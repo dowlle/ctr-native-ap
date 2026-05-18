@@ -1,49 +1,58 @@
 #include <common.h>
 
-extern unsigned char BoxSceneArr[20];
-
 // for oxide intro and ND box
 void DECOMP_CS_Cutscene_Start(void)
 {
-	// stack allocation
 	struct CsThreadInitData initData;
 
 	struct GameTracker *gGT = sdata->gGT;
 
-	// no instance, no initData required,
-	// this automatically starts the "introcam" thread
-	DECOMP_CS_Thread_Init(0, 0, 0, 0, 0);
+	DECOMP_CS_Thread_Init(0, OVR_233.s_introcam, 0, 0, 0);
 
-	// If this is the Naughty Dog Box Scene
-	if (gGT->levelID == NAUGHTY_DOG_CRATE)
+	if ((gGT->gameMode2 & CREDITS) == 0)
 	{
-		struct Level *lev1 = gGT->level1;
-		for (unsigned int i = 0; i < lev1->numInstances; i++)
+		if (gGT->levelID == NAUGHTY_DOG_CRATE)
 		{
-			struct InstDef *def = &lev1->ptrInstDefs[i];
-			short mid = def->model->id;
-			if (mid >= 0xB6 && mid <= 0xBF)
+			struct Level *lev1 = gGT->level1;
+			for (unsigned int i = 0; i < lev1->numInstances; i++)
 			{
-				if (def->ptrInstance != NULL)
-					def->ptrInstance->flags |= HIDE_MODEL;
+				struct InstDef *def = &lev1->ptrInstDefs[i];
+				short mid = def->model->id;
+				if (mid >= NDI_BOX_BOX_01 && mid <= NDI_BOX_LID2)
+				{
+					if (def->ptrInstance != NULL)
+						def->ptrInstance->flags |= HIDE_MODEL;
+				}
 			}
-		}
 
-		// nullify
-		int *ptrIntArr = &initData;
-		for (int i = 0; i < sizeof(struct CsThreadInitData) / 4; i++)
-			ptrIntArr[i] = 0;
+			DECOMP_CS_Instance_InitMatrix();
 
-		DECOMP_CS_Instance_InitMatrix();
+			int *ptrIntArr = (int *)&initData;
+			for (int i = 0; i < sizeof(struct CsThreadInitData) / 4; i++)
+				ptrIntArr[i] = 0;
 
-		for (int i = 0; i < 19; i++)
-		{
-			DECOMP_CS_Thread_Init(BoxSceneArr[i], 0, &initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_01, OVR_233.s_box1, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_02, OVR_233.s_box2, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_02_BOTTOM, OVR_233.s_box2_bottom, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_02_FRONT, OVR_233.s_box2_front, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_02A, OVR_233.s_box2_A, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_BOX_03, OVR_233.s_box3, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_CODE, OVR_233.s_code, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_GLOW, OVR_233.s_glow, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_LID, OVR_233.s_lid, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_LIDB, OVR_233.s_lidb, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_LIDC, OVR_233.s_lidc, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_LIDD, OVR_233.s_lidd, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_BOX_LID2, OVR_233.s_lid2, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART0, OVR_233.s_kart0, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART1, OVR_233.s_kart1, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART2, OVR_233.s_kart2, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART3, OVR_233.s_kart3, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART6, OVR_233.s_kart6, (short *)&initData, 0, 0);
+			DECOMP_CS_Thread_Init(NDI_KART7, OVR_233.s_kart7, (short *)&initData, 0, 0);
 		}
 	}
-
-	// if going to credits
-	if ((gGT->gameMode2 & CREDITS) != 0)
+	else
 	{
 		OVR_233.isCutsceneOver = 0;
 
@@ -52,32 +61,3 @@ void DECOMP_CS_Cutscene_Start(void)
 		DECOMP_CS_Instance_InitMatrix();
 	}
 }
-
-// Should be 19 large
-unsigned char BoxSceneArr[20] = {
-    0xb6, // BOX1
-    0xb7, // BOX2
-    0xb8, // BOX2_BOTTOM
-    0xb9, // BOX2_FRONT
-    0xba, // BOX2_A
-    0xbb, // BOX3
-    0xbc, // CODE
-    0xbd, // GLOW
-    0xbe, // LID
-    0xc9, // LIDB
-    0xca, // LIDC
-    0xcb, // LIDD
-    0xbf, // LID2
-
-    193, // KART0
-    194, // KART1
-    195, // KART2
-    196, // KART3
-
-    // --- cut by ND
-
-    199, // KART6
-    200, // KART7
-
-    -1, // NULL
-};

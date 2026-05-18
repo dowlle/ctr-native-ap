@@ -84,13 +84,8 @@ void DECOMP_CS_Thread_ThTick(struct Thread *t)
 		int textWidth;
 		u_short textRect[4];
 
-		textWidth = DECOMP_DecalFont_DrawMultiLine(
-			sdata->lngStrings[cs->Subtitles.lngIndex],
-			cs->Subtitles.textPos[0],
-			cs->Subtitles.textPos[1],
-			460,
-			cs->Subtitles.font,
-			cs->Subtitles.colors);
+		textWidth = DECOMP_DecalFont_DrawMultiLine(sdata->lngStrings[cs->Subtitles.lngIndex], cs->Subtitles.textPos[0], cs->Subtitles.textPos[1], 460,
+		                                           cs->Subtitles.font, cs->Subtitles.colors);
 
 		textRect[0] = cs->Subtitles.textPos[0] - 236;
 		textRect[1] = cs->Subtitles.textPos[1] - 4;

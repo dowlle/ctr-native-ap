@@ -14,11 +14,7 @@ void DECOMP_CS_Thread_LInB(struct Instance *inst)
 	if (inst->thread != 0)
 		goto check_polar;
 
-	t = DECOMP_PROC_BirthWithObject(
-		SIZE_RELATIVE_POOL_BUCKET(0x60, NONE, MEDIUM, STATIC),
-		DECOMP_CS_Thread_ThTick,
-		OVR_233.s_introguy,
-		0);
+	t = DECOMP_PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(0x60, NONE, MEDIUM, STATIC), DECOMP_CS_Thread_ThTick, OVR_233.s_introguy, 0);
 
 	inst->thread = t;
 
@@ -73,8 +69,7 @@ void DECOMP_CS_Thread_LInB(struct Instance *inst)
 		cs->desiredScale = 0x1000;
 		cs->particleID = 0xff;
 
-		cs->unk14 =
-			frameStart + (short)(((rng >> 2 & 0xfff) * ((frameEnd - frameStart) + 1)) >> 0xc);
+		cs->unk14 = frameStart + (short)(((rng >> 2 & 0xfff) * ((frameEnd - frameStart) + 1)) >> 0xc);
 
 		struct GameTracker *gGT = sdata->gGT;
 
