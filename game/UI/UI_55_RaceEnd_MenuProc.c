@@ -50,7 +50,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	switch (option)
 	{
 	// Quit
-	case 3: {
+	case 3:
+	{
 		// Erase ghost of previous race from RAM
 		DECOMP_GhostTape_Destroy();
 
@@ -62,7 +63,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		break;
 	}
 
-	case 4: {
+	case 4:
+	{
 		// Turn off HUD
 		gGT->hudFlags &= 0xfe;
 
@@ -100,7 +102,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 
 	// Change Character, or Change Level
 	case 5:
-	case 6: {
+	case 6:
+	{
 		// Erase ghost of previous race from RAM
 		DECOMP_GhostTape_Destroy();
 
@@ -118,7 +121,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	}
 
 	// Save Ghost
-	case 9: {
+	case 9:
+	{
 		sdata->framesSinceRaceEnded = 0x3f9;
 
 #ifndef REBUILD_PS1
@@ -132,7 +136,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	}
 
 	// Change Setup
-	case 10: {
+	case 10:
+	{
 		// go to battle setup screen
 		sdata->mainMenuState = 3;
 
@@ -142,7 +147,8 @@ void DECOMP_UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	}
 
 	// Exit To Map
-	case 0xd: {
+	case 0xd:
+	{
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
 

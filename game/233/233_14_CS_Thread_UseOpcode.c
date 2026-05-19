@@ -676,7 +676,8 @@ processOpcode:
 		conditionMet = CS_Credits_IsTextValid();
 		goto advanceIfConditionMet;
 
-	case 0x24: {
+	case 0x24:
+	{
 		struct CsThreadInitData initData;
 		int dancerModelID = opcodeMeta->arg1.i;
 

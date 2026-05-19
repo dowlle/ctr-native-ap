@@ -13,7 +13,8 @@ void DECOMP_VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 	switch (weaponID)
 	{
 	// Turbo
-	case 0: {
+	case 0:
+	{
 		int boost = 0x80;
 		if (d->numWumpas >= 10)
 			boost = 0x100;
@@ -661,7 +662,8 @@ void DECOMP_VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 
 
 	// Super Engine
-	case 0xd: {
+	case 0xd:
+	{
 		int engine = 0x1e00;
 		if (d->numWumpas >= 10)
 			engine = 0x2d00;

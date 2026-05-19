@@ -31,7 +31,8 @@ void DECOMP_Particle_FuncPtr_SpitTire(struct Particle *p)
 	switch (iVar2)
 	{
 	// frame #1
-	case 0x1000: {
+	case 0x1000:
+	{
 		// random Y
 		rng = DECOMP_MixRNG_Scramble();
 		p->axis[1].velocity = rng + (rng / 0x12c0) * -0x12c0 + 0x1900;
@@ -42,7 +43,8 @@ void DECOMP_Particle_FuncPtr_SpitTire(struct Particle *p)
 	}
 
 	// frame #2
-	case 0xfff: {
+	case 0xfff:
+	{
 		// random Y
 		rng = DECOMP_MixRNG_Scramble();
 		p->axis[1].velocity = rng + (rng / 800) * -800 + 8000;
@@ -53,7 +55,8 @@ void DECOMP_Particle_FuncPtr_SpitTire(struct Particle *p)
 	}
 
 	// frame #3
-	case 0xffe: {
+	case 0xffe:
+	{
 		// random Y
 		rng = DECOMP_MixRNG_Scramble();
 		p->axis[1].velocity = rng + (rng / 800) * -800 + 6000;

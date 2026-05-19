@@ -16,7 +16,8 @@ void DECOMP_AH_MaskHint_Update()
 		sdata->AkuAkuHintState++;
 		break;
 
-	case 1: {
+	case 1:
+	{
 		int absSpeedApprox = d->speedApprox;
 		if (absSpeedApprox < 0)
 			absSpeedApprox = -absSpeedApprox;
@@ -181,7 +182,8 @@ void DECOMP_AH_MaskHint_Update()
 		}
 		break;
 
-	case 4: {
+	case 4:
+	{
 		int lngIndex = 0;
 		int boolFound = 0;
 		short *ptrLngID = &D232.hintMenu_lngIndexArr[0];

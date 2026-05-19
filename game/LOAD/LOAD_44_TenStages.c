@@ -29,7 +29,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 
 	switch (loadingStage)
 	{
-	case 0: {
+	case 0:
+	{
 #ifndef REBUILD_PS1
 		if (!boolPlayMusicDuringLoading)
 		{
@@ -188,7 +189,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 
 		break;
 	}
-	case 1: {
+	case 1:
+	{
 		// if XA has not paused since CDSYS_XAPauseRequest in stage #0,
 		// then quit the function and try again next frame
 		if (sdata->XA_State == 4)
@@ -227,7 +229,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		DECOMP_LOAD_OvrEndRace(ovrRegion1);
 		break;
 	}
-	case 2: {
+	case 2:
+	{
 		// force no-load on main menu
 		if (levelID == MAIN_MENU_LEVEL)
 			break;
@@ -241,7 +244,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		DECOMP_LOAD_OvrLOD(gGT->numPlyrCurrGame);
 		break;
 	}
-	case 3: {
+	case 3:
+	{
 		// main menu + scrapbook, 230
 		if ((levelID != ADVENTURE_GARAGE) && ((gGT->gameMode1 & MAIN_MENU) != 0))
 		{
@@ -270,7 +274,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		DECOMP_LOAD_OvrThreads(ovrRegion3);
 		break;
 	}
-	case 4: {
+	case 4:
+	{
 		if (!boolPlayMusicDuringLoading)
 		{
 			DECOMP_Music_Restart();
@@ -304,7 +309,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		DECOMP_LOAD_DriverMPK((unsigned int)bigfile, sdata->levelLOD);
 		break;
 	}
-	case 5: {
+	case 5:
+	{
 		sdata->PLYROBJECTLIST = (int **)((unsigned int)sdata->ptrMPK + 4);
 		if (sdata->ptrMPK == 0)
 			sdata->PLYROBJECTLIST = 0;
@@ -332,7 +338,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 
 		break;
 	}
-	case 6: {
+	case 6:
+	{
 		if (!boolPlayMusicDuringLoading)
 		{
 			iVar9 = DECOMP_Music_AsyncParseBanks();
@@ -447,7 +454,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		}
 		break;
 	}
-	case 7: {
+	case 7:
+	{
 		// get level pointer
 		struct Level *lev = sdata->ptrLevelFile;
 
@@ -582,7 +590,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 		gGT->gameMode2 = gGT->gameMode2 | 0x100;
 		break;
 	}
-	case 8: {
+	case 8:
+	{
 		// If going to the podium
 		if (((gGT->gameMode1 & ADVENTURE_ARENA) != 0) && (gGT->podiumRewardID != NOFUNC) // 0
 		)
@@ -655,7 +664,8 @@ int DECOMP_LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigH
 			goto LAB_800346b0;
 		break;
 	}
-	case 9: {
+	case 9:
+	{
 		// Limited-Rendering scenarios
 		if ((levelID == SCRAPBOOK) || (levelID == MAIN_MENU_LEVEL) || ((gGT->gameMode2 & CREDITS) != 0))
 		{

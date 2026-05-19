@@ -17,6 +17,7 @@ BraceWrapping:
   BeforeElse: true
   BeforeCatch: true
   IndentBraces: false
+  AfterCaseLabel: true
 
 PointerAlignment: Right
 ReferenceAlignment: Right

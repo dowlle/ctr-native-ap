@@ -23,7 +23,8 @@ int DECOMP_MEMCARD_HandleEvent(void)
 	switch (sdata->memcard_stage)
 	{
 	// after checking info
-	case MC_STAGE_GETINFO: {
+	case MC_STAGE_GETINFO:
+	{
 		event = MEMCARD_GetNextSwEvent();
 
 		if (event == MC_RETURN_PENDING)
@@ -90,7 +91,8 @@ int DECOMP_MEMCARD_HandleEvent(void)
 	}
 
 	// after checking new card
-	case MC_STAGE_NEWCARD: {
+	case MC_STAGE_NEWCARD:
+	{
 		event = MEMCARD_GetNextSwEvent();
 
 		if (event == MC_RETURN_PENDING)

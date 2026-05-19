@@ -331,7 +331,8 @@ void DECOMP_GhostReplay_ThTick(struct Thread *t)
 				tape->packetID++;
 				break;
 
-			case 0x81: { // Animation
+			case 0x81:
+			{ // Animation
 
 				// What's with the safety checks in the original game?
 				// Did the animation format of ghosts not match retail?
