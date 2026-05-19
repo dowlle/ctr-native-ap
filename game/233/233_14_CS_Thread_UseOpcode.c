@@ -20,6 +20,7 @@ static void CS_RestoreDecodedOpcode(struct CutsceneObj *cs, const int in[5])
 	dst[4] = in[4];
 }
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac840-0x800ade8c
 int DECOMP_CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 {
 	unsigned char numPlayers;
@@ -112,7 +113,7 @@ int DECOMP_CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs
 				reloadAdvCharSelectOpcodeState:
 					cs->unk18 = ((int *)&cs->decodedOpcode)[2];
 					iVar8 = DECOMP_MixRNG_Scramble();
-					opcodeMeta = &cs->decodedOpcode;
+					opcodeMeta = (struct CsOpcodeMeta *)cs->metadata;
 					opcodeMetaShorts = (short *)opcodeMeta;
 					cs->unk14 =
 					    opcodeMeta->frameStart + (short)((int)((iVar8 >> 2 & 0xfff) * (((int)opcodeMeta->frameEnd - (int)opcodeMeta->frameStart) + 1)) >> 0xc);
@@ -135,7 +136,7 @@ int DECOMP_CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs
 	iVar12 = cs->unk18;
 	iVar8 = (int)cs->unk1e;
 	elapsedTimeRemaining = gGT->elapsedTimeMS;
-	opcodeMeta = &cs->decodedOpcode;
+	opcodeMeta = (struct CsOpcodeMeta *)cs->metadata;
 	opcodeMetaShorts = (short *)opcodeMeta;
 	animIndex = (int)opcodeMeta->animIndex;
 
@@ -385,6 +386,9 @@ processOpcode:
 	case 3:
 		if (instance != 0)
 		{
+			// NOTE(aalhendi): PSX-backfeed blocker: native scratchpad divergence. Retail
+			// builds this opcode 3 init data at scratchpad 0x1f800108; native keeps it
+			// on the host stack. Restore the scratchpad address contract before PSX use.
 			struct CsThreadInitData initData;
 			int spawnModelID = opcodeMeta->arg1.i;
 
@@ -674,6 +678,9 @@ processOpcode:
 
 	case 0x24:
 	{
+		// NOTE(aalhendi): PSX-backfeed blocker: native scratchpad divergence. Retail
+		// builds this credits dancer init data at scratchpad 0x1f800108; native keeps it
+		// on the host stack. Restore the scratchpad address contract before PSX use.
 		struct CsThreadInitData initData;
 		int dancerModelID = opcodeMeta->arg1.i;
 
