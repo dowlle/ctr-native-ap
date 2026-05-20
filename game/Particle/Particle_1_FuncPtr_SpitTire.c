@@ -1,21 +1,21 @@
 #include <common.h>
 
-void DECOMP_Particle_FuncPtr_SpitTire(struct Particle *p)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003ec18-0x8003ee20
+void Particle_FuncPtr_SpitTire(struct Particle *p)
 {
 	int rng;
 	int iVar2;
+	int targetY;
 
 	// Wait until tires are 0x10 units above
 	// the ground, which is where the plant
 	// actually "spits" tires from the mouth
-	iVar2 = p->plantInst->matrix.t[1] + 0x10;
+	targetY = p->plantInst->matrix.t[1] + 0x10;
 
-	if ((p->axis[1].startVal >> 8) >= iVar2)
+	if ((p->axis[1].startVal >> 8) >= targetY)
 	{
 		return;
 	}
-
-	p->axis[1].startVal = iVar2 * 0x100;
 
 	// random X
 	rng = DECOMP_MixRNG_Scramble();
@@ -69,7 +69,5 @@ void DECOMP_Particle_FuncPtr_SpitTire(struct Particle *p)
 		return;
 	}
 
-	p->axis[0].velocity = p->axis[0].velocity;
-	p->axis[1].velocity = p->axis[1].velocity;
-	p->axis[2].velocity = p->axis[2].velocity;
+	p->axis[1].startVal = targetY * 0x100;
 }

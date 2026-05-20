@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003ea28-0x8003ea6c
 int DECOMP_MixRNG_Scramble()
 {
 	// random algorithm for seemingly-random numbers

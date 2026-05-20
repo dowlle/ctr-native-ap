@@ -219,12 +219,12 @@ void DECOMP_MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *g
 		DECOMP_GhostTape_WriteMoves(0);
 		gGT->unk1cc4[4] = (u32)(gGT->unk1cc4[4] * 10000) / 0x147e;
 
-#ifndef REBUILD_PS1
+#if !defined(REBUILD_PS1) || defined(CTR_NATIVE)
 
 
 		Particle_UpdateAllParticles();
 
-#endif // rebuildps1
+#endif
 	}
 	else
 	{

@@ -7,7 +7,6 @@ void RainLogic(struct GameTracker *gGT);
 void MenuHighlight();
 void RenderAllWeather(struct GameTracker *gGT);
 void RenderAllConfetti(struct GameTracker *gGT);
-void RenderAllStars(struct GameTracker *gGT);
 void RenderAllHUD(struct GameTracker *gGT);
 void RenderAllBeakerRain(struct GameTracker *gGT);
 void RenderAllBoxSceneSplitLines(struct GameTracker *gGT);
@@ -87,7 +86,13 @@ void DECOMP_MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem 
 #ifndef REBUILD_PS1
 	RenderAllWeather(gGT);
 	RenderAllConfetti(gGT);
-	RenderAllStars(gGT);
+#endif
+#if !defined(REBUILD_PS1) || defined(CTR_NATIVE)
+	// TODO(aalhendi): Re-enable this ASM-verified retail subrange
+	// (0x800364f8-0x80036538) after PsyCross handles RenderStars' length-2
+	// draw-env packet payload (`0xe1000a20, 0`) without desyncing the OT walker.
+	// if ((gGT->renderFlags & 8) != 0 && gGT->stars.numStars != 0)
+	// 	RenderStars(&gGT->pushBuffer[0], &gGT->backBuffer->primMem, &gGT->stars, gGT->numPlyrCurrGame);
 #endif
 
 	RenderAllHUD(gGT);
@@ -472,18 +477,6 @@ void RenderAllConfetti(struct GameTracker *gGT)
 	}
 }
 
-void RenderAllStars(struct GameTracker *gGT)
-{
-	// only if stars are enabled
-	if ((gGT->renderFlags & 8) == 0)
-		return;
-
-	// quit if no stars exist
-	if (gGT->stars.numStars == 0)
-		return;
-
-	RenderStars(&gGT->pushBuffer[0], &gGT->backBuffer->primMem, &gGT->stars, gGT->numPlyrCurrGame);
-}
 #endif
 
 void RenderAllHUD(struct GameTracker *gGT)

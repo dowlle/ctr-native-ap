@@ -5,13 +5,29 @@ struct ParticleAxis
 	s16 accel;
 };
 
+struct ParticleOscillator
+{
+	struct ParticleOscillator *next;
+	struct ParticleOscillator *prev;
+	u16 flags;
+	s16 previousValue;
+	u16 period;
+	s16 phase;
+	u16 scale;
+	s16 offset;
+	s16 min;
+	s16 max;
+};
+
 struct Particle
 {
 	// 0x0
 	struct Particle *next;
 
 	// 0x4
-	struct Particle *prev;
+	// Active particles use this as the oscillator chain head. While a particle
+	// is inside a JitPool free list, the same word is the list Item prev field.
+	struct ParticleOscillator *oscillator;
 
 	// 0x8
 	struct Icon *ptrIconArray;
@@ -137,4 +153,5 @@ struct ParticleEmitter
 };
 
 _Static_assert(sizeof(struct ParticleAxis) == 8);
+_Static_assert(sizeof(struct ParticleOscillator) == 0x18);
 _Static_assert(sizeof(struct ParticleEmitter) == 0x24);

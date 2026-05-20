@@ -21,6 +21,7 @@
 #include "game/RenderBucket/RenderBucket_QueueExecute.c"
 #include "game/RenderTires/DrawTires_Solid.c"
 #include "game/RenderTires/DrawTires_Reflection.c"
+#include "game/RenderStars/RenderStars.c"
 
 #include "game/MAIN/MAIN_AAA_BigBlock1.c"
 
@@ -365,8 +366,19 @@
 #include "game/MEMPACK/MEMPACK_10_PopState.c"
 #include "game/MEMPACK/MEMPACK_11_PopToState.c"
 
+#include "game/MixRNG/RngDeadCoed.c"
 #include "game/MixRNG/MixRNG_0_Scramble.c"
+#include "game/MixRNG/MixRNG_1_Particles.c"
+#include "game/MixRNG/MixRNG_2_GetValue.c"
 
+#include "game/Particle/Particle_0_FuncPtr_PotionShatter.c"
+#include "game/Particle/Particle_1_FuncPtr_SpitTire.c"
+#include "game/Particle/Particle_2_FuncPtr_ExhaustUnderwater.c"
+#include "game/Particle/Particle_3_OnDestroy.c"
+#include "game/Particle/Particle_4_UpdateList.c"
+#include "game/Particle/Particle_5_UpdateAllParticles.c"
+#include "game/Particle/Particle_6_BitwiseClampByte.c"
+#include "game/Particle/Particle_7_SetColors.c"
 #include "game/Particle/Particle_4_Init.c"
 
 #include "game/PROC/PROC_00_DestroyTracker.c"

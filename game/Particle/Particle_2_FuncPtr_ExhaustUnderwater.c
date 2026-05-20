@@ -1,20 +1,18 @@
 #include <common.h>
 
-void DECOMP_Particle_FuncPtr_ExhaustUnderwater(struct Particle *p)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003ee20-0x8003eeb0
+void Particle_FuncPtr_ExhaustUnderwater(struct Particle *p)
 {
 	struct IconGroup *icon;
-	struct Icon **iconPtrArray;
 
 	if ((3 < ((p->axis[1].startVal >> 8) + p->driverInst->matrix.t[1])) && (p->framesLeftInLife < 27))
 	{
 		// bubblepop
 		icon = sdata->gGT->iconGroup[8];
+		p->ptrIconGroup = icon;
 
 		if (icon != NULL)
 		{
-			// save icons
-			p->ptrIconGroup = icon;
-
 			struct Icon **ptrIconArray = ICONGROUP_GETICONS(icon);
 
 			// actually the first icon pointer in the array,

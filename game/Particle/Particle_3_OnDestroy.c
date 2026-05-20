@@ -1,16 +1,17 @@
 #include <common.h>
 
-void DECOMP_Particle_OnDestroy(struct Particle *p)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003eeb0-0x8003eefc
+void Particle_OnDestroy(struct Particle *p)
 {
-	struct Particle *pp;
+	struct ParticleOscillator *osc;
 
-	pp = p->prev;
+	osc = p->oscillator;
 
-	while (pp != NULL)
+	while (osc != NULL)
 	{
-		pp = pp->next;
+		struct ParticleOscillator *next = osc->next;
 
-		// free list of Oscillator Pool
-		LIST_AddFront(&sdata->gGT->JitPools.oscillator.free, (struct Item *)pp);
+		DECOMP_LIST_AddFront(&sdata->gGT->JitPools.oscillator.free, (struct Item *)osc);
+		osc = next;
 	}
 }
