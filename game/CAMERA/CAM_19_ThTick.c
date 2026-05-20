@@ -452,11 +452,11 @@ SkipNewCameraEOR:
 								gte_ldv0((SVECTOR *)&cDC->transitionTo);
 								gte_rtv0();
 
-									VECTOR pathOffset;
-									gte_stlvnl(&pathOffset);
-									uVar9 = pathOffset.vx;
-									iVar7 = pathOffset.vy;
-									iVar8 = pathOffset.vz;
+								VECTOR pathOffset;
+								gte_stlvnl(&pathOffset);
+								uVar9 = pathOffset.vx;
+								iVar7 = pathOffset.vy;
+								iVar8 = pathOffset.vz;
 
 								pb->pos[0] = scratchpad[0x144] + (short)uVar9;
 								pb->pos[1] = scratchpad[0x145] + (short)iVar7;
