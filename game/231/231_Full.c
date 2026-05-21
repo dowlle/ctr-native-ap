@@ -19,6 +19,8 @@
 
 // TODO(aalhendi): unported path-node, audio recycle, and matrix-parent behavior.
 // TODO(aalhendi): 026-038 are the warpball / mask / shield cluster.
+#include "231_035_RB_MaskWeapon_FadeAway.c"
+#include "231_036_RB_MaskWeapon_ThTick.c"
 #include "231_039_RB_Player_ToggleInvisible.c"
 #include "231_040_RB_Player_ToggleFlicker.c"
 #include "231_041_RB_RainCloud_FadeAway.c"

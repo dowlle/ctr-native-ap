@@ -15,11 +15,9 @@ void DECOMP_VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 		d->matrixIndex = 0;
 		inst->animIndex = 0;
 
-		// (instance, anim#0)
-		// numFrames = VehFrameInst_GetNumAnimFrames(inst, 0);
+		numFrames = DECOMP_VehFrameInst_GetNumAnimFrames(inst, 0);
 
-		// (midpoint, numFrames)
-		inst->animFrame = 10; // VehFrameInst_GetStartFrame(0, numFrames);
+		inst->animFrame = DECOMP_VehFrameInst_GetStartFrame(0, numFrames);
 
 		d->AxisAngle2_normalVec[0] = d->KartStates.MaskGrab.AngleAxis_NormalVec[0];
 		d->AxisAngle2_normalVec[1] = d->KartStates.MaskGrab.AngleAxis_NormalVec[1];
@@ -41,7 +39,7 @@ void DECOMP_VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 			d->KartStates.MaskGrab.boolWhistle = true;
 
 			// "falling" sound, like a whistle
-			OtherFX_Play(0x55, 1);
+			DECOMP_OtherFX_Play(0x55, 1);
 		}
 
 

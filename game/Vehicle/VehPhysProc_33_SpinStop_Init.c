@@ -21,6 +21,10 @@ void *PlayerStopSpinFuncTable[0xD] = {0,
 
                                       VehEmitter_DriverMain
 
+#else
+                                      // TODO(aalhendi): Port moved collision, driver collision, jump/friction,
+                                      // matrix translation, spin-stop animation, and emitter stages.
+                                      NULL, NULL, COLL_FIXED_PlayerSearch, NULL, NULL, NULL, NULL
 #endif
 };
 

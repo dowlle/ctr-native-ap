@@ -31,9 +31,9 @@ void DECOMP_VehStuckProc_MaskGrab_Update(struct Thread *t, struct Driver *d)
 	gGT->cameraDC[d->driverID].flags |= 8;
 
 
-	VehStuckProc_MaskGrab_FindDestPos((struct Thread *)d, (struct Driver *)d->lastValid);
+	DECOMP_VehStuckProc_MaskGrab_FindDestPos(d, d->lastValid);
 
 	DECOMP_VehBirth_TeleportSelf(d, 0, 0x80);
 
-	VehStuckProc_RevEngine_Init(t, d);
+	DECOMP_VehStuckProc_RevEngine_Init(t, d);
 }

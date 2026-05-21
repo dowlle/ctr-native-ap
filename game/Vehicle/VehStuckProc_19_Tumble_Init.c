@@ -5,7 +5,7 @@ void *PlayerBlastedFuncTable[0xD] = {(void *)0x0,
 #ifdef REBUILD_PC
                                      DECOMP_VehStuckProc_Tumble_PhysLinear,
 #else
-	VehStuckProc_Tumble_PhysLinear,
+                                     VehStuckProc_Tumble_PhysLinear,
 #endif
                                      DECOMP_VehPhysProc_Driving_Audio,
                                      DECOMP_VehStuckProc_Tumble_PhysAngular,
@@ -19,6 +19,10 @@ void *PlayerBlastedFuncTable[0xD] = {(void *)0x0,
                                      VehPhysForce_TranslateMatrix,
                                      DECOMP_VehStuckProc_Tumble_Animate,
                                      VehEmitter_DriverMain
+#else
+                                     // TODO(aalhendi): Port moved collision, driver collision, jump/friction,
+                                     // matrix translation, tumble animation, and emitter stages.
+                                     NULL, NULL, COLL_FIXED_PlayerSearch, NULL, NULL, NULL, NULL
 #endif
 };
 

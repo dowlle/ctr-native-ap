@@ -20,6 +20,10 @@ void *PlayerLastSpinFuncTable[0xD] = {0,
 
                                       VehEmitter_DriverMain
 
+#else
+                                      // TODO(aalhendi): Port moved collision, driver collision, jump/friction,
+                                      // matrix translation, last-spin frame, and emitter stages.
+                                      NULL, NULL, COLL_FIXED_PlayerSearch, NULL, NULL, NULL, NULL
 #endif
 };
 

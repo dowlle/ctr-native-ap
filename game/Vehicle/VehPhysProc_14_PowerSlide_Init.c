@@ -58,5 +58,9 @@ void *PlayerDriftingFuncTable[13] = {DECOMP_VehPhysProc_PowerSlide_InitSetUpdate
 
                                      VehEmitter_DriverMain
 
+#else
+                                     // TODO(aalhendi): Port moved collision, driver collision, jump/friction,
+                                     // matrix translation, frame processing, and emitter stages.
+                                     NULL, NULL, COLL_FIXED_PlayerSearch, NULL, NULL, NULL, NULL
 #endif
 };

@@ -468,6 +468,12 @@ void DECOMP_VehBirth_TireSprites(struct Thread *t);
 void DECOMP_VehBirth_NonGhost(struct Thread *t, int index);
 struct Driver *DECOMP_VehBirth_Player(int index);
 
+struct Terrain *DECOMP_VehAfterColl_GetTerrain(u8 terrainType);
+u32 VehCalc_FastSqrt(u32 n, u32 shift);
+int DECOMP_VehFrameInst_GetStartFrame(int animIndex, int numFrames);
+u32 DECOMP_VehFrameInst_GetNumAnimFrames(struct Instance *inst, int animIndex);
+struct MaskHeadWeapon *DECOMP_VehPickupItem_MaskUseWeapon(struct Driver *driver, int boolPlaySound);
+
 void DECOMP_VehPhysGeneral_PhysAngular(struct Thread *t, struct Driver *d);
 
 void DECOMP_VehPhysProc_Driving_PhysLinear(struct Thread *t, struct Driver *d);
@@ -482,6 +488,12 @@ void DECOMP_VehStuckProc_RIP_Init(struct Thread *t, struct Driver *d);
 void DECOMP_VehPhysProc_FreezeVShift_Update(struct Thread *t, struct Driver *d);
 void DECOMP_VehPhysProc_FreezeVShift_ReverseOneFrame(struct Thread *t, struct Driver *d);
 void DECOMP_VehPhysProc_FreezeVShift_Init(struct Thread *t, struct Driver *d);
+
+void DECOMP_VehStuckProc_MaskGrab_FindDestPos(struct Driver *d, struct QuadBlock *quad);
+void DECOMP_VehStuckProc_MaskGrab_Update(struct Thread *t, struct Driver *d);
+void DECOMP_VehStuckProc_MaskGrab_PhysLinear(struct Thread *t, struct Driver *d);
+void DECOMP_VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d);
+void DECOMP_VehStuckProc_MaskGrab_Init(struct Thread *t, struct Driver *d);
 
 void DECOMP_VehPhysProc_PowerSlide_PhysAngular(struct Thread *t, struct Driver *d);
 void DECOMP_VehPhysProc_PowerSlide_Finalize(struct Thread *t, struct Driver *d);
@@ -906,5 +918,6 @@ void COLL_FIXED_QUADBLK_GetNormVecs_LoLOD(struct ScratchpadStruct *sps, struct Q
 void COLL_FIXED_QUADBLK_GetNormVecs_HiLOD(struct ScratchpadStruct *sps, struct QuadBlock *quad);
 void COLL_FIXED_QUADBLK_TestTriangles(struct QuadBlock *qb, struct ScratchpadStruct *sps);
 void COLL_FIXED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps);
+void COLL_FIXED_PlayerSearch(struct Thread *t, struct Driver *d);
 void DECOMP_BOTS_LevInstColl(struct Thread *param_1);
 void DECOMP_CS_LoadBoss(struct BossCutsceneData *bcd);

@@ -32,5 +32,9 @@ void *PlayerFreezeFuncTable[13] = {NULL,
                                    VehPhysForce_TranslateMatrix,
                                    VehFrameProc_Driving,
                                    VehEmitter_DriverMain
+#else
+                                   // TODO(aalhendi): Port moved collision, driver collision, jump/friction,
+                                   // matrix translation, frame processing, and emitter stages.
+                                   NULL, NULL, COLL_FIXED_PlayerSearch, NULL, NULL, NULL, NULL
 #endif
 };

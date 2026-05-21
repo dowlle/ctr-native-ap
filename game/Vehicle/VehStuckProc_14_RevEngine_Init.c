@@ -64,8 +64,7 @@ void *PlayerRevEngineFuncTable[13] = {
     DECOMP_VehStuckProc_RevEngine_Animate,
     VehEmitter_DriverMain,
 #else
-    0,
-    DECOMP_VehStuckProc_RevEngine_Animate,
-    0
+    // TODO(aalhendi): Port matrix translation and driver emitter stages.
+    0, DECOMP_VehStuckProc_RevEngine_Animate, 0
 #endif
 };

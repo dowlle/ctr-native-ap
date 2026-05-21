@@ -107,6 +107,7 @@
 #include "game/COLL/COLL_14_FIXED_QUADBLK_GetNormVecs_HiLOD.c"
 #include "game/COLL/COLL_11_FIXED_QUADBLK_TestTriangles.c"
 #include "game/COLL/COLL_12_FIXED_BSPLEAF_TestQuadblocks.c"
+#include "game/COLL/COLL_04_FIXED_PlayerSearch.c"
 
 #include "game/CTR/CTR_00_Box_DrawWirePrims.c"
 #include "game/CTR/CTR_01_Box_DrawWireBox.c"
@@ -315,6 +316,8 @@
 #include "game/INSTANCE/INSTANCE_05_Death.c"
 #include "game/INSTANCE/INSTANCE_06_LevInitAll.c"
 #include "game/INSTANCE/INSTANCE_08_GetNumAnimFrames.c"
+
+#include "game/LHMatrix/LHMatrix_0_Parent.c"
 
 #include "game/JitPool/JitPool_0_Clear.c"
 #include "game/JitPool/JitPool_1_Init.c"
@@ -536,10 +539,14 @@
 #include "game/Vehicle/VehCalc_0_InterpBySpeed.c"
 #include "game/Vehicle/VehCalc_1_MapToRange.c"
 #include "game/Vehicle/VehCalc_2_SteerAccel.c"
+#include "game/Vehicle/VehCalc_3_FastSqrt.c"
+
+#include "game/Vehicle/VehAfterColl_1_GetTerrain.c"
 
 #include "game/Vehicle/VehFire_0_Audio.c"
 #include "game/Vehicle/VehFire_1_Increment.c"
 
+#include "game/Vehicle/VehFrameInst_0_GetStartFrame.c"
 #include "game/Vehicle/VehFrameInst_1_GetNumAnimFrames.c"
 
 #include "game/Vehicle/VehPhysForce_0_ConvertSpeedToVec.c"
@@ -568,9 +575,16 @@
 #include "game/Vehicle/VehPhysProc_AAA_BigBlock1.c"
 
 #include "game/Vehicle/VehPickupItem_0_MaskBoolGoodGuy.c"
+#include "game/Vehicle/VehPickupItem_1_MaskUseWeapon.c"
 #include "game/Vehicle/VehPickupItem_4_ShootNow.c"
 #include "game/Vehicle/VehPickupItem_5_ShootOnCirclePress.c"
 
+#include "game/Vehicle/VehStuckProc_00_MaskGrab_FindDestPos.c"
+#include "game/Vehicle/VehStuckProc_01_MaskGrab_Particles.c"
+#include "game/Vehicle/VehStuckProc_02_MaskGrab_Update.c"
+#include "game/Vehicle/VehStuckProc_03_MaskGrab_PhysLinear.c"
+#include "game/Vehicle/VehStuckProc_04_MaskGrab_Animate.c"
+#include "game/Vehicle/VehStuckProc_05_MaskGrab_Init.c"
 #include "game/Vehicle/VehStuckProc_10_RIP_Init.c"
 #include "game/Vehicle/VehStuckProc_11_RevEngine_Update.c"
 #include "game/Vehicle/VehStuckProc_12_RevEngine_PhysLinear.c"
