@@ -1,8 +1,9 @@
 #include <common.h>
 
-void DECOMP_COLL_MOVED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800202a8-0x80020334
+void COLL_MOVED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps)
 {
-	u32 numQuads;
+	int numQuads;
 	struct QuadBlock *ptrQuad;
 
 	// if bsp flag is water
@@ -15,10 +16,11 @@ void DECOMP_COLL_MOVED_BSPLEAF_TestQuadblocks(struct BSP *node, struct Scratchpa
 	ptrQuad = node->data.leaf.ptrQuadBlockArray;
 
 	// loop through all quadblocks
-	while (numQuads-- != 0)
+	do
 	{
 		COLL_MOVED_QUADBLK_TestTriangles(ptrQuad++, sps);
-	}
+		numQuads--;
+	} while (numQuads > 0);
 
 	if ((sps->Union.QuadBlockColl.searchFlags & 1) != 0)
 	{

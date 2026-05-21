@@ -91,6 +91,8 @@ void FUN_8001f6f0(int param_1, int param_2);
 void FUN_8001f7f0(int param_1);
 u32 FUN_8001f928(u32 *param_1, u32 *param_2, u32 *param_3, u32 *param_4);
 void FUN_8001fc40(u32 *param_1, int param_2, u32 param_3, u32 param_4);
+s32 COLL_MOVED_TRIANGL_ReorderNormals(void *set1, void *v1, void *v2, void *v3);
+void COLL_MOVED_TRIANGL_TestPoint(struct ScratchpadStruct *sps, struct BspSearchVertex *v1, struct BspSearchVertex *v2, struct BspSearchVertex *v3);
 void COLL_MOVED_QUADBLK_TestTriangles(struct QuadBlock *qb, struct ScratchpadStruct *sps);
 void COLL_MOVED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps);
 void FUN_80020334(struct QuadBlock *qb, int triangleID, int param_3);

@@ -108,6 +108,10 @@
 #include "game/COLL/COLL_11_FIXED_QUADBLK_TestTriangles.c"
 #include "game/COLL/COLL_12_FIXED_BSPLEAF_TestQuadblocks.c"
 #include "game/COLL/COLL_04_FIXED_PlayerSearch.c"
+#include "game/COLL/COLL_16_MOVED_TRIANGL_ReorderNormals.c"
+#include "game/COLL/COLL_17_MOVED_TRIANGL_TestPoint.c"
+#include "game/COLL/COLL_18_MOVED_QUADBLK_TestTriangles.c"
+#include "game/COLL/COLL_19_MOVED_BSPLEAF_TestQuadblocks.c"
 
 #include "game/CTR/CTR_00_Box_DrawWirePrims.c"
 #include "game/CTR/CTR_01_Box_DrawWireBox.c"
