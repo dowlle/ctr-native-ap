@@ -230,6 +230,29 @@ static inline void RenderBucket_SplitInterpolateVertex(struct RenderBucketSplitV
 	             ((u32)RenderBucket_InterpU8((u8)(from->color >> 16), (u8)(to->color >> 16), factor) << 16);
 }
 
+static inline void RenderBucket_WaterSplitInterpolateVertex(struct RenderBucketSplitVertex *dst, const struct RenderBucketSplitVertex *from,
+                                                            const struct RenderBucketSplitVertex *to, int hasTexture, s16 splitLine)
+{
+	int denom = (s16)(to->xy >> 16) - (s16)(from->xy >> 16);
+	int factor = RenderBucket_MipsSllSigned(from->splitDist, 16) / denom;
+
+	// NOTE(aalhendi): Source-backs helper cluster 0x8006d094-0x8006d55c.
+	// This split clips against model-space Y, not the depth plane used by 0x8006b4c8.
+	if (hasTexture != 0)
+	{
+		u8 u = RenderBucket_InterpU8((u8)from->uv, (u8)to->uv, factor);
+		u8 v = RenderBucket_InterpU8((u8)(from->uv >> 8), (u8)(to->uv >> 8), factor);
+		dst->uv = (u16)u | ((u16)v << 8);
+	}
+
+	dst->xy = RenderBucket_PackXY(RenderBucket_InterpS16((s16)from->xy, (s16)to->xy, factor), splitLine);
+	dst->z = (u32)(RenderBucket_MipsMulLoSra16((s32)to->z - (s32)from->z, factor) + (s32)from->z);
+	dst->color = (u32)RenderBucket_InterpU8((u8)from->color, (u8)to->color, factor) |
+	             ((u32)RenderBucket_InterpU8((u8)(from->color >> 8), (u8)(to->color >> 8), factor) << 8) |
+	             ((u32)RenderBucket_InterpU8((u8)(from->color >> 16), (u8)(to->color >> 16), factor) << 16);
+	dst->splitDist = 0;
+}
+
 static struct ModelAnim *RenderBucket_GetAnim(struct Instance *inst, struct ModelHeader *mh)
 {
 	if (mh->ptrAnimations == 0)
@@ -299,6 +322,7 @@ static const u32 sRenderBucketInstanceFunc3Table8008a470[4] = {
 #define RB_RETAIL_INST_SETUP_FADE_COLOR  ((u32)0x8006c984U)
 #define RB_RETAIL_INST_PRIM_SELECT_RANGE ((u32)0x8006ad6cU)
 #define RB_RETAIL_INST_PRIM_NORMAL       ((u32)0x8006ad88U)
+#define RB_RETAIL_INST_FUNC2_SPLIT_XOR   ((u32)0x8006d59cU)
 
 #define RB_RETAIL_DRAWFUNC_NORMAL        ((int)0x8006a52cU)
 #define RB_RETAIL_DRAWFUNC_NORMAL_ALT    ((int)0x8006a6b8U)
@@ -1691,6 +1715,28 @@ struct RenderBucketUncompressResult RenderBucket_UncompressAnimationFrame(struct
 	return result;
 }
 
+static struct RenderBucketUncompressResult RenderBucket_UncompressAnimationFrame_Split(struct RenderBucketDrawContext *ctx, u32 command, u16 stackIndex)
+{
+	struct RenderBucketUncompressResult result = RenderBucket_UncompressAnimationFrame(ctx, command, stackIndex);
+	u8 flags = (command >> 24) & 0xff;
+	u32 *scratchVertex = CTR_SCRATCHPAD_PTR(u32, 0x140 + (stackIndex * 8));
+
+	if ((flags & 4) != 0)
+		return result;
+
+	// NOTE(aalhendi): Retail 0x8006bf30 decodes like 0x8006a8e0, then runs
+	// the packed vertex through the split light matrix with MVMVA sf0.
+	MTC2(result.packed.xy, 0);
+	MTC2(result.packed.z, 1);
+	doCOP2(0x04a6012);
+	result.packed.xy = ((u32)MFC2(10) << 16) | ((u32)MFC2(9) & 0xffff);
+	result.packed.z = MFC2(11);
+	ctx->packedStack[stackIndex] = result.packed;
+	scratchVertex[0] = result.packed.xy;
+	scratchVertex[1] = result.packed.z;
+	return result;
+}
+
 static u_long *RenderBucket_GetNormalOTEntry(int activeRange, int depthMac0)
 {
 	int depthBin = (int)((u32)depthMac0 >> 17);
@@ -1825,6 +1871,20 @@ static void RenderBucket_InitSplitVertex(struct RenderBucketDrawContext *ctx, in
 {
 	struct RenderBucketSplitVertex *split = &ctx->tempSplit[slot];
 	int splitDist = (s16)ctx->splitPlane - (s32)packedZ;
+
+	split->xy = packedXY;
+	split->z = packedZ;
+	split->color = (u32)color;
+	split->uv = 0;
+	split->splitDist = (s16)splitDist;
+	split->sxy = 0;
+	split->sz = 0;
+}
+
+static void RenderBucket_InitWaterSplitVertex(struct RenderBucketDrawContext *ctx, int slot, u32 packedXY, u32 packedZ, int color)
+{
+	struct RenderBucketSplitVertex *split = &ctx->tempSplit[slot];
+	int splitDist = (s16)ctx->idpp->splitLine - (s16)(packedXY >> 16);
 
 	split->xy = packedXY;
 	split->z = packedZ;
@@ -2179,6 +2239,71 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 	return 0;
 }
 
+static int RenderBucket_WaterSplitDrawsNegativeSide(struct RenderBucketDrawContext *ctx)
+{
+	if ((u32)(uintptr_t)ctx->inst->funcPtr[2] == RB_RETAIL_INST_FUNC2_SPLIT_XOR)
+		return (s8)ctx->inst->unk53 < 0;
+
+	return 1;
+}
+
+static int RenderBucket_ClipWaterSplitPolygon(struct RenderBucketDrawContext *ctx, const struct RenderBucketSplitVertex *inVerts, int inCount,
+                                              struct RenderBucketSplitVertex *outVerts, int hasTexture, int drawNegativeSide)
+{
+	struct RenderBucketSplitVertex prev = inVerts[inCount - 1];
+	int prevInside = (drawNegativeSide != 0) ? (prev.splitDist < 0) : (prev.splitDist >= 0);
+	int outCount = 0;
+	s16 splitLine = ctx->idpp->splitLine;
+
+	for (int i = 0; i < inCount; i++)
+	{
+		const struct RenderBucketSplitVertex *curr = &inVerts[i];
+		int currInside = (drawNegativeSide != 0) ? (curr->splitDist < 0) : (curr->splitDist >= 0);
+
+		if (prevInside != currInside)
+		{
+			struct RenderBucketSplitVertex *dst = &outVerts[outCount++];
+
+			RenderBucket_WaterSplitInterpolateVertex(dst, &prev, curr, hasTexture, splitLine);
+			RenderBucket_ProjectSplitVertex(ctx, dst);
+		}
+
+		if (currInside != 0)
+			outVerts[outCount++] = *curr;
+
+		prev = *curr;
+		prevInside = currInside;
+	}
+
+	return outCount;
+}
+
+static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
+{
+	struct RenderBucketSplitVertex inVerts[3];
+	struct RenderBucketSplitVertex outVerts[4];
+	int drawNegativeSide = RenderBucket_WaterSplitDrawsNegativeSide(ctx);
+	int activeRange = RenderBucket_SelectPrimitiveActiveRange(ctx, command);
+	int outCount;
+
+	RenderBucket_AssignSplitUvs(ctx, tex);
+
+	inVerts[0] = ctx->tempSplit[1];
+	inVerts[1] = ctx->tempSplit[2];
+	inVerts[2] = ctx->tempSplit[3];
+	outCount = RenderBucket_ClipWaterSplitPolygon(ctx, inVerts, 3, outVerts, tex != 0, drawNegativeSide);
+	if (outCount < 3)
+		return 0;
+
+	if (RenderBucket_DrawSplitPrimitiveAtRange(ctx, command, tex, activeRange, depthMac0, &outVerts[0], &outVerts[1], &outVerts[2]) < 0)
+		return -1;
+
+	if (outCount == 4)
+		return RenderBucket_DrawSplitPrimitiveAtRange(ctx, command, tex, activeRange, depthMac0, &outVerts[0], &outVerts[2], &outVerts[3]);
+
+	return 0;
+}
+
 void RenderBucket_DrawFunc_Normal(struct RenderBucketDrawContext *ctx)
 {
 	u32 *pCmd;
@@ -2474,6 +2599,109 @@ static void RenderBucket_DrawFunc_Special(struct RenderBucketDrawContext *ctx)
 	}
 }
 
+static void RenderBucket_DrawFunc_Split(struct RenderBucketDrawContext *ctx)
+{
+	u32 *pCmd = (u32 *)ctx->idpp->ptrCommandList;
+
+	// NOTE(aalhendi): Source-backs retail 0x8006b030's water/mud split entry.
+	RenderBucket_CopyScratchColorCache(ctx);
+	pCmd++;
+
+	while (*pCmd != 0xffffffff)
+	{
+		u32 command = *pCmd++;
+		u16 flags = (command >> 24) & 0xff;
+		u16 stackIndex = (command >> 16) & 0xff;
+		int startsNewStrip;
+		int useRtps;
+		int reuseFirstVertex;
+		u32 drawCommand;
+		int color;
+		struct RenderBucketUncompressResult decoded;
+
+		if ((command >> 16) == 0)
+		{
+			RenderBucket_ApplyColorOnlyCommand(ctx, command);
+			continue;
+		}
+
+		decoded = RenderBucket_UncompressAnimationFrame_Split(ctx, command, stackIndex);
+		color = decoded.color;
+		if ((flags & 4) == 0)
+			ctx->vertexIndex++;
+
+		ctx->tempCoords[0] = ctx->tempCoords[1];
+		ctx->tempCoords[1] = ctx->tempCoords[2];
+		ctx->tempCoords[2] = ctx->tempCoords[3];
+		ctx->tempCoords[3] = ctx->stack[stackIndex];
+		ctx->tempPacked[0] = ctx->tempPacked[1];
+		ctx->tempPacked[1] = ctx->tempPacked[2];
+		ctx->tempPacked[2] = ctx->tempPacked[3];
+		ctx->tempPacked[3] = decoded.packed;
+		ctx->tempSplit[0] = ctx->tempSplit[1];
+		ctx->tempSplit[1] = ctx->tempSplit[2];
+		ctx->tempSplit[2] = ctx->tempSplit[3];
+		RenderBucket_InitWaterSplitVertex(ctx, 3, ctx->tempPacked[3].xy, ctx->tempPacked[3].z, color);
+
+		ctx->tempColor[0] = ctx->tempColor[1];
+		ctx->tempColor[1] = ctx->tempColor[2];
+		ctx->tempColor[2] = ctx->tempColor[3];
+		ctx->tempColor[3] = color;
+
+		startsNewStrip = (flags & 0x80) != 0;
+		if ((startsNewStrip != 0) || (ctx->stripLength == 0))
+			ctx->primCommand = command;
+
+		if (startsNewStrip != 0)
+			ctx->stripLength = 0;
+
+		useRtps = ctx->stripLength > 2;
+		reuseFirstVertex = (useRtps != 0) && ((flags & 0x40) != 0);
+
+		if (reuseFirstVertex != 0)
+		{
+			ctx->tempCoords[1] = ctx->tempCoords[0];
+			ctx->tempPacked[1] = ctx->tempPacked[0];
+			ctx->tempSplit[1] = ctx->tempSplit[0];
+			ctx->tempColor[1] = ctx->tempColor[0];
+		}
+
+		if (ctx->stripLength < 2)
+		{
+			ctx->stripLength++;
+			continue;
+		}
+
+		drawCommand = (ctx->stripLength == 2) ? ctx->primCommand : command;
+
+		{
+			struct TextureLayout *tex;
+			int depthMac0;
+			int isValidTexture;
+			int shouldDraw;
+
+			shouldDraw = RenderBucket_ProjectPrim_Split(ctx, drawCommand, useRtps, reuseFirstVertex, &depthMac0);
+			if (shouldDraw == 0)
+			{
+				ctx->stripLength++;
+				continue;
+			}
+
+			tex = RenderBucket_GetCommandTexture(ctx, drawCommand, &isValidTexture);
+			if (isValidTexture == 0)
+			{
+				ctx->stripLength++;
+				continue;
+			}
+
+			if (RenderBucket_DrawWaterSplitClipped(ctx, drawCommand, tex, depthMac0) < 0)
+				return;
+		}
+
+		ctx->stripLength++;
+	}
+}
+
 static void RenderBucket_DrawFunc_NormalAlt(struct RenderBucketDrawContext *ctx)
 {
 	u32 *pCmd = (u32 *)ctx->idpp->ptrCommandList;
@@ -2664,6 +2892,10 @@ static void RenderBucket_DispatchDrawFunc(struct RenderBucketDrawContext *ctx)
 		RenderBucket_DrawFunc_NormalAlt(ctx);
 		return;
 
+	case RB_RETAIL_DRAWFUNC_SPLIT:
+		RenderBucket_DrawFunc_Split(ctx);
+		return;
+
 	case RB_RETAIL_DRAWFUNC_SPECIAL:
 		RenderBucket_DrawFunc_Special(ctx);
 		return;
@@ -2724,6 +2956,8 @@ static int RenderBucket_PrepareDrawContext(struct RenderBucketDrawContext *ctx, 
 	gte_SetTransMatrix(&idpp->mvp);
 	gte_SetGeomOffset(pb->rect.w >> 1, pb->rect.h >> 1);
 	gte_SetGeomScreen(pb->distanceToScreen_PREV);
+	if ((idpp->instFlags & RB_INSTANCE_SPLIT_STATE_MASK) != 0)
+		RenderBucket_GteLoadLightMatrixWords(&idpp->m3x3);
 
 	ctx->inst = inst;
 	ctx->idpp = idpp;
