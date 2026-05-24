@@ -1,9 +1,8 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aece0-0x800aede0.
 void DECOMP_RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct Driver *d)
 {
-	int iVar1;
-
 	param_2 &= 0xff;
 
 	if (d == 0)
@@ -25,7 +24,12 @@ void DECOMP_RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct
 	}
 
 	// path index = pathPtr2 - pathPtr1
-	tw->nodeCurrIndex = ((u32)cn - (u32)first) / sizeof(struct CheckpointNode);
+	tw->nodeCurrIndex = (u8)(cn - first);
 
 	return;
+}
+
+void RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct Driver *d)
+{
+	DECOMP_RB_Warpball_SeekDriver(tw, param_2, d);
 }

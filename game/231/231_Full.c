@@ -27,9 +27,12 @@
 #include "231_025_RB_MovingExplosive_Explode.c"
 #include "231_026_RB_Warpball_FadeAway.c"
 #include "231_027_RB_Warpball_Death.c"
+#include "231_028_RB_Warpball_NewPathNode.c"
+#include "231_029_RB_Warpball_Start.c"
 
-// TODO(aalhendi): unported path-node, audio recycle, and matrix-parent behavior.
-// TODO(aalhendi): 028-038 are the warpball / mask / shield cluster.
+// TODO(aalhendi): unported warpball target selection, tracking tick, audio recycle, and matrix-parent behavior.
+// TODO(aalhendi): 030-038 are the remaining warpball / mask / shield cluster.
+#include "231_032_RB_Warpball_SeekDriver.c"
 #include "231_035_RB_MaskWeapon_FadeAway.c"
 #include "231_036_RB_MaskWeapon_ThTick.c"
 #include "231_039_RB_Player_ToggleInvisible.c"
