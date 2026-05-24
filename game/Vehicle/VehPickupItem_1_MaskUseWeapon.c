@@ -1,7 +1,7 @@
 #include <common.h>
 
-// Byte budget: /860
-// boolPlaySound (0 for mask grab, 1 for weapon)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80064c38-0x80064f94.
+// boolPlaySound only gates sound when refreshing an existing mask object.
 struct MaskHeadWeapon *DECOMP_VehPickupItem_MaskUseWeapon(struct Driver *driver, int boolPlaySound)
 
 {
@@ -34,7 +34,7 @@ struct MaskHeadWeapon *DECOMP_VehPickupItem_MaskUseWeapon(struct Driver *driver,
 		currThread->funcThTick = DECOMP_RB_MaskWeapon_ThTick;
 
 		maskObj = currThread->object;
-		maskObj->duration = (driver->numWumpas < 10) ? 0x2d00 : 0x1e00;
+		maskObj->duration = (driver->numWumpas < 10) ? 0x1e00 : 0x2d00;
 
 		if (
 		    // If this is human and not AI
@@ -64,7 +64,7 @@ struct MaskHeadWeapon *DECOMP_VehPickupItem_MaskUseWeapon(struct Driver *driver,
 	int modelID = STATIC_UKAUKA - boolGoodGuy;
 
 	// 0x3a: uka head model idx in modelPtr array
-	instance = DECOMP_INSTANCE_BirthWithThread(modelID, 0, SMALL, OTHER, DECOMP_RB_MaskWeapon_ThTick, sizeof(struct MaskHeadWeapon), t);
+	instance = DECOMP_INSTANCE_BirthWithThread(modelID, sdata->s_doctor1, SMALL, OTHER, DECOMP_RB_MaskWeapon_ThTick, sizeof(struct MaskHeadWeapon), t);
 
 	soundID = modelID + 0x1A;
 
@@ -102,7 +102,11 @@ struct MaskHeadWeapon *DECOMP_VehPickupItem_MaskUseWeapon(struct Driver *driver,
 
 	maskObj = (struct MaskHeadWeapon *)t->object;
 
-	maskObj->maskBeamInst = DECOMP_INSTANCE_Birth3D(modelPtr, 0, t);
+#ifdef REBUILD_PC
+	maskObj->maskBeamInst = DECOMP_INSTANCE_Birth3D(modelPtr, "akubeam1", t);
+#else
+	maskObj->maskBeamInst = DECOMP_INSTANCE_Birth3D(modelPtr, rdata.s_akubeam1, t);
+#endif
 
 	t->funcThDestroy = DECOMP_PROC_DestroyInstance;
 
