@@ -1,13 +1,12 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001cbe0-0x8001cc18.
 int DECOMP_CDSYS_XAGetNumTracks(int categoryID)
 {
-	// XnfLoaded will be false without boolUseDisc
-	// if(sdata->boolUseDisc == 0) return -1;
-	if (sdata->bool_XnfLoaded == 0)
-		return -1;
+	if (sdata->boolUseDisc == 0)
+		return 0;
 	if (categoryID >= CDSYS_XA_NUM_TYPES)
-		return -1;
+		return 0;
 
 	return sdata->ptrArray_numSongs[categoryID];
 }

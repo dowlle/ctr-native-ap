@@ -1,9 +1,12 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b4d0-0x8002b508
 void DECOMP_Smart_EnterCriticalSection(void)
 {
-	// Optimization, use Software-CriticalSection
-	// that does not actually block callbacks,
-	// just prevent use of audio during callbacks
-	sdata->criticalSectionCount++;
+	int count = sdata->criticalSectionCount;
+
+	sdata->criticalSectionCount = count + 1;
+
+	if (count == 0)
+		EnterCriticalSection();
 }

@@ -1,6 +1,7 @@
 #include <common.h>
 
 // change volume
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a170-0x8002a28c
 void DECOMP_cseq_opcode_from06and07(struct SongSeq *seq)
 {
 	struct ChannelStats *curr, *backupNext;

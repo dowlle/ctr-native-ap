@@ -1,11 +1,13 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002cb44-0x8002cbb4
 void DECOMP_Voiceline_StopAll(void)
 {
 	while (sdata->Voiceline2.last != 0)
 	{
-		DECOMP_LIST_RemoveMember((struct LinkedList *)&sdata->Voiceline2.first, sdata->Voiceline2.last);
+		struct Item *voiceLine = sdata->Voiceline2.last;
 
-		DECOMP_LIST_AddFront(&sdata->Voiceline1, sdata->Voiceline2.last);
+		DECOMP_LIST_RemoveMember(&sdata->Voiceline2, voiceLine);
+		DECOMP_LIST_AddFront(&sdata->Voiceline1, voiceLine);
 	}
 }

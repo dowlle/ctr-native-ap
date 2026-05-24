@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029dcc-0x80029e18
 char *DECOMP_howl_GetNextNote(char *currNote, int *noteLen)
 {
 	int var1;

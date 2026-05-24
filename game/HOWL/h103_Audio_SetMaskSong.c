@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002d554-0x8002d67c
 void DECOMP_Audio_SetMaskSong(u32 tempo)
 {
 	char i;

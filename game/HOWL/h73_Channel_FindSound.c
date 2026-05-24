@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b5b4-0x8002b608
 int DECOMP_Channel_FindSound(int soundID)
 {
 	struct ChannelStats *curr, *backupNext;
@@ -12,8 +13,8 @@ int DECOMP_Channel_FindSound(int soundID)
 		    // type == OtherFX
 		    (curr->type == 1) &&
 
-		    // matching ID
-		    (curr->soundID == soundID))
+		    // matching low 16-bit sound ID
+		    ((curr->soundID & 0xffff) == (soundID & 0xffff)))
 		{
 			// sound already playing
 			return 1;

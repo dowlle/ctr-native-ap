@@ -1,10 +1,10 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001cf98-0x8001cfec.
 void DECOMP_CDSYS_XAPauseRequest()
 {
-	// XnfLoaded will be false without boolUseDisc
-	// if(sdata->boolUseDisc == 0) return;
-
+	if (sdata->boolUseDisc == 0)
+		return;
 	if (sdata->bool_XnfLoaded == 0)
 		return;
 	if (sdata->XA_State < 2)

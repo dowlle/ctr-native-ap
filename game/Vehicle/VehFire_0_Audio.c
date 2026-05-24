@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005ab24-0x8005abfc.
 void DECOMP_VehFire_Audio(struct Driver *driver, int speed_cap)
 {
 	u32 distortion;
@@ -12,7 +13,7 @@ void DECOMP_VehFire_Audio(struct Driver *driver, int speed_cap)
 		return;
 	}
 
-	if (speed_cap > 0x7f)
+	if (speed_cap >= 0x80)
 	{
 		// max volume
 		volume = 0xff << 0x10;
@@ -20,14 +21,12 @@ void DECOMP_VehFire_Audio(struct Driver *driver, int speed_cap)
 		// distort
 		distortion = 0x6c << 0x8;
 
-#ifndef REBUILD_PS1
 		Voiceline_RequestPlay(0x10, data.characterIDs[driver->driverID], 0x10);
-#endif
 
 		goto Skip;
 	}
 
-	if (speed_cap > 0x40)
+	if (speed_cap >= 0x40)
 	{
 		// 3/4 volume
 		volume = 0xc0 << 0x10;
@@ -58,7 +57,7 @@ Skip:
 
 	// 0xD = Turbo Boost Sound
 	// 0x80 = balance L/R
-	DECOMP_OtherFX_Play_LowLevel(0xd, 1, volume | distortion | 0x80);
+	DECOMP_OtherFX_Play_LowLevel(0xd, 1, volume | distortion | extraFlags);
 
 	// turbo audio cooldown 0.24s
 	driver->VehFire_AudioCooldown = 0xf0;

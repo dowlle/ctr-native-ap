@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800293b8-0x800296c4
 int DECOMP_Bank_AssignSpuAddrs()
 {
 	int i;
@@ -146,12 +147,8 @@ int DECOMP_Bank_AssignSpuAddrs()
 		if (SpuIsTransferCompleted(SPU_TRANSFER_PEEK) == 0)
 			return 0;
 
-		// This is clearly in ghdira, but causes a
-		// Bug in Adventure->CrashCove, and in Arcade->DragonMines
-		// so what's happening?
-
-		// if(sdata->bankFlags == 0)
-		//	sdata->audioAllocPtr += sdata->audioAllocSize >> 3;
+		if (sdata->bankFlags == 0)
+			sdata->audioAllocPtr += sdata->audioAllocSize >> 3;
 
 		sdata->ptrLastBank->flags |= 2;
 

@@ -1,19 +1,20 @@
 #include <common.h>
 
-void DECOMP_howl_LoadHeader(char *filename)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029b2c-0x80029c40
+int DECOMP_howl_LoadHeader(char *filename)
 {
 	struct HowlHeader *alloc;
 	int howlHeaderSize;
 	int numSector;
 	int ret;
 
+	if (DECOMP_LOAD_FindFile(filename, &sdata->KartHWL_CdFile) == 0)
+		return 0;
+
 	DECOMP_MEMPACK_PushState();
 
 	// allocate room for one sector
 	alloc = DECOMP_MEMPACK_AllocMem(0x800 /*, filename*/);
-
-	if (DECOMP_LOAD_FindFile(filename, &sdata->KartHWL_CdFile) == 0)
-		alloc = 0;
 
 	if (alloc != 0)
 	{
@@ -22,13 +23,7 @@ void DECOMP_howl_LoadHeader(char *filename)
 
 		if (
 		    // confirm first sector loaded properly
-		    (ret != 0)
-
-// assume loaded correct file
-#if 0
-			&& (alloc->magic == *(int*)&sdata->s_HOWL[0])
-			&& (alloc->version == 0x80) // different in other CTR builds
-#endif
+		    (ret != 0) && (alloc->magic == *(int *)&sdata->s_HOWL[0]) && (alloc->version == 0x80) // different in other CTR builds
 		)
 		{
 			// allocate room for howlHeader + pointerTable
@@ -38,17 +33,8 @@ void DECOMP_howl_LoadHeader(char *filename)
 			numSector = (howlHeaderSize + 0x800 - 1) >> 0xb;
 			DECOMP_MEMPACK_ReallocMem(numSector << 0xb);
 
-			// if header fit in one sector, done!
-			if (numSector == 1)
-				return;
-
-			// if header needs a more sectors loaded,
-			// like CTR-U which needs 3 sectors...
-
-			// read remaining sectors
-			ret = DECOMP_LOAD_HowlHeaderSectors(&sdata->KartHWL_CdFile, (void *)((int)alloc + 0x800), 1, numSector - 1);
-
-			if (ret != 0)
+			// if header needs more sectors loaded, like CTR-U which needs 3 sectors
+			if (numSector < 2 || DECOMP_LOAD_HowlHeaderSectors(&sdata->KartHWL_CdFile, (void *)((int)alloc + 0x800), 1, numSector - 1) != 0)
 			{
 				// initilaize header and pointer table
 				DECOMP_howl_ParseHeader(alloc);
@@ -58,10 +44,11 @@ void DECOMP_howl_LoadHeader(char *filename)
 				DECOMP_MEMPACK_ReallocMem(howlHeaderSize);
 
 				// do NOT PopState
-				return;
+				return 1;
 			}
 		}
 	}
 
 	DECOMP_MEMPACK_PopState();
+	return 0;
 }

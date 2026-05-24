@@ -1,20 +1,19 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001cfec-0x8001d06c.
 void DECOMP_CDSYS_XAPauseForce()
 {
-	// XnfLoaded will be false without boolUseDisc
-	// if(sdata->boolUseDisc == 0) return;
-
+	if (sdata->boolUseDisc == 0)
+		return;
 	if (sdata->bool_XnfLoaded == 0)
 		return;
 	if (sdata->XA_State == 0)
 		return;
 
-	sdata->XA_State = 0;
 	sdata->XA_boolFinished = 0;
+	sdata->XA_State = 0;
 
-	// dont call SpuSetIRQ here,
-	// it's called in SpuDisableIRQ anyway
+	SpuSetIRQ(0);
 	DECOMP_CDSYS_SpuDisableIRQ();
 
 	CdControl(CdlPause, 0, 0);

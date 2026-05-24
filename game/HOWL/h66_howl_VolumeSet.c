@@ -1,21 +1,44 @@
 #include <common.h>
 
-// Shared between VolumeSet and Get
-extern int *settingsPtrArr[3];
-
-extern void (*settingsFuncArr[3])();
-
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b130-0x8002b1f0
 void DECOMP_howl_VolumeSet(int type, u8 vol)
 {
-	if (*settingsPtrArr[type] == vol)
-		return;
-	*settingsPtrArr[type] = vol;
+	if (type == 1)
+	{
+		if (sdata->vol_Music == vol)
+			return;
 
-	DECOMP_Smart_EnterCriticalSection();
+		sdata->vol_Music = vol;
 
-	settingsFuncArr[type]();
+		DECOMP_Smart_EnterCriticalSection();
+
+		DECOMP_UpdateChannelVol_Music_All();
+	}
+	else if (type == 0)
+	{
+		if (sdata->vol_FX == vol)
+			return;
+
+		sdata->vol_FX = vol;
+
+		DECOMP_Smart_EnterCriticalSection();
+
+		DECOMP_UpdateChannelVol_EngineFX_All();
+	}
+	else
+	{
+		if (type != 2)
+			return;
+
+		if (sdata->vol_Voice == vol)
+			return;
+
+		sdata->vol_Voice = vol;
+
+		DECOMP_Smart_EnterCriticalSection();
+
+		DECOMP_UpdateChannelVol_OtherFX_All();
+	}
 
 	DECOMP_Smart_ExitCriticalSection();
 }
-
-void (*settingsFuncArr[3])() = {DECOMP_UpdateChannelVol_EngineFX_All, DECOMP_UpdateChannelVol_Music_All, DECOMP_UpdateChannelVol_OtherFX_All};

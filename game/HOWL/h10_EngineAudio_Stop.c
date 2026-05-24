@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028b54-0x80028bbc
 void DECOMP_EngineAudio_Stop(u32 soundID)
 {
 	if (sdata->boolAudioEnabled == 0)

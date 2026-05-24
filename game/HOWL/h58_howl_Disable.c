@@ -1,6 +1,11 @@
 #include <common.h>
 
-void DECOMP_howl_Disable()
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ac94-0x8002acb8
+int DECOMP_howl_Disable(void)
 {
+	if (sdata->boolAudioEnabled == 0)
+		return 0;
+
 	sdata->boolAudioEnabled = 0;
+	return 1;
 }

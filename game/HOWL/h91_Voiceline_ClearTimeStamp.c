@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002caa8-0x8002cae0
 void DECOMP_Voiceline_ClearTimeStamp(void)
 {
 	for (char i = 0; i < 16; i++)

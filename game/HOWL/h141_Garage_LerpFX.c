@@ -1,9 +1,6 @@
 #include <common.h>
 
-/**
- * @brief Byte budget: 408/476
- * FUN_800304b8
- */
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800304b8-0x80030694.
 void DECOMP_Garage_LerpFX(void)
 {
 	struct GarageFX *garageSounds = sdata->garageSoundPool;
@@ -35,6 +32,9 @@ void DECOMP_Garage_LerpFX(void)
 			targetLR = garageSounds->LR;
 		}
 
+		if (targetLR == garageSounds->LR && targetVolume == garageSounds->volume)
+			continue;
+
 		if (targetVolume != garageSounds->volume)
 		{
 			s16 delta = (garageSounds->volume < targetVolume) ? 8 : -8;
@@ -61,9 +61,12 @@ void DECOMP_Garage_LerpFX(void)
 			DECOMP_OtherFX_RecycleNew(audioPtrRef, sdata->garageSoundIDs[i], ((int)garageSounds->volume << 0x10) | (int)garageSounds->LR | 0x8000U);
 		}
 
-		if (targetLR == garageSounds->LR && targetVolume == garageSounds->volume && garageSounds->gsp_curr == GSP_GONE)
+		if (targetLR == garageSounds->LR && targetVolume == garageSounds->volume)
 		{
-			DECOMP_OtherFX_RecycleMute((int *)audioPtrRef);
+			garageSounds->gsp_prev = garageSounds->gsp_curr;
+
+			if (garageSounds->gsp_curr == GSP_GONE)
+				DECOMP_OtherFX_RecycleMute((int *)audioPtrRef);
 		}
 	}
 }

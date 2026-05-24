@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800292fc-0x800293b8
 int DECOMP_Bank_Alloc(int bankID, struct Bank *ptrBank)
 {
 	if (sdata->boolAudioEnabled == 0)
@@ -10,7 +11,7 @@ int DECOMP_Bank_Alloc(int bankID, struct Bank *ptrBank)
 	}
 
 	// is last bank needed for level?
-	sdata->bankFlags = ptrBank->flags & 1;
+	sdata->bankFlags = (ptrBank->flags & 1) != 0;
 
 	sdata->bankSectorOffset = sdata->howl_bankOffsets[bankID & 0xffff];
 

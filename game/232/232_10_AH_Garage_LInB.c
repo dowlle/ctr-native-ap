@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800af070-0x800af3a4.
 void DECOMP_AH_Garage_LInB(struct Instance *inst)
 {
 	char bossIsOpen, i;
@@ -24,7 +25,7 @@ void DECOMP_AH_Garage_LInB(struct Instance *inst)
 	t = DECOMP_PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(sizeof(struct BossGarageDoor), NONE, SMALL, STATIC),
 
 	                                DECOMP_AH_Garage_ThTick, // behavior
-	                                0,                       // debug name
+	                                R232.s_garage,           // debug name
 	                                0                        // thread relative
 	);
 
@@ -50,7 +51,7 @@ void DECOMP_AH_Garage_LInB(struct Instance *inst)
 	{
 		// make a "garagetop" to make door appear to roll up
 
-		garageTop = DECOMP_INSTANCE_Birth3D(gGT->modelPtr[STATIC_GARAGETOP], 0, t);
+		garageTop = DECOMP_INSTANCE_Birth3D(gGT->modelPtr[STATIC_GARAGETOP], R232.s_garagetop, t);
 
 		// copy matrix from one instance to the other
 		*(int *)&garageTop->matrix.m[0][0] = *(int *)&inst->matrix.m[0][0];

@@ -1,9 +1,11 @@
 #include <common.h>
 
-void DECOMP_SongPool_Start(struct Song *song, int songID, int deltaBPM, int boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a730-0x8002a9d8
+void DECOMP_SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits)
 {
 	int i;
 	int vol;
+	u8 numSeqs;
 	struct SongSeq *seqCurr;
 	struct CseqSongHeader *csh;
 	char *cnhFirst;
@@ -14,11 +16,12 @@ void DECOMP_SongPool_Start(struct Song *song, int songID, int deltaBPM, int bool
 	song->id = songID;
 
 	csh = (struct CseqSongHeader *)&sdata->ptrCseqSongData[sdata->ptrCseqSongStartOffset[songID]];
+	numSeqs = csh->numSeqs;
 
 	// advHub
 	if (songSet != 0)
 	{
-		if (songSet->numSeqs != csh->numSeqs)
+		if (songSet->numSeqs != numSeqs)
 			return;
 
 		song->songSetActiveBits = songSetActiveBits;
@@ -57,19 +60,19 @@ void DECOMP_SongPool_Start(struct Song *song, int songID, int deltaBPM, int bool
 	song->vol_StepRate = 1;
 	song->numSequences = 0;
 
-	s16 *seqOffsetArr = (s16 *)SONGHEADER_GETSEQOFFARR(csh);
+	u16 *seqOffsetArr = (u16 *)SONGHEADER_GETSEQOFFARR(csh);
 
 	// first note header comes after end of CseqSongHeader
 	// and the full array of seqOffsets within the header
-	cnhFirst = (char *)&seqOffsetArr[csh->numSeqs];
+	cnhFirst = (char *)&seqOffsetArr[numSeqs];
 
 	// align up by 4
-	if (((int)cnhFirst & 2) != 0)
-		cnhFirst += 2;
-	if (((int)cnhFirst & 1) != 0)
+	if (((uintptr_t)cnhFirst & 1) != 0)
 		cnhFirst += 1;
+	if (((uintptr_t)cnhFirst & 2) != 0)
+		cnhFirst += 2;
 
-	for (i = 0; i < csh->numSeqs; i++)
+	for (i = 0; i < numSeqs; i++)
 	{
 		cnhCurr = (struct SongNoteHeader *)&cnhFirst[seqOffsetArr[i]];
 

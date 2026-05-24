@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b43cc-0x800b4470.
 void DECOMP_AH_MaskHint_LerpVol(int param_1)
 {
 	int diff;

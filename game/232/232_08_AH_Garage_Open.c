@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae8e0-0x800ae988.
 void DECOMP_AH_Garage_Open(struct ScratchpadStruct *sps, struct Thread *otherTh)
 {
 	s16 sound;
@@ -7,12 +8,8 @@ void DECOMP_AH_Garage_Open(struct ScratchpadStruct *sps, struct Thread *otherTh)
 	struct BossGarageDoor *garage;
 	struct Thread *garageThread;
 
-	// There's nothing else on the map to collide with the door,
-	// skip the IF that was in the original game
-#if 0
-  // thread -> modelIndex != "player" of any kind
-  if (otherTh->modelIndex != DYNAMIC_PLAYER) return;
-#endif
+	if (otherTh->modelIndex != DYNAMIC_PLAYER)
+		return;
 
 	garageThread = sps->Union.ThBuckColl.thread;
 

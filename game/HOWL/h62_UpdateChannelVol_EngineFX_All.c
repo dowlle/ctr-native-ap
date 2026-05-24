@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ae64-0x8002af6c
 void DECOMP_UpdateChannelVol_EngineFX_All()
 {
 	struct ChannelStats *curr;

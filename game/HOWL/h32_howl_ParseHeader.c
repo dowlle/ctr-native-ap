@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029a50-0x80029ab4
 void DECOMP_howl_ParseHeader(struct HowlHeader *hh)
 {
 	u32 addr = (u32)hh;
@@ -20,8 +21,7 @@ void DECOMP_howl_ParseHeader(struct HowlHeader *hh)
 	addr += sizeof(s16) * hh->numBanks;
 
 	sdata->howl_songOffsets = (u16 *)addr;
+	addr += sizeof(s16) * hh->numSequences;
 
-	// unused
-	// addr += sizeof(s16) * hh->numSequences;
-	// sdata->howl_endOfHowl = addr;
+	sdata->howl_endOfHowl = addr;
 }

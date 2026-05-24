@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a494-0x8002a4a8
 void DECOMP_cseq_opcode09(struct SongSeq *seq)
 {
 	u8 *currNote = seq->currNote;

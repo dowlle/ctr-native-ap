@@ -1,6 +1,7 @@
 #include <common.h>
 
 // does not really touch voiceline
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002c918-0x8002caa8
 void DECOMP_Voiceline_PoolInit(void)
 {
 	char index;

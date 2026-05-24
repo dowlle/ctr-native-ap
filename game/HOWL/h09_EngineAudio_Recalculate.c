@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800289b0-0x80028b54
 s16 DECOMP_EngineAudio_Recalculate(u32 soundID, u32 sfx)
 {
 	int iVar1;

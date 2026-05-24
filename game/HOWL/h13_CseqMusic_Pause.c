@@ -1,18 +1,16 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028d64-0x80028de0
 // pause all songs
 void DECOMP_CseqMusic_Pause()
 {
 	int i;
 	struct Song *song;
 
-// byte budget,
-// if either of these are false, CseqMusic_Start
-// wouldn't have played to begin with anyway
-#if 0
-	if(sdata->boolAudioEnabled == 0) return;
-	if(sdata->ptrCseqHeader == 0) return;
-#endif
+	if (sdata->boolAudioEnabled == 0)
+		return;
+	if (sdata->ptrCseqHeader == 0)
+		return;
 
 	DECOMP_Smart_EnterCriticalSection();
 

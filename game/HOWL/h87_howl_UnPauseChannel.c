@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002c64c-0x8002c784
 void DECOMP_howl_UnPauseChannel(struct ChannelStats *stats)
 {
 	int type;
@@ -22,13 +23,22 @@ void DECOMP_howl_UnPauseChannel(struct ChannelStats *stats)
 	}
 
 	// music
-	else // type == 2
+	else if (type == 2)
 	{
 		DECOMP_howl_InitChannelAttr_Music(&sdata->songSeq[soundID], &attr, stats->drumIndex_pitchIndex, stats->vol);
+	}
+	else
+	{
+		return;
 	}
 
 	// enable all bits in ChannelUpdate flag
 	sdata->ChannelUpdateFlags[stats->channelID] |= 0x7e;
 
-	memcpy(&sdata->channelAttrNew[stats->channelID], &attr, sizeof(struct ChannelAttr));
+	int *dest = (int *)&sdata->channelAttrNew[stats->channelID];
+	int *src = (int *)&attr;
+	dest[0] = src[0];
+	dest[1] = src[1];
+	dest[2] = src[2];
+	dest[3] = src[3];
 }

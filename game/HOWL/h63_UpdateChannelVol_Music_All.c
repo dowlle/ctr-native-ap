@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002af6c-0x8002b030
 void DECOMP_UpdateChannelVol_Music_All()
 {
 	struct ChannelStats *curr, *backupNext;

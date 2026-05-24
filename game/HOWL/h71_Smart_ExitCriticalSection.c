@@ -1,9 +1,16 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b508-0x8002b540
 void DECOMP_Smart_ExitCriticalSection(void)
 {
-	// Optimization, use Software-CriticalSection
-	// that does not actually block callbacks,
-	// just prevent use of audio during callbacks
-	sdata->criticalSectionCount--;
+	int count = sdata->criticalSectionCount;
+
+	if (count == 0)
+		return;
+
+	count--;
+	sdata->criticalSectionCount = count;
+
+	if (count == 0)
+		ExitCriticalSection();
 }

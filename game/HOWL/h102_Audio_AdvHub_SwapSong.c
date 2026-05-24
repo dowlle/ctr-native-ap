@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002d50c-0x8002d554
 void DECOMP_Audio_AdvHub_SwapSong(int levelID)
 {
 	if ((sdata->unkAudioState == 5) &&

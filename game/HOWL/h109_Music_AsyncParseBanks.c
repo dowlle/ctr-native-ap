@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002de48-0x8002e338
 u32 DECOMP_Music_AsyncParseBanks(void)
 {
 	u8 bVar1;
@@ -8,7 +9,12 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 	struct GameTracker *gGT = sdata->gGT;
 	struct Bank thisBank;
 	int level = gGT->levelID;
-	char *arr = (char *)&sdata->audioDefaults[7];
+	u8 *arr = (u8 *)&sdata->audioDefaults[7];
+
+	if (arr[1] == 5)
+		return 1;
+	if (arr[1] > 4)
+		return 0;
 
 	// loading state of song (one byte)
 	switch (arr[1])
@@ -22,6 +28,9 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 		// If you're in a Boss Race
 		if (gGT->gameMode1 < 0)
 		{
+			if (gGT->bossID >= 6)
+				break;
+
 			index = sdata->songBankBossID[gGT->bossID];
 		}
 
@@ -117,7 +126,10 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 		if (level < GEM_STONE_VALLEY)
 		{
 			// If you're not in Adventure Cup
-			if (((gGT->gameMode1 & ADVENTURE_CUP) == 0) ||
+			if (((gGT->gameMode1 & ADVENTURE_MODE) == 0) ||
+
+			    // If you're not in Adventure Cup
+			    ((gGT->gameMode1 & ADVENTURE_CUP) == 0) ||
 
 			    // If this is not the purple gem cup
 			    (gGT->cup.cupID != 4))
@@ -188,12 +200,30 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 			if (sdata->bankPodiumStage >= 3)
 				break;
 
-			u8 *podiumIndex = &gGT->podium_modelIndex_First;
+			switch (sdata->bankPodiumStage)
+			{
+			case 0:
+				bVar1 = gGT->podium_modelIndex_First;
+				break;
 
-			bVar1 = podiumIndex[sdata->bankPodiumStage];
-			if (bVar1 != 0)
-				DECOMP_Bank_Load((bVar1 - 88), &thisBank);
+			case 1:
+				if (gGT->podium_modelIndex_Second == 0)
+					goto PODIUM_STAGE_DONE;
 
+				bVar1 = gGT->podium_modelIndex_Second;
+				break;
+
+			default:
+				if (gGT->podium_modelIndex_Third == 0)
+					goto PODIUM_STAGE_DONE;
+
+				bVar1 = gGT->podium_modelIndex_Third;
+				break;
+			}
+
+			DECOMP_Bank_Load((u16)(bVar1 - 88), &thisBank);
+
+		PODIUM_STAGE_DONE:
 			sdata->bankPodiumStage++;
 			goto PARSE_FINISH;
 		}
@@ -209,6 +239,9 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 		// 0x80000000
 		if (gGT->gameMode1 < 0)
 		{
+			if (gGT->bossID >= 6)
+				break;
+
 			index = 0x19;
 		}
 
@@ -267,7 +300,7 @@ u32 DECOMP_Music_AsyncParseBanks(void)
 		break;
 
 	default:
-		return 1;
+		return 0;
 	}
 
 	// loading state of song (one byte)

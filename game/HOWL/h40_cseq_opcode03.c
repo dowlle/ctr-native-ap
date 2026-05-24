@@ -1,6 +1,7 @@
 #include <common.h>
 
 // "end of song" opcode
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029f24-0x80029f78
 void DECOMP_cseq_opcode03(struct SongSeq *seq)
 {
 	// if song does not loop
@@ -17,6 +18,7 @@ void DECOMP_cseq_opcode03(struct SongSeq *seq)
 	}
 }
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029f78-0x80029f80
 void DECOMP_cseq_opcode04_empty(struct SongSeq *seq)
 {
 	// left empty by ND

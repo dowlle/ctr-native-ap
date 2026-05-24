@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029e18-0x80029f1c
 void DECOMP_cseq_opcode01_noteoff(struct SongSeq *seq)
 {
 	struct ChannelStats *curr, *backupNext;
@@ -28,12 +29,15 @@ void DECOMP_cseq_opcode01_noteoff(struct SongSeq *seq)
 		*flagPtr |= 1;
 		*flagPtr &= ~(2);
 
+		curr->flags &= (u8)~1;
+
 		// recycle: remove from taken, put on free
 		DECOMP_LIST_RemoveMember(&sdata->channelTaken, (struct Item *)curr);
 		DECOMP_LIST_AddBack(&sdata->channelFree, (struct Item *)curr);
 	}
 }
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029f1c-0x80029f24
 void DECOMP_cseq_opcode02_empty(struct SongSeq *seq)
 {
 	// left empty by ND

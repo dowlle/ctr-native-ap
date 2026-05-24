@@ -1,8 +1,9 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002c208-0x8002c34c
 void DECOMP_howl_PlayAudio_Update()
 {
-	int *ptrFlag;
+	u32 *ptrFlag;
 	struct ChannelStats *curr, *backupNext;
 	u8 statFlags;
 
@@ -15,7 +16,9 @@ void DECOMP_howl_PlayAudio_Update()
 			if (sdata->currentVolume < 0)
 				sdata->currentVolume = 0;
 
+			sdata->criticalSectionCount = 1;
 			DECOMP_howl_VolumeSet(0, sdata->currentVolume);
+			sdata->criticalSectionCount = 0;
 		}
 
 		for (curr = (struct ChannelStats *)sdata->channelTaken.first; curr != NULL; curr = backupNext)

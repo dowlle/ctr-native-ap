@@ -1,18 +1,17 @@
 #include <common.h>
 
-void DECOMP_CseqMusic_ChangeVolume(int songID, int p2, int p3)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028e5c-0x80028f34
+void DECOMP_CseqMusic_ChangeVolume(u16 songID, int p2, int p3)
 {
 	int i;
 	struct Song *song;
 
-// byte budget,
-// if either of these are false, CseqMusic_Start
-// wouldn't have played to begin with anyway
-#if 0
-	if(sdata->boolAudioEnabled == 0) return;
-	if(sdata->ptrCseqHeader == 0) return;
-	if(sdata->ptrCseqHeader->numSongs <= songID) return;
-#endif
+	if (sdata->boolAudioEnabled == 0)
+		return;
+	if (sdata->ptrCseqHeader == 0)
+		return;
+	if (sdata->ptrCseqHeader->numSongs <= songID)
+		return;
 
 	DECOMP_Smart_EnterCriticalSection();
 

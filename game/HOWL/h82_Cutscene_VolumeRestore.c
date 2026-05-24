@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002c1d0-0x8002c208
 void DECOMP_Cutscene_VolumeRestore(void)
 {
 	// enter critical section

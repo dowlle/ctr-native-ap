@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c470-0x8001c4f4.
 void DECOMP_CDSYS_SetMode_StreamData()
 {
 	char buf[8];
@@ -31,6 +32,9 @@ void DECOMP_CDSYS_SetMode_StreamData()
 	sdata->discMode = DM_DATA;
 	sdata->XA_State = 0;
 
-	CdSyncCallback(0);
-	CdReadyCallback(0);
+	if (sdata->bool_XnfLoaded != 0)
+	{
+		CdSyncCallback(0);
+		CdReadyCallback(0);
+	}
 }

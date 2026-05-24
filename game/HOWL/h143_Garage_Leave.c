@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003074c-0x80030778.
 void DECOMP_Garage_Leave(void)
 {
 	int i;

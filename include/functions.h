@@ -63,8 +63,8 @@ void CDSYS_SpuDisableIRQ();
 void CDSYS_SpuGetMaxSample();
 u32 CDSYS_XAGetNumTracks(int categoryID);
 u32 CDSYS_XASeek(int isCdControl, int categoryID, int audioTrackID);
-u32 CDSYS_XAGetTrackLength(int categoryID, int audioTrackID);
-void CDSYS_XAPlay(int categoryID, int index);
+int CDSYS_XAGetTrackLength(int categoryID, int audioTrackID);
+int CDSYS_XAPlay(int categoryID, int index);
 void CDSYS_XAPauseRequest();
 void CDSYS_XAPauseForce();
 void CDSYS_XAPauseAtEnd();
@@ -310,7 +310,7 @@ void CseqMusic_StopAll();
 // SongPool_CalculateTempo()
 void SongPool_ChangeTempo(struct Song *song, s16 p2);
 
-void SongPool_Start(struct Song *song, int songID, int deltaBPM, int boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits);
+void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits);
 
 
 void SongPool_Volume(struct Song *song, char param_2, char param_3, int param_4);
@@ -321,7 +321,7 @@ void SongPool_StopAllCseq(struct Song *song);
 
 // even more howl
 
-// howl_Disable()
+int howl_Disable(void);
 
 // UpdateChannelVol
 
@@ -334,6 +334,8 @@ void SongPool_StopAllCseq(struct Song *song);
 
 // not even the last of howl
 
+int howl_ModeGet(void);
+void howl_ModeSet(int newMode);
 
 // OptionsMenu...
 
@@ -351,7 +353,7 @@ int Channel_FindSound(int soundID);
 struct ChannelStats *Channel_AllocSlot_AntiSpam(s16 soundID, char boolUseAntiSpam, int flags, struct ChannelAttr *attr);
 struct ChannelStats *Channel_AllocSlot(int flags, struct ChannelAttr *attr);
 struct ChannelStats *Channel_SearchFX_EditAttr(int type, int soundID, int updateFlags, struct ChannelAttr *attr);
-void Channel_SearchFX_Destroy(int type, int soundID, int flags);
+struct ChannelStats *Channel_SearchFX_Destroy(int type, int soundID, int flags);
 void Channel_DestroyAll_LowLevel(int opt1, int boolKeepMusic, char type);
 // Channel_ParseSongToChannels()
 // Channel_UpdateChannels()
@@ -371,9 +373,9 @@ void Voiceline_PoolClear(void);
 // Voiceline_StopAll()
 // Voiceline_ToggleEnable()
 void Voiceline_RequestPlay(u32 voiceID, u32 characterID, u32 characterID2);
-// Voiceline_StartPlay()
-// Voiceline_Update()
-// Voiceline_EmptyFunc()
+void Voiceline_StartPlay(struct Item *voiceLine);
+void Voiceline_Update(void);
+void Voiceline_EmptyFunc(void);
 // Voiceline_SetDefaults()
 
 // Audio
@@ -403,9 +405,9 @@ void Music_End();
 
 // GTE (?)
 
-// GTE_AudioLR_Inst()
+void GTE_AudioLR_Inst(MATRIX *m, s32 *param_2);
 void GTE_AudioLR_Driver(MATRIX *m, struct Driver *d, u32 *param_3);
-// GTE_GetSquaredLength()
+int GTE_GetSquaredLength(s32 *param_1);
 
 // Even more OtherFX...
 
@@ -415,16 +417,16 @@ void OtherFX_DriverCrashing(u32 boolEcho, u32 volume);
 
 // uh...
 
-// GTE_GetSquaredDistance()
-// CalculateVolumeFromDistance()
+int GTE_GetSquaredDistance(s16 *param_1, s16 *param_2);
+void CalculateVolumeFromDistance(u32 *param_1, u32 param_2, int param_3);
 void PlayWarppadSound(u32 param_1);
 
 // Level (?)
 
-// Level_SoundLoopSet()
-// Level_SoundLoopFade()
-// Level_RandomFX()
-// Level_AmbientSound()
+void Level_SoundLoopSet(int *param_1, u32 param_2, u32 param_3);
+void Level_SoundLoopFade(int *param_1, u32 param_2, int param_3, int param_4);
+void Level_RandomFX(int *param_1, u32 param_2, int param_3, u32 param_4, int param_5);
+void Level_AmbientSound(void);
 
 // PlaySound3D
 
@@ -433,10 +435,10 @@ void PlaySound3D_Flags(u32 *flags, u32 soundID, struct Instance *inst);
 
 // EngineSound
 
-// EngineSound_Player()
-// EngineSound_VolumeAdjust()
-// EngineSound_AI()
-// EngineSound_NearestAIs()
+void EngineSound_Player(struct Driver *driver);
+int EngineSound_VolumeAdjust(int desired, int current, int step);
+void EngineSound_AI(struct Driver *ai, struct Driver *cameraDriver, int slotIndex, int distance, int distanceDelta, u32 lr);
+void EngineSound_NearestAIs(void);
 
 // Garage
 
@@ -1246,8 +1248,7 @@ void RB_MakeInstanceReflective(struct ScratchpadStruct *, struct Instance *);
 // void COLL_MOVED_PlayerSearch(struct Thread* thread, struct Driver* driver);
 // void VehPhysForce_CollideDrivers(struct Thread* thread, struct Driver* driver);
 // void COLL_FIXED_PlayerSearch(struct Thread* thread, struct Driver* driver);
-void FLARE_Init(s16 *);                                             // this is present (but commented out) further up the file. Idk why.
-int EngineSound_VolumeAdjust(int desired, int current, int amount); // this is present (but commented out) further up the file. Idk why.
+void FLARE_Init(s16 *); // this is present (but commented out) further up the file. Idk why.
 void RB_ShieldDark_ThTick_Grow(struct Thread *t);
 void RB_Warpball_ThTick(struct Thread *t);
 struct CheckpointNode *RB_Warpball_NewPathNode(struct CheckpointNode *ptrNodeCurr, struct Driver *victim);
@@ -1263,7 +1264,6 @@ u16 RB_Hazard_CollLevInst(struct ScratchpadStruct *, struct Thread *);
 void RB_GenericMine_ThDestroy(struct Thread *t, struct Instance *inst, struct MineWeapon *mw);
 void RB_Player_KillPlayer(struct Driver *player_1, struct Driver *player_2);
 void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *inst, s16 *output);
-void EngineSound_Player(struct Driver *driver);
 void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity);
 int RngDeadCoed(u32 *);
 struct Model *VehBirth_GetModelByName(char *searchName);
@@ -1341,4 +1341,3 @@ void SelectProfile_DrawAdvProfile(struct AdvProgress *adv, int posX, int posY, u
 void SelectProfile_Init(u16 flags);
 void Seal_CheckColl(struct Instance *sealInst, struct Thread *sealTh, int damage, int radius, int sound);
 void DotLights_AudioAndVideo(struct GameTracker *gGT);
-void EngineSound_NearestAIs(void);

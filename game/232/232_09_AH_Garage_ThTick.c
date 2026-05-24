@@ -1,10 +1,11 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae988-0x800af070.
 void DECOMP_AH_Garage_ThTick(struct Thread *t)
 {
 	char bossIsOpen, i;
-	char levelID;
-	char hubID;
+	int levelID;
+	int hubID;
 	int top;
 	int move;
 	int ratio;
@@ -223,10 +224,8 @@ LAB_800aede8:
 	SPS->Union.ThBuckColl.thread = t;
 	SPS->Union.ThBuckColl.funcCallback = DECOMP_AH_Garage_Open;
 
-#ifndef REBUILD_PS1
 	// Open garage door when player gets within radius of door
 	DECOMP_PROC_CollideHitboxWithBucket(gGT->threadBuckets[PLAYER].thread, SPS, 0);
-#endif
 
 	ratio = DECOMP_MATH_Sin((int)inst->instDef->rot[1]);
 

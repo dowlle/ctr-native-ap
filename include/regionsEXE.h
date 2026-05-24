@@ -2799,7 +2799,7 @@ struct sData
 	char reverbModeBossID[8];
 
 	// 8008d078
-	char songBankBossID[8];
+	u8 songBankBossID[8];
 
 #if BUILD == EurRetail
 	// 8008d40c
@@ -3761,7 +3761,8 @@ struct sData
 
 	// 8008bba4 sep3
 	// 8008d760 usaRetail
-	int curReverb;
+	u16 curReverb;
+	u16 padCurReverb;
 
 	// 8008d764
 	int audioAllocSize;

@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002bbac-0x8002be9c
 void DECOMP_Channel_ParseSongToChannels()
 {
 	struct Song *song;
@@ -118,35 +119,34 @@ void DECOMP_Channel_ParseSongToChannels()
 					seq->NoteTimeElapsed -= seq->NoteLength;
 
 					// currNote->opcode
-					int opcode = seq->currNote[0];
+					int opcode = (u8)seq->currNote[0];
 
-#if 0
-					if(opcode >= 0xb) {} // ERROR
-#endif
-
-					// call opcode from funcPtr array,
-					// this is OG until DATA is rewritten
-					(*data.opcodeFunc[opcode])(seq);
-
-					// if reached end, quit
-					if ((seq->flags & 1) == 0)
-						break;
-
-					// if song restarting (opcode03)
-					if ((seq->flags & 8) != 0)
+					if (opcode < 0xb)
 					{
-						seq->flags &= ~(8);
+						// call opcode from funcPtr array,
+						// this is OG until DATA is rewritten
+						(*data.opcodeFunc[opcode])(seq);
 
-						seq->currNote = seq->firstNote;
+						// if reached end, quit
+						if ((seq->flags & 1) == 0)
+							break;
+
+						// if song restarting (opcode03)
+						if ((seq->flags & 8) != 0)
+						{
+							seq->flags &= ~(8);
+
+							seq->currNote = seq->firstNote;
+						}
+
+						// if song not restarting (opcode03)
+						else
+						{
+							seq->currNote += data.opcodeOffset[opcode];
+						}
+
+						seq->currNote = DECOMP_howl_GetNextNote(seq->currNote, &seq->NoteLength);
 					}
-
-					// if song not restarting (opcode03)
-					else
-					{
-						seq->currNote += data.opcodeOffset[opcode];
-					}
-
-					seq->currNote = DECOMP_howl_GetNextNote(seq->currNote, &seq->NoteLength);
 				}
 			}
 		}

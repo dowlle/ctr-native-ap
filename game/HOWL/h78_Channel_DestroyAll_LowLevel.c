@@ -4,6 +4,7 @@ void Channel_DestroySelf(struct ChannelStats *stats);
 
 // param_1 0: keep menu fx, 1: destroy all fx
 // param_2 0: destroy music, 1: keep music
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ba90-0x8002bbac
 void DECOMP_Channel_DestroyAll_LowLevel(int opt1, int boolKeepMusic, char type)
 {
 	struct ChannelStats *curr, *backupNext;
@@ -29,7 +30,7 @@ void DECOMP_Channel_DestroyAll_LowLevel(int opt1, int boolKeepMusic, char type)
 
 			        // if otherFX and not menu sounds,
 			        // cause those should ring out
-			        ((s16)curr->soundID > 5)))
+			        ((u16)curr->soundID > 5)))
 			{
 				Channel_DestroySelf(curr);
 			}

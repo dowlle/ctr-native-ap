@@ -1,19 +1,33 @@
 #include <common.h>
 
-void DECOMP_CDSYS_XAPlay(int categoryID, int xaID)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001cdb4-0x8001cf98
+int DECOMP_CDSYS_XAPlay(int categoryID, int xaID)
 {
 	char buf1[8];
 	char buf2[8];
 
-	if (xaID >= DECOMP_CDSYS_XAGetNumTracks(categoryID))
-		return;
+	if (sdata->boolUseDisc == 0)
+		return 1;
 
-#if 0
-	// If game is loading, play error sound
-#endif
+	if (sdata->bool_XnfLoaded == 0)
+		return 0;
+
+	if (categoryID >= CDSYS_XA_NUM_TYPES)
+		return 0;
+
+	if (xaID >= DECOMP_CDSYS_XAGetNumTracks(categoryID))
+		return 0;
+
+	if (sdata->load_inProgress != 0)
+	{
+		DECOMP_OtherFX_Play(5, 1);
+		return 0;
+	}
 
 	if (sdata->discMode != DM_AUDIO)
 		DECOMP_CDSYS_SetMode_StreamAudio();
+
+	sdata->XA_State = 2;
 
 	int vol = sdata->vol_Voice;
 	if (categoryID == CDSYS_XA_TYPE_MUSIC)
@@ -36,10 +50,9 @@ void DECOMP_CDSYS_XAPlay(int categoryID, int xaID)
 
 	sdata->XA_StartPos = sum;
 	sdata->XA_EndPos = sum + xas->XaBytes;
-	sdata->XA_State = 0;
-
 	sdata->XA_MaxSampleVal = 0;
 	sdata->XA_MaxSampleValInArr = 0;
+	sdata->unused_8008d700 = 0;
 
 	sdata->countPass_CdReadyCallback = 0;
 	sdata->countFail_CdReadyCallback = 0;
@@ -56,7 +69,15 @@ void DECOMP_CDSYS_XAPlay(int categoryID, int xaID)
 		// Emulators with no IRQ support will keep playing random
 		// XA audio on the disc infinitely, and never reach ND Box
 
-		sdata->XA_State = 2;
 		DECOMP_CDSYS_SpuEnableIRQ();
+		return 1;
 	}
+
+	sdata->XA_State = 0;
+	return 0;
+}
+
+int CDSYS_XAPlay(int categoryID, int xaID)
+{
+	return DECOMP_CDSYS_XAPlay(categoryID, xaID);
 }

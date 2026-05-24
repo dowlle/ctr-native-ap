@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800284d0-0x80028690
 int DECOMP_OtherFX_Play_LowLevel(u32 soundID, char boolAntiSpam, u32 flags)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -52,6 +53,8 @@ int DECOMP_OtherFX_Play_LowLevel(u32 soundID, char boolAntiSpam, u32 flags)
 
 	if (channel == 0)
 	{
+		// NOTE(aalhendi): Retail falls through to a PSX null-space read here.
+		// Native returns the no-sound result explicitly instead of crashing.
 		DECOMP_Smart_ExitCriticalSection();
 		return 0;
 	}

@@ -1,8 +1,9 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002c510-0x8002c64c
 void DECOMP_howl_PauseAudio()
 {
-	int *ptrFlag;
+	u32 *ptrFlag;
 	struct ChannelStats *curr, *backupNext;
 	struct ChannelStats *pausedStats;
 
@@ -25,11 +26,12 @@ void DECOMP_howl_PauseAudio()
 		*ptrFlag |= 1;
 		*ptrFlag &= ~(2);
 
-		// psx's kernel memcpy does NOT work inside "critical" sections
 		int *dest = (int *)pausedStats++;
 		int *src = (int *)curr;
 
-		// skip first two, which are pointers
+		// psx's kernel memcpy does NOT work inside "critical" sections
+		dest[0] = src[0];
+		dest[1] = src[1];
 		dest[2] = src[2];
 		dest[3] = src[3];
 		dest[4] = src[4];

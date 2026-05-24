@@ -1,6 +1,7 @@
 #include <common.h>
 
-int DECOMP_CseqMusic_Start(int songID, int p2, struct SongSet *p3, int p4, int p5)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028c78-0x80028d64
+int DECOMP_CseqMusic_Start(u16 songID, int p2, struct SongSet *p3, int p4, int p5)
 {
 	int i;
 	struct Song *song;

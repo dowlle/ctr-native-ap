@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029ab4-0x80029b2c
 void DECOMP_howl_ParseCseqHeader(struct CseqHeader *ch)
 {
 	u32 addr = (u32)ch;
@@ -16,8 +17,7 @@ void DECOMP_howl_ParseCseqHeader(struct CseqHeader *ch)
 	sdata->ptrCseqSongStartOffset = (s16 *)addr;
 	addr += sizeof(s16) * ch->numSongs;
 
-	// align up by 4
-	addr += 2;
+	addr = (addr + 3) & ~3;
 
 	sdata->ptrCseqSongData = (char *)addr;
 }

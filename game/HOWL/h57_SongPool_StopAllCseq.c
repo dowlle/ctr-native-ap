@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ac0c-0x8002ac94
 void DECOMP_SongPool_StopAllCseq(struct Song *song)
 {
 	int i;
@@ -8,11 +9,11 @@ void DECOMP_SongPool_StopAllCseq(struct Song *song)
 	if ((song->flags & 1) == 0)
 		return;
 
-	// stop song
-	song->flags &= ~(1);
-
 	for (i = 0; i < song->numSequences; i++)
 	{
 		DECOMP_SongPool_StopCseq(song->CseqSequences[i]);
 	}
+
+	// stop song
+	song->flags &= (u8)~1;
 }

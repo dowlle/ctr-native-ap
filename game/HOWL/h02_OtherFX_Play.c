@@ -5,6 +5,7 @@
 // 0 - play with no duplicates (dont recycle old)
 // 1 - play with no duplicates (recycle old)
 // 2 - play with duplicates
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028468-0x80028494
 int OtherFX_Play(u32 soundID, int flags)
 {
 	// ff8080:
@@ -12,7 +13,7 @@ int OtherFX_Play(u32 soundID, int flags)
 	// 0xff - volume
 	// 0x80 - distortion (none)
 	// 0x80 - LR (center of left and right)
-	return DECOMP_OtherFX_Play_LowLevel(soundID & 0xfff, flags & 0xff, 0xff8080);
+	return DECOMP_OtherFX_Play_LowLevel(soundID & 0xffff, flags & 0xff, 0xff8080);
 }
 
 int DECOMP_OtherFX_Play(u32 soundID, int flags)

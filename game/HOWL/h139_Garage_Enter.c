@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030264-0x80030404.
 void DECOMP_Garage_Enter(char charId)
 {
 	struct GarageFX *garageSounds;
@@ -7,7 +8,6 @@ void DECOMP_Garage_Enter(char charId)
 	int i;
 	int charRight;
 	int charLeft;
-	int *audioPtr;
 	int LR;
 
 	//>=8
@@ -27,7 +27,6 @@ void DECOMP_Garage_Enter(char charId)
 
 		garageSounds->gsp_prev = GSP_GONE;
 		garageSounds->volume = 0;
-		garageSounds->audioPtr = 0;
 
 		// if this character is in focus
 		if (i == charId)
@@ -62,6 +61,7 @@ void DECOMP_Garage_Enter(char charId)
 		{
 			garageSounds->gsp_curr = GSP_GONE;
 			garageSounds->LR = 0x80;
+			garageSounds->audioPtr = 0;
 			continue;
 		}
 
@@ -70,7 +70,10 @@ void DECOMP_Garage_Enter(char charId)
 		garageSounds->LR = LR;
 
 		if (soundIDs[i] == 0)
+		{
+			garageSounds->audioPtr = 0;
 			continue;
+		}
 
 		DECOMP_OtherFX_RecycleNew((u32 *)&garageSounds->audioPtr, (int)soundIDs[i], 0x8000 | LR);
 	}

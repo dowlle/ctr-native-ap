@@ -1,15 +1,16 @@
 #include <common.h>
 
-void DECOMP_CDSYS_SetXAToLang(int lang)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c56c-0x8001c7a4.
+int DECOMP_CDSYS_SetXAToLang(int lang)
 {
 	char *xaLang;
 	int fileSize;
 	struct XNF *xnf;
 
 	if (sdata->boolUseDisc == 0)
-		return;
+		return 1;
 	if (lang >= 8)
-		return;
+		return 0;
 
 	sdata->bool_XnfLoaded = 0;
 	DECOMP_CDSYS_SetMode_StreamData();
@@ -32,19 +33,19 @@ void DECOMP_CDSYS_SetXAToLang(int lang)
 
 	// read error
 	if (xnf == 0)
-		return;
+		return 0;
 
 	// header error
 	if (xnf->magic != *(int *)&sdata->s_XINF[0])
-		return;
+		return 0;
 
 	// Aug5=100, Sep3=101, Retail=102
 	if (xnf->version != 102)
-		return;
+		return 0;
 
 	sdata->xa_numTypes = xnf->numTypes;
 	if (sdata->xa_numTypes != CDSYS_XA_NUM_TYPES)
-		return;
+		return 0;
 
 	sdata->ptrArray_NumXAs = &xnf->numXA[0];
 	sdata->ptrArray_firstXaIndex = &xnf->firstXaIndex[0];
@@ -67,9 +68,10 @@ void DECOMP_CDSYS_SetXAToLang(int lang)
 
 			// quit on error to find XA file
 			if (DECOMP_CDSYS_GetFilePosInt(am->name, returnPtr_xaCdPos) == 0)
-				return;
+				return 0;
 		}
 	}
 
 	sdata->bool_XnfLoaded = 1;
+	return 1;
 }

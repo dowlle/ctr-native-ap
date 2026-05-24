@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e418-0x8002e46c
 // happens during "FINAL LAP!"
 void DECOMP_Music_LowerVolume(void)
 {
@@ -10,7 +11,7 @@ void DECOMP_Music_LowerVolume(void)
 		// 50% volume
 		setVolume = 150;
 
-		if (1 < sdata->cseqHighestIndex - 1)
+		if ((u32)(sdata->cseqHighestIndex - 1) >= 2)
 		{
 			// 25% volume
 			setVolume = 90;

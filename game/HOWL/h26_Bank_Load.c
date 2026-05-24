@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800297a0-0x80029824
 int DECOMP_Bank_Load(int bankID, struct Bank *ptrBank)
 {
 	int numBanks = sdata->numAudioBanks;
@@ -8,7 +9,7 @@ int DECOMP_Bank_Load(int bankID, struct Bank *ptrBank)
 	if (numBanks >= 8)
 		return 0;
 
-	sdata->bank[numBanks].bankID = bankID;
+	sdata->bank[numBanks].bankID = bankID & 0xffff;
 
 	// if bank is in use, quit
 	if ((sdata->bank[numBanks].flags & 3) != 0)

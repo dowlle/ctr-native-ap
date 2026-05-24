@@ -1,18 +1,17 @@
 #include <common.h>
 
-void DECOMP_CseqMusic_Stop(int songID)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800291a0-0x80029258
+void DECOMP_CseqMusic_Stop(u16 songID)
 {
 	int i;
 	struct Song *song;
 
-// byte budget,
-// if either of these are false, CseqMusic_Start
-// wouldn't have played to begin with anyway
-#if 0
-	if(sdata->boolAudioEnabled == 0) return;
-	if(sdata->ptrCseqHeader == 0) return;
-	if(sdata->ptrCseqHeader->numSongs <= songID) return;
-#endif
+	if (sdata->boolAudioEnabled == 0)
+		return;
+	if (sdata->ptrCseqHeader == 0)
+		return;
+	if (sdata->ptrCseqHeader->numSongs <= songID)
+		return;
 
 	DECOMP_Smart_EnterCriticalSection();
 

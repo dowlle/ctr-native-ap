@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058ba4-0x80058c44.
 void DECOMP_VehBirth_EngineAudio_AllPlayers(void)
 {
 	struct Thread *th;
@@ -14,8 +15,6 @@ void DECOMP_VehBirth_EngineAudio_AllPlayers(void)
 
 		int engine = data.MetaDataCharacters[data.characterIDs[driverID]].engineID;
 
-#ifndef REBUILD_PS1
-		EngineAudio_InitOnce((engine * 4) + driverID, 0x8080);
-#endif
+		DECOMP_EngineAudio_InitOnce((engine * 4) + driverID, 0x8080);
 	}
 }

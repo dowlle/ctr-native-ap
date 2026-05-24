@@ -1,18 +1,29 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001ca98-0x8001cbe0.
 void DECOMP_CDSYS_SpuGetMaxSample(void)
 {
-	int index2;
 	s16 sample;
 	s16 max;
 	max = 0;
 
-	s16 *ptrSpuBuf = &sdata->SpuDecodedBuf[sdata->irqAddr << 9];
+	if (sdata->boolUseDisc == 0)
+		return;
+
+	int start = 0x100;
+	int end = 0x200;
+	if (sdata->irqAddr == 0)
+	{
+		start = 0;
+		end = 0x100;
+	}
+
+	s16 *ptrSpuBuf = &sdata->SpuDecodedBuf[start];
 
 	// absolute value, find max in block
-	for (int i = 0; i < 0x100; i++)
+	for (int i = start; i < end; i++)
 	{
-		sample = ptrSpuBuf[i];
+		sample = *ptrSpuBuf++;
 		if (sample < 0)
 			sample = -sample;
 		if (max < sample)
@@ -28,16 +39,20 @@ void DECOMP_CDSYS_SpuGetMaxSample(void)
 	if (sdata->XA_MaxSampleIndex >= 3)
 		sdata->XA_MaxSampleIndex = 0;
 
-	// === Naughty Dog Bug ===
-	// This needs to reset itself
-	sdata->XA_MaxSampleNumSaved++;
-	if (sdata->XA_MaxSampleNumSaved >= 3)
-		sdata->XA_MaxSampleNumSaved = 3;
+	if (sdata->XA_MaxSampleNumSaved < 3)
+		sdata->XA_MaxSampleNumSaved++;
 
 	// Find max of last 3 block maxes,
 	// as long as 3 blocks have already passed
 	sdata->XA_MaxSampleValInArr = 0;
-	for (int i = 0; i < sdata->XA_MaxSampleNumSaved; i++)
-		if (sdata->XA_MaxSampleValInArr < sdata->XA_MaxSampleValArr[i])
-			sdata->XA_MaxSampleValInArr = sdata->XA_MaxSampleValArr[i];
+	int index = sdata->XA_MaxSampleIndex;
+	for (int i = sdata->XA_MaxSampleNumSaved; i > 0; i--)
+	{
+		index--;
+		if (index < 0)
+			index = 2;
+
+		if (sdata->XA_MaxSampleValInArr < sdata->XA_MaxSampleValArr[index])
+			sdata->XA_MaxSampleValInArr = sdata->XA_MaxSampleValArr[index];
+	}
 }

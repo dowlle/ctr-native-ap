@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e690-0x8002e724
 void DECOMP_OtherFX_RecycleNew(u32 *soundID_Count, u32 newSoundID, u32 modifyFlags)
 {
 	int local = *soundID_Count;

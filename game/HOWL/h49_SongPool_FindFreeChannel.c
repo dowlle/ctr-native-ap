@@ -1,6 +1,7 @@
 #include <common.h>
 
-struct SongSeq *DECOMP_SongPool_FindFreeChannel()
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a63c-0x8002a678
+struct SongSeq *DECOMP_SongPool_FindFreeChannel(void)
 {
 	struct SongSeq *seq;
 

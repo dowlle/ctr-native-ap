@@ -1,8 +1,8 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002dd24-0x8002dd74
 void DECOMP_Music_SetIntro(void)
 {
-	u32 boolSuccess;
 	struct Bank thisBank;
 
 	sdata->audioDefaults[7] = 0;

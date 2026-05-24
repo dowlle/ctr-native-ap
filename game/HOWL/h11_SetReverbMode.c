@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028bbc-0x80028c78
 void DECOMP_SetReverbMode(u16 newReverbMode)
 {
 	if (newReverbMode < 5)

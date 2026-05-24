@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002dcac-0x8002dd24
 void DECOMP_Audio_SetReverbMode(int levelID, u32 isBossRace, int bossID)
 {
 	u32 reverb;

@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e46c-0x8002e4c0
 // after "FINAL LAP!" is done
 void DECOMP_Music_RaiseVolume(void)
 {
@@ -10,7 +11,7 @@ void DECOMP_Music_RaiseVolume(void)
 		// 100% volume
 		setVolume = 255;
 
-		if (1 < sdata->cseqHighestIndex - 1)
+		if ((u32)(sdata->cseqHighestIndex - 1) >= 2)
 		{
 			// 75% volume
 			setVolume = 190;

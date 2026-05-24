@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002cbb4-0x8002cbe8
 void DECOMP_Voiceline_ToggleEnable(int toggle)
 {
 	// if this is disabling

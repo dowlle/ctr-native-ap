@@ -1,12 +1,13 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002dd74-0x8002de48
 void DECOMP_Music_LoadBanks(void)
 {
 	u32 bankID;
 	struct Bank thisBank;
 	struct GameTracker *gGT = sdata->gGT;
 	int level = gGT->levelID;
-	char *arr = (char *)&sdata->audioDefaults[7];
+	u8 *arr = (u8 *)&sdata->audioDefaults[7];
 
 	DECOMP_Audio_SetReverbMode(
 	    // Level ID

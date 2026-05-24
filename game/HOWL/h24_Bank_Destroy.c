@@ -1,8 +1,9 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800296c4-0x80029730
 void DECOMP_Bank_Destroy(struct Bank *ptrLastBank)
 {
-	s16 flags;
+	u16 flags;
 
 	if (sdata->boolAudioEnabled == 0)
 		return;

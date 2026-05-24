@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b898-0x8002b9b8
 struct ChannelStats *DECOMP_Channel_SearchFX_EditAttr(int type, int soundID, int updateFlags, struct ChannelAttr *attr)
 {
 	struct ChannelAttr *editAttr;
@@ -49,7 +50,7 @@ struct ChannelStats *DECOMP_Channel_SearchFX_EditAttr(int type, int soundID, int
 			}
 
 			// change in volume
-			if ((updateFlags & 0x20) != 0)
+			if ((updateFlags & 0x40) != 0)
 			{
 				// OG game treats this as one int
 				editAttr->audioL = attr->audioL;

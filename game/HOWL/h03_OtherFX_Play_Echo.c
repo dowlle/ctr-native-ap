@@ -3,6 +3,7 @@
 // param_3:
 // 0 - normal
 // 1 - echo
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028494-0x800284d0
 void OtherFX_Play_Echo(u32 soundID, int flags, int echoFlag)
 {
 	// ff8080:
@@ -15,7 +16,7 @@ void OtherFX_Play_Echo(u32 soundID, int flags, int echoFlag)
 	if (echoFlag != 0)
 		otherFlags |= 0x1000000;
 
-	DECOMP_OtherFX_Play_LowLevel(soundID & 0xfff, flags & 0xff, otherFlags);
+	DECOMP_OtherFX_Play_LowLevel(soundID & 0xffff, flags & 0xff, otherFlags);
 }
 
 void DECOMP_OtherFX_Play_Echo(u32 soundID, int flags, int echoFlag)

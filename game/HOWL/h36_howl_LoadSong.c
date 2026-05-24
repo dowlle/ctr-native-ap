@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80029ca4-0x80029dc0
 // similar to h23_Bank_AssignSpuAddrs, and h34_howl_LoadHeader
 int DECOMP_howl_LoadSong()
 {
@@ -36,7 +37,7 @@ int DECOMP_howl_LoadSong()
 			return 0;
 
 		// CseqHeader->songSize, aligned up to sector size
-		int numSector = (*(int *)&sdata->sampleBlock1[0] + 0x800 - 1) >> 0xb;
+		int numSector = (*(int *)&sdata->sampleBlock1[0] + 0x7ff) >> 0xb;
 
 		ret = DECOMP_LOAD_HowlSectorChainStart(&sdata->KartHWL_CdFile,      // CdLoc of HOWL
 		                                       sdata->tenSampleBlocks,      // (sampleBlock1+0x800) RAM destination

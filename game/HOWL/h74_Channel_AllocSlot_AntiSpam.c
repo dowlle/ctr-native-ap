@@ -2,6 +2,7 @@
 
 void Channel_DestroySelf(struct ChannelStats *stats);
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b608-0x8002b7d0
 struct ChannelStats *DECOMP_Channel_AllocSlot_AntiSpam(s16 soundID, char boolUseAntiSpam, int flags, struct ChannelAttr *attr)
 {
 	struct ChannelAttr *newAttr;
@@ -24,7 +25,7 @@ struct ChannelStats *DECOMP_Channel_AllocSlot_AntiSpam(s16 soundID, char boolUse
 			    (curr->type == 1) &&
 
 			    // matching ID
-			    ((s16)curr->soundID == soundID))
+			    ((curr->soundID & 0xffff) == ((u16)soundID)))
 			{
 				int duration = sdata->gGT->frameTimer_MainFrame_ResetDB - curr->startFrame;
 

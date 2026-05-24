@@ -201,10 +201,9 @@ struct CseqHeader
 	int songSize;
 
 	// 0x4
-	char numLongSamples;
-	char numShortSamples;
-	char numSongs;
-	char filler;
+	u8 numLongSamples;
+	u8 numShortSamples;
+	u16 numSongs;
 };
 
 struct SampleInstrument
@@ -333,7 +332,7 @@ struct SongSeq
 	u8 vol_New;
 
 	// 0x7
-	char vol_StepRate;
+	u8 vol_StepRate;
 
 	// one is curr, one is desired
 
@@ -382,7 +381,7 @@ struct Song
 
 	// 0x2
 	// songID out of all songs in RAM
-	s16 id;
+	u16 id;
 
 	// 0x4
 	int songSetActiveBits;
@@ -407,7 +406,7 @@ struct Song
 	// 0x18 = vol_Curr
 	u8 vol_Curr;
 	u8 vol_New;
-	char vol_StepRate;
+	u8 vol_StepRate;
 
 	// 0x1b
 	char numSequences;

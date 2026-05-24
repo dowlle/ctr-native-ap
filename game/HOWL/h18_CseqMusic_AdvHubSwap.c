@@ -1,16 +1,17 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800290cc-0x800291a0
 void DECOMP_CseqMusic_AdvHubSwap(u16 songId, struct SongSet *songSet, int songSetActiveBits)
 {
 	struct Song *song;
 	int i;
 
-// Temporarily commented out, while trying to fit byte budget
-#if 0
-  if (sdata->boolAudioEnabled == 0) return;
-  if (sdata->ptrCseqHeader == 0) return;
-  if (songId >= sdata->ptrCseqHeader->numSongs) return;
-#endif
+	if (sdata->boolAudioEnabled == 0)
+		return;
+	if (sdata->ptrCseqHeader == 0)
+		return;
+	if (sdata->ptrCseqHeader->numSongs <= songId)
+		return;
 
 	DECOMP_Smart_EnterCriticalSection();
 

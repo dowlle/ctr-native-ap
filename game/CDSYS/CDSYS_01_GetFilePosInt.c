@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c420-0x8001c470.
 u32 DECOMP_CDSYS_GetFilePosInt(char *fileString, int *filePos)
 {
 	CdlFILE cdlFile;

@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002d2f4-0x8002d4cc
 void DECOMP_Audio_SetState(u32 state)
 {
 	u8 XA_type;

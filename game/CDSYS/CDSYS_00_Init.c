@@ -1,26 +1,25 @@
 #include <common.h>
 
-void DECOMP_CDSYS_Init(int boolUseDisc)
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c360-0x8001c420.
+int DECOMP_CDSYS_Init(int boolUseDisc)
 {
 	sdata->boolUseDisc = boolUseDisc;
 
-#if !defined(REBUILD_PS1) || defined(CTR_NATIVE)
-	Voiceline_PoolClear();
-#endif
+	*(s16 *)&sdata->unused400[0] = 0;
 
 	// if using parallel port (Naughty Dog Devs only)
-	if (boolUseDisc == 0)
-		return;
-
-	// if Cd does not initialize
-	if (CdInit() == 0)
+	if (boolUseDisc != 0)
 	{
-		// use parallel port (Naughty Dog Devs only)
-		sdata->boolUseDisc = 0;
-		return;
-	}
+		// if Cd does not initialize
+		if (CdInit() == 0)
+		{
+			// use parallel port (Naughty Dog Devs only)
+			sdata->boolUseDisc = 0;
+			return 0;
+		}
 
-	CdSetDebug(1);
+		CdSetDebug(1);
+	}
 
 	sdata->discMode = -1;
 	sdata->bool_XnfLoaded = 0;
@@ -57,4 +56,8 @@ void DECOMP_CDSYS_Init(int boolUseDisc)
 
 	// 1 - English
 	DECOMP_CDSYS_SetXAToLang(1);
+
+	Voiceline_PoolClear();
+
+	return 1;
 }

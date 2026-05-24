@@ -1,12 +1,22 @@
 #include <common.h>
 
-void DECOMP_CDSYS_XASeek(int boolCdControl, int categoryID, int xaID) // third param should maybe be `u32`
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001cc18-0x8001cd20.
+int DECOMP_CDSYS_XASeek(int boolCdControl, int categoryID, int xaID)
 {
 	CdlLOC loc;
 	int com;
 
+	if (sdata->boolUseDisc == 0)
+		return 1;
+
+	if (sdata->bool_XnfLoaded == 0)
+		return 0;
+
+	if (categoryID >= CDSYS_XA_NUM_TYPES)
+		return 0;
+
 	if (xaID >= DECOMP_CDSYS_XAGetNumTracks(categoryID))
-		return;
+		return 0;
 
 	if (sdata->discMode != DM_AUDIO)
 		DECOMP_CDSYS_SetMode_StreamAudio();
@@ -23,4 +33,6 @@ void DECOMP_CDSYS_XASeek(int boolCdControl, int categoryID, int xaID) // third p
 		com = CdlSeekL;
 
 	CdControl(com, &loc, 0);
+
+	return 1;
 }

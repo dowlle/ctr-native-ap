@@ -1,8 +1,10 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002d67c-0x8002dc4c
 void DECOMP_Audio_Update1(void)
 {
 	char i;
+	int raceOrderIndex;
 	s16 uVar1;
 	u32 uVar2;
 	struct Driver *d = 0;
@@ -60,18 +62,9 @@ void DECOMP_Audio_Update1(void)
 			d = 0;
 		}
 
-		if (d == 0)
-			break;
+		DECOMP_Voiceline_Update();
 
-#ifndef REBUILD_PS1
-		Voiceline_Update();
 		Level_AmbientSound();
-#endif
-
-// Temporary, no Drivers yet
-#ifdef REBUILD_PS1
-		break;
-#endif
 
 		// if race has more than 2 laps
 		if ((2 < sdata->gGT->numLaps) &&
@@ -98,9 +91,6 @@ void DECOMP_Audio_Update1(void)
 			d = 0;
 		}
 
-		if (d == 0)
-			break;
-
 		// if need to XASeek
 		if (((sdata->boolNeedXASeek != 0) && (sdata->XA_State == 0)) && (9 < gGT->frameTimer_MainFrame_ResetDB - sdata->XA_PauseFrame))
 		{
@@ -115,9 +105,7 @@ void DECOMP_Audio_Update1(void)
 			sdata->boolNeedXASeek = 0;
 		}
 
-#ifndef REBUILD_PS1
 		Level_AmbientSound();
-#endif
 
 		// if driver is on final lap
 		if (d->lapIndex == gGT->numLaps - 1U)
@@ -139,9 +127,7 @@ void DECOMP_Audio_Update1(void)
 
 		DECOMP_Audio_SetMaskSong(maskTempo);
 
-#ifndef REBUILD_PS1
 		Level_AmbientSound();
-#endif
 
 		if (sdata->XA_State == 0)
 		{
@@ -163,13 +149,9 @@ void DECOMP_Audio_Update1(void)
 			d = 0;
 		}
 
-		if (d == 0)
-			break;
+		DECOMP_Voiceline_Update();
 
-#ifndef REBUILD_PS1
-		Voiceline_Update();
 		Level_AmbientSound();
-#endif
 
 		if (
 		    // if driver's lap is the last lap
@@ -183,6 +165,7 @@ void DECOMP_Audio_Update1(void)
 
 		break;
 	case 14:
+		raceOrderIndex = -1;
 
 		// human driver in the lead
 		for (i = 0; i < 8; i++)
@@ -191,13 +174,11 @@ void DECOMP_Audio_Update1(void)
 
 			if ((d != NULL) && (d->instSelf->thread->modelIndex == DYNAMIC_PLAYER))
 			{
+				raceOrderIndex = i;
 				break;
 			}
 			d = 0;
 		}
-
-		if (d == 0)
-			break;
 
 		// if need to XASeek
 		if (((sdata->boolNeedXASeek != 0) && (sdata->XA_State == 0)) && (9 < gGT->frameTimer_MainFrame_ResetDB - sdata->XA_PauseFrame))
@@ -212,9 +193,7 @@ void DECOMP_Audio_Update1(void)
 			sdata->boolNeedXASeek = 0;
 		}
 
-#ifndef REBUILD_PS1
 		Level_AmbientSound();
-#endif
 
 		// if the race is over for this racer
 		if ((d->actionsFlagSet & 0x2000000) != 0)
@@ -228,7 +207,7 @@ void DECOMP_Audio_Update1(void)
 					// defeat music
 					uVar1 = 5;
 
-					if ((d->driverRank == 0) || ((gGT->gameMode1 & ADVENTURE_CUP) != 0) || ((gGT->gameMode2 & CUP_ANY_KIND) != 0))
+					if ((raceOrderIndex == 0) || ((gGT->gameMode1 & ADVENTURE_CUP) != 0) || ((gGT->gameMode2 & CUP_ANY_KIND) != 0))
 					{
 						DECOMP_OtherFX_Play(0x5f, 0);
 
@@ -296,9 +275,7 @@ void DECOMP_Audio_Update1(void)
 		break;
 	case 15:
 
-#ifndef REBUILD_PS1
 		Level_AmbientSound();
-#endif
 
 		if (sdata->XA_State == 0)
 		{

@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030694-0x8003074c.
 void DECOMP_Garage_MoveLR(int desiredId)
 {
 	struct GarageFX *garageSounds;

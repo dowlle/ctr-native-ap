@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e350-0x8002e418
 // param_1 - SongID (playing)
 // param_2 - deltaBPM
 // param_3 - 8008d068 for AdvHub

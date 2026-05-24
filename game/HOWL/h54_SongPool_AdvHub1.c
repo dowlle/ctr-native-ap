@@ -1,13 +1,14 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a9f0-0x8002aa44
 void DECOMP_SongPool_AdvHub1(struct Song *song, int seqID, int vol, int boolImm)
 {
 	struct SongSeq *seq;
 
 	struct CseqSongHeader *csh = (struct CseqSongHeader *)&sdata->ptrCseqSongData[sdata->ptrCseqSongStartOffset[song->id]];
 
-	// screw safety, must fit the byte budget
-	// if(seqID >= csh->numSeqs) return;
+	if (seqID >= (u8)csh->numSeqs)
+		return;
 
 	seq = song->CseqSequences[seqID];
 

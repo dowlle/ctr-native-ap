@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002be9c-0x8002c18c
 void DECOMP_Channel_UpdateChannels()
 {
 	// int voice_bit;
@@ -11,8 +12,7 @@ void DECOMP_Channel_UpdateChannels()
 
 	struct ChannelAttr *cur;
 	struct ChannelAttr *new;
-	int *ptrFlag;
-	int updateFlags;
+	u32 *ptrFlag;
 
 	for (vNum = 0, ptrFlag = &sdata->ChannelUpdateFlags[0];
 
@@ -20,7 +20,7 @@ void DECOMP_Channel_UpdateChannels()
 
 	     vNum++, ptrFlag++)
 	{
-		int updateFlags = *ptrFlag;
+		u32 updateFlags = *ptrFlag;
 
 		// if need to turn off
 		if ((updateFlags & 1) != 0)
@@ -47,7 +47,7 @@ void DECOMP_Channel_UpdateChannels()
 
 	     vNum++, cur++, new++, ptrFlag++)
 	{
-		int updateFlags = *ptrFlag;
+		u32 updateFlags = *ptrFlag;
 
 		// if need to turn on
 		if ((updateFlags & 2) != 0)

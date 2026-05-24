@@ -1,29 +1,17 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c984-0x8001c9e4.
 void DECOMP_CDSYS_SpuCallbackTransfer()
 {
-// === Naughty Dog Bug (fixed) ===
-// Use this frame's sample on this frame
-#if 1
-	DECOMP_CDSYS_SpuGetMaxSample();
-#endif
+	if (sdata->irqAddr == 0)
+		sdata->irqAddr = 0x200;
+	else
+		sdata->irqAddr = 0;
 
-
-	// 0->1 and 1->0
-	sdata->irqAddr = (sdata->irqAddr + 1) & 1;
-	SpuSetIRQAddr(sdata->irqAddr << 9);
+	SpuSetIRQAddr(sdata->irqAddr);
 	SpuSetIRQ(1);
 
-
-#if 0 // unused
 	sdata->countPass_CdTransferCallback++;
-#endif
 
-
-// === Naughty Dog Bug ===
-// this uses "last" sample's data,
-// which is why CDSYS_SpuEnableIRQ does a clear
-#if 0
 	DECOMP_CDSYS_SpuGetMaxSample();
-#endif
 }

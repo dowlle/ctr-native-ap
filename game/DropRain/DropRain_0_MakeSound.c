@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80024464-0x8002451c.
 void DECOMP_DropRain_MakeSound(struct GameTracker *gGT)
 {
 	int i, lev;
@@ -18,7 +19,6 @@ void DECOMP_DropRain_MakeSound(struct GameTracker *gGT)
 	{
 		rained |= gGT->rainBuffer[i].numParticles_curr;
 	}
-
 
 	// if someone is rained on
 	if (rained != 0)

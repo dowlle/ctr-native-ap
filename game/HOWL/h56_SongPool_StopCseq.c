@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ab18-0x8002ac0c
 void DECOMP_SongPool_StopCseq(struct SongSeq *seq)
 {
 	struct ChannelStats *curr, *backupNext;
@@ -13,20 +14,15 @@ void DECOMP_SongPool_StopCseq(struct SongSeq *seq)
 		if (curr->type != 2)
 			continue;
 
-// This line doesn't work, ND Box -> Loading screen
-// does not stop "all" sounds, unless commented out.
-// Without this line, the game can't stop "individual"
-// music sequences, but the game never does that anyway
-#if 0
-		if(curr->soundID != (int)seq->soundID) continue;
-#endif
+		if (curr->soundID != seq->soundID)
+			continue;
 
 		// enable OFF(1) flag, disable ON(2) flag
 		flagPtr = &sdata->ChannelUpdateFlags[curr->channelID];
 		*flagPtr |= 1;
 		*flagPtr &= ~(2);
 
-		*(u8 *)&curr->flags &= ~(1);
+		curr->flags &= (u8)~1;
 
 		// recycle: remove from taken, put on free
 		DECOMP_LIST_RemoveMember(&sdata->channelTaken, (struct Item *)curr);
