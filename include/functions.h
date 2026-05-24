@@ -367,7 +367,7 @@ void Cutscene_VolumeRestore();
 
 // Voiceline_PoolInit()
 void Voiceline_ClearTimeStamp();
-// Voiceline_PoolClear()
+void Voiceline_PoolClear(void);
 // Voiceline_StopAll()
 // Voiceline_ToggleEnable()
 void Voiceline_RequestPlay(u32 voiceID, u32 characterID, u32 characterID2);
@@ -1291,7 +1291,6 @@ void *MEMPACK_AllocHighMem(int allocSize);
 char *CS_Credits_GetNextString(char *);
 void CS_Credits_DestroyCreditGhost();
 void CdSetDebug(int);
-void Voiceline_PoolClear();
 void SpuSetIRQ(int);
 void SpuReadDecodedData(s16 *, int);
 void SpuSetIRQCallback(void (*)(void));

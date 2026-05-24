@@ -198,7 +198,6 @@ void DECOMP_howl_UnPauseAudio(void);
 void DECOMP_howl_StopAudio(int boolErasePauseBackup, int boolEraseMusic, int boolDestroyAllFX);
 void DECOMP_Voiceline_PoolInit(void);
 void DECOMP_Voiceline_ClearTimeStamp(void);
-void DECOMP_Voiceline_PoolClear(void);
 void DECOMP_Voiceline_StopAll(void);
 void DECOMP_Voiceline_ToggleEnable(int toggle);
 // skip 95, 96, 97, 98
