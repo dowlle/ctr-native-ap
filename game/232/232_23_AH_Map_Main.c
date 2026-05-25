@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1c90-0x800b1ef8.
 void AH_Map_Main(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -15,7 +16,7 @@ void AH_Map_Main(void)
 
 	local_20 = 0;
 	advDriver = gGT->drivers[0];
-	ptrHudData = data.hudStructPtr[0];
+	ptrHudData = data.hudStructPtr[gGT->numPlyrCurrGame - 1];
 	hubPtrs = 0;
 	iVar1 = RaceFlag_GetCanDraw();
 	if (iVar1 == 0)
@@ -35,17 +36,11 @@ void AH_Map_Main(void)
 	}
 
 
-	// in the OG code, is this even possible?
-#if 0
-  if ((gGT->numPlyrCurrGame == 0) &&
-  
-	// if this is an AI, not a human
-     ((advDriver->actionsFlagSet & 0x100000) != 0)) 
-  {
-	// force draw speedometer, not map, why?
-    sdata->HudAndDebugFlags = 8;
-  }
-#endif
+	// NOTE(aalhendi): Retail keeps this AI-only Adventure Hub speedometer fallback.
+	if ((gGT->numPlyrCurrGame == 0) && ((advDriver->actionsFlagSet & 0x100000) != 0))
+	{
+		sdata->HudAndDebugFlags = 8;
+	}
 
 	if (gGT->level1->ptrSpawnType1->count != 0)
 	{

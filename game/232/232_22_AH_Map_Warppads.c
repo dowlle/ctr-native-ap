@@ -1,27 +1,11 @@
 #include <common.h>
 
-static char warppadColor[8] = {
-    // Locked: Gray
-    [0] = 0x17,
-
-    // Trophy: set later
-    [1] = 0,
-
-    // Beat Everything: Red
-    [2] = 3,
-
-    // token/relic: Yellow
-    [3] = 0xe,
-
-    // SlideCol/TurboTrack: set later
-    [4] = 0,
-};
-
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1a18-0x800b1c90.
 void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	struct Instance *warppadInst;
-	char bVar1;
+	struct Instance *closestWarppadInst;
 	int distX;
 	int distY;
 	int distZ;
@@ -33,6 +17,7 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 
 	// find minDistance, set to max
 	minDistance = 0x7fffffff;
+	closestWarppadInst = NULL;
 
 	MATRIX *dMat = &gGT->drivers[0]->instSelf->matrix;
 
@@ -40,22 +25,40 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 	    /**/; warppadThread != NULL; warppadThread = warppadThread->siblingThread)
 	{
 		int index = warppadThread->modelIndex;
+		int isTrophy = 0;
+		int skipDistance = 0;
+
 		warppadInst = warppadThread->inst;
 
-		// Trophy: blue/white
-		warppadColor[1] = 5;
-		if ((gGT->timer & 2) != 0)
-			warppadColor[1] = 4;
+		switch ((u32)index)
+		{
+		case 0:
+			color = 0x17;
+			skipDistance = 1;
+			break;
+		case 1:
+			color = 5;
+			if ((gGT->timer & 2) != 0)
+				color = 4;
+			isTrophy = 1;
+			break;
+		case 2:
+			color = 3;
+			break;
+		case 3:
+			color = 0xe;
+			break;
+		case 4:
+			// Each Slide Coliseum/Turbo Track color lasts two frames.
+			color = ((gGT->timer >> 1) & 7) + 5;
+			break;
+		default:
+			color = 0x15;
+			skipDistance = 1;
+			break;
+		}
 
-		// SlideCol/TurboTrack
-		// flash a bunch of colors (crash-pura),
-		// each color should last two frames, so use timer>>1
-		warppadColor[4] = ((gGT->timer >> 1) & 7) + 5;
-
-		color = warppadColor[index];
-
-		// only for trophy
-		if (index == 1)
+		if (isTrophy)
 		{
 			// get posZ in 3D, turns into posY in 2D
 			posX = warppadInst->matrix.t[0];
@@ -73,8 +76,7 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 
 		UI_Map_DrawRawIcon((int)ptrMap, (int *)&warppadInst->matrix.t[0], 0x31, color, 0, 0x1000);
 
-		// if locked
-		if (index == 0)
+		if (skipDistance)
 		{
 			// skip distance check
 			continue;
@@ -84,19 +86,18 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 		distY = warppadInst->matrix.t[1] - dMat->t[1];
 		distZ = warppadInst->matrix.t[2] - dMat->t[2];
 
-#if (!defined(REBUILD_PS1) || defined(REBUILD_PC))
 		currDistance = SquareRoot0_stub(distX * distX + distY * distY + distZ * distZ);
 
 		if (minDistance > currDistance)
+		{
 			minDistance = currDistance;
-#endif
+			closestWarppadInst = warppadInst;
+		}
 	}
 
-#ifndef REBUILD_PS1
 	// play sound from closest unlocked warppad
-	if (minDistance != 0x7fffffff)
+	if (closestWarppadInst != NULL)
 		PlayWarppadSound(minDistance << 1);
-#endif
 
 	return;
 }
