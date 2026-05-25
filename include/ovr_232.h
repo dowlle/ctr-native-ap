@@ -62,7 +62,8 @@ struct WoodDoor
 	s16 keyShrinkFrame;
 
 	// 0x34
-	int doorID;
+	s16 doorID;
+	s16 padding_0x36;
 
 	// 0x38 bytes large
 };

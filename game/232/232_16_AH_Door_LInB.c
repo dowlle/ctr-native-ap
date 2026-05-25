@@ -1,10 +1,9 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b072c-0x800b0b98.
 void AH_Door_LInB(struct Instance *inst)
 {
 	char i;
-	char doorID;
-	s16 sVar2;
 	int levelID;
 	int ratio;
 	s16 leftRot[3];
@@ -25,9 +24,9 @@ void AH_Door_LInB(struct Instance *inst)
 	if (inst->thread != NULL)
 		return;
 
-	t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(0x38, NONE, SMALL, STATIC),
+	t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(sizeof(struct WoodDoor), NONE, SMALL, STATIC),
 	                         AH_Door_ThTick, // behavior
-	                         0,              // debug name
+	                         R232.s_door,    // debug name
 	                         0               // thread relative
 	);
 
@@ -47,22 +46,28 @@ void AH_Door_LInB(struct Instance *inst)
 	// and every left-hand door has one key hole
 	inst->flags |= 0x1000;
 
-	// otherDoor, and 4 keys, all next to each other
-	instPtrArr = &woodDoor->otherDoor;
-	for (i = 0; i < 5; i++)
+	// 4 keys, all next to each other
+	instPtrArr = &woodDoor->keyInst[0];
+	for (i = 0; i < 4; i++)
 	{
 		instPtrArr[i] = NULL;
 	}
 
-	woodDoor->doorID = inst->name[5] - '0';
-
+	woodDoor->frameCount_unused = 0;
 	woodDoor->camFlags = 0;
+	woodDoor->camTimer_unused = 0;
 	woodDoor->frameCount_doorOpenAnim = 0;
 	woodDoor->keyShrinkFrame = 0;
 
 	woodDoor->doorRot[0] = 0;
 	woodDoor->doorRot[1] = 0;
 	woodDoor->doorRot[2] = 0;
+	woodDoor->doorID = 0;
+
+	for (i = 5; inst->name[i] != '\0'; i++)
+	{
+		woodDoor->doorID = woodDoor->doorID * 10 + inst->name[i] - '0';
+	}
 
 	// Level ID is Glacier Park
 	if (levelID == GLACIER_PARK)
@@ -94,7 +99,7 @@ void AH_Door_LInB(struct Instance *inst)
 	// "door"
 
 	// INSTANCE_Birth3D -- ptrModel, name, thread
-	otherDoorInst = INSTANCE_Birth3D(m, 0, 0);
+	otherDoorInst = INSTANCE_Birth3D(m, R232.s_door, t);
 
 	// spawn instance of right-hand door,
 	// which is not in LEV file, only built in thread
@@ -105,17 +110,10 @@ void AH_Door_LInB(struct Instance *inst)
 
 	// copy full matrix (position and rotation)
 	// from left-hand door to right-hand door
-	*(int *)&otherDoorInst->matrix.m[0][0] = *(int *)&inst->matrix.m[0][0];
-	*(int *)&otherDoorInst->matrix.m[0][2] = *(int *)&inst->matrix.m[0][2];
-	*(int *)&otherDoorInst->matrix.m[1][1] = *(int *)&inst->matrix.m[1][1];
-	*(int *)&otherDoorInst->matrix.m[2][0] = *(int *)&inst->matrix.m[2][0];
-	otherDoorInst->matrix.m[2][2] = inst->matrix.m[2][2];
-	otherDoorInst->matrix.t[0] = inst->matrix.t[0];
-	otherDoorInst->matrix.t[1] = inst->matrix.t[1];
-	otherDoorInst->matrix.t[2] = inst->matrix.t[2];
+	otherDoorInst->matrix = inst->matrix;
 
 	// set scaleX to -0x1000
-	otherDoorInst->scale[0] = 0xf000;
+	otherDoorInst->scale[0] = -0x1000;
 
 	ratio = MATH_Cos((int)inst->instDef->rot[1]);
 
