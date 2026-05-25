@@ -37,6 +37,7 @@ u32 DECOMP_main()
 #endif
 
 		DECOMP_LOAD_NextQueuedFile();
+		// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c5d0-0x8003c5dc for per-frame XA pause handling.
 		DECOMP_CDSYS_XAPauseAtEnd();
 
 		switch (sdata->mainGameState)
@@ -53,6 +54,7 @@ u32 DECOMP_main()
 
 #ifndef REBUILD_PS1
 			MainStats_RestartRaceCountLoss();
+			// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c9f8-0x8003ca04 for load-complete voiceline reset.
 			Voiceline_ClearTimeStamp();
 #endif
 
@@ -77,6 +79,7 @@ u32 DECOMP_main()
 			DECOMP_GAMEPAD_GetNumConnected(gGS);
 
 			sdata->boolSoundPaused = 0;
+			// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003caa4-0x8003cab4 for load-complete engine audio init.
 			DECOMP_VehBirth_EngineAudio_AllPlayers();
 
 			// 9 = intro cutscene
@@ -629,6 +632,7 @@ void StateZero()
 #endif
 
 	// \SOUNDS\KART.HWL;1
+	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c8e0-0x8003c928 for startup HOWL/music/XA setup.
 	DECOMP_howl_InitGlobals(data.kartHwlPath);
 
 	VSyncCallback(DECOMP_MainDrawCb_Vsync);
@@ -645,6 +649,7 @@ void StateZero()
 	while (sdata->XA_State != 0)
 	{
 		// WARNING: Read-only address (ram, 0x8008d888) is written
+		// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c940-0x8003c948 for startup XA pause polling.
 		DECOMP_CDSYS_XAPauseAtEnd();
 	}
 #endif
