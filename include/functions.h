@@ -829,20 +829,20 @@ void RefreshCard_StartMemcardAction(int action);
 // RefreshCard_GameProgressAndOptions()
 void RefreshCard_Entry();
 void SelectProfile_QueueLoadHub_MenuProc(struct RectMenu *menu);
-// SelectProfile_ThTick()
-// SelectProfile_PrintInteger()
+void SelectProfile_ThTick(struct Thread *t);
+void SelectProfile_PrintInteger(int value, int posX, int posY, int usePaddedFormat, int color);
 int SelectProfile_UI_ConvertX(int param_1, int param_2);
 int SelectProfile_UI_ConvertY(int param_1, int param_2);
 // SelectProfile_DrawAdvProfile()
 void SelectProfile_GetTrackID();
-// SelectProfile_Init()
-void SelectProfile_Destroy();
+void SelectProfile_Init(u16 flags);
+void SelectProfile_Destroy(void);
 void SelectProfile_AdvPickMode_MenuProc(struct RectMenu *menu);
 // SelectProfile_DrawGhostProfile()
 void SelectProfile_MuteCursors();
 void SelectProfile_UnMuteCursors();
 void SelectProfile_ToggleMode(u32 param_1);
-// SelectProfile_InitAndDestroy()
+void SelectProfile_InitAndDestroy(void);
 u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 param_2, u32 confirm);
 // SelectProfile_AllProfiles_MenuProc()
 
@@ -1283,7 +1283,6 @@ void Vector_SpecLightSpin3D(struct Instance *, s16 *, s16 *);
 void Vector_SpecLightNoSpin3D(struct Instance *, s16 *, s16 *);
 void CS_Podium_Prize_Spin(struct Instance *inst, s16 *prize);
 int howl_VolumeGet(int type);
-void SelectProfile_PrintInteger(int integer, s16 posX, s16 posY, s16 fmt, u16 flags);
 void Vector_SpecLightSpin2D(struct Instance *, s16 *, s16 *); // guessed about the signature
 char *CS_Credits_GetNextString(char *);
 void CS_Credits_DestroyCreditGhost();
@@ -1332,6 +1331,5 @@ void SetDrawEnv(void *, DRAWENV *);
 u32 VehCalc_FastSqrt(u32, u32);
 void VehBirth_NullThread(struct Thread *t);
 void SelectProfile_DrawAdvProfile(struct AdvProgress *adv, int posX, int posY, u32 isHighlighted, s16 slotIndex, u16 menuFlag);
-void SelectProfile_Init(u16 flags);
 void Seal_CheckColl(struct Instance *sealInst, struct Thread *sealTh, int damage, int radius, int sound);
 void DotLights_AudioAndVideo(struct GameTracker *gGT);

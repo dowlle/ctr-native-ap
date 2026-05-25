@@ -10,8 +10,7 @@ static s16 *SelectProfile_TimerSaveComplete(void)
 	return (s16 *)&sdata->data10_bbb[12];
 }
 
-// NOTE(aalhendi): Retail-mapped NTSC-U 926 0x80048e2c-0x80048edc.
-// TODO(aalhendi): Port SelectProfile_Init before this receives an ASM-verified stamp.
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80048e2c-0x80048edc.
 void SelectProfile_ToggleMode(u32 mode)
 {
 	sdata->memcardAction = mode & 0xf;
@@ -35,8 +34,7 @@ void SelectProfile_ToggleMode(u32 mode)
 		data.menuOverwriteAdv.drawStyle |= 0x10;
 	}
 
-	// TODO(aalhendi): SelectProfile_Init owns the adventure load/save 3D icons.
-	// Native ghost save does not need it, but the adventure profile path does.
+	SelectProfile_Init(data.menuFourAdvProfiles.drawStyle);
 
 	data.menuFourAdvProfiles.rowSelected = sdata->unk_8008d73C_relatedToRowHighlighted;
 	*(s16 *)&sdata->data10_bbb[2] = 0;

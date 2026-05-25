@@ -529,13 +529,18 @@
 #include "game/RefreshCard/RefreshCard_10_Entry.c"
 
 #include "game/SelectProfile/SelectProfile_00_QueueLoadHub_MenuProc.c"
+#include "game/SelectProfile/SelectProfile_01_ThTick.c"
+#include "game/SelectProfile/SelectProfile_02_PrintInteger.c"
 #include "game/SelectProfile/SelectProfile_03_UI_ConvertX.c"
 #include "game/SelectProfile/SelectProfile_04_UI_ConvertY.c"
 #include "game/SelectProfile/SelectProfile_06_GetTrackID.c"
+#include "game/SelectProfile/SelectProfile_07_Init.c"
+#include "game/SelectProfile/SelectProfile_08_Destroy.c"
 #include "game/SelectProfile/SelectProfile_13_Cursors.c"
 #include "game/SelectProfile/SelectProfile_14_ToggleMode.c"
 #include "game/SelectProfile/SelectProfile_15_InputLogic.c"
 #include "game/SelectProfile/SelectProfile_16_AllProfiles_MenuProc.c"
+#include "game/SelectProfile/SelectProfile_17_InitAndDestroy.c"
 
 #include "game/TakeCupProgress/TakeCupProgress_0_Activate.c"
 

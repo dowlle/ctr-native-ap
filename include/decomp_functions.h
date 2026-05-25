@@ -396,9 +396,14 @@ void RefreshCard_StartMemcardAction(int action);
 
 void SelectProfile_MuteCursors(void);
 void SelectProfile_UnMuteCursors(void);
+void SelectProfile_ThTick(struct Thread *t);
+void SelectProfile_PrintInteger(int value, int posX, int posY, int usePaddedFormat, int color);
 int SelectProfile_UI_ConvertX(int param_1, int param_2);
 int SelectProfile_UI_ConvertY(int param_1, int param_2);
 void SelectProfile_GetTrackID(void);
+void SelectProfile_Init(u16 flags);
+void SelectProfile_Destroy(void);
+void SelectProfile_InitAndDestroy(void);
 u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlags);
 void SelectProfile_AllProfiles_MenuProc(struct RectMenu *menu);
 void SelectProfile_ToggleMode(u32 mode);
