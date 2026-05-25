@@ -70,8 +70,7 @@
 
 #include "231_082_085_RB_Armadillo.c"
 #include "231_086_088_RB_Fireball.c"
-// TODO(aalhendi): RngDeadCoed, Vector_SpecLightNoSpin3D, sound helpers.
-// TODO(aalhendi): 089-091 FlameJet
+#include "231_089_091_RB_FlameJet.c"
 #include "231_092_094_RB_Follower.c"
 #include "231_095_098_RB_Fruit.c"
 #include "231_099_100_RB_Minecart.c"

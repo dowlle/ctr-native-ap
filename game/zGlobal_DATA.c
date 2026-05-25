@@ -55,9 +55,7 @@ int DECOMP_RB_Fruit_LInC()
 // int DECOMP_RB_CrateFruit_LInC() {}	-- DONE
 // int DECOMP_RB_CrateWeapon_LInC() {}	-- DONE
 // int DECOMP_RB_CrateTime_LInC() {}		-- DONE
-void DECOMP_RB_FlameJet_LInB()
-{
-}
+// void DECOMP_RB_FlameJet_LInB() {}	-- DONE
 // void DECOMP_RB_Plant_LInB() {}	-- DONE
 // void DECOMP_RB_Minecart_LInB() {}	-- DONE
 // void DECOMP_RB_Snowball_LInB() {}	-- DONE

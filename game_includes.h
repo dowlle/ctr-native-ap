@@ -770,6 +770,7 @@
 #include "game/Vehicle/VehTalkMask_4_End.c"
 
 #include "game/Vector/Vector_1_SpecLightSpin3D.c"
+#include "game/Vector/Vector_2_SpecLightNoSpin3D.c"
 #include "game/Vector/Vector_3_BakeMatrixTable.c"
 
 #include "game/221/221_Full.c"
