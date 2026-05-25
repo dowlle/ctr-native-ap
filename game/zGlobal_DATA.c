@@ -45,12 +45,8 @@ void AH_Sign_LInB();
 // temporary, until 231 compiles into PC port
 #ifdef REBUILD_PC
 // void DECOMP_RB_Default_LInB() {}	-- DONE
-void DECOMP_RB_Fruit_LInB()
-{
-}
-int DECOMP_RB_Fruit_LInC()
-{
-}
+// void DECOMP_RB_Fruit_LInB() {}	-- DONE
+// int DECOMP_RB_Fruit_LInC() {}		-- DONE
 // void RB_GenericMine_LInB() {}		-- DONE
 // int DECOMP_RB_CrateFruit_LInC() {}	-- DONE
 // int DECOMP_RB_CrateWeapon_LInC() {}	-- DONE
@@ -1197,10 +1193,7 @@ struct Data
                     SET_MDM(NULL, NULL, NULL),
 
                     // 0x02 - PU_WUMPA_FRUIT
-                    // OG game births a thread, calls ThCollide, then dies,
-                    // DECOMP shouldn't birth in LInC, just trigger HUD,
-                    // Use Crystal_LInC, optimized for Crystal and Fruit
-                    SET_MDM(NULL, DECOMP_RB_Fruit_LInB, DECOMP_RB_Crystal_LInC),
+                    SET_MDM(NULL, DECOMP_RB_Fruit_LInB, DECOMP_RB_Fruit_LInC),
 
                     // 0x03 - PU_SMALL_BOMB
                     SET_MDM(NULL, NULL, NULL),

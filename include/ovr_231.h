@@ -448,12 +448,10 @@ struct Follower
 	s16 realPos[4];
 };
 
-#if 0
 struct Fruit
 {
-	// 0x4 bytes large
+	struct Driver *driver;
 };
-#endif
 
 struct Minecart
 {
