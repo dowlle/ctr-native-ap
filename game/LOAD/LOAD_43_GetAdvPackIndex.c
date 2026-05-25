@@ -1,6 +1,7 @@
 #include <common.h>
 
-int LOAD_GetAdvPackIndex()
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800335dc-0x80033610.
+int LOAD_GetAdvPackIndex(void)
 {
 	int levelID = sdata->gGT->levelID;
 
