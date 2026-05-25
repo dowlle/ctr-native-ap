@@ -107,6 +107,7 @@ void DECOMP_MainInit_Drivers(struct GameTracker *gGT)
 	}
 
 	// If number of AIs is not zero
+	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003b868-0x8003b894 for AI engine-audio init side effects.
 	if (gGT->numBotsNextGame != 0)
 	{
 		// Init AI engine sounds
