@@ -11,7 +11,7 @@ static Vec3 VehPhysForce_OnApplyForces_RotateVector(const MATRIX *m, s16 vx, s16
 	return out;
 }
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005ea60-0x8005ebac
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005ea60-0x8005ebac.
 void VehPhysForce_OnApplyForces(struct Thread *thread, struct Driver *driver)
 {
 	(void)thread;

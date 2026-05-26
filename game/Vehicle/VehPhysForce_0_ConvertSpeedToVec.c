@@ -1,6 +1,6 @@
 #include <common.h>
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005e104-0x8005e214
+// NOTE(aalhendi): ASM-verified helper for NTSC-U 926 0x8005e104-0x8005e214.
 void VehPhysForce_ConvertSpeedToVecOut(struct Driver *driver, Vec3 *vel)
 {
 	int yAngle = driver->axisRotationY;

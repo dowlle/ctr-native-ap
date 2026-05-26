@@ -11,7 +11,7 @@ static SVec3 VehPhysForce_CounterSteer_RotateVector(const MATRIX *m, s16 vx, s16
 	return out;
 }
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005fb4c-0x8005fc8c
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005fb4c-0x8005fc8c.
 void VehPhysForce_CounterSteer(struct Driver *driver)
 {
 	driver->accel.x = 0;
