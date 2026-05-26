@@ -19,9 +19,8 @@ void LOAD_TalkingMask(int packID, int maskID)
 
 	int offset = maskID * 4 + (packID - 1) * 2;
 
-	// NOTE(aalhendi): Retail passes legacy VRAM type 3 with no callback. Native
-	// uses bit-flag load types, so the VRAM upload callback stays explicit.
-	LOAD_AppendQueue(0, LT_SETVRAM, BI_UKAHEAD + offset, NULL, LOAD_VramFileCallback);
+	// NOTE(aalhendi): Retail queues legacy VRAM type 3 with no final callback.
+	LOAD_AppendQueue(0, LT_VRAM, BI_UKAHEAD + offset, NULL, NULL);
 
 	LOAD_AppendQueue(0, LT_GETADDR, BI_UKAHEAD + offset + 1, NULL, LOAD_Callback_MaskHints3D);
 }

@@ -449,10 +449,10 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		sdata->load_inProgress = 1;
 
 		// add VRAM to loading queue
-		LOAD_AppendQueue(0, LT_SETVRAM, LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_VRAM), NULL, LOAD_VramFileCallback);
+		LOAD_AppendQueue(0, LT_VRAM, LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_VRAM), NULL, NULL);
 
 		// add LEV to loading queue
-		LOAD_AppendQueue(0, LT_GETADDR, LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_LEV), &sdata->ptrLevelFile, LOAD_DramFileCallback);
+		LOAD_AppendQueue(0, LT_GETADDR, LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_LEV), NULL, LOAD_Callback_LEV);
 
 		// if world is made of multiple LEVs
 		if ((gGT->gameMode2 & LEV_SWAP) != 0)
@@ -550,7 +550,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		iVar9 = LOAD_GetAdvPackIndex() - 1;
 
 		// VRAM for podium and all related models
-		LOAD_AppendQueue(0, LT_SETVRAM, BI_PODIUMVRMS + iVar9, NULL, LOAD_VramFileCallback);
+		LOAD_AppendQueue(0, LT_VRAM, BI_PODIUMVRMS + iVar9, NULL, NULL);
 
 		// podium first place
 		u8 *ptrIndexArr = &gGT->podium_modelIndex_First;

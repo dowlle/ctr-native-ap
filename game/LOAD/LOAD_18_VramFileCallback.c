@@ -1,7 +1,6 @@
 #include <common.h>
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80031ee4-0x80031fdc; native keeps
-// frameFinishedVRAM as the queued VRAM upload countdown.
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80031ee4-0x80031fdc.
 void LOAD_VramFileCallback(struct LoadQueueSlot *lqs)
 {
 	int *vramBuf = lqs->ptrDestination;
@@ -35,8 +34,6 @@ void LOAD_VramFileCallback(struct LoadQueueSlot *lqs)
 		}
 	}
 
-	// wait 2 frames before starting the next load queue,
-	// vsync callback will set queueReady after 2 frames
-	sdata->frameFinishedVRAM = 2;
-	sdata->queueReady = 0;
+	// LOAD_NextQueuedFile waits 3 vsync frames before releasing the queue.
+	sdata->frameFinishedVRAM = sdata->gGT->frameTimer_VsyncCallback;
 }

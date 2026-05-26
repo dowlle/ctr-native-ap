@@ -21,7 +21,7 @@ void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID)
 	gGT->level2 = 0;
 	gGT->levID_in_each_mempack[packID] = levID;
 
-	LOAD_AppendQueue(bigfile, LT_VRAM, LOAD_GetBigfileIndex(levID, 1, LVI_VRAM), 0, LOAD_VramFileCallback);
-	LOAD_AppendQueue(bigfile, LT_GETADDR, LOAD_GetBigfileIndex(levID, 1, LVI_LEV), &sdata->ptrLevelFile, LOAD_DramFileCallback);
+	LOAD_AppendQueue(bigfile, LT_VRAM, LOAD_GetBigfileIndex(levID, 1, LVI_VRAM), NULL, NULL);
+	LOAD_AppendQueue(bigfile, LT_GETADDR, LOAD_GetBigfileIndex(levID, 1, LVI_LEV), NULL, LOAD_Callback_LEV);
 	LOAD_AppendQueue(bigfile, LT_SETADDR, LOAD_GetBigfileIndex(levID, 1, LVI_PTR), (void *)sdata->PatchMem_Ptr, LOAD_HubCallback);
 }

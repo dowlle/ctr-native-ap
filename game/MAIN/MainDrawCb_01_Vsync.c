@@ -35,20 +35,5 @@ void MainDrawCb_Vsync()
 
 	GAMEPAD_PollVsync(sdata->gGamepads);
 
-#ifdef REBUILD_PC
-
-	// wait two vsyncs for VRAM upload to finish
-	if (sdata->frameFinishedVRAM != 0)
-	{
-		sdata->frameFinishedVRAM--;
-
-		if (sdata->frameFinishedVRAM == 0)
-		{
-			sdata->queueReady = 1;
-		}
-	}
-
-#endif
-
 	return;
 }
