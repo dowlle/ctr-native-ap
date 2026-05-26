@@ -10,6 +10,7 @@ __attribute__((optimize("O0"))) int ScrapBookPlayMovie_DecodeFrame()
 }
 #endif
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800b4014-0x800b42b0.
 void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 {
 	s16 lev;
@@ -18,7 +19,6 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 	DRAWENV *ptrDrawEnv;
 	CdlFILE cdlFile;
 	struct GameTracker *gGT = sdata->gGT;
-	int isOn = RaceFlag_IsFullyOnScreen();
 
 	// book state (0,1,2,3,4)
 	switch (D230.scrapbookState)
@@ -26,7 +26,7 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 	// Init State,
 	// alter checkered flag
 	case 0:
-		if (isOn == 1)
+		if (RaceFlag_IsFullyOnScreen() == 1)
 		{
 			// checkered flag, begin transition off-screen
 			RaceFlag_BeginTransition(2);
@@ -74,6 +74,8 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 
 			// CD position of video, and numFrames
 			MM_Video_StartStream(cdPos, 0x1148);
+#else
+			// NOTE(aalhendi): Native does not run the PSX STR decoder path here.
 #endif
 
 			// start playing movie
@@ -141,7 +143,7 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 	// send player back to adv hub,
 	// or back to main menu
 	case 4:
-		if (isOn == 1)
+		if (RaceFlag_IsFullyOnScreen() == 1)
 		{
 			// change checkered flag back
 			RaceFlag_SetDrawOrder(0);
