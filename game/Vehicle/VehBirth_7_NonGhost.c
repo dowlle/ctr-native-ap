@@ -23,17 +23,9 @@ void VehBirth_NonGhost(struct Thread *t, int index)
 		id = data.characterIDs[index];
 	}
 
-// NOTE(aalhendi): Native patches the PC call target; retail already has the
-// correct fixed address in code.
-#ifdef CTR_NATIVE
-#define JAL(dest) (((unsigned long)dest & 0x3FFFFFF) >> 2 | 0xC000000)
-	if (*(int *)0x800214bc == 0xC018EF5)
-		*(int *)0x800214bc = JAL(VehPhysProc_SlamWall_Init);
-#endif
-
 	struct Model *m = VehBirth_GetModelByName(data.MetaDataCharacters[id].name_Debug);
 
-	struct Instance *inst = INSTANCE_Birth3D(m, 0, t);
+	struct Instance *inst = INSTANCE_Birth3D(m, m->name, t);
 
 	t->inst = inst;
 
@@ -41,7 +33,7 @@ void VehBirth_NonGhost(struct Thread *t, int index)
 	m = gGT->modelPtr[STATIC_WAKE];
 	if (m != 0)
 	{
-		inst = INSTANCE_Birth3D(m, 0, 0);
+		inst = INSTANCE_Birth3D(m, m->name, 0);
 		d->wakeInst = inst;
 
 		if (inst != 0)

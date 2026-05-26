@@ -444,6 +444,8 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		}
 
 		// base index of the group
+		// NOTE(aalhendi): Retail sets the load gate before queueing level files.
+		sdata->load_inProgress = 1;
 		uVar16 = LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD);
 
 		// add VRAM to loading queue

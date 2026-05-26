@@ -9,11 +9,24 @@ void INSTANCE_Birth(struct Instance *inst, struct Model *model, char *name, stru
 	gGT = sdata->gGT;
 
 	// copy name
-	for (i = 0; i < 15; i++)
+#ifdef CTR_NATIVE
+	if (name == NULL)
 	{
-		inst->name[i] = name[i];
+		// NOTE(aalhendi): Retail can read PS1 null-space for unnamed instances.
+		for (i = 0; i < 16; i++)
+		{
+			inst->name[i] = '\0';
+		}
 	}
-	inst->name[15] = '\0';
+	else
+#endif
+	{
+		for (i = 0; i < 15; i++)
+		{
+			inst->name[i] = name[i];
+		}
+		inst->name[15] = '\0';
+	}
 
 	inst->unk50 = 0xfe;
 	inst->unk51 = 0xc;
