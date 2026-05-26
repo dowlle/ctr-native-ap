@@ -1,6 +1,6 @@
 #include <common.h>
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003eeb0-0x8003eefc
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003eeb0-0x8003eefc.
 void Particle_OnDestroy(struct Particle *p)
 {
 	struct ParticleOscillator *osc;

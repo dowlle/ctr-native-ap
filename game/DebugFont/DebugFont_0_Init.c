@@ -1,6 +1,6 @@
 #include <common.h>
 
-// Does not fit byte budget
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800222e0-0x80022318.
 void DebugFont_Init(struct GameTracker *gGT)
 {
 	struct Icon *debugFontIcon = gGT->ptrIcons[0x42];

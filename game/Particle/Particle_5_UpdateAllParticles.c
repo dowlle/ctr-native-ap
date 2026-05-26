@@ -1,6 +1,6 @@
 #include <common.h>
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003f434-0x8003f48c
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003f434-0x8003f48c.
 void Particle_UpdateAllParticles(void)
 {
 	struct GameTracker *gGT = sdata->gGT;

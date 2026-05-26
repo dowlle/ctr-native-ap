@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800251ac-0x80025208.
 void GAMEPAD_Init(struct GamepadSystem *gGamepads)
 {
 	int i;
