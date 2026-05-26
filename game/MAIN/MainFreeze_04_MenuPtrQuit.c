@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80039908-0x800399fc.
 void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 {
 	s16 row;
@@ -30,9 +31,10 @@ void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 			return;
 		}
 
-		// row == 1
-
-		sdata->ptrActiveMenu = MainFreeze_GetMenuPtr();
+		if ((row == 1) || (row == -1))
+		{
+			sdata->ptrActiveMenu = MainFreeze_GetMenuPtr();
+		}
 	}
 	else
 	{
