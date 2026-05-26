@@ -1,34 +1,31 @@
 #include "common.h"
 
-#define SOME_SCALE 4
+#define VEH_GROUND_SKIDS_SCRATCH_X 0xb8
+#define VEH_GROUND_SKIDS_SCRATCH_Y 0xbc
+#define VEH_GROUND_SKIDS_SCRATCH_Z 0xc0
 
-// FUN_8005c278
-// calculates the next skidmark triangle?
-// unk - array of 3 vectors to update
-// v1 - some vector1
-// v2 - some vector2
-// v3 - some vector3
-void VehGroundSkids_Subset2(SVECTOR *unk, SVECTOR *v1, SVECTOR *v2, SVECTOR *v3)
+static s16 VehGroundSkids_ScaleRelative(u16 value, u16 origin)
 {
-	// TODO: investigate parent function to give better names
+	return (s16)((value - origin) << 2);
+}
 
-	// unk is SVECTOR[3] at sp 0x0, but for some reason it crashes
-	// we can just hardcode the sp address instead
-	// cause it's always called with the sp address 0 (check r0)
-	SVECTOR *sp = (SVECTOR *)0x1F800000;
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005c278-0x8005c354.
+void VehGroundSkids_Subset2(SVECTOR *scratch, SVECTOR *v1, SVECTOR *v2, SVECTOR *v3)
+{
+	u8 *scratchBytes = (u8 *)scratch;
+	u16 originX = *(u16 *)(scratchBytes + VEH_GROUND_SKIDS_SCRATCH_X);
+	u16 originY = *(u16 *)(scratchBytes + VEH_GROUND_SKIDS_SCRATCH_Y);
+	u16 originZ = *(u16 *)(scratchBytes + VEH_GROUND_SKIDS_SCRATCH_Z);
 
-	// translation vector on scratchpad
-	VECTOR *t = (VECTOR *)0x1F8000B8;
+	scratch[0].vx = VehGroundSkids_ScaleRelative((u16)v1->vx, originX);
+	scratch[0].vy = VehGroundSkids_ScaleRelative((u16)v1->vy, originY);
+	scratch[0].vz = VehGroundSkids_ScaleRelative((u16)v1->vz, originZ);
 
-	sp[0].vx = (v1->vx - t->vx) * SOME_SCALE;
-	sp[0].vy = (v1->vy - t->vy) * SOME_SCALE;
-	sp[0].vz = (v1->vz - t->vz) * SOME_SCALE;
+	scratch[1].vx = VehGroundSkids_ScaleRelative((u16)v2->vx, originX);
+	scratch[1].vy = VehGroundSkids_ScaleRelative((u16)v2->vy, originY);
+	scratch[1].vz = VehGroundSkids_ScaleRelative((u16)v2->vz, originZ);
 
-	sp[1].vx = (v2->vx - t->vx) * SOME_SCALE;
-	sp[1].vy = (v2->vy - t->vy) * SOME_SCALE;
-	sp[1].vz = (v2->vz - t->vz) * SOME_SCALE;
-
-	sp[2].vx = (v3->vx - t->vx) * SOME_SCALE;
-	sp[2].vy = (v3->vy - t->vy) * SOME_SCALE;
-	sp[2].vz = (v3->vz - t->vz) * SOME_SCALE;
+	scratch[2].vx = VehGroundSkids_ScaleRelative((u16)v3->vx, originX);
+	scratch[2].vy = VehGroundSkids_ScaleRelative((u16)v3->vy, originY);
+	scratch[2].vz = VehGroundSkids_ScaleRelative((u16)v3->vz, originZ);
 }

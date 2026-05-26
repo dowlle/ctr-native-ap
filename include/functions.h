@@ -986,7 +986,7 @@ void VehFrameProc_LastSpin(struct Thread *t, struct Driver *d);
 bool VehGroundShadow_Subset1(struct TextureLayout *pDst, int iconIndex);
 void VehGroundShadow_Main(void);
 // VehGroundSkids_Subset1()
-// VehGroundSkids_Subset2()
+void VehGroundSkids_Subset2(SVECTOR *scratch, SVECTOR *v1, SVECTOR *v2, SVECTOR *v3);
 void VehGroundSkids_Main(struct Thread *thread, struct PushBuffer *pb);
 // VehLap_UpdateProgress()
 void VehPhysCrash_ConvertVecToSpeed(struct Driver *d, Vec3 *v);

@@ -716,6 +716,8 @@
 #include "game/Vehicle/VehPhysJoystick_1_GetStrength.c"
 #include "game/Vehicle/VehPhysJoystick_2_GetStrengthAbsolute.c"
 
+#include "game/Vehicle/VehGroundSkids_1_Subset2.c"
+
 #include "game/Vehicle/VehPhysProc_00_Driving_PhysLinear.c"
 #include "game/Vehicle/VehPhysProc_01_Driving_Audio.c"
 #include "game/Vehicle/VehPhysProc_02_Driving_Update.c"
