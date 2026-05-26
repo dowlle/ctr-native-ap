@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 232 0x800b4470-0x800b4c80.
 void AH_MaskHint_Update()
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -38,32 +39,9 @@ void AH_MaskHint_Update()
 
 			cdc->flags |= 8;
 
-			// === Naughty Dog Bug ===
-			// ScratchpadStruct was allocated on stack memory,
-			// instead of 0x1f800108, that's why FollowDriver
-			// parameter is wrong, and why function allocates
-			// 0x2d0 on $sp when MaskHint_Update starts
-
-#ifndef REBUILD_PS1
-
 			// Get pos and rot, then set them as desired
 			CAM_FollowDriver_AngleAxis(cdc, d, 0x1f800108, pos, rot);
-			CAM_SetDesiredPosRot((int)cdc, (u16 *)pos, (u16 *)rot);
-
-#else
-
-			// temporary, until CAM_FollowDriver_Normal
-			// and CAM_ThTick are implemented in PC port
-			cdc->flags |= 0x800;
-
-			// rigged result
-			gGT->pushBuffer[0].pos[0] = 0xBDB0;
-			gGT->pushBuffer[0].pos[1] = 0x84;
-			gGT->pushBuffer[0].pos[2] = 0xFAFC;
-			gGT->pushBuffer[0].rot[0] = 0x6e4;
-			gGT->pushBuffer[0].rot[1] = 0xef4;
-			gGT->pushBuffer[0].rot[2] = 0;
-#endif
+			CAM_SetDesiredPosRot(cdc, pos, rot);
 		}
 
 		D232.maskWarppadDelayFrames = 60;
@@ -80,16 +58,10 @@ void AH_MaskHint_Update()
 		}
 
 		struct Instance *dInst = d->instSelf;
+		sdata->instMaskHints3D = VehTalkMask_Init();
+		struct Instance *mhInst = sdata->instMaskHints3D;
 
-#ifndef REBUILD_PS1
 		CTR_MatrixToRot((SVECTOR *)rot, &dInst->matrix, 0x11);
-#else
-		// Lucky enough, N Sanity Beach's first
-		// mask hint, actually is 0,0,0
-		rot[0] = 0;
-		rot[1] = 0;
-		rot[2] = 0;
-#endif
 
 		// not a typo
 		D232.maskCamRotStart[0] = rot[1] & 0xfff;
@@ -100,8 +72,6 @@ void AH_MaskHint_Update()
 		D232.maskCamPosStart[1] = dInst->matrix.t[1];
 		D232.maskCamPosStart[2] = dInst->matrix.t[2];
 
-		sdata->instMaskHints3D = VehTalkMask_Init();
-		struct Instance *mhInst = sdata->instMaskHints3D;
 		((struct MaskHint *)mhInst->thread->object)->scale = 0;
 
 		AH_MaskHint_SetAnim(0);
@@ -155,15 +125,13 @@ void AH_MaskHint_Update()
 			break;
 		}
 
-// Should be pointless,
-// Mask will always be loaded by the end
-// of the first 3-second spawn (curr < spawnFrame, break)
-#if 0
-			// NULLPTR checks if load started
-			// IS_PATCHED checks if load finished
-			if (sdata->modelMaskHints3D == 0) break;
-			if (!DRAM_IS_PATCHED(sdata->modelMaskHints3D)) break;
-#endif
+		// NULLPTR checks if load started,
+		// DRAM_IS_PATCHED checks if load finished.
+		if ((sdata->modelMaskHints3D == 0) || !DRAM_IS_PATCHED(sdata->modelMaskHints3D))
+		{
+			AH_MaskHint_LerpVol(0x1000);
+			break;
+		}
 
 		if (((D232.maskWarppadBoolInterrupt & 1) != 0) || ((gGT->cameraDC[0].flags & 0x800) != 0))
 		{
@@ -171,7 +139,7 @@ void AH_MaskHint_Update()
 
 			AH_MaskHint_SpawnParticles(0x18, &D232.emSet_maskLeave[0], 0x1000);
 
-			VehTalkMask_PlayXA((struct Instance *)sdata->modelMaskHints3D, D232.maskHintID);
+			VehTalkMask_PlayXA(sdata->instMaskHints3D, D232.maskHintID);
 
 			if (((gGT->gameMode1 & ADVENTURE_ARENA) != 0) &&
 
@@ -304,24 +272,6 @@ void AH_MaskHint_Update()
 			gGT->gameMode2 &= ~(VEH_FREEZE_DOOR);
 			d->funcPtrs[0] = VehPhysProc_Driving_Init;
 		}
-
-#ifdef REBUILD_PS1
-		// rigged, return camera to spawn pos.
-		// temporary until camera can lerp back around
-
-		int k = 0;
-		gGT->pushBuffer[k].pos[0] = gGT->level1->DriverSpawn[k].pos[0];
-		gGT->pushBuffer[k].pos[1] = gGT->level1->DriverSpawn[k].pos[1] + 0x20;
-		gGT->pushBuffer[k].pos[2] = gGT->level1->DriverSpawn[k].pos[2];
-
-		gGT->pushBuffer[k].rot[0] = gGT->level1->DriverSpawn[k].rot[0] + 0x800;
-		gGT->pushBuffer[k].rot[1] = gGT->level1->DriverSpawn[k].rot[1] - 0x400;
-		gGT->pushBuffer[k].rot[2] = 0; // required
-
-		// move backwards a little
-		gGT->pushBuffer[k].pos[2] += (0xc0 * MATH_Cos(gGT->pushBuffer[k].rot[1])) >> 0xC;
-		gGT->pushBuffer[k].pos[0] += (0xc0 * MATH_Sin(gGT->pushBuffer[k].rot[1])) >> 0xC;
-#endif
 
 		break;
 	}
