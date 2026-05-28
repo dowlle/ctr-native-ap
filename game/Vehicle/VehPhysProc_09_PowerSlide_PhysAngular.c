@@ -1,5 +1,6 @@
 #include <common.h>
 
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80062f4c-0x80063634.
 void VehPhysProc_PowerSlide_PhysAngular(struct Thread *th, struct Driver *driver)
 {
 	char cVar1;
@@ -417,9 +418,7 @@ void PhysLerpRot(struct Driver *driver, int iVar13)
 
 void PhysTerrainSlope(struct Driver *driver)
 {
-#if !defined(REBUILD_PS1) || defined(CTR_NATIVE)
 	VehPhysForce_RotAxisAngle(&driver->matrixMovingDir, &driver->AxisAngle1_normalVec.x, (int)driver->angle);
 	gte_SetRotMatrix(&driver->matrixMovingDir);
 	VehPhysForce_CounterSteer(driver);
-#endif
 }

@@ -246,7 +246,7 @@ static void VehGroundShadow_EmitQuad(u32 **primCursor, u_long *otBase, const str
 	*primCursor = prim + 10;
 }
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005b720-0x8005c120
+// NOTE(aalhendi): ASM-audited NTSC-U 926 0x8005b720-0x8005c120; not stamped until exact scratchpad layout is restored.
 void VehGroundShadow_Main(void)
 {
 	struct GameTracker *gGT = sdata->gGT;

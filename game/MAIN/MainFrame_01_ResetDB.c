@@ -28,11 +28,11 @@ void MainFrame_ResetDB(struct GameTracker *gGT)
 	CTR_EmptyFunc_MainFrame_ResetDB();
 	DecalGlobal_EmptyFunc_MainFrame_ResetDB();
 
-	ClearOTagR((u32 *)otSwapchainDB, gGT->numPlyrCurrGame << 10 | 6);
+	ClearOTagR((u32 *)otSwapchainDB, sdata->gGT->numPlyrCurrGame << 10 | 6);
 
-	for (iVar4 = 0; iVar4 < gGT->numPlyrCurrGame; iVar4++)
+	for (iVar4 = 0; iVar4 < sdata->gGT->numPlyrCurrGame; iVar4++)
 	{
-		gGT->pushBuffer[iVar4].ptrOT = (u_long *)((int)otSwapchainDB + (gGT->numPlyrCurrGame - iVar4 - 1) * 0x1000 + 0x18);
+		gGT->pushBuffer[iVar4].ptrOT = (u_long *)((int)otSwapchainDB + (sdata->gGT->numPlyrCurrGame - iVar4 - 1) * 0x1000 + 0x18);
 	}
 
 	for (iVar4; iVar4 < 4; iVar4++)
