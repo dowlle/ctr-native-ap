@@ -32,12 +32,8 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 
 	u8 colorRGBA[4];
 
-#ifdef CTR_NATIVE
 	RECT r1;
 	RECT *r = &r1;
-#else
-	RECT *r = (RECT *)0x1f800000; // todo: replace 0x1f800000 with reference to scratchpad
-#endif
 	RECT r58;
 
 	s16 local_50;
@@ -99,14 +95,15 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 			// you selected in character selection screen
 			MM_Characters_BackupIDs();
 
-			MM_Characters_HideDrivers();
-
 			// if returning to main menu
 			if (D230.movingToTrackMenu == 0)
 			{
 				MM_JumpTo_Title_Returning();
+				MM_Characters_HideDrivers();
 				return;
 			}
+
+			MM_Characters_HideDrivers();
 
 			// if you are in a cup
 			if ((gGT->gameMode2 & CUP_ANY_KIND) != 0)
