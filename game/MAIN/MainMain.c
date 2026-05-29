@@ -411,11 +411,11 @@ u32 main(void)
 #endif
 
 
-#ifdef REBUILD_PC
+#ifdef CTR_NATIVE
 			Platform_BeginFrame();
 #endif
 			MainFrame_RenderFrame(gGT, gGS);
-#ifdef REBUILD_PC
+#ifdef CTR_NATIVE
 			Platform_EndFrame();
 #endif
 
@@ -553,10 +553,10 @@ void StateZero()
 	VSync(0);
 	GAMEPAD_GetNumConnected(gGS);
 
-#ifndef REBUILD_PC
-#define BIGPATH rdata.s_PathTo_Bigfile
-#else
+#ifdef CTR_NATIVE
 #define BIGPATH "\\BIGFILE.BIG;1"
+#else
+#define BIGPATH rdata.s_PathTo_Bigfile
 #endif
 
 	// Get CD Position fo BIGFILE
@@ -564,7 +564,7 @@ void StateZero()
 
 // Defrag to save heap space,
 // required because MEMPACK_Init moves heap
-#ifndef REBUILD_PC
+#ifndef CTR_NATIVE
 	extern char RB_NewEndFile[4];
 	void OVR_Region3();
 
