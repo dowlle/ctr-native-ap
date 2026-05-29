@@ -1,7 +1,7 @@
 #include <common.h>
 
-// NOTE(aalhendi): Source-backed partial for NTSC-U 926 0x800abf48-0x800ad298.
-// Full branch-order/menu/load-tail audit remains pending before ASM verification.
+// NOTE(aalhendi): Source-backed partial for NTSC-U 926 0x800abf48-0x800ad2c8.
+// Full-body branch/register audit remains pending before ASM verification.
 void AH_WarpPad_ThTick(struct Thread *t)
 {
 	int i;
@@ -443,7 +443,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if ((champID < 8) && (champID != data.characterIDs[0]))
 		{
 			// set everyone to spawn in order
-			for (i = 1; i < 7; i++)
+			for (i = 1; i < 8; i++)
 			{
 				if (champID == data.characterIDs[i])
 				{
@@ -451,11 +451,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					champSlot = i;
 				}
 
-				else
-					sdata->kartSpawnOrderArray[i] = i;
-			}
+				else if (i == 7)
+				{
+					sdata->kartSpawnOrderArray[7] = champSlot;
+				}
 
-			sdata->kartSpawnOrderArray[7] = champSlot;
+				else
+				{
+					sdata->kartSpawnOrderArray[i] = i;
+				}
+			}
 		}
 
 		// Speed Champion is invalid
@@ -484,73 +489,100 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
+	if ((dist > 0x8fff) && (warppadObj->boolEnteredWarppad == 0))
+		return;
+
 	// if flag is on-screen, loading has already been finalized
 	if (RaceFlag_IsTransitioning() != 0)
 		return;
 
-	// if driver has not entered this warppad
-	if (warppadObj->boolEnteredWarppad == 0)
+	levelID = warppadObj->levelID;
+
+	// gem cups
+	if (levelID >= AH_WP_ADV_CUP)
 	{
-		// if far away from warppad, quit
-		if (dist > 0x8fff)
+		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->framesWarping++;
+		gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
+		if (warppadObj->framesWarping < 61)
 			return;
 
-		// close to warppad, first frame
-		else
-		{
-			// now in warppad
-			warppadObj->boolEnteredWarppad = 1;
-			warppadObj->framesWarping = 0;
-		}
+		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
+
+		gGT->cup.cupID = levelID - AH_WP_ADV_CUP;
+		gGT->cup.trackIndex = 0;
+		for (i = 0; i < 8; i++)
+			gGT->cup.points[i] = 0;
+
+		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];
+		goto WarpPad_RequestLoad;
 	}
 
-	// Spam every frame (not a bug, more like last-minute hack).
-	// This wont have a negative performance impact cause it's IF-guarded,
-	// needed cause mask hint sets state to 0xB (Freeze), then this sets
-	// warp back. Without this, Freeze causes mask-grab, which makes you drive.
-	// However, with this, state goes 0xA, then 0xB, then 0xA, and warp SFX
-	// plays a second time. Animation also plays twice but is invisible second time
-#ifndef REBUILD_PS1
-	gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
-#endif
-
-	if (warppadObj->framesWarping < 0x400)
+	// Slide Col or Turbo Track
+	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
+	{
+		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
+		gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
+		if (warppadObj->framesWarping < 61)
+			return;
 
-	// wait 2 full seconds before loading
-	if (warppadObj->framesWarping <= 60)
-		return;
+		sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
+		goto WarpPad_RequestLoad;
+	}
 
-	// only works for trophy tracks rn
+	// Battle Tracks
+	if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
+	{
+		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->framesWarping++;
+		gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
+		if (warppadObj->framesWarping < 61)
+			return;
+
+		sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
+
+		// Dont have hint "collect every crystal"
+		if ((sdata->advProgress.rewards[4] & 0x8000) == 0)
+			MainFrame_RequestMaskHint(0x19, 1);
+
+		// if can't spawn aku cause he's already here,
+		// quit function, wait till he's done to start race
+		i = AH_MaskHint_boolCanSpawn();
+		if ((i & 0xffff) == 0)
+			return;
+
+		gGT->originalEventTime = D232.timeCrystalChallenge[levelID - AH_WP_NITRO_COURT];
+		goto WarpPad_RequestLoad;
+	}
+
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
-		// if trophy is unlocked
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, (levelID + 6)) != 0)
 		{
-			// if never opened
-			if (sdata->boolOpenTokenRelicMenu == 0)
+			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
 			{
-				D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, (levelID + 0x4c)) != 0);
+				if (warppadObj->framesWarping < 61)
+					goto WarpPad_TrophyAnimateOnly;
 
-				// now opened
-				sdata->boolOpenTokenRelicMenu = 1;
+				// if never opened
+				if (sdata->boolOpenTokenRelicMenu == 0)
+				{
+					if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
+					{
+						D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, (levelID + 0x4c)) != 0);
 
-				RECTMENU_Show(&D232.menuTokenRelic);
+						RECTMENU_Show(&D232.menuTokenRelic);
 
-				// dont load level
-				return;
-			}
+						// now opened
+						sdata->boolOpenTokenRelicMenu = 1;
+					}
+				}
 
-			// if opened, but not closed yet
-			if ((RECTMENU_BoolHidden(&D232.menuTokenRelic) & 0xffff) == 0)
-			{
-				// dont load level
-				return;
-			}
+				// if opened, but not closed yet
+				if ((RECTMENU_BoolHidden(&D232.menuTokenRelic) & 0xffff) == 0)
+					goto WarpPad_TrophyAnimateOnly;
 
-			// if opened, then closed
-			else
-			{
 				// Relic Hint
 				i = 0x1d;
 
@@ -566,56 +598,44 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// quit function, wait till he's done to start race
 				i = AH_MaskHint_boolCanSpawn();
 				if ((i & 0xffff) == 0)
-					return;
+					goto WarpPad_TrophyAnimateOnly;
 
 				// reset for future gameplay
 				sdata->boolOpenTokenRelicMenu = 0;
+				warppadObj->boolEnteredWarppad = 0;
+				goto WarpPad_RequestLoad;
 			}
 		}
 	}
 
-	// Slide Col or Turbo Track
-	else if (levelID < AH_WP_NITRO_COURT)
+	if (CHECK_ADV_BIT(sdata->advProgress.rewards, (levelID + 6)) != 0)
 	{
-		// Add Relic
-		sdata->Loading.OnBegin.AddBitsConfig0 |= 0x4000000;
-	}
+		i = data.metaDataLEV[levelID].hubID + 0x5d;
 
-	// Battle Tracks
-	else if (levelID < AH_WP_GEM_STONE_VALLEY)
-	{
-		// Add Crystal Challenge
-		sdata->Loading.OnBegin.AddBitsConfig0 |= 0x8000000;
-
-		// Dont have hint "collect every crystal"
-		if ((sdata->advProgress.rewards[4] & 0x8000) == 0)
-			MainFrame_RequestMaskHint(0x19, 1);
-
-		// if can't spawn aku cause he's already here,
-		// quit function, wait till he's done to start race
-		i = AH_MaskHint_boolCanSpawn();
-		if ((i & 0xffff) == 0)
+		if (CHECK_ADV_BIT(sdata->advProgress.rewards, i) == 0)
 			return;
-
-		gGT->originalEventTime = D232.timeCrystalChallenge[levelID - AH_WP_NITRO_COURT];
 	}
 
-	// gem cups
-	else
-	{
-		// Add Adv Cup
-		sdata->Loading.OnBegin.AddBitsConfig0 |= 0x10000000;
+	warppadObj->boolEnteredWarppad = 1;
+	warppadObj->framesWarping++;
+	gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
+	if (warppadObj->framesWarping < 61)
+		return;
 
-		gGT->cup.cupID = levelID - AH_WP_ADV_CUP;
-		gGT->cup.trackIndex = 0;
-		for (i = 0; i < 8; i++)
-			gGT->cup.points[i] = 0;
-
-		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];
-	}
+WarpPad_RequestLoad:
 
 	// Rem Adventure Arena
-	sdata->Loading.OnBegin.RemBitsConfig0 |= 0x100000;
+	sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 
 	MainRaceTrack_RequestLoad(levelID);
+	return;
+
+WarpPad_TrophyAnimateOnly:
+
+	if (warppadObj->framesWarping < 0x400)
+		warppadObj->framesWarping++;
+
+	warppadObj->boolEnteredWarppad = 1;
+
+	gGT->drivers[0]->funcPtrs[0] = VehStuckProc_Warp_Init;
 }
