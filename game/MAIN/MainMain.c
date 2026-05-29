@@ -4,6 +4,7 @@ void StateZero();
 
 // #define FastBoot
 
+// NOTE(aalhendi): PSX path ASM-verified NTSC-U 926 0x8003c58c-0x8003cf7c.
 #ifdef CTR_NATIVE
 u32 CTR_Main(void)
 #else
@@ -466,8 +467,9 @@ __attribute__((optimize("O0"))) int GetSongTime()
 }
 #endif
 
-// by separating this, it can be
-// overwritten dynamically (oxide fix)
+// NOTE(aalhendi): Source split of retail main's state-0 body
+// 0x8003c614-0x8003c984.
+// By separating this, it can be overwritten dynamically (oxide fix).
 void StateZero()
 {
 	u16 *clockEffect;
@@ -564,7 +566,8 @@ void StateZero()
 
 // Defrag to save heap space,
 // required because MEMPACK_Init moves heap
-#ifndef CTR_NATIVE
+#if 0
+	// NOTE(aalhendi): Retail main does not rewrite BIGFILE overlay sizes here.
 	extern char RB_NewEndFile[4];
 	void OVR_Region3();
 
