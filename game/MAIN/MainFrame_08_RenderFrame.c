@@ -19,7 +19,7 @@ void RenderBucket_ExecuteAllInstances(struct GameTracker *gGT);
 void RenderAllTires(struct GameTracker *gGT);
 void RenderAllShadows(struct GameTracker *gGT);
 void RenderAllHeatParticles(struct GameTracker *gGT);
-void RenderAllLevelGeometry(struct GameTracker *gGT);
+void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struct mesh_info *ptr_mesh_info);
 void WindowBoxLines(struct GameTracker *gGT);
 void WindowDivsionLines(struct GameTracker *gGT);
 void RenderDispEnv_UI(struct GameTracker *gGT);
@@ -48,12 +48,16 @@ volatile int gCtrDebugSkipLevelGeometry = 0;
 void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 {
 	struct Level *lev = gGT->level1;
+	struct mesh_info *ptr_mesh_info = 0;
 
 
 	DrawUnpluggedMsg(gGT, gGamepads);
 	DrawFinalLap(gGT);
 
 	ElimBG_HandleState(gGT);
+
+	if (lev != 0)
+		ptr_mesh_info = lev->ptr_mesh_info;
 
 	if ((gGT->renderFlags & 0x21) != 0)
 		MainFrame_VisMemFullFrame(gGT, gGT->level1);
@@ -114,13 +118,13 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 
 	PushBuffer_FadeAllWindows();
 
-	if ((gGT->renderFlags & 1) != 0)
+	if (((gGT->renderFlags & 1) != 0) && (ptr_mesh_info != 0))
 	{
 #ifdef CTR_INTERNAL
 		if (gCtrDebugSkipLevelGeometry == 0)
 #endif
 		{
-			RenderAllLevelGeometry(gGT);
+			RenderAllLevelGeometry(gGT, lev, ptr_mesh_info);
 		}
 
 		RenderDispEnv_World(gGT); // == RenderDispEnv_World ==
@@ -760,20 +764,16 @@ void RenderAllHeatParticles(struct GameTracker *gGT)
 	Torch_Main(gGT->particleList_heatWarp, &gGT->pushBuffer[0], &gGT->backBuffer->primMem, gGT->numPlyrCurrGame, gGT->swapchainIndex * 0x128);
 }
 
-void RenderAllLevelGeometry(struct GameTracker *gGT)
+void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struct mesh_info *ptr_mesh_info)
 {
 	int i;
 	int distToScreen;
 	int numPlyrCurrGame;
-	struct Level *level1;
 	struct PushBuffer *pushBuffer;
-	struct mesh_info *ptr_mesh_info;
 
-	level1 = gGT->level1;
 	if (level1 == 0)
 		return;
 
-	ptr_mesh_info = level1->ptr_mesh_info;
 	if (ptr_mesh_info == 0)
 		return;
 
@@ -1199,11 +1199,14 @@ void RenderSubmit(struct GameTracker *gGT)
 	if (gGT->frontBuffer != 0)
 	{
 		sdata->vsyncTillFlip = 2;
+		gGT->unk1cc4[5] = gGT->unk1cc4[0];
 
-		// skip debug stuff
-
-		PutDispEnv(&gGT->frontBuffer->dispEnv);
+		if ((sdata->boolDebugDispEnv & 1) != 0)
+			PutDispEnv(&sdata->blank_debug_DispEnv);
+		else
+			PutDispEnv(&gGT->frontBuffer->dispEnv);
 		PutDrawEnv(&gGT->frontBuffer->drawEnv);
+		gGT->frontBuffer = 0;
 	}
 
 	// swap=0, get db[1]
