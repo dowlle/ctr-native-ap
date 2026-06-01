@@ -4,6 +4,12 @@ typedef int (*Ovr228BucketDispatch)(u32 handlerAddress, void *bucketValue, struc
                                     const int *visFaceList);
 typedef int (*Ovr228ClipConsumer)(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex);
 
+enum Ovr228DrawLevelConstants
+{
+	OVR228_WATER_BSP_LIST_HANDLER = 0x800a10c4,
+	OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS = 0x1040,
+};
+
 static const struct OverlayRDATA_228_BucketSetupRecord *Ovr228_800a0fb8_FindBucketSetupRecord(u32 setupAddress, int *setupIndex)
 {
 	for (int i = 0; i < OVR228_BUCKET_COUNT; i++)
@@ -175,18 +181,20 @@ static int Ovr228_ConsumeClipRecordsForViewport(struct PushBuffer *pb, struct Pr
 	return consume(pb, primMem, clipCursor, playerIndex);
 }
 
-static int Ovr228_UnportedBucketDispatch(u32 handlerAddress, void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem,
-                                         const int *visFaceList)
+static int Ovr228_800a10c4_DrawWaterBspList(void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem, const int *visFaceList)
 {
-	(void)handlerAddress;
-	(void)bucketValue;
-	(void)pb;
-	(void)mesh;
-	(void)primMem;
-	(void)visFaceList;
+	DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
+	return Ovr226_800a1e30_DrawWaterBspList((struct VisMemBspListNode *)bucketValue, pb, mesh, primMem, visFaceList);
+}
 
-	// NOTE(aalhendi): 0x800a10c4+ bucket families are outside this pass.
-	// Fail closed if this audit-only entry is called without real handlers.
+static int Ovr228_800a10c4_800a1b88_BucketDispatch(u32 handlerAddress, void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh,
+                                                   struct PrimMem *primMem, const int *visFaceList)
+{
+	if (handlerAddress == OVR228_WATER_BSP_LIST_HANDLER)
+		return Ovr228_800a10c4_DrawWaterBspList(bucketValue, pb, mesh, primMem, visFaceList);
+
+	// NOTE(aalhendi): Bucket families outside 0x800a10c4..0x800a1b88 remain
+	// unported. Fail closed if this audit-only entry reaches them.
 	return 0;
 }
 
@@ -275,6 +283,6 @@ static int Ovr228_800a0cbc_EntryWithCallbacks(void *LevRenderList, struct PushBu
 int Ovr228_800a0cbc_Entry(void *LevRenderList, struct PushBuffer *pb, struct BSP *bspList, struct PrimMem *primMem, void *VisMem10, void *VisMem14,
                           void *VisMem18, void *waterEnvMap)
 {
-	return Ovr228_800a0cbc_EntryWithCallbacks(LevRenderList, pb, bspList, primMem, VisMem10, VisMem14, VisMem18, waterEnvMap, Ovr228_UnportedBucketDispatch,
-	                                          Ovr228_UnportedClipConsumer);
+	return Ovr228_800a0cbc_EntryWithCallbacks(LevRenderList, pb, bspList, primMem, VisMem10, VisMem14, VisMem18, waterEnvMap,
+	                                          Ovr228_800a10c4_800a1b88_BucketDispatch, Ovr228_UnportedClipConsumer);
 }

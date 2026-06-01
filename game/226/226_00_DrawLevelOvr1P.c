@@ -9000,19 +9000,30 @@ static int Ovr226_800a2850_EmitWaterListGT4Raw(struct PushBuffer *pb, struct Pri
 }
 
 static int Ovr226_800a27b8_EmitWaterListDirectTail(struct PushBuffer *pb, struct PrimMem *primMem, const struct QuadBlock *block,
-	                                                   const struct DrawLevelOvr1PScratchVertex *projected, const int *indices, int faceIndex,
-	                                                   u_long *inheritedOtEntry)
+                                                   const struct DrawLevelOvr1PScratchVertex *projected, const int *indices, int faceIndex,
+                                                   u_long *inheritedOtEntry)
 {
 	u32 directMask = *CTR_SCRATCHPAD_PTR(u32, 0x70);
 	u32 handlerAddress = DrawLevelOvr1P_GetDirectHandlerAddress(directMask);
 
+	// NOTE(aalhendi): 227/228/229 water-list direct tables use shifted retail
+	// labels with the same packet ABI; alias them to the owned native writers.
 	switch (handlerAddress)
 	{
 	case 0x800a27dc:
+	case 0x800a28d0:
+	case 0x800a25bc:
+	case 0x800a2670:
 		return Ovr226_800a27dc_EmitWaterListGT3Raw(pb, primMem, block, projected, indices, faceIndex, 0, inheritedOtEntry);
 	case 0x800a27d4:
+	case 0x800a28c8:
+	case 0x800a25b4:
+	case 0x800a2668:
 		return Ovr226_800a27dc_EmitWaterListGT3Raw(pb, primMem, block, projected, indices, faceIndex, 1, inheritedOtEntry);
 	case 0x800a2850:
+	case 0x800a2944:
+	case 0x800a2660:
+	case 0x800a2714:
 		return Ovr226_800a2850_EmitWaterListGT4Raw(pb, primMem, block, projected, indices, faceIndex, inheritedOtEntry);
 	default:
 		return 1;
