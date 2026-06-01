@@ -180,7 +180,7 @@ static int COLL_FIXED_PlayerSearch_CheckMaskGrabProgress(struct Driver *d, struc
 	if ((d->kartState == KS_MASK_GRABBED) || ((d->unkAA & 1) != 0) || ((quad->quadFlags & 0x1000) == 0))
 		return 0;
 
-	if (quad->checkpointIndex == -1)
+	if (quad->checkpointIndex == 0xff)
 	{
 		if ((u32)(gGT->levelID - GEM_STONE_VALLEY) < 5)
 		{
@@ -189,7 +189,7 @@ static int COLL_FIXED_PlayerSearch_CheckMaskGrabProgress(struct Driver *d, struc
 		return 0;
 	}
 
-	struct CheckpointNode *node = &level->ptr_restart_points[(u8)quad->checkpointIndex];
+	struct CheckpointNode *node = &level->ptr_restart_points[quad->checkpointIndex];
 
 	if (((d->actionsFlagSet & 0x1000000) == 0) && (node->nextIndex_forward > 1) &&
 	    ((((level->ptr_restart_points[0].distToFinish >> 2) << 3) < (int)(d->distanceToFinish_checkpoint - CollFixed_MulLo(node->distToFinish, 8)))))
@@ -199,8 +199,8 @@ static int COLL_FIXED_PlayerSearch_CheckMaskGrabProgress(struct Driver *d, struc
 
 	u16 trackLength = level->ptr_restart_points[0].distToFinish;
 
-	if ((node->distToFinish < (CollFixed_MulLo(trackLength, 0xf) >> 4)) && (d->lastValid->checkpointIndex != -1) &&
-	    ((level->ptr_restart_points[(u8)d->lastValid->checkpointIndex].distToFinish + (trackLength >> 2)) < node->distToFinish))
+	if ((node->distToFinish < (CollFixed_MulLo(trackLength, 0xf) >> 4)) && (d->lastValid->checkpointIndex != 0xff) &&
+	    ((level->ptr_restart_points[d->lastValid->checkpointIndex].distToFinish + (trackLength >> 2)) < node->distToFinish))
 	{
 		return 1;
 	}

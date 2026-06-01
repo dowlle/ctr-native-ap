@@ -18,9 +18,9 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	{
 		struct QuadBlock *quad = driver->lastValid;
 
-		if ((quad != NULL) && ((u8)quad->checkpointIndex != 0xff))
+		if ((quad != NULL) && (quad->checkpointIndex != 0xff))
 		{
-			checkpointIndex = (u8)quad->checkpointIndex;
+			checkpointIndex = quad->checkpointIndex;
 		}
 	}
 	else

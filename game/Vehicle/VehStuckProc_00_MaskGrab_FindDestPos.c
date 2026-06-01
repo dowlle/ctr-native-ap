@@ -48,7 +48,7 @@ void VehStuckProc_MaskGrab_FindDestPos(struct Driver *d, struct QuadBlock *quad)
 	struct Level *level = gGT->level1;
 	struct mesh_info *mesh = level->ptr_mesh_info;
 
-	if ((level->cnt_restart_points < 1) || (level->ptr_restart_points == NULL) || (quad->checkpointIndex == -1))
+	if ((level->cnt_restart_points < 1) || (level->ptr_restart_points == NULL) || (quad->checkpointIndex == 0xff))
 	{
 		struct LevVertex *verts = mesh->ptrVertexArray;
 		struct LevVertex *v0 = &verts[quad->index[0]];
@@ -62,7 +62,7 @@ void VehStuckProc_MaskGrab_FindDestPos(struct Driver *d, struct QuadBlock *quad)
 	{
 		struct ScratchpadStruct *sps = CTR_SCRATCHPAD_PTR(struct ScratchpadStruct, 0x108);
 		struct Thread *driverThread = d->instSelf->thread;
-		struct CheckpointNode *respawn = &level->ptr_restart_points[(u8)quad->checkpointIndex];
+		struct CheckpointNode *respawn = &level->ptr_restart_points[quad->checkpointIndex];
 		struct CheckpointNode *nextRespawn;
 
 		sps->Input1.hitRadius = driverThread->driver_HitRadius;

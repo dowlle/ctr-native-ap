@@ -207,7 +207,7 @@ struct QuadBlock
 	// 0x3E
 	// used for checkpoint progression
 	// and also respawns
-	char checkpointIndex;
+	u8 checkpointIndex;
 
 	char triNormalVecBitShift;
 
@@ -225,6 +225,11 @@ struct QuadBlock
 
 	// full struct is 0x5c bytes large
 };
+
+_Static_assert(sizeof(struct QuadBlock) == 0x5c);
+_Static_assert(offsetof(struct QuadBlock, checkpointIndex) == 0x3e);
+_Static_assert(offsetof(struct QuadBlock, ptr_texture_low) == 0x40);
+_Static_assert(offsetof(struct QuadBlock, pvs) == 0x44);
 
 // BSP box that contains geometry
 struct BSP

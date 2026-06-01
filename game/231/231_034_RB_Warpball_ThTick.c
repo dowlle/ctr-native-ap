@@ -20,7 +20,7 @@ static int RB_Warpball_NodeDeltaLength(struct CheckpointNode *curr, struct Check
 
 static void RB_Warpball_SetQuadblockIndex(struct TrackerWeapon *tw, struct ScratchpadStruct *sps)
 {
-	if ((u8)sps->Set2.ptrQuadblock->checkpointIndex != 0xff)
+	if (sps->Set2.ptrQuadblock->checkpointIndex != 0xff)
 	{
 		tw->nodeNextIndex = sps->Set2.ptrQuadblock->checkpointIndex;
 	}
