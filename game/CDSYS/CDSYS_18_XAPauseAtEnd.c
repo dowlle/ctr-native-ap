@@ -13,7 +13,10 @@ void CDSYS_XAPauseAtEnd()
 		int xaPlaying = NativeAudio_IsXAPlaying();
 
 		if (xaPlaying != 0)
+		{
 			CDSYS_SpuGetMaxSample();
+			sdata->XA_CurrOffset = NativeAudio_GetXACurrOffset();
+		}
 
 		if (sdata->XA_State == 4)
 		{
@@ -31,14 +34,10 @@ void CDSYS_XAPauseAtEnd()
 			else
 			{
 				NativeAudio_SetXAVolume((s16)sdata->XA_VolumeBitshift, (s16)sdata->XA_VolumeBitshift);
-				sdata->XA_CurrOffset++;
+				sdata->XA_CurrOffset = NativeAudio_GetXACurrOffset();
 			}
 		}
-		else if (xaPlaying != 0)
-		{
-			sdata->XA_CurrOffset++;
-		}
-		else
+		else if (xaPlaying == 0)
 		{
 			sdata->XA_State = 0;
 			sdata->XA_MaxSampleVal = 0;

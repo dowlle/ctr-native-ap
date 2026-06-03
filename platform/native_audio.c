@@ -2762,6 +2762,38 @@ int NativeAudio_IsXAPlaying(void)
 	return PsyX_SPUAL_IsXAPlaying();
 }
 
+int NativeAudio_GetXACurrOffset(void)
+{
+	u64 sourceFrame;
+	u64 outputFrame;
+	int offset;
+
+	if (s_audio.output.device != 0)
+		SDL_LockAudioDevice(s_audio.output.device);
+
+	sourceFrame = s_audio.xa.positionFp >> NATIVE_AUDIO_FP_SHIFT;
+	if ((s_audio.xa.frameCount > 0) && (sourceFrame > (u64)s_audio.xa.frameCount))
+		sourceFrame = (u64)s_audio.xa.frameCount;
+
+	if ((s_audio.xa.hasTrackIdentity == 0) || (s_audio.xa.sampleRate <= 0))
+	{
+		offset = 0;
+	}
+	else
+	{
+		// NOTE(aalhendi): Retail XA_CurrOffset advances in decoded SPU blocks,
+		// which cutscene lipsync converts with (offset * 30 * 0x100) / 44100.
+		outputFrame = (sourceFrame * NATIVE_AUDIO_SAMPLE_RATE) / (u64)s_audio.xa.sampleRate;
+		outputFrame >>= 8;
+		offset = outputFrame > (u64)INT_MAX ? INT_MAX : (int)outputFrame;
+	}
+
+	if (s_audio.output.device != 0)
+		SDL_UnlockAudioDevice(s_audio.output.device);
+
+	return offset;
+}
+
 int NativeAudio_GetXAMaxSample(void)
 {
 	int max = 0;
