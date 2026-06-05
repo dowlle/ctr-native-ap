@@ -14,6 +14,30 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
 
+execute_process(
+    COMMAND git rev-parse --short=12 HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE CTR_NATIVE_GIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT CTR_NATIVE_GIT_HASH)
+    set(CTR_NATIVE_GIT_HASH "unknown")
+endif()
+
+execute_process(
+    COMMAND git diff --quiet --exit-code
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    RESULT_VARIABLE CTR_NATIVE_GIT_DIRTY
+    ERROR_QUIET
+)
+if(CTR_NATIVE_GIT_DIRTY EQUAL 0)
+    set(CTR_NATIVE_BUILD_ID "${CTR_NATIVE_GIT_HASH}")
+else()
+    string(TIMESTAMP CTR_NATIVE_BUILD_TIMESTAMP "%Y%m%d%H%M%S" UTC)
+    set(CTR_NATIVE_BUILD_ID "${CTR_NATIVE_GIT_HASH}-dirty-${CTR_NATIVE_BUILD_TIMESTAMP}")
+endif()
+
 set(GAME_SOURCES
     ctr_native.c
     platform/native_audio.c
@@ -73,6 +97,7 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE
     BUILD=926
     CTR_INTERNAL
+    CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
 )
 target_compile_options(ctr_native PRIVATE -O2)
 target_link_libraries(ctr_native SDL3::SDL3)

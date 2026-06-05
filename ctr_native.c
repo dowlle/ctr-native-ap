@@ -651,6 +651,11 @@ int main(int argc, char *argv[])
 
 	chdir(baseDir);
 
+#if defined(CTR_INTERNAL)
+	if (NativeReplayScheduler_PrepareReportFromArgs(argc, argv) != 0)
+		return 1;
+#endif
+
 #ifdef USE_16BY9
 	printf("[CTR Native] Widescreen\n");
 	Platform_Init("Crash Team Racing", 1280, 720);

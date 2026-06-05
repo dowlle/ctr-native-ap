@@ -3,6 +3,8 @@
 
 #include <macros.h>
 
+int Platform_LogSetPath(const char *path);
+const char *Platform_LogGetPath(void);
 void Platform_LogInit(const char *appName);
 void Platform_LogShutdown(void);
 void Platform_LogFlush(void);

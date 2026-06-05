@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -9,6 +10,7 @@
 #endif
 
 static FILE *s_logStream = NULL;
+static char s_logPath[512]; // TODO(aalhendi): yeah this is an issue waiting to happen. w/e
 
 static void Platform_LogWrite(FILE *consoleStream, const char *text)
 {
@@ -21,7 +23,10 @@ static void Platform_LogWrite(FILE *consoleStream, const char *text)
 	fputs(text, stream);
 
 	if (s_logStream != NULL)
+	{
 		fputs(text, s_logStream);
+		fflush(s_logStream);
+	}
 }
 
 static void Platform_LogV(FILE *consoleStream, const char *fmt, va_list args)
@@ -36,21 +41,53 @@ static void Platform_LogV(FILE *consoleStream, const char *fmt, va_list args)
 	Platform_LogWrite(consoleStream, text);
 }
 
-void Platform_LogInit(const char *appName)
+int Platform_LogSetPath(const char *path)
 {
-	char filename[128];
-	int written = snprintf(filename, sizeof(filename), "%s.log", appName);
+	int written;
 
-	if ((written < 0) || ((size_t)written >= sizeof(filename)))
+	if (s_logStream != NULL)
+		return 0;
+
+	if ((path == NULL) || (path[0] == '\0'))
 	{
-		fprintf(stderr, "[CTR Native] Error: log filename is too long\n");
-		return;
+		s_logPath[0] = '\0';
+		return 1;
 	}
 
-	s_logStream = fopen(filename, "wb");
+	written = snprintf(s_logPath, sizeof(s_logPath), "%s", path);
+	if ((written < 0) || ((size_t)written >= sizeof(s_logPath)))
+	{
+		s_logPath[0] = '\0';
+		fprintf(stderr, "[CTR Native] Error: log path is too long\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+const char *Platform_LogGetPath(void)
+{
+	return s_logPath;
+}
+
+void Platform_LogInit(const char *appName)
+{
+	if (s_logPath[0] == '\0')
+	{
+		int written = snprintf(s_logPath, sizeof(s_logPath), "%s.log", appName);
+
+		if ((written < 0) || ((size_t)written >= sizeof(s_logPath)))
+		{
+			fprintf(stderr, "[CTR Native] Error: log filename is too long\n");
+			s_logPath[0] = '\0';
+			return;
+		}
+	}
+
+	s_logStream = fopen(s_logPath, "wb");
 
 	if (s_logStream == NULL)
-		fprintf(stderr, "[CTR Native] Error: cannot create log file '%s'\n", filename);
+		fprintf(stderr, "[CTR Native] Error: cannot create log file '%s'\n", s_logPath);
 }
 
 void Platform_LogShutdown(void)

@@ -202,6 +202,15 @@ int NativeCheckpointFile_AppendRecord(struct NativeCheckpointFileWriter *writer,
 		return 0;
 
 	writer->recordCount++;
+	{
+		struct NativeCheckpointFileHeader header;
+
+		NativeCheckpointFile_InitHeader(&header);
+		header.recordCount = writer->recordCount;
+		if (!NativeCheckpointFile_WriteHeader(file, &header))
+			return 0;
+		fflush(file);
+	}
 	NativeCheckpointFile_FillInfo(info, &record);
 	return 1;
 }

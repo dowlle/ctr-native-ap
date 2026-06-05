@@ -24,6 +24,7 @@ struct NativeReplaySchedulerFrameInfo
 	u32 advRng1;
 };
 
+int NativeReplayScheduler_PrepareReportFromArgs(int argc, char **argv);
 int NativeReplayScheduler_ConfigureFromArgs(int argc, char **argv);
 void NativeReplayScheduler_Shutdown(void);
 int NativeReplayScheduler_BeginFrame(const struct NativeReplaySchedulerFrameInfo *info);
