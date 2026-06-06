@@ -9,6 +9,11 @@ enum NativeMemcardResult
 	NATIVE_MEMCARD_IO_ERROR,
 };
 
+enum NativeMemcardResult NativeMemcard_SetRoot(const char *root_path);
+void NativeMemcard_ClearRoot(void);
+enum NativeMemcardResult NativeMemcard_CloneRoot(const char *src_root, const char *dst_root);
+enum NativeMemcardResult NativeMemcard_CloneCurrentRoot(const char *dst_root);
+enum NativeMemcardResult NativeMemcard_RemoveRoot(const char *root_path);
 int NativeMemcard_FileExists(const char *save_name);
 int NativeMemcard_FindFirstFile(const char *pattern, char *dst_name, int dst_size);
 int NativeMemcard_FindNextFile(char *dst_name, int dst_size);
