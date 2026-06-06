@@ -1,10 +1,5 @@
 #include <common.h>
 
-
-#if BUILD == JpnRetail
-u32 DecalFont_boolRacingWheel();
-#endif
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800223f4-0x800224d0.
 int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)
 {

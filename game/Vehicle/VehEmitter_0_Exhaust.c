@@ -63,7 +63,6 @@ struct Particle *VehEmitter_Exhaust(struct Driver *d, VECTOR *param_2, VECTOR *p
 
 	if (exhaustType == 7)
 	{
-		void Particle_FuncPtr_ExhaustUnderwater(struct Particle * p);
 		p->funcPtr = Particle_FuncPtr_ExhaustUnderwater;
 	}
 

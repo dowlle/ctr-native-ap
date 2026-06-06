@@ -1,8 +1,5 @@
 #include <common.h>
 
-void RB_TNT_ThTick_ThrowOffHead(struct Thread *t);
-void RB_TNT_ThTick_ThrowOnHead(struct Thread *t);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800acb60-0x800ad250.
 void RB_GenericMine_ThTick(struct Thread *t)
 {

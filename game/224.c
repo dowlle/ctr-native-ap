@@ -8,9 +8,6 @@ extern struct RectMenu menu224NoSave;
 extern struct MenuRow rowsWithSave[6];
 extern struct MenuRow rowsNoSave[5];
 
-void TT_EndEvent_DisplayTime(int paramX, s16 paramY, u32 UI_DrawRaceClockFlags);
-void TT_EndEvent_DrawHighScore(s16 startX, int startY, s16 scoreMode);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8009fdc8-0x800a04d4.
 void TT_EndEvent_DrawMenu(void)
 {

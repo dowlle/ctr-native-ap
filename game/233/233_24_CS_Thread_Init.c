@@ -107,7 +107,7 @@ thTick_epilogue:
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800af328-0x800af7c0
-struct Thread *CS_Thread_Init(s16 modelID, char *name, s16 *param_3, s16 param_4, struct Thread *parent)
+struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 param_4, struct Thread *parent)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	struct CutsceneObj *cs;

@@ -1,7 +1,7 @@
 #include <common.h>
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030778-0x8003086c.
-void INSTANCE_Birth(struct Instance *inst, struct Model *model, char *name, struct Thread *th, int flags)
+void INSTANCE_Birth(struct Instance *inst, struct Model *model, const char *name, struct Thread *th, int flags)
 {
 	int i;
 	struct GameTracker *gGT;

@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_GenericMine_ThTick(struct Thread *t);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aca50-0x800acb60.
 void RB_GenericMine_LInB(struct Instance *inst)
 {

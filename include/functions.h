@@ -11,11 +11,22 @@ typedef enum _CdlIntrResult
 #endif
 // typedef void (*CdlCB)(CdlIntrResult, u8*);
 
+// Retail overlay address labels; declared as functions to preserve existing address-taking call sites.
+void OVR_Region1(void);
+void OVR_Region2(void);
+void OVR_Region3(void);
+void CS_EndOfFile(void);
+void RB_EndOfFile(void);
+void AH_EndOfFile(void);
+void MM_EndOfFile(void);
+
 void CAM_ClearScreen(struct GameTracker *gGT);
 void CAM_Init(struct CameraDC *cDC, int cameraID, struct Driver *d, struct PushBuffer *pb);
 int CAM_Path_GetNumPoints(void);
 u8 CAM_Path_Move(int frameIndex, s16 *position, s16 *rotation, s16 *getPath);
 void CAM_SetDesiredPosRot(struct CameraDC *cDC, s16 *pos, s16 *rot);
+
+void BOTS_Adv_AdjustDifficulty(void);
 
 int CDSYS_Init(int boolUseDisc);
 u32 CDSYS_GetFilePosInt(char *fileString, int *filePos);
@@ -40,6 +51,9 @@ void CDSYS_XAPauseForce(void);
 void CDSYS_XAPauseAtEnd(void);
 
 struct MetaDataMODEL *COLL_LevModelMeta(u32 id);
+void COLL_SearchBSP_CallbackQUADBLK(u32 *posTop, u32 *posBottom, struct ScratchpadStruct *sps, int hitRadius);
+void COLL_SearchBSP_CallbackPARAM(struct BSP *root, struct BoundingBox *bbox, void (*callback)(struct BSP *, struct ScratchpadStruct *),
+                                  struct ScratchpadStruct *sps);
 
 void CTR_CycleTex_AllModels(u32 numModels, struct Model **pModelArray, int timer);
 void CTR_CycleTex_LEV(struct AnimTex *animtex, int timer);
@@ -52,10 +66,11 @@ void CTR_unknownMaybeThunk2(void *dst, void *src);
 void CTR_unknownMaybeThunk3(void *dst, void *src, int byteCount);
 
 void CTR_Box_DrawWireBox(RECT *r, const Color *color, void *ot, struct PrimMem *primMem);
-void CTR_Box_DrawClearBox(RECT *r, Color *color, int transparency, u_long *ot);
+void CTR_Box_DrawClearBox(const RECT *r, const Color *color, int transparency, u_long *ot);
 void CTR_Box_DrawSolidBox(RECT *r, Color color, u_long *ot);
 
 // decal
+u32 DecalFont_boolRacingWheel(void);
 void DecalFont_DrawLine(char *str, int posX, int posY, s16 fontType, int flags);
 void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType, int flags);
 int DecalFont_DrawMultiLine(char *str, int posX, int posY, int maxPixLen, s16 fontType, int flags);
@@ -216,8 +231,10 @@ void howl_UnPauseAudio(void);
 void howl_StopAudio(int boolErasePauseBackup, int boolEraseMusic, int boolDestroyAllFX);
 void Voiceline_PoolInit(void);
 void Voiceline_ClearTimeStamp(void);
+void Voiceline_PoolClear(void);
 void Voiceline_StopAll(void);
 void Voiceline_ToggleEnable(int toggle);
+void Voiceline_RequestPlay(u32 voiceID, u32 characterID, u32 characterID2);
 void Voiceline_StartPlay(struct Item *voiceLine);
 void Voiceline_Update(void);
 void Voiceline_EmptyFunc(void);
@@ -261,10 +278,10 @@ void Garage_MoveLR(int desiredId);
 void Garage_Leave(void);
 
 // INSTANCE
-void INSTANCE_Birth(struct Instance *inst, struct Model *model, char *name, struct Thread *th, int flags);
-struct Instance *INSTANCE_Birth2D(struct Model *model, char *name, struct Thread *th);
-struct Instance *INSTANCE_Birth3D(struct Model *model, char *name, struct Thread *th);
-struct Instance *INSTANCE_BirthWithThread(int modelID, char *name, int poolType, int bucket, void *funcThTick, int objSize, struct Thread *parent);
+void INSTANCE_Birth(struct Instance *inst, struct Model *model, const char *name, struct Thread *th, int flags);
+struct Instance *INSTANCE_Birth2D(struct Model *model, const char *name, struct Thread *th);
+struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct Thread *th);
+struct Instance *INSTANCE_BirthWithThread(int modelID, const char *name, int poolType, int bucket, void *funcThTick, int objSize, struct Thread *parent);
 struct Instance *INSTANCE_BirthWithThread_Stack(int *spArr);
 void INSTANCE_Death(struct Instance *inst);
 u16 INSTANCE_GetNumAnimFrames(struct Instance *pInstance, int animIndex);
@@ -289,6 +306,8 @@ void LIST_AddFront(struct LinkedList *L, struct Item *I);
 void LIST_Clear(struct LinkedList *L);
 void *LIST_GetFirstItem(struct LinkedList *L);
 void *LIST_GetNextItem(struct Item *I);
+
+void LOAD_AppendQueue(struct BigHeader *bigfile, int type, int fileIndex, void *destinationPtr, void (*callback)(struct LoadQueueSlot *));
 void LIST_Init(struct LinkedList *L, struct Item *item, int itemSize, int numItems);
 struct Item *LIST_RemoveBack(struct LinkedList *L);
 struct Item *LIST_RemoveFront(struct LinkedList *L);
@@ -329,6 +348,7 @@ void LOAD_HowlCallback(CdlIntrResult result, u8 *unk);
 int LOAD_HowlSectorChainStart(CdlFILE *cdlFileHWL, void *ptrDestination, int firstSector,
                               int numSector); // 2nd param might be `struct SampleBlockHeader*`
 int LOAD_HowlSectorChainEnd(void);
+void MainLoadVLC_Callback(struct LoadQueueSlot *param_1);
 
 void LOAD_InitCD(void);
 int LOAD_InitCDvol(void);
@@ -345,9 +365,37 @@ void MainDrawCb_DrawSync(void);
 
 void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepads);
 void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamepads);
+void DrawUnpluggedMsg(struct GameTracker *gGT, struct GamepadSystem *gGamepads);
+void DrawFinalLap(struct GameTracker *gGT);
+void RainLogic(struct GameTracker *gGT);
+void MenuHighlight(void);
+void RenderAllWeather(struct GameTracker *gGT);
+void RenderAllConfetti(struct GameTracker *gGT);
+void RenderAllHUD(struct GameTracker *gGT);
+void RenderAllBeakerRain(struct GameTracker *gGT);
+void RenderAllBoxSceneSplitLines(struct GameTracker *gGT);
+void RenderBucket_QueueAllInstances(struct GameTracker *gGT);
+void RenderAllNormalParticles(struct GameTracker *gGT);
+void RenderDispEnv_World(struct GameTracker *gGT);
+void RenderAllFlag0x40(struct GameTracker *gGT);
+void RenderAllTitleDPP(struct GameTracker *gGT);
+void RenderBucket_ExecuteAllInstances(struct GameTracker *gGT);
+void RenderAllTires(struct GameTracker *gGT);
+void RenderAllShadows(struct GameTracker *gGT);
+void RenderAllHeatParticles(struct GameTracker *gGT);
+void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struct mesh_info *ptr_mesh_info);
+void WindowBoxLines(struct GameTracker *gGT);
+void WindowDivsionLines(struct GameTracker *gGT);
+void RenderDispEnv_UI(struct GameTracker *gGT);
+void RenderVSYNC(struct GameTracker *gGT);
+void RenderFMV(void);
+void RenderSubmit(struct GameTracker *gGT);
 void MainFrame_ResetDB(struct GameTracker *gGT);
 void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad);
 void MainFrame_TogglePauseAudio(int bool_pause);
+
+void StateZero(void);
+void startSP(void);
 
 void MainFreeze_SafeAdvDestroy(void);
 void MainFreeze_MenuPtrQuit(struct RectMenu *menu);
@@ -491,10 +539,15 @@ void RECTMENU_Show(struct RectMenu *m);
 
 int MixRNG_Scramble(void);
 
+void MainStats_RestartRaceCountLoss(void);
+
+void Particle_UpdateAllParticles(void);
+void Particle_RenderList(struct PushBuffer *pb, void *particleList);
+
 void PickupBots_Init(void);
 void PickupBots_Update(void);
 
-struct Thread *PROC_BirthWithObject(int flags, void *funcThTick, char *name, struct Thread *relativeTh);
+struct Thread *PROC_BirthWithObject(int flags, void *funcThTick, const char *name, struct Thread *relativeTh);
 void PROC_CheckAllForDead(void);
 void PROC_CheckBloodlineForDead(struct Thread **replaceSelf, struct Thread *th);
 void PROC_CollidePointWithBucket(struct Thread *th, struct BucketSearchParams *buf);
@@ -508,7 +561,10 @@ void PROC_PerBspLeaf_CheckInstances(struct BSP *bspLeaf, struct ScratchpadStruct
 struct Thread *PROC_SearchForModel(struct Thread *th, s16 modelID);
 void PROC_StartSearch_Self(struct ScratchpadStruct *sps);
 
+void ThTick_SetAndExec(struct Thread *thread, void (*funcThTick)(struct Thread *));
+
 void PushBuffer_Init(struct PushBuffer *pb, int id, int total);
+void PushBuffer_UpdateFrustum(struct PushBuffer *pb);
 void PushBuffer_SetPsyqGeom(struct PushBuffer *pb);
 void PushBuffer_SetMatrixVP(struct PushBuffer *pb);
 
@@ -567,6 +623,9 @@ void UI_DrawSlideMeter(s16 posX, s16 posY, struct Driver *driver);
 u32 UI_VsQuipReadDriver(struct Driver *driver, int offset, int size);
 void UI_VsQuipAssign(struct Driver *driver, struct QuipMeta *meta, struct Driver *bestDriver, int characterID);
 void UI_VsQuipAssignAll(void);
+void UI_VsQuipDrawAll(void);
+void UI_VsWaitForPressX(void);
+void UI_RaceStart_IntroText1P(void);
 void UI_DrawRankedDrivers(void);
 void UI_DrawDriverIcon(struct Icon *icon, s16 posX, s16 posY, struct PrimMem *primMem, u_long *ot, char transparency, s16 scale, u32 color);
 void UI_RenderFrame_AdvHub(void);
@@ -676,6 +735,7 @@ void VehStuckProc_Warp_Init(struct Thread *t, struct Driver *d);
 
 void VehPhysForce_ConvertSpeedToVec(struct Driver *driver);
 void VehPhysForce_AccelTerrainSlope(struct Driver *driver);
+void VehPhysForce_RotAxisAngle(MATRIX *m, s16 *normVec, s16 angle);
 void VehPhysForce_OnApplyForces(struct Thread *t, struct Driver *d);
 void VehPhysGeneral_SetHeldItem(struct Driver *driver);
 void VehPickupItem_ShootOnCirclePress(struct Driver *d);
@@ -684,6 +744,12 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 void VehTurbo_ProcessBucket(struct Thread *turboThread);
 void VehTurbo_ThTick(struct Thread *t);
 void VehTurbo_ThDestroy(struct Thread *t);
+
+void VehGroundShadow_Main(void);
+void VehGroundSkids_Main(struct Thread *thread, struct PushBuffer *pb);
+
+void Vector_SpecLightSpin2D(struct Instance *inst, s16 *rot, s16 *lightDir);
+void Vector_BakeMatrixTable(void);
 
 void VehStuckProc_Tumble_Update(struct Thread *thread, struct Driver *driver);
 void VehStuckProc_Tumble_PhysLinear(struct Thread *thread, struct Driver *driver);
@@ -763,6 +829,8 @@ u32 MM_Video_CheckIfFinished(int param_1);
 
 // 231 (undone)
 void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta);
+void RB_MakeInstanceReflective(struct ScratchpadStruct *sps, struct Instance *inst);
+void RB_Player_KillPlayer(struct Driver *attacker, struct Driver *victim);
 void RB_MinePool_Init(void);
 void RB_MinePool_Remove(struct MineWeapon *mw);
 void RB_MinePool_Add(struct MineWeapon *mw);
@@ -777,6 +845,8 @@ struct Instance *RB_Hazard_CollideWithBucket(struct Instance *weaponInst, struct
 
 void RB_Hazard_ThCollide_Missile(struct Thread *thread);
 void RB_Hazard_ThCollide_Generic(struct Thread *thread);
+void RB_Hazard_ThCollide_Generic_Alt(struct Thread **param_1);
+u16 RB_Hazard_CollLevInst(struct ScratchpadStruct *sps, struct Thread *th);
 
 int RB_Hazard_InterpolateValue(s16 currRot, s16 desiredRot, s16 rotSpeed);
 
@@ -787,6 +857,19 @@ void RB_MovingExplosive_Explode(struct Thread *t, struct Instance *inst, struct 
 void RB_RainCloud_FadeAway(struct Thread *t);
 void RB_RainCloud_ThTick(struct Thread *t);
 void RB_RainCloud_Init(struct Driver *d);
+void RB_Explosion_ThTick(struct Thread *t);
+void RB_Explosion_InitPotion(struct Instance *inst);
+void RB_Explosion_InitGeneric(struct Instance *inst);
+void RB_Blowup_ThTick(struct Thread *t);
+void RB_Blowup_Init(struct Instance *weaponInst);
+void RB_Burst_CollThBucket(struct ScratchpadStruct *sps, struct Thread *t);
+void RB_Burst_CollLevInst(struct ScratchpadStruct *sps, struct BSP *bspHitbox);
+void RB_Burst_ThTick(struct Thread *t);
+void RB_Burst_DrawAll(struct GameTracker *gGT);
+void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *inst, s16 *output);
+void RB_Default_LInB(struct Instance *inst);
+void RB_Fruit_LInB(struct Instance *inst);
+int RB_Fruit_LInC(struct Instance *fruitInst, struct Thread *driverTh, struct ScratchpadStruct *sps);
 
 struct Thread *RB_GetThread_ClosestTracker(struct Driver *d);
 void RB_Baron_LInB(struct Instance *inst);
@@ -801,11 +884,40 @@ void RB_Armadillo_LInB(struct Instance *inst);
 void RB_Fireball_ThTick(struct Thread *t);
 void RB_Fireball_LInB(struct Instance *inst);
 
+void RB_GenericMine_ThTick(struct Thread *t);
+void RB_GenericMine_ThDestroy(struct Thread *t, struct Instance *inst, struct MineWeapon *mw);
+void RB_GenericMine_LInB(struct Instance *inst);
+void RB_ShieldDark_ThTick_Grow(struct Thread *th);
+void RB_ShieldDark_ThTick_Pop(struct Thread *t);
+void RB_TNT_ThTick_ThrowOffHead(struct Thread *t);
+void RB_TNT_ThTick_SitOnHead(struct Thread *t);
+void RB_TNT_ThTick_ThrowOnHead(struct Thread *t);
+
 void RB_Minecart_ThTick(struct Thread *t);
+void RB_Minecart_CheckColl(struct Instance *minecartInst, struct Thread *minecartTh);
 void RB_Minecart_LInB(struct Instance *inst);
 
-void RB_Plant_LInB(struct Instance *inst);
+void RB_Potion_OnShatter_TeethCallback(int unk, struct BSP *bspHitbox);
 
+int RB_CrateWeapon_LInC(struct Instance *crateInst, struct Thread *collidingTh, struct ScratchpadStruct *sps);
+int RB_CrateFruit_LInC(struct Instance *crateInst, struct Thread *collidingTh, struct ScratchpadStruct *sps);
+int RB_CrateTime_LInC(struct Instance *crateInst, struct Thread *driverTh, struct ScratchpadStruct *sps);
+
+void RB_Banner_LInB(struct Instance *inst);
+void RB_CtrLetter_LInB(struct Instance *inst);
+int RB_CtrLetter_LInC(struct Instance *letterInst, struct Thread *driverTh, struct ScratchpadStruct *sps);
+
+void RB_Crystal_LInB(struct Instance *inst);
+int RB_Crystal_LInC(struct Instance *crystalInst, struct Thread *driverTh, struct ScratchpadStruct *sps);
+
+void RB_FlameJet_LInB(struct Instance *inst);
+
+void RB_Orca_LInB(struct Instance *inst);
+
+void RB_Plant_LInB(struct Instance *inst);
+void RB_Plant_ThTick_Rest(struct Thread *t);
+
+void Seal_CheckColl(struct Instance *sealInst, struct Thread *sealTh, int damage, int radius, int sound);
 void RB_Seal_ThTick_Move(struct Thread *t);
 void RB_Seal_ThTick_TurnAround(struct Thread *t);
 void RB_Seal_LInB(struct Instance *inst);
@@ -815,13 +927,34 @@ void RB_Snowball_LInB(struct Instance *inst);
 
 void RB_Spider_LInB(struct Instance *inst);
 
+void RB_StartText_ProcessBucket(struct Thread *thread);
+void RB_StartText_LInB(struct Instance *inst);
+
+void RB_Teeth_LInB(struct Instance *inst);
+int RB_Teeth_LInC(struct Instance *teethInst, struct Thread *t, struct ScratchpadStruct *sps);
+
 void RB_Turtle_ThTick(struct Thread *t);
 int RB_Turtle_LInC(struct Instance *inst, struct Thread *driverTh, struct ScratchpadStruct *sps);
 void RB_Turtle_LInB(struct Instance *inst);
 
+void RB_Warpball_FadeAway(struct Thread *t);
+struct CheckpointNode *RB_Warpball_NewPathNode(struct CheckpointNode *cn, struct Driver *d);
+void RB_Warpball_Start(struct TrackerWeapon *tw);
+struct Driver *RB_Warpball_GetDriverTarget(struct TrackerWeapon *tw, struct Instance *inst);
+void RB_Warpball_SetTargetDriver(struct TrackerWeapon *tw);
+void RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct Driver *d);
+void RB_Warpball_ThTick(struct Thread *t);
+
+void RB_Player_ToggleInvisible(void);
+void RB_Player_ToggleFlicker(void);
+void RB_Burst_ProcessBucket(struct Thread *thread);
+void RB_Blowup_ProcessBucket(struct Thread *thread);
+void RB_Follower_ProcessBucket(struct Thread *thread);
+
 // 232
 s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData);
 void AH_WarpPad_AllWarppadNum(void);
+void AH_WarpPad_SetNumModelData(struct Instance *inst, struct ModelHeader *mh);
 void AH_WarpPad_MenuProc(struct RectMenu *menu);
 
 void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadObj, int index, int x, int y, int z);
@@ -868,6 +1001,8 @@ void AH_MaskHint_LerpVol(int param_1);
 void AH_MaskHint_Update(void);
 
 struct Particle *Particle_Init(u32 param_1, struct IconGroup *ig, struct ParticleEmitter *emSet);
+void Particle_FuncPtr_PotionShatter(struct Particle *p);
+void Particle_FuncPtr_ExhaustUnderwater(struct Particle *p);
 void Vector_SpecLightSpin3D(struct Instance *inst, s16 *rot, s16 *lightDir);
 
 // 233
@@ -892,13 +1027,13 @@ void CS_Thread_MoveOnPath(struct Thread *t);
 void CS_Thread_Particles(struct Thread *t);
 void CS_Thread_InterpolateFramesMS(struct Thread *t);
 void CS_Thread_ThTick(struct Thread *t);
-struct Thread *CS_Thread_Init(s16 modelID, char *name, s16 *param_3, s16 param_4, struct Thread *parent);
+struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 param_4, struct Thread *parent);
 void CS_Podium_Prize_ThDestroy(struct Thread *t);
 void CS_Podium_Prize_Spin(struct Instance *inst, s16 *prize);
 void CS_Podium_Prize_ThTick1(struct Thread *th);
 void CS_Podium_Prize_ThTick2(struct Thread *th);
 void CS_Podium_Prize_ThTick3(struct Thread *th);
-void CS_Podium_Prize_Init(u32 prizeModel, char *prizeName, s16 *posOnScreen);
+void CS_Podium_Prize_Init(u32 prizeModel, const char *prizeName, s16 *posOnScreen);
 void CS_Podium_Stand_ThTick(struct Thread *t);
 void CS_Podium_Stand_Init(s16 *podiumData);
 void CS_Podium_FullScene_Init(void);
@@ -913,6 +1048,44 @@ int CS_Credits_NewCreditGhosts(void);
 void CS_Credits_End(void);
 void CS_Credits_DrawNames(struct CreditsObj *co);
 void CS_Credits_DrawEpilogue(struct CreditsObj *co);
+
+void CC_EndEvent_DrawMenu(void);
+void AA_EndEvent_DrawMenu(void);
+void RR_EndEvent_DrawMenu(void);
+void TT_EndEvent_DrawMenu(void);
+void TT_EndEvent_DisplayTime(int paramX, s16 paramY, u32 UI_DrawRaceClockFlags);
+void TT_EndEvent_DrawHighScore(s16 startX, int startY, s16 scoreMode);
+void VB_EndEvent_DrawMenu(void);
+
+void MM_Cheat_MaxWumpa(void);
+void MM_Cheat_UnlockRoo(void);
+void MM_Cheat_UnlockPapu(void);
+void MM_Cheat_UnlockJoe(void);
+void MM_Cheat_UnlockPinstripe(void);
+void MM_Cheat_UnlockFakeCrash(void);
+void MM_Cheat_UnlockPenta(void);
+void MM_Cheat_UnlockTropy(void);
+void MM_Cheat_UnlockScrapbook(void);
+void MM_Cheat_UnlockTracks(void);
+void MM_Cheat_InfiniteMasks(void);
+void MM_Cheat_MaxTurbos(void);
+void MM_Cheat_MaxInvisibility(void);
+void MM_Cheat_MaxEngine(void);
+void MM_Cheat_MaxBombs(void);
+void MM_Cheat_AdvDifficulty(void);
+void MM_Cheat_SuperHard(void);
+void MM_Cheat_IcyTracks(void);
+void MM_Cheat_SuperTurboPads(void);
+void MM_Cheat_OneLap(void);
+void MM_Cheat_TurboCounter(void);
+
+void UI_Map_DrawMap_ExtraFunc(struct Icon *icon, POLY_FT4 *p, s16 posX, s16 empty, struct PrimMem *primMem, u_long *otMem, u32 transparency);
+
+void VehTalkMask_ThTick(struct Thread *t);
+void PhysLerpRot(struct Driver *driver, int iVar13);
+void PhysTerrainSlope(struct Driver *driver);
+
+void Channel_DestroySelf(struct ChannelStats *stats);
 
 //=====================================================================================================================
 // this section is forward decls to fix warnings by TheUbMunster.

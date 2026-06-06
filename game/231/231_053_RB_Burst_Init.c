@@ -1,9 +1,5 @@
 #include <common.h>
 
-void RB_Burst_ThTick();
-void RB_Burst_CollLevInst();
-void RB_Burst_CollThBucket();
-
 static char s_burst_explosion1[] = "explosion1";
 static char s_burst_explosion2[] = "explosion2";
 static char s_burst_shockwave1[] = "shockwave1";

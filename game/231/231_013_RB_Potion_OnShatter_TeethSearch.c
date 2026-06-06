@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_Potion_OnShatter_TeethCallback(int unk, struct BSP *bspHitbox);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac638-0x800ac6b4.
 void RB_Potion_OnShatter_TeethSearch(struct Instance *inst)
 {

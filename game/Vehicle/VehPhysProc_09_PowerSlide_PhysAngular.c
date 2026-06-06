@@ -65,7 +65,6 @@ void VehPhysProc_PowerSlide_PhysAngular(struct Thread *th, struct Driver *driver
 		iVar13 = -iVar13;
 	}
 
-	void PhysLerpRot(struct Driver * driver, int iVar13);
 	PhysLerpRot(driver, iVar13);
 
 	// turning rate
@@ -381,8 +380,6 @@ LAB_800632cc:
 	if (driver->KartStates.Drifting.driftTotalTimeMS > (int)((u32)driver->unk462 << 5))
 		driver->KartStates.Drifting.driftTotalTimeMS = (u16)driver->unk462 << 5;
 
-	// Located in Drifting_FuncPtrs.c
-	void PhysTerrainSlope(struct Driver * driver);
 	PhysTerrainSlope(driver);
 }
 

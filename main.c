@@ -1,5 +1,4 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define CTR_NATIVE
 #define SDL_MAIN_HANDLED
 
 #include <stdio.h>

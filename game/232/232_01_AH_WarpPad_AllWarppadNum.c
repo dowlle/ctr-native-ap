@@ -5,8 +5,6 @@ _Static_assert(offsetof(struct WarpPad, specLightGem) == 0x50);
 _Static_assert(offsetof(struct WarpPad, digit10s) == 0x68);
 _Static_assert(offsetof(struct WarpPad, levelID) == 0x6c);
 
-void AH_WarpPad_SetNumModelData(struct Instance *inst, struct ModelHeader *mh);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abbdc-0x800abd80.
 void AH_WarpPad_AllWarppadNum()
 {

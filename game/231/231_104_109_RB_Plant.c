@@ -23,9 +23,6 @@ struct HitboxDesc plantBoxDesc = {.inst = (struct Instance *)0,
 
 extern struct ParticleEmitter emSet_PlantTires[8];
 
-void RB_Plant_ThTick_Rest(struct Thread *t);
-void RB_Hazard_ThCollide_Generic_Alt(struct Thread **param_1);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b81e8-0x800b84f0.
 void RB_Plant_ThTick_Eat(struct Thread *t)
 {

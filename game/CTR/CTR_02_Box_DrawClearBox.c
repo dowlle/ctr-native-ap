@@ -1,7 +1,7 @@
 #include <common.h>
 
 // NOTE(aalhendi): PSX path ASM-verified NTSC-U 926 0x8002177c-0x80021894.
-void CTR_Box_DrawClearBox(RECT *r, Color *color, int transparency, u_long *ot)
+void CTR_Box_DrawClearBox(const RECT *r, const Color *color, int transparency, u_long *ot)
 {
 	typedef struct TPage_PolyF4
 	{
@@ -20,8 +20,9 @@ void CTR_Box_DrawClearBox(RECT *r, Color *color, int transparency, u_long *ot)
 	p->p.tag.self = 0;
 
 	const PrimCode primCode = {.poly = {.renderCode = RenderCode_Polygon, .quad = 1, .semiTransparency = 1}};
-	color->code = primCode;
-	p->p.colorCode = *color;
+	Color primColor = *color;
+	primColor.code = primCode;
+	p->p.colorCode = primColor;
 
 	s16 topX = r->x;
 	s16 topY = r->y;

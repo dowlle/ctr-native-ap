@@ -2,8 +2,6 @@
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b5090-0x800b5210.
 
-void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *inst, s16 *output);
-
 int RB_CtrLetter_ThCollide(struct Thread *letterTh, struct Thread *driverTh, void *funcThCollide, struct ScratchpadStruct *sps)
 {
 	s16 posScreen[2];

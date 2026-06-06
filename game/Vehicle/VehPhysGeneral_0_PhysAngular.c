@@ -29,7 +29,6 @@ void VehPhysGeneral_PhysAngular(struct Thread *thread, struct Driver *driver)
 	char simpTurnState;
 	s16 driftAngleCurr_og;
 
-	void PhysLerpRot(struct Driver * driver, int iVar13);
 	PhysLerpRot(driver, 0);
 
 	elapsedTimeMS = sdata->gGT->elapsedTimeMS;
@@ -366,7 +365,5 @@ LAB_80060284:
 	driver->axisRotationX += (s16)((turnResistMinBitshift * elapsedTimeMS) >> 0xd);
 	driver->axisRotationX &= 0xfff;
 
-	// Located in Drifting_FuncPtrs.c
-	void PhysTerrainSlope(struct Driver * driver);
 	PhysTerrainSlope(driver);
 }

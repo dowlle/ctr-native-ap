@@ -1,7 +1,5 @@
 #include <common.h>
 
-void UI_Map_DrawMap_ExtraFunc(struct Icon *icon, POLY_FT4 *p, s16 posX, s16 empty, struct PrimMem *primMem, u_long *otMem, u32 transparency);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004d614-0x8004d8b4.
 void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 posY, struct PrimMem *primMem, u_long *otMem, u32 colorID)
 {

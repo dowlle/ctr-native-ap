@@ -1,27 +1,5 @@
 #include <common.h>
 
-void MM_Cheat_MaxWumpa(void);
-void MM_Cheat_UnlockRoo(void);
-void MM_Cheat_UnlockPapu(void);
-void MM_Cheat_UnlockJoe(void);
-void MM_Cheat_UnlockPinstripe(void);
-void MM_Cheat_UnlockFakeCrash(void);
-void MM_Cheat_UnlockPenta(void);
-void MM_Cheat_UnlockTropy(void);
-void MM_Cheat_UnlockScrapbook(void);
-void MM_Cheat_UnlockTracks(void);
-void MM_Cheat_InfiniteMasks(void);
-void MM_Cheat_MaxTurbos(void);
-void MM_Cheat_MaxInvisibility(void);
-void MM_Cheat_MaxEngine(void);
-void MM_Cheat_MaxBombs(void);
-void MM_Cheat_AdvDifficulty(void);
-void MM_Cheat_SuperHard(void);
-void MM_Cheat_IcyTracks(void);
-void MM_Cheat_SuperTurboPads(void);
-void MM_Cheat_OneLap(void);
-void MM_Cheat_TurboCounter(void);
-
 #define CHEAT_N BTN_UP
 #define CHEAT_U BTN_UP
 #define CHEAT_S BTN_DOWN

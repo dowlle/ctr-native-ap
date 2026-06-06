@@ -2,8 +2,6 @@
 
 s16 crystalLightDir[4] = {0x94F, 0x94F, 0x94F, 0};
 
-void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *inst, s16 *output);
-
 static void RB_Crystal_RotateStep(struct Instance *crystalInst, struct Crystal *crystalObj)
 {
 	crystalObj->rot[1] += 0x40;

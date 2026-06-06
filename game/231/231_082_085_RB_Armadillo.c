@@ -1,7 +1,5 @@
 #include <common.h>
 
-void Seal_CheckColl(struct Instance *sealInst, struct Thread *sealTh, int damage, int radius, int sound);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b5984-0x800b5f50.
 
 

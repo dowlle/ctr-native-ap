@@ -1,16 +1,5 @@
 #include <common.h>
 
-void RB_GenericMine_ThTick(struct Thread *t);
-u16 RB_Hazard_CollLevInst(struct ScratchpadStruct *sps, struct Thread *th);
-void RB_GenericMine_ThDestroy(struct Thread *t, struct Instance *inst, struct MineWeapon *mw);
-void RB_ShieldDark_ThTick_Grow(struct Thread *t);
-void RB_Warpball_ThTick(struct Thread *t);
-struct CheckpointNode *RB_Warpball_NewPathNode(struct CheckpointNode *ptrNodeCurr, struct Driver *victim);
-void RB_Warpball_Start(struct TrackerWeapon *tw);
-void RB_Warpball_SetTargetDriver(struct TrackerWeapon *tw);
-struct Driver *RB_Warpball_GetDriverTarget(struct TrackerWeapon *tw, struct Instance *inst);
-void RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct Driver *d);
-
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006540c-0x800666e4.

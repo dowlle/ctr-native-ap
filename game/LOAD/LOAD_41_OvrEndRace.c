@@ -1,7 +1,5 @@
 #include <common.h>
 
-void OVR_Region1();
-
 // DLL loaded = param_1 + 221
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800334f4-0x80033570.
 void LOAD_OvrEndRace(u32 param_1)

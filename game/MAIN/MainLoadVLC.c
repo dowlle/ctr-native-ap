@@ -1,7 +1,5 @@
 #include <common.h>
 
-void MainLoadVLC_Callback();
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c518-0x8003c58c.
 void MainLoadVLC(void)
 {

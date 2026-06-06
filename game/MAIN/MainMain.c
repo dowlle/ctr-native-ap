@@ -5,8 +5,6 @@
 #include <platform/native_savestate.h>
 #endif
 
-void StateZero();
-
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 static struct NativeReplaySchedulerFrameInfo MainReplayScheduler_FrameInfo(struct GameTracker *gGT)
 {
@@ -559,7 +557,6 @@ void StateZero()
 #if 0
 	// NOTE(aalhendi): Retail main does not rewrite BIGFILE overlay sizes here.
 	extern char RB_NewEndFile[4];
-	void OVR_Region3();
 
 	// Dont load full overlay file, cut off the end
 	struct BigEntry *firstEntry = BIG_GETENTRY(sdata->ptrBigfile1);

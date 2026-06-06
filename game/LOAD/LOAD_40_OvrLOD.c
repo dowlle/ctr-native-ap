@@ -1,7 +1,5 @@
 #include <common.h>
 
-void OVR_Region2();
-
 // param_1 = numPlyrCurrGame {1,2,3,4}
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80033474-0x800334f4.
 void LOAD_OvrLOD(u32 param_1)

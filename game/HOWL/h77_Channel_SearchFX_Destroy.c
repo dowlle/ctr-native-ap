@@ -1,7 +1,5 @@
 #include <common.h>
 
-void Channel_DestroySelf(struct ChannelStats *stats);
-
 // depending on flags, you might have:
 //	16-bit soundID, which destroys all of this type of sound
 //	32-bit soundID_count, which destroys specific instance of sound

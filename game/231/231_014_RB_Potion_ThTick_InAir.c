@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_GenericMine_ThTick(struct Thread *t);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac6b4-0x800aca50.
 void RB_Potion_ThTick_InAir(struct Thread *t)
 {

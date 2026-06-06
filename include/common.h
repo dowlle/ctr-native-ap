@@ -17,6 +17,7 @@
 #include <ctr_math.h>
 #include <ctr_scratchpad.h>
 #include <prim.h>
+#include <psx/libpad.h>
 
 #include <psn00bsdk/include/sys/fcntl.h>
 

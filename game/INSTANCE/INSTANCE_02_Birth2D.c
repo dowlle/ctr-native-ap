@@ -1,7 +1,7 @@
 #include <common.h>
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800308e4-0x800309a4.
-struct Instance *INSTANCE_Birth2D(struct Model *model, char *name, struct Thread *th)
+struct Instance *INSTANCE_Birth2D(struct Model *model, const char *name, struct Thread *th)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	struct Instance *inst;

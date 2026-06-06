@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_ShieldDark_ThTick_Pop(struct Thread *t);
-
 static const s16 s_shieldGrowScale[8][2] = {
     {977, 1835}, {1792, 2936}, {2205, 2095}, {2335, 1254}, {1884, 1612}, {1433, 1971}, {1612, 1881}, {1792, 1792},
 };

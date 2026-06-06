@@ -1,7 +1,5 @@
 #include <common.h>
 
-void Channel_DestroySelf(struct ChannelStats *stats);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b608-0x8002b7d0
 struct ChannelStats *Channel_AllocSlot_AntiSpam(s16 soundID, char boolUseAntiSpam, int flags, struct ChannelAttr *attr)
 {

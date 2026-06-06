@@ -44,7 +44,6 @@ void start()
 	// initialize $gp
 	sdata = &sdata_static;
 
-	void startSP();
 	startSP();
 
 	u32 main(void);

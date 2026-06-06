@@ -1,7 +1,5 @@
 #include <common.h>
 
-void VehTalkMask_ThTick(struct Thread *t);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80069178-0x800691e4.
 struct Instance *VehTalkMask_Init()
 {

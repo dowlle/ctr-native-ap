@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_Explosion_ThTick(struct Thread *t);
-
 static char s_explosion1[] = "explosion1";
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 231 0x800b1630-0x800b1714.

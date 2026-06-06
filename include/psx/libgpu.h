@@ -128,9 +128,9 @@ extern int (*GPU_printf)(const char *fmt, ...);
  */
 
 #define isendprim(p)            ((((P_TAG *)(p))->addr) == 0xffffff)
-#define nextPrim(p)             (void *)((((P_TAG *)(p))->addr))
+#define nextPrim(p)             (void *)(uintptr_t)(((P_TAG *)(p))->addr)
 
-#define setaddr(p, _addr)       (((P_TAG *)(p))->addr = (u_int)((u_int *)_addr))
+#define setaddr(p, _addr)       (((P_TAG *)(p))->addr = (u_int)((uintptr_t)(_addr) & 0xffffffu))
 #define getaddr(p)              (u_int)(((P_TAG *)(p))->addr)
 
 #define setlen(p, _len)         (((P_TAG *)(p))->len = (u_char)(_len))
@@ -145,7 +145,7 @@ extern int (*GPU_printf)(const char *fmt, ...);
 
 #define catPrim(p0, p1)         setaddr(p0, p1)
 
-#define termPrim(p)             setaddr(p, 0xffffffff)
+#define termPrim(p)             (((P_TAG *)(p))->addr = 0xffffffu)
 
 #define setSemiTrans(p, abe)    ((abe) ? setcode(p, getcode(p) | 0x02) : setcode(p, getcode(p) & ~0x02))
 

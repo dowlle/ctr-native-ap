@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_Explosion_ThTick();
-
 static const u32 s_potionShatterEmitter[] = {
     0x000c0001, 0x00000000, 0x001400a1, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000001, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00020001, 0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
@@ -77,7 +75,6 @@ void RB_Explosion_InitPotion(struct Instance *inst)
 
 		p->axis[9].startVal = 1;
 
-		void Particle_FuncPtr_PotionShatter();
 		p->funcPtr = Particle_FuncPtr_PotionShatter;
 	}
 

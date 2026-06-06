@@ -1,7 +1,5 @@
 #include <common.h>
 
-void OVR_Region3();
-
 #ifdef CTR_NATIVE
 static void LOAD_NativeResetThreadsOverlay(u32 overlayIndex)
 {

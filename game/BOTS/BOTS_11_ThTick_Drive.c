@@ -278,9 +278,9 @@ give_this_label_a_better_name2:
 					for (botData = (struct BotData *)LIST_GetFirstItem(&sdata->navBotList[botDriver->botData.botPath]); botData != NULL;
 					     botData = (struct BotData *)LIST_GetNextItem((struct Item *)botData), sVar7 = (short)iVar3)
 					{
-						struct Driver *driverFromBotData = ((char *)botData) - offsetof(struct Driver, botData);
+						struct Driver *driverFromBotData = (struct Driver *)((char *)botData - offsetof(struct Driver, botData));
 
-						if (driverFromBotData == (char *)botDriver)
+						if (driverFromBotData == botDriver)
 							continue;
 
 

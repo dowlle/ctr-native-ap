@@ -3,27 +3,6 @@
 // this is only for LevInstances,
 // NonLev-related entries are empty
 
-// Signatures of LInC changed to return int instead of void as per this conversation:
-// https://discord.com/channels/527135227546435584/637616020177289236/1312155337545093130
-
-void RB_Default_LInB();
-void RB_Fruit_LInB();
-int RB_Fruit_LInC();
-void RB_GenericMine_LInB(struct Instance *inst);
-int RB_CrateFruit_LInC();
-int RB_CrateWeapon_LInC();
-int RB_CrateTime_LInC();
-void RB_FlameJet_LInB();
-void RB_Orca_LInB();
-void RB_StartText_LInB();
-void RB_Banner_LInB();
-void RB_CtrLetter_LInB();
-int RB_CtrLetter_LInC();
-void RB_Crystal_LInB();
-int RB_Crystal_LInC();
-void RB_Teeth_LInB();
-int RB_Teeth_LInC();
-
 #define SET_MDM(x, y, z) {.name = 0, .LInB = y, .LInC = z}
 // usage of this macro is mainly because I'm too lazy to go through this file and manually recalculate all the values where s16 is expected instead of uint.
 // this is purely to reduce warnings in the compiler output. (i.e., the compiler was doing this implicitly). (literally 800 lines of warnings at

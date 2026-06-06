@@ -52,7 +52,7 @@ struct Thread
 	struct Thread *prev;
 
 	// 0x8
-	char *name;
+	const char *name;
 
 	// 0xc
 	// weapons hold drivers as parentThreads when fired

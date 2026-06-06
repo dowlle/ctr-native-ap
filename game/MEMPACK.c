@@ -1,12 +1,6 @@
 #include <common.h>
 
 
-void CS_EndOfFile();
-void RB_EndOfFile();
-void AH_EndOfFile();
-void MM_EndOfFile();
-void OVR_Region3();
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 PS1 path 0x8003e740-0x8003e80c; CTR_NATIVE uses host RAM.
 void MEMPACK_Init(int ramSize)
 {

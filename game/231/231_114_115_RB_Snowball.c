@@ -1,7 +1,5 @@
 #include <common.h>
 
-void RB_Minecart_CheckColl(struct Instance *minecartInst, struct Thread *minecartTh);
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b92ac-0x800b95fc.
 
 void RB_Snowball_ThTick(struct Thread *t)

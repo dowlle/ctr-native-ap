@@ -1,46 +1,5 @@
 #include <common.h>
 
-// all in this file
-void DrawUnpluggedMsg(struct GameTracker *gGT, struct GamepadSystem *gGamepads);
-void DrawFinalLap(struct GameTracker *gGT);
-void RainLogic(struct GameTracker *gGT);
-void MenuHighlight();
-void RenderAllWeather(struct GameTracker *gGT);
-void RenderAllConfetti(struct GameTracker *gGT);
-void RenderAllHUD(struct GameTracker *gGT);
-void RenderAllBeakerRain(struct GameTracker *gGT);
-void RenderAllBoxSceneSplitLines(struct GameTracker *gGT);
-void RenderBucket_QueueAllInstances(struct GameTracker *gGT);
-void RenderAllNormalParticles(struct GameTracker *gGT);
-void RenderDispEnv_World(struct GameTracker *gGT);
-void RenderAllFlag0x40(struct GameTracker *gGT);
-void RenderAllTitleDPP(struct GameTracker *gGT);
-void RenderBucket_ExecuteAllInstances(struct GameTracker *gGT);
-void RenderAllTires(struct GameTracker *gGT);
-void RenderAllShadows(struct GameTracker *gGT);
-void RenderAllHeatParticles(struct GameTracker *gGT);
-void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struct mesh_info *ptr_mesh_info);
-void WindowBoxLines(struct GameTracker *gGT);
-void WindowDivsionLines(struct GameTracker *gGT);
-void RenderDispEnv_UI(struct GameTracker *gGT);
-void RenderVSYNC(struct GameTracker *gGT);
-void RenderFMV();
-void RenderSubmit(struct GameTracker *gGT);
-
-// original CTR funcs
-void VB_EndEvent_DrawMenu();
-void RR_EndEvent_DrawMenu();
-void AA_EndEvent_DrawMenu();
-void TT_EndEvent_DrawMenu(void);
-void CC_EndEvent_DrawMenu();
-void OVR_Region1(void);
-void RB_Player_ToggleInvisible();
-void RB_Player_ToggleFlicker();
-void RB_Burst_ProcessBucket(struct Thread *thread);
-void RB_Blowup_ProcessBucket(struct Thread *thread);
-void RB_Follower_ProcessBucket(struct Thread *thread);
-void RB_StartText_ProcessBucket(struct Thread *thread);
-
 #ifdef CTR_INTERNAL
 volatile int gCtrDebugSkipLevelGeometry = 0;
 #endif

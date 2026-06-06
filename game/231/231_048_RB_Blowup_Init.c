@@ -1,9 +1,5 @@
 #include <common.h>
 
-void RB_Blowup_ThTick();
-void RB_Burst_CollLevInst();
-void RB_Burst_CollThBucket();
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b18f8-0x800b1bd8.
 void RB_Blowup_Init(struct Instance *weaponInst)
 {
