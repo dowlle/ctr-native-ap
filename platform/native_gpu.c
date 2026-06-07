@@ -71,6 +71,7 @@ typedef struct
 
 	int drawPrimMode;
 	bool psxTexturedSemiTrans;
+	bool psxTextureOutputSTP;
 	bool psxDrawMaskSet;
 
 	u16 startVertex;
@@ -124,6 +125,7 @@ void ClearSplits(void)
 	s_gpu.splitIndex = 0;
 	s_gpu.splits[0].texFormat = (TexFormat)0xFFFF;
 	s_gpu.splits[0].psxTexturedSemiTrans = false;
+	s_gpu.splits[0].psxTextureOutputSTP = false;
 	s_gpu.splits[0].psxDrawMaskSet = false;
 	s_gpu.framebufferFeedbackRunActive = false;
 }
@@ -779,6 +781,10 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	TexFormat texFormat = GetTPageFormat(tpage);
 	TextureID textureId = textured ? NativeRenderer_GetVRAMTexture() : NativeRenderer_GetWhiteTexture();
 	bool psxTexturedSemiTrans = semiTrans && textured && s_gpu.overrideTexture == 0;
+	// NOTE(aalhendi): PS1 framebuffer bit 15 follows sampled texture STP for
+	// textured draws unless E6 forces it. Recursive screen-copy effects depend
+	// on this bit surviving after the blended textured pass.
+	bool psxTextureOutputSTP = textured && s_gpu.overrideTexture == 0;
 
 	if (textured && s_gpu.overrideTexture != 0)
 	{
@@ -791,9 +797,10 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	// FIXME: compare drawing environment too?
 	if (!psxTexturedSemiTrans && curSplit->blendMode == blendMode && curSplit->texFormat == texFormat && curSplit->textureId == textureId &&
 	    curSplit->drawPrimMode == s_gpu.drawPrimMode && curSplit->psxTexturedSemiTrans == psxTexturedSemiTrans &&
-	    curSplit->psxDrawMaskSet == s_gpu.psxDrawMaskSet && curSplit->drawenv.clip.x == activeDrawEnv.clip.x &&
-	    curSplit->drawenv.clip.y == activeDrawEnv.clip.y && curSplit->drawenv.clip.w == activeDrawEnv.clip.w &&
-	    curSplit->drawenv.clip.h == activeDrawEnv.clip.h && curSplit->drawenv.dfe == activeDrawEnv.dfe && curSplit->debugText == s_gpu.currentSplitDebugText)
+	    curSplit->psxTextureOutputSTP == psxTextureOutputSTP && curSplit->psxDrawMaskSet == s_gpu.psxDrawMaskSet &&
+	    curSplit->drawenv.clip.x == activeDrawEnv.clip.x && curSplit->drawenv.clip.y == activeDrawEnv.clip.y &&
+	    curSplit->drawenv.clip.w == activeDrawEnv.clip.w && curSplit->drawenv.clip.h == activeDrawEnv.clip.h && curSplit->drawenv.dfe == activeDrawEnv.dfe &&
+	    curSplit->debugText == s_gpu.currentSplitDebugText)
 	{
 		return;
 	}
@@ -812,6 +819,7 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	split->textureId = textureId;
 	split->drawPrimMode = s_gpu.drawPrimMode;
 	split->psxTexturedSemiTrans = psxTexturedSemiTrans;
+	split->psxTextureOutputSTP = psxTextureOutputSTP;
 	split->psxDrawMaskSet = s_gpu.psxDrawMaskSet;
 	split->drawenv = activeDrawEnv;
 	split->dispenv = activeDispEnv;
@@ -837,6 +845,7 @@ void DrawSplit(const GPUDrawSplit *split)
 		NativeRenderer_SetOverrideTextureSize(split->drawenv.tw.w, split->drawenv.tw.h);
 
 	NativeRenderer_SetPSXDrawMaskSet(split->psxDrawMaskSet);
+	NativeRenderer_SetPSXTextureOutputSTP(split->psxTextureOutputSTP);
 
 	const bool drawOnScreen = split->drawenv.dfe;
 	NativeRenderer_SetupClipMode(&split->drawenv.clip, drawOnScreen);

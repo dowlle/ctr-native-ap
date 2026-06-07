@@ -32,6 +32,7 @@ void NativeRenderer_SetupClipMode(const RECT16 *clipRect, int enable);
 void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat);
 void NativeRenderer_SetOverrideTextureSize(int width, int height);
 void NativeRenderer_SetPSXTextureSemiTransPass(int pass);
+void NativeRenderer_SetPSXTextureOutputSTP(int enabled);
 void NativeRenderer_SetPSXDrawMaskSet(int maskSet);
 void NativeRenderer_UpdateVertexBuffer(const GrVertex *vertices, int count);
 void NativeRenderer_DrawTriangles(int startVertex, int triangles);

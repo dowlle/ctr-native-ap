@@ -233,7 +233,6 @@ global_variable GLuint s_glVertexBuffer[2];
 global_variable int s_curVertexBuffer = 0;
 
 global_variable GLuint s_glBlitFramebuffer;
-global_variable GrPBO s_glFramebufferPBO;
 
 global_variable GLuint s_glVramFramebuffer;
 
@@ -334,7 +333,6 @@ void NativeRenderer_Shutdown(void)
 	glDeleteVertexArrays(2, s_glVertexArray);
 	glDeleteBuffers(2, s_glVertexBuffer);
 
-	PBO_Destroy(&s_glFramebufferPBO);
 	PBO_Destroy(&s_glOffscreenPBO);
 
 	glDeleteFramebuffers(1, &s_glBlitFramebuffer);
@@ -405,6 +403,7 @@ typedef struct
 	GLint lutLoc;
 	GLint psxSemiTransPassLoc;
 	GLint psxDrawMaskSetLoc;
+	GLint psxTextureOutputStpLoc;
 } GTEShader;
 
 internal int NativeRenderer_Shader_CheckShaderStatus(GLuint shader);
@@ -429,6 +428,7 @@ GLint u_bilinearFilterLoc;
 GLint u_texelSizeLoc;
 GLint u_psxSemiTransPassLoc;
 GLint u_psxDrawMaskSetLoc;
+GLint u_psxTextureOutputStpLoc;
 
 #define GPU_SAMPLE_TEXTURE_4BIT_FUNC                                             \
 	"	// returns 16 bit colour\n"                                                \
@@ -497,6 +497,8 @@ GLint u_psxDrawMaskSetLoc;
 	    "	uniform int bilinearFilter;\n"                                                                                                              \
 	    "	uniform int psxSemiTransPass;\n"                                                                                                            \
 	    "	uniform int psxDrawMaskSet;\n"                                                                                                              \
+	    "	uniform int psxTextureOutputStp;\n"                                                                                                         \
+	    "	float sampledStp = 0.0;\n"                                                                                                                  \
 	    "	const vec2 c_LUTTexel = vec2(1.0 / 256.0, 1.0 / 256.0);\n"                                                                                  \
 	    "	vec4 lut(vec2 rg) { return texture2D(s_rgLut, rg - c_LUTTexel * 0.0001); }\n" GPU_STP_PASS_FUNC "	vec4 bilinearTextureSample(vec2 P) {\n" \
 	    "		vec2 frac = fract(P);\n"                                                                                                                   \
@@ -513,6 +515,7 @@ GLint u_psxDrawMaskSetLoc;
 	    "		float sx2 = mix(stpWeight(C12), stpWeight(C22), frac.x);\n"                                                                                \
 	    "		float stp = mix(sx1, sx2, frac.y);\n"                                                                                                      \
 	    "		vec2 rg = mix(mix(C11, C21, frac.x), mix(C12, C22, frac.x), frac.y);\n"                                                                    \
+	    "		sampledStp = stp;\n"                                                                                                                       \
 	    "		if(discardForSemiTransPass(rg, stp)) { discard; }\n"                                                                                       \
 	    "		vec4 x1 = mix(lut(C11), lut(C21), frac.x);\n"                                                                                              \
 	    "		vec4 x2 = mix(lut(C12), lut(C22), frac.x);\n"                                                                                              \
@@ -522,7 +525,8 @@ GLint u_psxDrawMaskSetLoc;
 	    "	}\n"                                                                                                                                        \
 	    "	vec4 nearestTextureSample(vec2 P) {\n"                                                                                                      \
 	    "		vec2 rg = samplePSX(P);\n"                                                                                                                 \
-	    "		if(discardForSemiTransPass(rg, stpWeight(rg))) { discard; }\n"                                                                             \
+	    "		sampledStp = stpWeight(rg);\n"                                                                                                             \
+	    "		if(discardForSemiTransPass(rg, sampledStp)) { discard; }\n"                                                                                \
 	    "		vec4 t = lut(rg);\n"                                                                                                                       \
 	    "		t.w = 1.0 - t.w;\n"                                                                                                                        \
 	    "		return t;\n"                                                                                                                               \
@@ -530,7 +534,7 @@ GLint u_psxDrawMaskSetLoc;
 	    "	void main() {\n"                                                                                                                            \
 	    "		vec4 color = (bilinearFilter > 0) ? bilinearTextureSample(v_texcoord.xy) : nearestTextureSample(v_texcoord.xy);\n"                         \
 	    "		fragColor = dither(color * v_color);\n"                                                                                                    \
-	    "		fragColor.a = float(psxDrawMaskSet);\n"                                                                                                    \
+	    "		fragColor.a = (psxDrawMaskSet != 0 || (psxTextureOutputStp != 0 && sampledStp >= 0.5)) ? 1.0 : 0.0;\n"                                     \
 	    "	}\n"
 
 global_variable const char *gpu_shader_common = "	varying vec4 v_texcoord;\n"
@@ -758,6 +762,7 @@ internal void NativeRenderer_CompilePSXShader(GTEShader *sh, const char *source)
 	sh->lutLoc = glGetUniformLocation(sh->shader, "s_rgLut");
 	sh->psxSemiTransPassLoc = glGetUniformLocation(sh->shader, "psxSemiTransPass");
 	sh->psxDrawMaskSetLoc = glGetUniformLocation(sh->shader, "psxDrawMaskSet");
+	sh->psxTextureOutputStpLoc = glGetUniformLocation(sh->shader, "psxTextureOutputStp");
 }
 
 internal void NativeRenderer_InitialisePSXShaders(void)
@@ -798,9 +803,6 @@ int NativeRenderer_InitialisePSX(void)
 
 	// gen framebuffer
 	{
-		memset(&s_glFramebufferPBO, 0, sizeof(s_glFramebufferPBO));
-		PBO_Init(&s_glFramebufferPBO, GL_RGBA, VRAM_WIDTH, VRAM_HEIGHT, 2);
-
 		// make a special texture
 		// it will be resized later
 		glGenTextures(1, &s_framebufferTexture);
@@ -1003,6 +1005,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_texelSizeLoc = -1;
 		u_psxSemiTransPassLoc = s_gteShader4.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader4.psxDrawMaskSetLoc;
+		u_psxTextureOutputStpLoc = s_gteShader4.psxTextureOutputStpLoc;
 		break;
 	case TF_8_BIT:
 		NativeRenderer_SetShader(s_gteShader8.shader);
@@ -1013,6 +1016,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_texelSizeLoc = -1;
 		u_psxSemiTransPassLoc = s_gteShader8.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader8.psxDrawMaskSetLoc;
+		u_psxTextureOutputStpLoc = s_gteShader8.psxTextureOutputStpLoc;
 		break;
 	case TF_16_BIT:
 		NativeRenderer_SetShader(s_gteShader16.shader);
@@ -1023,6 +1027,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_texelSizeLoc = -1;
 		u_psxSemiTransPassLoc = s_gteShader16.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader16.psxDrawMaskSetLoc;
+		u_psxTextureOutputStpLoc = s_gteShader16.psxTextureOutputStpLoc;
 		break;
 	case TF_32_BIT_RGBA:
 		NativeRenderer_SetShader(s_gteShader32Rgba.shader);
@@ -1033,6 +1038,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_texelSizeLoc = s_gteShader32Rgba.texelSizeLoc;
 		u_psxSemiTransPassLoc = s_gteShader32Rgba.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader32Rgba.psxDrawMaskSetLoc;
+		u_psxTextureOutputStpLoc = s_gteShader32Rgba.psxTextureOutputStpLoc;
 		break;
 	}
 
@@ -1079,6 +1085,12 @@ void NativeRenderer_SetPSXTextureSemiTransPass(int pass)
 {
 	if (u_psxSemiTransPassLoc >= 0)
 		glUniform1i(u_psxSemiTransPassLoc, pass);
+}
+
+void NativeRenderer_SetPSXTextureOutputSTP(int enabled)
+{
+	if (u_psxTextureOutputStpLoc >= 0)
+		glUniform1i(u_psxTextureOutputStpLoc, enabled);
 }
 
 void NativeRenderer_SetPSXDrawMaskSet(int maskSet)
@@ -1216,18 +1228,25 @@ void NativeRenderer_ReadFramebufferDataToVRAM(void)
 	w = s_previousFramebuffer.w;
 	h = s_previousFramebuffer.h;
 
-	// now we can read it back to VRAM texture
+	if (w <= 0 || h <= 0)
+		return;
 
-	// read the texture
-	if (s_glFramebufferPBO.pixels)
+	u32 *pixels = (u32 *)malloc((size_t)w * (size_t)h * sizeof(u32));
+	if (pixels != NULL)
 	{
 		glBindTexture(GL_TEXTURE_2D, s_framebufferTexture);
-		PBO_Download(&s_glFramebufferPBO);
+		// NOTE(aalhendi): DrawSync can be called immediately before screen-copy
+		// effects sample PS1 VRAM. A delayed PBO readback replays an older frame
+		// into VRAM and turns clock/idle blur into flicker; use the latest
+		// framebuffer texture here.
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		// NOTE(aalhendi): Keep the CPU-side VRAM mirror packed like PS1 VRAM.
 		// Host texture bindings are invalid after this direct GL texture read.
-		NativeRenderer_CopyRGBAFramebufferToVRAM((u32 *)s_glFramebufferPBO.pixels, x, y, w, h, 1, 0);
+		NativeRenderer_CopyRGBAFramebufferToVRAM(pixels, x, y, w, h, 1, 0);
 		s_lastBoundTexture = -1;
+
+		free(pixels);
 	}
 }
 
