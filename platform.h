@@ -21,6 +21,9 @@ void Platform_EndScene(void);
 void Platform_EndFrame(void);
 void Platform_PresentVRAMDisplay(void);
 void Platform_PinVRAMDisplayFrames(int frameCount);
+void Platform_PinVRAMDisplayRect(int x, int y, int w, int h, int frameCount);
+int Platform_GetVBlankCount(void);
+void Platform_WaitUntilVBlank(int targetVBlank);
 void Platform_PollHostEvents(void);
 int Platform_PollInput(void);
 

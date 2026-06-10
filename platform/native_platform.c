@@ -32,6 +32,11 @@ global_variable int s_hostAltKeyState = 0;
 global_variable int s_platformInitialized = 0;
 global_variable int s_platformBeginScene = 0;
 global_variable int s_pinnedVramDisplayFrames = 0;
+global_variable int s_pinnedVramDisplayCustomRect = 0;
+global_variable int s_pinnedVramDisplayX = 0;
+global_variable int s_pinnedVramDisplayY = 0;
+global_variable int s_pinnedVramDisplayW = 0;
+global_variable int s_pinnedVramDisplayH = 0;
 #define NATIVE_FPS_REPORT_FRAME_WINDOW 2000
 global_variable int s_fpsFrameCount = 0;
 global_variable u64 s_fpsLastCounter = 0;
@@ -281,9 +286,18 @@ void Platform_EndScene(void)
 
 	if (s_pinnedVramDisplayFrames > 0)
 	{
-		NativeRenderer_PresentVRAMDisplay();
+			// NOTE(aalhendi): Direct VRAM presentation skips StoreFrameBuffer.
+			// Do not let the next DrawSync read stale framebuffer texture data back
+			// into PSX VRAM after a movie/frame upload.
+			NativeRenderer_DiscardFramebufferReadback();
+			if (s_pinnedVramDisplayCustomRect)
+				NativeRenderer_PresentVRAMRect(s_pinnedVramDisplayX, s_pinnedVramDisplayY, s_pinnedVramDisplayW, s_pinnedVramDisplayH);
+			else
+			NativeRenderer_PresentVRAMDisplay();
 		NativeRenderer_SwapWindow();
 		s_pinnedVramDisplayFrames--;
+		if (s_pinnedVramDisplayFrames <= 0)
+			s_pinnedVramDisplayCustomRect = 0;
 		NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_END_SCENE);
 		return;
 	}
@@ -314,7 +328,23 @@ void Platform_PresentVRAMDisplay(void)
 void Platform_PinVRAMDisplayFrames(int frameCount)
 {
 	if (frameCount > s_pinnedVramDisplayFrames)
+	{
 		s_pinnedVramDisplayFrames = frameCount;
+		s_pinnedVramDisplayCustomRect = 0;
+	}
+}
+
+void Platform_PinVRAMDisplayRect(int x, int y, int w, int h, int frameCount)
+{
+	if ((frameCount <= 0) || (w <= 0) || (h <= 0))
+		return;
+
+	s_pinnedVramDisplayX = x;
+	s_pinnedVramDisplayY = y;
+	s_pinnedVramDisplayW = w;
+	s_pinnedVramDisplayH = h;
+	s_pinnedVramDisplayFrames = frameCount;
+	s_pinnedVramDisplayCustomRect = 1;
 }
 
 void Platform_PollHostEvents(void)
@@ -555,4 +585,40 @@ int VSync(int mode)
 #endif
 
 	return s_nativeVBlankCount;
+}
+
+int Platform_GetVBlankCount(void)
+{
+	return s_nativeVBlankCount;
+}
+
+void Platform_WaitUntilVBlank(int targetVBlank)
+{
+	int emittedVBlanks = 0;
+	int requestedVBlanks = targetVBlank - s_nativeVBlankCount;
+
+	if (requestedVBlanks <= 0)
+		return;
+
+#if defined(CTR_INTERNAL)
+	if (NativeReplayScheduler_ConsumeVSyncPacket(requestedVBlanks, &emittedVBlanks))
+	{
+		for (s32 i = 0; i < emittedVBlanks; i++)
+			Native_WaitAndEmitVBlank();
+
+		return;
+	}
+#endif
+
+	emittedVBlanks += Native_CatchUpDueVBlanks();
+
+	while (s_nativeVBlankCount < targetVBlank)
+	{
+		Native_WaitAndEmitVBlank();
+		emittedVBlanks++;
+	}
+
+#if defined(CTR_INTERNAL)
+	NativeReplayScheduler_RecordVSyncPacket(emittedVBlanks);
+#endif
 }

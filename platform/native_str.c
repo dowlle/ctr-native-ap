@@ -1,28 +1,31 @@
 #include <macros.h>
 #include <platform/native_assets.h>
+#include <platform/native_renderer.h>
 #include <platform/native_str.h>
 #include <psx/libgpu.h>
 
 #include <stdio.h>
 #include <string.h>
 
-#define NATIVE_STR_EXTRACTED_SECTOR_SIZE 0x800
-#define NATIVE_STR_CD_SECTOR_SIZE        0x920
-#define NATIVE_STR_SECTOR_HEADER         0x20
-#define NATIVE_STR_SECTOR_PAYLOAD        (NATIVE_STR_EXTRACTED_SECTOR_SIZE - NATIVE_STR_SECTOR_HEADER)
-#define NATIVE_STR_MAX_RECORD_SIZE       NATIVE_STR_CD_SECTOR_SIZE
-#define NATIVE_STR_MAX_FRAME_SECTORS     10
-#define NATIVE_STR_MAX_FRAME_BYTES       (NATIVE_STR_MAX_FRAME_SECTORS * NATIVE_STR_SECTOR_PAYLOAD)
-#define NATIVE_STR_PATH_MAX              1024
-#define NATIVE_STR_MAX_WIDTH             512
-#define NATIVE_STR_MAX_HEIGHT            240
-#define NATIVE_STR_ID                    0x80010160u
-#define NATIVE_STR_BS_ID                 0x3800u
-#define NATIVE_STR_END_OF_BLOCK          0xfe00u
-#define NATIVE_STR_IDCT_SHIFT            14
-#define NATIVE_STR_IDCT_SCALE            (1 << NATIVE_STR_IDCT_SHIFT)
-#define NATIVE_STR_SCRAPBOOK_PATH        "TEST.STR"
-#define NATIVE_STR_SCRAPBOOK_FRAME_COUNT 0x1148
+#define NATIVE_STR_EXTRACTED_SECTOR_SIZE    0x800
+#define NATIVE_STR_CD_SECTOR_SIZE           0x920
+#define NATIVE_STR_CD_SUBHEADER_SIZE        0x8
+#define NATIVE_STR_SECTOR_HEADER            0x20
+#define NATIVE_STR_EXTRACTED_SECTOR_PAYLOAD (NATIVE_STR_EXTRACTED_SECTOR_SIZE - NATIVE_STR_SECTOR_HEADER)
+#define NATIVE_STR_CD_SECTOR_PAYLOAD        NATIVE_STR_EXTRACTED_SECTOR_PAYLOAD
+#define NATIVE_STR_MAX_RECORD_SIZE          NATIVE_STR_CD_SECTOR_SIZE
+#define NATIVE_STR_MAX_FRAME_SECTORS        10
+#define NATIVE_STR_MAX_FRAME_BYTES          (NATIVE_STR_MAX_FRAME_SECTORS * NATIVE_STR_CD_SECTOR_PAYLOAD)
+#define NATIVE_STR_PATH_MAX                 1024
+#define NATIVE_STR_MAX_WIDTH                512
+#define NATIVE_STR_MAX_HEIGHT               240
+#define NATIVE_STR_ID                       0x80010160u
+#define NATIVE_STR_BS_ID                    0x3800u
+#define NATIVE_STR_END_OF_BLOCK             0xfe00u
+#define NATIVE_STR_IDCT_SHIFT               14
+#define NATIVE_STR_IDCT_SCALE               (1 << NATIVE_STR_IDCT_SHIFT)
+#define NATIVE_STR_SCRAPBOOK_PATH           "TEST.STR"
+#define NATIVE_STR_SCRAPBOOK_FRAME_COUNT    0x1148
 
 enum NativeSTRFormat
 {
@@ -405,10 +408,10 @@ internal s32 NativeSTR_ParseSectorHeader(const u8 *sector, s32 headerOffset, str
 	       (header->height <= NATIVE_STR_MAX_HEIGHT);
 }
 
-internal void NativeSTR_CopySectorPayload(const u8 *sector, s32 headerOffset, const struct NativeSTRSectorHeader *header, s32 *copied)
+internal void NativeSTR_CopySectorPayload(const u8 *sector, s32 headerOffset, const struct NativeSTRSectorHeader *header, s32 payloadSize, s32 *copied)
 {
 	s32 remaining = (s32)header->frameSize - *copied;
-	s32 copyBytes = (remaining < NATIVE_STR_SECTOR_PAYLOAD) ? remaining : NATIVE_STR_SECTOR_PAYLOAD;
+	s32 copyBytes = (remaining < payloadSize) ? remaining : payloadSize;
 
 	if (copyBytes <= 0)
 		return;
@@ -449,7 +452,7 @@ internal s32 NativeSTR_ReadNextFrameFromFile(void)
 			return 0;
 		}
 
-		NativeSTR_CopySectorPayload(sector, 0, &firstHeader, &copied);
+		NativeSTR_CopySectorPayload(sector, 0, &header, NATIVE_STR_EXTRACTED_SECTOR_PAYLOAD, &copied);
 	}
 
 	return copied == (s32)firstHeader.frameSize;
@@ -460,9 +463,11 @@ internal s32 NativeSTR_ReadNextCdRecord(u8 *sector, struct NativeSTRSectorHeader
 	while (fread(sector, 1, NATIVE_STR_CD_SECTOR_SIZE, s_str.file) == NATIVE_STR_CD_SECTOR_SIZE)
 	{
 		// NOTE(aalhendi): TEST.STR is the raw CD/XA scrapbook stream. Each
-		// 0x920-byte record has eight bytes before the 0x20-byte STR chunk
-		// header, unlike extracted track-preview STR files.
-		if (NativeSTR_ParseSectorHeader(sector, 8, header) != 0)
+		// 0x920-byte record has an XA subheader before the STR chunk header,
+		// unlike extracted track-preview STR files. The video chunk still only
+		// carries the logical 0x800-byte STR sector, so payload copies stay at
+		// 0x7e0 after that header.
+		if (NativeSTR_ParseSectorHeader(sector, NATIVE_STR_CD_SUBHEADER_SIZE, header) != 0)
 			return 1;
 	}
 
@@ -485,7 +490,7 @@ internal s32 NativeSTR_ReadNextFrameFromCdStream(void)
 	s_str.width = firstHeader.width;
 	s_str.height = firstHeader.height;
 	s_str.frameSize = (s32)firstHeader.frameSize;
-	NativeSTR_CopySectorPayload(sector, 8, &firstHeader, &copied);
+	NativeSTR_CopySectorPayload(sector, NATIVE_STR_CD_SUBHEADER_SIZE, &firstHeader, NATIVE_STR_CD_SECTOR_PAYLOAD, &copied);
 
 	for (expectedChunk = 1; expectedChunk < firstHeader.chunkCount; expectedChunk++)
 	{
@@ -498,7 +503,7 @@ internal s32 NativeSTR_ReadNextFrameFromCdStream(void)
 
 			if ((header.frameIndex == firstHeader.frameIndex) && (header.frameSize == firstHeader.frameSize) && (header.chunkIndex == expectedChunk))
 			{
-				NativeSTR_CopySectorPayload(sector, 8, &firstHeader, &copied);
+				NativeSTR_CopySectorPayload(sector, NATIVE_STR_CD_SUBHEADER_SIZE, &header, NATIVE_STR_CD_SECTOR_PAYLOAD, &copied);
 				break;
 			}
 
@@ -663,5 +668,9 @@ s32 NativeSTR_UploadNextFrame(s32 dstX, s32 dstY)
 	rect.w = s_str.width;
 	rect.h = s_str.height;
 	LoadImage(&rect, (u_long *)s_str.rgb555);
+	// NOTE(aalhendi): Track-preview STR draws these uploaded pixels as same-pass
+	// textured primitives. Retail LoadImage is GPU-visible immediately; refresh
+	// the host VRAM texture at that boundary.
+	NativeRenderer_UpdateVRAM();
 	return 1;
 }

@@ -1486,6 +1486,11 @@ void NativeRenderer_ReadFramebufferDataToVRAM(void)
 	}
 }
 
+void NativeRenderer_DiscardFramebufferReadback(void)
+{
+	s_framebufferNeedsUpdate = 0;
+}
+
 internal void NativeRenderer_SetScissorState(int enable)
 {
 	if (s_previousScissorState == enable)
@@ -1807,16 +1812,8 @@ internal void NativeRenderer_FillDisplayChunkVerts(GrVertex *verts, int dstX, in
 	}
 }
 
-void NativeRenderer_PresentVRAMDisplay(void)
+void NativeRenderer_PresentVRAMRect(int displayX, int displayY, int displayW, int displayH)
 {
-	// NOTE(aalhendi): ctr-native local divergence. Retail presents this boot
-	// splash path by displaying VRAM directly after DR_MOVE packets; the native
-	// OpenGL backend otherwise swaps the current framebuffer and never shows
-	// those VRAM-only copies.
-	const int displayX = activeDispEnv.disp.x;
-	const int displayY = activeDispEnv.disp.y;
-	const int displayW = activeDispEnv.disp.w;
-	const int displayH = activeDispEnv.disp.h;
 	const int maxChunkW = 0x100;
 	const int maxChunkH = 0x100;
 	const int maxChunkBytes = maxChunkW * maxChunkH * 4;
@@ -1866,6 +1863,15 @@ void NativeRenderer_PresentVRAMDisplay(void)
 			NativeRenderer_DrawTriangles(0, 2);
 		}
 	}
+}
+
+void NativeRenderer_PresentVRAMDisplay(void)
+{
+	// NOTE(aalhendi): ctr-native local divergence. Retail presents this boot
+	// splash path by displaying VRAM directly after DR_MOVE packets; the native
+	// OpenGL backend otherwise swaps the current framebuffer and never shows
+	// those VRAM-only copies.
+	NativeRenderer_PresentVRAMRect(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
 }
 
 void NativeRenderer_SwapWindow(void)

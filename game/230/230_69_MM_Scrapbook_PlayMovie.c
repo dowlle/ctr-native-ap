@@ -1,38 +1,30 @@
 #include <common.h>
 
 #ifdef CTR_NATIVE
+#include "../../platform.h"
+#include <platform/native_audio.h>
+#include <platform/native_renderer.h>
 #include <platform/native_str.h>
 
-#define SCRAPBOOK_NATIVE_SRC_X       512
-#define SCRAPBOOK_NATIVE_SRC_Y       0
-#define SCRAPBOOK_NATIVE_DST_X       0
-#define SCRAPBOOK_NATIVE_DST_Y       4
-#define SCRAPBOOK_NATIVE_WIDTH       512
-#define SCRAPBOOK_NATIVE_HEIGHT      208
-#define SCRAPBOOK_NATIVE_STRIP_WIDTH 128
+#define SCRAPBOOK_NATIVE_XA_PATH       "TEST.STR"
+#define SCRAPBOOK_NATIVE_XA_CHANNEL    1
+#define SCRAPBOOK_NATIVE_FRAME_Y_PAD   4
+#define SCRAPBOOK_NATIVE_DISPLAY_WIDTH SCREEN_WIDTH
+#define SCRAPBOOK_NATIVE_FRAME_VBLANKS 4
 
-static void MM_Scrapbook_DrawNativeFrame(void)
+global_variable s32 s_scrapbookNativeNextVBlank;
+
+static void MM_Scrapbook_GetNativeSource(s16 *srcX, s16 *srcY, s16 *displayY)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	u32 *prim = (u32 *)gGT->backBuffer->primMem.curr;
-	u32 *firstPrim = prim;
-	u_long *ot = gGT->pushBuffer_UI.ptrOT;
-	u32 oldTag = (u32)*ot;
-	s32 x;
+	DRAWENV *drawEnv = &gGT->db[1 - gGT->swapchainIndex].drawEnv;
 
-	for (x = 0; x < SCRAPBOOK_NATIVE_WIDTH; x += SCRAPBOOK_NATIVE_STRIP_WIDTH)
-	{
-		s16 tile[16] = {
-		    SCRAPBOOK_NATIVE_SRC_X + (s16)x, SCRAPBOOK_NATIVE_SRC_Y, SCRAPBOOK_NATIVE_STRIP_WIDTH, SCRAPBOOK_NATIVE_HEIGHT,
-		    SCRAPBOOK_NATIVE_DST_X + (s16)x, SCRAPBOOK_NATIVE_DST_Y, SCRAPBOOK_NATIVE_STRIP_WIDTH, SCRAPBOOK_NATIVE_HEIGHT,
-		};
-
-		prim = DISPLAY_Blur_SubFunc(prim, tile);
-	}
-
-	*ot = (u_long)CtrGpu_PrimToOTLink24(firstPrim);
-	prim[-10] = oldTag | 0x09000000;
-	gGT->backBuffer->primMem.curr = prim;
+	// NOTE(aalhendi): Retail decodes Scrapbook into the inactive draw page.
+	// Native then presents that VRAM display page directly instead of drawing
+	// the movie back through a texture primitive.
+	*srcX = drawEnv->ofs[0];
+	*displayY = drawEnv->ofs[1];
+	*srcY = *displayY + SCRAPBOOK_NATIVE_FRAME_Y_PAD;
 }
 #endif
 
@@ -91,10 +83,18 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 
 #ifdef CTR_NATIVE
 		if (NativeSTR_StartScrapbook() != 0)
-		{
-			D230.scrapbookState = 2;
-			return;
-		}
+			{
+				// NOTE(aalhendi): Native video decoding skips interleaved XA records;
+				// play the Scrapbook CD-XA channel from the same raw STR file.
+				if (NativeAudio_PlayXAFile(SCRAPBOOK_NATIVE_XA_PATH, SCRAPBOOK_NATIVE_XA_CHANNEL, sdata->vol_Music << 7, sdata->vol_Music << 7) == 0)
+				{
+					NativeSTR_Stop();
+					goto GO_BACK;
+				}
+				s_scrapbookNativeNextVBlank = Platform_GetVBlankCount() + SCRAPBOOK_NATIVE_FRAME_VBLANKS;
+				D230.scrapbookState = 2;
+				return;
+			}
 #else
 		// \TEST.STR;1
 		// if file was found
@@ -146,8 +146,19 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 		    (MM_Video_CheckIfFinished(0) == 1) || (getButtonPress != 0))
 #else
 		getButtonPress = (sdata->buttonTapPerPlayer[0] & 0x41070);
+		s32 nativeUploaded = 0;
+		s16 nativeSrcX;
+		s16 nativeSrcY;
+		s16 nativeDisplayY;
 
-		if ((getButtonPress != 0) || (NativeSTR_UploadNextFrame(SCRAPBOOK_NATIVE_SRC_X, SCRAPBOOK_NATIVE_SRC_Y) == 0))
+		MM_Scrapbook_GetNativeSource(&nativeSrcX, &nativeSrcY, &nativeDisplayY);
+		if (getButtonPress == 0)
+		{
+			NativeRenderer_ClearVRAM(nativeSrcX, nativeDisplayY, SCRAPBOOK_NATIVE_DISPLAY_WIDTH, SCREEN_HEIGHT, 0, 0, 0);
+			nativeUploaded = NativeSTR_UploadNextFrame(nativeSrcX, nativeSrcY);
+		}
+
+		if ((getButtonPress != 0) || (nativeUploaded == 0))
 #endif
 		{
 			if (getButtonPress != 0)
@@ -158,14 +169,29 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 			// stop video
 			D230.scrapbookState = 3;
 		}
-#ifdef CTR_NATIVE
+	#ifdef CTR_NATIVE
 		else
 		{
-			MM_Scrapbook_DrawNativeFrame();
+			Platform_PinVRAMDisplayRect(nativeSrcX, nativeDisplayY, SCRAPBOOK_NATIVE_DISPLAY_WIDTH, SCREEN_HEIGHT, 1);
 		}
-#endif
+	#endif
 
+#ifdef CTR_NATIVE
+		if ((getButtonPress == 0) && (nativeUploaded != 0))
+		{
+			// NOTE(aalhendi): Native decodes this frame on the CPU. Count any
+			// elapsed decode vblanks toward the retail 15fps cadence instead of
+			// adding them on top of a fresh VSync(4).
+			Platform_WaitUntilVBlank(s_scrapbookNativeNextVBlank);
+			s_scrapbookNativeNextVBlank += SCRAPBOOK_NATIVE_FRAME_VBLANKS;
+		}
+		else
+		{
+			VSync(SCRAPBOOK_NATIVE_FRAME_VBLANKS);
+		}
+#else
 		VSync(4);
+#endif
 		break;
 
 	// return disc to normal,
@@ -178,6 +204,7 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 
 		MM_Video_ClearMem();
 #else
+		NativeAudio_StopXA();
 		NativeSTR_Stop();
 #endif
 
