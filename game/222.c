@@ -67,9 +67,7 @@ void AA_EndEvent_DrawMenu(void)
 	if (driver->instBigNum->scale[0] != 0x1e00)
 	{
 		struct Instance *instFruitDisp = driver->instFruitDisp;
-		instFruitDisp->scale[0] = 0;
-		instFruitDisp->scale[1] = 0;
-		instFruitDisp->scale[2] = 0;
+		CTR_SET_VEC3(instFruitDisp->scale, 0, 0, 0);
 	}
 
 	// if not in Token mode, these won't be used until later;
@@ -514,6 +512,7 @@ void AA_EndEvent_DisplayTime(s16 driverId, s16 param_2)
 	s16 width;
 	s16 endFrame;
 	s16 posXY[2];
+	s16 bigNumScale;
 	RECT r;
 
 	gGT = sdata->gGT;
@@ -605,10 +604,9 @@ void AA_EndEvent_DisplayTime(s16 driverId, s16 param_2)
 
 	// interpolate scale to 0x1e00
 	UI_Lerp2D_Linear(&posXY[0], hud[2].scale, 0, 0x1e00, 0, framesElapsed, 30);
+	bigNumScale = posXY[0];
 
-	bigNum->scale[0] = posXY[0];
-	bigNum->scale[1] = posXY[0];
-	bigNum->scale[2] = posXY[0];
+	CTR_SET_VEC3(bigNum->scale, bigNumScale, bigNumScale, bigNumScale);
 
 	// === Draw Suffix ===
 

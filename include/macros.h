@@ -61,6 +61,23 @@ typedef double f64;
 #define len(arr)                (sizeof(arr) / sizeof(arr[0]))
 #define OFFSETOF(TYPE, ELEMENT) ((u32)offsetof(TYPE, ELEMENT))
 
+// Raw [3] vector array helpers. Arguments must be side-effect-free lvalues.
+#define CTR_COPY_VEC3(DST, SRC) \
+	do                          \
+	{                           \
+		(DST)[0] = (SRC)[0];    \
+		(DST)[1] = (SRC)[1];    \
+		(DST)[2] = (SRC)[2];    \
+	} while (0)
+
+#define CTR_SET_VEC3(DST, X, Y, Z) \
+	do                             \
+	{                              \
+		(DST)[0] = (X);            \
+		(DST)[1] = (Y);            \
+		(DST)[2] = (Z);            \
+	} while (0)
+
 #if defined(__GNUC__) || defined(__clang__)
 #define CTR_PRINTF_FORMAT(fmtArg, firstVararg) __attribute__((format(printf, fmtArg, firstVararg)))
 #else

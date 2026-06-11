@@ -145,9 +145,7 @@ void RR_EndEvent_DrawMenu(void)
 		relic->colorRGBA = 0xd8d2090;
 	}
 
-	sdata->ptrTimebox1->scale[0] = 0x300;
-	sdata->ptrTimebox1->scale[1] = 0x300;
-	sdata->ptrTimebox1->scale[2] = 0x300;
+	CTR_SET_VEC3(sdata->ptrTimebox1->scale, 0x300, 0x300, 0x300);
 
 	// If race ended less than 900 seconds ago (30 seconds)
 	if (sdata->framesSinceRaceEnded < 900)

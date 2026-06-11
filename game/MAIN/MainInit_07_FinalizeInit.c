@@ -106,9 +106,7 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 		inst = d->instSelf;
 		if (inst != 0)
 		{
-			inst->scale[0] = 0xccc;
-			inst->scale[1] = 0xccc;
-			inst->scale[2] = 0xccc;
+			CTR_SET_VEC3(inst->scale, 0xccc, 0xccc, 0xccc);
 		}
 
 		if (i < gGT->numPlyrCurrGame)

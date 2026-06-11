@@ -496,13 +496,9 @@ SKIP_CONTROLS:
 	CAM_Path_Move((int)garageFrames, &camPos[0], &camRot[0], &getPath);
 
 	// set position and rotation to pushBuffer
-	gGT->pushBuffer[0].pos[0] = camPos[0];
-	gGT->pushBuffer[0].pos[1] = camPos[1];
-	gGT->pushBuffer[0].pos[2] = camPos[2];
+	CTR_COPY_VEC3(gGT->pushBuffer[0].pos, camPos);
 
-	gGT->pushBuffer[0].rot[0] = camRot[0];
-	gGT->pushBuffer[0].rot[1] = camRot[1];
-	gGT->pushBuffer[0].rot[2] = camRot[2];
+	CTR_COPY_VEC3(gGT->pushBuffer[0].rot, camRot);
 
 	int zoom = gGarage.numFramesCurr_ZoomOut;
 	if (zoom == 0)

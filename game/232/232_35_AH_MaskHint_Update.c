@@ -69,13 +69,9 @@ void AH_MaskHint_Update()
 		{
 			struct CameraDC *cdc = &gGT->cameraDC[0];
 
-			cdc->driverOffset_CamEyePos[0] = D232.eyePos[0];
-			cdc->driverOffset_CamEyePos[1] = D232.eyePos[1];
-			cdc->driverOffset_CamEyePos[2] = D232.eyePos[2];
+			CTR_COPY_VEC3(cdc->driverOffset_CamEyePos, D232.eyePos);
 
-			cdc->driverOffset_CamLookAtPos[0] = D232.lookAtPos[0];
-			cdc->driverOffset_CamLookAtPos[1] = D232.lookAtPos[1];
-			cdc->driverOffset_CamLookAtPos[2] = D232.lookAtPos[2];
+			CTR_COPY_VEC3(cdc->driverOffset_CamLookAtPos, D232.lookAtPos);
 
 			cdc->flags |= 8;
 
@@ -108,9 +104,7 @@ void AH_MaskHint_Update()
 		D232.maskCamRotStart[2] = rot[2] & 0xfff;
 		D232.maskCamRotStart[1] = rot[0] & 0xfff;
 
-		D232.maskCamPosStart[0] = dInst->matrix.t[0];
-		D232.maskCamPosStart[1] = dInst->matrix.t[1];
-		D232.maskCamPosStart[2] = dInst->matrix.t[2];
+		CTR_COPY_VEC3(D232.maskCamPosStart, dInst->matrix.t);
 
 		((struct MaskHint *)mhInst->thread->object)->scale = 0;
 

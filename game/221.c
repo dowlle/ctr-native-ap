@@ -25,7 +25,6 @@ void CC_EndEvent_DrawMenu()
 	int boolLose;
 	struct AdvProgress *adv;
 	struct Instance *tokenInst;
-	int growVal;
 	int bitIndex;
 	int levelID;
 	int elapsedFrames;
@@ -152,10 +151,9 @@ void CC_EndEvent_DrawMenu()
 	{
 		if (tokenInst->scale[0] < 0x2001)
 		{
-			growVal = tokenInst->scale[0] + 0x200;
-			tokenInst->scale[0] = growVal;
-			tokenInst->scale[1] = growVal;
-			tokenInst->scale[2] = growVal;
+			tokenInst->scale[0] += 0x200;
+			tokenInst->scale[1] += 0x200;
+			tokenInst->scale[2] += 0x200;
 		}
 	}
 
