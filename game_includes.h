@@ -27,27 +27,7 @@
 
 #include "game/MAIN/MAIN_AAA_BigBlock1.c"
 
-#include "game/CAMERA/CAM_00_SkyboxGlow.c"
-#include "game/CAMERA/CAM_01_ClearScreen.c"
-#include "game/CAMERA/CAM_02_Init.c"
-#include "game/CAMERA/CAM_04_Path_GetNumPoints.c"
-#include "game/CAMERA/CAM_05_Path_Move.c"
-#include "game/CAMERA/CAM_06_StartOfRace.c"
-#include "game/CAMERA/CAM_07_EndOfRace_Battle.c"
-#include "game/CAMERA/CAM_08_EndOfRace.c"
-#include "game/CAMERA/CAM_10_ProcessTransition.c"
-#include "game/CAMERA/CAM_03_FindClosestQuadblock.c"
-#include "game/CAMERA/CAM_09_StartLine_FlyIn_FixY.c"
-#include "game/CAMERA/CAM_11_FollowDriver_AngleAxis.c"
-#include "game/CAMERA/CAM_12_StartLine_FlyIn.c"
-#include "game/CAMERA/CAM_13_FollowDriver_TrackPath.c"
-#include "game/CAMERA/CAM_14_LookAtPosition.c"
-#include "game/CAMERA/CAM_15_FollowDriver_Spin360.c"
-#include "game/CAMERA/CAM_16_SetDesiredPosRot.c"
-
-#include "game/CAMERA/CAM_17_FollowDriver_Normal.c"
-#include "game/CAMERA/CAM_18_MapRange_PosPoints.c"
-#include "game/CAMERA/CAM_19_ThTick.c"
+#include "game/CAM.c"
 
 #include "game/BOTS.c"
 #include "game/CDSYS/CDSYS_00_Init.c"
