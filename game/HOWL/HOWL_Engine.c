@@ -242,7 +242,7 @@ void EngineSound_Player(struct Driver *driver)
 					driver->sfxDistortOffset = ((u8)driver->const_turboMaxRoom >> 1) - (driver->turbo_MeterRoomLeft >> 6);
 				}
 
-				int drift = (s32)((u32)driver->unk3D4[0] << 0x10) >> 0x13;
+				int drift = (s32)((u32)driver->turnWobbleAngle << 0x10) >> 0x13;
 				if (drift < 0)
 					drift = -drift;
 				enginePitch -= drift;
@@ -254,7 +254,7 @@ void EngineSound_Player(struct Driver *driver)
 		}
 		else
 		{
-			int drift = (s32)((u32)driver->unk3D4[0] << 0x10) >> 0x13;
+			int drift = (s32)((u32)driver->turnWobbleAngle << 0x10) >> 0x13;
 			if (drift < 0)
 				drift = -drift;
 			distortionValue = enginePitch - drift;

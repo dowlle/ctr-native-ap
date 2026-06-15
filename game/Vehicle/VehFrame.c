@@ -282,13 +282,13 @@ void VehFrameProc_LastSpin(struct Thread *t, struct Driver *d)
 
 	if (d->turnAngleCurr > 0)
 	{
-		if (d->unk_LerpToForwards < 0)
+		if (d->turnAngleLerpVel < 0)
 		{
 			targetFrame = numFrames - 1;
 		}
 	}
 
-	if ((d->turnAngleCurr < 0) && (d->unk_LerpToForwards > 0))
+	if ((d->turnAngleCurr < 0) && (d->turnAngleLerpVel > 0))
 	{
 		targetFrame = 0;
 	}

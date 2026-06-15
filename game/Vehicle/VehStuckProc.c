@@ -1130,17 +1130,17 @@ void VehStuckProc_Tumble_PhysAngular(struct Thread *thread, struct Driver *drive
 
 	driver->numFramesSpentSteering = 10000;
 
-	driver->unk3D4[0] = (s16)CTR_MipsSubLo((u16)driver->unk3D4[0], CTR_MipsSra(driver->unk3D4[0], 3));
+	driver->turnWobbleAngle = (s16)CTR_MipsSubLo((u16)driver->turnWobbleAngle, CTR_MipsSra(driver->turnWobbleAngle, 3));
 	driver->rotationSpinRate = (s16)CTR_MipsSubLo((u16)driver->rotationSpinRate, CTR_MipsSra(driver->rotationSpinRate, 3));
-	driver->unk_LerpToForwards = (s16)CTR_MipsSubLo((u16)driver->unk_LerpToForwards, CTR_MipsSra(driver->unk_LerpToForwards, 3));
+	driver->turnAngleLerpVel = (s16)CTR_MipsSubLo((u16)driver->turnAngleLerpVel, CTR_MipsSra(driver->turnAngleLerpVel, 3));
 
 	driver->ampTurnState = driver->rotationSpinRate;
 
-	driver->turnAngleCurr = (s16)CTR_MipsSubLo(CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->turnAngleCurr, (u16)driver->unk_LerpToForwards), 0x800) & 0xfff, 0x800);
+	driver->turnAngleCurr = (s16)CTR_MipsSubLo(CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->turnAngleCurr, (u16)driver->turnAngleLerpVel), 0x800) & 0xfff, 0x800);
 
 	driver->angle = (s16)(CTR_MipsAddLo((u16)driver->angle, CTR_MipsSra(CTR_MipsMulLo(driver->rotationSpinRate, elapsedTimeMS), 0xd)) & 0xfff);
 
-	(driver->rotCurr).y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->unk3D4[0], (u16)driver->angle), (u16)driver->turnAngleCurr);
+	(driver->rotCurr).y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->turnWobbleAngle, (u16)driver->angle), (u16)driver->turnAngleCurr);
 
 	(driver->rotCurr).w = VehCalc_InterpBySpeed((int)(driver->rotCurr).w, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 5), 5), 0);
 
@@ -1525,7 +1525,7 @@ void VehStuckProc_Warp_PhysAngular(struct Thread *th, struct Driver *d)
 	d->turnAngleCurr = sVar2;
 
 	// cameraRotY = ??? + kart angle + drift angle
-	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->unk3D4[0], (u16)d->angle), (u16)sVar2);
+	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnWobbleAngle, (u16)d->angle), (u16)sVar2);
 
 	// driver is warping
 	d->actionsFlagSet |= ACTION_WARP;

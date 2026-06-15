@@ -71,22 +71,12 @@ static void VehTurbo_TransformOffset(struct Instance *driverInst, s16 x, s16 y, 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800693c8-0x80069bb0.
 void VehTurbo_ThTick(struct Thread *turboThread)
 {
-	char kartState;
-	u32 fireAudioDistort;
-	int iVar7;
-	u32 uVar8;
-	struct Turbo *turbo;
-	struct Instance *instanceDriver;
-	struct Instance *instance;
-	struct Driver *driver;
-	int fireSize;
-	s16 elapsedTime;
 	struct GameTracker *gGT = sdata->gGT;
 
-	turbo = (struct Turbo *)turboThread->object;
-	driver = turbo->driver;
-	instance = turboThread->inst;
-	instanceDriver = driver->instSelf;
+	struct Turbo *turbo = (struct Turbo *)turboThread->object;
+	struct Driver *driver = turbo->driver;
+	struct Instance *instance = turboThread->inst;
+	struct Instance *instanceDriver = driver->instSelf;
 
 	if ((
 	        // if not burnt
@@ -139,7 +129,7 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		turbo->inst->vertSplit = instanceDriver->vertSplit;
 	}
 
-	fireSize = (int)turbo->fireSize;
+	int fireSize = (int)turbo->fireSize;
 	if (8 < (int)turbo->fireSize)
 	{
 		fireSize = 8;
@@ -178,7 +168,7 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	                         instanceDriver->scale[2] * -0x34 >> 0xc, (VECTOR *)&turbo->inst->matrix.t[0]);
 
 	// decrease turbo visibility cooldown by elapsed milliseconds per frame, ~32
-	elapsedTime = turbo->fireVisibilityCooldown - gGT->elapsedTimeMS;
+	s16 elapsedTime = turbo->fireVisibilityCooldown - gGT->elapsedTimeMS;
 	turbo->fireVisibilityCooldown = elapsedTime;
 
 	// don't allow negatives
@@ -228,21 +218,21 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	// player of any kind
 	if (instanceDriver->thread->modelIndex == DYNAMIC_PLAYER)
 	{
-		iVar7 = 0x100 - (u32)(instance->alphaScale >> 4);
+		int fireSfxVolume = 0x100 - (u32)(instance->alphaScale >> 4);
 
-		if (iVar7 < 0)
+		if (fireSfxVolume < 0)
 		{
-			iVar7 = 0;
+			fireSfxVolume = 0;
 		}
 		else
 		{
-			if (0x82 < iVar7)
+			if (0x82 < fireSfxVolume)
 			{
-				iVar7 = 0x82;
+				fireSfxVolume = 0x82;
 			}
 		}
 
-		fireAudioDistort = (u32)turbo->fireAudioDistort + 0x10;
+		u32 fireAudioDistort = (u32)turbo->fireAudioDistort + 0x10;
 
 		if ((int)fireAudioDistort < 0)
 		{
@@ -267,7 +257,7 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		}
 
 		// driver audio
-		OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xe, (iVar7 << 0x10 | fireAudioDistort | 0x80));
+		OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xe, (fireSfxVolume << 0x10 | fireAudioDistort | 0x80));
 
 		// manipulate turbo audio distort to change sound each frame
 		if (turbo->fireAudioDistort < 0xc0)
@@ -276,7 +266,7 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		}
 	}
 
-	kartState = driver->kartState;
+	char kartState = driver->kartState;
 
 	if (
 	    // if this is a ghost
@@ -330,17 +320,17 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		if (instanceDriver->thread->modelIndex == DYNAMIC_PLAYER)
 		{
 			// volume, distortion, left/right
-			uVar8 = 0x8080;
+			u32 stopSfxParams = 0x8080;
 
 			// if echo is required
 			if ((driver->actionsFlagSet & ACTION_ENGINE_ECHO) != 0)
 			{
 				// add echo, volume, distortion, left/right
-				uVar8 = 0x1008080;
+				stopSfxParams = 0x1008080;
 			}
 
 			// driver audio
-			OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xffffffff, uVar8);
+			OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xffffffff, stopSfxParams);
 		}
 
 		// 0x800 = this thread needs to be deleted

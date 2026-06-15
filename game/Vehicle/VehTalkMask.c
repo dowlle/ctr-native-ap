@@ -37,64 +37,64 @@ void VehTalkMask_ThTick(struct Thread *t)
 
 	sdata->unk_8008d9f4[1] = sdata->XA_MaxSampleValInArr;
 
-	int iVar4 = sdata->unk_8008d9f4[1] * 7;
+	int targetMouthFrame = sdata->unk_8008d9f4[1] * 7;
 
-	if (iVar4 < 0)
+	if (targetMouthFrame < 0)
 	{
-		iVar4 = iVar4 + 0x3fff;
+		targetMouthFrame = targetMouthFrame + 0x3fff;
 	}
 
-	iVar4 = iVar4 >> 0xe;
+	targetMouthFrame = targetMouthFrame >> 0xe;
 
-	if (sdata->unk_8008d9f4[2] < iVar4)
-		sdata->unk_8008d9f4[2] = iVar4;
+	if (sdata->unk_8008d9f4[2] < targetMouthFrame)
+		sdata->unk_8008d9f4[2] = targetMouthFrame;
 
-	int iVar6 = iVar4;
-	if (iVar4 < 2)
+	int desiredMouthFrame = targetMouthFrame;
+	if (targetMouthFrame < 2)
 	{
-		iVar6 = 0;
+		desiredMouthFrame = 0;
 	}
 
-	int iVar5 = mhInst->animFrame;
+	int currentMouthFrame = mhInst->animFrame;
 
-	if (iVar4 > 3)
+	if (targetMouthFrame > 3)
 	{
-		iVar4 = iVar5 - iVar6;
+		int mouthFrameDelta = currentMouthFrame - desiredMouthFrame;
 
-		if (iVar4 < 0)
+		if (mouthFrameDelta < 0)
 		{
-			iVar4 = -iVar4;
+			mouthFrameDelta = -mouthFrameDelta;
 		}
 
-		if (iVar4 > 3)
+		if (mouthFrameDelta > 3)
 		{
-			mhInst->animFrame = (s16)iVar6;
+			mhInst->animFrame = (s16)desiredMouthFrame;
 
 			goto SkipLerp;
 		}
 	}
 
-	mhInst->animFrame = EngineSound_VolumeAdjust(iVar6, iVar5, 1);
+	mhInst->animFrame = EngineSound_VolumeAdjust(desiredMouthFrame, currentMouthFrame, 1);
 
 SkipLerp:
 
-	iVar5 = mhInst->animFrame;
+	currentMouthFrame = mhInst->animFrame;
 
 	// animFrame
-	iVar4 = iVar5 - iVar6;
+	int mouthFrameDelta = currentMouthFrame - desiredMouthFrame;
 
-	if (iVar4 < 0)
+	if (mouthFrameDelta < 0)
 	{
-		iVar4 = -iVar4;
+		mouthFrameDelta = -mouthFrameDelta;
 	}
 
-	if (iVar4 < 6)
+	if (mouthFrameDelta < 6)
 	{
-		mhInst->animFrame = EngineSound_VolumeAdjust(iVar6, iVar5, 1);
+		mhInst->animFrame = EngineSound_VolumeAdjust(desiredMouthFrame, currentMouthFrame, 1);
 	}
 	else
 	{
-		mhInst->animFrame = (s16)iVar6;
+		mhInst->animFrame = (s16)desiredMouthFrame;
 	}
 
 	// animation frame goes back and forth

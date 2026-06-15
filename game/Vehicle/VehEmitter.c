@@ -616,7 +616,7 @@ static void VehEmitter_SkidmarkAudio(struct Thread *thread, struct Driver *d, st
 
 		if (d->kartState == KS_DRIFTING)
 		{
-			int drift = d->unk3D4[0];
+			int drift = d->turnWobbleAngle;
 			if (drift < 0)
 				drift = -drift;
 
@@ -755,7 +755,7 @@ void VehEmitter_DriverMain(struct Thread *thread, struct Driver *d)
 	{
 		GAMEPAD_JogCon2(d, 0x27, 0);
 
-		if (d->unk3D4[0] == 0)
+		if (d->turnWobbleAngle == 0)
 			return;
 
 		int jogValue = ((sdata->gGT->timer & 3) == 0) ? 0x27 : 0xf0;

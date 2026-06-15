@@ -1037,18 +1037,27 @@ struct Driver
 	s16 turnAnglePrev;
 
 	// 0x3CA
-	s16 unk3CA;
+	s16 turnAngleLerpTarget;
 
 	// 0x3CC
 	// from VehPhysForce_CollideDrivers
 	SVec3 accel;
 
 	// 0x3D2
-	s16 unk_LerpToForwards;
+	s16 turnAngleLerpVel;
 
 	// 0x3d4
 	// This is a UNION between kart states
-	s16 unk3D4[3];
+	union
+	{
+		s16 turnWobbleRaw[3];
+		struct
+		{
+			s16 turnWobbleAngle;
+			s16 turnWobbleVelocity;
+			s16 turnWobbleTimer;
+		};
+	};
 
 	// 0x3DA
 	// also drift direction
@@ -1897,6 +1906,9 @@ _Static_assert(offsetof(struct Driver, AxisAngle2_normalVec) == 0x368);
 _Static_assert(offsetof(struct Driver, AxisAngle3_normalVec) == 0x370);
 _Static_assert(offsetof(struct Driver, AxisAngle4_normalVec) == 0x378);
 _Static_assert(offsetof(struct Driver, terrainScaledBaseSpeed) == 0x3c4);
+_Static_assert(offsetof(struct Driver, turnWobbleAngle) == 0x3d4);
+_Static_assert(offsetof(struct Driver, turnWobbleVelocity) == 0x3d6);
+_Static_assert(offsetof(struct Driver, turnWobbleTimer) == 0x3d8);
 _Static_assert(offsetof(struct Driver, jump_HighJumpTimerMS) == 0x3fa);
 _Static_assert(offsetof(struct Driver, posWallColl) == 0x384);
 _Static_assert(offsetof(struct Driver, wallRubSpeedLimit) == 0x38a);

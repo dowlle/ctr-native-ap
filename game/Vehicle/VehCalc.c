@@ -40,44 +40,39 @@ int VehCalc_MapToRange(int val, int oldMin, int oldMax, int newMin, int newMax)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005900c-0x80059070.
-int VehCalc_SteerAccel(int param_1, int param_2, int param_3, int param_4, int param_5, int param_6)
+int VehCalc_SteerAccel(int steeringFrameCount, int stage2FirstFrame, int stage2FrameLength, int stage4FirstFrame, int stage1MinSteer, int stage1MaxSteer)
 {
-	// Crash Bandicoot:
-	// param_2: 0x4	SteerAccel_Stage2_FirstFrame
-	// param_3: 0x8	SteerAccel_Stage2_FrameLength
-	// param_4: 0x40	SteerAccel_Stage4_FirstFrame
-	// param_5: 0x800	SteerAccel_Stage1_MinSteer
-	// param_6: 0xC00	SteerAccel_Stage1_MaxSteer
+	int steerAccel = stage1MaxSteer;
 
 	// Steering Stage 1,
 	// if first 4 frames of steering
 	// increase steer acceleration as time passes
-	if (param_1 < param_2)
+	if (steeringFrameCount < stage2FirstFrame)
 	{
 		// map "frame" from [0,4] -> [0x800,0xC00]
 
-		param_6 = VehCalc_MapToRange(param_1, 0, param_2, param_5, param_6);
+		steerAccel = VehCalc_MapToRange(steeringFrameCount, 0, stage2FirstFrame, stage1MinSteer, stage1MaxSteer);
 	}
 
 	else
 	{
-		int stage3Start = CTR_MipsAddLo(param_2, param_3);
+		int stage3Start = CTR_MipsAddLo(stage2FirstFrame, stage2FrameLength);
 
 		// Steering Stage 3
 		// frames 12+
 		// decrease steer acceleration as time passes
-		if (stage3Start < param_1)
+		if (stage3Start < steeringFrameCount)
 		{
 			// map "frame" from [12,64] -> [0xC00,0]
 
-			param_6 = VehCalc_MapToRange(param_1, stage3Start, param_4, param_6, 0);
+			steerAccel = VehCalc_MapToRange(steeringFrameCount, stage3Start, stage4FirstFrame, stage1MaxSteer, 0);
 		}
 	}
 
 	// Steering Stage 2,
 	// next 0x8 frames (frame 4 to 12)
 	// max steer accel of 0xC00
-	return param_6;
+	return steerAccel;
 
 	// Steering Stage 4,
 	// part of Stage 3's mapping,

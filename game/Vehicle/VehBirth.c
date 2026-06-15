@@ -293,7 +293,7 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	d->jumpMeter = 0;
 	d->jumpMeterTimer = 0;
 	d->turnAngleCurr = 0;
-	d->unk_LerpToForwards = 0;
+	d->turnAngleLerpVel = 0;
 	d->turnAnglePrev = 0;
 	d->rotCurr.w = 0;
 	d->rotPrev.w = 0;

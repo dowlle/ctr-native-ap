@@ -137,7 +137,7 @@ void VehPhysGeneral_PhysAngular(struct Thread *thread, struct Driver *driver)
 	classSpeed_original = CTR_MipsSra(classSpeed_halved, 0x10);
 	turnResistMax = CTR_MipsMulLo((u8)driver->const_turnResistMax, classSpeed_original);
 	turnResistMin = CTR_MipsMulLo((u8)driver->const_turnResistMin, classSpeed_original);
-	forwardDir = driver->unk_LerpToForwards;
+	forwardDir = driver->turnAngleLerpVel;
 	rotCurrW_interp = (int)driver->const_modelRotVelMax;
 	turnResistMaxBitshift = CTR_MipsSra(turnResistMax, 8);
 	turnResistMinBitshift = CTR_MipsSra(turnResistMin, 8);
@@ -207,9 +207,9 @@ void VehPhysGeneral_PhysAngular(struct Thread *thread, struct Driver *driver)
 
 	// spins camera from side of driver, to back of driver,
 	// when the drifting ends. "LerpToForwards"
-	driver->unk_LerpToForwards = VehPhysGeneral_LerpToForwards(driver, (int)driftAngleCurr_og, (int)forwardDir, classSpeed_halved);
+	driver->turnAngleLerpVel = VehPhysGeneral_LerpToForwards(driver, (int)driftAngleCurr_og, (int)forwardDir, classSpeed_halved);
 
-	classSpeed_halved = (int)(s16)driver->unk_LerpToForwards;
+	classSpeed_halved = (int)(s16)driver->turnAngleLerpVel;
 
 	if (terrain->turnAngleScale != 0x100)
 	{
@@ -266,9 +266,9 @@ void VehPhysGeneral_PhysAngular(struct Thread *thread, struct Driver *driver)
 			}
 		}
 	}
-	turnResistMax = (int)driver->unk3D4[0];
-	turnResistMaxBitshift = (int)driver->unk3D4[2];
-	rotCurrW_original = (int)driver->unk3D4[1];
+	turnResistMax = (int)driver->turnWobbleAngle;
+	turnResistMaxBitshift = (int)driver->turnWobbleTimer;
+	rotCurrW_original = (int)driver->turnWobbleVelocity;
 	if (((terrain->flags & TERRAIN_FLAG_SKIP_TURN_ASSIST) == 0) && ((actionsFlagSet & ACTION_TOUCH_GROUND) != 0))
 	{
 		turnResistMin = driftAngleCurr_Final;
@@ -332,12 +332,12 @@ LAB_80060284:
 	else
 	{
 		turnResistMaxBitshift = CTR_MipsSubLo(turnResistMaxBitshift, 1);
-		forwardDir = (s16)CTR_MipsAddLo(driver->unk3D4[0], rotCurrW_original);
+		forwardDir = (s16)CTR_MipsAddLo(driver->turnWobbleAngle, rotCurrW_original);
 	}
 	angle = driver->angle;
-	driver->unk3D4[2] = (s16)turnResistMaxBitshift;
-	driver->unk3D4[0] = forwardDir;
-	driver->unk3D4[1] = (s16)rotCurrW_original;
+	driver->turnWobbleTimer = (s16)turnResistMaxBitshift;
+	driver->turnWobbleAngle = forwardDir;
+	driver->turnWobbleVelocity = (s16)rotCurrW_original;
 	rotCurrW_interp = VehCalc_MapToRange(speedApprox, 0, 0x600, classSpeed_halved, 0);
 	rotCurrW_original = CTR_MipsSra(CTR_MipsMulLo(rotCurrW_interp, elapsedTimeMS), 5);
 	rotCurrW_interp = rotCurrW_original;
@@ -395,62 +395,61 @@ int VehPhysGeneral_LerpQuarterStrength(int current, int desired)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80060488-0x800605a0.
-int VehPhysGeneral_LerpToForwards(struct Driver *d, int param_2, int param_3, int param_4)
+int VehPhysGeneral_LerpToForwards(struct Driver *d, int currentAngle, int currentVelocity, int targetAngle)
 {
-	bool bVar1;
-	u32 uVar2;
-	int iVar3;
+	bool mirrored = false;
+	int desiredVelocity = 0;
 
-	bVar1 = false;
-	d->unk3CA = 0;
-	if ((param_4 < 0) || ((param_4 == 0 && (param_2 < 0))))
+	d->turnAngleLerpTarget = 0;
+	if ((targetAngle < 0) || ((targetAngle == 0 && (currentAngle < 0))))
 	{
-		bVar1 = true;
-		param_2 = CTR_MipsNegLo(param_2);
-		param_3 = CTR_MipsNegLo(param_3);
-		param_4 = CTR_MipsNegLo(param_4);
+		mirrored = true;
+		currentAngle = CTR_MipsNegLo(currentAngle);
+		currentVelocity = CTR_MipsNegLo(currentVelocity);
+		targetAngle = CTR_MipsNegLo(targetAngle);
 	}
-	iVar3 = 0;
 
 	if (d->wallRubTimer != 0xf0)
 	{
-		if (param_4 < param_2)
+		if (targetAngle < currentAngle)
 		{
-			if (d->const_modelRotVelMax < param_2)
+			u32 lerpStrength;
+
+			if (d->const_modelRotVelMax < currentAngle)
 			{
-				uVar2 = CTR_MipsSubLo(CTR_MipsSll((u8)d->unk458, 4), (u8)d->unk458);
+				lerpStrength = CTR_MipsSubLo(CTR_MipsSll((u8)d->unk458, 4), (u8)d->unk458);
 			}
 			else
 			{
-				uVar2 = (u8)d->unk458;
+				lerpStrength = (u8)d->unk458;
 			}
-			iVar3 = VehPhysGeneral_LerpQuarterStrength(uVar2, CTR_MipsSubLo(param_2, param_4));
-			iVar3 = CTR_MipsNegLo(iVar3);
+			desiredVelocity = VehPhysGeneral_LerpQuarterStrength(lerpStrength, CTR_MipsSubLo(currentAngle, targetAngle));
+			desiredVelocity = CTR_MipsNegLo(desiredVelocity);
 		}
 		else
 		{
-			if (param_2 < param_4)
+			if (currentAngle < targetAngle)
 			{
-				if (param_2 < 0)
+				if (currentAngle < 0)
 				{
-					iVar3 = VehPhysGeneral_LerpQuarterStrength((u8)d->unk459, CTR_MipsSubLo(param_4, param_2));
+					desiredVelocity = VehPhysGeneral_LerpQuarterStrength((u8)d->unk459, CTR_MipsSubLo(targetAngle, currentAngle));
 				}
 				else
 				{
-					iVar3 = VehPhysGeneral_LerpQuarterStrength((u8)d->angleMaxCounterSteer, CTR_MipsSubLo(param_4, param_2));
-					d->unk3CA = (s16)param_4;
+					desiredVelocity = VehPhysGeneral_LerpQuarterStrength((u8)d->angleMaxCounterSteer, CTR_MipsSubLo(targetAngle, currentAngle));
+					d->turnAngleLerpTarget = (s16)targetAngle;
 				}
 			}
 		}
 	}
 
 	// Interpolate rotation by speed
-	iVar3 = VehCalc_InterpBySpeed(param_3, d->unk45a, iVar3);
-	if (bVar1)
+	desiredVelocity = VehCalc_InterpBySpeed(currentVelocity, d->unk45a, desiredVelocity);
+	if (mirrored)
 	{
-		iVar3 = CTR_MipsNegLo(iVar3);
+		desiredVelocity = CTR_MipsNegLo(desiredVelocity);
 	}
-	return iVar3;
+	return desiredVelocity;
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800605a0-0x80060630.

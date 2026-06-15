@@ -1584,7 +1584,7 @@ LAB_800632cc:
 	{
 		// Play the SFX of near-spinout
 
-		absVal_DistortCurr = driver->unk3D4[0];
+		absVal_DistortCurr = driver->turnWobbleAngle;
 		if (absVal_DistortCurr < 0)
 			absVal_DistortCurr = CTR_MipsNegLo(absVal_DistortCurr);
 
@@ -1592,14 +1592,14 @@ LAB_800632cc:
 		if (absVal_DistortCurr < 10)
 		{
 			// count up for 8 frames
-			driver->unk3D4[2] = 8;
+			driver->turnWobbleTimer = 8;
 
 			// distortion, rate of change
-			driver->unk3D4[1] = 0x14;
+			driver->turnWobbleVelocity = 0x14;
 
 			if (iVar13 < 0)
 			{
-				driver->unk3D4[1] = (s16)CTR_MipsNegLo(driver->unk3D4[1]);
+				driver->turnWobbleVelocity = (s16)CTR_MipsNegLo(driver->turnWobbleVelocity);
 			}
 		}
 	}
@@ -1609,10 +1609,10 @@ LAB_800632cc:
 	{
 		// stop increasing distortion,
 		// go back down
-		driver->unk3D4[2] = 0;
+		driver->turnWobbleTimer = 0;
 	}
 
-	absVal_DistortCurr = driver->unk3D4[0];
+	absVal_DistortCurr = driver->turnWobbleAngle;
 	if (absVal_DistortCurr < 0)
 		absVal_DistortCurr = CTR_MipsNegLo(absVal_DistortCurr);
 
@@ -1621,37 +1621,37 @@ LAB_800632cc:
 	{
 		// stop increasing distortion,
 		// go back down
-		driver->unk3D4[2] = 0;
+		driver->turnWobbleTimer = 0;
 	}
 
 	// frame countdown over
-	if (driver->unk3D4[2] == 0)
+	if (driver->turnWobbleTimer == 0)
 	{
 		// nearing spinout sfx
-		driver->unk3D4[1] = 10;
+		driver->turnWobbleVelocity = 10;
 
-		if (0 < driver->unk3D4[0])
-			driver->unk3D4[1] = (s16)CTR_MipsNegLo(driver->unk3D4[1]);
+		if (0 < driver->turnWobbleAngle)
+			driver->turnWobbleVelocity = (s16)CTR_MipsNegLo(driver->turnWobbleVelocity);
 
-		absVal_DistortVel = driver->unk3D4[1];
+		absVal_DistortVel = driver->turnWobbleVelocity;
 		if (absVal_DistortVel < 0)
 			absVal_DistortVel = CTR_MipsNegLo(absVal_DistortVel);
 
 		// move down until zero
-		sVar5 = VehCalc_InterpBySpeed(driver->unk3D4[0], absVal_DistortVel, 0);
+		sVar5 = VehCalc_InterpBySpeed(driver->turnWobbleAngle, absVal_DistortVel, 0);
 	}
 
 	// frames counting down
 	else
 	{
-		driver->unk3D4[2] = (s16)CTR_MipsSubLo((u16)driver->unk3D4[2], 1);
+		driver->turnWobbleTimer = (s16)CTR_MipsSubLo((u16)driver->turnWobbleTimer, 1);
 
 		// move up each frame
-		sVar5 = CTR_MipsAddLo((u16)driver->unk3D4[0], (u16)driver->unk3D4[1]);
+		sVar5 = CTR_MipsAddLo((u16)driver->turnWobbleAngle, (u16)driver->turnWobbleVelocity);
 	}
 
 	// near-spinout distortion SFX
-	driver->unk3D4[0] = sVar5;
+	driver->turnWobbleAngle = sVar5;
 
 	driver->ampTurnState = (s16)CTR_MipsAddLo(iVar9, iVar13);
 
@@ -1675,7 +1675,7 @@ LAB_800632cc:
 		driver->axisRotationX = (s16)(CTR_MipsAddLo((u16)driver->axisRotationX, sVar5) & 0xfff);
 	}
 
-	driver->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->unk3D4[0], (u16)driver->angle), (u16)driver->turnAngleCurr);
+	driver->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)driver->turnWobbleAngle, (u16)driver->angle), (u16)driver->turnAngleCurr);
 
 	// increment this by milliseconds
 	driver->KartStates.Drifting.driftTotalTimeMS = (s16)CTR_MipsAddLo((u16)driver->KartStates.Drifting.driftTotalTimeMS, (u16)gGT->elapsedTimeMS);
@@ -1934,7 +1934,7 @@ void VehPhysProc_PowerSlide_Init(struct Thread *t, struct Driver *d)
 	d->multDrift = (s16)drift;
 
 	d->rotationSpinRate = 0;
-	d->unk_LerpToForwards = 0;
+	d->turnAngleLerpVel = 0;
 	d->timeUntilDriftSpinout = 0;
 
 	// Turbo meter space left to fill = Length of Turbo meter << 5
@@ -1977,7 +1977,7 @@ void VehPhysProc_SlamWall_PhysAngular(struct Thread *t, struct Driver *d)
 
 	d->angle = (s16)(CTR_MipsAddLo((u16)d->angle, CTR_MipsSra(CTR_MipsMulLo(d->ampTurnState, elapsedTimeMS), 0xd)) & 0xfff);
 
-	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->unk3D4[0], (u16)d->angle), (u16)d->turnAngleCurr);
+	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnWobbleAngle, (u16)d->angle), (u16)d->turnAngleCurr);
 
 	d->rotCurr.w = VehCalc_InterpBySpeed(d->rotCurr.w, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 5), 5), 0);
 
@@ -2071,10 +2071,10 @@ void VehPhysProc_SlamWall_Init(struct Thread *t, struct Driver *d)
 	d->baseSpeed = 0;
 	d->fireSpeed = 0;
 	d->rotationSpinRate = 0;
-	d->unk_LerpToForwards = 0;
-	d->unk3D4[0] = 0;
-	d->unk3D4[1] = 0;
-	d->unk3D4[2] = 0;
+	d->turnAngleLerpVel = 0;
+	d->turnWobbleAngle = 0;
+	d->turnWobbleVelocity = 0;
+	d->turnWobbleTimer = 0;
 	d->turbo_MeterRoomLeft = 0;
 	d->turbo_outsideTimer = 0;
 	d->VehFire_AudioCooldown = 0;
@@ -2151,7 +2151,7 @@ void VehPhysProc_SpinFirst_PhysAngular(struct Thread *t, struct Driver *d)
 	d->numFramesSpentSteering = 10000;
 
 	d->rotationSpinRate = (s16)CTR_MipsSubLo((u16)d->rotationSpinRate, CTR_MipsSra(d->rotationSpinRate, 3));
-	d->unk3D4[0] = (s16)CTR_MipsSubLo((u16)d->unk3D4[0], CTR_MipsSra(d->unk3D4[0], 3));
+	d->turnWobbleAngle = (s16)CTR_MipsSubLo((u16)d->turnWobbleAngle, CTR_MipsSra(d->turnWobbleAngle, 3));
 
 	d->turnAngleCurr = (s16)CTR_MipsSubLo(CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnAngleCurr, (u16)d->KartStates.Spinning.driftSpinRate), 0x800) & 0xfff, 0x800);
 
@@ -2159,7 +2159,7 @@ void VehPhysProc_SpinFirst_PhysAngular(struct Thread *t, struct Driver *d)
 
 	d->angle = (s16)(CTR_MipsAddLo((u16)d->angle, CTR_MipsSra(CTR_MipsMulLo(d->rotationSpinRate, elapsedTimeMS), 0xd)) & 0xfff);
 
-	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->unk3D4[0], (u16)d->angle), (u16)d->turnAngleCurr);
+	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnWobbleAngle, (u16)d->angle), (u16)d->turnAngleCurr);
 
 	d->rotCurr.w = VehCalc_InterpBySpeed(d->rotCurr.w, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 5), 5), 0);
 
@@ -2197,7 +2197,7 @@ void VehPhysProc_SpinFirst_Init(struct Thread *t, struct Driver *d)
 
 	d->kartState = KS_SPINNING;
 
-	d->unk_LerpToForwards = 0;
+	d->turnAngleLerpVel = 0;
 	d->turbo_MeterRoomLeft = 0;
 
 	if (LOAD_IsOpen_RacingOrBattle() && ((sdata->gGT->gameMode1 & ADVENTURE_ARENA) == 0))
@@ -2277,7 +2277,7 @@ void VehPhysProc_SpinLast_PhysAngular(struct Thread *t, struct Driver *d)
 	d->numFramesSpentSteering = 10000;
 
 	d->rotationSpinRate = (s16)CTR_MipsSubLo((u16)d->rotationSpinRate, CTR_MipsSra(d->rotationSpinRate, 3));
-	d->unk3D4[0] = (s16)CTR_MipsSubLo((u16)d->unk3D4[0], CTR_MipsSra(d->unk3D4[0], 3));
+	d->turnWobbleAngle = (s16)CTR_MipsSubLo((u16)d->turnWobbleAngle, CTR_MipsSra(d->turnWobbleAngle, 3));
 
 	d->ampTurnState = d->rotationSpinRate;
 
@@ -2321,7 +2321,7 @@ void VehPhysProc_SpinLast_PhysAngular(struct Thread *t, struct Driver *d)
 
 	d->angle = (s16)(CTR_MipsAddLo((u16)d->angle, CTR_MipsSra(CTR_MipsMulLo(d->ampTurnState, elapsedTimeMS), 0xd)) & 0xfff);
 
-	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->unk3D4[0], (u16)d->angle), (u16)d->turnAngleCurr);
+	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnWobbleAngle, (u16)d->angle), (u16)d->turnAngleCurr);
 
 	d->rotCurr.w = VehCalc_InterpBySpeed(d->rotCurr.w, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 5), 5), 0);
 
@@ -2377,7 +2377,7 @@ void VehPhysProc_SpinStop_PhysAngular(struct Thread *t, struct Driver *d)
 	int elapsedTimeMS = sdata->gGT->elapsedTimeMS;
 
 	d->angle = (s16)(CTR_MipsAddLo((u16)d->angle, CTR_MipsSra(CTR_MipsMulLo(d->ampTurnState, elapsedTimeMS), 0xd)) & 0xfff);
-	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->unk3D4[0], (u16)d->angle), (u16)d->turnAngleCurr);
+	d->rotCurr.y = (s16)CTR_MipsAddLo(CTR_MipsAddLo((u16)d->turnWobbleAngle, (u16)d->angle), (u16)d->turnAngleCurr);
 
 	d->rotCurr.w = VehCalc_InterpBySpeed(d->rotCurr.w, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 5), 5), 0);
 	d->turnAngleCurr = VehCalc_InterpBySpeed(d->turnAngleCurr, CTR_MipsSra(CTR_MipsSll(elapsedTimeMS, 7), 5), 0);

@@ -1144,8 +1144,8 @@ int VehPhysJoystick_ReturnToRest(int stickVal, int half, struct RacingWheelData 
 int VehPhysJoystick_GetStrengthAbsolute(int stickVal, int maxSteer, struct RacingWheelData *rwd);
 int VehPhysJoystick_GetStrength(int val, int max, struct RacingWheelData *rwd);
 int VehPhysGeneral_LerpQuarterStrength(int current, int desired);
-int VehPhysGeneral_LerpToForwards(struct Driver *d, int param_2, int param_3, int param_4);
-int VehCalc_SteerAccel(int param_1, int param_2, int param_3, int param_4, int param_5, int param_6);
+int VehPhysGeneral_LerpToForwards(struct Driver *d, int currentAngle, int currentVelocity, int targetAngle);
+int VehCalc_SteerAccel(int steeringFrameCount, int stage2FirstFrame, int stage2FrameLength, int stage4FirstFrame, int stage1MinSteer, int stage1MaxSteer);
 void VehFrameProc_Driving(struct Thread *t, struct Driver *d);
 void VehFrameProc_Spinning(struct Thread *t, struct Driver *d);
 void VehFrameProc_LastSpin(struct Thread *t, struct Driver *d);
