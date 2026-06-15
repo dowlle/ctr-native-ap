@@ -57,7 +57,7 @@ void RB_RainCloud_Init(struct Driver *d)
 		rcloud = cloudInst->thread->object;
 		rcloud->timeMS = 0x1e00; // 7.68s
 		rcloud->rainLocal = rlocal;
-		rcloud->boolScrollItem = 1;
+		rcloud->effect = RAIN_CLOUD_EFFECT_ITEM_ROLL;
 
 		if (
 		    // if driver has no weapon
@@ -65,7 +65,7 @@ void RB_RainCloud_Init(struct Driver *d)
 
 		    (d->noItemTimer != 0))
 		{
-			rcloud->boolScrollItem = 0;
+			rcloud->effect = RAIN_CLOUD_EFFECT_SLOW;
 		}
 
 		d->thCloud = cloudInst->thread;
@@ -83,8 +83,7 @@ void RB_RainCloud_Init(struct Driver *d)
 		// random number
 		int rng = MixRNG_Scramble();
 
-		// random (related to driver offset 0x50a)
-		rcloud->boolScrollItem = (s16)((rng % 400) / 100);
+		rcloud->effect = (RainCloudEffect)((rng % 400) / 100);
 	}
 	return;
 }

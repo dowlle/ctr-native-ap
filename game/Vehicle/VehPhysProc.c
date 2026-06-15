@@ -64,7 +64,7 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 	u32 square;
 
 	int msPerFrame;
-	s16 driverRankItemValue;
+	RainCloudEffect rainCloudEffect;
 	u32 itemSound;
 	u32 actionsFlagSetNext;
 	u32 buttonsHeld;
@@ -164,11 +164,11 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 
 	// === Determine Hazard ===
 
-	driverRankItemValue = 4;
+	rainCloudEffect = RAIN_CLOUD_EFFECT_NONE;
 
 	// if you have a raincloud over your head from potion
 	if (driver->thCloud != 0)
-		driverRankItemValue = ((struct RainCloud *)driver->thCloud->object)->boolScrollItem;
+		rainCloudEffect = ((struct RainCloud *)driver->thCloud->object)->effect;
 
 	// get approximate speed
 	approximateSpeed = driver->speedApprox;
@@ -179,7 +179,7 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 	// driver->clockReceive
 	driverTimer = driver->clockReceive;
 
-	driver->driverRankItemValue = driverRankItemValue;
+	driver->rainCloudEffect = rainCloudEffect;
 
 	// absolute value of speed
 	if (approximateSpeed < 0)
@@ -193,9 +193,9 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 
 	                                  // if you are not squished
 	                                  driverTimer == 0)) &&
-	    ((driverRankItemValue != 0 || (
-	                                      // if time on the clock is zero
-	                                      driverTimer = gGT->elapsedEventTime, driverTimer == 0))))
+	    ((rainCloudEffect != RAIN_CLOUD_EFFECT_SLOW || (
+	                                                       // if time on the clock is zero
+	                                                       driverTimer = gGT->elapsedEventTime, driverTimer == 0))))
 	{
 		timerHazard = driver->hazardTimer;
 
@@ -482,10 +482,11 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 
 		// If you dont have "roulette" weapon (0x10), and if you dont have "no weapon" (0xf)
 		// and if you did not have a weapon last frame (0x3c->0),
-		// and if (unknown driverRankItemValue related to 0x4a0),
+		// and if raincloud item roll is not blocking weapon fire,
 		// and if you are not being effected by Clock Weapon
 		heldItemID = driver->heldItemID;
-		if ((heldItemID != 0xF) && (heldItemID != 0x10) && (driver->noItemTimer == 0) && (driverRankItemValue != 1) && (driver->clockReceive == 0))
+		if ((heldItemID != 0xF) && (heldItemID != 0x10) && (driver->noItemTimer == 0) && (rainCloudEffect != RAIN_CLOUD_EFFECT_ITEM_ROLL) &&
+		    (driver->clockReceive == 0))
 		{
 			// This driver wants to fire a weapon
 			actionsFlagSetCopy |= ACTION_WEAPON_FIRE_REQUEST;
@@ -537,7 +538,7 @@ CheckJumpButtons:
 	{
 		if (
 		    // If you are holding L1 or R1 and
-		    ((buttonsHeld & 0xc00) != 0) && (driverRankItemValue != 3))
+		    ((buttonsHeld & 0xc00) != 0) && (rainCloudEffect != RAIN_CLOUD_EFFECT_JUMP_LOCKOUT))
 		{
 			if ((actionsFlagSetCopy & ACTION_JUMP_BUTTON_HELD) == 0)
 			{
@@ -568,7 +569,7 @@ CheckJumpButtons:
 			driver->buttonUsedToStartDrift = buttonsTapped;
 		}
 
-		if (driverRankItemValue != 3)
+		if (rainCloudEffect != RAIN_CLOUD_EFFECT_JUMP_LOCKOUT)
 		{
 			driver->jump_TenBuffer = 10;
 		LAB_8006222c:
@@ -600,7 +601,7 @@ CheckJumpButtons:
 	    // If Reserves are not zero
 	    (driver->reserves != 0) ||
 
-	    (driverRankItemValue == 6))
+	    (rainCloudEffect == RAIN_CLOUD_EFFECT_RESERVE_RELEASE))
 	{
 		// If you are not holding Cross
 		if (cross == 0)

@@ -170,11 +170,12 @@ struct RainCloud
 	s16 timeMS;
 
 	// 0x6
-	// I guess this is used for randomizing the items?
-	s16 boolScrollItem;
+	RainCloudEffect effect;
 
 	// size - 0x8
 };
+_Static_assert(offsetof(struct RainCloud, effect) == 0x6);
+_Static_assert(sizeof(struct RainCloud) == 0x8);
 
 struct Shield
 {

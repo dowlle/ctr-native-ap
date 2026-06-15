@@ -69,7 +69,7 @@ void RB_RainCloud_ThTick(struct Thread *t)
 			if (rcloud->timeMS < 0)
 				rcloud->timeMS = 0;
 
-			if (rcloud->boolScrollItem != 1)
+			if (rcloud->effect != RAIN_CLOUD_EFFECT_ITEM_ROLL)
 				return;
 
 			if (d->heldItemID == 0xf)
@@ -92,7 +92,7 @@ void RB_RainCloud_ThTick(struct Thread *t)
 
 		// === RainCloud timeMS is over ===
 
-		if ((rcloud->boolScrollItem == 1) &&
+		if ((rcloud->effect == RAIN_CLOUD_EFFECT_ITEM_ROLL) &&
 
 		    // If your weapon is not "no weapon"
 		    (d->heldItemID != 0xf))

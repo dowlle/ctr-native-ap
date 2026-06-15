@@ -1449,7 +1449,7 @@ void COLL_FIXED_PlayerSearch(struct Thread *t, struct Driver *d)
 		goto DriverAirborne;
 	}
 
-	if ((d->driverRankItemValue == 2) || ((gGT->gameMode2 & 0x80000) != 0))
+	if ((d->rainCloudEffect == RAIN_CLOUD_EFFECT_ICE_TERRAIN) || ((gGT->gameMode2 & 0x80000) != 0))
 	{
 		d->currentTerrain = TERRAIN_ICE;
 	}

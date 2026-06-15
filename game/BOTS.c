@@ -454,19 +454,19 @@ void BOTS_SetRotation(struct Driver *bot, int useSpawnYaw)
 {
 	struct NavFrame *nf = bot->botData.botNavFrame;
 
-	CTR_SET_VEC3(bot->botData.aiPhysics.velAxis, 0, 0, 0);
+	CTR_SET_VEC3(bot->botData.aiPhysics.velocity.v, 0, 0, 0);
 
 	// ======== Get Driver Position =============
 
-	bot->botData.estimatePos[0] = (s16)CTR_MipsSra(bot->posCurr.x, 8);
-	bot->botData.estimatePos[1] = (s16)CTR_MipsSra(bot->posCurr.y, 8);
-	bot->botData.estimatePos[2] = (s16)CTR_MipsSra(bot->posCurr.z, 8);
+	bot->botData.estimatePosition.x = (s16)CTR_MipsSra(bot->posCurr.x, 8);
+	bot->botData.estimatePosition.y = (s16)CTR_MipsSra(bot->posCurr.y, 8);
+	bot->botData.estimatePosition.z = (s16)CTR_MipsSra(bot->posCurr.z, 8);
 
 	// ======== Compare to Nav Position =============
 
-	int dx = CTR_MipsSubLo(nf->pos[0], bot->botData.estimatePos[0]);
-	int dy = CTR_MipsSubLo(nf->pos[1], bot->botData.estimatePos[1]);
-	int dz = CTR_MipsSubLo(nf->pos[2], bot->botData.estimatePos[2]);
+	int dx = CTR_MipsSubLo(nf->pos[0], bot->botData.estimatePosition.x);
+	int dy = CTR_MipsSubLo(nf->pos[1], bot->botData.estimatePosition.y);
+	int dz = CTR_MipsSubLo(nf->pos[2], bot->botData.estimatePosition.z);
 
 	// ======== Calculate Distance =============
 
@@ -557,7 +557,7 @@ void BOTS_ThTick_RevEngine(struct Thread *botThread)
 	struct Driver *botDriver = (struct Driver *)botThread->object;
 	struct MaskHeadWeapon *mask = botDriver->botData.maskObj;
 
-	if (botDriver->botData.ai_posBackup[1] < botDriver->posCurr.y)
+	if (botDriver->botData.positionBackup.y < botDriver->posCurr.y)
 	{ // mask grabbed
 		botDriver->posCurr.y = CTR_MipsSubLo(botDriver->posCurr.y, CTR_MipsSra(CTR_MipsSll(sdata->gGT->elapsedTimeMS, 9), 5));
 
@@ -610,18 +610,18 @@ void BOTS_MaskGrab(struct Thread *botThread)
 
 	// midpointX between nav frames
 	int midpoint = CTR_MipsSll(CTR_MipsAddLo(frame->pos[0], CTR_MipsDiv(CTR_MipsSubLo(nextFrame->pos[0], frame->pos[0]), 2)), 8);
-	bot->botData.ai_posBackup[0] = midpoint;
+	bot->botData.positionBackup.x = midpoint;
 	bot->posPrev.x = midpoint;
 
 	// midpointY between nav frames
 	midpoint = CTR_MipsSll(CTR_MipsAddLo(frame->pos[1], CTR_MipsDiv(CTR_MipsSubLo(nextFrame->pos[1], frame->pos[1]), 2)), 8);
-	bot->botData.ai_posBackup[1] = midpoint;
+	bot->botData.positionBackup.y = midpoint;
 	bot->posPrev.y = midpoint;
 	bot->quadBlockHeight = midpoint;
 
 	// midpointZ between nav frames
 	midpoint = CTR_MipsSll(CTR_MipsAddLo(frame->pos[2], CTR_MipsDiv(CTR_MipsSubLo(nextFrame->pos[2], frame->pos[2]), 2)), 8);
-	bot->botData.ai_posBackup[2] = midpoint;
+	bot->botData.positionBackup.z = midpoint;
 	bot->posPrev.z = midpoint;
 
 	bot->botData.aiPhysics.mulDrift = 0;
@@ -629,7 +629,7 @@ void BOTS_MaskGrab(struct Thread *botThread)
 	bot->botData.aiPhysics.reserved_0x5cc = 0;
 	bot->botData.aiPhysics.speedY = 0;
 	bot->botData.aiPhysics.speedLinear = 0;
-	CTR_SET_VEC3(bot->botData.aiPhysics.velAxis, 0, 0, 0);
+	CTR_SET_VEC3(bot->botData.aiPhysics.velocity.v, 0, 0, 0);
 
 	bot->actionsFlagSet |= ACTION_TOUCH_GROUND;
 
@@ -658,9 +658,9 @@ void BOTS_MaskGrab(struct Thread *botThread)
 	}
 
 	// posY, plus height to be dropped from
-	bot->posCurr.x = bot->botData.ai_posBackup[0];
-	bot->posCurr.y = CTR_MipsAddLo(bot->botData.ai_posBackup[1], BOTS_MASK_DROP_HEIGHT);
-	bot->posCurr.z = bot->botData.ai_posBackup[2];
+	bot->posCurr.x = bot->botData.positionBackup.x;
+	bot->posCurr.y = CTR_MipsAddLo(bot->botData.positionBackup.y, BOTS_MASK_DROP_HEIGHT);
+	bot->posCurr.z = bot->botData.positionBackup.z;
 
 	struct MaskHeadWeapon *mask = VehPickupItem_MaskUseWeapon(bot, 1);
 	bot->botData.maskObj = mask;
@@ -931,9 +931,9 @@ UpdateTireColorTimer:
 		if (driverSearch.bucket.bestDistSq < CTR_MipsMulLo(combinedRadius, combinedRadius))
 		{
 			Vec3 selfVelocity = {
-			    .x = CTR_MipsAddLo(botDriver->xSpeed, botDriver->botData.aiPhysics.accelAxis[0]),
-			    .y = CTR_MipsAddLo(botDriver->ySpeed, botDriver->botData.aiPhysics.accelAxis[1]),
-			    .z = CTR_MipsAddLo(botDriver->zSpeed, botDriver->botData.aiPhysics.accelAxis[2]),
+			    .x = CTR_MipsAddLo(botDriver->xSpeed, botDriver->botData.aiPhysics.accel.x),
+			    .y = CTR_MipsAddLo(botDriver->ySpeed, botDriver->botData.aiPhysics.accel.y),
+			    .z = CTR_MipsAddLo(botDriver->zSpeed, botDriver->botData.aiPhysics.accel.z),
 			};
 			VehPhysCrash_AnyTwoCars(botThread, &driverSearch, &selfVelocity);
 		}
@@ -1511,8 +1511,8 @@ UpdateTireColorTimer:
 	if (botDriver->botData.aiPhysics.speedY < -0x5000)
 		botDriver->botData.aiPhysics.speedY = -0x5000;
 
-	botDriver->botData.ai_posBackup[1] =
-	    CTR_MipsAddLo(botDriver->botData.ai_posBackup[1], CTR_MipsSra(CTR_MipsMulLo(botDriver->botData.aiPhysics.speedY, elapsedMilliseconds), 5));
+	botDriver->botData.positionBackup.y =
+	    CTR_MipsAddLo(botDriver->botData.positionBackup.y, CTR_MipsSra(CTR_MipsMulLo(botDriver->botData.aiPhysics.speedY, elapsedMilliseconds), 5));
 
 	short navDist; // sVar7
 
@@ -1549,7 +1549,7 @@ UpdateTireColorTimer:
 		if (navFrameNext >= sdata->NavPath_ptrHeader[index]->last)
 			navFrameNext = sdata->NavPath_ptrNavFrameArray[index];
 
-		if ((CTR_MipsSra(botDriver->botData.ai_posBackup[1], 8) < navFrameNext->pos[1]) && ((navFrameCurr->flags & BOTS_NAV_FLAG_KILLPLANE) != 0))
+		if ((CTR_MipsSra(botDriver->botData.positionBackup.y, 8) < navFrameNext->pos[1]) && ((navFrameCurr->flags & BOTS_NAV_FLAG_KILLPLANE) != 0))
 		{
 			BOTS_Killplane(botThread);
 		}
@@ -1750,97 +1750,97 @@ UpdateTireColorTimer:
 	botDriver->rotPrev.y = botDriver->rotCurr.y;
 	botDriver->rotPrev.z = botDriver->rotCurr.z;
 
-	botDriver->botData.ai_posBackup[0] = CTR_MipsSll(
+	botDriver->botData.positionBackup.x = CTR_MipsSll(
 	    CTR_MipsAddLo(navFrameCurr->pos[0], CTR_MipsSra(CTR_MipsMulLo(CTR_MipsSubLo(navFrameNext->pos[0], navFrameCurr->pos[0]), percentage), 0xc)), 8);
 	botDriver->quadBlockHeight = CTR_MipsSll(
 	    CTR_MipsAddLo(navFrameCurr->pos[1], CTR_MipsSra(CTR_MipsMulLo(CTR_MipsSubLo(navFrameNext->pos[1], navFrameCurr->pos[1]), percentage), 0xc)), 8);
-	botDriver->botData.ai_posBackup[2] = CTR_MipsSll(
+	botDriver->botData.positionBackup.z = CTR_MipsSll(
 	    CTR_MipsAddLo(navFrameCurr->pos[2], CTR_MipsSra(CTR_MipsMulLo(CTR_MipsSubLo(navFrameNext->pos[2], navFrameCurr->pos[2]), percentage), 0xc)), 8);
 
 	if ((botDriver->botData.botFlags & BOT_FLAG_FREE_PHYSICS) != 0)
 	{
-		botDriver->botData.aiPhysics.accelAxis[1] = 0;
-		botDriver->botData.aiPhysics.velAxis[0] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[0], botDriver->botData.aiPhysics.accelAxis[0]);
-		botDriver->botData.aiPhysics.velAxis[1] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[1], botDriver->botData.aiPhysics.accelAxis[1]);
-		botDriver->botData.aiPhysics.velAxis[2] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[2], botDriver->botData.aiPhysics.accelAxis[2]);
-		int preAccelX = botDriver->botData.aiPhysics.accelAxis[0]; // iVar3
-		int preAccelZ = botDriver->botData.aiPhysics.accelAxis[2]; // iVar15
-		botDriver->botData.aiPhysics.accelAxis[0] = CTR_MipsSra(botDriver->botData.aiPhysics.accelAxis[0], 1);
-		botDriver->botData.aiPhysics.accelAxis[2] = CTR_MipsSra(botDriver->botData.aiPhysics.accelAxis[2], 1);
-		botDriver->botData.aiPhysics.velAxis[1] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[1], botDriver->botData.aiPhysics.accelAxis[1]);
+		botDriver->botData.aiPhysics.accel.y = 0;
+		botDriver->botData.aiPhysics.velocity.x = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.x, botDriver->botData.aiPhysics.accel.x);
+		botDriver->botData.aiPhysics.velocity.y = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.y, botDriver->botData.aiPhysics.accel.y);
+		botDriver->botData.aiPhysics.velocity.z = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.z, botDriver->botData.aiPhysics.accel.z);
+		int preAccelX = botDriver->botData.aiPhysics.accel.x; // iVar3
+		int preAccelZ = botDriver->botData.aiPhysics.accel.z; // iVar15
+		botDriver->botData.aiPhysics.accel.x = CTR_MipsSra(botDriver->botData.aiPhysics.accel.x, 1);
+		botDriver->botData.aiPhysics.accel.z = CTR_MipsSra(botDriver->botData.aiPhysics.accel.z, 1);
+		botDriver->botData.aiPhysics.velocity.y = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.y, botDriver->botData.aiPhysics.accel.y);
 
-		botDriver->botData.aiPhysics.velAxis[0] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[0], preAccelX);
-		botDriver->botData.aiPhysics.velAxis[2] = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[2], preAccelZ);
+		botDriver->botData.aiPhysics.velocity.x = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.x, preAccelX);
+		botDriver->botData.aiPhysics.velocity.z = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.z, preAccelZ);
 
-		int preX = botDriver->botData.aiPhysics.velAxis[0]; // iVar3
+		int preX = botDriver->botData.aiPhysics.velocity.x; // iVar3
 		if (preX != 0)
 		{
 			if (preX < 1)
 			{
-				botDriver->botData.aiPhysics.velAxis[0] = CTR_MipsAddLo(preX, 0x444);
+				botDriver->botData.aiPhysics.velocity.x = CTR_MipsAddLo(preX, 0x444);
 				if (0 < CTR_MipsAddLo(preX, 0x444))
 				{
-					botDriver->botData.aiPhysics.velAxis[0] = 0;
+					botDriver->botData.aiPhysics.velocity.x = 0;
 				}
 				else
 				{
-					if (botDriver->botData.aiPhysics.accelAxis[0] == 0)
+					if (botDriver->botData.aiPhysics.accel.x == 0)
 					{
-						botDriver->botData.aiPhysics.accelAxis[0] = 0x444;
+						botDriver->botData.aiPhysics.accel.x = 0x444;
 					}
 				}
 			}
 			else
 			{
-				botDriver->botData.aiPhysics.velAxis[0] = CTR_MipsSubLo(preX, 0x444);
+				botDriver->botData.aiPhysics.velocity.x = CTR_MipsSubLo(preX, 0x444);
 				if (CTR_MipsSubLo(preX, 0x444) < 0)
 				{
-					botDriver->botData.aiPhysics.velAxis[0] = 0;
+					botDriver->botData.aiPhysics.velocity.x = 0;
 				}
 				else
 				{
-					if (botDriver->botData.aiPhysics.accelAxis[0] == 0)
+					if (botDriver->botData.aiPhysics.accel.x == 0)
 					{
-						botDriver->botData.aiPhysics.accelAxis[0] = -0x444;
+						botDriver->botData.aiPhysics.accel.x = -0x444;
 					}
 				}
 			}
 		}
-		int preZ = botDriver->botData.aiPhysics.velAxis[2]; // iVar3
+		int preZ = botDriver->botData.aiPhysics.velocity.z; // iVar3
 		if (preZ != 0)
 		{
 			if (preZ < 1)
 			{
-				botDriver->botData.aiPhysics.velAxis[2] = CTR_MipsAddLo(preZ, 0x444);
+				botDriver->botData.aiPhysics.velocity.z = CTR_MipsAddLo(preZ, 0x444);
 				if (0 < CTR_MipsAddLo(preZ, 0x444))
 				{
-					botDriver->botData.aiPhysics.velAxis[2] = 0;
+					botDriver->botData.aiPhysics.velocity.z = 0;
 				}
 				else
 				{
-					if (botDriver->botData.aiPhysics.accelAxis[2] == 0)
+					if (botDriver->botData.aiPhysics.accel.z == 0)
 					{
-						botDriver->botData.aiPhysics.accelAxis[2] = 0x444;
+						botDriver->botData.aiPhysics.accel.z = 0x444;
 					}
 				}
 			}
 			else
 			{
-				botDriver->botData.aiPhysics.velAxis[2] = CTR_MipsSubLo(preZ, 0x444);
+				botDriver->botData.aiPhysics.velocity.z = CTR_MipsSubLo(preZ, 0x444);
 				if (CTR_MipsSubLo(preZ, 0x444) < 0)
 				{
-					botDriver->botData.aiPhysics.velAxis[2] = 0;
+					botDriver->botData.aiPhysics.velocity.z = 0;
 				}
 				else
 				{
-					if (botDriver->botData.aiPhysics.accelAxis[2] == 0)
+					if (botDriver->botData.aiPhysics.accel.z == 0)
 					{
-						botDriver->botData.aiPhysics.accelAxis[2] = -0x444;
+						botDriver->botData.aiPhysics.accel.z = -0x444;
 					}
 				}
 			}
 		}
-		if ((botDriver->botData.aiPhysics.velAxis[0] == 0) && (botDriver->botData.aiPhysics.velAxis[2] == 0))
+		if ((botDriver->botData.aiPhysics.velocity.x == 0) && (botDriver->botData.aiPhysics.velocity.z == 0))
 		{
 			botDriver->botData.botFlags &= ~BOT_FLAG_FREE_PHYSICS;
 		}
@@ -1860,9 +1860,9 @@ UpdateTireColorTimer:
 
 		botDriver->botData.ai_rot4[1] = CTR_MipsAddLo(CTR_MipsSll(navFrameCurr->rot[1], 4), CTR_MipsSra(CTR_MipsMulLo(deltaRotY, percentage), 0xc)) & 0xfff;
 
-		s16 probeY = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[1], botDriver->botData.aiPhysics.velAxis[1]), 8);
-		s16 probeX = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[0], botDriver->botData.aiPhysics.velAxis[0]), 8);
-		s16 probeZ = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[2], botDriver->botData.aiPhysics.velAxis[2]), 8);
+		s16 probeY = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.y, botDriver->botData.aiPhysics.velocity.y), 8);
+		s16 probeX = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.x, botDriver->botData.aiPhysics.velocity.x), 8);
+		s16 probeZ = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.z, botDriver->botData.aiPhysics.velocity.z), 8);
 		SVec3 probeTop = {
 		    .x = probeX,
 		    .y = (s16)CTR_MipsSubLo(probeY, 0x100),
@@ -1901,7 +1901,7 @@ UpdateTireColorTimer:
 		}
 	}
 	deltaPosThisFrame = CTR_MipsSra(deltaPosThisFrame, 8);
-	if (botDriver->botData.ai_posBackup[1] < botDriver->quadBlockHeight)
+	if (botDriver->botData.positionBackup.y < botDriver->quadBlockHeight)
 	{
 		u32 oldBotFlags = botDriver->botData.botFlags; // uVar8
 		botDriver->botData.botFlags &= ~BOT_FLAG_MOON_GRAVITY;
@@ -1984,7 +1984,7 @@ UpdateTireColorTimer:
 				}
 				deltaPosThisFrame = CTR_MipsSubLo(botDriver->quadBlockHeight, botDriver->posPrev.y);
 
-				botDriver->botData.ai_posBackup[1] = botDriver->quadBlockHeight;
+				botDriver->botData.positionBackup.y = botDriver->quadBlockHeight;
 
 				botDriver->botData.aiPhysics.speedY = deltaPosThisFrame;
 
@@ -2073,7 +2073,7 @@ UpdateTireColorTimer:
 					}
 				}
 
-				botDriver->botData.ai_posBackup[1] = botDriver->quadBlockHeight;
+				botDriver->botData.positionBackup.y = botDriver->quadBlockHeight;
 			}
 		}
 		else
@@ -2498,9 +2498,9 @@ UpdateTireColorTimer:
 	botDriver->rotCurr.y =
 	    (s16)CTR_MipsAddLo((u16)botDriver->rotCurr.y, CTR_MipsAddLo((u16)botDriver->botData.aiPhysics.mulDrift, (u16)botDriver->turnAngleCurr));
 
-	botDriver->posCurr.x = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[0], botDriver->botData.ai_posBackup[0]);
-	botDriver->posCurr.y = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[1], botDriver->botData.ai_posBackup[1]);
-	botDriver->posCurr.z = CTR_MipsAddLo(botDriver->botData.aiPhysics.velAxis[2], botDriver->botData.ai_posBackup[2]);
+	botDriver->posCurr.x = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.x, botDriver->botData.positionBackup.x);
+	botDriver->posCurr.y = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.y, botDriver->botData.positionBackup.y);
+	botDriver->posCurr.z = CTR_MipsAddLo(botDriver->botData.aiPhysics.velocity.z, botDriver->botData.positionBackup.z);
 
 	botInstance->matrix.t[0] = CTR_MipsSra(botDriver->posCurr.x, 8);
 	botInstance->matrix.t[1] = CTR_MipsAddLo(CTR_MipsSra(botDriver->posCurr.y, 8), botDriver->Screen_OffsetY);
@@ -2638,9 +2638,9 @@ FinishHazardTimerUpdate:
 
 	if (botThread->modelIndex == DYNAMIC_PLAYER)
 	{
-		s16 probeX = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[0], botDriver->botData.aiPhysics.velAxis[0]), 8);
-		s16 probeY = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[1], botDriver->botData.aiPhysics.velAxis[1]), 8);
-		s16 probeZ = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.ai_posBackup[2], botDriver->botData.aiPhysics.velAxis[2]), 8);
+		s16 probeX = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.x, botDriver->botData.aiPhysics.velocity.x), 8);
+		s16 probeY = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.y, botDriver->botData.aiPhysics.velocity.y), 8);
+		s16 probeZ = (s16)CTR_MipsSra(CTR_MipsAddLo(botDriver->botData.positionBackup.z, botDriver->botData.aiPhysics.velocity.z), 8);
 		SVec3 probeTop = {
 		    .x = probeX,
 		    .y = (s16)CTR_MipsSubLo(probeY, 0x100),
@@ -2741,7 +2741,7 @@ u32 BOTS_ChangeState(struct Driver *driverVictim, int damageType, struct Driver 
 		if ((driverVictim->botData.botFlags & BOT_FLAG_DAMAGE_ACTIVE) == 0)
 		{
 			driverVictim->botData.aiPhysics.speedLinear = CTR_MipsSra(driverVictim->botData.aiPhysics.speedLinear, 3);
-			driverVictim->botData.ai_posBackup[1] = CTR_MipsAddLo(driverVictim->botData.ai_posBackup[1], 0x4000);
+			driverVictim->botData.positionBackup.y = CTR_MipsAddLo(driverVictim->botData.positionBackup.y, 0x4000);
 		}
 
 		driverVictim->botData.ai_progress_cooldown = 0;
@@ -2854,7 +2854,7 @@ void BOTS_CollideWithOtherAI(struct Driver *robot_1, struct Driver *robot_2)
 		struct NavFrame *navFrameNext = robot_1->botData.botNavFrame;
 
 		// iVar4
-		navSegmentStartPos = robot_1->botData.estimatePos;
+		navSegmentStartPos = robot_1->botData.estimatePosition.v;
 		navSegmentEndPos = &navFrameNext->pos[0];
 	}
 
@@ -2908,12 +2908,12 @@ void BOTS_GotoStartingLine(struct Driver *d)
 	d->botData.aiPhysics.reserved_0x5cc = 0;
 	d->botData.aiPhysics.speedY = 0;
 	d->botData.aiPhysics.speedLinear = 0;
-	CTR_SET_VEC3(d->botData.aiPhysics.accelAxis, 0, 0, 0);
-	CTR_SET_VEC3(d->botData.aiPhysics.velAxis, 0, 0, 0);
+	CTR_SET_VEC3(d->botData.aiPhysics.accel.v, 0, 0, 0);
+	CTR_SET_VEC3(d->botData.aiPhysics.velocity.v, 0, 0, 0);
 
-	d->botData.ai_posBackup[0] = d->posCurr.x;
-	d->botData.ai_posBackup[1] = d->posCurr.y;
-	d->botData.ai_posBackup[2] = d->posCurr.z;
+	d->botData.positionBackup.x = d->posCurr.x;
+	d->botData.positionBackup.y = d->posCurr.y;
+	d->botData.positionBackup.z = d->posCurr.z;
 
 	d->botData.navProgressRemainder = 0;
 

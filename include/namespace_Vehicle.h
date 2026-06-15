@@ -516,6 +516,17 @@ typedef enum DriverCollisionFlags : s16
 	DRIVER_COLL_FLAG_GROUNDED = 0x8,
 } DriverCollisionFlags;
 
+typedef enum RainCloudEffect : s16
+{
+	RAIN_CLOUD_EFFECT_SLOW = 0,
+	RAIN_CLOUD_EFFECT_ITEM_ROLL = 1,
+	RAIN_CLOUD_EFFECT_ICE_TERRAIN = 2,
+	RAIN_CLOUD_EFFECT_JUMP_LOCKOUT = 3,
+	RAIN_CLOUD_EFFECT_NONE = 4,
+	RAIN_CLOUD_EFFECT_HEAVY_FRICTION = 5,
+	RAIN_CLOUD_EFFECT_RESERVE_RELEASE = 6,
+} RainCloudEffect;
+
 typedef enum ForcedJumpType : u8
 {
 	FORCED_JUMP_NONE = 0,
@@ -616,10 +627,10 @@ struct BotPhysics
 	int speedLinear;
 
 	// 0x1c, Driver + 0x5d8
-	int accelAxis[3];
+	Vec3 accel;
 
 	// 0x28, Driver + 0x5e4
-	int velAxis[3];
+	Vec3 velocity;
 };
 
 struct BotData
@@ -661,7 +672,7 @@ struct BotData
 	struct BotPhysics aiPhysics;
 
 	// 0x5f0
-	int ai_posBackup[3];
+	Vec3 positionBackup;
 
 	// 0x5fc
 	s16 ai_rot4[4];
@@ -684,7 +695,7 @@ struct BotData
 		struct NavFrame estimateNavFrame;
 		struct
 		{
-			s16 estimatePos[3];
+			SVec3 estimatePosition;
 			u8 estimateRotNav[3];
 			u8 estimateRotCurrY;
 			s16 distToNextNavXYZ;
@@ -1079,7 +1090,7 @@ struct Driver
 	s16 axisRotationX;
 
 	// 0x398
-	s16 oh_no_anotherFiller;
+	s16 padding_0x398;
 
 	// 0x39A
 	s16 angle;
@@ -1105,7 +1116,7 @@ struct Driver
 	s16 forwardAccelImpulse;
 
 	// 0x3B4
-	s16 rotationSpinRate; // again?
+	s16 rotationSpinRate;
 
 	// 0x3B6
 	s16 engineSoundVolumeState;
@@ -1543,7 +1554,7 @@ struct Driver
 		s16 startY;
 
 		// 0x4d8
-		int unk;
+		int reserved_0x4d8;
 
 		// 0x4dc
 		int scoreDelta; // -1, 0, 1
@@ -1599,7 +1610,7 @@ struct Driver
 	s16 alphaScaleBackup;
 
 	// 0x50A
-	s16 driverRankItemValue;
+	RainCloudEffect rainCloudEffect;
 
 	// 0x50C
 	char numTimesAttackingPlayer[8];
@@ -1930,16 +1941,20 @@ _Static_assert(offsetof(struct BotPhysics, squishCooldown) == 0xc);
 _Static_assert(offsetof(struct BotPhysics, reserved_0x5cc) == 0x10);
 _Static_assert(offsetof(struct BotPhysics, speedY) == 0x14);
 _Static_assert(offsetof(struct BotPhysics, speedLinear) == 0x18);
-_Static_assert(offsetof(struct BotPhysics, accelAxis) == 0x1c);
-_Static_assert(offsetof(struct BotPhysics, velAxis) == 0x28);
+_Static_assert(offsetof(struct BotPhysics, accel) == 0x1c);
+_Static_assert(offsetof(struct BotPhysics, velocity) == 0x28);
+_Static_assert(sizeof(((struct BotPhysics *)0)->accel) == 0xc);
+_Static_assert(sizeof(((struct BotPhysics *)0)->velocity) == 0xc);
 _Static_assert(sizeof(struct BotData) == 0x94);
 _Static_assert(offsetof(struct BotData, aiPhysics) == 0x24);
 _Static_assert(offsetof(struct BotData, reserved_0x5a0) == 0x8);
 _Static_assert(offsetof(struct BotData, reserved_0x5ac) == 0x14);
+_Static_assert(offsetof(struct BotData, positionBackup) == 0x58);
 _Static_assert(offsetof(struct BotData, ai_quadblock_checkpointIndex) == 0x72);
 _Static_assert(offsetof(struct BotData, reserved_0x628) == 0x90);
 _Static_assert(offsetof(struct BotData, estimateNavFrame) == 0x74);
-_Static_assert(offsetof(struct BotData, estimatePos) == 0x74);
+_Static_assert(offsetof(struct BotData, estimatePosition) == 0x74);
+_Static_assert(sizeof(((struct BotData *)0)->estimatePosition) == 0x6);
 _Static_assert(offsetof(struct BotData, estimateFlags) == 0x82);
 _Static_assert(offsetof(struct BotData, estimateTail) == 0x84);
 _Static_assert(BOT_FLAG_ESTIMATE_NAV == 0x1);
@@ -1986,6 +2001,8 @@ _Static_assert(ACTION_REVERSE_STEER_LEFT == 0x20000000);
 _Static_assert(ACTION_REVERSE_STEER_RIGHT == 0x40000000);
 _Static_assert(ACTION_DROPPING_MINE == 0x80000000u);
 _Static_assert(sizeof(DriverCollisionFlags) == 0x2);
+_Static_assert(sizeof(RainCloudEffect) == 0x2);
+_Static_assert(RAIN_CLOUD_EFFECT_NONE == 0x4);
 _Static_assert(DRIVER_COLL_FLAG_MASK_GRAB_REQUEST == 0x1);
 _Static_assert(DRIVER_COLL_FLAG_SURFACE_PUSHBACK == 0x2);
 _Static_assert(DRIVER_COLL_FLAG_TOUCHED_QUADBLOCK == 0x4);
@@ -2039,6 +2056,7 @@ _Static_assert(offsetof(struct Driver, turnWobbleTimer) == 0x3d8);
 _Static_assert(offsetof(struct Driver, jump_HighJumpTimerMS) == 0x3fa);
 _Static_assert(offsetof(struct Driver, posWallColl) == 0x384);
 _Static_assert(offsetof(struct Driver, wallRubSpeedLimit) == 0x38a);
+_Static_assert(offsetof(struct Driver, padding_0x398) == 0x398);
 _Static_assert(offsetof(struct Driver, wallRubTimer) == 0x3fe);
 _Static_assert(offsetof(struct Driver, vShiftStartGuardTimer) == 0x406);
 _Static_assert(offsetof(struct Driver, vShiftWindowTimer) == 0x408);
@@ -2074,6 +2092,8 @@ _Static_assert(offsetof(struct Driver, engineSoundMode) == 0x47b);
 _Static_assert(offsetof(struct Driver, checkpoint) == 0x494);
 _Static_assert(offsetof(struct Driver, checkpoint.branchChoiceIndex) == 0x494);
 _Static_assert(offsetof(struct Driver, checkpoint.currentIndex) == 0x495);
+_Static_assert(offsetof(struct Driver, BattleHUD.reserved_0x4d8) == 0x4d8);
+_Static_assert(offsetof(struct Driver, rainCloudEffect) == 0x50a);
 _Static_assert(offsetof(struct Driver, numTimesWumpa) == 0x569);
 _Static_assert(offsetof(struct Driver, ghostPadding_0x636) == 0x636);
 _Static_assert(offsetof(struct Driver, KartStates.RevEngine.overRevTimerMS) == 0x58c);

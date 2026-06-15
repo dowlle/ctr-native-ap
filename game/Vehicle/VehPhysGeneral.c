@@ -1144,7 +1144,7 @@ int VehPhysGeneral_GetBaseSpeed(struct Driver *driver)
 
 	if (
 	    // burn, squish, or raincloud
-	    (driver->burnTimer != 0) || (driver->squishTimer != 0) || (driver->driverRankItemValue == 0))
+	    (driver->burnTimer != 0) || (driver->squishTimer != 0) || (driver->rainCloudEffect == RAIN_CLOUD_EFFECT_SLOW))
 	{
 		subtract = driver->const_DamagedSpeed;
 	}

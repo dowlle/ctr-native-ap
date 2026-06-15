@@ -201,7 +201,7 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 				perpendicularFriction = driver->const_NoPedalFriction_Perpendicular;
 				forwardFriction = driver->const_NoPedalFriction_Forward;
 
-				if (driver->driverRankItemValue == 5)
+				if (driver->rainCloudEffect == RAIN_CLOUD_EFFECT_HEAVY_FRICTION)
 				{
 					perpendicularFriction = CTR_MipsSll(driver->const_BrakeFriction, 4);
 					forwardFriction = perpendicularFriction;
@@ -253,7 +253,7 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 			}
 
 			perpendicularFriction = driver->const_BrakeFriction;
-			if (driver->driverRankItemValue == 5)
+			if (driver->rainCloudEffect == RAIN_CLOUD_EFFECT_HEAVY_FRICTION)
 			{
 				perpendicularFriction = CTR_MipsSll(perpendicularFriction, 4);
 				forwardFriction = perpendicularFriction;

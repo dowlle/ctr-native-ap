@@ -258,7 +258,7 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 
 			if (driver->thCloud != 0)
 			{
-				if (((struct RainCloud *)driver->thCloud->object)->boolScrollItem == 1)
+				if (((struct RainCloud *)driver->thCloud->object)->effect == RAIN_CLOUD_EFFECT_ITEM_ROLL)
 					return 1;
 			}
 

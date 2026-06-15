@@ -133,9 +133,9 @@ void VehPhysCrash_AI(struct Driver *bot, Vec3 *vel)
 	    CTR_MipsSra(CTR_MipsAddLo(CTR_MipsAddLo(CTR_MipsMulLo(forward[0], vel->x), CTR_MipsMulLo(forward[1], vel->y)), CTR_MipsMulLo(forward[2], vel->z)), 8);
 
 	bot->botData.aiPhysics.speedLinear = botSpeed;
-	bot->botData.aiPhysics.accelAxis[0] = CTR_MipsSubLo(vel->x, CTR_MipsSra(CTR_MipsMulLo(forward[0], botSpeed), 8));
+	bot->botData.aiPhysics.accel.x = CTR_MipsSubLo(vel->x, CTR_MipsSra(CTR_MipsMulLo(forward[0], botSpeed), 8));
 	bot->botData.botFlags |= BOT_FLAG_FREE_PHYSICS;
-	bot->botData.aiPhysics.accelAxis[2] = CTR_MipsSubLo(vel->z, CTR_MipsSra(CTR_MipsMulLo(forward[2], botSpeed), 8));
+	bot->botData.aiPhysics.accel.z = CTR_MipsSubLo(vel->z, CTR_MipsSra(CTR_MipsMulLo(forward[2], botSpeed), 8));
 }
 
 static void VehPhysCrash_Attack_SetReason(struct Driver *driver, u8 reason)
@@ -326,9 +326,9 @@ void VehPhysCrash_AnyTwoCars(struct Thread *thread, struct DriverCollisionSearch
 		}
 		else
 		{
-			otherVel.x = CTR_MipsAddLo(otherDriver->xSpeed, otherDriver->botData.aiPhysics.accelAxis[0]);
-			otherVel.y = CTR_MipsAddLo(otherDriver->ySpeed, otherDriver->botData.aiPhysics.accelAxis[1]);
-			otherVel.z = CTR_MipsAddLo(otherDriver->zSpeed, otherDriver->botData.aiPhysics.accelAxis[2]);
+			otherVel.x = CTR_MipsAddLo(otherDriver->xSpeed, otherDriver->botData.aiPhysics.accel.x);
+			otherVel.y = CTR_MipsAddLo(otherDriver->ySpeed, otherDriver->botData.aiPhysics.accel.y);
+			otherVel.z = CTR_MipsAddLo(otherDriver->zSpeed, otherDriver->botData.aiPhysics.accel.z);
 
 			VehPhysCrash_WeightedVelocity(&weightedVel, selfVel, selfDriver, &otherVel, otherDriver);
 			VehPhysCrash_BouncePair(hitDir, &weightedVel, &otherVel, selfVel);
@@ -347,9 +347,9 @@ void VehPhysCrash_AnyTwoCars(struct Thread *thread, struct DriverCollisionSearch
 		Vec3 otherVel;
 		Vec3 weightedVel;
 
-		otherVel.x = CTR_MipsAddLo(otherDriver->xSpeed, otherDriver->botData.aiPhysics.accelAxis[0]);
-		otherVel.y = CTR_MipsAddLo(otherDriver->ySpeed, otherDriver->botData.aiPhysics.accelAxis[1]);
-		otherVel.z = CTR_MipsAddLo(otherDriver->zSpeed, otherDriver->botData.aiPhysics.accelAxis[2]);
+		otherVel.x = CTR_MipsAddLo(otherDriver->xSpeed, otherDriver->botData.aiPhysics.accel.x);
+		otherVel.y = CTR_MipsAddLo(otherDriver->ySpeed, otherDriver->botData.aiPhysics.accel.y);
+		otherVel.z = CTR_MipsAddLo(otherDriver->zSpeed, otherDriver->botData.aiPhysics.accel.z);
 
 		VehPhysCrash_WeightedVelocity(&weightedVel, selfVel, selfDriver, &otherVel, otherDriver);
 		VehPhysCrash_BouncePair(hitDir, &weightedVel, &otherVel, selfVel);
