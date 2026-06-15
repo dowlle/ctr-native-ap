@@ -75,8 +75,8 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 		maskBeamInst->vertSplit = driverInst->vertSplit;
 	}
 
-	maskInst->unk50 = driverInst->unk50;
-	maskInst->unk51 = driverInst->unk51;
+	maskInst->depthBiasNormal = driverInst->depthBiasNormal;
+	maskInst->depthBiasSecondary = driverInst->depthBiasSecondary;
 
 	struct MaskHeadScratch *mhs = CTR_SCRATCHPAD_PTR(struct MaskHeadScratch, 0x108);
 

@@ -74,7 +74,7 @@ void AH_Garage_LInB(struct Instance *inst)
 		// continue setting GarageTop position
 		garageTop->matrix.t[2] = inst->matrix.t[2] + (ratio * 0x4c >> 0xc);
 
-		garageTop->unk50 = 0xfe;
+		garageTop->depthBiasNormal = 0xfe;
 
 		garage->garageTopInst = garageTop;
 	}
@@ -127,8 +127,8 @@ void AH_Garage_LInB(struct Instance *inst)
 	garage->rot[1] = inst->instDef->rot[1];
 	garage->rot[2] = inst->instDef->rot[2];
 
-	inst->unk50 = 1;
-	inst->unk51 = inst->unk50;
+	inst->depthBiasNormal = 1;
+	inst->depthBiasSecondary = inst->depthBiasNormal;
 	inst->unk53 = 0;
 	inst->vertSplit = inst->instDef->pos[1] + 0x300;
 }

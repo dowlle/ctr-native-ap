@@ -49,13 +49,12 @@ struct Particle
 	s16 unk16;
 
 	// 0x18
-	// char[2], s16[1] (0, 0xff, 0x0400)
-	char unk18;
-	char unk19;
-	s16 unk1A;
+	// Signed OT/depth adjustment for non-IDPP render lists.
+	s8 otIndexOffset;
 
-	// 0x19
-	// driverID (if needed)
+	// Driver/camera filter; -1 means all cameras.
+	s8 driverID;
+	s16 unk1A;
 
 	// 0x1C
 	void *funcPtr;
@@ -154,4 +153,8 @@ struct ParticleEmitter
 
 _Static_assert(sizeof(struct ParticleAxis) == 8);
 _Static_assert(sizeof(struct ParticleOscillator) == 0x18);
+_Static_assert(sizeof(struct Particle) == 0x7c);
+_Static_assert(offsetof(struct Particle, otIndexOffset) == 0x18);
+_Static_assert(offsetof(struct Particle, driverID) == 0x19);
+_Static_assert(offsetof(struct Particle, unk1A) == 0x1a);
 _Static_assert(sizeof(struct ParticleEmitter) == 0x24);

@@ -439,9 +439,9 @@ void VehStuckProc_MaskGrab_Init(struct Thread *t, struct Driver *d)
 				if (p == NULL)
 					break;
 
-				p->unk18 = d->instSelf->unk50;
+				p->otIndexOffset = d->instSelf->depthBiasNormal;
 				p->driverInst = d->instSelf;
-				p->unk19 = d->driverID;
+				p->driverID = d->driverID;
 			}
 		}
 		else

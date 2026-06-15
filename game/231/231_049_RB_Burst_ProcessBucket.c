@@ -11,7 +11,7 @@ static void RB_Burst_CopyDrawState(struct Instance *dstInst, struct Instance *sr
 	struct InstDrawPerPlayer *dst = RB_Burst_GetIDPP(dstInst, playerIndex);
 
 	dst->instFlags &= src->instFlags | ~DRAW_SUCCESSFUL;
-	dst->unkE4 = src->unkE4;
+	dst->otRangeNormal = src->otRangeNormal;
 	dst->depthOffset[0] = src->depthOffset[0];
 	dst->depthOffset[1] = src->depthOffset[1];
 }

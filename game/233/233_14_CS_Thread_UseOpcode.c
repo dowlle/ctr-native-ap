@@ -74,8 +74,8 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			{
 				if ((instance->flags & HIDE_MODEL) == 0)
 					goto afterPodiumSecondModelCheck;
-				instance->unk50 -= 2;
-				instance->unk51 -= 2;
+				instance->depthBiasNormal -= 2;
+				instance->depthBiasSecondary -= 2;
 				instance->flags &= ~HIDE_MODEL;
 			}
 		}
@@ -91,8 +91,8 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			{
 				if ((instance->flags & HIDE_MODEL) == 0)
 					goto afterPodiumFirstModelCheck;
-				instance->unk50 -= 6;
-				instance->unk51 -= 6;
+				instance->depthBiasNormal -= 6;
+				instance->depthBiasSecondary -= 6;
 				instance->flags &= ~HIDE_MODEL;
 			}
 		}
@@ -624,8 +624,8 @@ processOpcode:
 	case 0x1c:
 		if (instance != 0)
 		{
-			instance->unk50 += (char)opcodeMeta->arg1.i;
-			instance->unk51 += (char)opcodeMeta->arg1.i;
+			instance->depthBiasNormal += (char)opcodeMeta->arg1.i;
+			instance->depthBiasSecondary += (char)opcodeMeta->arg1.i;
 		}
 		break;
 

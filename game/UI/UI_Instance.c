@@ -172,8 +172,8 @@ struct Instance *UI_INSTANCE_BirthWithThread(int param_1, int param_2, int param
 		inst->scale[1] = uVar5;
 		inst->scale[2] = uVar5;
 
-		inst->unk50 = 0x80;
-		inst->unk51 = 0x80;
+		inst->depthBiasNormal = 0x80;
+		inst->depthBiasSecondary = 0x80;
 		if (param_4 == 0)
 		{
 			rot[0] = 0;

@@ -59,7 +59,7 @@ struct Particle *VehEmitter_Exhaust(struct Driver *d, VECTOR *exhaustPos, VECTOR
 	}
 
 	p->driverInst = dInst;
-	p->unk18 = dInst->unk50;
+	p->otIndexOffset = dInst->depthBiasNormal;
 
 	if (exhaustType == 7)
 	{
@@ -138,7 +138,7 @@ void VehEmitter_Sparks_Ground(struct Driver *d, struct ParticleEmitter *emSet)
 		}
 
 		p->driverInst = d->instSelf;
-		p->unk18 = d->instSelf->unk50;
+		p->otIndexOffset = d->instSelf->depthBiasNormal;
 	}
 }
 
@@ -212,7 +212,7 @@ void VehEmitter_Terrain_Ground(struct Driver *d, struct ParticleEmitter *emSet)
 		}
 
 		p->driverInst = dInst;
-		p->unk18 = dInst->unk50;
+		p->otIndexOffset = dInst->depthBiasNormal;
 	}
 }
 
@@ -407,7 +407,7 @@ static void VehEmitter_Skidmarks(struct Thread *thread, struct Driver *d, Terrai
 {
 	struct Instance *inst = thread->inst;
 	MATRIX *m = &inst->matrix;
-	u8 color = ((inst->flags & SPLIT_LINE) == 0) ? inst->unk50 : inst->unk51;
+	u8 color = ((inst->flags & SPLIT_LINE) == 0) ? inst->depthBiasNormal : inst->depthBiasSecondary;
 	u8 flags = ((terrainFlags & TERRAIN_FLAG_FORCE_SKIDMARKS) == 0) ? 0 : 1;
 	int sin = MATH_Sin(d->axisRotationX);
 	int cos = MATH_Cos(d->axisRotationX);
@@ -464,9 +464,9 @@ static void VehEmitter_MudSplash(struct Driver *d)
 		if (p == NULL)
 			continue;
 
-		p->unk18 = d->instSelf->unk50;
+		p->otIndexOffset = d->instSelf->depthBiasNormal;
 		p->driverInst = d->instSelf;
-		p->unk19 = d->driverID;
+		p->driverID = d->driverID;
 
 		p->axis[0].startVal += (int)p->axis[0].velocity * 0x10;
 		p->axis[2].startVal += (int)p->axis[2].velocity * 0x10;

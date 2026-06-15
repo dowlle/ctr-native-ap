@@ -28,8 +28,8 @@ void INSTANCE_Birth(struct Instance *inst, struct Model *model, const char *name
 		inst->name[15] = '\0';
 	}
 
-	inst->unk50 = 0xfe;
-	inst->unk51 = 0xc;
+	inst->depthBiasNormal = 0xfe;
+	inst->depthBiasSecondary = 0xc;
 	inst->animIndex = 0;
 	inst->unk53 = 1;
 
@@ -247,8 +247,8 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		dst[2] = src[2];
 
 		// 0x10 + (5 * 4) = 0x24
-		inst->unk50 = levInstDef->unk24 - 2;
-		inst->unk51 = levInstDef->unk24 + 12;
+		inst->depthBiasNormal = levInstDef->unk24 - 2;
+		inst->depthBiasSecondary = levInstDef->unk24 + 12;
 
 		// reflect color
 		inst->reflectionRGBA = 0x7f7f7f;

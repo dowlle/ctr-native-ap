@@ -79,7 +79,7 @@ void RB_Bubbles_RoosTubes()
 		numFreeParticles--;
 
 		p->unk1A = 0x7fff;
-		p->unk18 = 8;
+		p->otIndexOffset = 8;
 
 		for (i = 0; i < 3; i++)
 			p->axis[i].startVal += ptrSpawnPosCoords[i] * 0x100;

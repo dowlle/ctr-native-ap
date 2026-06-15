@@ -588,11 +588,11 @@ static void Particle_RenderList_LinkAndAdvance(u32 **primCursor, u32 **payloadCu
 		if ((u16)idpp->depthOffset[1] < otIndex)
 			otIndex = (u16)idpp->depthOffset[1];
 
-		otBase = (u_long *)(uintptr_t)idpp->unkE4;
+		otBase = (u_long *)(uintptr_t)idpp->otRangeNormal;
 	}
 	else
 	{
-		otIndex = (depth >> 8) + (s8)particle->unk18;
+		otIndex = (depth >> 8) + (s8)particle->otIndexOffset;
 
 		if (otIndex < 0)
 			otIndex = 0;
@@ -975,7 +975,7 @@ void Particle_RenderList(struct PushBuffer *pb, void *particleList)
 			u32 color;
 
 			prim = primCursor;
-			driverID = (s8)particle->unk19;
+			driverID = (s8)particle->driverID;
 
 			if (driverID != -1 && driverID != cameraID)
 				goto next_particle;
@@ -1317,8 +1317,8 @@ struct Particle *Particle_Init(u32 param_1, struct IconGroup *ig, struct Particl
 	}
 
 	p->unk1A = 0x400;
-	p->unk19 = -1;
-	p->unk18 = 0;
+	p->driverID = -1;
+	p->otIndexOffset = 0;
 
 	if ((p->flagsSetColor & 0x1000) != 0)
 	{

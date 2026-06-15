@@ -24,11 +24,11 @@ void MM_Title_SetTrophyDPP(void)
 	idpp2_b8 |= 0xffffffbf;
 	idpp1->instFlags &= idpp2_b8;
 
-	e4 = idpp2->unkE4;
-	e8 = idpp2->unkE8;
+	e4 = idpp2->otRangeNormal;
+	e8 = idpp2->otRangeSecondary;
 	dc = *(int *)&idpp2->depthOffset[0];
 
-	idpp1->unkE4 = e4;
-	idpp1->unkE8 = e8;
+	idpp1->otRangeNormal = e4;
+	idpp1->otRangeSecondary = e8;
 	*(int *)&idpp1->depthOffset[0] = dc;
 }

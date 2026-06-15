@@ -130,7 +130,7 @@ static void VehGroundShadow_BuildEntry(struct VehGroundShadowEntry *entry, struc
 	entry->pos[0] = (s16)CTR_MipsSra(driver->posCurr.x, 8);
 	entry->pos[1] = (s16)CTR_MipsAddLo(CTR_MipsSra(driver->quadBlockHeight, 8), 3);
 	entry->pos[2] = (s16)CTR_MipsSra(driver->posCurr.z, 8);
-	entry->depthBias = (s8)((entry->instFlags & SPLIT_LINE) != 0 ? inst->unk51 : inst->unk50) + 1;
+	entry->depthBias = (s8)((entry->instFlags & SPLIT_LINE) != 0 ? inst->depthBiasSecondary : inst->depthBiasNormal) + 1;
 }
 
 static void VehGroundShadow_TransformLocalAxes(struct VehGroundShadowEntry *entry)

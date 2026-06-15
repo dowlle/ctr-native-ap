@@ -41,7 +41,7 @@ void CS_Thread_Particles(struct Thread *t)
 				p->axis[0].startVal += (pos[0] + inst->matrix.t[0]) << 8;
 				p->axis[1].startVal += (pos[1] + inst->matrix.t[1]) << 8;
 				p->axis[2].startVal += (pos[2] + inst->matrix.t[2]) << 8;
-				p->unk18 = inst->unk50 + modelDelta;
+				p->otIndexOffset = inst->depthBiasNormal + modelDelta;
 			}
 		}
 

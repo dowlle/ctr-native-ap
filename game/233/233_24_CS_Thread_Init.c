@@ -265,8 +265,8 @@ after_opcode:
 
 		if ((u32)(gGT->levelID - GEM_STONE_VALLEY) < 5)
 		{
-			inst->unk50 -= 4;
-			inst->unk51 -= 4;
+			inst->depthBiasNormal -= 4;
+			inst->depthBiasSecondary -= 4;
 		}
 
 		param_3[0xc] = param_3[8];

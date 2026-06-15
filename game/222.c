@@ -213,7 +213,7 @@ void AA_EndEvent_DrawMenu(void)
 
 			if (shouldDrawToken)
 			{
-				hudR->unk50 = 1;
+				hudR->depthBiasNormal = 1;
 				hudToken->flags &= ~HIDE_MODEL;
 				hudToken->matrix.t[0] = hudT->matrix.t[0];
 				hudToken->matrix.t[1] = UI_ConvertY_2(letterPos.y + 0x18, AA_SCREEN_DEPTH);

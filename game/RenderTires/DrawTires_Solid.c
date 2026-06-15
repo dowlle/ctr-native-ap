@@ -78,8 +78,8 @@ _Static_assert(offsetof(struct InstDrawPerPlayer, m3x3) == 0x24);
 _Static_assert(offsetof(struct InstDrawPerPlayer, instFlags) == 0x44);
 _Static_assert(offsetof(struct InstDrawPerPlayer, lodIndex) == 0x64);
 _Static_assert(offsetof(struct InstDrawPerPlayer, depthOffset) == 0x68);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE4) == 0x70);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE8) == 0x74);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeNormal) == 0x70);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeSecondary) == 0x74);
 
 static const u32 sDrawTiresSolidJumpTable[8] = {
     0x8006ed7c, 0x8006ed98, 0x8006edb4, 0x8006edcc, 0x8006ede4, 0x8006ee00, 0x8006ee1c, 0x8006ee3c,
@@ -271,8 +271,8 @@ static void DrawTiresSolid_BuildWheelLocalPairs(struct DrawTiresSolidScratch *sc
 	DrawTiresSolid_WriteS32(scratch, 0x8c, wheelRearZ);
 	DrawTiresSolid_WriteS32(scratch, 0x94, wheelRearZ);
 
-	DrawTiresSolid_WriteS32(scratch, 0x40, idpp->unkE4);
-	DrawTiresSolid_WriteS32(scratch, 0x44, idpp->unkE8);
+	DrawTiresSolid_WriteS32(scratch, 0x40, idpp->otRangeNormal);
+	DrawTiresSolid_WriteS32(scratch, 0x44, idpp->otRangeSecondary);
 	DrawTiresSolid_WriteS32(scratch, 0x48, (s16)driver->wheelSize);
 
 	steering = DrawTiresSolid_TrigAngleSinCos(driver->wheelRotation << 2);
@@ -736,10 +736,10 @@ static int DrawTiresSolid_StagePlayer(struct DrawTiresSolidScratch *scratch, str
 #endif
 
 	scratch->wheelSize = driver->wheelSize;
-	scratch->otRangeNormal = idpp->unkE4;
-	scratch->otRangeSecondary = idpp->unkE8;
-	scratch->otRangeStart = scratch->depthOffsetStartBytes + idpp->unkE4;
-	scratch->otRangeEnd = scratch->depthOffsetEndBytes + idpp->unkE4;
+	scratch->otRangeNormal = idpp->otRangeNormal;
+	scratch->otRangeSecondary = idpp->otRangeSecondary;
+	scratch->otRangeStart = scratch->depthOffsetStartBytes + idpp->otRangeNormal;
+	scratch->otRangeEnd = scratch->depthOffsetEndBytes + idpp->otRangeNormal;
 
 	DrawTiresSolid_BuildWheelLocalPairs(scratch, driver, inst, idpp);
 	DrawTiresSolid_SetupGteState(scratch, inst, idpp, pb);

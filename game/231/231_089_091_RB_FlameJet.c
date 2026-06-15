@@ -250,7 +250,7 @@ void RB_FlameJet_Particles(struct Instance *inst, struct FlameJet *fjObj)
 		particle1->axis[1].accel = result >> 4;
 
 		particle1->unk1A = 0x1e00;
-		particle1->unk18 = inst->unk50 - 1;
+		particle1->otIndexOffset = inst->depthBiasNormal - 1;
 
 		if ((gGT->timer & 1) != 0)
 		{
@@ -295,7 +295,7 @@ void RB_FlameJet_Particles(struct Instance *inst, struct FlameJet *fjObj)
 		particle2->axis[1].accel = particle1->axis[1].accel;
 
 		particle2->unk1A = 0x1e00;
-		particle2->unk18 = inst->unk50;
+		particle2->otIndexOffset = inst->depthBiasNormal;
 	}
 }
 

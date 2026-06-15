@@ -123,8 +123,8 @@ void RB_Minecart_ThTick(struct Thread *t)
 	}
 
 	// what is this?
-	minecartInst->unk50 = minecartArr[minecartObj->posIndex];
-	minecartInst->unk51 = minecartArr[minecartObj->posIndex];
+	minecartInst->depthBiasNormal = minecartArr[minecartObj->posIndex];
+	minecartInst->depthBiasSecondary = minecartArr[minecartObj->posIndex];
 
 	for (i = 0; i < 3; i++)
 	{

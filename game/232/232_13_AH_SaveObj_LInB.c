@@ -63,7 +63,7 @@ void AH_SaveObj_LInB(struct Instance *savInst)
 				inst->matrix.t[1] = spawn->posCoords[1];
 				inst->matrix.t[2] = spawn->posCoords[2];
 
-				inst->unk50 = 0xf8;
+				inst->depthBiasNormal = 0xf8;
 			}
 		}
 	}

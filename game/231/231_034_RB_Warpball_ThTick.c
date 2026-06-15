@@ -279,7 +279,7 @@ void RB_Warpball_ThTick(struct Thread *t)
 		if (((tw->flags & 0xc) != 0) && (inst->matrix.t[1] < sps->hit.hitPos.y))
 		{
 			inst->matrix.t[1] = sps->hit.hitPos.y;
-			inst->unk50 = sps->hit.ptrQuadblock->draw_order_low - 1;
+			inst->depthBiasNormal = sps->hit.ptrQuadblock->draw_order_low - 1;
 		}
 	}
 	else
@@ -311,7 +311,7 @@ void RB_Warpball_ThTick(struct Thread *t)
 		p->axis[3].startVal = s_warpballParticleHeight << 8;
 		p->axis[4].startVal = s_warpballParticleHeight * 0xc0;
 		p->axis[5].startVal = s_warpballParticleHeight << 7;
-		p->unk18 = inst->unk50 + 1;
+		p->otIndexOffset = inst->depthBiasNormal + 1;
 		p->framesLeftInLife = -1;
 	}
 

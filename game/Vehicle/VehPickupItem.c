@@ -927,7 +927,7 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		tw->ptrParticle = p;
 
 		if (p != 0)
-			p->unk18 = 250;
+			p->otIndexOffset = 250;
 
 		break;
 

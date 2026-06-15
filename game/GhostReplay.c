@@ -517,7 +517,7 @@ void GhostReplay_Init1(void)
 			}
 		}
 
-		inst->unk51 = 0xc;
+		inst->depthBiasSecondary = 0xc;
 		inst->flags |= 0x4000000;
 		ghostDriver->instSelf = inst;
 		VehBirth_TireSprites(t);

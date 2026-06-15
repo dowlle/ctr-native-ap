@@ -16,8 +16,8 @@ void CS_Podium_Stand_Init(s16 *podiumData)
 	inst->matrix.t[1] = podiumData[1];
 	inst->matrix.t[2] = podiumData[2];
 
-	inst->unk51 += 2;
-	inst->unk50 += 2;
+	inst->depthBiasSecondary += 2;
+	inst->depthBiasNormal += 2;
 
 	podiumData[12] = podiumData[8];
 	podiumData[13] = podiumData[9];

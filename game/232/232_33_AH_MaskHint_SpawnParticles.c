@@ -32,7 +32,7 @@ void AH_MaskHint_SpawnParticles(s16 numParticles, struct ParticleEmitter *emSet,
 		particle->axis[5].startVal = (particle->axis[5].startVal * maskAnim) >> 0xc;
 		particle->axis[5].velocity = (particle->axis[5].velocity * maskAnim) >> 0xc;
 
-		particle->unk18 -= 5;
+		particle->otIndexOffset -= 5;
 	}
 
 	return;

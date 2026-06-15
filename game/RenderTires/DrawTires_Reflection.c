@@ -78,8 +78,8 @@ _Static_assert(offsetof(struct InstDrawPerPlayer, m3x3) == 0x24);
 _Static_assert(offsetof(struct InstDrawPerPlayer, instFlags) == 0x44);
 _Static_assert(offsetof(struct InstDrawPerPlayer, lodIndex) == 0x64);
 _Static_assert(offsetof(struct InstDrawPerPlayer, depthOffset) == 0x68);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE4) == 0x70);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE8) == 0x74);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeNormal) == 0x70);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeSecondary) == 0x74);
 
 static const u32 sDrawTiresReflectionJumpTable[8] = {
     0x8006f7f8, 0x8006f814, 0x8006f830, 0x8006f848, 0x8006f860, 0x8006f87c, 0x8006f898, 0x8006f8b8,
@@ -205,8 +205,8 @@ static void DrawTiresReflection_BuildWheelLocalPairs(struct DrawTiresReflectionS
 	DrawTiresReflection_WriteS32(scratch, 0x8c, wheelRearZ);
 	DrawTiresReflection_WriteS32(scratch, 0x94, wheelRearZ);
 
-	DrawTiresReflection_WriteS32(scratch, 0x40, idpp->unkE4);
-	DrawTiresReflection_WriteS32(scratch, 0x44, idpp->unkE8);
+	DrawTiresReflection_WriteS32(scratch, 0x40, idpp->otRangeNormal);
+	DrawTiresReflection_WriteS32(scratch, 0x44, idpp->otRangeSecondary);
 	DrawTiresReflection_WriteS32(scratch, 0x48, (s16)driver->wheelSize);
 
 	steering = DrawTiresSolid_TrigAngleSinCos(driver->wheelRotation << 2);

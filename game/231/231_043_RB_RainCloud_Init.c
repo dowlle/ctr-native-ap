@@ -29,8 +29,8 @@ void RB_RainCloud_Init(struct Driver *d)
 
 		cloudInst->alphaScale = 0x800;
 
-		cloudInst->unk50 = d->instSelf->unk50;
-		cloudInst->unk51 = d->instSelf->unk51;
+		cloudInst->depthBiasNormal = d->instSelf->depthBiasNormal;
+		cloudInst->depthBiasSecondary = d->instSelf->depthBiasSecondary;
 
 		// add rain to pool
 		rlocal = (struct RainLocal *)JitPool_Add(&sdata->gGT->JitPools.rain);

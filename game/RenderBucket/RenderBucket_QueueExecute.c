@@ -88,8 +88,8 @@ _Static_assert(offsetof(struct Instance, matrix) == 0x30);
 _Static_assert(offsetof(struct Instance, matrix.t[0]) == 0x44);
 _Static_assert(offsetof(struct Instance, matrix.t[1]) == 0x48);
 _Static_assert(offsetof(struct Instance, matrix.t[2]) == 0x4c);
-_Static_assert(offsetof(struct Instance, unk50) == 0x50);
-_Static_assert(offsetof(struct Instance, unk51) == 0x51);
+_Static_assert(offsetof(struct Instance, depthBiasNormal) == 0x50);
+_Static_assert(offsetof(struct Instance, depthBiasSecondary) == 0x51);
 _Static_assert(offsetof(struct Instance, animIndex) == 0x52);
 _Static_assert(offsetof(struct Instance, animFrame) == 0x54);
 _Static_assert(offsetof(struct Instance, vertSplit) == 0x56);
@@ -138,8 +138,8 @@ _Static_assert(offsetof(struct InstDrawPerPlayer, ptrDeltaArray) == 0x60);
 _Static_assert(offsetof(struct InstDrawPerPlayer, lodIndex) == 0x64);
 _Static_assert(offsetof(struct InstDrawPerPlayer, depthOffset) == 0x68);
 _Static_assert(offsetof(struct InstDrawPerPlayer, mh) == 0x6c);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE4) == 0x70);
-_Static_assert(offsetof(struct InstDrawPerPlayer, unkE8) == 0x74);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeNormal) == 0x70);
+_Static_assert(offsetof(struct InstDrawPerPlayer, otRangeSecondary) == 0x74);
 _Static_assert(offsetof(struct InstDrawPerPlayer, unkEC) == 0x78);
 _Static_assert(offsetof(struct InstDrawPerPlayer, unkF0) == 0x7c);
 _Static_assert(sizeof(struct InstDrawPerPlayer) == 0x88);
@@ -1515,7 +1515,7 @@ static int RenderBucket_ShouldAllocateSecondaryRange(u32 instFlags, const struct
 
 static int RenderBucket_BuildDepthRange(struct Instance *inst, struct ModelFrame *frame, struct ModelFrame *nextFrame, struct PushBuffer *pb,
                                         struct InstDrawPerPlayer *idpp, struct RenderBucketQueueState *queueState, int viewDepth, int normalDepthBias,
-                                        int reflectDepthBias, u32 *instFlags, const struct RenderBucketSplitState *split, const MATRIX *projectionMvp)
+                                        int secondaryDepthBias, u32 *instFlags, const struct RenderBucketSplitState *split, const MATRIX *projectionMvp)
 {
 	struct RenderBucketBounds bounds;
 	int primaryRange;
@@ -1536,7 +1536,7 @@ static int RenderBucket_BuildDepthRange(struct Instance *inst, struct ModelFrame
 		// If split/reflection selection runs, 0x800713c8 stores the stale t1
 		// value from the cull path, which is still the unsigned viewport height.
 		if ((*instFlags & (SPLIT_LINE | REFLECTIVE)) != 0)
-			idpp->unkE8 = (u16)pb->rect.h;
+			idpp->otRangeSecondary = (u16)pb->rect.h;
 		return 1;
 	}
 
@@ -1550,20 +1550,20 @@ static int RenderBucket_BuildDepthRange(struct Instance *inst, struct ModelFrame
 	if (primaryRange == 0)
 		return 0;
 
-	idpp->unkE4 = primaryRange;
-	idpp->unkE8 = primaryRange;
+	idpp->otRangeNormal = primaryRange;
+	idpp->otRangeSecondary = primaryRange;
 
 	if (RenderBucket_ShouldAllocateSecondaryRange(*instFlags, split) != 0)
 	{
 		// NOTE(aalhendi): Retail QueueDraw allocates this distinct
 		// reflected/split OT range at 0x80071320-0x800713b4 with signed
-		// Instance.unk51 as the second depth bias. The allocation predicate is
+		// Instance.depthBiasSecondary as the second depth bias. The allocation predicate is
 		// source-backed through RenderBucketSplitState.
-		secondaryRange = RenderBucket_AllocateOTRange(queueState, pb, minDepth, maxDepth, viewDepth, reflectDepthBias, 0);
+		secondaryRange = RenderBucket_AllocateOTRange(queueState, pb, minDepth, maxDepth, viewDepth, secondaryDepthBias, 0);
 		if (secondaryRange == 0)
 			return 0;
 
-		idpp->unkE8 = secondaryRange;
+		idpp->otRangeSecondary = secondaryRange;
 	}
 
 	return 1;
@@ -1707,7 +1707,7 @@ static struct RenderBucketEntry *RenderBucket_QueueDraw(struct Instance *inst, s
 	int lodIndex;
 	int lodExhausted;
 	int normalDepthBias;
-	int reflectDepthBias;
+	int secondaryDepthBias;
 	int viewDepth;
 	int drawFunc;
 	int uncompressFunc;
@@ -1783,10 +1783,10 @@ static struct RenderBucketEntry *RenderBucket_QueueDraw(struct Instance *inst, s
 
 	idpp->mh = mh;
 	idpp->lodIndex = lodIndex;
-	normalDepthBias = RenderBucket_SignExtendByte(inst->unk50);
-	reflectDepthBias = RenderBucket_SignExtendByte(inst->unk51);
+	normalDepthBias = RenderBucket_SignExtendByte(inst->depthBiasNormal);
+	secondaryDepthBias = RenderBucket_SignExtendByte(inst->depthBiasSecondary);
 	RenderBucket_BuildM3x3(inst, mh, viewDepth, &matrixState);
-	RenderBucket_AdjustDepthBiasForNormal(inst, playerIndex, &normalDepthBias, &reflectDepthBias);
+	RenderBucket_AdjustDepthBiasForNormal(inst, playerIndex, &normalDepthBias, &secondaryDepthBias);
 
 	frame = RenderBucket_GetFrame(inst, mh, &nextFrame, &deltaArray, &lastFrameAdvance);
 	idpp->ptrDeltaArray = deltaArray;
@@ -1806,7 +1806,7 @@ static struct RenderBucketEntry *RenderBucket_QueueDraw(struct Instance *inst, s
 	RenderBucket_StoreMatrixWords(&idpp->m3x3, matrixState.m0, matrixState.m1, matrixState.m2, matrixState.m3, matrixState.m4);
 	split = RenderBucket_BuildSplitState(inst, mh, frame, nextFrame, pb, idpp, viewDepth, &queuedFlags, &matrixState, &projectionMvp);
 
-	if (RenderBucket_BuildDepthRange(inst, frame, nextFrame, pb, idpp, queueState, viewDepth, normalDepthBias, reflectDepthBias, &queuedFlags, &split,
+	if (RenderBucket_BuildDepthRange(inst, frame, nextFrame, pb, idpp, queueState, viewDepth, normalDepthBias, secondaryDepthBias, &queuedFlags, &split,
 	                                 &projectionMvp) == 0)
 	{
 		idpp->instFlags = queuedFlags;
@@ -2654,18 +2654,18 @@ static int RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(struct RenderBucketDra
 
 static int RenderBucket_DrawInstPrim_KeyRelicToken(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 int RenderBucket_DrawInstPrim_Normal(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_NormalAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_NormalAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_DrawInstPrim_SelectRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006ad6c-0x8006ad88.
-	int activeRange = ((s32)(command << 6) > 0) ? ctx->idpp->unkE4 : ctx->idpp->unkE8;
+	int activeRange = ((s32)(command << 6) > 0) ? ctx->idpp->otRangeNormal : ctx->idpp->otRangeSecondary;
 
 	return RenderBucket_DrawInstPrim_NormalAtRange(ctx, command, tex, activeRange, depthMac0);
 }
@@ -2736,7 +2736,7 @@ static int RenderBucket_DrawInstPrim_DepthFadeAtRange(struct RenderBucketDrawCon
 
 static int RenderBucket_DrawInstPrim_DepthFade(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_DepthFadeAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_DepthFadeAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_DrawInstPrim_ClampDepthAtRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int activeRange,
@@ -2749,7 +2749,7 @@ static int RenderBucket_DrawInstPrim_ClampDepthAtRange(struct RenderBucketDrawCo
 
 static int RenderBucket_DrawInstPrim_ClampDepth(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_ClampDepthAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_ClampDepthAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_DrawInstPrim_LitTextureAtRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int activeRange,
@@ -2863,7 +2863,7 @@ static int RenderBucket_DrawInstPrim_LitTextureAtRange(struct RenderBucketDrawCo
 
 static int RenderBucket_DrawInstPrim_LitTexture(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_LitTextureAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_LitTextureAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_DrawInstPrim_GhostAtRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int activeRange, int depthMac0)
@@ -2937,7 +2937,7 @@ static int RenderBucket_DrawInstPrim_GhostAtRange(struct RenderBucketDrawContext
 
 static int RenderBucket_DrawInstPrim_Ghost(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DrawInstPrim_GhostAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DrawInstPrim_GhostAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_DispatchDrawInstPrimAtRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int activeRange, int depthMac0)
@@ -2981,15 +2981,15 @@ static int RenderBucket_DispatchDrawInstPrimAtRange(struct RenderBucketDrawConte
 
 static int RenderBucket_DispatchDrawInstPrim(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int depthMac0)
 {
-	return RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0);
+	return RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0);
 }
 
 static int RenderBucket_SelectPrimitiveActiveRange(struct RenderBucketDrawContext *ctx, u32 command)
 {
 	if ((u32)(uintptr_t)ctx->inst->funcPtr[1] == RB_RETAIL_INST_PRIM_SELECT_RANGE)
-		return ((s32)(command << 6) > 0) ? ctx->idpp->unkE4 : ctx->idpp->unkE8;
+		return ((s32)(command << 6) > 0) ? ctx->idpp->otRangeNormal : ctx->idpp->otRangeSecondary;
 
-	return ctx->idpp->unkE4;
+	return ctx->idpp->otRangeNormal;
 }
 
 static void RenderBucket_AssignSplitUvs(struct RenderBucketDrawContext *ctx, const struct TextureLayout *tex)
@@ -3526,11 +3526,11 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 
 	case 7:
 		return RenderBucket_RestoreProjectedRegsAndReturn(
-		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, ctx->idpp->unkE4, depthMac0, a, b, c, a->splitDist));
+		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0, a, b, c, a->splitDist));
 
 	case 1:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ac, a, c, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, &ac, &ab, c->splitDist) < 0)
@@ -3541,8 +3541,8 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &ac, a, &ab, a->splitDist));
 
 	case 2:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &cb, c, b, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, a, &ab, a->splitDist) < 0)
@@ -3553,8 +3553,8 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, b, &cb, &ab, b->splitDist));
 
 	case 4:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ac, a, c, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &bc, b, c, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, b, &bc, &ac, b->splitDist) < 0)
@@ -3565,8 +3565,8 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &bc, c, &ac, c->splitDist));
 
 	case 3:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ac, a, c, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &bc, b, c, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, b, &bc, &ac, b->splitDist) < 0)
@@ -3577,8 +3577,8 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &bc, c, &ac, c->splitDist));
 
 	case 5:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &cb, c, b, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, a, &ab, a->splitDist) < 0)
@@ -3589,8 +3589,8 @@ static int RenderBucket_DrawSplitClipped(struct RenderBucketDrawContext *ctx, u3
 		    &savedRegs, RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, b, &cb, &ab, b->splitDist));
 
 	case 6:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildDepthSplitIntersection(ctx, &ac, a, c, hasTexture);
 		if (RenderBucket_DrawDepthSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, &ac, &ab, c->splitDist) < 0)
@@ -3739,15 +3739,15 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 	{
 	case 0:
 		return RenderBucket_RestoreProjectedRegsAndReturn(
-		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, ctx->idpp->unkE8, depthMac0, a, b, c, a->splitDist));
+		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, ctx->idpp->otRangeSecondary, depthMac0, a, b, c, a->splitDist));
 
 	case 7:
 		return RenderBucket_RestoreProjectedRegsAndReturn(
-		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, ctx->idpp->unkE4, depthMac0, a, b, c, a->splitDist));
+		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0, a, b, c, a->splitDist));
 
 	case 1:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ac, a, c, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, &ac, &ab, c->splitDist) < 0)
@@ -3758,8 +3758,8 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &ac, a, &ab, a->splitDist));
 
 	case 6:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ac, a, c, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, &ac, &ab, c->splitDist) < 0)
@@ -3770,8 +3770,8 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &ac, a, &ab, a->splitDist));
 
 	case 2:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &cb, c, b, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, a, &ab, a->splitDist) < 0)
@@ -3782,8 +3782,8 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, b, &cb, &ab, b->splitDist));
 
 	case 5:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ab, a, b, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &cb, c, b, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, c, a, &ab, a->splitDist) < 0)
@@ -3794,8 +3794,8 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, b, &cb, &ab, b->splitDist));
 
 	case 3:
-		primaryRange = ctx->idpp->unkE4;
-		secondaryRange = ctx->idpp->unkE8;
+		primaryRange = ctx->idpp->otRangeNormal;
+		secondaryRange = ctx->idpp->otRangeSecondary;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ac, a, c, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &bc, b, c, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, b, &bc, &ac, b->splitDist) < 0)
@@ -3806,8 +3806,8 @@ static int RenderBucket_DrawWaterSplitClipped(struct RenderBucketDrawContext *ct
 		    &savedRegs, RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, secondaryRange, depthMac0, &bc, c, &ac, c->splitDist));
 
 	case 4:
-		primaryRange = ctx->idpp->unkE8;
-		secondaryRange = ctx->idpp->unkE4;
+		primaryRange = ctx->idpp->otRangeSecondary;
+		secondaryRange = ctx->idpp->otRangeNormal;
 		RenderBucket_BuildWaterSplitIntersection(ctx, &ac, a, c, hasTexture);
 		RenderBucket_BuildWaterSplitIntersection(ctx, &bc, b, c, hasTexture);
 		if (RenderBucket_DrawWaterSplitCandidate(ctx, command, tex, primaryRange, depthMac0, b, &bc, &ac, b->splitDist) < 0)
@@ -3978,7 +3978,7 @@ static int RenderBucket_DrawSpecialMirroredPass(struct RenderBucketDrawContext *
 	ctx->tempColor[1] = (int)(((u32)savedColor1 >> shift) & mask);
 	ctx->tempColor[2] = (int)(((u32)savedColor2 >> shift) & mask);
 	ctx->tempColor[3] = (int)(((u32)savedColor3 >> shift) & mask);
-	ret = RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->unkE8, depthMac0);
+	ret = RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->otRangeSecondary, depthMac0);
 	ctx->tempColor[1] = savedColor1;
 	ctx->tempColor[2] = savedColor2;
 	ctx->tempColor[3] = savedColor3;
@@ -4017,7 +4017,7 @@ static int RenderBucket_DrawSpecialPrimitive(struct RenderBucketDrawContext *ctx
 	originalFlag = CFC2(31);
 	if (RenderBucket_CheckProjectedPrim(ctx, command, originalFlag, 0, &depthMac0) != 0)
 	{
-		if (RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->unkE4, depthMac0) < 0)
+		if (RenderBucket_DispatchDrawInstPrimAtRange(ctx, command, tex, ctx->idpp->otRangeNormal, depthMac0) < 0)
 			return -1;
 	}
 
@@ -4026,10 +4026,10 @@ static int RenderBucket_DrawSpecialPrimitive(struct RenderBucketDrawContext *ctx
 
 static void RenderBucket_SwapActiveRanges(struct RenderBucketDrawContext *ctx)
 {
-	int range = ctx->idpp->unkE4;
+	int range = ctx->idpp->otRangeNormal;
 
-	ctx->idpp->unkE4 = ctx->idpp->unkE8;
-	ctx->idpp->unkE8 = range;
+	ctx->idpp->otRangeNormal = ctx->idpp->otRangeSecondary;
+	ctx->idpp->otRangeSecondary = range;
 }
 
 static int RenderBucket_DrawReflectionPrimitive(struct RenderBucketDrawContext *ctx, u32 command, int useRtps, int reuseFirstVertex, struct TextureLayout *tex)

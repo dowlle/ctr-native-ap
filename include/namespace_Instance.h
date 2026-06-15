@@ -465,10 +465,10 @@ struct InstDrawPerPlayer
 	struct ModelHeader *mh;
 
 	// 0xe4
-	int unkE4; // ptrOT + depthOffset
-	int unkE8; // ptrOT + depthOffset
-	int unkEC; // drawFunc1
-	int unkF0; // drawFunc2
+	int otRangeNormal;    // ptrOT + depthOffset
+	int otRangeSecondary; // ptrOT + depthOffset
+	int unkEC;            // drawFunc1
+	int unkF0;            // drawFunc2
 
 	// 0xec - render function
 	// 0xf0 - func (for what?)
@@ -519,8 +519,8 @@ struct Instance
 	MATRIX matrix;
 
 	// 0x50
-	u8 unk50;
-	u8 unk51;
+	u8 depthBiasNormal;
+	u8 depthBiasSecondary;
 
 	// 0x52
 	u8 animIndex;

@@ -25,7 +25,7 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	// ====== First Instance =========
 
 	burst[1] = (int)currInst;
-	currInst->unk50 += -2;
+	currInst->depthBiasNormal += -2;
 
 	// set rotation to identity matrix
 	*(int *)&currInst->matrix.m[0][0] = 0x1000;
@@ -43,7 +43,7 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	currInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_WARPEDBURST], s_burst_explosion2, t);
 
 	burst[2] = (int)currInst;
-	currInst->unk50 += -2;
+	currInst->depthBiasNormal += -2;
 
 	// instance flags
 	currInst->flags |= 0x2000000;
@@ -66,7 +66,7 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	currInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_SHOCKWAVE_RED], s_burst_shockwave1, t);
 
 	burst[0] = (int)currInst;
-	currInst->unk50 += -2;
+	currInst->depthBiasNormal += -2;
 
 	// instance flags
 	currInst->flags |= 0x2040000;

@@ -33,8 +33,8 @@ void CS_Podium_Prize_ThTick1(struct Thread *th)
 	prize[0x13] = 0xf;
 	prize[0x15] = 0;
 
-	inst->unk50 = 0x80;
-	inst->unk51 = 0x80;
+	inst->depthBiasNormal = 0x80;
+	inst->depthBiasSecondary = 0x80;
 
 	inst->scale[0] = 0x1000;
 	inst->scale[1] = 0x1000;

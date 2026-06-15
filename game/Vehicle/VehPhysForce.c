@@ -888,9 +888,9 @@ static void VehPhysForce_TranslateMatrix_SpawnWakeParticle(struct Driver *d)
 
 	if (p != NULL)
 	{
-		p->unk18 = d->instSelf->unk50;
+		p->otIndexOffset = d->instSelf->depthBiasNormal;
 		p->driverInst = d->instSelf;
-		p->unk19 = d->driverID;
+		p->driverID = d->driverID;
 	}
 }
 
@@ -935,8 +935,8 @@ static void VehPhysForce_TranslateMatrix_UpdateWake(struct Instance *inst, struc
 	}
 
 	wake->flags &= ~HIDE_MODEL;
-	wake->unk50 = (u8)CTR_MipsAddLo(inst->unk50, 1);
-	wake->unk51 = (u8)CTR_MipsSubLo(inst->unk51, 1);
+	wake->depthBiasNormal = (u8)CTR_MipsAddLo(inst->depthBiasNormal, 1);
+	wake->depthBiasSecondary = (u8)CTR_MipsSubLo(inst->depthBiasSecondary, 1);
 
 	wake->matrix.t[0] = inst->matrix.t[0];
 	wake->matrix.t[1] = 0;

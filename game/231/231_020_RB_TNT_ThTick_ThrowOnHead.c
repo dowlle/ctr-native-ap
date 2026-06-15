@@ -47,8 +47,8 @@ void RB_TNT_ThTick_ThrowOnHead(struct Thread *t)
 			// play sound that you hit a TNT
 			PlaySound3D(0x51, inst);
 
-			inst->unk50 = mw->driverTarget->instSelf->unk50 + -1;
-			inst->unk51 = mw->driverTarget->instSelf->unk51 + -1;
+			inst->depthBiasNormal = mw->driverTarget->instSelf->depthBiasNormal + -1;
+			inst->depthBiasSecondary = mw->driverTarget->instSelf->depthBiasSecondary + -1;
 
 			// assign
 			ThTick_SetAndExec(t, RB_TNT_ThTick_SitOnHead);

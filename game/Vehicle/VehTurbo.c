@@ -23,10 +23,10 @@ void VehTurbo_ProcessBucket(struct Thread *turboThread)
 				secondary->instFlags &= driverDrawFlag;
 				primary->instFlags &= driverDrawFlag;
 
-				secondary->unkE4 = driver->unkE4;
-				primary->unkE4 = driver->unkE4;
-				secondary->unkE8 = driver->unkE8;
-				primary->unkE8 = driver->unkE8;
+				secondary->otRangeNormal = driver->otRangeNormal;
+				primary->otRangeNormal = driver->otRangeNormal;
+				secondary->otRangeSecondary = driver->otRangeSecondary;
+				primary->otRangeSecondary = driver->otRangeSecondary;
 
 				secondary->depthOffset[0] = driver->depthOffset[0];
 				primary->depthOffset[0] = driver->depthOffset[0];
