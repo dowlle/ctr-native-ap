@@ -16,7 +16,16 @@
 #define NATIVE_AUDIO_FP_SHIFT               16
 #define NATIVE_AUDIO_FP_ONE                 (1 << NATIVE_AUDIO_FP_SHIFT)
 #define NATIVE_AUDIO_GAUSS_INDEX_SHIFT      8
-#define NATIVE_AUDIO_DIRECT_VOL_MAX         0x4000
+// NOTE(aalhendi): Matches PSX SPU Q15 direct-volume semantics. The SPU treats
+// each volume register (voice VOLL/VOLR, CD CDVOLL/CDVOLR, master MVOLL/MVOR)
+// as a signed 16-bit value with effective gain = value / 0x8000, so two stages
+// (per-voice then master) divide by 0x8000^2 = 0x40000000. The previous 0x4000
+// value mirrored the legacy OpenAL backend, which made every voice/XA ~4x
+// louder than retail and clipped heavily. Retail HOWL ships vol_Music=175,
+// vol_FX=215, vol_Voice=255, master=0x3fff, and Channel_SetVolume caps each
+// voice at 0x3fff; under this divisor those reach the same amplitude as PSX
+// hardware (e.g. 0x3fff^2 / 0x40000000 ~= 0.25 per voice at defaults).
+#define NATIVE_AUDIO_DIRECT_VOL_MAX         0x8000
 #define NATIVE_AUDIO_VBLANK_FRAMES          (NATIVE_AUDIO_SAMPLE_RATE / 60)
 #define NATIVE_AUDIO_SCHEDULED_QUEUE_FRAMES (NATIVE_AUDIO_VBLANK_FRAMES * 16)
 #define NATIVE_AUDIO_XA_ZIGZAG_TAPS         29
@@ -2685,8 +2694,8 @@ internal void NativeAudio_MixFrame(s16 *outLeft, s16 *outRight)
 			NativeAudio_MixSample(&mixLeft, &mixRight, left, right);
 			if (s_audio.cdReverbEnabled)
 			{
-				NativeAudio_MixSample(&reverbSendLeft, &reverbSendRight, NativeAudio_ApplyVolume(srcLeft, s_audio.xa.volumeLeft, NATIVE_AUDIO_DIRECT_VOL_MAX),
-				                      NativeAudio_ApplyVolume(srcRight, s_audio.xa.volumeRight, NATIVE_AUDIO_DIRECT_VOL_MAX));
+				NativeAudio_MixSample(&reverbSendLeft, &reverbSendRight, NativeAudio_ApplyMasterVolume(srcLeft, s_audio.xa.volumeLeft),
+				                      NativeAudio_ApplyMasterVolume(srcRight, s_audio.xa.volumeRight));
 			}
 			NativeAudio_AdvanceXAOutputFrameNoLock();
 		}
@@ -2740,8 +2749,8 @@ internal void NativeAudio_MixFrame(s16 *outLeft, s16 *outRight)
 			NativeAudio_MixSample(&mixLeft, &mixRight, left, right);
 			if (voice->reverb)
 			{
-				NativeAudio_MixSample(&reverbSendLeft, &reverbSendRight, NativeAudio_ApplyVolume(sample, voice->attr.volume.left, NATIVE_AUDIO_DIRECT_VOL_MAX),
-				                      NativeAudio_ApplyVolume(sample, voice->attr.volume.right, NATIVE_AUDIO_DIRECT_VOL_MAX));
+				NativeAudio_MixSample(&reverbSendLeft, &reverbSendRight, NativeAudio_ApplyMasterVolume(sample, voice->attr.volume.left),
+				                      NativeAudio_ApplyMasterVolume(sample, voice->attr.volume.right));
 			}
 			NativeAudio_AdsrAdvance(voice);
 			if (!voice->active || voice->adsrPhase == NATIVE_AUDIO_ADSR_OFF)
