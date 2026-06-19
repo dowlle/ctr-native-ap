@@ -35,6 +35,16 @@ enum GameMode1
 	ADVENTURE_BOSS = 0x80000000
 };
 
+typedef enum MainMenuState : s16
+{
+	MAIN_MENU_TITLE = 0,
+	MAIN_MENU_CHARACTERS = 1,
+	MAIN_MENU_TRACK_SELECT = 2,
+	MAIN_MENU_BATTLE_SETUP = 3,
+	MAIN_MENU_ADVENTURE = 4,
+	MAIN_MENU_SCRAPBOOK = 5,
+} MainMenuState;
+
 enum GameModeEnd
 {
 	PLAYER_GHOST_BEAT = 1,

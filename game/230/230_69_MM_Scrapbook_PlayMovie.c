@@ -83,18 +83,18 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 
 #ifdef CTR_NATIVE
 		if (NativeSTR_StartScrapbook() != 0)
+		{
+			// NOTE(aalhendi): Native video decoding skips interleaved XA records;
+			// play the Scrapbook CD-XA channel from the same raw STR file.
+			if (NativeAudio_PlayXAFile(SCRAPBOOK_NATIVE_XA_PATH, SCRAPBOOK_NATIVE_XA_CHANNEL, sdata->vol_Music << 7, sdata->vol_Music << 7) == 0)
 			{
-				// NOTE(aalhendi): Native video decoding skips interleaved XA records;
-				// play the Scrapbook CD-XA channel from the same raw STR file.
-				if (NativeAudio_PlayXAFile(SCRAPBOOK_NATIVE_XA_PATH, SCRAPBOOK_NATIVE_XA_CHANNEL, sdata->vol_Music << 7, sdata->vol_Music << 7) == 0)
-				{
-					NativeSTR_Stop();
-					goto GO_BACK;
-				}
-				s_scrapbookNativeNextVBlank = Platform_GetVBlankCount() + SCRAPBOOK_NATIVE_FRAME_VBLANKS;
-				D230.scrapbookState = 2;
-				return;
+				NativeSTR_Stop();
+				goto GO_BACK;
 			}
+			s_scrapbookNativeNextVBlank = Platform_GetVBlankCount() + SCRAPBOOK_NATIVE_FRAME_VBLANKS;
+			D230.scrapbookState = 2;
+			return;
+		}
 #else
 		// \TEST.STR;1
 		// if file was found
@@ -169,12 +169,12 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 			// stop video
 			D230.scrapbookState = 3;
 		}
-	#ifdef CTR_NATIVE
+#ifdef CTR_NATIVE
 		else
 		{
 			Platform_PinVRAMDisplayRect(nativeSrcX, nativeDisplayY, SCRAPBOOK_NATIVE_DISPLAY_WIDTH, SCREEN_HEIGHT, 1);
 		}
-	#endif
+#endif
 
 #ifdef CTR_NATIVE
 		if ((getButtonPress == 0) && (nativeUploaded != 0))
@@ -238,7 +238,7 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 				MM_JumpTo_Title_Returning();
 
 				// return to main menu (adv, tt, arcade, vs, battle)
-				sdata->mainMenuState = 0;
+				sdata->mainMenuState = MAIN_MENU_TITLE;
 			}
 
 			MainRaceTrack_RequestLoad(lev);

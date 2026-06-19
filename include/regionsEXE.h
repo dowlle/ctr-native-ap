@@ -4366,13 +4366,7 @@ struct sData
 	int memcardAction;
 
 	// 8008d97C
-	// 0 - Adv, tt, arcade, vs, battle
-	// 1 - character selection
-	// 2 - track selection
-	// 3 - battle
-	// 4 - adv
-	// 5 - scrapbook
-	int mainMenuState;
+	MainMenuState mainMenuState;
 
 	// 8008d980
 	// 0 - 7

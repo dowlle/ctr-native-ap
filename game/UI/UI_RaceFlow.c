@@ -347,7 +347,7 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		GhostTape_Destroy();
 
 		// go back to main menu
-		sdata->mainMenuState = 0;
+		sdata->mainMenuState = MAIN_MENU_TITLE;
 
 		// load LEV of main menu
 		MainRaceTrack_RequestLoad(0x27);
@@ -399,9 +399,8 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		// Erase ghost of previous race from RAM
 		GhostTape_Destroy();
 
-		// 1 for character select
-		// 2 for track select
-		sdata->mainMenuState = option - 4;
+		// MAIN_MENU_CHARACTERS or MAIN_MENU_TRACK_SELECT
+		sdata->mainMenuState = (MainMenuState)(option - 4);
 
 		// when loading is done
 		// add flag for "in menus"
@@ -429,7 +428,7 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	case 10:
 	{
 		// go to battle setup screen
-		sdata->mainMenuState = 3;
+		sdata->mainMenuState = MAIN_MENU_BATTLE_SETUP;
 
 		// load LEV of main menu
 		MainRaceTrack_RequestLoad(0x27);

@@ -786,7 +786,7 @@ void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 			sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU;
 
 			// Go to main menu
-			sdata->mainMenuState = 0;
+			sdata->mainMenuState = MAIN_MENU_TITLE;
 
 			// Remove bit for "In Adventure Arena" when loading is done
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
@@ -977,7 +977,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		levID = MAIN_MENU_LEVEL;
 
 		// return to character selection
-		sdata->mainMenuState = 1;
+		sdata->mainMenuState = MAIN_MENU_CHARACTERS;
 
 		// when loading is done, add bit for "in mb"
 		sdata->Loading.OnBegin.AddBitsConfig0 |= 0x2000;
@@ -996,7 +996,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		levID = MAIN_MENU_LEVEL;
 
 		// return to track selection
-		sdata->mainMenuState = 2;
+		sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
 
 		// when loading is done
 		// add bit for "in mb"
@@ -1013,7 +1013,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		levID = MAIN_MENU_LEVEL;
 
 		// return to battle setup
-		sdata->mainMenuState = 3;
+		sdata->mainMenuState = MAIN_MENU_BATTLE_SETUP;
 
 		// when loading is done
 		// add bit for "in mb"

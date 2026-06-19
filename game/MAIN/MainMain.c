@@ -354,7 +354,7 @@ u32 main(void)
 					// leave demo mode, go to main menu
 					gGT->boolDemoMode = 0;
 					gGT->numPlyrNextGame = 1;
-					sdata->mainMenuState = 0;
+					sdata->mainMenuState = MAIN_MENU_TITLE;
 
 				LAB_8003ce08:
 					MainRaceTrack_RequestLoad(MAIN_MENU_LEVEL);

@@ -130,7 +130,7 @@ void MM_Title_MenuUpdate(void)
 		sdata->advProfileIndex = 0xffff;
 
 		// go to adventure character select screen
-		sdata->mainMenuState = 4;
+		sdata->mainMenuState = MAIN_MENU_ADVENTURE;
 
 		MainRaceTrack_RequestLoad(ADVENTURE_GARAGE);
 		break;
@@ -217,7 +217,7 @@ void MM_Title_MenuUpdate(void)
 		MM_Title_KillThread();
 
 		// go to scrapbook
-		sdata->mainMenuState = 5;
+		sdata->mainMenuState = MAIN_MENU_SCRAPBOOK;
 
 		cutsceneLev = SCRAPBOOK;
 	LAB_800abfc0:

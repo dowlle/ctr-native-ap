@@ -88,7 +88,7 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 
 		if ((gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		{
-			sdata->mainMenuState = 0;
+			sdata->mainMenuState = MAIN_MENU_TITLE;
 			gGT->gameMode1 = (gGT->gameMode1 & ~ADVENTURE_ARENA) | MAIN_MENU;
 			gGT->podiumRewardID = NOFUNC;
 			gGT->gameMode2 &= ~VEH_FREEZE_PODIUM;

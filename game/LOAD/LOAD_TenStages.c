@@ -1,7 +1,6 @@
 #include <common.h>
 
-void (*mainMenuInit[6])() = {MM_JumpTo_Title_FirstTime, MM_JumpTo_Characters, MM_JumpTo_TrackSelect,
-                             MM_JumpTo_BattleSetup,     CS_Garage_Init,       MM_JumpTo_Scrapbook};
+void (*mainMenuInit[])() = {MM_JumpTo_Title_FirstTime, MM_JumpTo_Characters, MM_JumpTo_TrackSelect, MM_JumpTo_BattleSetup, CS_Garage_Init, MM_JumpTo_Scrapbook};
 
 #ifdef CTR_NATIVE
 enum
@@ -154,7 +153,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			if (strncmp(gGT->levelName, sdata->s_garage, 6) == 0)
 			{
 				gGT->numPlyrCurrGame = 1;
-				sdata->mainMenuState = 4;
+				sdata->mainMenuState = MAIN_MENU_ADVENTURE;
 			}
 		}
 		else if (strncmp(gGT->levelName, sdata->s_hub, 3) == 0)

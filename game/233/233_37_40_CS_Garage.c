@@ -310,7 +310,7 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 				else
 				{
 					// return to main menu
-					sdata->mainMenuState = 0;
+					sdata->mainMenuState = MAIN_MENU_TITLE;
 
 					Garage_Leave();
 

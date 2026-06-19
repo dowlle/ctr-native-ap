@@ -45,7 +45,7 @@ void CS_Credits_End(void)
 	// go to scrapbook
 	else
 	{
-		sdata->mainMenuState = 5;
+		sdata->mainMenuState = MAIN_MENU_SCRAPBOOK;
 
 		levID = SCRAPBOOK;
 	}

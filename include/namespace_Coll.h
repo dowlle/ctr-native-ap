@@ -43,9 +43,6 @@ enum CollModelIDFlags
 	COLL_MODELID_BLOCKAGE_FLAG = 0x8000,
 };
 
-// NOTE(aalhendi): Fixed-underlying enums are a GCC/Clang extension in this
-// C99 build. Retail stores this scratchpad field as a signed halfword, so keep
-// the semantic enum backed by s16 instead of relying on default enum size.
 typedef enum CollNormalAxis : s16
 {
 	COLL_NORMAL_AXIS_Z = 1,
