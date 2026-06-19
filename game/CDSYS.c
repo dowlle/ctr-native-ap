@@ -87,6 +87,18 @@ void CDSYS_SetMode_StreamData()
 {
 	char buf[8];
 
+#if defined(CTR_NATIVE)
+	// NOTE(aalhendi): Native has no disc-mode switch, but retail force-stops
+	// XA on every data-mode entry via CDSYS_XAPauseForce when XNF is loaded.
+	// Mirror that safety net so any caller expecting XA to be stopped before
+	// data reads begin keeps working. Guarded by XA_State so early-boot
+	// callers (CDSYS_Init, bigfile load, HOWL load) that run before gGT or
+	// any XA playback exists are no-ops.
+	if (sdata->XA_State != 0)
+		CDSYS_XAPauseForce();
+	return;
+#endif
+
 	// quit if using parallel
 	if (sdata->boolUseDisc == 0)
 		return;

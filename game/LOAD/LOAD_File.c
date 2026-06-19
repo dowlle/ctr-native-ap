@@ -40,7 +40,14 @@ int LOAD_InitCDvol(void)
 	CD_REG(2) = 0;
 	CD_REG(3) = 0x20;
 #else
-	// NOTE(aalhendi): Native CD/XA mix is owned by the native audio backend, not PSX MMIO.
+	// NOTE(aalhendi): Retail CdInit calls this hook to reset SPU volume
+	// state before howl_InitGlobals re-applies game defaults. Native has
+	// no CdInit path (CDSYS_Init(0) skips it), so mirror the SPU CD
+	// volume write through the native SPU API to keep parity with the
+	// retail init ordering. Master volume defaults are already handled
+	// by NativeAudio_SpuInit (0x3fff), matching retail's "only if zero"
+	// guard.
+	SpuSetCommonCDVolume(0x3fff, 0x3fff);
 #endif
 
 	return 0;
@@ -52,6 +59,10 @@ void LOAD_InitCD()
 #ifdef CTR_NATIVE
 	NativeCD_Init();
 	CDSYS_Init(0);
+	// NOTE(aalhendi): Retail chains LOAD_InitCD -> CDSYS_Init(1) -> CdInit
+	// -> LOAD_InitCDvol. Native skips CdInit (no disc), so call the volume
+	// hook explicitly to preserve the same init ordering.
+	LOAD_InitCDvol();
 	return;
 #endif
 
