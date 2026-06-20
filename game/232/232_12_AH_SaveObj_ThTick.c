@@ -91,7 +91,7 @@ void AH_SaveObj_ThTick(struct Thread *t)
 
 				// Set CameraDC's desired position and rotation,
 				// then begin the transition by setting flag
-				CAM_SetDesiredPosRot(&gGT->cameraDC[0], (s16 *)&desiredPos, (s16 *)&desiredRot);
+				CAM_SetDesiredPosRot(&gGT->cameraDC[0], &desiredPos, &desiredRot);
 
 				GAMEPAD_JogCon2(driver, 0, 0);
 

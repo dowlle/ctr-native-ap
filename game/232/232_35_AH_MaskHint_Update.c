@@ -78,7 +78,7 @@ void AH_MaskHint_Update()
 
 			// NOTE(aalhendi): Retail passes a stack work buffer here, not 0x1f800108.
 			CAM_FollowDriver_AngleAxis(cdc, d, (u8 *)(void *)angleAxisWork, pos.v, rot.v);
-			CAM_SetDesiredPosRot(cdc, pos.v, rot.v);
+			CAM_SetDesiredPosRot(cdc, &pos, &rot);
 		}
 
 		D232.maskWarppadDelayFrames = 60;

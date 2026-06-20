@@ -206,8 +206,8 @@ struct CameraDC
 	// Spin360 uses 0xa4 for spin speed
 	struct
 	{
-		s16 pos[3];
-		s16 rot[3];
+		SVec3 pos;
+		SVec3 rot;
 	} transitionTo;
 
 	// 0xb0 - union between multiple end-of-race camera modes

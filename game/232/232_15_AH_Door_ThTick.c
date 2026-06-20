@@ -403,7 +403,7 @@ void AH_Door_ThTick(struct Thread *t)
 		desiredRot.z = doorInst->instDef->rot[2];
 
 		// set desired position and rotation for CamerDC transition
-		CAM_SetDesiredPosRot(&gGT->cameraDC[0], desiredPos.v, desiredRot.v);
+		CAM_SetDesiredPosRot(&gGT->cameraDC[0], &desiredPos, &desiredRot);
 
 		GAMEPAD_JogCon2(driver, 0, 0);
 

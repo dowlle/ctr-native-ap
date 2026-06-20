@@ -586,9 +586,9 @@ void CAM_EndOfRace_Battle(struct CameraDC *cDC, struct Driver *d)
 	// spin360's spinSpeed (missing union)
 	// and spinHeight, spinDistance, etc
 	height = data.Spin360_heightOffset_cameraPos[sdata->gGT->numPlyrCurrGame];
-	cDC->transitionTo.pos[0] = 0xffe5;
-	cDC->transitionTo.pos[1] = height;
-	cDC->transitionTo.pos[2] = 0xc0;
+	cDC->transitionTo.pos.x = 0xffe5;
+	cDC->transitionTo.pos.y = height;
+	cDC->transitionTo.pos.z = 0xc0;
 
 	// use camera that spins around player
 	cDC->flags |= CAMERA_FLAG_BATTLE_END_OF_RACE;
@@ -1092,38 +1092,33 @@ void CAM_FollowDriver_Spin360(struct CameraDC *cDC, u8 *scratchpad, struct Drive
 	// rotate other way for odd number
 	if ((d->driverID & 1) != 0)
 	{
-		cDC->spin360Angle -= cDC->transitionTo.pos[0];
+		cDC->spin360Angle -= cDC->transitionTo.pos.x;
 	}
 	else
 	{
 		// rotate one way
-		cDC->spin360Angle += cDC->transitionTo.pos[0];
+		cDC->spin360Angle += cDC->transitionTo.pos.x;
 	}
 
 	int angle = cDC->spin360Angle;
 	ratio = MATH_Sin(angle);
-	desiredPos[0] = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x, 8), CTR_MipsSra(CAM_MulLo(ratio, cDC->transitionTo.pos[2]), 0xc));
+	desiredPos[0] = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x, 8), CTR_MipsSra(CAM_MulLo(ratio, cDC->transitionTo.pos.z), 0xc));
 
 	ratio = MATH_Cos(angle);
-	desiredPos[2] = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z, 8), CTR_MipsSra(CAM_MulLo(ratio, cDC->transitionTo.pos[2]), 0xc));
+	desiredPos[2] = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z, 8), CTR_MipsSra(CAM_MulLo(ratio, cDC->transitionTo.pos.z), 0xc));
 
-	desiredPos[1] = (s16)CTR_MipsAddLo((u16)cDC->transitionTo.pos[1], CTR_MipsSra(d->posCurr.y, 8));
+	desiredPos[1] = (s16)CTR_MipsAddLo((u16)cDC->transitionTo.pos.y, CTR_MipsSra(d->posCurr.y, 8));
 
 	CAM_LookAtPosition(scratchpad, (int *)&d->posCurr.x, desiredPos, desiredRot);
 	return;
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001a054-0x8001a0bc
-void CAM_SetDesiredPosRot(struct CameraDC *cDC, s16 *pos, s16 *rot)
+void CAM_SetDesiredPosRot(struct CameraDC *cDC, const SVec3 *pos, const SVec3 *rot)
 {
-	int i;
-
 	// save desired pos and rot
-	for (i = 0; i < 3; i++)
-	{
-		cDC->transitionTo.pos[i] = pos[i];
-		cDC->transitionTo.rot[i] = rot[i];
-	}
+	cDC->transitionTo.pos = *pos;
+	cDC->transitionTo.rot = *rot;
 
 	// 1 second, 30 frames
 	cDC->transitionFrameCount = 0x1e;
@@ -1642,13 +1637,13 @@ LAB_8001ab04:
 		if ((backupFlags & CAMERA_FLAG_TRANSITION_AWAY) != 0)
 		{
 			// cameraDC TransitionTo pos and rot
-			local_40[0] = cDC->transitionTo.pos[0];
-			local_40[1] = cDC->transitionTo.pos[1];
-			local_40[2] = cDC->transitionTo.pos[2];
+			local_40[0] = cDC->transitionTo.pos.x;
+			local_40[1] = cDC->transitionTo.pos.y;
+			local_40[2] = cDC->transitionTo.pos.z;
 
-			local_38[0] = cDC->transitionTo.rot[0];
-			local_38[1] = cDC->transitionTo.rot[1];
-			local_38[2] = cDC->transitionTo.rot[2];
+			local_38[0] = cDC->transitionTo.rot.x;
+			local_38[1] = cDC->transitionTo.rot.y;
+			local_38[2] = cDC->transitionTo.rot.z;
 
 			// interpolate fly-in [0 to 0x1000]
 			x = cDC->transitionBlend;
@@ -2016,11 +2011,11 @@ void CAM_ThTick(struct Thread *t)
 		pb->pos[2] = psVar21[3];
 		break;
 	case 7:
-		(cDC->transitionTo).pos[0] = *psVar19;
+		(cDC->transitionTo).pos.x = *psVar19;
 		sVar6 = psVar21[2];
 		uVar22 = cDC->flags & 0xffffffbf;
 		cDC->flags = uVar22;
-		(cDC->transitionTo).pos[1] = sVar6;
+		(cDC->transitionTo).pos.y = sVar6;
 		if (psVar21[3] != 0)
 		{
 			cDC->flags = uVar22 | 0x40;
@@ -2051,12 +2046,12 @@ void CAM_ThTick(struct Thread *t)
 		psVar15 = gGT->level1->ptr_restart_points;
 		cDC->trackPathProgress = 0;
 		cDC->trackPathNode = psVar15 + sVar6;
-		(cDC->transitionTo).pos[0] = psVar21[2];
-		(cDC->transitionTo).pos[1] = psVar21[3];
-		(cDC->transitionTo).pos[2] = psVar21[4];
-		(cDC->transitionTo).rot[0] = psVar21[5];
-		(cDC->transitionTo).rot[1] = psVar21[6];
-		(cDC->transitionTo).rot[2] = psVar21[7];
+		(cDC->transitionTo).pos.x = psVar21[2];
+		(cDC->transitionTo).pos.y = psVar21[3];
+		(cDC->transitionTo).pos.z = psVar21[4];
+		(cDC->transitionTo).rot.x = psVar21[5];
+		(cDC->transitionTo).rot.y = psVar21[6];
+		(cDC->transitionTo).rot.z = psVar21[7];
 		cDC->eorModeData.trackPathSpeed = psVar21[8];
 		break;
 
@@ -2077,17 +2072,17 @@ void CAM_ThTick(struct Thread *t)
 		psVar19 = psVar21 + 5;
 		sVar6 = psVar21[4] - sVar6;
 	LAB_8001b928:
-		(cDC->transitionTo).pos[0] = sVar6;
-		(cDC->transitionTo).pos[1] = *psVar19;
-		(cDC->transitionTo).pos[2] = psVar19[1];
+		(cDC->transitionTo).pos.x = sVar6;
+		(cDC->transitionTo).pos.y = *psVar19;
+		(cDC->transitionTo).pos.z = psVar19[1];
 		break;
 	case 12:
-		(cDC->transitionTo).pos[0] = *psVar19;
-		(cDC->transitionTo).pos[1] = psVar21[2];
-		(cDC->transitionTo).pos[2] = psVar21[3];
-		(cDC->transitionTo).rot[0] = psVar21[4];
-		(cDC->transitionTo).rot[1] = psVar21[5];
-		(cDC->transitionTo).rot[2] = psVar21[6];
+		(cDC->transitionTo).pos.x = *psVar19;
+		(cDC->transitionTo).pos.y = psVar21[2];
+		(cDC->transitionTo).pos.z = psVar21[3];
+		(cDC->transitionTo).rot.x = psVar21[4];
+		(cDC->transitionTo).rot.y = psVar21[5];
+		(cDC->transitionTo).rot.z = psVar21[6];
 		cDC->eorModeData.pointPath.endPos.x = psVar21[7];
 		cDC->eorModeData.pointPath.endPos.y = psVar21[8];
 		cDC->eorModeData.pointPath.endPos.z = psVar21[9];
@@ -2137,13 +2132,13 @@ SkipNewCameraEOR:
 						stackMemPos[1] = (s16)CTR_MipsSra(d->posCurr.y, 8);
 						stackMemPos[2] = (s16)CTR_MipsSra(d->posCurr.z, 8);
 
-						iVar8 = CAM_MapRange_PosPoints((cDC->transitionTo).pos, (cDC->transitionTo).rot, &stackMemPos[0]);
+						iVar8 = CAM_MapRange_PosPoints((cDC->transitionTo).pos.v, (cDC->transitionTo).rot.v, &stackMemPos[0]);
 
 						iVar17 = (int)cDC->eorModeData.pointPath.speed;
 
-						stackMemPos[0] = cDC->eorModeData.pointPath.endPos.x - (cDC->transitionTo).rot[0];
-						stackMemPos[1] = cDC->eorModeData.pointPath.endPos.y - (cDC->transitionTo).rot[1];
-						stackMemPos[2] = cDC->eorModeData.pointPath.endPos.z - (cDC->transitionTo).rot[2];
+						stackMemPos[0] = cDC->eorModeData.pointPath.endPos.x - (cDC->transitionTo).rot.x;
+						stackMemPos[1] = cDC->eorModeData.pointPath.endPos.y - (cDC->transitionTo).rot.y;
+						stackMemPos[2] = cDC->eorModeData.pointPath.endPos.z - (cDC->transitionTo).rot.z;
 
 						iVar7 = iVar17;
 						if (iVar17 < 0)
@@ -2193,7 +2188,7 @@ SkipNewCameraEOR:
 							cDC->trackPathProgress = 0;
 							cDC->transitionFrame = 0;
 						}
-						psVar21 = (cDC->transitionTo).rot;
+						psVar21 = (cDC->transitionTo).rot.v;
 						if (iVar17 < 0)
 						{
 							psVar21 = cDC->eorModeData.pointPath.endPos.v;
@@ -2206,9 +2201,9 @@ SkipNewCameraEOR:
 					if (sVar6 == 7)
 					{
 						pb->pos[0] = (s16)CTR_MipsSra(d->posCurr.x, 8);
-						pb->pos[1] = (cDC->transitionTo).pos[0] + (s16)CTR_MipsSra(d->posCurr.y, 8);
+						pb->pos[1] = (cDC->transitionTo).pos.x + (s16)CTR_MipsSra(d->posCurr.y, 8);
 						pb->pos[2] = (s16)CTR_MipsSra(d->posCurr.z, 8);
-						sVar6 = (cDC->transitionTo).pos[1];
+						sVar6 = (cDC->transitionTo).pos.y;
 						pb->rot[1] = 0;
 						pb->rot[2] = 0;
 						pb->rot[0] = sVar6 + 0x400;
@@ -2296,9 +2291,9 @@ SkipNewCameraEOR:
 								pb->pos[0] = trackPathPos[0] + (s16)uVar9;
 								pb->pos[1] = trackPathPos[1] + (s16)iVar7;
 								pb->pos[2] = trackPathPos[2] + (s16)iVar8;
-								pb->rot[0] = trackPathRot[0] + cDC->transitionTo.rot[0];
-								pb->rot[1] = trackPathRot[1] + cDC->transitionTo.rot[1];
-								pb->rot[2] = trackPathRot[2] + cDC->transitionTo.rot[2];
+								pb->rot[0] = trackPathRot[0] + cDC->transitionTo.rot.x;
+								pb->rot[1] = trackPathRot[1] + cDC->transitionTo.rot.y;
+								pb->rot[2] = trackPathRot[2] + cDC->transitionTo.rot.z;
 							}
 							psVar21 = scratchpad;
 							if (cDC->cameraMode == 0xd)
@@ -2312,9 +2307,9 @@ SkipNewCameraEOR:
 
 				iVar7 = SquareRoot0_stub(CTR_MipsAddLo(CAM_MulLo(*(int *)(scratchpadBytes + 0x24c), *(int *)(scratchpadBytes + 0x24c)),
 				                                       CAM_MulLo(*(int *)(scratchpadBytes + 0x254), *(int *)(scratchpadBytes + 0x254))));
-				iVar17 = (int)(cDC->transitionTo).pos[0];
-				iVar24 = (iVar7 - (cDC->transitionTo).pos[1]) * iVar17;
-				iVar8 = (int)(cDC->transitionTo).pos[2];
+				iVar17 = (int)(cDC->transitionTo).pos.x;
+				iVar24 = (iVar7 - (cDC->transitionTo).pos.y) * iVar17;
+				iVar8 = (int)(cDC->transitionTo).pos.z;
 				iVar7 = iVar24 / iVar8;
 				/*
 				if (iVar8 == 0)

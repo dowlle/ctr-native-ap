@@ -282,7 +282,7 @@ void MM_Title_KillThread(void)
 		D230.titleObj = NULL;
 
 		// CameraDC, it must be zero to follow you
-		gGT->cameraDC[0].transitionTo.rot[0] = 0;
+		gGT->cameraDC[0].transitionTo.rot.x = 0;
 		gGT->pushBuffer[0].distanceToScreen_CURR = 0x100;
 	}
 }
