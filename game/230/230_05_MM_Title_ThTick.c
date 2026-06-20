@@ -39,9 +39,9 @@ static void MM_Title_UpdateTrophySpecLight(struct Instance *titleInst)
 	MATH_VectorNormalize(&view);
 	MM_Title_RotMatrixMul(&matrix, &view, &viewMac);
 
-	idpp[0].specLight[0] = (s16)((u16)lightMac.vx + (u16)viewMac.vx);
-	idpp[0].specLight[1] = (s16)((u16)lightMac.vy + (u16)viewMac.vy);
-	idpp[0].specLight[2] = (s16)((u16)lightMac.vz + (u16)viewMac.vz);
+	idpp[0].halfVector.x = (s16)((u16)lightMac.vx + (u16)viewMac.vx);
+	idpp[0].halfVector.y = (s16)((u16)lightMac.vy + (u16)viewMac.vy);
+	idpp[0].halfVector.z = (s16)((u16)lightMac.vz + (u16)viewMac.vz);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800ac350-0x800ac6dc.

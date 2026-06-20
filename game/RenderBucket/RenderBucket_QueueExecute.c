@@ -4578,8 +4578,8 @@ static int RenderBucket_RunInstanceSetupCallback(struct RenderBucketDrawContext 
 	case RB_RETAIL_INST_SETUP_LIGHT_COLOR:
 		CTC2((s8)ctx->inst->unk53, 16);
 		CTC2((u16)ctx->inst->reflectionRGBA, 17);
-		CTC2(*(u32 *)&ctx->idpp->specLight[0], 19);
-		CTC2((u16)ctx->idpp->specLight[2], 20);
+		CTC2(*(u32 *)&ctx->idpp->halfVector.x, 19);
+		CTC2((u16)ctx->idpp->halfVector.z, 20);
 		RenderBucket_SetFarColorFromInstance(ctx->inst);
 		return 1;
 

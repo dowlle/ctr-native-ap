@@ -42,9 +42,7 @@ void Vector_SpecLightSpin2D(struct Instance *inst, s16 *rot, s16 *lightDir)
 
 	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
-		idpp[i].specLight[0] = halfVector.x;
-		idpp[i].specLight[1] = halfVector.y;
-		idpp[i].specLight[2] = halfVector.z;
+		idpp[i].halfVector = halfVector;
 	}
 }
 
@@ -99,9 +97,7 @@ void Vector_SpecLightSpin3D(struct Instance *inst, s16 *rot, s16 *lightDir)
 		halfVector.z = lightLocal.z + viewLocal.z;
 		MATH_VectorNormalize(&halfVector);
 
-		idpp[i].specLight[0] = halfVector.x;
-		idpp[i].specLight[1] = halfVector.y;
-		idpp[i].specLight[2] = halfVector.z;
+		idpp[i].halfVector = halfVector;
 	}
 }
 
@@ -140,9 +136,7 @@ void Vector_SpecLightNoSpin3D(struct Instance *inst, s16 *rot, s16 *lightDir)
 		halfVector.z = lightLocal.z + viewLocal.z;
 		MATH_VectorNormalize(&halfVector);
 
-		idpp[i].specLight[0] = halfVector.x;
-		idpp[i].specLight[1] = halfVector.y;
-		idpp[i].specLight[2] = halfVector.z;
+		idpp[i].halfVector = halfVector;
 	}
 }
 

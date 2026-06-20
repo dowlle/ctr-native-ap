@@ -474,7 +474,8 @@ struct InstDrawPerPlayer
 	// 0xf0 - func (for what?)
 
 	// 0xf4
-	s16 specLight[4];
+	SVec3 halfVector;
+	s16 _pad_halfVector;
 
 	// 0xfc = end of struct
 
