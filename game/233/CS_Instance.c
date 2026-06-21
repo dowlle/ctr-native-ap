@@ -120,3 +120,132 @@ void CS_Instance_GetFrameData(struct Instance *inst, int animIndex, u32 animFram
 		}
 	}
 }
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac5a4-0x800ac638
+int CS_Instance_GetNumAnimFrames(struct Instance *modelInst, int animIndex, int LOD)
+{
+	struct Model *model;
+	struct ModelHeader *header;
+	struct ModelAnim *anim;
+
+	if (modelInst == NULL)
+		return 0;
+
+	model = modelInst->model;
+	if (model == NULL)
+		return 0;
+
+	if (LOD >= model->numHeaders)
+		return 0;
+
+	header = &model->headers[LOD];
+	if (header == NULL)
+		return 0;
+
+	if (animIndex >= header->numAnimations)
+		return 0;
+
+	if (header->ptrAnimations == NULL)
+		return 0;
+
+	anim = header->ptrAnimations[animIndex];
+	if (anim == NULL)
+		return 0;
+
+	return (anim->numFrames & 0x7fff);
+}
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac638-0x800ac694
+int CS_Instance_SafeCheckAnimFrame(struct Instance *inst, int animIndex, int LOD, int desiredFrame)
+{
+	// Default return value
+	int animFrame = desiredFrame;
+
+	if (inst == NULL)
+		return animFrame;
+
+	if (desiredFrame <= 0)
+		return 0;
+
+	int numFrames = CS_Instance_GetNumAnimFrames(inst, animIndex, LOD);
+
+	// if negative
+	if (numFrames < 1)
+		return 0;
+
+	// if more than 1 and out of bounds
+	if (numFrames <= desiredFrame)
+		animFrame = numFrames - 1;
+
+	// Return adjusted animFrame
+	return animFrame;
+}
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac694-0x800ac714
+char CS_Instance_BoolPlaySound(struct CutsceneObj *cs, struct Instance *desiredInst)
+{
+	struct Instance *inst;
+	struct Instance **visInstSrc;
+	struct InstDrawPerPlayer *idpp;
+
+	if ((desiredInst == NULL) || ((cs->flags & 0x1000) == 0))
+		return 1;
+
+	// pointer to array of visible instances
+	visInstSrc = sdata->gGT->cameraDC[0].visInstSrc;
+
+#if defined(CTR_NATIVE)
+	// NOTE(aalhendi): Same native low-RAM guard as AH_WarpPad_ThTick:
+	// a null camera list behaves like "desired instance is not visible."
+	if (visInstSrc == NULL)
+		return 0;
+#endif
+
+	// Same code as warppad_thtick
+	while (visInstSrc[0] != 0)
+	{
+		if (visInstSrc[0] == desiredInst)
+		{
+			idpp = INST_GETIDPP(desiredInst);
+			return (idpp[0].instFlags & 0x40) != 0;
+		}
+
+		visInstSrc++;
+	}
+
+	return 0;
+}
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac214-0x800ac320
+void CS_Instance_InitMatrix(void)
+{
+	if (D233.cs_initMatrixBool != 0)
+		return;
+
+	D233.cs_initMatrixBool = 1;
+
+	MATRIX mat;
+	MATRIX scale = {0};
+
+	for (int i = 0; i < 4; i++)
+	{
+		char *data = (char *)D233.cs_initMatrixTable[i].data;
+		int count = D233.cs_initMatrixTable[i].count;
+
+		if (data == NULL || count <= 0)
+			continue;
+
+		for (int j = 0; j < count; j++)
+		{
+			char *entry = data + j * 0x20;
+
+			ConvertRotToMatrix(&mat, (s16 *)(entry + 8));
+
+			scale.m[0][0] = *(s16 *)(entry + 0x10);
+			scale.m[1][1] = *(s16 *)(entry + 0x12);
+			scale.m[2][2] = *(s16 *)(entry + 0x14);
+
+			MatrixRotate((MATRIX *)(entry + 8), &scale, &mat);
+		}
+	}
+}

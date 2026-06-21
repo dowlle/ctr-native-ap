@@ -344,6 +344,17 @@
 #include "game/232/AH_MaskHint.c"
 #include "game/232/AH_Sign.c"
 
-#include "game/233/233_Full.c"
+#include "game/233/CS_Instance.c"
+#include "game/233/CS_ScriptCmd.c"
+#include "game/233/CS_Podium.c"
+#include "game/233/CS_Thread.c"
+#include "game/233/CS_LoadBoss.c"
+#include "game/233/CS_Camera.c"
+#include "game/233/CS_BoxScene.c"
+#include "game/233/CS_Cutscene.c"
+#include "game/233/CS_Credits.c"
+#include "game/233/CS_Garage.c"
+#include "game/233/R233.c"
+#include "game/233/D233.c"
 
 #endif
