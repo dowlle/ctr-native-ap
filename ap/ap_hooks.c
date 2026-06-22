@@ -159,13 +159,26 @@ static int ap_net_started = 0;
 // Count of received items per bit-pool category (index by AP_ItemCat 0..COUNT-1).
 static int ap_item_count[AP_CAT_COUNT] = {0};
 
-// Reconcile received-item counts into AdvProgress bits: ensure `count` bits of
-// each category pool are set (filled from the HIGH end -- see ap_items.h
-// collision note). Idempotent + self-healing across loads, and refreshes the
-// live counters the gates read via GAMEPROG_AdvPercent.
+// Reconcile AdvProgress category bits to EXACTLY the received-item counts: set
+// the top `count` bits of each pool (high-end), CLEAR the rest. This makes the
+// game's progression reflect ONLY what the multiworld has given you, which is
+// what the bit-driven adventure gates (boss garages count specific trophy bits,
+// Gemstone Valley counts key bits, Turbo Track counts gem bits, etc.) then read.
+// Consequences:
+//  - BL-2 fix: a local race win sets a vanilla reward bit, but it's not backed
+//    by a received item, so it's cleared on the next tick -> a win never
+//    double-counts toward the gates. Progression comes only from received items.
+//  - Any save works: stale bits from a non-AP save are wiped and the received
+//    set re-applied; on (re)connect the server re-sends your items so the counts
+//    rebuild from scratch. Load any file and your progress == your AP inventory.
+// Location checks are still emitted by the grant-site events (AP_NotifyAdvReward),
+// independent of these bits. Only the 7 managed location-bit pools are touched;
+// story/hint/door flags are left to the game.
+// Idempotent + self-healing across loads. Refreshes the live counters via
+// GAMEPROG_AdvPercent so gates that read currAdvProfile see the change.
 static void AP_ApplyItems(struct AdvProgress *adv)
 {
-	int changed = 0;
+	int changed = 0, granted = 0;
 	int c, k;
 	for (c = 0; c < AP_CAT_COUNT; c++)
 	{
@@ -173,21 +186,32 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 		int want = ap_item_count[c];
 		if (want > p->size)
 			want = p->size;
-		for (k = 0; k < want; k++)
+		for (k = 0; k < p->size; k++)
 		{
-			int bit = p->bits[p->size - 1 - k]; // high-end fill
-			if (CHECK_ADV_BIT(adv->rewards, bit) == 0)
+			int bit = p->bits[p->size - 1 - k]; // high-end first
+			int isSet = CHECK_ADV_BIT(adv->rewards, bit) != 0;
+			if (k < want)
 			{
-				UNLOCK_ADV_BIT(adv->rewards, bit);
+				if (!isSet)
+				{
+					UNLOCK_ADV_BIT(adv->rewards, bit);
+					changed = 1;
+					granted = 1;
+				}
+			}
+			else if (isSet)
+			{
+				// bit not backed by a received item -> clear (local-win leak /
+				// stale save bit)
+				adv->rewards[bit >> 5] &= ~(1u << (bit & 31));
 				changed = 1;
 			}
 		}
 	}
 	if (changed)
-	{
 		GAMEPROG_AdvPercent(adv);
+	if (granted)
 		AP_AppendLog("[AP ITEM] applied received items to AdvProgress\n");
-	}
 }
 
 // Read ws uri / slot / password from "ap-config.txt" in the working dir if it
