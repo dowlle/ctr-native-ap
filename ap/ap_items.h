@@ -28,6 +28,21 @@
 
 #define AP_ITEM_BASE 35010000
 
+// ── Per-item-TYPE indices (Option B) ──
+// item id = AP_ITEM_BASE + index. 15 indices (0..14), Wumpa (15) is filler.
+// Colour order 0=Red 1=Green 2=Blue 3=Yellow 4=Purple (matches the apworld).
+// Also declared in ap_hooks.h (the gate API header); guard against redefinition.
+#ifndef AP_IDX_TROPHY
+#define AP_IDX_TROPHY        0
+#define AP_IDX_SAPPHIRE      1
+#define AP_IDX_GOLD          2
+#define AP_IDX_PLATINUM      3
+#define AP_IDX_TOKEN_RED     4  // tokens: 4..8 = R,G,B,Y,P
+#define AP_IDX_GEM_RED       9  // gems:   9..13 = R,G,B,Y,P
+#define AP_IDX_KEY          14
+#define AP_ITEM_INDEX_COUNT 15
+#endif
+
 typedef enum
 {
 	AP_CAT_TROPHY = 0,

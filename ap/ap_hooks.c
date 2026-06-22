@@ -157,13 +157,48 @@ void AP_NotifyGoal(int oxideSecond)
 static int ap_net_started = 0;
 
 // Count of received items per bit-pool category (index by AP_ItemCat 0..COUNT-1).
+// Kept ONLY to drive the cosmetic AdvProgress bits (podium / profile % / hub-map
+// icons) in AP_ApplyItems. The adventure GATES no longer read these bits.
 static int ap_item_count[AP_CAT_COUNT] = {0};
 
+// Per-item-TYPE received count (Option B). This is the AUTHORITATIVE gate input:
+// the boss garages, hub doors, gem cups, Turbo Track, Slide Coliseum, and trophy
+// warp pads read these via AP_GateCount* (see game/232/AH_*.c, #ifdef CTR_AP).
+// Keyed by raw item index 0..14 (id - AP_ITEM_BASE). Decoupled from location
+// bits, so generic item fill never collides with the game's own location grants.
+static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
+
+int AP_GateCount(int itemType)
+{
+	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
+		return 0;
+	return ap_recv_count[itemType];
+}
+
+int AP_GateCountTokenColour(int colour)
+{
+	if (colour < 0 || colour > 4)
+		return 0;
+	return ap_recv_count[AP_IDX_TOKEN_RED + colour]; // 4..8
+}
+
+int AP_GateCountGemColour(int colour)
+{
+	if (colour < 0 || colour > 4)
+		return 0;
+	return ap_recv_count[AP_IDX_GEM_RED + colour]; // 9..13
+}
+
 // Reconcile AdvProgress category bits to EXACTLY the received-item counts: set
-// the top `count` bits of each pool (high-end), CLEAR the rest. This makes the
-// game's progression reflect ONLY what the multiworld has given you, which is
-// what the bit-driven adventure gates (boss garages count specific trophy bits,
-// Gemstone Valley counts key bits, Turbo Track counts gem bits, etc.) then read.
+// the top `count` bits of each pool (high-end), CLEAR the rest.
+//
+// OPTION B NOTE: as of Phase 1 the adventure GATES no longer read these bits --
+// they read the per-item-TYPE counters via AP_GateCount* (see game/232/AH_*.c).
+// These bits are now COSMETIC ONLY: they still feed GAMEPROG_AdvPercent so the
+// progress %, podium, and hub-map icons render, but they no longer gate anything.
+// Because the gates are independent of the bits, the old item-bit / location-bit
+// collision (BL-2/BL-3) is dissolved regardless of what these bits hold. Kept as
+// the original high-end reconcile so the cosmetic UI behaves exactly as before.
 // Consequences:
 //  - BL-2 fix: a local race win sets a vanilla reward bit, but it's not backed
 //    by a received item, so it's cleared on the next tick -> a win never
@@ -265,6 +300,13 @@ static void AP_NetTick(void)
 	int i;
 	for (i = 0; i < n; i++)
 	{
+		// Authoritative gate counter: tally by raw item TYPE index 0..14.
+		long long idx = items[i] - AP_ITEM_BASE;
+		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
+			ap_recv_count[idx]++;
+
+		// Coarse category tally: kept only to drive the cosmetic AdvProgress
+		// bits (progress %, podium) in AP_ApplyItems -- gates ignore these.
 		AP_ItemCat c = AP_ItemCategory(items[i]);
 		char msg[128];
 		if (c >= 0 && c < AP_CAT_COUNT)

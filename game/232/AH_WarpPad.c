@@ -578,7 +578,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	{
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
 		{
+#ifdef CTR_AP
+			// AP Option B: trophy-track warp pad gates on received Trophies.
+			if (AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen)
+#else
 			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
+#endif
 			{
 				if (warppadObj->framesWarping < 61)
 					goto WarpPad_TrophyAnimateOnly;
@@ -989,7 +994,11 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		{
 			// number trophies needed to open
 			unlockItem_modelID = STATIC_TROPHY;
+#ifdef CTR_AP
+			unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+#else
 			unlockItem_numOwned = gGT->currAdvProfile.numTrophies;
+#endif
 			unlockItem_numNeeded = data.metaDataLEV[levelID].numTrophiesToOpen;
 		}
 	}
@@ -999,8 +1008,13 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	{
 		// number relics needed to open
 		unlockItem_modelID = STATIC_RELIC;
-		unlockItem_numOwned = gGT->currAdvProfile.numRelics;
 		unlockItem_numNeeded = 10;
+#ifdef CTR_AP
+		// AP Option B: Slide Coliseum gates on 10 received Sapphire Relics.
+		unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+#else
+		unlockItem_numOwned = gGT->currAdvProfile.numRelics;
+#endif
 	}
 
 	// Turbo Track
@@ -1013,8 +1027,14 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// count number of gems owned
 		unlockItem_numOwned = 0;
 		for (i = 0; i < 5; i++)
+#ifdef CTR_AP
+			// AP Option B: Turbo Track needs all 5 received Gem colours.
+			if (AP_GateCountGemColour(i) >= 1)
+				unlockItem_numOwned++;
+#else
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_GEM + i) != 0)
 				unlockItem_numOwned++;
+#endif
 	}
 
 	// battle maps
@@ -1030,8 +1050,14 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		unlockItem_modelID = STATIC_TOKEN;
 		unlockItem_numNeeded = 4;
 
+#ifdef CTR_AP
+		// AP Option B: gem cup gates on 4 received Tokens of its colour.
+		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P.
+		unlockItem_numOwned = AP_GateCountTokenColour(levelID - AH_WP_ADV_CUP);
+#else
 		arrTokenCount = &gGT->currAdvProfile.numCtrTokens.red;
 		unlockItem_numOwned = arrTokenCount[levelID - AH_WP_ADV_CUP];
+#endif
 	}
 
 	// if unlocked

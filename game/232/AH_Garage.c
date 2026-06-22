@@ -188,6 +188,11 @@ LAB_800aeb6c:
 	// If you're in Gemstone Valley
 	if (levelID == GEM_STONE_VALLEY)
 	{
+#ifdef CTR_AP
+		// AP Option B: Oxide garage opens on 4 received Keys (not boss-key bits).
+		if (AP_GateCount(AP_IDX_KEY) < 4)
+			goto LAB_800aebd0;
+#else
 		// ripper roo boss key
 		bitIndex = ADV_REWARD_FIRST_BOSS_KEY;
 
@@ -198,10 +203,18 @@ LAB_800aeb6c:
 				goto LAB_800aebd0;
 			bitIndex++;
 		}
+#endif
 	}
 	// If you're not in Gemstone Valley
 	else
 	{
+#ifdef CTR_AP
+		// AP Option B: boss garages open on a flat cumulative Trophy total.
+		// hubID = levelID - GEM_STONE_VALLEY is 1..4 for the four boss hubs
+		// (Roo, Papu, Komodo, Pinstripe) -> thresholds 4, 8, 12, 16.
+		if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
+			goto LAB_800aebd0;
+#else
 		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];
 		// check all four tracks on hub
 		for (i = 0; i < 4; i++)
@@ -211,6 +224,7 @@ LAB_800aeb6c:
 				// boss is not open
 				goto LAB_800aebd0;
 		}
+#endif
 	}
 	goto LAB_800aec34;
 
@@ -315,7 +329,13 @@ LAB_800aede8:
 		sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_BOSS;
 
+#ifdef CTR_AP
+		// AP Option B: Oxide Final Challenge unlocks on 18 received Sapphire
+		// Relics (default FinalOxideUnlock; the 18 gold+plat variant is Phase 2).
+		if ((levelID == GEM_STONE_VALLEY) && (AP_GateCount(AP_IDX_SAPPHIRE) >= 18))
+#else
 		if ((levelID == GEM_STONE_VALLEY) && (gGT->currAdvProfile.numRelics == 18))
+#endif
 		{
 			// set string index (0-5) to "N Oxide's Final Challenge"
 			gGT->bossID = 5;
@@ -419,6 +439,12 @@ void AH_Garage_LInB(struct Instance *inst)
 
 	if (levelID == GEM_STONE_VALLEY)
 	{
+#ifdef CTR_AP
+		// AP Option B: Oxide garage opens on 4 received Keys.
+		if (AP_GateCount(AP_IDX_KEY) < 4)
+			goto GarageLocked;
+		bossIsOpen = true;
+#else
 		// ripper roo boss key
 		bitIndex = ADV_REWARD_FIRST_BOSS_KEY;
 		// check four boss keys
@@ -429,11 +455,18 @@ void AH_Garage_LInB(struct Instance *inst)
 			bitIndex++;
 		}
 		bossIsOpen = true;
+#endif
 	}
 
 	// if not gemstone valley
 	else
 	{
+#ifdef CTR_AP
+		// AP Option B: flat cumulative Trophy total (Roo 4, Papu 8, Komodo 12,
+		// Pinstripe 16); hubID = levelID - GEM_STONE_VALLEY is 1..4.
+		if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
+			goto GarageLocked;
+#else
 		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];
 		// check all four tracks on hub
 		for (i = 0; i < 4; i++)
@@ -443,6 +476,7 @@ void AH_Garage_LInB(struct Instance *inst)
 				// boss is not open
 				goto GarageLocked;
 		}
+#endif
 	}
 
 	// if boss is open
