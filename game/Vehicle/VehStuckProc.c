@@ -1290,7 +1290,7 @@ static void VehWarpDust_Project(SVECTOR *point, int offsetX, int offsetY, int of
 	right->vy = VehWarpDust_AddHalf(point->vy, CTR_MipsNegLo(offsetY));
 	right->vz = VehWarpDust_AddHalf(point->vz, CTR_MipsNegLo(offsetZ));
 
-	gte_ldv3(left, point, right);
+	CTR_GteLoadSV3(left, point, right);
 	gte_rtpt_b();
 
 	out->sxy0 = MFC2(12);

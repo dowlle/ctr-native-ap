@@ -2579,7 +2579,7 @@ static int RenderBucket_DrawInstPrim_NormalAtOTEntry(struct RenderBucketDrawCont
 		*(u32 *)&p->r0 = 0x30000000 | (u32)MFC2(20);
 		*(int *)&p->r1 = MFC2(21);
 		*(int *)&p->r2 = MFC2(22);
-		gte_stsxy3(&p->x0, &p->x1, &p->x2);
+		CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 #ifdef CTR_INTERNAL
 		if (CtrTireDebug_ShouldLog(CTR_TIREDBG_RENDERBUCKET_PRIM) != 0)
 		{
@@ -2609,7 +2609,7 @@ static int RenderBucket_DrawInstPrim_NormalAtOTEntry(struct RenderBucketDrawCont
 		*(int *)&p->u0 = *(int *)&tex->u0;
 		*(u32 *)&p->u1 = texWord1;
 		*(u32 *)&p->u2 = *(u32 *)&tex->u2;
-		gte_stsxy3(&p->x0, &p->x1, &p->x2);
+		CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 #ifdef CTR_INTERNAL
 		if (CtrTireDebug_ShouldLog(CTR_TIREDBG_RENDERBUCKET_PRIM) != 0)
 		{
@@ -2670,7 +2670,7 @@ static int RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(struct RenderBucketDra
 		otEntry++;
 
 	POLY_FT3 *p = ctx->primMem->cursor;
-	gte_stsxy3(&p->x0, &p->x1, &p->x2);
+	CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 
 	u32 sourceColor = (u32)ctx->tempColor[1];
 	MTC2((s32)(sourceColor << 24) >> 19, 9);
@@ -2799,7 +2799,7 @@ static int RenderBucket_DrawInstPrim_DepthFadeAtRange(struct RenderBucketDrawCon
 	*(u32 *)&p->r0 = 0x36000000 | (color0 & 0x00ffffff);
 	*(u32 *)&p->r1 = color1;
 	*(u32 *)&p->r2 = color2;
-	gte_stsxy3(&p->x0, &p->x1, &p->x2);
+	CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 	*(u32 *)&p->u0 = *(u32 *)&tex->u0;
 	*(u32 *)&p->u1 = *(u32 *)&tex->u1;
 	*(u32 *)&p->u2 = *(u32 *)&tex->u2;
@@ -2926,7 +2926,7 @@ static int RenderBucket_DrawInstPrim_LitTextureAtRange(struct RenderBucketDrawCo
 
 	p = ctx->primMem->cursor;
 	*(u32 *)&p->r0 = codeWord | (b << 16) | (g << 8) | r;
-	gte_stsxy3(&p->x0, &p->x1, &p->x2);
+	CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 	*(u32 *)&p->u0 = *(u32 *)&tex->u0;
 	*(u32 *)&p->u1 = texWord1 | tpageMask;
 	*(u32 *)&p->u2 = *(u32 *)&tex->u2;
