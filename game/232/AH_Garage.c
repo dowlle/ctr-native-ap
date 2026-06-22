@@ -192,8 +192,15 @@ LAB_800aeb6c:
 	if (levelID == GEM_STONE_VALLEY)
 	{
 #ifdef CTR_AP
-		// AP Option B: Oxide garage opens on 4 received Keys (not boss-key bits).
-		if (AP_GateCount(AP_IDX_KEY) < 4)
+		// AP Phase 2: per-seed Oxide garage requirement (boss_req[4]) when
+		// slot_data active; else Phase-1 fixed 4 received Keys. The apworld
+		// resolves Oxide to {type:2,count:4} (keys), so default behaviour matches.
+		if (ctr_cfg_active())
+		{
+			if (!AP_BossReqMet(&ctr_cfg.boss_req[4]))
+				goto LAB_800aebd0;
+		}
+		else if (AP_GateCount(AP_IDX_KEY) < 4)
 			goto LAB_800aebd0;
 #else
 		// ripper roo boss key
@@ -214,10 +221,16 @@ LAB_800aeb6c:
 	else
 	{
 #ifdef CTR_AP
-		// AP Option B: boss garages open on a flat cumulative Trophy total.
+		// AP Phase 2: per-seed boss garage requirement when slot_data active.
 		// hubID = levelID - GEM_STONE_VALLEY is 1..4 for the four boss hubs
-		// (Roo, Papu, Komodo, Pinstripe) -> thresholds 4, 8, 12, 16.
-		if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
+		// (Roo, Papu, Komodo, Pinstripe) -> boss_req[0..3]. Phase-1 fallback is
+		// the flat cumulative Trophy total (4, 8, 12, 16).
+		if (ctr_cfg_active())
+		{
+			if (!AP_BossReqMet(&ctr_cfg.boss_req[(levelID - GEM_STONE_VALLEY) - 1]))
+				goto LAB_800aebd0;
+		}
+		else if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
 			goto LAB_800aebd0;
 #else
 		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];
@@ -351,9 +364,15 @@ LAB_800aede8:
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_BOSS;
 
 #ifdef CTR_AP
-		// AP Option B: Oxide Final Challenge unlocks on 18 received Sapphire
-		// Relics (default FinalOxideUnlock; the 18 gold+plat variant is Phase 2).
-		if ((levelID == GEM_STONE_VALLEY) && (AP_GateCount(AP_IDX_SAPPHIRE) >= 18))
+		// AP Phase 2: Oxide Final Challenge unlock honours the per-seed
+		// oxide_final_unlock option: 0 = 18 sapphire (default), 1 = 18 gold AND
+		// 18 platinum. Phase-1 fallback (no slot_data) is 18 sapphire.
+		int oxOpen = ctr_cfg_active()
+		    ? (ctr_cfg.oxide_final_unlock == 1
+		           ? (AP_GateCount(AP_IDX_GOLD) >= 18 && AP_GateCount(AP_IDX_PLATINUM) >= 18)
+		           : AP_GateCount(AP_IDX_SAPPHIRE) >= 18)
+		    : (AP_GateCount(AP_IDX_SAPPHIRE) >= 18);
+		if ((levelID == GEM_STONE_VALLEY) && oxOpen)
 #else
 		if ((levelID == GEM_STONE_VALLEY) && (gGT->currAdvProfile.numRelics == 18))
 #endif
@@ -461,8 +480,14 @@ void AH_Garage_LInB(struct Instance *inst)
 	if (levelID == GEM_STONE_VALLEY)
 	{
 #ifdef CTR_AP
-		// AP Option B: Oxide garage opens on 4 received Keys.
-		if (AP_GateCount(AP_IDX_KEY) < 4)
+		// AP Phase 2: per-seed Oxide garage requirement (boss_req[4]) when active;
+		// else Phase-1 fixed 4 received Keys.
+		if (ctr_cfg_active())
+		{
+			if (!AP_BossReqMet(&ctr_cfg.boss_req[4]))
+				goto GarageLocked;
+		}
+		else if (AP_GateCount(AP_IDX_KEY) < 4)
 			goto GarageLocked;
 		bossIsOpen = true;
 #else
@@ -485,9 +510,15 @@ void AH_Garage_LInB(struct Instance *inst)
 	else
 	{
 #ifdef CTR_AP
-		// AP Option B: flat cumulative Trophy total (Roo 4, Papu 8, Komodo 12,
-		// Pinstripe 16); hubID = levelID - GEM_STONE_VALLEY is 1..4.
-		if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
+		// AP Phase 2: per-seed boss garage requirement (boss_req[hubID-1]) when
+		// active; else Phase-1 flat cumulative Trophy total (Roo 4, Papu 8,
+		// Komodo 12, Pinstripe 16). hubID = levelID - GEM_STONE_VALLEY is 1..4.
+		if (ctr_cfg_active())
+		{
+			if (!AP_BossReqMet(&ctr_cfg.boss_req[(levelID - GEM_STONE_VALLEY) - 1]))
+				goto GarageLocked;
+		}
+		else if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
 			goto GarageLocked;
 #else
 		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];

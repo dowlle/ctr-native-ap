@@ -106,7 +106,7 @@ if(CTR_AP)
     # RTTI / -mbig-obj live. ws:// only -> header-only deps + ws2_32, no TLS.
     enable_language(CXX)
     set(AP_VENDOR ${CMAKE_SOURCE_DIR}/ap/vendor)
-    add_library(ap_net STATIC ap/ap_net.cpp)
+    add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp)
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     target_include_directories(ap_net PRIVATE
@@ -117,6 +117,7 @@ if(CTR_AP)
         ${AP_VENDOR}/json/include
         ${CMAKE_SOURCE_DIR}/ap)
     target_compile_definitions(ap_net PRIVATE
+        CTR_AP
         WSWRAP_NO_SSL WSWRAP_NO_COMPRESSION AP_NO_SCHEMA
         ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1
         _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)

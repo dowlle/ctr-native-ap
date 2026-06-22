@@ -189,6 +189,56 @@ int AP_GateCountGemColour(int colour)
 	return ap_recv_count[AP_IDX_GEM_RED + colour]; // 9..13
 }
 
+// ── Phase 2: per-seed resolved-requirement comparators ──
+// These live C-side (not in ap_seedcfg.cpp) because they read the received-item
+// counters above (AP_GateCount*) and the per-track numTrophiesToOpen threshold
+// from data.metaDataLEV[], both of which are unreachable from the isolated C++
+// slot_data parser. ctr_cfg + ctr_cfg_active()/ctr_cfg_warp_dest() come from
+// ap_seedcfg.{h,cpp}; the gate sites (AH_*.c) call these by name.
+
+// Returns owned >= count for a resolved requirement. colour-aware for tokens
+// (type 3) and gems (type 5): colour 0..4 selects one colour, -1 sums the
+// vanilla "all colours" interpretation native-side -- but the apworld emits a
+// concrete colour for token/gem reqs, so the -1 branch only fires defensively.
+int AP_BossReqMet(const ctr_req *r)
+{
+	if (r == 0)
+		return 1;
+	switch (r->type)
+	{
+	case 0:
+		return 1; // no requirement -> always met (native vanilla rule applies elsewhere)
+	case 1: // trophies
+		return AP_GateCount(AP_IDX_TROPHY) >= r->count;
+	case 2: // keys
+		return AP_GateCount(AP_IDX_KEY) >= r->count;
+	case 3: // tokens (colour 0..4, or -1 = any/Red baseline)
+		return ((r->colour >= 0) ? AP_GateCountTokenColour(r->colour)
+		                         : AP_GateCount(AP_IDX_TOKEN_RED)) >= r->count;
+	case 4: // sapphire
+		return AP_GateCount(AP_IDX_SAPPHIRE) >= r->count;
+	case 5: // gems (colour 0..4, or -1 = any/Red baseline)
+		return ((r->colour >= 0) ? AP_GateCountGemColour(r->colour)
+		                         : AP_GateCountGemColour(0)) >= r->count;
+	default:
+		return 1;
+	}
+}
+
+// Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
+// otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
+// per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
+// adventure numbering), valid for the 28-wide ctr_cfg arrays for trophy tracks.
+int ctr_cfg_warp_unlocked(int levelID)
+{
+	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
+	    ctr_cfg.warp_pad_unlock[levelID].type != 0)
+		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID]);
+
+	// Phase-1 fallback: received trophies >= per-track threshold.
+	return AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen;
+}
+
 // Reconcile AdvProgress category bits to EXACTLY the received-item counts: set
 // the top `count` bits of each pool (high-end), CLEAR the rest.
 //

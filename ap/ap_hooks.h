@@ -10,6 +10,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+
 struct GameTracker;
 
 // Called once per frame from the main loop (CTR_Main in MainMain.c).

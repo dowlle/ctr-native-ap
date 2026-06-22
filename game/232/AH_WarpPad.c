@@ -617,8 +617,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
 		{
 #ifdef CTR_AP
-			// AP Option B: trophy-track warp pad gates on received Trophies.
-			if (AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen)
+			// AP Phase 2: per-seed requirement when slot_data active, else the
+			// Phase-1 received-trophy rule. Keeps spawn visual + load gate in
+			// lockstep (both read ctr_cfg_warp_unlocked / the same requirement).
+			if (ctr_cfg_warp_unlocked(levelID))
 #else
 			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
 #endif
@@ -1031,6 +1033,16 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 	warppadObj->levelID = levelID;
 
+#ifdef CTR_AP
+	// AP Phase 2 STRETCH: warp-pad destination shuffle. Override only the LOAD
+	// target (warppadObj->levelID, re-read by ThTick at the load gate); the local
+	// `levelID` stays the PHYSICAL pad ID so the unlock-requirement selection
+	// below still keys off the physical pad. ctr_cfg_warp_dest is identity-safe:
+	// returns the input unchanged when slot_data is inactive or warp_pad_map is
+	// identity (not shuffled), so this is a no-op for the non-shuffle MVP path.
+	warppadObj->levelID = ctr_cfg_warp_dest(levelID);
+#endif
+
 	unlockItem_modelID = 0;
 	unlockItem_numOwned = 0;
 	unlockItem_numNeeded = -1;
@@ -1056,14 +1068,59 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// if trophy not owned
 		else
 		{
-			// number trophies needed to open
-			unlockItem_modelID = STATIC_TROPHY;
 #ifdef CTR_AP
-			unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-#else
-			unlockItem_numOwned = gGT->currAdvProfile.numTrophies;
+			// AP Phase 2: a per-seed randomized requirement replaces the Phase-1
+			// trophy threshold for this pad when slot_data is active and the pad
+			// has a resolved requirement (type != 0). type 0 (fixed pads / vanilla
+			// mode / absent slot_data) falls through to the Phase-1 statics below.
+			if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
+			    ctr_cfg.warp_pad_unlock[levelID].type != 0)
+			{
+				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID];
+				switch (r->type)
+				{
+				case 1: // trophies
+					unlockItem_modelID = STATIC_TROPHY;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+					break;
+				case 2: // keys
+					unlockItem_modelID = STATIC_KEY;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
+					break;
+				case 3: // tokens (colour-aware)
+					unlockItem_modelID = STATIC_TOKEN;
+					unlockItem_numOwned = (r->colour >= 0)
+					    ? AP_GateCountTokenColour(r->colour)
+					    : AP_GateCount(AP_IDX_TOKEN_RED);
+					break;
+				case 4: // sapphire
+					unlockItem_modelID = STATIC_RELIC;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+					break;
+				case 5: // gems (colour-aware)
+					unlockItem_modelID = STATIC_GEM;
+					unlockItem_numOwned =
+					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
+					break;
+				default:
+					unlockItem_modelID = STATIC_TROPHY;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+					break;
+				}
+				unlockItem_numNeeded = r->count;
+			}
+			else
 #endif
-			unlockItem_numNeeded = data.metaDataLEV[levelID].numTrophiesToOpen;
+			{
+				// number trophies needed to open
+				unlockItem_modelID = STATIC_TROPHY;
+#ifdef CTR_AP
+				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+#else
+				unlockItem_numOwned = gGT->currAdvProfile.numTrophies;
+#endif
+				unlockItem_numNeeded = data.metaDataLEV[levelID].numTrophiesToOpen;
+			}
 		}
 	}
 

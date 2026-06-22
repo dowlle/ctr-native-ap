@@ -11,6 +11,7 @@
 
 #include "apclient.hpp" // pulls wswrap + websocketpp + asio + nlohmann/json
 #include "ap_net.h"
+#include "ap_seedcfg.h" // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
 
 #include <deque>
 #include <list>
@@ -54,7 +55,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		g_connected = true;
-		(void)slotData;
+		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
 		std::fprintf(stderr, "[AP NET] slot connected\n");
 	});
 	g_ap->set_slot_refused_handler([](const std::list<std::string> &errors) {
