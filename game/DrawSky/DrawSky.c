@@ -7,6 +7,16 @@ struct DrawSkyContext
 	u32 screenBounds;
 };
 
+struct DrawSkyScratch
+{
+	u32 baseFaceOffset;
+	u32 baseCountOffset;
+};
+
+_Static_assert(sizeof(struct DrawSkyScratch) == 0x8);
+_Static_assert(offsetof(struct DrawSkyScratch, baseFaceOffset) == 0x0);
+_Static_assert(offsetof(struct DrawSkyScratch, baseCountOffset) == 0x4);
+
 static u32 DrawSky_ReadWord(const void *base, int offset)
 {
 	return *(const u32 *)(const void *)((const char *)base + offset);
@@ -105,6 +115,7 @@ void DrawSky_Full(void *skybox, struct PushBuffer *pb, struct PrimMem *primMem)
 	// Native C relies on the host ABI because the only retail data temporaries live in 0x10 and 0x14 and are explicit below.
 	if (sky != NULL)
 	{
+		struct DrawSkyScratch *scratch = CTR_SCRATCHPAD_PTR(struct DrawSkyScratch, 0x10);
 		struct DrawSkyContext ctx;
 		u32 baseFaceOffset;
 		u32 baseCountOffset;
@@ -123,8 +134,8 @@ void DrawSky_Full(void *skybox, struct PushBuffer *pb, struct PrimMem *primMem)
 		baseFaceOffset = ((DrawSky_ReadWord(pb, 0x08) + 0x500) >> 7) & 0x1c;
 		baseCountOffset = (baseFaceOffset >> 1) & 0xe;
 
-		*CTR_SCRATCHPAD_PTR(u32, 0x10) = baseFaceOffset;
-		*CTR_SCRATCHPAD_PTR(u32, 0x14) = baseCountOffset;
+		scratch->baseFaceOffset = baseFaceOffset;
+		scratch->baseCountOffset = baseCountOffset;
 
 		ctx.verts = sky->ptrVertex;
 		ctx.ot = &pb->ptrOT[0x3ff];
@@ -140,14 +151,14 @@ void DrawSky_Full(void *skybox, struct PushBuffer *pb, struct PrimMem *primMem)
 		countIndex = (int)(baseCountOffset >> 1);
 		prim = DrawSky_Piece(sky, &ctx, faceIndex, countIndex, prim);
 
-		baseFaceOffset = (*CTR_SCRATCHPAD_PTR(u32, 0x10) - 4) & 0x1c;
-		baseCountOffset = (*CTR_SCRATCHPAD_PTR(u32, 0x14) - 2) & 0xe;
+		baseFaceOffset = (scratch->baseFaceOffset - 4) & 0x1c;
+		baseCountOffset = (scratch->baseCountOffset - 2) & 0xe;
 		faceIndex = (int)(baseFaceOffset >> 2);
 		countIndex = (int)(baseCountOffset >> 1);
 		prim = DrawSky_Piece(sky, &ctx, faceIndex, countIndex, prim);
 
-		baseFaceOffset = (*CTR_SCRATCHPAD_PTR(u32, 0x10) - 8) & 0x1c;
-		baseCountOffset = (*CTR_SCRATCHPAD_PTR(u32, 0x14) - 4) & 0xe;
+		baseFaceOffset = (scratch->baseFaceOffset - 8) & 0x1c;
+		baseCountOffset = (scratch->baseCountOffset - 4) & 0xe;
 		faceIndex = (int)(baseFaceOffset >> 2);
 		countIndex = (int)(baseCountOffset >> 1);
 		prim = DrawSky_Piece(sky, &ctx, faceIndex, countIndex, prim);

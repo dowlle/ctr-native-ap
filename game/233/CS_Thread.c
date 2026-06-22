@@ -1,5 +1,15 @@
 #include <common.h>
 
+struct CSThreadParentFrameScratch
+{
+	SVec3Slot parentPos;
+	u8 pad_110[0x08];
+	SVec3Slot parentRot;
+};
+
+_Static_assert(offsetof(struct CSThreadParentFrameScratch, parentPos) == 0x00);
+_Static_assert(offsetof(struct CSThreadParentFrameScratch, parentRot) == 0x10);
+
 static void CS_SaveDecodedOpcode(const struct CutsceneObj *cs, int out[5])
 {
 	const int *src = (const int *)&cs->decodedOpcode;
@@ -1274,8 +1284,7 @@ check_polar:
 void CS_Thread_ThTick(struct Thread *t)
 {
 	// Retail uses scratchpad 0x1f800108/0x1f800118 for parent frame-data temporaries.
-	s16 *parentPos = CTR_SCRATCHPAD_PTR(s16, 0x108);
-	s16 *parentRot = CTR_SCRATCHPAD_PTR(s16, 0x118);
+	struct CSThreadParentFrameScratch *parentFrame = CTR_SCRATCHPAD_PTR(struct CSThreadParentFrameScratch, 0x108);
 	SVec3 bonePos;
 	struct CutsceneObj *cs = t->object;
 	struct Instance *inst = t->inst;
@@ -1308,15 +1317,16 @@ void CS_Thread_ThTick(struct Thread *t)
 			{
 				parentInst = parentThread->inst;
 
-				CS_Instance_GetFrameData(parentInst, parentInst->animIndex, parentInst->animFrame, (u16 *)parentPos, (u16 *)parentRot, 0);
+				CS_Instance_GetFrameData(parentInst, parentInst->animIndex, parentInst->animFrame, (u16 *)parentFrame->parentPos.vec.v,
+				                         (u16 *)parentFrame->parentRot.vec.v, 0);
 
-				inst->matrix.t[0] = parentInst->matrix.t[0] + parentPos[0];
-				inst->matrix.t[1] = parentInst->matrix.t[1] + parentPos[1];
-				inst->matrix.t[2] = parentInst->matrix.t[2] + parentPos[2];
+				inst->matrix.t[0] = parentInst->matrix.t[0] + parentFrame->parentPos.x;
+				inst->matrix.t[1] = parentInst->matrix.t[1] + parentFrame->parentPos.y;
+				inst->matrix.t[2] = parentInst->matrix.t[2] + parentFrame->parentPos.z;
 
 				if ((cs->flags & 0x10) == 0)
 				{
-					ConvertRotToMatrix(&inst->matrix, parentRot);
+					ConvertRotToMatrix(&inst->matrix, &parentFrame->parentRot.vec);
 				}
 			}
 		}

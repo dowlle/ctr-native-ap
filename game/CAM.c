@@ -709,10 +709,10 @@ static void CAM_FollowDriver_AngleAxis_TransformOffset(const SVec3 *offset, VECT
 	CTR_GteStoreMAC(&out->vx);
 }
 
-void CAM_FollowDriver_AngleAxis(struct CameraDC *cDC, struct Driver *d, u8 *workBuffer, SVec3 *pushBufferPos, SVec3 *pushBufferRot)
+void CAM_FollowDriver_AngleAxis(struct CameraDC *cDC, struct Driver *d, struct CameraScratchWork *scratchWork, SVec3 *pushBufferPos, SVec3 *pushBufferRot)
 {
-	MATRIX *axisMatrix = (MATRIX *)(workBuffer + 0x220);
-	VECTOR *eye = (VECTOR *)(workBuffer + 0x240);
+	MATRIX *axisMatrix = &scratchWork->camera.matrix;
+	VECTOR *eye = (VECTOR *)&scratchWork->camera.pos;
 	VECTOR lookAt;
 	s32 ratio;
 	s32 dx;
@@ -753,9 +753,9 @@ void CAM_FollowDriver_AngleAxis(struct CameraDC *cDC, struct Driver *d, u8 *work
 	dy = eye->vy - cDC->lookAtPos.y;
 	dz = eye->vz - cDC->lookAtPos.z;
 
-	*(s32 *)(workBuffer + 0x24c) = dx;
-	*(s32 *)(workBuffer + 0x250) = dy;
-	*(s32 *)(workBuffer + 0x254) = dz;
+	scratchWork->camera.dir.x = dx;
+	scratchWork->camera.dir.y = dy;
+	scratchWork->camera.dir.z = dz;
 
 	pushBufferRot->y = (s16)ratan2(dx, dz);
 	distanceXZ = SquareRoot0_stub(CTR_MipsAddLo(CAM_FollowDriver_AngleAxis_MulLo(dx, dx), CAM_FollowDriver_AngleAxis_MulLo(dz, dz)));
@@ -949,9 +949,9 @@ u32 CAM_FollowDriver_TrackPath(struct CameraDC *cDC, SVec3 *pos, s32 speed, s32 
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80019e7c-0x80019f58
-void CAM_LookAtPosition(u8 *scratchpad, Vec3 *positions, SVec3 *desiredPos, SVec3 *desiredRot)
+void CAM_LookAtPosition(struct CameraScratchWork *scratchWork, Vec3 *positions, SVec3 *desiredPos, SVec3 *desiredRot)
 {
-	struct CameraScratch *cam = (struct CameraScratch *)(scratchpad + 0x20C);
+	struct CameraScratch *cam = &scratchWork->camera;
 
 	s32 dirX = desiredPos->x - (positions->x >> 8);
 	s32 dirY = desiredPos->y - ((positions->y >> 8) + data.Spin360_heightOffset_driverPos[sdata->gGT->numPlyrCurrGame]);
@@ -970,7 +970,7 @@ void CAM_LookAtPosition(u8 *scratchpad, Vec3 *positions, SVec3 *desiredPos, SVec
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80019f58-0x8001a054
-void CAM_FollowDriver_Spin360(struct CameraDC *cDC, u8 *scratchpad, struct Driver *d, SVec3 *desiredPos, SVec3 *desiredRot)
+void CAM_FollowDriver_Spin360(struct CameraDC *cDC, struct CameraScratchWork *scratchWork, struct Driver *d, SVec3 *desiredPos, SVec3 *desiredRot)
 {
 	s32 ratio;
 
@@ -998,7 +998,7 @@ void CAM_FollowDriver_Spin360(struct CameraDC *cDC, u8 *scratchpad, struct Drive
 
 	desiredPos->y = (s16)CTR_MipsAddLo((u16)cDC->transitionTo.pos.y, CTR_MipsSra(d->posCurr.y, 8));
 
-	CAM_LookAtPosition(scratchpad, &d->posCurr, desiredPos, desiredRot);
+	CAM_LookAtPosition(scratchWork, &d->posCurr, desiredPos, desiredRot);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001a054-0x8001a0bc
@@ -1017,11 +1017,11 @@ void CAM_SetDesiredPosRot(struct CameraDC *cDC, const SVec3 *pos, const SVec3 *r
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001a0bc-0x8001b254.
-void CAM_FollowDriver_Normal(struct CameraDC *cDC, struct Driver *d, SVec3 *pushBufferPos, u8 *scratchpad, struct ZoomData *zoom)
+void CAM_FollowDriver_Normal(struct CameraDC *cDC, struct Driver *d, SVec3 *pushBufferPos, struct CameraScratchWork *scratchWork, struct ZoomData *zoom)
 {
 	struct PushBuffer *pb = (struct PushBuffer *)pushBufferPos;
-	struct ScratchpadStruct *sps = (struct ScratchpadStruct *)scratchpad;
-	struct CameraScratch *cam = (struct CameraScratch *)(scratchpad + 0x20C);
+	struct ScratchpadStruct *sps = (struct ScratchpadStruct *)scratchWork;
+	struct CameraScratch *cam = &scratchWork->camera;
 	struct GameTracker *gGT = sdata->gGT;
 	struct GamepadBuffer *pad = &sdata->gGamepads->gamepad[d->driverID];
 	s8 state;
@@ -1172,14 +1172,14 @@ void CAM_FollowDriver_Normal(struct CameraDC *cDC, struct Driver *d, SVec3 *push
 
 	CTR_GteLoadSVec3V0(&cam->rot);
 	gte_rtv0();
-	CTR_GteStoreMAC((s32 *)(scratchpad + 0x27c));
+	CTR_GteStoreMAC(scratchWork->sideOffset.v);
 
 	cam->delta.x = CTR_MipsSra(d->posCurr.x, 8);
 	cam->delta.y = CTR_MipsSra(d->posCurr.y, 8);
 	cam->delta.z = CTR_MipsSra(d->posCurr.z, 8);
 
-	cam->delta.x += *(s32 *)(scratchpad + 0x27c);
-	cam->delta.z += *(s32 *)(scratchpad + 0x284);
+	cam->delta.x += scratchWork->sideOffset.x;
+	cam->delta.z += scratchWork->sideOffset.z;
 	cam->pos.x += cam->delta.x;
 
 
@@ -1372,10 +1372,10 @@ void CAM_FollowDriver_Normal(struct CameraDC *cDC, struct Driver *d, SVec3 *push
 		// Mud, Water, or FastWater
 		if (((state == 0xe) || (state == 4)) || (state == 0xd))
 		{
-			*(s16 *)(scratchpad + 0x1e) = 0;
+			scratchWork->terrainHeightFloor = 0;
 		}
 
-		x = (s32) * (s16 *)(scratchpad + 0x1e) + (s32)zoom->vertDistance;
+		x = (s32)scratchWork->terrainHeightFloor + (s32)zoom->vertDistance;
 		if (cam->pos.y < x)
 		{
 			cam->pos.y = x;
@@ -1502,7 +1502,7 @@ LAB_8001ab04:
 	// if end-of-race battle
 	if ((backupFlags & CAMERA_FLAG_BATTLE_END_OF_RACE) != 0)
 	{
-		CAM_FollowDriver_Spin360(cDC, scratchpad, d, &local_40, &local_38);
+		CAM_FollowDriver_Spin360(cDC, scratchWork, d, &local_40, &local_38);
 
 		// reverse interpolation of fly-in [0x1000 to 0]
 		x = 0x1000 - cDC->transitionBlend;
@@ -1590,7 +1590,7 @@ LAB_8001ab04:
 	cam->pos.y = (s32)pb->pos.y;
 	cam->pos.z = (s32)pb->pos.z;
 
-	CAM_FindClosestQuadblock((struct ScratchpadStruct *)scratchpad, cDC, d, (VECTOR *)&cam->pos);
+	CAM_FindClosestQuadblock((struct ScratchpadStruct *)scratchWork, cDC, d, (VECTOR *)&cam->pos);
 
 	x = cDC->transitionFrameCount;
 	iVar14 = cDC->transitionFrameCount;
@@ -1734,15 +1734,14 @@ void CAM_ThTick(struct Thread *t)
 	struct PushBuffer *pb;
 	struct ZoomData *ptrZoomData;
 	struct Driver *d;
-	u8 *scratchpadBytes;
 	s16 *scratchpad;
 	s32 iVar24;
 	s32 iVar25;
 
 	struct GameTracker *gGT = sdata->gGT;
-	scratchpadBytes = CTR_SCRATCHPAD_PTR(u8, 0x108);
-	scratchpad = (s16 *)scratchpadBytes;
-	struct CameraScratch *camThTick = (struct CameraScratch *)(scratchpadBytes + 0x20C);
+	struct CameraScratchWork *scratchWork = CTR_SCRATCHPAD_PTR(struct CameraScratchWork, 0x108);
+	scratchpad = (s16 *)scratchWork;
+	struct CameraScratch *camThTick = &scratchWork->camera;
 	cDC = (struct CameraDC *)t->inst;
 	d = cDC->driverToFollow;
 	pb = cDC->pushBuffer;
@@ -1979,7 +1978,7 @@ SkipNewCameraEOR:
 			if (sVar6 == 4)
 			{
 			LAB_8001c11c:
-				CAM_LookAtPosition(scratchpadBytes, &d->posCurr, &pb->pos, &pb->rot);
+				CAM_LookAtPosition(scratchWork, &d->posCurr, &pb->pos, &pb->rot);
 				psVar21 = scratchpad;
 			LAB_8001c128:
 				scratchpad = psVar21;
@@ -1989,7 +1988,7 @@ SkipNewCameraEOR:
 				psVar21 = scratchpad;
 				if (sVar6 == 10)
 				{
-					CAM_FollowDriver_Spin360(cDC, scratchpadBytes, d, &pb->pos, &pb->rot);
+					CAM_FollowDriver_Spin360(cDC, scratchWork, d, &pb->pos, &pb->rot);
 					goto LAB_8001c128;
 				}
 				if (sVar6 != 0xb)
@@ -2111,7 +2110,7 @@ SkipNewCameraEOR:
 								{
 									cDC->flags = cDC->flags | CAMERA_FLAG_RESET_RAIN_POS | CAMERA_FLAG_DIRECTION_CHANGED;
 								}
-								CAM_FollowDriver_AngleAxis(cDC, d, scratchpadBytes, &pb->pos, &pb->rot);
+								CAM_FollowDriver_AngleAxis(cDC, d, scratchWork, &pb->pos, &pb->rot);
 							}
 							else
 							{
@@ -2119,7 +2118,7 @@ SkipNewCameraEOR:
 								{
 									cDC->flags = cDC->flags | CAMERA_FLAG_RESET_RAIN_POS | CAMERA_FLAG_DIRECTION_CHANGED;
 								}
-								CAM_FollowDriver_Normal(cDC, d, &pb->pos, scratchpadBytes, ptrZoomData);
+								CAM_FollowDriver_Normal(cDC, d, &pb->pos, scratchWork, ptrZoomData);
 							}
 							cDC->botFlagsPrevFrame = d->botData.botFlags;
 							goto LAB_8001c150;
@@ -2128,8 +2127,8 @@ SkipNewCameraEOR:
 						{
 							if ((gGT->level1->cnt_restart_points != 0) && ((gGT->gameMode1 & 0xf) == 0))
 							{
-								SVec3 *trackPathPos = CTR_SCRATCHPAD_PTR(SVec3, 0x390);
-								SVec3 *trackPathLookaheadPos = CTR_SCRATCHPAD_PTR(SVec3, 0x398);
+								SVec3 *trackPathPos = &scratchWork->trackPathPos;
+								SVec3 *trackPathLookaheadPos = &scratchWork->trackPathLookaheadPos;
 
 
 								uVar9 = CAM_FollowDriver_TrackPath(cDC, trackPathPos, cDC->eorModeData.trackPathSpeed, 1);
@@ -2177,7 +2176,7 @@ SkipNewCameraEOR:
 					goto LAB_8001c128;
 				}
 
-				CAM_LookAtPosition(scratchpadBytes, &d->posCurr, &pb->pos, &pb->rot);
+				CAM_LookAtPosition(scratchWork, &d->posCurr, &pb->pos, &pb->rot);
 
 				iVar7 = SquareRoot0_stub(CTR_MipsAddLo(CAM_MulLo(camThTick->dir.x, camThTick->dir.x), CAM_MulLo(camThTick->dir.z, camThTick->dir.z)));
 				iVar17 = (s32)(cDC->transitionTo).pos.x;
@@ -2212,12 +2211,12 @@ SkipNewCameraEOR:
 			cameraProbePos->vy = (s32)pb->pos.y;
 			cameraProbePos->vz = (s32)pb->pos.z;
 
-			CAM_FindClosestQuadblock((struct ScratchpadStruct *)scratchpadBytes, cDC, d, cameraProbePos);
+			CAM_FindClosestQuadblock((struct ScratchpadStruct *)scratchWork, cDC, d, cameraProbePos);
 			goto LAB_8001c150;
 		}
 	}
 
-	CAM_FollowDriver_Normal(cDC, d, &pb->pos.x, scratchpadBytes, ptrZoomData);
+	CAM_FollowDriver_Normal(cDC, d, &pb->pos.x, scratchWork, ptrZoomData);
 
 LAB_8001c150:
 	cDC->cameraModePrev = cDC->cameraMode;

@@ -65,6 +65,8 @@
 // should not be here
 #include <namespace_Main.h>
 
+#include <namespace_DrawLevel.h>
+
 #include <namespace_UI.h>
 #include <namespace_Vehicle.h>
 #include <ovr_226.h>

@@ -18,6 +18,18 @@ struct DrawConfettiTrigPair
 	s32 cos;
 };
 
+struct DrawConfettiScratch
+{
+	u32 remainingParticles;
+	u32 color;
+	u8 pad_08[0x20];
+	u8 colorTable[36];
+};
+
+_Static_assert(offsetof(struct DrawConfettiScratch, remainingParticles) == 0x00);
+_Static_assert(offsetof(struct DrawConfettiScratch, color) == 0x04);
+_Static_assert(offsetof(struct DrawConfettiScratch, colorTable) == 0x28);
+
 static u32 DrawConfetti_ReadWord(const void *base, int offset)
 {
 	return *(const u32 *)(const void *)((const char *)base + offset);
@@ -133,9 +145,7 @@ static void DrawConfetti_LinkPrimitive(POLY_F4 *poly, u_long *ot)
 void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti, int frameTimer, int gameMode1)
 {
 	POLY_F4 *prim = primMem->cursor;
-	u8 *scratchColorTable = CTR_SCRATCHPAD_PTR(u8, 0x58);
-	u32 *scratchRemaining = CTR_SCRATCHPAD_PTR(u32, 0x30);
-	u32 *scratchColor = CTR_SCRATCHPAD_PTR(u32, 0x34);
+	struct DrawConfettiScratch *scratch = CTR_SCRATCHPAD_PTR(struct DrawConfettiScratch, 0x30);
 	struct DrawConfettiTrigPair cameraTrig;
 	u32 screenBounds;
 	u_long *otBase;
@@ -160,7 +170,7 @@ void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti
 	CTC2(0, 7);
 
 	for (int i = 0; i < (int)sizeof(sDrawConfettiColorTable8008a2a0); i++)
-		scratchColorTable[i] = sDrawConfettiColorTable8008a2a0[i];
+		scratch->colorTable[i] = sDrawConfettiColorTable8008a2a0[i];
 
 	CTC2(DrawConfetti_ReadWord(&pb->matrix_ViewProj, 0x00), 0);
 	CTC2(DrawConfetti_ReadWord(&pb->matrix_ViewProj, 0x04), 1);
@@ -209,7 +219,7 @@ void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti
 	baseY = (s32)(DrawConfetti_ReadWord(confetti, 0x08) * timer - (u32)(s32)pb->pos.y);
 	baseZ = -pb->pos.z + centerZ;
 
-	*scratchColor = 0x28000000;
+	scratch->color = 0x28000000;
 	cycle = 6;
 	state0 = 0x30125400;
 	state1 = 0x493583fe;
@@ -255,7 +265,7 @@ void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti
 			break;
 
 		particleCount--;
-		*scratchRemaining = particleCount;
+		scratch->remainingParticles = particleCount;
 
 		x = (((s32)rng.x >> 21) + baseX) & 0x7ff;
 		y = (((s32)rng.y >> 21) + baseY) & 0x7ff;
@@ -273,8 +283,8 @@ void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti
 		angle = (s32)((u32)angle << 3);
 		spinB = DrawConfetti_TrigAngleSinCos(angle);
 
-		shade = scratchColorTable[((spinB.cos > 0) ? spinB.cos : -spinB.cos) >> 7];
-		*scratchColor = DrawConfetti_BuildColor(cycle, shade);
+		shade = scratch->colorTable[((spinB.cos > 0) ? spinB.cos : -spinB.cos) >> 7];
+		scratch->color = DrawConfetti_BuildColor(cycle, shade);
 
 		halfY = spinB.cos >> 8;
 		skewX = (spinB.sin * spinA.sin) >> 20;
@@ -328,17 +338,17 @@ void DrawConfetti(struct PushBuffer *pb, struct PrimMem *primMem, void *confetti
 					CtrGpu_WritePackedXY(&prim->x2, MFC2(13));
 					CtrGpu_WritePackedXY(&prim->x3, MFC2(14));
 					depth = MFC2(24);
-					CtrGpu_WriteColorCode(&prim->r0, *scratchColor);
+					CtrGpu_WriteColorCode(&prim->r0, scratch->color);
 					ot = (u_long *)(void *)((char *)otBase + ((depth >> 18) << 2));
 					DrawConfetti_LinkPrimitive(prim, ot);
-					particleCount = *scratchRemaining;
+					particleCount = scratch->remainingParticles;
 					prim++;
 					continue;
 				}
 			}
 		}
 
-		particleCount = *scratchRemaining;
+		particleCount = scratch->remainingParticles;
 	}
 
 	primMem->cursor = prim;

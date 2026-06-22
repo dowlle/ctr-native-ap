@@ -1231,6 +1231,17 @@ struct VehWarpDustProjected
 	u32 depth;
 };
 
+struct VehWarpDustScratch
+{
+	u8 pad_000[0x108];
+	SVECTOR points[VEH_WARP_DUST_SEGMENTS + 1];
+	SVECTOR projectLeft;
+	SVECTOR projectRight;
+	struct VehWarpDustProjected prev;
+	struct VehWarpDustProjected curr;
+	SVec3 jitterScale;
+};
+
 struct VehWarpDustG4Body
 {
 	u32 color0AndCode;
@@ -1266,16 +1277,22 @@ _Static_assert(offsetof(struct VehWarpDustPacket, tag) == 0x00);
 _Static_assert(offsetof(struct VehWarpDustPacket, drawMode) == 0x04);
 _Static_assert(offsetof(struct VehWarpDustPacket, leftStrip) == 0x08);
 _Static_assert(offsetof(struct VehWarpDustPacket, rightStrip) == 0x28);
+_Static_assert(offsetof(struct VehWarpDustScratch, points) == 0x108);
+_Static_assert(offsetof(struct VehWarpDustScratch, projectLeft) == 0x190);
+_Static_assert(offsetof(struct VehWarpDustScratch, projectRight) == 0x198);
+_Static_assert(offsetof(struct VehWarpDustScratch, prev) == 0x1a0);
+_Static_assert(offsetof(struct VehWarpDustScratch, curr) == 0x1b0);
+_Static_assert(offsetof(struct VehWarpDustScratch, jitterScale) == 0x1c0);
 
 static s16 VehWarpDust_AddHalf(s16 value, int delta)
 {
 	return (s16)CTR_MipsAddLo((u16)value, delta);
 }
 
-static void VehWarpDust_Project(SVECTOR *point, int offsetX, int offsetY, int offsetZ, struct VehWarpDustProjected *out)
+static void VehWarpDust_Project(struct VehWarpDustScratch *scratch, SVECTOR *point, int offsetX, int offsetY, int offsetZ, struct VehWarpDustProjected *out)
 {
-	SVECTOR *left = CTR_SCRATCHPAD_PTR(SVECTOR, 0x190);
-	SVECTOR *right = CTR_SCRATCHPAD_PTR(SVECTOR, 0x198);
+	SVECTOR *left = &scratch->projectLeft;
+	SVECTOR *right = &scratch->projectRight;
 
 	left->vx = VehWarpDust_AddHalf(point->vx, offsetX);
 	left->vy = VehWarpDust_AddHalf(point->vy, offsetY);
@@ -1330,9 +1347,10 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 	struct PushBuffer *pb = &gGT->pushBuffer[d->driverID];
 	struct DB *backBuffer = gGT->backBuffer;
 	u32 *prim = backBuffer->primMem.cursor;
-	SVECTOR *points = CTR_SCRATCHPAD_PTR(SVECTOR, 0x108);
+	struct VehWarpDustScratch *scratch = CTR_SCRATCHPAD_PTR(struct VehWarpDustScratch, 0);
+	SVECTOR *points = scratch->points;
 	SVECTOR *endpoint = &points[VEH_WARP_DUST_SEGMENTS];
-	s16 *jitterScale = CTR_SCRATCHPAD_PTR(s16, 0x1c0);
+	s16 *jitterScale = scratch->jitterScale.v;
 	int offsetX;
 	int offsetY;
 	int offsetZ;
@@ -1359,8 +1377,8 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 	for (int ring = 0; ring < 6; ring++)
 	{
 		int baseAngle = CTR_MipsAddLo((CTR_MipsSll(ring, 12) / 6), warp[3]);
-		struct VehWarpDustProjected *prev = CTR_SCRATCHPAD_PTR(struct VehWarpDustProjected, 0x1a0);
-		struct VehWarpDustProjected *curr = CTR_SCRATCHPAD_PTR(struct VehWarpDustProjected, 0x1b0);
+		struct VehWarpDustProjected *prev = &scratch->prev;
+		struct VehWarpDustProjected *curr = &scratch->curr;
 
 		points[0].vx = (s16)CTR_MipsSubLo(CTR_MipsSra(d->posCurr.x, 8), CTR_MipsSra(MATH_Sin(baseAngle), 5));
 		points[0].vy = (s16)CTR_MipsSra(warp[2], 8);
@@ -1387,13 +1405,13 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 		for (int i = 1; i < VEH_WARP_DUST_SEGMENTS; i++)
 			points[i].vy = VehWarpDust_AddHalf(points[i].vy, CTR_MipsSra(MATH_Sin(CTR_MipsSll(i, 7)), 7));
 
-		VehWarpDust_Project(&points[0], offsetX, offsetY, offsetZ, prev);
+		VehWarpDust_Project(scratch, &points[0], offsetX, offsetY, offsetZ, prev);
 
 		for (int seg = 0; seg < VEH_WARP_DUST_SEGMENTS; seg++)
 		{
 			struct VehWarpDustProjected *tmp;
 
-			VehWarpDust_Project(&points[seg + 1], offsetX, offsetY, offsetZ, curr);
+			VehWarpDust_Project(scratch, &points[seg + 1], offsetX, offsetY, offsetZ, curr);
 			VehWarpDust_EmitSegment(&prim, pb, prev, curr);
 
 			tmp = prev;

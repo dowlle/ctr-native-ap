@@ -647,9 +647,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 		fcOUT->pos.z = tz + cameraPosZ;
 
 		// far clip: pos + dir*100
-		spf->pos[0] = posX;
-		spf->pos[1] = posY;
-		spf->pos[2] = posZ;
+		spf->clippedFarPos.x = posX;
+		spf->clippedFarPos.y = posY;
+		spf->clippedFarPos.z = posZ;
 
 		// === X Axis ===
 		if (((cameraPosX < -0x8000) && (-0x8000 < posX)) || ((-0x8000 < cameraPosX && (posX < -0x8000))))
@@ -660,9 +660,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < 0x1000)
 			{
-				spf->pos[0] = -0x8000;
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.x = -0x8000;
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -676,9 +676,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[1] = -0x8000;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.y = -0x8000;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -692,9 +692,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[2] = -0x8000;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = -0x8000;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -708,9 +708,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[0] = 0x7fff;
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.x = 0x7fff;
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -724,9 +724,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[1] = 0x7fff;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.y = 0x7fff;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -740,27 +740,27 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (ty < iVar19)
 			{
-				spf->pos[2] = 0x7fff;
-				spf->pos[0] = cameraPosX + (ty * (posX - cameraPosX) >> 0xc);
-				spf->pos[1] = cameraPosY + (ty * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = 0x7fff;
+				spf->clippedFarPos.x = cameraPosX + (ty * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.y = cameraPosY + (ty * (posY - cameraPosY) >> 0xc);
 			}
 		}
 
 		// === Set 6 Min/Max X,Y,Z variables ===
 
-		if (min_X > spf->pos[0])
-			min_X = spf->pos[0];
-		if (min_Y > spf->pos[1])
-			min_Y = spf->pos[1];
-		if (min_Z > spf->pos[2])
-			min_Z = spf->pos[2];
+		if (min_X > spf->clippedFarPos.x)
+			min_X = spf->clippedFarPos.x;
+		if (min_Y > spf->clippedFarPos.y)
+			min_Y = spf->clippedFarPos.y;
+		if (min_Z > spf->clippedFarPos.z)
+			min_Z = spf->clippedFarPos.z;
 
-		if (max_X < spf->pos[0])
-			max_X = spf->pos[0];
-		if (max_Y < spf->pos[1])
-			max_Y = spf->pos[1];
-		if (max_Z < spf->pos[2])
-			max_Z = spf->pos[2];
+		if (max_X < spf->clippedFarPos.x)
+			max_X = spf->clippedFarPos.x;
+		if (max_Y < spf->clippedFarPos.y)
+			max_Y = spf->clippedFarPos.y;
+		if (max_Z < spf->clippedFarPos.z)
+			max_Z = spf->clippedFarPos.z;
 
 		// next corner to write
 		fcOUT--;

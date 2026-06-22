@@ -6,7 +6,7 @@ struct FrustumCornerOUT
 struct ScratchpadFrustum
 {
 	// 1f800000
-	int pos[3];
+	Vec3 clippedFarPos;
 
 	// 1f80000C
 	struct FrustumCornerOUT fc[4];
@@ -17,6 +17,12 @@ struct ScratchpadFrustum
 	// 1f80002A
 	// -- end --
 };
+
+_Static_assert(sizeof(Vec3) == 0x0c);
+_Static_assert(offsetof(struct ScratchpadFrustum, clippedFarPos) == 0x00);
+_Static_assert(offsetof(struct ScratchpadFrustum, fc) == 0x0c);
+_Static_assert(offsetof(struct ScratchpadFrustum, camPos) == 0x24);
+_Static_assert(offsetof(struct ScratchpadFrustum, camPos) + sizeof(SVec3) == 0x2a);
 
 struct PushBufferSetMatrixVPScratch
 {
