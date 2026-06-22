@@ -93,6 +93,9 @@ void RR_EndEvent_UnlockAward(void)
 
 		// unlock
 		UNLOCK_ADV_BIT(adv->rewards, rewardBit);
+#ifdef CTR_AP
+		AP_NotifyAdvReward(rewardBit); // AP: relic (time trial) location check
+#endif
 
 		// relic model
 		gGT->podiumRewardID = STATIC_RELIC;

@@ -493,10 +493,16 @@ void AA_EndEvent_DrawMenu(void)
 			gGT->podiumRewardID = STATIC_BIG1;
 
 			adv->storyFlags |= ADV_REWARD_OXIDE_FIRST_WIN_FLAGS;
+#ifdef CTR_AP
+			AP_NotifyGoal(0); // AP: beat Oxide (first win)
+#endif
 
 			if (gGT->bossID == AA_OXIDE_SECOND_WIN_BOSS_ID)
 			{
 				adv->storyFlags |= ADV_REWARD_OXIDE_SECOND_WIN_FLAGS;
+#ifdef CTR_AP
+				AP_NotifyGoal(1); // AP: beat Oxide (final win = goal)
+#endif
 			}
 		}
 	}
@@ -506,6 +512,9 @@ void AA_EndEvent_DrawMenu(void)
 	{
 		// Unlock reward
 		UNLOCK_ADV_BIT(adv->rewards, rewardBit);
+#ifdef CTR_AP
+		AP_NotifyAdvReward(rewardBit); // AP: boss-race / story reward location check
+#endif
 	}
 
 	if (IS_BOSS_RACE(gGT->gameMode1))
@@ -521,6 +530,9 @@ void AA_EndEvent_DrawMenu(void)
 	{
 		// unlock tropy
 		UNLOCK_ADV_BIT(adv->rewards, rewardBit);
+#ifdef CTR_AP
+		AP_NotifyAdvReward(rewardBit); // AP: trophy location check
+#endif
 
 		// go to podium with trophy
 		gGT->podiumRewardID = STATIC_TROPHY;
