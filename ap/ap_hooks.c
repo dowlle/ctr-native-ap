@@ -6,6 +6,7 @@
 #include "ap_hooks.h"
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
+#include "ap_items.h"     // item-id -> AdvProgress category bit pools
 
 // ============================================================================
 // Archipelago integration. Parts:
@@ -155,6 +156,40 @@ void AP_NotifyGoal(int oxideSecond)
 
 static int ap_net_started = 0;
 
+// Count of received items per bit-pool category (index by AP_ItemCat 0..COUNT-1).
+static int ap_item_count[AP_CAT_COUNT] = {0};
+
+// Reconcile received-item counts into AdvProgress bits: ensure `count` bits of
+// each category pool are set (filled from the HIGH end -- see ap_items.h
+// collision note). Idempotent + self-healing across loads, and refreshes the
+// live counters the gates read via GAMEPROG_AdvPercent.
+static void AP_ApplyItems(struct AdvProgress *adv)
+{
+	int changed = 0;
+	int c, k;
+	for (c = 0; c < AP_CAT_COUNT; c++)
+	{
+		const AP_CatPool *p = &AP_CATEGORY_POOLS[c];
+		int want = ap_item_count[c];
+		if (want > p->size)
+			want = p->size;
+		for (k = 0; k < want; k++)
+		{
+			int bit = p->bits[p->size - 1 - k]; // high-end fill
+			if (CHECK_ADV_BIT(adv->rewards, bit) == 0)
+			{
+				UNLOCK_ADV_BIT(adv->rewards, bit);
+				changed = 1;
+			}
+		}
+	}
+	if (changed)
+	{
+		GAMEPROG_AdvPercent(adv);
+		AP_AppendLog("[AP ITEM] applied received items to AdvProgress\n");
+	}
+}
+
 // Read ws uri / slot / password from "ap-config.txt" in the working dir if it
 // exists. Lines: "uri=...", "slot=...", "password=...". Missing file or keys
 // keep the defaults.
@@ -198,16 +233,27 @@ static void AP_NetTick(void)
 
 	ap_net_poll();
 
-	// Received items: log now. Applying to AdvProgress needs the item->bit map
-	// (ap_items.h, next step). TODO(ap): grant each item's bit + reconcile.
+	// Received items: tally by category. Applied to AdvProgress bits in
+	// AP_ApplyItems() (adventure + save-safe only). Single game session counts
+	// each item once; a reconnect re-sends the full list (dedup TODO).
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
 	int i;
 	for (i = 0; i < n; i++)
 	{
-		char msg[96];
-		snprintf(msg, sizeof msg,
-		         "[AP ITEM] received item id %lld (apply TODO)\n", items[i]);
+		AP_ItemCat c = AP_ItemCategory(items[i]);
+		char msg[128];
+		if (c >= 0 && c < AP_CAT_COUNT)
+		{
+			ap_item_count[c]++;
+			snprintf(msg, sizeof msg, "[AP ITEM] received %s (id %lld) -> have %d\n",
+			         AP_CATEGORY_POOLS[c].name, items[i], ap_item_count[c]);
+		}
+		else
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received item id %lld (filler/unmapped)\n", items[i]);
+		}
 		AP_AppendLog(msg);
 	}
 }
@@ -280,6 +326,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 	if ((++tick % 30) != 0)
 		return;
 
+	AP_ApplyItems(&sdata->advProgress); // grant received items into game state
 	AP_PollDebug(&sdata->advProgress);
 }
 
