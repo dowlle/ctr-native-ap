@@ -1304,6 +1304,21 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				for (i = 0; i < 3; i++)
 				{
 					rewardModelID = s_warpPadRewardModelIDs[i];
+#ifdef CTR_AP
+					{
+						// Reward glow: substitute the model of the AP item
+						// actually placed at this slot's location on the pad's
+						// DESTINATION track (the track it loads under shuffle).
+						// slot i -> 0 trophy race, 1 sapphire relic, 2 token.
+						static const int kSlotFirstBit[3] = {
+						    ADV_REWARD_FIRST_TROPHY,
+						    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+						    ADV_REWARD_FIRST_CTR_TOKEN};
+						int apModel = AP_WarpPadRewardModel(warppadObj->levelID + kSlotFirstBit[i]);
+						if (apModel >= 0)
+							rewardModelID = apModel;
+					}
+#endif
 					newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize1", t);
 					warppadObj->inst[WPIS_OPEN_PRIZE1 + i] = newInst;
 
@@ -1362,7 +1377,17 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				// open for relic/token
 				t->modelIndex = 3;
 
-				newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_RELIC], "prize2", t);
+				rewardModelID = STATIC_RELIC;
+#ifdef CTR_AP
+				{
+					// Reward glow: the AP item at this track's (DEST) sapphire
+					// relic location.
+					int apModel = AP_WarpPadRewardModel(warppadObj->levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC);
+					if (apModel >= 0)
+						rewardModelID = apModel;
+				}
+#endif
+				newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize2", t);
 
 				// relic blue
 				newInst->colorRGBA = 0x20a5ff0;
@@ -1399,7 +1424,16 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			// open for relic/token
 			t->modelIndex = 3;
 
-			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_TOKEN], "prize2", t);
+			rewardModelID = STATIC_TOKEN;
+#ifdef CTR_AP
+			{
+				// Reward glow: the AP item at this track's (DEST) token location.
+				int apModel = AP_WarpPadRewardModel(warppadObj->levelID + ADV_REWARD_FIRST_CTR_TOKEN);
+				if (apModel >= 0)
+					rewardModelID = apModel;
+			}
+#endif
+			newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize2", t);
 
 			// token color
 			newInst->colorRGBA = ((u32)data.AdvCups[tokenGroupID].color[0] << 0x14) | ((u32)data.AdvCups[tokenGroupID].color[1] << 0xc) |

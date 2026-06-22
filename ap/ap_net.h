@@ -28,6 +28,21 @@ void ap_net_send_goal(void);                         // StatusUpdate(GOAL)
 // Drain newly-received item ids into out (capacity max). Returns count copied.
 int  ap_net_drain_items(long long *out, int max);
 
+// ── Reward-glow / pad-state support (scouted on slot-connect) ──
+// 1 (and fills any non-null out params) if a scout result is known for
+// location_code: the item placed there, the player who receives it, and AP
+// item flags (bit0 = progression). A scouted item with player == ap_net_self_slot
+// is an own CTR reward (render its model); otherwise a foreign AP item (marker).
+int  ap_net_scout_known(long long location_code, long long *out_item,
+                        int *out_player, unsigned *out_flags);
+
+// 1 if location_code has already been checked on the server (own slot). Drives
+// the "done / chill" warp-pad colouring vs the "new / available" glow.
+int  ap_net_location_checked(long long location_code);
+
+// Connected slot number, or -1 before connect.
+int  ap_net_self_slot(void);
+
 void ap_net_shutdown(void);
 
 #ifdef __cplusplus

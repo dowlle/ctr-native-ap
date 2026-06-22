@@ -53,6 +53,16 @@ int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// ── Reward glow ──
+// Model id to DISPLAY in a warp-pad prize slot, for the location identified by
+// its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
+// Returns the model of the AP item actually placed at that location -- an own
+// CTR reward shows its category model (trophy/relic/token/gem/key); a foreign
+// multiworld item shows STATIC_KEY as a generic "AP" marker. Returns -1 when
+// not connected, not yet scouted, or the bit is not a checkable location, so the
+// caller keeps the vanilla model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
+int AP_WarpPadRewardModel(int globalBit);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

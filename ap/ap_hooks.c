@@ -90,6 +90,49 @@ static long AP_LookupLocationCode(int globalBit)
 }
 
 // ---------------------------------------------------------------------------
+// REWARD GLOW -- map a location (by its AdvProgress global bit) to the model of
+// the AP item placed there, so each warp pad's glow shows its real reward.
+// ---------------------------------------------------------------------------
+
+int AP_WarpPadRewardModel(int globalBit)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return -1; // not a checkable location -> keep vanilla model
+
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return -1; // not scouted yet (not connected / pre-scout) -> vanilla
+
+	// A foreign multiworld item (placed for a different slot) -> generic marker.
+	if (player != ap_net_self_slot())
+		return STATIC_KEY;
+
+	// Own CTR reward -> its category's model.
+	switch (AP_ItemCategory(item))
+	{
+	case AP_CAT_TROPHY:
+		return STATIC_TROPHY;
+	case AP_CAT_SAPPHIRE:
+	case AP_CAT_GOLD:
+	case AP_CAT_PLATINUM:
+		return STATIC_RELIC;
+	case AP_CAT_TOKEN:
+		return STATIC_TOKEN;
+	case AP_CAT_GEM:
+		return STATIC_GEM;
+	case AP_CAT_KEY:
+		return STATIC_KEY;
+	default:
+		return STATIC_KEY; // own Wumpa / unmapped -> marker rather than a wrong model
+	}
+}
+
+// ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.
 // ---------------------------------------------------------------------------

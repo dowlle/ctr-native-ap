@@ -11,11 +11,14 @@
 
 #include "apclient.hpp" // pulls wswrap + websocketpp + asio + nlohmann/json
 #include "ap_net.h"
-#include "ap_seedcfg.h" // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
+#include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
+#include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
 
 #include <deque>
 #include <list>
 #include <string>
+#include <set>
+#include <unordered_map>
 #include <cstdio>
 #include <cstdint>
 
@@ -24,6 +27,14 @@ static std::deque<long long> g_items; // received item ids, drained by the game
 static std::string           g_slot;
 static std::string           g_password;
 static bool                  g_connected = false;
+
+// Reward-glow / pad-state support: scouted item placed at each CTR location,
+// keyed by AP location_code. Filled by the LocationInfo handler after the
+// LocationScouts sent on slot-connect. The warp-pad render reads this to show
+// the actual reward in each pad's glow (own CTR item -> its model; foreign item
+// -> an "AP" marker). Checked-state is read live from apclientpp instead
+// (get_checked_locations), so it needs no separate store here.
+static std::unordered_map<int64_t, APClient::NetworkItem> g_scouts;
 
 extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
@@ -56,7 +67,21 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		g_connected = true;
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
-		std::fprintf(stderr, "[AP NET] slot connected\n");
+		// Scout every CTR location so the warp pads can show the actual AP reward
+		// placed at each (and recolour pads whose location is already checked).
+		// One LocationScouts on connect; results arrive via the info handler.
+		std::list<int64_t> locs;
+		for (int i = 0; i < AP_LOCATION_TABLE_LEN; i++)
+			locs.push_back((int64_t)AP_LOCATION_TABLE[i].location_code);
+		g_ap->LocationScouts(locs, 0);
+		std::fprintf(stderr, "[AP NET] slot connected; scouting %d locations\n",
+		             AP_LOCATION_TABLE_LEN);
+	});
+	g_ap->set_location_info_handler([](const std::list<APClient::NetworkItem> &items) {
+		for (const auto &it : items)
+			g_scouts[it.location] = it;
+		std::fprintf(stderr, "[AP NET] scout info received for %d locations\n",
+		             (int)items.size());
 	});
 	g_ap->set_slot_refused_handler([](const std::list<std::string> &errors) {
 		g_connected = false;
@@ -108,6 +133,34 @@ extern "C" void ap_net_send_goal(void)
 		g_ap->StatusUpdate(APClient::ClientStatus::GOAL);
 }
 
+extern "C" int ap_net_scout_known(long long location_code, long long *out_item,
+                                  int *out_player, unsigned *out_flags)
+{
+	auto it = g_scouts.find((int64_t)location_code);
+	if (it == g_scouts.end())
+		return 0;
+	if (out_item)
+		*out_item = (long long)it->second.item;
+	if (out_player)
+		*out_player = it->second.player;
+	if (out_flags)
+		*out_flags = it->second.flags;
+	return 1;
+}
+
+extern "C" int ap_net_location_checked(long long location_code)
+{
+	if (!g_ap)
+		return 0;
+	const std::set<int64_t> &chk = g_ap->get_checked_locations();
+	return chk.count((int64_t)location_code) ? 1 : 0;
+}
+
+extern "C" int ap_net_self_slot(void)
+{
+	return g_ap ? g_ap->get_player_number() : -1;
+}
+
 extern "C" int ap_net_drain_items(long long *out, int max)
 {
 	int n = 0;
@@ -128,4 +181,5 @@ extern "C" void ap_net_shutdown(void)
 	}
 	g_connected = false;
 	g_items.clear();
+	g_scouts.clear();
 }
