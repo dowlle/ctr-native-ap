@@ -188,7 +188,12 @@ void AH_Door_ThTick(struct Thread *t)
 	}
 
 	// if player has less than that amount
+#ifdef CTR_AP
+	// AP Option B: hub doors open on received Keys (numKeys 1..4 per hub).
+	if (AP_GateCount(AP_IDX_KEY) < numKeys)
+#else
 	if (gGT->currAdvProfile.numKeys < numKeys)
+#endif
 	{
 		// if one key is required
 		if (numKeys == 1)
