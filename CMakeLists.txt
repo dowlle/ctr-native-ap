@@ -88,6 +88,32 @@ target_compile_definitions(ctr_native PRIVATE
 if(CTR_AP)
     target_compile_definitions(ctr_native PRIVATE CTR_AP)
     set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
+
+    # Archipelago networking (apclientpp). Compiled as an isolated C++17 static
+    # library so the unity C build stays C; the only scope where exceptions /
+    # RTTI / -mbig-obj live. ws:// only -> header-only deps + ws2_32, no TLS.
+    enable_language(CXX)
+    set(AP_VENDOR ${CMAKE_SOURCE_DIR}/ap/vendor)
+    add_library(ap_net STATIC ap/ap_net.cpp)
+    set_target_properties(ap_net PROPERTIES
+        LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_include_directories(ap_net PRIVATE
+        ${AP_VENDOR}/apclientpp
+        ${AP_VENDOR}/wswrap/include
+        ${AP_VENDOR}/websocketpp
+        ${AP_VENDOR}/asio/include
+        ${AP_VENDOR}/json/include
+        ${CMAKE_SOURCE_DIR}/ap)
+    target_compile_definitions(ap_net PRIVATE
+        WSWRAP_NO_SSL WSWRAP_NO_COMPRESSION AP_NO_SCHEMA
+        ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1
+        _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
+    target_compile_options(ap_net PRIVATE -Wa,-mbig-obj -O1 -fexceptions -frtti)
+
+    # A C target linking a C++ archive: CMake promotes the link to C++ (g++),
+    # pulling in libstdc++. Keep it static to match the -static exe.
+    target_link_libraries(ctr_native ap_net ws2_32)
+    target_link_options(ctr_native PRIVATE -static-libstdc++)
 endif()
 target_compile_options(ctr_native PRIVATE -O2)
 target_link_libraries(ctr_native SDL3::SDL3)
