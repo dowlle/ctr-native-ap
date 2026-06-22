@@ -48,6 +48,11 @@ int AP_GateCount(int itemType);          // received count for one of the 15 ite
 int AP_GateCountTokenColour(int colour); // colour 0..4 = R,G,B,Y,P -> token idx 4+colour
 int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx 9+colour
 
+// Append a line to the AP debug log (forwards to the module's AP_AppendLog).
+// Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation
+// lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
+void AP_LogLine(const char *msg);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

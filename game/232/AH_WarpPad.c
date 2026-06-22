@@ -542,6 +542,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	levelID = warppadObj->levelID;
 
+#ifdef CTR_AP
+	// AP Phase 2 STRETCH: under warp-pad DESTINATION shuffle, warppadObj->levelID
+	// is the REMAPPED track this pad LOADS, but the per-pad unlock REQUIREMENT was
+	// keyed by the PHYSICAL pad LevelID (the apworld keys warp_pad_unlock by
+	// physical pad). Recover the physical pad id for the unlock-requirement gate
+	// below while keeping local `levelID` (= destination) for the actual track
+	// load. ctr_cfg_warp_phys is identity-safe: returns its input unchanged when
+	// slot_data is inactive or the map is identity, so this is a no-op pre-shuffle.
+	int physLevelID = ctr_cfg_warp_phys(levelID);
+#endif
+
 	// gem cups
 	if (levelID >= AH_WP_ADV_CUP)
 	{
@@ -614,13 +625,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
+#ifdef CTR_AP
+		// AP Phase 2 STRETCH: the "trophy owned?" gate decides first-pass (needs
+		// the per-seed unlock requirement) vs already-won (key re-entry). LInB
+		// keys this by the PHYSICAL pad, so ThTick must too, or under destination
+		// shuffle the spawn visual (LInB, physical) and the load gate (ThTick)
+		// would disagree about which mode the pad is in. physLevelID == levelID
+		// pre-shuffle, so this is a no-op for the identity map / inactive path.
+		if (CHECK_ADV_BIT(sdata->advProgress.rewards, physLevelID + ADV_REWARD_FIRST_TROPHY) != 0)
+#else
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
+#endif
 		{
 #ifdef CTR_AP
 			// AP Phase 2: per-seed requirement when slot_data active, else the
 			// Phase-1 received-trophy rule. Keeps spawn visual + load gate in
 			// lockstep (both read ctr_cfg_warp_unlocked / the same requirement).
-			if (ctr_cfg_warp_unlocked(levelID))
+			// Keyed by PHYSICAL pad (physLevelID) so the requirement matches the
+			// one LInB selected and rendered; under destination shuffle this
+			// differs from `levelID` (= the remapped track being loaded).
+			if (ctr_cfg_warp_unlocked(physLevelID))
 #else
 			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
 #endif
@@ -1041,6 +1065,18 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	// returns the input unchanged when slot_data is inactive or warp_pad_map is
 	// identity (not shuffled), so this is a no-op for the non-shuffle MVP path.
 	warppadObj->levelID = ctr_cfg_warp_dest(levelID);
+
+	// Confirmation log: emit one line per pad whose destination was actually
+	// remapped (physical != loaded). Proves the warp_pad_map round-tripped and
+	// the native LInB remap is live; silent when the map is identity.
+	if (warppadObj->levelID != levelID)
+	{
+		char apwpmsg[96];
+		snprintf(apwpmsg, sizeof apwpmsg,
+		         "[AP WARP] pad phys=%d remapped -> loads track=%d\n",
+		         levelID, warppadObj->levelID);
+		AP_LogLine(apwpmsg);
+	}
 #endif
 
 	unlockItem_modelID = 0;
