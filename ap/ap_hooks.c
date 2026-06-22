@@ -7,22 +7,25 @@
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 
 // ============================================================================
-// Archipelago integration -- per-frame hook.
-//
-// Two halves run each (throttled) tick while in Adventure Mode and not mid-load:
+// Archipelago integration. Three parts:
 //
 //   WRITE path (item-receive): reconcile the game's AdvProgress against the set
-//   of items the player *should* have. Idempotent + self-healing -- setting an
-//   already-set bit is a no-op, and if a save load wipes a granted bit the next
-//   tick re-applies it. (Currently a spike: one hardcoded desired item.)
+//   of items the player *should* have. Idempotent + self-healing. (Currently a
+//   spike: one hardcoded desired item; becomes the apclientpp received list.)
 //
-//   READ path (location-check): snapshot AdvProgress and detect 0->1 bit
-//   transitions, i.e. locations the player just checked (won a trophy/relic/etc).
-//   Currently logs them; the real path will send LocationChecks to the AP server.
+//   LOCATION EVENTS (option A -- AUTHORITATIVE): the game's own reward-grant
+//   sites call AP_NotifyAdvReward() the instant a player earns a checkable
+//   reward (trophy/relic/token/gem/boss), and AP_NotifyGoal() when Oxide is
+//   beaten. This is reliable regardless of load/menu state -- unlike watching
+//   the persistent bit, which is set during the race-end -> hub-load transition
+//   and was therefore missed by the per-frame poll (see board 2026-06-22 17:18).
 //
-// Both halves are still local prototypes. The next milestone (apclientpp) makes
-// the WRITE desired-set come from the server's received-items list, and the READ
-// detections turn into network LocationChecks. See TODO(ap) markers.
+//   DEBUG poll: a per-frame scan that logs *unmapped* AdvProgress bit changes
+//   (story/hint flags) for visibility. It no longer drives location checks --
+//   the events above do -- so it cannot double-count or miss real checks.
+//
+// TODO(ap): apclientpp -- feed the WRITE desired-set from received items, and
+// send the LOCATION EVENTS as network LocationChecks + the goal as StatusUpdate.
 // ============================================================================
 
 #define AP_SPIKE_LOG "D:\\pythonProjects\\ctr-archipelago\\reference" \
@@ -30,66 +33,19 @@
 #define AP_READ_LOG  "D:\\pythonProjects\\ctr-archipelago\\reference" \
                      "\\ctr-native\\build-ap\\ap-read.log"
 
-// ---------------------------------------------------------------------------
-// WRITE path (spike): one fixed desired item, the Crash Cove trophy.
-//   advProgress.rewards[0] bit 0x200 == global bitIndex 9.
-// TODO(ap): replace the hardcoded desired item with the apclientpp item list.
-// ---------------------------------------------------------------------------
-
-static void AP_LogReconcile(struct GameTracker *gGT, struct AdvProgress *adv)
+static void AP_AppendLog(const char *msg)
 {
-	fprintf(stderr,
-	        "[AP SPIKE] reconcile applied Crash Cove trophy; "
-	        "rewards[0]=0x%08x, numTrophies=%d\n",
-	        adv->rewards[0], gGT->currAdvProfile.numTrophies);
-
-	// Append (not overwrite) so repeated re-applies are visible -- each line
-	// after the first is the self-healing reconcile recovering from a wipe.
-	FILE *ap_log = fopen(AP_SPIKE_LOG, "a");
-	if (ap_log)
+	fputs(msg, stderr);
+	FILE *f = fopen(AP_READ_LOG, "a");
+	if (f)
 	{
-		fprintf(ap_log,
-		        "[AP SPIKE] reconcile applied Crash Cove trophy; "
-		        "rewards[0]=0x%08x, numTrophies=%d\n",
-		        adv->rewards[0], gGT->currAdvProfile.numTrophies);
-		fclose(ap_log);
+		fputs(msg, f);
+		fclose(f);
 	}
 }
 
-// ---------------------------------------------------------------------------
-// READ path: detect newly-set AdvProgress bits (location checks).
-//
-// `ap_loc_snapshot` caches the last-seen rewards words. On the first armed tick
-// it is seeded from the current state (AFTER the write reconcile runs, so the
-// spike's forced Crash Cove bit is part of the baseline, not reported). On every
-// later tick, a 0->1 transition in any of the 6 reward words is a location the
-// player just checked. Each globalBit (= word*32 + bit) is resolved to its AP
-// location code via the generated AP_LOCATION_TABLE (ap_locations.h); the two
-// Oxide goal bits are reported separately. The 16 track trophies also get a
-// friendly name for easy manual verification.
-//
-// `ap_read_armed` is cleared whenever we leave Adventure Mode or a load is in
-// progress, so re-entering / loading a save re-seeds the baseline from the
-// loaded state instead of reporting every earned bit as a fresh check.
-// ---------------------------------------------------------------------------
-
-static u32 ap_loc_snapshot[6];
-static int ap_read_armed = 0;
-
-// Bits the WRITE reconcile set from received items. On native, item-grants and
-// location-checks share the same AdvProgress bits (there is no rando ROM patch to
-// redirect progression gates onto separate SaveSlot-4 counters as Icebound's
-// BizHawk client relies on -- vanilla gates count these bits via
-// GAMEPROG_AdvPercent). So a genuine location check is a bit that went 0->1 AND is
-// NOT in this mask. Limitation: if an item pre-sets a track's bit, a later real
-// win of that track produces no 0->1 and is missed (the "missed-check" case); that
-// can only be fully solved by event-based detection (hook the race-win/reward
-// grant), an open architecture decision -- see board 2026-06-22 15:50 thread.
-static u32 ap_client_set_mask[6] = {0};
-
-// Friendly names for the 16 track trophies (AdvProgress word 0, bits 6..21).
-// Everything else logs generically; the full location map is the apworld ID
-// reconciliation (a later step), not needed for the read-path prototype.
+// Friendly names for the 16 track trophies (AdvProgress word 0, bits 6..21),
+// for easy manual verification in the log. Everything else resolves by code.
 static const char *AP_TrophyName(int globalBit)
 {
 	switch (globalBit)
@@ -127,71 +83,146 @@ static long AP_LookupLocationCode(int globalBit)
 	return -1;
 }
 
-static void AP_LogLocationCheck(int word, int bit, int globalBit, u32 wordValue)
+// ---------------------------------------------------------------------------
+// LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
+// grant sites. Each checked location is logged now and (TODO) queued for the
+// network LocationChecks send once apclientpp lands.
+// ---------------------------------------------------------------------------
+
+static int ap_goal_reached = 0;
+static int ap_goal_logged_first = 0;
+static int ap_goal_logged_second = 0;
+
+// Per-session dedup so a grant site that re-enters (e.g. an end-event drawn
+// every frame, or a reward path without its own CHECK_ADV_BIT guard) only
+// produces one check. 192 bits = the 6 AdvProgress reward words.
+static u32 ap_notified_mask[6] = {0};
+
+void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
-	const char *name = AP_TrophyName(globalBit); // friendly hint for the 16 trophies
-	long code = AP_LookupLocationCode(globalBit);
 
-	if (globalBit == AP_GOAL_BIT_OXIDE_FIRST || globalBit == AP_GOAL_BIT_OXIDE_SECOND)
+	if (rewardBit < 0 || rewardBit >= 192)
+		return;
+	int w = rewardBit >> 5, b = rewardBit & 31;
+	if (ap_notified_mask[w] & (1u << b))
+		return; // already notified this session
+	ap_notified_mask[w] |= (1u << b);
+
+	long code = AP_LookupLocationCode(rewardBit);
+	const char *name = AP_TrophyName(rewardBit);
+
+	if (code >= 0)
 	{
 		snprintf(msg, sizeof msg,
-		         "[AP READ] GOAL bit set: globalBit %d (Oxide %s win)\n",
-		         globalBit,
-		         globalBit == AP_GOAL_BIT_OXIDE_FIRST ? "first" : "second");
-		// TODO(ap): send goal completion to the server.
-	}
-	else if (code >= 0)
-	{
-		snprintf(msg, sizeof msg,
-		         "[AP READ] location checked: AP code %ld (globalBit %d)%s%s\n",
-		         code, globalBit, name ? " -- " : "", name ? name : "");
-		// TODO(ap): send LocationChecks([code]) to the server.
+		         "[AP CHECK] location: AP code %ld (bit %d)%s%s\n",
+		         code, rewardBit, name ? " -- " : "", name ? name : "");
+		// TODO(ap): queue `code` for the network LocationChecks send.
 	}
 	else
 	{
+		// A reward bit the player earned that isn't a checkable AP location
+		// (e.g. a non-location story/unlock reward routed through a grant site).
 		snprintf(msg, sizeof msg,
-		         "[AP READ] unmapped bit set: rewards[%d] bit %d "
-		         "(globalBit %d, mask 0x%08x)\n",
-		         word, bit, globalBit, (u32)(1u << bit));
+		         "[AP CHECK] non-location reward granted: bit %d (no AP code)\n",
+		         rewardBit);
 	}
+	AP_AppendLog(msg);
+}
 
-	fputs(msg, stderr);
-	FILE *ap_log = fopen(AP_READ_LOG, "a");
-	if (ap_log)
+void AP_NotifyGoal(int oxideSecond)
+{
+	char msg[128];
+	// Idempotent: grant sites may re-enter while the end-event is on screen.
+	if (oxideSecond)
 	{
-		fputs(msg, ap_log);
-		fclose(ap_log);
+		if (ap_goal_logged_second)
+			return;
+		ap_goal_logged_second = 1;
+	}
+	else
+	{
+		if (ap_goal_logged_first)
+			return;
+		ap_goal_logged_first = 1;
+	}
+	ap_goal_reached = 1;
+	snprintf(msg, sizeof msg,
+	         "[AP GOAL] Oxide beaten (%s win) -- goal reached\n",
+	         oxideSecond ? "second/final" : "first");
+	AP_AppendLog(msg);
+	// TODO(ap): send StatusUpdate(CLIENT_GOAL) to the server.
+}
+
+// ---------------------------------------------------------------------------
+// WRITE path (spike): one fixed desired item, the Crash Cove trophy.
+//   advProgress.rewards[0] bit 0x200 == global bitIndex 9.
+// TODO(ap): replace the hardcoded desired item with the apclientpp item list.
+// ---------------------------------------------------------------------------
+
+static void AP_LogReconcile(struct GameTracker *gGT, struct AdvProgress *adv)
+{
+	char msg[160];
+	snprintf(msg, sizeof msg,
+	         "[AP SPIKE] reconcile applied Crash Cove trophy; "
+	         "rewards[0]=0x%08x, numTrophies=%d\n",
+	         adv->rewards[0], gGT->currAdvProfile.numTrophies);
+	fputs(msg, stderr);
+	FILE *f = fopen(AP_SPIKE_LOG, "a");
+	if (f)
+	{
+		fputs(msg, f);
+		fclose(f);
 	}
 }
 
-static void AP_PollLocations(struct AdvProgress *adv)
+// ---------------------------------------------------------------------------
+// DEBUG poll: log *unmapped* AdvProgress bit changes (non-location state like
+// story/hint flags) for visibility. Mapped locations and goal bits are owned by
+// the LOCATION EVENTS above and intentionally skipped here, so there is no
+// double-counting. Re-baselines on entering adventure / after loads.
+// ---------------------------------------------------------------------------
+
+static u32 ap_dbg_snapshot[6];
+static int ap_dbg_armed = 0;
+
+static void AP_PollDebug(struct AdvProgress *adv)
 {
 	int w, b;
 
-	if (!ap_read_armed)
+	if (!ap_dbg_armed)
 	{
-		// Seed the baseline from current state; do not report on this tick.
 		for (w = 0; w < 6; w++)
-			ap_loc_snapshot[w] = adv->rewards[w];
-		ap_read_armed = 1;
+			ap_dbg_snapshot[w] = adv->rewards[w];
+		ap_dbg_armed = 1;
 		return;
 	}
 
 	for (w = 0; w < 6; w++)
 	{
 		u32 cur = adv->rewards[w];
-		u32 newly = cur & ~ap_loc_snapshot[w];       // bits that went 0 -> 1
-		u32 player = newly & ~ap_client_set_mask[w]; // drop item/client-set bits
-		if (player)
+		u32 newly = cur & ~ap_dbg_snapshot[w]; // bits that went 0 -> 1
+		if (newly)
 		{
 			for (b = 0; b < 32; b++)
 			{
-				if (player & (1u << b))
-					AP_LogLocationCheck(w, b, (w * 32) + b, cur);
+				if (!(newly & (1u << b)))
+					continue;
+				int globalBit = (w * 32) + b;
+				// Skip mapped locations + goal bits -- events own them.
+				if (AP_LookupLocationCode(globalBit) >= 0 ||
+				    globalBit == AP_GOAL_BIT_OXIDE_FIRST ||
+				    globalBit == AP_GOAL_BIT_OXIDE_SECOND)
+					continue;
+				char msg[160];
+				snprintf(msg, sizeof msg,
+				         "[AP DBG] unmapped bit set: rewards[%d] bit %d "
+				         "(globalBit %d, mask 0x%08x)\n",
+				         w, b, globalBit, (u32)(1u << b));
+				AP_AppendLog(msg);
 			}
 		}
-		ap_loc_snapshot[w] = cur;
+		ap_dbg_snapshot[w] = cur;
 	}
 }
 
@@ -200,13 +231,11 @@ static void AP_PollLocations(struct AdvProgress *adv)
 void AP_OnFrame(struct GameTracker *gGT)
 {
 	// Only act when it is safe: in adventure mode and not mid-load (the load
-	// sequence copies memcard->advProgress over sdata->advProgress and recounts,
-	// so writing during it would be clobbered and reading would report the whole
-	// loaded save as fresh checks). Leaving this state disarms the read baseline.
+	// sequence copies memcard->advProgress over sdata->advProgress and recounts).
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0 ||
 	    sdata->Loading.stage != LOAD_IDLE)
 	{
-		ap_read_armed = 0;
+		ap_dbg_armed = 0;
 		return;
 	}
 
@@ -218,9 +247,6 @@ void AP_OnFrame(struct GameTracker *gGT)
 	struct AdvProgress *adv = &sdata->advProgress;
 
 	// --- WRITE path (spike): reconcile desired items into game state. ---
-	// Mark the desired item's bit as client-set every tick (idempotent) so the
-	// read path below never reports it as a player location check.
-	ap_client_set_mask[0] |= (1u << 9); // Crash Cove trophy (bit 9)
 	if (CHECK_ADV_BIT(adv->rewards, 9) == 0)
 	{
 		UNLOCK_ADV_BIT(adv->rewards, 9);
@@ -228,9 +254,8 @@ void AP_OnFrame(struct GameTracker *gGT)
 		AP_LogReconcile(gGT, adv);
 	}
 
-	// --- READ path: detect location checks (runs after the write so the spike's
-	//     forced bit is baselined, not reported as a player check). ---
-	AP_PollLocations(adv);
+	// --- DEBUG poll: log unmapped state changes (locations come from events). ---
+	AP_PollDebug(adv);
 }
 
 #endif // CTR_AP

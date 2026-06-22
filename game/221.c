@@ -234,6 +234,9 @@ void CC_EndEvent_DrawMenu()
 	sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
 	sdata->Loading.OnBegin.RemBitsConfig0 |= CRYSTAL_CHALLENGE;
 	CC_EndEvent_UnlockRewardBit(adv, tokenRewardBit);
+#ifdef CTR_AP
+	AP_NotifyAdvReward(tokenRewardBit); // AP: CTR token challenge location check
+#endif
 	MainRaceTrack_RequestLoad(gGT->prevLEV); // NOTE(aalhendi): Adv hub.
 
 	return;

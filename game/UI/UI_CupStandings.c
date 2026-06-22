@@ -580,6 +580,9 @@ void UI_CupStandings_InputAndDraw(void)
 						if (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0)
 						{
 							UNLOCK_ADV_BIT(rewardsSet, bitIndex);
+#ifdef CTR_AP
+							AP_NotifyAdvReward(bitIndex); // AP: gem cup location check
+#endif
 
 							// unlock Roo, Papu, Joe, Pinstripe, FCrash
 							bitIndex = GAME_UNLOCK_BIT_BOSS_CHARACTER_FIRST + i;
