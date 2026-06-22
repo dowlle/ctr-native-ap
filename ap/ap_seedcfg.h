@@ -66,6 +66,15 @@ int ctr_cfg_active(void);
 // input unchanged) when inactive or out of range -- safe to call unconditionally.
 int ctr_cfg_warp_dest(int physPadLevelID);
 
+// Inverse of ctr_cfg_warp_dest: given the destination trackID a pad currently
+// LOADS (warppadObj->levelID after the LInB remap), return the PHYSICAL pad
+// LevelID. Identity (returns the input unchanged) when inactive, out of range,
+// or when no pad maps to that destination. Used by AH_WarpPad_ThTick's load gate
+// so the per-pad unlock requirement (keyed by PHYSICAL pad) is checked against
+// the physical pad and not the remapped destination. warp_pad_map is a
+// permutation within each shuffle group, so the inverse is unique.
+int ctr_cfg_warp_phys(int destTrackLevelID);
+
 // Is a trophy-track warp pad's LOAD gate satisfied? When active and the pad has a
 // per-seed requirement (type != 0), compares owned >= count for that requirement
 // (colour-aware for tokens/gems). Otherwise falls back to the Phase-1 trophy rule

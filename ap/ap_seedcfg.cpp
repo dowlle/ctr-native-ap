@@ -202,3 +202,18 @@ extern "C" int ctr_cfg_warp_dest(int physPadLevelID)
 		return physPadLevelID;
 	return ctr_cfg.warp_pad_map[physPadLevelID];
 }
+
+extern "C" int ctr_cfg_warp_phys(int destTrackLevelID)
+{
+	if (ctr_cfg.schema_version < 1 || destTrackLevelID < 0 ||
+	    destTrackLevelID >= CTR_CFG_PAD_COUNT)
+		return destTrackLevelID;
+	// Linear scan for the physical pad whose destination is destTrackLevelID.
+	// warp_pad_map is a permutation within each shuffle group (identity for
+	// non-shuffled pads), so at most one physical pad maps here. If none does
+	// (out-of-group cup/boss IDs that aren't shuffled), return identity.
+	for (int phys = 0; phys < CTR_CFG_PAD_COUNT; phys++)
+		if (ctr_cfg.warp_pad_map[phys] == destTrackLevelID)
+			return phys;
+	return destTrackLevelID;
+}

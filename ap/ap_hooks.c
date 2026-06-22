@@ -43,6 +43,13 @@ static void AP_AppendLog(const char *msg)
 	}
 }
 
+// Non-static shim so game-side gate files can emit AP log lines (AP_AppendLog is
+// static to this module). Declared in ap_hooks.h.
+void AP_LogLine(const char *msg)
+{
+	AP_AppendLog(msg);
+}
+
 // Friendly names for the 16 track trophies (AdvProgress word 0, bits 6..21),
 // for easy manual verification in the log. Everything else resolves by code.
 static const char *AP_TrophyName(int globalBit)
