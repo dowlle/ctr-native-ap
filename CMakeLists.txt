@@ -7,6 +7,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 set(CTR_NATIVE_VERSION "0.1.0-beta.6.1")
 
+# Archipelago integration: OFF = clean vanilla build; ON = AP mod build.
+# Build clean:  cmake -S . -B build
+# Build mod:    cmake -S . -B build-ap -DCTR_AP=ON   (outputs ctr_native_ap.exe)
+option(CTR_AP "Build with Archipelago integration" OFF)
+
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "-m32 ${CMAKE_EXE_LINKER_FLAGS}")
@@ -89,6 +94,13 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE_VERSION=\"${CTR_NATIVE_VERSION}\"
     CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
 )
+
+# Archipelago mod build: enable the AP code path and emit a distinct binary
+# so the clean and mod exes never clobber each other.
+if(CTR_AP)
+    target_compile_definitions(ctr_native PRIVATE CTR_AP)
+    set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
+endif()
 target_compile_options(ctr_native PRIVATE -O2)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(ctr_native PRIVATE -Wenum-conversion -Wenum-compare -Wswitch-enum -Wformat -Wparentheses)

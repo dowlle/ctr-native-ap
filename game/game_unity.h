@@ -3,6 +3,11 @@
 
 #include <common.h>
 
+// Archipelago hook declarations (CTR_AP build only; see ap/ap_hooks.h)
+#ifdef CTR_AP
+#include "../ap/ap_hooks.h"
+#endif
+
 #include "226/R226.c"
 #include "227/R227.c"
 #include "228/R228.c"
@@ -324,5 +329,10 @@
 #include "233/CS_Garage.c"
 #include "233/R233.c"
 #include "233/D233.c"
+
+// Archipelago module definition (CTR_AP build only)
+#ifdef CTR_AP
+#include "../ap/ap_hooks.c"
+#endif
 
 #endif

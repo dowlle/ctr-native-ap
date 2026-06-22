@@ -318,6 +318,11 @@ u32 main(void)
 			// frame counter, not represented in common.h currently
 			sdata->frameCounter++;
 
+			// Archipelago per-frame hook (CTR_AP build only; see ap/ap_hooks.c)
+#ifdef CTR_AP
+			AP_OnFrame(gGT);
+#endif
+
 			// Process all gamepad input
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 			{
