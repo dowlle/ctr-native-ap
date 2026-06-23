@@ -63,6 +63,12 @@ void AP_LogLine(const char *msg);
 // caller keeps the vanilla model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
 int AP_WarpPadRewardModel(int globalBit);
 
+// Reward-glow relic TINT. Vanilla renders every relic tier the same blue, so a
+// glow advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
+// tier-specific packed colorRGBA for an OWN relic scouted at this location, or 0
+// to keep the caller's default colour (non-relic / foreign / unscouted -> 0).
+int AP_WarpPadRewardTint(int globalBit);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

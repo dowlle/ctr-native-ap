@@ -132,6 +132,37 @@ int AP_WarpPadRewardModel(int globalBit)
 	}
 }
 
+// Tier-specific relic tint for the reward glow (see header). colorRGBA is packed
+// as (R<<0x14)|(G<<0xc)|(B<<0x4); 0x020a5ff0 is the vanilla relic blue. Returns 0
+// to leave the caller's default colour untouched.
+int AP_WarpPadRewardTint(int globalBit)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return 0;
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return 0;
+	if (player != ap_net_self_slot())
+		return 0; // foreign item keeps its marker colour
+
+	switch (AP_ItemCategory(item))
+	{
+	case AP_CAT_SAPPHIRE:
+		return 0x020a5ff0; // blue (vanilla relic colour)
+	case AP_CAT_GOLD:
+		return 0x0ffc6290; // gold
+	case AP_CAT_PLATINUM:
+		return 0x0ebebf50; // platinum / pale silver
+	default:
+		return 0; // not an own relic -> caller default
+	}
+}
+
 // ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.

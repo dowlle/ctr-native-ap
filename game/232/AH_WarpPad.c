@@ -1266,6 +1266,16 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					if (rewardModelID == STATIC_RELIC)
 					{
 						newInst->colorRGBA = 0x20a5ff0;
+#ifdef CTR_AP
+						{
+							// Tint the glow by the scouted relic's TIER (sapphire/
+							// gold/platinum) instead of always-blue. Keyed by the
+							// same DEST bit used to resolve the model just above.
+							int tint = AP_WarpPadRewardTint(warppadObj->levelID + kSlotFirstBit[i]);
+							if (tint)
+								newInst->colorRGBA = tint;
+						}
+#endif
 						newInst->flags |= USE_SPECULAR_LIGHT;
 						newInst->scale.x = 0x1800;
 						newInst->scale.y = 0x1800;
@@ -1322,6 +1332,15 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 				// relic blue
 				newInst->colorRGBA = 0x20a5ff0;
+#ifdef CTR_AP
+				{
+					// Tint the relic-time-trial glow by the scouted relic TIER
+					// (sapphire/gold/platinum) rather than always-blue.
+					int tint = AP_WarpPadRewardTint(warppadObj->levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC);
+					if (tint)
+						newInst->colorRGBA = tint;
+				}
+#endif
 
 				newInst->flags |= USE_SPECULAR_LIGHT;
 
