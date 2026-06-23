@@ -27,6 +27,10 @@ enum
 };
 typedef s16 AudioState;
 
+CTR_STATIC_ASSERT(sizeof(AudioState) == 0x2);
+CTR_STATIC_ASSERT(AUDIO_NONE == 0);
+CTR_STATIC_ASSERT(AUDIO_RACE_END == 16);
+
 // Global song indices into howl_songOffsets[].
 enum HowlSong
 {

@@ -70,6 +70,10 @@ enum
 };
 typedef s16 MainMenuState;
 
+CTR_STATIC_ASSERT(sizeof(MainMenuState) == 0x2);
+CTR_STATIC_ASSERT(MAIN_MENU_TITLE == 0);
+CTR_STATIC_ASSERT(MAIN_MENU_SCRAPBOOK == 5);
+
 enum GameModeEnd
 {
 	PLAYER_GHOST_BEAT = 1,

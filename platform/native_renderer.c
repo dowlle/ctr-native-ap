@@ -1794,19 +1794,7 @@ void NativeRenderer_SetBlendMode(BlendMode blendMode)
 	if (s_previousBlendMode == blendMode)
 		return;
 
-	if (blendMode == BM_NONE)
-	{
-		if (s_previousBlendMode != BM_NONE)
-		{
-			glBlendColor(1.f, 1.f, 1.f, 1.f);
-			glDisable(GL_BLEND);
-		}
-
-		s_previousBlendMode = blendMode;
-		NativeRenderer_EnableDepth(1);
-		return;
-	}
-	else
+	if (blendMode != BM_NONE)
 	{
 		if (s_previousBlendMode == BM_NONE)
 		{
@@ -1814,22 +1802,35 @@ void NativeRenderer_SetBlendMode(BlendMode blendMode)
 			glEnable(GL_BLEND);
 		}
 
-		s_previousBlendMode = blendMode;
 		NativeRenderer_EnableDepth(0);
 	}
 
-	glBlendEquationSeparate(blendMode == BM_SUBTRACT ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD, GL_FUNC_ADD);
 	switch (blendMode)
 	{
+	case BM_NONE:
+		if (s_previousBlendMode != BM_NONE)
+		{
+			glBlendColor(1.f, 1.f, 1.f, 1.f);
+			glDisable(GL_BLEND);
+		}
+
+		NativeRenderer_EnableDepth(1);
+		break;
 	case BM_AVERAGE:
+		glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 		// NOTE(aalhendi): keep RGB blend weight constant so alpha can carry the PS1 mask bit.
 		glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA, GL_ONE, GL_ZERO);
 		break;
 	case BM_ADD:
+		glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+		glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
+		break;
 	case BM_SUBTRACT:
+		glBlendEquationSeparate(GL_FUNC_REVERSE_SUBTRACT, GL_FUNC_ADD);
 		glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
 		break;
 	case BM_ADD_QUATER_SOURCE:
+		glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 		glBlendFuncSeparate(GL_CONSTANT_COLOR, GL_ONE, GL_ONE, GL_ZERO);
 		break;
 	}

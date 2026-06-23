@@ -74,6 +74,9 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
 )
 target_compile_options(ctr_native PRIVATE -O2)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(ctr_native PRIVATE -Wenum-conversion -Wenum-compare -Wswitch-enum)
+endif()
 target_link_libraries(ctr_native SDL3::SDL3)
 target_link_options(ctr_native PRIVATE -static-libgcc)
 if(WIN32)

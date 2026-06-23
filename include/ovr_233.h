@@ -9,6 +9,10 @@ enum
 };
 typedef s32 CutscenePhase;
 
+CTR_STATIC_ASSERT(sizeof(CutscenePhase) == 0x4);
+CTR_STATIC_ASSERT(CS_CAMERA_PAN == 0);
+CTR_STATIC_ASSERT(CS_WAIT_END == 5);
+
 struct CsThreadInitData
 {
 	SVec3Slot podiumPos;

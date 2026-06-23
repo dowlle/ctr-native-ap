@@ -10,6 +10,10 @@ enum
 };
 typedef u8 GhostOpcode;
 
+CTR_STATIC_ASSERT(sizeof(GhostOpcode) == 0x1);
+CTR_STATIC_ASSERT(GHOST_OP_POSITION == 0x80);
+CTR_STATIC_ASSERT(GHOST_OP_IDLE == 0x84);
+
 static const u8 GHOST_SIZE_POSITION = 11;
 static const u8 GHOST_SIZE_ANIMATION = 3;
 static const u8 GHOST_SIZE_BOOST = 6;

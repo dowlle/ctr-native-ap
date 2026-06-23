@@ -8,6 +8,10 @@ enum
 };
 typedef s32 ScrapbookState;
 
+CTR_STATIC_ASSERT(sizeof(ScrapbookState) == 0x4);
+CTR_STATIC_ASSERT(SCRAP_INIT == 0);
+CTR_STATIC_ASSERT(SCRAP_EXIT == 4);
+
 enum TransitionState
 {
 	ENTERING_MENU,

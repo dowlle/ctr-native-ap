@@ -50,6 +50,8 @@ enum
 };
 typedef u32 ThreadFlags;
 
+CTR_STATIC_ASSERT(sizeof(ThreadFlags) == 0x4);
+
 enum
 {
 	THREAD_DRIVER_HIT_RADIUS = 0x40,

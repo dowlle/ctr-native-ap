@@ -32,19 +32,9 @@ enum Font
 	FONT_NUM = 4,
 };
 
-// used in DecalFont_DrawLineStrlen
-enum FontFlags
-{
-	// end text at X position
-	JUSTIFY_RIGHT = 0x4000,
-
-	// center text
-	JUSTIFY_CENTER = 0x8000
-};
-
-// text color gradients corresponding to ptrColors
-// used in DecalFont_DrawLineStrlen
-enum Colors
+// DecalFont_DrawLineStrlen receives one packed style word: low bits select the
+// ptrColors slot, high bits select alignment/style.
+enum DecalFontStyle
 {
 	// normal UI text colors
 	ORANGE,
@@ -106,8 +96,23 @@ enum Colors
 #endif
 
 	// total amount of enum entries
-	NUM_COLORS
+	NUM_COLORS,
+
+	// TODO(alhendi): nicer way of doing this or...?
+	// end text at X position
+	JUSTIFY_RIGHT = 0x4000,
+
+	// center text
+	JUSTIFY_CENTER = 0x8000
 };
+
+typedef u16 DecalFontStyle;
+
+CTR_STATIC_ASSERT(sizeof(DecalFontStyle) == 0x2);
+CTR_STATIC_ASSERT(ORANGE == 0);
+CTR_STATIC_ASSERT(NUM_COLORS <= 0xfff);
+CTR_STATIC_ASSERT(JUSTIFY_RIGHT == 0x4000);
+CTR_STATIC_ASSERT(JUSTIFY_CENTER == 0x8000);
 
 struct TextureLayout
 {
