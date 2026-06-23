@@ -168,8 +168,67 @@ int AP_WarpPadRewardTint(int globalBit)
 // grant sites; logs the check and sends it to the server.
 // ---------------------------------------------------------------------------
 
-static int ap_goal_logged_first = 0;
-static int ap_goal_logged_second = 0;
+// Goal completion state. The Oxide beats are game EVENTS (set by AP_NotifyGoal);
+// item-based goals read received counts. ap_goal_sent makes the send idempotent.
+static int ap_oxide_first_beaten = 0;
+static int ap_oxide_final_beaten = 0;
+static int ap_goal_sent = 0;
+
+static int AP_AllFiveGems(void)
+{
+	int c;
+	for (c = 0; c < 5; c++)
+		if (AP_GateCountGemColour(c) < 1)
+			return 0;
+	return 1;
+}
+
+// Send StatusUpdate(GOAL) once when the per-seed goal (ctr_cfg.goal) is met.
+// Mirrors the apworld completion_condition per goal:
+//   0 oxide             -> beat N. Oxide (first challenge)
+//   1 oxidefinal        -> beat N. Oxide (final challenge)
+//   2 everythingplusone -> beat N. Oxide (final) + 18 Gold relics + all 5 gems
+//   3 allbosses         -> 16 trophies received
+//   4 allgemcups        -> all 5 gems received (i.e. won every gem cup)
+// Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
+// first Oxide beat is the goal.
+void AP_EvaluateGoal(void)
+{
+	int done = 0;
+
+	if (ap_goal_sent)
+		return;
+
+	if (!ctr_cfg_active())
+	{
+		done = ap_oxide_first_beaten;
+	}
+	else
+	{
+		switch (ctr_cfg.goal)
+		{
+		case 0: done = ap_oxide_first_beaten; break;
+		case 1: done = ap_oxide_final_beaten; break;
+		case 2: done = ap_oxide_final_beaten
+		               && AP_GateCount(AP_IDX_GOLD) >= 18
+		               && AP_AllFiveGems(); break;
+		case 3: done = AP_GateCount(AP_IDX_TROPHY) >= 16; break;
+		case 4: done = AP_AllFiveGems(); break;
+		default: done = ap_oxide_first_beaten; break;
+		}
+	}
+
+	if (done)
+	{
+		char msg[96];
+		ap_goal_sent = 1;
+		snprintf(msg, sizeof msg,
+		         "[AP GOAL] goal %d complete -- StatusUpdate(GOAL)\n",
+		         ctr_cfg_active() ? ctr_cfg.goal : -1);
+		AP_AppendLog(msg);
+		ap_net_send_goal();
+	}
+}
 
 // Per-session dedup so a grant site that re-enters (an end-event drawn every
 // frame, or a reward path without its own CHECK_ADV_BIT guard) only produces one
@@ -210,25 +269,15 @@ void AP_NotifyAdvReward(int rewardBit)
 
 void AP_NotifyGoal(int oxideSecond)
 {
-	char msg[128];
-	// Idempotent: grant sites may re-enter while the end-event is on screen.
+	// Record the Oxide beat as a game EVENT. Whether it completes the seed
+	// depends on ctr_cfg.goal -- for non-Oxide goals (all-bosses, all-gem-cups)
+	// beating Oxide is NOT the win -- so defer the StatusUpdate(GOAL) decision to
+	// AP_EvaluateGoal (which also fires per-frame for the item-based goals).
 	if (oxideSecond)
-	{
-		if (ap_goal_logged_second)
-			return;
-		ap_goal_logged_second = 1;
-	}
+		ap_oxide_final_beaten = 1;
 	else
-	{
-		if (ap_goal_logged_first)
-			return;
-		ap_goal_logged_first = 1;
-	}
-	snprintf(msg, sizeof msg,
-	         "[AP GOAL] Oxide beaten (%s win) -- goal reached\n",
-	         oxideSecond ? "second/final" : "first");
-	AP_AppendLog(msg);
-	ap_net_send_goal(); // StatusUpdate(GOAL)
+		ap_oxide_first_beaten = 1;
+	AP_EvaluateGoal();
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +573,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 		return;
 
 	AP_ApplyItems(&sdata->advProgress); // grant received items into game state
+	AP_EvaluateGoal(); // item-based goals (all-bosses / all-gem-cups / 101%) fire here
 	AP_PollDebug(&sdata->advProgress);
 }
 

@@ -22,8 +22,14 @@ void AP_OnFrame(struct GameTracker *gGT);
 // AdvProgress bit index (= word*32 + bit); resolved to an AP location code.
 void AP_NotifyAdvReward(int rewardBit);
 
-// Called when the player beats Oxide (the goal). oxideSecond != 0 = final win.
+// Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
+// event; whether it COMPLETES the seed depends on ctr_cfg.goal (see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
+
+// Evaluate the per-seed goal (ctr_cfg.goal) against received items + game events
+// and send StatusUpdate(GOAL) once when met. Call every adventure frame (item-
+// based goals: all-bosses / all-gem-cups / 101%) and on the Oxide beat.
+void AP_EvaluateGoal(void);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress
