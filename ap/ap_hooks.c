@@ -246,6 +246,47 @@ int AP_WarpPadRewardTint(int globalBit)
 	}
 }
 
+// Enumerate the still-UNCOLLECTED (unchecked) AP reward locations of race track
+// `destLevelID` (0..15), writing their global AdvProgress bits into `outBits`
+// (caller array, capacity `cap`) in fixed tier order -- Trophy +0x06, Sapphire
+// +0x16, Gold +0x28, Platinum +0x3a, CTR Token +0x4c -- and returning the count
+// written (0..5). A location counts as collected purely by AP CHECKED-STATE
+// (AP_LocationCheckedByBit / ap_net_location_checked), NEVER by CHECK_ADV_BIT or
+// modelIndex: AP_ApplyItems clears local-win bits every frame, so only the
+// server's checked set is authoritative. Returns 0 for a non-race destination or
+// when every tier is checked (caller then shows nothing). This is the sole input
+// to the warp-pad glow's "which rewards to advertise + cycle" decision.
+int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
+{
+	static const int kTierBit[5] = {
+	    ADV_REWARD_FIRST_TROPHY,
+	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+	    ADV_REWARD_FIRST_GOLD_RELIC,
+	    ADV_REWARD_FIRST_PLATINUM_RELIC,
+	    ADV_REWARD_FIRST_CTR_TOKEN};
+	int count = 0;
+	int i;
+
+	if (outBits == 0 || cap <= 0)
+		return 0;
+	if (destLevelID < 0 || destLevelID >= 16)
+		return 0; // only race tracks 0..15 carry this 5-location pool
+
+	for (i = 0; i < 5 && count < cap; i++)
+	{
+		int bit = destLevelID + kTierBit[i];
+		// AP_LookupLocationCode == -1 (location not in this seed's table, e.g. a
+		// tier the apworld didn't place) is treated as "not advertisable" -> skip,
+		// so we never show a glow for a non-existent location.
+		if (AP_LookupLocationCode(bit) < 0)
+			continue;
+		if (!AP_LocationCheckedByBit(bit))
+			outBits[count++] = bit;
+	}
+
+	return count;
+}
+
 // ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.

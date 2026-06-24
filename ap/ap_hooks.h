@@ -82,6 +82,19 @@ int AP_WarpPadRewardTint(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 
+// ── Reward-glow uncollected enumeration ──
+// Fill `outBits` (capacity `cap`) with the still-UNCOLLECTED (unchecked) AP reward
+// locations of race track `destLevelID` (0..15), in fixed tier order: Trophy
+// +0x06, Sapphire +0x16, Gold +0x28, Platinum +0x3a, CTR Token +0x4c. Returns the
+// count written (0..5). "Collected" is decided ONLY by AP checked-state (the
+// server's set), never by CHECK_ADV_BIT / modelIndex (which AP_ApplyItems clears
+// every frame). Tiers absent from this seed's location table are skipped. Returns
+// 0 for a non-race destination or when all tiers are checked. The warp-pad glow
+// (AH_WarpPad_LInB / _ThTick, #ifdef CTR_AP) drives its model/tint/visibility and
+// the multi-reward cycle entirely off this list -- fully decoupled from the
+// vanilla pad-state machine.
+int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
+
 // ── Map overlay (debug/QoL) ──
 // AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
 //   1  = at least one of that race track's 5 reward locations (trophy/sapphire/
