@@ -82,6 +82,14 @@ int AP_WarpPadRewardTint(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 
+// Which relic TIER to advertise in the warp-pad relic prize on frame `timer`.
+// Cycles every 2s (0x3C frames) through only the still-UNCHECKED Sapphire/Gold/
+// Platinum Time-Trial locations of race track `destLevelID`, so the player can
+// see what each uncollected tier gives. Returns that tier's global bit (pass it
+// to AP_WarpPadRewardModel / AP_WarpPadRewardTint), or -1 if all three tiers are
+// already checked or `destLevelID` is not a race track (0..15).
+int AP_RelicTierCycleBit(int destLevelID, unsigned timer);
+
 // ── Map overlay (debug/QoL) ──
 // AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
 //   1  = at least one of that race track's 5 reward locations (trophy/sapphire/

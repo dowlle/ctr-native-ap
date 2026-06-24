@@ -797,6 +797,31 @@ WarpPad_AnimateOpen:
 
 		if (instArr[WPIS_OPEN_PRIZE1 + i] != 0)
 		{
+#ifdef CTR_AP
+			// Advance the relic-prize TIER cycle. The dedicated relic prize lives
+			// at WPIS_OPEN_PRIZE1 (i == 0) in the relic/token open state
+			// (modelIndex 3). Every 2s AP_RelicTierCycleBit picks the next still-
+			// unchecked Sapphire/Gold/Platinum tier; we swap this instance's model
+			// and tint to advertise it (model-pointer reassignment is a native
+			// pattern -- cf. AH_Pause.c, VehTurbo.c). The helper no-ops (returns
+			// the same bit / -1) for non-race tracks, so SlideCol/TurboTrack relics
+			// are untouched. -1 (all tiers checked) leaves the current model as-is.
+			if (i == 0 && t->modelIndex == 3)
+			{
+				int relicCycleBit = AP_RelicTierCycleBit(warppadObj->levelID, gGT->timer);
+				if (relicCycleBit >= 0)
+				{
+					int apModel = AP_WarpPadRewardModel(relicCycleBit);
+					int tint;
+					if (apModel >= 0 && gGT->modelPtr[apModel] != 0)
+						instArr[WPIS_OPEN_PRIZE1]->model = gGT->modelPtr[apModel];
+					tint = AP_WarpPadRewardTint(relicCycleBit);
+					if (tint)
+						instArr[WPIS_OPEN_PRIZE1]->colorRGBA = tint;
+				}
+			}
+#endif
+
 			AH_WarpPad_SpinRewards(instArr[WPIS_OPEN_PRIZE1 + i], warppadObj, i, warppadInst->matrix.t[0], warppadInst->matrix.t[1], warppadInst->matrix.t[2]);
 
 			modelID = instArr[WPIS_OPEN_PRIZE1 + i]->model->id;
@@ -1254,9 +1279,25 @@ void AH_WarpPad_LInB(struct Instance *inst)
 						// actually placed at this slot's location on the pad's
 						// DESTINATION track (the track it loads under shuffle).
 						// slot i -> 0 trophy race, 1 sapphire relic, 2 token.
-						int apModel = AP_WarpPadRewardModel(warppadObj->levelID + kSlotFirstBit[i]);
-						if (apModel >= 0)
-							rewardModelID = apModel;
+						int apBit = warppadObj->levelID + kSlotFirstBit[i];
+
+						// Hide rewards already CHECKED on the server: skip the
+						// prize birth, leaving this slot null. Every consumer of
+						// inst[WPIS_OPEN_PRIZE1+i] null-guards (spin loop ~:798,
+						// SlideCol relink ~:1453, ThDestroy ~:902), so a null slot
+						// simply renders nothing. We still advance rewardAngle so
+						// the remaining prizes keep their original placement.
+						if (AP_LocationCheckedByBit(apBit))
+						{
+							rewardAngle += 0x555;
+							continue;
+						}
+
+						{
+							int apModel = AP_WarpPadRewardModel(apBit);
+							if (apModel >= 0)
+								rewardModelID = apModel;
+						}
 					}
 #endif
 					newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize1", t);
@@ -1329,10 +1370,20 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 				rewardModelID = STATIC_RELIC;
 #ifdef CTR_AP
+				// The relic prize now CYCLES the three Time-Trial tiers
+				// (Sapphire/Gold/Platinum), each a separate AP location, so the
+				// player sees what every uncollected tier gives. AP_RelicTierCycleBit
+				// picks the active tier for this frame (skipping checked tiers);
+				// AH_WarpPad_ThTick re-runs it each frame to advance the cycle.
+				int relicCycleBit = AP_RelicTierCycleBit(warppadObj->levelID, gGT->timer);
+				if (relicCycleBit < 0)
 				{
-					// Reward glow: the AP item at this track's (DEST) sapphire
-					// relic location.
-					int apModel = AP_WarpPadRewardModel(warppadObj->levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC);
+					// All three tiers already checked -> show nothing. Leave
+					// inst[WPIS_OPEN_PRIZE1] null (every consumer null-guards).
+					goto AP_RelicPrizeDone;
+				}
+				{
+					int apModel = AP_WarpPadRewardModel(relicCycleBit);
 					if (apModel >= 0)
 						rewardModelID = apModel;
 				}
@@ -1344,8 +1395,8 @@ void AH_WarpPad_LInB(struct Instance *inst)
 #ifdef CTR_AP
 				{
 					// Tint the relic-time-trial glow by the scouted relic TIER
-					// (sapphire/gold/platinum) rather than always-blue.
-					int tint = AP_WarpPadRewardTint(warppadObj->levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC);
+					// (sapphire/gold/platinum) of the tier being advertised now.
+					int tint = AP_WarpPadRewardTint(relicCycleBit);
 					if (tint)
 						newInst->colorRGBA = tint;
 				}
@@ -1370,11 +1421,23 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				newInst->scale.z = 0x1800;
 
 				warppadObj->inst[WPIS_OPEN_PRIZE1] = newInst;
+
+#ifdef CTR_AP
+			AP_RelicPrizeDone:; // all relic tiers checked -> skipped the birth
+#endif
 			}
 
 			// if token owned
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0)
 				return;
+
+#ifdef CTR_AP
+			// Hide the token reward if its AP location is already CHECKED on the
+			// server: skip the birth (leaving WPIS_OPEN_PRIZE2 null) and return,
+			// mirroring the vanilla "token owned -> return" path just above.
+			if (AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_CTR_TOKEN))
+				return;
+#endif
 
 			tokenGroupID = data.metaDataLEV[levelID].ctrTokenGroupID;
 
