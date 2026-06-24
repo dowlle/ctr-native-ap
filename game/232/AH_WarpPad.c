@@ -849,12 +849,84 @@ WarpPad_AnimateOpen:
 		rewardScale = ((((0x900000 * 2) - dist) * 0x100) / 0x900000);
 	}
 
+#ifdef CTR_AP
+	// ── AP GLOW PASS (checked-state driven, decoupled from modelIndex) ──
+	// Each frame, decide WHICH AP reward each of the 3 prize slots advertises,
+	// purely from the DESTINATION track's still-UNCHECKED locations on the server.
+	// This is the SOLE authority for AP-glow content: it reads neither modelIndex
+	// nor CHECK_ADV_BIT. LInB always births 3 prize slots for a race track, so the
+	// instances exist here regardless of vanilla pad state.
+	//   - n uncollected, n>3 : cycle a 3-wide window every 2s (0x3C frames) so the
+	//                          slots rotate through every uncollected reward.
+	//   - n in 1..3          : slot i shows uncollected[i]; extra slots hidden.
+	//   - n == 0             : all three slots hidden (everything checked).
+	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
+	// loop below, so a hidden slot neither renders nor mis-scales.
+	int apUncBits[5];
+	int apUncN = -1;     // -1 = "not an AP race track" -> leave vanilla glow alone
+	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
+	if (levelID < AH_WP_SLIDE_COLISEUM)
+	{
+		apUncN = AP_WarpPadUncollectedBits(warppadObj->levelID, apUncBits,
+		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
+		if (apUncN > 0)
+		{
+			int base = (apUncN > 3) ? (int)((gGT->timer / 0x3C) * 3) : 0;
+			for (i = 0; i < 3; i++)
+				apSlotBit[i] = (i < apUncN) ? apUncBits[(base + i) % apUncN] : -1;
+		}
+		// apUncN == 0 -> all apSlotBit stay -1 (hide everything).
+	}
+#endif
+
 	for (i = 0; i < 3; i++)
 	{
 		warppadObj->spinRot_Prize.z = 0x155;
 
 		if (instArr[WPIS_OPEN_PRIZE1 + i] != 0)
 		{
+#ifdef CTR_AP
+			// Apply the AP slot decision before spinning/scaling this instance.
+			if (apUncN >= 0)
+			{
+				struct Instance *apPrize = instArr[WPIS_OPEN_PRIZE1 + i];
+				if (apSlotBit[i] < 0)
+				{
+					// Nothing to advertise in this slot -> force-hide and skip the
+					// spin/scale entirely so it neither renders nor mutates.
+					apPrize->flags |= HIDE_MODEL;
+					warppadObj->thirds[i] += 0x20;
+					warppadObj->spinRot_Rewards.y += 0x4;
+					continue;
+				}
+
+				// Swap this slot to the advertised reward's model + tint. Model-
+				// pointer reassignment is a native pattern; SpinRewards/scale below
+				// read the new model->id. Foreign / unscouted -> AP_WarpPadRewardModel
+				// returns STATIC_KEY / -1; we keep the existing model on -1.
+				{
+					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
+					int apTint;
+					if (apModel >= 0 && gGT->modelPtr[apModel] != 0)
+						apPrize->model = gGT->modelPtr[apModel];
+
+					// Re-derive tint/flags from the (possibly new) model id.
+					if (apPrize->model->id == STATIC_TOKEN)
+						apPrize->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+					else
+						apPrize->flags &= ~DRAW_TRANSPARENT;
+
+					if (apPrize->model->id == STATIC_RELIC)
+					{
+						apPrize->colorRGBA = 0x20a5ff0; // vanilla relic blue default
+						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
+						if (apTint)
+							apPrize->colorRGBA = apTint; // tier tint (sapph/gold/plat)
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+					}
+				}
+			}
+#endif
 			AH_WarpPad_SpinRewards(instArr[WPIS_OPEN_PRIZE1 + i], warppadObj, i, warppadInst->matrix.t[0], warppadInst->matrix.t[1], warppadInst->matrix.t[2]);
 
 			modelID = instArr[WPIS_OPEN_PRIZE1 + i]->model->id;
@@ -1299,35 +1371,36 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			t->modelIndex = 2;
 
 			// if trophy not owned
+#ifdef CTR_AP
+			// AP GLOW REDESIGN: under CTR_AP a race track's warp pad ALWAYS births
+			// all three prize slots (WPIS_OPEN_PRIZE1..3), regardless of the vanilla
+			// trophy bit. AH_WarpPad_ThTick then drives WHICH reward each slot shows
+			// (and hides/cycles them) purely off AP checked-state -- see the AP glow
+			// pass in _ThTick. We force the 3-slot path here because that is the only
+			// branch that creates three drivable instances; the modelIndex 2/3 paths
+			// below (which key off CHECK_ADV_BIT, cleared every frame by AP_ApplyItems)
+			// would otherwise leave us 0 or 1 slot. The models/tints born here are
+			// vanilla placeholders; _ThTick overwrites model + colorRGBA every frame.
+			// lightDirRelic/Token are seeded once so a slot that _ThTick turns into a
+			// relic/token gets correct specular spin (SpinRewards reads them by model).
+			if (levelID < AH_WP_SLIDE_COLISEUM)
+#else
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) == 0)
+#endif
 			{
 				// open for trophy
 				t->modelIndex = 1;
 
+#ifdef CTR_AP
+				warppadObj->lightDirRelic = D232.lightDirRelic[0];
+				warppadObj->lightDirToken =
+				    D232.lightDirToken[data.metaDataLEV[levelID].ctrTokenGroupID];
+#endif
+
 				rewardAngle = 0;
 				for (i = 0; i < 3; i++)
 				{
-#ifdef CTR_AP
-					// slot i -> reward-type first bit on the pad's DESTINATION track:
-					// 0 trophy race, 1 sapphire relic, 2 token. Loop-scoped so both the
-					// model swap and the relic-tier tint below can read it.
-					static const int kSlotFirstBit[3] = {
-					    ADV_REWARD_FIRST_TROPHY,
-					    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
-					    ADV_REWARD_FIRST_CTR_TOKEN};
-#endif
 					rewardModelID = s_warpPadRewardModelIDs[i];
-#ifdef CTR_AP
-					{
-						// Reward glow: substitute the model of the AP item
-						// actually placed at this slot's location on the pad's
-						// DESTINATION track (the track it loads under shuffle).
-						// slot i -> 0 trophy race, 1 sapphire relic, 2 token.
-						int apModel = AP_WarpPadRewardModel(warppadObj->levelID + kSlotFirstBit[i]);
-						if (apModel >= 0)
-							rewardModelID = apModel;
-					}
-#endif
 					newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize1", t);
 					warppadObj->inst[WPIS_OPEN_PRIZE1 + i] = newInst;
 
@@ -1344,16 +1417,6 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					if (rewardModelID == STATIC_RELIC)
 					{
 						newInst->colorRGBA = 0x20a5ff0;
-#ifdef CTR_AP
-						{
-							// Tint the glow by the scouted relic's TIER (sapphire/
-							// gold/platinum) instead of always-blue. Keyed by the
-							// same DEST bit used to resolve the model just above.
-							int tint = AP_WarpPadRewardTint(warppadObj->levelID + kSlotFirstBit[i]);
-							if (tint)
-								newInst->colorRGBA = tint;
-						}
-#endif
 						newInst->flags |= USE_SPECULAR_LIGHT;
 						newInst->scale.x = 0x1800;
 						newInst->scale.y = 0x1800;
