@@ -878,6 +878,20 @@ int Platform_InputCycleGamepadController(void)
 	return nextSlot + 1;
 }
 
+#ifdef CTR_AP
+// Raw, mapping-independent keyboard probe for AP debug/QoL hotkeys (e.g. the
+// in-game map overlay toggle). Reads the SDL host keyboard snapshot refreshed in
+// Platform_InputUpdate(); returns 1 if the physical key for `scancode`
+// (SDL_SCANCODE_*) is currently down, else 0. Not wired into the PSX pad bus, so
+// it has zero effect on the clean build or on gameplay input.
+int Platform_InputRawKeyDown(int scancode)
+{
+	if (s_keyboardState == NULL || scancode < 0 || scancode >= SDL_SCANCODE_COUNT)
+		return 0;
+	return s_keyboardState[scancode] ? 1 : 0;
+}
+#endif
+
 void Platform_InputPadInit(int slot, unsigned char *padData)
 {
 	if ((slot < 0) || (slot >= NATIVE_INPUT_PHYSICAL_SLOT_COUNT))

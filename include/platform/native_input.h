@@ -23,6 +23,12 @@ void Platform_InputControllerRemoved(int instanceId);
 int Platform_InputCycleKeyboardController(void);
 int Platform_InputCycleGamepadController(void);
 
+#ifdef CTR_AP
+// Raw keyboard probe (SDL_SCANCODE_*) for AP debug/QoL hotkeys. 1 if down, 0
+// otherwise. Mapping-independent; not part of the PSX pad bus. CTR_AP only.
+int Platform_InputRawKeyDown(int scancode);
+#endif
+
 void Platform_InputPadInit(int slot, unsigned char *padData);
 int Platform_InputPadGetState(int port);
 void Platform_InputPadVibrate(int port, unsigned char *table, int len);
