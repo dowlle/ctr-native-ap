@@ -567,12 +567,129 @@ static void AP_PollDebug(struct AdvProgress *adv)
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// STATE DUMP -- write a JSON snapshot of the live AP <-> game state to
+// ap-state.json (overwritten on a throttle) so the game's belief can be diffed
+// against the apworld seed / slot_data offline. Debug-only; no gameplay effect.
+// Relative path -> lands next to the exe (the play folder, same dir as
+// ap-config.txt). Pairs received-item truth + the game's own counters + the
+// per-pad resolved requirement & whether it's met + trophy-race checked-state,
+// which is exactly the surface where game/apworld misalignment shows up.
+// ---------------------------------------------------------------------------
+#define AP_STATE_FILE "ap-state.json"
+
+static const char *AP_ITEM_NAMES[AP_ITEM_INDEX_COUNT] = {
+    "Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic",
+    "Red CTR Token", "Green CTR Token", "Blue CTR Token", "Yellow CTR Token",
+    "Purple CTR Token", "Red Gem", "Green Gem", "Blue Gem", "Yellow Gem",
+    "Purple Gem", "Key"};
+
+static const char *AP_REQ_TYPE_NAMES[6] = {
+    "none", "trophy", "key", "token", "sapphire", "gem"};
+
+static const char *AP_BOSS_NAMES[CTR_CFG_BOSS_COUNT] = {
+    "ripper_roo", "papu_papu", "komodo_joe", "pinstripe", "oxide"};
+
+static const char *AP_ReqTypeName(int t)
+{
+	return (t >= 0 && t < 6) ? AP_REQ_TYPE_NAMES[t] : "?";
+}
+
+static void AP_DumpState(struct GameTracker *gGT)
+{
+	int i, checked = 0;
+	FILE *f = fopen(AP_STATE_FILE, "w");
+	if (!f)
+		return;
+
+	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
+		if (ap_net_location_checked(AP_LOCATION_TABLE[i].location_code))
+			checked++;
+
+	fputs("{\n", f);
+	fprintf(f, "  \"schema_active\": %d,\n", ctr_cfg_active());
+	fprintf(f, "  \"in_adventure\": %d,\n",
+	        (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0);
+	fprintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
+	fprintf(f, "  \"locations_checked\": %d,\n", checked);
+	fprintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
+	fprintf(f,
+	        "  \"options\": {\"goal\": %d, \"oxide_final_unlock\": %d, "
+	        "\"warppad_unlock_mode\": %d, \"bossgarage_mode\": %d, "
+	        "\"shuffle_warp_pads\": %d},\n",
+	        ctr_cfg.goal, ctr_cfg.oxide_final_unlock, ctr_cfg.warppad_unlock_mode,
+	        ctr_cfg.bossgarage_mode, ctr_cfg.shuffle_warp_pads);
+
+	// The game's own cached counters (what gates/UI read) -- compare vs AP truth.
+	fprintf(f,
+	        "  \"game_counters\": {\"trophies\": %d, \"relics\": %d, "
+	        "\"keys\": %d, \"tokens\": %d, \"completion_pct\": %d},\n",
+	        gGT->currAdvProfile.numTrophies, gGT->currAdvProfile.numRelics,
+	        gGT->currAdvProfile.numKeys, gGT->currAdvProfile.numCtrTokens,
+	        gGT->currAdvProfile.completionPercent);
+
+	// AP-side truth: received-item counts by type.
+	fputs("  \"received_items\": {", f);
+	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
+		fprintf(f, "%s\"%s\": %d", i ? ", " : "", AP_ITEM_NAMES[i],
+		        AP_GateCount(i));
+	fputs("},\n", f);
+
+	// Per-pad: destination, resolved requirement, met?, trophy-race checked?
+	fputs("  \"pads\": [\n", f);
+	for (i = 0; i < CTR_CFG_PAD_COUNT; i++)
+	{
+		const ctr_req *r = &ctr_cfg.warp_pad_unlock[i];
+		int dest = ctr_cfg_warp_dest(i);
+		// trophy_checked only means something for the 16 race-track destinations
+		// (LevelID 0..15, the trophy-race bit pool). For non-race dests (trials,
+		// arenas, cups) dest+TROPHY_OFFSET collides into a relic bit and would read
+		// a false positive -- emit -1 (n/a) instead.
+		int trophyChecked =
+		    (dest >= 0 && dest < 16)
+		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
+		        : -1;
+		fprintf(f,
+		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
+		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
+		        "\"trophy_checked\": %d}%s\n",
+		        i, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        ctr_cfg_warp_unlocked(i), trophyChecked,
+		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
+	}
+	fputs("  ],\n", f);
+
+	// Boss garages: resolved requirement + met?
+	fputs("  \"bosses\": [\n", f);
+	for (i = 0; i < CTR_CFG_BOSS_COUNT; i++)
+	{
+		const ctr_req *r = &ctr_cfg.boss_req[i];
+		fprintf(f,
+		        "    {\"boss\": \"%s\", \"req_type\": \"%s\", \"count\": %d, "
+		        "\"met\": %d}%s\n",
+		        AP_BOSS_NAMES[i], AP_ReqTypeName(r->type), r->count,
+		        AP_BossReqMet(r), (i + 1 < CTR_CFG_BOSS_COUNT) ? "," : "");
+	}
+	fputs("  ]\n", f);
+
+	fputs("}\n", f);
+	fclose(f);
+}
+
 void AP_OnFrame(struct GameTracker *gGT)
 {
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick();
 
-	// Adventure-only debug poll below.
+	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
+	// at the title screen right after connect. AP-side fields (options, received
+	// items, checked locations, per-pad reqs) are valid once slot_data is parsed;
+	// game_counters read live only in adventure mode (see "in_adventure" in JSON).
+	static int dumpTick = 0;
+	if ((++dumpTick % 60) == 0)
+		AP_DumpState(gGT);
+
+	// Adventure-only item/goal/debug poll below.
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0 ||
 	    sdata->Loading.stage != LOAD_IDLE)
 	{
