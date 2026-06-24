@@ -1303,6 +1303,15 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				rewardAngle = 0;
 				for (i = 0; i < 3; i++)
 				{
+#ifdef CTR_AP
+					// slot i -> reward-type first bit on the pad's DESTINATION track:
+					// 0 trophy race, 1 sapphire relic, 2 token. Loop-scoped so both the
+					// model swap and the relic-tier tint below can read it.
+					static const int kSlotFirstBit[3] = {
+					    ADV_REWARD_FIRST_TROPHY,
+					    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+					    ADV_REWARD_FIRST_CTR_TOKEN};
+#endif
 					rewardModelID = s_warpPadRewardModelIDs[i];
 #ifdef CTR_AP
 					{
@@ -1310,10 +1319,6 @@ void AH_WarpPad_LInB(struct Instance *inst)
 						// actually placed at this slot's location on the pad's
 						// DESTINATION track (the track it loads under shuffle).
 						// slot i -> 0 trophy race, 1 sapphire relic, 2 token.
-						static const int kSlotFirstBit[3] = {
-						    ADV_REWARD_FIRST_TROPHY,
-						    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
-						    ADV_REWARD_FIRST_CTR_TOKEN};
 						int apModel = AP_WarpPadRewardModel(warppadObj->levelID + kSlotFirstBit[i]);
 						if (apModel >= 0)
 							rewardModelID = apModel;
