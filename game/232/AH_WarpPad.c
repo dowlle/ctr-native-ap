@@ -588,13 +588,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
 #ifdef CTR_AP
-		// AP Phase 2 STRETCH: the "trophy owned?" gate decides first-pass (needs
-		// the per-seed unlock requirement) vs already-won (key re-entry). LInB
-		// keys this by the PHYSICAL pad, so ThTick must too, or under destination
-		// shuffle the spawn visual (LInB, physical) and the load gate (ThTick)
-		// would disagree about which mode the pad is in. physLevelID == levelID
-		// pre-shuffle, so this is a no-op for the identity map / inactive path.
-		if (CHECK_ADV_BIT(sdata->advProgress.rewards, physLevelID + ADV_REWARD_FIRST_TROPHY) != 0)
+		// "Trophy race beaten?" decides first-pass (load the trophy race) vs
+		// already-won (open the relic-race / CTR-token-challenge menu). This MUST
+		// read AP checked-state, NOT the AdvProgress trophy bit: AP_ApplyItems
+		// clears any trophy bit not backed by a *received* Trophy item every frame,
+		// so a local win is wiped and the bit never means "raced this track" --
+		// which left the relic races + token challenges permanently unreachable
+		// (softlock: the seed's progression routes through those locations).
+		// Keyed by levelID = the DESTINATION track actually loaded/raced under
+		// destination shuffle (whose Trophy Race location the win checks). The
+		// unlock REQUIREMENT below stays keyed by physLevelID (a pad property).
+		if (AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
 #else
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
 #endif

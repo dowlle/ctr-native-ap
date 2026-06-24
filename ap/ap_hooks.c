@@ -89,6 +89,19 @@ static long AP_LookupLocationCode(int globalBit)
 	return -1;
 }
 
+// 1 if the AP location at `globalBit` has been CHECKED on the server for our own
+// slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits -- to ask "has the
+// player completed this location" in AP mode: AP_ApplyItems clears any location
+// bit not backed by a received item every frame, so a local win is wiped and the
+// raw bit can never reflect it. Returns 0 if not a checkable bit / not connected.
+int AP_LocationCheckedByBit(int globalBit)
+{
+	long code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return 0;
+	return ap_net_location_checked(code);
+}
+
 // ---------------------------------------------------------------------------
 // REWARD GLOW -- map a location (by its AdvProgress global bit) to the model of
 // the AP item placed there, so each warp pad's glow shows its real reward.

@@ -75,6 +75,13 @@ int AP_WarpPadRewardModel(int globalBit);
 // to keep the caller's default colour (non-relic / foreign / unscouted -> 0).
 int AP_WarpPadRewardTint(int globalBit);
 
+// 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
+// server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
+// -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
+// clears any location bit not backed by a received item every frame, so the raw
+// bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
+int AP_LocationCheckedByBit(int globalBit);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H
