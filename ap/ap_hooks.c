@@ -246,41 +246,6 @@ int AP_WarpPadRewardTint(int globalBit)
 	}
 }
 
-// Relic-tier cycle for the warp-pad relic prize. A track's relic race has three
-// SEPARATE Time-Trial locations -- Sapphire (+0x16), Gold (+0x28), Platinum
-// (+0x3a) -- each with its own AP item. The vanilla glow only ever showed the
-// sapphire prize, so the player couldn't see what Gold/Platinum give. This picks
-// which tier to ADVERTISE on frame `timer`, cycling once every 2s (0x3C frames,
-// matching the gem colour-cycle cadence in AH_WarpPad_ThTick) through only the
-// tiers still UNCHECKED on the server. Returns that tier's global bit (feed it to
-// AP_WarpPadRewardModel / AP_WarpPadRewardTint), or -1 if all three are already
-// checked (show nothing) or `destLevelID` is not a race track.
-int AP_RelicTierCycleBit(int destLevelID, unsigned timer)
-{
-	static const int kTierBit[3] = {
-	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
-	    ADV_REWARD_FIRST_GOLD_RELIC,
-	    ADV_REWARD_FIRST_PLATINUM_RELIC};
-	int uncollected[3];
-	int count = 0;
-	int i;
-
-	if (destLevelID < 0 || destLevelID >= 16)
-		return -1;
-
-	for (i = 0; i < 3; i++)
-	{
-		int bit = destLevelID + kTierBit[i];
-		if (!AP_LocationCheckedByBit(bit))
-			uncollected[count++] = bit;
-	}
-
-	if (count == 0)
-		return -1; // every tier collected -> nothing to advertise
-
-	return uncollected[(timer / 0x3C) % count];
-}
-
 // ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.
