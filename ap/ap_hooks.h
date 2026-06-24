@@ -82,6 +82,20 @@ int AP_WarpPadRewardTint(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 
+// ── Map overlay (debug/QoL) ──
+// AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
+//   1  = at least one of that race track's 5 reward locations (trophy/sapphire/
+//        gold/platinum/token) holds an OWN, progression, still-unchecked item
+//   0  = a race track (LevelID 0..15) with nothing useful left unchecked
+//  -1  = not a race-track destination (only 0..15 carry the trophy-race pool)
+// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
+int AP_PadUsefulness(int destLevelID);
+
+// 1 while the in-game map AP overlay is toggled on (SDL_SCANCODE_M rising edge,
+// handled in AP_OnFrame). The game side reads this to decide whether to override
+// warp-pad minimap icon colours.
+int AP_MapOverlayOn(void);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

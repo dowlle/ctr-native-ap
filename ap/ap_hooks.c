@@ -29,6 +29,16 @@
 // map (ap_items.h, next step). Today received items are logged, not granted.
 // ============================================================================
 
+// Raw keyboard probe for the map-overlay hotkey (platform/native_input.c, CTR_AP
+// only). Declared here rather than including <SDL3/SDL.h> so the AP module stays
+// free of SDL headers in the unity build.
+int Platform_InputRawKeyDown(int scancode);
+
+// SDL_SCANCODE_M, anchored to externals/SDL/include/SDL3/SDL_scancode.h:75
+// (SDL_SCANCODE_M = 16). Not in s_keyboardMapping defaults (native_input.c:236),
+// so toggling the overlay never disturbs gameplay input.
+#define AP_MAP_OVERLAY_SCANCODE 16
+
 #define AP_READ_LOG "D:\\pythonProjects\\ctr-archipelago\\reference" \
                     "\\ctr-native\\build-ap\\ap-read.log"
 
@@ -100,6 +110,66 @@ int AP_LocationCheckedByBit(int globalBit)
 	if (code < 0)
 		return 0;
 	return ap_net_location_checked(code);
+}
+
+// ---------------------------------------------------------------------------
+// MAP OVERLAY (debug/QoL) -- badge each warp pad on the existing minimap by the
+// AP state of its DESTINATION track. Pure colour override on the icon already
+// drawn by AH_Map_Warppads; no geometry change, no gameplay effect.
+// ---------------------------------------------------------------------------
+
+// 1 if the location at this global AdvProgress bit holds an OWN, progression,
+// still-unchecked AP item ("useful reward still here"); 0 otherwise. Mirrors the
+// AP_WarpPad* helpers: lookup -> scout -> own-slot + flags bit0 (progression).
+static int AP_BitIsUsefulUnchecked(int globalBit)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return 0;                       // not a checkable location
+	if (ap_net_location_checked(code))
+		return 0;                       // already collected -> nothing useful here
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return 0;                       // not scouted (not connected / pre-scout)
+	if (player != ap_net_self_slot())
+		return 0;                       // foreign multiworld item -> not "our" reward
+	return (flags & 1u) ? 1 : 0;        // bit0 = progression
+}
+
+// Usefulness verdict for a warp pad pointing at destination LevelID `destLevelID`:
+//   1  = at least one of the dest track's 5 reward locations holds an own,
+//        progression, still-unchecked item (useful reward still here)
+//   0  = a race track, but nothing useful is left unchecked there
+//  -1  = not a race-track destination (0..15 only carry the trophy-race pool;
+//        other dests would collide into unrelated bits)
+// The 5 per-track bits: trophy +0x06, sapphire +0x16, gold +0x28, platinum
+// +0x3a, token +0x4c (enum AdvRewardBitIndex, namespace_Memcard.h:186-205).
+int AP_PadUsefulness(int destLevelID)
+{
+	if (destLevelID < 0 || destLevelID >= 16)
+		return -1;
+
+	if (AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ||
+	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC) ||
+	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC) ||
+	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC) ||
+	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN))
+		return 1;
+
+	return 0;
+}
+
+// Map-overlay toggle. Flipped on the rising edge of SDL_SCANCODE_M in AP_OnFrame
+// (see below). The game-side AH_Map_Warppads reads it via AP_MapOverlayOn().
+static int g_ap_map_overlay = 0;
+
+int AP_MapOverlayOn(void)
+{
+	return g_ap_map_overlay;
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +748,17 @@ static void AP_DumpState(struct GameTracker *gGT)
 
 void AP_OnFrame(struct GameTracker *gGT)
 {
+	// Map-overlay toggle: flip g_ap_map_overlay on the RISING edge of the hotkey.
+	// Runs every frame and in all game modes so the toggle works anywhere. Pure
+	// HUD state -- no pad-bus interaction, no gameplay effect.
+	{
+		static int ap_overlay_key_prev = 0;
+		int keyNow = Platform_InputRawKeyDown(AP_MAP_OVERLAY_SCANCODE);
+		if (keyNow && !ap_overlay_key_prev)
+			g_ap_map_overlay = !g_ap_map_overlay;
+		ap_overlay_key_prev = keyNow;
+	}
+
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick();
 
