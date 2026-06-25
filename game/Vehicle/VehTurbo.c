@@ -285,7 +285,9 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		{
 			// if fully transparent, skip lines
 			if (0xfff < instance->alphaScale)
+			{
 				goto LAB_80069b50;
+			}
 
 			if (turbo->fireDisappearCountdown == '\0')
 			{
@@ -304,7 +306,9 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		{
 			// if scale is big, skip lines
 			if (0xfff < instance->alphaScale)
+			{
 				goto LAB_80069b50;
+			}
 		}
 	}
 
