@@ -59,6 +59,13 @@ int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// 1 if Aku Aku mask hints should be SKIPPED. Read once from ap-config.txt
+// (line "skip_hints=1") at connect. Honoured at the single choke point
+// MainFrame_RequestMaskHint (#ifdef CTR_AP) by early-returning, so no hint is
+// ever armed. Default 0 (hints behave normally). QoL / testing convenience;
+// later the apworld can write this value into ap-config.txt from a YAML option.
+int AP_SkipHints(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
@@ -69,10 +76,12 @@ void AP_LogLine(const char *msg);
 // caller keeps the vanilla model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
 int AP_WarpPadRewardModel(int globalBit);
 
-// Reward-glow relic TINT. Vanilla renders every relic tier the same blue, so a
-// glow advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
-// tier-specific packed colorRGBA for an OWN relic scouted at this location, or 0
-// to keep the caller's default colour (non-relic / foreign / unscouted -> 0).
+// Reward-glow TINT. Vanilla renders every relic tier the same blue, so a glow
+// advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
+// tier-specific packed colorRGBA for an OWN relic scouted at this location; a
+// vivid magenta for a FOREIGN multiworld item (so the generic STATIC_KEY marker
+// isn't mistaken for an own Key); or 0 to keep the caller's default colour
+// (own non-relic / unscouted -> 0). Caller applies it to relic + key models.
 int AP_WarpPadRewardTint(int globalBit);
 
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
@@ -103,6 +112,13 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 //  -1  = not a race-track destination (only 0..15 carry the trophy-race pool)
 // Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
 int AP_PadUsefulness(int destLevelID);
+
+// Richer map-overlay state distinguishing the two-stage phases (M-key):
+//   1 stage-1 own progression reward available (green) · 2 trophy beaten but
+//   stage-2 LOCKED (red) · 3 stage-2 OPEN with unchecked TT/token checks
+//   (periwinkle) · 0 race track nothing left (gray) · -1 non-race (vanilla).
+// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
+int AP_PadMapState(int destLevelID);
 
 // 1 while the in-game map AP overlay is toggled on (SDL_SCANCODE_M rising edge,
 // handled in AP_OnFrame). The game side reads this to decide whether to override

@@ -615,6 +615,19 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
 #endif
 			{
+#ifdef CTR_AP
+				// AP Phase 2 (open-rando two-stage): STAGE 2 gates the relic Time
+				// Trials + CTR Token Challenge menu independently of stage 1 (which
+				// opened the trophy race above). Until stage 2 is met the trophy race
+				// is raceable but the tier-2 menu/load stays closed -- the pad just
+				// spins (TrophyAnimateOnly), the same idle visual as a not-yet-unlocked
+				// stage 1. Keyed by PHYSICAL pad (physLevelID), the same key stage 1
+				// uses. type 0 / collapsed / flat-v1 -> ctr_cfg_warp_stage2_unlocked
+				// returns 1, so non-two-stage seeds reach the menu exactly as before.
+				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
+					goto WarpPad_TrophyAnimateOnly;
+#endif
+
 				if (warppadObj->framesWarping < 61)
 					goto WarpPad_TrophyAnimateOnly;
 
@@ -666,7 +679,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
+#ifdef CTR_AP
+	// AP: "trophy already won -> re-race needs the hub boss key" must read AP
+	// checked-state (keyed by the DESTINATION track actually raced), NOT the
+	// cosmetic AdvProgress trophy bit. AP_ApplyItems fills received-trophy bits
+	// from the HIGH END (ap_hooks.c reconcile), so with N received trophies the top
+	// N trophy bits are set regardless of which tracks were actually won. Under
+	// destination shuffle a pad whose destination is one of those top levelIDs
+	// (e.g. Roo's Tubes pad -> Tiny Arena = 15, with >=1 received trophy) would
+	// otherwise read "won" here, hit the hub-boss-key gate below with no key, and
+	// `goto WarpPad_AnimateOpen` -- the pad animates but never warps -> the player
+	// drives straight through a green pad. Mirrors the ThTick:601 f9fbfa7a0 fix.
+	if (AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
+#else
 	if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
+#endif
 	{
 		i = data.metaDataLEV[levelID].hubID + ADV_REWARD_BOSS_KEY_HUB_ID_BASE;
 
@@ -819,6 +846,30 @@ WarpPad_AnimateOpen:
 		}
 		// apUncN == 0 -> all apSlotBit stay -1 (hide everything).
 	}
+	// ── AP single-reward pads: BATTLE ARENAS + GEM CUPS ──
+	// Unlike a race track (3 prize slots), these pads carry exactly ONE checkable
+	// location and (under CTR_AP) always-birth ONE prize slot (WPIS_OPEN_PRIZE1 --
+	// see LInB). Drive slot 0 off that single location bit and reuse the slot-
+	// override loop below verbatim: advertise the scouted reward model while the
+	// location is UNCHECKED on the server, force-hide it the instant it is CHECKED
+	// (apSlotBit[i] < 0 -> HIDE_MODEL + skip). apUncN is set >= 0 purely to arm the
+	// override path; only apSlotBit[] decides per-slot content. Slots 1/2 hold no
+	// instance (LInB births one), so the existing null-check skips them.
+	else if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
+	{
+		// Battle arena crystal location (Crystal Bonus Round, AP bits 111..114).
+		// battleTrackArr maps the pad LevelID offset to its crystal reward slot.
+		int apCrystalBit = R232.battleTrackArr[levelID - AH_WP_NITRO_COURT] + ADV_REWARD_FIRST_PURPLE_TOKEN;
+		apUncN = 1; // single-slot AP pad -> arm the override loop below
+		apSlotBit[0] = AP_LocationCheckedByBit(apCrystalBit) ? -1 : apCrystalBit;
+	}
+	else if (((u16)(levelID - AH_WP_ADV_CUP)) < 5)
+	{
+		// Gem cup location (Gem, AP bits 106..110), keyed by cup colour 0..4.
+		int apGemBit = (levelID - AH_WP_ADV_CUP) + ADV_REWARD_FIRST_GEM;
+		apUncN = 1;
+		apSlotBit[0] = AP_LocationCheckedByBit(apGemBit) ? -1 : apGemBit;
+	}
 #endif
 
 	for (i = 0; i < 3; i++)
@@ -865,6 +916,21 @@ WarpPad_AnimateOpen:
 						if (apTint)
 							apPrize->colorRGBA = apTint; // tier tint (sapph/gold/plat)
 						apPrize->flags |= USE_SPECULAR_LIGHT;
+					}
+					else if (apPrize->model->id == STATIC_KEY)
+					{
+						// Foreign multiworld item renders as the generic key marker.
+						// AP_WarpPadRewardTint returns a vivid magenta ONLY for a
+						// foreign item (an OWN Key returns 0 -> keeps its normal gold),
+						// so this colours other players' items distinctly without
+						// touching your own Keys. Interim until the foreign marker gets
+						// the real Archipelago-logo model.
+						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
+						if (apTint)
+						{
+							apPrize->colorRGBA = apTint;
+							apPrize->flags |= USE_SPECULAR_LIGHT;
+						}
 					}
 				}
 			}
@@ -1102,6 +1168,57 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// instead of data.metaDataLEV[levelID].hubID
 		// can we just do gGT->levelID-0x19?
 
+#ifdef CTR_AP
+		// AP two-stage RE-LOCK (open-rando): the trophy race is already WON
+		// (AP checked-state, keyed by the DESTINATION track) but this pad's
+		// STAGE 2 is not yet satisfied. Render the pad CLOSED, advertising the
+		// stage-2 requirement, so the player isn't pulled into a dead warp that
+		// ThTick blocks at the load gate (ctr_cfg_warp_stage2_unlocked). This is
+		// the missing visual half of the stage-2 gate: without it LInB would
+		// treat a stage1-met pad as fully unlocked. stage2 keyed by PHYSICAL pad
+		// (levelID), the same key ThTick's stage-2 gate uses; checked-state keyed
+		// by warppadObj->levelID (= destination track) to match ThTick:601.
+		// type 0 stage2 (no second gate / collapsed / flat-v1) -> _stage2_unlocked
+		// returns 1 -> this branch is skipped -> pre-two-stage behaviour.
+		if (ctr_cfg_active() &&
+		    AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY) &&
+		    !ctr_cfg_warp_stage2_unlocked(levelID))
+		{
+			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
+			switch (r->type)
+			{
+			case 1: // trophies
+				unlockItem_modelID = STATIC_TROPHY;
+				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+				break;
+			case 2: // keys
+				unlockItem_modelID = STATIC_KEY;
+				unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
+				break;
+			case 3: // tokens (colour-aware)
+				unlockItem_modelID = STATIC_TOKEN;
+				unlockItem_numOwned = (r->colour >= 0)
+				    ? AP_GateCountTokenColour(r->colour)
+				    : AP_GateCount(AP_IDX_TOKEN_RED);
+				break;
+			case 4: // sapphire relic
+				unlockItem_modelID = STATIC_RELIC;
+				unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+				break;
+			case 5: // gems (colour-aware)
+				unlockItem_modelID = STATIC_GEM;
+				unlockItem_numOwned =
+				    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
+				break;
+			default:
+				unlockItem_modelID = STATIC_TROPHY;
+				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+				break;
+			}
+			unlockItem_numNeeded = r->count;
+		}
+		else
+#endif
 		// if trophy owned
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
 		{
@@ -1122,9 +1239,12 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			// has a resolved requirement (type != 0). type 0 (fixed pads / vanilla
 			// mode / absent slot_data) falls through to the Phase-1 statics below.
 			if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
-			    ctr_cfg.warp_pad_unlock[levelID].type != 0)
+			    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 			{
-				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID];
+				// stage1 is the "open the trophy race" requirement shown on the pad
+				// here (the trophy-not-owned branch). The stage2 (tier-2) requirement
+				// is gated at the load site in AH_WarpPad_ThTick, not advertised here.
+				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage1;
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -1220,9 +1340,61 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		unlockItem_numNeeded = 4;
 
 #ifdef CTR_AP
-		// AP Option B: gem cup gates on 4 received Tokens of its colour.
-		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P.
-		unlockItem_numOwned = AP_GateCountTokenColour(levelID - AH_WP_ADV_CUP);
+		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P. Gem cups are not
+		// in the warp-pad shuffle group, so the physical pad == this LevelID
+		// (ctr_cfg_warp_phys is identity here); index gem_cup_unlock by cup colour.
+		{
+			int cupIdx = levelID - AH_WP_ADV_CUP;
+			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
+			// Phase-1 "4 tokens of this colour" rule when slot_data is active and the
+			// cup has a resolved requirement (type != 0). type 0 (option off / vanilla
+			// / absent slot_data) falls back to the token rule. Uses the SAME colour-
+			// aware type switch the trophy pads use (~1224). NOTE: gem cups carry no
+			// pre-existing "2-key hub gate" in this branch, so there is nothing to AND
+			// the stage-1 requirement with here (see handoff flag).
+			if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
+			{
+				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
+				switch (r->type)
+				{
+				case 1: // trophies
+					unlockItem_modelID = STATIC_TROPHY;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
+					break;
+				case 2: // keys
+					unlockItem_modelID = STATIC_KEY;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
+					break;
+				case 3: // tokens (colour-aware)
+					unlockItem_modelID = STATIC_TOKEN;
+					unlockItem_numOwned = (r->colour >= 0)
+					    ? AP_GateCountTokenColour(r->colour)
+					    : AP_GateCount(AP_IDX_TOKEN_RED);
+					break;
+				case 4: // sapphire
+					unlockItem_modelID = STATIC_RELIC;
+					unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+					break;
+				case 5: // gems (colour-aware)
+					unlockItem_modelID = STATIC_GEM;
+					unlockItem_numOwned =
+					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
+					break;
+				default:
+					unlockItem_modelID = STATIC_TOKEN;
+					unlockItem_numOwned = AP_GateCountTokenColour(cupIdx);
+					break;
+				}
+				unlockItem_numNeeded = r->count;
+			}
+			else
+			{
+				// AP Option B fallback: gate on 4 received Tokens of its colour.
+				unlockItem_modelID = STATIC_TOKEN;
+				unlockItem_numNeeded = 4;
+				unlockItem_numOwned = AP_GateCountTokenColour(cupIdx);
+			}
+		}
 #else
 		arrTokenCount = &gGT->currAdvProfile.numCtrTokens.red;
 		unlockItem_numOwned = arrTokenCount[levelID - AH_WP_ADV_CUP];
@@ -1547,7 +1719,16 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			// already unlocked
 			t->modelIndex = 2;
 
+#ifdef CTR_AP
+			// AP GLOW: ALWAYS birth the battle-arena prize slot so AH_WarpPad_ThTick's
+			// glow pass can drive its model + hide-on-collect off AP checked-state.
+			// Mirrors the trophy always-birth (~1413); do NOT gate on the cosmetic
+			// crystal bit -- AP_ApplyItems clears it every frame, which left the pad
+			// showing a stale vanilla CTR coin that never hid on collect (image-124).
+			if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
+#else
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, i) == 0)
+#endif
 			{
 				// rainbow
 				t->modelIndex = 4;
@@ -1581,6 +1762,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			// bit index of gem
 			i = (levelID - AH_WP_ADV_CUP) + ADV_REWARD_FIRST_GEM;
 
+#ifndef CTR_AP
 			// if gem is already unlocked, quit
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, i) != 0)
 			{
@@ -1589,6 +1771,12 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 				return;
 			}
+#else
+			// AP GLOW: ALWAYS birth the gem-cup prize slot (do NOT early-return on the
+			// cosmetic gem bit, which AP_ApplyItems clears every frame) so ThTick's
+			// glow pass can drive its model + hide-on-collect off AP checked-state.
+			// Mirrors the trophy / battle-arena always-birth.
+#endif
 
 			// rainbow color
 			t->modelIndex = 4;

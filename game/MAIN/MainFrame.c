@@ -737,6 +737,14 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80035e20-0x80035e70.
 void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 {
+#ifdef CTR_AP
+	// AP QoL (ap-config.txt skip_hints=1): suppress all Aku Aku mask hints at the
+	// single choke point -- early-return before any hint is armed, so there is no
+	// freeze and nothing to click through. Default off (hints behave normally).
+	if (AP_SkipHints())
+		return;
+#endif
+
 	struct GameTracker *gGT = sdata->gGT;
 
 	if (((gGT->gameMode1 & PAUSE_ALL) == 0) && (sdata->AkuHint_RequestedHint == -1))

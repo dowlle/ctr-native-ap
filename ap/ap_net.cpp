@@ -28,6 +28,14 @@ static std::string           g_slot;
 static std::string           g_password;
 static bool                  g_connected = false;
 
+// Set true on every fresh slot-connect (new seed, reconnect, or server switch).
+// ap_hooks polls it via ap_net_take_recv_reset() and zeroes its received-item
+// tallies before draining, so counts rebuild from the server's authoritative
+// ReceivedItems list (resent from index 0 on connect) instead of accumulating on
+// top of a previous connection's items. Keyed on the connect event, NOT on
+// items_received, so it also fires when the new slot has zero received items.
+static bool                  g_recv_reset = false;
+
 // Reward-glow / pad-state support: scouted item placed at each CTR location,
 // keyed by AP location_code. Filled by the LocationInfo handler after the
 // LocationScouts sent on slot-connect. The warp-pad render reads this to show
@@ -66,6 +74,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		g_connected = true;
+		// Fresh connect: signal ap_hooks to zero its received-item tallies, and
+		// drop any stale queue/scout state from a previous connection (server
+		// switch carried the old seed's items into memory otherwise). The server
+		// resends the full ReceivedItems list (from index 0) right after this.
+		g_recv_reset = true;
+		g_items.clear();
+		g_scouts.clear();
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
 		// Scout every CTR location so the warp pads can show the actual AP reward
 		// placed at each (and recolour pads whose location is already checked).
@@ -108,6 +123,15 @@ extern "C" void ap_net_connect_slot(const char *slot, const char *password)
 {
 	g_slot = slot ? slot : "";
 	g_password = password ? password : "";
+}
+
+// Returns 1 once after each fresh slot-connect (then clears the flag). ap_hooks
+// uses this to reset its received-item tallies before draining the resent list.
+extern "C" int ap_net_take_recv_reset(void)
+{
+	int r = g_recv_reset ? 1 : 0;
+	g_recv_reset = false;
+	return r;
 }
 
 extern "C" void ap_net_poll(void)

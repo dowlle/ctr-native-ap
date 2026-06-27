@@ -28,6 +28,11 @@ void ap_net_send_goal(void);                         // StatusUpdate(GOAL)
 // Drain newly-received item ids into out (capacity max). Returns count copied.
 int  ap_net_drain_items(long long *out, int max);
 
+// 1 once after each fresh slot-connect (new seed / reconnect / server switch),
+// then self-clears. Caller zeroes per-session received-item tallies on a 1 so
+// counts rebuild from the server's authoritative ReceivedItems list.
+int  ap_net_take_recv_reset(void);
+
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
 // location_code: the item placed there, the player who receives it, and AP

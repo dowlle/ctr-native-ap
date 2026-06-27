@@ -60,6 +60,27 @@ void AP_LogLine(const char *msg)
 	AP_AppendLog(msg);
 }
 
+// Skip Aku Aku mask hints (QoL / testing). Set from ap-config.txt at connect;
+// read by MainFrame_RequestMaskHint to early-return. Default off.
+static int ap_skip_hints = 0;
+int AP_SkipHints(void)
+{
+	return ap_skip_hints;
+}
+
+// Diagnostic (crash investigation): format a compact game-state breadcrumb for a
+// log line -- frame timer, in-adventure flag, loading stage, and current levelID.
+// Lets a flushed log show what the game was doing (e.g. an item arriving while a
+// hub transition is mid-load). Logging only -- reads state, never mutates it.
+static void AP_FmtState(struct GameTracker *gGT, char *buf, int n)
+{
+	snprintf(buf, n, "t=%u adv=%d load=%d lvl=%d",
+	         (unsigned)gGT->timer,
+	         (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0,
+	         (int)sdata->Loading.stage,
+	         (int)gGT->levelID);
+}
+
 // Friendly names for the 16 track trophies (AdvProgress word 0, bits 6..21),
 // for easy manual verification in the log. Everything else resolves by code.
 static const char *AP_TrophyName(int globalBit)
@@ -163,6 +184,48 @@ int AP_PadUsefulness(int destLevelID)
 	return 0;
 }
 
+// 1 if the location at globalBit exists and is NOT checked on the server (any
+// item, own or foreign). Used by the map overlay to ask "is there still a check
+// to do here", independent of whether the placed item is our own progression.
+static int AP_BitUnchecked(int globalBit)
+{
+    long code = AP_LookupLocationCode(globalBit);
+    if (code < 0) return 0;
+    return ap_net_location_checked(code) ? 0 : 1;
+}
+
+// Richer per-pad map-overlay state (M-key), distinguishing the two-stage phases
+// so the player can tell a stage-2-LOCKED pad from a stage-2-OPEN one. destLevelID
+// is the DESTINATION race track (0..15); the pad's stage-2 requirement keys off
+// the PHYSICAL pad, recovered via ctr_cfg_warp_phys (identity-safe pre-shuffle).
+//   1 = stage 1: Trophy Race not yet beaten and an OWN progression reward is
+//       still there                         -> green  (come do the trophy race)
+//   2 = Trophy Race BEATEN but stage 2 (relic TT + CTR Token menu) is LOCKED
+//                                           -> red    (blocked until stage-2 items)
+//   3 = stage 2 OPEN and >=1 TT/token location still UNCHECKED
+//                                           -> periwinkle (checks available now)
+//   0 = race track, nothing useful/available left   -> gray
+//  -1 = not a race-track destination                -> vanilla (untouched)
+int AP_PadMapState(int destLevelID)
+{
+    if (destLevelID < 0 || destLevelID >= 16)
+        return -1;
+
+    if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
+        // Stage 1: trophy race not beaten yet.
+        return AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
+
+    // Trophy race beaten -> stage 2 phase. Any relic-TT / CTR-token check left?
+    int s2checks = AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC)
+                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC)
+                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC)
+                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
+    if (!s2checks)
+        return 0; // all stage-2 checks done
+
+    return ctr_cfg_warp_stage2_unlocked(ctr_cfg_warp_phys(destLevelID)) ? 3 : 2;
+}
+
 // Map-overlay toggle. Flipped on the rising edge of SDL_SCANCODE_M in AP_OnFrame
 // (see below). The game-side AH_Map_Warppads reads it via AP_MapOverlayOn().
 static int g_ap_map_overlay = 0;
@@ -171,6 +234,12 @@ int AP_MapOverlayOn(void)
 {
 	return g_ap_map_overlay;
 }
+
+// Distinct tint for a FOREIGN multiworld item rendered with the generic
+// STATIC_KEY marker, so it can't be mistaken for an own boss Key. Vivid magenta
+// (255,20,200) packed (R<<0x14)|(G<<0xc)|(B<<0x4). Interim until the foreign
+// marker gets the real Archipelago-logo model (backlogged custom-asset task).
+#define AP_FOREIGN_TINT 0x0ff14c80
 
 // ---------------------------------------------------------------------------
 // REWARD GLOW -- map a location (by its AdvProgress global bit) to the model of
@@ -231,7 +300,12 @@ int AP_WarpPadRewardTint(int globalBit)
 	if (!ap_net_scout_known(code, &item, &player, &flags))
 		return 0;
 	if (player != ap_net_self_slot())
-		return 0; // foreign item keeps its marker colour
+		// Foreign multiworld item: until it has its own model (the Archipelago
+		// logo is a backlogged custom-asset task) it renders as STATIC_KEY, which
+		// looks like an own boss Key. Tint it a vivid magenta so it's unmistakably
+		// "someone else's AP item", not a Key you can use. The render applies this
+		// to the key model (see AH_WarpPad.c). Packed (R<<0x14)|(G<<0xc)|(B<<0x4).
+		return AP_FOREIGN_TINT; // (255,20,200) magenta
 
 	switch (AP_ItemCategory(item))
 	{
@@ -486,11 +560,28 @@ int AP_BossReqMet(const ctr_req *r)
 int ctr_cfg_warp_unlocked(int levelID)
 {
 	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[levelID].type != 0)
-		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID]);
+	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
+		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 
 	// Phase-1 fallback: received trophies >= per-track threshold.
 	return AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen;
+}
+
+// Trophy-track warp pad STAGE-2 gate (open-rando two-stage). Mirrors
+// ctr_cfg_warp_unlocked but reads stage2: when active and the pad has a stage2
+// requirement (type != 0) it returns owned >= count via AP_BossReqMet
+// (colour-aware). type 0 (no stage2 / collapsed-to-stage1 / flat-v1 slot_data /
+// inactive) returns 1 (always open), so the relic-Time-Trial + CTR-Token
+// menu opens the moment stage1 is met -- identical to the pre-two-stage flow.
+// physPadLevelID is the PHYSICAL pad LevelID, the same key stage1 uses.
+int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
+{
+	if (ctr_cfg_active() && physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
+	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
+		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physPadLevelID].stage2);
+
+	// No stage2 requirement -> tier 2 opens as soon as stage1 is satisfied.
+	return 1;
 }
 
 // Reconcile AdvProgress category bits to EXACTLY the received-item counts: set
@@ -574,11 +665,13 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			snprintf(slot, slotN, "%s", line + 5);
 		else if (!strncmp(line, "password=", 9))
 			snprintf(pass, passN, "%s", line + 9);
+		else if (!strncmp(line, "skip_hints=", 11))
+			ap_skip_hints = (line[11] == '1'); // QoL: suppress Aku Aku mask hints
 	}
 	fclose(f);
 }
 
-static void AP_NetTick(void)
+static void AP_NetTick(struct GameTracker *gGT)
 {
 	if (!ap_net_started)
 	{
@@ -596,12 +689,37 @@ static void AP_NetTick(void)
 
 	ap_net_poll();
 
+	// On a fresh slot-connect (new seed, reconnect, or server switch) the server
+	// resends the FULL ReceivedItems list from index 0. Zero the per-session
+	// tallies + goal/notify state FIRST so everything rebuilds from the
+	// authoritative list, instead of accumulating on top of the previous
+	// connection (which double-counted on reconnect and carried a prior seed's
+	// items across a server switch). AP_ApplyItems reconciles AdvProgress bits to
+	// ap_recv_count each frame, so zeroing here clears the stale in-game counts.
+	// Foundation for a future in-game connection manager (clean per-connect reset).
+	if (ap_net_take_recv_reset())
+	{
+		int k;
+		for (k = 0; k < AP_ITEM_INDEX_COUNT; k++)
+			ap_recv_count[k] = 0;
+		for (k = 0; k < AP_CAT_COUNT; k++)
+			ap_item_count[k] = 0;
+		for (k = 0; k < 6; k++)
+			ap_notified_mask[k] = 0;
+		ap_oxide_first_beaten = 0;
+		ap_oxide_final_beaten = 0;
+		ap_goal_sent = 0;
+		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
+	}
+
 	// Received items: tally by category. Applied to AdvProgress bits in
-	// AP_ApplyItems() (adventure + save-safe only). Single game session counts
-	// each item once; a reconnect re-sends the full list (dedup TODO).
+	// AP_ApplyItems() (adventure + save-safe only). The tally is zeroed on each
+	// fresh connect (above), so the resent full list rebuilds counts exactly.
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
 	int i;
+	char st[64];
+	AP_FmtState(gGT, st, sizeof st); // game-state breadcrumb for this drain (crash diag)
 	for (i = 0; i < n; i++)
 	{
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
@@ -612,17 +730,17 @@ static void AP_NetTick(void)
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
 		// bits (progress %, podium) in AP_ApplyItems -- gates ignore these.
 		AP_ItemCat c = AP_ItemCategory(items[i]);
-		char msg[128];
+		char msg[160];
 		if (c >= 0 && c < AP_CAT_COUNT)
 		{
 			ap_item_count[c]++;
-			snprintf(msg, sizeof msg, "[AP ITEM] received %s (id %lld) -> have %d\n",
-			         AP_CATEGORY_POOLS[c].name, items[i], ap_item_count[c]);
+			snprintf(msg, sizeof msg, "[AP ITEM] received %s (id %lld) -> have %d | %s\n",
+			         AP_CATEGORY_POOLS[c].name, items[i], ap_item_count[c], st);
 		}
 		else
 		{
 			snprintf(msg, sizeof msg,
-			         "[AP ITEM] received item id %lld (filler/unmapped)\n", items[i]);
+			         "[AP ITEM] received item id %lld (filler/unmapped) | %s\n", items[i], st);
 		}
 		AP_AppendLog(msg);
 	}
@@ -750,7 +868,8 @@ static void AP_DumpState(struct GameTracker *gGT)
 	fputs("  \"pads\": [\n", f);
 	for (i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
-		const ctr_req *r = &ctr_cfg.warp_pad_unlock[i];
+		const ctr_warp_unlock *u = &ctr_cfg.warp_pad_unlock[i];
+		const ctr_req *r = &u->stage1;
 		int dest = ctr_cfg_warp_dest(i);
 		// trophy_checked only means something for the 16 race-track destinations
 		// (LevelID 0..15, the trophy-race bit pool). For non-race dests (trials,
@@ -763,9 +882,13 @@ static void AP_DumpState(struct GameTracker *gGT)
 		fprintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
+		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
+		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
 		        "\"trophy_checked\": %d}%s\n",
 		        i, dest, AP_ReqTypeName(r->type), r->count, r->colour,
-		        ctr_cfg_warp_unlocked(i), trophyChecked,
+		        ctr_cfg_warp_unlocked(i),
+		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
 	}
 	fputs("  ],\n", f);
@@ -800,8 +923,32 @@ void AP_OnFrame(struct GameTracker *gGT)
 		ap_overlay_key_prev = keyNow;
 	}
 
+	// Diagnostic breadcrumbs (crash investigation): a one-time run-start marker so
+	// the appended log has a clear per-process boundary, plus a line on every
+	// levelID (hub/track) transition. The log flushes per line, so if a crash
+	// happens during a transition (e.g. an Autopelago item lands mid hub-load) the
+	// tail shows exactly where. Logging only -- no gameplay effect.
+	{
+		static int ap_booted = 0;
+		static int ap_prev_level = -999;
+		if (!ap_booted)
+		{
+			ap_booted = 1;
+			AP_AppendLog("[AP BOOT] ===== client run start =====\n");
+		}
+		if ((int)gGT->levelID != ap_prev_level)
+		{
+			char m[96];
+			snprintf(m, sizeof m, "[AP HUB] levelID %d -> %d (t=%u load=%d)\n",
+			         ap_prev_level, (int)gGT->levelID, (unsigned)gGT->timer,
+			         (int)sdata->Loading.stage);
+			AP_AppendLog(m);
+			ap_prev_level = (int)gGT->levelID;
+		}
+	}
+
 	// Network: connect once + pump every frame, in all game modes.
-	AP_NetTick();
+	AP_NetTick(gGT);
 
 	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
 	// at the title screen right after connect. AP-side fields (options, received
