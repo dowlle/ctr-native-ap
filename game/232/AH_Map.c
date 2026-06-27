@@ -563,18 +563,26 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 #ifdef CTR_AP
 		// AP map overlay (toggle: SDL_SCANCODE_M -> AP_MapOverlayOn). Pure colour
 		// override on the icon drawn below -- no geometry/gameplay change. Badge an
-		// UNLOCKED pad by the AP state of its destination race track:
-		//   LIGHT_GREEN -> an own progression reward is still uncollected there
-		//   GRAY        -> unlocked but nothing useful left (done/chill)
+		// UNLOCKED pad by the two-stage AP state of its destination race track
+		// (AP_PadMapState):
+		//   LIGHT_GREEN -> stage 1: an own progression reward still uncollected
+		//   RED         -> Trophy Race beaten but stage 2 LOCKED (relic TT / CTR
+		//                  Token menu gated -- you're blocked until stage-2 items)
+		//   PERIWINKLE  -> stage 2 OPEN with checks still available to do now
+		//   GRAY        -> nothing useful/available left (done/chill)
 		// LOCKED pads (case 0 / default, skipDistance set) keep their vanilla colour
 		// so the player still sees what is gated. -1 (non-race dest) also untouched.
 		if (AP_MapOverlayOn() && !skipDistance)
 		{
 			int destLevelID = ((struct WarpPad *)warppadThread->object)->levelID;
-			int useful = AP_PadUsefulness(destLevelID);
-			if (useful == 1)
+			int st = AP_PadMapState(destLevelID);
+			if (st == 1)
 				color = LIGHT_GREEN;
-			else if (useful == 0)
+			else if (st == 3)
+				color = PERIWINKLE;
+			else if (st == 2)
+				color = RED;
+			else if (st == 0)
 				color = GRAY;
 		}
 #endif

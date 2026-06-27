@@ -39,6 +39,18 @@ typedef struct
 	int colour;
 } ctr_req;
 
+// Two-stage warp-pad unlock (open-rando). stage1 opens the trophy race; stage2
+// opens the relic Time Trials + CTR Token Challenge menu. Each stage is an
+// independent resolved requirement that can be ANY CTR item type (relic/trophy/
+// gem/token/key). A pad's stage2 MAY equal stage1 when a seed collapses it.
+// schema_version 1 (flat, pre two-stage) is parsed into stage1 with a type:0
+// (always-open) stage2 for back-compat -- see ap_seedcfg_parse_json.
+typedef struct
+{
+	ctr_req stage1; // open the trophy race
+	ctr_req stage2; // open the relic Time Trials + CTR Token Challenge
+} ctr_warp_unlock;
+
 typedef struct
 {
 	int schema_version; // 0 = not parsed -> Phase-1 fallback everywhere
@@ -51,9 +63,17 @@ typedef struct
 	int warppad_unlock_mode; // 0 vanilla / 1 random / 2 random_without_4_keys
 	int bossgarage_mode;     // 0 original4 / 1 same_hub / 2 trophies
 
-	int     warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
-	ctr_req warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad resolved req (type 0 = native vanilla rule)
-	ctr_req boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
+	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
+	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)
+	// Gem cups (CupRed..CupPurple = LevelID 100..104) live OUTSIDE the 28-wide
+	// warp_pad_unlock array, so their per-seed randomized unlock requirement is
+	// stored here, keyed by cup colour 0..4 = R,G,B,Y,P (= LevelID - 100). The
+	// apworld emits these under the same warp_pad_unlock object using string keys
+	// "100".."104"; the parser routes those keys into this array. stage1.type 0 =
+	// fall back to the Phase-1 "4 tokens of this colour" rule. stage2 unused (gem
+	// cups have no tier-2 menu); kept as ctr_warp_unlock only for parse symmetry.
+	ctr_warp_unlock gem_cup_unlock[5];                  // gem cups by colour (LevelID 100..104); stage1.type 0 = native vanilla rule
+	ctr_req         boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -86,6 +106,15 @@ int ctr_cfg_warp_phys(int destTrackLevelID);
 // numTrophiesToOpen threshold from data.metaDataLEV[] for the Phase-1 fallback,
 // neither of which is reachable from the isolated C++ static lib.
 int ctr_cfg_warp_unlocked(int levelID);
+
+// Is a trophy-track warp pad's STAGE-2 satisfied (open the relic Time Trials +
+// CTR Token Challenge menu)? When active and the pad has a stage2 requirement
+// (type != 0), compares owned >= count for stage2 (colour-aware for tokens/gems
+// via AP_BossReqMet). type 0 (no stage2 / collapsed / flat-v1 slot_data) returns
+// 1 (always open) so the tier-2 menu opens as soon as stage1 is met -- exactly
+// the pre-two-stage behaviour. physPadLevelID is the PHYSICAL pad LevelID, the
+// same key ctr_cfg_warp_unlocked uses. IMPLEMENTED C-SIDE in ap_hooks.c.
+int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 
 // Typed comparator for a resolved requirement (boss garages + warp-pad load
 // gate). Returns owned >= count for r->type using AP_GateCount* (colour-aware).

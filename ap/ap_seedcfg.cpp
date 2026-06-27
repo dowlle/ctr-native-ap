@@ -75,6 +75,43 @@ static ctr_req parse_req(const nlohmann::json &o)
 	return r;
 }
 
+// Parse a per-pad warp-pad unlock entry into its two stages.
+//
+//   schema 2 (two-stage, open-rando):  {"stage1": {type,count,colour},
+//                                        "stage2": {type,count,colour}}
+//   schema 1 (flat, pre two-stage):    {type,count,colour}
+//
+// Back-compat: a flat object has no "stage1" key, so it is read directly into
+// stage1 and stage2 is left type:0 (always-open) -- the tier-2 menu opens the
+// instant stage1 is met, exactly the pre-two-stage behaviour.
+static ctr_warp_unlock parse_warp_unlock(const nlohmann::json &o)
+{
+	ctr_warp_unlock u;
+	auto s1 = o.find("stage1");
+	if (s1 != o.end() && s1->is_object())
+	{
+		u.stage1 = parse_req(*s1);
+		auto s2 = o.find("stage2");
+		if (s2 != o.end() && s2->is_object())
+			u.stage2 = parse_req(*s2);
+		else
+		{
+			u.stage2.type = 0;
+			u.stage2.count = 0;
+			u.stage2.colour = -1;
+		}
+	}
+	else
+	{
+		// flat v1 shape -> stage1, stage2 stays always-open
+		u.stage1 = parse_req(o);
+		u.stage2.type = 0;
+		u.stage2.count = 0;
+		u.stage2.colour = -1;
+	}
+	return u;
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
@@ -82,9 +119,22 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	for (int i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
 		ctr_cfg.warp_pad_map[i] = i;
-		ctr_cfg.warp_pad_unlock[i].type = 0;
-		ctr_cfg.warp_pad_unlock[i].count = 0;
-		ctr_cfg.warp_pad_unlock[i].colour = -1;
+		ctr_cfg.warp_pad_unlock[i].stage1.type = 0;
+		ctr_cfg.warp_pad_unlock[i].stage1.count = 0;
+		ctr_cfg.warp_pad_unlock[i].stage1.colour = -1;
+		ctr_cfg.warp_pad_unlock[i].stage2.type = 0;
+		ctr_cfg.warp_pad_unlock[i].stage2.count = 0;
+		ctr_cfg.warp_pad_unlock[i].stage2.colour = -1;
+	}
+	// Gem cups (LevelID 100..104) -> gem_cup_unlock[0..4] by colour; type 0 = vanilla.
+	for (int i = 0; i < 5; i++)
+	{
+		ctr_cfg.gem_cup_unlock[i].stage1.type = 0;
+		ctr_cfg.gem_cup_unlock[i].stage1.count = 0;
+		ctr_cfg.gem_cup_unlock[i].stage1.colour = -1;
+		ctr_cfg.gem_cup_unlock[i].stage2.type = 0;
+		ctr_cfg.gem_cup_unlock[i].stage2.count = 0;
+		ctr_cfg.gem_cup_unlock[i].stage2.colour = -1;
 	}
 	for (int i = 0; i < CTR_CFG_BOSS_COUNT; i++)
 	{
@@ -137,7 +187,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
-	// ── warp_pad_unlock: per-pad resolved {type,count,colour} ──
+	// ── warp_pad_unlock: per-pad two-stage {stage1,stage2} (v1 flat accepted) ──
 	auto unlIt = j.find("warp_pad_unlock");
 	if (unlIt != j.end() && unlIt->is_object())
 	{
@@ -145,9 +195,18 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			int pad;
 			try { pad = std::stoi(it.key()); } catch (...) { continue; }
-			if (pad < 0 || pad >= CTR_CFG_PAD_COUNT || !it.value().is_object())
+			if (!it.value().is_object())
 				continue;
-			ctr_cfg.warp_pad_unlock[pad] = parse_req(it.value());
+			// Gem cups (LevelID 100..104) live outside the 28-wide warp_pad_unlock
+			// array; route them into gem_cup_unlock[colour] (= LevelID - 100).
+			if (pad >= 100 && pad <= 104)
+			{
+				ctr_cfg.gem_cup_unlock[pad - 100] = parse_warp_unlock(it.value());
+				continue;
+			}
+			if (pad < 0 || pad >= CTR_CFG_PAD_COUNT)
+				continue;
+			ctr_cfg.warp_pad_unlock[pad] = parse_warp_unlock(it.value());
 		}
 	}
 
@@ -178,16 +237,26 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	             ctr_cfg.oxide_final_unlock);
 	for (int i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
-		const ctr_req &r = ctr_cfg.warp_pad_unlock[i];
-		if (r.type != 0)
+		const ctr_warp_unlock &u = ctr_cfg.warp_pad_unlock[i];
+		if (u.stage1.type != 0 || u.stage2.type != 0)
 			std::fprintf(stderr,
-			             "[AP CFG] warp_pad_unlock[%d] = {type=%d count=%d colour=%d} "
-			             "(dest=%d)\n",
-			             i, r.type, r.count, r.colour, ctr_cfg.warp_pad_map[i]);
+			             "[AP CFG] warp_pad_unlock[%d] = stage1{type=%d count=%d colour=%d} "
+			             "stage2{type=%d count=%d colour=%d} (dest=%d)\n",
+			             i, u.stage1.type, u.stage1.count, u.stage1.colour,
+			             u.stage2.type, u.stage2.count, u.stage2.colour,
+			             ctr_cfg.warp_pad_map[i]);
 	}
 	for (int b = 0; b < CTR_CFG_BOSS_COUNT; b++)
 		std::fprintf(stderr, "[AP CFG] boss_req[%d] = {type=%d count=%d}\n", b,
 		             ctr_cfg.boss_req[b].type, ctr_cfg.boss_req[b].count);
+	for (int c = 0; c < 5; c++)
+	{
+		const ctr_req &g = ctr_cfg.gem_cup_unlock[c].stage1;
+		if (g.type != 0)
+			std::fprintf(stderr,
+			             "[AP CFG] gem_cup_unlock[%d] (LevelID %d) = stage1{type=%d count=%d colour=%d}\n",
+			             c, 100 + c, g.type, g.count, g.colour);
+	}
 }
 
 extern "C" int ctr_cfg_active(void)
