@@ -1242,14 +1242,34 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		}
 		else
 #endif
+#ifdef CTR_AP
+		// AP: "trophy owned -> re-race needs hub keys" must read AP checked-state
+		// (the DESTINATION track's Trophy Race LOCATION), NOT the cosmetic AdvProgress
+		// trophy bit. AP_ApplyItems high-end-fills received-trophy bits, so a NOT-won pad
+		// whose levelID is among the top received-trophy bits would otherwise read "won"
+		// here and get routed into the vanilla hub-key re-race gate (GetKeysRequirement),
+		// silently REPLACING the seed's randomized stage-1 requirement (opening on the
+		// wrong item/count -> out-of-logic, or softlock in the harder direction). This is
+		// the LInB twin of the ThTick:601/682 f9fbfa7a0 fix; keyed by warppadObj->levelID
+		// (destination) for shuffle consistency.
+		if (AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
+#else
 		// if trophy owned
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
+#endif
 		{
 		GetKeysRequirement:
 
 			// keys needed to unlock track again
 			unlockItem_modelID = STATIC_KEY;
+#ifdef CTR_AP
+			// AP: owned-count from the authoritative received-Key tally, not the cosmetic
+			// currAdvProfile.numKeys (rebuilt from bits) -- the same source every other AP
+			// key gate uses (hub door + pad reqs + Oxide).
+			unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
+#else
 			unlockItem_numOwned = gGT->currAdvProfile.numKeys;
+#endif
 			unlockItem_numNeeded = D232.arrKeysNeeded[data.metaDataLEV[levelID].hubID];
 		}
 
