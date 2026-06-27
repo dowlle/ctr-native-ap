@@ -1050,6 +1050,29 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 static const s16 s_warpPadRewardModelIDs[3] = {STATIC_TROPHY, STATIC_RELIC, STATIC_TOKEN};
 
 // NOTE(aalhendi): Source-backed for NTSC-U 926 0x800ad3ec-0x800ae870.
+#ifdef CTR_AP
+// Resolve a per-seed unlock requirement (ctr_req) into the LInB display/gate
+// triple (model id + owned count + needed count), colour-aware. Mirrors the
+// inline switch the trophy pads / gem cups use; factored out for the trial pads
+// (Slide Coliseum / Turbo Track), which the open two-stage rework randomizes.
+static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *numNeeded)
+{
+	switch (r->type)
+	{
+	case 1: *modelID = STATIC_TROPHY; *numOwned = AP_GateCount(AP_IDX_TROPHY); break;
+	case 2: *modelID = STATIC_KEY;    *numOwned = AP_GateCount(AP_IDX_KEY);    break;
+	case 3:
+		*modelID = STATIC_TOKEN;
+		*numOwned = (r->colour >= 0) ? AP_GateCountTokenColour(r->colour) : AP_GateCount(AP_IDX_TOKEN_RED);
+		break;
+	case 4: *modelID = STATIC_RELIC;  *numOwned = AP_GateCount(AP_IDX_SAPPHIRE); break;
+	case 5: *modelID = STATIC_GEM;    *numOwned = (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0; break;
+	default: *modelID = STATIC_TROPHY; *numOwned = AP_GateCount(AP_IDX_TROPHY); break;
+	}
+	*numNeeded = r->count;
+}
+#endif
+
 void AH_WarpPad_LInB(struct Instance *inst)
 {
 	int i;
@@ -1295,35 +1318,62 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	// Slide Col
 	else if (levelID == AH_WP_SLIDE_COLISEUM)
 	{
-		// number relics needed to open
-		unlockItem_modelID = STATIC_RELIC;
-		unlockItem_numNeeded = 10;
 #ifdef CTR_AP
-		// AP Option B: Slide Coliseum gates on 10 received Sapphire Relics.
-		unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
-#else
-		unlockItem_numOwned = gGT->currAdvProfile.numRelics;
+		// AP open two-stage: Slide Coliseum carries a per-seed randomized
+		// single-stage requirement (warp_pad_unlock[16], same dense array as the
+		// trophy pads). type 0 / inactive falls back to the vanilla 10-Sapphire gate.
+		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
+		{
+			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
+			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+		}
+		else
 #endif
+		{
+			// number relics needed to open
+			unlockItem_modelID = STATIC_RELIC;
+			unlockItem_numNeeded = 10;
+#ifdef CTR_AP
+			// AP fallback (type 0 / vanilla): 10 received Sapphire Relics.
+			unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+#else
+			unlockItem_numOwned = gGT->currAdvProfile.numRelics;
+#endif
+		}
 	}
 
 	// Turbo Track
 	else if (levelID == AH_WP_TURBO_TRACK)
 	{
-		// number gems needed to open
-		unlockItem_modelID = STATIC_GEM;
-		unlockItem_numNeeded = 5;
-
-		// count number of gems owned
-		unlockItem_numOwned = 0;
-		for (i = 0; i < 5; i++)
 #ifdef CTR_AP
-			// AP Option B: Turbo Track needs all 5 received Gem colours.
-			if (AP_GateCountGemColour(i) >= 1)
-				unlockItem_numOwned++;
-#else
-			if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_GEM + i) != 0)
-				unlockItem_numOwned++;
+		// AP open two-stage: Turbo Track carries a per-seed randomized single-stage
+		// requirement (warp_pad_unlock[17]). type 0 / inactive falls back to vanilla 5 Gems.
+		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
+		{
+			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
+			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+		}
+		else
 #endif
+		{
+			// number gems needed to open
+			unlockItem_modelID = STATIC_GEM;
+			unlockItem_numNeeded = 5;
+
+			// count number of gems owned
+			unlockItem_numOwned = 0;
+			for (i = 0; i < 5; i++)
+#ifdef CTR_AP
+				// AP fallback (type 0 / vanilla): all 5 received Gem colours.
+				if (AP_GateCountGemColour(i) >= 1)
+					unlockItem_numOwned++;
+#else
+				if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_GEM + i) != 0)
+					unlockItem_numOwned++;
+#endif
+		}
 	}
 
 	// battle maps
