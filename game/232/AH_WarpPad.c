@@ -1379,7 +1379,19 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	// battle maps
 	else if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
 	{
-		goto GetKeysRequirement;
+#ifdef CTR_AP
+		// AP open randomization: battle-arena pads carry a per-seed randomized
+		// single-stage requirement (warp_pad_unlock[18/19/21/23]); type 0 / inactive
+		// falls back to the vanilla hub-key gate (GetKeysRequirement).
+		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
+		{
+			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
+			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+		}
+		else
+#endif
+			goto GetKeysRequirement;
 	}
 
 	// gem cups
