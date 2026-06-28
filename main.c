@@ -60,6 +60,7 @@
 #include "platform/native_libspu.c"
 #include "platform/native_log.c"
 #include "platform/native_memcard.c"
+#include "platform/native_memcard_adapter.c"
 #include "platform/native_perf.c"
 #include "platform/native_platform.c"
 #include "platform/native_replay_scheduler.c"

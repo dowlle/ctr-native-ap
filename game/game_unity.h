@@ -147,10 +147,9 @@
 #include "MEMCARD/MEMCARD_Events.c"
 #include "MEMCARD/MEMCARD_FileIO.c"
 
-// NOTE(aalhendi): CTR_NATIVE routes host-backed card operations through MEMCARD_NativeAdapter; non-native builds use the retail card functions below.
-#if defined(CTR_NATIVE)
-#include "MEMCARD/MEMCARD_NativeAdapter.c"
-#else
+// NOTE(aalhendi): Retail card operations use PSX card/event/file APIs. Native
+// provides the same game-facing MEMCARD_* API from platform/native_memcard_adapter.c.
+#if !defined(CTR_NATIVE)
 #include "MEMCARD/MEMCARD_RetailCard.c"
 #include "MEMCARD/MEMCARD_RetailEvents.c"
 #include "MEMCARD/MEMCARD_RetailTransfer.c"
