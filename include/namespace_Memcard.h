@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_MEMCARD_H
+#define CTR_NATIVE_NAMESPACE_MEMCARD_H
+
 // Modified from original game
 enum MC_STAGE
 {
@@ -590,4 +593,6 @@ CTR_STATIC_ASSERT(sizeof(struct GhostProfile) == 0x34);
 CTR_STATIC_ASSERT(sizeof(struct GameOptions) == 0x28);
 #else
 CTR_STATIC_ASSERT(sizeof(struct GameOptions) == 0x24);
+#endif
+
 #endif

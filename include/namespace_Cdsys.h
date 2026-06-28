@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_CDSYS_H
+#define CTR_NATIVE_NAMESPACE_CDSYS_H
+
 enum XA_TYPE
 {
 	CDSYS_XA_TYPE_MUSIC,
@@ -90,3 +93,5 @@ struct AudioMeta
 };
 
 CTR_STATIC_ASSERT(sizeof(struct AudioMeta) == 8);
+
+#endif

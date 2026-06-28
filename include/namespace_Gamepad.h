@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_GAMEPAD_H
+#define CTR_NATIVE_NAMESPACE_GAMEPAD_H
+
 // an exact copy of the PadButton enum in PSn00bSDK's psxpad header, for whatever reason
 // minus raw input data for non-standard controllers
 enum RawInput
@@ -342,3 +345,5 @@ CTR_STATIC_ASSERT(sizeof(struct GamepadSystem) == 0x31C);
 CTR_STATIC_ASSERT(sizeof(struct GamepadSystem) == 0x320);
 #endif
 CTR_STATIC_ASSERT(sizeof(struct RacingWheelData) == 6);
+
+#endif

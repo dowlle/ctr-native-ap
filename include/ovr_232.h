@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_OVR_232_H
+#define CTR_NATIVE_OVR_232_H
+
 
 struct MaskHint
 {
@@ -504,3 +507,5 @@ struct OverlayDATA_232
 
 extern struct OverlayRDATA_232 R232;
 extern struct OverlayDATA_232 D232;
+
+#endif

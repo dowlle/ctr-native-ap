@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_SELECTPROFILE_H
+#define CTR_NATIVE_NAMESPACE_SELECTPROFILE_H
+
 struct SelectProfileLoadSaveIcon
 {
 	struct Instance *inst;
@@ -13,3 +16,5 @@ struct SelectProfileLoadSaveObj
 
 CTR_STATIC_ASSERT(sizeof(struct SelectProfileLoadSaveIcon) == 0xc);
 CTR_STATIC_ASSERT(sizeof(struct SelectProfileLoadSaveObj) == 0x8);
+
+#endif

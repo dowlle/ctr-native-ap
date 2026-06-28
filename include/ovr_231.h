@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_OVR_231_H
+#define CTR_NATIVE_OVR_231_H
+
 
 // used all over 231,
 // Plant, FlameJet, etc
@@ -713,3 +716,5 @@ struct OverlayDATA_231
 
 extern struct OverlayRDATA_231 R231;
 extern struct OverlayDATA_231 D231;
+
+#endif

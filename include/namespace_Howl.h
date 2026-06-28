@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_HOWL_H
+#define CTR_NATIVE_NAMESPACE_HOWL_H
+
 #if 0
 // this is a type in libsnd.h
 struct SndVolume
@@ -570,3 +573,5 @@ CTR_STATIC_ASSERT(sizeof(struct ChannelAttr) == 0x10);
 CTR_STATIC_ASSERT(sizeof(struct ChannelStats) == 0x20);
 CTR_STATIC_ASSERT(sizeof(struct SongSeq) == 0x1C);
 CTR_STATIC_ASSERT(sizeof(struct Song) == 0x7C);
+
+#endif

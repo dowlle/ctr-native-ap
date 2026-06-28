@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_DECAL_H
+#define CTR_NATIVE_NAMESPACE_DECAL_H
+
 // transparent parameter of DrawPoly funcs
 enum BlendModeDecal
 {
@@ -180,3 +183,5 @@ CTR_STATIC_ASSERT(sizeof(struct Icon) == 0x20);
 #define setIconUV(p, icon)                                                                                                                    \
 	*(u32 *)&p->u0 = *(u32 *)&icon->texLayout.u0, *(u32 *)&p->u1 = *(u32 *)&icon->texLayout.u1, *(u16 *)&p->u2 = *(u16 *)&icon->texLayout.u2, \
 	      *(u16 *)&p->u3 = *(u16 *)&icon->texLayout.u3
+
+#endif

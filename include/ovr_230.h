@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_OVR_230_H
+#define CTR_NATIVE_OVR_230_H
+
 enum
 {
 	SCRAP_INIT = 0,
@@ -1154,3 +1157,5 @@ CTR_STATIC_ASSERT(sizeof(struct MainMenu_LevelRow) == 0x10);
 #endif
 CTR_STATIC_ASSERT(sizeof(struct CharacterSelectMeta) == 0xC);
 CTR_STATIC_ASSERT(sizeof(struct TransitionMeta) == 0xA);
+
+#endif

@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_LEVEL_H
+#define CTR_NATIVE_NAMESPACE_LEVEL_H
+
 enum LevelID
 {
 	DINGO_CANYON = 0, // 0.
@@ -943,3 +946,5 @@ CTR_STATIC_ASSERT(offsetof(struct SpawnType2, posCoords) == 0x4);
 CTR_STATIC_ASSERT(offsetof(struct SpawnType2, positions) == 0x4);
 CTR_STATIC_ASSERT(offsetof(struct SpawnType2, posRot) == 0x4);
 CTR_STATIC_ASSERT(offsetof(struct Level, jumpVerticalSpeedCap) == 0x18C);
+
+#endif

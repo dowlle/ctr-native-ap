@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_MAIN_H
+#define CTR_NATIVE_NAMESPACE_MAIN_H
+
 enum GameMode1
 {
 	PAUSE_1 = 0x1,
@@ -1431,4 +1434,6 @@ CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x258C);
 #elif BUILD >= EurRetail
 CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x2594);
 #endif
+#endif
+
 #endif

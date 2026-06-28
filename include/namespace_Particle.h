@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_PARTICLE_H
+#define CTR_NATIVE_NAMESPACE_PARTICLE_H
+
 struct ParticleAxis
 {
 	int startVal;
@@ -158,3 +161,5 @@ CTR_STATIC_ASSERT(offsetof(struct Particle, otIndexOffset) == 0x18);
 CTR_STATIC_ASSERT(offsetof(struct Particle, driverID) == 0x19);
 CTR_STATIC_ASSERT(offsetof(struct Particle, unk1A) == 0x1a);
 CTR_STATIC_ASSERT(sizeof(struct ParticleEmitter) == 0x24);
+
+#endif

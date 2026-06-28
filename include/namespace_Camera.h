@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_CAMERA_H
+#define CTR_NATIVE_NAMESPACE_CAMERA_H
+
 // Camera scratchpad overlay rooted at retail scratchpad 0x1f800108.
 // Camera-owned fields begin at work+0x20c, absolute scratchpad 0x1f800314.
 struct CameraCollisionScratch
@@ -430,4 +433,6 @@ CTR_STATIC_ASSERT(offsetof(struct CameraDC, heightSmoothing) == 0xc0);
 CTR_STATIC_ASSERT(sizeof(struct CameraDC) == 0xDC);
 #else
 CTR_STATIC_ASSERT(sizeof(struct CameraDC) == 0xC8);
+#endif
+
 #endif

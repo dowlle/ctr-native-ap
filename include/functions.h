@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_FUNCTIONS_H
+#define CTR_NATIVE_FUNCTIONS_H
+
 // Retail overlay address labels; declared as functions to preserve existing address-taking call sites.
 void OVR_Region1(void);
 void OVR_Region2(void);
@@ -1290,3 +1293,5 @@ void VehPhysForce_TranslateMatrix(struct Thread *thread, struct Driver *driver);
 int VehPhysGeneral_JumpGetVelY(s16 *normalVec, Vec3 *speedXYZ);
 void VehPhysGeneral_JumpAndFriction(struct Thread *thread, struct Driver *driver);
 void CS_LoadBoss(const struct BossCutsceneData *bcd);
+
+#endif

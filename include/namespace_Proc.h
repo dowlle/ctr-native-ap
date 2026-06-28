@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_PROC_H
+#define CTR_NATIVE_NAMESPACE_PROC_H
+
 #define SIZE_RELATIVE_POOL_BUCKET(a, b, c, d) (a << 16) | b | c | d
 
 enum STACK_POOL
@@ -223,3 +226,5 @@ struct ThreadBucket
 };
 
 CTR_STATIC_ASSERT(sizeof(struct ThreadBucket) == 0x14);
+
+#endif

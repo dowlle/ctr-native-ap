@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_DISPLAY_H
+#define CTR_NATIVE_NAMESPACE_DISPLAY_H
+
 struct PrimMem
 {
 	// 0x0
@@ -84,4 +87,6 @@ CTR_STATIC_ASSERT(offsetof(struct DB, blurCameraMask) == 0x70);
 CTR_STATIC_ASSERT(offsetof(struct DB, primMem) == 0x74);
 CTR_STATIC_ASSERT(offsetof(struct DB, otMem) == 0x90);
 CTR_STATIC_ASSERT(sizeof(struct DB) == 0xA4);
+#endif
+
 #endif

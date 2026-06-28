@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_INSTANCE_H
+#define CTR_NATIVE_NAMESPACE_INSTANCE_H
+
 // & 0x1 = draw instance
 // & 0x2, 0x4, 0x8 -- FUN_80030ad4 -- collision?
 // & 0x10 = animation: loop
@@ -591,3 +594,5 @@ static inline u32 INST_CompressNormalVectorAndDriverIndex(s32 normalX, s32 norma
 }
 
 #define INST_GETIDPP(x) (struct InstDrawPerPlayer *)((u32)x + sizeof(struct Instance))
+
+#endif

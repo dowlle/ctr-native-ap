@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_DRAWLEVEL_H
+#define CTR_NATIVE_NAMESPACE_DRAWLEVEL_H
+
 struct DrawLevelOvr1PRenderListSlot
 {
 	struct QuadBlock **ptrQuadBlocksRendered;
@@ -241,3 +244,5 @@ CTR_STATIC_ASSERT(offsetof(struct DrawLevelOvr1PStableScratch, pushBufferPtr32) 
 CTR_STATIC_ASSERT(offsetof(struct DrawLevelOvr1PStableScratch, selected4x1TableWord) == 0x194);
 CTR_STATIC_ASSERT(offsetof(struct DrawLevelOvr1PStableScratch, projectedCenter) == 0x198);
 CTR_STATIC_ASSERT(offsetof(struct DrawLevelOvr1PStableScratch, uv) == 0x1a0);
+
+#endif

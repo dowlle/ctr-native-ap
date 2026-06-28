@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_UI_H
+#define CTR_NATIVE_NAMESPACE_UI_H
+
 struct UiElement2D
 {
 	s16 x;
@@ -50,3 +53,5 @@ CTR_STATIC_ASSERT(OFFSETOF(struct UiElement3D, m) == 0x8);
 CTR_STATIC_ASSERT(sizeof(struct UiElement3D) == 0x38);
 CTR_STATIC_ASSERT(sizeof(struct QuipStr) == 0x8);
 CTR_STATIC_ASSERT(sizeof(struct QuipMeta) == 0x18);
+
+#endif

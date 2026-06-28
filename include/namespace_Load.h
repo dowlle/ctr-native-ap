@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_LOAD_H
+#define CTR_NATIVE_NAMESPACE_LOAD_H
+
 enum BigIndex
 {
 	// 1p, 2p, 4p, relic
@@ -193,3 +196,5 @@ struct LoadQueueSlot
 };
 
 CTR_STATIC_ASSERT(sizeof(struct LoadQueueSlot) == 0x18);
+
+#endif

@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_OVR_233_H
+#define CTR_NATIVE_OVR_233_H
+
 enum
 {
 	CS_CAMERA_PAN = 0,
@@ -883,3 +886,5 @@ CTR_STATIC_ASSERT(OFFSETOF(struct Ovr233_Credits_BSS, creditsObj) == 0x34);
 #endif
 
 extern struct Ovr233_Credits_BSS creditsBSS;
+
+#endif

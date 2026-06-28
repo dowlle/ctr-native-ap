@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_VEHICLE_H
+#define CTR_NATIVE_NAMESPACE_VEHICLE_H
+
 #include <ctr_math.h>
 
 struct Thread;
@@ -2210,3 +2213,5 @@ CTR_STATIC_ASSERT(offsetof(struct Driver, rotPrev.y) == 0x2f6);
 CTR_STATIC_ASSERT(offsetof(struct Driver, rotPrev.z) == 0x2f8);
 CTR_STATIC_ASSERT(offsetof(struct Driver, rotPrev.w) == 0x2fa);
 CTR_STATIC_ASSERT(offsetof(struct Driver, KartStates.MaskGrab.AngleAxis_NormalVec) == 0x584);
+
+#endif

@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_PUSHBUFFER_H
+#define CTR_NATIVE_NAMESPACE_PUSHBUFFER_H
+
 struct FrustumCornerOUT
 {
 	SVec3 pos;
@@ -176,3 +179,5 @@ CTR_STATIC_ASSERT(offsetof(struct PushBuffer, renderBucketOTRangeEnd) == 0xf8);
 CTR_STATIC_ASSERT(offsetof(struct PushBuffer, renderBucketOTByteOffset) == 0xfc);
 CTR_STATIC_ASSERT(offsetof(struct PushBuffer, renderBucketScreenPos) == 0x100);
 CTR_STATIC_ASSERT(offsetof(struct PushBuffer, renderBucketScreenSize) == 0x104);
+
+#endif

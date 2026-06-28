@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_GHOST_H
+#define CTR_NATIVE_NAMESPACE_GHOST_H
+
 // GhostTape is 0x268 large
 // GhostRecBuf is 0x3e00
 
@@ -100,3 +103,5 @@ struct GhostHeader
 };
 
 #define GHOSTHEADER_GETRECORDBUFFER(x) (char *)((u32)x + sizeof(struct GhostHeader))
+
+#endif
