@@ -7,7 +7,7 @@
 #endif
 
 #ifndef CTR_NATIVE
-#include <gccHeaders.h>
+#include <psx/psn00b_prelude.h>
 #endif
 
 // Project base types and helpers.
