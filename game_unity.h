@@ -95,8 +95,7 @@
 
 #include "game/LevInstDef.c"
 
-#include "game/LibraryOfModels/LibraryOfModels_0_Store.c"
-#include "game/LibraryOfModels/LibraryOfModels_1_Clear.c"
+#include "game/LibraryOfModels/LibraryOfModels.c"
 
 #include "game/LinkedCollide.c"
 
