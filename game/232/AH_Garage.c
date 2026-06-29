@@ -227,7 +227,10 @@ LAB_800aeb6c:
 		// the flat cumulative Trophy total (4, 8, 12, 16).
 		if (ctr_cfg_active())
 		{
-			if (!AP_BossReqMet(&ctr_cfg.boss_req[(levelID - GEM_STONE_VALLEY) - 1]))
+			// AP Phase 2 (item #6): per-mode boss gate. Modes 0/1 (Original4Tracks /
+			// SameHubTracks) check WON tracks; mode 2 (Trophies) falls back to the
+			// resolved trophy-count requirement -- all inside AP_BossGarageOpen.
+			if (!AP_BossGarageOpen((levelID - GEM_STONE_VALLEY) - 1))
 				goto LAB_800aebd0;
 		}
 		else if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)
@@ -515,7 +518,8 @@ void AH_Garage_LInB(struct Instance *inst)
 		// Komodo 12, Pinstripe 16). hubID = levelID - GEM_STONE_VALLEY is 1..4.
 		if (ctr_cfg_active())
 		{
-			if (!AP_BossReqMet(&ctr_cfg.boss_req[(levelID - GEM_STONE_VALLEY) - 1]))
+			// AP Phase 2 (item #6): per-mode boss gate (see AH_Garage_ThTick).
+			if (!AP_BossGarageOpen((levelID - GEM_STONE_VALLEY) - 1))
 				goto GarageLocked;
 		}
 		else if (AP_GateCount(AP_IDX_TROPHY) < (levelID - GEM_STONE_VALLEY) * 4)

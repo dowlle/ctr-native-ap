@@ -83,6 +83,13 @@ typedef struct
 	// cups have no tier-2 menu); kept as ctr_warp_unlock only for parse symmetry.
 	ctr_warp_unlock gem_cup_unlock[5];                  // gem cups by colour (LevelID 100..104); stage1.type 0 = native vanilla rule
 	ctr_req         boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
+	// Per-boss required race-track LevelIDs for the track-based garage modes
+	// (bossgarage_mode 0 Original4Tracks / 1 SameHubTracks). boss_tracks[b][0..
+	// boss_n_tracks[b]-1] are the LevelIDs the player must have WON for boss b to
+	// open; n==0 / entry -1 = no track list (mode 2 Trophies, or Oxide) -> use
+	// boss_req. Emitted by the apworld under boss_garage_req[<boss>].tracks.
+	int             boss_tracks[CTR_CFG_BOSS_COUNT][4];
+	int             boss_n_tracks[CTR_CFG_BOSS_COUNT];
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -129,6 +136,14 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 // gate). Returns owned >= count for r->type using AP_GateCount* (colour-aware).
 // type 0 / unknown -> 1 (no requirement). IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_BossReqMet(const ctr_req *r);
+
+// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
+// Komodo, Pinstripe). Honours bossgarage_mode: modes 0/1 (Original4Tracks /
+// SameHubTracks) open the garage once every required race track for that boss
+// has been WON (boss_tracks[bossIdx]); mode 2 (Trophies) and any boss with no
+// track list fall back to the flat trophy-count requirement via AP_BossReqMet.
+// IMPLEMENTED C-SIDE in ap_hooks.c (needs AP_LocationCheckedByBit).
+int AP_BossGarageOpen(int bossIdx);
 
 #ifdef __cplusplus
 } // extern "C"
