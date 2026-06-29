@@ -71,6 +71,12 @@ typedef struct
 	int shuffle_warp_pads;
 	int warppad_unlock_mode; // 0 vanilla / 1 random / 2 random_without_4_keys
 	int bossgarage_mode;     // 0 original4 / 1 same_hub / 2 trophies
+	// item #5 placement toggles (forward-looking; MVP native ignores them because
+	// locked gems/keys never enter the multiworld pool -> native never receives an
+	// item it must place). A future native build can branch on these to tell
+	// "reward not shuffled" apart from "reward shuffled elsewhere".
+	int shuffle_gems;        // 0 gems pinned to gem cups / 1 gems in the pool
+	int shuffle_keys;        // 0 keys pinned to boss races / 1 keys in the pool
 
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)

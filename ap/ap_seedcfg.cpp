@@ -173,6 +173,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.relics_require_perfect = json_int(opt, "relics_require_perfect", 0);
 	ctr_cfg.oxide_final_unlock = json_int(opt, "oxide_final_unlock", 0);
 	ctr_cfg.shuffle_warp_pads = json_int(opt, "shuffle_warp_pads", 0);
+	ctr_cfg.shuffle_gems = json_int(opt, "shuffle_gems", 0);
+	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
 
