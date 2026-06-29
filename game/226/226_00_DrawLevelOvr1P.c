@@ -8261,127 +8261,60 @@ static int Ovr226_800a36a8_DrawGround4x1BspList(struct VisMemBspListNode *slot, 
 	return 1;
 }
 
-static int Ovr226_800a417c_DrawGround4x1RenderedList(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem)
+static u32 DrawLevelOvr1P_GetNonWaterRenderedListReserve(int role)
 {
-	struct LevVertex *vertices = mesh->ptrVertexArray;
-	struct DrawLevelOvr1PScratchVertex *projected = DrawLevelOvr1P_GetScratchVertices();
-
-	if (renderedList == NULL)
+	switch (role)
 	{
-		return 1;
-	}
+	case DRAW_LEVEL_OVR1P_BUCKET_4X1_RENDERED:
+		return DRAW_LEVEL_OVR1P_BUCKET_RESERVE_4X1;
 
-	while (1)
-	{
-		struct QuadBlock *block = *renderedList;
+	case DRAW_LEVEL_OVR1P_BUCKET_4X2_RENDERED:
+		return DRAW_LEVEL_OVR1P_BUCKET_RESERVE_4X2;
 
-		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_4X1))
-		{
-			return 0;
-		}
-
-		DrawLevelOvr1P_SetGridFaceSlotWord(projected, 0);
-		if (block == NULL)
-		{
-			return 1;
-		}
-
-		DrawLevelOvr1P_ProjectRenderedGrid(vertices, block, projected, DRAW_LEVEL_OVR1P_PROJECTED_SOURCE_POS_FLAGS, DRAW_LEVEL_OVR1P_GRID_SLOT_FACE);
-
-		for (int faceIndex = 0; faceIndex < 4; faceIndex++)
-		{
-			if (!Ovr226_800a47f4_Ground4x1RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex))
-			{
-				return 0;
-			}
-		}
-
-		renderedList++;
+	default:
+		return DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT;
 	}
 }
 
-static int Ovr226_800a5e5c_DrawGround4x2RenderedList(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem)
+static enum DrawLevelOvr1PGridSlotMode DrawLevelOvr1P_GetNonWaterRenderedListSlotMode(int role)
 {
-	struct LevVertex *vertices = mesh->ptrVertexArray;
-	struct DrawLevelOvr1PScratchVertex *projected = DrawLevelOvr1P_GetScratchVertices();
-
-	if (renderedList == NULL)
+	switch (role)
 	{
-		return 1;
-	}
+	case DRAW_LEVEL_OVR1P_BUCKET_4X1_RENDERED:
+	case DRAW_LEVEL_OVR1P_BUCKET_4X2_RENDERED:
+		return DRAW_LEVEL_OVR1P_GRID_SLOT_FACE;
 
-	while (1)
-	{
-		struct QuadBlock *block = *renderedList;
-
-		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_4X2))
-		{
-			return 0;
-		}
-
-		DrawLevelOvr1P_SetGridFaceSlotWord(projected, 0);
-		if (block == NULL)
-		{
-			return 1;
-		}
-
-		DrawLevelOvr1P_ProjectRenderedGrid(vertices, block, projected, DRAW_LEVEL_OVR1P_PROJECTED_SOURCE_POS_FLAGS, DRAW_LEVEL_OVR1P_GRID_SLOT_FACE);
-
-		for (int faceIndex = 0; faceIndex < 4; faceIndex++)
-		{
-			if (!Ovr226_800a6740_Ground4x2RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex))
-			{
-				return 0;
-			}
-		}
-
-		renderedList++;
+	default:
+		return DRAW_LEVEL_OVR1P_GRID_SLOT_WORD;
 	}
 }
 
-static int Ovr226_800a7ba8_DrawDynamicRenderedList(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem)
+static int DrawLevelOvr1P_NonWaterRenderedSelectorNearGate(struct PushBuffer *pb, struct PrimMem *primMem, struct DrawLevelOvr1PScratchVertex *projected,
+                                                           struct QuadBlock *block, int faceIndex, int role)
 {
-	struct LevVertex *vertices = mesh->ptrVertexArray;
-	struct DrawLevelOvr1PScratchVertex *projected = DrawLevelOvr1P_GetScratchVertices();
-
-	if (renderedList == NULL)
+	switch (role)
 	{
-		return 1;
-	}
+	case DRAW_LEVEL_OVR1P_BUCKET_4X1_RENDERED:
+		return Ovr226_800a47f4_Ground4x1RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex);
 
-	while (1)
-	{
-		struct QuadBlock *block = *renderedList;
+	case DRAW_LEVEL_OVR1P_BUCKET_4X2_RENDERED:
+		return Ovr226_800a6740_Ground4x2RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex);
 
-		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT))
-		{
-			return 0;
-		}
+	case DRAW_LEVEL_OVR1P_BUCKET_DYNAMIC_RENDERED:
+		return Ovr226_800a8380_DynamicRenderedSelectorNearGate(pb, primMem, projected, block, faceIndex);
 
-		DrawLevelOvr1P_SetGridFaceSlotWord(projected, 0);
-		if (block == NULL)
-		{
-			return 1;
-		}
-
-		DrawLevelOvr1P_ProjectRenderedGrid(vertices, block, projected, DRAW_LEVEL_OVR1P_PROJECTED_SOURCE_POS_FLAGS, DRAW_LEVEL_OVR1P_GRID_SLOT_WORD);
-
-		for (int faceIndex = 0; faceIndex < 4; faceIndex++)
-		{
-			if (!Ovr226_800a8380_DynamicRenderedSelectorNearGate(pb, primMem, projected, block, faceIndex))
-			{
-				return 0;
-			}
-		}
-
-		renderedList++;
+	default:
+		return Ovr226_800a9fa0_Quad4x4RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex);
 	}
 }
 
-static int Ovr226_800a97c8_DrawQuad4x4RenderedList(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem)
+static int DrawLevelOvr1P_DrawNonWaterRenderedList(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem,
+                                                   int role)
 {
 	struct LevVertex *vertices = mesh->ptrVertexArray;
 	struct DrawLevelOvr1PScratchVertex *projected = DrawLevelOvr1P_GetScratchVertices();
+	u32 reserve = DrawLevelOvr1P_GetNonWaterRenderedListReserve(role);
+	enum DrawLevelOvr1PGridSlotMode slotMode = DrawLevelOvr1P_GetNonWaterRenderedListSlotMode(role);
 
 	if (renderedList == NULL)
 	{
@@ -8392,7 +8325,7 @@ static int Ovr226_800a97c8_DrawQuad4x4RenderedList(struct QuadBlock **renderedLi
 	{
 		struct QuadBlock *block = *renderedList;
 
-		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT))
+		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, reserve))
 		{
 			return 0;
 		}
@@ -8403,11 +8336,11 @@ static int Ovr226_800a97c8_DrawQuad4x4RenderedList(struct QuadBlock **renderedLi
 			return 1;
 		}
 
-		DrawLevelOvr1P_ProjectRenderedGrid(vertices, block, projected, DRAW_LEVEL_OVR1P_PROJECTED_SOURCE_POS_FLAGS, DRAW_LEVEL_OVR1P_GRID_SLOT_WORD);
+		DrawLevelOvr1P_ProjectRenderedGrid(vertices, block, projected, DRAW_LEVEL_OVR1P_PROJECTED_SOURCE_POS_FLAGS, slotMode);
 
 		for (int faceIndex = 0; faceIndex < 4; faceIndex++)
 		{
-			if (!Ovr226_800a9fa0_Quad4x4RenderedSelectorNearGate(pb, primMem, projected, block, faceIndex))
+			if (!DrawLevelOvr1P_NonWaterRenderedSelectorNearGate(pb, primMem, projected, block, faceIndex, role))
 			{
 				return 0;
 			}
@@ -9774,32 +9707,20 @@ static int DrawLevelOvr1P_DrawRenderedQuadBlocks(struct QuadBlock **renderedList
 		return 1;
 	}
 
-	if (role == DRAW_LEVEL_OVR1P_BUCKET_4X1_RENDERED)
+	switch (role)
 	{
-		return Ovr226_800a417c_DrawGround4x1RenderedList(renderedList, pb, mesh, primMem);
-	}
+	case DRAW_LEVEL_OVR1P_BUCKET_4X1_RENDERED:
+	case DRAW_LEVEL_OVR1P_BUCKET_4X2_RENDERED:
+	case DRAW_LEVEL_OVR1P_BUCKET_DYNAMIC_RENDERED:
+	case DRAW_LEVEL_OVR1P_BUCKET_4X4_RENDERED:
+		return DrawLevelOvr1P_DrawNonWaterRenderedList(renderedList, pb, mesh, primMem, role);
 
-	if (role == DRAW_LEVEL_OVR1P_BUCKET_4X2_RENDERED)
-	{
-		return Ovr226_800a5e5c_DrawGround4x2RenderedList(renderedList, pb, mesh, primMem);
-	}
-
-	if (role == DRAW_LEVEL_OVR1P_BUCKET_DYNAMIC_RENDERED)
-	{
-		return Ovr226_800a7ba8_DrawDynamicRenderedList(renderedList, pb, mesh, primMem);
-	}
-
-	if (role == DRAW_LEVEL_OVR1P_BUCKET_4X4_RENDERED)
-	{
-		return Ovr226_800a97c8_DrawQuad4x4RenderedList(renderedList, pb, mesh, primMem);
-	}
-
-	if (role == DRAW_LEVEL_OVR1P_BUCKET_WATER_RENDERED)
-	{
+	case DRAW_LEVEL_OVR1P_BUCKET_WATER_RENDERED:
 		return Ovr226_800a2904_DrawWaterRenderedList(renderedList, pb, mesh, primMem);
-	}
 
-	return 0;
+	default:
+		return 0;
+	}
 }
 
 static void *DrawLevelOvr1P_GetRenderListBucketValue(struct DrawLevelOvr1PRenderList *renderList, const struct DrawLevelOvr1PBucket *bucket)
