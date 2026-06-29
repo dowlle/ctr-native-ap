@@ -31,7 +31,16 @@ extern "C" {
 // One resolved requirement. type per the §0 shared table:
 //   0 none/use native vanilla fixed rule
 //   1 trophies   2 keys   3 tokens   4 sapphire   5 gems
+//   6 AnyToken   7 AnyRelic   8 AnyGem   (any-of aggregates, colour = -1)
 // colour: -1 (n/a) or 0..4 = R,G,B,Y,P (only meaningful for tokens / gems).
+//
+// any-of semantics (requirement_specificity = any_of, the apworld default):
+//   type 3 token / 5 gem with colour 0..4 = a SPECIFIC colour; colour -1 = the
+//     legacy single-colour defensive fallback (apworld never emits it under any_of).
+//   type 6 AnyToken  (colour -1) = owned >= count summed over ALL 5 token colours.
+//   type 7 AnyRelic  (colour -1) = owned >= count summed over Sapphire+Gold+Platinum.
+//   type 8 AnyGem    (colour -1) = owned >= count summed over ALL 5 gem colours.
+// See AP_BossReqMet (ap_hooks.c) + AP_GateCount*Sum (ap_hooks.{h,c}).
 typedef struct
 {
 	int type;
