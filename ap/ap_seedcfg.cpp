@@ -141,6 +141,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.boss_req[i].type = 0;
 		ctr_cfg.boss_req[i].count = 0;
 		ctr_cfg.boss_req[i].colour = -1;
+		ctr_cfg.boss_n_tracks[i] = 0;
+		for (int k = 0; k < 4; k++)
+			ctr_cfg.boss_tracks[i][k] = -1;
 	}
 
 	if (!j.is_object())
@@ -220,7 +223,25 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			auto it = bossIt->find(kBossKeys[b]);
 			if (it != bossIt->end() && it->is_object())
+			{
 				ctr_cfg.boss_req[b] = parse_req(*it);
+				// Optional per-boss track list (garage modes 0/1). Mode 2 omits
+				// it; extra key is harmless to parse_req above. Cap at 4 (each
+				// boss hub has exactly four race tracks).
+				auto trIt = it->find("tracks");
+				if (trIt != it->end() && trIt->is_array())
+				{
+					int n = 0;
+					for (auto &tv : *trIt)
+					{
+						if (n >= 4)
+							break;
+						try { ctr_cfg.boss_tracks[b][n++] = tv.get<int>(); }
+						catch (...) {}
+					}
+					ctr_cfg.boss_n_tracks[b] = n;
+				}
+			}
 		}
 	}
 

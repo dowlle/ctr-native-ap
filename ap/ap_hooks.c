@@ -587,6 +587,43 @@ int AP_BossReqMet(const ctr_req *r)
 	}
 }
 
+// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
+// Komodo, Pinstripe). bossgarage_mode 0 (Original4Tracks) / 1 (SameHubTracks):
+// the garage opens once the player has WON each required race track for that boss
+// (ctr_cfg.boss_tracks[bossIdx][0..n-1], emitted by the apworld -- vanilla
+// LevelIDs for mode 0, destination-remapped LevelIDs for mode 1). A track counts
+// as WON when its trophy-race AP location has been checked --
+// AP_LocationCheckedByBit(trackLevelID + ADV_REWARD_FIRST_TROPHY), NOT
+// CHECK_ADV_BIT: in AP the AdvProgress trophy bit reflects RECEIVED items, not the
+// races the player actually won, so only the checked-location signal is correct
+// here. mode 2 (Trophies) and any boss with no track list fall back to the flat
+// trophy-count requirement via AP_BossReqMet. Oxide (bossIdx 4) is a key gate and
+// is never routed through this function.
+int AP_BossGarageOpen(int bossIdx)
+{
+	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
+		return 1;
+
+	int mode = ctr_cfg.bossgarage_mode;
+	int n = ctr_cfg.boss_n_tracks[bossIdx];
+
+	if ((mode == 0 || mode == 1) && n > 0)
+	{
+		for (int i = 0; i < n; i++)
+		{
+			int track = ctr_cfg.boss_tracks[bossIdx][i];
+			if (track < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(track + ADV_REWARD_FIRST_TROPHY))
+				return 0;
+		}
+		return 1;
+	}
+
+	// mode 2 (Trophies) or no track list -> flat trophy-count requirement.
+	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
+}
+
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
 // otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
 // per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
