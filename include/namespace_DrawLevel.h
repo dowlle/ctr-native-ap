@@ -1,6 +1,11 @@
 #ifndef CTR_NATIVE_NAMESPACE_DRAWLEVEL_H
 #define CTR_NATIVE_NAMESPACE_DRAWLEVEL_H
 
+enum DrawLevelOvr1PRenderListConstant
+{
+	DRAW_LEVEL_OVR1P_RENDER_LIST_SLOT_COUNT = 5,
+};
+
 struct DrawLevelOvr1PRenderListSlot
 {
 	struct QuadBlock **ptrQuadBlocksRendered;
@@ -9,7 +14,7 @@ struct DrawLevelOvr1PRenderListSlot
 
 struct DrawLevelOvr1PRenderList
 {
-	struct DrawLevelOvr1PRenderListSlot list[5];
+	struct DrawLevelOvr1PRenderListSlot list[DRAW_LEVEL_OVR1P_RENDER_LIST_SLOT_COUNT];
 	struct VisMemBspListNode *bspListStart_FullDynamic;
 	struct QuadBlock **ptrQuadBlocksRendered_FullDynamic;
 };

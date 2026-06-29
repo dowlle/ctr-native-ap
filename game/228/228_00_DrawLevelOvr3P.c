@@ -190,7 +190,8 @@ static int Ovr228_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList
                                      DrawLevelOvrBucketDispatch dispatch, int *didDispatch)
 {
 	u32 bucketIndex = (u32)renderListOffset / sizeof(u32);
-	void *bucketValue = DrawLevelOvr1P_GetRenderListField(renderList, renderListOffset);
+	const struct DrawLevelOvr1PBucket *bucket = &sDrawLevelOvr1PBuckets[bucketIndex];
+	void *bucketValue = DrawLevelOvr1P_GetRenderListBucketValue(renderList, bucket);
 	u32 setupAddress = R228.bucketSetupAddresses[bucketIndex];
 	u32 handlerAddress = R228.bucketHandlerAddresses[bucketIndex];
 	struct QuadBlock **renderedOverflowBase = (struct QuadBlock **)data.ptrRenderedQuadblockDestination_forEachPlayer[playerIndex];

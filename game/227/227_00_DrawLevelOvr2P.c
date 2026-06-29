@@ -167,7 +167,8 @@ static int Ovr227_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList
                                      struct PrimMem *primMem, const int *visFaceList, u8 **clipCursor, int playerIndex, int applySetup)
 {
 	u32 bucketIndex = (u32)renderListOffset / sizeof(u32);
-	void *bucketValue = DrawLevelOvr1P_GetRenderListField(renderList, renderListOffset);
+	const struct DrawLevelOvr1PBucket *bucket = &sDrawLevelOvr1PBuckets[bucketIndex];
+	void *bucketValue = DrawLevelOvr1P_GetRenderListBucketValue(renderList, bucket);
 	u32 setupAddress = R227.bucketSetupAddresses[bucketIndex];
 	u32 handlerAddress = R227.bucketHandlerAddresses[bucketIndex];
 	struct QuadBlock **renderedOverflowBase = (struct QuadBlock **)data.ptrRenderedQuadblockDestination_forEachPlayer[playerIndex];
@@ -198,7 +199,9 @@ static int Ovr227_800a0d9c_DispatchBucketTable(struct DrawLevelOvr1PRenderList *
 {
 	for (s32 renderListOffset = 0x28; renderListOffset >= 0; renderListOffset -= (s32)sizeof(u32))
 	{
-		void *viewport0BucketValue = DrawLevelOvr1P_GetRenderListField(&renderLists[0], renderListOffset);
+		u32 bucketIndex = (u32)renderListOffset / sizeof(u32);
+		const struct DrawLevelOvr1PBucket *bucket = &sDrawLevelOvr1PBuckets[bucketIndex];
+		void *viewport0BucketValue = DrawLevelOvr1P_GetRenderListBucketValue(&renderLists[0], bucket);
 
 		DrawLevelOvr1P_Scratch()->currentBucketOffset = (u32)renderListOffset;
 

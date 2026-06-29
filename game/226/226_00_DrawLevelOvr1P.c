@@ -10174,9 +10174,33 @@ static int DrawLevelOvr1P_DrawRenderedQuadBlocks(struct QuadBlock **renderedList
 	return 0;
 }
 
-static void *DrawLevelOvr1P_GetRenderListField(struct DrawLevelOvr1PRenderList *renderList, int offset)
+static void *DrawLevelOvr1P_GetRenderListBucketValue(struct DrawLevelOvr1PRenderList *renderList, const struct DrawLevelOvr1PBucket *bucket)
 {
-	return *(void **)((u8 *)renderList + offset);
+	int renderListOffset = bucket->renderListOffset;
+
+	if (renderListOffset == offsetof(struct DrawLevelOvr1PRenderList, bspListStart_FullDynamic))
+	{
+		return renderList->bspListStart_FullDynamic;
+	}
+
+	if (renderListOffset == offsetof(struct DrawLevelOvr1PRenderList, ptrQuadBlocksRendered_FullDynamic))
+	{
+		return renderList->ptrQuadBlocksRendered_FullDynamic;
+	}
+
+	u32 slotIndex = (u32)renderListOffset / sizeof(renderList->list[0]);
+
+	if (slotIndex >= DRAW_LEVEL_OVR1P_RENDER_LIST_SLOT_COUNT)
+	{
+		return NULL;
+	}
+
+	if (bucket->kind == DRAW_LEVEL_OVR1P_BUCKET_QUADBLOCKS_RENDERED)
+	{
+		return renderList->list[slotIndex].ptrQuadBlocksRendered;
+	}
+
+	return renderList->list[slotIndex].bspListStart;
 }
 
 static void Ovr226_800a0d34_SetEntryGteAndCameraScratch(struct PushBuffer *pb)
@@ -10272,7 +10296,7 @@ static int Ovr226_800a0e10_DispatchBucketTable(struct DrawLevelOvr1PRenderList *
 	{
 		u32 bucketIndex = (u32)renderListOffset / sizeof(u32);
 		const struct DrawLevelOvr1PBucket *bucket = &sDrawLevelOvr1PBuckets[bucketIndex];
-		void *bucketValue = DrawLevelOvr1P_GetRenderListField(renderList, renderListOffset);
+		void *bucketValue = DrawLevelOvr1P_GetRenderListBucketValue(renderList, bucket);
 		u32 setupAddress = R226.bucketSetupAddresses[bucketIndex];
 		u32 handlerAddress = R226.bucketHandlerAddresses[bucketIndex];
 
