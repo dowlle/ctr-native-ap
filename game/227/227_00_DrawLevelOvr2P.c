@@ -163,16 +163,6 @@ static int Ovr227_800a0ddc_DispatchBucketHandler(u32 handlerAddress, void *bucke
 	return 0;
 }
 
-static void Ovr227_ClearRenderedOverflowBase(int playerIndex)
-{
-	struct QuadBlock **renderedOverflowBase = (struct QuadBlock **)data.ptrRenderedQuadblockDestination_forEachPlayer[playerIndex];
-
-	if (renderedOverflowBase != NULL)
-	{
-		*renderedOverflowBase = NULL;
-	}
-}
-
 static void Ovr227_800a0f60_SetViewportContext(struct PushBuffer *pb, const int *visFaceList, u8 *clipStart, u8 *clipCursor,
                                                struct QuadBlock **renderedOverflowBase)
 {
@@ -190,7 +180,7 @@ static int Ovr227_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList
 
 	if (bucketValue == NULL)
 	{
-		Ovr227_ClearRenderedOverflowBase(playerIndex);
+		DrawLevelOvr_ClearRenderedOverflowBase(playerIndex);
 		return 1;
 	}
 

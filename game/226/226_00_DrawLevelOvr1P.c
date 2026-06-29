@@ -7727,6 +7727,26 @@ static void DrawLevelOvr1P_SetViewportScratchContext(struct PushBuffer *pb, cons
 	Ovr226_800a0d34_SetEntryGteAndCameraScratch(pb);
 }
 
+static void DrawLevelOvr_ClearRenderedOverflowBase(int playerIndex)
+{
+	struct QuadBlock **renderedOverflowBase = (struct QuadBlock **)data.ptrRenderedQuadblockDestination_forEachPlayer[playerIndex];
+
+	if (renderedOverflowBase != NULL)
+	{
+		*renderedOverflowBase = NULL;
+	}
+}
+
+static int DrawLevelOvr_ConsumeClipRecordsForViewport(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex,
+                                                      int (*consume)(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex))
+{
+	u8 *start = data.PtrClipBuffer[playerIndex];
+
+	DrawLevelOvr1P_SetClipRecordStart(start);
+	DrawLevelOvr1P_SetClipRecordCursor(clipCursor);
+	return consume(pb, primMem, clipCursor, playerIndex);
+}
+
 static struct QuadBlock **DrawLevelOvr1P_GetRenderedOverflowBase(void)
 {
 	if (sDrawLevelOvr1P_RenderedOverflowBase != NULL)

@@ -1,10 +1,6 @@
 #include <common.h>
 #include "../RenderLevel/DrawLevelOvr_shared.h"
 
-typedef int (*Ovr228BucketDispatch)(u32 handlerAddress, void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem,
-                                    const int *visFaceList);
-typedef int (*Ovr228ClipConsumer)(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex);
-
 enum Ovr228DrawLevelConstants
 {
 	OVR228_WATER_BSP_LIST_HANDLER = 0x800a10c4,
@@ -195,19 +191,9 @@ static void Ovr228_800a1014_SetViewportContext(struct PushBuffer *pb, const int 
 	DrawLevelOvr1P_SetViewportScratchContext(pb, visFaceList, clipStart, clipCursor, renderedOverflowBase);
 }
 
-static void Ovr228_ClearRenderedOverflowBase(int playerIndex)
-{
-	struct QuadBlock **renderedOverflowBase = (struct QuadBlock **)data.ptrRenderedQuadblockDestination_forEachPlayer[playerIndex];
-
-	if (renderedOverflowBase != NULL)
-	{
-		*renderedOverflowBase = NULL;
-	}
-}
-
 static int Ovr228_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList, s32 renderListOffset, struct PushBuffer *pb, struct mesh_info *mesh,
                                      struct PrimMem *primMem, const int *visFaceList, u8 **clipCursor, int playerIndex, int applySetup,
-                                     Ovr228BucketDispatch dispatch, int *didDispatch)
+                                     DrawLevelOvrBucketDispatch dispatch, int *didDispatch)
 {
 	u32 bucketIndex = (u32)renderListOffset / sizeof(u32);
 	void *bucketValue = DrawLevelOvr1P_GetRenderListField(renderList, renderListOffset);
@@ -219,7 +205,7 @@ static int Ovr228_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList
 
 	if (bucketValue == NULL)
 	{
-		Ovr228_ClearRenderedOverflowBase(playerIndex);
+		DrawLevelOvr_ClearRenderedOverflowBase(playerIndex);
 		return 1;
 	}
 
@@ -241,7 +227,7 @@ static int Ovr228_DrawViewportBucket(struct DrawLevelOvr1PRenderList *renderList
 
 static int Ovr228_800a0d9c_DispatchBucketTable(struct DrawLevelOvr1PRenderList *renderLists, struct PushBuffer *pushBuffers, struct mesh_info *mesh,
                                                struct PrimMem *primMem, const int *visFaceList0, const int *visFaceList1, const int *visFaceList2,
-                                               u8 **clipCursors, Ovr228BucketDispatch dispatch)
+                                               u8 **clipCursors, DrawLevelOvrBucketDispatch dispatch)
 {
 	for (s32 renderListOffset = 0x1c; renderListOffset >= 0; renderListOffset -= (s32)sizeof(u32))
 	{
@@ -272,15 +258,6 @@ static int Ovr228_800a0d9c_DispatchBucketTable(struct DrawLevelOvr1PRenderList *
 	}
 
 	return 1;
-}
-
-static int Ovr228_ConsumeClipRecordsForViewport(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex, Ovr228ClipConsumer consume)
-{
-	u8 *start = data.PtrClipBuffer[playerIndex];
-
-	DrawLevelOvr1P_SetClipRecordStart(start);
-	DrawLevelOvr1P_SetClipRecordCursor(clipCursor);
-	return consume(pb, primMem, clipCursor, playerIndex);
 }
 
 static int Ovr228_800a10c4_DrawWaterBspList(void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem, const int *visFaceList)
@@ -407,8 +384,8 @@ static int Ovr228_800a81bc_ConsumeClipRecords(struct PushBuffer *pb, struct Prim
 }
 
 static int Ovr228_800a0cbc_EntryWithCallbacks(void *LevRenderList, struct PushBuffer *pb, struct BSP *bspList, struct PrimMem *primMem, void *VisMem10,
-                                              void *VisMem14, void *VisMem18, const struct TextureLayout *waterEnvMap, Ovr228BucketDispatch dispatch,
-                                              Ovr228ClipConsumer consume)
+                                              void *VisMem14, void *VisMem18, const struct TextureLayout *waterEnvMap, DrawLevelOvrBucketDispatch dispatch,
+                                              DrawLevelOvrClipConsumer consume)
 {
 	struct DrawLevelOvr1PRenderList *renderLists = LevRenderList;
 	struct mesh_info *mesh = (struct mesh_info *)bspList;
@@ -475,17 +452,17 @@ static int Ovr228_800a0cbc_EntryWithCallbacks(void *LevRenderList, struct PushBu
 	DrawLevelOvr1P_Scratch()->playerClipCursorPtr32[2] = (u32)(uintptr_t)clipCursors[2];
 
 	Ovr228_800a8e08_CopyClipRecordJumpTable();
-	if (!Ovr228_ConsumeClipRecordsForViewport(&pb[0], primMem, clipCursors[0], 0, consume))
+	if (!DrawLevelOvr_ConsumeClipRecordsForViewport(&pb[0], primMem, clipCursors[0], 0, consume))
 	{
 		return 0;
 	}
 
-	if (!Ovr228_ConsumeClipRecordsForViewport(&pb[1], primMem, clipCursors[1], 1, consume))
+	if (!DrawLevelOvr_ConsumeClipRecordsForViewport(&pb[1], primMem, clipCursors[1], 1, consume))
 	{
 		return 0;
 	}
 
-	if (!Ovr228_ConsumeClipRecordsForViewport(&pb[2], primMem, clipCursors[2], 2, consume))
+	if (!DrawLevelOvr_ConsumeClipRecordsForViewport(&pb[2], primMem, clipCursors[2], 2, consume))
 	{
 		return 0;
 	}

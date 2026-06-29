@@ -6,6 +6,10 @@
 // the canonical 226 C helpers to the 227/228/229 overlay slices.
 
 // Bucket metadata and scratch views.
+typedef int (*DrawLevelOvrBucketDispatch)(u32 handlerAddress, void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem,
+                                          const int *visFaceList);
+typedef int (*DrawLevelOvrClipConsumer)(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex);
+
 extern const struct DrawLevelOvr1PBucket sDrawLevelOvr1PBuckets[];
 struct DrawLevelOvr1PStableScratch *DrawLevelOvr1P_Scratch(void);
 struct MainRenderLevelGeometryScratch *DrawLevelOvr1P_RenderScratch(void);
@@ -20,9 +24,12 @@ void DrawLevelOvr1P_SetViewportScratchContext(struct PushBuffer *pb, const int *
                                               struct QuadBlock **renderedOverflowBase);
 void DrawLevelOvr1P_SetPrimReserveBias(u32 bias);
 void DrawLevelOvr1P_SetListHandlersSeedRenderedCursor(int enabled);
+void DrawLevelOvr_ClearRenderedOverflowBase(int playerIndex);
 
 // Shared dispatch helpers.
 int DrawLevelOvr1P_ConsumeClipRecords(struct PushBuffer *pb, struct PrimMem *primMem);
+int DrawLevelOvr_ConsumeClipRecordsForViewport(struct PushBuffer *pb, struct PrimMem *primMem, u8 *clipCursor, int playerIndex,
+                                               DrawLevelOvrClipConsumer consume);
 void *DrawLevelOvr1P_GetRenderListField(struct DrawLevelOvr1PRenderList *renderList, int offset);
 int DrawLevelOvr1P_DrawRenderedQuadBlocks(struct QuadBlock **renderedList, struct PushBuffer *pb, struct mesh_info *mesh, struct PrimMem *primMem, int role);
 
