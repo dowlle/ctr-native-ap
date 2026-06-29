@@ -3,15 +3,6 @@
 
 enum Ovr228DrawLevelConstants
 {
-	OVR228_WATER_BSP_LIST_HANDLER = 0x800a10c4,
-	OVR228_WATER_RENDERED_HANDLER = 0x800a1b88,
-	OVR228_SPLIT_GROUND_LIST_A_HANDLER = 0x800a2928,
-	OVR228_SPLIT_GROUND_RENDERED_A_HANDLER = 0x800a37b8,
-	OVR228_SPLIT_GROUND_LIST_B_HANDLER = 0x800a4768,
-	OVR228_SPLIT_GROUND_RENDERED_B_HANDLER = 0x800a55f8,
-	OVR228_WIDE_DYNAMIC_HANDLER = 0x800a65a8,
-	OVR228_QUAD_4X4_RENDERED_HANDLER = 0x800a71fc,
-	OVR228_WATER_RENDERED_DEFAULT_WRAPPER = 0x800a2224,
 	OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS = 0x1040,
 	OVR228_SPLIT_GROUND_LIST_B_PRIM_RESERVE_BIAS = 0x16c0,
 	OVR228_TERMINAL_PRIM_RESERVE_BIAS = 0x1a00,
@@ -259,33 +250,33 @@ static int Ovr228_800a0d9c_DispatchBucketTable(struct DrawLevelOvr1PRenderList *
 static int Ovr228_800a10c4_800a81bc_BucketDispatch(u32 handlerAddress, void *bucketValue, struct PushBuffer *pb, struct mesh_info *mesh,
                                                    struct PrimMem *primMem, const int *visFaceList)
 {
-	if (handlerAddress == OVR228_WATER_BSP_LIST_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_WATER_BSP_LIST_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		return Ovr226_800a1e30_DrawWaterBspList((struct VisMemBspListNode *)bucketValue, pb, mesh, primMem, visFaceList);
 	}
 
-	if (handlerAddress == OVR228_WATER_RENDERED_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_WATER_RENDERED_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		return Ovr226_800a2904_DrawWaterRenderedListWithDefaultHandler((struct QuadBlock **)bucketValue, pb, mesh, primMem,
-		                                                               OVR228_WATER_RENDERED_DEFAULT_WRAPPER);
+		                                                               OVR228_RETAIL_LABEL_WATER_RENDERED_DEFAULT_WRAPPER);
 	}
 
-	if (handlerAddress == OVR228_SPLIT_GROUND_LIST_A_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_SPLIT_GROUND_LIST_A_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		return DrawLevelOvr1P_DrawSplitGroundListABspList((struct VisMemBspListNode *)bucketValue, pb, mesh, primMem, visFaceList);
 	}
 
-	if (handlerAddress == OVR228_SPLIT_GROUND_RENDERED_A_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_SPLIT_GROUND_RENDERED_A_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		DrawLevelOvr1P_SetSplitGroundThresholdScratch();
 		return DrawLevelOvr1P_DrawRenderedQuadBlocks((struct QuadBlock **)bucketValue, pb, mesh, primMem, DRAW_LEVEL_OVR1P_BUCKET_DYNAMIC_RENDERED);
 	}
 
-	if (handlerAddress == OVR228_SPLIT_GROUND_LIST_B_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_SPLIT_GROUND_LIST_B_HANDLER)
 	{
 		int result;
 
@@ -298,7 +289,7 @@ static int Ovr228_800a10c4_800a81bc_BucketDispatch(u32 handlerAddress, void *buc
 		return result;
 	}
 
-	if (handlerAddress == OVR228_SPLIT_GROUND_RENDERED_B_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_SPLIT_GROUND_RENDERED_B_HANDLER)
 	{
 		int result;
 
@@ -310,14 +301,14 @@ static int Ovr228_800a10c4_800a81bc_BucketDispatch(u32 handlerAddress, void *buc
 		return result;
 	}
 
-	if (handlerAddress == OVR228_WIDE_DYNAMIC_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_WIDE_DYNAMIC_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		DrawLevelOvr1P_SetSplitGroundThresholdScratch();
 		return DrawLevelOvr1P_DrawBspListQuadBlocks((struct VisMemBspListNode *)bucketValue, pb, mesh, primMem, visFaceList, DRAW_LEVEL_OVR1P_BUCKET_4X4_LIST);
 	}
 
-	if (handlerAddress == OVR228_QUAD_4X4_RENDERED_HANDLER)
+	if (handlerAddress == OVR228_RETAIL_LABEL_QUAD_4X4_RENDERED_HANDLER)
 	{
 		DrawLevelOvr1P_SetPrimReserveBias(OVR228_WATER_BSP_LIST_PRIM_RESERVE_BIAS);
 		DrawLevelOvr1P_SetSplitGroundThresholdScratch();
