@@ -453,7 +453,8 @@ struct OverlayDATA_232
 	s16 _pad_maskCamRotStart;
 
 	// 800b5570
-	int maskWarppadDelayFrames;
+	s16 maskWarppadDelayFrames;
+	s16 padding_maskWarppadDelayFrames;
 
 	// 800b5574
 	s16 maskWarppadBoolInterrupt;
@@ -504,6 +505,12 @@ struct OverlayDATA_232
 	s16 unkModeHubItems;
 	s16 padding_800b5672;
 };
+
+#define OFFSETOF_D232(ELEMENT) ((u32)0x800b4ddc + OFFSETOF(struct OverlayDATA_232, ELEMENT))
+
+CTR_STATIC_ASSERT(OFFSETOF_D232(maskWarppadDelayFrames) == 0x800b5570);
+CTR_STATIC_ASSERT(OFFSETOF_D232(maskWarppadBoolInterrupt) == 0x800b5574);
+CTR_STATIC_ASSERT(OFFSETOF_D232(ptrPauseObject) == 0x800b5578);
 
 extern struct OverlayRDATA_232 R232;
 extern struct OverlayDATA_232 D232;

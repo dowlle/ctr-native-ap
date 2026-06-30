@@ -4142,7 +4142,8 @@ struct sData
 	// search for FUN_800b3f88,
 	// determines if Aku is talking, to disable
 	// on-screen text, or delay track loading
-	int AkuAkuHintState;
+	s16 AkuAkuHintState;
+	s16 padding_AkuAkuHintState;
 
 	// 8008bcb0 -- SepReview
 	// 8008d878 -- UsaRetail
@@ -5201,6 +5202,8 @@ CTR_STATIC_ASSERT(sizeof(struct MetaDataMODEL) == 0xC);
 
 CTR_STATIC_ASSERT(OFFSETOF_DATA(rowsQuit[0]) == 0x800841BC);
 CTR_STATIC_ASSERT(OFFSETOF_DATA(menuQuit) == 0x800841D0);
+CTR_STATIC_ASSERT(OFFSETOF_SDATA(AkuAkuHintState) == 0x8008D874);
+CTR_STATIC_ASSERT(OFFSETOF_SDATA(lngStrings) == 0x8008D878);
 CTR_STATIC_ASSERT(OFFSETOF_SDATA(botCrashNavRot) == 0x8008D9EC);
 CTR_STATIC_ASSERT(OFFSETOF_SDATA(vehicleCollisionImpactStrength) == 0x8008D9F4);
 CTR_STATIC_ASSERT(OFFSETOF_SDATA(talkMaskXASamplePeak) == 0x8008D9F8);
