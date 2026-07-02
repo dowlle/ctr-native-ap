@@ -17,6 +17,89 @@ enum AdventureHubHudFlags
 
 CTR_STATIC_ASSERT(AH_HUD_FLAG_HIDE_MAP == 0x10);
 
+enum AdventureHubCounts
+{
+	AH_BOSS_KEY_COUNT = 4,
+	AH_HUB_TRACK_COUNT = 4,
+	AH_WOOD_DOOR_KEY_COUNT = 4,
+};
+
+CTR_STATIC_ASSERT(AH_BOSS_KEY_COUNT == 4);
+CTR_STATIC_ASSERT(AH_HUB_TRACK_COUNT == 4);
+CTR_STATIC_ASSERT(AH_WOOD_DOOR_KEY_COUNT == 4);
+
+enum AHHintMenuConstants
+{
+	AH_HINTMENU_ARROW_COUNT = 5,
+	AH_HINTMENU_ARROW_SPACING = 0x32,
+	AH_HINTMENU_ARROW_START_X = 0x95,
+	AH_HINTMENU_ARROW_Y_OFFSET = 4,
+	AH_HINTMENU_VISIBLE_ROWS = 5,
+	AH_HINTMENU_SCROLL_MARGIN = AH_HINTMENU_VISIBLE_ROWS - 1,
+	AH_HINTMENU_VIEW_COOLDOWN_FRAMES = 30,
+	AH_HINTMENU_HINT_STRING_COUNT = 32,
+	AH_HINTMENU_HINT_LNG_FIRST = LNG_GREETINGS,
+	AH_HINTMENU_INPUT_VIEW_EXIT = BTN_CROSS_one | BTN_CIRCLE | BTN_SQUARE_one | BTN_TRIANGLE,
+	AH_HINTMENU_INPUT_NAV = BTN_UP | BTN_DOWN | BTN_CROSS_one | BTN_CIRCLE | BTN_SQUARE_one | BTN_TRIANGLE,
+	AH_HINTMENU_INPUT_CONFIRM = BTN_CROSS_one | BTN_CIRCLE,
+	AH_HINTMENU_INPUT_BACK = BTN_TRIANGLE | BTN_SQUARE_one,
+	AH_HINTMENU_INPUT_CLOSE = BTN_START | BTN_SQUARE_one | BTN_TRIANGLE,
+};
+
+CTR_STATIC_ASSERT(AH_HINTMENU_ARROW_COUNT == 5);
+CTR_STATIC_ASSERT(AH_HINTMENU_ARROW_SPACING == 0x32);
+CTR_STATIC_ASSERT(AH_HINTMENU_ARROW_START_X == 0x95);
+CTR_STATIC_ASSERT(AH_HINTMENU_ARROW_Y_OFFSET == 4);
+CTR_STATIC_ASSERT(AH_HINTMENU_VISIBLE_ROWS == 5);
+CTR_STATIC_ASSERT(AH_HINTMENU_SCROLL_MARGIN == 4);
+CTR_STATIC_ASSERT(AH_HINTMENU_VIEW_COOLDOWN_FRAMES == 30);
+CTR_STATIC_ASSERT(AH_HINTMENU_HINT_STRING_COUNT == 32);
+CTR_STATIC_ASSERT(AH_HINTMENU_HINT_LNG_FIRST == 0x17b);
+CTR_STATIC_ASSERT(AH_HINTMENU_INPUT_VIEW_EXIT == 0x40070);
+CTR_STATIC_ASSERT(AH_HINTMENU_INPUT_NAV == 0x40073);
+CTR_STATIC_ASSERT(AH_HINTMENU_INPUT_CONFIRM == 0x50);
+CTR_STATIC_ASSERT(AH_HINTMENU_INPUT_BACK == 0x40020);
+CTR_STATIC_ASSERT(AH_HINTMENU_INPUT_CLOSE == 0x41020);
+
+enum AHMaskHintState
+{
+	AH_MASKHINT_STATE_IDLE = 0,
+	AH_MASKHINT_STATE_REPEAT_PROMPT = 5,
+};
+
+enum AHMaskHintConstants
+{
+	AH_MASKHINT_SHORT_SPAWN_FRAMES = 20,
+	AH_MASKHINT_LONG_SPAWN_FRAMES = CTR_SECONDS_TO_FRAMES(3),
+	AH_MASKHINT_CAMERA_DELAY_FRAMES = CTR_SECONDS_TO_FRAMES(2),
+	AH_MASKHINT_INTERRUPT_DONE_DELAY_FRAMES = CTR_SECONDS_TO_FRAMES(1),
+	AH_MASKHINT_MAX_START_SPEED = 0x31,
+	AH_MASKHINT_FULL_BLEND = FP_ONE,
+	AH_MASKHINT_SPAWN_RING_FRAMES = 20,
+	AH_MASKHINT_SPAWN_SPIRAL_RADIUS = 50,
+	AH_MASKHINT_SPAWN_PARTICLES = 3,
+	AH_MASKHINT_LEAVE_PARTICLES = 0x18,
+	AH_MASKHINT_VANISH_PARTICLES = 20,
+	AH_MASKHINT_SFX_SPAWN = 0x100,
+	AH_MASKHINT_SFX_VANISH = 0x101,
+};
+
+CTR_STATIC_ASSERT(AH_MASKHINT_STATE_IDLE == 0);
+CTR_STATIC_ASSERT(AH_MASKHINT_STATE_REPEAT_PROMPT == 5);
+CTR_STATIC_ASSERT(AH_MASKHINT_SHORT_SPAWN_FRAMES == 20);
+CTR_STATIC_ASSERT(AH_MASKHINT_LONG_SPAWN_FRAMES == 90);
+CTR_STATIC_ASSERT(AH_MASKHINT_CAMERA_DELAY_FRAMES == 60);
+CTR_STATIC_ASSERT(AH_MASKHINT_INTERRUPT_DONE_DELAY_FRAMES == 30);
+CTR_STATIC_ASSERT(AH_MASKHINT_MAX_START_SPEED == 0x31);
+CTR_STATIC_ASSERT(AH_MASKHINT_FULL_BLEND == 0x1000);
+CTR_STATIC_ASSERT(AH_MASKHINT_SPAWN_RING_FRAMES == 20);
+CTR_STATIC_ASSERT(AH_MASKHINT_SPAWN_SPIRAL_RADIUS == 50);
+CTR_STATIC_ASSERT(AH_MASKHINT_SPAWN_PARTICLES == 3);
+CTR_STATIC_ASSERT(AH_MASKHINT_LEAVE_PARTICLES == 0x18);
+CTR_STATIC_ASSERT(AH_MASKHINT_VANISH_PARTICLES == 20);
+CTR_STATIC_ASSERT(AH_MASKHINT_SFX_SPAWN == 0x100);
+CTR_STATIC_ASSERT(AH_MASKHINT_SFX_VANISH == 0x101);
+
 enum BossGarageDoorDirectionID
 {
 	BOSS_GARAGE_DOOR_CLOSING = -1,
@@ -87,7 +170,7 @@ CTR_STATIC_ASSERT(sizeof(AdventureHubDoorID) == 0x2);
 struct WoodDoor
 {
 	struct Instance *otherDoor;
-	struct Instance *keyInst[4];
+	struct Instance *keyInst[AH_WOOD_DOOR_KEY_COUNT];
 
 	// 0x14 (5)
 	SVec3 doorRot;
@@ -281,6 +364,49 @@ CTR_STATIC_ASSERT(sizeof(struct PauseObject) == 0xe4);
 CTR_STATIC_ASSERT(offsetof(struct PauseObject, members) == 0x0);
 CTR_STATIC_ASSERT(offsetof(struct PauseObject, t) == 0xe0);
 
+struct AHPausePage
+{
+	// can be -1 if not hub page
+	s16 hubID;
+
+	// can be -1 for hubs, which then get name from MetaDataLev
+	s16 titleLng;
+
+	// enum AHPausePageType, stored as s16 to match retail layout
+	s16 type;
+
+	s16 characterID_Boss;
+};
+
+struct AHPauseInstance
+{
+	// 0x0
+	s16 modelID;
+	s16 scale;
+
+	// 0x4
+	u32 color;
+
+	// 0x8
+	u32 instFlags;
+
+	// 0xC
+	SVec3 lightDir;
+	s16 _pad_lightDir;
+};
+
+CTR_STATIC_ASSERT(sizeof(struct AHPausePage) == 0x8);
+CTR_STATIC_ASSERT(offsetof(struct AHPausePage, hubID) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct AHPausePage, titleLng) == 0x2);
+CTR_STATIC_ASSERT(offsetof(struct AHPausePage, type) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct AHPausePage, characterID_Boss) == 0x6);
+CTR_STATIC_ASSERT(sizeof(struct AHPauseInstance) == 0x14);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseInstance, modelID) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseInstance, scale) == 0x2);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseInstance, color) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseInstance, instFlags) == 0x8);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseInstance, lightDir) == 0xc);
+
 struct WarpPad
 {
 	// 0x0
@@ -350,6 +476,14 @@ typedef u16 AHSaveObjFlagSet;
 enum AHSaveObjConstants
 {
 	AH_SAVEOBJ_SCANLINE_START_FRAME = 0xf,
+	AH_SAVEOBJ_INTERACTION_DIST_SQ = 0x8ffff,
+	AH_SAVEOBJ_ENTRY_SPEED_MAX = 0x80,
+	AH_SAVEOBJ_EXIT_SPEED_MAX = 0x101,
+	AH_SAVEOBJ_CAMERA_FORWARD_OFFSET = 0x19,
+	AH_SAVEOBJ_SCAN_SFX_ID = 0x99,
+	AH_SAVEOBJ_SCAN_SFX_NEAR_DIST = 300,
+	AH_SAVEOBJ_SCAN_SFX_FAR_DIST = 6000,
+	AH_SAVEOBJ_SCAN_DEPTH_BIAS = 0xf8,
 };
 
 struct SaveObj
@@ -371,6 +505,15 @@ CTR_STATIC_ASSERT(AH_SAVEOBJ_FLAG_NONE == 0);
 CTR_STATIC_ASSERT(AH_SAVEOBJ_FLAG_INTERACTION_ACTIVE == 1);
 CTR_STATIC_ASSERT(AH_SAVEOBJ_FLAG_MENU_SHOWN == 2);
 CTR_STATIC_ASSERT(AH_SAVEOBJ_FLAG_HUD_RESTORED == 4);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_SCANLINE_START_FRAME == 0xf);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_INTERACTION_DIST_SQ == 0x8ffff);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_ENTRY_SPEED_MAX == 0x80);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_EXIT_SPEED_MAX == 0x101);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_CAMERA_FORWARD_OFFSET == 0x19);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_SCAN_SFX_ID == 0x99);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_SCAN_SFX_NEAR_DIST == 300);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_SCAN_SFX_FAR_DIST == 6000);
+CTR_STATIC_ASSERT(AH_SAVEOBJ_SCAN_DEPTH_BIAS == 0xf8);
 CTR_STATIC_ASSERT(sizeof(AHSaveObjFlagSet) == 0x2);
 CTR_STATIC_ASSERT(sizeof(struct SaveObj) == 0xc);
 
@@ -473,43 +616,29 @@ struct OverlayDATA_232
 	s16 hubArrowXY_Inner[2 * 3];
 
 	// 800b4fbc
-	s16 hubArrowXY_Outter[2 * 4];
+	s16 hubArrowXY_Outer[2 * 4];
 
 	// 800b4fcc
 	s16 loadSave_pos[2 * 4];
 
 	// 800b4fdc
-	int loadSave_col[4]; // maybe should be `char*` instead of `int`
+	u32 loadSave_col[4];
 
 	// 800b4fec
 	s16 hubArrow_pos[2 * 3];
 
 	// 800B4FF8
-	int hubArrow_col1[3]; // maybe should be `char*` instead of `int`
+	u32 hubArrow_col1[3];
 
 	// 800b5004
-	int hubArrow_col2[3];
+	u32 hubArrow_col2[3];
 
 	// 800b5010
-	int hubArrowGray1[3];
-	int hubArrowGray2[3];
+	u32 hubArrowGray1[3];
+	u32 hubArrowGray2[3];
 
 	// 800b5028
-	// 8 bytes each
-	struct
-	{
-		// can be -1 if not hub page
-		s16 hubID;
-
-		// can be -1 for hubs, which then
-		// get name from MetaDataLev
-		s16 titleLng;
-
-		// enum AHPausePageType
-		s16 type;
-
-		s16 characterID_Boss;
-	} advPausePages[AH_PAUSE_MENU_PAGE_COUNT];
+	struct AHPausePage advPausePages[AH_PAUSE_MENU_PAGE_COUNT];
 
 	// 0x800B5060
 	// 0,1,2,3,4: Gems
@@ -517,27 +646,7 @@ struct OverlayDATA_232
 	// 6,7,8: 3-Relic page
 	// 9,10,11,12,13: Tokens
 	// 14: Trophy
-	struct
-	{
-		// 0x0
-		s16 modelID;
-		s16 scale;
-
-		// 0x4
-		int color;
-
-		// 0x8
-		// same for all gems
-		int instFlags;
-
-		// 0xC
-		// same for all gems
-		SVec3 lightDir;
-		s16 _pad_lightDir;
-
-
-		// 0x14 bytes each
-	} advPauseInst[AH_PAUSE_ICON_COUNT];
+	struct AHPauseInstance advPauseInst[AH_PAUSE_ICON_COUNT];
 
 	// 0x800B518C
 	struct RectMenu menuHintMenu;
@@ -546,10 +655,10 @@ struct OverlayDATA_232
 	s16 fiveArrow_pos[2 * 3];
 
 	// 0x800b51c4
-	int fiveArrow_col1[3];
+	u32 fiveArrow_col1[3];
 
 	// 0x800b51d0
-	int fiveArrow_col2[3];
+	u32 fiveArrow_col2[3];
 
 	// 0x800b51dc
 	SVec3 maskPos;
@@ -601,10 +710,10 @@ struct OverlayDATA_232
 	s16 _pad_lookAtPos;
 
 	// 800b5530
-	int colorQuad[4]; // maybe should be `char*` instead of `int`
+	u32 colorQuad[4];
 
 	// 800b5540
-	int colorTri[3]; // maybe should be `char*` instead of `int`
+	u32 colorTri[3];
 
 	// 800b554c
 	s16 pausePageDir;

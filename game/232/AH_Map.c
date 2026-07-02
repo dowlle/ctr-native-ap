@@ -63,6 +63,21 @@ enum AHMapMainConstants
 	AH_MAP_HUD_COUNTER_OFFSET_Y = -10,
 };
 
+enum AHMapArrowOutlineConstants
+{
+	AH_MAP_ARROW_OUTLINE_COUNT = 3,
+	AH_MAP_ARROW_OUTLINE_PHASE_STEP = 0xc,
+	AH_MAP_ARROW_OUTLINE_PHASE_MASK = 0x3f,
+	AH_MAP_ARROW_OUTLINE_PHASE_DELAY = 6,
+	AH_MAP_ARROW_OUTLINE_VISIBLE_PHASES = 0xc,
+	AH_MAP_ARROW_OUTLINE_RADIUS_MUL = 0x2aa,
+	AH_MAP_ARROW_OUTLINE_RADIUS_BIAS = FP_ONE,
+	AH_MAP_ARROW_OUTLINE_RADIUS_SHIFT = 0x1a,
+	AH_MAP_ARROW_OUTLINE_TROPHY_STEP = 0x200,
+	AH_MAP_ARROW_OUTLINE_ROUTE_STEP = 0x555,
+	AH_MAP_ARROW_OUTLINE_BOSS_STEP = 0x199,
+};
+
 CTR_STATIC_ASSERT(AH_MAP_HUD_AND_DEBUG_SPEEDOMETER == 0x8);
 CTR_STATIC_ASSERT(AH_MAP_ICON_TOP_HALF == 3);
 CTR_STATIC_ASSERT(AH_MAP_ICON_BOTTOM_HALF == 4);
@@ -74,6 +89,17 @@ CTR_STATIC_ASSERT(AH_MAP_HUD_SLOT_KEY_COUNT == 0xf);
 CTR_STATIC_ASSERT(AH_MAP_HUD_SLOT_TROPHY_COUNT == 0x10);
 CTR_STATIC_ASSERT(AH_MAP_HUD_COUNTER_OFFSET_X == 0x10);
 CTR_STATIC_ASSERT(AH_MAP_HUD_COUNTER_OFFSET_Y == -10);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_COUNT == 3);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_PHASE_STEP == 0xc);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_PHASE_MASK == 0x3f);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_PHASE_DELAY == 6);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_VISIBLE_PHASES == 0xc);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_RADIUS_MUL == 0x2aa);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_RADIUS_BIAS == 0x1000);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_RADIUS_SHIFT == 0x1a);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_TROPHY_STEP == 0x200);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_ROUTE_STEP == 0x555);
+CTR_STATIC_ASSERT(AH_MAP_ARROW_OUTLINE_BOSS_STEP == 0x199);
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0b98-0x800b0ce0.
 void AH_Map_LoadSave_Prim(s16 *vertPos, char *vertCol, void *ot, struct PrimMem *primMem)
@@ -207,7 +233,7 @@ void AH_Map_HubArrow(int posX, int posY, s16 *vertPos, char *vertCol, int scale,
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1150-0x800b14f4.
-void AH_Map_HubArrowOutter(s16 *mapData, int arrowIndex, int posX, int posY, int inputAngle, int type)
+void AH_Map_HubArrowOuter(s16 *mapData, int arrowIndex, int posX, int posY, int inputAngle, int type)
 {
 	struct GameTracker *gGT;
 	gGT = sdata->gGT;
@@ -222,83 +248,86 @@ void AH_Map_HubArrowOutter(s16 *mapData, int arrowIndex, int posX, int posY, int
 
 	int timer = gGT->timer >> 0;
 
-	int var14;
-	int var15;
-	int var8;
+	int outlineColorR;
+	int outlineColorG;
+	int outlineAngleStep;
 
-	var15 = 0x40;
+	outlineColorG = 0x40;
 	if ((timer & 1) != 0)
 	{
-		var15 = 0xe0;
+		outlineColorG = 0xe0;
 	}
 
 	if (type == 0)
 	{
-		var14 = var15;
-		var8 = 0x200;
+		outlineColorR = outlineColorG;
+		outlineAngleStep = AH_MAP_ARROW_OUTLINE_TROPHY_STEP;
 	}
 
 	else if (type == 1)
 	{
-		var14 = 0xff;
-		var8 = 0x555;
+		outlineColorR = 0xff;
+		outlineAngleStep = AH_MAP_ARROW_OUTLINE_ROUTE_STEP;
 
-		posX += D232.hubArrowXY_Outter[2 * (((inputAngle >> 0x8) & 0xc) >> 2) + 0];
-		posY += D232.hubArrowXY_Outter[2 * (((inputAngle >> 0x8) & 0xc) >> 2) + 1];
+		posX += D232.hubArrowXY_Outer[2 * (((inputAngle >> 0x8) & 0xc) >> 2) + 0];
+		posY += D232.hubArrowXY_Outer[2 * (((inputAngle >> 0x8) & 0xc) >> 2) + 1];
 	}
 
 	else
 	{
-		var14 = var15;
-		var8 = 0x199;
+		outlineColorR = outlineColorG;
+		outlineAngleStep = AH_MAP_ARROW_OUTLINE_BOSS_STEP;
 		inputAngle ^= 0x800;
 	}
 
 	inputAngle = (s16)inputAngle;
 
-	for (int iVar10 = 0; iVar10 < 3; iVar10++)
+	for (int outlineIndex = 0; outlineIndex < AH_MAP_ARROW_OUTLINE_COUNT; outlineIndex++)
 	{
-		u32 var5 = (~(timer + (int)arrowIndex * 0xc) & 0x3f) + (2 - (int)(s16)iVar10) * -6;
+		u32 outlinePhase = (~(timer + (int)arrowIndex * AH_MAP_ARROW_OUTLINE_PHASE_STEP) & AH_MAP_ARROW_OUTLINE_PHASE_MASK) +
+		                   ((AH_MAP_ARROW_OUTLINE_COUNT - 1) - (int)(s16)outlineIndex) * -AH_MAP_ARROW_OUTLINE_PHASE_DELAY;
 
-		if (var5 >= 0xc)
+		if (outlinePhase >= AH_MAP_ARROW_OUTLINE_VISIBLE_PHASES)
 		{
 			continue;
 		}
 
-		int iVar16 = ((var5 * 0x2aa + 0x1000) * 0x10000) >> 0x1a;
+		int outlineRadius =
+		    ((outlinePhase * AH_MAP_ARROW_OUTLINE_RADIUS_MUL + AH_MAP_ARROW_OUTLINE_RADIUS_BIAS) * 0x10000) >> AH_MAP_ARROW_OUTLINE_RADIUS_SHIFT;
 
-		int bVar1 = 1;
+		b32 isFirstPoint = true;
 
 		int shiftToggle = 1;
 
-		int iVar6 = 0;
-		int iVar9 = 0;
+		int prevX = 0;
+		int prevY = 0;
 
-		for (int iVar13 = 0; iVar13 < var8 + 0xfff; iVar13 += var8)
+		for (int outlineAngle = 0; outlineAngle < outlineAngleStep + 0xfff; outlineAngle += outlineAngleStep)
 		{
 			if (type != 2)
 			{
 				shiftToggle = 0;
 			}
 
-			int angle = iVar13 + inputAngle;
+			int angle = outlineAngle + inputAngle;
 
 			int sin = MATH_Sin(angle);
 			int cos = MATH_Cos(angle);
 
-			int iVar4 = (shiftToggle & 1) + 0xc;
+			int radiusShift = (shiftToggle & 1) + 0xc;
 
-			sin = posX + ((((iVar16 << 3) / 5) * sin) >> iVar4);
-			cos = posY - ((((iVar16)) * cos) >> iVar4);
+			sin = posX + ((((outlineRadius << 3) / 5) * sin) >> radiusShift);
+			cos = posY - ((outlineRadius * cos) >> radiusShift);
 
-			if (!bVar1)
+			if (!isFirstPoint)
 			{
-				CTR_Box_DrawWirePrims((Point){{iVar9, iVar6}}, (Point){{sin, cos}}, MakeColor(var14, var15, 0xff), (void *)gGT->pushBuffer_UI.ptrOT);
+				CTR_Box_DrawWirePrims((Point){{prevX, prevY}}, (Point){{sin, cos}}, MakeColor(outlineColorR, outlineColorG, 0xff),
+				                      (void *)gGT->pushBuffer_UI.ptrOT);
 			}
 
-			bVar1 = 0;
-			iVar9 = sin;
-			iVar6 = cos;
+			isFirstPoint = false;
+			prevX = sin;
+			prevY = cos;
 			shiftToggle++;
 		}
 	}
@@ -339,8 +368,8 @@ void AH_Map_HubItems(s16 *mapData, s16 *arrowCounter)
 				// gemstone valley
 				if (iconType == AH_HUB_ITEM_OXIDE_WARPPAD)
 				{
-					// check 4 boss keys
-					for (int i = 0; i < 4; i++)
+					// check all boss keys
+					for (int i = 0; i < AH_BOSS_KEY_COUNT; i++)
 					{
 						u32 bit = i + ADV_REWARD_FIRST_BOSS_KEY;
 
@@ -376,9 +405,9 @@ void AH_Map_HubItems(s16 *mapData, s16 *arrowCounter)
 				else
 				{
 					int base = levelID - N_SANITY_BEACH;
-					s16 *trophies = &data.advHubTrackIDs[base * 4];
+					s16 *trophies = &data.advHubTrackIDs[base * AH_HUB_TRACK_COUNT];
 
-					for (int i = 0; i < 4; i++)
+					for (int i = 0; i < AH_HUB_TRACK_COUNT; i++)
 					{
 						if (CHECK_ADV_BIT(adv->rewards, trophies[i] + ADV_REWARD_FIRST_TROPHY) == 0)
 						{
@@ -427,7 +456,7 @@ void AH_Map_HubItems(s16 *mapData, s16 *arrowCounter)
 				UI_Map_GetIconPos(mapData, &routePosX, &routePosY);
 				if ((routeLockState == 0) && (D232.mapPriorityArrowDrawn == 0))
 				{
-					AH_Map_HubArrowOutter(mapData, (int)*arrowCounter, routePosX, routePosY, (0x1000 - (u16)item->angle), AH_MAP_ARROW_HUB_ROUTE);
+					AH_Map_HubArrowOuter(mapData, (int)*arrowCounter, routePosX, routePosY, (0x1000 - (u16)item->angle), AH_MAP_ARROW_HUB_ROUTE);
 					*arrowCounter = *arrowCounter + 1;
 				}
 
@@ -491,7 +520,7 @@ void AH_Map_HubItems(s16 *mapData, s16 *arrowCounter)
 
 					UI_Map_GetIconPos(mapData, &bossArrowPosX, &bossArrowPosY);
 
-					AH_Map_HubArrowOutter(mapData, (int)*arrowCounter, bossArrowPosX, bossArrowPosY, 0, AH_MAP_ARROW_BOSS);
+					AH_Map_HubArrowOuter(mapData, (int)*arrowCounter, bossArrowPosX, bossArrowPosY, 0, AH_MAP_ARROW_BOSS);
 
 					*arrowCounter = *arrowCounter + 1;
 				}
@@ -566,7 +595,7 @@ void AH_Map_Warppads(s16 *mapData, struct Thread *warppadThread, s16 *arrowCount
 			// Get Icon Dimensions
 			UI_Map_GetIconPos(mapData, &arrowPosX, &arrowPosY);
 
-			AH_Map_HubArrowOutter(mapData, (int)*arrowCounter, arrowPosX, arrowPosY, 0, AH_MAP_ARROW_WARPPAD_TROPHY);
+			AH_Map_HubArrowOuter(mapData, (int)*arrowCounter, arrowPosX, arrowPosY, 0, AH_MAP_ARROW_WARPPAD_TROPHY);
 
 			*arrowCounter = *arrowCounter + 1;
 		}

@@ -18,6 +18,15 @@ enum AHDoorConstants
 	AH_DOOR_KEY_RAISE_STEP = 4,
 	AH_DOOR_KEY_ORBIT_STEP = 0x10,
 	AH_DOOR_KEY_SHRINK_FRAME_COUNT = 0xb,
+	AH_DOOR_KEY_FLOAT_RADIUS_SHIFT = 5,
+	AH_DOOR_KEY_FLOAT_SFX_FRAME_0 = 0x0a,
+	AH_DOOR_KEY_FLOAT_SFX_FRAME_1 = 0x0f,
+	AH_DOOR_KEY_FLOAT_SFX_FRAME_2 = 0x14,
+	AH_DOOR_KEY_FLOAT_SFX_FRAME_3 = 0x19,
+	AH_DOOR_KEY_FLOAT_SFX_ID = 0x67,
+	AH_DOOR_UNLOCK_SFX_FRAME = 0x50,
+	AH_DOOR_UNLOCK_SFX_ID = 0x93,
+	AH_DOOR_CREAK_SFX_ID = 0x94,
 	AH_DOOR_OPEN_ROTATION = 0x400,
 	AH_DOOR_OPEN_ROTATION_STEP = 0x10,
 	AH_DOOR_PAIR_OFFSET = 0x600,
@@ -39,7 +48,7 @@ void AH_Door_ThDestroy(struct Thread *t)
 		woodDoor->otherDoor = NULL;
 	}
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < AH_WOOD_DOOR_KEY_COUNT; i++)
 	{
 		INSTANCE_Death(woodDoor->keyInst[i]);
 		woodDoor->keyInst[i] = NULL;
@@ -92,8 +101,6 @@ void AH_Door_ThTick(struct Thread *t)
 	int distY;
 	int distZ;
 	int dist;
-	int iVar17;
-	int iVar18;
 	SVec3 desiredPos;
 	SVec3 desiredRot;
 	SVec3 keyLightDir;
@@ -314,7 +321,7 @@ void AH_Door_ThTick(struct Thread *t)
 							keyInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_KEY], R232.s_key, t);
 
 							// Set Key Color
-							keyInst->colorRGBA = 0xdca6000;
+							keyInst->colorRGBA = INST_COLOR_KEY;
 
 							keyInst->flags |= USE_SPECULAR_LIGHT;
 							door->frameCount_unused++;
@@ -367,21 +374,23 @@ void AH_Door_ThTick(struct Thread *t)
 
 							if (1 < numKeys)
 							{
-								iVar18 = i * (0x1000 / numKeys);
-								iVar17 = (int)keyInst->scale.x;
+								int keyOrbitOffset = i * (FP_ONE / numKeys);
+								int keyOrbitRadius = (int)keyInst->scale.x;
 
-								if (iVar17 < 0)
+								if (keyOrbitRadius < 0)
 								{
-									iVar17 += 0x1f;
+									keyOrbitRadius += (1 << AH_DOOR_KEY_FLOAT_RADIUS_SHIFT) - 1;
 								}
 
-								ratio = MATH_Sin(door->keyOrbit + iVar18);
+								keyOrbitRadius >>= AH_DOOR_KEY_FLOAT_RADIUS_SHIFT;
 
-								keyInst->matrix.t[0] = driver->instSelf->matrix.t[0] + ((iVar17 >> 5) * ratio >> 0xc);
+								ratio = MATH_Sin(door->keyOrbit + keyOrbitOffset);
 
-								ratio = MATH_Cos(door->keyOrbit + iVar18);
+								keyInst->matrix.t[0] = driver->instSelf->matrix.t[0] + (keyOrbitRadius * ratio >> 0xc);
 
-								keyInst->matrix.t[2] = driver->instSelf->matrix.t[2] + ((iVar17 >> 5) * ratio >> 0xc);
+								ratio = MATH_Cos(door->keyOrbit + keyOrbitOffset);
+
+								keyInst->matrix.t[2] = driver->instSelf->matrix.t[2] + (keyOrbitRadius * ratio >> 0xc);
 							}
 
 							Vector_SpecLightSpin3D(keyInst, &door->keyRot, &keyLightDir);
@@ -405,31 +414,31 @@ void AH_Door_ThTick(struct Thread *t)
 
 				switch (door->frameCount_doorOpenAnim)
 				{
-				case 0x0A:
+				case AH_DOOR_KEY_FLOAT_SFX_FRAME_0:
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0208-0x800b0218 for first floating-key SFX.
-					OtherFX_Play_LowLevel(0x67, 1, 0xff7680);
+					OtherFX_Play_LowLevel(AH_DOOR_KEY_FLOAT_SFX_ID, 1, 0xff7680);
 					break;
-				case 0x0F:
+				case AH_DOOR_KEY_FLOAT_SFX_FRAME_1:
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b022c-0x800b023c for second floating-key SFX.
-					OtherFX_Play_LowLevel(0x67, 1, 0xeb8080);
+					OtherFX_Play_LowLevel(AH_DOOR_KEY_FLOAT_SFX_ID, 1, 0xeb8080);
 					break;
-				case 0x14:
+				case AH_DOOR_KEY_FLOAT_SFX_FRAME_2:
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0250-0x800b0260 for third floating-key SFX.
-					OtherFX_Play_LowLevel(0x67, 1, 0xd78a80);
+					OtherFX_Play_LowLevel(AH_DOOR_KEY_FLOAT_SFX_ID, 1, 0xd78a80);
 					break;
-				case 0x19:
+				case AH_DOOR_KEY_FLOAT_SFX_FRAME_3:
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0274-0x800b0284 for fourth floating-key SFX.
-					OtherFX_Play_LowLevel(0x67, 1, 0xc39480);
+					OtherFX_Play_LowLevel(AH_DOOR_KEY_FLOAT_SFX_ID, 1, 0xc39480);
 					break;
-				case 0x50:
+				case AH_DOOR_UNLOCK_SFX_FRAME:
 					// unlock door sound
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0298-0x800b02ac for door unlock SFX.
-					OtherFX_Play(0x93, 1);
+					OtherFX_Play(AH_DOOR_UNLOCK_SFX_ID, 1);
 					break;
 				case AH_DOOR_KEY_SPIN_FRAMES:
-					// on last frame, doors "creek" open
+					// on last frame, doors creak open
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b02a0-0x800b02ac for door creak SFX.
-					OtherFX_Play(0x94, 1);
+					OtherFX_Play(AH_DOOR_CREAK_SFX_ID, 1);
 					break;
 
 				default:
@@ -499,8 +508,8 @@ void AH_Door_ThTick(struct Thread *t)
 		{
 			scaler = (s16 *)R232.keyFrame;
 
-			// loop through 4 keys
-			for (i = 0; i < 4; i++)
+			// loop through door key slots
+			for (i = 0; i < AH_WOOD_DOOR_KEY_COUNT; i++)
 			{
 				keyInst = door->keyInst[i];
 				// if instance exists
@@ -518,8 +527,8 @@ void AH_Door_ThTick(struct Thread *t)
 			return;
 		}
 
-		// loop through 4 keys
-		for (i = 0; i < 4; i++)
+		// loop through door key slots
+		for (i = 0; i < AH_WOOD_DOOR_KEY_COUNT; i++)
 		{
 			INSTANCE_Death(door->keyInst[i]);
 			door->keyInst[i] = NULL;
@@ -630,9 +639,9 @@ void AH_Door_LInB(struct Instance *inst)
 	// and every left-hand door has one key hole
 	inst->flags |= SPLIT_SPECIAL;
 
-	// 4 keys, all next to each other
+	// Key slots are next to each other.
 	instPtrArr = &woodDoor->keyInst[0];
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < AH_WOOD_DOOR_KEY_COUNT; i++)
 	{
 		instPtrArr[(s32)i] = NULL;
 	}
@@ -708,7 +717,7 @@ void AH_Door_LInB(struct Instance *inst)
 
 	otherDoorInst->matrix.t[1] = inst->matrix.t[1];
 
-	ratio = MATH_Sin((int)(int)inst->instDef->rot.y);
+	ratio = MATH_Sin((int)inst->instDef->rot.y);
 
 	otherDoorInst->matrix.t[2] += (ratio * AH_DOOR_PAIR_OFFSET >> 0xc);
 

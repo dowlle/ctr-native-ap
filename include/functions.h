@@ -1046,7 +1046,7 @@ void AH_Map_LoadSave_Full(int posX, int posY, s16 *vertPos, char *vertCol, int s
 
 void AH_Map_HubArrow(int posX, int posY, s16 *vertPos, char *vertCol, int scale, int angle);
 
-void AH_Map_HubArrowOutter(s16 *mapData, int arrowIndex, int posX, int posY, int inputAngle, int type);
+void AH_Map_HubArrowOuter(s16 *mapData, int arrowIndex, int posX, int posY, int inputAngle, int type);
 
 void AH_Map_HubItems(s16 *mapData, s16 *arrowCounter);
 void AH_Map_Warppads(s16 *mapData, struct Thread *warppadThread, s16 *arrowCounter);
@@ -1054,7 +1054,7 @@ void AH_Map_Main(void);
 void AH_Pause_Destroy(void);
 void AH_Pause_Draw(s32 pageID, s32 posX);
 void AH_Pause_Update(void);
-void AH_HintMenu_FiveArrows(int param_1, s16 rotation);
+void AH_HintMenu_FiveArrows(int posY, s16 rotation);
 void AH_HintMenu_MaskPosRot(void);
 void AH_HintMenu_MenuProc(struct RectMenu *menu);
 void AH_MaskHint_Start(s16 hintId, u16 bool_interruptWarppad);
@@ -1063,7 +1063,7 @@ void AH_MaskHint_SetAnim(int scale);
 
 void AH_MaskHint_SpawnParticles(s16 numParticles, struct ParticleEmitter *emSet, int maskAnim);
 
-void AH_MaskHint_LerpVol(int param_1);
+void AH_MaskHint_LerpVol(int blend);
 void AH_MaskHint_Update(void);
 
 struct Particle *Particle_Init(u32 param_1, struct IconGroup *ig, struct ParticleEmitter *emSet);

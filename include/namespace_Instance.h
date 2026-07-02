@@ -55,6 +55,17 @@ enum InstanceFlags
 	INVISIBLE_DURING_PAUSE = 0x20000000
 };
 
+enum InstanceColorRGBA
+{
+	INST_COLOR_SAPPHIRE_RELIC = 0x20a5ff0,
+	INST_COLOR_KEY = 0xdca6000,
+};
+
+force_inline u32 INST_PackColorRGB(s32 r, s32 g, s32 b)
+{
+	return ((u32)r << 0x14) | ((u32)g << 0xc) | ((u32)b << 0x4);
+}
+
 enum MODEL_ID
 {
 	NOFUNC = 0x00,

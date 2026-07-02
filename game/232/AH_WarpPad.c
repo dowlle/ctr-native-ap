@@ -56,6 +56,7 @@ enum
 	AH_WP_OPEN_RING_ALPHA = 0x400,
 	AH_WP_OPEN_RING_HEIGHT_STEP = 0x400,
 	AH_WP_FULL_ALPHA = 0x1000,
+	AH_WP_PURPLE_TOKEN_GROUP = 4,
 	AH_WP_NAME_LEVEL_ID_OFFSET = 8,
 	AH_WP_DIGIT_MODEL_FIRST_1_TO_8 = 0x38,
 	AH_WP_DIGIT_MODEL_0 = 0x6d,
@@ -475,8 +476,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			i = (gGT->timer / 0x3C) % 5;
 
-			closedItemInst->colorRGBA =
-			    ((u32)data.AdvCups[i].color[0] << 0x14) | ((u32)data.AdvCups[i].color[1] << 0xc) | ((u32)data.AdvCups[i].color[2] << 0x4);
+			closedItemInst->colorRGBA = INST_PackColorRGB(data.AdvCups[i].color[0], data.AdvCups[i].color[1], data.AdvCups[i].color[2]);
 		}
 
 		// for Key or Gem
@@ -1175,7 +1175,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 					if (rewardModelID == STATIC_RELIC)
 					{
-						newInst->colorRGBA = 0x20a5ff0;
+						newInst->colorRGBA = INST_COLOR_SAPPHIRE_RELIC;
 						newInst->flags |= USE_SPECULAR_LIGHT;
 						CTR_SET_VEC3(newInst->scale.v, AH_WP_RELIC_PRIZE_SCALE, AH_WP_RELIC_PRIZE_SCALE, AH_WP_RELIC_PRIZE_SCALE);
 					}
@@ -1185,8 +1185,8 @@ void AH_WarpPad_LInB(struct Instance *inst)
 						tokenGroupID = data.metaDataLEV[levelID].ctrTokenGroupID;
 
 						// token color
-						newInst->colorRGBA = ((u32)data.AdvCups[tokenGroupID].color[0] << 0x14) | ((u32)data.AdvCups[tokenGroupID].color[1] << 0xc) |
-						                     ((u32)data.AdvCups[tokenGroupID].color[2] << 0x4);
+						newInst->colorRGBA =
+						    INST_PackColorRGB(data.AdvCups[tokenGroupID].color[0], data.AdvCups[tokenGroupID].color[1], data.AdvCups[tokenGroupID].color[2]);
 
 						newInst->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 
@@ -1215,7 +1215,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_RELIC], "prize2", t);
 
 				// relic blue
-				newInst->colorRGBA = 0x20a5ff0;
+				newInst->colorRGBA = INST_COLOR_SAPPHIRE_RELIC;
 
 				newInst->flags |= USE_SPECULAR_LIGHT;
 
@@ -1245,8 +1245,8 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_TOKEN], "prize2", t);
 
 			// token color
-			newInst->colorRGBA = ((u32)data.AdvCups[tokenGroupID].color[0] << 0x14) | ((u32)data.AdvCups[tokenGroupID].color[1] << 0xc) |
-			                     ((u32)data.AdvCups[tokenGroupID].color[2] << 0x4);
+			newInst->colorRGBA =
+			    INST_PackColorRGB(data.AdvCups[tokenGroupID].color[0], data.AdvCups[tokenGroupID].color[1], data.AdvCups[tokenGroupID].color[2]);
 
 			newInst->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 
@@ -1284,7 +1284,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_RELIC], "prize2", t);
 
 					// relic blue
-					newInst->colorRGBA = 0x20a5ff0;
+					newInst->colorRGBA = INST_COLOR_SAPPHIRE_RELIC;
 
 					newInst->flags |= USE_SPECULAR_LIGHT;
 
@@ -1338,11 +1338,11 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 				newInst->flags |= USE_SPECULAR_LIGHT;
 
-				tokenGroupID = 4;
+				tokenGroupID = AH_WP_PURPLE_TOKEN_GROUP;
 
 				// token color
-				newInst->colorRGBA = ((u32)data.AdvCups[tokenGroupID].color[0] << 0x14) | ((u32)data.AdvCups[tokenGroupID].color[1] << 0xc) |
-				                     ((u32)data.AdvCups[tokenGroupID].color[2] << 0x4);
+				newInst->colorRGBA =
+				    INST_PackColorRGB(data.AdvCups[tokenGroupID].color[0], data.AdvCups[tokenGroupID].color[1], data.AdvCups[tokenGroupID].color[2]);
 
 				warppadObj->lightDirToken = D232.lightDirToken[tokenGroupID];
 
@@ -1380,7 +1380,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			i = levelID - AH_WP_ID_FIRST_GEM_CUP;
 
 			// token color
-			newInst->colorRGBA = ((u32)data.AdvCups[i].color[0] << 0x14) | ((u32)data.AdvCups[i].color[1] << 0xc) | ((u32)data.AdvCups[i].color[2] << 0x4);
+			newInst->colorRGBA = INST_PackColorRGB(data.AdvCups[i].color[0], data.AdvCups[i].color[1], data.AdvCups[i].color[2]);
 
 			warppadObj->inst[WPIS_OPEN_PRIZE1] = newInst;
 
@@ -1431,7 +1431,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		if (unlockItem_modelID == STATIC_RELIC)
 		{
 			// Relic blue color
-			newInst->colorRGBA = 0x20a5ff0;
+			newInst->colorRGBA = INST_COLOR_SAPPHIRE_RELIC;
 
 			warppadObj->lightDirRelic = D232.lightDirRelic[0];
 		}
@@ -1440,7 +1440,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		else if (unlockItem_modelID == STATIC_KEY)
 		{
 			// Key color
-			newInst->colorRGBA = 0xdca6000;
+			newInst->colorRGBA = INST_COLOR_KEY;
 
 			// store in Gem array (intended by ND, not a bug)
 			warppadObj->lightDirGem = D232.lightDirGem[0];
@@ -1449,7 +1449,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// Gem
 		else if (unlockItem_modelID == STATIC_GEM)
 		{
-			newInst->colorRGBA = ((u32)data.AdvCups[0].color[0] << 0x14) | ((u32)data.AdvCups[0].color[1] << 0xc) | ((u32)data.AdvCups[0].color[2] << 0x4);
+			newInst->colorRGBA = INST_PackColorRGB(data.AdvCups[0].color[0], data.AdvCups[0].color[1], data.AdvCups[0].color[2]);
 
 			// store in Gem array
 			warppadObj->lightDirGem = D232.lightDirGem[0];
@@ -1461,7 +1461,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			i = levelID - AH_WP_ID_FIRST_GEM_CUP;
 
 			// token color
-			newInst->colorRGBA = ((u32)data.AdvCups[i].color[0] << 0x14) | ((u32)data.AdvCups[i].color[1] << 0xc) | ((u32)data.AdvCups[i].color[2] << 0x4);
+			newInst->colorRGBA = INST_PackColorRGB(data.AdvCups[i].color[0], data.AdvCups[i].color[1], data.AdvCups[i].color[2]);
 
 			warppadObj->lightDirToken = D232.lightDirToken[i];
 		}

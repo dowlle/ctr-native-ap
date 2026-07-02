@@ -86,8 +86,6 @@ void AH_Garage_ThTick(struct Thread *t)
 {
 	b32 bossIsOpen = true;
 	s32 i;
-	s32 levelID;
-	s32 hubID;
 	s32 top;
 	s32 move;
 	s32 ratio;
@@ -98,20 +96,14 @@ void AH_Garage_ThTick(struct Thread *t)
 	u32 hintMask;
 	Vec3 dist;
 	Vec3 pos;
-	struct BossGarageDoor *garage;
-	struct Instance *inst;
-	struct Instance *drv_inst;
-	struct GameTracker *gGT;
-	struct AdvProgress *adv;
+	struct GameTracker *gGT = sdata->gGT;
+	struct AdvProgress *adv = &sdata->advProgress;
+	struct BossGarageDoor *garage = t->object;
+	struct Instance *inst = t->inst;
+	struct Instance *drv_inst = gGT->drivers[0]->instSelf;
+	s32 levelID = gGT->levelID;
+	s32 hubID = levelID - GEM_STONE_VALLEY;
 	struct ScratchpadStruct *sps = CTR_SCRATCHPAD_PTR(struct ScratchpadStruct, 0x108);
-
-	gGT = sdata->gGT;
-	adv = &sdata->advProgress;
-	garage = t->object;
-	inst = t->inst;
-	drv_inst = gGT->drivers[0]->instSelf;
-	levelID = gGT->levelID;
-	hubID = levelID - GEM_STONE_VALLEY;
 
 	// if door is not opening or closing
 	if (garage->direction == BOSS_GARAGE_DOOR_STOPPED)
@@ -210,8 +202,8 @@ LAB_800aeb6c:
 		// ripper roo boss key
 		bitIndex = ADV_REWARD_FIRST_BOSS_KEY;
 
-		// check four boss keys
-		for (i = 0; i < 4; i++)
+		// check all boss keys
+		for (i = 0; i < AH_BOSS_KEY_COUNT; i++)
 		{
 			if (CHECK_ADV_BIT(adv->rewards, bitIndex) == 0)
 			{
@@ -223,9 +215,9 @@ LAB_800aeb6c:
 	// If you're not in Gemstone Valley
 	else
 	{
-		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];
-		// check all four tracks on hub
-		for (i = 0; i < 4; i++)
+		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * AH_HUB_TRACK_COUNT];
+		// check all tracks on hub
+		for (i = 0; i < AH_HUB_TRACK_COUNT; i++)
 		{
 			// if any trophy on this hub is not unlocked
 			if (CHECK_ADV_BIT(adv->rewards, check[i] + ADV_REWARD_FIRST_TROPHY) == 0)
@@ -382,17 +374,13 @@ void AH_Garage_LInB(struct Instance *inst)
 	s32 i;
 	const s16 *check;
 	u32 bitIndex;
-	s32 levelID;
 	s32 ratio;
-	struct AdvProgress *adv;
 	struct Thread *t;
 	struct Instance *garageTop;
 	struct BossGarageDoor *garage;
-	struct GameTracker *gGT;
-
-	gGT = sdata->gGT;
-	adv = &sdata->advProgress;
-	levelID = gGT->levelID;
+	struct GameTracker *gGT = sdata->gGT;
+	struct AdvProgress *adv = &sdata->advProgress;
+	s32 levelID = gGT->levelID;
 
 	if (inst->thread != NULL)
 	{
@@ -458,8 +446,8 @@ void AH_Garage_LInB(struct Instance *inst)
 	{
 		// ripper roo boss key
 		bitIndex = ADV_REWARD_FIRST_BOSS_KEY;
-		// check four boss keys
-		for (i = 0; i < 4; i++)
+		// check all boss keys
+		for (i = 0; i < AH_BOSS_KEY_COUNT; i++)
 		{
 			if (CHECK_ADV_BIT(adv->rewards, bitIndex) == 0)
 			{
@@ -473,9 +461,9 @@ void AH_Garage_LInB(struct Instance *inst)
 	// if not gemstone valley
 	else
 	{
-		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * 4];
-		// check all four tracks on hub
-		for (i = 0; i < 4; i++)
+		check = &data.advHubTrackIDs[(levelID - N_SANITY_BEACH) * AH_HUB_TRACK_COUNT];
+		// check all tracks on hub
+		for (i = 0; i < AH_HUB_TRACK_COUNT; i++)
 		{
 			// if any trophy on this hub is not unlocked
 			if (CHECK_ADV_BIT(adv->rewards, check[i] + ADV_REWARD_FIRST_TROPHY) == 0)

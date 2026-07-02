@@ -545,7 +545,7 @@ void AH_Pause_Draw(s32 pageID, s32 posX)
 				u8 *ptrColor = (u8 *)&D232.advPauseInst[index].color;
 
 				inst->alphaScale = 0;
-				inst->colorRGBA = (ptrColor[0] << 0x14) | (ptrColor[1] << 0xc) | (ptrColor[2] << 0x4);
+				inst->colorRGBA = INST_PackColorRGB(ptrColor[0], ptrColor[1], ptrColor[2]);
 			}
 
 			s32 scale = D232.advPauseInst[index].scale;
