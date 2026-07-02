@@ -517,6 +517,30 @@ int AP_GateCountGemColour(int colour)
 	return ap_recv_count[AP_IDX_GEM_RED + colour]; // 9..13
 }
 
+// ── any-of aggregate counters (requirement_specificity = any_of) ──
+// Sum the received-item counts across a whole TYPE, so a type 6/7/8 gate means
+// "any N of that type regardless of colour/tier". These read the same
+// authoritative ap_recv_count[] counters as AP_GateCount above.
+int AP_GateCountTokenSum(void)
+{
+	return AP_GateCountTokenColour(0) + AP_GateCountTokenColour(1) +
+	       AP_GateCountTokenColour(2) + AP_GateCountTokenColour(3) +
+	       AP_GateCountTokenColour(4);
+}
+
+int AP_GateCountRelicSum(void)
+{
+	return AP_GateCount(AP_IDX_SAPPHIRE) + AP_GateCount(AP_IDX_GOLD) +
+	       AP_GateCount(AP_IDX_PLATINUM);
+}
+
+int AP_GateCountGemSum(void)
+{
+	return AP_GateCountGemColour(0) + AP_GateCountGemColour(1) +
+	       AP_GateCountGemColour(2) + AP_GateCountGemColour(3) +
+	       AP_GateCountGemColour(4);
+}
+
 // ── Phase 2: per-seed resolved-requirement comparators ──
 // These live C-side (not in ap_seedcfg.cpp) because they read the received-item
 // counters above (AP_GateCount*) and the per-track numTrophiesToOpen threshold
@@ -527,7 +551,10 @@ int AP_GateCountGemColour(int colour)
 // Returns owned >= count for a resolved requirement. colour-aware for tokens
 // (type 3) and gems (type 5): colour 0..4 selects one colour, -1 sums the
 // vanilla "all colours" interpretation native-side -- but the apworld emits a
-// concrete colour for token/gem reqs, so the -1 branch only fires defensively.
+// concrete colour for token/gem reqs under specific_colour, so the type-3/5 -1
+// branch only fires defensively. The genuine any-of aggregates the apworld emits
+// under requirement_specificity = any_of are the dedicated type 6/7/8 codes, which
+// sum the whole type via AP_GateCount*Sum().
 int AP_BossReqMet(const ctr_req *r)
 {
 	if (r == 0)
@@ -540,17 +567,61 @@ int AP_BossReqMet(const ctr_req *r)
 		return AP_GateCount(AP_IDX_TROPHY) >= r->count;
 	case 2: // keys
 		return AP_GateCount(AP_IDX_KEY) >= r->count;
-	case 3: // tokens (colour 0..4, or -1 = any/Red baseline)
+	case 3: // tokens (colour 0..4 = one colour; -1 = any token, summed)
 		return ((r->colour >= 0) ? AP_GateCountTokenColour(r->colour)
-		                         : AP_GateCount(AP_IDX_TOKEN_RED)) >= r->count;
-	case 4: // sapphire
-		return AP_GateCount(AP_IDX_SAPPHIRE) >= r->count;
-	case 5: // gems (colour 0..4, or -1 = any/Red baseline)
+		                         : AP_GateCountTokenSum()) >= r->count;
+	case 4: // sapphire (colour -1 = any relic tier, summed)
+		return ((r->colour >= 0) ? AP_GateCount(AP_IDX_SAPPHIRE)
+		                         : AP_GateCountRelicSum()) >= r->count;
+	case 5: // gems (colour 0..4 = one colour; -1 = any gem, summed)
 		return ((r->colour >= 0) ? AP_GateCountGemColour(r->colour)
-		                         : AP_GateCountGemColour(0)) >= r->count;
+		                         : AP_GateCountGemSum()) >= r->count;
+	case 6: // AnyToken: any N tokens summed across all 5 colours
+		return AP_GateCountTokenSum() >= r->count;
+	case 7: // AnyRelic: any N relics summed across Sapphire+Gold+Platinum
+		return AP_GateCountRelicSum() >= r->count;
+	case 8: // AnyGem: any N gems summed across all 5 colours
+		return AP_GateCountGemSum() >= r->count;
 	default:
 		return 1;
 	}
+}
+
+// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
+// Komodo, Pinstripe). bossgarage_mode 0 (Original4Tracks) / 1 (SameHubTracks):
+// the garage opens once the player has WON each required race track for that boss
+// (ctr_cfg.boss_tracks[bossIdx][0..n-1], emitted by the apworld -- vanilla
+// LevelIDs for mode 0, destination-remapped LevelIDs for mode 1). A track counts
+// as WON when its trophy-race AP location has been checked --
+// AP_LocationCheckedByBit(trackLevelID + ADV_REWARD_FIRST_TROPHY), NOT
+// CHECK_ADV_BIT: in AP the AdvProgress trophy bit reflects RECEIVED items, not the
+// races the player actually won, so only the checked-location signal is correct
+// here. mode 2 (Trophies) and any boss with no track list fall back to the flat
+// trophy-count requirement via AP_BossReqMet. Oxide (bossIdx 4) is a key gate and
+// is never routed through this function.
+int AP_BossGarageOpen(int bossIdx)
+{
+	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
+		return 1;
+
+	int mode = ctr_cfg.bossgarage_mode;
+	int n = ctr_cfg.boss_n_tracks[bossIdx];
+
+	if ((mode == 0 || mode == 1) && n > 0)
+	{
+		for (int i = 0; i < n; i++)
+		{
+			int track = ctr_cfg.boss_tracks[bossIdx][i];
+			if (track < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(track + ADV_REWARD_FIRST_TROPHY))
+				return 0;
+		}
+		return 1;
+	}
+
+	// mode 2 (Trophies) or no track list -> flat trophy-count requirement.
+	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
@@ -813,15 +884,16 @@ static const char *AP_ITEM_NAMES[AP_ITEM_INDEX_COUNT] = {
     "Purple CTR Token", "Red Gem", "Green Gem", "Blue Gem", "Yellow Gem",
     "Purple Gem", "Key"};
 
-static const char *AP_REQ_TYPE_NAMES[6] = {
-    "none", "trophy", "key", "token", "sapphire", "gem"};
+static const char *AP_REQ_TYPE_NAMES[9] = {
+    "none", "trophy", "key", "token", "sapphire", "gem",
+    "any_token", "any_relic", "any_gem"};
 
 static const char *AP_BOSS_NAMES[CTR_CFG_BOSS_COUNT] = {
     "ripper_roo", "papu_papu", "komodo_joe", "pinstripe", "oxide"};
 
 static const char *AP_ReqTypeName(int t)
 {
-	return (t >= 0 && t < 6) ? AP_REQ_TYPE_NAMES[t] : "?";
+	return (t >= 0 && t < 9) ? AP_REQ_TYPE_NAMES[t] : "?";
 }
 
 static void AP_DumpState(struct GameTracker *gGT)

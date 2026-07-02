@@ -31,7 +31,16 @@ extern "C" {
 // One resolved requirement. type per the §0 shared table:
 //   0 none/use native vanilla fixed rule
 //   1 trophies   2 keys   3 tokens   4 sapphire   5 gems
+//   6 AnyToken   7 AnyRelic   8 AnyGem   (any-of aggregates, colour = -1)
 // colour: -1 (n/a) or 0..4 = R,G,B,Y,P (only meaningful for tokens / gems).
+//
+// any-of semantics (requirement_specificity = any_of, the apworld default):
+//   type 3 token / 5 gem with colour 0..4 = a SPECIFIC colour; colour -1 = the
+//     legacy single-colour defensive fallback (apworld never emits it under any_of).
+//   type 6 AnyToken  (colour -1) = owned >= count summed over ALL 5 token colours.
+//   type 7 AnyRelic  (colour -1) = owned >= count summed over Sapphire+Gold+Platinum.
+//   type 8 AnyGem    (colour -1) = owned >= count summed over ALL 5 gem colours.
+// See AP_BossReqMet (ap_hooks.c) + AP_GateCount*Sum (ap_hooks.{h,c}).
 typedef struct
 {
 	int type;
@@ -62,6 +71,12 @@ typedef struct
 	int shuffle_warp_pads;
 	int warppad_unlock_mode; // 0 vanilla / 1 random / 2 random_without_4_keys
 	int bossgarage_mode;     // 0 original4 / 1 same_hub / 2 trophies
+	// item #5 placement toggles (forward-looking; MVP native ignores them because
+	// locked gems/keys never enter the multiworld pool -> native never receives an
+	// item it must place). A future native build can branch on these to tell
+	// "reward not shuffled" apart from "reward shuffled elsewhere".
+	int shuffle_gems;        // 0 gems pinned to gem cups / 1 gems in the pool
+	int shuffle_keys;        // 0 keys pinned to boss races / 1 keys in the pool
 
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)
@@ -74,6 +89,13 @@ typedef struct
 	// cups have no tier-2 menu); kept as ctr_warp_unlock only for parse symmetry.
 	ctr_warp_unlock gem_cup_unlock[5];                  // gem cups by colour (LevelID 100..104); stage1.type 0 = native vanilla rule
 	ctr_req         boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
+	// Per-boss required race-track LevelIDs for the track-based garage modes
+	// (bossgarage_mode 0 Original4Tracks / 1 SameHubTracks). boss_tracks[b][0..
+	// boss_n_tracks[b]-1] are the LevelIDs the player must have WON for boss b to
+	// open; n==0 / entry -1 = no track list (mode 2 Trophies, or Oxide) -> use
+	// boss_req. Emitted by the apworld under boss_garage_req[<boss>].tracks.
+	int             boss_tracks[CTR_CFG_BOSS_COUNT][4];
+	int             boss_n_tracks[CTR_CFG_BOSS_COUNT];
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -120,6 +142,14 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 // gate). Returns owned >= count for r->type using AP_GateCount* (colour-aware).
 // type 0 / unknown -> 1 (no requirement). IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_BossReqMet(const ctr_req *r);
+
+// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
+// Komodo, Pinstripe). Honours bossgarage_mode: modes 0/1 (Original4Tracks /
+// SameHubTracks) open the garage once every required race track for that boss
+// has been WON (boss_tracks[bossIdx]); mode 2 (Trophies) and any boss with no
+// track list fall back to the flat trophy-count requirement via AP_BossReqMet.
+// IMPLEMENTED C-SIDE in ap_hooks.c (needs AP_LocationCheckedByBit).
+int AP_BossGarageOpen(int bossIdx);
 
 #ifdef __cplusplus
 } // extern "C"
