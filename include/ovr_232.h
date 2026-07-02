@@ -10,6 +10,13 @@ struct MaskHint
 	// end of struct
 };
 
+enum AdventureHubHudFlags
+{
+	AH_HUD_FLAG_HIDE_MAP = 0x10,
+};
+
+CTR_STATIC_ASSERT(AH_HUD_FLAG_HIDE_MAP == 0x10);
+
 enum BossGarageDoorDirectionID
 {
 	BOSS_GARAGE_DOOR_CLOSING = -1,
@@ -167,6 +174,27 @@ CTR_STATIC_ASSERT(AH_HUB_ITEM_ROUTE_KEY2 == -4);
 CTR_STATIC_ASSERT(AH_HUB_ITEM_ROUTE_KEY3 == -5);
 CTR_STATIC_ASSERT(sizeof(AdventureHubItemType) == 0x2);
 
+struct HubItem
+{
+	// 0x0
+	s16 posX;
+	s16 posY;
+
+	// 0x4
+	s16 angle;
+
+	// 0x6
+	AdventureHubItemType iconType;
+
+	// 0x8 -- size
+};
+
+CTR_STATIC_ASSERT(sizeof(struct HubItem) == 0x8);
+CTR_STATIC_ASSERT(OFFSETOF(struct HubItem, posX) == 0x0);
+CTR_STATIC_ASSERT(OFFSETOF(struct HubItem, posY) == 0x2);
+CTR_STATIC_ASSERT(OFFSETOF(struct HubItem, angle) == 0x4);
+CTR_STATIC_ASSERT(OFFSETOF(struct HubItem, iconType) == 0x6);
+
 enum AHWarpPadVisualState
 {
 	AH_WP_VISUAL_LOCKED = 0,
@@ -176,6 +204,13 @@ enum AHWarpPadVisualState
 	AH_WP_VISUAL_COLOR_CYCLE_OPEN,
 	AH_WP_VISUAL_COUNT,
 };
+
+CTR_STATIC_ASSERT(AH_WP_VISUAL_LOCKED == 0);
+CTR_STATIC_ASSERT(AH_WP_VISUAL_TROPHY_OPEN == 1);
+CTR_STATIC_ASSERT(AH_WP_VISUAL_COMPLETE == 2);
+CTR_STATIC_ASSERT(AH_WP_VISUAL_RELIC_TOKEN_OPEN == 3);
+CTR_STATIC_ASSERT(AH_WP_VISUAL_COLOR_CYCLE_OPEN == 4);
+CTR_STATIC_ASSERT(AH_WP_VISUAL_COUNT == 5);
 
 enum AHPausePageType
 {
@@ -209,6 +244,42 @@ enum AHPauseConstants
 	AH_PAUSE_RELIC_TRACK_COUNT = 0x12,
 	AH_PAUSE_PURPLE_TOKEN_COUNT = 4,
 };
+
+struct AHPauseMember
+{
+	// 0x0
+	s16 iconIndex;
+	s16 unlockFlags;
+
+	// 0x4
+	SVec3 rot;
+	s16 _pad_rot;
+
+	// 0xC
+	struct Instance *inst;
+
+	// 0x10 -- size
+};
+
+struct PauseObject
+{
+	// 0x0
+	struct AHPauseMember members[AH_PAUSE_MEMBER_COUNT];
+
+	// 0xE0
+	struct Thread *t;
+
+	// 0xe4 -- size
+};
+
+CTR_STATIC_ASSERT(sizeof(struct AHPauseMember) == 0x10);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseMember, iconIndex) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseMember, unlockFlags) == 0x2);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseMember, rot) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct AHPauseMember, inst) == 0xc);
+CTR_STATIC_ASSERT(sizeof(struct PauseObject) == 0xe4);
+CTR_STATIC_ASSERT(offsetof(struct PauseObject, members) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct PauseObject, t) == 0xe0);
 
 struct WarpPad
 {
@@ -381,23 +452,9 @@ struct OverlayDATA_232
 	// 800b4ec0
 	s16 primOffsetXY_HubArrow[5 * 2];
 
-	struct HubItem
-	{
-		// 0x0
-		s16 posX;
-		s16 posY;
-
-		// 0x4
-		s16 angle;
-
-		// 0x6
-		AdventureHubItemType iconType;
-
-		// 0x8 -- size
-	}
 	// 800b4ed4
 	// 2 arrows, boss, save/load, null(0xFFFF)
-	hubItems_hub1[5],
+	struct HubItem hubItems_hub1[5],
 	    // 800b4efc
 	    hubItems_hub2[5],
 	    // 800b4f24
@@ -410,7 +467,7 @@ struct OverlayDATA_232
 	// 800b4f9c -- array of pointers:
 	//		800b4ed4 800b4efc 800b4f24
 	//		800b4f4c 800b4f7c
-	s16 *hubItemsXY_ptrArray[5];
+	struct HubItem *hubItemsXY_ptrArray[5];
 
 	// 800b4fb0
 	s16 hubArrowXY_Inner[2 * 3];
@@ -591,30 +648,7 @@ struct OverlayDATA_232
 	// 800b5578
 	struct PauseObject *ptrPauseObject;
 
-	struct PauseObject
-	{
-		// 0x0
-		struct
-		{
-			// 0x0
-			s16 indexAdvPauseInst;
-			s16 unlockFlag;
-
-			// 0x4
-			SVec3 rot;
-			s16 _pad_rot;
-
-			// 0xC
-			struct Instance *inst;
-
-			// 0x10 -- size
-		} PauseMember[AH_PAUSE_MEMBER_COUNT];
-
-		// 0xE0
-		struct Thread *t;
-
-		// 0xe4 -- size
-	} pauseObject; // 800b557c
+	struct PauseObject pauseObject; // 800b557c
 
 	// 800B5660
 	int hintMenu_boolViewHint;
@@ -640,6 +674,7 @@ struct OverlayDATA_232
 CTR_STATIC_ASSERT(OFFSETOF_D232(maskWarppadDelayFrames) == 0x800b5570);
 CTR_STATIC_ASSERT(OFFSETOF_D232(maskWarppadBoolInterrupt) == 0x800b5574);
 CTR_STATIC_ASSERT(OFFSETOF_D232(ptrPauseObject) == 0x800b5578);
+CTR_STATIC_ASSERT(OFFSETOF_D232(pauseObject) == 0x800b557c);
 
 extern struct OverlayRDATA_232 R232;
 extern struct OverlayDATA_232 D232;

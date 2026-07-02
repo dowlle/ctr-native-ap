@@ -408,7 +408,7 @@ void AH_MaskHint_Update()
 			    (D232.maskHintID != 0) && (D232.maskHintID != 0x18))
 			{
 				// hide UI map
-				gGT->hudFlags |= 0x10;
+				gGT->hudFlags |= AH_HUD_FLAG_HIDE_MAP;
 			}
 
 			sdata->AkuAkuHintState++;
@@ -437,7 +437,7 @@ void AH_MaskHint_Update()
 		     ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)))
 		{
 			// show map again
-			gGT->hudFlags &= ~(0x10);
+			gGT->hudFlags &= ~AH_HUD_FLAG_HIDE_MAP;
 		}
 	}
 	break;

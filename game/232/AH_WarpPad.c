@@ -20,17 +20,46 @@ enum
 	AH_WP_REWARD_INSTANCE_COUNT = 3,
 	AH_WP_WISP_COUNT = 2,
 	AH_WP_WARP_LOAD_FRAMES = 61,
+	AH_WP_TROPHY_PORTAL_HOLD_FRAMES = 0x400,
 	AH_WP_LONG_RANGE_NEAR_DIST_SQ = 0x144000,
 	AH_WP_SHORT_RANGE_NEAR_DIST_SQ = 0x90000,
 	AH_WP_WARP_TRIGGER_DIST_SQ = 0x8fff,
 	AH_WP_REWARD_FADE_DIST_SQ = 0x900000,
 	AH_WP_REWARD_SPACING_ANGLE = 0x555,
+	AH_WP_SPAWN_FORWARD_OFFSET = 0x400,
 	AH_WP_FLOATING_OBJECT_HEIGHT = 0x100,
 	AH_WP_PRIZE_RING_RADIUS = 0xc0,
 	AH_WP_PRIZE_TILT_Z = 0x155,
 	AH_WP_RELIC_PRIZE_SCALE = 0x1800,
 	AH_WP_STANDARD_ITEM_SCALE = 0x2000,
 	AH_WP_TROPHY_PRIZE_SCALE = 0x2800,
+	AH_WP_CLOSED_SINGLE_DIGIT_OFFSET = -0x80,
+	AH_WP_CLOSED_SINGLE_ITEM_OFFSET = 0x80,
+	AH_WP_CLOSED_ITEM_WITH_TENS_OFFSET = 0xc0,
+	AH_WP_CLOSED_X_WITH_TENS_OFFSET = 0x40,
+	AH_WP_CLOSED_TENS_OFFSET = -0x40,
+	AH_WP_CLOSED_ONES_WITH_TENS_OFFSET = -0xa0,
+	AH_WP_SPIN_PRIZE_STEP = 0x40,
+	AH_WP_SPIN_PRIZE_REWARD_STEP = 0x80,
+	AH_WP_SPIN_BEAM_STEP = 0x200,
+	AH_WP_SPIN_WISP_STEP = 0x100,
+	AH_WP_SPIN_REWARD_RING_STEP = 0x4,
+	AH_WP_REWARD_PHASE_STEP = 0x20,
+	AH_WP_WISP_RISE_RATE = 0x20,
+	AH_WP_WISP_RISE_RATE_STEP = 0x10,
+	AH_WP_WISP_FAR_MAX_HEIGHT = 0x600,
+	AH_WP_WISP_NEAR_MAX_HEIGHT = 0x400,
+	AH_WP_WISP_FIRST_FRAMES = 4,
+	AH_WP_WISP_FADE_IN_STEP = 0x380,
+	AH_WP_WISP_FADE_OUT_RANGE = 0xc00,
+	AH_WP_OPEN_BEAM_ALPHA = 0xc00,
+	AH_WP_OPEN_RING_ALPHA = 0x400,
+	AH_WP_OPEN_RING_HEIGHT_STEP = 0x400,
+	AH_WP_FULL_ALPHA = 0x1000,
+	AH_WP_NAME_LEVEL_ID_OFFSET = 8,
+	AH_WP_DIGIT_MODEL_FIRST_1_TO_8 = 0x38,
+	AH_WP_DIGIT_MODEL_0 = 0x6d,
+	AH_WP_DIGIT_MODEL_9 = 0x6e,
 };
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
@@ -62,11 +91,11 @@ s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 	struct Instance *inst = t->inst;
 	struct InstDef *instDef = inst->instDef;
 
-	posData[0] = inst->matrix.t[0] + ((MATH_Cos(instDef->rot.y) << 0xA) >> 0xC);
+	posData[0] = inst->matrix.t[0] + ((MATH_Cos(instDef->rot.y) * AH_WP_SPAWN_FORWARD_OFFSET) >> 0xC);
 
 	posData[1] = inst->matrix.t[1];
 
-	posData[2] = inst->matrix.t[2] + ((MATH_Sin(instDef->rot.y) * -0x400) >> 0xC);
+	posData[2] = inst->matrix.t[2] + ((MATH_Sin(instDef->rot.y) * -AH_WP_SPAWN_FORWARD_OFFSET) >> 0xC);
 
 	return &instDef->rot.x;
 }
@@ -245,7 +274,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			if (instArr[i] != 0)
 			{
-				instArr[i]->flags &= ~(0x80);
+				instArr[i]->flags &= ~HIDE_MODEL;
 			}
 		}
 	}
@@ -257,7 +286,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			if (instArr[i] != 0)
 			{
-				instArr[i]->flags |= 0x80;
+				instArr[i]->flags |= HIDE_MODEL;
 			}
 		}
 	}
@@ -383,33 +412,33 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// no 10s digit
 		if (instArr[WPIS_CLOSED_10S] == 0)
 		{
-			instArr[WPIS_CLOSED_1S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * -0x80 >> 0xC);
-			instArr[WPIS_CLOSED_1S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * -0x80 >> 0xC);
+			instArr[WPIS_CLOSED_1S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_SINGLE_DIGIT_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_1S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_SINGLE_DIGIT_OFFSET >> 0xC);
 
-			instArr[WPIS_CLOSED_ITEM]->matrix.t[0] = warppadMatrix->t[0] + ((angleCos << 7) >> 0xC);
-			instArr[WPIS_CLOSED_ITEM]->matrix.t[2] = warppadMatrix->t[2] + ((angleSin << 7) >> 0xC);
+			instArr[WPIS_CLOSED_ITEM]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_SINGLE_ITEM_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_ITEM]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_SINGLE_ITEM_OFFSET >> 0xC);
 		}
 
 		// 10s digit
 		else
 		{
-			instArr[WPIS_CLOSED_ITEM]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * 0xC0 >> 0xC);
-			instArr[WPIS_CLOSED_ITEM]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * 0xC0 >> 0xC);
+			instArr[WPIS_CLOSED_ITEM]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_ITEM_WITH_TENS_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_ITEM]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_ITEM_WITH_TENS_OFFSET >> 0xC);
 
-			instArr[WPIS_CLOSED_X]->matrix.t[0] = warppadMatrix->t[0] + ((angleCos << 6) >> 0xC);
-			instArr[WPIS_CLOSED_X]->matrix.t[2] = warppadMatrix->t[2] + ((angleSin << 6) >> 0xC);
+			instArr[WPIS_CLOSED_X]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_X_WITH_TENS_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_X]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_X_WITH_TENS_OFFSET >> 0xC);
 
-			instArr[WPIS_CLOSED_10S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * -0x40 >> 0xC);
-			instArr[WPIS_CLOSED_10S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * -0x40 >> 0xC);
+			instArr[WPIS_CLOSED_10S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_TENS_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_10S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_TENS_OFFSET >> 0xC);
 
-			instArr[WPIS_CLOSED_1S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * -0xa0 >> 0xC);
-			instArr[WPIS_CLOSED_1S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * -0xa0 >> 0xC);
+			instArr[WPIS_CLOSED_1S]->matrix.t[0] = warppadMatrix->t[0] + (angleCos * AH_WP_CLOSED_ONES_WITH_TENS_OFFSET >> 0xC);
+			instArr[WPIS_CLOSED_1S]->matrix.t[2] = warppadMatrix->t[2] + (angleSin * AH_WP_CLOSED_ONES_WITH_TENS_OFFSET >> 0xC);
 		}
 
 		warppadObj->spinRot_Prize.x = 0;
 		warppadObj->spinRot_Prize.z = 0;
 
-		warppadObj->spinRot_Prize.y += 0x40;
+		warppadObj->spinRot_Prize.y += AH_WP_SPIN_PRIZE_STEP;
 
 		struct Instance *closedItemInst = instArr[WPIS_CLOSED_ITEM];
 
@@ -487,7 +516,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 			else if (i == 7)
 			{
-				sdata->kartSpawnOrderArray[7] = champSlot;
+				sdata->kartSpawnOrderArray[AH_WP_RACER_SLOT_COUNT - 1] = champSlot;
 			}
 
 			else
@@ -700,7 +729,7 @@ WarpPad_RequestLoad:
 
 WarpPad_TrophyAnimateOnly:
 
-	if (warppadObj->framesWarping < 0x400)
+	if (warppadObj->framesWarping < AH_WP_TROPHY_PORTAL_HOLD_FRAMES)
 	{
 		warppadObj->framesWarping++;
 	}
@@ -719,20 +748,20 @@ WarpPad_AnimateOpen:
 		// what on earth was this RNG?
 		// how'd they come up with something so random, that looks so good?
 		i = MixRNG_Scramble();
-		warppadObj->spinRot_Beam.y += ((s16)(i >> 3) + (s16)((i >> 3) / 6) * -6 + 1) * 0x200;
+		warppadObj->spinRot_Beam.y += ((s16)(i >> 3) + (s16)((i >> 3) / 6) * -6 + 1) * AH_WP_SPIN_BEAM_STEP;
 
 		// converted to TEST in rebuildPS1
 		ConvertRotToMatrix(&instArr[WPIS_OPEN_BEAM]->matrix, &warppadObj->spinRot_Beam);
 	}
 
-	wispRiseRate = 0x20;
+	wispRiseRate = AH_WP_WISP_RISE_RATE;
 
-	wispMaxHeight = 0x600;
+	wispMaxHeight = AH_WP_WISP_FAR_MAX_HEIGHT;
 
 	// if close to this warppad
 	if (D232.levelID != -1)
 	{
-		wispMaxHeight = 0x400;
+		wispMaxHeight = AH_WP_WISP_NEAR_MAX_HEIGHT;
 	}
 
 	for (i = 0; i < AH_WP_WISP_COUNT; i++)
@@ -742,7 +771,7 @@ WarpPad_AnimateOpen:
 			warppadObj->spinRot_Wisp[i].x = 0;
 			warppadObj->spinRot_Wisp[i].z = 0;
 
-			warppadObj->spinRot_Wisp[i].y += 0x100;
+			warppadObj->spinRot_Wisp[i].y += AH_WP_SPIN_WISP_STEP;
 
 			// converted to TEST in rebuildPS1
 			ConvertRotToMatrix(&instArr[WPIS_OPEN_RING1 + i]->matrix, &warppadObj->spinRot_Wisp[i]);
@@ -754,17 +783,17 @@ WarpPad_AnimateOpen:
 
 				// if height hasn't reached 4x RiseRate,
 				// first 4 frames of rising
-				if (instArr[WPIS_OPEN_RING1 + i]->matrix.t[1] < (warppadInst->matrix.t[1] + wispRiseRate * 4))
+				if (instArr[WPIS_OPEN_RING1 + i]->matrix.t[1] < (warppadInst->matrix.t[1] + wispRiseRate * AH_WP_WISP_FIRST_FRAMES))
 				{
 					// reduce transparency
-					instArr[WPIS_OPEN_RING1 + i]->alphaScale -= 0x380;
+					instArr[WPIS_OPEN_RING1 + i]->alphaScale -= AH_WP_WISP_FADE_IN_STEP;
 				}
 
 				// after first 4 frames
 				else
 				{
 					// add transparency as the wisp spirals upward (~0x60  per frame)
-					instArr[WPIS_OPEN_RING1 + i]->alphaScale += 0xc00 / (wispMaxHeight / wispRiseRate);
+					instArr[WPIS_OPEN_RING1 + i]->alphaScale += AH_WP_WISP_FADE_OUT_RANGE / (wispMaxHeight / wispRiseRate);
 				}
 			}
 
@@ -775,7 +804,7 @@ WarpPad_AnimateOpen:
 				instArr[WPIS_OPEN_RING1 + i]->matrix.t[1] = warppadInst->matrix.t[1];
 
 				// full transparency
-				instArr[WPIS_OPEN_RING1 + i]->alphaScale = 0x1000;
+				instArr[WPIS_OPEN_RING1 + i]->alphaScale = AH_WP_FULL_ALPHA;
 
 				rng1 = MixRNG_Scramble() >> 3;
 
@@ -785,14 +814,14 @@ WarpPad_AnimateOpen:
 					rng2 = rng1 + 0xfff;
 				}
 
-				warppadObj->spinRot_Wisp[i].y = (s16)rng1 + (s16)(rng2 >> 0xc) * -0x1000;
+				warppadObj->spinRot_Wisp[i].y = (s16)rng1 + (s16)(rng2 >> 0xc) * -AH_WP_FULL_ALPHA;
 			}
 		}
 
-		wispRiseRate += 0x10;
+		wispRiseRate += AH_WP_WISP_RISE_RATE_STEP;
 	}
 
-	warppadObj->spinRot_Prize.y += 0x80;
+	warppadObj->spinRot_Prize.y += AH_WP_SPIN_PRIZE_REWARD_STEP;
 
 	rewardScale = 0x100;
 
@@ -820,13 +849,13 @@ WarpPad_AnimateOpen:
 			if (rewardScale == 0)
 			{
 				// invisible
-				instArr[WPIS_OPEN_PRIZE1 + i]->flags |= 0x80;
+				instArr[WPIS_OPEN_PRIZE1 + i]->flags |= HIDE_MODEL;
 			}
 
 			else
 			{
 				// visible
-				instArr[WPIS_OPEN_PRIZE1 + i]->flags &= ~(0x80);
+				instArr[WPIS_OPEN_PRIZE1 + i]->flags &= ~HIDE_MODEL;
 
 				// token
 				rewardScale2 = AH_WP_STANDARD_ITEM_SCALE;
@@ -849,8 +878,8 @@ WarpPad_AnimateOpen:
 			}
 		}
 
-		warppadObj->thirds[i] += 0x20;
-		warppadObj->spinRot_Rewards.y += 0x4;
+		warppadObj->thirds[i] += AH_WP_REWARD_PHASE_STEP;
+		warppadObj->spinRot_Rewards.y += AH_WP_SPIN_REWARD_RING_STEP;
 	}
 
 	if (instArr[WPIS_CLOSED_1S] != 0)
@@ -865,14 +894,10 @@ WarpPad_AnimateOpen:
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ad2c8-0x800ad3ec.
 void AH_WarpPad_ThDestroy(struct Thread *t)
 {
-	int i;
-	struct Instance **instArr;
-	struct WarpPad *warppadObj;
-
-	warppadObj = t->object;
+	struct WarpPad *warppadObj = t->object;
 
 	// array of instances in warppad object
-	instArr = &warppadObj->inst[0];
+	struct Instance **instArr = &warppadObj->inst[0];
 
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
@@ -904,7 +929,7 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 		instArr[WPIS_OPEN_BEAM] = 0;
 	}
 
-	for (i = WPIS_OPEN_RING1; i < WPIS_OPEN_PRIZE1; i++)
+	for (int i = WPIS_OPEN_RING1; i < WPIS_OPEN_PRIZE1; i++)
 	{
 		if (instArr[i] != 0)
 		{
@@ -913,7 +938,7 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 		}
 	}
 
-	for (i = WPIS_OPEN_PRIZE1; i < WPIS_NUM_INSTANCES; i++)
+	for (int i = WPIS_OPEN_PRIZE1; i < WPIS_NUM_INSTANCES; i++)
 	{
 		if (instArr[i] != 0)
 		{
@@ -989,7 +1014,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	// "warppad#104" is gem cup 4
 	// etc
 
-	for (i = 8; inst->name[i] != 0; i++)
+	for (i = AH_WP_NAME_LEVEL_ID_OFFSET; inst->name[i] != 0; i++)
 	{
 		levelID = levelID * 10 + inst->name[i] - '0';
 	}
@@ -1088,7 +1113,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			newInst->matrix.t[1] = inst->matrix.t[1];
 			newInst->matrix.t[2] = inst->matrix.t[2];
 
-			newInst->alphaScale = 0xc00;
+			newInst->alphaScale = AH_WP_OPEN_BEAM_ALPHA;
 
 			warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
 		}
@@ -1102,10 +1127,10 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 				CTR_MatrixCopyRot(&newInst->matrix, &inst->matrix);
 				newInst->matrix.t[0] = inst->matrix.t[0];
-				newInst->matrix.t[1] = inst->matrix.t[1] + i * 0x400;
+				newInst->matrix.t[1] = inst->matrix.t[1] + i * AH_WP_OPEN_RING_HEIGHT_STEP;
 				newInst->matrix.t[2] = inst->matrix.t[2];
 
-				newInst->alphaScale = 0x400;
+				newInst->alphaScale = AH_WP_OPEN_RING_ALPHA;
 
 				warppadObj->inst[WPIS_OPEN_RING1 + i] = newInst;
 			}
@@ -1487,14 +1512,14 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	// ====== "1s" ========
 
 	// STATIC_BIG (1-8)
-	i = 0x38;
+	i = AH_WP_DIGIT_MODEL_FIRST_1_TO_8;
 	if (warppadObj->digit1s == 0)
 	{
-		i = 0x6d; // '0'
+		i = AH_WP_DIGIT_MODEL_0;
 	}
 	if (warppadObj->digit1s == 9)
 	{
-		i = 0x6e; // '9'
+		i = AH_WP_DIGIT_MODEL_9;
 	}
 
 	// WPIS_CLOSED_1S

@@ -596,9 +596,9 @@ internal void NativeCheckpoint_RelocateAdventurePauseObject(const struct NativeC
 		return;
 	}
 
-	for (u32 i = 0; i < len(pauseObject->PauseMember); i++)
+	for (u32 i = 0; i < len(pauseObject->members); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &pauseObject->PauseMember[i].inst);
+		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &pauseObject->members[i].inst);
 	}
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &pauseObject->t);
 }
