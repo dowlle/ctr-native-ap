@@ -1125,6 +1125,11 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 		break;
 	case 4: *modelID = STATIC_RELIC;  *numOwned = AP_GateCount(AP_IDX_SAPPHIRE); break;
 	case 5: *modelID = STATIC_GEM;    *numOwned = (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0; break;
+	// any-of aggregates (colour -1): show the type's model + the summed owned count
+	// so the displayed X/N matches the gate eval (AP_BossReqMet types 6/7/8).
+	case 6: *modelID = STATIC_TOKEN;  *numOwned = AP_GateCountTokenSum(); break; // AnyToken
+	case 7: *modelID = STATIC_RELIC;  *numOwned = AP_GateCountRelicSum(); break; // AnyRelic
+	case 8: *modelID = STATIC_GEM;    *numOwned = AP_GateCountGemSum();   break; // AnyGem
 	default: *modelID = STATIC_TROPHY; *numOwned = AP_GateCount(AP_IDX_TROPHY); break;
 	}
 	*numNeeded = r->count;
@@ -1297,6 +1302,18 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				unlockItem_numOwned =
 				    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
 				break;
+			case 6: // any token (all colours, summed)
+				unlockItem_modelID = STATIC_TOKEN;
+				unlockItem_numOwned = AP_GateCountTokenSum();
+				break;
+			case 7: // any relic (all tiers, summed)
+				unlockItem_modelID = STATIC_RELIC;
+				unlockItem_numOwned = AP_GateCountRelicSum();
+				break;
+			case 8: // any gem (all colours, summed)
+				unlockItem_modelID = STATIC_GEM;
+				unlockItem_numOwned = AP_GateCountGemSum();
+				break;
 			default:
 				unlockItem_modelID = STATIC_TROPHY;
 				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
@@ -1376,6 +1393,18 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					unlockItem_modelID = STATIC_GEM;
 					unlockItem_numOwned =
 					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
+					break;
+				case 6: // any token (all colours, summed)
+					unlockItem_modelID = STATIC_TOKEN;
+					unlockItem_numOwned = AP_GateCountTokenSum();
+					break;
+				case 7: // any relic (all tiers, summed)
+					unlockItem_modelID = STATIC_RELIC;
+					unlockItem_numOwned = AP_GateCountRelicSum();
+					break;
+				case 8: // any gem (all colours, summed)
+					unlockItem_modelID = STATIC_GEM;
+					unlockItem_numOwned = AP_GateCountGemSum();
 					break;
 				default:
 					unlockItem_modelID = STATIC_TROPHY;
@@ -1525,6 +1554,18 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					unlockItem_modelID = STATIC_GEM;
 					unlockItem_numOwned =
 					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
+					break;
+				case 6: // any token (all colours, summed)
+					unlockItem_modelID = STATIC_TOKEN;
+					unlockItem_numOwned = AP_GateCountTokenSum();
+					break;
+				case 7: // any relic (all tiers, summed)
+					unlockItem_modelID = STATIC_RELIC;
+					unlockItem_numOwned = AP_GateCountRelicSum();
+					break;
+				case 8: // any gem (all colours, summed)
+					unlockItem_modelID = STATIC_GEM;
+					unlockItem_numOwned = AP_GateCountGemSum();
 					break;
 				default:
 					unlockItem_modelID = STATIC_TOKEN;

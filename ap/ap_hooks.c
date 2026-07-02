@@ -884,15 +884,16 @@ static const char *AP_ITEM_NAMES[AP_ITEM_INDEX_COUNT] = {
     "Purple CTR Token", "Red Gem", "Green Gem", "Blue Gem", "Yellow Gem",
     "Purple Gem", "Key"};
 
-static const char *AP_REQ_TYPE_NAMES[6] = {
-    "none", "trophy", "key", "token", "sapphire", "gem"};
+static const char *AP_REQ_TYPE_NAMES[9] = {
+    "none", "trophy", "key", "token", "sapphire", "gem",
+    "any_token", "any_relic", "any_gem"};
 
 static const char *AP_BOSS_NAMES[CTR_CFG_BOSS_COUNT] = {
     "ripper_roo", "papu_papu", "komodo_joe", "pinstripe", "oxide"};
 
 static const char *AP_ReqTypeName(int t)
 {
-	return (t >= 0 && t < 6) ? AP_REQ_TYPE_NAMES[t] : "?";
+	return (t >= 0 && t < 9) ? AP_REQ_TYPE_NAMES[t] : "?";
 }
 
 static void AP_DumpState(struct GameTracker *gGT)
