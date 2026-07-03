@@ -868,6 +868,124 @@ static void AP_PollDebug(struct AdvProgress *adv)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// RACE-PLACEMENT LISTENER -- observation-only groundwork for the decided
+// "podium check ladder" (per-race nested rungs: 1st / 2nd-or-3rd / any-finish).
+// The game does NOT persist race placement, so the apworld can't derive it from
+// AdvProgress -- this listener captures it LIVE. It sends NOTHING to the AP
+// server: it only mirrors the player's live position and records the final
+// placement of each finished race into the diagnostic log (ap-read.log) + the
+// state dump (ap-state.json), so the apworld location design can be made with a
+// full picture of what the engine actually exposes.
+//
+// Engine surfaces (source-anchored, all in the same unity build):
+//   * live rank      -- gGT->drivers[0]->driverRank  (s16, 0 = 1st place;
+//                        namespace_Vehicle.h:1528, offset 0x482). Recomputed
+//                        every frame by PlayLevel_UpdateLapStats (PlayLevel.c:4).
+//   * race finished  -- drivers[0]->actionsFlagSet & ACTION_RACE_FINISHED
+//                        (0x2000000; namespace_Vehicle.h:576). Set the frame the
+//                        player crosses the line on the final lap, regardless of
+//                        placement -- so 2nd/3rd/4th finishes are observable here
+//                        even though adventure mode itself only "wins" (awards a
+//                        trophy) on 1st (AA_EndEvent_DrawMenu, 222.c:100/449).
+//   * P1 == local    -- gGT->drivers[0] is the human player in adventure/boss
+//                        races (222.c:69, UI_Rank.c single-player branch).
+// ---------------------------------------------------------------------------
+
+// Race-type classification from the mode words at the finish moment, so the
+// apworld design knows which surface each placement came from (only the standard
+// trophy race is a podium-ladder target; the rest are documented, not gated).
+enum
+{
+	AP_RACE_UNKNOWN = 0,
+	AP_RACE_TROPHY  = 1, // standard adventure trophy race (podium-ladder target)
+	AP_RACE_BOSS    = 2, // boss race: 2 racers, 1st = win / 2nd = loss only
+	AP_RACE_RELIC   = 3, // relic time trial: solo, no standings (rank always 0)
+	AP_RACE_CRYSTAL = 4, // crystal challenge: collect-all, no standings
+	AP_RACE_TOKEN   = 5, // CTR token challenge (GameMode2 TOKEN_RACE)
+	AP_RACE_ARCADE  = 6, // arcade / non-adventure race
+};
+
+static const char *AP_RACE_TYPE_NAMES[7] = {
+    "unknown", "trophy", "boss", "relic", "crystal", "token", "arcade"};
+
+static const char *AP_RaceTypeName(int t)
+{
+	return (t >= 0 && t < 7) ? AP_RACE_TYPE_NAMES[t] : "?";
+}
+
+// Live placement of the player this frame: driverRank+1 (1 = 1st), or -1 when
+// not in a live adventure race. Mirrored into ap-state.json.
+static int ap_live_position = -1;
+
+// Last captured final placement (survives the whole session for diff/inspection).
+static int ap_last_race_track = -1; // gGT->levelID at the finish moment
+static int ap_last_race_place = -1; // driverRank+1 (1 = 1st), -1 = none yet
+static int ap_last_race_mode  = AP_RACE_UNKNOWN;
+
+static int AP_ClassifyRace(struct GameTracker *gGT)
+{
+	int gm1 = gGT->gameMode1;
+	int gm2 = gGT->gameMode2;
+	if ((gm1 & ADVENTURE_MODE) == 0)
+		return AP_RACE_ARCADE;
+	if (IS_BOSS_RACE(gm1))
+		return AP_RACE_BOSS;
+	if (gm1 & RELIC_RACE)
+		return AP_RACE_RELIC;
+	if (gm1 & CRYSTAL_CHALLENGE)
+		return AP_RACE_CRYSTAL;
+	if (gm2 & TOKEN_RACE)
+		return AP_RACE_TOKEN;
+	return AP_RACE_TROPHY;
+}
+
+// Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure
+// throttle/early-return, so the finish transition is never missed. Self-gates to
+// real races via drivers[0] + ACTION_RACE_FINISHED. Observation-only.
+static void AP_RaceListenerTick(struct GameTracker *gGT)
+{
+	// Rising-edge detector on the player's ACTION_RACE_FINISHED bit -- fires the
+	// capture exactly once per race and re-arms automatically when the flag
+	// clears (next race start). Same idiom as the M-key overlay toggle above; it
+	// naturally ignores the multi-frame ceremony / retry menu / reload that all
+	// hold the flag set. Persisting across a hub visit is harmless (0->1 only).
+	static int ap_finish_prev = 0;
+
+	struct Driver *p = gGT->drivers[0]; // P1 == the local player in adventure
+
+	// Live-position mirror: only meaningful with a valid player driver in an
+	// adventure context; -1 otherwise so a diff can't misread a stale hub rank.
+	if (p != NULL && (gGT->gameMode1 & ADVENTURE_MODE) != 0)
+		ap_live_position = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
+	else
+		ap_live_position = -1;
+
+	if (p == NULL)
+		return;
+
+	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
+	if (finishedNow && !ap_finish_prev)
+	{
+		// driverRank is frozen once you cross the line (nobody can pass a
+		// finished racer), so this is the authoritative final placement.
+		ap_last_race_track = (int)gGT->levelID;
+		ap_last_race_place = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
+		ap_last_race_mode  = AP_ClassifyRace(gGT);
+
+		char m[160];
+		snprintf(m, sizeof m,
+		         "[AP RACE] track=%d final_place=%d race_type=%s "
+		         "(t=%u adv=%d load=%d)\n",
+		         ap_last_race_track, ap_last_race_place,
+		         AP_RaceTypeName(ap_last_race_mode), (unsigned)gGT->timer,
+		         (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0,
+		         (int)sdata->Loading.stage);
+		AP_AppendLog(m);
+	}
+	ap_finish_prev = finishedNow;
+}
+
+// ---------------------------------------------------------------------------
 // STATE DUMP -- write a JSON snapshot of the live AP <-> game state to
 // ap-state.json (overwritten on a throttle) so the game's belief can be diffed
 // against the apworld seed / slot_data offline. Debug-only; no gameplay effect.
@@ -914,6 +1032,13 @@ static void AP_DumpState(struct GameTracker *gGT)
 	fprintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
 	fprintf(f, "  \"locations_checked\": %d,\n", checked);
 	fprintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
+	// Live race placement (observation-only groundwork for the podium ladder).
+	fprintf(f, "  \"live_position\": %d,\n", ap_live_position);
+	fprintf(f,
+	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
+	        "\"type\": \"%s\"},\n",
+	        ap_last_race_track, ap_last_race_place,
+	        AP_RaceTypeName(ap_last_race_mode));
 	fprintf(f,
 	        "  \"options\": {\"goal\": %d, \"oxide_final_unlock\": %d, "
 	        "\"warppad_unlock_mode\": %d, \"bossgarage_mode\": %d, "
@@ -1018,6 +1143,10 @@ void AP_OnFrame(struct GameTracker *gGT)
 			ap_prev_level = (int)gGT->levelID;
 		}
 	}
+
+	// Race-placement listener: runs every frame in all modes so the finish
+	// transition is never missed by the throttle below. Observation-only.
+	AP_RaceListenerTick(gGT);
 
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
