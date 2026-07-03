@@ -362,6 +362,217 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 }
 
 // ---------------------------------------------------------------------------
+// UNIFIED PAD STATE (Warp-Pad State Model v2, 2026-07-03 design).
+// One state function shared by the map colour (AH_Map.c), the in-hub look
+// (AH_WarpPad_LInB), and the gate (AH_WarpPad_ThTick). A pad is in exactly one
+// state; every surface reads it from the same source, no mode switch.
+//
+// LIFECYCLE keys off the DESTINATION content category (race dest = full 6-state;
+// trial/arena/cup dest = reduced 1->2->5). REQUIREMENTS stay keyed to the
+// PHYSICAL pad (stage1/stage2 come from warp_pad_unlock[phys]). GREEN means "a
+// check you can do" -- ANY item (foreign included), NOT the old own-progression
+// criterion (AP_BitIsUsefulUnchecked), which this model drops.
+// ---------------------------------------------------------------------------
+
+// Enumerate the still-UNCOLLECTED (unchecked on the server) AP reward locations
+// of destination `destLevelID`, for ANY category, writing their global
+// AdvProgress bits into `outBits` (capacity `cap`) and returning the count. This
+// is the category-general sibling of AP_WarpPadUncollectedBits (race-only), added
+// so the state model + the trial-pad glow can see trial/arena/cup locations too.
+// "Collected" is decided ONLY by AP checked-state (never CHECK_ADV_BIT). Absent
+// tiers (no location_code in this seed) are skipped. Categories:
+//   race  0..15 : 5 tiers (trophy +0x06, sapphire +0x16, gold +0x28,
+//                 platinum +0x3a, CTR token +0x4c)
+//   trial 16,17 : 3 relic tiers (sapphire/gold/platinum) -- Slide Coliseum +
+//                 Turbo Track carry no trophy/token location
+//   arena 18,19,21,23 : 1 crystal (battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN)
+//   cup   100..104     : 1 gem ((dest-100) + FIRST_GEM)
+int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
+{
+	static const int kRaceTierBit[5] = {
+	    ADV_REWARD_FIRST_TROPHY,
+	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+	    ADV_REWARD_FIRST_GOLD_RELIC,
+	    ADV_REWARD_FIRST_PLATINUM_RELIC,
+	    ADV_REWARD_FIRST_CTR_TOKEN};
+	// Trial pads (Slide Coliseum 16 / Turbo Track 17) carry only the three relic
+	// Time-Trial locations (dest + SAPPHIRE/GOLD/PLATINUM: bits 38/56/74 &
+	// 39/57/75, verified against AP_LOCATION_TABLE) -- no trophy, no token.
+	static const int kTrialTierBit[3] = {
+	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+	    ADV_REWARD_FIRST_GOLD_RELIC,
+	    ADV_REWARD_FIRST_PLATINUM_RELIC};
+	int count = 0;
+	int i;
+
+	if (outBits == 0 || cap <= 0)
+		return 0;
+
+	if (destLevelID >= 0 && destLevelID < 16)
+	{
+		for (i = 0; i < 5 && count < cap; i++)
+		{
+			int bit = destLevelID + kRaceTierBit[i];
+			if (AP_LookupLocationCode(bit) < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(bit))
+				outBits[count++] = bit;
+		}
+	}
+	else if (destLevelID == 16 || destLevelID == 17)
+	{
+		for (i = 0; i < 3 && count < cap; i++)
+		{
+			int bit = destLevelID + kTrialTierBit[i];
+			if (AP_LookupLocationCode(bit) < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(bit))
+				outBits[count++] = bit;
+		}
+	}
+	else if (destLevelID == 18 || destLevelID == 19 ||
+	         destLevelID == 21 || destLevelID == 23)
+	{
+		// Battle arena crystal (Crystal Bonus Round, bits 111..114). Same mapping
+		// as the ThTick glow pass: battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN.
+		int bit = R232.battleTrackArr[destLevelID - 18] + ADV_REWARD_FIRST_PURPLE_TOKEN;
+		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+			outBits[count++] = bit;
+	}
+	else if (destLevelID >= 100 && destLevelID < 105)
+	{
+		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4.
+		int bit = (destLevelID - 100) + ADV_REWARD_FIRST_GEM;
+		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+			outBits[count++] = bit;
+	}
+
+	return count;
+}
+
+// Is destination `destLevelID` one of the 16 shuffleable race tracks (the only
+// category with the full 6-state two-stage lifecycle)?
+static int AP_DestIsRace(int destLevelID)
+{
+	return destLevelID >= 0 && destLevelID < 16;
+}
+
+// Is destination `destLevelID` a recognised warp-pad destination at all (race /
+// trial / arena / cup)? Anything else -> AP_PadState returns 0 (vanilla/untouched).
+static int AP_DestKnown(int destLevelID)
+{
+	return AP_DestIsRace(destLevelID) ||
+	       destLevelID == 16 || destLevelID == 17 ||
+	       destLevelID == 18 || destLevelID == 19 ||
+	       destLevelID == 21 || destLevelID == 23 ||
+	       (destLevelID >= 100 && destLevelID < 105);
+}
+
+// Is the PHYSICAL pad's stage-1 (entry) requirement satisfied? Faithful copy of
+// the per-category unlock predicate AH_WarpPad_LInB computes for each pad class
+// (verified against source 2026-07-03), so the state model agrees with the pad
+// the game actually births. Race pads reuse ctr_cfg_warp_unlocked verbatim (the
+// same helper ThTick's load gate uses). NON-race categories mirror LInB's
+// per-class branch: randomized requirement when slot_data provides one, else the
+// vanilla fallback for that class. Keyed by the PHYSICAL pad LevelID.
+static int AP_PadStage1Met(int physLevelID)
+{
+	int i, owned;
+
+	// Race tracks (0..15): the canonical helper (shared with ThTick + LInB).
+	if (physLevelID >= 0 && physLevelID < 16)
+		return ctr_cfg_warp_unlocked(physLevelID);
+
+	// Trial pads: Slide Coliseum (16) = vanilla 10 Sapphire relics; Turbo Track
+	// (17) = vanilla all 5 Gem colours. Randomized single-stage req overrides.
+	if (physLevelID == 16 || physLevelID == 17)
+	{
+		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
+		if (physLevelID == 16)
+			return AP_GateCount(AP_IDX_SAPPHIRE) >= 10;
+		owned = 0;
+		for (i = 0; i < 5; i++)
+			if (AP_GateCountGemColour(i) >= 1)
+				owned++;
+		return owned >= 5;
+	}
+
+	// Battle arenas (18/19/21/23): randomized req overrides; else the vanilla
+	// hub-key gate (LInB GetKeysRequirement: received Keys >= arrKeysNeeded[hub]).
+	if (physLevelID == 18 || physLevelID == 19 ||
+	    physLevelID == 21 || physLevelID == 23)
+	{
+		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
+		return AP_GateCount(AP_IDX_KEY) >=
+		       D232.arrKeysNeeded[data.metaDataLEV[physLevelID].hubID];
+	}
+
+	// Gem cups (100..104): randomized req overrides; else vanilla 4 Tokens of the
+	// cup's colour. gem_cup_unlock is keyed by cup colour 0..4 (identity pad).
+	if (physLevelID >= 100 && physLevelID < 105)
+	{
+		int cupIdx = physLevelID - 100;
+		if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[cupIdx].stage1);
+		return AP_GateCountTokenColour(cupIdx) >= 4;
+	}
+
+	return 1; // unknown pad -> treat as enterable (defensive; AP_PadState gates)
+}
+
+// The unified pad state (Warp-Pad State Model v2). Returns:
+//   1 = Locked      (stage-1 unmet)                         -> RED
+//   2 = Raceable    (stage-1 met, primary check available)  -> GREEN (flicker)
+//   3 = Re-locked   (race dest only: trophy checked,
+//                    stage-2 unmet)                          -> ORANGE
+//   4 = Tier-2 open (race dest only: stage-2 met, checks
+//                    remain)                                 -> PERIWINKLE
+//   5 = Done        (all destination locations checked;
+//                    HARD-LOCKED, pure UX)                   -> GRAY
+//   0 = vanilla / not applicable (no slot_data, or an
+//       unrecognised destination)                           -> untouched
+// physLevelID = the physical pad (requirement key); destLevelID = the loaded
+// destination track (location + lifecycle-category key). Under no shuffle these
+// are equal; the callers pass both so it is correct under destination shuffle.
+int AP_PadState(int physLevelID, int destLevelID)
+{
+	int uncBits[5];
+	int uncN;
+
+	if (!ctr_cfg_active())
+		return 0; // vanilla mode -> caller leaves the pad untouched
+	if (!AP_DestKnown(destLevelID))
+		return 0;
+
+	uncN = AP_PadUncollectedBits(destLevelID,
+	                             uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
+
+	// Done is terminal: every destination location checked. A done pad has
+	// nothing left by definition, so hard-locking it never gates progression.
+	if (uncN == 0)
+		return 5;
+
+	if (!AP_PadStage1Met(physLevelID))
+		return 1; // Locked: entry requirement unmet
+
+	if (!AP_DestIsRace(destLevelID))
+		return 2; // reduced lifecycle (trial/arena/cup): stage-1 met + checks left
+
+	// Race destination: full two-stage lifecycle.
+	if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
+		return 2; // Raceable: trophy race (primary check) still available
+
+	// Trophy checked, more checks remain -> stage-2 phase (keyed by physical pad).
+	if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
+		return 3; // Re-locked: stage-2 requirement not yet met
+	return 4;     // Tier-2 open: relic TT / CTR token checks available
+}
+
+// ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.
 // ---------------------------------------------------------------------------

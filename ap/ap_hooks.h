@@ -110,6 +110,22 @@ int AP_LocationCheckedByBit(int globalBit);
 // vanilla pad-state machine.
 int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 
+// ── Unified pad state (Warp-Pad State Model v2) ──
+// Category-general uncollected-location enumerator: fills `outBits` (capacity
+// `cap`) with the still-unchecked AP reward locations of destination
+// `destLevelID` for ANY category (race 0..15 = 5 tiers; trial 16/17 = 3 relic
+// tiers; arena 18/19/21/23 = 1 crystal; cup 100..104 = 1 gem) and returns the
+// count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
+int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
+
+// The single pad-state function driving map colour, in-hub look, and the gate.
+// Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
+// vanilla mode (no slot_data) / unrecognised destination (leave the pad
+// untouched). physLevelID keys the requirement (physical pad); destLevelID keys
+// the location + lifecycle category (loaded destination track). See the v2
+// design note. Consumed by AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
+int AP_PadState(int physLevelID, int destLevelID);
+
 // ── Map overlay (debug/QoL) ──
 // AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
 //   1  = at least one of that race track's 5 reward locations (trophy/sapphire/
