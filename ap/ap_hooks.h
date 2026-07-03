@@ -139,11 +139,6 @@ unsigned AP_StateGen(void);
 // design note. Consumed by AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
-// Retained M-key toggle state getter. No longer gates map colours (always on via
-// AP_PadState); kept until the M-key becomes the map-zoom toggle. Rising edge
-// handled in AP_OnFrame.
-int AP_MapOverlayOn(void);
-
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

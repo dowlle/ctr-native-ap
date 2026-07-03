@@ -144,23 +144,14 @@ int AP_LocationCheckedByBit(int globalBit)
 }
 
 // ---------------------------------------------------------------------------
-// MAP overlay retirement note: the old debug-era per-pad map state
-// (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState,
-// gated by the SDL_SCANCODE_M overlay toggle) is superseded by the unified
-// AP_PadState (Warp-Pad State Model v2) above, which drives an always-on 5-state
-// map colour and drops the own-progression-only GREEN criterion. The M-key
-// toggle state (g_ap_map_overlay) is kept below only until the M=zoom rework.
+// MAP overlay retirement: the old debug-era per-pad map state
+// (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState)
+// and its SDL_SCANCODE_M colour-override toggle (g_ap_map_overlay /
+// AP_MapOverlayOn) are fully retired -- superseded by the unified AP_PadState
+// (Warp-Pad State Model v2), which drives an always-on 5-state map colour and
+// drops the own-progression-only GREEN criterion. The M key is now reserved for
+// the deferred hub-map zoom (see AP_OnFrame).
 // ---------------------------------------------------------------------------
-
-// Retained M-key toggle state (rising edge flipped in AP_OnFrame). No longer
-// gates the map colours (they are always on under AP_PadState); slated to become
-// the map-zoom toggle. Kept so AP_OnFrame's handler + AP_MapOverlayOn compile.
-static int g_ap_map_overlay = 0;
-
-int AP_MapOverlayOn(void)
-{
-	return g_ap_map_overlay;
-}
 
 // Distinct tint for a FOREIGN multiworld item rendered with the generic
 // STATIC_KEY marker, so it can't be mistaken for an own boss Key. Vivid magenta
@@ -1158,16 +1149,15 @@ static void AP_DumpState(struct GameTracker *gGT)
 
 void AP_OnFrame(struct GameTracker *gGT)
 {
-	// Map-overlay toggle: flip g_ap_map_overlay on the RISING edge of the hotkey.
-	// Runs every frame and in all game modes so the toggle works anywhere. Pure
-	// HUD state -- no pad-bus interaction, no gameplay effect.
-	{
-		static int ap_overlay_key_prev = 0;
-		int keyNow = Platform_InputRawKeyDown(AP_MAP_OVERLAY_SCANCODE);
-		if (keyNow && !ap_overlay_key_prev)
-			g_ap_map_overlay = !g_ap_map_overlay;
-		ap_overlay_key_prev = keyNow;
-	}
+	// M-key: RESERVED for the future hub-map ZOOM (Warp-Pad State Model v2). The
+	// old debug map-overlay colour toggle it used to drive is retired -- map
+	// colours are now always on (AP_PadState). The zoom itself is deferred: it
+	// needs to scale UI_Map_GetIconPos + UI_Map_DrawMap (ASM-verified vanilla,
+	// shared by the hub map AND the track-select / in-race minimaps) around the
+	// map centre, which is fragile shared-render work to be done + verified in
+	// game, not inferred here. AP_MAP_OVERLAY_SCANCODE / Platform_InputRawKeyDown
+	// are left declared as the input plumbing that rework will reuse. No handler
+	// runs today, so M is an inert no-op.
 
 	// Diagnostic breadcrumbs (crash investigation): a one-time run-start marker so
 	// the appended log has a clear per-process boundary, plus a line on every
