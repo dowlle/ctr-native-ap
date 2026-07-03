@@ -6,6 +6,8 @@
 // Archipelago hook declarations (CTR_AP build only; see ap/ap_hooks.h)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
+#include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
+#include "../ap/ap_shortcut.h" // Shortcutless mechanism
 #endif
 
 #include "226/R226.c"
@@ -333,6 +335,8 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_traps.c"
+#include "../ap/ap_shortcut.c"
 #endif
 
 #endif

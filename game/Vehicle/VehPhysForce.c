@@ -105,6 +105,11 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 		gravityY = CTR_MipsAddLo(CTR_MipsSll(scaledGravity, 3), gravityY) / 100;
 	}
 
+#ifdef CTR_AP
+	// Low-gravity trap: scale gravity down for the local player while firing.
+	gravityY = AP_TrapGravity(driver, gravityY);
+#endif
+
 	gravityY = CTR_MipsSra(CTR_MipsMulLo(gravityY, elapsedTimeMS), 5);
 	Vec3 localGravity = VehPhysForce_OnGravity_RotateVectorLocal(&driver->matrixMovingDir, 0, (s16)gravityY, 0);
 
@@ -292,6 +297,11 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 
 		perpendicularFriction = CTR_MipsSra(CTR_MipsMulLo(perpendicularFriction, elapsedTimeMS), 5);
 		forwardFriction = CTR_MipsSra(CTR_MipsMulLo(forwardFriction, elapsedTimeMS), 5);
+
+#ifdef CTR_AP
+		// Icy-road trap: cut grip for the local player while firing.
+		AP_TrapFriction(driver, &perpendicularFriction, &forwardFriction);
+#endif
 
 		int terrainFrictionScale = driver->terrainMeta1->groundFrictionScale;
 		if (terrainFrictionScale != 0x100)

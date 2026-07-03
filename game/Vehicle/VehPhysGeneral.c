@@ -1156,6 +1156,12 @@ int VehPhysGeneral_GetBaseSpeed(struct Driver *driver)
 		speedAdditional = CTR_MipsAddLo(speedAdditional, driver->const_MaskSpeed);
 	}
 
+#ifdef CTR_AP
+	// Boost / USF-no-brake trap: pin reserves + fireSpeedCap so the boost-speed add
+	// below applies at max (USF) or a milder tier (boost) for the local player.
+	AP_TrapForceBoost(driver);
+#endif
+
 	if (driver->reserves != 0)
 	{
 		statAdditional = CTR_MipsAddLo(statAdditional, driver->fireSpeedCap);

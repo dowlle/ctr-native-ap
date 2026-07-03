@@ -462,6 +462,11 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 	cross = buttonsHeld & BTN_CROSS;
 	square = buttonsHeld & BTN_SQUARE;
 
+#ifdef CTR_AP
+	// USF-no-brake trap: suppress braking + force throttle for the local player.
+	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
+#endif
+
 	// state of kart
 	kartState = driver->kartState;
 

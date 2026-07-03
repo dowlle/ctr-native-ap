@@ -7,6 +7,8 @@
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
+#include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
+#include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 
 // ============================================================================
 // Archipelago integration. Parts:
@@ -738,6 +740,10 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			snprintf(pass, passN, "%s", line + 9);
 		else if (!strncmp(line, "skip_hints=", 11))
 			ap_skip_hints = (line[11] == '1'); // QoL: suppress Aku Aku mask hints
+		else if (AP_TrapConfigLine(line))
+			; // debug_trap=... -> prime a trap for testing (see ap_traps.c)
+		else if (AP_ShortcutConfigLine(line))
+			; // shortcutless=... / shortcut_capture=... (see ap_shortcut.c)
 	}
 	fclose(f);
 }
@@ -1021,6 +1027,12 @@ void AP_OnFrame(struct GameTracker *gGT)
 
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
+
+	// Trap framework: advance prime->fire->clear lifecycle + apply the FP camera,
+	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
+	// gates its own race-only logic). Physics effects apply at their engine sites.
+	AP_TrapTick(gGT);
+	AP_ShortcutKeys();
 
 	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
 	// at the title screen right after connect. AP-side fields (options, received

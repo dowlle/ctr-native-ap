@@ -1481,6 +1481,16 @@ void COLL_FIXED_PlayerSearch(struct Thread *t, struct Driver *d)
 		d->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST;
 	}
 
+#ifdef CTR_AP
+	// Shortcutless: reset the local player (reuse the mask-grab respawn) if they
+	// touch known shortcut geometry while Shortcutless is active. Also drives the
+	// capture log. No-op until Shortcutless is toggled on + shortcut quads exist.
+	if (AP_ShortcutCheck(d, quad))
+	{
+		d->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST;
+	}
+#endif
+
 	d->jump_LandingBoost = 0;
 	d->actionsFlagSet &= ~(ACTION_AIRBORNE | ACTION_HIGH_JUMP);
 
