@@ -25,7 +25,9 @@ void AH_Garage_Open(struct ScratchpadStruct *sps, void *hitObject)
 	struct Thread *garageThread;
 
 	if (otherTh->modelIndex != DYNAMIC_PLAYER)
+	{
 		return;
+	}
 
 	garageThread = sps->Union.ThBuckColl.thread;
 
@@ -75,7 +77,6 @@ void AH_Garage_ThTick(struct Thread *t)
 	int bottom;
 	s16 *check;
 	u32 bitIndex;
-	u32 uVar5;
 	u32 uVar8;
 	int dist[3];
 	int pos[3];
@@ -114,7 +115,9 @@ void AH_Garage_ThTick(struct Thread *t)
 
 			// if countdown is not done, dont close door
 			if (garage->cooldown > 0)
+			{
 				goto LAB_800aeb6c;
+			}
 
 			// play sound of normal boss door opening, except for Oxide
 			uVar8 = (levelID == GEM_STONE_VALLEY) ? 0x96 : 0x95;
@@ -207,7 +210,9 @@ LAB_800aeb6c:
 		for (i = 0; i < 4; i++)
 		{
 			if (CHECK_ADV_BIT(adv->rewards, bitIndex) == 0)
+			{
 				goto LAB_800aebd0;
+			}
 			bitIndex++;
 		}
 #endif
@@ -236,9 +241,11 @@ LAB_800aeb6c:
 		for (i = 0; i < 4; i++)
 		{
 			// if any trophy on this hub is not unlocked
-			if (CHECK_ADV_BIT(adv->rewards, check[i] + ADV_REWARD_FIRST_TROPHY) == 0)
+			if (CHECK_ADV_BIT(adv->rewards, check[(s32)i] + ADV_REWARD_FIRST_TROPHY) == 0)
+			{
 				// boss is not open
 				goto LAB_800aebd0;
+			}
 		}
 #endif
 	}
@@ -255,11 +262,15 @@ LAB_800aec34:
 	// if in a state where you're seeing the boss key open an adv door,
 	// or some other kind of cutscene where you can't move
 	if ((gGT->gameMode2 & 4) != 0)
+	{
 		return;
+	}
 
 	// check distance
 	if (0x143fff < dist[0] * dist[0] + dist[1] * dist[1] + dist[2] * dist[2])
+	{
 		goto LAB_800aede0;
+	}
 
 	RECT view = gGT->pushBuffer[0].rect;
 
@@ -271,11 +282,13 @@ LAB_800aec34:
 
 		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
 
-		    (view.x + view.w >> 1), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
+		    ((view.x + view.w) >> 1), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
 	}
 
 	if (bossIsOpen)
+	{
 		goto LAB_800aede8;
+	}
 
 	uVar8 = 0;
 
@@ -284,25 +297,33 @@ LAB_800aec34:
 	{
 		// if hint is not unlocked "need 4 keys for oxide"
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_NEED_FOUR_KEYS_FOR_OXIDE) == 0)
+		{
 			// HintID: need four keys to race oxide
 			uVar8 = ADV_MASK_HINT_ID_NEED_FOUR_KEYS_FOR_OXIDE;
+		}
 	}
 	// not gemstone valley
 	else
 	{
 		//  if hint is not unlocked "to access this boss garage..."
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_NEED_FOUR_TROPHIES_FOR_BOSS) == 0)
+		{
 			// HintID: need four trophies to enter boss
 			uVar8 = ADV_MASK_HINT_ID_NEED_FOUR_TROPHIES_FOR_BOSS;
+		}
 	}
 
 	if (uVar8 != 0)
+	{
 		MainFrame_RequestMaskHint(uVar8, 0);
+	}
 
 LAB_800aede0:
 
 	if (!bossIsOpen)
+	{
 		return;
+	}
 
 LAB_800aede8:
 
@@ -400,7 +421,9 @@ void AH_Garage_LInB(struct Instance *inst)
 	levelID = gGT->levelID;
 
 	if (inst->thread != NULL)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(sizeof(struct BossGarageDoor), NONE, SMALL, STATIC),
 
@@ -410,7 +433,9 @@ void AH_Garage_LInB(struct Instance *inst)
 	);
 
 	if (t == NULL)
+	{
 		return;
+	}
 
 	inst->thread = t;
 	t->inst = inst;
@@ -434,11 +459,7 @@ void AH_Garage_LInB(struct Instance *inst)
 		garageTop = INSTANCE_Birth3D(gGT->modelPtr[STATIC_GARAGETOP], R232.s_garagetop, t);
 
 		// copy matrix from one instance to the other
-		*(int *)&garageTop->matrix.m[0][0] = *(int *)&inst->matrix.m[0][0];
-		*(int *)&garageTop->matrix.m[0][2] = *(int *)&inst->matrix.m[0][2];
-		*(int *)&garageTop->matrix.m[1][1] = *(int *)&inst->matrix.m[1][1];
-		*(int *)&garageTop->matrix.m[2][0] = *(int *)&inst->matrix.m[2][0];
-		garageTop->matrix.m[2][2] = inst->matrix.m[2][2];
+		CTR_MatrixCopyRot(&garageTop->matrix, &inst->matrix);
 		garageTop->matrix.t[0] = inst->matrix.t[0];
 		garageTop->matrix.t[1] = inst->matrix.t[1];
 		garageTop->matrix.t[2] = inst->matrix.t[2];
@@ -479,7 +500,9 @@ void AH_Garage_LInB(struct Instance *inst)
 		for (i = 0; i < 4; i++)
 		{
 			if (CHECK_ADV_BIT(adv->rewards, bitIndex) == 0)
+			{
 				goto GarageLocked;
+			}
 			bitIndex++;
 		}
 		bossIsOpen = true;
@@ -507,9 +530,11 @@ void AH_Garage_LInB(struct Instance *inst)
 		for (i = 0; i < 4; i++)
 		{
 			// if any trophy on this hub is not unlocked
-			if (CHECK_ADV_BIT(adv->rewards, check[i] + ADV_REWARD_FIRST_TROPHY) == 0)
+			if (CHECK_ADV_BIT(adv->rewards, check[(s32)i] + ADV_REWARD_FIRST_TROPHY) == 0)
+			{
 				// boss is not open
 				goto GarageLocked;
+			}
 		}
 #endif
 	}

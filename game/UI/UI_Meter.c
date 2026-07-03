@@ -48,9 +48,13 @@ void UI_JumpMeter_Update(struct Driver *d)
 			{
 				int param = 0;
 				if (d->jumpMeter >= 960)
+				{
 					param = 0x80;
+				}
 				if (d->jumpMeter >= 1440)
+				{
 					param = 0x100;
+				}
 
 				// add one second reserves
 				VehFire_Increment(d, 960, POWER_SLIDE_HANG_TIME, param);
@@ -90,7 +94,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 	s16 jumpMeter;
 	struct DB *backDB;
 	int iVar5;
-	u_long *primmemCurr;
+	uint32_t *primmemCurr;
 	POLY_F4 *p;
 	int iVar8;
 	s16 sVar9;
@@ -109,7 +113,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 
 	iVar5 = ((int)driver->jumpMeter / 0x3c0) * 0x10000 >> 0x10;
 	whateverThisIs = (int)driver->jumpMeter + iVar5 * -0x3c0;
-	iVar10 = ((whateverThisIs / 6 + (whateverThisIs >> 0x1f) >> 4) - (whateverThisIs >> 0x1f)) * 0x10000 >> 0x10;
+	iVar10 = (((whateverThisIs / 6 + (whateverThisIs >> 0x1f)) >> 4) - (whateverThisIs >> 0x1f)) * 0x10000 >> 0x10;
 	iVar11 = (int)posX;
 	iVar8 = (int)posY + numbersYOffset + 2;
 
@@ -132,7 +136,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 	p = 0;
 
 	// if there is room left for more
-	if (primmemCurr <= (u_long *)backDB->primMem.guardEnd)
+	if (primmemCurr <= (uint32_t *)backDB->primMem.guardEnd)
 	{
 		// add primitives
 		backDB->primMem.cursor = &primmemCurr[6];
@@ -141,7 +145,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 
 	if (p != 0)
 	{
-		*(u32 *)&p->r0 = 0x28ffffff;
+		CtrGpu_WriteColorCode(&p->r0, 0x28ffffff);
 		p->x1 = posX + 13;
 		p->x3 = posX + 13;
 		p->x0 = box.x;
@@ -154,7 +158,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 		// pointer to OT memory
 		primmemCurr = gGT->pushBuffer_UI.ptrOT;
 
-		*(int *)p = *primmemCurr | 0x5000000;
+		p->tag = CtrGpu_PackOTTag(*primmemCurr, 0x5000000);
 		*primmemCurr = CtrGpu_PrimToOTLink24(p);
 
 		box2.y = posY - barHeight;
@@ -168,7 +172,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 		primmemCurr = backDB->primMem.cursor;
 		p = 0;
 
-		if (primmemCurr <= (u_long *)backDB->primMem.guardEnd)
+		if (primmemCurr <= (uint32_t *)backDB->primMem.guardEnd)
 		{
 			backDB->primMem.cursor = &primmemCurr[6];
 			p = (POLY_F4 *)primmemCurr;
@@ -197,7 +201,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 					}
 				}
 			}
-			*(u32 *)&p->r0 = colorAndCode;
+			CtrGpu_WriteColorCode(&p->r0, colorAndCode);
 			jumpMeterHeight = (int)sVar9 * barHeight;
 			sVar9 = posX + 0xc;
 			p->x0 = posX;
@@ -212,7 +216,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 
 			primmemCurr = gGT->pushBuffer_UI.ptrOT;
 
-			*(int *)p = *primmemCurr | 0x5000000;
+			p->tag = CtrGpu_PackOTTag(*primmemCurr, 0x5000000);
 			*primmemCurr = CtrGpu_PrimToOTLink24(p);
 
 			backDB = gGT->backBuffer;
@@ -220,7 +224,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 			p = 0;
 
 			// If there is room to add more
-			if (primmemCurr <= (u_long *)backDB->primMem.guardEnd)
+			if (primmemCurr <= (uint32_t *)backDB->primMem.guardEnd)
 			{
 				// Add more primitives
 				backDB->primMem.cursor = &primmemCurr[6];
@@ -229,7 +233,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 
 			if (p != 0)
 			{
-				*(u32 *)&p->r0 = 0x28808080;
+				CtrGpu_WriteColorCode(&p->r0, 0x28808080);
 				p->x0 = posX;
 				p->y0 = posY - barHeight;
 				p->x1 = sVar9;
@@ -242,7 +246,7 @@ void UI_JumpMeter_Draw(s16 posX, s16 posY, struct Driver *driver)
 				// pointer to OT memory
 				primmemCurr = gGT->pushBuffer_UI.ptrOT;
 
-				*(int *)p = *primmemCurr | 0x5000000;
+				p->tag = CtrGpu_PackOTTag(*primmemCurr, 0x5000000);
 				*primmemCurr = CtrGpu_PrimToOTLink24(p);
 			}
 		}

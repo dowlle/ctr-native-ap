@@ -9,6 +9,11 @@
 #include <stdint.h>
 #endif
 
+#define CTR_STATIC_ASSERT_JOIN2(a, b) a##b
+#define CTR_STATIC_ASSERT_JOIN(a, b)  CTR_STATIC_ASSERT_JOIN2(a, b)
+// TODO(aalhendi): something nicer than __LINE__? Maybe __COUNTER__. Look into compilers
+#define CTR_STATIC_ASSERT(expr)       typedef char CTR_STATIC_ASSERT_JOIN(ctr_static_assert_, __LINE__)[(expr) ? 1 : -1] __attribute__((unused))
+
 typedef uint64_t u64;
 typedef int64_t s64;
 typedef uint32_t u32;
@@ -61,9 +66,42 @@ typedef double f64;
 #define internal                static
 #define local_persist           static
 #define global_variable         static
+#define CTR_MAY_ALIAS           __attribute__((may_alias))
 
 #define len(arr)                (sizeof(arr) / sizeof(arr[0]))
 #define OFFSETOF(TYPE, ELEMENT) ((u32)offsetof(TYPE, ELEMENT))
+
+force_inline u16 CTR_ReadU16LE(const void *src)
+{
+	const u8 *bytes = (const u8 *)src;
+
+	return (u16)((u16)bytes[0] | ((u16)bytes[1] << 8));
+}
+
+force_inline u32 CTR_ReadU32LE(const void *src)
+{
+	const u8 *bytes = (const u8 *)src;
+
+	return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
+}
+
+force_inline void CTR_WriteU16LE(void *dst, u16 value)
+{
+	u8 *bytes = (u8 *)dst;
+
+	bytes[0] = (u8)value;
+	bytes[1] = (u8)(value >> 8);
+}
+
+force_inline void CTR_WriteU32LE(void *dst, u32 value)
+{
+	u8 *bytes = (u8 *)dst;
+
+	bytes[0] = (u8)value;
+	bytes[1] = (u8)(value >> 8);
+	bytes[2] = (u8)(value >> 16);
+	bytes[3] = (u8)(value >> 24);
+}
 
 // Raw [3] vector array helpers. Arguments must be side-effect-free lvalues.
 #define CTR_COPY_VEC3(DST, SRC) \
@@ -87,6 +125,16 @@ typedef double f64;
 #else
 #define CTR_PRINTF_FORMAT(fmtArg, firstVararg)
 #endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+#define CTR_GCC_OPTIMIZE_O0 __attribute__((optimize("O0")))
+#else
+#define CTR_GCC_OPTIMIZE_O0
+#endif
+
+// Retail format strings use PsyQ `%ld` for 32-bit values. Keep call sites on
+// project-width types while satisfying host printf varargs for the literal.
+#define CTR_PRINTF_PSX_LONG(value) ((long)(s32)(value))
 
 #define RGBtoBGR(color)            ((color & 0xFF0000) >> 16) | (color & 0xFF00) | ((color & 0xFF) << 16)
 

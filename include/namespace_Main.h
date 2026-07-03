@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_MAIN_H
+#define CTR_NATIVE_NAMESPACE_MAIN_H
+
 enum GameMode1
 {
 	PAUSE_1 = 0x1,
@@ -32,15 +35,31 @@ enum GameMode1
 	ADVENTURE_CUP = 0x10000000,
 	GAME_CUTSCENE = 0x20000000,
 	LOADING = 0x40000000,
-	ADVENTURE_BOSS = 0x80000000
 };
+
+#define ADVENTURE_BOSS 0x80000000u
+
+enum GameMode1Masks
+{
+	GAME_MODE_VIBRATION_MASK = P1_VIBRATE | P2_VIBRATE | P3_VIBRATE | P4_VIBRATE,
+	GAME_MODE_END_RETAINED_MODE_MASK = BATTLE_MODE | TIME_TRIAL | BETA_UNLIMITED | ADVENTURE_MODE | ADVENTURE_ARENA | END_OF_RACE,
+	GAME_MODE_MENU_OR_CUTSCENE_MASK = MAIN_MENU | GAME_CUTSCENE,
+	GAME_MODE_TIME_TRIAL_GAMEPLAY_MASK = TIME_TRIAL | GAME_MODE_MENU_OR_CUTSCENE_MASK,
+	GAME_MODE_SAVE_LAP_TIME_MASK = ARCADE_MODE | ADVENTURE_MODE | TIME_TRIAL,
+};
+
+CTR_STATIC_ASSERT(GAME_MODE_VIBRATION_MASK == 0xf00);
+CTR_STATIC_ASSERT(GAME_MODE_END_RETAINED_MODE_MASK == 0x3e0020);
+CTR_STATIC_ASSERT(GAME_MODE_MENU_OR_CUTSCENE_MASK == 0x20002000);
+CTR_STATIC_ASSERT(GAME_MODE_TIME_TRIAL_GAMEPLAY_MASK == 0x20022000);
+CTR_STATIC_ASSERT(GAME_MODE_SAVE_LAP_TIME_MASK == 0x4a0000);
 
 // NOTE(aalhendi): ADVENTURE_BOSS = 0x80000000 sets the sign bit. Retail tests this via
 // signed comparison (bltz). Keep the same semantics, not a bitmask test.
 // TODO(aalhendi): i'd *like* to do something better. idk yet
 #define IS_BOSS_RACE(gm) ((gm) < 0)
 
-typedef enum LoadStage : s32
+enum
 {
 	LOAD_VLC = -6,         // loading VLC table (menu/scrapbook)
 	LOAD_RESTART = -5,     // restart race from pause
@@ -48,17 +67,18 @@ typedef enum LoadStage : s32
 	LOAD_FINISHED = -2,    // TenStages done, transitioning to next phase
 	LOAD_IDLE = -1,        // not loading
 	LOAD_TEN_STAGES_0 = 0, // begin TenStages pipeline
-} LoadStage;
+};
+typedef s32 LoadStage;
 
-_Static_assert(sizeof(LoadStage) == 0x4);
-_Static_assert(LOAD_VLC == -6);
-_Static_assert(LOAD_RESTART == -5);
-_Static_assert(LOAD_REQUESTED == -4);
-_Static_assert(LOAD_FINISHED == -2);
-_Static_assert(LOAD_IDLE == -1);
-_Static_assert(LOAD_TEN_STAGES_0 == 0);
+CTR_STATIC_ASSERT(sizeof(LoadStage) == 0x4);
+CTR_STATIC_ASSERT(LOAD_VLC == -6);
+CTR_STATIC_ASSERT(LOAD_RESTART == -5);
+CTR_STATIC_ASSERT(LOAD_REQUESTED == -4);
+CTR_STATIC_ASSERT(LOAD_FINISHED == -2);
+CTR_STATIC_ASSERT(LOAD_IDLE == -1);
+CTR_STATIC_ASSERT(LOAD_TEN_STAGES_0 == 0);
 
-typedef enum MainMenuState : s16
+enum
 {
 	MAIN_MENU_TITLE = 0,
 	MAIN_MENU_CHARACTERS = 1,
@@ -66,7 +86,12 @@ typedef enum MainMenuState : s16
 	MAIN_MENU_BATTLE_SETUP = 3,
 	MAIN_MENU_ADVENTURE = 4,
 	MAIN_MENU_SCRAPBOOK = 5,
-} MainMenuState;
+};
+typedef s16 MainMenuState;
+
+CTR_STATIC_ASSERT(sizeof(MainMenuState) == 0x2);
+CTR_STATIC_ASSERT(MAIN_MENU_TITLE == 0);
+CTR_STATIC_ASSERT(MAIN_MENU_SCRAPBOOK == 5);
 
 enum GameModeEnd
 {
@@ -107,6 +132,9 @@ enum GameModeEnd
 enum GameMode2
 {
 	SPAWN_AT_BOSS = 1,
+	// NOTE(aalhendi): Retail clears bit 1 next to SPAWN_AT_BOSS in VehBirth,
+	// but this checkout has no modeled producer or consumer for it yet.
+	GAME_MODE2_SPAWN_RETAINED_UNKNOWN = 0x2,
 
 	VEH_FREEZE_PODIUM = 4,
 	TOKEN_RACE = 0x8,
@@ -138,6 +166,15 @@ enum GameMode2
 	CHEAT_ALL = CHEAT_ADV | CHEAT_BOMBS | CHEAT_ENGINE | CHEAT_ICY | CHEAT_INVISIBLE | CHEAT_MASK | CHEAT_ONELAP | CHEAT_SUPERHARD | CHEAT_TURBO |
 	            CHEAT_TURBOCOUNT | CHEAT_TURBOPAD | CHEAT_WUMPA,
 };
+
+enum GameMode2Masks
+{
+	GAME_MODE2_SPAWN_CLEAR_MASK = SPAWN_AT_BOSS | GAME_MODE2_SPAWN_RETAINED_UNKNOWN,
+	GAME_MODE2_VEH_FREEZE_MASK = VEH_FREEZE_PODIUM | VEH_FREEZE_DOOR,
+};
+
+CTR_STATIC_ASSERT(GAME_MODE2_SPAWN_CLEAR_MASK == 0x3);
+CTR_STATIC_ASSERT(GAME_MODE2_VEH_FREEZE_MASK == 0x4004);
 
 enum CharacterUnlock
 {
@@ -171,16 +208,24 @@ struct MainRenderLevelGeometryScratch
 	s32 fullDynamicFadeDepthStart;
 };
 
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, depthScale) == 0x14);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, bspLodDistanceThreshold) == 0x18);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, textureLodDepthThreshold0) == 0x1c);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, textureLodDepthThreshold1) == 0x20);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, topLevelNearDepthThreshold) == 0x24);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, recursiveNearDepthThreshold) == 0x28);
-_Static_assert(offsetof(struct MainRenderLevelGeometryScratch, fullDynamicFadeDepthStart) == 0x2c);
-_Static_assert(sizeof(struct MainRenderLevelGeometryScratch) == 0x30);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, depthScale) == 0x14);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, bspLodDistanceThreshold) == 0x18);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, textureLodDepthThreshold0) == 0x1c);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, textureLodDepthThreshold1) == 0x20);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, topLevelNearDepthThreshold) == 0x24);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, recursiveNearDepthThreshold) == 0x28);
+CTR_STATIC_ASSERT(offsetof(struct MainRenderLevelGeometryScratch, fullDynamicFadeDepthStart) == 0x2c);
+CTR_STATIC_ASSERT(sizeof(struct MainRenderLevelGeometryScratch) == 0x30);
 
 // real ND name
+struct RngDeadCoedState
+{
+	u32 state0;
+	u32 state1;
+};
+
+CTR_STATIC_ASSERT(sizeof(struct RngDeadCoedState) == 0x8);
+
 struct GameTracker
 {
 	// 0x0
@@ -388,11 +433,11 @@ struct GameTracker
 
 	// 1c9c
 	// exhaust, fire, etc
-	void *particleList_ordinary;
+	struct Particle *particleList_ordinary;
 
 	// 1ca0
 	// distorts screen above fire
-	void *particleList_heatWarp;
+	struct Particle *particleList_heatWarp;
 
 	// 1ca4
 	int numParticles;
@@ -1242,14 +1287,7 @@ struct GameTracker
 
 	// 252c
 	// this stuct is passed to FUN_8006c684 and updates every frame (this is func with 0xdeadc0ed)
-	struct
-	{
-		// 252c
-		int unk1;
-
-		// 2530
-		int unk2;
-	} deadcoed_struct;
+	struct RngDeadCoedState deadcoed_struct;
 
 	// 0x2534
 	char final_filler_mostly_null[0x0B];
@@ -1390,12 +1428,14 @@ struct GameTracker
 
 #ifndef CTR_NATIVE
 #if BUILD == SepReview
-_Static_assert(sizeof(struct GameTracker) == 0x24F8);
+CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x24F8);
 #elif BUILD == UsaRetail
-_Static_assert(sizeof(struct GameTracker) == 0x2584);
+CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x2584);
 #elif BUILD == JpnTrial
-_Static_assert(sizeof(struct GameTracker) == 0x258C);
+CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x258C);
 #elif BUILD >= EurRetail
-_Static_assert(sizeof(struct GameTracker) == 0x2594);
+CTR_STATIC_ASSERT(sizeof(struct GameTracker) == 0x2594);
 #endif
+#endif
+
 #endif

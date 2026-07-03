@@ -21,10 +21,12 @@ void RB_TNT_ThTick_ThrowOffHead(struct Thread *t)
 	// NOTE(aalhendi): Retail reads through driverTarget blindly here. Boss-thrown TNT can have
 	// no target, and native cannot mirror PS1 low-memory null reads.
 	if ((mw->stopFallAtY == 0x3fff) && (mw->driverTarget != NULL))
+	{
 #else
 	if (mw->stopFallAtY == 0x3fff)
 #endif
 		mw->stopFallAtY = mw->driverTarget->instSelf->matrix.t[1];
+	}
 
 	if (inst->matrix.t[1] <= mw->stopFallAtY)
 	{
@@ -48,14 +50,18 @@ void RB_TNT_ThTick_ThrowOffHead(struct Thread *t)
 		// NOTE(aalhendi) Retail writes through driverTarget blindly; boss-thrown TNT has no
 		// driver-owned instTntRecv slot to clear.
 		if (mw->driverTarget != NULL)
+		{
 #endif
 			mw->driverTarget->instTntRecv = 0;
+		}
 	}
 
 	// decrease velocity (artificial gravity)
 	mw->velocity.y -= ((gGT->elapsedTimeMS << 2) >> 5);
 	if (mw->velocity.y < -0x60)
+	{
 		mw->velocity.y = -0x60;
+	}
 }
 
 static const s16 s_tntSitScale[(0x5a + 1) * 2] = {
@@ -88,7 +94,7 @@ void RB_TNT_ThTick_SitOnHead(struct Thread *t)
 	// To: TNT instance
 	// From: obj->driverWhoHitMe->instance
 	// Delta: TNT -> 0x1c (position relative to driver)
-	LHMatrix_Parent(inst, mw->driverTarget->instSelf, (SVECTOR *)&mw->deltaPos.x);
+	LHMatrix_Parent(inst, mw->driverTarget->instSelf, &mw->deltaPos);
 
 	// Get Kart State
 	state = mw->driverTarget->kartState;
@@ -136,7 +142,9 @@ void RB_TNT_ThTick_SitOnHead(struct Thread *t)
 	{
 		// if player did not start jumping this frame
 		if ((mw->driverTarget->actionsFlagSet & ACTION_JUMP_STARTED) == 0)
+		{
 			goto LAB_800ad5f8;
+		}
 
 		if (mw->jumpsRemaining != 0)
 		{
@@ -149,7 +157,9 @@ void RB_TNT_ThTick_SitOnHead(struct Thread *t)
 	{
 		rng = MixRNG_Scramble();
 		if (rng != (rng / 0x10e) * 0x10e)
+		{
 			goto LAB_800ad5f8;
+		}
 	}
 
 	// set scale (x, y, z)
@@ -235,7 +245,7 @@ void RB_TNT_ThTick_ThrowOnHead(struct Thread *t)
 	s16 distHead;
 
 	// matrix?
-	s16 auStack48[32];
+	MATRIX localMatrix;
 
 	gGT = sdata->gGT;
 
@@ -277,7 +287,7 @@ void RB_TNT_ThTick_ThrowOnHead(struct Thread *t)
 	}
 
 	// CopyMatrix
-	LHMatrix_Parent(inst, mw->driverTarget->instSelf, (SVECTOR *)&mw->deltaPos.x);
+	LHMatrix_Parent(inst, mw->driverTarget->instSelf, &mw->deltaPos);
 
 	// rotation
 	rot.x = 0;
@@ -285,16 +295,18 @@ void RB_TNT_ThTick_ThrowOnHead(struct Thread *t)
 	rot.z = 0;
 
 	// convert 3 rotation shorts into rotation matrix
-	ConvertRotToMatrix((MATRIX *)auStack48, &rot);
+	ConvertRotToMatrix(&localMatrix, &rot);
 
-	MatrixRotate(&inst->matrix, &inst->matrix, (MATRIX *)auStack48);
+	MatrixRotate(&inst->matrix, &inst->matrix, &localMatrix);
 
 	// reduce time remaining until TNT lands on head
 	mw->velocity.y -= ((gGT->elapsedTimeMS << 2) >> 5);
 
 	// set a minimum value (-0x60)
 	if (mw->velocity.y < -0x60)
+	{
 		mw->velocity.y = -0x60;
+	}
 
 	// rotation
 	mw->tntSpinY += 0x100;

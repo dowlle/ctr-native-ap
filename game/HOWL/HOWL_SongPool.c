@@ -15,7 +15,9 @@ struct SongSeq *SongPool_FindFreeChannel(void)
 	{
 		// if seq is not playing
 		if ((seq->flags & 1) == 0)
+		{
 			return seq;
+		}
 	}
 
 	return 0;
@@ -41,7 +43,7 @@ void SongPool_ChangeTempo(struct Song *song, s16 deltaBPM)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a730-0x8002a9d8
-void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits)
+void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, b32 boolLoopAtEnd, struct SongSet *songSet, int songSetActiveBits)
 {
 	int i;
 	int vol;
@@ -62,7 +64,9 @@ void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtE
 	if (songSet != 0)
 	{
 		if (songSet->numSeqs != numSeqs)
+		{
 			return;
+		}
 
 		song->songSetActiveBits = songSetActiveBits;
 	}
@@ -108,9 +112,13 @@ void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtE
 
 	// align up by 4
 	if (((uintptr_t)cnhFirst & 1) != 0)
+	{
 		cnhFirst += 1;
+	}
 	if (((uintptr_t)cnhFirst & 2) != 0)
+	{
 		cnhFirst += 2;
+	}
 
 	for (i = 0; i < numSeqs; i++)
 	{
@@ -118,7 +126,9 @@ void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtE
 
 		seqCurr = SongPool_FindFreeChannel();
 		if (seqCurr == NULL)
+		{
 			continue;
+		}
 
 		// now playing
 		seqCurr->flags = 1;
@@ -175,7 +185,7 @@ void SongPool_Start(struct Song *song, u16 songID, s16 deltaBPM, int boolLoopAtE
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a9d8-0x8002a9f0
-void SongPool_Volume(struct Song *song, int newVol, int newStep, int boolImm)
+void SongPool_Volume(struct Song *song, int newVol, int newStep, b32 boolImm)
 {
 	// if immediate change request,
 	// without fading volume
@@ -189,14 +199,16 @@ void SongPool_Volume(struct Song *song, int newVol, int newStep, int boolImm)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a9f0-0x8002aa44
-void SongPool_AdvHub1(struct Song *song, int seqID, int vol, int boolImm)
+void SongPool_AdvHub1(struct Song *song, int seqID, int vol, b32 boolImm)
 {
 	struct SongSeq *seq;
 
 	struct CseqSongHeader *csh = GetCseqSongHeader(song->id);
 
 	if (seqID >= (u8)csh->numSeqs)
+	{
 		return;
+	}
 
 	seq = song->CseqSequences[seqID];
 
@@ -221,7 +233,9 @@ void SongPool_AdvHub2(struct Song *song, struct SongSet *songSet, int songSetAct
 	if (songSet != 0)
 	{
 		if (songSet->numSeqs != numSeqs)
+		{
 			return;
+		}
 
 		song->songSetActiveBits = songSetActiveBits;
 	}
@@ -232,7 +246,9 @@ void SongPool_AdvHub2(struct Song *song, struct SongSet *songSet, int songSetAct
 		vol = 0xff;
 
 		if ((songSet->ptrSongSetBits[i] & song->songSetActiveBits) == 0)
+		{
 			vol = 0;
+		}
 
 		SongPool_AdvHub1(song, i, vol, 0);
 	}
@@ -250,10 +266,14 @@ void SongPool_StopCseq(struct SongSeq *seq)
 
 		// type != MUSIC
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		if (curr->soundID != seq->soundID)
+		{
 			continue;
+		}
 
 		// enable OFF(1) flag, disable ON(2) flag
 		flagPtr = &sdata->ChannelUpdateFlags[curr->channelID];
@@ -278,7 +298,9 @@ void SongPool_StopAllCseq(struct Song *song)
 
 	// if song is not playing, skip
 	if ((song->flags & 1) == 0)
+	{
 		return;
+	}
 
 	for (i = 0; i < song->numSequences; i++)
 	{

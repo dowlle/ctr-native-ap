@@ -4,9 +4,7 @@
 // NOTE(aalhendi): ASM-verified NTSC-U 926 PS1 path 0x8003e740-0x8003e80c; CTR_NATIVE uses host RAM.
 void MEMPACK_Init(int ramSize)
 {
-	struct Mempack *ptrMempack;
 	u32 startPtr;
-	u32 maxOverlayEnd;
 	int packSize;
 
 #if defined(CTR_NATIVE)
@@ -16,7 +14,7 @@ void MEMPACK_Init(int ramSize)
 	startPtr = (u32)arena->start;
 	packSize = arena->size;
 
-	printf("[CTR] Where does memory starts? (%s) %08x\n", arena->lowAddressValid ? "GOOD" : "BAD", (u32)arena->base);
+	printf("[CTR] MEMPACK native backing: base=%08x\n", (u32)arena->base);
 
 	MEMPACK_NewPack((void *)startPtr, packSize);
 	sdata->PtrMempack->endOfMemory = arena->endOfMemory;

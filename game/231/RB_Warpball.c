@@ -13,7 +13,6 @@ static const s32 s_warpballFadeY[6] = {
 void RB_Warpball_FadeAway(struct Thread *t)
 {
 	s16 frameId;
-	int iVar2;
 	struct TrackerWeapon *tw;
 	struct Instance *inst;
 	struct Driver *d;
@@ -70,7 +69,7 @@ void RB_Warpball_Death(struct Thread *t)
 	PlaySound3D(0x4f, inst);
 
 	// stop audio of moving
-	OtherFX_RecycleMute(&tw->audioPtr);
+	OtherFX_RecycleMute(&tw->soundIDCount);
 
 	ThTick_SetAndExec(t, &RB_Warpball_FadeAway);
 	return;
@@ -288,9 +287,13 @@ void RB_Warpball_SeekDriver(struct TrackerWeapon *tw, u32 param_2, struct Driver
 	param_2 &= 0xff;
 
 	if (d == 0)
+	{
 		return;
+	}
 	if (param_2 == 0xff)
+	{
 		return;
+	}
 
 	struct CheckpointNode *first = &sdata->gGT->level1->ptr_restart_points[0];
 
@@ -433,8 +436,8 @@ void RB_Warpball_ThTick(struct Thread *t)
 	inst = t->inst;
 	tw = t->object;
 
-	((s16 *)&tw->unk4c)[0] = (s16)inst->matrix.t[0];
-	((s16 *)&tw->unk4c)[1] = (s16)inst->matrix.t[1];
+	CTR_WriteU16LE(&tw->unk4c, (u16)inst->matrix.t[0]);
+	CTR_WriteU16LE((u8 *)&tw->unk4c + 2, (u16)inst->matrix.t[1]);
 	tw->unk50 = (s16)inst->matrix.t[2];
 
 	if ((int)inst->animFrame + 1 < INSTANCE_GetNumAnimFrames(inst, 0))
@@ -617,7 +620,7 @@ void RB_Warpball_ThTick(struct Thread *t)
 		RB_Warpball_AdvanceStraight(tw, inst, elapsedTime);
 	}
 
-	PlaySound3D_Flags((u32 *)&tw->audioPtr, 0x4e, inst);
+	PlaySound3D_Flags(&tw->soundIDCount, 0x4e, inst);
 
 	posTop.x = (s16)inst->matrix.t[0];
 	posTop.y = (s16)(inst->matrix.t[1] - 0x80);

@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_LEVEL_H
+#define CTR_NATIVE_NAMESPACE_LEVEL_H
+
 enum LevelID
 {
 	DINGO_CANYON = 0, // 0.
@@ -157,7 +160,7 @@ struct PVS
 
 typedef s16 BspChildId;
 
-typedef enum QuadBlockFlags : u16
+enum
 {
 	QUADBLOCK_FLAG_REFLECT_SPLIT_LINE_1 = 0x0001,
 	QUADBLOCK_FLAG_LOW_GRAVITY = 0x0002,
@@ -172,7 +175,8 @@ typedef enum QuadBlockFlags : u16
 	QUADBLOCK_FLAG_COLLISION_SURFACE = 0x2000,
 	QUADBLOCK_FLAG_NO_CAMERA_RESPAWN_PROBE = 0x4000,
 	QUADBLOCK_FLAG_SKIP_WATER_LIST = 0x8000,
-} QuadBlockFlags;
+};
+typedef u16 QuadBlockFlags;
 
 enum QuadBlockTriNormalDividendIndex
 {
@@ -188,10 +192,7 @@ enum QuadBlockTriNormalDividendIndex
 	QUADBLOCK_TRI_NORMAL_DIVIDEND_LO_1 = 9,
 };
 
-enum QuadBlockDrawOrderLow
-{
-	QUADBLOCK_DRAW_ORDER_LOW_DOUBLE_SIDED = 0x80000000u,
-};
+#define QUADBLOCK_DRAW_ORDER_LOW_DOUBLE_SIDED 0x80000000u
 
 struct QuadBlock
 {
@@ -263,33 +264,33 @@ struct QuadBlock
 	// full struct is 0x5c bytes large
 };
 
-_Static_assert(sizeof(struct QuadBlock) == 0x5c);
-_Static_assert(offsetof(struct QuadBlock, index) == 0x0);
-_Static_assert(sizeof(((struct QuadBlock *)0)->index[0]) == 0x2);
-_Static_assert(sizeof(QuadBlockFlags) == 0x2);
-_Static_assert(QUADBLOCK_FLAG_REFLECT_SPLIT_LINE_1 == 0x0001);
-_Static_assert(QUADBLOCK_FLAG_LOW_GRAVITY == 0x0002);
-_Static_assert(QUADBLOCK_FLAG_REFLECT_SPLIT_LINE_0 == 0x0004);
-_Static_assert(QUADBLOCK_FLAG_NO_COLLISION_RESPONSE == 0x0010);
-_Static_assert(QUADBLOCK_FLAG_TRIGGER == 0x0040);
-_Static_assert(QUADBLOCK_FLAG_ENGINE_ECHO == 0x0080);
-_Static_assert(QUADBLOCK_FLAG_KILL_PLANE == 0x0200);
-_Static_assert(QUADBLOCK_FLAG_DOOR == 0x0400);
-_Static_assert(QUADBLOCK_FLAG_CAMERA_SEARCH == 0x0800);
-_Static_assert(QUADBLOCK_FLAG_GROUND == 0x1000);
-_Static_assert(QUADBLOCK_FLAG_COLLISION_SURFACE == 0x2000);
-_Static_assert(QUADBLOCK_FLAG_NO_CAMERA_RESPAWN_PROBE == 0x4000);
-_Static_assert(QUADBLOCK_FLAG_SKIP_WATER_LIST == 0x8000);
-_Static_assert(offsetof(struct QuadBlock, quadFlags) == 0x12);
-_Static_assert(offsetof(struct QuadBlock, checkpointIndex) == 0x3e);
-_Static_assert(offsetof(struct QuadBlock, ptr_texture_low) == 0x40);
-_Static_assert(offsetof(struct QuadBlock, pvs) == 0x44);
-_Static_assert(offsetof(struct QuadBlock, triNormalVecDividend) == 0x48);
-_Static_assert(QUADBLOCK_TRI_NORMAL_DIVIDEND_HI_0 == 0);
-_Static_assert(QUADBLOCK_TRI_NORMAL_DIVIDEND_HI_7 == 7);
-_Static_assert(QUADBLOCK_TRI_NORMAL_DIVIDEND_LO_0 == 8);
-_Static_assert(QUADBLOCK_TRI_NORMAL_DIVIDEND_LO_1 == 9);
-_Static_assert(QUADBLOCK_DRAW_ORDER_LOW_DOUBLE_SIDED == 0x80000000u);
+CTR_STATIC_ASSERT(sizeof(struct QuadBlock) == 0x5c);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, index) == 0x0);
+CTR_STATIC_ASSERT(sizeof(((struct QuadBlock *)0)->index[0]) == 0x2);
+CTR_STATIC_ASSERT(sizeof(QuadBlockFlags) == 0x2);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_REFLECT_SPLIT_LINE_1 == 0x0001);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_LOW_GRAVITY == 0x0002);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_REFLECT_SPLIT_LINE_0 == 0x0004);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_NO_COLLISION_RESPONSE == 0x0010);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_TRIGGER == 0x0040);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_ENGINE_ECHO == 0x0080);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_KILL_PLANE == 0x0200);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_DOOR == 0x0400);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_CAMERA_SEARCH == 0x0800);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_GROUND == 0x1000);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_COLLISION_SURFACE == 0x2000);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_NO_CAMERA_RESPAWN_PROBE == 0x4000);
+CTR_STATIC_ASSERT(QUADBLOCK_FLAG_SKIP_WATER_LIST == 0x8000);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, quadFlags) == 0x12);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, checkpointIndex) == 0x3e);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, ptr_texture_low) == 0x40);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, pvs) == 0x44);
+CTR_STATIC_ASSERT(offsetof(struct QuadBlock, triNormalVecDividend) == 0x48);
+CTR_STATIC_ASSERT(QUADBLOCK_TRI_NORMAL_DIVIDEND_HI_0 == 0);
+CTR_STATIC_ASSERT(QUADBLOCK_TRI_NORMAL_DIVIDEND_HI_7 == 7);
+CTR_STATIC_ASSERT(QUADBLOCK_TRI_NORMAL_DIVIDEND_LO_0 == 8);
+CTR_STATIC_ASSERT(QUADBLOCK_TRI_NORMAL_DIVIDEND_LO_1 == 9);
+CTR_STATIC_ASSERT(QUADBLOCK_DRAW_ORDER_LOW_DOUBLE_SIDED == 0x80000000u);
 
 // BSP box that contains geometry
 struct BSP
@@ -367,71 +368,76 @@ struct BSP
 	// 0x20 bytes large
 };
 
-typedef enum BspChildIdEncoding : u16
+enum
 {
 	BSP_CHILD_ID_INDEX_MASK = 0x3fff,
 	BSP_CHILD_ID_LEAF_FLAG = 0x4000,
 	BSP_CHILD_ID_NONE = 0xffff,
-} BspChildIdEncoding;
+};
+typedef u16 BspChildIdEncoding;
 
-typedef enum BspNodeFlag : u16
+enum
 {
 	BSP_NODE_FLAG_LEAF = 0x0001,
-} BspNodeFlag;
+};
+typedef u16 BspNodeFlag;
 
-typedef enum BspRenderLeafFlag : u16
+enum
 {
 	BSP_RENDER_LEAF_FLAG_4X1 = 0x0008,
 	BSP_RENDER_LEAF_FLAG_4X2 = 0x0010,
 	BSP_RENDER_LEAF_FLAG_DYNAMIC_SUBDIV = 0x0020,
 	BSP_RENDER_LEAF_FLAG_4X4 = 0x0080,
-} BspRenderLeafFlag;
+};
+typedef u16 BspRenderLeafFlag;
 
-typedef enum BspHitboxFlag : u16
+enum
 {
 	BSP_HITBOX_LINC_USES_INSTDEF = 0x10,
 	BSP_HITBOX_CHECK_Y_RANGE = 0x20,
 	BSP_HITBOX_USE_Y_AXIS = 0x40,
 	BSP_HITBOX_COLLIDABLE = 0x80,
-} BspHitboxFlag;
+};
+typedef u16 BspHitboxFlag;
 
-typedef enum BspLeafFlag : u16
+enum
 {
 	BSP_LEAF_FLAG_WATER = 0x2,
-} BspLeafFlag;
+};
+typedef u16 BspLeafFlag;
 
 enum BspHitboxClass
 {
 	BSP_HITBOX_CLASS_TOUCH = 4,
 };
 
-_Static_assert(sizeof(struct BSP) == 0x20);
-_Static_assert(sizeof(BspChildId) == 0x2);
-_Static_assert(sizeof(BspChildIdEncoding) == 0x2);
-_Static_assert(BSP_CHILD_ID_INDEX_MASK == 0x3fff);
-_Static_assert(BSP_CHILD_ID_LEAF_FLAG == 0x4000);
-_Static_assert(BSP_CHILD_ID_NONE == 0xffff);
-_Static_assert(sizeof(BspNodeFlag) == 0x2);
-_Static_assert(BSP_NODE_FLAG_LEAF == 0x0001);
-_Static_assert(sizeof(BspRenderLeafFlag) == 0x2);
-_Static_assert(BSP_RENDER_LEAF_FLAG_4X1 == 0x0008);
-_Static_assert(BSP_RENDER_LEAF_FLAG_4X2 == 0x0010);
-_Static_assert(BSP_RENDER_LEAF_FLAG_DYNAMIC_SUBDIV == 0x0020);
-_Static_assert(BSP_RENDER_LEAF_FLAG_4X4 == 0x0080);
-_Static_assert(sizeof(BspHitboxFlag) == 0x2);
-_Static_assert(BSP_HITBOX_LINC_USES_INSTDEF == 0x10);
-_Static_assert(BSP_HITBOX_CHECK_Y_RANGE == 0x20);
-_Static_assert(BSP_HITBOX_USE_Y_AXIS == 0x40);
-_Static_assert(BSP_HITBOX_COLLIDABLE == 0x80);
-_Static_assert(sizeof(BspLeafFlag) == 0x2);
-_Static_assert(BSP_LEAF_FLAG_WATER == 0x2);
-_Static_assert(offsetof(struct BSP, flag) == 0x0);
-_Static_assert(offsetof(struct BSP, id) == 0x2);
-_Static_assert(offsetof(struct BSP, box) == 0x4);
-_Static_assert(offsetof(struct BSP, data.branch.childID) == 0x18);
-_Static_assert(offsetof(struct BSP, data.hitbox.center) == 0x10);
-_Static_assert(offsetof(struct BSP, data.hitbox.radius) == 0x16);
-_Static_assert(offsetof(struct BSP, data.hitbox.instDef) == 0x1C);
+CTR_STATIC_ASSERT(sizeof(struct BSP) == 0x20);
+CTR_STATIC_ASSERT(sizeof(BspChildId) == 0x2);
+CTR_STATIC_ASSERT(sizeof(BspChildIdEncoding) == 0x2);
+CTR_STATIC_ASSERT(BSP_CHILD_ID_INDEX_MASK == 0x3fff);
+CTR_STATIC_ASSERT(BSP_CHILD_ID_LEAF_FLAG == 0x4000);
+CTR_STATIC_ASSERT(BSP_CHILD_ID_NONE == 0xffff);
+CTR_STATIC_ASSERT(sizeof(BspNodeFlag) == 0x2);
+CTR_STATIC_ASSERT(BSP_NODE_FLAG_LEAF == 0x0001);
+CTR_STATIC_ASSERT(sizeof(BspRenderLeafFlag) == 0x2);
+CTR_STATIC_ASSERT(BSP_RENDER_LEAF_FLAG_4X1 == 0x0008);
+CTR_STATIC_ASSERT(BSP_RENDER_LEAF_FLAG_4X2 == 0x0010);
+CTR_STATIC_ASSERT(BSP_RENDER_LEAF_FLAG_DYNAMIC_SUBDIV == 0x0020);
+CTR_STATIC_ASSERT(BSP_RENDER_LEAF_FLAG_4X4 == 0x0080);
+CTR_STATIC_ASSERT(sizeof(BspHitboxFlag) == 0x2);
+CTR_STATIC_ASSERT(BSP_HITBOX_LINC_USES_INSTDEF == 0x10);
+CTR_STATIC_ASSERT(BSP_HITBOX_CHECK_Y_RANGE == 0x20);
+CTR_STATIC_ASSERT(BSP_HITBOX_USE_Y_AXIS == 0x40);
+CTR_STATIC_ASSERT(BSP_HITBOX_COLLIDABLE == 0x80);
+CTR_STATIC_ASSERT(sizeof(BspLeafFlag) == 0x2);
+CTR_STATIC_ASSERT(BSP_LEAF_FLAG_WATER == 0x2);
+CTR_STATIC_ASSERT(offsetof(struct BSP, flag) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct BSP, id) == 0x2);
+CTR_STATIC_ASSERT(offsetof(struct BSP, box) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct BSP, data.branch.childID) == 0x18);
+CTR_STATIC_ASSERT(offsetof(struct BSP, data.hitbox.center) == 0x10);
+CTR_STATIC_ASSERT(offsetof(struct BSP, data.hitbox.radius) == 0x16);
+CTR_STATIC_ASSERT(offsetof(struct BSP, data.hitbox.instDef) == 0x1C);
 
 struct VisMemBspListNode
 {
@@ -439,7 +445,7 @@ struct VisMemBspListNode
 	struct BSP *bsp;
 };
 
-_Static_assert(sizeof(struct VisMemBspListNode) == 8);
+CTR_STATIC_ASSERT(sizeof(struct VisMemBspListNode) == 8);
 
 struct LevVertex
 {
@@ -620,10 +626,21 @@ struct SpawnType1
 };
 #define ST1_GETPOINTERS(x) (void **)((u32)x + sizeof(struct SpawnType1))
 
+struct SpawnPosRot
+{
+	SVec3 pos;
+	SVec3 rot;
+};
+
 struct SpawnType2
 {
 	int numCoords;
-	s16 *posCoords; // maybe should be `struct PosRot*` instead of `s16*`
+	union
+	{
+		s16 *posCoords;
+		SVec3 *positions;
+		struct SpawnPosRot *posRot;
+	};
 };
 
 // per-quadblock checkpoint node
@@ -765,8 +782,8 @@ struct Level
 	struct Icon *ptr_named_tex_array;
 
 	// 0x44
-	// pointer to environment map, used by water rendering
-	void *ptr_tex_waterEnvMap;
+	// pointer to environment map texture layout, used by water rendering
+	struct TextureLayout *ptr_tex_waterEnvMap;
 
 	// 0x48
 	// used for additional skybox gradients (e.g. papu's pyramid)
@@ -830,7 +847,7 @@ struct Level
 
 	// spawn_arrays2 is for things
 	// like Seal, Minecart, etc,
-	// series of positions (only positions)
+	// series of SVec3 positions
 
 	// 0x138
 	int numSpawnType2;
@@ -840,7 +857,7 @@ struct Level
 
 	// spawn_arrays is for things
 	// N Gin Labs barrel, Snowball,
-	// series of positions and rotations
+	// series of SpawnPosRot records
 
 	// 0x140
 	int numSpawnType2_PosRot;
@@ -876,7 +893,7 @@ struct Level
 	int unk_16C;
 
 	// 0x170
-	int unk_170;
+	void *unk_170;
 
 	// 0x174
 	int numSCVert;
@@ -916,5 +933,15 @@ struct Level
 	char footer[0x60];
 };
 
-_Static_assert(sizeof(struct RainBuffer) == 0x30);
-_Static_assert(offsetof(struct Level, jumpVerticalSpeedCap) == 0x18C);
+CTR_STATIC_ASSERT(sizeof(struct RainBuffer) == 0x30);
+CTR_STATIC_ASSERT(sizeof(struct SpawnPosRot) == 0xc);
+CTR_STATIC_ASSERT(offsetof(struct SpawnPosRot, pos) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct SpawnPosRot, rot) == 0x6);
+CTR_STATIC_ASSERT(sizeof(struct SpawnType2) == 0x8);
+CTR_STATIC_ASSERT(offsetof(struct SpawnType2, numCoords) == 0x0);
+CTR_STATIC_ASSERT(offsetof(struct SpawnType2, posCoords) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct SpawnType2, positions) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct SpawnType2, posRot) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct Level, jumpVerticalSpeedCap) == 0x18C);
+
+#endif

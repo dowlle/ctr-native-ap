@@ -2,7 +2,7 @@
 
 static void TRIG_AngleSinCos_Common(u32 angle, s32 *sine, s32 *cosine)
 {
-	u32 trig = *(u32 *)&data.trigApprox[angle & 0x3ff];
+	u32 trig = CTR_ReadU32LE(&data.trigApprox[angle & 0x3ff]);
 
 	if ((angle & 0x400) == 0)
 	{
@@ -21,15 +21,19 @@ static void TRIG_AngleSinCos_Common(u32 angle, s32 *sine, s32 *cosine)
 		*cosine = (s32)(trig << 0x10) >> 0x10;
 
 		if ((angle & 0x800) == 0)
+		{
 			*cosine = -*cosine;
+		}
 		else
+		{
 			*sine = -*sine;
+		}
 	}
 }
 
 void TRIG_AngleSinCos_r16r17r18_duplicate(u32 angle, u32 *sine, u32 *cosine)
 {
-	u32 trig = *(u32 *)&data.trigApprox[angle & 0x3ff];
+	u32 trig = CTR_ReadU32LE(&data.trigApprox[angle & 0x3ff]);
 
 	// NOTE(aalhendi): Retail input is s0 and outputs are zero-extended s1/s2.
 	if ((angle & 0x400) == 0)
@@ -49,9 +53,13 @@ void TRIG_AngleSinCos_r16r17r18_duplicate(u32 angle, u32 *sine, u32 *cosine)
 		*sine = trig >> 0x10;
 
 		if ((angle & 0x800) == 0)
+		{
 			*cosine = (0u - *cosine) & 0xffff;
+		}
 		else
+		{
 			*sine = (0u - *sine) & 0xffff;
+		}
 	}
 }
 

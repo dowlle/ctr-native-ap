@@ -17,7 +17,7 @@ enum PlantAnim
 struct HitboxDesc plantBoxDesc = {.inst = (struct Instance *)0,
                                   .thread = (struct Thread *)0,
                                   .bucket = (struct Thread *)0,
-                                  .bbox = {.min = {0xFFC0, 0xFFC0, 0}, .max = {0x40, 0x80, 0x1E0}},
+                                  .bbox = {.min = {{0xFFC0, 0xFFC0, 0}}, .max = {{0x40, 0x80, 0x1E0}}},
                                   .threadHit = (struct Thread *)0,
                                   .funcThCollide = (void *)0};
 
@@ -114,7 +114,9 @@ void RB_Plant_ThTick_Eat(struct Thread *t)
 					particle = Particle_Init(0, sdata->gGT->iconGroup[0], &emSet_PlantTires[0]);
 
 					if (particle == 0)
+					{
 						continue;
+					}
 
 					particle->funcPtr = Particle_FuncPtr_SpitTire;
 					particle->plantInst = plantInst;
@@ -322,7 +324,9 @@ void RB_Plant_ThTick_Hungry(struct Thread *t)
 
 	// bosses are immune
 	if ((gGT->gameMode1 & ADVENTURE_BOSS) != 0)
+	{
 		return;
+	}
 
 	plantBoxDescLocal.bucket = gGT->threadBuckets[ROBOT].thread;
 	hitInst = LinkedCollide_Hitbox_Desc(&plantBoxDescLocal);
@@ -409,7 +413,9 @@ void RB_Plant_LInB(struct Instance *inst)
 	struct Thread *t;
 
 	if (inst->thread != NULL)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(
 	    // creation flags
@@ -421,7 +427,9 @@ void RB_Plant_LInB(struct Instance *inst)
 
 	inst->thread = t;
 	if (t == 0)
+	{
 		return;
+	}
 
 	t->inst = inst;
 

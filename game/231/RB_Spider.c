@@ -17,8 +17,8 @@ void RB_Spider_DrawWebs(struct Thread *t, struct PushBuffer *pb)
 		s32 z;
 	} WebLine;
 
-	_Static_assert(sizeof(multiCmdPacket) == 0x18);
-	_Static_assert(sizeof(WebLine) == 0xc);
+	CTR_STATIC_ASSERT(sizeof(multiCmdPacket) == 0x18);
+	CTR_STATIC_ASSERT(sizeof(WebLine) == 0xc);
 
 	struct GameTracker *gGT;
 	struct PrimMem *primMem;
@@ -38,7 +38,9 @@ void RB_Spider_DrawWebs(struct Thread *t, struct PushBuffer *pb)
 
 	// quit if there are no spiders
 	if (t == NULL)
+	{
 		return;
+	}
 
 	scratchpad = CTR_SCRATCHPAD_PTR(WebLine, 0);
 	line = scratchpad;
@@ -66,7 +68,9 @@ void RB_Spider_DrawWebs(struct Thread *t, struct PushBuffer *pb)
 	p = primMem->cursor;
 	nextPrim = p + (numSpiders * numPlyr);
 	if (nextPrim >= (multiCmdPacket *)primMem->guardEnd)
+	{
 		return;
+	}
 
 	// loop through all players
 	for (i = 0; i < numPlyr; i++)
@@ -96,8 +100,8 @@ void RB_Spider_DrawWebs(struct Thread *t, struct PushBuffer *pb)
 				p->tpage = 0xe1000a20;
 				p->f2.tag = 0;
 
-				*(u32 *)&p->f2.x0 = MFC2(12);
-				*(u32 *)&p->f2.x1 = MFC2(13);
+				CtrGpu_WritePackedXY(&p->f2.x0, MFC2(12));
+				CtrGpu_WritePackedXY(&p->f2.x1, MFC2(13));
 
 				lineColor = 0x3f;
 				if (depth > 0xa00)
@@ -112,13 +116,15 @@ void RB_Spider_DrawWebs(struct Thread *t, struct PushBuffer *pb)
 
 				depth = depth >> 6;
 				if (depth > 0x3ff)
+				{
 					depth = 0x3ff;
+				}
 
 				// pushBuffer 0xf4, ptrOT
 				ot = (u32 *)&pb->ptrOT[depth];
 
 				// prim header, OT and prim len
-				*(int *)p = *ot | 0x5000000;
+				*(int *)p = CtrGpu_PackOTTag(*ot, 0x5000000);
 				*ot = CtrGpu_PrimToOTLink24(p);
 				p++;
 			}
@@ -319,12 +325,16 @@ void RB_Spider_LInB(struct Instance *inst)
 	int spiderID;
 
 	if (inst->thread != NULL)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(sizeof(struct Spider), NONE, SMALL, SPIDER), RB_Spider_ThTick, "spider", 0);
 	inst->thread = t;
 	if (t == NULL)
+	{
 		return;
+	}
 
 	spider = t->object;
 	t->funcThCollide = (void (*)(struct Thread *))RB_Spider_ThCollide;
@@ -357,11 +367,7 @@ void RB_Spider_LInB(struct Instance *inst)
 
 	spider->shadowInst = shadowInst;
 
-	*(int *)&shadowInst->matrix.m[0][0] = *(int *)&inst->matrix.m[0][0];
-	*(int *)&shadowInst->matrix.m[0][2] = *(int *)&inst->matrix.m[0][2];
-	*(int *)&shadowInst->matrix.m[1][1] = *(int *)&inst->matrix.m[1][1];
-	*(int *)&shadowInst->matrix.m[2][0] = *(int *)&inst->matrix.m[2][0];
-	shadowInst->matrix.m[2][2] = inst->matrix.m[2][2];
+	CTR_MatrixCopyRot(&shadowInst->matrix, &inst->matrix);
 
 	shadowInst->matrix.t[0] = inst->matrix.t[0];
 	shadowInst->matrix.t[1] = inst->matrix.t[1] - 8;

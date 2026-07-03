@@ -13,7 +13,7 @@ void MM_Scrapbook_Init(void)
 }
 
 #ifdef CTR_NATIVE
-#include "../../platform.h"
+#include <platform.h>
 #include <platform/native_audio.h>
 #include <platform/native_renderer.h>
 #include <platform/native_str.h>
@@ -41,7 +41,7 @@ static void MM_Scrapbook_GetNativeSource(s16 *srcX, s16 *srcY, s16 *displayY)
 #endif
 
 #ifndef CTR_NATIVE
-__attribute__((optimize("O0"))) int ScrapBookPlayMovie_DecodeFrame()
+CTR_GCC_OPTIMIZE_O0 int ScrapBookPlayMovie_DecodeFrame()
 {
 	struct GameTracker *gGT = sdata->gGT;
 	DRAWENV *ptrDrawEnv = &gGT->db[1 - gGT->swapchainIndex].drawEnv;
@@ -54,10 +54,7 @@ __attribute__((optimize("O0"))) int ScrapBookPlayMovie_DecodeFrame()
 void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 {
 	s16 lev;
-	int cdPos;
 	int getButtonPress = 0;
-	DRAWENV *ptrDrawEnv;
-	CdlFILE cdlFile;
 	struct GameTracker *gGT = sdata->gGT;
 
 	// book state (0,1,2,3,4)

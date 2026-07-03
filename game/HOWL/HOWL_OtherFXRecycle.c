@@ -35,7 +35,7 @@ void OtherFX_RecycleNew(u32 *soundID_Count, u32 newSoundID, u32 modifyFlags)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e724-0x8002e760
-void OtherFX_RecycleMute(int *soundID_Count)
+void OtherFX_RecycleMute(u32 *soundID_Count)
 {
 	if (*soundID_Count != 0)
 	{
@@ -63,5 +63,5 @@ void OtherFX_DriverCrashing(u32 boolEcho, u32 volume)
 		crashID = 0xa;
 	}
 
-	OtherFX_Play_LowLevel(crashID, 0, (boolEcho << 0x18) | ((volume & 0xff) << 0x10) | 0x8080);
+	OtherFX_Play_LowLevel(crashID, 0, HowlSfx_Pack(HOWL_SFX_LR_CENTER, HOWL_SFX_DISTORTION_NONE, volume, boolEcho));
 }

@@ -21,7 +21,7 @@ void MM_Characters_AnimateColors(u8 *colorData, s16 playerID, s16 flag)
 		trigApproximationIndex = sdata->frameCounter * 0x100 + playerID * 0x400;
 
 		// approximate trigonometry
-		trigApprox = *(u32 *)&data.trigApprox[trigApproximationIndex & 0x3ff];
+		trigApprox = CTR_ReadU32LE(&data.trigApprox[trigApproximationIndex & 0x3ff]);
 
 		if ((trigApproximationIndex & 0x400) == 0)
 		{
@@ -30,7 +30,9 @@ void MM_Characters_AnimateColors(u8 *colorData, s16 playerID, s16 flag)
 		trigApprox = trigApprox >> 0x10;
 
 		if ((trigApproximationIndex & 0x800) != 0)
+		{
 			trigApprox = -(int)trigApprox;
+		}
 	}
 
 	colorAdjustmentValue = 0;
@@ -54,8 +56,8 @@ int MM_Characters_GetNextDriver(s16 dpad, char characterID)
 	s16 unlocked;
 	char newDriver;
 
-	nextDriver = D230.csm_Active[characterID].indexNext[dpad];
-	unlocked = D230.csm_Active[nextDriver].unlockFlags;
+	nextDriver = D230.csm_Active[(s32)characterID].indexNext[dpad];
+	unlocked = D230.csm_Active[(s32)nextDriver].unlockFlags;
 
 	// set new driver to the driver
 	// you'd get when pressing Up button
@@ -111,11 +113,15 @@ struct Model *MM_Characters_GetModelByName(int *name)
 
 	// if LEV is invalid
 	if (level1 == NULL)
+	{
 		return NULL;
+	}
 
 	models = level1->ptrModelsPtrArray;
 	if (models == NULL)
+	{
 		return NULL;
+	}
 
 	// loop through all models in array
 	// of model pointers, until nullptr
@@ -133,15 +139,12 @@ struct Model *MM_Characters_GetModelByName(int *name)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800adc0c-0x800ae0bc PSX path.
-void MM_Characters_DrawWindows(int boolShowDrivers)
+void MM_Characters_DrawWindows(b32 boolShowDrivers)
 {
 	struct GameTracker *gGT;
-	s16 uVar2;
-	s16 uVar3;
 	struct Model *uVar4;
 	int iVar5;
 	u32 iVar6;
-	u32 uVar7;
 	int iVar8;
 	s16 sVar9;
 	struct Instance *iVar10;
@@ -406,7 +409,7 @@ void MM_Characters_BackupIDs(void)
 	{
 		// make a backup when you leave character selection,
 		// backup is restored when you go back to selection
-		sdata->characterIDs_backup[i] = data.characterIDs[i];
+		sdata->characterIDs_backup[(s32)i] = data.characterIDs[(s32)i];
 	}
 	return;
 }
@@ -418,7 +421,6 @@ void MM_Characters_PreventOverlap(void)
 	char cVar1;
 	int iVar2;
 	char *pcVar3;
-	int iVar4;
 	int iVar5;
 	int iVar6;
 	int iVar7;
@@ -481,8 +483,6 @@ void MM_Characters_RestoreIDs(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	s16 *currID;
-	int iVar3;
-	int iVar4;
 	char i;
 	s16 uVar1;
 
@@ -497,7 +497,7 @@ void MM_Characters_RestoreIDs(void)
 	for (i = 0; i < 8; i++)
 	{
 		// set character ID to the last ID you entered
-		data.characterIDs[i] = sdata->characterIDs_backup[i];
+		data.characterIDs[(s32)i] = sdata->characterIDs_backup[(s32)i];
 	}
 
 	MM_Characters_SetMenuLayout();
@@ -512,7 +512,7 @@ void MM_Characters_RestoreIDs(void)
 		// Basically sets them to 0, 1, 2, 3, 4... up to 0xE,
 		// setting Oxide's manually to 0xF is needed to make his icon appear
 
-		D230.characterMenuID[D230.csm_Active[i].characterID] = i;
+		D230.characterMenuID[(s32)D230.csm_Active[(s32)i].characterID] = i;
 	}
 
 	for (i = 0; i < gGT->numPlyrNextGame; i++)
@@ -520,10 +520,10 @@ void MM_Characters_RestoreIDs(void)
 		// Determine if this icon is unlocked (and drawing)
 
 		// get character ID
-		currID = &data.characterIDs[i];
+		currID = &data.characterIDs[(s32)i];
 
 		// get unlock requirement for this character
-		uVar1 = D230.csm_Active[*currID].unlockFlags;
+		uVar1 = D230.csm_Active[(s32)*currID].unlockFlags;
 
 		if (
 		    // If Icon has an unlock requirement
@@ -543,14 +543,14 @@ void MM_Characters_RestoreIDs(void)
 	{
 		// set name string ID to the character ID of each player.
 		// The string will only draw if both these variables match
-		D230.characterSelect_charIDs_curr[i] = data.characterIDs[i];
-		D230.characterSelect_charIDs_desired[i] = data.characterIDs[i];
+		D230.characterSelect_charIDs_curr[(s32)i] = data.characterIDs[(s32)i];
+		D230.characterSelect_charIDs_desired[(s32)i] = data.characterIDs[(s32)i];
 
 		// something to do with transitioning between icons
-		D230.timerPerPlayer[i] = 0;
+		D230.timerPerPlayer[(s32)i] = 0;
 
 		// rotation of each driver, 90 degrees difference
-		D230.characterSelect_angle[i] = (i * 0x400) + 400;
+		D230.characterSelect_angle[(s32)i] = (i * 0x400) + 400;
 	}
 
 	MM_Characters_DrawWindows(0);
@@ -565,9 +565,9 @@ void MM_Characters_HideDrivers(void)
 
 	for (i = 0; i < 4; i++)
 	{
-		PushBuffer_Init(&gGT->pushBuffer[i], 0, 1);
+		PushBuffer_Init(&gGT->pushBuffer[(s32)i], 0, 1);
 
-		gGT->drivers[i]->instSelf->flags |= HIDE_MODEL;
+		gGT->drivers[(s32)i]->instSelf->flags |= HIDE_MODEL;
 	}
 
 	return;
@@ -579,7 +579,6 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 	int bVar2;
 	int bVar3;
 	u16 characterSelectFlags5bit;
-	s16 *psVar5;
 	s16 sVar6;
 	s16 nextDriver;
 	int iVar8;
@@ -595,7 +594,7 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 	s16 globalIconPerPlayerCopy4;
 	s16 globalIconPerPlayerCopy;
 	s16 globalIconPerPlayerCopy2;
-	u16 *globalIconPerPlayerPtr2;
+	s16 *globalIconPerPlayerPtr2;
 	int iVar24;
 	u32 k;
 	u16 *puVar26;
@@ -624,7 +623,7 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 
 	struct GameTracker *gGT = sdata->gGT;
 
-	u_long *ot = gGT->backBuffer->otMem.uiOT;
+	uint32_t *ot = gGT->backBuffer->otMem.uiOT;
 
 	for (i = 0; i < 4; i++)
 	{
@@ -704,7 +703,9 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 
 		// If you have a lot of characters unlocked, do not draw SELECT CHARACTER
 		if (D230.isRosterExpanded)
+		{
 			goto dontDrawSelectCharacter;
+		}
 
 		DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_CHARACTER_SELECT], posX + 0x9c, posY + 0x14, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 		characterSelectType = FONT_BIG;
@@ -720,7 +721,9 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 
 		// If Fake Crash is unlocked, do not draw "Select Character"
 		if (sdata->gameProgress.unlockFlags & UNLOCK_FAKE_CRASH)
+		{
 			goto dontDrawSelectCharacter;
+		}
 
 		DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_CHARACTER_SELECT], posX + 0xfc, posY + 8, FONT_CREDITS, (JUSTIFY_CENTER | ORANGE));
 		characterSelectType = FONT_CREDITS;
@@ -797,7 +800,9 @@ dontDrawSelectCharacter:
 
 							// If you press Left
 							if ((button & BTN_LEFT) != 0)
+							{
 								goto LAB_800aec08;
+							}
 
 							// At this point, you must have pressed Right
 
@@ -907,7 +912,9 @@ dontDrawSelectCharacter:
 							bVar3 = !bVar2;
 							bVar2 = false;
 							if (bVar3)
+							{
 								break;
+							}
 							globalIconPerPlayerCopy2 = (u32)*globalIconPerPlayerPtr2;
 						}
 						globalIconPerPlayerCopy3 = globalIconPerPlayerCopy2;
@@ -1100,16 +1107,22 @@ dontDrawSelectCharacter:
 
 			// if number of players is 3 or 4
 			if (numPlyrNextGame >= 3)
+			{
 				fontType = FONT_SMALL;
+			}
 
 			iVar8 = (int)&D230.ptrTransitionMeta[j + 0x10];
 			sVar10 = ((struct TransitionMeta *)iVar8)->currY + D230.characterSelect_ptrWindowXY[j * 2 + 1];
 			sVar6 = (s16)((((u32)(numPlyrNextGame < 3) ^ 1) << 0x12) >> 0x10);
 
 			if ((numPlyrNextGame == 4) && (j > 1))
+			{
 				sVar6 = sVar10 + sVar6 - 6;
+			}
 			else
+			{
 				sVar6 = sVar10 + D230.textPos + sVar6;
+			}
 
 			// draw string
 			DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[csm_Active->characterID].name_LNG_long],

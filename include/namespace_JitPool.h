@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_JITPOOL_H
+#define CTR_NATIVE_NAMESPACE_JITPOOL_H
+
 // complete struct
 struct JitPool
 {
@@ -10,4 +13,6 @@ struct JitPool
 	void *ptrPoolData;
 };
 
-_Static_assert(sizeof(struct JitPool) == 0x28);
+CTR_STATIC_ASSERT(sizeof(struct JitPool) == 0x28);
+
+#endif

@@ -20,7 +20,7 @@ void VehTalkMask_ThTick(struct Thread *t)
 
 		if (gGT->drivers[0] != 0)
 		{
-			int boolGoodGuy = VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]);
+			b32 boolGoodGuy = VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]);
 
 			// 0x3A for Uka, 0x39 for Aku
 			int modelID = STATIC_UKAUKA - boolGoodGuy;
@@ -47,7 +47,9 @@ void VehTalkMask_ThTick(struct Thread *t)
 	targetMouthFrame = targetMouthFrame >> 0xe;
 
 	if (sdata->talkMaskMaxMouthFrame < targetMouthFrame)
+	{
 		sdata->talkMaskMaxMouthFrame = targetMouthFrame;
+	}
 
 	int desiredMouthFrame = targetMouthFrame;
 	if (targetMouthFrame < 2)
@@ -102,10 +104,13 @@ SkipLerp:
 	// 0x0C: mouth open
 
 	if (mhInst->animFrame < 0)
+	{
 		mhInst->animFrame = 0;
-
+	}
 	else if (lastFrame < (u32)mhInst->animFrame)
+	{
 		mhInst->animFrame = (s16)lastFrame;
+	}
 
 	if (sdata->talkMask_boolDead != 0)
 	{
@@ -139,10 +144,12 @@ void VehTalkMask_PlayXA(struct Instance *i, int id)
 
 	if (d != 0)
 	{
-		int boolGoodGuy = VehPickupItem_MaskBoolGoodGuy(d);
+		b32 boolGoodGuy = VehPickupItem_MaskBoolGoodGuy(d);
 
 		if (boolGoodGuy == 0)
+		{
 			id += 0x1f;
+		}
 	}
 
 	CDSYS_XAPlay(CDSYS_XA_TYPE_EXTRA, id);

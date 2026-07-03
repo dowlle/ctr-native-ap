@@ -5,8 +5,6 @@ struct Instance *UI_INSTANCE_BirthWithThread(int param_1, int param_2, int param
 
 {
 	s16 modelID;
-	s16 sVar2;
-	s16 sVar3;
 	s16 uVar5;
 	struct Thread *hudThread;
 	s32 lVar7;
@@ -25,7 +23,9 @@ struct Instance *UI_INSTANCE_BirthWithThread(int param_1, int param_2, int param
 	// get model pointer
 	model = gGT->modelPtr[param_1];
 	if (model == 0)
+	{
 		return NULL;
+	}
 
 	hudStruct = data.hudStructPtr[gGT->numPlyrCurrGame - 1];
 
@@ -232,15 +232,19 @@ void UI_INSTANCE_InitAll(void)
 		// NOTE(aalhendi): Menu-storage can carry CRYSTAL_CHALLENGE into tracks
 		// that did not publish crystal HUD models.
 		if (sdata->ptrHudCrystal != NULL)
+		{
 #endif
 			sdata->ptrHudCrystal->flags |= 0x80;
+		}
 
 		// make copy of Token pointer
 		token = sdata->ptrToken;
 
 #if defined(CTR_NATIVE)
 		if (token == NULL)
+		{
 			return;
+		}
 #endif
 
 		// set Token scale (x, y, z) to zero
@@ -277,8 +281,10 @@ void UI_INSTANCE_InitAll(void)
 				data.rankIconsCurr[i] = 0;
 			}
 			else
+			{
 #endif
 				data.rankIconsCurr[i] = gGT->drivers[i]->driverRank;
+			}
 
 			// if more than 1 screen
 			if (1 < gGT->numPlyrCurrGame)
@@ -376,16 +382,22 @@ void UI_INSTANCE_InitAll(void)
 #if defined(CTR_NATIVE)
 	// NOTE(aalhendi): PSX writes the hidden C/T/R flags through null HUD pointers in Garage; native cannot.
 	if (sdata->ptrHudC != NULL)
+	{
 #endif
 		sdata->ptrHudC->flags |= 0x80;
+	}
 #if defined(CTR_NATIVE)
 	if (sdata->ptrHudT != NULL)
+	{
 #endif
 		sdata->ptrHudT->flags |= 0x80;
+	}
 #if defined(CTR_NATIVE)
 	if (sdata->ptrHudR != NULL)
+	{
 #endif
 		sdata->ptrHudR->flags |= 0x80;
+	}
 
 	// make copy of Token pointer
 	token = sdata->ptrToken;

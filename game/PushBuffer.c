@@ -83,7 +83,9 @@ void PushBuffer_Init(struct PushBuffer *pb, int id, int total)
 	}
 
 	if ((total < 3) || (total > 4))
+	{
 		return;
+	}
 
 	if (id == 0)
 	{
@@ -157,19 +159,28 @@ void PushBuffer_SetPsyqGeom(struct PushBuffer *pb)
 }
 
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80042974-0x80042a8c.
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80042974-0x80042a8c for the retail path.
 void PushBuffer_SetDrawEnv_DecalMP(void *ot, struct DB *backBuffer, RECT *viewport, s16 offsetX, s16 offsetY, u8 dtd, u8 dfe, u8 isbg, u8 tpageUpper,
                                    u8 tpageLower)
 {
 	void *p;
 	DRAWENV newDrawEnv;
 
-	// Copy DrawEnv from gGT->backBuffer
-	int *dst = (int *)&newDrawEnv;
-	int *src = (int *)&backBuffer->drawEnv;
+#ifdef CTR_NATIVE
+	// NOTE(aalhendi): Retail receives PS1 RAM OT slots here. Native translates
+	// 24-bit OT tokens back to host pointers, so stale DecalMP range metadata
+	// must not splice a DR_ENV packet into unrelated current-frame memory.
+	if (!CtrGpu_IsCurrentOTRange(backBuffer, ot, ot))
+	{
+		return;
+	}
+#endif
 
+	// Copy DrawEnv from gGT->backBuffer
 	for (u32 i = 0; i < sizeof(DRAWENV) / 4; i++)
-		dst[i] = src[i];
+	{
+		CTR_WriteU32LE((u8 *)&newDrawEnv + i * 4, CTR_ReadU32LE((u8 *)&backBuffer->drawEnv + i * 4));
+	}
 
 	// Now modify DrawEnv...
 
@@ -206,7 +217,9 @@ void PushBuffer_SetDrawEnv_DecalMP(void *ot, struct DB *backBuffer, RECT *viewpo
 	}
 
 	if (prim == NULL)
+	{
 		return;
+	}
 
 	// ofs[X]
 	newDrawEnv.ofs[0] = offsetX;
@@ -227,11 +240,10 @@ void PushBuffer_SetDrawEnv_Normal(void *ot, struct PushBuffer *pb, struct DB *ba
 {
 	DRAWENV newDrawEnv;
 
-	int *dst = (int *)&newDrawEnv;
-	int *src = (int *)&backBuffer->drawEnv;
-
 	for (u32 i = 0; i < sizeof(DRAWENV) / 4; i++)
-		dst[i] = src[i];
+	{
+		CTR_WriteU32LE((u8 *)&newDrawEnv + i * 4, CTR_ReadU32LE((u8 *)&backBuffer->drawEnv + i * 4));
+	}
 
 	// always?
 	if (copyDrawEnvNULL == 0)
@@ -325,24 +337,24 @@ void PushBuffer_SetMatrixVP(struct PushBuffer *pb)
 #endif
 
 	// CameraMatrix
-	uVar3 = *(int *)&matrixDST->m[0][0];
-	uVar4 = *(int *)&matrixDST->m[0][2];
-	uVar5 = *(int *)&matrixDST->m[1][1];
-	uVar6 = *(int *)&matrixDST->m[2][0];
-	sVar7 = *(s16 *)&matrixDST->m[2][2];
+	uVar3 = CTR_ReadU32LE(&matrixDST->m[0][0]);
+	uVar4 = CTR_ReadU32LE(&matrixDST->m[0][2]);
+	uVar5 = CTR_ReadU32LE(&matrixDST->m[1][1]);
+	uVar6 = CTR_ReadU32LE(&matrixDST->m[2][0]);
+	sVar7 = matrixDST->m[2][2];
 
 	// CameraMatrix, for shadows, particles, and audio
-	*(int *)((int)&pb->matrix_Camera + 0x0) = uVar3;
-	*(int *)((int)&pb->matrix_Camera + 0x4) = uVar4;
-	*(int *)((int)&pb->matrix_Camera + 0x8) = uVar5;
-	*(int *)((int)&pb->matrix_Camera + 0xC) = uVar6;
-	*(s16 *)((int)&pb->matrix_Camera + 0x10) = sVar7;
+	CTR_WriteU32LE(&pb->matrix_Camera.m[0][0], uVar3);
+	CTR_WriteU32LE(&pb->matrix_Camera.m[0][2], uVar4);
+	CTR_WriteU32LE(&pb->matrix_Camera.m[1][1], uVar5);
+	CTR_WriteU32LE(&pb->matrix_Camera.m[2][0], uVar6);
+	pb->matrix_Camera.m[2][2] = sVar7;
 
 	// transpose the camera matrix
-	view0 = uVar3 & 0xffff | uVar4 & 0xffff0000;
-	view4 = uVar6 & 0xffff | uVar3 & 0xffff0000;
-	view8 = uVar5 & 0xffff | uVar6 & 0xffff0000;
-	viewC = uVar4 & 0xffff | uVar5 & 0xffff0000;
+	view0 = (uVar3 & 0xffff) | (uVar4 & 0xffff0000);
+	view4 = (uVar6 & 0xffff) | (uVar3 & 0xffff0000);
+	view8 = (uVar5 & 0xffff) | (uVar6 & 0xffff0000);
+	viewC = (uVar4 & 0xffff) | (uVar5 & 0xffff0000);
 
 	// CameraTranspose, for lightning during Driver Warping effect
 	*(int *)((int)&pb->matrix_CameraTranspose + 0x0) = view0;
@@ -455,16 +467,16 @@ static s32 PushBuffer_SetFrustumPlane_Abs(s32 value)
 	return (value < 0) ? -value : value;
 }
 
-int PushBuffer_SetFrustumPlane(s16 *frustumData, struct FrustumCornerOUT *fc1, s16 *camPos, struct FrustumCornerOUT *fc2)
+int PushBuffer_SetFrustumPlane(struct PushBufferFrustumPlane *frustumPlane, struct FrustumCornerOUT *fc1, const SVec3 *camPos, struct FrustumCornerOUT *fc2)
 {
 	int leadingZeroBits;
 	int temp;
 	s32 normalX;
 	s32 normalY;
 	s32 normalZ;
-	int cameraPosX = camPos[0];
-	int cameraPosY = camPos[1];
-	int cameraPosZ = camPos[2];
+	int cameraPosX = camPos->x;
+	int cameraPosY = camPos->y;
+	int cameraPosZ = camPos->z;
 
 	PushBuffer_SetFrustumPlane_LoadAxisVector(fc2->pos.x - cameraPosX, fc2->pos.y - cameraPosY, fc2->pos.z - cameraPosZ);
 	PushBuffer_SetFrustumPlane_LoadIRVector(fc1->pos.x - cameraPosX, fc1->pos.y - cameraPosY, fc1->pos.z - cameraPosZ);
@@ -479,11 +491,15 @@ int PushBuffer_SetFrustumPlane(s16 *frustumData, struct FrustumCornerOUT *fc1, s
 
 	temp = PushBuffer_SetFrustumPlane_ReadLeadingZeroes((u32)PushBuffer_SetFrustumPlane_Abs(normalY));
 	if (temp < leadingZeroBits)
+	{
 		leadingZeroBits = temp;
+	}
 
 	temp = PushBuffer_SetFrustumPlane_ReadLeadingZeroes((u32)PushBuffer_SetFrustumPlane_Abs(normalZ));
 	if (temp < leadingZeroBits)
+	{
 		leadingZeroBits = temp;
+	}
 
 	if (leadingZeroBits < 0x12)
 	{
@@ -503,16 +519,20 @@ int PushBuffer_SetFrustumPlane(s16 *frustumData, struct FrustumCornerOUT *fc1, s
 
 	int planeD = (normalX * cameraPosX + normalY * cameraPosY + normalZ * cameraPosZ) >> 13;
 
-	frustumData[0] = (s16)normalX;
-	frustumData[1] = (s16)normalY;
-	frustumData[2] = (s16)normalZ;
-	frustumData[3] = (s16)planeD;
+	frustumPlane->normal.x = (s16)normalX;
+	frustumPlane->normal.y = (s16)normalY;
+	frustumPlane->normal.z = (s16)normalZ;
+	frustumPlane->halfDistance = (s16)planeD;
 
 	u32 planeType = (u32)normalX >> 31;
 	if (normalY < 0)
+	{
 		planeType |= 2;
+	}
 	if (normalZ < 0)
+	{
 		planeType |= 4;
+	}
 
 	return planeType;
 }
@@ -639,9 +659,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 		fcOUT->pos.z = tz + cameraPosZ;
 
 		// far clip: pos + dir*100
-		spf->pos[0] = posX;
-		spf->pos[1] = posY;
-		spf->pos[2] = posZ;
+		spf->clippedFarPos.x = posX;
+		spf->clippedFarPos.y = posY;
+		spf->clippedFarPos.z = posZ;
 
 		// === X Axis ===
 		if (((cameraPosX < -0x8000) && (-0x8000 < posX)) || ((-0x8000 < cameraPosX && (posX < -0x8000))))
@@ -652,9 +672,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < 0x1000)
 			{
-				spf->pos[0] = -0x8000;
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.x = -0x8000;
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -668,9 +688,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[1] = -0x8000;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.y = -0x8000;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -684,9 +704,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[2] = -0x8000;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = -0x8000;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -700,9 +720,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[0] = 0x7fff;
-				spf->pos[1] = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.x = 0x7fff;
+				spf->clippedFarPos.y = cameraPosY + (tz * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -716,9 +736,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (tz < iVar19)
 			{
-				spf->pos[1] = 0x7fff;
-				spf->pos[0] = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
-				spf->pos[2] = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
+				spf->clippedFarPos.y = 0x7fff;
+				spf->clippedFarPos.x = cameraPosX + (tz * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.z = cameraPosZ + (tz * (posZ - cameraPosZ) >> 0xc);
 				iVar19 = tz;
 			}
 		}
@@ -732,27 +752,39 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 			if (ty < iVar19)
 			{
-				spf->pos[2] = 0x7fff;
-				spf->pos[0] = cameraPosX + (ty * (posX - cameraPosX) >> 0xc);
-				spf->pos[1] = cameraPosY + (ty * (posY - cameraPosY) >> 0xc);
+				spf->clippedFarPos.z = 0x7fff;
+				spf->clippedFarPos.x = cameraPosX + (ty * (posX - cameraPosX) >> 0xc);
+				spf->clippedFarPos.y = cameraPosY + (ty * (posY - cameraPosY) >> 0xc);
 			}
 		}
 
 		// === Set 6 Min/Max X,Y,Z variables ===
 
-		if (min_X > spf->pos[0])
-			min_X = spf->pos[0];
-		if (min_Y > spf->pos[1])
-			min_Y = spf->pos[1];
-		if (min_Z > spf->pos[2])
-			min_Z = spf->pos[2];
+		if (min_X > spf->clippedFarPos.x)
+		{
+			min_X = spf->clippedFarPos.x;
+		}
+		if (min_Y > spf->clippedFarPos.y)
+		{
+			min_Y = spf->clippedFarPos.y;
+		}
+		if (min_Z > spf->clippedFarPos.z)
+		{
+			min_Z = spf->clippedFarPos.z;
+		}
 
-		if (max_X < spf->pos[0])
-			max_X = spf->pos[0];
-		if (max_Y < spf->pos[1])
-			max_Y = spf->pos[1];
-		if (max_Z < spf->pos[2])
-			max_Z = spf->pos[2];
+		if (max_X < spf->clippedFarPos.x)
+		{
+			max_X = spf->clippedFarPos.x;
+		}
+		if (max_Y < spf->clippedFarPos.y)
+		{
+			max_Y = spf->clippedFarPos.y;
+		}
+		if (max_Z < spf->clippedFarPos.z)
+		{
+			max_Z = spf->clippedFarPos.z;
+		}
 
 		// next corner to write
 		fcOUT--;
@@ -772,16 +804,16 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 	spf->camPos.z = cameraPosZ;
 
 	// PushBuffer_SetFrustumPlane (x4)
-	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumData[0], &spf->fc[0], &spf->camPos.x, &spf->fc[1]);
+	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumPlanes[0], &spf->fc[0], &spf->camPos, &spf->fc[1]);
 	pb->RenderListJmpIndex[0] = ~val_Y & 7;
 
-	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumData[0x8], &spf->fc[1], &spf->camPos.x, &spf->fc[3]);
+	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumPlanes[1], &spf->fc[1], &spf->camPos, &spf->fc[3]);
 	pb->RenderListJmpIndex[1] = ~val_Y & 7;
 
-	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumData[0x10], &spf->fc[3], &spf->camPos.x, &spf->fc[2]);
+	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumPlanes[2], &spf->fc[3], &spf->camPos, &spf->fc[2]);
 	pb->RenderListJmpIndex[2] = ~val_Y & 7;
 
-	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumData[0x18], &spf->fc[2], &spf->camPos.x, &spf->fc[0]);
+	val_Y = PushBuffer_SetFrustumPlane(&pb->frustumPlanes[3], &spf->fc[2], &spf->camPos, &spf->fc[0]);
 	pb->RenderListJmpIndex[3] = ~val_Y & 7;
 
 	PushBuffer_UpdateFrustum_LoadV0(0, 0x1000);
@@ -792,9 +824,9 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 	int retZ;
 	PushBuffer_UpdateFrustum_ReadMAC(&retX, &retY, &retZ);
 
-	*(s16 *)&pb->frustumData[0x20] = -retX;
-	*(s16 *)&pb->frustumData[0x22] = -retY;
-	*(s16 *)&pb->frustumData[0x24] = -retZ;
+	pb->frustumPlanes[4].normal.x = -retX;
+	pb->frustumPlanes[4].normal.y = -retY;
+	pb->frustumPlanes[4].normal.z = -retZ;
 
 
 	int distToScreen = pb->distanceToScreen_PREV;
@@ -805,7 +837,7 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 		iVar9 = distToScreen + 3;
 	}
 
-	*(s16 *)&pb->frustumData[0x26] = (s16)(-(cameraPosX * retX + cameraPosY * retY + cameraPosZ * retZ) >> 0xd) - (s16)(iVar9 >> 2);
+	pb->frustumPlanes[4].halfDistance = (s16)(-(cameraPosX * retX + cameraPosY * retY + cameraPosZ * retZ) >> 0xd) - (s16)(iVar9 >> 2);
 
 	// Negation Flags
 	int flags = (u32)retX >> 0x1f;

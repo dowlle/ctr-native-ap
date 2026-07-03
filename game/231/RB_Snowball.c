@@ -9,8 +9,9 @@ void RB_Snowball_ThTick(struct Thread *t)
 
 	int modelID;
 	int soundID;
-	int baseShort;
+	int pointIndex;
 	struct SpawnType2 *ptrSpawnType2;
+	const struct SpawnPosRot *frame;
 
 	snowInst = t->inst;
 	snowObj = (struct Snowball *)t->object;
@@ -26,7 +27,7 @@ void RB_Snowball_ThTick(struct Thread *t)
 		{
 			// snowball roll
 			soundID = 0x73;
-			PlaySound3D_Flags(&snowObj->audioPtr, soundID, snowInst);
+			PlaySound3D_Flags(&snowObj->soundIDCount, soundID, snowInst);
 		}
 
 		// sewer speedway barrel
@@ -34,20 +35,22 @@ void RB_Snowball_ThTick(struct Thread *t)
 		{
 			// barrel roll
 			soundID = 0x74;
-			PlaySound3D_Flags(&snowObj->audioPtr, soundID, snowInst);
+			PlaySound3D_Flags(&snowObj->soundIDCount, soundID, snowInst);
 		}
 
-		baseShort = snowObj->pointIndex;
-		if (baseShort > snowObj->numPoints)
-			baseShort = (snowObj->numPoints * 2) - baseShort;
+		pointIndex = snowObj->pointIndex;
+		if (pointIndex > snowObj->numPoints)
+		{
+			pointIndex = (snowObj->numPoints * 2) - pointIndex;
+		}
 
-		baseShort *= 6;
+		frame = &ptrSpawnType2->posRot[pointIndex];
 
-		ConvertRotToMatrix(&snowInst->matrix, &ptrSpawnType2->posCoords[baseShort + 3]);
+		ConvertRotToMatrix(&snowInst->matrix, &frame->rot);
 
-		snowInst->matrix.t[0] = ptrSpawnType2->posCoords[baseShort + 0];
-		snowInst->matrix.t[1] = ptrSpawnType2->posCoords[baseShort + 1];
-		snowInst->matrix.t[2] = ptrSpawnType2->posCoords[baseShort + 2];
+		snowInst->matrix.t[0] = frame->pos.x;
+		snowInst->matrix.t[1] = frame->pos.y;
+		snowInst->matrix.t[2] = frame->pos.z;
 
 		RB_Minecart_CheckColl(snowInst, t);
 	}
@@ -61,7 +64,9 @@ void RB_Snowball_LInB(struct Instance *inst)
 	struct Thread *t;
 
 	if (inst->thread != 0)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(
 	    // creation flags
@@ -73,7 +78,9 @@ void RB_Snowball_LInB(struct Instance *inst)
 	);
 
 	if (t == 0)
+	{
 		return;
+	}
 	inst->thread = t;
 	t->inst = inst;
 
@@ -90,5 +97,5 @@ void RB_Snowball_LInB(struct Instance *inst)
 
 	snowObj->rot_unused.y = inst->matrix.m[0][2] >> 2;
 	snowObj->rot_unused.z = inst->matrix.m[2][2] >> 2;
-	snowObj->audioPtr = 0;
+	snowObj->soundIDCount = 0;
 }

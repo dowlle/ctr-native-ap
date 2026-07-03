@@ -1,6 +1,11 @@
-#include "../platform.h"
+#include <platform.h>
 #include "ctr_scratchpad.h"
+#include "platform/native_memory.h"
+#if defined(CTR_INTERNAL)
+#include "platform/native_checkpoint.h"
+#endif
 
+#include <common.h>
 #include <macros.h>
 
 #include <stdio.h>
@@ -12,7 +17,7 @@
 #endif
 
 // TODO(aalhendi): Re-audit LOAD_ReadFile_ex, LOAD_DramFileCallback, LEV/PTR
-// callbacks, and hub swapping before removing the expanded arena escape hatch.
+// callbacks, hub swapping, MEMPACK size arithmetic + PSX shaped ptr storage before removing the expanded arena escape hatch
 #if CTR_NATIVE_MEMPACK_RETAIL_PRESSURE
 // NOTE(aalhendi): Retail pressure mode exposes the NTSC-U 926 mempack window
 // inside a 2 MiB backing store.
@@ -31,7 +36,7 @@ union NativeScratchpadStorage
 	u32 words[CTR_SCRATCHPAD_SIZE / sizeof(u32)];
 };
 
-_Static_assert(sizeof(union NativeScratchpadStorage) == CTR_SCRATCHPAD_SIZE);
+CTR_STATIC_ASSERT(sizeof(union NativeScratchpadStorage) == CTR_SCRATCHPAD_SIZE);
 
 global_variable char s_mempackMemory[CTR_NATIVE_MEMPACK_BUFFER_SIZE];
 global_variable struct PlatformMempackArena s_mempackArena;
@@ -46,33 +51,47 @@ void Platform_InitScratchpad(void)
 #endif
 }
 
-internal void Platform_ConfigureMempackArena(void)
+void Platform_ConfigureMempackArena(void)
 {
 	s_mempackArena.base = &s_mempackMemory[0];
 	s_mempackArena.start = &s_mempackMemory[CTR_NATIVE_MEMPACK_START_OFFSET];
 	s_mempackArena.endOfMemory = &s_mempackMemory[CTR_NATIVE_MEMPACK_BUFFER_SIZE];
 	s_mempackArena.size = CTR_NATIVE_MEMPACK_SIZE;
 	s_mempackArena.backingSize = CTR_NATIVE_MEMPACK_BUFFER_SIZE;
-
-	// NOTE(aalhendi): Native still uses PS1-shaped OT links for many render
-	// paths. MEMPACK must stay below 0x01000000 so CtrGpu_PrimToOTLink24 can
-	// pack linked primitive pointers without losing address bits.
-	s_mempackArena.lowAddressValid =
-	    ((u32)s_mempackArena.base < 0x01000000) && ((u32)s_mempackArena.start < 0x01000000) && ((u32)s_mempackArena.endOfMemory <= 0x01000000);
 }
 
 const struct PlatformMempackArena *Platform_InitMempackArena(void)
 {
 	memset(s_mempackMemory, 0, sizeof(s_mempackMemory));
 	Platform_ConfigureMempackArena();
+#if defined(CTR_INTERNAL)
+	NativeCheckpoint_OnMempackArenaReset();
+#endif
 
 	return &s_mempackArena;
 }
 
-internal void Platform_RepairResidentPointers(s32 activeMempackIndex)
+const struct PlatformMempackArena *Platform_GetMempackArena(void)
+{
+	return &s_mempackArena;
+}
+
+void *Platform_GetMempackBacking(void)
+{
+	return &s_mempackMemory[0];
+}
+
+int Platform_GetMempackBackingSize(void)
+{
+	return (int)sizeof(s_mempackMemory);
+}
+
+void Platform_RepairResidentPointers(s32 activeMempackIndex)
 {
 	if ((activeMempackIndex < 0) || (activeMempackIndex >= 4))
+	{
 		activeMempackIndex = 0;
+	}
 
 	// NOTE(aalhendi): Native keeps retail-shaped global data, but pointer aliases
 	// must target this process's static storage. This also moves GCC's
@@ -82,6 +101,6 @@ internal void Platform_RepairResidentPointers(s32 activeMempackIndex)
 	sdata_static.gGT = &sdata_static.gameTracker;
 	sdata_static.gGamepads = &sdata_static.gamepadSystem;
 	sdata_static.PtrMempack = &sdata_static.mempack[activeMempackIndex];
-	sdata_static.ptrToMemcardBuffer1 = (int)&sdata_static.memcardBytes[0];
+	sdata_static.ptrToMemcardBuffer1 = &sdata_static.memcardBytes[0];
 	sdata_static.ptrToMemcardBuffer2 = &sdata_static.memcardBytes[0];
 }

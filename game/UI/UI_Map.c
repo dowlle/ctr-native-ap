@@ -1,7 +1,7 @@
 #include <common.h>
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004d614-0x8004d8b4.
-void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 posY, struct PrimMem *primMem, u_long *otMem, u32 colorID)
+void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 posY, struct PrimMem *primMem, uint32_t *otMem, u32 colorID)
 {
 	s16 mapBottomHeight;
 	s16 mapTopHeight;
@@ -54,7 +54,7 @@ void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 p
 	    ((gGT->gameMode1 & MAIN_MENU) != 0))
 	{
 		// r0, g0, b0 (vertex color)
-		*(int *)&p->r0 = color;
+		CtrGpu_WriteColorCode(&p->r0, color);
 
 		// position of the top margin of the primitive for the top half of the minimap
 		mapTopHeight = posY - (((u16)mapTop->texLayout.v2 - (u16)mapTop->texLayout.v0) + mapBottomHeight);
@@ -70,7 +70,7 @@ void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 p
 	}
 
 	// r0, g0, b0 (vertex color)
-	*(int *)&p->r0 = color;
+	CtrGpu_WriteColorCode(&p->r0, color);
 
 	p->y0 = posY - mapBottomHeight;
 	p->y1 = posY - mapBottomHeight;
@@ -82,7 +82,7 @@ void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 p
 	primMem->cursor = p + 1;
 }
 
-void UI_Map_DrawMap_ExtraFunc(struct Icon *icon, POLY_FT4 *p, s16 posX, s16 empty, struct PrimMem *primMem, u_long *otMem, u32 transparency)
+void UI_Map_DrawMap_ExtraFunc(struct Icon *icon, POLY_FT4 *p, s16 posX, s16 empty, struct PrimMem *primMem, uint32_t *otMem, u32 transparency)
 {
 	s16 leftX;
 	s16 sizeX;
@@ -102,10 +102,10 @@ void UI_Map_DrawMap_ExtraFunc(struct Icon *icon, POLY_FT4 *p, s16 posX, s16 empt
 	setPolyFT4(p);
 
 	// UVs
-	*(int *)&p->u0 = *(int *)&icon->texLayout.u0;
-	*(int *)&p->u1 = *(int *)&icon->texLayout.u1;
-	*(int *)&p->u2 = *(int *)&icon->texLayout.u2;
-	*(s16 *)&p->u3 = *(s16 *)&icon->texLayout.u3;
+	CtrGpu_WritePackedUVWord(&p->u0, CTR_ReadU32LE(&icon->texLayout.u0));
+	CtrGpu_WritePackedUVWord(&p->u1, CTR_ReadU32LE(&icon->texLayout.u1));
+	CtrGpu_WritePackedUVWord(&p->u2, CTR_ReadU32LE(&icon->texLayout.u2));
+	CtrGpu_WritePackedUV(&p->u3, CTR_ReadU16LE(&icon->texLayout.u3));
 
 	if (transparency != 0)
 	{
@@ -225,7 +225,7 @@ void UI_Map_DrawRawIcon(int ptrMap, int *param_2, int iconID, int colorID, int u
 {
 	int posX;
 	int posY;
-	int *ptrColor;
+	u32 *ptrColor;
 	struct GameTracker *gGT = sdata->gGT;
 
 	(void)unused;
@@ -318,7 +318,9 @@ void UI_Map_DrawGhosts(int ptrMap, struct Thread *bucket)
 
 		// if ghost not initialized
 		if (*(s16 *)((int)d + 0x632) == 0)
+		{
 			continue;
+		}
 
 		// ghost made by player
 		if (*(s16 *)((int)d + 0x630) == 0)
@@ -327,7 +329,9 @@ void UI_Map_DrawGhosts(int ptrMap, struct Thread *bucket)
 
 			color = CORTEX_RED;
 			if ((gGT->timer & 1) != 0)
+			{
 				color = CRASH_BLUE;
+			}
 		}
 
 		// ghost is N Tropy or Oxide
@@ -343,7 +347,9 @@ void UI_Map_DrawGhosts(int ptrMap, struct Thread *bucket)
 
 				color = RED;
 				if ((gGT->timer & 1) != 0)
+				{
 					color = WHITE;
+				}
 			}
 		}
 
@@ -368,7 +374,9 @@ void UI_Map_DrawTracking(int ptrMap, struct Thread *bucket)
 
 		// instance -> model -> modelID != warpball
 		if (inst->model->id != DYNAMIC_WARPBALL)
+		{
 			continue;
+		}
 
 		// == only draw warpball ==
 
@@ -381,14 +389,18 @@ void UI_Map_DrawTracking(int ptrMap, struct Thread *bucket)
 
 		// check if target exists
 		if (d == 0)
+		{
 			continue;
+		}
 
 		// == only draw target if target exists ==
 
 		// flicker
 		uVar1 = 4;
 		if ((sdata->gGT->timer & 1) != 0)
+		{
 			uVar1 = 3;
+		}
 
 		UI_Map_DrawRawIcon(ptrMap, (int *)&d->instSelf->matrix.t[0], 0x21, uVar1, 0, 0x1000);
 	}

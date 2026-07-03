@@ -3,8 +3,8 @@
 static void OVR233_ResetGarage(void);
 static void OVR233_ResetCreditsBSS(void);
 
-_Static_assert(sizeof(struct OverlayRDATA_233) == 0xbd90);
-_Static_assert(sizeof(void *) == 4);
+CTR_STATIC_ASSERT(sizeof(struct OverlayRDATA_233) == 0xbd90);
+CTR_STATIC_ASSERT(sizeof(void *) == 4);
 
 struct OverlayDATA_233 D233;
 
@@ -61,10 +61,10 @@ static const struct OVR233_Garage s_gGarageInitialState = OVR233_GARAGE_INITIALI
 struct OVR233_Garage gGarage = OVR233_GARAGE_INITIALIZER;
 
 // NOTE(aalhendi): Retail overlay data at 0x800b9488-0x800b9498.
-#define OVR233_CREDITS_BSS_INITIALIZER          \
-	{                                           \
-	    .creditGhost_Pos = {0x64, 0x3c, 0x12c}, \
-	    .creditText_PosX = 0x14,                \
+#define OVR233_CREDITS_BSS_INITIALIZER            \
+	{                                             \
+	    .creditGhost_Pos = {{0x64, 0x3c, 0x12c}}, \
+	    .creditText_PosX = 0x14,                  \
 	}
 
 static const struct Ovr233_Credits_BSS s_creditsBSSInitialState = OVR233_CREDITS_BSS_INITIALIZER;
@@ -145,7 +145,9 @@ char *CS_OVR233_TranslateRetailOpcodePointer(char *opCodeAt)
 	{
 		const struct Ovr233RetailPointerRange *range = &ranges[i];
 		if ((ptr >= range->retailStart) && (ptr < range->retailEnd))
+		{
 			return range->nativeStart + (ptr - range->retailStart);
+		}
 	}
 
 	return opCodeAt;

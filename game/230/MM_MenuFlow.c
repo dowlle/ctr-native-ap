@@ -55,7 +55,9 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 
 	// if scrapbook is unlocked, change "rows" to extended array
 	if (CHECK_ADV_BIT(sdata->gameProgress.unlocks, GAME_UNLOCK_BIT_SCRAPBOOK) != 0)
+	{
 		mainMenu->rows = &D230.rowsMainMenuWithScrapbook[0];
+	}
 
 	MM_ParseCheatCodes();
 	MM_ToggleRows_Difficulty();
@@ -392,7 +394,9 @@ void MM_ToggleRows_Difficulty(void)
 
 		// if -1 (for EASY row), skip
 		if (-1 == bitIndex)
+		{
 			continue;
+		}
 
 		// assume unlocked
 		uVar6 = 1;
@@ -426,7 +430,7 @@ void MM_ToggleRows_Difficulty(void)
 		    ((gGT->gameMode1 & ARCADE_MODE) != 0) &&
 
 		    // if you are in Arcade or VS cup
-		    ((gGT->gameMode2 & 0x10) != 0))
+		    ((gGT->gameMode2 & CUP_ANY_KIND) != 0))
 		{
 			// use high bits for "LOCKED"
 			uVar5 = uVar5 | 0x8000;
@@ -529,7 +533,9 @@ void MM_MenuProc_NewLoad(struct RectMenu *menu)
 	}
 
 	if ((row < 0) || (row > 1))
+	{
 		return;
+	}
 
 	// if Load was chosen
 	D230.desiredMenuIndex = row;

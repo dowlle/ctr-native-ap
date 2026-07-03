@@ -3,11 +3,11 @@
 struct HitboxDesc fjBoxDesc = {.inst = (struct Instance *)0,
                                .thread = (struct Thread *)0,
                                .bucket = (struct Thread *)0,
-                               .bbox = {.min = {0xFFC0, 0xFFC0, 0}, .max = {0x40, 0x80, 0x140}},
+                               .bbox = {.min = {{0xFFC0, 0xFFC0, 0}}, .max = {{0x40, 0x80, 0x140}}},
                                .threadHit = (struct Thread *)0,
                                .funcThCollide = (void *)0};
 
-SVec3 fjLightDir = {0x8B8, 0xD6A, 0};
+SVec3 fjLightDir = {{0x8B8, 0xD6A, 0}};
 
 struct ParticleEmitter emSet_fjHeat[0xb] = {[0] =
                                                 {
@@ -126,7 +126,7 @@ struct ParticleEmitter emSet_fjHeat[0xb] = {[0] =
                                                 },
 
                                             // null terminator
-                                            {}};
+                                            {0}};
 
 struct ParticleEmitter emSet_fjFire[0x8] = {[0] =
                                                 {
@@ -222,7 +222,7 @@ struct ParticleEmitter emSet_fjFire[0x8] = {[0] =
                                                 },
 
                                             // null terminator
-                                            {}};
+                                            {0}};
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b64c0-0x800b6728.
 void RB_FlameJet_Particles(struct Instance *inst, struct FlameJet *fjObj)
@@ -245,8 +245,8 @@ void RB_FlameJet_Particles(struct Instance *inst, struct FlameJet *fjObj)
 		particle1->axis[1].velocity = 0;
 		particle1->axis[2].velocity = (s16)fjObj->dirZ;
 
-		result = RngDeadCoed((u32 *)&gGT->deadcoed_struct);
-		result = MATH_Sin(gGT->timer * 0x100 + (result >> 0x18) & 0xfff);
+		result = RngDeadCoed(&gGT->deadcoed_struct);
+		result = MATH_Sin((gGT->timer * 0x100 + (result >> 0x18)) & 0xfff);
 		particle1->axis[1].accel = result >> 4;
 
 		particle1->unk1A = 0x1e00;
@@ -261,12 +261,16 @@ void RB_FlameJet_Particles(struct Instance *inst, struct FlameJet *fjObj)
 
 	// heat particle is 1P only
 	if (gGT->numPlyrCurrGame > 1)
+	{
 		return;
+	}
 
 #if defined(CTR_NATIVE)
 	// NOTE(aalhendi): Retail would read PS1 null-space if the fire particle allocation failed.
 	if (particle1 == NULL)
+	{
 		return;
+	}
 #endif
 
 	particle2 = Particle_Init(0, (struct IconGroup *)gGT->ptrSparkle, &emSet_fjHeat[0]);
@@ -322,7 +326,7 @@ void RB_FlameJet_ThTick(struct Thread *t)
 	// in first 45 frames (1.5s)
 	if (fjObj->cycleTimer < 0x2d)
 	{
-		PlaySound3D_Flags((u32 *)&fjObj->audioPtr, 0x68, fjInst);
+		PlaySound3D_Flags(&fjObj->soundIDCount, 0x68, fjInst);
 
 		// [unused variable?]
 		fjObj->unk += 0x100;
@@ -377,18 +381,22 @@ void RB_FlameJet_ThTick(struct Thread *t)
 	// on 45th frame (1.5s)
 	else if (fjObj->cycleTimer == 0x2d)
 	{
-		if (fjObj->audioPtr != 0)
-			OtherFX_RecycleMute(&fjObj->audioPtr);
+		if (fjObj->soundIDCount != 0)
+		{
+			OtherFX_RecycleMute(&fjObj->soundIDCount);
+		}
 	}
 
 	// repeat cycle every 105 (3.5s)
 	else if (fjObj->cycleTimer > 0x69)
+	{
 		fjObj->cycleTimer = 0;
+	}
 
 EndFjThTick:
 
 	fjObj->cycleTimer++;
-	Vector_SpecLightNoSpin3D(fjInst, &fjInst->instDef->rot.x, &fjLightDir);
+	Vector_SpecLightNoSpin3D(fjInst, &fjInst->instDef->rot, &fjLightDir);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b6938-0x800b6d58.
@@ -406,7 +414,9 @@ void RB_FlameJet_LInB(struct Instance *inst)
 	inst->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 
 	if (inst->thread != 0)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(
 	    // creation flags
@@ -418,7 +428,9 @@ void RB_FlameJet_LInB(struct Instance *inst)
 	);
 
 	if (t == 0)
+	{
 		return;
+	}
 	inst->thread = t;
 	t->inst = inst;
 
@@ -427,7 +439,7 @@ void RB_FlameJet_LInB(struct Instance *inst)
 	fjObj->cooldown = 0;
 	fjObj->dirX = inst->matrix.m[0][2] * -0x4b >> 5;
 	fjObj->dirZ = inst->matrix.m[2][2] * 0x4b >> 5;
-	fjObj->audioPtr = 0;
+	fjObj->soundIDCount = 0;
 
 	fjBoxDesc.bbox.min.x = -0x40;
 	fjBoxDesc.bbox.min.y = -0x40;

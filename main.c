@@ -19,45 +19,20 @@
 #define ExitCriticalSection()
 #endif
 
-#include "psx/types.h"
-#include "psx/libetc.h"
-#include "psx/libgte.h"
-#include "psx/libgpu.h"
-#include "psx/libspu.h"
-#include "psx/libcd.h"
-#include "psx/libapi.h"
-#include "psx/strings.h"
-#include "psx/inline_c.h"
 #include "platform/native_assets.h"
 #include "platform/native_log.h"
+#include "platform/native_memory.h"
 #include "platform/native_perf.h"
 #include "platform/native_replay_scheduler.h"
 #include "platform/native_savestate.h"
 
 #ifndef __GNUC__
-#define _Static_assert(x)
 #define __attribute__(x)
 #endif
 
-#define RECT RECT16
-typedef enum
-{
-	PAD_ID_MOUSE = 0x1,
-	PAD_ID_NEGCON = 0x2,
-	PAD_ID_IRQ10_GUN = 0x3,
-	PAD_ID_DIGITAL = 0x4,
-	PAD_ID_ANALOG_STICK = 0x5,
-	PAD_ID_GUNCON = 0x6,
-	PAD_ID_ANALOG = 0x7,
-	PAD_ID_MULTITAP = 0x8,
-	PAD_ID_JOGCON = 0xe,
-	PAD_ID_CONFIG_MODE = 0xf,
-	PAD_ID_NONE = 0xf
-} PadTypeID;
+#include <platform.h>
 
-#include "platform.h"
-
-#include "game_includes.h"
+#include "game/game_unity.h"
 
 #include "game/zGlobal_RDATA.c"
 #include "game/zGlobal_DATA.c"
@@ -65,12 +40,14 @@ typedef enum
 
 #undef RECT
 
+#include "platform/native_disc_image.c"
 #include "platform/native_assets.c"
 #include "platform/native_audio.c"
 #include "platform/native_memory.c"
 #include "platform/native_checkpoint.c"
 #include "platform/native_checkpoint_file.c"
 #include "platform/native_cd.c"
+#include "platform/native_gpu_links.c"
 #include "platform/native_gpu.c"
 #include "platform/native_gte_core.c"
 #include "platform/native_glad.c"
@@ -84,6 +61,7 @@ typedef enum
 #include "platform/native_libspu.c"
 #include "platform/native_log.c"
 #include "platform/native_memcard.c"
+#include "platform/native_memcard_adapter.c"
 #include "platform/native_perf.c"
 #include "platform/native_platform.c"
 #include "platform/native_replay_scheduler.c"
@@ -138,7 +116,7 @@ static int NativeConsole_ShouldPauseOnError(void)
 #endif
 }
 
-static int NativeConsole_Return(int result)
+static s32 NativeConsole_Return(const u32 result)
 {
 	if ((result != 0) && NativeConsole_ShouldPauseOnError())
 	{
@@ -152,7 +130,7 @@ static int NativeConsole_Return(int result)
 		}
 	}
 
-	return result;
+	return (s32)result;
 }
 
 // TODO(aalhendi): just make an argparser?
@@ -199,11 +177,15 @@ int main(int argc, char *argv[])
 	}
 
 	if (!NativeAssets_Validate())
+	{
 		return NativeConsole_Return(1);
+	}
 
 #if defined(CTR_INTERNAL)
 	if (NativeReplayScheduler_PrepareReportFromArgs(argc, argv) != 0)
+	{
 		return NativeConsole_Return(1);
+	}
 #endif
 
 #ifdef USE_16BY9
@@ -238,7 +220,7 @@ int main(int argc, char *argv[])
 	(void)argv;
 #endif
 
-	int result = CTR_Main();
+	const int result = CTR_Main();
 
 	Platform_Shutdown();
 	return NativeConsole_Return(result);

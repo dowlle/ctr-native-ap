@@ -75,7 +75,9 @@ int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)
 			pixLength += font_charPixWidth;
 		}
 
+#if BUILD >= JpnTrial
 	NextIteration:
+#endif
 		character++;
 		len--;
 	}
@@ -92,7 +94,7 @@ int DecalFont_GetLineWidth(char *str, s16 fontType)
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800224fc-0x80022878 for the retail path.
-void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType, int flags)
+void DecalFont_DrawLineStrlen(char *str, s16 len, int posX, s16 posY, s16 fontType, int flags)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -102,7 +104,9 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 		int alignX = DecalFont_GetLineWidthStrlen(str, len, fontType);
 
 		if (flags & JUSTIFY_CENTER)
+		{
 			alignX /= 2;
+		}
 
 		posX -= alignX;
 	}
@@ -118,9 +122,9 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 
 #endif
 
-	for (*str != 0; *str != 0 && len != 0; str++, len--)
+	for (; *str != 0 && len != 0; str++, len--)
 	{
-		u8 *strcopy = str;
+		u8 *strcopy = (u8 *)str;
 		u16 iconID = 0xff;
 		s16 charWidth = data.font_charPixWidth[fontType];
 		s16 pixWidthExtra = 0;
@@ -130,11 +134,11 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 #if BUILD == EurRetail
 
 		int numCharacters = 1;
-		int upsideDownCharacter = false;
+		b32 upsideDownCharacter = false;
 
 #endif
 
-		int *ptrColor = data.ptrColor[flags];
+		u32 *ptrColor = data.ptrColor[flags];
 
 #if BUILD >= JpnTrial
 
@@ -143,8 +147,8 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 			// if the current character in the string is a tilde, delete the next two characters and color the rest of the word depending on the characters
 			// being deleted used with numbers according to the color ID, e.g. ~01 gives the blue-ish gray color seen in the race lap count
 
-			u8 *strnext = str + 1;
-			u8 *strnextnext = str + 2;
+			u8 *strnext = (u8 *)str + 1;
+			u8 *strnextnext = (u8 *)str + 2;
 			str += 2;
 			len -= 2;
 			flags = (*strnextnext + (*strnext - 0x30) * 10) - 0x30;
@@ -156,7 +160,9 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 #endif
 
 		if (*strcopy == ':' || *strcopy == '.')
+		{
 			charWidth = data.font_puncPixWidth[fontType];
+		}
 
 		// if the character is one of the PSX buttons
 		// @ is circle, [ is square, ^ is triangle, * is X
@@ -326,7 +332,9 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 				iconID -= 0x80;
 				s16 kanaIconGroupID = 15;
 				if (iconGroupID == 4)
+				{
 					kanaIconGroupID = 14;
+				}
 				iconGroupID = kanaIconGroupID;
 			}
 
@@ -439,6 +447,7 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 // NOTE(aalhendi): Native can boot before every retail icon group is loaded.
 #ifdef CTR_NATIVE
 			if (gGT->iconGroup[iconGroupID] != 0)
+			{
 #endif
 
 				if (iconID < gGT->iconGroup[iconGroupID]->numIcons)
@@ -455,6 +464,7 @@ void DecalFont_DrawLineStrlen(u8 *str, s16 len, int posX, s16 posY, s16 fontType
 
 					                     0, iconScale);
 				}
+			}
 
 #elif BUILD == JpnTrial || BUILD == JpnRetail
 
@@ -524,10 +534,10 @@ void DecalFont_DrawLine(char *str, int posX, int posY, s16 fontType, int flags)
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800228c4-0x80022930.
-void DecalFont_DrawLineOT(char *str, int posX, int posY, s16 fontType, int flags, u_long *ot)
+void DecalFont_DrawLineOT(char *str, int posX, int posY, s16 fontType, int flags, uint32_t *ot)
 {
 	struct GameTracker *gGT;
-	u_long *backupOT;
+	uint32_t *backupOT;
 
 	gGT = sdata->gGT;
 
@@ -594,7 +604,9 @@ int DecalFont_DrawMultiLineStrlen(char *str, s16 len, s16 posX, s16 posY, s16 ma
 
 				// if nullptr, or out of letters, quit the loop
 				if ((strCharacter == '\0') || (lettersRemaining == 0))
+				{
 					break;
+				}
 
 				// if this is a letter, number, or symbol
 				if ((strCharacter != ' ') && (strCharacter != '\r'))
@@ -615,7 +627,9 @@ int DecalFont_DrawMultiLineStrlen(char *str, s16 len, s16 posX, s16 posY, s16 ma
 						// or a space (end of word),
 						// or the end of the line '\r'
 						if (((strCharacter == '\0') || (strCharacter == ' ')) || (strCharacter == '\r'))
+						{
 							break;
+						}
 					}
 				}
 
@@ -635,7 +649,9 @@ int DecalFont_DrawMultiLineStrlen(char *str, s16 len, s16 posX, s16 posY, s16 ma
 
 				                                  // check if this is new line
 				                                  strCharacter == '\r'))
+				{
 					break;
+				}
 			}
 		}
 
@@ -685,7 +701,9 @@ int DecalFont_DrawMultiLineStrlen(char *str, s16 len, s16 posX, s16 posY, s16 ma
 			len = len + -1;
 		}
 		if ((*strPointer == '\0') || (str = strPointer, len == 0))
+		{
 			goto EndFunction;
+		}
 	} while (1);
 }
 

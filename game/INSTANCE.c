@@ -197,7 +197,6 @@ void INSTANCE_Death(struct Instance *inst)
 // param2 - number of instances
 void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 {
-	s16 sVar5;
 	u16 modelID;
 	int *dst;
 	int *src;
@@ -274,7 +273,7 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		struct InstDrawPerPlayer *idpp = INST_GETIDPP(inst);
 
 		// loop through InstDrawPerPlayer
-		for (char j = 0; j < gGT->numPlyrCurrGame; j++)
+		for (s32 j = 0; j < gGT->numPlyrCurrGame; j++)
 		{
 			idpp[j].mh = 0;
 			idpp[j].pushBuffer = &gGT->pushBuffer[j];
@@ -299,9 +298,9 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 			}
 		}
 
-		int boolArcadeOnly = ((((u32)modelID - PU_FRUIT_CRATE) < 2) || (modelID == PU_WUMPA_FRUIT));
+		b32 boolArcadeOnly = ((((u32)modelID - PU_FRUIT_CRATE) < 2) || (modelID == PU_WUMPA_FRUIT));
 
-		int boolRelicOnly = ((((u32)modelID - STATIC_TIME_CRATE_02) < 2) || (modelID == STATIC_TIME_CRATE_01));
+		b32 boolRelicOnly = ((((u32)modelID - STATIC_TIME_CRATE_02) < 2) || (modelID == STATIC_TIME_CRATE_01));
 
 		if ((gGT->gameMode1 & TIME_TRIAL) != 0)
 		{
@@ -314,7 +313,9 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		else if ((gGT->gameMode1 & RELIC_RACE) != 0)
 		{
 			if (boolArcadeOnly)
+			{
 				inst->flags &= ~DRAW_COLLISION_MASK;
+			}
 
 			if (boolRelicOnly)
 			{
@@ -328,10 +329,13 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		else if ((gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
 		{
 			if (modelID == STATIC_CRYSTAL)
+			{
 				gGT->numCrystalsInLEV++;
-
+			}
 			else if (modelID == PU_FRUIT_CRATE)
+			{
 				inst->flags &= ~DRAW_COLLISION_MASK;
+			}
 		}
 
 		// If NOT crystal challenge
@@ -350,7 +354,9 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		{
 			// disable C-T-R letters
 			if ((u32)(modelID - STATIC_C) < 3)
+			{
 				inst->flags &= ~DRAW_COLLISION_MASK;
+			}
 		}
 
 		// next InstDef
@@ -367,7 +373,9 @@ void INSTANCE_LevDelayedLInBs(struct InstDef *instDef, int numInstances)
 		struct MetaDataMODEL *meta = COLL_LevModelMeta(instDef->model->id);
 
 		if ((meta != NULL) && (meta->LInB != NULL))
+		{
 			meta->LInB(instDef->ptrInstance);
+		}
 
 		instDef++;
 	}
@@ -386,25 +394,31 @@ u16 INSTANCE_GetNumAnimFrames(struct Instance *pInstance, int animIndex)
 
 	// get model from instance and validate
 	if (pModel = pInstance->model, pModel != NULL)
-
+	{
 		// if model got headers
 		if (pModel->numHeaders > 0)
-
+		{
 			// get first header ptr and validate
 			if (pHeader = pModel->headers, pHeader != NULL)
-
+			{
 				// if header got animations
 				if (pHeader->ptrAnimations != NULL)
-
+				{
 					// validate anim index param
 					if (animIndex < (int)pHeader->numAnimations)
-
+					{
 						// get proper animation ptr and validate
 						if (pAnim = *(pHeader->ptrAnimations + animIndex), pAnim != NULL)
-
+						{
 							// we're finally there, get number of frames
 							// remember it's masked due to interp flag
 							return pAnim->numFrames & 0x7fff;
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// any other case
 	return 0;

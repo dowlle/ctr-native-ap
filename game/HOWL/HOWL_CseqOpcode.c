@@ -14,15 +14,21 @@ void cseq_opcode01_noteoff(struct SongSeq *seq)
 
 		// type != MUSIC
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		// not the sound needed to turn off
 		if (curr->soundID != soundID)
+		{
 			continue;
+		}
 
 		// need a struct for Note offset 0x1
 		if (curr->drumIndex_pitchIndex != currNote[1])
+		{
 			continue;
+		}
 
 		// enable OFF(1) flag, disable ON(2) flag
 		flagPtr = &sdata->ChannelUpdateFlags[curr->channelID];
@@ -127,7 +133,6 @@ void howl_InitChannelAttr_Music(struct SongSeq *seq, struct ChannelAttr *attr, i
 void cseq_opcode_from06and07(struct SongSeq *seq)
 {
 	struct ChannelStats *curr, *backupNext;
-	u8 *currNote = seq->currNote;
 	int soundID = seq->soundID;
 	int songIndex = seq->songPoolIndex;
 
@@ -139,11 +144,15 @@ void cseq_opcode_from06and07(struct SongSeq *seq)
 
 		// type != MUSIC
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		// not the sound needed to turn off
 		if (curr->soundID != soundID)
+		{
 			continue;
+		}
 
 		Channel_SetVolume(&sdata->channelAttrNew[curr->channelID], CTR_MipsSra(CTR_MipsMulLo(sampleVol, curr->vol), 18), seq->LR);
 
@@ -161,11 +170,17 @@ void cseq_opcode05_noteon(struct SongSeq *seq)
 	struct ChannelAttr attr;
 
 	if (sdata->vol_Music == 0)
+	{
 		return;
+	}
 	if (sdata->songPool[songIndex].vol_Curr == 0)
+	{
 		return;
+	}
 	if (seq->vol_Curr == 0)
+	{
 		return;
+	}
 
 	currNote = seq->currNote;
 
@@ -174,7 +189,9 @@ void cseq_opcode05_noteon(struct SongSeq *seq)
 	stats = Channel_AllocSlot(0x7c, &attr);
 
 	if (stats == 0)
+	{
 		return;
+	}
 
 	stats->flags |= 0xe;
 
@@ -228,11 +245,15 @@ void cseq_opcode08(struct SongSeq *seq)
 
 		// type != MUSIC
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		// not the sound needed to turn off
 		if (curr->soundID != soundID)
+		{
 			continue;
+		}
 
 		// set reverb
 		sdata->channelAttrNew[curr->channelID].reverb = currNote[1];
@@ -265,11 +286,15 @@ void cseq_opcode0a(struct SongSeq *seq)
 
 		// type != MUSIC
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		// not the sound needed to turn off
 		if (curr->soundID != soundID)
+		{
 			continue;
+		}
 
 		int index = curr->drumIndex_pitchIndex;
 

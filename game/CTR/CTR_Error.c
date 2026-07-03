@@ -14,7 +14,9 @@ void CTR_ErrorScreen(char r, char g, char b)
 
 		// save a little asm
 		if (i == 2)
+		{
 			return;
+		}
 
 		// prim code = 0 (cause bitshifted),
 		// with bit-flag parameter '2'
@@ -33,6 +35,6 @@ void CTR_ErrorScreen(char r, char g, char b)
 		p.g0 = g;
 		p.b0 = b;
 
-		DrawOTag((u_long *)&p);
+		DrawOTag(&p);
 	}
 }

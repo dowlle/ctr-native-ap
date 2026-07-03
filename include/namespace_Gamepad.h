@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_GAMEPAD_H
+#define CTR_NATIVE_NAMESPACE_GAMEPAD_H
+
 // an exact copy of the PadButton enum in PSn00bSDK's psxpad header, for whatever reason
 // minus raw input data for non-standard controllers
 enum RawInput
@@ -47,6 +50,15 @@ enum Buttons
 	BTN_L3 = 0x10000,
 	BTN_R3 = 0x20000,
 	BTN_TRIANGLE = 0x40000
+};
+
+struct GamepadButtonMap
+{
+	// 0x0
+	u8 rawInput[4];
+
+	// 0x4
+	u32 buttons;
 };
 
 enum Plug
@@ -121,27 +133,37 @@ struct __attribute__((packed)) ControllerPacket
 
 struct __attribute__((packed)) MultitapPacket
 {
-	// 0x0
-	// see ControllerPacket
-	u8 plugged;
-
-	// 0x1
-	// ditto
 	union
 	{
 		struct
 		{
-			u8 payloadLength : 4;
-			u8 controllerType : 4;
-		};
-		u8 controllerData;
-	};
+			// 0x0
+			// see ControllerPacket
+			u8 plugged;
 
-	// 0x2
-	struct ControllerPacket controllers[4];
+			// 0x1
+			// ditto
+			union
+			{
+				struct
+				{
+					u8 payloadLength : 4;
+					u8 controllerType : 4;
+				};
+				u8 controllerData;
+			};
+
+			// 0x2
+			struct ControllerPacket controllers[4];
+		};
+		struct ControllerPacket controller;
+	};
 
 	// 34 bytes
 };
+
+CTR_STATIC_ASSERT(sizeof(struct ControllerPacket) == 8);
+CTR_STATIC_ASSERT(sizeof(struct MultitapPacket) == 34);
 
 struct GamepadBuffer
 {
@@ -206,13 +228,13 @@ struct GamepadBuffer
 	// if power is above the 60-unit hardware budget
 
 	// 0x2A
-	char motorDesired[2];
+	u8 motorDesired[2];
 
 	// 0x2C
-	char motorPower[2];
+	u8 motorPower[2];
 
 	// 0x2E
-	char motorSubmit[2];
+	u8 motorSubmit[2];
 
 	// === DualShock ===
 
@@ -330,12 +352,15 @@ struct RacingWheelData
 	s16 range;
 };
 
-_Static_assert(sizeof(struct GamepadBuffer) == 0x50);
+CTR_STATIC_ASSERT(sizeof(struct GamepadBuffer) == 0x50);
+CTR_STATIC_ASSERT(sizeof(struct GamepadButtonMap) == 0x8);
 #if BUILD <= SepReview
-_Static_assert(sizeof(struct GamepadSystem) == 0x2D4);
+CTR_STATIC_ASSERT(sizeof(struct GamepadSystem) == 0x2D4);
 #elif BUILD < EurRetail
-_Static_assert(sizeof(struct GamepadSystem) == 0x31C);
+CTR_STATIC_ASSERT(sizeof(struct GamepadSystem) == 0x31C);
 #else
-_Static_assert(sizeof(struct GamepadSystem) == 0x320);
+CTR_STATIC_ASSERT(sizeof(struct GamepadSystem) == 0x320);
 #endif
-_Static_assert(sizeof(struct RacingWheelData) == 6);
+CTR_STATIC_ASSERT(sizeof(struct RacingWheelData) == 6);
+
+#endif

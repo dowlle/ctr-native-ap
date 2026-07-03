@@ -42,7 +42,7 @@ void LevInstDef_UnPack(struct mesh_info *ptr_mesh_info)
 }
 
 
-void LevInstDef_RePack(struct mesh_info *ptr_mesh_info, int boolAdvHub)
+void LevInstDef_RePack(struct mesh_info *ptr_mesh_info, b32 boolAdvHub)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80031268-0x800313c8.
 	int i;
@@ -86,7 +86,9 @@ void LevInstDef_RePack(struct mesh_info *ptr_mesh_info, int boolAdvHub)
 			{
 				th = inst->thread;
 				if (th != 0)
+				{
 					th->flags |= THREAD_FLAG_DEAD;
+				}
 
 				// erase instance in pool
 				LIST_AddFront(&sdata->gGT->JitPools.instance.free, (struct Item *)inst);

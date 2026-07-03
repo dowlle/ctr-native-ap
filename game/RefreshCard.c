@@ -6,13 +6,15 @@ int RefreshCard_BoolGhostForLEV(u16 trackID)
 {
 	int i;
 	int count = 0;
-	int numGhosts = *(s16 *)&sdata->numGhostProfilesSaved;
+	int numGhosts = (s16)CTR_ReadU16LE(&sdata->numGhostProfilesSaved);
 	s16 levelID = trackID;
 
 	for (i = 0; i < numGhosts; i++)
 	{
 		if (sdata->ghostProfile_memcard[i].trackID == levelID)
+		{
 			count++;
+		}
 	}
 
 	return (s16)count;
@@ -34,17 +36,25 @@ int RefreshCard_GetResult(int result)
 	if (result16 == 8)
 	{
 		if ((sdata->memcardUnk1 & 6) != 0)
+		{
 			return 1;
+		}
 	}
 
 	if ((sdata->memcardUnk1 & 6) != 0)
+	{
 		return 0;
+	}
 
 	if (sdata->frame3_memcardAction != sdata->frame4_memcardAction)
+	{
 		return 0;
+	}
 
 	if (sdata->frame3_memcardSlot != sdata->frame4_memcardSlot)
+	{
 		return 0;
+	}
 
 	return sdata->desired_memcardResult == result16;
 }
@@ -56,16 +66,24 @@ u32 RefreshCard_GhostEncodeByte(int currByte)
 	s16 byte = currByte;
 
 	if (byte < 10)
+	{
 		return (currByte + '0') & 0xff;
+	}
 
 	if (byte < 0x24)
+	{
 		return (currByte + 0x37) & 0xff;
+	}
 
 	if (byte < 0x3e)
+	{
 		return (currByte + 0x3d) & 0xff;
+	}
 
 	if (byte == 0x3e)
+	{
 		return '-';
+	}
 
 	return '_';
 }
@@ -93,7 +111,9 @@ static int RefreshCard_GhostProfileNameExists(char *profileName)
 	for (i = 0; i < sdata->numGhostProfilesSaved; i++)
 	{
 		if (strcmp(sdata->ghostProfile_memcard[i].profile_name, profileName) == 0)
+		{
 			return 1;
+		}
 	}
 
 	return 0;
@@ -113,7 +133,9 @@ void RefreshCard_GhostEncodeProfile(u32 slotIndex, u16 characterID, u16 levelID,
 		isUnique = 1;
 
 		if (time > 0x8c9ff)
+		{
 			time = 0x8c9ff;
+		}
 
 		packed = (u32)characterID32 | ((u32)((s32)(s16)levelID << 4)) | ((u32)time << 9) | (slotIndex << 0x1d);
 		data.s_BASCUS_94426G_Question[13] = RefreshCard_GhostEncodeByte(packed & 0x3f);
@@ -125,7 +147,9 @@ void RefreshCard_GhostEncodeProfile(u32 slotIndex, u16 characterID, u16 levelID,
 		data.s_BASCUS_94426G_Question[19] = '\0';
 
 		if (RefreshCard_GhostProfileNameExists(data.s_BASCUS_94426G_Question) != 0)
+		{
 			isUnique = 0;
+		}
 
 		slotIndex = (slotIndex + 1) & 7;
 	} while (isUnique == 0);
@@ -150,7 +174,7 @@ void RefreshCard_GhostEncodeProfile(u32 slotIndex, u16 characterID, u16 levelID,
 	*(u8 *)&profile->alwaysOne = 1;
 	profile->trackID = levelID;
 	profile->characterID = characterID;
-	*(s16 *)&profile->memcardProfileIndex = slotIndex;
+	CTR_WriteU16LE(&profile->memcardProfileIndex, (u16)slotIndex);
 	profile->trackTime = time;
 }
 
@@ -161,16 +185,24 @@ int RefreshCard_GhostDecodeByte(int value)
 	u8 byte = value;
 
 	if (byte == '-')
+	{
 		return 0x3e;
+	}
 
 	if (byte == '_')
+	{
 		return 0x3f;
+	}
 
 	if (byte < ':')
+	{
 		return byte - '0';
+	}
 
 	if (byte < '[')
+	{
 		return (s16)(byte - 0x37);
+	}
 
 	return (s16)(byte - 0x3d);
 }
@@ -227,21 +259,21 @@ void RefreshCard_SetScreenText(int screenText)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800471e8-0x80047224.
 void RefreshCard_Unknown2(void)
 {
-	if (*(s16 *)&sdata->boolAdvProfilesChecked == 0)
+	if ((s16)CTR_ReadU16LE(&sdata->boolAdvProfilesChecked) == 0)
 	{
 		GAMEPROG_InitFullMemcard((struct MemcardProfile *)sdata->ptrToMemcardBuffer1);
-		*(s16 *)&sdata->boolAdvProfilesChecked = 1;
+		CTR_WriteU16LE(&sdata->boolAdvProfilesChecked, 1);
 	}
 
-	*(s16 *)&sdata->unk8008d95c = 1;
-	*(s16 *)&sdata->unk_memcardRelated_8008d928[0] = 0;
+	CTR_WriteU16LE(&sdata->unk8008d95c, 1);
+	CTR_WriteU16LE(&sdata->unk_memcardRelated_8008d928[0], 0);
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80047224-0x80047230.
 void RefreshCard_GetNumGhostsTotal(void)
 {
-	*(s16 *)&sdata->numGhostProfilesSaved = 0;
+	CTR_WriteU16LE(&sdata->numGhostProfilesSaved, 0);
 }
 
 
@@ -250,9 +282,9 @@ void RefreshCard_GameProgressAndOptions(void)
 {
 	struct MemcardProfile *memcard;
 
-	*(s16 *)&sdata->unk8008d95c = 1;
-	*(s16 *)&sdata->unk_memcardRelated_8008d928[0] = 1;
-	*(s16 *)&sdata->advProfileIndex = -1;
+	CTR_WriteU16LE(&sdata->unk8008d95c, 1);
+	CTR_WriteU16LE(&sdata->unk_memcardRelated_8008d928[0], 1);
+	CTR_WriteU16LE(&sdata->advProfileIndex, (u16)-1);
 
 	memcard = (struct MemcardProfile *)sdata->ptrToMemcardBuffer1;
 
@@ -428,8 +460,8 @@ void RefreshCard_Unknown3(void)
 	if (RefreshCard_GetResult(MC_RESULT_READY_LOAD) != 0)
 	{
 		RefreshCard_Unknown2();
-		*(s16 *)&sdata->unk8008d95c = 0;
-		*(s16 *)&sdata->boolAdvProfilesChecked = 0;
+		CTR_WriteU16LE(&sdata->unk8008d95c, 0);
+		CTR_WriteU16LE(&sdata->boolAdvProfilesChecked, 0);
 		RefreshCard_SetScreenText(MC_SCREEN_LOADING);
 		RefreshCard_QueueMainLoad();
 		sdata->boolError = 0;
@@ -447,7 +479,9 @@ void RefreshCard_Unknown3(void)
 	}
 
 	if (RefreshCard_GetResult(MC_RESULT_READY_SAVE) == 0)
+	{
 		goto done;
+	}
 
 	sdata->boolError = 1;
 
@@ -479,7 +513,7 @@ void RefreshCard_Unknown3(void)
 			}
 		}
 
-		*(s16 *)&sdata->unk8008d964 = 1;
+		CTR_WriteU16LE(&sdata->unk8008d964, 1);
 		sdata->mcStart = 2;
 		RefreshCard_SetScreenText(MC_SCREEN_NULL);
 		RefreshCard_QueueGetInfo();
@@ -519,8 +553,8 @@ void RefreshCard_Unknown3(void)
 		{
 			RefreshCard_GetNumGhostsTotal();
 			RefreshCard_Unknown2();
-			*(s16 *)&sdata->unk8008d95c = 0;
-			*(s16 *)&sdata->boolAdvProfilesChecked = 0;
+			CTR_WriteU16LE(&sdata->unk8008d95c, 0);
+			CTR_WriteU16LE(&sdata->boolAdvProfilesChecked, 0);
 			RefreshCard_SetScreenText(MC_SCREEN_LOADING);
 			RefreshCard_QueueMainLoad();
 			sdata->boolError = 0;
@@ -532,10 +566,10 @@ void RefreshCard_Unknown3(void)
 	if (sdata->mcStart == 5)
 	{
 		sdata->boolReplayHumanGhost = 1;
-		*(s16 *)&sdata->unk8008d964 = 1;
+		CTR_WriteU16LE(&sdata->unk8008d964, 1);
 		RefreshCard_SetScreenText(MC_SCREEN_NULL);
 	}
-	else if (*(int *)sdata->ptrToMemcardBuffer2 == 0x1600ffee)
+	else if (CTR_ReadU32LE(sdata->ptrToMemcardBuffer2) == 0x1600ffee)
 	{
 		sdata->boolMemcardDataValid = 0;
 		RefreshCard_GameProgressAndOptions();
@@ -554,7 +588,9 @@ void RefreshCard_Unknown3(void)
 
 done:
 	if ((keepPolling != 0) && (RefreshCard_GetResult(MC_RESULT_PENDING) == 0))
+	{
 		RefreshCard_QueueGetInfo();
+	}
 }
 
 
@@ -579,7 +615,9 @@ void RefreshCard_Unknown4(void)
 
 		sdata->memcardUnk1 &= ~1;
 		if ((sdata->memcardUnk1 & 2) == 0)
+		{
 			sdata->memcardUnk1 &= ~4;
+		}
 
 		switch (sdata->frame1_memcardAction)
 		{
@@ -636,7 +674,9 @@ void RefreshCard_Unknown4(void)
 		{
 			sdata->desired_memcardResult = MC_RESULT_READY_LOAD;
 			if ((sdata->memcardUnk1 & 8) == 0)
+			{
 				sdata->desired_memcardResult = MC_RESULT_READY_SAVE;
+			}
 		}
 		break;
 	case MC_RETURN_TIMEOUT:
@@ -649,7 +689,9 @@ void RefreshCard_Unknown4(void)
 	case MC_RETURN_NEWCARD:
 		sdata->desired_memcardResult = MC_RESULT_NEWCARD;
 		if (sdata->frame1_memcardAction == MC_ACTION_Format)
+		{
 			sdata->desired_memcardResult = MC_RESULT_READY_SAVE;
+		}
 		break;
 	case MC_RETURN_FULL:
 		sdata->desired_memcardResult = MC_RESULT_FULL;

@@ -16,8 +16,7 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	s16 sVar1;
 	int stringColor;
 	u32 lapIndex;
-	u32 uVar3;
-	u8 *totalTimeString;
+	char *totalTimeString;
 	int iVar5;
 	int numParamY;
 	int iVar7;
@@ -27,7 +26,6 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	int str;
 	int posX;
 	int numLaps;
-	int levID;
 
 	int strOffset;
 
@@ -281,7 +279,9 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 				{
 					// If you're in Arcade Mode
 					if ((gGT->gameMode1 & ARCADE_MODE) != 0)
+					{
 						goto LAB_8004f84c;
+					}
 
 					// Set lap number in "Ln" string
 					sdata->s_Ln[1] = (char)numLaps + '1';
@@ -351,9 +351,6 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	// If did not unlock relic, draw NEXT goal
 	if ((gGT->gameModeEnd & NEW_RELIC) == 0)
 	{
-		// Level ID
-		levID = gGT->levelID;
-
 		// if you have gold or platinum, draw platinum
 		if ((CHECK_ADV_BIT(rewardsSet, gGT->levelID + ADV_REWARD_FIRST_PLATINUM_RELIC) != 0) ||
 		    (CHECK_ADV_BIT(rewardsSet, gGT->levelID + ADV_REWARD_FIRST_GOLD_RELIC) != 0))
@@ -376,7 +373,9 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	{
 		// if owned plat, draw plat
 		if (CHECK_ADV_BIT(rewardsSet, gGT->levelID + ADV_REWARD_FIRST_PLATINUM_RELIC) != 0)
+		{
 			goto DrawPlatinum;
+		}
 
 		// if own gold, draw gold,
 		// if own blue, draw blue

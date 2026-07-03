@@ -260,7 +260,7 @@ void GAMEPROG_NewProfile_InsideAdv(struct AdvProgress *adv)
 void GAMEPROG_SaveCupProgress(void)
 {
 	int i;
-	int *prog;
+	u32 *prog;
 	int bitIndex1;
 	int bitIndex2;
 

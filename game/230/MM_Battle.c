@@ -1,10 +1,12 @@
 #include <common.h>
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abaa8-0x800abaf0.
-void MM_Battle_DrawIcon_Character(struct Icon *icon, int posX, int posY, struct PrimMem *primMem, u_long *ot, char transparency, s16 scale)
+void MM_Battle_DrawIcon_Character(struct Icon *icon, int posX, int posY, struct PrimMem *primMem, uint32_t *ot, char transparency, s16 scale)
 {
 	if (icon == 0)
+	{
 		return;
+	}
 	DecalHUD_DrawPolyFT4(icon, posX, posY, primMem, ot, transparency, scale);
 }
 
@@ -18,13 +20,15 @@ void MM_Battle_CloseSubMenu(struct RectMenu *menu)
 void MM_Battle_DrawIcon_Weapon(struct Icon *icon, u32 posX, int posY, struct PrimMem *primMem, u32 *ot, char transparency, s16 param_7, u16 param_8, u32 *color)
 {
 	if (!icon)
+	{
 		return;
+	}
 
 	POLY_FT4 *p = (POLY_FT4 *)primMem->cursor;
 
-	u32 uv0 = *(u32 *)&icon->texLayout.u0;
-	u32 uv1 = *(u32 *)&icon->texLayout.u1;
-	u32 uv2 = *(u32 *)&icon->texLayout.u2;
+	u32 uv0 = CTR_ReadU32LE(&icon->texLayout.u0);
+	u32 uv1 = CTR_ReadU32LE(&icon->texLayout.u1);
+	u32 uv2 = CTR_ReadU32LE(&icon->texLayout.u2);
 	s32 scaledWidth = (((s32)((u8)icon->texLayout.u1 - (u8)icon->texLayout.u0)) * param_7) >> 0xc;
 	s32 scaledHeight = (((s32)((u8)icon->texLayout.v2 - (u8)icon->texLayout.v0)) * param_7) >> 0xc;
 	u32 code = 0x2c000000;
@@ -40,11 +44,11 @@ void MM_Battle_DrawIcon_Weapon(struct Icon *icon, u32 posX, int posY, struct Pri
 		uv1 = (uv1 & 0xff9fffff) | ((((u32)(u8)transparency - 1) << 0x15));
 	}
 
-	*(u32 *)&p->r0 = (*color & 0xffffff) | code;
-	*(u32 *)&p->u0 = uv0;
-	*(u32 *)&p->u1 = uv1;
-	*(u16 *)&p->u2 = (u16)uv2;
-	*(u16 *)&p->u3 = (u16)(uv2 >> 0x10);
+	CtrGpu_WriteColorCode(&p->r0, (*color & 0xffffff) | code);
+	CtrGpu_WritePackedUVWord(&p->u0, uv0);
+	CtrGpu_WritePackedUVWord(&p->u1, uv1);
+	CtrGpu_WritePackedUV(&p->u2, (u16)uv2);
+	CtrGpu_WritePackedUV(&p->u3, (u16)(uv2 >> 0x10));
 
 	if ((param_8 & 1) != 0)
 	{
@@ -53,17 +57,17 @@ void MM_Battle_DrawIcon_Weapon(struct Icon *icon, u32 posX, int posY, struct Pri
 
 		if ((s16)param_8 == 1)
 		{
-			*(u32 *)&p->x1 = posX | packedY;
-			*(u32 *)&p->x3 = sidewaysX | packedY;
-			*(u32 *)&p->x0 = posX | packedSideY;
-			*(u32 *)&p->x2 = sidewaysX | packedSideY;
+			CtrGpu_WritePackedXY(&p->x1, posX | packedY);
+			CtrGpu_WritePackedXY(&p->x3, sidewaysX | packedY);
+			CtrGpu_WritePackedXY(&p->x0, posX | packedSideY);
+			CtrGpu_WritePackedXY(&p->x2, sidewaysX | packedSideY);
 		}
 		else
 		{
-			*(u32 *)&p->x2 = posX | packedY;
-			*(u32 *)&p->x0 = sidewaysX | packedY;
-			*(u32 *)&p->x3 = posX | packedSideY;
-			*(u32 *)&p->x1 = sidewaysX | packedSideY;
+			CtrGpu_WritePackedXY(&p->x2, posX | packedY);
+			CtrGpu_WritePackedXY(&p->x0, sidewaysX | packedY);
+			CtrGpu_WritePackedXY(&p->x3, posX | packedSideY);
+			CtrGpu_WritePackedXY(&p->x1, sidewaysX | packedSideY);
 		}
 	}
 	else
@@ -73,22 +77,22 @@ void MM_Battle_DrawIcon_Weapon(struct Icon *icon, u32 posX, int posY, struct Pri
 
 		if (((u32)param_8 << 0x10) == 0)
 		{
-			*(u32 *)&p->x0 = posX | packedY;
-			*(u32 *)&p->x1 = rightX | packedY;
-			*(u32 *)&p->x2 = posX | packedBottomY;
-			*(u32 *)&p->x3 = rightX | packedBottomY;
+			CtrGpu_WritePackedXY(&p->x0, posX | packedY);
+			CtrGpu_WritePackedXY(&p->x1, rightX | packedY);
+			CtrGpu_WritePackedXY(&p->x2, posX | packedBottomY);
+			CtrGpu_WritePackedXY(&p->x3, rightX | packedBottomY);
 		}
 		else
 		{
-			*(u32 *)&p->x3 = posX | packedY;
-			*(u32 *)&p->x2 = rightX | packedY;
-			*(u32 *)&p->x1 = posX | packedBottomY;
-			*(u32 *)&p->x0 = rightX | packedBottomY;
+			CtrGpu_WritePackedXY(&p->x3, posX | packedY);
+			CtrGpu_WritePackedXY(&p->x2, rightX | packedY);
+			CtrGpu_WritePackedXY(&p->x1, posX | packedBottomY);
+			CtrGpu_WritePackedXY(&p->x0, rightX | packedBottomY);
 		}
 	}
 
-	*(int *)p = *(int *)ot | 0x9000000;
-	*(int *)ot = (int)CtrGpu_PrimToOTLink24(p);
+	p->tag = CtrGpu_PackOTTag(*ot, 0x9000000);
+	*ot = CtrGpu_PrimToOTLink24(p);
 
 	primMem->cursor = p + 1;
 }
@@ -114,7 +118,6 @@ void MM_Battle_MenuProc(struct RectMenu *unused)
 	int iVar13;
 	int iVar16;
 	u32 uVar17;
-	s16 *puVar18;
 	s16 sVar20;
 	RECT local_60;
 	u16 local_60b[4];
@@ -125,7 +128,6 @@ void MM_Battle_MenuProc(struct RectMenu *unused)
 	RECT local_40;
 	s16 local_38;
 	s16 local_36;
-	Color color_;
 
 	struct RectMenu *box;
 	struct GameTracker *gGT = sdata->gGT;
@@ -225,9 +227,13 @@ void MM_Battle_MenuProc(struct RectMenu *unused)
 	for (int i = 0; i < 4; i++)
 	{
 		if ((gGT->battleSetup.teamFlags & (1 << i)) == 0)
+		{
 			gGT->battleSetup.pointsPerTeam[i] = -500;
+		}
 		else
+		{
 			gGT->battleSetup.pointsPerTeam[i] = 0;
+		}
 	}
 
 	// Related to Battle mode
@@ -486,7 +492,9 @@ void MM_Battle_MenuProc(struct RectMenu *unused)
 						else
 						{
 							if ((D230.menuBattleType.rowSelected == 2) && (sdata->battleSetupRowHighlighted == 10))
+							{
 								goto LAB_800b1d7c;
+							}
 						}
 					}
 				}
@@ -710,7 +718,9 @@ void MM_Battle_MenuProc(struct RectMenu *unused)
 			goto LAB_800b25f0;
 		}
 		if (D230.menuBattleType.rowSelected != 0)
+		{
 			goto LAB_800b25f0;
+		}
 		box = &D230.menuBattleLengthPoints;
 	}
 
@@ -779,7 +789,7 @@ LAB_800b25f0:
 		}
 	}
 
-	u_long *ot = gGT->backBuffer->otMem.uiOT;
+	uint32_t *ot = gGT->backBuffer->otMem.uiOT;
 
 	for (i = 0; i < 4; i++)
 	{
@@ -819,7 +829,7 @@ LAB_800b25f0:
 		local_50.x = tmbattle[4].currX + 0x9c + 0;
 		local_50.y = tmbattle[4].currY + sVar20 + 3;
 
-		CTR_Box_DrawClearBox(&local_50, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, (u_long *)ot);
+		CTR_Box_DrawClearBox(&local_50, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, (uint32_t *)ot);
 	}
 
 	local_40.w = 0x140;
@@ -934,7 +944,7 @@ LAB_800b25f0:
 		j = (u32)local_40.y + 2 + j * 0x20;
 
 		// If the icon is bowling bomb or missile on the 2nd row
-		if ((i - 7U & 0xffff) < 2)
+		if (((i - 7U) & 0xffff) < 2)
 		{
 			// draw the "3" over the icons
 			DecalFont_DrawLine(&R230.s_3[0], iVar13, j, 2, uVar17);
@@ -964,7 +974,8 @@ LAB_800b25f0:
 	local_58.w = local_40.w - 6;
 	local_58.h = local_40.h - 4;
 
-	CTR_Box_DrawClearBox(&local_58, (Color *)&D230.color3, TRANS_50_DECAL, ot);
+	Color boxColor = {.self = D230.color3};
+	CTR_Box_DrawClearBox(&local_58, &boxColor, TRANS_50_DECAL, ot);
 
 	RECTMENU_DrawInnerRect(&local_40, 0, ot);
 

@@ -1,5 +1,6 @@
 #include <macros.h>
 #include <platform/native_assets.h>
+#include <platform/native_disc_image.h>
 #include <platform/native_renderer.h>
 #include <platform/native_str.h>
 #include <psx/libgpu.h>
@@ -16,7 +17,6 @@
 #define NATIVE_STR_MAX_RECORD_SIZE          NATIVE_STR_CD_SECTOR_SIZE
 #define NATIVE_STR_MAX_FRAME_SECTORS        10
 #define NATIVE_STR_MAX_FRAME_BYTES          (NATIVE_STR_MAX_FRAME_SECTORS * NATIVE_STR_CD_SECTOR_PAYLOAD)
-#define NATIVE_STR_PATH_MAX                 1024
 #define NATIVE_STR_MAX_WIDTH                512
 #define NATIVE_STR_MAX_HEIGHT               240
 #define NATIVE_STR_ID                       0x80010160u
@@ -33,13 +33,25 @@ enum NativeSTRFormat
 	NATIVE_STR_FORMAT_CD_STREAM,
 };
 
+enum NativeSTRSource
+{
+	NATIVE_STR_SOURCE_NONE,
+	NATIVE_STR_SOURCE_HOST_FILE,
+	NATIVE_STR_SOURCE_DISC,
+};
+
 struct NativeSTRState
 {
 	FILE *file;
+	struct NativeDiscImageFile discFile;
 	s32 active;
 	s32 format;
+	s32 source;
 	s32 loop;
-	s32 bigfileIndex;
+	s32 bigfileSector;
+	u32 fileBaseOffset;
+	u32 fileBaseSector;
+	u32 currentSector;
 	s32 frameIndex;
 	s32 frameLimit;
 	s32 frameSize;
@@ -147,9 +159,13 @@ internal s32 NativeSTR_Sign10(u32 value)
 internal s32 NativeSTR_Clamp8(s32 value)
 {
 	if (value < 0)
+	{
 		return 0;
+	}
 	if (value > 255)
+	{
 		return 255;
+	}
 	return value;
 }
 
@@ -170,7 +186,9 @@ internal u32 NativeSTR_ReadBits(struct NativeSTRBitReader *br, s32 count)
 		u32 word = 0;
 
 		if (byteOffset + 1 < br->size)
+		{
 			word = NativeSTR_ReadLE16(&br->data[byteOffset]);
+		}
 
 		value = (value << 1) | ((word >> bit) & 1);
 		br->bitOffset++;
@@ -218,13 +236,19 @@ internal s32 NativeSTR_ReadAcCode(struct NativeSTRBitReader *br, u16 *outCode)
 
 			NativeSTR_ReadBits(br, group->prefixBits);
 			if (group->indexBits != 0)
+			{
 				index = NativeSTR_ReadBits(br, group->indexBits);
+			}
 
 			if (group->values[0] != NATIVE_STR_END_OF_BLOCK)
+			{
 				sign = NativeSTR_ReadBits(br, 1);
+			}
 
 			if (index >= group->valueCount)
+			{
 				return 0;
+			}
 
 			code = group->values[index];
 			*outCode = (sign != 0) ? NativeSTR_NegateMdecCode(code) : code;
@@ -257,9 +281,13 @@ internal void NativeSTR_IDCT(const s32 *coefficients, s32 *out)
 			}
 
 			if (sum >= 0)
+			{
 				sum += (s64)NATIVE_STR_IDCT_SCALE * NATIVE_STR_IDCT_SCALE * 2;
+			}
 			else
+			{
 				sum -= (s64)NATIVE_STR_IDCT_SCALE * NATIVE_STR_IDCT_SCALE * 2;
+			}
 
 			out[y * 8 + x] = (s32)(sum / ((s64)NATIVE_STR_IDCT_SCALE * NATIVE_STR_IDCT_SCALE * 4));
 		}
@@ -282,14 +310,20 @@ internal s32 NativeSTR_DecodeBlock(struct NativeSTRBitReader *br, s32 quant, s32
 	for (;;)
 	{
 		if (NativeSTR_ReadAcCode(br, &code) == 0)
+		{
 			return 0;
+		}
 
 		if (code == NATIVE_STR_END_OF_BLOCK)
+		{
 			break;
+		}
 
 		k += ((code >> 10) & 0x3f) + 1;
 		if (k > 63)
+		{
 			break;
+		}
 
 		target = s_mdecZagzig[k];
 		coefficients[target] = (NativeSTR_Sign10(code) * s_mdecQuantTable[target] * quant + 4) / 8;
@@ -318,7 +352,9 @@ internal s32 NativeSTR_DecodeMacroblock(struct NativeSTRBitReader *br, s32 quant
 	for (i = 0; i < 6; i++)
 	{
 		if (NativeSTR_DecodeBlock(br, quant, blocks[i]) == 0)
+		{
 			return 0;
+		}
 	}
 
 	for (y = 0; y < 16; y++)
@@ -333,12 +369,18 @@ internal s32 NativeSTR_DecodeMacroblock(struct NativeSTRBitReader *br, s32 quant
 			s32 cr;
 
 			if ((dstX >= s_str.width) || (dstY >= s_str.height))
+			{
 				continue;
+			}
 
 			if (y < 8)
+			{
 				yBlockIndex = (x < 8) ? 2 : 3;
+			}
 			else
+			{
 				yBlockIndex = (x < 8) ? 4 : 5;
+			}
 
 			luma = blocks[yBlockIndex][(y & 7) * 8 + (x & 7)];
 			cr = blocks[0][(y >> 1) * 8 + (x >> 1)];
@@ -370,7 +412,9 @@ internal s32 NativeSTR_DecodeFrame(void)
 	(void)mdecSize;
 
 	if ((bsId != NATIVE_STR_BS_ID) || (quant > 0x3f) || ((version != 1) && (version != 2)))
+	{
 		return 0;
+	}
 
 	br.data = s_str.frameData;
 	br.size = s_str.frameSize;
@@ -384,7 +428,9 @@ internal s32 NativeSTR_DecodeFrame(void)
 		for (baseY = 0; baseY < codedHeight; baseY += 16)
 		{
 			if (NativeSTR_DecodeMacroblock(&br, quant, baseX, baseY) == 0)
+			{
 				return 0;
+			}
 		}
 	}
 
@@ -414,10 +460,54 @@ internal void NativeSTR_CopySectorPayload(const u8 *sector, s32 headerOffset, co
 	s32 copyBytes = (remaining < payloadSize) ? remaining : payloadSize;
 
 	if (copyBytes <= 0)
+	{
 		return;
+	}
 
 	memcpy(&s_str.frameData[*copied], &sector[headerOffset + NATIVE_STR_SECTOR_HEADER], (size_t)copyBytes);
 	*copied += copyBytes;
+}
+
+internal s32 NativeSTR_ReadExtractedSector(u8 *sector)
+{
+	if (s_str.source == NATIVE_STR_SOURCE_HOST_FILE)
+	{
+		return fread(sector, 1, NATIVE_STR_EXTRACTED_SECTOR_SIZE, s_str.file) == NATIVE_STR_EXTRACTED_SECTOR_SIZE;
+	}
+
+	if (s_str.source == NATIVE_STR_SOURCE_DISC)
+	{
+		if (!NativeDiscImage_ReadDataSectors(&s_str.discFile, s_str.currentSector, 1, sector))
+		{
+			return 0;
+		}
+
+		s_str.currentSector++;
+		return 1;
+	}
+
+	return 0;
+}
+
+internal s32 NativeSTR_ReadCdRecord(u8 *sector)
+{
+	if (s_str.source == NATIVE_STR_SOURCE_HOST_FILE)
+	{
+		return fread(sector, 1, NATIVE_STR_CD_SECTOR_SIZE, s_str.file) == NATIVE_STR_CD_SECTOR_SIZE;
+	}
+
+	if (s_str.source == NATIVE_STR_SOURCE_DISC)
+	{
+		if (!NativeDiscImage_ReadRawSectors(&s_str.discFile, s_str.currentSector, 1, sector))
+		{
+			return 0;
+		}
+
+		s_str.currentSector++;
+		return 1;
+	}
+
+	return 0;
 }
 
 internal s32 NativeSTR_ReadNextFrameFromFile(void)
@@ -427,11 +517,15 @@ internal s32 NativeSTR_ReadNextFrameFromFile(void)
 	s32 copied = 0;
 	s32 chunk;
 
-	if (fread(sector, 1, sizeof(sector), s_str.file) != sizeof(sector))
+	if (!NativeSTR_ReadExtractedSector(sector))
+	{
 		return 0;
+	}
 
 	if ((NativeSTR_ParseSectorHeader(sector, 0, &firstHeader) == 0) || (firstHeader.chunkIndex != 0))
+	{
 		return 0;
+	}
 
 	s_str.width = firstHeader.width;
 	s_str.height = firstHeader.height;
@@ -442,8 +536,10 @@ internal s32 NativeSTR_ReadNextFrameFromFile(void)
 		struct NativeSTRSectorHeader header;
 		if (chunk != 0)
 		{
-			if (fread(sector, 1, sizeof(sector), s_str.file) != sizeof(sector))
+			if (!NativeSTR_ReadExtractedSector(sector))
+			{
 				return 0;
+			}
 		}
 
 		if ((NativeSTR_ParseSectorHeader(sector, 0, &header) == 0) || (header.chunkIndex != chunk) || (header.frameIndex != firstHeader.frameIndex) ||
@@ -460,7 +556,7 @@ internal s32 NativeSTR_ReadNextFrameFromFile(void)
 
 internal s32 NativeSTR_ReadNextCdRecord(u8 *sector, struct NativeSTRSectorHeader *header)
 {
-	while (fread(sector, 1, NATIVE_STR_CD_SECTOR_SIZE, s_str.file) == NATIVE_STR_CD_SECTOR_SIZE)
+	while (NativeSTR_ReadCdRecord(sector))
 	{
 		// NOTE(aalhendi): TEST.STR is the raw CD/XA scrapbook stream. Each
 		// 0x920-byte record has an XA subheader before the STR chunk header,
@@ -468,7 +564,9 @@ internal s32 NativeSTR_ReadNextCdRecord(u8 *sector, struct NativeSTRSectorHeader
 		// carries the logical 0x800-byte STR sector, so payload copies stay at
 		// 0x7e0 after that header.
 		if (NativeSTR_ParseSectorHeader(sector, NATIVE_STR_CD_SUBHEADER_SIZE, header) != 0)
+		{
 			return 1;
+		}
 	}
 
 	return 0;
@@ -484,7 +582,9 @@ internal s32 NativeSTR_ReadNextFrameFromCdStream(void)
 	do
 	{
 		if (NativeSTR_ReadNextCdRecord(sector, &firstHeader) == 0)
+		{
 			return 0;
+		}
 	} while (firstHeader.chunkIndex != 0);
 
 	s_str.width = firstHeader.width;
@@ -499,7 +599,9 @@ internal s32 NativeSTR_ReadNextFrameFromCdStream(void)
 		for (;;)
 		{
 			if (NativeSTR_ReadNextCdRecord(sector, &header) == 0)
+			{
 				return 0;
+			}
 
 			if ((header.frameIndex == firstHeader.frameIndex) && (header.frameSize == firstHeader.frameSize) && (header.chunkIndex == expectedChunk))
 			{
@@ -508,11 +610,31 @@ internal s32 NativeSTR_ReadNextFrameFromCdStream(void)
 			}
 
 			if ((header.chunkIndex == 0) && (header.frameIndex != firstHeader.frameIndex))
+			{
 				return 0;
+			}
 		}
 	}
 
 	return copied == (s32)firstHeader.frameSize;
+}
+
+internal s32 NativeSTR_RewindFrameSource(void)
+{
+	if (s_str.source == NATIVE_STR_SOURCE_DISC)
+	{
+		s_str.currentSector = s_str.fileBaseSector;
+		s_str.frameIndex = 0;
+		return 1;
+	}
+
+	if ((s_str.file == NULL) || (fseek(s_str.file, (long)s_str.fileBaseOffset, SEEK_SET) != 0))
+	{
+		return 0;
+	}
+
+	s_str.frameIndex = 0;
+	return 1;
 }
 
 internal s32 NativeSTR_ReadNextFrame(void)
@@ -525,10 +647,14 @@ internal s32 NativeSTR_ReadNextFrame(void)
 		if ((s_str.frameLimit > 0) && (s_str.frameIndex >= s_str.frameLimit))
 		{
 			if (s_str.loop == 0)
+			{
 				return 0;
+			}
 
-			rewind(s_str.file);
-			s_str.frameIndex = 0;
+			if (NativeSTR_RewindFrameSource() == 0)
+			{
+				return 0;
+			}
 		}
 
 		if (((s_str.format == NATIVE_STR_FORMAT_CD_STREAM) ? NativeSTR_ReadNextFrameFromCdStream() : NativeSTR_ReadNextFrameFromFile()) != 0)
@@ -538,77 +664,62 @@ internal s32 NativeSTR_ReadNextFrame(void)
 		}
 
 		if (s_str.loop == 0)
-			return 0;
-
-		rewind(s_str.file);
-		s_str.frameIndex = 0;
-	}
-
-	return 0;
-}
-
-internal s32 NativeSTR_ResolveBigfilePath(s32 bigfileIndex, char *dst, s32 dstCount)
-{
-	FILE *file;
-	char line[256];
-	s32 index = 0;
-
-	if ((dst == NULL) || (dstCount <= 0))
-		return 0;
-
-	file = NativeAssets_Open("bigfile.txt", "r");
-	if (file == NULL)
-		return 0;
-
-	while (fgets(line, sizeof(line), file) != NULL)
-	{
-		if (index == bigfileIndex)
 		{
-			NativeStr8 lineText = NativeStr8_FromCString(line);
-			char relativePath[256];
-			int written;
-
-			while ((lineText.len != 0) && ((lineText.ptr[lineText.len - 1u] == '\r') || (lineText.ptr[lineText.len - 1u] == '\n')))
-				lineText.len--;
-
-			written = snprintf(relativePath, sizeof(relativePath), "bigfile/%.*s", (int)lineText.len, (const char *)lineText.ptr);
-			if ((written <= 0) || ((size_t)written >= sizeof(relativePath)) || !NativeAssets_BuildPath(relativePath, dst, (size_t)dstCount))
-			{
-				fclose(file);
-				return 0;
-			}
-
-			fclose(file);
-			return 1;
+			return 0;
 		}
 
-		index++;
+		if (NativeSTR_RewindFrameSource() == 0)
+		{
+			return 0;
+		}
 	}
 
-	fclose(file);
 	return 0;
 }
 
-s32 NativeSTR_StartTrackPreview(s32 bigfileIndex, s32 frameCount)
+s32 NativeSTR_StartTrackPreviewFromBigfileSector(s32 bigfileSector, s32 frameCount)
 {
-	char path[NATIVE_STR_PATH_MAX];
+	struct NativeDiscImageFile discFile;
 
-	if ((s_str.active != 0) && (s_str.bigfileIndex == bigfileIndex))
+	if (bigfileSector < 0)
+	{
+		return 0;
+	}
+
+	if ((s_str.active != 0) && (s_str.bigfileSector == bigfileSector))
+	{
 		return 1;
+	}
 
 	NativeSTR_Stop();
 
-	if (NativeSTR_ResolveBigfilePath(bigfileIndex, path, sizeof(path)) == 0)
+	s_str.file = NativeAssets_OpenHostBigfile("rb");
+	if (s_str.file != NULL)
+	{
+		s_str.source = NATIVE_STR_SOURCE_HOST_FILE;
+		s_str.fileBaseOffset = (u32)bigfileSector * NATIVE_STR_EXTRACTED_SECTOR_SIZE;
+	}
+	else if (NativeDiscImage_FindFile("BIGFILE.BIG", &discFile))
+	{
+		s_str.source = NATIVE_STR_SOURCE_DISC;
+		s_str.discFile = discFile;
+		s_str.fileBaseSector = (u32)bigfileSector;
+	}
+	else
+	{
 		return 0;
+	}
 
-	s_str.file = fopen(path, "rb");
-	if (s_str.file == NULL)
+	if (NativeSTR_RewindFrameSource() == 0)
+	{
+		NativeSTR_Stop();
 		return 0;
+	}
 
 	s_str.active = 1;
 	s_str.format = NATIVE_STR_FORMAT_EXTRACTED;
 	s_str.loop = 1;
-	s_str.bigfileIndex = bigfileIndex;
+	s_str.bigfileSector = bigfileSector;
 	s_str.frameIndex = 0;
 	s_str.frameLimit = frameCount;
 	return 1;
@@ -616,21 +727,39 @@ s32 NativeSTR_StartTrackPreview(s32 bigfileIndex, s32 frameCount)
 
 s32 NativeSTR_StartScrapbook(void)
 {
+	struct NativeDiscImageFile discFile;
+
 	if ((s_str.active != 0) && (s_str.format == NATIVE_STR_FORMAT_CD_STREAM))
+	{
 		return 1;
+	}
 
 	NativeSTR_Stop();
 
-	s_str.file = NativeAssets_Open(NATIVE_STR_SCRAPBOOK_PATH, "rb");
-	if (s_str.file == NULL)
+	s_str.file = NativeAssets_OpenHost(NATIVE_STR_SCRAPBOOK_PATH, "rb");
+	if (s_str.file != NULL)
+	{
+		s_str.source = NATIVE_STR_SOURCE_HOST_FILE;
+	}
+	else if (NativeDiscImage_FindFile(NATIVE_STR_SCRAPBOOK_PATH, &discFile))
+	{
+		s_str.source = NATIVE_STR_SOURCE_DISC;
+		s_str.discFile = discFile;
+	}
+	else
+	{
 		return 0;
+	}
 
 	s_str.active = 1;
 	s_str.format = NATIVE_STR_FORMAT_CD_STREAM;
 	s_str.loop = 0;
-	s_str.bigfileIndex = -1;
+	s_str.bigfileSector = -1;
 	s_str.frameIndex = 0;
 	s_str.frameLimit = NATIVE_STR_SCRAPBOOK_FRAME_COUNT;
+	s_str.fileBaseOffset = 0;
+	s_str.fileBaseSector = 0;
+	s_str.currentSector = 0;
 	return 1;
 }
 
@@ -644,8 +773,12 @@ void NativeSTR_Stop(void)
 
 	s_str.active = 0;
 	s_str.format = NATIVE_STR_FORMAT_EXTRACTED;
+	s_str.source = NATIVE_STR_SOURCE_NONE;
 	s_str.loop = 0;
-	s_str.bigfileIndex = -1;
+	s_str.bigfileSector = -1;
+	s_str.fileBaseOffset = 0;
+	s_str.fileBaseSector = 0;
+	s_str.currentSector = 0;
 	s_str.frameIndex = 0;
 	s_str.frameLimit = 0;
 	s_str.width = 0;
@@ -657,17 +790,21 @@ s32 NativeSTR_UploadNextFrame(s32 dstX, s32 dstY)
 {
 	RECT16 rect;
 
-	if ((s_str.active == 0) || (s_str.file == NULL))
+	if ((s_str.active == 0) || (s_str.source == NATIVE_STR_SOURCE_NONE))
+	{
 		return 0;
+	}
 
 	if ((NativeSTR_ReadNextFrame() == 0) || (NativeSTR_DecodeFrame() == 0))
+	{
 		return 0;
+	}
 
 	rect.x = dstX;
 	rect.y = dstY;
 	rect.w = s_str.width;
 	rect.h = s_str.height;
-	LoadImage(&rect, (u_long *)s_str.rgb555);
+	LoadImage(&rect, s_str.rgb555);
 	// NOTE(aalhendi): Track-preview STR draws these uploaded pixels as same-pass
 	// textured primitives. Retail LoadImage is GPU-visible immediately; refresh
 	// the host VRAM texture at that boundary.

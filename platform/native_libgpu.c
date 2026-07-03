@@ -11,7 +11,8 @@
 #include <platform/native_renderer.h>
 #include <platform/native_gpu.h>
 #include <platform/native_perf.h>
-#include "../platform.h"
+#include <gpu.h>
+#include <platform.h>
 
 #include <string.h>
 
@@ -22,14 +23,14 @@
 int g_dbg_emulatorPaused = 0;
 void (*drawsync_callback)(void) = NULL;
 
-int ClearImage(RECT16 *rect, u_char r, u_char g, u_char b)
+int ClearImage(RECT16 *rect, uint8_t r, uint8_t g, uint8_t b)
 {
 	NativeRenderer_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
 	NativeRenderer_Clear(rect->x, rect->y, rect->w, rect->h, r, g, b);
 	return 0;
 }
 
-int ClearImage2(RECT16 *rect, u_char r, u_char g, u_char b)
+int ClearImage2(RECT16 *rect, uint8_t r, uint8_t g, uint8_t b)
 {
 	return ClearImage(rect, r, g, b);
 }
@@ -53,13 +54,13 @@ int DrawSync(int mode)
 	return 0;
 }
 
-int LoadImage(RECT16 *rect, u_long *p)
+int LoadImage(RECT16 *rect, void *p)
 {
 	NativeRenderer_CopyVRAM((unsigned short *)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
 	return 0;
 }
 
-int LoadImage2(RECT16 *rect, u_long *p)
+int LoadImage2(RECT16 *rect, void *p)
 {
 	LoadImage(rect, p);
 	NativeRenderer_UpdateVRAM();
@@ -73,13 +74,13 @@ int MoveImage(RECT16 *rect, int x, int y)
 	return 0;
 }
 
-int StoreImage(RECT16 *rect, u_long *p)
+int StoreImage(RECT16 *rect, uint32_t *p)
 {
 	NativeRenderer_ReadVRAM((unsigned short *)p, rect->x, rect->y, rect->w, rect->h);
 	return 0;
 }
 
-int StoreImage2(RECT16 *rect, u_long *p)
+int StoreImage2(RECT16 *rect, uint32_t *p)
 {
 	return StoreImage(rect, p);
 }
@@ -108,12 +109,14 @@ int SetGraphDebug(int level)
 	return 0;
 }
 
-u_long *ClearOTag(u_long *ot, int n)
+uint32_t *ClearOTag(uint32_t *ot, int n)
 {
 	OT_TAG *ptag_list;
 
 	if (n == 0)
+	{
 		return NULL;
+	}
 
 	ptag_list = (OT_TAG *)ot;
 
@@ -129,12 +132,14 @@ u_long *ClearOTag(u_long *ot, int n)
 	return NULL;
 }
 
-u_long *ClearOTagR(u_long *ot, int n)
+uint32_t *ClearOTagR(uint32_t *ot, int n)
 {
 	OT_TAG *ptag_list;
 
 	if (n == 0)
+	{
 		return NULL;
+	}
 
 	ptag_list = (OT_TAG *)ot;
 
@@ -210,9 +215,13 @@ DRAWENV *SetDefDrawEnv(DRAWENV *env, int x, int y, int w, int h)
 	env->dtd = 1;
 
 	if (GetVideoMode() == MODE_NTSC)
+	{
 		env->dfe = h < 289 ? 1 : 0;
+	}
 	else
+	{
 		env->dfe = h < 257 ? 1 : 0;
+	}
 
 	env->ofs[0] = x;
 	env->ofs[1] = y;
@@ -239,7 +248,9 @@ void SetDrawMove(DR_MOVE *p, RECT16 *rect, int x, int y)
 	char len = 5;
 
 	if (rect->w == 0 || rect->h == 0)
+	{
 		len = 0;
+	}
 
 	p->code[0] = 0x1000000;
 	p->code[1] = 0x80000000;
@@ -250,13 +261,13 @@ void SetDrawMove(DR_MOVE *p, RECT16 *rect, int x, int y)
 	setlen(p, len);
 }
 
-u_int DrawSyncCallback(void (*func)(void))
+uint32_t DrawSyncCallback(void (*func)(void))
 {
 	drawsync_callback = func;
 	return 0;
 }
 
-void DrawOTag(u_long *p)
+void DrawOTag(void *p)
 {
 	NativePerf_BeginScope(NATIVE_PERF_BUCKET_DRAW_OTAG);
 	do
@@ -273,7 +284,7 @@ void DrawOTag(u_long *p)
 			ClearSplits();
 		}
 
-		ParsePrimitivesLinkedList((u_int *)p, 0);
+		ParsePrimitivesLinkedList((uint32_t *)p, 0);
 		DrawAllSplits();
 	} while (g_dbg_emulatorPaused);
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_DRAW_OTAG);
@@ -292,10 +303,14 @@ void DrawPrim(void *p)
 		ClearSplits();
 	}
 
-	ParsePrimitivesLinkedList((u_int *)p, 1);
+	ParsePrimitivesLinkedList((uint32_t *)p, 1);
 }
 
 void AddPrim(void *ot, void *p)
 {
-	addPrim(ot, p);
+	u32 otTag = CTR_GPU_ReadTagWord(ot);
+	u32 primTag = CTR_GPU_ReadTagWord(p);
+
+	CTR_GPU_WriteTagWord(p, CtrGpu_PackOTTag(otTag, primTag & 0xff000000u));
+	CTR_GPU_WriteTagWord(ot, CtrGpu_PrimToOTLink24(p));
 }

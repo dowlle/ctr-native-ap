@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_OVR_231_H
+#define CTR_NATIVE_OVR_231_H
+
 
 // used all over 231,
 // Plant, FlameJet, etc
@@ -83,7 +86,7 @@ struct TrackerWeapon
 	s16 frameCount_Blind;
 
 	// 0x24
-	int audioPtr;
+	u32 soundIDCount;
 
 	// 0x28
 	u32 distanceToTarget;
@@ -178,8 +181,8 @@ struct RainCloud
 
 	// size - 0x8
 };
-_Static_assert(offsetof(struct RainCloud, effect) == 0x6);
-_Static_assert(sizeof(struct RainCloud) == 0x8);
+CTR_STATIC_ASSERT(offsetof(struct RainCloud, effect) == 0x6);
+CTR_STATIC_ASSERT(sizeof(struct RainCloud) == 0x8);
 
 struct Shield
 {
@@ -213,9 +216,18 @@ struct MineWeapon;
 
 struct WeaponSlot231
 {
-	// 0x0
-	struct WeaponSlot231 *next;
-	struct WeaponSlot231 *prev;
+	union
+	{
+		// 0x0
+		struct Item item;
+
+		struct
+		{
+			// 0x0
+			struct WeaponSlot231 *next;
+			struct WeaponSlot231 *prev;
+		};
+	};
 
 	// 0x8
 	struct MineWeapon *mineWeapon;
@@ -328,7 +340,7 @@ struct Crate
 	// 0x8 bytes large
 };
 
-_Static_assert(sizeof(struct Crate) == 0x8);
+CTR_STATIC_ASSERT(sizeof(struct Crate) == 0x8);
 
 struct Crystal
 {
@@ -441,7 +453,7 @@ struct FlameJet
 	s16 cooldown;
 
 	// 0x10
-	int audioPtr;
+	u32 soundIDCount;
 
 	// 0x14 bytes large
 };
@@ -494,7 +506,7 @@ struct Minecart
 	s16 rotSpeed;
 
 	// 0x28
-	int audioPtr;
+	u32 soundIDCount;
 
 	// 0x2c bytes large
 };
@@ -607,7 +619,7 @@ struct Snowball
 	s16 snowID;
 
 	// 0xC
-	int audioPtr;
+	u32 soundIDCount;
 
 	// 0x10 bytes large
 };
@@ -636,9 +648,9 @@ struct Spider
 
 	// 0x10 bytes large
 };
-_Static_assert(offsetof(struct Spider, delay) == 0x4);
-_Static_assert(offsetof(struct Spider, shadowInst) == 0xc);
-_Static_assert(sizeof(struct Spider) == 0x10);
+CTR_STATIC_ASSERT(offsetof(struct Spider, delay) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct Spider, shadowInst) == 0xc);
+CTR_STATIC_ASSERT(sizeof(struct Spider) == 0x10);
 
 struct Teeth
 {
@@ -656,7 +668,7 @@ struct Teeth
 
 	// 0x8 bytes large
 };
-_Static_assert(sizeof(struct Teeth) == 0x8);
+CTR_STATIC_ASSERT(sizeof(struct Teeth) == 0x8);
 
 struct Turtle
 {
@@ -684,9 +696,9 @@ struct Turtle
 
 	// 0xC bytes large
 };
-_Static_assert(offsetof(struct Turtle, turtleID) == 0x4);
-_Static_assert(offsetof(struct Turtle, state) == 0x8);
-_Static_assert(sizeof(struct Turtle) == 0xc);
+CTR_STATIC_ASSERT(offsetof(struct Turtle, turtleID) == 0x4);
+CTR_STATIC_ASSERT(offsetof(struct Turtle, state) == 0x8);
+CTR_STATIC_ASSERT(sizeof(struct Turtle) == 0xc);
 
 struct OverlayRDATA_231
 {
@@ -713,3 +725,5 @@ struct OverlayDATA_231
 
 extern struct OverlayRDATA_231 R231;
 extern struct OverlayDATA_231 D231;
+
+#endif

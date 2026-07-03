@@ -55,9 +55,6 @@ void UI_DrawRankedDrivers(void)
 	struct GameTracker *gGT;
 	s16 txtColor;
 	u32 uVar7;
-	int absPosRank;
-	int iVar8;
-	s16 *puVar9;
 	s16 numRacersFinished;
 	u16 uVar11;
 	int iVar12;
@@ -66,18 +63,10 @@ void UI_DrawRankedDrivers(void)
 	struct Thread *warpballThread;
 	struct Instance *warpballInst;
 	int iVar15;
-	u16 *puVar16;
-	s16 *psVar17;
+	s16 *puVar16;
 	u16 uVar18;
 	Point pos;
-	s16 local_44;
-	s16 local_40;
-	s16 local_3e;
-	s16 local_3c;
-	s16 local_38;
-	s16 local_34;
 	u32 local_30;
-	u32 local_2c;
 
 	gGT = sdata->gGT;
 
@@ -196,6 +185,7 @@ void UI_DrawRankedDrivers(void)
 					}
 				}
 
+				SVec2 iconPos = {.x = pos.x, .y = pos.y};
 				s16 iconScale = FP(1);
 
 				int isTransitioning = (pos.x == -100);
@@ -203,7 +193,9 @@ void UI_DrawRankedDrivers(void)
 				// === Icon Transitioning ===
 				if (isTransitioning)
 				{
-					UI_Lerp2D_Angular((s16 *)&pos, *curr, *des, *psVar13);
+					UI_Lerp2D_Angular(&iconPos, *curr, *des, *psVar13);
+					pos.x = iconPos.x;
+					pos.y = iconPos.y;
 				}
 
 				UI_DrawDriverIcon(
@@ -272,7 +264,9 @@ void UI_DrawRankedDrivers(void)
 				uVar18 = (u16)uVar18;
 
 				if ((s16)uVar18 < 0)
+				{
 					goto LAB_80052b00;
+				}
 			}
 
 			// posX
@@ -343,7 +337,9 @@ void UI_DrawRankedDrivers(void)
 
 			// if not warpball, skip
 			if (warpballInst->model->id != DYNAMIC_WARPBALL)
+			{
 				continue;
+			}
 
 			// pointer to path data
 			struct CheckpointNode *cn = gGT->level1->ptr_restart_points;
@@ -354,7 +350,9 @@ void UI_DrawRankedDrivers(void)
 			iVar12 = 0;
 
 			if (((u32)(gGT->level1->cnt_restart_points - 1) >= 0xff) || (iVar4 < 0))
+			{
 				continue;
+			}
 
 			int pos[4];
 			pos[0] = warpballInst->matrix.t[0];
@@ -387,7 +385,9 @@ void UI_DrawRankedDrivers(void)
 			iVar15 = gGT->level1->ptr_restart_points[0].distToFinish * 8;
 			iVar12 = iVar3 % iVar15;
 			if (iVar12 == 0)
+			{
 				continue;
+			}
 
 #if 0
 	  	if (uVar1 == 0) trap(0x1c00);

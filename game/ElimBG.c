@@ -8,7 +8,9 @@ void ElimBG_SaveScreenshot_Chunk(u16 *param_1, u16 *param_2, int param_3)
 	u16 *puVar2;
 
 	if (param_3 == 0)
+	{
 		return;
+	}
 
 	puVar2 = param_2 + 3;
 
@@ -27,8 +29,6 @@ void ElimBG_SaveScreenshot_Chunk(u16 *param_1, u16 *param_2, int param_3)
 void ElimBG_SaveScreenshot_Full(struct GameTracker *gGT)
 {
 	int iVar4;
-	u32 local_48[2];
-	u32 local_40[2];
 	RECT rect1;
 	RECT rect2;
 	RECT rSrc;
@@ -36,12 +36,14 @@ void ElimBG_SaveScreenshot_Full(struct GameTracker *gGT)
 
 	iVar4 = 0;
 
-	// rdataPauseData
-	// TODO: modify this code to just properly assign to the rect's members instead of this jank.
-	((u32 *)&rect1)[0] = 0x200;
-	((u32 *)&rect1)[1] = 0x1000040;
-	((u32 *)&rect2)[0] = 0x240;
-	((u32 *)&rect2)[1] = 0x1000040;
+	rect1.x = 0x200;
+	rect1.y = 0;
+	rect1.w = 0x40;
+	rect1.h = 0x100;
+	rect2.x = 0x240;
+	rect2.y = 0;
+	rect2.w = 0x40;
+	rect2.h = 0x100;
 
 	// vram copy, then overwrite vram with pause image
 
@@ -110,7 +112,7 @@ void ElimBG_SaveScreenshot_Full(struct GameTracker *gGT)
 	rDst.y = 0xff;
 	rDst.w = 0x10;
 	rDst.h = 1;
-	LoadImage(&rDst, (u32 *)&data.pauseScreenStrip[0]);
+	LoadImage(&rDst, &data.pauseScreenStrip[0]);
 }
 
 
@@ -134,9 +136,13 @@ void ElimBG_ToggleInstance(struct Instance *inst, char boolGameIsPaused)
 		flags = inst->flags;
 
 		if (!(flags & HIDE_MODEL))
+		{
 			flags &= ~INVISIBLE_BEFORE_PAUSE;
+		}
 		else
+		{
 			flags |= INVISIBLE_BEFORE_PAUSE;
+		}
 
 		inst->flags = flags;
 		inst->flags |= (INVISIBLE_DURING_PAUSE | HIDE_MODEL);
@@ -145,12 +151,14 @@ void ElimBG_ToggleInstance(struct Instance *inst, char boolGameIsPaused)
 	}
 
 	if ((inst->flags & (INVISIBLE_BEFORE_PAUSE | INVISIBLE_DURING_PAUSE)) == INVISIBLE_DURING_PAUSE)
+	{
 		inst->flags &= ~(INVISIBLE_DURING_PAUSE | HIDE_MODEL);
+	}
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800248bc-0x80024974.
-void ElimBG_ToggleAllInstances(struct GameTracker *gGT, int boolGameIsPaused)
+void ElimBG_ToggleAllInstances(struct GameTracker *gGT, b32 boolGameIsPaused)
 {
 	struct Level *lev;
 	struct Instance *inst;
@@ -164,7 +172,9 @@ void ElimBG_ToggleAllInstances(struct GameTracker *gGT, int boolGameIsPaused)
 		inst = ptrInstDefs->ptrInstance;
 
 		if (inst != 0)
+		{
 			ElimBG_ToggleInstance(inst, boolGameIsPaused);
+		}
 	}
 
 	// Loop through all instances in Instance Pool
@@ -185,7 +195,6 @@ void ElimBG_HandleState(struct GameTracker *gGT)
 	int iVar6;
 	POLY_FT4 *p;
 	u32 uVar7;
-	char cVar8;
 	u32 tpage;
 	u32 uVar9;
 	int iVar10;
@@ -195,12 +204,14 @@ void ElimBG_HandleState(struct GameTracker *gGT)
 	// if this is last frame of pause
 	if (sdata->pause_state == 3)
 	{
-		// rdataPauseData
-		// TODO: modify this code to just properly assign to the rect's members instead of this jank.
-		((u32 *)&rect1)[0] = 0x200;
-		((u32 *)&rect1)[1] = 0x1000040;
-		((u32 *)&rect2)[0] = 0x240;
-		((u32 *)&rect2)[1] = 0x1000040;
+		rect1.x = 0x200;
+		rect1.y = 0;
+		rect1.w = 0x40;
+		rect1.h = 0x100;
+		rect2.x = 0x240;
+		rect2.y = 0;
+		rect2.w = 0x40;
+		rect2.h = 0x100;
 
 		// load from RAM, back to VRAM
 		LoadImage(&rect1, (u32 *)sdata->PausePtrsVRAM[0]);

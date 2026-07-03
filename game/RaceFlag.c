@@ -22,8 +22,8 @@ struct RaceFlagScratch
 	union RaceFlagScreenBuffer screen[2];
 };
 
-_Static_assert(sizeof(union RaceFlagScreenBuffer) == 0x78);
-_Static_assert(sizeof(struct RaceFlagScratch) == 0xf0);
+CTR_STATIC_ASSERT(sizeof(union RaceFlagScreenBuffer) == 0x78);
+CTR_STATIC_ASSERT(sizeof(struct RaceFlagScratch) == 0xf0);
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80043e34-0x80043f1c.
 int RaceFlag_MoveModels(int frameIndex, int numFrames)
@@ -40,10 +40,14 @@ int RaceFlag_MoveModels(int frameIndex, int numFrames)
 	int result;
 
 	if (frameIndex < 0)
+	{
 		return 0;
+	}
 
 	if (frameIndex > numFrames)
+	{
 		return 0x1000;
+	}
 
 	// cut in half
 	midpoint = numFrames / 2;
@@ -200,7 +204,9 @@ u32 *RaceFlag_GetOT(void)
 	{
 		// set fully "off" to start transition "on"
 		if (sdata->RaceFlag_Position < 0)
+		{
 			sdata->RaceFlag_Position = 5000;
+		}
 
 		sdata->RaceFlag_TransitionSpeed = 300;
 
@@ -211,9 +217,11 @@ u32 *RaceFlag_GetOT(void)
 		{
 			// skip last 8 frames to zero
 			if (iVar2 < 8)
+			{
 				sdata->RaceFlag_Position = 0;
 
-			// transition for frame >= 8
+				// transition for frame >= 8
+			}
 			else
 			{
 				// rate of transition
@@ -237,7 +245,9 @@ u32 *RaceFlag_GetOT(void)
 			if (sdata->RaceFlag_DrawOrder != 1)
 			{
 				if (sdata->RaceFlag_DrawOrder != -1)
+				{
 					return otDrawFirst_FarthestDepth;
+				}
 
 				sdata->RaceFlag_DrawOrder = 0;
 			}
@@ -292,8 +302,7 @@ void RaceFlag_DrawLoadingString(void)
 	int iVar9;
 	int iVar10;
 	u32 *uVar11;
-	char local_30;
-	char local_2f;
+	char local_30[2];
 
 	pbVar7 = sdata->lngStrings[LNG_LOADING];
 
@@ -359,18 +368,20 @@ void RaceFlag_DrawLoadingString(void)
 					// if frame > 0x4f,
 					// if letter is fully off-screen
 					if (0x4f < iVar3)
+					{
 						goto LAB_800443c4;
+					}
 
 					// letter is moving off-screen
 					iVar4 = (0x4b - iVar3) * 0x3c + 0x100;
 				}
 			}
-			local_30 = *pbVar7;
+			local_30[0] = *pbVar7;
 			pbVar8 = pbVar7 + 1;
 			uVar5 = 1;
-			if (local_30 < 4)
+			if (local_30[0] < 4)
 			{
-				local_2f = *pbVar8;
+				local_30[1] = *pbVar8;
 				pbVar8 = pbVar7 + 2;
 
 				// increment loop counter
@@ -380,10 +391,10 @@ void RaceFlag_DrawLoadingString(void)
 			}
 			if ((s16)iVar4 != 0x23c)
 			{
-				DecalFont_DrawLineStrlen(&local_30, uVar5, (iVar10 + iVar4), 0x6c, 1, 0);
+				DecalFont_DrawLineStrlen(local_30, uVar5, (iVar10 + iVar4), 0x6c, 1, 0);
 			}
 
-			iVar4 = DecalFont_GetLineWidthStrlen(&local_30, uVar5, 1);
+			iVar4 = DecalFont_GetLineWidthStrlen(local_30, uVar5, 1);
 
 			iVar10 = iVar10 + iVar4;
 			iVar9 = iVar9 + 0xf0;
@@ -399,7 +410,7 @@ void RaceFlag_DrawLoadingString(void)
 	}
 
 	// pointer to OT mem
-	gGT->pushBuffer_UI.ptrOT = (u_long *)uVar11;
+	gGT->pushBuffer_UI.ptrOT = (uint32_t *)uVar11;
 
 	if (iVar3 < 0x50)
 	{
@@ -440,7 +451,7 @@ force_inline int MathSinInline(u32 param_1)
 	int iVar1;
 
 	// approximate trigonometry
-	iVar1 = *(int *)&data.trigApprox[param_1 & 0x3ff];
+	iVar1 = (s32)CTR_ReadU32LE(&data.trigApprox[param_1 & 0x3ff]);
 
 	if ((param_1 & 0x400) == 0)
 	{
@@ -465,7 +476,7 @@ void RaceFlag_DrawSelf()
 	int toggle;
 
 	s16 flagPos;
-	u_long *ot;
+	uint32_t *ot;
 	u32 screenlimit;
 	u32 dimensions;
 
@@ -485,7 +496,9 @@ void RaceFlag_DrawSelf()
 	SVECTOR pos[3] = {0};
 
 	if (sdata->RaceFlag_CanDraw == 0)
+	{
 		return;
+	}
 
 	if (sdata->RaceFlag_LoadingTextAnimFrame < 0)
 	{
@@ -495,7 +508,9 @@ void RaceFlag_DrawSelf()
 		}
 
 		if (sdata->RaceFlag_LoadingTextAnimFrame < 0)
+		{
 			goto SKIP_LOADING_TEXT;
+		}
 	}
 
 	RaceFlag_DrawLoadingString();
@@ -503,7 +518,7 @@ void RaceFlag_DrawSelf()
 SKIP_LOADING_TEXT:
 
 	sdata->RaceFlag_CopyLoadStage = sdata->Loading.stage;
-	ot = (u_long *)RaceFlag_GetOT();
+	ot = (uint32_t *)RaceFlag_GetOT();
 
 	gte_SetRotMatrix(&data.matrixTitleFlag);
 	gte_SetTransMatrix(&data.matrixTitleFlag);
@@ -705,28 +720,28 @@ SKIP_LOADING_TEXT:
 				    (((dimensions - read0) & (dimensions - read1) & (dimensions - write0) & (dimensions - write1) & screenlimit) == 0))
 				{
 					// TRUE for gray, FALSE for white
-					u8 boolDark = (((column >> 2) + (i >> 2) & 1U) != 0);
+					u8 boolDark = ((((column >> 2) + (i >> 2)) & 1U) != 0);
 
 					u8 colorR = RaceFlag_CalculateBrightness(lightR, boolDark);
 					setRGB0(p, colorR, colorR, colorR);
-					*(int *)&p->r2 = *(int *)&p->r0;
+					CTR_WriteU32LE(&p->r2, CTR_ReadU32LE(&p->r0));
 
 					u8 colorL = RaceFlag_CalculateBrightness(lightL, boolDark);
 					setRGB1(p, colorL, colorL, colorL);
-					*(int *)&p->r3 = *(int *)&p->r1;
+					CTR_WriteU32LE(&p->r3, CTR_ReadU32LE(&p->r1));
 
 					// positions
-					*(int *)&p->x0 = read0;
-					*(int *)&p->x2 = read1;
-					*(int *)&p->x1 = write0;
-					*(int *)&p->x3 = write1;
+					CtrGpu_WritePackedXY(&p->x0, read0);
+					CtrGpu_WritePackedXY(&p->x2, read1);
+					CtrGpu_WritePackedXY(&p->x1, write0);
+					CtrGpu_WritePackedXY(&p->x3, write1);
 
 					// prim/code
 					setPolyG4(p);
 
 					// Prim/OT
 					// addPrim(ot, p); works but uses more instructions.
-					*(int *)p = *ot | 0x8000000;
+					p->tag = CtrGpu_PackOTTag(*ot, 0x8000000);
 					*ot = CtrGpu_PrimToOTLink24(p);
 
 					p++;

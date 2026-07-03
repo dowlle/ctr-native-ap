@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_GHOST_H
+#define CTR_NATIVE_NAMESPACE_GHOST_H
+
 // GhostTape is 0x268 large
 // GhostRecBuf is 0x3e00
 
@@ -11,7 +14,7 @@ struct GhostPacket
 	// 0x10 -- size of packet
 };
 
-_Static_assert(sizeof(struct GhostPacket) == 0x10);
+CTR_STATIC_ASSERT(sizeof(struct GhostPacket) == 0x10);
 
 struct GhostTape
 {
@@ -100,3 +103,5 @@ struct GhostHeader
 };
 
 #define GHOSTHEADER_GETRECORDBUFFER(x) (char *)((u32)x + sizeof(struct GhostHeader))
+
+#endif

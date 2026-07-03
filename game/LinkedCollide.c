@@ -25,12 +25,16 @@ struct Instance *LinkedCollide_Radius(struct Instance *objInst, struct Thread *_
 		{
 			// Cylinder collision
 			if ((diff_dist < hitRadius) && (-0x20 < diff_y))
+			{
 				return thInst;
+			}
 		}
 
 		// Spherical collision for everything else
 		else if (diff_dist + diff_y * diff_y < hitRadius)
+		{
 			return thInst;
+		}
 
 		// next thread in the list (thread bucket)
 		thBucket = thBucket->siblingThread;
@@ -75,7 +79,7 @@ struct Instance *LinkedCollide_Hitbox(struct Instance *objInst, struct Thread *_
 		SetRotMatrix(&thInstMatrix);
 		SetTransMatrix(&thInstMatrix);
 
-		RotTrans(&thInstPos, &outVec, (long *)flags);
+		RotTrans(&thInstPos, &outVec, flags);
 
 		if ((bbox.min.x < outVec.vx) && (outVec.vx < bbox.max.x) && (bbox.min.z < outVec.vz) && (outVec.vz < bbox.max.z) && (bbox.min.y <= diff_y) &&
 		    (diff_y < bbox.max.y))

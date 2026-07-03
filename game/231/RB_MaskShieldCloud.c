@@ -33,7 +33,7 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 	// Second time is BeamInst
 	for (int i = 0; i < 2; i++)
 	{
-		LHMatrix_Parent(instCurr, driverInst, (SVECTOR *)&mhs->posOffset);
+		LHMatrix_Parent(instCurr, driverInst, &mhs->posOffset);
 
 		instCurr->scale.x += -0x100;
 		instCurr->scale.y += -0x100;
@@ -55,7 +55,9 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 	MatrixRotate(m, m, &mhs->m);
 
 	if (maskBeamInst->alphaScale < 0x1000)
+	{
 		maskBeamInst->alphaScale += 0x200;
+	}
 
 	totalTime = mask->duration;
 
@@ -64,7 +66,9 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 		totalTime += sdata->gGT->elapsedTimeMS;
 
 		if (totalTime > 0x200)
+		{
 			totalTime = 0x200;
+		}
 
 		mask->duration = totalTime;
 		return;
@@ -111,9 +115,9 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 	{
 		for (i = 0; i < numPlyr; i++)
 		{
-			pb = &gGT->pushBuffer[i];
-			maskIdpp[i].pushBuffer = pb;
-			beamIdpp[i].pushBuffer = pb;
+			pb = &gGT->pushBuffer[(s32)i];
+			maskIdpp[(s32)i].pushBuffer = pb;
+			beamIdpp[(s32)i].pushBuffer = pb;
 		}
 	}
 
@@ -122,10 +126,12 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 		for (i = 0; i < numPlyr; i++)
 		{
 			if (i == d->driverID)
+			{
 				continue;
+			}
 
-			maskIdpp[i].pushBuffer = NULL;
-			beamIdpp[i].pushBuffer = NULL;
+			maskIdpp[(s32)i].pushBuffer = NULL;
+			beamIdpp[(s32)i].pushBuffer = NULL;
 		}
 	}
 
@@ -168,7 +174,7 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 	{
 		if ((mask->rot.z & 1) == 0)
 		{
-			LHMatrix_Parent(instCurr, driverInst, (SVECTOR *)&mhs->posOffset);
+			LHMatrix_Parent(instCurr, driverInst, &mhs->posOffset);
 			ConvertRotToMatrix(&mhs->m, &mhs->rot);
 			MatrixRotate(&instCurr->matrix, &instCurr->matrix, &mhs->m);
 		}
@@ -221,7 +227,9 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 		mask->duration -= gGT->elapsedTimeMS;
 
 		if (mask->duration < 0)
+		{
 			mask->duration = 0;
+		}
 	}
 
 	// first pass
@@ -263,22 +271,14 @@ void RB_ShieldDark_ThTick_Pop(struct Thread *t)
 	rot.x = 0;
 	rot.y = 0;
 	rot.z = 0;
-	LHMatrix_Parent(instDark, driverOwner->instSelf, (SVECTOR *)rot.v);
-	LHMatrix_Parent(instColor, driverOwner->instSelf, (SVECTOR *)rot.v);
+	LHMatrix_Parent(instDark, driverOwner->instSelf, &rot);
+	LHMatrix_Parent(instColor, driverOwner->instSelf, &rot);
 
 	// set rotation
-	*(int *)&instDark->matrix.m[0][0] = 0x1000;
-	*(int *)&instDark->matrix.m[0][2] = 0;
-	*(int *)&instDark->matrix.m[1][1] = 0x1000;
-	*(int *)&instDark->matrix.m[2][0] = 0;
-	instDark->matrix.m[2][2] = 0x1000;
+	CTR_MatrixSetRotIdentity(&instDark->matrix);
 
 	// set rotation
-	*(int *)&instColor->matrix.m[0][0] = 0x1000;
-	*(int *)&instColor->matrix.m[0][2] = 0;
-	*(int *)&instColor->matrix.m[1][1] = 0x1000;
-	*(int *)&instColor->matrix.m[2][0] = 0;
-	instColor->matrix.m[2][2] = 0x1000;
+	CTR_MatrixSetRotIdentity(&instColor->matrix);
 
 	int animFrame = sh->animFrame;
 
@@ -354,7 +354,9 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 
 		int iVar8 = rotY;
 		if (rotY < 0)
+		{
 			iVar8 = rotY + 0xfff;
+		}
 
 		// if highlight is finished
 		if ((rotY + (iVar8 >> 12) * -0x1000) == 0x400)
@@ -405,7 +407,9 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 		for (i = 0; i < gGT->numPlyrCurrGame; i++)
 		{
 			if (i == player->driverID)
+			{
 				continue;
+			}
 
 			idpp[i].pushBuffer = 0;
 			colorIdpp[i].pushBuffer = 0;
@@ -421,23 +425,15 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	// Copy matrix
 	// To: shield instance, highlight instance, etc
 	// From: thread (shield) -> parentthread (player) -> object (driver) -> instance
-	LHMatrix_Parent(shieldInst, driverInst, (SVECTOR *)pos.v);
-	LHMatrix_Parent(colorInst, driverInst, (SVECTOR *)pos.v);
-	LHMatrix_Parent(highlightInst, driverInst, (SVECTOR *)pos.v);
+	LHMatrix_Parent(shieldInst, driverInst, &pos);
+	LHMatrix_Parent(colorInst, driverInst, &pos);
+	LHMatrix_Parent(highlightInst, driverInst, &pos);
 
 	// set rotation variables
-	*(int *)&shieldInst->matrix.m[0][0] = 0x1000;
-	*(int *)&shieldInst->matrix.m[0][2] = 0;
-	*(int *)&shieldInst->matrix.m[1][1] = 0x1000;
-	*(int *)&shieldInst->matrix.m[2][0] = 0;
-	shieldInst->matrix.m[2][2] = 0x1000;
+	CTR_MatrixSetRotIdentity(&shieldInst->matrix);
 
 	// set rotation variables
-	*(int *)&colorInst->matrix.m[0][0] = 0x1000;
-	*(int *)&colorInst->matrix.m[0][2] = 0;
-	*(int *)&colorInst->matrix.m[1][1] = 0x1000;
-	*(int *)&colorInst->matrix.m[2][0] = 0;
-	colorInst->matrix.m[2][2] = 0x1000;
+	CTR_MatrixSetRotIdentity(&colorInst->matrix);
 
 	// convert 3 rotation shorts into rotation matrix
 	ConvertRotToMatrix(&highlightInst->matrix, &shield->highlightRot);
@@ -549,7 +545,9 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	}
 
 	if ((shieldFlags & 2) == 0)
+	{
 		return;
+	}
 
 	player->instBubbleHold = NULL;
 	player->numTimesMissileLaunched++;
@@ -580,11 +578,7 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	}
 
 	// copy position and rotation from one instance to another
-	*(int *)&bombInst->matrix.m[0][0] = *(int *)&shieldInst->matrix.m[0][0];
-	*(int *)&bombInst->matrix.m[0][2] = *(int *)&shieldInst->matrix.m[0][2];
-	*(int *)&bombInst->matrix.m[1][1] = *(int *)&shieldInst->matrix.m[1][1];
-	*(int *)&bombInst->matrix.m[2][0] = *(int *)&shieldInst->matrix.m[2][0];
-	bombInst->matrix.m[2][2] = shieldInst->matrix.m[2][2];
+	CTR_MatrixCopyRot(&bombInst->matrix, &shieldInst->matrix);
 	bombInst->matrix.t[0] = shieldInst->matrix.t[0];
 	bombInst->matrix.t[1] = shieldInst->matrix.t[1];
 	bombInst->matrix.t[2] = shieldInst->matrix.t[2];
@@ -601,7 +595,7 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	tw->flags = 0;
 	tw->driverTarget = 0;
 	tw->timeAlive = 0;
-	tw->audioPtr = 0;
+	tw->soundIDCount = 0;
 	tw->frameCount_Blind = 0;
 
 	tw->driverParent = player;
@@ -673,8 +667,6 @@ void RB_RainCloud_ThTick(struct Thread *t)
 {
 	s16 animFrame;
 	int numFrames;
-	int reduce;
-	int rng;
 	struct Instance *inst;
 	struct Driver *d;
 	struct RainCloud *rcloud;
@@ -735,16 +727,24 @@ void RB_RainCloud_ThTick(struct Thread *t)
 		{
 			rcloud->timeMS -= gGT->elapsedTimeMS;
 			if (rcloud->timeMS < 0)
+			{
 				rcloud->timeMS = 0;
+			}
 
 			if (rcloud->effect != RAIN_CLOUD_EFFECT_ITEM_ROLL)
+			{
 				return;
+			}
 
 			if (d->heldItemID == 0xf)
+			{
 				return;
+			}
 
 			if (d->noItemTimer != 0)
+			{
 				return;
+			}
 
 			// set weapon to "weapon roulette" to make it spin
 			d->heldItemID = 0x10;
@@ -797,11 +797,7 @@ void RB_RainCloud_Init(struct Driver *d)
 
 		cloudInst->thread->funcThDestroy = PROC_DestroyInstance;
 
-		*(int *)&cloudInst->matrix.m[0][0] = 0x1000;
-		*(int *)&cloudInst->matrix.m[0][2] = 0;
-		*(int *)&cloudInst->matrix.m[1][1] = 0x1000;
-		*(int *)&cloudInst->matrix.m[2][0] = 0;
-		cloudInst->matrix.m[2][2] = 0x1000;
+		CTR_MatrixSetRotIdentity(&cloudInst->matrix);
 
 		// cloud->posX = driver->posX
 		cloudInst->matrix.t[0] = d->instSelf->matrix.t[0];

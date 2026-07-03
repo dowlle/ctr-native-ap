@@ -4,7 +4,9 @@
 int howl_Disable(void)
 {
 	if (sdata->boolAudioEnabled == 0)
+	{
 		return 0;
+	}
 
 	sdata->boolAudioEnabled = 0;
 	return 1;
@@ -24,7 +26,9 @@ void UpdateChannelVol_OtherFX(struct OtherFX *otherFX, struct ChannelAttr *attr,
 	otherVol = sdata->vol_FX;
 
 	if ((otherFX->flags & 4) != 0)
+	{
 		otherVol = sdata->vol_Voice;
+	}
 
 	Channel_SetVolume(attr, (otherVol * otherFX->volume * vol) >> 10, LR);
 }
@@ -53,13 +57,14 @@ void UpdateChannelVol_Music(struct SongSeq *songSeq, struct ChannelAttr *attr, i
 void UpdateChannelVol_EngineFX_All()
 {
 	struct ChannelStats *curr;
-	u32 *flagPtr;
 
 	for (curr = (struct ChannelStats *)sdata->channelTaken.first; curr != NULL; curr = curr->next)
 	{
 		// type == MUSIC, skip
 		if (curr->type == 2)
+		{
 			continue;
+		}
 
 		// update volume
 		sdata->ChannelUpdateFlags[curr->channelID] |= 0x40;
@@ -92,7 +97,9 @@ void UpdateChannelVol_Music_All()
 
 		// type != MUSIC, skip
 		if (curr->type != 2)
+		{
 			continue;
+		}
 
 		// update volume
 		sdata->ChannelUpdateFlags[curr->channelID] |= 0x40;
@@ -112,7 +119,9 @@ void UpdateChannelVol_OtherFX_All()
 
 		// type != OtherFX, skip
 		if (curr->type != 1)
+		{
 			continue;
+		}
 
 		// update volume
 		sdata->ChannelUpdateFlags[curr->channelID] |= 0x40;
@@ -126,13 +135,19 @@ void UpdateChannelVol_OtherFX_All()
 int howl_VolumeGet(int type)
 {
 	if (type == 1)
+	{
 		return sdata->vol_Music;
+	}
 
 	if (type == 0)
+	{
 		return sdata->vol_FX;
+	}
 
 	if (type == 2)
+	{
 		return sdata->vol_Voice;
+	}
 
 	return 0;
 }
@@ -143,7 +158,9 @@ void howl_VolumeSet(int type, u8 vol)
 	if (type == 1)
 	{
 		if (sdata->vol_Music == vol)
+		{
 			return;
+		}
 
 		sdata->vol_Music = vol;
 
@@ -154,7 +171,9 @@ void howl_VolumeSet(int type, u8 vol)
 	else if (type == 0)
 	{
 		if (sdata->vol_FX == vol)
+		{
 			return;
+		}
 
 		sdata->vol_FX = vol;
 
@@ -165,10 +184,14 @@ void howl_VolumeSet(int type, u8 vol)
 	else
 	{
 		if (type != 2)
+		{
 			return;
+		}
 
 		if (sdata->vol_Voice == vol)
+		{
 			return;
+		}
 
 		sdata->vol_Voice = vol;
 
@@ -252,7 +275,9 @@ void OptionsMenu_TestSound(int newRow, int newBoolPlay)
 
 				int val = 1;
 				if (Music_GetHighestSongPlayIndex() == 1)
+				{
 					val = 2;
+				}
 
 				CseqMusic_Start(val, 0, NULL, 0, 1);
 			}

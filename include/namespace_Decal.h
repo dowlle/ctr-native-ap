@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_DECAL_H
+#define CTR_NATIVE_NAMESPACE_DECAL_H
+
 // transparent parameter of DrawPoly funcs
 enum BlendModeDecal
 {
@@ -32,19 +35,9 @@ enum Font
 	FONT_NUM = 4,
 };
 
-// used in DecalFont_DrawLineStrlen
-enum FontFlags
-{
-	// end text at X position
-	JUSTIFY_RIGHT = 0x4000,
-
-	// center text
-	JUSTIFY_CENTER = 0x8000
-};
-
-// text color gradients corresponding to ptrColors
-// used in DecalFont_DrawLineStrlen
-enum Colors
+// DecalFont_DrawLineStrlen receives one packed style word: low bits select the
+// ptrColors slot, high bits select alignment/style.
+enum DecalFontStyle
 {
 	// normal UI text colors
 	ORANGE,
@@ -106,8 +99,23 @@ enum Colors
 #endif
 
 	// total amount of enum entries
-	NUM_COLORS
+	NUM_COLORS,
+
+	// TODO(alhendi): nicer way of doing this or...?
+	// end text at X position
+	JUSTIFY_RIGHT = 0x4000,
+
+	// center text
+	JUSTIFY_CENTER = 0x8000
 };
+
+typedef u16 DecalFontStyle;
+
+CTR_STATIC_ASSERT(sizeof(DecalFontStyle) == 0x2);
+CTR_STATIC_ASSERT(ORANGE == 0);
+CTR_STATIC_ASSERT(NUM_COLORS <= 0xfff);
+CTR_STATIC_ASSERT(JUSTIFY_RIGHT == 0x4000);
+CTR_STATIC_ASSERT(JUSTIFY_CENTER == 0x8000);
 
 struct TextureLayout
 {
@@ -169,9 +177,11 @@ struct IconGroup
 };
 #define ICONGROUP_GETICONS(x) (struct Icon **)((u32)x + sizeof(struct IconGroup))
 
-_Static_assert(sizeof(struct TextureLayout) == 0xC);
-_Static_assert(sizeof(struct Icon) == 0x20);
+CTR_STATIC_ASSERT(sizeof(struct TextureLayout) == 0xC);
+CTR_STATIC_ASSERT(sizeof(struct Icon) == 0x20);
 
-#define setIconUV(p, icon)                                                                                                                    \
-	*(u32 *)&p->u0 = *(u32 *)&icon->texLayout.u0, *(u32 *)&p->u1 = *(u32 *)&icon->texLayout.u1, *(u16 *)&p->u2 = *(u16 *)&icon->texLayout.u2, \
-	      *(u16 *)&p->u3 = *(u16 *)&icon->texLayout.u3
+#define setIconUV(p, icon)                                                                                                                              \
+	CtrGpu_WritePackedUVWord(&(p)->u0, CTR_ReadU32LE(&(icon)->texLayout.u0)), CtrGpu_WritePackedUVWord(&(p)->u1, CTR_ReadU32LE(&(icon)->texLayout.u1)), \
+	    CtrGpu_WritePackedUV(&(p)->u2, CTR_ReadU16LE(&(icon)->texLayout.u2)), CtrGpu_WritePackedUV(&(p)->u3, CTR_ReadU16LE(&(icon)->texLayout.u3))
+
+#endif

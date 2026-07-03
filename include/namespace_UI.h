@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_UI_H
+#define CTR_NATIVE_NAMESPACE_UI_H
+
 struct UiElement2D
 {
 	s16 x;
@@ -43,10 +46,12 @@ struct QuipMeta
 	int dataSize;
 };
 
-_Static_assert(sizeof(struct UiElement2D) == 0x8);
-_Static_assert(OFFSETOF(struct UiElement3D, rot) == 0x0);
-_Static_assert(OFFSETOF(struct UiElement3D, scale) == 0x6);
-_Static_assert(OFFSETOF(struct UiElement3D, m) == 0x8);
-_Static_assert(sizeof(struct UiElement3D) == 0x38);
-_Static_assert(sizeof(struct QuipStr) == 0x8);
-_Static_assert(sizeof(struct QuipMeta) == 0x18);
+CTR_STATIC_ASSERT(sizeof(struct UiElement2D) == 0x8);
+CTR_STATIC_ASSERT(OFFSETOF(struct UiElement3D, rot) == 0x0);
+CTR_STATIC_ASSERT(OFFSETOF(struct UiElement3D, scale) == 0x6);
+CTR_STATIC_ASSERT(OFFSETOF(struct UiElement3D, m) == 0x8);
+CTR_STATIC_ASSERT(sizeof(struct UiElement3D) == 0x38);
+CTR_STATIC_ASSERT(sizeof(struct QuipStr) == 0x8);
+CTR_STATIC_ASSERT(sizeof(struct QuipMeta) == 0x18);
+
+#endif

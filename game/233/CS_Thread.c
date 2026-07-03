@@ -1,23 +1,31 @@
 #include <common.h>
 
+struct CSThreadParentFrameScratch
+{
+	SVec3Slot parentPos;
+	u8 pad_110[0x08];
+	SVec3Slot parentRot;
+};
+
+CTR_STATIC_ASSERT(offsetof(struct CSThreadParentFrameScratch, parentPos) == 0x00);
+CTR_STATIC_ASSERT(offsetof(struct CSThreadParentFrameScratch, parentRot) == 0x10);
+
 static void CS_SaveDecodedOpcode(const struct CutsceneObj *cs, int out[5])
 {
-	const int *src = (const int *)&cs->decodedOpcode;
-	out[0] = src[0];
-	out[1] = src[1];
-	out[2] = src[2];
-	out[3] = src[3];
-	out[4] = src[4];
+	out[0] = cs->decodedOpcode.words[0];
+	out[1] = cs->decodedOpcode.words[1];
+	out[2] = cs->decodedOpcode.words[2];
+	out[3] = cs->decodedOpcode.words[3];
+	out[4] = cs->decodedOpcode.words[4];
 }
 
 static void CS_RestoreDecodedOpcode(struct CutsceneObj *cs, const int in[5])
 {
-	int *dst = (int *)&cs->decodedOpcode;
-	dst[0] = in[0];
-	dst[1] = in[1];
-	dst[2] = in[2];
-	dst[3] = in[3];
-	dst[4] = in[4];
+	cs->decodedOpcode.words[0] = in[0];
+	cs->decodedOpcode.words[1] = in[1];
+	cs->decodedOpcode.words[2] = in[2];
+	cs->decodedOpcode.words[3] = in[3];
+	cs->decodedOpcode.words[4] = in[4];
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac840-0x800ade8c
@@ -38,9 +46,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 	struct Thread *dancerThread;
 	char *opcodeAt;
 	int iVar12;
-	struct CsOpcodeMeta *opcodeMeta;
+	union CsOpcodeMeta *opcodeMeta;
 	s16 *opcodeMetaShorts;
-	s16 *frameData;
+	struct CsInitMatrixEntry *frameData;
 	int rotInterpNumerator;
 	int rotInterpStartFrame;
 	int rotInterpFrameRange;
@@ -50,7 +58,7 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 	int metadataBackup[5];
 	SVec3 camRot;
 	SVec3 camPos;
-	u16 camPathFlags[2];
+	s16 camPathFlags[2];
 	int animIndex;
 	int opcodeDuration;
 	int opcodeChanged;
@@ -62,7 +70,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 	if (instance != 0)
 	{
 		if ((instance->flags & SPLIT_LINE) != 0)
+		{
 			instance->vertSplit = D233.VertSplitLine;
+		}
 
 		if ((int)instance->model->id == (u32)(u8)gGT->podium_modelIndex_Second)
 		{
@@ -73,7 +83,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			else
 			{
 				if ((instance->flags & HIDE_MODEL) == 0)
+				{
 					goto afterPodiumSecondModelCheck;
+				}
 				instance->depthBiasNormal -= 2;
 				instance->depthBiasSecondary -= 2;
 				instance->flags &= ~HIDE_MODEL;
@@ -90,7 +102,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			else
 			{
 				if ((instance->flags & HIDE_MODEL) == 0)
+				{
 					goto afterPodiumFirstModelCheck;
+				}
 				instance->depthBiasNormal -= 6;
 				instance->depthBiasSecondary -= 6;
 				instance->flags &= ~HIDE_MODEL;
@@ -111,9 +125,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 					CS_ScriptCmd_OpcodeAt(cs, R233.advCharSelectSelectOpcodes[(int)instance->model->id - STATIC_CRASHSELECT]);
 					CS_SaveDecodedOpcode(cs, metadataBackup);
 				reloadAdvCharSelectOpcodeState:
-					cs->unk18 = ((int *)&cs->decodedOpcode)[2];
+					cs->unk18 = cs->decodedOpcode.words[2];
 					iVar8 = MixRNG_Scramble();
-					opcodeMeta = (struct CsOpcodeMeta *)cs->metadata;
+					opcodeMeta = cs->metadataMeta;
 					opcodeMetaShorts = (s16 *)opcodeMeta;
 					cs->opcodeDuration =
 					    opcodeMeta->frameStart + (s16)((int)((iVar8 >> 2 & 0xfff) * (((int)opcodeMeta->frameEnd - (int)opcodeMeta->frameStart) + 1)) >> 0xc);
@@ -136,7 +150,7 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 	iVar12 = cs->unk18;
 	iVar8 = (int)cs->unk1e;
 	elapsedTimeRemaining = gGT->elapsedTimeMS;
-	opcodeMeta = (struct CsOpcodeMeta *)cs->metadata;
+	opcodeMeta = cs->metadataMeta;
 	opcodeMetaShorts = (s16 *)opcodeMeta;
 	animIndex = (int)opcodeMeta->animIndex;
 
@@ -155,26 +169,38 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			else
 			{
 				if (opcodeMeta->opcode == 0x14)
+				{
 					CS_ScriptCmd_OpcodeNext(cs);
+				}
 				CAM_Path_Move((int)(s16)(numCamPathPoints + -1), gGT->pushBuffer[0].pos.v, gGT->pushBuffer[0].rot.v, camPathFlags);
 			}
 
 			clockEffectFlags = gGT->clockEffectEnabled;
 			gGT->clockEffectEnabled = clockEffectFlags & 0xfffe;
 			if ((camPathFlags[0] & 1) != 0)
-				gGT->clockEffectEnabled = clockEffectFlags & 0xfffe | 1;
+			{
+				gGT->clockEffectEnabled = (clockEffectFlags & 0xfffe) | 1;
+			}
 
 			if ((cs->flags & 0x20) == 0)
 			{
 				gGT->pushBuffer[0].distanceToScreen_PREV = 0x100;
 				if ((camPathFlags[0] & 2) != 0)
+				{
 					gGT->pushBuffer[0].distanceToScreen_PREV = 0x50;
+				}
 				if ((camPathFlags[0] & 4) != 0)
+				{
 					gGT->pushBuffer[0].distanceToScreen_PREV = 0x278;
+				}
 				if ((camPathFlags[0] & 0x20) != 0)
+				{
 					gGT->pushBuffer[0].distanceToScreen_PREV = 0x1eb;
+				}
 				if ((camPathFlags[0] & 0x40) != 0)
+				{
 					gGT->pushBuffer[0].distanceToScreen_PREV = 0x14d;
+				}
 			}
 
 			if (((camPathFlags[0] & 0x10) != 0) && ((MixRNG_Scramble() & 0xf) == 0))
@@ -183,7 +209,9 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 			}
 
 			if (gGT->levelID == 0x29)
+			{
 				gGT->pushBuffer[0].distanceToScreen_PREV = 0x140;
+			}
 
 			gGT->pushBuffer[0].distanceToScreen_CURR = gGT->pushBuffer[0].distanceToScreen_PREV;
 		}
@@ -196,21 +224,29 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 				if (gGT->levelID == 0x29)
 				{
 					if ((u32)gGT->msInThisLEV >> 5 < 0xb5)
+					{
 						goto afterCameraAndSkipChecks;
+					}
 					RaceFlag_SetCanDraw(1);
 					iVar8 = RaceFlag_IsTransitioning();
 					if ((iVar8 == 0) && (iVar8 = RaceFlag_IsFullyOnScreen(), iVar8 == 0))
+					{
 						RaceFlag_SetFullyOffScreen();
+					}
 				}
 				else
 				{
 					RaceFlag_SetCanDraw(1);
 					iVar8 = RaceFlag_IsTransitioning();
 					if ((iVar8 == 0) && (iVar8 = RaceFlag_IsFullyOnScreen(), iVar8 == 0))
+					{
 						RaceFlag_SetFullyOffScreen();
+					}
 					levelToLoad = CREDITS_CRASH;
 					if (gGT->levelID - 0x2aU < 2)
+					{
 						goto requestSkipLevelLoad;
+					}
 				}
 				CseqMusic_StopAll();
 				CDSYS_XAPauseRequest();
@@ -243,10 +279,12 @@ afterCameraAndSkipChecks:
 			rotInterpStartFrame = opcodeMeta->arg0.i;
 			if (opcodeMeta->arg1.i != rotInterpStartFrame)
 			{
-				rotInterpNumerator = ((((int)opcodeMeta->rotEnd - iVar10) + 0x800U & 0xfff) - 0x800) * (iVar12 - rotInterpStartFrame);
+				rotInterpNumerator = (((((int)opcodeMeta->rotEnd - iVar10) + 0x800U) & 0xfff) - 0x800) * (iVar12 - rotInterpStartFrame);
 				rotInterpFrameRange = opcodeMeta->arg1.i - rotInterpStartFrame;
 				if (rotInterpFrameRange < 0)
+				{
 					rotInterpFrameRange = -rotInterpFrameRange;
+				}
 				iVar10 = iVar10 + rotInterpNumerator / rotInterpFrameRange;
 			}
 		}
@@ -268,15 +306,15 @@ afterCameraAndSkipChecks:
 		}
 		if (cs->frameOverrideRoot != 0)
 		{
-			frameData = (s16 *)((uintptr_t)(*cs->frameOverrideRoot) + iVar12 * 0x20);
-			*(int *)((u8 *)&instance->matrix + 0x00) = *(int *)(frameData + 4);
-			*(int *)((u8 *)&instance->matrix + 0x04) = *(int *)(frameData + 6);
-			*(int *)((u8 *)&instance->matrix + 0x08) = *(int *)(frameData + 8);
-			*(int *)((u8 *)&instance->matrix + 0x0c) = *(int *)(frameData + 10);
-			*(int *)((u8 *)&instance->matrix + 0x10) = *(int *)(frameData + 0xc);
-			instance->matrix.t[0] = (int)*frameData;
-			instance->matrix.t[1] = (int)frameData[1];
-			instance->matrix.t[2] = (int)frameData[2];
+			frameData = &cs->frameOverrideRoot->data[iVar12];
+			CTR_WriteU32LE((u8 *)&instance->matrix + 0x00, CTR_ReadU32LE(&frameData->rotScaleOrMatrix[0]));
+			CTR_WriteU32LE((u8 *)&instance->matrix + 0x04, CTR_ReadU32LE(&frameData->rotScaleOrMatrix[2]));
+			CTR_WriteU32LE((u8 *)&instance->matrix + 0x08, CTR_ReadU32LE(&frameData->rotScaleOrMatrix[4]));
+			CTR_WriteU32LE((u8 *)&instance->matrix + 0x0c, CTR_ReadU32LE(&frameData->rotScaleOrMatrix[6]));
+			CTR_WriteU32LE((u8 *)&instance->matrix + 0x10, CTR_ReadU32LE(&frameData->rotScaleOrMatrix[8]));
+			instance->matrix.t[0] = frameData->offset[0];
+			instance->matrix.t[1] = frameData->offset[1];
+			instance->matrix.t[2] = frameData->offset[2];
 		}
 		return 0;
 	}
@@ -293,18 +331,24 @@ processOpcode:
 			if ((cutsceneFlags & 0x200) != 0)
 			{
 				if (((cutsceneFlags & 0x400) == 0) && (sdata->XA_State == 3))
+				{
 					cs->flags = cutsceneFlags | 0x400;
+				}
 				if (sdata->XA_State != 0)
 				{
 					if ((cs->flags & 0x400) == 0)
+					{
 						iVar12 = 0;
+					}
 					else
 					{
 						iVar12 = CS_Instance_SafeCheckAnimFrame(instance, animIndex, iVar8, (sdata->XA_CurrOffset * 0x1e00) / 0xac44);
 						iVar12 = iVar12 << 5;
 					}
 					if (opcodeMeta->arg1.i << 5 < iVar12)
+					{
 						break;
+					}
 					goto updateInstanceAndReturn;
 				}
 				break;
@@ -375,7 +419,9 @@ processOpcode:
 
 	case 2:
 		if (instance != 0)
+		{
 			instance->flags |= HIDE_MODEL;
+		}
 		CS_RestoreDecodedOpcode(cs, metadataBackup);
 		return 1;
 
@@ -402,16 +448,20 @@ processOpcode:
 				initData->rot.z = 0;
 			}
 
-			CS_Thread_Init(spawnModelID, R233.s_spawn, (s16 *)initData, 0, instance->thread);
+			CS_Thread_Init(spawnModelID, R233.s_spawn, initData, 0, instance->thread);
 		}
 		break;
 
 	case 4:
 		iVar10 = MixRNG_Scramble();
 		if (opcodeMeta->arg0.i < (int)(iVar10 >> 2 & 0xff))
+		{
 			CS_ScriptCmd_OpcodeNext(cs);
+		}
 		else
+		{
 			CS_ScriptCmd_OpcodeAt(cs, opcodeMeta->arg1.ptr);
+		}
 		opcodeChanged = 1;
 		goto finishOpcodeStep;
 
@@ -419,13 +469,17 @@ processOpcode:
 		if (gGT->levelID == 0x28)
 		{
 			if (instance != 0)
+			{
 				Garage_PlayFX(opcodeMeta->arg1.u, (int)instance->model->id + -0xce);
+			}
 		}
 		else
 		{
 			iVar10 = CS_Instance_BoolPlaySound(cs, instance);
 			if (iVar10 != 0)
+			{
 				OtherFX_Play((u32)(u16)opcodeMetaShorts[6], 1);
+			}
 		}
 		break;
 
@@ -467,7 +521,9 @@ processOpcode:
 
 	case 10:
 		if (opcodeMeta->arg1.i == -1)
+		{
 			cutsceneFlags = cs->flags | CS_FLAG_PATH_MOTION_DISABLED;
+		}
 		else
 		{
 			cs->pathProgress32 = 0;
@@ -545,7 +601,9 @@ processOpcode:
 					goto requestMappedLevelLoad;
 				}
 				if (iVar10 == 0x2c)
+				{
 					goto requestDirectLevelLoad;
+				}
 			}
 			D233.boolLoadNextSwap = 1;
 			LOAD_Hub_ReadFile(sdata->ptrBigfileCdPos_2, iVar10, 3 - (int)gGT->activeMempackIndex);
@@ -554,13 +612,17 @@ processOpcode:
 
 	case 0x11:
 		if ((D233.boolLoadNextSwap == 0) || (sdata->queueReady == 0) || (sdata->queueLength != 0))
+		{
 			goto updateInstanceAndReturn;
+		}
 		break;
 
 	case 0x12:
 		CDSYS_XAPlay(opcodeMeta->arg0.i, opcodeMeta->arg1.i);
 		if (sdata->XA_State != 0)
-			cs->flags = cs->flags & 0xfbff | 0x200;
+		{
+			cs->flags = (cs->flags & 0xfbff) | 0x200;
+		}
 		break;
 
 	case 0x13:
@@ -599,7 +661,9 @@ processOpcode:
 	case 0x18:
 		iVar10 = RaceFlag_IsFullyOnScreen();
 		if (iVar10 == 1)
+		{
 			RaceFlag_BeginTransition(2);
+		}
 		break;
 
 	case 0x19:
@@ -609,12 +673,16 @@ processOpcode:
 
 	case 0x1a:
 		if (instance != 0)
+		{
 			instance->flags |= HIDE_MODEL;
+		}
 		break;
 
 	case 0x1b:
 		if (instance != 0)
+		{
 			instance->flags &= ~HIDE_MODEL;
+		}
 		break;
 
 	case 0x1c:
@@ -627,12 +695,16 @@ processOpcode:
 
 	case 0x1d:
 		if (instance != 0)
+		{
 			instance->flags |= opcodeMeta->arg1.u;
+		}
 		break;
 
 	case 0x1e:
 		if (instance != 0)
+		{
 			instance->flags &= ~opcodeMeta->arg1.u;
+		}
 		break;
 
 	case 0x1f:
@@ -651,7 +723,9 @@ processOpcode:
 	case 0x21:
 		D233.bossCutsceneIndex = opcodeMeta->arg1.i;
 		if ((D233.bossCutsceneIndex == 0) && (0x11 < gGT->currAdvProfile.numRelics))
+		{
 			D233.bossCutsceneIndex = 9;
+		}
 		D233.cutsceneState = CS_WAIT_INPUT;
 		break;
 
@@ -695,13 +769,15 @@ processOpcode:
 			gGT->podium_modelIndex_Second = STATIC_OXIDEDANCE;
 		}
 		if (dancerModelID == STATIC_CRASHDANCE)
+		{
 			initData->rot.y += 0x800;
+		}
 
 		initData->rot.x += R233.creditsDancerRotOffset.x;
 		initData->rot.y += R233.creditsDancerRotOffset.y;
 		initData->rot.z += R233.creditsDancerRotOffset.z;
 
-		dancerThread = (struct Thread *)CS_Thread_Init(dancerModelID, R233.s_g_dancer, (s16 *)initData, 0, 0);
+		dancerThread = (struct Thread *)CS_Thread_Init(dancerModelID, R233.s_g_dancer, initData, 0, 0);
 		CS_Credits_NewDancer(dancerThread, (int)opcodeMetaShorts[6]);
 	}
 	break;
@@ -711,7 +787,9 @@ processOpcode:
 	advanceIfConditionMet:
 		conditionMet &= 0xffff;
 		if (conditionMet == 0)
+		{
 			goto updateInstanceAndReturn;
+		}
 		break;
 
 	case 0x26:
@@ -737,7 +815,9 @@ processOpcode:
 
 	case 0x27:
 		if ((u32)gGT->msInThisLEV >> 5 < opcodeMeta->arg1.u)
+		{
 			goto updateInstanceAndReturn;
+		}
 		break;
 
 	case 0x28:
@@ -753,22 +833,30 @@ processOpcode:
 	case 0x2c:
 		gameModeTarget = opcodeMeta->animIndex;
 		if (gameModeTarget == 1)
+		{
 			gGT->gameMode2 |= opcodeMeta->arg1.u;
+		}
 		else
 		{
 			if (gameModeTarget < 2)
 			{
 				if (gameModeTarget == 0)
+				{
 					gGT->gameMode1 |= opcodeMeta->arg1.u;
+				}
 			}
 			else
 			{
 				if (gameModeTarget == 2)
+				{
 					gGT->renderFlags |= opcodeMeta->arg1.u;
+				}
 				else
 				{
 					if (gameModeTarget == 3)
+					{
 						gGT->renderFlags &= ~opcodeMeta->arg1.u;
+					}
 				}
 			}
 		}
@@ -791,7 +879,9 @@ processOpcode:
 
 	case 0x2f:
 		if (0 < gGT->pushBuffer_UI.fadeFromBlack_currentValue)
+		{
 			goto updateInstanceAndReturn;
+		}
 		break;
 
 	case 0x30:
@@ -810,7 +900,9 @@ processOpcode:
 
 finishOpcodeStep:
 	if ((elapsedTimeRemaining != 0) || (opcodeChanged != 0))
+	{
 		goto processOpcode;
+	}
 	goto updateInstanceAndReturn;
 }
 
@@ -821,10 +913,14 @@ void CS_Thread_AnimateScale(struct Thread *t)
 	struct CutsceneObj *cs = t->object;
 
 	if (!inst)
+	{
 		return;
+	}
 
 	if (cs->scaleSpeed == 0)
+	{
 		return;
+	}
 
 	int newScale = (int)inst->scale.x + (int)cs->scaleSpeed;
 	int desiredScale = (int)cs->desiredScale;
@@ -862,25 +958,32 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 	int switchVal;
 	int digit;
 	struct SpawnType2 *spawnEntry;
-	s16 *coords;
-	s16 *curr;
-	s16 *next;
+	SVec3 *positions;
+	SVec3 *curr;
+	SVec3 *next;
+	struct SpawnPosRot *posRot;
 	u16 progress;
 	int idx;
 	u16 frac;
 	SVec3 rot;
 
 	if ((cs->flags & CS_FLAG_PATH_MOTION_DISABLED) != 0)
+	{
 		return;
+	}
 
 	if (inst == 0)
+	{
 		return;
+	}
 
 	modelID = inst->model->id;
 	switchVal = (s16)(modelID - 0xA1);
 
 	if ((u32)switchVal >= 63)
+	{
 		return;
+	}
 
 	gGT = sdata->gGT;
 	level = gGT->level1;
@@ -893,13 +996,17 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 		digit = (u8)inst->name[strlen(inst->name) - 1] - '0';
 
 		if (level->numSpawnType2 <= digit)
+		{
 			return;
+		}
 
-		spawnEntry = (struct SpawnType2 *)((char *)level->ptrSpawnType2 + digit * 8);
-		coords = spawnEntry->posCoords;
+		spawnEntry = &level->ptrSpawnType2[digit];
+		positions = spawnEntry->positions;
 
-		if (coords == 0)
+		if (positions == 0)
+		{
 			return;
+		}
 
 		progress = cs->pathProgress32;
 		idx = (s16)progress >> 5;
@@ -921,21 +1028,25 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 			}
 		}
 
-		curr = &coords[idx * 3];
-		next = &curr[3];
+		curr = &positions[idx];
+		next = &curr[1];
 
-		inst->matrix.t[0] = curr[0] + ((frac * (next[0] - curr[0])) >> 5);
-		inst->matrix.t[1] = curr[1] + ((frac * (next[1] - curr[1])) >> 5);
-		inst->matrix.t[2] = curr[2] + ((frac * (next[2] - curr[2])) >> 5);
+		inst->matrix.t[0] = curr->x + ((frac * (next->x - curr->x)) >> 5);
+		inst->matrix.t[1] = curr->y + ((frac * (next->y - curr->y)) >> 5);
+		inst->matrix.t[2] = curr->z + ((frac * (next->z - curr->z)) >> 5);
 
 		if (idx >= spawnEntry->numCoords - 1)
+		{
 			return;
+		}
 
 		if (modelID == 0xDF)
+		{
 			return;
+		}
 
 		rot.x = cs->rot.x;
-		rot.y = cs->rot.y + ratan2(next[0] - curr[0], next[2] - curr[2]);
+		rot.y = cs->rot.y + ratan2(next->x - curr->x, next->z - curr->z);
 		rot.z = cs->rot.z;
 
 		ConvertRotToMatrix(&inst->matrix, &rot);
@@ -949,13 +1060,17 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 		digit = (u8)inst->name[strlen(inst->name) - 1] - '0';
 
 		if (level->numSpawnType2_PosRot <= digit)
+		{
 			return;
+		}
 
-		spawnEntry = (struct SpawnType2 *)((char *)level->ptrSpawnType2_PosRot + digit * 8);
-		coords = spawnEntry->posCoords;
+		spawnEntry = &level->ptrSpawnType2_PosRot[digit];
+		posRot = spawnEntry->posRot;
 
-		if (coords == 0)
+		if (posRot == 0)
+		{
 			return;
+		}
 
 		progress = cs->pathProgress32;
 		cs->pathProgress32 = (u16)(progress + (u16)gGT->elapsedTimeMS);
@@ -968,15 +1083,13 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 		}
 
 		{
-			s16 *point = &coords[idx * 6];
+			struct SpawnPosRot *frame = &posRot[idx];
 
-			inst->matrix.t[0] = point[0];
-			inst->matrix.t[1] = point[1];
-			inst->matrix.t[2] = point[2];
+			inst->matrix.t[0] = frame->pos.x;
+			inst->matrix.t[1] = frame->pos.y;
+			inst->matrix.t[2] = frame->pos.z;
 
-			rot.x = point[3];
-			rot.y = point[4];
-			rot.z = point[5];
+			rot = frame->rot;
 		}
 
 		break;
@@ -984,19 +1097,25 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 	case 0x30:
 
 		if (level->numSpawnType2 <= 0)
+		{
 			return;
+		}
 
 		spawnEntry = level->ptrSpawnType2;
-		coords = spawnEntry->posCoords;
+		positions = spawnEntry->positions;
 
-		if (coords == 0)
+		if (positions == 0)
+		{
 			return;
+		}
 
 		{
 			int prog = 0;
 
 			if (cs->animIndex == 3)
+			{
 				prog = cs->unk18;
+			}
 
 			frac = prog & 0x1f;
 			int numCoords = spawnEntry->numCoords;
@@ -1006,24 +1125,24 @@ void CS_Thread_MoveOnPath(struct Thread *t)
 			{
 				if (idx >= 0)
 				{
-					curr = &coords[idx * 3];
-					next = &curr[3];
+					curr = &positions[idx];
+					next = &curr[1];
 				}
 				else
 				{
-					curr = &coords[0];
+					curr = &positions[0];
 					next = curr;
 				}
 			}
 			else
 			{
-				curr = &coords[(numCoords - 1) * 3];
+				curr = &positions[numCoords - 1];
 				next = curr;
 			}
 
-			inst->matrix.t[0] = curr[0] + ((frac * (next[0] - curr[0])) >> 5);
-			inst->matrix.t[1] = curr[1] + ((frac * (next[1] - curr[1])) >> 5);
-			inst->matrix.t[2] = curr[2] + ((frac * (next[2] - curr[2])) >> 5);
+			inst->matrix.t[0] = curr->x + ((frac * (next->x - curr->x)) >> 5);
+			inst->matrix.t[1] = curr->y + ((frac * (next->y - curr->y)) >> 5);
+			inst->matrix.t[2] = curr->z + ((frac * (next->z - curr->z)) >> 5);
 		}
 
 		return;
@@ -1044,14 +1163,20 @@ void CS_Thread_Particles(struct Thread *t)
 	s8 particleID;
 
 	if (inst == NULL)
+	{
 		return;
+	}
 
 	if ((inst->flags & HIDE_MODEL) != 0)
+	{
 		return;
+	}
 
 	particleID = cs->particleID;
 	if ((u8)particleID >= 9)
+	{
 		return;
+	}
 
 	entry = &R233.particleConfigs[(int)particleID];
 
@@ -1081,7 +1206,9 @@ void CS_Thread_Particles(struct Thread *t)
 		}
 
 		if ((flags & 1) == 0)
+		{
 			break;
+		}
 
 		entry++;
 	}
@@ -1097,13 +1224,13 @@ struct CSInterpolateLinePacket
 	u32 xy1;
 };
 
-_Static_assert(sizeof(struct CSInterpolateLinePacket) == 0x18);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, tag) == 0x00);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, drawMode) == 0x04);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, pad) == 0x08);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, colorAndCode) == 0x0C);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, xy0) == 0x10);
-_Static_assert(offsetof(struct CSInterpolateLinePacket, xy1) == 0x14);
+CTR_STATIC_ASSERT(sizeof(struct CSInterpolateLinePacket) == 0x18);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, tag) == 0x00);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, drawMode) == 0x04);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, pad) == 0x08);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, colorAndCode) == 0x0C);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, xy0) == 0x10);
+CTR_STATIC_ASSERT(offsetof(struct CSInterpolateLinePacket, xy1) == 0x14);
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae318-0x800ae54c
 void CS_Thread_InterpolateFramesMS(struct Thread *t)
@@ -1133,7 +1260,9 @@ void CS_Thread_InterpolateFramesMS(struct Thread *t)
 	end = primMem->guardEnd;
 
 	if ((uintptr_t)(packet + 1) >= (uintptr_t)end)
+	{
 		return;
+	}
 
 	gte_SetRotMatrix(&gGT->pushBuffer[0].matrix_ViewProj);
 	gte_SetTransMatrix(&gGT->pushBuffer[0].matrix_ViewProj);
@@ -1163,17 +1292,21 @@ void CS_Thread_InterpolateFramesMS(struct Thread *t)
 
 			color = fade >> 11;
 			if (fade < 0)
+			{
 				color = (fade + 0x7ff) >> 11;
+			}
 		}
 
 		packet->colorAndCode = color | (color << 8) | (color << 16) | 0x42000000;
 
 		otIndex = depth >> 6;
 		if (otIndex > 0x3ff)
+		{
 			otIndex = 0x3ff;
+		}
 
 		ot = (u32 *)&gGT->pushBuffer[0].ptrOT[otIndex];
-		packet->tag = (*ot & 0xffffff) | 0x05000000;
+		packet->tag = CtrGpu_PackOTTag(*ot, 0x05000000);
 		*ot = CtrGpu_PrimToOTLink24(packet);
 		packet++;
 	}
@@ -1192,20 +1325,24 @@ void CS_Thread_LInB(struct Instance *inst)
 	D233.isCutsceneOver = 0;
 
 	if (inst->thread != 0)
+	{
 		goto check_polar;
+	}
 
 	t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(0x60, NONE, MEDIUM, STATIC), CS_Thread_ThTick, R233.s_introguy, 0);
 
 	inst->thread = t;
 
 	if (t == 0)
+	{
 		return;
+	}
 
 	cs = t->object;
 
 	t->inst = inst;
 
-	cs->metadata = (int *)&cs->decodedOpcode;
+	cs->metadataMeta = &cs->decodedOpcode;
 	cs->prevOpcode = (char *)-1;
 	cs->Subtitles.lngIndex = -1;
 
@@ -1229,11 +1366,11 @@ void CS_Thread_LInB(struct Instance *inst)
 
 	CS_ScriptCmd_OpcodeAt(cs, scriptPtr);
 
-	cs->unk18 = *(int *)(cs->metadata + 2);
+	cs->unk18 = cs->metadata[2];
 
 	{
 		int rng = MixRNG_Scramble();
-		s16 *meta = (s16 *)cs->metadata;
+		s16 *meta = cs->metadataShorts;
 		s16 frameStart = meta[2];
 		s16 frameEnd = meta[3];
 
@@ -1274,8 +1411,7 @@ check_polar:
 void CS_Thread_ThTick(struct Thread *t)
 {
 	// Retail uses scratchpad 0x1f800108/0x1f800118 for parent frame-data temporaries.
-	s16 *parentPos = CTR_SCRATCHPAD_PTR(s16, 0x108);
-	s16 *parentRot = CTR_SCRATCHPAD_PTR(s16, 0x118);
+	struct CSThreadParentFrameScratch *parentFrame = CTR_SCRATCHPAD_PTR(struct CSThreadParentFrameScratch, 0x108);
 	SVec3 bonePos;
 	struct CutsceneObj *cs = t->object;
 	struct Instance *inst = t->inst;
@@ -1287,7 +1423,9 @@ void CS_Thread_ThTick(struct Thread *t)
 		t->flags |= THREAD_FLAG_DEAD;
 
 		if ((sdata->gGT->gameMode2 & 0x80) != 0)
+		{
 			return;
+		}
 	}
 
 	CS_Thread_MoveOnPath(t);
@@ -1295,7 +1433,9 @@ void CS_Thread_ThTick(struct Thread *t)
 	CS_Thread_Particles(t);
 
 	if ((cs->flags & 0x40) != 0)
+	{
 		CS_Thread_InterpolateFramesMS(t);
+	}
 
 	// ASM: 0x800ae5dc - parent-thread frameOverrideRoot processing
 	if (inst != 0)
@@ -1308,22 +1448,25 @@ void CS_Thread_ThTick(struct Thread *t)
 			{
 				parentInst = parentThread->inst;
 
-				CS_Instance_GetFrameData(parentInst, parentInst->animIndex, parentInst->animFrame, (u16 *)parentPos, (u16 *)parentRot, 0);
+				CS_Instance_GetFrameData(parentInst, parentInst->animIndex, parentInst->animFrame, (u16 *)parentFrame->parentPos.vec.v,
+				                         (u16 *)parentFrame->parentRot.vec.v, 0);
 
-				inst->matrix.t[0] = parentInst->matrix.t[0] + parentPos[0];
-				inst->matrix.t[1] = parentInst->matrix.t[1] + parentPos[1];
-				inst->matrix.t[2] = parentInst->matrix.t[2] + parentPos[2];
+				inst->matrix.t[0] = parentInst->matrix.t[0] + parentFrame->parentPos.x;
+				inst->matrix.t[1] = parentInst->matrix.t[1] + parentFrame->parentPos.y;
+				inst->matrix.t[2] = parentInst->matrix.t[2] + parentFrame->parentPos.z;
 
 				if ((cs->flags & 0x10) == 0)
 				{
-					ConvertRotToMatrix(&inst->matrix, parentRot);
+					ConvertRotToMatrix(&inst->matrix, &parentFrame->parentRot.vec);
 				}
 			}
 		}
 
 		inst = t->inst;
 		if (inst == 0)
+		{
 			goto thTick_subtitles;
+		}
 
 		// ASM: 0x800ae6b4 - flag 0x8 writes bone Y to overlay-233 mutable state.
 		if ((cs->flags & 0x8) != 0)
@@ -1334,7 +1477,9 @@ void CS_Thread_ThTick(struct Thread *t)
 
 			inst = t->inst;
 			if (inst == 0)
+			{
 				goto thTick_subtitles;
+			}
 		}
 
 		// ASM: 0x800ae6fc - flag 0x2: random alphaScale for fade effect
@@ -1355,20 +1500,19 @@ thTick_subtitles:
 	{
 		struct GameTracker *gGT = sdata->gGT;
 		int textWidth;
-		u16 textRect[4];
+		RECT textRect;
 
 		textWidth = DecalFont_DrawMultiLine(sdata->lngStrings[cs->Subtitles.lngIndex], cs->Subtitles.textPos.x, cs->Subtitles.textPos.y, 460,
 		                                    cs->Subtitles.font, cs->Subtitles.colors);
 
-		textRect[0] = (u16)((u16)cs->Subtitles.textPos.x - 236);
-		textRect[1] = (u16)((u16)cs->Subtitles.textPos.y - 4);
-		textRect[2] = 472;
-		textRect[3] = (u16)((s16)textWidth + 8);
+		textRect.x = (s16)((u16)cs->Subtitles.textPos.x - 236);
+		textRect.y = (s16)((u16)cs->Subtitles.textPos.y - 4);
+		textRect.w = 472;
+		textRect.h = (s16)textWidth + 8;
 
-		RECTMENU_DrawInnerRect((RECT *)textRect, 4, gGT->backBuffer->otMem.uiOT);
+		RECTMENU_DrawInnerRect(&textRect, 4, gGT->backBuffer->otMem.uiOT);
 	}
 
-thTick_epilogue:
 	// ASM: 0x800ae7dc - check isCutsceneOver, re-apply death flag
 	if (D233.isCutsceneOver != 0)
 	{
@@ -1377,7 +1521,7 @@ thTick_epilogue:
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800af328-0x800af7c0
-struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 param_4, struct Thread *parent)
+struct Thread *CS_Thread_Init(s16 modelID, const char *name, struct CsThreadInitData *initData, s16 param_4, struct Thread *parent)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	struct CutsceneObj *cs;
@@ -1394,22 +1538,30 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 p
 		t = PROC_BirthWithObject(SIZE_RELATIVE_POOL_BUCKET(0x60, NONE, MEDIUM, CAMERA), CS_Thread_ThTick, name, parent);
 
 		if (t == NULL)
+		{
 			return NULL;
+		}
 	}
 	else
 	{
 		bucket = OTHER;
 
 		if ((u32)(modelID - NDI_KART6) < 2)
+		{
 			bucket = AKUAKU;
+		}
 
 		if ((u32)(modelID - NDI_KART0) < 4)
+		{
 			bucket = GHOST;
+		}
 
 		inst = INSTANCE_BirthWithThread(modelID, name, MEDIUM, bucket, CS_Thread_ThTick, 0x60, parent);
 
 		if (inst == NULL)
+		{
 			return NULL;
+		}
 
 		t = inst->thread;
 		t->funcThDestroy = PROC_DestroyInstance;
@@ -1417,7 +1569,7 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 p
 
 	cs = t->object;
 
-	cs->metadata = (int *)&cs->decodedOpcode;
+	cs->metadataMeta = &cs->decodedOpcode;
 	cs->frameOverrideRoot = NULL;
 	cs->prevOpcode = (char *)-1;
 	cs->Subtitles.lngIndex = -1;
@@ -1464,7 +1616,7 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 p
 
 			if ((u32)(modelID - NDI_KART0) < 4)
 			{
-				cs->frameOverrideRoot = (int *)&D233.cs_initMatrixTable[modelID - NDI_KART0];
+				cs->frameOverrideRoot = &D233.cs_initMatrixTable[modelID - NDI_KART0];
 			}
 
 			goto after_opcode;
@@ -1481,9 +1633,13 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 p
 		else if ((u32)(modelID - STATIC_TAWNA1) < 4)
 		{
 			if (gGT->gameMode2 & CREDITS)
+			{
 				scriptPtr = (char *)R233.script_tawnaCredits;
+			}
 			else
+			{
 				scriptPtr = (char *)R233.script_tawnaNormal;
+			}
 		}
 		else if ((u32)(modelID - STATIC_CRASHDANCE) < 0x10)
 		{
@@ -1491,9 +1647,13 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, s16 *param_3, s16 p
 			int off = (modelID - STATIC_CRASHDANCE);
 
 			if (modelID == gGT->podium_modelIndex_First)
+			{
 				base = R233.danceFirstScripts;
+			}
 			else
+			{
 				base = R233.danceOtherScripts;
+			}
 
 			scriptPtr = base[off];
 		}
@@ -1509,22 +1669,22 @@ after_opcode:
 
 	cs->unk18 = cs->metadata[2];
 
-	meta = (s16 *)cs->metadata;
+	meta = cs->metadataShorts;
 	cs->opcodeDuration = meta[2] + (s16)(((MixRNG_Scramble() >> 2 & 0xfff) * ((meta[3] - meta[2]) + 1)) >> 0xc);
 
 	if (inst != NULL)
 	{
-		MTC2(*(int *)(param_3 + 4), 0);
-		MTC2(*(int *)(param_3 + 6), 1);
+		MTC2(CTR_PackS16Pair(initData->characterPos.x, initData->characterPos.y), 0);
+		MTC2(CTR_PackS16Pair(initData->characterPos.z, initData->characterPos.w), 1);
 		gte_llv0();
 
 		int rx = MFC2(25);
 		int ry = MFC2(26);
 		int rz = MFC2(27);
 
-		inst->matrix.t[0] = rx + param_3[0];
-		inst->matrix.t[1] = ry + param_3[1];
-		inst->matrix.t[2] = rz + param_3[2];
+		inst->matrix.t[0] = rx + initData->podiumPos.x;
+		inst->matrix.t[1] = ry + initData->podiumPos.y;
+		inst->matrix.t[2] = rz + initData->podiumPos.z;
 
 		if (gGT->levelID != NAUGHTY_DOG_CRATE)
 		{
@@ -1539,16 +1699,16 @@ after_opcode:
 			inst->depthBiasSecondary -= 4;
 		}
 
-		param_3[0xc] = param_3[8];
-		param_3[0xe] = param_3[10];
-		param_3[0xd] = param_3[9] + param_4;
+		initData->derivedRot.x = initData->rot.x;
+		initData->derivedRot.z = initData->rot.z;
+		initData->derivedRot.y = initData->rot.y + param_4;
 
-		ConvertRotToMatrix(&inst->matrix, param_3 + 0xc);
+		ConvertRotToMatrix(&inst->matrix, &initData->derivedRot.vec);
 
-		cs->unk1c = param_3[0xd] & 0xfff;
-		cs->rot.x = param_3[0xc] & 0xfff;
-		cs->rot.y = param_3[0xd] & 0xfff;
-		cs->rot.z = param_3[0xe] & 0xfff;
+		cs->unk1c = initData->derivedRot.y & 0xfff;
+		cs->rot.x = initData->derivedRot.x & 0xfff;
+		cs->rot.y = initData->derivedRot.y & 0xfff;
+		cs->rot.z = initData->derivedRot.z & 0xfff;
 	}
 
 	cs->particleID = 0xff;

@@ -13,11 +13,10 @@ void MM_HighScore_Text3D(char *string, int posX, int posY, s16 font, u32 flags)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800b2fbc-0x800b3914.
 void MM_HighScore_Draw(u16 trackIndex, u32 rowIndex, u32 posX, u32 posY)
 {
-	char i;
+	s32 i;
 	s16 numColor;
-	s16 sVar1;
 	s16 lineWidth;
-	int *colorPtr;
+	u32 *colorPtr;
 	s16 levelID;
 	struct HighScoreEntry *entry;
 	RECT videoBox;
@@ -114,7 +113,7 @@ void MM_HighScore_Draw(u16 trackIndex, u32 rowIndex, u32 posX, u32 posY)
 	// Icon, Name, and Time
 	for (i = 0; i < 5; i++)
 	{
-		char j = i + 2;
+		s32 j = i + 2;
 
 		// Character Icon
 		RECTMENU_DrawPolyGT4(gGT->ptrIcons[data.MetaDataCharacters[entry[i + 1].characterID].iconID], D230.transitionMeta_HighScores[j].currX + offsetX + 0x20,
@@ -192,7 +191,9 @@ void MM_HighScore_MenuProc(struct RectMenu *menu_unused)
 		}
 		D230.highScore_transitionFrames[0] = sVar2;
 		if (D230.highScore_transitionState != IN_MENU)
+		{
 			goto LAB_OVR_230__800b3c78;
+		}
 	}
 	if ((sdata->buttonTapPerPlayer[0] & 1) == 0)
 	{
@@ -333,7 +334,7 @@ LAB_OVR_230__800b3c78:
 		iVar7 = (8 - D230.highScore_transitionFrames[1]) * D230.highScore_horizontalMove[0] * 0x40;
 	}
 
-	u_long *ot = sdata->gGT->backBuffer->otMem.uiOT;
+	uint32_t *ot = sdata->gGT->backBuffer->otMem.uiOT;
 
 	if (((iVar7 != -0x200) && (iVar7 != 0x200)) && ((iVar4 != -0xd8 && (iVar4 != 0xd8))))
 	{

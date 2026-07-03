@@ -32,17 +32,18 @@ void RB_Minecart_CheckColl(struct Instance *minecartInst, struct Thread *minecar
 
 void RB_Minecart_NewPoint(struct Instance *minecartInst, struct Minecart *minecartObj, struct SpawnType2 *spawnType2)
 {
-	int pointIndex = minecartObj->posIndex * 3;
+	const SVec3 *start = &spawnType2->positions[minecartObj->posIndex - 1];
+	const SVec3 *end = &spawnType2->positions[minecartObj->posIndex];
 
 	for (int i = 0; i < 3; i++)
 	{
-		int start = spawnType2->posCoords[pointIndex + i - 3];
-		int end = spawnType2->posCoords[pointIndex + i];
+		int startValue = start->v[i];
+		int endValue = end->v[i];
 
-		minecartObj->posStart.v[i] = start;
-		minecartObj->posEnd.v[i] = end;
-		minecartInst->matrix.t[i] = start;
-		minecartObj->dir.v[i] = start - end;
+		minecartObj->posStart.v[i] = startValue;
+		minecartObj->posEnd.v[i] = endValue;
+		minecartInst->matrix.t[i] = startValue;
+		minecartObj->dir.v[i] = startValue - endValue;
 	}
 
 #if defined(CTR_NATIVE)
@@ -81,7 +82,9 @@ void RB_Minecart_ThTick(struct Thread *t)
 	}
 
 	if (level->numSpawnType2 == 0)
+	{
 		return;
+	}
 
 	// path coordinates for minecarts
 	spawnType2 = &level->ptrSpawnType2[0];
@@ -137,7 +140,7 @@ void RB_Minecart_ThTick(struct Thread *t)
 	// converted to TEST in rebuildPS1
 	ConvertRotToMatrix(&minecartInst->matrix, &minecartObj->rotCurr);
 
-	PlaySound3D_Flags(&minecartObj->audioPtr,
+	PlaySound3D_Flags(&minecartObj->soundIDCount,
 	                  0x72, // minecart sound
 	                  minecartInst);
 
@@ -153,7 +156,9 @@ void RB_Minecart_LInB(struct Instance *inst)
 	int startIndex;
 
 	if (inst->thread != 0)
+	{
 		return;
+	}
 
 	t = PROC_BirthWithObject(
 	    // creation flags
@@ -165,12 +170,14 @@ void RB_Minecart_LInB(struct Instance *inst)
 	);
 
 	if (t == 0)
+	{
 		return;
+	}
 	inst->thread = t;
 	t->inst = inst;
 
 	// memset is faster than erasing the following
-	// betweenPoints_currFrame, rotDesired[2], audioPtr,
+	// betweenPoints_currFrame, rotDesired[2], soundIDCount,
 	// rotCurr[0], rotCurr[1], rotCurr[2]
 
 	minecartObj = ((struct Minecart *)t->object);
@@ -218,7 +225,9 @@ void RB_Minecart_LInB(struct Instance *inst)
 
 		// #2 and any other non-0/non-1 suffix
 		if (minecartID != 1)
+		{
 			startIndex = startIndex << 1;
+		}
 
 		startIndex = startIndex / 3;
 	}

@@ -101,23 +101,33 @@ void VehStuckProc_MaskGrab_FindDestPos(struct Driver *d, struct QuadBlock *quad)
 					int diffZ = CTR_MipsSubLo(d->posCurr.z, other->posCurr.z);
 
 					if (diffX < 0)
+					{
 						diffX = CTR_MipsNegLo(diffX);
+					}
 
 					if (diffX < 0x2000)
+					{
 						break;
+					}
 
 					if (diffZ < 0)
+					{
 						diffZ = CTR_MipsNegLo(diffZ);
+					}
 
 					if (diffZ < 0x2000)
+					{
 						break;
+					}
 				}
 
 				playerThread = playerThread->siblingThread;
 			}
 
 			if (playerThread == NULL)
+			{
 				break;
+			}
 		} while (1);
 	}
 
@@ -136,7 +146,9 @@ void VehStuckProc_MaskGrab_Particles(struct Driver *d)
 		p = Particle_Init(0, sdata->gGT->iconGroup[0], &data.emSet_Maskgrab[0]);
 
 		if (p == NULL)
+		{
 			return;
+		}
 
 		// position variables
 		p->axis[0].startVal = CTR_MipsAddLo(p->axis[0].startVal, d->posCurr.x);
@@ -154,10 +166,14 @@ void VehStuckProc_MaskGrab_Update(struct Thread *t, struct Driver *d)
 	d->NoInputTimer = (s16)CTR_MipsSubLo((u16)d->NoInputTimer, (u16)gGT->elapsedTimeMS);
 
 	if (d->NoInputTimer < 0)
+	{
 		d->NoInputTimer = 0;
+	}
 
 	if (d->NoInputTimer != 0)
+	{
 		return;
+	}
 
 	// when input is allowed,
 	// which is when driver is spawned back over track
@@ -255,15 +271,21 @@ void VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 
 		// logic specific to matrix set
 		if (maskGrabAnimFrame < 3)
+		{
 			d->matrixIndex = 7;
+		}
 		else
+		{
 			d->matrixIndex = maskGrabAnimFrame + 5;
+		}
 
 
 		// logic specific to instance
 		frame = 7;
 		if (2 < maskGrabAnimFrame)
+		{
 			frame = maskGrabAnimFrame + 5;
+		}
 		inst->animFrame = frame;
 
 
@@ -271,7 +293,9 @@ void VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 		frame = maskGrabAnimFrame + 1;
 
 		if (frame > 7)
+		{
 			frame = 7;
+		}
 		d->KartStates.MaskGrab.animFrame = frame;
 
 		// no input is less than 1.35 s
@@ -292,7 +316,9 @@ void VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 			{
 				d->jumpSquishStretch = (s16)CTR_MipsSubLo((u16)d->jumpSquishStretch, 800);
 				if (d->jumpSquishStretch < 0)
+				{
 					d->jumpSquishStretch = 0;
+				}
 			}
 			else
 			{
@@ -307,7 +333,9 @@ void VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 
 				d->jumpSquishStretch = (s16)CTR_MipsAddLo((u16)d->jumpSquishStretch, 0x2d0);
 				if (d->jumpSquishStretch > 8000)
+				{
 					d->jumpSquishStretch = 8000;
+				}
 			}
 		}
 		else
@@ -325,7 +353,9 @@ void VehStuckProc_MaskGrab_Animate(struct Thread *t, struct Driver *d)
 
 	// if maskObj
 	if (mask == 0)
+	{
 		return;
+	}
 
 	// set mask duration
 	mask->duration = 7680;
@@ -435,7 +465,9 @@ void VehStuckProc_MaskGrab_Init(struct Thread *t, struct Driver *d)
 			{
 				struct Particle *p = Particle_Init(0, gGT->iconGroup[9], &data.emSet_Falling[0]);
 				if (p == NULL)
+				{
 					break;
+				}
 
 				p->otIndexOffset = d->instSelf->depthBiasNormal;
 				p->driverInst = d->instSelf;
@@ -465,7 +497,9 @@ void VehStuckProc_MaskGrab_Init(struct Thread *t, struct Driver *d)
 
 	struct MaskHeadWeapon *mask = d->KartStates.MaskGrab.maskObj;
 	if (mask == NULL)
+	{
 		return;
+	}
 
 	mask->rot.z |= 1;
 
@@ -543,7 +577,7 @@ void VehStuckProc_PlantEaten_Animate(struct Thread *t, struct Driver *d)
 	struct Instance *inst;
 	SVECTOR plantVector;
 	VECTOR camVec;
-	s32 alStack32[2];
+	s32 gteFlags[2];
 
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -575,10 +609,10 @@ void VehStuckProc_PlantEaten_Animate(struct Thread *t, struct Driver *d)
 		camVec.vx = 0;
 		camVec.vy = 0;
 		camVec.vz = 0;
-		alStack32[0] = 0;
-		alStack32[1] = 0;
+		gteFlags[0] = 0;
+		gteFlags[1] = 0;
 
-		RotTrans(&plantVector, &camVec, (long *)alStack32);
+		RotTrans(&plantVector, &camVec, gteFlags);
 
 		struct PushBuffer *pb = &gGT->pushBuffer[d->driverID];
 
@@ -648,14 +682,16 @@ void VehStuckProc_PlantEaten_Init(struct Thread *t, struct Driver *d)
 	inst->flags |= HIDE_MODEL;
 
 	OtherFX_Stop1((int)d->driverAudioPtrs[1]);
-	d->driverAudioPtrs[1] = NULL;
+	d->driverAudioPtrs[1] = 0;
 	OtherFX_Stop1((int)d->driverAudioPtrs[2]);
-	d->driverAudioPtrs[2] = NULL;
+	d->driverAudioPtrs[2] = 0;
 	OtherFX_Stop1((int)d->driverAudioPtrs[0]);
-	d->driverAudioPtrs[0] = NULL;
+	d->driverAudioPtrs[0] = 0;
 
 	for (i = 0; i < DRIVER_FUNC_COUNT; i++)
-		d->funcPtrs[i] = PlayerEatenFuncTable[i];
+	{
+		d->funcPtrs[(s32)i] = PlayerEatenFuncTable[(s32)i];
+	}
 }
 
 DriverFunc PlayerEatenFuncTable[DRIVER_FUNC_COUNT] = {
@@ -720,7 +756,9 @@ void VehStuckProc_RevEngine_Update(struct Thread *t, struct Driver *d)
 	// this function
 
 	if ((d->KartStates.RevEngine.boolMaskGrab == true) && (d->KartStates.RevEngine.maskObj != NULL))
+	{
 		d->KartStates.RevEngine.maskObj->duration = 0;
+	}
 
 	if ((d->const_AccelSpeed_ClassStat < d->KartStates.RevEngine.fireLevel) && (d->KartStates.RevEngine.lockoutFlags & REV_ENGINE_LOCKOUT_ALL) == 0)
 	{
@@ -760,28 +798,36 @@ void VehStuckProc_RevEngine_PhysLinear(struct Thread *t, struct Driver *d)
 	cooldownTimer = (u16)d->KartStates.RevEngine.releaseCooldownTimerMS;
 	cooldownTimer = CTR_MipsSubLo(cooldownTimer, (u16)gGT->elapsedTimeMS);
 	if ((cooldownTimer & 0x8000) != 0)
+	{
 		cooldownTimer = 0;
+	}
 	d->KartStates.RevEngine.releaseCooldownTimerMS = (s16)cooldownTimer;
 
 	cooldownTimer = (u16)d->KartStates.RevEngine.emptyCooldownTimerMS;
 	cooldownTimer = CTR_MipsSubLo(cooldownTimer, (u16)gGT->elapsedTimeMS);
 	if ((cooldownTimer & 0x8000) != 0)
+	{
 		cooldownTimer = 0;
+	}
 	d->KartStates.RevEngine.emptyCooldownTimerMS = (s16)cooldownTimer;
 
 	VehPhysProc_Driving_PhysLinear(t, d);
 
 	if (d->KartStates.RevEngine.boolMaskGrab == 0)
+	{
 		return;
+	}
 
 	d->posCurr.y = CTR_MipsSubLo(d->posCurr.y, 0x200);
 
 	// if maskObj exists
 	if (d->KartStates.RevEngine.maskObj != 0)
+	{
 		d->KartStates.RevEngine.maskObj->duration = 7680;
+	}
 
 	struct CameraDC *cDC = &gGT->cameraDC[d->driverID];
-	cDC->flags |= 0x10;
+	cDC->flags |= CAMERA_FLAG_MASK_GRAB;
 	cDC->maskGrabHeightOffset = 0x40;
 }
 
@@ -795,7 +841,9 @@ void VehStuckProc_RevEngine_Animate(struct Thread *t, struct Driver *d)
 	{
 		int revDelta = CTR_MipsSubLo(d->KartStates.RevEngine.fireLevel, d->KartStates.RevEngine.boostMeter);
 		if (revDelta < 0)
+		{
 			revDelta = CTR_MipsNegLo(revDelta);
+		}
 
 		revDelta = CTR_MipsSra(revDelta, 1);
 
@@ -805,10 +853,14 @@ void VehStuckProc_RevEngine_Animate(struct Thread *t, struct Driver *d)
 		// depending on how full the meter is,
 		// there are two speeds
 		if (5000 < revDelta)
+		{
 			fillStep = 5000;
+		}
 
 		if (revDelta < 0x100)
+		{
 			fillStep = 0x100;
+		}
 
 		int revLevel = VehCalc_InterpBySpeed(d->KartStates.RevEngine.fireLevel, fillStep, d->KartStates.RevEngine.boostMeter);
 
@@ -842,7 +894,9 @@ void VehStuckProc_RevEngine_Animate(struct Thread *t, struct Driver *d)
 		d->KartStates.RevEngine.chargeState = REV_ENGINE_CHARGE_IDLE;
 
 		if (d->const_AccelSpeed_ClassStat < d->KartStates.RevEngine.fireLevel)
+		{
 			d->KartStates.RevEngine.chargeState = REV_ENGINE_CHARGE_RELEASED_ABOVE_ACCEL;
+		}
 	}
 
 	if ((d->KartStates.RevEngine.chargeState != REV_ENGINE_CHARGE_IDLE) && (d->KartStates.RevEngine.fireLevel < d->const_AccelSpeed_ClassStat))
@@ -886,7 +940,9 @@ void VehStuckProc_RevEngine_Animate(struct Thread *t, struct Driver *d)
 		}
 
 		if (decayBelowMinimum)
+		{
 			decayStep = 0x100;
+		}
 
 		int revLevel = CTR_MipsSubLo(d->KartStates.RevEngine.fireLevel, decayStep);
 		d->KartStates.RevEngine.fireLevel = revLevel;
@@ -899,18 +955,24 @@ void VehStuckProc_RevEngine_Animate(struct Thread *t, struct Driver *d)
 	}
 
 	if (d->fireSpeed < 1)
+	{
 		d->KartStates.RevEngine.lockoutFlags &= ~REV_ENGINE_LOCKOUT_PEDAL_HELD;
+	}
 
-LAB_80067dec:
+LAB_80067dec:;
 
 	u32 packedStatus = ((u32)(u16)d->KartStates.RevEngine.emptyCooldownTimerMS) | ((u32)d->KartStates.RevEngine.chargeState << 16) |
 	                   ((u32)d->KartStates.RevEngine.lockoutFlags << 24);
 	if ((packedStatus & REV_ENGINE_PACKED_BUSY_MASK) == 0)
 	{
 		if (d->KartStates.RevEngine.fireLevel < d->const_AccelSpeed_ClassStat)
+		{
 			d->revEngineState = 0;
+		}
 		else
+		{
 			d->revEngineState = 1;
+		}
 	}
 	else
 	{
@@ -961,7 +1023,9 @@ LAB_80067dec:
 	if (squishScale < 0x401)
 	{
 		if (squishScale < 0)
+		{
 			squishScale = 0;
+		}
 	}
 	else
 	{
@@ -1009,7 +1073,7 @@ void VehStuckProc_RevEngine_Init(struct Thread *t, struct Driver *d)
 		sdata->gGT->cameraDC[d->driverID].flags |= 8;
 	}
 
-	for (char i = 0; i < DRIVER_FUNC_COUNT; i++)
+	for (s32 i = 0; i < DRIVER_FUNC_COUNT; i++)
 	{
 		d->funcPtrs[i] = PlayerRevEngineFuncTable[i];
 	}
@@ -1035,7 +1099,9 @@ DriverFunc PlayerRevEngineFuncTable[DRIVER_FUNC_COUNT] = {
 void VehStuckProc_Tumble_Update(struct Thread *thread, struct Driver *driver)
 {
 	if (driver->NoInputTimer != 0)
+	{
 		return;
+	}
 
 	driver->matrixArray = 0;
 	driver->matrixIndex = 0;
@@ -1049,7 +1115,9 @@ void VehStuckProc_Tumble_PhysLinear(struct Thread *thread, struct Driver *driver
 	driver->NoInputTimer = (s16)CTR_MipsSubLo((u16)driver->NoInputTimer, (u16)sdata->gGT->elapsedTimeMS);
 
 	if (driver->NoInputTimer < 0)
+	{
 		driver->NoInputTimer = 0;
+	}
 
 	VehPhysProc_Driving_PhysLinear(thread, driver);
 
@@ -1174,15 +1242,21 @@ void VehStuckProc_Warp_MoveDustPuff(s16 *points, int span, int radius, s16 *jitt
 
 	int jitterX = CTR_MipsSra(CTR_MipsMulLo(MixRNG_Scramble() & 0xfff, radius), 0xc);
 	if (jitterX < radiusHalf)
+	{
 		jitterX = CTR_MipsSubLo(jitterX, radius);
+	}
 
 	int jitterY = CTR_MipsSra(CTR_MipsMulLo(MixRNG_Scramble() & 0xfff, radius), 0xc);
 	if (jitterY < radiusHalf)
+	{
 		jitterY = CTR_MipsSubLo(jitterY, radius);
+	}
 
 	int jitterZ = CTR_MipsSra(CTR_MipsMulLo(MixRNG_Scramble() & 0xfff, radius), 0xc);
 	if (jitterZ < radiusHalf)
+	{
 		jitterZ = CTR_MipsSubLo(jitterZ, radius);
+	}
 
 	s16 *end = points + span * 4;
 	int halfSpan = CTR_MipsSra(span, 1);
@@ -1208,16 +1282,22 @@ void VehStuckProc_Warp_AddDustPuff1(struct ScratchpadStruct *sps)
 
 	// if even frame don't spawn
 	if (gGT->timer & 1)
+	{
 		return;
+	}
 
 	struct Particle *p = Particle_Init(0, gGT->iconGroup[1], &data.emSet_Warppad[0]);
 
 	if (p == NULL)
+	{
 		return;
+	}
 
 	// position variables
-	for (char i = 0; i < 3; i++)
+	for (s32 i = 0; i < 3; i++)
+	{
 		p->axis[i].startVal = CTR_MipsAddLo(p->axis[i].startVal, CTR_MipsSll(sps->Input1.pos.v[i], 8));
+	}
 }
 
 
@@ -1229,6 +1309,17 @@ struct VehWarpDustProjected
 	u32 sxy1;
 	u32 sxy2;
 	u32 depth;
+};
+
+struct VehWarpDustScratch
+{
+	u8 pad_000[0x108];
+	SVECTOR points[VEH_WARP_DUST_SEGMENTS + 1];
+	SVECTOR projectLeft;
+	SVECTOR projectRight;
+	struct VehWarpDustProjected prev;
+	struct VehWarpDustProjected curr;
+	SVec3 jitterScale;
 };
 
 struct VehWarpDustG4Body
@@ -1251,36 +1342,37 @@ struct VehWarpDustPacket
 	struct VehWarpDustG4Body rightStrip;
 };
 
-_Static_assert(sizeof(struct VehWarpDustG4Body) == 0x20);
-_Static_assert(offsetof(struct VehWarpDustG4Body, color0AndCode) == 0x00);
-_Static_assert(offsetof(struct VehWarpDustG4Body, xy0) == 0x04);
-_Static_assert(offsetof(struct VehWarpDustG4Body, color1) == 0x08);
-_Static_assert(offsetof(struct VehWarpDustG4Body, xy1) == 0x0C);
-_Static_assert(offsetof(struct VehWarpDustG4Body, color2) == 0x10);
-_Static_assert(offsetof(struct VehWarpDustG4Body, xy2) == 0x14);
-_Static_assert(offsetof(struct VehWarpDustG4Body, color3) == 0x18);
-_Static_assert(offsetof(struct VehWarpDustG4Body, xy3) == 0x1C);
+CTR_STATIC_ASSERT(sizeof(struct VehWarpDustG4Body) == 0x20);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, color0AndCode) == 0x00);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, xy0) == 0x04);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, color1) == 0x08);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, xy1) == 0x0C);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, color2) == 0x10);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, xy2) == 0x14);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, color3) == 0x18);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustG4Body, xy3) == 0x1C);
 
-_Static_assert(sizeof(struct VehWarpDustPacket) == 0x48);
-_Static_assert(offsetof(struct VehWarpDustPacket, tag) == 0x00);
-_Static_assert(offsetof(struct VehWarpDustPacket, drawMode) == 0x04);
-_Static_assert(offsetof(struct VehWarpDustPacket, leftStrip) == 0x08);
-_Static_assert(offsetof(struct VehWarpDustPacket, rightStrip) == 0x28);
+CTR_STATIC_ASSERT(sizeof(struct VehWarpDustPacket) == 0x48);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustPacket, tag) == 0x00);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustPacket, drawMode) == 0x04);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustPacket, leftStrip) == 0x08);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustPacket, rightStrip) == 0x28);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, points) == 0x108);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, projectLeft) == 0x190);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, projectRight) == 0x198);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, prev) == 0x1a0);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, curr) == 0x1b0);
+CTR_STATIC_ASSERT(offsetof(struct VehWarpDustScratch, jitterScale) == 0x1c0);
 
 static s16 VehWarpDust_AddHalf(s16 value, int delta)
 {
 	return (s16)CTR_MipsAddLo((u16)value, delta);
 }
 
-static u32 VehWarpDust_Ptr24(const void *ptr)
+static void VehWarpDust_Project(struct VehWarpDustScratch *scratch, SVECTOR *point, int offsetX, int offsetY, int offsetZ, struct VehWarpDustProjected *out)
 {
-	return CtrGpu_PrimToOTLink24(ptr);
-}
-
-static void VehWarpDust_Project(SVECTOR *point, int offsetX, int offsetY, int offsetZ, struct VehWarpDustProjected *out)
-{
-	SVECTOR *left = CTR_SCRATCHPAD_PTR(SVECTOR, 0x190);
-	SVECTOR *right = CTR_SCRATCHPAD_PTR(SVECTOR, 0x198);
+	SVECTOR *left = &scratch->projectLeft;
+	SVECTOR *right = &scratch->projectRight;
 
 	left->vx = VehWarpDust_AddHalf(point->vx, offsetX);
 	left->vy = VehWarpDust_AddHalf(point->vy, offsetY);
@@ -1302,7 +1394,7 @@ static void VehWarpDust_Project(SVECTOR *point, int offsetX, int offsetY, int of
 static void VehWarpDust_EmitSegment(u32 **primCursor, struct PushBuffer *pb, const struct VehWarpDustProjected *prev, const struct VehWarpDustProjected *curr)
 {
 	struct VehWarpDustPacket *packet = (struct VehWarpDustPacket *)*primCursor;
-	u_long *ot = pb->ptrOT + CTR_MipsSra((s32)curr->depth, 6);
+	uint32_t *ot = pb->ptrOT + CTR_MipsSra((s32)curr->depth, 6);
 
 	packet->drawMode = 0xe1000a20;
 
@@ -1324,8 +1416,7 @@ static void VehWarpDust_EmitSegment(u32 **primCursor, struct PushBuffer *pb, con
 	packet->rightStrip.color3 = 0x007f1f3f;
 	packet->rightStrip.xy3 = prev->sxy1;
 
-	packet->tag = (u32)*ot | 0x11000000;
-	*ot = (u_long)VehWarpDust_Ptr24(packet);
+	CtrGpu_LinkPacket24(ot, &packet->tag, packet, 0x11000000);
 	*primCursor = (u32 *)(packet + 1);
 }
 
@@ -1336,9 +1427,10 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 	struct PushBuffer *pb = &gGT->pushBuffer[d->driverID];
 	struct DB *backBuffer = gGT->backBuffer;
 	u32 *prim = backBuffer->primMem.cursor;
-	SVECTOR *points = CTR_SCRATCHPAD_PTR(SVECTOR, 0x108);
+	struct VehWarpDustScratch *scratch = CTR_SCRATCHPAD_PTR(struct VehWarpDustScratch, 0);
+	SVECTOR *points = scratch->points;
 	SVECTOR *endpoint = &points[VEH_WARP_DUST_SEGMENTS];
-	s16 *jitterScale = CTR_SCRATCHPAD_PTR(s16, 0x1c0);
+	s16 *jitterScale = scratch->jitterScale.v;
 	int offsetX;
 	int offsetY;
 	int offsetZ;
@@ -1365,8 +1457,8 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 	for (int ring = 0; ring < 6; ring++)
 	{
 		int baseAngle = CTR_MipsAddLo((CTR_MipsSll(ring, 12) / 6), warp[3]);
-		struct VehWarpDustProjected *prev = CTR_SCRATCHPAD_PTR(struct VehWarpDustProjected, 0x1a0);
-		struct VehWarpDustProjected *curr = CTR_SCRATCHPAD_PTR(struct VehWarpDustProjected, 0x1b0);
+		struct VehWarpDustProjected *prev = &scratch->prev;
+		struct VehWarpDustProjected *curr = &scratch->curr;
 
 		points[0].vx = (s16)CTR_MipsSubLo(CTR_MipsSra(d->posCurr.x, 8), CTR_MipsSra(MATH_Sin(baseAngle), 5));
 		points[0].vy = (s16)CTR_MipsSra(warp[2], 8);
@@ -1391,15 +1483,17 @@ void VehStuckProc_Warp_AddDustPuff2(struct Driver *d, int *warp)
 		VehStuckProc_Warp_MoveDustPuff((s16 *)points, VEH_WARP_DUST_SEGMENTS, 0x100, jitterScale);
 
 		for (int i = 1; i < VEH_WARP_DUST_SEGMENTS; i++)
+		{
 			points[i].vy = VehWarpDust_AddHalf(points[i].vy, CTR_MipsSra(MATH_Sin(CTR_MipsSll(i, 7)), 7));
+		}
 
-		VehWarpDust_Project(&points[0], offsetX, offsetY, offsetZ, prev);
+		VehWarpDust_Project(scratch, &points[0], offsetX, offsetY, offsetZ, prev);
 
 		for (int seg = 0; seg < VEH_WARP_DUST_SEGMENTS; seg++)
 		{
 			struct VehWarpDustProjected *tmp;
 
-			VehWarpDust_Project(&points[seg + 1], offsetX, offsetY, offsetZ, curr);
+			VehWarpDust_Project(scratch, &points[seg + 1], offsetX, offsetY, offsetZ, curr);
 			VehWarpDust_EmitSegment(&prim, pb, prev, curr);
 
 			tmp = prev;
@@ -1428,7 +1522,9 @@ void VehStuckProc_Warp_PhysAngular(struct Thread *th, struct Driver *d)
 		int beamHeight = CTR_MipsAddLo(d->posCurr.y, 0x100);
 
 		if (beamHeight < d->KartStates.Warp.quadHeight)
+		{
 			beamHeight = d->KartStates.Warp.quadHeight;
+		}
 
 		d->KartStates.Warp.beamHeight = beamHeight;
 
@@ -1446,11 +1542,15 @@ void VehStuckProc_Warp_PhysAngular(struct Thread *th, struct Driver *d)
 		// interpolate until scale is [0x12c0, 0x960, 0x12c0],
 		// car is wide and s16
 
-		for (char i = 0; i < 3; i++)
+		for (s32 i = 0; i < 3; i++)
+		{
 			inst->scale.v[i] = VehCalc_InterpBySpeed(inst->scale.v[i], 120, 4800 >> (i & 1));
+		}
 
 		if (d->posCurr.y < CTR_MipsAddLo(d->quadBlockHeight, 0x8000))
+		{
 			d->posCurr.y = CTR_MipsAddLo(d->posCurr.y, 0x800);
+		}
 	}
 	else
 	{
@@ -1462,8 +1562,10 @@ void VehStuckProc_Warp_PhysAngular(struct Thread *th, struct Driver *d)
 		// interpolate until scale is [0, 24000, 0],
 		// car is tall and thin
 
-		for (char i = 0; i < 3; i++)
+		for (s32 i = 0; i < 3; i++)
+		{
 			inst->scale.v[i] = VehCalc_InterpBySpeed(inst->scale.v[i], (i == 1) ? 3200 : 600, 24000 * (i & 1));
+		}
 
 		// if scale shrinks to zero
 		if (inst->scale.x == 0)
@@ -1508,7 +1610,9 @@ void VehStuckProc_Warp_PhysAngular(struct Thread *th, struct Driver *d)
 void VehStuckProc_Warp_Init(struct Thread *th, struct Driver *d)
 {
 	if (d->kartState == KS_WARP_PAD)
+	{
 		return;
+	}
 
 	// If you are not in a warp pad
 
@@ -1520,11 +1624,11 @@ void VehStuckProc_Warp_Init(struct Thread *th, struct Driver *d)
 	OtherFX_Play(0x97, 1);
 
 	OtherFX_Stop1((int)d->driverAudioPtrs[1]);
-	d->driverAudioPtrs[1] = NULL;
+	d->driverAudioPtrs[1] = 0;
 	OtherFX_Stop1((int)d->driverAudioPtrs[2]);
-	d->driverAudioPtrs[2] = NULL;
+	d->driverAudioPtrs[2] = 0;
 	OtherFX_Stop1((int)d->driverAudioPtrs[0]);
-	d->driverAudioPtrs[0] = NULL;
+	d->driverAudioPtrs[0] = 0;
 
 	u8 playerID = d->driverID;
 

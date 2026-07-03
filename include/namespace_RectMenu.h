@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_RECTMENU_H
+#define CTR_NATIVE_NAMESPACE_RECTMENU_H
+
 enum MenuFlags
 {
 	// menu's X position will be used to center it horizontally
@@ -151,9 +154,11 @@ struct RectMenu
 #endif
 };
 
-_Static_assert(sizeof(struct MenuRow) == 6);
+CTR_STATIC_ASSERT(sizeof(struct MenuRow) == 6);
 #if BUILD != SepReview
-_Static_assert(sizeof(struct RectMenu) == 0x2C);
+CTR_STATIC_ASSERT(sizeof(struct RectMenu) == 0x2C);
 #else
-_Static_assert(sizeof(struct RectMenu) == 0x34);
+CTR_STATIC_ASSERT(sizeof(struct RectMenu) == 0x34);
+#endif
+
 #endif

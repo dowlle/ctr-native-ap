@@ -15,7 +15,7 @@ struct DecalMPEntry
 	struct PushBuffer pb;
 };
 
-_Static_assert(sizeof(struct DecalMPEntry) == 0x128);
+CTR_STATIC_ASSERT(sizeof(struct DecalMPEntry) == 0x128);
 
 static inline struct DecalMPEntry *DecalMP_GetEntry(struct GameTracker *gGT, int index)
 {
@@ -32,7 +32,9 @@ static inline struct InstDrawPerPlayer *DecalMP_GetIdpp(struct Instance *inst, i
 void DecalMP_01(struct GameTracker *gGT)
 {
 	if (gGT->numPlyrCurrGame == 0)
+	{
 		return;
+	}
 
 	int entryIndex = 0;
 
@@ -44,14 +46,18 @@ void DecalMP_01(struct GameTracker *gGT)
 		{
 			struct Driver *driver = gGT->drivers[driverID];
 			if (driver == NULL)
+			{
 				continue;
+			}
 
 			struct Instance *inst = driver->instSelf;
 			struct InstDrawPerPlayer *idpp = DecalMP_GetIdpp(inst, cameraID);
 			idpp->instFlags |= 0x300;
 
 			if (driverID == cameraID)
+			{
 				continue;
+			}
 
 			struct DecalMPEntry *entry = DecalMP_GetEntry(gGT, entryIndex++);
 
@@ -86,7 +92,9 @@ void DecalMP_02(struct GameTracker *gGT)
 	{
 		struct DecalMPEntry *entry = DecalMP_GetEntry(gGT, index);
 		if (entry->inst == NULL)
+		{
 			return;
+		}
 
 		int cameraID = entry->pb.cameraID;
 		struct InstDrawPerPlayer *idpp = DecalMP_GetIdpp(entry->inst, cameraID);
@@ -97,7 +105,9 @@ void DecalMP_02(struct GameTracker *gGT)
 			timer = entry->timer;
 			int minFrames = entry->pb.renderBucketOTByteOffset >> 3;
 			if (minFrames < 2)
+			{
 				minFrames = 2;
+			}
 
 			if ((timer < 1000) && (((timer <= minFrames) && (entry->lodIndex == idpp->lodIndex)) || (((gGT->timer ^ index) & 1) == 0)))
 			{
@@ -110,7 +120,7 @@ void DecalMP_02(struct GameTracker *gGT)
 
 				if ((entry->pb.ptrOT != NULL) && (entry->pb.renderBucketOTRangeEnd != NULL))
 				{
-					u_long *cameraOT = gGT->pushBuffer[cameraID].ptrOT;
+					uint32_t *cameraOT = gGT->pushBuffer[cameraID].ptrOT;
 					*entry->pb.ptrOT = cameraOT[0x3ff];
 					cameraOT[0x3ff] = CtrGpu_PrimToOTLink24(entry->pb.renderBucketOTRangeEnd);
 				}
@@ -118,7 +128,9 @@ void DecalMP_02(struct GameTracker *gGT)
 
 			timer++;
 			if ((gGT->gameMode1 & PAUSE_ALL) == 0)
+			{
 				entry->timer = timer;
+			}
 		}
 		else
 		{
@@ -150,13 +162,17 @@ void DecalMP_03(struct GameTracker *gGT)
 
 		struct DecalMPEntry *entry = DecalMP_GetEntry(gGT, index);
 		if (entry->inst == NULL)
+		{
 			return;
+		}
 
 		int cameraID = entry->pb.cameraID;
 		struct InstDrawPerPlayer *idpp = DecalMP_GetIdpp(entry->inst, cameraID);
 
 		if ((idpp->instFlags & 0x140) != 0x140)
+		{
 			continue;
+		}
 
 		if (entry->boolUpdatedThisFrame != 0)
 		{
@@ -190,7 +206,9 @@ void DecalMP_03(struct GameTracker *gGT)
 		int u1 = u0 + entry->renderW;
 		int v1 = v0 + entry->renderH;
 		if (v1 >= 0x100)
+		{
 			v1 = 0xff;
+		}
 
 		CtrGpu_WritePackedUV(&poly->u0, (u16)(u0 | (v0 << 8)));
 		CtrGpu_WritePackedUV(&poly->u1, (u16)(u1 | (v0 << 8)));
@@ -199,8 +217,8 @@ void DecalMP_03(struct GameTracker *gGT)
 
 		poly->tpage = (u16)(((texY & 0x100) >> 4) | ((texX & 0x3ff) >> 6) | 0x100 | ((texY & 0x200) << 2));
 
-		u_long *ot = gGT->pushBuffer[cameraID].ptrOT + (entry->pb.renderBucketOTByteOffset >> 2);
-		poly->tag = *ot | 0x09000000;
+		uint32_t *ot = gGT->pushBuffer[cameraID].ptrOT + (entry->pb.renderBucketOTByteOffset >> 2);
+		poly->tag = CtrGpu_PackOTTag(*ot, 0x09000000);
 		CtrGpu_LinkPrimToOT(ot, poly);
 		gGT->backBuffer->primMem.cursor = poly + 1;
 	}

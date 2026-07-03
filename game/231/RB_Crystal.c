@@ -1,6 +1,6 @@
 #include <common.h>
 
-SVec3 crystalLightDir = {0x94F, 0x94F, 0x94F};
+SVec3 crystalLightDir = {{0x94F, 0x94F, 0x94F}};
 
 static void RB_Crystal_RotateStep(struct Instance *crystalInst, struct Crystal *crystalObj)
 {
@@ -49,7 +49,7 @@ int RB_Crystal_ThCollide(struct Thread *crystalTh, struct Thread *driverTh, void
 		driver->PickupWumpaHUD.numCollected++;
 	}
 
-	*(int *)&crystalInst->scale.x = 0;
+	CTR_WriteU32LE(&crystalInst->scale.x, 0);
 	crystalInst->scale.z = 0;
 	crystalInst->thread = 0;
 
@@ -81,7 +81,7 @@ void RB_Crystal_ThTick(struct Thread *t)
 	                           ((sine << 4) >> 0xc) +        // sine (bounce up/down)
 	                           0x30;                         // airborne bump
 
-	Vector_SpecLightSpin3D(crystalInst, &crystalObj->rot.x, &crystalLightDir);
+	Vector_SpecLightSpin3D(crystalInst, &crystalObj->rot, &crystalLightDir);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b4e7c-0x800b4f48.
@@ -104,7 +104,9 @@ int RB_Crystal_LInC(struct Instance *crystalInst, struct Thread *driverTh, struc
 
 		crystalInst->thread = crystalTh;
 		if (crystalTh == NULL)
+		{
 			return 0;
+		}
 
 		crystalTh->inst = crystalInst;
 		crystalTh->funcThCollide = (void (*)(struct Thread *))RB_Crystal_ThCollide;
@@ -112,10 +114,14 @@ int RB_Crystal_LInC(struct Instance *crystalInst, struct Thread *driverTh, struc
 	}
 
 	if ((crystalTh == NULL) || (crystalTh->funcThCollide == NULL))
+	{
 		return 0;
+	}
 
 	if (crystalInst->scale.x == 0)
+	{
 		return 0;
+	}
 
 	return ((CrystalCollideFunc)crystalTh->funcThCollide)(crystalTh, driverTh, crystalTh->funcThCollide, sps);
 }
@@ -139,14 +145,16 @@ void RB_Crystal_LInB(struct Instance *inst)
 
 		inst->thread = t;
 		if (t == 0)
+		{
 			return;
+		}
 
 		crystalObj = ((struct Crystal *)t->object);
 		t->inst = inst;
 		t->funcThCollide = (void (*)(struct Thread *))RB_Crystal_ThCollide;
 
 		// rotX, rotY, rotZ
-		*(int *)&crystalObj->rot.x = 0;
+		CTR_WriteU32LE(&crystalObj->rot.x, 0);
 		crystalObj->rot.z = 0;
 
 		inst->colorRGBA = 0xd22fff0;

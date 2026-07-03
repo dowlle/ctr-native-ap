@@ -134,7 +134,9 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 	{
 		localZ = originalLocalZ;
 		if (originalLocalZ < maxForwardSpeed)
+		{
 			localZ = maxForwardSpeed;
+		}
 	}
 
 	int minForwardSpeed = CTR_MipsSubLo(driver->fireSpeed, CTR_MipsSra(driver->const_SlopeForwardSpeedBonus, 1));
@@ -142,7 +144,9 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 	{
 		localZ = originalLocalZ;
 		if (originalLocalZ > minForwardSpeed)
+		{
 			localZ = minForwardSpeed;
+		}
 	}
 
 	int maxPerpendicularSpeed = driver->const_SideSpeedClamp;
@@ -150,7 +154,9 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 	{
 		localX = originalLocalX;
 		if (originalLocalX < maxPerpendicularSpeed)
+		{
 			localX = maxPerpendicularSpeed;
+		}
 	}
 
 	int minPerpendicularSpeed = CTR_MipsNegLo(maxPerpendicularSpeed);
@@ -158,7 +164,9 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 	{
 		localX = originalLocalX;
 		if (originalLocalX > minPerpendicularSpeed)
+		{
 			localX = minPerpendicularSpeed;
+		}
 	}
 
 	TerrainFlags terrainFlags = driver->terrainMeta1->flags;
@@ -855,7 +863,8 @@ static void VehPhysForce_TranslateMatrix_UpdateInstanceMatrix(struct Instance *i
 		s16 *entryVec = (s16 *)entry;
 		Vec3 rotated;
 
-		MatrixRotate(&inst->matrix, &d->matrixFacingDir, (MATRIX *)(void *)((u8 *)entry + MATRIX_ND_BAKED_MATRIX_OFFSET));
+		MatrixNDOverlapMatrix *matrix = MatrixND_GetOverlapMatrix(entry);
+		MatrixRotate(&inst->matrix, &d->matrixFacingDir, (MATRIX *)matrix);
 
 		rotated = VehPhysForce_TranslateMatrix_RotateVector(&d->matrixFacingDir, entryVec[0], entryVec[1], entryVec[2]);
 
@@ -993,12 +1002,6 @@ void VehPhysForce_TranslateMatrix(struct Thread *thread, struct Driver *driver)
 	VehPhysForce_TranslateMatrix_UpdateWake(inst, driver);
 }
 
-struct VehPhysForceTrigPair
-{
-	s32 sin;
-	s32 cos;
-};
-
 static int VehPhysForce_CountLeadingSignBits(s32 value)
 {
 	u32 bits = (u32)value;
@@ -1006,16 +1009,18 @@ static int VehPhysForce_CountLeadingSignBits(s32 value)
 	int count = 0;
 
 	while (count < 32 && (((bits >> (31 - count)) & 1) == sign))
+	{
 		count++;
+	}
 
 	return count;
 }
 
-static struct VehPhysForceTrigPair VehPhysForce_TrigAngleSinCos(int angle)
+static struct TrigPair VehPhysForce_TrigAngleSinCos(int angle)
 {
 	struct TrigTable trig = data.trigApprox[angle & 0x3ff];
 	u32 packed = ((u32)(u16)trig.sin) | ((u32)(u16)trig.cos << 16);
-	struct VehPhysForceTrigPair pair;
+	struct TrigPair pair;
 
 	if ((angle & 0x400) == 0)
 	{
@@ -1034,9 +1039,13 @@ static struct VehPhysForceTrigPair VehPhysForce_TrigAngleSinCos(int angle)
 		pair.cos = (s16)packed;
 
 		if ((angle & 0x800) != 0)
+		{
 			pair.sin = CTR_MipsNegLo(pair.sin);
+		}
 		else
+		{
 			pair.cos = CTR_MipsNegLo(pair.cos);
+		}
 	}
 
 	return pair;
@@ -1048,7 +1057,7 @@ void VehPhysForce_RotAxisAngle(MATRIX *m, s16 *normVec, s16 angle)
 	s32 normalX = normVec[0];
 	s32 normalY = normVec[1];
 	s32 normalZ = normVec[2];
-	struct VehPhysForceTrigPair trig = VehPhysForce_TrigAngleSinCos(angle);
+	struct TrigPair trig = VehPhysForce_TrigAngleSinCos(angle);
 	s32 normalXSq = CTR_MipsMulLo(normalX, normalX);
 	s32 normalZSq = CTR_MipsMulLo(normalZ, normalZ);
 	s32 crossXZ = CTR_MipsMulLo(normalX, CTR_MipsNegLo(normalZ));
@@ -1068,7 +1077,9 @@ void VehPhysForce_RotAxisAngle(MATRIX *m, s16 *normVec, s16 angle)
 		s32 dot = CTR_MipsAddLo(CTR_MipsMulLo(trig.sin, normalX), CTR_MipsMulLo(trig.cos, normalZ));
 
 		if (normalY < 0)
+		{
 			outX = CTR_MipsNegLo(outX);
+		}
 
 		outY = CTR_MipsSra(CTR_MipsNegLo(dot), 12);
 	}

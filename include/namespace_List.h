@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_LIST_H
+#define CTR_NATIVE_NAMESPACE_LIST_H
+
 // complete struct
 struct Item
 {
@@ -13,4 +16,6 @@ struct LinkedList
 	int count;
 };
 
-_Static_assert(sizeof(struct LinkedList) == 0xC);
+CTR_STATIC_ASSERT(sizeof(struct LinkedList) == 0xC);
+
+#endif

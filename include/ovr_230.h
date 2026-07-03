@@ -1,11 +1,19 @@
-typedef enum ScrapbookState : s32
+#ifndef CTR_NATIVE_OVR_230_H
+#define CTR_NATIVE_OVR_230_H
+
+enum
 {
 	SCRAP_INIT = 0,
 	SCRAP_LOAD = 1,
 	SCRAP_PLAY = 2,
 	SCRAP_STOP = 3,
 	SCRAP_EXIT = 4,
-} ScrapbookState;
+};
+typedef s32 ScrapbookState;
+
+CTR_STATIC_ASSERT(sizeof(ScrapbookState) == 0x4);
+CTR_STATIC_ASSERT(SCRAP_INIT == 0);
+CTR_STATIC_ASSERT(SCRAP_EXIT == 4);
 
 enum TransitionState
 {
@@ -1109,7 +1117,7 @@ struct OVR_230_VideoBSS
 
 	// 30,31...
 	// 800b67fc
-	u_long *in_Buf[2];
+	uint32_t *in_Buf[2];
 
 	int field32_0x58;
 
@@ -1119,7 +1127,7 @@ struct OVR_230_VideoBSS
 	char field36_0x5f;
 
 	// 800b680c
-	u_long *out_Buf[4];
+	uint32_t *out_Buf[4];
 
 	// 800b681c
 	RECT slice;
@@ -1143,9 +1151,11 @@ extern struct OVR_230_VideoBSS V230;
 
 
 #if BUILD >= EurRetail
-_Static_assert(sizeof(struct MainMenu_LevelRow) == 0x14);
+CTR_STATIC_ASSERT(sizeof(struct MainMenu_LevelRow) == 0x14);
 #else
-_Static_assert(sizeof(struct MainMenu_LevelRow) == 0x10);
+CTR_STATIC_ASSERT(sizeof(struct MainMenu_LevelRow) == 0x10);
 #endif
-_Static_assert(sizeof(struct CharacterSelectMeta) == 0xC);
-_Static_assert(sizeof(struct TransitionMeta) == 0xA);
+CTR_STATIC_ASSERT(sizeof(struct CharacterSelectMeta) == 0xC);
+CTR_STATIC_ASSERT(sizeof(struct TransitionMeta) == 0xA);
+
+#endif

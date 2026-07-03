@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_CDSYS_H
+#define CTR_NATIVE_NAMESPACE_CDSYS_H
+
 enum XA_TYPE
 {
 	CDSYS_XA_TYPE_MUSIC,
@@ -17,14 +20,19 @@ enum DiscMode
 	DM_AUDIO
 };
 
-typedef enum XAState : int
+enum
 {
 	XA_IDLE = 0,
 	XA_SEEKING = 1,
 	XA_STARTING = 2,
 	XA_PLAYING = 3,
 	XA_FADING = 4,
-} XAState;
+};
+typedef s32 XAState;
+
+CTR_STATIC_ASSERT(sizeof(XAState) == 0x4);
+CTR_STATIC_ASSERT(XA_IDLE == 0);
+CTR_STATIC_ASSERT(XA_FADING == 4);
 
 struct XNF
 {
@@ -84,4 +92,6 @@ struct AudioMeta
 	char *name;
 };
 
-_Static_assert(sizeof(struct AudioMeta) == 8);
+CTR_STATIC_ASSERT(sizeof(struct AudioMeta) == 8);
+
+#endif

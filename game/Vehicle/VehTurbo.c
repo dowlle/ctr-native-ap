@@ -203,7 +203,7 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	// STATIC_TURBO_EFFECT5
 	// STATIC_TURBO_EFFECT6
 	// STATIC_TURBO_EFFECT7
-	turbo->inst->model = gGT->modelPtr[((int)turbo->fireAnimIndex + 3U & 7) + STATIC_TURBO_EFFECT];
+	turbo->inst->model = gGT->modelPtr[(((int)turbo->fireAnimIndex + 3U) & 7) + STATIC_TURBO_EFFECT];
 
 	turbo->fireAnimIndex++;
 
@@ -246,18 +246,11 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 			}
 		}
 
-		// distort
-		fireAudioDistort = fireAudioDistort << 8;
-
 		// if echo is required
-		if ((driver->actionsFlagSet & ACTION_ENGINE_ECHO) != 0)
-		{
-			// add echo
-			fireAudioDistort |= 0x1000000;
-		}
+		u32 echo = ((driver->actionsFlagSet & ACTION_ENGINE_ECHO) != 0);
 
 		// driver audio
-		OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xe, (fireSfxVolume << 0x10 | fireAudioDistort | 0x80));
+		OtherFX_RecycleNew(&driver->driverAudioPtrs[3], 0xe, HowlSfx_Pack(HOWL_SFX_LR_CENTER, fireAudioDistort, fireSfxVolume, echo));
 
 		// manipulate turbo audio distort to change sound each frame
 		if (turbo->fireAudioDistort < 0xc0)
@@ -285,7 +278,9 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		{
 			// if fully transparent, skip lines
 			if (0xfff < instance->alphaScale)
+			{
 				goto LAB_80069b50;
+			}
 
 			if (turbo->fireDisappearCountdown == '\0')
 			{
@@ -304,7 +299,9 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		{
 			// if scale is big, skip lines
 			if (0xfff < instance->alphaScale)
+			{
 				goto LAB_80069b50;
+			}
 		}
 	}
 
@@ -320,17 +317,17 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		if (instanceDriver->thread->modelIndex == DYNAMIC_PLAYER)
 		{
 			// volume, distortion, left/right
-			u32 stopSfxParams = 0x8080;
+			u32 stopSfxParams = HOWL_SFX_CENTER_NO_DISTORTION;
 
 			// if echo is required
 			if ((driver->actionsFlagSet & ACTION_ENGINE_ECHO) != 0)
 			{
 				// add echo, volume, distortion, left/right
-				stopSfxParams = 0x1008080;
+				stopSfxParams = HOWL_SFX_CENTER_NO_DISTORTION | HOWL_SFX_ECHO_FLAG;
 			}
 
 			// driver audio
-			OtherFX_RecycleNew((u32 *)&driver->driverAudioPtrs[3], 0xffffffff, stopSfxParams);
+			OtherFX_RecycleNew(&driver->driverAudioPtrs[3], 0xffffffff, stopSfxParams);
 		}
 
 		// 0x800 = this thread needs to be deleted

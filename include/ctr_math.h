@@ -38,6 +38,31 @@ typedef union SVec4
 	s16 v[4];
 } SVec4;
 
+typedef union SVec3Slot
+{
+	struct
+	{
+		SVec3 vec;
+		s16 pad;
+	};
+	struct
+	{
+		s16 x;
+		s16 y;
+		s16 z;
+		s16 w;
+	};
+	s16 v[4];
+} SVec3Slot;
+
+CTR_STATIC_ASSERT(sizeof(SVec3Slot) == 0x8);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, vec) == 0x0);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, pad) == 0x6);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, x) == 0x0);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, y) == 0x2);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, z) == 0x4);
+CTR_STATIC_ASSERT(offsetof(SVec3Slot, w) == 0x6);
+
 typedef union Vec2
 {
 	struct
@@ -71,18 +96,18 @@ typedef union Vec4
 	s32 v[4];
 } Vec4;
 
-typedef struct Matrix
-{
-	s16 m[3][3];
-	Vec3 t;
-} Matrix;
-
 // trigonometry //
 
 struct TrigTable
 {
 	s16 sin;
 	s16 cos;
+};
+
+struct TrigPair
+{
+	s32 sin;
+	s32 cos;
 };
 
 #define ANG_TWO_PI                         0x1000           // 360

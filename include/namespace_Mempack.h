@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_MEMPACK_H
+#define CTR_NATIVE_NAMESPACE_MEMPACK_H
+
 // each mempack is 0x18*4 (0x60) bytes large
 struct Mempack
 {
@@ -31,4 +34,6 @@ struct Mempack
 	// 0x60 -- size of struct
 };
 
-_Static_assert(sizeof(struct Mempack) == 0x60);
+CTR_STATIC_ASSERT(sizeof(struct Mempack) == 0x60);
+
+#endif

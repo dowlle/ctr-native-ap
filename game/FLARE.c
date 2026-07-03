@@ -1,10 +1,5 @@
 #include <common.h>
 
-static inline u32 FLARE_Ptr24(const void *ptr)
-{
-	return CtrGpu_PrimToOTLink24(ptr);
-}
-
 static inline u32 FLARE_PackXY(s16 x, s16 y)
 {
 	return (u16)x | ((u32)(u16)y << 16);
@@ -22,10 +17,10 @@ static inline void FLARE_LoadGridRow(s16 y)
 
 static inline void FLARE_WriteTexture(POLY_GT4 *poly, struct Icon *icon, u32 texWord1)
 {
-	CtrGpu_WritePackedUVWord(&poly->u0, *(u32 *)&icon->texLayout.u0);
+	CtrGpu_WritePackedUVWord(&poly->u0, CTR_ReadU32LE(&icon->texLayout.u0));
 	CtrGpu_WritePackedUVWord(&poly->u1, texWord1);
-	CtrGpu_WritePackedUV(&poly->u2, *(u16 *)&icon->texLayout.u2);
-	CtrGpu_WritePackedUV(&poly->u3, *(u16 *)&icon->texLayout.u3);
+	CtrGpu_WritePackedUV(&poly->u2, CTR_ReadU16LE(&icon->texLayout.u2));
+	CtrGpu_WritePackedUV(&poly->u3, CTR_ReadU16LE(&icon->texLayout.u3));
 }
 
 static inline void FLARE_WriteColors(POLY_GT4 *poly)
@@ -54,7 +49,9 @@ void FLARE_ThTick(struct Thread *th)
 
 	POLY_GT4 *prim = gGT->backBuffer->primMem.cursor;
 	if ((char *)(prim + 4) >= (char *)gGT->backBuffer->primMem.guardEnd)
+	{
 		return;
+	}
 
 	PushBuffer_SetPsyqGeom(pb);
 	gte_SetLightMatrix(&pb->matrix_ViewProj);
@@ -119,9 +116,11 @@ void FLARE_ThTick(struct Thread *th)
 
 	struct Icon *icon = gGT->ptrIcons[0x87];
 	if (icon == NULL)
+	{
 		return;
+	}
 
-	u32 texWord1 = (*(u32 *)&icon->texLayout.u1 & 0xff9fffff) | 0x00200000;
+	u32 texWord1 = (CTR_ReadU32LE(&icon->texLayout.u1) & 0xff9fffff) | 0x00200000;
 	POLY_GT4 *p0 = prim;
 	POLY_GT4 *p1 = prim + 1;
 	POLY_GT4 *p2 = prim + 2;
@@ -163,16 +162,20 @@ void FLARE_ThTick(struct Thread *th)
 
 	depth = (depth >> 8) - 2;
 	if (depth < 0)
+	{
 		depth = 0;
+	}
 	if (depth > 0x3ff)
+	{
 		depth = 0x3ff;
+	}
 
-	u_long *ot = &pb->ptrOT[depth];
-	p0->tag = FLARE_Ptr24(p1) | 0x0c000000;
-	p1->tag = FLARE_Ptr24(p2) | 0x0c000000;
-	p2->tag = FLARE_Ptr24(p3) | 0x0c000000;
-	p3->tag = *ot | 0x0c000000;
-	*ot = FLARE_Ptr24(p0);
+	uint32_t *ot = &pb->ptrOT[depth];
+	p0->tag = CtrGpu_PackOTTag(CtrGpu_PrimToOTLink24(p1), 0x0c000000);
+	p1->tag = CtrGpu_PackOTTag(CtrGpu_PrimToOTLink24(p2), 0x0c000000);
+	p2->tag = CtrGpu_PackOTTag(CtrGpu_PrimToOTLink24(p3), 0x0c000000);
+	p3->tag = CtrGpu_PackOTTag(*ot, 0x0c000000);
+	*ot = CtrGpu_PrimToOTLink24(p0);
 
 	gGT->backBuffer->primMem.cursor = prim + 4;
 }

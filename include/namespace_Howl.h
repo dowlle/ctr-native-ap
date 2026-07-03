@@ -1,3 +1,6 @@
+#ifndef CTR_NATIVE_NAMESPACE_HOWL_H
+#define CTR_NATIVE_NAMESPACE_HOWL_H
+
 #if 0
 // this is a type in libsnd.h
 struct SndVolume
@@ -7,7 +10,7 @@ struct SndVolume
 };
 #endif
 
-typedef enum AudioState : s16
+enum
 {
 	AUDIO_NONE = 0,
 	AUDIO_LOADING = 1,
@@ -24,7 +27,78 @@ typedef enum AudioState : s16
 	AUDIO_POST_LAST_LAP = 14,
 	AUDIO_LAST_LAP = 15,
 	AUDIO_RACE_END = 16,
-} AudioState;
+};
+typedef s16 AudioState;
+
+CTR_STATIC_ASSERT(sizeof(AudioState) == 0x2);
+CTR_STATIC_ASSERT(AUDIO_NONE == 0);
+CTR_STATIC_ASSERT(AUDIO_RACE_END == 16);
+
+struct VoicelineItem
+{
+	// 0x0
+	struct Item item;
+
+	// 0x8
+	s16 voiceID;
+
+	// 0xa
+	u8 characterID;
+
+	// 0xb
+	u8 secondaryCharacterID;
+
+	// 0xc
+	s32 startFrame;
+};
+
+enum HowlSfxParam
+{
+	HOWL_SFX_LR_SHIFT = 0,
+	HOWL_SFX_DISTORTION_SHIFT = 8,
+	HOWL_SFX_VOLUME_SHIFT = 16,
+	HOWL_SFX_ECHO_SHIFT = 24,
+
+	HOWL_SFX_LR_CENTER = 0x80,
+	HOWL_SFX_DISTORTION_NONE = 0x80,
+	HOWL_SFX_VOLUME_MAX = 0xff,
+
+	HOWL_SFX_CENTER_NO_DISTORTION = (HOWL_SFX_DISTORTION_NONE << HOWL_SFX_DISTORTION_SHIFT) | HOWL_SFX_LR_CENTER,
+	HOWL_SFX_DEFAULT_FLAGS = (HOWL_SFX_VOLUME_MAX << HOWL_SFX_VOLUME_SHIFT) | HOWL_SFX_CENTER_NO_DISTORTION,
+	HOWL_SFX_ECHO_FLAG = 1 << HOWL_SFX_ECHO_SHIFT,
+};
+
+CTR_STATIC_ASSERT(HOWL_SFX_CENTER_NO_DISTORTION == 0x8080);
+CTR_STATIC_ASSERT(HOWL_SFX_DEFAULT_FLAGS == 0xff8080);
+CTR_STATIC_ASSERT(HOWL_SFX_ECHO_FLAG == 0x1000000);
+
+force_inline u32 HowlSfx_Pack(u32 lr, u32 distortion, u32 volume, u32 echo)
+{
+	// NOTE(aalhendi): echo is the raw high-byte field. Most callers use 0/1,
+	// but 3D quadblock audio passes QUADBLOCK_FLAG_ENGINE_ECHO (0x80).
+	return ((lr & 0xff) << HOWL_SFX_LR_SHIFT) | ((distortion & 0xff) << HOWL_SFX_DISTORTION_SHIFT) | ((volume & 0xff) << HOWL_SFX_VOLUME_SHIFT) |
+	       ((echo & 0xff) << HOWL_SFX_ECHO_SHIFT);
+}
+
+force_inline u32 HowlSfx_LR(u32 flags)
+{
+	return (flags >> HOWL_SFX_LR_SHIFT) & 0xff;
+}
+
+force_inline u32 HowlSfx_Distortion(u32 flags)
+{
+	return (flags >> HOWL_SFX_DISTORTION_SHIFT) & 0xff;
+}
+
+force_inline u32 HowlSfx_Volume(u32 flags)
+{
+	return (flags >> HOWL_SFX_VOLUME_SHIFT) & 0xff;
+}
+
+force_inline u32 HowlSfx_Echo(u32 flags)
+{
+	return (flags >> HOWL_SFX_ECHO_SHIFT) & 0xff;
+}
 
 // Global song indices into howl_songOffsets[].
 enum HowlSong
@@ -93,11 +167,20 @@ struct ChannelAttr
 // similar to SndVoiceStats in psyq libsnd.h
 struct ChannelStats
 {
-	// 0x0
-	struct ChannelStats *next;
+	union
+	{
+		// 0x0
+		struct Item item;
 
-	// 0x4
-	struct ChannelStats *prev;
+		struct
+		{
+			// 0x0
+			struct ChannelStats *next;
+
+			// 0x4
+			struct ChannelStats *prev;
+		};
+	};
 
 	// 0x8
 	u8 flags;
@@ -170,7 +253,7 @@ struct GarageFX
 	int LR;
 
 	// 0x8
-	void *audioPtr;
+	u32 soundIDCount;
 
 	// 0xC - size of each member
 };
@@ -512,8 +595,11 @@ enum VoiceType_XAGAME2
 }
 #endif
 
-_Static_assert(sizeof(SpuReverbAttr) == 0x14);
-_Static_assert(sizeof(struct ChannelAttr) == 0x10);
-_Static_assert(sizeof(struct ChannelStats) == 0x20);
-_Static_assert(sizeof(struct SongSeq) == 0x1C);
-_Static_assert(sizeof(struct Song) == 0x7C);
+CTR_STATIC_ASSERT(sizeof(SpuReverbAttr) == 0x14);
+CTR_STATIC_ASSERT(sizeof(struct VoicelineItem) == 0x10);
+CTR_STATIC_ASSERT(sizeof(struct ChannelAttr) == 0x10);
+CTR_STATIC_ASSERT(sizeof(struct ChannelStats) == 0x20);
+CTR_STATIC_ASSERT(sizeof(struct SongSeq) == 0x1C);
+CTR_STATIC_ASSERT(sizeof(struct Song) == 0x7C);
+
+#endif

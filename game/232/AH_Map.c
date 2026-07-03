@@ -6,7 +6,9 @@ void AH_Map_LoadSave_Prim(s16 *vertPos, char *vertCol, void *ot, struct PrimMem 
 	POLY_G4 *p = primMem->cursor;
 
 	if (primMem->end < (void *)p)
+	{
 		return;
+	}
 
 	primMem->cursor = p + 1;
 
@@ -149,7 +151,9 @@ void AH_Map_HubArrowOutter(void *hubPtrs, int arrowIndex, int posX, int posY, in
 
 	var15 = 0x40;
 	if ((timer & 1) != 0)
+	{
 		var15 = 0xe0;
+	}
 
 	if (type == 0)
 	{
@@ -180,7 +184,9 @@ void AH_Map_HubArrowOutter(void *hubPtrs, int arrowIndex, int posX, int posY, in
 		u32 var5 = (~(timer + (int)arrowIndex * 0xc) & 0x3f) + (2 - (int)(s16)iVar10) * -6;
 
 		if (var5 >= 0xc)
+		{
 			continue;
+		}
 
 		int iVar16 = ((var5 * 0x2aa + 0x1000) * 0x10000) >> 0x1a;
 
@@ -194,7 +200,9 @@ void AH_Map_HubArrowOutter(void *hubPtrs, int arrowIndex, int posX, int posY, in
 		for (int iVar13 = 0; iVar13 < var8 + 0xfff; iVar13 += var8)
 		{
 			if (type != 2)
+			{
 				shiftToggle = 0;
+			}
 
 			int angle = iVar13 + inputAngle;
 
@@ -208,7 +216,7 @@ void AH_Map_HubArrowOutter(void *hubPtrs, int arrowIndex, int posX, int posY, in
 
 			if (!bVar1)
 			{
-				CTR_Box_DrawWirePrims((Point){iVar9, iVar6}, (Point){sin, cos}, MakeColor(var14, var15, 0xff), (void *)gGT->pushBuffer_UI.ptrOT);
+				CTR_Box_DrawWirePrims((Point){{iVar9, iVar6}}, (Point){{sin, cos}}, MakeColor(var14, var15, 0xff), (void *)gGT->pushBuffer_UI.ptrOT);
 			}
 
 			bVar1 = 0;
@@ -225,10 +233,9 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 	struct GameTracker *gGT;
 	struct AdvProgress *adv;
 	s16 levelID;
-	s16 hubID;
 	s16 sVar1;
 	s16 *trophies;
-	bool open;
+	b32 open;
 	int iVar3;
 	u32 bit;
 	int iVar5;
@@ -357,7 +364,9 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 							}
 						}
 						if (!open)
+						{
 							goto LAB_800b17e4;
+						}
 
 						// check if key is unlocked
 						sVar7 = CHECK_ADV_BIT(adv->rewards, base + ADV_REWARD_FIRST_BOSS_KEY);
@@ -461,7 +470,9 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 						// depending on frames
 						uVar6 = 5;
 						if ((gGT->timer & 2) != 0)
+						{
 							uVar6 = 4;
+						}
 					}
 				}
 
@@ -528,7 +539,9 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 		case 1:
 			color = 5;
 			if ((gGT->timer & 2) != 0)
+			{
 				color = 4;
+			}
 			isTrophy = 1;
 			break;
 		case 2:
@@ -613,7 +626,9 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 
 	// play sound from closest unlocked warppad
 	if (closestWarppadInst != NULL)
+	{
 		PlayWarppadSound(minDistance << 1);
+	}
 
 	return;
 }
@@ -710,7 +725,9 @@ void AH_Map_Main(void)
 	// synchronously, so emit only this static prompt during the hub UI pass and
 	// leave AH_MaskHint_Update to run the real state/audio timing later.
 	if (sdata->AkuAkuHintState == 5)
+	{
 		AH_MaskHint_DrawRepeatPrompt();
+	}
 #endif
 
 	return;
