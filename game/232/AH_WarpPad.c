@@ -691,9 +691,59 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
 					{
-						D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0);
+#ifdef CTR_AP
+						// AP: the tier-2 choice menu hides an already-CHECKED race
+						// type, and when only ONE type still has an unchecked
+						// location it skips the menu and enters that mode directly.
+						// Which types remain is read from AP_PadUncollectedBits
+						// (keyed by DESTINATION track = levelID here), which skips
+						// tiers this seed never placed -- so a checked/absent option
+						// is never offered. (The both-checked case is state 5 Done,
+						// hard-locked upstream, so it never reaches this menu.)
+						if (ctr_cfg_active())
+						{
+							int apUncMenu[5];
+							int apUncMenuN = AP_PadUncollectedBits(levelID, apUncMenu, 5);
+							int apTokenLeft = 0, apRelicLeft = 0, apk;
+							for (apk = 0; apk < apUncMenuN; apk++)
+							{
+								int off = apUncMenu[apk] - levelID;
+								if (off == ADV_REWARD_FIRST_CTR_TOKEN)
+									apTokenLeft = 1;
+								else if (off == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
+								         off == ADV_REWARD_FIRST_GOLD_RELIC ||
+								         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
+									apRelicLeft = 1;
+							}
 
-						RECTMENU_Show(&D232.menuTokenRelic);
+							if (apTokenLeft && !apRelicLeft)
+							{
+								// only CTR Token challenge left -> enter directly
+								// (mirrors AH_WarpPad_MenuProc row 0); no menu shown.
+								gGT->gameMode2 |= TOKEN_RACE;
+								RECTMENU_Hide(&D232.menuTokenRelic);
+							}
+							else if (apRelicLeft && !apTokenLeft)
+							{
+								// only Relic Race left -> enter directly (row 1).
+								gGT->gameMode1 |= RELIC_RACE;
+								RECTMENU_Hide(&D232.menuTokenRelic);
+							}
+							else
+							{
+								// both types have an unchecked location -> show the
+								// menu, cursor on an available row.
+								D232.menuTokenRelic.rowSelected = apTokenLeft ? 0 : 1;
+								RECTMENU_Show(&D232.menuTokenRelic);
+							}
+						}
+						else
+#endif
+						{
+							D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0);
+
+							RECTMENU_Show(&D232.menuTokenRelic);
+						}
 
 						// now opened
 						sdata->boolOpenTokenRelicMenu = 1;
