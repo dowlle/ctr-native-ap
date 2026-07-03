@@ -876,6 +876,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			snprintf(pass, passN, "%s", line + 9);
 		else if (!strncmp(line, "skip_hints=", 11))
 			ap_skip_hints = (line[11] == '1'); // QoL: suppress Aku Aku mask hints
+		else if (!strncmp(line, "map_flash=", 10))
+			ap_map_flash = (line[10] != '0'); // 0 = static GREEN (no Raceable flicker)
 	}
 	fclose(f);
 }
