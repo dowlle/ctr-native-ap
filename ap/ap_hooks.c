@@ -500,6 +500,33 @@ int AP_PadState(int physLevelID, int destLevelID)
 }
 
 // ---------------------------------------------------------------------------
+// AP STATE GENERATION (Warp-Pad State Model v2, foundation for live re-birth).
+// A monotonically increasing counter bumped whenever something that can change a
+// pad's AP_PadState happens: a fresh slot-connect (slot_data activation), a
+// received item that changes a gate count, or a location-checked notification.
+// A future in-hub re-birth consumer tags each pad with the generation it was
+// born at and, on mismatch, rebuilds the pad's in-hub instances so the 3D look
+// tracks state changes in real time (item arrives / check completes elsewhere
+// while standing in the hub) -- and re-remaps a pad born before a late connect.
+//
+// NOT yet consumed for re-birth: AH_WarpPad_LInB is a LEVEL-LOAD one-shot (see
+// INSTANCE_LevLInBs), and the only teardown pattern the codebase proves is
+// destruction (inst->thread=0 + THREAD_FLAG_DEAD, e.g. RB_Crate). A safe in-hub
+// re-birth needs a lifecycle this code does not yet establish, so that consumer
+// is deferred to a focused, in-game-verified change rather than inferred blind
+// (crew verify-first rule). The MAP colour and every gate already recompute
+// AP_PadState live each frame, so those two surfaces are honest in real time
+// today; only the in-hub 3D structural look and a late-connect pad's destination
+// remap wait on this re-birth. See the v2 design note's foundation 1.
+// ---------------------------------------------------------------------------
+static unsigned ap_state_gen = 0;
+
+unsigned AP_StateGen(void)
+{
+	return ap_state_gen;
+}
+
+// ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.
 // ---------------------------------------------------------------------------
@@ -600,7 +627,10 @@ void AP_NotifyAdvReward(int rewardBit)
 	AP_AppendLog(msg);
 
 	if (code >= 0)
+	{
 		ap_net_send_location(code); // LocationChecks([code])
+		ap_state_gen++; // a location was checked -> the owning pad's state may shift
+	}
 }
 
 void AP_NotifyGoal(int oxideSecond)
@@ -920,6 +950,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_oxide_first_beaten = 0;
 		ap_oxide_final_beaten = 0;
 		ap_goal_sent = 0;
+		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 	}
 
@@ -936,7 +967,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
+		{
 			ap_recv_count[idx]++;
+			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
+		}
 
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
 		// bits (progress %, podium) in AP_ApplyItems -- gates ignore these.

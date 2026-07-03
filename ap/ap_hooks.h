@@ -123,6 +123,14 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 // count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 
+// AP state-generation counter (foundation for live in-hub pad re-birth). Bumped
+// on fresh slot-connect, on a received item that changes a gate count, and on a
+// location-checked notification -- i.e. whenever a pad's AP_PadState may change.
+// A future re-birth consumer tags each pad at birth and rebuilds it on mismatch.
+// Not yet consumed for re-birth (AH_WarpPad_LInB is level-load-only; see the
+// note in ap_hooks.c). The map + gates already recompute AP_PadState live.
+unsigned AP_StateGen(void);
+
 // The single pad-state function driving map colour, in-hub look, and the gate.
 // Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
 // vanilla mode (no slot_data) / unrecognised destination (leave the pad
