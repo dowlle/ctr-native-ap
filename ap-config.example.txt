@@ -1,0 +1,32 @@
+# CTR-AP client configuration (example).
+#
+# Copy this file to "ap-config.txt" (same folder as the game executable) and
+# fill in your own values. The game reads it once at startup.
+#
+# Format: one "key=value" per line, no spaces around the "=". Any line that
+# does not begin with a known key (including these comment lines starting with
+# "#" and blank lines) is ignored. If the file or a key is missing, the built-in
+# default shown in brackets below is used.
+
+# uri: the Archipelago server to connect to. [ws://localhost:38281]
+# This build connects over a plain, unencrypted WebSocket (ws://). It is aimed
+# at a local or self-hosted server. If you omit the "ws://" prefix and/or the
+# port, the client fills them in (default port 38281). Examples:
+#   uri=ws://localhost:38281
+#   uri=archipelago.gg:38281
+uri=ws://localhost:38281
+
+# slot: your player (slot) name in the multiworld, exactly as it appears in the
+# room. [CtrSmokeTest]
+slot=Player1
+
+# password: the room password, if the room has one. Leave blank for none. []
+password=
+
+# skip_hints: set to 1 to suppress the in-game Aku Aku mask hints (a quality of
+# life option for repeat players). 0 keeps hints normal. [0]
+skip_hints=0
+
+# map_flash: 1 keeps the hub map's "raceable" two-tone flicker. Set to 0 for a
+# static green marker instead. [1]
+map_flash=1
