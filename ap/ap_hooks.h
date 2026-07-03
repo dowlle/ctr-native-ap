@@ -72,6 +72,11 @@ void AP_LogLine(const char *msg);
 // later the apworld can write this value into ap-config.txt from a YAML option.
 int AP_SkipHints(void);
 
+// 1 if the hub-map "Raceable" two-tone flicker (state 2 GREEN) is enabled.
+// Default 1; set to 0 by ap-config.txt "map_flash=0" for a static GREEN. Read by
+// AH_Map_Warppads (#ifdef CTR_AP). See the Warp-Pad State Model v2 design note.
+int AP_MapFlashOn(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
@@ -126,25 +131,9 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // design note. Consumed by AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
-// ── Map overlay (debug/QoL) ──
-// AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
-//   1  = at least one of that race track's 5 reward locations (trophy/sapphire/
-//        gold/platinum/token) holds an OWN, progression, still-unchecked item
-//   0  = a race track (LevelID 0..15) with nothing useful left unchecked
-//  -1  = not a race-track destination (only 0..15 carry the trophy-race pool)
-// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
-int AP_PadUsefulness(int destLevelID);
-
-// Richer map-overlay state distinguishing the two-stage phases (M-key):
-//   1 stage-1 own progression reward available (green) · 2 trophy beaten but
-//   stage-2 LOCKED (red) · 3 stage-2 OPEN with unchecked TT/token checks
-//   (periwinkle) · 0 race track nothing left (gray) · -1 non-race (vanilla).
-// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
-int AP_PadMapState(int destLevelID);
-
-// 1 while the in-game map AP overlay is toggled on (SDL_SCANCODE_M rising edge,
-// handled in AP_OnFrame). The game side reads this to decide whether to override
-// warp-pad minimap icon colours.
+// Retained M-key toggle state getter. No longer gates map colours (always on via
+// AP_PadState); kept until the M-key becomes the map-zoom toggle. Rising edge
+// handled in AP_OnFrame.
 int AP_MapOverlayOn(void);
 
 #endif // CTR_AP

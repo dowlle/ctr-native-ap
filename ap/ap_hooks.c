@@ -68,6 +68,16 @@ int AP_SkipHints(void)
 	return ap_skip_hints;
 }
 
+// Map flash (Warp-Pad State Model v2): the vanilla-style two-tone flicker that
+// signals "Raceable" (state 2 GREEN) on the hub map. Default ON. Turned off via
+// ap-config.txt ("map_flash=0") -> state 2 renders a static GREEN. Delivery
+// mirrors skip_hints (ap-config.txt first; a YAML option can write it later).
+static int ap_map_flash = 1;
+int AP_MapFlashOn(void)
+{
+	return ap_map_flash;
+}
+
 // Diagnostic (crash investigation): format a compact game-state breadcrumb for a
 // log line -- frame timer, in-adventure flag, loading stage, and current levelID.
 // Lets a flushed log show what the game was doing (e.g. an item arriving while a
@@ -134,100 +144,17 @@ int AP_LocationCheckedByBit(int globalBit)
 }
 
 // ---------------------------------------------------------------------------
-// MAP OVERLAY (debug/QoL) -- badge each warp pad on the existing minimap by the
-// AP state of its DESTINATION track. Pure colour override on the icon already
-// drawn by AH_Map_Warppads; no geometry change, no gameplay effect.
+// MAP overlay retirement note: the old debug-era per-pad map state
+// (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState,
+// gated by the SDL_SCANCODE_M overlay toggle) is superseded by the unified
+// AP_PadState (Warp-Pad State Model v2) above, which drives an always-on 5-state
+// map colour and drops the own-progression-only GREEN criterion. The M-key
+// toggle state (g_ap_map_overlay) is kept below only until the M=zoom rework.
 // ---------------------------------------------------------------------------
 
-// 1 if the location at this global AdvProgress bit holds an OWN, progression,
-// still-unchecked AP item ("useful reward still here"); 0 otherwise. Mirrors the
-// AP_WarpPad* helpers: lookup -> scout -> own-slot + flags bit0 (progression).
-static int AP_BitIsUsefulUnchecked(int globalBit)
-{
-	long code;
-	long long item = 0;
-	int player = -1;
-	unsigned flags = 0;
-
-	code = AP_LookupLocationCode(globalBit);
-	if (code < 0)
-		return 0;                       // not a checkable location
-	if (ap_net_location_checked(code))
-		return 0;                       // already collected -> nothing useful here
-	if (!ap_net_scout_known(code, &item, &player, &flags))
-		return 0;                       // not scouted (not connected / pre-scout)
-	if (player != ap_net_self_slot())
-		return 0;                       // foreign multiworld item -> not "our" reward
-	return (flags & 1u) ? 1 : 0;        // bit0 = progression
-}
-
-// Usefulness verdict for a warp pad pointing at destination LevelID `destLevelID`:
-//   1  = at least one of the dest track's 5 reward locations holds an own,
-//        progression, still-unchecked item (useful reward still here)
-//   0  = a race track, but nothing useful is left unchecked there
-//  -1  = not a race-track destination (0..15 only carry the trophy-race pool;
-//        other dests would collide into unrelated bits)
-// The 5 per-track bits: trophy +0x06, sapphire +0x16, gold +0x28, platinum
-// +0x3a, token +0x4c (enum AdvRewardBitIndex, namespace_Memcard.h:186-205).
-int AP_PadUsefulness(int destLevelID)
-{
-	if (destLevelID < 0 || destLevelID >= 16)
-		return -1;
-
-	if (AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN))
-		return 1;
-
-	return 0;
-}
-
-// 1 if the location at globalBit exists and is NOT checked on the server (any
-// item, own or foreign). Used by the map overlay to ask "is there still a check
-// to do here", independent of whether the placed item is our own progression.
-static int AP_BitUnchecked(int globalBit)
-{
-    long code = AP_LookupLocationCode(globalBit);
-    if (code < 0) return 0;
-    return ap_net_location_checked(code) ? 0 : 1;
-}
-
-// Richer per-pad map-overlay state (M-key), distinguishing the two-stage phases
-// so the player can tell a stage-2-LOCKED pad from a stage-2-OPEN one. destLevelID
-// is the DESTINATION race track (0..15); the pad's stage-2 requirement keys off
-// the PHYSICAL pad, recovered via ctr_cfg_warp_phys (identity-safe pre-shuffle).
-//   1 = stage 1: Trophy Race not yet beaten and an OWN progression reward is
-//       still there                         -> green  (come do the trophy race)
-//   2 = Trophy Race BEATEN but stage 2 (relic TT + CTR Token menu) is LOCKED
-//                                           -> red    (blocked until stage-2 items)
-//   3 = stage 2 OPEN and >=1 TT/token location still UNCHECKED
-//                                           -> periwinkle (checks available now)
-//   0 = race track, nothing useful/available left   -> gray
-//  -1 = not a race-track destination                -> vanilla (untouched)
-int AP_PadMapState(int destLevelID)
-{
-    if (destLevelID < 0 || destLevelID >= 16)
-        return -1;
-
-    if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
-        // Stage 1: trophy race not beaten yet.
-        return AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
-
-    // Trophy race beaten -> stage 2 phase. Any relic-TT / CTR-token check left?
-    int s2checks = AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
-    if (!s2checks)
-        return 0; // all stage-2 checks done
-
-    return ctr_cfg_warp_stage2_unlocked(ctr_cfg_warp_phys(destLevelID)) ? 3 : 2;
-}
-
-// Map-overlay toggle. Flipped on the rising edge of SDL_SCANCODE_M in AP_OnFrame
-// (see below). The game-side AH_Map_Warppads reads it via AP_MapOverlayOn().
+// Retained M-key toggle state (rising edge flipped in AP_OnFrame). No longer
+// gates the map colours (they are always on under AP_PadState); slated to become
+// the map-zoom toggle. Kept so AP_OnFrame's handler + AP_MapOverlayOn compile.
 static int g_ap_map_overlay = 0;
 
 int AP_MapOverlayOn(void)
