@@ -243,7 +243,7 @@ u32 main(void)
 
 						gameMode2 = gGT->gameMode2;
 
-						gGT->hudFlags &= 0xf7;
+						gGT->hudFlags &= HUD_FLAG_CLEAR_INTRO_RACE_TITLE_BARS_MASK;
 
 						gameMode1 = gGT->gameMode1;
 						gGT->gameMode2 = gameMode2 | AddBitsConfig8;
@@ -348,7 +348,7 @@ u32 main(void)
 
 			    (
 			        // Turn off HUD
-			        gGT->hudFlags &= 0xfe,
+			        gGT->hudFlags &= HUD_FLAG_CLEAR_RACE_HUD_MASK,
 			        // if game is not loading
 			        sdata->Loading.stage == LOAD_IDLE))
 			{
@@ -414,7 +414,7 @@ u32 main(void)
 			if (gGT->boolDemoMode != '\0')
 			{
 				// Turn off HUD
-				gGT->hudFlags &= 0xfe;
+				gGT->hudFlags &= HUD_FLAG_CLEAR_RACE_HUD_MASK;
 			}
 
 			// reset vsync calls between drawsync
@@ -629,8 +629,8 @@ void StateZero()
 	gGT->backBuffer = &gGT->db[0];
 
 	gGT->overlayIndex_EndOfRace = 0xff;
-	gGT->overlayIndex_LOD = 0xff;
-	gGT->overlayIndex_Threads = 0xff;
+	gGT->overlayIndex_LOD = OVERLAY_INDEX_NONE;
+	gGT->overlayIndex_Threads = OVERLAY_INDEX_NONE;
 
 	PutDispEnv(&gGT->db[1].dispEnv);
 	PutDrawEnv(&gGT->db[1].drawEnv);

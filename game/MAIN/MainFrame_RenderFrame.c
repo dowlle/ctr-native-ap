@@ -29,13 +29,13 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 		ptr_mesh_info = lev->ptr_mesh_info;
 	}
 
-	if ((gGT->renderFlags & 0x21) != 0)
+	if ((gGT->renderFlags & RENDER_FLAG_VISMEM_REFRESH_MASK) != 0)
 	{
 		MainFrame_VisMemFullFrame(gGT, gGT->level1);
 	}
 
 
-	if ((gGT->renderFlags & 1) != 0)
+	if ((gGT->renderFlags & RENDER_FLAG_DRAW_LEVEL) != 0)
 	{
 		if (gGT->visMem1 != 0)
 		{
@@ -68,12 +68,12 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	RenderAllWeather(gGT);
 	RenderAllConfetti(gGT);
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 subrange 0x800364f8-0x80036538.
-	if ((gGT->renderFlags & 8) != 0 && gGT->stars.numStars != 0)
+	if (((gGT->renderFlags & RENDER_FLAG_STARS) != 0) && (gGT->stars.numStars != 0))
 	{
 		RenderStars(&gGT->pushBuffer[0], &gGT->backBuffer->primMem, &gGT->stars, gGT->numPlyrCurrGame);
 	}
 
-	if (((gGT->renderFlags & 0x100) != 0) && (gGT->numPlyrCurrGame > 1))
+	if (((gGT->renderFlags & RENDER_FLAG_MULTIPLAYER_DECALS) != 0) && (gGT->numPlyrCurrGame > 1))
 	{
 		DecalMP_01(gGT);
 	}
@@ -98,7 +98,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 
 	RenderDispEnv_World(gGT); // == RenderDispEnv_World ==
 
-	if (((gGT->renderFlags & 0x100) != 0) && (gGT->numPlyrCurrGame > 1))
+	if (((gGT->renderFlags & RENDER_FLAG_MULTIPLAYER_DECALS) != 0) && (gGT->numPlyrCurrGame > 1))
 	{
 		DecalMP_02(gGT);
 	}
@@ -121,7 +121,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	PushBuffer_FadeAllWindows();
 	MAINFRAME_PERF_END(NATIVE_PERF_BUCKET_MAINFRAME_EFFECTS);
 
-	if (((gGT->renderFlags & 1) != 0) && (ptr_mesh_info != 0))
+	if (((gGT->renderFlags & RENDER_FLAG_DRAW_LEVEL) != 0) && (ptr_mesh_info != 0))
 	{
 #ifdef CTR_INTERNAL
 		if (gCtrDebugSkipLevelGeometry == 0)
@@ -135,12 +135,12 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 		MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_POST_LEVEL);
 		RenderDispEnv_World(gGT); // == RenderDispEnv_World ==
 
-		if (((gGT->hudFlags & 1) != 0) && (gGT->numPlyrCurrGame > 1))
+		if (((gGT->hudFlags & HUD_FLAG_RACE_HUD) != 0) && (gGT->numPlyrCurrGame > 1))
 		{
 			UI_RenderFrame_Wumpa3D_2P3P4P(gGT);
 		}
 
-		if (((gGT->renderFlags & 0x100) != 0) && (gGT->numPlyrCurrGame > 1))
+		if (((gGT->renderFlags & RENDER_FLAG_MULTIPLAYER_DECALS) != 0) && (gGT->numPlyrCurrGame > 1))
 		{
 			DecalMP_03(gGT);
 		}
@@ -156,7 +156,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 			DotLights_AudioAndVideo(gGT);
 		}
 
-		if ((gGT->renderFlags & 0x8000) != 0)
+		if ((gGT->renderFlags & RENDER_FLAG_SPLIT_SCREEN_LINES) != 0)
 		{
 			WindowBoxLines(gGT);
 
@@ -197,7 +197,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	}
 
 	// clear swapchain
-	if (((gGT->renderFlags & 0x2000) != 0) && ((lev->clearColor[0].enable != 0) || (lev->clearColor[1].enable != 0)))
+	if (((gGT->renderFlags & RENDER_FLAG_CLEAR_BACK_BUFFER) != 0) && ((lev->clearColor[0].enable != 0) || (lev->clearColor[1].enable != 0)))
 	{
 		MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_CLEAR_SCREEN);
 		CAM_ClearScreen(gGT);
@@ -205,7 +205,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	}
 
 	MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_UI);
-	if ((gGT->renderFlags & 0x1000) != 0)
+	if ((gGT->renderFlags & RENDER_FLAG_CHECKERED_FLAG) != 0)
 	{
 		RaceFlag_DrawSelf();
 	}
@@ -437,7 +437,7 @@ void RenderAllWeather(struct GameTracker *gGT)
 	int numPlyrCurrGame = gGT->numPlyrCurrGame;
 
 	// only if rain is enabled
-	if ((gGT->renderFlags & 2) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_RAIN) == 0)
 	{
 		return;
 	}
@@ -458,7 +458,7 @@ void RenderAllConfetti(struct GameTracker *gGT)
 	int numWinners = gGT->numWinners;
 
 	// only if confetti is enabled
-	if ((gGT->renderFlags & 4) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_CONFETTI) == 0)
 	{
 		return;
 	}
@@ -484,7 +484,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 	gameMode1 = gGT->gameMode1;
 
 	// if drawing intro-race title bars
-	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & 8) != 0) && ((gameMode1 & START_OF_RACE) != 0))
+	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & HUD_FLAG_INTRO_RACE_TITLE_BARS) != 0) && ((gameMode1 & START_OF_RACE) != 0))
 	{
 		UI_RaceStart_IntroText1P();
 	}
@@ -493,10 +493,10 @@ void RenderAllHUD(struct GameTracker *gGT)
 	else
 	{
 		// if no hud
-		if ((hudFlags & 1) == 0)
+		if ((hudFlags & HUD_FLAG_RACE_HUD) == 0)
 		{
 			// if standings
-			if ((hudFlags & 4) != 0)
+			if ((hudFlags & HUD_FLAG_CUP_STANDINGS) != 0)
 			{
 				UI_CupStandings_InputAndDraw();
 			}
@@ -552,7 +552,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 										}
 										else
 										{
-											gGT->hudFlags = (hudFlags & 0xfe) | 4;
+											gGT->hudFlags = (hudFlags & HUD_FLAG_CLEAR_RACE_HUD_MASK) | HUD_FLAG_CUP_STANDINGS;
 										}
 									}
 									else
@@ -648,7 +648,7 @@ void RenderAllBeakerRain(struct GameTracker *gGT)
 	int numPlyrCurrGame = gGT->numPlyrCurrGame;
 
 	// only if beaker rain is enabled
-	if ((gGT->renderFlags & 0x10) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_BEAKER_RAIN) == 0)
 	{
 		return;
 	}
@@ -680,7 +680,7 @@ void RenderBucket_QueueAllInstances(struct GameTracker *gGT)
 	int *RBI;
 	int numPlyrCurrGame = gGT->numPlyrCurrGame;
 
-	if ((gGT->renderFlags & 0x20) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_RENDER_BUCKET) == 0)
 	{
 		return;
 	}
@@ -714,7 +714,7 @@ void RenderAllNormalParticles(struct GameTracker *gGT)
 {
 	int i;
 
-	if ((gGT->renderFlags & 0x200) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_PARTICLES) == 0)
 	{
 		return;
 	}
@@ -739,7 +739,7 @@ void RenderDispEnv_World(struct GameTracker *gGT)
 // I need a better name
 void RenderAllFlag0x40(struct GameTracker *gGT)
 {
-	if ((gGT->renderFlags & 0x40) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_EFFECT_BUCKETS) == 0)
 	{
 		return;
 	}
@@ -791,7 +791,7 @@ void RenderAllTitleDPP(struct GameTracker *gGT)
 
 void RenderBucket_ExecuteAllInstances(struct GameTracker *gGT)
 {
-	if ((gGT->renderFlags & 0x20) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_RENDER_BUCKET) == 0)
 	{
 		return;
 	}
@@ -804,7 +804,7 @@ void RenderAllTires(struct GameTracker *gGT)
 	int numPlyrCurrGame;
 	struct PrimMem *gGT_primMem;
 
-	if ((gGT->renderFlags & 0x80) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_TIRES) == 0)
 	{
 		return;
 	}
@@ -833,7 +833,7 @@ void RenderAllTires(struct GameTracker *gGT)
 
 void RenderAllShadows(struct GameTracker *gGT)
 {
-	if ((gGT->renderFlags & 0x400) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_SHADOWS) == 0)
 	{
 		return;
 	}
@@ -842,7 +842,7 @@ void RenderAllShadows(struct GameTracker *gGT)
 
 void RenderAllHeatParticles(struct GameTracker *gGT)
 {
-	if ((gGT->renderFlags & 0x800) == 0)
+	if ((gGT->renderFlags & RENDER_FLAG_HEAT_EFFECT) == 0)
 	{
 		return;
 	}
@@ -1224,7 +1224,7 @@ void RenderVSYNC(struct GameTracker *gGT)
 	gGT->clockDurationStall = Timer_GetTime_Total();
 
 	// render checkered flag
-	if ((gGT->renderFlags & 0x1000) != 0)
+	if ((gGT->renderFlags & RENDER_FLAG_CHECKERED_FLAG) != 0)
 	{
 		// Wait until "next" vsync,
 		// Main Menu at 45fps will cap to 30fps

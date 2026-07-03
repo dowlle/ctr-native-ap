@@ -796,7 +796,7 @@ void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 	s16 row;
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (menu->unk1e == 0)
+	if (menu->funcState == RECTMENU_FUNC_STATE_INPUT)
 	{
 		row = menu->rowSelected;
 		if (row == 0)
@@ -878,7 +878,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 
 	// assume 5 frames have passed since paused
 
-	if (menu->unk1e != 0)
+	if (menu->funcState != RECTMENU_FUNC_STATE_INPUT)
 	{
 		menu->drawStyle &= 0xfeff;
 
@@ -1166,7 +1166,7 @@ void MainFreeze_IfPressStart(void)
 		return;
 	}
 
-	if ((gGT->renderFlags & 0x1000) != 0)
+	if ((gGT->renderFlags & RENDER_FLAG_CHECKERED_FLAG) != 0)
 	{
 		return;
 	}

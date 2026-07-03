@@ -493,7 +493,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 				{
 					sdata->boolSaveCupProgress = 0;
 
-					SelectProfile_ToggleMode(0x41);
+					SelectProfile_ToggleMode(SELECT_PROFILE_MODE_SLOT_SAVE);
 
 					RECTMENU_Show(&data.menuWarning2);
 					gGT->gameModeEnd |= NEW_NAME;

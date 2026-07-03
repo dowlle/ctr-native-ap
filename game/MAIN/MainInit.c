@@ -498,7 +498,7 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	PushBuffer_SetPsyqGeom(pb);
 	PushBuffer_SetMatrixVP(pb);
 
-	if ((gGT->hudFlags & 2) != 0)
+	if ((gGT->hudFlags & HUD_FLAG_INIT_UI_INSTANCES) != 0)
 	{
 		UI_INSTANCE_InitAll();
 	}

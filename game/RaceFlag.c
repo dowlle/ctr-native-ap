@@ -6,6 +6,62 @@ enum RaceFlagScratchConstants
 	RACE_FLAG_SCREEN_POINTS_PER_ROW = 3,
 };
 
+enum RaceFlagConstants
+{
+	RACE_FLAG_POSITION_ONSCREEN = 0,
+	RACE_FLAG_POSITION_OFFSCREEN = 5000,
+	RACE_FLAG_POSITION_OFFSCREEN_LEFT = -5000,
+	RACE_FLAG_OFFSCREEN_CHECK_BIAS = 4999,
+	RACE_FLAG_OFFSCREEN_CHECK_WIDTH = 9999,
+	RACE_FLAG_DRAW_ORDER_AFTER_FLAG = 1,
+	RACE_FLAG_DRAW_ORDER_BEFORE_FLAG = -1,
+	RACE_FLAG_DRAW_ORDER_DONE = 0,
+	RACE_FLAG_TRANSITION_ONSCREEN = 0,
+	RACE_FLAG_TRANSITION_OFFSCREEN = 2,
+	RACE_FLAG_TRANSITION_BEGIN_ONSCREEN = 1,
+	RACE_FLAG_TRANSITION_BEGIN_OFFSCREEN = 2,
+	RACE_FLAG_TRANSITION_ONSCREEN_SPEED = 300,
+	RACE_FLAG_TRANSITION_OFFSCREEN_SPEED_MAX = 1000,
+	RACE_FLAG_TRANSITION_OFFSCREEN_ACCEL_SCALE = 10,
+	RACE_FLAG_TRANSITION_ONSCREEN_SNAP_DISTANCE = 8,
+	RACE_FLAG_TRANSITION_ONSCREEN_POSITION_SHIFT = 3,
+	RACE_FLAG_TRANSITION_OFFSCREEN_POSITION_SHIFT = 2,
+	RACE_FLAG_TRANSITION_TIME_SHIFT = 5,
+	RACE_FLAG_LOADING_IDLE_SLIDE_LIMIT = -1000,
+	RACE_FLAG_LOADING_IDLE_SLIDE_STEP = 0x28,
+	RACE_FLAG_LOADING_OFFSCREEN_X = 0x23c,
+	RACE_FLAG_LOADING_CENTER_X = 0x100,
+	RACE_FLAG_LOADING_Y = 0x6c,
+	RACE_FLAG_LOADING_FONT_SIZE = 1,
+	RACE_FLAG_LOADING_TEXT_FLAGS = 0,
+	RACE_FLAG_LOADING_FIRST_CENTER_FRAME = 4,
+	RACE_FLAG_LOADING_LAST_CENTER_FRAME = 0x4a,
+	RACE_FLAG_LOADING_EXIT_BASE_FRAME = 0x4b,
+	RACE_FLAG_LOADING_LAST_VISIBLE_FRAME = 0x4f,
+	RACE_FLAG_LOADING_ANIM_RESET_FRAME = 0x50,
+	RACE_FLAG_LOADING_LETTER_SPEED_X = 0x3c,
+	RACE_FLAG_LOADING_NEXT_LETTER_START_X = 0xf0,
+	RACE_FLAG_LOADING_LETTER_FRAME_STEP = 4,
+	RACE_FLAG_LOADING_GLYPH_EXTENDED_MAX = 4,
+	RACE_FLAG_LOADING_FRAME_TIME_SHIFT = 5,
+	RACE_FLAG_LOADING_MIN_FRAME_ADVANCE = 1,
+	RACE_FLAG_LOADING_REPEAT_STAGE_FIRST = 6,
+	RACE_FLAG_LOADING_REPEAT_STAGE_COUNT = 2,
+	RACE_FLAG_TRIG_TABLE_MASK = 0x3ff,
+	RACE_FLAG_TRIG_HIGH_HALF_MASK = 0x400,
+	RACE_FLAG_TRIG_NEGATE_MASK = 0x800,
+};
+
+CTR_STATIC_ASSERT(RACE_FLAG_POSITION_OFFSCREEN == 5000);
+CTR_STATIC_ASSERT(RACE_FLAG_POSITION_OFFSCREEN_LEFT == -5000);
+CTR_STATIC_ASSERT(RACE_FLAG_OFFSCREEN_CHECK_WIDTH == 9999);
+CTR_STATIC_ASSERT(RACE_FLAG_LOADING_OFFSCREEN_X == 0x23c);
+CTR_STATIC_ASSERT(RACE_FLAG_LOADING_CENTER_X == 0x100);
+CTR_STATIC_ASSERT(RACE_FLAG_LOADING_ANIM_RESET_FRAME == 0x50);
+CTR_STATIC_ASSERT(RACE_FLAG_TRIG_TABLE_MASK == 0x3ff);
+CTR_STATIC_ASSERT(RACE_FLAG_TRIG_HIGH_HALF_MASK == 0x400);
+CTR_STATIC_ASSERT(RACE_FLAG_TRIG_NEGATE_MASK == 0x800);
+
 struct RaceFlagProjectedRow
 {
 	u32 xy[RACE_FLAG_SCREEN_POINTS_PER_ROW];
@@ -77,7 +133,7 @@ int RaceFlag_IsFullyOnScreen(void)
 {
 	// return true if flag is fully on screen
 	// return false if flag is not fully on screen
-	return (sdata->RaceFlag_Position == 0);
+	return (sdata->RaceFlag_Position == RACE_FLAG_POSITION_ONSCREEN);
 }
 
 
@@ -86,7 +142,7 @@ int RaceFlag_IsFullyOffScreen(void)
 {
 	// return false, "not true", if flag is < 5000, partially on-screen
 	// return true, "not false", if flag is >= 5000, fully off-screen
-	return ((((u16)sdata->RaceFlag_Position + 4999U) & 0xffff) < 9999) ^ 1;
+	return ((((u16)sdata->RaceFlag_Position + RACE_FLAG_OFFSCREEN_CHECK_BIAS) & 0xffff) < RACE_FLAG_OFFSCREEN_CHECK_WIDTH) ^ 1;
 }
 
 
@@ -97,17 +153,17 @@ int RaceFlag_IsTransitioning()
 
 	return
 	    // if checkered flag is not fully on-screen and not fully off-screen
-	    (pos != 0) && (pos != -5000) && (pos != 5000) &&
+	    (pos != RACE_FLAG_POSITION_ONSCREEN) && (pos != RACE_FLAG_POSITION_OFFSCREEN_LEFT) && (pos != RACE_FLAG_POSITION_OFFSCREEN) &&
 
 	    // is allowed to render
-	    ((sdata->gGT->renderFlags & 0x1000) != 0);
+	    ((sdata->gGT->renderFlags & RENDER_FLAG_CHECKERED_FLAG) != 0);
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80043f8c-0x80043fb0.
 void RaceFlag_SetDrawOrder(int drawOrder)
 {
-	sdata->RaceFlag_DrawOrder = (drawOrder != 0) ? 1 : -1;
+	sdata->RaceFlag_DrawOrder = (drawOrder != 0) ? RACE_FLAG_DRAW_ORDER_AFTER_FLAG : RACE_FLAG_DRAW_ORDER_BEFORE_FLAG;
 }
 
 
@@ -115,62 +171,62 @@ void RaceFlag_SetDrawOrder(int drawOrder)
 void RaceFlag_BeginTransition(int direction)
 {
 	// Begin Transition on-screen
-	if (direction == 1)
+	if (direction == RACE_FLAG_TRANSITION_BEGIN_ONSCREEN)
 	{
 		sdata->RaceFlag_LoadingTextAnimFrame = -1;
 
-		sdata->RaceFlag_Position = 5000;
+		sdata->RaceFlag_Position = RACE_FLAG_POSITION_OFFSCREEN;
 
-		sdata->RaceFlag_AnimationType = 0;
+		sdata->RaceFlag_AnimationType = RACE_FLAG_TRANSITION_ONSCREEN;
 	}
 
 	// Begin Transition off-screen
-	else if (direction == 2)
+	else if (direction == RACE_FLAG_TRANSITION_BEGIN_OFFSCREEN)
 	{
 		RaceFlag_SetDrawOrder(0);
 
-		sdata->RaceFlag_Position = 0;
+		sdata->RaceFlag_Position = RACE_FLAG_POSITION_ONSCREEN;
 
 		sdata->RaceFlag_AnimationType = direction;
 	}
 
 	// enable loading screen's checkered flag
-	sdata->gGT->renderFlags |= 0x1000;
+	sdata->gGT->renderFlags |= RENDER_FLAG_CHECKERED_FLAG;
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004402c-0x80044058.
 void RaceFlag_SetFullyOnScreen()
 {
-	sdata->RaceFlag_AnimationType = 0;
+	sdata->RaceFlag_AnimationType = RACE_FLAG_TRANSITION_ONSCREEN;
 	sdata->RaceFlag_LoadingTextAnimFrame = -1;
 
 	// flag is now fully on-screen
-	sdata->RaceFlag_Position = 0;
+	sdata->RaceFlag_Position = RACE_FLAG_POSITION_ONSCREEN;
 
 	// enable loading screen's checkered flag
-	sdata->gGT->renderFlags |= 0x1000;
+	sdata->gGT->renderFlags |= RENDER_FLAG_CHECKERED_FLAG;
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80044058-0x80044088.
 void RaceFlag_SetFullyOffScreen()
 {
-	sdata->RaceFlag_AnimationType = 0;
+	sdata->RaceFlag_AnimationType = RACE_FLAG_TRANSITION_ONSCREEN;
 	sdata->RaceFlag_LoadingTextAnimFrame = -1;
 
 	// flag is now fully off-screen
-	sdata->RaceFlag_Position = 5000;
+	sdata->RaceFlag_Position = RACE_FLAG_POSITION_OFFSCREEN;
 
 	// disable loading screen's checkered flag
-	sdata->gGT->renderFlags &= ~(0x1000);
+	sdata->gGT->renderFlags &= ~RENDER_FLAG_CHECKERED_FLAG;
 }
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80044088-0x80044094.
-void RaceFlag_SetCanDraw(s16 param_1)
+void RaceFlag_SetCanDraw(s16 canDraw)
 {
-	sdata->RaceFlag_CanDraw = param_1;
+	sdata->RaceFlag_CanDraw = canDraw;
 }
 
 
@@ -184,8 +240,8 @@ int RaceFlag_GetCanDraw(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800440a0-0x80044290.
 u32 *RaceFlag_GetOT(void)
 {
-	s16 sVar1;
-	int iVar2;
+	s16 positionStep;
+	int position;
 	struct GameTracker *gGT = sdata->gGT;
 
 	u32 *otDrawFirst_FarthestDepth;
@@ -200,25 +256,25 @@ u32 *RaceFlag_GetOT(void)
 	}
 
 	// transitioning on-screen
-	if (sdata->RaceFlag_AnimationType == 0)
+	if (sdata->RaceFlag_AnimationType == RACE_FLAG_TRANSITION_ONSCREEN)
 	{
 		// set fully "off" to start transition "on"
 		if (sdata->RaceFlag_Position < 0)
 		{
-			sdata->RaceFlag_Position = 5000;
+			sdata->RaceFlag_Position = RACE_FLAG_POSITION_OFFSCREEN;
 		}
 
-		sdata->RaceFlag_TransitionSpeed = 300;
+		sdata->RaceFlag_TransitionSpeed = RACE_FLAG_TRANSITION_ONSCREEN_SPEED;
 
-		iVar2 = sdata->RaceFlag_Position;
+		position = sdata->RaceFlag_Position;
 
 		// if transitioning
-		if (iVar2 != 0)
+		if (position != RACE_FLAG_POSITION_ONSCREEN)
 		{
 			// skip last 8 frames to zero
-			if (iVar2 < 8)
+			if (position < RACE_FLAG_TRANSITION_ONSCREEN_SNAP_DISTANCE)
 			{
-				sdata->RaceFlag_Position = 0;
+				sdata->RaceFlag_Position = RACE_FLAG_POSITION_ONSCREEN;
 
 				// transition for frame >= 8
 			}
@@ -226,54 +282,55 @@ u32 *RaceFlag_GetOT(void)
 			{
 				// rate of transition
 
-				iVar2 = ((u16)sdata->RaceFlag_Position >> 3) * gGT->elapsedTimeMS;
-				iVar2 = iVar2 >> 5;
+				position = ((u16)sdata->RaceFlag_Position >> RACE_FLAG_TRANSITION_ONSCREEN_POSITION_SHIFT) * gGT->elapsedTimeMS;
+				position = position >> RACE_FLAG_TRANSITION_TIME_SHIFT;
 
-				sVar1 = -(s16)iVar2;
-				if (iVar2 < 1)
+				positionStep = -(s16)position;
+				if (position < 1)
 				{
-					sVar1 = -1;
+					positionStep = -1;
 				}
 
-				sdata->RaceFlag_Position += sVar1;
+				sdata->RaceFlag_Position += positionStep;
 			}
 		}
 
 		// transition is finished
 		else
 		{
-			if (sdata->RaceFlag_DrawOrder != 1)
+			if (sdata->RaceFlag_DrawOrder != RACE_FLAG_DRAW_ORDER_AFTER_FLAG)
 			{
-				if (sdata->RaceFlag_DrawOrder != -1)
+				if (sdata->RaceFlag_DrawOrder != RACE_FLAG_DRAW_ORDER_BEFORE_FLAG)
 				{
 					return otDrawFirst_FarthestDepth;
 				}
 
-				sdata->RaceFlag_DrawOrder = 0;
+				sdata->RaceFlag_DrawOrder = RACE_FLAG_DRAW_ORDER_DONE;
 			}
 		}
 	}
 
 	// transition off-screen
-	if (sdata->RaceFlag_AnimationType == 2)
+	if (sdata->RaceFlag_AnimationType == RACE_FLAG_TRANSITION_OFFSCREEN)
 	{
-		if (sdata->RaceFlag_TransitionSpeed < 1000)
+		if (sdata->RaceFlag_TransitionSpeed < RACE_FLAG_TRANSITION_OFFSCREEN_SPEED_MAX)
 		{
-			sdata->RaceFlag_TransitionSpeed += (s16)((gGT->elapsedTimeMS * 10) >> 5);
+			sdata->RaceFlag_TransitionSpeed += (s16)((gGT->elapsedTimeMS * RACE_FLAG_TRANSITION_OFFSCREEN_ACCEL_SCALE) >> RACE_FLAG_TRANSITION_TIME_SHIFT);
 		}
 
 		// If transitioning "off"
-		if (sdata->RaceFlag_Position > -5000)
+		if (sdata->RaceFlag_Position > RACE_FLAG_POSITION_OFFSCREEN_LEFT)
 		{
-			sdata->RaceFlag_Position -= (((u32)sdata->RaceFlag_TransitionSpeed >> 2) * gGT->elapsedTimeMS) >> 5;
+			sdata->RaceFlag_Position -= (((u32)sdata->RaceFlag_TransitionSpeed >> RACE_FLAG_TRANSITION_OFFSCREEN_POSITION_SHIFT) * gGT->elapsedTimeMS) >>
+			                            RACE_FLAG_TRANSITION_TIME_SHIFT;
 		}
 
 		// finished transitioning off
 		else
 		{
-			sdata->RaceFlag_Position = 5000;
-			sdata->RaceFlag_AnimationType = 0;
-			gGT->renderFlags &= ~(0x1000);
+			sdata->RaceFlag_Position = RACE_FLAG_POSITION_OFFSCREEN;
+			sdata->RaceFlag_AnimationType = RACE_FLAG_TRANSITION_ONSCREEN;
+			gGT->renderFlags &= ~RENDER_FLAG_CHECKERED_FLAG;
 		}
 	}
 
@@ -292,40 +349,40 @@ void RaceFlag_ResetTextAnim(void)
 void RaceFlag_DrawLoadingString(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	int iVar2;
-	int iVar3;
-	int iVar4;
-	int uVar5;
-	int iVar6;
-	char *pbVar7;
-	char *pbVar8;
-	int iVar9;
-	int iVar10;
-	u32 *uVar11;
-	char local_30[2];
+	int loadingTextBytes;
+	int letterAnimFrame;
+	int letterX;
+	int glyphByteCount;
+	int textByteIndex;
+	char *loadingText;
+	char *nextGlyph;
+	int nextLetterStartX;
+	int drawX;
+	u32 *oldOT;
+	char glyph[2];
 
-	pbVar7 = sdata->lngStrings[LNG_LOADING];
+	loadingText = sdata->lngStrings[LNG_LOADING];
 
 	// pointer to OT mem
-	uVar11 = (u32 *)gGT->pushBuffer_UI.ptrOT;
+	oldOT = (u32 *)gGT->pushBuffer_UI.ptrOT;
 
 	// pointer to OT mem
 	gGT->pushBuffer_UI.ptrOT = gGT->otSwapchainDB[gGT->swapchainIndex];
 
 	// get length of "LOADING..." string
-	iVar2 = 10;
+	loadingTextBytes = strlen(loadingText);
 
-	iVar3 = DecalFont_GetLineWidth(pbVar7, 1);
+	int textWidth = DecalFont_GetLineWidth(loadingText, RACE_FLAG_LOADING_FONT_SIZE);
 
 	// loop counter
-	iVar6 = 0;
+	textByteIndex = 0;
 
 	// if game is not loading
 	if (sdata->Loading.stage == LOAD_IDLE)
 	{
-		if (-1000 < (int)sdata->RaceFlag_Transition)
+		if (RACE_FLAG_LOADING_IDLE_SLIDE_LIMIT < (int)sdata->RaceFlag_Transition)
 		{
-			sdata->RaceFlag_Transition -= 0x28;
+			sdata->RaceFlag_Transition -= RACE_FLAG_LOADING_IDLE_SLIDE_STEP;
 		}
 	}
 	else
@@ -333,101 +390,97 @@ void RaceFlag_DrawLoadingString(void)
 		sdata->RaceFlag_Transition = 0;
 	}
 
-	iVar10 = (sdata->RaceFlag_Transition & 0xffff) - (iVar3 >> 1);
+	drawX = (sdata->RaceFlag_Transition & 0xffff) - (textWidth >> 1);
 
-	iVar3 = sdata->RaceFlag_LoadingTextAnimFrame;
+	letterAnimFrame = sdata->RaceFlag_LoadingTextAnimFrame;
 
-	if (0 < iVar2)
+	if (0 < loadingTextBytes)
 	{
-		iVar9 = iVar3 * -0x3c + 0x23c;
+		nextLetterStartX = letterAnimFrame * -RACE_FLAG_LOADING_LETTER_SPEED_X + RACE_FLAG_LOADING_OFFSCREEN_X;
 
-		// for iVar6 = 0; iVar6 < strlen("LOADING..."); iVar6++)
+		// for each byte in the localized "LOADING..." string
 		do
 		{
-			if (iVar3 < 0)
+			if (letterAnimFrame < 0)
 			{
-			LAB_800443c4:
+			DrawLetterOffscreen:
 
 				// draw text off screen
-				iVar4 = 0x23c;
+				letterX = RACE_FLAG_LOADING_OFFSCREEN_X;
 			}
 			else
 			{
-				iVar4 = iVar9;
-				if (
-				    // if frame > 4,
-				    // if text starts moving on-screen?
-				    (4 < iVar3) && (
-				                       // draw letter at midpoint of screen
-				                       iVar4 = 0x100,
-
-				                       // if frame > 0x4a,
-				                       // if text starts moving off-screen?
-				                       0x4a < iVar3))
+				letterX = nextLetterStartX;
+				if (RACE_FLAG_LOADING_FIRST_CENTER_FRAME < letterAnimFrame)
 				{
-					// if frame > 0x4f,
-					// if letter is fully off-screen
-					if (0x4f < iVar3)
-					{
-						goto LAB_800443c4;
-					}
+					letterX = RACE_FLAG_LOADING_CENTER_X;
 
-					// letter is moving off-screen
-					iVar4 = (0x4b - iVar3) * 0x3c + 0x100;
+					if (RACE_FLAG_LOADING_LAST_CENTER_FRAME < letterAnimFrame)
+					{
+						// if letter is fully off-screen
+						if (RACE_FLAG_LOADING_LAST_VISIBLE_FRAME < letterAnimFrame)
+						{
+							goto DrawLetterOffscreen;
+						}
+
+						// letter is moving off-screen
+						letterX = (RACE_FLAG_LOADING_EXIT_BASE_FRAME - letterAnimFrame) * RACE_FLAG_LOADING_LETTER_SPEED_X + RACE_FLAG_LOADING_CENTER_X;
+					}
 				}
 			}
-			local_30[0] = *pbVar7;
-			pbVar8 = pbVar7 + 1;
-			uVar5 = 1;
-			if (local_30[0] < 4)
+			glyph[0] = *loadingText;
+			nextGlyph = loadingText + 1;
+			glyphByteCount = 1;
+			if ((u8)glyph[0] < RACE_FLAG_LOADING_GLYPH_EXTENDED_MAX)
 			{
-				local_30[1] = *pbVar8;
-				pbVar8 = pbVar7 + 2;
+				glyph[1] = *nextGlyph;
+				nextGlyph = loadingText + 2;
 
 				// increment loop counter
-				iVar6 = iVar6 + 1;
+				textByteIndex = textByteIndex + 1;
 
-				uVar5 = 2;
+				glyphByteCount = 2;
 			}
-			if ((s16)iVar4 != 0x23c)
+			if ((s16)letterX != RACE_FLAG_LOADING_OFFSCREEN_X)
 			{
-				DecalFont_DrawLineStrlen(local_30, uVar5, (iVar10 + iVar4), 0x6c, 1, 0);
+				DecalFont_DrawLineStrlen(glyph, glyphByteCount, (drawX + letterX), RACE_FLAG_LOADING_Y, RACE_FLAG_LOADING_FONT_SIZE,
+				                         RACE_FLAG_LOADING_TEXT_FLAGS);
 			}
 
-			iVar4 = DecalFont_GetLineWidthStrlen(local_30, uVar5, 1);
+			letterX = DecalFont_GetLineWidthStrlen(glyph, glyphByteCount, RACE_FLAG_LOADING_FONT_SIZE);
 
-			iVar10 = iVar10 + iVar4;
-			iVar9 = iVar9 + 0xf0;
+			drawX = drawX + letterX;
+			nextLetterStartX = nextLetterStartX + RACE_FLAG_LOADING_NEXT_LETTER_START_X;
 
 			// increment loop counter
-			iVar6 = iVar6 + 1;
+			textByteIndex = textByteIndex + 1;
 
 			// treat all letters with 4 frame difference
-			iVar3 = iVar3 + -4;
+			letterAnimFrame = letterAnimFrame - RACE_FLAG_LOADING_LETTER_FRAME_STEP;
 
-			pbVar7 = pbVar8;
-		} while (iVar6 < iVar2);
+			loadingText = nextGlyph;
+		} while (textByteIndex < loadingTextBytes);
 	}
 
 	// pointer to OT mem
-	gGT->pushBuffer_UI.ptrOT = (uint32_t *)uVar11;
+	gGT->pushBuffer_UI.ptrOT = (uint32_t *)oldOT;
 
-	if (iVar3 < 0x50)
+	if (letterAnimFrame < RACE_FLAG_LOADING_ANIM_RESET_FRAME)
 	{
-		iVar2 = gGT->elapsedTimeMS >> 5;
+		int frameAdvance = gGT->elapsedTimeMS >> RACE_FLAG_LOADING_FRAME_TIME_SHIFT;
 
-		if (iVar2 < 1)
+		if (frameAdvance < RACE_FLAG_LOADING_MIN_FRAME_ADVANCE)
 		{
-			iVar2 = 1;
+			frameAdvance = RACE_FLAG_LOADING_MIN_FRAME_ADVANCE;
 		}
 
-		sdata->RaceFlag_LoadingTextAnimFrame += iVar2;
+		sdata->RaceFlag_LoadingTextAnimFrame += frameAdvance;
 	}
 
 	else
 	{
 		sdata->RaceFlag_LoadingTextAnimFrame = -1;
-		if ((u32)(sdata->Loading.stage - 6U) < 2)
+		if ((u32)(sdata->Loading.stage - RACE_FLAG_LOADING_REPEAT_STAGE_FIRST) < RACE_FLAG_LOADING_REPEAT_STAGE_COUNT)
 		{
 			sdata->RaceFlag_LoadingTextAnimFrame = 0;
 		}
@@ -444,28 +497,26 @@ force_inline char RaceFlag_CalculateBrightness(u32 sine, u8 darkTile)
 	return ((sine * -125 + 0x1fe000) >> 0xD);
 }
 
-// inline Sine operation
-// drops clock from ~130 to
-force_inline int MathSinInline(u32 param_1)
+force_inline int RaceFlag_Sin(u32 angle)
 {
-	int iVar1;
+	int sine;
 
 	// approximate trigonometry
-	iVar1 = (s32)CTR_ReadU32LE(&data.trigApprox[param_1 & 0x3ff]);
+	sine = (s32)CTR_ReadU32LE(&data.trigApprox[angle & RACE_FLAG_TRIG_TABLE_MASK]);
 
-	if ((param_1 & 0x400) == 0)
+	if ((angle & RACE_FLAG_TRIG_HIGH_HALF_MASK) == 0)
 	{
-		iVar1 = iVar1 << 0x10;
+		sine = sine << 0x10;
 	}
 
-	iVar1 = iVar1 >> 0x10;
+	sine = sine >> 0x10;
 
-	if ((param_1 & 0x800) != 0)
+	if ((angle & RACE_FLAG_TRIG_NEGATE_MASK) != 0)
 	{
 		// make negative
-		iVar1 = -iVar1;
+		sine = -sine;
 	}
-	return iVar1;
+	return sine;
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800444e8-0x80044ef8.
@@ -562,8 +613,8 @@ SKIP_LOADING_TEXT:
 			local[0] += 0x200;
 			local[2] += 200;
 
-			int sin0 = MathSinInline(local[0]) + 0xfff;
-			int sin2 = MathSinInline(local[2]) + 0xfff;
+			int sin0 = RaceFlag_Sin(local[0]) + 0xfff;
+			int sin2 = RaceFlag_Sin(local[2]) + 0xfff;
 
 			// reset based on trig
 			local[1] = (sin0 * 0x20 >> 0xd) + 0x96;
@@ -571,13 +622,13 @@ SKIP_LOADING_TEXT:
 		}
 
 		// === Step 3 ===
-		var2 = MathSinInline(var1) + 0xfff;
+		var2 = RaceFlag_Sin(var1) + 0xfff;
 		var2 = var2 * local[1];
 		var2 = (var2 >> 0xd) + 0x280;
 
 		// === Step 4 ===
 		var1 += 0xc80;
-		lightL = MathSinInline(var1) + 0xfff;
+		lightL = RaceFlag_Sin(var1) + 0xfff;
 
 		// === Step 5 ===
 		pos[0].vy = 0xfc72;
@@ -608,7 +659,7 @@ SKIP_LOADING_TEXT:
 			for (vect = &pos[0]; vect < &pos[3]; vect++)
 			{
 				// Range: [1.0, 2.0]
-				var3 = MathSinInline(var1) + 0xfff;
+				var3 = RaceFlag_Sin(var1) + 0xfff;
 				var1 += 300;
 
 				// change all vector posZ
@@ -652,8 +703,8 @@ SKIP_LOADING_TEXT:
 			local[0] += 0x200;
 			local[2] += 200;
 
-			int sin0 = MathSinInline(local[0]) + 0xfff;
-			int sin2 = MathSinInline(local[2]) + 0xfff;
+			int sin0 = RaceFlag_Sin(local[0]) + 0xfff;
+			int sin2 = RaceFlag_Sin(local[2]) + 0xfff;
 
 			// reset based on trig
 			local[1] = (sin0 * 0x20 >> 0xd) + 0x96;
@@ -661,13 +712,13 @@ SKIP_LOADING_TEXT:
 		}
 
 		// === Step 3 ===
-		var2 = MathSinInline(var1) + 0xfff;
+		var2 = RaceFlag_Sin(var1) + 0xfff;
 		var2 = var2 * local[1];
 		var2 = (var2 >> 0xd) + 0x280;
 
 		// === Step 4 ===
 		var1 += 0xc80;
-		lightL = MathSinInline(var1) + 0xfff;
+		lightL = RaceFlag_Sin(var1) + 0xfff;
 
 		// === Step 5 ===
 		pos[0].vy = 0xfc72;
@@ -690,7 +741,7 @@ SKIP_LOADING_TEXT:
 			for (vect = &pos[0]; vect < &pos[3]; vect++)
 			{
 				// Range: [1.0, 2.0]
-				var3 = MathSinInline(var1) + 0xfff;
+				var3 = RaceFlag_Sin(var1) + 0xfff;
 				var1 += 300;
 
 				// change all vector posZ

@@ -18,7 +18,7 @@ void MainRaceTrack_StartLoad(s16 levelID)
 void MainRaceTrack_RequestLoad(s16 levelID)
 {
 	// Turn off HUD
-	sdata->gGT->hudFlags &= 0xfe;
+	sdata->gGT->hudFlags &= HUD_FLAG_CLEAR_RACE_HUD_MASK;
 
 	if (RaceFlag_IsFullyOffScreen() == 1)
 	{

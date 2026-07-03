@@ -1,5 +1,10 @@
 #include <common.h>
 
+enum LibraryOfModelsConstants
+{
+	LIBRARY_OF_MODELS_CLEAR_COUNT = 0xe2,
+};
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003147c-0x800314c0.
 void LibraryOfModels_Store(struct GameTracker *gGT, u32 numModels, struct Model **ptrModelArray)
 {
@@ -22,8 +27,7 @@ void LibraryOfModels_Store(struct GameTracker *gGT, u32 numModels, struct Model 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800314c0-0x800314e0.
 void LibraryOfModels_Clear(struct GameTracker *gGT)
 {
-	int i;
-	for (i = 0; i < 0xe2; i++)
+	for (s32 i = 0; i < LIBRARY_OF_MODELS_CLEAR_COUNT; i++)
 	{
 		gGT->modelPtr[i] = 0;
 	}
