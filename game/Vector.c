@@ -200,9 +200,10 @@ static void Vector_BakeMatrixTable_BakeRotScaleEntries(void)
 			scale.m[1][1] = entry->authoredScale.y;
 			scale.m[2][2] = entry->authoredScale.z;
 
-			MATRIX baked;
-			MatrixRotate(&baked, &scale, &rot);
-			*MatrixND_GetOverlapMatrix(entry) = *(MatrixNDOverlapMatrix *)&baked;
+			// NOTE(aalhendi): Retail writes the 0x14-byte rotated payload
+			// directly into this entry, not a full MATRIX copy.
+			void *matrixDst = MatrixND_GetOverlapMatrix(entry);
+			MatrixRotate(matrixDst, &scale, &rot);
 		}
 	}
 }
