@@ -72,7 +72,7 @@ void AP_TrapReceive(int effect);
 // while that effect is FIRING. gGT is the live GameTracker.
 void AP_TrapTick(struct GameTracker *gGT);
 
-// Poll debug keybinds (F1..F6) to test-fire traps without an AP server. Called
+// Poll debug keybinds (Numpad 1..6) to test-fire traps without an AP server. Called
 // from AP_OnFrame. See ap_traps.c for the key map. No-op in a normal session
 // (the keys are not in the gameplay input map).
 void AP_TrapDebugKeys(void);

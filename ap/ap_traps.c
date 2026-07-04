@@ -18,16 +18,18 @@
 int Platform_InputRawKeyDown(int scancode);
 
 // Debug test-fire keys (SDL scancodes, externals/SDL/include/SDL3/SDL_scancode.h:
-// F1=58..F6=63). Not in the gameplay input map (native_input.c defaults), so they
-// never disturb driving. F1..F5 INSTANT-FIRE one effect (bypassing the prime/lap
-// gate, for quick visual checks); F6 PRIMES all five (to exercise the real lap-2/3
-// priming path in the next race).
-#define AP_TRAP_KEY_ICY   58 // F1
-#define AP_TRAP_KEY_GRAV  59 // F2
-#define AP_TRAP_KEY_USF   60 // F3
-#define AP_TRAP_KEY_BOOST 61 // F4
-#define AP_TRAP_KEY_FP    62 // F5
-#define AP_TRAP_KEY_PRIME 63 // F6 -> prime all
+// KP_1=89..KP_6=94). Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers
+// own F1-F12 (native_platform.c: wireframe/savestates/controller-cycling) and fire
+// regardless of AP keys. Not in the gameplay input map (native_input.c defaults),
+// so they never disturb driving. Numpad 1..5 INSTANT-FIRE one effect (bypassing
+// the prime/lap gate, for quick visual checks); Numpad 6 PRIMES all five (to
+// exercise the real lap-2/3 priming path in the next race).
+#define AP_TRAP_KEY_ICY   89 // Numpad 1
+#define AP_TRAP_KEY_GRAV  90 // Numpad 2
+#define AP_TRAP_KEY_USF   91 // Numpad 3
+#define AP_TRAP_KEY_BOOST 92 // Numpad 4
+#define AP_TRAP_KEY_FP    93 // Numpad 5
+#define AP_TRAP_KEY_PRIME 94 // Numpad 6 -> prime all
 
 // First-person camera mode selector. cameraMode 0x10 = "first person" with yaw
 // taken from the kart heading (d->angle) -- the stable hood-cam forward view
