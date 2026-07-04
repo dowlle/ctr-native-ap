@@ -37,16 +37,39 @@ enum
 	MM_TRACK_SELECT_ROW_Y_SHIFT = 0xc,
 	MM_TRACK_SELECT_ROW_Y_OFFSET = 0x60,
 	MM_TRACK_SELECT_TT_STAR_COUNT = 2,
+	MM_TRACK_SELECT_TT_STAR_ICON_GROUP = 5,
 	MM_TRACK_SELECT_TT_STAR_ICON = 0x37,
 	MM_TRACK_SELECT_MAP_LAYER_COUNT = 6,
 	MM_TRACK_SELECT_MAP_BOX_H = 100,
 	MM_TRACK_SELECT_PREVIEW_X = 0x134,
 	MM_TRACK_SELECT_PREVIEW_Y_WITH_MAP = 5,
 	MM_TRACK_SELECT_PREVIEW_Y_NO_MAP = 0x3a,
+	MM_TRACK_SELECT_LAP_MENU_WIDTH = 0xa4,
+	MM_TRACK_SELECT_GHOST_TAPE_ALLOC_SIZE = 0x3e00,
+	MM_TRACK_SELECT_GHOST_TAPE_CLEAR_SIZE = 0x28,
+	MM_TRACK_SELECT_ROW_PHASE_UNIT = 0x10000,
+	MM_TRACK_SELECT_ROW_NAME_X_OFFSET = 8,
+	MM_TRACK_SELECT_ROW_NAME_Y_OFFSET = 0x65,
+	MM_TRACK_SELECT_STAR_X_OFFSET = 4,
+	MM_TRACK_SELECT_STAR_Y_OFFSET = 4,
+	MM_TRACK_SELECT_STAR_Y_STEP = 8,
+	MM_TRACK_SELECT_GHOST_FLASH_FRAME_BIT = 4,
+	MM_TRACK_SELECT_GHOST_TEXT_FROM_NAME_X = 0x78,
+	MM_TRACK_SELECT_GHOST_TEXT_Y_OFFSET = 0x76,
+	MM_TRACK_SELECT_HIGHLIGHT_INSET_X = 6,
+	MM_TRACK_SELECT_HIGHLIGHT_INSET_Y = 4,
+	MM_TRACK_SELECT_HIGHLIGHT_W_SHRINK = 12,
+	MM_TRACK_SELECT_HIGHLIGHT_H_SHRINK = 8,
+	MM_TRACK_SELECT_TITLE_X = 0x18c,
+	MM_TRACK_SELECT_LEVEL_TEXT_Y_STEP = 0x10,
+	MM_TRACK_SELECT_TITLE_TO_MAP_Y = 0x22,
+	MM_TRACK_SELECT_MAP_CENTER_Y_OFFSET = 0x49,
+	MM_TRACK_SELECT_INPUT = BTN_UP | BTN_DOWN | BTN_TRIANGLE | BTN_SQUARE_one | BTN_CROSS_one | BTN_CIRCLE,
 };
 
 CTR_STATIC_ASSERT(MM_TRACK_VIDEO_ICON == 1);
 CTR_STATIC_ASSERT(MM_TRACK_VIDEO_PLAYING == 3);
+CTR_STATIC_ASSERT(MM_TRACK_SELECT_INPUT == 0x40073);
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800afa44-0x800afa94.
 void MM_TrackSelect_Video_SetDefaults(void)
@@ -62,13 +85,13 @@ void MM_TrackSelect_Video_SetDefaults(void)
 	sdata->videoSTR_dst_vramY = 0;
 
 	// track icon has been viewed for zero frames
-	D230.trackSel_videoPreviewFrames = 0;
+	D230.trackSelect.videoPreviewFrames = 0;
 
 	// Data is not allocated for TrackSel videos
-	D230.trackSel_videoMemAllocated = 0;
+	D230.trackSelect.videoMemAllocated = 0;
 
-	D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_ICON;
-	D230.trackSel_videoStatePrev = MM_TRACK_VIDEO_ICON;
+	D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_ICON;
+	D230.trackSelect.videoStatePrev = MM_TRACK_VIDEO_ICON;
 }
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800afa94-0x800afaf0.
@@ -78,26 +101,26 @@ void MM_TrackSelect_Video_State(int resetPreview)
 	if (resetPreview == 1)
 	{
 		// icon has been viewed for zero frames
-		D230.trackSel_videoPreviewFrames = 0;
+		D230.trackSelect.videoPreviewFrames = 0;
 
 		// player sees a track icon (not video)
-		D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_ICON;
+		D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_ICON;
 
 		return;
 	}
 
 	// if player sees a track icon
-	if (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_ICON)
+	if (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_ICON)
 	{
 		// wait before starting the preview video
-		if (D230.trackSel_videoPreviewFrames < MM_TRACK_VIDEO_PREVIEW_WAIT_FRAMES)
+		if (D230.trackSelect.videoPreviewFrames < MM_TRACK_VIDEO_PREVIEW_WAIT_FRAMES)
 		{
-			D230.trackSel_videoPreviewFrames++;
+			D230.trackSelect.videoPreviewFrames++;
 		}
 		else
 		{
 			// allocate video memory, prepare to play video
-			D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_START_STREAM;
+			D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_START_STREAM;
 		}
 	}
 }
@@ -146,48 +169,45 @@ void MM_TrackSelect_Video_Draw(RECT *r, struct MainMenu_LevelRow *selectMenu, in
 	struct GameTracker *gGT = sdata->gGT;
 	struct BigHeader *bh = sdata->ptrBigfileCdPos_2;
 	struct BigEntry *entry = BIG_GETENTRY(bh);
-	int videoID;
 
 	selectMenu = &selectMenu[trackIndex];
-	videoID = selectMenu->videoID;
+	s32 previewVideoFileIndex = selectMenu->previewVideoFileIndex;
 
-	if ((entry[videoID].size == 0) ||
+	if ((entry[previewVideoFileIndex].size == 0) ||
 
 	    // Video off-screen
 	    (r->x < 0) || (r->y < 0) || ((r->x + r->w) > MM_TRACK_VIDEO_SCREEN_W) || ((r->y + r->h) > MM_TRACK_VIDEO_SCREEN_H))
 	{
 		// draw icon
-		D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_ICON;
+		D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_ICON;
 	}
 #ifdef CTR_NATIVE
 	else
 	{
-		if ((D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM) && (D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_ICON))
+		if ((D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM) && (D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_ICON))
 		{
-			if (NativeSTR_StartTrackPreviewFromBigfileSector(entry[videoID].offset, selectMenu->videoLength) != 0)
+			if (NativeSTR_StartTrackPreviewFromBigfileSector(entry[previewVideoFileIndex].offset, selectMenu->previewVideoFrameCount) != 0)
 			{
-				D230.trackSel_videoMemAllocated = D230.trackSel_videoStatePrev;
+				D230.trackSelect.videoMemAllocated = D230.trackSelect.videoStatePrev;
 			}
 		}
 
-		if (((D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_PLAYING) || (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_PLAYING)) ||
-		    (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
+		if (((D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_PLAYING) || (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_PLAYING)) ||
+		    (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
 		{
-			int uploaded;
-
 			tpage = gGT->ptrIcons[MM_TRACK_VIDEO_ICON_INDEX]->texLayout.tpage;
 			u0 = gGT->ptrIcons[MM_TRACK_VIDEO_ICON_INDEX]->texLayout.u0;
 			v0 = gGT->ptrIcons[MM_TRACK_VIDEO_ICON_INDEX]->texLayout.v0;
 			srcX = (u16)u0 + (tpage & 0xf) * 0x40;
 			srcY = (u16)v0 + (tpage & 0x10) * 0x10 + (s16)(((u32)tpage & 0x800) >> 2);
-			uploaded = NativeSTR_UploadNextFrame(srcX, srcY);
+			int uploaded = NativeSTR_UploadNextFrame(srcX, srcY);
 
-			if ((uploaded == 1) && (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
+			if ((uploaded == 1) && (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
 			{
-				D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_PLAYING;
+				D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_PLAYING;
 			}
 
-			if (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_PLAYING)
+			if (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_PLAYING)
 			{
 				MM_TrackSelect_Video_DrawNativePreview(r, srcX + MM_TRACK_VIDEO_FRAME_SRC_OFFSET_X, srcY + MM_TRACK_VIDEO_FRAME_SRC_OFFSET_Y);
 			}
@@ -196,24 +216,24 @@ void MM_TrackSelect_Video_Draw(RECT *r, struct MainMenu_LevelRow *selectMenu, in
 #else
 	else
 	{
-		if ((D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM) && (D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_ICON))
+		if ((D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM) && (D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_ICON))
 		{
 			// If you have not allocated memory for video yet
-			if (D230.trackSel_videoMemAllocated == 0)
+			if (D230.trackSelect.videoMemAllocated == 0)
 			{
 				// Allocate memory for video in Track Selection
 				MM_Video_AllocMem(MM_TRACK_VIDEO_WIDTH, MM_TRACK_VIDEO_HEIGHT, MM_TRACK_VIDEO_FLAGS, 0, 0);
 
 				// You have now allocated the memory
-				D230.trackSel_videoMemAllocated = D230.trackSel_videoStatePrev;
+				D230.trackSelect.videoMemAllocated = D230.trackSelect.videoStatePrev;
 			}
 
 			// CD position of video, and numFrames
-			MM_Video_StartStream(bh->cdpos + entry[videoID].offset, selectMenu->videoLength);
+			MM_Video_StartStream(bh->cdpos + entry[previewVideoFileIndex].offset, selectMenu->previewVideoFrameCount);
 		}
 
-		if (((D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_PLAYING) || (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_PLAYING)) ||
-		    (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
+		if (((D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_PLAYING) || (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_PLAYING)) ||
+		    (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
 		{
 			tpage = gGT->ptrIcons[MM_TRACK_VIDEO_ICON_INDEX]->texLayout.tpage;
 			u0 = gGT->ptrIcons[MM_TRACK_VIDEO_ICON_INDEX]->texLayout.u0;
@@ -224,11 +244,11 @@ void MM_TrackSelect_Video_Draw(RECT *r, struct MainMenu_LevelRow *selectMenu, in
 			// Decode into the icon's VRAM page; the copied rectangle starts inside it.
 			int decodedFrame = MM_Video_DecodeFrame(srcX, srcY);
 
-			if ((decodedFrame == 1) && (D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
+			if ((decodedFrame == 1) && (D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_START_STREAM))
 			{
-				D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_PLAYING;
+				D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_PLAYING;
 			}
-			if (D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_PLAYING)
+			if (D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_PLAYING)
 			{
 				// RECT position (x,y)
 				sdata->videoSTR_src_vramRect.x = srcX + MM_TRACK_VIDEO_FRAME_SRC_OFFSET_X;
@@ -250,80 +270,81 @@ void MM_TrackSelect_Video_Draw(RECT *r, struct MainMenu_LevelRow *selectMenu, in
 #endif
 
 	// if not playing video, draw icon
-	if (D230.trackSel_videoStateCurr != MM_TRACK_VIDEO_PLAYING)
+	if (D230.trackSelect.videoStateCurr != MM_TRACK_VIDEO_PLAYING)
 	{
 		// Draw Video icon
 		RECTMENU_DrawPolyGT4(gGT->ptrIcons[selectMenu->videoThumbnail], (r->x + MM_TRACK_VIDEO_FRAME_SRC_OFFSET_X), (r->y + MM_TRACK_VIDEO_FRAME_SRC_OFFSET_Y),
-		                     &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, D230.videoCol, D230.videoCol, D230.videoCol, D230.videoCol, 0, FP(1.0));
+		                     &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, D230.videoCol.self, D230.videoCol.self, D230.videoCol.self,
+		                     D230.videoCol.self, 0, FP(1.0));
 	}
 
 #ifndef CTR_NATIVE
-	if (D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_ICON)
+	if (D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_ICON)
 	{
 		// disable video copy
 		MainFrame_InitVideoSTR(0, 0, 0, 0);
 	}
 
 	// First frame to start video
-	if ((stopVideo == 1) && (D230.trackSel_videoMemAllocated == 1))
+	if ((stopVideo == 1) && (D230.trackSelect.videoMemAllocated == 1))
 	{
-		D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_ICON;
+		D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_ICON;
 	}
 
 	// First frame to stop video
-	if ((D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_ICON) && (D230.trackSel_videoStatePrev != MM_TRACK_VIDEO_ICON))
+	if ((D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_ICON) && (D230.trackSelect.videoStatePrev != MM_TRACK_VIDEO_ICON))
 	{
 		MM_Video_StopStream();
 	}
 
 	// First frame to start video,
 	// but this time after stopping video safely
-	if ((stopVideo == 1) && (D230.trackSel_videoMemAllocated == 1))
+	if ((stopVideo == 1) && (D230.trackSelect.videoMemAllocated == 1))
 	{
 		MM_Video_ClearMem();
 
-		D230.trackSel_videoMemAllocated = 0;
+		D230.trackSelect.videoMemAllocated = 0;
 	}
 #else
-	if (D230.trackSel_videoStatePrev == MM_TRACK_VIDEO_ICON)
+	if (D230.trackSelect.videoStatePrev == MM_TRACK_VIDEO_ICON)
 	{
 		MainFrame_InitVideoSTR(0, 0, 0, 0);
 	}
 
-	if ((stopVideo == 1) && (D230.trackSel_videoMemAllocated == 1))
+	if ((stopVideo == 1) && (D230.trackSelect.videoMemAllocated == 1))
 	{
-		D230.trackSel_videoStateCurr = MM_TRACK_VIDEO_ICON;
+		D230.trackSelect.videoStateCurr = MM_TRACK_VIDEO_ICON;
 	}
 
-	if ((D230.trackSel_videoStateCurr == MM_TRACK_VIDEO_ICON) && (D230.trackSel_videoStatePrev != MM_TRACK_VIDEO_ICON))
+	if ((D230.trackSelect.videoStateCurr == MM_TRACK_VIDEO_ICON) && (D230.trackSelect.videoStatePrev != MM_TRACK_VIDEO_ICON))
 	{
 		NativeSTR_Stop();
 	}
 
-	if ((stopVideo == 1) && (D230.trackSel_videoMemAllocated == 1))
+	if ((stopVideo == 1) && (D230.trackSelect.videoMemAllocated == 1))
 	{
 		NativeSTR_Stop();
-		D230.trackSel_videoMemAllocated = 0;
+		D230.trackSelect.videoMemAllocated = 0;
 	}
 #endif
 
-	D230.trackSel_videoStatePrev = D230.trackSel_videoStateCurr;
+	D230.trackSelect.videoStatePrev = D230.trackSelect.videoStateCurr;
 
 	// Draw 2D Menu rectangle background
 	RECTMENU_DrawInnerRect(r, (s16)(rectFlags | 1), gGT->backBuffer->otMem.uiOT);
 }
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800aff58-0x800affd0.
-char MM_TrackSelect_boolTrackOpen(struct MainMenu_LevelRow *menuSelect)
+b32 MM_TrackSelect_boolTrackOpen(struct MainMenu_LevelRow *menuSelect)
 {
 	s16 flag = menuSelect->unlock;
 
-	if (flag == -1)
+	if (flag == MM_TRACK_UNLOCK_ALWAYS)
 	{
 		return true;
 	}
 
-	if (flag == -2)
+	if (flag == MM_TRACK_UNLOCK_1P_ONLY)
 	{
 		return sdata->gGT->numPlyrNextGame == 1;
 	}
@@ -343,14 +364,14 @@ void MM_TrackSelect_Init(void)
 	s16 numTracks;
 
 	// lap selection menu is closed by default
-	D230.trackSel_lapBoxOpen = false;
-	D230.trackSel_transitionState = ENTERING_MENU;
+	D230.trackSelect.lapBoxOpen = false;
+	D230.trackSelect.transition.state = ENTERING_MENU;
 
 	// set track index to the index selected in track selection menu, starts at 0 for both Arcade and Battle
 	D230.menuTrackSelect.rowSelected = sdata->trackSelBackup;
 
 	// 12 frames when moving between selection
-	D230.trackSel_transitionFrames = MM_TRACK_SELECT_TRANSITION_FRAMES;
+	D230.trackSelect.transition.frame = MM_TRACK_SELECT_TRANSITION_FRAMES;
 
 	// Set menu and num of tracks based on game mode
 	if ((sdata->gGT->gameMode1 & BATTLE_MODE) != 0)
@@ -382,7 +403,7 @@ void MM_TrackSelect_Init(void)
 		}
 	}
 
-	D230.trackSel_currTrack = D230.menuTrackSelect.rowSelected;
+	D230.trackSelect.currentTrack = D230.menuTrackSelect.rowSelected;
 
 	MM_TrackSelect_Video_SetDefaults();
 }
@@ -396,14 +417,14 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 	struct MainMenu_LevelRow *selectMenu;
 	struct GameTracker *gGT = sdata->gGT;
 
-	elapsedFrames = D230.trackSel_transitionFrames;
+	elapsedFrames = D230.trackSelect.transition.frame;
 
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800b00d4-0x800b02b0.
 	// if you are not in track selection menu
-	if (D230.trackSel_transitionState != IN_MENU)
+	if (D230.trackSelect.transition.state != IN_MENU)
 	{
 		// if transitioning in
-		if (D230.trackSel_transitionState == ENTERING_MENU)
+		if (D230.trackSelect.transition.state == ENTERING_MENU)
 		{
 			// make error message posY appear
 			// near bottom of screen
@@ -417,13 +438,13 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				sdata->errorMessagePosIndex = 2;
 			}
 
-			MM_TransitionInOut(&D230.transitionMeta_trackSel[0], elapsedFrames, MM_TRACK_SELECT_SLIDE_FRAMES);
+			MM_TransitionInOut(D230.transitionMeta_trackSel, elapsedFrames, MM_TRACK_SELECT_SLIDE_FRAMES);
 
 			// ran out of frames
 			if (elapsedFrames == 0)
 			{
 				// menu is now in focus
-				D230.trackSel_transitionState = IN_MENU;
+				D230.trackSelect.transition.state = IN_MENU;
 			}
 			else
 			{
@@ -431,9 +452,9 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 			}
 		}
 		// transitioning out
-		else if (D230.trackSel_transitionState == EXITING_MENU)
+		else if (D230.trackSelect.transition.state == EXITING_MENU)
 		{
-			MM_TransitionInOut(&D230.transitionMeta_trackSel[0], elapsedFrames, MM_TRACK_SELECT_SLIDE_FRAMES);
+			MM_TransitionInOut(D230.transitionMeta_trackSel, elapsedFrames, MM_TRACK_SELECT_SLIDE_FRAMES);
 			elapsedFrames++;
 
 			if (elapsedFrames > MM_TRACK_SELECT_TRANSITION_FRAMES)
@@ -441,7 +462,7 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				sdata->errorMessagePosIndex = 0;
 
 				// if track has not been chosen
-				if (D230.trackSel_startRaceAfterFadeOut == 0)
+				if (D230.trackSelect.transition.startAfterExit == 0)
 				{
 					// return to character selection
 					sdata->ptrDesiredMenu = &D230.menuCharacterSelect;
@@ -466,9 +487,9 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				if ((gGT->gameMode1 & TIME_TRIAL) != 0)
 				{
 					// allocate room at the end of RAM for ghosts
-					sdata->ptrGhostTapePlaying = MEMPACK_AllocHighMem(0x3e00 /*, R230.s_loaded_ghost_data*/);
+					sdata->ptrGhostTapePlaying = MEMPACK_AllocHighMem(MM_TRACK_SELECT_GHOST_TAPE_ALLOC_SIZE /*, R230.s_loaded_ghost_data*/);
 
-					memset(sdata->ptrGhostTapePlaying, 0, 0x28);
+					memset(sdata->ptrGhostTapePlaying, 0, MM_TRACK_SELECT_GHOST_TAPE_CLEAR_SIZE);
 
 					// by default, dont show ghost in race
 					sdata->boolReplayHumanGhost = 0;
@@ -492,7 +513,7 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 			}
 		}
 	}
-	D230.trackSel_transitionFrames = elapsedFrames;
+	D230.trackSelect.transition.frame = elapsedFrames;
 
 	// default arcade tracks
 	selectMenu = &D230.arcadeTracks[0];
@@ -510,16 +531,16 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800b02b0-0x800b04c8.
 	// if lap selection menu is closed
-	if (D230.trackSel_lapBoxOpen == 0)
+	if (D230.trackSelect.lapBoxOpen == 0)
 	{
-		int importantButton = sdata->buttonTapPerPlayer[0] & (BTN_UP | BTN_DOWN | BTN_TRIANGLE | BTN_SQUARE_one | BTN_CROSS_one | BTN_CIRCLE);
+		int importantButton = sdata->buttonTapPerPlayer[0] & MM_TRACK_SELECT_INPUT;
 
 		if (
 		    // if not changing levels
-		    (D230.trackSel_trackChangeFrames == 0) &&
+		    (D230.trackSelect.trackChangeFrames == 0) &&
 
 		    // only check buttons if IN_MENU
-		    (D230.trackSel_transitionState == IN_MENU) &&
+		    (D230.trackSelect.transition.state == IN_MENU) &&
 
 		    // desired button pressed
 		    (importantButton != 0))
@@ -542,9 +563,9 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 
 				} while (!MM_TrackSelect_boolTrackOpen(&selectMenu[currTrack]));
 
-				D230.trackSel_currTrack = currTrack;
-				D230.trackSel_trackChangeFrames = MM_TRACK_SELECT_TRACK_CHANGE_FRAMES;
-				D230.trackSel_trackChangeDirection = 1;
+				D230.trackSelect.currentTrack = currTrack;
+				D230.trackSelect.trackChangeFrames = MM_TRACK_SELECT_TRACK_CHANGE_FRAMES;
+				D230.trackSelect.trackChangeDirection = 1;
 
 				// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b034c-0x800b035c for track-select previous SFX.
 				OtherFX_Play(0, 1);
@@ -566,9 +587,9 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 
 				} while (!MM_TrackSelect_boolTrackOpen(&selectMenu[currTrack]));
 
-				D230.trackSel_currTrack = currTrack;
-				D230.trackSel_trackChangeFrames = MM_TRACK_SELECT_TRACK_CHANGE_FRAMES;
-				D230.trackSel_trackChangeDirection = -1;
+				D230.trackSelect.currentTrack = currTrack;
+				D230.trackSelect.trackChangeFrames = MM_TRACK_SELECT_TRACK_CHANGE_FRAMES;
+				D230.trackSelect.trackChangeDirection = -1;
 
 				// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b03bc-0x800b03cc for track-select next SFX.
 				OtherFX_Play(0, 1);
@@ -585,13 +606,13 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				if ((gGT->gameMode1 & (BATTLE_MODE | TIME_TRIAL)) == 0)
 				{
 					// open lap select menu
-					D230.trackSel_lapBoxOpen = D230.trackSel_transitionState;
+					D230.trackSelect.lapBoxOpen = D230.trackSelect.transition.state;
 					break;
 				}
 
 				// if Battle or Time Trial, skip straight to level
-				D230.trackSel_startRaceAfterFadeOut = D230.trackSel_transitionState;
-				D230.trackSel_transitionState = EXITING_MENU;
+				D230.trackSelect.transition.startAfterExit = D230.trackSelect.transition.state;
+				D230.trackSelect.transition.state = EXITING_MENU;
 				break;
 
 			case BTN_TRIANGLE:
@@ -601,8 +622,8 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0490-0x800b04a4 for track-select back SFX.
 				OtherFX_Play(2, 1);
 
-				D230.trackSel_startRaceAfterFadeOut = 0;
-				D230.trackSel_transitionState = EXITING_MENU;
+				D230.trackSelect.transition.startAfterExit = 0;
+				D230.trackSelect.transition.state = EXITING_MENU;
 				break;
 			default:
 				break;
@@ -622,28 +643,28 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		D230.menuLapSel.rowSelected = sdata->uselessLapRowCopy;
 
 		// If you're in track selection menu
-		if (D230.trackSel_transitionState == IN_MENU)
+		if (D230.trackSelect.transition.state == IN_MENU)
 		{
 			lapSelTransitionState = RECTMENU_ProcessInput(&D230.menuLapSel);
 		}
 
-		RECTMENU_DrawSelf(&D230.menuLapSel, D230.transitionMeta_trackSel[2].currX, D230.transitionMeta_trackSel[2].currY, 0xa4);
+		RECTMENU_DrawSelf(&D230.menuLapSel, D230.trackSelect_lapMenuTransition.currX, D230.trackSelect_lapMenuTransition.currY, MM_TRACK_SELECT_LAP_MENU_WIDTH);
 
 		// put LapRow back into 8d920
 		sdata->uselessLapRowCopy = D230.menuLapSel.rowSelected;
 
 		// get lap count
-		gGT->numLaps = D230.lapRowVal[D230.menuLapSel.rowSelected];
+		gGT->numLaps = D230.lapCountByRow[D230.menuLapSel.rowSelected].lapCount;
 
 		// if it is time to start the race
 		if (lapSelTransitionState == 1)
 		{
 			// try to start the race
-			D230.trackSel_transitionState = EXITING_MENU;
+			D230.trackSelect.transition.state = EXITING_MENU;
 
 			// if this is 1 (which it is), the race starts,
 			// otherwise, you go back to character selection
-			D230.trackSel_startRaceAfterFadeOut = lapSelTransitionState;
+			D230.trackSelect.transition.startAfterExit = lapSelTransitionState;
 		}
 
 		// If it is not time to start the race
@@ -652,7 +673,7 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 			if (lapSelTransitionState == -1)
 			{
 				// close lap selection menu
-				D230.trackSel_lapBoxOpen = 0;
+				D230.trackSelect.lapBoxOpen = 0;
 			}
 		}
 
@@ -665,17 +686,17 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 	}
 
 	// decrease frame from track list motion
-	int trackChangeFrames = D230.trackSel_trackChangeFrames + -1;
-	if ((0 < D230.trackSel_trackChangeFrames) && (D230.trackSel_trackChangeFrames = trackChangeFrames, trackChangeFrames == 0))
+	int trackChangeFrames = D230.trackSelect.trackChangeFrames + -1;
+	if ((0 < D230.trackSelect.trackChangeFrames) && (D230.trackSelect.trackChangeFrames = trackChangeFrames, trackChangeFrames == 0))
 	{
-		menu->rowSelected = D230.trackSel_currTrack;
+		menu->rowSelected = D230.trackSelect.currentTrack;
 	}
 
 	// not transitioning
 	u32 resetPreviewVideo = 0;
 
 	// if you are transitioning out of level selection
-	if ((D230.trackSel_trackChangeFrames != 0) || (D230.trackSel_transitionState == EXITING_MENU))
+	if ((D230.trackSelect.trackChangeFrames != 0) || (D230.trackSelect.transition.state == EXITING_MENU))
 	{
 		// transitioning,
 		// which means stop drawing track video,
@@ -715,11 +736,11 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		// This part actually "moves" the rows,
 		// when pressing the Up and Down buttons on D-Pad
 		u32 rowAngle = ((rowPhase >> 0x10) + -MM_TRACK_SELECT_CENTER_ROW) * MM_TRACK_SELECT_ROW_ANGLE_STEP;
-		if (0 < D230.trackSel_trackChangeFrames)
+		if (0 < D230.trackSelect.trackChangeFrames)
 		{
-			rowAngle = rowAngle + (((MM_TRACK_SELECT_TRACK_CHANGE_FRAMES - D230.trackSel_trackChangeFrames) * MM_TRACK_SELECT_ROW_ANGLE_STEP) /
+			rowAngle = rowAngle + (((MM_TRACK_SELECT_TRACK_CHANGE_FRAMES - D230.trackSelect.trackChangeFrames) * MM_TRACK_SELECT_ROW_ANGLE_STEP) /
 			                       MM_TRACK_SELECT_TRACK_CHANGE_FRAMES) *
-			                          (int)D230.trackSel_trackChangeDirection;
+			                          (int)D230.trackSelect.trackChangeDirection;
 		}
 
 		RECT rowRect;
@@ -727,11 +748,11 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		rowRect.h = MM_TRACK_SELECT_ROW_H;
 
 		// posX of track list
-		s32 rowX = (u32)D230.transitionMeta_trackSel[0].currX + (MATH_Cos(rowAngle) * MM_TRACK_SELECT_ROW_X_RADIUS >> MM_TRACK_SELECT_ROW_X_SHIFT) +
+		s32 rowX = (u32)D230.trackSelect_rowListTransition.currX + (MATH_Cos(rowAngle) * MM_TRACK_SELECT_ROW_X_RADIUS >> MM_TRACK_SELECT_ROW_X_SHIFT) +
 		           MM_TRACK_SELECT_ROW_X_OFFSET;
 
 		// posY of track list
-		s32 rowBaseY = (u32)D230.transitionMeta_trackSel[0].currY + (MATH_Sin(rowAngle) * MM_TRACK_SELECT_ROW_Y_RADIUS >> MM_TRACK_SELECT_ROW_Y_SHIFT);
+		s32 rowBaseY = (u32)D230.trackSelect_rowListTransition.currY + (MATH_Sin(rowAngle) * MM_TRACK_SELECT_ROW_Y_RADIUS >> MM_TRACK_SELECT_ROW_Y_SHIFT);
 
 		s16 rowY = (s16)rowBaseY + MM_TRACK_SELECT_ROW_Y_OFFSET;
 		rowRect.x = (s16)rowX;
@@ -756,14 +777,15 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				int timeTrialFlags = sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
 
 				// if star is earned
-				if (((timeTrialFlags >> D230.timeTrialFlagGet[starIndex]) & 1) != 0)
+				if (((timeTrialFlags >> D230.timeTrialStars.beatenFlagBit[starIndex]) & 1) != 0)
 				{
 					// pointer to color data of star
-					u32 *starColor = data.ptrColor[D230.timeTrialStarCol[starIndex]];
+					u32 *starColor = data.ptrColor[D230.timeTrialStars.colorIndex[starIndex]];
 
-					struct Icon **iconPtrArray = ICONGROUP_GETICONS(gGT->iconGroup[5]);
+					struct Icon **iconPtrArray = ICONGROUP_GETICONS(gGT->iconGroup[MM_TRACK_SELECT_TT_STAR_ICON_GROUP]);
 
-					DecalHUD_DrawPolyGT4(iconPtrArray[MM_TRACK_SELECT_TT_STAR_ICON], rowX + MM_TRACK_SELECT_ROW_W + 4, (int)rowY + starIndex * 8 + 4,
+					DecalHUD_DrawPolyGT4(iconPtrArray[MM_TRACK_SELECT_TT_STAR_ICON], rowX + MM_TRACK_SELECT_ROW_W + MM_TRACK_SELECT_STAR_X_OFFSET,
+					                     (int)rowY + starIndex * MM_TRACK_SELECT_STAR_Y_STEP + MM_TRACK_SELECT_STAR_Y_OFFSET,
 
 					                     // pointer to PrimMem struct
 					                     &gGT->backBuffer->primMem,
@@ -785,9 +807,10 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		}
 
 		// Draw string
-		DecalFont_DrawLine(sdata->lngStrings[data.metaDataLEV[selectMenu[currTrack].levID].name_LNG], (rowX + 8), (rowBaseY + 0x65), FONT_BIG, ORANGE);
+		DecalFont_DrawLine(sdata->lngStrings[data.metaDataLEV[selectMenu[currTrack].levID].name_LNG], (rowX + MM_TRACK_SELECT_ROW_NAME_X_OFFSET),
+		                   (rowBaseY + MM_TRACK_SELECT_ROW_NAME_Y_OFFSET), FONT_BIG, ORANGE);
 
-		if ((D230.trackSel_trackChangeFrames == 0) && ((s16)rowIndex == MM_TRACK_SELECT_CENTER_ROW))
+		if ((D230.trackSelect.trackChangeFrames == 0) && ((s16)rowIndex == MM_TRACK_SELECT_CENTER_ROW))
 		{
 			// if you are in time trial mode
 			if ((gGT->gameMode1 & TIME_TRIAL) != 0)
@@ -801,7 +824,7 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 					u32 ghostTextFlags;
 
 					// Flash Colors
-					if ((sdata->frameCounter & 4) == 0)
+					if ((sdata->frameCounter & MM_TRACK_SELECT_GHOST_FLASH_FRAME_BIT) == 0)
 					{
 						ghostTextFlags = (JUSTIFY_CENTER | WHITE);
 					}
@@ -810,14 +833,16 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 						ghostTextFlags = (JUSTIFY_CENTER | PERIWINKLE);
 					}
 
-					DecalFont_DrawLine(sdata->lngStrings[LNG_GHOST_DATA_EXISTS], (rowX + 8 + 0x78), (rowBaseY + 0x76), FONT_SMALL, ghostTextFlags);
+					DecalFont_DrawLine(sdata->lngStrings[LNG_GHOST_DATA_EXISTS],
+					                   (rowX + MM_TRACK_SELECT_ROW_NAME_X_OFFSET + MM_TRACK_SELECT_GHOST_TEXT_FROM_NAME_X),
+					                   (rowBaseY + MM_TRACK_SELECT_GHOST_TEXT_Y_OFFSET), FONT_SMALL, ghostTextFlags);
 				}
 			}
 			RECT highlightRect;
-			highlightRect.x = rowRect.x + 6;
-			highlightRect.y = rowRect.y + 4;
-			highlightRect.w = rowRect.w - 12;
-			highlightRect.h = rowRect.h - 8;
+			highlightRect.x = rowRect.x + MM_TRACK_SELECT_HIGHLIGHT_INSET_X;
+			highlightRect.y = rowRect.y + MM_TRACK_SELECT_HIGHLIGHT_INSET_Y;
+			highlightRect.w = rowRect.w - MM_TRACK_SELECT_HIGHLIGHT_W_SHRINK;
+			highlightRect.h = rowRect.h - MM_TRACK_SELECT_HIGHLIGHT_H_SHRINK;
 
 			CTR_Box_DrawClearBox(&highlightRect, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, gGT->backBuffer->otMem.uiOT);
 		}
@@ -840,7 +865,7 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		} while ((trackOpen & 0xffff) == 0);
 
 		rowIndex = rowIndex + 1;
-		rowPhase = rowIndex * 0x10000;
+		rowPhase = rowIndex * MM_TRACK_SELECT_ROW_PHASE_UNIT;
 		if (MM_TRACK_SELECT_VISIBLE_ROWS <= rowIndex)
 		{
 			RECT previewRect;
@@ -848,52 +873,51 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 			previewRect.h = MM_TRACK_VIDEO_HEIGHT;
 
 			// posX of "SELECT LEVEL"
-			previewRect.x = D230.transitionMeta_trackSel[1].currX + MM_TRACK_SELECT_PREVIEW_X;
+			previewRect.x = D230.trackSelect_previewTransition.currX + MM_TRACK_SELECT_PREVIEW_X;
 
 			// posY of "SELECT LEVEL"
 			// near-top if map exists, near-mid if no map
-			previewRect.y = D230.transitionMeta_trackSel[1].currY + MM_TRACK_SELECT_PREVIEW_Y_NO_MAP;
+			previewRect.y = D230.trackSelect_previewTransition.currY + MM_TRACK_SELECT_PREVIEW_Y_NO_MAP;
 
 			if (-1 < selectMenu[menu->rowSelected].mapTextureID)
 			{
-				previewRect.y = D230.transitionMeta_trackSel[1].currY + MM_TRACK_SELECT_PREVIEW_Y_WITH_MAP;
+				previewRect.y = D230.trackSelect_previewTransition.currY + MM_TRACK_SELECT_PREVIEW_Y_WITH_MAP;
 			}
 
-			// _D230.trackSel_lapBoxOpen is the boolean to show
-			// the selection menu for number of laps:
-			// 3, 5, 7
+			// D230.trackSelect.lapBoxOpen controls the 3/5/7 lap menu.
 
 			// If the lap selection menu is closed
-			if (D230.trackSel_lapBoxOpen == 0)
+			if (D230.trackSelect.lapBoxOpen == 0)
 			{
-				DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_LEVEL_SELECT], (D230.transitionMeta_trackSel[3].currX + 0x18c),
-				                   (D230.transitionMeta_trackSel[3].currY + (u32)previewRect.y), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+				DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_LEVEL_SELECT], (D230.trackSelect_titleTransition.currX + MM_TRACK_SELECT_TITLE_X),
+				                   (D230.trackSelect_titleTransition.currY + (u32)previewRect.y), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
-				DecalFont_DrawLine(sdata->lngStrings[LNG_LEVEL], (D230.transitionMeta_trackSel[3].currX + 0x18c),
-				                   (D230.transitionMeta_trackSel[3].currY + (u32)previewRect.y + 0x10), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+				DecalFont_DrawLine(sdata->lngStrings[LNG_LEVEL], (D230.trackSelect_titleTransition.currX + MM_TRACK_SELECT_TITLE_X),
+				                   (D230.trackSelect_titleTransition.currY + (u32)previewRect.y + MM_TRACK_SELECT_LEVEL_TEXT_Y_STEP), FONT_BIG,
+				                   (JUSTIFY_CENTER | ORANGE));
 			}
 
 			// next, draw the map icon, below "SELECT LEVEL",
 			// exactly 0x22 (34) pixels below the text
-			previewRect.y += 0x22;
+			previewRect.y += MM_TRACK_SELECT_TITLE_TO_MAP_Y;
 
 			if ((-1 < selectMenu[menu->rowSelected].mapTextureID) &&
 
 			    // If lap selection menu is closed
-			    (D230.trackSel_lapBoxOpen == 0))
+			    (D230.trackSelect.lapBoxOpen == 0))
 			{
-				int mapID = selectMenu[menu->rowSelected].mapTextureID;
+				s32 mapID = selectMenu[menu->rowSelected].mapTextureID;
 				struct Icon *iconMap0 = gGT->ptrIcons[mapID + 0];
 				struct Icon *iconMap1 = gGT->ptrIcons[mapID + 1];
 
 				// icon data
-				char mapTopV2 = iconMap0->texLayout.v2;
-				char mapTopV0 = iconMap0->texLayout.v0;
-				char mapBottomV2 = iconMap1->texLayout.v2;
-				char mapBottomV0 = iconMap1->texLayout.v0;
+				u8 mapTopV2 = iconMap0->texLayout.v2;
+				u8 mapTopV0 = iconMap0->texLayout.v0;
+				u8 mapBottomV2 = iconMap1->texLayout.v2;
+				u8 mapBottomV0 = iconMap1->texLayout.v0;
 
-				int mapWidth = (iconMap0->texLayout.u1 - iconMap0->texLayout.u0);
-				int mapHeight = ((((u32)mapTopV2 - (u32)mapTopV0) + (u32)mapBottomV2) - (u32)mapBottomV0);
+				s32 mapWidth = (s32)iconMap0->texLayout.u1 - (s32)iconMap0->texLayout.u0;
+				s32 mapHeight = ((s32)mapTopV2 - (s32)mapTopV0) + (s32)mapBottomV2 - (s32)mapBottomV0;
 
 				// draw six track minimaps on menu
 				// map 1 is the regular color, which is white
@@ -912,12 +936,14 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 					    iconMap1,
 
 					    // X
-					    D230.drawMapOffset[mapLayer].offsetX + previewRect.x + (D230.transitionMeta_trackSel[2].currX - D230.transitionMeta_trackSel[1].currX) +
-					        (MM_TRACK_VIDEO_WIDTH >> 1) + (mapWidth >> 1),
+					    D230.drawMapOffset[mapLayer].offsetX + previewRect.x +
+					        (D230.trackSelect_lapMenuTransition.currX - D230.trackSelect_previewTransition.currX) + (MM_TRACK_VIDEO_WIDTH >> 1) +
+					        (mapWidth >> 1),
 
 					    // Y
-					    D230.drawMapOffset[mapLayer].offsetY + previewRect.y + (D230.transitionMeta_trackSel[2].currY - D230.transitionMeta_trackSel[1].currY) +
-					        0x49 + (MM_TRACK_SELECT_MAP_BOX_H >> 1) + (mapHeight >> 1),
+					    D230.drawMapOffset[mapLayer].offsetY + previewRect.y +
+					        (D230.trackSelect_lapMenuTransition.currY - D230.trackSelect_previewTransition.currY) + MM_TRACK_SELECT_MAP_CENTER_Y_OFFSET +
+					        (MM_TRACK_SELECT_MAP_BOX_H >> 1) + (mapHeight >> 1),
 
 					    // pointer to PrimMem struct
 					    &gGT->backBuffer->primMem,
@@ -932,7 +958,8 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				}
 			}
 
-			MM_TrackSelect_Video_Draw(&previewRect, selectMenu, (int)(s16)D230.trackSel_currTrack, (u32)(D230.trackSel_transitionState == EXITING_MENU), 0);
+			MM_TrackSelect_Video_Draw(&previewRect, selectMenu, (int)(s16)D230.trackSelect.currentTrack,
+			                          (u32)(D230.trackSelect.transition.state == EXITING_MENU), 0);
 
 			return;
 		}

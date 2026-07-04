@@ -1607,23 +1607,23 @@ internal void NativeCheckpoint_RelocateD230Pointers(const struct NativeCheckpoin
 	}
 	for (u32 i = 0; i < len(D230.cheats); i++)
 	{
-		NativeCheckpoint_RelocateImagePointerSlot(oldHeader, liveHeader, &D230.cheats[i].funcPtr);
+		NativeCheckpoint_RelocateImagePointerSlot(oldHeader, liveHeader, &D230.cheats[i].handler);
 	}
-	for (u32 i = 0; i < len(D230.ptrSelectWindowPos); i++)
+	for (u32 i = 0; i < len(D230.characterSelectWindowPosByLayout); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.ptrSelectWindowPos[i]);
+		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.characterSelectWindowPosByLayout[i]);
 	}
-	for (u32 i = 0; i < len(D230.ptrCsmArr); i++)
+	for (u32 i = 0; i < len(D230.characterSelectMetaByLayout); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.ptrCsmArr[i]);
+		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.characterSelectMetaByLayout[i]);
 	}
-	for (u32 i = 0; i < len(D230.ptr_transitionMeta_csm); i++)
+	for (u32 i = 0; i < len(D230.characterSelectTransitionByPlayerCount); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.ptr_transitionMeta_csm[i]);
+		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.characterSelectTransitionByPlayerCount[i]);
 	}
-	for (u32 i = 0; i < len(D230.PlayerNumberStrings); i++)
+	for (u32 i = 0; i < len(D230.playerNumberStrings); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.PlayerNumberStrings[i]);
+		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.playerNumberStrings[i]);
 	}
 
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.titleObj);
@@ -1632,10 +1632,10 @@ internal void NativeCheckpoint_RelocateD230Pointers(const struct NativeCheckpoin
 		NativeCheckpoint_RelocateTitle(oldHeader, liveHeader, D230.titleObj);
 	}
 
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.characterSelect_ptrWindowXY);
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.csm_Active);
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.ptrIntroCam);
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.ptrTransitionMeta);
+	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.activeCharacterSelectWindowPos);
+	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.activeCharacterSelectMeta);
+	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.titleIntroCameraPath);
+	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &D230.characterSelectTransitionMeta);
 }
 
 internal void NativeCheckpoint_RelocateV230Pointers(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader)

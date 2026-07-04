@@ -120,10 +120,10 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 
 			// scrapbook is 4.91 min, 4 mins + 54 sec,
 			// (4424 total / 15fps / 60 sec per min) mins,
-			// 0x1148 = 4424 = numFrames
+			// 0x1148 = 4424 = stream frames
 
-			// CD position of video, and numFrames
-			MM_Video_StartStream(cdPos, 0x1148);
+			// CD position of video, and stream frame count
+			MM_Video_StartStream(cdPos, SCRAPBOOK_STREAM_FRAMES);
 
 			// start playing movie
 			D230.scrapbookState = SCRAP_PLAY;
@@ -146,11 +146,11 @@ void MM_Scrapbook_PlayMovie(struct RectMenu *menu)
 		}
 
 		// If you press Start, Cross, Circle, Triangle, or Square
-		getButtonPress = (sdata->buttonTapPerPlayer[0] & 0x41070);
+		getButtonPress = (sdata->buttonTapPerPlayer[0] & SCRAPBOOK_SKIP_INPUT);
 
 		if ((MM_Video_CheckIfFinished(0) == 1) || (getButtonPress != 0))
 #else
-		getButtonPress = (sdata->buttonTapPerPlayer[0] & 0x41070);
+		getButtonPress = (sdata->buttonTapPerPlayer[0] & SCRAPBOOK_SKIP_INPUT);
 		s32 nativeUploaded = 0;
 		s16 nativeSrcX;
 		s16 nativeSrcY;

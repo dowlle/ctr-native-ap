@@ -21,20 +21,20 @@ void MM_Video_DecDCToutCallbackFunc(void)
 
 	uint32_t *ot = BreakDraw();
 
-	LoadImage(&V230.slice, V230.out_Buf[V230.imgId]);
+	LoadImage(&V230.slice, V230.out_Buf[V230.dctOutBufferIndex]);
 
 	/* update slice (rectangular strip) area to next one on the right */
 	V230.slice.x += V230.slice.w;
-	V230.imgId ^= 1;
+	V230.dctOutBufferIndex ^= 1;
 
-	if (V230.frameCounter == V230.totalFrames)
+	if (V230.sliceIndex == V230.finalSliceIndex)
 	{
-		V230.isDone = 1;
+		V230.dctOutputDone = 1;
 	}
 	else
 	{
-		V230.frameCounter++;
-		DecDCTout(V230.out_Buf[V230.imgId], V230.dctOutSliceSize);
+		V230.sliceIndex++;
+		DecDCTout(V230.out_Buf[V230.dctOutBufferIndex], V230.dctOutSliceSize);
 	}
 
 	if (ot != 0)
@@ -113,7 +113,7 @@ void MM_Video_VLC_Decode(void)
 	s16 freeSectors;
 	s16 overSectors;
 	uint32_t *sectorData;
-	uint32_t *sectorHeader[2];
+	StHEADER *sectorHeader[2];
 	int waitTime;
 	CdlLOC *sectorLoc;
 
@@ -125,7 +125,7 @@ void MM_Video_VLC_Decode(void)
 	backloc = StGetBackloc(&V230.cdLocation2);
 
 	oldDecodeState = V230.decodeState;
-	if ((V230.decodeState == 1) && ((V230.RING_SIZE - (V230.RING_SIZE >> 2)) <= freeSectors))
+	if ((V230.decodeState == 1) && ((V230.ringSectorCount - (V230.ringSectorCount >> 2)) <= freeSectors))
 	{
 		V230.stallRecoveryFrames++;
 
@@ -134,15 +134,15 @@ void MM_Video_VLC_Decode(void)
 			V230.stallRecoveryFrames = 0;
 			StClearRing();
 			V230.endOfStream = 0;
-			V230.frameCount = 0;
+			V230.sectorFrameCount = 0;
 			V230.lastSectorFrameCount = 0;
 			V230.lastBackloc = 0;
-			V230.loopStartBackloc = -1;
-			V230.loopEndBackloc = -1;
+			V230.loopStartBackloc = MM_VIDEO_BACKLOC_NONE;
+			V230.loopEndBackloc = MM_VIDEO_BACKLOC_NONE;
 			V230.loopWrapPending = 0;
 			V230.stalledBacklocFrames = 0;
 			V230.stallRecoveryFrames = 0;
-			V230.field21_0x38 = 0xffffffff;
+			V230.unused_0x38 = MM_VIDEO_BACKLOC_NONE;
 			V230.decodeState = oldDecodeState;
 
 			MM_Video_KickCD(&V230.cdLocation1);
@@ -155,7 +155,7 @@ void MM_Video_VLC_Decode(void)
 	V230.stallRecoveryFrames = 0;
 
 	// Scrapbook
-	if (((V230.flags & MM_VIDEO_FLAG_SCRAPBOOK) == 0) && (freeSectors < (V230.RING_SIZE >> 4)))
+	if (((V230.flags & MM_VIDEO_FLAG_SCRAPBOOK) == 0) && (freeSectors < (V230.ringSectorCount >> 4)))
 	{
 		MM_Video_KickCD(&V230.cdLocation2);
 	}
@@ -169,13 +169,13 @@ void MM_Video_VLC_Decode(void)
 			V230.drawNextFrame = 0;
 			StClearRing();
 			V230.lastSectorFrameCount = 0;
-			V230.loopStartBackloc = -1;
-			V230.loopEndBackloc = -1;
+			V230.loopStartBackloc = MM_VIDEO_BACKLOC_NONE;
+			V230.loopEndBackloc = MM_VIDEO_BACKLOC_NONE;
 			V230.loopWrapPending = 0;
 			V230.stallRecoveryFrames = 0;
 			V230.lastBackloc = 0;
 			V230.stalledBacklocFrames = 0;
-			V230.field21_0x38 = 0xffffffff;
+			V230.unused_0x38 = MM_VIDEO_BACKLOC_NONE;
 
 			MM_Video_KickCD(&V230.cdLocation3);
 		}
@@ -192,7 +192,7 @@ void MM_Video_VLC_Decode(void)
 	if ((V230.loopStartBackloc < 0) &&
 
 	    // length of video
-	    ((V230.numFrames <= backloc ||
+	    ((V230.streamFrameCount <= backloc ||
 
 	      (backloc < V230.lastBackloc))))
 	{
@@ -212,12 +212,12 @@ void MM_Video_VLC_Decode(void)
 		// if video is looping
 		else
 		{
-			V230.field21_0x38 = 0xffffffff;
+			V230.unused_0x38 = MM_VIDEO_BACKLOC_NONE;
 			if (V230.loopEndBackloc < 1)
 			{
 				MM_Video_KickCD(&V230.cdLocation1);
 
-				if (backloc == V230.numFrames)
+				if (backloc == V230.streamFrameCount)
 				{
 					V230.loopEndBackloc = CdPosToInt(&V230.cdLocation2);
 				}
@@ -230,7 +230,7 @@ void MM_Video_VLC_Decode(void)
 			}
 			else
 			{
-				if (backloc != V230.numFrames)
+				if (backloc != V230.streamFrameCount)
 				{
 					result = CdPosToInt(&V230.cdLocation2);
 					if (V230.loopEndBackloc < result)
@@ -241,13 +241,13 @@ void MM_Video_VLC_Decode(void)
 
 						MM_Video_KickCD(&V230.cdLocation1);
 					}
-					V230.loopEndBackloc = -1;
+					V230.loopEndBackloc = MM_VIDEO_BACKLOC_NONE;
 				}
 			}
 		}
 	}
 
-	V230.lastSectorFrameCount = V230.frameCount;
+	V230.lastSectorFrameCount = V230.sectorFrameCount;
 	V230.lastBackloc = backloc;
 
 LAB_800b5fec:
@@ -258,10 +258,9 @@ LAB_800b5fec:
 		result = StGetNext(&sectorData, sectorHeader);
 		if (result == 0)
 		{
-			// sector->frameCount
-			V230.frameCount = *(int *)((char *)sectorHeader[0] + 8);
+			V230.sectorFrameCount = sectorHeader[0]->frameCount;
 
-			if (V230.frameCount == V230.lastSectorFrameCount)
+			if (V230.sectorFrameCount == V230.lastSectorFrameCount)
 			{
 				StFreeRing(sectorData);
 				goto LAB_800b5fec;
@@ -269,8 +268,7 @@ LAB_800b5fec:
 
 			if (0 < V230.loopStartBackloc)
 			{
-				// sector->loc
-				sectorLoc = (CdlLOC *)((char *)sectorHeader[0] + 0x1c);
+				sectorLoc = &sectorHeader[0]->loc;
 				result = CdPosToInt(sectorLoc);
 
 				waitTime = MM_VIDEO_VLC_WAIT_FRAMES;
@@ -283,7 +281,7 @@ LAB_800b5fec:
 				}
 				if (V230.loopWrapPending == 1)
 				{
-					V230.loopStartBackloc = -1;
+					V230.loopStartBackloc = MM_VIDEO_BACKLOC_NONE;
 					V230.loopWrapPending = 0;
 					V230.lastBackloc = backloc;
 				}
@@ -293,8 +291,7 @@ LAB_800b5fec:
 
 			if (size <= V230.vlcBufferSize)
 			{
-				// sector->loc
-				sectorLoc = (CdlLOC *)((char *)sectorHeader[0] + 0x1c);
+				sectorLoc = &sectorHeader[0]->loc;
 				V230.cdLocation3 = *sectorLoc;
 
 				// VLC Decode
@@ -317,27 +314,27 @@ LAB_800b5fec:
 	V230.drawNextFrame = 0;
 }
 
-void MM_Video_StartStream(int cdStartSector, int numFrames)
+void MM_Video_StartStream(int cdStartSector, int streamFrameCount)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b615c-0x800b6260.
 	V230.cdRetryState = 0;
 	V230.endOfStream = 0;
 	V230.decodeState = 1;
 
-	V230.isDone = 0;
+	V230.dctOutputDone = 0;
 
-	V230.frameCount = 0;
+	V230.sectorFrameCount = 0;
 	V230.lastSectorFrameCount = 0;
 	V230.lastBackloc = 0;
-	V230.loopStartBackloc = 0xffffffff;
-	V230.loopEndBackloc = 0xffffffff;
+	V230.loopStartBackloc = MM_VIDEO_BACKLOC_NONE;
+	V230.loopEndBackloc = MM_VIDEO_BACKLOC_NONE;
 	V230.loopWrapPending = 0;
 	V230.stalledBacklocFrames = 0;
 	V230.stallRecoveryFrames = 0;
-	V230.field21_0x38 = 0xffffffff;
+	V230.unused_0x38 = MM_VIDEO_BACKLOC_NONE;
 	V230.drawNextFrame = 0;
 
-	V230.numFrames = numFrames;
+	V230.streamFrameCount = streamFrameCount;
 
 	// start streaming video
 	CdIntToPos(cdStartSector, &V230.cdLocation1);
@@ -349,7 +346,7 @@ void MM_Video_StartStream(int cdStartSector, int numFrames)
 	CDSYS_SetMode_StreamData();
 
 	// 800b6814 = Ring_Buf (mempack)
-	StSetRing(V230.out_Buf[2], V230.RING_SIZE);
+	StSetRing(V230.out_Buf[2], V230.ringSectorCount);
 
 	StClearRing();
 
@@ -361,9 +358,7 @@ void MM_Video_StartStream(int cdStartSector, int numFrames)
 void MM_Video_StopStream(void)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b6260-0x800b62d8.
-	int cdReady;
-
-	cdReady = CdDiskReady(1);
+	int cdReady = CdDiskReady(1);
 	if (cdReady == 2)
 	{
 		do
@@ -391,7 +386,7 @@ void MM_Video_StopStream(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b62d8-0x800b64d4.
 void MM_Video_AllocMem(u32 width, u16 height, u32 flags, int ringSectorCount, int vlcBufferShift)
 {
-	char isRGB24;
+	b32 isRGB24;
 	u32 paddedHeight;
 	int bytesPerPixel;
 
@@ -401,22 +396,22 @@ void MM_Video_AllocMem(u32 width, u16 height, u32 flags, int ringSectorCount, in
 	width &= 0xffff;
 	height &= 0xffff;
 
-	V230.RING_SIZE = ringSectorCount;
+	V230.ringSectorCount = ringSectorCount;
 
 	if (ringSectorCount < 1)
 	{
-		V230.RING_SIZE = MM_VIDEO_DEFAULT_RING_SECTORS;
+		V230.ringSectorCount = MM_VIDEO_DEFAULT_RING_SECTORS;
 	}
 
 	isRGB24 = (flags & MM_VIDEO_FLAG_RGB24);
 
 	bytesPerPixel = (isRGB24) ? 3 : 2;
 
-	V230.DCT_MODE = (u16)isRGB24;
+	V230.dctMode = (u16)isRGB24;
 
 	paddedHeight = (((height - 1) >> 4) + 1) * 0x10;
-	V230.totalFrames = (((width - 1) >> 4) + 1U) - 1;
-	V230.imgId = 0;
+	V230.finalSliceIndex = (((width - 1) >> 4) + 1U) - 1;
+	V230.dctOutBufferIndex = 0;
 	V230.vlcBufferIndex = 0;
 	V230.dctOutSliceSize = (int)(bytesPerPixel * 8 * paddedHeight) >> 1;
 	V230.vlcBufferSize = (int)(((width * bytesPerPixel) >> 1) * paddedHeight) >> (vlcBufferShift + 1U);
@@ -428,7 +423,7 @@ void MM_Video_AllocMem(u32 width, u16 height, u32 flags, int ringSectorCount, in
 	V230.in_Buf[0] = MEMPACK_AllocMem(V230.vlcBufferSize << 3); //, OVR_230.s_VlcBuf);
 	V230.in_Buf[1] = (uint32_t *)(((int)V230.in_Buf[0]) + V230.vlcBufferSize * 4);
 
-	V230.out_Buf[2] = MEMPACK_AllocMem(V230.RING_SIZE << 0xb); //, OVR_230.s_RingBuf);
+	V230.out_Buf[2] = MEMPACK_AllocMem(V230.ringSectorCount << LOAD_CD_DATA_SECTOR_SHIFT); //, OVR_230.s_RingBuf);
 
 	V230.slice.x = 0;
 	V230.slice.y = 0;
@@ -457,10 +452,9 @@ void MM_Video_ClearMem(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b64f4-0x800b6674.
 u32 MM_Video_DecodeFrame(s16 offsetX, s16 offsetY)
 {
-	int cdReady;
+	int cdReady = CdDiskReady(1);
 	u32 boolDraw;
 
-	cdReady = CdDiskReady(1);
 	if (V230.cdRetryState == 1)
 	{
 		if (cdReady == 2)
@@ -478,7 +472,7 @@ u32 MM_Video_DecodeFrame(s16 offsetX, s16 offsetY)
 			V230.decodeState = 1;
 			V230.stallRecoveryFrames = 0;
 			V230.cdRetryState = 1;
-			V230.lastBackloc = V230.frameCount - 1;
+			V230.lastBackloc = V230.sectorFrameCount - 1;
 			StClearRing();
 		}
 	}
@@ -502,18 +496,18 @@ u32 MM_Video_DecodeFrame(s16 offsetX, s16 offsetY)
 
 		if (V230.drawNextFrame == 1)
 		{
-			V230.frameCounter = 0;
+			V230.sliceIndex = 0;
 
 			V230.slice.x = offsetX;
 			V230.slice.y = offsetY;
 
 			// start decoding video
-			DecDCTin(V230.in_Buf[V230.vlcBufferIndex], V230.DCT_MODE);
+			DecDCTin(V230.in_Buf[V230.vlcBufferIndex], V230.dctMode);
 
 			V230.vlcBufferIndex ^= 1;
 
 			// get result of decoding
-			DecDCTout(V230.out_Buf[V230.imgId], V230.dctOutSliceSize);
+			DecDCTout(V230.out_Buf[V230.dctOutBufferIndex], V230.dctOutSliceSize);
 
 			// return 1, ready to draw
 			boolDraw = (u32)V230.drawNextFrame;
@@ -525,7 +519,7 @@ u32 MM_Video_DecodeFrame(s16 offsetX, s16 offsetY)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 PSX path 0x800b6674-0x800b67ac.
 u32 MM_Video_CheckIfFinished(int pollCdReady)
 {
-	char cdReadError;
+	b32 cdReadError;
 	u32 isFinished;
 	int cdReady;
 	int timeoutFrames;
@@ -558,7 +552,7 @@ u32 MM_Video_CheckIfFinished(int pollCdReady)
 				if (cdReady == 0x10)
 				{
 					cdReadError = true;
-					V230.isDone = 1;
+					V230.dctOutputDone = 1;
 				}
 				else
 				{
@@ -570,10 +564,10 @@ u32 MM_Video_CheckIfFinished(int pollCdReady)
 
 			if (timeoutFrames == 0)
 			{
-				V230.isDone = 1;
+				V230.dctOutputDone = 1;
 			}
 
-		} while (!V230.isDone);
+		} while (!V230.dctOutputDone);
 
 		do
 		{
@@ -581,11 +575,11 @@ u32 MM_Video_CheckIfFinished(int pollCdReady)
 
 		} while (cdReady != 0);
 
-		V230.isDone = 0;
+		V230.dctOutputDone = 0;
 
 		V230.drawNextFrame = 0;
 
-		if ((!cdReadError) && (V230.frameCounter != V230.totalFrames))
+		if ((!cdReadError) && (V230.sliceIndex != V230.finalSliceIndex))
 		{
 			// Discontinue current decoding,
 			// does not affect internal states (libref)

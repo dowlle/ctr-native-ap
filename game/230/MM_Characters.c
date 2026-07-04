@@ -6,6 +6,9 @@ enum
 	MM_CHARACTER_SELECT_SCREEN_H = 0xd8,
 	MM_CHARACTER_SELECT_DISTANCE_TO_SCREEN = 0x100,
 	MM_CHARACTER_SELECT_MODEL_MOVE_FP = 0x1000,
+	MM_CHARACTER_SELECT_MODEL_MOVE_FP_SHIFT = 0xc,
+	MM_CHARACTER_SELECT_MODEL_MOVE_NEXT = 1,
+	MM_CHARACTER_SELECT_MODEL_MOVE_PREV = -1,
 	MM_CHARACTER_SELECT_ICON_COUNT = 0xf,
 	MM_CHARACTER_SELECT_EXPANSION_ICON_FIRST = 0xc,
 	MM_CHARACTER_SELECT_DEFAULT_DRIVER_COUNT = 8,
@@ -31,10 +34,6 @@ enum
 	MM_CHARACTER_SELECT_4P_CHARACTER_Y = 0x18,
 	MM_CHARACTER_SELECT_LIMITED_TITLE_X = 0xfc,
 	MM_CHARACTER_SELECT_LIMITED_TITLE_Y = 10,
-	MM_CHARACTER_SELECT_DIR_UP = 0,
-	MM_CHARACTER_SELECT_DIR_DOWN = 1,
-	MM_CHARACTER_SELECT_DIR_LEFT = 2,
-	MM_CHARACTER_SELECT_DIR_RIGHT = 3,
 	MM_CHARACTER_SELECT_INPUT_DPAD = BTN_RIGHT | BTN_LEFT | BTN_DOWN | BTN_UP,
 	MM_CHARACTER_SELECT_INPUT_MENU = BTN_TRIANGLE | BTN_CIRCLE | BTN_SQUARE_one | BTN_CROSS_one,
 	MM_CHARACTER_SELECT_INPUT_CONFIRM = BTN_CIRCLE | BTN_CROSS_one,
@@ -55,6 +54,14 @@ enum
 	MM_CHARACTER_SELECT_SELECTED_BORDER_SHRINK_W = 6,
 	MM_CHARACTER_SELECT_SELECTED_BORDER_SHRINK_H = 4,
 	MM_CHARACTER_SELECT_4P_NAME_BOTTOM_OFFSET = -6,
+	MM_CHARACTER_SELECT_COLOR_PHASE_FRAME_STEP = 0x100,
+	MM_CHARACTER_SELECT_COLOR_PHASE_PLAYER_STEP = 0x400,
+	MM_CHARACTER_SELECT_COLOR_TRIG_MASK = 0x3ff,
+	MM_CHARACTER_SELECT_COLOR_TRIG_HIGH_HALF_BIT = 0x400,
+	MM_CHARACTER_SELECT_COLOR_TRIG_NEGATE_BIT = 0x800,
+	MM_CHARACTER_SELECT_COLOR_PULSE_THRESHOLD = 0xc00,
+	MM_CHARACTER_SELECT_COLOR_PULSE_SCALE_SHIFT = 7,
+	MM_CHARACTER_SELECT_COLOR_PULSE_FP_SHIFT = 0xc,
 };
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800ad98c-0x800ada4c.
@@ -75,27 +82,27 @@ void MM_Characters_AnimateColors(u8 *colorData, s16 playerID, s16 flag)
 	// see MM_Characters_MenuProc
 	if (flag == 0)
 	{
-		trigApproximationIndex = sdata->frameCounter * 0x100 + playerID * 0x400;
+		trigApproximationIndex = sdata->frameCounter * MM_CHARACTER_SELECT_COLOR_PHASE_FRAME_STEP + playerID * MM_CHARACTER_SELECT_COLOR_PHASE_PLAYER_STEP;
 
 		// approximate trigonometry
-		trigApprox = CTR_ReadU32LE(&data.trigApprox[trigApproximationIndex & 0x3ff]);
+		trigApprox = CTR_ReadU32LE(&data.trigApprox[trigApproximationIndex & MM_CHARACTER_SELECT_COLOR_TRIG_MASK]);
 
-		if ((trigApproximationIndex & 0x400) == 0)
+		if ((trigApproximationIndex & MM_CHARACTER_SELECT_COLOR_TRIG_HIGH_HALF_BIT) == 0)
 		{
 			trigApprox = trigApprox << 0x10;
 		}
 		trigApprox = trigApprox >> 0x10;
 
-		if ((trigApproximationIndex & 0x800) != 0)
+		if ((trigApproximationIndex & MM_CHARACTER_SELECT_COLOR_TRIG_NEGATE_BIT) != 0)
 		{
 			trigApprox = -(int)trigApprox;
 		}
 	}
 
 	colorAdjustmentValue = 0;
-	if (0xc00 < (int)trigApprox)
+	if (MM_CHARACTER_SELECT_COLOR_PULSE_THRESHOLD < (int)trigApprox)
 	{
-		colorAdjustmentValue = ((trigApprox << 7) >> 0xc);
+		colorAdjustmentValue = ((trigApprox << MM_CHARACTER_SELECT_COLOR_PULSE_SCALE_SHIFT) >> MM_CHARACTER_SELECT_COLOR_PULSE_FP_SHIFT);
 	}
 
 	colorData[0] = ptrColor[0] | colorAdjustmentValue;
@@ -107,22 +114,18 @@ void MM_Characters_AnimateColors(u8 *colorData, s16 playerID, s16 flag)
 }
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800ada4c-0x800adae4.
-int MM_Characters_GetNextDriver(s16 dpad, char characterID)
+int MM_Characters_GetNextDriver(s16 direction, s16 characterID)
 {
-	char nextIcon;
-	s16 unlocked;
-	char newDriver;
-
-	nextIcon = D230.csm_Active[(s32)characterID].indexNext[dpad];
-	unlocked = D230.csm_Active[(s32)nextIcon].unlockFlags;
+	u8 nextIcon = D230.activeCharacterSelectMeta[(s32)characterID].nextIconByDirection[direction];
+	s16 unlocked = D230.activeCharacterSelectMeta[(s32)nextIcon].unlockFlags;
 
 	// set new driver to the driver
 	// you'd get when pressing Up button
-	newDriver = nextIcon;
+	s16 newDriver = nextIcon;
 
 	if (
 	    // if desired driver is not unlocked by default
-	    (unlocked != -1) &&
+	    (unlocked != MM_CHARACTER_UNLOCK_ALWAYS) &&
 
 	    (((sdata->gameProgress.unlocks[unlocked >> 5] >> (unlocked & 0x1f)) & 1) == 0))
 	{
@@ -137,18 +140,16 @@ int MM_Characters_GetNextDriver(s16 dpad, char characterID)
 // used for preventing players highlighting the same character
 // also for when you go left of komodo joe's icon
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800adae4-0x800adb64.
-u32 MM_Characters_boolIsInvalid(s16 *iconPerPlayer, s16 characterID, s16 player)
+b32 MM_Characters_boolIsInvalid(s16 *iconPerPlayer, s16 characterID, s16 player)
 {
-	s16 i = 0;
-
 	// if there are players
 	if (sdata->gGT->numPlyrNextGame)
 	{
 		// loop through players
-		for (i = 0; i < sdata->gGT->numPlyrNextGame; i++)
+		for (s16 playerIndex = 0; playerIndex < sdata->gGT->numPlyrNextGame; playerIndex++)
 		{
 			// if driver is taken
-			if ((i != player) && (characterID == iconPerPlayer[i]))
+			if ((playerIndex != player) && (characterID == iconPerPlayer[playerIndex]))
 			{
 				return 1;
 			}
@@ -162,7 +163,7 @@ u32 MM_Characters_boolIsInvalid(s16 *iconPerPlayer, s16 characterID, s16 player)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 230 0x800adb64-0x800adc0c.
 // Search for character model by string,
 // specific to main menu lev, altered in oxide mod
-struct Model *MM_Characters_GetModelByName(int *name)
+struct Model *MM_Characters_GetModelByName(const char *name)
 {
 	struct Model **models;
 	struct Model *model;
@@ -184,9 +185,8 @@ struct Model *MM_Characters_GetModelByName(int *name)
 	// of model pointers, until nullptr
 	for (model = models[0]; model != NULL; models++, model = models[0])
 	{
-		int *modelName = (int *)model;
-
-		if ((modelName[0] == name[0]) && (modelName[1] == name[1]) && (modelName[2] == name[2]) && (modelName[3] == name[3]))
+		if ((ModelName_ReadWord(model->name, 0) == ModelName_ReadWord(name, 0)) && (ModelName_ReadWord(model->name, 1) == ModelName_ReadWord(name, 1)) &&
+		    (ModelName_ReadWord(model->name, 2) == ModelName_ReadWord(name, 2)) && (ModelName_ReadWord(model->name, 3) == ModelName_ReadWord(name, 3)))
 		{
 			// found it
 			return model;
@@ -209,14 +209,14 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 
 	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 	{
-		s16 *windowPos = &D230.characterSelect_ptrWindowXY[playerIndex * 2];
-		struct TransitionMeta *tMeta = &D230.ptrTransitionMeta[playerIndex];
+		SVec2 *windowPos = &D230.activeCharacterSelectWindowPos[playerIndex];
+		struct TransitionMeta *tMeta = &D230.characterSelectTransitionMeta[playerIndex];
 
 		struct PushBuffer *pb = &gGT->pushBuffer[playerIndex];
-		pb->rect.x = windowPos[0] + tMeta[0x10].currX;
-		pb->rect.y = windowPos[1] + tMeta[0x10].currY;
-		pb->rect.w = D230.characterSelect_sizeX;
-		pb->rect.h = D230.characterSelect_sizeY;
+		pb->rect.x = windowPos->x + tMeta[MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST].currX;
+		pb->rect.y = windowPos->y + tMeta[MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST].currY;
+		pb->rect.w = D230.characterSelectWindowWidth;
+		pb->rect.h = D230.characterSelectWindowHeight;
 
 		// negative StartX
 		if ((s16)pb->rect.x < 0)
@@ -301,25 +301,25 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 		// so that each camera can only see one driver
 		idpp[playerIndex].pushBuffer = pb;
 
-		s16 *currCharacterID = &D230.characterSelect_charIDs_curr[playerIndex];
+		s16 *currCharacterID = &D230.characterSelectPlayerState.currentCharacterID[playerIndex];
 
 		driverInst->animFrame = 0;
 		driverInst->vertSplit = 0;
 
-		struct Model *model = MM_Characters_GetModelByName((int *)data.MetaDataCharacters[(int)*currCharacterID].name_Debug);
+		struct Model *model = MM_Characters_GetModelByName(data.MetaDataCharacters[(int)*currCharacterID].name_Debug);
 
 		// set modelPtr in Instance
 		driverInst->model = model;
 
 		// CameraDC, freecam mode
-		gGT->cameraDC[playerIndex].cameraMode = 3;
+		gGT->cameraDC[playerIndex].cameraMode = CAMERA_MODE_FREECAM;
 
 		// Set position of player
-		driverInst->matrix.t[0] = D230.csm_instPos.x;
-		driverInst->matrix.t[1] = D230.csm_instPos.y;
-		driverInst->matrix.t[2] = D230.csm_instPos.z;
+		driverInst->matrix.t[0] = D230.characterSelectDriverModel.pos.x;
+		driverInst->matrix.t[1] = D230.characterSelectDriverModel.pos.y;
+		driverInst->matrix.t[2] = D230.characterSelectDriverModel.pos.z;
 
-		s16 *moveTimer = &D230.characterSelect_modelMoveTimer[playerIndex];
+		s16 *moveTimer = &D230.characterSelectModelMoveTimer[playerIndex];
 		s16 nextMoveTimer = *moveTimer + -1;
 
 		// If no transition between players
@@ -328,8 +328,8 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 			// compare to character ID
 			if (*currCharacterID != data.characterIDs[playerIndex])
 			{
-				*moveTimer = D230.characterSelect_modelMoveFrames << 1;
-				D230.characterSelect_charIDs_desired[playerIndex] = data.characterIDs[playerIndex];
+				*moveTimer = D230.characterSelectDriverModel.moveFrames << 1;
+				D230.characterSelectPlayerState.desiredCharacterID[playerIndex] = data.characterIDs[playerIndex];
 			}
 		}
 
@@ -343,15 +343,15 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 			s32 slideOffset;
 
 			// if timer is before midpoint
-			if ((int)nextMoveTimer < (int)D230.characterSelect_modelMoveFrames)
+			if ((int)nextMoveTimer < (int)D230.characterSelectDriverModel.moveFrames)
 			{
 				// make driver fly off screen
-				*currCharacterID = D230.characterSelect_charIDs_desired[playerIndex];
-				s32 moveFrameScale = RaceFlag_MoveModels((int)nextMoveTimer, (int)D230.characterSelect_modelMoveFrames);
+				*currCharacterID = D230.characterSelectPlayerState.desiredCharacterID[playerIndex];
+				s32 moveFrameScale = RaceFlag_MoveModels((int)nextMoveTimer, (int)D230.characterSelectDriverModel.moveFrames);
 
 				// direction moving
-				slideDirection = -D230.characterSelect_modelMoveDir[playerIndex];
-				slideOffset = moveFrameScale * D230.characterSelect_modelSlideDistance >> 0xc;
+				slideDirection = -D230.characterSelectPlayerState.modelMoveDir[playerIndex];
+				slideOffset = moveFrameScale * D230.characterSelectDriverModel.slideDistance >> MM_CHARACTER_SELECT_MODEL_MOVE_FP_SHIFT;
 			}
 
 			// if timer is after midpoint
@@ -359,20 +359,21 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 			{
 				// make new driver fly on screen
 				s32 moveFrameScale =
-				    RaceFlag_MoveModels((int)nextMoveTimer - (int)D230.characterSelect_modelMoveFrames, (int)D230.characterSelect_modelMoveFrames);
+				    RaceFlag_MoveModels((int)nextMoveTimer - (int)D230.characterSelectDriverModel.moveFrames, (int)D230.characterSelectDriverModel.moveFrames);
 
 				// direction moving
-				slideDirection = D230.characterSelect_modelMoveDir[playerIndex];
-				slideOffset = (MM_CHARACTER_SELECT_MODEL_MOVE_FP - moveFrameScale) * (int)D230.characterSelect_modelSlideDistance >> 0xc;
+				slideDirection = D230.characterSelectPlayerState.modelMoveDir[playerIndex];
+				slideOffset = (MM_CHARACTER_SELECT_MODEL_MOVE_FP - moveFrameScale) * (int)D230.characterSelectDriverModel.slideDistance >>
+				              MM_CHARACTER_SELECT_MODEL_MOVE_FP_SHIFT;
 			}
 
 			driverInst->matrix.t[0] += slideDirection * slideOffset;
 		}
 
 		// driver rotation
-		rot.x = D230.csm_instRot.x;
-		rot.y = D230.csm_instRot.y + D230.characterSelect_angle[playerIndex];
-		rot.z = D230.csm_instRot.z;
+		rot.x = D230.characterSelectDriverModel.rot.x;
+		rot.y = D230.characterSelectDriverModel.rot.y + D230.characterSelectPlayerState.angle[playerIndex];
+		rot.z = D230.characterSelectDriverModel.rot.z;
 
 		ConvertRotToMatrix(&driverInst->matrix, &rot);
 	}
@@ -385,7 +386,7 @@ void MM_Characters_SetMenuLayout(void)
 	b32 expandRoster = false;
 
 	// By default, draw "Select character" in 3P menu
-	D230.isRosterExpanded = 0;
+	D230.characterSelectRosterExpanded = 0;
 
 	s32 numPlyrNextGame = sdata->gGT->numPlyrNextGame;
 	s32 layoutIndex = numPlyrNextGame - 1;
@@ -395,7 +396,7 @@ void MM_Characters_SetMenuLayout(void)
 	for (s32 iconIndex = MM_CHARACTER_SELECT_EXPANSION_ICON_FIRST; iconIndex < MM_CHARACTER_SELECT_ICON_COUNT; iconIndex++)
 	{
 		// OG game code
-		u16 unlocked = D230.csm_1P2P[iconIndex].unlockFlags;
+		u16 unlocked = D230.characterSelectMeta1P2P[iconIndex].unlockFlags;
 
 		if (((sdata->gameProgress.unlocks[unlocked >> 5] >> (unlocked & 0x1f)) & 1) != 0)
 		{
@@ -415,23 +416,23 @@ void MM_Characters_SetMenuLayout(void)
 		layoutIndex += MM_CHARACTER_SELECT_LIMITED_LAYOUT_OFFSET;
 	}
 
-	D230.isRosterExpanded = expandRoster;
+	D230.characterSelectRosterExpanded = expandRoster;
 
-	D230.characterSelectIconLayout = layoutIndex;
+	D230.characterSelectLayoutIndex = layoutIndex;
 
-	D230.csm_instPos.y = D230.driverPosY[layoutIndex];
-	D230.csm_instPos.z = D230.driverPosZ[layoutIndex];
+	D230.characterSelectDriverModel.pos.y = D230.characterSelectLayout.driverPosY[layoutIndex];
+	D230.characterSelectDriverModel.pos.z = D230.characterSelectLayout.driverPosZ[layoutIndex];
 
-	D230.characterSelect_sizeX = D230.windowW[layoutIndex];
-	D230.characterSelect_sizeY = D230.windowH[layoutIndex];
+	D230.characterSelectWindowWidth = D230.characterSelectLayout.windowW[layoutIndex];
+	D230.characterSelectWindowHeight = D230.characterSelectLayout.windowH[layoutIndex];
 
-	D230.characterSelect_ptrWindowXY = D230.ptrSelectWindowPos[layoutIndex];
+	D230.activeCharacterSelectWindowPos = D230.characterSelectWindowPosByLayout[layoutIndex];
 
-	D230.csm_Active = D230.ptrCsmArr[layoutIndex];
+	D230.activeCharacterSelectMeta = D230.characterSelectMetaByLayout[layoutIndex];
 
-	D230.textPos = D230.textPosArr[layoutIndex];
+	D230.characterSelectNameTextY = D230.characterSelectLayout.textY[layoutIndex];
 
-	D230.ptrTransitionMeta = D230.ptr_transitionMeta_csm[numPlyrNextGame - 1];
+	D230.characterSelectTransitionMeta = D230.characterSelectTransitionByPlayerCount[numPlyrNextGame - 1];
 
 	return;
 }
@@ -455,8 +456,8 @@ void MM_Characters_PreventOverlap(void)
 	s8 availableDefaultCharacters[MM_CHARACTER_SELECT_DEFAULT_DRIVER_COUNT];
 
 	// default 0,1,2,3,4,5,6,7
-	CTR_WriteU32LE((u8 *)&availableDefaultCharacters[0], (u32)R230.characterID_default[0]);
-	CTR_WriteU32LE((u8 *)&availableDefaultCharacters[4], (u32)R230.characterID_default[1]);
+	CTR_WriteU32LE((u8 *)&availableDefaultCharacters[0], R230.packedDefaultCharacterIDWords[0]);
+	CTR_WriteU32LE((u8 *)&availableDefaultCharacters[4], R230.packedDefaultCharacterIDWords[1]);
 
 	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 	{
@@ -510,8 +511,8 @@ void MM_Characters_RestoreIDs(void)
 
 	// erase select bits
 	sdata->characterSelectFlags = 0;
-	D230.transitionFrames = MM_CHARACTER_SELECT_TRANSITION_FRAMES;
-	D230.isMenuTransitioning = ENTERING_MENU;
+	D230.characterSelectTransitionFrame = MM_CHARACTER_SELECT_TRANSITION_FRAMES;
+	D230.characterSelectMenuState = ENTERING_MENU;
 
 	// This uses 80086e84, which controls character IDs
 	for (s32 driverIndex = 0; driverIndex < MM_CHARACTER_SELECT_DEFAULT_DRIVER_COUNT; driverIndex++)
@@ -530,7 +531,7 @@ void MM_Characters_RestoreIDs(void)
 		// Basically sets them to 0, 1, 2, 3, 4... up to 0xE,
 		// setting Oxide's manually to 0xF is needed to make his icon appear
 
-		D230.characterMenuID[(s32)D230.csm_Active[iconIndex].characterID] = iconIndex;
+		D230.characterMenuID[(s32)D230.activeCharacterSelectMeta[iconIndex].characterID] = iconIndex;
 	}
 
 	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
@@ -541,11 +542,11 @@ void MM_Characters_RestoreIDs(void)
 		s16 *currID = &data.characterIDs[playerIndex];
 
 		// get unlock requirement for this character
-		s16 unlocked = D230.csm_Active[(s32)*currID].unlockFlags;
+		s16 unlocked = D230.activeCharacterSelectMeta[(s32)*currID].unlockFlags;
 
 		if (
 		    // If Icon has an unlock requirement
-		    (unlocked != -1) &&
+		    (unlocked != MM_CHARACTER_UNLOCK_ALWAYS) &&
 
 		    // If Character is Locked
 		    (((sdata->gameProgress.unlocks[unlocked >> 5] >> (unlocked & 0x1f)) & 1) == 0))
@@ -561,14 +562,14 @@ void MM_Characters_RestoreIDs(void)
 	{
 		// set name string ID to the character ID of each player.
 		// The string will only draw if both these variables match
-		D230.characterSelect_charIDs_curr[playerIndex] = data.characterIDs[playerIndex];
-		D230.characterSelect_charIDs_desired[playerIndex] = data.characterIDs[playerIndex];
+		D230.characterSelectPlayerState.currentCharacterID[playerIndex] = data.characterIDs[playerIndex];
+		D230.characterSelectPlayerState.desiredCharacterID[playerIndex] = data.characterIDs[playerIndex];
 
 		// something to do with transitioning between icons
-		D230.characterSelect_modelMoveTimer[playerIndex] = 0;
+		D230.characterSelectModelMoveTimer[playerIndex] = 0;
 
 		// rotation of each driver, 90 degrees difference
-		D230.characterSelect_angle[playerIndex] = (playerIndex * MM_CHARACTER_SELECT_ANGLE_STEP) + MM_CHARACTER_SELECT_ANGLE_OFFSET;
+		D230.characterSelectPlayerState.angle[playerIndex] = (playerIndex * MM_CHARACTER_SELECT_ANGLE_STEP) + MM_CHARACTER_SELECT_ANGLE_OFFSET;
 	}
 
 	MM_Characters_DrawWindows(0);
@@ -594,29 +595,26 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 {
 	(void)unused;
 	u8 numPlyrNextGame;
-	int candidateTaken;
-	int deadEndCandidateFree;
+	b32 candidateInUseByOtherPlayer;
+	b32 deadEndCandidateAvailable;
 	u16 playerSelectFlag;
 	s16 nextIcon;
 	u32 button;
 	int intermediateIcon;
-	u8 *outlineColorData;
 	u32 characterSelectType;
 	u32 fontType;
-	u32 iconColor;
+	Color iconColor;
 	s16 previousCandidateIcon;
 	int nextIconCopy;
 	s16 alternateIcon;
 	s16 currentIcon;
 	s16 candidateIcon;
 	s16 *playerIconSlot;
-	u32 k;
 	struct CharacterSelectMeta *preInputCharacterMeta;
 	s16 iconPerPlayer[4];
-	u8 playerColorData[8];
-	Color color;
-
-	u8 colorRGBA[4];
+	Color playerColor;
+	Color outlineColor;
+	Color animatedColor;
 
 	RECT r1;
 	RECT *r = &r1;
@@ -625,64 +623,62 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 	s16 hitNavigationDeadEnd;
 	s16 *iconPerPlayerPtr;
 
-	int i;
-	int j;
 	int posX;
 	int posY;
 	s16 playerIcon;
 	int direction;
 
-	s16 *windowPos;
-	struct CharacterSelectMeta *csm_Active;
+	SVec2 *windowPos;
+	struct CharacterSelectMeta *activeCharacterSelectMeta;
 
 	struct GameTracker *gGT = sdata->gGT;
 
 	u32 *ot = gGT->backBuffer->otMem.uiOT;
 
-	for (i = 0; i < MM_CHARACTER_SELECT_MAX_PLAYERS; i++)
+	for (s32 playerIndex = 0; playerIndex < MM_CHARACTER_SELECT_MAX_PLAYERS; playerIndex++)
 	{
-		iconPerPlayer[i] = D230.characterMenuID[data.characterIDs[i]];
+		iconPerPlayer[playerIndex] = D230.characterMenuID[data.characterIDs[playerIndex]];
 	}
 
 	// if menu is not in focus
-	if (D230.isMenuTransitioning != IN_MENU)
+	if (D230.characterSelectMenuState != IN_MENU)
 	{
-		MM_TransitionInOut(D230.ptrTransitionMeta, (int)D230.transitionFrames, MM_CHARACTER_SELECT_TRANSITION_STEP);
+		MM_TransitionInOut(D230.characterSelectTransitionMeta, (int)D230.characterSelectTransitionFrame, MM_CHARACTER_SELECT_TRANSITION_STEP);
 	}
 
 	MM_Characters_SetMenuLayout();
 	MM_Characters_DrawWindows(1);
 
 	// if transitioning in
-	if (D230.isMenuTransitioning == ENTERING_MENU)
+	if (D230.characterSelectMenuState == ENTERING_MENU)
 	{
 		// if no more frames
-		if (D230.transitionFrames == 0)
+		if (D230.characterSelectTransitionFrame == 0)
 		{
 			// menu is now in focus
-			D230.isMenuTransitioning = IN_MENU;
+			D230.characterSelectMenuState = IN_MENU;
 		}
 		else
 		{
-			D230.transitionFrames--;
+			D230.characterSelectTransitionFrame--;
 		}
 	}
 
 	// if transitioning out
-	if (D230.isMenuTransitioning == EXITING_MENU)
+	if (D230.characterSelectMenuState == EXITING_MENU)
 	{
 		// increase frame
-		D230.transitionFrames++;
+		D230.characterSelectTransitionFrame++;
 
 		// if more than 12 frames
-		if (D230.transitionFrames > MM_CHARACTER_SELECT_TRANSITION_FRAMES)
+		if (D230.characterSelectTransitionFrame > MM_CHARACTER_SELECT_TRANSITION_FRAMES)
 		{
 			// Make a backup of the characters
 			// you selected in character selection screen
 			MM_Characters_BackupIDs();
 
 			// if returning to main menu
-			if (D230.movingToTrackMenu == 0)
+			if (D230.characterSelectExitsForward == 0)
 			{
 				MM_JumpTo_Title_Returning();
 				MM_Characters_HideDrivers();
@@ -706,17 +702,17 @@ void MM_Characters_MenuProc(struct RectMenu *unused)
 		}
 	}
 
-	posX = D230.ptrTransitionMeta[MM_CHARACTER_SELECT_TITLE_TRANSITION_INDEX].currX;
-	posY = D230.ptrTransitionMeta[MM_CHARACTER_SELECT_TITLE_TRANSITION_INDEX].currY;
+	posX = D230.characterSelectTransitionMeta[MM_CHARACTER_SELECT_TITLE_TRANSITION_INDEX].currX;
+	posY = D230.characterSelectTransitionMeta[MM_CHARACTER_SELECT_TITLE_TRANSITION_INDEX].currY;
 
 	char *characterSelectString;
-	switch (D230.characterSelectIconLayout)
+	switch (D230.characterSelectLayoutIndex)
 	{
 	// 3P character selection
 	case MM_CHARACTER_SELECT_LAYOUT_3P:
 
 		// If you have a lot of characters unlocked, do not draw SELECT CHARACTER
-		if (D230.isRosterExpanded)
+		if (D230.characterSelectRosterExpanded)
 		{
 			goto dontDrawSelectCharacter;
 		}
@@ -773,27 +769,27 @@ dontDrawSelectCharacter:
 
 	iconPerPlayerPtr = &iconPerPlayer[0];
 
-	for (i = 0; i < gGT->numPlyrNextGame; i++)
+	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 	{
-		playerSelectFlag = (u16)(1 << i);
-		currentIcon = iconPerPlayerPtr[i];
+		playerSelectFlag = (u16)(1 << playerIndex);
+		currentIcon = iconPerPlayerPtr[playerIndex];
 		candidateIcon = currentIcon;
 
-		MM_Characters_AnimateColors(playerColorData, i, (int)(s16)(sdata->characterSelectFlags & playerSelectFlag));
+		MM_Characters_AnimateColors((u8 *)&playerColor, playerIndex, (int)(s16)(sdata->characterSelectFlags & playerSelectFlag));
 
-		preInputCharacterMeta = &D230.csm_Active[currentIcon];
+		preInputCharacterMeta = &D230.activeCharacterSelectMeta[currentIcon];
 
 		if (
 
-		    (D230.isMenuTransitioning == IN_MENU) && (
-		                                                 // get input from this player
-		                                                 button = sdata->buttonTapPerPlayer[i],
+		    (D230.characterSelectMenuState == IN_MENU) && (
+		                                                      // get input from this player
+		                                                      button = sdata->buttonTapPerPlayer[playerIndex],
 
-		                                                 // If you press the D-Pad, or Cross, Square, Triangle, Circle
-		                                                 button & (MM_CHARACTER_SELECT_INPUT_DPAD | MM_CHARACTER_SELECT_INPUT_MENU)))
+		                                                      // If you press the D-Pad, or Cross, Square, Triangle, Circle
+		                                                      button & (MM_CHARACTER_SELECT_INPUT_DPAD | MM_CHARACTER_SELECT_INPUT_MENU)))
 		{
 			// if character has not been selected by this player
-			if (((int)(s16)sdata->characterSelectFlags >> i & 1U) == 0)
+			if (((int)(s16)sdata->characterSelectFlags >> playerIndex & 1U) == 0)
 			{
 				// If you pressed any of the D-pad buttons
 				if ((button & MM_CHARACTER_SELECT_INPUT_DPAD) != 0)
@@ -811,7 +807,7 @@ dontDrawSelectCharacter:
 							// if it is anything that isn't Left
 
 							// Left
-							direction = MM_CHARACTER_SELECT_DIR_LEFT;
+							direction = CHARACTER_SELECT_DIR_LEFT;
 
 							// If you press Left
 							if ((button & BTN_LEFT) != 0)
@@ -822,20 +818,20 @@ dontDrawSelectCharacter:
 							// At this point, you must have pressed Right
 
 							// Right
-							direction = MM_CHARACTER_SELECT_DIR_RIGHT;
+							direction = CHARACTER_SELECT_DIR_RIGHT;
 
 							// Move down character selection list
-							D230.characterSelect_modelMoveDir[i] = 1;
+							D230.characterSelectPlayerState.modelMoveDir[playerIndex] = MM_CHARACTER_SELECT_MODEL_MOVE_NEXT;
 						}
 
 						// If you pressed Down
 						else
 						{
 							// Down
-							direction = MM_CHARACTER_SELECT_DIR_DOWN;
+							direction = CHARACTER_SELECT_DIR_DOWN;
 
 							// Move down character selection list
-							D230.characterSelect_modelMoveDir[i] = 1;
+							D230.characterSelectPlayerState.modelMoveDir[playerIndex] = MM_CHARACTER_SELECT_MODEL_MOVE_NEXT;
 						}
 					}
 
@@ -843,16 +839,15 @@ dontDrawSelectCharacter:
 					else
 					{
 						// Up
-						direction = MM_CHARACTER_SELECT_DIR_UP;
+						direction = CHARACTER_SELECT_DIR_UP;
 					LAB_800aec08:
 						// If you press Up or Left
 
 						// Move up character selection list
-						(D230.characterSelect_modelMoveDir)[i] = 0xffff;
+						D230.characterSelectPlayerState.modelMoveDir[playerIndex] = MM_CHARACTER_SELECT_MODEL_MOVE_PREV;
 					}
 
-					j = i;
-					playerIconSlot = &iconPerPlayerPtr[j];
+					playerIconSlot = &iconPerPlayerPtr[playerIndex];
 					previousCandidateIcon = candidateIcon;
 					do
 					{
@@ -864,38 +859,38 @@ dontDrawSelectCharacter:
 							hitNavigationDeadEnd = 1;
 							nextIcon = MM_Characters_GetNextDriver(direction, (int)(s16)*playerIconSlot);
 							nextIconCopy = (int)nextIcon;
-							candidateIcon = MM_Characters_GetNextDriver((u32)(u8)D230.getNextDriver1[direction], nextIconCopy);
+							candidateIcon = MM_Characters_GetNextDriver(D230.characterSelectFallbackDirection1[direction], nextIconCopy);
 							intermediateIcon = (int)(s16)candidateIcon;
 
 							if ((((intermediateIcon == alternateIcon) || (nextIconCopy == alternateIcon)) || (nextIconCopy == intermediateIcon)) ||
-							    (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, intermediateIcon, j), (button & 0xffff) != 0))
+							    (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, intermediateIcon, playerIndex), (button & 0xffff) != 0))
 							{
-								nextIcon = MM_Characters_GetNextDriver((u32)(u8)D230.getNextDriver1[direction], (int)(s16)*playerIconSlot);
+								nextIcon = MM_Characters_GetNextDriver(D230.characterSelectFallbackDirection1[direction], (int)(s16)*playerIconSlot);
 								intermediateIcon = (int)nextIcon;
 								candidateIcon = MM_Characters_GetNextDriver(direction, intermediateIcon);
 								alternateIcon = (int)(s16)candidateIcon;
 
 								if (((alternateIcon == previousCandidateIcon) || (intermediateIcon == previousCandidateIcon)) ||
 								    ((intermediateIcon == alternateIcon ||
-								      (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, j), (button & 0xffff) != 0))))
+								      (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, playerIndex), (button & 0xffff) != 0))))
 								{
 									nextIcon = MM_Characters_GetNextDriver(direction, (int)(s16)*playerIconSlot);
 									intermediateIcon = (int)nextIcon;
-									candidateIcon = MM_Characters_GetNextDriver((u32)(u8)D230.getNextDriver2[direction], intermediateIcon);
+									candidateIcon = MM_Characters_GetNextDriver(D230.characterSelectFallbackDirection2[direction], intermediateIcon);
 									alternateIcon = (int)(s16)candidateIcon;
 
 									if (((alternateIcon == previousCandidateIcon) || (intermediateIcon == previousCandidateIcon)) ||
 									    ((intermediateIcon == alternateIcon ||
-									      (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, j), (button & 0xffff) != 0))))
+									      (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, playerIndex), (button & 0xffff) != 0))))
 									{
-										nextIcon = MM_Characters_GetNextDriver((u32)(u8)D230.getNextDriver2[direction], (int)(s16)*playerIconSlot);
+										nextIcon = MM_Characters_GetNextDriver(D230.characterSelectFallbackDirection2[direction], (int)(s16)*playerIconSlot);
 										intermediateIcon = (int)nextIcon;
 										candidateIcon = MM_Characters_GetNextDriver(direction, intermediateIcon);
 										alternateIcon = (int)(s16)candidateIcon;
 
 										if ((((alternateIcon == previousCandidateIcon) || (intermediateIcon == previousCandidateIcon)) ||
 										     (intermediateIcon == alternateIcon)) ||
-										    (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, j), (button & 0xffff) != 0))
+										    (button = MM_Characters_boolIsInvalid(iconPerPlayerPtr, alternateIcon, playerIndex), (button & 0xffff) != 0))
 										{
 											candidateIcon = (u32)*playerIconSlot;
 										}
@@ -903,13 +898,13 @@ dontDrawSelectCharacter:
 								}
 							}
 						}
-						candidateTaken = false;
+						candidateInUseByOtherPlayer = false;
 
-						for (k = 0; k < (u32)gGT->numPlyrNextGame; k++)
+						for (s32 otherPlayerIndex = 0; otherPlayerIndex < gGT->numPlyrNextGame; otherPlayerIndex++)
 						{
-							if (((int)k != j) && ((s16)candidateIcon == iconPerPlayerPtr[k]))
+							if ((otherPlayerIndex != playerIndex) && ((s16)candidateIcon == iconPerPlayerPtr[otherPlayerIndex]))
 							{
-								candidateTaken = true;
+								candidateInUseByOtherPlayer = true;
 								break;
 							}
 						}
@@ -922,33 +917,33 @@ dontDrawSelectCharacter:
 						}
 						if (hitNavigationDeadEnd != 0)
 						{
-							deadEndCandidateFree = !candidateTaken;
-							candidateTaken = false;
-							if (deadEndCandidateFree)
+							deadEndCandidateAvailable = !candidateInUseByOtherPlayer;
+							candidateInUseByOtherPlayer = false;
+							if (deadEndCandidateAvailable)
 							{
 								break;
 							}
 							candidateIcon = (u32)*playerIconSlot;
 						}
 						previousCandidateIcon = candidateIcon;
-					} while (candidateTaken);
+					} while (candidateInUseByOtherPlayer);
 				}
 				currentIcon = (u16)candidateIcon;
 
-				for (j = 0; j < gGT->numPlyrNextGame; j++)
+				for (s32 otherPlayerIndex = 0; otherPlayerIndex < gGT->numPlyrNextGame; otherPlayerIndex++)
 				{
-					if ((j != i) && ((s16)candidateIcon == iconPerPlayerPtr[j]))
+					if ((otherPlayerIndex != playerIndex) && ((s16)candidateIcon == iconPerPlayerPtr[otherPlayerIndex]))
 					{
-						candidateIcon = (u32)(u16)iconPerPlayerPtr[i];
+						candidateIcon = (u32)(u16)iconPerPlayerPtr[playerIndex];
 					}
 					currentIcon = (u16)candidateIcon;
 				}
 
 				// If this player pressed Cross or Circle
-				if (((sdata->buttonTapPerPlayer)[i] & MM_CHARACTER_SELECT_INPUT_CONFIRM) != 0)
+				if (((sdata->buttonTapPerPlayer)[playerIndex] & MM_CHARACTER_SELECT_INPUT_CONFIRM) != 0)
 				{
 					// this player has now selected a character
-					sdata->characterSelectFlags = sdata->characterSelectFlags | (u16)(1 << i);
+					sdata->characterSelectFlags = sdata->characterSelectFlags | (u16)(1 << playerIndex);
 
 					numPlyrNextGame = gGT->numPlyrNextGame;
 
@@ -959,22 +954,22 @@ dontDrawSelectCharacter:
 					// if all players have selected their characters
 					if ((int)(s16)sdata->characterSelectFlags == (1 << numPlyrNextGame) - 1)
 					{
-						// move to track selection
-						D230.movingToTrackMenu = 1;
-						D230.isMenuTransitioning = EXITING_MENU;
+						// exit toward cup or track selection
+						D230.characterSelectExitsForward = 1;
+						D230.characterSelectMenuState = EXITING_MENU;
 					}
 				}
 
 				if (
 				    // if this is the first iteration of the loop
-				    ((i & 0xffff) == 0) &&
+				    ((playerIndex & 0xffff) == 0) &&
 
 				    // if you press Square or Triangle
 				    ((sdata->buttonTapPerPlayer[0] & MM_CHARACTER_SELECT_INPUT_BACK) != 0))
 				{
 					// return to main menu
-					D230.movingToTrackMenu = 0;
-					D230.isMenuTransitioning = EXITING_MENU;
+					D230.characterSelectExitsForward = 0;
+					D230.characterSelectMenuState = EXITING_MENU;
 
 					// Play sound
 					// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800af01c-0x800af054 for character-select back SFX.
@@ -996,26 +991,26 @@ dontDrawSelectCharacter:
 			}
 
 			// clear input
-			sdata->buttonTapPerPlayer[i] = 0;
+			sdata->buttonTapPerPlayer[playerIndex] = 0;
 		}
 
-		iconPerPlayerPtr[i] = currentIcon;
+		iconPerPlayerPtr[playerIndex] = currentIcon;
 
 		// transition of each icon
-		struct TransitionMeta *currentIconTransition = &D230.ptrTransitionMeta[currentIcon];
+		struct TransitionMeta *currentIconTransition = &D230.characterSelectTransitionMeta[currentIcon];
 
 		// if player has not selected a character
-		if (((sdata->characterSelectFlags >> i) & 1U) == 0)
+		if (((sdata->characterSelectFlags >> playerIndex) & 1U) == 0)
 		{
 			// draw string
 			// "1", "2", "3", "4", above the character icon
-			DecalFont_DrawLine(D230.PlayerNumberStrings[i], currentIconTransition->currX + (u32)preInputCharacterMeta->posX - 6,
+			DecalFont_DrawLine(D230.playerNumberStrings[playerIndex], currentIconTransition->currX + (u32)preInputCharacterMeta->posX - 6,
 			                   currentIconTransition->currY + (u32)preInputCharacterMeta->posY - 3, FONT_BIG, WHITE);
-			outlineColorData = playerColorData;
+			outlineColor = playerColor;
 		}
 		else
 		{
-			outlineColorData = (u8 *)&D230.characterSelect_Outline;
+			outlineColor = D230.characterSelect_Outline;
 		}
 
 		r->x = currentIconTransition->currX + preInputCharacterMeta->posX;
@@ -1023,21 +1018,20 @@ dontDrawSelectCharacter:
 		r->w = MM_CHARACTER_SELECT_ICON_RECT_W;
 		r->h = MM_CHARACTER_SELECT_ICON_RECT_H;
 
-		color = *(Color *)outlineColorData;
-		RECTMENU_DrawOuterRect_HighLevel(r, color, 0, ot);
+		RECTMENU_DrawOuterRect_HighLevel(r, outlineColor, 0, ot);
 	}
 
 	MM_Characters_PreventOverlap();
 
-	csm_Active = D230.csm_Active;
+	activeCharacterSelectMeta = D230.activeCharacterSelectMeta;
 
 	// loop through character icons
-	for (i = 0; i < MM_CHARACTER_SELECT_ICON_COUNT; i++)
+	for (s32 iconIndex = 0; iconIndex < MM_CHARACTER_SELECT_ICON_COUNT; iconIndex++)
 	{
-		s16 unlockRequirement = csm_Active->unlockFlags;
+		s16 unlockRequirement = activeCharacterSelectMeta->unlockFlags;
 		if (
 		    // If Icon is unlocked by default,
-		    (unlockRequirement == -1) ||
+		    (unlockRequirement == MM_CHARACTER_UNLOCK_ALWAYS) ||
 
 		    // if character is unlocked
 		    // from 4-byte variable that handles all rewards
@@ -1046,69 +1040,68 @@ dontDrawSelectCharacter:
 		{
 			iconColor = D230.characterSelect_NeutralColor;
 
-			for (j = 0; j < gGT->numPlyrNextGame; j++)
+			for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 			{
-				if (((s16)i == iconPerPlayer[j]) &&
+				if (((s16)iconIndex == iconPerPlayer[playerIndex]) &&
 
 				    // if player selected a character
-				    (((int)(s16)sdata->characterSelectFlags >> (j & 0x1fU) & 1U) != 0))
+				    (((int)(s16)sdata->characterSelectFlags >> (playerIndex & 0x1fU) & 1U) != 0))
 				{
 					iconColor = D230.characterSelect_ChosenColor;
 				}
 			}
 
-			struct TransitionMeta *iconTransition = &D230.ptrTransitionMeta[i];
+			struct TransitionMeta *iconTransition = &D230.characterSelectTransitionMeta[iconIndex];
 
-			RECTMENU_DrawPolyGT4(gGT->ptrIcons[data.MetaDataCharacters[csm_Active->characterID].iconID],
-			                     iconTransition->currX + csm_Active->posX + MM_CHARACTER_SELECT_ICON_DECAL_OFFSET_X,
-			                     iconTransition->currY + csm_Active->posY + MM_CHARACTER_SELECT_ICON_DECAL_OFFSET_Y,
+			RECTMENU_DrawPolyGT4(gGT->ptrIcons[data.MetaDataCharacters[activeCharacterSelectMeta->characterID].iconID],
+			                     iconTransition->currX + activeCharacterSelectMeta->posX + MM_CHARACTER_SELECT_ICON_DECAL_OFFSET_X,
+			                     iconTransition->currY + activeCharacterSelectMeta->posY + MM_CHARACTER_SELECT_ICON_DECAL_OFFSET_Y,
 
 			                     &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT,
 
-			                     iconColor, iconColor, iconColor, iconColor, TRANS_50_DECAL, FP(1.0));
+			                     iconColor.self, iconColor.self, iconColor.self, iconColor.self, TRANS_50_DECAL, FP(1.0));
 		}
 
-		csm_Active++;
+		activeCharacterSelectMeta++;
 	}
 
 	// reset
-	csm_Active = D230.csm_Active;
+	activeCharacterSelectMeta = D230.activeCharacterSelectMeta;
 
-	for (i = 0; i < MM_CHARACTER_SELECT_MAX_PLAYERS; i++)
+	for (s32 playerIndex = 0; playerIndex < MM_CHARACTER_SELECT_MAX_PLAYERS; playerIndex++)
 	{
-		data.characterIDs[i] = csm_Active[(int)iconPerPlayer[i]].characterID;
+		data.characterIDs[playerIndex] = activeCharacterSelectMeta[(int)iconPerPlayer[playerIndex]].characterID;
 	}
 
-	for (i = 0; i < gGT->numPlyrNextGame; i++)
+	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 	{
-		j = i;
-		playerIcon = iconPerPlayer[j];
-		csm_Active = &D230.csm_Active[playerIcon];
+		playerIcon = iconPerPlayer[playerIndex];
+		activeCharacterSelectMeta = &D230.activeCharacterSelectMeta[playerIcon];
 
 		// if player has not selected a character
-		if (((int)(s16)sdata->characterSelectFlags >> j & 1U) == 0)
+		if (((int)(s16)sdata->characterSelectFlags >> playerIndex & 1U) == 0)
 		{
-			MM_Characters_AnimateColors((u8 *)&colorRGBA, j,
+			MM_Characters_AnimateColors((u8 *)&animatedColor, playerIndex,
 
 			                            // flags of which characters are selected
-			                            (int)(s16)(sdata->characterSelectFlags & (u16)(1 << j)));
+			                            (int)(s16)(sdata->characterSelectFlags & (u16)(1 << playerIndex)));
 
-			colorRGBA[0] = (u8)((int)((u32)colorRGBA[0] << 2) / 5);
-			colorRGBA[1] = (u8)((int)((u32)colorRGBA[1] << 2) / 5);
-			colorRGBA[2] = (u8)((int)((u32)colorRGBA[2] << 2) / 5);
+			animatedColor.r = (u8)((int)((u32)animatedColor.r << 2) / 5);
+			animatedColor.g = (u8)((int)((u32)animatedColor.g << 2) / 5);
+			animatedColor.b = (u8)((int)((u32)animatedColor.b << 2) / 5);
 
-			struct TransitionMeta *selectedIconTransition = &D230.ptrTransitionMeta[playerIcon];
+			struct TransitionMeta *selectedIconTransition = &D230.characterSelectTransitionMeta[playerIcon];
 
-			r->x = selectedIconTransition->currX + csm_Active->posX + MM_CHARACTER_SELECT_HIGHLIGHT_OFFSET_X;
-			r->y = selectedIconTransition->currY + csm_Active->posY + MM_CHARACTER_SELECT_HIGHLIGHT_OFFSET_Y;
+			r->x = selectedIconTransition->currX + activeCharacterSelectMeta->posX + MM_CHARACTER_SELECT_HIGHLIGHT_OFFSET_X;
+			r->y = selectedIconTransition->currY + activeCharacterSelectMeta->posY + MM_CHARACTER_SELECT_HIGHLIGHT_OFFSET_Y;
 			r->w = MM_CHARACTER_SELECT_HIGHLIGHT_W;
 			r->h = MM_CHARACTER_SELECT_HIGHLIGHT_H;
 
-			Color color = *(Color *)&colorRGBA;
 			// this draws the flashing blue square that appears when you highlight a character in the character select screen
-			CTR_Box_DrawSolidBox(r, color, ot);
+			CTR_Box_DrawSolidBox(r, animatedColor, ot);
 		}
-		if ((D230.characterSelect_modelMoveTimer[j] == 0) && (D230.characterSelect_charIDs_curr[j] == data.characterIDs[j]))
+		if ((D230.characterSelectModelMoveTimer[playerIndex] == 0) &&
+		    (D230.characterSelectPlayerState.currentCharacterID[playerIndex] == data.characterIDs[playerIndex]))
 		{
 			// get number of players
 			numPlyrNextGame = gGT->numPlyrNextGame;
@@ -1122,51 +1115,53 @@ dontDrawSelectCharacter:
 				fontType = FONT_SMALL;
 			}
 
-			struct TransitionMeta *driverWindowTransition = &D230.ptrTransitionMeta[j + MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST];
-			s16 nameBaseY = driverWindowTransition->currY + D230.characterSelect_ptrWindowXY[j * 2 + 1];
+			struct TransitionMeta *driverWindowTransition =
+			    &D230.characterSelectTransitionMeta[playerIndex + MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST];
+			SVec2 *windowPos = &D230.activeCharacterSelectWindowPos[playerIndex];
+			s16 nameBaseY = driverWindowTransition->currY + windowPos->y;
 			s16 nameYOffset = (s16)((((u32)(numPlyrNextGame < 3) ^ 1) << 0x12) >> 0x10);
 			s16 nameY;
 
-			if ((numPlyrNextGame == 4) && (j > 1))
+			if ((numPlyrNextGame == 4) && (playerIndex > 1))
 			{
 				nameY = nameBaseY + nameYOffset + MM_CHARACTER_SELECT_4P_NAME_BOTTOM_OFFSET;
 			}
 			else
 			{
-				nameY = nameBaseY + D230.textPos + nameYOffset;
+				nameY = nameBaseY + D230.characterSelectNameTextY + nameYOffset;
 			}
 
 			// draw string
-			DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[csm_Active->characterID].name_LNG_long],
-			                   (int)driverWindowTransition->currX + D230.characterSelect_ptrWindowXY[j * 2] + (int)((u32)D230.characterSelect_sizeX >> 1),
-			                   (int)nameY, fontType, (JUSTIFY_CENTER | ORANGE));
+			DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[activeCharacterSelectMeta->characterID].name_LNG_long],
+			                   (int)driverWindowTransition->currX + windowPos->x + (int)((u32)D230.characterSelectWindowWidth >> 1), (int)nameY, fontType,
+			                   (JUSTIFY_CENTER | ORANGE));
 		}
 
 		// spin the character
-		D230.characterSelect_angle[i] += MM_CHARACTER_SELECT_SPIN_STEP;
+		D230.characterSelectPlayerState.angle[playerIndex] += MM_CHARACTER_SELECT_SPIN_STEP;
 	}
 
 	// reset
-	csm_Active = D230.csm_Active;
+	activeCharacterSelectMeta = D230.activeCharacterSelectMeta;
 
 	// loop through all icons
-	for (i = 0; i < MM_CHARACTER_SELECT_ICON_COUNT; i++)
+	for (s32 iconIndex = 0; iconIndex < MM_CHARACTER_SELECT_ICON_COUNT; iconIndex++)
 	{
-		s16 unlockRequirement = csm_Active[i].unlockFlags;
+		s16 unlockRequirement = activeCharacterSelectMeta[iconIndex].unlockFlags;
 
 		if (
 		    // If Icon is unlocked (from array of icons)
-		    (unlockRequirement == -1) ||
+		    (unlockRequirement == MM_CHARACTER_UNLOCK_ALWAYS) ||
 
 		    // if character is unlocked
 		    // from 4-byte variable that handles all rewards
 		    // also the variable written by cheats
 		    ((sdata->gameProgress.unlocks[unlockRequirement >> 5] >> (unlockRequirement & 0x1fU) & 1) != 0))
 		{
-			struct TransitionMeta *iconTransition = &D230.ptrTransitionMeta[i];
+			struct TransitionMeta *iconTransition = &D230.characterSelectTransitionMeta[iconIndex];
 
-			r->x = iconTransition->currX + csm_Active[i].posX;
-			r->y = iconTransition->currY + csm_Active[i].posY;
+			r->x = iconTransition->currX + activeCharacterSelectMeta[iconIndex].posX;
+			r->y = iconTransition->currY + activeCharacterSelectMeta[iconIndex].posY;
 			r->w = MM_CHARACTER_SELECT_ICON_RECT_W;
 			r->h = MM_CHARACTER_SELECT_ICON_RECT_H;
 
@@ -1175,29 +1170,27 @@ dontDrawSelectCharacter:
 		}
 	}
 
-	windowPos = D230.characterSelect_ptrWindowXY;
+	windowPos = D230.activeCharacterSelectWindowPos;
 
-	for (i = 0; i < gGT->numPlyrNextGame; i++)
+	for (s32 playerIndex = 0; playerIndex < gGT->numPlyrNextGame; playerIndex++)
 	{
-		j = i;
-		struct TransitionMeta *driverWindowTransition = &D230.ptrTransitionMeta[j + MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST];
+		struct TransitionMeta *driverWindowTransition = &D230.characterSelectTransitionMeta[playerIndex + MM_CHARACTER_SELECT_DRIVER_WINDOW_TRANSITION_FIRST];
 
 		// store window width and height in one 4-byte variable
-		r->x = driverWindowTransition->currX + windowPos[0];
-		r->y = driverWindowTransition->currY + windowPos[1];
-		r->w = D230.characterSelect_sizeX;
-		r->h = D230.characterSelect_sizeY;
+		r->x = driverWindowTransition->currX + windowPos->x;
+		r->y = driverWindowTransition->currY + windowPos->y;
+		r->w = D230.characterSelectWindowWidth;
+		r->h = D230.characterSelectWindowHeight;
 
-		MM_Characters_AnimateColors((u8 *)&colorRGBA, j,
+		MM_Characters_AnimateColors((u8 *)&animatedColor, playerIndex,
 
 		                            // flags of which characters are selected
-		                            ((int)(s16)sdata->characterSelectFlags >> j ^ 1U) & 1);
+		                            ((int)(s16)sdata->characterSelectFlags >> playerIndex ^ 1U) & 1);
 
-		color = *(Color *)&colorRGBA;
-		RECTMENU_DrawOuterRect_HighLevel(r, color, 0, ot);
+		RECTMENU_DrawOuterRect_HighLevel(r, animatedColor, 0, ot);
 
 		// if player selected a character
-		if (((int)(s16)sdata->characterSelectFlags >> j & 1U) != 0)
+		if (((int)(s16)sdata->characterSelectFlags >> playerIndex & 1U) != 0)
 		{
 			r58.x = r->x;
 			r58.y = r->y;
@@ -1211,15 +1204,14 @@ dontDrawSelectCharacter:
 				r58.w -= MM_CHARACTER_SELECT_SELECTED_BORDER_SHRINK_W;
 				r58.h -= MM_CHARACTER_SELECT_SELECTED_BORDER_SHRINK_H;
 
-				colorRGBA[0] = (u8)((int)((u32)colorRGBA[0] << 2) / 5);
-				colorRGBA[1] = (u8)((int)((u32)colorRGBA[1] << 2) / 5);
-				colorRGBA[2] = (u8)((int)((u32)colorRGBA[2] << 2) / 5);
+				animatedColor.r = (u8)((int)((u32)animatedColor.r << 2) / 5);
+				animatedColor.g = (u8)((int)((u32)animatedColor.g << 2) / 5);
+				animatedColor.b = (u8)((int)((u32)animatedColor.b << 2) / 5);
 
-				color = *(Color *)&colorRGBA;
-				RECTMENU_DrawOuterRect_HighLevel(&r58, color, 0, ot);
+				RECTMENU_DrawOuterRect_HighLevel(&r58, animatedColor, 0, ot);
 			}
 		}
-		windowPos = windowPos + 2;
+		windowPos++;
 
 		// Draw 2D Menu rectangle background
 		RECTMENU_DrawInnerRect(r, 9, &ot[3]);
@@ -1229,7 +1221,7 @@ dontDrawSelectCharacter:
 		r->x = 0;
 		r->y = 0;
 
-		RECTMENU_DrawRwdBlueRect(r, &D230.characterSelect_BlueRectColors[0], &gGT->pushBuffer[i].ptrOT[0x3ff], &gGT->backBuffer->primMem);
+		RECTMENU_DrawRwdBlueRect(r, &D230.characterSelect_BlueRectColors[0], &gGT->pushBuffer[playerIndex].ptrOT[0x3ff], &gGT->backBuffer->primMem);
 	}
 	return;
 }

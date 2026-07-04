@@ -69,7 +69,8 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 		    // main menu, "title" exists, and timer >= 230
 		    (D230.titleMenuState == TITLE_MENU_STATE_IN_MENU) && (D230.titleObj != NULL) && (TITLE_INTRO_TM_DRAW_MIN_FRAME < D230.titleIntroFrame))
 		{
-			DecalFont_DrawLineOT(sdata->lngStrings[LNG_TM], 0x10e, 0x9c, FONT_SMALL, ORANGE, &gGT->backBuffer->otMem.uiOT[3]);
+			DecalFont_DrawLineOT(sdata->lngStrings[LNG_TM], MM_TITLE_TM_X, MM_TITLE_TM_Y, FONT_SMALL, ORANGE,
+			                     &gGT->backBuffer->otMem.uiOT[MM_TITLE_TM_OT_INDEX]);
 		}
 
 		if ((D230.menuMainMenu.state & DRAW_NEXT_MENU_IN_HIERARCHY) == 0)
@@ -222,7 +223,7 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	// Battle
 	if (choose == LNG_BATTLE)
 	{
-		D230.characterSelect_transitionState = 2;
+		D230.characterSelectTransitionState = EXITING_MENU;
 
 		// set game mode to Battle Mode
 		gGT->gameMode1 |= BATTLE_MODE;
@@ -261,31 +262,28 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800ad448-0x800ad560.
 void MM_ToggleRows_PlayerCount(void)
 {
-	int i;
-	struct MenuRow *row;
-
-	for (i = 0; i < MM_PLAYER_1P2P_SELECTABLE_ROWS; i++)
+	for (s32 rowIndex = 0; rowIndex < MM_PLAYER_1P2P_SELECTABLE_ROWS; rowIndex++)
 	{
-		row = &D230.rowsPlayers1P2P[i];
+		struct MenuRow *row = &D230.rowsPlayers1P2P[rowIndex];
 
 		// unlock row
 		row->stringIndex &= MENU_ROW_LNG_MASK;
 
-		if ((MainFrame_HaveAllPads(i + 1) & 0xffff) == 0)
+		if ((MainFrame_HaveAllPads(rowIndex + 1) & 0xffff) == 0)
 		{
 			// lock row
 			row->stringIndex |= MENU_ROW_LOCKED;
 		}
 	}
 
-	for (i = 0; i < MM_PLAYER_2P3P4P_SELECTABLE_ROWS; i++)
+	for (s32 rowIndex = 0; rowIndex < MM_PLAYER_2P3P4P_SELECTABLE_ROWS; rowIndex++)
 	{
-		row = &D230.rowsPlayers2P3P4P[i];
+		struct MenuRow *row = &D230.rowsPlayers2P3P4P[rowIndex];
 
 		// unlock row
 		row->stringIndex &= MENU_ROW_LNG_MASK;
 
-		if ((MainFrame_HaveAllPads(i + 2) & 0xffff) == 0)
+		if ((MainFrame_HaveAllPads(rowIndex + 2) & 0xffff) == 0)
 		{
 			// lock row
 			row->stringIndex |= MENU_ROW_LOCKED;
@@ -309,7 +307,7 @@ void MM_MenuProc_1p2p(struct RectMenu *menu)
 
 		gGT->numPlyrNextGame = 1;
 
-		D230.characterSelect_transitionState = 0;
+		D230.characterSelectTransitionState = ENTERING_MENU;
 	}
 
 	else
@@ -345,7 +343,7 @@ void MM_MenuProc_2p3p4p(struct RectMenu *menu)
 
 		gGT->numPlyrNextGame = 1;
 
-		D230.characterSelect_transitionState = 0;
+		D230.characterSelectTransitionState = ENTERING_MENU;
 	}
 	else
 	{
@@ -368,16 +366,15 @@ void MM_MenuProc_2p3p4p(struct RectMenu *menu)
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800ad678-0x800ad7a4.
 void MM_ToggleRows_Difficulty(void)
 {
-	char shouldCheckNextTrack;
 	struct GameTracker *gGT = sdata->gGT;
 	s16 bitIndex;
 	u16 lngIndex;
 	u32 isUnlocked;
 
 	// check 3 mods (easy, medium, hard)
-	for (int difficultyIndex = 0; difficultyIndex < MM_DIFFICULTY_COUNT; difficultyIndex++)
+	for (s32 difficultyIndex = 0; difficultyIndex < MM_DIFFICULTY_COUNT; difficultyIndex++)
 	{
-		bitIndex = D230.cupDifficultyUnlockFlags[difficultyIndex];
+		bitIndex = D230.cupDifficulty.firstUnlockBit[difficultyIndex];
 
 		// if -1 (for EASY row), skip
 		if (-1 == bitIndex)
@@ -390,15 +387,15 @@ void MM_ToggleRows_Difficulty(void)
 
 		// check 4 bits starting at bitIndex,
 		// one for each track in cup
-		for (int trackIndex = 0; trackIndex < MM_CUP_TRACK_COUNT; trackIndex++)
+		for (s32 trackIndex = 0; trackIndex < MM_CUP_TRACK_COUNT; trackIndex++)
 		{
-			shouldCheckNextTrack = (isUnlocked != 0);
+			b32 shouldCheckNextTrack = (isUnlocked != 0);
 			isUnlocked = 0;
 
 			// if not determined locked
 			if (shouldCheckNextTrack)
 			{
-				int unlockBit = (int)bitIndex + trackIndex;
+				s32 unlockBit = (s32)bitIndex + trackIndex;
 
 				// check what is unlocked
 				isUnlocked = (sdata->gameProgress.unlocks[unlockBit >> 5] >> (unlockBit & 0x1f)) & 1;
@@ -407,7 +404,7 @@ void MM_ToggleRows_Difficulty(void)
 
 		// get current value of lng index,
 		// for easy, medium, hard
-		lngIndex = D230.cupDifficultyLngIndex[difficultyIndex];
+		lngIndex = D230.cupDifficulty.stringIndex[difficultyIndex];
 
 		if (
 		    // if locked
@@ -431,9 +428,7 @@ void MM_ToggleRows_Difficulty(void)
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800ad7a4-0x800ad828.
 void MM_MenuProc_Difficulty(struct RectMenu *menu)
 {
-	s16 row;
-
-	row = menu->rowSelected;
+	s16 row = menu->rowSelected;
 
 	// if uninitialized
 	if (row == -1)
@@ -447,7 +442,7 @@ void MM_MenuProc_Difficulty(struct RectMenu *menu)
 		if ((row >= 0) && (row < MM_DIFFICULTY_COUNT))
 		{
 			// set difficulty to value, from array of fixed difficulty values
-			sdata->gGT->arcadeDifficulty = D230.cupDifficultySpeed[row];
+			sdata->gGT->arcadeDifficulty = D230.cupDifficulty.speed[row];
 
 			D230.titleMenuState = TITLE_MENU_STATE_EXITING;
 			D230.desiredMenuIndex = MM_EXIT_ROUTE_CHARACTER_SELECT;
@@ -493,7 +488,7 @@ void MM_MenuProc_SingleCup(struct RectMenu *menu)
 		{
 			// set next menu to 1P+2P select
 			menu->ptrNextBox_InHierarchy = &D230.menuPlayers1P2P;
-			D230.characterSelect_transitionState = 1;
+			D230.characterSelectTransitionState = IN_MENU;
 			return;
 		}
 
@@ -501,7 +496,7 @@ void MM_MenuProc_SingleCup(struct RectMenu *menu)
 
 		// set next menu to 2P+3P+4P (vs or battle)
 		menu->ptrNextBox_InHierarchy = &D230.menuPlayers2P3P4P;
-		D230.characterSelect_transitionState = 2;
+		D230.characterSelectTransitionState = EXITING_MENU;
 	}
 }
 
@@ -544,9 +539,9 @@ struct RectMenu *MM_AdvNewLoad_GetMenuPtr(void)
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800b42b0-0x800b4334.
 void MM_ResetAllMenus(void)
 {
-	for (int i = 0; i < MM_MENU_RESET_COUNT; i++)
+	for (s32 menuIndex = 0; menuIndex < MM_MENU_RESET_COUNT; menuIndex++)
 	{
-		struct RectMenu *menu = D230.arrayMenuPtrs[i];
+		struct RectMenu *menu = D230.arrayMenuPtrs[menuIndex];
 
 // NOTE(aalhendi): Retail resets one menu per array slot; native walks chained
 // menus because overlay 230 data is not reloaded.
@@ -583,7 +578,7 @@ void MM_JumpTo_Title_Returning(void)
 	// return to main menu
 	sdata->ptrDesiredMenu = &D230.menuMainMenu;
 
-	D230.titleMenuTransitionFrame = D230.titleMenuTransitionFrameCount;
+	D230.titleMenuTransitionFrame = D230.titleMenuTransitionDurationFrames;
 }
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800b4364-0x800b43f4.
@@ -600,7 +595,7 @@ void MM_JumpTo_Title_FirstTime(void)
 	if (sdata->boolLangChosen == 0)
 	{
 		sdata->ptrActiveMenu = &D230.menuLngBoot;
-		D230.langMenuTimer = 900;
+		D230.langMenuTimer = MM_LANGUAGE_MENU_TIMEOUT_FRAMES;
 	}
 	else
 	{

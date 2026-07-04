@@ -159,7 +159,7 @@ void MM_ParseCheatCodes(void)
 		return;
 	}
 
-	int tap = gpad->buttonsTapped;
+	u32 tap = (u32)gpad->buttonsTapped;
 	if (tap == 0)
 	{
 		return;
@@ -169,39 +169,40 @@ void MM_ParseCheatCodes(void)
 	// and also must have tapped a buttons
 
 	// shift the loop
-	for (int i = MM_CHEAT_BUTTON_HISTORY_COUNT - 1; i > 0; i--)
+	for (s32 historyIndex = MM_CHEAT_BUTTON_HISTORY_COUNT - 1; historyIndex > 0; historyIndex--)
 	{
-		D230.cheatButtonEntry[i] = D230.cheatButtonEntry[i - 1];
+		D230.cheatButtonHistory[historyIndex] = D230.cheatButtonHistory[historyIndex - 1];
 	}
 
 	// add to input
-	D230.cheatButtonEntry[0] = tap;
+	D230.cheatButtonHistory[0] = tap;
 
 	// loop through all cheats
-	for (int j = 0; j < MM_CHEAT_COUNT; j++)
+	for (s32 cheatIndex = 0; cheatIndex < MM_CHEAT_COUNT; cheatIndex++)
 	{
-		b32 boolPass = true;
+		b32 cheatMatches = true;
 
 		// check if buttons match this cheat
-		for (int i = 0; i < D230.cheats[j].numButtons; i++)
+		for (s32 buttonIndex = 0; buttonIndex < D230.cheats[cheatIndex].buttonCount; buttonIndex++)
 		{
 			// remember, inputButtons is backward
-			if ((D230.cheatButtonEntry[i] & D230.cheats[j].buttons[D230.cheats[j].numButtons - i - 1]) == 0)
+			s32 expectedButtonIndex = D230.cheats[cheatIndex].buttonCount - buttonIndex - 1;
+			if ((D230.cheatButtonHistory[buttonIndex] & D230.cheats[cheatIndex].buttons[expectedButtonIndex]) == 0)
 			{
-				boolPass = false;
+				cheatMatches = false;
 				break;
 			}
 		}
 
 		// skip to next cheat if needed
-		if (!boolPass)
+		if (!cheatMatches)
 		{
 			continue;
 		}
 
-		if (D230.cheats[j].funcPtr != NULL)
+		if (D230.cheats[cheatIndex].handler != NULL)
 		{
-			D230.cheats[j].funcPtr();
+			D230.cheats[cheatIndex].handler();
 		}
 	}
 

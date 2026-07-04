@@ -45,7 +45,7 @@ struct OverlayDATA_230 D230 = {
             .posX_curr = 0x180,
             .posY_curr = 0x6c,
 
-            .state = 0x403,
+            .state = EXECUTE_FUNCPTR | CENTER_ON_COORDS,
             .rows = &D230.rowsMainMenuBasic[0],
             .funcPtr = MM_MenuProc_Main,
 
@@ -97,7 +97,7 @@ struct OverlayDATA_230 D230 = {
         {
             .stringIndexTitle = LNG_DIFFICULTY,
 
-            .state = 1,
+            .state = CENTER_ON_X,
             .rows = &D230.rowsDifficulty[0],
             .funcPtr = MM_MenuProc_Difficulty,
         },
@@ -113,7 +113,7 @@ struct OverlayDATA_230 D230 = {
         {
             .stringIndexTitle = LNG_RACE_TYPE,
 
-            .state = 1,
+            .state = CENTER_ON_X,
             .rows = &D230.rowsRaceType[0],
             .funcPtr = MM_MenuProc_SingleCup,
         },
@@ -206,7 +206,7 @@ struct OverlayDATA_230 D230 = {
         {
             .stringIndexTitle = -1,
 
-            .state = 0x20,
+            .state = DISABLE_INPUT_ALLOW_FUNCPTRS,
             .funcPtr = MM_Scrapbook_PlayMovie,
         },
 
@@ -226,20 +226,14 @@ struct OverlayDATA_230 D230 = {
     .titleCameraPos = {{0x32, 0xFFE2, 0x64}},
     .titleCameraRot = {{0, 0xFF9C, 0}},
 
-    .titleMenuTransitionFrameCount = 0xC,
-    .titleMenuTransitionCount = 8,
+    .titleMenuTransitionDurationFrames = 0xC,
+    .titleMenuTransitionStep = 8,
 
-    .title_mainPosX = 0x180,
-    .title_mainPosY = 0x6c,
-
-    .title_advPosX = 0,
-    .title_advPosY = 0,
-    .title_racePosX = 0,
-    .title_racePosY = 0,
-    .title_plyrPosX = 0,
-    .title_plyrPosY = 0,
-    .title_diffPosX = 0,
-    .title_diffPosY = 0,
+    .titleMainMenuPos = {{0x180, 0x6c}},
+    .titleAdventureMenuPos = {{0, 0}},
+    .titleRaceTypeMenuPos = {{0, 0}},
+    .titlePlayersMenuPos = {{0, 0}},
+    .titleDifficultyMenuPos = {{0, 0}},
 
     .titleBaseCameraPos = {{0x32, 0xFFE2, 0x64}},
 
@@ -299,43 +293,46 @@ struct OverlayDATA_230 D230 = {
             {5, {CHEAT_A, CHEAT_D, CHEAT_D, CHEAT_O, CHEAT_N}, MM_Cheat_TurboCounter},
         },
 
-    .cheatButtonEntry = {0},
+    .cheatButtonHistory = {0},
 
-    .cupDifficultyUnlockFlags = {-1, 0xC, 0x10, 0},
-    .cupDifficultyLngIndex = {0x15A, 0x15B, 0x15C, 0},
-    .cupDifficultySpeed = {0x50, 0xA0, 0xF0},
+    .cupDifficulty =
+        {
+            .firstUnlockBit = {-1, 0xC, 0x10, 0},
+            .stringIndex = {0x15A, 0x15B, 0x15C, 0},
+            .speed = {0x50, 0xA0, 0xF0},
+        },
 
     // CHARACTER SELECT CONSTS
 
     .characterSelectWindowPos =
         {
             // 1P full menu
-            {0x7F, 0xA},
+            {.x = 0x7F, .y = 0xA},
 
             // 1P small menu
-            {0x4D, 0x1E},
+            {.x = 0x4D, .y = 0x1E},
 
             // 2P full menu
-            {0xA, 0xA},
-            {0x101, 0xA},
+            {.x = 0xA, .y = 0xA},
+            {.x = 0x101, .y = 0xA},
 
             // 2P small menu
-            {0x1E, 0x1E},
-            {0x100, 0x1E},
+            {.x = 0x1E, .y = 0x1E},
+            {.x = 0x100, .y = 0x1E},
 
             // 3P menu
-            {0x136, 0x4},
-            {0x136, 0x4A},
-            {0x136, 0x90},
+            {.x = 0x136, .y = 0x4},
+            {.x = 0x136, .y = 0x4A},
+            {.x = 0x136, .y = 0x90},
 
             // 4P menu
-            {0x15, 0x1},
-            {0x13F, 0x1},
-            {0x15, 0x95},
-            {0x13F, 0x95},
+            {.x = 0x15, .y = 0x1},
+            {.x = 0x13F, .y = 0x1},
+            {.x = 0x15, .y = 0x95},
+            {.x = 0x13F, .y = 0x95},
         },
 
-    .ptrSelectWindowPos =
+    .characterSelectWindowPosByLayout =
         {
             // full menus, 1p2p3p4p
             &D230.characterSelectWindowPos[0],
@@ -348,17 +345,20 @@ struct OverlayDATA_230 D230 = {
             &D230.characterSelectWindowPos[4],
         },
 
-    .windowW = {0xF6, 0xD6, 0xA0, 0xA0, 0x15A, 0xD6},
+    .characterSelectLayout =
+        {
+            .windowW = {0xF6, 0xD6, 0xA0, 0xA0, 0x15A, 0xD6},
 
-    .windowH = {0x50, 0x50, 0x40, 0x40, 0x5C, 0x5C},
+            .windowH = {0x50, 0x50, 0x40, 0x40, 0x5C, 0x5C},
 
-    .driverPosZ = {0xC8, 0xC8, 0xFa, 0xFa, 0xAA, 0xAA},
+            .driverPosZ = {0xC8, 0xC8, 0xFa, 0xFa, 0xAA, 0xAA},
 
-    .driverPosY = {0x28, 0x28, 0x28, 0x28, 0x28, 0x28},
+            .driverPosY = {0x28, 0x28, 0x28, 0x28, 0x28, 0x28},
 
-    .textPosArr = {0x46, 0x46, 0x36, 0x36, 0x52, 0x52},
+            .textY = {0x46, 0x46, 0x36, 0x36, 0x52, 0x52},
+        },
 
-    .csm_1P2P_limited =
+    .characterSelectMeta1P2PLimited =
         {// Crash
          {0x80, 0x80, {0, 4, 8, 1}, 0, 0xFFFF},
          // Cortex
@@ -390,7 +390,7 @@ struct OverlayDATA_230 D230 = {
          // Fake Crash
          {0x120, 0xCE, {6, 14, 13, 14}, 14, 0xB}},
 
-    .csm_1P2P =
+    .characterSelectMeta1P2P =
         {// Crash
          {0x80, 0x60, {0, 4, 8, 1}, 0, 0xFFFF},
          // Cortex
@@ -422,7 +422,7 @@ struct OverlayDATA_230 D230 = {
          // Fake Crash
          {0x120, 0xAE, {6, 14, 13, 14}, 14, 0xB}},
 
-    .csm_3P =
+    .characterSelectMeta3P =
         {// Crash
          {0x20, 0x47, {12, 4, 0, 1}, 0, 0xFFFF},
          // Cortex
@@ -454,7 +454,7 @@ struct OverlayDATA_230 D230 = {
          // Fake Crash
          {0xC0, 0x20, {14, 3, 13, 14}, 14, 0xB}},
 
-    .csm_4P =
+    .characterSelectMeta4P =
         {// Crash
          {0x80, 0x47, {0, 4, 10, 1}, 0, 0xFFFF},
          // Cortex
@@ -486,7 +486,7 @@ struct OverlayDATA_230 D230 = {
          // Penta
          {0xE0, 0x20, {14, 1, 14, 14}, 13, 0x6}},
 
-    .ptrCsmArr = {&D230.csm_1P2P[0], &D230.csm_1P2P[0], &D230.csm_3P[0], &D230.csm_4P[0], &D230.csm_1P2P_limited[0], &D230.csm_1P2P_limited[0]},
+    .characterSelectMetaByLayout = {&D230.characterSelectMeta1P2P[0], &D230.characterSelectMeta1P2P[0], &D230.characterSelectMeta3P[0], &D230.characterSelectMeta4P[0], &D230.characterSelectMeta1P2PLimited[0], &D230.characterSelectMeta1P2PLimited[0]},
 
     .characterMenuID =
         {
@@ -508,49 +508,49 @@ struct OverlayDATA_230 D230 = {
             0,
         },
 
-    .transitionMeta_csm_1P2P =
+    .characterSelectTransition1P2P =
         {
             {0, 0xC8, 6, 0, 0}, {0, 0xC8, 5, 0, 0}, {0, 0xC8, 4, 0, 0}, {0, 0xC8, 3, 0, 0}, {0, 0xC8, 5, 0, 0}, {0, 0xC8, 4, 0, 0}, {0, 0xC8, 3, 0, 0},
             {0, 0xC8, 2, 0, 0}, {0, 0xC8, 7, 0, 0}, {0, 0xC8, 1, 0, 0}, {0, 0xC8, 6, 0, 0}, {0, 0xC8, 0, 0, 0}, {0, 0xC8, 4, 0, 0}, {0, 0xC8, 3, 0, 0},
             {0, 0xC8, 2, 0, 0}, {-512, 0, 2, 0, 0}, {512, 0, 3, 0, 0},  {512, 0, 1, 0, 0},  {512, 0, 7, 0, 0},  {512, 0, 5, 0, 0},  {0, 0, -1, 0, 0},
         },
 
-    .transitionMeta_csm_3P =
+    .characterSelectTransition3P =
         {
             {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0}, {-512, 0, 4, 0, 0}, {-512, 0, 5, 0, 0}, {-512, 0, 1, 0, 0}, {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0},
             {-512, 0, 4, 0, 0}, {-512, 0, 0, 0, 0}, {-512, 0, 1, 0, 0}, {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0}, {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0},
             {-512, 0, 4, 0, 0}, {-512, 0, 0, 0, 0}, {512, 0, 5, 0, 0},  {512, 0, 3, 0, 0},  {512, 0, 1, 0, 0},  {512, 0, 5, 0, 0},  {0, 0, -1, 0, 0},
         },
 
-    .transitionMeta_csm_4P =
+    .characterSelectTransition4P =
         {
             {-512, 0, 1, 0, 0}, {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0}, {-512, 0, 4, 0, 0}, {-512, 0, 2, 0, 0}, {-512, 0, 3, 0, 0}, {-512, 0, 4, 0, 0},
             {-512, 0, 5, 0, 0}, {-512, 0, 3, 0, 0}, {-512, 0, 4, 0, 0}, {-512, 0, 0, 0, 0}, {-512, 0, 5, 0, 0}, {-512, 0, 1, 0, 0}, {-512, 0, 6, 0, 0},
             {-512, 0, 2, 0, 0}, {-512, 0, 0, 0, 0}, {512, 0, 3, 0, 0},  {512, 0, 1, 0, 0},  {512, 0, 7, 0, 0},  {512, 0, 5, 0, 0},  {0, 0, -1, 0, 0},
         },
 
-    .ptr_transitionMeta_csm = {&D230.transitionMeta_csm_1P2P[0], &D230.transitionMeta_csm_1P2P[0], &D230.transitionMeta_csm_3P[0],
-                               &D230.transitionMeta_csm_4P[0]},
+    .characterSelectTransitionByPlayerCount = {&D230.characterSelectTransition1P2P[0], &D230.characterSelectTransition1P2P[0], &D230.characterSelectTransition3P[0],
+                               &D230.characterSelectTransition4P[0]},
 
-    .csm_instPos = {{0, 0x28, 0xFA}},
+    .characterSelectDriverModel =
+        {
+            .pos = {{0, 0x28, 0xFA}},
+            .rot = {{0x800, 0, 0}},
+            .moveFrames = 4,
+            .slideDistance = 0x8C,
+        },
 
-    .csm_instRot = {{0x800, 0, 0}},
+    .playerNumberStrings = {&R230.s_1[0], &R230.s_2[0], &R230.s_3[0], &R230.s_4[0]},
 
-    .characterSelect_modelMoveFrames = 4,
+    .characterSelectFallbackDirection1 = {2, 2, 1, 1},
 
-    .characterSelect_modelSlideDistance = 0x8C,
+    .characterSelectFallbackDirection2 = {3, 3, 0, 0},
 
-    .PlayerNumberStrings = {&R230.s_1[0], &R230.s_2[0], &R230.s_3[0], &R230.s_4[0]},
+    .characterSelect_Outline = {.self = 0},
 
-    .getNextDriver1 = {2, 2, 1, 1},
+    .characterSelect_NeutralColor = {.self = 0x808080},
 
-    .getNextDriver2 = {3, 3, 0, 0},
-
-    .characterSelect_Outline = 0,
-
-    .characterSelect_NeutralColor = 0x808080,
-
-    .characterSelect_ChosenColor = 0,
+    .characterSelect_ChosenColor = {.self = 0},
 
     .characterSelect_BlueRectColors = {0x1b, 0x6a, 0xcb, 0x00, 0x9b, 0xd2, 0xf2, 0x40, 0xb7, 0xe1, 0xed, 0x43,
                                        0x65, 0x4b, 0x03, 0x46, 0xa6, 0x83, 0x23, 0x50, 0xdf, 0xc8, 0x95, 0x64},
@@ -617,7 +617,7 @@ struct OverlayDATA_230 D230 = {
 
     .transitionMeta_trackSel = {{-512, 0, 1, 0, 0}, {0, -200, 2, 0, 0}, {0, 200, 3, 0, 0}, {512, 0, 4, 0, 0}, {0, 0, -1, 0, 0}},
 
-    .lapRowVal = {3, 5, 7, 0},
+    .lapCountByRow = {{3, 0}, {5, 0}, {7, 0}, {0, 0}},
 
     .rowsLapSel = {{0x9b, 0, 1, 0, 0}, {0x9c, 0, 2, 1, 1}, {0x9d, 1, 2, 2, 2}, {-1}},
 
@@ -628,14 +628,17 @@ struct OverlayDATA_230 D230 = {
             .posX_curr = 0x18C,
             .posY_curr = 0x7c,
 
-            .state = 0x81,
+            .state = USE_SMALL_FONT | CENTER_ON_X,
             .rows = &D230.rowsLapSel[0],
         },
 
-    .videoCol = 0x808080,
+    .videoCol = {.self = 0x808080},
 
-    .timeTrialStarCol = {0xE, 0x16},
-    .timeTrialFlagGet = {0x1, 0x2},
+    .timeTrialStars =
+        {
+            .colorIndex = {0xE, 0x16},
+            .beatenFlagBit = {0x1, 0x2},
+        },
 
     .drawMapOffset = {{0, 0, 1}, {-2, 0, 3}, {2, 0, 3}, {0, 1, 3}, {0, -1, 3}, {12, 6, 2}},
 
@@ -643,11 +646,20 @@ struct OverlayDATA_230 D230 = {
 
     .transitionMeta_cupSel = {{-256, -100, 5, 0, 0}, {256, -100, 4, 0, 0}, {-256, 100, 3, 0, 0}, {256, 100, 2, 0, 0}, {0, -100, 0, 0, 0}, {0, 0, -1, 0, 0}},
 
-    .cupSel_StarColorIndex = {0x11, 0xE, 0x16, 0},
+    .cupSelectStars =
+        {
+            .colorIndex = {TROPY_LIGHT_BLUE, PAPU_YELLOW, SILVER, 0},
 
-    .cupSel_StarUnlockFlag = {0xC, 0x10, 0x14, 0},
+            .winBitBase =
+                {
+                    GAME_PROGRESS_CUP_CURRENT_WIN_FIRST_BIT,
+                    GAME_PROGRESS_CUP_CURRENT_WIN_FIRST_BIT + GAME_PROGRESS_CUP_COUNT,
+                    GAME_PROGRESS_CUP_CURRENT_WIN_FIRST_BIT + (GAME_PROGRESS_CUP_COUNT * 2),
+                    0,
+                },
+        },
 
-    .cupSel_Color = 0xC0C0C0,
+    .cupSel_Color = {.self = 0xC0C0C0},
 
     // BATTLE CONSTS
 
@@ -667,7 +679,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleType = {.stringIndexTitle = -1,
 
-                       .state = 0x10280,
+                       .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                        .rows = &D230.rowsBattleType[0],
                        .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -675,7 +687,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleLengthLifeTime = {.stringIndexTitle = -1,
 
-                                 .state = 0x10280,
+                                 .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                                  .rows = &D230.rowsBattleLengthLifeTime[0],
                                  .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -683,7 +695,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleLengthTimeTime = {.stringIndexTitle = -1,
 
-                                 .state = 0x10280,
+                                 .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                                  .rows = &D230.rowsBattleLengthTimeTime[0],
                                  .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -691,7 +703,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleLengthPoints = {.stringIndexTitle = -1,
 
-                               .state = 0x10280,
+                               .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                                .rows = &D230.rowsBattleLengthPoints[0],
                                .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -699,7 +711,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleLengthLifeLife = {.stringIndexTitle = -1,
 
-                                 .state = 0x10280,
+                                 .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                                  .rows = &D230.rowsBattleLengthLifeLife[0],
                                  .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -707,7 +719,7 @@ struct OverlayDATA_230 D230 = {
 
     .menuBattleStartGame = {.stringIndexTitle = -1,
 
-                            .state = 0x10280,
+                            .state = KEEP_INPUTS_IN_SUBMENU | CENTER_MENU_TEXT | USE_SMALL_FONT,
                             .rows = &D230.rowsBattleStartGame[0],
                             .funcPtr = MM_Battle_CloseSubMenu},
 
@@ -717,16 +729,18 @@ struct OverlayDATA_230 D230 = {
     .battleWeaponItems =
         {{0x1, 0x2}, {0x2, 0x6}, {0x4, 0x7}, {0x8, 0x8}, {0x10, 0x9}, {0x40, 0xB}, {0x80, 0xC}, {0x400, 0xF}, {0x800, 0x10}, {0x1000, 0x11}, {0x2000, 0x12}},
 
-    .battleTypeGameMode1Flags = {POINT_LIMIT, TIME_LIMIT, LIFE_LIMIT},
+    .battleSetupTables =
+        {
+            .typeModeFlags = {POINT_LIMIT, TIME_LIMIT, LIFE_LIMIT},
+            .timeLimitMinutes = {3, 6, 9},
+            .lifeModeTimeLimitMinutes = {3, 6, -1},
+            .lifeLimitValues = {3, 6, 9},
+            .pointLimitValues = {5, 10, 15},
+        },
 
-    .battleTimeLimitMinutes = {3, 6, 9},
-    .battleLifeTimeMinutes = {3, 6, -1},
-    .battleLifeLimitValues = {3, 6, 9},
-    .battlePointLimitValues = {5, 10, 15},
-
-    .battleWeaponEnabledColor = 0x808080,
-    .battleWeaponDisabledColor = 0x101010,
-    .battleWeaponPanelColor = 0x806050,
+    .battleWeaponEnabledColor = {.self = 0x808080},
+    .battleWeaponDisabledColor = {.self = 0x101010},
+    .battleWeaponPanelColor = {.self = 0x806050},
 
     // HIGH SCORE CONSTS
 
@@ -743,11 +757,14 @@ struct OverlayDATA_230 D230 = {
                                   {256, 0, 0, 0, 0},
                                   {0, 0, -1, 0, 0}},
 
-    .colorIndexArray = {0xE, 0x16},
+    .highScoreGhostStars =
+        {
+            .colorIndex = {0xE, 0x16},
 
-    .highscore_ghostBeatFlags = {0x1, 0x2},
+            .beatenFlagBit = {0x1, 0x2},
+        },
 
-    .highscore_iconColor = 0x808080,
+    .highscore_iconColor = {.self = 0x808080},
 
     .rowsHighScore = {{0xAF, 0, 1, 0, 0}, {0xB1, 0, 2, 0, 0}, {0xB2, 1, 2, 0, 0}, {-1}},
 
@@ -755,13 +772,16 @@ struct OverlayDATA_230 D230 = {
                       .posX_curr = 0x17C,
                       .posY_curr = 0xAF,
 
-                      .state = 0x81,
+                      .state = USE_SMALL_FONT | CENTER_ON_X,
                       .rows = &D230.rowsHighScore[0]},
 
-    .highScore_trackDesired = 0,
-    .highScore_rowDesired = 0,
-    .highScore_trackCurr = 0,
-    .highScore_rowCurr = 0,
+    .highScoreSelection =
+        {
+            .targetTrack = 0,
+            .targetRow = 0,
+            .currentTrack = 0,
+            .currentRow = 0,
+        },
 
 #if 0
 
@@ -785,7 +805,7 @@ struct OverlayDATA_230 D230 = {
 		.posX_curr = 256,
 		.posY_curr = 118,
 
-		.state = 0xC03,
+		.state = RECTMENU_UNKNOWN_0x800 | EXECUTE_FUNCPTR | CENTER_ON_COORDS,
 		.rows = &D230.rowsLngBoot,
 		.funcPtr = MM_MenuProc_LanguageBoot
 	}
@@ -795,66 +815,84 @@ struct OverlayDATA_230 D230 = {
     .titleObj = 0,
 
     // TRACK SELECT DYN
-    .trackSel_trackChangeFrames = 0,
-    .trackSel_currTrack = 0,
-    .trackSel_trackChangeDirection = 0,
-    .trackSel_lapBoxOpen = 0,
-    .trackSel_transitionState = 0,
-    .trackSel_startRaceAfterFadeOut = 0,
-    .trackSel_transitionFrames = 0,
-    .trackSel_videoPreviewFrames = 0,
-    .trackSel_videoMemAllocated = 0,
-    .trackSel_videoStateCurr = 0,
-    .trackSel_videoStatePrev = 0,
+    .trackSelect =
+        {
+            .trackChangeFrames = 0,
+            .currentTrack = 0,
+            .trackChangeDirection = 0,
+            .lapBoxOpen = 0,
+            .transition =
+                {
+                    .state = ENTERING_MENU,
+                    .startAfterExit = 0,
+                    .frame = 0,
+                },
+            .videoPreviewFrames = 0,
+            .videoMemAllocated = 0,
+            .videoStateCurr = 0,
+            .videoStatePrev = 0,
+        },
 
     // CUP SELECT DYN
-    .cupSel_transitionState = 0,
-    .cupSel_postTransition_boolStart = 0,
-    .cupSel_transitionFrames = 0,
+    .cupSelectTransition =
+        {
+            .state = ENTERING_MENU,
+            .startAfterExit = 0,
+            .frame = 0,
+        },
 
     // BATTLE DYN
-    .battle_transitionState = 0,
-    .battle_postTransition_boolStart = 0,
-    .battle_transitionFrames = 0,
+    .battleTransition =
+        {
+            .state = ENTERING_MENU,
+            .startAfterExit = 0,
+            .frame = 0,
+        },
 
     // HIGHSCORE DYN
-    .highScore_transitionState = 0,
-    .highScore_transitionFrames = {0, 0, 0},
-    .highScore_horizontalMove = {0, 0},
-    .highScore_verticalMove = {0, 0},
+    .highScoreTransition =
+        {
+            .state = ENTERING_MENU,
+            .frame = {0, 0, 0},
+            .horizontalMove = {0, 0},
+            .verticalMove = {0, 0},
+        },
 
     // SCRAPBOOK
     .scrapbookState = SCRAP_INIT,
 
     // CHAR SELECT AND TITLE DYN
-    .characterSelect_sizeY = 0,
+    .characterSelectWindowHeight = 0,
     .desiredMenuIndex = MM_EXIT_ROUTE_ADV_NEW,
-    .movingToTrackMenu = 0,
+    .characterSelectExitsForward = 0,
 
-    .characterSelect_modelMoveDir = {0, 0, 0, 0},
-    .characterSelect_charIDs_desired = {0, 0, 0, 0},
-    .characterSelect_charIDs_curr = {0, 0, 0, 0},
-    .characterSelect_angle = {0, 0, 0, 0},
-    .characterSelect_transitionState = 0,
-    .characterSelect_ptrWindowXY = 0,
-    .characterSelectIconLayout = 0,
+    .characterSelectPlayerState =
+        {
+            .modelMoveDir = {0, 0, 0, 0},
+            .desiredCharacterID = {0, 0, 0, 0},
+            .currentCharacterID = {0, 0, 0, 0},
+            .angle = {0, 0, 0, 0},
+        },
+    .characterSelectTransitionState = ENTERING_MENU,
+    .activeCharacterSelectWindowPos = 0,
+    .characterSelectLayoutIndex = 0,
 
     .titleIntroFrame = 0,
-    .csm_Active = 0,
+    .activeCharacterSelectMeta = 0,
     .titleMenuState = TITLE_MENU_STATE_INTRO,
-    .isMenuTransitioning = 0,
+    .characterSelectMenuState = ENTERING_MENU,
 
-    .characterSelect_modelMoveTimer = {0, 0, 0, 0},
+    .characterSelectModelMoveTimer = {0, 0, 0, 0},
 #if 0
 	.langMenuTimer = 0,
 #endif
-    .isRosterExpanded = 0,
-    .characterSelect_sizeX = 0,
-    .ptrIntroCam = 0,
-    .textPos = 0,
-    .ptrTransitionMeta = 0,
+    .characterSelectRosterExpanded = 0,
+    .characterSelectWindowWidth = 0,
+    .titleIntroCameraPath = 0,
+    .characterSelectNameTextY = 0,
+    .characterSelectTransitionMeta = 0,
     .titleMenuTransitionFrame = 0,
-    .transitionFrames = 0,
+    .characterSelectTransitionFrame = 0,
 
     .s_SliceBuf = "SliceBuf",
     .s_VlcBuf = "VlcBuf",
