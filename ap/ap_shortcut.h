@@ -27,7 +27,7 @@
 //   3. A SMALL per-track blockID table (the only hand data): ~30 on-road-shortcut
 //      quads the source hands us, ported verbatim. VERIFY-FIRST CAVEAT: these
 //      blockIDs are the mod's retail-disc values; confirm per track against our data
-//      in-game before trusting them (shortcut_capture=1 / F8 log the touched IDs).
+//      in-game before trusting them (shortcut_capture=1 / Numpad 8 log the touched IDs).
 //
 // Enforcement reuses the engine's own respawn: layers 1 & 3 go through the existing
 // COLL_FIXED_PlayerSearch hook (AP_ShortcutCheck -> OR DRIVER_COLL_FLAG_MASK_GRAB_
@@ -77,7 +77,7 @@ int AP_QuadIsShortcut(struct QuadBlock *quad);
 // Per-frame checkpoint-% gap-skip detector (layer 2). Call from AP_OnFrame.
 void AP_ShortcutSkipTick(struct GameTracker *gGT);
 
-// Debug keybinds (F7 dev toggle Shortcutless, F8 log/mark the local player's
+// Debug keybinds (Numpad 7 dev toggle Shortcutless, Numpad 8 log/mark the local player's
 // current quad blockID). Dev tools for verifying/extending the table; the real
 // player switch (gated on allow_shortcut_switching) is the future in-game menu.
 void AP_ShortcutKeys(void);

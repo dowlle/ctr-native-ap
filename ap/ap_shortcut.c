@@ -18,15 +18,17 @@
 
 int Platform_InputRawKeyDown(int scancode); // native_input.c (CTR_AP only)
 
-#define AP_SC_KEY_TOGGLE 64 // F7: dev toggle Shortcutless
-#define AP_SC_KEY_MARK   65 // F8: log/mark current quad blockID
+// Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers own F1-F12
+// (native_platform.c, F8 = savestate LOAD) and fire regardless of AP keys.
+#define AP_SC_KEY_TOGGLE 95 // Numpad 7: dev toggle Shortcutless
+#define AP_SC_KEY_MARK   96 // Numpad 8: log/mark current quad blockID
 
 static int g_shortcutless = 0;   // enforcement toggle (the Shortcut Unlock item)
 static int g_mode = AP_SC_ALLOWED;
 static int g_allow_switching = 0; // allow_shortcut_switching (future in-game switch)
 static int g_capture_log = 0;    // passive per-touch blockID logging (verify tool)
 
-// Dev capture set: blockIDs marked live with F8, honoured by AP_QuadIsShortcut so a
+// Dev capture set: blockIDs marked live with Numpad 8, honoured by AP_QuadIsShortcut so a
 // candidate table entry can be tested against REAL track data before it is baked in.
 #define AP_SC_CAPTURE_CAP 64
 static s16 g_captured[AP_SC_CAPTURE_CAP];
@@ -195,21 +197,37 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 	if (gGT == 0)
 		return;
 
-	// Reset per-race state during the light countdown (mirror the mod).
-	if (gGT->trafficLightsTimer > 0)
+	// Only sample checkpoints inside a live race window: mid-race, lights out, not
+	// loading/menu/cutscene/EOR (same test as AP_TrapTick; anchor PlayLevel.c:338).
+	// Outside that window drivers[0] can point at a not-yet-born Driver whose
+	// lastValid still holds arena leftovers, non-null but dangling (the Crash Cove
+	// race-load crash at ap_shortcut.c:227, minidumps 2026-07-04). Every early-out
+	// below also clears g_lastValid_prev so no pointer survives a context change.
+	if ((gGT->gameMode1 &
+	     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) != 0 ||
+	    gGT->trafficLightsTimer > 0)
 	{
 		g_lastValid_prev = 0;
 		return;
 	}
 
 	if (!g_shortcutless)
+	{
+		g_lastValid_prev = 0;
 		return;
+	}
 
 	levelID = (int)gGT->levelID;
 	if (levelID > TURBO_TRACK) // race tracks only (0..TURBO_TRACK)
+	{
+		g_lastValid_prev = 0;
 		return;
+	}
 	if (gGT->level1 == 0)
+	{
+		g_lastValid_prev = 0;
 		return;
+	}
 
 	d = gGT->drivers[0]; // local player
 	if (d == 0 || d->lastValid == 0)
@@ -313,7 +331,7 @@ void AP_ShortcutKeys(void)
 	int toggle = Platform_InputRawKeyDown(AP_SC_KEY_TOGGLE);
 	int mark = Platform_InputRawKeyDown(AP_SC_KEY_MARK);
 
-	// F7 is a DEV toggle -- always works so the effect can be tested regardless of
+	// Numpad 7 is a DEV toggle -- always works so the effect can be tested regardless of
 	// mode / allow_shortcut_switching (the real player switch is the future menu).
 	if (toggle && !prevToggle)
 		AP_ShortcutlessSet(!g_shortcutless);
