@@ -710,7 +710,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			// disable rendering everything, draw loading screen and instances
 			gGT->renderFlags = (gGT->renderFlags & RENDER_FLAG_CHECKERED_FLAG) | RENDER_FLAG_RENDER_BUCKET;
 
-			if (RaceFlag_IsFullyOffScreen() == 1)
+			if (RaceFlag_IsFullyOffScreen())
 			{
 				RaceFlag_BeginTransition(1);
 			}

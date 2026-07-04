@@ -120,7 +120,7 @@ void MainFrame_ResetDB(struct GameTracker *gGT)
 
 void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 {
-	char bVar1;
+	b32 wasPausedAtFrameStart;
 	s16 sVar2;
 	u32 uVar3;
 	int iVar4;
@@ -133,10 +133,10 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 	int iVar11;
 	struct Thread *psVar12;
 
-	bVar1 = true;
+	wasPausedAtFrameStart = true;
 	if ((gGT->gameMode1 & PAUSE_ALL) == 0)
 	{
-		bVar1 = false;
+		wasPausedAtFrameStart = false;
 		pushBuffer = gGT->pushBuffer;
 		for (psVar12 = gGT->threadBuckets[0].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 		{
@@ -285,7 +285,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 					continue;
 				}
 #endif
-				if ((u8)psVar9->numTimesAttacking < (u8)psVar8->numTimesAttacking)
+				if (psVar9->numTimesAttacking < psVar8->numTimesAttacking)
 				{
 					goto LAB_80035098;
 				}
@@ -293,7 +293,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 		}
 #endif
 
-		if (((psVar8 != 0) && (psVar9 != 0)) && (iVar4 = (u32)(u8)psVar9->numTimesAttacking - (u32)(u8)psVar8->numTimesAttacking, psVar8->quip2 < iVar4))
+		if (((psVar8 != 0) && (psVar9 != 0)) && (iVar4 = (u32)psVar9->numTimesAttacking - (u32)psVar8->numTimesAttacking, psVar8->quip2 < iVar4))
 		{
 			psVar8->quip2 = (s16)iVar4;
 		}
@@ -392,7 +392,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 
 	if ((uVar3 & END_OF_RACE) == 0)
 	{
-		if ((bVar1) || ((uVar3 & PAUSE_ALL) != 0))
+		if (wasPausedAtFrameStart || ((uVar3 & PAUSE_ALL) != 0))
 		{
 			if (gGT->cooldownfromPauseUntilUnpause == 0)
 			{
@@ -427,16 +427,15 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 				{
 					if (sdata->AkuAkuHintState == 0)
 					{
-						if (RaceFlag_IsFullyOnScreen() == 0)
+						if (!RaceFlag_IsFullyOnScreen())
 						{
 							for (iVar4 = 0; iVar4 < gGT->numPlyrCurrGame; iVar4++)
 							{
-								if ((((uVar5 != 0) &&
-								      ((
+								if ((((uVar5 != 0) && ((
 #if defined(CTR_NATIVE)
-								          uVar3 = MainFrame_HaveAllPads((u16)(u8)gGT->numPlyrNextGame), (uVar3 & 0xffff) == 0 &&
+								                          !MainFrame_HaveAllPads((u16)gGT->numPlyrNextGame) &&
 #endif
-								                                                                            ((gGT->gameMode1 & PAUSE_ALL) == 0)))) ||
+								                          ((gGT->gameMode1 & PAUSE_ALL) == 0)))) ||
 								     ((gGamepads->gamepad[iVar4].buttonsTapped & BTN_START) != 0)) &&
 								    (gGT->overlayIndex_Threads != OVERLAY_INDEX_NONE))
 								{
@@ -559,7 +558,7 @@ void MainFrame_InitVideoSTR(u32 boolPlayVideoStr, RECT *r, s16 posX, s16 posY)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80035d70-0x80035e20.
-int MainFrame_HaveAllPads(s16 numPlyrNextGame)
+b32 MainFrame_HaveAllPads(s16 numPlyrNextGame)
 {
 	// if game is not loading
 	if (sdata->Loading.stage == LOAD_IDLE)
@@ -568,7 +567,7 @@ int MainFrame_HaveAllPads(s16 numPlyrNextGame)
 
 		if (numPlyrNextGame == 0)
 		{
-			return 0;
+			return false;
 		}
 
 		for (int i = 0; i < numPlyrNextGame; i++)
@@ -577,18 +576,18 @@ int MainFrame_HaveAllPads(s16 numPlyrNextGame)
 
 			if (packet == NULL)
 			{
-				return 0;
+				return false;
 			}
 			if (packet->plugged != PLUGGED)
 			{
-				return 0;
+				return false;
 			}
 
 			gb++;
 		}
 	}
 
-	return 1;
+	return true;
 }
 
 static void MainFrame_ReplacePackedVisList(int *dst, void *src, int byteCount)
@@ -810,7 +809,7 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 //	0x00 - not interrupting a warppad load screen
 // 	0x01 - interrupting (CTR, Relic, or Crystal hints)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80035e20-0x80035e70.
-void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
+void MainFrame_RequestMaskHint(s16 hintId, s16 interruptWarpPad)
 {
 	struct GameTracker *gGT = sdata->gGT;
 

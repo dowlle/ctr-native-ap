@@ -366,7 +366,7 @@ void Voiceline_Update(void)
 
 			if (gGT->numPlyrCurrGame == 1)
 			{
-				if ((VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]) & 0xffff) == 0)
+				if (!VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]))
 				{
 					voiceID = 0x3d;
 				}

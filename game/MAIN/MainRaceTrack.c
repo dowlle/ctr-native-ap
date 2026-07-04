@@ -20,7 +20,7 @@ void MainRaceTrack_RequestLoad(s16 levelID)
 	// Turn off HUD
 	sdata->gGT->hudFlags &= HUD_FLAG_CLEAR_RACE_HUD_MASK;
 
-	if (RaceFlag_IsFullyOffScreen() == 1)
+	if (RaceFlag_IsFullyOffScreen())
 	{
 		RaceFlag_BeginTransition(1);
 	}

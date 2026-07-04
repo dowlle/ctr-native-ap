@@ -76,7 +76,7 @@ int Channel_FindSound(int soundID)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002b608-0x8002b7d0
-struct ChannelStats *Channel_AllocSlot_AntiSpam(s16 soundID, char boolUseAntiSpam, int flags, struct ChannelAttr *attr)
+struct ChannelStats *Channel_AllocSlot_AntiSpam(s16 soundID, u8 boolUseAntiSpam, int flags, struct ChannelAttr *attr)
 {
 	struct ChannelStats *curr, *backupNext;
 
@@ -266,7 +266,7 @@ struct ChannelStats *Channel_SearchFX_Destroy(int type, int soundID, int flags)
 // param_1 0: keep menu fx, 1: destroy all fx
 // param_2 0: destroy music, 1: keep music
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002ba90-0x8002bbac
-void Channel_DestroyAll_LowLevel(int opt1, b32 boolKeepMusic, char type)
+void Channel_DestroyAll_LowLevel(int opt1, b32 boolKeepMusic, u8 type)
 {
 	struct ChannelStats *curr, *backupNext;
 

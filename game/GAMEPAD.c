@@ -42,7 +42,6 @@ void GAMEPAD_SetMainMode(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800252a0-0x80025410.
 void GAMEPAD_ProcessState(struct GamepadBuffer *pad, int padState, s16 id)
 {
-	char uVar1;
 	int iVar2;
 	int iVar3;
 
@@ -82,8 +81,7 @@ void GAMEPAD_ProcessState(struct GamepadBuffer *pad, int padState, s16 id)
 			// loop through motors
 			for (iVar3 = 0; iVar3 < iVar2; iVar3++)
 			{
-				uVar1 = PadInfoAct(id, iVar3, 4);
-				pad->motorPower[iVar3] = uVar1;
+				pad->motorPower[iVar3] = (u8)PadInfoAct(id, iVar3, 4);
 			}
 
 			PadSetAct(id, &pad->motorSubmit[0], sizeof(pad->motorSubmit));
@@ -603,7 +601,7 @@ void GAMEPAD_ProcessSticks(struct GamepadSystem *gGamepads)
 						sVar8 += 0x80;
 					}
 				}
-				pad->unk43 = (char)iVar7;
+				pad->unk43 = (u8)iVar7;
 				pad->stickLX_dontUse1 = sVar8;
 				pad->stickLY_dontUse1 = 0x80;
 				pad->stickRX = 0x80;
@@ -646,8 +644,7 @@ int GAMEPAD_ProcessTapRelease(struct GamepadSystem *gGamepads)
 		return 0;
 	}
 
-	char cVar1;
-	cVar1 = sdata->unkPadSetActAlign[6];
+	u8 analogButtonsEnabled = sdata->unkPadSetActAlign[6];
 
 	struct GamepadBuffer *pad;
 	struct ControllerPacket *ptrControllerPacket;
@@ -666,7 +663,7 @@ int GAMEPAD_ProcessTapRelease(struct GamepadSystem *gGamepads)
 		}
 		else
 		{
-			if (cVar1 != 0)
+			if (analogButtonsEnabled != 0)
 			{
 				if (pad->stickLX < 0x20)
 				{
@@ -714,7 +711,7 @@ void GAMEPAD_ProcessMotors(struct GamepadSystem *gGS)
 		struct GamepadBuffer *pad = &gGS->gamepad[i];
 		struct ControllerPacket *packet = pad->ptrControllerPacket;
 
-		if ((packet != 0) && (gGT->boolDemoMode == 0) && ((gGT->gameMode1 & PAUSE_ALL) == 0) && (RaceFlag_IsTransitioning() == 0))
+		if ((packet != 0) && (gGT->boolDemoMode == 0) && ((gGT->gameMode1 & PAUSE_ALL) == 0) && !RaceFlag_IsTransitioning())
 		{
 			if (packet->controllerData == ((PAD_ID_JOGCON << 4) | 3))
 			{
@@ -726,10 +723,10 @@ void GAMEPAD_ProcessMotors(struct GamepadSystem *gGS)
 					{
 						if ((pad->unk43 < pad->unk42) || (bVar1 = pad->unk43 >> 4, pad->unk48 != 0))
 						{
-							char unk42 = pad->unk42;
-							bVar1 = unk42 >> 4;
+							u8 jogStrength = pad->unk42;
+							bVar1 = jogStrength >> 4;
 
-							if ((((gGT->timer & bVar1) & 0xf) != 0) && (bVar1 = (unk42 - 0x10) >> 4, (unk42 - 0x10) < 0))
+							if ((((gGT->timer & bVar1) & 0xf) != 0) && (bVar1 = (jogStrength - 0x10) >> 4, (jogStrength - 0x10) < 0))
 							{
 								bVar1 = 0;
 							}
@@ -971,7 +968,7 @@ int GAMEPAD_ProcessAnyoneVars(struct GamepadSystem *gGamepads)
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800263a0-0x800263fc
-void GAMEPAD_JogCon1(struct Driver *d, char val, u16 timeMS)
+void GAMEPAD_JogCon1(struct Driver *d, u8 val, u16 timeMS)
 {
 	if ((d->actionsFlagSet & ACTION_BOT) != 0)
 	{
@@ -991,7 +988,7 @@ void GAMEPAD_JogCon1(struct Driver *d, char val, u16 timeMS)
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800263fc-0x80026440.
-void GAMEPAD_JogCon2(struct Driver *d, char val, s16 timeMS)
+void GAMEPAD_JogCon2(struct Driver *d, u8 val, s16 timeMS)
 {
 	if ((d->actionsFlagSet & ACTION_BOT) != 0)
 	{
@@ -1065,7 +1062,7 @@ void GAMEPAD_ShockForce1(struct Driver *d, int frame, int val)
 	}
 
 	gb->shockFrameForce1 = frame;
-	gb->shockValForce1 = val;
+	gb->shockValForce1 = (u8)val;
 }
 
 
@@ -1097,5 +1094,5 @@ void GAMEPAD_ShockForce2(struct Driver *d, int frame, int val)
 	}
 
 	gb->shockFrameForce2 = frame;
-	gb->shockValForce2 = val;
+	gb->shockValForce2 = (u8)val;
 }

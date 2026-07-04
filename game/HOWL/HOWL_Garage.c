@@ -22,7 +22,7 @@ void Garage_Init(void)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030264-0x80030404.
-void Garage_Enter(char charId)
+void Garage_Enter(int charId)
 {
 	struct GarageFX *garageSounds;
 	u8 *soundIDs;
@@ -103,7 +103,7 @@ void Garage_Enter(char charId)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030404-0x800304b8.
-void Garage_PlayFX(u32 soundId, char charId)
+void Garage_PlayFX(u32 soundId, int charId)
 {
 	if (charId < PINSTRIPE)
 	{
@@ -114,9 +114,8 @@ void Garage_PlayFX(u32 soundId, char charId)
 			soundId = (sdata->audioRNG % 3) + 0xf3;
 		}
 
-		u8 garageIndex = (u8)charId;
 		OtherFX_Play_LowLevel(soundId & 0xffff, 1,
-		                      HowlSfx_Pack(sdata->garageSoundPool[garageIndex].LR, HOWL_SFX_DISTORTION_NONE, sdata->garageSoundPool[garageIndex].volume, 0));
+		                      HowlSfx_Pack(sdata->garageSoundPool[charId].LR, HOWL_SFX_DISTORTION_NONE, sdata->garageSoundPool[charId].volume, 0));
 	}
 }
 
@@ -129,19 +128,19 @@ void Garage_LerpFX(void)
 	for (int i = 0; i < 8; ++i, ++garageSounds)
 	{
 		s16 targetVolume, targetLR;
-		char cVar1 = garageSounds->gsp_curr;
+		u8 garageSoundPos = garageSounds->gsp_curr;
 
-		if (cVar1 == GSP_CENTER)
+		if (garageSoundPos == GSP_CENTER)
 		{
 			targetVolume = 0xff;
 			targetLR = 0x80;
 		}
-		else if (cVar1 == GSP_LEFT)
+		else if (garageSoundPos == GSP_LEFT)
 		{
 			targetVolume = 100;
 			targetLR = 0x3c;
 		}
-		else if (cVar1 == GSP_RIGHT)
+		else if (garageSoundPos == GSP_RIGHT)
 		{
 			targetVolume = 100;
 			targetLR = 0xc3;
@@ -200,8 +199,8 @@ void Garage_MoveLR(int desiredId)
 {
 	struct GarageFX *garageSounds;
 	s32 i;
-	char charRight;
-	char charLeft;
+	int charRight;
+	int charLeft;
 
 	// shouldn't ever happen
 	if (desiredId > 7)

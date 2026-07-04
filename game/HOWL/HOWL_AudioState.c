@@ -202,7 +202,7 @@ void Audio_Update1(void)
 	s32 i;
 	int raceOrderIndex;
 	s16 uVar1;
-	u32 uVar2;
+	b32 tropyBeatenOnAllTracks;
 	struct Driver *d = 0;
 	u32 maskTempo;
 	int iVar7;
@@ -457,10 +457,10 @@ void Audio_Update1(void)
 				else
 				{
 					// Check if N Tropy has been beaten on all tracks
-					uVar2 = GAMEPROG_CheckGhostsBeaten(1);
+					tropyBeatenOnAllTracks = GAMEPROG_CheckGhostsBeaten(1);
 
 					// If there is a track where N Tropy has not been beaten
-					if ((uVar2 & 0xffff) == 0)
+					if (!tropyBeatenOnAllTracks)
 					{
 						// OtherFX_Play
 						OtherFX_Play(0x5f, 0);

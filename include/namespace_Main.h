@@ -56,6 +56,13 @@ CTR_STATIC_ASSERT(GAME_MODE_TIME_TRIAL_GAMEPLAY_MASK == 0x20022000);
 CTR_STATIC_ASSERT(GAME_MODE_SAVE_LAP_TIME_MASK == 0x4a0000);
 CTR_STATIC_ASSERT(GAME_MODE_GHOST_RECORD_BLOCK_MASK == 0x1f);
 
+enum BattleSetupConstants
+{
+	BATTLE_DEFAULT_WEAPON_FLAGS = 0x34de,
+};
+
+CTR_STATIC_ASSERT(BATTLE_DEFAULT_WEAPON_FLAGS == 0x34de);
+
 // NOTE(aalhendi): ADVENTURE_BOSS = 0x80000000 sets the sign bit. Retail tests this via
 // signed comparison (bltz). Keep the same semantics, not a bitmask test.
 // TODO(aalhendi): i'd *like* to do something better. idk yet
@@ -536,12 +543,12 @@ struct GameTracker
 	// 1cb0 -- EurRetail, JpnRetail
 
 	// 1ca8, 1ca9
-	char numPlyrCurrGame;
-	char numPlyrNextGame;
+	u8 numPlyrCurrGame;
+	u8 numPlyrNextGame;
 
 	// 1caa, 1cab
-	char numBotsCurrGame;
-	char numBotsNextGame;
+	u8 numBotsCurrGame;
+	u8 numBotsNextGame;
 
 	// 1cac
 	int unk1cac[5];
@@ -619,7 +626,7 @@ struct GameTracker
 	char boolDemoMode;
 
 	// 1d33
-	char numLaps;
+	s8 numLaps;
 
 	// 1d34
 	// Variable is never given a value

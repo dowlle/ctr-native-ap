@@ -234,7 +234,7 @@ void DrawUnpluggedMsg(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 
 	skipMainMenuTopLevel = 0;
 
-	if (LOAD_IsOpen_MainMenu() != 0)
+	if (LOAD_IsOpen_MainMenu())
 	{
 		// if main menu is open, assume 230 loaded,
 		// quit if menu is at highest level (no ptrNext to draw)
@@ -252,7 +252,7 @@ void DrawUnpluggedMsg(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 		return;
 	}
 
-	if (MainFrame_HaveAllPads(gGT->numPlyrNextGame) == 1)
+	if (MainFrame_HaveAllPads(gGT->numPlyrNextGame))
 	{
 		return;
 	}
@@ -596,7 +596,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 				}
 
 				// if 233 is still loaded
-				if (LOAD_IsOpen_AdvHub() == 0)
+				if (!LOAD_IsOpen_AdvHub())
 				{
 					// if any transition is over
 					if (gGT->pushBuffer_UI.fadeFromBlack_currentValue > 0xfff)
@@ -665,7 +665,7 @@ void RenderAllBeakerRain(struct GameTracker *gGT)
 void RenderAllBoxSceneSplitLines(struct GameTracker *gGT)
 {
 	// Check 233 overlay, cause levelID is set and MainFrame_RenderFrame runs before 233 loads.
-	if (LOAD_IsOpen_Podiums() != 0)
+	if (LOAD_IsOpen_Podiums())
 	{
 		if (gGT->levelID == NAUGHTY_DOG_CRATE)
 		{
@@ -691,11 +691,11 @@ void RenderBucket_QueueAllInstances(struct GameTracker *gGT)
 		lod |= 4;
 	}
 
-	RBI = RenderBucket_QueueLevInstances(&gGT->cameraDC[0], &gGT->backBuffer->otMem, gGT->ptrRenderBucketInstance, (u8)sdata->LOD[lod], (char)numPlyrCurrGame,
+	RBI = RenderBucket_QueueLevInstances(&gGT->cameraDC[0], &gGT->backBuffer->otMem, gGT->ptrRenderBucketInstance, (u8)sdata->LOD[lod], numPlyrCurrGame,
 	                                     gGT->gameMode1 & PAUSE_ALL);
 
-	RBI = RenderBucket_QueueNonLevInstances(gGT->JitPools.instance.taken.first, &gGT->backBuffer->otMem, (void *)RBI, (u8)sdata->LOD[lod],
-	                                        (char)numPlyrCurrGame, gGT->gameMode1 & PAUSE_ALL);
+	RBI = RenderBucket_QueueNonLevInstances(gGT->JitPools.instance.taken.first, &gGT->backBuffer->otMem, (void *)RBI, (u8)sdata->LOD[lod], numPlyrCurrGame,
+	                                        gGT->gameMode1 & PAUSE_ALL);
 
 	// Aug prototype
 #if 0
@@ -744,7 +744,7 @@ void RenderAllFlag0x40(struct GameTracker *gGT)
 		return;
 	}
 
-	if (LOAD_IsOpen_RacingOrBattle() != 0)
+	if (LOAD_IsOpen_RacingOrBattle())
 	{
 		RB_Player_ToggleInvisible();
 		RB_Player_ToggleFlicker();
@@ -756,7 +756,7 @@ void RenderAllFlag0x40(struct GameTracker *gGT)
 		RB_StartText_ProcessBucket(gGT->threadBuckets[STARTTEXT].thread);
 	}
 
-	if (LOAD_IsOpen_AdvHub() != 0)
+	if (LOAD_IsOpen_AdvHub())
 	{
 		if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
 		{
@@ -782,7 +782,7 @@ void RenderAllTitleDPP(struct GameTracker *gGT)
 	{
 		return;
 	}
-	if (LOAD_IsOpen_MainMenu() == 0)
+	if (!LOAD_IsOpen_MainMenu())
 	{
 		return;
 	}
@@ -946,7 +946,7 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		gGT->bspLeafsDrawn = 0;
 
 		gGT->bspLeafsDrawn += RenderLists_Init1P2P(ptr_mesh_info->bspRoot, gGT->visMem1->visLeafList[0], pushBuffer, (u32)&gGT->LevRenderLists[0],
-		                                           gGT->visMem1->bspList[0], (char)numPlyrCurrGame);
+		                                           gGT->visMem1->bspList[0], numPlyrCurrGame);
 
 		// 226-229
 		DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, &gGT->backBuffer->primMem, gGT->visMem1->visFaceList[0],
@@ -981,7 +981,7 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		for (i = 0; i < numPlyrCurrGame; i++)
 		{
 			gGT->bspLeafsDrawn += RenderLists_Init1P2P(ptr_mesh_info->bspRoot, gGT->visMem1->visLeafList[i], &gGT->pushBuffer[i], (u32)&gGT->LevRenderLists[i],
-			                                           gGT->visMem1->bspList[i], (char)numPlyrCurrGame);
+			                                           gGT->visMem1->bspList[i], numPlyrCurrGame);
 		}
 
 		// 226-229
@@ -1124,10 +1124,10 @@ void WindowDivsionLines(struct GameTracker *gGT)
 	if (numPlyrCurrGame > 2)
 	{
 #if 0
-		gGT->drivers[0]->numWumpas = 10;
-		gGT->drivers[0]->heldItemID = 3;
-		gGT->drivers[1]->numWumpas = 10;
-		gGT->drivers[1]->heldItemID = 3;
+		gGT->drivers[0]->numWumpas = DRIVER_WUMPA_JUICED_COUNT;
+		gGT->drivers[0]->heldItemID = HELD_ITEM_TNT;
+		gGT->drivers[1]->numWumpas = DRIVER_WUMPA_JUICED_COUNT;
+		gGT->drivers[1]->heldItemID = HELD_ITEM_TNT;
 #endif
 
 		p = gGT->backBuffer->primMem.cursor;

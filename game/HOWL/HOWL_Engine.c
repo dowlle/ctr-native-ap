@@ -2,8 +2,7 @@
 
 // Initialize car engine audio system for one driver
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80028880-0x800289b0
-char EngineAudio_InitOnce(u32 soundID, u32 flags)
-
+b32 EngineAudio_InitOnce(u32 soundID, u32 flags)
 {
 	struct EngineFX *ptrEngineFX;
 	struct ChannelStats *channel;
@@ -562,7 +561,7 @@ void EngineSound_NearestAIs(void)
 	{
 		struct Driver *ai = thread->object;
 
-		for (int i = 0; i < (u8)gGT->numPlyrCurrGame; i++)
+		for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 		{
 			EngineSound_NearestAIs_InsertClosest(ai, i, EngineSound_NearestAIs_GetDistance(ai, i), closestDrivers, closestDistances, closestPlayers);
 		}

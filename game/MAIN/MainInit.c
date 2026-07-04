@@ -290,14 +290,13 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003b6d0-0x8003b934; CTR_NATIVE gates TT ghost model publication.
 void MainInit_Drivers(struct GameTracker *gGT)
 {
-	char i;
-	char numPlyrCurrGame = gGT->numPlyrCurrGame;
+	u8 numPlyrCurrGame = gGT->numPlyrCurrGame;
 	u8 numDrivers;
 	int gameMode = gGT->gameMode1;
 
-	for (i = 0; i < 8; i++)
+	for (int i = 0; i < 8; i++)
 	{
-		gGT->drivers[(s32)i] = NULL;
+		gGT->drivers[i] = NULL;
 	}
 
 	gGT->numBotsNextGame = 0;
@@ -317,9 +316,9 @@ void MainInit_Drivers(struct GameTracker *gGT)
 	// Spawn all players,
 	// This MUST be in reverse order,
 	// because of threadBucket linked list order
-	for (i = numPlyrCurrGame - 1; i >= 0; i--)
+	for (int i = numPlyrCurrGame - 1; i >= 0; i--)
 	{
-		gGT->drivers[(s32)i] = VehBirth_Player(i);
+		gGT->drivers[i] = VehBirth_Player(i);
 	}
 
 	// spawn all AIs
@@ -364,7 +363,7 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		}
 
 		// Spawn AIs
-		for (i = numPlyrCurrGame; i < numDrivers; i++)
+		for (int i = numPlyrCurrGame; i < numDrivers; i++)
 		{
 			// spawn an AI at this character index
 			BOTS_Driver_Init(i);
@@ -384,9 +383,9 @@ void MainInit_Drivers(struct GameTracker *gGT)
 	if ((gameMode & MAIN_MENU) != 0)
 	{
 		// fill up 4 players
-		for (i = numPlyrCurrGame; i < 4; i++)
+		for (int i = numPlyrCurrGame; i < 4; i++)
 		{
-			gGT->drivers[(s32)i] = VehBirth_Player(i);
+			gGT->drivers[i] = VehBirth_Player(i);
 		}
 	}
 

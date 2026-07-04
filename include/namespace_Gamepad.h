@@ -245,17 +245,17 @@ struct GamepadBuffer
 
 	// 0x3C
 	int shockValFreq;
-	char shockValForce1;
-	char shockValForce2;
+	u8 shockValForce1;
+	u8 shockValForce2;
 
 	// ==== JogCon ====
 
-	char unk42;
-	char unk43;
+	u8 unk42;
+	u8 unk43;
 
 	// 0x44
-	char unk44; // 2A
-	char unk45; // 2A
+	u8 unk44; // 2A
+	u8 unk45; // 2A
 
 	// elapsedTim timers
 	s16 unk46; // vib1 2A

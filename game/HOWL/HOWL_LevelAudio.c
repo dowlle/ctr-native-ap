@@ -176,7 +176,7 @@ void Level_AmbientSound(void)
 	u32 levelID = gGT->levelID;
 	int closestDistance[2];
 
-	if ((levelID >= 0x19) || ((u8)gGT->numPlyrCurrGame >= 3))
+	if ((levelID >= 0x19) || (gGT->numPlyrCurrGame >= 3))
 	{
 		return;
 	}
@@ -186,7 +186,7 @@ void Level_AmbientSound(void)
 		b32 playDrops = false;
 		b32 playLoop = false;
 
-		for (int i = 0; i < (u8)gGT->numPlyrCurrGame; i++)
+		for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 		{
 			struct Driver *driver = gGT->drivers[i];
 			u8 terrain = driver->currentTerrain;
@@ -217,7 +217,7 @@ void Level_AmbientSound(void)
 		b32 playFirstLoop = false;
 		b32 playSecondLoop = false;
 
-		for (int i = 0; i < (u8)gGT->numPlyrCurrGame; i++)
+		for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 		{
 			s16 sound = gGT->drivers[i]->terrainMeta2->sound;
 
@@ -268,7 +268,7 @@ void Level_AmbientSound(void)
 			{
 				SVec3 *coord = &spawn->positions[coordIndex];
 
-				for (int playerIndex = 0; playerIndex < (u8)gGT->numPlyrCurrGame; playerIndex++)
+				for (int playerIndex = 0; playerIndex < gGT->numPlyrCurrGame; playerIndex++)
 				{
 					int distance = GTE_GetSquaredDistance(gGT->pushBuffer[playerIndex].pos.v, coord->v);
 
@@ -370,7 +370,7 @@ void PlaySound3D(u32 soundID, struct Instance *inst)
 	u32 closestDistance = 9000;
 	int closestCamera = 0;
 
-	for (int i = 0; i < (u8)gGT->numPlyrCurrGame; i++)
+	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
 		dir[i][0] = CTR_MipsSubLo(inst->matrix.t[0], gGT->pushBuffer[i].pos.x);
 		dir[i][1] = CTR_MipsSubLo(inst->matrix.t[1], gGT->pushBuffer[i].pos.y);
@@ -434,7 +434,7 @@ void PlaySound3D_Flags(u32 *flags, u32 soundID, struct Instance *inst)
 		return;
 	}
 
-	for (int i = 0; i < (u8)gGT->numPlyrCurrGame; i++)
+	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
 		dir[i][0] = CTR_MipsSubLo(inst->matrix.t[0], gGT->pushBuffer[i].pos.x);
 		dir[i][1] = CTR_MipsSubLo(inst->matrix.t[1], gGT->pushBuffer[i].pos.y);

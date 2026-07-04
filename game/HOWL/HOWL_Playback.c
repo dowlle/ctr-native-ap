@@ -233,7 +233,7 @@ void howl_UnPauseChannel(struct ChannelStats *stats)
 void howl_UnPauseAudio()
 {
 	int i;
-	char backupID;
+	u8 backupID;
 	struct ChannelStats *backupPrev;
 	struct ChannelStats *curr, *backupNext;
 	struct ChannelStats *pausedStats;

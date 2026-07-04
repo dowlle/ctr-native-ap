@@ -593,11 +593,10 @@ force_inline void DISPLAYRECTMENU_MainFreeze_MenuPtrOptions(struct RectMenu *men
 		}
 	}
 
-	// drawStyle needs research...
-	menu->drawStyle &= 0xfeff;
+	menu->drawStyle &= ~RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 	if (gGT->numPlyrCurrGame > 2)
 	{
-		menu->drawStyle |= 0x100;
+		menu->drawStyle |= RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 	}
 
 	int volumeSliderTriangleLeftMargin = 0;
@@ -828,12 +827,12 @@ void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 	}
 	else
 	{
-		menu->drawStyle &= ~0x100;
+		menu->drawStyle &= ~RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 
 		// if more than 2 screens
 		if (gGT->numPlyrCurrGame > 2)
 		{
-			menu->drawStyle |= 0x100;
+			menu->drawStyle |= RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 		}
 
 		MainFreeze_SafeAdvDestroy();
@@ -851,7 +850,7 @@ void MainFreeze_SafeAdvDestroy(void)
 	}
 
 	// check if Adv Hub is loaded
-	if (LOAD_IsOpen_AdvHub() == 0)
+	if (!LOAD_IsOpen_AdvHub())
 	{
 		return;
 	}
@@ -880,12 +879,12 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 
 	if (menu->funcState != RECTMENU_FUNC_STATE_INPUT)
 	{
-		menu->drawStyle &= 0xfeff;
+		menu->drawStyle &= ~RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 
 		// if more than 2 screens
 		if (2 < gGT->numPlyrCurrGame)
 		{
-			menu->drawStyle |= 0x100;
+			menu->drawStyle |= RECTMENU_DRAW_STYLE_3P4P_LAYOUT;
 		}
 
 		if (((gameMode & ADVENTURE_ARENA) == 0) || (menu->state & NEEDS_TO_CLOSE))
@@ -894,7 +893,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		}
 
 		// quit adv hub if it's not loaded
-		if (LOAD_IsOpen_AdvHub() == 0)
+		if (!LOAD_IsOpen_AdvHub())
 		{
 			return;
 		}
@@ -959,7 +958,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		// get rid of pause flag
 		gGT->gameMode1 &= ~PAUSE_1;
 
-		if (RaceFlag_IsFullyOffScreen() == 1)
+		if (RaceFlag_IsFullyOffScreen())
 		{
 			// checkered flag, begin transition on-screen
 			RaceFlag_BeginTransition(1);
@@ -1161,7 +1160,7 @@ void MainFreeze_IfPressStart(void)
 	u32 gameMode1;
 	struct RectMenu *menu;
 
-	if (RaceFlag_IsFullyOnScreen() != 0)
+	if (RaceFlag_IsFullyOnScreen())
 	{
 		return;
 	}

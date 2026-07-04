@@ -283,8 +283,8 @@ enum GarageSoundPos
 struct GarageFX
 {
 	// enum GarageSoundPos
-	char gsp_curr;
-	char gsp_prev;
+	u8 gsp_curr;
+	u8 gsp_prev;
 
 	// 0x2
 	s16 volume;
@@ -639,6 +639,7 @@ CTR_STATIC_ASSERT(sizeof(SpuReverbAttr) == 0x14);
 CTR_STATIC_ASSERT(sizeof(struct VoicelineItem) == 0x10);
 CTR_STATIC_ASSERT(sizeof(struct ChannelAttr) == 0x10);
 CTR_STATIC_ASSERT(sizeof(struct ChannelStats) == 0x20);
+CTR_STATIC_ASSERT(sizeof(struct GarageFX) == 0xC);
 CTR_STATIC_ASSERT(sizeof(struct SongSeq) == 0x1C);
 CTR_STATIC_ASSERT(sizeof(struct Song) == 0x7C);
 

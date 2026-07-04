@@ -5,7 +5,7 @@
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001c360-0x8001c420.
-int CDSYS_Init(b32 boolUseDisc)
+b32 CDSYS_Init(b32 boolUseDisc)
 {
 	sdata->boolUseDisc = boolUseDisc;
 
@@ -19,7 +19,7 @@ int CDSYS_Init(b32 boolUseDisc)
 		{
 			// use parallel port (Naughty Dog Devs only)
 			sdata->boolUseDisc = 0;
-			return 0;
+			return false;
 		}
 
 		CdSetDebug(1);
@@ -62,7 +62,7 @@ int CDSYS_Init(b32 boolUseDisc)
 
 	Voiceline_PoolClear();
 
-	return 1;
+	return true;
 }
 
 

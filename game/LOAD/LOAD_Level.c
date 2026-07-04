@@ -43,7 +43,7 @@ void LOAD_LevelFile(int levelID)
 	// disable all rendering except checkeredFlag
 	gGT->renderFlags &= RENDER_FLAG_CHECKERED_FLAG;
 
-	if (RaceFlag_IsFullyOffScreen() == 1)
+	if (RaceFlag_IsFullyOffScreen())
 	{
 		RaceFlag_BeginTransition(1);
 	}

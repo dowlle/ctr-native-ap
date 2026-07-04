@@ -12,7 +12,7 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 
 	int timeBonus = 0;
 
-	if (((s8)driver->numTimeCrates == gGT->timeCratesInLEV) && (subtractTimeCrateBonus != 0))
+	if ((driver->numTimeCrates == gGT->timeCratesInLEV) && (subtractTimeCrateBonus != 0))
 	{
 		timeBonus = 0x2580;
 	}
@@ -31,7 +31,7 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 
 	gGT->bestLapTime = sdata->ptrActiveHighScoreEntry[0].time;
 
-	for (s16 i = 0; i < (s8)gGT->numLaps; i++)
+	for (s16 i = 0; i < gGT->numLaps; i++)
 	{
 		if (gGT->lapTime[i] < gGT->bestLapTime)
 		{
@@ -91,7 +91,7 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 	}
 
 CheckOxideAllTracks:
-	if ((GAMEPROG_CheckGhostsBeaten(2) & 0xffff) != 0)
+	if (GAMEPROG_CheckGhostsBeaten(2))
 	{
 		UNLOCK_ADV_BIT(sdata->gameProgress.unlocks, GAME_UNLOCK_BIT_SCRAPBOOK);
 	}

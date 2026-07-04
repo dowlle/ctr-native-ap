@@ -115,7 +115,7 @@ u32 main(void)
 
 			if (gGT->levelID == MAIN_MENU_LEVEL)
 			{
-				if (RaceFlag_IsFullyOffScreen() != 0)
+				if (RaceFlag_IsFullyOffScreen())
 				{
 					RaceFlag_SetFullyOnScreen();
 				}
@@ -123,7 +123,7 @@ u32 main(void)
 
 			else
 			{
-				if (RaceFlag_IsFullyOnScreen() != 0)
+				if (RaceFlag_IsFullyOnScreen())
 				{
 					RaceFlag_BeginTransition(2);
 				}
@@ -179,7 +179,7 @@ u32 main(void)
 			// if loading, or gameplay interrupted
 			if (sdata->Loading.stage != LOAD_IDLE)
 			{
-				if ((RaceFlag_IsFullyOnScreen() == 1) || (gGT->levelID == NAUGHTY_DOG_CRATE) || (sdata->pause_state != 0))
+				if (RaceFlag_IsFullyOnScreen() || (gGT->levelID == NAUGHTY_DOG_CRATE) || (sdata->pause_state != 0))
 				{
 					gGT->gameMode1 |= LOADING;
 				}
@@ -207,7 +207,7 @@ u32 main(void)
 				// if restarting race
 				if (iVar8 == LOAD_RESTART)
 				{
-					if (RaceFlag_IsFullyOnScreen() == 1)
+					if (RaceFlag_IsFullyOnScreen())
 					{
 						// reinitialize world,
 						// does not reinitialize pools
@@ -234,7 +234,7 @@ u32 main(void)
 					RemBitsConfig0 = sdata->Loading.OnBegin.RemBitsConfig0;
 					AddBitsConfig0 = sdata->Loading.OnBegin.AddBitsConfig0;
 
-					if (RaceFlag_IsFullyOnScreen() == 1)
+					if (RaceFlag_IsFullyOnScreen())
 					{
 						sdata->Loading.OnBegin.AddBitsConfig0 = 0;
 						sdata->Loading.OnBegin.RemBitsConfig0 = 0;
@@ -254,7 +254,7 @@ u32 main(void)
 						MainRaceTrack_StartLoad(sdata->Loading.Lev_ID_To_Load);
 					}
 
-					else if (RaceFlag_IsFullyOffScreen() == 1)
+					else if (RaceFlag_IsFullyOffScreen())
 					{
 						RaceFlag_BeginTransition(1);
 					}
@@ -561,7 +561,7 @@ void StateZero()
 	// set lap count to 3
 	gGT->numLaps = 3;
 
-	gGT->battleSetup.enabledWeapons |= 0x34de;
+	gGT->battleSetup.enabledWeapons |= BATTLE_DEFAULT_WEAPON_FLAGS;
 	gGT->numPlyrCurrGame = 1;
 	gGT->numPlyrNextGame = 1;
 	*(u32 *)&gGT->battleSetup.teamOfEachPlayer = 0x3020100;
