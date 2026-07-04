@@ -70,6 +70,16 @@ int AP_SkipHints(void)
 	return ap_skip_hints;
 }
 
+// Map flash (Warp-Pad State Model v2): the vanilla-style two-tone flicker that
+// signals "Raceable" (state 2 GREEN) on the hub map. Default ON. Turned off via
+// ap-config.txt ("map_flash=0") -> state 2 renders a static GREEN. Delivery
+// mirrors skip_hints (ap-config.txt first; a YAML option can write it later).
+static int ap_map_flash = 1;
+int AP_MapFlashOn(void)
+{
+	return ap_map_flash;
+}
+
 // Diagnostic (crash investigation): format a compact game-state breadcrumb for a
 // log line -- frame timer, in-adventure flag, loading stage, and current levelID.
 // Lets a flushed log show what the game was doing (e.g. an item arriving while a
@@ -136,106 +146,14 @@ int AP_LocationCheckedByBit(int globalBit)
 }
 
 // ---------------------------------------------------------------------------
-// MAP OVERLAY (debug/QoL) -- badge each warp pad on the existing minimap by the
-// AP state of its DESTINATION track. Pure colour override on the icon already
-// drawn by AH_Map_Warppads; no geometry change, no gameplay effect.
+// MAP overlay retirement: the old debug-era per-pad map state
+// (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState)
+// and its SDL_SCANCODE_M colour-override toggle (g_ap_map_overlay /
+// AP_MapOverlayOn) are fully retired -- superseded by the unified AP_PadState
+// (Warp-Pad State Model v2), which drives an always-on 5-state map colour and
+// drops the own-progression-only GREEN criterion. The M key is now reserved for
+// the deferred hub-map zoom (see AP_OnFrame).
 // ---------------------------------------------------------------------------
-
-// 1 if the location at this global AdvProgress bit holds an OWN, progression,
-// still-unchecked AP item ("useful reward still here"); 0 otherwise. Mirrors the
-// AP_WarpPad* helpers: lookup -> scout -> own-slot + flags bit0 (progression).
-static int AP_BitIsUsefulUnchecked(int globalBit)
-{
-	long code;
-	long long item = 0;
-	int player = -1;
-	unsigned flags = 0;
-
-	code = AP_LookupLocationCode(globalBit);
-	if (code < 0)
-		return 0;                       // not a checkable location
-	if (ap_net_location_checked(code))
-		return 0;                       // already collected -> nothing useful here
-	if (!ap_net_scout_known(code, &item, &player, &flags))
-		return 0;                       // not scouted (not connected / pre-scout)
-	if (player != ap_net_self_slot())
-		return 0;                       // foreign multiworld item -> not "our" reward
-	return (flags & 1u) ? 1 : 0;        // bit0 = progression
-}
-
-// Usefulness verdict for a warp pad pointing at destination LevelID `destLevelID`:
-//   1  = at least one of the dest track's 5 reward locations holds an own,
-//        progression, still-unchecked item (useful reward still here)
-//   0  = a race track, but nothing useful is left unchecked there
-//  -1  = not a race-track destination (0..15 only carry the trophy-race pool;
-//        other dests would collide into unrelated bits)
-// The 5 per-track bits: trophy +0x06, sapphire +0x16, gold +0x28, platinum
-// +0x3a, token +0x4c (enum AdvRewardBitIndex, namespace_Memcard.h:186-205).
-int AP_PadUsefulness(int destLevelID)
-{
-	if (destLevelID < 0 || destLevelID >= 16)
-		return -1;
-
-	if (AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC) ||
-	    AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN))
-		return 1;
-
-	return 0;
-}
-
-// 1 if the location at globalBit exists and is NOT checked on the server (any
-// item, own or foreign). Used by the map overlay to ask "is there still a check
-// to do here", independent of whether the placed item is our own progression.
-static int AP_BitUnchecked(int globalBit)
-{
-    long code = AP_LookupLocationCode(globalBit);
-    if (code < 0) return 0;
-    return ap_net_location_checked(code) ? 0 : 1;
-}
-
-// Richer per-pad map-overlay state (M-key), distinguishing the two-stage phases
-// so the player can tell a stage-2-LOCKED pad from a stage-2-OPEN one. destLevelID
-// is the DESTINATION race track (0..15); the pad's stage-2 requirement keys off
-// the PHYSICAL pad, recovered via ctr_cfg_warp_phys (identity-safe pre-shuffle).
-//   1 = stage 1: Trophy Race not yet beaten and an OWN progression reward is
-//       still there                         -> green  (come do the trophy race)
-//   2 = Trophy Race BEATEN but stage 2 (relic TT + CTR Token menu) is LOCKED
-//                                           -> red    (blocked until stage-2 items)
-//   3 = stage 2 OPEN and >=1 TT/token location still UNCHECKED
-//                                           -> periwinkle (checks available now)
-//   0 = race track, nothing useful/available left   -> gray
-//  -1 = not a race-track destination                -> vanilla (untouched)
-int AP_PadMapState(int destLevelID)
-{
-    if (destLevelID < 0 || destLevelID >= 16)
-        return -1;
-
-    if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
-        // Stage 1: trophy race not beaten yet.
-        return AP_BitIsUsefulUnchecked(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
-
-    // Trophy race beaten -> stage 2 phase. Any relic-TT / CTR-token check left?
-    int s2checks = AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_GOLD_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_PLATINUM_RELIC)
-                || AP_BitUnchecked(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
-    if (!s2checks)
-        return 0; // all stage-2 checks done
-
-    return ctr_cfg_warp_stage2_unlocked(ctr_cfg_warp_phys(destLevelID)) ? 3 : 2;
-}
-
-// Map-overlay toggle. Flipped on the rising edge of SDL_SCANCODE_M in AP_OnFrame
-// (see below). The game-side AH_Map_Warppads reads it via AP_MapOverlayOn().
-static int g_ap_map_overlay = 0;
-
-int AP_MapOverlayOn(void)
-{
-	return g_ap_map_overlay;
-}
 
 // Distinct tint for a FOREIGN multiworld item rendered with the generic
 // STATIC_KEY marker, so it can't be mistaken for an own boss Key. Vivid magenta
@@ -364,6 +282,244 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 }
 
 // ---------------------------------------------------------------------------
+// UNIFIED PAD STATE (Warp-Pad State Model v2, 2026-07-03 design).
+// One state function shared by the map colour (AH_Map.c), the in-hub look
+// (AH_WarpPad_LInB), and the gate (AH_WarpPad_ThTick). A pad is in exactly one
+// state; every surface reads it from the same source, no mode switch.
+//
+// LIFECYCLE keys off the DESTINATION content category (race dest = full 6-state;
+// trial/arena/cup dest = reduced 1->2->5). REQUIREMENTS stay keyed to the
+// PHYSICAL pad (stage1/stage2 come from warp_pad_unlock[phys]). GREEN means "a
+// check you can do" -- ANY item (foreign included), NOT the old own-progression
+// criterion (AP_BitIsUsefulUnchecked), which this model drops.
+// ---------------------------------------------------------------------------
+
+// Enumerate the still-UNCOLLECTED (unchecked on the server) AP reward locations
+// of destination `destLevelID`, for ANY category, writing their global
+// AdvProgress bits into `outBits` (capacity `cap`) and returning the count. This
+// is the category-general sibling of AP_WarpPadUncollectedBits (race-only), added
+// so the state model + the trial-pad glow can see trial/arena/cup locations too.
+// "Collected" is decided ONLY by AP checked-state (never CHECK_ADV_BIT). Absent
+// tiers (no location_code in this seed) are skipped. Categories:
+//   race  0..15 : 5 tiers (trophy +0x06, sapphire +0x16, gold +0x28,
+//                 platinum +0x3a, CTR token +0x4c)
+//   trial 16,17 : 3 relic tiers (sapphire/gold/platinum) -- Slide Coliseum +
+//                 Turbo Track carry no trophy/token location
+//   arena 18,19,21,23 : 1 crystal (battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN)
+//   cup   100..104     : 1 gem ((dest-100) + FIRST_GEM)
+int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
+{
+	static const int kRaceTierBit[5] = {
+	    ADV_REWARD_FIRST_TROPHY,
+	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+	    ADV_REWARD_FIRST_GOLD_RELIC,
+	    ADV_REWARD_FIRST_PLATINUM_RELIC,
+	    ADV_REWARD_FIRST_CTR_TOKEN};
+	// Trial pads (Slide Coliseum 16 / Turbo Track 17) carry only the three relic
+	// Time-Trial locations (dest + SAPPHIRE/GOLD/PLATINUM: bits 38/56/74 &
+	// 39/57/75, verified against AP_LOCATION_TABLE) -- no trophy, no token.
+	static const int kTrialTierBit[3] = {
+	    ADV_REWARD_FIRST_SAPPHIRE_RELIC,
+	    ADV_REWARD_FIRST_GOLD_RELIC,
+	    ADV_REWARD_FIRST_PLATINUM_RELIC};
+	int count = 0;
+	int i;
+
+	if (outBits == 0 || cap <= 0)
+		return 0;
+
+	if (destLevelID >= 0 && destLevelID < 16)
+	{
+		for (i = 0; i < 5 && count < cap; i++)
+		{
+			int bit = destLevelID + kRaceTierBit[i];
+			if (AP_LookupLocationCode(bit) < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(bit))
+				outBits[count++] = bit;
+		}
+	}
+	else if (destLevelID == 16 || destLevelID == 17)
+	{
+		for (i = 0; i < 3 && count < cap; i++)
+		{
+			int bit = destLevelID + kTrialTierBit[i];
+			if (AP_LookupLocationCode(bit) < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(bit))
+				outBits[count++] = bit;
+		}
+	}
+	else if (destLevelID == 18 || destLevelID == 19 ||
+	         destLevelID == 21 || destLevelID == 23)
+	{
+		// Battle arena crystal (Crystal Bonus Round, bits 111..114). Same mapping
+		// as the ThTick glow pass: battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN.
+		int bit = R232.battleTrackArr[destLevelID - 18] + ADV_REWARD_FIRST_PURPLE_TOKEN;
+		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+			outBits[count++] = bit;
+	}
+	else if (destLevelID >= 100 && destLevelID < 105)
+	{
+		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4.
+		int bit = (destLevelID - 100) + ADV_REWARD_FIRST_GEM;
+		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+			outBits[count++] = bit;
+	}
+
+	return count;
+}
+
+// Is destination `destLevelID` one of the 16 shuffleable race tracks (the only
+// category with the full 6-state two-stage lifecycle)?
+static int AP_DestIsRace(int destLevelID)
+{
+	return destLevelID >= 0 && destLevelID < 16;
+}
+
+// Is destination `destLevelID` a recognised warp-pad destination at all (race /
+// trial / arena / cup)? Anything else -> AP_PadState returns 0 (vanilla/untouched).
+static int AP_DestKnown(int destLevelID)
+{
+	return AP_DestIsRace(destLevelID) ||
+	       destLevelID == 16 || destLevelID == 17 ||
+	       destLevelID == 18 || destLevelID == 19 ||
+	       destLevelID == 21 || destLevelID == 23 ||
+	       (destLevelID >= 100 && destLevelID < 105);
+}
+
+// Is the PHYSICAL pad's stage-1 (entry) requirement satisfied? Faithful copy of
+// the per-category unlock predicate AH_WarpPad_LInB computes for each pad class
+// (verified against source 2026-07-03), so the state model agrees with the pad
+// the game actually births. Race pads reuse ctr_cfg_warp_unlocked verbatim (the
+// same helper ThTick's load gate uses). NON-race categories mirror LInB's
+// per-class branch: randomized requirement when slot_data provides one, else the
+// vanilla fallback for that class. Keyed by the PHYSICAL pad LevelID.
+static int AP_PadStage1Met(int physLevelID)
+{
+	int i, owned;
+
+	// Race tracks (0..15): the canonical helper (shared with ThTick + LInB).
+	if (physLevelID >= 0 && physLevelID < 16)
+		return ctr_cfg_warp_unlocked(physLevelID);
+
+	// Trial pads: Slide Coliseum (16) = vanilla 10 Sapphire relics; Turbo Track
+	// (17) = vanilla all 5 Gem colours. Randomized single-stage req overrides.
+	if (physLevelID == 16 || physLevelID == 17)
+	{
+		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
+		if (physLevelID == 16)
+			return AP_GateCount(AP_IDX_SAPPHIRE) >= 10;
+		owned = 0;
+		for (i = 0; i < 5; i++)
+			if (AP_GateCountGemColour(i) >= 1)
+				owned++;
+		return owned >= 5;
+	}
+
+	// Battle arenas (18/19/21/23): randomized req overrides; else the vanilla
+	// hub-key gate (LInB GetKeysRequirement: received Keys >= arrKeysNeeded[hub]).
+	if (physLevelID == 18 || physLevelID == 19 ||
+	    physLevelID == 21 || physLevelID == 23)
+	{
+		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
+		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
+		return AP_GateCount(AP_IDX_KEY) >=
+		       D232.arrKeysNeeded[data.metaDataLEV[physLevelID].hubID];
+	}
+
+	// Gem cups (100..104): randomized req overrides; else vanilla 4 Tokens of the
+	// cup's colour. gem_cup_unlock is keyed by cup colour 0..4 (identity pad).
+	if (physLevelID >= 100 && physLevelID < 105)
+	{
+		int cupIdx = physLevelID - 100;
+		if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[cupIdx].stage1);
+		return AP_GateCountTokenColour(cupIdx) >= 4;
+	}
+
+	return 1; // unknown pad -> treat as enterable (defensive; AP_PadState gates)
+}
+
+// The unified pad state (Warp-Pad State Model v2). Returns:
+//   1 = Locked      (stage-1 unmet)                         -> RED
+//   2 = Raceable    (stage-1 met, primary check available)  -> GREEN (flicker)
+//   3 = Re-locked   (race dest only: trophy checked,
+//                    stage-2 unmet)                          -> ORANGE
+//   4 = Tier-2 open (race dest only: stage-2 met, checks
+//                    remain)                                 -> PERIWINKLE
+//   5 = Done        (all destination locations checked;
+//                    HARD-LOCKED, pure UX)                   -> GRAY
+//   0 = vanilla / not applicable (no slot_data, or an
+//       unrecognised destination)                           -> untouched
+// physLevelID = the physical pad (requirement key); destLevelID = the loaded
+// destination track (location + lifecycle-category key). Under no shuffle these
+// are equal; the callers pass both so it is correct under destination shuffle.
+int AP_PadState(int physLevelID, int destLevelID)
+{
+	int uncBits[5];
+	int uncN;
+
+	if (!ctr_cfg_active())
+		return 0; // vanilla mode -> caller leaves the pad untouched
+	if (!AP_DestKnown(destLevelID))
+		return 0;
+
+	uncN = AP_PadUncollectedBits(destLevelID,
+	                             uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
+
+	// Done is terminal: every destination location checked. A done pad has
+	// nothing left by definition, so hard-locking it never gates progression.
+	if (uncN == 0)
+		return 5;
+
+	if (!AP_PadStage1Met(physLevelID))
+		return 1; // Locked: entry requirement unmet
+
+	if (!AP_DestIsRace(destLevelID))
+		return 2; // reduced lifecycle (trial/arena/cup): stage-1 met + checks left
+
+	// Race destination: full two-stage lifecycle.
+	if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
+		return 2; // Raceable: trophy race (primary check) still available
+
+	// Trophy checked, more checks remain -> stage-2 phase (keyed by physical pad).
+	if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
+		return 3; // Re-locked: stage-2 requirement not yet met
+	return 4;     // Tier-2 open: relic TT / CTR token checks available
+}
+
+// ---------------------------------------------------------------------------
+// AP STATE GENERATION (Warp-Pad State Model v2, foundation for live re-birth).
+// A monotonically increasing counter bumped whenever something that can change a
+// pad's AP_PadState happens: a fresh slot-connect (slot_data activation), a
+// received item that changes a gate count, or a location-checked notification.
+// A future in-hub re-birth consumer tags each pad with the generation it was
+// born at and, on mismatch, rebuilds the pad's in-hub instances so the 3D look
+// tracks state changes in real time (item arrives / check completes elsewhere
+// while standing in the hub) -- and re-remaps a pad born before a late connect.
+//
+// NOT yet consumed for re-birth: AH_WarpPad_LInB is a LEVEL-LOAD one-shot (see
+// INSTANCE_LevLInBs), and the only teardown pattern the codebase proves is
+// destruction (inst->thread=0 + THREAD_FLAG_DEAD, e.g. RB_Crate). A safe in-hub
+// re-birth needs a lifecycle this code does not yet establish, so that consumer
+// is deferred to a focused, in-game-verified change rather than inferred blind
+// (crew verify-first rule). The MAP colour and every gate already recompute
+// AP_PadState live each frame, so those two surfaces are honest in real time
+// today; only the in-hub 3D structural look and a late-connect pad's destination
+// remap wait on this re-birth. See the v2 design note's foundation 1.
+// ---------------------------------------------------------------------------
+static unsigned ap_state_gen = 0;
+
+unsigned AP_StateGen(void)
+{
+	return ap_state_gen;
+}
+
+// ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.
 // ---------------------------------------------------------------------------
@@ -464,7 +620,10 @@ void AP_NotifyAdvReward(int rewardBit)
 	AP_AppendLog(msg);
 
 	if (code >= 0)
+	{
 		ap_net_send_location(code); // LocationChecks([code])
+		ap_state_gen++; // a location was checked -> the owning pad's state may shift
+	}
 }
 
 void AP_NotifyGoal(int oxideSecond)
@@ -744,6 +903,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			; // debug_trap=... -> prime a trap for testing (see ap_traps.c)
 		else if (AP_ShortcutConfigLine(line))
 			; // shortcutless=... / shortcut_capture=... (see ap_shortcut.c)
+		else if (!strncmp(line, "map_flash=", 10))
+			ap_map_flash = (line[10] != '0'); // 0 = static GREEN (no Raceable flicker)
 	}
 	fclose(f);
 }
@@ -786,6 +947,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_oxide_first_beaten = 0;
 		ap_oxide_final_beaten = 0;
 		ap_goal_sent = 0;
+		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 	}
 
@@ -802,7 +964,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
+		{
 			ap_recv_count[idx]++;
+			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
+		}
 
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
 		// bits (progress %, podium) in AP_ApplyItems -- gates ignore these.
@@ -1115,16 +1280,15 @@ static void AP_DumpState(struct GameTracker *gGT)
 
 void AP_OnFrame(struct GameTracker *gGT)
 {
-	// Map-overlay toggle: flip g_ap_map_overlay on the RISING edge of the hotkey.
-	// Runs every frame and in all game modes so the toggle works anywhere. Pure
-	// HUD state -- no pad-bus interaction, no gameplay effect.
-	{
-		static int ap_overlay_key_prev = 0;
-		int keyNow = Platform_InputRawKeyDown(AP_MAP_OVERLAY_SCANCODE);
-		if (keyNow && !ap_overlay_key_prev)
-			g_ap_map_overlay = !g_ap_map_overlay;
-		ap_overlay_key_prev = keyNow;
-	}
+	// M-key: RESERVED for the future hub-map ZOOM (Warp-Pad State Model v2). The
+	// old debug map-overlay colour toggle it used to drive is retired -- map
+	// colours are now always on (AP_PadState). The zoom itself is deferred: it
+	// needs to scale UI_Map_GetIconPos + UI_Map_DrawMap (ASM-verified vanilla,
+	// shared by the hub map AND the track-select / in-race minimaps) around the
+	// map centre, which is fragile shared-render work to be done + verified in
+	// game, not inferred here. AP_MAP_OVERLAY_SCANCODE / Platform_InputRawKeyDown
+	// are left declared as the input plumbing that rework will reuse. No handler
+	// runs today, so M is an inert no-op.
 
 	// Diagnostic breadcrumbs (crash investigation): a one-time run-start marker so
 	// the appended log has a clear per-process boundary, plus a line on every

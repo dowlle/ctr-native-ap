@@ -464,6 +464,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// === Assume Unlocked ===
 
+#ifdef CTR_AP
+	// DONE (Warp-Pad State Model v2, state 5): hard-locked, always. Every check at
+	// this pad's destination is done, so entry is blocked purely as UX (design #1)
+	// -- it can never gate progression. Bail before the entire warp/load/glow path
+	// below; the pad shows only its gray X (born in LInB) and never warps. A done
+	// pad has CLOSED_1S == 0, so it fell through the locked-render path above to
+	// reach here. Keyed off AP_PadState so it also hard-locks a pad that BECOMES
+	// done live (its look updates on the next re-birth; the gate is honest now).
+	if (ctr_cfg_active() &&
+	    AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5)
+	{
+		return;
+	}
+#endif
+
 	if ((dist > 0x8fff) && (warppadObj->boolEnteredWarppad == 0))
 	{
 		goto WarpPad_AnimateOpen;
@@ -676,9 +691,59 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
 					{
-						D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0);
+#ifdef CTR_AP
+						// AP: the tier-2 choice menu hides an already-CHECKED race
+						// type, and when only ONE type still has an unchecked
+						// location it skips the menu and enters that mode directly.
+						// Which types remain is read from AP_PadUncollectedBits
+						// (keyed by DESTINATION track = levelID here), which skips
+						// tiers this seed never placed -- so a checked/absent option
+						// is never offered. (The both-checked case is state 5 Done,
+						// hard-locked upstream, so it never reaches this menu.)
+						if (ctr_cfg_active())
+						{
+							int apUncMenu[5];
+							int apUncMenuN = AP_PadUncollectedBits(levelID, apUncMenu, 5);
+							int apTokenLeft = 0, apRelicLeft = 0, apk;
+							for (apk = 0; apk < apUncMenuN; apk++)
+							{
+								int off = apUncMenu[apk] - levelID;
+								if (off == ADV_REWARD_FIRST_CTR_TOKEN)
+									apTokenLeft = 1;
+								else if (off == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
+								         off == ADV_REWARD_FIRST_GOLD_RELIC ||
+								         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
+									apRelicLeft = 1;
+							}
 
-						RECTMENU_Show(&D232.menuTokenRelic);
+							if (apTokenLeft && !apRelicLeft)
+							{
+								// only CTR Token challenge left -> enter directly
+								// (mirrors AH_WarpPad_MenuProc row 0); no menu shown.
+								gGT->gameMode2 |= TOKEN_RACE;
+								RECTMENU_Hide(&D232.menuTokenRelic);
+							}
+							else if (apRelicLeft && !apTokenLeft)
+							{
+								// only Relic Race left -> enter directly (row 1).
+								gGT->gameMode1 |= RELIC_RACE;
+								RECTMENU_Hide(&D232.menuTokenRelic);
+							}
+							else
+							{
+								// both types have an unchecked location -> show the
+								// menu, cursor on an available row.
+								D232.menuTokenRelic.rowSelected = apTokenLeft ? 0 : 1;
+								RECTMENU_Show(&D232.menuTokenRelic);
+							}
+						}
+						else
+#endif
+						{
+							D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0);
+
+							RECTMENU_Show(&D232.menuTokenRelic);
+						}
 
 						// now opened
 						sdata->boolOpenTokenRelicMenu = 1;
@@ -1252,6 +1317,51 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	unlockItem_modelID = 0;
 	unlockItem_numOwned = 0;
 	unlockItem_numNeeded = -1;
+
+#ifdef CTR_AP
+	// DONE (Warp-Pad State Model v2, state 5): every destination location for this
+	// pad is checked. Render a CLOSED look distinct from Locked/Re-locked -- the
+	// gray X ALONE: no requirement item, no digits, no beam/rings/prize glow. Born
+	// with CLOSED_1S / CLOSED_ITEM left NULL so AH_WarpPad_ThTick's Done guard keeps
+	// the pad inert (it never enters the locked-render path -- which would deref
+	// CLOSED_ITEM -- nor the warp path). Hard-locked, always: a done pad has nothing
+	// left, so blocking entry is pure UX and cannot gate progression (design #1).
+	// levelID = physical pad; warppadObj->levelID = destination (location key).
+	if (ctr_cfg_active() && AP_PadState(levelID, warppadObj->levelID) == 5)
+	{
+		warppadObj->digit1s = 0;
+		warppadObj->digit10s = 0;
+
+		// WPIS_CLOSED_X -- the only instance a done pad births.
+		newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BIGX], "x", t);
+
+		// copy matrix (identity rotation, mirrors the vanilla X birth below)
+		*(int *)((int)&newInst->matrix + 0x0) = 0x1000;
+		*(int *)((int)&newInst->matrix + 0x4) = 0;
+		*(int *)((int)&newInst->matrix + 0x8) = 0x1000;
+		*(int *)((int)&newInst->matrix + 0xC) = 0;
+		*(s16 *)((int)&newInst->matrix + 0x10) = 0x1000;
+		newInst->matrix.t[0] = inst->matrix.t[0];
+		newInst->matrix.t[1] = inst->matrix.t[1] + 0x100;
+		newInst->matrix.t[2] = inst->matrix.t[2];
+
+		newInst->scale.x = 0x2000;
+		newInst->scale.y = 0x2000;
+		newInst->scale.z = 0x2000;
+
+		// gray tint (packed (R<<0x14)|(G<<0xc)|(B<<0x4), 0x80 grey) so the done pad
+		// reads distinct from an active red/gold marker. If STATIC_BIGX ignores the
+		// vertex colour the X still stands ALONE (no item/digits), which is the
+		// primary distinction.
+		newInst->colorRGBA = 0x08080800;
+
+		// always face camera
+		newInst->model->headers[0].flags |= 1;
+
+		warppadObj->inst[WPIS_CLOSED_X] = newInst;
+		return;
+	}
+#endif
 
 	// Trophy Track
 	if (levelID < AH_WP_SLIDE_COLISEUM)
@@ -2095,6 +2205,17 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		else
 		{
 			i = levelID - AH_WP_ADV_CUP;
+
+#ifdef CTR_AP
+			// Cosmetic-index fix: `i` is the cup colour ONLY for gem-cup pads
+			// (levelID 100..104 -> 0..4). Under AP randomization a NON-cup pad
+			// (race/trial/arena, levelID < 100) can carry a Token requirement,
+			// making i negative -> data.AdvCups[i] / D232.lightDirToken[i] read
+			// out of bounds (garbage tint / possible bad light dir). Clamp to a
+			// valid colour slot; the closed-req token tint is purely cosmetic.
+			if (i < 0 || i > 4)
+				i = 0;
+#endif
 
 			// token color
 			newInst->colorRGBA = ((u32)data.AdvCups[i].color[0] << 0x14) | ((u32)data.AdvCups[i].color[1] << 0xc) | ((u32)data.AdvCups[i].color[2] << 0x4);

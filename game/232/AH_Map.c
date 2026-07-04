@@ -561,28 +561,39 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 		}
 
 #ifdef CTR_AP
-		// AP map overlay (toggle: SDL_SCANCODE_M -> AP_MapOverlayOn). Pure colour
-		// override on the icon drawn below -- no geometry/gameplay change. Badge an
-		// UNLOCKED pad by the two-stage AP state of its destination race track
-		// (AP_PadMapState):
-		//   LIGHT_GREEN -> stage 1: an own progression reward still uncollected
-		//   RED         -> Trophy Race beaten but stage 2 LOCKED (relic TT / CTR
-		//                  Token menu gated -- you're blocked until stage-2 items)
-		//   PERIWINKLE  -> stage 2 OPEN with checks still available to do now
-		//   GRAY        -> nothing useful/available left (done/chill)
-		// LOCKED pads (case 0 / default, skipDistance set) keep their vanilla colour
-		// so the player still sees what is gated. -1 (non-race dest) also untouched.
-		if (AP_MapOverlayOn() && !skipDistance)
+		// AP Warp-Pad State Model v2: one honest map, always on. Whenever slot_data
+		// is active, EVERY warp-pad icon (locked ones included -- vanilla skipped
+		// them via skipDistance) is coloured from the unified AP_PadState of its
+		// DESTINATION track, so the player reads the pad's state off the map without
+		// a mode switch. Pure colour override -- no geometry change, and skipDistance
+		// still governs the proximity-sound distance check below (gameplay untouched).
+		//   1 Locked      -> RED
+		//   2 Raceable    -> GREEN, vanilla-style two-tone flicker (timer & 2)
+		//   3 Re-locked   -> ORANGE (did something here, more items needed)
+		//   4 Tier-2 open -> PERIWINKLE
+		//   5 Done        -> GRAY (hard-locked, nothing left)
+		// AP_PadState returns 0 in vanilla mode / for an unrecognised destination, so
+		// the vanilla colour switch above is left entirely untouched there.
 		{
 			int destLevelID = ((struct WarpPad *)warppadThread->object)->levelID;
-			int st = AP_PadMapState(destLevelID);
+			int physLevelID = ctr_cfg_warp_phys(destLevelID);
+			int st = AP_PadState(physLevelID, destLevelID);
 			if (st == 1)
-				color = LIGHT_GREEN;
-			else if (st == 3)
-				color = PERIWINKLE;
-			else if (st == 2)
 				color = RED;
-			else if (st == 0)
+			else if (st == 2)
+			{
+				// GREEN inherits the vanilla-style two-tone availability flicker.
+				// The map_flash option (ap-config.txt) turns the flicker off ->
+				// static GREEN. AP_MapFlashOn() defaults to 1 (flicker on).
+				color = LIGHT_GREEN;
+				if (AP_MapFlashOn() && (gGT->timer & 2) != 0)
+					color = FOREST_GREEN;
+			}
+			else if (st == 3)
+				color = ORANGE;
+			else if (st == 4)
+				color = PERIWINKLE;
+			else if (st == 5)
 				color = GRAY;
 		}
 #endif

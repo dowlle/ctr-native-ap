@@ -72,6 +72,11 @@ void AP_LogLine(const char *msg);
 // later the apworld can write this value into ap-config.txt from a YAML option.
 int AP_SkipHints(void);
 
+// 1 if the hub-map "Raceable" two-tone flicker (state 2 GREEN) is enabled.
+// Default 1; set to 0 by ap-config.txt "map_flash=0" for a static GREEN. Read by
+// AH_Map_Warppads (#ifdef CTR_AP). See the Warp-Pad State Model v2 design note.
+int AP_MapFlashOn(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
@@ -110,26 +115,29 @@ int AP_LocationCheckedByBit(int globalBit);
 // vanilla pad-state machine.
 int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 
-// ── Map overlay (debug/QoL) ──
-// AP "usefulness" of a warp pad pointing at destination LevelID `destLevelID`:
-//   1  = at least one of that race track's 5 reward locations (trophy/sapphire/
-//        gold/platinum/token) holds an OWN, progression, still-unchecked item
-//   0  = a race track (LevelID 0..15) with nothing useful left unchecked
-//  -1  = not a race-track destination (only 0..15 carry the trophy-race pool)
-// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
-int AP_PadUsefulness(int destLevelID);
+// ── Unified pad state (Warp-Pad State Model v2) ──
+// Category-general uncollected-location enumerator: fills `outBits` (capacity
+// `cap`) with the still-unchecked AP reward locations of destination
+// `destLevelID` for ANY category (race 0..15 = 5 tiers; trial 16/17 = 3 relic
+// tiers; arena 18/19/21/23 = 1 crystal; cup 100..104 = 1 gem) and returns the
+// count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
+int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 
-// Richer map-overlay state distinguishing the two-stage phases (M-key):
-//   1 stage-1 own progression reward available (green) · 2 trophy beaten but
-//   stage-2 LOCKED (red) · 3 stage-2 OPEN with unchecked TT/token checks
-//   (periwinkle) · 0 race track nothing left (gray) · -1 non-race (vanilla).
-// Used by AH_Map_Warppads (#ifdef CTR_AP) to colour-badge the minimap.
-int AP_PadMapState(int destLevelID);
+// AP state-generation counter (foundation for live in-hub pad re-birth). Bumped
+// on fresh slot-connect, on a received item that changes a gate count, and on a
+// location-checked notification -- i.e. whenever a pad's AP_PadState may change.
+// A future re-birth consumer tags each pad at birth and rebuilds it on mismatch.
+// Not yet consumed for re-birth (AH_WarpPad_LInB is level-load-only; see the
+// note in ap_hooks.c). The map + gates already recompute AP_PadState live.
+unsigned AP_StateGen(void);
 
-// 1 while the in-game map AP overlay is toggled on (SDL_SCANCODE_M rising edge,
-// handled in AP_OnFrame). The game side reads this to decide whether to override
-// warp-pad minimap icon colours.
-int AP_MapOverlayOn(void);
+// The single pad-state function driving map colour, in-hub look, and the gate.
+// Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
+// vanilla mode (no slot_data) / unrecognised destination (leave the pad
+// untouched). physLevelID keys the requirement (physical pad); destLevelID keys
+// the location + lifecycle category (loaded destination track). See the v2
+// design note. Consumed by AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
+int AP_PadState(int physLevelID, int destLevelID);
 
 #endif // CTR_AP
 
