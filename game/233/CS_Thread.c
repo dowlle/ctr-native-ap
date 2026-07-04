@@ -336,8 +336,7 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 						goto afterCameraAndSkipChecks;
 					}
 					RaceFlag_SetCanDraw(1);
-					int raceFlagState = RaceFlag_IsTransitioning();
-					if ((raceFlagState == 0) && (raceFlagState = RaceFlag_IsFullyOnScreen(), raceFlagState == 0))
+					if (!RaceFlag_IsTransitioning() && !RaceFlag_IsFullyOnScreen())
 					{
 						RaceFlag_SetFullyOffScreen();
 					}
@@ -345,8 +344,7 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 				else
 				{
 					RaceFlag_SetCanDraw(1);
-					int raceFlagState = RaceFlag_IsTransitioning();
-					if ((raceFlagState == 0) && (raceFlagState = RaceFlag_IsFullyOnScreen(), raceFlagState == 0))
+					if (!RaceFlag_IsTransitioning() && !RaceFlag_IsFullyOnScreen())
 					{
 						RaceFlag_SetFullyOffScreen();
 					}
@@ -588,8 +586,7 @@ processOpcode:
 		}
 		else
 		{
-			int canPlaySound = CS_Instance_BoolPlaySound(cs, instance);
-			if (canPlaySound != 0)
+			if (CS_Instance_BoolPlaySound(cs, instance))
 			{
 				OtherFX_Play((u32)(u16)opcodeMetaShorts[6], 1);
 			}
@@ -765,8 +762,8 @@ processOpcode:
 
 	case CS_OPCODE_RACEFLAG_TRANSITION1_IF_OFFSCREEN:
 	{
-		int raceFlagState = RaceFlag_IsFullyOffScreen();
-		if (raceFlagState == 1)
+		b32 raceFlagState = RaceFlag_IsFullyOffScreen();
+		if (raceFlagState)
 		{
 			RaceFlag_SetCanDraw(1);
 			RaceFlag_BeginTransition(1);
@@ -780,8 +777,8 @@ processOpcode:
 
 	case CS_OPCODE_RACEFLAG_TRANSITION2_IF_ONSCREEN:
 	{
-		int raceFlagState = RaceFlag_IsFullyOnScreen();
-		if (raceFlagState == 1)
+		b32 raceFlagState = RaceFlag_IsFullyOnScreen();
+		if (raceFlagState)
 		{
 			RaceFlag_BeginTransition(2);
 		}

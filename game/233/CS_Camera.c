@@ -14,7 +14,7 @@ enum CutsceneCameraConstants
 };
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aed48-0x800aedf8
-u8 CS_Camera_BoolGotoBoss(void)
+b32 CS_Camera_BoolGotoBoss(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -22,7 +22,7 @@ u8 CS_Camera_BoolGotoBoss(void)
 	if ((gGT->podiumRewardID == STATIC_RELIC) && (gGT->currAdvProfile.numRelics >= ADV_OXIDE_FINAL_RELIC_COUNT))
 	{
 		// If Oxide was not beaten twice yet
-		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) == 0)
+		if (!CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND))
 		{
 			return 1;
 		}
@@ -44,8 +44,6 @@ u8 CS_Camera_BoolGotoBoss(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae9a8-0x800aed48
 void CS_Camera_ThTick_Boss(struct Thread *t)
 {
-	char i;
-
 	int cutsceneID;
 	s16 levID;
 
@@ -128,16 +126,16 @@ void CS_Camera_ThTick_Boss(struct Thread *t)
 
 		struct Model **mArr = &D233.ptrModelBossHead;
 
-		for (i = 0; i < 2; i++)
+		for (int i = 0; i < 2; i++)
 		{
-			if (mArr[(s32)i] != NULL)
+			if (mArr[i] != NULL)
 			{
 				if (i != 0)
 				{
-					mArr[(s32)i] = (struct Model *)((char *)mArr[(s32)i] + 4);
+					mArr[i] = (struct Model *)((char *)mArr[i] + 4);
 				}
 
-				gGT->modelPtr[mArr[(s32)i]->id] = mArr[(s32)i];
+				gGT->modelPtr[mArr[i]->id] = mArr[i];
 			}
 		}
 
@@ -158,14 +156,14 @@ void CS_Camera_ThTick_Boss(struct Thread *t)
 		// Body first, sibling = 0
 		// Head next, sibling = body
 		t = 0;
-		for (i = 1; i >= 0; i--)
+		for (int i = 1; i >= 0; i--)
 		{
-			if (mArr[(s32)i] == NULL)
+			if (mArr[i] == NULL)
 			{
 				continue;
 			}
 
-			t = CS_Thread_Init(mArr[(s32)i]->id, mArr[(s32)i]->name, &initData, 0, t);
+			t = CS_Thread_Init(mArr[i]->id, mArr[i]->name, &initData, 0, t);
 			if (t == NULL)
 			{
 				continue;
@@ -341,7 +339,7 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 
 		if (rewardId != STATIC_BIG1)
 		{
-			if (CS_Camera_BoolGotoBoss() == 0)
+			if (!CS_Camera_BoolGotoBoss())
 			{
 				s16 hintID;
 
@@ -369,7 +367,7 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 					break;
 				}
 
-				if ((VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]) & 0xffff) == 0)
+				if (!VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]))
 				{
 					hintID += ADV_MASK_HINT_UKA_UKA_XA_OFFSET;
 				}

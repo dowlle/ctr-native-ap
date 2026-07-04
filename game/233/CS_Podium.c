@@ -317,7 +317,7 @@ void CS_Podium_Prize_ThTick3(struct Thread *th)
 		return;
 	}
 
-	if (CS_Camera_BoolGotoBoss() == 0)
+	if (!CS_Camera_BoolGotoBoss())
 	{
 		u32 rewards = sdata->advProgress.hintFlags;
 		s16 hintID = 0;
@@ -568,11 +568,11 @@ void CS_Podium_Prize_Init(u32 prizeModel, const char *prizeName, const SVec3Slot
 		prize->targetScreenPos.x = hud[UI_HUD_SLOT_RELIC].x;
 		prize->targetScreenPos.y = hud[UI_HUD_SLOT_RELIC].y - PODIUM_PRIZE_HUD_Y_OFFSET;
 
-		if (CHECK_ADV_BIT(sdata->advProgress.rewards, bitIndex) == 0)
+		if (!CHECK_ADV_BIT(sdata->advProgress.rewards, bitIndex))
 		{
 			bitIndex = gGT->prevLEV + ADV_REWARD_FIRST_GOLD_RELIC;
 
-			if (CHECK_ADV_BIT(sdata->advProgress.rewards, bitIndex) == 0)
+			if (!CHECK_ADV_BIT(sdata->advProgress.rewards, bitIndex))
 			{
 				relicColor = INST_COLOR_SAPPHIRE_RELIC;
 			}

@@ -45,7 +45,7 @@ enum
 CTR_STATIC_ASSERT(GARAGE_STAT_BAR_POLY_G4_COLOR_CODE == 0x38000000);
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7784-0x800b7834
-void CS_Garage_ZoomOut(char zoomState)
+void CS_Garage_ZoomOut(s16 zoomState)
 {
 	if (zoomState != 0)
 	{
@@ -287,7 +287,7 @@ void CS_Garage_MenuProc(struct RectMenu *menu)
 	// Draw character name
 	DecalFont_DrawLine(name, GARAGE_CHARACTER_NAME_X, GARAGE_CHARACTER_NAME_Y, FONT_BIG, 0xffff8000);
 
-	char arrowColor = ORANGE;
+	int arrowColor = ORANGE;
 
 	// blink arrows
 	if ((sdata->frameCounter & 4) == 0)

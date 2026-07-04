@@ -261,7 +261,7 @@ void CS_Credits_Init(void)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b92a0-0x800b92cc
-int CS_Credits_IsTextValid(void)
+b32 CS_Credits_IsTextValid(void)
 {
 	struct CreditsObj *creditsObj = &creditsBSS.creditsObj;
 
