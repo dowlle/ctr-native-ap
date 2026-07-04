@@ -5,65 +5,86 @@
 //
 // Compiled ONLY when CTR_AP is defined. Prerequisite of the adopted "Shortcut
 // Unlock" PROGRESSION item (Feature Triage Register B, Stef 2026-07-04): the seed
-// starts Shortcutless and the AP item flips it off. This module owns the runtime-
-// toggleable enforcement so that future item just calls AP_ShortcutlessSet(0).
+// can start Shortcutless and the AP item flips it off. This module owns the
+// runtime-toggleable enforcement so that future item just calls AP_ShortcutlessSet(0).
 //
-// ── Honest scoping (verified against this engine's own track data) ──
-// CTR's retail track data has NO notion of a shortcut. The quadblock flag set
-// (namespace_Level.h:163-179) has no shortcut bit; TerrainType (namespace_Level.h:
-// 73-96) has no shortcut surface; there is one checkpoint graph per track whose
-// branches (nextIndex_left/right) are treated as VALID alternate routes, not
-// illegal ones. The engine's existing forward-skip detector
-// (COLL_FIXED_PlayerSearch_CheckMaskGrabProgress, COLL.c:1346-1350) only fires on
-// gaining >1/4 of the track length between two checkpoints -- real shortcuts are
-// authored to stay checkpoint-legal, so it will NOT catch them. Therefore "which
-// quads are a shortcut" is data that does not exist in retail and must be ADDED
-// per track. What DOES already exist is the enforcement/respawn machinery: setting
-// DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (COLL.c:1481) makes the Aku-Aku mask grab the
-// racer and replant them at their last valid checkpoint (VehStuckProc.c:43).
+// ── Mechanism (ported from a real published GPL Shortcutless) ──
+// Source: kkv0n/Penguin-MODSK @ game_modes_mods, mods/game_modes/ShortcutLess/
+// (a fork of GPL-3.0 CTR-tools/CTR-ModSDK; same retail engine + level data as this
+// decomp). See the vault research note "2026-07-04 -- Research -- Shortcutless
+// Implementation Found (Penguin-MODSK GPL Port)". An earlier draft of this module
+// wrongly concluded shortcuts need full per-track hand annotation and shipped an
+// F8 capture harness; that was overscoped. Enforcement is three layers, and ~99%
+// of it comes from data retail ALREADY has:
 //
-// This module therefore ships (1) the reusable enforcement hook wired into that
-// existing machinery, runtime-toggleable, and (2) a live CAPTURE harness to BUILD
-// the missing per-track annotation from real play (verify-first, no inference):
-// drive onto a shortcut, mark its quads, then a per-track blockID table can be
-// baked from the marks. See the handoff note for the proposed data model.
+//   1. OFF-ROAD TERRAIN (the bulk, zero authoring): a quad whose terrain_type is
+//      grass/dirt/snow (+water on Dragon Mines) is off the intended racing line,
+//      so touching one is a shortcut -> mask grab. Read live from quad->terrain_type.
+//   2. CHECKPOINT-% SKIP (zero coordinate authoring, per-track % constants only):
+//      if the driver's lastValid checkpointIndex jumps more than a per-track % of
+//      the track's checkpoint count between frames, it's a gap-skip -> rewind
+//      lastValid + mask grab. AP_ShortcutSkipTick() (per frame from AP_OnFrame).
+//   3. A SMALL per-track blockID table (the only hand data): ~30 on-road-shortcut
+//      quads the source hands us, ported verbatim. VERIFY-FIRST CAVEAT: these
+//      blockIDs are the mod's retail-disc values; confirm per track against our data
+//      in-game before trusting them (shortcut_capture=1 / F8 log the touched IDs).
+//
+// Enforcement reuses the engine's own respawn: layers 1 & 3 go through the existing
+// COLL_FIXED_PlayerSearch hook (AP_ShortcutCheck -> OR DRIVER_COLL_FLAG_MASK_GRAB_
+// REQUEST, COLL.c); layer 2 sets that flag directly after rewinding lastValid, so
+// the Aku-Aku mask grab replants the racer at the previous valid checkpoint
+// (VehStuckProc.c). Nothing mutates persistent level data, so with Shortcutless OFF
+// (allowed mode, or after the Shortcut Unlock item) there is ZERO vanilla impact.
 
 #ifdef CTR_AP
 
 struct Driver;
 struct QuadBlock;
+struct GameTracker;
 
-// New per-quad flag proposed for baked annotation (an unused QuadBlockFlags bit,
-// namespace_Level.h leaves 0x0008/0x0020/0x0100 free). Retail quads never set it;
-// it is here so a future track-data annotation pass (or an asset patch) can mark
-// shortcut geometry and AP_QuadIsShortcut() will honour it with zero code change.
+// Optional baked annotation: an unused QuadBlockFlags bit (0x0008; the engine
+// leaves 0x0008/0x0020/0x0100 free). A future asset/track-data pass can set it to
+// mark shortcut geometry and AP_QuadIsShortcut() will honour it. Retail never sets
+// it, so it is inert until used.
 #define AP_QUADBLOCK_FLAG_SHORTCUT 0x0008
 
-// Runtime Shortcutless toggle. Default OFF. The future "Shortcut Unlock" AP item
-// flips it via AP_ShortcutlessSet(0); the seed enables it at start (config
-// shortcutless=1, or the apworld writing that config, or a start-state hook).
+// Shortcuts option model (Stef, 2026-07-04). YAML `shortcuts:` maps here; native
+// reads it from ap-config now (slot_data later).
+enum AP_ShortcutMode
+{
+	AP_SC_ALLOWED = 0,    // vanilla; enforcement never arms; no unlock item
+	AP_SC_FORBIDDEN = 1,  // Shortcutless enforced all seed; no item
+	AP_SC_UNLOCKABLE = 2  // starts enforced; Shortcut Unlock item flips it off
+};
+
+// Runtime Shortcutless toggle. The "Shortcut Unlock" AP item flips it via
+// AP_ShortcutlessSet(0); the seed enables it at start per the mode above.
 int  AP_ShortcutlessActive(void);
 void AP_ShortcutlessSet(int on);
+int  AP_ShortcutMode(void);             // current AP_ShortcutMode
+int  AP_ShortcutSwitchingAllowed(void); // allow_shortcut_switching (in-game switch)
 
 // Engine hook -- called from COLL_FIXED_PlayerSearch after the vanilla mask-grab
-// test (COLL.c, right after the CheckMaskGrabProgress block). Returns 1 if the
-// racer should be reset (grabbed) for taking a shortcut: i.e. Shortcutless is
-// active, `driver` is the local player, and `quad` is flagged/known as a shortcut.
-// Also drives the passive capture log when enabled. The caller ORs the result into
-// DRIVER_COLL_FLAG_MASK_GRAB_REQUEST, reusing the existing respawn pipeline.
+// test. Returns 1 if the racer should be reset (grabbed): Shortcutless active,
+// `driver` is the local player, and `quad` is shortcut geometry (layers 1 & 3).
+// Caller ORs the result into DRIVER_COLL_FLAG_MASK_GRAB_REQUEST.
 int AP_ShortcutCheck(struct Driver *driver, struct QuadBlock *quad);
 
-// 1 if `quad` is known to be shortcut geometry: either the baked flag bit is set,
-// or its blockID is in the runtime captured set (built live via the mark key).
+// 1 if `quad` is shortcut geometry: off-road terrain, a per-track table blockID,
+// the live-captured set, or the baked flag.
 int AP_QuadIsShortcut(struct QuadBlock *quad);
 
-// Debug keybinds (F7 toggle Shortcutless, F8 mark the local player's current quad
-// as a shortcut + log its blockID). Called from AP_TrapTick's key poll path.
+// Per-frame checkpoint-% gap-skip detector (layer 2). Call from AP_OnFrame.
+void AP_ShortcutSkipTick(struct GameTracker *gGT);
+
+// Debug keybinds (F7 dev toggle Shortcutless, F8 log/mark the local player's
+// current quad blockID). Dev tools for verifying/extending the table; the real
+// player switch (gated on allow_shortcut_switching) is the future in-game menu.
 void AP_ShortcutKeys(void);
 
-// Parse one ap-config.txt line. Recognised: "shortcutless=1" (start Shortcutless),
-// "shortcut_capture=1" (passively log every quad the local player touches, to map
-// a shortcut's blockIDs). Returns 1 if consumed, 0 otherwise.
+// Parse one ap-config.txt line. Recognised: "shortcuts=allowed|forbidden|
+// unlockable", "allow_shortcut_switching=0|1", "shortcut_capture=0|1", and the
+// legacy "shortcutless=0|1". Returns 1 if consumed, 0 otherwise.
 int AP_ShortcutConfigLine(const char *line);
 
 #endif // CTR_AP

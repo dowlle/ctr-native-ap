@@ -1033,6 +1033,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
 	AP_ShortcutKeys();
+	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 
 	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
 	// at the title screen right after connect. AP-side fields (options, received
