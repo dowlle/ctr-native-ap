@@ -178,6 +178,7 @@ int AP_ShortcutCheck(struct Driver *driver, struct QuadBlock *quad)
 // request the mask grab (engine replants at that checkpoint). Local player only, so
 // AI pathing is untouched.
 static struct QuadBlock *g_lastValid_prev = 0; // previous frame's local lastValid
+static int g_scless_stale_logged = 0;          // rising-edge latch for the stale-lastValid diag log
 
 static int abs_i(int v) { return v < 0 ? -v : v; }
 
@@ -187,6 +188,36 @@ static void AP_ScTriggerGrab(struct Driver *d)
 		d->lastValid = g_lastValid_prev; // rewind so respawn lands at the last legit checkpoint
 	d->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST;
 	AP_LogLine("[AP SHORTCUT] SKIP blocked -> mask grab\n");
+}
+
+// A driver's lastValid is set only when the birth/collision BSP probe HITS a
+// quadblock (VehBirth.c:236); on a miss it keeps whatever it held before -- after
+// a level load that is the freed previous level's mesh (mempack popped), non-null
+// but dangling. Reading ->checkpointIndex off it is the Crash Cove / Roo's Tubes
+// race-entry crash (ap_shortcut.c:245, minidumps 2026-07-04). Validate the pointer
+// against the live level's quadblock array -- the same array the engine indexes a
+// quadblock against elsewhere (CAM.c:2342, MainFrame.c:622) -- before trusting it.
+static int AP_LastValidInMesh(struct GameTracker *gGT, struct QuadBlock *qb)
+{
+	struct mesh_info *mesh;
+	unsigned char *base, *p;
+	unsigned long span;
+
+	if (gGT == 0 || gGT->level1 == 0 || qb == 0)
+		return 0;
+	mesh = gGT->level1->ptr_mesh_info;
+	if (mesh == 0 || mesh->ptrQuadBlockArray == 0 || mesh->numQuadBlock <= 0)
+		return 0;
+	base = (unsigned char *)mesh->ptrQuadBlockArray;
+	p = (unsigned char *)qb;
+	if (p < base)
+		return 0;
+	span = (unsigned long)(p - base);
+	if (span % sizeof(struct QuadBlock) != 0)            // must land on a block boundary
+		return 0;
+	if (span / sizeof(struct QuadBlock) >= (unsigned long)mesh->numQuadBlock)
+		return 0;
+	return 1;
 }
 
 void AP_ShortcutSkipTick(struct GameTracker *gGT)
@@ -233,8 +264,32 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 	if (d == 0 || d->lastValid == 0)
 	{
 		g_lastValid_prev = 0;
+		g_scless_stale_logged = 0;
 		return;
 	}
+
+	// lastValid non-null but not pointing into the live mesh -> stale probe-miss
+	// pointer (see AP_LastValidInMesh). Bail before the ->checkpointIndex read that
+	// crashes, and log once per episode so the Artemis build proves WHEN it fires:
+	// load!=IDLE or gm1 & LOADING(0x40000000) => loading window; else post-birth.
+	if (!AP_LastValidInMesh(gGT, d->lastValid))
+	{
+		if (!g_scless_stale_logged)
+		{
+			char m[176];
+			snprintf(m, sizeof m,
+			         "[AP SHORTCUT] stale lastValid=%p out-of-mesh -> skip "
+			         "(load=%d gm1=0x%08x lvl=%d tlt=%d)\n",
+			         (void *)d->lastValid, (int)sdata->Loading.stage,
+			         (unsigned)gGT->gameMode1, (int)gGT->levelID,
+			         (int)gGT->trafficLightsTimer);
+			AP_LogLine(m);
+			g_scless_stale_logged = 1;
+		}
+		g_lastValid_prev = 0;
+		return;
+	}
+	g_scless_stale_logged = 0;
 
 	maxCheckpoint = gGT->level1->cnt_restart_points - 1;
 	if (maxCheckpoint <= 0)
@@ -255,6 +310,11 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 		maxSkip = (maxCheckpoint * 17) / 100;
 	else
 		maxSkip = (maxCheckpoint * 13) / 100;
+
+	// g_lastValid_prev was validated when saved, but a context change since can have
+	// freed it; re-validate before this deref so a stale prev can't crash here either.
+	if (g_lastValid_prev != 0 && !AP_LastValidInMesh(gGT, g_lastValid_prev))
+		g_lastValid_prev = 0;
 
 	if (g_lastValid_prev != 0 && cur != (int)(unsigned char)g_lastValid_prev->checkpointIndex)
 	{
