@@ -828,6 +828,21 @@ int ctr_cfg_warp_unlocked(int levelID)
 	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 
+	// Cup PHYSICAL pads (100..104) live outside the dense warp_pad_unlock array.
+	// Under `merged` destination shuffle a race destination can be hosted on a cup
+	// pad, so ThTick's load gate (AH_WarpPad.c:679) recovers physLevelID = a cup
+	// LevelID and calls this. Key by cup colour into gem_cup_unlock (randomized
+	// stage1) else the vanilla "4 tokens of the cup's colour" rule -- the SAME
+	// predicate AP_PadStage1Met's cup branch uses. MUST run before the trophy
+	// fallback below, which would read data.metaDataLEV[100] out of bounds.
+	if (levelID >= 100 && levelID <= 104)
+	{
+		int cupIdx = levelID - 100;
+		if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
+			return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[cupIdx].stage1);
+		return AP_GateCountTokenColour(cupIdx) >= 4;
+	}
+
 	// Phase-1 fallback: received trophies >= per-track threshold.
 	return AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen;
 }
@@ -844,6 +859,14 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 	if (ctr_cfg_active() && physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
 	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
 		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physPadLevelID].stage2);
+
+	// Cup PHYSICAL pads (100..104): under `merged` shuffle a cup pad hosting a
+	// trophy-race destination carries a REAL stage2 (contract §2 stage-2 rule -- the
+	// apworld emits it into gem_cup_unlock), so honour it. type 0 (cup hosting
+	// non-race content, or vanilla) falls through to the always-open return below.
+	if (ctr_cfg_active() && physPadLevelID >= 100 && physPadLevelID <= 104 &&
+	    ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2.type != 0)
+		return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2);
 
 	// No stage2 requirement -> tier 2 opens as soon as stage1 is satisfied.
 	return 1;
@@ -1371,6 +1394,36 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
 		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
+	}
+	fputs("  ],\n", f);
+
+	// Cup PHYSICAL pads (100..104): map + two-stage req + met, so contract §6.3
+	// offline diffing (ap-state.json vs slot_data) covers destination-shuffled cups
+	// the same way the dense "pads" array covers 0..27. dest = gem_cup_map (a race
+	// destination here means the cup pad hosts a trophy race); trophy_checked follows
+	// the DESTINATION when that destination is a race track, else -1 (n/a).
+	fputs("  \"cup_pads\": [\n", f);
+	for (i = 0; i < 5; i++)
+	{
+		const ctr_warp_unlock *u = &ctr_cfg.gem_cup_unlock[i];
+		const ctr_req *r = &u->stage1;
+		int phys = 100 + i;
+		int dest = ctr_cfg_warp_dest(phys);
+		int trophyChecked =
+		    (dest >= 0 && dest < 16)
+		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
+		        : -1;
+		fprintf(f,
+		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
+		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
+		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
+		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
+		        "\"trophy_checked\": %d}%s\n",
+		        phys, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        ctr_cfg_warp_unlocked(phys),
+		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        ctr_cfg_warp_stage2_unlocked(phys), trophyChecked,
+		        (i + 1 < 5) ? "," : "");
 	}
 	fputs("  ],\n", f);
 
