@@ -591,6 +591,12 @@ void AP_EvaluateGoal(void)
 // check. 192 bits = the 6 AdvProgress reward words.
 static u32 ap_notified_mask[6] = {0};
 
+// Podium fan-out lives with the race listener below; forward-declared here so
+// the trophy-award path (a win => 1st => every rung) and the connect-time
+// reconciliation sweep can both drive it as crash/miss backstops.
+static void AP_SendPodiumChecks(int track, int placement);
+static void AP_ReconcilePodiumFromTrophies(void);
+
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
@@ -624,6 +630,16 @@ void AP_NotifyAdvReward(int rewardBit)
 		ap_net_send_location(code); // LocationChecks([code])
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 	}
+
+	// Podium backstop (event-time): winning a trophy race == finishing 1st ==
+	// every podium rung earned. Fire them from THIS reliable award path, not only
+	// the live finish-line capture, so a crash/reload/missed edge after the line
+	// still delivers the rungs. Trophy bits are the contiguous block
+	// [ADV_REWARD_FIRST_TROPHY, ADV_REWARD_FIRST_SAPPHIRE_RELIC); levelID is the
+	// offset within it. Deduped inside AP_SendPodiumChecks.
+	if (rewardBit >= ADV_REWARD_FIRST_TROPHY &&
+	    rewardBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
+		AP_SendPodiumChecks(rewardBit - ADV_REWARD_FIRST_TROPHY, 1);
 }
 
 void AP_NotifyGoal(int oxideSecond)
@@ -951,6 +967,13 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 	}
 
+	// Podium backstop (connect-time): reconcile rungs for any trophy race whose
+	// win was already recorded (a prior session, or a crash that lost the live
+	// capture). Winning == 1st == all rungs, so the durable trophy-checked signal
+	// is sufficient. Deduped + cheap (16 tracks) so it is safe to run every tick;
+	// this is what unblocks an existing stuck save on reconnect WITHOUT re-racing.
+	AP_ReconcilePodiumFromTrophies();
+
 	// Received items: tally by category. Applied to AdvProgress bits in
 	// AP_ApplyItems() (adventure + save-safe only). The tally is zeroed on each
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
@@ -1160,6 +1183,21 @@ static void AP_SendPodiumChecks(int track, int placement)
 		AP_AppendLog(msg);
 		ap_net_send_location(code); // LocationChecks([code])
 	}
+}
+
+// Connect-time backstop: any trophy race whose trophy LOCATION is already
+// checked was, by the engine's win-only rule (a trophy is awarded ONLY on 1st),
+// finished 1st -- so every podium rung for that track is earned. Sweep all 16
+// trophy tracks and fan out (deduped) from that durable signal. Idempotent, so
+// running it each connect/tick just no-ops once the rungs are checked. Covers
+// races won in a prior session and finishes whose live capture was lost.
+static void AP_ReconcilePodiumFromTrophies(void)
+{
+	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+		return;
+	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
+		if (AP_LocationCheckedByBit(lid + ADV_REWARD_FIRST_TROPHY))
+			AP_SendPodiumChecks(lid, 1); // trophy won => 1st => all rungs
 }
 
 // Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure
