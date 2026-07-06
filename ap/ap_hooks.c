@@ -1110,9 +1110,62 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 	return AP_RACE_TROPHY;
 }
 
+// Fan a trophy-race finish out into podium-ladder location checks (the native
+// half of feat/podium-checks; the apworld declares the rung locations + emits
+// the podium_checks slot_data block, ap_seedcfg parses it into ctr_cfg.podium).
+// The nesting rule "a better result satisfies every rung at or below it" is
+// applied HERE from the observed final placement:
+//   placement == 1     -> first + podium + any   (a win fires every rung)
+//   placement in {2,3}  -> podium + any           (the podium rung, not 1st)
+//   placement >= 4      -> any only
+// A rung the seed did not create is stored -1 and skipped; sends dedup against
+// the client's checked-set so re-winning a track never re-emits. These are AP
+// location codes, NOT AdvProgress bits, so they go straight down ap_net_send_
+// location -- NEVER through AP_NotifyAdvReward's bit lookup (podium-listener
+// handoff §3.4). MUST be called only for AP_RACE_TROPHY finishes: relic / token /
+// crystal challenges run on the SAME levelIDs as the trophy tracks (only the
+// mode word differs), so gating on the levelID range alone would misfire.
+static void AP_SendPodiumChecks(int track, int placement)
+{
+	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+		return;
+	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
+		return; // only the 16 trophy races carry rungs
+	if (placement < 1)
+		return; // -1 = placement unknown -> nothing to fan out
+
+	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+
+	// Assemble the earned rung set, best-result-fills-lower.
+	long codes[3];
+	int n = 0;
+	if (placement == 1)
+		codes[n++] = pr->first;  // a win also clears podium + any below
+	if (placement <= 3)
+		codes[n++] = pr->podium; // 1st clears it too; 2nd/3rd start here
+	codes[n++] = pr->any;        // every finish clears the any-position rung
+
+	for (int i = 0; i < n; i++)
+	{
+		long code = codes[i];
+		if (code < 0)
+			continue; // rung absent this seed
+		if (ap_net_location_checked(code))
+			continue; // already checked (re-win / reload)
+
+		char msg[128];
+		snprintf(msg, sizeof msg,
+		         "[AP CHECK] podium: track=%d place=%d location %ld\n",
+		         track, placement, code);
+		AP_AppendLog(msg);
+		ap_net_send_location(code); // LocationChecks([code])
+	}
+}
+
 // Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure
 // throttle/early-return, so the finish transition is never missed. Self-gates to
-// real races via drivers[0] + ACTION_RACE_FINISHED. Observation-only.
+// real races via drivers[0] + ACTION_RACE_FINISHED. Captures placement, then
+// fans out podium-ladder checks for trophy-race finishes.
 static void AP_RaceListenerTick(struct GameTracker *gGT)
 {
 	// Rising-edge detector on the player's ACTION_RACE_FINISHED bit -- fires the
@@ -1152,6 +1205,11 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		         (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0,
 		         (int)sdata->Loading.stage);
 		AP_AppendLog(m);
+
+		// Native fan-out: only trophy races carry podium rungs (relic/token/
+		// crystal share the same levelIDs, so the type gate is load-bearing).
+		if (ap_last_race_mode == AP_RACE_TROPHY)
+			AP_SendPodiumChecks(ap_last_race_track, ap_last_race_place);
 	}
 	ap_finish_prev = finishedNow;
 }

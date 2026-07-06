@@ -145,6 +145,15 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		for (int k = 0; k < 4; k++)
 			ctr_cfg.boss_tracks[i][k] = -1;
 	}
+	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
+	ctr_cfg.podium_enabled = 0;
+	ctr_cfg.podium_any_position = 0;
+	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+	{
+		ctr_cfg.podium[i].first = -1;
+		ctr_cfg.podium[i].podium = -1;
+		ctr_cfg.podium[i].any = -1;
+	}
 
 	if (!j.is_object())
 	{
@@ -247,6 +256,38 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// ── podium_checks: nested placement-rung ladder for the 16 trophy races ──
+	// Additive block (feat/podium-checks). Keyed by physical race-pad LevelID as
+	// a JSON string "0".."15" (== the [AP RACE] track field the listener logs).
+	// Each entry carries first/podium/any AP location codes; a rung absent this
+	// seed (any-position off, or the feature off) is JSON null -> stored as -1 so
+	// the native fan-out skips it. schema_version is NOT keyed off this block --
+	// it is purely additive, so a pre-podium seed just leaves podium_enabled 0.
+	auto podIt = j.find("podium_checks");
+	if (podIt != j.end() && podIt->is_object())
+	{
+		ctr_cfg.podium_enabled = json_int(*podIt, "enabled", 0);
+		ctr_cfg.podium_any_position = json_int(*podIt, "any_position", 0);
+		auto locIt = podIt->find("locations");
+		if (ctr_cfg.podium_enabled && locIt != podIt->end() && locIt->is_object())
+		{
+			for (auto it = locIt->begin(); it != locIt->end(); ++it)
+			{
+				int lid;
+				try { lid = std::stoi(it.key()); } catch (...) { continue; }
+				if (lid < 0 || lid >= CTR_CFG_PODIUM_TRACK_COUNT)
+					continue; // only the 16 trophy races carry rungs
+				if (!it.value().is_object())
+					continue;
+				const nlohmann::json &r = it.value();
+				// json_int returns -1 for a JSON null or missing key -> absent rung.
+				ctr_cfg.podium[lid].first  = json_int(r, "first", -1);
+				ctr_cfg.podium[lid].podium = json_int(r, "podium", -1);
+				ctr_cfg.podium[lid].any    = json_int(r, "any", -1);
+			}
+		}
+	}
+
 	// Activate LAST -- a partial parse never flips ctr_cfg_active() true.
 	ctr_cfg.schema_version = schema;
 
@@ -280,6 +321,17 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			             "[AP CFG] gem_cup_unlock[%d] (LevelID %d) = stage1{type=%d count=%d colour=%d}\n",
 			             c, 100 + c, g.type, g.count, g.colour);
 	}
+	std::fprintf(stderr, "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
+	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
+	if (ctr_cfg.podium_enabled)
+		for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+		{
+			const ctr_podium_rungs &pr = ctr_cfg.podium[i];
+			if (pr.first >= 0 || pr.podium >= 0 || pr.any >= 0)
+				std::fprintf(stderr,
+				             "[AP CFG] podium[LevelID %d] = first=%ld podium=%ld any=%ld\n",
+				             i, pr.first, pr.podium, pr.any);
+		}
 }
 
 extern "C" int ctr_cfg_active(void)

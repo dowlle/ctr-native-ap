@@ -28,6 +28,13 @@ extern "C" {
 #define CTR_CFG_PAD_COUNT 28
 #define CTR_CFG_BOSS_COUNT 5 // 0 roo, 1 papu, 2 komodo, 3 pinstripe, 4 oxide
 
+// Podium placement checks (feat/podium-checks apworld side). The nested rung
+// ladder rides ONLY the 16 standard adventure trophy races, keyed by physical
+// race-pad LevelID 0..15 (== gGT->levelID at a trophy race == the [AP RACE]
+// track field the listener logs). Boss/token/relic/crystal have no genuine
+// multi-position finish and carry no podium rungs.
+#define CTR_CFG_PODIUM_TRACK_COUNT 16
+
 // One resolved requirement. type per the §0 shared table:
 //   0 none/use native vanilla fixed rule
 //   1 trophies   2 keys   3 tokens   4 sapphire   5 gems
@@ -47,6 +54,18 @@ typedef struct
 	int count;
 	int colour;
 } ctr_req;
+
+// One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
+// the game has no bit for "finished 2nd", so these fire event-only from the
+// placement listener, never through AP_NotifyAdvReward's bit lookup). A rung
+// absent from the seed (any-position off, or the whole feature off) is stored
+// as -1 and MUST be skipped by the native fan-out.
+typedef struct
+{
+	long first;  // "Finish 1st"          location code, or -1 = absent
+	long podium; // "Finish 2nd or 3rd"   location code, or -1 = absent
+	long any;    // "Finish (Any Position)" location code, or -1 = absent
+} ctr_podium_rungs;
 
 // Two-stage warp-pad unlock (open-rando). stage1 opens the trophy race; stage2
 // opens the relic Time Trials + CTR Token Challenge menu. Each stage is an
@@ -96,6 +115,15 @@ typedef struct
 	// boss_req. Emitted by the apworld under boss_garage_req[<boss>].tracks.
 	int             boss_tracks[CTR_CFG_BOSS_COUNT][4];
 	int             boss_n_tracks[CTR_CFG_BOSS_COUNT];
+
+	// Podium placement checks (feat/podium-checks). enabled/any_position mirror
+	// the two apworld toggles; podium[levelID] holds the per-track rung codes for
+	// the 16 trophy races. The native fan-out (ap_hooks.c AP_RaceListenerTick)
+	// reads these at the finish-line capture point. Additive block -- absent from
+	// pre-podium seeds, in which case podium_enabled stays 0 and no rung fires.
+	int              podium_enabled;      // podium_checks.enabled
+	int              podium_any_position; // podium_checks.any_position
+	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
