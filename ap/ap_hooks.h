@@ -82,17 +82,19 @@ int AP_MapFlashOn(void);
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
 // Returns the model of the AP item actually placed at that location -- an own
 // CTR reward shows its category model (trophy/relic/token/gem/key); a foreign
-// multiworld item shows STATIC_KEY as a generic "AP" marker. Returns -1 when
-// not connected, not yet scouted, or the bit is not a checkable location, so the
-// caller keeps the vanilla model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
+// multiworld item shows STATIC_GEM (tinted white) as a generic "AP" marker.
+// Returns -1 when not connected, not yet scouted, or the bit is not a checkable
+// location, so the caller keeps the vanilla model. Used by AH_WarpPad_LInB
+// (#ifdef CTR_AP).
 int AP_WarpPadRewardModel(int globalBit);
 
 // Reward-glow TINT. Vanilla renders every relic tier the same blue, so a glow
 // advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
-// tier-specific packed colorRGBA for an OWN relic scouted at this location; a
-// vivid magenta for a FOREIGN multiworld item (so the generic STATIC_KEY marker
-// isn't mistaken for an own Key); or 0 to keep the caller's default colour
-// (own non-relic / unscouted -> 0). Caller applies it to relic + key models.
+// tier-specific packed colorRGBA for an OWN relic scouted at this location; pure
+// white for a FOREIGN multiworld item (so the generic STATIC_GEM marker renders
+// as a distinct white gem, not mistaken for an own coloured gem or boss Key); or
+// 0 to keep the caller's default colour (own non-relic / unscouted -> 0). Caller
+// applies it to relic + gem marker models.
 int AP_WarpPadRewardTint(int globalBit);
 
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the

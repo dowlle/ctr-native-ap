@@ -155,11 +155,14 @@ int AP_LocationCheckedByBit(int globalBit)
 // the deferred hub-map zoom (see AP_OnFrame).
 // ---------------------------------------------------------------------------
 
-// Distinct tint for a FOREIGN multiworld item rendered with the generic
-// STATIC_KEY marker, so it can't be mistaken for an own boss Key. Vivid magenta
-// (255,20,200) packed (R<<0x14)|(G<<0xc)|(B<<0x4). Interim until the foreign
-// marker gets the real Archipelago-logo model (backlogged custom-asset task).
-#define AP_FOREIGN_TINT 0x0ff14c80
+// Tint for a FOREIGN multiworld item, rendered with the generic gem marker
+// (STATIC_GEM) so it reads as "someone else's AP item" (Icebound's standalone
+// uses a white gem for the same purpose) and can't be mistaken for an own boss
+// Key. Pure white (255,255,255) packed (R<<0x14)|(G<<0xc)|(B<<0x4) -> a bright
+// white gem, distinct from own COLOURED gem-cup gems (which keep their colour).
+// Interim until the foreign marker gets the real Archipelago-logo model
+// (backlogged custom-asset task).
+#define AP_FOREIGN_TINT 0x0ffffff0
 
 // ---------------------------------------------------------------------------
 // REWARD GLOW -- map a location (by its AdvProgress global bit) to the model of
@@ -181,8 +184,11 @@ int AP_WarpPadRewardModel(int globalBit)
 		return -1; // not scouted yet (not connected / pre-scout) -> vanilla
 
 	// A foreign multiworld item (placed for a different slot) -> generic marker.
+	// Rendered as a gem (tinted white by AP_WarpPadRewardTint) so it reads as
+	// "another player's AP item" and isn't mistaken for an own boss Key. Real
+	// Archipelago-logo model is the backlogged end goal.
 	if (player != ap_net_self_slot())
-		return STATIC_KEY;
+		return STATIC_GEM;
 
 	// Own CTR reward -> its category's model.
 	switch (AP_ItemCategory(item))
@@ -221,11 +227,12 @@ int AP_WarpPadRewardTint(int globalBit)
 		return 0;
 	if (player != ap_net_self_slot())
 		// Foreign multiworld item: until it has its own model (the Archipelago
-		// logo is a backlogged custom-asset task) it renders as STATIC_KEY, which
-		// looks like an own boss Key. Tint it a vivid magenta so it's unmistakably
-		// "someone else's AP item", not a Key you can use. The render applies this
-		// to the key model (see AH_WarpPad.c). Packed (R<<0x14)|(G<<0xc)|(B<<0x4).
-		return AP_FOREIGN_TINT; // (255,20,200) magenta
+		// logo is a backlogged custom-asset task) it renders as STATIC_GEM. Tint
+		// it pure white so it reads as a "white gem = someone else's AP item"
+		// marker, distinct from own coloured gem-cup gems and from own boss Keys.
+		// The render applies this to the gem model (see AH_WarpPad.c). Packed
+		// (R<<0x14)|(G<<0xc)|(B<<0x4).
+		return AP_FOREIGN_TINT; // (255,255,255) white
 
 	switch (AP_ItemCategory(item))
 	{

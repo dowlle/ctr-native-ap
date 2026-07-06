@@ -1040,14 +1040,16 @@ WarpPad_AnimateOpen:
 							apPrize->colorRGBA = apTint; // tier tint (sapph/gold/plat)
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 					}
-					else if (apPrize->model->id == STATIC_KEY)
+					else if (apPrize->model->id == STATIC_GEM)
 					{
-						// Foreign multiworld item renders as the generic key marker.
-						// AP_WarpPadRewardTint returns a vivid magenta ONLY for a
-						// foreign item (an OWN Key returns 0 -> keeps its normal gold),
-						// so this colours other players' items distinctly without
-						// touching your own Keys. Interim until the foreign marker gets
-						// the real Archipelago-logo model.
+						// Gem model serves two roles here:
+						//  - FOREIGN multiworld item -> AP_WarpPadRewardTint returns
+						//    pure white, rendering a distinct WHITE gem marker (Icebound
+						//    standalone convention) so it isn't mistaken for an own
+						//    coloured gem or boss Key. Interim until the foreign marker
+						//    gets the real Archipelago-logo model.
+						//  - OWN gem-cup gem -> AP_WarpPadRewardTint returns 0, so the
+						//    gem keeps whatever colour it was born with (untouched).
 						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
 						if (apTint)
 						{
@@ -1818,6 +1820,11 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				warppadObj->lightDirRelic = D232.lightDirRelic[0];
 				warppadObj->lightDirToken =
 				    D232.lightDirToken[data.metaDataLEV[levelID].ctrTokenGroupID];
+				// Seed the gem light dir too: _ThTick can turn a slot into STATIC_GEM
+				// (own gem-cup gem, or a white-gem FOREIGN marker), and SpinRewards
+				// reads lightDirGem for specular spin on gem models. All 5 D232 table
+				// entries are identical, so [0] is the universal value.
+				warppadObj->lightDirGem = D232.lightDirGem[0];
 #endif
 
 				rewardAngle = 0;
