@@ -84,7 +84,16 @@ void RR_EndEvent_UnlockAward(void)
 		s32 rewardBit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * relicIndex + levelID;
 
 		// if relic already unlocked, check next relic
+#ifdef CTR_AP
+		// AP: gate on the location CHECKED-state, not adv->rewards -- AP_ApplyItems
+		// high-end-fills received relic bits, so a just-beaten tier whose bit is in
+		// the received set would be skipped and never send its TT location check
+		// (same AP_ApplyItems-collision class as the trophy fix in 222.c).
+		if (ctr_cfg_active() ? AP_LocationCheckedByBit(rewardBit)
+		                     : (CHECK_ADV_BIT(adv->rewards, rewardBit) != 0))
+#else
 		if (CHECK_ADV_BIT(adv->rewards, rewardBit) != 0)
+#endif
 		{
 			continue;
 		}

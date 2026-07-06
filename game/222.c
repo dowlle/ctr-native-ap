@@ -526,7 +526,21 @@ void AA_EndEvent_DrawMenu(void)
 	// if trophy is not won,
 	// Dingo Bingo needs to win trophy and token in the same race
 	rewardBit = gGT->levelID + ADV_REWARD_FIRST_TROPHY;
+#ifdef CTR_AP
+	// AP: the vanilla "already won?" gate reads adv->rewards, but AP_ApplyItems
+	// high-end-fills your RECEIVED-trophy bits into that same set every frame. A
+	// trophy race whose bit is among the received set would read "already won" and
+	// skip the location check + podium backstop -- so a genuinely just-won race
+	// never sends "<track>: Trophy Race" and its pad stays stuck in stage 1 (the
+	// Polar Pass / levelID 12 bug, 2026-07-06: 8 trophies received => bits 15..8
+	// set => track 12 falsely "won"). Gate on the AP location CHECKED-state instead
+	// (same fix class as ThTick:601 f9fbfa7a0). AP_NotifyAdvReward dedupes, so a
+	// re-win is safe.
+	if (ctr_cfg_active() ? !AP_LocationCheckedByBit(rewardBit)
+	                     : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
+#else
 	if (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0)
+#endif
 	{
 		// unlock tropy
 		UNLOCK_ADV_BIT(adv->rewards, rewardBit);
