@@ -1078,10 +1078,20 @@ WarpPad_AnimateOpen:
 						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
+					case STATIC_KEY:
+						// Own boss Key. The key model has NO useful unmodulated colour --
+						// at colorRGBA 0 it renders solid BLACK (unlike the trophy, whose
+						// texture shows through untinted). Vanilla always modulates it:
+						// the hub-door open sequence draws it gold with specular
+						// (AH_Door.c: 0xdca6000 + USE_SPECULAR_LIGHT). Mirror that here so
+						// the glow key reads as the golden boss key, not a black blob.
+						apPrize->colorRGBA = 0xdca6000; // vanilla golden key
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
 					default:
-						// STATIC_TROPHY / STATIC_KEY / any other own reward -> natural,
-						// untinted colour (colorRGBA 0 = the INSTANCE_Birth3D default the
-						// trophy placeholder already uses -> shows the model's own texture).
+						// STATIC_TROPHY / any other own reward -> natural, untinted
+						// colour (colorRGBA 0 = the INSTANCE_Birth3D default the trophy
+						// placeholder already uses -> shows the model's own texture).
 						apPrize->colorRGBA = 0;
 						break;
 					}

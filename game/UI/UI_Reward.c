@@ -144,6 +144,19 @@ void UI_ThTick_Reward(struct Thread *bucket)
 	// Get object
 	obj = bucket->object;
 
+#ifdef CTR_AP
+	// AP: re-tint the hub RELIC counter icon to match the tier its count is
+	// cycling through (Sapphire -> Gold -> Platinum, in sync with UI_DrawNumRelic's
+	// 0x3C/tier timer). ONLY the relic icon; key/trophy/crystal/token/menu-crystal
+	// share this tick and are left untouched. Sapphire tint = the vanilla HUD relic
+	// colour (0x060a5ff0), so tier 0 looks identical to stock.
+	if (ctr_cfg_active() && inst->model->id == STATIC_RELIC)
+	{
+		static const u32 s_hudRelicTierTint[3] = {0x060a5ff0, 0x0ffc6290, 0x0ebebf50};
+		inst->colorRGBA = s_hudRelicTierTint[(gGT->timer / 0x3C) % 3];
+	}
+#endif
+
 	// Spin on the Y axis
 	obj->rot.y += 0x40;
 

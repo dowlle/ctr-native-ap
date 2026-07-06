@@ -94,10 +94,24 @@ void UI_DrawNumRelic(s16 posX, s16 posY)
 	DecalFont_DrawLine(&sdata->s_x[0], posX, posY + 4, FONT_SMALL, ORANGE);
 
 	gGT = sdata->gGT;
-	num = gGT->currAdvProfile.numRelics;
-	if ((gGT->gameMode2 & INC_RELIC) != 0)
+#ifdef CTR_AP
+	// AP: the three relic tiers are independent received currencies, so the hub
+	// relic counter cycles Sapphire -> Gold -> Platinum every 2s, showing each
+	// tier's own received count. The icon re-tints in sync (UI_ThTick_Reward),
+	// and the pause RELICS screen shows all three at once (AH_Pause type==2).
+	if (ctr_cfg_active())
 	{
-		num--;
+		static const int s_relicTierIdx[3] = {AP_IDX_SAPPHIRE, AP_IDX_GOLD, AP_IDX_PLATINUM};
+		num = AP_GateCount(s_relicTierIdx[(gGT->timer / 0x3C) % 3]);
+	}
+	else
+#endif
+	{
+		num = gGT->currAdvProfile.numRelics;
+		if ((gGT->gameMode2 & INC_RELIC) != 0)
+		{
+			num--;
+		}
 	}
 
 	sprintf(&string[0], &sdata->s_longInt[0], num);

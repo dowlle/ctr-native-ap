@@ -206,7 +206,11 @@ int AP_WarpPadRewardModel(int globalBit)
 	case AP_CAT_KEY:
 		return STATIC_KEY;
 	default:
-		return STATIC_KEY; // own Wumpa / unmapped -> marker rather than a wrong model
+		// Own Wumpa / filler / unmapped -> the generic white-gem marker, SAME as a
+		// foreign item (Stef's call 2026-07-06). Previously STATIC_KEY, which after
+		// the golden-key render fix made every filler location look like a real boss
+		// Key ("extra keys" in the glows). A boss Key must ONLY show for AP_CAT_KEY.
+		return STATIC_GEM;
 	}
 }
 
@@ -242,8 +246,14 @@ int AP_WarpPadRewardTint(int globalBit)
 		return 0x0ffc6290; // gold
 	case AP_CAT_PLATINUM:
 		return 0x0ebebf50; // platinum / pale silver
+	case AP_CAT_GEM:
+		return 0; // own gem-cup gem -> keep its natural born colour (untinted)
 	default:
-		return 0; // not an own relic -> caller default
+		// Own Wumpa / filler / unmapped now renders on STATIC_GEM (see
+		// AP_WarpPadRewardModel) -- tint it white so it reads as the same generic
+		// marker as a foreign item (Stef's call 2026-07-06). Relic/trophy/token/key
+		// items never reach here (they hit their own cases / models).
+		return AP_FOREIGN_TINT; // white
 	}
 }
 
