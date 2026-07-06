@@ -438,6 +438,19 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// Relic
 		if (modelID == STATIC_RELIC)
 		{
+#ifdef CTR_AP
+			// AP: a relic requirement (especially "any relic", the any_of default) is
+			// satisfied by ANY tier, but the icon is a single Sapphire-blue relic,
+			// which reads as "sapphires only". Cycle the tint through the 3 tiers every
+			// 2s (sapphire -> gold -> platinum) so it reads as "any relic tier" --
+			// mirrors the gem-requirement colour cycle below. Tints match
+			// AP_WarpPadRewardTint's per-tier values.
+			if (ctr_cfg_active())
+			{
+				static const u32 s_relicTierTint[3] = {0x020a5ff0, 0x0ffc6290, 0x0ebebf50};
+				InstArr0->colorRGBA = s_relicTierTint[(gGT->timer / 0x3C) % 3];
+			}
+#endif
 			Vector_SpecLightSpin3D(InstArr0, &warppadObj->spinRot_Prize, &warppadObj->lightDirRelic);
 			return;
 		}
@@ -1026,36 +1039,51 @@ WarpPad_AnimateOpen:
 					if (apModel >= 0 && gGT->modelPtr[apModel] != 0)
 						apPrize->model = gGT->modelPtr[apModel];
 
-					// Re-derive tint/flags from the (possibly new) model id.
-					if (apPrize->model->id == STATIC_TOKEN)
-						apPrize->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
-					else
-						apPrize->flags &= ~DRAW_TRANSPARENT;
-
-					if (apPrize->model->id == STATIC_RELIC)
+					// Re-derive colour + flags from the (possibly reassigned) model id.
+					// The 3 slots are BORN as trophy/relic/token placeholders
+					// (s_warpPadRewardModelIDs): the relic slot pre-tinted blue, the
+					// token slot pre-tinted its group colour, the trophy slot untinted
+					// (colorRGBA 0). When _ThTick swaps a slot to a different reward
+					// model, that stale placeholder colour would BLEED -- e.g. a trophy
+					// landing in the relic slot renders BLUE. Reset colour per FINAL
+					// model so OWN items always show their natural colour; ONLY a
+					// FOREIGN multiworld item is recoloured (to the white gem marker).
+					apPrize->flags &= ~DRAW_TRANSPARENT;
+					switch (apPrize->model->id)
 					{
-						apPrize->colorRGBA = 0x20a5ff0; // vanilla relic blue default
+					case STATIC_RELIC:
+						apPrize->colorRGBA = 0x20a5ff0; // vanilla relic blue
 						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
 						if (apTint)
-							apPrize->colorRGBA = apTint; // tier tint (sapph/gold/plat)
+							apPrize->colorRGBA = apTint; // own relic TIER tint (sapph/gold/plat)
 						apPrize->flags |= USE_SPECULAR_LIGHT;
-					}
-					else if (apPrize->model->id == STATIC_GEM)
+						break;
+					case STATIC_TOKEN:
 					{
-						// Gem model serves two roles here:
-						//  - FOREIGN multiworld item -> AP_WarpPadRewardTint returns
-						//    pure white, rendering a distinct WHITE gem marker (Icebound
-						//    standalone convention) so it isn't mistaken for an own
-						//    coloured gem or boss Key. Interim until the foreign marker
-						//    gets the real Archipelago-logo model.
-						//  - OWN gem-cup gem -> AP_WarpPadRewardTint returns 0, so the
-						//    gem keeps whatever colour it was born with (untouched).
-						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
-						if (apTint)
-						{
-							apPrize->colorRGBA = apTint;
-							apPrize->flags |= USE_SPECULAR_LIGHT;
-						}
+						// Token model needs colour modulation to read as a token; use
+						// the destination track's token-group colour (matches the born
+						// token placeholder / the vanilla token you'd win there).
+						int tg = data.metaDataLEV[warppadObj->levelID].ctrTokenGroupID;
+						apPrize->colorRGBA =
+						    ((u32)data.AdvCups[tg].color[0] << 0x14) |
+						    ((u32)data.AdvCups[tg].color[1] << 0xc) |
+						    ((u32)data.AdvCups[tg].color[2] << 0x4);
+						apPrize->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+						break;
+					}
+					case STATIC_GEM:
+						// FOREIGN multiworld item -> white gem marker; OWN gem -> 0
+						// (natural gem model colour). AP_WarpPadRewardTint returns pure
+						// white only for a foreign item, 0 otherwise.
+						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
+					default:
+						// STATIC_TROPHY / STATIC_KEY / any other own reward -> natural,
+						// untinted colour (colorRGBA 0 = the INSTANCE_Birth3D default the
+						// trophy placeholder already uses -> shows the model's own texture).
+						apPrize->colorRGBA = 0;
+						break;
 					}
 				}
 			}

@@ -318,6 +318,22 @@ void AH_Pause_Draw(int pageID, int posX)
 		count[1] = 0;
 		count[2] = 0;
 
+#ifdef CTR_AP
+		if (ctr_cfg_active())
+		{
+			// AP mode: Sapphire/Gold/Platinum are three INDEPENDENT received
+			// currencies, not one highest-tier-per-track slot. The vanilla scan
+			// below counts each track once (its single highest tier), so a received
+			// Sapphire reads as 0 when a Platinum shares that track's AdvProgress
+			// slot (the AP_ApplyItems high-end-fill collision). Read the decoupled AP
+			// per-tier counts so each tier's real received total shows. Keeps the
+			// existing 3-up Sapphire/Gold/Platinum layout below.
+			count[0] = (s16)AP_GateCount(AP_IDX_SAPPHIRE);
+			count[1] = (s16)AP_GateCount(AP_IDX_GOLD);
+			count[2] = (s16)AP_GateCount(AP_IDX_PLATINUM);
+		}
+		else
+#endif
 		for (int i = 0; i < 0x12; i++)
 		{
 			// platinum
