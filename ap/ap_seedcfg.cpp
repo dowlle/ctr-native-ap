@@ -48,6 +48,16 @@ static int ctr_clamp_count(int type, int count)
 	return count;
 }
 
+// A warp_pad_map / gem_cup_map VALUE is a destination LevelID. slot_data v3 opens
+// the destination shuffle to the full ID space in BOTH directions, so the legal
+// set is the dense pads 0..27 PLUS the five cup LevelIDs 100..104. A value outside
+// this set is a malformed/forward-incompatible entry and is dropped (the pad keeps
+// its identity destination), never clamped into a wrong track.
+static int ctr_valid_dest(int v)
+{
+	return (v >= 0 && v < CTR_CFG_PAD_COUNT) || (v >= 100 && v <= 104);
+}
+
 static int json_int(const nlohmann::json &j, const char *key, int dflt)
 {
 	auto it = j.find(key);
@@ -127,6 +137,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.warp_pad_unlock[i].stage2.colour = -1;
 	}
 	// Gem cups (LevelID 100..104) -> gem_cup_unlock[0..4] by colour; type 0 = vanilla.
+	// gem_cup_map is the destination-shuffle counterpart to warp_pad_map: identity
+	// (cup pad 100+i loads cup 100+i) until warp_pad_map overlays a "100".."104" key.
 	for (int i = 0; i < 5; i++)
 	{
 		ctr_cfg.gem_cup_unlock[i].stage1.type = 0;
@@ -135,6 +147,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.gem_cup_unlock[i].stage2.type = 0;
 		ctr_cfg.gem_cup_unlock[i].stage2.count = 0;
 		ctr_cfg.gem_cup_unlock[i].stage2.colour = -1;
+		ctr_cfg.gem_cup_map[i] = 100 + i; // identity
 	}
 	for (int i = 0; i < CTR_CFG_BOSS_COUNT; i++)
 	{
@@ -188,6 +201,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
 
 	// ── warp_pad_map: identity already set; overlay string-keyed entries ──
+	// slot_data v3 keys span "0".."27" (-> warp_pad_map) AND "100".."104" (-> the
+	// cup destination map gem_cup_map). Values are validated against the full
+	// {0..27, 100..104} destination set (ctr_valid_dest): a cup pad may host a race
+	// destination and a race pad may host a cup destination under `merged` grouping.
 	auto mapIt = j.find("warp_pad_map");
 	if (mapIt != j.end() && mapIt->is_object())
 	{
@@ -195,9 +212,18 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			int pad;
 			try { pad = std::stoi(it.key()); } catch (...) { continue; }
+			int dest;
+			try { dest = it.value().get<int>(); } catch (...) { continue; }
+			if (!ctr_valid_dest(dest))
+				continue; // out-of-range destination -> keep identity
+			if (pad >= 100 && pad <= 104)
+			{
+				ctr_cfg.gem_cup_map[pad - 100] = dest; // cup PHYSICAL pad destination
+				continue;
+			}
 			if (pad < 0 || pad >= CTR_CFG_PAD_COUNT)
 				continue;
-			try { ctr_cfg.warp_pad_map[pad] = it.value().get<int>(); } catch (...) {}
+			ctr_cfg.warp_pad_map[pad] = dest;
 		}
 	}
 
@@ -315,11 +341,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             ctr_cfg.boss_req[b].type, ctr_cfg.boss_req[b].count);
 	for (int c = 0; c < 5; c++)
 	{
-		const ctr_req &g = ctr_cfg.gem_cup_unlock[c].stage1;
-		if (g.type != 0)
+		const ctr_warp_unlock &u = ctr_cfg.gem_cup_unlock[c];
+		int dest = ctr_cfg.gem_cup_map[c];
+		// Print when the cup carries a randomized requirement OR its destination was
+		// remapped (slot_data v3 cup destination shuffle) -- either makes it non-vanilla.
+		if (u.stage1.type != 0 || u.stage2.type != 0 || dest != 100 + c)
 			std::fprintf(stderr,
-			             "[AP CFG] gem_cup_unlock[%d] (LevelID %d) = stage1{type=%d count=%d colour=%d}\n",
-			             c, 100 + c, g.type, g.count, g.colour);
+			             "[AP CFG] gem_cup[%d] (phys LevelID %d) = stage1{type=%d count=%d colour=%d} "
+			             "stage2{type=%d count=%d colour=%d} (dest=%d)\n",
+			             c, 100 + c, u.stage1.type, u.stage1.count, u.stage1.colour,
+			             u.stage2.type, u.stage2.count, u.stage2.colour, dest);
 	}
 	std::fprintf(stderr, "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
 	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
@@ -341,23 +372,30 @@ extern "C" int ctr_cfg_active(void)
 
 extern "C" int ctr_cfg_warp_dest(int physPadLevelID)
 {
-	if (ctr_cfg.schema_version < 1 || physPadLevelID < 0 ||
-	    physPadLevelID >= CTR_CFG_PAD_COUNT)
+	if (ctr_cfg.schema_version < 1)
 		return physPadLevelID;
-	return ctr_cfg.warp_pad_map[physPadLevelID];
+	// Dense pads 0..27 in warp_pad_map; cup pads 100..104 in gem_cup_map. Any other
+	// LevelID has no map entry -> identity (safe to call unconditionally).
+	if (physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT)
+		return ctr_cfg.warp_pad_map[physPadLevelID];
+	if (physPadLevelID >= 100 && physPadLevelID <= 104)
+		return ctr_cfg.gem_cup_map[physPadLevelID - 100];
+	return physPadLevelID;
 }
 
 extern "C" int ctr_cfg_warp_phys(int destTrackLevelID)
 {
-	if (ctr_cfg.schema_version < 1 || destTrackLevelID < 0 ||
-	    destTrackLevelID >= CTR_CFG_PAD_COUNT)
+	if (ctr_cfg.schema_version < 1 || !ctr_valid_dest(destTrackLevelID))
 		return destTrackLevelID;
-	// Linear scan for the physical pad whose destination is destTrackLevelID.
-	// warp_pad_map is a permutation within each shuffle group (identity for
-	// non-shuffled pads), so at most one physical pad maps here. If none does
-	// (out-of-group cup/boss IDs that aren't shuffled), return identity.
+	// Linear scan for the physical pad whose destination is destTrackLevelID, over
+	// BOTH maps. The union of warp_pad_map (0..27) and gem_cup_map (100..104) is a
+	// permutation over the participating pool (identity for non-shuffled pads), so
+	// at most one physical pad maps here. If none does, return identity.
 	for (int phys = 0; phys < CTR_CFG_PAD_COUNT; phys++)
 		if (ctr_cfg.warp_pad_map[phys] == destTrackLevelID)
 			return phys;
+	for (int c = 0; c < 5; c++)
+		if (ctr_cfg.gem_cup_map[c] == destTrackLevelID)
+			return 100 + c;
 	return destTrackLevelID;
 }
