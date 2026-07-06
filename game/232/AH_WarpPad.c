@@ -1422,7 +1422,18 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// by warppadObj->levelID (= destination track) to match ThTick:601.
 		// type 0 stage2 (no second gate / collapsed / flat-v1) -> _stage2_unlocked
 		// returns 1 -> this branch is skipped -> pre-two-stage behaviour.
+		//
+		// slot_data v3 (merged destination shuffle): this branch runs whenever the
+		// PHYSICAL pad is a trophy track, but the DESTINATION may now be a non-race
+		// (cup/arena/trial). The trophy-race two-stage lifecycle only exists for a
+		// RACE destination, and warppadObj->levelID + FIRST_TROPHY aliases an
+		// unrelated location bit for a non-race dest -- so gate the whole trophy
+		// lifecycle on "destination is a race track" (< AH_WP_SLIDE_COLISEUM). For a
+		// non-race dest this is already inert (the apworld emits stage2 type 0 -> the
+		// !unlocked term is false), but the guard makes it robust regardless of what
+		// the destination hosts. Matches ThTick's own dest-race gate at :654.
 		if (ctr_cfg_active() &&
+		    warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
 		    AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY) &&
 		    !ctr_cfg_warp_stage2_unlocked(levelID))
 		{
@@ -1483,7 +1494,21 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		// wrong item/count -> out-of-logic, or softlock in the harder direction). This is
 		// the LInB twin of the ThTick:601/682 f9fbfa7a0 fix; keyed by warppadObj->levelID
 		// (destination) for shuffle consistency.
-		if (AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
+		//
+		// slot_data v3 (merged destination shuffle): guard on "destination is a race
+		// track" (< AH_WP_SLIDE_COLISEUM). This branch runs whenever the PHYSICAL pad
+		// is a trophy track, but under merged grouping the DESTINATION may be a
+		// cup/arena/trial, for which warppadObj->levelID + FIRST_TROPHY aliases an
+		// unrelated location bit (e.g. arena dest 18 -> bit 24 = track-2 sapphire).
+		// A coincidental set of that aliased bit would falsely read "trophy owned" and
+		// render the pad OPEN (stage2 type 0 -> the BUG-A clear below fires),
+		// bypassing the physical pad's stage-1 requirement -- a real gate/display
+		// split. When the dest is non-race there is no trophy race here at all, so
+		// fall straight to the "trophy not owned" branch below, which advertises the
+		// PHYSICAL pad's stage-1 requirement (the correct gate). No-op for a race
+		// dest (the normal case), where the guard is always true.
+		if (warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
+		    AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
 #else
 		// if trophy owned
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
@@ -1686,9 +1711,12 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		unlockItem_numNeeded = 4;
 
 #ifdef CTR_AP
-		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P. Gem cups are not
-		// in the warp-pad shuffle group, so the physical pad == this LevelID
-		// (ctr_cfg_warp_phys is identity here); index gem_cup_unlock by cup colour.
+		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P. `levelID` here is
+		// the PHYSICAL cup pad (LInB keeps it physical; warppadObj->levelID holds the
+		// shuffled destination). Per the keying invariant the unlock REQUIREMENT is a
+		// property of the physical pad, so gem_cup_unlock is indexed by the physical
+		// cup colour -- correct even under slot_data v3 destination shuffle, where this
+		// cup pad may load a non-cup destination (its requirement still shows here).
 		{
 			int cupIdx = levelID - AH_WP_ADV_CUP;
 			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
