@@ -970,10 +970,20 @@ WarpPad_AnimateOpen:
 #ifdef CTR_AP
 	// ── AP GLOW PASS (checked-state driven, decoupled from modelIndex) ──
 	// Each frame, decide WHICH AP reward each of the 3 prize slots advertises,
-	// purely from the DESTINATION track's still-UNCHECKED locations on the server.
-	// This is the SOLE authority for AP-glow content: it reads neither modelIndex
-	// nor CHECK_ADV_BIT. LInB always births 3 prize slots for a race track, so the
-	// instances exist here regardless of vanilla pad state.
+	// purely from the DESTINATION's still-UNCHECKED locations on the server. This is
+	// the SOLE authority for AP-glow content: it reads neither modelIndex nor
+	// CHECK_ADV_BIT.
+	//
+	// Dispatch on the pad's DESTINATION, not its physical class: `levelID` here is
+	// warppadObj->levelID, which LInB set to ctr_cfg_warp_dest(physical). ONE helper,
+	// AP_PadUncollectedBits, enumerates the still-unchecked AP reward locations for
+	// ANY destination category -- race 0..15 (up to 5 tiers, cycled 3 at a time),
+	// trial 16/17 (up to 3 relic Time-Trial tiers), arena 18/19/21/23 (1 crystal),
+	// cup 100..104 (1 gem). LInB now births 3 prize slots for EVERY one of these pad
+	// classes, so the instances exist regardless of what the destination hosts: a
+	// trial/arena/cup pad hosting a race fills all 3; an identity arena/cup fills
+	// slot 0 and hides slots 1/2. A destination outside every AP category keeps
+	// apUncN = -1 -> vanilla glow untouched.
 	//   - n uncollected, n>3 : cycle a 3-wide window every 2s (0x3C frames) so the
 	//                          slots rotate through every uncollected reward.
 	//   - n in 1..3          : slot i shows uncollected[i]; extra slots hidden.
@@ -981,43 +991,22 @@ WarpPad_AnimateOpen:
 	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
 	// loop below, so a hidden slot neither renders nor mis-scales.
 	int apUncBits[5];
-	int apUncN = -1;     // -1 = "not an AP race track" -> leave vanilla glow alone
+	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
-	if (levelID < AH_WP_SLIDE_COLISEUM)
+	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
+	    (levelID == AH_WP_SLIDE_COLISEUM) || (levelID == AH_WP_TURBO_TRACK) || // trial 16/17
+	    (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23) || // arena
+	    (((u16)(levelID - AH_WP_ADV_CUP)) < 5))                   // cup 100..104
 	{
-		apUncN = AP_WarpPadUncollectedBits(warppadObj->levelID, apUncBits,
-		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
+		apUncN = AP_PadUncollectedBits(warppadObj->levelID, apUncBits,
+		                               (int)(sizeof apUncBits / sizeof apUncBits[0]));
 		if (apUncN > 0)
 		{
 			int base = (apUncN > 3) ? (int)((gGT->timer / 0x3C) * 3) : 0;
 			for (i = 0; i < 3; i++)
 				apSlotBit[i] = (i < apUncN) ? apUncBits[(base + i) % apUncN] : -1;
 		}
-		// apUncN == 0 -> all apSlotBit stay -1 (hide everything).
-	}
-	// ── AP single-reward pads: BATTLE ARENAS + GEM CUPS ──
-	// Unlike a race track (3 prize slots), these pads carry exactly ONE checkable
-	// location and (under CTR_AP) always-birth ONE prize slot (WPIS_OPEN_PRIZE1 --
-	// see LInB). Drive slot 0 off that single location bit and reuse the slot-
-	// override loop below verbatim: advertise the scouted reward model while the
-	// location is UNCHECKED on the server, force-hide it the instant it is CHECKED
-	// (apSlotBit[i] < 0 -> HIDE_MODEL + skip). apUncN is set >= 0 purely to arm the
-	// override path; only apSlotBit[] decides per-slot content. Slots 1/2 hold no
-	// instance (LInB births one), so the existing null-check skips them.
-	else if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
-	{
-		// Battle arena crystal location (Crystal Bonus Round, AP bits 111..114).
-		// battleTrackArr maps the pad LevelID offset to its crystal reward slot.
-		int apCrystalBit = R232.battleTrackArr[levelID - AH_WP_NITRO_COURT] + ADV_REWARD_FIRST_PURPLE_TOKEN;
-		apUncN = 1; // single-slot AP pad -> arm the override loop below
-		apSlotBit[0] = AP_LocationCheckedByBit(apCrystalBit) ? -1 : apCrystalBit;
-	}
-	else if (((u16)(levelID - AH_WP_ADV_CUP)) < 5)
-	{
-		// Gem cup location (Gem, AP bits 106..110), keyed by cup colour 0..4.
-		int apGemBit = (levelID - AH_WP_ADV_CUP) + ADV_REWARD_FIRST_GEM;
-		apUncN = 1;
-		apSlotBit[0] = AP_LocationCheckedByBit(apGemBit) ? -1 : apGemBit;
+		// apUncN == 0 -> all apSlotBit stay -1 (hide everything: all checked).
 	}
 #endif
 
@@ -1868,6 +1857,96 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			warppadObj->spinRot_Wisp[i].y = 0;
 			warppadObj->spinRot_Wisp[i].z = 0;
 		}
+
+#ifdef CTR_AP
+		// ── AP UNIFORM 3-SLOT GLOW BIRTH for NON-RACE pad classes ──
+		// A physical TRIAL / ARENA / CUP pad, when OPEN under an active seed, births
+		// all three prize slots (WPIS_OPEN_PRIZE1..3) exactly like a race pad does
+		// below -- so ThTick's DESTINATION-driven glow pass always has three drivable
+		// instances no matter what the pad hosts. Previously these classes birthed at
+		// most ONE slot (the trial/arena/cup branches further down), so a trial pad
+		// hosting a race showed no glow (the dest-driven pass wanted 3 slots, found
+		// <=1). ThTick overwrites each slot's model + colour every frame from the
+		// destination's uncollected AP locations and hides unused slots (apSlotBit < 0
+		// -> HIDE_MODEL + skip), so the placeholder model/tint chosen here is
+		// immaterial; only slot existence, the seeded light dirs, and the index-based
+		// spin positions (recomputed by AH_WarpPad_SpinRewards each frame, NOT the
+		// birth matrix) are load-bearing -- an identity arena/cup thus keeps its exact
+		// single-slot look (slot 0 at index 0, slots 1/2 hidden).
+		//
+		// Gated on ctr_cfg_active(): with no slot_data there is no destination shuffle
+		// and no AP glow, so trial/arena/cup fall through to their unchanged vanilla
+		// per-class births below. modelIndex is set to 4 -- the value those classes
+		// already take when open -- so the map (AH_Map.c) is unchanged (its colour is
+		// AP_PadState-driven under slot_data regardless; modelIndex 4 avoids the
+		// trophy hub-arrow that modelIndex 1 would add). Races keep using their own
+		// proven branch below untouched. This also grants IDENTITY trials their
+		// Time-Trial relic glow for the first time (backlog: trial-pad reward GLOW).
+		if (ctr_cfg_active() &&
+		    (levelID == AH_WP_SLIDE_COLISEUM || levelID == AH_WP_TURBO_TRACK ||
+		     (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || levelID == 21 || levelID == 23 ||
+		     (((u16)(levelID - AH_WP_ADV_CUP)) < 5)))
+		{
+			// metaDataLEV is valid for track/trial/arena LevelIDs but NOT cup pads
+			// (100..104); a cup destination shows a gem (lightDirGem), never a token,
+			// so group 0 is a safe placeholder there. For race/trial/arena this equals
+			// the physical pad's own token group, matching the race birth below.
+			int apTokGroup = (levelID >= 0 && levelID < AH_WP_ADV_CUP)
+			                     ? data.metaDataLEV[levelID].ctrTokenGroupID
+			                     : 0;
+			t->modelIndex = 4;
+			warppadObj->lightDirRelic = D232.lightDirRelic[0];
+			warppadObj->lightDirToken = D232.lightDirToken[apTokGroup];
+			warppadObj->lightDirGem = D232.lightDirGem[0];
+
+			rewardAngle = 0;
+			for (i = 0; i < 3; i++)
+			{
+				rewardModelID = s_warpPadRewardModelIDs[i];
+				newInst = INSTANCE_Birth3D(gGT->modelPtr[rewardModelID], "prize1", t);
+				warppadObj->inst[WPIS_OPEN_PRIZE1 + i] = newInst;
+
+				// copy matrix (birth placeholder pose; SpinRewards recomputes it live)
+				*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
+				*(int *)((int)&newInst->matrix + 0x4) = *(int *)((int)&inst->matrix + 0x4);
+				*(int *)((int)&newInst->matrix + 0x8) = *(int *)((int)&inst->matrix + 0x8);
+				*(int *)((int)&newInst->matrix + 0xC) = *(int *)((int)&inst->matrix + 0xC);
+				*(s16 *)((int)&newInst->matrix + 0x10) = *(s16 *)((int)&inst->matrix + 0x10);
+				newInst->matrix.t[0] = inst->matrix.t[0] + ((MATH_Sin(rewardAngle) * 0xc0) >> 0xc);
+				newInst->matrix.t[1] = inst->matrix.t[1] + 0x100;
+				newInst->matrix.t[2] = inst->matrix.t[2] + ((MATH_Cos(rewardAngle) * 0xc0) >> 0xc);
+
+				if (rewardModelID == STATIC_RELIC)
+				{
+					newInst->colorRGBA = 0x20a5ff0;
+					newInst->flags |= USE_SPECULAR_LIGHT;
+					newInst->scale.x = 0x1800;
+					newInst->scale.y = 0x1800;
+					newInst->scale.z = 0x1800;
+				}
+				else if (rewardModelID == STATIC_TOKEN)
+				{
+					newInst->colorRGBA = ((u32)data.AdvCups[apTokGroup].color[0] << 0x14) |
+					                     ((u32)data.AdvCups[apTokGroup].color[1] << 0xc) |
+					                     ((u32)data.AdvCups[apTokGroup].color[2] << 0x4);
+					newInst->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+					newInst->scale.x = 0x2000;
+					newInst->scale.y = 0x2000;
+					newInst->scale.z = 0x2000;
+				}
+				else
+				{
+					newInst->scale.x = 0x2800;
+					newInst->scale.y = 0x2800;
+					newInst->scale.z = 0x2800;
+				}
+
+				rewardAngle += 0x555;
+			}
+
+			return;
+		}
+#endif
 
 		if (levelID < AH_WP_SLIDE_COLISEUM)
 		{
