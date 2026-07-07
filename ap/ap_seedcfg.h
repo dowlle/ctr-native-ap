@@ -22,9 +22,14 @@
 extern "C" {
 #endif
 
-// 28 physical warp-pad LevelIDs (0..27 covers the §0 track + cup IDs we index;
-// CupRed..CupPurple are 100..104 and are handled by the fixed type:0 rule, so
-// they are not addressed through these 28-wide arrays).
+// 28 physical warp-pad LevelIDs (0..27 covers the §0 track + arena IDs we index
+// through the dense arrays). CupRed..CupPurple are LevelID 100..104 and live
+// OUTSIDE these 28-wide arrays: their per-seed unlock is in gem_cup_unlock[5] and
+// (slot_data v3, destination-shuffle categories) their per-seed destination is in
+// gem_cup_map[5]. Under `merged` grouping the shuffle ID space spans {0..27,
+// 100..104} in BOTH directions -- a cup PHYSICAL pad may host any destination and
+// any physical pad may host a cup destination -- so the warp_dest/warp_phys
+// helpers below cover both arrays.
 #define CTR_CFG_PAD_COUNT 28
 #define CTR_CFG_BOSS_COUNT 5 // 0 roo, 1 papu, 2 komodo, 3 pinstripe, 4 oxide
 
@@ -107,6 +112,14 @@ typedef struct
 	// fall back to the Phase-1 "4 tokens of this colour" rule. stage2 unused (gem
 	// cups have no tier-2 menu); kept as ctr_warp_unlock only for parse symmetry.
 	ctr_warp_unlock gem_cup_unlock[5];                  // gem cups by colour (LevelID 100..104); stage1.type 0 = native vanilla rule
+	// slot_data v3 (destination-shuffle categories): the destination LevelID that
+	// physical cup pad 100+i LOADS, keyed by cup colour 0..4 (= LevelID - 100).
+	// Identity default (gem_cup_map[i] == 100 + i) until warp_pad_map overlays it,
+	// exactly like warp_pad_map's identity base for 0..27. Under `merged` grouping a
+	// value here may be ANY {0..27, 100..104} (a cup pad hosting a race/arena/other
+	// cup); ctr_cfg_warp_dest/ctr_cfg_warp_phys read this array alongside
+	// warp_pad_map so the phys<->dest mapping is a single permutation over the union.
+	int             gem_cup_map[5];                     // phys cup LevelID 100+i -> destination LevelID (identity default 100+i)
 	ctr_req         boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
 	// Per-boss required race-track LevelIDs for the track-based garage modes
 	// (bossgarage_mode 0 Original4Tracks / 1 SameHubTracks). boss_tracks[b][0..
@@ -132,24 +145,33 @@ extern ctr_seed_config ctr_cfg;
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
 
-// Remapped destination trackID for a physical pad LevelID. Identity (returns the
-// input unchanged) when inactive or out of range -- safe to call unconditionally.
+// Remapped destination trackID for a physical pad LevelID. Accepts the full
+// shuffle ID space: physical pads 0..27 (warp_pad_map) and cup pads 100..104
+// (gem_cup_map). Identity (returns the input unchanged) when inactive or out of
+// range -- safe to call unconditionally.
 int ctr_cfg_warp_dest(int physPadLevelID);
 
 // Inverse of ctr_cfg_warp_dest: given the destination trackID a pad currently
 // LOADS (warppadObj->levelID after the LInB remap), return the PHYSICAL pad
-// LevelID. Identity (returns the input unchanged) when inactive, out of range,
+// LevelID. Scans BOTH warp_pad_map (0..27) and gem_cup_map (100..104), so the
+// destination (and the recovered physical pad) may be anywhere in {0..27,
+// 100..104}. Identity (returns the input unchanged) when inactive, out of range,
 // or when no pad maps to that destination. Used by AH_WarpPad_ThTick's load gate
 // so the per-pad unlock requirement (keyed by PHYSICAL pad) is checked against
-// the physical pad and not the remapped destination. warp_pad_map is a
-// permutation within each shuffle group, so the inverse is unique.
+// the physical pad and not the remapped destination. The union of the two maps is
+// a permutation over the participating pool, so the inverse is unique.
 int ctr_cfg_warp_phys(int destTrackLevelID);
 
-// Is a trophy-track warp pad's LOAD gate satisfied? When active and the pad has a
-// per-seed requirement (type != 0), compares owned >= count for that requirement
-// (colour-aware for tokens/gems). Otherwise falls back to the Phase-1 trophy rule
-// (received trophies >= numTrophiesToOpen). Used by the load-time gate in
-// AH_WarpPad_ThTick so the spawn visual and the load gate read one source.
+// Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
+// active and the pad has a per-seed requirement (type != 0), compares owned >=
+// count for that requirement (colour-aware for tokens/gems). Otherwise falls back
+// to that pad class's Phase-1 rule. Accepts BOTH the dense-array pads (0..27,
+// vanilla fallback = received trophies >= numTrophiesToOpen) and cup pads
+// (100..104 -> gem_cup_unlock[phys-100], vanilla fallback = 4 tokens of the cup's
+// colour) -- required because under destination shuffle a race destination can be
+// hosted on a cup PHYSICAL pad, and ThTick's load gate then calls this with a
+// physical cup LevelID. Used by the load-time gate in AH_WarpPad_ThTick so the
+// spawn visual and the load gate read one source.
 //
 // IMPLEMENTED C-SIDE in ap_hooks.c (not ap_seedcfg.cpp): it needs AP_GateCount*
 // (received-item counters live in the C unity build) and the per-track
@@ -163,7 +185,11 @@ int ctr_cfg_warp_unlocked(int levelID);
 // via AP_BossReqMet). type 0 (no stage2 / collapsed / flat-v1 slot_data) returns
 // 1 (always open) so the tier-2 menu opens as soon as stage1 is met -- exactly
 // the pre-two-stage behaviour. physPadLevelID is the PHYSICAL pad LevelID, the
-// same key ctr_cfg_warp_unlocked uses. IMPLEMENTED C-SIDE in ap_hooks.c.
+// same key ctr_cfg_warp_unlocked uses. Accepts cup pads 100..104
+// (-> gem_cup_unlock[phys-100].stage2): under `merged` shuffle a cup PHYSICAL pad
+// can host a trophy-race destination, which per the contract §2 stage-2 rule
+// carries a real stage2, so the cup pad's stage2 must be honoured here.
+// IMPLEMENTED C-SIDE in ap_hooks.c.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 
 // Typed comparator for a resolved requirement (boss garages + warp-pad load
