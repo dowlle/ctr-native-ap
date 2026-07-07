@@ -138,6 +138,19 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 				{
 					lightDir = &warppadObj->lightDirToken;
 				}
+#ifdef CTR_AP
+				else if (modelID == STATIC_KEY)
+				{
+					// AP: a boss Key can occupy a reward glow slot (vanilla never
+					// puts a key here, so this dispatch had no case for it and the
+					// key's specular light stayed world-fixed while the model spun:
+					// gold facing the light, BLACK facing away). Spin its light like
+					// vanilla's requirement-icon key does — via the gem slot, which
+					// vanilla itself uses for keys ("store in Gem array, intended by
+					// ND") and which the AP birth path already seeds.
+					lightDir = &warppadObj->lightDirGem;
+				}
+#endif
 				else
 				{
 					goto SpinReward;
