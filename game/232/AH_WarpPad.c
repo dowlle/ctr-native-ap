@@ -1050,7 +1050,17 @@ WarpPad_AnimateOpen:
 					// landing in the relic slot renders BLUE. Reset colour per FINAL
 					// model so OWN items always show their natural colour; ONLY a
 					// FOREIGN multiworld item is recoloured (to the white gem marker).
-					apPrize->flags &= ~DRAW_TRANSPARENT;
+					// Flags reset per FINAL model: clear DRAW_TRANSPARENT and
+					// USE_SPECULAR_LIGHT up front so each case re-adds only what its
+					// model needs. STATIC_TROPHY (the default case) must render WITHOUT
+					// specular -- vanilla trophies are unlit and SpinRewards deliberately
+					// skips the light-spin for STATIC_TROPHY (no lightDir). Without this
+					// clear, a slot BORN as the relic/token placeholder (specular set at
+					// birth) or one that just cycled through a relic/token/gem/key keeps
+					// USE_SPECULAR_LIGHT when it becomes a trophy -> a specular trophy
+					// whose light is never spun renders solid BLACK (the specular sibling
+					// of the black-key bug).
+					apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 					switch (apPrize->model->id)
 					{
 					case STATIC_RELIC:
