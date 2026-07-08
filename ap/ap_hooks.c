@@ -11,7 +11,14 @@
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 
-// =====================================================================
+// Apworld item index of the FIRST trap item. The apworld's data/items.json lays
+// the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
+// same order as the AP_TrapEffect enum, so item index (16 + effect) maps to
+// effect. Kept next to AP_ITEM_BASE/AP_ITEM_INDEX_COUNT (ap_items.h) this depends
+// on; if the apworld's item table order changes, update both together.
+#define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
+
+// ==============================================================
 // Archipelago integration. Parts:
 //
 //   NETWORK (ap_net.cpp / apclientpp): connect once at boot, pump every frame
@@ -30,7 +37,7 @@
 //
 // TODO(ap): apply received items into AdvProgress -- needs the item-id -> bit
 // map (ap_items.h, next step). Today received items are logged, not granted.
-// =====================================================================
+// ==============================================================
 
 // Raw keyboard probe for the map-overlay hotkey (platform/native_input.c, CTR_AP
 // only). Declared here rather than including <SDL3/SDL.h> so the AP module stays
@@ -1705,6 +1712,20 @@ static void AP_NetTick(struct GameTracker *gGT)
 		{
 			ap_recv_count[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
+		}
+
+		// Trap items -> prime the matching trap effect. The apworld emits 5 trap
+		// items directly after Wumpa Fruit (idx 15), one per AP_TrapEffect in enum
+		// order, so idx 16..20 map to effect 0..4 (icy / lowgrav / usf-no-brake /
+		// boost / first-person). AP_TrapReceive arms the trap silently; it fires
+		// mid-race on a later lap and clears itself (ap_traps.c owns that lifecycle).
+		// Traps are not gate items, so they never touch ap_recv_count above. A
+		// pre-trap native ignores these ids by construction (idx fails the count
+		// guard and AP_ItemCategory -> AP_CAT_NONE -> logged filler/unmapped, below).
+		else if (idx >= AP_TRAP_ITEM_FIRST_INDEX &&
+		         idx < AP_TRAP_ITEM_FIRST_INDEX + AP_TRAP_COUNT)
+		{
+			AP_TrapReceive((int)(idx - AP_TRAP_ITEM_FIRST_INDEX));
 		}
 
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
