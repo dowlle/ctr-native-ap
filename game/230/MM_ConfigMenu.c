@@ -96,6 +96,159 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	}
 }
 
+#ifdef CTR_AP
+// ── Archipelago connection manager ──────────────────────────────────────────
+// The "Connection" section is not a plain toggle/slider group: it has three
+// editable text rows (Server / Slot / Password), a Connect action row, and a
+// read-only status row. It gets its own submenu proc (MM_ConfigProc_Connection)
+// so the generic section renderer above stays untouched. The three CFG_STRING
+// entries are the section's rows in g_configEntries (before Archipelago); the
+// Connect + Status rows are appended here and are not config entries.
+//
+// Selecting a text row starts a NativeText session (platform keyboard capture,
+// see platform/native_platform.c). While it is active the platform layer owns the
+// keyboard and this proc suppresses its own navigation; Enter commits + saves,
+// Escape restores the pre-edit value.
+
+static int  s_connEditing = 0;   // 1 while a text row is being edited
+static int  s_connEditRow = 0;   // which string row (0..2) is being edited
+static char s_connBackup[128];   // pre-edit value, restored on cancel
+
+// Render a CFG_STRING value into out: masked (one '*' per char) for the password,
+// plain otherwise, with a blinking trailing cursor while this row is being edited.
+static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char *out, int outCap)
+{
+	const char *src = (const char *)e->valuePtr;
+	int n = 0;
+
+	if (src[0] == '\0' && !editing)
+	{
+		out[0] = '-';
+		out[1] = '\0';
+		return;
+	}
+
+	while (src[n] != '\0' && n < outCap - 2)
+	{
+		out[n] = masked ? '*' : src[n];
+		n++;
+	}
+	if (editing && (sdata->frameCounter & 0x10)) // ~2 Hz blink
+		out[n++] = '_';
+	out[n] = '\0';
+}
+
+static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+{
+	char buf[160];
+	const int firstEntry = s_sectionToEntry[s_currentSection];
+	const int numStrings = s_sectionCount[s_currentSection]; // uri / slot / password
+	const int numRows = numStrings + 1;                      // + Connect action row
+
+	// Resolve a finished edit first. The platform layer keeps the session active
+	// (NativeText_Active == 1) until we call NativeText_End here, so the commit /
+	// cancel frame still reads as "editing" to the parent proc's back handler --
+	// avoiding a one-frame nav race (pad state is polled from the live keyboard).
+	int justResolved = 0;
+	if (s_connEditing && NativeText_Result() != 0)
+	{
+		const ConfigEntry *e = &g_configEntries[firstEntry + s_connEditRow];
+		if (NativeText_Result() == 2) // Escape -> restore the pre-edit value
+		{
+			strncpy((char *)e->valuePtr, s_connBackup, e->max - 1);
+			((char *)e->valuePtr)[e->max - 1] = '\0';
+		}
+		else // Enter -> persist the edited value
+		{
+			NativeConfig_Save();
+		}
+		NativeText_End();
+		s_connEditing = 0;
+		justResolved = 1;
+	}
+
+	// While editing (or on the frame we just resolved) all menu navigation is
+	// suppressed: text mode owns input.
+	if (!s_connEditing && !justResolved)
+	{
+		if ((pad->buttonsTapped & BTN_UP) != 0)
+		{
+			menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : numRows - 1;
+			OtherFX_Play(0, 1);
+		}
+		if ((pad->buttonsTapped & BTN_DOWN) != 0)
+		{
+			menu->rowSelected = (menu->rowSelected < numRows - 1) ? menu->rowSelected + 1 : 0;
+			OtherFX_Play(0, 1);
+		}
+		if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
+		{
+			OtherFX_Play(1, 1);
+			if (menu->rowSelected < numStrings)
+			{
+				// Enter edit mode: back up the current value, hand the buffer to the
+				// platform keyboard capture (editing continues from the current text).
+				const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+				s_connEditRow = menu->rowSelected;
+				strncpy(s_connBackup, (char *)e->valuePtr, sizeof s_connBackup - 1);
+				s_connBackup[sizeof s_connBackup - 1] = '\0';
+				NativeText_Begin((char *)e->valuePtr, e->max);
+				s_connEditing = 1;
+			}
+			else
+			{
+				// Connect action: re-dial with the saved connection settings.
+				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
+			}
+		}
+	}
+
+	DecalFont_DrawLineOT((char *)g_configEntries[firstEntry].section,
+		0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+
+	int labelX = 0x38;
+	int valueX = 0xB0;  // text values are left-justified (they grow rightward as typed)
+	int startY = 0x3C;
+	int rowSpacing = 0x0E;
+
+	for (int j = 0; j < numStrings; j++)
+	{
+		const ConfigEntry *e = &g_configEntries[firstEntry + j];
+		int y = startY + j * rowSpacing;
+		int masked = (strcmp(e->key, "password") == 0);
+		int editing = (s_connEditing && s_connEditRow == j);
+
+		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
+		Conn_FormatValue(e, masked, editing, buf, sizeof buf);
+		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, WHITE, ot);
+
+		if (j == menu->rowSelected)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+
+	// Connect action row.
+	{
+		int y = startY + numStrings * rowSpacing;
+		DecalFont_DrawLineOT("Connect", labelX, y, FONT_SMALL, ORANGE, ot);
+		if (menu->rowSelected == numStrings)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+
+	// Read-only status row (one line below the Connect row).
+	{
+		int y = startY + (numStrings + 2) * rowSpacing;
+		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
+		DecalFont_DrawLineOT((char *)AP_Net_StatusLine(), valueX, y, FONT_SMALL, WHITE, ot);
+	}
+}
+#endif // CTR_AP
+
 static void MM_MenuProc_Config(struct RectMenu *menu)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -106,7 +259,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if (s_numSections == 0)
 		BuildSectionMap();
 
-	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
+	// Back / exit -- but not while a text-entry session owns the keyboard (there
+	// Escape is the cancel key, handled in the platform layer). NativeText_Active
+	// is always 0 outside an edit, so this is a no-op change for the toggle sections.
+	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active())
 	{
 		OtherFX_Play(2, 1);
 		if (s_currentSection >= 0)
@@ -126,6 +282,16 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		const int sec = s_currentSection;
 		const int numRows = s_sectionCount[sec];
 		const int firstEntry = s_sectionToEntry[sec];
+
+#ifdef CTR_AP
+		// The Connection section has bespoke text-edit / connect behaviour.
+		if (strcmp(g_configEntries[firstEntry].section, "Connection") == 0)
+		{
+			MM_ConfigProc_Connection(menu, ot, pad);
+		}
+		else
+		{
+#endif
 
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
@@ -176,6 +342,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 			}
 		}
+#ifdef CTR_AP
+		} // end generic (non-Connection) section
+#endif
 	}
 	else
 	{

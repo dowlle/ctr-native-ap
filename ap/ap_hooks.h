@@ -77,6 +77,17 @@ int AP_SkipHints(void);
 // AH_Map_Warppads (#ifdef CTR_AP). See the Warp-Pad State Model v2 design note.
 int AP_MapFlashOn(void);
 
+// ── In-game connection manager (see game/230/MM_ConfigMenu.c) ──
+// Tear down any existing apclientpp client and re-dial with these connection
+// settings (the menu's "Connect" action). Only safe from the main menu, where no
+// item is in flight and no adventure state depends on the live socket -- the menu
+// is reachable only from there by construction, so no mid-session teardown occurs.
+void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
+
+// One-line connection status for the menu's status row ("Not connected" /
+// "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
+const char *AP_Net_StatusLine(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.

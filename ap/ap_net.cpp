@@ -28,6 +28,12 @@ static std::string           g_slot;
 static std::string           g_password;
 static bool                  g_connected = false;
 
+// Coarse status + last refusal reason for the in-game connection manager (read
+// through ap_net_status / ap_net_last_error). Maintained entirely from the socket
+// / slot handlers below so it needs no apclientpp State enum names.
+static int                   g_status = AP_NET_STATUS_IDLE;
+static std::string           g_last_error;
+
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
 // ap_hooks polls it via ap_net_take_recv_reset() and zeroes its received-item
 // tallies before draining, so counts rebuild from the server's authoritative
@@ -61,10 +67,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	}
 
 	g_ap->set_socket_connected_handler([]() {
+		if (g_status != AP_NET_STATUS_ERROR)
+			g_status = AP_NET_STATUS_CONNECTING; // socket up; slot handshake pending
 		std::fprintf(stderr, "[AP NET] socket connected\n");
 	});
 	g_ap->set_socket_disconnected_handler([]() {
 		g_connected = false;
+		// Not an error unless the slot was refused; apclientpp will auto-retry.
+		if (g_status != AP_NET_STATUS_ERROR)
+			g_status = AP_NET_STATUS_CONNECTING;
 		std::fprintf(stderr, "[AP NET] socket disconnected\n");
 	});
 	g_ap->set_room_info_handler([]() {
@@ -74,6 +85,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		g_connected = true;
+		g_status = AP_NET_STATUS_CONNECTED;
+		g_last_error.clear();
 		// Fresh connect: signal ap_hooks to zero its received-item tallies, and
 		// drop any stale queue/scout state from a previous connection (server
 		// switch carried the old seed's items into memory otherwise). The server
@@ -106,6 +119,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			e += s;
 			e += ' ';
 		}
+		g_status = AP_NET_STATUS_ERROR;
+		g_last_error = e;
 		std::fprintf(stderr, "[AP NET] slot refused: %s\n", e.c_str());
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
@@ -116,6 +131,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			             (long long)it.item, it.index);
 		}
 	});
+	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
+	g_last_error.clear();
 	return 0;
 }
 
@@ -185,6 +202,16 @@ extern "C" int ap_net_self_slot(void)
 	return g_ap ? g_ap->get_player_number() : -1;
 }
 
+extern "C" int ap_net_status(void)
+{
+	return g_status;
+}
+
+extern "C" const char *ap_net_last_error(void)
+{
+	return g_last_error.c_str();
+}
+
 extern "C" int ap_net_drain_items(long long *out, int max)
 {
 	int n = 0;
@@ -206,4 +233,6 @@ extern "C" void ap_net_shutdown(void)
 	g_connected = false;
 	g_items.clear();
 	g_scouts.clear();
+	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
+	g_last_error.clear();
 }

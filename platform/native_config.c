@@ -18,6 +18,9 @@ NativeConfig g_config = {
 #ifdef CTR_AP
 	false, // skipHints
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
+	"",    // uri      (empty = no saved room; startup skips the auto-dial)
+	"",    // slot
+	"",    // password
 #endif
 };
 
@@ -26,6 +29,11 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
 	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},
 #ifdef CTR_AP
+	// Connection section (before Archipelago): CFG_STRING rows edited in the
+	// connection manager. max = buffer capacity (see MM_ConfigMenu.c).
+	{"Connection",  "uri",                      "Server",                       CFG_STRING, g_config.uri,      0, (int)sizeof(g_config.uri),      0},
+	{"Connection",  "slot",                     "Slot",                         CFG_STRING, g_config.slot,     0, (int)sizeof(g_config.slot),     0},
+	{"Connection",  "password",                 "Password",                     CFG_STRING, g_config.password, 0, (int)sizeof(g_config.password), 0},
 	{"Archipelago", "skip_hints",               "Skip Mask Hints",              CFG_BOOL, &g_config.skipHints},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
 #endif
@@ -109,6 +117,12 @@ void NativeConfig_Load(void)
 			{
 				if (e->type == CFG_BOOL)
 					*(bool *)e->valuePtr = ParseBool(value);
+				else if (e->type == CFG_STRING)
+				{
+					// value is already trimmed; plain key=value, no quoting.
+					strncpy((char *)e->valuePtr, value, e->max - 1);
+					((char *)e->valuePtr)[e->max - 1] = '\0';
+				}
 				else
 					*(int *)e->valuePtr = atoi(value);
 				break;
@@ -145,6 +159,8 @@ void NativeConfig_Save(void)
 
 		if (e->type == CFG_BOOL)
 			fprintf(f, "%s = %s\n", e->key, *(bool *)e->valuePtr ? "true" : "false");
+		else if (e->type == CFG_STRING)
+			fprintf(f, "%s = %s\n", e->key, (const char *)e->valuePtr);
 		else
 			fprintf(f, "%s = %d\n", e->key, *(int *)e->valuePtr);
 	}

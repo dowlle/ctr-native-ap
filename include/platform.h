@@ -29,6 +29,17 @@ int Platform_PollInput(void);
 
 #if defined(CTR_NATIVE)
 int NikoGetEnterKey(void);
+
+// In-game text entry (host keyboard). While a session is active the platform
+// event loop routes typing into the caller's buffer instead of the game: printable
+// ASCII appends, Backspace deletes, Enter commits, Escape cancels -- and those keys
+// are consumed so gameplay / menu input never sees them. Used by the in-game
+// Archipelago connection manager (game/230/MM_ConfigMenu.c). buf holds the current
+// value on entry (editing continues from it) and is null-terminated throughout.
+void NativeText_Begin(char *buf, int cap);
+void NativeText_End(void);
+int NativeText_Active(void); // 1 while capturing
+int NativeText_Result(void); // 0 = active/none, 1 = committed (Enter), 2 = cancelled (Escape)
 #endif
 
 #endif

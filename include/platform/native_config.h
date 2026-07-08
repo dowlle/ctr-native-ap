@@ -17,13 +17,22 @@ typedef struct
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
+	// Archipelago room, edited in the in-game connection manager (see
+	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
+	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
+	// deliberately generous; empty uri means "no saved room" (startup skips the
+	// auto-dial). Precedence over the legacy ap-config.txt uri/slot/password.
+	char uri[128];
+	char slot[64];
+	char password[64];
 #endif
 } NativeConfig;
 
 typedef enum
 {
 	CFG_BOOL,
-	CFG_INT
+	CFG_INT,
+	CFG_STRING
 } ConfigType;
 
 typedef struct
@@ -32,8 +41,8 @@ typedef struct
 	const char *key;
 	const char *label;
 	ConfigType type;
-	void *valuePtr;   // points into g_config (e.g. &g_config.skipIntro)
-	int min, max, step; // slider bounds, ignored for CFG_BOOL
+	void *valuePtr;   // points into g_config (e.g. &g_config.skipIntro; the buffer itself for CFG_STRING)
+	int min, max, step; // CFG_INT: slider bounds. CFG_STRING: max = buffer capacity. Ignored for CFG_BOOL.
 } ConfigEntry;
 
 extern NativeConfig g_config;
