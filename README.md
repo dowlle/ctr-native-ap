@@ -48,11 +48,12 @@ Developers and the curious: see [BUILDING.md](BUILDING.md) for prerequisites, bu
 
 ## AI Usage Disclosure
 
-CTR Archipelago is developed with AI assistance (Anthropic's Claude, via Claude Code). The short version:
+CTR Archipelago is developed with AI assistance (Anthropic's Claude, via Claude Code). You deserve to know how something is made before you decide how you feel about it, so here is the honest version.
 
-- **AI writes code under my direction:** randomization and generation logic, the native AP integration, debugging, and review passes.
-- **No AI-generated art.** Every tracker icon and in-game marker is rendered from the game's own 3D models. No generated textures, logos, or models.
+- **AI writes code under my direction:** randomization and generation logic, the native AP integration, debugging, and review passes. The design decisions, the priorities, and the accountability are mine. I use AI as a tool that helps me finish what I start, not as a replacement for anyone's craft.
+- **No AI-generated art.** Every tracker icon and in-game marker is rendered from the game's own 3D models. No generated textures, logos, or models. This project exists because of human creative work (the original game, the decompilation, the randomizer design it builds on), and it doesn't launder anyone's art through a model.
 - **Nothing ships unverified.** Every apworld release passes a full run of Eijebong's Archipelago fuzzer (10/10 check categories across ~14,000 generations; nothing ships red). I playtest every native build in-game on real seeds, and gating logic is verified against the game's actual code, not guessed. The project has a human-reviewed specification and data contract; I don't merge code I haven't understood.
+- **The footprint, for those weighing it:** measured production data ([Google, 2025](https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference); [independent measurement](https://www.sciencedirect.com/science/article/pii/S2542435126001145)) puts a typical AI request at roughly 0.3 Wh and a fraction of a milliliter of water. A heavy day of AI-assisted development on this project costs electricity on the order of one hot shower. The data center buildout at large is a real concern; I think it belongs in energy policy, not at the feet of hobby projects, but you may weigh that differently.
 - **Why:** AI lets me actually finish my projects (I have ADHD). Using it is a considered choice, not a careless one.
 
 If AI-assisted development is a dealbreaker for you, that's a fair call to make with the facts in front of you.
