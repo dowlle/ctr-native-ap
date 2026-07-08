@@ -2,6 +2,7 @@
 
 #include <common.h>
 #include <stdio.h>
+#include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
@@ -645,6 +646,255 @@ static u32 ap_notified_mask[6] = {0};
 static void AP_SendPodiumChecks(int track, int placement);
 static void AP_ReconcilePodiumFromTrophies(void);
 
+// ---------------------------------------------------------------------------
+// RACE-END CEREMONY AWARD TEXT (option 2: one shared draw block, cycling)
+//
+// The finish-line ceremonies vanilla-draw a fixed "RELIC AWARDED" / "CTR TOKEN
+// AWARDED" string. Under AP the useful thing to show is WHAT the finished race
+// actually sent -- own item ("<ITEM> AWARDED") or a foreign one ("<ITEM> FOR
+// <PLAYER>"). Two data sources feed the block:
+//   * the scout cache (synchronous, item + receiving player for all 99 CTR
+//     locations) -- resolved through ap_net_scout_text/_known;
+//   * a per-race "ceremony ledger" of the location checks this race sent, so a
+//     multi-check race (relic beating 2-3 tiers, a trophy win with podium rungs)
+//     can cycle one entry at a time. Relic tiers are recorded at the finish
+//     (RR_EndEvent_UnlockAward -> AP_NotifyAdvReward) and podium rungs at the
+//     finish (the race listener), so both are present while the ceremony draws.
+// Crystal/token/trophy checks are only SENT on the continue-press, i.e. after the
+// award text is already on screen, so those callers pass the celebrated reward
+// bit directly and the block resolves it from the scout cache without the ledger.
+//
+// Everything here is display-only and gated on ctr_cfg_active(); when AP is
+// inactive AP_CeremonyDraw() returns 0 and the caller draws its vanilla string,
+// so a clean/vanilla-config run is byte-identical.
+// ---------------------------------------------------------------------------
+#define AP_CEREMONY_MAX 8            // max distinct checks shown for one race
+#define AP_CEREMONY_CYCLE_FRAMES 90  // per-entry dwell when cycling (tunable)
+
+typedef struct
+{
+	long code; // AP location code (scout-cache key)
+	int  bit;  // AdvProgress reward bit, or -1 for a podium / non-bit entry
+	int  rung; // podium rung: 0 = 1st, 1 = podium, 2 = any-finish; -1 otherwise
+} AP_CeremonyEntry;
+
+static AP_CeremonyEntry ap_ceremony_ledger[AP_CEREMONY_MAX];
+static int ap_ceremony_count = 0;
+
+// Cleared when a new race starts (the finish-flag falling edge in the race
+// listener), so each ceremony shows only its own race's just-earned checks.
+static void AP_CeremonyLedgerReset(void)
+{
+	ap_ceremony_count = 0;
+}
+
+// Record a just-sent location check for the current race. code < 0 (a reward with
+// no AP location) and duplicates are ignored; the buffer caps at AP_CEREMONY_MAX.
+static void AP_CeremonyLedgerAdd(long code, int bit, int rung)
+{
+	if (code < 0)
+		return;
+	for (int i = 0; i < ap_ceremony_count; i++)
+		if (ap_ceremony_ledger[i].code == code)
+			return;
+	if (ap_ceremony_count >= AP_CEREMONY_MAX)
+		return;
+	ap_ceremony_ledger[ap_ceremony_count].code = code;
+	ap_ceremony_ledger[ap_ceremony_count].bit  = bit;
+	ap_ceremony_ledger[ap_ceremony_count].rung = rung;
+	ap_ceremony_count++;
+}
+
+// Highest relic tier this race sent (0 = Sapphire, 1 = Gold, 2 = Platinum), or -1
+// if none. The true "what did this run just win" signal for the relic ceremony's
+// tier label + relic colour, which vanilla reads from advProgress.rewards -- bits
+// AP_ApplyItems rewrites every frame to mirror RECEIVED items, so after a local
+// platinum run they read back as the AP inventory, not the run (the SAPPHIRE-label
+// bug). The ledger is populated only after a relic finish, so this returns -1
+// during the pre-race clock draw and the vanilla path stands.
+int AP_CeremonyRelicTier(void)
+{
+	int best = -1;
+	for (int i = 0; i < ap_ceremony_count; i++)
+	{
+		int bit = ap_ceremony_ledger[i].bit;
+		int tier = -1;
+		if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
+			tier = 2;
+		else if (bit >= ADV_REWARD_FIRST_GOLD_RELIC && bit < ADV_REWARD_FIRST_PLATINUM_RELIC)
+			tier = 1;
+		else if (bit >= ADV_REWARD_FIRST_SAPPHIRE_RELIC && bit < ADV_REWARD_FIRST_GOLD_RELIC)
+			tier = 0;
+		if (tier > best)
+			best = tier;
+	}
+	return best;
+}
+
+// Short context line describing WHICH check an entry is (the item line below says
+// what was sent). Only the multi-entry contexts get one -- relic tier + podium
+// rung -- so a lone trophy/token/crystal reads as just "<ITEM> AWARDED".
+static const char *AP_CeremonyPrefix(int bit, int rung)
+{
+	if (rung == 0)
+		return "PODIUM 1ST";
+	if (rung == 1)
+		return "PODIUM";
+	if (rung == 2)
+		return "FINISH";
+	if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
+		return "PLATINUM RELIC";
+	if (bit >= ADV_REWARD_FIRST_GOLD_RELIC && bit < ADV_REWARD_FIRST_PLATINUM_RELIC)
+		return "GOLD RELIC";
+	if (bit >= ADV_REWARD_FIRST_SAPPHIRE_RELIC && bit < ADV_REWARD_FIRST_GOLD_RELIC)
+		return "SAPPHIRE RELIC";
+	return NULL;
+}
+
+// Copy in -> out, uppercased and restricted to the NTSC-U ceremony glyph set.
+// Lowercase maps to the same glyph as uppercase, so uppercasing gives a stable
+// look; anything with no glyph -- parentheses and the like -- or the reserved
+// button-icon glyphs @ [ ^ * would render as silent gaps or button icons, so they
+// become spaces. Truncates to cap-1 characters + terminator.
+static void AP_CeremonySanitize(const char *in, char *out, int cap)
+{
+	int j = 0;
+	if (!out || cap <= 0)
+		return;
+	for (int i = 0; in && in[i] && j < cap - 1; i++)
+	{
+		unsigned char c = (unsigned char)in[i];
+		if (c >= 'a' && c <= 'z')
+			c = (unsigned char)(c - ('a' - 'A'));
+		int ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+		         c == ' ' || c == '!' || c == '%' || c == '\'' || c == ',' ||
+		         c == '-' || c == '.' || c == '/' || c == ':' || c == '<' ||
+		         c == '=' || c == '>' || c == '?' || c == '_' || c == '+';
+		out[j++] = ok ? (char)c : ' ';
+	}
+	out[j] = '\0';
+}
+
+// One centralized place for the ceremony wording (Stef retunes later).
+#define AP_CEREMONY_FMT_OWN      "%s AWARDED"
+#define AP_CEREMONY_FMT_FOREIGN  "%s FOR %s"
+#define AP_CEREMONY_ITEM_UNKNOWN "AP ITEM"
+#define AP_CEREMONY_ROW_Y        0x10 // prefix -> item line spacing
+
+static int AP_CeremonyNameIsBlank(const char *s)
+{
+	// Empty, or the apclientpp "Unknown" placeholder (uppercased by the sanitizer).
+	if (!s || s[0] == '\0')
+		return 1;
+	return (s[0] == 'U' && s[1] == 'N' && s[2] == 'K' && s[3] == 'N' &&
+	        s[4] == 'O' && s[5] == 'W' && s[6] == 'N' && s[7] == '\0');
+}
+
+// Render one ledger/primary entry as a (prefix + item) block anchored at x,y.
+static void AP_CeremonyDrawEntry(int x, int y, long code, int bit, int rung)
+{
+	char itemRaw[64], playerRaw[64];
+	char item[40], player[24];
+	char line[80];
+	int player_slot = -1;
+	int sp;
+	int flashOn = (sdata->gGT->timer & 1);
+
+	if (ap_net_scout_text(code, itemRaw, (int)sizeof itemRaw, playerRaw, (int)sizeof playerRaw))
+	{
+		AP_CeremonySanitize(itemRaw, item, (int)sizeof item);
+		AP_CeremonySanitize(playerRaw, player, (int)sizeof player);
+	}
+	else
+	{
+		item[0] = '\0';
+		player[0] = '\0';
+	}
+	if (AP_CeremonyNameIsBlank(item))
+		snprintf(item, sizeof item, "%s", AP_CEREMONY_ITEM_UNKNOWN);
+	if (player[0] == '\0')
+		snprintf(player, sizeof player, "%s", "PLAYER");
+
+	if (ap_net_scout_known(code, NULL, &sp, NULL))
+		player_slot = sp;
+
+	int own = (player_slot >= 0 && player_slot == ap_net_self_slot());
+
+	// Own = orange (gentle flash like the vanilla banners); foreign = steady white
+	// to echo the white foreign-item marker used on the pads.
+	int itemColor = JUSTIFY_CENTER | (own ? (flashOn ? ORANGE : WHITE) : WHITE);
+
+	const char *prefix = AP_CeremonyPrefix(bit, rung);
+	int itemY = y;
+	if (prefix != NULL)
+	{
+		DecalFont_DrawLine((char *)prefix, x, y, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+		itemY = y + AP_CEREMONY_ROW_Y;
+	}
+
+	if (own)
+		snprintf(line, sizeof line, AP_CEREMONY_FMT_OWN, item);
+	else
+		snprintf(line, sizeof line, AP_CEREMONY_FMT_FOREIGN, item, player);
+
+	// FONT_SMALL + word-wrap so a long foreign name folds instead of overrunning.
+	DecalFont_DrawMultiLine(line, x, itemY, 0x1b0, FONT_SMALL, itemColor);
+}
+
+// Shared entry point called from every end-of-race draw function. Draws the AP
+// award block (cycling if the race sent several checks) and returns 1 so the
+// caller suppresses its vanilla award line. Returns 0 -- caller draws vanilla --
+// when AP is inactive or nothing here is scouted (the vanilla fallback).
+// primaryBit is the reward bit the ceremony celebrates, or -1 for none.
+// includeLedger folds in the whole race's just-sent checks (relic tiers, podium
+// rungs) so a multi-check screen cycles them; single-reward screens pass 0 so a
+// shared multi-reward race (e.g. token+trophy) doesn't echo the same rungs twice.
+int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
+{
+	if (!ctr_cfg_active())
+		return 0;
+
+	long codes[AP_CEREMONY_MAX + 1];
+	int  bits[AP_CEREMONY_MAX + 1];
+	int  rungs[AP_CEREMONY_MAX + 1];
+	int  n = 0;
+
+	long pcode = (primaryBit >= 0) ? AP_LookupLocationCode(primaryBit) : -1;
+	if (pcode >= 0)
+	{
+		codes[n] = pcode;
+		bits[n] = primaryBit;
+		rungs[n] = -1;
+		n++;
+	}
+	for (int i = 0; includeLedger && i < ap_ceremony_count && n <= AP_CEREMONY_MAX; i++)
+	{
+		long c = ap_ceremony_ledger[i].code;
+		int dup = 0;
+		for (int k = 0; k < n; k++)
+			if (codes[k] == c)
+			{
+				dup = 1;
+				break;
+			}
+		if (dup)
+			continue;
+		codes[n] = c;
+		bits[n] = ap_ceremony_ledger[i].bit;
+		rungs[n] = ap_ceremony_ledger[i].rung;
+		n++;
+	}
+
+	if (n == 0)
+		return 0; // not connected / nothing scouted -> caller draws vanilla
+
+	int idx = (n > 1)
+	              ? (int)((sdata->gGT->timer / AP_CEREMONY_CYCLE_FRAMES) % (unsigned)n)
+	              : 0;
+	AP_CeremonyDrawEntry(x, y, codes[idx], bits[idx], rungs[idx]);
+	return 1;
+}
+
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
@@ -677,6 +927,7 @@ void AP_NotifyAdvReward(int rewardBit)
 	{
 		ap_net_send_location(code); // LocationChecks([code])
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
+		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
 	}
 
 	// Podium backstop (event-time): winning a trophy race == finishing 1st ==
@@ -1341,14 +1592,24 @@ static void AP_SendPodiumChecks(int track, int placement)
 
 	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
 
-	// Assemble the earned rung set, best-result-fills-lower.
+	// Assemble the earned rung set, best-result-fills-lower. The parallel rungs[]
+	// tags each code (0 = 1st, 1 = podium, 2 = any) so the ceremony block can
+	// label it.
 	long codes[3];
+	int rungs[3];
 	int n = 0;
 	if (placement == 1)
-		codes[n++] = pr->first;  // a win also clears podium + any below
+	{
+		codes[n] = pr->first; // a win also clears podium + any below
+		rungs[n++] = 0;
+	}
 	if (placement <= 3)
-		codes[n++] = pr->podium; // 1st clears it too; 2nd/3rd start here
-	codes[n++] = pr->any;        // every finish clears the any-position rung
+	{
+		codes[n] = pr->podium; // 1st clears it too; 2nd/3rd start here
+		rungs[n++] = 1;
+	}
+	codes[n] = pr->any; // every finish clears the any-position rung
+	rungs[n++] = 2;
 
 	for (int i = 0; i < n; i++)
 	{
@@ -1364,6 +1625,7 @@ static void AP_SendPodiumChecks(int track, int placement)
 		         track, placement, code);
 		AP_AppendLog(msg);
 		ap_net_send_location(code); // LocationChecks([code])
+		AP_CeremonyLedgerAdd(code, -1, rungs[i]); // feed the race-end award block
 	}
 }
 
@@ -1430,6 +1692,16 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// crystal share the same levelIDs, so the type gate is load-bearing).
 		if (ap_last_race_mode == AP_RACE_TROPHY)
 			AP_SendPodiumChecks(ap_last_race_track, ap_last_race_place);
+	}
+	else if (!finishedNow && ap_finish_prev)
+	{
+		// Falling edge = the previous race's finished-state cleared, i.e. a new
+		// race has started. Clear the ceremony ledger here rather than on the
+		// finish edge: relic tiers (RR_EndEvent_UnlockAward) and the continue-
+		// press grants land AT/AFTER the finish, so resetting at race start keeps
+		// this race's entries intact through its whole ceremony regardless of
+		// within-frame ordering.
+		AP_CeremonyLedgerReset();
 	}
 	ap_finish_prev = finishedNow;
 }

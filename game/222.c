@@ -235,7 +235,12 @@ void AA_EndEvent_DrawMenu(void)
 
 					s32 textColor = (gGT->timer & 1) ? (JUSTIFY_CENTER | RED) : (JUSTIFY_CENTER | WHITE);
 
-					DecalFont_DrawLine(sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], textPos.x, textPos.y, FONT_BIG, textColor);
+#ifdef CTR_AP
+					// AP: show the CTR-token challenge location's scouted reward. The
+					// check sends on the continue-press, so pass the celebrated bit.
+					if (!AP_CeremonyDraw(textPos.x, textPos.y, rewardBit, 0))
+#endif
+						DecalFont_DrawLine(sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], textPos.x, textPos.y, FONT_BIG, textColor);
 				}
 			}
 		}
@@ -424,6 +429,17 @@ void AA_EndEvent_DrawMenu(void)
 	{
 		return;
 	}
+
+#ifdef CTR_AP
+	// AP: the plain trophy-win screen draws NO vanilla award text, so ADD the AP
+	// block (the trophy + any podium rungs, cycled) in the free space above the
+	// standings icons (y=0x60). Only a genuine trophy win that is not a boss race
+	// or a CTR-token race (which draws its own block above). The trophy check sends
+	// on the continue-press, so it is passed as the primary bit; podium rungs come
+	// from the ledger.
+	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1))
+		AP_CeremonyDraw(0x100, 0x40, gGT->levelID + ADV_REWARD_FIRST_TROPHY, 1);
+#endif
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_PRESS_TO_CONTINUE], 0x100, 0xbe, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
