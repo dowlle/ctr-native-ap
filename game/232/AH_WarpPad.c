@@ -1072,10 +1072,17 @@ WarpPad_AnimateOpen:
 						break;
 					case STATIC_TOKEN:
 					{
-						// Token model needs colour modulation to read as a token; use
-						// the destination track's token-group colour (matches the born
-						// token placeholder / the vanilla token you'd win there).
-						int tg = data.metaDataLEV[warppadObj->levelID].ctrTokenGroupID;
+						// Token model needs colour modulation to read as a token. Colour
+						// it by the SCOUTED item's colour: item shuffle can place a
+						// different-colour token than the destination's vanilla token
+						// group (e.g. a Blue CTR Token at the Yellow Gem Cup location),
+						// and the glow must advertise the real reward. Fall back to the
+						// destination track's token group only when the scout is
+						// unavailable (unscouted placeholder / not an own token), which
+						// is the born placeholder colour and the prior behaviour.
+						int tg = AP_WarpPadRewardTokenColour(apSlotBit[i]);
+						if (tg < 0)
+							tg = data.metaDataLEV[warppadObj->levelID].ctrTokenGroupID;
 						apPrize->colorRGBA =
 						    ((u32)data.AdvCups[tg].color[0] << 0x14) |
 						    ((u32)data.AdvCups[tg].color[1] << 0xc) |

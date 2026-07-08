@@ -267,6 +267,28 @@ int AP_WarpPadRewardTint(int globalBit)
 	}
 }
 
+// Colour index of the OWN CTR Token scouted here (see header). The token item id
+// encodes its colour: ids AP_ITEM_BASE+4..8 = R,G,B,Y,P (AP_IDX_TOKEN_RED = 4),
+// which lines up with data.AdvCups[0..4]. Foreign / unscouted / non-token -> -1.
+int AP_WarpPadRewardTokenColour(int globalBit)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return -1;
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return -1;
+	if (player != ap_net_self_slot())
+		return -1; // foreign multiworld item is not an own coloured token
+	if (AP_ItemCategory(item) != AP_CAT_TOKEN)
+		return -1;
+	return (int)((item - AP_ITEM_BASE) - AP_IDX_TOKEN_RED); // 0..4 = R,G,B,Y,P
+}
+
 // Enumerate the still-UNCOLLECTED (unchecked) AP reward locations of race track
 // `destLevelID` (0..15), writing their global AdvProgress bits into `outBits`
 // (caller array, capacity `cap`) in fixed tier order -- Trophy +0x06, Sapphire
