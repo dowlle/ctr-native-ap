@@ -563,12 +563,18 @@ static int AP_AllFiveGems(void)
 }
 
 // Send StatusUpdate(GOAL) once when the per-seed goal (ctr_cfg.goal) is met.
-// Mirrors the apworld completion_condition per goal:
-//   0 oxide             -> beat N. Oxide (first challenge)
-//   1 oxidefinal        -> beat N. Oxide (final challenge)
-//   2 everythingplusone -> beat N. Oxide (final) + 18 Gold relics + all 5 gems
-//   3 allbosses         -> 16 trophies received
-//   4 allgemcups        -> all 5 gems received (i.e. won every gem cup)
+// Mirrors the apworld completion_condition per goal (goal enum keeps a gap at 2:
+// the old "everythingplusone" goal was dropped, the ints are NOT renumbered):
+//   0 oxide      -> beat N. Oxide (first challenge)
+//   1 oxidefinal -> beat N. Oxide (final challenge)
+//   3 allbosses  -> won all 4 boss races (Ripper Roo, Papu Papu, Komodo Joe,
+//                   Pinstripe). "Won" == the boss-race LOCATION is CHECKED
+//                   (sent only on an actual live win, game/222.c). NOT
+//                   AP_GateCount(Trophy)>=16, and NOT CHECK_ADV_BIT on the boss
+//                   key bits 94-97: those are the Key item pool (AP_POOL_KEY),
+//                   so AP_ApplyItems sets them from RECEIVED keys -- holding 4
+//                   shuffled Keys is not beating 4 bosses (the BUG-D class).
+//   4 allgemcups -> all 5 gems received (i.e. won every gem cup)
 // Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
 // first Oxide beat is the goal.
 void AP_EvaluateGoal(void)
@@ -588,10 +594,19 @@ void AP_EvaluateGoal(void)
 		{
 		case 0: done = ap_oxide_first_beaten; break;
 		case 1: done = ap_oxide_final_beaten; break;
-		case 2: done = ap_oxide_final_beaten
-		               && AP_GateCount(AP_IDX_GOLD) >= 18
-		               && AP_AllFiveGems(); break;
-		case 3: done = AP_GateCount(AP_IDX_TROPHY) >= 16; break;
+		case 3:
+		{
+			// All 4 boss races personally won == each boss-race location checked.
+			// Durable (server checked-set, resent on connect) + reliable (checked
+			// only at the live win site, never by received Keys). Same signal
+			// AP_BossGarageOpen uses for trophy tracks.
+			int allWon = 1, b;
+			for (b = 0; b < 4; b++)
+				if (!AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+					allWon = 0;
+			done = allWon;
+			break;
+		}
 		case 4: done = AP_AllFiveGems(); break;
 		default: done = ap_oxide_first_beaten; break;
 		}
@@ -675,6 +690,14 @@ void AP_NotifyGoal(int oxideSecond)
 		ap_oxide_final_beaten = 1;
 	else
 		ap_oxide_first_beaten = 1;
+
+	// As of schema 4 the two Oxide beats are also REAL location checks
+	// (35011104 / 35011105). AP_NotifyAdvReward looks up the bit's code in
+	// AP_LOCATION_TABLE and sends the LocationCheck with per-session dedup, so a
+	// pre-rework seed (bits not in its table) simply no-ops here.
+	AP_NotifyAdvReward(oxideSecond ? AP_GOAL_BIT_OXIDE_SECOND
+	                               : AP_GOAL_BIT_OXIDE_FIRST);
+
 	AP_EvaluateGoal();
 }
 
@@ -1089,10 +1112,10 @@ static void AP_PollDebug(struct AdvProgress *adv)
 				if (!(newly & (1u << b)))
 					continue;
 				int globalBit = (w * 32) + b;
-				if (AP_LookupLocationCode(globalBit) >= 0 ||
-				    globalBit == AP_GOAL_BIT_OXIDE_FIRST ||
-				    globalBit == AP_GOAL_BIT_OXIDE_SECOND)
-					continue; // events own these
+				if (AP_LookupLocationCode(globalBit) >= 0)
+					continue; // a mapped location -- owned by the grant-site events
+				              // (schema 4: the Oxide bits 115/116 are now real codes
+				              // too, so this clause already covers them)
 				char msg[160];
 				snprintf(msg, sizeof msg,
 				         "[AP DBG] unmapped bit set: rewards[%d] bit %d "
