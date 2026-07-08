@@ -103,9 +103,19 @@ if(CTR_AP)
 
     # Archipelago networking (apclientpp). Compiled as an isolated C++17 static
     # library so the unity C build stays C; the only scope where exceptions /
-    # RTTI / -mbig-obj live. ws:// only -> header-only deps + ws2_32, no TLS.
+    # RTTI / -mbig-obj live. wss:// (TLS) + permessage-deflate compression are
+    # enabled: the transport is chosen from the URI scheme at runtime, so plain
+    # ws:// (e.g. ws://127.0.0.1) keeps working with no behaviour change.
     enable_language(CXX)
     set(AP_VENDOR ${CMAKE_SOURCE_DIR}/ap/vendor)
+
+    # TLS + compression backends. Static archives are preferred to match the
+    # -static-libstdc++ / -static-libgcc posture of the shipped exe.
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    set(ZLIB_USE_STATIC_LIBS TRUE)
+    find_package(OpenSSL REQUIRED)
+    find_package(ZLIB REQUIRED)
+
     add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp)
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
@@ -116,16 +126,18 @@ if(CTR_AP)
         ${AP_VENDOR}/asio/include
         ${AP_VENDOR}/json/include
         ${CMAKE_SOURCE_DIR}/ap)
+    target_link_libraries(ap_net PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
     target_compile_definitions(ap_net PRIVATE
         CTR_AP
-        WSWRAP_NO_SSL WSWRAP_NO_COMPRESSION AP_NO_SCHEMA
+        AP_NO_SCHEMA
         ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1
         _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
     target_compile_options(ap_net PRIVATE -Wa,-mbig-obj -O1 -fexceptions -frtti)
 
     # A C target linking a C++ archive: CMake promotes the link to C++ (g++),
-    # pulling in libstdc++. Keep it static to match the -static exe.
-    target_link_libraries(ctr_native ap_net ws2_32)
+    # pulling in libstdc++. Keep it static to match the -static exe. crypt32 is
+    # needed for the Windows system-CA lookup wswrap does on wss:// connections.
+    target_link_libraries(ctr_native ap_net ws2_32 crypt32)
     target_link_options(ctr_native PRIVATE -static-libstdc++)
 endif()
 target_compile_options(ctr_native PRIVATE -O2)

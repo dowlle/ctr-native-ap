@@ -3,7 +3,8 @@
 
 // C interface to the Archipelago network client (apclientpp). Implemented in
 // ap_net.cpp (C++), compiled as an isolated static lib and called from the C
-// unity build (ap_hooks.c). ws:// only -- no TLS -- for local testing.
+// unity build (ap_hooks.c). Handles ws:// and wss:// (TLS) with compression;
+// the transport is selected from the uri scheme passed to ap_net_init().
 
 #ifdef __cplusplus
 extern "C" {
