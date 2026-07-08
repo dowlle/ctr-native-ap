@@ -58,6 +58,7 @@ int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx
 // Sum the received counts across a whole item TYPE, for the type 6/7/8 gates.
 int AP_GateCountTokenSum(void); // all 5 token colours (idx 4..8)
 int AP_GateCountRelicSum(void); // all 3 relic tiers  (idx 1..3 = Sapphire+Gold+Platinum)
+int AP_GateCountRelicTier(int colour); // type-4 tier: 0=Sapphire,1=Gold,2=Platinum; -1=Sapphire
 int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).

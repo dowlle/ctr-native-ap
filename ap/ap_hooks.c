@@ -757,6 +757,23 @@ int AP_GateCountRelicSum(void)
 	       AP_GateCount(AP_IDX_PLATINUM);
 }
 
+// Received count for a specific-tier (type 4) relic requirement. As of schema 4
+// the apworld emits the tier in `colour`: 0 = Sapphire, 1 = Gold, 2 = Platinum.
+// The tiers are INDEPENDENT (no downward hierarchy). A legacy schema-3 type-4 req
+// arrives colour -1; the apworld's stage-1 relic rules have always meant Sapphire
+// specifically, so -1 (and any out-of-range colour) resolves to Sapphire -- NOT
+// the tri-tier sum, which was out-of-logic permissive. Type 7 (AnyRelic) keeps
+// AP_GateCountRelicSum; this is only the type-4 tier selector.
+int AP_GateCountRelicTier(int colour)
+{
+	switch (colour)
+	{
+	case 1:  return AP_GateCount(AP_IDX_GOLD);
+	case 2:  return AP_GateCount(AP_IDX_PLATINUM);
+	default: return AP_GateCount(AP_IDX_SAPPHIRE); // colour 0 or legacy -1
+	}
+}
+
 int AP_GateCountGemSum(void)
 {
 	return AP_GateCountGemColour(0) + AP_GateCountGemColour(1) +
@@ -772,12 +789,15 @@ int AP_GateCountGemSum(void)
 // ap_seedcfg.{h,cpp}; the gate sites (AH_*.c) call these by name.
 
 // Returns owned >= count for a resolved requirement. colour-aware for tokens
-// (type 3) and gems (type 5): colour 0..4 selects one colour, -1 sums the
-// vanilla "all colours" interpretation native-side -- but the apworld emits a
-// concrete colour for token/gem reqs under specific_colour, so the type-3/5 -1
-// branch only fires defensively. The genuine any-of aggregates the apworld emits
-// under requirement_specificity = any_of are the dedicated type 6/7/8 codes, which
-// sum the whole type via AP_GateCount*Sum().
+// (type 3), relics (type 4), and gems (type 5): for tokens/gems colour 0..4
+// selects one colour; for relics colour 0/1/2 selects Sapphire/Gold/Platinum
+// (independent tiers, schema 4). A -1 colour is the legacy schema-3 shape:
+// token/gem -1 sums the vanilla "all colours" interpretation (defensive -- the
+// apworld emits a concrete colour under specific_colour), and relic -1 resolves
+// to Sapphire (the standing stage-1 relic meaning), via AP_GateCountRelicTier.
+// The genuine any-of aggregates the apworld emits under requirement_specificity =
+// any_of are the dedicated type 6/7/8 codes, which sum the whole type via
+// AP_GateCount*Sum().
 int AP_BossReqMet(const ctr_req *r)
 {
 	if (r == 0)
@@ -793,9 +813,8 @@ int AP_BossReqMet(const ctr_req *r)
 	case 3: // tokens (colour 0..4 = one colour; -1 = any token, summed)
 		return ((r->colour >= 0) ? AP_GateCountTokenColour(r->colour)
 		                         : AP_GateCountTokenSum()) >= r->count;
-	case 4: // sapphire (colour -1 = any relic tier, summed)
-		return ((r->colour >= 0) ? AP_GateCount(AP_IDX_SAPPHIRE)
-		                         : AP_GateCountRelicSum()) >= r->count;
+	case 4: // relic, tier by colour (0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire)
+		return AP_GateCountRelicTier(r->colour) >= r->count;
 	case 5: // gems (colour 0..4 = one colour; -1 = any gem, summed)
 		return ((r->colour >= 0) ? AP_GateCountGemColour(r->colour)
 		                         : AP_GateCountGemSum()) >= r->count;
