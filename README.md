@@ -30,7 +30,9 @@ slot=Player1
 password=
 ```
 
-The client currently connects over a plain, unencrypted WebSocket (`ws://`), aimed at a local or self-hosted server. Then run the executable: it connects at startup and you play from there.
+Then run the executable: it connects at startup and you play from there.
+
+During development the client connects over a plain, unencrypted WebSocket (`ws://`), aimed at a local or self-hosted server. Secure connections (`wss://`, for archipelago.gg rooms) and an in-game connection screen are planned before release.
 
 ## Joining a multiworld
 
