@@ -48,6 +48,28 @@ CTR_STATIC_ASSERT(offsetof(struct WarpPad, lightDirGem) == 0x50);
 CTR_STATIC_ASSERT(offsetof(struct WarpPad, digit10s) == 0x68);
 CTR_STATIC_ASSERT(offsetof(struct WarpPad, levelID) == 0x6c);
 
+// Build (or rebuild) a warp pad's child instances for its current state. Factored
+// out of AH_WarpPad_LInB (the level-load birth) so the AP live-refresh path can
+// reuse the exact birth logic. Forward-declared here because AH_WarpPad_ThTick (the
+// re-birth caller, CTR_AP) is defined before it. Declared in both builds since
+// AH_WarpPad_LInB calls it unconditionally.
+static void AH_WarpPad_BuildInstances(struct Thread *t);
+
+#ifdef CTR_AP
+// ── AP live pad re-birth (Warp-Pad State Model v2) ──
+// A warp pad's locked/open/done LOOK and load-gate instances are latched at birth;
+// nothing re-derived them when the world changed while the player stood in the hub.
+// So a pad gated on an item stayed shut until a hub reload, and a pad whose last
+// location was checked kept its open glow/sound. These tables let AH_WarpPad_ThTick
+// re-birth a pad the instant its AP_PadState changes. The WarpPad struct is size-
+// locked (0x78 static assert), so the per-pad tag lives here, keyed by PHYSICAL pad
+// LevelID (0..27, gem cups 100..104 -> all < 128).
+//   s_padRebirthGen[phys]   = AP_StateGen value ThTick last evaluated for the pad
+//   s_padRebirthState[phys] = AP_PadState the pad's instances were last BUILT for
+static unsigned s_padRebirthGen[128];
+static int      s_padRebirthState[128];
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abbdc-0x800abd80.
 void AH_WarpPad_AllWarppadNum()
 {
@@ -231,6 +253,36 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	warppadObj = t->object;
 	warppadInst = t->inst;
 	visInstSrc = gGT->cameraDC[0].visInstSrc;
+
+#ifdef CTR_AP
+	// AP live pad refresh: the locked/open/done look + gate instances are latched at
+	// birth. When an AP event changes THIS pad's state while the player is in the hub
+	// (a received gate item opens it; the last location checked makes it done),
+	// AP_StateGen() bumps. Re-derive by tearing down and rebuilding via the exact
+	// birth logic -- only on an actual AP_PadState change, and never mid-warp. Mid-
+	// tick INSTANCE_Death is already the norm in this proc (the locked-digit teardown
+	// below); the rebuild adds the matching births. AP_PadState is recomputed only on
+	// a gen change, so the steady-state cost is one integer compare per pad per frame.
+	if (ctr_cfg_active() && warppadObj->boolEnteredWarppad == 0)
+	{
+		int rbPhys = ctr_cfg_warp_phys(warppadObj->levelID);
+		if (rbPhys >= 0 && rbPhys < 128)
+		{
+			unsigned rbGen = AP_StateGen();
+			if (s_padRebirthGen[rbPhys] != rbGen)
+			{
+				int rbState = AP_PadState(rbPhys, warppadObj->levelID);
+				s_padRebirthGen[rbPhys] = rbGen;
+				if (rbState != s_padRebirthState[rbPhys])
+				{
+					AH_WarpPad_ThDestroy(t);       // free current child instances
+					AH_WarpPad_BuildInstances(t);  // rebuild for the new state
+					return; // render fresh next frame; instArr is now the new set
+				}
+			}
+		}
+	}
+#endif
 
 #if defined(CTR_NATIVE)
 	// NOTE(aalhendi): Retail can read PS1 low RAM when the hub-swap frame
@@ -1253,36 +1305,13 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 }
 #endif
 
+// Engine entry point: level-load birth. Births the pad thread, then builds its
+// child instances for the current state. The instance-building body lives in
+// AH_WarpPad_BuildInstances so the AP live-refresh path can reuse it (see
+// AH_WarpPad_ThTick).
 void AH_WarpPad_LInB(struct Instance *inst)
 {
-	int i;
-	int levelID;
 	struct Thread *t;
-	struct WarpPad *warppadObj;
-
-	struct GameTracker *gGT;
-
-	int unlockItem_numOwned;
-	int unlockItem_numNeeded;
-	int unlockItem_modelID;
-	int rewardModelID;
-	int rewardAngle;
-	int tokenGroupID;
-
-	int *arrTokenCount;
-	struct Instance *newInst;
-
-	// NOTE(aalhendi): WarpPad level IDs come from "warppad#NN" instance names
-	// and use retail adventure numbering, not the native LevelID enum.
-	enum
-	{
-		AH_WP_SLIDE_COLISEUM = 16,
-		AH_WP_TURBO_TRACK = 17,
-		AH_WP_NITRO_COURT = 18,
-		AH_WP_ADV_CUP = 100,
-	};
-
-	gGT = sdata->gGT;
 
 	if (inst->thread != NULL)
 	{
@@ -1304,6 +1333,43 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	t->inst = inst;
 
 	t->funcThDestroy = AH_WarpPad_ThDestroy;
+
+	AH_WarpPad_BuildInstances(t);
+}
+
+// Build (or REBUILD) all of a warp pad's child instances for its CURRENT state.
+// Pure relocation of the original AH_WarpPad_LInB birth body -- the caller has set
+// up the thread already (LInB via a fresh thread; the ThTick re-birth path after
+// AH_WarpPad_ThDestroy) -- with inst / object recovered from the thread.
+static void AH_WarpPad_BuildInstances(struct Thread *t)
+{
+	int i;
+	int levelID;
+	struct WarpPad *warppadObj;
+
+	struct GameTracker *gGT;
+
+	int unlockItem_numOwned;
+	int unlockItem_numNeeded;
+	int unlockItem_modelID;
+	int rewardModelID;
+	int rewardAngle;
+	int tokenGroupID;
+
+	struct Instance *newInst;
+	struct Instance *inst = t->inst;
+
+	// NOTE(aalhendi): WarpPad level IDs come from "warppad#NN" instance names
+	// and use retail adventure numbering, not the native LevelID enum.
+	enum
+	{
+		AH_WP_SLIDE_COLISEUM = 16,
+		AH_WP_TURBO_TRACK = 17,
+		AH_WP_NITRO_COURT = 18,
+		AH_WP_ADV_CUP = 100,
+	};
+
+	gGT = sdata->gGT;
 
 	// 0 - locked
 	// 1 - open for trophy
@@ -1364,6 +1430,12 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		         levelID, warppadObj->levelID);
 		AP_LogLine(apwpmsg);
 	}
+
+	// Record the AP_PadState these instances are being built for, so ThTick re-births
+	// only on an actual state change (not on every unrelated location check). levelID
+	// = physical pad; warppadObj->levelID = destination (the AP_PadState location key).
+	if (levelID >= 0 && levelID < 128)
+		s_padRebirthState[levelID] = ctr_cfg_active() ? AP_PadState(levelID, warppadObj->levelID) : 0;
 #endif
 
 	unlockItem_modelID = 0;
@@ -1799,7 +1871,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			}
 		}
 #else
-		arrTokenCount = &gGT->currAdvProfile.numCtrTokens.red;
+		int *arrTokenCount = &gGT->currAdvProfile.numCtrTokens.red;
 		unlockItem_numOwned = arrTokenCount[levelID - AH_WP_ADV_CUP];
 #endif
 	}
