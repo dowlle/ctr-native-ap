@@ -45,6 +45,19 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger);
 // AP_ApplyItems-clobbered advProgress bits. -1 during pre-race draws.
 int AP_CeremonyRelicTier(void);
 
+// ── Hub item-received feed (display-only) ──
+// Bottom-left feed of the AP items you receive, rendered only on the adventure
+// hub. AP_FeedOnItemReceived queues one drained receipt (called once per item in
+// the received-item drain loop). AP_FeedConnectReset re-arms initial-inventory
+// suppression on a fresh connect; AP_FeedEndDrain(n) primes the feed once that
+// dump goes quiet. AP_FeedDrawHub renders + ages the feed from the hub UI pass.
+// AP_HubFeedOn reflects the ap-config.txt "hub_feed=" toggle (default on).
+void AP_FeedOnItemReceived(long long item, int player, long long index);
+void AP_FeedConnectReset(void);
+void AP_FeedEndDrain(int drainedThisFrame);
+void AP_FeedDrawHub(void);
+int  AP_HubFeedOn(void);
+
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress
 // location bits, so item fill (generic, high-end) no longer collides with the

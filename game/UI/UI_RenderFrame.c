@@ -902,6 +902,12 @@ void UI_RenderFrame_AdvHub(void)
 	UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
 	UI_DrawNumKey(hudStructPtr[0xF].x + 0x10, hudStructPtr[0xF].y - 10);
 	UI_DrawNumTrophy(hudStructPtr[0x10].x + 0x10, hudStructPtr[0x10].y - 10);
+
+#ifdef CTR_AP
+	// AP hub item-received feed (bottom-left). Self-gates on ctr_cfg_active() +
+	// the hub_feed toggle; only runs on the adventure hub, which is this pass.
+	AP_FeedDrawHub();
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005435c-0x8005465c for the retail path.

@@ -50,6 +50,19 @@ int  ap_net_scout_known(long long location_code, long long *out_item,
 int  ap_net_scout_text(long long location_code, char *item_buf, int item_n,
                        char *player_buf, int player_n);
 
+// Sender slot / server ReceivedItems index for position `pos` of the most recent
+// ap_net_drain_items() batch (valid until the next drain). -1 if out of range.
+// The hub item feed uses these to attribute + dedup each drained item.
+int       ap_net_recv_batch_player(int pos);
+long long ap_net_recv_batch_index(int pos);
+
+// Resolve a RECEIVED item (item_id, sending sender_slot) into display strings:
+// item name in this slot's own game + the sender's alias. Returns 1 on success,
+// 0 if not connected. A name missing from the synced DataPackage comes back
+// "Unknown"; the caller substitutes a generic.
+int  ap_net_item_text(long long item_id, int sender_slot, char *item_buf,
+                      int item_n, char *player_buf, int player_n);
+
 // 1 if location_code has already been checked on the server (own slot). Drives
 // the "done / chill" warp-pad colouring vs the "new / available" glow.
 int  ap_net_location_checked(long long location_code);
