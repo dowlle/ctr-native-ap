@@ -105,6 +105,11 @@ global_variable GLuint s_glVramFramebuffer;
 
 global_variable GLuint s_glOffscreenFramebuffer;
 
+// Set once the GL context and glad extension loader have both succeeded, so the
+// GL entry points the shutdown path calls are valid. Guards teardown after a
+// failed init, where those entry points are still null and calling them crashes.
+global_variable int s_glInitialised = 0;
+
 
 internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen)
 {
@@ -198,11 +203,18 @@ int NativeRenderer_InitialiseRender(char *windowName, int width, int height, int
 		return 0;
 	}
 
+	s_glInitialised = 1;
 	return 1;
 }
 
 void NativeRenderer_Shutdown(void)
 {
+	if (!s_glInitialised)
+	{
+		return;
+	}
+	s_glInitialised = 0;
+
 	glDeleteVertexArrays(2, s_glVertexArray);
 	glDeleteBuffers(2, s_glVertexBuffer);
 

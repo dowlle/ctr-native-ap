@@ -214,7 +214,10 @@ void Platform_Init(const char *title, int width, int height)
 	{
 		Platform_LogError("[CTR Native] Failed to initialise SDL\n");
 		Platform_LogShutdown();
-		return;
+		// Platform_Init is void, so a return here would let the caller run on
+		// into the frame loop and dereference the never-created window/renderer.
+		// Exit nonzero after the error instead of falling through to a crash.
+		exit(EXIT_FAILURE);
 	}
 
 	s_platformInitialized = 1;
@@ -223,14 +226,14 @@ void Platform_Init(const char *title, int width, int height)
 	{
 		Platform_LogError("[CTR Native] Failed to initialise window\n");
 		Platform_Shutdown();
-		return;
+		exit(EXIT_FAILURE);
 	}
 
 	if (!NativeRenderer_InitialisePSX())
 	{
 		Platform_LogError("[CTR Native] Failed to initialise PSX renderer state\n");
 		Platform_Shutdown();
-		return;
+		exit(EXIT_FAILURE);
 	}
 
 	atexit(Platform_Shutdown);
