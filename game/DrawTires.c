@@ -116,6 +116,19 @@ s32 Unknown_8006ef98(s32 radicand)
 	return root;
 }
 
+// Retail tolerated a zero-length vector in the tire-normalize divides below:
+// Unknown_8006ef98(0) returns 0 and the R3000 DIV by zero does not fault, it
+// just leaves LO/HI unpredictable and execution continues. Native gcc instead
+// proves the len == 0 path divides by zero (UB) and compiles it to a trap
+// (ud2), which hard-crashed the first rendered frame on the Steam Deck.
+// Clamp to 1: whenever the sum of squares is 0 every vector component is 0,
+// so the normalized result is (0,0,0) regardless of the divisor value.
+static s32 DrawTires_VecLenNonzero(s32 sumOfSquares)
+{
+	s32 len = Unknown_8006ef98(sumOfSquares);
+	return (len == 0) ? 1 : len;
+}
+
 static void DrawTiresSolid_BuildWheelLocalPairs(struct DrawTiresScratch *scratch, struct Driver *driver, struct Instance *inst, struct InstDrawPerPlayer *idpp)
 {
 	int wheelX = (inst->scale.x * 0x90) >> 12;
@@ -229,7 +242,7 @@ static void DrawTiresSolid_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		gte_sqr0_b();
 		wheelLocal->center.x = centerX;
 		wheelLocal->center.y = centerY;
-		int len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		int len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 
 		gte_lcv1_b();
 		wheelLocal->center.z.word = centerZ;
@@ -261,7 +274,7 @@ static void DrawTiresSolid_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		int axisZ = MFC2_S(27);
 
 		gte_sqr0_b();
-		len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 		invLen = 0x10000 / len;
 
 		axisX = (axisX * invLen) >> 4;
@@ -283,7 +296,7 @@ static void DrawTiresSolid_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		axisZ = MFC2_S(27);
 
 		gte_sqr0_b();
-		len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 		invLen = (wheelSize * -(0x10000 / len)) >> 12;
 
 		axisB->x = (axisX * invLen) >> 10;
@@ -820,7 +833,7 @@ static void DrawTiresReflection_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		gte_sqr0_b();
 		wheelLocal->center.x = centerX;
 		wheelLocal->center.y = centerY;
-		int len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		int len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 
 		gte_lcv1_b();
 		wheelLocal->center.z.word = centerZ;
@@ -852,7 +865,7 @@ static void DrawTiresReflection_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		int axisZ = MFC2_S(27);
 
 		gte_sqr0_b();
-		len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 		invLen = 0x10000 / len;
 
 		axisX = (axisX * invLen) >> 4;
@@ -874,7 +887,7 @@ static void DrawTiresReflection_BuildWheelAxes(struct DrawTiresScratch *scratch)
 		axisZ = MFC2_S(27);
 
 		gte_sqr0_b();
-		len = Unknown_8006ef98(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
+		len = DrawTires_VecLenNonzero(MFC2_S(25) + MFC2_S(26) + MFC2_S(27));
 		invLen = (wheelSize * -(0x10000 / len)) >> 12;
 
 		axisB->x = (axisX * invLen) >> 10;
