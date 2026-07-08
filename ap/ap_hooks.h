@@ -89,6 +89,12 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 // "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
 const char *AP_Net_StatusLine(void);
 
+// 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
+// visible while holding reserves). Default 0; set by ap-config.txt
+// "hud_reserves_fx=1". Read by VehFire_Increment (#ifdef CTR_AP). Visual only;
+// bundled with the ported ReservesMeter HUD.
+int AP_HudReservesFx(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.

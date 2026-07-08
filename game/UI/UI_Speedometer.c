@@ -240,3 +240,31 @@ void UI_DrawSpeedBG(void)
 		AddPrimitive(p, sdata->gGT->pushBuffer_UI.ptrOT);
 	}
 }
+
+#ifdef CTR_AP
+// AP HUD: numeric speed readout. Shows FP8_INT(speedometerNeedleValue) -- the
+// same smoothed value the analog needle uses, so the number does not jitter
+// frame to frame. Turns green above const_AccelSpeed_ClassStat (over class top
+// speed, i.e. on fire / USF -- the state racers actually watch for). Unlike the
+// vanilla Triangle-toggle needle it never evicts the minimap: it is drawn near
+// the boost bar and coexists with the map.
+void UI_DrawSpeedNum(s16 posX, s16 posY, struct Driver *driver)
+{
+	char string[8];
+
+	int speed = FP8_INT(driver->speedometerNeedleValue);
+	if (speed < 0)
+	{
+		speed = 0;
+	}
+
+	DecalFontStyle color = ORANGE;
+	if (driver->const_AccelSpeed_ClassStat < driver->speedometerNeedleValue)
+	{
+		color = LIGHT_GREEN;
+	}
+
+	sprintf(&string[0], "%d", speed);
+	DecalFont_DrawLine(&string[0], posX, posY, FONT_BIG, color);
+}
+#endif
