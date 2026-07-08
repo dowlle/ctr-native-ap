@@ -68,13 +68,14 @@ const char *ap_net_last_error(void); // last slot-refused reason, "" if none
 // cached value read back through ap_net_difficulty_known.
 
 // On a fresh slot-connect: subscribe to the override key and request its current
-// value. slot_default is the slot_data ai_difficulty (0..100), or < 0 if the seed
-// set none; when >= 0 it seeds the cached value immediately so the slot_data
-// default is effective before the Get round-trip returns. No-op if not connected.
+// value. slot_default is the slot_data ai_difficulty (raw difficulty value), or < 0
+// if the seed set none; when >= 0 it seeds the cached value immediately so the
+// slot_data default is effective before the Get round-trip returns. No-op if not
+// connected.
 void ap_net_difficulty_subscribe(int slot_default);
 
-// Write value (0..100) to the override key (replace op, no reply) and update the
-// cached value. No-op if not connected.
+// Write value (raw difficulty value) to the override key (replace op, no reply)
+// and update the cached value. No-op if not connected.
 void ap_net_difficulty_set(int value);
 
 // 1 (and writes *out) if a difficulty value is currently known from the server

@@ -89,13 +89,15 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 // "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
 const char *AP_Net_StatusLine(void);
 
-// ── AI-difficulty comfort setting (option-sync pattern) ──
-// Additive AI-difficulty bump in the engine's internal difficulty units, applied
-// by BOTS_Adv_AdjustDifficulty at race start. Sourced from the local config value
-// (which the connect-time pull mirrors from the per-slot data-storage override /
-// slot_data default). 0 = vanilla. COMFORT ONLY -- generation never depends on it,
-// and it re-reads every race start so a mid-seed change takes effect next race.
-int  AP_AiDifficultyBump(void);
+// ── AI-difficulty preset (option-sync pattern) ──
+// The selected AI-difficulty as a raw engine difficulty VALUE (0 = vanilla; the
+// presets are 0x50/0xA0/0xF0/0x140/0x280). Applied by BOTS_Adv_AdjustDifficulty at
+// race start, which OVERRIDES the computed difficulty with this value (mirroring
+// the reference AdvDifficulty module). Sourced from the local config value (which
+// the connect-time pull mirrors from the per-slot data-storage override / slot_data
+// default). COMFORT ONLY -- generation never depends on it, and it re-reads every
+// race start so a mid-seed change takes effect next race.
+int  AP_AiDifficultyValue(void);
 
 // Push the current local difficulty to the per-slot data-storage override (key
 // "ctr_difficulty_<slot>") so it persists across sessions/devices. No-op when not

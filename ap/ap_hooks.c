@@ -1218,36 +1218,25 @@ const char *AP_Net_StatusLine(void)
 	return line;
 }
 
-// ── AI-difficulty comfort setting ──
-// The local config value is the single source of truth for both the menu slider
-// and the effect; the connect pull mirrors any server override into it. Returns
-// it clamped to 0..100.
-static int AP_AiDifficultyPct(void)
+// ── AI-difficulty preset ──
+// The local config value is the single source of truth for both the menu row and
+// the effect; the connect pull mirrors any server override into it. It holds the
+// raw engine difficulty VALUE (0 = vanilla; presets 0x50/0xA0/0xF0/0x140/0x280).
+// An out-of-ladder value from slot_data is used as-is (only display snaps to the
+// nearest preset). Returns it clamped non-negative.
+int AP_AiDifficultyValue(void)
 {
 	int v = g_config.aiDifficulty;
 	if (v < 0)
 		v = 0;
-	if (v > 100)
-		v = 100;
 	return v;
-}
-
-// ~"very hard" arcade-difficulty magnitude; 100% maps to this additive bump.
-#define AP_AI_DIFF_MAX_BUMP 0x140
-
-int AP_AiDifficultyBump(void)
-{
-	int pct = AP_AiDifficultyPct();
-	if (pct <= 0)
-		return 0; // 0% = vanilla, no change
-	return (pct * AP_AI_DIFF_MAX_BUMP) / 100;
 }
 
 void AP_AiDifficultyCommit(void)
 {
 	// No-op when not connected (ap_net_difficulty_set guards on state). When
 	// connected this persists the local value to the per-slot data-storage key.
-	ap_net_difficulty_set(AP_AiDifficultyPct());
+	ap_net_difficulty_set(AP_AiDifficultyValue());
 }
 
 // ---------------------------------------------------------------------------

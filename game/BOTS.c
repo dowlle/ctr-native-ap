@@ -281,18 +281,21 @@ void BOTS_Adv_AdjustDifficulty(void)
 	}
 
 #ifdef CTR_AP
-	// Archipelago AI-difficulty comfort setting (option-sync): an additive bump on
-	// top of the computed AI difficulty, re-applied every race start so a mid-seed
-	// change takes effect next race. Excluded from ARCADE_MODE, whose difficulty
-	// base is the player-chosen arcadeDifficulty. Comfort only -- generation logic
-	// never depends on it. See AP_AiDifficultyBump (ap/ap_hooks.c).
+	// Archipelago AI-difficulty preset (option-sync): a fixed difficulty chosen
+	// in-game that OVERRIDES the trophy/loss-derived value, mirroring the reference
+	// AdvDifficulty module (which patches this function's per-branch subtraction to
+	// load arcadeDifficulty as a constant). 0 = vanilla (keep dynamic scaling). Cup
+	// difficulty follows the vanilla +0x50 relationship (see the CUP_DIFFICULTY
+	// path). Excluded from ARCADE_MODE, whose base is the player-chosen
+	// arcadeDifficulty. Re-applied every race start; comfort only -- generation
+	// never depends on it. See AP_AiDifficultyValue (ap/ap_hooks.c).
 	if ((gameMode1 & ARCADE_MODE) == 0)
 	{
-		s32 apBump = AP_AiDifficultyBump();
-		if (apBump > 0)
+		s32 apDiff = AP_AiDifficultyValue();
+		if (apDiff > 0)
 		{
-			currDifficulty += apBump;
-			cupDifficulty = (s16)(cupDifficulty + apBump);
+			currDifficulty = apDiff;
+			cupDifficulty = (s16)(apDiff + 0x50);
 		}
 	}
 #endif
