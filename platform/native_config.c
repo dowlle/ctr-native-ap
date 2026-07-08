@@ -133,36 +133,177 @@ void NativeConfig_Load(void)
 	fclose(f);
 }
 
+// Look up the entry table row that owns a section/key pair (i.e. one this build
+// knows about). Returns false for sections/keys outside the current build's
+// table -- those are carried through verbatim on save.
+static bool FindConfigEntry(const char *section, const char *key, int *outIndex)
+{
+	for (int i = 0; i < g_numConfigEntries; i++)
+	{
+		if (strcmp(section, g_configEntries[i].section) == 0 &&
+		    strcmp(key, g_configEntries[i].key) == 0)
+		{
+			if (outIndex)
+				*outIndex = i;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void WriteEntryLine(FILE *f, const ConfigEntry *e)
+{
+	if (e->type == CFG_BOOL)
+		fprintf(f, "%s = %s\n", e->key, *(bool *)e->valuePtr ? "true" : "false");
+	else if (e->type == CFG_STRING)
+		fprintf(f, "%s = %s\n", e->key, (const char *)e->valuePtr);
+	else
+		fprintf(f, "%s = %d\n", e->key, *(int *)e->valuePtr);
+}
+
 void NativeConfig_Save(void)
 {
+	// Read the existing file first (before truncating it): NativeConfig_Save must
+	// carry through any section or key this build's entry table does not own.
+	// Otherwise saving from a build with a smaller table -- e.g. the vanilla build,
+	// which has no [Connection]/[Archipelago] rows -- would silently drop the AP
+	// build's sections. Owned keys are rewritten in place with their current value;
+	// everything else (unknown sections/keys, comments, blank lines) is preserved.
+	char *existing = NULL;
+	FILE *rf = fopen("config.ini", "r");
+	if (rf)
+	{
+		fseek(rf, 0, SEEK_END);
+		long len = ftell(rf);
+		fseek(rf, 0, SEEK_SET);
+		if (len > 0)
+		{
+			existing = (char *)malloc((size_t)len + 1);
+			if (existing)
+			{
+				size_t got = fread(existing, 1, (size_t)len, rf);
+				existing[got] = '\0';
+			}
+		}
+		fclose(rf);
+	}
+
 	FILE *f = fopen("config.ini", "w");
 	if (!f)
+	{
+		free(existing);
 		return;
+	}
 
 	// Writing the file marks config.ini as authoritative from here on, so the AP
 	// layer's config.ini-over-ap-config.txt precedence takes effect immediately.
 	g_configIniPresent = true;
 
-	const char *lastSection = NULL;
-
-	for (int i = 0; i < g_numConfigEntries; i++)
+	if (!existing)
 	{
-		const ConfigEntry *e = &g_configEntries[i];
-
-		if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
+		// No prior file (or empty): write the entry table straight out.
+		const char *lastSection = NULL;
+		for (int i = 0; i < g_numConfigEntries; i++)
 		{
-			if (lastSection != NULL)
-				fprintf(f, "\n");
-			fprintf(f, "[%s]\n", e->section);
-			lastSection = e->section;
+			const ConfigEntry *e = &g_configEntries[i];
+			if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
+			{
+				if (lastSection != NULL)
+					fprintf(f, "\n");
+				fprintf(f, "[%s]\n", e->section);
+				lastSection = e->section;
+			}
+			WriteEntryLine(f, e);
+		}
+		fclose(f);
+		return;
+	}
+
+	// Generously sized flag per owned entry; the entry table is small.
+	bool written[64] = {false};
+
+	char section[64] = "";
+	char *cursor = existing;
+	while (*cursor)
+	{
+		char *nl = strchr(cursor, '\n');
+		size_t lineLen = nl ? (size_t)(nl - cursor) : strlen(cursor);
+
+		char raw[256];
+		size_t copyLen = lineLen < sizeof(raw) - 1 ? lineLen : sizeof(raw) - 1;
+		memcpy(raw, cursor, copyLen);
+		raw[copyLen] = '\0';
+		if (copyLen > 0 && raw[copyLen - 1] == '\r') // tolerate CRLF
+			raw[copyLen - 1] = '\0';
+
+		char parse[256];
+		strncpy(parse, raw, sizeof(parse) - 1);
+		parse[sizeof(parse) - 1] = '\0';
+		char *p = trimWhitespace(parse);
+
+		if (*p == '[')
+		{
+			char *end = strchr(p + 1, ']');
+			if (end)
+			{
+				*end = '\0';
+				strncpy(section, p + 1, sizeof(section) - 1);
+				section[sizeof(section) - 1] = '\0';
+			}
+			fprintf(f, "%s\n", raw); // section header, preserved verbatim
+		}
+		else if (*p == '\0' || *p == ';' || *p == '#')
+		{
+			fprintf(f, "%s\n", raw); // blank line or comment, preserved
+		}
+		else
+		{
+			char *eq = strchr(p, '=');
+			if (eq)
+			{
+				*eq = '\0';
+				char *key = trimWhitespace(p);
+				int idx = -1;
+				if (FindConfigEntry(section, key, &idx))
+				{
+					WriteEntryLine(f, &g_configEntries[idx]); // owned: current value
+					if (idx < (int)(sizeof(written) / sizeof(written[0])))
+						written[idx] = true;
+				}
+				else
+				{
+					fprintf(f, "%s\n", raw); // unknown key, preserved
+				}
+			}
+			else
+			{
+				fprintf(f, "%s\n", raw); // not a key=value line, preserved
+			}
 		}
 
-		if (e->type == CFG_BOOL)
-			fprintf(f, "%s = %s\n", e->key, *(bool *)e->valuePtr ? "true" : "false");
-		else if (e->type == CFG_STRING)
-			fprintf(f, "%s = %s\n", e->key, (const char *)e->valuePtr);
-		else
-			fprintf(f, "%s = %d\n", e->key, *(int *)e->valuePtr);
+		if (!nl)
+			break;
+		cursor = nl + 1;
+	}
+
+	free(existing);
+
+	// Append any owned entries that were not already present in the file (e.g. an
+	// option added to the table since the config was last written). A section that
+	// already appeared but is missing a key gets a repeated header here; the loader
+	// resolves keys against the most recent header, so this stays correct.
+	const char *lastSection = NULL;
+	for (int i = 0; i < g_numConfigEntries; i++)
+	{
+		if (i < (int)(sizeof(written) / sizeof(written[0])) && written[i])
+			continue;
+		const ConfigEntry *e = &g_configEntries[i];
+		if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
+		{
+			fprintf(f, "\n[%s]\n", e->section);
+			lastSection = e->section;
+		}
+		WriteEntryLine(f, e);
 	}
 
 	fclose(f);
