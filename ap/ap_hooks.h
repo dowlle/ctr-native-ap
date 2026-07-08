@@ -178,6 +178,15 @@ int AP_ReqRelicTintTier(const ctr_req *r);
 void AP_SetWarpReqRelicTint(int physLevelID, int tier);
 int  AP_WarpReqRelicTint(int physLevelID);
 
+// Colour index (0..4 = R,G,B,Y,P) of the OWN CTR Token scouted at this location,
+// or -1 when the scout is not an own token (foreign / unscouted / other
+// category). The reward glow must tint a token model by the SCOUTED ITEM's
+// colour, not the destination track's vanilla token group -- under item shuffle
+// a Blue CTR Token can sit at a location whose vanilla token is Yellow. The
+// index maps directly onto data.AdvCups[] (same R,G,B,Y,P order). Caller falls
+// back to the vanilla token group on -1 (unscouted placeholder).
+int AP_WarpPadRewardTokenColour(int globalBit);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
