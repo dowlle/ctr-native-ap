@@ -24,7 +24,7 @@
 // so early item grants land on late-game tracks while a tester typically wins
 // early tracks first. The clean fix (redirect the gate counters to a separate
 // received-item counter so item application never touches location bits) is a
-// larger change, deferred. See board 2026-06-22 15:50 / 17:40 threads.
+// larger change, deferred.
 
 #define AP_ITEM_BASE 35010000
 

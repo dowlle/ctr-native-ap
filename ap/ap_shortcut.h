@@ -3,16 +3,15 @@
 
 // Archipelago SHORTCUTLESS mechanism for CTR Native.
 //
-// Compiled ONLY when CTR_AP is defined. Prerequisite of the adopted "Shortcut
-// Unlock" PROGRESSION item (Feature Triage Register B, Stef 2026-07-04): the seed
+// Compiled ONLY when CTR_AP is defined. Prerequisite of the planned "Shortcut
+// Unlock" PROGRESSION item: the seed
 // can start Shortcutless and the AP item flips it off. This module owns the
 // runtime-toggleable enforcement so that future item just calls AP_ShortcutlessSet(0).
 //
 // ── Mechanism (ported from a real published GPL Shortcutless) ──
 // Source: kkv0n/Penguin-MODSK @ game_modes_mods, mods/game_modes/ShortcutLess/
-// (a fork of GPL-3.0 CTR-tools/CTR-ModSDK; same retail engine + level data as this
-// decomp). See the vault research note "2026-07-04 -- Research -- Shortcutless
-// Implementation Found (Penguin-MODSK GPL Port)". An earlier draft of this module
+// (a fork of GPL-3.0 CTR-tools/CTR-ModSDK; same retail engine + level data as
+// this decomp). An earlier draft of this module
 // wrongly concluded shortcuts need full per-track hand annotation and shipped an
 // F8 capture harness; that was overscoped. Enforcement is three layers, and ~99%
 // of it comes from data retail ALREADY has:
@@ -48,7 +47,7 @@ struct GameTracker;
 // it, so it is inert until used.
 #define AP_QUADBLOCK_FLAG_SHORTCUT 0x0008
 
-// Shortcuts option model (Stef, 2026-07-04). YAML `shortcuts:` maps here; native
+// Shortcuts option model. YAML `shortcuts:` maps here; native
 // reads it from ap-config now (slot_data later).
 enum AP_ShortcutMode
 {

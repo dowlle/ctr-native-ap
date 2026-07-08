@@ -9,7 +9,7 @@
 // physics/input/camera sites (each guarded by #ifdef CTR_AP) and everything else
 // stays here. Mirrors the ap_hooks.c convention.
 //
-// ── Design: the priming rule (Stef/Icebound decision, 2026-07-04) ──
+// ── Design: the priming rule ──
 // A received trap does NOT fire immediately. It PRIMES silently and only FIRES
 // during an active race on LAP 2 OR LAP 3, at a random moment after priming. This
 // is shared framework behaviour for the whole trap family (not per-trap), so every
@@ -39,7 +39,7 @@ struct Driver;
 struct GamepadBuffer;
 
 // ── Effect ids ──
-// The v1 trap set (Feature Triage Register B, Stef 2026-07-04). These are the
+// The v1 trap set. These are the
 // EFFECT ids, internal to native. The AP ITEM ids that map to them are owned by
 // the apworld and wired later -- see AP_TrapReceive's TODO seam.
 enum AP_TrapEffect

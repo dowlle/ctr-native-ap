@@ -207,7 +207,7 @@ int AP_WarpPadRewardModel(int globalBit)
 		return STATIC_KEY;
 	default:
 		// Own Wumpa / filler / unmapped -> the generic white-gem marker, SAME as a
-		// foreign item (Stef's call 2026-07-06). Previously STATIC_KEY, which after
+		// foreign item. Previously STATIC_KEY, which after
 		// the golden-key render fix made every filler location look like a real boss
 		// Key ("extra keys" in the glows). A boss Key must ONLY show for AP_CAT_KEY.
 		return STATIC_GEM;
@@ -251,7 +251,7 @@ int AP_WarpPadRewardTint(int globalBit)
 	default:
 		// Own Wumpa / filler / unmapped now renders on STATIC_GEM (see
 		// AP_WarpPadRewardModel) -- tint it white so it reads as the same generic
-		// marker as a foreign item (Stef's call 2026-07-06). Relic/trophy/token/key
+		// marker as a foreign item. Relic/trophy/token/key
 		// items never reach here (they hit their own cases / models).
 		return AP_FOREIGN_TINT; // white
 	}
@@ -299,7 +299,7 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 }
 
 // ---------------------------------------------------------------------------
-// UNIFIED PAD STATE (Warp-Pad State Model v2, 2026-07-03 design).
+// UNIFIED PAD STATE (Warp-Pad State Model v2).
 // One state function shared by the map colour (AH_Map.c), the in-hub look
 // (AH_WarpPad_LInB), and the gate (AH_WarpPad_ThTick). A pad is in exactly one
 // state; every surface reads it from the same source, no mode switch.
@@ -407,7 +407,7 @@ static int AP_DestKnown(int destLevelID)
 
 // Is the PHYSICAL pad's stage-1 (entry) requirement satisfied? Faithful copy of
 // the per-category unlock predicate AH_WarpPad_LInB computes for each pad class
-// (verified against source 2026-07-03), so the state model agrees with the pad
+// so the state model agrees with the pad
 // the game actually births. Race pads reuse ctr_cfg_warp_unlocked verbatim (the
 // same helper ThTick's load gate uses). NON-race categories mirror LInB's
 // per-class branch: randomized requirement when slot_data provides one, else the
@@ -527,7 +527,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 // (crew verify-first rule). The MAP colour and every gate already recompute
 // AP_PadState live each frame, so those two surfaces are honest in real time
 // today; only the in-hub 3D structural look and a late-connect pad's destination
-// remap wait on this re-birth. See the v2 design note's foundation 1.
+// remap wait on this re-birth.
 // ---------------------------------------------------------------------------
 static unsigned ap_state_gen = 0;
 
@@ -1184,8 +1184,8 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 // A rung the seed did not create is stored -1 and skipped; sends dedup against
 // the client's checked-set so re-winning a track never re-emits. These are AP
 // location codes, NOT AdvProgress bits, so they go straight down ap_net_send_
-// location -- NEVER through AP_NotifyAdvReward's bit lookup (podium-listener
-// handoff §3.4). MUST be called only for AP_RACE_TROPHY finishes: relic / token /
+// location -- NEVER through AP_NotifyAdvReward's bit lookup. MUST be called
+// only for AP_RACE_TROPHY finishes: relic / token /
 // crystal challenges run on the SAME levelIDs as the trophy tracks (only the
 // mode word differs), so gating on the levelID range alone would misfire.
 static void AP_SendPodiumChecks(int track, int placement)

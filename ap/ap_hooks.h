@@ -74,7 +74,7 @@ int AP_SkipHints(void);
 
 // 1 if the hub-map "Raceable" two-tone flicker (state 2 GREEN) is enabled.
 // Default 1; set to 0 by ap-config.txt "map_flash=0" for a static GREEN. Read by
-// AH_Map_Warppads (#ifdef CTR_AP). See the Warp-Pad State Model v2 design note.
+// AH_Map_Warppads (#ifdef CTR_AP). Part of the Warp-Pad State Model v2.
 int AP_MapFlashOn(void);
 
 // ── Reward glow ──
@@ -137,8 +137,8 @@ unsigned AP_StateGen(void);
 // Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
 // vanilla mode (no slot_data) / unrecognised destination (leave the pad
 // untouched). physLevelID keys the requirement (physical pad); destLevelID keys
-// the location + lifecycle category (loaded destination track). See the v2
-// design note. Consumed by AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
+// the location + lifecycle category (loaded destination track). Consumed by
+// AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
 #endif // CTR_AP
