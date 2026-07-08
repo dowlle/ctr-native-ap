@@ -17,6 +17,10 @@ typedef struct
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
+	int  aiDifficulty;          // Archipelago: AI-difficulty preset, stored as the raw
+	                            // engine difficulty VALUE (0=vanilla, 0x50, 0xa0, 0xf0,
+	                            // 0x140, 0x280). Local value; synced to the per-slot
+	                            // data-storage override on connect/edit. Comfort only.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
@@ -32,7 +36,10 @@ typedef enum
 {
 	CFG_BOOL,
 	CFG_INT,
-	CFG_STRING
+	CFG_STRING,
+	CFG_ENUM   // int value chosen from a fixed ladder; rendered as a name, stepped
+	           // left/right (see the AI-difficulty ladder in game/230/MM_ConfigMenu.c).
+	           // Persists as its raw int value, same as CFG_INT.
 } ConfigType;
 
 typedef struct

@@ -280,6 +280,26 @@ void BOTS_Adv_AdjustDifficulty(void)
 		currDifficulty = 0;
 	}
 
+#ifdef CTR_AP
+	// Archipelago AI-difficulty preset (option-sync): a fixed difficulty chosen
+	// in-game that OVERRIDES the trophy/loss-derived value, mirroring the reference
+	// AdvDifficulty module (which patches this function's per-branch subtraction to
+	// load arcadeDifficulty as a constant). 0 = vanilla (keep dynamic scaling). Cup
+	// difficulty follows the vanilla +0x50 relationship (see the CUP_DIFFICULTY
+	// path). Excluded from ARCADE_MODE, whose base is the player-chosen
+	// arcadeDifficulty. Re-applied every race start; comfort only -- generation
+	// never depends on it. See AP_AiDifficultyValue (ap/ap_hooks.c).
+	if ((gameMode1 & ARCADE_MODE) == 0)
+	{
+		s32 apDiff = AP_AiDifficultyValue();
+		if (apDiff > 0)
+		{
+			currDifficulty = apDiff;
+			cupDifficulty = (s16)(apDiff + 0x50);
+		}
+	}
+#endif
+
 	BOTS_Adv_LerpDifficulty(sdata->arcade_difficultyParams, (s16)currDifficulty);
 
 	if (((gameMode1 & ADVENTURE_CUP) != 0) || ((gameMode2 & CUP_ANY_KIND) != 0))

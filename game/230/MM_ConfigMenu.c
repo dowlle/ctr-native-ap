@@ -82,11 +82,60 @@ static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSe
 	}
 }
 
+// AI-difficulty preset ladder (CFG_ENUM). The values are the engine's internal
+// difficulty scale: 0 keeps vanilla dynamic (trophy-based) scaling; the rest are
+// the fixed presets from the reference difficulty menu. The raw value is what gets
+// stored + synced, so an out-of-ladder value from slot_data still applies as-is;
+// the menu only snaps to the nearest entry for display and left/right stepping.
+static const int   s_aiDiffValues[] = {0, 0x50, 0xA0, 0xF0, 0x140, 0x280};
+static const char *s_aiDiffNames[]  = {"VANILLA", "EASY", "MEDIUM", "HARD", "SUPER HARD", "ULTRA HARD"};
+#define AI_DIFF_COUNT ((int)(sizeof(s_aiDiffValues) / sizeof(s_aiDiffValues[0])))
+
+// Nearest ladder index for an arbitrary value (exact match, else closest).
+static int AiDiff_NearestIndex(int value)
+{
+	int best = 0;
+	int bestDist = -1;
+	for (int i = 0; i < AI_DIFF_COUNT; i++)
+	{
+		int d = value - s_aiDiffValues[i];
+		if (d < 0)
+			d = -d;
+		if (bestDist < 0 || d < bestDist)
+		{
+			bestDist = d;
+			best = i;
+		}
+	}
+	return best;
+}
+
+static const char *AiDiff_Label(int value)
+{
+	return s_aiDiffNames[AiDiff_NearestIndex(value)];
+}
+
+// Step to the adjacent preset (dir -1/+1), clamped to the ladder ends.
+static void AiDiff_Step(int *value, int dir)
+{
+	int i = AiDiff_NearestIndex(*value) + dir;
+	if (i < 0)
+		i = 0;
+	if (i > AI_DIFF_COUNT - 1)
+		i = AI_DIFF_COUNT - 1;
+	*value = s_aiDiffValues[i];
+}
+
 static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf)
 {
 	if (e->type == CFG_BOOL)
 	{
 		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON" : "OFF",
+			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+	}
+	else if (e->type == CFG_ENUM)
+	{
+		DecalFont_DrawLineOT((char *)AiDiff_Label(*(int *)e->valuePtr),
 			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else
@@ -273,6 +322,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		else
 		{
 			NativeConfig_Save();
+#ifdef CTR_AP
+			// Persist the AI-difficulty value to the per-slot data-storage override
+			// (no-op if not connected), alongside the config.ini write above.
+			AP_AiDifficultyCommit();
+#endif
 			sdata->ptrDesiredMenu = &D230.menuMainMenu;
 		}
 	}
@@ -310,6 +364,24 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
 			if (e->type == CFG_BOOL)
 				*(bool *)e->valuePtr ^= 1;
+		}
+
+		// enum entries: tap left/right to step through the preset ladder
+		{
+			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			if (e->type == CFG_ENUM)
+			{
+				if ((pad->buttonsTapped & BTN_LEFT) != 0)
+				{
+					AiDiff_Step((int *)e->valuePtr, -1);
+					OtherFX_Play(0, 1);
+				}
+				if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+				{
+					AiDiff_Step((int *)e->valuePtr, +1);
+					OtherFX_Play(0, 1);
+				}
+			}
 		}
 
 		// slider update for int entries

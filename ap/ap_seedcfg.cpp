@@ -158,6 +158,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		for (int k = 0; k < 4; k++)
 			ctr_cfg.boss_tracks[i][k] = -1;
 	}
+	// AI-difficulty slot_data default: -1 = unset (absent from ctr_options, or no
+	// slot_data at all) so the connect-time pull leaves the local value untouched.
+	ctr_cfg.ai_difficulty_default = -1;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.podium_any_position = 0;
@@ -199,6 +202,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
+	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
+	// change schema_version -- generation never depends on it.
+	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);
 
 	// ── warp_pad_map: identity already set; overlay string-keyed entries ──
 	// slot_data v3 keys span "0".."27" (-> warp_pad_map) AND "100".."104" (-> the
