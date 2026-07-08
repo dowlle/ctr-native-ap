@@ -234,7 +234,6 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 	struct AdvProgress *adv;
 	s16 levelID;
 	s16 sVar1;
-	s16 *trophies;
 	b32 open;
 	int iVar3;
 	u32 bit;
@@ -353,14 +352,30 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 
 						int base = levelID - N_SANITY_BEACH;
 
-						for (iVar3 = 0; iVar3 < 4; iVar3++)
+#ifdef CTR_AP
+						// AP: light the garage from the SAME authority its physical door
+						// uses (AP_BossGarageOpen, see AH_Garage.c) so the map matches
+						// whether it actually opens. AP fills trophy bits by COUNT (high-
+						// end first), never the specific hub-track bits the vanilla loop
+						// checks -- so that loop keeps the garage dark on the map even when
+						// the door opens (e.g. 4 trophies received). base == bossIdx here
+						// (GEM_STONE_VALLEY and N_SANITY_BEACH are consecutive level IDs, so
+						// levelID - N_SANITY_BEACH == (levelID - GEM_STONE_VALLEY) - 1).
+						if (ctr_cfg_active())
 						{
-							trophies = &data.advHubTrackIDs[base * 4];
-
-							if (CHECK_ADV_BIT(adv->rewards, trophies[iVar3] + ADV_REWARD_FIRST_TROPHY) == 0)
+							open = (AP_BossGarageOpen(base) != 0);
+						}
+						else
+#endif
+						{
+							s16 *trophies = &data.advHubTrackIDs[base * 4];
+							for (iVar3 = 0; iVar3 < 4; iVar3++)
 							{
-								open = false;
-								break;
+								if (CHECK_ADV_BIT(adv->rewards, trophies[iVar3] + ADV_REWARD_FIRST_TROPHY) == 0)
+								{
+									open = false;
+									break;
+								}
 							}
 						}
 						if (!open)
