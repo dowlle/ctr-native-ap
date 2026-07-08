@@ -254,7 +254,13 @@ void CC_EndEvent_DrawMenu()
 
 	UI_Lerp2D_Linear(pos.v, -0x64, 0xA2, 0x100, 0xA2, elapsedFrames, CC_FLY_IN_FRAMES);
 
-	DecalFont_DrawLine(sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], pos.x, pos.y, FONT_BIG, color);
+#ifdef CTR_AP
+	// AP: show the crystal-challenge location's scouted reward instead of the fixed
+	// "CTR TOKEN AWARDED". The check is only sent on the continue-press, so the
+	// celebrated bit is passed directly and resolved from the scout cache.
+	if (!AP_CeremonyDraw(pos.x, pos.y, tokenRewardBit, 0))
+#endif
+		DecalFont_DrawLine(sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], pos.x, pos.y, FONT_BIG, color);
 #if defined(CTR_NATIVE)
 	if (token != NULL)
 #endif

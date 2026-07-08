@@ -103,6 +103,23 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		std::list<int64_t> locs;
 		for (int i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 			locs.push_back((int64_t)AP_LOCATION_TABLE[i].location_code);
+		// Podium-ladder rungs carry no AdvProgress bit, so they are absent from
+		// AP_LOCATION_TABLE -- scout them explicitly from the parsed per-seed config
+		// so the ceremony can resolve the item + player placed on each rung (else a
+		// foreign rung reward renders as the generic fallback). ctr_cfg is populated
+		// by ap_seedcfg_parse_json() just above.
+		if (ctr_cfg.podium_enabled)
+		{
+			for (int t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
+			{
+				if (ctr_cfg.podium[t].first >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].first);
+				if (ctr_cfg.podium[t].podium >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].podium);
+				if (ctr_cfg.podium[t].any >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].any);
+			}
+		}
 		g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr, "[AP NET] slot connected; scouting %d locations\n",
 		             AP_LOCATION_TABLE_LEN);
@@ -188,6 +205,42 @@ extern "C" int ap_net_scout_known(long long location_code, long long *out_item,
 		*out_player = it->second.player;
 	if (out_flags)
 		*out_flags = it->second.flags;
+	return 1;
+}
+
+extern "C" int ap_net_scout_text(long long location_code, char *item_buf,
+                                 int item_n, char *player_buf, int player_n)
+{
+	if (item_buf && item_n > 0)
+		item_buf[0] = '\0';
+	if (player_buf && player_n > 0)
+		player_buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	auto it = g_scouts.find((int64_t)location_code);
+	if (it == g_scouts.end())
+		return 0;
+	const APClient::NetworkItem &ni = it->second;
+	try
+	{
+		// The item belongs to the game of the player who RECEIVES it. Names come
+		// from the DataPackage apclientpp syncs+caches on connect; a name not yet
+		// in the package resolves to "Unknown" (the caller maps that to a generic).
+		if (item_buf && item_n > 0)
+		{
+			std::string name = g_ap->get_item_name(ni.item, g_ap->get_player_game(ni.player));
+			std::snprintf(item_buf, (size_t)item_n, "%s", name.c_str());
+		}
+		if (player_buf && player_n > 0)
+		{
+			std::string alias = g_ap->get_player_alias(ni.player);
+			std::snprintf(player_buf, (size_t)player_n, "%s", alias.c_str());
+		}
+	}
+	catch (...)
+	{
+		return 0;
+	}
 	return 1;
 }
 

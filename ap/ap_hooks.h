@@ -31,6 +31,20 @@ void AP_NotifyGoal(int oxideSecond);
 // based goals: all-bosses / all-gem-cups / 101%) and on the Oxide beat.
 void AP_EvaluateGoal(void);
 
+// ── Race-end ceremony award text (display-only) ──
+// Draw the AP award block at x,y from the current race's just-sent checks +
+// primaryBit (the reward the ceremony celebrates, or -1 for ledger-only). Returns
+// 1 if it drew (caller suppresses its vanilla award line), 0 if AP is inactive or
+// nothing is scouted (caller draws the vanilla string). Called from the four
+// end-of-race draw functions (game/221.c, game/222.c, game/223.c).
+int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger);
+
+// Highest relic tier the just-finished relic race sent (0 Sapphire, 1 Gold, 2
+// Platinum; -1 none). The truthful source for the relic ceremony's tier label +
+// relic colour (game/223.c, game/UI/UI_Clock.c), which vanilla derives from the
+// AP_ApplyItems-clobbered advProgress bits. -1 during pre-race draws.
+int AP_CeremonyRelicTier(void);
+
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress
 // location bits, so item fill (generic, high-end) no longer collides with the

@@ -179,6 +179,21 @@ void RR_EndEvent_DrawMenu(void)
 		relic->colorRGBA = RR_GOLD_RELIC_COLOR;
 	}
 
+#ifdef CTR_AP
+	// AP: the bits above are AP_ApplyItems' received-item view, not the run just
+	// finished, so they mis-colour the ceremony relic (the SAPPHIRE-label bug's
+	// sibling). Drive the colour from the true just-won tier instead; tier 0 keeps
+	// the model's base sapphire colour.
+	if (ctr_cfg_active())
+	{
+		int apRelicTier = AP_CeremonyRelicTier();
+		if (apRelicTier == 2)
+			relic->colorRGBA = RR_PLATINUM_RELIC_COLOR;
+		else if (apRelicTier == 1)
+			relic->colorRGBA = RR_GOLD_RELIC_COLOR;
+	}
+#endif
+
 	sdata->ptrTimebox1->scale = (SVec3){{RR_TIMEBOX_SCALE, RR_TIMEBOX_SCALE, RR_TIMEBOX_SCALE}};
 
 	if (sdata->framesSinceRaceEnded < RR_RESULT_MAX_FRAMES)
@@ -436,7 +451,14 @@ void RR_EndEvent_DrawMenu(void)
 		// interpolate fly-in
 		UI_Lerp2D_Linear(pos.v, startX, 0x50, endX, 0x50, elapsedFrames, RR_LERP_FRAMES);
 
-		DecalFont_DrawLine(sdata->lngStrings[LNG_RELIC_AWARDED], pos.x, pos.y, 1, textColor);
+#ifdef CTR_AP
+		// AP: replace the fixed "RELIC AWARDED" banner with what this run actually
+		// sent (the beaten relic tiers, cycled). primaryBit -1 = ledger only; the
+		// tiers were recorded at the finish by RR_EndEvent_UnlockAward. Falls back
+		// to the vanilla banner when AP is inactive or nothing is scouted.
+		if (!AP_CeremonyDraw(pos.x, pos.y, -1, 1))
+#endif
+			DecalFont_DrawLine(sdata->lngStrings[LNG_RELIC_AWARDED], pos.x, pos.y, 1, textColor);
 	}
 
 skipRelicAwarded:

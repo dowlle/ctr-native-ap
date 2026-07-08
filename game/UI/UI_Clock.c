@@ -401,6 +401,33 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	}
 
 LAB_8004f378:
+#ifdef CTR_AP
+	// AP: the tier label + relic colour above are chosen from advProgress.rewards,
+	// which AP_ApplyItems rewrites every frame to mirror RECEIVED items -- so after
+	// a local platinum run the just-won bits are wiped and the fall-through mislabels
+	// it SAPPHIRE (the photographed bug: sapphire label over a platinum-consistent
+	// time). Override with the tier this run actually won. The ledger is populated
+	// only after a relic finish, so the pre-race "next goal" draw is untouched.
+	if (ctr_cfg_active())
+	{
+		int apRelicTier = AP_CeremonyRelicTier();
+		if (apRelicTier == 2)
+		{
+			str = 200; // 0xc8 PLATINUM
+			stringColor_but_its_also_relicColor = SILVER;
+		}
+		else if (apRelicTier == 1)
+		{
+			str = 199; // 0xc7 GOLD
+			stringColor_but_its_also_relicColor = PAPU_YELLOW;
+		}
+		else if (apRelicTier == 0)
+		{
+			str = 0xc6; // SAPPHIRE
+			stringColor_but_its_also_relicColor = TROPY_LIGHT_BLUE;
+		}
+	}
+#endif
 	fontType = FONT_BIG;
 	if ((flags & 1) == 0)
 	{

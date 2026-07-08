@@ -42,6 +42,14 @@ int  ap_net_take_recv_reset(void);
 int  ap_net_scout_known(long long location_code, long long *out_item,
                         int *out_player, unsigned *out_flags);
 
+// Resolve the scouted item at location_code into display strings: the item name
+// (item_buf) and the receiving player's alias (player_buf), each truncated to fit
+// its buffer and null-terminated. Returns 1 if the location is scouted, 0
+// otherwise (both buffers are set to "" on a 0). A name not yet present in the
+// synced DataPackage comes back as "Unknown"; the caller substitutes a generic.
+int  ap_net_scout_text(long long location_code, char *item_buf, int item_n,
+                       char *player_buf, int player_n);
+
 // 1 if location_code has already been checked on the server (own slot). Drives
 // the "done / chill" warp-pad colouring vs the "new / available" glow.
 int  ap_net_location_checked(long long location_code);
