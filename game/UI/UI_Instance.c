@@ -265,6 +265,17 @@ void UI_INSTANCE_InitAll(void)
 		UI_INSTANCE_BirthWithThread(99, (int)UI_ThTick_Reward, 0xf, 1, 0, (int)sdata->s_key1);
 		UI_INSTANCE_BirthWithThread(0x62, (int)UI_ThTick_Reward, 0x10, 0, 0, (int)sdata->s_trophy1);
 
+#ifdef CTR_AP
+		// AP HUD: birth a token icon on the hub (slot 0x12) so the token counter
+		// has an icon beside it. AP-only -- vanilla never showed hub tokens.
+		// UI_ThTick_Reward re-tints it through the 5 token colours in sync with
+		// the counter. Model/string match the crystal-arena token birth above.
+		if (ctr_cfg_active())
+		{
+			UI_INSTANCE_BirthWithThread(STATIC_TOKEN, (int)UI_ThTick_Reward, 0x12, 0, 0, (int)sdata->s_token);
+		}
+#endif
+
 		GAMEPROG_AdvPercent(&sdata->advProgress);
 
 		return;

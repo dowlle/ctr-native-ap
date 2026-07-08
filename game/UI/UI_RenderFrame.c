@@ -194,6 +194,18 @@ void UI_RenderFrame_Racing()
 				{
 					// Draw powerslide meter
 					UI_DrawSlideMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
+
+#ifdef CTR_AP
+					// AP HUD: reserves bar 5px under the boost bar, plus a numeric
+					// speed readout below it (1P only). Sits inside the
+					// not-finished / not-battle gate so it inherits the boost
+					// bar's visibility (hidden after the finish line and in battle).
+					if (ctr_cfg_active() && numPlyr == 1)
+					{
+						UI_DrawReservesMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y + 5, playerStruct);
+						UI_DrawSpeedNum(hudStructPtr[8].x + offset - 49, hudStructPtr[8].y + 9, playerStruct);
+					}
+#endif
 				}
 
 				// If you are not in Time Trial or Relic Race
@@ -890,6 +902,17 @@ void UI_RenderFrame_AdvHub(void)
 	UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
 	UI_DrawNumKey(hudStructPtr[0xF].x + 0x10, hudStructPtr[0xF].y - 10);
 	UI_DrawNumTrophy(hudStructPtr[0x10].x + 0x10, hudStructPtr[0x10].y - 10);
+
+#ifdef CTR_AP
+	// AP HUD: token counter on the hub top row (slot 0x12), only while
+	// AP-connected. Its icon is born in UI_Instance's ADVENTURE_ARENA block and
+	// re-tints per colour via UI_ThTick_Reward; the count cycles the 5 token
+	// colours like the relic counter.
+	if (ctr_cfg_active())
+	{
+		UI_DrawNumToken(hudStructPtr[0x12].x + 0x10, hudStructPtr[0x12].y - 10);
+	}
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005435c-0x8005465c for the retail path.
@@ -918,6 +941,15 @@ void UI_RenderFrame_CrystChall(void)
 	UI_JumpMeter_Draw(hudStructPtr[6].x, hudStructPtr[6].y, player);
 
 	UI_DrawSlideMeter(hudStructPtr[8].x, hudStructPtr[8].y, player);
+
+#ifdef CTR_AP
+	// AP HUD: reserves bar in crystal arenas too (the ModSDK demo build hooked
+	// this render path as well). CrystChall is always 1P.
+	if (ctr_cfg_active())
+	{
+		UI_DrawReservesMeter(hudStructPtr[8].x, hudStructPtr[8].y + 5, player);
+	}
+#endif
 
 	UI_DrawSpeedBG();
 

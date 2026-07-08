@@ -271,20 +271,40 @@ void AH_Pause_Draw(int pageID, int posX)
 	{
 		s16 tokenCount[5] = {0, 0, 0, 0, 0};
 
-		for (int i = 0; i < 0x10; i++)
+#ifdef CTR_AP
+		if (ctr_cfg_active())
 		{
-			if (CHECK_ADV_BIT(adv->rewards, i + ADV_REWARD_FIRST_CTR_TOKEN) != 0)
+			// AP mode: the 5 token colours are INDEPENDENT received currencies,
+			// but AP_ApplyItems fills them into one colour-blind pool by total
+			// received count, so the vanilla bit scan below -- which groups
+			// AdvProgress token bits by ctrTokenGroupID (i.e. by which track slot
+			// holds a bit) -- reports the wrong per-colour split. Read the
+			// decoupled AP per-colour counts instead. Same shape as the pause
+			// RELICS fix (type==2 below) and the hub token counter, so hub HUD,
+			// pause screen and gem-cup gates all read the same counters.
+			for (int c = 0; c < 5; c++)
 			{
-				tokenCount[data.metaDataLEV[i].ctrTokenGroupID]++;
+				tokenCount[c] = (s16)AP_GateCountTokenColour(c);
 			}
 		}
-
-		// NOTE(aalhendi): Purple tokens are stored in a separate reward bit range not in ctrTokenGroupID.
-		for (int i = 0; i < 4; i++)
+		else
+#endif
 		{
-			if (CHECK_ADV_BIT(adv->rewards, i + ADV_REWARD_FIRST_PURPLE_TOKEN) != 0)
+			for (int i = 0; i < 0x10; i++)
 			{
-				tokenCount[4]++;
+				if (CHECK_ADV_BIT(adv->rewards, i + ADV_REWARD_FIRST_CTR_TOKEN) != 0)
+				{
+					tokenCount[data.metaDataLEV[i].ctrTokenGroupID]++;
+				}
+			}
+
+			// NOTE(aalhendi): Purple tokens are stored in a separate reward bit range not in ctrTokenGroupID.
+			for (int i = 0; i < 4; i++)
+			{
+				if (CHECK_ADV_BIT(adv->rewards, i + ADV_REWARD_FIRST_PURPLE_TOKEN) != 0)
+				{
+					tokenCount[4]++;
+				}
 			}
 		}
 

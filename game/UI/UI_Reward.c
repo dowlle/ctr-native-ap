@@ -155,6 +155,18 @@ void UI_ThTick_Reward(struct Thread *bucket)
 		static const u32 s_hudRelicTierTint[3] = {0x060a5ff0, 0x0ffc6290, 0x0ebebf50};
 		inst->colorRGBA = s_hudRelicTierTint[(gGT->timer / 0x3C) % 3];
 	}
+	// AP: re-tint the hub TOKEN counter icon to the colour its count is cycling
+	// through (R,G,B,Y,P, in sync with UI_DrawNumToken's 0x3C/colour timer). The
+	// per-colour RGBA is derived from data.AdvCups[colour].color the same way
+	// warp-pad token prizes are tinted (AH_WarpPad); the AdvCups index equals the
+	// AP token colour index. ONLY the token icon on the hub is touched.
+	else if (ctr_cfg_active() && inst->model->id == STATIC_TOKEN)
+	{
+		int colour = (gGT->timer / 0x3C) % 5;
+		inst->colorRGBA = ((u32)data.AdvCups[colour].color[0] << 0x14) |
+		                  ((u32)data.AdvCups[colour].color[1] << 0xc) |
+		                  ((u32)data.AdvCups[colour].color[2] << 0x4);
+	}
 #endif
 
 	// Spin on the Y axis

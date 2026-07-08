@@ -274,11 +274,24 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 		// all other boosts
 		else
 		{
-			// make fire invisible for the sake of the visibility cooldown as explained in common.h
-			turboInst1->flags |= DEPTH_FADE | HIDE_MODEL;
-			turboInst2->flags |= DEPTH_FADE | HIDE_MODEL;
+#ifdef CTR_AP
+			// AP (optional, default OFF; enable with ap-config.txt
+			// "hud_reserves_fx=1"): exhaust-fire retention tweak bundled with the
+			// ReservesMeter module. When you already hold reserves, keep the fire
+			// earned from power slides visible instead of hiding it for the
+			// visibility cooldown. Visual only (instance HIDE flags + cooldown);
+			// the numTurbos counter below is untouched. Behind a toggle because it
+			// changes a familiar cue -- upstream disabled it on the EUR build.
+			// With the toggle off this reduces to the vanilla always-hide.
+			if (!(AP_HudReservesFx() && driver->reserves != 0))
+#endif
+			{
+				// make fire invisible for the sake of the visibility cooldown as explained in common.h
+				turboInst1->flags |= DEPTH_FADE | HIDE_MODEL;
+				turboInst2->flags |= DEPTH_FADE | HIDE_MODEL;
 
-			turboObj->fireVisibilityCooldown = 0x60;
+				turboObj->fireVisibilityCooldown = 0x60;
+			}
 			driver->numTurbos = (s16)CTR_MipsAddLo((u16)driver->numTurbos, 1);
 #if BUILD == JpnRetail
 			// the japanese version of the game keeps track of your highest turbo chain in a race

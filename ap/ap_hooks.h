@@ -77,6 +77,12 @@ int AP_SkipHints(void);
 // AH_Map_Warppads (#ifdef CTR_AP). Part of the Warp-Pad State Model v2.
 int AP_MapFlashOn(void);
 
+// 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
+// visible while holding reserves). Default 0; set by ap-config.txt
+// "hud_reserves_fx=1". Read by VehFire_Increment (#ifdef CTR_AP). Visual only;
+// bundled with the ported ReservesMeter HUD.
+int AP_HudReservesFx(void);
+
 // ── Reward glow ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
