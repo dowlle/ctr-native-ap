@@ -23,7 +23,17 @@
 #include <cstdint>
 
 static APClient            *g_ap = nullptr;
-static std::deque<long long> g_items; // received item ids, drained by the game
+static std::deque<long long> g_items;        // received item ids, drained by the game
+static std::deque<int>       g_items_player; // parallel: sending player slot
+static std::deque<long long> g_items_index;  // parallel: server ReceivedItems index
+
+// Metadata of the most recent ap_net_drain_items() batch, positionally aligned
+// with its output and valid until the next drain. Lets the hub item feed resolve
+// each drained item's sender + server index without changing the drain signature
+// (the shared item-id drain loop in ap_hooks stays a plain both-add seam).
+static int       g_recv_batch_player[64];
+static long long g_recv_batch_index[64];
+static int       g_recv_batch_n = 0;
 static std::string           g_slot;
 static std::string           g_password;
 static bool                  g_connected = false;
@@ -93,6 +103,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// resends the full ReceivedItems list (from index 0) right after this.
 		g_recv_reset = true;
 		g_items.clear();
+		g_items_player.clear();
+		g_items_index.clear();
 		g_scouts.clear();
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
 		// Scout every CTR location so the warp pads can show the actual AP reward
@@ -127,6 +139,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		for (const auto &it : items)
 		{
 			g_items.push_back((long long)it.item);
+			g_items_player.push_back((int)it.player);
+			g_items_index.push_back((long long)it.index);
 			std::fprintf(stderr, "[AP NET] received item %lld (index %d)\n",
 			             (long long)it.item, it.index);
 		}
@@ -251,12 +265,78 @@ extern "C" const char *ap_net_last_error(void)
 extern "C" int ap_net_drain_items(long long *out, int max)
 {
 	int n = 0;
+	g_recv_batch_n = 0;
 	while (n < max && !g_items.empty())
 	{
-		out[n++] = g_items.front();
+		out[n] = g_items.front();
 		g_items.pop_front();
+		int       pl = -1;
+		long long ix = -1;
+		if (!g_items_player.empty())
+		{
+			pl = g_items_player.front();
+			g_items_player.pop_front();
+		}
+		if (!g_items_index.empty())
+		{
+			ix = g_items_index.front();
+			g_items_index.pop_front();
+		}
+		if (n < (int)(sizeof g_recv_batch_player / sizeof g_recv_batch_player[0]))
+		{
+			g_recv_batch_player[n] = pl;
+			g_recv_batch_index[n] = ix;
+			g_recv_batch_n = n + 1;
+		}
+		n++;
 	}
 	return n;
+}
+
+// Sender slot / server index for position `pos` of the most recent drain batch
+// (valid until the next ap_net_drain_items call). -1 if pos is out of range.
+extern "C" int ap_net_recv_batch_player(int pos)
+{
+	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_player[pos] : -1;
+}
+
+extern "C" long long ap_net_recv_batch_index(int pos)
+{
+	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_index[pos] : -1;
+}
+
+// Resolve a RECEIVED item into display strings: the item name (in this slot's own
+// game, since we are the receiver) and the sending player's alias. Returns 1 on
+// success, 0 if not connected (both buffers set to ""). A name missing from the
+// synced DataPackage resolves to "Unknown"; the caller substitutes a generic.
+extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_buf,
+                                int item_n, char *player_buf, int player_n)
+{
+	if (item_buf && item_n > 0)
+		item_buf[0] = '\0';
+	if (player_buf && player_n > 0)
+		player_buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	try
+	{
+		if (item_buf && item_n > 0)
+		{
+			std::string name =
+			    g_ap->get_item_name(item_id, g_ap->get_player_game(g_ap->get_player_number()));
+			std::snprintf(item_buf, (size_t)item_n, "%s", name.c_str());
+		}
+		if (player_buf && player_n > 0)
+		{
+			std::string alias = g_ap->get_player_alias(sender_slot);
+			std::snprintf(player_buf, (size_t)player_n, "%s", alias.c_str());
+		}
+	}
+	catch (...)
+	{
+		return 0;
+	}
+	return 1;
 }
 
 extern "C" void ap_net_shutdown(void)
@@ -268,6 +348,8 @@ extern "C" void ap_net_shutdown(void)
 	}
 	g_connected = false;
 	g_items.clear();
+	g_items_player.clear();
+	g_items_index.clear();
 	g_scouts.clear();
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();

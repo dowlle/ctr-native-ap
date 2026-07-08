@@ -895,6 +895,215 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
 	return 1;
 }
 
+// ---------------------------------------------------------------------------
+// HUB ITEM-RECEIVED FEED (display-only)
+//
+// A bottom-left feed of the Archipelago items you receive. Rendered ONLY on the
+// adventure hub; items received elsewhere (mid-race, menus) queue and surface on
+// hub entry. Each visible line lives AP_FEED_LIFETIME_FRAMES starting when it
+// first becomes VISIBLE (time spent queued in a race does not count against it).
+// New lines enter at the bottom and push older lines up; a deep queue drains
+// oldest-first, one line per stagger interval.
+//
+// Replay suppression: on every (re)connect the server resends the full received
+// list from index 0. The feed absorbs that initial inventory SILENTLY -- while
+// unprimed every drained item is swallowed and its server index tracked as a
+// high-water mark -- and only primes (goes live) after a short quiet window with
+// no further items. Past priming, only items with a strictly higher index toast,
+// so a reconnect's replay (same indices) never re-toasts. All display-only and
+// gated on ctr_cfg_active(), so a clean / vanilla-config run is byte-identical.
+// ---------------------------------------------------------------------------
+#define AP_FEED_LIFETIME_FRAMES    240 // per-line visible dwell (~4s), tunable
+#define AP_FEED_MAX_VISIBLE        5   // lines on screen at once
+#define AP_FEED_QUEUE_MAX          24  // pending (not-yet-visible) ring capacity
+#define AP_FEED_STAGGER_FRAMES     12  // min frames between promotions (cascade)
+#define AP_FEED_PRIME_QUIET_FRAMES 30  // no-new-item frames before going live
+#define AP_FEED_LINE_H             0xC // vertical spacing between lines
+#define AP_FEED_X                  0x10
+#define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
+// Storage cap: big enough that the "%s FROM %s" format below (item<=31 +
+// " FROM " + player<=23) can never be truncated, so no -Wformat-truncation.
+#define AP_FEED_TEXT_CAP           64
+#define AP_FEED_ITEM_CAP           32
+#define AP_FEED_PLAYER_CAP         24
+// Wording lives here (retunable), consistent with the ceremony block above.
+#define AP_FEED_FMT_OWN      "%s"           // own slot / server item
+#define AP_FEED_FMT_FOREIGN  "%s FROM %s"   // someone else sent it
+#define AP_FEED_ITEM_UNKNOWN "AP ITEM"
+
+typedef struct
+{
+	char text[AP_FEED_TEXT_CAP];
+	int  own;        // 1 = own/server item (colour), 0 = foreign
+	int  framesLeft; // visible lifetime remaining
+} AP_FeedLine;
+
+static AP_FeedLine ap_feed_queue[AP_FEED_QUEUE_MAX]; // FIFO of pending lines
+static int ap_feed_qhead = 0;
+static int ap_feed_qcount = 0;
+static AP_FeedLine ap_feed_vis[AP_FEED_MAX_VISIBLE]; // [0]=oldest(top)..newest(bottom)
+static int ap_feed_vcount = 0;
+static int ap_feed_stagger = 0;
+
+static int       ap_feed_primed = 0;  // 0 while absorbing the initial inventory
+static long long ap_feed_hwm = -1;    // highest already-known server index
+static int       ap_feed_quiet = 0;   // consecutive no-new-item frames (priming)
+
+static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on)
+int AP_HubFeedOn(void)
+{
+	return ap_hub_feed_on;
+}
+
+// Append a ready-formatted line to the pending queue. Oldest is dropped if full.
+static void AP_FeedEnqueue(const char *text, int own)
+{
+	if (ap_feed_qcount >= AP_FEED_QUEUE_MAX)
+	{
+		ap_feed_qhead = (ap_feed_qhead + 1) % AP_FEED_QUEUE_MAX;
+		ap_feed_qcount--;
+	}
+	int slot = (ap_feed_qhead + ap_feed_qcount) % AP_FEED_QUEUE_MAX;
+	snprintf(ap_feed_queue[slot].text, AP_FEED_TEXT_CAP, "%s", text);
+	ap_feed_queue[slot].own = own;
+	ap_feed_queue[slot].framesLeft = 0;
+	ap_feed_qcount++;
+}
+
+// Clear feed state on a fresh (re)connect: drop stale toasts and re-arm the
+// initial-inventory absorb window. Called from the connect-reset block.
+void AP_FeedConnectReset(void)
+{
+	ap_feed_primed = 0;
+	ap_feed_hwm = -1;
+	ap_feed_quiet = 0;
+	ap_feed_qhead = 0;
+	ap_feed_qcount = 0;
+	ap_feed_vcount = 0;
+	ap_feed_stagger = 0;
+}
+
+// One drained received item. While unprimed (initial inventory) it is swallowed
+// and its index tracked; once primed, only a strictly newer index enqueues a
+// toast, so a reconnect's re-sent inventory (same indices) never re-appears.
+void AP_FeedOnItemReceived(long long item, int player, long long index)
+{
+	if (!ctr_cfg_active())
+		return;
+
+	if (!ap_feed_primed)
+	{
+		if (index > ap_feed_hwm)
+			ap_feed_hwm = index; // remember the initial inventory's high-water mark
+		return;
+	}
+	if (index >= 0 && index <= ap_feed_hwm)
+		return; // replayed inventory entry -> already known
+	if (index > ap_feed_hwm)
+		ap_feed_hwm = index;
+
+	int self = ap_net_self_slot();
+	// Stef's rule: own slot OR the server (slot <= 0) shows just the item; anyone
+	// else gets "FROM <PLAYER>".
+	int own = (player <= 0 || player == self);
+
+	char itemRaw[64], playerRaw[64];
+	char itemS[AP_FEED_ITEM_CAP], playerS[AP_FEED_PLAYER_CAP];
+	char line[AP_FEED_TEXT_CAP];
+	if (ap_net_item_text(item, player, itemRaw, (int)sizeof itemRaw, playerRaw, (int)sizeof playerRaw))
+	{
+		AP_CeremonySanitize(itemRaw, itemS, (int)sizeof itemS);
+		AP_CeremonySanitize(playerRaw, playerS, (int)sizeof playerS);
+	}
+	else
+	{
+		itemS[0] = '\0';
+		playerS[0] = '\0';
+	}
+	if (AP_CeremonyNameIsBlank(itemS))
+		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
+
+	if (own || playerS[0] == '\0')
+		snprintf(line, sizeof line, AP_FEED_FMT_OWN, itemS);
+	else
+		snprintf(line, sizeof line, AP_FEED_FMT_FOREIGN, itemS, playerS);
+
+	AP_FeedEnqueue(line, own);
+}
+
+// Called once after each frame's received-item drain (n = items drained this
+// frame). Handles the go-live transition: once connected and the initial dump
+// has gone quiet for AP_FEED_PRIME_QUIET_FRAMES, the feed primes and starts
+// toasting. Any item that arrives while unprimed keeps resetting the window (and
+// is absorbed by AP_FeedOnItemReceived), so a chunked initial sync stays silent.
+void AP_FeedEndDrain(int drainedThisFrame)
+{
+	if (ap_feed_primed)
+		return;
+	if (drainedThisFrame > 0 || !ap_net_is_connected())
+	{
+		ap_feed_quiet = 0;
+		return;
+	}
+	if (++ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
+		ap_feed_primed = 1;
+}
+
+// Render the feed on the adventure hub: promote one pending line per stagger into
+// a free visible slot (oldest first), age + expire visible lines from the top,
+// and draw newest at the bottom anchor with older lines stacked upward.
+void AP_FeedDrawHub(void)
+{
+	if (!ctr_cfg_active() || !ap_hub_feed_on)
+		return;
+
+	// Promote a pending line into a free slot, rate-limited so a deep queue
+	// cascades in rather than snapping full in one frame.
+	if (ap_feed_vcount < AP_FEED_MAX_VISIBLE && ap_feed_qcount > 0)
+	{
+		if (ap_feed_stagger > 0)
+		{
+			ap_feed_stagger--;
+		}
+		else
+		{
+			AP_FeedLine *q = &ap_feed_queue[ap_feed_qhead];
+			ap_feed_qhead = (ap_feed_qhead + 1) % AP_FEED_QUEUE_MAX;
+			ap_feed_qcount--;
+			AP_FeedLine *v = &ap_feed_vis[ap_feed_vcount];
+			snprintf(v->text, AP_FEED_TEXT_CAP, "%s", q->text);
+			v->own = q->own;
+			v->framesLeft = AP_FEED_LIFETIME_FRAMES; // lifetime starts now (visible)
+			ap_feed_vcount++;
+			ap_feed_stagger = AP_FEED_STAGGER_FRAMES;
+		}
+	}
+
+	// Age, then compact out expired lines (oldest reach 0 first).
+	int w = 0;
+	for (int i = 0; i < ap_feed_vcount; i++)
+	{
+		if (ap_feed_vis[i].framesLeft > 0)
+			ap_feed_vis[i].framesLeft--;
+		if (ap_feed_vis[i].framesLeft > 0)
+		{
+			if (w != i)
+				ap_feed_vis[w] = ap_feed_vis[i];
+			w++;
+		}
+	}
+	ap_feed_vcount = w;
+
+	// Draw: newest (last) at the bottom anchor, older lines stacked upward.
+	for (int i = 0; i < ap_feed_vcount; i++)
+	{
+		int fromBottom = ap_feed_vcount - 1 - i;
+		int y = AP_FEED_BASE_Y - fromBottom * AP_FEED_LINE_H;
+		int color = ap_feed_vis[i].own ? ORANGE : WHITE;
+		DecalFont_DrawLine(ap_feed_vis[i].text, AP_FEED_X, y, FONT_SMALL, color);
+	}
+}
+
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
@@ -1270,6 +1479,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			; // shortcutless=... / shortcut_capture=... (see ap_shortcut.c)
 		else if (!strncmp(line, "map_flash=", 10))
 			ap_map_flash = (line[10] != '0'); // 0 = static GREEN (no Raceable flicker)
+		else if (!strncmp(line, "hub_feed=", 9))
+			ap_hub_feed_on = (line[9] != '0'); // 0 = hide the hub item-received feed
 	}
 	fclose(f);
 }
@@ -1352,6 +1563,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_oxide_final_beaten = 0;
 		ap_goal_sent = 0;
 		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
+		AP_FeedConnectReset(); // drop stale toasts + re-arm initial-inventory absorb
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 	}
 
@@ -1372,6 +1584,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 	AP_FmtState(gGT, st, sizeof st); // game-state breadcrumb for this drain (crash diag)
 	for (i = 0; i < n; i++)
 	{
+		// Hub item feed: queue a toast for this receipt (sender + server index from
+		// the aligned drain batch). Display-only; self-suppresses off-hub / unprimed.
+		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i), ap_net_recv_batch_index(i));
+
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
@@ -1397,6 +1613,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		AP_AppendLog(msg);
 	}
+	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
 }
 
 // In-game connection manager: tear down the current client and re-dial. The menu
