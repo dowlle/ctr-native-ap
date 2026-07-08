@@ -1240,7 +1240,7 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 		*modelID = STATIC_TOKEN;
 		*numOwned = (r->colour >= 0) ? AP_GateCountTokenColour(r->colour) : AP_GateCount(AP_IDX_TOKEN_RED);
 		break;
-	case 4: *modelID = STATIC_RELIC;  *numOwned = AP_GateCount(AP_IDX_SAPPHIRE); break;
+	case 4: *modelID = STATIC_RELIC;  *numOwned = AP_GateCountRelicTier(r->colour); break; // tier by colour
 	case 5: *modelID = STATIC_GEM;    *numOwned = (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0; break;
 	// any-of aggregates (colour -1): show the type's model + the summed owned count
 	// so the displayed X/N matches the gate eval (AP_BossReqMet types 6/7/8).
@@ -1466,9 +1466,9 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				    ? AP_GateCountTokenColour(r->colour)
 				    : AP_GateCount(AP_IDX_TOKEN_RED);
 				break;
-			case 4: // sapphire relic
+			case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
 				unlockItem_modelID = STATIC_RELIC;
-				unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+				unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
 				break;
 			case 5: // gems (colour-aware)
 				unlockItem_modelID = STATIC_GEM;
@@ -1593,9 +1593,9 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					    ? AP_GateCountTokenColour(r->colour)
 					    : AP_GateCount(AP_IDX_TOKEN_RED);
 					break;
-				case 4: // sapphire
+				case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
 					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+					unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
 					break;
 				case 5: // gems (colour-aware)
 					unlockItem_modelID = STATIC_GEM;
@@ -1762,9 +1762,9 @@ void AH_WarpPad_LInB(struct Instance *inst)
 					    ? AP_GateCountTokenColour(r->colour)
 					    : AP_GateCount(AP_IDX_TOKEN_RED);
 					break;
-				case 4: // sapphire
+				case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
 					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
+					unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
 					break;
 				case 5: // gems (colour-aware)
 					unlockItem_modelID = STATIC_GEM;

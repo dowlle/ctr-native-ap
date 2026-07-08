@@ -563,12 +563,18 @@ static int AP_AllFiveGems(void)
 }
 
 // Send StatusUpdate(GOAL) once when the per-seed goal (ctr_cfg.goal) is met.
-// Mirrors the apworld completion_condition per goal:
-//   0 oxide             -> beat N. Oxide (first challenge)
-//   1 oxidefinal        -> beat N. Oxide (final challenge)
-//   2 everythingplusone -> beat N. Oxide (final) + 18 Gold relics + all 5 gems
-//   3 allbosses         -> 16 trophies received
-//   4 allgemcups        -> all 5 gems received (i.e. won every gem cup)
+// Mirrors the apworld completion_condition per goal (goal enum keeps a gap at 2:
+// the old "everythingplusone" goal was dropped, the ints are NOT renumbered):
+//   0 oxide      -> beat N. Oxide (first challenge)
+//   1 oxidefinal -> beat N. Oxide (final challenge)
+//   3 allbosses  -> won all 4 boss races (Ripper Roo, Papu Papu, Komodo Joe,
+//                   Pinstripe). "Won" == the boss-race LOCATION is CHECKED
+//                   (sent only on an actual live win, game/222.c). NOT
+//                   AP_GateCount(Trophy)>=16, and NOT CHECK_ADV_BIT on the boss
+//                   key bits 94-97: those are the Key item pool (AP_POOL_KEY),
+//                   so AP_ApplyItems sets them from RECEIVED keys -- holding 4
+//                   shuffled Keys is not beating 4 bosses (the BUG-D class).
+//   4 allgemcups -> all 5 gems received (i.e. won every gem cup)
 // Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
 // first Oxide beat is the goal.
 void AP_EvaluateGoal(void)
@@ -588,10 +594,19 @@ void AP_EvaluateGoal(void)
 		{
 		case 0: done = ap_oxide_first_beaten; break;
 		case 1: done = ap_oxide_final_beaten; break;
-		case 2: done = ap_oxide_final_beaten
-		               && AP_GateCount(AP_IDX_GOLD) >= 18
-		               && AP_AllFiveGems(); break;
-		case 3: done = AP_GateCount(AP_IDX_TROPHY) >= 16; break;
+		case 3:
+		{
+			// All 4 boss races personally won == each boss-race location checked.
+			// Durable (server checked-set, resent on connect) + reliable (checked
+			// only at the live win site, never by received Keys). Same signal
+			// AP_BossGarageOpen uses for trophy tracks.
+			int allWon = 1, b;
+			for (b = 0; b < 4; b++)
+				if (!AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+					allWon = 0;
+			done = allWon;
+			break;
+		}
 		case 4: done = AP_AllFiveGems(); break;
 		default: done = ap_oxide_first_beaten; break;
 		}
@@ -675,6 +690,14 @@ void AP_NotifyGoal(int oxideSecond)
 		ap_oxide_final_beaten = 1;
 	else
 		ap_oxide_first_beaten = 1;
+
+	// As of schema 4 the two Oxide beats are also REAL location checks
+	// (35011104 / 35011105). AP_NotifyAdvReward looks up the bit's code in
+	// AP_LOCATION_TABLE and sends the LocationCheck with per-session dedup, so a
+	// pre-rework seed (bits not in its table) simply no-ops here.
+	AP_NotifyAdvReward(oxideSecond ? AP_GOAL_BIT_OXIDE_SECOND
+	                               : AP_GOAL_BIT_OXIDE_FIRST);
+
 	AP_EvaluateGoal();
 }
 
@@ -734,6 +757,23 @@ int AP_GateCountRelicSum(void)
 	       AP_GateCount(AP_IDX_PLATINUM);
 }
 
+// Received count for a specific-tier (type 4) relic requirement. As of schema 4
+// the apworld emits the tier in `colour`: 0 = Sapphire, 1 = Gold, 2 = Platinum.
+// The tiers are INDEPENDENT (no downward hierarchy). A legacy schema-3 type-4 req
+// arrives colour -1; the apworld's stage-1 relic rules have always meant Sapphire
+// specifically, so -1 (and any out-of-range colour) resolves to Sapphire -- NOT
+// the tri-tier sum, which was out-of-logic permissive. Type 7 (AnyRelic) keeps
+// AP_GateCountRelicSum; this is only the type-4 tier selector.
+int AP_GateCountRelicTier(int colour)
+{
+	switch (colour)
+	{
+	case 1:  return AP_GateCount(AP_IDX_GOLD);
+	case 2:  return AP_GateCount(AP_IDX_PLATINUM);
+	default: return AP_GateCount(AP_IDX_SAPPHIRE); // colour 0 or legacy -1
+	}
+}
+
 int AP_GateCountGemSum(void)
 {
 	return AP_GateCountGemColour(0) + AP_GateCountGemColour(1) +
@@ -749,12 +789,15 @@ int AP_GateCountGemSum(void)
 // ap_seedcfg.{h,cpp}; the gate sites (AH_*.c) call these by name.
 
 // Returns owned >= count for a resolved requirement. colour-aware for tokens
-// (type 3) and gems (type 5): colour 0..4 selects one colour, -1 sums the
-// vanilla "all colours" interpretation native-side -- but the apworld emits a
-// concrete colour for token/gem reqs under specific_colour, so the type-3/5 -1
-// branch only fires defensively. The genuine any-of aggregates the apworld emits
-// under requirement_specificity = any_of are the dedicated type 6/7/8 codes, which
-// sum the whole type via AP_GateCount*Sum().
+// (type 3), relics (type 4), and gems (type 5): for tokens/gems colour 0..4
+// selects one colour; for relics colour 0/1/2 selects Sapphire/Gold/Platinum
+// (independent tiers, schema 4). A -1 colour is the legacy schema-3 shape:
+// token/gem -1 sums the vanilla "all colours" interpretation (defensive -- the
+// apworld emits a concrete colour under specific_colour), and relic -1 resolves
+// to Sapphire (the standing stage-1 relic meaning), via AP_GateCountRelicTier.
+// The genuine any-of aggregates the apworld emits under requirement_specificity =
+// any_of are the dedicated type 6/7/8 codes, which sum the whole type via
+// AP_GateCount*Sum().
 int AP_BossReqMet(const ctr_req *r)
 {
 	if (r == 0)
@@ -770,9 +813,8 @@ int AP_BossReqMet(const ctr_req *r)
 	case 3: // tokens (colour 0..4 = one colour; -1 = any token, summed)
 		return ((r->colour >= 0) ? AP_GateCountTokenColour(r->colour)
 		                         : AP_GateCountTokenSum()) >= r->count;
-	case 4: // sapphire (colour -1 = any relic tier, summed)
-		return ((r->colour >= 0) ? AP_GateCount(AP_IDX_SAPPHIRE)
-		                         : AP_GateCountRelicSum()) >= r->count;
+	case 4: // relic, tier by colour (0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire)
+		return AP_GateCountRelicTier(r->colour) >= r->count;
 	case 5: // gems (colour 0..4 = one colour; -1 = any gem, summed)
 		return ((r->colour >= 0) ? AP_GateCountGemColour(r->colour)
 		                         : AP_GateCountGemSum()) >= r->count;
@@ -1089,10 +1131,10 @@ static void AP_PollDebug(struct AdvProgress *adv)
 				if (!(newly & (1u << b)))
 					continue;
 				int globalBit = (w * 32) + b;
-				if (AP_LookupLocationCode(globalBit) >= 0 ||
-				    globalBit == AP_GOAL_BIT_OXIDE_FIRST ||
-				    globalBit == AP_GOAL_BIT_OXIDE_SECOND)
-					continue; // events own these
+				if (AP_LookupLocationCode(globalBit) >= 0)
+					continue; // a mapped location -- owned by the grant-site events
+				              // (schema 4: the Oxide bits 115/116 are now real codes
+				              // too, so this clause already covers them)
 				char msg[160];
 				snprintf(msg, sizeof msg,
 				         "[AP DBG] unmapped bit set: rewards[%d] bit %d "
@@ -1327,6 +1369,24 @@ static const char *AP_ReqTypeName(int t)
 	return (t >= 0 && t < 9) ? AP_REQ_TYPE_NAMES[t] : "?";
 }
 
+// Tier-aware requirement name for the debug dump. A type-4 relic req carries its
+// tier in colour (schema 4: 0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire),
+// so the flat "sapphire" name would misread every tier as sapphire. Widen only
+// type 4; every other type is colour-independent and defers to AP_ReqTypeName.
+static const char *AP_ReqTypeNameColour(int t, int colour)
+{
+	if (t == 4)
+	{
+		switch (colour)
+		{
+		case 1:  return "gold_relic";
+		case 2:  return "platinum_relic";
+		default: return "sapphire_relic"; // colour 0 or legacy -1
+		}
+	}
+	return AP_ReqTypeName(t);
+}
+
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
@@ -1395,9 +1455,10 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
 		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
 		        "\"trophy_checked\": %d}%s\n",
-		        i, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        i, dest, AP_ReqTypeNameColour(r->type, r->colour), r->count, r->colour,
 		        ctr_cfg_warp_unlocked(i),
-		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        AP_ReqTypeNameColour(u->stage2.type, u->stage2.colour),
+		        u->stage2.count, u->stage2.colour,
 		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
 	}
@@ -1425,9 +1486,10 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
 		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
 		        "\"trophy_checked\": %d}%s\n",
-		        phys, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        phys, dest, AP_ReqTypeNameColour(r->type, r->colour), r->count, r->colour,
 		        ctr_cfg_warp_unlocked(phys),
-		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        AP_ReqTypeNameColour(u->stage2.type, u->stage2.colour),
+		        u->stage2.count, u->stage2.colour,
 		        ctr_cfg_warp_stage2_unlocked(phys), trophyChecked,
 		        (i + 1 < 5) ? "," : "");
 	}
@@ -1441,7 +1503,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		fprintf(f,
 		        "    {\"boss\": \"%s\", \"req_type\": \"%s\", \"count\": %d, "
 		        "\"met\": %d}%s\n",
-		        AP_BOSS_NAMES[i], AP_ReqTypeName(r->type), r->count,
+		        AP_BOSS_NAMES[i], AP_ReqTypeNameColour(r->type, r->colour), r->count,
 		        AP_BossReqMet(r), (i + 1 < CTR_CFG_BOSS_COUNT) ? "," : "");
 	}
 	fputs("  ]\n", f);

@@ -10,7 +10,7 @@
 
 typedef struct { int bit_index; long location_code; } AP_LocationEntry;
 
-// 99 checkable adventure locations.
+// 101 checkable adventure locations.
 static const AP_LocationEntry AP_LOCATION_TABLE[] = {
 	{   6, 35011007 }, // Dingo Canyon: Trophy Race
 	{   7, 35011009 }, // Dragon Mines: Trophy Race
@@ -111,10 +111,18 @@ static const AP_LocationEntry AP_LOCATION_TABLE[] = {
 	{ 112, 35013001 }, // Rampage Ruins: Crystal Bonus Round
 	{ 113, 35013002 }, // Rocky Road: Crystal Bonus Round
 	{ 114, 35013003 }, // Nitro Court: Crystal Bonus Round
+	{ 115, 35011104 }, // N. Oxide's Challenge: Boss Race (goals 0/1)
+	{ 116, 35011105 }, // N. Oxide's Final Challenge: Boss Race (goal 1)
 };
-#define AP_LOCATION_TABLE_LEN 99
+#define AP_LOCATION_TABLE_LEN 101
 
-// Goal/victory bits (not location checks; locations.json code == null).
+// Oxide-beat bits. As of slot_data schema 4 (goal-rework v2) these two are REAL
+// checkable locations (promoted in locations.json to 35011104 / 35011105 and now
+// in AP_LOCATION_TABLE above), sent from the Oxide-beat path
+// (AP_NotifyGoal -> AP_NotifyAdvReward). The win itself stays a separate game
+// EVENT (ap_oxide_*_beaten) that AP_EvaluateGoal reads, mirroring the apworld's
+// companion-event separation. The #defines below name the bits for that send +
+// for the goal-0/1 completion flags.
 // BEAT_OXIDE_FIRST = 0x73 (bit 115), BEAT_OXIDE_SECOND = 0x74 (bit 116).
 #define AP_GOAL_BIT_OXIDE_FIRST  115
 #define AP_GOAL_BIT_OXIDE_SECOND 116
