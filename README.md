@@ -1,12 +1,12 @@
 # CTR Archipelago (ctr-native-ap)
 
-Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. No emulator, no ROM patching: this is a native port of the game (built on the [CTR-tools](https://github.com/CTR-tools/CTR-ModSDK) decompilation) with the Archipelago client built directly into it. It connects to the server, receives items, locks and unlocks warp pads, boss garages, doors and gem cups per seed, and sends your location checks and goal.
+Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. This is a native port of the game (built on the [CTR-native](https://github.com/CTR-tools/ctr-native) decompilation) with the Archipelago client built directly into it: no emulator, no ROM patching. It connects to the server, receives items, locks and unlocks warp pads, boss garages, doors and gem cups per seed, and sends your location checks and goal.
 
 **Status: in development, not yet released.** The code is public for collaboration and transparency. Once released, Windows and Linux builds will be available on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
 
 ## Getting started
 
-You need three things: a release build, your own copy of the game, and a small config file.
+You need three things: a release build, your own (NTSC-U) copy of the game, and a small config file.
 
 **1. Download a release.** Grab the build for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr_native_ap.exe` (Windows) or `ctr_native_ap` (Linux).
 
@@ -36,7 +36,11 @@ During development the client connects over a plain, unencrypted WebSocket (`ws:
 
 ## Joining a multiworld
 
-The randomization logic lives in the companion apworld, [`dowlle/ctr-archipelago-apworld`](https://github.com/dowlle/ctr-archipelago-apworld) (see the [CTR world README](https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md)). Whoever generates the multiworld needs `ctr.apworld`; as a player you only need the client setup above and your slot name. New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/).
+The randomization logic lives in the companion apworld, [`dowlle/ctr-archipelago-apworld`](https://github.com/dowlle/ctr-archipelago-apworld) (see the [CTR world README](https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md)).
+
+Like every Archipelago game, CTR needs a YAML options file per player at generation time: install `ctr.apworld` into your Archipelago installation, use the Launcher's **Generate Template Options** to get the CTR template YAML, set your slot name and options, and hand it to whoever generates the multiworld. Only the generator needs the apworld; as a player you just need the YAML you submitted, the client setup above, and your slot name.
+
+New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/).
 
 ## Building from source
 
@@ -46,7 +50,7 @@ Developers and the curious: see [BUILDING.md](BUILDING.md) for prerequisites, bu
 
 CTR Archipelago is developed with AI assistance (Anthropic's Claude, via Claude Code). The short version:
 
-- **AI writes much of the code**, under my direction: randomization and generation logic, the native AP integration, debugging, and review passes.
+- **AI writes code under my direction:** randomization and generation logic, the native AP integration, debugging, and review passes.
 - **No AI-generated art.** Every tracker icon and in-game marker is rendered from the game's own 3D models. No generated textures, logos, or models.
 - **Nothing ships unverified.** Every apworld release passes a full run of Eijebong's Archipelago fuzzer (10/10 check categories across ~14,000 generations; nothing ships red). I playtest every native build in-game on real seeds, and gating logic is verified against the game's actual code, not guessed. The project has a human-reviewed specification and data contract; I don't merge code I haven't understood.
 - **Why:** AI lets me actually finish my projects (I have ADHD). Using it is a considered choice, not a careless one.
@@ -55,7 +59,7 @@ If AI-assisted development is a dealbreaker for you, that's a fair call to make 
 
 ## License
 
-GPL-3.0, inherited from upstream [CTR-tools/ctr-native](https://github.com/CTR-tools/ctr-native) — see [LICENSE](LICENSE). The Archipelago layer added by this fork is GPL-3.0 as well. Vendored and build-time third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+GPL-3.0, inherited from upstream [CTR-tools/ctr-native](https://github.com/CTR-tools/ctr-native) - see [LICENSE](LICENSE). The Archipelago layer added by this fork is GPL-3.0 as well. Vendored and build-time third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 This repository contains no game assets. You must own a retail NTSC-U copy of Crash Team Racing to play.
 
@@ -64,6 +68,6 @@ This repository contains no game assets. You must own a retail NTSC-U copy of Cr
 - [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) — the decompilation project this is built on
 - [PsyCross](https://github.com/OpenDriver2/PsyCross) — original PS1 compatibility code from which parts of CTR Native's owned platform layer and PsyQ facade headers are derived
 - [SDL3](https://github.com/libsdl-org/SDL) — cross-platform multimedia
-- Icebound777 and Taor — the CTR randomizer whose design this project's Archipelago integration builds on, carried forward with his blessing; the foundational work and the credit for it stay with them
+- Icebound777 and Taor — the [CTR randomizer](https://github.com/icebound777/CTR-Randomizer-Standalone) whose design this project's Archipelago integration builds on, carried forward with his blessing; the foundational work and the credit for it stay with them
 - [apclientpp](https://github.com/black-sliver/apclientpp) — the Archipelago client library powering the in-process AP connection
 - Crash Team Racing is a trademark of Sony Computer Entertainment / Naughty Dog
