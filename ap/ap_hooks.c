@@ -748,7 +748,22 @@ static const char *AP_CeremonyPrefix(int bit, int rung)
 		return "GOLD RELIC";
 	if (bit >= ADV_REWARD_FIRST_SAPPHIRE_RELIC && bit < ADV_REWARD_FIRST_GOLD_RELIC)
 		return "SAPPHIRE RELIC";
+	// Trophy needs no per-entry prefix: the trophy screen draws a persistent
+	// "TROPHY WON" header (AP_CeremonyTrophyWon) so the win is always acknowledged
+	// alongside whatever item the location actually sent.
 	return NULL;
+}
+
+// The trophy-race win itself (Stef ruling): the plain trophy screen must keep
+// saying the trophy was won even though its location's scouted item is often a
+// foreign player's. Drawn persistently above the cycling award block. Returns 1
+// when it drew so the caller knows the AP header is present.
+int AP_CeremonyTrophyWon(int x, int y)
+{
+	if (!ctr_cfg_active())
+		return 0;
+	DecalFont_DrawLine((char *)"TROPHY WON", x, y, FONT_BIG, JUSTIFY_CENTER | ORANGE);
+	return 1;
 }
 
 // Copy in -> out, uppercased and restricted to the NTSC-U ceremony glyph set.

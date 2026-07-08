@@ -101,6 +101,23 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		std::list<int64_t> locs;
 		for (int i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 			locs.push_back((int64_t)AP_LOCATION_TABLE[i].location_code);
+		// Podium-ladder rungs carry no AdvProgress bit, so they are absent from
+		// AP_LOCATION_TABLE -- scout them explicitly from the parsed per-seed config
+		// so the ceremony can resolve the item + player placed on each rung (else a
+		// foreign rung reward renders as the generic fallback). ctr_cfg is populated
+		// by ap_seedcfg_parse_json() just above.
+		if (ctr_cfg.podium_enabled)
+		{
+			for (int t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
+			{
+				if (ctr_cfg.podium[t].first >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].first);
+				if (ctr_cfg.podium[t].podium >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].podium);
+				if (ctr_cfg.podium[t].any >= 0)
+					locs.push_back((int64_t)ctr_cfg.podium[t].any);
+			}
+		}
 		g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr, "[AP NET] slot connected; scouting %d locations\n",
 		             AP_LOCATION_TABLE_LEN);

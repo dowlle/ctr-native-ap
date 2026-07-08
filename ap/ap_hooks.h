@@ -39,6 +39,10 @@ void AP_EvaluateGoal(void);
 // end-of-race draw functions (game/221.c, game/222.c, game/223.c).
 int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger);
 
+// Draw the persistent "TROPHY WON" header on the plain trophy-win screen (above
+// the cycling award block). Returns 1 if drawn, 0 when AP is inactive.
+int AP_CeremonyTrophyWon(int x, int y);
+
 // Highest relic tier the just-finished relic race sent (0 Sapphire, 1 Gold, 2
 // Platinum; -1 none). The truthful source for the relic ceremony's tier label +
 // relic colour (game/223.c, game/UI/UI_Clock.c), which vanilla derives from the
