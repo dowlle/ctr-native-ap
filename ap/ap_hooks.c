@@ -67,6 +67,13 @@ void AP_LogLine(const char *msg)
 static int ap_skip_hints = 0;
 int AP_SkipHints(void)
 {
+	// Precedence (migration window, one release): if the in-game options menu has
+	// written a config.ini, its skip_hints value wins and takes effect live (the
+	// menu mutates g_config in place). Without a config.ini we fall back to the
+	// legacy ap-config.txt "skip_hints=" key parsed into ap_skip_hints, so users
+	// who never open the menu keep their current behaviour.
+	if (NativeConfig_HasIni())
+		return g_config.skipHints;
 	return ap_skip_hints;
 }
 
@@ -77,6 +84,9 @@ int AP_SkipHints(void)
 static int ap_map_flash = 1;
 int AP_MapFlashOn(void)
 {
+	// Same config.ini-over-ap-config.txt precedence as AP_SkipHints (see there).
+	if (NativeConfig_HasIni())
+		return g_config.mapFlash;
 	return ap_map_flash;
 }
 

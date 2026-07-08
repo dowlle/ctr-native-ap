@@ -95,10 +95,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 	// 3P/4P
 	if (levelLOD - 3U < 2)
 	{
+		// disable_split_screen_lod (config.ini, see platform/native_config.c): load
+		// the hi-res character model in 3-4P split screen instead of the low LOD.
+		int racerModel = g_config.disableSplitScreenLod ? BI_RACERMODELHI : BI_RACERMODELLOW;
 		for (i = 0; i < 3; i++)
 		{
 			// low lod CTR model
-			LOAD_AppendQueue(bigfile, LT_GETADDR, BI_RACERMODELLOW + data.characterIDs[i], &data.driverModelExtras[i].fileBase, LOAD_DriverMPK_SetPointer);
+			LOAD_AppendQueue(bigfile, LT_GETADDR, racerModel + data.characterIDs[i], &data.driverModelExtras[i].fileBase, LOAD_DriverMPK_SetPointer);
 		}
 
 		// load 4P MPK of fourth player

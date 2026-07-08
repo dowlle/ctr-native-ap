@@ -1151,7 +1151,10 @@ static int RenderBucket_AcceptProjectedBounds(const struct RenderBucketBounds *b
 		return 0;
 	}
 
-	if (RenderBucket_MipsSub(bounds->maxZ, geomScreenHalf) < 0)
+	// increase_draw_distance (config.ini): relax the far-Z reject so geometry past
+	// the normal half-screen depth is still accepted.
+	int gsh = g_config.increaseDrawDistance ? (geomScreenHalf >> 2) : geomScreenHalf;
+	if (RenderBucket_MipsSub(bounds->maxZ, gsh) < 0)
 	{
 		return 0;
 	}
@@ -1262,6 +1265,13 @@ static struct ModelHeader *RenderBucket_SelectModelHeader(struct Instance *inst,
 
 	// NOTE(aalhendi): Retail keeps the low 32 bits of this product before dividing by GTE H.
 	projectedDistance = (int)(u32)((s64)(pb->rect.w >> 1) * viewDepth) / pb->distanceToScreen_PREV;
+#ifdef CTR_NATIVE
+	// increase_draw_distance (config.ini): shrink the per-model LOD distance so
+	// higher-detail LODs are held farther out. Must skip screenspace instances
+	// (e.g. instBigNum) whose viewDepth is a digit selector, not a 3D camera distance.
+	if (g_config.increaseDrawDistance && (inst->flags & SCREENSPACE_INSTANCE) == 0)
+		projectedDistance = (projectedDistance * 100) / 400;
+#endif
 	mh = inst->model->headers;
 	headersRemaining = inst->model->numHeaders;
 	lodIndex = 0;

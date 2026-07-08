@@ -67,6 +67,7 @@ This repository contains no game assets. You must own a retail NTSC-U copy of Cr
 
 - [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) — the decompilation project this is built on
 - [PsyCross](https://github.com/OpenDriver2/PsyCross) — original PS1 compatibility code from which parts of CTR Native's owned platform layer and PsyQ facade headers are derived
+- [thecodingbob/ctr-native](https://github.com/thecodingbob/ctr-native) — the in-game config menu framework this fork's options menu is ported from
 - [SDL3](https://github.com/libsdl-org/SDL) — cross-platform multimedia
 - Icebound777 and Taor — the [CTR randomizer](https://github.com/icebound777/CTR-Randomizer-Standalone) whose design this project's Archipelago integration builds on, carried forward with his blessing; the foundational work and the credit for it stay with them
 - [apclientpp](https://github.com/black-sliver/apclientpp) — the Archipelago client library powering the in-process AP connection
