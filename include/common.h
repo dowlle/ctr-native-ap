@@ -15,6 +15,7 @@
 
 #if defined(CTR_NATIVE)
 #include <platform.h>
+#include <platform/native_config.h>
 #endif
 
 // Game declarations and GPU helpers that depend on the layout headers above.

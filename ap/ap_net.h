@@ -48,6 +48,19 @@ int  ap_net_location_checked(long long location_code);
 // Connected slot number, or -1 before connect.
 int  ap_net_self_slot(void);
 
+// Coarse connection status for the in-game connection manager. Tracked by the
+// socket / slot handlers in ap_net.cpp; ap_hooks.c's AP_Net_StatusLine maps these
+// to a one-line string for the menu.
+enum
+{
+	AP_NET_STATUS_IDLE = 0,   // no client / not dialed
+	AP_NET_STATUS_CONNECTING, // socket up or slot handshake pending
+	AP_NET_STATUS_CONNECTED,  // slot connected
+	AP_NET_STATUS_ERROR       // slot refused (see ap_net_last_error)
+};
+int  ap_net_status(void);
+const char *ap_net_last_error(void); // last slot-refused reason, "" if none
+
 void ap_net_shutdown(void);
 
 #ifdef __cplusplus

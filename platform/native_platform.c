@@ -389,6 +389,82 @@ void Platform_PinVRAMDisplayRect(int x, int y, int w, int h, int frameCount)
 	s_pinnedVramDisplayCustomRect = 1;
 }
 
+// ---- In-game text entry (native connection manager) ---------------------
+// While a NativeText session is active, host keyboard input is captured into the
+// caller's buffer instead of reaching the game: SDL_EVENT_TEXT_INPUT appends
+// printable ASCII, Backspace deletes, Enter commits, Escape cancels. The keys are
+// consumed in Platform_PollHostEvents so gameplay / menu input is suppressed while
+// typing. Length is tracked here to avoid a <string.h> dependency in this file.
+global_variable char *s_textBuf = NULL;
+global_variable int s_textCap = 0;
+global_variable int s_textLen = 0;
+global_variable int s_textActive = 0;
+global_variable int s_textResult = 0; // 0 none, 1 commit (Enter), 2 cancel (Escape)
+
+void NativeText_Begin(char *buf, int cap)
+{
+	s_textBuf = buf;
+	s_textCap = cap;
+	s_textLen = 0;
+	while ((buf != NULL) && (s_textLen < cap - 1) && (buf[s_textLen] != '\0'))
+	{
+		s_textLen++;
+	}
+	s_textActive = 1;
+	s_textResult = 0;
+	if (g_window != NULL)
+	{
+		SDL_StartTextInput(g_window);
+	}
+}
+
+void NativeText_End(void)
+{
+	if ((s_textActive != 0) && (g_window != NULL))
+	{
+		SDL_StopTextInput(g_window);
+	}
+	s_textBuf = NULL;
+	s_textCap = 0;
+	s_textLen = 0;
+	s_textActive = 0;
+	s_textResult = 0;
+}
+
+int NativeText_Active(void)
+{
+	return s_textActive;
+}
+
+int NativeText_Result(void)
+{
+	return s_textResult;
+}
+
+internal void Platform_HandleTextInput(const char *utf8)
+{
+	if ((s_textActive == 0) || (s_textResult != 0) || (s_textBuf == NULL) || (utf8 == NULL))
+	{
+		return;
+	}
+
+	for (const char *p = utf8; *p != '\0'; p++)
+	{
+		unsigned char c = (unsigned char)*p;
+		// Printable ASCII only; reject control bytes and non-ASCII (UTF-8 >= 0x80).
+		if ((c < 0x20) || (c >= 0x7F))
+		{
+			continue;
+		}
+		if (s_textLen >= s_textCap - 1)
+		{
+			break;
+		}
+		s_textBuf[s_textLen++] = (char)c;
+	}
+	s_textBuf[s_textLen] = '\0';
+}
+
 void Platform_PollHostEvents(void)
 {
 	SDL_Event event;
@@ -416,11 +492,43 @@ void Platform_PollHostEvents(void)
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
 			exit(0);
 			break;
+		case SDL_EVENT_TEXT_INPUT:
+			Platform_HandleTextInput(event.text.text);
+			break;
 		case SDL_EVENT_KEY_DOWN:
 		case SDL_EVENT_KEY_UP:
 		{
 			int key = event.key.scancode;
 			char down = (event.type == SDL_EVENT_KEY_UP) ? 0 : 1;
+
+			// A text-entry session owns the keyboard: edit the buffer and consume the
+			// key so it never reaches the game's key state. The session stays active
+			// (NativeText_Active stays 1) until the menu acknowledges the result via
+			// NativeText_End -- so the frame that commits/cancels is still "editing"
+			// from the menu's point of view, avoiding a one-frame nav race (pad state
+			// is polled from the live keyboard, not from these events).
+			if (s_textActive != 0)
+			{
+				if ((down != 0) && (s_textResult == 0))
+				{
+					if (key == SDL_SCANCODE_BACKSPACE)
+					{
+						if (s_textLen > 0)
+						{
+							s_textBuf[--s_textLen] = '\0';
+						}
+					}
+					else if ((key == SDL_SCANCODE_RETURN) || (key == SDL_SCANCODE_KP_ENTER))
+					{
+						s_textResult = 1; // commit; menu ends the session next
+					}
+					else if (key == SDL_SCANCODE_ESCAPE)
+					{
+						s_textResult = 2; // cancel; menu ends the session next
+					}
+				}
+				break;
+			}
 
 			if (key == SDL_SCANCODE_RALT)
 			{

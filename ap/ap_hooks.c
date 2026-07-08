@@ -67,6 +67,13 @@ void AP_LogLine(const char *msg)
 static int ap_skip_hints = 0;
 int AP_SkipHints(void)
 {
+	// Precedence (migration window, one release): if the in-game options menu has
+	// written a config.ini, its skip_hints value wins and takes effect live (the
+	// menu mutates g_config in place). Without a config.ini we fall back to the
+	// legacy ap-config.txt "skip_hints=" key parsed into ap_skip_hints, so users
+	// who never open the menu keep their current behaviour.
+	if (NativeConfig_HasIni())
+		return g_config.skipHints;
 	return ap_skip_hints;
 }
 
@@ -77,6 +84,9 @@ int AP_SkipHints(void)
 static int ap_map_flash = 1;
 int AP_MapFlashOn(void)
 {
+	// Same config.ini-over-ap-config.txt precedence as AP_SkipHints (see there).
+	if (NativeConfig_HasIni())
+		return g_config.mapFlash;
 	return ap_map_flash;
 }
 
@@ -1017,15 +1027,54 @@ static void AP_NetTick(struct GameTracker *gGT)
 {
 	if (!ap_net_started)
 	{
-		char uri[128] = "ws://localhost:38281";
-		char slot[64] = "CtrSmokeTest";
+		char uri[128] = "";
+		char slot[64] = "";
 		char pass[64] = "";
 		char msg[256];
-		AP_ReadConfig(uri, sizeof uri, slot, sizeof slot, pass, sizeof pass);
-		snprintf(msg, sizeof msg, "[AP NET] init uri=%s slot=%s\n", uri, slot);
-		AP_AppendLog(msg);
-		if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
-			ap_net_connect_slot(slot, pass);
+		int haveLegacy = 0;
+		int haveIni = (g_config.uri[0] != '\0');
+
+		// Always parse ap-config.txt when it exists: besides uri/slot/password it
+		// primes the trap / shortcut / skip_hints test hooks (see AP_ReadConfig). If
+		// present it seeds the legacy connection defaults, then its own keys override.
+		{
+			FILE *f = fopen("ap-config.txt", "r");
+			if (f)
+			{
+				fclose(f);
+				snprintf(uri, sizeof uri, "ws://localhost:38281");
+				snprintf(slot, sizeof slot, "CtrSmokeTest");
+				AP_ReadConfig(uri, sizeof uri, slot, sizeof slot, pass, sizeof pass);
+				haveLegacy = 1;
+			}
+		}
+
+		// config.ini [Connection] wins over ap-config.txt when set (same precedence
+		// as AP_SkipHints / AP_MapFlashOn).
+		if (haveIni)
+		{
+			snprintf(uri, sizeof uri, "%s", g_config.uri);
+			snprintf(slot, sizeof slot, "%s", g_config.slot);
+			snprintf(pass, sizeof pass, "%s", g_config.password);
+		}
+
+		// Approved startup change: with NEITHER a config.ini [Connection] uri NOR an
+		// ap-config.txt present, do NOT auto-dial the localhost default. Skip the dial
+		// and surface a hint (log + the menu's status line show "not connected"); the
+		// player sets up the room in OPTIONS > Connection and hits Connect. With any
+		// config present, startup auto-connect behaves exactly as before.
+		if (haveIni || haveLegacy)
+		{
+			snprintf(msg, sizeof msg, "[AP NET] init uri=%s slot=%s\n", uri, slot);
+			AP_AppendLog(msg);
+			if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
+				ap_net_connect_slot(slot, pass);
+		}
+		else
+		{
+			AP_AppendLog("[AP NET] not connected - set up your room in "
+			             "OPTIONS > Connection (no config.ini [Connection], no ap-config.txt)\n");
+		}
 		ap_net_started = 1; // attempt once
 	}
 
@@ -1097,6 +1146,51 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		AP_AppendLog(msg);
 	}
+}
+
+// In-game connection manager: tear down the current client and re-dial. The menu
+// is reachable only from the main menu, so there is no in-flight item or live
+// adventure state to strand -- AP_NetTick keeps polling, and the fresh slot-connect
+// resets the per-session tallies through ap_net_take_recv_reset() as usual.
+void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
+{
+	char msg[256];
+	snprintf(msg, sizeof msg, "[AP NET] reconnect uri=%s slot=%s\n",
+	         uri ? uri : "", slot ? slot : "");
+	AP_AppendLog(msg);
+
+	ap_net_shutdown();
+	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
+		ap_net_connect_slot(slot, password);
+	ap_net_started = 1; // suppress the boot-time auto-dial from re-running
+}
+
+// One-line status for the menu's read-only status row.
+const char *AP_Net_StatusLine(void)
+{
+	static char line[128];
+	switch (ap_net_status())
+	{
+	case AP_NET_STATUS_CONNECTED:
+		snprintf(line, sizeof line, "Connected");
+		break;
+	case AP_NET_STATUS_CONNECTING:
+		snprintf(line, sizeof line, "Connecting...");
+		break;
+	case AP_NET_STATUS_ERROR:
+	{
+		const char *e = ap_net_last_error();
+		if (e && *e)
+			snprintf(line, sizeof line, "Error: %s", e);
+		else
+			snprintf(line, sizeof line, "Connection error");
+		break;
+	}
+	default:
+		snprintf(line, sizeof line, "Not connected");
+		break;
+	}
+	return line;
 }
 
 // ---------------------------------------------------------------------------

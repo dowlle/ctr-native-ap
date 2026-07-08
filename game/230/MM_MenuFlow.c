@@ -1,5 +1,11 @@
 #include <common.h>
 
+// In-game options menu (see game/230/MM_ConfigMenu.c): the config-enabled main
+// menu row arrays (adding the OPTIONS row) and the options RectMenu.
+extern struct MenuRow s_rowsMainMenuBasicConfig[];
+extern struct MenuRow s_rowsMainMenuWithSBConfig[];
+extern struct RectMenu g_configMenu;
+
 // NOTE(aalhendi): ASM-verified against retail 230 0x800abaf0-0x800abcac.
 u8 MM_TransitionInOut(struct TransitionMeta *meta, int framesPassed, int numFrames)
 {
@@ -53,10 +59,15 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	s16 choose;
 	struct GameTracker *gGT = sdata->gGT;
 
-	// if scrapbook is unlocked, change "rows" to extended array
+	// if scrapbook is unlocked, change "rows" to extended array. Both variants add
+	// the OPTIONS row that routes into the in-game config menu (see MM_ConfigMenu.c).
 	if (CHECK_ADV_BIT(sdata->gameProgress.unlocks, GAME_UNLOCK_BIT_SCRAPBOOK) != 0)
 	{
-		mainMenu->rows = &D230.rowsMainMenuWithScrapbook[0];
+		mainMenu->rows = &s_rowsMainMenuWithSBConfig[0];
+	}
+	else
+	{
+		mainMenu->rows = &s_rowsMainMenuBasicConfig[0];
 	}
 
 	MM_ParseCheatCodes();
@@ -258,6 +269,14 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 		// Leave main menu hierarchy
 		D230.MM_State = 2;
 
+		return;
+	}
+
+	// Config / Options (string 0x0E == LNG_OPTIONS). Hand off to the standalone
+	// options RectMenu; it returns to menuMainMenu on exit.
+	if (choose == 0x0E)
+	{
+		sdata->ptrDesiredMenu = &g_configMenu;
 		return;
 	}
 }
