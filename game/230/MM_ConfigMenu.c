@@ -273,6 +273,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		else
 		{
 			NativeConfig_Save();
+#ifdef CTR_AP
+			// Persist the AI-difficulty value to the per-slot data-storage override
+			// (no-op if not connected), alongside the config.ini write above.
+			AP_AiDifficultyCommit();
+#endif
 			sdata->ptrDesiredMenu = &D230.menuMainMenu;
 		}
 	}

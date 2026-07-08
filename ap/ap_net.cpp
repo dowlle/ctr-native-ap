@@ -18,6 +18,7 @@
 #include <list>
 #include <string>
 #include <set>
+#include <map>
 #include <unordered_map>
 #include <cstdio>
 #include <cstdint>
@@ -49,6 +50,18 @@ static bool                  g_recv_reset = false;
 // -> an "AP" marker). Checked-state is read live from apclientpp instead
 // (get_checked_locations), so it needs no separate store here.
 static std::unordered_map<int64_t, APClient::NetworkItem> g_scouts;
+
+// AI-difficulty option sync. g_diff_value caches the last value learned from the
+// server (slot_data default seed, a Get reply, or a SetNotify update); g_diff_known
+// gates it. Cleared on shutdown/reconnect so a stale value never survives a server
+// switch. Key is per-slot: "ctr_difficulty_<slot name>".
+static int         g_diff_value = 0;
+static bool        g_diff_known = false;
+
+static std::string ap_diff_key()
+{
+	return "ctr_difficulty_" + g_slot;
+}
 
 extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
@@ -122,6 +135,27 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_status = AP_NET_STATUS_ERROR;
 		g_last_error = e;
 		std::fprintf(stderr, "[AP NET] slot refused: %s\n", e.c_str());
+	});
+	// Data-storage replies for the AI-difficulty override. Get -> Retrieved (a
+	// key->value map); SetNotify + Set(want_reply) -> SetReply (key, new value).
+	// Both fire inline on the poll thread, same as every other handler.
+	g_ap->set_retrieved_handler([](const std::map<std::string, nlohmann::json> &keys) {
+		auto it = keys.find(ap_diff_key());
+		if (it != keys.end() && it->second.is_number_integer())
+		{
+			g_diff_value = it->second.get<int>();
+			g_diff_known = true;
+			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
+		}
+	});
+	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
+	                               const nlohmann::json &) {
+		if (key == ap_diff_key() && value.is_number_integer())
+		{
+			g_diff_value = value.get<int>();
+			g_diff_known = true;
+			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
+		}
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
@@ -223,6 +257,44 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 	return n;
 }
 
+extern "C" void ap_net_difficulty_subscribe(int slot_default)
+{
+	if (!g_ap || !g_connected)
+		return;
+	// Seed the slot_data default so it is effective before the Get returns; a
+	// stored per-slot override (if any) overwrites it via the retrieved handler.
+	if (slot_default >= 0)
+	{
+		g_diff_value = slot_default;
+		g_diff_known = true;
+	}
+	const std::string key = ap_diff_key();
+	g_ap->SetNotify({key});
+	g_ap->Get({key});
+}
+
+extern "C" void ap_net_difficulty_set(int value)
+{
+	if (!g_ap || !g_connected)
+		return;
+	// replace: write value unconditionally; default seeds the key if it is unset.
+	APClient::DataStorageOperation op;
+	op.operation = "replace";
+	op.value = value;
+	g_ap->Set(ap_diff_key(), value, false, {op});
+	g_diff_value = value;
+	g_diff_known = true;
+}
+
+extern "C" int ap_net_difficulty_known(int *out)
+{
+	if (!g_diff_known)
+		return 0;
+	if (out)
+		*out = g_diff_value;
+	return 1;
+}
+
 extern "C" void ap_net_shutdown(void)
 {
 	if (g_ap)
@@ -233,6 +305,7 @@ extern "C" void ap_net_shutdown(void)
 	g_connected = false;
 	g_items.clear();
 	g_scouts.clear();
+	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 }

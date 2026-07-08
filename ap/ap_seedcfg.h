@@ -102,6 +102,14 @@ typedef struct
 	int shuffle_gems;        // 0 gems pinned to gem cups / 1 gems in the pool
 	int shuffle_keys;        // 0 keys pinned to boss races / 1 keys in the pool
 
+	// AI-difficulty comfort setting (option-sync pattern). Additive OPTIONAL field:
+	// the apworld may put a starting value in ctr_options.ai_difficulty, but
+	// generation NEVER depends on it, so its absence needs no schema bump. -1 =
+	// "no slot_data default" (the seed did not set it); 0..100 = a starting percent
+	// the connect-time pull seeds into the local value before the per-slot
+	// data-storage override (key "ctr_difficulty_<slot>") is fetched. 0 = vanilla.
+	int ai_difficulty_default;
+
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)
 	// Gem cups (CupRed..CupPurple = LevelID 100..104) live OUTSIDE the 28-wide

@@ -280,6 +280,23 @@ void BOTS_Adv_AdjustDifficulty(void)
 		currDifficulty = 0;
 	}
 
+#ifdef CTR_AP
+	// Archipelago AI-difficulty comfort setting (option-sync): an additive bump on
+	// top of the computed AI difficulty, re-applied every race start so a mid-seed
+	// change takes effect next race. Excluded from ARCADE_MODE, whose difficulty
+	// base is the player-chosen arcadeDifficulty. Comfort only -- generation logic
+	// never depends on it. See AP_AiDifficultyBump (ap/ap_hooks.c).
+	if ((gameMode1 & ARCADE_MODE) == 0)
+	{
+		s32 apBump = AP_AiDifficultyBump();
+		if (apBump > 0)
+		{
+			currDifficulty += apBump;
+			cupDifficulty = (s16)(cupDifficulty + apBump);
+		}
+	}
+#endif
+
 	BOTS_Adv_LerpDifficulty(sdata->arcade_difficultyParams, (s16)currDifficulty);
 
 	if (((gameMode1 & ADVENTURE_CUP) != 0) || ((gameMode2 & CUP_ANY_KIND) != 0))

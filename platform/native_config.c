@@ -18,6 +18,7 @@ NativeConfig g_config = {
 #ifdef CTR_AP
 	false, // skipHints
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
+	0,     // aiDifficulty (0 = vanilla)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -36,6 +37,8 @@ const ConfigEntry g_configEntries[] = {
 	{"Connection",  "password",                 "Password",                     CFG_STRING, g_config.password, 0, (int)sizeof(g_config.password), 0},
 	{"Archipelago", "skip_hints",               "Skip Mask Hints",              CFG_BOOL, &g_config.skipHints},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
+	// CFG_INT slider: AI-difficulty comfort setting, 0..100% in 5% steps.
+	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_INT,  &g_config.aiDifficulty, 0, 100, 5},
 #endif
 };
 

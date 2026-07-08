@@ -717,6 +717,10 @@ void AP_NotifyGoal(int oxideSecond)
 
 static int ap_net_started = 0;
 
+// AI-difficulty option sync: 1 once this connection's override has been pulled
+// into the local config (one-shot per connect; re-armed on each fresh connect).
+static int ap_diff_pulled = 0;
+
 // Count of received items per bit-pool category (index by AP_ItemCat 0..COUNT-1).
 // Kept ONLY to drive the cosmetic AdvProgress bits (podium / profile % / hub-map
 // icons) in AP_ApplyItems. The adventure GATES no longer read these bits.
@@ -1102,6 +1106,27 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_goal_sent = 0;
 		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
+
+		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
+		// seeded by this seed's slot_data default. ap_diff_pulled re-arms the one-shot
+		// pull below so a reconnect / server switch re-reads the authoritative value.
+		ap_net_difficulty_subscribe(ctr_cfg.ai_difficulty_default);
+		ap_diff_pulled = 0;
+	}
+
+	// One-shot connect pull: as soon as a difficulty value is known from the server
+	// (the slot_data default seed, or the Get reply that overrides it), mirror it
+	// into the local config so the menu slider and the effect read one source. Done
+	// exactly once per connect so it never clobbers a live in-menu edit mid-session
+	// (cross-device changes land on the next reconnect, not live -- v1 limitation).
+	if (!ap_diff_pulled)
+	{
+		int dv;
+		if (ap_net_difficulty_known(&dv))
+		{
+			g_config.aiDifficulty = dv;
+			ap_diff_pulled = 1;
+		}
 	}
 
 	// Podium backstop (connect-time): reconcile rungs for any trophy race whose
@@ -1191,6 +1216,38 @@ const char *AP_Net_StatusLine(void)
 		break;
 	}
 	return line;
+}
+
+// ── AI-difficulty comfort setting ──
+// The local config value is the single source of truth for both the menu slider
+// and the effect; the connect pull mirrors any server override into it. Returns
+// it clamped to 0..100.
+static int AP_AiDifficultyPct(void)
+{
+	int v = g_config.aiDifficulty;
+	if (v < 0)
+		v = 0;
+	if (v > 100)
+		v = 100;
+	return v;
+}
+
+// ~"very hard" arcade-difficulty magnitude; 100% maps to this additive bump.
+#define AP_AI_DIFF_MAX_BUMP 0x140
+
+int AP_AiDifficultyBump(void)
+{
+	int pct = AP_AiDifficultyPct();
+	if (pct <= 0)
+		return 0; // 0% = vanilla, no change
+	return (pct * AP_AI_DIFF_MAX_BUMP) / 100;
+}
+
+void AP_AiDifficultyCommit(void)
+{
+	// No-op when not connected (ap_net_difficulty_set guards on state). When
+	// connected this persists the local value to the per-slot data-storage key.
+	ap_net_difficulty_set(AP_AiDifficultyPct());
 }
 
 // ---------------------------------------------------------------------------

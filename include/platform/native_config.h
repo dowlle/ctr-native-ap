@@ -17,6 +17,9 @@ typedef struct
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
+	int  aiDifficulty;          // Archipelago: AI-difficulty comfort setting, 0..100%
+	                            // (0 = vanilla). Local value; synced to the per-slot
+	                            // data-storage override on connect/edit. Comfort only.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
