@@ -1703,7 +1703,11 @@ void AH_WarpPad_LInB(struct Instance *inst)
 #ifdef CTR_AP
 		// AP open randomization: battle-arena pads carry a per-seed randomized
 		// single-stage requirement (warp_pad_unlock[18/19/21/23]); type 0 / inactive
-		// falls back to the vanilla hub-key gate (GetKeysRequirement).
+		// falls back to the vanilla hub-key gate (GetKeysRequirement). A FREE arena
+		// in a randomized seed arrives as the explicit always-true "0 trophies"
+		// ({type 1, count 0}) and therefore opens here (open-when-free); type 0 only
+		// occurs when the arenas are vanilla-gated by design (vanilla unlock mode /
+		// arenas not included in the seed).
 		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		{

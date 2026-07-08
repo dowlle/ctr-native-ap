@@ -438,6 +438,12 @@ static int AP_PadStage1Met(int physLevelID)
 
 	// Battle arenas (18/19/21/23): randomized req overrides; else the vanilla
 	// hub-key gate (LInB GetKeysRequirement: received Keys >= arrKeysNeeded[hub]).
+	// Open-when-free: a randomized seed that includes the arenas ALWAYS sends a
+	// non-type-0 stage-1 for them -- a FREE arena arrives as the explicit
+	// always-true "0 trophies" ({type 1, count 0}), so it opens here with no
+	// vanilla-key AND (only its hub door still gates it physically). type 0 is
+	// reserved for vanilla unlock mode / arenas-not-included, where the vanilla
+	// gate below is the correct behaviour.
 	if (physLevelID == 18 || physLevelID == 19 ||
 	    physLevelID == 21 || physLevelID == 23)
 	{
