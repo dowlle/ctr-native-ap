@@ -1369,6 +1369,24 @@ static const char *AP_ReqTypeName(int t)
 	return (t >= 0 && t < 9) ? AP_REQ_TYPE_NAMES[t] : "?";
 }
 
+// Tier-aware requirement name for the debug dump. A type-4 relic req carries its
+// tier in colour (schema 4: 0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire),
+// so the flat "sapphire" name would misread every tier as sapphire. Widen only
+// type 4; every other type is colour-independent and defers to AP_ReqTypeName.
+static const char *AP_ReqTypeNameColour(int t, int colour)
+{
+	if (t == 4)
+	{
+		switch (colour)
+		{
+		case 1:  return "gold_relic";
+		case 2:  return "platinum_relic";
+		default: return "sapphire_relic"; // colour 0 or legacy -1
+		}
+	}
+	return AP_ReqTypeName(t);
+}
+
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
@@ -1437,9 +1455,10 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
 		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
 		        "\"trophy_checked\": %d}%s\n",
-		        i, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        i, dest, AP_ReqTypeNameColour(r->type, r->colour), r->count, r->colour,
 		        ctr_cfg_warp_unlocked(i),
-		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        AP_ReqTypeNameColour(u->stage2.type, u->stage2.colour),
+		        u->stage2.count, u->stage2.colour,
 		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
 	}
@@ -1467,9 +1486,10 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
 		        "\"stage2_colour\": %d, \"stage2_unlocked\": %d, "
 		        "\"trophy_checked\": %d}%s\n",
-		        phys, dest, AP_ReqTypeName(r->type), r->count, r->colour,
+		        phys, dest, AP_ReqTypeNameColour(r->type, r->colour), r->count, r->colour,
 		        ctr_cfg_warp_unlocked(phys),
-		        AP_ReqTypeName(u->stage2.type), u->stage2.count, u->stage2.colour,
+		        AP_ReqTypeNameColour(u->stage2.type, u->stage2.colour),
+		        u->stage2.count, u->stage2.colour,
 		        ctr_cfg_warp_stage2_unlocked(phys), trophyChecked,
 		        (i + 1 < 5) ? "," : "");
 	}
@@ -1483,7 +1503,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		fprintf(f,
 		        "    {\"boss\": \"%s\", \"req_type\": \"%s\", \"count\": %d, "
 		        "\"met\": %d}%s\n",
-		        AP_BOSS_NAMES[i], AP_ReqTypeName(r->type), r->count,
+		        AP_BOSS_NAMES[i], AP_ReqTypeNameColour(r->type, r->colour), r->count,
 		        AP_BossReqMet(r), (i + 1 < CTR_CFG_BOSS_COUNT) ? "," : "");
 	}
 	fputs("  ]\n", f);
