@@ -194,7 +194,7 @@ static void AP_ScTriggerGrab(struct Driver *d)
 // quadblock (VehBirth.c:236); on a miss it keeps whatever it held before -- after
 // a level load that is the freed previous level's mesh (mempack popped), non-null
 // but dangling. Reading ->checkpointIndex off it is the Crash Cove / Roo's Tubes
-// race-entry crash (ap_shortcut.c:245, minidumps 2026-07-04). Validate the pointer
+// race-entry crash (diagnosed from crash minidumps). Validate the pointer
 // against the live level's quadblock array -- the same array the engine indexes a
 // quadblock against elsewhere (CAM.c:2342, MainFrame.c:622) -- before trusting it.
 static int AP_LastValidInMesh(struct GameTracker *gGT, struct QuadBlock *qb)
@@ -232,7 +232,7 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 	// loading/menu/cutscene/EOR (same test as AP_TrapTick; anchor PlayLevel.c:338).
 	// Outside that window drivers[0] can point at a not-yet-born Driver whose
 	// lastValid still holds arena leftovers, non-null but dangling (the Crash Cove
-	// race-load crash at ap_shortcut.c:227, minidumps 2026-07-04). Every early-out
+	// race-load crash, diagnosed from crash minidumps). Every early-out
 	// below also clears g_lastValid_prev so no pointer survives a context change.
 	if ((gGT->gameMode1 &
 	     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) != 0 ||
