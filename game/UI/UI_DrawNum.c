@@ -176,26 +176,3 @@ void UI_DrawNumCrystal(s16 posX, s16 posY, struct Driver *d)
 
 	DecalFont_DrawLine(&string[0], posX + 0xD, posY, FONT_BIG, ORANGE);
 }
-
-#ifdef CTR_AP
-// AP HUD: hub token counter. Tokens are 5 independent received currencies
-// (R,G,B,Y,P) that gate the gem cups, so -- like the relic counter above -- the
-// number cycles through each colour every 2s (gGT->timer / 0x3C), showing that
-// colour's own received count. The hub token icon re-tints in sync
-// (UI_ThTick_Reward). Only drawn while AP-connected; vanilla never showed
-// tokens on the adventure hub.
-void UI_DrawNumToken(s16 posX, s16 posY)
-{
-	int num;
-	struct GameTracker *gGT;
-	char string[8];
-
-	DecalFont_DrawLine(&sdata->s_x[0], posX, posY + 4, FONT_SMALL, ORANGE);
-
-	gGT = sdata->gGT;
-	num = AP_GateCountTokenColour((gGT->timer / 0x3C) % 5);
-
-	sprintf(&string[0], &sdata->s_longInt[0], num);
-	DecalFont_DrawLine(&string[0], posX + 0xD, posY, FONT_BIG, ORANGE);
-}
-#endif
