@@ -431,18 +431,15 @@ void AA_EndEvent_DrawMenu(void)
 	}
 
 #ifdef CTR_AP
-	// AP: the plain trophy-win screen draws NO vanilla award text, so ADD a
-	// persistent "TROPHY WON" header plus the AP award block (the trophy location
-	// item + any podium rungs, cycled) in the free space above the standings icons
-	// (y=0x60). Only a genuine trophy win that is not a boss race or a CTR-token
-	// race (which draws its own block above). The trophy check sends on the
-	// continue-press, so it is passed as the primary bit; podium rungs come from
-	// the ledger.
+	// AP: the plain trophy-win screen draws NO vanilla award text, so ADD the AP
+	// award block in the free space above the standings icons (y=0x60). The trophy
+	// location's entry is prefixed "TROPHY WON" (so the win is acknowledged) and
+	// its scouted item + player shown; podium rungs cycle after it. Only a genuine
+	// trophy win that is not a boss race or a CTR-token race (which draws its own
+	// block above). The trophy check sends on the continue-press, so it is passed
+	// as the primary bit; podium rungs come from the ledger.
 	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1))
-	{
-		AP_CeremonyTrophyWon(0x100, 0x30);
 		AP_CeremonyDraw(0x100, 0x40, gGT->levelID + ADV_REWARD_FIRST_TROPHY, 1);
-	}
 #endif
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_PRESS_TO_CONTINUE], 0x100, 0xbe, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
