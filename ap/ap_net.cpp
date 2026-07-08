@@ -2,8 +2,10 @@
 //
 // Compiled as an isolated C++17 static library (see the CTR_AP block in
 // CMakeLists.txt) and called from the C unity build (ap_hooks.c) through the C
-// API in ap_net.h. Plain ws:// only -- no TLS, no compression, no schema --
-// which reduces the dependency footprint to header-only libs + ws2_32.
+// API in ap_net.h. Supports ws:// and wss:// (TLS) with permessage-deflate
+// compression; the transport is picked from the URI scheme, so the caller only
+// varies the uri passed to ap_net_init(). Schema validation stays disabled
+// (AP_NO_SCHEMA). TLS uses OpenSSL; compression uses zlib.
 //
 // apclientpp's poll() is single-threaded: handlers fire inline during the
 // ap_net_poll() call on the game thread, so no locking is needed around the
