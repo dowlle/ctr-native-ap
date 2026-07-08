@@ -109,6 +109,27 @@ int AP_WarpPadRewardModel(int globalBit);
 // applies it to relic + gem marker models.
 int AP_WarpPadRewardTint(int globalBit);
 
+// ── Requirement-hologram relic tint (closed pad) ──
+// The relic icon shown on a LOCKED pad advertises that pad's relic REQUIREMENT.
+// Vanilla renders it in one blue; the reward-glow rework cycles it through the 3
+// tiers so an AnyRelic req reads as "any tier". A specific-tier req (schema-4
+// type 4) must instead pin THAT tier's tint. LInB owns the physical-pad/stage
+// selection that decides which requirement a pad shows, so it records the shown
+// req's tint tier here; AH_WarpPad_ThTick (destination-keyed, must not re-run
+// that selection) reads it back keyed by the physical pad.
+//
+// AP_ReqRelicTintTier maps a resolved requirement to that tier: 0/1/2 =
+// Sapphire/Gold/Platinum for a type-4 req (legacy colour -1 = Sapphire, matching
+// AP_GateCountRelicTier); any other type -- including AnyRelic (type 7) -- returns
+// a negative value meaning "keep the sapphire->gold->platinum cycle".
+int AP_ReqRelicTintTier(const ctr_req *r);
+
+// Record / read the tint tier for a physical pad's closed-req relic hologram.
+// physLevelID is the PHYSICAL pad LevelID (0..27 warp pads, 100..104 gem cups).
+// A negative stored value (the default, and what unknown pads return) means cycle.
+void AP_SetWarpReqRelicTint(int physLevelID, int tier);
+int  AP_WarpReqRelicTint(int physLevelID);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems

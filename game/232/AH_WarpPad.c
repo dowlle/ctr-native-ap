@@ -452,16 +452,24 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (modelID == STATIC_RELIC)
 		{
 #ifdef CTR_AP
-			// AP: a relic requirement (especially "any relic", the any_of default) is
-			// satisfied by ANY tier, but the icon is a single Sapphire-blue relic,
-			// which reads as "sapphires only". Cycle the tint through the 3 tiers every
-			// 2s (sapphire -> gold -> platinum) so it reads as "any relic tier" --
-			// mirrors the gem-requirement colour cycle below. Tints match
-			// AP_WarpPadRewardTint's per-tier values.
+			// AP: the relic icon here advertises this pad's relic REQUIREMENT. An
+			// AnyRelic req (type 7) is met by ANY tier, but the icon is a single
+			// Sapphire-blue relic reading as "sapphires only" -- so cycle the tint
+			// through the 3 tiers every 2s (sapphire -> gold -> platinum) so it reads
+			// as "any relic tier" (mirrors the gem-requirement colour cycle below).
+			// A specific-tier req (schema-4 type 4) instead pins THAT tier's tint so
+			// it stops lying about which tier is needed. LInB resolved which pad/stage
+			// requirement is shown and recorded its tier keyed by the physical pad;
+			// re-derive the physical pad from this destination-keyed thread and read it
+			// back (negative = cycle). Tints match AP_WarpPadRewardTint's per-tier values.
 			if (ctr_cfg_active())
 			{
 				static const u32 s_relicTierTint[3] = {0x020a5ff0, 0x0ffc6290, 0x0ebebf50};
-				InstArr0->colorRGBA = s_relicTierTint[(gGT->timer / 0x3C) % 3];
+				int relicTintTier = AP_WarpReqRelicTint(ctr_cfg_warp_phys(warppadObj->levelID));
+				if (relicTintTier >= 0)
+					InstArr0->colorRGBA = s_relicTierTint[relicTintTier]; // specific tier -> fixed
+				else
+					InstArr0->colorRGBA = s_relicTierTint[(gGT->timer / 0x3C) % 3]; // AnyRelic -> cycle
 			}
 #endif
 			Vector_SpecLightSpin3D(InstArr0, &warppadObj->spinRot_Prize, &warppadObj->lightDirRelic);
@@ -1265,6 +1273,13 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	int unlockItem_numOwned;
 	int unlockItem_numNeeded;
 	int unlockItem_modelID;
+#ifdef CTR_AP
+	// Tint tier for a relic CLOSED-req icon: 0/1/2 = fixed Sapphire/Gold/Platinum,
+	// <0 = cycle (AnyRelic). Set alongside each resolved requirement below and
+	// recorded per physical pad at the icon birth so the destination-keyed ThTick
+	// can pin the tint without re-running this stage/pad selection.
+	int reqRelicTint = -1;
+#endif
 	int rewardModelID;
 	int rewardAngle;
 	int tokenGroupID;
@@ -1450,6 +1465,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		    !ctr_cfg_warp_stage2_unlocked(levelID))
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
+			reqRelicTint = AP_ReqRelicTintTier(r);
 			switch (r->type)
 			{
 			case 1: // trophies
@@ -1577,6 +1593,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 				// here (the trophy-not-owned branch). The stage2 (tier-2) requirement
 				// is gated at the load site in AH_WarpPad_ThTick, not advertised here.
 				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage1;
+				reqRelicTint = AP_ReqRelicTintTier(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -1648,6 +1665,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1675,6 +1693,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1713,6 +1732,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1746,6 +1766,7 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
 			{
 				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
+				reqRelicTint = AP_ReqRelicTintTier(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -2360,6 +2381,15 @@ void AH_WarpPad_LInB(struct Instance *inst)
 			newInst->colorRGBA = 0x20a5ff0;
 
 			warppadObj->lightDirRelic = D232.lightDirRelic[0];
+
+#ifdef CTR_AP
+			// Record which tier tint the destination-keyed ThTick should pin for
+			// this pad's relic requirement (reqRelicTint was set alongside the
+			// resolved requirement above). Keyed by the PHYSICAL pad (levelID stays
+			// physical throughout LInB), the pad the requirement belongs to.
+			if (ctr_cfg_active())
+				AP_SetWarpReqRelicTint(levelID, reqRelicTint);
+#endif
 		}
 
 		// Key

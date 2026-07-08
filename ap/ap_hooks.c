@@ -784,6 +784,51 @@ int AP_GateCountRelicTier(int colour)
 	}
 }
 
+// ── Requirement-hologram relic tint (closed pad; see the ap_hooks.h note) ──
+// Tint tier for the relic icon a LOCKED pad shows for its relic REQUIREMENT. A
+// specific-tier req (type 4) pins that tier's colour so it no longer cycles;
+// AnyRelic (type 7) and any non-relic req keep the cycle (negative return). The
+// colour->tier map mirrors AP_GateCountRelicTier exactly, so display and gate
+// agree (legacy colour -1 = Sapphire).
+int AP_ReqRelicTintTier(const ctr_req *r)
+{
+	if (r == 0 || r->type != 4)
+		return -1; // AnyRelic (type 7) or non-relic -> cycle
+	switch (r->colour)
+	{
+	case 1:  return 1; // Gold
+	case 2:  return 2; // Platinum
+	default: return 0; // Sapphire (colour 0 or legacy -1)
+	}
+}
+
+// Per-physical-pad store of the above, written by LInB at the moment it births
+// the closed requirement icon (it alone knows which pad/stage requirement is
+// shown) and read by the destination-keyed ThTick. Split like ctr_cfg's own
+// arrays: dense 0..27 for warp pads, 5-wide for gem cups (LevelID 100..104). The
+// values are only read when the shown model is a relic, which is exactly when
+// LInB has just written this pad's slot, so the zero-init (Sapphire) is never
+// observed for an unwritten pad; unknown pads still report cycle defensively.
+static signed char s_warpReqRelicTint[CTR_CFG_PAD_COUNT];
+static signed char s_cupReqRelicTint[5];
+
+void AP_SetWarpReqRelicTint(int physLevelID, int tier)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		s_warpReqRelicTint[physLevelID] = (signed char)tier;
+	else if (physLevelID >= 100 && physLevelID < 105)
+		s_cupReqRelicTint[physLevelID - 100] = (signed char)tier;
+}
+
+int AP_WarpReqRelicTint(int physLevelID)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		return s_warpReqRelicTint[physLevelID];
+	if (physLevelID >= 100 && physLevelID < 105)
+		return s_cupReqRelicTint[physLevelID - 100];
+	return -1; // unknown pad -> cycle (matches pre-pin behaviour)
+}
+
 int AP_GateCountGemSum(void)
 {
 	return AP_GateCountGemColour(0) + AP_GateCountGemColour(1) +
