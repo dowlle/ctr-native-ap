@@ -951,7 +951,7 @@ void DrawSplit(const GPUDrawSplit *split)
 		// into an empty retail draw area. Empty clips should consume no pixels,
 		// and must not leak stale native offscreen/scissor state.
 		NativeRenderer_SetupClipMode(&split->drawenv.clip, &split->dispenv, drawOnScreen);
-		NativeRenderer_SetOffscreenState(&split->drawenv.clip, &split->dispenv, 0);
+		NativeRenderer_SetOffscreenState(&split->drawenv.clip, 0);
 		if (split->debugText)
 		{
 			NativeRenderer_PopDebugLabel();
@@ -972,7 +972,8 @@ void DrawSplit(const GPUDrawSplit *split)
 	NativeRenderer_SetPSXTextureOutputSTP(split->psxTextureOutputSTP);
 
 	NativeRenderer_SetupClipMode(&split->drawenv.clip, &split->dispenv, drawOnScreen);
-	NativeRenderer_SetOffscreenState(&split->drawenv.clip, &split->dispenv, !drawOnScreen);
+	NativeRenderer_SetOffscreenState(&split->drawenv.clip, !drawOnScreen);
+	NativeRenderer_SetProjection(&split->drawenv.clip, &split->dispenv, !drawOnScreen);
 
 	if (split->psxTexturedSemiTrans)
 	{
