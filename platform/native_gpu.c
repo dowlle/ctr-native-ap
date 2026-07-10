@@ -943,6 +943,9 @@ internal void SetPSXMaskState(u32 code)
 void DrawAllSplits()
 {
 	NativePerf_BeginScope(NATIVE_PERF_BUCKET_DRAW_ALL_SPLITS);
+	// CPU-originated LoadImage, MoveImage, and fill commands are GPU-visible
+	// before the next draw batch, matching PS1 command ordering.
+	NativeRenderer_UpdateVRAM();
 #ifdef CTR_INTERNAL
 	if (g_dbg_emulatorPaused)
 	{

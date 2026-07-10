@@ -349,9 +349,8 @@ void Platform_EndScene(void)
 
 	if (s_pinnedVramDisplayFrames > 0)
 	{
-		// NOTE(aalhendi): Direct VRAM presentation skips StoreFrameBuffer.
-		// Do not let the next DrawSync read stale framebuffer texture data back
-		// into PSX VRAM after a movie/frame upload.
+		// NOTE(aalhendi): Direct VRAM presentation has no new host framebuffer
+		// snapshot. Do not let a later CPU read replay the previous one into VRAM.
 		NativeRenderer_DiscardFramebufferReadback();
 		if (s_pinnedVramDisplayCustomRect)
 		{
@@ -391,8 +390,8 @@ void Platform_EndFrame(void)
 
 void Platform_PresentVRAMDisplay(void)
 {
+	Platform_PinVRAMDisplayFrames(1);
 	Platform_BeginScene();
-	NativeRenderer_PresentVRAMDisplay();
 	Platform_EndFrame();
 }
 

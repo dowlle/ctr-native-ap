@@ -280,6 +280,11 @@ void NativeRenderer_BeginScene(void)
 
 void NativeRenderer_EndScene(void)
 {
+	if (s_previousOffscreenState)
+	{
+		NativeRenderer_SetOffscreenState(&s_previousOffscreen, &activeDispEnv, 0);
+	}
+
 	s_framebufferNeedsUpdate = 1;
 
 	if (g_dbg_wireframeMode)
@@ -1654,37 +1659,27 @@ internal void NativeRenderer_FlushOffscreenToVRAM(void)
 		return;
 	}
 
-	glBindFramebuffer(GL_FRAMEBUFFER, s_glVramFramebuffer);
-
-	// rebind texture
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_vramTexture, 0);
-
-	// setup draw and read framebuffers
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, s_glOffscreenFramebuffer); // source is offscreen render target
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_glVramFramebuffer);
-
-	glBlitFramebuffer(0, 0, s_previousOffscreen.w, s_previousOffscreen.h, s_previousOffscreen.x, s_previousOffscreen.y + s_previousOffscreen.h,
-	                  s_previousOffscreen.x + s_previousOffscreen.w, s_previousOffscreen.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-	// done, unbind
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-	// copy rendering results to the CPU-side PSX VRAM mirror
+	// NOTE(aalhendi): Native offscreen draws produce RGBA pixels. Publish the
+	// packed 5:5:5:1 result to both VRAM mirrors; a direct RGBA-to-RG8 blit only
+	// copies the R/G channels and does not represent a PS1 pixel.
 	{
 		u32 *pixels = NativeRenderer_GetReadbackScratch(s_previousOffscreen.w * s_previousOffscreen.h);
 		if (pixels == NULL)
 		{
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			return;
 		}
 
 		glBindTexture(GL_TEXTURE_2D, s_offscreenRenderTexture);
 		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-		glBindTexture(GL_TEXTURE_2D, s_lastBoundTexture != (TextureID)-1 ? s_lastBoundTexture : 0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 
-		NativeRenderer_CopyRGBAFramebufferToVRAM(pixels, s_previousOffscreen.x, s_previousOffscreen.y, s_previousOffscreen.w, s_previousOffscreen.h, 0, 1);
+		NativeRenderer_CopyRGBAFramebufferToVRAM(pixels, s_previousOffscreen.x, s_previousOffscreen.y, s_previousOffscreen.w, s_previousOffscreen.h, 1, 1);
+		NativeRenderer_UpdateVRAM();
 	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	s_lastBoundTexture = (TextureID)-1;
 }
 
 internal void NativeRenderer_SetScissorState(int enable)
@@ -1961,6 +1956,7 @@ void NativeRenderer_UpdateVRAM(void)
 	s_vramNeedsUpdate = 0;
 	s_vramDirtyRectCount = 0;
 
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, s_vramTexture);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, VRAM_WIDTH);
 	for (int i = 0; i < rectCount; i++)
@@ -1969,6 +1965,7 @@ void NativeRenderer_UpdateVRAM(void)
 		glTexSubImage2D(GL_TEXTURE_2D, 0, r.x, r.y, r.w, r.h, VRAM_FORMAT, GL_UNSIGNED_BYTE, vram + (size_t)r.y * VRAM_WIDTH + r.x);
 	}
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	s_lastBoundTexture = (TextureID)-1;
 
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_RENDERER_UPDATE_VRAM);
 }
@@ -2050,6 +2047,8 @@ void NativeRenderer_PresentVRAMRect(int displayX, int displayY, int displayW, in
 	{
 		return;
 	}
+
+	NativeRenderer_ReadFramebufferDataToVRAM();
 
 	if (rgba == NULL)
 	{
