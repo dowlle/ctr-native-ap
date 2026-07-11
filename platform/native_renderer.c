@@ -1709,6 +1709,11 @@ void NativeRenderer_SetOffscreenState(const RECT16 *offscreenRect, const DISPENV
 {
 	const int sameOffscreenRect = NativeRenderer_RectEquals(&s_previousOffscreen, offscreenRect);
 
+	if (!enable && !s_previousOffscreenState)
+	{
+		return;
+	}
+
 	if (enable)
 	{
 		// setup render target viewport
@@ -1755,11 +1760,6 @@ void NativeRenderer_SetOffscreenState(const RECT16 *offscreenRect, const DISPENV
 	}
 	else
 	{
-		if (!s_previousOffscreenState)
-		{
-			return;
-		}
-
 		s_previousOffscreenState = 0;
 
 		NativeRenderer_FlushOffscreenToVRAM();

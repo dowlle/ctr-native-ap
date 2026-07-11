@@ -281,15 +281,14 @@ void Platform_Shutdown(void)
 	NativeReplayScheduler_Shutdown();
 #endif
 	Platform_InputShutdown();
+	NativeAudio_Shutdown();
+	NativeRenderer_Shutdown();
 
 	if (g_window != NULL)
 	{
 		SDL_DestroyWindow(g_window);
 		g_window = NULL;
 	}
-
-	NativeAudio_Shutdown();
-	NativeRenderer_Shutdown();
 
 	SDL_Quit();
 
