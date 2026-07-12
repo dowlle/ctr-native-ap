@@ -1098,6 +1098,14 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		else
 		{
 			levID = GEM_STONE_VALLEY;
+#ifdef CTR_AP
+			// Under destination shuffle a gem cup can be entered from any hub, so
+			// return to the recorded entry hub instead of always Gemstone Valley
+			// (else exiting a cup with GV still locked spawns outside the map).
+			int apCupReturn = AP_CupReturnHub();
+			if (apCupReturn >= 0)
+				levID = (s16)apCupReturn;
+#endif
 
 			// when loading is done remove bits for Adventure Cup, relic, and crystal challenge
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP | RELIC_RACE | CRYSTAL_CHALLENGE;

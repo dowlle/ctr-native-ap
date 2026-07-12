@@ -1345,6 +1345,27 @@ int AP_GateCountGemSum(void)
 	       AP_GateCountGemColour(4);
 }
 
+// ── Gem-cup return hub (destination-shuffle correctness; see the ap_hooks.h note) ──
+// Physical hub the player entered the current/last gem cup from, captured at cup
+// entry before the four cup-track loads clobber gGT->prevLEV. Read only by the
+// ADVENTURE_CUP exit-to-map paths, which run immediately after a cup, so a value
+// left over from an earlier cup can never be consumed by a non-cup return. -1 =
+// never set this session. AP_CupReturnHub gates on ctr_cfg_active() so a vanilla
+// (no-slot_data) run always falls back to the hard-coded GEM_STONE_VALLEY return.
+static int ap_cup_return_hub = -1;
+
+void AP_CupEnterFromHub(int hubLevelID)
+{
+	ap_cup_return_hub = hubLevelID;
+}
+
+int AP_CupReturnHub(void)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	return ap_cup_return_hub;
+}
+
 // ── Phase 2: per-seed resolved-requirement comparators ──
 // These live C-side (not in ap_seedcfg.cpp) because they read the received-item
 // counters above (AP_GateCount*) and the per-track numTrophiesToOpen threshold

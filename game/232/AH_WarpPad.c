@@ -674,6 +674,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			gGT->cup.points[i] = 0;
 		}
 
+#ifdef CTR_AP
+		// Remember the physical hub this cup is entered FROM, before the cup's
+		// four track loads clobber gGT->prevLEV. The two ADVENTURE_CUP exit-to-map
+		// sites (UI_RaceFlow.c, MainFreeze.c) return here instead of the hard-coded
+		// GEM_STONE_VALLEY, so a gem cup hosted on a non-GV pad under destination
+		// shuffle no longer strands the player outside a still-locked Gemstone
+		// Valley on exit. gGT->levelID is still the entry hub at this point (the
+		// track load below overwrites it via LOAD_LevelFile).
+		if (ctr_cfg_active())
+			AP_CupEnterFromHub(gGT->levelID);
+#endif
+
 		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];
 		goto WarpPad_RequestLoad;
 	}

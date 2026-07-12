@@ -231,6 +231,23 @@ unsigned AP_StateGen(void);
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
+// ── Gem-cup return hub (destination-shuffle correctness) ──
+// Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a
+// cup's four track loads clobber gGT->prevLEV (each MainRaceTrack_RequestLoad
+// records prevLEV = the previous TRACK, not the entry hub) and, in the retail
+// game, gem cups only ever live in Gemstone Valley -- so the GEM_STONE_VALLEY
+// literal is always right. Under warp-pad DESTINATION shuffle a gem cup can be
+// hosted on a physical pad in ANY hub, so a player can enter a cup while GV is
+// still locked; returning to GV then strands them outside the unloaded map
+// (in-game repro, 2026-07). AH_WarpPad_ThTick records the physical
+// entry hub at cup ENTRY (gGT->levelID, captured before the track load
+// overwrites it); the two cup exit-to-map sites (game/UI/UI_RaceFlow.c,
+// game/MAIN/MainFreeze.c) call AP_CupReturnHub() instead of using the
+// GEM_STONE_VALLEY literal. AP_CupReturnHub returns -1 (AP inactive or unset) ->
+// caller keeps the vanilla GEM_STONE_VALLEY return.
+void AP_CupEnterFromHub(int hubLevelID);
+int  AP_CupReturnHub(void);
+
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H
