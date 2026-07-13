@@ -12,6 +12,12 @@ set(CTR_NATIVE_VERSION "0.1.0-beta.6.1")
 # Build mod:    cmake -S . -B build-ap -DCTR_AP=ON   (outputs ctr_native_ap.exe)
 option(CTR_AP "Build with Archipelago integration" OFF)
 
+# Custom-track loader (Phase-0 spike): OFF = retail behaviour; ON = serve mapped
+# track subfile groups from disk (see platform/native_custom_tracks.c and
+# tools/CUSTOM-TRACK-SPIKE.md). Combine with -DCTR_AP=ON for the AP build:
+#   cmake -S . -B build-ct -DCTR_AP=ON -DCTR_CUSTOM_TRACKS=ON
+option(CTR_CUSTOM_TRACKS "Load custom track subfile groups from disk" OFF)
+
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "-m32 ${CMAKE_EXE_LINKER_FLAGS}")
@@ -139,6 +145,14 @@ if(CTR_AP)
     # needed for the Windows system-CA lookup wswrap does on wss:// connections.
     target_link_libraries(ctr_native ap_net ws2_32 crypt32)
     target_link_options(ctr_native PRIVATE -static-libstdc++)
+endif()
+
+# Custom-track loader. The source (platform/native_custom_tracks.c) is part of
+# the main.c unity build and its whole body is #ifdef CTR_CUSTOM_TRACKS, so the
+# flag only needs to add the compile definition; with it OFF the file expands to
+# nothing and the build is byte-identical to retail.
+if(CTR_CUSTOM_TRACKS)
+    target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_TRACKS)
 endif()
 target_compile_options(ctr_native PRIVATE -O2)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")

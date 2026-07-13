@@ -70,6 +70,7 @@
 #include "platform/native_state.c"
 #include "platform/native_str.c"
 #include "platform/native_config.c"
+#include "platform/native_custom_tracks.c"
 
 #ifndef CC
 #if __GNUC__
@@ -185,6 +186,12 @@ int main(int argc, char *argv[])
 	// Load user options (config.ini in the working dir) before the game boots so
 	// startup-time toggles (e.g. skip_intro) are honoured on the first frame.
 	NativeConfig_Load();
+
+#ifdef CTR_CUSTOM_TRACKS
+	// Parse the [CustomTracks] section (config.ini) once, before the game boots,
+	// so track-subfile reads can consult the override table from the first load.
+	CustomTrack_Load();
+#endif
 
 #if defined(CTR_INTERNAL)
 	if (NativeReplayScheduler_PrepareReportFromArgs(argc, argv) != 0)
