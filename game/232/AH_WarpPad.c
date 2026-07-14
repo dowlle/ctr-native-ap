@@ -769,14 +769,22 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #ifdef CTR_AP
 				// AP Phase 2 (open-rando two-stage): STAGE 2 gates the relic Time
 				// Trials + CTR Token Challenge menu independently of stage 1 (which
-				// opened the trophy race above). Until stage 2 is met the trophy race
-				// is raceable but the tier-2 menu/load stays closed -- the pad just
-				// spins (TrophyAnimateOnly), the same idle visual as a not-yet-unlocked
-				// stage 1. Keyed by PHYSICAL pad (physLevelID), the same key stage 1
-				// uses. type 0 / collapsed / flat-v1 -> ctr_cfg_warp_stage2_unlocked
-				// returns 1, so non-two-stage seeds reach the menu exactly as before.
+				// opened the trophy race above). Keyed by PHYSICAL pad (physLevelID),
+				// the same key stage 1 uses. type 0 / collapsed / flat-v1 ->
+				// ctr_cfg_warp_stage2_unlocked returns 1, so non-two-stage seeds
+				// reach the menu exactly as before.
+				//
+				// A stage-2-locked pad is normally born CLOSED (the LInB re-lock
+				// advert, all pad classes) and never reaches this code -- this gate
+				// is the backstop for the one stale frame before a live re-birth.
+				// It must NOT goto WarpPad_TrophyAnimateOnly: that label sets
+				// boolEnteredWarppad=1 + VehStuckProc_Warp_Init, which captures the
+				// kart with no menu ever coming (the 2026-07-14 Dragon Mines
+				// softlock) and permanently disables this pad's live re-birth
+				// (ThTick's refresh requires boolEnteredWarppad==0). AnimateOpen
+				// keeps the pad inert and the player free.
 				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-					goto WarpPad_TrophyAnimateOnly;
+					goto WarpPad_AnimateOpen;
 #endif
 
 				if (warppadObj->framesWarping < 61)
@@ -1330,6 +1338,41 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 	}
 	*numNeeded = r->count;
 }
+
+// AP stage-2 re-lock advert for NON-trophy-track physical pads (trial / arena /
+// cup) hosting a RACE destination under destination shuffle: destination trophy
+// checked + this pad's stage-2 unmet must render the pad CLOSED advertising the
+// stage-2 requirement -- Stef's ruling 2026-07-15: state-3 behaves exactly like
+// a locked stage-1 pad. The trophy-track branch has carried this re-lock since
+// two-stage landed; the other pad classes never got it, so a race destination
+// hosted there (merged shuffle) was born plain-open while ThTick's stage-2 load
+// gate blocked the tier-2 menu -- the gate/display split behind the 2026-07-14
+// Dragon Mines-on-Skull-Rock-pad softlock. Fills the display triple and returns
+// 1 when the re-lock applies (caller then skips its stage-1 advert; the shared
+// owned>=needed decision below births the pad CLOSED, whose ThTick path never
+// reaches the warp code). Requirement resolved via ctr_cfg_warp_stage2_req --
+// the exact record the load gate evaluates, so gate and look cannot diverge.
+static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
+                                   int *modelID, int *numOwned, int *numNeeded,
+                                   int *tint)
+{
+	// same function-local idiom as ThTick/BuildInstances
+	enum
+	{
+		AH_WP_SLIDE_COLISEUM = 16,
+	};
+	const ctr_req *r;
+	if (!ctr_cfg_active() ||
+	    warppadObj->levelID >= AH_WP_SLIDE_COLISEUM ||
+	    !AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
+		return 0;
+	r = ctr_cfg_warp_stage2_req(physLevelID);
+	if (r == 0 || AP_BossReqMet(r))
+		return 0;
+	AP_ReqToUnlock(r, modelID, numOwned, numNeeded);
+	*tint = AP_ReqRelicTintTier(r);
+	return 1;
+}
 #endif
 
 // Engine entry point: level-load birth. Births the pad thread, then builds its
@@ -1748,10 +1791,18 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	else if (levelID == AH_WP_SLIDE_COLISEUM)
 	{
 #ifdef CTR_AP
+		// AP stage-2 re-lock first: a race destination hosted on this trial pad
+		// (merged shuffle) with its trophy checked + stage-2 unmet renders CLOSED
+		// advertising the stage-2 requirement (see AP_Stage2RelockToUnlock).
+		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
+		                            &unlockItem_numOwned, &unlockItem_numNeeded,
+		                            &reqRelicTint))
+		{
+		}
 		// AP open two-stage: Slide Coliseum carries a per-seed randomized
 		// single-stage requirement (warp_pad_unlock[16], same dense array as the
 		// trophy pads). type 0 / inactive falls back to the vanilla 10-Sapphire gate.
-		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
@@ -1777,9 +1828,15 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	else if (levelID == AH_WP_TURBO_TRACK)
 	{
 #ifdef CTR_AP
+		// AP stage-2 re-lock first (see the Slide Coliseum branch above).
+		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
+		                            &unlockItem_numOwned, &unlockItem_numNeeded,
+		                            &reqRelicTint))
+		{
+		}
 		// AP open two-stage: Turbo Track carries a per-seed randomized single-stage
 		// requirement (warp_pad_unlock[17]). type 0 / inactive falls back to vanilla 5 Gems.
-		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
@@ -1818,7 +1875,15 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// ({type 1, count 0}) and therefore opens here (open-when-free); type 0 only
 		// occurs when the arenas are vanilla-gated by design (vanilla unlock mode /
 		// arenas not included in the seed).
-		if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
+		// Stage-2 re-lock first (see the Slide Coliseum branch above): the
+		// 2026-07-14 softlock repro was exactly this case -- Dragon Mines (race
+		// dest) hosted on the Skull Rock arena pad with stage2 "any 2 Gem" unmet.
+		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
+		                            &unlockItem_numOwned, &unlockItem_numNeeded,
+		                            &reqRelicTint))
+		{
+		}
+		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		{
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
@@ -1846,6 +1911,16 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// cup pad may load a non-cup destination (its requirement still shows here).
 		{
 			int cupIdx = levelID - AH_WP_ADV_CUP;
+			// AP stage-2 re-lock first (see the Slide Coliseum branch above): a race
+			// destination hosted on this cup pad (merged shuffle) with its trophy
+			// checked + stage-2 unmet renders CLOSED advertising the stage-2
+			// requirement. ctr_cfg_warp_stage2_req resolves cup pads 100..104 via
+			// gem_cup_unlock, the same record the ThTick load gate evaluates.
+			if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
+			                            &unlockItem_numOwned, &unlockItem_numNeeded,
+			                            &reqRelicTint))
+			{
+			}
 			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
 			// Phase-1 "4 tokens of this colour" rule when slot_data is active and the
 			// cup has a resolved requirement (type != 0). type 0 (option off / vanilla
@@ -1854,7 +1929,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// pre-existing "2-key hub gate" in this branch, so there is nothing to AND
 			// the stage-1 requirement with here (the Cups Room hub door enforces the
 			// key gate structurally).
-			if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
+			else if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
 			{
 				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
 				reqRelicTint = AP_ReqRelicTintTier(r);

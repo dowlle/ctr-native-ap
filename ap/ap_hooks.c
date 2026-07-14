@@ -1489,20 +1489,31 @@ int ctr_cfg_warp_unlocked(int levelID)
 // physPadLevelID is the PHYSICAL pad LevelID, the same key stage1 uses.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 {
-	if (ctr_cfg_active() && physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
-		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physPadLevelID].stage2);
-
-	// Cup PHYSICAL pads (100..104): under `merged` shuffle a cup pad hosting a
-	// trophy-race destination carries a REAL stage2 (contract §2 stage-2 rule -- the
-	// apworld emits it into gem_cup_unlock), so honour it. type 0 (cup hosting
-	// non-race content, or vanilla) falls through to the always-open return below.
-	if (ctr_cfg_active() && physPadLevelID >= 100 && physPadLevelID <= 104 &&
-	    ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2.type != 0)
-		return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2);
+	const ctr_req *r = ctr_cfg_warp_stage2_req(physPadLevelID);
+	if (r != 0)
+		return AP_BossReqMet(r);
 
 	// No stage2 requirement -> tier 2 opens as soon as stage1 is satisfied.
 	return 1;
+}
+
+// The stage-2 requirement record for a physical pad, or NULL when it has none.
+// Cup PHYSICAL pads (100..104): under `merged` shuffle a cup pad hosting a
+// trophy-race destination carries a REAL stage2 (contract §2 stage-2 rule -- the
+// apworld emits it into gem_cup_unlock), so it resolves here too. Single source
+// for the stage-2 key logic; the load gate above and the LInB re-lock advert
+// (AH_WarpPad.c) both resolve through it so gate and display cannot diverge.
+const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID)
+{
+	if (!ctr_cfg_active())
+		return 0;
+	if (physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
+	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
+		return &ctr_cfg.warp_pad_unlock[physPadLevelID].stage2;
+	if (physPadLevelID >= 100 && physPadLevelID <= 104 &&
+	    ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2.type != 0)
+		return &ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2;
+	return 0;
 }
 
 // Reconcile AdvProgress category bits to EXACTLY the received-item counts: set

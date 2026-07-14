@@ -201,6 +201,13 @@ int ctr_cfg_warp_unlocked(int levelID);
 // IMPLEMENTED C-SIDE in ap_hooks.c.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 
+// The stage-2 requirement record for a physical pad, or NULL when it has none
+// (type 0 / invalid id / slot_data inactive). Single source for the stage-2
+// key logic: dense pads 0..27 via warp_pad_unlock, cup pads 100..104 via
+// gem_cup_unlock. ctr_cfg_warp_stage2_unlocked and the LInB re-lock advert
+// both resolve through it. IMPLEMENTED C-SIDE in ap_hooks.c.
+const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID);
+
 // Typed comparator for a resolved requirement (boss garages + warp-pad load
 // gate). Returns owned >= count for r->type using AP_GateCount* (colour-aware).
 // type 0 / unknown -> 1 (no requirement). IMPLEMENTED C-SIDE in ap_hooks.c.
