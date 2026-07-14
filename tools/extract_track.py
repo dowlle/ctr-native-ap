@@ -101,6 +101,30 @@ def read_subfile(path, entries, index):
     return data
 
 
+# First index of each BIGFILE region past the arcade groups, from the BigIndex
+# enum in include/namespace_Load.h. Used to label non-arcade diff hits: modern
+# CrashTeamEditor patches stash their custom .lev/.vrm in the OVERLAYSECT slots
+# and hook the loader via code edits, rather than replacing an arcade group.
+BIGINDEX_REGIONS = [
+    (144, "BI_BATTLETRACKS (battle arena group)"),
+    (200, "BI_ADVENTUREHUB (hub lev/vrm/ptr)"),
+    (215, "BI_MAINMENUFILE"),
+    (221, "BI_OVERLAYSECT1-3 (code overlays; CTE patches stash .lev/.vrm here)"),
+    (234, "BI_LANGUAGEFILE (track name strings live here)"),
+    (242, "BI_RACERMODELHI"),
+    (258, "BI_SHAREDMPKVRM"),
+    (260, "BI_1PARCADEPACK and later"),
+]
+
+
+def bigindex_region(idx):
+    label = "unknown region"
+    for start, name in BIGINDEX_REGIONS:
+        if idx >= start:
+            label = name
+    return label
+
+
 def mode_diff(clean_path, patched_path):
     _, clean = parse_bigfile(clean_path)
     _, patched = parse_bigfile(patched_path)
@@ -112,8 +136,10 @@ def mode_diff(clean_path, patched_path):
 
     changed = []
     for i in range(n):
-        # Compare by (size, bytes). Size mismatch alone already means a change.
-        if clean[i] != patched[i]:
+        # Compare by (size, bytes) only. Offsets must NOT participate: one grown
+        # subfile shifts every later entry's offset, which would flag hundreds of
+        # byte-identical files as changed (seen with a real CTE patch).
+        if clean[i][1] != patched[i][1]:
             changed.append(i)
         else:
             cb = read_subfile(clean_path, clean, i)
@@ -146,8 +172,9 @@ def mode_diff(clean_path, patched_path):
             print("             -> full group replaced; dump with: "
                   "extract_track.py dump <patched> %d tracks/<name>" % track)
     if other:
-        print("Changed indices outside the arcade-track range (>= 144): %s"
-              % ",".join(str(i) for i in other))
+        print("Changed indices outside the arcade-track range (>= 144):")
+        for idx in other:
+            print("  index %-3d  %s" % (idx, bigindex_region(idx)))
     return 0
 
 

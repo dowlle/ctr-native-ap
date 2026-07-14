@@ -61,8 +61,8 @@ Note: `extract_assets.py` reads the disc's ISO9660 file system and pulls
 python tools/extract_track.py diff clean-assets/BIGFILE.BIG patched-assets/BIGFILE.BIG
 ```
 
-This prints the changed subfile indices grouped by arcade track. A single-track
-patch normally shows one track with all 8 subfiles changed, for example:
+This prints the changed subfile indices grouped by arcade track. An old-style
+single-track patch shows one track with all 8 subfiles changed, for example:
 
 ```
   levelID 0   Dingo Canyon      subfiles 0,1,2,3,4,5,6,7  (indices 0,1,2,3,4,5,6,7)
@@ -70,6 +70,36 @@ patch normally shows one track with all 8 subfiles changed, for example:
 ```
 
 The `levelID` reported here is the slot the patch actually replaced. Remember it.
+
+**Reality check (verified against Figure Ate Fries v2.0 on Artemis, 2026-07-14):
+modern CrashTeamEditor-era patches do NOT replace an arcade group at all.** The
+FAF v2.0 diff shows only 5 real changes, none in the arcade range: the custom
+`.lev` and `.vrm` are stashed in the `BI_OVERLAYSECT1` slots (indices 221/222),
+plus code edits in an overlay (230), a track-name edit in a language file (235),
+and one shared-VRM tweak (258); the loader redirect lives in code the xdelta
+patches outside BIGFILE. If the diff shows this pattern, skip Step 4's dump and
+use the **raw-file route** below instead.
+
+### Raw-file route (CTE patches)
+
+CTE-era zips usually ship the raw `<track>.lev` and `<track>.vrm` next to the
+xdelta (FAF v2.0 does). A retail arcade group is 4 mode-pairs of `(vrm, lev)` --
+even subfiles 0/2/4/6 are VRMs (each exactly 458808 bytes; a CTE `.vrm` matches
+that size exactly), odd subfiles 1/3/5/7 are the per-mode LEVs. Assemble the
+group directly:
+
+```
+tracks/<name>/0.bin = <track>.vrm     tracks/<name>/1.bin = <track>.lev
+tracks/<name>/2.bin = <track>.vrm     tracks/<name>/3.bin = <track>.lev
+tracks/<name>/4.bin = <track>.vrm     tracks/<name>/5.bin = <track>.lev
+tracks/<name>/6.bin = <track>.vrm     tracks/<name>/7.bin = <track>.lev
+python tools/extract_track.py check tracks/<name>
+```
+
+(Using the same pair for all 4 modes is spike-grade: 1P adventure/arcade uses
+pair 0/1. The per-mode retail LEVs differ, so 2P/4P/relic on a custom track are
+untested territory.) Then continue at Step 5 with the levelID of whichever
+retail slot you want the track to replace.
 
 ## Step 4 -- dump the patched group
 
