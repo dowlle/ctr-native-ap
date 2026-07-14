@@ -452,7 +452,16 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		if ((gGT->gameMode1 & ADVENTURE_CUP) != 0)
 		{
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
-			MainRaceTrack_RequestLoad(GEM_STONE_VALLEY);
+			s16 cupReturn = GEM_STONE_VALLEY;
+#ifdef CTR_AP
+			// Under destination shuffle a gem cup can be entered from any hub, so
+			// return to the recorded entry hub instead of always Gemstone Valley
+			// (else exiting a cup with GV still locked spawns outside the map).
+			int apCupReturn = AP_CupReturnHub();
+			if (apCupReturn >= 0)
+				cupReturn = (s16)apCupReturn;
+#endif
+			MainRaceTrack_RequestLoad(cupReturn);
 			break;
 		}
 
