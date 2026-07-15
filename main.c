@@ -19,6 +19,9 @@
 #define ExitCriticalSection()
 #endif
 
+#ifdef CTR_AP
+#include "ap/ap_version.h"
+#endif
 #include "platform/native_assets.h"
 #include "platform/native_log.h"
 #include "platform/native_memory.h"
@@ -166,6 +169,11 @@ int main(int argc, char *argv[])
 	}
 
 	printf("[CTR Native] Version: %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
+#ifdef CTR_AP
+	// The CTR-AP RELEASE identifier (client + companion apworld pair), distinct
+	// from the engine version above -- this is the line a bug report should quote.
+	printf("[CTR-AP] Release: %s\n", CTR_AP_VERSION);
+#endif
 	printf("[CTR Native] Built with: " CC "\n");
 	printf("[CTR Native] Base: %s\n", NativeAssets_GetBaseDir());
 	printf("[CTR Native] Assets: %s\n", NativeAssets_GetAssetDir());
@@ -193,12 +201,20 @@ int main(int argc, char *argv[])
 	}
 #endif
 
+#ifdef CTR_AP
+	// Window title carries the CTR-AP release so a screenshot alone names the
+	// build (release-management plan, proposal 1).
+#define CTR_WINDOW_TITLE "Crash Team Racing - CTR-AP " CTR_AP_VERSION
+#else
+#define CTR_WINDOW_TITLE "Crash Team Racing"
+#endif
+
 #ifdef USE_16BY9
 	printf("[CTR Native] Widescreen\n");
-	Platform_Init("Crash Team Racing", 1280, 720);
+	Platform_Init(CTR_WINDOW_TITLE, 1280, 720);
 #else
 	printf("[CTR Native] 4:3\n");
-	Platform_Init("Crash Team Racing", 800, 600);
+	Platform_Init(CTR_WINDOW_TITLE, 800, 600);
 #endif
 
 #if defined(CTR_INTERNAL)

@@ -385,6 +385,21 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 
 						// check if key is unlocked
 						sVar7 = CHECK_ADV_BIT(adv->rewards, base + ADV_REWARD_FIRST_BOSS_KEY);
+#ifdef CTR_AP
+						// AP: "beaten" must key off the boss-race LOCATION being
+						// checked, not the key AdvProgress bit -- in AP those bits
+						// double as the RECEIVED-Key pool (the exact trap the goal-3
+						// rework avoids), so a garage you personally beat kept
+						// flashing "open, not beaten" until the matching Key item
+						// happened to arrive from the multiworld (live find,
+						// 2026-07-15 playtest). Same durable server-checked signal
+						// AP_EvaluateGoal's goal 3 and the garage door use.
+						if (ctr_cfg_active() &&
+						    AP_LocationCheckedByBit(base + ADV_REWARD_FIRST_BOSS_KEY))
+						{
+							sVar7 = 1;
+						}
+#endif
 					}
 
 					// open, not beaten

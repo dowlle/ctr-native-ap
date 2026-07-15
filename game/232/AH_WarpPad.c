@@ -540,6 +540,20 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			i = (gGT->timer / 0x3C) % 5;
 
+#ifdef CTR_AP
+			// AP: the gem icon here advertises this pad's gem REQUIREMENT. The
+			// vanilla 5-colour cycle is right for a genuine AnyGem req (type 8),
+			// but a specific-colour req (type 5) must pin ITS one colour -- the
+			// cycle made a "1x Blue Gem" gate read as "any 1 gem" (live confusion,
+			// 2026-07-15 playtest). Mirrors the relic-tier pin above; LInB recorded
+			// the shown requirement's gem colour keyed by the physical pad.
+			if (ctr_cfg_active())
+			{
+				int apReqGemC = AP_WarpReqGemColour(ctr_cfg_warp_phys(warppadObj->levelID));
+				if (apReqGemC >= 0)
+					i = apReqGemC; // specific colour -> fixed; negative keeps the cycle
+			}
+#endif
 			InstArr0->colorRGBA = ((u32)data.AdvCups[i].color[0] << 0x14) | ((u32)data.AdvCups[i].color[1] << 0xc) | ((u32)data.AdvCups[i].color[2] << 0x4);
 		}
 
@@ -1070,7 +1084,10 @@ WarpPad_AnimateOpen:
 	//   - n == 0             : all three slots hidden (everything checked).
 	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
 	// loop below, so a hidden slot neither renders nor mis-scales.
-	int apUncBits[5];
+	// 8 = 5 race tiers + up to 3 podium rung pseudo-bits (glow-only enumerator;
+	// rungs joined the glow cycle 2026-07-15 so a pad advertises the items on its
+	// position checks too, not just the tier rewards).
+	int apUncBits[8];
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
 	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
@@ -1078,8 +1095,8 @@ WarpPad_AnimateOpen:
 	    (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23) || // arena
 	    (((u16)(levelID - AH_WP_ADV_CUP)) < 5))                   // cup 100..104
 	{
-		apUncN = AP_PadUncollectedBits(warppadObj->levelID, apUncBits,
-		                               (int)(sizeof apUncBits / sizeof apUncBits[0]));
+		apUncN = AP_PadUncollectedGlowBits(warppadObj->levelID, apUncBits,
+		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
 		if (apUncN > 0)
 		{
 			int base = (apUncN > 3) ? (int)((gGT->timer / 0x3C) * 3) : 0;
@@ -1171,10 +1188,23 @@ WarpPad_AnimateOpen:
 						break;
 					}
 					case STATIC_GEM:
-						// FOREIGN multiworld item -> white gem marker; OWN gem -> 0
-						// (natural gem model colour). AP_WarpPadRewardTint returns pure
-						// white only for a foreign item, 0 otherwise.
-						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						// FOREIGN multiworld item -> white gem marker (AP_WarpPadRewardTint).
+						// OWN gem -> its gem COLOUR via data.AdvCups: the gem model has no
+						// useful unmodulated colour -- at colorRGBA 0 it renders near-black
+						// (the specular sibling of the black-key bug; seen live 2026-07-15,
+						// an own Purple Gem reading as a "black gem"). Vanilla always
+						// modulates gems (CS_Podium tints by data.AdvCups[cup].color) --
+						// mirror that here keyed by the SCOUTED gem's colour.
+						apTint = AP_WarpPadRewardTint(apSlotBit[i]);
+						if (apTint == 0)
+						{
+							int apGemC = AP_WarpPadRewardGemColour(apSlotBit[i]);
+							if (apGemC >= 0)
+								apTint = ((u32)data.AdvCups[apGemC].color[0] << 0x14) |
+								         ((u32)data.AdvCups[apGemC].color[1] << 0xc) |
+								         ((u32)data.AdvCups[apGemC].color[2] << 0x4);
+						}
+						apPrize->colorRGBA = apTint;
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
 					case STATIC_KEY:
@@ -1354,7 +1384,7 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 // the exact record the load gate evaluates, so gate and look cannot diverge.
 static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
                                    int *modelID, int *numOwned, int *numNeeded,
-                                   int *tint)
+                                   int *tint, int *gemColour)
 {
 	// same function-local idiom as ThTick/BuildInstances
 	enum
@@ -1371,6 +1401,7 @@ static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
 		return 0;
 	AP_ReqToUnlock(r, modelID, numOwned, numNeeded);
 	*tint = AP_ReqRelicTintTier(r);
+	*gemColour = AP_ReqGemColour(r);
 	return 1;
 }
 #endif
@@ -1428,6 +1459,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// recorded per physical pad at the icon birth so the destination-keyed ThTick
 	// can pin the tint without re-running this stage/pad selection.
 	int reqRelicTint = -1;
+	// Same idiom for a gem CLOSED-req icon: 0..4 = fixed R,G,B,Y,P colour pin
+	// (specific-colour type 5), <0 = cycle (AnyGem / non-gem requirement).
+	int reqGemColour = -1;
 #endif
 	int rewardModelID;
 	int rewardAngle;
@@ -1600,6 +1634,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);
+			reqGemColour = AP_ReqGemColour(r);
 			switch (r->type)
 			{
 			case 1: // trophies
@@ -1728,6 +1763,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 				// is gated at the load site in AH_WarpPad_ThTick, not advertised here.
 				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage1;
 				reqRelicTint = AP_ReqRelicTintTier(r);
+			reqGemColour = AP_ReqGemColour(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -1796,7 +1832,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// advertising the stage-2 requirement (see AP_Stage2RelockToUnlock).
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint))
+		                            &reqRelicTint, &reqGemColour))
 		{
 		}
 		// AP open two-stage: Slide Coliseum carries a per-seed randomized
@@ -1808,6 +1844,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1831,7 +1868,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// AP stage-2 re-lock first (see the Slide Coliseum branch above).
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint))
+		                            &reqRelicTint, &reqGemColour))
 		{
 		}
 		// AP open two-stage: Turbo Track carries a per-seed randomized single-stage
@@ -1842,6 +1879,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1880,7 +1918,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// dest) hosted on the Skull Rock arena pad with stage2 "any 2 Gem" unmet.
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint))
+		                            &reqRelicTint, &reqGemColour))
 		{
 		}
 		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
@@ -1889,6 +1927,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1918,7 +1957,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// gem_cup_unlock, the same record the ThTick load gate evaluates.
 			if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 			                            &unlockItem_numOwned, &unlockItem_numNeeded,
-			                            &reqRelicTint))
+			                            &reqRelicTint, &reqGemColour))
 			{
 			}
 			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
@@ -1933,6 +1972,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			{
 				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
 				reqRelicTint = AP_ReqRelicTintTier(r);
+			reqGemColour = AP_ReqGemColour(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -2520,6 +2560,18 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 	// WPIS_CLOSED_ITEM
 	newInst = INSTANCE_Birth3D(gGT->modelPtr[unlockItem_modelID], "reqObj", t);
+
+#ifdef CTR_AP
+	// Record which gem colour the destination-keyed ThTick should pin for this
+	// pad's closed-req gem hologram (reqGemColour was set alongside the resolved
+	// requirement above; -1 for a non-gem/AnyGem requirement = keep the cycle).
+	// Recorded for EVERY closed pad -- ThTick only reads it when the icon model
+	// IS a gem, so a -1 record is never consumed wrongly. Keyed by the PHYSICAL
+	// pad (levelID stays physical throughout LInB), mirroring the relic record
+	// in the STATIC_RELIC branch below.
+	if (ctr_cfg_active())
+		AP_SetWarpReqGemColour(levelID, reqGemColour);
+#endif
 
 	// copy matrix
 	*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
