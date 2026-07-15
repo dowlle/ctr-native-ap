@@ -230,6 +230,13 @@ void AP_TrapDebugKeys(void)
 	    {AP_TRAP_KEY_PRIME, -1},
 	};
 	int k;
+
+	// DEAD unless ap-config.txt dev_keys=1 (shared gate with the Shortcutless dev
+	// keys, AP_DevKeysEnabled). Unguarded these fire traps from ANY numpad press
+	// in any mode -- same leak class as issue #16.
+	if (!AP_DevKeysEnabled())
+		return;
+
 	for (k = 0; k < 6; k++)
 	{
 		int down = Platform_InputRawKeyDown(keys[k].scancode);
@@ -280,7 +287,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 	int raceActive, lapWindow;
 	struct Driver *local;
 
-	// Debug keys work anywhere (title screen included).
+	// Debug keys work anywhere (title screen included) -- but only when enabled
+	// via ap-config.txt dev_keys=1 (gate inside AP_TrapDebugKeys).
 	AP_TrapDebugKeys();
 
 	if (gGT == 0)

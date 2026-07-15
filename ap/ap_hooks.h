@@ -122,6 +122,13 @@ const char *AP_Net_StatusLine(void);
 // bundled with the ported ReservesMeter HUD.
 int AP_HudReservesFx(void);
 
+// 1 if the numpad DEV hotkeys are enabled: trap test-fire keys Numpad 1-6
+// (ap_traps.c) and the Shortcutless toggle/mark keys Numpad 7-8 (ap_shortcut.c).
+// Default 0 -- the keys are DEAD in normal play, so a stray numpad press (e.g.
+// typing the port on the connection screen with NumLock on, issue #16) can
+// never reach test machinery. Set ap-config.txt "dev_keys=1" for a dev session.
+int AP_DevKeysEnabled(void);
+
 // ── AI-difficulty preset (option-sync pattern) ──
 // The selected AI-difficulty as a raw engine difficulty VALUE (0 = vanilla; the
 // presets are 0x50/0xA0/0xF0/0x140/0x280). Applied by BOTS_Adv_AdjustDifficulty at

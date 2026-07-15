@@ -108,6 +108,17 @@ int AP_HudReservesFx(void)
 	return ap_hud_reserves_fx;
 }
 
+// Numpad dev hotkeys (trap test-fire Numpad 1-6, Shortcutless toggle/mark
+// Numpad 7-8). Default OFF: the raw-key polls run in ALL game modes, so an
+// unguarded numpad press could reach test machinery in a release build -- a
+// player typing the port with NumLock on toggled Shortcutless (issue #16).
+// Set via ap-config.txt "dev_keys=1"; checked inside the key handlers.
+static int ap_dev_keys = 0;
+int AP_DevKeysEnabled(void)
+{
+	return ap_dev_keys;
+}
+
 // Diagnostic (crash investigation): format a compact game-state breadcrumb for a
 // log line -- frame timer, in-adventure flag, loading stage, and current levelID.
 // Lets a flushed log show what the game was doing (e.g. an item arriving while a
@@ -1704,6 +1715,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			; // debug_trap=... -> prime a trap for testing (see ap_traps.c)
 		else if (AP_ShortcutConfigLine(line))
 			; // shortcutless=... / shortcut_capture=... (see ap_shortcut.c)
+		else if (!strncmp(line, "dev_keys=", 9))
+			ap_dev_keys = (line[9] == '1'); // numpad dev hotkeys (traps + Shortcutless)
 		else if (!strncmp(line, "map_flash=", 10))
 			ap_map_flash = (line[10] != '0'); // 0 = static GREEN (no Raceable flicker)
 		else if (!strncmp(line, "hud_reserves_fx=", 16))

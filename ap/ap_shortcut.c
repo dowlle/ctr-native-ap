@@ -388,11 +388,20 @@ static void AP_ScMarkCurrentQuad(void)
 void AP_ShortcutKeys(void)
 {
 	static int prevToggle = 0, prevMark = 0;
-	int toggle = Platform_InputRawKeyDown(AP_SC_KEY_TOGGLE);
-	int mark = Platform_InputRawKeyDown(AP_SC_KEY_MARK);
+	int toggle, mark;
 
-	// Numpad 7 is a DEV toggle -- always works so the effect can be tested regardless of
-	// mode / allow_shortcut_switching (the real player switch is the future menu).
+	// DEAD unless ap-config.txt dev_keys=1 (shared gate with the trap test keys).
+	// These raw-key polls run in ALL modes, so unguarded they reach release
+	// players: typing the port with NumLock on toggled Shortcutless (issue #16).
+	if (!AP_DevKeysEnabled())
+		return;
+
+	toggle = Platform_InputRawKeyDown(AP_SC_KEY_TOGGLE);
+	mark = Platform_InputRawKeyDown(AP_SC_KEY_MARK);
+
+	// Numpad 7 is a DEV toggle -- once dev_keys=1 it always works so the effect can
+	// be tested regardless of mode / allow_shortcut_switching (the real player
+	// switch is the future menu).
 	if (toggle && !prevToggle)
 		AP_ShortcutlessSet(!g_shortcutless);
 	if (mark && !prevMark)
