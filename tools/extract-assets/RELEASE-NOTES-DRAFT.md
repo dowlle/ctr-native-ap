@@ -19,16 +19,18 @@ This release ships no game data. You provide the game files from your own copy
 of the NTSC-U (North American) Crash Team Racing disc. Nothing here contains
 Crash Team Racing game assets, and none are distributed.
 
-A helper script (`extract_assets.py`) reads your own disc image (`.cue`, `.bin`,
-or `.chd`) and copies out just the files the game needs into an `assets` folder.
-It checks that the disc is the supported region and that the extracted set is
-complete. See `SETUP.md` for the full walkthrough.
+The easiest setup is a drop-in: name a raw `.bin` dump of your disc
+`ctr-u.bin` and place it in an `assets` folder next to the executable — no
+extra tools needed. Alternatively, a helper script (`extract_assets.py`) reads
+your disc image (`.cue`, `.bin`, or `.chd`), verifies the region, and copies
+out just the files the game needs, which saves disk space. See `SETUP.md` for
+the full walkthrough.
 
 ### What is in this release
 
 - `ctr_native_ap.exe`: the game executable with Archipelago support built in.
 - `ctr.apworld`: the Archipelago world, for whoever generates the multiworld.
-- `extract_assets.py`: the bring-your-own-disc asset extractor.
+- `extract_assets.py`: the optional space-saving asset extractor.
 - `ap-config.example.txt`: a documented template for your server settings
   (optional; the in-game OPTIONS → Connection screen is the recommended way).
 - `SETUP.md`: step-by-step setup.
