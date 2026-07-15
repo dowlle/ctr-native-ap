@@ -2,37 +2,26 @@
 
 Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. This is a native port of the game (built on the [CTR-native](https://github.com/CTR-tools/ctr-native) decompilation) with the Archipelago client built directly into it: no emulator, no ROM patching. It connects to the server, receives items, locks and unlocks warp pads, boss garages, doors and gem cups per seed, and sends your location checks and goal.
 
-**Status: in development, not yet released.** The code is public for collaboration and transparency. Once released, Windows and Linux builds will be available on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
+Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
 
 ## Getting started
 
-You need three things: a release build, your own (NTSC-U) copy of the game, and a small config file.
+You need three things: a release build, your own (NTSC-U) copy of the game, and your room details. The full walkthrough (including the optional space-saving asset extractor) is in [SETUP.md](SETUP.md); the short version:
 
 **1. Download a release.** Grab the build for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr_native_ap.exe` (Windows) or `ctr_native_ap` (Linux).
 
-**2. Add your own game disc image.** This project contains no game assets. You must own a retail **NTSC-U** copy of Crash Team Racing. Dump it as a raw `.bin` disc image and place it next to the executable in a folder named `assets`:
+**2. Add your own game disc image.** This project contains no game assets. You must own a retail **NTSC-U** copy of Crash Team Racing. Dump it as a raw `.bin` disc image, name the file `ctr-u.bin`, and place it next to the executable in a folder named `assets`:
 
 ```
 CTR-Archipelago/
   ctr_native_ap.exe
-  ap-config.txt
   assets/
     ctr-u.bin
 ```
 
 The image must be the common single-track raw PSX BIN layout (MODE2/2352 sectors, data track starting at byte 0). A 2048-byte `.iso` will not work: it strips the sector data needed for audio and video.
 
-**3. Configure your connection.** Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` next to the executable and fill in your room details:
-
-```
-uri=ws://localhost:38281
-slot=Player1
-password=
-```
-
-Then run the executable: it connects at startup and you play from there.
-
-During development the client connects over a plain, unencrypted WebSocket (`ws://`), aimed at a local or self-hosted server. Secure connections (`wss://`, for archipelago.gg rooms) and an in-game connection screen are planned before release.
+**3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game reconnects automatically on later launches. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead — see [SETUP.md](SETUP.md).
 
 ## Joining a multiworld
 
