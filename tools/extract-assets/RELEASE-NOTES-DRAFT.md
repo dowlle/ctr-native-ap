@@ -1,8 +1,11 @@
-# DRAFT: CTR-AP release notes
+# TEMPLATE: CTR-AP release notes
 
-Status: DRAFT. This file is a working draft of the text a future GitHub release
-would carry. It is not published, not linked from anywhere, and no release
-exists yet. Do not treat any part of this as final copy.
+Status: TEMPLATE for future releases. v0.1.0 shipped on 2026-07-15 with a
+finalized version of this text (see the published notes at
+https://github.com/dowlle/ctr-native-ap/releases/tag/v0.1.0 for the live
+example, including the What's-next roadmap section and the verify-your-download
+block). For the next release: update the content below, then follow
+RELEASING.md.
 
 ---
 
