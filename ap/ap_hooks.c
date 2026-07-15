@@ -820,7 +820,7 @@ static void AP_CeremonySanitize(const char *in, char *out, int cap)
 	out[j] = '\0';
 }
 
-// One centralized place for the ceremony wording (Stef retunes later).
+// One centralized place for the ceremony wording (retune later).
 #define AP_CEREMONY_FMT_OWN      "%s AWARDED"
 #define AP_CEREMONY_FMT_FOREIGN  "%s FOR %s"
 #define AP_CEREMONY_ITEM_UNKNOWN "AP ITEM"
@@ -1048,7 +1048,7 @@ void AP_FeedOnItemReceived(long long item, int player, long long index)
 		ap_feed_hwm = index;
 
 	int self = ap_net_self_slot();
-	// Stef's rule: own slot OR the server (slot <= 0) shows just the item; anyone
+	// Display rule: own slot OR the server (slot <= 0) shows just the item; anyone
 	// else gets "FROM <PLAYER>".
 	int own = (player <= 0 || player == self);
 

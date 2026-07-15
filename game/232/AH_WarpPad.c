@@ -1342,7 +1342,7 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 // AP stage-2 re-lock advert for NON-trophy-track physical pads (trial / arena /
 // cup) hosting a RACE destination under destination shuffle: destination trophy
 // checked + this pad's stage-2 unmet must render the pad CLOSED advertising the
-// stage-2 requirement -- Stef's ruling 2026-07-15: state-3 behaves exactly like
+// stage-2 requirement -- design ruling 2026-07-15: state-3 behaves exactly like
 // a locked stage-1 pad. The trophy-track branch has carried this re-lock since
 // two-stage landed; the other pad classes never got it, so a race destination
 // hosted there (merged shuffle) was born plain-open while ThTick's stage-2 load
