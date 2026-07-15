@@ -351,6 +351,35 @@ void UI_DrawRaceClock(u16 paramX, u16 paramY, u32 flags, struct Driver *driver)
 	// If did not unlock relic, draw NEXT goal
 	if ((gGT->gameModeEnd & NEW_RELIC) == 0)
 	{
+#ifdef CTR_AP
+		// AP live target ladder (issue #21): the reward bits below are
+		// AP_ApplyItems' received-item view, not this track's true state. While
+		// the ladder owns the target (relic race, AP seed), the label + colour
+		// follow its CURRENT tier so they always match the relicTime_* digits it
+		// fills -- including after a mid-race step-down. The post-finish draw
+		// takes the NEW_RELIC branch below, where the AP_CeremonyRelicTier
+		// override at LAB_8004f378 stays in charge.
+		if (AP_RelicTargetTier() >= 0)
+		{
+			int apLadderTier = AP_RelicTargetTier();
+			if (apLadderTier == 2)
+			{
+				str = 200; // 0xc8 PLATINUM
+				stringColor_but_its_also_relicColor = SILVER;
+			}
+			else if (apLadderTier == 1)
+			{
+				str = 199; // 0xc7 GOLD
+				stringColor_but_its_also_relicColor = PAPU_YELLOW;
+			}
+			else
+			{
+				str = 0xc6; // SAPPHIRE
+				stringColor_but_its_also_relicColor = TROPY_LIGHT_BLUE;
+			}
+			goto LAB_8004f378;
+		}
+#endif
 		// if you have gold or platinum, draw platinum
 		if ((CHECK_ADV_BIT(rewardsSet, gGT->levelID + ADV_REWARD_FIRST_PLATINUM_RELIC) != 0) ||
 		    (CHECK_ADV_BIT(rewardsSet, gGT->levelID + ADV_REWARD_FIRST_GOLD_RELIC) != 0))

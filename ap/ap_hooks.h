@@ -45,6 +45,20 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger);
 // AP_ApplyItems-clobbered advProgress bits. -1 during pre-race draws.
 int AP_CeremonyRelicTier(void);
 
+// ── Relic-race live target ladder (issue #21) ──
+// AP-active seeds replace the vanilla race-start tier selector (which reads
+// the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum
+// items made a first attempt show the PLATINUM time). AP_RelicTargetInit runs
+// at relic-race start (UI_Instance.c): it picks the highest tier still
+// earnable on this track (location in seed + unchecked), fills the
+// sdata->relicTime_* HUD digits, and returns 1 (0 = no slot_data, vanilla
+// selector stands). A per-frame tick in AP_OnFrame steps the shown tier down
+// when the race clock passes its time, holding at the lowest earnable tier.
+// AP_RelicTargetTier is the current shown tier for the HUD label/colour pin
+// (UI_Clock.c); -1 = ladder inactive (vanilla label path).
+int AP_RelicTargetInit(int levelID);
+int AP_RelicTargetTier(void);
+
 // ── Hub item-received feed (display-only) ──
 // Bottom-left feed of the AP items you receive, rendered only on the adventure
 // hub. AP_FeedOnItemReceived queues one drained receipt (called once per item in
