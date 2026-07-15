@@ -77,24 +77,32 @@ data the game needs, so it will not work. This path skips the region check and
 uses more disk space than the extracted folder, which is why the extractor is
 recommended.
 
-## Step 3: create your config file
+## Step 3: connect to your room
 
-Copy `ap-config.example.txt` to `ap-config.txt` in the same folder as
-`ctr_native_ap.exe`, and open it in a text editor. Set at least:
+Launch `ctr_native_ap.exe`. On a first start with no saved connection the game
+boots to the main menu and shows that it is not connected. Go to **OPTIONS →
+Connection** and type your room details with your keyboard:
 
-- `uri`: the Archipelago server address (for example `archipelago.gg:38281`, or
-  `ws://localhost:38281` for a server on your own machine).
-- `slot`: your player name in the room, spelled exactly as it appears there.
-- `password`: the room password, or leave it blank if there is none.
+- **Server**: the address of your room, for example `archipelago.gg:38281`
+  (the port is on your room page). Secure connections (`wss://`) are used
+  automatically for hosted rooms; for a server on your own machine use
+  `ws://localhost:38281` or just `localhost:38281`.
+- **Slot**: your player name in the room, spelled exactly as it appears there.
+- **Password**: the room password, or leave it blank if there is none.
 
-The other options (`skip_hints`, `map_flash`) are optional quality of life
-toggles and can be left at their defaults. Every option is documented inline in
-the example file.
+Select **Connect**. The status line on the same screen shows the connection
+state (Connecting… / Connected / an error message). Your settings are saved to
+`config.ini` next to the executable, and the game reconnects automatically on
+later launches.
 
-## Step 4: run
+### Alternative: config file
 
-Launch `ctr_native_ap.exe`. It connects to the server at startup using your
-`ap-config.txt`, then boots the game.
+If you prefer a text file, copy `ap-config.example.txt` to `ap-config.txt` in
+the same folder as `ctr_native_ap.exe` and set `uri`, `slot`, and `password`
+there; the game reads it at startup. Values saved from the in-game Connection
+screen (`config.ini`) take precedence when both exist. The example file also
+documents a few optional quality of life toggles (`skip_hints`, `map_flash`),
+which can equally be changed in the in-game options menu.
 
 ## Troubleshooting
 
@@ -113,6 +121,8 @@ Launch `ctr_native_ap.exe`. It connects to the server at startup using your
 - The game window opens but there is no music or the intro video is black: your
   image was probably a cooked 2048-byte `.iso`, which drops the XA and STR
   sector data. Re-dump or re-obtain the disc as a raw MODE2/2352 image.
-- Cannot connect to the server: check the `uri`, `slot`, and `password` in
-  `ap-config.txt`. This build uses a plain (unencrypted) WebSocket connection,
-  so it is best suited to a local or self-hosted server.
+- Cannot connect to the server: check the server address, slot name, and
+  password in **OPTIONS → Connection** (the status line there shows the error
+  reason) — or in `ap-config.txt` if you use the config file instead. The slot
+  name must match the room exactly. Settings saved from the in-game screen
+  (`config.ini`) override `ap-config.txt`.

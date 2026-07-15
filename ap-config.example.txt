@@ -1,5 +1,11 @@
 # CTR-AP client configuration (example).
 #
+# You do not need this file: the in-game connection screen (OPTIONS ->
+# Connection) is the recommended way to set up your room, and it saves to
+# "config.ini". This file is the text-file alternative. Note that connection
+# values saved from the in-game screen (config.ini) take precedence over the
+# ones here when both exist.
+#
 # Copy this file to "ap-config.txt" (same folder as the game executable) and
 # fill in your own values. The game reads it once at startup.
 #
@@ -9,11 +15,12 @@
 # default shown in brackets below is used.
 
 # uri: the Archipelago server to connect to. [ws://localhost:38281]
-# This build connects over a plain, unencrypted WebSocket (ws://). It is aimed
-# at a local or self-hosted server. If you omit the "ws://" prefix and/or the
-# port, the client fills them in (default port 38281). Examples:
-#   uri=ws://localhost:38281
+# Both plain (ws://) and secure (wss://) WebSocket connections are supported.
+# If you omit the scheme and/or the port, the client fills them in: a secure
+# connection is tried first with automatic fallback (default port 38281), so
+# hosted archipelago.gg rooms work with just host:port. Examples:
 #   uri=archipelago.gg:38281
+#   uri=ws://localhost:38281
 uri=ws://localhost:38281
 
 # slot: your player (slot) name in the multiworld, exactly as it appears in the
