@@ -21,10 +21,9 @@ disc. You will need:
 ## Step 1: get the game executable
 
 Download `ctr_native_ap.exe` from the
-[releases page](https://github.com/dowlle/ctr-native-ap/releases) and put it in
-a folder of
-its own, for example a folder called `CTR-AP`. The rest of these steps add the
-game data and your server settings next to it.
+[releases page](https://github.com/dowlle/ctr-native-ap/releases) and put it
+in a folder of its own, for example a folder called `CTR-AP`. The rest of
+these steps add the game data and your server settings next to it.
 
 ## Step 2: drop in your disc image (recommended)
 
