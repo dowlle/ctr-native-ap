@@ -77,8 +77,10 @@ int AP_QuadIsShortcut(struct QuadBlock *quad);
 void AP_ShortcutSkipTick(struct GameTracker *gGT);
 
 // Debug keybinds (Numpad 7 dev toggle Shortcutless, Numpad 8 log/mark the local player's
-// current quad blockID). Dev tools for verifying/extending the table; the real
-// player switch (gated on allow_shortcut_switching) is the future in-game menu.
+// current quad blockID). DEAD unless ap-config.txt dev_keys=1 (AP_DevKeysEnabled,
+// shared with the trap test keys) -- unguarded they leaked into release play,
+// issue #16. Dev tools for verifying/extending the table; the real player
+// switch (gated on allow_shortcut_switching) is the future in-game menu.
 void AP_ShortcutKeys(void);
 
 // Parse one ap-config.txt line. Recognised: "shortcuts=allowed|forbidden|
