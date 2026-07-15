@@ -16,11 +16,13 @@ disc. You will need:
    (it saves disk space and is the route for `.chd` images). If your image is
    a `.chd`, you also need the `chdman` tool on your PATH.
 3. The prebuilt game executable, `ctr_native_ap.exe`. Download it from the
-   releases page.
+   [releases page](https://github.com/dowlle/ctr-native-ap/releases).
 
 ## Step 1: get the game executable
 
-Download `ctr_native_ap.exe` from the releases page and put it in a folder of
+Download `ctr_native_ap.exe` from the
+[releases page](https://github.com/dowlle/ctr-native-ap/releases) and put it in
+a folder of
 its own, for example a folder called `CTR-AP`. The rest of these steps add the
 game data and your server settings next to it.
 
