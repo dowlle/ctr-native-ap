@@ -43,6 +43,9 @@ the full walkthrough.
   or a `.chd`). A cooked 2048-byte `.iso` does not carry the audio and video
   sector data the game needs.
 - `.chd` images require the `chdman` tool to be installed and on your PATH.
+- After beating your goal, the game may freeze on a black screen once the
+  credits end. Your goal is already sent to the multiworld at that point --
+  close the game and relaunch. A relaunch shows your completed seed correctly.
 
 ### Credits
 

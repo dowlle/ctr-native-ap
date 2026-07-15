@@ -178,6 +178,26 @@ int AP_ReqRelicTintTier(const ctr_req *r);
 void AP_SetWarpReqRelicTint(int physLevelID, int tier);
 int  AP_WarpReqRelicTint(int physLevelID);
 
+// ── Requirement-hologram gem colour (closed pad) ── the gem sibling of the
+// relic-tint machinery above. A specific-colour gem requirement (type 5) must
+// pin its ONE colour on the closed-pad gem hologram -- the vanilla 5-colour
+// cycle made a "1x Blue Gem" gate read as "any 1 gem" (live confusion,
+// 2026-07-15 playtest). Only a genuine AnyGem req (type 8) keeps the cycle.
+// AP_ReqGemColour maps a resolved requirement to its gem colour index (0..4 =
+// R,G,B,Y,P, straight onto data.AdvCups[]); any other type -- including AnyGem
+// -- returns negative meaning "keep the colour cycle".
+int  AP_ReqGemColour(const ctr_req *r);
+void AP_SetWarpReqGemColour(int physLevelID, int colour);
+int  AP_WarpReqGemColour(int physLevelID);
+
+// Colour index (0..4 = R,G,B,Y,P) of the OWN Gem scouted at this location, or
+// -1 when the scout is not an own gem. The gem model has NO useful unmodulated
+// colour -- at colorRGBA 0 it renders near-black (the specular sibling of the
+// black-key bug; vanilla always modulates gems, e.g. CS_Podium via
+// data.AdvCups[cup].color). The reward glow therefore tints an OWN gem by the
+// scouted item's colour; same data.AdvCups mapping as tokens.
+int AP_WarpPadRewardGemColour(int globalBit);
+
 // Colour index (0..4 = R,G,B,Y,P) of the OWN CTR Token scouted at this location,
 // or -1 when the scout is not an own token (foreign / unscouted / other
 // category). The reward glow must tint a token model by the SCOUTED ITEM's
@@ -214,6 +234,23 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 // tiers; arena 18/19/21/23 = 1 crystal; cup 100..104 = 1 gem) and returns the
 // count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
+
+// ── Podium rungs in the reward glow ──
+// Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),
+// so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
+// AP_PODIUM_PSEUDO_BASE + track*3 + rung (0 first / 1 podium / 2 any), safely
+// above the 192-bit AdvProgress space. AP_LookupLocationCode translates them to
+// the per-seed rung location codes, so every downstream bit-keyed helper
+// (reward model, tint, checked-state, scouts -- rungs are already scouted for
+// the ceremony) works on rungs unchanged.
+//
+// AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS, for a race
+// destination with podium checks enabled, the still-unchecked rung pseudo-bits
+// appended after the tier bits. GLOW-ONLY on purpose: the tier-2 menu and
+// AP_PadState keep consuming the tier-only enumerators, so adding rungs to the
+// glow can never distort mode selection or the Done state.
+#define AP_PODIUM_PSEUDO_BASE 0x100
+int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
 // AP state-generation counter (foundation for live in-hub pad re-birth). Bumped
 // on fresh slot-connect, on a received item that changes a gate count, and on a

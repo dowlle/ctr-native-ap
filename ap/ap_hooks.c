@@ -148,10 +148,26 @@ static const char *AP_TrophyName(int globalBit)
 }
 
 // Resolve a global AdvProgress bit to its AP location code, or -1 if not a
-// checkable location.
+// checkable location. Podium-rung PSEUDO-BITS (>= AP_PODIUM_PSEUDO_BASE, see
+// ap_hooks.h) translate to the per-seed rung codes here, so every bit-keyed
+// consumer (checked-state, reward model/tint, scouts) handles rungs unchanged.
 static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
+	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
+	{
+		int off = globalBit - AP_PODIUM_PSEUDO_BASE;
+		int track = off / 3;
+		int rung = off % 3;
+		long code;
+		if (!ctr_cfg.podium_enabled || track < 0 ||
+		    track >= CTR_CFG_PODIUM_TRACK_COUNT)
+			return -1;
+		code = (rung == 0) ? ctr_cfg.podium[track].first
+		     : (rung == 1) ? ctr_cfg.podium[track].podium
+		                   : ctr_cfg.podium[track].any;
+		return (code > 0) ? code : -1; // -1 = rung absent from this seed
+	}
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 	{
 		if (AP_LOCATION_TABLE[i].bit_index == globalBit)
@@ -307,6 +323,28 @@ int AP_WarpPadRewardTokenColour(int globalBit)
 	return (int)((item - AP_ITEM_BASE) - AP_IDX_TOKEN_RED); // 0..4 = R,G,B,Y,P
 }
 
+// Colour index of the OWN Gem scouted here (see header). The gem item id
+// encodes its colour: ids AP_ITEM_BASE+9..13 = R,G,B,Y,P (AP_IDX_GEM_RED = 9),
+// which lines up with data.AdvCups[0..4]. Foreign / unscouted / non-gem -> -1.
+int AP_WarpPadRewardGemColour(int globalBit)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return -1;
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return -1;
+	if (player != ap_net_self_slot())
+		return -1; // foreign multiworld item is not an own coloured gem
+	if (AP_ItemCategory(item) != AP_CAT_GEM)
+		return -1;
+	return (int)((item - AP_ITEM_BASE) - AP_IDX_GEM_RED); // 0..4 = R,G,B,Y,P
+}
+
 // Enumerate the still-UNCOLLECTED (unchecked) AP reward locations of race track
 // `destLevelID` (0..15), writing their global AdvProgress bits into `outBits`
 // (caller array, capacity `cap`) in fixed tier order -- Trophy +0x06, Sapphire
@@ -434,6 +472,31 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 			outBits[count++] = bit;
 	}
 
+	return count;
+}
+
+// Glow-only enumerator (see ap_hooks.h): the tier/category bits above PLUS, for
+// a race destination with podium checks enabled, the still-unchecked podium
+// rung pseudo-bits appended after them. AP_LookupLocationCode returns -1 for a
+// rung this seed does not carry (e.g. any_position off), which skips it here
+// exactly like an absent tier. Kept separate from AP_PadUncollectedBits so the
+// tier-2 menu and AP_PadState semantics stay byte-identical.
+int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
+{
+	int count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+	int rung;
+
+	if (destLevelID >= 0 && destLevelID < 16 && ctr_cfg.podium_enabled)
+	{
+		for (rung = 0; rung < 3 && count < cap; rung++)
+		{
+			int bit = AP_PODIUM_PSEUDO_BASE + destLevelID * 3 + rung;
+			if (AP_LookupLocationCode(bit) < 0)
+				continue;
+			if (!AP_LocationCheckedByBit(bit))
+				outBits[count++] = bit;
+		}
+	}
 	return count;
 }
 
@@ -1335,6 +1398,44 @@ int AP_WarpReqRelicTint(int physLevelID)
 		return s_warpReqRelicTint[physLevelID];
 	if (physLevelID >= 100 && physLevelID < 105)
 		return s_cupReqRelicTint[physLevelID - 100];
+	return -1; // unknown pad -> cycle (matches pre-pin behaviour)
+}
+
+// Gem sibling of the relic-tint trio above (see ap_hooks.h): a type-5 req pins
+// its ONE gem colour on the closed-pad hologram; AnyGem (type 8) and non-gem
+// reqs keep the vanilla 5-colour cycle (negative). The colour index maps
+// straight onto data.AdvCups[0..4], matching AP_GateCountGemColour's keying so
+// display and gate agree.
+int AP_ReqGemColour(const ctr_req *r)
+{
+	if (r == 0 || r->type != 5)
+		return -1; // AnyGem (type 8) or non-gem -> cycle
+	return (r->colour >= 0 && r->colour < 5) ? r->colour : -1;
+}
+
+// Per-physical-pad store, same layout + lifecycle as the relic-tint store:
+// written by LInB at the closed-icon birth (it alone knows which pad/stage
+// requirement is shown), read back by the destination-keyed ThTick. LInB
+// records for EVERY closed pad (a non-gem requirement records -1 = cycle), and
+// ThTick only reads it when the icon model IS a gem, so a stale slot is never
+// consumed.
+static signed char s_warpReqGemColour[CTR_CFG_PAD_COUNT];
+static signed char s_cupReqGemColour[5];
+
+void AP_SetWarpReqGemColour(int physLevelID, int colour)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		s_warpReqGemColour[physLevelID] = (signed char)colour;
+	else if (physLevelID >= 100 && physLevelID < 105)
+		s_cupReqGemColour[physLevelID - 100] = (signed char)colour;
+}
+
+int AP_WarpReqGemColour(int physLevelID)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		return s_warpReqGemColour[physLevelID];
+	if (physLevelID >= 100 && physLevelID < 105)
+		return s_cupReqGemColour[physLevelID - 100];
 	return -1; // unknown pad -> cycle (matches pre-pin behaviour)
 }
 
