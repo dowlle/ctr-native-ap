@@ -21,7 +21,7 @@ CTR-Archipelago/
 
 The image must be the common single-track raw PSX BIN layout (MODE2/2352 sectors, data track starting at byte 0). A 2048-byte `.iso` will not work: it strips the sector data needed for audio and video.
 
-**3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game reconnects automatically on later launches. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead — see [SETUP.md](SETUP.md).
+**3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game reconnects automatically on later launches. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead; see [SETUP.md](SETUP.md).
 
 ## Joining a multiworld
 
@@ -55,10 +55,10 @@ This repository contains no game assets. You must own a retail NTSC-U copy of Cr
 
 ## Credits
 
-- [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) — the decompilation project this is built on
-- [PsyCross](https://github.com/OpenDriver2/PsyCross) — original PS1 compatibility code from which parts of CTR Native's owned platform layer and PsyQ facade headers are derived
-- [thecodingbob/ctr-native](https://github.com/thecodingbob/ctr-native) — the in-game config menu framework this fork's options menu is ported from
-- [SDL3](https://github.com/libsdl-org/SDL) — cross-platform multimedia
-- Icebound777 and Taor — the [CTR randomizer](https://github.com/icebound777/CTR-Randomizer-Standalone) whose design this project's Archipelago integration builds on, carried forward with his blessing; the foundational work and the credit for it stay with them
-- [apclientpp](https://github.com/black-sliver/apclientpp) — the Archipelago client library powering the in-process AP connection
+- [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) - the decompilation project this is built on
+- [PsyCross](https://github.com/OpenDriver2/PsyCross) - original PS1 compatibility code from which parts of CTR Native's owned platform layer and PsyQ facade headers are derived
+- [thecodingbob/ctr-native](https://github.com/thecodingbob/ctr-native) - the in-game config menu framework this fork's options menu is ported from
+- [SDL3](https://github.com/libsdl-org/SDL) - cross-platform multimedia
+- Icebound777 and Taor - the [CTR randomizer](https://github.com/icebound777/CTR-Randomizer-Standalone) whose design this project's Archipelago integration builds on, carried forward with his blessing; the foundational work and the credit for it stay with them
+- [apclientpp](https://github.com/black-sliver/apclientpp) - the Archipelago client library powering the in-process AP connection
 - Crash Team Racing is a trademark of Sony Computer Entertainment / Naughty Dog

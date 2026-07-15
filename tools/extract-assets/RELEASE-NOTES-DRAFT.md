@@ -20,7 +20,7 @@ of the NTSC-U (North American) Crash Team Racing disc. Nothing here contains
 Crash Team Racing game assets, and none are distributed.
 
 The easiest setup is a drop-in: name a raw `.bin` dump of your disc
-`ctr-u.bin` and place it in an `assets` folder next to the executable — no
+`ctr-u.bin` and place it in an `assets` folder next to the executable; no
 extra tools needed. Alternatively, a helper script (`extract_assets.py`) reads
 your disc image (`.cue`, `.bin`, or `.chd`), verifies the region, and copies
 out just the files the game needs, which saves disk space. See `SETUP.md` for
