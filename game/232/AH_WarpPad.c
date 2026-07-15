@@ -531,6 +531,27 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// Token
 		if (modelID == STATIC_TOKEN)
 		{
+#ifdef CTR_AP
+			// AP: the token icon here advertises this pad's token REQUIREMENT. The
+			// closed-icon birth clamps non-cup pads to Red, so a specific-colour
+			// token gate read as "1x Red Token" whatever its real colour (live
+			// report 2026-07-16, issue #19: a 1x Purple gate shown red). Pin the
+			// requirement's OWN colour (record >= 0); AnyToken (-1) cycles all 5
+			// like AnyGem so it reads as "any token"; -2 (no resolved token req,
+			// e.g. the vanilla cup rule) leaves the birth colour untouched.
+			// Mirrors the gem-requirement pin below.
+			if (ctr_cfg_active())
+			{
+				int apReqTokC = AP_WarpReqTokenColour(ctr_cfg_warp_phys(warppadObj->levelID));
+				if (apReqTokC >= -1)
+				{
+					i = (apReqTokC >= 0) ? apReqTokC : (gGT->timer / 0x3C) % 5;
+					InstArr0->colorRGBA = ((u32)data.AdvCups[i].color[0] << 0x14) |
+					                      ((u32)data.AdvCups[i].color[1] << 0xc) |
+					                      ((u32)data.AdvCups[i].color[2] << 0x4);
+				}
+			}
+#endif
 			Vector_SpecLightSpin3D(InstArr0, &warppadObj->spinRot_Prize, &warppadObj->lightDirToken);
 			return;
 		}
@@ -1384,7 +1405,7 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 // the exact record the load gate evaluates, so gate and look cannot diverge.
 static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
                                    int *modelID, int *numOwned, int *numNeeded,
-                                   int *tint, int *gemColour)
+                                   int *tint, int *gemColour, int *tokenColour)
 {
 	// same function-local idiom as ThTick/BuildInstances
 	enum
@@ -1402,6 +1423,7 @@ static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
 	AP_ReqToUnlock(r, modelID, numOwned, numNeeded);
 	*tint = AP_ReqRelicTintTier(r);
 	*gemColour = AP_ReqGemColour(r);
+	*tokenColour = AP_ReqTokenColour(r);
 	return 1;
 }
 #endif
@@ -1462,6 +1484,12 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// Same idiom for a gem CLOSED-req icon: 0..4 = fixed R,G,B,Y,P colour pin
 	// (specific-colour type 5), <0 = cycle (AnyGem / non-gem requirement).
 	int reqGemColour = -1;
+	// Token CLOSED-req icon colour: 0..4 = fixed R,G,B,Y,P pin (specific-colour
+	// type 3), -1 = cycle (AnyToken type 6), -2 = no resolved token requirement
+	// (leave the birth colour alone). Unlike gems, -2 must be distinct from the
+	// cycle: a vanilla cup pad's token icon is a FIXED cup colour, so "no AP
+	// opinion" cannot default to cycling. See AP_ReqTokenColour / issue #19.
+	int reqTokenColour = -2;
 #endif
 	int rewardModelID;
 	int rewardAngle;
@@ -1635,6 +1663,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);
 			reqGemColour = AP_ReqGemColour(r);
+			reqTokenColour = AP_ReqTokenColour(r);
 			switch (r->type)
 			{
 			case 1: // trophies
@@ -1763,7 +1792,8 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 				// is gated at the load site in AH_WarpPad_ThTick, not advertised here.
 				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage1;
 				reqRelicTint = AP_ReqRelicTintTier(r);
-			reqGemColour = AP_ReqGemColour(r);
+				reqGemColour = AP_ReqGemColour(r);
+				reqTokenColour = AP_ReqTokenColour(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -1832,7 +1862,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// advertising the stage-2 requirement (see AP_Stage2RelockToUnlock).
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour))
+		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
 		{
 		}
 		// AP open two-stage: Slide Coliseum carries a per-seed randomized
@@ -1845,6 +1875,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1868,7 +1899,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// AP stage-2 re-lock first (see the Slide Coliseum branch above).
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour))
+		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
 		{
 		}
 		// AP open two-stage: Turbo Track carries a per-seed randomized single-stage
@@ -1880,6 +1911,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1918,7 +1950,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// dest) hosted on the Skull Rock arena pad with stage2 "any 2 Gem" unmet.
 		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour))
+		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
 		{
 		}
 		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
@@ -1928,6 +1960,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
 			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
 		}
 		else
 #endif
@@ -1957,7 +1990,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// gem_cup_unlock, the same record the ThTick load gate evaluates.
 			if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
 			                            &unlockItem_numOwned, &unlockItem_numNeeded,
-			                            &reqRelicTint, &reqGemColour))
+			                            &reqRelicTint, &reqGemColour, &reqTokenColour))
 			{
 			}
 			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
@@ -1972,7 +2005,8 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			{
 				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
 				reqRelicTint = AP_ReqRelicTintTier(r);
-			reqGemColour = AP_ReqGemColour(r);
+				reqGemColour = AP_ReqGemColour(r);
+				reqTokenColour = AP_ReqTokenColour(r);
 				switch (r->type)
 				{
 				case 1: // trophies
@@ -2570,7 +2604,13 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// pad (levelID stays physical throughout LInB), mirroring the relic record
 	// in the STATIC_RELIC branch below.
 	if (ctr_cfg_active())
+	{
 		AP_SetWarpReqGemColour(levelID, reqGemColour);
+		// Token sibling (issue #19): same record/consume contract; -2 = no
+		// resolved token requirement -> ThTick leaves the birth colour alone
+		// (the vanilla cup-colour icon must NOT cycle).
+		AP_SetWarpReqTokenColour(levelID, reqTokenColour);
+	}
 #endif
 
 	// copy matrix
@@ -2643,6 +2683,14 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// valid colour slot; the closed-req token tint is purely cosmetic.
 			if (i < 0 || i > 4)
 				i = 0;
+
+			// Issue #19: the clamp made every non-cup token REQUIREMENT read as
+			// Red (a 1x Purple gate shown as a red token, live report). A resolved
+			// specific-colour token req (type 3) births in ITS colour; AnyToken
+			// (-1) keeps the clamp start and ThTick cycles it; -2 (no resolved
+			// token req, e.g. the vanilla cup rule) keeps the cup-index colour.
+			if (ctr_cfg_active() && reqTokenColour >= 0)
+				i = reqTokenColour;
 #endif
 
 			// token color

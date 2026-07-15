@@ -197,6 +197,18 @@ int  AP_ReqGemColour(const ctr_req *r);
 void AP_SetWarpReqGemColour(int physLevelID, int colour);
 int  AP_WarpReqGemColour(int physLevelID);
 
+// ── Requirement-icon token colour (closed pad) ── the token sibling (issue
+// #19): the icon-birth cup-index clamp made every non-cup token gate read as
+// Red (a "1x Purple CTR Token" gate shown as a red token, live report
+// 2026-07-16). AP_ReqTokenColour maps a resolved requirement to 0..4 = R,G,B,
+// Y,P (specific-colour type 3, straight onto data.AdvCups[]), -1 = cycle all
+// five (AnyToken type 6), or -2 = no resolved token requirement -> the display
+// leaves the birth colour alone (a vanilla cup pad's token icon is a FIXED cup
+// colour, so no-opinion must be distinct from cycle).
+int  AP_ReqTokenColour(const ctr_req *r);
+void AP_SetWarpReqTokenColour(int physLevelID, int colour);
+int  AP_WarpReqTokenColour(int physLevelID);
+
 // Colour index (0..4 = R,G,B,Y,P) of the OWN Gem scouted at this location, or
 // -1 when the scout is not an own gem. The gem model has NO useful unmodulated
 // colour -- at colorRGBA 0 it renders near-black (the specular sibling of the

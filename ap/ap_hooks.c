@@ -1450,6 +1450,45 @@ int AP_WarpReqGemColour(int physLevelID)
 	return -1; // unknown pad -> cycle (matches pre-pin behaviour)
 }
 
+// Token sibling of the gem trio above (issue #19): a specific-colour token
+// requirement (type 3) pins its ONE colour on the closed-pad token icon --
+// the icon-birth clamp made every non-cup token gate read as Red (a 1x Purple
+// gate shown red, live report 2026-07-16). AnyToken (type 6) returns -1 =
+// cycle all five colours. Any OTHER requirement returns -2 = "no resolved
+// token requirement", which the display treats as leave-the-birth-colour-
+// alone: unlike gems (where -1 = cycle IS the vanilla look), a vanilla cup
+// pad's token icon is a FIXED cup colour, so the no-opinion state must be
+// distinct from the cycle. Colour indices map straight onto data.AdvCups[],
+// matching AP_GateCountTokenColour's keying so display and gate agree.
+int AP_ReqTokenColour(const ctr_req *r)
+{
+	if (r == 0 || (r->type != 3 && r->type != 6))
+		return -2;
+	if (r->type == 6)
+		return -1; // AnyToken -> cycle
+	return (r->colour >= 0 && r->colour < 5) ? r->colour : -1;
+}
+
+static signed char s_warpReqTokenColour[CTR_CFG_PAD_COUNT];
+static signed char s_cupReqTokenColour[5];
+
+void AP_SetWarpReqTokenColour(int physLevelID, int colour)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		s_warpReqTokenColour[physLevelID] = (signed char)colour;
+	else if (physLevelID >= 100 && physLevelID < 105)
+		s_cupReqTokenColour[physLevelID - 100] = (signed char)colour;
+}
+
+int AP_WarpReqTokenColour(int physLevelID)
+{
+	if (physLevelID >= 0 && physLevelID < CTR_CFG_PAD_COUNT)
+		return s_warpReqTokenColour[physLevelID];
+	if (physLevelID >= 100 && physLevelID < 105)
+		return s_cupReqTokenColour[physLevelID - 100];
+	return -2; // unknown pad -> leave the birth colour (matches pre-pin behaviour)
+}
+
 int AP_GateCountGemSum(void)
 {
 	return AP_GateCountGemColour(0) + AP_GateCountGemColour(1) +
