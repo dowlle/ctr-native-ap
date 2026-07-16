@@ -48,6 +48,21 @@ sudo apt install gcc-multilib
 sudo apt install libx11-dev libxext-dev libgl1-mesa-dev libasound2-dev libudev-dev libdbus-1-dev
 ```
 
+The AP build additionally links a static, 32-bit OpenSSL and zlib for the `wss://`
+transport, so the AP build also needs the 32-bit development packages for those
+(`libssl-dev` and `zlib1g-dev` for the `i386` multiarch, or your distro's
+equivalent). The vanilla port does not need them.
+
+> **Shipping Linux binaries: target glibc 2.38, not the newest available.**
+> A binary built against a bleeding-edge glibc will refuse to start on
+> distributions that ship an older one, and users generally cannot upgrade glibc
+> themselves. CTR-AP is forked from upstream beta 6.1, whose Linux binaries
+> target **glibc 2.38** (widely available); keep that as the floor for any
+> published Linux/Steam Deck build and do not let the build host silently raise
+> it. Build on (or in a container matching) a glibc-2.38-era toolchain when
+> producing release binaries; building locally for your own machine has no such
+> constraint.
+
 ## Building the vanilla port
 
 ```
