@@ -173,11 +173,14 @@ void RB_Hazard_ThCollide_Generic(struct Thread *thread)
 	struct Instance *crateInst = mw->crateInst;
 	if (crateInst != 0)
 	{
-		struct Crate *crateObj = (struct Crate *)crateInst->thread->object;
-
-		if (crateObj != 0)
+		struct Thread *crateThread = crateInst->thread;
+		if (crateThread != NULL)
 		{
-			crateObj->boolPauseCooldown = 0;
+			struct Crate *crateObj = crateThread->object;
+			if (crateObj != NULL)
+			{
+				crateObj->boolPauseCooldown = 0;
+			}
 		}
 	}
 

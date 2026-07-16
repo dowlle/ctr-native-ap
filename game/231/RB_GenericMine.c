@@ -56,6 +56,7 @@ void RB_GenericMine_LInB(struct Instance *inst)
 	mw->velocity.z = 0;
 	mw->boolDestroyed = 0;
 	mw->parentSafetyFrames = 0;
+	mw->tntSpinY = 0;
 	mw->flags = 0;
 	mw->stopFallAtY = inst->matrix.t[1];
 

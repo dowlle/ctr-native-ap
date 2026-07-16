@@ -42,14 +42,6 @@ struct Driver *RB_CrateAny_GetDriver(struct Thread *t, struct ScratchpadStruct *
 		// get driver that used the weapon
 		driver = ((struct TrackerWeapon *)t->object)->driverParent;
 
-		// if this is an AI, quit
-
-		// it's odd that it casts "1" as struct Driver*, but callers of this function *do* check the return value == 1, so it must be intentional.
-		if ((driver->actionsFlagSet & ACTION_BOT) != 0)
-		{
-			return (struct Driver *)1;
-		}
-
 		return driver;
 	}
 
@@ -235,13 +227,8 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 	crateInst = crateThread->inst;
 	crateObj = ((struct Crate *)crateThread->object);
 
-	if (crateObj->cooldown == 0)
+	if ((crateObj->cooldown == 0) && ((crateInst->scale.x == 0) || (crateInst->scale.x == 0x1000)))
 	{
-		if ((crateInst->scale.x != 0) && (crateInst->scale.x != 0x1000))
-		{
-			return 0;
-		}
-
 		crateObj->cooldown = 0x1e;
 
 		if (crateInst->scale.x == 0x1000)
@@ -250,6 +237,10 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 
 			driver = RB_CrateAny_GetDriver(collidingTh, sps);
 			if ((int)driver == 1)
+			{
+				return 1;
+			}
+			if ((driver->actionsFlagSet & ACTION_BOT) != 0)
 			{
 				return 1;
 			}
@@ -363,13 +354,8 @@ int RB_CrateFruit_ThCollide(struct Thread *crateThread, struct Thread *colliding
 	crateInst = crateThread->inst;
 	crateObj = ((struct Crate *)crateThread->object);
 
-	if (crateObj->cooldown == 0)
+	if ((crateObj->cooldown == 0) && ((crateInst->scale.x == 0) || (crateInst->scale.x == 0x1000)))
 	{
-		if ((crateInst->scale.x != 0) && (crateInst->scale.x != 0x1000))
-		{
-			return 0;
-		}
-
 		crateObj->cooldown = 0x1e;
 
 		if (crateInst->scale.x == 0x1000)
@@ -456,13 +442,8 @@ int RB_CrateTime_ThCollide(struct Thread *crateThread, struct Thread *driverTh, 
 	crateInst = crateThread->inst;
 	crateObj = ((struct Crate *)crateThread->object);
 
-	if (crateObj->cooldown == 0)
+	if ((crateObj->cooldown == 0) && ((crateInst->scale.x == 0) || (crateInst->scale.x == 0x1000)))
 	{
-		if ((crateInst->scale.x != 0) && (crateInst->scale.x != 0x1000))
-		{
-			return 0;
-		}
-
 		crateObj->cooldown = 0x1e;
 
 		if (crateInst->scale.x == 0x1000)

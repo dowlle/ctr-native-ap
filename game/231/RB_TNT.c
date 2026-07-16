@@ -221,6 +221,7 @@ LAB_800ad5f8:
 		t->flags |= THREAD_FLAG_DEAD;
 
 		mw->driverTarget->instTntRecv = NULL;
+		return;
 	}
 
 	// set scale of TNT, given frame of animation
@@ -271,8 +272,8 @@ void RB_TNT_ThTick_ThrowOnHead(struct Thread *t)
 			// Set TNT timer to 0, it blows up at 0x5a
 			mw->numFramesOnHead = 0;
 
-			// number of jumps is 7 or 8
-			mw->jumpsRemaining = 8 - (MixRNG_Scramble() & 1);
+			// A negative odd RNG result gives retail a ninth jump.
+			mw->jumpsRemaining = 8 - (MixRNG_Scramble() % 2);
 
 			// play sound that you hit a TNT
 			PlaySound3D(0x51, inst);
