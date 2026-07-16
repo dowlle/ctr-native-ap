@@ -155,8 +155,8 @@ void SelectProfile_DrawAdvProfile(struct AdvProgress *adv, int posX, int posY, s
 		int iconID = data.MetaDataCharacters[characterID].iconID;
 		struct SelectProfileLoadSaveObj *obj = (struct SelectProfileLoadSaveObj *)sdata->ptrLoadSaveObj;
 
-		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 10, posY + 6, &gGT->backBuffer->primMem, gGT->backBuffer->otMem.uiOT, iconColor, iconColor,
-		                     iconColor, iconColor, 1, 0x1000);
+		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 10, posY + 6, &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, iconColor, iconColor, iconColor,
+		                     iconColor, 1, 0x1000);
 
 		DecalFont_DrawLine(adv->name, posX + 0x6c, posY + 0x29, FONT_BIG, nameColor | 0xffff8000);
 
@@ -418,7 +418,7 @@ void SelectProfile_DrawGhostProfile(struct GhostProfile *profile, int posX, int 
 
 		DecalFont_DrawLine(sdata->lngStrings[mdLev->name_LNG], posX + 0x64, posY + 0x1e, FONT_SMALL, 0xffff801d);
 		DecalFont_DrawLine(RECTMENU_DrawTime(profile->trackTime), posX + 0x78, posY + 10, FONT_BIG, 0xffff8001);
-		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 8, posY + 5, &gGT->backBuffer->primMem, gGT->backBuffer->otMem.uiOT, sdata->ghostIconColor,
+		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 8, posY + 5, &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, sdata->ghostIconColor,
 		                     sdata->ghostIconColor, sdata->ghostIconColor, sdata->ghostIconColor, TRANS_50_DECAL, 0x1000);
 	}
 	else
@@ -554,9 +554,9 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 			OtherFX_Play(0, 1);
 		}
 
-		if (((tap & (BTN_CROSS | BTN_CIRCLE)) == 0) || ((numRows == 0) && (sdata->memcardAction != SELECT_PROFILE_ACTION_SAVE)))
+		if (((tap & (BTN_CROSS_one | BTN_CIRCLE)) == 0) || ((numRows == 0) && (sdata->memcardAction != SELECT_PROFILE_ACTION_SAVE)))
 		{
-			if ((tap & (BTN_TRIANGLE | BTN_SQUARE)) != 0)
+			if ((tap & (BTN_TRIANGLE | BTN_SQUARE_one)) != 0)
 			{
 				OtherFX_Play(2, 1);
 				handled = 1;
@@ -576,7 +576,7 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 	}
 	else
 	{
-		u32 cancel = (tap & (BTN_TRIANGLE | BTN_SQUARE)) != 0;
+		u32 cancel = (tap & (BTN_TRIANGLE | BTN_SQUARE_one)) != 0;
 
 		if (cancel)
 		{
@@ -586,7 +586,7 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 
 		handled = cancel;
 
-		if (((confirmFlags & 2) != 0) && ((tap & (BTN_CROSS | BTN_CIRCLE)) != 0))
+		if (((confirmFlags & 2) != 0) && ((tap & (BTN_CROSS_one | BTN_CIRCLE)) != 0))
 		{
 			OtherFX_Play(1, 1);
 			handled = 1;
@@ -789,7 +789,9 @@ static void SelectProfile_DrawGhostRows(struct RectMenu *menu, int rowCount, int
 	int rowCountWithEmpty = sdata->numGhostProfilesSaved + canChooseEmptySlot;
 	struct GhostProfile *profile = &sdata->ghostProfile_memcard[0];
 
-	subtitleVisible = strlen(sdata->lngStrings[data.lngIndex_LoadSave[(sdata->memcardAction * 2) + 1]]) != 0;
+	// NOTE(aalhendi): Retail tests the Adventure subtitle table here, but
+	// draws the Ghost subtitle table below.
+	subtitleVisible = strlen(sdata->lngStrings[data.lngStringsSaveLoadDelete[(sdata->memcardAction * 2) + 1]]) != 0;
 
 	if (rowCount < 7)
 	{
@@ -934,9 +936,9 @@ static int SelectProfile_ProcessOverwritePrompt(void)
 			overwriteMenu->rowSelected++;
 		}
 	}
-	else if ((tap & (BTN_CROSS | BTN_CIRCLE | BTN_TRIANGLE | BTN_SQUARE)) != 0)
+	else if ((tap & (BTN_CROSS_one | BTN_CIRCLE | BTN_TRIANGLE | BTN_SQUARE_one)) != 0)
 	{
-		if ((tap & (BTN_CROSS | BTN_CIRCLE)) != 0)
+		if ((tap & (BTN_CROSS_one | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
 			confirm = overwriteMenu->rowSelected == 0;
@@ -952,42 +954,6 @@ static int SelectProfile_ProcessOverwritePrompt(void)
 	data.menuOverwriteAdv.rowSelected = overwriteMenu->rowSelected;
 	data.menuOverwriteGhost.rowSelected = overwriteMenu->rowSelected;
 	return confirm;
-}
-
-static void SelectProfile_HandleNoCardOrSpace(struct RectMenu *menu)
-{
-	int mode = *SelectProfile_AllProfiles_Mode();
-
-	if (sdata->mcScreenText == MC_SCREEN_WARNING_NOCARD)
-	{
-		if (sdata->memcardAction == SELECT_PROFILE_ACTION_SAVE)
-		{
-			*SelectProfile_AllProfiles_ActionActive() = sdata->memcardAction;
-			*SelectProfile_AllProfiles_ActionDone() = sdata->memcardAction;
-			sdata->boolError = 1;
-		}
-		else if ((sdata->memcardAction == SELECT_PROFILE_ACTION_LOAD) && (mode == SELECT_PROFILE_SCREEN_GHOST))
-		{
-			*SelectProfile_AllProfiles_ActionActive() = 1;
-			*SelectProfile_AllProfiles_ActionDone() = 1;
-			sdata->boolError = 1;
-		}
-	}
-
-	if ((sdata->mcScreenText != MC_SCREEN_WARNING_UNFORMATTED) && (sdata->memoryCard_SizeRemaining < SELECT_PROFILE_ADV_SAVE_BYTES) &&
-	    (*(s16 *)&sdata->unk_memcardRelated_8008d928[0] == 0) && (sdata->memcardAction == SELECT_PROFILE_ACTION_SAVE))
-	{
-		*SelectProfile_AllProfiles_ActionActive() = 1;
-		*SelectProfile_AllProfiles_ActionDone() = 1;
-		sdata->boolError = 1;
-	}
-
-	if (menu->rowSelected == -1)
-	{
-		*SelectProfile_AllProfiles_ActionActive() = 1;
-		*SelectProfile_AllProfiles_ExitToPrevious() = 1;
-		sdata->boolError = 1;
-	}
 }
 
 static void SelectProfile_StartLoadGhost(struct RectMenu *menu, int rowCount)
@@ -1021,12 +987,41 @@ static void SelectProfile_StartLoadGhost(struct RectMenu *menu, int rowCount)
 static int SelectProfile_HandleSelection(struct RectMenu *menu, int rowCount)
 {
 	int mode = *SelectProfile_AllProfiles_Mode();
+	b32 proceed = true;
 
 	if (menu->rowSelected == -1)
 	{
 		*SelectProfile_AllProfiles_ActionActive() = 1;
 		*SelectProfile_AllProfiles_ExitToPrevious() = 1;
 		sdata->boolError = 1;
+		return 0;
+	}
+
+	if (sdata->mcScreenText == MC_SCREEN_WARNING_NOCARD)
+	{
+		proceed = false;
+
+		if (sdata->memcardAction == SELECT_PROFILE_ACTION_SAVE)
+		{
+			*SelectProfile_AllProfiles_ActionActive() = 1;
+			*SelectProfile_AllProfiles_ActionDone() = 1;
+			sdata->boolError = 1;
+		}
+		else if ((sdata->memcardAction == SELECT_PROFILE_ACTION_LOAD) && (mode == SELECT_PROFILE_SCREEN_GHOST))
+		{
+			proceed = true;
+		}
+	}
+
+	if ((mode != SELECT_PROFILE_SCREEN_GHOST) && (sdata->mcScreenText != MC_SCREEN_WARNING_UNFORMATTED) &&
+	    (sdata->memoryCard_SizeRemaining < SELECT_PROFILE_ADV_SAVE_BYTES) && (*(s16 *)&sdata->unk_memcardRelated_8008d928[0] == 0) &&
+	    (sdata->memcardAction == SELECT_PROFILE_ACTION_SAVE))
+	{
+		proceed = false;
+	}
+
+	if (!proceed)
+	{
 		return 0;
 	}
 
@@ -1142,9 +1137,19 @@ static void SelectProfile_DrawMemcardMessage(int screen, int color, int menuFlag
 		return;
 	}
 
+	if (*SelectProfile_AllProfiles_ActionDone() != 0)
+	{
+		return;
+	}
+
 	if ((firstString == 0x10f) && (sdata->memcardAction == SELECT_PROFILE_ACTION_SAVE))
 	{
 		firstString = 0x106;
+	}
+
+	if ((*SelectProfile_AllProfiles_Mode() != SELECT_PROFILE_SCREEN_GHOST) && (screen == MC_SCREEN_ERROR_NODATA) && (sdata->boolMemcardDataValid != 0))
+	{
+		DecalFont_DrawLine(sdata->lngStrings[LNG_DATA_ON_MEMORY_CARD_IS_OUT_OF_DATE], 0x100, 0xc3, FONT_SMALL, JUSTIFY_CENTER | RED);
 	}
 
 	if ((sdata->memcardAction == SELECT_PROFILE_ACTION_DELETE) && (firstString == 0xea))
@@ -1165,7 +1170,7 @@ static void SelectProfile_DrawMemcardMessage(int screen, int color, int menuFlag
 			if (strlen(line) != 0)
 			{
 				int font = (i == 0) ? FONT_BIG : FONT_SMALL;
-				int y = (i == 0) ? 0x26 : 0x2e + (i * 10);
+				int y = (i == 0) ? 0x26 : 0x2e + (i * (data.font_charPixHeight[FONT_SMALL] + 2));
 				int lineColor = color | 0xffff8000;
 
 				if (((sdata->frameCounter & 4) == 0) && (i == 0))
@@ -1181,11 +1186,11 @@ static void SelectProfile_DrawMemcardMessage(int screen, int color, int menuFlag
 	RECTMENU_DrawInnerRect((RECT *)&sdata->unk_BeforeTokenMenu[0], menuFlag, sdata->gGT->backBuffer->otMem.uiOT);
 }
 
-static void SelectProfile_DrawAll(struct RectMenu *menu, int rowCount, int savedGhostCount, b32 canChooseEmptySlot, int color)
+static void SelectProfile_DrawAll(struct RectMenu *menu, int rowCount, int savedGhostCount, b32 canChooseEmptySlot, int color, b32 doSave)
 {
-	b32 canDrawProfiles = (*SelectProfile_AllProfiles_ActionActive() == 0) &&
-	                      (((s16)CTR_ReadU16LE(&sdata->unk8008d95c) != 0) || ((s16)CTR_ReadU16LE(&sdata->unk_memcardRelated_8008d928[0]) != 0) ||
-	                       (sdata->mcScreenText == MC_SCREEN_NULL));
+	int screenOverride = sdata->mcScreenText;
+	b32 canDrawProfiles = (*SelectProfile_AllProfiles_ActionActive() == 0) && ((s16)CTR_ReadU16LE(&sdata->unk8008d95c) != 0) &&
+	                      (((s16)CTR_ReadU16LE(&sdata->unk_memcardRelated_8008d928[0]) != 0) || (sdata->mcScreenText == MC_SCREEN_NULL));
 
 	if ((sdata->memcardAction == SELECT_PROFILE_ACTION_LOAD) && SelectProfile_IsGhostMode() &&
 	    ((sdata->mcScreenText == MC_SCREEN_ERROR_NODATA) || (sdata->mcScreenText == MC_SCREEN_WARNING_NOCARD)) && (rowCount != 0))
@@ -1197,9 +1202,30 @@ static void SelectProfile_DrawAll(struct RectMenu *menu, int rowCount, int saved
 	{
 		if ((sdata->mcScreenText == MC_SCREEN_NULL) || (sdata->mcScreenText == MC_SCREEN_ERROR_NODATA))
 		{
-			canDrawProfiles = SelectProfile_IsGhostMode() ? !((sdata->memoryCard_SizeRemaining < SELECT_PROFILE_GHOST_SAVE_BYTES) && (savedGhostCount == 0))
-			                                              : !((sdata->memoryCard_SizeRemaining < SELECT_PROFILE_ADV_SAVE_BYTES) &&
-			                                                  (*(s16 *)&sdata->unk_memcardRelated_8008d928[0] == 0));
+			canDrawProfiles = false;
+
+			if (doSave)
+			{
+				screenOverride = MC_SCREEN_SAVING;
+			}
+			else if (SelectProfile_IsGhostMode())
+			{
+				canDrawProfiles = true;
+				if ((sdata->memoryCard_SizeRemaining < SELECT_PROFILE_GHOST_SAVE_BYTES) && (savedGhostCount == 0))
+				{
+					canDrawProfiles = false;
+					screenOverride = MC_SCREEN_ERROR_FULL;
+				}
+			}
+			else
+			{
+				canDrawProfiles = true;
+				if ((sdata->memoryCard_SizeRemaining < SELECT_PROFILE_ADV_SAVE_BYTES) && (*(s16 *)&sdata->unk_memcardRelated_8008d928[0] == 0))
+				{
+					canDrawProfiles = false;
+					screenOverride = MC_SCREEN_ERROR_FULL;
+				}
+			}
 		}
 
 		if ((sdata->mcScreenText == MC_SCREEN_ERROR_TIMEOUT) && (*SelectProfile_AllProfiles_TimeoutPrompt() != 0))
@@ -1248,7 +1274,7 @@ static void SelectProfile_DrawAll(struct RectMenu *menu, int rowCount, int saved
 		}
 		else
 		{
-			SelectProfile_DrawMemcardMessage(sdata->mcScreenText, color, menu->drawStyle);
+			SelectProfile_DrawMemcardMessage(screenOverride, color, menu->drawStyle);
 		}
 	}
 }
@@ -1315,14 +1341,18 @@ static void SelectProfile_FinalizeAdventure(struct RectMenu *menu)
 
 	if (mode == SELECT_PROFILE_SCREEN_GREEN_LOAD_SAVE)
 	{
-		if ((*SelectProfile_AllProfiles_ExitToPrevious() == 0) && (sdata->memcardAction == SELECT_PROFILE_ACTION_LOAD))
+		if (*SelectProfile_AllProfiles_ExitToPrevious() == 0)
 		{
 			sdata->advProfileIndex = menu->rowSelected;
+		}
+
+		if ((*SelectProfile_AllProfiles_ExitToPrevious() == 0) && (sdata->memcardAction == SELECT_PROFILE_ACTION_LOAD))
+		{
 			GAMEPROG_AdvPercent(&sdata->advProgress);
 			sdata->ptrDesiredMenu = &data.menuQueueLoadHub;
 			// NOTE(aalhendi): Retail 0x8004a8a0-0x8004a8c4 queues through currLEV.
 			gGT->currLEV = sdata->advProgress.HubLevYouSavedOn;
-			data.menuQueueLoadHub.rowSelected = 3;
+			data.menuGreenLoadSave.rowSelected = 3;
 		}
 		else
 		{
@@ -1384,7 +1414,7 @@ static void SelectProfile_FinalizeAdventure(struct RectMenu *menu)
 		}
 		else if (*SelectProfile_AllProfiles_ExitToPrevious() != 0)
 		{
-			sdata->ptrDesiredMenu = &data.menuWarning2;
+			sdata->ptrDesiredMenu = &data.menuSaveGame;
 			return;
 		}
 
@@ -1440,7 +1470,7 @@ void SelectProfile_AllProfiles_MenuProc(struct RectMenu *menu)
 		{
 			if (sdata->mcScreenText == MC_SCREEN_WARNING_NOCARD)
 			{
-				if ((sdata->buttonTapPerPlayer[0] & (BTN_CROSS | BTN_CIRCLE)) != 0)
+				if ((sdata->buttonTapPerPlayer[0] & (BTN_CROSS_one | BTN_CIRCLE)) != 0)
 				{
 					OtherFX_Play(1, 1);
 					if (sdata->boolSaveCupProgress == 0)
@@ -1487,7 +1517,6 @@ void SelectProfile_AllProfiles_MenuProc(struct RectMenu *menu)
 
 		if (handled != 0)
 		{
-			SelectProfile_HandleNoCardOrSpace(menu);
 			doSave = SelectProfile_HandleSelection(menu, rowCount);
 		}
 	}
@@ -1517,7 +1546,7 @@ draw_and_finish:
 
 	if (menu->funcState == RECTMENU_FUNC_STATE_UPDATE)
 	{
-		SelectProfile_DrawAll(menu, rowCount, savedGhostCount, canChooseEmptySlot, color);
+		SelectProfile_DrawAll(menu, rowCount, savedGhostCount, canChooseEmptySlot, color, doSave);
 	}
 
 	if (SelectProfile_ShouldFinalize())
