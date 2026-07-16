@@ -516,6 +516,20 @@ void MM_MenuProc_SingleCup(struct RectMenu *menu)
 		{
 			// enable cup mode
 			gGT->gameMode2 |= CUP_ANY_KIND;
+
+#ifdef CTR_AP
+			// AP QoL: one-lap cup races (slot_data ctr_options.one_lap_cups).
+			// This is the choke point where a race is known to be a cup, and
+			// cups skip the lap-selection menu, so numLaps set here persists
+			// into the cup's races. Mirrors the vanilla CHEAT_ONELAP effect
+			// (numLaps = 1) but scoped to cups only; single races re-derive
+			// numLaps in MM_TrackSelect, boss/trial races are unaffected.
+			// Absent key -> ctr_cfg.one_lap_cups 0 -> vanilla lap counts.
+			if (ctr_cfg_active() && ctr_cfg.one_lap_cups)
+			{
+				gGT->numLaps = 1;
+			}
+#endif
 		}
 
 		menu->state |= 0x14;

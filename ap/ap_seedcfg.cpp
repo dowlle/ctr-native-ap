@@ -202,6 +202,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
+	// QoL additive key (no schema bump): default 0 = vanilla lap counts.
+	ctr_cfg.one_lap_cups = json_int(opt, "one_lap_cups", 0);
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
 	// change schema_version -- generation never depends on it.
 	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);
