@@ -2201,8 +2201,8 @@ static void AP_ReconcilePodiumFromTrophies(void)
 
 // Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure
 // throttle/early-return, so the finish transition is never missed. Self-gates to
-// real races via drivers[0] + ACTION_RACE_FINISHED. Captures placement, then
-// fans out podium-ladder checks for trophy-race finishes.
+// real races via drivers[0] + ACTION_RACE_FINISHED + LOAD_IDLE. Captures
+// placement, then fans out podium-ladder checks for trophy-race finishes.
 static void AP_RaceListenerTick(struct GameTracker *gGT)
 {
 	// Rising-edge detector on the player's ACTION_RACE_FINISHED bit -- fires the
@@ -2224,8 +2224,18 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	if (p == NULL)
 		return;
 
+	// Genuine in-race context: adventure mode with the level fully loaded. During
+	// a hub/track load the drivers[0] slot can hold uninitialised leftovers, and
+	// reading ACTION_RACE_FINISHED off that garbage would fire a bogus finish
+	// capture -- a spurious "[AP RACE] track=.. final_place=.." line logged during
+	// hub transitions (issue #4). A real finish is always reached with the level
+	// loaded, so requiring LOAD_IDLE never drops a true finish. The raw flag still
+	// drives the falling-edge ledger reset below, so ceremony timing is unchanged.
+	int inRace = (gGT->gameMode1 & ADVENTURE_MODE) != 0 &&
+	             sdata->Loading.stage == LOAD_IDLE;
+
 	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
-	if (finishedNow && !ap_finish_prev)
+	if (finishedNow && !ap_finish_prev && inRace)
 	{
 		// driverRank is frozen once you cross the line (nobody can pass a
 		// finished racer), so this is the authoritative final placement.
