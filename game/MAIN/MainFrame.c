@@ -128,7 +128,6 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 	u32 uVar5;
 	struct Driver *psVar8;
 	struct Driver *psVar9;
-	struct Driver *psVar10;
 	struct PushBuffer *pushBuffer;
 	int iVar11;
 	struct Thread *psVar12;
@@ -263,32 +262,29 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 #if defined(CTR_NATIVE)
 		for (psVar12 = gGT->threadBuckets[0].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 		{
-			psVar9 = (struct Driver *)psVar12->object;
-			psVar10 = psVar9;
-			if (psVar9->driverID == 0)
+			struct Driver *currentDriver = psVar12->object;
+
+			if (currentDriver->driverID == 0)
 			{
-			LAB_80035098:
-				psVar8 = psVar9;
-				psVar9 = psVar10;
+				psVar8 = currentDriver;
+				continue;
 			}
-			else
+
+			if (currentDriver->driverID == 1)
 			{
-				if (psVar9->driverID == 1)
-				{
-					psVar9 = psVar9;
-				}
-				psVar10 = psVar8;
-#ifdef CTR_NATIVE
-				// NOTE(aalhendi): Retail may read PSX low memory before driver 0 appears.
-				if (psVar8 == NULL)
-				{
-					continue;
-				}
-#endif
-				if (psVar9->numTimesAttacking < psVar8->numTimesAttacking)
-				{
-					goto LAB_80035098;
-				}
+				psVar9 = currentDriver;
+			}
+
+			// NOTE(aalhendi): Retail may read PSX low memory before driver 0 appears.
+			if (psVar8 == NULL)
+			{
+				continue;
+			}
+
+			if (currentDriver->numTimesAttacking < psVar8->numTimesAttacking)
+			{
+				psVar9 = psVar8;
+				psVar8 = currentDriver;
 			}
 		}
 #endif
@@ -298,7 +294,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			psVar8->quip2 = (s16)iVar4;
 		}
 
-		for (iVar4 = 0; iVar4 < NUM_BUCKETS; iVar4++)
+		for (iVar4 = 0; iVar4 < PAUSE; iVar4++)
 		{
 			if ((((gGT->gameMode1 & DEBUG_MENU) == 0) || ((gGT->threadBuckets[iVar4].boolCantPause & 1) != 0)) &&
 

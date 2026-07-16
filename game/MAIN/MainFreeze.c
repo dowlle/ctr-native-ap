@@ -464,7 +464,7 @@ force_inline b32 PROCESSINPUTS_MainFreeze_MenuPtrOptions(struct RectMenu *menu, 
 			OptionsMenu_TestSound(menu->rowSelected, 1);
 			if (sdata->AnyPlayerHold & (BTN_LEFT | BTN_RIGHT))
 			{
-				int volume = howl_VolumeGet(menu->rowSelected);
+				int volume = howl_VolumeGet(menu->rowSelected) & 0xff;
 
 				if (sdata->AnyPlayerHold & BTN_LEFT)
 				{
@@ -822,7 +822,7 @@ void MainFreeze_MenuPtrQuit(struct RectMenu *menu)
 
 		if ((row == 1) || (row == -1))
 		{
-			sdata->ptrActiveMenu = MainFreeze_GetMenuPtr();
+			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 		}
 	}
 	else
