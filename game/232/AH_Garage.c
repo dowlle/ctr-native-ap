@@ -367,15 +367,11 @@ LAB_800aede8:
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_BOSS;
 
 #ifdef CTR_AP
-		// AP Phase 2: Oxide Final Challenge unlock honours the per-seed
-		// oxide_final_unlock option: 0 = 18 sapphire (default), 1 = 18 gold AND
-		// 18 platinum. Phase-1 fallback (no slot_data) is 18 sapphire.
-		int oxOpen = ctr_cfg_active()
-		    ? (ctr_cfg.oxide_final_unlock == 1
-		           ? (AP_GateCount(AP_IDX_GOLD) >= 18 && AP_GateCount(AP_IDX_PLATINUM) >= 18)
-		           : AP_GateCount(AP_IDX_SAPPHIRE) >= 18)
-		    : (AP_GateCount(AP_IDX_SAPPHIRE) >= 18);
-		if ((levelID == GEM_STONE_VALLEY) && oxOpen)
+		// AP Phase 2 (issue #23): Oxide's Final Challenge unlock honours the
+		// per-seed relic-goal MODE + COUNT (ctr_cfg.oxide_final_unlock /
+		// oxide_final_count), resolved by AP_OxideFinalOpen against the received
+		// relic-tier counts. Phase-1 fallback (no slot_data) = vanilla 18 Sapphire.
+		if ((levelID == GEM_STONE_VALLEY) && AP_OxideFinalOpen())
 #else
 		if ((levelID == GEM_STONE_VALLEY) && (gGT->currAdvProfile.numRelics == 18))
 #endif

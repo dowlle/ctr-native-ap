@@ -907,6 +907,9 @@ void UI_RenderFrame_AdvHub(void)
 	// AP hub item-received feed (bottom-left). Self-gates on ctr_cfg_active() +
 	// the hub_feed toggle; only runs on the adventure hub, which is this pass.
 	AP_FeedDrawHub();
+	// Newer-schema warning (issue #8): top-left RED banner, self-gates on
+	// ctr_cfg.schema_newer. No-op unless the seed is from a newer apworld.
+	AP_DrawSchemaWarning();
 #endif
 }
 

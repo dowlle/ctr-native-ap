@@ -768,6 +768,9 @@ void AH_Map_Main(void)
 	// the moment the walkable 232 overlay takes over (e.g. when the trophy-won
 	// entry animation ends).
 	AP_FeedDrawHub();
+	// Newer-schema warning (issue #8): top-left RED banner, self-gates on
+	// ctr_cfg.schema_newer. No-op unless the seed is from a newer apworld.
+	AP_DrawSchemaWarning();
 #endif
 
 #if defined(CTR_NATIVE)
