@@ -359,7 +359,7 @@ void RaceFlag_DrawLoadingString(void)
 	int nextLetterStartX;
 	int drawX;
 	u32 *oldOT;
-	char glyph[2];
+	u8 glyph[2];
 
 	loadingText = sdata->lngStrings[LNG_LOADING];
 
@@ -431,7 +431,7 @@ void RaceFlag_DrawLoadingString(void)
 			glyph[0] = *loadingText;
 			nextGlyph = loadingText + 1;
 			glyphByteCount = 1;
-			if ((u8)glyph[0] < RACE_FLAG_LOADING_GLYPH_EXTENDED_MAX)
+			if (glyph[0] < RACE_FLAG_LOADING_GLYPH_EXTENDED_MAX)
 			{
 				glyph[1] = *nextGlyph;
 				nextGlyph = loadingText + 2;
@@ -443,11 +443,11 @@ void RaceFlag_DrawLoadingString(void)
 			}
 			if ((s16)letterX != RACE_FLAG_LOADING_OFFSCREEN_X)
 			{
-				DecalFont_DrawLineStrlen(glyph, glyphByteCount, (drawX + letterX), RACE_FLAG_LOADING_Y, RACE_FLAG_LOADING_FONT_SIZE,
+				DecalFont_DrawLineStrlen((char *)glyph, glyphByteCount, (s16)(drawX + letterX), RACE_FLAG_LOADING_Y, RACE_FLAG_LOADING_FONT_SIZE,
 				                         RACE_FLAG_LOADING_TEXT_FLAGS);
 			}
 
-			letterX = DecalFont_GetLineWidthStrlen(glyph, glyphByteCount, RACE_FLAG_LOADING_FONT_SIZE);
+			letterX = DecalFont_GetLineWidthStrlen((char *)glyph, glyphByteCount, RACE_FLAG_LOADING_FONT_SIZE);
 
 			drawX = drawX + letterX;
 			nextLetterStartX = nextLetterStartX + RACE_FLAG_LOADING_NEXT_LETTER_START_X;
@@ -682,7 +682,7 @@ SKIP_LOADING_TEXT:
 
 	// === Rest of Iterations ===
 	// Now executing without branching
-	for (column = 1; column < 36; column++)
+	for (column = 1; column < 35; column++)
 	{
 		union RaceFlagScreenBuffer *writeScreen = &scratch->screen[toggle];
 		toggle = toggle ^ 1;

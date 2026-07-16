@@ -73,10 +73,10 @@ void RECTMENU_DrawRwdBlueRect_Subset(s16 *pos, int *color, uint32_t *ot, struct 
 		CtrGpu_WriteColorCode(&p->r2, color[2] & 0xffffff);
 		CtrGpu_WriteColorCode(&p->r3, color[3] & 0xffffff);
 
-		CtrGpu_WritePackedXY(&p->x0, CTR_ReadU32LE(&pos[0]));
-		CtrGpu_WritePackedXY(&p->x1, (pos[0] + pos[2]) | ((u32)pos[1] << 16));
-		CtrGpu_WritePackedXY(&p->x2, pos[0] | ((u32)(pos[1] + pos[3]) << 16));
-		CtrGpu_WritePackedXY(&p->x3, (pos[0] + pos[2]) | ((u32)(pos[1] + pos[3]) << 16));
+		CtrGpu_WritePackedXY(&p->x0, CTR_PackS16Pair(pos[0], pos[1]));
+		CtrGpu_WritePackedXY(&p->x1, CTR_PackS16Pair(pos[0] + pos[2], pos[1]));
+		CtrGpu_WritePackedXY(&p->x2, CTR_PackS16Pair(pos[0], pos[1] + pos[3]));
+		CtrGpu_WritePackedXY(&p->x3, CTR_PackS16Pair(pos[0] + pos[2], pos[1] + pos[3]));
 
 		p->tag = CtrGpu_PackOTTag(*ot, 0x8000000);
 		*ot = CtrGpu_PrimToOTLink24(p);
@@ -217,7 +217,7 @@ void RECTMENU_DrawQuip(char *comment, s16 startX, int startY, u32 sizeX, s16 fon
 	if ((textFlag & 0x8000) != 0)
 	{
 		// posX with text un-centered
-		posX = startX - (sizeX >> 1);
+		posX = startX - ((s16)sizeX / 2);
 	}
 
 	sizeY = (u32)data.PlayerCommentBoxParams[fontType];
@@ -755,6 +755,19 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 
 	RngDeadCoed(&sdata->advRng);
 
+	if (((m->state & ONLY_DRAW_TITLE) == 0) && ((m->state & RECTMENU_DRAW_CALLBACK_FLAGS) != RECTMENU_DRAW_CALLBACK_FLAGS))
+	{
+		if (sdata->activeSubMenu != m)
+		{
+			sdata->activeSubMenu = m;
+
+			if ((m->state & KEEP_INPUTS_IN_SUBMENU) == 0)
+			{
+				RECTMENU_ClearInput();
+			}
+		}
+	}
+
 	// button from any player
 	button = sdata->AnyPlayerTap;
 
@@ -785,17 +798,6 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 
 		currMenuRow = &m->rows[oldRow];
 
-		if (sdata->activeSubMenu != m)
-		{
-			sdata->activeSubMenu = m;
-
-			// if input should clear upon opening
-			if ((m->state & KEEP_INPUTS_IN_SUBMENU) == 0)
-			{
-				RECTMENU_ClearInput();
-			}
-		}
-
 		// optimized way to check all four button presses:
 		// up, down, left, right, and get new row
 		for (i = 0; i < 4; i++)
@@ -817,11 +819,11 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 			}
 		}
 
-		if ((button & (BTN_CROSS | BTN_CIRCLE)) == 0)
+		if ((button & (BTN_CROSS_one | BTN_CIRCLE)) == 0)
 		{
 			if (
 			    // if Triangle or Square
-			    ((button & (BTN_TRIANGLE | BTN_SQUARE)) != 0) &&
+			    ((button & (BTN_TRIANGLE | BTN_SQUARE_one)) != 0) &&
 
 			    // if this is not the top of the menu
 			    ((m->state & MENU_CANT_GO_BACK) == 0))
@@ -950,6 +952,7 @@ void RECTMENU_ProcessState()
 		currMenu->funcPtr(currMenu);
 
 		// check if funcPtr changed "state"
+		currMenu = sdata->ptrActiveMenu;
 		state = currMenu->state;
 	}
 
@@ -960,6 +963,7 @@ void RECTMENU_ProcessState()
 		RECTMENU_ProcessInput(currMenu);
 
 		// check if ProcessInput changed "state"
+		currMenu = sdata->ptrActiveMenu;
 		state = currMenu->state;
 
 		// if Menu border is not invisible
@@ -974,6 +978,9 @@ void RECTMENU_ProcessState()
 		}
 	}
 
+	currMenu = sdata->ptrActiveMenu;
+	state = currMenu->state;
+
 	// not sure what this is
 	if ((state & RECTMENU_UNKNOWN_0x800) == 0)
 	{
@@ -984,6 +991,9 @@ void RECTMENU_ProcessState()
 
 		sdata->gGT->renderFlags |= RENDER_FLAG_RENDER_BUCKET;
 	}
+
+	currMenu = sdata->ptrActiveMenu;
+	state = currMenu->state;
 
 	// if menu needs to close
 	if ((state & NEEDS_TO_CLOSE) != 0)
