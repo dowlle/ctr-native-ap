@@ -97,7 +97,7 @@ struct ChannelStats *Channel_AllocSlot_AntiSpam(s16 soundID, u8 boolUseAntiSpam,
 			    // matching ID
 			    ((curr->soundID & 0xffff) == ((u16)soundID)))
 			{
-				int duration = sdata->gGT->frameTimer_MainFrame_ResetDB - curr->startFrame;
+				u32 duration = (u32)sdata->gGT->frameTimer_MainFrame_ResetDB - (u32)curr->startFrame;
 
 				// if started within 10 frames, cancel old and start new,
 				// otherwise you'll allocate too many sounds and overflow

@@ -417,6 +417,7 @@ void Voiceline_EmptyFunc(void)
 void Voiceline_SetDefaults(void)
 {
 	sdata->audioState = AUDIO_NONE;
+	sdata->desiredXA_FinalLapIndex = 0;
 	sdata->desiredXA_RaceIntroIndex = 0;
 
 	sdata->WrongWayDirection_bool = false;

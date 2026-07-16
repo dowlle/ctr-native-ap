@@ -547,7 +547,7 @@ void EngineSound_NearestAIs(void)
 	int closestDistances[2];
 	s16 closestPlayers[2];
 
-	if (gGT->numBotsCurrGame == 0)
+	if (gGT->numBotsNextGame == 0)
 	{
 		return;
 	}

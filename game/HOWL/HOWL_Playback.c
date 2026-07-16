@@ -249,6 +249,11 @@ void howl_UnPauseAudio()
 	Smart_EnterCriticalSection();
 	for (i = 0, curr = (struct ChannelStats *)sdata->channelFree.first; i < sdata->numBackup_ChannelStats; i++, curr = backupNext)
 	{
+		if (curr == NULL)
+		{
+			break;
+		}
+
 		backupID = curr->channelID;
 		backupPrev = curr->prev;
 		backupNext = curr->next;
