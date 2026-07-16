@@ -1701,9 +1701,24 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 			want = p->size;
 		for (k = 0; k < p->size; k++)
 		{
-			int bit = p->bits[p->size - 1 - k]; // high-end first
+			int bit, wantSet;
+			if (c == AP_CAT_GEM)
+			{
+				// Gems are per-colour items and requirements can pin a specific
+				// colour, so mirror each colour's own bit truthfully from the
+				// per-colour receive counts (the pause screen shows WHICH gems
+				// you hold). Pooled high-end-first fill stays for the fungible
+				// categories. (issue #35)
+				bit = p->bits[k]; // 106 + colour, matches AP_IDX_GEM_RED + k
+				wantSet = ap_recv_count[AP_IDX_GEM_RED + k] > 0;
+			}
+			else
+			{
+				bit = p->bits[p->size - 1 - k]; // high-end first
+				wantSet = k < want;
+			}
 			int isSet = CHECK_ADV_BIT(adv->rewards, bit) != 0;
-			if (k < want)
+			if (wantSet)
 			{
 				if (!isSet)
 				{
