@@ -10,6 +10,7 @@
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
+#include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -1913,6 +1914,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_TrapReceive((int)(idx - AP_TRAP_ITEM_FIRST_INDEX));
 		}
 
+		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
+		// local player in-race (issue #11). Not a gate item, so it never touches
+		// ap_recv_count. Cosmetic/QoL only; still logged as filler/unmapped below.
+		else if (AP_ItemCategory(items[i]) == AP_CAT_WUMPA)
+		{
+			AP_WumpaReceive(1);
+		}
+
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
 		// bits (progress %, podium) in AP_ApplyItems -- gates ignore these.
 		AP_ItemCat c = AP_ItemCategory(items[i]);
@@ -2490,6 +2499,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
+	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 

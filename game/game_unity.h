@@ -338,6 +338,7 @@
 #include "../ap/ap_hooks.c"
 #include "../ap/ap_traps.c"
 #include "../ap/ap_shortcut.c"
+#include "../ap/ap_wumpa.c"
 #endif
 
 #endif
