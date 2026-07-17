@@ -102,6 +102,20 @@ int AP_GateCountRelicSum(void); // all 3 relic tiers  (idx 1..3 = Sapphire+Gold+
 int AP_GateCountRelicTier(int colour); // type-4 tier: 0=Sapphire,1=Gold,2=Platinum; -1=Sapphire
 int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 
+// Oxide's Final Challenge door gate (issue #23). Reads ctr_cfg.oxide_final_unlock
+// (mode) + ctr_cfg.oxide_final_count against the received relic-tier counts:
+//   sapphire/gold/platinum -> that tier >= count
+//   any    -> any single tier >= count      total -> Sapphire+Gold+Platinum >= count
+// Relic tiers are INDEPENDENT (no downward hierarchy) -- matches the apworld
+// completion condition exactly. When slot_data is absent, falls back to the
+// Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
+int AP_OxideFinalOpen(void);
+
+// Persistent on-screen warning drawn on the adventure hub when the connected
+// seed's slot_data schema is NEWER than this build understands (issue #8;
+// ctr_cfg.schema_newer). Self-gates; a no-op on matching/older seeds.
+void AP_DrawSchemaWarning(void);
+
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.

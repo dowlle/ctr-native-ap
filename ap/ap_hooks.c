@@ -1330,6 +1330,23 @@ void AP_FeedDrawHub(void)
 	}
 }
 
+// Persistent "this seed is from a newer apworld -- update the client" banner
+// (issue #8). Drawn every adventure-hub frame while ctr_cfg.schema_newer is set,
+// in RED at the top-left so it cannot be mistaken for the transient item feed at
+// the bottom. Unlike the feed it does NOT age out: as long as the mismatched
+// seed is connected, the warning stays up. No-op on matching / older seeds, so a
+// normal session is byte-identical.
+void AP_DrawSchemaWarning(void)
+{
+	if (!ctr_cfg.schema_newer)
+		return;
+	// Static so the strings are not rebuilt per frame; DrawLine takes char*.
+	static char warn1[] = "!! CTR-AP CLIENT OUT OF DATE !!";
+	static char warn2[] = "This seed needs a newer client. Gates may be wrong.";
+	DecalFont_DrawLine(warn1, AP_FEED_X, 0x14, FONT_SMALL, RED);
+	DecalFont_DrawLine(warn2, AP_FEED_X, 0x14 + AP_FEED_LINE_H, FONT_SMALL, RED);
+}
+
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
@@ -1471,6 +1488,35 @@ int AP_GateCountRelicTier(int colour)
 	case 1:  return AP_GateCount(AP_IDX_GOLD);
 	case 2:  return AP_GateCount(AP_IDX_PLATINUM);
 	default: return AP_GateCount(AP_IDX_SAPPHIRE); // colour 0 or legacy -1
+	}
+}
+
+// Oxide's Final Challenge door gate (issue #23; schema >= 5). Reads the per-seed
+// relic-goal mode + count against the received relic-tier counts. Tiers are
+// INDEPENDENT items (no downward hierarchy), so this mirrors the apworld
+// FinalOxideUnlock completion condition exactly:
+//   sapphire/gold/platinum -> that ONE tier's received count >= count
+//   any    -> at least one tier's count >= count
+//   total  -> Sapphire + Gold + Platinum summed >= count
+// Phase-1 fallback (no slot_data active): the vanilla 18-Sapphire rule.
+int AP_OxideFinalOpen(void)
+{
+	if (!ctr_cfg_active())
+		return AP_GateCount(AP_IDX_SAPPHIRE) >= 18;
+
+	int n = ctr_cfg.oxide_final_count;
+	int s = AP_GateCount(AP_IDX_SAPPHIRE);
+	int g = AP_GateCount(AP_IDX_GOLD);
+	int p = AP_GateCount(AP_IDX_PLATINUM);
+
+	switch (ctr_cfg.oxide_final_unlock)
+	{
+	case OXIDE_FINAL_MODE_GOLD:     return g >= n;
+	case OXIDE_FINAL_MODE_PLATINUM: return p >= n;
+	case OXIDE_FINAL_MODE_ANY:      return (s >= n) || (g >= n) || (p >= n);
+	case OXIDE_FINAL_MODE_TOTAL:    return (s + g + p) >= n;
+	case OXIDE_FINAL_MODE_SAPPHIRE:
+	default:                        return s >= n;
 	}
 }
 
@@ -2460,9 +2506,11 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        AP_RaceTypeName(ap_last_race_mode));
 	fprintf(f,
 	        "  \"options\": {\"goal\": %d, \"oxide_final_unlock\": %d, "
+	        "\"oxide_final_count\": %d, \"schema_newer\": %d, "
 	        "\"warppad_unlock_mode\": %d, \"bossgarage_mode\": %d, "
 	        "\"shuffle_warp_pads\": %d},\n",
-	        ctr_cfg.goal, ctr_cfg.oxide_final_unlock, ctr_cfg.warppad_unlock_mode,
+	        ctr_cfg.goal, ctr_cfg.oxide_final_unlock, ctr_cfg.oxide_final_count,
+	        ctr_cfg.schema_newer, ctr_cfg.warppad_unlock_mode,
 	        ctr_cfg.bossgarage_mode, ctr_cfg.shuffle_warp_pads);
 
 	// The game's own cached counters (what gates/UI read) -- compare vs AP truth.
