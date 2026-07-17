@@ -175,9 +175,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.podium_any_position = 0;
 	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
 	{
-		ctr_cfg.podium[i].first = -1;
-		ctr_cfg.podium[i].podium = -1;
-		ctr_cfg.podium[i].any = -1;
+		ctr_cfg.podium[i].held_1st = -1;
+		ctr_cfg.podium[i].held_3rd = -1;
+		ctr_cfg.podium[i].held_5th = -1;
+		ctr_cfg.podium[i].finish_podium = -1;
+		ctr_cfg.podium[i].finish_any = -1;
 	}
 
 	if (!j.is_object())
@@ -324,17 +326,32 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
-	// ── podium_checks: nested placement-rung ladder for the 16 trophy races ──
+	// ── podium_checks: the placement-rung ladder for the 16 trophy races ──
 	// Additive block (feat/podium-checks). Keyed by physical race-pad LevelID as
 	// a JSON string "0".."15" (== the [AP RACE] track field the listener logs).
-	// Each entry carries first/podium/any AP location codes; a rung absent this
-	// seed (any-position off, or the feature off) is JSON null -> stored as -1 so
-	// the native fan-out skips it. schema_version is NOT keyed off this block --
-	// it is purely additive, so a pre-podium seed just leaves podium_enabled 0.
+	// schema_version is NOT keyed off this block -- it is purely additive, so a
+	// pre-podium seed just leaves podium_enabled 0.
+	//
+	// TWO wire shapes, keyed off schema_version (the #9 rung rework):
+	//   schema >= 6: a 5-slot array [held_1st, held_3rd, held_5th, finish_podium,
+	//                finish_any] of location codes (-1 / null = rung absent). A
+	//                named object with those same keys is also accepted (forward-
+	//                robust to a future rung addition) -- whichever the apworld
+	//                emits round-trips here.
+	//   schema <= 5: the legacy object {first, podium, any}. "first" (Finish 1st)
+	//                is retired -- mapped nowhere; podium -> finish_podium; any ->
+	//                finish_any; the held_* live rungs did not exist, stay absent.
+	// A rung absent from the seed (held_5th default-off, a rung the seed did not
+	// place, the whole feature off) is stored -1 so the native fan-out skips it.
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{
-		ctr_cfg.podium_enabled = json_int(*podIt, "enabled", 0);
+		// `enabled` defaults ON at schema >= 6 when the block is present: the apworld
+		// omits the whole podium_checks block for a podium-off seed (the pre-podium
+		// precedent), so a present block means the feature is on even if the now-
+		// redundant explicit `enabled` bool were ever dropped. Pre-6 seeds keep the
+		// original default-0 behaviour (an explicit `enabled` bool is always emitted).
+		ctr_cfg.podium_enabled = json_int(*podIt, "enabled", schema >= 6 ? 1 : 0);
 		ctr_cfg.podium_any_position = json_int(*podIt, "any_position", 0);
 		auto locIt = podIt->find("locations");
 		if (ctr_cfg.podium_enabled && locIt != podIt->end() && locIt->is_object())
@@ -345,13 +362,45 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				try { lid = std::stoi(it.key()); } catch (...) { continue; }
 				if (lid < 0 || lid >= CTR_CFG_PODIUM_TRACK_COUNT)
 					continue; // only the 16 trophy races carry rungs
-				if (!it.value().is_object())
-					continue;
 				const nlohmann::json &r = it.value();
-				// json_int returns -1 for a JSON null or missing key -> absent rung.
-				ctr_cfg.podium[lid].first  = json_int(r, "first", -1);
-				ctr_cfg.podium[lid].podium = json_int(r, "podium", -1);
-				ctr_cfg.podium[lid].any    = json_int(r, "any", -1);
+				ctr_podium_rungs &pr = ctr_cfg.podium[lid];
+				if (schema >= 6)
+				{
+					if (r.is_array())
+					{
+						// [held_1st, held_3rd, held_5th, finish_podium, finish_any].
+						// A short array leaves the missing tail rungs at -1; a null /
+						// non-int element is treated as absent.
+						long *slot[CTR_CFG_PODIUM_RUNG_COUNT] = {
+						    &pr.held_1st, &pr.held_3rd, &pr.held_5th,
+						    &pr.finish_podium, &pr.finish_any};
+						for (size_t k = 0;
+						     k < r.size() && k < CTR_CFG_PODIUM_RUNG_COUNT; k++)
+						{
+							if (!r[k].is_number_integer())
+								continue; // null / absent -> keep -1
+							try { *slot[k] = r[k].get<int>(); } catch (...) {}
+						}
+					}
+					else if (r.is_object())
+					{
+						// Named form: same five keys. json_int returns -1 for a null
+						// or missing key -> absent rung.
+						pr.held_1st      = json_int(r, "held_1st", -1);
+						pr.held_3rd      = json_int(r, "held_3rd", -1);
+						pr.held_5th      = json_int(r, "held_5th", -1);
+						pr.finish_podium = json_int(r, "finish_podium", -1);
+						pr.finish_any    = json_int(r, "finish_any", -1);
+					}
+				}
+				else if (r.is_object())
+				{
+					// Legacy schema <= 5 shape: {first, podium, any}. "first" is
+					// retired (the trophy check covers a 1st-place finish); map the
+					// other two onto the new struct; held_* stay absent.
+					pr.finish_podium = json_int(r, "podium", -1);
+					pr.finish_any    = json_int(r, "any", -1);
+				}
 			}
 		}
 	}
@@ -401,10 +450,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
 		{
 			const ctr_podium_rungs &pr = ctr_cfg.podium[i];
-			if (pr.first >= 0 || pr.podium >= 0 || pr.any >= 0)
+			if (pr.held_1st >= 0 || pr.held_3rd >= 0 || pr.held_5th >= 0 ||
+			    pr.finish_podium >= 0 || pr.finish_any >= 0)
 				std::fprintf(stderr,
-				             "[AP CFG] podium[LevelID %d] = first=%ld podium=%ld any=%ld\n",
-				             i, pr.first, pr.podium, pr.any);
+				             "[AP CFG] podium[LevelID %d] = held_1st=%ld held_3rd=%ld "
+				             "held_5th=%ld finish_podium=%ld finish_any=%ld\n",
+				             i, pr.held_1st, pr.held_3rd, pr.held_5th,
+				             pr.finish_podium, pr.finish_any);
 		}
 }
 

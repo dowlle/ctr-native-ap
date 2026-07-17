@@ -169,15 +169,22 @@ static long AP_LookupLocationCode(int globalBit)
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
 	{
 		int off = globalBit - AP_PODIUM_PSEUDO_BASE;
-		int track = off / 3;
-		int rung = off % 3;
+		int track = off / CTR_CFG_PODIUM_RUNG_COUNT;
+		int rung = off % CTR_CFG_PODIUM_RUNG_COUNT;
+		const ctr_podium_rungs *pr;
 		long code;
 		if (!ctr_cfg.podium_enabled || track < 0 ||
 		    track >= CTR_CFG_PODIUM_TRACK_COUNT)
 			return -1;
-		code = (rung == 0) ? ctr_cfg.podium[track].first
-		     : (rung == 1) ? ctr_cfg.podium[track].podium
-		                   : ctr_cfg.podium[track].any;
+		pr = &ctr_cfg.podium[track];
+		switch (rung)
+		{
+		case 0:  code = pr->held_1st;      break;
+		case 1:  code = pr->held_3rd;      break;
+		case 2:  code = pr->held_5th;      break;
+		case 3:  code = pr->finish_podium; break;
+		default: code = pr->finish_any;    break; // rung 4
+		}
 		return (code > 0) ? code : -1; // -1 = rung absent from this seed
 	}
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
@@ -487,27 +494,54 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
-// Glow-only enumerator (see ap_hooks.h): the tier/category bits above PLUS, for
-// a race destination with podium checks enabled, the still-unchecked podium
-// rung pseudo-bits appended after them. AP_LookupLocationCode returns -1 for a
-// rung this seed does not carry (e.g. any_position off), which skips it here
-// exactly like an absent tier. Kept separate from AP_PadUncollectedBits so the
-// tier-2 menu and AP_PadState semantics stay byte-identical.
+// Append the still-unchecked podium rung pseudo-bits of ONE race track (0..15) to
+// outBits, advancing *count. Shared by the race-pad path and the cup-pad
+// aggregation below. AP_LookupLocationCode returns -1 for a rung this seed does
+// not carry (held_5th default-off, a rung the seed did not place), which skips it
+// here exactly like an absent tier.
+static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
+{
+	int rung;
+	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
+		return;
+	for (rung = 0; rung < CTR_CFG_PODIUM_RUNG_COUNT && *count < cap; rung++)
+	{
+		int bit = AP_PODIUM_PSEUDO_BASE + track * CTR_CFG_PODIUM_RUNG_COUNT + rung;
+		if (AP_LookupLocationCode(bit) < 0)
+			continue;
+		if (!AP_LocationCheckedByBit(bit))
+			outBits[(*count)++] = bit;
+	}
+}
+
+// Glow-only enumerator (see ap_hooks.h): the tier/category bits above PLUS the
+// still-unchecked podium rung pseudo-bits. For a RACE destination (0..15) it
+// appends that track's own rungs. For a CUP destination (100..104) it appends the
+// rungs of ALL FOUR of the cup's leg tracks (data.advCupTrackIDs), because a cup
+// pad's position checks live on its legs -- without this a cup pad under-advertises
+// (decision 3, 2026-07-16 wayfinder). Kept separate from AP_PadUncollectedBits so
+// the tier-2 menu and AP_PadState semantics stay byte-identical (glow only).
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
 	int count = AP_PadUncollectedBits(destLevelID, outBits, cap);
-	int rung;
 
-	if (destLevelID >= 0 && destLevelID < 16 && ctr_cfg.podium_enabled)
+	if (!ctr_cfg.podium_enabled)
+		return count;
+
+	if (destLevelID >= 0 && destLevelID < 16)
 	{
-		for (rung = 0; rung < 3 && count < cap; rung++)
-		{
-			int bit = AP_PODIUM_PSEUDO_BASE + destLevelID * 3 + rung;
-			if (AP_LookupLocationCode(bit) < 0)
-				continue;
-			if (!AP_LocationCheckedByBit(bit))
-				outBits[count++] = bit;
-		}
+		AP_AppendTrackRungGlow(destLevelID, outBits, cap, &count);
+	}
+	else if (destLevelID >= 100 && destLevelID < 105)
+	{
+		// Aggregate the four leg tracks' uncollected rungs. advCupTrackIDs is
+		// cup-major (cup*4 + leg); a leg whose track is a trial (16/17) or otherwise
+		// outside 0..15 carries no podium rungs and is skipped by AP_AppendTrackRungGlow.
+		int cup = destLevelID - 100;
+		int leg;
+		for (leg = 0; leg < 4 && count < cap; leg++)
+			AP_AppendTrackRungGlow(data.advCupTrackIDs[cup * 4 + leg], outBits, cap,
+			                       &count);
 	}
 	return count;
 }
@@ -789,7 +823,7 @@ typedef struct
 {
 	long code; // AP location code (scout-cache key)
 	int  bit;  // AdvProgress reward bit, or -1 for a podium / non-bit entry
-	int  rung; // podium rung: 0 = 1st, 1 = podium, 2 = any-finish; -1 otherwise
+	int  rung; // podium rung tag AP_RUNG_* (0 held_1st..4 finish_any); -1 otherwise
 } AP_CeremonyEntry;
 
 static AP_CeremonyEntry ap_ceremony_ledger[AP_CEREMONY_MAX];
@@ -957,10 +991,14 @@ static void AP_RelicTargetTick(struct GameTracker *gGT)
 static const char *AP_CeremonyPrefix(int bit, int rung)
 {
 	if (rung == 0)
-		return "PODIUM 1ST";
+		return "HELD 1ST";
 	if (rung == 1)
-		return "PODIUM";
+		return "HELD 3RD";
 	if (rung == 2)
+		return "HELD 5TH";
+	if (rung == 3)
+		return "PODIUM";
+	if (rung == 4)
 		return "FINISH";
 	if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
 		return "PLATINUM RELIC";
@@ -2315,6 +2353,19 @@ static int ap_last_race_track = -1; // gGT->levelID at the finish moment
 static int ap_last_race_place = -1; // driverRank+1 (1 = 1st), -1 = none yet
 static int ap_last_race_mode  = AP_RACE_UNKNOWN;
 
+// Held-position live-listener state (reset per race at the finish-flag falling
+// edge). ap_held_countdown_seen is the load-gap guard latch (set once the lights
+// sequence is observed on a live track, cleared off-track / at END_OF_RACE), the
+// same pattern as ap_wumpa.c's g_countdown_seen. The debounce timer holds a
+// candidate position (ap_held_cand_pos) and the ms it has stayed stable
+// (ap_held_cand_ms); ap_held_best_pos is the best (lowest) position already fanned
+// out this race, so an improving hold fires once and a worse-or-equal hold no-ops.
+// Mirrored into ap-state.json.
+static int ap_held_countdown_seen = 0;
+static int ap_held_cand_pos = -1;
+static int ap_held_cand_ms  = 0;
+static int ap_held_best_pos = 99;
+
 static int AP_ClassifyRace(struct GameTracker *gGT)
 {
 	int gm1 = gGT->gameMode1;
@@ -2332,21 +2383,66 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 	return AP_RACE_TROPHY;
 }
 
-// Fan a trophy-race finish out into podium-ladder location checks (the native
-// half of feat/podium-checks; the apworld declares the rung locations + emits
-// the podium_checks slot_data block, ap_seedcfg parses it into ctr_cfg.podium).
-// The nesting rule "a better result satisfies every rung at or below it" is
-// applied HERE from the observed final placement:
-//   placement == 1     -> first + podium + any   (a win fires every rung)
-//   placement in {2,3}  -> podium + any           (the podium rung, not 1st)
-//   placement >= 4      -> any only
-// A rung the seed did not create is stored -1 and skipped; sends dedup against
-// the client's checked-set so re-winning a track never re-emits. These are AP
-// location codes, NOT AdvProgress bits, so they go straight down ap_net_send_
-// location -- NEVER through AP_NotifyAdvReward's bit lookup. MUST be called
-// only for AP_RACE_TROPHY finishes: relic / token /
-// crystal challenges run on the SAME levelIDs as the trophy tracks (only the
-// mode word differs), so gating on the levelID range alone would misfire.
+// Rung tags -- also the pseudo-bit rung index order (AP_LookupLocationCode):
+//   0 held_1st  1 held_3rd  2 held_5th   (LIVE, from the position listener)
+//   3 finish_podium  4 finish_any        (FINAL, from the finish edge)
+// Used by the ceremony prefix (AP_CeremonyPrefix) and the diagnostic log.
+enum
+{
+	AP_RUNG_HELD_1ST      = 0,
+	AP_RUNG_HELD_3RD      = 1,
+	AP_RUNG_HELD_5TH      = 2,
+	AP_RUNG_FINISH_PODIUM = 3,
+	AP_RUNG_FINISH_ANY    = 4,
+};
+
+// Held-position debounce: the live position must hold stable for this long before
+// its held rung fires, so a one-or-two-frame overtake flicker at a pass cannot
+// earn a rung. Short by design (decision 4, 2026-07-16 wayfinder): "if the game
+// visibly shows you in 1st for a moment, you earned it" -- long enough to reject
+// flicker, short enough that a genuine moment in the lead counts. THE one tunable.
+// Time-based (ms), not frames, so it is frame-rate independent (the PC port is not
+// pinned to the 30fps NTSC tick). ~0.5s ~= 15 NTSC frames.
+#define AP_HELD_DEBOUNCE_MS 500
+
+// Emit ONE rung location check: skip if absent (-1) or already checked (the whole
+// dedup/checked-state story comes free from ap_net_location_checked), else log +
+// send + record it in the race-end ceremony ledger. `phase` = "held" or "finish"
+// for the diagnostic log only. Shared by the live listener and the finish fan-out.
+static void AP_EmitRung(int track, long code, int rungTag, int position,
+                        const char *phase)
+{
+	if (code < 0)
+		return; // rung absent this seed
+	if (ap_net_location_checked(code))
+		return; // already checked (re-fire / re-win / reload)
+
+	char msg[128];
+	snprintf(msg, sizeof msg,
+	         "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
+	         phase, track, position, rungTag, code);
+	AP_AppendLog(msg);
+	ap_net_send_location(code);                    // LocationChecks([code])
+	AP_CeremonyLedgerAdd(code, -1, rungTag);       // feed the race-end award block
+}
+
+// FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
+// (the native half of feat/podium-checks; the apworld declares the rung locations
+// + emits podium_checks slot_data, ap_seedcfg parses it into ctr_cfg.podium). The
+// nesting rule "a better result satisfies every rung at or below it" is applied
+// HERE from the observed FINAL placement:
+//   placement == 1     -> held_1st + held_3rd + held_5th + finish_podium + finish_any
+//   placement in {2,3}  -> held_3rd + held_5th + finish_podium + finish_any
+//   placement in {4,5}  -> held_5th + finish_any
+//   placement >= 6      -> finish_any
+// The held_* rungs are earned LIVE mid-race by AP_RaceListenerTick; the finish is
+// the WIN FALLBACK (decision 5): a trophy win (placement 1) fans out EVERYTHING,
+// covering a missed live capture and server /send_location grants -- and finishing
+// AT a position legitimately satisfies the held rungs at or below it. Sends dedup
+// against the checked-set, so the live listener + finish fan-out never double-send.
+// MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs): relic / token /
+// crystal challenges run on the SAME levelIDs as the trophy tracks (only the mode
+// word differs), so gating on the levelID range alone would misfire.
 static void AP_SendPodiumChecks(int track, int placement)
 {
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
@@ -2358,41 +2454,38 @@ static void AP_SendPodiumChecks(int track, int placement)
 
 	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
 
-	// Assemble the earned rung set, best-result-fills-lower. The parallel rungs[]
-	// tags each code (0 = 1st, 1 = podium, 2 = any) so the ceremony block can
-	// label it.
-	long codes[3];
-	int rungs[3];
-	int n = 0;
 	if (placement == 1)
-	{
-		codes[n] = pr->first; // a win also clears podium + any below
-		rungs[n++] = 0;
-	}
+		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, placement, "finish");
 	if (placement <= 3)
-	{
-		codes[n] = pr->podium; // 1st clears it too; 2nd/3rd start here
-		rungs[n++] = 1;
-	}
-	codes[n] = pr->any; // every finish clears the any-position rung
-	rungs[n++] = 2;
+		AP_EmitRung(track, pr->held_3rd, AP_RUNG_HELD_3RD, placement, "finish");
+	if (placement <= 5)
+		AP_EmitRung(track, pr->held_5th, AP_RUNG_HELD_5TH, placement, "finish");
+	if (placement <= 3)
+		AP_EmitRung(track, pr->finish_podium, AP_RUNG_FINISH_PODIUM, placement, "finish");
+	AP_EmitRung(track, pr->finish_any, AP_RUNG_FINISH_ANY, placement, "finish");
+}
 
-	for (int i = 0; i < n; i++)
-	{
-		long code = codes[i];
-		if (code < 0)
-			continue; // rung absent this seed
-		if (ap_net_location_checked(code))
-			continue; // already checked (re-win / reload)
+// LIVE fan-out: fire the held-position rungs for a debounce-CONFIRMED stable live
+// position (1 = 1st). Ladder: holding 1st grants held_3rd + held_5th; holding
+// <=3rd grants held_5th. The finish_* rungs are NOT touched here -- they are
+// final-position checks owned by AP_SendPodiumChecks. Dedup is automatic.
+static void AP_SendHeldChecks(int track, int position)
+{
+	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+		return;
+	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
+		return;
+	if (position < 1)
+		return;
 
-		char msg[128];
-		snprintf(msg, sizeof msg,
-		         "[AP CHECK] podium: track=%d place=%d location %ld\n",
-		         track, placement, code);
-		AP_AppendLog(msg);
-		ap_net_send_location(code); // LocationChecks([code])
-		AP_CeremonyLedgerAdd(code, -1, rungs[i]); // feed the race-end award block
-	}
+	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+
+	if (position == 1)
+		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, position, "held");
+	if (position <= 3)
+		AP_EmitRung(track, pr->held_3rd, AP_RUNG_HELD_3RD, position, "held");
+	if (position <= 5)
+		AP_EmitRung(track, pr->held_5th, AP_RUNG_HELD_5TH, position, "held");
 }
 
 // Connect-time backstop: any trophy race whose trophy LOCATION is already
@@ -2478,8 +2571,79 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// this race's entries intact through its whole ceremony regardless of
 		// within-frame ordering.
 		AP_CeremonyLedgerReset();
+		// Re-arm the held-position listener for the next race / cup leg: forget the
+		// debounce candidate and the best-fired position so the new track's held
+		// rungs can fire fresh (each cup leg loads its own destination track).
+		ap_held_best_pos = 99;
+		ap_held_cand_pos = -1;
+		ap_held_cand_ms  = 0;
 	}
 	ap_finish_prev = finishedNow;
+
+	// ── LIVE held-position listener (mid-race) ──────────────────────────────
+	// Fire the held-position rungs the moment the live rank holds stable for the
+	// debounce window. GUARD CHAIN (the load-gap lesson, bit us twice on 2026-07-17):
+	// flags/timer alone are NOT enough -- the few frames after a level load carry
+	// stale gameMode1/trafficLightsTimer, and the adventure hub passes a raw
+	// flag/timer test too. So the fire is gated on the SAME proven predicate class
+	// as the wumpa/deathlink receive windows:
+	//   (1) LOAD_IsOpen_RacingOrBattle() -- the stock on-a-track overlay test, false
+	//       in the hub and during the load gap;
+	//   (2) the countdown latch -- set only after the lights sequence is observed on
+	//       a live track, which can never happen inside the load gap;
+	//   (3) not START/END_OF_RACE / MAIN_MENU / GAME_CUTSCENE / PAUSE_ALL, lights out;
+	//   (4) AP_ClassifyRace == TROPHY -- trophy races AND cup legs (legs classify as
+	//       trophy), never relic/token/crystal/boss/arcade.
+	// The debounce (position must hold AP_HELD_DEBOUNCE_MS) then rejects overtake
+	// flicker: any position change resets the stability timer, so a 1-2 frame swap
+	// at a pass never confirms.
+	{
+		int onTrack = LOAD_IsOpen_RacingOrBattle();
+		if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
+			ap_held_countdown_seen = 0;
+		else if (gGT->trafficLightsTimer >= 1)
+			ap_held_countdown_seen = 1;
+
+		int heldWindow =
+		    (gGT->gameMode1 &
+		     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
+		    gGT->trafficLightsTimer < 1 && onTrack && ap_held_countdown_seen;
+
+		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY && ap_live_position >= 1)
+		{
+			int elapsedMs = gGT->elapsedTimeMS;
+			if (elapsedMs <= 0)
+				elapsedMs = 32; // defensive: a paused/odd frame must not stall the timer
+
+			if (ap_live_position == ap_held_cand_pos)
+			{
+				ap_held_cand_ms += elapsedMs;
+			}
+			else
+			{
+				ap_held_cand_pos = ap_live_position; // position changed -> restart debounce
+				ap_held_cand_ms  = 0;
+			}
+
+			// Confirmed hold: fire only when it IMPROVES on the best already fanned
+			// out this race (a lower rank number is better). The ladder inside
+			// AP_SendHeldChecks grants every held rung at or below the confirmed
+			// position, so a later worse hold has nothing new to add.
+			if (ap_held_cand_ms >= AP_HELD_DEBOUNCE_MS && ap_held_cand_pos < ap_held_best_pos)
+			{
+				AP_SendHeldChecks((int)gGT->levelID, ap_held_cand_pos);
+				ap_held_best_pos = ap_held_cand_pos;
+			}
+		}
+		else
+		{
+			// Outside the held window (hub / load / menu / pause / non-trophy): stop
+			// debouncing. ap_held_best_pos is preserved so a mid-race pause cannot
+			// re-earn an already-fired rung; it resets only at the race-start edge.
+			ap_held_cand_pos = -1;
+			ap_held_cand_ms  = 0;
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2547,8 +2711,16 @@ static void AP_DumpState(struct GameTracker *gGT)
 	fprintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
 	fprintf(f, "  \"locations_checked\": %d,\n", checked);
 	fprintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
-	// Live race placement (observation-only groundwork for the podium ladder).
+	// Live race placement + the held-position listener's debounce state (the #9
+	// live rung listener). held.cand_pos/cand_ms = the position currently being
+	// debounced and how long it has held; held.best_pos = best position already
+	// fanned out this race (99 = none yet); held.countdown_seen = the load-gap latch.
 	fprintf(f, "  \"live_position\": %d,\n", ap_live_position);
+	fprintf(f,
+	        "  \"held\": {\"cand_pos\": %d, \"cand_ms\": %d, \"best_pos\": %d, "
+	        "\"countdown_seen\": %d, \"debounce_ms\": %d},\n",
+	        ap_held_cand_pos, ap_held_cand_ms, ap_held_best_pos,
+	        ap_held_countdown_seen, AP_HELD_DEBOUNCE_MS);
 	fprintf(f,
 	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
 	        "\"type\": \"%s\"},\n",
