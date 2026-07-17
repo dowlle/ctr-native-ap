@@ -2466,6 +2466,22 @@ void AP_OnFrame(struct GameTracker *gGT)
 			         (int)sdata->Loading.stage);
 			AP_AppendLog(m);
 			ap_prev_level = (int)gGT->levelID;
+
+			// AP QoL one-lap cups (#7): restore the vanilla lap count when a
+			// level transition lands anywhere that is not a live race track
+			// (hub free-roam; LOAD_IsOpen_RacingOrBattle() is the stock
+			// on-a-track predicate). The adventure cup entry (AH_WarpPad.c)
+			// sets numLaps = 1 for the whole cup and nothing in adventure
+			// re-derives it, so without this a post-cup trophy/boss/relic race
+			// would inherit the 1-lap override. Gated on the option so the
+			// write never fires on seeds without it.
+			if (ctr_cfg_active() && ctr_cfg.one_lap_cups &&
+			    (gGT->gameMode1 & ADVENTURE_MODE) != 0 &&
+			    !LOAD_IsOpen_RacingOrBattle() && gGT->numLaps != 3)
+			{
+				gGT->numLaps = 3;
+				AP_AppendLog("[AP CUP] one-lap override cleared (hub return)\n");
+			}
 		}
 	}
 
