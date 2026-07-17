@@ -352,7 +352,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		// redundant explicit `enabled` bool were ever dropped. Pre-6 seeds keep the
 		// original default-0 behaviour (an explicit `enabled` bool is always emitted).
 		ctr_cfg.podium_enabled = json_int(*podIt, "enabled", schema >= 6 ? 1 : 0);
-		ctr_cfg.podium_any_position = json_int(*podIt, "any_position", 0);
+		// any_position is a schema <= 5 concept (the optional third finish rung). It
+		// is GONE in schema 6 -- per-rung presence is the -1 sentinel now -- so read
+		// it only on legacy seeds; a schema-6 seed leaves it 0.
+		ctr_cfg.podium_any_position =
+		    (schema <= 5) ? json_int(*podIt, "any_position", 0) : 0;
 		auto locIt = podIt->find("locations");
 		if (ctr_cfg.podium_enabled && locIt != podIt->end() && locIt->is_object())
 		{

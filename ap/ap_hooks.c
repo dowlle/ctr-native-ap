@@ -507,10 +507,21 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 	for (rung = 0; rung < CTR_CFG_PODIUM_RUNG_COUNT && *count < cap; rung++)
 	{
 		int bit = AP_PODIUM_PSEUDO_BASE + track * CTR_CFG_PODIUM_RUNG_COUNT + rung;
+		int j;
 		if (AP_LookupLocationCode(bit) < 0)
 			continue;
-		if (!AP_LocationCheckedByBit(bit))
-			outBits[(*count)++] = bit;
+		if (AP_LocationCheckedByBit(bit))
+			continue;
+		// Dedup within this pad's buffer: a cup pad aggregates four legs, and a
+		// track can (in principle) appear more than once, which would else list the
+		// same rung twice in the glow cycle. Cheap (buffer <= 24). Two DIFFERENT cup
+		// pads advertising overlapping rungs is fine -- they are separate buffers.
+		for (j = 0; j < *count; j++)
+			if (outBits[j] == bit)
+				break;
+		if (j < *count)
+			continue;
+		outBits[(*count)++] = bit;
 	}
 }
 
