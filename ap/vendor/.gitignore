@@ -1,0 +1,4 @@
+# Vendored header-only AP deps are fetched, not committed (see fetch-deps.sh).
+*
+!.gitignore
+!fetch-deps.sh

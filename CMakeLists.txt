@@ -14,6 +14,9 @@ option(CTR_AP "Build with Archipelago integration" OFF)
 
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
+    # The AP mod enables CXX (apclientpp/asio); it must be -m32 too or its
+    # objects are 64-bit and fail to link against the 32-bit engine.
+    set(CMAKE_CXX_FLAGS "-m32 ${CMAKE_CXX_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "-m32 ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 
@@ -130,14 +133,30 @@ if(CTR_AP)
     target_compile_definitions(ap_net PRIVATE
         CTR_AP
         AP_NO_SCHEMA
-        ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1
-        _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
-    target_compile_options(ap_net PRIVATE -Wa,-mbig-obj -O1 -fexceptions -frtti)
+        ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1)
+    # wss:// TLS + permessage-deflate stay enabled on every target (release
+    # requirement); the Windows networking headers only apply to the mingw target.
+    if(WIN32)
+        target_compile_definitions(ap_net PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
+    endif()
+    target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
+    # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.
+    if(WIN32)
+        target_compile_options(ap_net PRIVATE -Wa,-mbig-obj)
+    endif()
 
     # A C target linking a C++ archive: CMake promotes the link to C++ (g++),
-    # pulling in libstdc++. Keep it static to match the -static exe. crypt32 is
-    # needed for the Windows system-CA lookup wswrap does on wss:// connections.
-    target_link_libraries(ctr_native ap_net ws2_32 crypt32)
+    # pulling in libstdc++. Keep it static to match the -static exe.
+    # Winsock (ws2_32) + crypt32 (the Windows system-CA lookup wswrap does on
+    # wss:// connections) are Windows-only; standalone-asio needs pthread on Linux
+    # (Linux CA validation comes from the static OpenSSL linked into ap_net).
+    target_link_libraries(ctr_native ap_net)
+    if(WIN32)
+        target_link_libraries(ctr_native ws2_32 crypt32)
+    else()
+        find_package(Threads REQUIRED)
+        target_link_libraries(ctr_native Threads::Threads)
+    endif()
     target_link_options(ctr_native PRIVATE -static-libstdc++)
 endif()
 target_compile_options(ctr_native PRIVATE -O2)
