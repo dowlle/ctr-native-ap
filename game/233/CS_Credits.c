@@ -345,8 +345,35 @@ void CS_Credits_End(void)
 	CS_Credits_RestorePodiumAudioForNativeHandoff();
 #endif
 
+	// Post-credits destination. Retail: a 101%-completed file (boolAllBlue, all 18
+	// sapphire-relic reward bits set) gets the Scrapbook send-off; otherwise the
+	// game returns to the hub. Mirror boolAllBlue's truthiness into a local so the
+	// bit itself stays intact for the later credits-fade reads (lines 449, 552).
+	s16 goScrapbook = (creditsBSS.boolAllBlue != 0);
+
+#ifdef CTR_AP
+	// AP: boolAllBlue here is AP_ApplyItems' mirrored received-item view of the
+	// sapphire-relic bits, not a genuine 101% file, so a fully-completed seed always
+	// trips the Scrapbook branch -- a post-credits path the port never exercised and
+	// where the game freezes on a black screen (issue #2). Pin the handoff to the hub
+	// whenever an AP config is active so completion never routes through Scrapbook.
+	// The log line records the retail branch that would have been taken, so the first
+	// test run confirms the diagnosis at the same time it verifies the fix. A vanilla
+	// (no AP config) run skips this block entirely and keeps retail behaviour exactly.
+	if (ctr_cfg_active())
+	{
+		char apcredmsg[96];
+		snprintf(apcredmsg, sizeof apcredmsg,
+		         "[AP CREDITS] end: boolAllBlue=%d retail-branch=%s -> pinned hub\n",
+		         (int)creditsBSS.boolAllBlue, goScrapbook ? "scrapbook" : "hub");
+		AP_LogLine(apcredmsg);
+
+		goScrapbook = 0;
+	}
+#endif
+
 	// go to gemstone valley
-	if (creditsBSS.boolAllBlue == 0)
+	if (goScrapbook == 0)
 	{
 		levID = GEM_STONE_VALLEY;
 
