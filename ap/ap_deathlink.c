@@ -214,11 +214,21 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		return 0; // receive, like send, only in adventure mode
 
-	// Same race window as the send path: mid-race, lights out, not paused / menu /
-	// cutscene / end-of-race. Out-of-race deaths stay queued until this holds.
+	// Race window, plus a real-track guard the send window does not need. The
+	// gameMode1 / trafficLightsTimer test alone is not enough on the receive side. The
+	// adventure hub itself passes it a few seconds after spawn: MainGameStart sets
+	// START_OF_RACE and trafficLightsTimer=0xf00 on hub entry, CAM.c:1675 clears
+	// START_OF_RACE when the fly-in ends, and MainMain.c counts the timer below 1 in
+	// ~4s, while ADVENTURE_MODE stays set all session. A queued death would otherwise
+	// fire while free-roaming the hub. LOAD_IsOpen_RacingOrBattle() (overlayIndex_Threads
+	// == 1) is false in the hub (overlay 2); it is the same predicate the stock mask-grab
+	// subsystem uses to decide it is on a track (VehStuckProc.c:451), the subsystem this
+	// forced reset drives. It fires the death at the next race start (lap 1, lights out)
+	// per the ruling. The trap lapWindow (ap_traps.c:311, lapIndex >= 1) also excludes the
+	// hub but would wrongly delay the death to lap 2. Out-of-race deaths stay queued.
 	raceActive = (gGT->gameMode1 &
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1;
+	             gGT->trafficLightsTimer < 1 && LOAD_IsOpen_RacingOrBattle();
 	if (!raceActive)
 		return 0;
 
