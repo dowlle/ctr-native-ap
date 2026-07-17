@@ -163,21 +163,11 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 	             gGT->trafficLightsTimer < 1;
 
-	// Apply a queued received death: force the full mask reset. Out-of-race deaths
-	// wait here until the next race window; a mid-race death fires at once. Gate on
-	// not-already-grabbed so the forced reset always produces a real, single edge
-	// (which the guard below swallows).
-	if (g_dl_pending_recv && raceActive && local != 0 &&
-	    local->kartState != KS_MASK_GRABBED)
-	{
-		char msg[192];
-		local->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST; // COLL.c:1484 precedent
-		g_dl_pending_recv = 0;
-		g_dl_swallow_edge = 1; // no-loop guard: swallow the resulting mask-grab edge
-		snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
-		         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
-		AP_LogLine(msg);
-	}
+	// A queued received death is APPLIED by AP_DeathLinkForceReset from inside the
+	// physics pipeline (COLL_FIXED_PlayerSearch), NOT here: the request bit set from
+	// AP_OnFrame is zeroed by VehPhysForce_OnApplyForces before the mask-grab gate
+	// reads it. That path clears g_dl_pending_recv and arms g_dl_swallow_edge; the
+	// send edge below then swallows the resulting mask-grab.
 
 	// Send trigger: rising edge into KS_MASK_GRABBED (fell off / eaten). This fires
 	// in BOTH tiers (mask_reset and any_hit). A forced-reset edge is swallowed once.
@@ -192,6 +182,61 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 			AP_DeathLinkFireLocal(gGT, "wiped out");
 	}
 	g_dl_prev_maskgrab = maskGrabNow;
+}
+
+// Apply a queued received death. Called from INSIDE COLL_FIXED_PlayerSearch, right
+// before the stock mask-grab gate (game/COLL.c), so the request bit we OR survives
+// to that gate: VehPhysForce_OnApplyForces zeroes collisionFlags every frame before
+// this function runs, so setting the bit from AP_OnFrame (as the first cut did) is
+// wiped and the reset never fires. This mirrors the AP_ShortcutCheck / kill-plane
+// precedents, which also set the bit from within this pipeline stage.
+//
+// Returns 1 (caller then OR's DRIVER_COLL_FLAG_MASK_GRAB_REQUEST) only when EVERY
+// stock-gate precondition (COLL.c:1694) is already satisfied, so the grab is
+// guaranteed to reach VehStuckProc_MaskGrab_Init this frame. That is what lets us
+// clear the depth-1 queue and arm the no-loop guard here: we never arm the guard
+// (which would swallow a later genuine send) for a grab that fails to land.
+int AP_DeathLinkForceReset(struct Driver *d)
+{
+	struct GameTracker *gGT;
+	int raceActive;
+	char msg[192];
+
+	if (!ctr_cfg_active() || ctr_cfg.death_link == CTR_DL_OFF)
+		return 0;
+	if (!g_dl_pending_recv || d == 0)
+		return 0;
+	if (sdata == 0 || sdata->gGT == 0)
+		return 0;
+	gGT = sdata->gGT;
+	if (d != gGT->drivers[0])
+		return 0; // local player only
+	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0)
+		return 0; // receive, like send, only in adventure mode
+
+	// Same race window as the send path: mid-race, lights out, not paused / menu /
+	// cutscene / end-of-race. Out-of-race deaths stay queued until this holds.
+	raceActive = (gGT->gameMode1 &
+	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
+	             gGT->trafficLightsTimer < 1;
+	if (!raceActive)
+		return 0;
+
+	// Mirror the stock gate's OWN preconditions so OR'ing the bit is guaranteed to
+	// fire VehStuckProc_MaskGrab_Init this frame (checked here, one line before the
+	// gate, so the values match what the gate sees). Only then is it safe to consume
+	// the queue and arm the guard.
+	if (d->kartState == KS_MASK_GRABBED || d->lastValid == 0 ||
+	    (sdata->HudAndDebugFlags & 0x1000) != 0 ||
+	    (d->stepFlagSet & COLL_STEP_TRIGGER_SUPPRESS_MASK_GRAB) != 0)
+		return 0;
+
+	g_dl_pending_recv = 0;
+	g_dl_swallow_edge = 1; // no-loop guard: the resulting mask-grab edge must not send
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
+	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+	AP_LogLine(msg);
+	return 1;
 }
 
 #endif // CTR_AP

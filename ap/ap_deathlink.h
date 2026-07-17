@@ -19,10 +19,14 @@
 //
 //   RECEIVE:
 //     * force the full mask-grab reset via DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (the
-//       proven Shortcutless precedent, COLL.c:1484). A death that arrives outside
-//       a race window is queued ONE deep (extras dropped) and fires at the next
-//       race start; a death that arrives mid-race fires as soon as the window is
-//       active.
+//       proven Shortcutless precedent, COLL.c:1488). The request bit MUST be OR'd
+//       from INSIDE the physics pipeline (AP_DeathLinkForceReset, hooked into
+//       COLL_FIXED_PlayerSearch), not from AP_OnFrame: VehPhysForce_OnApplyForces
+//       zeroes collisionFlags every frame before the mask-grab gate reads it, so a
+//       pre-pipeline OR would be wiped. A death that arrives outside a race window
+//       is queued ONE deep (extras dropped) and fires at the next race window; a
+//       death that arrives mid-race fires as soon as the window is active. Receive,
+//       like send, is gated to adventure mode.
 //
 //   NO-LOOP GUARD (hard requirement): the forced mask-grab is itself a send
 //   trigger, so the resulting rising edge is swallowed exactly once and never
@@ -47,10 +51,20 @@ enum
 // AP_NetTick's fresh-connect block, after slot_data has been parsed.
 void AP_DeathLinkConnectReset(void);
 
-// Per-frame driver, called from AP_OnFrame (all modes). Drains inbound deaths,
-// fires a queued death at the race window, runs the mask-grab send edge, and
-// counts down the no-loop guard. gGT is the live GameTracker.
+// Per-frame driver, called from AP_OnFrame (all modes). Drains the network inbound
+// latch into the depth-1 queue and runs the mask-grab send edge (consuming the
+// no-loop guard). The queued death is APPLIED separately by AP_DeathLinkForceReset
+// from inside the physics pipeline; this runs before the pipeline each frame.
 void AP_DeathLinkTick(struct GameTracker *gGT);
+
+// Receive-apply hook, called from INSIDE COLL_FIXED_PlayerSearch (game/COLL.c,
+// right before the mask-grab gate) so the request bit survives to the gate. Returns
+// 1 when a queued received death should force this driver's mask reset THIS frame;
+// the caller then OR's DRIVER_COLL_FLAG_MASK_GRAB_REQUEST. It returns 1 only once
+// every gate precondition is already met, so the grab is guaranteed to fire, which
+// is why it may clear the queue and arm the no-loop guard here. Adventure mode +
+// race window + local player only.
+int AP_DeathLinkForceReset(struct Driver *d);
 
 // any_hit send hook, called from VehPickState_NewState once a hit is confirmed to
 // land on its victim. Sends only when death_link == any_hit, the victim is the
