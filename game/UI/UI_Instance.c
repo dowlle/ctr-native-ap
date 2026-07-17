@@ -312,6 +312,17 @@ void UI_INSTANCE_InitAll(void)
 			sdata->ptrRelic->scale.x = 0;
 		}
 
+#ifdef CTR_AP
+		// AP live target ladder (issue #21): the reward bits below are
+		// AP_ApplyItems' received-item view, so received Gold/Platinum items made
+		// a first attempt show the PLATINUM time. AP-active seeds pick the target
+		// from the earnable (in-seed, unchecked) tiers instead and fill the
+		// relicTime_* digits themselves; AP_OnFrame steps the tier down live when
+		// the race clock passes it. Vanilla / no-slot_data keeps the selector below.
+		if (AP_RelicTargetInit(gGT->levelID))
+			return;
+#endif
+
 		// Get Relic Time to put in HUD
 		if (
 		    // no platinum and no gold

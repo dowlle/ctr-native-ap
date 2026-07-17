@@ -845,6 +845,112 @@ int AP_CeremonyRelicTier(void)
 	return best;
 }
 
+// ── Relic-race live target ladder (issue #21) ──
+// The vanilla race-start tier selector reads advProgress.rewards, which
+// AP_ApplyItems rewrites every frame to mirror RECEIVED items -- so received
+// Gold/Platinum Relic items poison the in-race top-left target (a first
+// attempt shows the PLATINUM time, live v0.1.0 report). AP-active seeds
+// replace it with a ladder: start at the highest tier still EARNABLE on this
+// track (its location exists in the seed and is unchecked), and the moment
+// the race clock passes the shown time, step down to the next earnable tier;
+// hold at the lowest. Display-only: RR_EndEvent_UnlockAward compares raw time
+// against every tier independently, so a late all-crates 10s bonus can still
+// award the higher tier after the display stepped down (a happy surprise, by
+// design -- see the issue-#21 fix plan).
+static int ap_relic_target_tier = -1; // shown tier this relic race; -1 = vanilla selector
+static int ap_relic_target_done = 0;  // 1 = ladder exhausted, hold the shown tier
+
+// Current ladder tier for the HUD label/colour pin (UI_Clock.c), -1 = vanilla.
+int AP_RelicTargetTier(void)
+{
+	return ap_relic_target_tier;
+}
+
+// Tier still earnable on this track: its Time Trial location exists in this
+// seed AND is unchecked. Unchecked tiers are always a contiguous run from the
+// top (beating a higher time also sends every lower tier's check), so the
+// ladder never has gaps.
+static int AP_RelicTierEarnable(int levelID, int tier)
+{
+	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
+	return AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit);
+}
+
+// Break a tier's time into the sdata HUD digit fields (same formulas as the
+// vanilla fill in UI_Instance.c, which the AP path replaces).
+static void AP_RelicTargetFill(int levelID, int tier)
+{
+	int relicTime = data.RelicTime[levelID * 3 + tier];
+	sdata->relicTime_1min = relicTime / 0xe100;
+	sdata->relicTime_10sec = (relicTime / 0x2580) % 6;
+	sdata->relicTime_1sec = (relicTime / 0x3c0) % 10;
+	sdata->relicTime_10ms = ((relicTime * 100) / 0x3c0) % 10;
+	sdata->relicTime_1ms = ((relicTime * 1000) / 0x3c0) % 10;
+}
+
+// Race-start hook (UI_Instance.c relic block). Returns 1 when the ladder took
+// over (digits filled); 0 keeps the vanilla selector (no slot_data).
+int AP_RelicTargetInit(int levelID)
+{
+	ap_relic_target_tier = -1;
+	ap_relic_target_done = 0;
+	if (!ctr_cfg_active())
+		return 0;
+	for (int t = 2; t >= 0; t--)
+	{
+		if (AP_RelicTierEarnable(levelID, t))
+		{
+			ap_relic_target_tier = t;
+			break;
+		}
+	}
+	if (ap_relic_target_tier < 0)
+	{
+		// Nothing earnable (replay of a fully-checked track): show Platinum,
+		// matching a completed vanilla track, and never step down.
+		ap_relic_target_tier = 2;
+		ap_relic_target_done = 1;
+	}
+	AP_RelicTargetFill(levelID, ap_relic_target_tier);
+	return 1;
+}
+
+// Per-frame downgrade (AP_OnFrame). Mid-race only: after the finish the
+// end-of-race digit rewrite (RR_EndEvent_UnlockAward) and the ceremony label
+// override (AP_CeremonyRelicTier) own the display.
+static void AP_RelicTargetTick(struct GameTracker *gGT)
+{
+	struct Driver *d;
+	int levelID;
+
+	if (ap_relic_target_tier < 0 || ap_relic_target_done)
+		return;
+	if ((gGT->gameMode1 & RELIC_RACE) == 0)
+		return;
+	if ((gGT->gameMode1 &
+	     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) != 0 ||
+	    gGT->trafficLightsTimer > 0)
+		return;
+	d = gGT->drivers[0];
+	if (d == 0)
+		return;
+	levelID = (int)gGT->levelID;
+	if (d->timeElapsedInRace <= data.RelicTime[levelID * 3 + ap_relic_target_tier])
+		return; // shown target still beatable
+
+	// Shown time passed: step down to the next earnable tier, else hold here.
+	for (int t = ap_relic_target_tier - 1; t >= 0; t--)
+	{
+		if (AP_RelicTierEarnable(levelID, t))
+		{
+			ap_relic_target_tier = t;
+			AP_RelicTargetFill(levelID, t);
+			return;
+		}
+	}
+	ap_relic_target_done = 1;
+}
+
 // Short context line describing WHICH check an entry is (the item line below says
 // what was sent). Only the multi-entry contexts get one -- relic tier + podium
 // rung -- so a lone trophy/token/crystal reads as just "<ITEM> AWARDED".
@@ -2502,6 +2608,8 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
+	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
+	                          // shown tier down when its time passes; race window only)
 
 	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
 	// at the title screen right after connect. AP-side fields (options, received
