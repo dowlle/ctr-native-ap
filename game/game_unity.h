@@ -8,6 +8,7 @@
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
+#include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #endif
 
 #include "226/R226.c"
@@ -339,6 +340,7 @@
 #include "../ap/ap_traps.c"
 #include "../ap/ap_shortcut.c"
 #include "../ap/ap_wumpa.c"
+#include "../ap/ap_deathlink.c"
 #endif
 
 #endif

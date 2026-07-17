@@ -166,6 +166,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// AI-difficulty slot_data default: -1 = unset (absent from ctr_options, or no
 	// slot_data at all) so the connect-time pull leaves the local value untouched.
 	ctr_cfg.ai_difficulty_default = -1;
+	// DeathLink defaults: off, amnesty 1 (every death). Additive keys, so an old
+	// seed without them degrades to the disabled state.
+	ctr_cfg.death_link = 0;
+	ctr_cfg.deathlink_amnesty = 1;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.podium_any_position = 0;
@@ -232,6 +236,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
 	// change schema_version -- generation never depends on it.
 	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);
+	// DeathLink (additive keys, no schema bump). Absent -> off / amnesty 1.
+	ctr_cfg.death_link = json_int(opt, "death_link", 0);
+	ctr_cfg.deathlink_amnesty = json_int(opt, "deathlink_amnesty", 1);
+	if (ctr_cfg.deathlink_amnesty < 1)
+		ctr_cfg.deathlink_amnesty = 1; // guard: never divide the send cadence by < 1
 
 	// ── warp_pad_map: identity already set; overlay string-keyed entries ──
 	// slot_data v3 keys span "0".."27" (-> warp_pad_map) AND "100".."104" (-> the

@@ -104,6 +104,22 @@ void ap_net_difficulty_set(int value);
 // (slot_data default seed, Get reply, or a SetNotify update); 0 if none yet.
 int  ap_net_difficulty_known(int *out);
 
+// ── DeathLink (issue #6) ──
+// Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
+// deaths to this client. Called by the game side after slot_data is parsed, only
+// when the seed's death_link option is on. No-op if the client is not up.
+void ap_net_deathlink_enable(void);
+
+// Bounce a death to the multiworld. cause is a short verb phrase; the client
+// prepends the slot name for the standard "<player> <cause>" line. No-op unless
+// slot-connected.
+void ap_net_deathlink_send(const char *cause);
+
+// Drain the depth-1 inbound death latch: returns 1 and copies the cause string
+// (truncated to cause_n) if a DeathLink bounce was pending, then clears it; 0
+// otherwise. Own-slot echoes are already filtered out by the network handler.
+int  ap_net_deathlink_take(char *cause_buf, int cause_n);
+
 void ap_net_shutdown(void);
 
 #ifdef __cplusplus

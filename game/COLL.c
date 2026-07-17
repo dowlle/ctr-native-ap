@@ -1692,6 +1692,17 @@ UpdateGroundOffset:
 		d->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST;
 	}
 
+#ifdef CTR_AP
+	// DeathLink receive: apply a queued incoming death as a forced mask reset. Set
+	// here, inside the pipeline just before the gate below, so the request bit is not
+	// wiped by VehPhysForce_OnApplyForces (which zeroes collisionFlags earlier this
+	// frame). AP_DeathLinkForceReset returns 1 only when the gate is certain to fire.
+	if (AP_DeathLinkForceReset(d))
+	{
+		d->collisionFlags |= DRIVER_COLL_FLAG_MASK_GRAB_REQUEST;
+	}
+#endif
+
 	if ((d->kartState != KS_MASK_GRABBED) && ((d->collisionFlags & DRIVER_COLL_FLAG_MASK_GRAB_REQUEST) != 0) && (d->lastValid != NULL) &&
 	    ((sdata->HudAndDebugFlags & 0x1000) == 0) && ((d->stepFlagSet & COLL_STEP_TRIGGER_SUPPRESS_MASK_GRAB) == 0))
 	{
