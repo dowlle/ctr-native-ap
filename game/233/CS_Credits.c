@@ -348,7 +348,7 @@ void CS_Credits_End(void)
 	// Post-credits destination. Retail: a 101%-completed file (boolAllBlue, all 18
 	// sapphire-relic reward bits set) gets the Scrapbook send-off; otherwise the
 	// game returns to the hub. Mirror boolAllBlue's truthiness into a local so the
-	// bit itself stays intact for the later credits-fade reads (lines 449, 552).
+	// bit itself stays intact for any later reads of the reward bit.
 	s16 goScrapbook = (creditsBSS.boolAllBlue != 0);
 
 #ifdef CTR_AP
