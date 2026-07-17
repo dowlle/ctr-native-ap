@@ -199,6 +199,15 @@ int VehPickState_NewState(struct Driver *victimDriver, int damageType, struct Dr
 		}
 	}
 
+#ifdef CTR_AP
+	// DeathLink any_hit tier (issue #6): a hit has confirmed-landed on its victim
+	// (every earlier return covers mask-held / invincible / shielded / already
+	// blasted, so it never fired). Observe it for an outgoing death; the hook itself
+	// gates to the local player, the any_hit tier, and damageType 1/2/3/4 (mask-grab
+	// is owned by the kartState edge detector, never counted here).
+	AP_DeathLinkOnHit(victimDriver, damageType, reason);
+#endif
+
 	victimDriver->kartState = KS_NORMAL;
 	victimDriver->reserves = 0;
 	victimDriver->turbo_outsideTimer = 0;

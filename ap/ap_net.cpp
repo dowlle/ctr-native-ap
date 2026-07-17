@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <cstdio>
 #include <cstdint>
+#include <ctime>
 
 static APClient            *g_ap = nullptr;
 static std::deque<long long> g_items;        // received item ids, drained by the game
@@ -74,6 +75,16 @@ static std::string ap_diff_key()
 {
 	return "ctr_difficulty_" + g_slot;
 }
+
+// ── DeathLink (issue #6) ──
+// Depth-1 inbound latch: the most recent DeathLink bounce not yet handed to the
+// game thread. A newer death overwrites an unhandled one, so extras are dropped
+// at the network boundary (the game side keeps its own depth-1 queue and fires
+// it at the next race window). Written in the bounced handler and drained by
+// ap_net_deathlink_take on the SAME poll thread (apclientpp is single-threaded,
+// the same guarantee the received-item queue relies on), so no lock is needed.
+static bool        g_dl_incoming = false;
+static std::string g_dl_incoming_cause;
 
 extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
@@ -197,6 +208,39 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] received item %lld (index %d)\n",
 			             (long long)it.item, it.index);
 		}
+	});
+	// DeathLink: incoming deaths arrive as a tagged Bounce. The handler fires
+	// inline on the poll thread like every other handler. It filters to the
+	// DeathLink tag, ignores our own death echoed back by the server (we carry the
+	// tag too), and latches the most recent death (depth 1) for the game thread.
+	g_ap->set_bounced_handler([](const nlohmann::json &packet) {
+		if (!packet.contains("tags") || !packet["tags"].is_array())
+			return;
+		bool isDeath = false;
+		for (const auto &t : packet["tags"])
+			if (t.is_string() && t.get<std::string>() == "DeathLink")
+			{
+				isDeath = true;
+				break;
+			}
+		if (!isDeath)
+			return;
+		if (!packet.contains("data") || !packet["data"].is_object())
+			return;
+		const auto &d = packet["data"];
+		std::string source = (d.contains("source") && d["source"].is_string())
+		                         ? d["source"].get<std::string>()
+		                         : "";
+		// Ignore the server's echo of our own death (no ping-pong with ourselves).
+		if (!source.empty() && g_ap && source == g_ap->get_slot())
+			return;
+		std::string cause = (d.contains("cause") && d["cause"].is_string())
+		                        ? d["cause"].get<std::string>()
+		                        : "";
+		g_dl_incoming = true; // depth-1: overwrite any death not yet drained
+		g_dl_incoming_cause = cause;
+		std::fprintf(stderr, "[AP NET] deathlink received from '%s': %s\n",
+		             source.c_str(), cause.c_str());
 	});
 	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
 	g_last_error.clear();
@@ -430,6 +474,52 @@ extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_b
 	return 1;
 }
 
+// ── DeathLink (issue #6) ──
+
+// Add the "DeathLink" connection tag on top of the base "AP" tag so the server
+// relays deaths to us. ConnectUpdate replaces the whole tag set, so both tags are
+// re-declared; items_handling is left unchanged (send_items_handling = false).
+// Called by the game side after slot_data is parsed, only when death_link != off.
+extern "C" void ap_net_deathlink_enable(void)
+{
+	if (!g_ap)
+		return;
+	g_ap->ConnectUpdate(false, 0, true, {"AP", "DeathLink"});
+	std::fprintf(stderr, "[AP NET] DeathLink tag enabled\n");
+}
+
+// Send a death as a tagged Bounce. cause is a short verb phrase (e.g. "was blown
+// up by a bomb"); the slot name is prepended so other clients render the standard
+// "<player> <cause>" line. No-op unless slot-connected.
+extern "C" void ap_net_deathlink_send(const char *cause)
+{
+	if (!g_ap || !g_connected)
+		return;
+	std::string slot = g_ap->get_slot();
+	nlohmann::json data;
+	data["time"] = (double)std::time(nullptr);
+	data["source"] = slot;
+	if (cause && cause[0])
+		data["cause"] = slot + " " + cause;
+	else
+		data["cause"] = slot + " wiped out";
+	g_ap->Bounce(data, {}, {}, {"DeathLink"});
+	std::fprintf(stderr, "[AP NET] deathlink sent: %s\n",
+	             data["cause"].get<std::string>().c_str());
+}
+
+// Drain the depth-1 inbound death latch. Returns 1 (and copies the cause string,
+// truncated to fit) if a death was pending, then clears it; 0 otherwise.
+extern "C" int ap_net_deathlink_take(char *cause_buf, int cause_n)
+{
+	if (!g_dl_incoming)
+		return 0;
+	g_dl_incoming = false;
+	if (cause_buf && cause_n > 0)
+		std::snprintf(cause_buf, (size_t)cause_n, "%s", g_dl_incoming_cause.c_str());
+	return 1;
+}
+
 extern "C" void ap_net_shutdown(void)
 {
 	if (g_ap)
@@ -442,6 +532,7 @@ extern "C" void ap_net_shutdown(void)
 	g_items_player.clear();
 	g_items_index.clear();
 	g_scouts.clear();
+	g_dl_incoming = false; // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();

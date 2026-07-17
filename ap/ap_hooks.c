@@ -1853,6 +1853,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// pull below so a reconnect / server switch re-reads the authoritative value.
 		ap_net_difficulty_subscribe(ctr_cfg.ai_difficulty_default);
 		ap_diff_pulled = 0;
+
+		// DeathLink (issue #6): reset per-session send/receive state and, when this
+		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
+		// the slot-connected handler that ran inside ap_net_poll() above, so
+		// ctr_cfg.death_link is authoritative here.
+		AP_DeathLinkConnectReset();
 	}
 
 	// One-shot connect pull: as soon as a difficulty value is known from the server
@@ -2482,6 +2488,11 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_TrapTick(gGT);
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
+
+	// DeathLink (issue #6): send-edge detection, inbound-death queue firing, and
+	// the no-loop guard. Runs every frame / all modes (it gates its own adventure-
+	// only sending and race-window firing internally).
+	AP_DeathLinkTick(gGT);
 
 	// State snapshot (~every 60 frames) -- runs in ALL game modes so it's available
 	// at the title screen right after connect. AP-side fields (options, received

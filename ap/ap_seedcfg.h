@@ -111,6 +111,14 @@ typedef struct
 	// fetched. An out-of-ladder value is applied as-is.
 	int ai_difficulty_default;
 
+	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
+	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
+	// feature stays dark on old seeds (the one_lap_cups additive-key precedent).
+	//   death_link:        0 off / 1 mask_reset / 2 any_hit
+	//   deathlink_amnesty: send one death per N eligible deaths (>= 1; 1 = every)
+	int death_link;
+	int deathlink_amnesty;
+
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)
 	// Gem cups (CupRed..CupPurple = LevelID 100..104) live OUTSIDE the 28-wide
