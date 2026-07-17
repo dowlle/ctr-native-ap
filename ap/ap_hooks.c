@@ -1895,6 +1895,35 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 		AP_AppendLog("[AP ITEM] applied received items to AdvProgress\n");
 }
 
+// Issue #17 (crash on area change): pre-latch the once-per-save "you opened a
+// new area" greeting hint so it can never arm during AP play. On a fresh save
+// the FIRST door to ever open triggers hint 7 (ADV_MASK_HINT_ID_NEW_WORLD_GREETING)
+// right at the doorway (game/232/AH_Door.c:154-174). If the player drives through
+// while Aku is mid-hint, LOAD_Hub_Main tears down the level memory the hint
+// machinery is still holding and the game crashes (see the mask-hint vs hub-swap
+// analysis). The door only requests the hint when its reward bit is clear
+// (AH_Door.c:163-174, CHECK_ADV_BIT == 0), so setting ADV_REWARD_HINT_NEW_WORLD_GREETING
+// (bit 125) here makes chkRewards read 1 and the request never fires.
+//
+// This is the standalone randomizer's mitigation (icebound777 wrote "has seen
+// this hint" to the save on creation, which eliminated the crash there). Scope
+// is deliberately surgical: bit 125 sits OUTSIDE the AP-managed pools (6..110)
+// so AP_ApplyItems never touches it, and only this one greeting hint is affected.
+// Every other mask hint (podium, warp-pad, garage, etc.) keeps its own bit and
+// its normal behaviour. AP players lose one flavour hint; vanilla builds are
+// unchanged (this runs only inside CTR_AP, adventure mode). Idempotent + self-
+// healing across loads, same as AP_ApplyItems. A deeper engine guard on the hub
+// swap (candidate 2, LOAD_Hub_Main on AkuAkuHintState) is a later upstreamable
+// root fix and is intentionally NOT built here.
+static void AP_PrelatchGreetingHint(struct AdvProgress *adv)
+{
+	if (CHECK_ADV_BIT(adv->rewards, ADV_REWARD_HINT_NEW_WORLD_GREETING) == 0)
+	{
+		UNLOCK_ADV_BIT(adv->rewards, ADV_REWARD_HINT_NEW_WORLD_GREETING);
+		AP_AppendLog("[AP HINT] pre-latched new-area greeting hint (issue #17)\n");
+	}
+}
+
 // Read ws uri / slot / password from "ap-config.txt" in the working dir if it
 // exists. Lines: "uri=...", "slot=...", "password=...". Missing file or keys
 // keep the defaults.
@@ -2717,6 +2746,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 		return;
 
 	AP_ApplyItems(&sdata->advProgress); // grant received items into game state
+	AP_PrelatchGreetingHint(&sdata->advProgress); // issue #17: kill the new-area greeting hint before it can collide with a hub swap
 	AP_EvaluateGoal(); // item-based goals (all-bosses / all-gem-cups / 101%) fire here
 	AP_PollDebug(&sdata->advProgress);
 }
