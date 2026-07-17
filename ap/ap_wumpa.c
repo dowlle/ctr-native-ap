@@ -56,14 +56,21 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		return;
 
 	// Race window: mid-race, countdown finished, not paused/menu/cutscene/EOR.
-	// Same test AP_TrapTick uses (anchors: gameMode flags namespace_Main.h;
-	// trafficLightsTimer < 1 = lights out, PlayLevel.c:338). At this point VehBirth
-	// has already zeroed the kart's fruit, so a grant here sticks and shows on the
-	// HUD -- both "start of race" (banked in the hub) and "live mid-race" receipts
-	// land through this one gate.
+	// The flag/timer test alone is NOT enough: the adventure hub passes it a few
+	// seconds after spawn (MainGameStart sets START_OF_RACE + trafficLightsTimer on
+	// hub entry, both clear while free-roaming), so a hub-banked grant would land on
+	// the hub kart and be wiped by the next VehBirth -- observed in the 2026-07-17
+	// batch smoke ("granted +5" on levelID 27, 0 fruit at the next spawn).
+	// LOAD_IsOpen_RacingOrBattle() (overlay-1 test, false in the hub; the stock
+	// mask-grab subsystem's own on-a-track predicate, VehStuckProc.c:451) closes it,
+	// same as the DeathLink receive window. Deliberately NOT the trap lapWindow
+	// (lapIndex >= 1) -- that would delay a hub-banked grant to lap 2. At this point
+	// VehBirth has already zeroed the kart's fruit, so a grant here sticks and shows
+	// on the HUD -- both "start of race" (banked in the hub) and "live mid-race"
+	// receipts land through this one gate.
 	raceActive = (gGT->gameMode1 &
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1;
+	             gGT->trafficLightsTimer < 1 && LOAD_IsOpen_RacingOrBattle();
 	if (!raceActive)
 		return;
 
