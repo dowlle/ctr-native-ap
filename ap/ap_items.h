@@ -22,9 +22,15 @@
 // missed check for that one track. To minimise this during play/testing we fill
 // each pool from the HIGH end (the bit choice is arbitrary for generic items),
 // so early item grants land on late-game tracks while a tester typically wins
-// early tracks first. The clean fix (redirect the gate counters to a separate
-// received-item counter so item application never touches location bits) is a
-// larger change, deferred.
+// early tracks first. GEMS are the exception: they are per-colour items with
+// per-colour requirements, so AP_ApplyItems mirrors each colour's own bit from
+// ap_recv_count instead of pooled high-end-first (issue #35 -- the pooled fill
+// set the Purple bit on the FIRST received gem of any colour). The grant-guard
+// half of the collision is closed separately: every check-sending grant site
+// now gates on the AP location CHECKED-state, not adv->rewards (222.c trophy,
+// 223.c relic, ThTick, UI_CupStandings gem cup). The clean fix (redirect the
+// gate counters to a separate received-item counter so item application never
+// touches location bits) is a larger change, deferred -- on the roadmap.
 
 #define AP_ITEM_BASE 35010000
 

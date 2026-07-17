@@ -592,7 +592,21 @@ void UI_CupStandings_InputAndDraw(void)
 						int bitIndex = ADV_REWARD_FIRST_GEM + i;
 						u32 *rewardsSet = sdata->advProgress.rewards;
 
+#ifdef CTR_AP
+						// AP: the vanilla "already won?" gate reads adv->rewards, but
+						// AP_ApplyItems mirrors RECEIVED gem items into that same set,
+						// so a cup whose gem bit is item-backed would read "already
+						// won" and skip the location check + boss characters + gem
+						// podium model (issue #35: any received gem used to set the
+						// Purple bit first, eating the Purple cup's check). Gate on
+						// the AP location CHECKED-state instead (same fix class as
+						// the trophy gate in 222.c and ThTick:601 f9fbfa7a0).
+						// AP_NotifyAdvReward dedupes, so a re-win is safe.
+						if (ctr_cfg_active() ? !AP_LocationCheckedByBit(bitIndex)
+						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
+#else
 						if (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0)
+#endif
 						{
 							UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
@@ -687,7 +701,30 @@ void UI_CupStandings_InputAndDraw(void)
 				}
 
 				// Level ID for Gemstone Valley (podiums)
+#ifdef CTR_AP
+				// AP (issue #34): under destination shuffle a gem cup can be
+				// entered from any hub, and Gemstone Valley may still be locked --
+				// the hardcoded GV load then strands the player outside the map
+				// (the same hazard the quit paths fixed with AP_CupReturnHub).
+				// Hold the podium in the recorded entry hub instead:
+				// LOAD_TenStages keys the podium sequence on podiumRewardID, not
+				// the level, so the ceremony machinery is hub-generic (boss keys
+				// already podium in every hub). Arcade/VS cups and vanilla keep
+				// the retail GV podium (AP_CupReturnHub returns -1 when AP is
+				// inactive or no entry hub was recorded).
+				{
+					int levID = 0x19;
+					if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
+					{
+						int apCupReturn = AP_CupReturnHub();
+						if (apCupReturn >= 0)
+							levID = apCupReturn;
+					}
+					MainRaceTrack_RequestLoad(levID);
+				}
+#else
 				MainRaceTrack_RequestLoad(0x19);
+#endif
 			}
 		}
 	}
