@@ -111,6 +111,13 @@ typedef struct
 	// fetched. An out-of-ladder value is applied as-is.
 	int ai_difficulty_default;
 
+	// QoL: one-lap cup races (slot_data ctr_options.one_lap_cups). Pure pace
+	// setting -- when 1, CUP races (gameMode2 & CUP_ANY_KIND) run a single lap
+	// via the vanilla one-lap mechanism; single/boss/trial races are untouched.
+	// ADDITIVE, no schema bump: json_int defaults the absent key to 0 (vanilla),
+	// so it never affects reachability and needs no version gate.
+	int one_lap_cups;       // 0 vanilla lap counts / 1 cups are one lap
+
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)
 	// Gem cups (CupRed..CupPurple = LevelID 100..104) live OUTSIDE the 28-wide

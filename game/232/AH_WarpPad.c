@@ -719,6 +719,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// track load below overwrites it via LOAD_LevelFile).
 		if (ctr_cfg_active())
 			AP_CupEnterFromHub(gGT->levelID);
+
+		// AP QoL one-lap cups (#7), adventure half: MM_MenuProc_SingleCup (the
+		// arcade choke this option first landed on) never runs for a pad-entered
+		// cup, so a slot with one_lap_cups on still raced 3-lap gem cups in
+		// adventure (batch smoke 2026-07-17). Set it here, the adventure cup
+		// entry point; nothing between the four legs re-derives numLaps, so it
+		// holds for the whole cup. The hub-return restore lives in AP_OnFrame's
+		// levelID-transition watcher (ap_hooks.c), so trophy/boss/relic races
+		// entered after a cup are back on vanilla lap counts.
+		if (ctr_cfg_active() && ctr_cfg.one_lap_cups)
+			gGT->numLaps = 1;
 #endif
 
 		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];

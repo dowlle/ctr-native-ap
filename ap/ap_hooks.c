@@ -2591,6 +2591,27 @@ void AP_OnFrame(struct GameTracker *gGT)
 			         (int)sdata->Loading.stage);
 			AP_AppendLog(m);
 			ap_prev_level = (int)gGT->levelID;
+
+			// AP QoL one-lap cups (#7): restore the vanilla lap count when a
+			// level transition lands in a HUB (GEM_STONE_VALLEY..CITADEL_CITY,
+			// namespace_Level.h). The adventure cup entry (AH_WarpPad.c) sets
+			// numLaps = 1 for the whole cup and nothing in adventure re-derives
+			// it, so without this a post-cup trophy/boss/relic race would
+			// inherit the 1-lap override. Keyed on the DESTINATION levelID, NOT
+			// on !LOAD_IsOpen_RacingOrBattle(): the overlay is still closed for
+			// a few frames while a cup LEG loads, so the on-a-track test read
+			// "off-track" mid-load and stomped the override before the leg
+			// started (batch smoke 2026-07-17, round 2: the cleared line fired
+			// on the levelID 26 -> 6 leg transition and the leg raced 3 laps).
+			// A transition's destination levelID cannot lie. Gated on the
+			// option so the write never fires on seeds without it.
+			if (ctr_cfg_active() && ctr_cfg.one_lap_cups &&
+			    (int)gGT->levelID >= GEM_STONE_VALLEY &&
+			    (int)gGT->levelID <= CITADEL_CITY && gGT->numLaps != 3)
+			{
+				gGT->numLaps = 3;
+				AP_AppendLog("[AP CUP] one-lap override cleared (hub return)\n");
+			}
 		}
 	}
 
