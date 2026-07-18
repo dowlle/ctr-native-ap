@@ -37,7 +37,9 @@ companion `ctr.apworld` carry the same version and are tested together.
 
 - [ ] Bundle folder named `ctr-archipelago-vX.Y.Z/` containing:
       `ctr_native_ap.exe`, `ctr.apworld`, `extract_assets.py`, `SETUP.md`,
-      `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`.
+      `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+      `support-bundle.bat`, `support-bundle.ps1` (Linux tarball instead ships
+      `support-bundle.sh`).
 - [ ] Zip it as `ctr-archipelago-vX.Y.Z-windows-x86.zip`. The folder INSIDE
       the zip must carry the release name too (players see it when unzipping).
 - [ ] Write the `.sha256` file for the zip; quote the hash in the release

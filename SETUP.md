@@ -120,6 +120,22 @@ on launch it from your Steam library. Steam Input then treats it like any
 other Steam game. One note: the in-game Connection screen is typed with a
 real keyboard, so set up your room before handing off to the couch.
 
+## Reporting a crash or a stuck seed
+
+If the game crashes, or a seed seems impossible to progress, run
+`support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux/Steam Deck) from
+the game folder. It creates one small archive (`ctr-ap-support-<date>.zip` /
+`.tar.gz`) containing the game log, the AP log, the crash report if there was
+one, and your connection settings with the password removed -- no game data is
+included. Attach that archive to your report on Discord or GitHub together
+with a line about what you were doing; if the seed itself seems broken,
+include your YAML and the spoiler log too.
+
+The client also checks every seed on connect: if a solo seed cannot be
+completed, a red "SEED NOT COMPLETABLE" warning appears on the hub and the AP
+log records which locations are unreachable. Mention that verdict in your
+report if you see it.
+
 ## Troubleshooting
 
 - "Missing or incomplete assets" at startup: the `assets` folder is not next to
