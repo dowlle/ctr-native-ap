@@ -349,6 +349,19 @@ extern "C" int ap_net_self_slot(void)
 	return g_ap ? g_ap->get_player_number() : -1;
 }
 
+extern "C" int ap_net_player_count(void)
+{
+	return g_ap ? (int)g_ap->get_players().size() : 0;
+}
+
+extern "C" int ap_net_scouts_ready(void)
+{
+	// The connect-time LocationScouts always covers locations that exist in
+	// every CTR seed (the 16 trophy races), so a non-empty scout cache means
+	// the LocationInfo reply has been processed.
+	return g_scouts.empty() ? 0 : 1;
+}
+
 extern "C" int ap_net_status(void)
 {
 	return g_status;

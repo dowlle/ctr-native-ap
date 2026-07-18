@@ -116,6 +116,17 @@ int AP_OxideFinalOpen(void);
 // ctr_cfg.schema_newer). Self-gates; a no-op on matching/older seeds.
 void AP_DrawSchemaWarning(void);
 
+// ── Seed completability verification (ap_verify.c) ──
+// Typed requirement comparator against an arbitrary counts array (15 AP_IDX_*
+// slots). The single source of truth for requirement semantics: AP_BossReqMet
+// delegates here with the live tallies; the verify sweep passes simulated ones.
+int AP_ReqMetCounts(const ctr_req *r, const int *counts);
+
+// Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
+// AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
+void AP_VerifyOnFrame(void);
+void AP_DrawVerifyWarning(void);
+
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
