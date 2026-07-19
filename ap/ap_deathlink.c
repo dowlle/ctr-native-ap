@@ -30,6 +30,16 @@ static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour on
 // would risk exactly the outgoing-send-on-received-death loop this must prevent.
 static int g_dl_swallow_edge = 0;
 
+// Send cooldown (frames). Observed live (2026-07-19 3-player play session): a
+// RECEIVED death's forced mask grab bounces the kart state machine through
+// KS_MASK_GRABBED several times, producing 4-5 rising edges while the one-shot
+// swallow guard covers only the first. The extra edges all sent, and with a
+// partner sitting at 91% damage that closed a death ping-pong loop. Damping: no
+// two sends within 2s, and nothing sends for 5s after a received death lands.
+#define AP_DL_COOLDOWN_AFTER_SEND 60
+#define AP_DL_COOLDOWN_AFTER_RECV 150
+static int g_dl_send_cooldown = 0;
+
 static int AP_DeathLinkAmnesty(void)
 {
 	int a = ctr_cfg_active() ? ctr_cfg.deathlink_amnesty : 1;
@@ -74,6 +84,14 @@ static void AP_DeathLinkFireLocal(struct GameTracker *gGT, const char *cause)
 	if (!ap_net_is_connected())
 		return;
 
+	if (g_dl_send_cooldown > 0)
+	{
+		snprintf(msg, sizeof msg, "[AP DEATH] held by cooldown (%df left): %s\n",
+		         g_dl_send_cooldown, cause);
+		AP_LogLine(msg);
+		return;
+	}
+
 	// Amnesty: send one death per N eligible deaths (N == 1 => every death).
 	if (++g_dl_amnesty_count < AP_DeathLinkAmnesty())
 	{
@@ -85,6 +103,7 @@ static void AP_DeathLinkFireLocal(struct GameTracker *gGT, const char *cause)
 	g_dl_amnesty_count = 0;
 
 	ap_net_deathlink_send(cause);
+	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_SEND;
 	snprintf(msg, sizeof msg, "[AP DEATH] sent: %s\n", cause);
 	AP_LogLine(msg);
 }
@@ -136,6 +155,11 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 
 	if (gGT == 0)
 		return;
+
+	// Tick the cooldown down unconditionally, before the feature-off return, so a
+	// mid-cooldown toggle-off cannot freeze a stale cooldown across the gap.
+	if (g_dl_send_cooldown > 0)
+		g_dl_send_cooldown--;
 
 	if (!ctr_cfg_active() || ctr_cfg.death_link == CTR_DL_OFF)
 	{
@@ -243,6 +267,7 @@ int AP_DeathLinkForceReset(struct Driver *d)
 
 	g_dl_pending_recv = 0;
 	g_dl_swallow_edge = 1; // no-loop guard: the resulting mask-grab edge must not send
+	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // forced grab multi-edges: mute them all
 	snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
 	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
 	AP_LogLine(msg);
