@@ -34,6 +34,10 @@ int  ap_net_drain_items(long long *out, int max);
 // counts rebuild from the server's authoritative ReceivedItems list.
 int  ap_net_take_recv_reset(void);
 
+// Seed / slot name of the connected room, empty/0 until slot-connected.
+int  ap_net_seed_name(char *buf, int n);
+int  ap_net_slot_name(char *buf, int n);
+
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
 // location_code: the item placed there, the player who receives it, and AP

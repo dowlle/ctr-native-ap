@@ -481,6 +481,44 @@ extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_b
 // relays deaths to us. ConnectUpdate replaces the whole tag set, so both tags are
 // re-declared; items_handling is left unchanged (send_items_handling = false).
 // Called by the game side after slot_data is parsed, only when death_link != off.
+// Seed + slot name of the connected room. Used as the one-shot-effect dedup
+// key (traps/wumpa replay suppression, ap_hooks.c). Empty/0 until connected.
+extern "C" int ap_net_seed_name(char *buf, int n)
+{
+	if (!buf || n <= 0)
+		return 0;
+	buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	try
+	{
+		std::snprintf(buf, (size_t)n, "%s", g_ap->get_seed().c_str());
+	}
+	catch (...)
+	{
+		return 0;
+	}
+	return buf[0] != '\0';
+}
+
+extern "C" int ap_net_slot_name(char *buf, int n)
+{
+	if (!buf || n <= 0)
+		return 0;
+	buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	try
+	{
+		std::snprintf(buf, (size_t)n, "%s", g_ap->get_slot().c_str());
+	}
+	catch (...)
+	{
+		return 0;
+	}
+	return buf[0] != '\0';
+}
+
 extern "C" void ap_net_deathlink_enable(void)
 {
 	if (!g_ap)
