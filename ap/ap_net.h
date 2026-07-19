@@ -74,6 +74,14 @@ int  ap_net_location_checked(long long location_code);
 // Connected slot number, or -1 before connect.
 int  ap_net_self_slot(void);
 
+// Number of slots in the connected room (0 before connect). 1 = solo seed --
+// the seed-verify sweep's verdict is definitive; >1 = multiworld (advisory).
+int  ap_net_player_count(void);
+
+// 1 once the connect-time LocationScouts reply has been processed (the scout
+// cache is populated). The seed-verify sweep waits on this.
+int  ap_net_scouts_ready(void);
+
 // Coarse connection status for the in-game connection manager. Tracked by the
 // socket / slot handlers in ap_net.cpp; ap_hooks.c's AP_Net_StatusLine maps these
 // to a one-line string for the menu.

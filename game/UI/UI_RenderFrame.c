@@ -910,6 +910,9 @@ void UI_RenderFrame_AdvHub(void)
 	// Newer-schema warning (issue #8): top-left RED banner, self-gates on
 	// ctr_cfg.schema_newer. No-op unless the seed is from a newer apworld.
 	AP_DrawSchemaWarning();
+	// Seed-verify warning: RED banner when a SOLO seed's goal is provably
+	// unreachable from the current state (ap_verify.c). Self-gates.
+	AP_DrawVerifyWarning();
 #endif
 }
 

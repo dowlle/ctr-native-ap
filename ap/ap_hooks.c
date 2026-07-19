@@ -1809,8 +1809,14 @@ int AP_CupReturnHub(void)
 // The genuine any-of aggregates the apworld emits under requirement_specificity =
 // any_of are the dedicated type 6/7/8 codes, which sum the whole type via
 // AP_GateCount*Sum().
-int AP_BossReqMet(const ctr_req *r)
+// Typed requirement comparator against an ARBITRARY counts array (indexed by
+// the 15 AP_IDX_* item types). AP_BossReqMet delegates here with the live
+// received tallies; the seed-verify sweep (ap_verify.c) calls it with its
+// simulated counts, so the live gates and the verifier share one comparator
+// and cannot drift apart.
+int AP_ReqMetCounts(const ctr_req *r, const int *counts)
 {
+	int i, sum;
 	if (r == 0)
 		return 1;
 	switch (r->type)
@@ -1818,26 +1824,39 @@ int AP_BossReqMet(const ctr_req *r)
 	case 0:
 		return 1; // no requirement -> always met (native vanilla rule applies elsewhere)
 	case 1: // trophies
-		return AP_GateCount(AP_IDX_TROPHY) >= r->count;
+		return counts[AP_IDX_TROPHY] >= r->count;
 	case 2: // keys
-		return AP_GateCount(AP_IDX_KEY) >= r->count;
+		return counts[AP_IDX_KEY] >= r->count;
 	case 3: // tokens (colour 0..4 = one colour; -1 = any token, summed)
-		return ((r->colour >= 0) ? AP_GateCountTokenColour(r->colour)
-		                         : AP_GateCountTokenSum()) >= r->count;
-	case 4: // relic, tier by colour (0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire)
-		return AP_GateCountRelicTier(r->colour) >= r->count;
-	case 5: // gems (colour 0..4 = one colour; -1 = any gem, summed)
-		return ((r->colour >= 0) ? AP_GateCountGemColour(r->colour)
-		                         : AP_GateCountGemSum()) >= r->count;
+		if (r->colour >= 0 && r->colour <= 4)
+			return counts[AP_IDX_TOKEN_RED + r->colour] >= r->count;
+		/* fall through to the AnyToken sum */
 	case 6: // AnyToken: any N tokens summed across all 5 colours
-		return AP_GateCountTokenSum() >= r->count;
-	case 7: // AnyRelic: any N relics summed across Sapphire+Gold+Platinum
-		return AP_GateCountRelicSum() >= r->count;
+		for (sum = 0, i = 0; i < 5; i++)
+			sum += counts[AP_IDX_TOKEN_RED + i];
+		return sum >= r->count;
+	case 4: // relic, tier by colour (0=Sapphire, 1=Gold, 2=Platinum; legacy -1=Sapphire)
+		i = (r->colour >= 0 && r->colour <= 2) ? r->colour : 0;
+		return counts[AP_IDX_SAPPHIRE + i] >= r->count;
+	case 5: // gems (colour 0..4 = one colour; -1 = any gem, summed)
+		if (r->colour >= 0 && r->colour <= 4)
+			return counts[AP_IDX_GEM_RED + r->colour] >= r->count;
+		/* fall through to the AnyGem sum */
 	case 8: // AnyGem: any N gems summed across all 5 colours
-		return AP_GateCountGemSum() >= r->count;
+		for (sum = 0, i = 0; i < 5; i++)
+			sum += counts[AP_IDX_GEM_RED + i];
+		return sum >= r->count;
+	case 7: // AnyRelic: any N relics summed across Sapphire+Gold+Platinum
+		return counts[AP_IDX_SAPPHIRE] + counts[AP_IDX_GOLD] +
+		       counts[AP_IDX_PLATINUM] >= r->count;
 	default:
 		return 1;
 	}
+}
+
+int AP_BossReqMet(const ctr_req *r)
+{
+	return AP_ReqMetCounts(r, ap_recv_count);
 }
 
 // Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
@@ -2961,6 +2980,11 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// levelID (hub/track) transition. The log flushes per line, so if a crash
 	// happens during a transition (e.g. an Autopelago item lands mid hub-load) the
 	// tail shows exactly where. Logging only -- no gameplay effect.
+	// Seed completability verification: recomputes only when the AP state
+	// generation moved (connect / received item / location check), so this is a
+	// cheap comparison on every other frame. See ap_verify.c.
+	AP_VerifyOnFrame();
+
 	{
 		static int ap_booted = 0;
 		static int ap_prev_level = -999;
