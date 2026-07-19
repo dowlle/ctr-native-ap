@@ -1485,6 +1485,79 @@ static int ap_item_count[AP_CAT_COUNT] = {0};
 // bits, so generic item fill never collides with the game's own location grants.
 static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
 
+// ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
+// The server resends the FULL ReceivedItems list on every (re)connect. Gate
+// COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
+// (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
+// Stef's Deck 3P replayed trap). Dedup: persist the highest server item index
+// whose batch was effect-applied, per seed+slot, in ctr-ap-fxseen.txt next to
+// the exe (tab-separated: seed<TAB>slot<TAB>max). Replayed items at or below
+// the stored index still count for gates but skip their effect. Unknown index
+// (-1) applies -- never swallow a live trap.
+#define AP_FXSEEN_FILE "ctr-ap-fxseen.txt"
+static long long ap_fx_seen_max = -1; // highest server index whose effect ran
+static char ap_fx_seed[128] = "";
+static char ap_fx_slot[64] = "";
+
+static void AP_FxSeenLoad(void)
+{
+	FILE *f;
+	char line[320];
+
+	ap_fx_seen_max = -1;
+	if (!ap_net_seed_name(ap_fx_seed, sizeof ap_fx_seed))
+		ap_fx_seed[0] = '\0';
+	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
+		ap_fx_slot[0] = '\0';
+	f = fopen(AP_FXSEEN_FILE, "r");
+	if (f == NULL)
+		return;
+	while (fgets(line, sizeof line, f))
+	{
+		char seed[128], slot[64];
+		long long max;
+		if (sscanf(line, "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
+		    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+		{
+			ap_fx_seen_max = max;
+			break;
+		}
+	}
+	fclose(f);
+}
+
+static void AP_FxSeenStore(void)
+{
+	// Read-modify-write the tiny file, preserving other seed/slot rows.
+	FILE *f;
+	char rows[8][320];
+	int nrows = 0, i;
+
+	if (ap_fx_seed[0] == '\0')
+		return;
+	f = fopen(AP_FXSEEN_FILE, "r");
+	if (f != NULL)
+	{
+		while (nrows < 8 && fgets(rows[nrows], sizeof rows[0], f))
+		{
+			char seed[128], slot[64];
+			long long max;
+			if (sscanf(rows[nrows], "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
+			    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+				continue; // our old row: superseded below
+			nrows++;
+		}
+		fclose(f);
+	}
+	f = fopen(AP_FXSEEN_FILE, "w");
+	if (f == NULL)
+		return;
+	for (i = 0; i < nrows; i++)
+		fputs(rows[i], f);
+	fprintf(f, "%s\t%s\t%lld\n", ap_fx_seed, ap_fx_slot, ap_fx_seen_max);
+	fclose(f);
+}
+
 int AP_GateCount(int itemType)
 {
 	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
@@ -2081,6 +2154,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	if (ap_net_take_recv_reset())
 	{
 		int k;
+		AP_FxSeenLoad(); // replay dedup: restore highest effect-applied index
 		for (k = 0; k < AP_ITEM_INDEX_COUNT; k++)
 			ap_recv_count[k] = 0;
 		for (k = 0; k < AP_CAT_COUNT; k++)
@@ -2162,7 +2236,16 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx >= AP_TRAP_ITEM_FIRST_INDEX &&
 		         idx < AP_TRAP_ITEM_FIRST_INDEX + AP_TRAP_COUNT)
 		{
-			AP_TrapReceive((int)(idx - AP_TRAP_ITEM_FIRST_INDEX));
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_TrapReceive((int)(idx - AP_TRAP_ITEM_FIRST_INDEX));
+			else
+			{
+				char skipmsg[96];
+				snprintf(skipmsg, sizeof skipmsg,
+				         "[AP TRAP] replay dedup: trap at index %lld skipped\n", srvIdx);
+				AP_LogLine(skipmsg);
+			}
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -2170,7 +2253,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// ap_recv_count. Cosmetic/QoL only; still logged as filler/unmapped below.
 		else if (AP_ItemCategory(items[i]) == AP_CAT_WUMPA)
 		{
-			AP_WumpaReceive(1);
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_WumpaReceive(1);
 		}
 
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
@@ -2190,6 +2275,26 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		AP_AppendLog(msg);
 	}
+	// Replay dedup high-water: after the batch, remember the highest server index
+	// drained (effects for anything at or below it must never run again) and
+	// persist it when it moved. Uses the OVERALL max, not just effect items: any
+	// future live item always has a higher index than everything already seen.
+	if (n > 0)
+	{
+		long long batchMax = ap_fx_seen_max;
+		for (i = 0; i < n; i++)
+		{
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx > batchMax)
+				batchMax = srvIdx;
+		}
+		if (batchMax > ap_fx_seen_max)
+		{
+			ap_fx_seen_max = batchMax;
+			AP_FxSeenStore();
+		}
+	}
+
 	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
 }
 
