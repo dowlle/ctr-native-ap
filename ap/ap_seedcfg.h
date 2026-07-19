@@ -39,10 +39,11 @@ extern "C" {
 // warns LOUDLY (stderr log + a persistent on-screen banner, ctr_cfg.schema_newer)
 // instead of silently guessing. Bump this in lockstep with the apworld's
 // fill_slot_data schema_version whenever the native side is taught the new shape.
+//   6 = 5-rung podium rework (held 1st/3rd/5th live + finish podium/any); #9
 //   5 = oxide_final_unlock relic-goal mode + oxide_final_count (issue #23)
 //   4 = type-4 relic-tier colour + goal-rework; 3 = podium + stage-2 padgate;
 //   2 = two-stage contract; 1 = flat pre-two-stage.
-#define CTR_CFG_SCHEMA_KNOWN 5
+#define CTR_CFG_SCHEMA_KNOWN 6
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -54,12 +55,24 @@ extern "C" {
 #define OXIDE_FINAL_MODE_ANY      3 // any single tier reaches N
 #define OXIDE_FINAL_MODE_TOTAL    4 // Sapphire + Gold + Platinum summed reach N
 
-// Podium placement checks (feat/podium-checks apworld side). The nested rung
-// ladder rides ONLY the 16 standard adventure trophy races, keyed by physical
-// race-pad LevelID 0..15 (== gGT->levelID at a trophy race == the [AP RACE]
-// track field the listener logs). Boss/token/relic/crystal have no genuine
-// multi-position finish and carry no podium rungs.
+// Podium placement checks (feat/podium-checks apworld side). The rung ladder
+// rides ONLY the 16 standard adventure trophy races, keyed by physical race-pad
+// LevelID 0..15 (== gGT->levelID at a trophy race == the [AP RACE] track field
+// the listener logs). Boss/token/relic/crystal have no genuine multi-position
+// finish and carry no podium rungs. Cup legs are real track loads on these same
+// LevelIDs and classify as trophy races, so they earn the destination track's
+// rungs too (the held listener + finish fan-out run during cup legs).
 #define CTR_CFG_PODIUM_TRACK_COUNT 16
+
+// Number of podium rungs per track (schema >= 6). The nested ladder, best-first:
+//   0 held_1st       -- live: held 1st place  (grants held_3rd + held_5th)
+//   1 held_3rd       -- live: held 3rd or better (grants held_5th)
+//   2 held_5th       -- live: held 5th or better (ships default-OFF; pool lever)
+//   3 finish_podium  -- final: finished on the podium (top 3) (grants finish_any)
+//   4 finish_any     -- final: finished at all
+// The retired "Finish 1st" rung (schema <= 5) is gone from creation -- the trophy
+// check already covers a 1st-place finish -- so it carries no slot here.
+#define CTR_CFG_PODIUM_RUNG_COUNT 5
 
 // One resolved requirement. type per the §0 shared table:
 //   0 none/use native vanilla fixed rule
@@ -82,15 +95,21 @@ typedef struct
 } ctr_req;
 
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
-// the game has no bit for "finished 2nd", so these fire event-only from the
-// placement listener, never through AP_NotifyAdvReward's bit lookup). A rung
-// absent from the seed (any-position off, or the whole feature off) is stored
-// as -1 and MUST be skipped by the native fan-out.
+// the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
+// from the placement listener, never through AP_NotifyAdvReward's bit lookup). A
+// rung absent from the seed (held_5th default-off, a rung the seed did not place,
+// or the whole feature off) is stored as -1 and MUST be skipped by the fan-out.
+// Order matches CTR_CFG_PODIUM_RUNG_COUNT above; the held_* rungs are LIVE
+// (mid-race, from the position listener), the finish_* rungs are FINAL (captured
+// at the finish edge). schema <= 5 seeds carry the legacy {first, podium, any}
+// shape: podium -> finish_podium, any -> finish_any, first retired, held_* absent.
 typedef struct
 {
-	long first;  // "Finish 1st"          location code, or -1 = absent
-	long podium; // "Finish 2nd or 3rd"   location code, or -1 = absent
-	long any;    // "Finish (Any Position)" location code, or -1 = absent
+	long held_1st;      // live "held 1st place"        location code, or -1 = absent
+	long held_3rd;      // live "held 3rd or better"    location code, or -1 = absent
+	long held_5th;      // live "held 5th or better"    location code, or -1 = absent
+	long finish_podium; // final "finished on podium"   location code, or -1 = absent
+	long finish_any;    // final "finished (any place)" location code, or -1 = absent
 } ctr_podium_rungs;
 
 // Two-stage warp-pad unlock (open-rando). stage1 opens the trophy race; stage2

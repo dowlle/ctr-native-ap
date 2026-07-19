@@ -148,12 +148,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		{
 			for (int t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
 			{
-				if (ctr_cfg.podium[t].first >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].first);
-				if (ctr_cfg.podium[t].podium >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].podium);
-				if (ctr_cfg.podium[t].any >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].any);
+				const ctr_podium_rungs &pr = ctr_cfg.podium[t];
+				const long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {
+				    pr.held_1st, pr.held_3rd, pr.held_5th,
+				    pr.finish_podium, pr.finish_any};
+				for (int k = 0; k < CTR_CFG_PODIUM_RUNG_COUNT; k++)
+					if (rung[k] >= 0)
+						locs.push_back((int64_t)rung[k]);
 			}
 		}
 		g_ap->LocationScouts(locs, 0);

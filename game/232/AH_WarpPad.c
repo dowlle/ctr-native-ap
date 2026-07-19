@@ -1116,10 +1116,13 @@ WarpPad_AnimateOpen:
 	//   - n == 0             : all three slots hidden (everything checked).
 	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
 	// loop below, so a hidden slot neither renders nor mis-scales.
-	// 8 = 5 race tiers + up to 3 podium rung pseudo-bits (glow-only enumerator;
-	// rungs joined the glow cycle 2026-07-15 so a pad advertises the items on its
-	// position checks too, not just the tier rewards).
-	int apUncBits[8];
+	// Glow-only enumerator buffer. Worst case is a CUP destination: 1 gem + the
+	// podium rungs of all four leg tracks (4 * 5 rungs = 20) = 21; a race
+	// destination is at most 5 tiers + 5 own rungs = 10. Size 24 covers both with
+	// slack. Rungs joined the glow cycle 2026-07-15 so a pad advertises the items on
+	// its position checks too, not just the tier rewards; cup-pad leg aggregation
+	// landed with the #9 5-rung rework (a cup pad's checks live on its legs).
+	int apUncBits[24];
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
 	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
