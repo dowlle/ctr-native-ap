@@ -173,9 +173,10 @@ static void ap_vf_recompute(void)
 	if (ctr_cfg.podium_enabled)
 		for (t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
 		{
-			long rung[3] = { ctr_cfg.podium[t].first, ctr_cfg.podium[t].podium,
-			                 ctr_cfg.podium[t].any };
-			for (i = 0; i < 3; i++)
+			long rung[5] = { ctr_cfg.podium[t].held_1st, ctr_cfg.podium[t].held_3rd,
+			                 ctr_cfg.podium[t].held_5th, ctr_cfg.podium[t].finish_podium,
+			                 ctr_cfg.podium[t].finish_any };
+			for (i = 0; i < 5; i++)
 				if (rung[i] >= 0 && n < AP_VF_MAX_LOCS)
 				{
 					locs[n].code = rung[i];
