@@ -12,7 +12,27 @@
 #include <string.h>
 
 #ifdef _WIN32
+// This file is part of the unity build, so whatever windows.h drags in lands in
+// the SAME translation unit as the PSX prelude and the decompiled game. Without
+// these trims, winuser.h's ACCEL collides with the game's ACCEL enum and the
+// windef.h RECT family collides with the PSX RECT16, which then cascades errors
+// through zGlobal_DATA.c and native_gpu.c. Only the process/debug APIs are
+// needed here, so drop GDI and USER entirely.
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#define NOUSER
+#define NOMINMAX
+// psx_prelude.h ends with `#ifndef RECT / #define RECT RECT16`. RECT is a
+// typedef rather than a macro in the Windows headers, so that guard passes and
+// the alias is already active by the time we get here. windows.h's own
+// `typedef struct tagRECT {...} RECT;` would then expand to `... RECT16;` and
+// redefine RECT16 as struct tagRECT, which breaks every PSX RECT16 user
+// downstream. Suspend the alias across the include and restore it after, so the
+// Windows headers and the rest of the unity build each see the RECT they expect.
+#pragma push_macro("RECT")
+#undef RECT
 #include <windows.h>
+#pragma pop_macro("RECT")
 #else
 #include <signal.h>
 #include <unistd.h>
@@ -140,7 +160,7 @@ static LONG WINAPI ap_crash_seh(EXCEPTION_POINTERS *ep)
 		// Module base + raw frame addresses: offsets against the shipped exe
 		// are symbolized offline against the same build's map/objects.
 		void *frames[32];
-		USHORT n = CaptureStackBacktrace(0, 32, frames, NULL);
+		USHORT n = CaptureStackBackTrace(0, 32, frames, NULL);
 		len += snprintf(buf + len, sizeof buf - len, "module-base: 0x%llx\nstack:",
 		                (unsigned long long)(uintptr_t)GetModuleHandleA(NULL));
 		for (USHORT i = 0; i < n && len < (int)sizeof buf - 24; i++)
