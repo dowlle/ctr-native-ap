@@ -680,7 +680,9 @@ static int AP_PadStage1Met(int physLevelID)
 // are equal; the callers pass both so it is correct under destination shuffle.
 int AP_PadState(int physLevelID, int destLevelID)
 {
-	int uncBits[5];
+	// Sized for the widest case: a cup pad aggregates its four legs' rungs
+	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.
+	int uncBits[24];
 	int uncN;
 
 	if (!ctr_cfg_active())
@@ -688,8 +690,20 @@ int AP_PadState(int physLevelID, int destLevelID)
 	if (!AP_DestKnown(destLevelID))
 		return 0;
 
-	uncN = AP_PadUncollectedBits(destLevelID,
-	                             uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
+	// Rung-AWARE count (issue #61). The Done state below hard-locks the pad, so it
+	// must not trigger while ANY location behind this pad is still checkable. The
+	// podium rungs are exactly such locations, and for a cup they live on the four
+	// LEG tracks rather than on the cup itself. Counting only the plain tier bits
+	// meant a Gem Cup went Done the moment its gem was checked, hard-locking the pad
+	// while its legs' held/finish rungs were still uncollected -- and because a cup
+	// leg is not independently raceable from the hub, those checks became
+	// unreachable for the rest of the seed. The same held for a race pad whose tier
+	// bits were all checked while a rung remained.
+	// AP_PadUncollectedGlowBits already enumerates rungs and already aggregates the
+	// four cup legs, and it degrades to the plain count when podium checks are off,
+	// so seeds without the feature are byte-identical.
+	uncN = AP_PadUncollectedGlowBits(destLevelID,
+	                                 uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
 
 	// Done is terminal: every destination location checked. A done pad has
 	// nothing left by definition, so hard-locking it never gates progression.
