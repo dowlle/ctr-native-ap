@@ -68,6 +68,7 @@ void Vector_SpecLightSpin3D(struct Instance *inst, const SVec3 *rot, const SVec3
 	SVec3 light = *lightDir;
 	struct GameTracker *gGT = sdata->gGT;
 	struct InstDrawPerPlayer *idpp = INST_GETIDPP(inst);
+	u8 *cameraLightMatrixCursor = (u8 *)gGT + OFFSETOF(struct GameTracker, pushBuffer) + OFFSETOF(struct PushBuffer, matrix_Camera);
 
 	ConvertRotToMatrix_Transpose(&rotMatrix, rot);
 
@@ -80,7 +81,9 @@ void Vector_SpecLightSpin3D(struct Instance *inst, const SVec3 *rot, const SVec3
 		SVec3 viewLocal;
 		SVec3 halfVector;
 
-		Vector_LightMatrixMul(&pb->matrix_Camera, &light, &lightCamera);
+		// NOTE(aalhendi): Retail advances this matrix cursor by two
+		// PushBuffer strides while camera positions advance by one.
+		Vector_LightMatrixMul((MATRIX *)cameraLightMatrixCursor, &light, &lightCamera);
 		Vector_LightMatrixMul(&rotMatrix, &lightCamera, &lightLocal);
 
 		inst->unk53 = (char)lightLocal.x;
@@ -98,6 +101,7 @@ void Vector_SpecLightSpin3D(struct Instance *inst, const SVec3 *rot, const SVec3
 		MATH_VectorNormalize(&halfVector);
 
 		idpp[i].halfVector = halfVector;
+		cameraLightMatrixCursor += sizeof(struct PushBuffer) * 2;
 	}
 }
 
