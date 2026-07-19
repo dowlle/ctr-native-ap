@@ -265,8 +265,10 @@ void SetDrawMove(DR_MOVE *p, RECT16 *rect, int x, int y)
 
 uint32_t DrawSyncCallback(void (*func)(void))
 {
+	uint32_t old = (uint32_t)(uintptr_t)drawsync_callback;
+
 	drawsync_callback = func;
-	return 0;
+	return old;
 }
 
 void DrawOTag(void *p)
