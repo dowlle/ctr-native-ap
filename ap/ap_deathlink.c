@@ -9,6 +9,8 @@
 #include "ap_net.h"     // ap_net_deathlink_enable / _send / _take, ap_net_is_connected
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
 
+#include "platform/native_config.h" // g_config.deathLink (the OPTIONS menu row)
+
 // ============================================================================
 // AP DEATHLINK -- game-side semantics. See ap_deathlink.h for the design
 // contract (send tiers, receive = forced mask reset, out-of-race depth-1 queue,
@@ -30,15 +32,58 @@ static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour on
 // would risk exactly the outgoing-send-on-received-death loop this must prevent.
 static int g_dl_swallow_edge = 0;
 
-// Send cooldown (frames). Observed live (2026-07-19 3-player play session): a
+// Send cooldown (frames). Observed live (2026-07-19 Deck 3-player session): a
 // RECEIVED death's forced mask grab bounces the kart state machine through
 // KS_MASK_GRABBED several times, producing 4-5 rising edges while the one-shot
-// swallow guard covers only the first. The extra edges all sent, and with a
-// partner sitting at 91% damage that closed a death ping-pong loop. Damping: no
-// two sends within 2s, and nothing sends for 5s after a received death lands.
+// swallow guard covers only the first -- the extra edges all sent, and with a
+// 91%-damage StS partner that closed a death ping-pong loop. Damping: no two
+// sends within 2s, and nothing sends for 5s after a received death lands.
 #define AP_DL_COOLDOWN_AFTER_SEND 60
 #define AP_DL_COOLDOWN_AFTER_RECV 150
 static int g_dl_send_cooldown = 0;
+
+// ── Runtime preference (OPTIONS -> Archipelago -> DeathLink menu row) ──
+// The preference lives in g_config.deathLink (-1 follow seed / 0 force off /
+// 1 force on), persisted to config.ini, so the menu row and a
+// hand-edited ini are all the same switch. The tag follows the preference via
+// AP_DeathLinkSyncTag below -- re-checked every frame, so menu edits apply
+// live without a menu-exit hook.
+static int g_dl_tag_on = 0; // tag state last declared to the server
+
+// Effective mode: the config preference wins over the seed option. The forced
+// values ARE the tier enum (1 = mask_reset, 2 = any_hit), so both in-game
+// DeathLink layers stay selectable when forcing on.
+static int AP_DeathLinkEffMode(void)
+{
+	if (g_config.deathLink == 0)
+		return CTR_DL_OFF;
+	if (g_config.deathLink == CTR_DL_MASK_RESET || g_config.deathLink == CTR_DL_ANY_HIT)
+		return g_config.deathLink;
+	return ctr_cfg_active() ? ctr_cfg.death_link : CTR_DL_OFF; // -1: follow the seed
+}
+
+int AP_DeathLinkActive(void)
+{
+	return AP_DeathLinkEffMode() != CTR_DL_OFF;
+}
+
+// Declare/withdraw the DeathLink tag whenever the effective state and the
+// server-declared tag disagree. Catches every edit path alike: the menu
+// row, a hand-edited config.ini, and reconnects.
+static void AP_DeathLinkSyncTag(void)
+{
+	int want = AP_DeathLinkActive() ? 1 : 0;
+	if (!ap_net_is_connected() || want == g_dl_tag_on)
+		return;
+	if (want)
+		ap_net_deathlink_enable();
+	else
+		ap_net_deathlink_disable();
+	g_dl_tag_on = want;
+	AP_LogLine(want ? "[AP DEATH] DeathLink ON (tag declared)\n"
+	                : "[AP DEATH] DeathLink OFF (tag withdrawn)\n");
+}
+
 
 static int AP_DeathLinkAmnesty(void)
 {
@@ -77,7 +122,7 @@ static void AP_DeathLinkFireLocal(struct GameTracker *gGT, const char *cause)
 {
 	char msg[160];
 
-	if (!ctr_cfg_active() || ctr_cfg.death_link == CTR_DL_OFF)
+	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
 		return;
 	if (gGT == 0 || (gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		return; // sends only from adventure mode
@@ -114,7 +159,7 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 {
 	struct GameTracker *gGT;
 
-	if (!ctr_cfg_active() || ctr_cfg.death_link != CTR_DL_ANY_HIT)
+	if (!ctr_cfg_active() || AP_DeathLinkEffMode() != CTR_DL_ANY_HIT)
 		return;
 	if (damageType < 1 || damageType > 4)
 		return;
@@ -140,11 +185,8 @@ void AP_DeathLinkConnectReset(void)
 	// Opt in to the DeathLink tag for this seed. Safe to call unconditionally on a
 	// fresh connect: ctr_cfg was parsed in the slot-connected handler just before
 	// AP_NetTick's reset block runs.
-	if (ctr_cfg_active() && ctr_cfg.death_link != CTR_DL_OFF)
-	{
-		ap_net_deathlink_enable();
-		AP_LogLine("[AP DEATH] DeathLink enabled for this seed\n");
-	}
+	g_dl_tag_on = 0; // fresh connection: no tag declared yet
+	AP_DeathLinkSyncTag();
 }
 
 void AP_DeathLinkTick(struct GameTracker *gGT)
@@ -156,12 +198,14 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	if (gGT == 0)
 		return;
 
-	// Tick the cooldown down unconditionally, before the feature-off return, so a
-	// mid-cooldown toggle-off cannot freeze a stale cooldown across the gap.
+	// Live preference sync: menu-row and ini edits all land here. Must run
+	// even when the effective mode is OFF so a toggle-off withdraws the tag.
+	AP_DeathLinkSyncTag();
+
 	if (g_dl_send_cooldown > 0)
 		g_dl_send_cooldown--;
 
-	if (!ctr_cfg_active() || ctr_cfg.death_link == CTR_DL_OFF)
+	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
 	{
 		// Feature off: keep edge/queue state clean so a later opt-in starts fresh.
 		g_dl_prev_maskgrab = 0;
@@ -226,7 +270,7 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	int raceActive;
 	char msg[192];
 
-	if (!ctr_cfg_active() || ctr_cfg.death_link == CTR_DL_OFF)
+	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
 		return 0;
 	if (!g_dl_pending_recv || d == 0)
 		return 0;

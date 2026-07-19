@@ -126,6 +126,53 @@ static void AiDiff_Step(int *value, int dir)
 	*value = s_aiDiffValues[i];
 }
 
+#ifdef CTR_AP
+// DeathLink ladder (CFG_ENUM): follow the seed option / force off / force a
+// tier. 1/2 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT tier values themselves
+// (ap_deathlink.h), so both in-game layers are directly selectable. Edits apply
+// live: ap_deathlink.c re-reads the preference every frame and syncs the
+// connection tag itself, so this row needs no menu-exit hook.
+static const int   s_dlinkValues[] = {-1, 0, 1, 2};
+static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT"};
+#define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
+
+static int Dlink_Index(int value)
+{
+	for (int i = 0; i < DLINK_COUNT; i++)
+		if (s_dlinkValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
+#endif
+
+// CFG_ENUM dispatch: each enum entry owns a ladder; picked by the field the
+// entry edits (pointer identity, no string compare).
+static const char *Enum_Label(const ConfigEntry *e)
+{
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.deathLink)
+		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+#endif
+	return AiDiff_Label(*(int *)e->valuePtr);
+}
+
+static void Enum_Step(const ConfigEntry *e, int dir)
+{
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.deathLink)
+	{
+		int i = Dlink_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > DLINK_COUNT - 1)
+			i = DLINK_COUNT - 1;
+		*(int *)e->valuePtr = s_dlinkValues[i];
+		return;
+	}
+#endif
+	AiDiff_Step((int *)e->valuePtr, dir);
+}
+
 static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf)
 {
 	if (e->type == CFG_BOOL)
@@ -135,7 +182,7 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	}
 	else if (e->type == CFG_ENUM)
 	{
-		DecalFont_DrawLineOT((char *)AiDiff_Label(*(int *)e->valuePtr),
+		DecalFont_DrawLineOT((char *)Enum_Label(e),
 			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else
@@ -373,12 +420,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
 				{
-					AiDiff_Step((int *)e->valuePtr, -1);
+					Enum_Step(e, -1);
 					OtherFX_Play(0, 1);
 				}
 				if ((pad->buttonsTapped & BTN_RIGHT) != 0)
 				{
-					AiDiff_Step((int *)e->valuePtr, +1);
+					Enum_Step(e, +1);
 					OtherFX_Play(0, 1);
 				}
 			}

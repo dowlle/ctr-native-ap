@@ -21,6 +21,12 @@ typedef struct
 	                            // engine difficulty VALUE (0=vanilla, 0x50, 0xa0, 0xf0,
 	                            // 0x140, 0x280). Local value; synced to the per-slot
 	                            // data-storage override on connect/edit. Comfort only.
+	int  deathLink;             // Archipelago: DeathLink preference. -1 = follow the
+	                            // seed option (default), 0 = force off, else a forced
+	                            // CTR_DL_* tier (1 = mask_reset: deaths only, 2 =
+	                            // any_hit: every landed hit). The menu row and the F9
+	                            // toggle both edit this; ap_deathlink.c reads it
+	                            // every frame.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
