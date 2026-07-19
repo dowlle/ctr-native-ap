@@ -11,6 +11,7 @@
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
+#include "ap_crash.h"     // crash reporter (support-bundle feature)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -50,11 +51,37 @@ int Platform_InputRawKeyDown(int scancode);
 // so toggling the overlay never disturbs gameplay input.
 #define AP_MAP_OVERLAY_SCANCODE 16
 
-#define AP_READ_LOG "D:\\pythonProjects\\ctr-archipelago\\reference" \
-                    "\\ctr-native\\build-ap\\ap-read.log"
+// AP debug log, next to the exe/config (the working directory) so every user
+// HAS one and the support-bundle scripts can collect it. The previous path was
+// a hardcoded dev-machine location: fopen failed silently on any other Windows
+// box (no AP log at all for exactly the users we need logs from) and on Linux
+// it became a literal "D:\..." FILENAME in the working directory.
+#define AP_READ_LOG "ctr-ap.log"
+#define AP_READ_LOG_OLD "ctr-ap.log.old"
+#define AP_READ_LOG_MAX (4 * 1024 * 1024) // rotate at 4 MB, keep one generation
 
 static void AP_AppendLog(const char *msg)
 {
+	// One-time size check: an append-forever log grows unbounded across weeks
+	// of sessions. Rotate the previous log to .old at the first write of a run
+	// (crash-safe: rename happens before any new content, so a crash tail is
+	// never lost mid-run).
+	static int checked = 0;
+	if (!checked)
+	{
+		checked = 1;
+		FILE *probe = fopen(AP_READ_LOG, "rb");
+		if (probe)
+		{
+			long sz = (fseek(probe, 0, SEEK_END) == 0) ? ftell(probe) : 0;
+			fclose(probe);
+			if (sz > AP_READ_LOG_MAX)
+			{
+				remove(AP_READ_LOG_OLD);
+				rename(AP_READ_LOG, AP_READ_LOG_OLD);
+			}
+		}
+	}
 	fputs(msg, stderr);
 	FILE *f = fopen(AP_READ_LOG, "a");
 	if (f)
@@ -2980,6 +3007,9 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// levelID (hub/track) transition. The log flushes per line, so if a crash
 	// happens during a transition (e.g. an Autopelago item lands mid hub-load) the
 	// tail shows exactly where. Logging only -- no gameplay effect.
+	// Crash-reporter context: cache the plain ints the signal/SEH handlers are
+	// allowed to read (walking game structures in a dying process is not).
+	AP_CrashNoteFrame((int)gGT->levelID, ap_net_is_connected());
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.
@@ -2991,7 +3021,10 @@ void AP_OnFrame(struct GameTracker *gGT)
 		if (!ap_booted)
 		{
 			ap_booted = 1;
-			AP_AppendLog("[AP BOOT] ===== client run start =====\n");
+			AP_CrashInstall();
+			AP_AppendLog("[AP BOOT] ===== client run start ===== (" CTR_AP_VERSION ")\n");
+			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
+			             ".sh on Linux/Deck) next to the game and share the archive\n");
 		}
 		if ((int)gGT->levelID != ap_prev_level)
 		{
