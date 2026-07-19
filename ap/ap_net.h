@@ -122,6 +122,9 @@ int  ap_net_difficulty_known(int *out);
 // when the seed's death_link option is on. No-op if the client is not up.
 void ap_net_deathlink_enable(void);
 
+// Remove the DeathLink tag again (runtime toggle counterpart of _enable).
+void ap_net_deathlink_disable(void);
+
 // Bounce a death to the multiworld. cause is a short verb phrase; the client
 // prepends the slot name for the standard "<player> <cause>" line. No-op unless
 // slot-connected.

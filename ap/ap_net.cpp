@@ -540,6 +540,16 @@ extern "C" void ap_net_deathlink_enable(void)
 	std::fprintf(stderr, "[AP NET] DeathLink tag enabled\n");
 }
 
+// Remove the "DeathLink" tag again (runtime toggle). ConnectUpdate replaces the
+// whole tag set, so the base "AP" tag is re-declared alone.
+extern "C" void ap_net_deathlink_disable(void)
+{
+	if (!g_ap)
+		return;
+	g_ap->ConnectUpdate(false, 0, true, {"AP"});
+	std::fprintf(stderr, "[AP NET] DeathLink tag disabled\n");
+}
+
 // Send a death as a tagged Bounce. cause is a short verb phrase (e.g. "was blown
 // up by a bomb"); the slot name is prepended so other clients render the standard
 // "<player> <cause>" line. No-op unless slot-connected.

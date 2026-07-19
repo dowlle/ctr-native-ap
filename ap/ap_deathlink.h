@@ -51,6 +51,9 @@ enum
 // AP_NetTick's fresh-connect block, after slot_data has been parsed.
 void AP_DeathLinkConnectReset(void);
 
+// 1 when DeathLink is effectively on (seed option + runtime override combined).
+int AP_DeathLinkActive(void);
+
 // Per-frame driver, called from AP_OnFrame (all modes). Drains the network inbound
 // latch into the depth-1 queue and runs the mask-grab send edge (consuming the
 // no-loop guard). The queued death is APPLIED separately by AP_DeathLinkForceReset
