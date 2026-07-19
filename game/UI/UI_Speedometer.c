@@ -53,7 +53,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[2].pos.x = posX + (FP_INT(sin[1] * needleWidth) + needleCenterX);
 	p->v[2].pos.y = posY + (yLen + needleCenterY);
 
@@ -62,7 +62,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[1].pos.x = posX - (FP_INT(sin[0] * needleWidth) - needleCenterX);
 	p->v[1].pos.y = posY - (yLen - needleCenterY);
 
@@ -71,7 +71,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[0].pos.x = posX + (FP_INT(sin[0] * needleHeight) + needleCenterX);
 	p->v[0].pos.y = posY + (yLen + needleCenterY);
 
@@ -91,7 +91,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[2].pos.x = posX - (FP_INT(sin[1] * needleWidth) - needleCenterX);
 	p->v[2].pos.y = posY - (yLen - needleCenterY);
 
@@ -100,7 +100,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[1].pos.x = posX - (FP_INT(sin[0] * needleWidth) - needleCenterX);
 	p->v[1].pos.y = posY - (yLen - needleCenterY);
 
@@ -109,7 +109,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[0].pos.x = posX + (FP_INT(sin[0] * needleHeight) + needleCenterX);
 	p->v[0].pos.y = posY + (yLen + needleCenterY);
 

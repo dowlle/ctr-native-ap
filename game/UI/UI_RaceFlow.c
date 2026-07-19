@@ -426,7 +426,7 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		SelectProfile_ToggleMode(0x31);
 
 		// Change active Menu to GhostSelection
-		sdata->ptrActiveMenu = &data.menuGhostSelection;
+		sdata->ptrDesiredMenu = &data.menuGhostSelection;
 		break;
 	}
 

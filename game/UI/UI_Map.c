@@ -35,7 +35,7 @@ void UI_Map_DrawMap(struct Icon *mapTop, struct Icon *mapBottom, s16 posX, s16 p
 		transparency = 0;
 	}
 
-	if (gGT->level1->ptrSpawnType1 != 0)
+	if ((gGT->level1->ptrSpawnType1 != NULL) && (gGT->level1->ptrSpawnType1->count != 0))
 	{
 		void **pointers = ST1_GETPOINTERS(gGT->level1->ptrSpawnType1);
 		iVar9 = (int)pointers[ST1_MAP];

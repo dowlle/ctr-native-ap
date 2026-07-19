@@ -235,8 +235,8 @@ struct QuadBlock
 
 	// 0x38
 	u8 terrain_type;
-	char weather_intensity;
-	char weather_vanishRate;
+	u8 weather_intensity;
+	u8 weather_vanishRate;
 	s8 mulNormVecY; // -127 for AntiGrav Sewer
 
 	// 0x3C
