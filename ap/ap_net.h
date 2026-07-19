@@ -34,6 +34,10 @@ int  ap_net_drain_items(long long *out, int max);
 // counts rebuild from the server's authoritative ReceivedItems list.
 int  ap_net_take_recv_reset(void);
 
+// Seed / slot name of the connected room, empty/0 until slot-connected.
+int  ap_net_seed_name(char *buf, int n);
+int  ap_net_slot_name(char *buf, int n);
+
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
 // location_code: the item placed there, the player who receives it, and AP
@@ -69,6 +73,14 @@ int  ap_net_location_checked(long long location_code);
 
 // Connected slot number, or -1 before connect.
 int  ap_net_self_slot(void);
+
+// Number of slots in the connected room (0 before connect). 1 = solo seed --
+// the seed-verify sweep's verdict is definitive; >1 = multiworld (advisory).
+int  ap_net_player_count(void);
+
+// 1 once the connect-time LocationScouts reply has been processed (the scout
+// cache is populated). The seed-verify sweep waits on this.
+int  ap_net_scouts_ready(void);
 
 // Coarse connection status for the in-game connection manager. Tracked by the
 // socket / slot handlers in ap_net.cpp; ap_hooks.c's AP_Net_StatusLine maps these

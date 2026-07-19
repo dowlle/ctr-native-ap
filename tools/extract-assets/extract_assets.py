@@ -71,6 +71,17 @@ class ExtractError(Exception):
 USER = 2048
 PVD_LBA = 16
 
+# Mode 2 Form 2 payload size. Form 2 sectors (XA audio, STR video) carry 2324
+# bytes of user data instead of 2048, and every CTR tool -- including the engine
+# -- expects them as raw 2336-byte sectors: subheader(8) + user(2324) + EDC(4),
+# i.e. everything after the 16-byte sync+header. Extracting them at 2048 leaves
+# the file with the right sector COUNT but truncated contents, so XA audio and
+# STR video decode to silence or garbage while every size check still passes.
+FORM2_USER = 2336
+FORM2_OFFSET = 16
+# Submode bit 5 in the Mode 2 subheader marks a Form 2 sector.
+SUBMODE_FORM2 = 0x20
+
 # (raw sector size, offset of user data within the sector), most specific first.
 SECTOR_LAYOUTS = [
     (2352, 24),   # MODE2/2352 form 1 (the usual CTR dump)
@@ -112,6 +123,38 @@ class Disc:
         for s in range(nsec):
             out += self.read_sector(lba + s)
         return bytes(out[:size])
+
+    def is_form2(self, lba):
+        """True when this sector is Mode 2 Form 2 (XA audio / STR video).
+
+        Read from the sector's own subheader rather than guessing from the file
+        extension, so a Form 1 file is never converted by mistake. Only raw
+        2352-byte dumps carry a subheader at all; a plain 2048-byte ISO has
+        already discarded the Form 2 payload, so it cannot be recovered here.
+        """
+        if self.raw != 2352:
+            return False
+        self.file.seek(lba * self.raw + FORM2_OFFSET)
+        sub = self.file.read(8)
+        return len(sub) == 8 and bool(sub[2] & SUBMODE_FORM2)
+
+    def read_extent_form2(self, lba, nsec):
+        """Read nsec Form 2 sectors as raw 2336-byte units.
+
+        The ISO9660 directory record sizes a Form 2 file in 2048-byte units, so
+        the SECTOR COUNT comes from that record while each sector is emitted at
+        its true 2336 bytes. This is why a truncated extraction still produced a
+        file with a plausible size: the sector count was right and only the
+        per-sector payload was short.
+        """
+        out = bytearray()
+        for s in range(nsec):
+            self.file.seek((lba + s) * self.raw + FORM2_OFFSET)
+            chunk = self.file.read(FORM2_USER)
+            if len(chunk) != FORM2_USER:
+                break
+            out += chunk
+        return bytes(out)
 
     def close(self):
         try:
@@ -361,6 +404,22 @@ def resolve_bin(image_path, workdir):
 def write_file(disc, out_dir, rel_path, lba, size):
     dest = os.path.join(out_dir, rel_path.replace("/", os.sep))
     os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+    # Mode 2 Form 2 extents (XA audio, STR video) must be written as raw 2336-byte
+    # sectors. Reading them at 2048 like a Form 1 file keeps the sector count but
+    # truncates every sector, so the engine loads them without error and then plays
+    # silence or garbage. Detected from the sector subheader, not the extension.
+    if disc.is_form2(lba):
+        nsec = (size + USER - 1) // USER
+        data = disc.read_extent_form2(lba, nsec)
+        expected = nsec * FORM2_USER
+        if len(data) != expected:
+            raise ExtractError(
+                "Short read while extracting %s (disc image may be truncated)." % rel_path)
+        with open(dest, "wb") as f:
+            f.write(data)
+        return len(data)
+
     data = disc.read_extent(lba, size)
     if len(data) != size:
         raise ExtractError("Short read while extracting %s (disc image may be truncated)." % rel_path)

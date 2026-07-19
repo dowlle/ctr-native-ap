@@ -148,12 +148,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		{
 			for (int t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
 			{
-				if (ctr_cfg.podium[t].first >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].first);
-				if (ctr_cfg.podium[t].podium >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].podium);
-				if (ctr_cfg.podium[t].any >= 0)
-					locs.push_back((int64_t)ctr_cfg.podium[t].any);
+				const ctr_podium_rungs &pr = ctr_cfg.podium[t];
+				const long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {
+				    pr.held_1st, pr.held_3rd, pr.held_5th,
+				    pr.finish_podium, pr.finish_any};
+				for (int k = 0; k < CTR_CFG_PODIUM_RUNG_COUNT; k++)
+					if (rung[k] >= 0)
+						locs.push_back((int64_t)rung[k]);
 			}
 		}
 		g_ap->LocationScouts(locs, 0);
@@ -349,6 +350,19 @@ extern "C" int ap_net_self_slot(void)
 	return g_ap ? g_ap->get_player_number() : -1;
 }
 
+extern "C" int ap_net_player_count(void)
+{
+	return g_ap ? (int)g_ap->get_players().size() : 0;
+}
+
+extern "C" int ap_net_scouts_ready(void)
+{
+	// The connect-time LocationScouts always covers locations that exist in
+	// every CTR seed (the 16 trophy races), so a non-empty scout cache means
+	// the LocationInfo reply has been processed.
+	return g_scouts.empty() ? 0 : 1;
+}
+
 extern "C" int ap_net_status(void)
 {
 	return g_status;
@@ -480,6 +494,44 @@ extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_b
 // relays deaths to us. ConnectUpdate replaces the whole tag set, so both tags are
 // re-declared; items_handling is left unchanged (send_items_handling = false).
 // Called by the game side after slot_data is parsed, only when death_link != off.
+// Seed + slot name of the connected room. Used as the one-shot-effect dedup
+// key (traps/wumpa replay suppression, ap_hooks.c). Empty/0 until connected.
+extern "C" int ap_net_seed_name(char *buf, int n)
+{
+	if (!buf || n <= 0)
+		return 0;
+	buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	try
+	{
+		std::snprintf(buf, (size_t)n, "%s", g_ap->get_seed().c_str());
+	}
+	catch (...)
+	{
+		return 0;
+	}
+	return buf[0] != '\0';
+}
+
+extern "C" int ap_net_slot_name(char *buf, int n)
+{
+	if (!buf || n <= 0)
+		return 0;
+	buf[0] = '\0';
+	if (!g_ap)
+		return 0;
+	try
+	{
+		std::snprintf(buf, (size_t)n, "%s", g_ap->get_slot().c_str());
+	}
+	catch (...)
+	{
+		return 0;
+	}
+	return buf[0] != '\0';
+}
+
 extern "C" void ap_net_deathlink_enable(void)
 {
 	if (!g_ap)

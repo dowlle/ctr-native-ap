@@ -116,6 +116,17 @@ int AP_OxideFinalOpen(void);
 // ctr_cfg.schema_newer). Self-gates; a no-op on matching/older seeds.
 void AP_DrawSchemaWarning(void);
 
+// ── Seed completability verification (ap_verify.c) ──
+// Typed requirement comparator against an arbitrary counts array (15 AP_IDX_*
+// slots). The single source of truth for requirement semantics: AP_BossReqMet
+// delegates here with the live tallies; the verify sweep passes simulated ones.
+int AP_ReqMetCounts(const ctr_req *r, const int *counts);
+
+// Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
+// AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
+void AP_VerifyOnFrame(void);
+void AP_DrawVerifyWarning(void);
+
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
@@ -285,17 +296,18 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // ── Podium rungs in the reward glow ──
 // Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),
 // so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
-// AP_PODIUM_PSEUDO_BASE + track*3 + rung (0 first / 1 podium / 2 any), safely
-// above the 192-bit AdvProgress space. AP_LookupLocationCode translates them to
-// the per-seed rung location codes, so every downstream bit-keyed helper
-// (reward model, tint, checked-state, scouts -- rungs are already scouted for
-// the ceremony) works on rungs unchanged.
+// AP_PODIUM_PSEUDO_BASE + track*CTR_CFG_PODIUM_RUNG_COUNT + rung (schema >= 6:
+// 0 held_1st / 1 held_3rd / 2 held_5th / 3 finish_podium / 4 finish_any), safely
+// above the 192-bit AdvProgress space (max = 0x100 + 15*5 + 4 = 335). AP_Lookup
+// LocationCode translates them to the per-seed rung location codes, so every
+// downstream bit-keyed helper (reward model, tint, checked-state, scouts -- rungs
+// are already scouted for the ceremony) works on rungs unchanged.
 //
-// AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS, for a race
-// destination with podium checks enabled, the still-unchecked rung pseudo-bits
-// appended after the tier bits. GLOW-ONLY on purpose: the tier-2 menu and
-// AP_PadState keep consuming the tier-only enumerators, so adding rungs to the
-// glow can never distort mode selection or the Done state.
+// AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS the still-unchecked rung
+// pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
+// the rungs of all four leg tracks (advCupTrackIDs). GLOW-ONLY on purpose: the
+// tier-2 menu and AP_PadState keep consuming the tier-only enumerators, so adding
+// rungs to the glow can never distort mode selection or the Done state.
 #define AP_PODIUM_PSEUDO_BASE 0x100
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
