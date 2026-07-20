@@ -444,6 +444,25 @@ int NativeText_Result(void)
 	return s_textResult;
 }
 
+// Resolve an active session from outside the keyboard path, with the same result
+// codes Enter / Escape produce (1 commit, 2 cancel). Used by the connection
+// manager's gamepad escape hatch so a controller-only device can finish an edit;
+// the session still ends the normal way, via NativeText_End on the menu side.
+// A session that is already resolved is left alone, so a stray pad press cannot
+// turn a keyboard commit into a cancel or the reverse.
+void NativeText_Resolve(int result)
+{
+	if ((s_textActive == 0) || (s_textResult != 0))
+	{
+		return;
+	}
+	if ((result != 1) && (result != 2))
+	{
+		return;
+	}
+	s_textResult = result;
+}
+
 internal void Platform_HandleTextInput(const char *utf8)
 {
 	if ((s_textActive == 0) || (s_textResult != 0) || (s_textBuf == NULL) || (utf8 == NULL))

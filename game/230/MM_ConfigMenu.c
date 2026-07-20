@@ -1,5 +1,10 @@
 #include <common.h>
 #include <stdio.h>
+#ifdef CTR_AP
+// Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
+// connection manager's controller commit / cancel (not in common.h's platform set).
+#include <platform/native_input.h>
+#endif
 
 // In-game options menu. Ported from thecodingbob/ctr-native (branch
 // modularize-improve-config): a two-level RectMenu proc -- a section selector,
@@ -205,10 +210,28 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 // see platform/native_platform.c). While it is active the platform layer owns the
 // keyboard and this proc suppresses its own navigation; Enter commits + saves,
 // Escape restores the pre-edit value.
+//
+// Controller escape hatch: Enter and Escape are unreachable on a pad-only device
+// such as a Steam Deck, which used to leave an edit with no way out. X or START
+// now commits and TRIANGLE cancels, doing exactly what the two keys do. X is the
+// button that opened the row, START mirrors Enter (the keyboard maps Enter onto
+// START), and TRIANGLE is this menu's own back button, so nothing new has to be
+// learned. Row-to-row navigation stays suppressed for the whole edit -- only the
+// two exits become reachable.
+//
+// The pad buffer cannot be used for this. The host keyboard is mapped onto a pad
+// slot and polled live, so while typing, "z" reads as TRIANGLE, "c" as CROSS,
+// space as SELECT and Enter as START -- a slot name would cancel itself halfway
+// through. Platform_InputRawGamepadButtons() reads physical pads only and is
+// therefore blind to typing; edges are taken here against the previous frame.
 
 static int  s_connEditing = 0;   // 1 while a text row is being edited
 static int  s_connEditRow = 0;   // which string row (0..2) is being edited
 static char s_connBackup[128];   // pre-edit value, restored on cancel
+static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edges
+
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE)
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -240,6 +263,24 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	const int firstEntry = s_sectionToEntry[s_currentSection];
 	const int numStrings = s_sectionCount[s_currentSection]; // uri / slot / password
 	const int numRows = numStrings + 1;                      // + Connect action row
+
+	// Pad-driven commit / cancel, folded into the same result codes the keyboard
+	// produces so the resolve block below stays the single exit path. Tracked
+	// every frame, editing or not, so the press that opened the row is already
+	// held when the first editing frame runs and cannot re-trigger as a fresh tap.
+	{
+		const int padNow = Platform_InputRawGamepadButtons();
+		const int padTapped = padNow & ~s_connPadPrev;
+		s_connPadPrev = padNow;
+
+		if (s_connEditing && NativeText_Result() == 0)
+		{
+			if ((padTapped & CONN_PAD_CANCEL) != 0)
+				NativeText_Resolve(2);
+			else if ((padTapped & CONN_PAD_COMMIT) != 0)
+				NativeText_Resolve(1);
+		}
+	}
 
 	// Resolve a finished edit first. The platform layer keeps the session active
 	// (NativeText_Active == 1) until we call NativeText_End here, so the commit /
@@ -341,6 +382,18 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		int y = startY + (numStrings + 2) * rowSpacing;
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		DecalFont_DrawLineOT((char *)AP_Net_StatusLine(), valueX, y, FONT_SMALL, WHITE, ot);
+	}
+
+	// Pad hint while a row is being edited, so the controller exits are
+	// discoverable. Drawn as a footer rather than on the row itself: the text
+	// value is left-justified and grows rightward as it is typed, so there is no
+	// space left on the row to put it. '*' and '^' are the font's own PSX face
+	// button glyphs (see game/DecalFont.c).
+	if (s_connEditing)
+	{
+		int y = startY + (numStrings + 4) * rowSpacing;
+		DecalFont_DrawLineOT("* OR START: SAVE   ^: CANCEL",
+			0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
 }
 #endif // CTR_AP

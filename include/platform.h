@@ -40,6 +40,7 @@ void NativeText_Begin(char *buf, int cap);
 void NativeText_End(void);
 int NativeText_Active(void); // 1 while capturing
 int NativeText_Result(void); // 0 = active/none, 1 = committed (Enter), 2 = cancelled (Escape)
+void NativeText_Resolve(int result); // resolve from outside the keyboard (1 commit, 2 cancel)
 #endif
 
 #endif
