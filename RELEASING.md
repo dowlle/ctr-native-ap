@@ -83,3 +83,24 @@ the previous release's published notes. House style:
 - [ ] Announce (community Discord), and route bug reports to the issue
       tracker.
 - [ ] Update the roadmap: shipped items out, new plans in.
+- [ ] **Documentation sweep. Do this every release, not only when it feels
+      needed.** Decision sessions keep docs current; release events never do,
+      which is how a public roadmap block ended up advertising four
+      already-shipped features as "planned next", and how a fixed-two-releases-
+      ago blocker stayed at the top of the backlog. Sweep for the issue numbers
+      that just shipped and clear every stale status:
+      - [ ] Public roadmap block: REGENERATE it from the internal ledger. Never
+            hand-edit it; that is how it drifts.
+      - [ ] Backlog and feature overview: anything shipped moves out of
+            "planned" or "backlog".
+      - [ ] Triage register: build-status cells frozen at "PR open" or
+            "in build" are now shipped.
+      - [ ] Any "decide BEFORE tagging" item still present: it either got
+            decided or it did not matter. Resolve it, do not carry it.
+- [ ] **Close cross-repo issues by hand.** GitHub only auto-closes from PR
+      keywords within the same repository, so an apworld PR never closes a
+      native issue. This is why issues have sat open for days after their work
+      merged.
+- [ ] Decide what "closed" means and be consistent: closing on merge means the
+      tracker claims fixes that no download contains. Prefer closing on
+      release.
