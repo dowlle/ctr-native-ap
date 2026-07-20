@@ -12,11 +12,11 @@ disc. You will need:
    PlayStation disc. A `.cue` plus `.bin`, a single `.bin`, or a `.chd` all
    work. Only the North American release is supported right now. PAL (European)
    and Japanese discs are detected and refused.
-2. Python 3.8 or newer, only if you use the optional asset extractor below
-   (it saves disk space and is the route for `.chd` images). If your image is
-   a `.chd`, you also need the `chdman` tool on your PATH.
-3. The prebuilt game executable, `ctr_native_ap.exe`. Download it from the
+2. The prebuilt game executable, `ctr_native_ap.exe`. Download it from the
    [releases page](https://github.com/dowlle/ctr-native-ap/releases).
+
+That is the whole list. You do not need Python, and you do not need to extract
+anything.
 
 ## Step 1: get the game executable
 
@@ -25,7 +25,7 @@ Download `ctr_native_ap.exe` from the
 in a folder of its own, for example a folder called `CTR-AP`. The rest of
 these steps add the game data and your server settings next to it.
 
-## Step 2: drop in your disc image (recommended)
+## Step 2: drop in your disc image
 
 The game reads the raw disc image directly. Copy your NTSC-U `.bin`, rename
 the copy to `ctr-u.bin`, and place it in an `assets` folder next to
@@ -44,45 +44,14 @@ single-track raw PlayStation BIN layout (MODE2/2352 sectors). A cooked
 needs, so it will not work. This path does not check the disc region, so make
 sure the image really is the North American (NTSC-U) release.
 
-### Alternative: extract the assets
-
-The extractor saves disk space (it copies out only the files the game needs)
-and is the route for `.chd` images. It also checks that your disc is the
-supported region and that nothing is missing. It needs Python 3.8+.
-
-From the folder that holds `ctr_native_ap.exe`, run:
-
-```
-python extract_assets.py "path/to/your/CTR.cue"
-```
-
-You can also point it at a `.bin` or a `.chd`. By default it writes an `assets`
-folder in the current directory. To send it somewhere else, add `--out`:
-
-```
-python extract_assets.py "path/to/your/CTR.bin" --out "path/to/CTR-AP/assets"
-```
-
-When it finishes you should have this layout:
-
-```
-CTR-AP/
-  ctr_native_ap.exe
-  assets/
-    BIGFILE.BIG
-    SOUNDS/KART.HWL
-    TEST.STR
-    XA/ENG.XNF
-    XA/ENG/EXTRA/S00.XA ... S05.XA
-    XA/ENG/GAME/S00.XA ... S20.XA
-    XA/MUSIC/S00.XA ... S01.XA
-```
+Go straight to Step 3. If your image is a `.chd`, or you specifically want to
+save disk space, see the appendix at the end of this guide.
 
 ## Step 3: connect to your room
 
 Launch `ctr_native_ap.exe`. On a first start with no saved connection the game
 boots to the main menu and shows that it is not connected. Go to **OPTIONS →
-Connection** and type your room details with your keyboard:
+Connection** and fill in your room details:
 
 - **Server**: the address of your room, for example `archipelago.gg:38281`
   (the port is on your room page). Secure connections (`wss://`) are used
@@ -117,8 +86,12 @@ Controller, custom button remapping, or per-game controller configurations),
 add the game to Steam as a non-Steam game: in Steam, choose **Games → Add a
 Non-Steam Game to My Library…**, browse to `ctr_native_ap.exe`, and from then
 on launch it from your Steam library. Steam Input then treats it like any
-other Steam game. One note: the in-game Connection screen is typed with a
-real keyboard, so set up your room before handing off to the couch.
+other Steam game.
+
+**On a Steam Deck** you do not need a keyboard at all. Launch the game from
+Steam in Gaming Mode, and focusing any field on the Connection screen brings up
+the Steam on-screen keyboard. The whole edit works from the pad: X or START
+saves the field, TRIANGLE cancels it.
 
 ## Reporting a crash or a stuck seed
 
@@ -159,3 +132,45 @@ report if you see it.
   reason), or in `ap-config.txt` if you use the config file instead. The slot
   name must match the room exactly. Settings saved from the in-game screen
   (`config.ini`) override `ap-config.txt`.
+
+## Appendix: extracting the assets (most people should skip this)
+
+**You almost certainly do not need this.** Step 2 is the normal way to set the
+game up, and it needs no extra tools. Extract only if one of these applies:
+
+- your disc image is a `.chd`, or
+- you want to save disk space, because extraction copies out only the files the
+  game actually uses instead of keeping the whole image.
+
+It needs Python 3.8 or newer, and `.chd` images additionally need the `chdman`
+tool on your PATH. From the folder that holds `ctr_native_ap.exe`, run:
+
+```
+python extract_assets.py "path/to/your/CTR.cue"
+```
+
+You can also point it at a `.bin` or a `.chd`. By default it writes an `assets`
+folder in the current directory. To send it somewhere else, add `--out`:
+
+```
+python extract_assets.py "path/to/your/CTR.bin" --out "path/to/CTR-AP/assets"
+```
+
+When it finishes you should have this layout:
+
+```
+CTR-AP/
+  ctr_native_ap.exe
+  assets/
+    BIGFILE.BIG
+    SOUNDS/KART.HWL
+    TEST.STR
+    XA/ENG.XNF
+    XA/ENG/EXTRA/S00.XA ... S05.XA
+    XA/ENG/GAME/S00.XA ... S20.XA
+    XA/MUSIC/S00.XA ... S01.XA
+```
+
+If you extracted with a version older than v0.1.2, run the extractor again with
+the current one. Earlier versions truncated part of the audio data, which makes
+music and the race announcer sound wrong or go missing.
