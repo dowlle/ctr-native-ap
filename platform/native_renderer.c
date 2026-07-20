@@ -1229,6 +1229,92 @@ void NativeRenderer_ClearVRAM(int x, int y, int w, int h, u8 r, u8 g, u8 b)
 	}
 }
 
+// Display-space (game) coordinates to window coordinates. The presentation
+// viewport is the letterboxed rectangle the whole display area is stretched onto
+// (see NativeRenderer_UpdatePresentationViewport), so the mapping is a plain
+// linear scale plus the viewport origin. Same arithmetic as the scissor
+// conversion in NativeRenderer_Clear below, minus the VRAM-absolute step: the
+// input here is already relative to the display origin, which is the space the
+// menu draws its primitives in. Window coordinates are top-left origin (the
+// viewport is centred, so its top margin equals s_presentViewport.y), unlike the
+// bottom-left origin GL wants for glScissor.
+int NativeRenderer_DisplayRectToWindow(int x, int y, int w, int h, int *outX, int *outY, int *outW, int *outH)
+{
+	int displayW = activeDispEnv.disp.w;
+	int displayH = activeDispEnv.disp.h;
+
+	if ((displayW <= 0) || (displayH <= 0))
+	{
+		displayW = activeDrawEnv.clip.w;
+		displayH = activeDrawEnv.clip.h;
+	}
+
+	if ((displayW <= 0) || (displayH <= 0) || (s_presentViewport.w <= 0) || (s_presentViewport.h <= 0))
+	{
+		return 0;
+	}
+
+	if (w < 0)
+	{
+		w = 0;
+	}
+	if (h < 0)
+	{
+		h = 0;
+	}
+
+	int left = x;
+	int top = y;
+	int right = x + w;
+	int bottom = y + h;
+
+	if (left < 0)
+	{
+		left = 0;
+	}
+	if (top < 0)
+	{
+		top = 0;
+	}
+	if (right > displayW)
+	{
+		right = displayW;
+	}
+	if (bottom > displayH)
+	{
+		bottom = displayH;
+	}
+
+	if ((right <= left) || (bottom <= top))
+	{
+		return 0;
+	}
+
+	const int windowLeft = s_presentViewport.x + (left * s_presentViewport.w) / displayW;
+	const int windowTop = s_presentViewport.y + (top * s_presentViewport.h) / displayH;
+	const int windowRight = s_presentViewport.x + (right * s_presentViewport.w + displayW - 1) / displayW;
+	const int windowBottom = s_presentViewport.y + (bottom * s_presentViewport.h + displayH - 1) / displayH;
+
+	if (outX != NULL)
+	{
+		*outX = windowLeft;
+	}
+	if (outY != NULL)
+	{
+		*outY = windowTop;
+	}
+	if (outW != NULL)
+	{
+		*outW = windowRight - windowLeft;
+	}
+	if (outH != NULL)
+	{
+		*outH = windowBottom - windowTop;
+	}
+
+	return 1;
+}
+
 void NativeRenderer_Clear(int x, int y, int w, int h, u8 r, u8 g, u8 b)
 {
 	if ((w <= 0) || (h <= 0) || (g_windowWidth <= 0) || (g_windowHeight <= 0))

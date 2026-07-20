@@ -16,6 +16,11 @@ void NativeRenderer_PresentVRAMDisplay(void);
 void NativeRenderer_PresentVRAMRect(int x, int y, int w, int h);
 void NativeRenderer_SaveVRAM(const char *outputFileName, int x, int y, int width, int height, int readFromFramebuffer);
 void NativeRenderer_Clear(int x, int y, int w, int h, u8 r, u8 g, u8 b);
+// Map a rectangle expressed in display-space game coordinates (the space menu
+// primitives are drawn in, origin at the top-left of the visible display area)
+// to top-left-origin window coordinates. Returns 0 when there is no usable
+// display or window geometry yet, in which case the outputs are untouched.
+int NativeRenderer_DisplayRectToWindow(int x, int y, int w, int h, int *outX, int *outY, int *outW, int *outH);
 void NativeRenderer_ClearVRAM(int x, int y, int w, int h, u8 r, u8 g, u8 b);
 void NativeRenderer_CopyVRAM(u16 *src, int x, int y, int w, int h, int dstX, int dstY);
 void NativeRenderer_ReadVRAM(u16 *dst, int x, int y, int dstW, int dstH);

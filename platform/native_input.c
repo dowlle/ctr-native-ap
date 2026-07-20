@@ -100,6 +100,9 @@ global_variable s32 s_inputInitialized;
 global_variable s32 s_installedSnapshotsActive;
 global_variable s32 s_keyboardControllerSlot = NATIVE_INPUT_DEFAULT_KEYBOARD_SLOT;
 global_variable s32 s_lastActiveControllerSlot = -1;
+#ifdef CTR_AP
+global_variable u16 s_rawGamepadButtons = 0;
+#endif
 
 extern s32 g_padCommEnable;
 
@@ -452,6 +455,14 @@ internal void NativeInput_ApplyController(s32 slot)
 		s_lastActiveControllerSlot = slot;
 	}
 
+#ifdef CTR_AP
+	// Physical-pad-only button snapshot for the AP connection manager (see
+	// Platform_InputRawGamepadButtons below). Accumulated here, before the
+	// keyboard is folded in by NativeInput_ApplyKeyboard, so the mask can never
+	// contain a keystroke. Active-high, RAW_BTN_* bit layout, OR-ed over pads.
+	s_rawGamepadButtons |= (u16)(~buttons);
+#endif
+
 	if (((buttons & 0x1) == 0) && ((buttons & 0x8) == 0))
 	{
 		buttons = 0xffff;
@@ -801,6 +812,10 @@ void Platform_InputUpdate(void)
 		return;
 	}
 
+#ifdef CTR_AP
+	s_rawGamepadButtons = 0;
+#endif
+
 	if (s_installedSnapshotsActive != 0)
 	{
 		// NOTE(aalhendi): replay/state installs PSX-shaped pad bytes here;
@@ -889,6 +904,22 @@ int Platform_InputRawKeyDown(int scancode)
 	if (s_keyboardState == NULL || scancode < 0 || scancode >= SDL_SCANCODE_COUNT)
 		return 0;
 	return s_keyboardState[scancode] ? 1 : 0;
+}
+
+// Buttons currently held on *physical* gamepads only, as an active-high mask in
+// the RAW_BTN_* bit layout (RAW_BTN_CROSS, RAW_BTN_TRIANGLE, RAW_BTN_START, ...),
+// OR-ed across every connected pad. Refreshed by Platform_InputUpdate().
+//
+// The host keyboard is mapped onto a pad slot and polled live from the SDL key
+// state, so the normal pad buffer cannot tell a button press apart from a
+// keystroke: with the default mapping, typing "z" reads as TRIANGLE, "c" as
+// CROSS, space as SELECT and Enter as START. The AP connection manager needs a
+// pad read that is unaffected by typing while a NativeText session is capturing
+// the keyboard, which is exactly what this returns. Not wired into the PSX pad
+// bus, so it has no effect on the clean build or on gameplay input.
+int Platform_InputRawGamepadButtons(void)
+{
+	return (int)s_rawGamepadButtons;
 }
 #endif
 
