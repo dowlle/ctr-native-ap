@@ -59,9 +59,14 @@ static const int ap_vf_boss_keys[4] = {
 static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 
 // ---------------------------------------------------------------------------
-// Location worklist: the 101 static table entries + up to 48 podium rungs.
+// Location worklist: the static table entries plus every podium rung the seed
+// can carry. The multiplier is DERIVED from CTR_CFG_PODIUM_RUNG_COUNT on
+// purpose: this used to hardcode 3 (the pre-Phase-A ladder) while the fill loop
+// below already wrote 5 rungs per track, so the worklist silently truncated at
+// 149 entries and the sweep then declared perfectly good seeds unbeatable.
+// If the rung model changes again, this follows it automatically.
 // ---------------------------------------------------------------------------
-#define AP_VF_MAX_LOCS (AP_LOCATION_TABLE_LEN + CTR_CFG_PODIUM_TRACK_COUNT * 3)
+#define AP_VF_MAX_LOCS 	(AP_LOCATION_TABLE_LEN + CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT)
 
 typedef enum
 {
@@ -94,6 +99,7 @@ static int      ap_vf_keys_fp = 0;      // Keys held at the fixed point
 static int      ap_vf_solo = 0;         // 1 = single-slot room (definitive)
 static unsigned ap_vf_gen = 0;          // AP_StateGen at last compute
 static char     ap_vf_line2[96];        // banner detail line
+static int      ap_vf_truncated = 0;    // worklist overflowed: verdict is not trustworthy
 
 // Requirement met under SIMULATED counts. Single source of truth is
 // AP_ReqMetCounts (ap_hooks.c) -- the same comparator the live gates use,
@@ -104,6 +110,8 @@ static char     ap_vf_line2[96];        // banner detail line
 // floor) so sweep and gate cannot disagree.
 static int ap_vf_stage1_met(int lid, const int *counts)
 {
+	int i, owned;
+
 	if (ctr_cfg_active() && lid >= 0 && lid < CTR_CFG_PAD_COUNT &&
 	    ctr_cfg.warp_pad_unlock[lid].stage1.type != 0)
 		return AP_ReqMetCounts(&ctr_cfg.warp_pad_unlock[lid].stage1, counts);
@@ -114,6 +122,25 @@ static int ap_vf_stage1_met(int lid, const int *counts)
 			return AP_ReqMetCounts(&ctr_cfg.gem_cup_unlock[cupIdx].stage1, counts);
 		return counts[AP_IDX_TOKEN_RED + cupIdx] >= 4;
 	}
+	// VANILLA FALLBACKS. These must mirror AP_PadStage1Met (ap_hooks.c) class for
+	// class -- the trophy floor below is the rule for RACE pads (0..15) ONLY.
+	// Trial pads: Slide Coliseum = 10 Sapphire relics, Turbo Track = all 5 gem
+	// colours. data.metaDataLEV[16/17].numTrophiesToOpen (10 / 15) is NOT a
+	// trophy gate for these pads and reading it here both over- and
+	// under-constrained the sweep.
+	if (lid == 16)
+		return counts[AP_IDX_SAPPHIRE] >= 10;
+	if (lid == 17)
+	{
+		for (owned = 0, i = 0; i < 5; i++)
+			if (counts[AP_IDX_GEM_RED + i] >= 1)
+				owned++;
+		return owned >= 5;
+	}
+	// Battle arenas: vanilla rule is the hub-key gate ONLY (the sweep already
+	// applies that via ap_vf_pad_keys), never a trophy floor.
+	if (lid == 18 || lid == 19 || lid == 21 || lid == 23)
+		return 1;
 	return counts[AP_IDX_TROPHY] >= data.metaDataLEV[lid].numTrophiesToOpen;
 }
 
@@ -150,6 +177,8 @@ static void ap_vf_recompute(void)
 	int        counts[AP_ITEM_INDEX_COUNT];
 	int        n = 0, i, t;
 
+	ap_vf_truncated = 0; // per-sweep state: a stale flag must not poison later verdicts
+
 	// Build the worklist from the static table...
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 	{
@@ -176,9 +205,17 @@ static void ap_vf_recompute(void)
 			long rung[5] = { ctr_cfg.podium[t].held_1st, ctr_cfg.podium[t].held_3rd,
 			                 ctr_cfg.podium[t].held_5th, ctr_cfg.podium[t].finish_podium,
 			                 ctr_cfg.podium[t].finish_any };
-			for (i = 0; i < 5; i++)
-				if (rung[i] >= 0 && n < AP_VF_MAX_LOCS)
+			for (i = 0; i < CTR_CFG_PODIUM_RUNG_COUNT; i++)
+				if (rung[i] >= 0)
 				{
+					if (n >= AP_VF_MAX_LOCS)
+					{
+						// Must never happen now the capacity is derived, but if
+						// it ever does, say so loudly and refuse to give a
+						// verdict rather than reporting a false failure.
+						ap_vf_truncated = 1;
+						break;
+					}
 					locs[n].code = rung[i];
 					locs[n].kind = AP_VF_PODIUM;
 					locs[n].track = t;
@@ -349,6 +386,11 @@ static void ap_vf_recompute(void)
 	ap_vf_keys_fp = counts[AP_IDX_KEY];
 	ap_vf_solo = (ap_net_player_count() == 1);
 	ap_vf_have = 1;
+	// A truncated worklist means the sweep reasoned over a partial seed. Never
+	// report that as a definitive failure: an "I could not check this" verdict
+	// is useful, a false "your seed is broken" is worse than no verifier.
+	if (ap_vf_truncated)
+		ap_vf_goal_ok = 1;
 
 	{
 		char msg[192];
@@ -360,6 +402,10 @@ static void ap_vf_recompute(void)
 		         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp,
 		         ap_vf_solo ? "solo: definitive" : "multiworld: advisory");
 		AP_LogLine(msg);
+		if (ap_vf_truncated)
+			AP_LogLine("[AP VERIFY] INDETERMINATE: location worklist overflowed "
+			           "(seed carries more locations than this build can track). "
+			           "No completability claim is made for this seed.\n");
 		if (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total)
 		{
 			int listed = 0;
@@ -390,9 +436,15 @@ void AP_VerifyOnFrame(void)
 	// build parses: the sweep would reason over wrong/partial gates -- skip.
 	// The schema-newer case already has its own loud banner.
 	if (!ctr_cfg_active() || ctr_cfg.schema_newer)
+	{
+		ap_vf_have = 0; // never let a previous seed's verdict survive here
 		return;
+	}
 	if (!ap_net_scouts_ready())
-		return; // LocationInfo not in yet; try again next frame
+	{
+		ap_vf_have = 0; // scouts were cleared by a (re)connect: verdict is stale
+		return;         // LocationInfo not in yet; try again next frame
+	}
 	unsigned gen = AP_StateGen();
 	if (ap_vf_have && gen == ap_vf_gen)
 		return;
