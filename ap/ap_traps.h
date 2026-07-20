@@ -57,12 +57,12 @@ enum AP_TrapEffect
 // instance to the registry (capacity AP_TRAP_REGISTRY_CAP; over capacity is
 // dropped with a log line). Called by whatever surfaces AP items.
 //
-// TODO(ap-wiring): the apworld does not yet emit trap items. When it does, the AP
-// item-id -> effect-id map goes in ap_hooks.c's received-item loop (AP_NetTick):
-// detect a trap item id and call AP_TrapReceive(effect). DO NOT invent AP item ids
-// here -- the apworld owns that space (slot_data contract). This function is the
-// single native entry point the pipeline calls; nothing else about traps needs to
-// change when the item ids land.
+// Wired: the apworld emits 5 trap items directly after Wumpa Fruit, one per
+// AP_TrapEffect in enum order, and ap_hooks.c's received-item loop maps
+// item index (AP_TRAP_ITEM_FIRST_INDEX + effect) to AP_TrapReceive(effect).
+// DO NOT invent AP item ids here -- the apworld owns that space (slot_data
+// contract). This function stays the single native entry point the pipeline
+// calls.
 void AP_TrapReceive(int effect);
 
 // ── Per-frame driver ──
