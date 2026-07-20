@@ -233,6 +233,16 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 #define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
 #define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE)
 
+// Row geometry in display-space coordinates, shared by the draw pass below and
+// by the rectangle handed to the platform text-input layer when an edit starts
+// (an on-screen keyboard positions itself around that rectangle). The values
+// match the highlight box drawn on the selected row.
+#define CONN_ROW_X       0x30
+#define CONN_ROW_W       0x1B0
+#define CONN_ROW_H       0x0C
+#define CONN_ROW_START_Y 0x3C
+#define CONN_ROW_SPACING 0x0E
+
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
 static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char *out, int outCap)
@@ -329,7 +339,12 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				s_connEditRow = menu->rowSelected;
 				strncpy(s_connBackup, (char *)e->valuePtr, sizeof s_connBackup - 1);
 				s_connBackup[sizeof s_connBackup - 1] = '\0';
-				NativeText_Begin((char *)e->valuePtr, e->max);
+				// The row's own rectangle goes with it, so a host on-screen
+				// keyboard (Steam Deck) can place itself clear of the field.
+				const int rowY = CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2;
+				const int rowMasked = (strcmp(e->key, "password") == 0);
+				NativeText_Begin((char *)e->valuePtr, e->max,
+					CONN_ROW_X, rowY, CONN_ROW_W, CONN_ROW_H, rowMasked);
 				s_connEditing = 1;
 			}
 			else
@@ -345,8 +360,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	int labelX = 0x38;
 	int valueX = 0xB0;  // text values are left-justified (they grow rightward as typed)
-	int startY = 0x3C;
-	int rowSpacing = 0x0E;
+	int startY = CONN_ROW_START_Y;
+	int rowSpacing = CONN_ROW_SPACING;
 
 	for (int j = 0; j < numStrings; j++)
 	{
@@ -361,7 +376,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 		if (j == menu->rowSelected)
 		{
-			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			RECT sel = {CONN_ROW_X, y - 2, CONN_ROW_W, CONN_ROW_H};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
 	}

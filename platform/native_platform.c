@@ -404,7 +404,31 @@ global_variable int s_textLen = 0;
 global_variable int s_textActive = 0;
 global_variable int s_textResult = 0; // 0 none, 1 commit (Enter), 2 cancel (Escape)
 
-void NativeText_Begin(char *buf, int cap)
+// Hand SDL the window-space rectangle of the row being edited. SDL passes it on
+// to the platform's on-screen keyboard: the Steam Deck backend puts it straight
+// into the steam://open/keyboard deeplink, and the floating keyboard uses it to
+// avoid covering the field. Without it the rectangle stays all zeroes and the
+// keyboard is placed against the window origin, on top of the menu.
+internal void Platform_SetTextInputArea(int fieldX, int fieldY, int fieldW, int fieldH)
+{
+	SDL_Rect area;
+
+	if (NativeRenderer_DisplayRectToWindow(fieldX, fieldY, fieldW, fieldH, &area.x, &area.y, &area.w, &area.h) == 0)
+	{
+		Platform_LogWarn("*Text input: no display geometry, leaving the input area unset\n");
+		return;
+	}
+
+	SDL_SetTextInputArea(g_window, &area, 0);
+
+	// Logged because it is the only way to tell, from a support bundle, whether a
+	// missing on-screen keyboard means the host never offered one or means it was
+	// raised somewhere unhelpful.
+	Platform_Log("*Text input: area %d,%d %dx%d (window %dx%d, screen keyboard support: %d)\n",
+		area.x, area.y, area.w, area.h, g_windowWidth, g_windowHeight, NativeText_ScreenKeyboardAvailable());
+}
+
+void NativeText_Begin(char *buf, int cap, int fieldX, int fieldY, int fieldW, int fieldH, int password)
 {
 	s_textBuf = buf;
 	s_textCap = cap;
@@ -417,7 +441,30 @@ void NativeText_Begin(char *buf, int cap)
 	s_textResult = 0;
 	if (g_window != NULL)
 	{
-		SDL_StartTextInput(g_window);
+		// Order matters: the input area has to be set before text input starts,
+		// because starting it is what raises the on-screen keyboard.
+		Platform_SetTextInputArea(fieldX, fieldY, fieldW, fieldH);
+
+		SDL_PropertiesID props = SDL_CreateProperties();
+
+		if (props != 0)
+		{
+			// Every connection field is a single line of literal text: no
+			// autocorrect and no auto-capitalisation, or a slot name gets
+			// "helpfully" rewritten. Single-line also makes the Steam keyboard
+			// dismiss on Enter instead of waiting for an explicit close.
+			SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER,
+				(password != 0) ? SDL_TEXTINPUT_TYPE_TEXT_PASSWORD_HIDDEN : SDL_TEXTINPUT_TYPE_TEXT);
+			SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_CAPITALIZATION_NUMBER, SDL_CAPITALIZE_NONE);
+			SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
+			SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_MULTILINE_BOOLEAN, false);
+			SDL_StartTextInputWithProperties(g_window, props);
+			SDL_DestroyProperties(props);
+		}
+		else
+		{
+			SDL_StartTextInput(g_window);
+		}
 	}
 }
 
@@ -461,6 +508,14 @@ void NativeText_Resolve(int result)
 		return;
 	}
 	s_textResult = result;
+}
+
+// True on hosts that can raise an on-screen keyboard for text input (the Steam
+// Deck, primarily). Logged when an edit starts, and available to the menu if a
+// hint about the keyboard is ever worth drawing.
+int NativeText_ScreenKeyboardAvailable(void)
+{
+	return SDL_HasScreenKeyboardSupport() ? 1 : 0;
 }
 
 internal void Platform_HandleTextInput(const char *utf8)
