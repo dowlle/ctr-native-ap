@@ -415,20 +415,41 @@ static void ap_vf_recompute(void)
 		ap_vf_goal_ok = 1;
 
 	{
-		char msg[192];
-		snprintf(msg, sizeof msg,
-		         "[AP VERIFY] %s: goal %s, %d/%d locations reachable, Keys %d "
-		         "(%s)\n",
-		         ap_vf_goal_ok ? "seed OK" : "GOAL BLOCKED",
-		         ap_vf_goal_ok ? "reachable" : "NOT reachable",
-		         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp,
-		         ap_vf_solo ? "solo: definitive" : "multiworld: advisory");
+		char msg[256];
+		// Two vocabularies on purpose: in SOLO the sweep is definitive, so a
+		// blocked goal is alarming and should read that way. In a MULTIWORLD the
+		// sweep can only see this world's own items, so "not reachable from here
+		// alone" is the NORMAL state early on -- alarming words here just send
+		// players to Discord with healthy seeds.
+		if (ap_vf_solo)
+			snprintf(msg, sizeof msg,
+			         "[AP VERIFY] %s: goal %s, %d/%d locations reachable, Keys %d "
+			         "(solo: definitive)\n",
+			         ap_vf_goal_ok ? "seed OK" : "GOAL BLOCKED",
+			         ap_vf_goal_ok ? "reachable" : "NOT reachable",
+			         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
+		else if (ap_vf_goal_ok)
+			snprintf(msg, sizeof msg,
+			         "[AP VERIFY] seed OK from this world alone: goal reachable, "
+			         "%d/%d locations reachable, Keys %d (multiworld projection)\n",
+			         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
+		else
+			snprintf(msg, sizeof msg,
+			         "[AP VERIFY] waiting on other worlds (NORMAL in a multiworld): "
+			         "%d/%d locations reachable with this world's items alone, Keys "
+			         "%d. Informational only; improves as items arrive from other "
+			         "players.\n",
+			         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
 		AP_LogLine(msg);
 		if (ap_vf_truncated)
 			AP_LogLine("[AP VERIFY] INDETERMINATE: location worklist overflowed "
 			           "(seed carries more locations than this build can track). "
 			           "No completability claim is made for this seed.\n");
-		if (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total)
+		// The per-location dump is diagnostic detail for SOLO (where "unreachable"
+		// means broken). In a multiworld it would enumerate locations that simply
+		// need other players' items -- 16 lines of noise under an informational
+		// header, so it stays solo-only.
+		if (ap_vf_solo && (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total))
 		{
 			int listed = 0;
 			for (i = 0; i < n && listed < 16; i++)
