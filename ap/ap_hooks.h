@@ -92,6 +92,7 @@ int  AP_HubFeedOn(void);
 #endif
 
 int AP_GateCount(int itemType);          // received count for one of the 15 item indices
+int AP_GateCountForeign(int itemType);   // #85: foreign-only split (multiworld + starting inv)
 int AP_GateCountTokenColour(int colour); // colour 0..4 = R,G,B,Y,P -> token idx 4+colour
 int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx 9+colour
 

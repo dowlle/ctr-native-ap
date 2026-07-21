@@ -59,6 +59,9 @@ int  ap_net_scout_text(long long location_code, char *item_buf, int item_n,
 // The hub item feed uses these to attribute + dedup each drained item.
 int       ap_net_recv_batch_player(int pos);
 long long ap_net_recv_batch_index(int pos);
+// Source location for the batch item at `pos` (<= 0 = starting inventory / server
+// grant). The seed verifier's foreign/own split (issue #85) reads this.
+long long ap_net_recv_batch_location(int pos);
 
 // Resolve a RECEIVED item (item_id, sending sender_slot) into display strings:
 // item name in this slot's own game + the sender's alias. Returns 1 on success,
@@ -70,6 +73,12 @@ int  ap_net_item_text(long long item_id, int sender_slot, char *item_buf,
 // 1 if location_code has already been checked on the server (own slot). Drives
 // the "done / chill" warp-pad colouring vs the "new / available" glow.
 int  ap_net_location_checked(long long location_code);
+
+// Count of own location checks sent whose ReceivedItems echo has not yet drained
+// (issue #85). In solo every own check echoes, so this drains to 0. The seed-verify
+// sweep withholds the "not completable" banner while this is > 0 so a transient
+// send->receive snapshot cannot flash a false warning.
+int  ap_net_checks_in_flight(void);
 
 // Connected slot number, or -1 before connect.
 int  ap_net_self_slot(void);
