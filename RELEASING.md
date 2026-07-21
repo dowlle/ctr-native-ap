@@ -70,6 +70,11 @@ the previous release's published notes. House style:
   (`blob/main/SETUP.md`) for the banner and walkthrough mentions, the
   tag-pinned copy (`blob/vX.Y.Z/SETUP.md`) labeled "as shipped".
 - Known limitations section includes every known issue, with workarounds.
+- Cross-check every claim in "New" against the Testing section's
+  not-verified-in-game list IN THE SAME DOCUMENT. A feature on that list
+  carries its hedge inside its own New bullet, not three sections down.
+  (v0.1.2 claimed cup-leg rungs were in logic while its own Testing section
+  listed them as unverified; the claim was half wrong, see #86.)
 - A "What's next" section from the roadmap keeps expectations honest.
 
 ## 7. Publish
