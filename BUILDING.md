@@ -89,7 +89,14 @@ rm -rf build/        # Linux: delete cached libraries
 
 All Archipelago code is isolated behind `#ifdef CTR_AP`; the vanilla build is unaffected.
 
-The AP build needs header-only networking dependencies in `ap/vendor/` that are not tracked in this repository: [apclientpp](https://github.com/black-sliver/apclientpp), [wswrap](https://github.com/black-sliver/wswrap), [WebSocket++](https://github.com/zaphoyd/websocketpp), [Asio](https://github.com/chriskohlhoff/asio), [nlohmann/json](https://github.com/nlohmann/json), and [valijson](https://github.com/tristanpenman/valijson). Clone or copy each into `ap/vendor/<name>/` (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for versions and licenses), then configure with CMake (same toolchain as above):
+The AP build needs header-only networking dependencies in `ap/vendor/` that are not tracked in this repository: [apclientpp](https://github.com/black-sliver/apclientpp), [wswrap](https://github.com/black-sliver/wswrap), [WebSocket++](https://github.com/zaphoyd/websocketpp), [Asio](https://github.com/chriskohlhoff/asio), and [nlohmann/json](https://github.com/nlohmann/json). Do not fetch these by hand: run the pinned fetcher, which clones each at the exact commit recorded in [`ap/vendor/versions.lock`](ap/vendor/versions.lock) and verifies its tree hash (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for versions and licenses):
+
+```
+ap/vendor/fetch-deps.sh          # fetch + verify all pinned deps
+ap/vendor/fetch-deps.sh verify   # re-check an existing tree (no network)
+```
+
+CMake re-checks the same pins at configure time (`cmake/APVendorCheck.cmake`) and refuses to build a tree that does not match the lock, so a silently-swapped dependency is caught before compilation rather than shipped. [valijson](https://github.com/tristanpenman/valijson) is marked optional in the lock and is NOT fetched: `AP_NO_SCHEMA` compiles out apclientpp's valijson includes, so it never enters the build. Then configure with CMake (same toolchain as above):
 
 ```
 cmake -S . -B build-ap -DCTR_AP=ON

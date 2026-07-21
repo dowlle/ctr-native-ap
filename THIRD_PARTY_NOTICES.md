@@ -73,11 +73,15 @@ Path: `ap/vendor/` (not tracked in this repository; required to configure with
 The Archipelago build (`ctr_native_ap`) compiles and statically links the
 following header-only libraries. They are not part of the vanilla engine build
 and are not distributed in this repository's source tree, but these notices
-apply to any binary distribution of `ctr_native_ap`.
+apply to any binary distribution of `ctr_native_ap`. The exact pinned revision
+of each is recorded in `ap/vendor/versions.lock` (the commit shas below are
+copied from it); the build is verified against that lock at configure time.
 
 ### apclientpp
 
 Source: <https://github.com/black-sliver/apclientpp>
+
+Vendored version: 0.6.4 (commit `79621690a3e845645f43888b0fe234a99c74892e`; upstream publishes no tag, so the pin is the commit)
 
 License: MIT — Copyright (c) 2022 black-sliver, FelicitusNeko
 
@@ -85,11 +89,15 @@ License: MIT — Copyright (c) 2022 black-sliver, FelicitusNeko
 
 Source: <https://github.com/black-sliver/wswrap>
 
+Vendored version: 1.03.00 (commit `aeba7ac428028723fb26ce92488f260660f786b1`; upstream publishes no tag, so the pin is the commit)
+
 License: MIT — Copyright (c) 2021 black-sliver
 
 ### nlohmann/json
 
 Source: <https://github.com/nlohmann/json>
+
+Vendored version: 3.11.3 (tag `v3.11.3`, commit `9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03`)
 
 License: MIT — Copyright (c) 2013-2021 Niels Lohmann
 
@@ -116,6 +124,8 @@ SOFTWARE.
 ### WebSocket++
 
 Source: <https://github.com/zaphoyd/websocketpp>
+
+Vendored version: 0.8.2 (tag `0.8.2`, commit `56123c87598f8b1dd471be83ca841ceae07f95ba`)
 
 License: BSD 3-Clause
 
@@ -148,6 +158,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Source: <https://github.com/chriskohlhoff/asio>
 
+Vendored version: 1.30.2 (tag `asio-1-30-2`, commit `12e0ce9e0500bf0f247dbd1ae894272656456079`)
+
 License: Boost Software License 1.0
 
 Boost Software License - Version 1.0 - August 17th, 2003
@@ -177,6 +189,8 @@ DEALINGS IN THE SOFTWARE.
 ### valijson
 
 Source: <https://github.com/tristanpenman/valijson>
+
+Not shipped: the AP build defines `AP_NO_SCHEMA`, which compiles out apclientpp's valijson includes, so no valijson code is linked into `ctr_native_ap`. It is marked optional in `ap/vendor/versions.lock` and is not fetched. This notice is retained for completeness in case `AP_NO_SCHEMA` is ever removed; if that happens, pin a revision in the lock and update this entry with the shipped version.
 
 License: BSD 2-Clause
 

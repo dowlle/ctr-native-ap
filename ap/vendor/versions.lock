@@ -1,0 +1,90 @@
+# ap/vendor/versions.lock -- pinned Archipelago networking dependencies (issue #78).
+#
+# Single source of truth for the vendored, header-only AP deps. fetch-deps.sh
+# clones each dep at its pinned sha and verifies it; cmake/APVendorCheck.cmake
+# re-checks the same pins at configure time and refuses to build a mismatched
+# tree. The pins below are the set that produced the shipped v0.1.2 client,
+# confirmed on the Linux build rig (apclientpp 0.6.4, not the 0.6.0 an RC once
+# carried by accident).
+#
+# Fields per [dep] block:
+#   url          upstream git remote
+#   tag          pinned git tag, or "-" when upstream publishes no matching tag
+#                (then the sha is the pin; see apclientpp / wswrap)
+#   sha          pinned commit sha; the checkout's HEAD must equal this
+#   dir          directory under ap/vendor/ that ends up on disk
+#   macro_file   header (relative to dir) carrying the version macro, or "-"
+#   macro        version-macro name checked by CMake, or "-" (tree hash only)
+#   macro_value  expected macro value, or "-"
+#   tree_sha256  sha256 of the extracted file tree (see fetch-deps.sh tree_hash)
+#   optional     "true" = not fetched/verified by default (see valijson)
+
+[apclientpp]
+url = https://github.com/black-sliver/apclientpp.git
+tag = -
+sha = 79621690a3e845645f43888b0fe234a99c74892e
+dir = apclientpp
+macro_file = apclient.hpp
+macro = APCLIENTPP_VERSION_INITIALIZER
+macro_value = {0, 6, 4}
+version = 0.6.4
+tree_sha256 = 0580cdda7323cbc619b4a06c79c3d09fba5285a05817849e3acb688af74c80c5
+
+[wswrap]
+url = https://github.com/black-sliver/wswrap.git
+tag = -
+sha = aeba7ac428028723fb26ce92488f260660f786b1
+dir = wswrap
+macro_file = include/wswrap.hpp
+macro = WSWRAP_VERSION
+macro_value = 10300
+version = 1.03.00
+tree_sha256 = 89fc486a42a956efbb5364561f628238127fc1312e7225ff8cd0f8736b29ef6c
+
+[websocketpp]
+url = https://github.com/zaphoyd/websocketpp.git
+tag = 0.8.2
+sha = 56123c87598f8b1dd471be83ca841ceae07f95ba
+dir = websocketpp
+macro_file = -
+macro = -
+macro_value = -
+version = 0.8.2
+tree_sha256 = 61b29871afe09f27b24e54d3f87f71a21f8f079858aac9286b10589569235d44
+
+[asio]
+url = https://github.com/chriskohlhoff/asio.git
+tag = asio-1-30-2
+sha = 12e0ce9e0500bf0f247dbd1ae894272656456079
+dir = asio
+macro_file = include/asio/version.hpp
+macro = ASIO_VERSION
+macro_value = 103002
+version = 1.30.2
+tree_sha256 = 36ac14ddec06966f262d22fb5f4b4e55ed6773bd901d56b358e04872ae19fd8f
+
+[json]
+url = https://github.com/nlohmann/json.git
+tag = v3.11.3
+sha = 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
+dir = json
+macro_file = include/nlohmann/detail/abi_macros.hpp
+macro = NLOHMANN_JSON_VERSION
+macro_value = 3.11.3
+version = 3.11.3
+tree_sha256 = fddb62ab1b6bb2de0ac28f3a3807460192b4cbcfc910ea9a90a81053c71a7b21
+
+# Optional: valijson is compiled out by AP_NO_SCHEMA (CMakeLists.txt). Not
+# fetched or verified by default; only needed if AP_NO_SCHEMA is ever removed.
+# If re-enabled, fill in a sha + tree_sha256 and flip optional to false.
+[valijson]
+url = https://github.com/tristanpenman/valijson.git
+tag = -
+sha = -
+dir = valijson
+macro_file = -
+macro = -
+macro_value = -
+version = (unused; AP_NO_SCHEMA)
+tree_sha256 = -
+optional = true

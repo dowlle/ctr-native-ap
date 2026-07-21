@@ -112,6 +112,11 @@ if(CTR_AP)
     enable_language(CXX)
     set(AP_VENDOR ${CMAKE_SOURCE_DIR}/ap/vendor)
 
+    # Reproducible-build gate (issue #78): refuse to configure a vendor tree that
+    # does not match ap/vendor/versions.lock, and generate ap_vendor_versions.h.
+    # Runs before ap_net is defined so a mismatched dep fails fast, not mid-compile.
+    include(${CMAKE_SOURCE_DIR}/cmake/APVendorCheck.cmake)
+
     # TLS + compression backends. Static archives are preferred to match the
     # -static-libstdc++ / -static-libgcc posture of the shipped exe.
     set(OPENSSL_USE_STATIC_LIBS TRUE)
