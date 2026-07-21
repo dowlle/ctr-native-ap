@@ -174,3 +174,18 @@ target_link_options(ctr_native PRIVATE -static-libgcc)
 if(WIN32)
     target_link_options(ctr_native PRIVATE -static)
 endif()
+
+# Release hygiene (Linux): split debug info into a .debug sidecar so the
+# binary that goes through the gate is byte-identical to what players download.
+if(UNIX)
+    option(CTR_SPLIT_DEBUG "Strip the binary, keeping symbols in a .debug sidecar" ON)
+    set(CTR_STRIP_FLAG "--strip-all" CACHE STRING
+        "objcopy strip flavour: --strip-all or --strip-debug (see issue #92 acceptance test)")
+    if(CTR_SPLIT_DEBUG)
+        add_custom_command(TARGET ctr_native POST_BUILD
+            COMMAND ${CMAKE_OBJCOPY} --only-keep-debug "$<TARGET_FILE:ctr_native>" "$<TARGET_FILE:ctr_native>.debug"
+            COMMAND ${CMAKE_OBJCOPY} ${CTR_STRIP_FLAG} "$<TARGET_FILE:ctr_native>"
+            COMMAND ${CMAKE_OBJCOPY} --add-gnu-debuglink="$<TARGET_FILE:ctr_native>.debug" "$<TARGET_FILE:ctr_native>"
+            COMMENT "Split debug info -> $<TARGET_FILE_NAME:ctr_native>.debug")
+    endif()
+endif()
