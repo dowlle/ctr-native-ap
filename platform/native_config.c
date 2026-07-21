@@ -15,6 +15,10 @@ NativeConfig g_config = {
 	false, // skipIntro
 	false, // increaseDrawDistance
 	false, // disableSplitScreenLod
+	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
+	-1,    // volMusic
+	-1,    // volVoice
+	-1,    // stereo
 #ifdef CTR_AP
 	false, // skipHints
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
@@ -30,6 +34,15 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "skip_intro",               "Skip Intros",                  CFG_BOOL, &g_config.skipIntro},
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
 	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},
+	// Audio section: config-file-only. Hidden from the in-game options menu (gated
+	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
+	// through the vanilla audio screen and a CFG_INT would render there as a bare
+	// "%d%%". Persisted here so the audio choice survives a launch. min/max/step
+	// are unused (the menu never renders these rows), kept for CFG_INT table shape.
+	{"Audio",       "vol_fx",                   "FX Volume",                    CFG_INT,  &g_config.volFx,    0, 255, 4},
+	{"Audio",       "vol_music",                "Music Volume",                 CFG_INT,  &g_config.volMusic, 0, 255, 4},
+	{"Audio",       "vol_voice",                "Voice Volume",                 CFG_INT,  &g_config.volVoice, 0, 255, 4},
+	{"Audio",       "stereo",                   "Stereo",                       CFG_INT,  &g_config.stereo,   0, 1,   1},
 #ifdef CTR_AP
 	// Connection section (before Archipelago): CFG_STRING rows edited in the
 	// connection manager. max = buffer capacity (see MM_ConfigMenu.c).

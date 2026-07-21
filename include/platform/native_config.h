@@ -14,6 +14,18 @@ typedef struct
 	bool skipIntro;             // Video & QoL: skip boot intros, go straight to the main menu
 	bool increaseDrawDistance;  // Video & QoL: render level geometry farther
 	bool disableSplitScreenLod; // Video & QoL: hi-res character models in 3-4P split screen
+	// Audio: the vanilla audio screen's volumes (0-255) and stereo/mono mode.
+	// Config-file-only -- persisted to config.ini [Audio] and edited through that
+	// screen (game/MAIN/MainFreeze.c), NOT the in-game options menu (the [Audio]
+	// section is gated out of it, see BuildSectionMap in game/230/MM_ConfigMenu.c).
+	// -1 means "not captured yet": config.ini stays silent about audio and the
+	// adventure-profile card keeps its vanilla say. Once the audio screen is
+	// visited these hold real 0-255 values and config.ini is authoritative -- it
+	// wins over the card, mirroring config.ini's precedence over ap-config.txt.
+	int volFx;
+	int volMusic;
+	int volVoice;
+	int stereo;
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)

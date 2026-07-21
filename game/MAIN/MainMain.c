@@ -661,6 +661,18 @@ void StateZero()
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c8e0-0x8003c928 for startup HOWL/music/XA setup.
 	howl_InitGlobals(data.kartHwlPath);
 
+	// config.ini audio (see platform/native_config.c) is authoritative over the
+	// adventure-profile card. Reapply the saved values over the howl_InitGlobals
+	// boot defaults so they hold even when no adventure profile is ever loaded this
+	// launch. volFx < 0 means nothing was captured yet -- leave the boot defaults.
+	if (g_config.volFx >= 0)
+	{
+		howl_VolumeSet(0, (u8)g_config.volFx);
+		howl_VolumeSet(1, (u8)g_config.volMusic);
+		howl_VolumeSet(2, (u8)g_config.volVoice);
+		howl_ModeSet(g_config.stereo != 0);
+	}
+
 	VSyncCallback(MainDrawCb_Vsync);
 
 	// Intro music + the "Start your engines" XA voice (skipped under skip_intro).

@@ -50,6 +50,13 @@ static void BuildSectionMap(void)
 	const char *curSection = NULL;
 	for (int i = 0; i < g_numConfigEntries; i++)
 	{
+		// The Audio section is config-file-only: its values live in config.ini and
+		// are edited through the vanilla audio screen (game/MAIN/MainFreeze.c), not
+		// this menu. Skip it so it never appears as a section here (its CFG_INT rows
+		// would also render as a bare "%d%%", duplicating that screen). The rows are
+		// contiguous, so skipping them leaves curSection on the prior section.
+		if (strcmp(g_configEntries[i].section, "Audio") == 0)
+			continue;
 		if (curSection == NULL || strcmp(g_configEntries[i].section, curSection) != 0)
 		{
 			curSection = g_configEntries[i].section;
