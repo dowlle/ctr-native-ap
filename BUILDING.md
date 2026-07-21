@@ -63,6 +63,19 @@ equivalent). The vanilla port does not need them.
 > producing release binaries; building locally for your own machine has no such
 > constraint.
 
+### Debug sidecar (Linux)
+
+Linux builds are stripped at build time: the CMake build splits the symbols out
+into a `<binary>.debug` file sitting next to the stripped executable (so an AP
+build yields `ctr_native_ap` and `ctr_native_ap.debug`). The stripped binary
+carries a `.gnu_debuglink` pointing at the sidecar, so `gdb` on the Deck or
+Atlas auto-loads the symbols as long as the `.debug` file stays next to the
+binary. Keep the pair together for any debugging work. Anyone who copies the
+binary WITHOUT its `.debug` sidecar loses symbol names; the Deck gdb workflow
+that previously relied on an unstripped binary now depends on the sidecar being
+present. To turn the split off for a local build, configure with
+`-DCTR_SPLIT_DEBUG=OFF`.
+
 ## Building the vanilla port
 
 ```

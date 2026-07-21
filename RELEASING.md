@@ -39,6 +39,23 @@ companion `ctr.apworld` carry the same version and are tested together.
       targets (vanilla + AP) compile.
 - [ ] Build `ctr.apworld` from the apworld release commit and verify it is
       content-identical to the build the fuzz gate ran on.
+- [ ] Linux/Steam Deck binary: build on the multiarch rig at the glibc-2.38
+      floor (`-DCTR_AP=ON`; see BUILDING.md). The build strips the binary and
+      writes a `ctr_native_ap.debug` sidecar next to it (CTR_SPLIT_DEBUG,
+      default ON). Confirm the debuglink is present with
+      `readelf --string-dump=.gnu_debuglink ctr_native_ap` and confirm the
+      binary reports "stripped" with `file ctr_native_ap`.
+- [ ] OPERATOR NOTE, run once on the first stripped build: `readelf -S
+      ctr_native_ap.debug` and check whether the sidecar actually contains
+      DWARF (`.debug_*` sections) or only a `.symtab`. The Linux release config
+      builds with no explicit `-g`, so the sidecar may be symtab-only. Separately,
+      the Linux crash reporter (`ap/ap_crash.c`) symbolizes via `.dynsym` and is
+      built without `-rdynamic`, so it likely resolves no game-frame names even
+      unstripped, and the shipped binary may carry no DWARF at all. If addr2line-
+      able crash addresses are wanted, adding `-g` to the Linux release build is a
+      worthwhile companion decision (its cost lands entirely in the `.debug`
+      sidecar after this change). That is a flagged follow-up decision, not part
+      of this step.
 
 ## 4. Package
 
@@ -51,6 +68,24 @@ companion `ctr.apworld` carry the same version and are tested together.
       the zip must carry the release name too (players see it when unzipping).
 - [ ] Write the `.sha256` file for the zip; quote the hash in the release
       notes.
+- [ ] Linux tarball: assemble `ctr-archipelago-vX.Y.Z-linux-x86.tar.gz`
+      containing the STRIPPED `ctr_native_ap` plus the same companion files as
+      the Windows bundle (`ctr.apworld`, `extract_assets.py`, `SETUP.md`,
+      `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+      `support-bundle.sh`). The tarball NEVER contains the `.debug` sidecar. As
+      with the zip, the folder inside the tarball carries the release name. Write
+      the tarball's `.sha256` sidecar.
+- [ ] The `.debug` sidecar ships as its OWN public release asset:
+      `ctr_native_ap.debug` plus a `ctr_native_ap.debug.sha256` sidecar
+      alongside it in the GitHub release (this lets community members symbolize
+      their own crash reports). It must be the `.debug` from the EXACT release
+      build; a rebuilt one fails the debuglink CRC32 check and is useless.
+- [ ] Record in the release evidence the sha256 of BOTH the stripped
+      `ctr_native_ap` and the `ctr_native_ap.debug`: add them to the devlog
+      artifact table, and archive a copy of the `.debug` and its checksums under
+      `ctr-artifacts/<version>/` (the existing evidence home). Because the
+      debuglink CRC rejects any rebuild, the `.debug` archived here must be the
+      one from the exact published release, not a later rebuild.
 
 ## 5. Tag
 
@@ -81,10 +116,16 @@ the previous release's published notes. House style:
 
 - [ ] Privacy scan the notes before publishing: no real names, no machine or
       host names, no local paths.
-- [ ] `gh release create vX.Y.Z` with three assets: the zip, its `.sha256`,
-      and the standalone `ctr.apworld` (multiworld hosts often want just the
-      world file).
-- [ ] Verify with `gh release view`: title, tag, all three assets present.
+- [ ] `gh release create vX.Y.Z` with the Windows assets: the zip, its
+      `.sha256`, and the standalone `ctr.apworld` (multiworld hosts often want
+      just the world file).
+- [ ] Add the Linux assets to the same release: the `.tar.gz` and its
+      `.sha256`, plus the `ctr_native_ap.debug` sidecar and its
+      `ctr_native_ap.debug.sha256` (see §4; the `.debug` is a public asset so
+      players can symbolize their own crashes).
+- [ ] Verify with `gh release view`: title, tag, and every asset present (the
+      Windows zip + sha256, `ctr.apworld`, the Linux tarball + sha256, and the
+      `.debug` + sha256).
 
 ## 8. After publishing
 
