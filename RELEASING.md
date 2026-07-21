@@ -12,6 +12,13 @@ companion `ctr.apworld` carry the same version and are tested together.
 - [ ] In-game playtest of a real generated seed on the exact release
       executable. Every surface changed since the last playtest gets looked at
       in-game, not just compiled.
+- [ ] Verifier sweep: for every YAML in `tools/verify-profiles/`, generate a
+      solo seed with the release apworld, connect the release client, and
+      record the verifier verdict. Any wrong verdict (a warning on a beatable
+      seed, or silence on an unbeatable one) blocks the tag. This sweep is
+      separate from the fuzz gate: the fuzzer proves generation succeeds, the
+      sweep proves the client's connect-time verifier judges the seed
+      correctly. See `tools/verify-profiles/README.md`.
 - [ ] Known issues written down honestly for the release notes, each with
       impact and workaround.
 
@@ -63,6 +70,11 @@ the previous release's published notes. House style:
   (`blob/main/SETUP.md`) for the banner and walkthrough mentions, the
   tag-pinned copy (`blob/vX.Y.Z/SETUP.md`) labeled "as shipped".
 - Known limitations section includes every known issue, with workarounds.
+- Cross-check every claim in "New" against the Testing section's
+  not-verified-in-game list IN THE SAME DOCUMENT. A feature on that list
+  carries its hedge inside its own New bullet, not three sections down.
+  (v0.1.2 claimed cup-leg rungs were in logic while its own Testing section
+  listed them as unverified; the claim was half wrong, see #86.)
 - A "What's next" section from the roadmap keeps expectations honest.
 
 ## 7. Publish

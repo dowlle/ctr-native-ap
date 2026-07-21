@@ -1,0 +1,59 @@
+name: VerifySweepC01
+
+description: Verifier sweep profile community-01. See tools/verify-profiles/README.md.
+
+game: Crash Team Racing
+requires:
+  version: 0.6.7
+  game:
+    Crash Team Racing: 0.1.0
+
+Crash Team Racing:
+  progression_balancing: normal
+  accessibility: full
+  goal: oxidefinal
+  oxide_final_challenge_unlock: any_relic_type
+  oxide_final_challenge_relic_count: 16
+  shuffle_gems: 'true'
+  include_gem_cups: 'true'
+  shuffle_keys: 'true'
+  trap_fill_percentage: 0
+  include_battle_arenas: 'true'
+  warp_pad_shuffle_categories:
+    ['crystals', 'tracks', 'cups']
+  warp_pad_shuffle_grouping: merged
+  warppad_unlock_requirements: random_without_4_keys
+  two_stage_density: full
+  requirement_variety: custom
+  requirement_weights:
+    {Trophy: 64, Key: 0, Sapphire Relic: 44, Gold Relic: 33, Platinum Relic: 22, Yellow CTR Token: 32, Yellow Gem: 16, Red CTR Token: 41, Red Gem: 20, Purple CTR Token: 50, Purple Gem: 25, Green CTR Token: 30, Green Gem: 15, Blue CTR Token: 25, Blue Gem: 13}
+  podium_placement_checks: 'true'
+  podium_finish_rungs: 'true'
+  podium_any_position_rung: 'true'
+  podium_held_rungs: 'true'
+  podium_held_fifth_rung: 'true'
+  one_lap_cups: 'true'
+  death_link: 'off'
+  deathlink_amnesty: 1
+  sapphire_relic_progression: full
+  gold_relic_progression: full
+  platinum_relic_progression: full
+
+  local_items:
+    []
+  non_local_items:
+    []
+  start_inventory:
+    {}
+  start_hints:
+    ["Key"]
+  start_location_hints:
+    ["Ripper Roo Garage: Boss Race", "Papu Papu Garage: Boss Race", "Komodo Joe Garage: Boss Race"]
+  exclude_locations:
+    ["Pinstripe Garage: Boss Race", "Hot Air Skyway: CTR Token Challenge", "N. Oxide Garage: N. Oxide's Challenge", "N. Oxide Garage: N. Oxide's Final Challenge", "Roo's Tubes: Platinum Time Trial", "Mystery Caves: Platinum Time Trial", "Sewer Speedway: Platinum Time Trial", "Tiger Temple: Platinum Time Trial", "Papu's Pyramid: Platinum Time Trial", "Dingo Canyon: Platinum Time Trial", "Blizzard Bluff: Platinum Time Trial", "Dragon Mines: Platinum Time Trial", "Polar Pass: Platinum Time Trial", "Tiny Arena: Platinum Time Trial", "Hot Air Skyway: Platinum Time Trial", "Cortex Castle: Platinum Time Trial", "N. Gin Labs: Platinum Time Trial", "Oxide Station: Platinum Time Trial"]
+  priority_locations:
+    []
+  item_links:
+    []
+  plando_items:
+    []
