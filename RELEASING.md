@@ -12,6 +12,13 @@ companion `ctr.apworld` carry the same version and are tested together.
 - [ ] In-game playtest of a real generated seed on the exact release
       executable. Every surface changed since the last playtest gets looked at
       in-game, not just compiled.
+- [ ] Verifier sweep: for every YAML in `tools/verify-profiles/`, generate a
+      solo seed with the release apworld, connect the release client, and
+      record the verifier verdict. Any wrong verdict (a warning on a beatable
+      seed, or silence on an unbeatable one) blocks the tag. This sweep is
+      separate from the fuzz gate: the fuzzer proves generation succeeds, the
+      sweep proves the client's connect-time verifier judges the seed
+      correctly. See `tools/verify-profiles/README.md`.
 - [ ] Known issues written down honestly for the release notes, each with
       impact and workaround.
 
