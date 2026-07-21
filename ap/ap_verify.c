@@ -185,6 +185,38 @@ static void ap_vf_bank_own(long code, int *counts)
 	}
 }
 
+// A podium rung fires from a gem-cup LEG as well as from the track's own pad
+// (issue #107): the placement listener hooks the race itself, and a cup leg is a
+// real load of that track, so winning a reachable cup collects the rungs of all
+// four leg tracks (data.advCupTrackIDs, the same table the cup-pad glow
+// aggregates by; the apworld's podium rule carries the same OR via the #86 joint
+// podium region). Without this branch, a seed whose Key progression runs through
+// a cup-leg rung -- common under merged destination shuffle, where a cup can sit
+// on a low-Key pad -- sweeps to a false GOAL BLOCKED. Reachability of the cup
+// uses the same predicate as the cup's own reward: the pad that loads the cup
+// destination, its hub keys, and its stage-1 gate.
+static int ap_vf_cup_leg_open(int lid, const int *counts,
+                              const int *pad_for_dest)
+{
+	int cup, leg, legged, cpad, ckeys;
+	for (cup = 0; cup < 5; cup++)
+	{
+		legged = 0;
+		for (leg = 0; leg < 4; leg++)
+			if (data.advCupTrackIDs[cup * 4 + leg] == lid)
+				legged = 1;
+		if (!legged)
+			continue;
+		cpad = pad_for_dest[100 + cup];
+		if (cpad < 0)
+			continue;
+		ckeys = (cpad >= 100) ? AP_VF_CUP_KEYS : ap_vf_pad_keys[cpad];
+		if (counts[AP_IDX_KEY] >= ckeys && ap_vf_stage1_met(cpad, counts))
+			return 1;
+	}
+	return 0;
+}
+
 // ---------------------------------------------------------------------------
 // The sweep.
 // ---------------------------------------------------------------------------
@@ -315,14 +347,18 @@ static void ap_vf_recompute(void)
 			case AP_VF_GEMCUP:
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
-				if (pad < 0)
-					break;
+				if (pad >= 0)
 				{
 					int keys = (pad >= 100) ? AP_VF_CUP_KEYS : ap_vf_pad_keys[pad];
 					ok = counts[AP_IDX_KEY] >= keys && ap_vf_stage1_met(pad, counts);
 					if (ok && locs[i].kind == AP_VF_TIER2)
 						ok = ap_vf_stage2_met(pad, counts);
 				}
+				// Rungs only: the cup-leg alternative (issue #107, comment on
+				// ap_vf_cup_leg_open). Other kinds are earned exclusively
+				// through their own pad, so they keep the pad-only rule.
+				if (!ok && locs[i].kind == AP_VF_PODIUM)
+					ok = ap_vf_cup_leg_open(lid, counts, pad_for_dest);
 				break;
 			case AP_VF_BOSS:
 			{
