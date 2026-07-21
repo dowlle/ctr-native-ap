@@ -30,6 +30,7 @@ static APClient            *g_ap = nullptr;
 static std::deque<long long> g_items;        // received item ids, drained by the game
 static std::deque<int>       g_items_player; // parallel: sending player slot
 static std::deque<long long> g_items_index;  // parallel: server ReceivedItems index
+static std::deque<long long> g_items_location; // parallel: source location (<=0 = starting inv)
 
 // Metadata of the most recent ap_net_drain_items() batch, positionally aligned
 // with its output and valid until the next drain. Lets the hub item feed resolve
@@ -37,6 +38,7 @@ static std::deque<long long> g_items_index;  // parallel: server ReceivedItems i
 // (the shared item-id drain loop in ap_hooks stays a plain both-add seam).
 static int       g_recv_batch_player[64];
 static long long g_recv_batch_index[64];
+static long long g_recv_batch_location[64]; // #85: source location for foreign classifier
 static int       g_recv_batch_n = 0;
 static std::string           g_slot;
 static std::string           g_password;
@@ -63,6 +65,22 @@ static bool                  g_recv_reset = false;
 // -> an "AP" marker). Checked-state is read live from apclientpp instead
 // (get_checked_locations), so it needs no separate store here.
 static std::unordered_map<int64_t, APClient::NetworkItem> g_scouts;
+
+// True once the connect-time LocationScouts reply has been fully processed (issue
+// #85). The server answers a LocationScouts request with exactly one LocationInfo,
+// so a single reply completes the cache. ap_net_scouts_ready returns this instead
+// of the weaker "cache non-empty" predicate: the verifier now banks own items from
+// the scout cache, so reasoning over a partially-filled cache would drop banked
+// items. Set in the location_info handler; cleared on slot-connect and shutdown.
+static bool g_scouts_done = false;
+
+// Locations whose LocationChecks was sent but whose server ReceivedItems echo has
+// not yet been drained (issue #85). In solo every own-world check produces a
+// ReceivedItems reply, so this drains to empty; the verifier withholds the
+// player-facing "not completable" banner while it is non-empty so a transient
+// send->receive snapshot cannot flash a false warning. Read via
+// ap_net_checks_in_flight. Cleared on slot-connect and shutdown.
+static std::set<int64_t> g_pending_checks;
 
 // AI-difficulty option sync. g_diff_value caches the last value learned from the
 // server (slot_data default seed, a Get reply, or a SetNotify update); g_diff_known
@@ -131,7 +149,10 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_items.clear();
 		g_items_player.clear();
 		g_items_index.clear();
+		g_items_location.clear();
 		g_scouts.clear();
+		g_scouts_done = false;   // #85: fresh scout round pending -> verifier waits
+		g_pending_checks.clear(); // #85: no checks in flight on a fresh connect
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
 		// Scout every CTR location so the warp pads can show the actual AP reward
 		// placed at each (and recolour pads whose location is already checked).
@@ -164,6 +185,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_ap->set_location_info_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
 			g_scouts[it.location] = it;
+		g_scouts_done = true; // #85: single LocationInfo reply completes the scout cache
 		std::fprintf(stderr, "[AP NET] scout info received for %d locations\n",
 		             (int)items.size());
 	});
@@ -206,6 +228,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_items.push_back((long long)it.item);
 			g_items_player.push_back((int)it.player);
 			g_items_index.push_back((long long)it.index);
+			g_items_location.push_back((long long)it.location);
+			g_pending_checks.erase(it.location); // #85: this receipt settles its own check
 			std::fprintf(stderr, "[AP NET] received item %lld (index %d)\n",
 			             (long long)it.item, it.index);
 		}
@@ -277,7 +301,10 @@ extern "C" int ap_net_is_connected(void)
 extern "C" void ap_net_send_location(long long location_code)
 {
 	if (g_ap && g_connected)
+	{
 		g_ap->LocationChecks({(int64_t)location_code});
+		g_pending_checks.insert((int64_t)location_code); // #85: in flight until its receipt drains
+	}
 }
 
 extern "C" void ap_net_send_goal(void)
@@ -357,10 +384,20 @@ extern "C" int ap_net_player_count(void)
 
 extern "C" int ap_net_scouts_ready(void)
 {
-	// The connect-time LocationScouts always covers locations that exist in
-	// every CTR seed (the 16 trophy races), so a non-empty scout cache means
-	// the LocationInfo reply has been processed.
-	return g_scouts.empty() ? 0 : 1;
+	// True only once the LocationInfo reply to the connect-time LocationScouts has
+	// been fully processed (issue #85). The verifier banks own items from the scout
+	// cache, so a partially-filled cache would drop banked items -- "cache
+	// non-empty" is too weak a predicate now. One request -> one reply, so
+	// g_scouts_done flips exactly when the cache is complete.
+	return g_scouts_done ? 1 : 0;
+}
+
+// Number of own location checks sent whose ReceivedItems echo has not yet drained
+// (issue #85). The verifier withholds the solo "not completable" banner while this
+// is non-zero so a transient send->receive snapshot cannot flash a false warning.
+extern "C" int ap_net_checks_in_flight(void)
+{
+	return (int)g_pending_checks.size();
 }
 
 extern "C" int ap_net_status(void)
@@ -383,6 +420,7 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 		g_items.pop_front();
 		int       pl = -1;
 		long long ix = -1;
+		long long lc = -1;
 		if (!g_items_player.empty())
 		{
 			pl = g_items_player.front();
@@ -393,10 +431,16 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 			ix = g_items_index.front();
 			g_items_index.pop_front();
 		}
+		if (!g_items_location.empty())
+		{
+			lc = g_items_location.front();
+			g_items_location.pop_front();
+		}
 		if (n < (int)(sizeof g_recv_batch_player / sizeof g_recv_batch_player[0]))
 		{
 			g_recv_batch_player[n] = pl;
 			g_recv_batch_index[n] = ix;
+			g_recv_batch_location[n] = lc;
 			g_recv_batch_n = n + 1;
 		}
 		n++;
@@ -452,6 +496,14 @@ extern "C" int ap_net_recv_batch_player(int pos)
 extern "C" long long ap_net_recv_batch_index(int pos)
 {
 	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_index[pos] : -1;
+}
+
+// Source location for position `pos` of the most recent drain batch (valid until
+// the next ap_net_drain_items call). <= 0 = starting inventory / server grant. The
+// seed verifier's foreign classifier (issue #85) uses this. -1 if pos out of range.
+extern "C" long long ap_net_recv_batch_location(int pos)
+{
+	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_location[pos] : -1;
 }
 
 // Resolve a RECEIVED item into display strings: the item name (in this slot's own
@@ -593,7 +645,10 @@ extern "C" void ap_net_shutdown(void)
 	g_items.clear();
 	g_items_player.clear();
 	g_items_index.clear();
+	g_items_location.clear();
 	g_scouts.clear();
+	g_scouts_done = false;    // #85: no valid scout cache after shutdown
+	g_pending_checks.clear(); // #85: drop any in-flight checks on a server switch
 	g_dl_incoming = false; // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler

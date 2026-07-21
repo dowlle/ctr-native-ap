@@ -1579,6 +1579,13 @@ static int ap_item_count[AP_CAT_COUNT] = {0};
 // bits, so generic item fill never collides with the game's own location grants.
 static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
 
+// Foreign-only split of ap_recv_count (issue #85): receipts that are NOT an
+// own-world location check -- multiworld items + starting inventory. The seed
+// verifier seeds its simulated tally from this and banks own items from the scout
+// cache as it opens each location, so the own component follows checked-state
+// synchronously and cannot race the ReceivedItems drain. See AP_GateCountForeign.
+static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
+
 // ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
@@ -1657,6 +1664,17 @@ int AP_GateCount(int itemType)
 	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
 		return 0;
 	return ap_recv_count[itemType];
+}
+
+// FOREIGN-only received count for one item index (issue #85). The seed verifier
+// seeds its simulated tally from this (multiworld receipts + starting inventory)
+// and banks OWN-world items from the scout cache as it opens each location, so the
+// own component follows checked-state synchronously and cannot race the drain.
+int AP_GateCountForeign(int itemType)
+{
+	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
+		return 0;
+	return ap_recv_count_foreign[itemType];
 }
 
 int AP_GateCountTokenColour(int colour)
@@ -2269,7 +2287,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		int k;
 		AP_FxSeenLoad(); // replay dedup: restore highest effect-applied index
 		for (k = 0; k < AP_ITEM_INDEX_COUNT; k++)
+		{
 			ap_recv_count[k] = 0;
+			ap_recv_count_foreign[k] = 0; // #85: rebuilds from the resent ReceivedItems list
+		}
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		for (k = 0; k < 6; k++)
@@ -2335,6 +2356,17 @@ static void AP_NetTick(struct GameTracker *gGT)
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
 			ap_recv_count[idx]++;
+			// Split tally for the seed verifier (issue #85): count this receipt as
+			// FOREIGN unless it is an own-world location check (which the verifier
+			// banks from the scout cache synchronously with checked-state instead).
+			// Defensive classifier (risk 1): sender != self OR location <= 0 -> foreign.
+			// Starting inventory / server grants carry no scout entry, so counting them
+			// foreign here keeps them from being dropped from BOTH tallies regardless of
+			// how the server reports the sender slot.
+			int       pl  = ap_net_recv_batch_player(i);
+			long long loc = ap_net_recv_batch_location(i);
+			if (pl != ap_net_self_slot() || loc <= 0)
+				ap_recv_count_foreign[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
 		}
 

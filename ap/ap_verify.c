@@ -100,6 +100,7 @@ static int      ap_vf_solo = 0;         // 1 = single-slot room (definitive)
 static unsigned ap_vf_gen = 0;          // AP_StateGen at last compute
 static char     ap_vf_line2[96];        // banner detail line
 static int      ap_vf_truncated = 0;    // worklist overflowed: verdict is not trustworthy
+static int      ap_vf_settled = 1;      // #85: last verdict computed with no checks in flight
 
 // Requirement met under SIMULATED counts. Single source of truth is
 // AP_ReqMetCounts (ap_hooks.c) -- the same comparator the live gates use,
@@ -167,6 +168,23 @@ static int ap_vf_oxide_final_met(const int *counts)
 	}
 }
 
+// Bank a location's OWN scouted item into the simulated counts (issue #85). A
+// no-op for foreign or unscouted locations -- their receipts live in the foreign
+// tally (AP_GateCountForeign) instead, so nothing is double-counted. Shared by the
+// checked-at-start pass and the fixed-point sweep so the two banking paths cannot
+// drift.
+static void ap_vf_bank_own(long code, int *counts)
+{
+	long long item; int player; unsigned flags;
+	if (ap_net_scout_known(code, &item, &player, &flags) &&
+	    player == ap_net_self_slot())
+	{
+		long long idx = item - AP_ITEM_BASE;
+		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
+			counts[(int)idx]++;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // The sweep.
 // ---------------------------------------------------------------------------
@@ -223,10 +241,20 @@ static void ap_vf_recompute(void)
 				}
 		}
 
+	// Seed the simulated tally from the FOREIGN receipts only (multiworld items +
+	// starting inventory). OWN items are banked from the scout cache below -- when a
+	// location starts checked here, and as the sweep opens each reachable location --
+	// so the own component follows checked-state synchronously and never races the
+	// ReceivedItems drain (issue #85). The verdict is still "completable from here":
+	// the seed verdict on a fresh connect and a stuck-detector mid-run.
+	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
+		counts[i] = AP_GateCountForeign(i);
+
 	// A location is IN this seed iff the connect-time scout knows it (options
 	// prune arenas/cups/rungs; the server only answers for locations that
-	// exist). Already-checked locations start collected -- their own items are
-	// in the live tallies below, so the sweep must not add them again.
+	// exist). Already-checked locations start collected AND have their own scouted
+	// item banked now: the sweep only banks locations IT opens (below), so a
+	// checked-at-start location would otherwise be counted nowhere.
 	ap_vf_total = 0;
 	for (i = 0; i < n; i++)
 	{
@@ -238,14 +266,14 @@ static void ap_vf_recompute(void)
 			continue;
 		}
 		ap_vf_total++;
-		state[i] = ap_net_location_checked(locs[i].code) ? 1 : 0;
+		if (ap_net_location_checked(locs[i].code))
+		{
+			state[i] = 1;
+			ap_vf_bank_own(locs[i].code, counts);
+		}
+		else
+			state[i] = 0;
 	}
-
-	// Start from the LIVE received tallies: the verdict is "completable from
-	// here", which is the seed verdict on a fresh connect and a stuck-detector
-	// mid-run.
-	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
-		counts[i] = AP_GateCount(i);
 
 	// Destination -> loading physical pad, from the same slot_data permutation
 	// the load gate uses (identity when shuffle is off).
@@ -341,16 +369,7 @@ static void ap_vf_recompute(void)
 				continue;
 			state[i] = 1;
 			progress = 1;
-			{
-				long long item; int player; unsigned flags;
-				if (ap_net_scout_known(locs[i].code, &item, &player, &flags) &&
-				    player == ap_net_self_slot())
-				{
-					long long idx = item - AP_ITEM_BASE;
-					if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
-						counts[(int)idx]++;
-				}
-			}
+			ap_vf_bank_own(locs[i].code, counts);
 		}
 	}
 
@@ -386,6 +405,9 @@ static void ap_vf_recompute(void)
 	ap_vf_keys_fp = counts[AP_IDX_KEY];
 	ap_vf_solo = (ap_net_player_count() == 1);
 	ap_vf_have = 1;
+	// #85: a verdict computed while an own check is still in flight is a transient
+	// snapshot; the banner waits for a settled one (the log still records this).
+	ap_vf_settled = (ap_net_checks_in_flight() == 0);
 	// A truncated worklist means the sweep reasoned over a partial seed. Never
 	// report that as a definitive failure: an "I could not check this" verdict
 	// is useful, a false "your seed is broken" is worse than no verifier.
@@ -447,15 +469,24 @@ void AP_VerifyOnFrame(void)
 	}
 	unsigned gen = AP_StateGen();
 	if (ap_vf_have && gen == ap_vf_gen)
+	{
+		// Gen unchanged, but a drain of only NON-gate items (Wumpa idx 15, traps)
+		// clears the in-flight check set WITHOUT bumping the gen (ap_hooks only bumps
+		// for gate items). Re-run once so a verdict computed while a check was still
+		// outstanding settles and the banner is no longer withheld; the gen compare
+		// alone would strand an unsettled verdict forever (issue #85).
+		if (!ap_vf_settled && ap_net_checks_in_flight() == 0)
+			ap_vf_recompute();
 		return;
+	}
 	ap_vf_gen = gen;
 	ap_vf_recompute();
 }
 
 void AP_DrawVerifyWarning(void)
 {
-	if (!ap_vf_have || ap_vf_goal_ok || !ap_vf_solo)
-		return;
+	if (!ap_vf_have || ap_vf_goal_ok || !ap_vf_solo || !ap_vf_settled)
+		return; // #85: withhold the banner until the verdict settled (no checks in flight)
 	static char warn1[] = "!! SEED NOT COMPLETABLE !!";
 	DecalFont_DrawLine(warn1, AP_FEED_X, 0x2c, FONT_SMALL, RED);
 	DecalFont_DrawLine(ap_vf_line2, AP_FEED_X, 0x2c + AP_FEED_LINE_H,
