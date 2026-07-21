@@ -1245,6 +1245,7 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
 // Wording lives here (retunable), consistent with the ceremony block above.
 #define AP_FEED_FMT_OWN      "%s"           // own slot / server item
 #define AP_FEED_FMT_FOREIGN  "%s FROM %s"   // someone else sent it
+#define AP_FEED_FMT_SENT     "%s TO %s"     // we checked a location that feeds someone else
 #define AP_FEED_ITEM_UNKNOWN "AP ITEM"
 
 typedef struct
@@ -1345,6 +1346,53 @@ void AP_FeedOnItemReceived(long long item, int player, long long index)
 		snprintf(line, sizeof line, AP_FEED_FMT_FOREIGN, itemS, playerS);
 
 	AP_FeedEnqueue(line, own);
+}
+
+// A location WE just checked that feeds SOMEONE ELSE. The received feed only ever
+// shows items we RECEIVE, so a nonlocal send (gem cups, cup-leg podium rungs, any
+// ceremony a player skips past) would otherwise surface nothing (issue #63).
+// Resolve the scouted destination + item and toast "<ITEM> TO <PLAYER>". Own-slot
+// sends are skipped: the server echoes them back through ReceivedItems, so
+// AP_FeedOnItemReceived already toasts them -- toasting here too would double the
+// line. Display-only, self-gated on ctr_cfg_active(); vanilla builds are
+// byte-identical. The caller must only invoke this for a genuinely NEW check (it
+// captures ap_net_location_checked BEFORE the send) so a re-win never re-toasts.
+static void AP_FeedOnLocationSent(long code)
+{
+	if (!ctr_cfg_active())
+		return;
+
+	// Every one of the 99 CTR locations is scouted on connect, so a known scout is
+	// expected; if it is somehow absent we cannot attribute the item -> stay silent.
+	int player = -1;
+	if (!ap_net_scout_known(code, NULL, &player, NULL))
+		return;
+
+	if (player == ap_net_self_slot())
+		return; // own item: the ReceivedItems echo already toasts it -- avoid a dupe
+
+	char itemRaw[64], playerRaw[64];
+	char itemS[AP_FEED_ITEM_CAP], playerS[AP_FEED_PLAYER_CAP];
+	char line[AP_FEED_TEXT_CAP];
+	if (ap_net_scout_text(code, itemRaw, (int)sizeof itemRaw, playerRaw, (int)sizeof playerRaw))
+	{
+		AP_CeremonySanitize(itemRaw, itemS, (int)sizeof itemS);
+		AP_CeremonySanitize(playerRaw, playerS, (int)sizeof playerS);
+	}
+	else
+	{
+		itemS[0] = '\0';
+		playerS[0] = '\0';
+	}
+	if (AP_CeremonyNameIsBlank(itemS))
+		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
+	if (playerS[0] == '\0')
+		snprintf(playerS, sizeof playerS, "%s", "PLAYER");
+
+	// "%s TO %s": item (<=31) + " TO " + player (<=23) = 58 < AP_FEED_TEXT_CAP (64),
+	// so it never truncates. own=0 -> foreign colour; a sent item is never our own.
+	snprintf(line, sizeof line, AP_FEED_FMT_SENT, itemS, playerS);
+	AP_FeedEnqueue(line, 0);
 }
 
 // Called once after each frame's received-item drain (n = items drained this
@@ -1467,9 +1515,14 @@ void AP_NotifyAdvReward(int rewardBit)
 
 	if (code >= 0)
 	{
+		// #63: capture the checked-state BEFORE the send so a session replay /
+		// re-win of an already-checked location never re-toasts the sent line.
+		int wasChecked = ap_net_location_checked(code);
 		ap_net_send_location(code); // LocationChecks([code])
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
+		if (!wasChecked)
+			AP_FeedOnLocationSent(code); // toast nonlocal sends to the hub feed
 	}
 
 	// Podium backstop (event-time): winning a trophy race == finishing 1st ==
@@ -2600,6 +2653,12 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	AP_AppendLog(msg);
 	ap_net_send_location(code);                    // LocationChecks([code])
 	AP_CeremonyLedgerAdd(code, -1, rungTag);       // feed the race-end award block
+	// #63: rung sends are deliberately NOT toasted to the hub feed. A single trophy
+	// win fans out up to ~5 rungs at once (AP_SendPodiumChecks), which would burst
+	// ~6 near-simultaneous toasts and feel spammy. Suppressed for now; to enable,
+	// add one line here -- AP_FeedOnLocationSent(code); -- it is already safe (the
+	// checked-state guard at the top of this function returns before the send on a
+	// re-fire/re-win, so a NEW check is the only path that reaches here).
 }
 
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
