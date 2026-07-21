@@ -53,17 +53,14 @@ companion `ctr.apworld` carry the same version and are tested together.
       default ON). Confirm the debuglink is present with
       `readelf --string-dump=.gnu_debuglink ctr_native_ap` and confirm the
       binary reports "stripped" with `file ctr_native_ap`.
-- [ ] OPERATOR NOTE, run once on the first stripped build: `readelf -S
-      ctr_native_ap.debug` and check whether the sidecar actually contains
-      DWARF (`.debug_*` sections) or only a `.symtab`. The Linux release config
-      builds with no explicit `-g`, so the sidecar may be symtab-only. Separately,
-      the Linux crash reporter (`ap/ap_crash.c`) symbolizes via `.dynsym` and is
-      built without `-rdynamic`, so it likely resolves no game-frame names even
-      unstripped, and the shipped binary may carry no DWARF at all. If addr2line-
-      able crash addresses are wanted, adding `-g` to the Linux release build is a
-      worthwhile companion decision (its cost lands entirely in the `.debug`
-      sidecar after this change). That is a flagged follow-up decision, not part
-      of this step.
+- [ ] Crash symbolization facts (measured on the rig, 2026-07-21, so no
+      re-checking needed): the `.debug` sidecar carries FULL DWARF plus the
+      symtab, so `addr2line -e ctr_native_ap.debug <offset>` resolves any
+      `+0xoffset` frame from a player's `ctr-ap-crash.txt`. The live crash
+      text itself never carries game-function names (the reporter resolves
+      via `.dynsym` only, ~2 dynamic text symbols, identical stripped or
+      not), which is why the sidecar from the EXACT release build must be
+      kept: it is the only path from a crash report to a function name.
 
 ## 4. Package
 
