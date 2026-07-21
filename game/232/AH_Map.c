@@ -600,8 +600,18 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 		//   1 Locked      -> RED
 		//   2 Raceable    -> GREEN, vanilla-style two-tone flicker (timer & 2)
 		//   3 Re-locked   -> ORANGE (did something here, more items needed)
-		//   4 Tier-2 open -> PERIWINKLE
+		//   4 Tier-2 open -> PERIWINKLE, slow two-tone pulse (timer & 4)
 		//   5 Done        -> GRAY (hard-locked, nothing left)
+		//
+		// Animated-cue vocabulary (issue #60 -- keep these distinct):
+		//   static colour        = nothing actionable here right now
+		//   GREEN fast flicker    = trophy check is open (race it)
+		//   BLUE slow pulse       = trophy done, but tier-2 checks (relic/CTR)
+		//                           remain -- pad stays "alive" instead of going
+		//                           quiet the moment the trophy is checked
+		//   quiet (static) GREEN  never happens; a checked trophy leaves state 4/5,
+		//   so "green stopped" still reads as "trophy done" -- the blue pulse then
+		//   tells you whether more checks are left (pulsing) or not (static GRAY).
 		// AP_PadState returns 0 in vanilla mode / for an unrecognised destination, so
 		// the vanilla colour switch above is left entirely untouched there.
 		{
@@ -622,7 +632,15 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 			else if (st == 3)
 				color = ORANGE;
 			else if (st == 4)
+			{
+				// Trophy checked but tier-2 checks remain: slow PERIWINKLE<->BLUE
+				// pulse. timer & 4 toggles half as fast as GREEN's timer & 2, so
+				// the cadence alone separates "race open" from "checks remain".
+				// Honours the map_flash opt-out exactly like GREEN.
 				color = PERIWINKLE;
+				if (AP_MapFlashOn() && (gGT->timer & 4) != 0)
+					color = BLUE;
+			}
 			else if (st == 5)
 				color = GRAY;
 		}
