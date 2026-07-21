@@ -287,10 +287,43 @@ extern "C" int ap_net_take_recv_reset(void)
 	return r;
 }
 
+// Issue #103: every seam that drives socket I/O must swallow exceptions. The
+// websocket stack throws on abrupt server loss, these functions are called from
+// C frames with no unwind tables, and an escaping exception is std::terminate ->
+// abort -- which also bypasses the SEH crash reporter, so the death is silent.
+// Catch, log (rate-limited: a dead socket would otherwise log every frame), and
+// keep going; apclientpp's own retry machinery recovers the connection.
+static void ap_net_note_net_exception(const char *where, const char *what)
+{
+	static unsigned count = 0;
+	if ((count++ & 63u) == 0)
+		std::fprintf(stderr,
+		             "[AP NET] network exception in %s (server connection lost? "
+		             "retrying in background): %s (occurrence %u)\n",
+		             where, what, count);
+}
+
+#define AP_NET_GUARD(where, body)                                   \
+	do                                                              \
+	{                                                               \
+		try                                                         \
+		{                                                           \
+			body;                                                   \
+		}                                                           \
+		catch (const std::exception &e)                             \
+		{                                                           \
+			ap_net_note_net_exception(where, e.what());             \
+		}                                                           \
+		catch (...)                                                 \
+		{                                                           \
+			ap_net_note_net_exception(where, "unknown exception");  \
+		}                                                           \
+	} while (0)
+
 extern "C" void ap_net_poll(void)
 {
 	if (g_ap)
-		g_ap->poll();
+		AP_NET_GUARD("poll", g_ap->poll());
 }
 
 extern "C" int ap_net_is_connected(void)
@@ -302,15 +335,17 @@ extern "C" void ap_net_send_location(long long location_code)
 {
 	if (g_ap && g_connected)
 	{
-		g_ap->LocationChecks({(int64_t)location_code});
-		g_pending_checks.insert((int64_t)location_code); // #85: in flight until its receipt drains
+		AP_NET_GUARD("send_location", {
+			g_ap->LocationChecks({(int64_t)location_code});
+			g_pending_checks.insert((int64_t)location_code); // #85: in flight until its receipt drains
+		});
 	}
 }
 
 extern "C" void ap_net_send_goal(void)
 {
 	if (g_ap && g_connected)
-		g_ap->StatusUpdate(APClient::ClientStatus::GOAL);
+		AP_NET_GUARD("send_goal", g_ap->StatusUpdate(APClient::ClientStatus::GOAL));
 }
 
 extern "C" int ap_net_scout_known(long long location_code, long long *out_item,
@@ -459,9 +494,11 @@ extern "C" void ap_net_difficulty_subscribe(int slot_default)
 		g_diff_value = slot_default;
 		g_diff_known = true;
 	}
-	const std::string key = ap_diff_key();
-	g_ap->SetNotify({key});
-	g_ap->Get({key});
+	AP_NET_GUARD("difficulty_subscribe", {
+		const std::string key = ap_diff_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
 }
 
 extern "C" void ap_net_difficulty_set(int value)
@@ -469,10 +506,12 @@ extern "C" void ap_net_difficulty_set(int value)
 	if (!g_ap || !g_connected)
 		return;
 	// replace: write value unconditionally; default seeds the key if it is unset.
-	APClient::DataStorageOperation op;
-	op.operation = "replace";
-	op.value = value;
-	g_ap->Set(ap_diff_key(), value, false, {op});
+	AP_NET_GUARD("difficulty_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = value;
+		g_ap->Set(ap_diff_key(), value, false, {op});
+	});
 	g_diff_value = value;
 	g_diff_known = true;
 }
@@ -588,8 +627,10 @@ extern "C" void ap_net_deathlink_enable(void)
 {
 	if (!g_ap)
 		return;
-	g_ap->ConnectUpdate(false, 0, true, {"AP", "DeathLink"});
-	std::fprintf(stderr, "[AP NET] DeathLink tag enabled\n");
+	AP_NET_GUARD("deathlink_enable", {
+		g_ap->ConnectUpdate(false, 0, true, {"AP", "DeathLink"});
+		std::fprintf(stderr, "[AP NET] DeathLink tag enabled\n");
+	});
 }
 
 // Remove the "DeathLink" tag again (runtime toggle). ConnectUpdate replaces the
@@ -598,8 +639,10 @@ extern "C" void ap_net_deathlink_disable(void)
 {
 	if (!g_ap)
 		return;
-	g_ap->ConnectUpdate(false, 0, true, {"AP"});
-	std::fprintf(stderr, "[AP NET] DeathLink tag disabled\n");
+	AP_NET_GUARD("deathlink_disable", {
+		g_ap->ConnectUpdate(false, 0, true, {"AP"});
+		std::fprintf(stderr, "[AP NET] DeathLink tag disabled\n");
+	});
 }
 
 // Send a death as a tagged Bounce. cause is a short verb phrase (e.g. "was blown
@@ -609,17 +652,19 @@ extern "C" void ap_net_deathlink_send(const char *cause)
 {
 	if (!g_ap || !g_connected)
 		return;
-	std::string slot = g_ap->get_slot();
-	nlohmann::json data;
-	data["time"] = (double)std::time(nullptr);
-	data["source"] = slot;
-	if (cause && cause[0])
-		data["cause"] = slot + " " + cause;
-	else
-		data["cause"] = slot + " wiped out";
-	g_ap->Bounce(data, {}, {}, {"DeathLink"});
-	std::fprintf(stderr, "[AP NET] deathlink sent: %s\n",
-	             data["cause"].get<std::string>().c_str());
+	AP_NET_GUARD("deathlink_send", {
+		std::string slot = g_ap->get_slot();
+		nlohmann::json data;
+		data["time"] = (double)std::time(nullptr);
+		data["source"] = slot;
+		if (cause && cause[0])
+			data["cause"] = slot + " " + cause;
+		else
+			data["cause"] = slot + " wiped out";
+		g_ap->Bounce(data, {}, {}, {"DeathLink"});
+		std::fprintf(stderr, "[AP NET] deathlink sent: %s\n",
+		             data["cause"].get<std::string>().c_str());
+	});
 }
 
 // Drain the depth-1 inbound death latch. Returns 1 (and copies the cause string,
