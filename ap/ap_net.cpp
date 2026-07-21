@@ -26,6 +26,11 @@
 #include <cstdint>
 #include <ctime>
 
+// ctr-ap.log shim from ap_hooks (resolved at final link). Connection-health
+// events must reach the persistent log, not just stderr: the Steam launch
+// path does not capture stderr, and support bundles read ctr-ap.log (#103).
+extern "C" void AP_LogLine(const char *msg);
+
 static APClient            *g_ap = nullptr;
 static std::deque<long long> g_items;        // received item ids, drained by the game
 static std::deque<int>       g_items_player; // parallel: sending player slot
@@ -124,6 +129,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		if (g_status != AP_NET_STATUS_ERROR)
 			g_status = AP_NET_STATUS_CONNECTING; // socket up; slot handshake pending
 		std::fprintf(stderr, "[AP NET] socket connected\n");
+		AP_LogLine("[AP NET] socket connected\n");
 	});
 	g_ap->set_socket_disconnected_handler([]() {
 		g_connected = false;
@@ -131,6 +137,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		if (g_status != AP_NET_STATUS_ERROR)
 			g_status = AP_NET_STATUS_CONNECTING;
 		std::fprintf(stderr, "[AP NET] socket disconnected\n");
+		AP_LogLine("[AP NET] socket disconnected (auto-retrying)\n");
 	});
 	g_ap->set_room_info_handler([]() {
 		std::fprintf(stderr, "[AP NET] RoomInfo; connecting slot '%s'\n", g_slot.c_str());
@@ -297,10 +304,15 @@ static void ap_net_note_net_exception(const char *where, const char *what)
 {
 	static unsigned count = 0;
 	if ((count++ & 63u) == 0)
-		std::fprintf(stderr,
-		             "[AP NET] network exception in %s (server connection lost? "
-		             "retrying in background): %s (occurrence %u)\n",
-		             where, what, count);
+	{
+		char line[256];
+		std::snprintf(line, sizeof line,
+		              "[AP NET] network exception in %s (server connection lost? "
+		              "retrying in background): %s (occurrence %u)\n",
+		              where, what, count);
+		std::fprintf(stderr, "%s", line);
+		AP_LogLine(line);
+	}
 }
 
 #define AP_NET_GUARD(where, body)                                   \
