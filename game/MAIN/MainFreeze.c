@@ -540,6 +540,16 @@ force_inline b32 PROCESSINPUTS_MainFreeze_MenuPtrOptions(struct RectMenu *menu, 
 			{
 				OtherFX_Play(1, 1);
 				exitMenu = true;
+
+				// Capture the audio screen's live volumes / stereo mode into
+				// config.ini (see platform/native_config.c). config.ini is
+				// authoritative over the adventure-profile card, so persisting on
+				// exit makes the choice survive a launch even with no adventure save.
+				g_config.volFx    = howl_VolumeGet(0);
+				g_config.volMusic = howl_VolumeGet(1);
+				g_config.volVoice = howl_VolumeGet(2);
+				g_config.stereo   = howl_ModeGet();
+				NativeConfig_Save();
 			}
 			break;
 		}
