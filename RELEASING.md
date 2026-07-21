@@ -92,6 +92,18 @@ the previous release's published notes. House style:
       development" wording).
 - [ ] File or update GitHub issues for the shipped known issues, labeled
       `known-issue`.
+- [ ] Publish the version to the apworld indexes, so players installing from
+      an index get this release instead of an older one. Two indexes carry
+      CTR: `dowlle/Archipelago-index` and `ionium-ap/Archipelago-index`. In
+      each, add the version under `[versions]` in `index/ctr.toml` and add a
+      `"X.Y.Z" = "<sha256>"` line under `[ctr]` in `index.lock`. Compute the
+      hash from the downloaded release asset, never from the release notes.
+      Index CI then runs the full check matrix against the published
+      `ctr.apworld`, which is an independent re-verification of the gate.
+      The ionium one is cross-fork: branch from their `main` (not ours, which
+      has diverged), push to our own index fork, and open the PR with
+      `--repo ionium-ap/Archipelago-index --base main`. This step was missed
+      for v0.1.1, which left every index a release behind for four days.
 - [ ] Announce (community Discord), and route bug reports to the issue
       tracker.
 - [ ] Update the roadmap: shipped items out, new plans in.
