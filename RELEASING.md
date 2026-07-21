@@ -106,6 +106,13 @@ the previous release's published notes. House style:
       for v0.1.1, which left every index a release behind for four days.
 - [ ] Announce (community Discord), and route bug reports to the issue
       tracker.
+- [ ] Fast-forward `master` to the upstream head: `git fetch upstream && git
+      push origin upstream/master:master`. `master` is a read-only mirror of
+      `CTR-tools/ctr-native` kept so "what changed upstream since we last
+      looked" stays a one-command question; it carries no work of ours (our
+      work lives on `main`). While there, skim the new upstream commits for
+      anything worth cherry-picking, the way the v0.1.2 cutscene-matrix and
+      third-turbo fixes were.
 - [ ] Update the roadmap: shipped items out, new plans in.
 - [ ] **Documentation sweep. Do this every release, not only when it feels
       needed.** Decision sessions keep docs current; release events never do,
