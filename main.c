@@ -185,6 +185,14 @@ int main(int argc, char *argv[])
 		return NativeConsole_Return(1);
 	}
 
+#ifdef CTR_AP
+	// Arm the crash reporter as early as its only dependency allows (the crash
+	// file is opened by relative path, so the base-dir chdir must have landed).
+	// Anything from here on -- asset validation, SDL/renderer init -- now leaves
+	// a ctr-ap-crash.txt block instead of dying silently (Intel HD 4000 class).
+	AP_CrashInstall();
+#endif
+
 	if (!NativeAssets_Validate())
 	{
 		return NativeConsole_Return(1);

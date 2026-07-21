@@ -22,7 +22,8 @@
 // no stdio locks beyond what a dying process can stomach) and then re-raise /
 // continue the search, so default OS crash behaviour is preserved.
 
-// Install the platform handlers. Call once at AP boot.
+// Install the platform handlers. Call once from main(), right after the
+// base-dir chdir (handlers write relative paths).
 void AP_CrashInstall(void);
 
 // Cheap per-frame context cache read by the handlers (a crashed process may

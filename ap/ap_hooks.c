@@ -3035,7 +3035,6 @@ void AP_OnFrame(struct GameTracker *gGT)
 		if (!ap_booted)
 		{
 			ap_booted = 1;
-			AP_CrashInstall();
 			AP_AppendLog("[AP BOOT] ===== client run start ===== (" CTR_AP_VERSION ")\n");
 			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
 			             ".sh on Linux/Deck) next to the game and share the archive\n");
