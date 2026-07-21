@@ -1,4 +1,6 @@
 # Vendored header-only AP deps are fetched, not committed (see fetch-deps.sh).
+# The fetch script and its pin manifest ARE committed.
 *
 !.gitignore
 !fetch-deps.sh
+!versions.lock

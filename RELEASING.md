@@ -37,6 +37,14 @@ companion `ctr.apworld` carry the same version and are tested together.
       the version string is compiled in, so the commit must be final first.
 - [ ] Verify the version string is embedded in the binary and both build
       targets (vanilla + AP) compile.
+- [ ] Configure the AP build from a FRESH build dir (a stale CMake cache can
+      skip the vendor gate). Configure must pass `APVendorCheck` with tree
+      hashing ON (the default; never pass `-DCTR_AP_VERIFY_VENDOR=OFF` for a
+      release) and print the resolved vendor set. A dep that does not match
+      `ap/vendor/versions.lock` fails configure here, before any compilation.
+- [ ] Generate `versions.txt` for the bundle from the pinned set:
+      `tools/release-versions.sh > <bundle>/versions.txt`. Its dep lines must
+      match the resolved set the AP configure just printed.
 - [ ] Build `ctr.apworld` from the apworld release commit and verify it is
       content-identical to the build the fuzz gate ran on.
 - [ ] Linux/Steam Deck binary: build on the multiarch rig at the glibc-2.38
@@ -60,8 +68,8 @@ companion `ctr.apworld` carry the same version and are tested together.
 ## 4. Package
 
 - [ ] Bundle folder named `ctr-archipelago-vX.Y.Z/` containing:
-      `ctr_native_ap.exe`, `ctr.apworld`, `extract_assets.py`, `SETUP.md`,
-      `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+      `ctr_native_ap.exe`, `ctr.apworld`, `versions.txt`, `extract_assets.py`,
+      `SETUP.md`, `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
       `support-bundle.bat`, `support-bundle.ps1` (Linux tarball instead ships
       `support-bundle.sh`).
 - [ ] Zip it as `ctr-archipelago-vX.Y.Z-windows-x86.zip`. The folder INSIDE
