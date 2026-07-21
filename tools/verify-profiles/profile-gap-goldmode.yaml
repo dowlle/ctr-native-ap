@@ -1,0 +1,8 @@
+name: VerifySweepGGLD
+game: Crash Team Racing
+description: Gap profile, Oxide Final Challenge gated on GOLD relics (mode branch untested by the other profiles).
+Crash Team Racing:
+  accessibility: full
+  goal: oxidefinal
+  oxide_final_challenge_unlock: gold_relics
+  oxide_final_challenge_relic_count: 12

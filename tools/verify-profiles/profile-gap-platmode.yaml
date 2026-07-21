@@ -1,0 +1,9 @@
+name: VerifySweepGPLT
+game: Crash Team Racing
+description: Gap profile, Oxide Final Challenge gated on PLATINUM relics with platinum relic progression at full, the slider interplay the docstrings promise works.
+Crash Team Racing:
+  accessibility: full
+  goal: oxidefinal
+  oxide_final_challenge_unlock: platinum_relics
+  oxide_final_challenge_relic_count: 10
+  platinum_relic_progression: full

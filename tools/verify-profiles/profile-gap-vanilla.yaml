@@ -1,0 +1,7 @@
+name: VerifySweepGVAN
+game: Crash Team Racing
+description: Gap profile, pure vanilla unlock mode with NO destination shuffle, post issue 80. The verifier must agree with the new entrance-keyed vanilla trophy floors on an unshuffled graph.
+Crash Team Racing:
+  accessibility: full
+  warppad_unlock_requirements: vanilla
+  warp_pad_shuffle_categories: []

@@ -1,0 +1,38 @@
+name: VerifySweepC06
+
+description: Verifier sweep candidate 06. All Gems goal with Shuffle Gems OFF, so the five gems stay pinned to their gem-cup reward locations and the goal requires winning every cup. Gem cups are then destination-shuffled under merged grouping, so each cup is loaded by a different physical pad. Exercises the verifier goal case 4 (all five gem counts above zero), gem-cup reachability through pad_for_dest, and the single-stage randomized cup entry requirements. Not covered by the six baseline profiles. See the proposal note in this folder.
+
+game: Crash Team Racing
+requires:
+  version: 0.6.7
+  game:
+    Crash Team Racing: 0.1.0
+
+Crash Team Racing:
+  progression_balancing: normal
+  accessibility: full
+  goal: allgemcups
+  oxide_final_challenge_unlock: sapphire_relics
+  oxide_final_challenge_relic_count: 18
+  shuffle_gems: 'false'
+  include_gem_cups: 'true'
+  shuffle_keys: 'true'
+  trap_fill_percentage: 0
+  include_battle_arenas: 'true'
+  warp_pad_shuffle_categories:
+    ['crystals', 'tracks', 'cups']
+  warp_pad_shuffle_grouping: merged
+  warppad_unlock_requirements: randomized
+  two_stage_density: standard
+  requirement_variety: icebound_beta5
+  podium_placement_checks: 'false'
+  podium_finish_rungs: 'false'
+  podium_any_position_rung: 'false'
+  podium_held_rungs: 'false'
+  podium_held_fifth_rung: 'false'
+  one_lap_cups: 'true'
+  death_link: 'off'
+  deathlink_amnesty: 1
+  sapphire_relic_progression: full
+  gold_relic_progression: full
+  platinum_relic_progression: full

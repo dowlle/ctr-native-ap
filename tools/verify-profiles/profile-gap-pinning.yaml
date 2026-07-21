@@ -1,0 +1,8 @@
+name: VerifySweepGPIN
+game: Crash Team Racing
+description: Gap profile, new 0.1.3 pinning paths. Gem cups AND battle arenas excluded while gems are shuffled, so the five gems pin to their vanilla cup checks and the four crystal tokens pin to the arena checks. The verifier must judge a seed where those nine locations are pinned out of the multiworld.
+Crash Team Racing:
+  accessibility: full
+  include_gem_cups: 'false'
+  include_battle_arenas: 'false'
+  shuffle_gems: 'true'
