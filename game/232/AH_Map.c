@@ -384,22 +384,25 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 						}
 
 						// check if key is unlocked
-						sVar7 = CHECK_ADV_BIT(adv->rewards, base + ADV_REWARD_FIRST_BOSS_KEY);
 #ifdef CTR_AP
 						// AP: "beaten" must key off the boss-race LOCATION being
 						// checked, not the key AdvProgress bit -- in AP those bits
 						// double as the RECEIVED-Key pool (the exact trap the goal-3
-						// rework avoids), so a garage you personally beat kept
-						// flashing "open, not beaten" until the matching Key item
-						// happened to arrive from the multiworld (live find,
-						// 2026-07-15 playtest). Same durable server-checked signal
-						// AP_EvaluateGoal's goal 3 and the garage door use.
-						if (ctr_cfg_active() &&
-						    AP_LocationCheckedByBit(base + ADV_REWARD_FIRST_BOSS_KEY))
+						// rework avoids), so holding Keys must not paint the star and
+						// a garage you personally beat must read done (live find,
+						// 2026-07-15 playtest). Override, not OR: the AdvProgress
+						// mirror is rewritten from received Keys every frame, so it
+						// must not feed sVar7 at all in AP. Same durable server-
+						// checked signal AP_EvaluateGoal's goal 3 and the door use.
+						if (ctr_cfg_active())
 						{
-							sVar7 = 1;
+							sVar7 = (s16)AP_LocationCheckedByBit(base + ADV_REWARD_FIRST_BOSS_KEY);
 						}
+						else
 #endif
+						{
+							sVar7 = CHECK_ADV_BIT(adv->rewards, base + ADV_REWARD_FIRST_BOSS_KEY);
+						}
 					}
 
 					// open, not beaten
@@ -411,6 +414,16 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 					if (sVar7 != 0)
 					{
 						sVar8 = 2;
+#ifdef CTR_AP
+						// AP: a checked boss-race location removes the star entirely
+						// (sVar8 = -1 skips the marker block at `if (-1 < sVar8)`).
+						// Guard on sVar1 == 3: the Oxide icon (sVar1 == 4) shares this
+						// tail and must keep its own marker (out of #84's scope).
+						if (ctr_cfg_active() && sVar1 == 3)
+						{
+							sVar8 = -1;
+						}
+#endif
 					}
 					goto LAB_800b17ec;
 				}
