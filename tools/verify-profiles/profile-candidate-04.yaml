@@ -1,0 +1,41 @@
+name: VerifySweepC04
+
+description: Verifier sweep candidate 04. Oxide-final goal in total_relics mode with every relic tier progression-full and a large summed count. Exercises the verifier OXIDE_FINAL_MODE_TOTAL branch (sapphire plus gold plus platinum summed against the count) which none of the six baseline profiles and neither of the community reports touch. Platinum time trials excluded to force the platinum contribution to come from shuffled placements rather than pinned trial rewards. See the proposal note in this folder.
+
+game: Crash Team Racing
+requires:
+  version: 0.6.7
+  game:
+    Crash Team Racing: 0.1.0
+
+Crash Team Racing:
+  progression_balancing: normal
+  accessibility: full
+  goal: oxidefinal
+  oxide_final_challenge_unlock: total_relics
+  oxide_final_challenge_relic_count: 18
+  shuffle_gems: 'true'
+  include_gem_cups: 'true'
+  shuffle_keys: 'true'
+  trap_fill_percentage: 0
+  include_battle_arenas: 'true'
+  warp_pad_shuffle_categories:
+    ['crystals', 'tracks', 'cups']
+  warp_pad_shuffle_grouping: merged
+  warppad_unlock_requirements: randomized
+  two_stage_density: standard
+  requirement_variety: icebound_beta5
+  podium_placement_checks: 'false'
+  podium_finish_rungs: 'false'
+  podium_any_position_rung: 'false'
+  podium_held_rungs: 'false'
+  podium_held_fifth_rung: 'false'
+  one_lap_cups: 'false'
+  death_link: 'off'
+  deathlink_amnesty: 1
+  sapphire_relic_progression: full
+  gold_relic_progression: full
+  platinum_relic_progression: full
+
+  exclude_locations:
+    ["Crash Cove: Platinum Time Trial", "Roo's Tubes: Platinum Time Trial", "Mystery Caves: Platinum Time Trial", "Sewer Speedway: Platinum Time Trial", "Dingo Canyon: Platinum Time Trial", "Tiger Temple: Platinum Time Trial", "Papu's Pyramid: Platinum Time Trial", "Coco Park: Platinum Time Trial"]

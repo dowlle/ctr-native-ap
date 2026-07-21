@@ -1,0 +1,17 @@
+name: VerifySweepG7B
+game: Crash Team Racing
+description: Gap profile 07b, the retired candidate 07 reworked per the #87 guard. Trophy weight 1 (the legal minimum) with Key 0 keeps the trophy spine nearly absent, so pads still gate almost entirely on tokens, relics and gems, restoring the aggregate-gate and no-spine stress the original candidate intended.
+Crash Team Racing:
+  accessibility: full
+  goal: oxide
+  shuffle_gems: 'true'
+  include_gem_cups: 'true'
+  include_battle_arenas: 'true'
+  warp_pad_shuffle_categories: ['crystals', 'tracks', 'cups']
+  warp_pad_shuffle_grouping: merged
+  warppad_unlock_requirements: random_without_4_keys
+  two_stage_density: deep
+  requirement_variety: custom
+  requirement_weights:
+    {Trophy: 1, Key: 0, Red CTR Token: 30, Green CTR Token: 30, Blue CTR Token: 30, Yellow CTR Token: 30, Purple CTR Token: 30, Sapphire Relic: 30, Gold Relic: 30, Platinum Relic: 30, Red Gem: 20, Green Gem: 20, Blue Gem: 20, Yellow Gem: 20, Purple Gem: 20}
+  one_lap_cups: 'true'

@@ -1,0 +1,38 @@
+name: VerifySweepC05
+
+description: Verifier sweep candidate 05. All Bosses goal crossed with merged destination shuffle plus battle arenas and gem cups. Exercises the verifier AP_VF_BOSS reachability path and the bosses_ok goal verdict (all four boss races reachable) under a shuffled hub graph, plus the boss-garage trophy gates (4 / 8 / 12 / 16) driving progression instead of the oxide relic count. Not covered by the six oxide-centric baseline profiles. See the proposal note in this folder.
+
+game: Crash Team Racing
+requires:
+  version: 0.6.7
+  game:
+    Crash Team Racing: 0.1.0
+
+Crash Team Racing:
+  progression_balancing: normal
+  accessibility: full
+  goal: allbosses
+  oxide_final_challenge_unlock: sapphire_relics
+  oxide_final_challenge_relic_count: 18
+  shuffle_gems: 'true'
+  include_gem_cups: 'true'
+  shuffle_keys: 'true'
+  trap_fill_percentage: 0
+  include_battle_arenas: 'true'
+  warp_pad_shuffle_categories:
+    ['crystals', 'tracks', 'cups']
+  warp_pad_shuffle_grouping: merged
+  warppad_unlock_requirements: randomized
+  two_stage_density: standard
+  requirement_variety: icebound_beta5
+  podium_placement_checks: 'true'
+  podium_finish_rungs: 'true'
+  podium_any_position_rung: 'true'
+  podium_held_rungs: 'true'
+  podium_held_fifth_rung: 'false'
+  one_lap_cups: 'false'
+  death_link: 'off'
+  deathlink_amnesty: 1
+  sapphire_relic_progression: full
+  gold_relic_progression: full
+  platinum_relic_progression: full
