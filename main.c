@@ -199,6 +199,26 @@ int main(int argc, char *argv[])
 
 	if (!NativeAssets_Validate())
 	{
+#if !defined(_WIN32)
+		// On-screen guidance for players who launched with no terminal in sight
+		// (e.g. a Steam Deck in Gaming Mode) and never see the stderr report.
+		// Windows is excluded: a double-clicked console build already opens a
+		// console that the pause below keeps readable, and a modal box would
+		// hang unattended runs. SDL message boxes work before SDL_Init and fail
+		// gracefully on headless hosts.
+		if (!isatty(STDERR_FILENO))
+		{
+			char assetsMessage[1280];
+			snprintf(assetsMessage, sizeof(assetsMessage),
+			         "Game assets are missing or incomplete.\n\n"
+			         "Place a raw .bin disc image of your own NTSC-U Crash Team Racing disc in the assets folder next to the game:\n\n"
+			         "%s\n\n"
+			         "Any filename ending in .bin works. See the setup guide for details.",
+			         NativeAssets_GetAssetDir());
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CTR Native", assetsMessage, NULL);
+		}
+#endif
+
 		return NativeConsole_Return(1);
 	}
 

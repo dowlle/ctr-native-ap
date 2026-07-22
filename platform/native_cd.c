@@ -9,7 +9,7 @@
 #include <string.h>
 
 // NOTE(aalhendi): Native exports the retail Cd* API. Extracted host files stay
-// as dev/modding overrides; missing files can fall back to assets/ctr-u.bin.
+// as dev/modding overrides; missing files can fall back to the mounted disc image.
 
 #define NATIVE_CD_SECTOR_WORDS   512
 #define NATIVE_CD_MAX_OPEN_FILES 8

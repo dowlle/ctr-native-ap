@@ -2,16 +2,24 @@
 
 #include <platform/native_path.h>
 
-#include <limits.h>
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <platform/native_win32.h>
+#else
 #include <dirent.h>
 #endif
+
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define NATIVE_DISC_IMAGE_PATH_MAX          1024
 #define NATIVE_DISC_IMAGE_BIN_PATH          "ctr-u.bin"
+#define NATIVE_DISC_IMAGE_BIN_EXTENSION     ".bin"
+#define NATIVE_DISC_IMAGE_SYSTEM_CNF_PATH   "SYSTEM.CNF"
+#define NATIVE_DISC_IMAGE_NTSC_U_SERIAL     "SCUS94426"
+#define NATIVE_DISC_IMAGE_NTSC_U_BOOT_ID    "SCUS_944.26"
+#define NATIVE_DISC_IMAGE_SERIAL_MAX        32
 #define NATIVE_DISC_IMAGE_RAW_SECTOR_SIZE   2352u
 #define NATIVE_DISC_IMAGE_FORM1_DATA_OFFSET 24u
 #define NATIVE_DISC_IMAGE_FORM1_DATA_SIZE   2048u
@@ -39,43 +47,30 @@ global_variable FILE *s_nativeDiscImageFile;
 global_variable struct NativeDiscImageFile s_nativeDiscImageRoot;
 global_variable int s_nativeDiscImageAvailable;
 
-internal int NativeDiscImage_FindHostImagePath(char *dst, size_t dstSize, NativeStr8 assetsDir)
+internal int NativeDiscImage_HasBinExtension(NativeStr8 name)
 {
-#if defined(_WIN32)
-	return NativePath_Join(dst, dstSize, assetsDir, NATIVE_STR8_LIT(NATIVE_DISC_IMAGE_BIN_PATH));
-#else
-	char dirPath[NATIVE_DISC_IMAGE_PATH_MAX];
-	DIR *dir;
-	struct dirent *entry;
-	int found = 0;
+	NativeStr8 extension = NATIVE_STR8_LIT(NATIVE_DISC_IMAGE_BIN_EXTENSION);
 
-	if (!NativePath_NormalizeSlashes(dirPath, sizeof(dirPath), assetsDir))
+	if (name.len < extension.len)
 	{
 		return 0;
 	}
 
-	dir = opendir(dirPath);
-	if (dir == NULL)
+	return NativeStr8_EqualsIgnoreCaseAscii(NativeStr8_Skip(name, name.len - extension.len), extension);
+}
+
+// Pass 1 tries only the conventional ctr-u.bin name; pass 2 tries every other
+// .bin file so a correctly dumped disc is found regardless of its filename.
+internal int NativeDiscImage_ShouldTryEntry(NativeStr8 entryName, int canonicalPass)
+{
+	int isCanonical = NativeStr8_EqualsIgnoreCaseAscii(entryName, NATIVE_STR8_LIT(NATIVE_DISC_IMAGE_BIN_PATH));
+
+	if (canonicalPass)
 	{
-		return 0;
+		return isCanonical;
 	}
 
-	while ((entry = readdir(dir)) != NULL)
-	{
-		NativeStr8 entryName = NativeStr8_FromCString(entry->d_name);
-
-		if (!NativeStr8_EqualsIgnoreCaseAscii(entryName, NATIVE_STR8_LIT(NATIVE_DISC_IMAGE_BIN_PATH)))
-		{
-			continue;
-		}
-
-		found = NativePath_Join(dst, dstSize, NativeStr8_FromCString(dirPath), entryName);
-		break;
-	}
-
-	closedir(dir);
-	return found;
-#endif
+	return !isCanonical && NativeDiscImage_HasBinExtension(entryName);
 }
 
 internal u32 NativeDiscImage_ReadLE32(const u8 *data)
@@ -364,46 +359,313 @@ internal int NativeDiscImage_LoadRoot(void)
 	return 1;
 }
 
-int NativeDiscImage_Init(const char *assetsDir)
+internal void NativeDiscImage_Unmount(void)
 {
-	char path[NATIVE_DISC_IMAGE_PATH_MAX];
-
-	s_nativeDiscImageAvailable = 0;
-	s_nativeDiscImagePath[0] = '\0';
-
 	if (s_nativeDiscImageFile != NULL)
 	{
 		fclose(s_nativeDiscImageFile);
 		s_nativeDiscImageFile = NULL;
 	}
 
-	if ((assetsDir == NULL) || !NativeDiscImage_FindHostImagePath(path, sizeof(path), NativeStr8_FromCString(assetsDir)))
+	s_nativeDiscImagePath[0] = '\0';
+	s_nativeDiscImageRoot.lba = 0;
+	s_nativeDiscImageRoot.size = 0;
+	s_nativeDiscImageAvailable = 0;
+}
+
+// Extracts the boot executable name from a SYSTEM.CNF BOOT line, e.g.
+// "BOOT = cdrom:\SCUS_944.26;1" -> "SCUS_944.26". Same detection the asset
+// extractor uses for region checks.
+internal int NativeDiscImage_ParseBootSerial(const u8 *data, int size, char *dst, size_t dstSize)
+{
+	int i = 0;
+
+	while (i < size)
+	{
+		int lineStart = i;
+		int lineEnd = lineStart;
+		int cursor;
+
+		while ((lineEnd < size) && (data[lineEnd] != '\n') && (data[lineEnd] != '\r'))
+		{
+			lineEnd++;
+		}
+
+		i = lineEnd + 1;
+
+		cursor = lineStart;
+		while ((cursor < lineEnd) && ((data[cursor] == ' ') || (data[cursor] == '\t')))
+		{
+			cursor++;
+		}
+
+		if (((lineEnd - cursor) >= 4) && (NativeStr8_ToUpperAscii(data[cursor]) == 'B') && (NativeStr8_ToUpperAscii(data[cursor + 1]) == 'O') &&
+		    (NativeStr8_ToUpperAscii(data[cursor + 2]) == 'O') && (NativeStr8_ToUpperAscii(data[cursor + 3]) == 'T'))
+		{
+			int nameStart;
+			int nameEnd;
+			int position = cursor;
+
+			while ((position < lineEnd) && (data[position] != '='))
+			{
+				position++;
+			}
+
+			if (position >= lineEnd)
+			{
+				continue;
+			}
+
+			nameStart = position + 1;
+			for (position = nameStart; position < lineEnd; position++)
+			{
+				u8 byte = data[position];
+
+				if ((byte == '\\') || (byte == '/') || (byte == ':'))
+				{
+					nameStart = position + 1;
+				}
+			}
+
+			nameEnd = nameStart;
+			while ((nameEnd < lineEnd) && (data[nameEnd] != ';'))
+			{
+				nameEnd++;
+			}
+
+			while ((nameStart < nameEnd) && (data[nameStart] == ' '))
+			{
+				nameStart++;
+			}
+
+			while ((nameEnd > nameStart) && (data[nameEnd - 1] == ' '))
+			{
+				nameEnd--;
+			}
+
+			if (nameEnd <= nameStart)
+			{
+				return 0;
+			}
+
+			return NativeStr8_CopyToCString(dst, dstSize, (NativeStr8){&data[nameStart], (size_t)(nameEnd - nameStart)});
+		}
+	}
+
+	return 0;
+}
+
+internal int NativeDiscImage_ReadBootSerial(char *dst, size_t dstSize)
+{
+	u8 *data;
+	int size;
+	int ok;
+
+	if (!NativeDiscImage_ReadFileBytes(NATIVE_DISC_IMAGE_SYSTEM_CNF_PATH, 0, &data, &size))
 	{
 		return 0;
 	}
 
+	ok = NativeDiscImage_ParseBootSerial(data, size, dst, dstSize);
+	free(data);
+	return ok;
+}
+
+internal void NativeDiscImage_NormalizeSerial(const char *serial, char *dst, size_t dstSize)
+{
+	size_t out = 0;
+	size_t i;
+
+	for (i = 0; (serial[i] != '\0') && (out + 1 < dstSize); i++)
+	{
+		u8 byte = (u8)serial[i];
+
+		if (((byte >= 'a') && (byte <= 'z')) || ((byte >= 'A') && (byte <= 'Z')) || ((byte >= '0') && (byte <= '9')))
+		{
+			dst[out++] = (char)NativeStr8_ToUpperAscii(byte);
+		}
+	}
+
+	dst[out] = '\0';
+}
+
+internal const char *NativeDiscImage_DescribeForeignSerial(const char *normalizedSerial)
+{
+	local_persist const char *palPrefixes[] = {"SCES", "SLES", "SCED", "SLED"};
+	local_persist const char *ntscJPrefixes[] = {"SCPS", "SLPS", "SLPM", "SCAJ"};
+	size_t i;
+
+	for (i = 0; i < sizeof(palPrefixes) / sizeof(palPrefixes[0]); i++)
+	{
+		if (strncmp(normalizedSerial, palPrefixes[i], strlen(palPrefixes[i])) == 0)
+		{
+			return "the PAL (European) release";
+		}
+	}
+
+	for (i = 0; i < sizeof(ntscJPrefixes) / sizeof(ntscJPrefixes[0]); i++)
+	{
+		if (strncmp(normalizedSerial, ntscJPrefixes[i], strlen(ntscJPrefixes[i])) == 0)
+		{
+			return "the NTSC-J (Japanese) release";
+		}
+	}
+
+	return "not the Crash Team Racing NTSC-U disc";
+}
+
+// Mounts a candidate .bin and keeps it only when it really is the NTSC-U
+// Crash Team Racing disc: raw MODE2/2352 sectors, a valid ISO9660 volume, and
+// boot id SCUS_944.26. Anything else is rejected with the reason on stderr so
+// an almost-right setup tells the user what is wrong.
+internal int NativeDiscImage_TryMountImage(const char *path)
+{
+	char serial[NATIVE_DISC_IMAGE_SERIAL_MAX];
+	char normalized[NATIVE_DISC_IMAGE_SERIAL_MAX];
+
 	s_nativeDiscImageFile = fopen(path, "rb");
 	if (s_nativeDiscImageFile == NULL)
 	{
+		fprintf(stderr, "[CTR Native] ignoring %s: cannot open file\n", path);
 		return 0;
 	}
 
 	if (!NativeDiscImage_LoadRoot())
 	{
-		fclose(s_nativeDiscImageFile);
-		s_nativeDiscImageFile = NULL;
+		fprintf(stderr, "[CTR Native] ignoring %s: not a raw MODE2/2352 PlayStation disc image (a cooked 2048-byte .iso does not work)\n", path);
+		NativeDiscImage_Unmount();
 		return 0;
 	}
 
 	if (!NativePath_NormalizeSlashes(s_nativeDiscImagePath, sizeof(s_nativeDiscImagePath), NativeStr8_FromCString(path)))
 	{
-		fclose(s_nativeDiscImageFile);
-		s_nativeDiscImageFile = NULL;
+		NativeDiscImage_Unmount();
 		return 0;
 	}
 
 	s_nativeDiscImageAvailable = 1;
+
+	if (!NativeDiscImage_ReadBootSerial(serial, sizeof(serial)))
+	{
+		fprintf(stderr, "[CTR Native] ignoring %s: no PlayStation boot id (SYSTEM.CNF) found on the disc\n", path);
+		NativeDiscImage_Unmount();
+		return 0;
+	}
+
+	NativeDiscImage_NormalizeSerial(serial, normalized, sizeof(normalized));
+	if (strcmp(normalized, NATIVE_DISC_IMAGE_NTSC_U_SERIAL) != 0)
+	{
+		fprintf(stderr, "[CTR Native] ignoring %s: boot id %s is %s; this port needs the North American (NTSC-U) release, boot id %s\n", path, serial,
+		        NativeDiscImage_DescribeForeignSerial(normalized), NATIVE_DISC_IMAGE_NTSC_U_BOOT_ID);
+		NativeDiscImage_Unmount();
+		return 0;
+	}
+
+	printf("[CTR Native] Disc image: %s (boot id %s)\n", s_nativeDiscImagePath, serial);
 	return 1;
+}
+
+internal int NativeDiscImage_ScanHostDir(const char *dirPath, int canonicalPass)
+{
+#if defined(_WIN32)
+	char searchPath[NATIVE_DISC_IMAGE_PATH_MAX];
+	WIN32_FIND_DATAA findData;
+	HANDLE findHandle;
+
+	if (!NativePath_Join(searchPath, sizeof(searchPath), NativeStr8_FromCString(dirPath), NATIVE_STR8_LIT("*")))
+	{
+		return 0;
+	}
+
+	findHandle = FindFirstFileA(searchPath, &findData);
+	if (findHandle == INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	do
+	{
+		NativeStr8 entryName = NativeStr8_FromCString(findData.cFileName);
+		char path[NATIVE_DISC_IMAGE_PATH_MAX];
+
+		if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+		{
+			continue;
+		}
+
+		if (!NativeDiscImage_ShouldTryEntry(entryName, canonicalPass))
+		{
+			continue;
+		}
+
+		if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(dirPath), entryName))
+		{
+			continue;
+		}
+
+		if (NativeDiscImage_TryMountImage(path))
+		{
+			FindClose(findHandle);
+			return 1;
+		}
+	} while (FindNextFileA(findHandle, &findData) != 0);
+
+	FindClose(findHandle);
+	return 0;
+#else
+	DIR *dir;
+	struct dirent *entry;
+
+	dir = opendir(dirPath);
+	if (dir == NULL)
+	{
+		return 0;
+	}
+
+	while ((entry = readdir(dir)) != NULL)
+	{
+		NativeStr8 entryName = NativeStr8_FromCString(entry->d_name);
+		char path[NATIVE_DISC_IMAGE_PATH_MAX];
+
+		if (!NativeDiscImage_ShouldTryEntry(entryName, canonicalPass))
+		{
+			continue;
+		}
+
+		if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(dirPath), entryName))
+		{
+			continue;
+		}
+
+		if (NativeDiscImage_TryMountImage(path))
+		{
+			closedir(dir);
+			return 1;
+		}
+	}
+
+	closedir(dir);
+	return 0;
+#endif
+}
+
+int NativeDiscImage_Init(const char *assetsDir)
+{
+	char dirPath[NATIVE_DISC_IMAGE_PATH_MAX];
+
+	NativeDiscImage_Unmount();
+
+	if ((assetsDir == NULL) || !NativePath_NormalizeSlashes(dirPath, sizeof(dirPath), NativeStr8_FromCString(assetsDir)))
+	{
+		return 0;
+	}
+
+	if (NativeDiscImage_ScanHostDir(dirPath, 1))
+	{
+		return 1;
+	}
+
+	return NativeDiscImage_ScanHostDir(dirPath, 0);
 }
 
 int NativeDiscImage_FindFile(const char *path, struct NativeDiscImageFile *fileOut)

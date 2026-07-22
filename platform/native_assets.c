@@ -9,6 +9,8 @@
 #include <platform/native_win32.h>
 #else
 #include <dirent.h>
+#include <errno.h>
+#include <sys/stat.h>
 #endif
 
 #include <stdio.h>
@@ -85,6 +87,106 @@ internal int NativeAssets_DirectoryExistsHost(const char *path)
 
 	closedir(dir);
 	return 1;
+#endif
+}
+
+internal int NativeAssets_CreateDirectoryHost(const char *path)
+{
+#if defined(_WIN32)
+	if (CreateDirectoryA(path, NULL))
+	{
+		return 1;
+	}
+
+	return GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+	if (mkdir(path, 0755) == 0)
+	{
+		return 1;
+	}
+
+	return errno == EEXIST;
+#endif
+}
+
+internal int NativeAssets_NameHasBinExtension(NativeStr8 name)
+{
+	NativeStr8 extension = NATIVE_STR8_LIT(".bin");
+
+	if (name.len < extension.len)
+	{
+		return 0;
+	}
+
+	return NativeStr8_EqualsIgnoreCaseAscii(NativeStr8_Skip(name, name.len - extension.len), extension);
+}
+
+// Any .bin in the assets folder counts when picking the base directory: disc
+// discovery accepts a correctly dumped NTSC-U image regardless of filename,
+// so base-dir selection must not insist on the ctr-u.bin name either.
+internal int NativeAssets_DirHasAnyBinFile(const char *dirPath)
+{
+#if defined(_WIN32)
+	char searchPath[NATIVE_ASSETS_PATH_MAX];
+	WIN32_FIND_DATAA findData;
+	HANDLE findHandle;
+	int found = 0;
+
+	if (!NativePath_Join(searchPath, sizeof(searchPath), NativeStr8_FromCString(dirPath), NATIVE_STR8_LIT("*")))
+		return 0;
+
+	findHandle = FindFirstFileA(searchPath, &findData);
+	if (findHandle == INVALID_HANDLE_VALUE)
+		return 0;
+
+	do
+	{
+		if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+			continue;
+
+		if (NativeAssets_NameHasBinExtension(NativeStr8_FromCString(findData.cFileName)))
+		{
+			found = 1;
+			break;
+		}
+	} while (FindNextFileA(findHandle, &findData) != 0);
+
+	FindClose(findHandle);
+	return found;
+#else
+	DIR *dir;
+	struct dirent *entry;
+	int found = 0;
+
+	dir = opendir(dirPath);
+	if (dir == NULL)
+	{
+		return 0;
+	}
+
+	while ((entry = readdir(dir)) != NULL)
+	{
+		char childPath[NATIVE_ASSETS_PATH_MAX];
+
+		if (!NativeAssets_NameHasBinExtension(NativeStr8_FromCString(entry->d_name)))
+		{
+			continue;
+		}
+
+		if (!NativePath_Join(childPath, sizeof(childPath), NativeStr8_FromCString(dirPath), NativeStr8_FromCString(entry->d_name)))
+		{
+			continue;
+		}
+
+		if (NativeAssets_FileExistsHost(childPath))
+		{
+			found = 1;
+			break;
+		}
+	}
+
+	closedir(dir);
+	return found;
 #endif
 }
 
@@ -495,12 +597,13 @@ internal int NativeAssets_BaseHasRequiredFile(NativeStr8 baseDir)
 		return NativeAssets_FileExistsHost(path);
 	}
 
-	if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(assetsDir), NATIVE_STR8_LIT(NATIVE_ASSETS_DISC_PATH)))
+	if (NativePath_Join(path, sizeof(path), NativeStr8_FromCString(assetsDir), NATIVE_STR8_LIT(NATIVE_ASSETS_DISC_PATH)) &&
+	    NativeAssets_FileExistsHost(path))
 	{
-		return 0;
+		return 1;
 	}
 
-	return NativeAssets_FileExistsHost(path);
+	return NativeAssets_DirHasAnyBinFile(assetsDir);
 }
 
 internal int NativeAssets_SetBaseDir(NativeStr8 baseDir)
@@ -518,6 +621,13 @@ internal int NativeAssets_SetBaseDir(NativeStr8 baseDir)
 		if (!NativePath_Join(assetsDir, sizeof(assetsDir), NativeStr8_FromCString(s_nativeAssetsBaseDir), NATIVE_STR8_LIT(NATIVE_ASSETS_DIR_NAME)))
 		{
 			return 0;
+		}
+
+		// First run: create the folder so the player can see where the disc
+		// image belongs instead of having to make it by hand.
+		if (!NativeAssets_DirectoryExistsHost(assetsDir) && NativeAssets_CreateDirectoryHost(assetsDir))
+		{
+			printf("[CTR Native] Created assets folder: %s\n", assetsDir);
 		}
 	}
 
@@ -747,7 +857,9 @@ internal void NativeAssets_PrintHeader(void)
 
 internal void NativeAssets_PrintFooter(void)
 {
-	fprintf(stderr, "[CTR Native] Provide either raw NTSC-U disc image %s, or extracted files:\n", NATIVE_ASSETS_DISC_PATH);
+	fprintf(stderr, "[CTR Native] Place a raw .bin disc image of your NTSC-U Crash Team Racing disc in that folder.\n");
+	fprintf(stderr, "[CTR Native] Any filename ending in .bin works; %s is the conventional name.\n", NATIVE_ASSETS_DISC_PATH);
+	fprintf(stderr, "[CTR Native] Alternatively provide extracted files:\n");
 	fprintf(stderr, "[CTR Native]   %s, %s, %s, %s, plus XA files referenced by %s\n", NATIVE_ASSETS_BIGFILE_PATH, NATIVE_ASSETS_KART_HWL_PATH,
 	        NATIVE_ASSETS_TEST_STR_PATH, NATIVE_ASSETS_XNF_PATH, NATIVE_ASSETS_XNF_PATH);
 }

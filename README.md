@@ -10,7 +10,7 @@ You need three things: a release build, your own (NTSC-U) copy of the game, and 
 
 **1. Download a release.** Grab the build for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr_native_ap.exe` (Windows) or `ctr_native_ap` (Linux).
 
-**2. Add your own game disc image.** This project contains no game assets. You must own a retail **NTSC-U** copy of Crash Team Racing. Dump it as a raw `.bin` disc image, name the file `ctr-u.bin`, and place it next to the executable in a folder named `assets`:
+**2. Add your own game disc image.** This project contains no game assets. You must own a retail **NTSC-U** copy of Crash Team Racing. Dump it as a raw `.bin` disc image and place it next to the executable in a folder named `assets` (launching the game once creates the folder). The filename does not matter: the game picks the `.bin` whose boot id matches the NTSC-U disc; `ctr-u.bin` is the conventional name:
 
 ```
 CTR-Archipelago/

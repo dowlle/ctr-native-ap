@@ -27,9 +27,9 @@ these steps add the game data and your server settings next to it.
 
 ## Step 2: drop in your disc image
 
-The game reads the raw disc image directly. Copy your NTSC-U `.bin`, rename
-the copy to `ctr-u.bin`, and place it in an `assets` folder next to
-`ctr_native_ap.exe`:
+The game reads the raw disc image directly. Copy your NTSC-U `.bin` into an
+`assets` folder next to `ctr_native_ap.exe` (launching the game once creates
+that folder for you):
 
 ```
 CTR-AP/
@@ -38,11 +38,13 @@ CTR-AP/
     ctr-u.bin
 ```
 
-That's it: no Python, no extraction step. The image must be the common
-single-track raw PlayStation BIN layout (MODE2/2352 sectors). A cooked
-2048-byte `.iso` does not carry the audio and video sector data the game
-needs, so it will not work. This path does not check the disc region, so make
-sure the image really is the North American (NTSC-U) release.
+The filename does not matter: the game scans the `.bin` files in `assets` and
+uses the one whose boot id matches the NTSC-U disc (`SCUS_944.26`).
+`ctr-u.bin` is just the conventional name. That's it: no Python, no extraction
+step. The image must be the common single-track raw PlayStation BIN layout
+(MODE2/2352 sectors). A cooked 2048-byte `.iso` does not carry the audio and
+video sector data the game needs, so it will not work. PAL (European) and
+Japanese images are detected and refused with a message naming their boot id.
 
 Go straight to Step 3. If your image is a `.chd`, or you specifically want to
 save disk space, see the appendix at the end of this guide.
@@ -111,10 +113,17 @@ report if you see it.
 
 ## Troubleshooting
 
-- "Missing or incomplete assets" at startup: the `assets` folder is not next to
-  the executable, the disc image inside it is not named `ctr-u.bin`, or a file
-  did not extract. Make sure the `assets` folder sits in the same directory as
-  `ctr_native_ap.exe` and holds either `ctr-u.bin` or a complete extracted set.
+- "Missing or incomplete assets" at startup: the `assets` folder holds no
+  usable disc image, or a file did not extract. Make sure the `assets` folder
+  sits in the same directory as `ctr_native_ap.exe` and holds either a raw
+  NTSC-U `.bin` (any filename) or a complete extracted set. The startup log
+  prints a reason line for every `.bin` it looked at and rejected.
+- "ignoring ...: not a raw MODE2/2352 PlayStation disc image" at startup: that
+  `.bin` is not a raw dump (it may be a renamed cooked `.iso`, an archive, or a
+  corrupt file). Re-dump the disc as a raw MODE2/2352 image.
+- "ignoring ...: boot id ... is the PAL (European) release" (or NTSC-J) at
+  startup: your image is not the North American release. You need the NTSC-U
+  disc, boot id `SCUS_944.26`.
 - "PAL is not supported yet" from the extractor: your disc is the European
   release. You need the North American (NTSC-U) disc, whose boot id starts with
   SCUS.
