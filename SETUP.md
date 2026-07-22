@@ -141,6 +141,14 @@ report if you see it.
   reason), or in `ap-config.txt` if you use the config file instead. The slot
   name must match the room exactly. Settings saved from the in-game screen
   (`config.ini`) override `ap-config.txt`.
+- Linux, no sound when launching outside Steam (often with
+  `Cannot open shared library libasound_module_pcm_pipewire.so` in the log):
+  the game is a 32-bit binary, so its audio goes through the 32-bit build of
+  the ALSA-to-PipeWire bridge, and most 64-bit distros no longer install that
+  by default. Install the i386/32-bit build of the PipeWire ALSA plugin from
+  your distro's repos (confirmed working on LMDE). On immutable distros like
+  Bazzite, adding the game to Steam and using the Steam Linux Runtime is the
+  practical route: Valve's runtime ships a complete 32-bit library stack.
 
 ## Appendix: extracting the assets (most people should skip this)
 
