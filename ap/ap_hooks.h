@@ -59,6 +59,16 @@ int AP_CeremonyRelicTier(void);
 int AP_RelicTargetInit(int levelID);
 int AP_RelicTargetTier(void);
 
+// ── Post-goal credits roll: AP section (issue #117, display-only) ──
+// Called once from CS_Credits_Init after the vanilla scroll is relocated.
+// Returns a merged scroll (hand-authored AP credits section from
+// ap_credits_data.h + a copy of the vanilla scroll) allocated in the same
+// MEMPACK high-mem arena as the vanilla block, or origScroll unchanged when no
+// AP config is active. CS_Credits_Init runs once per credits playthrough (only
+// full level loads reach it; the 19 later dancer levels swap in via the
+// LOAD_Hub path), so the section appears exactly once per roll.
+char *AP_Credits_PrependScroll(char *origScroll);
+
 // ── Hub item-received feed (display-only) ──
 // Bottom-left feed of the AP items you receive, rendered only on the adventure
 // hub. AP_FeedOnItemReceived queues one drained receipt (called once per item in

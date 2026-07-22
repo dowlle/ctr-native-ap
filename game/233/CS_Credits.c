@@ -233,6 +233,16 @@ void CS_Credits_Init(void)
 
 	creditsObj->credits_posY = 340;
 	creditsObj->credits_topString = ptrStrings[0x14];
+
+#ifdef CTR_AP
+	// Issue #117: prepend the AP credits section to the relocated main scroll.
+	// This Init runs once per credits playthrough -- only a full level load
+	// reaches it (MainInit_FinalizeInit -> CS_Cutscene_Start); the 19 later
+	// dancer levels arrive via the LOAD_Hub swap path (CS_Thread.c opcodes
+	// 0xf/0x10), which never re-runs it -- so the section cannot repeat. With
+	// no AP config active the hook returns the vanilla pointer unchanged.
+	creditsObj->credits_topString = AP_Credits_PrependScroll(creditsObj->credits_topString);
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b92a0-0x800b92cc
