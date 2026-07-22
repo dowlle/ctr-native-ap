@@ -246,8 +246,25 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 	MEMPACK_PushState();
 
 	JitPool_Init(&gGT->JitPools.thread, (renderBucketSize * 3) >> 7, sizeof(struct Thread), rdata.s_ThreadPool);
+#ifdef CTR_AP
+	// #56: the AP build births standing warp-pad advert instances vanilla never
+	// had (always-3 prize slots per open pad, AH_WarpPad_BuildInstances), so a
+	// pad-heavy hub sits close to the vanilla cap (renderBucketSize >> 5 = 128
+	// in a hub) and the pause menu's +14 gem births tips it over: JitPool_Add
+	// returns NULL and the caller's first deref crashes. Enlarge to a flat 256.
+	// Deliberately decoupled from renderBucketSize: the "one instance per 32
+	// bytes of render-bucket scratch" ratio is a PSX byte budget, and the native
+	// build does not allocate the render bucket from renderBucketSize at all
+	// (see the CTR_NATIVE branch below, which reuses static RDATA scratch).
+	// Cost at hub itemSize (252 B single-player): +32 KB of MEMPACK's 2 MB.
+	// Nothing indexes this pool by a fixed count; it is walked as a linked
+	// free/taken list, so enlargement is iteration-safe.
+	JitPool_Init(&gGT->JitPools.instance, 256, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
+	             rdata.s_InstancePool);
+#else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);
+#endif
 	JitPool_Init(&gGT->JitPools.smallStack, (poolScale * 0x19) >> 10, 0x48, rdata.s_SmallStackPool);
 	JitPool_Init(&gGT->JitPools.mediumStack, poolScale >> 7, 0x88, rdata.s_MediumStackPool);
 
