@@ -1,5 +1,6 @@
 #include <macros.h>
 #include <platform/native_audio.h>
+#include <platform/native_log.h>
 #include <psx/libetc.h>
 #include <psx/libspu.h>
 
@@ -56,7 +57,25 @@ int SpuIsTransferCompleted(int flag)
 void SpuInit(void)
 {
 	ResetCallback();
-	NativeAudio_SpuInit();
+	if (!NativeAudio_SpuInit())
+	{
+		// NOTE: NativeAudio_SpuInit returns 0 when no working output device could
+		// be opened. Surface a friendly, actionable message here (the shim is ours;
+		// native_audio.c stays untouched) instead of leaving the player with only a
+		// raw ALSA/SDL error line. The game keeps running without sound.
+		static b32 s_reportedAudioInitFailure = 0;
+
+		if (!s_reportedAudioInitFailure)
+		{
+			s_reportedAudioInitFailure = 1;
+			Platform_LogError("[CTR Audio] No audio device could be opened. The game will continue without sound.\n");
+#if defined(__linux__)
+			Platform_LogError("[CTR Audio] On 64-bit Linux outside Steam this usually means the 32-bit PipeWire ALSA bridge is missing. "
+			                  "Install your distribution's i386/32-bit PipeWire ALSA plugin, or run the game through the Steam Linux Runtime. "
+			                  "See SETUP.md, Troubleshooting.\n");
+#endif
+		}
+	}
 }
 
 internal void NativeLibSpu_SetVoiceAttr(SpuVoiceAttr *arg)
