@@ -487,7 +487,23 @@ void AA_EndEvent_DrawMenu(void)
 		if (gGT->bossID < AA_KEY_BOSS_COUNT)
 		{
 			// only if first time beating boss
+#ifdef CTR_AP
+			// AP: same trap as the trophy branch below. In AP mode the boss-key
+			// bits in adv->rewards are the RECEIVED-Key mirror (AP_ApplyItems
+			// high-end-fills them every frame), so a player who already holds
+			// enough received Keys reads as "boss already beaten" on a genuine
+			// first win: podiumRewardID never becomes STATIC_KEY and the post-boss
+			// outro is skipped (issue #111; the mirror fills from the last boss
+			// backward, so 1 Key skips Pinstripe's outro, 2 Komodo Joe's, 3 Papu
+			// Papu's, 4 Ripper Roo's). Decide "first time" from the AP CHECKED
+			// location state instead, exactly like the trophy gate below. Repeat
+			// wins still skip: the first win sends the location via
+			// AP_NotifyAdvReward, so the bit reads checked from then on.
+			if (ctr_cfg_active() ? !AP_LocationCheckedByBit(rewardBit)
+			                     : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
+#else
 			if (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0)
+#endif
 			{
 				// Go to Podium after returning to Adventure Hub
 				gGT->podiumRewardID = STATIC_KEY; // key
