@@ -50,8 +50,10 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "ICEBOUND777"},
     {0, "TAOR"},
     {0, ""},
-    // CTR-tools/ctr-native contributors, by upstream contribution count.
-    {1, "CTR-NATIVE DECOMPILATION"},
+    // Union of the CTR-tools/CTR-ModSDK and CTR-tools/ctr-native contributor
+    // lists (verified identical via the GitHub API except RINNEGATAMANTE,
+    // ctr-native only), by upstream contribution count.
+    {1, "CTR-MODSDK DECOMPILATION"},
     {0, "AALHENDI"},
     {0, "SUPERSTARXALIEN"},
     {0, "MATEUSFAVARIN"},
