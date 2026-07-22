@@ -130,11 +130,11 @@ ctr-native/
     ctr-u.bin
 ```
 
-The disc image requirements are the same as for players (raw NTSC-U BIN, MODE2/2352; see the [README](README.md#getting-started)).
+The disc image requirements are the same as for players (raw NTSC-U BIN, MODE2/2352; see the [README](README.md#getting-started)). The `ctr-u.bin` name is conventional, not required: discovery scans the `.bin` files in `assets/` and mounts the one whose boot id is `SCUS_944.26`.
 
 ### Extracted asset override
 
-You do not need extracted assets for normal play. Extracted files are supported for development, modding, and debugging: if present under `assets/`, they override files from `ctr-u.bin`.
+You do not need extracted assets for normal play. Extracted files are supported for development, modding, and debugging: if present under `assets/`, they override files from the disc image.
 
 ```
 assets/
