@@ -1212,6 +1212,73 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
 }
 
 // ---------------------------------------------------------------------------
+// POST-GOAL CREDITS ROLL: AP SECTION (issue #117, display-only)
+//
+// CS_Credits_Init relocates the vanilla credits scroll (a "\r"-separated text
+// blob from the credits LEV asset) to plain C pointers, then points
+// credits_topString at it. This hook builds the hand-authored AP section
+// (ap_credits_data.h) in front of a copy of that scroll inside the same
+// MEMPACK high-mem arena the vanilla block lives in, so lifetime (cleared by
+// CS_Credits_DestroyCreditGhost at credits end) and native-checkpoint pointer
+// relocation behave identically to the vanilla block.
+//
+// Each rendered line is: leading "~NN" colour code + centering spaces + text +
+// "\r". CS_Credits_DrawNames strips leading colour codes itself and resets its
+// colour state at the top visible line every frame, so every non-blank line
+// carries its own code. The scroller walks "\r" until the final NUL, so the
+// prepended section simply extends the roll; scroll speed, fade and the
+// epilogue path are untouched.
+// ---------------------------------------------------------------------------
+#include "ap_credits_data.h"
+
+char *AP_Credits_PrependScroll(char *origScroll)
+{
+	if (!ctr_cfg_active() || origScroll == NULL)
+	{
+		return origScroll;
+	}
+
+	// Upper bound per line: 3-char colour code + padded field + "\r".
+	u32 apMax = (u32)AP_CREDITS_NUM_LINES * (3 + AP_CREDITS_FIELD_WIDTH + 1);
+	u32 origLen = strlen(origScroll);
+
+	char *merged = MEMPACK_AllocHighMem((int)(apMax + origLen + 1));
+	char *dst = merged;
+
+	for (int i = 0; i < AP_CREDITS_NUM_LINES; i++)
+	{
+		const char *text = AP_CREDITS_LINES[i].text;
+		int textLen = (int)strlen(text);
+
+		if (textLen > 0)
+		{
+			// Colour slot 00 = ORANGE (headers), 04 = WHITE (entries).
+			const char *code = AP_CREDITS_LINES[i].header ? "~00" : "~04";
+			memcpy(dst, code, 3);
+			dst += 3;
+
+			// Centre in the field (spaces advance a full 14px glyph slot).
+			int pad = (AP_CREDITS_FIELD_WIDTH - textLen) / 2;
+			for (; pad > 0; pad--)
+			{
+				*dst++ = ' ';
+			}
+
+			memcpy(dst, text, textLen);
+			dst += textLen;
+		}
+
+		*dst++ = '\r';
+	}
+
+	memcpy(dst, origScroll, origLen + 1);
+
+	AP_LogLine("[AP CREDITS] prepended AP section to the credits scroll\n");
+
+	return merged;
+}
+
+// ---------------------------------------------------------------------------
 // HUB ITEM-RECEIVED FEED (display-only)
 //
 // A bottom-left feed of the Archipelago items you receive. Rendered ONLY on the
