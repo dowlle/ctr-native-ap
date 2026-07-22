@@ -3201,9 +3201,11 @@ void AP_OnFrame(struct GameTracker *gGT)
 		if ((int)gGT->levelID != ap_prev_level)
 		{
 			char m[96];
-			snprintf(m, sizeof m, "[AP HUB] levelID %d -> %d (t=%u load=%d)\n",
+			// free= is MEMPACK headroom at the transition frame (0.1.4 level-40
+			// freeze follow-up; pairs with the [AP POOL] jitpools line).
+			snprintf(m, sizeof m, "[AP HUB] levelID %d -> %d (t=%u load=%d free=%d)\n",
 			         ap_prev_level, (int)gGT->levelID, (unsigned)gGT->timer,
-			         (int)sdata->Loading.stage);
+			         (int)sdata->Loading.stage, MEMPACK_GetFreeBytes());
 			AP_AppendLog(m);
 			ap_prev_level = (int)gGT->levelID;
 

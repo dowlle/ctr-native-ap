@@ -250,16 +250,21 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 	// #56: the AP build births standing warp-pad advert instances vanilla never
 	// had (always-3 prize slots per open pad, AH_WarpPad_BuildInstances), so a
 	// pad-heavy hub sits close to the vanilla cap (renderBucketSize >> 5 = 128
-	// in a hub) and the pause menu's +14 gem births tips it over: JitPool_Add
-	// returns NULL and the caller's first deref crashes. Enlarge to a flat 256.
-	// Deliberately decoupled from renderBucketSize: the "one instance per 32
-	// bytes of render-bucket scratch" ratio is a PSX byte budget, and the native
-	// build does not allocate the render bucket from renderBucketSize at all
-	// (see the CTR_NATIVE branch below, which reuses static RDATA scratch).
-	// Cost at hub itemSize (252 B single-player): +32 KB of MEMPACK's 2 MB.
+	// in a hub) and the pause menu's +14 gem births tips it over. Enlarge by a
+	// flat +48 over the vanilla per-mode budget: 3 advert slots x up to 10 open
+	// pads (24-30) plus the pause menu's +14, with margin. Cost at hub itemSize
+	// (252 B single-player): ~12 KB of MEMPACK.
+	// NOT a flat 256 total: the native MEMPACK arena is the retail-pressure
+	// 0x144e10 window (native_memory.c), not 2 MB, and a flat 256 (+32-56 KB
+	// depending on mode) starved the Adventure-entry (levelID 40) load into
+	// MEMPACK exhaustion, which spun silently forever — the 0.1.4 RC
+	// level-40 freeze. If +48 ever falls short the failure is now benign:
+	// Birth3D/Birth2D return NULL, consumers skip the icon, and the
+	// [AP POOL] log names the caller (crash path removed by the #56 guards).
 	// Nothing indexes this pool by a fixed count; it is walked as a linked
 	// free/taken list, so enlargement is iteration-safe.
-	JitPool_Init(&gGT->JitPools.instance, 256, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
+	JitPool_Init(&gGT->JitPools.instance, (renderBucketSize >> 5) + 48,
+	             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);
 #else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
@@ -302,6 +307,19 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 	{
 		data.PtrClipBuffer[i] = MEMPACK_AllocMem(MainDB_GetClipSize(gGT->levelID, gGT->numPlyrCurrGame) << 2);
 	}
+
+#ifdef CTR_AP
+	{
+		// Headroom telemetry (0.1.4 level-40 freeze follow-up): how much MEMPACK
+		// each level-load keeps after the per-level pools + clip buffers. Reads
+		// alongside the [AP MEMPACK] exhaustion report and the [AP POOL] pause
+		// high-water line to size the instance pool against real hubs.
+		char apmsg[96];
+		snprintf(apmsg, sizeof apmsg, "[AP POOL] jitpools lvl=%d inst=%d free=%d\n",
+		         gGT->levelID, gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes());
+		AP_LogLine(apmsg);
+	}
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003b6d0-0x8003b934; CTR_NATIVE gates TT ghost model publication.

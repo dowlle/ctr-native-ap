@@ -1,5 +1,31 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include <stdlib.h>
+
+// Exhaustion reporting (declared in ap/ap_hooks.h and ap/ap_crash.h; game TUs
+// bind AP symbols by prototype like every other AP call site in game/).
+void AP_LogLine(const char *msg);
+void AP_CrashReportTerminate(const char *what);
+
+// Both allocator dead-ends below are permanent on the native build: the game
+// loop is single-threaded, so nothing ever frees MEMPACK while AllocHighMem
+// waits, and AllocMem's retail behaviour (error flash + infinite loop) is a
+// silent busy-hang with no ctr-ap-crash.txt (0.1.4 RC Adventure-entry blocker
+// presented exactly this way). Report loudly through the crash reporter and
+// die instead; abort() keeps the SIGABRT/terminate report path from #110
+// double-writing because AP_CrashReportTerminate latches the noted flag.
+static void MEMPACK_ApExhausted(const char *who, int allocSize)
+{
+	char apmsg[128];
+	snprintf(apmsg, sizeof apmsg, "[AP MEMPACK] %s exhausted: need=%d free=%d pack=%d\n",
+	         who, allocSize, MEMPACK_GetFreeBytes(), sdata->PtrMempack->packSize);
+	AP_LogLine(apmsg);
+	AP_CrashReportTerminate(apmsg);
+	abort();
+}
+#endif
+
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 PS1 path 0x8003e740-0x8003e80c; CTR_NATIVE uses host RAM.
 void MEMPACK_Init(int ramSize)
@@ -87,10 +113,14 @@ void *MEMPACK_AllocMem(int allocSize)
 
 	if (MEMPACK_GetFreeBytes() < allocSize)
 	{
+#ifdef CTR_AP
+		MEMPACK_ApExhausted("AllocMem", allocSize);
+#else
 		CTR_ErrorScreen(0xFF, 0, 0);
 		for (;;)
 		{
 		}
+#endif
 	}
 
 	newAllocSize = (allocSize + 3) & 0xfffffffc;
@@ -108,9 +138,16 @@ void *MEMPACK_AllocHighMem(int allocSize)
 {
 	int newLastFreeByte;
 
+#ifdef CTR_AP
+	if (MEMPACK_GetFreeBytes() < allocSize)
+	{
+		MEMPACK_ApExhausted("AllocHighMem", allocSize);
+	}
+#else
 	while (MEMPACK_GetFreeBytes() < allocSize)
 	{
 	}
+#endif
 
 	allocSize = (allocSize + 3) & 0xfffffffc;
 	sdata->PtrMempack->sizeOfPrevAllocation = allocSize;
