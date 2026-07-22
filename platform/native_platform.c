@@ -395,9 +395,10 @@ void Platform_PinVRAMDisplayRect(int x, int y, int w, int h, int frameCount)
 // ---- In-game text entry (native connection manager) ---------------------
 // While a NativeText session is active, host keyboard input is captured into the
 // caller's buffer instead of reaching the game: SDL_EVENT_TEXT_INPUT appends
-// printable ASCII, Backspace deletes, Enter commits, Escape cancels. The keys are
-// consumed in Platform_PollHostEvents so gameplay / menu input is suppressed while
-// typing. Length is tracked here to avoid a <string.h> dependency in this file.
+// printable ASCII, Backspace deletes, Enter commits, Escape cancels, and Ctrl+V
+// pastes the host clipboard. The keys are consumed in Platform_PollHostEvents so
+// gameplay / menu input is suppressed while typing. Length is tracked here to
+// avoid a <string.h> dependency in this file.
 global_variable char *s_textBuf = NULL;
 global_variable int s_textCap = 0;
 global_variable int s_textLen = 0;
@@ -542,6 +543,47 @@ internal void Platform_HandleTextInput(const char *utf8)
 	s_textBuf[s_textLen] = '\0';
 }
 
+// Paste path (Ctrl+V while a text-entry session is active and unresolved -- the
+// only time it can fire, so it can never touch gameplay or other menus). The
+// clipboard is treated as untrusted input: leading and trailing whitespace is
+// trimmed (addresses are usually copied from a surrounding line of text), then
+// the remainder goes through the same appender as typed input, so newlines and
+// other control bytes are dropped, non-ASCII is dropped, and the field's length
+// cap holds. Interior spaces survive the trim on purpose: Archipelago slot
+// names may legitimately contain them.
+internal void Platform_HandleTextPaste(void)
+{
+	if ((s_textActive == 0) || (s_textResult != 0) || (s_textBuf == NULL))
+	{
+		return;
+	}
+
+	char *clip = SDL_GetClipboardText(); // owned; must go back through SDL_free
+	if (clip == NULL)
+	{
+		return;
+	}
+
+	char *start = clip;
+	while ((*start != '\0') && ((unsigned char)*start <= 0x20))
+	{
+		start++;
+	}
+	int n = 0;
+	while (start[n] != '\0')
+	{
+		n++;
+	}
+	while ((n > 0) && ((unsigned char)start[n - 1] <= 0x20))
+	{
+		n--;
+	}
+	start[n] = '\0';
+
+	Platform_HandleTextInput(start);
+	SDL_free(clip);
+}
+
 void Platform_PollHostEvents(void)
 {
 	SDL_Event event;
@@ -602,6 +644,10 @@ void Platform_PollHostEvents(void)
 					else if (key == SDL_SCANCODE_ESCAPE)
 					{
 						s_textResult = 2; // cancel; menu ends the session next
+					}
+					else if ((key == SDL_SCANCODE_V) && ((event.key.mod & SDL_KMOD_CTRL) != 0))
+					{
+						Platform_HandleTextPaste();
 					}
 				}
 				break;
