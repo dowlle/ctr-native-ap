@@ -4,6 +4,25 @@ The repeatable checklist for shipping a release, written down from the v0.1.0
 release (2026-07-15). CTR-AP ships as a versioned PAIR: this client and the
 companion `ctr.apworld` carry the same version and are tested together.
 
+## 0. Cycle sequence (merge first, then test the merged result)
+
+The release cycle's development order, settled during the 0.1.4 cycle:
+
+- Every milestone item gets its own branch and its own PR (no stacking), with
+  a review before merge.
+- **Merge ALL of the cycle's PRs BEFORE hardware playtesting.** What ships is
+  the merged combination, never an individual branch build, and the items
+  interact in the same play session (pool sizes, boss-win handling and trap
+  behavior all run in one adventure). Playtesting branch builds tests
+  artifacts that will never ship and doubles the hardware time.
+- Bugs found in the merged playtest are fixed FORWARD: fresh branch, fresh PR,
+  merged like any other. `main` is not a release until it is tagged, so
+  merged-but-untagged `main` carrying fix iterations is normal, not a problem.
+- Every gate in section 1 runs against merged `main` and the final apworld
+  build: fresh-dir release builds from the merged result, the in-game matrix
+  on those builds, and the full fuzz on the exact apworld content that will
+  ship.
+
 ## 1. Gates (nothing ships red)
 
 - [ ] Full fuzz clean on the apworld release commit: ~14,000 generations, zero
