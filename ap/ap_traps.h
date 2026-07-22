@@ -100,9 +100,11 @@ void AP_TrapFriction(struct Driver *driver, int *perpendicularFriction, int *for
 
 // VehPhysGeneral_GetBaseSpeed (VehPhysGeneral.c, immediately before the
 // `if (driver->reserves != 0)` boost-speed add): AP_TrapForceBoost(driver);
-// While the boost or USF-no-brake trap is FIRING on the local player, pins
-// driver->reserves (so the boost-speed term is applied) and driver->fireSpeedCap
-// (USF -> const_SacredFireSpeed, boost -> const_SingleTurboSpeed). No-op otherwise.
+// While the boost or USF-no-brake trap is FIRING on the local player, FLOORS
+// driver->reserves (only raised to the floor when below it, so banked reserves
+// survive) and FLOORS driver->fireSpeedCap (USF -> a true USF-tier cap computed
+// via the VehFire.c fire-level formula at super-turbo-pad fireLevel, boost ->
+// const_SingleTurboSpeed; never downgrades a higher cap). No-op otherwise.
 void AP_TrapForceBoost(struct Driver *driver);
 
 // VehPhysProc_Driving_PhysLinear (VehPhysProc.c, right after `square`/`cross` are

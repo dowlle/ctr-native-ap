@@ -39,13 +39,16 @@ int Platform_InputRawKeyDown(int scancode);
 #define AP_CAM_FIRSTPERSON 0x10
 #define AP_CAM_CHASE       0
 
-// Effect durations, in milliseconds of firing time.
+// Effect durations, in milliseconds of firing time. Flat 20 s for every trap
+// (issue #116): the old 4-6 s windows were over before the player registered
+// them. Deliberately a single hardcoded table -- no YAML option yet; per-trap
+// tuning or an option promotion can come later if 20 s proves too brutal.
 static const int AP_TRAP_DURATION_MS[AP_TRAP_COUNT] = {
-    6000, // icy
-    6000, // low gravity
-    4000, // USF no-brake
-    4000, // boost
-    5000, // first person
+    20000, // icy
+    20000, // low gravity
+    20000, // USF no-brake
+    20000, // boost
+    20000, // first person
 };
 
 // Random fire-delay window (ms) after the trap first enters the lap-2/3 window.
@@ -53,13 +56,22 @@ static const int AP_TRAP_DURATION_MS[AP_TRAP_COUNT] = {
 #define AP_TRAP_FIRE_DELAY_MAX_MS 8000
 
 // Physics tuning. Gravity/friction are scaled by /256 fixed point.
-#define AP_TRAP_GRAV_SCALE     74   // 74/256 ~= 0.29, matches the engine's own
-                                    //  per-quad low-gravity factor (~29/100,
-                                    //  VehPhysForce.c:104-105)
+#define AP_TRAP_GRAV_SCALE     74   // 74/256 ~= 0.29. NOTE: deliberately floatier
+                                    //  than the engine's per-quad low-gravity
+                                    //  factor, which computes 41/100 (~0.41):
+                                    //  ((g<<2)+g)<<3 + g, all over 100
+                                    //  (VehPhysForce.c:104-105)
 #define AP_TRAP_FRICTION_SCALE 40   // 40/256 ~= 0.16 grip -> icy
-// Reserves value re-pinned each frame so VehPhysProc's per-frame decrement /
-// resets (VehPhysProc.c:111/623/2154) can never zero it while the trap fires.
+// Reserves FLOOR while a boost/USF trap fires: reserves are only RAISED to this
+// value when below it (never overwritten downward), so the per-frame decrement /
+// resets in VehPhysProc (VehPhysProc.c:111/623/2154) can never zero the boost,
+// while a player's banked reserves above the floor -- and any reserves earned
+// during the 20 s window -- survive the trap instead of being deleted by a
+// hard per-frame pin.
 #define AP_TRAP_BOOST_RESERVES 1200
+// fireLevel of a super turbo pad (VehPhysForce.c:551) -- the input that makes
+// VehFire_Increment (VehFire.c:322) compute a genuinely USF-tier fireSpeedCap.
+#define AP_TRAP_USF_FIRELEVEL  0x800
 #define AP_STICK_NEUTRAL       0x80 // analog centre (native_input.c:125-128)
 
 // ── Registry ──
@@ -380,9 +392,24 @@ void AP_TrapFriction(struct Driver *driver, int *perpendicularFriction, int *for
 {
 	if (g_active[AP_TRAP_ICY] && AP_TrapIsLocal(driver))
 	{
+		// KNOWN, ACCEPTED SIDE EFFECT: this scales the friction scalars BEFORE the
+		// per-terrain groundFrictionScale multiplies in (VehPhysForce.c:306-307),
+		// so while the trap fires, off-road drag is also cut to ~16 percent -- the
+		// 20 s icy window doubles as an off-road cutting window for players who
+		// know that. Kept as deliberate counterplay (see issue #116 discussion;
+		// Ignore Off-Road is separately planned as an item, #14).
 		*perpendicularFriction = (*perpendicularFriction * AP_TRAP_FRICTION_SCALE) / 256;
 		*forwardFriction = (*forwardFriction * AP_TRAP_FRICTION_SCALE) / 256;
 	}
+}
+
+// Raise reserves to the trap floor without ever lowering them (s16 field; the
+// floor is far below the 32767 ceiling, and values already above it pass through
+// untouched, so no overflow path is introduced).
+static void AP_TrapFloorReserves(struct Driver *driver)
+{
+	if (driver->reserves < AP_TRAP_BOOST_RESERVES)
+		driver->reserves = AP_TRAP_BOOST_RESERVES;
 }
 
 void AP_TrapForceBoost(struct Driver *driver)
@@ -391,13 +418,30 @@ void AP_TrapForceBoost(struct Driver *driver)
 		return;
 	if (g_active[AP_TRAP_USF_NOBRAKE])
 	{
-		driver->reserves = AP_TRAP_BOOST_RESERVES;
-		driver->fireSpeedCap = driver->const_SacredFireSpeed; // max tier = USF
+		// Genuinely USF-tier cap, derived from the real fire-level formula
+		// (VehFire.c:322): cap = singleTurbo + (fireLevel * (sacred - singleTurbo))
+		// >> 8, evaluated at a super turbo pad's fireLevel (0x800). The old pin to
+		// const_SacredFireSpeed only granted red-fire speed, which is NOT USF --
+		// the engine itself defines USF as fireSpeedCap above sacred (VehFire.c:342).
+		int usfCap = ((int)driver->const_SingleTurboSpeed +
+		              ((AP_TRAP_USF_FIRELEVEL *
+		                ((int)driver->const_SacredFireSpeed - (int)driver->const_SingleTurboSpeed)) >> 8));
+		if (usfCap > 32767)
+			usfCap = 32767; // fireSpeedCap is s16
+		AP_TrapFloorReserves(driver);
+		// Floor, not pin: VehFire_Increment demotes the cap on any non-super-pad
+		// boost while above sacred (VehFire.c:342-345); re-raising here each frame
+		// restores the trap tier without ever downgrading a higher cap.
+		if (driver->fireSpeedCap < usfCap)
+			driver->fireSpeedCap = (s16)usfCap;
 	}
 	else if (g_active[AP_TRAP_BOOST])
 	{
-		driver->reserves = AP_TRAP_BOOST_RESERVES;
-		driver->fireSpeedCap = driver->const_SingleTurboSpeed; // milder boost
+		AP_TrapFloorReserves(driver);
+		// Floor, not pin: a hard pin to const_SingleTurboSpeed would DOWNGRADE a
+		// red fire the player earns mid-trap. Only raise up to the milder tier.
+		if (driver->fireSpeedCap < driver->const_SingleTurboSpeed)
+			driver->fireSpeedCap = driver->const_SingleTurboSpeed;
 	}
 }
 
