@@ -69,6 +69,20 @@ struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct 
 	{
 		INSTANCE_Birth(inst, model, name, th, DRAW_COLLISION_MASK);
 	}
+#ifdef CTR_AP
+	else
+	{
+		// #56: pool exhaustion used to surface as a silent access violation at
+		// the caller's first deref of this NULL. One central alarm here covers
+		// every call site and names the caller, so an undersized pool in the
+		// wild shows up as a log line instead of a bare crash address.
+		char apmsg[96];
+		snprintf(apmsg, sizeof apmsg, "[AP POOL] Birth3D NULL pool=%d/%d name=%s\n",
+		         sdata->gGT->JitPools.instance.taken.count,
+		         sdata->gGT->JitPools.instance.maxItems, (name != NULL) ? name : "?");
+		AP_LogLine(apmsg);
+	}
+#endif
 
 	return inst;
 }
@@ -88,6 +102,17 @@ struct Instance *INSTANCE_Birth2D(struct Model *model, const char *name, struct 
 	{
 		INSTANCE_Birth(inst, model, name, th, 0x40f);
 	}
+#ifdef CTR_AP
+	// #56 sibling latent: the NULL test above guards INSTANCE_Birth, but the
+	// idpp writes below deref the result unconditionally, so a full pool
+	// crashed inside the birth function itself. Return the NULL instead, the
+	// same contract as INSTANCE_Birth3D; the caller inherits responsibility
+	// for it like every other birth call site.
+	if (inst == NULL)
+	{
+		return NULL;
+	}
+#endif
 
 	idpp = INST_GETIDPP(inst);
 	idpp[0].pushBuffer = &gGT->pushBuffer_UI;

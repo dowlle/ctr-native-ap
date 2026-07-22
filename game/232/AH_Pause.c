@@ -137,6 +137,14 @@ void AH_Pause_Draw(int pageID, int posX)
 				{
 					struct Instance *inst = ptrPauseObject->PauseMember[pauseIndex + j].inst;
 
+#ifdef CTR_AP
+					// #56: member may be NULL after a failed pool birth
+					if (inst == NULL)
+					{
+						continue;
+					}
+#endif
+
 					// Remove SelectProfile with regular UI variant
 					inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + j * 0x1e, 0x100);
 
@@ -151,10 +159,16 @@ void AH_Pause_Draw(int pageID, int posX)
 			{
 				struct Instance *inst = ptrPauseObject->PauseMember[pauseIndex].inst;
 
-				// Remove SelectProfile with regular UI variant
-				inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
+#ifdef CTR_AP
+				// #56: member may be NULL after a failed pool birth
+				if (inst != NULL)
+#endif
+				{
+					// Remove SelectProfile with regular UI variant
+					inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
 
-				inst->matrix.t[1] = UI_ConvertY_2(rowY + 0x2f, 0x100);
+					inst->matrix.t[1] = UI_ConvertY_2(rowY + 0x2f, 0x100);
+				}
 			}
 
 			if (CHECK_ADV_BIT(adv->rewards, trackID + ADV_REWARD_FIRST_PLATINUM_RELIC) != 0)
@@ -222,10 +236,16 @@ void AH_Pause_Draw(int pageID, int posX)
 			{
 				struct Instance *inst = ptrPauseObject->PauseMember[pauseIndex + i].inst;
 
-				// Remove SelectProfile with regular UI variant
-				inst->matrix.t[0] = UI_ConvertX_2(posX + 0x100 + (i - 2) * 60, 0x100);
+#ifdef CTR_AP
+				// #56: member may be NULL after a failed pool birth
+				if (inst != NULL)
+#endif
+				{
+					// Remove SelectProfile with regular UI variant
+					inst->matrix.t[0] = UI_ConvertX_2(posX + 0x100 + (i - 2) * 60, 0x100);
 
-				inst->matrix.t[1] = UI_ConvertY_2(((i & 1) << 4) | 0x6a, 0x100);
+					inst->matrix.t[1] = UI_ConvertY_2(((i & 1) << 4) | 0x6a, 0x100);
+				}
 
 				// gem color
 				ptrPauseObject->PauseMember[pauseIndex + i].indexAdvPauseInst = i;
@@ -238,10 +258,16 @@ void AH_Pause_Draw(int pageID, int posX)
 		{
 			struct Instance *inst = ptrPauseObject->PauseMember[pauseIndex].inst;
 
-			// Remove SelectProfile with regular UI variant
-			inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
+#ifdef CTR_AP
+			// #56: member may be NULL after a failed pool birth
+			if (inst != NULL)
+#endif
+			{
+				// Remove SelectProfile with regular UI variant
+				inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
 
-			inst->matrix.t[1] = UI_ConvertY_2(bossRowY + 0x2f, 0x100);
+				inst->matrix.t[1] = UI_ConvertY_2(bossRowY + 0x2f, 0x100);
+			}
 
 			ptrPauseObject->PauseMember[pauseIndex].indexAdvPauseInst = 5;
 			ptrPauseObject->PauseMember[pauseIndex].unlockFlag |= CHECK_ADV_BIT(adv->rewards, data.BeatBossPrize[hubID]);
@@ -256,10 +282,16 @@ void AH_Pause_Draw(int pageID, int posX)
 
 				inst = ptrPauseObject->PauseMember[pauseIndex].inst;
 
-				// Remove SelectProfile with regular UI variant
-				inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
+#ifdef CTR_AP
+				// #56: member may be NULL after a failed pool birth
+				if (inst != NULL)
+#endif
+				{
+					// Remove SelectProfile with regular UI variant
+					inst->matrix.t[0] = UI_ConvertX_2(posX + iconX + 1 * 0x1e, 0x100);
 
-				inst->matrix.t[1] = UI_ConvertY_2(crystalRowY + 0x2f, 0x100);
+					inst->matrix.t[1] = UI_ConvertY_2(crystalRowY + 0x2f, 0x100);
+				}
 
 				ptrPauseObject->PauseMember[pauseIndex].indexAdvPauseInst = 9 + mdLev->ctrTokenGroupID;
 				ptrPauseObject->PauseMember[pauseIndex].unlockFlag |= CHECK_ADV_BIT(adv->rewards, hubID + ADV_REWARD_PURPLE_TOKEN_HUB_ID_BASE);
@@ -318,10 +350,16 @@ void AH_Pause_Draw(int pageID, int posX)
 
 			struct Instance *inst = ptrPauseObject->PauseMember[i].inst;
 
-			// Remove SelectProfile with regular UI variant
-			inst->matrix.t[0] = UI_ConvertX_2(instPosX, 0x100);
+#ifdef CTR_AP
+			// #56: member may be NULL after a failed pool birth
+			if (inst != NULL)
+#endif
+			{
+				// Remove SelectProfile with regular UI variant
+				inst->matrix.t[0] = UI_ConvertX_2(instPosX, 0x100);
 
-			inst->matrix.t[1] = UI_ConvertY_2(instPosY + 0x41, 0x100);
+				inst->matrix.t[1] = UI_ConvertY_2(instPosY + 0x41, 0x100);
+			}
 
 			SelectProfile_PrintInteger(tokenCount[i], instPosX + 0x36, instPosY + 0x3a, 0, 0);
 
@@ -382,10 +420,16 @@ void AH_Pause_Draw(int pageID, int posX)
 
 			struct Instance *inst = ptrPauseObject->PauseMember[i].inst;
 
-			// Remove SelectProfile with regular UI variant
-			inst->matrix.t[0] = UI_ConvertX_2(instPosX, 0x100);
+#ifdef CTR_AP
+			// #56: member may be NULL after a failed pool birth
+			if (inst != NULL)
+#endif
+			{
+				// Remove SelectProfile with regular UI variant
+				inst->matrix.t[0] = UI_ConvertX_2(instPosX, 0x100);
 
-			inst->matrix.t[1] = UI_ConvertY_2(0x49, 0x100);
+				inst->matrix.t[1] = UI_ConvertY_2(0x49, 0x100);
+			}
 
 			SelectProfile_PrintInteger(count[i], instPosX + 0x19, 0x49, 0, 0);
 
@@ -435,6 +479,15 @@ void AH_Pause_Draw(int pageID, int posX)
 
 		struct Instance *inst = ptrPauseObject->PauseMember[i].inst;
 		SVec3 *rot = &ptrPauseObject->PauseMember[i].rot;
+
+#ifdef CTR_AP
+		// #56: member may be NULL after a failed pool birth; skip its render
+		// setup entirely (both branches and the rot update deref inst)
+		if (inst == NULL)
+		{
+			continue;
+		}
+#endif
 
 		if (index < 0)
 		{
@@ -525,6 +578,20 @@ void AH_Pause_Update()
 		D232.ptrPauseObject = ptrPauseObject;
 		ptrPauseObject->t = t;
 
+#ifdef CTR_AP
+		{
+			// #56: report the standing instance count at pause open, before the
+			// 14 gem births below. This is the high-water measurement that sizes
+			// the enlarged pool against real hubs (the pause tips the pool over
+			// exactly when this count is within 14 of maxItems).
+			char apmsg[96];
+			snprintf(apmsg, sizeof apmsg, "[AP POOL] pause open lvl=%d instpool=%d/%d before +14\n",
+			         gGT->levelID, gGT->JitPools.instance.taken.count,
+			         gGT->JitPools.instance.maxItems);
+			AP_LogLine(apmsg);
+		}
+#endif
+
 		for (int i = 0; i < 0xe; i++)
 		{
 			struct Instance *inst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_GEM], R232.s_pause, t);
@@ -534,6 +601,19 @@ void AH_Pause_Update()
 			ptrPauseObject->PauseMember[i].rot.x = 0;
 			ptrPauseObject->PauseMember[i].rot.y = 0;
 			ptrPauseObject->PauseMember[i].rot.z = 0;
+
+#ifdef CTR_AP
+			// #56 defense-in-depth: if the pool is ever exhausted despite the
+			// enlarged cap, keep the NULL member (Birth3D already logged the
+			// alarm) and skip its setup. AH_Pause_Draw skips NULL members and
+			// AH_Pause_Destroy's INSTANCE_Death path is NULL-tolerant
+			// (LIST_RemoveMember / LIST_AddFront both no-op on a NULL item),
+			// so a missing gem icon degrades cosmetically instead of crashing.
+			if (inst == NULL)
+			{
+				continue;
+			}
+#endif
 
 			inst->flags |= (USE_SPECULAR_LIGHT | SCREENSPACE_INSTANCE | HIDE_MODEL);
 
