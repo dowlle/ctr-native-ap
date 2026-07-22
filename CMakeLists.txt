@@ -124,7 +124,7 @@ if(CTR_AP)
     find_package(OpenSSL REQUIRED)
     find_package(ZLIB REQUIRED)
 
-    add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp)
+    add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp ap/ap_crash_terminate.cpp)
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     target_include_directories(ap_net PRIVATE
