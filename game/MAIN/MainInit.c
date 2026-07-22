@@ -263,9 +263,24 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 	// [AP POOL] log names the caller (crash path removed by the #56 guards).
 	// Nothing indexes this pool by a fixed count; it is walked as a linked
 	// free/taken list, so enlargement is iteration-safe.
-	JitPool_Init(&gGT->JitPools.instance, (renderBucketSize >> 5) + 48,
-	             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
-	             rdata.s_InstancePool);
+	// Hub-only: pads and pause gems are the ONLY AP instance extras, and both
+	// exist only in adventure hubs. Everywhere else (races, arenas, garage,
+	// menus) the vanilla budget was already enough for a full AP release cycle
+	// (v0.1.3), and those loads are the tight ones — measured after the RC fix:
+	// garage (lvl 40) load keeps ~10 KB with +48 vs ~22 KB without, a race
+	// (lvl 9) ~6 KB vs ~18 KB, while a hub keeps ~979 KB either way. Measured
+	// hub pause high-water with every pad open: 48 standing + 14 pause gems =
+	// 62 vs the vanilla cap of 64 — the #56 crash margin was 2 instances.
+	{
+		int apInstExtra = 0;
+		if ((gGT->levelID >= GEM_STONE_VALLEY) && (gGT->levelID <= CITADEL_CITY))
+		{
+			apInstExtra = 48;
+		}
+		JitPool_Init(&gGT->JitPools.instance, (renderBucketSize >> 5) + apInstExtra,
+		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
+		             rdata.s_InstancePool);
+	}
 #else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);
