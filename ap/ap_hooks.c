@@ -2052,6 +2052,17 @@ int AP_BossReqMet(const ctr_req *r)
 // is never routed through this function.
 int AP_BossGarageOpen(int bossIdx)
 {
+	// Boss already beaten -> garage is DONE and stays closed, even once its
+	// access requirement is met. The boss-race LOCATION bit is the same
+	// checked-location authority the map's red "beaten" star reads
+	// (AH_Map.c:399, base + ADV_REWARD_FIRST_BOSS_KEY), so gating both the
+	// door and the open/closed map icon on it here keeps all three consistent.
+	// Only the four regular bosses (Roo/Papu/Komodo/Pinstripe, idx 0..3);
+	// Oxide (idx 4) is a separate key/goal gate and must not be closed here.
+	if (bossIdx >= 0 && bossIdx < 4 &&
+	    AP_LocationCheckedByBit(bossIdx + ADV_REWARD_FIRST_BOSS_KEY))
+		return 0;
+
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
 
