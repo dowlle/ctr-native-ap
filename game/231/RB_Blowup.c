@@ -1,5 +1,13 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// #56 sibling: the two instance births in RB_Blowup_Init are unchecked in retail.
+// On native a full JitPool makes a birth return NULL and the blind deref is an
+// access violation. The guards below drop only the explosion visual on exhaustion;
+// this log line marks each save so testers can surface near-misses.
+void AP_LogLine(const char *msg);
+#endif
+
 static struct InstDrawPerPlayer *RB_Blowup_GetIDPP(struct Instance *inst, int playerIndex)
 {
 	return (struct InstDrawPerPlayer *)((char *)inst + sizeof(struct Instance) + (playerIndex * sizeof(struct InstDrawPerPlayer)));
@@ -93,6 +101,17 @@ void RB_Blowup_Init(struct Instance *weaponInst)
 	// initialize thread for blowup
 	explosionInst = INSTANCE_BirthWithThread(0x26, 0, SMALL, BLOWUP, RB_Blowup_ThTick, 0xc, 0);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): Retail births into a fixed PS1 instance pool that effectively
+	// never overflowed and derefs the result blindly. On native the JitPool can be
+	// full (INSTANCE.c), the birth returns NULL, and the blind deref is an access
+	// violation (KitKat, Hot Air Skyway v0.1.3: 0xc0000005 @ RB_TNT.c:36 -> here).
+	// The explosion + shockwave are purely cosmetic; the explosion's collision damage
+	// (below) uses only weaponInst + the scratchpad, so it must still run. Guard the
+	// visual setup, keep the damage. The non-native (PSX/decomp) build is unchanged.
+	if (explosionInst != NULL)
+	{
+#endif
 	explosionInst->flags |= (VISIBLE_DURING_GAMEPLAY | DRAW_BILLBOARD);
 
 	explosionTh = explosionInst->thread;
@@ -136,6 +155,13 @@ void RB_Blowup_Init(struct Instance *weaponInst)
 	// set shockwave instance
 	blowup[0] = (s32)(uintptr_t)shockwaveInst;
 
+#if defined(CTR_NATIVE)
+	// Same hazard for the shockwave ring. The ThTick/ProcessBucket consumers already
+	// tolerate a 0 slot (RB_Blowup_UpdateSlot / RB_Blowup_ProcessBucket), so a NULL
+	// here simply means "no ring this blast".
+	if (shockwaveInst != NULL)
+	{
+#endif
 	shockwaveInst->flags |= PIXEL_LOD;
 
 	CTR_MatrixSetRotIdentity(&shockwaveInst->matrix);
@@ -148,6 +174,22 @@ void RB_Blowup_Init(struct Instance *weaponInst)
 	// set flag to always point to camera
 	headers[0].flags |= 2;
 	headers[1].flags |= 2;
+#if defined(CTR_NATIVE)
+	}
+#if defined(CTR_AP)
+	else
+	{
+		AP_LogLine("[AP POOL] Blowup shockwave birth NULL (crash averted)\n");
+	}
+#endif
+	}
+#if defined(CTR_AP)
+	else
+	{
+		AP_LogLine("[AP POOL] Blowup explosion birth NULL (crash averted)\n");
+	}
+#endif
+#endif
 
 	// ======== End Of Instance ==========
 
