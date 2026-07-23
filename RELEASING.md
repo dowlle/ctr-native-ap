@@ -104,6 +104,18 @@ The release cycle's development order, settled during the 0.1.4 cycle:
       alongside it in the GitHub release (this lets community members symbolize
       their own crash reports). It must be the `.debug` from the EXACT release
       build; a rebuilt one fails the debuglink CRC32 check and is useless.
+- [ ] Regenerate the player template YAML from the RELEASE apworld using AP's
+      template creator, and ship it as `Crash.Team.Racing.yaml` (a public release
+      asset). Install the shipped `ctr.apworld` into an AP source checkout's
+      `custom_worlds/`, then run the "Generate Template Options" creator against
+      it: from the AP source root, `SKIP_REQUIREMENTS_UPDATE=1 py -3.12 -c "from
+      Options import generate_yaml_templates; generate_yaml_templates('<out>', False)"`
+      (Python 3.11+; unrelated-world import errors such as zillion are harmless
+      noise). Do NOT hand-edit or reuse a stale template. Confirm the option
+      defaults match this cycle's rulings before shipping (0.1.4:
+      `two_stage_density: full`, `one_lap_cups: on`) and that the docstring-diet
+      text is present. The `warp_pad_shuffle_categories` set order varies per run,
+      so the template is not byte-reproducible and is not sha-pinned.
 - [ ] Record in the release evidence the sha256 of BOTH the stripped
       `ctr_native_ap` and the `ctr_native_ap.debug`: add them to the devlog
       artifact table, and archive a copy of the `.debug` and its checksums under
@@ -141,15 +153,16 @@ the previous release's published notes. House style:
 - [ ] Privacy scan the notes before publishing: no real names, no machine or
       host names, no local paths.
 - [ ] `gh release create vX.Y.Z` with the Windows assets: the zip, its
-      `.sha256`, and the standalone `ctr.apworld` (multiworld hosts often want
-      just the world file).
+      `.sha256`, the standalone `ctr.apworld` and its `.sha256` (multiworld hosts
+      often want just the world file), and the regenerated `Crash.Team.Racing.yaml`
+      player template (see §4).
 - [ ] Add the Linux assets to the same release: the `.tar.gz` and its
       `.sha256`, plus the `ctr_native_ap.debug` sidecar and its
       `ctr_native_ap.debug.sha256` (see §4; the `.debug` is a public asset so
       players can symbolize their own crashes).
 - [ ] Verify with `gh release view`: title, tag, and every asset present (the
-      Windows zip + sha256, `ctr.apworld`, the Linux tarball + sha256, and the
-      `.debug` + sha256).
+      Windows zip + sha256, `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the
+      Linux tarball + sha256, and the `.debug` + sha256).
 
 ## 8. After publishing
 
