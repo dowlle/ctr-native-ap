@@ -935,3 +935,19 @@ void Platform_WaitUntilVBlank(int targetVBlank)
 	NativeReplayScheduler_RecordVSyncPacket(emittedVBlanks);
 #endif
 }
+
+#if defined(CTR_AP)
+// Monotonic wall-clock in milliseconds for the AP frame-stall watchdog
+// (ap/ap_perf.c). The ap/ module stays SDL-header-free (see the extern
+// declaration precedent for Platform_InputRawKeyDown in ap/ap_hooks.c), so the
+// SDL performance counter is read here and handed over as a plain double. The
+// counter frequency is fixed for the process lifetime, so it is cached on first
+// use. CTR_AP-only: the vanilla build (CTR_AP=OFF) never sees this.
+double Platform_PerfNowMs(void)
+{
+	static Uint64 s_freq = 0; // SDL_GetPerformanceFrequency(), cached once
+	if (s_freq == 0)
+		s_freq = SDL_GetPerformanceFrequency();
+	return (double)SDL_GetPerformanceCounter() * 1000.0 / (double)s_freq;
+}
+#endif // CTR_AP

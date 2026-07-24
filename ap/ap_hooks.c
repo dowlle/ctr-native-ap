@@ -12,6 +12,7 @@
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
+#include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -2339,7 +2340,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_net_started = 1; // attempt once
 	}
 
+	// [AP PERF] POLL section: apclientpp's poll() fires every queued network
+	// handler inline on this thread (item batches, and the connect-time
+	// datapackage sync), so a slow poll is a prime slow-AP-frame suspect.
+	AP_PerfSectionBegin(AP_PERF_SEC_POLL);
 	ap_net_poll();
+	AP_PerfSectionEnd(AP_PERF_SEC_POLL);
 
 	// On a fresh slot-connect (new seed, reconnect, or server switch) the server
 	// resends the FULL ReceivedItems list from index 0. Zero the per-session
@@ -3162,7 +3168,11 @@ static void AP_DumpState(struct GameTracker *gGT)
 	fclose(f);
 }
 
-void AP_OnFrame(struct GameTracker *gGT)
+// Real per-frame body. Wrapped by AP_OnFrame below so the always-on frame-stall
+// watchdog (ap_perf.c) can bracket it without touching the body's own early
+// returns (the adventure-mode / loading gate near the end). Keeps the public
+// AP_OnFrame signature identical.
+static void ap_onframe_body(struct GameTracker *gGT)
 {
 	// M-key: RESERVED for the future hub-map ZOOM (Warp-Pad State Model v2). The
 	// old debug map-overlay colour toggle it used to drive is retired -- map
@@ -3185,7 +3195,11 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.
+	// [AP PERF] VERIFY section: the recompute (when it does run) sweeps the seed,
+	// so it is the other named slow-AP-frame suspect.
+	AP_PerfSectionBegin(AP_PERF_SEC_VERIFY);
 	AP_VerifyOnFrame();
+	AP_PerfSectionEnd(AP_PERF_SEC_VERIFY);
 
 	{
 		static int ap_booted = 0;
@@ -3279,6 +3293,18 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_PrelatchGreetingHint(&sdata->advProgress); // issue #17: kill the new-area greeting hint before it can collide with a hub swap
 	AP_EvaluateGoal(); // item-based goals (all-bosses / all-gem-cups / 101%) fire here
 	AP_PollDebug(&sdata->advProgress);
+}
+
+void AP_OnFrame(struct GameTracker *gGT)
+{
+	// Always-on frame-stall watchdog (ap_perf.c). Bracketing the body here means
+	// its early returns (the adventure-mode / loading gate) need no touching:
+	// AP_PerfFrameEnd always runs. levelID + the load stage feed the "stall
+	// outside AP" attribution -- a level load legitimately blocks for seconds, so
+	// the watchdog must know when we are loading and not report it as a stall.
+	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage);
+	ap_onframe_body(gGT);
+	AP_PerfFrameEnd();
 }
 
 #endif // CTR_AP
