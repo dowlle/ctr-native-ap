@@ -181,6 +181,24 @@ struct Instance *INSTANCE_BirthWithThread(int modelID, const char *name, int poo
 
 	*/
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): Retail's own exhaustion check sits commented out above and
+	// the deref below crashes on a full thread pool. NULL is already this
+	// function's failure contract (missing model above), so return it and let
+	// the guarded call sites degrade the same way they do for a full instance
+	// pool.
+	if (t == NULL)
+	{
+#ifdef CTR_AP
+		char apmsg[96];
+		snprintf(apmsg, sizeof apmsg, "[AP POOL] BirthWithThread thread NULL name=%s\n",
+		         (name != NULL) ? name : "?");
+		AP_LogLine(apmsg);
+#endif
+		return NULL;
+	}
+#endif
+
 	t->modelIndex = modelID;
 	inst = INSTANCE_Birth3D(m, name, t);
 
