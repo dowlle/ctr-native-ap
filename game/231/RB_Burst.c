@@ -262,6 +262,19 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	// initialize thread for burst
 	currInst = INSTANCE_BirthWithThread(0x2b, s_burst_explosion1, SMALL, BURST, RB_Burst_ThTick, 0xc, 0);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): Retail births into a fixed PS1 instance pool that effectively
+	// never overflowed and derefs the result blindly. On native the JitPool can be
+	// full, INSTANCE_BirthWithThread returns NULL (INSTANCE.c), and the blind deref
+	// is an access violation (#56 Class-B, the sibling of the RB_Blowup #135 and
+	// RB_Hazard field crashes). A NULL main burst means no visual this blast; the
+	// collision-damage sweep below uses only weaponInst + the scratchpad, so it must
+	// still run (same visual/damage split as RB_Blowup). The persistent consumers
+	// (RB_Burst_ThTick/UpdateSlot, ProcessBucket, DrawAll) already tolerate 0 slots.
+	// The non-native (PSX/decomp) build is unchanged.
+	if (currInst != NULL)
+	{
+#endif
 	// get thread from instance
 	t = currInst->thread;
 
@@ -285,6 +298,12 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	currInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_WARPEDBURST], s_burst_explosion2, t);
 
 	burst[2] = (int)currInst;
+#if defined(CTR_NATIVE)
+	// A NULL warped-burst slot just means no warped ring this blast; the slot
+	// stays 0 and every consumer already skips a 0 slot.
+	if (currInst != NULL)
+	{
+#endif
 	currInst->depthBiasNormal += -2;
 
 	currInst->flags |= VISIBLE_DURING_GAMEPLAY;
@@ -301,12 +320,21 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	// set flag to always point to camera
 	headers = currInst->model->headers;
 	headers[0].flags |= 2;
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	// ======= Next One ===========
 
 	currInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_SHOCKWAVE_RED], s_burst_shockwave1, t);
 
 	burst[0] = (int)currInst;
+#if defined(CTR_NATIVE)
+	// A NULL shockwave slot just means no red ring this blast; the slot stays 0
+	// and every consumer already skips a 0 slot.
+	if (currInst != NULL)
+	{
+#endif
 	currInst->depthBiasNormal += -2;
 
 	// instance flags
@@ -316,12 +344,27 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	headers = currInst->model->headers;
 	headers[0].flags |= 2;
 	headers[1].flags |= 2;
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	// ======= End of Instance =========
 
 	for (int i = 0; /*i < 3*/; i++)
 	{
 		currInst = (struct Instance *)burst[i];
+
+#if defined(CTR_NATIVE)
+		// A skipped (NULL) prize slot keeps the loop's i==2 terminator intact.
+		if (currInst == NULL)
+		{
+			if (i == 2)
+			{
+				break;
+			}
+			continue;
+		}
+#endif
 
 		currInst->matrix.t[0] = weaponInst->matrix.t[0];
 		currInst->matrix.t[1] = weaponInst->matrix.t[1] + -0x30;
@@ -353,6 +396,11 @@ void RB_Burst_Init(struct Instance *weaponInst)
 
 	// currInst is burst[2]
 
+#if defined(CTR_NATIVE)
+	// The tail re-touches burst[2], which may have been the skipped slot above.
+	if (currInst != NULL)
+	{
+#endif
 	// rotate 90 degrees (X -> -Y)
 	currInst->matrix.m[0][0] = 0;
 	currInst->matrix.m[0][1] = 0xf000;
@@ -361,6 +409,10 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	// rotate 90 degrees (Y -> X)
 	currInst->matrix.m[1][0] = 0x1000;
 	CTR_WriteU32LE(&currInst->matrix.m[1][1], 0);
+#if defined(CTR_NATIVE)
+	}	// end burst[2] tail guard
+	}	// end main-burst visual guard (collision damage below runs unconditionally)
+#endif
 
 	// ========= Collisions ===========
 
