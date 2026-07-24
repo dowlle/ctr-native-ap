@@ -197,12 +197,26 @@ void RB_Hazard_ThCollide_Generic(struct Thread *thread)
 		// "thread", or else you'll kill the wrong thread
 		// at the end of the function
 
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): Retail reads crateInst->thread blindly, but a standing
+		// crate's thread is legitimately NULL (RB_CrateAny_ThTick_Grow clears it
+		// after every regrow), so a mine sitting on a crate spot caught in a
+		// blast faults here on native (KitKat, Oxide Station v0.1.4). The
+		// sibling RB_GenericMine_ThCollide always had the full check; upstream
+		// added this same guard in 843ec9af4.
+		if ((crateInst->thread != NULL) && (crateInst->thread->object != NULL))
+		{
+			crateObj = (struct Crate *)crateInst->thread->object;
+			crateObj->boolPauseCooldown = 0;
+		}
+#else
 		crateObj = (struct Crate *)crateInst->thread->object;
 
 		if (crateObj != 0)
 		{
 			crateObj->boolPauseCooldown = 0;
 		}
+#endif
 	}
 
 	modelID = inst->model->id;
