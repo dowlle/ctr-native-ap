@@ -240,7 +240,11 @@ void RB_Spider_ThTick(struct Thread *t)
 		updatePosScale:
 			spiderInst->matrix.t[1] = (int)spiderInst->instDef->pos.y + spiderArr[spiderInst->animFrame];
 
-			if (spiderInst->animFrame < 0xb)
+			if (spiderInst->animFrame < 0xb
+#if defined(CTR_NATIVE)
+			    && spider->shadowInst != NULL	// retail-blind pool birth may be NULL (#56 Class-B)
+#endif
+			)
 			{
 				spider->shadowInst->scale.x = (s16)((spiderInst->animFrame << 0xc) / 10) + 0x1800;
 				spider->shadowInst->scale.z = (s16)((spiderInst->animFrame << 0xc) / 10) + 0x1800;
@@ -367,13 +371,30 @@ void RB_Spider_LInB(struct Instance *inst)
 
 	spider->shadowInst = shadowInst;
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). The drop-shadow
+	// is cosmetic; a NULL one just means this spider casts no shadow. Its only other
+	// consumer (the ThTick scale write) is guarded to match, spider->shadowInst stays
+	// NULL and nothing ever calls INSTANCE_Death on it. PSX/decomp build unchanged.
+	// The spider's own raise (inst->matrix, below) stays unconditional.
+	if (shadowInst != NULL)
+	{
+#endif
 	CTR_MatrixCopyRot(&shadowInst->matrix, &inst->matrix);
 
 	shadowInst->matrix.t[0] = inst->matrix.t[0];
 	shadowInst->matrix.t[1] = inst->matrix.t[1] - 8;
 	shadowInst->matrix.t[2] = inst->matrix.t[2];
+#if defined(CTR_NATIVE)
+	}
+#endif
+
 	inst->matrix.t[1] += 0x4c0;
 
+#if defined(CTR_NATIVE)
+	if (shadowInst != NULL)
+	{
+#endif
 	shadowInst->scale.x = 0x2000;
 	shadowInst->scale.y = 0x2000;
 	shadowInst->scale.z = 0x2000;
@@ -382,4 +403,7 @@ void RB_Spider_LInB(struct Instance *inst)
 	rot.y = 0x200;
 	rot.z = 0;
 	ConvertRotToMatrix(&shadowInst->matrix, &rot);
+#if defined(CTR_NATIVE)
+	}
+#endif
 }
