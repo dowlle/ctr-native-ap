@@ -290,6 +290,29 @@ LAB_800aec34:
 		goto LAB_800aede8;
 	}
 
+#ifdef CTR_AP
+	// #24: the door is locked and the player is standing at it. The vanilla Aku
+	// hint below can only say "four trophies" / "four keys", so under slot_data it
+	// misstates the requirement this gate actually enforces. Add one plain text
+	// line carrying the real requirement, directly under the challenge name (the
+	// hint itself still fires -- it is the retail flavour text, and suppressing it
+	// would change vanilla behaviour for a cosmetic reason). Only drawn while Aku
+	// is silent, matching the challenge-name line above, so the two cannot overlap
+	// his hint box. Oxide's door is hubID 0 -> boss index 4; the four boss garages
+	// are hubID 1..4 -> boss index 0..3.
+	{
+		char advert[64];
+		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+
+		if (sdata->AkuAkuHintState == 0 &&
+		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
+		{
+			DecalFont_DrawLine(advert, ((view.x + view.w) >> 1),
+			                   ((view.y + view.h) - 0x14), FONT_SMALL, 0xffff8000);
+		}
+	}
+#endif
+
 	uVar8 = 0;
 
 	// if this is gemstone valley
