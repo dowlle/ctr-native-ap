@@ -1,0 +1,90 @@
+name: Feature request or idea
+description: A new check, item, option or quality-of-life change.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome and several shipped features started as one. The questions below
+        are the ones that get asked in the comments every time, so answering them up front
+        gets the idea triaged in one pass instead of three.
+
+        Not knowing an answer is fine. Leave it blank.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What you would like added or changed.
+      placeholder: |
+        A check for breaking every time crate in a relic race, not just finishing it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What would it add to play?
+      description: |
+        What problem it solves, or what it would feel like in a run. This is what decides
+        whether an idea gets adopted, more than the mechanism does.
+      placeholder: |
+        My relic times are well under platinum, so I have never had a reason to go for
+        perfects. This would give me one, and it spreads checks over content I skip.
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Does another randomizer or Archipelago world already do this?
+      description: |
+        Genuinely useful, not a formality. Naming the game that does it well has settled
+        several design questions here in one comment.
+      placeholder: |
+        The standalone CTR randomizer has an option that requires perfects for relic
+        rewards. Mario Kart Double Dash AP does something similar with item boxes.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: optional
+    attributes:
+      label: Should this be optional?
+      description: |
+        Almost every accepted idea ends up as a YAML option, and the default matters.
+        Anything that changes the item or location pool is normally off by default.
+      options:
+        - Not sure
+        - A YAML option, off by default
+        - A YAML option, on by default
+        - Always on, no option
+    validations:
+      required: false
+
+  - type: input
+    id: pool-size
+    attributes:
+      label: Roughly how many checks or items would this add?
+      description: |
+        A rough count is enough. Pool size drives whether an idea can ship as a patch or
+        has to wait for a datapackage bump, so an early estimate helps a lot.
+      placeholder: About 18, one per relic race
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which side would this touch, if you know?
+      description: |
+        The game client and the randomization logic are two repositories. Guessing wrong
+        costs nothing, this just helps route it.
+      options:
+        - Not sure
+        - The game itself (display, controls, in-game behaviour)
+        - The randomization (checks, items, options, logic)
+        - Trackers
+    validations:
+      required: false

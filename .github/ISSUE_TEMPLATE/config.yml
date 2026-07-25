@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and troubleshooting guide
+    url: https://github.com/dowlle/ctr-native-ap/blob/main/SETUP.md
+    about: Installing, extracting your disc, Steam Deck and Linux notes, and the common fixes. Worth a look before filing.
+  - name: Randomization, generation and logic
+    url: https://github.com/dowlle/ctr-archipelago-apworld/issues/new/choose
+    about: Issues with seed generation, options or logic live in the companion apworld repository. If you are unsure, file here anyway and it will be moved.
+  - name: New to Archipelago itself
+    url: https://archipelago.gg/tutorial/
+    about: Setting up a multiworld, YAMLs and rooms in general, rather than anything CTR-specific.
