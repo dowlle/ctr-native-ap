@@ -126,7 +126,35 @@ struct Instance *INSTANCE_Birth2D(struct Model *model, const char *name, struct 
 }
 
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800309a4-0x80030a50.
+#if defined(CTR_NATIVE)
+static void INSTANCE_RollbackThreadBirth(struct Thread *t, struct Thread *relativeTh)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (relativeTh == NULL)
+	{
+		gGT->threadBuckets[t->flags & 0xff].thread = t->siblingThread;
+	}
+	else if ((t->flags & SELF_SIBLING) != 0)
+	{
+		relativeTh->siblingThread = t->siblingThread;
+	}
+	else if ((t->flags & CHILD_BETWEEN) != 0)
+	{
+		relativeTh->childThread = t->childThread;
+	}
+	else
+	{
+		relativeTh->childThread = t->siblingThread;
+	}
+
+	PROC_DestroyObject(t->object, t->flags);
+	LIST_AddFront(&gGT->JitPools.thread.free, (struct Item *)t);
+}
+#endif
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800309a4-0x80030a50;
+// CTR_NATIVE only adds allocation-failure rollback.
 struct Instance *INSTANCE_BirthWithThread(int modelID, const char *name, int poolType, int bucket, void *funcThTick, int objSize, struct Thread *parent)
 {
 	struct GameTracker *gGT;
@@ -201,6 +229,14 @@ struct Instance *INSTANCE_BirthWithThread(int modelID, const char *name, int poo
 
 	t->modelIndex = modelID;
 	inst = INSTANCE_Birth3D(m, name, t);
+
+#if defined(CTR_NATIVE)
+	if (inst == NULL)
+	{
+		INSTANCE_RollbackThreadBirth(t, parent);
+		return NULL;
+	}
+#endif
 
 	/*
 
