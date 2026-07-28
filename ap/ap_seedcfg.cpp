@@ -93,6 +93,28 @@ static int json_int(const nlohmann::json &j, const char *key, int dflt)
 	}
 }
 
+// String-valued counterpart to json_int, for the handful of ctr_options keys that
+// carry text (today: world_version). Always leaves `out` NUL-terminated, and an
+// absent / null / non-string / oversized value leaves it EMPTY -- the additive-key
+// convention, where "unknown" is a value the consumers can act on by staying quiet.
+static void json_str(const nlohmann::json &j, const char *key, char *out, size_t cap)
+{
+	out[0] = '\0';
+	auto it = j.find(key);
+	if (it == j.end() || !it->is_string())
+		return;
+	try
+	{
+		const std::string s = it->get<std::string>();
+		if (s.size() < cap)
+			std::snprintf(out, cap, "%s", s.c_str());
+	}
+	catch (...)
+	{
+		out[0] = '\0';
+	}
+}
+
 static ctr_req parse_req(const nlohmann::json &o)
 {
 	ctr_req r;
@@ -188,6 +210,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// seed without them degrades to the disabled state.
 	ctr_cfg.death_link = 0;
 	ctr_cfg.deathlink_amnesty = 1;
+	// Pair version of the generating apworld (#150): unknown until parsed, and an
+	// unknown version is one the update notice must say nothing about.
+	ctr_cfg.world_version[0] = '\0';
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
@@ -267,6 +292,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.deathlink_amnesty = json_int(opt, "deathlink_amnesty", 1);
 	if (ctr_cfg.deathlink_amnesty < 1)
 		ctr_cfg.deathlink_amnesty = 1; // guard: never divide the send cadence by < 1
+	// Generating apworld's world_version = the pair version (#150). Additive key,
+	// no schema bump: a seed predating it leaves the buffer empty and the update
+	// notice stays dark. Stored verbatim; the comparison lives in ap_version_cmp.h.
+	json_str(opt, "world_version", ctr_cfg.world_version, sizeof ctr_cfg.world_version);
+	if (ctr_cfg.world_version[0] != '\0')
+		ap_cfg_log("[AP CFG] seed pair version (apworld world_version): %s\n",
+		           ctr_cfg.world_version);
 
 	// ── warp_pad_map: identity already set; overlay string-keyed entries ──
 	// slot_data v3 keys span "0".."27" (-> warp_pad_map) AND "100".."104" (-> the

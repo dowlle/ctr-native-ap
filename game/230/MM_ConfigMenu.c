@@ -55,7 +55,12 @@ static void BuildSectionMap(void)
 		// this menu. Skip it so it never appears as a section here (its CFG_INT rows
 		// would also render as a bare "%d%%", duplicating that screen). The rows are
 		// contiguous, so skipping them leaves curSection on the prior section.
-		if (strcmp(g_configEntries[i].section, "Audio") == 0)
+		// The State section is config-file-only for the same reason plus one more:
+		// it holds remembered state (the pair-version notice's last-seen version,
+		// issue #150), not a user option, and its CFG_STRING row has no renderer in
+		// the generic section draw below. Written by the code that owns the state.
+		if (strcmp(g_configEntries[i].section, "Audio") == 0 ||
+		    strcmp(g_configEntries[i].section, "State") == 0)
 			continue;
 		if (curSection == NULL || strcmp(g_configEntries[i].section, curSection) != 0)
 		{
@@ -417,6 +422,13 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
+
+	// Pair-version update notice (issue #150) -- the persistent surface, below the
+	// status block. Rows 8-10 of this section's grid: clear of the status overflow
+	// line (row 6) and of the edit hint below (row 7), and the last line lands on
+	// 0xC8, still inside the panel. Self-gates: nothing is drawn and no space is
+	// taken unless the connected seed was built by a newer pair.
+	AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
 
 	// Pad hint while a row is being edited, so the controller exits are
 	// discoverable. Drawn as a footer rather than on the row itself: the text
