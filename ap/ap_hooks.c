@@ -2172,6 +2172,162 @@ int AP_BossGarageOpen(int bossIdx)
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
+// ── #24: plain-text requirement advert for the boss-class gates ──
+// Warp pads advertise their configured requirement with an icon + count, but the
+// four boss garages and Oxide's garage door only ever spoke through the vanilla
+// Aku hints, whose wording is hardcoded to the RETAIL rules ("four trophies",
+// "four keys") and therefore misstates every per-seed requirement. Ruled shape:
+// a plain TEXT line, deliberately not the pads' icon vocabulary, because text
+// can carry the relic-tier and gem/token-colour wording an icon cannot.
+// Hub doors stay out of scope (they remain key-required, so the vanilla key hints
+// are still accurate for them).
+
+// Owned tally a requirement is judged against. The branch structure mirrors
+// AP_ReqMetCounts case for case -- including the type-3/5 fall-through to the
+// any-of sum on an out-of-range colour -- so the advert can never disagree with
+// the gate about which counter is being compared.
+static int AP_ReqOwned(const ctr_req *r)
+{
+	int i, sum;
+
+	switch (r->type)
+	{
+	case 1: // trophies
+		return ap_recv_count[AP_IDX_TROPHY];
+	case 2: // keys
+		return ap_recv_count[AP_IDX_KEY];
+	case 3: // tokens (colour 0..4 = one colour)
+		if (r->colour >= 0 && r->colour <= 4)
+			return ap_recv_count[AP_IDX_TOKEN_RED + r->colour];
+		/* fall through to the AnyToken sum */
+	case 6: // AnyToken
+		for (sum = 0, i = 0; i < 5; i++)
+			sum += ap_recv_count[AP_IDX_TOKEN_RED + i];
+		return sum;
+	case 4: // relic, tier by colour (legacy -1 = Sapphire)
+		i = (r->colour >= 0 && r->colour <= 2) ? r->colour : 0;
+		return ap_recv_count[AP_IDX_SAPPHIRE + i];
+	case 5: // gems (colour 0..4 = one colour)
+		if (r->colour >= 0 && r->colour <= 4)
+			return ap_recv_count[AP_IDX_GEM_RED + r->colour];
+		/* fall through to the AnyGem sum */
+	case 8: // AnyGem
+		for (sum = 0, i = 0; i < 5; i++)
+			sum += ap_recv_count[AP_IDX_GEM_RED + i];
+		return sum;
+	case 7: // AnyRelic
+		return ap_recv_count[AP_IDX_SAPPHIRE] + ap_recv_count[AP_IDX_GOLD] +
+		       ap_recv_count[AP_IDX_PLATINUM];
+	default:
+		return 0;
+	}
+}
+
+static const char *AP_ADVERT_COLOURS[5] = {"Red", "Green", "Blue", "Yellow",
+                                           "Purple"};
+
+// Writes the advert line for boss `bossIdx` (0..3 = Roo, Papu, Komodo, Pinstripe;
+// 4 = Oxide) into `out` and returns 1, or returns 0 when there is nothing to
+// advertise. Returning 0 deliberately leaves the vanilla Aku hint as the only
+// message: with no slot_data the retail rules ARE the live rules, so the retail
+// wording is correct and inventing a second line would be noise.
+int AP_BossGateAdvert(int bossIdx, char *out, int cap)
+{
+	const ctr_req *r;
+	const char *noun;
+	const char *tint = "";
+	int owned, need;
+
+	if (out == 0 || cap <= 0)
+		return 0;
+	if (!ctr_cfg_active())
+		return 0;
+	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
+		return 0;
+
+	// Modes 0/1 gate on RACES WON, not on items held (see AP_BossGarageOpen), so
+	// the advert has to speak in races or it would advertise a requirement that
+	// is not the one being enforced. Oxide (bossIdx 4) never routes through the
+	// track-list gate, so it always falls to the requirement branch below.
+	if (bossIdx < 4 && (ctr_cfg.bossgarage_mode == 0 || ctr_cfg.bossgarage_mode == 1) &&
+	    ctr_cfg.boss_n_tracks[bossIdx] > 0)
+	{
+		int listed = ctr_cfg.boss_n_tracks[bossIdx];
+		int required = 0;
+		int won = 0;
+		int i;
+
+		for (i = 0; i < listed; i++)
+		{
+			int track = ctr_cfg.boss_tracks[bossIdx][i];
+			if (track < 0)
+				continue; // an absent track is skipped by the gate too
+			required++;
+			if (AP_LocationCheckedByBit(track + ADV_REWARD_FIRST_TROPHY))
+				won++;
+		}
+
+		if (required == 0)
+			return 0;
+
+		snprintf(out, (size_t)cap, "Requires: win %d %s (have %d)", required,
+		         (required == 1) ? "hub race" : "hub races", won);
+		return 1;
+	}
+
+	r = &ctr_cfg.boss_req[bossIdx];
+	if (r->type == 0 || r->count <= 0)
+		return 0; // no requirement resolved -> nothing to advertise
+
+	need = r->count;
+
+	switch (r->type)
+	{
+	case 1:
+		noun = (need == 1) ? "Trophy" : "Trophies";
+		break;
+	case 2:
+		noun = (need == 1) ? "Key" : "Keys";
+		break;
+	case 3:
+		noun = (need == 1) ? "CTR Token" : "CTR Tokens";
+		if (r->colour >= 0 && r->colour <= 4)
+			tint = AP_ADVERT_COLOURS[r->colour];
+		break;
+	case 6:
+		noun = (need == 1) ? "CTR Token" : "CTR Tokens";
+		break;
+	case 4:
+		noun = (need == 1) ? "Relic" : "Relics";
+		// Tier wording is the whole reason this advert is text and not an icon.
+		tint = (r->colour == 1) ? "Gold" : (r->colour == 2) ? "Platinum" : "Sapphire";
+		break;
+	case 5:
+		noun = (need == 1) ? "Gem" : "Gems";
+		if (r->colour >= 0 && r->colour <= 4)
+			tint = AP_ADVERT_COLOURS[r->colour];
+		break;
+	case 7:
+		noun = (need == 1) ? "Relic" : "Relics";
+		break;
+	case 8:
+		noun = (need == 1) ? "Gem" : "Gems";
+		break;
+	default:
+		return 0;
+	}
+
+	owned = AP_ReqOwned(r);
+
+	if (tint[0] != '\0')
+		snprintf(out, (size_t)cap, "Requires: %d %s %s (have %d)", need, tint,
+		         noun, owned);
+	else
+		snprintf(out, (size_t)cap, "Requires: %d %s (have %d)", need, noun, owned);
+
+	return 1;
+}
+
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
 // otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
 // per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail

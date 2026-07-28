@@ -300,6 +300,15 @@ int AP_BossReqMet(const ctr_req *r);
 // IMPLEMENTED C-SIDE in ap_hooks.c (needs AP_LocationCheckedByBit).
 int AP_BossGarageOpen(int bossIdx);
 
+// #24: plain-text requirement advert for a boss-class gate (bossIdx 0..3 = the
+// four boss garages, 4 = Oxide's garage door). Writes a line such as
+// "Requires: 18 Gold Relics (have 12)" into `out` and returns 1; returns 0 when
+// there is nothing to advertise (no slot_data -> the vanilla Aku hints are still
+// accurate, so the caller must leave them as the only message). Mirrors the gate
+// it describes: modes 0/1 advertise races won, everything else the resolved
+// requirement. IMPLEMENTED C-SIDE in ap_hooks.c.
+int AP_BossGateAdvert(int bossIdx, char *out, int cap);
+
 #ifdef __cplusplus
 } // extern "C"
 

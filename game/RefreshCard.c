@@ -158,7 +158,7 @@ void RefreshCard_GhostEncodeProfile(u32 slotIndex, u16 characterID, u16 levelID,
 
 	strcat(&description[strlen(description)], sdata->lngStrings[data.metaDataLEV[(s16)levelID].name_LNG]);
 	strcat(description, sdata->strcatData1_colon);
-	strcat(&description[strlen(description)], sdata->lngStrings[data.MetaDataCharacters[(s16)characterID].name_LNG_long]);
+	strcat(&description[strlen(description)], sdata->lngStrings[data.MetaDataCharacters[(s16)characterID].name_LNG_short]);
 	strcat(description, sdata->strcatData1_colon);
 	strcat(description, (char *)RECTMENU_DrawTime(time));
 
@@ -383,10 +383,10 @@ void RefreshCard_Unknown3(void)
 			{
 				int remaining;
 
-				memcpy(data.s_BASCUS_94426G_Question, sdata->ghostProfile_memcard[sdata->ghostProfile_rowSelect].profile_name,
-				       sizeof(data.s_BASCUS_94426G_Question));
+				memcpy(sdata->ghostFileNameFinal, sdata->ghostProfile_memcard[sdata->ghostProfile_rowSelect].profile_name,
+				       sizeof(sdata->ghostProfile_memcard[0].profile_name));
 				RefreshCard_SetScreenText(MC_SCREEN_SAVING);
-				RefreshCard_NextMemcardAction(0, MC_ACTION_Erase, data.s_BASCUS_94426G_Question, NULL, NULL, 0);
+				RefreshCard_NextMemcardAction(0, MC_ACTION_Erase, sdata->ghostFileNameFinal, NULL, NULL, 0);
 				sdata->boolError = 0;
 
 				remaining = (sdata->numGhostProfilesSaved - 1) - sdata->ghostProfile_rowSelect;
@@ -428,7 +428,6 @@ void RefreshCard_Unknown3(void)
 
 	if (RefreshCard_GetResult(MC_RESULT_FULL) != 0)
 	{
-		RefreshCard_Unknown2();
 		RefreshCard_SetScreenAndPoll(MC_SCREEN_ERROR_FULL);
 		keepPolling = 0;
 		goto done;
@@ -450,7 +449,7 @@ void RefreshCard_Unknown3(void)
 
 		if ((sdata->memcardAction >= 0) && (sdata->memcardAction < 3))
 		{
-			RefreshCard_SetScreenText(MC_SCREEN_ERROR_NODATA);
+			RefreshCard_SetScreenText((sdata->memcardAction == 0) ? MC_SCREEN_ERROR_NODATA : MC_SCREEN_NULL);
 			RefreshCard_QueueGetInfo();
 			keepPolling = 0;
 		}
