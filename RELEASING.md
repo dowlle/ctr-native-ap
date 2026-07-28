@@ -4,6 +4,25 @@ The repeatable checklist for shipping a release, written down from the v0.1.0
 release (2026-07-15). CTR-AP ships as a versioned PAIR: this client and the
 companion `ctr.apworld` carry the same version and are tested together.
 
+## Versioning policy (ruled 2026-07-26, extended 2026-07-28)
+
+- **Every release is a three-part semver bump: `vX.Y.Z`, no fourth segment,
+  ever.** Regular releases bump the patch (0.1.4 -> 0.1.5); bigger updates
+  bump the minor (0.1.x -> 0.2.x). v0.1.4.1 is the one-off historical
+  exception and must not be repeated.
+- **The pair always bumps, even for client-only fixes.** A client fix ships
+  as a full release: the apworld's `world_version` bumps to match even when
+  its content did not change, the apworld is rebuilt, the full asset set
+  ships (see the completeness gate in section 7), and the indexes get their
+  version PR. Rationale: both live indexes resolve the apworld by a
+  `releases/download/v{{version}}/ctr.apworld` URL template, so a four-part
+  or client-only tag is either invisible to the apworld manager or breaks
+  the template.
+- **Every non-pre-release must be a complete, installable pair.** A release
+  missing any standard asset ships as a pre-release or not at all. What made
+  v0.1.4.1 unpromotable was not its version number; it was the missing
+  Linux build, apworld, template, and debug sidecar.
+
 ## 0. Cycle sequence (merge first, then test the merged result)
 
 The release cycle's development order, settled during the 0.1.4 cycle:
@@ -163,6 +182,14 @@ the previous release's published notes. House style:
 - [ ] Verify with `gh release view`: title, tag, and every asset present (the
       Windows zip + sha256, `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the
       Linux tarball + sha256, and the `.debug` + sha256).
+- [ ] **Asset-completeness gate: all assets or pre-release.** The release may
+      only be published (or have its pre-release flag removed) once the
+      `gh release view` check above shows the COMPLETE nine-asset set. If
+      anything is missing, the release stays flagged pre-release until the
+      missing assets are attached, no exceptions and no "add it later while
+      Latest". This is the rule v0.1.4.1 taught: it shipped Windows-only,
+      which stranded Linux and Steam Deck players and removed the apworld and
+      template from the default download path, so it could never be promoted.
 
 ## 8. After publishing
 
