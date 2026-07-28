@@ -20,6 +20,29 @@ void VehTurbo_ProcessBucket(struct Thread *turboThread)
 			{
 				u32 driverDrawFlag = driver->instFlags | ~DRAW_SUCCESSFUL;
 
+#if defined(CTR_NATIVE)
+				// NOTE(dowlle): the second turbo flame is a retail-blind pool birth
+				// (VehFire.c) that can be NULL on native (#56 Class-B). INST_GETIDPP is
+				// plain pointer arithmetic, so a NULL secondaryInst does not fault here,
+				// it faults on the stores below. These are pure writes into the
+				// per-player draw record, so skipping them just leaves the second flame
+				// undrawn; the primary flame and the driver keep their full update.
+				// The non-native path below is the untouched retail interleaving.
+				if (secondaryInst != NULL)
+				{
+					secondary->instFlags &= driverDrawFlag;
+					secondary->otRangeNormal = driver->otRangeNormal;
+					secondary->otRangeSecondary = driver->otRangeSecondary;
+					secondary->depthOffset[0] = driver->depthOffset[0];
+					secondary->depthOffset[1] = driver->depthOffset[1];
+				}
+
+				primary->instFlags &= driverDrawFlag;
+				primary->otRangeNormal = driver->otRangeNormal;
+				primary->otRangeSecondary = driver->otRangeSecondary;
+				primary->depthOffset[0] = driver->depthOffset[0];
+				primary->depthOffset[1] = driver->depthOffset[1];
+#else
 				secondary->instFlags &= driverDrawFlag;
 				primary->instFlags &= driverDrawFlag;
 
@@ -32,6 +55,7 @@ void VehTurbo_ProcessBucket(struct Thread *turboThread)
 				primary->depthOffset[0] = driver->depthOffset[0];
 				secondary->depthOffset[1] = driver->depthOffset[1];
 				primary->depthOffset[1] = driver->depthOffset[1];
+#endif
 			}
 
 			primary++;
@@ -97,7 +121,21 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	{
 		// instance flags
 		instance->flags &= ~SPLIT_LINE;
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): turbo->inst is the second flame, a retail-blind pool birth in
+		// VehFire.c that returns NULL when the instance pool is full (#56 Class-B).
+		// Retail read through that NULL harmlessly; native faults. Every deref of it in
+		// this tick is guarded the same way, so a failed birth degrades to a one-flame
+		// turbo that still fades, still plays audio and still reaps its own thread.
+		// The teardown is already safe: INSTANCE_Death(NULL) reaches JitPool_Remove,
+		// whose LIST_RemoveMember/LIST_AddFront both early-return on a NULL item.
+		if (turbo->inst != NULL)
+		{
+#endif
 		turbo->inst->flags &= ~SPLIT_LINE;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	// if instance is split by water
@@ -106,8 +144,15 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		// turbos are now split by water, set vertical split height
 		instance->flags |= SPLIT_LINE;
 		instance->vertSplit = instanceDriver->vertSplit;
+#if defined(CTR_NATIVE)
+		if (turbo->inst != NULL)
+		{
+#endif
 		turbo->inst->flags |= SPLIT_LINE;
 		turbo->inst->vertSplit = instanceDriver->vertSplit;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	// if driver instance is not reflective
@@ -115,7 +160,14 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	{
 		// remove reflection from turbo instances
 		instance->flags &= ~REFLECTIVE;
+#if defined(CTR_NATIVE)
+		if (turbo->inst != NULL)
+		{
+#endif
 		turbo->inst->flags &= ~REFLECTIVE;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	// if driver instance is reflective
@@ -125,8 +177,15 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 		// copy reflection height axis to instance
 		instance->flags |= REFLECTIVE;
 		instance->vertSplit = instanceDriver->vertSplit;
+#if defined(CTR_NATIVE)
+		if (turbo->inst != NULL)
+		{
+#endif
 		turbo->inst->flags |= REFLECTIVE;
 		turbo->inst->vertSplit = instanceDriver->vertSplit;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	int fireSize = (int)turbo->fireSize;
@@ -154,6 +213,10 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	                         &instance->matrix.t[0]);
 
 	// matrix of second turbo instance, negate X axis
+#if defined(CTR_NATIVE)
+	if (turbo->inst != NULL)
+	{
+#endif
 	turbo->inst->matrix.m[0][0] = (s16)(-(int)instanceDriver->matrix.m[0][0] * fireSize >> 3);
 	turbo->inst->matrix.m[0][1] = (s16)(instanceDriver->matrix.m[0][1] * fireSize >> 3);
 	turbo->inst->matrix.m[0][2] = (s16)(instanceDriver->matrix.m[0][2] * fireSize >> 3);
@@ -166,6 +229,9 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 
 	VehTurbo_TransformOffset(instanceDriver, instanceDriver->scale.x * -0x12 >> 0xc, instanceDriver->scale.y * 3 >> 8, instanceDriver->scale.z * -0x34 >> 0xc,
 	                         &turbo->inst->matrix.t[0]);
+#if defined(CTR_NATIVE)
+	}	// end second-flame matrix guard
+#endif
 
 	// decrease turbo visibility cooldown by elapsed milliseconds per frame, ~32
 	s16 elapsedTime = turbo->fireVisibilityCooldown - gGT->elapsedTimeMS;
@@ -181,7 +247,14 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	{
 		// make fire visible now that there's no cooldown
 		instance->flags &= ~HIDE_MODEL;
+#if defined(CTR_NATIVE)
+		if (turbo->inst != NULL)
+		{
+#endif
 		turbo->inst->flags &= ~HIDE_MODEL;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	if (instance->alphaScale < 2500)
@@ -203,7 +276,14 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 	// STATIC_TURBO_EFFECT5
 	// STATIC_TURBO_EFFECT6
 	// STATIC_TURBO_EFFECT7
+#if defined(CTR_NATIVE)
+	if (turbo->inst != NULL)
+	{
+#endif
 	turbo->inst->model = gGT->modelPtr[(((int)turbo->fireAnimIndex + 3U) & 7) + STATIC_TURBO_EFFECT];
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	turbo->fireAnimIndex++;
 
@@ -286,13 +366,27 @@ void VehTurbo_ThTick(struct Thread *turboThread)
 			{
 				// increase transparency
 				instance->alphaScale += 0x100;
+#if defined(CTR_NATIVE)
+				if (turbo->inst != NULL)
+				{
+#endif
 				turbo->inst->alphaScale += 0x100;
+#if defined(CTR_NATIVE)
+				}
+#endif
 			}
 			else
 			{
 				// increase transparency
 				instance->alphaScale += 0x40;
+#if defined(CTR_NATIVE)
+				if (turbo->inst != NULL)
+				{
+#endif
 				turbo->inst->alphaScale += 0x40;
+#if defined(CTR_NATIVE)
+				}
+#endif
 			}
 		}
 		else
