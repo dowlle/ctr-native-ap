@@ -27,6 +27,8 @@ NativeConfig g_config = {
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
+	true,  // updateCheck (default on: the pair-version notice is informational)
+	"",    // updateLastSeen (empty = the title notice has never been shown)
 #endif
 };
 
@@ -55,6 +57,15 @@ const ConfigEntry g_configEntries[] = {
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
 	{"Archipelago", "death_link",               "DeathLink",                    CFG_ENUM, &g_config.deathLink},
+	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
+	// skip_hints/map_flash, so it renders and toggles with no menu changes.
+	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
+	// State section: config-file-only, exactly like [Audio] above -- gated out of
+	// BuildSectionMap (game/230/MM_ConfigMenu.c) so it is never a menu section.
+	// This is remembered state, not an option, and the generic section renderer
+	// has no CFG_STRING row drawing anyway (it would fall through to "%d%%").
+	// Written by the title-screen notice itself, never by a menu row.
+	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
 #endif
 };
 

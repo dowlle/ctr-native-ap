@@ -47,6 +47,16 @@ typedef struct
 	char uri[128];
 	char slot[64];
 	char password[64];
+	// Archipelago: pair-version update notice (issue #150). updateCheck is the
+	// user's on/off switch (default on) for the whole notice; false suppresses it
+	// on every surface. updateLastSeen is NOT a user setting -- it is the newest
+	// seed pair version the title-screen notice has already been shown for, so the
+	// same version never re-notifies there across sessions. It lives in a hidden
+	// config-file-only section (the [Audio] precedent, see BuildSectionMap in
+	// game/230/MM_ConfigMenu.c): a CFG_STRING row has no renderer in the generic
+	// section menu, and it is state rather than an option. Empty = never shown.
+	bool updateCheck;
+	char updateLastSeen[32];
 #endif
 } NativeConfig;
 

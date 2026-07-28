@@ -127,6 +127,25 @@ int AP_OxideFinalOpen(void);
 // ctr_cfg.schema_newer). Self-gates; a no-op on matching/older seeds.
 void AP_DrawSchemaWarning(void);
 
+// ── Pair-version update notice (issue #150) ──
+// INFORMATIONAL notice shown when the connected seed's ctr_options.world_version
+// is a HIGHER pair version than this build's CTR_AP_VERSION -- i.e. a newer
+// client/apworld pair exists. Nothing about the session is broken by this, so it
+// draws in ORANGE and is deliberately NOT the RED schema banner above (RED means
+// a compatibility break). Zero network: the whole test is the seed's own string
+// against the compiled one. Both draws self-gate -- no slot_data, an absent /
+// unparseable version, an equal or older seed, or [Archipelago] update_check =
+// false and they are no-ops.
+//
+// Title screen (game/230/MM_MenuFlow.c): shown once per pair version, remembered
+// across sessions in [State] update_last_seen so the same version never nags twice.
+void AP_DrawTitleUpdateNotice(uint32_t *ot);
+// OPTIONS > Connection status area (game/230/MM_ConfigMenu.c): the PERSISTENT
+// surface -- it ignores update_last_seen, so a player who dismissed the title
+// notice can always come back and read which version the seed wants. Draws its
+// lines centred on `centreX` starting at `y`, `spacing` apart.
+void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing);
+
 // ── Seed completability verification (ap_verify.c) ──
 // Typed requirement comparator against an arbitrary counts array (15 AP_IDX_*
 // slots). The single source of truth for requirement semantics: AP_BossReqMet

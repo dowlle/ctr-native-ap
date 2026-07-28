@@ -5,6 +5,8 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
+#include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
@@ -1647,6 +1649,140 @@ void AP_DrawSchemaWarning(void)
 	static char warn2[] = "This seed needs a newer client. Gates may be wrong.";
 	DecalFont_DrawLine(warn1, AP_FEED_X, 0x14, FONT_SMALL, RED);
 	DecalFont_DrawLine(warn2, AP_FEED_X, 0x14 + AP_FEED_LINE_H, FONT_SMALL, RED);
+}
+
+// ── Pair-version update notice (issue #150) ─────────────────────────────────
+// The apworld stamps its own world_version into ctr_options.world_version, and
+// under the release policy that string IS the pair version -- so a seed built by
+// a newer apworld is proof that a newer client exists. That makes this the exact
+// mirror of the schema_newer channel above, with no network call anywhere: the
+// whole comparison is the seed's own string against the compiled CTR_AP_VERSION.
+//
+// It is INFORMATIONAL, and the difference from AP_DrawSchemaWarning matters.
+// schema_newer means a compatibility break (gates may be enforced wrong), so it
+// is RED, permanent, and worded as a fault. This one means "there is a newer
+// release": the session is fine, nothing is mis-enforced, and the player may
+// finish this seed and update whenever. So it is ORANGE (the title line's own
+// colour), it never uses the words required / must / unsupported / out of date,
+// and it does not touch the RED banner in any way.
+//
+// Silence is the default answer to every uncertainty: no slot_data, a seed from
+// before the key existed (empty string), a version either side cannot parse, an
+// equal or older seed, or update_check switched off -- all draw nothing at all.
+
+// Wide enough for the longest line plus a full-length world_version (33 chars of
+// fixed text + CTR_CFG_VERSION_CAP), so no line can ever be truncated.
+#define AP_UPD_LINE_CAP 80
+
+// Title-screen anchor: centred, one line below the trademark line at y 0x9C
+// (game/230/MM_MenuFlow.c), stacking down to 0xC6 -- still inside the same safe
+// area the hub feed's bottom anchor (0xC8) sits on.
+#define AP_UPD_TITLE_CENTRE_X 0x100
+#define AP_UPD_TITLE_Y        0xAA
+#define AP_UPD_TITLE_LINE_H   0x0E
+
+static char ap_upd_line1[AP_UPD_LINE_CAP];
+static char ap_upd_line2[AP_UPD_LINE_CAP];
+static char ap_upd_line3[AP_UPD_LINE_CAP];
+static char ap_upd_built_for[CTR_CFG_VERSION_CAP]; // seed version the lines describe
+static int  ap_upd_armed = 0;
+static int  ap_upd_title_show = -1; // -1 undecided, 0 already shown once, 1 show
+
+// Refresh the notice state for the currently connected seed; 1 when it is armed.
+// Safe to call every frame: the strings are rebuilt only when the seed version
+// itself changes, which is once per connect.
+static int AP_UpdateNoticeRefresh(void)
+{
+	const char *seed = ctr_cfg.world_version;
+
+	if (!g_config.updateCheck || !ctr_cfg_active() || seed[0] == '\0' ||
+	    !AP_VersionNewer(seed, CTR_AP_VERSION))
+	{
+		ap_upd_armed = 0;
+		ap_upd_built_for[0] = '\0';
+		ap_upd_title_show = -1;
+		return 0;
+	}
+
+	if (!ap_upd_armed || strcmp(ap_upd_built_for, seed) != 0)
+	{
+		char msg[128];
+
+		snprintf(ap_upd_built_for, sizeof ap_upd_built_for, "%s", seed);
+		// Both versions are substituted WITHOUT their "v" (the strings print their
+		// own), so a seed that spells its version "v0.1.5" cannot render as "vv0.1.5".
+		// The explicit %.*s precision is the world_version buffer's own bound: it
+		// changes nothing at runtime (a parsed version is a dozen bytes) but lets
+		// the compiler see that these lines cannot be truncated.
+		snprintf(ap_upd_line1, sizeof ap_upd_line1,
+		         "THIS SEED WAS BUILT WITH CTR-AP v%.*s",
+		         (int)(sizeof ctr_cfg.world_version - 1), AP_VersionDigits(seed));
+		// Lines 2 and 3 are ONE sentence pair, split only because FONT_SMALL bills
+		// 13 px per character (zGlobal_DATA.c font_charPixWidth) and the UI space is
+		// 512 px wide: the pair on one line measures ~620 px and would run off both
+		// edges centred. The words are untouched.
+		snprintf(ap_upd_line2, sizeof ap_upd_line2,
+		         "You are on v%s.", AP_VersionDigits(CTR_AP_VERSION));
+		snprintf(ap_upd_line3, sizeof ap_upd_line3,
+		         "Update the client and apworld.");
+
+		ap_upd_armed = 1;
+		ap_upd_title_show = -1; // a version we have not shown yet gets its own showing
+
+		snprintf(msg, sizeof msg, "[AP UPD] seed pair version %.*s > client %s\n",
+		         (int)(sizeof ctr_cfg.world_version - 1), AP_VersionDigits(seed),
+		         AP_VersionDigits(CTR_AP_VERSION));
+		AP_LogLine(msg);
+	}
+
+	return 1;
+}
+
+static void AP_UpdateNoticeDrawLines(uint32_t *ot, int centreX, int y, int spacing)
+{
+	DecalFont_DrawLineOT(ap_upd_line1, centreX, y,
+	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+	DecalFont_DrawLineOT(ap_upd_line2, centreX, y + spacing,
+	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+	DecalFont_DrawLineOT(ap_upd_line3, centreX, y + 2 * spacing,
+	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+}
+
+void AP_DrawTitleUpdateNotice(uint32_t *ot)
+{
+	if (!AP_UpdateNoticeRefresh())
+		return;
+
+	if (ap_upd_title_show < 0)
+	{
+		// First frame this version could appear: decide against the remembered one,
+		// then commit that decision straight away. Writing last-seen up front rather
+		// than when the notice leaves the screen is what keeps it up for the whole
+		// visit -- every later frame reads the latch, not the config value, so the
+		// notice cannot suppress itself one frame after it appeared.
+		ap_upd_title_show = (strcmp(g_config.updateLastSeen, ap_upd_built_for) != 0);
+		if (ap_upd_title_show)
+		{
+			snprintf(g_config.updateLastSeen, sizeof g_config.updateLastSeen,
+			         "%s", ap_upd_built_for);
+			NativeConfig_Save();
+		}
+	}
+
+	if (!ap_upd_title_show)
+		return;
+
+	AP_UpdateNoticeDrawLines(ot, AP_UPD_TITLE_CENTRE_X, AP_UPD_TITLE_Y, AP_UPD_TITLE_LINE_H);
+}
+
+void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing)
+{
+	// No last-seen check here on purpose: this is the surface a player goes LOOKING
+	// for, so it stays as long as the seed wants a newer client.
+	if (!AP_UpdateNoticeRefresh())
+		return;
+
+	AP_UpdateNoticeDrawLines(ot, centreX, y, spacing);
 }
 
 void AP_NotifyAdvReward(int rewardBit)
