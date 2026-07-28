@@ -1114,6 +1114,12 @@ WarpPad_AnimateOpen:
 	//                          slots rotate through every uncollected reward.
 	//   - n in 1..3          : slot i shows uncollected[i]; extra slots hidden.
 	//   - n == 0             : all three slots hidden (everything checked).
+	// The slot LAYOUT itself is AP_PadGlowSlots' call (issue #59): the rules just
+	// above are its one_pile mode, the default and the only mode a seed without
+	// ctr_options.warp_pad_item_display can ask for. by_reward_type instead pins
+	// one reward type per slot (trophy + rungs / relics / token-gem-crystal) and
+	// rotates within the type on the same 2s tick. Either way this pass yields the
+	// same thing -- one bit per slot, or -1 -- so everything below is untouched.
 	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
 	// loop below, so a hidden slot neither renders nor mis-scales.
 	// Glow-only enumerator buffer. Worst case is a CUP destination: 1 gem + the
@@ -1133,11 +1139,7 @@ WarpPad_AnimateOpen:
 		apUncN = AP_PadUncollectedGlowBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
 		if (apUncN > 0)
-		{
-			int base = (apUncN > 3) ? (int)((gGT->timer / 0x3C) * 3) : 0;
-			for (i = 0; i < 3; i++)
-				apSlotBit[i] = (i < apUncN) ? apUncBits[(base + i) % apUncN] : -1;
-		}
+			AP_PadGlowSlots(apUncBits, apUncN, (int)(gGT->timer / 0x3C), apSlotBit);
 		// apUncN == 0 -> all apSlotBit stay -1 (hide everything: all checked).
 	}
 #endif

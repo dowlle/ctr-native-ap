@@ -322,6 +322,16 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 #define AP_PODIUM_PSEUDO_BASE 0x100
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
+// ── Prize-slot layout (issue #59) ──
+// Given the `n` bits AP_PadUncollectedGlowBits enumerated for a pad and the
+// display tick `phase` (the caller's frame counter / 0x3C, one step per 2s),
+// decide which bit each of the pad's three prize slots advertises, writing them
+// into outSlot3 (-1 = hide that slot). Honours ctr_cfg.warp_pad_item_display:
+// one pile cycling a 3-wide window (the default, and the behaviour of every seed
+// predating the option) or one slot per reward type rotating within its type.
+// Display only -- reads no gate and moves no state.
+void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3);
+
 // AP state-generation counter (foundation for live in-hub pad re-birth). Bumped
 // on fresh slot-connect, on a received item that changes a gate count, and on a
 // location-checked notification -- i.e. whenever a pad's AP_PadState may change.
