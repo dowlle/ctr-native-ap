@@ -44,16 +44,34 @@ static struct Driver *AP_WumpaLocalDriver(struct GameTracker *gGT)
 void AP_WumpaReceive(int count)
 {
 	char msg[96];
+	int banked, discarded;
 
 	if (count <= 0)
 		return;
 
+	// #144: report what actually happened. A receive that would push the bank
+	// past AP_WUMPA_MAX has the overflow discarded by the clamp below, not
+	// banked -- "banked +N" for a discarded N was a lie the log told fifteen
+	// times in a row in one player's submitted log.
+	banked = count;
 	g_wumpa_pending += count;
 	if (g_wumpa_pending > AP_WUMPA_MAX)
+	{
+		banked = count - (g_wumpa_pending - AP_WUMPA_MAX);
 		g_wumpa_pending = AP_WUMPA_MAX; // a kart can never hold more; no cross-race hoard
+	}
+	discarded = count - banked;
 
-	snprintf(msg, sizeof msg, "[AP WUMPA] banked +%d (pending %d)\n",
-	         count, g_wumpa_pending);
+	if (discarded == 0)
+		snprintf(msg, sizeof msg, "[AP WUMPA] banked +%d (pending %d)\n",
+		         banked, g_wumpa_pending);
+	else if (banked == 0)
+		snprintf(msg, sizeof msg, "[AP WUMPA] discarded +%d (bank full at %d)\n",
+		         discarded, AP_WUMPA_MAX);
+	else
+		snprintf(msg, sizeof msg,
+		         "[AP WUMPA] banked +%d, discarded +%d (bank full at %d)\n",
+		         banked, discarded, AP_WUMPA_MAX);
 	AP_LogLine(msg);
 }
 

@@ -102,6 +102,13 @@ static char     ap_vf_line2[96];        // banner detail line
 static int      ap_vf_truncated = 0;    // worklist overflowed: verdict is not trustworthy
 static int      ap_vf_settled = 1;      // #85: last verdict computed with no checks in flight
 
+// #144: reachable/Keys last printed by the "waiting on other worlds" line, so a
+// resettle re-run (line 535) that lands on an unchanged multiworld snapshot
+// doesn't repeat the same line verbatim -- one submitted log printed it 15
+// times in a row with identical numbers.
+static int      ap_vf_wait_last_reachable = -1;
+static int      ap_vf_wait_last_keys = -1;
+
 // Requirement met under SIMULATED counts. Single source of truth is
 // AP_ReqMetCounts (ap_hooks.c) -- the same comparator the live gates use,
 // parameterised by the counts array.
@@ -452,6 +459,7 @@ static void ap_vf_recompute(void)
 
 	{
 		char msg[256];
+		int wait_repeat = 0;
 		// Two vocabularies on purpose: in SOLO the sweep is definitive, so a
 		// blocked goal is alarming and should read that way. In a MULTIWORLD the
 		// sweep can only see this world's own items, so "not reachable from here
@@ -470,13 +478,23 @@ static void ap_vf_recompute(void)
 			         "%d/%d locations reachable, Keys %d (multiworld projection)\n",
 			         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
 		else
-			snprintf(msg, sizeof msg,
-			         "[AP VERIFY] waiting on other worlds (NORMAL in a multiworld): "
-			         "%d/%d locations reachable with this world's items alone, Keys "
-			         "%d. Informational only; improves as items arrive from other "
-			         "players.\n",
-			         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
-		AP_LogLine(msg);
+		{
+			// #144: same reachable/Keys as the last time this line printed -- the
+			// snapshot hasn't moved, so repeating it verbatim is noise, not signal.
+			wait_repeat = (ap_vf_reachable == ap_vf_wait_last_reachable &&
+			               ap_vf_keys_fp == ap_vf_wait_last_keys);
+			ap_vf_wait_last_reachable = ap_vf_reachable;
+			ap_vf_wait_last_keys = ap_vf_keys_fp;
+			if (!wait_repeat)
+				snprintf(msg, sizeof msg,
+				         "[AP VERIFY] waiting on other worlds (NORMAL in a multiworld): "
+				         "%d/%d locations reachable with this world's items alone, Keys "
+				         "%d. Informational only; improves as items arrive from other "
+				         "players.\n",
+				         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
+		}
+		if (!wait_repeat)
+			AP_LogLine(msg);
 		if (ap_vf_truncated)
 			AP_LogLine("[AP VERIFY] INDETERMINATE: location worklist overflowed "
 			           "(seed carries more locations than this build can track). "
