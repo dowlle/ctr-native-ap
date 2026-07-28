@@ -29,16 +29,32 @@
 //                            poll   = network handlers (item batches + the
 //                                     connect-time datapackage sync)
 //                            verify = the seed-completability sweep (ap_verify.c)
-//                            rest   = everything else in AP_OnFrame (item apply,
-//                                     traps, state dump, ...)
+//                            item   = the received-item drain (runs AFTER poll
+//                                     closes, so an item burst used to land in
+//                                     "rest")
+//                            dump   = AP_DumpState rewriting the whole state
+//                                     file, every 60 frames
+//                            logio  = the per-line log write (each line is its
+//                                     own fopen/fputs/fclose on this thread),
+//                                     summed across every line the frame wrote
+//                            rest   = everything else in AP_OnFrame (traps,
+//                                     DeathLink, the adventure poll, ...)
 
 // Per-frame AP-slice sections. Room to grow: add new IDs before
 // AP_PERF_SEC__COUNT (and account for them in ap_perf.c's "rest" arithmetic).
+//
+// The sections are DISJOINT by construction, so "rest" is a real remainder.
+// LOG_IO is the only one that nests inside the others (every section can write
+// log lines), so ap_perf.c subtracts the log-io charged inside a section from
+// that section's own total -- see AP_PerfSectionEnd.
 enum
 {
-	AP_PERF_SEC_POLL   = 0, // apclientpp poll() -- all network handlers fire inline
-	AP_PERF_SEC_VERIFY = 1, // seed-completability sweep (ap_verify.c)
-	AP_PERF_SEC__COUNT = 2
+	AP_PERF_SEC_POLL       = 0, // apclientpp poll() -- all network handlers fire inline
+	AP_PERF_SEC_VERIFY     = 1, // seed-completability sweep (ap_verify.c)
+	AP_PERF_SEC_ITEM_APPLY = 2, // received-item drain + per-item bookkeeping (ap_hooks.c)
+	AP_PERF_SEC_STATE_DUMP = 3, // AP_DumpState: full state-file rewrite (ap_hooks.c)
+	AP_PERF_SEC_LOG_IO     = 4, // AP_AppendLog: one fopen/fputs/fclose per log line
+	AP_PERF_SEC__COUNT     = 5
 };
 
 // Thresholds and rate limit, in milliseconds.
@@ -53,11 +69,16 @@ enum
 #define AP_PERF_SLICE_WARN_MS 50.0
 #define AP_PERF_RATELIMIT_MS  1000.0
 
-// Called at the very top of AP_OnFrame with the live levelID and load stage.
-void AP_PerfFrameBegin(int levelID, int loadStage);
+// Called at the very top of AP_OnFrame with the live levelID, load stage, and
+// frame timer. timer is gGT->timer, the same value the t= stamp on the [AP
+// ITEM] / [AP HUB] / [AP RACE] lines carries, so a stall line can be lined up
+// against the game-side lines around it.
+void AP_PerfFrameBegin(int levelID, int loadStage, unsigned timer);
 
-// Bracket a section around a call site inside the AP slice. Depth-1 only (the
-// call sites do not nest); an unbalanced End (no matching Begin) is ignored.
+// Bracket a section around a call site inside the AP slice. Depth-1 per section
+// (a section never re-enters itself); an unbalanced End (no matching Begin) is
+// ignored. LOG_IO may open inside any other section -- that is expected and
+// accounted for, see the enum above.
 void AP_PerfSectionBegin(int sec);
 void AP_PerfSectionEnd(int sec);
 

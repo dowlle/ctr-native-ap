@@ -63,6 +63,13 @@ int Platform_InputRawKeyDown(int scancode);
 
 static void AP_AppendLog(const char *msg)
 {
+	// [AP PERF] LOG_IO section: every line is its own fopen/fputs/fclose on the
+	// game thread, so a chatty frame (an item burst, a datapackage sync) pays for
+	// that here. Summed across all lines the frame writes; the two timer reads are
+	// the same cheap Platform_PerfNowMs the other sections use, which is noise next
+	// to the file open this brackets.
+	AP_PerfSectionBegin(AP_PERF_SEC_LOG_IO);
+
 	// One-time size check: an append-forever log grows unbounded across weeks
 	// of sessions. Rotate the previous log to .old at the first write of a run
 	// (crash-safe: rename happens before any new content, so a crash tail is
@@ -90,6 +97,8 @@ static void AP_AppendLog(const char *msg)
 		fputs(msg, f);
 		fclose(f);
 	}
+
+	AP_PerfSectionEnd(AP_PERF_SEC_LOG_IO);
 }
 
 // Non-static shim so game-side gate files can emit AP log lines (AP_AppendLog is
@@ -2410,6 +2419,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// this is what unblocks an existing stuck save on reconnect WITHOUT re-racing.
 	AP_ReconcilePodiumFromTrophies();
 
+	// [AP PERF] ITEM_APPLY section: the received-item drain runs AFTER the POLL
+	// section closes, so before this bracket existed an item burst (or the
+	// connect-time initial-inventory dump) was invisible -- it landed in "rest"
+	// with poll=0. Covers the drain, the per-item bookkeeping, and the feed hand-off.
+	AP_PerfSectionBegin(AP_PERF_SEC_ITEM_APPLY);
+
 	// Received items: tally by category. Applied to AdvProgress bits in
 	// AP_ApplyItems() (adventure + save-safe only). The tally is zeroed on each
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
@@ -2514,6 +2529,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 	}
 
 	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
+
+	AP_PerfSectionEnd(AP_PERF_SEC_ITEM_APPLY);
 }
 
 // In-game connection manager: tear down the current client and re-dial. The menu
@@ -3272,9 +3289,16 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// at the title screen right after connect. AP-side fields (options, received
 	// items, checked locations, per-pad reqs) are valid once slot_data is parsed;
 	// game_counters read live only in adventure mode (see "in_adventure" in JSON).
+	// [AP PERF] STATE_DUMP section: the dump rewrites the entire state file from
+	// scratch (fopen "w" + a long fprintf run), on the game thread, on the frame it
+	// lands. One frame in 60 pays for it, and that frame used to charge it to "rest".
 	static int dumpTick = 0;
 	if ((++dumpTick % 60) == 0)
+	{
+		AP_PerfSectionBegin(AP_PERF_SEC_STATE_DUMP);
 		AP_DumpState(gGT);
+		AP_PerfSectionEnd(AP_PERF_SEC_STATE_DUMP);
+	}
 
 	// Adventure-only item/goal/debug poll below.
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0 ||
@@ -3302,7 +3326,10 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// AP_PerfFrameEnd always runs. levelID + the load stage feed the "stall
 	// outside AP" attribution -- a level load legitimately blocks for seconds, so
 	// the watchdog must know when we are loading and not report it as a stall.
-	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage);
+	// gGT->timer feeds the t= stamp, the same clock the [AP ITEM] / [AP HUB] /
+	// [AP RACE] lines stamp, so a stall line can be placed against them in the log.
+	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage,
+	                  (unsigned)gGT->timer);
 	ap_onframe_body(gGT);
 	AP_PerfFrameEnd();
 }

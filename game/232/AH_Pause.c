@@ -584,10 +584,12 @@ void AH_Pause_Update()
 			// 14 gem births below. This is the high-water measurement that sizes
 			// the enlarged pool against real hubs (the pause tips the pool over
 			// exactly when this count is within 14 of maxItems).
-			char apmsg[96];
-			snprintf(apmsg, sizeof apmsg, "[AP POOL] pause open lvl=%d instpool=%d/%d before +14\n",
+			// t= is the frame timer the [AP PERF] / [AP ITEM] / [AP HUB] lines
+			// stamp, so a pause open can be lined up against a stall in the log.
+			char apmsg[128];
+			snprintf(apmsg, sizeof apmsg, "[AP POOL] pause open lvl=%d instpool=%d/%d before +14 t=%u\n",
 			         gGT->levelID, gGT->JitPools.instance.taken.count,
-			         gGT->JitPools.instance.maxItems);
+			         gGT->JitPools.instance.maxItems, (unsigned)gGT->timer);
 			AP_LogLine(apmsg);
 		}
 #endif

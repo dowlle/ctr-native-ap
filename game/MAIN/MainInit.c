@@ -329,9 +329,11 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		// each level-load keeps after the per-level pools + clip buffers. Reads
 		// alongside the [AP MEMPACK] exhaustion report and the [AP POOL] pause
 		// high-water line to size the instance pool against real hubs.
-		char apmsg[96];
-		snprintf(apmsg, sizeof apmsg, "[AP POOL] jitpools lvl=%d inst=%d free=%d\n",
-		         gGT->levelID, gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes());
+		// t= as on the sibling [AP POOL] / [AP PERF] lines: same frame timer.
+		char apmsg[128];
+		snprintf(apmsg, sizeof apmsg, "[AP POOL] jitpools lvl=%d inst=%d free=%d t=%u\n",
+		         gGT->levelID, gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes(),
+		         (unsigned)gGT->timer);
 		AP_LogLine(apmsg);
 	}
 #endif

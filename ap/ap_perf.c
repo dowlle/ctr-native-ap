@@ -26,9 +26,10 @@ double Platform_PerfNowMs(void);
 // Slice timing. s_lastFrameEndMs < 0 means "no valid previous frame end yet"
 // (first call), which disables the "stall outside AP" gap until we have a real
 // prior slice to measure from.
-static double s_lastFrameEndMs = -1.0;
-static double s_frameBeginMs   = 0.0;
-static int    s_frameLevelID   = -1;
+static double   s_lastFrameEndMs = -1.0;
+static double   s_frameBeginMs   = 0.0;
+static int      s_frameLevelID   = -1;
+static unsigned s_frameTimer     = 0; // gGT->timer, for the t= stamp
 
 // Previous frame's load stage. The "stall outside AP" gap must be suppressed if
 // EITHER the previous or the current frame was loading (a level load blocks for
@@ -36,9 +37,18 @@ static int    s_frameLevelID   = -1;
 static int    s_prevLoadStage  = LOAD_IDLE;
 
 // Per-frame section breakdown (ms). s_secOpen is the depth-1 nesting guard.
+// s_secLogIoAtBeginMs is the LOG_IO running total captured when the section
+// opened: the difference at End is the log I/O charged INSIDE this section, and
+// it is subtracted so the sections stay disjoint (see AP_PerfSectionEnd).
 static double s_secAccumMs[AP_PERF_SEC__COUNT];
 static double s_secBeginMs[AP_PERF_SEC__COUNT];
+static double s_secLogIoAtBeginMs[AP_PERF_SEC__COUNT];
 static int    s_secOpen[AP_PERF_SEC__COUNT];
+
+// Set while this module is writing one of its own log lines. The LOG_IO section
+// wraps AP_AppendLog, so without this the watchdog would bill its own emission
+// to the frame it is reporting on.
+static int s_emittingOwnLine = 0;
 
 // Rate limiting, per line type.
 enum
@@ -71,7 +81,16 @@ static int ap_perf_ratelimit(int line, double now, unsigned *outSuppressed)
 	return 1;
 }
 
-void AP_PerfFrameBegin(int levelID, int loadStage)
+// Emit one of this module's own lines without the LOG_IO section billing it to
+// the current frame.
+static void ap_perf_emit(const char *msg)
+{
+	s_emittingOwnLine = 1;
+	AP_LogLine(msg);
+	s_emittingOwnLine = 0;
+}
+
+void AP_PerfFrameBegin(int levelID, int loadStage, unsigned timer)
 {
 	const double now = Platform_PerfNowMs();
 	int i;
@@ -100,15 +119,16 @@ void AP_PerfFrameBegin(int levelID, int loadStage)
 			{
 				char msg[128];
 				snprintf(msg, sizeof msg,
-				         "[AP PERF] stall outside AP: gap=%dms lvl=%d (suppressed=%u)\n",
-				         (int)gap, levelID, suppressed);
-				AP_LogLine(msg);
+				         "[AP PERF] stall outside AP: gap=%dms lvl=%d t=%u (suppressed=%u)\n",
+				         (int)gap, levelID, timer, suppressed);
+				ap_perf_emit(msg);
 			}
 		}
 	}
 
 	s_prevLoadStage = loadStage;
 	s_frameLevelID = levelID;
+	s_frameTimer = timer;
 	s_frameBeginMs = now;
 }
 
@@ -116,9 +136,12 @@ void AP_PerfSectionBegin(int sec)
 {
 	if (sec < 0 || sec >= AP_PERF_SEC__COUNT)
 		return;
+	if (sec == AP_PERF_SEC_LOG_IO && s_emittingOwnLine)
+		return; // our own line: the matching End is then ignored as unbalanced
 	if (s_secOpen[sec]) // depth-1 only: ignore a re-entrant Begin
 		return;
 	s_secOpen[sec] = 1;
+	s_secLogIoAtBeginMs[sec] = s_secAccumMs[AP_PERF_SEC_LOG_IO];
 	s_secBeginMs[sec] = Platform_PerfNowMs();
 }
 
@@ -128,7 +151,21 @@ void AP_PerfSectionEnd(int sec)
 		return;
 	if (!s_secOpen[sec]) // ignore an End with no matching Begin
 		return;
-	s_secAccumMs[sec] += Platform_PerfNowMs() - s_secBeginMs[sec];
+
+	double elapsed = Platform_PerfNowMs() - s_secBeginMs[sec];
+
+	// Log I/O nests inside every other section (poll handlers, the item drain and
+	// the state dump all write log lines), so charge it to LOG_IO only. Without
+	// this, "rest = total - every section" would subtract those milliseconds
+	// twice and read low.
+	if (sec != AP_PERF_SEC_LOG_IO)
+	{
+		elapsed -= s_secAccumMs[AP_PERF_SEC_LOG_IO] - s_secLogIoAtBeginMs[sec];
+		if (elapsed < 0.0)
+			elapsed = 0.0;
+	}
+
+	s_secAccumMs[sec] += elapsed;
 	s_secOpen[sec] = 0;
 }
 
@@ -141,19 +178,28 @@ void AP_PerfFrameEnd(void)
 	{
 		const double poll   = s_secAccumMs[AP_PERF_SEC_POLL];
 		const double verify = s_secAccumMs[AP_PERF_SEC_VERIFY];
-		double rest = total - poll - verify;
+		const double item   = s_secAccumMs[AP_PERF_SEC_ITEM_APPLY];
+		const double dump   = s_secAccumMs[AP_PERF_SEC_STATE_DUMP];
+		const double logio  = s_secAccumMs[AP_PERF_SEC_LOG_IO];
+
+		// The sections are disjoint (AP_PerfSectionEnd keeps nested log I/O out of
+		// its enclosing section), so this is a true remainder: whatever is left is
+		// AP work no section covers yet.
+		double rest = total - poll - verify - item - dump - logio;
 		if (rest < 0.0) // section timing can round just past the total; clamp
 			rest = 0.0;
 
 		unsigned suppressed = 0;
 		if (ap_perf_ratelimit(AP_PERF_LINE_SLICE, now, &suppressed))
 		{
-			char msg[192];
+			char msg[256];
 			snprintf(msg, sizeof msg,
-			         "[AP PERF] slow AP frame: total=%dms poll=%dms verify=%dms rest=%dms lvl=%d (suppressed=%u)\n",
-			         (int)total, (int)poll, (int)verify, (int)rest,
-			         s_frameLevelID, suppressed);
-			AP_LogLine(msg);
+			         "[AP PERF] slow AP frame: total=%dms poll=%dms verify=%dms item=%dms "
+			         "dump=%dms logio=%dms rest=%dms lvl=%d t=%u (suppressed=%u)\n",
+			         (int)total, (int)poll, (int)verify, (int)item,
+			         (int)dump, (int)logio, (int)rest,
+			         s_frameLevelID, s_frameTimer, suppressed);
+			ap_perf_emit(msg);
 		}
 	}
 
