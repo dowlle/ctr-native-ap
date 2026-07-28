@@ -594,6 +594,93 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
+// Reward-type group of a glow bit -> the prize slot that owns it under
+// by_reward_type (issue #59). The three groups are exactly the three slots the
+// pad already births as trophy / relic / token placeholders
+// (s_warpPadRewardModelIDs in AH_WarpPad.c), so a grouped slot keeps showing the
+// kind of check its placeholder was born for:
+//   0 RACE   trophy bit + that track's podium rung pseudo-bits (>= the pseudo
+//            base) -- one race result, one slot, which is why this slot can hold
+//            six items (trophy + 5 rungs) on a rung seed.
+//   1 RELIC  the sapphire/gold/platinum Time-Trial tiers, i.e. the contiguous
+//            span from the first sapphire bit up to the first CTR token bit.
+//   2 TOKEN  everything else the glow enumerators can produce: the CTR Token
+//            challenge, a gem-cup gem and an arena crystal (purple token).
+// Bit ranges follow the enumerators above, which build every bit as
+// <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
+static int AP_GlowBitRewardGroup(int globalBit)
+{
+	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
+		return 0; // podium rung -- rides with its track's trophy
+	if (globalBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
+		return 0; // trophy (ADV_REWARD_FIRST_TROPHY + track)
+	if (globalBit < ADV_REWARD_FIRST_CTR_TOKEN)
+		return 1; // sapphire / gold / platinum relic tiers
+	return 2;     // CTR token, gem-cup gem, arena crystal
+}
+
+// Decide WHICH of the `n` uncollected bits each of the pad's three prize slots
+// advertises this frame, writing the per-slot bit (or -1 = hide the slot) into
+// outSlot3. `phase` is the display tick (frame counter / 0x3C, so it steps once
+// every 2 seconds); the caller owns the frame clock. Sole consumer is the AP glow
+// pass in AH_WarpPad_ThTick.
+//
+// Layout follows ctr_cfg.warp_pad_item_display (issue #59):
+//   ONE_PILE (default, and every seed predating the option): all n items share
+//     the three slots. n > 3 cycles a 3-wide window over the whole list, n in
+//     1..3 puts item i in slot i, and the leftover slots hide. Unchanged from
+//     what the glow has always done, which is what the absent-key fallback owes.
+//   BY_REWARD_TYPE: each reward type keeps its own slot (see
+//     AP_GlowBitRewardGroup) and rotates only within that type, so a floating
+//     sapphire in the relic slot is the relic check and never the CTR check. A
+//     type with nothing left hides its slot, so a destination carrying a single
+//     reward (arena crystal, cup gem) shows it in the token slot rather than
+//     slot 0 -- the price of a fixed slot per type, and the point of the option.
+void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3)
+{
+	int i;
+
+	if (outSlot3 == 0)
+		return;
+	outSlot3[0] = -1;
+	outSlot3[1] = -1;
+	outSlot3[2] = -1;
+	if (bits == 0 || n <= 0)
+		return;
+	if (phase < 0)
+		phase = 0; // never let a wrapped clock drive a negative modulo
+
+	if (ctr_cfg_active() &&
+	    ctr_cfg.warp_pad_item_display == WARP_PAD_DISPLAY_BY_REWARD_TYPE)
+	{
+		for (i = 0; i < 3; i++)
+		{
+			int inGroup = 0;
+			int nth;
+			int j;
+			for (j = 0; j < n; j++)
+				if (AP_GlowBitRewardGroup(bits[j]) == i)
+					inGroup++;
+			if (inGroup == 0)
+				continue; // nothing of this type left -> slot stays hidden
+			nth = phase % inGroup;
+			for (j = 0; j < n; j++)
+				if (AP_GlowBitRewardGroup(bits[j]) == i && nth-- == 0)
+				{
+					outSlot3[i] = bits[j];
+					break;
+				}
+		}
+		return;
+	}
+
+	{
+		int base = (n > 3) ? phase * 3 : 0;
+		for (i = 0; i < 3; i++)
+			outSlot3[i] = (i < n) ? bits[(base + i) % n] : -1;
+	}
+}
+
 // Is destination `destLevelID` one of the 16 shuffleable race tracks (the only
 // category with the full 6-state two-stage lifecycle)?
 static int AP_DestIsRace(int destLevelID)

@@ -188,6 +188,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// seed without them degrades to the disabled state.
 	ctr_cfg.death_link = 0;
 	ctr_cfg.deathlink_amnesty = 1;
+	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
+	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.podium_any_position = 0;
@@ -253,6 +255,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
 	// QoL additive key (no schema bump): default 0 = vanilla lap counts.
 	ctr_cfg.one_lap_cups = json_int(opt, "one_lap_cups", 0);
+	// Warp-pad glow layout (issue #59). Additive key, no schema bump: absent ->
+	// WARP_PAD_DISPLAY_ONE_PILE, which is the glow every shipped client renders.
+	ctr_cfg.warp_pad_item_display =
+	    json_int(opt, "warp_pad_item_display", WARP_PAD_DISPLAY_ONE_PILE);
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
 	// change schema_version -- generation never depends on it.
 	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);

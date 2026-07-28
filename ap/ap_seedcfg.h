@@ -55,6 +55,12 @@ extern "C" {
 #define OXIDE_FINAL_MODE_ANY      3 // any single tier reaches N
 #define OXIDE_FINAL_MODE_TOTAL    4 // Sapphire + Gold + Platinum summed reach N
 
+// warp_pad_item_display (issue #59, apworld option WarpPadItemDisplay). Pure
+// DISPLAY setting for the pad reward glow -- it steers no gate, no location and
+// no item. Value 0 stays frozen = the pile the glow has always shown.
+#define WARP_PAD_DISPLAY_ONE_PILE       0 // all uncollected items share the 3 slots
+#define WARP_PAD_DISPLAY_BY_REWARD_TYPE 1 // one slot per reward type, rotating within it
+
 // Podium placement checks (feat/podium-checks apworld side). The rung ladder
 // rides ONLY the 16 standard adventure trophy races, keyed by physical race-pad
 // LevelID 0..15 (== gGT->levelID at a trophy race == the [AP RACE] track field
@@ -165,6 +171,16 @@ typedef struct
 	// ADDITIVE, no schema bump: json_int defaults the absent key to 0 (vanilla),
 	// so it never affects reachability and needs no version gate.
 	int one_lap_cups;       // 0 vanilla lap counts / 1 cups are one lap
+
+	// Warp-pad reward glow layout (issue #59, slot_data ctr_options.
+	// warp_pad_item_display). WARP_PAD_DISPLAY_*: 0 = every uncollected item
+	// shares the three prize slots and they cycle through the whole pile
+	// together; 1 = each reward type owns one slot and rotates only within its
+	// own type. ADDITIVE, no schema bump (the one_lap_cups precedent): json_int
+	// defaults the absent key to 0, which IS today's pile, so an old seed on a
+	// new client and a new seed on an old client both glow exactly as they do
+	// now. Display only -- never read by a gate, a check or an item.
+	int warp_pad_item_display;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
