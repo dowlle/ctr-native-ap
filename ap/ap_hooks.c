@@ -235,8 +235,8 @@ static long AP_LookupLocationCode(int globalBit)
 // 1 if the AP location at `globalBit` has been CHECKED on the server for our own
 // slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits -- to ask "has the
 // player completed this location" in AP mode: AP_ApplyItems clears any location
-// bit not backed by a received item every frame, so a local win is wiped and the
-// raw bit can never reflect it. Returns 0 if not a checkable bit / not connected.
+// bit not backed by a received item on every reconcile tick, so a local win is
+// wiped and the raw bit can never reflect it. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit)
 {
 	long code = AP_LookupLocationCode(globalBit);
@@ -407,8 +407,8 @@ int AP_WarpPadRewardGemColour(int globalBit)
 // +0x16, Gold +0x28, Platinum +0x3a, CTR Token +0x4c -- and returning the count
 // written (0..5). A location counts as collected purely by AP CHECKED-STATE
 // (AP_LocationCheckedByBit / ap_net_location_checked), NEVER by CHECK_ADV_BIT or
-// modelIndex: AP_ApplyItems clears local-win bits every frame, so only the
-// server's checked set is authoritative. Returns 0 for a non-race destination or
+// modelIndex: AP_ApplyItems clears local-win bits on every reconcile tick, so only
+// the server's checked set is authoritative. Returns 0 for a non-race destination or
 // when every tier is checked (caller then shows nothing). This is the sole input
 // to the warp-pad glow's "which rewards to advertise + cycle" decision.
 int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
@@ -918,8 +918,8 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int rung)
 // Highest relic tier this race sent (0 = Sapphire, 1 = Gold, 2 = Platinum), or -1
 // if none. The true "what did this run just win" signal for the relic ceremony's
 // tier label + relic colour, which vanilla reads from advProgress.rewards -- bits
-// AP_ApplyItems rewrites every frame to mirror RECEIVED items, so after a local
-// platinum run they read back as the AP inventory, not the run (the SAPPHIRE-label
+// AP_ApplyItems rewrites on every reconcile tick to mirror RECEIVED items, so after
+// a local platinum run they read back as the AP inventory, not the run (the SAPPHIRE-label
 // bug). The ledger is populated only after a relic finish, so this returns -1
 // during the pre-race clock draw and the vanilla path stands.
 int AP_CeremonyRelicTier(void)
@@ -943,8 +943,8 @@ int AP_CeremonyRelicTier(void)
 
 // ── Relic-race live target ladder (issue #21) ──
 // The vanilla race-start tier selector reads advProgress.rewards, which
-// AP_ApplyItems rewrites every frame to mirror RECEIVED items -- so received
-// Gold/Platinum Relic items poison the in-race top-left target (a first
+// AP_ApplyItems rewrites on every reconcile tick to mirror RECEIVED items -- so
+// received Gold/Platinum Relic items poison the in-race top-left target (a first
 // attempt shows the PLATINUM time, live v0.1.0 report). AP-active seeds
 // replace it with a ladder: start at the highest tier still EARNABLE on this
 // track (its location exists in the seed and is unchecked), and the moment
@@ -2150,8 +2150,11 @@ const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID)
 	return 0;
 }
 
-// Reconcile AdvProgress category bits to EXACTLY the received-item counts: set
-// the top `count` bits of each pool (high-end), CLEAR the rest.
+// Reconcile AdvProgress category bits to EXACTLY the received-item counts: for
+// the fungible categories set the top `count` bits of the pool (high-end) and
+// CLEAR the rest; for the per-colour categories (Gem, CTR Token) mirror each
+// colour's own bits from its received count. Runs on the throttled adventure
+// tick in ap_onframe_body (~every 30 frames), not every frame.
 //
 // OPTION B NOTE: as of Phase 1 the adventure GATES no longer read these bits --
 // they read the per-item-TYPE counters via AP_GateCount* (see game/232/AH_*.c).
@@ -2194,6 +2197,26 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 				// categories. (issue #35)
 				bit = p->bits[k]; // 106 + colour, matches AP_IDX_GEM_RED + k
 				wantSet = ap_recv_count[AP_IDX_GEM_RED + k] > 0;
+			}
+			else if (c == AP_CAT_TOKEN)
+			{
+				// Same argument as the gems above (issue #142): CTR Tokens are
+				// per-colour items, requirements can pin a colour, and the pause
+				// screen shows WHICH colours you hold -- so mirror each colour's
+				// own four-bit run from the per-colour receive counts instead of
+				// the colour-blind high-end fill. AP_POOL_TOKEN is COLOUR-MAJOR,
+				// so k / 4 is the colour and k % 4 the slot within it. WHICH slot
+				// of a colour lights is still arbitrary (the icons track received
+				// items, not checked locations -- that is the 0.2.0 display
+				// question), but the COLOUR is now truthful.
+				//
+				// This is also what finally puts the crystal-arena bits under the
+				// reconcile: colour 4 is bits 111-114, which no pool covered, so a
+				// locally won arena lit its pause icon permanently even though the
+				// player never received that Purple CTR Token.
+				int colour = k / 4;
+				bit = p->bits[k];
+				wantSet = (k % 4) < ap_recv_count[AP_IDX_TOKEN_RED + colour];
 			}
 			else
 			{

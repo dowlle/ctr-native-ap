@@ -22,15 +22,17 @@
 // missed check for that one track. To minimise this during play/testing we fill
 // each pool from the HIGH end (the bit choice is arbitrary for generic items),
 // so early item grants land on late-game tracks while a tester typically wins
-// early tracks first. GEMS are the exception: they are per-colour items with
-// per-colour requirements, so AP_ApplyItems mirrors each colour's own bit from
-// ap_recv_count instead of pooled high-end-first (issue #35 -- the pooled fill
-// set the Purple bit on the FIRST received gem of any colour). The grant-guard
-// half of the collision is closed separately: every check-sending grant site
-// now gates on the AP location CHECKED-state, not adv->rewards (222.c trophy,
-// 223.c relic, ThTick, UI_CupStandings gem cup). The clean fix (redirect the
-// gate counters to a separate received-item counter so item application never
-// touches location bits) is a larger change, deferred -- on the roadmap.
+// early tracks first. GEMS and CTR TOKENS are the exceptions: both are
+// per-colour items with per-colour requirements AND a visible colour identity
+// on the pause screen, so AP_ApplyItems mirrors each colour's own bits from
+// ap_recv_count instead of pooled high-end-first (gems: issue #35, where the
+// pooled fill set the Purple bit on the FIRST received gem of any colour;
+// tokens: issue #142). The grant-guard half of the collision is closed
+// separately: every check-sending grant site now gates on the AP location
+// CHECKED-state, not adv->rewards (221.c crystal arena, 222.c trophy + boss
+// key, 223.c relic, ThTick, UI_CupStandings gem cup). The clean fix (redirect
+// the gate counters to a separate received-item counter so item application
+// never touches location bits) is a larger change, deferred -- on the roadmap.
 
 #define AP_ITEM_BASE 35010000
 
@@ -87,9 +89,26 @@ static const int AP_POOL_TROPHY[16]   = {6,7,8,9,10,11,12,13,14,15,16,17,18,19,2
 static const int AP_POOL_SAPPHIRE[18] = {22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39};
 static const int AP_POOL_GOLD[18]     = {40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57};
 static const int AP_POOL_PLATINUM[18] = {58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75};
-static const int AP_POOL_TOKEN[16]    = {76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91};
 static const int AP_POOL_KEY[4]       = {94,95,96,97};
 static const int AP_POOL_GEM[5]       = {106,107,108,109,110};
+
+// CTR Tokens are per-colour items (4 of each colour) and the pause screen shows
+// WHICH colours you hold, so this pool is COLOUR-MAJOR, not bit-ascending:
+// entries [c*4 .. c*4+3] are colour c's four bits, c = 0 Red, 1 Green, 2 Blue,
+// 3 Yellow, 4 Purple -- the same keying as AP_IDX_TOKEN_RED + c,
+// AP_GateCountTokenColour and data.AdvCups[]. Colours 0-3 are the 16 race-track
+// challenge bits 76-91 regrouped by each track's ctrTokenGroupID (metaDataLEV in
+// game/zGlobal_DATA.c); colour 4 is the four crystal-arena bits 111-114
+// (ADV_REWARD_FIRST_PURPLE_TOKEN), which NO pool covered before issue #142 --
+// so nothing ever cleared the bit a locally won arena set and its pause icon
+// stayed lit across the tick, the level load and the save.
+static const int AP_POOL_TOKEN[20]    = {
+	 78, 79, 81, 85, // Red:    Blizzard Bluff, Crash Cove, Papu's Pyramid, Mystery Caves
+	 82, 86, 88, 90, // Green:  Roo's Tubes, Cortex Castle, Polar Pass, Coco Park
+	 77, 80, 84, 87, // Blue:   Dragon Mines, Tiger Temple, Sewer Speedway, N. Gin Labs
+	 76, 83, 89, 91, // Yellow: Dingo Canyon, Hot Air Skyway, Oxide Station, Tiny Arena
+	111,112,113,114, // Purple: Skull Rock, Rampage Ruins, Rocky Road, Nitro Court
+};
 
 typedef struct
 {
@@ -103,7 +122,7 @@ static const AP_CatPool AP_CATEGORY_POOLS[AP_CAT_COUNT] = {
 	{AP_POOL_SAPPHIRE, 18, "Sapphire Relic"},
 	{AP_POOL_GOLD,     18, "Gold Relic"},
 	{AP_POOL_PLATINUM, 18, "Platinum Relic"},
-	{AP_POOL_TOKEN,    16, "CTR Token"},
+	{AP_POOL_TOKEN,    20, "CTR Token"},
 	{AP_POOL_GEM,       5, "Gem"},
 	{AP_POOL_KEY,       4, "Key"},
 };
