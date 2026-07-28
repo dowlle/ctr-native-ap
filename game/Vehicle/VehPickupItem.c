@@ -136,6 +136,23 @@ struct MaskHeadWeapon *VehPickupItem_MaskUseWeapon(struct Driver *driver, b32 bo
 
 	modelPtr = gGT->modelPtr[STATIC_AKUBEAM + ((modelID - STATIC_AKUAKU) * 2)];
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). The mask birth
+	// above returns NULL on native when the instance or thread pool is full, and the
+	// thread/object reads below fault on it. NULL is already this function's documented
+	// "no mask" return (the adventure-arena early-out at the top), and every caller
+	// tolerates it: BOTS.c guards the result, and VehStuckProc stores it into
+	// KartStates.MaskGrab/RevEngine.maskObj, which it already sets to NULL itself and
+	// NULL-checks at every read. So bail out instead of crashing.
+	if (instance == NULL)
+	{
+#if defined(CTR_AP)
+		AP_LogLine("[AP POOL] Mask weapon birth NULL (crash averted)\n");
+#endif
+		return NULL;
+	}
+#endif
+
 	t = instance->thread;
 
 	maskObj = (struct MaskHeadWeapon *)t->object;
@@ -152,7 +169,26 @@ struct MaskHeadWeapon *VehPickupItem_MaskUseWeapon(struct Driver *driver, b32 bo
 
 	t->flags |= THREAD_FLAG_DISABLE_COLLISION;
 	instance->flags |= HIDE_MODEL;
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): the beam is a second pool birth that can fail on its own (#56
+	// Class-B). It is cosmetic, so a NULL beam leaves the mask itself fully working.
+	// maskObj->maskBeamInst keeps the NULL and both consumers (RB_MaskWeapon_ThTick and
+	// RB_MaskWeapon_FadeAway) are guarded to match. The FadeAway teardown needs no
+	// guard: INSTANCE_Death(NULL) reaches JitPool_Remove, whose LIST_RemoveMember and
+	// LIST_AddFront both early-return on a NULL item.
+	if (maskObj->maskBeamInst != NULL)
+	{
+#endif
 	maskObj->maskBeamInst->flags |= HIDE_MODEL;
+#if defined(CTR_NATIVE)
+	}
+#if defined(CTR_AP)
+	else
+	{
+		AP_LogLine("[AP POOL] Mask beam birth NULL (crash averted)\n");
+	}
+#endif
+#endif
 	maskObj->duration = (driver->numWumpas > 9) ? 0x2d00 : 0x1e00;
 	maskObj->rot.x = 0x40;
 	maskObj->rot.y = 0;
@@ -783,6 +819,21 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 
 		weaponInst = INSTANCE_BirthWithThread(0x5a, shieldDarkName, MEDIUM, OTHER, RB_ShieldDark_ThTick_Grow, sizeof(struct Shield), d->instSelf->thread);
 
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). On native this
+		// returns NULL when the instance or thread pool is full and the reads below
+		// fault. Dropping the shield entirely is the only safe failure: without the dark
+		// bubble there is no thread to hang the colour and highlight instances off.
+		// d->instBubbleHold is left untouched, so the driver simply has no shield.
+		if (weaponInst == NULL)
+		{
+#if defined(CTR_AP)
+			AP_LogLine("[AP POOL] Shield bubble birth NULL (crash averted)\n");
+#endif
+			break;
+		}
+#endif
+
 		weaponTh = weaponInst->thread;
 		weaponInst->scale.x = 0x700;
 		weaponInst->scale.y = 0x700;
@@ -800,13 +851,44 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 
 		struct Instance *instHighlight = INSTANCE_Birth3D(gGT->modelPtr[DYNAMIC_HIGHLIGHT], highlightName, weaponTh);
 
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): the colour and highlight layers are two more retail-blind pool
+		// births (#56 Class-B) and either can fail on its own. Both are cosmetic layers
+		// on top of the dark bubble, so a NULL one just means that layer is not drawn.
+		// The NULL is stored into shieldObj below and every consumer in
+		// RB_ShieldDark_ThTick_Grow / RB_ShieldDark_ThTick_Pop is guarded to match.
+		// Their teardowns need no guard: INSTANCE_Death(NULL) reaches JitPool_Remove,
+		// whose LIST_RemoveMember and LIST_AddFront both early-return on a NULL item.
+		if (instColor != NULL)
+		{
+#endif
 		instColor->scale.x = 0x700;
 		instColor->scale.y = 0x700;
 		instColor->scale.z = 0x700;
+#if defined(CTR_NATIVE)
+		}
+#if defined(CTR_AP)
+		else
+		{
+			AP_LogLine("[AP POOL] Shield colour birth NULL (crash averted)\n");
+		}
+#endif
 
+		if (instHighlight != NULL)
+		{
+#endif
 		instHighlight->scale.x = 0x700;
 		instHighlight->scale.y = 0x700;
 		instHighlight->scale.z = 0x700;
+#if defined(CTR_NATIVE)
+		}
+#if defined(CTR_AP)
+		else
+		{
+			AP_LogLine("[AP POOL] Shield highlight birth NULL (crash averted)\n");
+		}
+#endif
+#endif
 
 		struct Shield *shieldObj = weaponTh->object;
 		shieldObj->animFrame = 0;

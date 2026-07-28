@@ -33,6 +33,19 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 	// Second time is BeamInst
 	for (int i = 0; i < 2; i++)
 	{
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): the beam is a retail-blind pool birth (VehPickupItem.c) that
+		// returns NULL on native when the instance pool is full (#56 Class-B). This is
+		// the second pass, so dropping out here leaves the mask's own fade untouched and
+		// simply skips the beam that was never created. The teardown below is already
+		// safe: INSTANCE_Death(NULL) reaches JitPool_Remove, whose LIST_RemoveMember and
+		// LIST_AddFront both early-return on a NULL item.
+		if (instCurr == NULL)
+		{
+			break;
+		}
+#endif
+
 		LHMatrix_Parent(instCurr, driverInst, &mhs->posOffset);
 
 		instCurr->scale.x += -0x100;
@@ -51,6 +64,10 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 	mhs->rot.z = 0;
 	ConvertRotToMatrix(&mhs->m, &mhs->rot);
 
+#if defined(CTR_NATIVE)
+	if (maskBeamInst != NULL)
+	{
+#endif
 	m = &maskBeamInst->matrix;
 	MatrixRotate(m, m, &mhs->m);
 
@@ -58,6 +75,9 @@ void RB_MaskWeapon_FadeAway(struct Thread *t)
 	{
 		maskBeamInst->alphaScale += 0x200;
 	}
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	totalTime = mask->duration;
 
@@ -111,12 +131,23 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 	struct InstDrawPerPlayer *maskIdpp = INST_GETIDPP(maskInst);
 	struct InstDrawPerPlayer *beamIdpp = INST_GETIDPP(maskBeamInst);
 
+	// NOTE(dowlle): maskBeamInst is a retail-blind pool birth (VehPickupItem.c) that
+	// returns NULL on native when the instance pool is full (#56 Class-B). Retail read
+	// through that NULL harmlessly; native faults. INST_GETIDPP above is plain pointer
+	// arithmetic, so beamIdpp does not fault until it is written through. Every deref of
+	// the beam in this tick is guarded, leaving a mask with no beam sprite but an
+	// otherwise fully working weapon. RB_MaskWeapon_FadeAway's INSTANCE_Death(NULL) is
+	// already a no-op (JitPool_Remove -> LIST_RemoveMember/LIST_AddFront both early-
+	// return on a NULL item), so no teardown guard is needed.
 	if (d->invisibleTimer == 0)
 	{
 		for (i = 0; i < numPlyr; i++)
 		{
 			pb = &gGT->pushBuffer[(s32)i];
 			maskIdpp[(s32)i].pushBuffer = pb;
+#if defined(CTR_NATIVE)
+			if (maskBeamInst != NULL)
+#endif
 			beamIdpp[(s32)i].pushBuffer = pb;
 		}
 	}
@@ -131,6 +162,9 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 			}
 
 			maskIdpp[(s32)i].pushBuffer = NULL;
+#if defined(CTR_NATIVE)
+			if (maskBeamInst != NULL)
+#endif
 			beamIdpp[(s32)i].pushBuffer = NULL;
 		}
 	}
@@ -144,8 +178,15 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 		maskInst->flags |= REFLECTIVE;
 
 		maskInst->vertSplit = driverInst->vertSplit;
+#if defined(CTR_NATIVE)
+		if (maskBeamInst != NULL)
+		{
+#endif
 		maskBeamInst->flags |= REFLECTIVE;
 		maskBeamInst->vertSplit = driverInst->vertSplit;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	maskInst->depthBiasNormal = driverInst->depthBiasNormal;
@@ -160,7 +201,13 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 	mhs->posOffset.x = (((MATH_Sin(rot) << 6) >> 0xc) * mask->scale) >> 0xc;
 	mhs->posOffset.z = (((MATH_Cos(rot) << 6) >> 0xc) * mask->scale) >> 0xc;
 
+#if defined(CTR_NATIVE)
+	// with no beam there is no animFrame to read; frame 0 is the beam's own
+	// start-of-animation offset, so the mask sits where it does on the first frame.
+	mhs->posOffset.y = R231.maskPosArr[(maskBeamInst != NULL) ? ((int)maskBeamInst->animFrame >> 0) : 0] + 0x40;
+#else
 	mhs->posOffset.y = R231.maskPosArr[(int)maskBeamInst->animFrame >> 0] + 0x40;
+#endif
 
 	mhs->rot.x = 0;
 	mhs->rot.y = rot;
@@ -172,6 +219,15 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 	// Second time is BeamInst
 	for (int i = 0; i < 2; i++)
 	{
+#if defined(CTR_NATIVE)
+		// second pass is the beam, which may have failed its birth; the mask's own
+		// pass has already run, so dropping out here loses nothing else.
+		if (instCurr == NULL)
+		{
+			break;
+		}
+#endif
+
 		if ((mask->rot.z & 1) == 0)
 		{
 			LHMatrix_Parent(instCurr, driverInst, &mhs->posOffset);
@@ -197,6 +253,11 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 
 	// === Animation ===
 
+#if defined(CTR_NATIVE)
+	// no beam means no beam animation to advance
+	if (maskBeamInst != NULL)
+	{
+#endif
 	// get animFrame
 	sVar1 = INSTANCE_GetNumAnimFrames(maskBeamInst, 0);
 
@@ -212,6 +273,9 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 		// restart animation
 		maskBeamInst->animFrame = 0;
 	}
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	// adjust rotation
 	mask->rot.y += -0x100;
@@ -234,10 +298,23 @@ void RB_MaskWeapon_ThTick(struct Thread *maskTh)
 
 	// first pass
 	instCurr = maskBeamInst;
+#if defined(CTR_NATIVE)
+	if (instCurr != NULL)
+#endif
 	instCurr->alphaScale = 0;
 
 	for (int i = 0; i < 2; i++)
 	{
+#if defined(CTR_NATIVE)
+		// this loop runs beam first, mask second, so a missing beam must skip ahead to
+		// the mask pass rather than break out of the loop.
+		if (instCurr == NULL)
+		{
+			instCurr = maskInst;
+			continue;
+		}
+#endif
+
 		instCurr->flags &= ~HIDE_MODEL;
 
 		instCurr->scale.x = mask->scale;
@@ -272,12 +349,25 @@ void RB_ShieldDark_ThTick_Pop(struct Thread *t)
 	rot.y = 0;
 	rot.z = 0;
 	LHMatrix_Parent(instDark, driverOwner->instSelf, &rot);
+
+	// NOTE(dowlle): instColor is a retail-blind pool birth (VehPickupItem.c) that can be
+	// NULL on native (#56 Class-B). It is the cosmetic colour layer over the dark
+	// bubble, so a NULL one just pops without its coloured shell. Each deref is guarded
+	// in place so the non-native statement order is untouched. The INSTANCE_Death calls
+	// at the end of this function are already NULL-safe (JitPool_Remove ->
+	// LIST_RemoveMember/LIST_AddFront both early-return on a NULL item).
+#if defined(CTR_NATIVE)
+	if (instColor != NULL)
+#endif
 	LHMatrix_Parent(instColor, driverOwner->instSelf, &rot);
 
 	// set rotation
 	CTR_MatrixSetRotIdentity(&instDark->matrix);
 
 	// set rotation
+#if defined(CTR_NATIVE)
+	if (instColor != NULL)
+#endif
 	CTR_MatrixSetRotIdentity(&instColor->matrix);
 
 	int animFrame = sh->animFrame;
@@ -290,9 +380,16 @@ void RB_ShieldDark_ThTick_Pop(struct Thread *t)
 		instDark->scale.z = s_shieldPopScale[animFrame][0];
 
 		// set scale
+#if defined(CTR_NATIVE)
+		if (instColor != NULL)
+		{
+#endif
 		instColor->scale.x = s_shieldPopScale[animFrame][0];
 		instColor->scale.y = s_shieldPopScale[animFrame][1];
 		instColor->scale.z = s_shieldPopScale[animFrame][0];
+#if defined(CTR_NATIVE)
+		}
+#endif
 
 		// next frame
 		sh->animFrame += 1;
@@ -343,11 +440,23 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	struct Driver *player = playerTh->object;
 	struct Instance *driverInst = playerTh->inst;
 
+	// NOTE(dowlle): colorInst and highlightInst are retail-blind pool births
+	// (VehPickupItem.c) and either can be NULL on native when the instance pool is full
+	// (#56 Class-B). Both are cosmetic layers over the dark bubble, so a NULL one is
+	// simply not drawn while the shield keeps its timing, its pop transition and its
+	// collision behaviour. Every deref below is guarded in place, so the non-native
+	// statement order is untouched. The INSTANCE_Death calls on the death path are
+	// already NULL-safe (JitPool_Remove -> LIST_RemoveMember/LIST_AddFront both
+	// early-return on a NULL item), so no teardown guard is needed.
+
 	// if highlight cooldown is gone
 	if (shield->highlightTimer == 0)
 	{
 		shield->highlightRot.y += 0x100;
 
+#if defined(CTR_NATIVE)
+		if (highlightInst != NULL)
+#endif
 		highlightInst->flags &= ~HIDE_MODEL;
 
 		rotY = shield->highlightRot.y;
@@ -366,6 +475,9 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 
 			shield->highlightRot.y = 0xc00;
 
+#if defined(CTR_NATIVE)
+			if (highlightInst != NULL)
+#endif
 			highlightInst->flags |= HIDE_MODEL;
 		}
 	}
@@ -376,11 +488,17 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 		// decrease counter, make invisible when this is zero
 		shield->highlightTimer--;
 
+#if defined(CTR_NATIVE)
+		if (highlightInst != NULL)
+#endif
 		highlightInst->flags |= HIDE_MODEL;
 
 		// if timer runs out (last frame)
 		if (shield->highlightTimer == 0)
 		{
+#if defined(CTR_NATIVE)
+			if (highlightInst != NULL)
+#endif
 			highlightInst->flags &= ~HIDE_MODEL;
 		}
 	}
@@ -396,7 +514,13 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 		{
 			pb = &gGT->pushBuffer[i];
 			idpp[i].pushBuffer = pb;
+#if defined(CTR_NATIVE)
+			if (colorInst != NULL)
+#endif
 			colorIdpp[i].pushBuffer = pb;
+#if defined(CTR_NATIVE)
+			if (highlightInst != NULL)
+#endif
 			highlightIdpp[i].pushBuffer = pb;
 		}
 	}
@@ -412,7 +536,13 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 			}
 
 			idpp[i].pushBuffer = 0;
+#if defined(CTR_NATIVE)
+			if (colorInst != NULL)
+#endif
 			colorIdpp[i].pushBuffer = 0;
+#if defined(CTR_NATIVE)
+			if (highlightInst != NULL)
+#endif
 			highlightIdpp[i].pushBuffer = 0;
 		}
 	}
@@ -426,16 +556,28 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	// To: shield instance, highlight instance, etc
 	// From: thread (shield) -> parentthread (player) -> object (driver) -> instance
 	LHMatrix_Parent(shieldInst, driverInst, &pos);
+#if defined(CTR_NATIVE)
+	if (colorInst != NULL)
+#endif
 	LHMatrix_Parent(colorInst, driverInst, &pos);
+#if defined(CTR_NATIVE)
+	if (highlightInst != NULL)
+#endif
 	LHMatrix_Parent(highlightInst, driverInst, &pos);
 
 	// set rotation variables
 	CTR_MatrixSetRotIdentity(&shieldInst->matrix);
 
 	// set rotation variables
+#if defined(CTR_NATIVE)
+	if (colorInst != NULL)
+#endif
 	CTR_MatrixSetRotIdentity(&colorInst->matrix);
 
 	// convert 3 rotation shorts into rotation matrix
+#if defined(CTR_NATIVE)
+	if (highlightInst != NULL)
+#endif
 	ConvertRotToMatrix(&highlightInst->matrix, &shield->highlightRot);
 
 	s16 scaleXZ;
@@ -453,9 +595,16 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 		shieldInst->scale.z = scaleXZ;
 
 		// set scale
+#if defined(CTR_NATIVE)
+		if (colorInst != NULL)
+		{
+#endif
 		colorInst->scale.x = scaleXZ;
 		colorInst->scale.y = scaleY;
 		colorInst->scale.z = scaleXZ;
+#if defined(CTR_NATIVE)
+		}
+#endif
 
 		// next frame
 		shield->animFrame++;
@@ -475,14 +624,28 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 		shieldInst->scale.z = scaleXZ;
 
 		// set scale
+#if defined(CTR_NATIVE)
+		if (colorInst != NULL)
+		{
+#endif
 		colorInst->scale.x = scaleXZ;
 		colorInst->scale.y = scaleY;
 		colorInst->scale.z = scaleXZ;
+#if defined(CTR_NATIVE)
+		}
+#endif
 
 		// set scale
+#if defined(CTR_NATIVE)
+		if (highlightInst != NULL)
+		{
+#endif
 		highlightInst->scale.x = scaleXZ;
 		highlightInst->scale.y = scaleY;
 		highlightInst->scale.z = scaleXZ;
+#if defined(CTR_NATIVE)
+		}
+#endif
 	}
 
 	// if this is not a blue shield,
@@ -512,7 +675,13 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 
 			// transparency
 			shieldInst->alphaScale = sVar4;
+#if defined(CTR_NATIVE)
+			if (colorInst != NULL)
+#endif
 			colorInst->alphaScale = sVar4;
+#if defined(CTR_NATIVE)
+			if (highlightInst != NULL)
+#endif
 			highlightInst->alphaScale = sVar4;
 		}
 	}
