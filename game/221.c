@@ -222,7 +222,24 @@ void CC_EndEvent_DrawMenu()
 	DecalFont_DrawLine(sdata->lngStrings[resultStringIndex], pos.x + 0x33, pos.y + 8, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 	// if a token is not newly-unlocked
-	if (didLose || CC_EndEvent_HasRewardBit(adv, tokenRewardBit))
+	b32 tokenAlreadyWon = CC_EndEvent_HasRewardBit(adv, tokenRewardBit);
+#ifdef CTR_AP
+	// AP: as of issue #142 the crystal-arena bits are part of the AP_ApplyItems
+	// reconcile, so they mirror your RECEIVED Purple CTR Tokens rather than what
+	// this save has actually won. Reading the raw bit here would hit both edges:
+	// a player already holding received purple tokens reads "already unlocked" on
+	// a genuine first win and the location check below never fires, and a real
+	// win is cleared again on the next tick so a replay replays the ceremony.
+	// Decide "already won" from the AP CHECKED state instead -- the same fix class
+	// as the trophy and boss-key gates in 222.c. AP_NotifyAdvReward dedupes, so a
+	// re-win is safe.
+	if (ctr_cfg_active())
+	{
+		tokenAlreadyWon = AP_LocationCheckedByBit(tokenRewardBit) != 0;
+	}
+#endif
+
+	if (didLose || tokenAlreadyWon)
 	{
 		// If you pressed X/O to continue, quit function
 		if ((sdata->menuReadyToPass & 1) != 0)
