@@ -233,7 +233,27 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 
 			// Make turbos invisible and transparent.
 			turboInst1->flags = turboInst1->flags | addFlags | 0x1040080;
+#if defined(CTR_NATIVE)
+			// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). The second
+			// flame is cosmetic, so a NULL one degrades the turbo to a single flame
+			// rather than crashing. turboObj->inst keeps the NULL and every consumer
+			// (VehTurbo_ThTick, VehTurbo_ProcessBucket, the "turbo already exists" branch
+			// below) is guarded to match. Teardown needs no guard: VehTurbo_ThDestroy's
+			// INSTANCE_Death(turboObj->inst) reaches JitPool_Remove, whose
+			// LIST_RemoveMember/LIST_AddFront both early-return on a NULL item.
+			if (turboInst2 != NULL)
+			{
+#endif
 			turboInst2->flags = turboInst2->flags | addFlags | 0x1040080;
+#if defined(CTR_NATIVE)
+			}
+#if defined(CTR_AP)
+			else
+			{
+				AP_LogLine("[AP POOL] Turbo second flame birth NULL (crash averted)\n");
+			}
+#endif
+#endif
 		}
 #else
 		turboObj = 0;
@@ -288,7 +308,15 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 			{
 				// make fire invisible for the sake of the visibility cooldown as explained in common.h
 				turboInst1->flags |= DEPTH_FADE | HIDE_MODEL;
+#if defined(CTR_NATIVE)
+				// second flame may have failed its pool birth (see above)
+				if (turboInst2 != NULL)
+				{
+#endif
 				turboInst2->flags |= DEPTH_FADE | HIDE_MODEL;
+#if defined(CTR_NATIVE)
+				}
+#endif
 
 				turboObj->fireVisibilityCooldown = 0x60;
 			}
@@ -302,7 +330,15 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 
 		turboObj->fireDisappearCountdown = -1;
 		turboInst1->alphaScale = 0;
+#if defined(CTR_NATIVE)
+		// second flame may have failed its pool birth (see above)
+		if (turboInst2 != NULL)
+		{
+#endif
 		turboInst2->alphaScale = 0;
+#if defined(CTR_NATIVE)
+		}
+#endif
 
 		// player of any kind
 		if (driver->instSelf->thread->modelIndex == DYNAMIC_PLAYER)

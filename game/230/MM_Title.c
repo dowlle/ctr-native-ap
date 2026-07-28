@@ -303,6 +303,18 @@ void MM_Title_SetTrophyDPP(void)
 		return;
 	}
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): the six title instances are retail-blind pool births (MM_Title_Init)
+	// that return NULL on native when the instance pool is full (#56 Class-B). This
+	// function copies draw state between two of them by fixed index, so it has nothing
+	// to do unless both exist. INST_GETIDPP is plain pointer arithmetic and would not
+	// fault until the reads below.
+	if ((title->i[1] == NULL) || (title->i[2] == NULL))
+	{
+		return;
+	}
+#endif
+
 	idpp1 = INST_GETIDPP(title->i[1]); // "title"
 	idpp2 = INST_GETIDPP(title->i[2]); // another "title"
 
@@ -440,6 +452,20 @@ void MM_Title_ThTick(struct Thread *title)
 		// current instance
 		titleInst = ptrTitle->i[i];
 
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): a retail-blind pool birth in MM_Title_Init can leave this slot
+		// NULL on native (#56 Class-B). Slot index is positional (it selects this
+		// instance's row in D230.titleInstances and drives the i != 2 trophy case), so
+		// the fail-safe is to skip the missing piece of the title screen and animate the
+		// rest, never to compact the array. MM_Title_KillThread needs no guard:
+		// INSTANCE_Death(NULL) reaches JitPool_Remove, whose LIST_RemoveMember and
+		// LIST_AddFront both early-return on a NULL item.
+		if (titleInst == NULL)
+		{
+			continue;
+		}
+#endif
+
 		titleInst->flags &= ~HIDE_MODEL;
 
 		// the frame of title screen that each instance should start animation
@@ -560,6 +586,22 @@ void MM_Title_Init(void)
 
 			// store instance
 			title->i[(s32)n] = inst;
+
+#if defined(CTR_NATIVE)
+			// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). On native
+			// the instance pool can be full and this returns NULL. The slot keeps the
+			// NULL (the struct was memset above) and MM_Title_ThTick /
+			// MM_Title_SetTrophyDPP skip it, so the title screen comes up missing one
+			// piece instead of crashing. Slot index is positional, so nothing is
+			// compacted. MM_Title_KillThread's INSTANCE_Death(NULL) is already a no-op.
+			if (inst == NULL)
+			{
+#if defined(CTR_AP)
+				AP_LogLine("[AP POOL] Title instance birth NULL (crash averted)\n");
+#endif
+				continue;
+			}
+#endif
 
 			if (D230.titleInstances[(s32)n].boolTrophy)
 			{

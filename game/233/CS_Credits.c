@@ -46,6 +46,19 @@ void CS_Credits_AnimateCreditGhost(struct Instance *dst, struct Instance *src, i
 {
 	struct CreditsObj *co = &creditsBSS.creditsObj;
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): every caller passes credit-ghost slots, which are retail-blind pool
+	// births (CS_Credits_Init) that can be NULL on native (#56 Class-B). This function
+	// copies a whole pose plus a model header block from src into dst, so there is
+	// nothing meaningful to do if either end is missing. Guarding here covers all three
+	// call sites in CS_Credits_ThTick at once; the trail simply has a gap where the
+	// birth failed.
+	if ((dst == NULL) || (src == NULL))
+	{
+		return;
+	}
+#endif
+
 	dst->animFrame = src->animFrame;
 	dst->animIndex = src->animIndex;
 
@@ -193,6 +206,25 @@ void CS_Credits_Init(void)
 
 		// save instance
 		creditsObj->creditGhostInst[4 - i] = inst;
+
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): retail-blind deref of a pool birth (#56 Class-B). On native the
+		// instance pool can be full and this returns NULL. The slot keeps the NULL (the
+		// struct was memset above) and CS_Credits_ThTick skips it, so the credits run
+		// with a shorter ghost trail instead of crashing. Slot index is positional (it
+		// picks the ghost's scratch buffers and its scale/alpha step in
+		// CS_Credits_AnimateCreditGhost), so nothing is compacted.
+		// CS_Credits_DestroyCreditGhost needs no guard: INSTANCE_Death(NULL) reaches
+		// JitPool_Remove, whose LIST_RemoveMember and LIST_AddFront both early-return on
+		// a NULL item.
+		if (inst == NULL)
+		{
+#if defined(CTR_AP)
+			AP_LogLine("[AP POOL] Credit ghost birth NULL (crash averted)\n");
+#endif
+			continue;
+		}
+#endif
 
 		inst->matrix.m[0][0] = 0x1000;
 		inst->matrix.m[0][1] = 0;
@@ -635,6 +667,13 @@ void CS_Credits_ThTick(void)
 			for (int i = 1; i < 5; i++)
 			{
 				struct Instance *ghost = co->creditGhostInst[i];
+#if defined(CTR_NATIVE)
+				// slot may have failed its pool birth (CS_Credits_Init)
+				if (ghost == NULL)
+				{
+					continue;
+				}
+#endif
 				ghost->scale.x += 0x4b;
 				ghost->scale.y += 0x4b;
 				ghost->scale.z += 0x4b;
