@@ -85,11 +85,12 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 		{
 			DecalFont_DrawLineOT(sdata->lngStrings[LNG_TM], 0x10e, 0x9c, FONT_SMALL, ORANGE, &gGT->backBuffer->otMem.uiOT[3]);
 #ifdef CTR_AP
-			// Pair-version update notice (issue #150), under the same two gates and
-			// in the same OT slot as the trademark line above: these are exactly the
-			// frames where the title has settled and text here is readable. Self-
-			// gates on the connected seed, so a session with no slot_data -- and the
-			// whole vanilla build -- draws nothing.
+			// Pair-version update notice (issue #150) -- one line, no version
+			// numbers, under the same two gates and in the same OT slot as the
+			// trademark line above: these are exactly the frames where the title has
+			// settled and text here is readable. Self-gates on the connected seed, so
+			// a session with no slot_data -- and the whole vanilla build -- draws
+			// nothing.
 			AP_DrawTitleUpdateNotice(&gGT->backBuffer->otMem.uiOT[3]);
 #endif
 		}

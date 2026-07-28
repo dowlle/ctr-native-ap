@@ -1675,16 +1675,22 @@ void AP_DrawSchemaWarning(void)
 #define AP_UPD_LINE_CAP 80
 
 // Title-screen anchor: centred, one line below the trademark line at y 0x9C
-// (game/230/MM_MenuFlow.c), stacking down to 0xC6 -- still inside the same safe
-// area the hub feed's bottom anchor (0xC8) sits on.
+// (game/230/MM_MenuFlow.c).
 #define AP_UPD_TITLE_CENTRE_X 0x100
 #define AP_UPD_TITLE_Y        0xAA
-#define AP_UPD_TITLE_LINE_H   0x0E
+
+// The TITLE surface is one line and carries NO version numbers. The title screen
+// only announces that an update exists; the numbers belong on the Connection
+// screen, which is where a player goes when they want to know which version.
+// Static (not const) because DecalFont_DrawLineOT takes a char*.
+static char ap_upd_title_line[] = "A new version is available!";
 
 static char ap_upd_line1[AP_UPD_LINE_CAP];
 static char ap_upd_line2[AP_UPD_LINE_CAP];
-static char ap_upd_line3[AP_UPD_LINE_CAP];
-static char ap_upd_built_for[CTR_CFG_VERSION_CAP]; // seed version the lines describe
+// Detail line 3 substitutes nothing, so it stays a literal rather than a
+// formatted buffer -- which also keeps it findable in the shipped binary.
+static char ap_upd_line3[] = "Update the client and apworld.";
+static char ap_upd_built_for[CTR_CFG_VERSION_CAP]; // seed version the detail lines describe
 static int  ap_upd_armed = 0;
 static int  ap_upd_title_show = -1; // -1 undecided, 0 already shown once, 1 show
 
@@ -1709,22 +1715,21 @@ static int AP_UpdateNoticeRefresh(void)
 		char msg[128];
 
 		snprintf(ap_upd_built_for, sizeof ap_upd_built_for, "%s", seed);
-		// Both versions are substituted WITHOUT their "v" (the strings print their
-		// own), so a seed that spells its version "v0.1.5" cannot render as "vv0.1.5".
-		// The explicit %.*s precision is the world_version buffer's own bound: it
-		// changes nothing at runtime (a parsed version is a dozen bytes) but lets
-		// the compiler see that these lines cannot be truncated.
+		// The DETAIL lines, drawn on the Connection screen only. Both versions are
+		// substituted WITHOUT their "v" (the strings print their own), so a seed
+		// that spells its version "v0.1.5" cannot render as "vv0.1.5". The explicit
+		// %.*s precision is the world_version buffer's own bound: it changes nothing
+		// at runtime (a parsed version is a dozen bytes) but lets the compiler see
+		// that these lines cannot be truncated.
 		snprintf(ap_upd_line1, sizeof ap_upd_line1,
 		         "THIS SEED WAS BUILT WITH CTR-AP v%.*s",
 		         (int)(sizeof ctr_cfg.world_version - 1), AP_VersionDigits(seed));
 		// Lines 2 and 3 are ONE sentence pair, split only because FONT_SMALL bills
 		// 13 px per character (zGlobal_DATA.c font_charPixWidth) and the UI space is
-		// 512 px wide: the pair on one line measures ~620 px and would run off both
+		// 512 px wide: the pair on one line measures ~630 px and would run off both
 		// edges centred. The words are untouched.
 		snprintf(ap_upd_line2, sizeof ap_upd_line2,
 		         "You are on v%s.", AP_VersionDigits(CTR_AP_VERSION));
-		snprintf(ap_upd_line3, sizeof ap_upd_line3,
-		         "Update the client and apworld.");
 
 		ap_upd_armed = 1;
 		ap_upd_title_show = -1; // a version we have not shown yet gets its own showing
@@ -1738,7 +1743,8 @@ static int AP_UpdateNoticeRefresh(void)
 	return 1;
 }
 
-static void AP_UpdateNoticeDrawLines(uint32_t *ot, int centreX, int y, int spacing)
+// The three DETAIL lines (Connection screen). The title screen does not use this.
+static void AP_UpdateNoticeDrawDetail(uint32_t *ot, int centreX, int y, int spacing)
 {
 	DecalFont_DrawLineOT(ap_upd_line1, centreX, y,
 	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
@@ -1772,17 +1778,20 @@ void AP_DrawTitleUpdateNotice(uint32_t *ot)
 	if (!ap_upd_title_show)
 		return;
 
-	AP_UpdateNoticeDrawLines(ot, AP_UPD_TITLE_CENTRE_X, AP_UPD_TITLE_Y, AP_UPD_TITLE_LINE_H);
+	DecalFont_DrawLineOT(ap_upd_title_line, AP_UPD_TITLE_CENTRE_X, AP_UPD_TITLE_Y,
+	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 
 void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing)
 {
 	// No last-seen check here on purpose: this is the surface a player goes LOOKING
-	// for, so it stays as long as the seed wants a newer client.
+	// for, so it stays as long as the seed wants a newer client. It is also the one
+	// that carries the version numbers -- the title screen only announces that an
+	// update exists.
 	if (!AP_UpdateNoticeRefresh())
 		return;
 
-	AP_UpdateNoticeDrawLines(ot, centreX, y, spacing);
+	AP_UpdateNoticeDrawDetail(ot, centreX, y, spacing);
 }
 
 void AP_NotifyAdvReward(int rewardBit)

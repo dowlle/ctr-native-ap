@@ -137,13 +137,15 @@ void AP_DrawSchemaWarning(void);
 // unparseable version, an equal or older seed, or [Archipelago] update_check =
 // false and they are no-ops.
 //
-// Title screen (game/230/MM_MenuFlow.c): shown once per pair version, remembered
-// across sessions in [State] update_last_seen so the same version never nags twice.
+// Title screen (game/230/MM_MenuFlow.c): ONE line, no version numbers -- it only
+// announces that an update exists. Shown once per pair version, remembered across
+// sessions in [State] update_last_seen so the same version never nags twice.
 void AP_DrawTitleUpdateNotice(uint32_t *ot);
-// OPTIONS > Connection status area (game/230/MM_ConfigMenu.c): the PERSISTENT
-// surface -- it ignores update_last_seen, so a player who dismissed the title
-// notice can always come back and read which version the seed wants. Draws its
-// lines centred on `centreX` starting at `y`, `spacing` apart.
+// OPTIONS > Connection status area (game/230/MM_ConfigMenu.c): the PERSISTENT and
+// DETAILED surface -- it carries the seed's version and this client's, and it
+// ignores update_last_seen, so a player who saw the title line can always come
+// here to find out which version the seed wants. Draws its lines centred on
+// `centreX` starting at `y`, `spacing` apart.
 void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing);
 
 // ── Seed completability verification (ap_verify.c) ──
