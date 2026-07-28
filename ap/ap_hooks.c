@@ -885,12 +885,34 @@ static int AP_AllFiveGems(void)
 //   4 allgemcups -> all 5 gems received (i.e. won every gem cup)
 // Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
 // first Oxide beat is the goal.
+static void AP_FeedEnqueue(const char *text, int own); // defined with the feed block below
+
 void AP_EvaluateGoal(void)
 {
 	int done = 0;
 
 	if (ap_goal_sent)
 		return;
+
+	// #163: never auto-goal on a shape this build did not parse. The verifier
+	// already returns early on schema_newer (ap_verify.c) so it never reasons
+	// over an unknown shape; the goal evaluator must be at least as careful,
+	// because there is NO safe legacy value for ctr_options.goal -- whatever a
+	// newer apworld writes there resolves on this build to some real, reachable
+	// win condition, so guessing sends GOAL early rather than not at all.
+	// (schema_newer is only ever set while slot_data is active, so vanilla /
+	// no-config sessions never take this branch.)
+	if (ctr_cfg.schema_newer)
+	{
+		static int warned = 0;
+		if (!warned)
+		{
+			warned = 1;
+			AP_LogLine("[AP GOAL] auto-goal disabled: seed schema is newer than this client\n");
+			AP_FeedEnqueue("GOAL CHECK OFF: seed needs a newer client", 1);
+		}
+		return;
+	}
 
 	if (!ctr_cfg_active())
 	{
