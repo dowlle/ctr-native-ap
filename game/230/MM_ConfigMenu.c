@@ -249,6 +249,10 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 #define CONN_ROW_H       0x0C
 #define CONN_ROW_START_Y 0x3C
 #define CONN_ROW_SPACING 0x0E
+// Characters that still fit between the Status label and the right edge of the
+// panel at FONT_SMALL (13 px per character). Longer status text is moved to its
+// own centred line below the row.
+#define CONN_STATUS_INLINE_MAX 24
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -399,11 +403,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
-	// Read-only status row (one line below the Connect row).
+	// Read-only status row (one line below the Connect row). Short states sit
+	// beside the label; anything longer than fits there (the unreachable-host
+	// line, a wordy slot refusal) is centred on the next line instead, where the
+	// full panel width is available, rather than running off the right edge.
 	{
 		int y = startY + (numStrings + 2) * rowSpacing;
+		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
-		DecalFont_DrawLineOT((char *)AP_Net_StatusLine(), valueX, y, FONT_SMALL, WHITE, ot);
+		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
+			DecalFont_DrawLineOT((char *)status, 0x100, y + rowSpacing,
+				FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		else
+			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
 
 	// Pad hint while a row is being edited, so the controller exits are

@@ -2550,6 +2550,11 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	ap_net_started = 1; // suppress the boot-time auto-dial from re-running
 }
 
+// Longest host the status row can render before the line runs off the panel
+// (FONT_SMALL is 13 px per character), leaving room for the fixed wording around
+// it. A longer host is cut and marked with "..".
+#define AP_STATUS_HOST_MAX 16
+
 // One-line status for the menu's read-only status row.
 const char *AP_Net_StatusLine(void)
 {
@@ -2562,6 +2567,24 @@ const char *AP_Net_StatusLine(void)
 	case AP_NET_STATUS_CONNECTING:
 		snprintf(line, sizeof line, "Connecting...");
 		break;
+	case AP_NET_STATUS_UNREACHABLE:
+	{
+		// Names what could not be reached so a dead address, a wrong port or a
+		// server that is not up yet reads differently from a handshake still in
+		// progress (issue #146). The client is still retrying either way. The uri
+		// row above this one carries the full address, so a trimmed host here
+		// costs the player nothing.
+		char host[64];
+		if (ap_net_host(host, sizeof host))
+		{
+			if ((int)strlen(host) > AP_STATUS_HOST_MAX)
+				snprintf(host + AP_STATUS_HOST_MAX - 2, 3, "..");
+			snprintf(line, sizeof line, "Cannot reach %s, retrying", host);
+		}
+		else
+			snprintf(line, sizeof line, "Cannot reach server, retrying");
+		break;
+	}
 	case AP_NET_STATUS_ERROR:
 	{
 		const char *e = ap_net_last_error();

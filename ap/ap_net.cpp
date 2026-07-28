@@ -55,6 +55,43 @@ static bool                  g_connected = false;
 static int                   g_status = AP_NET_STATUS_IDLE;
 static std::string           g_last_error;
 
+// Issue #146: the status could only ever leave CONNECTING towards CONNECTED or a
+// slot refusal, so an unreachable host, a wrong port, a firewall/DNS problem or a
+// server that is not up yet all rendered as an indefinite "Connecting...". Count
+// failed connect attempts; past the threshold the status names the host it cannot
+// reach. apclientpp keeps retrying exactly as before -- only the message changes.
+//
+// The count comes from the socket ERROR handler, not the disconnect handler: a
+// connect that never opens leaves apclientpp in SOCKET_CONNECTING, and its
+// onclose() only calls the disconnect handler from a state past that, so a
+// refused or unroutable host fires the error handler alone. Cleared whenever the
+// socket does come up, on a slot connect, and on fresh connect parameters.
+// Attempts back off 1.5s / 3s / 6s / ... (capped at 15s), so three failures is
+// at least nine seconds of trying before the line changes -- longer when the
+// attempts themselves have to time out rather than being refused outright.
+static const int             AP_NET_UNREACHABLE_FAILS = 3;
+static std::string           g_host;
+static int                   g_socket_fails = 0;
+
+// "ws://host:port/path" -> "host". The connection menu's uri row already carries
+// the full address, and the status row it shares only has room for a short host,
+// so scheme, port and path are dropped here. Carries apclientpp's own uri caveat:
+// a bare (bracket-less) IPv6 literal is mangled by the port strip.
+static std::string ap_net_host_of(const std::string &uri)
+{
+	std::string h = uri;
+	const auto scheme = h.find("://");
+	if (scheme != std::string::npos)
+		h.erase(0, scheme + 3);
+	const auto slash = h.find('/');
+	if (slash != std::string::npos)
+		h.erase(slash);
+	const auto colon = h.rfind(':');
+	if (colon != std::string::npos)
+		h.erase(colon);
+	return h;
+}
+
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
 // ap_hooks polls it via ap_net_take_recv_reset() and zeroes its received-item
 // tallies before draining, so counts rebuild from the server's authoritative
@@ -126,6 +163,9 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	}
 
 	g_ap->set_socket_connected_handler([]() {
+		// The room answered a websocket handshake, so it is reachable: any
+		// unreachable verdict is stale and the failure run starts over (#146).
+		g_socket_fails = 0;
 		if (g_status != AP_NET_STATUS_ERROR)
 			g_status = AP_NET_STATUS_CONNECTING; // socket up; slot handshake pending
 		std::fprintf(stderr, "[AP NET] socket connected\n");
@@ -139,6 +179,33 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		std::fprintf(stderr, "[AP NET] socket disconnected\n");
 		AP_LogLine("[AP NET] socket disconnected (auto-retrying)\n");
 	});
+	// One call per failed connect attempt, with the transport's own reason
+	// ("Connection refused", a TLS or DNS failure, ...). Until #146 nothing
+	// consumed this, so a room that was never reachable produced no ctr-ap.log
+	// trace at all and no status change. Attempts back off to one every 15s, so
+	// logging each of them cannot flood the file.
+	g_ap->set_socket_error_handler([](const std::string &msg) {
+		if (g_socket_fails < AP_NET_UNREACHABLE_FAILS)
+			g_socket_fails++;
+		char line[256];
+		std::snprintf(line, sizeof line, "[AP NET] connect attempt failed: %s\n",
+		              msg.empty() ? "unknown error" : msg.c_str());
+		std::fprintf(stderr, "%s", line);
+		AP_LogLine(line);
+		// Past the threshold, say what cannot be reached instead of sitting on
+		// "Connecting..." forever. Retrying is unchanged; only the message moves.
+		if (g_status == AP_NET_STATUS_ERROR || g_status == AP_NET_STATUS_CONNECTED)
+			return; // a refusal reason / a live slot outranks a stray socket error
+		if (g_socket_fails >= AP_NET_UNREACHABLE_FAILS && !g_host.empty() &&
+		    g_status != AP_NET_STATUS_UNREACHABLE)
+		{
+			g_status = AP_NET_STATUS_UNREACHABLE;
+			std::snprintf(line, sizeof line,
+			              "[AP NET] cannot reach %s after %d attempts (still retrying)\n",
+			              g_host.c_str(), g_socket_fails);
+			AP_LogLine(line);
+		}
+	});
 	g_ap->set_room_info_handler([]() {
 		std::fprintf(stderr, "[AP NET] RoomInfo; connecting slot '%s'\n", g_slot.c_str());
 		// items_handling 0b111 = remote items + own world + starting inventory.
@@ -148,6 +215,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_connected = true;
 		g_status = AP_NET_STATUS_CONNECTED;
 		g_last_error.clear();
+		g_socket_fails = 0; // #146: the run of failures ended here
 		// Fresh connect: signal ap_hooks to zero its received-item tallies, and
 		// drop any stale queue/scout state from a previous connection (server
 		// switch carried the old seed's items into memory otherwise). The server
@@ -274,6 +342,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		std::fprintf(stderr, "[AP NET] deathlink received from '%s': %s\n",
 		             source.c_str(), cause.c_str());
 	});
+	g_host = ap_net_host_of(uri ? uri : "localhost"); // #146: named by the status line
+	g_socket_fails = 0;
 	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
 	g_last_error.clear();
 	return 0;
@@ -283,6 +353,11 @@ extern "C" void ap_net_connect_slot(const char *slot, const char *password)
 {
 	g_slot = slot ? slot : "";
 	g_password = password ? password : "";
+	// Fresh parameters: re-arm the unreachable threshold so a new attempt starts
+	// from "Connecting..." rather than inheriting the previous verdict (#146).
+	g_socket_fails = 0;
+	if (g_status == AP_NET_STATUS_UNREACHABLE)
+		g_status = AP_NET_STATUS_CONNECTING;
 }
 
 // Returns 1 once after each fresh slot-connect (then clears the flag). ap_hooks
@@ -455,6 +530,14 @@ extern "C" int ap_net_status(void)
 extern "C" const char *ap_net_last_error(void)
 {
 	return g_last_error.c_str();
+}
+
+extern "C" int ap_net_host(char *buf, int n)
+{
+	if (!buf || n <= 0)
+		return 0;
+	std::snprintf(buf, (size_t)n, "%s", g_host.c_str());
+	return buf[0] != '\0';
 }
 
 extern "C" int ap_net_drain_items(long long *out, int max)
@@ -710,4 +793,6 @@ extern "C" void ap_net_shutdown(void)
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
+	g_host.clear();     // #146: no host to name once the client is gone
+	g_socket_fails = 0;
 }
