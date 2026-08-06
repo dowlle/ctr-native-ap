@@ -814,8 +814,15 @@ void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 {
 #ifdef CTR_AP
 	// AP QoL (ap-config.txt skip_hints=1): suppress all Aku Aku mask hints at the
-	// single choke point -- early-return before any hint is armed, so there is no
-	// freeze and nothing to click through. Default off (hints behave normally).
+	// single choke point -- early-return before any hint is armed, so nothing has
+	// to be clicked through. Default off (hints behave normally).
+	//
+	// CORRECTION (issue #51): this only suppresses the freeze the HINT itself arms
+	// (AH_MaskHint.c:29). The new-area greeting hint is ALSO retail's only runtime
+	// release for the first-key door freeze VehBirth arms (VehBirth.c:189 ->
+	// AH_MaskHint.c:496), so skipping it leaves that one held. AH_Door_ThTick now
+	// releases that flag directly under CTR_AP; do not read this early-return as
+	// "no freeze is ever outstanding".
 	if (AP_SkipHints())
 		return;
 #endif
