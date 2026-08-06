@@ -24,9 +24,17 @@ struct GameTracker;
 // How hard the per-class tint is pushed onto the marker, as the GTE's IR0
 // interpolation factor: 0x1000 is a full lerp to the class colour (flat, no
 // shading left), 0 leaves the model's own neutral greys and no classification at
-// all. Just short of full keeps the tint unambiguous while letting a little of
-// the logo's internal shading survive. One of the values Stef tunes in-game.
-#define AP_MARKER_TINT_STRENGTH 0x0e00
+// all. The final vertex colour is grey + (tint - grey) * IR0/0x1000, so the
+// model's shading only survives in the (1 - IR0) share.
+//
+// 0x0e00 shipped in the first prototype and read FLAT in game (2026-08-06 rc3
+// playtest): it left the greys just 1/8 of the result, about 20 levels of
+// variation. 0x0c00 gives them a quarter, so the shaded LUT's 20..208 spread
+// lands as ~47 levels of visible gradient while the class hue still supplies
+// three quarters of the colour. Lower it further for more modelling and less
+// classification; raise it back toward 0x1000 for flat, maximally legible class
+// colours. One of the values Stef tunes in-game.
+#define AP_MARKER_TINT_STRENGTH 0x0c00
 
 // Park the marker model at gGT->modelPtr[STATIC_AP]. Idempotent and cheap (one
 // compare + one store), so it is safe to call every frame; that also re-asserts

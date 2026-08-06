@@ -142,6 +142,29 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 
 	modelID = prizeInst->model->id;
 
+#ifdef CTR_AP
+	if (modelID == STATIC_AP)
+	{
+		// #124 polish: the AP marker is a thin extruded plate (depth span 23 of
+		// 255), so the shared prize spin drags it through edge-on twice a
+		// revolution, where it collapses to a sliver -- the vanilla prizes are
+		// chunky and do not care. Billboard it about the vertical axis instead of
+		// spinning it.
+		//
+		// pushBuffer.rot IS the camera rotation that builds matrix_Camera, via
+		// this very ConvertRotToMatrix (PushBuffer.c:305). Giving the marker the
+		// camera's own yaw therefore puts its thin axis parallel to the camera's,
+		// i.e. face-on, by construction -- there is no angle offset to guess.
+		// Only .y is replaced: .x and .z pass through untouched, so the marker
+		// keeps exactly vanilla's upright axis and lean, and this cannot flip it.
+		struct GameTracker *gGT = sdata->gGT;
+		SVec3               faceCam = warppadObj->spinRot_Prize;
+
+		faceCam.y = gGT->pushBuffer[0].rot.y;
+		ConvertRotToMatrix(&prizeInst->matrix, &faceCam);
+	}
+#endif
+
 	if (modelID != STATIC_TROPHY) // if not trophy (no lightDir on trophy)
 	{
 		if (modelID == STATIC_GEM) // gem

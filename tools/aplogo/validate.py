@@ -51,6 +51,9 @@ check(all(0 <= c <= 255 for v in verts for c in v), "all vertex bytes in 0..255"
 print("\nscratchpad safety")
 check(cmds[0] == n_colors, f"commands[0] ({cmds[0]}) is the colour count")
 check(cmds[0] <= (0x400 - 0x140) // 4, f"colour count {cmds[0]} fits the scratchpad colour cache")
+# GetCommandColor reads (command >> 7) & 0x1fc as a BYTE offset (:2318-2328),
+# so the colour index is a 7-bit field however much scratchpad is free.
+check(n_colors <= 127, f"colour count {n_colors} fits the 7-bit colour-index field")
 
 stream = cmds[1:]
 print("\nterminator")
@@ -125,6 +128,15 @@ check(all(v[2] >= 0 for v in verts), "carry pre-compensation kept vertical bytes
 print("\ncolour LUT is neutral (0x00BBGGRR)")
 neutral = all(((c) & 0xFF) == ((c >> 8) & 0xFF) == ((c >> 16) & 0xFF) for c in colors)
 check(neutral, "every LUT entry is grey, so the class tint modulates cleanly")
+
+# The flat look fixed on 2026-08-06 was a LUT with almost no usable spread whose
+# top entry was 0xff (which is what read as a white sliver edge-on). Guard both.
+print("\nshading has usable range")
+levels = sorted((c & 0xFF) for c in colors)
+check(len(colors) > 6, f"LUT carries per-vertex shading, not one entry per region ({len(colors)})")
+check(levels[-1] - levels[0] >= 120, f"grey spread {levels[-1] - levels[0]} is wide enough to read as shading")
+check(levels[-1] <= 232, f"brightest grey {levels[-1]} stays off the washed-out top end")
+check(levels[0] <= 48, f"darkest grey {levels[0]} is dark enough to read as shadow")
 
 print()
 if fails:
