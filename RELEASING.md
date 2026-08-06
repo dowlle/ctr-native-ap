@@ -80,6 +80,18 @@ The release cycle's development order, settled during the 0.1.4 cycle:
       hashing ON (the default; never pass `-DCTR_AP_VERIFY_VENDOR=OFF` for a
       release) and print the resolved vendor set. A dep that does not match
       `ap/vendor/versions.lock` fails configure here, before any compilation.
+- [ ] Windows binary: strip the shipped `ctr_native_ap.exe` and keep a
+      `ctr_native_ap.exe.debug` sidecar (ruled 2026-08-06, after v0.1.4 shipped
+      a 33 MB unstripped exe carrying full DWARF and local build paths). NOTE:
+      the CMake split-debug block is `if(UNIX)`-gated (`CMakeLists.txt:187`), so
+      on MinGW32 this is a manual post-build step until that block covers
+      Windows: `objcopy --only-keep-debug ctr_native_ap.exe
+      ctr_native_ap.exe.debug`, then `objcopy --strip-all ctr_native_ap.exe`,
+      then `objcopy --add-gnu-debuglink=ctr_native_ap.exe.debug
+      ctr_native_ap.exe`. Do it BEFORE the smoke run so the bytes that are
+      looked at are the bytes that ship. Confirm with `objdump -h` that no
+      `.debug_*` sections remain in the exe and that `.gnu_debuglink` is
+      present.
 - [ ] Generate `versions.txt` for the bundle from the pinned set:
       `tools/release-versions.sh > <bundle>/versions.txt`. Its dep lines must
       match the resolved set the AP configure just printed.
@@ -118,10 +130,11 @@ The release cycle's development order, settled during the 0.1.4 cycle:
       `support-bundle.sh`). The tarball NEVER contains the `.debug` sidecar. As
       with the zip, the folder inside the tarball carries the release name. Write
       the tarball's `.sha256` sidecar.
-- [ ] The `.debug` sidecar ships as its OWN public release asset:
-      `ctr_native_ap.debug` plus a `ctr_native_ap.debug.sha256` sidecar
-      alongside it in the GitHub release (this lets community members symbolize
-      their own crash reports). It must be the `.debug` from the EXACT release
+- [ ] BOTH `.debug` sidecars ship as their OWN public release assets: the Linux
+      `ctr_native_ap.debug` and the Windows `ctr_native_ap.exe.debug`, each with
+      a `.sha256` sidecar alongside it in the GitHub release (this lets
+      community members symbolize their own crash reports). Neither tarball nor
+      zip contains a sidecar. Each must be the `.debug` from the EXACT release
       build; a rebuilt one fails the debuglink CRC32 check and is useless.
 - [ ] Regenerate the player template YAML from the RELEASE apworld using AP's
       template creator, and ship it as `Crash.Team.Racing.yaml` (a public release
@@ -172,19 +185,22 @@ the previous release's published notes. House style:
 - [ ] Privacy scan the notes before publishing: no real names, no machine or
       host names, no local paths.
 - [ ] `gh release create vX.Y.Z` with the Windows assets: the zip, its
-      `.sha256`, the standalone `ctr.apworld` and its `.sha256` (multiworld hosts
-      often want just the world file), and the regenerated `Crash.Team.Racing.yaml`
-      player template (see §4).
+      `.sha256`, the `ctr_native_ap.exe.debug` sidecar and its `.sha256`, the
+      standalone `ctr.apworld` and its `.sha256` (multiworld hosts often want
+      just the world file), and the regenerated `Crash.Team.Racing.yaml` player
+      template (see §4).
 - [ ] Add the Linux assets to the same release: the `.tar.gz` and its
       `.sha256`, plus the `ctr_native_ap.debug` sidecar and its
-      `ctr_native_ap.debug.sha256` (see §4; the `.debug` is a public asset so
-      players can symbolize their own crashes).
+      `ctr_native_ap.debug.sha256` (see §4; both `.debug` files are public
+      assets so players can symbolize their own crashes).
 - [ ] Verify with `gh release view`: title, tag, and every asset present (the
-      Windows zip + sha256, `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the
-      Linux tarball + sha256, and the `.debug` + sha256).
+      Windows zip + sha256, `ctr_native_ap.exe.debug` + sha256, `ctr.apworld` +
+      sha256, `Crash.Team.Racing.yaml`, the Linux tarball + sha256, and
+      `ctr_native_ap.debug` + sha256).
 - [ ] **Asset-completeness gate: all assets or pre-release.** The release may
       only be published (or have its pre-release flag removed) once the
-      `gh release view` check above shows the COMPLETE nine-asset set. If
+      `gh release view` check above shows the COMPLETE eleven-asset set (nine
+      through v0.1.4, plus the two Windows `.debug` assets added in v0.1.5). If
       anything is missing, the release stays flagged pre-release until the
       missing assets are attached, no exceptions and no "add it later while
       Latest". This is the rule v0.1.4.1 taught: it shipped Windows-only,
