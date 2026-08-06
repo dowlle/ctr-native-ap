@@ -358,7 +358,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	}
 	catch (...)
 	{
+		// Leave a status behind instead of the IDLE the failed dial inherits from
+		// shutdown: IDLE renders as "not connected", which reads as "nobody tried"
+		// and is what a reconnect into a broken client used to look like (#146).
+		g_status = AP_NET_STATUS_ERROR;
+		g_last_error = "client init failed";
 		std::fprintf(stderr, "[AP NET] APClient construction failed\n");
+		AP_LogLine("[AP NET] APClient construction failed\n");
 		return -1;
 	}
 
@@ -994,6 +1000,20 @@ extern "C" void ap_net_shutdown(void)
 {
 	if (g_ap)
 	{
+		// This closes a live socket and polls it down (wswrap_websocketpp.hpp:
+		// 428-451), so it looks like it could re-enter a half-destroyed
+		// APClient: ~APClient is defaulted (apclient.hpp:223) and therefore
+		// destroys every handler std::function (:1807-1823) and _seed (:1833)
+		// BEFORE _ws (:1803), while the connection still holds the handler
+		// lambdas websocketpp snapshotted at creation (endpoint_impl.hpp:59-68),
+		// which cleanup()'s handler clearing does not reach. It does not happen:
+		// wswrap nulls impl->second before it polls (wswrap_websocketpp.hpp:431)
+		// and every one of those lambdas is gated on impl->second, so none of
+		// them ever calls back into APClient. Verified with AddressSanitizer on
+		// the 32-bit Linux build over 40 reconnect cycles whose teardowns land
+		// across every socket state (pre-connect, TCP connecting, TLS
+		// handshaking, established, failed): no error, no callback. Left as a
+		// plain delete on purpose -- do not re-derive this.
 		delete g_ap;
 		g_ap = nullptr;
 	}
@@ -1012,4 +1032,9 @@ extern "C" void ap_net_shutdown(void)
 	g_host.clear();     // #146: no host to name once the client is gone
 	g_socket_fails = 0;
 	g_uri_secure = false;
+	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on
+	// "a reconnect line, then a fresh client run start with no shutdown lines",
+	// and the log had no way to say whether the teardown had completed. Now it
+	// does: no such line after a reconnect means the process died inside it.
+	AP_LogLine("[AP NET] client teardown complete\n");
 }
