@@ -1195,6 +1195,15 @@ WarpPad_AnimateOpen:
 					// whose light is never spun renders solid BLACK (the specular sibling
 					// of the black-key bug).
 					apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+					// alphaScale is reset for the same reason as the flags: only
+					// the untextured AP marker (#124) uses it, and a slot that
+					// cycles off the marker onto a trophy would otherwise keep a
+					// non-zero alpha and get its colours lerped toward the
+					// trophy's colorRGBA of 0 -- i.e. a BLACK trophy, the same
+					// bug family as the black key and the specular trophy above.
+					// 0 is what INSTANCE_Birth gives these instances (INSTANCE.c:40),
+					// so this restores the born value rather than inventing one.
+					apPrize->alphaScale = 0;
 					switch (apPrize->model->id)
 					{
 					case STATIC_RELIC:
@@ -1243,6 +1252,29 @@ WarpPad_AnimateOpen:
 						}
 						apPrize->colorRGBA = apTint;
 						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
+					case STATIC_AP:
+						// #124: another game's item, shown as the Archipelago-logo
+						// marker and tinted by AP classification.
+						//
+						// This model is untextured, so it MUST stay on the plain
+						// prim writer: the writers selected by DRAW_TRANSPARENT and
+						// USE_SPECULAR_LIGHT both bail out on a null texture and
+						// draw nothing at all (RenderBucket_QueueExecute.c:2924,
+						// :3063). The clear above already leaves both off; do not
+						// re-add them here.
+						//
+						// Untextured prims also do not get the multiplicative tint
+						// the gem/key/relic path uses. Their colour comes from the
+						// model's own colour table, lerped toward colorRGBA by
+						// alphaScale (:2817-2830), which is zero on a freshly born
+						// instance -- so without this the marker would render in
+						// flat greys and carry no classification at all. The
+						// marker's colours are deliberately neutral so the lerp
+						// reads as a clean class tint; short of full strength it
+						// keeps a little of the logo's own shading.
+						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						apPrize->alphaScale = AP_MARKER_TINT_STRENGTH;
 						break;
 					case STATIC_KEY:
 						// Own boss Key. The key model has NO useful unmodulated colour --

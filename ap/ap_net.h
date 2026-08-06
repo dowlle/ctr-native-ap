@@ -91,6 +91,16 @@ int  ap_net_player_count(void);
 // cache is populated). The seed-verify sweep waits on this.
 int  ap_net_scouts_ready(void);
 
+// 1 once per-slot game names are usable. Together with ap_net_scouts_ready this
+// is the #124 classified-display gate: the warp-pad glow must not classify a
+// foreign item before both land, or the first frames after a connect flicker
+// between the other-game and CTR-peer presentations.
+int  ap_net_slot_info_ready(void);
+
+// 1 if `player` plays Crash Team Racing. Only meaningful once
+// ap_net_slot_info_ready() is 1; before that every slot reads as not-CTR.
+int  ap_net_player_is_ctr(int player);
+
 // Coarse connection status for the in-game connection manager. Tracked by the
 // socket / slot handlers in ap_net.cpp; ap_hooks.c's AP_Net_StatusLine maps these
 // to a one-line string for the menu.
