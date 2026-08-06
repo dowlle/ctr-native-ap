@@ -1,0 +1,167 @@
+name: Bug report
+description: Something in the game is broken, crashing, or behaving wrong.
+title: "[Bug] "
+labels: ["bug", "needs-repro"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Most of the time we can fix a bug from one good report,
+        and the fields below are the ones that have actually saved a round trip in past reports.
+
+        If a **seed looks impossible to finish** rather than broken, use the
+        "Stuck or impossible seed" form instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what you expected instead.
+      placeholder: The game closed with no message the moment I paused in Gemstone Valley.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: Client version
+      description: |
+        The version is printed on the `[AP BOOT]` line at the top of `ctr-ap.log`,
+        next to the game executable.
+      options:
+        - v0.1.4.1
+        - v0.1.4
+        - v0.1.3
+        - v0.1.2
+        - v0.1.1
+        - v0.1.0
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform and how you launched the game
+      options:
+        - Windows
+        - Steam Deck (SteamOS)
+        - Linux, launched directly
+        - Linux, launched through Steam (Steam Linux Runtime / Proton)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: "Linux only: distribution and version"
+      description: |
+        Linux and Steam Deck reports live or die on this. Several past bugs turned out
+        to be missing 32-bit system libraries rather than game code.
+      placeholder: Linux Mint Debian Edition 7, Cinnamon, X11
+    validations:
+      required: false
+
+  - type: dropdown
+    id: also-vanilla
+    attributes:
+      label: Does this also happen in the plain (non-Archipelago) CTR Native build?
+      description: |
+        This build is a fork of the CTR-tools/ctr-native decompilation. If a bug is also
+        in upstream, it belongs upstream, and knowing that up front saves days.
+        "Have not tested" is a perfectly fine answer.
+      options:
+        - Have not tested
+        - "Yes, it happens in plain CTR Native too"
+        - "No, only in the Archipelago build"
+        - Not applicable (this is Archipelago-specific behaviour)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        As precise as you can be. "Pausing sometimes crashes" took weeks to pin down;
+        "pause immediately after opening the door to the Gem Cups" was fixed in days.
+      placeholder: |
+        1. Enter Gemstone Valley
+        2. Open the door leading to the Gem Cups
+        3. Pause immediately after the door opens
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where in the game
+      description: Track, hub area, menu or cutscene.
+      placeholder: Gemstone Valley hub, or Mystery Caves during a trophy race
+    validations:
+      required: false
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it happen?
+      description: |
+        "It stopped after a restart" is a real and useful answer. One past bug was a
+        stray debug hotkey that a restart cleared, and that detail is what identified it.
+      options:
+        - Every time, reliably
+        - Most times
+        - Happened once
+        - It stopped after restarting the game
+    validations:
+      required: false
+
+  - type: textarea
+    id: support-bundle
+    attributes:
+      label: Support bundle or crash file
+      description: |
+        Run `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux and Steam Deck)
+        from the game folder and drag the resulting archive into this box. It packs
+        `ctr-ap.log`, the crash report and your connection settings **with the password
+        removed**, and contains no game data.
+
+        For a crash, `ctr-ap-crash.txt` next to the executable is the single most useful
+        file: it is what turned three months of "crashes sometimes" into a one-line fix.
+      placeholder: Drag the ctr-ap-support-*.zip / .tar.gz file here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: yaml
+    attributes:
+      label: Your YAML, or the options you changed from the defaults
+      description: |
+        Options matter more than they look. Past reports were resolved by finding out that
+        mask hints were on, or that a particular include option was set.
+      render: yaml
+    validations:
+      required: false
+
+  - type: dropdown
+    id: progress-lost
+    attributes:
+      label: Did you lose progress?
+      description: Checks already sent normally survive on the server, but tell us if they did not.
+      options:
+        - "No, the server kept everything"
+        - "Yes, I lost checks or progress"
+        - Not sure
+        - Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, video, or anything that felt relevant.
+    validations:
+      required: false

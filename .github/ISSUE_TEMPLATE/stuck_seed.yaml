@@ -1,0 +1,135 @@
+name: Stuck or impossible seed
+description: You cannot progress, or a check or item looks unreachable.
+title: "[Seed] "
+labels: ["bug", "apworld"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the game itself works but the **seed** looks wrong: a check you cannot
+        reach, a door that will not open, or a run that cannot be finished.
+
+        Most of these turn out to be logic or option interactions, so the YAML and the seed
+        matter more here than a crash log does.
+
+  - type: textarea
+    id: stuck-on
+    attributes:
+      label: What are you stuck on?
+      description: What you cannot reach or cannot do, and what you have already tried.
+      placeholder: |
+        Every warp pad in the second hub wants Purple CTR Tokens, but I turned battle
+        arenas off so there is nowhere to earn them.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: Client version
+      description: |
+        On the `[AP BOOT]` line at the top of `ctr-ap.log`. Please also give the apworld
+        version below: the client and the apworld ship as a pair and must match.
+      options:
+        - v0.1.4.1
+        - v0.1.4
+        - v0.1.3
+        - v0.1.2
+        - v0.1.1
+        - v0.1.0
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: apworld-version
+    attributes:
+      label: APWorld version
+      description: The `ctr.apworld` file you generated with, and the Archipelago version.
+      placeholder: ctr 0.1.4 on Archipelago 0.6.7
+    validations:
+      required: false
+
+  - type: dropdown
+    id: seed-verifier
+    attributes:
+      label: Did the game show a red "SEED NOT COMPLETABLE" warning on the hub?
+      description: |
+        The client checks every solo seed when it connects. That verdict, either way,
+        is one of the fastest ways to tell a real logic bug from a false alarm,
+        and both answers have been wrong before, so say what you actually saw.
+      options:
+        - "No warning appeared"
+        - "Yes, the warning appeared"
+        - Did not notice
+    validations:
+      required: true
+
+  - type: dropdown
+    id: solo-or-multi
+    attributes:
+      label: Solo or multiworld?
+      description: Some failures only exist in multiworld fills, others only solo.
+      options:
+        - Solo (only my game in the room)
+        - Multiworld with other games
+        - Multiworld with more than one CTR slot
+    validations:
+      required: true
+
+  - type: textarea
+    id: yaml
+    attributes:
+      label: Your YAML
+      description: |
+        Required. Nearly every seed problem so far has come down to an option or a
+        combination of options, so without this we can only guess.
+      render: yaml
+    validations:
+      required: true
+
+  - type: input
+    id: room
+    attributes:
+      label: Room link or seed number
+      description: |
+        An archipelago.gg room link is ideal, since it lets us regenerate the exact seed.
+        A seed number works too. If the room is private, say so and we will work from the YAML.
+      placeholder: https://archipelago.gg/room/...
+    validations:
+      required: false
+
+  - type: input
+    id: slot
+    attributes:
+      label: Your slot name
+      placeholder: Player1
+    validations:
+      required: false
+
+  - type: textarea
+    id: tracker
+    attributes:
+      label: What does your tracker say?
+      description: |
+        If you use Universal Tracker or a PopTracker pack, does it consider the location
+        in logic? A disagreement between the tracker and the game is itself a useful clue.
+    validations:
+      required: false
+
+  - type: textarea
+    id: support-bundle
+    attributes:
+      label: Support bundle and spoiler log
+      description: |
+        Run `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux and Steam Deck)
+        from the game folder and drag the archive in here. Passwords are stripped and no
+        game data is included. The AP log records which locations the verifier considered
+        unreachable, which is usually the answer.
+
+        If you have the spoiler log for the seed, attach that too, but only if you are
+        happy to have it public: it reveals the whole seed.
+      placeholder: Drag the ctr-ap-support-*.zip / .tar.gz file here.
+    validations:
+      required: false
