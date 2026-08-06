@@ -142,28 +142,29 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 
 	modelID = prizeInst->model->id;
 
-#ifdef CTR_AP
-	if (modelID == STATIC_AP)
-	{
-		// #124 polish: the AP marker is a thin extruded plate (depth span 23 of
-		// 255), so the shared prize spin drags it through edge-on twice a
-		// revolution, where it collapses to a sliver -- the vanilla prizes are
-		// chunky and do not care. Billboard it about the vertical axis instead of
-		// spinning it.
-		//
-		// pushBuffer.rot IS the camera rotation that builds matrix_Camera, via
-		// this very ConvertRotToMatrix (PushBuffer.c:305). Giving the marker the
-		// camera's own yaw therefore puts its thin axis parallel to the camera's,
-		// i.e. face-on, by construction -- there is no angle offset to guess.
-		// Only .y is replaced: .x and .z pass through untouched, so the marker
-		// keeps exactly vanilla's upright axis and lean, and this cannot flip it.
-		struct GameTracker *gGT = sdata->gGT;
-		SVec3               faceCam = warppadObj->spinRot_Prize;
-
-		faceCam.y = gGT->pushBuffer[0].rot.y;
-		ConvertRotToMatrix(&prizeInst->matrix, &faceCam);
-	}
-#endif
+	// #124: the AP marker takes the SHARED prize spin above, exactly like every
+	// other reward on the pad. Do NOT special-case it here.
+	//
+	// A yaw billboard was tried and reverted (in game, 2026-08-06): it overrode
+	// spinRot_Prize.y with gGT->pushBuffer[0].rot.y on the reasoning that
+	// pushBuffer.rot is the same rotation matrix_Camera is built from, so copying
+	// its yaw would put the marker's thin axis parallel to the camera's. It does
+	// not. The follow camera is NOT a pure yaw -- CAM_FollowDriver_Normal writes
+	// pb->rot.x = 0x800 - ratan2(...) (CAM.c:1526), a ~180 degree pitch term --
+	// and ConvertRotToMatrix composes the Euler angles in an order where that term
+	// sits between the two yaw rotations. A half-turn about X conjugates a Y
+	// rotation into its negation, so the yaws do not cancel and the marker never
+	// locks square to the camera; it just stops spinning and changes shape as you
+	// drive. Stef's verdict was "the AP logo now doesnt do any rotation".
+	//
+	// If a real billboard is ever wanted, follow the engine's OWN pattern rather
+	// than pb->rot: the locked-pad digit code a few hundred lines below faces the
+	// camera with ratan2 over the camera and pad POSITIONS (:469), which needs no
+	// assumption about Euler order at all.
+	//
+	// Edge-on is handled instead by the spin plus the per-vertex shading: the
+	// plate is only edge-on for a fraction of each turn, the motion reads, and the
+	// face term makes that fraction a DARK rim rather than the old white sliver.
 
 	if (modelID != STATIC_TROPHY) // if not trophy (no lightDir on trophy)
 	{
