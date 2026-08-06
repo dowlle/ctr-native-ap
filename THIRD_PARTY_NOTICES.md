@@ -218,6 +218,27 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+## Archipelago Logo Marker (AP build only)
+
+Paths: `tools/aplogo/aplogo.h` (vendored source mesh), `ap/ap_marker_model_data.h` (generated)
+
+The in-game marker that identifies another player's item on a warp pad is a
+low-poly mesh of the Archipelago logo. The mesh was taken from the MMRecompRando
+project (<https://github.com/RecompRando/MMRecompRando>, `include/aplogo.h`),
+which is licensed GPL-3.0, the same license as this project.
+`tools/aplogo/convert.py` converts that mesh into the static C data the AP build
+compiles in; the conversion stores the mesh's six region colours as luminance so
+the per-class tint modulates a neutral base, and changes no geometry.
+
+The Archipelago logo itself is copyright (c) 2022 Krista Corkos and Christopher
+Wilson, used under Creative Commons Attribution-NonCommercial 4.0
+(<https://creativecommons.org/licenses/by-nc/4.0/>). This project is
+non-commercial. Attribution is owed to both the mesh and the underlying logo
+design, and both credits are permanent.
+
+License (mesh): GPL-3.0, per the MMRecompRando repository.
+License (logo design): CC BY-NC 4.0.
+
 ## SDL3
 
 Path: `externals/SDL`
