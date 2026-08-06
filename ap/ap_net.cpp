@@ -504,6 +504,45 @@ extern "C" int ap_net_player_count(void)
 	return g_ap ? (int)g_ap->get_players().size() : 0;
 }
 
+// #124: the slot-info half of the classified-display gate. The Connected packet
+// carries both the player list and the per-slot game names, so once our own slot
+// resolves to a game name the table is usable for every slot. Without this gate
+// the first glow frames after a connect would resolve every peer's game as
+// unknown and flicker between the other-game and CTR-peer presentations.
+extern "C" int ap_net_slot_info_ready(void)
+{
+	if (!g_ap || !g_connected)
+		return 0;
+	try
+	{
+		if (g_ap->get_players().empty())
+			return 0;
+		return g_ap->get_player_game(g_ap->get_player_number()).empty() ? 0 : 1;
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
+// 1 if `player` plays Crash Team Racing (a CTR peer), 0 for any other game and
+// for a slot that does not resolve. Callers must gate on ap_net_slot_info_ready()
+// first: before slot info lands, an unresolved slot is indistinguishable from a
+// genuine other-game slot.
+extern "C" int ap_net_player_is_ctr(int player)
+{
+	if (!g_ap)
+		return 0;
+	try
+	{
+		return g_ap->get_player_game(player) == "Crash Team Racing" ? 1 : 0;
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
 extern "C" int ap_net_scouts_ready(void)
 {
 	// True only once the LocationInfo reply to the connect-time LocationScouts has

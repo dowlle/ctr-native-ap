@@ -15,6 +15,7 @@
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
+#include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -267,6 +268,69 @@ int AP_LocationCheckedByBit(int globalBit)
 #define AP_FOREIGN_TINT 0x0ffffff0
 
 // ---------------------------------------------------------------------------
+// #124 -- CLASSIFIED FOREIGN-ITEM DISPLAY
+//
+// A foreign item used to render as an undifferentiated white gem, which told
+// the player nothing: pads full of white gems got skipped even when they held
+// progression another player was waiting on. Items belonging to players of
+// OTHER GAMES now render as the Archipelago-logo marker, tinted by the item's
+// AP classification.
+//
+// Items belonging to other CTR players are deliberately untouched here. The
+// ruled design gives them their real CTR model (class-tinted, or ghost-rendered
+// where the model's identity IS its colour), which needs a new per-slot channel
+// through the glow-bits path; that is a separate, riskier change.
+// ---------------------------------------------------------------------------
+
+// Packed as (R << 0x14) | (G << 0xc) | (B << 0x4), matching the relic tints.
+#define AP_PACK_TINT(r, g, b) (((u32)(r) << 0x14) | ((u32)(g) << 0xc) | ((u32)(b) << 0x4))
+
+// In-game-legible approximations of the standard AP scheme, not literal hex
+// values from it: these are read on a small spinning model at PSX draw distance,
+// so they are pushed for separation rather than fidelity. Filler cyan and useful
+// slate blue are the pair most at risk of collapsing into each other, so they are
+// split hard on the green channel. Final values are Stef's in-game call.
+#define AP_TINT_PROGRESSION AP_PACK_TINT(0xc0, 0x88, 0xf0) // plum
+#define AP_TINT_USEFUL      AP_PACK_TINT(0x50, 0x78, 0xe0) // slate blue
+#define AP_TINT_FILLER      AP_PACK_TINT(0x40, 0xe8, 0xe0) // cyan
+#define AP_TINT_TRAP        AP_PACK_TINT(0xff, 0x80, 0x60) // salmon
+
+// AP item flags: bit0 = progression, bit1 = useful, bit2 = trap, 0 = filler.
+#define AP_ITEM_FLAG_PROGRESSION 1
+#define AP_ITEM_FLAG_USEFUL      2
+#define AP_ITEM_FLAG_TRAP        4
+
+static int AP_ClassTint(unsigned flags)
+{
+	// Progression wins over useful when an item carries both, matching how AP's
+	// own clients present it.
+	if (flags & AP_ITEM_FLAG_PROGRESSION)
+		return AP_TINT_PROGRESSION;
+	if (flags & AP_ITEM_FLAG_USEFUL)
+		return AP_TINT_USEFUL;
+	if (flags & AP_ITEM_FLAG_TRAP)
+		return AP_TINT_TRAP;
+	return AP_TINT_FILLER;
+}
+
+// 1 if `player`'s item should render as the classified AP-logo marker.
+//
+// Three conditions, all required. Scouts and slot info are the sync gate: the
+// glow runs every frame from connect, and classifying before either lands would
+// flicker between presentations. The marker registration is the third, so the
+// model choice and the tint below can never disagree about the presentation.
+static int AP_UseClassifiedMarker(int player)
+{
+	if (player == ap_net_self_slot())
+		return 0; // own item -> its real CTR model
+	if (!ap_net_scouts_ready() || !ap_net_slot_info_ready())
+		return 0;
+	if (!AP_MarkerModel_IsRegistered())
+		return 0;
+	return ap_net_player_is_ctr(player) ? 0 : 1; // CTR peers stay on the old path
+}
+
+// ---------------------------------------------------------------------------
 // REWARD GLOW -- map a location (by its AdvProgress global bit) to the model of
 // the AP item placed there, so each warp pad's glow shows its real reward.
 // ---------------------------------------------------------------------------
@@ -285,12 +349,13 @@ int AP_WarpPadRewardModel(int globalBit)
 	if (!ap_net_scout_known(code, &item, &player, &flags))
 		return -1; // not scouted yet (not connected / pre-scout) -> vanilla
 
-	// A foreign multiworld item (placed for a different slot) -> generic marker.
-	// Rendered as a gem (tinted white by AP_WarpPadRewardTint) so it reads as
-	// "another player's AP item" and isn't mistaken for an own boss Key. Real
-	// Archipelago-logo model is the backlogged end goal.
+	// A foreign multiworld item (placed for a different slot). Another game's
+	// item gets the Archipelago-logo marker, class-tinted by
+	// AP_WarpPadRewardTint (#124). Another CTR player's item, and anything
+	// scouted before the display gate opens, keeps the white gem: it reads as
+	// "another player's AP item" and isn't mistaken for an own boss Key.
 	if (player != ap_net_self_slot())
-		return STATIC_GEM;
+		return AP_UseClassifiedMarker(player) ? STATIC_AP : STATIC_GEM;
 
 	// Own CTR reward -> its category's model.
 	switch (AP_ItemCategory(item))
@@ -332,13 +397,17 @@ int AP_WarpPadRewardTint(int globalBit)
 	if (!ap_net_scout_known(code, &item, &player, &flags))
 		return 0;
 	if (player != ap_net_self_slot())
-		// Foreign multiworld item: until it has its own model (the Archipelago
-		// logo is a backlogged custom-asset task) it renders as STATIC_GEM. Tint
-		// it pure white so it reads as a "white gem = someone else's AP item"
-		// marker, distinct from own coloured gem-cup gems and from own boss Keys.
-		// The render applies this to the gem model (see AH_WarpPad.c). Packed
-		// (R<<0x14)|(G<<0xc)|(B<<0x4).
+	{
+		// Foreign multiworld item. Another game's item renders as the AP-logo
+		// marker and carries its AP classification in the tint (#124); the
+		// marker's own colours are neutral greys so this modulates cleanly.
+		// Everything else -- CTR peers, and anything scouted before the display
+		// gate opens -- keeps the white gem, distinct from own coloured gem-cup
+		// gems and from own boss Keys. Packed (R<<0x14)|(G<<0xc)|(B<<0x4).
+		if (AP_UseClassifiedMarker(player))
+			return AP_ClassTint(flags);
 		return AP_FOREIGN_TINT; // (255,255,255) white
+	}
 
 	switch (AP_ItemCategory(item))
 	{
@@ -3665,6 +3734,10 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// Crash-reporter context: cache the plain ints the signal/SEH handlers are
 	// allowed to read (walking game structures in a dying process is not).
 	AP_CrashNoteFrame((int)gGT->levelID, ap_net_is_connected());
+	// Park the #124 AP-logo marker in its model slot. Idempotent, and re-running
+	// it every frame is what keeps the slot correct across hub/level loads and
+	// savestate restores rather than depending on a single well-timed call.
+	AP_MarkerModel_Register(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.
