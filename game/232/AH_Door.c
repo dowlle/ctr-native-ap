@@ -160,6 +160,35 @@ void AH_Door_ThTick(struct Thread *t)
 			return;
 		}
 
+#ifdef CTR_AP
+		// AP (issue #51): release the first-key door freeze here.
+		//
+		// On the boss win that brings the player to exactly one Key,
+		// VehBirth_TeleportSelf teleports them to door 5 and sets VEH_FREEZE_DOOR
+		// (game/Vehicle/VehBirth.c:171-193). That flag kills driving input in
+		// VehPhysProc_Driving_PhysLinear (game/Vehicle/VehPhysProc.c:407) while
+		// the camera and the pause menu keep running. Retail's only runtime
+		// release is the "you opened a new area" greeting hint reaching state 7
+		// (game/232/AH_MaskHint.c:496-497), which the request below arms.
+		//
+		// AP never gets there: AP_PrelatchGreetingHint sets that hint's reward bit
+		// on connect (ap/ap_hooks.c:2681-2688, issue #17), so chkRewards below
+		// reads 1 and the request never fires; ap-config.txt skip_hints=1 makes
+		// MainFrame_RequestMaskHint early-return for the same net effect
+		// (game/MAIN/MainFrame.c:815-821). The freeze then survives until the next
+		// VehBirth_TeleportSelf clears it at :160, i.e. until a level reload.
+		//
+		// This sits at the point in the flow retail released at (door open, camera
+		// transition finished) and is a no-op unless the flag is actually stuck,
+		// so the driver re-init runs once rather than every frame.
+		if ((gGT->gameMode2 & VEH_FREEZE_DOOR) != 0)
+		{
+			gGT->gameMode2 &= ~VEH_FREEZE_DOOR;
+			driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+			AP_LogLine("[AP DOOR] released first-key door freeze (#51)\n");
+		}
+#endif
+
 		// check if hint is unlocked
 		chkRewards = CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_NEW_WORLD_GREETING);
 
