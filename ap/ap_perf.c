@@ -14,7 +14,7 @@
 // Monotonic wall-clock in milliseconds (platform/native_platform.c, CTR_AP
 // only). Declared here rather than including <SDL3/SDL.h> so this module stays
 // free of SDL headers -- the same extern-in-consumer pattern ap_hooks.c uses for
-// Platform_InputRawKeyDown (ap_hooks.c:47). The definition lands later in the
+// Platform_InputRawKeyDown (ap_hooks.c:51). The definition lands later in the
 // unity translation unit (native_platform.c is #included after game_unity.h),
 // exactly like Platform_InputRawKeyDown's definition in native_input.c.
 double Platform_PerfNowMs(void);
