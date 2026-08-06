@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert MMRecompRando's N64 F3DEX AP-logo mesh (GPL-3.0) into ctr-native
-static model data: a u8 vertex blob, a greyscale colour LUT and a
+static model data: a u8 vertex blob, a shaded greyscale colour LUT and a
 RenderBucket command stream.
 
 Engine facts this encodes (all verified in
@@ -107,13 +107,15 @@ centers = [
 ]
 
 
-def to_bytes(v):
+def to_float(v):
+    """Output-space (horizontal, depth, vertical) coords, unrounded."""
     n64x, n64y, n64z = v
-    raw = [n64z, n64x, n64y]  # horizontal, depth, vertical
-    out = []
-    for i, r in enumerate(raw):
-        b = int(round((r - centers[i]) * scale + 127.5))
-        out.append(max(0, min(255, b)))
+    raw = [n64z, n64x, n64y]
+    return [(r - centers[i]) * scale + 127.5 for i, r in enumerate(raw)]
+
+
+def to_bytes(v):
+    out = [max(0, min(255, int(round(c)))) for c in to_float(v)]
     # Pre-compensate the packed-add carry: byte0 >= 128 adds 1 to the vertical
     # half once the negative frame origin is applied (QueueExecute.c:2240-2244).
     if out[0] >= 128:
@@ -121,24 +123,94 @@ def to_bytes(v):
     return tuple(out)
 
 
-# --- de-index into draw order --------------------------------------------
-verts = []
-cmds = []
-for v0, v1, v2, ci in tris:
-    for j, v in enumerate((v0, v1, v2)):
-        verts.append(to_bytes(v))
-        flags = 0x80 if j == 0 else 0x00
-        stack = j + 1  # never 0: (command >> 16) == 0 is a colour-only command
-        cmds.append((flags << 24) | (stack << 16) | (ci << 9) | 0)
+# --- per-vertex shading ---------------------------------------------------
+# The marker read FLAT in its first in-game look (2026-08-06 rc3 playtest): six
+# unshaded regions lerped most of the way to a single class colour leave almost
+# no variation, and seen edge-on the plate collapsed to a bright near-white
+# sliver (its brightest region colour was 0xff).
+#
+# This is fixed in DATA, not in the renderer. The untextured path emits POLY_G3
+# with three INDEPENDENT per-vertex colours taken from tempColor[1..3]
+# (QueueExecute.c:2861-2871), and every vertex command carries its own colour
+# index (:4397-4400), so a Gouraud gradient is already supported and costs
+# nothing at runtime.
+#
+# Three factors combine into one grey per vertex:
+#   * the region's own luminance, so the logo's internal regions stay distinct;
+#   * a face term |normal . depth|, which darkens the extruded RIM relative to
+#     the flat faces -- this is what stops the edge-on view reading as a white
+#     sliver, since edge-on shows only rim;
+#   * a vertical term, a plain light-from-above gradient.
+# Vertices are already de-indexed per triangle, so a geometric per-triangle
+# normal can be baked straight in.
+RIM_AMBIENT = 0.15   # light on a surface turned fully edge-on
+RIM_FACE = 0.55      # extra light on the flat faces
+TOP_GRADIENT = 0.30  # extra light toward the top of the logo
+REGION_FLOOR = 0.45  # how far a dark region may pull a vertex down
+GREY_MAX = 220       # brightest LUT entry (255 was the washout)
+GREY_STEP = 4        # quantisation; keeps the LUT far inside the 127-index field
 
-# --- greyscale colour LUT -------------------------------------------------
-# The spec requires a near-neutral base so the class tint modulates cleanly.
-# Take luminance, then stretch the (naturally narrow) spread for legibility.
 lum = [0.299 * r + 0.587 * g + 0.114 * b for r, g, b in prim_colors]
 lo, hi = min(lum), max(lum)
-LUT_LO, LUT_HI = 96, 255
-greys = [int(round((l - lo) / (hi - lo) * (LUT_HI - LUT_LO) + LUT_LO)) for l in lum]
-# PSX colour word is 0x00BBGGRR.
+region_w = [REGION_FLOOR + (1 - REGION_FLOOR) * (l - lo) / (hi - lo) for l in lum]
+
+allf = [to_float(v) for v in allv]
+v_lo = min(p[2] for p in allf)
+v_hi = max(p[2] for p in allf)
+
+
+def tri_face_term(v0, v1, v2):
+    """|normal . depth axis|: 1.0 on the logo's flat faces, 0.0 on the rim."""
+    a, b, c = to_float(v0), to_float(v1), to_float(v2)
+    u = [b[i] - a[i] for i in range(3)]
+    w = [c[i] - a[i] for i in range(3)]
+    n = [
+        u[1] * w[2] - u[2] * w[1],
+        u[2] * w[0] - u[0] * w[2],
+        u[0] * w[1] - u[1] * w[0],
+    ]
+    mag = sum(x * x for x in n) ** 0.5
+    if mag == 0.0:
+        return 1.0
+    return abs(n[1]) / mag
+
+
+def vertex_grey(v, ci, face):
+    vnorm = (to_float(v)[2] - v_lo) / (v_hi - v_lo)
+    s = region_w[ci] * (RIM_AMBIENT + RIM_FACE * face + TOP_GRADIENT * vnorm)
+    s = max(0.0, min(1.0, s))
+    q = int(round(GREY_MAX * s / GREY_STEP)) * GREY_STEP
+    return max(0, min(255, q))
+
+
+# --- de-index into draw order --------------------------------------------
+# The colour LUT is now built from the shaded greys actually used, deduplicated,
+# rather than being the six region colours.
+verts = []
+cmds = []
+greys = []          # LUT, in first-use order
+grey_index = {}
+for v0, v1, v2, ci in tris:
+    face = tri_face_term(v0, v1, v2)
+    for j, v in enumerate((v0, v1, v2)):
+        verts.append(to_bytes(v))
+        g = vertex_grey(v, ci, face)
+        if g not in grey_index:
+            grey_index[g] = len(greys)
+            greys.append(g)
+        gi = grey_index[g]
+        flags = 0x80 if j == 0 else 0x00
+        stack = j + 1  # never 0: (command >> 16) == 0 is a colour-only command
+        cmds.append((flags << 24) | (stack << 16) | (gi << 9) | 0)
+
+# The colour index is a 7-bit field: RenderBucket_GetCommandColor reads
+# (command >> 7) & 0x1fc as a BYTE offset (QueueExecute.c:2318-2328), so index
+# 127 is the hard ceiling. The scratchpad colour cache is the looser limit at
+# (0x400 - 0x140) / 4 = 176 entries (:2302-2316).
+assert len(greys) <= 127, f"colour LUT overflowed the 7-bit index field: {len(greys)}"
+
+# PSX colour word is 0x00BBGGRR; every entry stays grey so the class tint
+# modulates a neutral base, per the ruled spec.
 color_words = [(g << 16) | (g << 8) | g for g in greys]
 
 
@@ -156,14 +228,19 @@ def emit(path):
     w("// Their mesh is an extruded 6-region silhouette drawn with flat prim")
     w("// colours and no texture (its combiner is SHADE x PRIMITIVE, no TEXEL),")
     w("// which is exactly what ctr-native's untextured POLY_G3 path wants. The")
-    w("// region colours are stored here as LUMINANCE so the per-class tint")
-    w("// modulates a neutral base, per the ruled spec.")
+    w("// colours are stored here as LUMINANCE so the per-class tint modulates a")
+    w("// neutral base, per the ruled spec.")
+    w("//")
+    w("// The greys are SHADED PER VERTEX (region luminance x a face term that")
+    w("// darkens the extruded rim x a light-from-above gradient), so the marker")
+    w("// reads as a solid object instead of a flat cut-out and its edge-on rim")
+    w("// goes dark rather than white. See the shading block in convert.py.")
     w("")
     w(f"#define AP_MARKER_NUM_VERTS {len(verts)}")
     w(f"#define AP_MARKER_NUM_TRIS  {len(tris)}")
     w(f"#define AP_MARKER_NUM_COLORS {len(color_words)}")
     w("")
-    w("// Neutral (luminance) versions of the logo's six region colours, 0x00BBGGRR.")
+    w("// Deduplicated per-vertex shaded greys, 0x00BBGGRR.")
     w("static const u32 s_apMarkerColors[AP_MARKER_NUM_COLORS] = {")
     w("    " + ", ".join(f"0x{c:08x}" for c in color_words) + ",")
     w("};")

@@ -1765,10 +1765,28 @@ void AP_DrawSchemaWarning(void)
 // fixed text + CTR_CFG_VERSION_CAP), so no line can ever be truncated.
 #define AP_UPD_LINE_CAP 80
 
-// Title-screen anchor: centred, one line below the trademark line at y 0x9C
-// (game/230/MM_MenuFlow.c).
+// Title-screen anchor: centred, in the clear band BELOW the CTR logo art and the
+// main-menu block.
+//
+// 0xAA shipped first and was wrong (rc3 playtest, 2026-08-06): anchoring one line
+// under the trademark line at y 0x9C drew the notice straight through the "CRASH
+// TEAM RACING" banner, and because the line is ~350 px wide and centred on 0x100
+// its tail also ran into the menu block's last row. Shifting it sideways cannot
+// fix that -- it is too wide to clear a menu box whose left edge is x 0x126 -- so
+// it goes below both instead.
+//
+// The arithmetic, in the 1P viewport (rect.h 0xd8, PushBuffer.c:9-13):
+//   * the main menu is CENTRED on posY_curr 0x6c (D230.c) with rows of
+//     font_charPixHeight[FONT_BIG] + 3 = 20 px (RECTMENU.c:364), so it grows
+//     symmetrically and its BOTTOM moves with the row count. Seven rows put it
+//     at ~0xba; the scrapbook unlock adds an eighth row
+//     (s_rowsMainMenuWithSBConfig, MM_ConfigMenu.c:28) and pushes it to ~0xc3.
+//     0xc3 is the number to clear -- NOT the 0xba a basic-save screenshot shows.
+//   * the logo art ends at about the same height.
+// 0xCA clears both, and the FONT_SMALL line is 8 px, so it ends at 0xd2 with six
+// rows still inside the viewport.
 #define AP_UPD_TITLE_CENTRE_X 0x100
-#define AP_UPD_TITLE_Y        0xAA
+#define AP_UPD_TITLE_Y        0xCA
 
 // The TITLE surface is one line and carries NO version numbers. The title screen
 // only announces that an update exists; the numbers belong on the Connection

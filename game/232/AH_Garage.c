@@ -304,11 +304,22 @@ LAB_800aec34:
 		char advert[64];
 		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
 
+		// The challenge name above is FONT_BIG drawn from its TOP edge, so the
+		// advert has to start a full FONT_BIG line lower or it lands inside the
+		// title's glyph band (0x14 did exactly that: the title occupies
+		// bottom-0x1e .. bottom-0x0d, the advert started at bottom-0x14). Stack it
+		// the way the engine stacks its own wrapped lines -- advance by
+		// font_charPixHeight of the line above (DecalFont_DrawMultiLineStrlen) --
+		// which is data-driven and stays correct if the region tables differ. The
+		// FONT_SMALL line is 8 px, so it still clears the 1P viewport bottom
+		// (rect.h, 0xd8 NTSC) with room to spare.
+		int advertY = ((view.y + view.h) - 0x1e) + data.font_charPixHeight[FONT_BIG];
+
 		if (sdata->AkuAkuHintState == 0 &&
 		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
 		{
-			DecalFont_DrawLine(advert, ((view.x + view.w) >> 1),
-			                   ((view.y + view.h) - 0x14), FONT_SMALL, 0xffff8000);
+			DecalFont_DrawLine(advert, ((view.x + view.w) >> 1), advertY, FONT_SMALL,
+			                   0xffff8000);
 		}
 	}
 #endif
