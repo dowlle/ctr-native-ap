@@ -154,7 +154,9 @@ if(CTR_AP)
     # pulling in libstdc++. Keep it static to match the -static exe.
     # Winsock (ws2_32) + crypt32 (the Windows system-CA lookup wswrap does on
     # wss:// connections) are Windows-only; standalone-asio needs pthread on Linux
-    # (Linux CA validation comes from the static OpenSSL linked into ap_net).
+    # (Linux CA validation comes from the static OpenSSL linked into ap_net --
+    # note that static OpenSSL also bakes in the BUILD host's OPENSSLDIR, which
+    # is why ap_net.cpp resolves the CA store itself before connecting, #170).
     target_link_libraries(ctr_native ap_net)
     if(WIN32)
         target_link_libraries(ctr_native ws2_32 crypt32)

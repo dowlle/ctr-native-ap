@@ -24,7 +24,14 @@
 #include <unordered_map>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <ctime>
+
+#ifndef _WIN32
+#include <openssl/x509.h> // X509_get_default_cert_file/dir: the compiled-in OPENSSLDIR
+#include <sys/stat.h>
+#include <dirent.h>
+#endif
 
 // ctr-ap.log shim from ap_hooks (resolved at final link). Connection-health
 // events must reach the persistent log, not just stderr: the Steam launch
@@ -146,15 +153,208 @@ static std::string ap_diff_key()
 static bool        g_dl_incoming = false;
 static std::string g_dl_incoming_cause;
 
+// ── TLS trust store (issue #170) ──
+//
+// The shipped client links OpenSSL statically, so the binary carries the
+// OPENSSLDIR of the machine it was BUILT on (Debian convention, /usr/lib/ssl).
+// wswrap's non-Windows branch only calls set_default_verify_paths()
+// (wswrap_websocketpp.hpp:347-351), so on a distribution that keeps its CA store
+// somewhere else the client loads zero trust roots and every wss:// certificate
+// verification fails. Measured in the field on SteamOS/Arch, whose store is at
+// /etc/ssl/cert.pem + /etc/ssl/certs and which has no /usr/lib/ssl at all: no
+// wss connection had ever succeeded from that device, while the same box
+// verified the AP server fine with `openssl s_client`.
+//
+// The fix lives in this wrapper rather than in wswrap because the vendored trees
+// are pinned by sha AND tree hash in ap/vendor/versions.lock and re-checked at
+// configure time (cmake/APVendorCheck.cmake), so a vendor edit fails the build
+// gate. apclientpp already exposes the seam: its certStore constructor argument
+// (apclient.hpp:139-152) is handed to wswrap, which load_verify_file()s it in
+// place of the compiled-in paths (wswrap_websocketpp.hpp:319-322).
+//
+// Precedence, highest first:
+//   1. SSL_CERT_FILE / SSL_CERT_DIR from the environment. Resolves to an empty
+//      store path so OpenSSL's own default-paths handling reads them: an
+//      explicit choice by the player (or by the Steam Deck run scripts, where
+//      this workaround is live today) has to keep winning over anything probed
+//      here.
+//   2. the compiled-in OPENSSLDIR locations, whenever they actually exist.
+//   3. the first readable bundle among the common distribution locations, or
+//      failing that a hashed certs directory via SSL_CERT_DIR.
+#ifndef _WIN32
+static bool ap_tls_file_ok(const char *p)
+{
+	struct stat st;
+	if (!p || !*p)
+		return false;
+	return stat(p, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+}
+
+static bool ap_tls_dir_ok(const char *p)
+{
+	if (!p || !*p)
+		return false;
+	DIR *d = opendir(p);
+	if (!d)
+		return false;
+	bool any = false;
+	for (const struct dirent *e = readdir(d); e; e = readdir(d))
+		if (e->d_name[0] != '.')
+		{
+			any = true;
+			break;
+		}
+	closedir(d);
+	return any;
+}
+
+// Single-file CA bundles, which is what apclientpp's certStore takes. Hashed
+// directories cannot go through that argument and are handled by SSL_CERT_DIR.
+static const char *const AP_TLS_CA_FILES[] = {
+    "/etc/ssl/cert.pem",                  // Arch, SteamOS
+    "/etc/ssl/certs/ca-certificates.crt", // Debian, Ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",   // Fedora, RHEL
+    "/etc/ssl/ca-bundle.pem",             // openSUSE
+    "/etc/pki/tls/cacert.pem",
+    "/etc/ssl/certs/ca-bundle.crt",
+};
+static const char *const AP_TLS_CA_DIRS[] = {
+    "/etc/ssl/certs",
+    "/etc/pki/tls/certs",
+};
+#endif
+
+static std::string g_cert_store;      // passed to APClient; "" = OpenSSL's own defaults
+static std::string g_cert_store_desc; // one line for the log and the failure diagnostic
+static bool        g_cert_store_ok = true; // false once nothing usable was found at all
+static bool        g_cert_store_done = false;
+static bool        g_cert_store_logged = false;
+
+static void ap_tls_resolve_cert_store(void)
+{
+	if (g_cert_store_done)
+		return;
+	g_cert_store_done = true;
+#ifdef _WIN32
+	// wswrap snapshots the Windows ROOT store straight into the OpenSSL context
+	// (wswrap_websocketpp.hpp:325-346), so there is nothing to resolve here and
+	// the store path stays empty exactly as before.
+	g_cert_store_desc = "Windows ROOT store";
+#else
+	const char *envFile = std::getenv("SSL_CERT_FILE");
+	const char *envDir = std::getenv("SSL_CERT_DIR");
+	if ((envFile && *envFile) || (envDir && *envDir))
+	{
+		g_cert_store_desc = "environment (SSL_CERT_FILE=";
+		g_cert_store_desc += (envFile && *envFile) ? envFile : "unset";
+		g_cert_store_desc += ", SSL_CERT_DIR=";
+		g_cert_store_desc += (envDir && *envDir) ? envDir : "unset";
+		g_cert_store_desc += ")";
+		return;
+	}
+
+	const char *defFile = X509_get_default_cert_file();
+	const char *defDir = X509_get_default_cert_dir();
+	const std::string builtIn =
+	    std::string(defFile ? defFile : "?") + " / " + (defDir ? defDir : "?");
+	if (ap_tls_file_ok(defFile) || ap_tls_dir_ok(defDir))
+	{
+		g_cert_store_desc = "built-in " + builtIn;
+		return;
+	}
+
+	for (size_t i = 0; i < sizeof AP_TLS_CA_FILES / sizeof AP_TLS_CA_FILES[0]; i++)
+		if (ap_tls_file_ok(AP_TLS_CA_FILES[i]))
+		{
+			g_cert_store = AP_TLS_CA_FILES[i];
+			g_cert_store_desc = g_cert_store + " (built-in " + builtIn + " missing)";
+			return;
+		}
+
+	for (size_t i = 0; i < sizeof AP_TLS_CA_DIRS / sizeof AP_TLS_CA_DIRS[0]; i++)
+		if (ap_tls_dir_ok(AP_TLS_CA_DIRS[i]))
+		{
+			// No single bundle anywhere, but a hashed directory exists. It cannot
+			// travel through certStore, so hand it to OpenSSL the way OpenSSL
+			// takes directories; set_default_verify_paths reads this at handshake
+			// time. Only reachable when the player set neither variable, so this
+			// never overwrites an explicit choice.
+			setenv("SSL_CERT_DIR", AP_TLS_CA_DIRS[i], 1);
+			g_cert_store_desc = std::string("SSL_CERT_DIR=") + AP_TLS_CA_DIRS[i] +
+			                    " (built-in " + builtIn + " missing)";
+			return;
+		}
+
+	g_cert_store_ok = false;
+	g_cert_store_desc = "none found (built-in " + builtIn + " missing)";
+#endif
+}
+
+// One line per process, and only when a TLS target is actually dialled: a
+// bare ws:// room has no use for it. Says which store the client settled on, so
+// a field log answers "was this a certificate problem?" without a repro.
+static void ap_tls_log_cert_store(void)
+{
+	if (g_cert_store_logged)
+		return;
+	g_cert_store_logged = true;
+	char line[512];
+	if (g_cert_store_ok)
+		std::snprintf(line, sizeof line, "[AP NET] TLS trust store: %s\n",
+		              g_cert_store_desc.c_str());
+	else
+		std::snprintf(line, sizeof line,
+		              "[AP NET] TLS trust store empty: %s, and no CA bundle exists at "
+		              "any known distribution path -- wss:// certificate verification "
+		              "will fail until SSL_CERT_FILE names a CA bundle\n",
+		              g_cert_store_desc.c_str());
+	std::fprintf(stderr, "%s", line);
+	AP_LogLine(line);
+}
+
+// True when the target is, or will become, wss://. apclientpp upgrades a
+// scheme-less uri to wss:// (apclient.hpp:164-179; AP_PREFER_UNENCRYPTED is not
+// defined in this build), so a bare "host:port" is a TLS target too.
+static bool ap_net_uri_is_secure(const std::string &uri)
+{
+	if (uri.rfind("wss://", 0) == 0)
+		return true;
+	if (uri.rfind("ws://", 0) == 0)
+		return false;
+	return !uri.empty() && uri.find("://") == std::string::npos;
+}
+
+// websocketpp reports a failed handshake as "TLS handshake failed"; OpenSSL's
+// own detail ("certificate verify failed") reaches the same string on other
+// paths. Substring matching keeps this independent of the transport's wording.
+static bool ap_net_error_is_tls(const std::string &m)
+{
+	return m.find("TLS") != std::string::npos || m.find("tls") != std::string::npos ||
+	       m.find("SSL") != std::string::npos || m.find("ssl") != std::string::npos ||
+	       m.find("certificate") != std::string::npos ||
+	       m.find("handshake") != std::string::npos;
+}
+
+static bool g_uri_secure = false;      // this client dials a TLS target
+static bool g_tls_diag_logged = false; // the TLS verdict below is logged once per client
+
 extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
 	if (g_ap)
 		return 0;
+	// Resolve the trust store before the client exists: apclientpp takes it as a
+	// constructor argument and hands it to every socket it later builds (#170).
+	ap_tls_resolve_cert_store();
+	g_uri_secure = ap_net_uri_is_secure(uri ? uri : "");
+	g_tls_diag_logged = false;
+	if (g_uri_secure)
+		ap_tls_log_cert_store();
 	try
 	{
 		g_ap = new APClient(uuid ? uuid : "ctr-native",
 		                    game ? game : "Crash Team Racing",
-		                    uri ? uri : "ws://localhost:38281");
+		                    uri ? uri : "ws://localhost:38281",
+		                    g_cert_store);
 	}
 	catch (...)
 	{
@@ -192,6 +392,22 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		              msg.empty() ? "unknown error" : msg.c_str());
 		std::fprintf(stderr, "%s", line);
 		AP_LogLine(line);
+		// #170: an unreachable host and a dead trust store used to produce the
+		// same "connect attempt failed" line, so a field log could not tell a
+		// certificate problem from a network problem -- which is how a Linux
+		// client that had never once completed a wss handshake read as a flaky
+		// server. Name it once per client; the retry loop repeats the same
+		// message every 15s and this must not flood the log.
+		if (g_uri_secure && !g_tls_diag_logged && ap_net_error_is_tls(msg))
+		{
+			g_tls_diag_logged = true;
+			std::snprintf(line, sizeof line,
+			              "[AP NET] TLS trust store empty/verification failed: %s "
+			              "(trust store: %s)\n",
+			              msg.c_str(), g_cert_store_desc.c_str());
+			std::fprintf(stderr, "%s", line);
+			AP_LogLine(line);
+		}
 		// Past the threshold, say what cannot be reached instead of sitting on
 		// "Connecting..." forever. Retrying is unchanged; only the message moves.
 		if (g_status == AP_NET_STATUS_ERROR || g_status == AP_NET_STATUS_CONNECTED)
@@ -795,4 +1011,5 @@ extern "C" void ap_net_shutdown(void)
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone
 	g_socket_fails = 0;
+	g_uri_secure = false;
 }
