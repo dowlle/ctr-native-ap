@@ -29,7 +29,7 @@
 
 #ifndef _WIN32
 #include <openssl/x509.h> // X509_get_default_cert_file/dir: the compiled-in OPENSSLDIR
-#include <sys/stat.h>
+#include <unistd.h>       // access(): the overflow-free existence test, see below
 #include <dirent.h>
 #endif
 
@@ -182,30 +182,53 @@ static std::string g_dl_incoming_cause;
 //   3. the first readable bundle among the common distribution locations, or
 //      failing that a hashed certs directory via SSL_CERT_DIR.
 #ifndef _WIN32
+// Neither helper below may touch a 32-bit stat or dirent struct, and that is
+// the whole point of how they are written.
+//
+// The client ships as a 32-bit binary built without large-file support, so
+// sizeof(ino_t) is 4. SteamOS keeps /etc on overlayfs, which synthesises inode
+// numbers around 2^63. glibc's legacy stat() and readdir() cannot represent
+// those and fail with EOVERFLOW, which the obvious implementation reads as
+// "file does not exist" and "directory is empty". Measured on the device:
+// stat("/etc/ssl/cert.pem") and lstat() both return -1 EOVERFLOW, readdir() on
+// the 441-entry /etc/ssl/certs returns NULL EOVERFLOW, and access() and fopen()
+// on those very same paths succeed. That is why the first version of this probe
+// reported "none found" on a machine whose CA store was present and readable
+// the whole time, while pointing SSL_CERT_FILE at the same path worked by hand.
+// It is not about the path being a symlink: lstat fails there too, and so does
+// the fully resolved target.
 static bool ap_tls_file_ok(const char *p)
 {
-	struct stat st;
 	if (!p || !*p)
 		return false;
-	return stat(p, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+	if (access(p, R_OK) != 0)
+		return false;
+	// Readable is not enough on its own: a directory also passes access(R_OK),
+	// and an empty bundle is useless. One byte through stdio settles both, since
+	// reading a directory fails with EISDIR and so yields EOF immediately.
+	FILE *f = std::fopen(p, "rb");
+	if (!f)
+		return false;
+	const bool has_content = std::fgetc(f) != EOF;
+	std::fclose(f);
+	return has_content;
 }
 
 static bool ap_tls_dir_ok(const char *p)
 {
 	if (!p || !*p)
 		return false;
+	if (access(p, R_OK | X_OK) != 0)
+		return false;
+	// opendir() cannot overflow because it fills no dirent; readdir() can, and
+	// on the device it does. The previous "is it populated" test is deliberately
+	// gone: it was the call that failed, and OpenSSL copes with an empty hash
+	// directory anyway.
 	DIR *d = opendir(p);
 	if (!d)
 		return false;
-	bool any = false;
-	for (const struct dirent *e = readdir(d); e; e = readdir(d))
-		if (e->d_name[0] != '.')
-		{
-			any = true;
-			break;
-		}
 	closedir(d);
-	return any;
+	return true;
 }
 
 // Single-file CA bundles, which is what apclientpp's certStore takes. Hashed
@@ -286,7 +309,15 @@ static void ap_tls_resolve_cert_store(void)
 		}
 
 	g_cert_store_ok = false;
-	g_cert_store_desc = "none found (built-in " + builtIn + " missing)";
+	// Name what was probed, not just that it failed. The first field failure of
+	// this resolver looked identical to "this machine has no CA store" when the
+	// truth was that the probe could not see one that was there.
+	g_cert_store_desc =
+	    "none found (built-in " + builtIn + " missing; probed " +
+	    std::to_string(sizeof AP_TLS_CA_FILES / sizeof AP_TLS_CA_FILES[0]) +
+	    " bundle paths and " +
+	    std::to_string(sizeof AP_TLS_CA_DIRS / sizeof AP_TLS_CA_DIRS[0]) +
+	    " certs directories)";
 #endif
 }
 
