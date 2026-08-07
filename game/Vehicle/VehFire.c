@@ -83,6 +83,18 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 	struct Instance *turboInst2;
 
 	struct GameTracker *gGT = sdata->gGT;
+
+#ifdef CTR_AP
+	// Test Lab boost tier, local player only. This function is the single choke
+	// point every boost in the game passes through -- pads, powerslides, hang
+	// time, the rev boost, the Turbo pickup, the Super Engine -- so filtering it
+	// here covers the whole chain in one place. It runs before anything else in
+	// the function so a suppressed grant also leaves no fire, no audio and no
+	// entry in the ghost tape, exactly as if the boost had never been earned.
+	if (!AP_TestLab_FireGrant(driver, &reserves, type, &fireLevel))
+		return;
+#endif
+
 	if (
 	    // if this is a turbo pad
 	    ((type & 4) != 0) &&

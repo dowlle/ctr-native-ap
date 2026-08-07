@@ -10,6 +10,7 @@
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
+#include "../ap/ap_testlab.h" // capability test harness (declares the engine hooks)
 #endif
 
 #include "226/R226.c"
@@ -346,6 +347,7 @@
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
+#include "../ap/ap_testlab.c"
 #endif
 
 #endif

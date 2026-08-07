@@ -29,6 +29,11 @@ NativeConfig g_config = {
 	"",    // password
 	true,  // updateCheck (default on: the pair-version notice is informational)
 	"",    // updateLastSeen (empty = the title notice has never been shown)
+	// Test Lab defaults are vanilla behaviour: no hook does anything until a row
+	// is moved off these values.
+	0,     // testLabBoost (AP_TESTLAB_BOOST_VANILLA = boost system off)
+	true,  // testLabGas (throttle works)
+	0,     // testLabStats (the character's own stats)
 #endif
 };
 
@@ -60,6 +65,14 @@ const ConfigEntry g_configEntries[] = {
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
+	// Test Lab section (see ap/ap_testlab.h): the capability harness for filling
+	// the completability matrix. Plain rows on the generic section renderer -- two
+	// CFG_ENUM ladders and one CFG_BOOL, all defined in MM_ConfigMenu.c. These are
+	// local settings that never touch the AP connection, so the section works with
+	// no server and is grouped away from the Archipelago rows to say so.
+	{"Test Lab",    "boost_tier",               "Boost Tier",                   CFG_ENUM, &g_config.testLabBoost},
+	{"Test Lab",    "gas_pedal",                "Gas Pedal",                    CFG_BOOL, &g_config.testLabGas},
+	{"Test Lab",    "stats",                    "Kart Stats",                   CFG_ENUM, &g_config.testLabStats},
 	// State section: config-file-only, exactly like [Audio] above -- gated out of
 	// BuildSectionMap (game/230/MM_ConfigMenu.c) so it is never a menu section.
 	// This is remembered state, not an option, and the generic section renderer

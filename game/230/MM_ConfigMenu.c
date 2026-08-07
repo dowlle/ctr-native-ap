@@ -160,6 +160,45 @@ static int Dlink_Index(int value)
 			return i;
 	return 0; // out-of-range persisted value renders and steps as SEED
 }
+
+// Capability Test Lab ladders (CFG_ENUM). Both are index-keyed -- the stored
+// value IS the ladder index, matching the AP_TESTLAB_* enums in ap/ap_testlab.h,
+// so a row can gain a tier by appending a name here and there.
+//
+// The boost ladder stops at USF on purpose. The chain's design adds an optional
+// blue-fire capstone above it whose values come from CTR Unlimited's Retro
+// Fueled mode; those values have not been sourced, so the tier is left OUT
+// rather than shipped with guessed numbers. It appends as index 4 when they are.
+static const char *s_tlBoostNames[] = {"VANILLA", "NONE", "BOOST", "USF"};
+#define TL_BOOST_COUNT ((int)(sizeof(s_tlBoostNames) / sizeof(s_tlBoostNames[0])))
+
+static const char *s_tlStatsNames[] = {"VANILLA", "FLOOR"};
+#define TL_STATS_COUNT ((int)(sizeof(s_tlStatsNames) / sizeof(s_tlStatsNames[0])))
+
+// The stored value is the ladder index, so a name table that has drifted out of
+// step with ap/ap_testlab.h would silently mislabel every tier below the gap.
+CTR_STATIC_ASSERT(TL_BOOST_COUNT == AP_TESTLAB_BOOST_COUNT);
+CTR_STATIC_ASSERT(TL_STATS_COUNT == AP_TESTLAB_STATS_COUNT);
+
+// Clamped index for an index-keyed ladder: a persisted value from outside the
+// current build's ladder renders and steps as the first (vanilla) entry rather
+// than reading off the end of the name table.
+static int TestLab_Index(int value, int count)
+{
+	if (value < 0 || value >= count)
+		return 0;
+	return value;
+}
+
+static void TestLab_Step(int *value, int dir, int count)
+{
+	int i = TestLab_Index(*value, count) + dir;
+	if (i < 0)
+		i = 0;
+	if (i > count - 1)
+		i = count - 1;
+	*value = i;
+}
 #endif
 
 // CFG_ENUM dispatch: each enum entry owns a ladder; picked by the field the
@@ -169,6 +208,10 @@ static const char *Enum_Label(const ConfigEntry *e)
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.testLabBoost)
+		return s_tlBoostNames[TestLab_Index(*(int *)e->valuePtr, TL_BOOST_COUNT)];
+	if (e->valuePtr == &g_config.testLabStats)
+		return s_tlStatsNames[TestLab_Index(*(int *)e->valuePtr, TL_STATS_COUNT)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -184,6 +227,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > DLINK_COUNT - 1)
 			i = DLINK_COUNT - 1;
 		*(int *)e->valuePtr = s_dlinkValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.testLabBoost)
+	{
+		TestLab_Step((int *)e->valuePtr, dir, TL_BOOST_COUNT);
+		return;
+	}
+	if (e->valuePtr == &g_config.testLabStats)
+	{
+		TestLab_Step((int *)e->valuePtr, dir, TL_STATS_COUNT);
 		return;
 	}
 #endif

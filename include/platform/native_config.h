@@ -57,6 +57,21 @@ typedef struct
 	// section menu, and it is state rather than an option. Empty = never shown.
 	bool updateCheck;
 	char updateLastSeen[32];
+	// Capability Test Lab (see ap/ap_testlab.h): a local test harness for filling
+	// the completability matrix by driving. LOCAL ONLY -- the physics hooks read
+	// these fields directly, never slot_data or the received-item counters, so
+	// the toggles work offline in arcade / time trial with no server. Every one
+	// of them is a no-op at the defaults below, which are vanilla behaviour.
+	int  testLabBoost;      // boost tier, an index into the AP_TESTLAB_BOOST_*
+	                        // ladder (0 = vanilla / system off, 1 = none, 2 =
+	                        // boost, 3 = USF). No blue-fire tier: its values come
+	                        // from CTR Unlimited and have not been sourced.
+	bool testLabGas;        // true = throttle works (vanilla); false = the gas
+	                        // button is dead for the local player. Reverse and
+	                        // the reserves auto-throttle are unaffected.
+	int  testLabStats;      // kart stats: 0 = the character's own (vanilla), 1 =
+	                        // pinned to the engine's minimum preset. An int, not
+	                        // a bool, because CFG_ENUM stores through an int *.
 #endif
 } NativeConfig;
 

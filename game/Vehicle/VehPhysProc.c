@@ -465,6 +465,15 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 #ifdef CTR_AP
 	// USF-no-brake trap: suppress braking + force throttle for the local player.
 	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
+	// Test Lab gas-pedal gate, local player only. Runs AFTER the trap so a
+	// deliberate bench configuration wins over a received effect: with the row set
+	// to OFF the pedal is off, full stop. Cross only -- the sticks are left alone
+	// so reverse still works, and the reserves auto-throttle below still overrides
+	// cross by itself whenever reserves are banked.
+	AP_TestLab_DriveInput(driver, &buttonsHeld, &cross);
+	// Test Lab stat floor, applied before anything in this function reads the stat
+	// constants (VehPhysGeneral_GetBaseSpeed below is the first consumer).
+	AP_TestLab_Stats(driver);
 #endif
 
 	// state of kart
