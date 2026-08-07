@@ -568,6 +568,14 @@ void VehBirth_SetConsts(struct Driver *driver)
 		}
 	}
 
+#ifdef CTR_AP
+	// Test Lab: capture the stats the loop above just wrote. This is the only
+	// place the engine ever writes them, so it is the only place a trustworthy
+	// base can be taken -- and taking it at every birth means a character change
+	// is picked up rather than restored over.
+	AP_TestLab_SnapshotStats(driver);
+#endif
+
 	return;
 }
 

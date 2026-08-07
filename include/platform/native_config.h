@@ -69,9 +69,23 @@ typedef struct
 	bool testLabGas;        // true = throttle works (vanilla); false = the gas
 	                        // button is dead for the local player. Reverse and
 	                        // the reserves auto-throttle are unaffected.
-	int  testLabStats;      // kart stats: 0 = the character's own (vanilla), 1 =
-	                        // pinned to the engine's minimum preset. An int, not
-	                        // a bool, because CFG_ENUM stores through an int *.
+	int  testLabStats;      // kart stat mode: 0 = the character's own (vanilla),
+	                        // 1 = pinned to the engine's minimum preset, 2 = the
+	                        // six custom values below. An int, not a bool,
+	                        // because CFG_ENUM stores through an int *.
+	// Custom kart stats, read only while testLabStats is 2. Each is an ABSOLUTE
+	// override of one driver constant in the engine's own units, so these numbers
+	// are directly comparable to the per-class values in data.metaPhys
+	// (game/zGlobal_DATA.c:7176-7209). Defaults are the BALANCED class's values --
+	// Crash's kart -- so Custom starts from a familiar baseline rather than a
+	// floor. Ranges and the full per-class tables are documented at the entry rows
+	// in platform/native_config.c; they are applied in ap/ap_testlab.c.
+	int  testLabTopSpeed;     // const_Speed_ClassStat
+	int  testLabBoostSpeed;   // const_AccelSpeed_ClassStat
+	int  testLabAccel;        // const_Accel_ClassStat
+	int  testLabTurnRate;     // const_TurnRate
+	int  testLabDriftTurn;    // const_DriftTurnBase
+	int  testLabTurnResponse; // const_TurnInputDelay
 #endif
 } NativeConfig;
 
@@ -80,8 +94,13 @@ typedef enum
 	CFG_BOOL,
 	CFG_INT,
 	CFG_STRING,
-	CFG_ENUM   // int value chosen from a fixed ladder; rendered as a name, stepped
+	CFG_ENUM,  // int value chosen from a fixed ladder; rendered as a name, stepped
 	           // left/right (see the AI-difficulty ladder in game/230/MM_ConfigMenu.c).
+	           // Persists as its raw int value, same as CFG_INT.
+	CFG_NUM    // int value stepped like CFG_INT (held left/right, min/max/step) but
+	           // rendered as a bare number instead of CFG_INT's "%d%%". CFG_INT's
+	           // percent rendering suits the volume sliders it was written for; a
+	           // kart stat in engine units is not a percentage of anything.
 	           // Persists as its raw int value, same as CFG_INT.
 } ConfigType;
 

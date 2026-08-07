@@ -34,6 +34,14 @@ NativeConfig g_config = {
 	0,     // testLabBoost (AP_TESTLAB_BOOST_VANILLA = boost system off)
 	true,  // testLabGas (throttle works)
 	0,     // testLabStats (the character's own stats)
+	// Custom stat defaults are the BALANCED class column, i.e. Crash's kart --
+	// a familiar baseline to tune away from. Unused unless testLabStats is 2.
+	13140, // testLabTopSpeed
+	14640, // testLabBoostSpeed
+	480,   // testLabAccel
+	28,    // testLabTurnRate
+	14,    // testLabDriftTurn
+	5000,  // testLabTurnResponse
 #endif
 };
 
@@ -66,13 +74,33 @@ const ConfigEntry g_configEntries[] = {
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
 	// Test Lab section (see ap/ap_testlab.h): the capability harness for filling
-	// the completability matrix. Plain rows on the generic section renderer -- two
-	// CFG_ENUM ladders and one CFG_BOOL, all defined in MM_ConfigMenu.c. These are
+	// the completability matrix. Plain rows on the generic section renderer --
+	// CFG_ENUM ladders, one CFG_BOOL, and the CFG_NUM stat rows below. These are
 	// local settings that never touch the AP connection, so the section works with
 	// no server and is grouped away from the Archipelago rows to say so.
 	{"Test Lab",    "boost_tier",               "Boost Tier",                   CFG_ENUM, &g_config.testLabBoost},
 	{"Test Lab",    "gas_pedal",                "Gas Pedal",                    CFG_BOOL, &g_config.testLabGas},
 	{"Test Lab",    "stats",                    "Kart Stats",                   CFG_ENUM, &g_config.testLabStats},
+	// Custom stat rows, live only while Kart Stats is CUSTOM. Each range runs from
+	// the LOWEST value any engine class has for that stat -- which is exactly what
+	// FLOOR mode applies, so the bottom of every slider is the settled bottom tier
+	// of the stat chain -- up to headroom above the highest, since the chain design
+	// climbs past the best vanilla character. The four numbers in each comment are
+	// the engine's own per-class values in BALANCED / ACCEL / SPEED / TURN order
+	// (game/zGlobal_DATA.c), so a slider position can be read against real karts;
+	// CROSS on a row cycles straight through those four.
+	//
+	// Deliberately absent: three of the nine class-varying stats -- TURN_DECREASE_RATE
+	// (4080 9080 5666 7252), PRE_TURBO (1000 750 500 1250) and COLLISION_WEIGHT
+	// (256 256 300 200). Their class values do not order with kart quality, so
+	// "higher" and "lower" have no defensible meaning for them, and a guessed
+	// direction has no place in a measurement instrument.
+	{"Test Lab",    "stat_top_speed",           "Top Speed",                    CFG_NUM,  &g_config.testLabTopSpeed,     12950, 15400, 50},  // 13140 13520 13900 12950
+	{"Test Lab",    "stat_boost_speed",         "Boosted Top Speed",            CFG_NUM,  &g_config.testLabBoostSpeed,   14450, 17000, 50},  // 14640 15020 15400 14450
+	{"Test Lab",    "stat_accel",               "Acceleration",                 CFG_NUM,  &g_config.testLabAccel,        448,   700,   4},   // 480   544   448   512
+	{"Test Lab",    "stat_turn_rate",           "Turn Rate",                    CFG_NUM,  &g_config.testLabTurnRate,     24,    40,    1},   // 28    26    24    30
+	{"Test Lab",    "stat_drift_turn",          "Drift Turn",                   CFG_NUM,  &g_config.testLabDriftTurn,    5,     30,    1},   // 14    10    5     18
+	{"Test Lab",    "stat_turn_response",       "Turn Response",                CFG_NUM,  &g_config.testLabTurnResponse, 4000,  8000,  100}, // 5000  4500  4000  5500
 	// State section: config-file-only, exactly like [Audio] above -- gated out of
 	// BuildSectionMap (game/230/MM_ConfigMenu.c) so it is never a menu section.
 	// This is remembered state, not an option, and the generic section renderer

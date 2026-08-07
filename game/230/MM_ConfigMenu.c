@@ -81,6 +81,32 @@ struct RectMenu g_configMenu = {
 	.funcPtr = MM_MenuProc_Config,
 };
 
+#ifdef CTR_AP
+// Open the config menu straight on the Test Lab section. Used by the in-race
+// pause menu (game/MAIN/MainFreeze.c): mid-race the point is always to change a
+// capability and get back to driving, so landing on the section selector would be
+// two extra presses every time. Falls back to the selector if the section is
+// somehow absent, rather than indexing a section that is not there.
+void MM_ConfigMenu_OpenAtTestLab(void)
+{
+	if (s_numSections == 0)
+		BuildSectionMap();
+
+	s_currentSection = -1;
+	for (int i = 0; i < s_numSections; i++)
+	{
+		if (strcmp(g_configEntries[s_sectionToEntry[i]].section, "Test Lab") == 0)
+		{
+			s_currentSection = i;
+			break;
+		}
+	}
+
+	g_configMenu.rowSelected = 0;
+	sdata->ptrDesiredMenu = &g_configMenu;
+}
+#endif
+
 static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSelected,
                               const int localRow, int *value, const int min, const int max, const int step)
 {
@@ -172,8 +198,61 @@ static int Dlink_Index(int value)
 static const char *s_tlBoostNames[] = {"VANILLA", "NONE", "BOOST", "USF"};
 #define TL_BOOST_COUNT ((int)(sizeof(s_tlBoostNames) / sizeof(s_tlBoostNames[0])))
 
-static const char *s_tlStatsNames[] = {"VANILLA", "FLOOR"};
+static const char *s_tlStatsNames[] = {"VANILLA", "FLOOR", "CUSTOM"};
 #define TL_STATS_COUNT ((int)(sizeof(s_tlStatsNames) / sizeof(s_tlStatsNames[0])))
+
+// The engine's own per-class value for each custom stat row, in the metaPhys
+// column order BALANCED / ACCEL / SPEED / TURN (game/zGlobal_DATA.c:7176-7209).
+// CROSS on a stat row steps through these, so a slider can be parked on a real
+// kart's number instead of a made-up one -- the fastest way to answer "what does
+// this number mean" while filling matrix cells. Rows are matched by the field
+// they edit, the same pointer-identity dispatch the enum ladders use.
+typedef struct
+{
+	const int *field;   // &g_config.<stat>, compared against ConfigEntry.valuePtr
+	int classValue[4];
+} TestLabStatClasses;
+
+static const TestLabStatClasses s_tlStatClasses[] = {
+	{&g_config.testLabTopSpeed,     {13140, 13520, 13900, 12950}},
+	{&g_config.testLabBoostSpeed,   {14640, 15020, 15400, 14450}},
+	{&g_config.testLabAccel,        {480,   544,   448,   512}},
+	{&g_config.testLabTurnRate,     {28,    26,    24,    30}},
+	{&g_config.testLabDriftTurn,    {14,    10,    5,     18}},
+	{&g_config.testLabTurnResponse, {5000,  4500,  4000,  5500}},
+};
+#define TL_STAT_CLASS_ROWS ((int)(sizeof(s_tlStatClasses) / sizeof(s_tlStatClasses[0])))
+
+// Move a stat row onto the next vanilla class value above its current setting,
+// wrapping back to the lowest. Works from any slider position, including ones
+// that sit between two class values.
+static void TestLab_CycleClassValue(const ConfigEntry *e)
+{
+	for (int i = 0; i < TL_STAT_CLASS_ROWS; i++)
+	{
+		if ((const void *)e->valuePtr != (const void *)s_tlStatClasses[i].field)
+			continue;
+
+		const int *v = s_tlStatClasses[i].classValue;
+		const int cur = *(int *)e->valuePtr;
+
+		int best = v[0];
+		int lowest = v[0];
+		int found = 0;
+		for (int j = 0; j < 4; j++)
+		{
+			if (v[j] < lowest)
+				lowest = v[j];
+			if (v[j] > cur && (!found || v[j] < best))
+			{
+				best = v[j];
+				found = 1;
+			}
+		}
+		*(int *)e->valuePtr = found ? best : lowest;
+		return;
+	}
+}
 
 // The stored value is the ladder index, so a name table that has drifted out of
 // step with ap/ap_testlab.h would silently mislabel every tier below the gap.
@@ -254,6 +333,12 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	{
 		DecalFont_DrawLineOT((char *)Enum_Label(e),
 			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+	}
+	else if (e->type == CFG_NUM)
+	{
+		// Bare number: a kart stat in engine units is not a percentage.
+		sprintf(buf, "%d", *(int *)e->valuePtr);
+		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else
 	{
@@ -507,6 +592,24 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if (s_numSections == 0)
 		BuildSectionMap();
 
+#ifdef CTR_AP
+	// Mid-race context. This proc runs from two places now: the main menu, and the
+	// pause menu during a race (see MainFreeze_MenuPtrDefault). The two differ in
+	// two ways that have to be handled here rather than at the entry points,
+	// because the menu struct is a single global shared by both.
+	//
+	// Bit 0x800 tells RECTMENU_ProcessState to leave the race-flag / renderFlags
+	// alone (game/RECTMENU.c:978-986). Every pause-context menu sets it; the
+	// front-end menus deliberately do not. Since funcPtr runs before that check in
+	// the same frame, setting it here lands immediately, and re-deriving it every
+	// frame means the flag can never be left stale in the wrong context.
+	const int inRace = (gGT->gameMode1 & PAUSE_ALL) != 0;
+	if (inRace)
+		g_configMenu.state |= 0x800;
+	else
+		g_configMenu.state &= ~0x800;
+#endif
+
 	// Back / exit -- but not while a text-entry session owns the keyboard (there
 	// Escape is the cancel key, handled in the platform layer). NativeText_Active
 	// is always 0 outside an edit, so this is a no-op change for the toggle sections.
@@ -525,8 +628,26 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			// Persist the AI-difficulty value to the per-slot data-storage override
 			// (no-op if not connected), alongside the config.ini write above.
 			AP_AiDifficultyCommit();
-#endif
+			if (inRace)
+			{
+				// Back to the pause menu, not the main menu. D230 is reset whenever
+				// the threads overlay changes (OVR230_ResetRuntimeState, game/230/
+				// D233 sibling D230.c:861-878), so &D230.menuMainMenu is not a valid
+				// target mid-race. MainFreeze_GetMenuPtr picks the right pause menu
+				// for the current mode, exactly as the in-race audio options screen
+				// does on exit (game/MAIN/MainFreeze.c:798). ClearInput stops this
+				// same TRIANGLE/START tap being re-read by the pause menu, which
+				// reads sdata->AnyPlayerTap rather than the pad directly.
+				RECTMENU_ClearInput();
+				sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+			}
+			else
+			{
+				sdata->ptrDesiredMenu = &D230.menuMainMenu;
+			}
+#else
 			sdata->ptrDesiredMenu = &D230.menuMainMenu;
+#endif
 		}
 	}
 
@@ -563,6 +684,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
 			if (e->type == CFG_BOOL)
 				*(bool *)e->valuePtr ^= 1;
+#ifdef CTR_AP
+			// Numeric rows: jump to the next vanilla engine-class value instead of
+			// holding left/right across the whole range to reach one.
+			else if (e->type == CFG_NUM)
+				TestLab_CycleClassValue(e);
+#endif
 		}
 
 		// enum entries: tap left/right to step through the preset ladder
@@ -583,11 +710,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 
-		// slider update for int entries
+		// slider update for numeric entries (CFG_INT percentages and CFG_NUM
+		// engine-unit values step identically; only the rendering differs)
 		for (int j = 0; j < numRows; j++)
 		{
 			const ConfigEntry *e = &g_configEntries[firstEntry + j];
-			if (e->type == CFG_INT)
+			if (e->type == CFG_INT || e->type == CFG_NUM)
 				Config_UpdateSlider(pad, menu->rowSelected, j, (int *)e->valuePtr, e->min, e->max, e->step);
 		}
 
@@ -613,7 +741,19 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 			}
 		}
+
 #ifdef CTR_AP
+		// Footer hint, only while a numeric row is selected: CROSS is otherwise a
+		// no-op on those rows, so its extra job needs saying. '*' is the font's own
+		// PSX cross glyph (see game/DecalFont.c), the same convention the
+		// connection manager's footer uses. Drawn one row below the last one, so a
+		// nine-row section still lands inside the panel.
+		{
+			const ConfigEntry *sel = &g_configEntries[firstEntry + menu->rowSelected];
+			if (sel->type == CFG_NUM)
+				DecalFont_DrawLineOT("* = NEXT VANILLA CLASS VALUE",
+					0x100, startY + (numRows + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		}
 		} // end generic (non-Connection) section
 #endif
 	}

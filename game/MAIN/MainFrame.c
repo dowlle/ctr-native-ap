@@ -1,5 +1,11 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Capability Test Lab config menu, openable over a paused race (see the SELECT
+// handler in game/MAIN/MainFreeze.c). Same local-extern idiom as MM_MenuFlow.c:7.
+extern struct RectMenu g_configMenu;
+#endif
+
 #if defined(CTR_NATIVE)
 static void MainFrame_RegisterGpuLinkRanges(struct GameTracker *gGT)
 {
@@ -397,6 +403,13 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			if (gGT->cooldownfromPauseUntilUnpause == 0)
 			{
 				if (((sdata->ptrActiveMenu != &data.menuRacingWheelConfig) && (sdata->ptrActiveMenu != &D232.menuHintMenu) // in 232
+#ifdef CTR_AP
+				     // Same exclusion for the Test Lab config menu opened over a
+				     // paused race: while it owns the screen START is its own back
+				     // button (game/230/MM_ConfigMenu.c) and must not unpause
+				     // underneath it.
+				     && (sdata->ptrActiveMenu != &g_configMenu)
+#endif
 				     ) &&
 				    ((sdata->AnyPlayerTap & BTN_START) != 0))
 				{

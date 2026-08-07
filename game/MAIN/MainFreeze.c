@@ -1,5 +1,14 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Capability Test Lab, opened from the pause menu (see the SELECT handler in
+// MainFreeze_MenuPtrDefault). Declared here rather than in a header for the same
+// reason MM_MenuFlow.c:7 does it: the config menu lives in game/230/ and is
+// pulled into the unity build after this file.
+extern struct RectMenu g_configMenu;
+void MM_ConfigMenu_OpenAtTestLab(void);
+#endif
+
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800379f4-0x80037bc0.
 void MainFreeze_ConfigDrawNPC105(s16 startX, s16 startY, s16 radius, int angleStep, s16 angle, char *color, uint32_t *otMem, struct PrimMem *primMem)
@@ -898,6 +907,44 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		{
 			menu->drawStyle |= 0x100;
 		}
+
+#ifdef CTR_AP
+		// SELECT opens the Capability Test Lab over the paused race, so a boost
+		// tier / gas pedal / kart stat can be changed and the same run resumed --
+		// which is the whole point of the harness (pair it with the F5/F8 quick
+		// save states in platform/native_savestate.c to retry one corner under
+		// several configurations). All three toggles apply live, so resuming after
+		// a change needs no restart.
+		//
+		// SELECT rather than a menu row: menu rows draw their label through
+		// sdata->lngStrings (game/RECTMENU.c:632) and the LNG table has no string
+		// for this and no extension mechanism, so a row would have to borrow an
+		// unrelated word. A button plus the hint line below says what it does in
+		// plain text. SELECT is mapped (include/namespace_Gamepad.h:48) and read by
+		// nothing else in the game.
+		//
+		// Read from sdata->AnyPlayerTap, the same source the pause menu itself
+		// uses, so RECTMENU_ClearInput on the way back suppresses the echo. The
+		// cooldown guard above has already returned for the first 5 frames after
+		// pausing, so the START press that paused cannot reach this. NEEDS_TO_CLOSE
+		// means the race is already unpausing, and opening a menu over that would
+		// leave the config panel up on a running race.
+		if ((sdata->AnyPlayerTap & BTN_SELECT) != 0 && (menu->state & NEEDS_TO_CLOSE) == 0)
+		{
+			OtherFX_Play(1, 1);
+			RECTMENU_ClearInput();
+			MM_ConfigMenu_OpenAtTestLab();
+			return;
+		}
+
+		// Hint line. Centred near the bottom of the screen, below the pause box --
+		// the in-race options panel ends at y 155 (see the menuBG rect in
+		// DISPLAYRECTMENU_MainFreeze_MenuPtrOptions), so 196 is clear of any pause
+		// menu and still inside the drawable area the config panel uses (its
+		// background ends at 210).
+		DecalFont_DrawLineOT("SELECT: TEST LAB", 0x100, 196, FONT_SMALL,
+			JUSTIFY_CENTER | WHITE, gGT->backBuffer->otMem.uiOT);
+#endif
 
 		if (((gameMode & ADVENTURE_ARENA) == 0) || (menu->state & NEEDS_TO_CLOSE))
 		{

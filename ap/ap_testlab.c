@@ -120,41 +120,121 @@ void AP_TestLab_DriveInput(struct Driver *driver, uint32_t *buttonsHeld, uint32_
 // so the floor is a per-stat minimum across classes, which is strictly at or
 // below every character and is exactly "all stats at the lowest level".
 //
-// Only the fields where "lowest" is unambiguous are floored: the three axes #13
-// names (top speed, acceleration, handling). The other class-varying rows
-// (TURN_DECREASE_RATE, TURN_INPUT_DELAY, PRE_TURBO, COLLISION_WEIGHT) are left
-// at the character's own values because a smaller number is not obviously a
-// worse kart for any of them, and guessing a direction would put an invented
-// value into a measurement instrument.
+// Six stats are covered, spanning the three axes #13 names (top speed,
+// acceleration, handling). Turn Response is const_TurnInputDelay, whose name is
+// misleading: it is not a delay but the per-frame RATE at which the kart's
+// rotation converges on the steering target -- it is added to or subtracted from
+// rotationSpinRate each frame at game/Vehicle/VehPhysGeneral.c:78, 95 and 108.
+// Higher is snappier, which the class table confirms (TURN class highest, SPEED
+// class lowest, matching how those classes handle). That direction is read off
+// the code, not off the field's name.
+//
+// Three class-varying stats are deliberately NOT covered: TURN_DECREASE_RATE
+// (4080 9080 5666 7252), PRE_TURBO (1000 750 500 1250) and COLLISION_WEIGHT
+// (256 256 300 200). Their class values do not order with kart quality, so
+// "lowest" has no defensible meaning for them and guessing a direction would put
+// an invented value into a measurement instrument.
 #define AP_TESTLAB_FLOOR_ACCEL       448   // zGlobal_DATA.c:7176, SPEED class
 #define AP_TESTLAB_FLOOR_SPEED       12950 // zGlobal_DATA.c:7178, TURN class
 #define AP_TESTLAB_FLOOR_ACCELSPEED  14450 // zGlobal_DATA.c:7179, TURN class
 #define AP_TESTLAB_FLOOR_TURNRATE    24    // zGlobal_DATA.c:7185, SPEED class
 #define AP_TESTLAB_FLOOR_DRIFTTURN   5     // zGlobal_DATA.c:7209, SPEED class
+#define AP_TESTLAB_FLOOR_TURNRESP    4000  // zGlobal_DATA.c:7188, SPEED class
+
+// Birth-time snapshot of exactly the stats this module overwrites, so VANILLA has
+// a base to restore to and a mid-race mode change is reversible.
+//
+// Keyed by driverID. Slot 0 is the local player and nothing else: MainInit_Drivers
+// spawns the humans as VehBirth_Player(i) for i = numPlyrCurrGame-1 down to 0
+// (game/MAIN/MainInit.c:374), bots take ids above them, and the two ghost drivers
+// are explicitly born with driverID 1 and 2 (game/GhostReplay.c:416), so nothing
+// else can land in slot 0. The driver pointer is stored alongside and checked on
+// read regardless -- if it ever fails to match, we have no trustworthy base and
+// write nothing, rather than restoring another kart's numbers.
+#define AP_TESTLAB_SNAP_SLOTS 8
+
+typedef struct
+{
+	struct Driver *driver;
+	s16 accel;
+	s16 speed;
+	s16 accelSpeed;
+	s16 turnResponse;
+	u8  turnRate;
+	s8  driftTurn;
+} TestLabStatSnapshot;
+
+static TestLabStatSnapshot g_statSnap[AP_TESTLAB_SNAP_SLOTS];
+
+void AP_TestLab_SnapshotStats(struct Driver *driver)
+{
+	if (driver == 0)
+		return;
+
+	const int id = driver->driverID;
+	if (id < 0 || id >= AP_TESTLAB_SNAP_SLOTS)
+		return;
+
+	TestLabStatSnapshot *s = &g_statSnap[id];
+	s->driver       = driver;
+	s->accel        = driver->const_Accel_ClassStat;
+	s->speed        = driver->const_Speed_ClassStat;
+	s->accelSpeed   = driver->const_AccelSpeed_ClassStat;
+	s->turnResponse = driver->const_TurnInputDelay;
+	s->turnRate     = driver->const_TurnRate;
+	s->driftTurn    = driver->const_DriftTurnBase;
+}
+
+// One writer for all three modes, so none of them can leave a kart half-converted
+// with some stats from one mode and some from another.
+static void AP_TestLabWriteStats(struct Driver *driver, int accel, int speed, int accelSpeed,
+                                 int turnResponse, int turnRate, int driftTurn)
+{
+	driver->const_Accel_ClassStat      = (s16)accel;
+	driver->const_Speed_ClassStat      = (s16)speed;
+	driver->const_AccelSpeed_ClassStat = (s16)accelSpeed;
+	driver->const_TurnInputDelay       = (s16)turnResponse;
+	driver->const_TurnRate             = (u8)turnRate;
+	driver->const_DriftTurnBase        = (s8)driftTurn;
+}
 
 void AP_TestLab_Stats(struct Driver *driver)
 {
-	if (g_config.testLabStats != AP_TESTLAB_STATS_FLOOR || !AP_TestLabIsLocal(driver))
+	if (!AP_TestLabIsLocal(driver))
 		return;
 
-	// Re-applied every frame rather than patched once at birth: the constants are
-	// only ever written by VehBirth_SetConsts, so a per-frame write is idempotent
-	// and survives a re-birth without this module having to know when one
-	// happened. The flip side is that there is no restore -- turning the row back
-	// to VANILLA takes effect from the next race, when birth re-runs and hands
-	// the kart its character's own numbers again. That is the intended workflow
-	// here (pick a configuration, then drive a track), and it avoids caching a
-	// snapshot that a character change would silently make wrong.
-	if (driver->const_Accel_ClassStat > AP_TESTLAB_FLOOR_ACCEL)
-		driver->const_Accel_ClassStat = AP_TESTLAB_FLOOR_ACCEL;
-	if (driver->const_Speed_ClassStat > AP_TESTLAB_FLOOR_SPEED)
-		driver->const_Speed_ClassStat = AP_TESTLAB_FLOOR_SPEED;
-	if (driver->const_AccelSpeed_ClassStat > AP_TESTLAB_FLOOR_ACCELSPEED)
-		driver->const_AccelSpeed_ClassStat = AP_TESTLAB_FLOOR_ACCELSPEED;
-	if (driver->const_TurnRate > AP_TESTLAB_FLOOR_TURNRATE)
-		driver->const_TurnRate = AP_TESTLAB_FLOOR_TURNRATE;
-	if ((s8)driver->const_DriftTurnBase > AP_TESTLAB_FLOOR_DRIFTTURN)
-		driver->const_DriftTurnBase = AP_TESTLAB_FLOOR_DRIFTTURN;
+	const int mode = g_config.testLabStats;
+
+	if (mode == AP_TESTLAB_STATS_FLOOR)
+	{
+		AP_TestLabWriteStats(driver, AP_TESTLAB_FLOOR_ACCEL, AP_TESTLAB_FLOOR_SPEED,
+		                     AP_TESTLAB_FLOOR_ACCELSPEED, AP_TESTLAB_FLOOR_TURNRESP,
+		                     AP_TESTLAB_FLOOR_TURNRATE, AP_TESTLAB_FLOOR_DRIFTTURN);
+		return;
+	}
+
+	if (mode == AP_TESTLAB_STATS_CUSTOM)
+	{
+		AP_TestLabWriteStats(driver, g_config.testLabAccel, g_config.testLabTopSpeed,
+		                     g_config.testLabBoostSpeed, g_config.testLabTurnResponse,
+		                     g_config.testLabTurnRate, g_config.testLabDriftTurn);
+		return;
+	}
+
+	// VANILLA: hand the character's own numbers back. Written every frame rather
+	// than once on the mode change -- six stores, no "have I already restored"
+	// flag to get wrong, and it self-heals. Every mode writes absolute values, so
+	// switching between them mid-race is instant in both directions.
+	const int id = driver->driverID;
+	if (id < 0 || id >= AP_TESTLAB_SNAP_SLOTS)
+		return;
+
+	const TestLabStatSnapshot *s = &g_statSnap[id];
+	if (s->driver != driver)
+		return;
+
+	AP_TestLabWriteStats(driver, s->accel, s->speed, s->accelSpeed,
+	                     s->turnResponse, s->turnRate, s->driftTurn);
 }
 
 #endif // CTR_AP

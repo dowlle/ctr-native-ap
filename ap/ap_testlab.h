@@ -49,13 +49,26 @@
 //     so both survive the gate exactly as they do in the shape this was verified
 //     against.
 //
-//   Stats floor (issue #13)
-//     Pins the local kart's speed / acceleration / handling stats to the bottom
-//     of the engine's own class table. See AP_TestLab_Stats for which fields and
-//     why those values.
+//   Kart stats (issue #13)
+//     VANILLA  the character's own stats, restored from the birth snapshot
+//     FLOOR    the engine's minimum preset: per stat, the lowest value any engine
+//              class holds. This is the settled bottom tier of the stat chain.
+//     CUSTOM   six per-stat values set from the menu, applied as absolute
+//              overrides. Matches the chain design, where an active system
+//              overrides the character stat table outright and character choice
+//              becomes cosmetic.
+//     See AP_TestLab_Stats for which fields are covered and why.
 //
 // Every hook is scoped to the local player, so AI racers are never touched, and
 // every hook is a no-op while the toggles sit at their vanilla defaults.
+//
+// ── Live apply ──
+// All three toggles take effect the moment they change, including mid-race with
+// the config menu open over a paused race. Boost tier and the gas pedal are read
+// fresh out of g_config on every grant / every frame, so they need nothing extra.
+// The stats need a base to return to, because the engine writes the stat
+// constants exactly once per driver at birth: AP_TestLab_SnapshotStats captures
+// that write, and switching back to VANILLA restores from it on the next frame.
 
 #ifdef CTR_AP
 
@@ -82,7 +95,8 @@ enum
 {
 	AP_TESTLAB_STATS_VANILLA = 0,
 	AP_TESTLAB_STATS_FLOOR   = 1,
-	AP_TESTLAB_STATS_COUNT   = 2
+	AP_TESTLAB_STATS_CUSTOM  = 2,
+	AP_TESTLAB_STATS_COUNT   = 3
 };
 
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke
@@ -97,9 +111,16 @@ int AP_TestLab_FireGrant(struct Driver *driver, int *reserves, uint32_t type, in
 // the throttle button has been read. Only cross / BTN_CROSS are cleared.
 void AP_TestLab_DriveInput(struct Driver *driver, uint32_t *buttonsHeld, uint32_t *cross);
 
-// Stats floor, called once per frame from the same driving-physics site, before
+// Kart stats, called once per frame from the same driving-physics site, before
 // anything reads the stat constants.
 void AP_TestLab_Stats(struct Driver *driver);
+
+// Birth-time stat capture, called at the end of VehBirth_SetConsts once the
+// engine has written a driver's stat constants. Re-taken at every birth, so a
+// character change is picked up rather than restored over. Runs unconditionally,
+// independent of the menu rows, so the base is already there whenever the mode is
+// switched mid-race.
+void AP_TestLab_SnapshotStats(struct Driver *driver);
 
 #endif // CTR_AP
 
