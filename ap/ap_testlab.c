@@ -110,15 +110,17 @@ void AP_TestLab_DriveInput(struct Driver *driver, uint32_t *buttonsHeld, uint32_
 // data.metaPhys[] rows into the driver by byte offset, picking each row's column
 // from the character's engine class (BALANCED / ACCEL / SPEED / TURN).
 //
-// #13's settled design says a seed starts with ALL stats at the lowest level and
-// that the chains override the character stat table with absolute per-tier
-// values, but neither the issue body nor its comments pin what the bottom tier's
-// numbers actually are. Rather than invent them, the floor here is the engine's
-// own minimum stat preset: for each stat, the lowest value any engine class has
-// in data.metaPhys (game/zGlobal_DATA.c:7176-7209). No class is globally weakest
-// -- SPEED has the worst acceleration and turn rate, TURN the worst top speed --
-// so the floor is a per-stat minimum across classes, which is strictly at or
-// below every character and is exactly "all stats at the lowest level".
+// The floor is RULED, not chosen here: #13's bottom tier is the lowest value used
+// across all characters, per stat (Stef, 2026-08-07). So FLOOR mode below is the
+// canonical #13 tier-0, not a harness approximation of it -- a matrix cell
+// measured in FLOOR mode is measuring the real bottom of the stat chain.
+//
+// Concretely that is the engine's own minimum stat preset: for each stat, the
+// lowest value any engine class holds in data.metaPhys
+// (game/zGlobal_DATA.c:7176-7209). It has to be a per-stat minimum rather than
+// one weakest class, because no class is globally weakest -- SPEED has the worst
+// acceleration and turn rate, TURN the worst top speed -- so the floor kart is
+// strictly at or below every character on every axis.
 //
 // Six stats are covered, spanning the three axes #13 names (top speed,
 // acceleration, handling). Turn Response is const_TurnInputDelay, whose name is

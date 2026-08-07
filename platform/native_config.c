@@ -83,8 +83,8 @@ const ConfigEntry g_configEntries[] = {
 	{"Test Lab",    "stats",                    "Kart Stats",                   CFG_ENUM, &g_config.testLabStats},
 	// Custom stat rows, live only while Kart Stats is CUSTOM. Each range runs from
 	// the LOWEST value any engine class has for that stat -- which is exactly what
-	// FLOOR mode applies, so the bottom of every slider is the settled bottom tier
-	// of the stat chain -- up to headroom above the highest, since the chain design
+	// FLOOR mode applies, so the bottom of every slider is the ruled bottom tier of
+	// the stat chain -- up to headroom above the highest, since the chain design
 	// climbs past the best vanilla character. The four numbers in each comment are
 	// the engine's own per-class values in BALANCED / ACCEL / SPEED / TURN order
 	// (game/zGlobal_DATA.c), so a slider position can be read against real karts;

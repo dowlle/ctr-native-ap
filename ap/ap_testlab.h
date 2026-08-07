@@ -52,7 +52,9 @@
 //   Kart stats (issue #13)
 //     VANILLA  the character's own stats, restored from the birth snapshot
 //     FLOOR    the engine's minimum preset: per stat, the lowest value any engine
-//              class holds. This is the settled bottom tier of the stat chain.
+//              class holds. This is the RULED bottom tier of the stat chain
+//              (Stef, 2026-08-07), so FLOOR is the canonical tier-0 rather than
+//              a harness approximation of it.
 //     CUSTOM   six per-stat values set from the menu, applied as absolute
 //              overrides. Matches the chain design, where an active system
 //              overrides the character stat table outright and character choice
