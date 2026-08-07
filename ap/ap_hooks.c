@@ -16,6 +16,8 @@
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
+#include "ap_spawn.h"        // additive model loader (#109 / #124 groundwork)
+#include "ap_author.h"       // in-game box placement author mode (#182)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -3756,6 +3758,13 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Box placement author mode (#182) and the additive model loader it draws
+	// through (#109 / #124 groundwork). Author first, loader second, so a
+	// placement dropped this frame gets its marker in the same frame instead of
+	// one frame later. Both self-gate: the author mode on the "Box Author Mode"
+	// option, the loader on having any spawn requests at all.
+	AP_Author_OnFrame(gGT);
+	AP_Spawn_OnFrame(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.
