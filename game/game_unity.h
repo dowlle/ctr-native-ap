@@ -12,6 +12,8 @@
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
 #include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
+#include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #endif
 
 #include "226/R226.c"
@@ -350,6 +352,8 @@
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
 #include "../ap/ap_capability.c"
+#include "../ap/ap_spawn.c"
+#include "../ap/ap_author.c"
 #endif
 
 #endif

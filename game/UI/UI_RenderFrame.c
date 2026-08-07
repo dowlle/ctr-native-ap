@@ -888,6 +888,13 @@ void UI_RenderFrame_Racing()
 		// disable the randomizing effect in the HUD
 		gGT->gameMode1 &= ~ROLLING_ITEM;
 	}
+
+#ifdef CTR_AP
+	// Box placement author mode (#182): one status line while the mode is on.
+	// Self-gates on the "Box Author Mode" option, so this is a call and a
+	// compare for everyone else.
+	AP_Author_DrawHud();
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80054298-0x8005435c.
