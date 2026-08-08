@@ -2594,7 +2594,7 @@ int ctr_cfg_warp_unlocked(int levelID)
 
 	// Cup PHYSICAL pads (100..104) live outside the dense warp_pad_unlock array.
 	// Under `merged` destination shuffle a race destination can be hosted on a cup
-	// pad, so ThTick's load gate (AH_WarpPad.c:679) recovers physLevelID = a cup
+	// pad, so ThTick's load gate (AH_WarpPad.c:713) recovers physLevelID = a cup
 	// LevelID and calls this. Key by cup colour into gem_cup_unlock (randomized
 	// stage1) else the vanilla "4 tokens of the cup's colour" rule -- the SAME
 	// predicate AP_PadStage1Met's cup branch uses. MUST run before the trophy

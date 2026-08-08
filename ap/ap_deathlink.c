@@ -260,7 +260,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 // precedents, which also set the bit from within this pipeline stage.
 //
 // Returns 1 (caller then OR's DRIVER_COLL_FLAG_MASK_GRAB_REQUEST) only when EVERY
-// stock-gate precondition (COLL.c:1694) is already satisfied, so the grab is
+// stock-gate precondition (COLL.c:1706) is already satisfied, so the grab is
 // guaranteed to reach VehStuckProc_MaskGrab_Init this frame. That is what lets us
 // clear the depth-1 queue and arm the no-loop guard here: we never arm the guard
 // (which would swallow a later genuine send) for a grab that fails to land.

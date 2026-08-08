@@ -64,13 +64,13 @@ static const int AP_TRAP_DURATION_MS[AP_TRAP_COUNT] = {
 #define AP_TRAP_FRICTION_SCALE 40   // 40/256 ~= 0.16 grip -> icy
 // Reserves FLOOR while a boost/USF trap fires: reserves are only RAISED to this
 // value when below it (never overwritten downward), so the per-frame decrement /
-// resets in VehPhysProc (VehPhysProc.c:111/623/2154) can never zero the boost,
+// resets in VehPhysProc (VehPhysProc.c:111/628/2159) can never zero the boost,
 // while a player's banked reserves above the floor -- and any reserves earned
 // during the 20 s window -- survive the trap instead of being deleted by a
 // hard per-frame pin.
 #define AP_TRAP_BOOST_RESERVES 1200
 // fireLevel of a super turbo pad (VehPhysForce.c:551) -- the input that makes
-// VehFire_Increment (VehFire.c:322) compute a genuinely USF-tier fireSpeedCap.
+// VehFire_Increment (VehFire.c:358) compute a genuinely USF-tier fireSpeedCap.
 #define AP_TRAP_USF_FIRELEVEL  0x800
 #define AP_STICK_NEUTRAL       0x80 // analog centre (native_input.c:125-128)
 
@@ -419,10 +419,10 @@ void AP_TrapForceBoost(struct Driver *driver)
 	if (g_active[AP_TRAP_USF_NOBRAKE])
 	{
 		// Genuinely USF-tier cap, derived from the real fire-level formula
-		// (VehFire.c:322): cap = singleTurbo + (fireLevel * (sacred - singleTurbo))
+		// (VehFire.c:358-359): cap = singleTurbo + (fireLevel * (sacred - singleTurbo))
 		// >> 8, evaluated at a super turbo pad's fireLevel (0x800). The old pin to
 		// const_SacredFireSpeed only granted red-fire speed, which is NOT USF --
-		// the engine itself defines USF as fireSpeedCap above sacred (VehFire.c:342).
+		// the engine itself defines USF as fireSpeedCap above sacred (VehFire.c:378).
 		int usfCap = ((int)driver->const_SingleTurboSpeed +
 		              ((AP_TRAP_USF_FIRELEVEL *
 		                ((int)driver->const_SacredFireSpeed - (int)driver->const_SingleTurboSpeed)) >> 8));
@@ -430,7 +430,7 @@ void AP_TrapForceBoost(struct Driver *driver)
 			usfCap = 32767; // fireSpeedCap is s16
 		AP_TrapFloorReserves(driver);
 		// Floor, not pin: VehFire_Increment demotes the cap on any non-super-pad
-		// boost while above sacred (VehFire.c:342-345); re-raising here each frame
+		// boost while above sacred (VehFire.c:375-381); re-raising here each frame
 		// restores the trap tier without ever downgrading a higher cap.
 		if (driver->fireSpeedCap < usfCap)
 			driver->fireSpeedCap = (s16)usfCap;
@@ -458,7 +458,7 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	*cross = BTN_CROSS;
 
 	// Neutralise the analog sticks so the pull-back reverse/brake path (read later
-	// in this same PhysLinear call, VehPhysProc.c:633/681) also goes dead. The pad
+	// in this same PhysLinear call, VehPhysProc.c:638/686) also goes dead. The pad
 	// buffer is repopulated from input every frame before physics, so this only
 	// affects the current frame's reads.
 	if (pad != 0)
