@@ -4,6 +4,7 @@
  * See THIRD_PARTY_NOTICES.md for copyright and license details.
  */
 
+#include "platform/native_config.h"
 #include <macros.h>
 #include "platform/native_renderer_types.h"
 #include <SDL3/SDL.h>
@@ -71,8 +72,8 @@ TextureID NativeRenderer_GetWhiteTexture(void)
 int g_windowWidth = 0;
 int g_windowHeight = 0;
 
-global_variable int s_presentAspectW = 4;
-global_variable int s_presentAspectH = 3;
+global_variable int s_presentAspectW = 16;
+global_variable int s_presentAspectH = 9;
 global_variable SDL_Rect s_presentViewport = {0, 0, 0, 0};
 
 int g_dbg_wireframeMode = 0;
@@ -94,6 +95,7 @@ internal void NativeRenderer_UpdatePresentationViewport(void);
 internal void NativeRenderer_ClearPresentationBars(void);
 internal void NativeRenderer_SetWireframe(int enable);
 internal void NativeRenderer_BindVertexBuffer(void);
+internal void NativeRenderer_UpdateConfiguredAspect(void);
 
 global_variable GLuint s_glVertexArray[2];
 global_variable GLuint s_glVertexBuffer[2];
@@ -183,7 +185,7 @@ int NativeRenderer_InitialiseRender(char *windowName, int width, int height, int
 {
 	g_windowWidth = width;
 	g_windowHeight = height;
-	NativeRenderer_SetPresentationAspect(width, height);
+	NativeRenderer_UpdateConfiguredAspect();
 
 	// Due to debugging in fullscreen
 	SDL_SetHint(SDL_HINT_WINDOW_ALLOW_TOPMOST, "0");
@@ -241,8 +243,9 @@ void NativeRenderer_BeginScene(void)
 	NativePerf_BeginScope(NATIVE_PERF_BUCKET_RENDERER_BEGIN_SCENE);
 	s_lastBoundTexture = 0;
 
-	NativeRenderer_UpdatePresentationViewport();
-	NativeRenderer_ClearPresentationBars();
+	NativeRenderer_UpdateConfiguredAspect();
+    NativeRenderer_UpdatePresentationViewport();
+    NativeRenderer_ClearPresentationBars();
 	glClear(GL_STENCIL_BUFFER_BIT);
 
 	NativeRenderer_UpdateVRAM();
@@ -306,6 +309,29 @@ internal void NativeRenderer_SetPresentationAspect(int width, int height)
 
 	s_presentAspectW = width / divisor;
 	s_presentAspectH = height / divisor;
+}
+
+internal void NativeRenderer_UpdateConfiguredAspect(void)
+{
+    switch (g_config.aspectRatio)
+    {
+        case 1:
+            NativeRenderer_SetPresentationAspect(16, 9);
+            break;
+
+        case 2:
+            NativeRenderer_SetPresentationAspect(16, 10);
+            break;
+
+        case 3:
+            NativeRenderer_SetPresentationAspect(21, 9);
+            break;
+
+        case 0:
+        default:
+            NativeRenderer_SetPresentationAspect(4, 3);
+            break;
+    }
 }
 
 internal void NativeRenderer_UpdatePresentationViewport(void)

@@ -1,3 +1,4 @@
+#include "platform/native_config.h"
 #include <platform.h>
 
 #include <macros.h>
@@ -115,9 +116,13 @@ internal void Platform_UpdateCursorVisibility(void)
 
 internal void Platform_HandleFullscreenToggle(void)
 {
-	int fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
+    int fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
+    int newFullscreen = fullscreen == 0;
 
-	SDL_SetWindowFullscreen(g_window, fullscreen == 0);
+    SDL_SetWindowFullscreen(g_window, newFullscreen);
+
+    g_config.fullscreen = newFullscreen != 0;
+    NativeConfig_Save();
 	SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 	Platform_UpdateCursorVisibility();
 	NativeRenderer_ResetDevice();
@@ -252,7 +257,7 @@ void Platform_Init(const char *title, int width, int height)
 
 	s_platformInitialized = 1;
 
-	if (!NativeRenderer_InitialiseRender(windowName, width, height, 0))
+	if (!NativeRenderer_InitialiseRender(windowName, width, height, g_config.fullscreen))
 	{
 		Platform_LogError("[CTR Native] Failed to initialise window\n");
 		Platform_Shutdown();

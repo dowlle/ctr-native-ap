@@ -11,6 +11,9 @@
 // randomizer's gating surface).
 typedef struct
 {
+	bool fullscreen;             // Graphics: start in fullscreen
+    int aspectRatio;             // Graphics: 0=4:3, 1=16:9, 2=16:10, 3=21:9
+	
 	bool skipIntro;             // Video & QoL: skip boot intros, go straight to the main menu
 	bool increaseDrawDistance;  // Video & QoL: render level geometry farther
 	bool disableSplitScreenLod; // Video & QoL: hi-res character models in 3-4P split screen

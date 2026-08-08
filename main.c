@@ -241,13 +241,13 @@ int main(int argc, char *argv[])
 #define CTR_WINDOW_TITLE "Crash Team Racing"
 #endif
 
-#ifdef USE_16BY9
-	printf("[CTR Native] Widescreen\n");
-	Platform_Init(CTR_WINDOW_TITLE, 1280, 720);
-#else
-	printf("[CTR Native] 4:3\n");
-	Platform_Init(CTR_WINDOW_TITLE, 800, 600);
-#endif
+printf("[CTR Native] Aspect Ratio: %s\n",
+    g_config.aspectRatio == 0 ? "4:3" :
+    g_config.aspectRatio == 1 ? "16:9" :
+    g_config.aspectRatio == 2 ? "16:10" :
+    "21:9");
+
+Platform_Init(CTR_WINDOW_TITLE, 1280, 720);
 
 #if defined(CTR_INTERNAL)
 	if (NativePerf_ConfigureFromArgs(argc, argv) != 0)

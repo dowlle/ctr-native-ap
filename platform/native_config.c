@@ -12,7 +12,10 @@
 // config sit side by side.
 
 NativeConfig g_config = {
-	false, // skipIntro
+    true,  // fullscreen
+    1,     // aspectRatio (1 = 16:9)
+
+    false, // skipIntro
 	false, // increaseDrawDistance
 	false, // disableSplitScreenLod
 	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
@@ -33,6 +36,9 @@ NativeConfig g_config = {
 };
 
 const ConfigEntry g_configEntries[] = {
+	{"Graphics", "fullscreen",   "Fullscreen",   CFG_BOOL, &g_config.fullscreen},
+    {"Graphics", "aspect_ratio", "Aspect Ratio", CFG_ENUM, &g_config.aspectRatio},
+	
 	{"Video & QoL", "skip_intro",               "Skip Intros",                  CFG_BOOL, &g_config.skipIntro},
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
 	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},
