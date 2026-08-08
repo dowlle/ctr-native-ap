@@ -12,18 +12,24 @@ disc. You will need:
    PlayStation disc. A `.cue` plus `.bin`, a single `.bin`, or a `.chd` all
    work. Only the North American release is supported right now. PAL (European)
    and Japanese discs are detected and refused.
-2. The prebuilt game executable, `ctr_native_ap.exe`. Download it from the
-   [releases page](https://github.com/dowlle/ctr-native-ap/releases).
+2. The release archive for your platform from the
+   [releases page](https://github.com/dowlle/ctr-native-ap/releases): the Windows
+   `.zip`, or the Linux and Steam Deck `.tar.gz`.
 
-That is the whole list. You do not need Python, and you do not need to extract
-anything.
+That is everything you need on the game side when you are joining an existing
+room. With a raw `.bin` image you do not need Python and you do not need to
+extract the disc. A `.chd` image uses the extractor in the appendix. If you are
+generating the multiworld yourself, you also need the matching `ctr.apworld`
+and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hosting-a-multiworld).
 
 ## Step 1: get the game executable
 
-Download `ctr_native_ap.exe` from the
-[releases page](https://github.com/dowlle/ctr-native-ap/releases) and put it
-in a folder of its own, for example a folder called `CTR-AP`. The rest of
-these steps add the game data and your server settings next to it.
+Download and extract the archive for your platform from the
+[releases page](https://github.com/dowlle/ctr-native-ap/releases):
+`ctr-archipelago-vX.Y.Z-windows-x86.zip` on Windows, or
+`ctr-archipelago-vX.Y.Z-linux-x86.tar.gz` on Linux and Steam Deck. Keep the
+extracted files together in their own folder. The rest of these steps add the
+game data and your server settings there.
 
 ## Step 2: drop in your disc image
 
@@ -67,6 +73,32 @@ state (Connecting… / Connected / an error message). Your settings are saved to
 `config.ini` next to the executable, and the game reconnects automatically on
 later launches.
 
+## Your first five minutes
+
+Once the status says **Connected**, return to the main menu and start Adventure
+mode. Use the normal save station in the hub to save your local Adventure
+progress. The Archipelago server remains authoritative for received items and
+completed locations, and rebuilds your received-item counts when you reconnect.
+
+The locations in your seed depend on its YAML options. They can include Trophy
+Races, CTR Token Challenges, relic Time Trials, boss races, Gem Cups, Crystal
+Bonus Rounds, Oxide races, and additional finishing-position checks. Complete
+an event and continue past its results or award screen to send its check. New
+items appear in the feed when you return to the Adventure hub. Progression items
+update your available gates; traps arm silently and fire during a later race.
+
+If the connection drops, reconnect before completing another location. In the
+current release, a check completed while disconnected is not resent later. The
+Connection screen shows the current state and any error message.
+
+The client verifies the seed after connecting. If the hub shows a red **SEED NOT
+COMPLETABLE** warning, stop and report it with your YAML and spoiler log. For a
+crash or a seed that appears stuck, follow
+[Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed). Setup
+questions and reproducible bugs can go to the
+[GitHub issue tracker](https://github.com/dowlle/ctr-native-ap/issues); if you
+are unsure which repository is responsible, file it there anyway.
+
 ### Alternative: config file
 
 If you prefer a text file, copy `ap-config.example.txt` to `ap-config.txt` in
@@ -75,6 +107,17 @@ there; the game reads it at startup. Values saved from the in-game Connection
 screen (`config.ini`) take precedence when both exist. The example file also
 documents a few optional quality of life toggles (`skip_hints`, `map_flash`),
 which can equally be changed in the in-game options menu.
+
+## Generating or hosting a multiworld
+
+Only the person generating the room needs the `ctr.apworld`. Download it from
+the same release as the client and install it by double-clicking it or placing it
+in Archipelago's `custom_worlds` folder. In the Archipelago Launcher, choose
+**Generate Template Options**, select Crash Team Racing, set the player name and
+options in the generated YAML, and add that YAML to the room's player files.
+
+The released client and apworld are a pair. Update both together, even when a
+release appears to change only one side.
 
 ## Optional: controllers and Steam Input
 
@@ -101,7 +144,7 @@ If the game crashes, or a seed seems impossible to progress, run
 `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux/Steam Deck) from
 the game folder. It creates one small archive (`ctr-ap-support-<date>.zip` /
 `.tar.gz`) containing the game log, the AP log, the crash report if there was
-one, and your connection settings with the password removed -- no game data is
+one, and your connection settings with the password removed. No game data is
 included. Attach that archive to your report on Discord or GitHub together
 with a line about what you were doing; if the seed itself seems broken,
 include your YAML and the spoiler log too.

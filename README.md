@@ -8,7 +8,7 @@ Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/r
 
 You need three things: a release build, your own (NTSC-U) copy of the game, and your room details. The full walkthrough (including the optional space-saving asset extractor) is in [SETUP.md](SETUP.md); the short version:
 
-**1. Download a release.** Grab the build for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr_native_ap.exe` (Windows) or `ctr_native_ap` (Linux).
+**1. Download and extract a release.** Grab the archive for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr-archipelago-vX.Y.Z-windows-x86.zip` on Windows, or `ctr-archipelago-vX.Y.Z-linux-x86.tar.gz` on Linux and Steam Deck. The extracted folder contains the game executable and its support files.
 
 **2. Add your own game disc image.** This project contains no game assets. You must own a retail **NTSC-U** copy of Crash Team Racing. Dump it as a raw `.bin` disc image and place it next to the executable in a folder named `assets` (launching the game once creates the folder). The filename does not matter: the game picks the `.bin` whose boot id matches the NTSC-U disc; `ctr-u.bin` is the conventional name:
 
@@ -35,17 +35,11 @@ New to Archipelago itself? Start with the [Archipelago tutorials](https://archip
 
 Developers and the curious: see [BUILDING.md](BUILDING.md) for prerequisites, build steps for the vanilla and AP builds, and the project architecture. For the plain native port of CTR without Archipelago, see upstream [CTR-tools/ctr-native](https://github.com/CTR-tools/ctr-native).
 
-## AI Usage Disclosure
+## AI usage
 
-CTR Archipelago is developed with AI assistance (Anthropic's Claude, via Claude Code). You deserve to know how something is made before you decide how you feel about it, so here is the honest version.
+I use Claude Code while developing CTR Archipelago. It helps with implementation, debugging, and review, while I make the design decisions and test releases in game. The project does not use AI-generated art. I am disclosing this because I want people to know how the project is made. I have ADHD, and this is one of the tools that helps me turn ideas into finished projects.
 
-- **AI writes code under my direction:** randomization and generation logic, the native AP integration, debugging, and review passes. The design decisions, the priorities, and the accountability are mine. I use AI as a tool that helps me finish what I start, not as a replacement for anyone's craft.
-- **No AI-generated art.** Every tracker icon and in-game marker is rendered from the game's own 3D models. No generated textures, logos, or models. This project exists because of human creative work (the original game, the decompilation, the randomizer design it builds on), and it doesn't launder anyone's art through a model.
-- **Nothing ships unverified.** Every apworld release passes a full run of Eijebong's Archipelago fuzzer (10/10 check categories across ~14,000 generations; nothing ships red). I playtest every native build in-game on real seeds, and gating logic is verified against the game's actual code, not guessed. The project has a human-reviewed specification and data contract; I don't merge code I haven't understood.
-- **The footprint, for those weighing it:** measured production data ([Google, 2025](https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference); [independent measurement](https://www.sciencedirect.com/science/article/pii/S2542435126001145)) puts a typical AI request at roughly 0.3 Wh and a fraction of a milliliter of water. A heavy day of AI-assisted development on this project costs electricity on the order of one hot shower. The data center buildout at large is a real concern; I think it belongs in energy policy, not at the feet of hobby projects, but you may weigh that differently.
-- **Why:** AI lets me actually finish my projects (I have ADHD). Using it is a considered choice, not a careless one.
-
-If AI-assisted development is a dealbreaker for you, that's a fair call to make with the facts in front of you.
+More detail about how I use and verify AI-assisted work is available in [AI_USAGE.md](AI_USAGE.md).
 
 ## License
 
