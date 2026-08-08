@@ -225,7 +225,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
 	}
 
-	// Race window (the trap-window idiom, ap_traps.c:301-306): mid-race, lights
+	// Race window (the trap-window idiom, ap_traps.c:313-318): mid-race, lights
 	// out, not paused / menu / cutscene / end-of-race.
 	raceActive = (gGT->gameMode1 &
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
