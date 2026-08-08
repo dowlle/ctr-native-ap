@@ -164,13 +164,82 @@ static int Dlink_Index(int value)
 
 // CFG_ENUM dispatch: each enum entry owns a ladder; picked by the field the
 // entry edits (pointer identity, no string compare).
+static const int s_aspectRatioValues[] = {0, 1, 2, 3};
+static const char *s_aspectRatioNames[] = {
+    "4:3",
+    "16:9",
+    "16:10",
+    "21:9"
+};
+#define ASPECT_RATIO_COUNT ((int)(sizeof(s_aspectRatioValues) / sizeof(s_aspectRatioValues[0])))
+
+static int AspectRatio_Index(int value)
+{
+    for (int i = 0; i < ASPECT_RATIO_COUNT; i++)
+    {
+        if (s_aspectRatioValues[i] == value)
+            return i;
+    }
+
+    return 1; // default to 16:9
+}
+
+static const char *AspectRatio_Label(int value)
+{
+    return s_aspectRatioNames[AspectRatio_Index(value)];
+}
+
+static void AspectRatio_Step(int *value, int dir)
+{
+    int i = AspectRatio_Index(*value) + dir;
+
+    if (i < 0)
+        i = 0;
+
+    if (i >= ASPECT_RATIO_COUNT)
+        i = ASPECT_RATIO_COUNT - 1;
+
+    *value = s_aspectRatioValues[i];
+}
+
 static const char *Enum_Label(const ConfigEntry *e)
 {
+    if (e->valuePtr == &g_config.aspectRatio)
+        return AspectRatio_Label(*(int *)e->valuePtr);
+
 #ifdef CTR_AP
-	if (e->valuePtr == &g_config.deathLink)
-		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+    if (e->valuePtr == &g_config.deathLink)
+        return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
 #endif
-	return AiDiff_Label(*(int *)e->valuePtr);
+
+    return AiDiff_Label(*(int *)e->valuePtr);
+}
+
+static void Enum_Step(const ConfigEntry *e, int dir)
+{
+    if (e->valuePtr == &g_config.aspectRatio)
+    {
+        AspectRatio_Step((int *)e->valuePtr, dir);
+        return;
+    }
+
+#ifdef CTR_AP
+    if (e->valuePtr == &g_config.deathLink)
+    {
+        int i = Dlink_Index(*(int *)e->valuePtr) + dir;
+
+        if (i < 0)
+            i = 0;
+
+        if (i > DLINK_COUNT - 1)
+            i = DLINK_COUNT - 1;
+
+        *(int *)e->valuePtr = s_dlinkValues[i];
+        return;
+    }
+#endif
+
+    AiDiff_Step((int *)e->valuePtr, dir);
 }
 
 static void Enum_Step(const ConfigEntry *e, int dir)
