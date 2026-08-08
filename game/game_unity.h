@@ -10,6 +10,7 @@
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
+#include "../ap/ap_charswap.h"   // hub character picker + hub-swap prototype (spike)
 #endif
 
 #include "226/R226.c"
@@ -346,6 +347,7 @@
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
+#include "../ap/ap_charswap.c"
 #endif
 
 #endif

@@ -3765,6 +3765,12 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_VerifyOnFrame();
 	AP_PerfSectionEnd(AP_PERF_SEC_VERIFY);
 
+	// Hub character picker + hub-swap prototype (spike, #54 / ruling R7). Placed
+	// ahead of the adventure/loading gate lower down because the swap has to see
+	// the frames where the hub comes BACK from its reload. Self-gates on
+	// AP_DevKeysEnabled() and on the adventure hub actually being open.
+	AP_CharSwap_Tick(gGT);
+
 	{
 		static int ap_booted = 0;
 		static int ap_prev_level = -999;
