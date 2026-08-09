@@ -62,6 +62,11 @@ long long ap_net_recv_batch_index(int pos);
 // Source location for the batch item at `pos` (<= 0 = starting inventory / server
 // grant). The seed verifier's foreign/own split (issue #85) reads this.
 long long ap_net_recv_batch_location(int pos);
+// AP classification flags (bit0 = progression, bit1 = useful, bit2 = trap) for
+// the batch item at `pos` (<= 0/0 = filler fallback). Preserved from the
+// NetworkItem.flags metadata so the hub feed can colour received items by class
+// (issue #195) without re-deriving it from names. Valid until the next drain.
+unsigned ap_net_recv_batch_flags(int pos);
 
 // Resolve a RECEIVED item (item_id, sending sender_slot) into display strings:
 // item name in this slot's own game + the sender's alias. Returns 1 on success,

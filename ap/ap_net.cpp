@@ -43,6 +43,7 @@ static std::deque<long long> g_items;        // received item ids, drained by th
 static std::deque<int>       g_items_player; // parallel: sending player slot
 static std::deque<long long> g_items_index;  // parallel: server ReceivedItems index
 static std::deque<long long> g_items_location; // parallel: source location (<=0 = starting inv)
+static std::deque<unsigned>  g_items_flags;  // parallel: NetworkItem.flags (#195 feed colours)
 
 // Metadata of the most recent ap_net_drain_items() batch, positionally aligned
 // with its output and valid until the next drain. Lets the hub item feed resolve
@@ -51,6 +52,7 @@ static std::deque<long long> g_items_location; // parallel: source location (<=0
 static int       g_recv_batch_player[64];
 static long long g_recv_batch_index[64];
 static long long g_recv_batch_location[64]; // #85: source location for foreign classifier
+static unsigned  g_recv_batch_flags[64];    // #195: NetworkItem.flags for feed colours
 static int       g_recv_batch_n = 0;
 static std::string           g_slot;
 static std::string           g_password;
@@ -478,6 +480,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_items_player.clear();
 		g_items_index.clear();
 		g_items_location.clear();
+		g_items_flags.clear();
+		g_recv_batch_n = 0; // invalidate metadata from the previous connection
 		g_scouts.clear();
 		g_scouts_done = false;   // #85: fresh scout round pending -> verifier waits
 		g_pending_checks.clear(); // #85: no checks in flight on a fresh connect
@@ -557,6 +561,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_items_player.push_back((int)it.player);
 			g_items_index.push_back((long long)it.index);
 			g_items_location.push_back((long long)it.location);
+			g_items_flags.push_back(it.flags);
 			g_pending_checks.erase(it.location); // #85: this receipt settles its own check
 			std::fprintf(stderr, "[AP NET] received item %lld (index %d)\n",
 			             (long long)it.item, it.index);
@@ -855,6 +860,7 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 		int       pl = -1;
 		long long ix = -1;
 		long long lc = -1;
+		unsigned  fl = 0;
 		if (!g_items_player.empty())
 		{
 			pl = g_items_player.front();
@@ -870,11 +876,17 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 			lc = g_items_location.front();
 			g_items_location.pop_front();
 		}
+		if (!g_items_flags.empty())
+		{
+			fl = g_items_flags.front();
+			g_items_flags.pop_front();
+		}
 		if (n < (int)(sizeof g_recv_batch_player / sizeof g_recv_batch_player[0]))
 		{
 			g_recv_batch_player[n] = pl;
 			g_recv_batch_index[n] = ix;
 			g_recv_batch_location[n] = lc;
+			g_recv_batch_flags[n] = fl;
 			g_recv_batch_n = n + 1;
 		}
 		n++;
@@ -942,6 +954,14 @@ extern "C" long long ap_net_recv_batch_index(int pos)
 extern "C" long long ap_net_recv_batch_location(int pos)
 {
 	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_location[pos] : -1;
+}
+
+// AP classification flags for position `pos` of the most recent drain batch
+// (valid until the next ap_net_drain_items call). 0 = filler, matching a
+// missing/unknown flags fallback. Used by the hub item feed (issue #195).
+extern "C" unsigned ap_net_recv_batch_flags(int pos)
+{
+	return (pos >= 0 && pos < g_recv_batch_n) ? g_recv_batch_flags[pos] : 0;
 }
 
 // Resolve a RECEIVED item into display strings: the item name (in this slot's own
@@ -1104,6 +1124,8 @@ extern "C" void ap_net_shutdown(void)
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();
+	g_items_flags.clear();
+	g_recv_batch_n = 0; // accessors must not expose the final pre-shutdown batch
 	g_scouts.clear();
 	g_scouts_done = false;    // #85: no valid scout cache after shutdown
 	g_pending_checks.clear(); // #85: drop any in-flight checks on a server switch

@@ -11,6 +11,7 @@
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
+#include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
@@ -320,21 +321,41 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 #define AP_TINT_TRAP        AP_PACK_TINT(0xff, 0x80, 0x60) // salmon
 
 // AP item flags: bit0 = progression, bit1 = useful, bit2 = trap, 0 = filler.
-#define AP_ITEM_FLAG_PROGRESSION 1
-#define AP_ITEM_FLAG_USEFUL      2
-#define AP_ITEM_FLAG_TRAP        4
+// The precedence that resolves them is the freestanding AP_ItemFlagsClass
+// (ap_item_flags.h), shared with the hub feed so the two presentations can
+// never disagree about a class.
 
 static int AP_ClassTint(unsigned flags)
 {
 	// Progression wins over useful when an item carries both, matching how AP's
 	// own clients present it.
-	if (flags & AP_ITEM_FLAG_PROGRESSION)
-		return AP_TINT_PROGRESSION;
-	if (flags & AP_ITEM_FLAG_USEFUL)
-		return AP_TINT_USEFUL;
-	if (flags & AP_ITEM_FLAG_TRAP)
-		return AP_TINT_TRAP;
+	switch (AP_ItemFlagsClass(flags))
+	{
+	case AP_ITEM_CLASS_PROGRESSION: return AP_TINT_PROGRESSION;
+	case AP_ITEM_CLASS_USEFUL:      return AP_TINT_USEFUL;
+	case AP_ITEM_CLASS_TRAP:        return AP_TINT_TRAP;
+	case AP_ITEM_CLASS_FILLER:      return AP_TINT_FILLER;
+	}
 	return AP_TINT_FILLER;
+}
+
+// Font-palette colour for one hub item-feed line (issue #195), resolved from the
+// same class as the marker tint above. CTR's font palette has no literal RGB
+// text colouring path, so this picks fixed, always-present flat ptrColors
+// entries: purple (N_GIN_PURPLE) progression, blue (CRASH_BLUE) useful, cyan
+// (POLAR_CYAN) filler, red (CORTEX_RED) trap. The exact hues are a legibility
+// call (Stef's, in-game on Artemis): the marker tints are packed model RGBA and
+// do not map 1:1 onto the palette.
+static int AP_ClassFontColor(unsigned flags)
+{
+	switch (AP_ItemFlagsClass(flags))
+	{
+	case AP_ITEM_CLASS_PROGRESSION: return N_GIN_PURPLE;
+	case AP_ITEM_CLASS_USEFUL:      return CRASH_BLUE;
+	case AP_ITEM_CLASS_TRAP:        return CORTEX_RED;
+	case AP_ITEM_CLASS_FILLER:      return POLAR_CYAN;
+	}
+	return POLAR_CYAN;
 }
 
 // 1 if `player`'s item should render as the classified AP-logo marker.
@@ -987,7 +1008,7 @@ static int AP_AllFiveGems(void)
 //   4 allgemcups -> all 5 gems received (i.e. won every gem cup)
 // Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
 // first Oxide beat is the goal.
-static void AP_FeedEnqueue(const char *text, int own); // defined with the feed block below
+static void AP_FeedEnqueue(const char *text, int color); // defined with the feed block below
 
 void AP_EvaluateGoal(void)
 {
@@ -1011,7 +1032,7 @@ void AP_EvaluateGoal(void)
 		{
 			warned = 1;
 			AP_LogLine("[AP GOAL] auto-goal disabled: seed schema is newer than this client\n");
-			AP_FeedEnqueue("GOAL CHECK OFF: seed needs a newer client", 1);
+			AP_FeedEnqueue("GOAL CHECK OFF: seed needs a newer client", ORANGE);
 		}
 		return;
 	}
@@ -1543,7 +1564,7 @@ char *AP_Credits_PrependScroll(char *origScroll)
 typedef struct
 {
 	char text[AP_FEED_TEXT_CAP];
-	int  own;        // 1 = own/server item (colour), 0 = foreign
+	int  color;      // DecalFontStyle index resolved from the item's AP class (#195)
 	int  framesLeft; // visible lifetime remaining
 } AP_FeedLine;
 
@@ -1565,7 +1586,7 @@ int AP_HubFeedOn(void)
 }
 
 // Append a ready-formatted line to the pending queue. Oldest is dropped if full.
-static void AP_FeedEnqueue(const char *text, int own)
+static void AP_FeedEnqueue(const char *text, int color)
 {
 	if (ap_feed_qcount >= AP_FEED_QUEUE_MAX)
 	{
@@ -1574,7 +1595,7 @@ static void AP_FeedEnqueue(const char *text, int own)
 	}
 	int slot = (ap_feed_qhead + ap_feed_qcount) % AP_FEED_QUEUE_MAX;
 	snprintf(ap_feed_queue[slot].text, AP_FEED_TEXT_CAP, "%s", text);
-	ap_feed_queue[slot].own = own;
+	ap_feed_queue[slot].color = color;
 	ap_feed_queue[slot].framesLeft = 0;
 	ap_feed_qcount++;
 }
@@ -1595,7 +1616,9 @@ void AP_FeedConnectReset(void)
 // One drained received item. While unprimed (initial inventory) it is swallowed
 // and its index tracked; once primed, only a strictly newer index enqueues a
 // toast, so a reconnect's re-sent inventory (same indices) never re-appears.
-void AP_FeedOnItemReceived(long long item, int player, long long index)
+// `flags` carries the NetworkItem.flags metadata through the drain batch so the
+// line can be coloured by AP class (issue #195) instead of re-derived from names.
+void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned flags)
 {
 	if (!ctr_cfg_active())
 		return;
@@ -1637,7 +1660,9 @@ void AP_FeedOnItemReceived(long long item, int player, long long index)
 	else
 		snprintf(line, sizeof line, AP_FEED_FMT_FOREIGN, itemS, playerS);
 
-	AP_FeedEnqueue(line, own);
+	// Colour by AP class, not by own/foreign: an own filler reads cyan exactly
+	// like a foreign one. own only shaped the wording above.
+	AP_FeedEnqueue(line, AP_ClassFontColor(flags));
 }
 
 // A location WE just checked that feeds SOMEONE ELSE. The received feed only ever
@@ -1656,8 +1681,11 @@ static void AP_FeedOnLocationSent(long code)
 
 	// Every one of the 99 CTR locations is scouted on connect, so a known scout is
 	// expected; if it is somehow absent we cannot attribute the item -> stay silent.
+	// The scout also carries the destination item's AP flags, so a sent line gets
+	// the same classification colouring as a received one (#195).
 	int player = -1;
-	if (!ap_net_scout_known(code, NULL, &player, NULL))
+	unsigned flags = 0;
+	if (!ap_net_scout_known(code, NULL, &player, &flags))
 		return;
 
 	if (player == ap_net_self_slot())
@@ -1682,9 +1710,10 @@ static void AP_FeedOnLocationSent(long code)
 		snprintf(playerS, sizeof playerS, "%s", "PLAYER");
 
 	// "%s TO %s": item (<=31) + " TO " + player (<=23) = 58 < AP_FEED_TEXT_CAP (64),
-	// so it never truncates. own=0 -> foreign colour; a sent item is never our own.
+	// so it never truncates. Class-coloured like a received line; a sent item is
+	// never our own, but that no longer drives the colour.
 	snprintf(line, sizeof line, AP_FEED_FMT_SENT, itemS, playerS);
-	AP_FeedEnqueue(line, 0);
+	AP_FeedEnqueue(line, AP_ClassFontColor(flags));
 }
 
 // Called once after each frame's received-item drain (n = items drained this
@@ -1728,7 +1757,7 @@ void AP_FeedDrawHub(void)
 			ap_feed_qcount--;
 			AP_FeedLine *v = &ap_feed_vis[ap_feed_vcount];
 			snprintf(v->text, AP_FEED_TEXT_CAP, "%s", q->text);
-			v->own = q->own;
+			v->color = q->color; // classification colour follows the line through the queue
 			v->framesLeft = AP_FEED_LIFETIME_FRAMES; // lifetime starts now (visible)
 			ap_feed_vcount++;
 			ap_feed_stagger = AP_FEED_STAGGER_FRAMES;
@@ -1751,12 +1780,14 @@ void AP_FeedDrawHub(void)
 	ap_feed_vcount = w;
 
 	// Draw: newest (last) at the bottom anchor, older lines stacked upward.
+	// Each line renders in its stored classification colour (issue #195); the
+	// old own/foreign orange-vs-white mapping is gone.
 	for (int i = 0; i < ap_feed_vcount; i++)
 	{
 		int fromBottom = ap_feed_vcount - 1 - i;
 		int y = AP_FEED_BASE_Y - fromBottom * AP_FEED_LINE_H;
-		int color = ap_feed_vis[i].own ? ORANGE : WHITE;
-		DecalFont_DrawLine(ap_feed_vis[i].text, AP_FEED_X, y, FONT_SMALL, color);
+		DecalFont_DrawLine(ap_feed_vis[i].text, AP_FEED_X, y, FONT_SMALL,
+		                   ap_feed_vis[i].color);
 	}
 }
 
@@ -3025,9 +3056,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 	AP_FmtState(gGT, st, sizeof st); // game-state breadcrumb for this drain (crash diag)
 	for (i = 0; i < n; i++)
 	{
-		// Hub item feed: queue a toast for this receipt (sender + server index from
-		// the aligned drain batch). Display-only; self-suppresses off-hub / unprimed.
-		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i), ap_net_recv_batch_index(i));
+		// Hub item feed: queue a toast for this receipt (sender, server index and
+		// AP classification flags from the aligned drain batch). Display-only;
+		// self-suppresses off-hub / unprimed.
+		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
+		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
 
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
