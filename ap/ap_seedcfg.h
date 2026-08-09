@@ -44,11 +44,14 @@ extern "C" {
 // warns LOUDLY (stderr log + a persistent on-screen banner, ctr_cfg.schema_newer)
 // instead of silently guessing. Bump this in lockstep with the apworld's
 // fill_slot_data schema_version whenever the native side is taught the new shape.
+//   7 = gem cup leg randomization, gem_cup_legs[5][4] (issue #166). The bump is
+//       UNCONDITIONAL on the apworld side (Q28 ruling) -- every 0.2.0 seed
+//       declares 7, on or off, so a pre-7 client warns on every new seed.
 //   6 = 5-rung podium rework (held 1st/3rd/5th live + finish podium/any); #9
 //   5 = oxide_final_unlock relic-goal mode + oxide_final_count (issue #23)
 //   4 = type-4 relic-tier colour + goal-rework; 3 = podium + stage-2 padgate;
 //   2 = two-stage contract; 1 = flat pre-two-stage.
-#define CTR_CFG_SCHEMA_KNOWN 6
+#define CTR_CFG_SCHEMA_KNOWN 7
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -223,6 +226,16 @@ typedef struct
 	// cup); ctr_cfg_warp_dest/ctr_cfg_warp_phys read this array alongside
 	// warp_pad_map so the phys<->dest mapping is a single permutation over the union.
 	int             gem_cup_map[5];                     // phys cup LevelID 100+i -> destination LevelID (identity default 100+i)
+	// Gem Cup leg tracks (issue #166, slot_data schema >= 7). Keyed by cup colour
+	// 0..4 (= LevelID - 100) x leg 0..3 (cup-major, matching data.advCupTrackIDs's
+	// own flat cup*4+leg layout). This isolated C++ lib has no access to `data`,
+	// so the identity/vanilla default is NOT a formula here (unlike gem_cup_map's
+	// 100+i): it is pushed in once at boot from the C side via
+	// ctr_cfg_set_vanilla_cup_legs(), cached, and every parse re-seeds this array
+	// from that cache before the (conditional) wire block overlays entries.
+	// ctr_cfg_cup_leg() is the identity-safe accessor -- never read this array
+	// directly.
+	int             gem_cup_legs[5][4];                 // cup colour 0..4 (LevelID 100+i) -> leg 0..3 track LevelID (vanilla default)
 	ctr_req         boss_req[CTR_CFG_BOSS_COUNT];       // 0 roo,1 papu,2 komodo,3 pinstripe,4 oxide
 	// Per-boss required race-track LevelIDs for the track-based garage modes
 	// (bossgarage_mode 0 Original4Tracks / 1 SameHubTracks). boss_tracks[b][0..
@@ -264,6 +277,22 @@ int ctr_cfg_warp_dest(int physPadLevelID);
 // the physical pad and not the remapped destination. The union of the two maps is
 // a permutation over the participating pool, so the inverse is unique.
 int ctr_cfg_warp_phys(int destTrackLevelID);
+
+// One-time vanilla-table seed (issue #166). The C unity build (ap_hooks.c, which
+// has `data` in scope) calls this ONCE at boot with data.advCupTrackIDs (20 ints,
+// cup-major cup*4+leg, i.e. the table's own flat layout) so this isolated C++ lib
+// never hand-copies it. Must run before the first ap_seedcfg_parse_json() for
+// that seed's identity default (and ctr_cfg_cup_leg's inactive-state fallback)
+// to be correct; safe to call again (idempotent last-write-wins).
+void ctr_cfg_set_vanilla_cup_legs(const int *legs);
+
+// The Gem Cup leg track LevelID for cup 0..4 (= LevelID - 100) x leg 0..3 (issue
+// #166, schema >= 7). Identity-safe: returns the cached vanilla
+// data.advCupTrackIDs value (via ctr_cfg_set_vanilla_cup_legs) when slot_data is
+// inactive or this seed's wire block left the leg at its default; out-of-range
+// cup/leg returns -1 (caller error, no sane fallback). Safe to call
+// unconditionally, mirroring ctr_cfg_warp_phys.
+int ctr_cfg_cup_leg(int cup, int leg);
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=

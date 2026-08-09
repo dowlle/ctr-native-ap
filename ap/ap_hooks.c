@@ -706,13 +706,15 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	}
 	else if (destLevelID >= 100 && destLevelID < 105)
 	{
-		// Aggregate the four leg tracks' uncollected rungs. advCupTrackIDs is
-		// cup-major (cup*4 + leg); a leg whose track is a trial (16/17) or otherwise
-		// outside 0..15 carries no podium rungs and is skipped by AP_AppendTrackRungGlow.
+		// Aggregate the four leg tracks' uncollected rungs. ctr_cfg_cup_leg is
+		// cup-major (cup, leg) and identity-safe (#166: returns the vanilla
+		// data.advCupTrackIDs value when inactive or this seed left the leg at
+		// its default); a leg whose track is a trial (16/17) or otherwise outside
+		// 0..15 carries no podium rungs and is skipped by AP_AppendTrackRungGlow.
 		int cup = destLevelID - 100;
 		int leg;
 		for (leg = 0; leg < 4 && count < cap; leg++)
-			AP_AppendTrackRungGlow(data.advCupTrackIDs[cup * 4 + leg], outBits, cap,
+			AP_AppendTrackRungGlow(ctr_cfg_cup_leg(cup, leg), outBits, cap,
 			                       &count);
 	}
 	return count;
@@ -3900,6 +3902,11 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			AP_AppendLog("[AP BOOT] vendor: " CTR_AP_VENDOR_VERSIONS "\n");
 			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
 			             ".sh on Linux/Deck) next to the game and share the archive\n");
+			// #166: prime the gem-cup-leg identity/vanilla table from the live
+			// data.advCupTrackIDs before any slot_data can possibly parse -- the
+			// isolated ap_net/ap_seedcfg C++ lib has no access to `data`, so this
+			// boot call is the one place the real vanilla table crosses into it.
+			ctr_cfg_set_vanilla_cup_legs(data.advCupTrackIDs);
 		}
 		if ((int)gGT->levelID != ap_prev_level)
 		{
