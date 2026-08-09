@@ -8,6 +8,7 @@
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
+#include "../ap/ap_surface.h"  // natural-surface comfort items (#14/#15)
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
 #endif
@@ -343,6 +344,7 @@
 #include "../ap/ap_verify.c"
 #include "../ap/ap_traps.c"
 #include "../ap/ap_shortcut.c"
+#include "../ap/ap_surface.c"
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
