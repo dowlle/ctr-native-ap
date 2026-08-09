@@ -1,6 +1,7 @@
 #ifdef CTR_AP
 
 #include <common.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
@@ -3368,31 +3369,43 @@ enum
 // pinned to the 30fps NTSC tick). ~0.5s ~= 15 NTSC frames.
 #define AP_HELD_DEBOUNCE_MS 500
 
-// Emit ONE rung location check: skip if absent (-1) or already checked (the whole
-// dedup/checked-state story comes free from ap_net_location_checked), else log +
-// send + record it in the race-end ceremony ledger. `phase` = "held" or "finish"
-// for the diagnostic log only. Shared by the live listener and the finish fan-out.
-static void AP_EmitRung(int track, long code, int rungTag, int position,
-                        const char *phase)
+// Emit one optional-class location check. The absent-code and checked-state
+// guards, diagnostic log and network send are common to podium, relic-perfect,
+// item-box, itemsanity and lettersanity checks. Ceremony participation and the
+// sent-item feed are deliberately caller decisions: not every class is earned in
+// a race-end award block, and bursty classes must be able to suppress feed spam.
+static void AP_EmitClassCheck(long code,
+                              int addToCeremonyLedger, int ledgerBit, int ledgerTag,
+                              int toastSentItem, const char *logFmt, ...)
 {
 	if (code < 0)
-		return; // rung absent this seed
+		return; // location absent this seed
 	if (ap_net_location_checked(code))
 		return; // already checked (re-fire / re-win / reload)
 
 	char msg[128];
-	snprintf(msg, sizeof msg,
-	         "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
-	         phase, track, position, rungTag, code);
+	va_list args;
+	va_start(args, logFmt);
+	vsnprintf(msg, sizeof msg, logFmt, args);
+	va_end(args);
 	AP_AppendLog(msg);
-	ap_net_send_location(code);                    // LocationChecks([code])
-	AP_CeremonyLedgerAdd(code, -1, rungTag);       // feed the race-end award block
-	// #63: rung sends are deliberately NOT toasted to the hub feed. A single trophy
-	// win fans out up to ~5 rungs at once (AP_SendPodiumChecks), which would burst
-	// ~6 near-simultaneous toasts and feel spammy. Suppressed for now; to enable,
-	// add one line here -- AP_FeedOnLocationSent(code); -- it is already safe (the
-	// checked-state guard at the top of this function returns before the send on a
-	// re-fire/re-win, so a NEW check is the only path that reaches here).
+
+	ap_net_send_location(code); // LocationChecks([code])
+	if (addToCeremonyLedger)
+		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
+	if (toastSentItem)
+		AP_FeedOnLocationSent(code);
+}
+
+// Podium wrapper: preserve the shipped log text and make the two podium-specific
+// policies explicit. Rungs join the ceremony ledger and stay out of the feed per
+// #63 because one result can fan out into several simultaneous checks.
+static void AP_EmitRung(int track, long code, int rungTag, int position,
+                        const char *phase)
+{
+	AP_EmitClassCheck(code, 1, -1, rungTag, 0,
+	                  "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
+	                  phase, track, position, rungTag, code);
 }
 
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
