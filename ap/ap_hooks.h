@@ -304,6 +304,35 @@ int AP_WarpPadRewardTokenColour(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 
+// 1 if the AP location at `globalBit` is a REAL location this SEED (present in
+// AP's own missing/checked location set for our slot -- see ap_net_location_exists).
+// AP_LookupLocationCode alone is NOT enough to answer this: it resolves against the
+// compile-time 101/112-name SUPERSET table, which is seed-independent, so it stays
+// >= 0 even for a relic Time Trial this particular seed never created (issue
+// #171/#28 R1: a below-count tier is removed, not pinned). Use this wherever a
+// per-seed "does this check exist at all" answer is needed -- the location-send
+// guard (AP_NotifyAdvReward) and every glow/notice enumerator
+// (AP_WarpPadUncollectedBits, AP_PadUncollectedBits) -- so a removed slot is never
+// sent, and never advertised as an outstanding check. Returns 0 if not a checkable
+// bit / not connected.
+int AP_LocationExistsByBit(int globalBit);
+
+// Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
+// Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant
+// answer to "does the player own this specific tier on this track". Two disjoint
+// sources, selected by whether the slot exists this seed:
+//   - REAL this seed (AP_LocationExistsByBit true): server truth,
+//     AP_LocationCheckedByBit -- unaffected by local-grant, exactly as before.
+//   - REMOVED this seed (a below-count tier, #171/#28 R1): there is no AP
+//     location to ask, so the raw AdvProgress bit IS the record -- set once by
+//     the grant site's own UNLOCK_ADV_BIT and never touched again by
+//     AP_ApplyItems (see its own local-grant skip), so it persists exactly like
+//     a vanilla flag (survives ticks, reconnects, and save/load) with zero AP
+//     meaning: it never derives from or feeds ap_recv_count / any gate.
+// Returns 0 for a bit outside the relic ranges (defensive; callers only pass
+// relic bits) or when not connected.
+int AP_RelicRewardOwnedByBit(int globalBit);
+
 // ── Reward-glow uncollected enumeration ──
 // Fill `outBits` (capacity `cap`) with the still-UNCOLLECTED (unchecked) AP reward
 // locations of race track `destLevelID` (0..15), in fixed tier order: Trophy

@@ -747,6 +747,18 @@ extern "C" int ap_net_location_checked(long long location_code)
 	return chk.count((int64_t)location_code) ? 1 : 0;
 }
 
+extern "C" int ap_net_location_exists(long long location_code)
+{
+	if (!g_ap)
+		return 0;
+	int64_t code = (int64_t)location_code;
+	const std::set<int64_t> &chk = g_ap->get_checked_locations();
+	if (chk.count(code))
+		return 1;
+	const std::set<int64_t> &miss = g_ap->get_missing_locations();
+	return miss.count(code) ? 1 : 0;
+}
+
 extern "C" int ap_net_self_slot(void)
 {
 	return g_ap ? g_ap->get_player_number() : -1;

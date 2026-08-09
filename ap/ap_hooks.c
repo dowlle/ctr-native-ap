@@ -248,6 +248,29 @@ int AP_LocationCheckedByBit(int globalBit)
 	return ap_net_location_checked(code);
 }
 
+// See ap_hooks.h. Per-seed existence, not per-seed checked-state: distinguishes a
+// real (if still unchecked) location from one this seed never created (issue
+// #171/#28 R1).
+int AP_LocationExistsByBit(int globalBit)
+{
+	long code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return 0;
+	return ap_net_location_exists(code);
+}
+
+// See ap_hooks.h. Merged relic-tier ownership (issue #28 R1 local-grant): server
+// truth for a real location this seed, the raw AdvProgress bit for a removed one.
+int AP_RelicRewardOwnedByBit(int globalBit)
+{
+	long code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return 0;
+	if (ap_net_location_exists(code))
+		return ap_net_location_checked(code);
+	return CHECK_ADV_BIT(sdata->advProgress.rewards, globalBit) != 0;
+}
+
 // ---------------------------------------------------------------------------
 // MAP overlay retirement: the old debug-era per-pad map state
 // (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState)
@@ -501,10 +524,11 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 	for (i = 0; i < 5 && count < cap; i++)
 	{
 		int bit = destLevelID + kTierBit[i];
-		// AP_LookupLocationCode == -1 (location not in this seed's table, e.g. a
-		// tier the apworld didn't place) is treated as "not advertisable" -> skip,
-		// so we never show a glow for a non-existent location.
-		if (AP_LookupLocationCode(bit) < 0)
+		// Not a real location THIS SEED (e.g. a tier the apworld didn't place,
+		// or -- issue #171/#28 R1 -- a below-count relic Time Trial that was
+		// never created at all) is "not advertisable" -> skip, so the glow
+		// never shows an AP check for a location that doesn't exist.
+		if (!AP_LocationExistsByBit(bit))
 			continue;
 		if (!AP_LocationCheckedByBit(bit))
 			outBits[count++] = bit;
@@ -565,7 +589,9 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 		for (i = 0; i < 5 && count < cap; i++)
 		{
 			int bit = destLevelID + kRaceTierBit[i];
-			if (AP_LookupLocationCode(bit) < 0)
+			// Issue #171/#28 R1: skip a below-count relic Time Trial this seed
+			// never created, exactly like AP_WarpPadUncollectedBits above.
+			if (!AP_LocationExistsByBit(bit))
 				continue;
 			if (!AP_LocationCheckedByBit(bit))
 				outBits[count++] = bit;
@@ -576,7 +602,7 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 		for (i = 0; i < 3 && count < cap; i++)
 		{
 			int bit = destLevelID + kTrialTierBit[i];
-			if (AP_LookupLocationCode(bit) < 0)
+			if (!AP_LocationExistsByBit(bit))
 				continue;
 			if (!AP_LocationCheckedByBit(bit))
 				outBits[count++] = bit;
@@ -587,15 +613,19 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 	{
 		// Battle arena crystal (Crystal Bonus Round, bits 111..114). Same mapping
 		// as the ThTick glow pass: battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN.
+		// Never a removed slot (crystal bonuses are unconditional locations --
+		// see the package-3 build note), but checked the same way for consistency.
 		int bit = R232.battleTrackArr[destLevelID - 18] + ADV_REWARD_FIRST_PURPLE_TOKEN;
-		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+		if (AP_LocationExistsByBit(bit) && !AP_LocationCheckedByBit(bit) && count < cap)
 			outBits[count++] = bit;
 	}
 	else if (destLevelID >= 100 && destLevelID < 105)
 	{
-		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4.
+		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4. Never a
+		// removed slot -- shuffle_gems off PINS this location (place_locked_item),
+		// it stays a real self-consistent AP check (see the package-3 build note).
 		int bit = (destLevelID - 100) + ADV_REWARD_FIRST_GEM;
-		if (AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit) && count < cap)
+		if (AP_LocationExistsByBit(bit) && !AP_LocationCheckedByBit(bit) && count < cap)
 			outBits[count++] = bit;
 	}
 
@@ -1142,14 +1172,18 @@ int AP_RelicTargetTier(void)
 	return ap_relic_target_tier;
 }
 
-// Tier still earnable on this track: its Time Trial location exists in this
-// seed AND is unchecked. Unchecked tiers are always a contiguous run from the
-// top (beating a higher time also sends every lower tier's check), so the
-// ladder never has gaps.
+// Tier still earnable on this track: not yet OWNED, whether that ownership is
+// a real AP check (server truth) or a native local grant on a removed slot
+// (issue #171/#28 R1 -- AP_RelicRewardOwnedByBit; the location existing at all
+// is folded into that same merged answer, since a removed slot's raw bit still
+// starts clear and correctly reads "not yet earned"). Unowned tiers are always
+// a contiguous run from the top (beating a higher time also sends/grants every
+// lower tier), so the ladder never has gaps -- true regardless of which tiers
+// on this track are real checks and which are local-grant.
 static int AP_RelicTierEarnable(int levelID, int tier)
 {
 	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
-	return AP_LookupLocationCode(bit) >= 0 && !AP_LocationCheckedByBit(bit);
+	return !AP_RelicRewardOwnedByBit(bit);
 }
 
 // Break a tier's time into the sdata HUD digit fields (same formulas as the
@@ -1916,12 +1950,31 @@ void AP_NotifyAdvReward(int rewardBit)
 
 	long code = AP_LookupLocationCode(rewardBit);
 	const char *name = AP_TrophyName(rewardBit);
+	// code >= 0 only proves the bit is IN the compile-time 101/112-name superset
+	// table -- that table is seed-independent, so a removed relic Time Trial
+	// (issue #171/#28 R1: a below-count tier is never created, not merely pinned)
+	// still resolves a code here. `exists` is the per-seed truth (AP's own
+	// checked/missing location set) and is what decides whether there is
+	// anything real to send.
+	int exists = code >= 0 && ap_net_location_exists(code);
 
-	if (code >= 0)
+	if (exists)
 	{
 		snprintf(msg, sizeof msg,
 		         "[AP CHECK] location: AP code %ld (bit %d)%s%s\n",
 		         code, rewardBit, name ? " -- " : "", name ? name : "");
+	}
+	else if (code >= 0)
+	{
+		// Local-grant (#28 R1): the caller's own vanilla-presentation code
+		// already ran (every grant site calls UNLOCK_ADV_BIT before this),
+		// which is the reward's ONLY record from here -- AP_ApplyItems never
+		// touches a local-grant bit (see its own skip), so it persists like a
+		// vanilla flag. Nothing to check, nothing to send.
+		snprintf(msg, sizeof msg,
+		         "[AP LOCAL-GRANT] bit %d has no AP location this seed -- "
+		         "granted natively, no check sent%s%s\n",
+		         rewardBit, name ? " -- " : "", name ? name : "");
 	}
 	else
 	{
@@ -1931,7 +1984,7 @@ void AP_NotifyAdvReward(int rewardBit)
 	}
 	AP_AppendLog(msg);
 
-	if (code >= 0)
+	if (exists)
 	{
 		// #63: capture the checked-state BEFORE the send so a session replay /
 		// re-win of an already-checked location never re-toasts the sent line.
@@ -2720,6 +2773,22 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 				bit = p->bits[p->size - 1 - k]; // high-end first
 				wantSet = k < want;
 			}
+			// Issue #171/#28 R1: a relic Time Trial this seed never created
+			// (a below-count tier) is a local-grant slot, not a fungible pool
+			// member -- its bit is the SOLE record of a native local grant
+			// (AP_RelicRewardOwnedByBit reads it back directly), written once
+			// by the grant site's own UNLOCK_ADV_BIT. This reconcile must
+			// never touch it: setting it from the pooled high-end fill would
+			// fabricate a relic that was never earned, and clearing it as
+			// "not backed by a received item" (every removed slot's bit fails
+			// that test by construction, since it can never receive an AP
+			// item) would erase a real local win the instant it lands. Only
+			// the three relic categories can ever have a removed slot
+			// (trophies, tokens, gems, keys are always real 1:1 locations
+			// this seed -- see the package-3 build note).
+			if ((c == AP_CAT_SAPPHIRE || c == AP_CAT_GOLD || c == AP_CAT_PLATINUM) &&
+			    !AP_LocationExistsByBit(bit))
+				continue;
 			int isSet = CHECK_ADV_BIT(adv->rewards, bit) != 0;
 			if (wantSet)
 			{
