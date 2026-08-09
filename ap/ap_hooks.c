@@ -18,6 +18,7 @@
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
+#include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -2996,6 +2997,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
+		AP_SurfaceReset(); // rebuilt by the authoritative ReceivedItems replay below
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3102,6 +3104,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 				         "[AP TRAP] replay dedup: trap at index %lld skipped\n", srvIdx);
 				AP_LogLine(skipmsg);
 			}
+		}
+
+		// Permanent comfort items (idx 21..25): remember presence for the natural
+		// terrain metadata hook. They are booleans, so duplicates are harmless.
+		else if (idx >= AP_SURFACE_ITEM_FIRST_INDEX &&
+		         idx < AP_SURFACE_ITEM_FIRST_INDEX + AP_SURFACE_ITEM_COUNT)
+		{
+			AP_SurfaceReceive((int)(idx - AP_SURFACE_ITEM_FIRST_INDEX));
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the

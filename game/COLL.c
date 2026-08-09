@@ -1499,6 +1499,9 @@ void COLL_FIXED_PlayerSearch(struct Thread *t, struct Driver *d)
 		goto DriverAirborne;
 	}
 
+#ifdef CTR_AP
+	int naturalTerrain = 0;
+#endif
 	if ((d->rainCloudEffect == RAIN_CLOUD_EFFECT_ICE_TERRAIN) || ((gGT->gameMode2 & CHEAT_ICY) != 0))
 	{
 		d->currentTerrain = TERRAIN_ICE;
@@ -1513,9 +1516,17 @@ void COLL_FIXED_PlayerSearch(struct Thread *t, struct Driver *d)
 		}
 
 		d->currentTerrain = terrainType;
+#ifdef CTR_AP
+		naturalTerrain = 1;
+#endif
 	}
 
+#ifdef CTR_AP
+	d->terrainMeta1 = VehAfterColl_GetTerrain(
+		AP_SurfaceTerrain(d, d->currentTerrain, naturalTerrain));
+#else
 	d->terrainMeta1 = VehAfterColl_GetTerrain(d->currentTerrain);
+#endif
 	d->terrainMeta2 = d->terrainMeta1;
 	d->jump_CoyoteTimerMS = COLL_FIXED_PLAYER_SEARCH_COYOTE_TIME_MS;
 
