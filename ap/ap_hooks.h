@@ -72,11 +72,13 @@ char *AP_Credits_PrependScroll(char *origScroll);
 // ── Hub item-received feed (display-only) ──
 // Bottom-left feed of the AP items you receive, rendered only on the adventure
 // hub. AP_FeedOnItemReceived queues one drained receipt (called once per item in
-// the received-item drain loop). AP_FeedConnectReset re-arms initial-inventory
-// suppression on a fresh connect; AP_FeedEndDrain(n) primes the feed once that
-// dump goes quiet. AP_FeedDrawHub renders + ages the feed from the hub UI pass.
-// AP_HubFeedOn reflects the ap-config.txt "hub_feed=" toggle (default on).
-void AP_FeedOnItemReceived(long long item, int player, long long index);
+// the received-item drain loop; flags is the NetworkItem.flags metadata, used to
+// colour the line by AP class, issue #195). AP_FeedConnectReset re-arms
+// initial-inventory suppression on a fresh connect; AP_FeedEndDrain(n) primes
+// the feed once that dump goes quiet. AP_FeedDrawHub renders + ages the feed
+// from the hub UI pass. AP_HubFeedOn reflects the ap-config.txt "hub_feed="
+// toggle (default on).
+void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned flags);
 void AP_FeedConnectReset(void);
 void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
