@@ -756,7 +756,15 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			gGT->numLaps = 1;
 #endif
 
+#ifdef CTR_AP
+		// #166: ctr_cfg_cup_leg is identity-safe (returns the vanilla
+		// data.advCupTrackIDs value when slot_data is inactive or this seed left
+		// the leg at its default), so this is a no-op pre-#166 and on an
+		// option-off / pre-0.2.0 seed.
+		levelID = ctr_cfg_cup_leg(gGT->cup.cupID, 0);
+#else
 		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];
+#endif
 		goto WarpPad_RequestLoad;
 	}
 

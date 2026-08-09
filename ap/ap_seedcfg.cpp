@@ -23,6 +23,24 @@ extern "C"
 	ctr_seed_config ctr_cfg = {0};
 }
 
+// Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
+// side via ctr_cfg_set_vanilla_cup_legs (this isolated C++ lib has no access to
+// `data`). ctr_cfg.gem_cup_legs is reset FROM this cache on every parse (the
+// identity default), and ctr_cfg_cup_leg falls back to it directly when
+// slot_data is inactive. s_ready guards the pre-boot-call window defensively;
+// in practice ap_hooks.c seeds this on frame 1, long before a connect (and
+// therefore a parse) is possible.
+static int s_vanilla_cup_legs[5][4];
+static int s_vanilla_cup_legs_ready = 0;
+
+extern "C" void ctr_cfg_set_vanilla_cup_legs(const int *legs)
+{
+	for (int c = 0; c < 5; c++)
+		for (int l = 0; l < 4; l++)
+			s_vanilla_cup_legs[c][l] = legs[c * 4 + l];
+	s_vanilla_cup_legs_ready = 1;
+}
+
 extern "C" void AP_LogLine(const char *msg);
 
 // [AP CFG] output channel: stderr for a live/redirected capture AND ctr-ap.log
@@ -194,6 +212,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.gem_cup_unlock[i].stage2.colour = -1;
 		ctr_cfg.gem_cup_map[i] = 100 + i; // identity
 	}
+	// gem_cup_legs (#166) identity default = the cached vanilla data.advCupTrackIDs
+	// table (see ctr_cfg_set_vanilla_cup_legs), not a formula -- there is no trivial
+	// identity for a leg track. Re-seeded from the cache on every parse so a
+	// pre-#166 seed (no wire block) and an option-off #166 seed both keep the real
+	// vanilla legs. -1 only if the cache was never primed (should not happen; see
+	// the loud log below).
+	for (int c = 0; c < 5; c++)
+		for (int l = 0; l < 4; l++)
+			ctr_cfg.gem_cup_legs[c][l] =
+			    s_vanilla_cup_legs_ready ? s_vanilla_cup_legs[c][l] : -1;
+	if (!s_vanilla_cup_legs_ready)
+		ap_cfg_log(
+		             "[AP CFG] *** gem_cup_legs vanilla table not seeded yet "
+		             "(ctr_cfg_set_vanilla_cup_legs never ran before this parse) -- "
+		             "gem cup leg loads default to -1 until the next connect ***\n");
 	for (int i = 0; i < CTR_CFG_BOSS_COUNT; i++)
 	{
 		ctr_cfg.boss_req[i].type = 0;
@@ -324,6 +357,38 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			if (pad < 0 || pad >= CTR_CFG_PAD_COUNT)
 				continue;
 			ctr_cfg.warp_pad_map[pad] = dest;
+		}
+	}
+
+	// ── gem_cup_legs (issue #166, schema >= 7): the five Gem Cups' leg tracks ──
+	// Conditional block: emitted only when randomize_gem_cup_tracks is on (the
+	// schema 7 bump itself is unconditional per Q28 -- an option-off seed still
+	// declares 7 but carries no key here, leaving every leg at the vanilla
+	// default seeded above). Keys "100".."104" (cup LevelID), each value a 4-int
+	// array of leg track LevelIDs, validated to the trophy-track range 0..15
+	// (trial tracks 16/17 are never legal legs); an out-of-range or malformed
+	// element is dropped, leaving that one leg at its vanilla default rather than
+	// guessing -- the same per-element tolerance boss_garage_req's tracks[] uses.
+	auto legsIt = j.find("gem_cup_legs");
+	if (legsIt != j.end() && legsIt->is_object())
+	{
+		for (auto it = legsIt->begin(); it != legsIt->end(); ++it)
+		{
+			int cup;
+			try { cup = std::stoi(it.key()); } catch (...) { continue; }
+			if (cup < 100 || cup > 104 || !it.value().is_array())
+				continue;
+			const nlohmann::json &legs = it.value();
+			for (size_t leg = 0; leg < legs.size() && leg < 4; leg++)
+			{
+				if (!legs[leg].is_number_integer())
+					continue; // null / non-int element -> keep vanilla for this leg
+				int track;
+				try { track = legs[leg].get<int>(); } catch (...) { continue; }
+				if (track < 0 || track > 15)
+					continue; // outside the trophy-track range -> keep vanilla
+				ctr_cfg.gem_cup_legs[cup - 100][leg] = track;
+			}
 		}
 	}
 
@@ -504,6 +569,15 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			             c, 100 + c, u.stage1.type, u.stage1.count, u.stage1.colour,
 			             u.stage2.type, u.stage2.count, u.stage2.colour, dest);
 	}
+	for (int c = 0; c < 5; c++)
+	{
+		const int *cl = ctr_cfg.gem_cup_legs[c];
+		const int *vl = s_vanilla_cup_legs[c];
+		if (cl[0] != vl[0] || cl[1] != vl[1] || cl[2] != vl[2] || cl[3] != vl[3])
+			ap_cfg_log(
+			             "[AP CFG] gem_cup_legs[%d] (phys LevelID %d) = [%d,%d,%d,%d]\n",
+			             c, 100 + c, cl[0], cl[1], cl[2], cl[3]);
+	}
 	ap_cfg_log( "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
 	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
 	if (ctr_cfg.podium_enabled)
@@ -553,4 +627,16 @@ extern "C" int ctr_cfg_warp_phys(int destTrackLevelID)
 		if (ctr_cfg.gem_cup_map[c] == destTrackLevelID)
 			return 100 + c;
 	return destTrackLevelID;
+}
+
+extern "C" int ctr_cfg_cup_leg(int cup, int leg)
+{
+	if (cup < 0 || cup >= 5 || leg < 0 || leg >= 4)
+		return -1; // caller error -- no sane fallback
+	if (ctr_cfg.schema_version >= 1)
+		return ctr_cfg.gem_cup_legs[cup][leg];
+	// Inactive (no slot_data / pre-connect): go straight to the cached vanilla
+	// table rather than the zero-initialized ctr_cfg.gem_cup_legs, which a parse
+	// may never have touched this session.
+	return s_vanilla_cup_legs_ready ? s_vanilla_cup_legs[cup][leg] : -1;
 }

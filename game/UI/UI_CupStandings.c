@@ -531,7 +531,12 @@ void UI_CupStandings_InputAndDraw(void)
 				// If not in Arcade or VS cup
 				if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
 				{
+#ifdef CTR_AP
+					// #166: identity-safe, see AH_WarpPad.c's leg-0 load.
+					index = ctr_cfg_cup_leg(cupID, cupTrack);
+#else
 					index = data.advCupTrackIDs[(4 * cupID) + cupTrack];
+#endif
 				}
 
 				// If Arcade or VS cup

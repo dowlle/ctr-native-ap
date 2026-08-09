@@ -195,13 +195,14 @@ static void ap_vf_bank_own(long code, int *counts)
 // A podium rung fires from a gem-cup LEG as well as from the track's own pad
 // (issue #107): the placement listener hooks the race itself, and a cup leg is a
 // real load of that track, so winning a reachable cup collects the rungs of all
-// four leg tracks (data.advCupTrackIDs, the same table the cup-pad glow
-// aggregates by; the apworld's podium rule carries the same OR via the #86 joint
-// podium region). Without this branch, a seed whose Key progression runs through
-// a cup-leg rung -- common under merged destination shuffle, where a cup can sit
-// on a low-Key pad -- sweeps to a false GOAL BLOCKED. Reachability of the cup
-// uses the same predicate as the cup's own reward: the pad that loads the cup
-// destination, its hub keys, and its stage-1 gate.
+// four leg tracks (ctr_cfg_cup_leg, identity-safe over data.advCupTrackIDs --
+// #166 -- the same accessor the cup-pad glow aggregates by; the apworld's
+// podium rule carries the same OR via the #86 joint podium region). Without
+// this branch, a seed whose Key progression runs through a cup-leg rung --
+// common under merged destination shuffle, where a cup can sit on a low-Key
+// pad -- sweeps to a false GOAL BLOCKED. Reachability of the cup uses the same
+// predicate as the cup's own reward: the pad that loads the cup destination,
+// its hub keys, and its stage-1 gate.
 static int ap_vf_cup_leg_open(int lid, const int *counts,
                               const int *pad_for_dest)
 {
@@ -210,7 +211,7 @@ static int ap_vf_cup_leg_open(int lid, const int *counts,
 	{
 		legged = 0;
 		for (leg = 0; leg < 4; leg++)
-			if (data.advCupTrackIDs[cup * 4 + leg] == lid)
+			if (ctr_cfg_cup_leg(cup, leg) == lid)
 				legged = 1;
 		if (!legged)
 			continue;
