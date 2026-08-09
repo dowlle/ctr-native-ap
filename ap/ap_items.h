@@ -6,8 +6,10 @@
 //
 // Icebound's items (data/items.json) are GENERIC category counters, not
 // track-specific: Trophy x16, Sapphire/Gold/Platinum Relic x18, CTR Token
-// (5 colours x4), Gem (5 colours), Key x4, Wumpa Fruit (filler). Item id =
-// AP_ITEM_BASE + index_in_items.json.
+// (5 colours x4), Gem (5 colours), Key x4, Wumpa Fruit (filler). The apworld
+// assigns explicit stable codes in data/items.json. The currently shipped base
+// block remains contiguous from AP_ITEM_BASE, which is what the native category
+// switch consumes; JSON array order is no longer the source of those ids.
 //
 // On the rando ROM these increment SaveSlot-4 byte-packed counters and the
 // patched gates read those counters. ctr-native has no such patch -- the gates
