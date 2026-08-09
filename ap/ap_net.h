@@ -74,6 +74,17 @@ int  ap_net_item_text(long long item_id, int sender_slot, char *item_buf,
 // the "done / chill" warp-pad colouring vs the "new / available" glow.
 int  ap_net_location_checked(long long location_code);
 
+// 1 if location_code is a REAL location for our own slot this seed -- present in
+// either the server's checked_locations or missing_locations set (their union is
+// the full, fixed per-slot location list; checking one only moves it between the
+// two sets, so the union never shrinks). Distinguishes an unchecked-but-real
+// location from one this seed never created at all (issue #171/#28 R1: a
+// below-count relic Time Trial is not created, not merely pinned/excluded), with
+// no bespoke wire field -- the slot_data Contract's own steer (§3, the
+// `relic_tier_locations` callout) is that AP's connection protocol already
+// carries this answer. Returns 0 if not connected.
+int  ap_net_location_exists(long long location_code);
+
 // Count of own location checks sent whose ReceivedItems echo has not yet drained
 // (issue #85). In solo every own check echoes, so this drains to 0. The seed-verify
 // sweep withholds the "not completable" banner while this is > 0 so a transient

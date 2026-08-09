@@ -83,13 +83,16 @@ void RR_EndEvent_UnlockAward(void)
 
 		s32 rewardBit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * relicIndex + levelID;
 
-		// if relic already unlocked, check next relic
+		// if relic already unlocked/granted, check next relic
 #ifdef CTR_AP
-		// AP: gate on the location CHECKED-state, not adv->rewards -- AP_ApplyItems
-		// high-end-fills received relic bits, so a just-beaten tier whose bit is in
-		// the received set would be skipped and never send its TT location check
-		// (same AP_ApplyItems-collision class as the trophy fix in 222.c).
-		if (ctr_cfg_active() ? AP_LocationCheckedByBit(rewardBit)
+		// AP: gate on merged OWNERSHIP, not raw adv->rewards -- AP_ApplyItems
+		// high-end-fills received relic bits (real checks) and now skips a
+		// removed slot's bit entirely (issue #171/#28 R1 local-grant), so
+		// AP_RelicRewardOwnedByBit reads server truth for a real location and
+		// the raw bit for a removed one, either way without a just-beaten tier
+		// being skipped and never sending/granting (same AP_ApplyItems-collision
+		// class as the trophy fix in 222.c).
+		if (ctr_cfg_active() ? AP_RelicRewardOwnedByBit(rewardBit)
 		                     : (CHECK_ADV_BIT(adv->rewards, rewardBit) != 0))
 #else
 		if (CHECK_ADV_BIT(adv->rewards, rewardBit) != 0)
@@ -98,12 +101,21 @@ void RR_EndEvent_UnlockAward(void)
 			continue;
 		}
 
-		// == beat relic, and unlocked relic ==
+		// == beat relic, and unlocked/granted relic ==
 
-		// unlock
+		// unlock -- vanilla presentation (model, tally, "won relic" flag below)
+		// fires unconditionally here for BOTH a real AP check and a local grant
+		// (issue #171/#28 R1: "exactly like vanilla", no AP round trip, zero AP
+		// meaning). For a removed slot this UNLOCK_ADV_BIT is the reward's only
+		// record from here on -- AP_ApplyItems never touches it (see its own
+		// skip), so it persists like any vanilla flag.
 		UNLOCK_ADV_BIT(adv->rewards, rewardBit);
 #ifdef CTR_AP
-		AP_NotifyAdvReward(rewardBit); // AP: relic (time trial) location check
+		// AP: relic (time trial) location check -- AP_NotifyAdvReward itself
+		// no-ops the network send for a removed slot (issue #171/#28 R1), so
+		// this call is always safe to make; nothing here needs to know which
+		// case it is.
+		AP_NotifyAdvReward(rewardBit);
 #endif
 
 		// relic model
