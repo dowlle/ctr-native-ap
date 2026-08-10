@@ -83,9 +83,10 @@ completed locations, and rebuilds your received-item counts when you reconnect.
 The locations in your seed depend on its YAML options. They can include Trophy
 Races, CTR Token Challenges, relic Time Trials, boss races, Gem Cups, Crystal
 Bonus Rounds, Oxide races, and additional finishing-position checks. Complete
-an event and continue past its results or award screen to send its check. New
-items appear in the feed when you return to the Adventure hub. Progression items
-update your available gates; traps arm silently and fire during a later race.
+an event and continue past its results or award screen to send its check. Items
+you receive, and the ones your checks send to other players, appear in the feed
+during the race as well as in the Adventure hub. Progression items update your
+available gates; traps arm silently and fire during a later race.
 
 If the connection drops, reconnect before completing another location. In the
 current release, a check completed while disconnected is not resent later. The

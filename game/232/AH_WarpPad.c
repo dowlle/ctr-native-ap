@@ -1199,10 +1199,14 @@ WarpPad_AnimateOpen:
 
 				// Swap this slot to the advertised reward's model + tint. Model-
 				// pointer reassignment is a native pattern; SpinRewards/scale below
-				// read the new model->id. Foreign / unscouted -> AP_WarpPadRewardModel
-				// returns STATIC_KEY / -1; we keep the existing model on -1.
+				// read the new model->id. Unscouted / unresolved / no marker model ->
+				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
+					// #212: another CTR player's OG reward keeps its own model and is
+					// made TRANSLUCENT instead. Resolved from the SAME scout as the
+					// model above, so model and treatment cannot disagree about a slot.
+					int apGhost = AP_WarpPadRewardGhost(apSlotBit[i]);
 					int apTint;
 					if (apModel >= 0 && gGT->modelPtr[apModel] != 0)
 						apPrize->model = gGT->modelPtr[apModel];
@@ -1214,19 +1218,25 @@ WarpPad_AnimateOpen:
 					// (colorRGBA 0). When _ThTick swaps a slot to a different reward
 					// model, that stale placeholder colour would BLEED -- e.g. a trophy
 					// landing in the relic slot renders BLUE. Reset colour per FINAL
-					// model so OWN items always show their natural colour; ONLY a
-					// FOREIGN multiworld item is recoloured (to the white gem marker).
-					// Flags reset per FINAL model: clear DRAW_TRANSPARENT and
-					// USE_SPECULAR_LIGHT up front so each case re-adds only what its
-					// model needs. STATIC_TROPHY (the default case) must render WITHOUT
-					// specular -- vanilla trophies are unlit and SpinRewards deliberately
-					// skips the light-spin for STATIC_TROPHY (no lightDir). Without this
-					// clear, a slot BORN as the relic/token placeholder (specular set at
-					// birth) or one that just cycled through a relic/token/gem/key keeps
-					// USE_SPECULAR_LIGHT when it becomes a trophy -> a specular trophy
-					// whose light is never spun renders solid BLACK (the specular sibling
-					// of the black-key bug).
-					apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+					// model so OWN items always show their natural colour; only an
+					// Archipelago-logo MARKER is recoloured, by AP classification or by
+					// the seed's one uniform surprise colour (#212).
+					// Flags reset per FINAL model: clear DRAW_TRANSPARENT,
+					// USE_SPECULAR_LIGHT and GHOST_DRAW_TRANSPARENT up front so each case
+					// re-adds only what its model needs. STATIC_TROPHY (the default case)
+					// must render WITHOUT specular -- vanilla trophies are unlit and
+					// SpinRewards deliberately skips the light-spin for STATIC_TROPHY (no
+					// lightDir). Without this clear, a slot BORN as the relic/token
+					// placeholder (specular set at birth) or one that just cycled through
+					// a relic/token/gem/key keeps USE_SPECULAR_LIGHT when it becomes a
+					// trophy -> a specular trophy whose light is never spun renders solid
+					// BLACK (the specular sibling of the black-key bug).
+					// GHOST_DRAW_TRANSPARENT (0x60000) carries a bit the other two do NOT
+					// (0x40000), and the prim/setup writer is chosen from flag bits 16-18
+					// as one 3-bit index (RenderBucket_QueueExecute.c:783). Leaving that
+					// bit set would strand a slot on the ghost writer for the rest of its
+					// life once it had shown one peer reward, so it clears with the rest.
+					apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT | GHOST_DRAW_TRANSPARENT);
 					// alphaScale is reset for the same reason as the flags: only
 					// the untextured AP marker (#124) uses it, and a slot that
 					// cycles off the marker onto a trophy would otherwise keep a
@@ -1266,7 +1276,10 @@ WarpPad_AnimateOpen:
 						break;
 					}
 					case STATIC_GEM:
-						// FOREIGN multiworld item -> white gem marker (AP_WarpPadRewardTint).
+						// A GEM now reaches this case only when the scouted item really is a
+						// gem-cup gem (mine, or a CTR peer's -- the peer's is ghosted below).
+						// The white-gem stand-in for foreign and filler items is retired
+						// (#212), so AP_WarpPadRewardTint no longer returns white here.
 						// OWN gem -> its gem COLOUR via data.AdvCups: the gem model has no
 						// useful unmodulated colour -- at colorRGBA 0 it renders near-black
 						// (the specular sibling of the black-key bug; seen live 2026-07-15,
@@ -1286,8 +1299,10 @@ WarpPad_AnimateOpen:
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
 					case STATIC_AP:
-						// #124: another game's item, shown as the Archipelago-logo
-						// marker and tinted by AP classification.
+						// The Archipelago-logo marker: since #212 this is EVERY non-OG
+						// item, mine or anyone's, tinted by AP classification -- or by the
+						// seed's single uniform colour when it asks for AP item types to
+						// stay a surprise (ctr_options.ap_item_type_colors = 0).
 						//
 						// This model is untextured, so it MUST stay on the plain
 						// prim writer: the writers selected by DRAW_TRANSPARENT and
@@ -1324,6 +1339,37 @@ WarpPad_AnimateOpen:
 						// placeholder already uses -> shows the model's own texture).
 						apPrize->colorRGBA = 0;
 						break;
+					}
+
+					// ── #212: another CTR PLAYER's OG reward -> the same model, GHOSTED ──
+					// The recipe is the time-trial ghost's, unchanged (GhostReplay.c:83-86):
+					// alphaScale 0xa00 + GHOST_DRAW_TRANSPARENT. That flag combination picks
+					// the ghost prim writer, which emits a semi-transparent mask triangle in
+					// front of the model and depth-cues the model itself toward the far
+					// colour by alphaScale -- so a peer's Sapphire Relic stays a Sapphire
+					// Relic and simply is not solid.
+					//
+					// colorRGBA MUST be 0 here, and that is a correctness constraint, not a
+					// look: the ghost writer takes its mask colour from a scratchpad word
+					// (RenderBucket_QueueExecute.c:3290) that the matching setup callback
+					// only refreshes on the colorRGBA == 0 branch (:5103-5122). A TINTED
+					// ghost would therefore emit a mask packet whose colour word -- command
+					// byte included -- is whatever the scratchpad happened to hold. So the
+					// per-model colour resolved above is dropped on this path; the ghost's
+					// own fade supplies the colour instead. This is why the tint helper
+					// already answers 0 for a ghosted slot: the two must agree.
+					//
+					// Consequence to check in game (Artemis): models that carry no useful
+					// unmodulated colour of their own -- key, gem -- ghost DARK. If that
+					// reads badly, the pre-analysed fallback is the pad token's translucency
+					// path (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT), which keeps colorRGBA but
+					// leaves the amount of translucency up to the model's own texture bits.
+					if (apGhost)
+					{
+						apPrize->colorRGBA = 0;
+						apPrize->alphaScale = AP_PAD_GHOST_ALPHA;
+						apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+						apPrize->flags |= GHOST_DRAW_TRANSPARENT;
 					}
 				}
 			}
