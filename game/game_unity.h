@@ -14,6 +14,7 @@
 #include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
+#include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
 #endif
 
 #include "226/R226.c"
@@ -354,6 +355,7 @@
 #include "../ap/ap_capability.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_author.c"
+#include "../ap/ap_boxes.c"
 #endif
 
 #endif

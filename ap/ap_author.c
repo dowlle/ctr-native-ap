@@ -48,6 +48,7 @@ static AP_SpawnHandle     s_marker[AP_AUTHOR_MAX_PLACEMENTS];
 static int                s_placeCount;
 
 static int s_loaded;           // the file has been read (once per run)
+static int s_placeGen;         // bumped on every change to s_place (see ap_author.h)
 static int s_enabledPrev;      // last frame's toggle state, for on/off edges
 static int s_markerLevel = -1; // level the current marker set was built for
 static int s_markerGen;        // AP_Spawn_Generation() the handles were taken at
@@ -96,27 +97,28 @@ int AP_Author_Enabled(void)
 
 // ── the marker model ────────────────────────────────────────────────────────
 
-// Which model stands in for an AP box while the real one does not exist.
+// Which model stands in for an AP box.
 //
-// First choice is the #124 AP-logo marker: it is our own model, it is already
-// registered into the free modelPtr slot every frame (ap_marker_model.c), and it
-// reads unambiguously as "Archipelago" rather than as a game object. It is only
-// available once it has been built, which needs STATIC_GEM -- a hub model -- so
-// an arcade-only session may never have it.
+// First choice is the weapon box, PU_RANDOM_CRATE. Every arcade track's LEV
+// carries it, so on a track it is essentially always available, and it is the
+// ruled #109 look, so the authoring preview and the real box are the same shape.
 //
-// Second choice is the weapon box the class is eventually meant to look like.
-// Every arcade track's LEV carries PU_RANDOM_CRATE, so on a track this is
-// essentially always available, and a box-shaped marker is the honest preview of
-// a box-shaped check.
+// ⚠ THE ORDER MATTERS AND IS NOT A STYLE CHOICE. The #124 AP-logo marker
+// (STATIC_AP) used to be first here, and under author mode's many-instance usage
+// it makes track FLOORS disappear -- reported by Stef 2026-08-09, resolved
+// 2026-08-10 by exactly this swap and confirmed live. See the vault note
+// "2026-08-09 -- Bug -- AP logo placement markers make floor invisible". The
+// logo path stays as a second choice because it costs nothing to keep, but if it
+// is ever promoted back to first, that bug is the reason not to.
 //
 // Returning -1 means "nothing to draw yet"; the placement is still recorded and
 // the marker request simply waits (ap_spawn.c holds unresolved model ids).
 static int AP_AuthorMarkerModel(struct GameTracker *gGT)
 {
-	if (AP_MarkerModel_IsRegistered() && gGT->modelPtr[STATIC_AP] != 0)
-		return STATIC_AP;
 	if (gGT->modelPtr[PU_RANDOM_CRATE] != 0)
 		return PU_RANDOM_CRATE;
+	if (AP_MarkerModel_IsRegistered() && gGT->modelPtr[STATIC_AP] != 0)
+		return STATIC_AP;
 	return -1;
 }
 
@@ -341,6 +343,7 @@ static void AP_AuthorLoad(void)
 	}
 
 	fclose(f);
+	s_placeGen++;
 
 	snprintf(msg, sizeof msg, "[AP AUTHOR] loaded %d placement(s) from %s\n",
 	         s_placeCount, AP_AUTHOR_FILE);
@@ -404,6 +407,7 @@ static void AP_AuthorDrop(struct GameTracker *gGT)
 	s_marker[s_placeCount] = AP_SPAWN_INVALID;
 	s_lastDropIndex = s_placeCount;
 	s_placeCount++;
+	s_placeGen++;
 
 	// Clear the latch for this one attempt: a drop is an explicit request, and
 	// if the loader is genuinely full the refusal is worth exactly one log line
@@ -461,6 +465,7 @@ static void AP_AuthorUndo(struct GameTracker *gGT)
 	}
 	s_placeCount--;
 	s_marker[s_placeCount] = AP_SPAWN_INVALID;
+	s_placeGen++;
 
 	s_lastDropIndex = -1;
 	AP_AuthorSave();
@@ -533,8 +538,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 		return;
 	}
 
-	if (!s_loaded)
-		AP_AuthorLoad();
+	AP_Author_EnsureLoaded();
 
 	if (!s_enabledPrev)
 	{
@@ -610,6 +614,43 @@ void AP_Author_DrawHud(void)
 		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H,
 		                   FONT_SMALL, WHITE);
 	}
+}
+
+// ── the shared placement table ──────────────────────────────────────────────
+
+void AP_Author_EnsureLoaded(void)
+{
+	if (!s_loaded)
+		AP_AuthorLoad();
+}
+
+int AP_Author_PlacementCount(void)
+{
+	return s_placeCount;
+}
+
+int AP_Author_PlacementGet(int index, int *level, short *x, short *y, short *z, short *rotY)
+{
+	if (index < 0 || index >= s_placeCount)
+		return 0;
+
+	if (level != 0)
+		*level = (int)s_place[index].level;
+	if (x != 0)
+		*x = s_place[index].x;
+	if (y != 0)
+		*y = s_place[index].y;
+	if (z != 0)
+		*z = s_place[index].z;
+	if (rotY != 0)
+		*rotY = s_place[index].rotY;
+
+	return 1;
+}
+
+int AP_Author_PlacementGeneration(void)
+{
+	return s_placeGen;
 }
 
 #endif // CTR_AP

@@ -168,6 +168,11 @@ void AP_DrawVerifyWarning(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// Emit one AP item-box location check (#109). Lives here rather than in
+// ap_boxes.c so every optional location class routes through the one #176
+// emitter, with its absent-code guard, checked-state guard and diagnostic line.
+void AP_EmitBoxCheck(int levelID, int slot, long code);
+
 // 1 if Aku Aku mask hints should be SKIPPED. Read once from ap-config.txt
 // (line "skip_hints=1") at connect. Honoured at the single choke point
 // MainFrame_RequestMaskHint (#ifdef CTR_AP) by early-returning, so no hint is

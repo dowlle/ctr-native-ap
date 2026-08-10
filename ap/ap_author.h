@@ -58,5 +58,28 @@ void AP_Author_DrawHud(void);
 // 1 while the mode is on. For call sites that want to skip work entirely.
 int AP_Author_Enabled(void);
 
+// ── the placement table, shared with the runtime box module ─────────────────
+//
+// ap_boxes.c (#109) spawns real, breakable boxes from the SAME table this mode
+// edits: one file, one reader, one ordering. That is what makes "slot N of a
+// track is the Nth placement listed for it" true on both sides by construction
+// rather than by two parsers agreeing, and it means an authoring edit is
+// visible to the runtime half without a restart.
+
+// Read the file if it has not been read yet. Author mode does this lazily when
+// it is switched on; the runtime half needs the table with the mode OFF.
+void AP_Author_EnsureLoaded(void);
+
+// Entries currently held, across all levels.
+int AP_Author_PlacementCount(void);
+
+// Copy placement `index` out. Any out pointer may be NULL. Returns 0 when the
+// index is out of range, in which case nothing is written.
+int AP_Author_PlacementGet(int index, int *level, short *x, short *y, short *z, short *rotY);
+
+// Bumped on every change to the table (load, drop, delete). A consumer compares
+// it to the value it built its own state from instead of polling every entry.
+int AP_Author_PlacementGeneration(void);
+
 #endif // CTR_AP
 #endif // AP_AUTHOR_H
