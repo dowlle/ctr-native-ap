@@ -1850,13 +1850,19 @@ void AP_DrawSchemaWarning(void)
 //     font_charPixHeight[FONT_BIG] + 3 = 20 px (RECTMENU.c:364), so it grows
 //     symmetrically and its BOTTOM moves with the row count. Seven rows put it
 //     at ~0xba; the scrapbook unlock adds an eighth row
-//     (s_rowsMainMenuWithSBConfig, MM_ConfigMenu.c:28) and pushes it to ~0xc3.
-//     0xc3 is the number to clear -- NOT the 0xba a basic-save screenshot shows.
+//     (s_rowsMainMenuWithSBConfig, MM_ConfigMenu.c:28) and pushed it to ~0xc3
+//     (a measured +9 px/row) -- 0xc3 was the number to clear, NOT the 0xba a
+//     basic-save screenshot shows.
 //   * the logo art ends at about the same height.
-// 0xCA clears both, and the FONT_SMALL line is 8 px, so it ends at 0xd2 with six
-// rows still inside the viewport.
+// #211 appended a QUIT row to both variants (MM_ConfigMenu.c), so the tallest
+// case is now nine rows (scrapbook + options + quit): extrapolating the same
+// +9 px/row puts the bottom at ~0xcc. 0xD3 keeps the original ~7 px clearance
+// over that new bottom (0xCA cleared 0xc3 the same way); the FONT_SMALL line is
+// 8 px, so it now ends at ~0xdb. This is arithmetic extrapolated from the
+// existing measured constant, NOT re-measured in game -- flagged on the rolling
+// testing list for a render check now that a ninth row exists.
 #define AP_UPD_TITLE_CENTRE_X 0x100
-#define AP_UPD_TITLE_Y        0xCA
+#define AP_UPD_TITLE_Y        0xD3
 
 // The TITLE surface is one line and carries NO version numbers. The title screen
 // only announces that an update exists; the numbers belong on the Connection
@@ -3293,6 +3299,14 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);
 	ap_net_started = 1; // suppress the boot-time auto-dial from re-running
+}
+
+// Quit-from-main-menu (#211): close the live socket before the process exits,
+// same call AP_Net_Reconnect makes ahead of a re-dial, just with no re-dial
+// after it.
+void AP_Net_Shutdown(void)
+{
+	ap_net_shutdown();
 }
 
 // Longest host the status row can render before the line runs off the panel
