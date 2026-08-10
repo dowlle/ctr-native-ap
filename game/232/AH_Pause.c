@@ -443,6 +443,25 @@ void AH_Pause_Draw(int pageID, int posX)
 		sprintf(totalString, "%s %d", sdata->lngStrings[LNG_TOTAL], bitIndex);
 
 		DecalFont_DrawLine(totalString, posX + 0x100, 0x6e, FONT_BIG, 0xffff8000);
+
+#ifdef CTR_AP
+		// Issue #152 (Q32 ruling): the composed-goal readout, alongside this
+		// existing AP-aware screen and styled to match it (small font, same
+		// colour family as the schema-warning banner, centred under the
+		// Total line). A dedicated new pause PAGE would need to grow
+		// D232.advPausePages, which is a fixed-layout overlay struct
+		// (annotated with retail memory offsets in ovr_232.h) -- resizing it
+		// is a materially larger, higher-risk change than a text-only insert
+		// into an EXISTING page, so this rides the relics page instead. See
+		// the #152 build note for the full reasoning.
+		if (ctr_cfg_active())
+		{
+			char goalLine[160];
+			if (AP_GoalAdvert(goalLine, (int)sizeof goalLine))
+				DecalFont_DrawLine(goalLine, posX + 0x100, 0x7e, FONT_SMALL,
+				                   0xffff8000);
+		}
+#endif
 	}
 
 	int iVar7 = DecalFont_GetLineWidth(str, FONT_BIG);

@@ -47,6 +47,12 @@ extern "C" {
 //   7 = gem cup leg randomization, gem_cup_legs[5][4] (issue #166). The bump is
 //       UNCONDITIONAL on the apworld side (Q28 ruling) -- every 0.2.0 seed
 //       declares 7, on or off, so a pre-7 client warns on every new seed.
+//       Issue #152 (composed goal conditions: goal_oxide/goal_bosses/
+//       goal_gems) rides this SAME 7, additive, no further bump -- every
+//       0.2.0 seed already declares 7 regardless of #166, so a client that
+//       understands 7 already knows to read the composed fields instead of
+//       the legacy `goal` int, and a pre-7 client already shows the #8
+//       banner and (issue #163) already suppresses auto-GOAL on schema_newer.
 //   6 = 5-rung podium rework (held 1st/3rd/5th live + finish podium/any); #9
 //   5 = oxide_final_unlock relic-goal mode + oxide_final_count (issue #23)
 //   4 = type-4 relic-tier colour + goal-rework; 3 = podium + stage-2 padgate;
@@ -146,7 +152,15 @@ typedef struct
 	// "update the client" banner. Reset to 0 at the top of every parse.
 	int schema_newer;
 
-	int goal;
+	int goal; // issue #152: legacy field, best-effort/debug-only on a composed
+	          // seed -- AP_EvaluateGoal and ap_verify.c read ONLY goal_oxide/
+	          // goal_bosses/goal_gems below, never this. -1 = no legacy analogue.
+	// Composed goal conditions (issue #152), ANDed together. At least one is
+	// always active (the apworld's generate_early rejects the all-off
+	// combination). 0 means "this condition is off" for all three, uniformly.
+	int goal_oxide;  // 0 none / 1 first (Oxide's Challenge) / 2 final (Oxide's Final Challenge)
+	int goal_bosses; // 0-4: how many of the 4 boss races must be personally won
+	int goal_gems;   // 0-5: how many of the 5 Gems must be held
 	int relic_min_time;
 	int relics_require_perfect;
 	// Oxide's Final Challenge gate. schema >= 5: oxide_final_unlock is a relic-goal
@@ -352,6 +366,15 @@ int AP_BossGarageOpen(int bossIdx);
 // it describes: modes 0/1 advertise races won, everything else the resolved
 // requirement. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_BossGateAdvert(int bossIdx, char *out, int cap);
+
+// #152: plain-text requirement advert for the composed goal. Writes a line
+// mirroring the exact AND of active conditions AP_EvaluateGoal checks (e.g.
+// "Goal: beat N. Oxide (Final) AND win 2 of 4 boss races (1) AND hold 3
+// Gems (1)") into `out` and returns 1; returns 0 when there is nothing to
+// advertise (no slot_data). Same pattern as AP_BossGateAdvert -- reads the
+// same ctr_cfg fields and AP_GateCount* helpers AP_EvaluateGoal reads, so the
+// two cannot disagree. IMPLEMENTED C-SIDE in ap_hooks.c.
+int AP_GoalAdvert(char *out, int cap);
 
 #ifdef __cplusplus
 } // extern "C"

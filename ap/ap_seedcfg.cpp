@@ -298,6 +298,32 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	}
 
 	ctr_cfg.goal = json_int(opt, "goal", 0);
+	// Issue #152: composed goal conditions, additive on the existing schema
+	// 7 (no further bump -- see the CTR_CFG_SCHEMA_KNOWN comment). An apworld
+	// built between #166 (schema unconditionally 7) and #152 landing emits
+	// schema 7 WITHOUT these three keys, so json_int's own default cannot be
+	// a bare 0/0/0 -- that would silently misgate an in-between seed as "no
+	// requirement" instead of its real legacy goal. Default each composed
+	// field from the legacy `goal` int instead, translated the same way the
+	// apworld's own UT restore path does (worlds/ctr/__init__.py
+	// _ut_restore_options); a seed that DOES carry the composed keys
+	// overrides these defaults with its real (possibly multi-condition)
+	// values. Mirrors AP_EvaluateGoal's own historical `default:` arm
+	// (unrecognised goal -> Oxide first) for the "unknown legacy value" case.
+	{
+		int legacy_oxide = 0, legacy_bosses = 0, legacy_gems = 0;
+		switch (ctr_cfg.goal)
+		{
+		case 0: legacy_oxide = 1; break; // oxide -> goal_oxide first
+		case 1: legacy_oxide = 2; break; // oxidefinal -> goal_oxide final
+		case 3: legacy_bosses = 4; break; // allbosses -> 4 of 4 required
+		case 4: legacy_gems = 5; break; // allgemcups -> 5 of 5 required
+		default: legacy_oxide = 1; break; // unrecognised -> Oxide first
+		}
+		ctr_cfg.goal_oxide = json_int(opt, "goal_oxide", legacy_oxide);
+		ctr_cfg.goal_bosses = json_int(opt, "goal_bosses", legacy_bosses);
+		ctr_cfg.goal_gems = json_int(opt, "goal_gems", legacy_gems);
+	}
 	ctr_cfg.relic_min_time = json_int(opt, "relic_min_time", 0);
 	ctr_cfg.relics_require_perfect = json_int(opt, "relics_require_perfect", 0);
 	// schema >= 5: oxide_final_unlock is a relic-goal MODE and oxide_final_count
@@ -536,9 +562,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Visibility: dump the parsed per-seed requirements so a tester can confirm
 	// the contract round-tripped (string-key std::stoi correctness included).
 	ap_cfg_log(
-	             "[AP CFG] slot_data parsed: schema=%d goal=%d warppad_mode=%d "
+	             "[AP CFG] slot_data parsed: schema=%d goal=%d "
+	             "goal_oxide=%d goal_bosses=%d goal_gems=%d warppad_mode=%d "
 	             "boss_mode=%d shuffle=%d oxide_final_mode=%d oxide_final_count=%d%s\n",
-	             ctr_cfg.schema_version, ctr_cfg.goal, ctr_cfg.warppad_unlock_mode,
+	             ctr_cfg.schema_version, ctr_cfg.goal,
+	             ctr_cfg.goal_oxide, ctr_cfg.goal_bosses, ctr_cfg.goal_gems,
+	             ctr_cfg.warppad_unlock_mode,
 	             ctr_cfg.bossgarage_mode, ctr_cfg.shuffle_warp_pads,
 	             ctr_cfg.oxide_final_unlock, ctr_cfg.oxide_final_count,
 	             ctr_cfg.schema_newer ? " [SCHEMA NEWER THAN BUILD]" : "");
