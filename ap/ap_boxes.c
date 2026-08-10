@@ -48,7 +48,9 @@ static int              s_liveCount;
 static int s_level = -1;    // level the live set was built for
 static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
 static int s_placeGen = -1; // AP_Author_PlacementGeneration() the set was built from
+static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
 static int s_modelWarned;   // "no crate model here" logged once per level
+static int s_spawnFull;     // the loader refused a box on this level: stop asking
 static int s_standDown;     // author mode / no seed: logged once per transition
 
 // Scratch for the set builder. Static rather than automatic: the placement
@@ -62,19 +64,47 @@ int AP_Boxes_LiveCount(void)
 
 // ── seed membership ─────────────────────────────────────────────────────────
 
-// Is this box location part of the current seed?
+// Does the connected seed carry the item_boxes class at all?
 //
-// ⚠ RE-POINTING SEAM. The apworld does not ship the `item_boxes` class yet: its
-// names are minted in the #177 freeze (apworld PR #44), which had not merged
-// when this was built, and no slot_data key carries the per-seed subset. Until
-// it does, a connected seed shows every authored box, which is what makes the
-// mechanism testable today. When ctr_cfg gains the class, this function body
-// becomes the per-code lookup and nothing else in this module changes.
+// ap_net_location_exists() answers "is this code in this slot's location list"
+// from the server's own checked + missing sets, which is the real answer to
+// ruling 1 and needs no slot_data key. But the class does not exist in any
+// generated seed yet: its names are minted in the #177 freeze (apworld PR #44),
+// which had NOT merged when this was built, so today every box code comes back
+// absent and a strict reading would spawn nothing at all and leave the mechanism
+// untestable.
+//
+// So the block is probed once per rebuild. One hit or more and the per-location
+// answer is used, which is the shipping behaviour and needs no further edit when
+// the freeze lands. Zero hits across all 270 codes means the seed predates the
+// class, and the DEV FALLBACK shows the authored set instead, saying so in the
+// log. The fallback retires itself the day a seed carries one box location; it
+// is not a switch anybody has to remember to flip.
+static int s_seedHasBoxClass;
+
+static void AP_BoxProbeSeedClass(void)
+{
+	int i;
+
+	s_seedHasBoxClass = 0;
+	for (i = 0; i < AP_BOX_LOCATION_COUNT; i++)
+	{
+		if (ap_net_location_exists((long long)(AP_BOX_CODE_BASE + i)))
+		{
+			s_seedHasBoxClass = 1;
+			return;
+		}
+	}
+}
+
 static int AP_BoxInSeed(long code, void *ctx)
 {
-	(void)code;
 	(void)ctx;
-	return 1;
+
+	if (!s_seedHasBoxClass)
+		return 1; // dev fallback; the rebuild log says which mode is in force
+
+	return ap_net_location_exists((long long)code);
 }
 
 // Already broken on this seed. Server truth, so it survives a reconnect, a
@@ -84,6 +114,30 @@ static int AP_BoxChecked(long code, void *ctx)
 {
 	(void)ctx;
 	return ap_net_location_checked((long long)code);
+}
+
+// Should this level's race carry AP boxes at all?
+//
+// ADVENTURE MODE ONLY, and this is a DECISION, not a ruling -- flagged in the
+// build note. The ruling says boxes appear in every race type "including relic
+// races", which is about the adventure pad modes (trophy / relic / token /
+// crystal), all of which pass here. Arcade, VS and battle do not, for two
+// reasons:
+//
+//   * logic. The apworld gives every box its track's pad-access rules for free
+//     via region membership (the 08-06 positioning design). An arcade race
+//     reaches any track with no pad at all, so a box breakable from Arcade is a
+//     box outside its own logic, and a player could sweep 241 checks without
+//     opening a single pad.
+//   * convention. Native already draws this line: AP_ClassifyRace returns
+//     AP_RACE_ARCADE for anything outside ADVENTURE_MODE (ap_hooks.c:3494-3496)
+//     and the podium fan-out fires only on an adventure trophy race.
+//
+// Boss races are adventure races on box tracks, so they are IN. Nothing is
+// gained by excluding them: it is the same track and the same location.
+static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
+{
+	return (gGT->gameMode1 & ADVENTURE_MODE) != 0;
 }
 
 // ── the live set ────────────────────────────────────────────────────────────
@@ -120,6 +174,7 @@ static void AP_BoxesForget(void)
 	s_liveCount = 0;
 	s_spawnGen = AP_Spawn_Generation();
 	s_modelWarned = 0;
+	s_spawnFull = 0;
 }
 
 static void AP_BoxesClear(void)
@@ -135,6 +190,7 @@ static void AP_BoxesClear(void)
 	}
 	s_liveCount = 0;
 	s_modelWarned = 0;
+	s_spawnFull = 0;
 }
 
 // Pull the shared placement table into the builder's shape.
@@ -174,6 +230,14 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	if (s_live[i].spawn != AP_SPAWN_INVALID)
 		return;
 
+	// The loader has already said no for this level. Without this latch the
+	// per-frame retry in AP_BoxesTick would ask again every frame and every
+	// refusal writes a log line, which is an fopen per line (ap_hooks.c) -- file
+	// IO in the frame loop for as long as the track is loaded. Same latch, same
+	// reason, as ap_author.c's marker path.
+	if (s_spawnFull)
+		return;
+
 	modelID = AP_BoxModel(gGT);
 	if (modelID < 0)
 	{
@@ -197,6 +261,8 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	rot.z = 0;
 
 	s_live[i].spawn = AP_Spawn_Add(modelID, &pos, &rot, AP_SPAWN_LIFE_LEVEL, s_boxName);
+	if (s_live[i].spawn == AP_SPAWN_INVALID)
+		s_spawnFull = 1;
 }
 
 static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
@@ -204,15 +270,19 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_BoxSlot slots[AP_BOX_SLOTS_PER_TRACK];
 	int        placements;
 	int        n, i, overflow = 0;
-	char       msg[128];
+	char       msg[160];
 
 	AP_BoxesClear();
 	s_level = level;
 	s_placeGen = AP_Author_PlacementGeneration();
+	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
 
 	if (AP_BoxMap_ApTrack(level) < 0)
 		return; // hub, arena, menu: not a box track
+	if (!AP_BoxesRaceCarriesBoxes(gGT))
+		return; // arcade / VS / battle: outside the boxes' own logic
 
+	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
 
 	n = AP_BoxMap_BuildSet(s_scratch, placements, level,
@@ -235,8 +305,10 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	for (i = 0; i < n; i++)
 		AP_BoxesSpawnOne(gGT, i);
 
-	snprintf(msg, sizeof msg, "[AP BOX] level %d (ap track %d): %d box(es) standing\n",
-	         level, AP_BoxMap_ApTrack(level), s_liveCount);
+	snprintf(msg, sizeof msg, "[AP BOX] level %d (ap track %d): %d box(es) standing, seed %s\n",
+	         level, AP_BoxMap_ApTrack(level), s_liveCount,
+	         s_seedHasBoxClass ? "carries the item_boxes class"
+	                           : "has NO box locations, showing the authored set (dev fallback)");
 	AP_LogLine(msg);
 
 	// Never let a bound drop data quietly (Lessons Learned §4).
@@ -420,7 +492,8 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	AP_Author_EnsureLoaded();
 
 	level = (int)gGT->levelID;
-	if (level != s_level || AP_Author_PlacementGeneration() != s_placeGen)
+	if (level != s_level || AP_Author_PlacementGeneration() != s_placeGen ||
+	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode)
 		AP_BoxesRebuild(gGT, level);
 
 	if (s_liveCount > 0)

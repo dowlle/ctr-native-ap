@@ -78,12 +78,15 @@ empty rather than misread.
 
 The first available of:
 
-1. the Archipelago-logo marker model (`STATIC_AP`, from #124). Preferred, but it
-   is only built once `STATIC_GEM` has been seen, which is a hub model -- an
-   arcade-only session may never have it;
-2. the weapon box (`PU_RANDOM_CRATE`), which every arcade track's LEV carries.
+1. the weapon box (`PU_RANDOM_CRATE`), which every arcade track's LEV carries.
+   This is the ruled #109 look, so the authoring preview and the real box are the
+   same shape;
+2. the Archipelago-logo marker model (`STATIC_AP`, from #124), as a fallback.
 
-Neither is the final AP box model. This is a stand-in so the spot can be judged.
+**The order matters and is not a style choice.** `STATIC_AP` used to be first,
+and under author mode's many-instance usage it makes track floors disappear
+(reported 2026-08-09, resolved 2026-08-10 by exactly this swap and confirmed
+live). If it is ever promoted back to first, that bug is the reason not to.
 
 ## How the marker gets there
 
@@ -100,3 +103,68 @@ Every level load and every race restart re-inits the instance pool, which voids
 every spawned instance. The loader is told at that point (`MainInit_JitPools`)
 and rebuilds the marker set, which is why a restart does not leave you with an
 empty track or with markers pointing at freed memory.
+
+---
+
+# The runtime half (#109)
+
+Author mode records placements and draws markers. `ap/ap_boxes.c` turns those
+same placements into real, breakable AP boxes during a race. The two never run at
+once: while author mode is on, the runtime boxes stand down and the markers are
+the set, which is how "author mode always shows the full authored set regardless
+of seed state" is implemented.
+
+## What a box does
+
+| | |
+|---|---|
+| Appears | on the 18 box tracks, in ADVENTURE races only (trophy, relic, token, crystal, boss). Arcade / VS / battle carry no boxes: a box reached without its track's warp pad would be outside its own logic. |
+| Breaks for | the local player only. AI drive through with no reaction. |
+| On break | the vanilla crate shatter plays, the location check is sent, and the box is gone. |
+| Gives | nothing else. No weapon roll, no wumpa, no relic time. The check and the item-feed line are the whole effect. |
+| Stays gone | for the rest of the seed, including across a reconnect or a relaunch, because the spawn set is rebuilt from AP checked-location state rather than from anything the client remembers. |
+| Blocks | nothing. You drive through a box, you do not bounce off it. |
+
+## How collision works without a BSP hitbox
+
+Vanilla pickups are collided through the level's baked BSP: the player sweep
+reaches a hitbox node's `InstDef` and only then the model's `LInC` callback
+(`CollMoved_PlayerSearch_RunHitboxLInC`, `game/COLL.c`). A runtime-born instance
+has neither, which is what made "give an authored box collision" look like BSP
+surgery.
+
+The engine has a second path. Runtime objects that are not in the BSP collide by
+a per-frame proximity walk over a thread bucket: `LinkedCollide_Radius`
+(`game/LinkedCollide.c`) is how the seal, the spider and the minecart find
+drivers. Boxes use that same call, against `threadBuckets[PLAYER]` only. Human
+drivers are born into `PLAYER` and AI drivers into `ROBOT`, so the AI
+pass-through rule costs no code at all: bots are simply never tested.
+
+## Relic races
+
+Boxes appear in relic races with no engine change. The weapon-crate strip in
+`INSTANCE_LevInitAll` walks the level's `InstDef` array and clears
+`DRAW_COLLISION_MASK` on weapon and fruit crates in relic and time-trial modes;
+boxes are born through `INSTANCE_Birth3D` and are never in that array, so the
+strip cannot reach them. That same loop is the only place `timeCratesInLEV` is
+incremented, and nothing in the box path touches it, so the relic clock economy
+is untouched.
+
+## Names and codes
+
+The location class is `item_boxes`: 270 names, `"<Track>: Item Box N"` with N
+from 1 to 15, over 18 tracks. Slot assignment is positional and unconditional --
+the Nth placement listed for a track is slot N whether or not it spawns -- so a
+box that is absent from the seed or already checked never re-points the ones
+after it. Placements past the 15th on a track are dropped and logged; they have
+no name to send.
+
+The engine `LevelID` to apworld track mapping is derived from the shipped
+Sapphire Time Trial location block rather than restated, so it cannot drift from
+the apworld's canonical 18-track order.
+
+## Testing it without a disc
+
+`tools/test-box-map.c` compiles the real bookkeeping out of engine:
+
+    cc -Wall -Wextra -DCTR_AP -o /tmp/test-box-map tools/test-box-map.c && /tmp/test-box-map
