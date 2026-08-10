@@ -133,6 +133,26 @@ static bool g_scouts_done = false;
 // ap_net_checks_in_flight. Cleared on slot-connect and shutdown.
 static std::set<int64_t> g_pending_checks;
 
+// #188: locations earned while the client could not send (not yet connected, or
+// the guarded LocationChecks call itself threw over a dying socket). Deliberately
+// NOT cleared on slot-connect/shutdown like g_pending_checks above -- these are
+// the opposite lifecycle: they must SURVIVE a disconnect and flush on the next
+// successful slot-connect. A std::set dedupes a location that re-fires its grant
+// path on every frame while offline (the callers already guard on
+// ap_net_location_checked, but that reflects server-confirmed state, which never
+// advances while offline) down to one resend, matching the server's own
+// idempotent LocationChecks handling (requirement 2 of the issue).
+static std::set<int64_t> g_held_checks;
+
+// Seed name + slot the currently-held g_held_checks were earned under (captured
+// from the identity active at hold time; see g_slot / APClient::get_seed()).
+// Compared against the identity of the NEXT successful slot-connect before
+// flushing: a reconnect to a different room or a different slot in the same
+// room must discard held checks rather than deliver them to the wrong world
+// (requirement 5 -- wrong-slot delivery is worse than the original bug).
+static std::string g_held_seed;
+static std::string g_held_slot;
+
 // AI-difficulty option sync. g_diff_value caches the last value learned from the
 // server (slot_data default seed, a Get reply, or a SetNotify update); g_diff_known
 // gates it. Cleared on shutdown/reconnect so a stale value never survives a server
@@ -485,6 +505,52 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_scouts.clear();
 		g_scouts_done = false;   // #85: fresh scout round pending -> verifier waits
 		g_pending_checks.clear(); // #85: no checks in flight on a fresh connect
+		// #188: flush checks retained across a disconnect, but ONLY into the same
+		// seed+slot they were earned under. Runs AFTER the g_pending_checks.clear()
+		// above -- resending here so the checks we just re-sent land back in
+		// g_pending_checks and the #85 in-flight bookkeeping still tracks them,
+		// instead of being wiped by that clear immediately after. get_seed() is
+		// populated from RoomInfo (fires before ConnectSlot, so it is already
+		// valid here) and is cleared to "" on every socket close, so it uniquely
+		// names the room this slot just joined; g_slot is the name we asked to
+		// join. Both apclientpp's own automatic reconnect (transient drop
+		// mid-play, the field-reported case -- same g_ap, same
+		// RoomInfo/ConnectSlot replay) and a manual same-room "Reconnect"
+		// (AP_Net_Reconnect tears g_ap down and rebuilds it, but does not touch
+		// g_held_checks) match here and flush. A reconnect to a DIFFERENT room or
+		// a different slot in the same room mismatches and the held checks are
+		// discarded rather than risk delivering them to the wrong world
+		// (requirement 5).
+		if (!g_held_checks.empty())
+		{
+			char line[96];
+			if (g_ap->get_seed() == g_held_seed && g_slot == g_held_slot)
+			{
+				std::snprintf(line, sizeof line,
+				              "[AP NET] resending %d check(s) held since the last disconnect\n",
+				              (int)g_held_checks.size());
+				AP_LogLine(line);
+				// Iterate a snapshot, not g_held_checks itself: ap_net_send_location
+				// re-inserts into g_held_checks on failure (guard exception / socket
+				// dead again immediately), which must not be lost -- swap it out
+				// first so a failed resend re-arms itself for the NEXT reconnect
+				// instead of being silently dropped here.
+				std::set<int64_t> retry;
+				retry.swap(g_held_checks);
+				for (int64_t code : retry)
+					ap_net_send_location((long long)code); // re-enters the connected path above
+			}
+			else
+			{
+				std::snprintf(line, sizeof line,
+				              "[AP NET] discarding %d held check(s) from a different seed/slot\n",
+				              (int)g_held_checks.size());
+				AP_LogLine(line);
+				g_held_checks.clear();
+			}
+		}
+		g_held_seed = g_ap->get_seed();
+		g_held_slot = g_slot;
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
 		// Scout every CTR location so the warp pads can show the actual AP reward
 		// placed at each (and recolour pads whose location is already checked).
@@ -678,13 +744,26 @@ extern "C" int ap_net_is_connected(void)
 
 extern "C" void ap_net_send_location(long long location_code)
 {
+	const int64_t code = (int64_t)location_code;
 	if (g_ap && g_connected)
 	{
+		bool sent = false;
 		AP_NET_GUARD("send_location", {
-			g_ap->LocationChecks({(int64_t)location_code});
-			g_pending_checks.insert((int64_t)location_code); // #85: in flight until its receipt drains
+			g_ap->LocationChecks({code});
+			g_pending_checks.insert(code); // #85: in flight until its receipt drains
+			sent = true;
 		});
+		if (sent)
+			return;
+		// #188: the guarded call above threw (dying socket) and was logged by
+		// AP_NET_GUARD -- fall through to the same retention path as "not
+		// connected" instead of dropping the check silently.
 	}
+	// #188: no live send path right now. Retain the check instead of losing it;
+	// it flushes on the next successful slot-connect for this same seed/slot
+	// (see set_slot_connected_handler), and is deduped here if the caller's
+	// grant path re-fires while still offline.
+	g_held_checks.insert(code);
 }
 
 extern "C" void ap_net_send_goal(void)
