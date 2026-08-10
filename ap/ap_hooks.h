@@ -23,12 +23,14 @@ void AP_OnFrame(struct GameTracker *gGT);
 void AP_NotifyAdvReward(int rewardBit);
 
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
-// event; whether it COMPLETES the seed depends on ctr_cfg.goal (see AP_EvaluateGoal).
+// event; whether it COMPLETES the seed depends on the composed goal (issue #152:
+// ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
 
-// Evaluate the per-seed goal (ctr_cfg.goal) against received items + game events
-// and send StatusUpdate(GOAL) once when met. Call every adventure frame (item-
-// based goals: all-bosses / all-gem-cups / 101%) and on the Oxide beat.
+// Evaluate the composed per-seed goal (issue #152: ctr_cfg.goal_oxide/
+// goal_bosses/goal_gems, ANDed) against received items + game events and send
+// StatusUpdate(GOAL) once when met. Call every adventure frame (the counted
+// conditions: N bosses / N gems) and on the Oxide beat.
 void AP_EvaluateGoal(void);
 
 // ── Race-end ceremony award text (display-only) ──

@@ -987,35 +987,35 @@ static int ap_oxide_first_beaten = 0;
 static int ap_oxide_final_beaten = 0;
 static int ap_goal_sent = 0;
 
-static int AP_AllFiveGems(void)
-{
-	int c;
-	for (c = 0; c < 5; c++)
-		if (AP_GateCountGemColour(c) < 1)
-			return 0;
-	return 1;
-}
-
-// Send StatusUpdate(GOAL) once when the per-seed goal (ctr_cfg.goal) is met.
-// Mirrors the apworld completion_condition per goal (goal enum keeps a gap at 2:
-// the old "everythingplusone" goal was dropped, the ints are NOT renumbered):
-//   0 oxide      -> beat N. Oxide (first challenge)
-//   1 oxidefinal -> beat N. Oxide (final challenge)
-//   3 allbosses  -> won all 4 boss races (Ripper Roo, Papu Papu, Komodo Joe,
-//                   Pinstripe). "Won" == the boss-race LOCATION is CHECKED
-//                   (sent only on an actual live win, game/222.c). NOT
-//                   AP_GateCount(Trophy)>=16, and NOT CHECK_ADV_BIT on the boss
-//                   key bits 94-97: those are the Key item pool (AP_POOL_KEY),
-//                   so AP_ApplyItems sets them from RECEIVED keys -- holding 4
-//                   shuffled Keys is not beating 4 bosses (the BUG-D class).
-//   4 allgemcups -> all 5 gems received (i.e. won every gem cup)
-// Without slot_data (vanilla / no AP config) we keep the legacy behaviour: the
-// first Oxide beat is the goal.
+// Send StatusUpdate(GOAL) once when the composed per-seed goal is met (issue
+// #152). ctr_cfg.goal_oxide/goal_bosses/goal_gems replace the old single
+// ctr_cfg.goal switch: the goal is the AND of every ACTIVE condition (0
+// means "off" for all three; the apworld's generate_early guarantees at
+// least one condition is active, so this is never vacuous on a real seed).
+//   goal_oxide 1 (first) -> beat N. Oxide's Challenge
+//   goal_oxide 2 (final) -> beat N. Oxide's Final Challenge
+//   goal_bosses N (>0)   -> N of the 4 boss races personally won. "Won" ==
+//                           the boss-race LOCATION is CHECKED (sent only on
+//                           an actual live win, game/222.c). NOT
+//                           AP_GateCount(Trophy)>=16, and NOT CHECK_ADV_BIT
+//                           on the boss key bits 94-97: those are the Key
+//                           item pool (AP_POOL_KEY), so AP_ApplyItems sets
+//                           them from RECEIVED keys -- holding 4 shuffled
+//                           Keys is not beating 4 bosses (the BUG-D class).
+//   goal_gems N (>0)     -> N of the 5 Gems held. AP_GateCountGemSum() is
+//                           exactly a distinct-colour count here, because
+//                           every Gem is a singleton item (at most one
+//                           received copy per colour).
+// "Any N" on both counted conditions, mirrored identically on the apworld
+// side (dossier C11): a tally compared against the configured count, never
+// "the first N in a fixed order".
+// Without slot_data (vanilla / no AP config) we keep the legacy behaviour:
+// the first Oxide beat is the goal.
 static void AP_FeedEnqueue(const char *text, int color); // defined with the feed block below
 
 void AP_EvaluateGoal(void)
 {
-	int done = 0;
+	int done;
 
 	if (ap_goal_sent)
 		return;
@@ -1046,35 +1046,35 @@ void AP_EvaluateGoal(void)
 	}
 	else
 	{
-		switch (ctr_cfg.goal)
+		done = 1; // AND of every active condition below.
+		if (ctr_cfg.goal_oxide == 1)
+			done = done && ap_oxide_first_beaten;
+		else if (ctr_cfg.goal_oxide == 2)
+			done = done && ap_oxide_final_beaten;
+		// goal_oxide == 0: no Oxide requirement, contributes nothing.
+
+		if (ctr_cfg.goal_bosses > 0)
 		{
-		case 0: done = ap_oxide_first_beaten; break;
-		case 1: done = ap_oxide_final_beaten; break;
-		case 3:
-		{
-			// All 4 boss races personally won == each boss-race location checked.
-			// Durable (server checked-set, resent on connect) + reliable (checked
-			// only at the live win site, never by received Keys). Same signal
-			// AP_BossGarageOpen uses for trophy tracks.
-			int allWon = 1, b;
+			int won = 0, b;
 			for (b = 0; b < 4; b++)
-				if (!AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-					allWon = 0;
-			done = allWon;
-			break;
+				if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+					won++;
+			done = done && (won >= ctr_cfg.goal_bosses);
 		}
-		case 4: done = AP_AllFiveGems(); break;
-		default: done = ap_oxide_first_beaten; break;
-		}
+
+		if (ctr_cfg.goal_gems > 0)
+			done = done && (AP_GateCountGemSum() >= ctr_cfg.goal_gems);
 	}
 
 	if (done)
 	{
-		char msg[96];
+		char msg[128];
 		ap_goal_sent = 1;
 		snprintf(msg, sizeof msg,
-		         "[AP GOAL] goal %d complete -- StatusUpdate(GOAL)\n",
-		         ctr_cfg_active() ? ctr_cfg.goal : -1);
+		         "[AP GOAL] goal (oxide=%d bosses=%d gems=%d) complete -- StatusUpdate(GOAL)\n",
+		         ctr_cfg_active() ? ctr_cfg.goal_oxide : -1,
+		         ctr_cfg_active() ? ctr_cfg.goal_bosses : -1,
+		         ctr_cfg_active() ? ctr_cfg.goal_gems : -1);
 		AP_AppendLog(msg);
 		ap_net_send_goal();
 	}
@@ -2060,9 +2060,10 @@ void AP_NotifyAdvReward(int rewardBit)
 void AP_NotifyGoal(int oxideSecond)
 {
 	// Record the Oxide beat as a game EVENT. Whether it completes the seed
-	// depends on ctr_cfg.goal -- for non-Oxide goals (all-bosses, all-gem-cups)
-	// beating Oxide is NOT the win -- so defer the StatusUpdate(GOAL) decision to
-	// AP_EvaluateGoal (which also fires per-frame for the item-based goals).
+	// depends on ctr_cfg.goal_oxide (issue #152) -- with goal_oxide off (0)
+	// or set to the OTHER Oxide race, beating this one is NOT the win by
+	// itself -- so defer the StatusUpdate(GOAL) decision to AP_EvaluateGoal
+	// (which also fires per-frame for the item-based conditions).
 	if (oxideSecond)
 		ap_oxide_final_beaten = 1;
 	else
@@ -2681,6 +2682,70 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 		         noun, owned);
 	else
 		snprintf(out, (size_t)cap, "Requires: %d %s (have %d)", need, noun, owned);
+
+	return 1;
+}
+
+// #152: plain-text requirement advert for the composed goal, written exactly
+// like AP_BossGateAdvert and reading the SAME ctr_cfg fields and
+// AP_GateCount*/AP_LocationCheckedByBit helpers AP_EvaluateGoal reads, so the
+// two cannot disagree. Writes a line such as "Goal: beat N. Oxide's Final
+// Challenge (not yet) and win 2 of 4 boss races (have 1) and hold 3 of 5
+// Gems (have 1)" into `out` and returns 1; returns 0 when there is nothing
+// to advertise (no slot_data -- the vanilla Aku hints stay the only message).
+int AP_GoalAdvert(char *out, int cap)
+{
+	char part[3][80];
+	int n_parts = 0;
+	int pos, i, b, won;
+
+	if (out == 0 || cap <= 0)
+		return 0;
+	if (!ctr_cfg_active())
+		return 0;
+
+	if (ctr_cfg.goal_oxide == 1)
+		snprintf(part[n_parts++], sizeof part[0],
+		         "beat N. Oxide (%s)", ap_oxide_first_beaten ? "done" : "not yet");
+	else if (ctr_cfg.goal_oxide == 2)
+		snprintf(part[n_parts++], sizeof part[0],
+		         "beat N. Oxide's Final Challenge (%s)",
+		         ap_oxide_final_beaten ? "done" : "not yet");
+	// goal_oxide == 0: no Oxide requirement, nothing to advertise for it.
+
+	if (ctr_cfg.goal_bosses > 0)
+	{
+		won = 0;
+		for (b = 0; b < 4; b++)
+			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+				won++;
+		snprintf(part[n_parts++], sizeof part[0],
+		         "win %d of 4 boss races (have %d)", ctr_cfg.goal_bosses, won);
+	}
+
+	if (ctr_cfg.goal_gems > 0)
+		snprintf(part[n_parts++], sizeof part[0],
+		         "hold %d of 5 Gems (have %d)", ctr_cfg.goal_gems,
+		         AP_GateCountGemSum());
+
+	if (n_parts == 0)
+		return 0; // nothing resolved -- should not happen on a real seed
+		          // (generate_early rejects the all-off combination)
+
+	pos = snprintf(out, (size_t)cap, "Goal: %s", part[0]);
+	if (pos < 0)
+		pos = 0;
+	if (pos > cap)
+		pos = cap;
+	for (i = 1; i < n_parts && pos < cap; i++)
+	{
+		int add = snprintf(out + pos, (size_t)(cap - pos), " and %s", part[i]);
+		if (add < 0)
+			break;
+		pos += add;
+		if (pos > cap)
+			pos = cap;
+	}
 
 	return 1;
 }
@@ -3769,11 +3834,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        ap_last_race_track, ap_last_race_place,
 	        AP_RaceTypeName(ap_last_race_mode));
 	fprintf(f,
-	        "  \"options\": {\"goal\": %d, \"oxide_final_unlock\": %d, "
+	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "
+	        "\"goal_bosses\": %d, \"goal_gems\": %d, "
+	        "\"oxide_final_unlock\": %d, "
 	        "\"oxide_final_count\": %d, \"schema_newer\": %d, "
 	        "\"warppad_unlock_mode\": %d, \"bossgarage_mode\": %d, "
 	        "\"shuffle_warp_pads\": %d},\n",
-	        ctr_cfg.goal, ctr_cfg.oxide_final_unlock, ctr_cfg.oxide_final_count,
+	        ctr_cfg.goal, ctr_cfg.goal_oxide, ctr_cfg.goal_bosses,
+	        ctr_cfg.goal_gems, ctr_cfg.oxide_final_unlock, ctr_cfg.oxide_final_count,
 	        ctr_cfg.schema_newer, ctr_cfg.warppad_unlock_mode,
 	        ctr_cfg.bossgarage_mode, ctr_cfg.shuffle_warp_pads);
 

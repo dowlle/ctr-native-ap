@@ -417,10 +417,12 @@ static void ap_vf_recompute(void)
 		}
 	}
 
-	// Tally + goal verdict (mirrors AP_EvaluateGoal's per-goal conditions, in
-	// "can it still be reached" form).
+	// Tally + goal verdict (issue #152: mirrors AP_EvaluateGoal's composed
+	// AND-of-active-conditions exactly, in "can it still be reached" form --
+	// dossier C11: "any N", a tally compared to the configured count, on
+	// both sides of the contract).
 	ap_vf_reachable = 0;
-	int oxide_ok = 0, oxide_fin_ok = 0, bosses_ok = 1;
+	int oxide_ok = 0, oxide_fin_ok = 0, bosses_won = 0;
 	for (i = 0; i < n; i++)
 	{
 		if (locs[i].code < 0)
@@ -431,20 +433,23 @@ static void ap_vf_recompute(void)
 			oxide_ok = 1;
 		if (locs[i].kind == AP_VF_OXIDE_FIN && state[i])
 			oxide_fin_ok = 1;
-		if (locs[i].kind == AP_VF_BOSS && !state[i])
-			bosses_ok = 0;
+		if (locs[i].kind == AP_VF_BOSS && state[i])
+			bosses_won++;
 	}
-	switch (ctr_cfg.goal)
 	{
-	case 1:  ap_vf_goal_ok = oxide_fin_ok; break;
-	case 3:  ap_vf_goal_ok = bosses_ok; break;
-	case 4:  ap_vf_goal_ok = counts[AP_IDX_GEM_RED] > 0 &&
-	                         counts[AP_IDX_GEM_RED + 1] > 0 &&
-	                         counts[AP_IDX_GEM_RED + 2] > 0 &&
-	                         counts[AP_IDX_GEM_RED + 3] > 0 &&
-	                         counts[AP_IDX_GEM_RED + 4] > 0; break;
-	case 0:
-	default: ap_vf_goal_ok = oxide_ok; break;
+		int gems_held = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
+		                (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
+		                (counts[AP_IDX_GEM_RED + 4] > 0);
+		ap_vf_goal_ok = 1;
+		if (ctr_cfg.goal_oxide == 1)
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok;
+		else if (ctr_cfg.goal_oxide == 2)
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok;
+		// goal_oxide == 0: no Oxide requirement, contributes nothing.
+		if (ctr_cfg.goal_bosses > 0)
+			ap_vf_goal_ok = ap_vf_goal_ok && (bosses_won >= ctr_cfg.goal_bosses);
+		if (ctr_cfg.goal_gems > 0)
+			ap_vf_goal_ok = ap_vf_goal_ok && (gems_held >= ctr_cfg.goal_gems);
 	}
 	ap_vf_keys_fp = counts[AP_IDX_KEY];
 	ap_vf_solo = (ap_net_player_count() == 1);
