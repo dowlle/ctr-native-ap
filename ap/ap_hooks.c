@@ -2024,7 +2024,22 @@ void AP_NotifyAdvReward(int rewardBit)
 		// #63: capture the checked-state BEFORE the send so a session replay /
 		// re-win of an already-checked location never re-toasts the sent line.
 		int wasChecked = ap_net_location_checked(code);
-		ap_net_send_location(code); // LocationChecks([code])
+		// #188b: this is the ONE choke point every grant path funnels through,
+		// and not every caller gates on AP_LocationCheckedByBit before reaching
+		// it (the boss/story reward and Oxide-goal paths don't, unlike the
+		// trophy/gem-cup sites) -- so a replay of an already-won event can
+		// still get here with wasChecked true. Sending anyway would, while
+		// offline, retain the code in g_held_checks and later resend a
+		// LocationChecks the server already settled; since the item was
+		// already delivered in an earlier connection, no ReceivedItems ever
+		// arrives to erase the resend's g_pending_checks entry, so
+		// ap_net_checks_in_flight() never returns to 0 and the #107
+		// not-completable banner (gated on ap_vf_settled) stays silently
+		// withheld for the rest of the connection. wasChecked is false for
+		// every genuine first-time earn, so gating the send on it cannot drop
+		// a real check -- only a resend of one already server-confirmed.
+		if (!wasChecked)
+			ap_net_send_location(code); // LocationChecks([code])
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
 		if (!wasChecked)
