@@ -243,6 +243,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// seed without them degrades to the disabled state.
 	ctr_cfg.death_link = 0;
 	ctr_cfg.deathlink_amnesty = 1;
+	// Capability packs (#12/#13) default to OFF, i.e. the vanilla kart. Same
+	// additive-key reasoning as death_link above: a pre-spine-1 seed carries none
+	// of these keys and must leave boost and stats exactly as the engine has them.
+	ctr_cfg.boost_mode = 0;
+	ctr_cfg.boost_blue_fire = 0;
+	ctr_cfg.stats_mode = 0;
 	// Pair version of the generating apworld (#150): unknown until parsed, and an
 	// unknown version is one the update notice must say nothing about.
 	ctr_cfg.world_version[0] = '\0';
@@ -325,6 +331,25 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.deathlink_amnesty = json_int(opt, "deathlink_amnesty", 1);
 	if (ctr_cfg.deathlink_amnesty < 1)
 		ctr_cfg.deathlink_amnesty = 1; // guard: never divide the send cadence by < 1
+	// Progressive Boost / Progressive Stats (#12/#13). Additive keys, no schema
+	// bump (the gem_cup_legs landing already made schema 7 unconditional). Absent
+	// -> 0 = off = the vanilla kart, so a pre-spine-1 seed on this client behaves
+	// exactly like a pre-#12/#13 client did. Stored raw: ap_capability.c decides
+	// what an unsupported mode value means, and it declines everything except
+	// shared_global rather than guessing.
+	ctr_cfg.boost_mode = json_int(opt, "boost_mode", 0);
+	ctr_cfg.boost_blue_fire = json_int(opt, "boost_blue_fire", 0);
+	ctr_cfg.stats_mode = json_int(opt, "stats_mode", 0);
+	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
+		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
+		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
+	if (ctr_cfg.boost_mode == 2 || ctr_cfg.stats_mode == 2)
+		ap_cfg_log(
+		    "[AP CFG] *** per_character capability mode requested (boost_mode=%d "
+		    "stats_mode=%d) -- this build has no per-character mapping and applies "
+		    "NOTHING for it. No apworld on main can generate this shape today "
+		    "(OptionError pending dowlle/ctr-native-ap#71). ***\n",
+		    ctr_cfg.boost_mode, ctr_cfg.stats_mode);
 	// Generating apworld's world_version = the pair version (#150). Additive key,
 	// no schema bump: a seed predating it leaves the buffer empty and the update
 	// notice stays dark. Stored verbatim; the comparison lives in ap_version_cmp.h.
