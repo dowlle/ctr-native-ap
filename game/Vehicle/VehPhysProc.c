@@ -465,6 +465,13 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 #ifdef CTR_AP
 	// USF-no-brake trap: suppress braking + force throttle for the local player.
 	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
+	// Progressive Stats (#13): received ranks -> the kart's stat constants,
+	// applied before anything in this function reads them
+	// (VehPhysGeneral_GetBaseSpeed below is the first consumer). Local player
+	// only, and a complete no-op unless this seed turned the pack on -- so a
+	// vanilla or pack-off seed keeps the exact class stats VehBirth_SetConsts
+	// wrote at birth.
+	AP_CapabilityStats(driver);
 #endif
 
 	// state of kart

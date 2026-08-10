@@ -83,6 +83,20 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 	struct Instance *turboInst2;
 
 	struct GameTracker *gGT = sdata->gGT;
+
+#ifdef CTR_AP
+	// Progressive Boost (#12), local player only, and only on a seed that turned
+	// the pack on. This function is the single choke point every boost in the game
+	// passes through -- pads, powerslides, hang time, the rev boost, the Turbo
+	// pickup, the Super Engine -- so filtering here covers the whole chain in one
+	// place. It runs before everything else in the function so a suppressed grant
+	// also leaves no fire, no audio and no entry in the ghost tape, exactly as if
+	// the boost had never been earned. Byte-identical to vanilla when the pack is
+	// off: AP_CapabilityFireGrant returns 1 without touching either out-param.
+	if (!AP_CapabilityFireGrant(driver, &reserves, type, &fireLevel))
+		return;
+#endif
+
 	if (
 	    // if this is a turbo pad
 	    ((type & 4) != 0) &&

@@ -19,6 +19,7 @@
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
+#include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -3080,6 +3081,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		AP_SurfaceReset(); // rebuilt by the authoritative ReceivedItems replay below
+		// Capability chains (#12/#13): same discipline. These are COUNTS, not
+		// one-shot effects, so the resent full list must rebuild them from zero --
+		// accumulating on top of the previous connection would hand the player a
+		// doubled boost tier on every reconnect.
+		AP_CapabilityReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3194,6 +3200,30 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_SURFACE_ITEM_FIRST_INDEX + AP_SURFACE_ITEM_COUNT)
 		{
 			AP_SurfaceReceive((int)(idx - AP_SURFACE_ITEM_FIRST_INDEX));
+		}
+
+		// Shared-global capability chains (idx 27..30): Progressive Boost, Top
+		// Speed, Acceleration, Turning. Unlike the surface booleans these are
+		// COUNTS -- the count IS the tier -- so every duplicate legitimately
+		// increments. Idempotence comes from AP_CapabilityReset zeroing them on
+		// each fresh connect before the resent list replays. Not gate items, so
+		// they never touch ap_recv_count; nothing in logic reads a tier yet
+		// (spine 1 shipped them `useful` for exactly that reason).
+		else if (idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
+		         idx < AP_CAPABILITY_ITEM_FIRST_INDEX + AP_CAPABILITY_ITEM_COUNT)
+		{
+			AP_CapabilityReceive((int)(idx - AP_CAPABILITY_ITEM_FIRST_INDEX));
+		}
+
+		// Per-character capability block (idx 31..94): registered in the
+		// datapackage, never created by any generation on apworld main
+		// (per_character raises OptionError pending dowlle/ctr-native-ap#71).
+		// Recognised only so a receipt is declined out loud instead of vanishing
+		// into the generic filler/unmapped line.
+		else if (idx >= AP_CAPABILITY_PC_ITEM_FIRST_INDEX &&
+		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
+		{
+			AP_CapabilityReceivePerCharacter((int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX));
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the

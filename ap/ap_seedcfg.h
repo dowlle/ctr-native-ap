@@ -212,6 +212,22 @@ typedef struct
 	int death_link;
 	int deathlink_amnesty;
 
+	// Progressive Boost (issue #12) + Progressive Stats (issue #13). ADDITIVE
+	// ctr_options keys, no schema bump -- schema 7 is already unconditional on
+	// every 0.2.0 seed (Q28), so these ride it exactly the way one_lap_cups and
+	// death_link rode theirs. A seed predating them leaves all three at 0, which
+	// IS the vanilla kart, so an old seed on a new client changes nothing.
+	//   boost_mode / stats_mode: 0 off / 1 shared_global / 2 per_character.
+	// Value 2 is RESERVED: the apworld raises OptionError for it today
+	// (dowlle/ctr-native-ap#71, location supply), and this build has no ruled
+	// per-character roster mapping, so ap_capability.c treats it as off rather
+	// than inventing shared-global behaviour for per-character items.
+	//   boost_blue_fire: adds the blue-fire capstone above USF (3 received copies
+	// instead of 2). No effect while boost_mode is 0. See ap/ap_capability.h.
+	int boost_mode;
+	int boost_blue_fire;
+	int stats_mode;
+
 	// The generating apworld's own world_version (issue #150), verbatim from
 	// ctr_options.world_version -- e.g. "0.1.5", no "v" prefix. Under the release
 	// policy that string IS the pair version, so a value higher than this build's

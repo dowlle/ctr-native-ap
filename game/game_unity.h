@@ -11,6 +11,7 @@
 #include "../ap/ap_surface.h"  // natural-surface comfort items (#14/#15)
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
+#include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #endif
 
 #include "226/R226.c"
@@ -348,6 +349,7 @@
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
+#include "../ap/ap_capability.c"
 #endif
 
 #endif
