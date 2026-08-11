@@ -66,11 +66,41 @@ int AP_Author_Enabled(void);
 // rather than by two parsers agreeing, and it means an authoring edit is
 // visible to the runtime half without a restart.
 
+// ── the two sources, and which one wins ─────────────────────────────────────
+//
+// The shipped client carries the FINAL authored set COMPILED IN
+// (ap_placements_data.h), so a player installs one executable and the boxes are
+// simply there. An external AP_AUTHOR_FILE next to the executable OVERRIDES it
+// wholesale, which is what keeps authoring, private sets and a hotfix possible
+// without a rebuild.
+//
+// PRECEDENCE IS BY EXISTENCE, NOT BY CONTENT: if the file opens, the file is the
+// table, even when it parses to zero placements. An operator who deliberately
+// empties the file means zero boxes, and silently resurrecting 241 compiled-in
+// ones behind their back would be the worse failure. The zero case is logged
+// loudly instead (AP_AuthorLoad).
+//
+// AUTHOR MODE IS FILE-ONLY. Dropping, deleting, listing and saving all act on
+// the external file's table and never on the embedded default -- the compiled-in
+// set is not editable by construction. Switching the mode on with no file present
+// EXPORTS the built-in set into the file once and then edits that, so the mode
+// still starts from the shipped placements without ever making the embedded
+// table itself writable.
+//
+// The rule itself and the read-only view over the winner live in
+// ap_placement_table.h (freestanding, and tested out of engine by
+// tools/test-box-map.c); AP_PLACEMENT_SRC_EMBEDDED / _FILE come from there.
+#include "ap_placement_table.h"
+
+// Which of the two is live right now. Meaningful after AP_Author_EnsureLoaded().
+int AP_Author_PlacementSource(void);
+
 // Read the file if it has not been read yet. Author mode does this lazily when
 // it is switched on; the runtime half needs the table with the mode OFF.
 void AP_Author_EnsureLoaded(void);
 
-// Entries currently held, across all levels.
+// Entries currently held, across all levels, in the LIVE table (file when one is
+// present, else the embedded default).
 int AP_Author_PlacementCount(void);
 
 // Copy placement `index` out. Any out pointer may be NULL. Returns 0 when the

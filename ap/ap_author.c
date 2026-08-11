@@ -7,9 +7,10 @@
 
 #include "ap_author.h"
 #include "ap_spawn.h"
-#include "ap_marker_model.h" // STATIC_AP (the AP-logo marker, #124)
-#include "ap_version.h"      // CTR_AP_VERSION, stamped into the exported file
-#include "ap_hooks.h"        // AP_LogLine
+#include "ap_marker_model.h"  // STATIC_AP (the AP-logo marker, #124)
+#include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
+#include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
+#include "ap_hooks.h"         // AP_LogLine
 
 // HUD placement: top-left, under the schema/verify warning banners (those start
 // at y 0x14, ap_hooks.c) so an authoring session never hides a real warning.
@@ -36,18 +37,16 @@ int Platform_InputRawKeyDown(int scancode);
 // three s32 (namespace_Vehicle.h:1042, ctr_math.h:73-81). Narrowing happens at
 // the moment of capture and the marker is spawned at the narrowed value, so
 // what is on screen is what is in the file (#182 open question 3).
-struct ApPlacement
-{
-	s16 level;
-	s16 x, y, z;
-	s16 rotY;
-};
+// The row SHAPE itself lives in ap_placement_table.h, shared with the read-only
+// view over whichever table is live. s16 and short are the same 16-bit type on
+// both targets, so every field access below is unaffected by reading it there.
 
-static struct ApPlacement s_place[AP_AUTHOR_MAX_PLACEMENTS];
+static AP_PlacementRow    s_place[AP_AUTHOR_MAX_PLACEMENTS];
 static AP_SpawnHandle     s_marker[AP_AUTHOR_MAX_PLACEMENTS];
 static int                s_placeCount;
 
 static int s_loaded;           // the file has been read (once per run)
+static int s_source = AP_PLACEMENT_SRC_EMBEDDED; // which table is live (ap_author.h)
 static int s_placeGen;         // bumped on every change to s_place (see ap_author.h)
 static int s_enabledPrev;      // last frame's toggle state, for on/off edges
 static int s_markerLevel = -1; // level the current marker set was built for
@@ -234,6 +233,17 @@ static void AP_AuthorSave(void)
 	fputs("  ]\n", f);
 	fputs("}\n", f);
 	fclose(f);
+
+	// The file now exists, so by the existence rule it is the live table from
+	// here on -- including within this session, so the runtime half follows what
+	// is being authored instead of the compiled-in default. Bumping the
+	// generation is what makes that rebuild happen (see ap_author.h).
+	if (s_source != AP_PLACEMENT_SRC_FILE)
+	{
+		s_source = AP_PLACEMENT_SRC_FILE;
+		s_placeGen++;
+		AP_LogLine("[AP AUTHOR] placements: " AP_AUTHOR_FILE " written -- it now overrides the built-in default\n");
+	}
 }
 
 // Read the integer that follows "key" on this line, e.g. "level_id" in
@@ -304,7 +314,7 @@ static void AP_AuthorLoad(void)
 {
 	FILE *f;
 	char  line[256];
-	char  msg[96];
+	char  msg[256]; // sized for the desync-guard lines below, the longest we emit
 
 	s_loaded = 1;
 	s_placeCount = 0;
@@ -312,7 +322,22 @@ static void AP_AuthorLoad(void)
 
 	f = fopen(AP_AUTHOR_FILE, "r");
 	if (f == 0)
-		return; // no file yet is the normal first run, not an error
+	{
+		// The normal shipped case, and not an error: no external file, so the
+		// compiled-in FINAL set is the table. ONE line, naming the live source.
+		s_source = AP_PLACEMENT_SRC_EMBEDDED;
+		s_placeGen++;
+		snprintf(msg, sizeof msg,
+		         "[AP AUTHOR] placements: built-in default, %d placement(s) (no %s next to the exe)\n",
+		         AP_EMBEDDED_PLACEMENT_COUNT, AP_AUTHOR_FILE);
+		AP_LogLine(msg);
+		return;
+	}
+
+	// The file opened, so the file is the table -- see the precedence note in
+	// ap_author.h. Everything below fills the FILE table only; the embedded
+	// default is left untouched and simply stops being consulted.
+	s_source = AP_PLACEMENT_SRC_FILE;
 
 	while (fgets(line, sizeof line, f) != 0)
 	{
@@ -345,9 +370,73 @@ static void AP_AuthorLoad(void)
 	fclose(f);
 	s_placeGen++;
 
-	snprintf(msg, sizeof msg, "[AP AUTHOR] loaded %d placement(s) from %s\n",
-	         s_placeCount, AP_AUTHOR_FILE);
+	// ONE line, naming the live source, so a support log answers "which set is
+	// this player actually running" without a second question.
+	snprintf(msg, sizeof msg,
+	         "[AP AUTHOR] placements: external %s OVERRIDES the built-in default, %d placement(s) (built-in has %d)\n",
+	         AP_AUTHOR_FILE, s_placeCount, AP_EMBEDDED_PLACEMENT_COUNT);
 	AP_LogLine(msg);
+
+	// DESYNC GUARD. An external file is an override, not a patch: it replaces the
+	// whole table, so a file authored against a different client (or a partial
+	// hand-made one) silently re-points every "Item Box N" name on the tracks it
+	// covers. Say so out loud rather than letting a player wonder why their boxes
+	// and the tracker disagree. Both directions are worth a line: an EMPTY file is
+	// a legitimate "no boxes" instruction, but it is also what an accidental
+	// truncation or a hand-restructured JSON looks like to the scanner reader.
+	if (s_placeCount == 0)
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] WARNING: %s is present but holds ZERO placements -- NO boxes will spawn anywhere. "
+		         "Delete the file to fall back to the built-in %d.\n",
+		         AP_AUTHOR_FILE, AP_EMBEDDED_PLACEMENT_COUNT);
+		AP_LogLine(msg);
+	}
+	else if (s_placeCount != AP_EMBEDDED_PLACEMENT_COUNT)
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] NOTE: the override holds %d placement(s), the built-in default %d -- "
+		         "box positions and per-track counts may differ from the shipped set.\n",
+		         s_placeCount, AP_EMBEDDED_PLACEMENT_COUNT);
+		AP_LogLine(msg);
+	}
+}
+
+// One-time export of the compiled-in default into the external file, so author
+// mode always has a real file to edit. No-op when a file is already live -- an
+// existing file is never overwritten by this, only by an explicit drop/undo/list
+// save, which is what keeps a hand-authored set safe from a stray toggle.
+static void AP_AuthorSeedFileFromEmbedded(void)
+{
+	int  i, n;
+	char msg[128];
+
+	if (s_source == AP_PLACEMENT_SRC_FILE)
+		return;
+
+	n = AP_EMBEDDED_PLACEMENT_COUNT;
+	if (n > AP_AUTHOR_MAX_PLACEMENTS)
+		n = AP_AUTHOR_MAX_PLACEMENTS; // cannot happen at 241 of 512; not a silent bound
+
+	for (i = 0; i < n; i++)
+	{
+		s_place[i].level = AP_EMBEDDED_PLACEMENTS[i].level;
+		s_place[i].x = AP_EMBEDDED_PLACEMENTS[i].x;
+		s_place[i].y = AP_EMBEDDED_PLACEMENTS[i].y;
+		s_place[i].z = AP_EMBEDDED_PLACEMENTS[i].z;
+		s_place[i].rotY = AP_EMBEDDED_PLACEMENTS[i].rotY;
+		s_marker[i] = AP_SPAWN_INVALID;
+	}
+	s_placeCount = n;
+	s_lastDropIndex = -1;
+	s_placeGen++;
+
+	snprintf(msg, sizeof msg,
+	         "[AP AUTHOR] no %s yet -- exported the built-in %d placement(s) into it to author against\n",
+	         AP_AUTHOR_FILE, n);
+	AP_LogLine(msg);
+
+	AP_AuthorSave(); // flips the live source to the file
 }
 
 // ── the actions ─────────────────────────────────────────────────────────────
@@ -546,6 +635,14 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 		s_markerLevel = -1; // force a rebuild for whatever level is loaded
 		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 drop, Numpad 0 delete last, "
 		           "Numpad . list + save\n");
+
+		// Author mode reads and writes the EXTERNAL FILE ONLY (packaging item 5),
+		// so switching it on with no file present would otherwise show an empty
+		// track while 241 compiled-in placements sit right there -- and the first
+		// save would then freeze that emptiness into the file. Seed the file from
+		// the built-in default instead, once, on the edge: after this the mode is
+		// editing a real file and every rule below is the plain file case.
+		AP_AuthorSeedFileFromEmbedded();
 	}
 
 	level = (int)gGT->levelID;
@@ -624,28 +721,43 @@ void AP_Author_EnsureLoaded(void)
 		AP_AuthorLoad();
 }
 
+int AP_Author_PlacementSource(void)
+{
+	return s_source;
+}
+
+// Below this line the two tables merge into one read-only view, and the merge
+// itself is NOT written here: it is AP_PlacementTable_* in ap_placement_table.h,
+// which tools/test-box-map.c exercises directly. This file only says which source
+// won and where the file's rows are, so the tested rule and the shipped rule are
+// the same code.
+//
+// Author mode never comes through here -- it edits s_place directly -- which is
+// what keeps the embedded default un-editable and the file the only thing a save
+// can touch.
+
+static AP_PlacementTable AP_AuthorLiveTable(void)
+{
+	AP_PlacementTable t;
+
+	t.source = s_source;
+	t.file = s_place;
+	t.fileCount = s_placeCount;
+	return t;
+}
+
 int AP_Author_PlacementCount(void)
 {
-	return s_placeCount;
+	AP_PlacementTable t = AP_AuthorLiveTable();
+
+	return AP_PlacementTable_Count(&t);
 }
 
 int AP_Author_PlacementGet(int index, int *level, short *x, short *y, short *z, short *rotY)
 {
-	if (index < 0 || index >= s_placeCount)
-		return 0;
+	AP_PlacementTable t = AP_AuthorLiveTable();
 
-	if (level != 0)
-		*level = (int)s_place[index].level;
-	if (x != 0)
-		*x = s_place[index].x;
-	if (y != 0)
-		*y = s_place[index].y;
-	if (z != 0)
-		*z = s_place[index].z;
-	if (rotY != 0)
-		*rotY = s_place[index].rotY;
-
-	return 1;
+	return AP_PlacementTable_Get(&t, index, level, x, y, z, rotY);
 }
 
 int AP_Author_PlacementGeneration(void)
