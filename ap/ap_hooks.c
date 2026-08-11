@@ -3332,6 +3332,19 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_net_difficulty_subscribe(ctr_cfg.ai_difficulty_default);
 		ap_diff_pulled = 0;
 
+		// Current racer (#54/#209): same per-slot data-storage path, seeded by
+		// this seed's own starting racer so a first-ever connect is correct
+		// before the Get round-trips. Only for a seed that actually carries the
+		// character phase -- writing a racer key for a pre-0.2.0 seed would
+		// leave state behind for a feature that seed does not have. The seat is
+		// re-armed so a reconnect re-applies the authoritative value rather than
+		// keeping whatever the local save happened to hold.
+		if (ctr_cfg.character_phase_present)
+		{
+			ap_net_character_subscribe(ctr_cfg.starting_character);
+			AP_CharSwap_ConnectReset();
+		}
+
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
 		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
 		// the slot-connected handler that ran inside ap_net_poll() above, so

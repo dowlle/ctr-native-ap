@@ -158,6 +158,27 @@ void ap_net_difficulty_set(int value);
 // (slot_data default seed, Get reply, or a SetNotify update); 0 if none yet.
 int  ap_net_difficulty_known(int *out);
 
+// ── Current racer sync (issues #54/#209, data storage) ──
+// The selected racer is MUTABLE non-item state, so it can ride neither slot_data
+// (frozen, sent once) nor the local save (the 2026-07-23 ruling keeps the build
+// machine-agnostic). It lives in per-slot data storage under
+// "ctr_character_<slot>", exactly like the difficulty override above. Values are
+// ENGINE character ids 0..15; anything else is ignored rather than seated.
+
+// On a fresh slot-connect: subscribe to the racer key and request its current
+// value. slot_default is the seed's own ctr_options.starting_character, which
+// seeds the cache so it is effective before the Get returns. No-op if not
+// connected.
+void ap_net_character_subscribe(int slot_default);
+
+// Persist the racer the player just swapped to (replace op, no reply) and update
+// the cached value. No-op if not connected or if characterID is out of range.
+void ap_net_character_set(int characterID);
+
+// 1 (and writes *out) if a racer is currently known from the server (slot_data
+// default seed, Get reply, or a SetNotify update); 0 if none yet.
+int  ap_net_character_known(int *out);
+
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
 // deaths to this client. Called by the game side after slot_data is parsed, only

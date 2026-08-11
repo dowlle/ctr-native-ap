@@ -509,6 +509,10 @@ static int ap_cs_isUnlocked(int characterID)
 	return AP_CharacterUnlocked(characterID);
 }
 
+// Defined further down, next to the seat/restore half it pairs with; declared
+// here because the swap request below fires before that point in the file.
+static void ap_cs_persistCharacter(int characterID);
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -640,12 +644,15 @@ static void ap_cs_requestSwap(struct GameTracker *gGT, int characterID)
 	// value the Garage confirm writes (game/233/CS_Garage.c:360), so the hub
 	// re-enters in exactly the state a fresh Garage pick would produce.
 	//
-	// >>> SEAM: persistence. <<< The 2026-07-23 ruling routes "current
-	// character" to per-slot AP data storage (the ctr_difficulty_<slot>
-	// precedent), NOT slot_data. That is not wired here; a reconnect will still
-	// reapply whatever the save carries.
+	// Persistence (spike seam 3) is wired: ap_cs_persistCharacter writes the
+	// choice to per-slot AP data storage, and AP_CharSwap_SeatStartingCharacter
+	// reads it back on the next connect. slot_data is deliberately not the
+	// carrier -- it is frozen and sent once, and this value is mutable.
 	data.characterIDs[0] = (short)characterID;
 	sdata->advProgress.characterID = (s16)characterID;
+	// Persist before the reload, not after: the reload tears the level down and
+	// a crash or a quit mid-load must not lose the choice the player just made.
+	ap_cs_persistCharacter(characterID);
 
 	snprintf(msg, sizeof msg, "[AP CHARSWAP] request lvl=%d %d -> %d pos=%d,%d,%d\n",
 	         (int)gGT->levelID, ap_cs_fromCharacter, characterID,
@@ -904,29 +911,79 @@ int AP_CharSwap_FeatureLive(void)
 // the picker, and re-seating it every frame would fight every swap.
 static int ap_cs_startingSeated = 0;
 
+// Re-arm the one-shot seat. Called from the fresh-connect path so a reconnect or
+// a slot switch re-applies the AUTHORITATIVE racer instead of keeping whatever
+// the local save holds -- which is the whole point of persisting it server-side.
+void AP_CharSwap_ConnectReset(void)
+{
+	ap_cs_startingSeated = 0;
+}
+
+// Persist the racer the player just chose (spike seam 3, now real).
+//
+// The selected racer is mutable non-item state, so it rides neither slot_data
+// (frozen, sent once) nor the local save. It goes to per-slot AP data storage,
+// the same path the AI-difficulty override uses -- the 2026-07-23 ruling picked
+// that deliberately: "our whole build so far has been machine-agnostic".
+static void ap_cs_persistCharacter(int characterID)
+{
+	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
+		return;
+	ap_net_character_set(characterID);
+}
+
 void AP_CharSwap_SeatStartingCharacter(void)
 {
-	char msg[128];
+	char msg[160];
+	int wanted;
+	int stored = 0;
 
 	if (ap_cs_startingSeated)
 		return;
 	if (!AP_CharSwap_FeatureLive())
 		return;
-	if ((unsigned)ctr_cfg.starting_character > (unsigned)NITROS_OXIDE)
+
+	// The stored per-slot racer WINS over the seed's starting racer. That is the
+	// ordering the feature needs: `starting_character` says who you begin as,
+	// the stored value says who you have since become, and a reconnect must
+	// restore the second rather than undo every swap of the session. On a
+	// first-ever connect nothing is stored and ap_net_character_subscribe has
+	// already seeded the cache with the seed's own starting racer, so both paths
+	// agree.
+	wanted = ap_net_character_known(&stored) ? stored : ctr_cfg.starting_character;
+	if (wanted < 0 || wanted > NITROS_OXIDE)
+		wanted = ctr_cfg.starting_character;
+	if ((unsigned)wanted > (unsigned)NITROS_OXIDE)
 		return;
+
+	// Only seat a racer the seed actually lets you be. A stored value can
+	// outlive the item state that justified it (a re-rolled seed on the same
+	// slot name), and seating a locked racer would hand the player a racer the
+	// generation never granted.
+	if (!AP_CharacterUnlocked(wanted))
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP CHARSWAP] stored racer %d is not unlocked on this seed; "
+		         "falling back to the starting racer %d\n",
+		         wanted, ctr_cfg.starting_character);
+		AP_LogLine(msg);
+		wanted = ctr_cfg.starting_character;
+	}
 
 	ap_cs_startingSeated = 1;
 
-	if (data.characterIDs[0] == (short)ctr_cfg.starting_character)
+	if (data.characterIDs[0] == (short)wanted)
 		return; // already there; nothing to say
 
 	snprintf(msg, sizeof msg,
-	         "[AP CHARSWAP] seating the seed's starting racer: %d -> %d\n",
-	         (int)data.characterIDs[0], ctr_cfg.starting_character);
+	         "[AP CHARSWAP] seating racer %d -> %d (%s)\n",
+	         (int)data.characterIDs[0], wanted,
+	         (wanted == ctr_cfg.starting_character) ? "seed starting racer"
+	                                                : "restored from AP data storage");
 	AP_LogLine(msg);
 
-	data.characterIDs[0] = (short)ctr_cfg.starting_character;
-	sdata->advProgress.characterID = (s16)ctr_cfg.starting_character;
+	data.characterIDs[0] = (short)wanted;
+	sdata->advProgress.characterID = (s16)wanted;
 }
 
 void AP_CharSwap_Tick(struct GameTracker *gGT)

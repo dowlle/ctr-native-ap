@@ -165,6 +165,20 @@ static std::string ap_diff_key()
 	return "ctr_difficulty_" + g_slot;
 }
 
+// Current racer sync (issues #54/#209), the same per-slot data-storage shape as
+// the difficulty override above and for the same reason: the selected racer is
+// MUTABLE non-item state, so it cannot ride slot_data (frozen, sent once) and
+// it must not ride the local save either -- the 2026-07-23 ruling routes it to
+// per-slot server storage precisely so the feature stays machine-agnostic.
+// Key: "ctr_character_<slot name>". Value: an ENGINE character id 0..15.
+static int         g_char_value = 0;
+static bool        g_char_known = false;
+
+static std::string ap_char_key()
+{
+	return "ctr_character_" + g_slot;
+}
+
 // ── DeathLink (issue #6) ──
 // Depth-1 inbound latch: the most recent DeathLink bounce not yet handed to the
 // game thread. A newer death overwrites an unhandled one, so extras are dropped
@@ -631,6 +645,20 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
+		auto ch = keys.find(ap_char_key());
+		if (ch != keys.end() && ch->second.is_number_integer())
+		{
+			int v = ch->second.get<int>();
+			// A stored racer outside the roster is a key some other tool wrote.
+			// Ignore it rather than seating a character id the engine cannot
+			// name; the slot_data starting racer stays in effect.
+			if (v >= 0 && v <= 15)
+			{
+				g_char_value = v;
+				g_char_known = true;
+				std::fprintf(stderr, "[AP NET] current racer retrieved: %d\n", g_char_value);
+			}
+		}
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
@@ -639,6 +667,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_value = value.get<int>();
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
+		}
+		if (key == ap_char_key() && value.is_number_integer())
+		{
+			int v = value.get<int>();
+			if (v >= 0 && v <= 15)
+			{
+				g_char_value = v;
+				g_char_known = true;
+				std::fprintf(stderr, "[AP NET] current racer changed: %d\n", g_char_value);
+			}
 		}
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
@@ -1027,6 +1065,50 @@ extern "C" void ap_net_difficulty_set(int value)
 	g_diff_known = true;
 }
 
+extern "C" void ap_net_character_subscribe(int slot_default)
+{
+	if (!g_ap || !g_connected)
+		return;
+	// Seed the seed's own starting racer so it is effective before the Get
+	// round-trips; a stored per-slot value (i.e. you already swapped in an
+	// earlier session) overwrites it through the retrieved handler.
+	if (slot_default >= 0 && slot_default <= 15)
+	{
+		g_char_value = slot_default;
+		g_char_known = true;
+	}
+	AP_NET_GUARD("character_subscribe", {
+		const std::string key = ap_char_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_character_set(int characterID)
+{
+	if (!g_ap || !g_connected)
+		return;
+	if (characterID < 0 || characterID > 15)
+		return;
+	AP_NET_GUARD("character_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = characterID;
+		g_ap->Set(ap_char_key(), characterID, false, {op});
+	});
+	g_char_value = characterID;
+	g_char_known = true;
+}
+
+extern "C" int ap_net_character_known(int *out)
+{
+	if (!g_char_known)
+		return 0;
+	if (out)
+		*out = g_char_value;
+	return 1;
+}
+
 extern "C" int ap_net_difficulty_known(int *out)
 {
 	if (!g_diff_known)
@@ -1231,6 +1313,7 @@ extern "C" void ap_net_shutdown(void)
 	g_pending_checks.clear(); // #85: drop any in-flight checks on a server switch
 	g_dl_incoming = false; // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
+	g_char_known = false; // nor may a racer selection leak into another slot
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone
