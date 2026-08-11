@@ -27,6 +27,8 @@ enum RelicRaceEndMenuConstants
 	RR_COUNTDOWN_STEP_FRAMES = 5,
 	RR_HIGH_SCORE_BANNER_START_FRAME = 370,
 	RR_HIGH_SCORE_BANNER_HOLD_FRAMES = CTR_SECONDS_TO_FRAMES(4),
+	RR_AP_CEREMONY_WRAP_WIDTH = 0x1b0,
+	RR_LOGICAL_SCREEN_WIDTH = 0x200,
 	RR_TIMEBOX_SCALE = 0x300,
 	RR_RELIC_FULL_SCALE = 0xc00,
 	RR_RELIC_GROW_STEP = 0x80,
@@ -436,6 +438,11 @@ void RR_EndEvent_DrawMenu(void)
 		{
 			startX = 0x100;
 			endX = 0x296;
+#ifdef CTR_AP
+			if (ctr_cfg_active())
+				endX = AP_CeremonyOffscreenX(RR_LOGICAL_SCREEN_WIDTH,
+				                                  RR_AP_CEREMONY_WRAP_WIDTH);
+#endif
 			elapsedFrames -= RR_FLYOUT_FRAME_OFFSET;
 		}
 
@@ -444,6 +451,11 @@ void RR_EndEvent_DrawMenu(void)
 		{
 			startX = 0x100;
 			endX = 0x296;
+#ifdef CTR_AP
+			if (ctr_cfg_active())
+				endX = AP_CeremonyOffscreenX(RR_LOGICAL_SCREEN_WIDTH,
+				                                  RR_AP_CEREMONY_WRAP_WIDTH);
+#endif
 			elapsedFrames -= RR_HIGH_SCORE_BANNER_START_FRAME;
 		}
 
@@ -468,7 +480,12 @@ void RR_EndEvent_DrawMenu(void)
 		// sent (the beaten relic tiers, cycled). primaryBit -1 = ledger only; the
 		// tiers were recorded at the finish by RR_EndEvent_UnlockAward. Falls back
 		// to the vanilla banner when AP is inactive or nothing is scouted.
-		if (!AP_CeremonyDraw(pos.x, pos.y, -1, 1))
+		if (!AP_CeremonyDrawTimed(
+		        pos.x, pos.y, -1, 1,
+		        sdata->framesSinceRaceEnded - RR_RELIC_AWARD_START_FRAME,
+		        ((gGT->gameModeEnd & NEW_HIGH_SCORE) != 0)
+		            ? RR_HIGH_SCORE_BANNER_START_FRAME - RR_RELIC_AWARD_START_FRAME
+		            : RR_FLYOUT_FRAME_OFFSET - RR_RELIC_AWARD_START_FRAME))
 #endif
 			DecalFont_DrawLine(sdata->lngStrings[LNG_RELIC_AWARDED], pos.x, pos.y, 1, textColor);
 	}
