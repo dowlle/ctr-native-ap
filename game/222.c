@@ -101,9 +101,8 @@ void AA_EndEvent_DrawMenu(void)
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
 #ifdef CTR_AP
 	if (ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2)
-		didEarnCtrToken = didWin &&
-			(driver->PickupLetterHUD.numCollected == AP_LettersRequiredCount(gGT->levelID)) &&
-			AP_LettersRequiredMet(gGT->levelID);
+		didEarnCtrToken = AP_LetterTokenEarned(
+			gGT->levelID, didWin, driver->PickupLetterHUD.numCollected);
 #endif
 
 	// If adventure mode

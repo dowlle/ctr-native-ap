@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+#include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 
 struct GameTracker;
 
@@ -343,6 +344,7 @@ long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
 int AP_LettersRequiredMet(int track);
 int AP_LettersRequiredCount(int track);
+int AP_LetterTokenEarned(int track, int didWin, int collected);
 
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).

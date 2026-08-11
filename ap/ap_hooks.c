@@ -3773,8 +3773,9 @@ int AP_LetterAvailable(int track, int letter)
 {
 	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
 	if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT || letter < 0 || letter >= 3) return 1;
-	if (ctr_cfg.lettersanity_mode == 2 && ctr_cfg.lettersanity_locations[track][letter] < 0) return 0;
-	return ap_letter_received[track][letter] != 0;
+	return AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
+	                              ctr_cfg.lettersanity_locations[track][letter],
+	                              ap_letter_received[track][letter]);
 }
 
 long AP_LetterLocation(int track, int letter)
@@ -3791,21 +3792,28 @@ void AP_LetterCollected(int track, int letter)
 
 int AP_LettersRequiredMet(int track)
 {
-	int l;
 	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
-	for (l = 0; l < 3; l++)
-		if ((ctr_cfg.lettersanity_mode == 3 || ctr_cfg.lettersanity_locations[track][l] >= 0) &&
-		    !ap_letter_received[track][l]) return 0;
-	return 1;
+	return AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
+	                                 ctr_cfg.lettersanity_locations[track],
+	                                 ap_letter_received[track]);
 }
 
 int AP_LettersRequiredCount(int track)
 {
-	int l, count = 0;
 	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 3;
-	if (ctr_cfg.lettersanity_mode == 3) return 3;
-	for (l = 0; l < 3; l++) if (ctr_cfg.lettersanity_locations[track][l] >= 0) count++;
-	return count;
+	return AP_LettersRequiredCountPure(1, ctr_cfg.lettersanity_mode,
+	                                   ctr_cfg.lettersanity_locations[track]);
+}
+
+int AP_LetterTokenEarned(int track, int didWin, int collected)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2 ||
+	    track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT)
+		return didWin && collected == 3;
+	return AP_LetterTokenEarnedPure(didWin, collected, 1,
+	                                ctr_cfg.lettersanity_mode,
+	                                ctr_cfg.lettersanity_locations[track],
+	                                ap_letter_received[track]);
 }
 
 // Podium wrapper: preserve the shipped log text and make the two podium-specific
