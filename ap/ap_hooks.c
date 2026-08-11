@@ -12,6 +12,7 @@
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
+#include "ap_reward_policy.h" // shared reward-display policy (#212/#219/#221/#222)
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
@@ -20,6 +21,17 @@
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
+
+// The freestanding reward-policy header spells out the model ids it can return
+// so the out-of-engine test harness can include it alone. Pin each one to the
+// engine's MODEL_ID enum here so the mirror can never silently drift.
+CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
+CTR_STATIC_ASSERT(AP_MODEL_WUMPA   == PU_WUMPA_FRUIT);
+CTR_STATIC_ASSERT(AP_MODEL_TROPHY  == STATIC_TROPHY);
+CTR_STATIC_ASSERT(AP_MODEL_RELIC   == STATIC_RELIC);
+CTR_STATIC_ASSERT(AP_MODEL_TOKEN   == STATIC_TOKEN);
+CTR_STATIC_ASSERT(AP_MODEL_GEM     == STATIC_GEM);
+CTR_STATIC_ASSERT(AP_MODEL_KEY     == STATIC_KEY);
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -428,27 +440,13 @@ static int AP_PadDisplayKind(long long item, int player, AP_ItemCat *outCat)
 	if (own || ap_net_player_is_ctr(player))
 	{
 		cat = AP_ItemCategory(item);
-		switch (cat)
-		{
-		case AP_CAT_TROPHY:
-		case AP_CAT_SAPPHIRE:
-		case AP_CAT_GOLD:
-		case AP_CAT_PLATINUM:
-		case AP_CAT_TOKEN:
-		case AP_CAT_GEM:
-		case AP_CAT_KEY:
-			break; // an OG CTR reward: keeps its own model
-		// Wumpa, traps, capability/comfort items, anything an apworld invented:
-		// not an OG CTR reward, so it is marker material whoever owns it. Every
-		// remaining enumerator is spelled out (not folded into `default`) so
-		// -Wswitch-enum keeps flagging this switch if the category set ever grows.
-		case AP_CAT_COUNT:
-		case AP_CAT_WUMPA:
-		case AP_CAT_NONE:
-		default:
+		// #212/#219/#222: a category that keeps its own model -- an OG CTR
+		// reward, a CTR progression crystal, or a Wumpa Fruit package -- is
+		// presentation-eligible (VANILLA/GHOST below). Everything else is marker
+		// material. The decision lives in the freestanding policy header, so the
+		// pad glow, the ceremony prop and the tests all consume one answer.
+		if (!AP_RewardKeepsModel(cat))
 			cat = AP_CAT_NONE;
-			break;
-		}
 	}
 
 	if (outCat)
@@ -507,29 +505,13 @@ int AP_WarpPadRewardModel(int globalBit)
 
 	case AP_PAD_DISP_VANILLA:
 	case AP_PAD_DISP_GHOST:
-		// An OG CTR reward: its own vanilla model either way. The GHOST kind adds
+		// A model-keeping reward: its own model either way. The GHOST kind adds
 		// translucency at the instance (AP_WarpPadRewardGhost), never a different
-		// model -- a peer's Sapphire Relic stays a Sapphire Relic.
-		switch (cat)
-		{
-		case AP_CAT_TROPHY:
-			return STATIC_TROPHY;
-		case AP_CAT_SAPPHIRE:
-		case AP_CAT_GOLD:
-		case AP_CAT_PLATINUM:
-			return STATIC_RELIC;
-		case AP_CAT_TOKEN:
-			return STATIC_TOKEN;
-		case AP_CAT_GEM:
-			return STATIC_GEM;
-		case AP_CAT_KEY:
-			return STATIC_KEY;
-		case AP_CAT_COUNT:
-		case AP_CAT_WUMPA:
-		case AP_CAT_NONE:
-		default:
-			return -1; // unreachable: the two model kinds always carry an OG category
-		}
+		// model -- a peer's Sapphire Relic stays a Sapphire Relic. Category ->
+		// model is the freestanding policy, shared with the ceremony prop and the
+		// tests; a peer's crystal stays a crystal (#219), a peer's wumpa package
+		// stays a wumpa fruit (#222).
+		return AP_RewardModelForCat(cat);
 
 	default:
 		return -1; // not checkable / not scouted / marker unavailable -> placeholder
@@ -573,6 +555,13 @@ int AP_WarpPadRewardTint(int globalBit)
 		return 0x0ffc6290; // gold
 	case AP_CAT_PLATINUM:
 		return 0x0ebebf50; // platinum / pale silver
+	// #219: an OWN crystal keeps the OG purple crystal colour (UI_Instance.c:90
+	// sets the same 0xd22fff0 at birth for a menu crystal). A PEER crystal never
+	// reaches this case -- the ghosted kind returns 0 above, and the ghost writer
+	// needs colorRGBA 0 anyway. Sourced from the freestanding policy so the pad
+	// glow and the ceremony prop tint one way.
+	case AP_CAT_CRYSTAL:
+		return (int)AP_RewardTintForCat(AP_CAT_CRYSTAL);
 	case AP_CAT_TROPHY:
 	case AP_CAT_TOKEN:
 	case AP_CAT_GEM:
@@ -587,6 +576,124 @@ int AP_WarpPadRewardTint(int globalBit)
 		// all: they are marker items now, handled above.
 		return 0;
 	}
+}
+
+// Display-scale multiplier for a scouted reward's ceremony prop (see header).
+// Fixed point, 0x1000 = 1.0. Delegates the per-category value to the freestanding
+// policy so the pad display, the ceremony prop and the tests all share one table
+// of scales. Unresolved / marker / unscouted resolve to the vanilla token's own
+// scale (0x1000), matching the pad glow leaving those slots alone.
+int AP_WarpPadRewardScale(int globalBit)
+{
+	AP_ItemCat cat = AP_CAT_NONE;
+	int kind = AP_PadDisplayForBit(globalBit, &cat, NULL);
+
+	if (kind != AP_PAD_DISP_VANILLA && kind != AP_PAD_DISP_GHOST)
+		return 0x1000; // marker / unresolved / unscouted -> token's own scale
+
+	return AP_RewardScaleForCat(cat);
+}
+
+// Re-present a Token Challenge / Crystal Challenge ceremony prop with the
+// reward that actually sits at `globalBit` (issue #221). The prop is born as a
+// vanilla CTR token (STATIC_TOKEN) and is otherwise only re-scaled by the
+// ceremony; this swaps in the resolved model, tint and ghost treatment so the
+// prop and the AP banner describe the same reward. Returns 1 when the prop was
+// re-presented, 0 to keep the vanilla token (AP inactive / unscouted / model
+// not resident). The colour/flag reset mirrors the pad-glow block in
+// AH_WarpPad_ThTick exactly (#213), so a reassigned prop never keeps the token's
+// stale birth colour.
+int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
+{
+	struct GameTracker *gGT;
+	int model;
+	int ghost;
+	int tint;
+
+	if (prop == 0)
+		return 0;
+	if (!ctr_cfg_active())
+		return 0;
+
+	model = AP_WarpPadRewardModel(globalBit);
+	if (model < 0)
+		return 0; // not scouted / not checkable / marker unavailable -> vanilla
+	gGT = sdata->gGT;
+	if (gGT == 0 || gGT->modelPtr[model] == 0)
+		return 0; // model not resident for this track -> vanilla fallback
+
+	ghost = AP_WarpPadRewardGhost(globalBit);
+	tint = AP_WarpPadRewardTint(globalBit);
+
+	prop->model = gGT->modelPtr[model];
+	prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT | GHOST_DRAW_TRANSPARENT);
+	prop->alphaScale = 0;
+
+	switch (prop->model->id)
+	{
+	case STATIC_RELIC:
+		prop->colorRGBA = 0x020a5ff0; // vanilla relic blue
+		if (tint)
+			prop->colorRGBA = tint; // own relic tier colour
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	case STATIC_CRYSTAL:
+		prop->colorRGBA = tint ? tint : 0x0d22fff0; // own crystal -> purple
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	case STATIC_TOKEN:
+	{
+		// Colour by the SCOUTED item's token colour; fall back to this track's
+		// vanilla token group when the scout is unavailable.
+		int tg = AP_WarpPadRewardTokenColour(globalBit);
+		if (tg < 0)
+			tg = data.metaDataLEV[gGT->levelID].ctrTokenGroupID;
+		prop->colorRGBA = ((u32)data.AdvCups[tg].color[0] << 0x14) |
+		                  ((u32)data.AdvCups[tg].color[1] << 0xc) |
+		                  ((u32)data.AdvCups[tg].color[2] << 0x4);
+		prop->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+		break;
+	}
+	case STATIC_GEM:
+	{
+		// A gem has no useful unmodulated colour; tint it by the scouted gem's
+		// colour (mirror of the pad-glow gem path).
+		int gc = AP_WarpPadRewardGemColour(globalBit);
+		if (gc >= 0)
+			prop->colorRGBA = ((u32)data.AdvCups[gc].color[0] << 0x14) |
+			                  ((u32)data.AdvCups[gc].color[1] << 0xc) |
+			                  ((u32)data.AdvCups[gc].color[2] << 0x4);
+		else
+			prop->colorRGBA = tint;
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	}
+	case STATIC_AP:
+		prop->colorRGBA = tint;
+		prop->alphaScale = AP_MARKER_TINT_STRENGTH;
+		break;
+	case STATIC_KEY:
+		prop->colorRGBA = 0x0dca6000; // vanilla golden key
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	case PU_WUMPA_FRUIT:
+		prop->colorRGBA = 0; // natural wumpa fruit colour
+		break;
+	default:
+		prop->colorRGBA = 0; // STATIC_TROPHY -> natural, untinted
+		break;
+	}
+
+	// Ghosted peer reward: colorRGBA MUST be 0 (see the pad-glow ghost block).
+	if (ghost)
+	{
+		prop->colorRGBA = 0;
+		prop->alphaScale = AP_PAD_GHOST_ALPHA;
+		prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+		prop->flags |= GHOST_DRAW_TRANSPARENT;
+	}
+
+	return 1;
 }
 
 // Colour index of the OWN CTR Token scouted here (see header). The token item id

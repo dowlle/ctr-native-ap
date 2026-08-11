@@ -1333,6 +1333,20 @@ WarpPad_AnimateOpen:
 						apPrize->colorRGBA = 0xdca6000; // vanilla golden key
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
+					case STATIC_CRYSTAL:
+						// #219: an OWN CTR progression/capability item -> the OG purple
+						// crystal, specular like the arena crystal (UI_Instance.c:90).
+						// A peer crystal is ghosted below (colorRGBA forced to 0 there),
+						// exactly like the peer OG rewards.
+						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
+					case PU_WUMPA_FRUIT:
+						// #222: an OWN Wumpa Fruit package -> the fruit model's natural
+						// colours (vanilla renders it unmodulated; RB_Fruit.c never tints
+						// it). A peer package is ghosted below.
+						apPrize->colorRGBA = 0;
+						break;
 					default:
 						// STATIC_TROPHY / any other own reward -> natural, untinted
 						// colour (colorRGBA 0 = the INSTANCE_Birth3D default the trophy
