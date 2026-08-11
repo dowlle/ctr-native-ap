@@ -204,6 +204,24 @@ typedef struct
 	// now. Display only -- never read by a gate, a check or an item.
 	int warp_pad_item_display;
 
+	// AP-item type colours (issue #212, slot_data ctr_options.
+	// ap_item_type_colors). Governs ONE thing: the colour of the Archipelago-logo
+	// markers in the pad glow. 1 (or any nonzero) = the AP classification tints --
+	// plum progression, slate blue useful, cyan filler, salmon trap -- which is
+	// what every shipped client renders. 0 = every marker wears one uniform
+	// colour, so which KIND of AP item a pad holds stays a surprise.
+	//
+	// ADDITIVE key, no schema bump, and DELIBERATELY DEFAULTED TO 1: the apworld
+	// half of #212 lands after the 0.2.0 name freeze, so this client has to run
+	// against seeds that carry no such key at all. Absent -> 1 -> today's
+	// behaviour, never the new one. Display only: it steers no gate, no location,
+	// no item and no logic (the #65 lesson does not bite here).
+	//
+	// EXPECTED WIRE KEY: "ap_item_type_colors" (int or bool). If the apworld half
+	// ships a different name, THIS is the line that changes -- and the option's own
+	// docstring must then describe what the game actually does (Lessons §12).
+	int ap_item_type_colors;
+
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
 	// feature stays dark on old seeds (the one_lap_cups additive-key precedent).
