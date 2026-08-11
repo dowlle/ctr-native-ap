@@ -159,6 +159,8 @@ static int AP_CapabilityIsLocal(struct Driver *driver)
 	return driver == sdata->gGT->drivers[0];
 }
 
+static int AP_CapabilityRosterSlotForCharacter(int characterID);
+
 // The roster slot of the character the local player is CURRENTLY driving, or -1
 // if that cannot be established.
 //
@@ -175,7 +177,6 @@ static int AP_CapabilityCurrentRosterSlot(void)
 {
 	struct Driver *driver;
 	int characterID;
-	int i;
 
 	if (sdata == 0 || sdata->gGT == 0)
 		return -1;
@@ -190,12 +191,42 @@ static int AP_CapabilityCurrentRosterSlot(void)
 
 	characterID = data.characterIDs[driver->driverID];
 
+	return AP_CapabilityRosterSlotForCharacter(characterID);
+}
+
+// Translate an engine character ID to the apworld roster row. Kept separate
+// from the live-driver lookup because menus can preview a character before a
+// Driver exists.
+static int AP_CapabilityRosterSlotForCharacter(int characterID)
+{
+	int i;
+
 	for (i = 0; i < AP_CAP_ROSTER_COUNT; i++)
 	{
 		if (AP_CAP_ROSTER_CHARACTER[i] == characterID)
 			return i;
 	}
 	return -1; // -1 (no character yet, menus) or a modded id: apply nothing
+}
+
+// Same mode dispatch as AP_CapabilityChainCount, with an explicit character
+// for UI surfaces that are not backed by the current Driver.
+static int AP_CapabilityChainCountForCharacter(int mode, int chain, int characterID)
+{
+	int slot;
+
+	if (chain < 0 || chain >= AP_CAP_CHAIN_COUNT)
+		return -1;
+
+	if (mode == AP_CAP_MODE_PER_CHARACTER)
+	{
+		slot = AP_CapabilityRosterSlotForCharacter(characterID);
+		if (slot < 0)
+			return -1;
+		return g_cap_recv_pc[slot][chain];
+	}
+
+	return g_cap_recv[chain];
 }
 
 // The received count for one chain under the seed's mode for that pack. Returns
@@ -261,6 +292,24 @@ int AP_CapabilityStatRankFor(int chain)
 		return -1;
 
 	rank = AP_CapabilityChainCount(ctr_cfg.stats_mode, chain);
+	if (rank < 0)
+		return -1;
+
+	if (rank > AP_CAP_STAT_COPIES)
+		rank = AP_CAP_STAT_COPIES;
+	return rank;
+}
+
+int AP_CapabilityStatRankForCharacter(int chain, int characterID)
+{
+	int rank;
+
+	if (!AP_CapabilityStatsActive())
+		return -1;
+	if (chain <= AP_CAP_CHAIN_BOOST || chain >= AP_CAP_CHAIN_COUNT)
+		return -1;
+
+	rank = AP_CapabilityChainCountForCharacter(ctr_cfg.stats_mode, chain, characterID);
 	if (rank < 0)
 		return -1;
 

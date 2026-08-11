@@ -1,5 +1,13 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Five equal visual steps across the Garage's six 13-pixel fill segments.
+// The final step stops at the existing 78-pixel fill ceiling.
+static const s16 AP_GARAGE_STAT_BAR_BY_RANK[AP_CAP_STAT_RANK_COUNT] = {
+	13, 26, 39, 52, 78,
+};
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7784-0x800b7834
 void CS_Garage_ZoomOut(char zoomState)
 {
@@ -76,6 +84,18 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	{
 		barLen = &gGarage.barLen[i];
 		s16 stat = gGarage.barStat[MDC->engineID * 3 + i];
+
+#ifdef CTR_AP
+		// Replacement design: when Progressive Stats is live, show the viewed
+		// racer's current AP rank outright. In shared_global mode the explicit
+		// character is intentionally ignored; in per_character mode it selects
+		// the PR #216 received-count row. An inactive or unknown configuration
+		// returns -1 and preserves the retail class-table bar byte-for-byte.
+		int rank = AP_CapabilityStatRankForCharacter(AP_CAP_CHAIN_TOP_SPEED + i,
+		                                                   currCharacterID);
+		if (rank >= 0)
+			stat = AP_GARAGE_STAT_BAR_BY_RANK[rank];
+#endif
 
 
 #define BAR_RATE 3

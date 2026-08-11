@@ -170,6 +170,13 @@ int AP_CapabilityBoostTier(void);
 // or -1 when the stat pack is not active (same fail-open rule as above).
 int AP_CapabilityStatRankFor(int chain);
 
+// Effective rank 0..4 for a stat chain on an explicit engine character ID.
+// This is the menu-safe counterpart to AP_CapabilityStatRankFor: the Garage
+// previews a racer before a Driver exists, so it cannot use the live-driver
+// lookup. Returns -1 when Progressive Stats is inactive, the chain is invalid,
+// or a per-character row cannot be identified.
+int AP_CapabilityStatRankForCharacter(int chain, int characterID);
+
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke
 // point every boost in the game passes through). Returns 0 to drop the grant
 // entirely, or 1 to let it through, having possibly rewritten *reserves and
