@@ -340,6 +340,17 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		         gGT->levelID, gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes(),
 		         (unsigned)gGT->timer);
 		AP_LogLine(apmsg);
+
+		// test-integration (2026-08-11 crash triage, the 08-07 checkpoint's
+		// missing repair): the pool re-init above dangles every instance
+		// pointer AP spawns hold. AP_Spawn_OnPoolReset exists for exactly this
+		// moment and was never wired -- without it the first AP_BoxesTick after
+		// a level load walks freed instances (three field crashes at
+		// LinkedCollide.c:17, all on level load).
+		{
+			void AP_Spawn_OnPoolReset(void);
+			AP_Spawn_OnPoolReset();
+		}
 	}
 #endif
 }
