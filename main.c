@@ -41,6 +41,7 @@
 #include "game/zGlobal_RDATA.c"
 #include "game/zGlobal_DATA.c"
 #include "game/zGlobal_SDATA.c"
+#include "game/widescreen.c"
 
 #undef RECT
 

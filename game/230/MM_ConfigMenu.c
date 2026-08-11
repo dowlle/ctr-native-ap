@@ -113,6 +113,22 @@ static const int   s_aiDiffValues[] = {0, 0x50, 0xA0, 0xF0, 0x140, 0x280};
 static const char *s_aiDiffNames[]  = {"VANILLA", "EASY", "MEDIUM", "HARD", "SUPER HARD", "ULTRA HARD"};
 #define AI_DIFF_COUNT ((int)(sizeof(s_aiDiffValues) / sizeof(s_aiDiffValues[0])))
 
+// Aspect-ratio preset ladder (CFG_ENUM), ported from thecodingbob/ctr-native
+// (branch widescreen-option). 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10,
+// 3 = 21:9. The raw value is what gets stored; the menu snaps out-of-ladder
+// values to the nearest preset for display and stepping, same as AI difficulty.
+static const int   s_aspectValues[] = {0, 1, 2, 3};
+static const char *s_aspectNames[]  = {"4:3", "16:9", "16:10", "21:9"};
+#define ASPECT_COUNT ((int)(sizeof(s_aspectValues) / sizeof(s_aspectValues[0])))
+
+static int Aspect_Index(int value)
+{
+	for (int i = 0; i < ASPECT_COUNT; i++)
+		if (s_aspectValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as 4:3
+}
+
 // Nearest ladder index for an arbitrary value (exact match, else closest).
 static int AiDiff_NearestIndex(int value)
 {
@@ -171,6 +187,8 @@ static int Dlink_Index(int value)
 // entry edits (pointer identity, no string compare).
 static const char *Enum_Label(const ConfigEntry *e)
 {
+	if (e->valuePtr == &g_config.aspectRatio)
+		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
@@ -180,6 +198,16 @@ static const char *Enum_Label(const ConfigEntry *e)
 
 static void Enum_Step(const ConfigEntry *e, int dir)
 {
+	if (e->valuePtr == &g_config.aspectRatio)
+	{
+		int i = Aspect_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > ASPECT_COUNT - 1)
+			i = ASPECT_COUNT - 1;
+		*(int *)e->valuePtr = s_aspectValues[i];
+		return;
+	}
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 	{

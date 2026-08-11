@@ -14,6 +14,9 @@ typedef struct
 	bool skipIntro;             // Video & QoL: skip boot intros, go straight to the main menu
 	bool increaseDrawDistance;  // Video & QoL: render level geometry farther
 	bool disableSplitScreenLod; // Video & QoL: hi-res character models in 3-4P split screen
+	bool fullscreen;            // Video & QoL: borderless fullscreen window (default windowed)
+	int  aspectRatio;           // Video & QoL: 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10, 3 = 21:9
+	bool dithering;             // Video & QoL: PSX-authentic dithering (default on)
 	// Audio: the vanilla audio screen's volumes (0-255) and stereo/mono mode.
 	// Config-file-only -- persisted to config.ini [Audio] and edited through that
 	// screen (game/MAIN/MainFreeze.c), NOT the in-game options menu (the [Audio]
@@ -86,6 +89,16 @@ extern const int g_numConfigEntries;
 
 void NativeConfig_Load(void);
 void NativeConfig_Save(void);
+
+// Fullscreen state-machine decisions, kept freestanding so the platform layer's
+// sync logic is testable out-of-engine (tools/test-graphics-options.c).
+// F11 / Alt+Enter toggle: the new config value is the negation of the window's
+// current state.
+bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen);
+
+// Per-frame sync (Platform_BeginFrame): whether the window must be re-applied
+// to match g_config.fullscreen.
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have);
 
 // true if a config.ini was present at load time. Consumers (e.g. the AP layer)
 // use this to decide config.ini precedence over legacy flat config files.

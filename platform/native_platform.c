@@ -9,6 +9,7 @@
 #include "platform/native_log.h"
 #include "platform/native_perf.h"
 #include "platform/native_renderer.h"
+#include "platform/native_config.h"
 #include "platform/native_replay_scheduler.h"
 #include "platform/native_savestate.h"
 
@@ -115,12 +116,14 @@ internal void Platform_UpdateCursorVisibility(void)
 
 internal void Platform_HandleFullscreenToggle(void)
 {
-	int fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
+	bool fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
 
-	SDL_SetWindowFullscreen(g_window, fullscreen == 0);
+	g_config.fullscreen = NativeConfig_FullscreenToggledFromWindow(fullscreen);
+	SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
 	SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 	Platform_UpdateCursorVisibility();
 	NativeRenderer_ResetDevice();
+	NativeConfig_Save();
 }
 
 internal void Platform_UpdateHostAltKeyState(const s32 key, const s8 down)
@@ -252,7 +255,7 @@ void Platform_Init(const char *title, int width, int height)
 
 	s_platformInitialized = 1;
 
-	if (!NativeRenderer_InitialiseRender(windowName, width, height, 0))
+	if (!NativeRenderer_InitialiseRender(windowName, width, height, g_config.fullscreen))
 	{
 		Platform_LogError("[CTR Native] Failed to initialise window\n");
 		Platform_Shutdown();
@@ -301,9 +304,19 @@ void Platform_Shutdown(void)
 
 void Platform_BeginFrame(void)
 {
-	// NOTE(aalhendi): Normal rendering begins from DrawOTag after the current
-	// draw env is installed. Starting a host scene here clears the previous env
-	// and can force the host GL driver to block before the retail render-submit path.
+	// Sync g_config.fullscreen with actual window state (ported from
+	// thecodingbob/ctr-native, branch fullscreen-option). The option can be set
+	// in the options menu or toggled with F11 / Alt+Enter; this keeps the
+	// config value and the real SDL window state agreeing every frame, and
+	// re-lays the presentation viewport out when the window size changes.
+	bool isFullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
+	if (NativeConfig_FullscreenNeedsReapply(g_config.fullscreen, isFullscreen))
+	{
+		SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
+		SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
+		Platform_UpdateCursorVisibility();
+		NativeRenderer_ResetDevice();
+	}
 }
 
 int Platform_BeginScene(void)
