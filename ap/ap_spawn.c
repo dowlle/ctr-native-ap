@@ -38,15 +38,13 @@ static int                 s_generation;
 // (RenderBucket_QueueExecute.c:2062) is looking for -- an instance without it is
 // silently skipped.
 //
-// VISIBLE_DURING_GAMEPLAY ("skip OT range") is added on purpose. A spawn is
-// placed by hand, often off the racing line, and the OT-range allocation is the
-// depth-sorting step that a far-off-line instance loses (QueueDraw's
-// BuildDepthRange, :1820). The flag keeps the projection/cull but skips the
-// range allocation, which is the same treatment the engine gives its own
-// always-wanted instances. This is the draw-culling open question from #182:
-// the flag is the cheap mitigation, and whether it is sufficient at real
-// placement distances is an in-game observation, not something provable here.
-#define AP_SPAWN_FLAGS (DRAW_COLLISION_MASK | VISIBLE_DURING_GAMEPLAY)
+// Do not add VISIBLE_DURING_GAMEPLAY/RB_INSTANCE_SKIP_OT_RANGE. Fresh runtime
+// instances have no ordering-table range to reuse, so skipping its allocation
+// makes QueueDraw succeed while the primitive writer drops every triangle.
+// (One of the two 2026-08-07 authoring-session runtime repairs, landed from
+// the checkpoint's dirty tree on 2026-08-11 -- it answered #182's draw-culling
+// open question the hard way, in game.)
+#define AP_SPAWN_FLAGS DRAW_COLLISION_MASK
 
 static struct ApSpawnEntry *AP_SpawnEntry(AP_SpawnHandle h)
 {
