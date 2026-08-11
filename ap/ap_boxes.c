@@ -64,22 +64,37 @@ int AP_Boxes_LiveCount(void)
 
 // ── seed membership ─────────────────────────────────────────────────────────
 
-// Does the connected seed carry the item_boxes class at all?
+// THE SPAWN RULE (ruled 2026-08-11, rulings note §7). A box stands ONLY if it
+// has a LIVE multiworld location in the connected slot's seed: a real wire code
+// (AP_BoxMap_Code != -1) that this world actually created. The placement set is
+// GEOMETRY ONLY; the wire data decides liveness. A slot whose seed carries zero
+// box locations therefore stands zero boxes, and a seed with a reduced seating
+// tier stands exactly the locations it created, no more.
 //
-// ap_net_location_exists() answers "is this code in this slot's location list"
-// from the server's own checked + missing sets, which is the real answer to
-// ruling 1 and needs no slot_data key. But the class does not exist in any
-// generated seed yet: its names are minted in the #177 freeze (apworld PR #44),
-// which had NOT merged when this was built, so today every box code comes back
-// absent and a strict reading would spawn nothing at all and leave the mechanism
-// untestable.
+// THE DEV FALLBACK IS RETIRED (ruled 2026-08-11, 15:54 addendum). It used to show
+// the full authored set on a seed with no box locations, back when the #177 name
+// freeze had not merged and a strict reading left the mechanism untestable. With
+// #109 merged that purpose is served, and the fallback had teeth: on a slot
+// without box locations it SENT checks for location ids that do not exist in that
+// world (observed live from the Bandi slot on Coco Park: 35014060/66/68/69).
+// MultiServer 0.6.x silently discarded them there, but 0.6.7 hard-drops the
+// connection on invalid ids in the scout path, so this was a coin flip across
+// server versions, not a harmless diagnostic.
 //
-// So the block is probed once per rebuild. One hit or more and the per-location
-// answer is used, which is the shipping behaviour and needs no further edit when
-// the freeze lands. Zero hits across all 270 codes means the seed predates the
-// class, and the DEV FALLBACK shows the authored set instead, saying so in the
-// log. The fallback retires itself the day a seed carries one box location; it
-// is not a switch anybody has to remember to flip.
+// The sole surviving exception is box_author=true, which is EXPLICIT-ON and shows
+// the full authored set as author-mode MARKERS (AP_Boxes_OnFrame stands the
+// runtime boxes down entirely while it is on) -- markers send nothing, so the
+// exception cannot reach the wire.
+static int AP_BoxInSeed(long code, void *ctx)
+{
+	(void)ctx;
+	return ap_net_location_exists((long long)code);
+}
+
+// Diagnosis only, NEVER policy: does the connected seed carry the item_boxes
+// class anywhere? Used to tell the two zero-box cases apart in the log -- "this
+// seed has no boxes at all" reads very differently from "this seed HAS boxes but
+// this track resolved to none", and the second one is a bug report.
 static int s_seedHasBoxClass;
 
 static void AP_BoxProbeSeedClass(void)
@@ -95,16 +110,6 @@ static void AP_BoxProbeSeedClass(void)
 			return;
 		}
 	}
-}
-
-static int AP_BoxInSeed(long code, void *ctx)
-{
-	(void)ctx;
-
-	if (!s_seedHasBoxClass)
-		return 1; // dev fallback; the rebuild log says which mode is in force
-
-	return ap_net_location_exists((long long)code);
 }
 
 // Already broken on this seed. Server truth, so it survives a reconnect, a
@@ -265,12 +270,30 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 		s_spawnFull = 1;
 }
 
+// How many placements this level carries in the LIVE table, capped at the frozen
+// ceiling: the number of box slots this track could possibly stand if every one
+// of them were live and unchecked. The denominator of the zero-box diagnosis.
+static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int level)
+{
+	int i, here = 0;
+
+	for (i = 0; i < count; i++)
+	{
+		if (scratch[i].level != level)
+			continue;
+		if (here >= AP_BOX_SLOTS_PER_TRACK)
+			break;
+		here++;
+	}
+	return here;
+}
+
 static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 {
 	AP_BoxSlot slots[AP_BOX_SLOTS_PER_TRACK];
-	int        placements;
+	int        placements, here;
 	int        n, i, overflow = 0;
-	char       msg[160];
+	char       msg[192];
 
 	AP_BoxesClear();
 	s_level = level;
@@ -284,6 +307,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 
 	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
+	here = AP_BoxesGeometryHere(s_scratch, placements, level);
 
 	n = AP_BoxMap_BuildSet(s_scratch, placements, level,
 	                       AP_BoxInSeed, AP_BoxChecked, 0,
@@ -305,11 +329,55 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	for (i = 0; i < n; i++)
 		AP_BoxesSpawnOne(gGT, i);
 
-	snprintf(msg, sizeof msg, "[AP BOX] level %d (ap track %d): %d box(es) standing, seed %s\n",
-	         level, AP_BoxMap_ApTrack(level), s_liveCount,
+	// ONE line per rebuild, and it names the live placement SOURCE: a support log
+	// has to answer "which set is this player running" without a second question.
+	snprintf(msg, sizeof msg,
+	         "[AP BOX] level %d (ap track %d): %d of %d placement(s) standing, placements from %s, seed %s\n",
+	         level, AP_BoxMap_ApTrack(level), s_liveCount, here,
+	         AP_Author_PlacementSource() == AP_PLACEMENT_SRC_FILE
+	             ? "the external " AP_AUTHOR_FILE
+	             : "the built-in default",
 	         s_seedHasBoxClass ? "carries the item_boxes class"
-	                           : "has NO box locations, showing the authored set (dev fallback)");
+	                           : "carries NO box locations");
 	AP_LogLine(msg);
+
+	// THE ZERO CASE, LOUD (packaging item 3). With the dev fallback retired a
+	// track can legitimately stand nothing, and the three reasons look identical
+	// on screen -- an empty track -- but mean completely different things:
+	//
+	//   * no geometry here            -> the placement set does not cover this
+	//                                    track. A packaging problem.
+	//   * geometry, seed has NO boxes -> itemsanity is off in this slot's seed.
+	//                                    Correct and silent-worthy, but still
+	//                                    worth one line so nobody hunts a bug.
+	//   * geometry, seed HAS boxes    -> this slot's world created box locations
+	//                                    but none of THIS track's are live and
+	//                                    unchecked. Either every box here is
+	//                                    already broken (fine) or the code block
+	//                                    and the seed disagree (a real bug).
+	//
+	// Never silent (Lessons Learned §4): the case that used to be papered over by
+	// the fallback is exactly the case that needs saying out loud.
+	if (s_liveCount == 0)
+	{
+		if (here == 0)
+			snprintf(msg, sizeof msg,
+			         "[AP BOX] WARNING: level %d (ap track %d) has NO placements in the live set -- "
+			         "no box can ever stand here\n",
+			         level, AP_BoxMap_ApTrack(level));
+		else if (!s_seedHasBoxClass)
+			snprintf(msg, sizeof msg,
+			         "[AP BOX] level %d: %d placement(s) here, but this slot's seed carries no box "
+			         "locations at all -- itemsanity is off for this slot, so nothing stands\n",
+			         level, here);
+		else
+			snprintf(msg, sizeof msg,
+			         "[AP BOX] WARNING: level %d: %d placement(s) here and this seed DOES carry box "
+			         "locations, yet ZERO stand -- all already checked, or the code block and the "
+			         "seed disagree\n",
+			         level, here);
+		AP_LogLine(msg);
+	}
 
 	// Never let a bound drop data quietly (Lessons Learned §4).
 	if (overflow > 0)
