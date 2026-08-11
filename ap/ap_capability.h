@@ -61,13 +61,26 @@
 // NOT order with quality, so "the weakest one" has no defensible meaning for
 // them and they stay vanilla.
 //
+// ── Modes (#12 / #13 both stage the same three ways) ──
+// Each pack carries its own mode on the wire and they are read independently, so
+// a seed may run boost per-character while stats stay shared-global (or either
+// pack off entirely).
+//   0 off            nothing is tracked and nothing is written: vanilla kart.
+//   1 shared_global  one chain per capability, every character drives it.
+//   2 per_character  a separate chain per racer (16 x 4 = 64 item indices), and
+//                    the chain that applies is the one belonging to the
+//                    character you are CURRENTLY driving. The received counts
+//                    are per-slot server truth for all 16 racers at once; the
+//                    kart only ever expresses the current character's row, so a
+//                    hub character swap re-derives the applied capability for
+//                    the new character with no extra bookkeeping (both entry
+//                    points read the live character every time they run).
+//
 // ── Scope ──
 // Local player only (drivers[0]) at every hook, so AI racers and ghost replays
 // are never touched -- the same isolation convention ap_surface.c and ap_traps.c
-// use. per_character mode (wire value 2) is a RESERVED shape the apworld refuses
-// to generate today (it raises OptionError pending
-// dowlle/ctr-native-ap#71, location supply); this module recognises its item
-// block and declines it loudly instead of guessing a roster mapping.
+// use. A mode this build does not recognise is treated as OFF, never as a
+// best-guess: a mode we cannot read must not change the kart.
 
 #include <stdint.h>
 
@@ -80,14 +93,6 @@ struct Driver;
 #define AP_CAPABILITY_ITEM_FIRST_INDEX 27
 #define AP_CAPABILITY_ITEM_COUNT 4
 
-// Per-character block: 16 racers x the same 4 chains, indices 31..94. Registered
-// in the datapackage now so a future dowlle/ctr-native-ap#71 landing needs no
-// second naming pass, but never CREATED by generation today. Recognised here
-// only so a receipt lands in the declined-path log instead of the generic
-// "filler/unmapped" line -- nothing maps it to a chain, deliberately.
-#define AP_CAPABILITY_PC_ITEM_FIRST_INDEX 31
-#define AP_CAPABILITY_PC_ITEM_COUNT 64
-
 // Chain index. Order matches the item indices above, so
 // (idx - AP_CAPABILITY_ITEM_FIRST_INDEX) IS the chain.
 enum
@@ -98,6 +103,18 @@ enum
 	AP_CAP_CHAIN_TURNING,
 	AP_CAP_CHAIN_COUNT
 };
+
+// The 16 playable racers, in the apworld's own `progressive_capability.ROSTER`
+// order -- which is the WIRE order and is NOT the engine's `enum Characters`
+// numbering. ap_capability.c holds the one table that maps between them; see the
+// long note there before touching either side.
+#define AP_CAP_ROSTER_COUNT 16
+
+// Per-character block: those 16 racers x the same 4 chains, indices 31..94,
+// laid out character-major (block index / 4 = roster slot, % 4 = chain), which
+// is exactly the order data/items.json mints them in.
+#define AP_CAPABILITY_PC_ITEM_FIRST_INDEX 31
+#define AP_CAPABILITY_PC_ITEM_COUNT (AP_CAP_ROSTER_COUNT * AP_CAP_CHAIN_COUNT)
 
 // Boost tiers. Index-keyed and ladder-ordered: the tier IS the number of
 // received Progressive Boost copies, clamped to the seed's ceiling.
@@ -135,16 +152,22 @@ void AP_CapabilityReset(void);
 // of range is a no-op.
 void AP_CapabilityReceive(int chain);
 
-// One received PER-CHARACTER capability item (block index 0..63). Declined, with
-// a single log line per connect: no generated seed can contain these today and
-// this build has no ruled roster mapping to apply them through.
+// One received PER-CHARACTER capability item (block index 0..63, character-major:
+// slot = index / AP_CAP_CHAIN_COUNT, chain = index % AP_CAP_CHAIN_COUNT). Counted
+// for its roster slot whatever the seed's modes say -- the counts are per-slot
+// server truth, and which of them the kart expresses is decided later, by the
+// character being driven. Out of range is a no-op.
 void AP_CapabilityReceivePerCharacter(int blockIndex);
 
-// This seed's effective boost tier (AP_CAP_BOOST_*), or -1 when the pack is not
-// active for this seed. Read by the fire-grant filter; exposed for logging.
+// This seed's effective boost tier (AP_CAP_BOOST_*) for the character currently
+// being driven, or -1 when the pack is not active for this seed (or, in
+// per_character mode, when the current character cannot be identified -- that
+// fails open to vanilla rather than to tier NONE). Read by the fire-grant filter;
+// exposed for logging.
 int AP_CapabilityBoostTier(void);
 
-// Effective rank 0..4 for a stat chain, or -1 when the stat pack is not active.
+// Effective rank 0..4 for a stat chain on the character currently being driven,
+// or -1 when the stat pack is not active (same fail-open rule as above).
 int AP_CapabilityStatRankFor(int chain);
 
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke

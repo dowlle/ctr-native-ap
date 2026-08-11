@@ -217,11 +217,13 @@ typedef struct
 	// every 0.2.0 seed (Q28), so these ride it exactly the way one_lap_cups and
 	// death_link rode theirs. A seed predating them leaves all three at 0, which
 	// IS the vanilla kart, so an old seed on a new client changes nothing.
-	//   boost_mode / stats_mode: 0 off / 1 shared_global / 2 per_character.
-	// Value 2 is RESERVED: the apworld raises OptionError for it today
-	// (dowlle/ctr-native-ap#71, location supply), and this build has no ruled
-	// per-character roster mapping, so ap_capability.c treats it as off rather
-	// than inventing shared-global behaviour for per-character items.
+	//   boost_mode / stats_mode: 0 off / 1 shared_global / 2 per_character, read
+	// independently per pack. Both live modes are consumed; in mode 2 the applied
+	// chain is the one belonging to the character being driven (item indices
+	// 31..94, roster order). The apworld still raises OptionError for mode 2 today
+	// (dowlle/ctr-native-ap#71, location supply), so no generated seed carries it
+	// yet -- the wire path is real, the supply is not. Anything outside 0/1/2 is
+	// treated as off by ap_capability.c rather than guessed at.
 	//   boost_blue_fire: adds the blue-fire capstone above USF (3 received copies
 	// instead of 2). No effect while boost_mode is 0. See ap/ap_capability.h.
 	int boost_mode;
