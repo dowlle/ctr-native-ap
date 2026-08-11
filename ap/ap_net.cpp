@@ -173,10 +173,62 @@ static std::string ap_diff_key()
 // Key: "ctr_character_<slot name>". Value: an ENGINE character id 0..15.
 static int         g_char_value = 0;
 static bool        g_char_known = false;
+// Revision counter, bumped ONLY when the value arrives from the SERVER (a Get
+// reply or a SetNotify update) or when the subscribe seeds a default. It exists
+// because the game side applies the racer exactly once and a `Get` is
+// asynchronous: without it, the seat consumes the seeded default on the first
+// frame and a stored racer arriving a few frames later is silently never
+// applied. The game side re-arms its one-shot on a revision change.
+//
+// Our own ap_net_character_set deliberately does NOT bump it: we already
+// applied that value locally, and the server's echo carries the same value, so
+// a re-seat would be a harmless no-op either way.
+static unsigned    g_char_rev = 0;
 
 static std::string ap_char_key()
 {
 	return "ctr_character_" + g_slot;
+}
+
+// Editable stat package (issues #54/#209). Same per-slot data-storage path and
+// the same reasoning as the racer above: edited values are mutable non-item
+// state and the 2026-07-23 ruling explicitly routes them to the server so they
+// survive a reconnect and a change of machine ("edited stats follow the slot on
+// the AP server, not the local save").
+//
+// Shape: a flat JSON array of AP_EDITSTAT_COUNT signed ints. Fixed length so a
+// partial or oversized array is rejected wholesale rather than applied halfway;
+// layout is owned by the game side (ap_charswap.c), which is the only writer
+// and the only reader.
+#define AP_EDITSTAT_COUNT 68  // 4 global + 16 racers x 4
+static int         g_edit_value[AP_EDITSTAT_COUNT];
+static bool        g_edit_known = false;
+static unsigned    g_edit_rev = 0;
+
+static std::string ap_edit_key()
+{
+	return "ctr_editstats_" + g_slot;
+}
+
+// Accept an array only if it is exactly the expected length and entirely
+// integral. A malformed package must leave the previous state untouched, not
+// half-applied -- a kart tuned from someone else's truncated array is worse
+// than a kart that ignored it.
+static bool ap_edit_accept(const nlohmann::json &v)
+{
+	if (!v.is_array() || v.size() != (size_t)AP_EDITSTAT_COUNT)
+		return false;
+	for (const auto &e : v)
+	{
+		if (!e.is_number_integer())
+			return false;
+	}
+	int i = 0;
+	for (const auto &e : v)
+		g_edit_value[i++] = e.get<int>();
+	g_edit_known = true;
+	g_edit_rev++;
+	return true;
 }
 
 // ── DeathLink (issue #6) ──
@@ -656,9 +708,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			{
 				g_char_value = v;
 				g_char_known = true;
+				g_char_rev++;
 				std::fprintf(stderr, "[AP NET] current racer retrieved: %d\n", g_char_value);
 			}
 		}
+		auto es = keys.find(ap_edit_key());
+		if (es != keys.end() && ap_edit_accept(es->second))
+			std::fprintf(stderr, "[AP NET] editable stat package retrieved (%d values)\n",
+			             AP_EDITSTAT_COUNT);
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
@@ -675,9 +732,12 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			{
 				g_char_value = v;
 				g_char_known = true;
+				g_char_rev++;
 				std::fprintf(stderr, "[AP NET] current racer changed: %d\n", g_char_value);
 			}
 		}
+		if (key == ap_edit_key() && ap_edit_accept(value))
+			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
@@ -1076,6 +1136,7 @@ extern "C" void ap_net_character_subscribe(int slot_default)
 	{
 		g_char_value = slot_default;
 		g_char_known = true;
+		g_char_rev++;
 	}
 	AP_NET_GUARD("character_subscribe", {
 		const std::string key = ap_char_key();
@@ -1107,6 +1168,58 @@ extern "C" int ap_net_character_known(int *out)
 	if (out)
 		*out = g_char_value;
 	return 1;
+}
+
+extern "C" unsigned ap_net_character_revision(void)
+{
+	return g_char_rev;
+}
+
+extern "C" void ap_net_editstats_subscribe(void)
+{
+	if (!g_ap || !g_connected)
+		return;
+	AP_NET_GUARD("editstats_subscribe", {
+		const std::string key = ap_edit_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_editstats_set(const int *values, int n)
+{
+	if (!g_ap || !g_connected)
+		return;
+	if (values == 0 || n != AP_EDITSTAT_COUNT)
+		return;
+	nlohmann::json arr = nlohmann::json::array();
+	for (int i = 0; i < n; i++)
+		arr.push_back(values[i]);
+	AP_NET_GUARD("editstats_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = arr;
+		g_ap->Set(ap_edit_key(), arr, false, {op});
+	});
+	for (int i = 0; i < n; i++)
+		g_edit_value[i] = values[i];
+	g_edit_known = true;
+	// Same reasoning as the racer: our own write needs no re-apply, so the
+	// revision is not bumped here.
+}
+
+extern "C" int ap_net_editstats_known(int *out, int n)
+{
+	if (!g_edit_known || out == 0 || n != AP_EDITSTAT_COUNT)
+		return 0;
+	for (int i = 0; i < n; i++)
+		out[i] = g_edit_value[i];
+	return 1;
+}
+
+extern "C" unsigned ap_net_editstats_revision(void)
+{
+	return g_edit_rev;
 }
 
 extern "C" int ap_net_difficulty_known(int *out)
@@ -1314,6 +1427,7 @@ extern "C" void ap_net_shutdown(void)
 	g_dl_incoming = false; // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_char_known = false; // nor may a racer selection leak into another slot
+	g_edit_known = false; // nor an edited stat package
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone

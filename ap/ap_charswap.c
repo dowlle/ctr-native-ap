@@ -306,6 +306,83 @@ static int ap_cs_resolvedEditMode(void)
 static short ap_cs_editGlobal[AP_CS_STATS];
 static short ap_cs_editPerChar[AP_CS_TILES][AP_CS_STATS];
 
+// Per-slot persistence of that package (issues #54/#209). The 2026-07-23 ruling
+// routes edited stats to the AP server, not the local save, for the same
+// machine-agnostic reason as the current racer.
+//
+// WIRE LAYOUT, owned here because this file is the only writer and the only
+// reader: index 0..3 are the four global deltas, then 16 racers x 4 in engine
+// character-id order. 4 + 64 = 68 = AP_NET_EDITSTAT_COUNT, which the network
+// side length-checks so a truncated package is rejected rather than applied
+// halfway.
+static unsigned ap_cs_editRestoredRev = 0;
+
+static void ap_cs_editPack(int *out)
+{
+	int i, c;
+	for (i = 0; i < AP_CS_STATS; i++)
+		out[i] = ap_cs_editGlobal[i];
+	for (c = 0; c < AP_CS_TILES; c++)
+	{
+		for (i = 0; i < AP_CS_STATS; i++)
+			out[AP_CS_STATS + c * AP_CS_STATS + i] = ap_cs_editPerChar[c][i];
+	}
+}
+
+static void ap_cs_editUnpack(const int *in)
+{
+	int i, c;
+	for (i = 0; i < AP_CS_STATS; i++)
+		ap_cs_editGlobal[i] = (short)in[i];
+	for (c = 0; c < AP_CS_TILES; c++)
+	{
+		for (i = 0; i < AP_CS_STATS; i++)
+			ap_cs_editPerChar[c][i] = (short)in[AP_CS_STATS + c * AP_CS_STATS + i];
+	}
+}
+
+// Write the package after an edit. Only when the seed actually gives the player
+// an editor: writing a package for a seed whose stats are owned by progressive
+// chains would store state that seed can never use, and would then be restored
+// onto a later seed that CAN.
+static void ap_cs_editPersist(void)
+{
+	int packed[AP_NET_EDITSTAT_COUNT];
+
+	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
+		return;
+	if (!ctr_cfg.stat_editing_allowed)
+		return;
+	ap_cs_editPack(packed);
+	ap_net_editstats_set(packed, AP_NET_EDITSTAT_COUNT);
+}
+
+// Apply a package that arrived from the server, once per revision. Same
+// asynchronous-`Get` reasoning as the racer seat: the reply lands some frames
+// after the subscribe, so a one-shot keyed on "have I restored yet" would miss
+// it entirely.
+static void ap_cs_editRestore(void)
+{
+	int packed[AP_NET_EDITSTAT_COUNT];
+	unsigned rev;
+
+	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
+		return;
+	// Restore ONLY when the editable package is what owns the stats this seed.
+	// A stored package from an earlier, editable seed must not quietly re-tune a
+	// kart whose stats now come from progressive chains or from vanilla.
+	if (!ctr_cfg.stat_editing_allowed)
+		return;
+	rev = ap_net_editstats_revision();
+	if (rev == ap_cs_editRestoredRev)
+		return;
+	if (!ap_net_editstats_known(packed, AP_NET_EDITSTAT_COUNT))
+		return;
+	ap_cs_editRestoredRev = rev;
+	ap_cs_editUnpack(packed);
+	AP_LogLine("[AP CHARSWAP] editable stat package restored from AP data storage\n");
+}
+
 // Progressive package: a stand-in for "received Progressive copies". Per
 // character it is deterministic and DISTINCT so a swap is falsifiable on
 // screen: if the live driver still shows the previous character's numbers, the
@@ -797,6 +874,12 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	if (characterID == data.characterIDs[0])
 		ap_cs_reapplyLive(gGT);
 
+	// Persist on every edit rather than on close. There is no "close" event the
+	// player is obliged to reach -- they can quit, crash or lose the connection
+	// with the panel open, and a tune that only survives a graceful exit is not
+	// really persisted.
+	ap_cs_editPersist();
+
 	OtherFX_Play(0, 1);
 }
 
@@ -909,7 +992,8 @@ int AP_CharSwap_FeatureLive(void)
 //
 // Runs once: after the first application the player owns their choice through
 // the picker, and re-seating it every frame would fight every swap.
-static int ap_cs_startingSeated = 0;
+static int      ap_cs_startingSeated = 0;
+static unsigned ap_cs_seatedRev = 0;
 
 // Re-arm the one-shot seat. Called from the fresh-connect path so a reconnect or
 // a slot switch re-applies the AUTHORITATIVE racer instead of keeping whatever
@@ -917,6 +1001,24 @@ static int ap_cs_startingSeated = 0;
 void AP_CharSwap_ConnectReset(void)
 {
 	ap_cs_startingSeated = 0;
+	ap_cs_seatedRev = 0;
+	ap_cs_editRestoredRev = 0;
+}
+
+// Has the server told us something about the racer that we have not applied?
+//
+// `Get` is ASYNCHRONOUS. The subscribe seeds the cache with the seed's starting
+// racer so the very first frame is correct, and the stored value lands some
+// frames later. A one-shot keyed only on "have I seated yet" would consume the
+// seeded default and then ignore the real answer forever -- the racer would
+// silently reset to the seed's starter on every reconnect, which is precisely
+// the bug persistence exists to prevent. Keying on the revision instead makes a
+// late-arriving stored racer apply exactly once, when it arrives.
+static int ap_cs_seatPending(void)
+{
+	if (!ap_cs_startingSeated)
+		return 1;
+	return ap_net_character_revision() != ap_cs_seatedRev;
 }
 
 // Persist the racer the player just chose (spike seam 3, now real).
@@ -938,9 +1040,13 @@ void AP_CharSwap_SeatStartingCharacter(void)
 	int wanted;
 	int stored = 0;
 
-	if (ap_cs_startingSeated)
+	if (!ap_cs_seatPending())
 		return;
 	if (!AP_CharSwap_FeatureLive())
+		return;
+	// Never re-seat over a swap the player is in the middle of: the picker owns
+	// the choice while it is open, and a reload in flight is about to apply one.
+	if (ap_cs_open || ap_cs_pendingSwap || ap_cs_restorePos)
 		return;
 
 	// The stored per-slot racer WINS over the seed's starting racer. That is the
@@ -971,6 +1077,7 @@ void AP_CharSwap_SeatStartingCharacter(void)
 	}
 
 	ap_cs_startingSeated = 1;
+	ap_cs_seatedRev = ap_net_character_revision();
 
 	if (data.characterIDs[0] == (short)wanted)
 		return; // already there; nothing to say
@@ -997,6 +1104,12 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 	// runnable on a bare build.
 	if (!AP_CharSwap_FeatureLive() && !AP_DevKeysEnabled())
 		return;
+
+	// Apply any editable-stat package that has arrived from the server since the
+	// last frame. Cheap (a revision compare) and outside the hub gate below,
+	// because the package has to be in effect before the next driver birth
+	// wherever that happens, not only while standing in a hub.
+	ap_cs_editRestore();
 
 	// A swap is in flight: wait for the hub to come back, then restore.
 	if (ap_cs_restorePos)

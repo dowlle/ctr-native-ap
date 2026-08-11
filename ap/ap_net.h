@@ -179,6 +179,25 @@ void ap_net_character_set(int characterID);
 // default seed, Get reply, or a SetNotify update); 0 if none yet.
 int  ap_net_character_known(int *out);
 
+// Bumped whenever the racer arrives from the SERVER (a Get reply or a SetNotify
+// update) or when subscribe seeds the seed's default. The game side applies the
+// racer once and `Get` is asynchronous, so without this the one-shot consumes
+// the seeded default on the first frame and a stored racer arriving a few
+// frames later is silently never applied. Re-arm on a change.
+unsigned ap_net_character_revision(void);
+
+// ── Editable stat package sync (issues #54/#209, data storage) ──
+// 68 signed ints (4 global + 16 racers x 4), under "ctr_editstats_<slot>". Same
+// per-slot server-side home as the racer, and for the same ruled reason. The
+// LAYOUT of the array is owned by ap_charswap.c, the only writer and reader; a
+// package of the wrong length or with a non-integer entry is rejected wholesale
+// rather than applied halfway.
+#define AP_NET_EDITSTAT_COUNT 68
+void ap_net_editstats_subscribe(void);
+void ap_net_editstats_set(const int *values, int n);
+int  ap_net_editstats_known(int *out, int n);
+unsigned ap_net_editstats_revision(void);
+
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
 // deaths to this client. Called by the game side after slot_data is parsed, only

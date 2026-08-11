@@ -3342,6 +3342,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		if (ctr_cfg.character_phase_present)
 		{
 			ap_net_character_subscribe(ctr_cfg.starting_character);
+			// Editable stat package: subscribed unconditionally alongside the
+			// racer, because whether it is APPLIED is a separate decision made
+			// at restore time (only when the editor owns this seed's stats).
+			// Fetching it always keeps the two keys' lifecycles identical.
+			ap_net_editstats_subscribe();
 			AP_CharSwap_ConnectReset();
 		}
 
