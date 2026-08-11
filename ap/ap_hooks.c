@@ -3215,11 +3215,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_CapabilityReceive((int)(idx - AP_CAPABILITY_ITEM_FIRST_INDEX));
 		}
 
-		// Per-character capability block (idx 31..94): registered in the
-		// datapackage, never created by any generation on apworld main
-		// (per_character raises OptionError pending dowlle/ctr-native-ap#71).
-		// Recognised only so a receipt is declined out loud instead of vanishing
-		// into the generic filler/unmapped line.
+		// Per-character capability block (idx 31..94): the same four chains again,
+		// once per racer, character-major in the apworld's roster order. Counts
+		// like the shared-global block above and rebuilds the same way; which
+		// racer's row the kart actually expresses is decided at read time by the
+		// character being driven, not here. No generation on apworld main creates
+		// these yet (per_character raises OptionError pending
+		// dowlle/ctr-native-ap#71), so today they only arrive from a hand-built
+		// seed -- the drain path is ready for when #71 lands.
 		else if (idx >= AP_CAPABILITY_PC_ITEM_FIRST_INDEX &&
 		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 		{

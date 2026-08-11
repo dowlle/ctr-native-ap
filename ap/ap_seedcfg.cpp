@@ -361,8 +361,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// bump (the gem_cup_legs landing already made schema 7 unconditional). Absent
 	// -> 0 = off = the vanilla kart, so a pre-spine-1 seed on this client behaves
 	// exactly like a pre-#12/#13 client did. Stored raw: ap_capability.c decides
-	// what an unsupported mode value means, and it declines everything except
-	// shared_global rather than guessing.
+	// what a mode value means, and it treats anything outside the two live modes
+	// (1 shared_global, 2 per_character) as off rather than guessing.
 	ctr_cfg.boost_mode = json_int(opt, "boost_mode", 0);
 	ctr_cfg.boost_blue_fire = json_int(opt, "boost_blue_fire", 0);
 	ctr_cfg.stats_mode = json_int(opt, "stats_mode", 0);
@@ -371,10 +371,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
 	if (ctr_cfg.boost_mode == 2 || ctr_cfg.stats_mode == 2)
 		ap_cfg_log(
-		    "[AP CFG] *** per_character capability mode requested (boost_mode=%d "
-		    "stats_mode=%d) -- this build has no per-character mapping and applies "
-		    "NOTHING for it. No apworld on main can generate this shape today "
-		    "(OptionError pending dowlle/ctr-native-ap#71). ***\n",
+		    "[AP CFG] per_character capability mode active (boost_mode=%d stats_mode=%d): "
+		    "the applied chain follows the character currently being driven. No apworld "
+		    "on main generates this shape yet (OptionError pending "
+		    "dowlle/ctr-native-ap#71), so a seed carrying it is hand-built for now.\n",
 		    ctr_cfg.boost_mode, ctr_cfg.stats_mode);
 	// Generating apworld's world_version = the pair version (#150). Additive key,
 	// no schema bump: a seed predating it leaves the buffer empty and the update
