@@ -555,9 +555,28 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// Scout every CTR location so the warp pads can show the actual AP reward
 		// placed at each (and recolour pads whose location is already checked).
 		// One LocationScouts on connect; results arrive via the info handler.
+		//
+		// ONLY ids the server declared for this slot (checked + missing, the
+		// ap_net_location_exists sets) may be scouted. The static table lists
+		// every registered CTR location, but a post-#171 seed genuinely omits
+		// the relic Time Trials its exact counts removed -- and AP 0.6.7 with
+		// _speedups answers a scout for a nonexistent id by raising server-side
+		// and HARD-DROPPING the socket (KeyError: "No location 35012207 for
+		// player 1", proven live 2026-08-11: every default-relic 0.2.0 seed +
+		// this client died in a connect/disconnect loop). Filtering here is the
+		// whole fix; a skipped id has no reward to display anyway.
 		std::list<int64_t> locs;
+		const std::set<int64_t> &scout_chk = g_ap->get_checked_locations();
+		const std::set<int64_t> &scout_miss = g_ap->get_missing_locations();
+		int scout_skipped = 0;
+		auto scout_add = [&](int64_t code) {
+			if (scout_chk.count(code) || scout_miss.count(code))
+				locs.push_back(code);
+			else
+				scout_skipped++;
+		};
 		for (int i = 0; i < AP_LOCATION_TABLE_LEN; i++)
-			locs.push_back((int64_t)AP_LOCATION_TABLE[i].location_code);
+			scout_add((int64_t)AP_LOCATION_TABLE[i].location_code);
 		// Podium-ladder rungs carry no AdvProgress bit, so they are absent from
 		// AP_LOCATION_TABLE -- scout them explicitly from the parsed per-seed config
 		// so the ceremony can resolve the item + player placed on each rung (else a
@@ -573,12 +592,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 				    pr.finish_podium, pr.finish_any};
 				for (int k = 0; k < CTR_CFG_PODIUM_RUNG_COUNT; k++)
 					if (rung[k] >= 0)
-						locs.push_back((int64_t)rung[k]);
+						scout_add((int64_t)rung[k]);
 			}
 		}
-		g_ap->LocationScouts(locs, 0);
-		std::fprintf(stderr, "[AP NET] slot connected; scouting %d locations\n",
-		             AP_LOCATION_TABLE_LEN);
+		if (!locs.empty())
+			g_ap->LocationScouts(locs, 0);
+		std::fprintf(stderr,
+		             "[AP NET] slot connected; scouting %d locations (%d not in this seed, skipped)\n",
+		             (int)locs.size(), scout_skipped);
 	});
 	g_ap->set_location_info_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
