@@ -13,7 +13,10 @@
 // menu with an OPTIONS row (string 0x0E == LNG_OPTIONS) and are pointed at by
 // MM_MenuProc_Main.
 
-// Row arrays with CONFIG entry at bottom, used by MM_MenuProc_Main
+// Row arrays with CONFIG entry at bottom, used by MM_MenuProc_Main. QUIT (#211)
+// is appended last, after OPTIONS, reusing LNG_QUIT (0x003) -- already proven as
+// a MenuRow stringIndex elsewhere (e.g. game/225.c's battle pause row) rather
+// than a title-only string -- so no new label is minted.
 struct MenuRow s_rowsMainMenuBasicConfig[] = {
 	{0x4C, 0, 1, 0, 0},
 	{0x4D, 0, 2, 1, 1},
@@ -21,7 +24,8 @@ struct MenuRow s_rowsMainMenuBasicConfig[] = {
 	{0x4F, 2, 4, 3, 3},
 	{0x50, 3, 5, 4, 4},
 	{0x51, 4, 6, 5, 5},
-	{0x0E, 5, 6, 6, 6},
+	{0x0E, 5, 7, 6, 6},
+	{LNG_QUIT, 6, 7, 7, 7},
 	{-1},
 };
 
@@ -33,7 +37,8 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 	{0x50, 3, 5, 4, 4},
 	{0x51, 4, 6, 5, 5},
 	{0x234, 5, 7, 6, 6},
-	{0x0E, 6, 7, 7, 7},
+	{0x0E, 6, 8, 7, 7},
+	{LNG_QUIT, 7, 8, 8, 8},
 	{-1},
 };
 

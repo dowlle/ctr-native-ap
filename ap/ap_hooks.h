@@ -202,6 +202,11 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 // "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
 const char *AP_Net_StatusLine(void);
 
+// Graceful client teardown before process exit (main-menu QUIT row, #211): the
+// same close-and-forget half of AP_Net_Reconnect, without the re-dial. Safe to
+// call even if never connected (ap_net_shutdown() no-ops on a null client).
+void AP_Net_Shutdown(void);
+
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
 // visible while holding reserves). Default 0; set by ap-config.txt
 // "hud_reserves_fx=1". Read by VehFire_Increment (#ifdef CTR_AP). Visual only;
