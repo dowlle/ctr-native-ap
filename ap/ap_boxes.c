@@ -429,6 +429,30 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 		if (inst == 0)
 			continue; // waiting for its model, or between a pool reset and a birth
 
+		// test-integration guard (2026-08-11 crash triage): the engine walk
+		// dereferences thInst->matrix unguarded, and a PLAYER-bucket thread can
+		// briefly carry inst == 0 (driver respawn/birth window) -- three field
+		// crashes at LinkedCollide.c:17 from this call site, two tracks, one at
+		// frame 13551 (a respawn moment). Retail never sees a null there because
+		// its callers only run from object threads born after the drivers. Skip
+		// the walk for this frame when the bucket is not fully born; one frame
+		// of missed proximity is invisible at 30fps.
+		{
+			struct Thread *guardTh;
+			int bucketSafe = 1;
+			for (guardTh = gGT->threadBuckets[PLAYER].thread; guardTh != 0;
+			     guardTh = guardTh->siblingThread)
+			{
+				if (guardTh->inst == 0)
+				{
+					bucketSafe = 0;
+					break;
+				}
+			}
+			if (!bucketSafe)
+				continue;
+		}
+
 		// The proximity walk the engine uses for its own non-BSP objects. PLAYER
 		// bucket only, which is the whole of the AI pass-through rule.
 		hit = LinkedCollide_Radius(inst, 0, gGT->threadBuckets[PLAYER].thread,
