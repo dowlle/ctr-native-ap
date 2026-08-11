@@ -895,6 +895,10 @@ void UI_RenderFrame_Racing()
 	// viewports (the per-player loop above is inside it) and is mutually exclusive
 	// with the hub passes, so the feed still ticks exactly once per frame.
 	AP_FeedDrawRace();
+	// Box placement author mode (#182): one status line while the mode is on.
+	// Self-gates on the "Box Author Mode" option, so this is a call and a
+	// compare for everyone else. (test-integration: keep-both, #213 x #214)
+	AP_Author_DrawHud();
 #endif
 }
 

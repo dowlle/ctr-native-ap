@@ -20,6 +20,9 @@
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
+#include "ap_author.h"     // in-game box placement author mode (#182)
+#include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -3758,6 +3761,18 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	                  phase, track, position, rungTag, code);
 }
 
+// Item box wrapper (#109). Two class policies, both from the 2026-08-10 ruling:
+// a box is NOT a ceremony award (it is earned mid-race, not in a result block),
+// and it DOES take a feed line, because "the check and the feed line are the
+// entire effect" -- there is no pickup, no weapon roll and no wumpa to show for
+// it, so the feed line is the only acknowledgement the player gets.
+void AP_EmitBoxCheck(int levelID, int slot, long code)
+{
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] item box: level=%d slot=%d (Item Box %d) location %ld\n",
+	                  levelID, slot, slot + 1, code);
+}
+
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
 // (the native half of feat/podium-checks; the apworld declares the rung locations
 // + emits podium_checks slot_data, ap_seedcfg parses it into ctr_cfg.podium). The
@@ -4191,6 +4206,18 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Box placement author mode (#182) and the additive model loader it draws
+	// through (#109 / #124 groundwork). Author first, loader second, so a
+	// placement dropped this frame gets its marker in the same frame instead of
+	// one frame later. Both self-gate: the author mode on the "Box Author Mode"
+	// option, the loader on having any spawn requests at all.
+	AP_Author_OnFrame(gGT);
+	// The #109 runtime boxes, between the two on purpose: author mode has already
+	// decided whether it owns this level's markers (it stands the boxes down when
+	// it does), and the loader has not run yet, so a box added this frame is born
+	// this frame rather than next.
+	AP_Boxes_OnFrame(gGT);
+	AP_Spawn_OnFrame(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.
