@@ -192,5 +192,81 @@ static inline int AP_BoxMap_BuildSet(const AP_BoxPlacement *placements, int coun
 	return written;
 }
 
+// ── how many boxes still stand behind a track ───────────────────────────────
+//
+// The §6 pad predicate (ruled 2026-08-11): AP_PadState must not Re-lock or mark
+// Done a pad that still has breakable boxes behind it. This answers only "how
+// many", because the pad needs a count and not the geometry -- boxes carry no
+// AdvProgress bit and so cannot ride in the pad's glow-bit array.
+//
+// `slots` is how many placements that level actually holds, capped by the caller
+// at the frozen ceiling. The predicate is deliberately the SAME pair the spawn
+// set uses: a box counts only if it could actually be broken, meaning it has
+// geometry (it is within `slots`), a live location in this slot's seed (§7) and
+// is not yet checked. Counting bare locations instead would let a seed that
+// created more box locations than the placement set covers keep a pad green with
+// nothing on the track to break.
+static inline int AP_BoxMap_CountStanding(int levelID, int slots,
+                                          int (*seedFn)(long, void *),
+                                          int (*checkedFn)(long, void *), void *ctx)
+{
+	int slot, standing = 0;
+
+	if (AP_BoxMap_ApTrack(levelID) < 0)
+		return 0; // hub, arena, menu: not a box track
+	if (slots > AP_BOX_SLOTS_PER_TRACK)
+		slots = AP_BOX_SLOTS_PER_TRACK;
+
+	for (slot = 0; slot < slots; slot++)
+	{
+		long code = AP_BoxMap_Code(levelID, slot);
+
+		if (code < 0)
+			continue;
+		if (seedFn != 0 && !seedFn(code, ctx))
+			continue;
+		if (checkedFn != 0 && checkedFn(code, ctx))
+			continue;
+		standing++;
+	}
+	return standing;
+}
+
+// ── which box codes may go on the wire ──────────────────────────────────────
+//
+// The connect-time scout list (ap_net.cpp). The item feed resolves its
+// "ITEM TO PLAYER" line out of the scout cache, and box locations were absent
+// from that list entirely, which is why a peer-bound box was silent while an
+// own-bound one toasted through the ReceivedItems echo (found in the 2026-08-11
+// v2 retest: 5 of 12 boxes fed the other slot, none toasted).
+//
+// ONLY codes this world actually created may be listed. MultiServer 0.6.7 hard
+// drops a connection on an invalid id in the scout path, so pushing the whole
+// 270-code block blind is a disconnect and not a diagnostic; a seed without the
+// box class contributes nothing at all. `inWorldFn` is the same checked+missing
+// membership test ap_net_location_exists uses (#217).
+//
+// Returns the number of codes written to out[]. Writing stops at outMax.
+static inline int AP_BoxMap_ScoutCodes(int (*inWorldFn)(long, void *), void *ctx,
+                                       long *out, int outMax)
+{
+	int i, written = 0;
+
+	if (inWorldFn == 0 || out == 0 || outMax <= 0)
+		return 0;
+
+	for (i = 0; i < AP_BOX_LOCATION_COUNT; i++)
+	{
+		long code = (long)(AP_BOX_CODE_BASE + i);
+
+		if (!inWorldFn(code, ctx))
+			continue;
+		if (written >= outMax)
+			break;
+		out[written++] = code;
+	}
+	return written;
+}
+
 #endif // CTR_AP
 #endif // AP_BOX_MAP_H
