@@ -248,6 +248,53 @@ typedef struct
 	int boost_blue_fire;
 	int stats_mode;
 
+	// ── Character phase (issues #54 / #209) ────────────────────────────────
+	// All additive keys under the already-unconditional schema 7. Absent ->
+	// the defaults set in ctr_cfg_reset, which reproduce pre-character-phase
+	// behaviour exactly (starting racer = Crash, no unlock economy, no locks,
+	// vanilla stats).
+	//
+	//   starting_character: the ENGINE `enum Characters` value 0..15, NOT an
+	// apworld roster slot. The apworld does the mapping (worlds/ctr/
+	// characters.py ROSTER_CHARACTER_ID, the mirror of this repo's own
+	// ap_capability.c AP_CAP_ROSTER_CHARACTER), so nothing here has to.
+	int starting_character;
+	//   starting_stat_class: 0 vanilla (keep the racer's own class) / 1
+	// balanced / 2 acceleration / 3 speed / 4 turning. Applies to the STARTING
+	// racer only and never to a racer you unlock.
+	int starting_stat_class;
+	//   character_unlocks: 1 = the other 15 racers arrive as items, 0 = the
+	// ruled all-unlocked comfort mode (every racer available immediately, no
+	// unlock items exist in the seed at all).
+	int character_unlocks;
+	//   racer_locked_pads: 1 = this seed carries racer locks. The locks
+	// themselves are in `racer_lock` below; this scalar exists so the client
+	// can tell "locks off" from "seed predates the feature" without inferring
+	// it from an empty array.
+	int racer_locked_pads;
+	//   penta_stats: 0 pal (Penta keeps his own TURN-class table) / 1 ntsc
+	// (the PAL/JP fifth "MAX" class, a best-of-each-axis cherry-pick of the
+	// four normal classes -- the same table USAUnlimitedPenta ships). ONLY
+	// meaningful while stat_source is vanilla; see below.
+	int penta_stats;
+	//   editable_stats: the RAW option, kept for diagnostics only. The stat
+	// panel must read the three resolved fields below, never this one.
+	int editable_stats;
+	//   The RESOLVED stat configuration. The apworld owns the ruled
+	// progressive-vs-editable precedence in exactly one function
+	// (characters.effective_stat_config) and sends the OUTCOME, so this client
+	// must not re-implement the rule -- that split between "the text, the
+	// rules and the engine" is what Lessons Learned #12 is about.
+	//   stat_source: 0 vanilla class stats / 1 progressive received chains /
+	// 2 the player's own editable package.
+	int stat_source;
+	//   stat_owner: 0 none / 1 global / 2 per_character. The granularity the
+	// panel labels and the package is keyed by.
+	int stat_owner;
+	//   stat_editing_allowed: 1 = the panel exposes an edit control. Never 1
+	// while stat_source is progressive; the apworld guarantees that.
+	int stat_editing_allowed;
+
 	// The generating apworld's own world_version (issue #150), verbatim from
 	// ctr_options.world_version -- e.g. "0.1.5", no "v" prefix. Under the release
 	// policy that string IS the pair version, so a value higher than this build's
@@ -268,6 +315,15 @@ typedef struct
 	// fall back to the Phase-1 "4 tokens of this colour" rule. stage2 unused (gem
 	// cups have no tier-2 menu); kept as ctr_warp_unlock only for parse symmetry.
 	ctr_warp_unlock gem_cup_unlock[5];                  // gem cups by colour (LevelID 100..104); stage1.type 0 = native vanilla rule
+	// Racer-locked pads (#54/#209). Parallel to warp_pad_unlock and keyed the
+	// same way (physical pad LevelID), holding the ENGINE character id a pad
+	// demands, or -1 for "no racer lock on this pad". A lock is ANDed ON TOP OF
+	// warp_pad_unlock[pad], never in place of it: the apworld emits it as its
+	// own top-level `racer_locks` block precisely so it cannot overwrite the
+	// stage-1 requirement the sphere search proved reachable there. Cup pads
+	// (LevelID 100..104) get the same treatment in gem_cup_racer_lock.
+	int racer_lock[CTR_CFG_PAD_COUNT];
+	int gem_cup_racer_lock[5];
 	// slot_data v3 (destination-shuffle categories): the destination LevelID that
 	// physical cup pad 100+i LOADS, keyed by cup colour 0..4 (= LevelID - 100).
 	// Identity default (gem_cup_map[i] == 100 + i) until warp_pad_map overlays it,
@@ -360,6 +416,17 @@ int ctr_cfg_cup_leg(int cup, int leg);
 // numTrophiesToOpen threshold from data.metaDataLEV[] for the Phase-1 fallback,
 // neither of which is reachable from the isolated C++ static lib.
 int ctr_cfg_warp_unlocked(int levelID);
+
+// The ENGINE character id a physical pad demands, or -1 when it carries no
+// racer lock (#54/#209). Dense pads 0..27 and cup pads 100..104, keyed exactly
+// like ctr_cfg_warp_unlocked. IMPLEMENTED C-SIDE in ap_hooks.c.
+int ctr_cfg_racer_lock(int physPadLevelID);
+
+// Is that pad's racer lock satisfied? Returns 1 for a pad with no lock, so a
+// caller can AND it unconditionally. ctr_cfg_warp_unlocked already does; the
+// separate accessor exists so the pad's own display can advertise the lock
+// without re-deriving the rule. IMPLEMENTED C-SIDE in ap_hooks.c.
+int ctr_cfg_racer_lock_met(int physPadLevelID);
 
 // Is a trophy-track warp pad's STAGE-2 satisfied (open the relic Time Trials +
 // CTR Token Challenge menu)? When active and the pad has a stage2 requirement

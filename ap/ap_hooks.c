@@ -2953,8 +2953,41 @@ int AP_GoalAdvert(char *out, int cap)
 // otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
 // per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
 // adventure numbering), valid for the 28-wide ctr_cfg arrays for trophy tracks.
+// Racer lock for a physical pad, or -1 when it has none (#54/#209). Dense pads
+// 0..27 via racer_lock, cup pads 100..104 via gem_cup_racer_lock -- the same
+// two-array routing warp_pad_unlock uses, for the same reason.
+int ctr_cfg_racer_lock(int physPadLevelID)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	if (physPadLevelID >= 100 && physPadLevelID <= 104)
+		return ctr_cfg.gem_cup_racer_lock[physPadLevelID - 100];
+	if (physPadLevelID < 0 || physPadLevelID >= CTR_CFG_PAD_COUNT)
+		return -1;
+	return ctr_cfg.racer_lock[physPadLevelID];
+}
+
+// Is this pad's racer lock satisfied? 1 when the pad has no lock, so every
+// caller can AND this unconditionally.
+int ctr_cfg_racer_lock_met(int physPadLevelID)
+{
+	int required = ctr_cfg_racer_lock(physPadLevelID);
+	if (required < 0)
+		return 1;
+	return AP_CharacterUnlocked(required);
+}
+
 int ctr_cfg_warp_unlocked(int levelID)
 {
+	// Racer lock (#54/#209): ANDed on top of whatever the pad already asks for,
+	// never in place of it -- the apworld's rule does exactly the same thing
+	// (Rules.add_racer_lock_rules captures the base rule and ANDs), and the two
+	// sides have to agree or the golden rule is broken. Checked first so a
+	// locked pad reads closed at every call site that goes through this gate:
+	// the load gate, the spawn visual and the map advert are all one source.
+	if (!ctr_cfg_racer_lock_met(levelID))
+		return 0;
+
 	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
 	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
@@ -3425,6 +3458,16 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 		{
 			AP_CapabilityReceivePerCharacter((int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX));
+		}
+
+		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
+		// same roster order as the capability blocks above. Receiving one makes
+		// that racer selectable in the hub picker and, on a racer-locked seed,
+		// opens any pad that demands them. Idempotent on a reconnect replay.
+		else if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+		         idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+		{
+			AP_CharacterReceive((int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX));
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -4213,6 +4256,19 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_PerfSectionBegin(AP_PERF_SEC_VERIFY);
 	AP_VerifyOnFrame();
 	AP_PerfSectionEnd(AP_PERF_SEC_VERIFY);
+
+	// Character phase: hub picker + hub swap (#54/#209, ruling R7). Placed ahead
+	// of the adventure/loading gate lower down because the swap has to see the
+	// frames where the hub comes BACK from its reload. Self-gates on the seed
+	// actually carrying the character phase (or dev keys) and on the adventure
+	// hub being open.
+	//
+	// Seating the seed's YAML starting racer runs first, and only once: the
+	// racer is never an item, so if this does not apply it nothing else will,
+	// and on a racer-locked seed starting as the wrong racer is the difference
+	// between a solvable run and a stuck one.
+	AP_CharSwap_SeatStartingCharacter();
+	AP_CharSwap_Tick(gGT);
 
 	{
 		static int ap_booted = 0;

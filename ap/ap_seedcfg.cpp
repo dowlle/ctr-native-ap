@@ -198,6 +198,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.warp_pad_unlock[i].stage2.type = 0;
 		ctr_cfg.warp_pad_unlock[i].stage2.count = 0;
 		ctr_cfg.warp_pad_unlock[i].stage2.colour = -1;
+		// -1 = no racer lock on this pad (#54/#209).
+		ctr_cfg.racer_lock[i] = -1;
 	}
 	// Gem cups (LevelID 100..104) -> gem_cup_unlock[0..4] by colour; type 0 = vanilla.
 	// gem_cup_map is the destination-shuffle counterpart to warp_pad_map: identity
@@ -249,6 +251,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.boost_mode = 0;
 	ctr_cfg.boost_blue_fire = 0;
 	ctr_cfg.stats_mode = 0;
+	// Character phase (#54/#209). These defaults ARE the pre-character-phase
+	// behaviour: you drive Crash in his own class, no racer is an item, no pad
+	// demands one, and the stat table is the engine's. A seed that predates the
+	// feature therefore plays exactly as it does on a pre-0.2.0 client.
+	ctr_cfg.starting_character = 0; // CRASH_BANDICOOT
+	ctr_cfg.starting_stat_class = 0;
+	ctr_cfg.character_unlocks = 0;
+	ctr_cfg.racer_locked_pads = 0;
+	ctr_cfg.penta_stats = 0;
+	ctr_cfg.editable_stats = 0;
+	ctr_cfg.stat_source = 0;
+	ctr_cfg.stat_owner = 0;
+	ctr_cfg.stat_editing_allowed = 0;
+	for (int i = 0; i < 5; i++)
+		ctr_cfg.gem_cup_racer_lock[i] = -1;
 	// Pair version of the generating apworld (#150): unknown until parsed, and an
 	// unknown version is one the update notice must say nothing about.
 	ctr_cfg.world_version[0] = '\0';
@@ -391,6 +408,67 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		    "on main generates this shape yet (OptionError pending "
 		    "dowlle/ctr-native-ap#71), so a seed carrying it is hand-built for now.\n",
 		    ctr_cfg.boost_mode, ctr_cfg.stats_mode);
+	// ── Character phase (#54/#209) ──
+	// Additive keys under the already-unconditional schema 7. Every one of them
+	// is emitted on EVERY 0.2.0 seed, on or off, so a diagnostic reads the real
+	// configuration rather than inferring it from block presence -- but each
+	// still parses with a default, because an older seed carries none of them.
+	//
+	// starting_character arrives as an ENGINE character id (the apworld maps its
+	// own roster order for us), so it is range-checked and nothing more.
+	ctr_cfg.starting_character = json_int(opt, "starting_character", 0); // default CRASH_BANDICOOT
+	// 0..15 == enum Characters CRASH_BANDICOOT..NITROS_OXIDE. Spelled as a
+	// literal because this translation unit is the isolated ap_net C++ library
+	// and cannot see the game's headers, the same reason parse_req uses raw
+	// type numbers.
+	if (ctr_cfg.starting_character < 0 || ctr_cfg.starting_character > 15)
+	{
+		ap_cfg_log("[AP CFG] starting_character=%d out of range 0..15 -> Crash. "
+		           "A racer this client cannot name must not become a silent "
+		           "array read.\n", ctr_cfg.starting_character);
+		ctr_cfg.starting_character = 0; // CRASH_BANDICOOT
+	}
+	ctr_cfg.starting_stat_class = json_int(opt, "starting_stat_class", 0);
+	// 0 = leave the racer's own class alone; 1..4 = BALANCED/ACCEL/SPEED/TURN
+	// (enum EngineClass, NUM_CLASSES == 4).
+	if (ctr_cfg.starting_stat_class < 0 || ctr_cfg.starting_stat_class > 4)
+		ctr_cfg.starting_stat_class = 0;
+	ctr_cfg.character_unlocks = json_int(opt, "character_unlocks", 0);
+	ctr_cfg.racer_locked_pads = json_int(opt, "racer_locked_pads", 0);
+	ctr_cfg.penta_stats = json_int(opt, "penta_stats", 0);
+	ctr_cfg.editable_stats = json_int(opt, "editable_stats", 0);
+	// The RESOLVED stat configuration. Read these three; never re-derive the
+	// progressive-vs-editable precedence here (the apworld owns it in one
+	// function and sends the outcome). A value this build does not recognise is
+	// treated as vanilla/off rather than guessed at, the same convention
+	// ap_capability.c uses for an unknown capability mode.
+	ctr_cfg.stat_source = json_int(opt, "stat_source", 0);
+	if (ctr_cfg.stat_source < 0 || ctr_cfg.stat_source > 2)
+		ctr_cfg.stat_source = 0;
+	ctr_cfg.stat_owner = json_int(opt, "stat_owner", 0);
+	if (ctr_cfg.stat_owner < 0 || ctr_cfg.stat_owner > 2)
+		ctr_cfg.stat_owner = 0;
+	ctr_cfg.stat_editing_allowed = json_int(opt, "stat_editing_allowed", 0) ? 1 : 0;
+	if (ctr_cfg.stat_source == 1 && ctr_cfg.stat_editing_allowed)
+	{
+		// Defensive, not decorative: the apworld guarantees this combination
+		// never ships, and if one ever did, silently exposing an edit control
+		// over a received-item package is exactly the read-only violation the
+		// 2026-08-08 ruling forbids.
+		ap_cfg_log("[AP CFG] stat_source=progressive with stat_editing_allowed=1 "
+		           "is not a shape the apworld emits; forcing read-only.\n");
+		ctr_cfg.stat_editing_allowed = 0;
+	}
+	if (ctr_cfg.starting_character != 0 /* CRASH_BANDICOOT */
+	    || ctr_cfg.character_unlocks || ctr_cfg.racer_locked_pads
+	    || ctr_cfg.stat_source != 0)
+		ap_cfg_log("[AP CFG] character phase: start=%d class=%d unlocks=%d "
+		           "locks=%d penta=%d stat_source=%d owner=%d editable=%d\n",
+		           ctr_cfg.starting_character, ctr_cfg.starting_stat_class,
+		           ctr_cfg.character_unlocks, ctr_cfg.racer_locked_pads,
+		           ctr_cfg.penta_stats, ctr_cfg.stat_source, ctr_cfg.stat_owner,
+		           ctr_cfg.stat_editing_allowed);
+
 	// Generating apworld's world_version = the pair version (#150). Additive key,
 	// no schema bump: a seed predating it leaves the buffer empty and the update
 	// notice stays dark. Stored verbatim; the comparison lives in ap_version_cmp.h.
@@ -478,6 +556,57 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			if (pad < 0 || pad >= CTR_CFG_PAD_COUNT)
 				continue;
 			ctr_cfg.warp_pad_unlock[pad] = parse_warp_unlock(it.value());
+		}
+	}
+
+	// ── racer_locks: the per-pad racer requirement (#54/#209) ──
+	// Shape: {"enabled": bool, "pads": {"<physical pad LevelID>": <engine
+	// characterID 0..15>}}. Deliberately its OWN top-level block rather than a
+	// tenth `Req` type, for two reasons the apworld's characters.py spells out:
+	// a `Req` would REPLACE the pad's stage-1 requirement when a lock has to sit
+	// ON TOP of it, and an unknown block is inert here whereas an unknown `Req`
+	// type would hit a switch default on a gate we cannot evaluate.
+	//
+	// Keys are the same physical-pad LevelIDs warp_pad_unlock uses, including
+	// the cup range 100..104, so the routing below mirrors that parser exactly.
+	// Values are ENGINE character ids: the apworld already mapped its own roster
+	// order (worlds/ctr/characters.py), so nothing here converts anything.
+	auto lockIt = j.find("racer_locks");
+	if (lockIt != j.end() && lockIt->is_object())
+	{
+		auto padsIt = lockIt->find("pads");
+		if (padsIt != lockIt->end() && padsIt->is_object())
+		{
+			int n = 0;
+			for (auto it = padsIt->begin(); it != padsIt->end(); ++it)
+			{
+				int pad;
+				int character;
+				try { pad = std::stoi(it.key()); } catch (...) { continue; }
+				try { character = it.value().get<int>(); } catch (...) { continue; }
+				// A racer this build cannot name must not become an array read
+				// into MetaDataCharacters. Skip the lock rather than guess, and
+				// say so: a pad whose lock we dropped is a pad we would open too
+				// early, which is a golden-rule desync worth a log line.
+				if (character < 0 || character > 15) // enum Characters range
+				{
+					ap_cfg_log("[AP CFG] racer_locks pad %d names character %d, "
+					           "outside 0..15; lock ignored.\n", pad, character);
+					continue;
+				}
+				if (pad >= 100 && pad <= 104)
+				{
+					ctr_cfg.gem_cup_racer_lock[pad - 100] = character;
+					n++;
+					continue;
+				}
+				if (pad < 0 || pad >= CTR_CFG_PAD_COUNT)
+					continue;
+				ctr_cfg.racer_lock[pad] = character;
+				n++;
+			}
+			if (n > 0)
+				ap_cfg_log("[AP CFG] racer locks: %d pad(s) require a specific racer\n", n);
 		}
 	}
 
