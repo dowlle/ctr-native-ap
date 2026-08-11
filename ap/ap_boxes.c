@@ -450,6 +450,21 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	if (gGT == 0)
 		return;
 
+	// Load gate (2026-08-11, five field crashes, root cause from the
+	// independent crash-research session): during a level load or race
+	// restart the PLAYER thread bucket can still reference the CLEARED thread
+	// pool, and ANY walk over it dereferences stale thread nodes -- three
+	// crashes in LinkedCollide_Radius, then two more inside a triage guard
+	// that tried to null-check the same list first. A freed list cannot be
+	// made safe to walk node-by-node; the whole box system (rebuild, spawn,
+	// collision) stands down until loading is idle and the local driver is
+	// fully born, which is the invariant the engine's own bucket walkers get
+	// for free by running from object threads born after the drivers.
+	if (sdata == 0 || sdata->Loading.stage != LOAD_IDLE)
+		return;
+	if (gGT->drivers[0] == 0 || gGT->drivers[0]->instSelf == 0)
+		return;
+
 	// Before anything reads a handle. A pool reset (a level load OR a race
 	// restart, which does not change the level) voided every handle we hold.
 	if (AP_Spawn_Generation() != s_spawnGen)
