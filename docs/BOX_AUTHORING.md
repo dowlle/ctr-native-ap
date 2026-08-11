@@ -38,6 +38,36 @@ there for the listing and for a deliberate flush.
 Placements can be dropped on the 18 race tracks and the 7 battle arenas. Anywhere
 else (hub, garage, menus) the drop is refused with a log line.
 
+## Two tables, and which one wins
+
+The shipped client carries the FINAL authored placement set compiled in, as
+`ap/ap_placements_data.h`. That table is generated, never hand-edited, and it is
+what a player gets with no extra files: install one executable and the boxes are
+there.
+
+`ap-box-placements.json` next to the executable overrides it wholesale.
+Precedence is by existence, not by content: if the file opens, the file is the
+table, even when it parses to zero placements. An operator who empties the file
+means zero boxes, and silently resurrecting the compiled-in set behind them would
+be the worse failure, so the zero case is logged loudly instead.
+
+The override is never a merge. Slot assignment is positional, so a table that was
+part file and part default would re-point names against both. For the same reason
+the loader logs a NOTE whenever an override's total differs from the compiled-in
+total: it cannot distinguish a deliberate custom layout from a truncated file, so
+saying so is the only guard available.
+
+Author mode is file-only. Dropping, deleting, listing and saving all act on the
+external file and never on the embedded table, which is not editable by
+construction. Switching the mode on with no file present exports the compiled-in
+set into the file once and then edits that, so authoring still starts from the
+shipped placements. Writing the file also flips the live source mid-session, so
+the runtime half follows what is being authored without a restart.
+
+The precedence rule itself lives in `ap/ap_placement_table.h`, freestanding and
+exercised out of engine by `tools/test-box-map.c`, so the tested rule and the
+shipped rule are the same code.
+
 ## The file
 
 `ap-box-placements.json`, written next to the executable, alongside `ctr-ap.log`
@@ -168,3 +198,20 @@ the apworld's canonical 18-track order.
 `tools/test-box-map.c` compiles the real bookkeeping out of engine:
 
     cc -Wall -Wextra -DCTR_AP -o /tmp/test-box-map tools/test-box-map.c && /tmp/test-box-map
+
+Exit 0 means every assertion held. It links nothing from the game, so it needs no
+disc, no display and no seed. What it pins:
+
+- the `LevelID` to apworld-track derivation and the frozen 270-code block,
+- slot assignment: positional, and never shifted by an absent or checked box,
+- the compiled-in table: its 241 rows, its per-track counts against the
+  provenance block in `ap_placements_data.h`, that no track exceeds the 15-slot
+  ceiling, and that the row order is not silently sorted,
+- precedence: the file wins by existence, an empty file still wins, and the
+  override is wholesale,
+- the spawn rule: a slot stands exactly the box locations its own seed created,
+  and a seed with none stands zero,
+- the pad predicate: how many boxes are still standing behind a track, which is
+  what stops a pad locking over uncollected boxes,
+- the scout-list filter: only codes this world created may go on the wire, which
+  is the precondition a peer-bound box's feed line depends on.

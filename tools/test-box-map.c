@@ -18,12 +18,22 @@
 //   4. the despawn bookkeeping: a checked box is not in the set, which is what
 //      "gone for the rest of the seed, across reconnects" means in code,
 //   5. the ceiling: placements past 15 on a track are dropped and COUNTED, so
-//      the caller can log them instead of losing them silently.
+//      the caller can log them instead of losing them silently,
+//   6. the COMPILED-IN placement table (#109 packaging): its count, its per-track
+//      counts, and that every row lands on a real box track inside the ceiling,
+//   7. PRECEDENCE: an external placement file overrides the compiled-in default
+//      by EXISTENCE, not by content, and the override is wholesale,
+//   8. the §7 spawn rule: a slot stands exactly the box locations its own seed
+//      created, so a reduced seating tier stands fewer boxes and no more,
+//   9. the §6 pad predicate: how many boxes are still standing behind a track,
+//  10. the scout-list filter: only codes this world created may go on the wire,
+//      which is the precondition a peer-bound box's feed line depends on.
 
 #include <stdio.h>
 #include <string.h> // memset
 
 #include "../ap/ap_box_map.h"
+#include "../ap/ap_placement_table.h"
 
 static int g_failures = 0;
 
@@ -369,6 +379,288 @@ static void test_set_ceiling(void)
 	expect_int(out[0].slot, 0, "NULL predicates still build a full set");
 }
 
+// ── 6. the compiled-in table ────────────────────────────────────────────────
+
+// The per-track counts the provenance block in ap_placements_data.h states.
+// Asserted rather than trusted: a regenerated table that quietly shifts a count
+// re-points every later "Item Box N" name on that track, and the header's own
+// documentation is the only thing that says what the FINAL set was.
+static const int k_perTrack[AP_BOX_TRACK_COUNT] = {
+	15, 13, 14, 10, 10, 12, 11, 15, 15, 13, 14, 15, 15, 14, 10, 15, 15, 15,
+};
+
+static void test_embedded_table(void)
+{
+	int counts[AP_BOX_TRACK_COUNT];
+	int i, total = 0;
+
+	printf("\n-- the COMPILED-IN default placement table (packaging) --\n");
+	memset(counts, 0, sizeof counts);
+
+	expect_int(AP_EMBEDDED_PLACEMENT_COUNT, 241, "the embedded table holds 241 placements");
+	expect_int(AP_EMBEDDED_PLACEMENT_COUNT, AP_EMBEDDED_PLACEMENT_EXPECTED,
+	           "count matches the header's own assertion");
+
+	for (i = 0; i < AP_EMBEDDED_PLACEMENT_COUNT; i++)
+	{
+		int level = (int)AP_EMBEDDED_PLACEMENTS[i].level;
+
+		if (AP_BoxMap_ApTrack(level) < 0)
+		{
+			printf("FAIL row %d sits on level %d, which is not a box track\n", i, level);
+			g_failures++;
+			continue;
+		}
+		counts[level]++;
+	}
+
+	for (i = 0; i < AP_BOX_TRACK_COUNT; i++)
+	{
+		total += counts[i];
+
+		if (counts[i] > AP_BOX_SLOTS_PER_TRACK)
+		{
+			// A row past the ceiling has no frozen name, so it can never spawn and
+			// can never send. Shipping one is a packaging bug, not a runtime one.
+			printf("FAIL level %d holds %d placements, past the frozen ceiling of %d\n",
+			       i, counts[i], AP_BOX_SLOTS_PER_TRACK);
+			g_failures++;
+		}
+		if (counts[i] != k_perTrack[i])
+		{
+			printf("FAIL level %d holds %d placements, the provenance block says %d\n",
+			       i, counts[i], k_perTrack[i]);
+			g_failures++;
+		}
+	}
+	expect_int(total, AP_EMBEDDED_PLACEMENT_COUNT, "every row landed on a box track");
+	printf("ok   per-track counts match the provenance block, none past the ceiling\n");
+
+	// Row order is load-bearing (slot assignment is positional), so the first and
+	// last rows are pinned: a re-sorted regeneration would still pass every count
+	// above while re-pointing names wholesale.
+	expect_int((int)AP_EMBEDDED_PLACEMENTS[0].level, 3, "the table opens on CRASH_COVE");
+	expect_int((int)AP_EMBEDDED_PLACEMENTS[0].x, -9378, "and on that row's x");
+	// The FINAL file appends four late placements AFTER Turbo Track, so the table
+	// does not end on level 17 and must not be "tidied" into level order: row 240
+	// is a Mystery Caves box and sorting it home would move it to a different slot.
+	expect_int((int)AP_EMBEDDED_PLACEMENTS[AP_EMBEDDED_PLACEMENT_COUNT - 1].level, 9,
+	           "the table ends on a late-appended MYSTERY_CAVES row, not on level 17");
+}
+
+// ── 7. precedence: which table is live ──────────────────────────────────────
+
+static void test_precedence(void)
+{
+	// A stand-in for the external file's rows, deliberately unlike the shipped
+	// set so "which table answered" is never ambiguous.
+	static const AP_PlacementRow k_file[] = {
+		{3, 11, 12, 13, 14},
+		{6, 21, 22, 23, 24},
+		{17, 31, 32, 33, 34},
+	};
+	AP_PlacementTable t;
+	int               level = -1;
+	short             x = 0, y = 0, z = 0, rot = 0;
+
+	printf("\n-- precedence: external file vs the compiled-in default --\n");
+
+	// No file: the embedded default is the table.
+	t.source = AP_PLACEMENT_SRC_EMBEDDED;
+	t.file = k_file; // present but must be ignored entirely
+	t.fileCount = 3;
+	expect_int(AP_PlacementTable_Count(&t), AP_EMBEDDED_PLACEMENT_COUNT,
+	           "no file -> the built-in default is live");
+	expect_int(AP_PlacementTable_Get(&t, 0, &level, &x, 0, 0, 0), 1, "row 0 reads back");
+	expect_int(level, 3, "and it is the embedded row, not the file's");
+	expect_int((int)x, -9378, "with the embedded coordinates");
+
+	// A file: it wins, wholesale.
+	t.source = AP_PLACEMENT_SRC_FILE;
+	expect_int(AP_PlacementTable_Count(&t), 3, "a file present -> the file is live");
+	expect_int(AP_PlacementTable_Get(&t, 0, &level, &x, &y, &z, &rot), 1, "row 0 reads back");
+	expect_int(level, 3, "the file's row 0 level");
+	expect_int((int)x, 11, "the file's row 0 x");
+	expect_int((int)rot, 14, "the file's row 0 rot_y");
+	expect_int(AP_PlacementTable_Get(&t, 2, &level, 0, 0, 0, 0), 1, "the file's last row reads back");
+	expect_int(level, 17, "and it is TURBO_TRACK");
+
+	// THE RULE: existence, not content. An empty file is a legitimate "no boxes"
+	// instruction and must NOT resurrect the 241 compiled-in rows behind the
+	// operator's back.
+	t.fileCount = 0;
+	expect_int(AP_PlacementTable_Count(&t), 0,
+	           "an EMPTY file still wins -- precedence is by existence");
+	expect_int(AP_PlacementTable_Get(&t, 0, 0, 0, 0, 0, 0), 0, "and it hands out nothing");
+
+	// Out of range on either source writes nothing and says so.
+	t.fileCount = 3;
+	level = 999;
+	expect_int(AP_PlacementTable_Get(&t, 3, &level, 0, 0, 0, 0), 0, "one past the file's end");
+	expect_int(level, 999, "and the out pointer was left untouched");
+	expect_int(AP_PlacementTable_Get(&t, -1, 0, 0, 0, 0, 0), 0, "a negative index");
+	t.source = AP_PLACEMENT_SRC_EMBEDDED;
+	expect_int(AP_PlacementTable_Get(&t, AP_EMBEDDED_PLACEMENT_COUNT, 0, 0, 0, 0, 0), 0,
+	           "one past the embedded table's end");
+}
+
+// ── 8. §7: a slot stands exactly its own seed's box locations ───────────────
+
+// The §7 predicate in the harness's terms: a code is live only if this world
+// created it. FakeState above models absence; this models the opposite framing
+// the ruling uses, so the test reads the way the rule does.
+struct FakeWorld
+{
+	long created[32];
+	int  numCreated;
+	long checked[8];
+	int  numChecked;
+};
+
+static int fake_created(long code, void *ctx)
+{
+	struct FakeWorld *w = (struct FakeWorld *)ctx;
+	int               i;
+
+	for (i = 0; i < w->numCreated; i++)
+	{
+		if (w->created[i] == code)
+			return 1;
+	}
+	return 0;
+}
+
+static int fake_world_checked(long code, void *ctx)
+{
+	struct FakeWorld *w = (struct FakeWorld *)ctx;
+	int               i;
+
+	for (i = 0; i < w->numChecked; i++)
+	{
+		if (w->checked[i] == code)
+			return 1;
+	}
+	return 0;
+}
+
+static void test_reduced_seating_tier(void)
+{
+	AP_BoxSlot       out[AP_BOX_SLOTS_PER_TRACK];
+	struct FakeWorld w;
+	int              n, over = -1;
+
+	printf("\n-- §7: the seed decides liveness, the placement set is geometry only --\n");
+	memset(&w, 0, sizeof w);
+
+	// A reduced seating tier: this slot's world created only three of Crash Cove's
+	// six placed boxes. The geometry still holds six.
+	w.created[w.numCreated++] = 35014000L; // slot 0
+	w.created[w.numCreated++] = 35014002L; // slot 2
+	w.created[w.numCreated++] = 35014005L; // slot 5
+
+	n = AP_BoxMap_BuildSet(k_placements, K_PLACEMENT_COUNT, 3,
+	                       fake_created, fake_world_checked, &w,
+	                       out, AP_BOX_SLOTS_PER_TRACK, &over);
+
+	expect_int(n, 3, "exactly the created locations stand, not the six placed");
+	expect_int(out[0].slot, 0, "slot 0 stands");
+	expect_int(out[1].slot, 2, "slot 2 stands, and kept its own slot");
+	expect_int(out[2].slot, 5, "slot 5 stands");
+	expect_long(out[1].code, 35014002L, "the middle one still carries slot 2's code");
+	expect_int(out[1].x, 300, "and slot 2's coordinates");
+
+	// The dev fallback is retired: a slot whose seed created NO box locations
+	// stands nothing at all, rather than showing the authored set and sending
+	// location ids that do not exist in that world.
+	w.numCreated = 0;
+	n = AP_BoxMap_BuildSet(k_placements, K_PLACEMENT_COUNT, 3,
+	                       fake_created, fake_world_checked, &w,
+	                       out, AP_BOX_SLOTS_PER_TRACK, &over);
+	expect_int(n, 0, "a seed with NO box locations stands ZERO boxes");
+}
+
+// ── 9. §6: what is still standing behind a pad ──────────────────────────────
+
+static void test_pad_boxes_left(void)
+{
+	struct FakeWorld w;
+
+	printf("\n-- §6: the pad's uncollected-box count --\n");
+	memset(&w, 0, sizeof w);
+
+	// Crash Cove: four box locations created, geometry for six.
+	w.created[w.numCreated++] = 35014000L;
+	w.created[w.numCreated++] = 35014001L;
+	w.created[w.numCreated++] = 35014002L;
+	w.created[w.numCreated++] = 35014003L;
+
+	expect_int(AP_BoxMap_CountStanding(3, 6, fake_created, fake_world_checked, &w), 4,
+	           "four live boxes are still standing");
+
+	// THE GATE CASE (ruled §6): the trophy is checked and boxes remain. The count
+	// must stay above zero, which is what stops AP_PadState returning Done (5) or
+	// Re-locked (3) and stranding them -- the trophy's own state never enters here.
+	w.checked[w.numChecked++] = 35014000L;
+	w.checked[w.numChecked++] = 35014001L;
+	expect_int(AP_BoxMap_CountStanding(3, 6, fake_created, fake_world_checked, &w), 2,
+	           "two broken, two still standing -> the pad may NOT lock");
+
+	w.checked[w.numChecked++] = 35014002L;
+	w.checked[w.numChecked++] = 35014003L;
+	expect_int(AP_BoxMap_CountStanding(3, 6, fake_created, fake_world_checked, &w), 0,
+	           "all four broken -> nothing is stranded, the pad may lock");
+
+	// Geometry bounds the count, so a seed that created more box locations than
+	// the placement set covers cannot keep a pad green with nothing to break.
+	w.numChecked = 0;
+	expect_int(AP_BoxMap_CountStanding(3, 2, fake_created, fake_world_checked, &w), 2,
+	           "only two placements here -> only two can stand");
+	expect_int(AP_BoxMap_CountStanding(3, 0, fake_created, fake_world_checked, &w), 0,
+	           "no placements here -> nothing stands");
+	expect_int(AP_BoxMap_CountStanding(3, 99, fake_created, fake_world_checked, &w), 4,
+	           "a slot count past the ceiling is clamped, not trusted");
+
+	// Not a box track at all: an arena pad has no boxes behind it by construction.
+	expect_int(AP_BoxMap_CountStanding(18, 15, fake_created, fake_world_checked, &w), 0,
+	           "an arena has no boxes behind its pad");
+}
+
+// ── 10. the scout list: what may go on the wire ─────────────────────────────
+
+static void test_scout_codes(void)
+{
+	struct FakeWorld w;
+	long             out[AP_BOX_LOCATION_COUNT];
+	int              n;
+
+	printf("\n-- the connect scout list (the peer-bound feed line's precondition) --\n");
+	memset(&w, 0, sizeof w);
+
+	// A seed WITHOUT the box class contributes nothing. This is the safety half:
+	// MultiServer 0.6.7 hard-drops the connection on an invalid id in the scout
+	// path, so a blind push of the 270-code block would be a disconnect.
+	n = AP_BoxMap_ScoutCodes(fake_created, &w, out, AP_BOX_LOCATION_COUNT);
+	expect_int(n, 0, "a seed with no box locations scouts no box codes");
+
+	// A seed WITH box locations lists exactly those, and in code order. Without
+	// them in the scout cache AP_FeedOnLocationSent cannot resolve a peer-bound
+	// box's "ITEM TO PLAYER" line and stays silent, which is the bug this closes.
+	w.created[w.numCreated++] = 35014269L; // deliberately out of order
+	w.created[w.numCreated++] = 35014000L;
+	w.created[w.numCreated++] = 35014015L;
+
+	n = AP_BoxMap_ScoutCodes(fake_created, &w, out, AP_BOX_LOCATION_COUNT);
+	expect_int(n, 3, "exactly the created box locations are scouted");
+	expect_long(out[0], 35014000L, "listed in code order, lowest first");
+	expect_long(out[1], 35014015L, "the second");
+	expect_long(out[2], 35014269L, "the block's last code");
+
+	// The bound is respected rather than overrun.
+	n = AP_BoxMap_ScoutCodes(fake_created, &w, out, 2);
+	expect_int(n, 2, "writing stops at the caller's cap");
+	expect_int(AP_BoxMap_ScoutCodes(0, &w, out, 4), 0, "no predicate -> nothing scouted");
+}
+
 int main(void)
 {
 	printf("AP item box map + spawn-set bookkeeping (#109)\n");
@@ -379,6 +671,11 @@ int main(void)
 	test_set_absent_does_not_shift();
 	test_set_checked_is_gone();
 	test_set_ceiling();
+	test_embedded_table();
+	test_precedence();
+	test_reduced_seating_tier();
+	test_pad_boxes_left();
+	test_scout_codes();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");
