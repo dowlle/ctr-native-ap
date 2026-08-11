@@ -294,6 +294,17 @@ typedef struct
 	//   stat_editing_allowed: 1 = the panel exposes an edit control. Never 1
 	// while stat_source is progressive; the apworld guarantees that.
 	int stat_editing_allowed;
+	//   character_phase_present: did this seed's ctr_options actually CARRY the
+	// character-phase keys? This is key PRESENCE, deliberately not inferred from
+	// the values above, because the two cases it separates are otherwise
+	// identical: an old seed with none of these keys, and a NEW 0.2.0 seed that
+	// explicitly set character_unlocks false with Crash as the starter and
+	// vanilla stats. In the second case all 16 racers ARE available and the hub
+	// picker is the only way to choose among them, so hiding it would delete the
+	// feature exactly where the player needs it most. The character-phase
+	// apworld emits every one of these keys on EVERY seed, on or off, which is
+	// what makes presence a reliable signal.
+	int character_phase_present;
 
 	// The generating apworld's own world_version (issue #150), verbatim from
 	// ctr_options.world_version -- e.g. "0.1.5", no "v" prefix. Under the release

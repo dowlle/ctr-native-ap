@@ -264,6 +264,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.stat_source = 0;
 	ctr_cfg.stat_owner = 0;
 	ctr_cfg.stat_editing_allowed = 0;
+	ctr_cfg.character_phase_present = 0;
 	for (int i = 0; i < 5; i++)
 		ctr_cfg.gem_cup_racer_lock[i] = -1;
 	// Pair version of the generating apworld (#150): unknown until parsed, and an
@@ -416,6 +417,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	//
 	// starting_character arrives as an ENGINE character id (the apworld maps its
 	// own roster order for us), so it is range-checked and nothing more.
+	// Key PRESENCE, decided before any value is read. An apworld that carries
+	// the character phase emits all of these unconditionally, so seeing any one
+	// of them proves the seed is a character-phase seed even when every value is
+	// its default -- which is precisely the all-unlocked-mode case where the
+	// picker must be live. Inferring this from the values instead would make an
+	// explicitly all-default 0.2.0 seed indistinguishable from a pre-feature
+	// one and would hide the picker on the seed that needs it most.
+	ctr_cfg.character_phase_present =
+	    (opt.find("character_unlocks") != opt.end()
+	     || opt.find("starting_character") != opt.end()
+	     || opt.find("racer_locked_pads") != opt.end()
+	     || opt.find("stat_source") != opt.end()
+	     || opt.find("penta_stats") != opt.end())
+	        ? 1
+	        : 0;
 	ctr_cfg.starting_character = json_int(opt, "starting_character", 0); // default CRASH_BANDICOOT
 	// 0..15 == enum Characters CRASH_BANDICOOT..NITROS_OXIDE. Spelled as a
 	// literal because this translation unit is the isolated ap_net C++ library
@@ -459,9 +475,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		           "is not a shape the apworld emits; forcing read-only.\n");
 		ctr_cfg.stat_editing_allowed = 0;
 	}
-	if (ctr_cfg.starting_character != 0 /* CRASH_BANDICOOT */
-	    || ctr_cfg.character_unlocks || ctr_cfg.racer_locked_pads
-	    || ctr_cfg.stat_source != 0)
+	if (ctr_cfg.character_phase_present)
 		ap_cfg_log("[AP CFG] character phase: start=%d class=%d unlocks=%d "
 		           "locks=%d penta=%d stat_source=%d owner=%d editable=%d\n",
 		           ctr_cfg.starting_character, ctr_cfg.starting_stat_class,

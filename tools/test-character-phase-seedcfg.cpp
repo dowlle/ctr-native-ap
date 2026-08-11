@@ -89,10 +89,39 @@ static void test_absent_keys_are_pre_feature_behaviour()
 	check_eq(ctr_cfg.stat_source, 0, "absent stat_source -> vanilla");
 	check_eq(ctr_cfg.stat_owner, 0, "absent stat_owner -> none");
 	check_eq(ctr_cfg.stat_editing_allowed, 0, "absent stat_editing_allowed -> no");
+	check_eq(ctr_cfg.character_phase_present, 0, "absent keys -> phase not present");
 	for (int pad = 0; pad < CTR_CFG_PAD_COUNT; pad++)
 		check(ctr_cfg.racer_lock[pad] == -1, "absent racer_locks -> no pad locked");
 	for (int cup = 0; cup < 5; cup++)
 		check(ctr_cfg.gem_cup_racer_lock[cup] == -1, "absent racer_locks -> no cup locked");
+}
+
+// The defect the 23:48 pre-commit audit caught: an explicitly all-default
+// character-phase seed must NOT look like a pre-feature seed. Both sides are
+// asserted, because getting either wrong is a real regression -- hiding the
+// picker on an all-unlocked seed deletes the feature, and showing it on a
+// genuinely old seed widens a roster nobody asked to widen.
+static void test_phase_presence_is_key_presence_not_value()
+{
+	// Old seed: no character keys at all.
+	parse("");
+	check_eq(ctr_cfg.character_phase_present, 0,
+	         "absent keys -> no character phase (old seed stays old)");
+
+	// New seed, all-unlocked comfort mode, every other value at its default.
+	// Every scalar below reads exactly like the absent-key case above.
+	parse("\"starting_character\":0,\"starting_stat_class\":0,"
+	      "\"character_unlocks\":false,\"racer_locked_pads\":false,"
+	      "\"penta_stats\":0,\"editable_stats\":0,"
+	      "\"stat_source\":0,\"stat_owner\":0,\"stat_editing_allowed\":false");
+	check_eq(ctr_cfg.character_phase_present, 1,
+	         "explicit all-default character keys -> phase IS live");
+	check_eq(ctr_cfg.character_unlocks, 0, "and all-unlocked mode is what it says");
+
+	// A single key is enough; the apworld emits them together, but a partial
+	// wire must not silently fall back to "no feature".
+	parse("\"character_unlocks\":true");
+	check_eq(ctr_cfg.character_phase_present, 1, "one key is enough");
 }
 
 static void test_scalars_round_trip()
@@ -198,6 +227,7 @@ static void test_a_reparse_clears_the_previous_seed()
 int main()
 {
 	test_absent_keys_are_pre_feature_behaviour();
+	test_phase_presence_is_key_presence_not_value();
 	test_scalars_round_trip();
 	test_out_of_range_values_fail_closed();
 	test_progressive_never_exposes_an_edit_control();

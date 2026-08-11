@@ -868,20 +868,27 @@ static void ap_cs_input(struct GameTracker *gGT)
 
 // Does this seed carry the character phase at all?
 //
-// Any one of: an unlock economy, a racer lock, a non-vanilla stat source, a
-// non-default starting racer, or a forced starting class. Deliberately NOT
-// "ctr_cfg_active()": a 0.2.0 seed that turned every character option off
-// should behave exactly like a pre-character-phase seed, including not opening
-// a picker the player has no use for.
+// Keyed on PRESENCE of the character-phase wire keys, never on their values.
+// The two cases that has to separate are otherwise identical on the wire:
+//
+//   * an OLD seed, from an apworld that predates the feature, carrying none of
+//     the keys. It has no unlock items and no roster concept, so the picker
+//     must stay shut -- a pre-0.2.0 seed has to keep behaving like one.
+//   * a NEW seed that set `character_unlocks: false` (the ruled all-unlocked
+//     comfort mode) and left everything else at its default: Crash as the
+//     starter, vanilla stats, no locks. Every scalar reads default, and yet all
+//     16 racers ARE available and the hub picker is the ONLY way to choose
+//     among them.
+//
+// An earlier cut of this function tested the VALUES and so answered "no
+// feature" to the second case, which deleted the picker on exactly the
+// configuration that exists to give you the whole roster. ctr_cfg tracks key
+// presence for this reason; do not re-derive it from a defaulted scalar.
 int AP_CharSwap_FeatureLive(void)
 {
 	if (!ctr_cfg_active())
 		return 0;
-	return ctr_cfg.character_unlocks
-	    || ctr_cfg.racer_locked_pads
-	    || ctr_cfg.stat_source != 0
-	    || ctr_cfg.starting_stat_class != 0
-	    || ctr_cfg.starting_character != CRASH_BANDICOOT;
+	return ctr_cfg.character_phase_present != 0;
 }
 
 // Apply the seed's starting racer once per session (spike seam 4's sibling).

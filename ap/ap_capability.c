@@ -126,7 +126,13 @@ int AP_CharacterUnlocked(int characterID)
 	// pre-0.2.0 client does -- the eight racers vanilla lets into Adventure,
 	// plus whoever is currently being driven. Never widen the roster on a seed
 	// that did not ask for it.
-	if (!ctr_cfg_active())
+	//
+	// Keyed on character_phase_present, NOT on ctr_cfg_active(): an older seed
+	// is active and simply carries none of these keys, and `character_unlocks`
+	// would default to 0 there -- which the all-unlocked branch below reads as
+	// "every racer is available". That would hand a pre-0.2.0 seed the whole
+	// roster, the exact opposite of leaving it alone.
+	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
 		return characterID <= PURA || characterID == data.characterIDs[0];
 
 	// The racer the seed starts you as is always yours.
