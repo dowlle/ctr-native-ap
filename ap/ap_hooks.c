@@ -20,6 +20,7 @@
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -27,6 +28,11 @@
 // effect. Kept next to AP_ITEM_BASE/AP_ITEM_INDEX_COUNT (ap_items.h) this depends
 // on; if the apworld's item table order changes, update both together.
 #define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
+
+// Frozen 0.2.0 datapackage append: weapon items occupy indexes 95..105 in held
+// ID order (0..4, 6..11). Rebuilt from ReceivedItems on every fresh connect.
+#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
 
 // ==============================================================
 // Archipelago integration. Parts:
@@ -3278,6 +3284,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
+		for (k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
+			ap_itemsanity_owned[k] = 0;
 		AP_SurfaceReset(); // rebuilt by the authoritative ReceivedItems replay below
 		// Capability chains (#12/#13): same discipline. These are COUNTS, not
 		// one-shot effects, so the resent full list must rebuild them from zero --
@@ -3425,6 +3433,15 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 		{
 			AP_CapabilityReceivePerCharacter((int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX));
+		}
+
+		// Itemsanity weapon unlocks (indexes 95..105): booleans by weapon type.
+		// Duplicate receipts are harmless; reconnect/slot reset clears the set
+		// before the authoritative ReceivedItems replay rebuilds it.
+		else if (idx >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
+		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
+		{
+			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -3759,6 +3776,55 @@ static void AP_EmitClassCheck(long code,
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
 		AP_FeedOnLocationSent(code);
+}
+
+static int AP_ItemsanityActive(void)
+{
+	// Server location-set membership is the authoritative all-or-none toggle.
+	// This also makes absent/old slot_data inert without a bespoke parser path.
+	return ctr_cfg_active() && ap_net_location_exists(35016000L);
+}
+
+void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	long plain;
+	long juiced;
+	if (!AP_ItemsanityActive() || !gGT || driver != gGT->drivers[0])
+		return;
+
+	plain = AP_ItemsanityLocationCode(heldItemID, 0);
+	juiced = AP_ItemsanityLocationCode(heldItemID, 1);
+	AP_EmitClassCheck(plain, 0, -1, 0, 1,
+	                  "[AP CHECK] itemsanity use: weapon=%d juiced=0 location %ld\n",
+	                  heldItemID, plain);
+	if (driver->numWumpas >= 10)
+		AP_EmitClassCheck(juiced, 0, -1, 0, 1,
+		                  "[AP CHECK] itemsanity use: weapon=%d juiced=1 location %ld\n",
+		                  heldItemID, juiced);
+}
+
+int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
+	const unsigned char *table, int tableCount)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int filtered;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return rolled;
+
+	filtered = AP_ItemsanitySubstituteRoll(rolled, roll, table, tableCount,
+	                                      ap_itemsanity_owned);
+	if (filtered == AP_ITEMSANITY_NO_ITEM)
+	{
+		// Ruled Empty Crates shape: keep the box/roulette acquisition path, hold
+		// no weapon, and grant one fruit through the engine's normal clamp/effect.
+		RB_Player_ModifyWumpa(driver, 1);
+		AP_AppendLog("[AP ITEMSANITY] no eligible roulette weapon; granted Wumpa\n");
+	}
+	return filtered;
 }
 
 // Podium wrapper: preserve the shipped log text and make the two podium-specific

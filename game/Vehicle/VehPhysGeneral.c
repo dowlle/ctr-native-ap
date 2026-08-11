@@ -998,6 +998,11 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	case ITEMSET_BattleDefault:
 	case ITEMSET_BossRace:
 		driver->heldItemID = charPtr[itemSet][(rng * numWeapons[itemSet]) / 0xc8];
+#ifdef CTR_AP
+		driver->heldItemID = AP_ItemsanityFilterRoll(driver, driver->heldItemID,
+		                                           (unsigned)rng, charPtr[itemSet],
+		                                           numWeapons[itemSet]);
+#endif
 		break;
 
 	// uses int array instead of char,

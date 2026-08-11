@@ -370,6 +370,9 @@ u32 VehPickupItem_PotionThrow(struct MineWeapon *mine, struct Instance *inst, u3
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006540c-0x800666e4.
+#ifdef CTR_AP
+	AP_ItemsanityOnUse(d, weaponID);
+#endif
 	struct Instance *dInst;
 	struct Thread *weaponTh;
 	struct Instance *weaponInst;

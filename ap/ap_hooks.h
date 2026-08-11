@@ -352,6 +352,13 @@ int AP_LocationCheckedByBit(int globalBit);
 // bit / not connected.
 int AP_LocationExistsByBit(int globalBit);
 
+// Itemsanity (#145): use-time check emission and receive-gated roulette.
+// The filter is local-player and active-seed safe; inactive/absent seeds and
+// nonlocal drivers receive the vanilla roll unchanged.
+void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID);
+int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
+                            const unsigned char *table, int tableCount);
+
 // Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
 // Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant
 // answer to "does the player own this specific tier on this track". Two disjoint

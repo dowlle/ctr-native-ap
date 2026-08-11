@@ -595,6 +595,12 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 						scout_add((int64_t)rung[k]);
 			}
 		}
+		// Itemsanity is an ordered global class with no AdvProgress bits and no
+		// elastic subset. Server membership is its authoritative on/off signal;
+		// scout all 22 frozen codes when present so the shared class emitter can
+		// resolve foreign sent-item feed entries exactly like podium rungs.
+		for (int i = 0; i < 22; i++)
+			scout_add((int64_t)(35016000 + i));
 		if (!locs.empty())
 			g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr,
