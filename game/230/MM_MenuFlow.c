@@ -288,6 +288,18 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 		sdata->ptrDesiredMenu = &g_configMenu;
 		return;
 	}
+
+	// Quit (#211): controller-first exit, mirroring the window-close path
+	// (platform/native_platform.c's SDL_EVENT_WINDOW_CLOSE_REQUESTED handler).
+	// Row is shared game code, present in both builds; only the AP disconnect
+	// ahead of it is CTR_AP-only.
+	if (choose == LNG_QUIT)
+	{
+#ifdef CTR_AP
+		AP_Net_Shutdown();
+#endif
+		exit(0);
+	}
 }
 
 // NOTE(aalhendi): ASM-verified against NTSC-U 926 overlay 230 0x800ad448-0x800ad560.
