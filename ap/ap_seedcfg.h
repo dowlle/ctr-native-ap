@@ -83,6 +83,9 @@ extern "C" {
 // LevelIDs and classify as trophy races, so they earn the destination track's
 // rungs too (the held listener + finish fan-out run during cup legs).
 #define CTR_CFG_PODIUM_TRACK_COUNT 16
+#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_LETTER_COUNT 3
+#define CTR_LETTER_ITEM_FIRST_INDEX 139
 
 // Number of podium rungs per track (schema >= 6). The nested ladder, best-first:
 //   0 held_1st       -- live: held 1st place  (grants held_3rd + held_5th)
@@ -303,6 +306,8 @@ typedef struct
 	int              podium_enabled;      // podium_checks.enabled
 	int              podium_any_position; // podium_checks.any_position
 	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
+	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
+	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.

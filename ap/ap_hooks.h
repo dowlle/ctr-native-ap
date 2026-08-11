@@ -338,6 +338,11 @@ int AP_WarpPadRewardTokenColour(int globalBit);
 // clears any location bit not backed by a received item every frame, so the raw
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
+int AP_LetterAvailable(int track, int letter);
+long AP_LetterLocation(int track, int letter);
+void AP_LetterCollected(int track, int letter);
+int AP_LettersRequiredMet(int track);
+int AP_LettersRequiredCount(int track);
 
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).
