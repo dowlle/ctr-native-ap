@@ -422,10 +422,19 @@ static int AP_PadDisplayKind(long long item, int player, int requireDrawable,
 			cat = AP_CAT_NONE;
 	}
 
+	// The marker is the fallback for a reward whose own model is not loaded, so
+	// its availability is asked the same way as any other model's rather than from
+	// the build flag alone: a fallback to something undrawable would put the slot
+	// right back on a stale model. The two cannot actually disagree today --
+	// AP_MarkerModel_Register re-parks the pointer every frame from AP_OnFrame,
+	// and LibraryOfModels_Clear stops at i < 0xe2 so the STATIC_AP slot survives
+	// every level load -- and this keeps that a locally checked fact instead of an
+	// invariant held somewhere else.
 	kind = AP_RewardPresentation(cat, own,
 	                             !requireDrawable ||
 	                                 AP_RewardModelDrawable(AP_RewardModelForCat(cat)),
-	                             AP_MarkerModel_IsRegistered());
+	                             AP_MarkerModel_IsRegistered() &&
+	                                 AP_RewardModelDrawable(STATIC_AP));
 
 	// A category that lost its model-keeping presentation is no longer carrying a
 	// category: the marker paths must see AP_CAT_NONE so the tint and the scale

@@ -221,6 +221,11 @@ int main(void)
 	expect_kind(AP_CAT_NONE, 0, 1, 1, AP_PAD_DISP_MARKER, "#212 group 3 draws no own/peer line");
 	expect_kind(AP_CAT_NONE, 1, 1, 0, AP_PAD_DISP_NONE, "no marker model parked -> placeholder");
 	expect_kind(AP_CAT_WUMPA, 1, 0, 0, AP_PAD_DISP_NONE, "no model, no marker -> placeholder");
+	// The fallback must never hand a surface a marker it cannot draw either: with
+	// the marker unavailable the answer is the placeholder, never a model-keeping
+	// presentation whose model is missing.
+	expect_kind(AP_CAT_CRYSTAL, 1, 0, 0, AP_PAD_DISP_NONE, "crystal not loaded and no marker -> placeholder");
+	expect_kind(AP_CAT_TROPHY, 0, 0, 0, AP_PAD_DISP_NONE, "peer reward, nothing drawable -> placeholder");
 
 	// ── #212: the colour a pad slot writes, per class and per surprise toggle ──
 	// Hex values are the packed (R<<0x14)|(G<<0xc)|(B<<0x4) forms of the tints, so
