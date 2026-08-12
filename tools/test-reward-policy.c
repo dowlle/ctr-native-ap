@@ -31,11 +31,14 @@
 //     the surface cannot draw wears plum rather than the item's own AP class,
 //     which the apworld ships as `useful`, and no other category makes that
 //     claim;
-//   - the ruling end to end from real item ids (expect_item_display): both CTR
-//     progression families -- the capability ladder (#219) and the character
-//     unlocks (#54/#209) -- present as the purple crystal where it is drawable
-//     and as the plum progression marker where it is not, while everything else
-//     keeps the ordinary class-tinted marker.
+//   - the ruling end to end from real item ids (expect_item_display): all three
+//     CTR progression families -- the capability ladder (#219), the character
+//     unlocks (#54/#209) and the lettersanity letters (#148) -- present as the
+//     purple crystal where it is drawable and as the plum progression marker
+//     where it is not, while everything else keeps the ordinary class-tinted
+//     marker. The families do NOT share an AP classification (two ship `useful`,
+//     the letters ship `progression`), so these rows also pin that the crystal is
+//     an enumerated list of item families and not a reading of the flags.
 
 #include <stdio.h>
 
@@ -178,21 +181,32 @@ int main(void)
 	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX +
 	                  AP_CHARACTER_ITEM_COUNT - 1,
 	           AP_CAT_CRYSTAL, "#54 character unlock last (Penta Penguin)");
+	// The lettersanity letters (139..186, 16 tracks x C/T/R) are the third crystal
+	// family, ruled in for the same uniform-visuals reason as the racers.
+	expect_cat(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX, AP_CAT_CRYSTAL,
+	           "#148 first letter (Letter C, Crash Cove)");
+	expect_cat(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX +
+	                  CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT - 1,
+	           AP_CAT_CRYSTAL, "#148 last letter (Letter R, Oxide Station)");
 	// Traps (16..20), comfort (21..26) and unknown ids stay marker material.
 	expect_cat(AP_ITEM_BASE + 16, AP_CAT_NONE, "trap -> marker material");
 	expect_cat(AP_ITEM_BASE + 21, AP_CAT_NONE, "comfort -> marker material");
 	expect_cat(AP_ITEM_BASE + 26, AP_CAT_NONE, "comfort -> marker material");
-	expect_cat(AP_ITEM_BASE + 95, AP_CAT_NONE, "past the ladder -> marker material");
-	// Both edges of the character block, so widening it to the neighbours has to
-	// be a deliberate edit. 122 is Progressive Starting Wumpa; 139 is the first
-	// lettersanity letter -- and the letters are the one family the datapackage
-	// really does classify `progression`, deliberately NOT crystals until that
-	// separate product call is made.
+	// The itemsanity weapon unlocks. The datapackage calls these `progression`,
+	// so this row is the standing proof that the crystal is NOT keyed off the AP
+	// flag -- it is an enumerated list of families, and this family has not been
+	// ruled into it.
+	expect_cat(AP_ITEM_BASE + 95, AP_CAT_NONE,
+	           "#145 itemsanity weapon: progression-classified, still marker material");
+	// Every edge of every crystal block, so widening one to its neighbour has to
+	// be a deliberate edit. 122 is Progressive Starting Wumpa (just below the
+	// racers) and 187 is Gas Pedal (just above the letters) -- also
+	// progression-classified, also not ruled in.
 	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX - 1, AP_CAT_NONE,
 	           "just below the character block -> marker material");
-	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX +
-	                  AP_CHARACTER_ITEM_COUNT,
-	           AP_CAT_NONE, "#148 letters are progression but NOT crystals (unruled)");
+	expect_cat(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX +
+	                  CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT,
+	           AP_CAT_NONE, "Gas Pedal, just above the letter block -> marker material");
 
 	// ── Model-keeping: the ONE category decision every surface consumes ──
 	// #212 OG rewards keep their models; #219 crystals and #222 wumpa join them.
@@ -352,6 +366,15 @@ int main(void)
 	expect_item_display(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX, 0, 1,
 	                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0,
 	                    "a peer's character unlock is a GHOSTED crystal, untinted");
+	// A letter carries the PROGRESSION flag where the other two families carry
+	// `useful`, and lands on exactly the same two answers -- which is the point of
+	// the ruling: one look for CTR progression, whatever the datapackage says.
+	expect_item_display(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX, 1, 1,
+	                    AP_ITEM_FLAG_PROGRESSION, 1, AP_MODEL_CRYSTAL, 0x0d22fff0,
+	                    "#148 own letter -> purple crystal");
+	expect_item_display(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX, 1, 0,
+	                    AP_ITEM_FLAG_PROGRESSION, 1, WANT_MARKER_MODEL, 0x0c088f00,
+	                    "#148 own letter, no crystal here -> plum marker");
 	// The contrast row: an item that is NOT one of the progression families still
 	// takes the ordinary marker and its own class colour, crystal or no crystal.
 	expect_item_display(AP_ITEM_BASE + 16, 1, 1, AP_ITEM_FLAG_TRAP, 1,

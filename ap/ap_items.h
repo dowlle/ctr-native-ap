@@ -55,6 +55,24 @@
 #define AP_ITEM_INDEX_COUNT 15
 #endif
 
+// ── Lettersanity item block (issue #148) ───────────────────────────────────
+// 16 tracks x the three C/T/R letters, item indices 139..186, track-major.
+//
+// COMPOSITION NOTE, same shape as the character-unlock block in ap_capability.h:
+// the lettersanity branch owns these in ap_seedcfg.h, next to the rest of the
+// per-seed letter config. This header cannot reach for that one -- ap_items.h is
+// freestanding on purpose, so the out-of-engine policy harness can compile it
+// without the seed parser -- and it needs the range to classify a letter for the
+// reward display. Values copied verbatim; when the branches compose, keep the
+// ap_seedcfg.h block and drop this one. Leaving both is harmless in the
+// meantime: the replacement lists are identical, so whichever header a
+// translation unit sees second is a benign redefinition.
+#ifndef CTR_LETTER_ITEM_FIRST_INDEX
+#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_LETTER_COUNT 3
+#define CTR_LETTER_ITEM_FIRST_INDEX 139
+#endif
+
 typedef enum
 {
 	AP_CAT_TROPHY = 0,
@@ -67,9 +85,11 @@ typedef enum
 	AP_CAT_COUNT,   // number of bit-pool categories
 	AP_CAT_WUMPA,   // filler, no bit pool
 	// Every CTR progression item with NO vanilla model of its own: the capability
-	// ladder (#219) and the character unlocks (#54/#209). No bit pool. The name is
-	// the MODEL these present as, not the feature they come from -- the ruling is
-	// that all of them read as the purple crystal.
+	// ladder (#219), the character unlocks (#54/#209) and the lettersanity letters
+	// (#148). No bit pool. The name is the MODEL these present as, not the feature
+	// they come from -- the ruling is that all of them read as the purple crystal,
+	// so a player never has to tell CTR's own progression apart from a foreign
+	// multiworld item by squinting at a marker's tint.
 	AP_CAT_CRYSTAL,
 	AP_CAT_NONE
 } AP_ItemCat;
@@ -116,11 +136,38 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		    idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
 			return AP_CAT_CRYSTAL;
 
-		// Everything else is marker material, INCLUDING the other CTR items the
-		// datapackage classifies `progression` -- the lettersanity letters (#148,
-		// indices 139+) are the live example. The ruling above named the character
-		// unlocks; extending the crystal to the letters is a separate product call
-		// and is not made here. When it is, this is the one place it lands.
+		// The lettersanity letters (#148, indices 139..186). Ruled in for the same
+		// reason as the racers: uniform visuals for CTR progression content.
+		if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
+		    idx < CTR_LETTER_ITEM_FIRST_INDEX +
+		              CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+			return AP_CAT_CRYSTAL;
+
+		// ── Why this list is enumerated and not "whatever the flags say" ──
+		//
+		// The rule these three blocks share is "a CTR item with NO vanilla model of
+		// its own reads as the crystal instead of a generic Archipelago marker". It
+		// deliberately does NOT read the item's AP classification, and it must not
+		// be refactored into doing so, because the datapackage's `progression` set
+		// is not that rule: worlds/ctr/data/items.json classifies indices 0..14
+		// (Trophy, the three relic tiers, the tokens, the gems, the Key), 95..105
+		// (the itemsanity weapon unlocks) and 139..187 as `progression`. Keying the
+		// crystal off the flag would therefore turn every OG CTR reward into a
+		// crystal and delete #212/#219's whole point, while the families that
+		// actually motivated the crystal -- the capability ladder and the racers --
+		// ship as `useful` and would not qualify at all. Enumeration is the honest
+		// encoding of the ruling; the flags are a different question with a
+		// different answer.
+		//
+		// Marker material, still, and each on purpose:
+		//   - Gas Pedal (187) sits immediately after the letter block and is
+		//     `progression`, but it is not a lettersanity item, no client branch
+		//     receives it yet, and no ruling has named it;
+		//   - the itemsanity weapon unlocks (95..105), which the live client does
+		//     receive;
+		//   - traps (16..20), comfort/surface items (21..26), the wumpa bundles
+		//     (120..121) and the Tizi Helper (188).
+		// The first two are the open ones; both land here when they are ruled.
 		return AP_CAT_NONE;
 	}
 }
