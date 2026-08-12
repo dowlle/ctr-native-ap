@@ -49,6 +49,18 @@ int AP_CharSwap_FeatureLive(void);
 // hub births the player during its own load.
 void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT);
 
+// The racer the adventure-start Garage character select must commit, or -1 when
+// this seed does not carry the character phase and the retail garage should run
+// untouched. When it returns a racer, the garage's own picker is SKIPPED: the
+// seed (or the racer persisted from a previous session) decides who you start
+// as, and switching afterwards is the hub picker's job.
+//
+// The gate applies in all-unlocked mode too. The garage can only ever offer the
+// eight vanilla starters (gGarage.unusedArr_garageChars, game/233/D233.c:29),
+// so leaving it live there would not be "the comfortable way to choose" -- it
+// would be a second, narrower picker that silently overwrites the seated racer.
+int AP_CharSwap_GarageRacer(void);
+
 // Re-arm the one-shot seat above on a fresh connect, so a reconnect or a slot
 // switch re-applies the authoritative racer instead of keeping whatever the
 // local save holds. Also ZEROES the live editable-stat deltas: the restore is

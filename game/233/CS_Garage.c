@@ -40,6 +40,32 @@ void CS_Garage_ZoomOut(char zoomState)
 	}
 }
 
+#ifdef CTR_AP
+// Force the AP-authoritative racer over whatever a Garage confirm just wrote.
+//
+// The two commit sites below (:380 and :466 in the retail flow) are the only
+// places in the tree that can seat a racer of the player's choosing at
+// adventure start. When the seed owns the racer they are unreachable, because
+// CS_Garage_MenuProc returns early -- but writing the invariant at the point of
+// the write, rather than trusting the arrangement that keeps us away from it,
+// is what stops a future refactor of the skip from silently reopening the
+// unlock bypass.
+static void CS_Garage_ApplyApRacerOverride(void)
+{
+	int apRacer = AP_CharSwap_GarageRacer();
+
+	if (apRacer < 0)
+		return; // no character phase on this seed: retail behaviour, untouched
+	if (data.characterIDs[0] == (s16)apRacer)
+		return;
+
+	AP_LogLine("[AP CHARSWAP] garage commit overridden; the seed owns the racer\n");
+
+	data.characterIDs[0] = (s16)apRacer;
+	sdata->advProgress.characterID = (s16)apRacer;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7834-0x800b854c
 void CS_Garage_MenuProc(struct RectMenu *param_1)
 {
@@ -63,6 +89,79 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	// CameraDC, freecam mode
 	gGT->cameraDC[0].cameraMode = 3;
 
+#ifdef CTR_AP
+	// ------------------------------------------------------------------
+	// The adventure-start character select is SKIPPED when the seed owns the
+	// racer (#54/#209).
+	//
+	// THE BYPASS THIS CLOSES. This function is the whole of the vanilla garage
+	// picker (registered as the menuGarage funcPtr, game/233/D233.c:11-23, run
+	// per frame from game/RECTMENU.c:943-954), and it commits the highlighted
+	// racer to data.characterIDs[0] plus sdata->advProgress.characterID at :380
+	// and again at :466. Those are precisely the two fields the AP layer seats
+	// the seed's racer into, and the garage writes them afterwards, so the
+	// player's pick simply won. Observed live on a seed whose starting racer was
+	// Neo Cortex with character unlocks on: picking Dingodile made you Dingodile.
+	// data.characterIDs[0] is then the authority for both the adventure MPK fetch
+	// (game/LOAD/LOAD_Assets.c:128) and the driver birth (VehBirth.c:688-696), so
+	// the wrong racer really is the one that races.
+	//
+	// WHY SKIP RATHER THAN FILTER. The garage's roster is
+	// gGarage.unusedArr_garageChars, the eight vanilla starters (D233.c:29). It
+	// has no row for Penta, Oxide or any unlockable, so a seed that starts you as
+	// one of them cannot be expressed here at all. Constraining the picker to a
+	// single legal tile would also present a choice that is not one.
+	//
+	// HOW THE SKIP WORKS. It performs exactly what the :375-385 confirm branch
+	// performs -- the same two writes, the same SubmitName_RestoreName(0), the
+	// same handoff to the OSK -- with the racer AP resolved instead of the
+	// highlighted one, and returns before any input or drawing. Everything
+	// downstream (name entry, profile slot, hub load) is the untouched retail
+	// path. This runs only with LOAD_IDLE, because MainFrame_RenderFrame.c:54-60
+	// gates RECTMENU_ProcessState on it, so the handoff can never fire mid-load.
+	//
+	// It sits AFTER the freecam camera-mode write above deliberately. That line
+	// runs on every frame of the retail garage, and the on-screen keyboard this
+	// hands off to draws over the garage scene, so skipping it would hand the OSK
+	// a camera state no retail path ever gives it.
+	//
+	// The garage may briefly have loaded the previous racer's model, since the
+	// MPK was queued from data.characterIDs[0] before we ran. That is cosmetic
+	// and lasts a frame: the hub's own load re-queues from the value written
+	// here.
+	{
+		// File-static rather than a gGarage field: gGarage mirrors a retail
+		// overlay-233 data layout and is size-asserted, so the latch stays
+		// outside it.
+		static int apSkipDone = 0;
+
+		int apRacer = AP_CharSwap_GarageRacer();
+
+		if (apRacer >= 0)
+		{
+			// One-shot. ptrDesiredMenu takes a frame or two to become the active
+			// menu, and this funcPtr keeps running meanwhile; the writes are
+			// idempotent but the sound effect and the name restore are not.
+			if (!apSkipDone)
+			{
+				apSkipDone = 1;
+
+				sdata->ptrDesiredMenu = &data.menuSubmitName;
+
+				data.characterIDs[0] = (s16)apRacer;
+				sdata->advProgress.characterID = (s16)apRacer;
+
+				SubmitName_RestoreName(0);
+				OtherFX_Play(1, 1);
+
+				AP_LogLine("[AP CHARSWAP] adventure-start garage select skipped; the seed owns the racer\n");
+			}
+			return;
+		}
+
+		apSkipDone = 0;
+	}
+#endif
 
 	// subtract transition timer by one frame
 	garageFrames = gGarage.numFramesCurr_GarageMove - 1;
@@ -380,6 +479,17 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 					data.characterIDs[0] = gGarage.unusedArr_garageChars[currSelectIndex];
 					sdata->advProgress.characterID = data.characterIDs[0];
 
+#ifdef CTR_AP
+					// Belt and braces on the unlock bypass (#54/#209). The skip
+					// at the top of this function returns before we can get
+					// here whenever the seed owns the racer, so this cannot
+					// currently fire -- but this is one of only two lines in
+					// the tree that can seat a racer the seed did not choose,
+					// and the invariant is worth stating where it is enforced
+					// rather than only where it is arranged.
+					CS_Garage_ApplyApRacerOverride();
+#endif
+
 					SubmitName_RestoreName(0);
 					OtherFX_Play(1, 1);
 				}
@@ -465,6 +575,11 @@ SKIP_CONTROLS:
 
 			data.characterIDs[0] = gGarage.unusedArr_garageChars[currSelectIndex];
 			sdata->advProgress.characterID = data.characterIDs[0];
+
+#ifdef CTR_AP
+			// The second of the two commit sites; same reasoning as :380.
+			CS_Garage_ApplyApRacerOverride();
+#endif
 
 			SubmitName_RestoreName(0);
 			OtherFX_Play(1, 1);

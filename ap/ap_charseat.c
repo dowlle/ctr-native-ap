@@ -46,6 +46,47 @@ int AP_SeatIdle(const struct AP_SeatState *s, unsigned rev)
 	return s->seated && s->seatedRev == rev;
 }
 
+int AP_SeatResolve(const struct AP_SeatInput *in)
+{
+	int wanted;
+
+	if (in == 0)
+		return AP_SEAT_NONE;
+
+	// The same precedence AP_SeatStep applies below: a STORED racer wins when
+	// there is one and it is eligible, and the seed's starting racer is the
+	// answer otherwise -- including while a stored racer is merely deferred,
+	// which is exactly the stand-in AP_SEAT_ACT_DEFER seats. The deferral in
+	// AP_SeatStep still owns restoring a stored racer later, on a hub frame,
+	// once its unlock arrives.
+	wanted = in->known ? in->stored : in->startingChar;
+	if (!ap_seat_inRoster(wanted) || !ap_seat_unlocked(in->unlockedMask, wanted))
+		wanted = in->startingChar;
+
+	// ONE DELIBERATE DIVERGENCE FROM AP_SeatStep, and it is the direction that
+	// matters. The starting racer is NOT re-tested against the unlock mask.
+	//
+	// AP_SeatStep tests it, and defers with no stand-in when it reads locked,
+	// because it is deciding whether to CHANGE a racer the player may already be
+	// driving and a wrong answer there is disruptive. This function is answering
+	// a different question -- what may be committed at adventure start -- and its
+	// caller reads a negative as "let the retail garage run", which hands the
+	// player a free pick of the eight vanilla starters. Declining here would
+	// therefore reopen the very unlock bypass the gate exists to close, and it
+	// would do so in a window that occurs on every connect.
+	//
+	// It is also the only input here that does not depend on the item replay:
+	// startingChar comes from slot_data, which is frozen and complete the moment
+	// the seed is parsed, while unlockedMask is built from received items that
+	// drain 32 a frame. Gating the one on the other is inferring settled state
+	// from an in-flight value, which is the failure this feature has already
+	// recorded twice.
+	if (!ap_seat_inRoster(wanted))
+		return AP_SEAT_NONE;
+
+	return wanted;
+}
+
 void AP_SeatStep(struct AP_SeatState *s, const struct AP_SeatInput *in,
                  struct AP_SeatAction *out)
 {

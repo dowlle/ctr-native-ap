@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ap_charname.h" // portrait-fallback name choice, shared with the harness
 #include "ap_charseat.h" // deterministic stored-racer seat state machine
 #include "ap_charswap.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
@@ -65,6 +66,20 @@ int Platform_InputRawKeyDown(int scancode); // native_input.c (CTR_AP only)
 // The 16th tile is new: retail's grid is 15 wide because Oxide has no arcade
 // select entry. He drops into the free slot on the bottom row at x=0x160,
 // which needs no layout redesign -- the row already has 0xA0/0xE0/0x120.
+//
+// THE ROWS ARE RAISED FROM RETAIL'S 0x60 / 0x87 / 0xAE.
+// The draw environment is 512 x 216, not 512 x 240: MainMain.c:534-537 calls
+// SetDefDrawEnv / SetDefDispEnv with h = 0xd8 = 216. Retail's grid ends at
+// 0xAE + 0x21 = 207, which leaves nine lines under it -- so the character panel
+// this picker owes the player had nowhere to go, and the first cut put it at
+// y = 0xD8, exactly the bottom edge, where every line of it fell outside the
+// framebuffer and nothing drew at all. MM_Characters can afford the low grid
+// because its own stat panel lives inside the per-player 3D windows, which this
+// picker does not have.
+//
+// So the grid moves up to 22 / 58 / 94 (pitch 36, tiles 0x21 = 33 tall, three
+// lines of gap) and ends at 127, leaving 128..216 for the panel. Retail's X
+// columns are untouched; only Y moves.
 // ---------------------------------------------------------------------------
 struct AP_CharTile
 {
@@ -76,23 +91,27 @@ struct AP_CharTile
 
 #define AP_CS_TILES 16
 
+#define AP_CS_ROW0 22
+#define AP_CS_ROW1 58
+#define AP_CS_ROW2 94
+
 static const struct AP_CharTile ap_cs_tiles[AP_CS_TILES] = {
-    /*  0 Crash      */ {0x080, 0x60, {0, 4, 8, 1}, CRASH_BANDICOOT},
-    /*  1 Cortex     */ {0x0C0, 0x60, {1, 5, 0, 2}, NEO_CORTEX},
-    /*  2 Tiny       */ {0x100, 0x60, {2, 6, 1, 3}, TINY_TIGER},
-    /*  3 Coco       */ {0x140, 0x60, {3, 7, 2, 9}, COCO_BANDICOOT},
-    /*  4 N. Gin     */ {0x080, 0x87, {0, 12, 10, 5}, N_GIN},
-    /*  5 Dingodile  */ {0x0C0, 0x87, {1, 13, 4, 6}, DINGODILE},
-    /*  6 Polar      */ {0x100, 0x87, {2, 14, 5, 7}, POLAR},
-    /*  7 Pura       */ {0x140, 0x87, {3, 14, 6, 11}, PURA},
-    /*  8 N. Tropy   */ {0x040, 0x60, {8, 10, 8, 0}, N_TROPY},
-    /*  9 Pinstripe  */ {0x180, 0x60, {9, 11, 3, 9}, PINSTRIPE},
-    /* 10 Ripper Roo */ {0x040, 0x87, {8, 10, 10, 4}, RIPPER_ROO},
-    /* 11 Papu Papu  */ {0x180, 0x87, {9, 11, 7, 11}, PAPU_PAPU},
-    /* 12 Komodo Joe */ {0x0A0, 0xAE, {4, 12, 12, 13}, KOMODO_JOE},
-    /* 13 Penta      */ {0x0E0, 0xAE, {5, 13, 12, 14}, PENTA_PENGUIN},
-    /* 14 Fake Crash */ {0x120, 0xAE, {6, 14, 13, 15}, FAKE_CRASH},
-    /* 15 N. Oxide   */ {0x160, 0xAE, {7, 15, 14, 15}, NITROS_OXIDE},
+    /*  0 Crash      */ {0x080, AP_CS_ROW0, {0, 4, 8, 1}, CRASH_BANDICOOT},
+    /*  1 Cortex     */ {0x0C0, AP_CS_ROW0, {1, 5, 0, 2}, NEO_CORTEX},
+    /*  2 Tiny       */ {0x100, AP_CS_ROW0, {2, 6, 1, 3}, TINY_TIGER},
+    /*  3 Coco       */ {0x140, AP_CS_ROW0, {3, 7, 2, 9}, COCO_BANDICOOT},
+    /*  4 N. Gin     */ {0x080, AP_CS_ROW1, {0, 12, 10, 5}, N_GIN},
+    /*  5 Dingodile  */ {0x0C0, AP_CS_ROW1, {1, 13, 4, 6}, DINGODILE},
+    /*  6 Polar      */ {0x100, AP_CS_ROW1, {2, 14, 5, 7}, POLAR},
+    /*  7 Pura       */ {0x140, AP_CS_ROW1, {3, 14, 6, 11}, PURA},
+    /*  8 N. Tropy   */ {0x040, AP_CS_ROW0, {8, 10, 8, 0}, N_TROPY},
+    /*  9 Pinstripe  */ {0x180, AP_CS_ROW0, {9, 11, 3, 9}, PINSTRIPE},
+    /* 10 Ripper Roo */ {0x040, AP_CS_ROW1, {8, 10, 10, 4}, RIPPER_ROO},
+    /* 11 Papu Papu  */ {0x180, AP_CS_ROW1, {9, 11, 7, 11}, PAPU_PAPU},
+    /* 12 Komodo Joe */ {0x0A0, AP_CS_ROW2, {4, 12, 12, 13}, KOMODO_JOE},
+    /* 13 Penta      */ {0x0E0, AP_CS_ROW2, {5, 13, 12, 14}, PENTA_PENGUIN},
+    /* 14 Fake Crash */ {0x120, AP_CS_ROW2, {6, 14, 13, 15}, FAKE_CRASH},
+    /* 15 N. Oxide   */ {0x160, AP_CS_ROW2, {7, 15, 14, 15}, NITROS_OXIDE},
 };
 
 // Navigation deliberately does NOT skip locked tiles, unlike
@@ -893,10 +912,55 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	OtherFX_Play(0, 1);
 }
 
+// Where the picker's navigation input comes from, and why NOT buttonTapPerPlayer.
+//
+// The first cut read sdata->buttonTapPerPlayer[0]. That array is dead in the
+// adventure hub. Its ONLY writer is RECTMENU_CollectInput (game/RECTMENU.c:735),
+// and the only call to it is guarded:
+//
+//     if ((sdata->ptrActiveMenu != 0) || ((gGT->gameMode1 & END_OF_RACE) != 0))
+//         RECTMENU_CollectInput();                 // game/MAIN/MainFrame_RenderFrame.c:49-52
+//
+// Standing in the hub there is no active RectMenu and the race is not over, so
+// neither disjunct holds and the array is never refreshed. It therefore holds
+// whatever the last menu left -- and this function used to zero it on the way
+// out, so after one frame it was permanently 0. Every tap test failed, which is
+// exactly the observed symptom: the grid drew, the kart stayed frozen, and no
+// input of ANY kind moved the cursor. Controller and keyboard both feed the same
+// GamepadBuffer, so a dead read explains both being dead at once where a
+// device-mapping fault would not.
+//
+// The pad buffer itself is written every frame with no menu gating:
+// GAMEPAD_ProcessTapRelease computes buttonsTapped as
+// `~buttonsHeldPrevFrame & buttonsHeldCurrFrame` (game/GAMEPAD.c:695) and is
+// reached unconditionally through GAMEPAD_ProcessAnyoneVars (game/GAMEPAD.c:925,
+// called from game/MAIN/MainMain.c:345). Reading it directly is the established
+// idiom for code that runs outside a menu -- game/233/CS_Camera.c:303,
+// game/UI/UI_RenderFrame.c:81, game/230/MM_ConfigMenu.c:342 and
+// game/232/AH_MaskHint.c:433 all do exactly this.
+//
+// ONE FRAME OF LATENCY, DELIBERATELY ACCEPTED. AP_OnFrame runs at
+// MainMain.c:323, ahead of the GAMEPAD_ProcessAnyoneVars call at :345, so at
+// frame N we read the word computed during frame N-1. Each frame's value is
+// still read exactly once, so every tap is seen exactly once and none is lost or
+// doubled; the cursor simply moves one frame after the press.
+//
+// We do NOT clear the bits we consume. The pad word is recomputed wholesale at
+// :345, later in this same frame, so a clear here would be overwritten before
+// any other consumer looked at it -- suppression is not achievable from this
+// slot. The picker's hold on the kart comes from VEH_FREEZE_DOOR instead, which
+// VehPhysProc_Driving_PhysLinear honours (game/Vehicle/VehPhysProc.c:407-411).
+// Start still reaches the pause menu while the picker is open; integrating the
+// two surfaces is issue #238, not this fix.
 static void ap_cs_input(struct GameTracker *gGT)
 {
-	unsigned int tap = sdata->buttonTapPerPlayer[0];
+	unsigned int tap;
 	int characterID;
+
+	if (sdata->gGamepads == NULL || sdata->gGamepads->numGamepadsConnected <= 0)
+		return;
+
+	tap = sdata->gGamepads->gamepad[0].buttonsTapped;
 
 	if (tap == 0)
 		return;
@@ -916,7 +980,6 @@ static void ap_cs_input(struct GameTracker *gGT)
 		else if ((tap & (BTN_SQUARE_one | BTN_TRIANGLE)) != 0)
 			ap_cs_editFocus = 0;
 
-		sdata->buttonTapPerPlayer[0] = 0;
 		return;
 	}
 
@@ -962,8 +1025,6 @@ static void ap_cs_input(struct GameTracker *gGT)
 		ap_cs_setFreeze(gGT, 0);
 		OtherFX_Play(2, 1);
 	}
-
-	sdata->buttonTapPerPlayer[0] = 0;
 }
 
 // Does this seed carry the character phase at all?
@@ -1078,6 +1139,54 @@ static void ap_cs_seatApply(int characterID, const char *source)
 
 	data.characterIDs[0] = (short)characterID;
 	sdata->advProgress.characterID = (s16)characterID;
+}
+
+// Which racer the adventure-start Garage must commit, or -1 when it should run
+// exactly as it always has (#54/#209).
+//
+// WHY THE GARAGE NEEDS GATING AT ALL. Starting a new Adventure loads
+// ADVENTURE_GARAGE (game/230/MM_Title.c:138, the only such request in the tree)
+// and the garage's own picker commits whatever the player highlighted, writing
+// data.characterIDs[0] and sdata->advProgress.characterID at
+// game/233/CS_Garage.c:380-381 and again at :466-467. Those are the same two
+// fields this file seats the seed's racer into, and the garage writes them
+// LATER, so on a seed with character_unlocks on, a player could pick any of the
+// eight vanilla starters and actually become them. That is an unlock-enforcement
+// bypass straight through the vanilla entry path, and it was observed live: a
+// seed whose starting racer was Neo Cortex loaded in as Dingodile.
+//
+// The answer is the seat machine's, not a second opinion: AP_SeatResolve applies
+// the same precedence AP_SeatStep does, so a stored racer from a previous
+// session wins over the seed's starting racer exactly as it does everywhere
+// else, and a stored racer whose unlock has not arrived falls back to the
+// starter while the deferral keeps its claim.
+//
+// -1 for a seed that does not carry the character phase, so a pre-0.2.0 seed and
+// an offline game keep the retail garage untouched. Note this is FeatureLive
+// only, deliberately not AP_DevKeysEnabled: with no seed connected there is no
+// authoritative racer to seat, so there is nothing to enforce.
+int AP_CharSwap_GarageRacer(void)
+{
+	struct AP_SeatInput in;
+	int                 i;
+
+	if (!AP_CharSwap_FeatureLive())
+		return -1;
+
+	in.rev          = 0;
+	in.stored       = 0;
+	in.known        = ap_net_character_known(&in.stored);
+	in.startingChar = ctr_cfg.starting_character;
+	in.busy         = 0;
+	in.hubReady     = 0;
+	in.unlockedMask = 0u;
+	for (i = 0; i < AP_SEAT_ROSTER; i++)
+	{
+		if (AP_CharacterUnlocked(i))
+			in.unlockedMask |= (1u << i);
+	}
+
+	return AP_SeatResolve(&in);
 }
 
 void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT)
@@ -1262,6 +1371,52 @@ static const char *ap_cs_rankName(int statIndex, int value)
 	return "HIGH";
 }
 
+// Pick the label for a tile whose portrait is not resident.
+//
+// Pure, and deliberately separated from the table lookups so the harness can
+// drive it: the whole point of the fallback is that it draws SOMETHING, and the
+// case that matters is the one where the preferred string is itself missing.
+// Split out into ap/ap_charname.h so tools/test-character-fallback.cpp compiles
+// the same code production does rather than a copy of it.
+//
+// One line per character, ever. The draw runs every frame while the picker is
+// open, so an unconditional log would be thousands of lines a minute; the first
+// cut's comment promised a log and emitted none at all, which is the reason a
+// real residency failure would have been invisible in the logs.
+static unsigned ap_cs_portraitReported = 0;
+
+static void ap_cs_noteMissingPortrait(int characterID, int iconID)
+{
+	char msg[160];
+
+	if ((unsigned)characterID >= AP_CS_TILES)
+		return;
+	if ((ap_cs_portraitReported & (1u << characterID)) != 0)
+		return;
+	ap_cs_portraitReported |= (1u << characterID);
+
+	snprintf(msg, sizeof msg,
+	         "[AP CHARSWAP] portrait for racer %d (iconID %d) is not resident in this "
+	         "hub's icon table; drawing the name instead\n",
+	         characterID, iconID);
+	AP_LogLine(msg);
+}
+
+static const char *ap_cs_shortName(int characterID)
+{
+	const char *localised = NULL;
+
+	if ((unsigned)characterID < AP_CS_TILES)
+	{
+		int lng = data.MetaDataCharacters[characterID].name_LNG_short;
+		if (lng >= 0)
+			localised = sdata->lngStrings[lng];
+		return AP_CharName_Pick(localised, data.MetaDataCharacters[characterID].name_Debug);
+	}
+
+	return AP_CharName_Pick(NULL, NULL);
+}
+
 static const char *ap_cs_ownershipLabel(void)
 {
 	if (ap_cs_progMode == AP_CS_MODE_GLOBAL)
@@ -1305,11 +1460,26 @@ void AP_CharPicker_Draw(void)
 		RECTMENU_DrawInnerRect(&r, 0, ot);
 	}
 
-	// Cursor highlight.
-	r.x = ap_cs_tiles[ap_cs_cursor].posX + 3;
-	r.y = ap_cs_tiles[ap_cs_cursor].posY + 2;
-	r.w = AP_CS_TILE_W - 6;
-	r.h = AP_CS_TILE_H - 4;
+	// Cursor highlight: an OUTLINE on the tile border, never a filled box.
+	//
+	// The first cut drew CTR_Box_DrawSolidBox over the cursor tile, and that box
+	// is an opaque PolyF4 (game/CTR/CTR_Box.c:117-143) submitted to the UI
+	// ordering table, while the portraits go to gGT->pushBuffer_UI.ptrOT further
+	// down. The two tables are not composited in add order, so the fill landed on
+	// top of the portrait and the highlighted tile rendered as a flat blue square
+	// with no art and no name. It read as a missing portrait; it was the cursor
+	// painting over a portrait that was resident all along, which is also why the
+	// short-name fallback below never appeared -- its icon was never NULL.
+	//
+	// MM_Characters has the same problem to solve and solves it with an outline:
+	// RECTMENU_DrawOuterRect_HighLevel in D230.characterSelect_Outline over the
+	// tile bounds (game/230/MM_Characters.c:1154). Following that idiom puts the
+	// highlight on the border, where it cannot occlude anything, and matches how
+	// the game's own picker looks.
+	r.x = ap_cs_tiles[ap_cs_cursor].posX;
+	r.y = ap_cs_tiles[ap_cs_cursor].posY;
+	r.w = AP_CS_TILE_W;
+	r.h = AP_CS_TILE_H;
 	// Field-by-field rather than through MakeColorCode. The macro is a compound
 	// literal into ColorCode's anonymous struct, and ASSIGNING one (as opposed
 	// to initialising a fresh variable with it, which is how every other caller
@@ -1317,11 +1487,11 @@ void AP_CharPicker_Draw(void)
 	// toolchain. This build holds a zero-new-warning gate, and quietly adding
 	// the project's only such warning to buy one line is not a trade worth
 	// making.
-	col.r = 0x30;
-	col.g = 0x50;
-	col.b = 0xa0;
+	col.r = 0xf0;
+	col.g = 0xd0;
+	col.b = 0x40;
 	col.code.code = 0;
-	CTR_Box_DrawSolidBox(&r, col, ot);
+	RECTMENU_DrawOuterRect_HighLevel(&r, col, 0, ot);
 
 	for (i = 0; i < AP_CS_TILES; i++)
 	{
@@ -1349,51 +1519,94 @@ void AP_CharPicker_Draw(void)
 		{
 			// The hub's icon table is populated from the hub LEV plus the
 			// resident adventure MPK (DecalGlobal_Store, game/DecalGlobal.c:19),
-			// so a portrait may simply not be resident here. Fall back to the
-			// short name and SAY SO in the log rather than drawing nothing.
-			DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[characterID].name_LNG_short],
+			// so a portrait may simply not be resident here. Fall back to a name
+			// and SAY SO in the log rather than drawing nothing.
+			//
+			// Two hardenings over the first cut, which claimed to log and did not,
+			// and which would itself have drawn nothing if lngStrings were the
+			// thing that was missing. ap_cs_shortName resolves the localised
+			// string first and falls back to MetaDataCHAR::name_Debug, a plain
+			// char* in the EXE (include/regionsEXE.h:311) that is resident
+			// whenever the character table is, so SOMETHING always draws.
+			DecalFont_DrawLine((char *)ap_cs_shortName(characterID),
 			                   ap_cs_tiles[i].posX + (AP_CS_TILE_W / 2), ap_cs_tiles[i].posY + 8,
 			                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+			ap_cs_noteMissingPortrait(characterID, iconID);
 		}
 	}
 
-	// Title.
-	DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_CHARACTER], 0x100, 0x40, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+	// Title, raised with the grid. FONT_BIG is 17 tall
+	// (data.font_charPixHeight, game/zGlobal_DATA.c:2586-2592), so this ends at
+	// 19 and clears the first tile row at 22.
+	DecalFont_DrawLine(sdata->lngStrings[LNG_SELECT_CHARACTER], 0x100, 2, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
+	// ------------------------------------------------------------------
 	// Highlighted-character panel.
-	panelY = 0xD8;
+	//
+	// The stats are the point of it: the ruling is that switching racer has to
+	// be an informed choice, so the numbers the resolver would ACTUALLY apply to
+	// this character are shown, whichever package owns them. ap_cs_effectiveValue
+	// is that resolver, and it already implements the ruled precedence
+	// (progressive when active, else editable when active, else the vanilla class
+	// value, with Penta's PAL/NTSC case folded in), so the panel reads it rather
+	// than restating the rule -- there is one owner of the number.
+	//
+	// The whole panel must fit between the bottom tile row (ends at 127) and the
+	// draw environment's 216-line floor (MainMain.c:534-537). Budget, all
+	// FONT_BIG 17 / FONT_SMALL 8:
+	//     130  name          (BIG,   ends 147)
+	//     150  ownership     (SMALL, ends 158)
+	//     162..192 stat rows (SMALL, four rows of 10)
+	//     198  controls      (SMALL, ends 206)
+	// The first cut started this block at 0xD8 = 216, which IS the floor, so
+	// every line of it fell outside the framebuffer and the player saw no name,
+	// no ownership label and no stats at all.
+	// ------------------------------------------------------------------
+	panelY = 130;
 	DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[selectedChar].name_LNG_long],
 	                   0x100, panelY, FONT_BIG, (JUSTIFY_CENTER | WHITE));
 
-	snprintf(line, sizeof line, "%s%s", ap_cs_ownershipLabel(),
-	         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)");
-	DecalFont_DrawLine(line, 0x100, panelY + 0x10, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
-
-	if (!ap_cs_isUnlocked(selectedChar))
-	{
-		DecalFont_DrawLine("LOCKED", 0x100, panelY + 0x1e, FONT_SMALL, (JUSTIFY_CENTER | RED));
-	}
+	// Ownership, editability and LOCKED share one line. They used to take two,
+	// which no longer fits, and LOCKED belongs beside the ownership label anyway:
+	// both answer "what am I allowed to do with this racer".
+	snprintf(line, sizeof line, "%s%s%s", ap_cs_ownershipLabel(),
+	         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
+	         ap_cs_isUnlocked(selectedChar) ? "" : "   LOCKED");
+	DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
+	                   (JUSTIFY_CENTER | (ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
 
 	for (i = 0; i < AP_CS_STATS; i++)
 	{
 		int want = ap_cs_effectiveValue(i, selectedChar);
-		int have = ap_cs_liveValue(live, i);
 		const char *marker = (ap_cs_editFocus && (i == ap_cs_statRow)) ? ">" : " ";
 
-		snprintf(line, sizeof line, "%s%-7s %6d %-9s  live %6d", marker,
-		         ap_cs_stats[i].label, want, ap_cs_rankName(i, want), have);
-		DecalFont_DrawLine(line, 0x40, panelY + 0x2c + i * 10, FONT_SMALL,
+		// The "live" column -- what the running driver is actually carrying right
+		// now -- is the spike's swap proof: for the racer you are standing as it
+		// must equal the promised value, for any other portrait it will not, and
+		// after a confirmed swap it must flip. That is a diagnostic, not player
+		// information, and at FONT_SMALL's 13-pixel cell
+		// (data.font_charPixWidth, zGlobal_DATA.c:2577-2583) carrying it costs
+		// more than a third of the 512-pixel line. It stays, behind dev keys,
+		// where the manual matrix can still use it.
+		if (AP_DevKeysEnabled())
+		{
+			snprintf(line, sizeof line, "%s%-7s %6d %-9s live %6d", marker,
+			         ap_cs_stats[i].label, want, ap_cs_rankName(i, want),
+			         ap_cs_liveValue(live, i));
+		}
+		else
+		{
+			snprintf(line, sizeof line, "%s%-7s %6d %-9s", marker,
+			         ap_cs_stats[i].label, want, ap_cs_rankName(i, want));
+		}
+
+		DecalFont_DrawLine(line, 0x70, panelY + 32 + i * 10, FONT_SMALL,
 		                   (i == ap_cs_statRow && ap_cs_editFocus) ? WHITE : ORANGE);
 	}
 
-	// "live" is the value the running driver is actually carrying. For the
-	// character you are standing as, live must equal the promised value; for
-	// any other portrait it will not, and that difference is the whole point of
-	// the proof: after a swap it must flip.
-	snprintf(line, sizeof line, "X CONFIRM   %s   TRIANGLE CLOSE   [np9/np0/np.]",
+	snprintf(line, sizeof line, "X CONFIRM   %s   TRIANGLE CLOSE",
 	         ap_cs_editorAvailable() ? "SQUARE EDIT" : "----");
-	DecalFont_DrawLine(line, 0x100, panelY + 0x2c + AP_CS_STATS * 10 + 4, FONT_SMALL,
-	                   (JUSTIFY_CENTER | ORANGE));
+	DecalFont_DrawLine(line, 0x100, panelY + 68, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 }
 
 #endif // CTR_AP

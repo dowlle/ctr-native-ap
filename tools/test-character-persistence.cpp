@@ -54,6 +54,7 @@
 extern "C" {
 #include "../ap/ap_charseat.h"
 }
+#include "../ap/ap_charname.h"
 #include "../ap/ap_editstat_bounds.h"
 
 static int g_failures = 0;
@@ -607,6 +608,192 @@ static void test_wrong_length_is_rejected()
 	check_eq(g_edit_value[0], 5, "and the stored package survives each one");
 }
 
+// ---------------------------------------------------------------------------
+// PART 4 -- the adventure-start garage gate (2026-08-12 runtime fix).
+//
+// The vanilla garage picker commits the highlighted racer to
+// data.characterIDs[0] and sdata->advProgress.characterID
+// (game/233/CS_Garage.c:380-381 and :466-467), AFTER the AP layer has seated the
+// seed's racer into those same two fields. Observed live: a seed whose starting
+// racer was Neo Cortex, with character unlocks on, loaded in as the Dingodile
+// the player picked in the garage. AP_CharSwap_GarageRacer now decides what the
+// garage may commit, and AP_SeatResolve is the whole of that decision.
+//
+// What matters here is that it agrees with AP_SeatStep. Two resolvers with the
+// same job and different answers is the Lessons Learned #12 shape, so the last
+// test drives both over the same inputs and pins them together rather than
+// trusting the comment that says they match.
+// ---------------------------------------------------------------------------
+
+static AP_SeatInput resolveInput(int startingChar, unsigned unlockedMask,
+                                 int known = 0, int stored = 0)
+{
+	AP_SeatInput in;
+	std::memset(&in, 0, sizeof in);
+	in.startingChar = startingChar;
+	in.unlockedMask = unlockedMask;
+	in.known        = known;
+	in.stored       = stored;
+	return in;
+}
+
+static void test_the_garage_gets_the_seeds_starter_when_nothing_is_stored()
+{
+	AP_SeatInput in = resolveInput(/*starter*/ 5, /*unlocked*/ (1u << 5));
+	check_eq(AP_SeatResolve(&in), 5, "with no stored racer the garage commits the seed's starter");
+}
+
+static void test_the_garage_prefers_a_stored_racer()
+{
+	// The racer the player swapped to in a previous session outranks the YAML
+	// starter, exactly as it does on a normal reconnect.
+	AP_SeatInput in = resolveInput(5, (1u << 5) | (1u << 12), /*known*/ 1, /*stored*/ 12);
+	check_eq(AP_SeatResolve(&in), 12, "a stored, unlocked racer wins over the seed's starter");
+}
+
+static void test_the_garage_falls_back_when_the_stored_racer_is_not_unlocked_yet()
+{
+	// Mid-replay: the stored racer's unlock item has not arrived. The garage
+	// commits the starter so play is never blocked; the deferral in AP_SeatStep
+	// still owns restoring the stored racer when its receipt lands.
+	AP_SeatInput in = resolveInput(5, (1u << 5), /*known*/ 1, /*stored*/ 12);
+	check_eq(AP_SeatResolve(&in), 5, "a not-yet-unlocked stored racer falls back to the starter");
+}
+
+static void test_the_garage_rejects_an_out_of_roster_stored_racer()
+{
+	AP_SeatInput hi = resolveInput(5, (1u << 5), 1, AP_SEAT_ROSTER);
+	AP_SeatInput lo = resolveInput(5, (1u << 5), 1, -3);
+	check_eq(AP_SeatResolve(&hi), 5, "a stored id past the roster falls back to the starter");
+	check_eq(AP_SeatResolve(&lo), 5, "a negative stored id falls back to the starter");
+}
+
+static void test_the_garage_refuses_only_when_the_starter_is_out_of_roster()
+{
+	// The ONLY case with no answer. A negative is read by AP_CharSwap_GarageRacer
+	// as "let the retail garage run", so every other case has to produce a racer
+	// or the gate lapses.
+	AP_SeatInput bad = resolveInput(-1, 0u);
+	check_eq(AP_SeatResolve(&bad), AP_SEAT_NONE, "an out-of-roster starter yields no answer");
+	check_eq(AP_SeatResolve(NULL), AP_SEAT_NONE, "a null input yields no answer");
+}
+
+static void test_the_starter_is_committed_even_before_its_unlock_is_replayed()
+{
+	// The window this covers happens on EVERY connect: unlockedMask is built from
+	// received items that drain 32 a frame, so for the first frames of a session
+	// even the seed's own starter reads locked. AP_SeatStep is conservative there
+	// and defers; the garage gate must not be, because declining would drop the
+	// player into the retail picker with a free choice of all eight starters.
+	//
+	// startingChar comes from slot_data, which is frozen and complete as soon as
+	// the seed is parsed, so it is knowable in that window while the mask is not.
+	AP_SeatInput nothingUnlockedYet = resolveInput(5, 0u);
+	check_eq(AP_SeatResolve(&nothingUnlockedYet), 5,
+	         "the seed's starter is committed even while the unlock mask is still empty");
+
+	AP_SeatInput storedTooEarly = resolveInput(5, 0u, /*known*/ 1, /*stored*/ 12);
+	check_eq(AP_SeatResolve(&storedTooEarly), 5,
+	         "and an ineligible stored racer still falls back to it, not to no-answer");
+}
+
+static void test_the_two_resolvers_never_disagree()
+{
+	// Sweep the inputs that decide WHICH racer (the ones both functions read) and
+	// require that a fresh AP_SeatStep, on a frame where it is free to act, seats
+	// exactly what AP_SeatResolve says. Deferral is the one legitimate divergence
+	// and is asserted as such: when the step defers with a stand-in, resolve must
+	// name that same stand-in.
+	for (int starter = 0; starter < 4; starter++)
+	{
+		for (int stored = 0; stored < 4; stored++)
+		{
+			for (int known = 0; known <= 1; known++)
+			{
+				for (unsigned mask = 0; mask < 16u; mask++)
+				{
+					AP_SeatInput in = resolveInput(starter, mask, known, stored);
+					in.hubReady     = 1;
+					in.rev          = 1;
+
+					AP_SeatState  s;
+					AP_SeatAction act;
+					AP_SeatReset(&s);
+					AP_SeatStep(&s, &in, &act);
+
+					int resolved = AP_SeatResolve(&in);
+
+					if (act.action == AP_SEAT_ACT_SEAT)
+					{
+						check_eq(resolved, act.character, "resolve agrees with a plain seat");
+					}
+					else if (act.action == AP_SEAT_ACT_DEFER && act.character != AP_SEAT_NONE)
+					{
+						check_eq(resolved, act.character, "resolve agrees with a deferral's stand-in");
+					}
+					else
+					{
+						// The one deliberate divergence, pinned rather than
+						// tolerated: the step machine has declined to seat
+						// anything because the starter is not unlocked YET, and
+						// the garage gate commits it regardless. Assert both that
+						// this is the only shape of disagreement and that the
+						// disagreement is exactly the starter.
+						check(act.action == AP_SEAT_ACT_DEFER,
+						      "the only case the step machine seats nothing is a deferral");
+						check(!(mask & (1u << starter)),
+						      "and it happens only while the starter reads locked");
+						check_eq(resolved, starter,
+						         "where the garage gate commits the starter anyway");
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PART 5 -- the picker's portrait fallback.
+//
+// gGT->ptrIcons is rebuilt per level from the level's icon table plus the
+// resident MPK (game/DecalGlobal.c:19-49), so whether every character portrait
+// is resident in a given hub is a runtime data fact. When one is not, the tile
+// must draw a name instead of nothing.
+//
+// The live 2026-08-12 session made this worth pinning. A tile DID render blank
+// and the fallback was blamed; it was not the cause -- the cursor highlight was
+// a filled box painted over a portrait that was resident all along -- but the
+// fallback was also genuinely unable to help, because it handed
+// DecalFont_DrawLine whatever sdata->lngStrings held, including NULL, and
+// DecalFont_DrawLine dereferences it (game/DecalFont.c:125).
+// ---------------------------------------------------------------------------
+
+static void test_the_fallback_prefers_the_localised_name()
+{
+	check(std::strcmp(AP_CharName_Pick("Dingodile", "dingo"), "Dingodile") == 0,
+	      "the localised name is used when it is there");
+}
+
+static void test_the_fallback_survives_a_missing_localised_name()
+{
+	check(std::strcmp(AP_CharName_Pick(NULL, "dingo"), "dingo") == 0,
+	      "a NULL localised name falls through to the EXE's debug name");
+	check(std::strcmp(AP_CharName_Pick("", "dingo"), "dingo") == 0,
+	      "an EMPTY localised name falls through too, not just a NULL one");
+}
+
+static void test_the_fallback_always_returns_something_drawable()
+{
+	// The contract that matters: never NULL, never empty. A tile that draws
+	// nothing is indistinguishable from a tile that is not there.
+	const char *both_missing = AP_CharName_Pick(NULL, NULL);
+	const char *both_empty   = AP_CharName_Pick("", "");
+	check(both_missing != NULL && both_missing[0] != '\0',
+	      "with neither name available the fallback still returns a drawable string");
+	check(both_empty != NULL && both_empty[0] != '\0',
+	      "two empty strings still return a drawable string");
+}
+
 int main()
 {
 	test_default_first_connect();
@@ -633,8 +820,20 @@ int main()
 	test_non_integers_are_rejected();
 	test_wrong_length_is_rejected();
 
+	test_the_garage_gets_the_seeds_starter_when_nothing_is_stored();
+	test_the_garage_prefers_a_stored_racer();
+	test_the_garage_falls_back_when_the_stored_racer_is_not_unlocked_yet();
+	test_the_garage_rejects_an_out_of_roster_stored_racer();
+	test_the_garage_refuses_only_when_the_starter_is_out_of_roster();
+	test_the_starter_is_committed_even_before_its_unlock_is_replayed();
+	test_the_two_resolvers_never_disagree();
+
+	test_the_fallback_prefers_the_localised_name();
+	test_the_fallback_survives_a_missing_localised_name();
+	test_the_fallback_always_returns_something_drawable();
+
 	if (g_failures == 0)
-		std::printf("character persistence (seat orderings + stored-value bound): all checks passed\n");
+		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback): all checks passed\n");
 	else
 		std::printf("character persistence: %d FAILURE(S)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;
