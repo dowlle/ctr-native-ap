@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "ap_charname.h" // portrait-fallback name choice, shared with the harness
-#include "ap_charseat.h" // deterministic stored-racer seat state machine
+#include "ap_charfreeze.h" // the picker's hold on the kart, shared with the harness
+#include "ap_charname.h"   // portrait-fallback name choice, shared with the harness
+#include "ap_charseat.h"   // deterministic stored-racer seat state machine
 #include "ap_charswap.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
 
@@ -626,7 +627,9 @@ static int ap_cs_open = 0;
 static int ap_cs_cursor = 0;   // tile index
 static int ap_cs_editFocus = 0;// editing the stat panel rather than the grid
 static int ap_cs_statRow = 0;  // highlighted stat row while editing
-static int ap_cs_frozeDriver = 0;
+// The picker's hold on the kart. Both halves of it (the flag and the driver's
+// func table) and the frame-by-frame decision live in ap/ap_charfreeze.h.
+static struct AP_CharFreezeState ap_cs_freeze = {0};
 
 static int ap_cs_pendingSwap = 0;  // reload requested this frame
 static int ap_cs_restorePos = 0;   // restore hub position after the reload
@@ -638,6 +641,17 @@ static int ap_cs_fromCharacter = -1;
 static int ap_cs_keyPrev[3];
 
 int AP_CharSwap_PickerOpen(void)
+{
+	return ap_cs_open;
+}
+
+// Defined in terms of the picker being open rather than repeating the test at
+// each draw site, so the HUD sites cannot answer this differently from one
+// another. It is a separate name because it is a separate question: "the picker
+// owns input" is what the kart freeze and the Start refusal ask, "the hub HUD
+// stands down" is what the draw sites ask, and only the second should move if
+// the suppression policy ever narrows to particular elements.
+int AP_CharSwap_HubHudHidden(void)
 {
 	return ap_cs_open;
 }
@@ -732,18 +746,74 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 	return 1;
 }
 
+// The engine half of the hold, in both directions. See ap/ap_charfreeze.h for
+// why the flag alone is not a freeze: it stops driving INPUT and nothing else,
+// so a kart carrying speed into the picker keeps that speed and keeps moving.
+// The freeze table is the engine's own answer to "a modal owns the screen", and
+// the pairing below is exactly the one AH_MaskHint and AH_Door use.
+static void ap_cs_applyFreeze(struct GameTracker *gGT, int on)
+{
+	struct Driver *d = gGT->drivers[0];
+
+	if (on)
+	{
+		gGT->gameMode2 |= VEH_FREEZE_DOOR;
+
+		// Idempotent: FreezeEndEvent_Init returns immediately once kartState is
+		// KS_FREEZE (game/Vehicle/VehPhysProc.c:1268-1271), so re-asserting this
+		// every frame costs one compare and one store.
+		if (d != NULL)
+			d->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_FreezeEndEvent_Init;
+	}
+	else
+	{
+		gGT->gameMode2 &= ~VEH_FREEZE_DOOR;
+
+		// Driving_Init restores PlayerDrivingFuncTable and KS_NORMAL on the next
+		// INIT stage. Its own guard is levelID/LOAD_IsOpen_AdvHub
+		// (game/Vehicle/VehPhysProc.c:1196), which the hub satisfies -- and the
+		// hub is the only place the picker runs.
+		if (d != NULL)
+			d->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+	}
+}
+
+// Take or give back the hold, keeping the state the per-frame decision reads in
+// step with it. Used by the open and close sites, which act on the frame the
+// player acts rather than waiting for the next tick.
 static void ap_cs_setFreeze(struct GameTracker *gGT, int on)
 {
 	if (on)
 	{
-		gGT->gameMode2 |= VEH_FREEZE_DOOR;
-		ap_cs_frozeDriver = 1;
+		ap_cs_applyFreeze(gGT, 1);
+		ap_cs_freeze.held = 1;
 	}
-	else if (ap_cs_frozeDriver)
+	else if (ap_cs_freeze.held)
 	{
-		gGT->gameMode2 &= ~VEH_FREEZE_DOOR;
-		ap_cs_frozeDriver = 0;
+		ap_cs_applyFreeze(gGT, 0);
+		ap_cs_freeze.held = 0;
 	}
+}
+
+// The per-frame authority over the hold (ap/ap_charfreeze.h). Re-asserts it for
+// as long as the picker is up, releases it exactly once on the close, and drops
+// it without touching the driver when the hub goes away underneath it.
+static void ap_cs_tickFreeze(struct GameTracker *gGT, int hubReady)
+{
+	struct AP_CharFreezeInput in;
+	int action;
+
+	in.pickerOpen = ap_cs_open;
+	in.hubReady = hubReady;
+
+	action = AP_CharFreeze_Step(&ap_cs_freeze, &in);
+
+	if (action == AP_CHARFREEZE_HOLD)
+		ap_cs_applyFreeze(gGT, 1);
+	else if (action == AP_CHARFREEZE_RELEASE)
+		ap_cs_applyFreeze(gGT, 0);
+	// AP_CHARFREEZE_DROP writes nothing: the level load already took the flag,
+	// and gGT->drivers[0] is not ours to write through any more.
 }
 
 static void ap_cs_logPackage(const char *tag, struct Driver *d, int characterID)
@@ -1005,10 +1075,10 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 // We do NOT clear the bits we consume. The pad word is recomputed wholesale at
 // :345, later in this same frame, so a clear here would be overwritten before
 // any other consumer looked at it -- suppression is simply not achievable from
-// this slot. The picker's hold on the kart comes from VEH_FREEZE_DOOR instead,
-// which VehPhysProc_Driving_PhysLinear honours
-// (game/Vehicle/VehPhysProc.c:407-411), and the one other consumer that mattered
-// is refused at its own source rather than by stealing its input:
+// this slot. The picker's hold on the kart is taken directly instead, as both
+// VEH_FREEZE_DOOR and the engine's own modal freeze table (ap/ap_charfreeze.h),
+// and the one other consumer that mattered is refused at its own source rather
+// than by stealing its input:
 // MainFreeze_IfPressStart returns early while the picker is open, so Start
 // cannot raise the pause menu on top of it (#238, and the spike matrix's row 22).
 static void ap_cs_input(struct GameTracker *gGT)
@@ -1363,12 +1433,14 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 		{
 			ap_cs_open = 0;
 			ap_cs_editFocus = 0;
-			ap_cs_frozeDriver = 0; // the level changed; the bit went with it
 		}
 		// A pause-menu request does not survive leaving the hub. The player asked
 		// to pick a character in THIS hub session; carrying the bit across a level
 		// load would pop the picker open somewhere they did not ask for it.
 		ap_cs_pauseRequest = 0;
+		// DROP, not RELEASE: the level changed, so the flag went with it and the
+		// driver this held is gone.
+		ap_cs_tickFreeze(gGT, 0);
 		return;
 	}
 
@@ -1386,18 +1458,18 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 			ap_cs_pauseRequest = 0;
 	}
 
+	// Something else took the game (pause, cutscene, mask hint) -> get out of
+	// the way rather than fight it.
+	if (ap_cs_open && !ap_cs_safeToOpen(gGT) && !ap_cs_freeze.held)
+		ap_cs_open = 0;
+
+	// Re-assert every frame the picker is up, and release on the frame after it
+	// closes if the close site has not already done it.
+	ap_cs_tickFreeze(gGT, 1);
+
 	if (!ap_cs_open)
 		return;
 
-	// Something else took the game (pause, cutscene, mask hint) -> get out of
-	// the way rather than fight it.
-	if (!ap_cs_safeToOpen(gGT) && !ap_cs_frozeDriver)
-	{
-		ap_cs_open = 0;
-		return;
-	}
-
-	ap_cs_setFreeze(gGT, 1); // re-assert every frame: AH_Door / AH_MaskHint clear it
 	ap_cs_input(gGT);
 }
 

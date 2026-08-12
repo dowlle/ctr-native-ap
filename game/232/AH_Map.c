@@ -784,7 +784,10 @@ void AH_Map_Main(void)
 	    // This covers the whole group -- driver dots, warp pads, hub items, the
 	    // map itself and the slide meter -- because all of them overlay the
 	    // same corner of the screen.
-	    && !AP_CharSwap_PickerOpen()
+	    //
+	    // Asked through AP_CharSwap_HubHudHidden rather than the picker flag
+	    // directly, so this site and the counters below cannot drift apart.
+	    && !AP_CharSwap_HubHudHidden()
 #endif
 	)
 	{
@@ -808,9 +811,19 @@ void AH_Map_Main(void)
 		UI_DrawSlideMeter(ptrHudData[8].x, ptrHudData[8].y, advDriver);
 	}
 
-	UI_DrawNumRelic(ptrHudData[0xE].x + 0x10, ptrHudData[0xE].y - 10);
-	UI_DrawNumKey(ptrHudData[0xF].x + 0x10, ptrHudData[0xF].y - 10);
-	UI_DrawNumTrophy(ptrHudData[0x10].x + 0x10, ptrHudData[0x10].y - 10);
+#ifdef CTR_AP
+	// The relic / key / trophy counters are the same class of standing hub HUD
+	// as the map group above and hide with it. They sit across the TOP of the
+	// screen, where the map guard does not reach, and the picker's own name and
+	// portrait rows are drawn under them. Found in live play on 2026-08-12,
+	// after the map fix had already landed.
+	if (!AP_CharSwap_HubHudHidden())
+#endif
+	{
+		UI_DrawNumRelic(ptrHudData[0xE].x + 0x10, ptrHudData[0xE].y - 10);
+		UI_DrawNumKey(ptrHudData[0xF].x + 0x10, ptrHudData[0xF].y - 10);
+		UI_DrawNumTrophy(ptrHudData[0x10].x + 0x10, ptrHudData[0x10].y - 10);
+	}
 
 #ifdef CTR_AP
 	// AP hub item-received feed (bottom-left). Also drawn from the transient

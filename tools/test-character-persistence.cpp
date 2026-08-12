@@ -56,6 +56,7 @@ extern "C" {
 }
 #include "../ap/ap_charname.h"
 #include "../ap/ap_editstat_bounds.h"
+#include "../ap/ap_charfreeze.h"
 #include "../ap/ap_garageskip.h"
 #include "../ap/ap_pauserow.h"
 
@@ -1043,6 +1044,255 @@ static void test_the_latch_tolerates_a_null_state()
 	check(AP_GarageSkip_Owns(kNoCharacterPhase) == 0, "and a negative racer means retail runs");
 }
 
+// ---------------------------------------------------------------------------
+// PART 8 -- the picker's hold on the kart.
+//
+// THIS SECTION EXISTS BECAUSE A FLAG WAS MISTAKEN FOR A FREEZE. The picker took
+// VEH_FREEZE_DOOR and nothing else. That flag is tested once, in
+// VehPhysProc_Driving_PhysLinear (game/Vehicle/VehPhysProc.c:407-411), which
+// returns before the driving code and so stops INPUT only; every stage after it
+// still runs and still moves the kart from d->baseSpeed, which nothing decays
+// while the flag is set. A kart that carried speed into the picker kept driving
+// under it. The dev key never showed this, because you are parked when you reach
+// for the keyboard; the #238 pause row is entered at speed, and PAUSE_ALL stops
+// MainFrame_GameLogic wholesale (game/MAIN/MainFrame.c:137) so that speed
+// survives the pause intact. Found in live play on 2026-08-12.
+//
+// The fix takes the engine's own modal freeze as well (the one the Aku Aku hint
+// takes, VehPhysProc_FreezeEndEvent_Init at game/MAIN/MainFrame.c:836), and the
+// decision about when to take, re-assert, release and drop it is the pure
+// ap/ap_charfreeze.h the engine calls.
+//
+// The kart below models the TWO HALVES, not CTR physics: it carries a speed, the
+// flag half stops input, and only the table half brings that speed to rest. That
+// is exactly enough to make the shipped defect executable.
+// ---------------------------------------------------------------------------
+
+struct FakeKart
+{
+	int flagHeld;  // VEH_FREEZE_DOOR
+	int tableHeld; // PlayerFreezeFuncTable, installed through the INIT slot
+	int baseSpeed; // what the stages after PhysLinear keep moving the kart by
+	int alive;     // 0 once a level load has taken this driver away
+};
+
+// One driver tick. Returns the distance the kart moves this frame.
+static int kartTick(FakeKart *k)
+{
+	if (!k->alive)
+		return 0;
+
+	// The freeze table's PhysLinear zeroes baseSpeed and the turn states every
+	// frame (game/Vehicle/VehPhysProc.c:1244-1250).
+	if (k->tableHeld)
+		k->baseSpeed = 0;
+
+	// The flag gates only the driving code inside PhysLinear. It does not touch
+	// the stages that carry the kart along at whatever speed it already has.
+	return k->baseSpeed;
+}
+
+// The engine half, driven by whatever the pure decision returned.
+static void applyFreeze(FakeKart *k, int action)
+{
+	if (action == AP_CHARFREEZE_HOLD)
+	{
+		k->flagHeld = 1;
+		k->tableHeld = 1;
+	}
+	else if (action == AP_CHARFREEZE_RELEASE)
+	{
+		k->flagHeld = 0;
+		k->tableHeld = 0;
+	}
+	// DROP touches nothing: the driver is gone.
+}
+
+// One AP_CharSwap_Tick's worth of freeze work, then the driver's own tick, in
+// that order, because AP_OnFrame (game/MAIN/MainMain.c:323) runs ahead of
+// MainFrame_GameLogic (:412). Returns the distance the kart moved this frame.
+static int freezeFrame(AP_CharFreezeState *s, FakeKart *k, int pickerOpen, int hubReady)
+{
+	AP_CharFreezeInput in;
+	in.pickerOpen = pickerOpen;
+	in.hubReady = hubReady;
+
+	applyFreeze(k, AP_CharFreeze_Step(s, &in));
+
+	return kartTick(k);
+}
+
+// A kart at speed: the state the pause row hands the picker.
+static FakeKart movingKart()
+{
+	FakeKart k;
+	k.flagHeld = 0;
+	k.tableHeld = 0;
+	k.baseSpeed = 900; // any non-zero speed will do
+	k.alive = 1;
+	return k;
+}
+
+static void test_a_kart_carrying_speed_into_the_picker_comes_to_rest()
+{
+	// The live defect, as a test: open the picker on a moving kart, and it must
+	// not travel while the picker is up.
+	AP_CharFreezeState s = {0};
+	FakeKart k = movingKart();
+	int travelled = 0;
+
+	for (int frame = 0; frame < 120; frame++)
+		travelled += freezeFrame(&s, &k, 1, 1);
+
+	check_eq(travelled, 0, "a kart that was moving when the picker opened does not move under it");
+	check_eq(k.flagHeld, 1, "the flag half is held");
+	check_eq(k.tableHeld, 1, "and the table half with it, which is what stops the kart");
+}
+
+static void test_the_flag_alone_is_not_a_freeze()
+{
+	// The rejected behaviour, simulated: hold only VEH_FREEZE_DOOR, as the
+	// shipped picker did. The case above fails on it, which is why it is here
+	// rather than described in a comment.
+	FakeKart k = movingKart();
+	int travelled = 0;
+
+	for (int frame = 0; frame < 120; frame++)
+	{
+		k.flagHeld = 1; // and nothing else
+		travelled += kartTick(&k);
+	}
+
+	check(travelled > 0, "the flag on its own leaves the kart driving, which is the defect");
+}
+
+static void test_the_hold_is_re_asserted_every_frame()
+{
+	// AH_Door_ThTick releases this exact flag and this exact INIT slot whenever a
+	// hub door is open (game/232/AH_Door.c:184-196), and AH_MaskHint does the
+	// same at its state 7. The picker now refuses that release while it is open,
+	// but the hold must survive one anyway: a hold taken once at open is a hold
+	// something else can take away.
+	AP_CharFreezeState s = {0};
+	FakeKart k = movingKart();
+	int travelled = 0;
+
+	for (int frame = 0; frame < 60; frame++)
+	{
+		if (frame == 20)
+		{
+			// something else hands the kart back, mid-picker
+			k.flagHeld = 0;
+			k.tableHeld = 0;
+			k.baseSpeed = 900;
+		}
+
+		travelled += freezeFrame(&s, &k, 1, 1);
+	}
+
+	check_eq(travelled, 0, "a release by something else is re-taken before the driver ticks");
+	check_eq(k.tableHeld, 1, "and the hold is back at the end of it");
+}
+
+static void test_closing_the_picker_releases_exactly_once()
+{
+	AP_CharFreezeState s = {0};
+	FakeKart k = movingKart();
+	AP_CharFreezeInput in;
+	int releases = 0;
+
+	in.hubReady = 1;
+
+	for (int frame = 0; frame < 30; frame++)
+	{
+		in.pickerOpen = (frame < 10);
+
+		int action = AP_CharFreeze_Step(&s, &in);
+		if (action == AP_CHARFREEZE_RELEASE)
+			releases++;
+		applyFreeze(&k, action);
+	}
+
+	check_eq(releases, 1, "the close releases exactly once, however long the picker stays shut");
+	check_eq(k.flagHeld, 0, "the flag is given back");
+	check_eq(k.tableHeld, 0, "and the driving table with it");
+}
+
+static void test_losing_the_hub_drops_the_hold_instead_of_releasing_it()
+{
+	// The level load takes the flag and the driver struct with it. A RELEASE here
+	// would write a funcPtr through a pointer that is no longer ours.
+	AP_CharFreezeState s = {0};
+	AP_CharFreezeInput in;
+
+	in.pickerOpen = 1;
+	in.hubReady = 1;
+	check_eq(AP_CharFreeze_Step(&s, &in), AP_CHARFREEZE_HOLD, "the picker takes the hold in the hub");
+
+	in.pickerOpen = 0;
+	in.hubReady = 0;
+	check_eq(AP_CharFreeze_Step(&s, &in), AP_CHARFREEZE_DROP, "losing the hub drops the hold");
+
+	// And nothing follows it: no release arrives once the next hub is ready.
+	in.hubReady = 1;
+	for (int frame = 0; frame < 10; frame++)
+		check_eq(AP_CharFreeze_Step(&s, &in), AP_CHARFREEZE_NONE, "a dropped hold is not released later");
+}
+
+static void test_the_hold_is_per_hub_session()
+{
+	// Same shape as the garage latch: what one hub takes away, the next hub must
+	// be able to take again.
+	AP_CharFreezeState s = {0};
+	FakeKart k = movingKart();
+	AP_CharFreezeInput in;
+	int travelled = 0;
+
+	in.pickerOpen = 1;
+	in.hubReady = 1;
+	applyFreeze(&k, AP_CharFreeze_Step(&s, &in));
+
+	in.hubReady = 0;
+	applyFreeze(&k, AP_CharFreeze_Step(&s, &in)); // DROP
+
+	// New hub, new driver, and the player opens the picker again at speed.
+	k = movingKart();
+
+	for (int frame = 0; frame < 30; frame++)
+		travelled += freezeFrame(&s, &k, 1, 1);
+
+	check_eq(travelled, 0, "the picker takes the hold again in the next hub session");
+}
+
+static void test_a_picker_that_never_opens_never_touches_the_kart()
+{
+	AP_CharFreezeState s = {0};
+	FakeKart k = movingKart();
+	int travelled = 0;
+
+	for (int frame = 0; frame < 60; frame++)
+		travelled += freezeFrame(&s, &k, 0, 1);
+
+	check(travelled > 0, "the kart drives normally with the picker shut");
+	check_eq(k.flagHeld, 0, "and nothing ever took the flag");
+	check_eq(s.held, 0, "nor the hold");
+}
+
+static void test_the_hold_tolerates_null_arguments()
+{
+	// Same defensive shape as the garage latch: the engine passes file-scope
+	// addresses, but the helper is inline and shared.
+	AP_CharFreezeState s = {0};
+	AP_CharFreezeInput in;
+
+	in.pickerOpen = 1;
+	in.hubReady = 1;
+
+	check_eq(AP_CharFreeze_Step(NULL, &in), AP_CHARFREEZE_NONE, "a null state does nothing");
+	check_eq(AP_CharFreeze_Step(&s, NULL), AP_CHARFREEZE_NONE, "a null input does nothing");
+	check_eq(s.held, 0, "and neither takes the hold");
+}
+
 int main()
 {
 	test_default_first_connect();
@@ -1096,8 +1346,17 @@ int main()
 	test_losing_the_seed_mid_session_rearms();
 	test_the_latch_tolerates_a_null_state();
 
+	test_a_kart_carrying_speed_into_the_picker_comes_to_rest();
+	test_the_flag_alone_is_not_a_freeze();
+	test_the_hold_is_re_asserted_every_frame();
+	test_closing_the_picker_releases_exactly_once();
+	test_losing_the_hub_drops_the_hold_instead_of_releasing_it();
+	test_the_hold_is_per_hub_session();
+	test_a_picker_that_never_opens_never_touches_the_kart();
+	test_the_hold_tolerates_null_arguments();
+
 	if (g_failures == 0)
-		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row + skip latch): all checks passed\n");
+		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row + skip latch + picker freeze): all checks passed\n");
 	else
 		std::printf("character persistence: %d FAILURE(S)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;

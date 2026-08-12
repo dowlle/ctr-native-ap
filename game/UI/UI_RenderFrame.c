@@ -907,9 +907,19 @@ void UI_RenderFrame_AdvHub(void)
 	gGT = sdata->gGT;
 	hudStructPtr = data.hudStructPtr[gGT->numPlyrCurrGame - 1];
 
-	UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
-	UI_DrawNumKey(hudStructPtr[0xF].x + 0x10, hudStructPtr[0xF].y - 10);
-	UI_DrawNumTrophy(hudStructPtr[0x10].x + 0x10, hudStructPtr[0x10].y - 10);
+#ifdef CTR_AP
+	// The relic / key / trophy counters hide while the character picker owns the
+	// screen, through the same question the hub's other HUD site asks
+	// (game/232/AH_Map.c). This pass and that one are mutually exclusive per
+	// frame, so both have to carry the test or the counters come back on
+	// whichever of the two the frame happens to take.
+	if (!AP_CharSwap_HubHudHidden())
+#endif
+	{
+		UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
+		UI_DrawNumKey(hudStructPtr[0xF].x + 0x10, hudStructPtr[0xF].y - 10);
+		UI_DrawNumTrophy(hudStructPtr[0x10].x + 0x10, hudStructPtr[0x10].y - 10);
+	}
 
 #ifdef CTR_AP
 	// AP hub item-received feed (bottom-left). Self-gates on ctr_cfg_active() +

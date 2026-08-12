@@ -29,10 +29,26 @@ void AP_CharSwap_Tick(struct GameTracker *gGT);
 // per frame, so this runs exactly once per frame while the hub is up.
 void AP_CharPicker_Draw(void);
 
-// True while the picker owns input. Used to keep the driver frozen, to hide the
-// hub minimap that would otherwise draw over it, and to refuse a Start press so
-// the pause menu cannot open on top of it.
+// True while the picker owns input. Used to keep the driver frozen, to refuse a
+// Start press so the pause menu cannot open on top of it, and to stop AH_Door's
+// #51 release from taking the picker's own kart freeze back.
 int AP_CharSwap_PickerOpen(void);
+
+// Must the hub's standing HUD stand down this frame?
+//
+// One question, asked by every hub HUD site, so they cannot drift apart. The
+// picker is a full-screen modal drawn late in the hub UI pass, and everything
+// the hub keeps permanently on screen is submitted BEFORE it and therefore
+// lands on top of it (AddPrim prepends and walks,
+// platform/native_libgpu.c:309). The minimap group was the first surface caught
+// doing this; the relic / key / trophy counters across the top of the screen
+// were the second, found in live play on 2026-08-12.
+//
+// Suppressing the draw is deliberate rather than re-ordering two ordering
+// tables against each other: the picker holds the kart and the input while it
+// is up, so a standing counter has nothing useful to say, and a skipped draw
+// cannot be defeated later by a submission-order detail the way a re-order can.
+int AP_CharSwap_HubHudHidden(void);
 
 // The adventure-hub pause menu's SELECT CHARACTER row was chosen (#238).
 //
