@@ -56,7 +56,10 @@ extern "C" {
 }
 #include "../ap/ap_charname.h"
 #include "../ap/ap_editstat_bounds.h"
+#define AP_STATBAR_PURE_ONLY // the draw half needs engine types; the geometry does not
 #include "../ap/ap_charfreeze.h"
+#include "../ap/ap_charstatrow.h"
+#include "../ap/ap_statbar.h"
 #include "../ap/ap_garageskip.h"
 #include "../ap/ap_pauserow.h"
 
@@ -1293,6 +1296,167 @@ static void test_the_hold_tolerates_null_arguments()
 	check_eq(s.held, 0, "and neither takes the hold");
 }
 
+
+// ---------------------------------------------------------------------------
+// PART 9 -- the Garage stat bar, and the rows that are no longer slots.
+//
+// The picker now draws the Garage's own bars (ruling: it must look like the
+// Garage, because that is the presentation players already know). Two things
+// came out of that which cannot be checked on a build machine and are ugly if
+// wrong:
+//
+//   1. THE SEGMENT ARITHMETIC. Six fixed 13-pixel cells have to render a length
+//      that lands anywhere between them, as a run of full cells plus at most one
+//      partial. An off-by-one here is a cell drawn one pixel wide, or a last
+//      cell that never fills, and neither is visible from here.
+//   2. THE ROW/SLOT SPLIT. The picker shows three stats; the edit package still
+//      carries four, because it is the wire shape of the stored value and a
+//      server may already hold one. So a screen row is no longer a package
+//      index, and feeding one in as the other writes the WRONG STAT and
+//      persists it on the same keypress. ACCSPD is the one that vanished from
+//      the screen and must stay in the package.
+// ---------------------------------------------------------------------------
+
+static void test_a_full_bar_is_six_full_segments()
+{
+	for (int i = 0; i < AP_STATBAR_SEGMENTS; i++)
+		check_eq(AP_StatBar_SegmentLen(AP_STATBAR_MAX_LEN, i), AP_STATBAR_SEGMENT_LEN,
+		         "every cell of a full bar is full");
+}
+
+static void test_an_empty_bar_draws_nothing()
+{
+	for (int i = 0; i < AP_STATBAR_SEGMENTS; i++)
+		check_eq(AP_StatBar_SegmentLen(0, i), 0, "an empty bar draws no cell");
+
+	// Retail's own sign guard: a negative length must not wrap into a huge one.
+	for (int i = 0; i < AP_STATBAR_SEGMENTS; i++)
+		check_eq(AP_StatBar_SegmentLen(-40, i), 0, "a negative length draws no cell");
+}
+
+static void test_the_cells_always_add_up_to_the_bar()
+{
+	// The property that catches an off-by-one anywhere in the walk: whatever the
+	// length, the drawn cells sum to exactly it, and no cell is over-long.
+	for (int len = 0; len <= AP_STATBAR_MAX_LEN; len++)
+	{
+		int total = 0;
+		for (int i = 0; i < AP_STATBAR_SEGMENTS; i++)
+		{
+			int seg = AP_StatBar_SegmentLen(len, i);
+			check(seg >= 0 && seg <= AP_STATBAR_SEGMENT_LEN, "a cell is within its own width");
+			total += seg;
+		}
+		check_eq(total, len, "the drawn cells sum to the bar length");
+	}
+}
+
+static void test_a_partial_bar_is_full_cells_then_one_partial()
+{
+	// 30 = two full cells (26) plus 4 of the third, and nothing after it.
+	check_eq(AP_StatBar_SegmentLen(30, 0), 13, "first cell full");
+	check_eq(AP_StatBar_SegmentLen(30, 1), 13, "second cell full");
+	check_eq(AP_StatBar_SegmentLen(30, 2), 4, "third cell partial");
+	check_eq(AP_StatBar_SegmentLen(30, 3), 0, "and nothing past it");
+
+	// A length sitting exactly on a boundary fills that cell and starts no other.
+	check_eq(AP_StatBar_SegmentLen(26, 1), 13, "a boundary length fills its last cell");
+	check_eq(AP_StatBar_SegmentLen(26, 2), 0, "and does not open the next one");
+}
+
+static void test_the_fill_grows_by_the_garage_rate_and_snaps_down()
+{
+	// Growth is three pixels a frame and stops exactly on the target.
+	int len = 0;
+	for (int frame = 0; frame < 4; frame++)
+		len = AP_StatBar_Step(len, 10);
+	check_eq(len, 10, "the fill stops exactly on its target, not past it");
+
+	// Falling is instant, which is retail's asymmetry, not an accident.
+	check_eq(AP_StatBar_Step(60, 12), 12, "a lower target is taken immediately");
+	check_eq(AP_StatBar_Step(10, 10), 10, "an unchanged target is a no-op");
+
+	// And it converges from empty to full without overshooting.
+	len = 0;
+	for (int frame = 0; frame < 200; frame++)
+	{
+		len = AP_StatBar_Step(len, AP_STATBAR_MAX_LEN);
+		check(len <= AP_STATBAR_MAX_LEN, "the fill never exceeds a full bar");
+	}
+	check_eq(len, AP_STATBAR_MAX_LEN, "and reaches full");
+}
+
+static void test_a_value_lands_somewhere_on_the_bar()
+{
+	const int lo = 100, hi = 200;
+
+	check_eq(AP_StatBar_LenForValue(lo, lo, hi), 1, "the floor of the ladder still shows a bar");
+	check_eq(AP_StatBar_LenForValue(lo - 500, lo, hi), 1, "and so does anything under it");
+	check_eq(AP_StatBar_LenForValue(hi, lo, hi), AP_STATBAR_MAX_LEN, "the ceiling fills the bar");
+	check_eq(AP_StatBar_LenForValue(hi + 500, lo, hi), AP_STATBAR_MAX_LEN, "and so does anything over it");
+
+	// Monotonic in between, and never outside the bar.
+	int prev = 0;
+	for (int v = lo; v <= hi; v++)
+	{
+		int len = AP_StatBar_LenForValue(v, lo, hi);
+		check(len >= 1 && len <= AP_STATBAR_MAX_LEN, "a length stays on the bar");
+		check(len >= prev, "a higher value never shows a shorter bar");
+		prev = len;
+	}
+
+	// A stat with no spread to rank against sits mid-bar rather than empty or full.
+	check_eq(AP_StatBar_LenForValue(42, 7, 7), AP_STATBAR_MAX_LEN / 2, "a flat ladder sits mid-bar");
+}
+
+static void test_the_three_rows_are_the_garages_three_stats()
+{
+	// ap_cs_stats[] order: 0 ACCEL, 1 SPEED, 2 ACCSPD, 3 TURN.
+	check_eq(AP_CharStatRow_ToStat(0), 1, "the top row is SPEED, as in the Garage");
+	check_eq(AP_CharStatRow_ToStat(1), 0, "then ACCEL");
+	check_eq(AP_CharStatRow_ToStat(2), 3, "then TURN");
+}
+
+static void test_accspd_is_off_the_screen_but_still_in_the_package()
+{
+	// The whole point of the split: no row reaches slot 2, so no edit can write
+	// it, and it keeps its place in the four-wide package regardless.
+	for (int row = 0; row < AP_CS_UI_ROWS; row++)
+		check(AP_CharStatRow_ToStat(row) != 2, "no row edits ACCSPD");
+
+	check_eq(AP_CharStatRow_IsShown(2), 0, "ACCSPD is not shown");
+	check_eq(AP_CharStatRow_IsShown(0), 1, "ACCEL is");
+	check_eq(AP_CharStatRow_IsShown(1), 1, "SPEED is");
+	check_eq(AP_CharStatRow_IsShown(3), 1, "TURN is");
+}
+
+static void test_a_junk_row_cannot_write_past_the_package()
+{
+	// Clamping, not wrapping: a junk row must not become a plausible-looking
+	// index into someone's saved tune.
+	check_eq(AP_CharStatRow_ToStat(-5), AP_CharStatRow_ToStat(0), "a negative row clamps low");
+	check_eq(AP_CharStatRow_ToStat(99), AP_CharStatRow_ToStat(AP_CS_UI_ROWS - 1), "a huge row clamps high");
+}
+
+static void test_row_navigation_is_a_single_cycle()
+{
+	// Same property the pause row carries: every row reachable, up the exact
+	// reverse of down, no cursor trap.
+	int seen[AP_CS_UI_ROWS] = {0};
+	int row = 0;
+	for (int step = 0; step < AP_CS_UI_ROWS; step++)
+	{
+		seen[row] = 1;
+		row = AP_CharStatRow_Next(row, 1);
+	}
+	check_eq(row, 0, "walking down returns to the start");
+	for (int i = 0; i < AP_CS_UI_ROWS; i++)
+		check(seen[i] != 0, "every row is reachable going down");
+
+	for (int i = 0; i < AP_CS_UI_ROWS; i++)
+		check_eq(AP_CharStatRow_Next(AP_CharStatRow_Next(i, 1), -1), i, "up undoes down exactly");
+}
+
 int main()
 {
 	test_default_first_connect();
@@ -1355,8 +1519,19 @@ int main()
 	test_a_picker_that_never_opens_never_touches_the_kart();
 	test_the_hold_tolerates_null_arguments();
 
+	test_a_full_bar_is_six_full_segments();
+	test_an_empty_bar_draws_nothing();
+	test_the_cells_always_add_up_to_the_bar();
+	test_a_partial_bar_is_full_cells_then_one_partial();
+	test_the_fill_grows_by_the_garage_rate_and_snaps_down();
+	test_a_value_lands_somewhere_on_the_bar();
+	test_the_three_rows_are_the_garages_three_stats();
+	test_accspd_is_off_the_screen_but_still_in_the_package();
+	test_a_junk_row_cannot_write_past_the_package();
+	test_row_navigation_is_a_single_cycle();
+
 	if (g_failures == 0)
-		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row + skip latch + picker freeze): all checks passed\n");
+		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row + skip latch + picker freeze + stat bars): all checks passed\n");
 	else
 		std::printf("character persistence: %d FAILURE(S)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;

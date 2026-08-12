@@ -16,6 +16,8 @@
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
+#include "../ap/ap_statbar.h"    // Garage stat bar, shared with the hub picker (#220)
+#include "../ap/ap_charstatrow.h" // picker stat rows vs package slots (#54/#209)
 #endif
 
 #include "226/R226.c"
@@ -356,6 +358,7 @@
 #include "../ap/ap_capability.c"
 #include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"
+#include "../ap/ap_statbar.c"
 #endif
 
 #endif

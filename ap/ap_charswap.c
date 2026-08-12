@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "ap_charfreeze.h" // the picker's hold on the kart, shared with the harness
+#include "ap_charfreeze.h"  // the picker's hold on the kart, shared with the harness
+#include "ap_charstatrow.h" // stat ROWS on screen vs stat SLOTS in the package
+#include "ap_statbar.h"     // the Garage bar renderer, shared with the Garage
 #include "ap_charname.h"   // portrait-fallback name choice, shared with the harness
 #include "ap_charseat.h"   // deterministic stored-racer seat state machine
 #include "ap_charswap.h"
@@ -626,7 +628,15 @@ static void ap_cs_persistCharacter(int characterID);
 static int ap_cs_open = 0;
 static int ap_cs_cursor = 0;   // tile index
 static int ap_cs_editFocus = 0;// editing the stat panel rather than the grid
-static int ap_cs_statRow = 0;  // highlighted stat row while editing
+static int ap_cs_statRow = 0;  // highlighted stat ROW (screen, 0..AP_CS_UI_ROWS-1)
+
+// The picker's own bar animation, the Garage's per-session state in miniature.
+// Centred on the screen the bars are drawn on rather than on the racer, so
+// moving the cursor across portraits regrows them, which is what the Garage does
+// when you move between racers.
+#define AP_CS_BAR_X 0xD8 // 216: the 78-pixel bar lands at 216..294, centred on 256
+static short ap_cs_barLen[AP_CS_UI_ROWS];
+static int ap_cs_barChar = -1;
 // The picker's hold on the kart. Both halves of it (the flag and the driver's
 // func table) and the frame-by-frame decision live in ap/ap_charfreeze.h.
 static struct AP_CharFreezeState ap_cs_freeze = {0};
@@ -942,7 +952,9 @@ static int ap_cs_tryOpen(struct GameTracker *gGT)
 
 	ap_cs_open = 1;
 	ap_cs_editFocus = 0;
+	ap_cs_statRow = 0;
 	ap_cs_cursor = ap_cs_tileForCharacter(data.characterIDs[0]);
+	ap_cs_barChar = -1; // grow the bars from empty, as a fresh Garage session does
 	ap_cs_setFreeze(gGT, 1);
 	ap_cs_logPackage("open", gGT->drivers[0], data.characterIDs[0]);
 	return 1;
@@ -1011,18 +1023,24 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	int characterID = ap_cs_tiles[ap_cs_cursor].characterID;
 	short *slot;
 	int base, next;
+	int stat;
 
 	if (!ap_cs_editorAvailable())
 		return;
 
-	slot = (ap_cs_editMode == AP_CS_MODE_GLOBAL) ? &ap_cs_editGlobal[ap_cs_statRow] : &ap_cs_editPerChar[characterID][ap_cs_statRow];
+	// The row on screen is NOT the slot in the package any more: the picker shows
+	// the Garage's three bars while the package still carries four stats
+	// (ap/ap_charstatrow.h). Every index below is the SLOT.
+	stat = AP_CharStatRow_ToStat(ap_cs_statRow);
 
-	base = ap_cs_vanillaValue(ap_cs_statRow, characterID);
+	slot = (ap_cs_editMode == AP_CS_MODE_GLOBAL) ? &ap_cs_editGlobal[stat] : &ap_cs_editPerChar[characterID][stat];
+
+	base = ap_cs_vanillaValue(stat, characterID);
 	if (base < 0)
 		return;
 
-	next = base + *slot + dir * ap_cs_stats[ap_cs_statRow].step;
-	next = ap_cs_clamp(ap_cs_statRow, next);
+	next = base + *slot + dir * ap_cs_stats[stat].step;
+	next = ap_cs_clamp(stat, next);
 	*slot = (short)(next - base);
 
 	// Only the character you are standing as can be applied live; the others
@@ -1099,9 +1117,9 @@ static void ap_cs_input(struct GameTracker *gGT)
 	if (ap_cs_editFocus)
 	{
 		if ((tap & BTN_UP) != 0)
-			ap_cs_statRow = (ap_cs_statRow + AP_CS_STATS - 1) % AP_CS_STATS;
+			ap_cs_statRow = AP_CharStatRow_Next(ap_cs_statRow, -1);
 		else if ((tap & BTN_DOWN) != 0)
-			ap_cs_statRow = (ap_cs_statRow + 1) % AP_CS_STATS;
+			ap_cs_statRow = AP_CharStatRow_Next(ap_cs_statRow, 1);
 		else if ((tap & BTN_LEFT) != 0)
 			ap_cs_adjust(gGT, -1);
 		else if ((tap & BTN_RIGHT) != 0)
@@ -1479,6 +1497,31 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 #define AP_CS_TILE_W 0x34
 #define AP_CS_TILE_H 0x21
 
+// The ladder a stat value is judged against: the spread of that stat across the
+// four vanilla classes. Shared by the rank word and by the bar length, so the
+// picker's bar and its dev-key diagnostic can never disagree about where a value
+// sits. Returns 0 when the stat has no metaPhys row to rank against.
+static int ap_cs_statLadder(int statIndex, int *lo, int *hi)
+{
+	int row = ap_cs_rowForOffset(ap_cs_stats[statIndex].driverOffset);
+	int i;
+
+	if (row < 0)
+		return 0;
+
+	*lo = data.metaPhys[row].value[0];
+	*hi = *lo;
+	for (i = 1; i < NUM_CLASSES; i++)
+	{
+		int v = data.metaPhys[row].value[i];
+		if (v < *lo)
+			*lo = v;
+		if (v > *hi)
+			*hi = v;
+	}
+	return 1;
+}
+
 static const char *ap_cs_rankName(int statIndex, int value)
 {
 	// Placeholder presentation only. The ruled ladder is
@@ -1486,22 +1529,10 @@ static const char *ap_cs_rankName(int statIndex, int value)
 	// upgrades; with no progressive items in the build there is nothing to
 	// rank against, so the bands here are laid over the four vanilla class
 	// values for the same stat. Replace when the real chains land.
-	int row = ap_cs_rowForOffset(ap_cs_stats[statIndex].driverOffset);
-	int lo, hi, i, span;
+	int lo = 0, hi = 0, span;
 
-	if ((row < 0) || (value < 0))
+	if ((value < 0) || !ap_cs_statLadder(statIndex, &lo, &hi))
 		return "?";
-
-	lo = data.metaPhys[row].value[0];
-	hi = lo;
-	for (i = 1; i < NUM_CLASSES; i++)
-	{
-		int v = data.metaPhys[row].value[i];
-		if (v < lo)
-			lo = v;
-		if (v > hi)
-			hi = v;
-	}
 
 	if (value < lo)
 		return "VERY LOW";
@@ -1703,8 +1734,12 @@ void AP_CharPicker_Draw(void)
 	// FONT_BIG 17 / FONT_SMALL 8:
 	//     130  name          (BIG,   ends 147)
 	//     150  ownership     (SMALL, ends 158)
-	//     162..192 stat rows (SMALL, four rows of 10)
-	//     198  controls      (SMALL, ends 206)
+	//     164..201 stat bars (three rows, 15 apart, each 7 tall + label)
+	//     206  controls      (SMALL, ends 214)
+	// The bars are 15 apart because that is the Garage's own row pitch
+	// (AP_STATBAR_ROW_PITCH), so the block is taller than the four text rows it
+	// replaced. The controls line moved down with it, which also closes the
+	// two-pixel band the old row 4 (192..200) and controls (198..206) shared.
 	// The first cut started this block at 0xD8 = 216, which IS the floor, so
 	// every line of it fell outside the framebuffer and the player saw no name,
 	// no ownership label and no stats at all.
@@ -1722,38 +1757,85 @@ void AP_CharPicker_Draw(void)
 	DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
 	                   (JUSTIFY_CENTER | (ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
 
-	for (i = 0; i < AP_CS_STATS; i++)
+	// ------------------------------------------------------------------
+	// Three stat bars, drawn by the Garage's own renderer (#220 ruling).
+	//
+	// SPEED, ACCEL, TURN, in the Garage's order, through AP_StatBar_Draw -- the
+	// same function game/233/CS_Garage.c calls, so the two surfaces cannot
+	// drift. ACCSPD is no longer shown or editable here; it remains in the edit
+	// package, which is why every index below goes through
+	// AP_CharStatRow_ToStat rather than being a row number.
+	//
+	// The fill ANIMATES, as it does in the Garage: ap_cs_barLen lerps toward the
+	// target at the Garage's own rate, so an edit slides the bar instead of
+	// snapping it. The state is reset when the picker opens and when the
+	// highlighted racer changes, so a new portrait grows its bars rather than
+	// inheriting the last one's.
+	// ------------------------------------------------------------------
+	if (ap_cs_barChar != selectedChar)
 	{
-		int want = ap_cs_effectiveValue(i, selectedChar);
-		const char *marker = (ap_cs_editFocus && (i == ap_cs_statRow)) ? ">" : " ";
+		ap_cs_barChar = selectedChar;
+		for (i = 0; i < AP_CS_UI_ROWS; i++)
+			ap_cs_barLen[i] = 0;
+	}
 
-		// The "live" column -- what the running driver is actually carrying right
-		// now -- is the spike's swap proof: for the racer you are standing as it
-		// must equal the promised value, for any other portrait it will not, and
-		// after a confirmed swap it must flip. That is a diagnostic, not player
-		// information, and at FONT_SMALL's 13-pixel cell
-		// (data.font_charPixWidth, zGlobal_DATA.c:2577-2583) carrying it costs
-		// more than a third of the 512-pixel line. It stays, behind dev keys,
-		// where the manual matrix can still use it.
+	for (i = 0; i < AP_CS_UI_ROWS; i++)
+	{
+		int stat = AP_CharStatRow_ToStat(i);
+		int want = ap_cs_effectiveValue(stat, selectedChar);
+		int barY = panelY + 34 + i * AP_STATBAR_ROW_PITCH;
+		int lo = 0, hi = 0, target;
+		int focused = (ap_cs_editFocus && (i == ap_cs_statRow));
+
+		// The ladder the value is placed on, the same one the rank word reads.
+		ap_cs_statLadder(stat, &lo, &hi);
+
+		target = AP_StatBar_LenForValue(want, lo, hi);
+		ap_cs_barLen[i] = (short)AP_StatBar_Step(ap_cs_barLen[i], target);
+
+		DecalFont_DrawLine((char *)ap_cs_stats[stat].label, AP_CS_BAR_X - 6, barY - 1,
+		                   FONT_SMALL, (JUSTIFY_RIGHT | (focused ? WHITE : ORANGE)));
+
+		AP_StatBar_Draw(AP_CS_BAR_X, barY, ap_cs_barLen[i], AP_STATBAR_COLORS,
+		                gGT->pushBuffer_UI.ptrOT, &gGT->backBuffer->primMem);
+
+		// The focused row wears the Garage's own blinking left/right arrows, the
+		// same icon and call the hub pause screen already draws in this overlay
+		// (game/232/AH_Pause.c:63-77, icon 0x38 of gGT->iconGroup[4]), so this is
+		// the retail arrow rather than a lookalike -- and its residency in the
+		// hub is proven by that existing call, not assumed.
+		if (focused)
+		{
+			struct Icon **icons = ICONGROUP_GETICONS(gGT->iconGroup[4]);
+			u32 *arrowColors = data.ptrColor[((sdata->frameCounter & 4) == 0) ? RED : ORANGE];
+			int arrowX[2] = {AP_CS_BAR_X - 22, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 22};
+			int arrowRot[2] = {0x800, 0};
+			int a;
+
+			for (a = 0; a < 2; a++)
+			{
+				DecalHUD_Arrow2D(icons[0x38], arrowX[a], barY + 3,
+				                 &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT,
+				                 arrowColors[0], arrowColors[1], arrowColors[2], arrowColors[3],
+				                 0, 0x1000, arrowRot[a]);
+			}
+		}
+
+		// The live column stays a dev-key diagnostic: it is the swap proof (the
+		// racer you are standing as must match, any other portrait must not), and
+		// it is not player information.
 		if (AP_DevKeysEnabled())
 		{
-			snprintf(line, sizeof line, "%s%-7s %6d %-9s live %6d", marker,
-			         ap_cs_stats[i].label, want, ap_cs_rankName(i, want),
-			         ap_cs_liveValue(live, i));
+			snprintf(line, sizeof line, "%6d %-9s live %6d", want, ap_cs_rankName(stat, want),
+			         ap_cs_liveValue(live, stat));
+			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
+			                   FONT_SMALL, ORANGE);
 		}
-		else
-		{
-			snprintf(line, sizeof line, "%s%-7s %6d %-9s", marker,
-			         ap_cs_stats[i].label, want, ap_cs_rankName(i, want));
-		}
-
-		DecalFont_DrawLine(line, 0x70, panelY + 32 + i * 10, FONT_SMALL,
-		                   (i == ap_cs_statRow && ap_cs_editFocus) ? WHITE : ORANGE);
 	}
 
 	snprintf(line, sizeof line, "X CONFIRM   %s   TRIANGLE CLOSE",
 	         ap_cs_editorAvailable() ? "SQUARE EDIT" : "----");
-	DecalFont_DrawLine(line, 0x100, panelY + 68, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+	DecalFont_DrawLine(line, 0x100, panelY + 76, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 }
 
 #endif // CTR_AP

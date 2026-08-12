@@ -111,8 +111,12 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	struct MetaDataCHAR *MDC = &data.MetaDataCharacters[currCharacterID];
 	int nameIndex = MDC->name_LNG_long;
 	RECT r;
+#ifndef CTR_AP
+	// Read only by the retail bar block below, which the AP build replaces with
+	// the shared renderer (ap/ap_statbar.h).
 	Color white = MakeColor(0xFF, 0xFF, 0xFF);
 	Color black = MakeColor(0, 0, 0);
+#endif
 
 	// CameraDC, freecam mode
 	gGT->cameraDC[0].cameraMode = 3;
@@ -284,15 +288,39 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 
 	// 7 pixels tall
 	u16 statBarStart_Y = 33;
+#ifndef CTR_AP
+	// The AP build passes only the first row's Y and steps by the shared pitch.
 	u16 statBarEnd_Y = 40;
 
 	u16 statBarShadows_Y = 34;
+#endif
 
 	// Draw class name
 	DecalFont_DrawLine(sdata->lngStrings[gGarage.unusedArr_lngIndex[i]], classNamePosX, 15, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 	// bar length (animated)
 
+#ifdef CTR_AP
+	// The bars are drawn through the shared renderer (ap/ap_statbar.h), which is
+	// this very block with gGarage.barLen and the locals turned into arguments.
+	// The hub character picker calls the same function, so the two AP surfaces
+	// cannot drift apart -- the whole point of the #220 ruling that the picker
+	// look like the Garage.
+	//
+	// The Garage still passes its OWN colour array, so nothing about its
+	// appearance depends on the AP copy the hub uses. The retail block below is
+	// preserved verbatim for the vanilla build, which is therefore byte-identical:
+	// only the AP build routes through here, and the AP build is the one where
+	// these bars are already AP-driven (PR #218 replaces their lengths with the
+	// received rank).
+	for (i = 0; i < 3; i++)
+	{
+		AP_StatBar_Draw(statBarPosX, statBarStart_Y + i * AP_STATBAR_ROW_PITCH,
+		                gGarage.barLen[i], gGarage.barColors,
+		                gGT->pushBuffer_UI.ptrOT, primMem);
+	}
+
+#else
 	for (i = 0; i < 3; i++)
 	{
 		barLen = &gGarage.barLen[i];
@@ -388,6 +416,7 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 		statBarEnd_Y += 15;
 		statBarShadows_Y += 15;
 	}
+#endif
 
 	s16 classMaxLen = DecalFont_GetLineWidth(sdata->lngStrings[LNG_INTERMEDIATE], 1);
 
