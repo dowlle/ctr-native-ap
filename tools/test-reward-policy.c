@@ -27,9 +27,15 @@
 //   - the colour a pad slot ends up with (AP_RewardPadTint) for every class,
 //     both values of ctr_options.ap_item_type_colors, and the invariant that a
 //     marker NEVER resolves to 0;
-//   - the #219 fallback colour (AP_MarkerFallbackTint): a capability crystal the
-//     surface cannot draw wears plum rather than the item's own AP class, which
-//     the apworld ships as `useful`, and no other category makes that claim.
+//   - the #219 fallback colour (AP_MarkerFallbackTint): a progression crystal
+//     the surface cannot draw wears plum rather than the item's own AP class,
+//     which the apworld ships as `useful`, and no other category makes that
+//     claim;
+//   - the ruling end to end from real item ids (expect_item_display): both CTR
+//     progression families -- the capability ladder (#219) and the character
+//     unlocks (#54/#209) -- present as the purple crystal where it is drawable
+//     and as the plum progression marker where it is not, while everything else
+//     keeps the ordinary class-tinted marker.
 
 #include <stdio.h>
 
@@ -111,6 +117,35 @@ static void expect_cat(long long id, AP_ItemCat want, const char *why)
 		g_failures++;
 }
 
+// END TO END from a real item id: category, then presentation, then the model
+// and the colour one pad slot writes for it. Driven from the ID rather than the
+// category on purpose -- these are the assertions that would catch someone
+// moving an item family out of the crystal, which a category-only test cannot
+// see. `own` and `drawable` describe the surface; a peer's reward is ghosted, so
+// only the OWN rows have a meaningful colour.
+static void expect_item_display(long long id, int own, int drawable, unsigned flags,
+                                int typeColors, int wantModel, int wantTint,
+                                const char *why)
+{
+	AP_ItemCat cat = AP_ItemCategory(id);
+	int kind = AP_RewardPresentation(cat, own, drawable, 1);
+	int gotModel = (kind == AP_PAD_DISP_VANILLA || kind == AP_PAD_DISP_GHOST)
+	                   ? AP_RewardModelForCat(cat)
+	                   : (kind == AP_PAD_DISP_MARKER ? -2 : -1);
+	int gotTint = AP_RewardPadTint(kind, cat, flags, typeColors);
+	int ok = (gotModel == wantModel) && (gotTint == wantTint);
+
+	printf("%-4s item %lld (own %d, drawable %d) -> %s model %d tint 0x%08x  [%s]\n",
+	       ok ? "ok" : "FAIL", id, own, drawable, kind_name(kind), gotModel,
+	       (unsigned)gotTint, why);
+	if (!ok)
+		g_failures++;
+}
+
+// -2 in the `wantModel` column above: the slot draws the Archipelago marker
+// (STATIC_AP), which is the caller's constant, not the policy's.
+#define WANT_MARKER_MODEL (-2)
+
 int main(void)
 {
 	// ── #219: item-id -> category, including the crystal ladder ──
@@ -134,12 +169,30 @@ int main(void)
 	expect_cat(AP_ITEM_BASE + AP_CAPABILITY_PC_ITEM_FIRST_INDEX +
 	                  AP_CAPABILITY_PC_ITEM_COUNT - 1,
 	           AP_CAT_CRYSTAL, "#219 per-character last");
+	// The character unlocks (123..138) join the SAME crystal category: a racer is
+	// a CTR progression item and reads as the purple crystal, not as a generic
+	// marker (ruled, #54/#209).
+	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX, AP_CAT_CRYSTAL,
+	           "#54 character unlock first (Crash Bandicoot)");
+	expect_cat(AP_ITEM_BASE + 137, AP_CAT_CRYSTAL, "#54 Nitros Oxide is a crystal");
+	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX +
+	                  AP_CHARACTER_ITEM_COUNT - 1,
+	           AP_CAT_CRYSTAL, "#54 character unlock last (Penta Penguin)");
 	// Traps (16..20), comfort (21..26) and unknown ids stay marker material.
 	expect_cat(AP_ITEM_BASE + 16, AP_CAT_NONE, "trap -> marker material");
 	expect_cat(AP_ITEM_BASE + 21, AP_CAT_NONE, "comfort -> marker material");
 	expect_cat(AP_ITEM_BASE + 26, AP_CAT_NONE, "comfort -> marker material");
 	expect_cat(AP_ITEM_BASE + 95, AP_CAT_NONE, "past the ladder -> marker material");
-	expect_cat(AP_ITEM_BASE + 120, AP_CAT_NONE, "unknown id -> marker material");
+	// Both edges of the character block, so widening it to the neighbours has to
+	// be a deliberate edit. 122 is Progressive Starting Wumpa; 139 is the first
+	// lettersanity letter -- and the letters are the one family the datapackage
+	// really does classify `progression`, deliberately NOT crystals until that
+	// separate product call is made.
+	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX - 1, AP_CAT_NONE,
+	           "just below the character block -> marker material");
+	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX +
+	                  AP_CHARACTER_ITEM_COUNT,
+	           AP_CAT_NONE, "#148 letters are progression but NOT crystals (unruled)");
 
 	// ── Model-keeping: the ONE category decision every surface consumes ──
 	// #212 OG rewards keep their models; #219 crystals and #222 wumpa join them.
@@ -278,6 +331,32 @@ int main(void)
 	                "a fallen-back trophy still takes its item's class");
 	expect_pad_tint(AP_CAT_WUMPA, 1, 0, AP_ITEM_FLAG_USEFUL, 1, 0x05078e00,
 	                "a fallen-back wumpa still takes its item's class");
+
+	// ── The ruling, end to end from real item ids ──
+	// Every CTR progression item presents as the purple crystal where the crystal
+	// is drawable, and as the plum progression marker where it is not. Both
+	// families ship as `useful`, so every one of these rows would have come out
+	// slate blue on the classification path -- that is the whole point of them.
+	expect_item_display(AP_ITEM_BASE + AP_CAPABILITY_ITEM_FIRST_INDEX, 1, 1,
+	                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0x0d22fff0,
+	                    "#219 own Progressive Boost -> purple crystal");
+	expect_item_display(AP_ITEM_BASE + AP_CAPABILITY_ITEM_FIRST_INDEX, 1, 0,
+	                    AP_ITEM_FLAG_USEFUL, 1, WANT_MARKER_MODEL, 0x0c088f00,
+	                    "#219 own Progressive Boost, no crystal here -> plum marker");
+	expect_item_display(AP_ITEM_BASE + 137, 1, 1, AP_ITEM_FLAG_USEFUL, 1,
+	                    AP_MODEL_CRYSTAL, 0x0d22fff0,
+	                    "#54 own Nitros Oxide -> purple crystal, never the marker");
+	expect_item_display(AP_ITEM_BASE + 137, 1, 0, AP_ITEM_FLAG_USEFUL, 1,
+	                    WANT_MARKER_MODEL, 0x0c088f00,
+	                    "#54 own Nitros Oxide, no crystal here -> plum marker");
+	expect_item_display(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX, 0, 1,
+	                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0,
+	                    "a peer's character unlock is a GHOSTED crystal, untinted");
+	// The contrast row: an item that is NOT one of the progression families still
+	// takes the ordinary marker and its own class colour, crystal or no crystal.
+	expect_item_display(AP_ITEM_BASE + 16, 1, 1, AP_ITEM_FLAG_TRAP, 1,
+	                    WANT_MARKER_MODEL, 0x0ff80600,
+	                    "a trap is still a salmon marker, not a crystal");
 
 	// The two marker entry points must agree on everything that was marker
 	// material to begin with, so the crystal claim above cannot leak into #212's

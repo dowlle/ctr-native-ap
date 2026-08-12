@@ -28,7 +28,8 @@
 #define AP_MODEL_KEY     0x63 // STATIC_KEY
 
 // 1 when a category KEEPS its own model -- an OG CTR reward (trophy / relic /
-// token / gem / key), a CTR progression crystal (#219), or a Wumpa Fruit
+// token / gem / key), a CTR progression crystal (the capability ladder #219 and
+// the character unlocks #54/#209), or a Wumpa Fruit
 // package (#222). These are the categories the local/peer VANILLA/GHOST split
 // applies to. 0 = marker material (everything else). This is THE one testable
 // category decision every model-based reward surface consumes.
@@ -202,17 +203,20 @@ static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
 // model-keeping category the surface could not draw, AP_CAT_NONE for ordinary
 // marker material.
 //
-// #219 specifies a capability-ladder reward as a PURPLE crystal. Where the
-// crystal model is not resident the reward becomes a marker, and that marker
-// must still read as the same reward. Reading the item's AP class instead
-// renders it SLATE BLUE, because the apworld ships every capability item as
-// `useful`, not `progression` -- worlds/ctr/progressive_capability.py says so in
-// as many words ("none of these items are `progression`; they ride as `useful`
-// filler-replacement content"), and worlds/ctr/data/items.json carries that
-// classification on all 68 of them. So the same reward would look like two
-// different things depending only on which model pack the surface happens to
+// A CTR progression reward -- the capability ladder (#219) and the character
+// unlocks (#54/#209) -- is a PURPLE crystal. Where the crystal model is not
+// resident the reward becomes a marker, and that marker must still read as the
+// same reward. Reading the item's AP class instead renders it SLATE BLUE,
+// because the apworld ships both families as `useful`, not `progression`:
+// worlds/ctr/progressive_capability.py says so in as many words for the ladder
+// ("none of these items are `progression`; they ride as `useful`
+// filler-replacement content"), and worlds/ctr/data/items.json carries `useful`
+// on all 68 ladder items and all 16 racers. So the same reward would look like
+// two different things depending only on which model pack the surface happens to
 // have loaded. Plum is the marker's own progression colour, so the fallback
-// stays inside the palette #212 already defined rather than inventing a hue.
+// stays inside the palette #212 already defined rather than inventing a hue --
+// and it is the right colour twice over here, since the ruling that put these
+// items on the crystal is precisely that they ARE progression.
 //
 // Only the crystal is claimed here. A WUMPA package that falls back is filler,
 // and the class tint already answers cyan for it -- the #212 case this policy

@@ -66,7 +66,11 @@ typedef enum
 	AP_CAT_KEY,
 	AP_CAT_COUNT,   // number of bit-pool categories
 	AP_CAT_WUMPA,   // filler, no bit pool
-	AP_CAT_CRYSTAL, // CTR progression/capability items, no bit pool (#219)
+	// Every CTR progression item with NO vanilla model of its own: the capability
+	// ladder (#219) and the character unlocks (#54/#209). No bit pool. The name is
+	// the MODEL these present as, not the feature they come from -- the ruling is
+	// that all of them read as the purple crystal.
+	AP_CAT_CRYSTAL,
 	AP_CAT_NONE
 } AP_ItemCat;
 
@@ -86,13 +90,37 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	case 14: return AP_CAT_KEY;   // Key
 	case 15: return AP_CAT_WUMPA; // Wumpa Fruit (filler)
 	default:
-		// CTR progression/capability items (#219): the shared-global capability
-		// block (Progressive Boost/Top Speed/Acceleration/Turning, indices 27..30)
-		// and the per-character block (indices 31..94). One crystal category for
-		// the whole ladder; the display resolver renders these as crystals.
+		// ── The CRYSTAL categories: CTR progression with no model of its own ──
+		//
+		// The capability ladder (#219): the shared-global block (Progressive
+		// Boost/Top Speed/Acceleration/Turning, indices 27..30) and the
+		// per-character block (indices 31..94).
 		if (idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
 		    idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 			return AP_CAT_CRYSTAL;
+
+		// The character unlocks (#54/#209, indices 123..138). Ruled: a character
+		// unlock IS a CTR progression item and reads as the same purple
+		// crystal as the ladder, not as a generic Archipelago marker. They join the
+		// category rather than getting one of their own because every answer the
+		// display policy gives them is the ladder's -- same model, same tint, same
+		// scale, same plum fallback -- and a second category whose every arm
+		// duplicated the first is a seam that can only ever drift apart.
+		//
+		// This is DISPLAY ONLY. AP_CAT_CRYSTAL has no bit pool (it sits past
+		// AP_CAT_COUNT, so AP_CATEGORY_POOLS cannot index it) and no consumer
+		// outside ap_reward_policy.h, so widening it grants nothing, gates nothing
+		// and counts nothing. The receive path for these items is unchanged and
+		// lives on the character-phase branch.
+		if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+		    idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+			return AP_CAT_CRYSTAL;
+
+		// Everything else is marker material, INCLUDING the other CTR items the
+		// datapackage classifies `progression` -- the lettersanity letters (#148,
+		// indices 139+) are the live example. The ruling above named the character
+		// unlocks; extending the crystal to the letters is a separate product call
+		// and is not made here. When it is, this is the one place it lands.
 		return AP_CAT_NONE;
 	}
 }
