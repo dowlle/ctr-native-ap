@@ -43,9 +43,10 @@ void CS_Garage_ZoomOut(char zoomState)
 #ifdef CTR_AP
 // Force the AP-authoritative racer over whatever a Garage confirm just wrote.
 //
-// The two commit sites below (:380 and :466 in the retail flow) are the only
-// places in the tree that can seat a racer of the player's choosing at
-// adventure start. When the seed owns the racer they are unreachable, because
+// The two commit sites below (:479-480 and :576-577 here, :380 and :466 before
+// this file grew the skip block) are the only places in the tree that can seat
+// a racer of the player's choosing at adventure start. When the seed owns the
+// racer they are unreachable, because
 // CS_Garage_MenuProc returns early -- but writing the invariant at the point of
 // the write, rather than trusting the arrangement that keeps us away from it,
 // is what stops a future refactor of the skip from silently reopening the
@@ -97,8 +98,8 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	// THE BYPASS THIS CLOSES. This function is the whole of the vanilla garage
 	// picker (registered as the menuGarage funcPtr, game/233/D233.c:11-23, run
 	// per frame from game/RECTMENU.c:943-954), and it commits the highlighted
-	// racer to data.characterIDs[0] plus sdata->advProgress.characterID at :380
-	// and again at :466. Those are precisely the two fields the AP layer seats
+	// racer to data.characterIDs[0] plus sdata->advProgress.characterID at
+	// :479-480 and again at :576-577. Those are precisely the two fields AP seats
 	// the seed's racer into, and the garage writes them afterwards, so the
 	// player's pick simply won. Observed live on a seed whose starting racer was
 	// Neo Cortex with character unlocks on: picking Dingodile made you Dingodile.
@@ -112,7 +113,7 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	// one of them cannot be expressed here at all. Constraining the picker to a
 	// single legal tile would also present a choice that is not one.
 	//
-	// HOW THE SKIP WORKS. It performs exactly what the :375-385 confirm branch
+	// HOW THE SKIP WORKS. It performs exactly what the double-tap confirm branch
 	// performs -- the same two writes, the same SubmitName_RestoreName(0), the
 	// same handoff to the OSK -- with the racer AP resolved instead of the
 	// highlighted one, and returns before any input or drawing. Everything
@@ -577,7 +578,7 @@ SKIP_CONTROLS:
 			sdata->advProgress.characterID = data.characterIDs[0];
 
 #ifdef CTR_AP
-			// The second of the two commit sites; same reasoning as :380.
+			// The second of the two commit sites; same reasoning as the first.
 			CS_Garage_ApplyApRacerOverride();
 #endif
 

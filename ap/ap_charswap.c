@@ -747,7 +747,7 @@ static void ap_cs_requestSwap(struct GameTracker *gGT, int characterID)
 	ap_cs_fromCharacter = data.characterIDs[0];
 
 	// The character the hub reloads with. advProgress.characterID is the same
-	// value the Garage confirm writes (game/233/CS_Garage.c:360), so the hub
+	// value the Garage confirm writes (the two commit sites in CS_Garage_MenuProc, game/233/CS_Garage.c:479-480 and :576-577), so the hub
 	// re-enters in exactly the state a fresh Garage pick would produce.
 	//
 	// Persistence (spike seam 3) is wired: ap_cs_persistCharacter writes the
@@ -1058,7 +1058,7 @@ int AP_CharSwap_FeatureLive(void)
 // client has to seat it -- otherwise a seed that says "you are Ripper Roo"
 // starts you as whoever the save file holds, and on a racer-locked seed that is
 // the difference between a solvable and an unsolvable run. Written to the same
-// two places a Garage confirm writes (game/233/CS_Garage.c:360), so the hub
+// two places a Garage confirm writes (the two commit sites in CS_Garage_MenuProc, game/233/CS_Garage.c:479-480 and :576-577), so the hub
 // enters in exactly the state a fresh pick would produce.
 //
 // Runs once per authoritative answer: after the application the player owns
@@ -1122,7 +1122,7 @@ static void ap_cs_persistCharacter(int characterID)
 }
 
 // Write a racer into the two places a Garage confirm writes
-// (game/233/CS_Garage.c:360), so the hub enters exactly the state a fresh pick
+// (the two commit sites in CS_Garage_MenuProc, game/233/CS_Garage.c:479-480 and :576-577), so the hub enters exactly the state a fresh pick
 // would produce. Silent when the racer is already seated.
 static void ap_cs_seatApply(int characterID, const char *source)
 {
