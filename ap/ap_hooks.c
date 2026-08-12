@@ -6,6 +6,7 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
@@ -1464,7 +1465,7 @@ static void AP_ReconcilePodiumFromTrophies(void);
 // so a clean/vanilla-config run is byte-identical.
 // ---------------------------------------------------------------------------
 #define AP_CEREMONY_MAX 8            // max distinct checks shown for one race
-#define AP_CEREMONY_CYCLE_FRAMES 90  // per-entry dwell when cycling (tunable)
+#define AP_CEREMONY_CYCLE_FRAMES AP_CEREMONY_DEFAULT_DWELL
 
 typedef struct
 {
@@ -1764,7 +1765,8 @@ static void AP_CeremonyDrawEntry(int x, int y, long code, int bit, int rung)
 // includeLedger folds in the whole race's just-sent checks (relic tiers, podium
 // rungs) so a multi-check screen cycles them; single-reward screens pass 0 so a
 // shared multi-reward race (e.g. token+trophy) doesn't echo the same rungs twice.
-int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
+static int AP_CeremonyDrawInternal(int x, int y, int primaryBit,
+	int includeLedger, int elapsedFrames, int visibleFrames)
 {
 	if (!ctr_cfg_active())
 		return 0;
@@ -1803,11 +1805,32 @@ int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
 	if (n == 0)
 		return 0; // not connected / nothing scouted -> caller draws vanilla
 
-	int idx = (n > 1)
-	              ? (int)((sdata->gGT->timer / AP_CEREMONY_CYCLE_FRAMES) % (unsigned)n)
-	              : 0;
+	int idx;
+	if (elapsedFrames >= 0 && visibleFrames > 0)
+		idx = AP_CeremonyCycleIndex(n, elapsedFrames, visibleFrames);
+	else
+		idx = (n > 1)
+		          ? (int)((sdata->gGT->timer / AP_CEREMONY_CYCLE_FRAMES) % (unsigned)n)
+		          : 0;
 	AP_CeremonyDrawEntry(x, y, codes[idx], bits[idx], rungs[idx]);
 	return 1;
+}
+
+int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger)
+{
+	return AP_CeremonyDrawInternal(x, y, primaryBit, includeLedger, -1, 0);
+}
+
+int AP_CeremonyDrawTimed(int x, int y, int primaryBit, int includeLedger,
+	int elapsedFrames, int visibleFrames)
+{
+	return AP_CeremonyDrawInternal(x, y, primaryBit, includeLedger,
+	                              elapsedFrames, visibleFrames);
+}
+
+int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth)
+{
+	return AP_CeremonyOffscreenCenterX(logicalWidth, wrapWidth);
 }
 
 // ---------------------------------------------------------------------------
