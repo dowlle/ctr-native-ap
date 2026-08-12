@@ -15,6 +15,9 @@ NativeConfig g_config = {
 	false, // skipIntro
 	false, // increaseDrawDistance
 	false, // disableSplitScreenLod
+	false, // fullscreen (default windowed)
+	0,     // aspectRatio (0 = 4:3, vanilla)
+	true,  // dithering (default on: PSX-authentic)
 	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
 	-1,    // volMusic
 	-1,    // volVoice
@@ -37,6 +40,15 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "skip_intro",               "Skip Intros",                  CFG_BOOL, &g_config.skipIntro},
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
 	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},
+	// The three graphics options ported from thecodingbob/ctr-native
+	// (widescreen-option / fullscreen-option / dithering-option branches). The
+	// aspect_ratio row is CFG_ENUM: 0 = 4:3 (vanilla default), 1 = 16:9,
+	// 2 = 16:10, 3 = 21:9, stepped through a fixed ladder and rendered as a name
+	// (see the s_aspectValues/s_aspectNames ladders in game/230/MM_ConfigMenu.c).
+	// Persists as its raw int value, same as CFG_INT.
+	{"Video & QoL", "dithering",                "Dithering",                    CFG_BOOL, &g_config.dithering},
+	{"Video & QoL", "fullscreen",               "Fullscreen",                   CFG_BOOL, &g_config.fullscreen},
+	{"Video & QoL", "aspect_ratio",             "Aspect Ratio",                 CFG_ENUM, &g_config.aspectRatio},
 	// Audio section: config-file-only. Hidden from the in-game options menu (gated
 	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
 	// through the vanilla audio screen and a CFG_INT would render there as a bare
@@ -83,6 +95,16 @@ static bool g_configIniPresent = false;
 bool NativeConfig_HasIni(void)
 {
 	return g_configIniPresent;
+}
+
+bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen)
+{
+	return !windowFullscreen;
+}
+
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have)
+{
+	return want != have;
 }
 
 static bool ParseBool(const char *s)

@@ -423,6 +423,20 @@ void PushBuffer_SetMatrixVP(struct PushBuffer *pb)
 	// scale Y axis (3)
 	pb->matrix_ViewProj.m[1][2] = pb->matrix_ViewProj.m[1][2] * r360 / r600;
 
+	// widescreen (ported from thecodingbob/ctr-native, branch widescreen-option):
+	// scale X by ws/r800 to widen the horizontal FOV for non-4:3 aspects. 4:3
+	// keeps ws == r800, so vanilla behaviour is unchanged with the default.
+	if (g_config.aspectRatio != 0)
+	{
+		int ws = Widescreen_GetFovScale();
+#define r800 0x800
+		pb->matrix_ViewProj.t[0] = pb->matrix_ViewProj.t[0] * ws / r800;
+		pb->matrix_ViewProj.m[0][0] = pb->matrix_ViewProj.m[0][0] * ws / r800;
+		pb->matrix_ViewProj.m[0][1] = pb->matrix_ViewProj.m[0][1] * ws / r800;
+		pb->matrix_ViewProj.m[0][2] = pb->matrix_ViewProj.m[0][2] * ws / r800;
+#undef r800
+	}
+
 	// store camera matrix,
 	// otherwise oxide intro cutscene bugs out,
 	// when crash is sleeping on the grassy hill
@@ -609,6 +623,15 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 	val_X = pb->rect.w;
 	val_X = val_X / 2;
+
+	// widescreen (ported from thecodingbob/ctr-native, branch widescreen-option):
+	// spread the frustum corner X out in step with the wider horizontal FOV
+	// applied in PushBuffer_SetMatrixVP, so the cull volume matches the visible
+	// geometry. 4:3 skips this, keeping val_X (and the cull volume) unchanged.
+	if (g_config.aspectRatio != 0)
+	{
+		val_X = Widescreen_ScaleFrustumX(val_X);
+	}
 
 	val_Y = ((pb->rect.h * 0x600) / 0x360);
 	val_Y = val_Y / 2;
