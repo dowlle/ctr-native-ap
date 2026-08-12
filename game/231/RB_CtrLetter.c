@@ -1,5 +1,15 @@
 #include <common.h>
 
+#ifdef CTR_AP
+static int AP_CtrLetterIndex(int modelID)
+{
+	if (modelID == STATIC_C) return 0;
+	if (modelID == STATIC_T) return 1;
+	if (modelID == STATIC_R) return 2;
+	return -1;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b5090-0x800b5210.
 
 int RB_CtrLetter_ThCollide(struct Thread *letterTh, struct Thread *driverTh, void *funcThCollide, struct ScratchpadStruct *sps)
@@ -16,6 +26,10 @@ int RB_CtrLetter_ThCollide(struct Thread *letterTh, struct Thread *driverTh, voi
 
 	letterInst = letterTh->inst;
 	driver = driverTh->object;
+#ifdef CTR_AP
+	int apLetter = AP_CtrLetterIndex(letterInst->model->id);
+	if (apLetter >= 0 && !AP_LetterAvailable(sdata->gGT->levelID, apLetter)) return 0;
+#endif
 
 	pb = &sdata->gGT->pushBuffer[driver->driverID];
 	RB_Fruit_GetScreenCoords(pb, letterInst, &posScreen[0]);
@@ -25,6 +39,9 @@ int RB_CtrLetter_ThCollide(struct Thread *letterTh, struct Thread *driverTh, voi
 	driver->PickupLetterHUD.cooldown = 10;
 	driver->PickupLetterHUD.numCollected++;
 	driver->PickupLetterHUD.modelID = letterInst->model->id;
+#ifdef CTR_AP
+	if (apLetter >= 0) AP_LetterCollected(sdata->gGT->levelID, apLetter);
+#endif
 
 	letterInst->scale.x = 0;
 	letterInst->scale.y = 0;
@@ -135,4 +152,14 @@ void RB_CtrLetter_LInB(struct Instance *inst)
 	}
 
 	RB_Default_LInB(inst);
+#ifdef CTR_AP
+	{
+		int apLetter = AP_CtrLetterIndex(inst->model->id);
+		if (apLetter >= 0 && sdata->gGT->levelID >= 0 && sdata->gGT->levelID < 16)
+		{
+			if (AP_LetterAvailable(sdata->gGT->levelID, apLetter)) inst->flags &= ~DRAW_TRANSPARENT;
+			else inst->flags |= DRAW_TRANSPARENT;
+		}
+	}
+#endif
 }

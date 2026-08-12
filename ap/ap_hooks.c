@@ -2564,6 +2564,7 @@ static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
 // cache as it opens each location, so the own component follows checked-state
 // synchronously and cannot race the ReceivedItems drain. See AP_GateCountForeign.
 static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
+static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 
 // ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate
@@ -3534,6 +3535,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_recv_count[k] = 0;
 			ap_recv_count_foreign[k] = 0; // #85: rebuilds from the resent ReceivedItems list
 		}
+		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		AP_SurfaceReset(); // rebuilt by the authoritative ReceivedItems replay below
@@ -3688,6 +3690,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 		{
 			AP_CapabilityReceivePerCharacter((int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX));
+		}
+		else if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
+		         idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+		{
+			int li = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
+			ap_letter_received[li / CTR_CFG_LETTER_COUNT][li % CTR_CFG_LETTER_COUNT] = 1;
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -4022,6 +4030,53 @@ static void AP_EmitClassCheck(long code,
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
 		AP_FeedOnLocationSent(code);
+}
+
+int AP_LetterAvailable(int track, int letter)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
+	if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT || letter < 0 || letter >= 3) return 1;
+	return AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
+	                              ctr_cfg.lettersanity_locations[track][letter],
+	                              ap_letter_received[track][letter]);
+}
+
+long AP_LetterLocation(int track, int letter)
+{
+	if (!ctr_cfg_active() || track < 0 || track >= 16 || letter < 0 || letter >= 3) return -1;
+	return ctr_cfg.lettersanity_locations[track][letter];
+}
+
+void AP_LetterCollected(int track, int letter)
+{
+	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, 0,
+	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
+}
+
+int AP_LettersRequiredMet(int track)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
+	return AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
+	                                 ctr_cfg.lettersanity_locations[track],
+	                                 ap_letter_received[track]);
+}
+
+int AP_LettersRequiredCount(int track)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 3;
+	return AP_LettersRequiredCountPure(1, ctr_cfg.lettersanity_mode,
+	                                   ctr_cfg.lettersanity_locations[track]);
+}
+
+int AP_LetterTokenEarned(int track, int didWin, int collected)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2 ||
+	    track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT)
+		return didWin && collected == 3;
+	return AP_LetterTokenEarnedPure(didWin, collected, 1,
+	                                ctr_cfg.lettersanity_mode,
+	                                ctr_cfg.lettersanity_locations[track],
+	                                ap_letter_received[track]);
 }
 
 // Podium wrapper: preserve the shipped log text and make the two podium-specific
