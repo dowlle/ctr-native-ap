@@ -370,6 +370,11 @@ u32 VehPickupItem_PotionThrow(struct MineWeapon *mine, struct Instance *inst, u3
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006540c-0x800666e4.
+	// NOTE(ap): no itemsanity hook here. By the time this runs, `weaponID` has
+	// already lost the Bomb, Bomb x3 and Missile x3 identities to the shared
+	// Missile branch, and the bot/boss auto-fire callers in PickupBots.c enter
+	// here directly. The check hook sits at the player's own choke point
+	// instead, in VehPickupItem_ShootOnCirclePress below.
 	struct Instance *dInst;
 	struct Thread *weaponTh;
 	struct Instance *weaponInst;
@@ -1131,6 +1136,16 @@ void VehPickupItem_ShootOnCirclePress(struct Driver *d)
 
 	// Remove the request to fire a weapon, since we will fire it now
 	d->actionsFlagSet &= ~ACTION_WEAPON_FIRE_REQUEST;
+
+#ifdef CTR_AP
+	// #145 itemsanity: the live choke point for a player-initiated use. The
+	// request flag is only raised by VehPhysProc after it has already spent the
+	// item (numHeldItems--/noItemTimer), and it is cleared just above, so this
+	// runs exactly once per committed use even when ShootNow's own caps (the
+	// 12-missile ceiling) swallow the projectile. It reads d->heldItemID, the
+	// true weapon identity, before the shared Bomb/Missile rewrite below.
+	AP_ItemsanityOnUse(d, (int)d->heldItemID);
+#endif
 
 	weapon = d->heldItemID;
 
