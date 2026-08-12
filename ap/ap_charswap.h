@@ -37,14 +37,23 @@ int AP_CharSwap_PickerOpen(void);
 // with every character option off answers 0 and behaves like a pre-feature seed.
 int AP_CharSwap_FeatureLive(void);
 
-// Seat this slot's racer, once per session: the value persisted in per-slot AP
-// data storage if there is one, otherwise the seed's YAML starting racer. The
-// racer is never an item, so nothing else would ever apply it.
-void AP_CharSwap_SeatStartingCharacter(void);
+// Seat this slot's racer, once per authoritative answer: the value persisted in
+// per-slot AP data storage if there is one, otherwise the seed's YAML starting
+// racer. The racer is never an item, so nothing else would ever apply it.
+//
+// Takes gGT only to ask ap_cs_hubReady whether this is a frame where changing an
+// ALREADY-seated racer is safe. A stored racer whose unlock item has not been
+// replayed yet is held pending with no deadline (ap_charseat.h explains why no
+// timer can be trusted here), so its restore can arrive mid-race; that restore
+// waits for the hub. The first seat of a connection is not gated, because the
+// hub births the player during its own load.
+void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT);
 
 // Re-arm the one-shot seat above on a fresh connect, so a reconnect or a slot
 // switch re-applies the authoritative racer instead of keeping whatever the
-// local save holds.
+// local save holds. Also ZEROES the live editable-stat deltas: the restore is
+// asynchronous and may never run at all on a slot with no stored package, so
+// without this the previous slot's tune stays in effect on the new one.
 void AP_CharSwap_ConnectReset(void);
 
 // Post-pass over VehBirth_SetConsts: applies the AP-owned stat package for the

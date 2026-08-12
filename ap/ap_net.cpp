@@ -196,11 +196,11 @@ static std::string ap_char_key()
 // survive a reconnect and a change of machine ("edited stats follow the slot on
 // the AP server, not the local save").
 //
-// Shape: a flat JSON array of AP_EDITSTAT_COUNT signed ints. Fixed length so a
-// partial or oversized array is rejected wholesale rather than applied halfway;
-// layout is owned by the game side (ap_charswap.c), which is the only writer
-// and the only reader.
-#define AP_EDITSTAT_COUNT 68  // 4 global + 16 racers x 4
+// Shape: a flat JSON array of AP_EDITSTAT_COUNT signed ints, each inside the
+// documented delta range. Fixed length so a partial or oversized array is
+// rejected wholesale rather than applied halfway; layout is owned by the game
+// side (ap_charswap.c), which is the only writer and the only reader.
+#define AP_EDITSTAT_COUNT AP_NET_EDITSTAT_COUNT
 static int         g_edit_value[AP_EDITSTAT_COUNT];
 static bool        g_edit_known = false;
 static unsigned    g_edit_rev = 0;
@@ -210,24 +210,67 @@ static std::string ap_edit_key()
 	return "ctr_editstats_" + g_slot;
 }
 
-// Accept an array only if it is exactly the expected length and entirely
-// integral. A malformed package must leave the previous state untouched, not
-// half-applied -- a kart tuned from someone else's truncated array is worse
-// than a kart that ignored it.
+// Read a JSON integer WIDE, without narrowing. nlohmann reports an integer that
+// does not fit int64 as unsigned, and get<int>() on either would truncate -- the
+// exact silent corruption the bounds check exists to prevent -- so pull the
+// widest representation and hand the caller a value it can range-check honestly.
+// Returns false when the number cannot even be represented in a long long, which
+// is already far outside any delta this client writes.
+static bool ap_json_int64(const nlohmann::json &e, long long *out)
+{
+	if (e.is_number_unsigned())
+	{
+		unsigned long long u = e.get<unsigned long long>();
+		if (u > (unsigned long long)0x7FFFFFFFFFFFFFFFull)
+			return false;
+		*out = (long long)u;
+		return true;
+	}
+	if (!e.is_number_integer())
+		return false;
+	*out = e.get<long long>();
+	return true;
+}
+
+// Accept an array only if it is exactly the expected length, entirely integral,
+// and entirely inside the documented delta bound. VALIDATE EVERYTHING FIRST,
+// copy nothing until the whole package has passed: a malformed or out-of-range
+// package must leave the previous state untouched, not half-applied. A kart
+// tuned from someone else's truncated array -- or from a 4294967328 that became
+// 32 on the way through `int` and then through `short` -- is worse than a kart
+// that ignored the package entirely.
 static bool ap_edit_accept(const nlohmann::json &v)
 {
+	long long staged[AP_EDITSTAT_COUNT];
+	int       i = 0;
+
 	if (!v.is_array() || v.size() != (size_t)AP_EDITSTAT_COUNT)
 		return false;
 	for (const auto &e : v)
 	{
-		if (!e.is_number_integer())
+		long long n = 0;
+		if (!e.is_number_integer() || !ap_json_int64(e, &n) || !ap_editstat_value_ok(n))
 			return false;
+		staged[i++] = n;
 	}
-	int i = 0;
-	for (const auto &e : v)
-		g_edit_value[i++] = e.get<int>();
+	for (i = 0; i < AP_EDITSTAT_COUNT; i++)
+		g_edit_value[i] = (int)staged[i];
 	g_edit_known = true;
 	g_edit_rev++;
+	return true;
+}
+
+// The stored racer gets the same pre-narrowing treatment for the same reason.
+// A raw get<int>() on 4294967301 yields 5, which passes an 0..15 roster check
+// and seats a racer nobody stored.
+static bool ap_char_accept(const nlohmann::json &v, int *out)
+{
+	long long n = 0;
+	if (!v.is_number_integer() || !ap_json_int64(v, &n))
+		return false;
+	if (n < 0 || n > 15)
+		return false;
+	*out = (int)n;
 	return true;
 }
 
@@ -698,19 +741,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
 		auto ch = keys.find(ap_char_key());
-		if (ch != keys.end() && ch->second.is_number_integer())
+		int  cv = 0;
+		// A stored racer outside the roster is a key some other tool wrote.
+		// Ignore it rather than seating a character id the engine cannot name;
+		// the slot_data starting racer stays in effect.
+		if (ch != keys.end() && ap_char_accept(ch->second, &cv))
 		{
-			int v = ch->second.get<int>();
-			// A stored racer outside the roster is a key some other tool wrote.
-			// Ignore it rather than seating a character id the engine cannot
-			// name; the slot_data starting racer stays in effect.
-			if (v >= 0 && v <= 15)
-			{
-				g_char_value = v;
-				g_char_known = true;
-				g_char_rev++;
-				std::fprintf(stderr, "[AP NET] current racer retrieved: %d\n", g_char_value);
-			}
+			g_char_value = cv;
+			g_char_known = true;
+			g_char_rev++;
+			std::fprintf(stderr, "[AP NET] current racer retrieved: %d\n", g_char_value);
 		}
 		auto es = keys.find(ap_edit_key());
 		if (es != keys.end() && ap_edit_accept(es->second))
@@ -725,16 +765,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
-		if (key == ap_char_key() && value.is_number_integer())
+		int cv = 0;
+		if (key == ap_char_key() && ap_char_accept(value, &cv))
 		{
-			int v = value.get<int>();
-			if (v >= 0 && v <= 15)
-			{
-				g_char_value = v;
-				g_char_known = true;
-				g_char_rev++;
-				std::fprintf(stderr, "[AP NET] current racer changed: %d\n", g_char_value);
-			}
+			g_char_value = cv;
+			g_char_known = true;
+			g_char_rev++;
+			std::fprintf(stderr, "[AP NET] current racer changed: %d\n", g_char_value);
 		}
 		if (key == ap_edit_key() && ap_edit_accept(value))
 			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
@@ -1192,6 +1229,21 @@ extern "C" void ap_net_editstats_set(const int *values, int n)
 		return;
 	if (values == 0 || n != AP_EDITSTAT_COUNT)
 		return;
+	// Never STORE what we would refuse to LOAD. The game side's deltas are
+	// shorts bounded by the stat table's own caps, so this cannot fire in
+	// practice; if it ever does, the bug is upstream and writing an unloadable
+	// package would hide it behind a package that silently stops restoring.
+	for (int i = 0; i < n; i++)
+	{
+		if (!ap_editstat_value_ok((long long)values[i]))
+		{
+			std::fprintf(stderr,
+			             "[AP NET] refusing to store an out-of-range editable stat delta "
+			             "(index %d = %d, bound %d..%d)\n",
+			             i, values[i], AP_NET_EDITSTAT_MIN, AP_NET_EDITSTAT_MAX);
+			return;
+		}
+	}
 	nlohmann::json arr = nlohmann::json::array();
 	for (int i = 0; i < n; i++)
 		arr.push_back(values[i]);

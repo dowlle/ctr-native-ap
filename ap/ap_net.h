@@ -6,6 +6,8 @@
 // unity build (ap_hooks.c). Handles ws:// and wss:// (TLS) with compression;
 // the transport is selected from the uri scheme passed to ap_net_init().
 
+#include "ap_editstat_bounds.h" // AP_NET_EDITSTAT_COUNT / _MIN / _MAX
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -187,12 +189,19 @@ int  ap_net_character_known(int *out);
 unsigned ap_net_character_revision(void);
 
 // ── Editable stat package sync (issues #54/#209, data storage) ──
-// 68 signed ints (4 global + 16 racers x 4), under "ctr_editstats_<slot>". Same
-// per-slot server-side home as the racer, and for the same ruled reason. The
-// LAYOUT of the array is owned by ap_charswap.c, the only writer and reader; a
-// package of the wrong length or with a non-integer entry is rejected wholesale
-// rather than applied halfway.
-#define AP_NET_EDITSTAT_COUNT 68
+// AP_NET_EDITSTAT_COUNT signed ints (4 global + 16 racers x 4), under
+// "ctr_editstats_<slot>". Same per-slot server-side home as the racer, and for
+// the same ruled reason. The LAYOUT of the array is owned by ap_charswap.c, the
+// only writer and reader.
+//
+// Data storage is untrusted input: anything holding the slot can write this key,
+// and the game side narrows each element to `short` before it reaches a driver.
+// A package is therefore accepted only when it is exactly the right length,
+// entirely integral, AND every element lies inside the documented delta range
+// [AP_NET_EDITSTAT_MIN, AP_NET_EDITSTAT_MAX] (see ap_editstat_bounds.h for how
+// that range is derived from the stat table's own caps). Any failure rejects the
+// package WHOLESALE, leaving the previous state untouched -- a half-applied or
+// silently truncated tune is worse than an ignored one.
 void ap_net_editstats_subscribe(void);
 void ap_net_editstats_set(const int *values, int n);
 int  ap_net_editstats_known(int *out, int n);

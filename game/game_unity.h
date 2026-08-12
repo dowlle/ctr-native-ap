@@ -12,6 +12,7 @@
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
 #include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #endif
 
@@ -351,6 +352,7 @@
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
 #include "../ap/ap_capability.c"
+#include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"
 #endif
 

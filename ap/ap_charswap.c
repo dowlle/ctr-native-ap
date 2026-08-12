@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ap_charseat.h" // deterministic stored-racer seat state machine
 #include "ap_charswap.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
 
@@ -315,6 +316,15 @@ static short ap_cs_editPerChar[AP_CS_TILES][AP_CS_STATS];
 // character-id order. 4 + 64 = 68 = AP_NET_EDITSTAT_COUNT, which the network
 // side length-checks so a truncated package is rejected rather than applied
 // halfway.
+//
+// Tied to that length at COMPILE time rather than by the comment above: the pack
+// and unpack loops below are driven by AP_CS_STATS / AP_CS_TILES while the
+// buffers they fill are AP_NET_EDITSTAT_COUNT long, so if the two ever disagreed
+// they would run off the end. There is one wire length and this is where the
+// game-side layout is checked against it.
+typedef char ap_cs_editLayoutMatchesWireLength
+    [(AP_CS_STATS + AP_CS_TILES * AP_CS_STATS == AP_NET_EDITSTAT_COUNT) ? 1 : -1];
+
 static unsigned ap_cs_editRestoredRev = 0;
 
 static void ap_cs_editPack(int *out)
@@ -990,35 +1000,47 @@ int AP_CharSwap_FeatureLive(void)
 // two places a Garage confirm writes (game/233/CS_Garage.c:360), so the hub
 // enters in exactly the state a fresh pick would produce.
 //
-// Runs once: after the first application the player owns their choice through
-// the picker, and re-seating it every frame would fight every swap.
-static int      ap_cs_startingSeated = 0;
-static unsigned ap_cs_seatedRev = 0;
+// Runs once per authoritative answer: after the application the player owns
+// their choice through the picker, and re-seating it every frame would fight
+// every swap. WHICH racer, and WHEN it is safe to apply, is decided by the pure
+// state machine in ap_charseat.c -- see that file's header for the connect
+// orderings it exists to get right. This file only supplies live inputs and
+// performs the writes it is told to perform.
+//
+// It supplies NO notion of "the item replay has finished", because the client
+// has none to give: apclientpp reports each ReceivedItems packet's starting
+// index and nothing else, so a stored racer whose unlock has not arrived stays
+// pending indefinitely rather than being abandoned on a timer.
+static struct AP_SeatState ap_cs_seat;
 
-// Re-arm the one-shot seat. Called from the fresh-connect path so a reconnect or
-// a slot switch re-applies the AUTHORITATIVE racer instead of keeping whatever
-// the local save holds -- which is the whole point of persisting it server-side.
+// The seat machine carries its own roster size (AP_SEAT_ROSTER) so it can stay
+// free of engine and AP headers and be compiled on its own by the harness. This
+// is the one place all three roster counts are visible at once, so it is where
+// that copy is pinned to the engine's roster and the capability tracker's rather
+// than left to drift.
+typedef char ap_cs_seatRosterMatchesEngine
+    [(AP_SEAT_ROSTER == AP_CAP_ROSTER_COUNT && AP_SEAT_ROSTER == NITROS_OXIDE + 1) ? 1 : -1];
+
+// Re-arm the one-shot seat and drop every scrap of the previous slot's state.
+// Called from the fresh-connect path so a reconnect or a slot switch re-applies
+// the AUTHORITATIVE racer and the AUTHORITATIVE stat package instead of keeping
+// whatever the previous connection left in memory.
 void AP_CharSwap_ConnectReset(void)
 {
-	ap_cs_startingSeated = 0;
-	ap_cs_seatedRev = 0;
+	AP_SeatReset(&ap_cs_seat);
 	ap_cs_editRestoredRev = 0;
-}
 
-// Has the server told us something about the racer that we have not applied?
-//
-// `Get` is ASYNCHRONOUS. The subscribe seeds the cache with the seed's starting
-// racer so the very first frame is correct, and the stored value lands some
-// frames later. A one-shot keyed only on "have I seated yet" would consume the
-// seeded default and then ignore the real answer forever -- the racer would
-// silently reset to the seed's starter on every reconnect, which is precisely
-// the bug persistence exists to prevent. Keying on the revision instead makes a
-// late-arriving stored racer apply exactly once, when it arrives.
-static int ap_cs_seatPending(void)
-{
-	if (!ap_cs_startingSeated)
-		return 1;
-	return ap_net_character_revision() != ap_cs_seatedRev;
+	// Zero the live edit tables, not just the revision that tracks them.
+	//
+	// Clearing only ap_cs_editRestoredRev leaves the previous slot's deltas
+	// populated and in effect. If the slot we are connecting to has no
+	// ctr_editstats_<slot> key at all, no restore ever runs, nothing overwrites
+	// them, and the player silently drives slot A's tune on slot B. Zeroing here
+	// -- synchronously, in the connect handler -- also closes the window before
+	// the asynchronous stored package can arrive: a new slot starts at zero
+	// deltas and only a package that actually belongs to it can move them.
+	memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
+	memset(ap_cs_editPerChar, 0, sizeof ap_cs_editPerChar);
 }
 
 // Persist the racer the player just chose (spike seam 3, now real).
@@ -1032,65 +1054,113 @@ static void ap_cs_persistCharacter(int characterID)
 	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
 		return;
 	ap_net_character_set(characterID);
+	// The player's own pick outranks anything still pending from storage. Without
+	// this, an unlock arriving a few frames later would let a deferred stored
+	// racer yank them back off the racer they just chose.
+	AP_SeatLocalChoice(&ap_cs_seat, ap_net_character_revision());
 }
 
-void AP_CharSwap_SeatStartingCharacter(void)
+// Write a racer into the two places a Garage confirm writes
+// (game/233/CS_Garage.c:360), so the hub enters exactly the state a fresh pick
+// would produce. Silent when the racer is already seated.
+static void ap_cs_seatApply(int characterID, const char *source)
 {
 	char msg[160];
-	int wanted;
-	int stored = 0;
 
-	if (!ap_cs_seatPending())
+	if (characterID < 0 || characterID > NITROS_OXIDE)
 		return;
-	if (!AP_CharSwap_FeatureLive())
-		return;
-	// Never re-seat over a swap the player is in the middle of: the picker owns
-	// the choice while it is open, and a reload in flight is about to apply one.
-	if (ap_cs_open || ap_cs_pendingSwap || ap_cs_restorePos)
-		return;
+	if (data.characterIDs[0] == (short)characterID)
+		return; // already there; nothing to do and nothing to say
 
-	// The stored per-slot racer WINS over the seed's starting racer. That is the
-	// ordering the feature needs: `starting_character` says who you begin as,
-	// the stored value says who you have since become, and a reconnect must
-	// restore the second rather than undo every swap of the session. On a
-	// first-ever connect nothing is stored and ap_net_character_subscribe has
-	// already seeded the cache with the seed's own starting racer, so both paths
-	// agree.
-	wanted = ap_net_character_known(&stored) ? stored : ctr_cfg.starting_character;
-	if (wanted < 0 || wanted > NITROS_OXIDE)
-		wanted = ctr_cfg.starting_character;
-	if ((unsigned)wanted > (unsigned)NITROS_OXIDE)
-		return;
-
-	// Only seat a racer the seed actually lets you be. A stored value can
-	// outlive the item state that justified it (a re-rolled seed on the same
-	// slot name), and seating a locked racer would hand the player a racer the
-	// generation never granted.
-	if (!AP_CharacterUnlocked(wanted))
-	{
-		snprintf(msg, sizeof msg,
-		         "[AP CHARSWAP] stored racer %d is not unlocked on this seed; "
-		         "falling back to the starting racer %d\n",
-		         wanted, ctr_cfg.starting_character);
-		AP_LogLine(msg);
-		wanted = ctr_cfg.starting_character;
-	}
-
-	ap_cs_startingSeated = 1;
-	ap_cs_seatedRev = ap_net_character_revision();
-
-	if (data.characterIDs[0] == (short)wanted)
-		return; // already there; nothing to say
-
-	snprintf(msg, sizeof msg,
-	         "[AP CHARSWAP] seating racer %d -> %d (%s)\n",
-	         (int)data.characterIDs[0], wanted,
-	         (wanted == ctr_cfg.starting_character) ? "seed starting racer"
-	                                                : "restored from AP data storage");
+	snprintf(msg, sizeof msg, "[AP CHARSWAP] seating racer %d -> %d (%s)\n",
+	         (int)data.characterIDs[0], characterID, source);
 	AP_LogLine(msg);
 
-	data.characterIDs[0] = (short)wanted;
-	sdata->advProgress.characterID = (s16)wanted;
+	data.characterIDs[0] = (short)characterID;
+	sdata->advProgress.characterID = (s16)characterID;
+}
+
+void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT)
+{
+	struct AP_SeatInput in;
+	struct AP_SeatAction act;
+	char                 msg[192];
+	unsigned             rev;
+	int                  i;
+
+	if (!AP_CharSwap_FeatureLive())
+		return;
+
+	// Cheap per-frame gate: on the ordinary frame there is no revision to
+	// resolve and no deferral outstanding, so we never build the unlock mask.
+	// A deferral holds this open, which is the standing cost of never dropping a
+	// stored racer on a timer: sixteen array lookups a frame and no writes.
+	rev = ap_net_character_revision();
+	if (AP_SeatIdle(&ap_cs_seat, rev))
+		return;
+
+	in.rev          = rev;
+	in.stored       = 0;
+	in.known        = ap_net_character_known(&in.stored);
+	in.startingChar = ctr_cfg.starting_character;
+	in.busy         = (ap_cs_open || ap_cs_pendingSwap || ap_cs_restorePos);
+	// Safe-frame test for a DEFERRED restore: the adventure hub open and idle
+	// with a live local driver. A deferral has no deadline, so its restore can
+	// land at any time, including mid-race, and this is what keeps it from
+	// changing the racer there. Server-driven seats are not gated on it (see
+	// ap_charseat.h): they must land before the hub's own load births the player.
+	in.hubReady     = ap_cs_hubReady(gGT);
+	in.unlockedMask = 0u;
+	for (i = 0; i < AP_SEAT_ROSTER; i++)
+	{
+		if (AP_CharacterUnlocked(i))
+			in.unlockedMask |= (1u << i);
+	}
+
+	AP_SeatStep(&ap_cs_seat, &in, &act);
+
+	switch (act.action)
+	{
+	case AP_SEAT_ACT_SEAT:
+		ap_cs_seatApply(act.character, act.fromStore ? "restored from AP data storage"
+		                                             : "seed starting racer");
+		break;
+
+	case AP_SEAT_ACT_DEFER:
+		// Only a racer the seed actually lets you be may be seated. A stored
+		// value can also simply be EARLY: its unlock item is still in the batched
+		// connect-time replay. Keep the stored choice pending with no deadline,
+		// seat the starting racer meanwhile when this is the first seat of the
+		// connection so play is never blocked, and say so exactly once.
+		if (act.character != AP_SEAT_NONE)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP CHARSWAP] stored racer %d is not unlocked (yet); seating the "
+			         "starting racer %d and restoring it if its unlock arrives\n",
+			         ap_cs_seat.pending, ctr_cfg.starting_character);
+			AP_LogLine(msg);
+			ap_cs_seatApply(act.character, "seed starting racer (stored racer pending)");
+		}
+		else
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP CHARSWAP] stored racer %d is not unlocked (yet); keeping racer %d "
+			         "and restoring it if its unlock arrives\n",
+			         ap_cs_seat.pending, (int)data.characterIDs[0]);
+			AP_LogLine(msg);
+		}
+		break;
+
+	case AP_SEAT_ACT_RESTORE:
+		// The unlock arrived. Note that this writes the same two fields a Garage
+		// confirm writes, so an in-hub restore takes visible effect at the next
+		// driver birth rather than re-loading the level under the player.
+		ap_cs_seatApply(act.character, "restored from AP data storage");
+		break;
+
+	default:
+		break;
+	}
 }
 
 void AP_CharSwap_Tick(struct GameTracker *gGT)

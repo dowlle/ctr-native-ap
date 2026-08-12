@@ -3339,6 +3339,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// leave state behind for a feature that seed does not have. The seat is
 		// re-armed so a reconnect re-applies the authoritative value rather than
 		// keeping whatever the local save happened to hold.
+		//
+		// The RESET runs unconditionally, outside that gate. It is what drops the
+		// previous slot's racer AND its editable-stat deltas, and a switch from a
+		// character-phase seed to a pre-0.2.0 one is exactly a case where nothing
+		// later would ever overwrite them. It also runs here, synchronously in the
+		// connect handler, so the tables are already zero before any asynchronous
+		// Retrieved reply for the new slot can land.
+		AP_CharSwap_ConnectReset();
 		if (ctr_cfg.character_phase_present)
 		{
 			ap_net_character_subscribe(ctr_cfg.starting_character);
@@ -3347,7 +3355,6 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// at restore time (only when the editor owns this seed's stats).
 			// Fetching it always keeps the two keys' lifecycles identical.
 			ap_net_editstats_subscribe();
-			AP_CharSwap_ConnectReset();
 		}
 
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
@@ -4281,11 +4288,14 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// actually carrying the character phase (or dev keys) and on the adventure
 	// hub being open.
 	//
-	// Seating the seed's YAML starting racer runs first, and only once: the
-	// racer is never an item, so if this does not apply it nothing else will,
-	// and on a racer-locked seed starting as the wrong racer is the difference
-	// between a solvable run and a stuck one.
-	AP_CharSwap_SeatStartingCharacter();
+	// Seating this slot's racer runs first, and only once per authoritative
+	// answer: the racer is never an item, so if this does not apply it nothing
+	// else will, and on a racer-locked seed starting as the wrong racer is the
+	// difference between a solvable run and a stuck one. It takes gGT purely to
+	// ask whether this is a hub frame, which is when a LATE restore (a stored
+	// racer whose unlock only just arrived) is allowed to change the seated
+	// racer; the first seat of a connection applies wherever we are.
+	AP_CharSwap_SeatStartingCharacter(gGT);
 	AP_CharSwap_Tick(gGT);
 
 	{
