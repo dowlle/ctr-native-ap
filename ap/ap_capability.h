@@ -118,20 +118,31 @@ enum
 
 // ── Character unlock items (issues #54 / #209) ─────────────────────────────
 // The 16 racers, minted straight after the per-character capability block at
-// item indices 123..138, in the SAME apworld roster order.
+// item indices 123..138, in the SAME apworld roster order. Each seed creates 15
+// of them (everything but the racer you start as, which arrives precollected),
+// one copy each. They add no locations and gate nothing unless the seed turned
+// racer-locked pads on.
 //
-// COMPOSITION NOTE. The character-phase branch owns the full version of this
-// block -- these two constants plus AP_CharacterReceive() and the playability
-// query -- in this same file. This branch needs ONLY the index range, because
-// the reward-display policy has to classify a character unlock (ap_items.h) and
-// that is a display decision with no receive path behind it here. The #ifndef
-// mirrors the AP_IDX_* precedent in ap_items.h / ap_hooks.h; when the two
-// branches compose, keep the character-phase block and drop this one. The values
-// are copied from it verbatim so the two can never disagree in the meantime.
-#ifndef AP_CHARACTER_ITEM_FIRST_INDEX
+// The roster-slot -> engine-character mapping is the one already in
+// ap_capability.c (AP_CAP_ROSTER_CHARACTER); putting the unlock tracker in the
+// same translation unit is deliberate, so a future roster edit cannot fix one
+// table and miss the other.
 #define AP_CHARACTER_ITEM_FIRST_INDEX 123
 #define AP_CHARACTER_ITEM_COUNT AP_CAP_ROSTER_COUNT
-#endif
+
+// Receive one character unlock, by ROSTER SLOT (idx - the base above).
+void AP_CharacterReceive(int rosterSlot);
+
+// Is this ENGINE character id playable right now? True for the seed's starting
+// racer, for any racer whose unlock has been received, and -- in the ruled
+// all-unlocked comfort mode -- for every racer. On a seed with no character
+// phase at all it answers for the eight vanilla Adventure starters, which is
+// what a pre-0.2.0 client enforces.
+int AP_CharacterUnlocked(int characterID);
+
+// Engine character id for a roster slot, or -1 when the slot is out of range.
+// The single reader of AP_CAP_ROSTER_CHARACTER outside this file.
+int AP_CapabilityRosterCharacter(int rosterSlot);
 
 // Boost tiers. Index-keyed and ladder-ordered: the tier IS the number of
 // received Progressive Boost copies, clamped to the seed's ceiling.

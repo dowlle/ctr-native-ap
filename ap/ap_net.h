@@ -6,6 +6,8 @@
 // unity build (ap_hooks.c). Handles ws:// and wss:// (TLS) with compression;
 // the transport is selected from the uri scheme passed to ap_net_init().
 
+#include "ap_editstat_bounds.h" // AP_NET_EDITSTAT_COUNT / _MIN / _MAX
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -157,6 +159,53 @@ void ap_net_difficulty_set(int value);
 // 1 (and writes *out) if a difficulty value is currently known from the server
 // (slot_data default seed, Get reply, or a SetNotify update); 0 if none yet.
 int  ap_net_difficulty_known(int *out);
+
+// ── Current racer sync (issues #54/#209, data storage) ──
+// The selected racer is MUTABLE non-item state, so it can ride neither slot_data
+// (frozen, sent once) nor the local save (the 2026-07-23 ruling keeps the build
+// machine-agnostic). It lives in per-slot data storage under
+// "ctr_character_<slot>", exactly like the difficulty override above. Values are
+// ENGINE character ids 0..15; anything else is ignored rather than seated.
+
+// On a fresh slot-connect: subscribe to the racer key and request its current
+// value. slot_default is the seed's own ctr_options.starting_character, which
+// seeds the cache so it is effective before the Get returns. No-op if not
+// connected.
+void ap_net_character_subscribe(int slot_default);
+
+// Persist the racer the player just swapped to (replace op, no reply) and update
+// the cached value. No-op if not connected or if characterID is out of range.
+void ap_net_character_set(int characterID);
+
+// 1 (and writes *out) if a racer is currently known from the server (slot_data
+// default seed, Get reply, or a SetNotify update); 0 if none yet.
+int  ap_net_character_known(int *out);
+
+// Bumped whenever the racer arrives from the SERVER (a Get reply or a SetNotify
+// update) or when subscribe seeds the seed's default. The game side applies the
+// racer once and `Get` is asynchronous, so without this the one-shot consumes
+// the seeded default on the first frame and a stored racer arriving a few
+// frames later is silently never applied. Re-arm on a change.
+unsigned ap_net_character_revision(void);
+
+// ── Editable stat package sync (issues #54/#209, data storage) ──
+// AP_NET_EDITSTAT_COUNT signed ints (4 global + 16 racers x 4), under
+// "ctr_editstats_<slot>". Same per-slot server-side home as the racer, and for
+// the same ruled reason. The LAYOUT of the array is owned by ap_charswap.c, the
+// only writer and reader.
+//
+// Data storage is untrusted input: anything holding the slot can write this key,
+// and the game side narrows each element to `short` before it reaches a driver.
+// A package is therefore accepted only when it is exactly the right length,
+// entirely integral, AND every element lies inside the documented delta range
+// [AP_NET_EDITSTAT_MIN, AP_NET_EDITSTAT_MAX] (see ap_editstat_bounds.h for how
+// that range is derived from the stat table's own caps). Any failure rejects the
+// package WHOLESALE, leaving the previous state untouched -- a half-applied or
+// silently truncated tune is worse than an ignored one.
+void ap_net_editstats_subscribe(void);
+void ap_net_editstats_set(const int *values, int n);
+int  ap_net_editstats_known(int *out, int n);
+unsigned ap_net_editstats_revision(void);
 
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays

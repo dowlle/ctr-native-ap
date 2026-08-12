@@ -3248,8 +3248,41 @@ int AP_GoalAdvert(char *out, int cap)
 // otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
 // per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
 // adventure numbering), valid for the 28-wide ctr_cfg arrays for trophy tracks.
+// Racer lock for a physical pad, or -1 when it has none (#54/#209). Dense pads
+// 0..27 via racer_lock, cup pads 100..104 via gem_cup_racer_lock -- the same
+// two-array routing warp_pad_unlock uses, for the same reason.
+int ctr_cfg_racer_lock(int physPadLevelID)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	if (physPadLevelID >= 100 && physPadLevelID <= 104)
+		return ctr_cfg.gem_cup_racer_lock[physPadLevelID - 100];
+	if (physPadLevelID < 0 || physPadLevelID >= CTR_CFG_PAD_COUNT)
+		return -1;
+	return ctr_cfg.racer_lock[physPadLevelID];
+}
+
+// Is this pad's racer lock satisfied? 1 when the pad has no lock, so every
+// caller can AND this unconditionally.
+int ctr_cfg_racer_lock_met(int physPadLevelID)
+{
+	int required = ctr_cfg_racer_lock(physPadLevelID);
+	if (required < 0)
+		return 1;
+	return AP_CharacterUnlocked(required);
+}
+
 int ctr_cfg_warp_unlocked(int levelID)
 {
+	// Racer lock (#54/#209): ANDed on top of whatever the pad already asks for,
+	// never in place of it -- the apworld's rule does exactly the same thing
+	// (Rules.add_racer_lock_rules captures the base rule and ANDs), and the two
+	// sides have to agree or the golden rule is broken. Checked first so a
+	// locked pad reads closed at every call site that goes through this gate:
+	// the load gate, the spawn visual and the map advert are all one source.
+	if (!ctr_cfg_racer_lock_met(levelID))
+		return 0;
+
 	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
 	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
@@ -3600,6 +3633,31 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_net_difficulty_subscribe(ctr_cfg.ai_difficulty_default);
 		ap_diff_pulled = 0;
 
+		// Current racer (#54/#209): same per-slot data-storage path, seeded by
+		// this seed's own starting racer so a first-ever connect is correct
+		// before the Get round-trips. Only for a seed that actually carries the
+		// character phase -- writing a racer key for a pre-0.2.0 seed would
+		// leave state behind for a feature that seed does not have. The seat is
+		// re-armed so a reconnect re-applies the authoritative value rather than
+		// keeping whatever the local save happened to hold.
+		//
+		// The RESET runs unconditionally, outside that gate. It is what drops the
+		// previous slot's racer AND its editable-stat deltas, and a switch from a
+		// character-phase seed to a pre-0.2.0 one is exactly a case where nothing
+		// later would ever overwrite them. It also runs here, synchronously in the
+		// connect handler, so the tables are already zero before any asynchronous
+		// Retrieved reply for the new slot can land.
+		AP_CharSwap_ConnectReset();
+		if (ctr_cfg.character_phase_present)
+		{
+			ap_net_character_subscribe(ctr_cfg.starting_character);
+			// Editable stat package: subscribed unconditionally alongside the
+			// racer, because whether it is APPLIED is a separate decision made
+			// at restore time (only when the editor owns this seed's stats).
+			// Fetching it always keeps the two keys' lifecycles identical.
+			ap_net_editstats_subscribe();
+		}
+
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
 		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
 		// the slot-connected handler that ran inside ap_net_poll() above, so
@@ -3732,6 +3790,16 @@ static void AP_NetTick(struct GameTracker *gGT)
 		{
 			int li = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
 			ap_letter_received[li / CTR_CFG_LETTER_COUNT][li % CTR_CFG_LETTER_COUNT] = 1;
+		}
+
+		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
+		// same roster order as the capability blocks above. Receiving one makes
+		// that racer selectable in the hub picker and, on a racer-locked seed,
+		// opens any pad that demands them. Idempotent on a reconnect replay.
+		else if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+		         idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+		{
+			AP_CharacterReceive((int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX));
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -4591,6 +4659,22 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_PerfSectionBegin(AP_PERF_SEC_VERIFY);
 	AP_VerifyOnFrame();
 	AP_PerfSectionEnd(AP_PERF_SEC_VERIFY);
+
+	// Character phase: hub picker + hub swap (#54/#209, ruling R7). Placed ahead
+	// of the adventure/loading gate lower down because the swap has to see the
+	// frames where the hub comes BACK from its reload. Self-gates on the seed
+	// actually carrying the character phase (or dev keys) and on the adventure
+	// hub being open.
+	//
+	// Seating this slot's racer runs first, and only once per authoritative
+	// answer: the racer is never an item, so if this does not apply it nothing
+	// else will, and on a racer-locked seed starting as the wrong racer is the
+	// difference between a solvable run and a stuck one. It takes gGT purely to
+	// ask whether this is a hub frame, which is when a LATE restore (a stored
+	// racer whose unlock only just arrived) is allowed to change the seated
+	// racer; the first seat of a connection applies wherever we are.
+	AP_CharSwap_SeatStartingCharacter(gGT);
+	AP_CharSwap_Tick(gGT);
 
 	{
 		static int ap_booted = 0;

@@ -166,6 +166,115 @@ static std::string ap_diff_key()
 	return "ctr_difficulty_" + g_slot;
 }
 
+// Current racer sync (issues #54/#209), the same per-slot data-storage shape as
+// the difficulty override above and for the same reason: the selected racer is
+// MUTABLE non-item state, so it cannot ride slot_data (frozen, sent once) and
+// it must not ride the local save either -- the 2026-07-23 ruling routes it to
+// per-slot server storage precisely so the feature stays machine-agnostic.
+// Key: "ctr_character_<slot name>". Value: an ENGINE character id 0..15.
+static int         g_char_value = 0;
+static bool        g_char_known = false;
+// Revision counter, bumped ONLY when the value arrives from the SERVER (a Get
+// reply or a SetNotify update) or when the subscribe seeds a default. It exists
+// because the game side applies the racer exactly once and a `Get` is
+// asynchronous: without it, the seat consumes the seeded default on the first
+// frame and a stored racer arriving a few frames later is silently never
+// applied. The game side re-arms its one-shot on a revision change.
+//
+// Our own ap_net_character_set deliberately does NOT bump it: we already
+// applied that value locally, and the server's echo carries the same value, so
+// a re-seat would be a harmless no-op either way.
+static unsigned    g_char_rev = 0;
+
+static std::string ap_char_key()
+{
+	return "ctr_character_" + g_slot;
+}
+
+// Editable stat package (issues #54/#209). Same per-slot data-storage path and
+// the same reasoning as the racer above: edited values are mutable non-item
+// state and the 2026-07-23 ruling explicitly routes them to the server so they
+// survive a reconnect and a change of machine ("edited stats follow the slot on
+// the AP server, not the local save").
+//
+// Shape: a flat JSON array of AP_EDITSTAT_COUNT signed ints, each inside the
+// documented delta range. Fixed length so a partial or oversized array is
+// rejected wholesale rather than applied halfway; layout is owned by the game
+// side (ap_charswap.c), which is the only writer and the only reader.
+#define AP_EDITSTAT_COUNT AP_NET_EDITSTAT_COUNT
+static int         g_edit_value[AP_EDITSTAT_COUNT];
+static bool        g_edit_known = false;
+static unsigned    g_edit_rev = 0;
+
+static std::string ap_edit_key()
+{
+	return "ctr_editstats_" + g_slot;
+}
+
+// Read a JSON integer WIDE, without narrowing. nlohmann reports an integer that
+// does not fit int64 as unsigned, and get<int>() on either would truncate -- the
+// exact silent corruption the bounds check exists to prevent -- so pull the
+// widest representation and hand the caller a value it can range-check honestly.
+// Returns false when the number cannot even be represented in a long long, which
+// is already far outside any delta this client writes.
+static bool ap_json_int64(const nlohmann::json &e, long long *out)
+{
+	if (e.is_number_unsigned())
+	{
+		unsigned long long u = e.get<unsigned long long>();
+		if (u > (unsigned long long)0x7FFFFFFFFFFFFFFFull)
+			return false;
+		*out = (long long)u;
+		return true;
+	}
+	if (!e.is_number_integer())
+		return false;
+	*out = e.get<long long>();
+	return true;
+}
+
+// Accept an array only if it is exactly the expected length, entirely integral,
+// and entirely inside the documented delta bound. VALIDATE EVERYTHING FIRST,
+// copy nothing until the whole package has passed: a malformed or out-of-range
+// package must leave the previous state untouched, not half-applied. A kart
+// tuned from someone else's truncated array -- or from a 4294967328 that became
+// 32 on the way through `int` and then through `short` -- is worse than a kart
+// that ignored the package entirely.
+static bool ap_edit_accept(const nlohmann::json &v)
+{
+	long long staged[AP_EDITSTAT_COUNT];
+	int       i = 0;
+
+	if (!v.is_array() || v.size() != (size_t)AP_EDITSTAT_COUNT)
+		return false;
+	for (const auto &e : v)
+	{
+		long long n = 0;
+		if (!e.is_number_integer() || !ap_json_int64(e, &n) || !ap_editstat_value_ok(n))
+			return false;
+		staged[i++] = n;
+	}
+	for (i = 0; i < AP_EDITSTAT_COUNT; i++)
+		g_edit_value[i] = (int)staged[i];
+	g_edit_known = true;
+	g_edit_rev++;
+	return true;
+}
+
+// The stored racer gets the same pre-narrowing treatment for the same reason.
+// A raw get<int>() on 4294967301 yields 5, which passes an 0..15 roster check
+// and seats a racer nobody stored.
+static bool ap_char_accept(const nlohmann::json &v, int *out)
+{
+	long long n = 0;
+	if (!v.is_number_integer() || !ap_json_int64(v, &n))
+		return false;
+	if (n < 0 || n > 15)
+		return false;
+	*out = (int)n;
+	return true;
+}
+
 // ── DeathLink (issue #6) ──
 // Depth-1 inbound latch: the most recent DeathLink bounce not yet handed to the
 // game thread. A newer death overwrites an unhandled one, so extras are dropped
@@ -689,6 +798,22 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
+		auto ch = keys.find(ap_char_key());
+		int  cv = 0;
+		// A stored racer outside the roster is a key some other tool wrote.
+		// Ignore it rather than seating a character id the engine cannot name;
+		// the slot_data starting racer stays in effect.
+		if (ch != keys.end() && ap_char_accept(ch->second, &cv))
+		{
+			g_char_value = cv;
+			g_char_known = true;
+			g_char_rev++;
+			std::fprintf(stderr, "[AP NET] current racer retrieved: %d\n", g_char_value);
+		}
+		auto es = keys.find(ap_edit_key());
+		if (es != keys.end() && ap_edit_accept(es->second))
+			std::fprintf(stderr, "[AP NET] editable stat package retrieved (%d values)\n",
+			             AP_EDITSTAT_COUNT);
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
@@ -698,6 +823,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
+		int cv = 0;
+		if (key == ap_char_key() && ap_char_accept(value, &cv))
+		{
+			g_char_value = cv;
+			g_char_known = true;
+			g_char_rev++;
+			std::fprintf(stderr, "[AP NET] current racer changed: %d\n", g_char_value);
+		}
+		if (key == ap_edit_key() && ap_edit_accept(value))
+			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
@@ -1085,6 +1220,118 @@ extern "C" void ap_net_difficulty_set(int value)
 	g_diff_known = true;
 }
 
+extern "C" void ap_net_character_subscribe(int slot_default)
+{
+	if (!g_ap || !g_connected)
+		return;
+	// Seed the seed's own starting racer so it is effective before the Get
+	// round-trips; a stored per-slot value (i.e. you already swapped in an
+	// earlier session) overwrites it through the retrieved handler.
+	if (slot_default >= 0 && slot_default <= 15)
+	{
+		g_char_value = slot_default;
+		g_char_known = true;
+		g_char_rev++;
+	}
+	AP_NET_GUARD("character_subscribe", {
+		const std::string key = ap_char_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_character_set(int characterID)
+{
+	if (!g_ap || !g_connected)
+		return;
+	if (characterID < 0 || characterID > 15)
+		return;
+	AP_NET_GUARD("character_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = characterID;
+		g_ap->Set(ap_char_key(), characterID, false, {op});
+	});
+	g_char_value = characterID;
+	g_char_known = true;
+}
+
+extern "C" int ap_net_character_known(int *out)
+{
+	if (!g_char_known)
+		return 0;
+	if (out)
+		*out = g_char_value;
+	return 1;
+}
+
+extern "C" unsigned ap_net_character_revision(void)
+{
+	return g_char_rev;
+}
+
+extern "C" void ap_net_editstats_subscribe(void)
+{
+	if (!g_ap || !g_connected)
+		return;
+	AP_NET_GUARD("editstats_subscribe", {
+		const std::string key = ap_edit_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_editstats_set(const int *values, int n)
+{
+	if (!g_ap || !g_connected)
+		return;
+	if (values == 0 || n != AP_EDITSTAT_COUNT)
+		return;
+	// Never STORE what we would refuse to LOAD. The game side's deltas are
+	// shorts bounded by the stat table's own caps, so this cannot fire in
+	// practice; if it ever does, the bug is upstream and writing an unloadable
+	// package would hide it behind a package that silently stops restoring.
+	for (int i = 0; i < n; i++)
+	{
+		if (!ap_editstat_value_ok((long long)values[i]))
+		{
+			std::fprintf(stderr,
+			             "[AP NET] refusing to store an out-of-range editable stat delta "
+			             "(index %d = %d, bound %d..%d)\n",
+			             i, values[i], AP_NET_EDITSTAT_MIN, AP_NET_EDITSTAT_MAX);
+			return;
+		}
+	}
+	nlohmann::json arr = nlohmann::json::array();
+	for (int i = 0; i < n; i++)
+		arr.push_back(values[i]);
+	AP_NET_GUARD("editstats_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = arr;
+		g_ap->Set(ap_edit_key(), arr, false, {op});
+	});
+	for (int i = 0; i < n; i++)
+		g_edit_value[i] = values[i];
+	g_edit_known = true;
+	// Same reasoning as the racer: our own write needs no re-apply, so the
+	// revision is not bumped here.
+}
+
+extern "C" int ap_net_editstats_known(int *out, int n)
+{
+	if (!g_edit_known || out == 0 || n != AP_EDITSTAT_COUNT)
+		return 0;
+	for (int i = 0; i < n; i++)
+		out[i] = g_edit_value[i];
+	return 1;
+}
+
+extern "C" unsigned ap_net_editstats_revision(void)
+{
+	return g_edit_rev;
+}
+
 extern "C" int ap_net_difficulty_known(int *out)
 {
 	if (!g_diff_known)
@@ -1289,6 +1536,8 @@ extern "C" void ap_net_shutdown(void)
 	g_pending_checks.clear(); // #85: drop any in-flight checks on a server switch
 	g_dl_incoming = false; // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
+	g_char_known = false; // nor may a racer selection leak into another slot
+	g_edit_known = false; // nor an edited stat package
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone
