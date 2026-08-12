@@ -15,6 +15,8 @@
 #include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
+#include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
+#include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #endif
 
 #include "226/R226.c"
@@ -356,6 +358,8 @@
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
+#include "../ap/ap_charseat.c"
+#include "../ap/ap_charswap.c"
 #endif
 
 #endif

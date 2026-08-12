@@ -805,6 +805,9 @@ void AH_Map_Main(void)
 	// Seed-verify warning: RED banner when a SOLO seed's goal is provably
 	// unreachable from the current state (ap_verify.c). Self-gates.
 	AP_DrawVerifyWarning();
+	// Hub character picker (spike, #54/R7). Self-gates on dev_keys + "picker
+	// open", and rides the same once-per-frame hub UI pass as the feed above.
+	AP_CharPicker_Draw();
 #endif
 
 #if defined(CTR_NATIVE)
