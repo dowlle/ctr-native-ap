@@ -765,7 +765,28 @@ void AH_Map_Main(void)
 	}
 
 	// Check a HUD flag
-	if ((gGT->hudFlags & 0x10) == 0)
+	if ((gGT->hudFlags & 0x10) == 0
+#ifdef CTR_AP
+	    // The hub minimap and its markers hide while the character picker is
+	    // open (#54/#209). They drew ON TOP of it: the map goes to
+	    // gGT->pushBuffer_UI.ptrOT and the picker's own draw call is further
+	    // down this same function, so the picker's portraits are submitted
+	    // AFTER the map, which under the ordering table's prepend-and-walk
+	    // (AddPrim, platform/native_libgpu.c:309) places them behind it. The
+	    // map's fixed corner at (500,195) sits squarely over the right-hand
+	    // tiles, so it covered them.
+	    //
+	    // Suppressing the draw is the honest fix rather than shuffling
+	    // submission order between two tables: the picker is a full-screen
+	    // modal that already holds VEH_FREEZE_DOOR, so there is nothing a
+	    // minimap can usefully say while it is up, and a skipped draw cannot be
+	    // defeated later by an ordering detail the way a re-ordering could.
+	    // This covers the whole group -- driver dots, warp pads, hub items, the
+	    // map itself and the slide meter -- because all of them overlay the
+	    // same corner of the screen.
+	    && !AP_CharSwap_PickerOpen()
+#endif
+	)
 	{
 		local_1e[0] = 0;
 
@@ -805,6 +826,9 @@ void AH_Map_Main(void)
 	// Seed-verify warning: RED banner when a SOLO seed's goal is provably
 	// unreachable from the current state (ap_verify.c). Self-gates.
 	AP_DrawVerifyWarning();
+	// Hub character picker (spike, #54/R7). Self-gates on dev_keys + "picker
+	// open", and rides the same once-per-frame hub UI pass as the feed above.
+	AP_CharPicker_Draw();
 #endif
 
 #if defined(CTR_NATIVE)
