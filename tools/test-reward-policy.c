@@ -31,14 +31,16 @@
 //     the surface cannot draw wears plum rather than the item's own AP class,
 //     which the apworld ships as `useful`, and no other category makes that
 //     claim;
-//   - the ruling end to end from real item ids (expect_item_display): all three
-//     CTR progression families -- the capability ladder (#219), the character
-//     unlocks (#54/#209) and the lettersanity letters (#148) -- present as the
-//     purple crystal where it is drawable and as the plum progression marker
-//     where it is not, while everything else keeps the ordinary class-tinted
-//     marker. The families do NOT share an AP classification (two ship `useful`,
-//     the letters ship `progression`), so these rows also pin that the crystal is
-//     an enumerated list of item families and not a reading of the flags.
+//   - the ruling end to end from real item ids (expect_item_display): EVERY CTR
+//     progression family with no vanilla model of its own -- the capability
+//     ladder (#219), the weapon unlocks (#145), the racers (#54/#209), the
+//     letters (#148) and Gas Pedal -- presents as the purple crystal where it is
+//     drawable and as the plum progression marker where it is not, while traps,
+//     comfort items, the wumpa bundles and the Tizi Helper keep the ordinary
+//     class-tinted marker. The crystal families do NOT share an AP
+//     classification (the ladder and the racers ship `useful`, the rest ship
+//     `progression`), so these rows also pin that the crystal is an enumerated
+//     list of item families and not a reading of the flags.
 
 #include <stdio.h>
 
@@ -188,25 +190,33 @@ int main(void)
 	expect_cat(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX +
 	                  CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT - 1,
 	           AP_CAT_CRYSTAL, "#148 last letter (Letter R, Oxide Station)");
-	// Traps (16..20), comfort (21..26) and unknown ids stay marker material.
+	// The itemsanity weapon unlocks (95..105) and Gas Pedal (187) are the last two
+	// families the ruling reached, so the crystal now covers every CTR progression
+	// item that has no vanilla model of its own.
+	expect_cat(AP_ITEM_BASE + AP_ITEMSANITY_ITEM_FIRST_INDEX, AP_CAT_CRYSTAL,
+	           "#145 first weapon unlock (Turbo)");
+	expect_cat(AP_ITEM_BASE + AP_ITEMSANITY_ITEM_FIRST_INDEX +
+	                  AP_ITEMSANITY_WEAPON_COUNT - 1,
+	           AP_CAT_CRYSTAL, "#145 last weapon unlock (Missile x3)");
+	expect_cat(AP_ITEM_BASE + 101, AP_CAT_CRYSTAL,
+	           "#145 Mask, the index #223 also reads -> still a crystal");
+	expect_cat(AP_ITEM_BASE + AP_GAS_PEDAL_ITEM_INDEX, AP_CAT_CRYSTAL, "Gas Pedal");
+	// Traps, comfort/surface items, the wumpa bundles and the Tizi Helper stay
+	// marker material: none of them is CTR progression. The trap rows are the ones
+	// that matter -- a trap wearing the progression crystal would lose the salmon
+	// warning colour the class tints exist to give it.
 	expect_cat(AP_ITEM_BASE + 16, AP_CAT_NONE, "trap -> marker material");
+	expect_cat(AP_ITEM_BASE + 20, AP_CAT_NONE, "last trap -> marker material");
 	expect_cat(AP_ITEM_BASE + 21, AP_CAT_NONE, "comfort -> marker material");
 	expect_cat(AP_ITEM_BASE + 26, AP_CAT_NONE, "comfort -> marker material");
-	// The itemsanity weapon unlocks. The datapackage calls these `progression`,
-	// so this row is the standing proof that the crystal is NOT keyed off the AP
-	// flag -- it is an enumerated list of families, and this family has not been
-	// ruled into it.
-	expect_cat(AP_ITEM_BASE + 95, AP_CAT_NONE,
-	           "#145 itemsanity weapon: progression-classified, still marker material");
-	// Every edge of every crystal block, so widening one to its neighbour has to
-	// be a deliberate edit. 122 is Progressive Starting Wumpa (just below the
-	// racers) and 187 is Gas Pedal (just above the letters) -- also
-	// progression-classified, also not ruled in.
+	expect_cat(AP_ITEM_BASE + 106, AP_CAT_NONE,
+	           "Wumpa Reset Trap, just above the weapon block -> marker material");
+	expect_cat(AP_ITEM_BASE + 188, AP_CAT_NONE,
+	           "#223 Tizi Helper, just above Gas Pedal -> marker material");
+	// The crystal-block edge that still has a non-crystal neighbour below it, so
+	// widening it has to be a deliberate edit. 122 is Progressive Starting Wumpa.
 	expect_cat(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX - 1, AP_CAT_NONE,
 	           "just below the character block -> marker material");
-	expect_cat(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX +
-	                  CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT,
-	           AP_CAT_NONE, "Gas Pedal, just above the letter block -> marker material");
 
 	// ── Model-keeping: the ONE category decision every surface consumes ──
 	// #212 OG rewards keep their models; #219 crystals and #222 wumpa join them.
@@ -375,8 +385,19 @@ int main(void)
 	expect_item_display(AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX, 1, 0,
 	                    AP_ITEM_FLAG_PROGRESSION, 1, WANT_MARKER_MODEL, 0x0c088f00,
 	                    "#148 own letter, no crystal here -> plum marker");
+	// The itemsanity weapon unlocks are the family a player is most likely to
+	// actually meet -- they are reachable in a real seed today, where Gas Pedal has
+	// no receive path and the per-character ladder cannot even generate.
+	expect_item_display(AP_ITEM_BASE + AP_ITEMSANITY_ITEM_FIRST_INDEX, 1, 1,
+	                    AP_ITEM_FLAG_PROGRESSION, 1, AP_MODEL_CRYSTAL, 0x0d22fff0,
+	                    "#145 own weapon unlock -> purple crystal");
+	expect_item_display(AP_ITEM_BASE + AP_ITEMSANITY_ITEM_FIRST_INDEX, 1, 0,
+	                    AP_ITEM_FLAG_PROGRESSION, 1, WANT_MARKER_MODEL, 0x0c088f00,
+	                    "#145 own weapon unlock, no crystal here -> plum marker");
 	// The contrast row: an item that is NOT one of the progression families still
 	// takes the ordinary marker and its own class colour, crystal or no crystal.
+	// This is the row that fails first if someone widens the crystal to "every CTR
+	// item", which would cost a trap its salmon warning.
 	expect_item_display(AP_ITEM_BASE + 16, 1, 1, AP_ITEM_FLAG_TRAP, 1,
 	                    WANT_MARKER_MODEL, 0x0ff80600,
 	                    "a trap is still a salmon marker, not a crystal");

@@ -28,8 +28,9 @@
 #define AP_MODEL_KEY     0x63 // STATIC_KEY
 
 // 1 when a category KEEPS its own model -- an OG CTR reward (trophy / relic /
-// token / gem / key), a CTR progression crystal (the capability ladder #219, the
-// character unlocks #54/#209 and the lettersanity letters #148), or a Wumpa Fruit
+// token / gem / key), a CTR progression crystal (every CTR progression family
+// with no vanilla model of its own -- see AP_ItemCategory for the list), or a
+// Wumpa Fruit
 // package (#222). These are the categories the local/peer VANILLA/GHOST split
 // applies to. 0 = marker material (everything else). This is THE one testable
 // category decision every model-based reward surface consumes.
@@ -203,20 +204,21 @@ static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
 // model-keeping category the surface could not draw, AP_CAT_NONE for ordinary
 // marker material.
 //
-// A CTR progression reward -- the capability ladder (#219), the character
-// unlocks (#54/#209) and the lettersanity letters (#148) -- is a PURPLE crystal.
-// Where the crystal model is not resident the reward becomes a marker, and that
-// marker must still read as the same reward.
+// Every CTR progression reward with no vanilla model of its own is a PURPLE
+// crystal (AP_ItemCategory lists the families). Where the crystal model is not
+// resident the reward becomes a marker, and that marker must still read as the
+// same reward.
 //
-// Reading the item's AP class instead would split the category in two, because
-// the datapackage does not classify these three families alike:
+// Reading the item's AP class instead would split one category into three,
+// because the datapackage does not classify these families alike:
 // worlds/ctr/data/items.json ships the 68 ladder items and the 16 racers as
 // `useful` (worlds/ctr/progressive_capability.py says so in as many words --
 // "none of these items are `progression`; they ride as `useful`
-// filler-replacement content") while the 48 letters are `progression`. On the
-// class path the racers would come out slate blue and the letters plum, and the
-// ladder would change colour depending only on which model pack the surface
-// happens to have loaded. One reward family, three looks.
+// filler-replacement content") while the 48 letters, the 11 weapon unlocks and
+// Gas Pedal are `progression`. On the class path the racers would come out slate
+// blue and the letters plum, and the ladder would change colour depending only
+// on which model pack the surface happens to have loaded. One reward family,
+// three looks.
 //
 // Plum for all of them: it is the marker's own progression colour, so the
 // fallback stays inside the palette #212 already defined rather than inventing a
