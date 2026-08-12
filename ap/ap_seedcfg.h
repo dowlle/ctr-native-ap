@@ -204,6 +204,24 @@ typedef struct
 	// now. Display only -- never read by a gate, a check or an item.
 	int warp_pad_item_display;
 
+	// AP-item type colours (issue #212, slot_data ctr_options.
+	// ap_item_type_colors). Governs ONE thing: the colour of the Archipelago-logo
+	// markers in the pad glow. 1 (or any nonzero) = the AP classification tints --
+	// plum progression, slate blue useful, cyan filler, salmon trap -- which is
+	// what every shipped client renders. 0 = every marker wears one uniform
+	// colour, so which KIND of AP item a pad holds stays a surprise.
+	//
+	// ADDITIVE key, no schema bump, and DELIBERATELY DEFAULTED TO 1: the apworld
+	// half of #212 lands after the 0.2.0 name freeze, so this client has to run
+	// against seeds that carry no such key at all. Absent -> 1 -> today's
+	// behaviour, never the new one. Display only: it steers no gate, no location,
+	// no item and no logic (the #65 lesson does not bite here).
+	//
+	// EXPECTED WIRE KEY: "ap_item_type_colors" (int or bool). If the apworld half
+	// ships a different name, THIS is the line that changes -- and the option's own
+	// docstring must then describe what the game actually does (Lessons §12).
+	int ap_item_type_colors;
+
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
 	// feature stays dark on old seeds (the one_lap_cups additive-key precedent).
@@ -217,11 +235,13 @@ typedef struct
 	// every 0.2.0 seed (Q28), so these ride it exactly the way one_lap_cups and
 	// death_link rode theirs. A seed predating them leaves all three at 0, which
 	// IS the vanilla kart, so an old seed on a new client changes nothing.
-	//   boost_mode / stats_mode: 0 off / 1 shared_global / 2 per_character.
-	// Value 2 is RESERVED: the apworld raises OptionError for it today
-	// (dowlle/ctr-native-ap#71, location supply), and this build has no ruled
-	// per-character roster mapping, so ap_capability.c treats it as off rather
-	// than inventing shared-global behaviour for per-character items.
+	//   boost_mode / stats_mode: 0 off / 1 shared_global / 2 per_character, read
+	// independently per pack. Both live modes are consumed; in mode 2 the applied
+	// chain is the one belonging to the character being driven (item indices
+	// 31..94, roster order). The apworld still raises OptionError for mode 2 today
+	// (dowlle/ctr-native-ap#71, location supply), so no generated seed carries it
+	// yet -- the wire path is real, the supply is not. Anything outside 0/1/2 is
+	// treated as off by ap_capability.c rather than guessed at.
 	//   boost_blue_fire: adds the blue-fire capstone above USF (3 received copies
 	// instead of 2). No effect while boost_mode is 0. See ap/ap_capability.h.
 	int boost_mode;

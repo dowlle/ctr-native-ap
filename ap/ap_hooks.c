@@ -288,14 +288,12 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 // the deferred hub-map zoom (see AP_OnFrame).
 // ---------------------------------------------------------------------------
 
-// Tint for a FOREIGN multiworld item, rendered with the generic gem marker
-// (STATIC_GEM) so it reads as "someone else's AP item" (Icebound's standalone
-// uses a white gem for the same purpose) and can't be mistaken for an own boss
-// Key. Pure white (255,255,255) packed (R<<0x14)|(G<<0xc)|(B<<0x4) -> a bright
-// white gem, distinct from own COLOURED gem-cup gems (which keep their colour).
-// Interim until the foreign marker gets the real Archipelago-logo model
-// (backlogged custom-asset task).
-#define AP_FOREIGN_TINT 0x0ffffff0
+// The generic WHITE GEM marker is RETIRED (#212, ruling 2026-08-10). It used to
+// stand in for every foreign item and for own filler/unmapped items, and both
+// callers now resolve to a real presentation instead: an OG CTR reward keeps its
+// own model (ghosted when it belongs to another CTR player) and everything else
+// renders as the Archipelago-logo marker. Nothing packs 0x0ffffff0 any more, so
+// no pad glow can show a white gem that is not an actual own/peer gem-cup gem.
 
 // ---------------------------------------------------------------------------
 // #124 -- CLASSIFIED FOREIGN-ITEM DISPLAY
@@ -306,10 +304,16 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 // OTHER GAMES now render as the Archipelago-logo marker, tinted by the item's
 // AP classification.
 //
-// Items belonging to other CTR players are deliberately untouched here. The
-// ruled design gives them their real CTR model (class-tinted, or ghost-rendered
-// where the model's identity IS its colour), which needs a new per-slot channel
-// through the glow-bits path; that is a separate, riskier change.
+// ── REVISED BY #212 (ruling 2026-08-10, display design note amendment) ──
+// The split is no longer own-vs-foreign but OG-CTR-REWARD-vs-everything-else:
+//   1. an OG CTR reward (trophy / relic / token / gem / key) that is MINE
+//      renders as its vanilla model, exactly as it always did;
+//   2. the same reward owned by ANOTHER CTR PLAYER renders as that same vanilla
+//      model, GHOSTED (the time-trial ghost translucency, AP_WarpPadRewardGhost);
+//   3. EVERY other item -- traps, capability/comfort items, wumpa, anything an
+//      apworld invented, mine or anyone's -- renders as the Archipelago-logo
+//      marker. There is deliberately no local/foreign distinction in group 3;
+//   4. the generic white gem is retired, so no glow shows one any more.
 // ---------------------------------------------------------------------------
 
 // Packed as (R << 0x14) | (G << 0xc) | (B << 0x4), matching the relic tints.
@@ -324,6 +328,14 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 #define AP_TINT_USEFUL      AP_PACK_TINT(0x50, 0x78, 0xe0) // slate blue
 #define AP_TINT_FILLER      AP_PACK_TINT(0x40, 0xe8, 0xe0) // cyan
 #define AP_TINT_TRAP        AP_PACK_TINT(0xff, 0x80, 0x60) // salmon
+
+// #212 point 5: the ONE colour every marker wears when the seed asks for AP item
+// types to stay a surprise (ctr_options.ap_item_type_colors = 0). Greyish white,
+// Stef's stated candidate: it is the only neutral that stays neutral under the
+// marker's multiplicative-ish tint lerp without collapsing toward any class hue,
+// and it cannot be confused with a gem-cup gem because it is never on a gem.
+// Never modulate to 0 here (near-black bug) -- the value stays well clear of it.
+#define AP_TINT_UNIFORM     AP_PACK_TINT(0xd0, 0xd0, 0xc8) // greyish white
 
 // AP item flags: bit0 = progression, bit1 = useful, bit2 = trap, 0 = filler.
 // The precedence that resolves them is the freestanding AP_ItemFlagsClass
@@ -342,6 +354,22 @@ static int AP_ClassTint(unsigned flags)
 	case AP_ITEM_CLASS_FILLER:      return AP_TINT_FILLER;
 	}
 	return AP_TINT_FILLER;
+}
+
+// The colour ONE Archipelago-logo marker wears, honouring the seed's surprise
+// toggle (#212 point 5). ctr_options.ap_item_type_colors: absent or nonzero ->
+// the class tints above, i.e. exactly the display every shipped client renders;
+// 0 -> the single uniform colour, so the AP item pool stays a surprise.
+//
+// The key is EXPECTED but not required: the apworld half of #212 lands after the
+// 0.2.0 name freeze, and a seed generated before it carries no such key. That is
+// why the parse defaults to 1 rather than to the new behaviour -- an old seed on
+// this client must glow the way it does today, not silently switch to grey.
+static int AP_MarkerTint(unsigned flags)
+{
+	if (!ctr_cfg.ap_item_type_colors)
+		return AP_TINT_UNIFORM;
+	return AP_ClassTint(flags);
 }
 
 // Font-palette colour for one hub item-feed line (issue #195), resolved from the
@@ -363,21 +391,105 @@ static int AP_ClassFontColor(unsigned flags)
 	return POLAR_CYAN;
 }
 
-// 1 if `player`'s item should render as the classified AP-logo marker.
+// The three presentations one scouted pad reward can have (#212). One resolver
+// feeds the model, the tint and the ghost flag, so those three can never
+// disagree about what a slot is showing.
+#define AP_PAD_DISP_VANILLA 0 // my own OG CTR reward -> its vanilla model, untouched
+#define AP_PAD_DISP_GHOST   1 // another CTR player's OG reward -> same model, ghosted
+#define AP_PAD_DISP_MARKER  2 // everything else -> the Archipelago-logo marker
+#define AP_PAD_DISP_NONE    3 // undecidable right now -> leave the placeholder alone
+
+// Resolve one scouted (item, player) pair to its presentation, and hand back the
+// OG category on the two model-keeping paths (AP_CAT_NONE otherwise).
 //
-// Three conditions, all required. Scouts and slot info are the sync gate: the
-// glow runs every frame from connect, and classifying before either lands would
-// flicker between presentations. The marker registration is the third, so the
-// model choice and the tint below can never disagree about the presentation.
-static int AP_UseClassifiedMarker(int player)
+// The sync gate is unchanged from #124 and still matters: the glow pass runs
+// every frame from connect, so resolving a FOREIGN item before scouts and slot
+// info have landed would flicker a slot between presentations. Before the gate
+// opens a foreign item resolves to AP_PAD_DISP_NONE and the slot keeps the
+// placeholder model it was born with. An OWN item needs neither (the self slot
+// is known at connect), so own rewards never flicker.
+//
+// AP_ItemCategory reads OUR item-id space, so it is only meaningful for a slot
+// that is playing CTR. Another game's ids collide with ours numerically and must
+// never be run through it -- that is the ap_net_player_is_ctr guard below, not a
+// nicety.
+static int AP_PadDisplayKind(long long item, int player, AP_ItemCat *outCat)
 {
-	if (player == ap_net_self_slot())
-		return 0; // own item -> its real CTR model
-	if (!ap_net_scouts_ready() || !ap_net_slot_info_ready())
-		return 0;
-	if (!AP_MarkerModel_IsRegistered())
-		return 0;
-	return ap_net_player_is_ctr(player) ? 0 : 1; // CTR peers stay on the old path
+	AP_ItemCat cat = AP_CAT_NONE;
+	int own = (player == ap_net_self_slot());
+
+	if (!own)
+	{
+		if (!ap_net_scouts_ready() || !ap_net_slot_info_ready())
+		{
+			if (outCat)
+				*outCat = AP_CAT_NONE;
+			return AP_PAD_DISP_NONE;
+		}
+	}
+
+	if (own || ap_net_player_is_ctr(player))
+	{
+		cat = AP_ItemCategory(item);
+		switch (cat)
+		{
+		case AP_CAT_TROPHY:
+		case AP_CAT_SAPPHIRE:
+		case AP_CAT_GOLD:
+		case AP_CAT_PLATINUM:
+		case AP_CAT_TOKEN:
+		case AP_CAT_GEM:
+		case AP_CAT_KEY:
+			break; // an OG CTR reward: keeps its own model
+		// Wumpa, traps, capability/comfort items, anything an apworld invented:
+		// not an OG CTR reward, so it is marker material whoever owns it. Every
+		// remaining enumerator is spelled out (not folded into `default`) so
+		// -Wswitch-enum keeps flagging this switch if the category set ever grows.
+		case AP_CAT_COUNT:
+		case AP_CAT_WUMPA:
+		case AP_CAT_NONE:
+		default:
+			cat = AP_CAT_NONE;
+			break;
+		}
+	}
+
+	if (outCat)
+		*outCat = cat;
+
+	if (cat != AP_CAT_NONE)
+		return own ? AP_PAD_DISP_VANILLA : AP_PAD_DISP_GHOST;
+
+	// Marker material. Without the marker model parked we have nothing to show it
+	// with (the white gem is retired), so the slot keeps its placeholder rather
+	// than inventing a stand-in that would lie about the reward.
+	return AP_MarkerModel_IsRegistered() ? AP_PAD_DISP_MARKER : AP_PAD_DISP_NONE;
+}
+
+// Resolve a location's global bit straight to (kind, category, flags). Returns
+// AP_PAD_DISP_NONE for anything not checkable or not yet scouted, which every
+// caller reads as "leave the vanilla/placeholder presentation alone".
+static int AP_PadDisplayForBit(int globalBit, AP_ItemCat *outCat, unsigned *outFlags)
+{
+	long code;
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+
+	if (outCat)
+		*outCat = AP_CAT_NONE;
+	if (outFlags)
+		*outFlags = 0;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0)
+		return AP_PAD_DISP_NONE; // not a checkable location
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return AP_PAD_DISP_NONE; // not scouted yet (not connected / pre-scout)
+
+	if (outFlags)
+		*outFlags = flags;
+	return AP_PadDisplayKind(item, player, outCat);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,48 +499,52 @@ static int AP_UseClassifiedMarker(int player)
 
 int AP_WarpPadRewardModel(int globalBit)
 {
-	long code;
-	long long item = 0;
-	int player = -1;
-	unsigned flags = 0;
+	AP_ItemCat cat = AP_CAT_NONE;
+	int kind = AP_PadDisplayForBit(globalBit, &cat, NULL);
 
-	code = AP_LookupLocationCode(globalBit);
-	if (code < 0)
-		return -1; // not a checkable location -> keep vanilla model
-
-	if (!ap_net_scout_known(code, &item, &player, &flags))
-		return -1; // not scouted yet (not connected / pre-scout) -> vanilla
-
-	// A foreign multiworld item (placed for a different slot). Another game's
-	// item gets the Archipelago-logo marker, class-tinted by
-	// AP_WarpPadRewardTint (#124). Another CTR player's item, and anything
-	// scouted before the display gate opens, keeps the white gem: it reads as
-	// "another player's AP item" and isn't mistaken for an own boss Key.
-	if (player != ap_net_self_slot())
-		return AP_UseClassifiedMarker(player) ? STATIC_AP : STATIC_GEM;
-
-	// Own CTR reward -> its category's model.
-	switch (AP_ItemCategory(item))
+	switch (kind)
 	{
-	case AP_CAT_TROPHY:
-		return STATIC_TROPHY;
-	case AP_CAT_SAPPHIRE:
-	case AP_CAT_GOLD:
-	case AP_CAT_PLATINUM:
-		return STATIC_RELIC;
-	case AP_CAT_TOKEN:
-		return STATIC_TOKEN;
-	case AP_CAT_GEM:
-		return STATIC_GEM;
-	case AP_CAT_KEY:
-		return STATIC_KEY;
+	case AP_PAD_DISP_MARKER:
+		// Every non-OG item, mine or anyone's (#212 point 3).
+		return STATIC_AP;
+
+	case AP_PAD_DISP_VANILLA:
+	case AP_PAD_DISP_GHOST:
+		// An OG CTR reward: its own vanilla model either way. The GHOST kind adds
+		// translucency at the instance (AP_WarpPadRewardGhost), never a different
+		// model -- a peer's Sapphire Relic stays a Sapphire Relic.
+		switch (cat)
+		{
+		case AP_CAT_TROPHY:
+			return STATIC_TROPHY;
+		case AP_CAT_SAPPHIRE:
+		case AP_CAT_GOLD:
+		case AP_CAT_PLATINUM:
+			return STATIC_RELIC;
+		case AP_CAT_TOKEN:
+			return STATIC_TOKEN;
+		case AP_CAT_GEM:
+			return STATIC_GEM;
+		case AP_CAT_KEY:
+			return STATIC_KEY;
+		case AP_CAT_COUNT:
+		case AP_CAT_WUMPA:
+		case AP_CAT_NONE:
+		default:
+			return -1; // unreachable: the two model kinds always carry an OG category
+		}
+
 	default:
-		// Own Wumpa / filler / unmapped -> the generic white-gem marker, SAME as a
-		// foreign item. Previously STATIC_KEY, which after
-		// the golden-key render fix made every filler location look like a real boss
-		// Key ("extra keys" in the glows). A boss Key must ONLY show for AP_CAT_KEY.
-		return STATIC_GEM;
+		return -1; // not checkable / not scouted / marker unavailable -> placeholder
 	}
+}
+
+// 1 when this location's scouted reward belongs to ANOTHER CTR PLAYER and keeps
+// its own OG model, i.e. the slot must be ghost-rendered (#212 point 2). Own
+// rewards, marker items and everything unresolved answer 0.
+int AP_WarpPadRewardGhost(int globalBit)
+{
+	return AP_PadDisplayForBit(globalBit, NULL, NULL) == AP_PAD_DISP_GHOST ? 1 : 0;
 }
 
 // Tier-specific relic tint for the reward glow (see header). colorRGBA is packed
@@ -436,30 +552,23 @@ int AP_WarpPadRewardModel(int globalBit)
 // to leave the caller's default colour untouched.
 int AP_WarpPadRewardTint(int globalBit)
 {
-	long code;
-	long long item = 0;
-	int player = -1;
+	AP_ItemCat cat = AP_CAT_NONE;
 	unsigned flags = 0;
+	int kind = AP_PadDisplayForBit(globalBit, &cat, &flags);
 
-	code = AP_LookupLocationCode(globalBit);
-	if (code < 0)
-		return 0;
-	if (!ap_net_scout_known(code, &item, &player, &flags))
-		return 0;
-	if (player != ap_net_self_slot())
-	{
-		// Foreign multiworld item. Another game's item renders as the AP-logo
-		// marker and carries its AP classification in the tint (#124); the
-		// marker's own colours are neutral greys so this modulates cleanly.
-		// Everything else -- CTR peers, and anything scouted before the display
-		// gate opens -- keeps the white gem, distinct from own coloured gem-cup
-		// gems and from own boss Keys. Packed (R<<0x14)|(G<<0xc)|(B<<0x4).
-		if (AP_UseClassifiedMarker(player))
-			return AP_ClassTint(flags);
-		return AP_FOREIGN_TINT; // (255,255,255) white
-	}
+	// The Archipelago-logo marker carries the classification (or the one uniform
+	// surprise colour) in its tint; the marker's own colours are neutral greys so
+	// this lerps cleanly. Same answer for my own non-OG items as for anyone
+	// else's -- #212 draws no local/foreign line here.
+	if (kind == AP_PAD_DISP_MARKER)
+		return AP_MarkerTint(flags);
 
-	switch (AP_ItemCategory(item))
+	// A GHOSTED peer reward takes NO tint: the ghost writer needs colorRGBA 0 (see
+	// the ghost block in AH_WarpPad_ThTick), and the caller forces it to 0 anyway.
+	if (kind != AP_PAD_DISP_VANILLA)
+		return 0;
+
+	switch (cat)
 	{
 	case AP_CAT_SAPPHIRE:
 		return 0x020a5ff0; // blue (vanilla relic colour)
@@ -467,14 +576,19 @@ int AP_WarpPadRewardTint(int globalBit)
 		return 0x0ffc6290; // gold
 	case AP_CAT_PLATINUM:
 		return 0x0ebebf50; // platinum / pale silver
+	case AP_CAT_TROPHY:
+	case AP_CAT_TOKEN:
 	case AP_CAT_GEM:
-		return 0; // own gem-cup gem -> keep its natural born colour (untinted)
+	case AP_CAT_KEY:
+	case AP_CAT_COUNT:
+	case AP_CAT_WUMPA:
+	case AP_CAT_NONE:
 	default:
-		// Own Wumpa / filler / unmapped now renders on STATIC_GEM (see
-		// AP_WarpPadRewardModel) -- tint it white so it reads as the same generic
-		// marker as a foreign item. Relic/trophy/token/key
-		// items never reach here (they hit their own cases / models).
-		return AP_FOREIGN_TINT; // white
+		// Own gem / trophy / token / key -> keep the natural colour path the glow
+		// switch already applies per model (gem-cup colour, untinted trophy, token
+		// group colour, golden key). Own filler and traps no longer reach here at
+		// all: they are marker items now, handled above.
+		return 0;
 	}
 }
 
@@ -1657,14 +1771,27 @@ char *AP_Credits_PrependScroll(char *origScroll)
 }
 
 // ---------------------------------------------------------------------------
-// HUB ITEM-RECEIVED FEED (display-only)
+// AP ITEM FEED (display-only)
 //
-// A bottom-left feed of the Archipelago items you receive. Rendered ONLY on the
-// adventure hub; items received elsewhere (mid-race, menus) queue and surface on
-// hub entry. Each visible line lives AP_FEED_LIFETIME_FRAMES starting when it
-// first becomes VISIBLE (time spent queued in a race does not count against it).
-// New lines enter at the bottom and push older lines up; a deep queue drains
-// oldest-first, one line per stagger interval.
+// A feed of the Archipelago items you receive, and of the ones you send to other
+// players. It started as a HUB-ONLY feed; issue #192 makes it render IN RACES
+// too, because the sanity checks a race is full of (crates, lap placements) were
+// firing with nothing on screen to show for them -- the player only found out
+// what they had sent by leaving the race. Each visible line lives
+// AP_FEED_LIFETIME_FRAMES starting when it first becomes VISIBLE (time spent
+// queued while no surface is drawing it does not count against it). New lines
+// enter at the bottom and push older lines up; a deep queue drains oldest-first,
+// one line per stagger interval.
+//
+// Two draw surfaces, never both in the same frame:
+//   * the HUB anchor, bottom-left, unchanged from the shipped feed;
+//   * the RACE anchor, upper-left of the track view, placed to clear the 1P race
+//     HUD (see AP_FEED_RACE_X / AP_FEED_RACE_BASE_Y for the arithmetic).
+// RenderAllHUD picks exactly one of the hub and race branches per frame
+// (MainFrame_RenderFrame.c: the ADVENTURE_ARENA if/else), the two hub sites are
+// themselves mutually exclusive (LOAD_IsOpen_AdvHub), and the race sites are the
+// racing/crystal-challenge pair, so the shared tick below still runs exactly
+// once per frame and lifetimes stay honest.
 //
 // Replay suppression: on every (re)connect the server resends the full received
 // list from index 0. The feed absorbs that initial inventory SILENTLY -- while
@@ -1682,6 +1809,33 @@ char *AP_Credits_PrependScroll(char *origScroll)
 #define AP_FEED_LINE_H             0xC // vertical spacing between lines
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
+
+// ── RACE anchor (issue #192) ────────────────────────────────────────────────
+// The hub anchor cannot be reused in a race: the 1P race HUD owns the whole left
+// column, and the feed would print straight through it. What is actually there,
+// read off the live element table and draw sites rather than from a screenshot:
+//   * the race clock + lap times block, drawn at (0x14, 8) (UI_RenderFrame.c's
+//     UI_DrawRaceClock call), FONT_BIG plus three lap rows -> roughly y 8..0x3c;
+//   * the rank list: numbers at x 0x34 and icons at x 0x14, y = rank * 0x1b +
+//     0x39 for four ranks (UI_Rank.c:139 and :180-183) -> y 0x39..0xa0;
+//   * the position readout at hudStructPtr[5] = (70, 171) in FONT_BIG
+//     (data.hud_1P_P1, zGlobal_DATA.c) -> the bottom-left corner, y ~0xa0..0xc8;
+//   * the map at (500, 195) and the reserves/speed block at (490, 206+), both
+//     bottom-RIGHT; the weapon box at (232, 5) and the turbo counter + its bar
+//     (x 0x14a..0x214, y 0x20..0x32) across the top.
+// That leaves the band between the clock block and the position readout, to the
+// right of the rank icons, free: x from 0x60, y from about 0x40 to 0x90. The
+// feed's newest line anchors at the bottom of that band and older lines stack
+// upward, so five lines occupy y 0x44..0x74 -- clear of every element above.
+// Left-justified like the hub feed, so an over-long line overflows toward the
+// empty right half of the screen instead of over the rank icons.
+//
+// 2P/3P/4P are deliberately NOT drawn: every coordinate here is a 1P-viewport
+// coordinate, and the split-screen HUD tables move each element per viewport.
+// Local multiplayer keeps queueing lines (nothing is lost) and shows them on the
+// next 1P surface.
+#define AP_FEED_RACE_X             0x60
+#define AP_FEED_RACE_BASE_Y        0x74 // bottom (newest) line anchor, in-race
 // Storage cap: big enough that the "%s FROM %s" format below (item<=31 +
 // " FROM " + player<=23) can never be truncated, so no -Wformat-truncation.
 #define AP_FEED_TEXT_CAP           64
@@ -1711,7 +1865,8 @@ static int       ap_feed_primed = 0;  // 0 while absorbing the initial inventory
 static long long ap_feed_hwm = -1;    // highest already-known server index
 static int       ap_feed_quiet = 0;   // consecutive no-new-item frames (priming)
 
-static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on)
+static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
+                               // BOTH feed surfaces since #192, key name kept)
 int AP_HubFeedOn(void)
 {
 	return ap_hub_feed_on;
@@ -1866,14 +2021,16 @@ void AP_FeedEndDrain(int drainedThisFrame)
 		ap_feed_primed = 1;
 }
 
-// Render the feed on the adventure hub: promote one pending line per stagger into
+// Tick + render the feed at one anchor: promote one pending line per stagger into
 // a free visible slot (oldest first), age + expire visible lines from the top,
-// and draw newest at the bottom anchor with older lines stacked upward.
-void AP_FeedDrawHub(void)
+// and draw newest at baseY with older lines stacked upward.
+//
+// Shared by both surfaces so the queue, the stagger, the lifetimes and the
+// eviction order are literally the same code in a race as on the hub; the only
+// per-surface value is where the block is anchored. Callers guarantee it runs at
+// most once per frame (see the block comment above).
+static void AP_FeedTickAndDraw(int x, int baseY)
 {
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
-		return;
-
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.
 	if (ap_feed_vcount < AP_FEED_MAX_VISIBLE && ap_feed_qcount > 0)
@@ -1917,10 +2074,45 @@ void AP_FeedDrawHub(void)
 	for (int i = 0; i < ap_feed_vcount; i++)
 	{
 		int fromBottom = ap_feed_vcount - 1 - i;
-		int y = AP_FEED_BASE_Y - fromBottom * AP_FEED_LINE_H;
-		DecalFont_DrawLine(ap_feed_vis[i].text, AP_FEED_X, y, FONT_SMALL,
+		int y = baseY - fromBottom * AP_FEED_LINE_H;
+		DecalFont_DrawLine(ap_feed_vis[i].text, x, y, FONT_SMALL,
 		                   ap_feed_vis[i].color);
 	}
+}
+
+// Adventure-hub surface: the shipped anchor, bottom-left, unchanged.
+void AP_FeedDrawHub(void)
+{
+	if (!ctr_cfg_active() || !ap_hub_feed_on)
+		return;
+
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y);
+}
+
+// In-race surface (issue #192): the same feed, on the race HUD, so an item sent
+// or received mid-race is seen when it happens instead of on the next hub entry.
+//
+// Two extra gates the hub surface does not need:
+//   * 1P ONLY. Every coordinate in the race anchor is a 1P-viewport coordinate
+//     (see AP_FEED_RACE_X). In split-screen the line would land in an arbitrary
+//     place in an arbitrary viewport, so the feed stays queued instead.
+//   * NOT WHILE PAUSED. The pause menu draws over the HUD, and a feed printing
+//     through it would be both ugly and unreadable. Skipping the whole tick (not
+//     just the draw) also FREEZES the lifetimes: a line does not burn its four
+//     seconds behind a pause menu, it resumes where it was. That mirrors how a
+//     line queued in a menu keeps its full dwell for later.
+void AP_FeedDrawRace(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (!ctr_cfg_active() || !ap_hub_feed_on)
+		return;
+	if (gGT->numPlyrCurrGame != 1)
+		return;
+	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
+		return;
+
+	AP_FeedTickAndDraw(AP_FEED_RACE_X, AP_FEED_RACE_BASE_Y);
 }
 
 // Persistent "this seed is from a newer apworld -- update the client" banner
@@ -1978,13 +2170,19 @@ void AP_DrawSchemaWarning(void)
 //     font_charPixHeight[FONT_BIG] + 3 = 20 px (RECTMENU.c:364), so it grows
 //     symmetrically and its BOTTOM moves with the row count. Seven rows put it
 //     at ~0xba; the scrapbook unlock adds an eighth row
-//     (s_rowsMainMenuWithSBConfig, MM_ConfigMenu.c:28) and pushes it to ~0xc3.
-//     0xc3 is the number to clear -- NOT the 0xba a basic-save screenshot shows.
+//     (s_rowsMainMenuWithSBConfig, MM_ConfigMenu.c:28) and pushed it to ~0xc3
+//     (a measured +9 px/row) -- 0xc3 was the number to clear, NOT the 0xba a
+//     basic-save screenshot shows.
 //   * the logo art ends at about the same height.
-// 0xCA clears both, and the FONT_SMALL line is 8 px, so it ends at 0xd2 with six
-// rows still inside the viewport.
+// #211 appended a QUIT row to both variants (MM_ConfigMenu.c), so the tallest
+// case is now nine rows (scrapbook + options + quit): extrapolating the same
+// +9 px/row puts the bottom at ~0xcc. 0xD3 keeps the original ~7 px clearance
+// over that new bottom (0xCA cleared 0xc3 the same way); the FONT_SMALL line is
+// 8 px, so it now ends at ~0xdb. This is arithmetic extrapolated from the
+// existing measured constant, NOT re-measured in game -- flagged on the rolling
+// testing list for a render check now that a ninth row exists.
 #define AP_UPD_TITLE_CENTRE_X 0x100
-#define AP_UPD_TITLE_Y        0xCA
+#define AP_UPD_TITLE_Y        0xD3
 
 // The TITLE surface is one line and carries NO version numbers. The title screen
 // only announces that an update exists; the numbers belong on the Connection
@@ -3122,7 +3320,7 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			ap_hud_reserves_fx = (line[16] == '1'); // keep power-slide fire when holding reserves
 
 		else if (!strncmp(line, "hub_feed=", 9))
-			ap_hub_feed_on = (line[9] != '0'); // 0 = hide the hub item-received feed
+			ap_hub_feed_on = (line[9] != '0'); // 0 = hide the AP item feed everywhere
 	}
 	fclose(f);
 }
@@ -3348,11 +3546,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_CapabilityReceive((int)(idx - AP_CAPABILITY_ITEM_FIRST_INDEX));
 		}
 
-		// Per-character capability block (idx 31..94): registered in the
-		// datapackage, never created by any generation on apworld main
-		// (per_character raises OptionError pending dowlle/ctr-native-ap#71).
-		// Recognised only so a receipt is declined out loud instead of vanishing
-		// into the generic filler/unmapped line.
+		// Per-character capability block (idx 31..94): the same four chains again,
+		// once per racer, character-major in the apworld's roster order. Counts
+		// like the shared-global block above and rebuilds the same way; which
+		// racer's row the kart actually expresses is decided at read time by the
+		// character being driven, not here. No generation on apworld main creates
+		// these yet (per_character raises OptionError pending
+		// dowlle/ctr-native-ap#71), so today they only arrive from a hand-built
+		// seed -- the drain path is ready for when #71 lands.
 		else if (idx >= AP_CAPABILITY_PC_ITEM_FIRST_INDEX &&
 		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
 		{
@@ -3426,6 +3627,14 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);
 	ap_net_started = 1; // suppress the boot-time auto-dial from re-running
+}
+
+// Quit-from-main-menu (#211): close the live socket before the process exits,
+// same call AP_Net_Reconnect makes ahead of a re-dial, just with no re-dial
+// after it.
+void AP_Net_Shutdown(void)
+{
+	ap_net_shutdown();
 }
 
 // Longest host the status row can render before the line runs off the panel

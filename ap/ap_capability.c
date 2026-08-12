@@ -15,18 +15,84 @@
 // ============================================================================
 
 // Received copies per chain, rebuilt from the authoritative ReceivedItems replay.
+// g_cap_recv is the shared_global pack (mode 1); g_cap_recv_pc is the
+// per_character pack (mode 2), one row per roster slot. Both are always tracked
+// from the wire -- the seed's mode decides which one the kart reads, not which
+// one is counted, so a mode the seed never uses simply stays at zero.
 static int g_cap_recv[AP_CAP_CHAIN_COUNT];
+static int g_cap_recv_pc[AP_CAP_ROSTER_COUNT][AP_CAP_CHAIN_COUNT];
 
-// One line per connect when a per-character receipt is declined, so a seed that
-// somehow carries them is visible in the log without spamming it.
+// One line per connect the first time a per-character receipt lands, so the wire
+// is visibly consumed without spamming the log with 64 lines.
 static int g_cap_pc_logged;
+
+// One line per connect if per_character mode is live but the current character
+// cannot be identified. That path fails open to vanilla, and a bound that drops
+// behaviour silently is the exact pattern Lessons Learned #4 is about.
+static int g_cap_pc_unknown_logged;
+
+// ── Roster order: WIRE order, not engine order ──────────────────────────────
+//
+// The per-character item block is laid out in the apworld's own
+// `progressive_capability.ROSTER` order (worlds/ctr/progressive_capability.py):
+//
+//   Crash Bandicoot, Coco Bandicoot, Polar, Pura, Neo Cortex, N. Tropy,
+//   Ripper Roo, Papu Papu, Komodo Joe, Pinstripe, Dingodile, Tiny Tiger,
+//   N. Gin, Fake Crash, Nitros Oxide, Penta Penguin
+//
+// The engine's own `enum Characters` (include/namespace_Vehicle.h) numbers the
+// SAME sixteen racers in a COMPLETELY DIFFERENT order (Crash, Cortex, Tiny,
+// Coco, N. Gin, Dingodile, Polar, Pura, Pinstripe, Papu, Roo, Komodo, Tropy,
+// Penta, Fake Crash, Oxide), and the grand-prix champion table in
+// game/zGlobal_DATA.c walks them in a third order again (Dingodile, Komodo,
+// Penta, Crash, Pura, Papu, Roo, Pinstripe, Tropy, Fake Crash, Cortex, N. Gin,
+// Polar, Oxide, Coco, Tiny). All three are the same SET of sixteen; only the set
+// was ever verified, in the spine-1 build note, and none of the three orders
+// agrees with either other one.
+//
+// So the roster slot a wire item carries CANNOT be used as an engine character
+// ID, and the engine character ID cannot be used as a wire index. This table is
+// the only place the two are reconciled: read it as "wire slot N belongs to this
+// engine character". Getting it wrong would not crash or warn -- it would
+// silently apply Dingodile's upgrades to Coco, which is why it is spelled out
+// name-by-name rather than computed.
+static const int AP_CAP_ROSTER_CHARACTER[AP_CAP_ROSTER_COUNT] = {
+	CRASH_BANDICOOT, // 0  Crash Bandicoot  (item idx 31..34)
+	COCO_BANDICOOT,  // 1  Coco Bandicoot   (35..38)
+	POLAR,           // 2  Polar            (39..42)
+	PURA,            // 3  Pura             (43..46)
+	NEO_CORTEX,      // 4  Neo Cortex       (47..50)
+	N_TROPY,         // 5  N. Tropy         (51..54)
+	RIPPER_ROO,      // 6  Ripper Roo       (55..58)
+	PAPU_PAPU,       // 7  Papu Papu        (59..62)
+	KOMODO_JOE,      // 8  Komodo Joe       (63..66)
+	PINSTRIPE,       // 9  Pinstripe        (67..70)
+	DINGODILE,       // 10 Dingodile        (71..74)
+	TINY_TIGER,      // 11 Tiny Tiger       (75..78)
+	N_GIN,           // 12 N. Gin           (79..82)
+	FAKE_CRASH,      // 13 Fake Crash       (83..86)
+	NITROS_OXIDE,    // 14 Nitros Oxide     (87..90)
+	PENTA_PENGUIN,   // 15 Penta Penguin    (91..94)
+};
+
+// Compile-time: the table and the block size must stay in step. A 17th racer or
+// a fifth chain has to break the build here rather than silently shift every
+// mapping by one.
+typedef char ap_cap_roster_table_size_check
+    [(sizeof(AP_CAP_ROSTER_CHARACTER) / sizeof(AP_CAP_ROSTER_CHARACTER[0])) == AP_CAP_ROSTER_COUNT
+         ? 1
+         : -1];
 
 void AP_CapabilityReset(void)
 {
-	int i;
+	int i, j;
 	for (i = 0; i < AP_CAP_CHAIN_COUNT; i++)
 		g_cap_recv[i] = 0;
+	for (i = 0; i < AP_CAP_ROSTER_COUNT; i++)
+		for (j = 0; j < AP_CAP_CHAIN_COUNT; j++)
+			g_cap_recv_pc[i][j] = 0;
 	g_cap_pc_logged = 0;
+	g_cap_pc_unknown_logged = 0;
 }
 
 void AP_CapabilityReceive(int chain)
@@ -37,38 +103,49 @@ void AP_CapabilityReceive(int chain)
 
 void AP_CapabilityReceivePerCharacter(int blockIndex)
 {
-	char msg[288];
+	int slot;
+	int chain;
 
 	if (blockIndex < 0 || blockIndex >= AP_CAPABILITY_PC_ITEM_COUNT)
 		return;
-	if (g_cap_pc_logged)
-		return;
 
-	g_cap_pc_logged = 1;
-	snprintf(msg, sizeof msg,
-	         "[AP CAP] per-character capability item received (block index %d) -- this "
-	         "build has no per-character mapping and applies NOTHING for it. No apworld "
-	         "on main generates these (per_character raises OptionError pending "
-	         "dowlle/ctr-native-ap#71).\n",
-	         blockIndex);
-	AP_LogLine(msg);
+	// Character-major, exactly as data/items.json mints indices 31..94:
+	// four consecutive chains per racer, roster order.
+	slot = blockIndex / AP_CAP_CHAIN_COUNT;
+	chain = blockIndex % AP_CAP_CHAIN_COUNT;
+	g_cap_recv_pc[slot][chain]++;
+
+	if (!g_cap_pc_logged)
+	{
+		char msg[192];
+		g_cap_pc_logged = 1;
+		snprintf(msg, sizeof msg,
+		         "[AP CAP] per-character capability items are arriving (first: roster slot "
+		         "%d, chain %d); the applied chain follows the character being driven\n",
+		         slot, chain);
+		AP_LogLine(msg);
+	}
 }
 
-// ── Is a pack active for this seed? ─────────────────────────────────────────
+// ── Is a pack active for this seed, and in which mode? ──────────────────────
 //
-// Mode 2 (per_character) is a RESERVED wire value: the apworld refuses to
-// generate it, and this build has no ruled roster mapping, so it is treated as
-// OFF rather than quietly given shared-global behaviour. Anything else unknown
-// is treated as OFF for the same reason -- a mode we do not understand must not
-// silently change the kart.
+// Both live modes are read independently per pack, so boost can run
+// per_character while stats stay shared_global. Anything else -- 0, or a mode
+// value a later apworld invents that this build predates -- is treated as OFF: a
+// mode we do not understand must not silently change the kart.
+static int AP_CapabilityModeLive(int mode)
+{
+	return mode == AP_CAP_MODE_SHARED_GLOBAL || mode == AP_CAP_MODE_PER_CHARACTER;
+}
+
 static int AP_CapabilityBoostActive(void)
 {
-	return ctr_cfg_active() && ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL;
+	return ctr_cfg_active() && AP_CapabilityModeLive(ctr_cfg.boost_mode);
 }
 
 static int AP_CapabilityStatsActive(void)
 {
-	return ctr_cfg_active() && ctr_cfg.stats_mode == AP_CAP_MODE_SHARED_GLOBAL;
+	return ctr_cfg_active() && AP_CapabilityModeLive(ctr_cfg.stats_mode);
 }
 
 // The local human player. Adventure / arcade single player: drivers[0]. Same
@@ -82,6 +159,106 @@ static int AP_CapabilityIsLocal(struct Driver *driver)
 	return driver == sdata->gGT->drivers[0];
 }
 
+static int AP_CapabilityRosterSlotForCharacter(int characterID);
+
+// The roster slot of the character the local player is CURRENTLY driving, or -1
+// if that cannot be established.
+//
+// `data.characterIDs[driver->driverID]` is the engine's own answer to "who is
+// this driver", and is precisely the expression VehBirth_SetConsts uses to pick
+// the class stat column -- so the capability ladder keys off the same source of
+// truth as the vanilla stats it overrides, rather than a second opinion that
+// could drift from it.
+//
+// Because this is resolved on every call rather than cached at connect, a hub
+// character swap needs no notification and no invalidation hook: the next frame
+// simply reads the new character and re-derives from that racer's own row.
+static int AP_CapabilityCurrentRosterSlot(void)
+{
+	struct Driver *driver;
+	int characterID;
+
+	if (sdata == 0 || sdata->gGT == 0)
+		return -1;
+
+	driver = sdata->gGT->drivers[0];
+	if (driver == 0)
+		return -1;
+
+	// characterIDs is an 8-entry table; driverID indexes it directly.
+	if (driver->driverID >= 8)
+		return -1;
+
+	characterID = data.characterIDs[driver->driverID];
+
+	return AP_CapabilityRosterSlotForCharacter(characterID);
+}
+
+// Translate an engine character ID to the apworld roster row. Kept separate
+// from the live-driver lookup because menus can preview a character before a
+// Driver exists.
+static int AP_CapabilityRosterSlotForCharacter(int characterID)
+{
+	int i;
+
+	for (i = 0; i < AP_CAP_ROSTER_COUNT; i++)
+	{
+		if (AP_CAP_ROSTER_CHARACTER[i] == characterID)
+			return i;
+	}
+	return -1; // -1 (no character yet, menus) or a modded id: apply nothing
+}
+
+// Same mode dispatch as AP_CapabilityChainCount, with an explicit character
+// for UI surfaces that are not backed by the current Driver.
+static int AP_CapabilityChainCountForCharacter(int mode, int chain, int characterID)
+{
+	int slot;
+
+	if (chain < 0 || chain >= AP_CAP_CHAIN_COUNT)
+		return -1;
+
+	if (mode == AP_CAP_MODE_PER_CHARACTER)
+	{
+		slot = AP_CapabilityRosterSlotForCharacter(characterID);
+		if (slot < 0)
+			return -1;
+		return g_cap_recv_pc[slot][chain];
+	}
+
+	return g_cap_recv[chain];
+}
+
+// The received count for one chain under the seed's mode for that pack. Returns
+// -1 when the pack is off, or when per_character mode cannot name the current
+// character -- callers turn that into "leave the engine alone", which fails open
+// to the vanilla kart rather than closed to the bottom of the ladder.
+static int AP_CapabilityChainCount(int mode, int chain)
+{
+	int slot;
+
+	if (chain < 0 || chain >= AP_CAP_CHAIN_COUNT)
+		return -1;
+
+	if (mode == AP_CAP_MODE_PER_CHARACTER)
+	{
+		slot = AP_CapabilityCurrentRosterSlot();
+		if (slot < 0)
+		{
+			if (!g_cap_pc_unknown_logged)
+			{
+				g_cap_pc_unknown_logged = 1;
+				AP_LogLine("[AP CAP] per_character mode is live but the current character could "
+				           "not be identified -- applying NOTHING (vanilla kart) until it can\n");
+			}
+			return -1;
+		}
+		return g_cap_recv_pc[slot][chain];
+	}
+
+	return g_cap_recv[chain];
+}
+
 int AP_CapabilityBoostTier(void)
 {
 	int ceiling;
@@ -90,11 +267,16 @@ int AP_CapabilityBoostTier(void)
 	if (!AP_CapabilityBoostActive())
 		return -1;
 
+	tier = AP_CapabilityChainCount(ctr_cfg.boost_mode, AP_CAP_CHAIN_BOOST);
+	if (tier < 0)
+		return -1;
+
 	// Without the capstone toggle the chain is 2 copies (none -> boost -> USF);
-	// with it, 3 (adds blue fire). Derived from the enum, not restated.
+	// with it, 3 (adds blue fire). Derived from the enum, not restated. The
+	// ceiling is per chain, so in per_character mode every racer climbs the same
+	// ladder on their own copies.
 	ceiling = ctr_cfg.boost_blue_fire ? AP_CAP_BOOST_BLUEFIRE : AP_CAP_BOOST_USF;
 
-	tier = g_cap_recv[AP_CAP_CHAIN_BOOST];
 	if (tier > ceiling)
 		tier = ceiling;
 	return tier;
@@ -109,7 +291,28 @@ int AP_CapabilityStatRankFor(int chain)
 	if (chain <= AP_CAP_CHAIN_BOOST || chain >= AP_CAP_CHAIN_COUNT)
 		return -1;
 
-	rank = g_cap_recv[chain];
+	rank = AP_CapabilityChainCount(ctr_cfg.stats_mode, chain);
+	if (rank < 0)
+		return -1;
+
+	if (rank > AP_CAP_STAT_COPIES)
+		rank = AP_CAP_STAT_COPIES;
+	return rank;
+}
+
+int AP_CapabilityStatRankForCharacter(int chain, int characterID)
+{
+	int rank;
+
+	if (!AP_CapabilityStatsActive())
+		return -1;
+	if (chain <= AP_CAP_CHAIN_BOOST || chain >= AP_CAP_CHAIN_COUNT)
+		return -1;
+
+	rank = AP_CapabilityChainCountForCharacter(ctr_cfg.stats_mode, chain, characterID);
+	if (rank < 0)
+		return -1;
+
 	if (rank > AP_CAP_STAT_COPIES)
 		rank = AP_CAP_STAT_COPIES;
 	return rank;

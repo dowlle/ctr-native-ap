@@ -890,9 +890,16 @@ void UI_RenderFrame_Racing()
 	}
 
 #ifdef CTR_AP
+	// AP item feed, in-race surface (issue #192). Self-gates on ctr_cfg_active(),
+	// the feed toggle, 1P and not-paused. This pass runs once per frame for ALL
+	// viewports (the per-player loop above is inside it) and is mutually exclusive
+	// with the hub passes, so the feed still ticks exactly once per frame.
+	AP_FeedDrawRace();
+
 	// Box placement author mode (#182): one status line while the mode is on.
 	// Self-gates on the "Box Author Mode" option, so this is a call and a
-	// compare for everyone else.
+	// compare for everyone else. Drawn after the feed so the authoring
+	// diagnostic stays legible on top of it.
 	AP_Author_DrawHud();
 #endif
 }
@@ -912,7 +919,8 @@ void UI_RenderFrame_AdvHub(void)
 
 #ifdef CTR_AP
 	// AP hub item-received feed (bottom-left). Self-gates on ctr_cfg_active() +
-	// the hub_feed toggle; only runs on the adventure hub, which is this pass.
+	// the hub_feed toggle; this pass is the adventure hub. The in-race surface is
+	// a separate call (AP_FeedDrawRace, issue #192) and never runs in the same frame.
 	AP_FeedDrawHub();
 	// Newer-schema warning (issue #8): top-left RED banner, self-gates on
 	// ctr_cfg.schema_newer. No-op unless the seed is from a newer apworld.
@@ -957,6 +965,13 @@ void UI_RenderFrame_CrystChall(void)
 	{
 		UI_DrawReservesMeter(hudStructPtr[8].x, hudStructPtr[8].y + 5, player);
 	}
+
+	// AP item feed, in-race surface (issue #192) -- a crystal challenge is a race
+	// context for the feed's purposes. It sits HERE rather than at the end of the
+	// function because the tail returns early on pause / item roll / roulette, and
+	// the feed must tick on every drawn frame of the challenge, not only on the
+	// frames that reach the bottom. Self-gating (1P, unpaused) lives in the hook.
+	AP_FeedDrawRace();
 #endif
 
 	UI_DrawSpeedBG();

@@ -71,19 +71,25 @@ int AP_RelicTargetTier(void);
 // LOAD_Hub path), so the section appears exactly once per roll.
 char *AP_Credits_PrependScroll(char *origScroll);
 
-// ── Hub item-received feed (display-only) ──
-// Bottom-left feed of the AP items you receive, rendered only on the adventure
-// hub. AP_FeedOnItemReceived queues one drained receipt (called once per item in
-// the received-item drain loop; flags is the NetworkItem.flags metadata, used to
-// colour the line by AP class, issue #195). AP_FeedConnectReset re-arms
-// initial-inventory suppression on a fresh connect; AP_FeedEndDrain(n) primes
-// the feed once that dump goes quiet. AP_FeedDrawHub renders + ages the feed
-// from the hub UI pass. AP_HubFeedOn reflects the ap-config.txt "hub_feed="
-// toggle (default on).
+// ── AP item feed (display-only) ──
+// Feed of the AP items you receive and send. AP_FeedOnItemReceived queues one
+// drained receipt (called once per item in the received-item drain loop; flags
+// is the NetworkItem.flags metadata, used to colour the line by AP class, issue
+// #195). AP_FeedConnectReset re-arms initial-inventory suppression on a fresh
+// connect; AP_FeedEndDrain(n) primes the feed once that dump goes quiet.
+//
+// TWO draw surfaces, one shared queue and one shared tick: AP_FeedDrawHub from
+// the hub UI pass (bottom-left, the shipped anchor) and AP_FeedDrawRace from the
+// race HUD pass (issue #192, upper-left of the track view, 1P and unpaused
+// only). RenderAllHUD never runs a hub and a race pass in the same frame, so the
+// feed ages exactly once per frame either way. AP_HubFeedOn reflects the
+// ap-config.txt "hub_feed=" toggle (default on) and now governs BOTH surfaces --
+// the key keeps its name so existing ap-config.txt files keep working.
 void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned flags);
 void AP_FeedConnectReset(void);
 void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
+void AP_FeedDrawRace(void);
 int  AP_HubFeedOn(void);
 
 // ── AP gate counters (received-item model, Option B) ──
@@ -196,6 +202,11 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 // "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
 const char *AP_Net_StatusLine(void);
 
+// Graceful client teardown before process exit (main-menu QUIT row, #211): the
+// same close-and-forget half of AP_Net_Reconnect, without the re-dial. Safe to
+// call even if never connected (ap_net_shutdown() no-ops on a null client).
+void AP_Net_Shutdown(void);
+
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
 // visible while holding reserves). Default 0; set by ap-config.txt
 // "hud_reserves_fx=1". Read by VehFire_Increment (#ifdef CTR_AP). Visual only;
@@ -224,24 +235,44 @@ int  AP_AiDifficultyValue(void);
 // connected. Called from the options menu on exit (see game/230/MM_ConfigMenu.c).
 void AP_AiDifficultyCommit(void);
 
-// ── Reward glow ──
+// ── Reward glow (display model revised by #212) ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
-// Returns the model of the AP item actually placed at that location -- an own
-// CTR reward shows its category model (trophy/relic/token/gem/key); a foreign
-// multiworld item shows STATIC_GEM (tinted white) as a generic "AP" marker.
-// Returns -1 when not connected, not yet scouted, or the bit is not a checkable
-// location, so the caller keeps the vanilla model. Used by AH_WarpPad_LInB
-// (#ifdef CTR_AP).
+// Returns the model of the AP item actually placed at that location:
+//   * an OG CTR reward (trophy / relic / token / gem / key) -> its own category
+//     model, whether it is MINE or another CTR PLAYER's (the peer's copy is
+//     ghost-rendered rather than re-modelled -- see AP_WarpPadRewardGhost);
+//   * everything else, mine or anyone's (traps, capability and comfort items,
+//     wumpa, any apworld-invented item, and every item of another GAME) ->
+//     STATIC_AP, the Archipelago-logo marker.
+// The generic white gem is retired and is never returned any more.
+// Returns -1 when not connected, not yet scouted, the bit is not a checkable
+// location, or the marker model is not registered yet, so the caller keeps the
+// placeholder model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
 int AP_WarpPadRewardModel(int globalBit);
+
+// 1 when the scouted reward here is another CTR PLAYER's OG reward, which keeps
+// its real model but renders TRANSLUCENT (#212 point 2, the time-trial ghost
+// treatment). 0 for own rewards, for marker items and for anything unresolved.
+// The caller must zero colorRGBA on this path -- see the ghost block in
+// AH_WarpPad_ThTick for why the ghost writer requires it.
+int AP_WarpPadRewardGhost(int globalBit);
+
+// Translucency for a ghosted peer reward, as the GTE's IR0 interpolation factor.
+// Vanilla's time-trial ghost writes this exact value as a bare literal
+// (GhostReplay.c:83, `inst->alphaScale = 0xa00`) and never names it, so this is
+// a deliberately documented MIRROR of that line rather than a second definition
+// of a constant that already has a name: change one and change the other only if
+// pad ghosts are meant to differ from kart ghosts.
+#define AP_PAD_GHOST_ALPHA 0xa00
 
 // Reward-glow TINT. Vanilla renders every relic tier the same blue, so a glow
 // advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
-// tier-specific packed colorRGBA for an OWN relic scouted at this location; pure
-// white for a FOREIGN multiworld item (so the generic STATIC_GEM marker renders
-// as a distinct white gem, not mistaken for an own coloured gem or boss Key); or
-// 0 to keep the caller's default colour (own non-relic / unscouted -> 0). Caller
-// applies it to relic + gem marker models.
+// tier-specific packed colorRGBA for an OWN relic scouted at this location; the
+// AP classification colour (or the one uniform "surprise" colour, when the seed
+// sets ctr_options.ap_item_type_colors = 0) for an Archipelago-logo marker; or 0
+// to keep the caller's default colour (own gem/trophy/token/key, ghosted peer
+// rewards, unscouted). Caller applies it to relic + gem + marker models.
 int AP_WarpPadRewardTint(int globalBit);
 
 // ── Requirement-hologram relic tint (closed pad) ──

@@ -254,6 +254,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.world_version[0] = '\0';
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
+	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
+	// for EVERY parse, including one that finds no ctr_options at all, so a seed
+	// that predates the apworld half glows exactly the way it does today.
+	ctr_cfg.ap_item_type_colors = 1;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.podium_any_position = 0;
@@ -349,6 +353,17 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// WARP_PAD_DISPLAY_ONE_PILE, which is the glow every shipped client renders.
 	ctr_cfg.warp_pad_item_display =
 	    json_int(opt, "warp_pad_item_display", WARP_PAD_DISPLAY_ONE_PILE);
+	// AP-item type colours (issue #212). EXPECTED key name "ap_item_type_colors",
+	// int or bool. Additive, no schema bump, and TOLERANT OF ABSENCE by design:
+	// the apworld half lands after the 0.2.0 name freeze, so most seeds this
+	// client sees will not carry the key at all. Absent / null / unparseable ->
+	// json_int's default of 1 -> classification tints, i.e. exactly the display
+	// this client shipped with. Only an explicit 0 turns the tints off; any other
+	// value is read as "on" by the consumer (AP_MarkerTint), so a future apworld
+	// that widens this into an enum cannot accidentally blank the markers.
+	ctr_cfg.ap_item_type_colors = json_int(opt, "ap_item_type_colors", 1);
+	if (!ctr_cfg.ap_item_type_colors)
+		ap_cfg_log("[AP CFG] ap_item_type_colors=0 -> AP markers render in one uniform colour\n");
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
 	// change schema_version -- generation never depends on it.
 	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);
@@ -361,8 +376,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// bump (the gem_cup_legs landing already made schema 7 unconditional). Absent
 	// -> 0 = off = the vanilla kart, so a pre-spine-1 seed on this client behaves
 	// exactly like a pre-#12/#13 client did. Stored raw: ap_capability.c decides
-	// what an unsupported mode value means, and it declines everything except
-	// shared_global rather than guessing.
+	// what a mode value means, and it treats anything outside the two live modes
+	// (1 shared_global, 2 per_character) as off rather than guessing.
 	ctr_cfg.boost_mode = json_int(opt, "boost_mode", 0);
 	ctr_cfg.boost_blue_fire = json_int(opt, "boost_blue_fire", 0);
 	ctr_cfg.stats_mode = json_int(opt, "stats_mode", 0);
@@ -371,10 +386,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
 	if (ctr_cfg.boost_mode == 2 || ctr_cfg.stats_mode == 2)
 		ap_cfg_log(
-		    "[AP CFG] *** per_character capability mode requested (boost_mode=%d "
-		    "stats_mode=%d) -- this build has no per-character mapping and applies "
-		    "NOTHING for it. No apworld on main can generate this shape today "
-		    "(OptionError pending dowlle/ctr-native-ap#71). ***\n",
+		    "[AP CFG] per_character capability mode active (boost_mode=%d stats_mode=%d): "
+		    "the applied chain follows the character currently being driven. No apworld "
+		    "on main generates this shape yet (OptionError pending "
+		    "dowlle/ctr-native-ap#71), so a seed carrying it is hand-built for now.\n",
 		    ctr_cfg.boost_mode, ctr_cfg.stats_mode);
 	// Generating apworld's world_version = the pair version (#150). Additive key,
 	// no schema bump: a seed predating it leaves the buffer empty and the update
