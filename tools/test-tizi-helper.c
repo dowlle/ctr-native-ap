@@ -30,7 +30,13 @@
 // constants rather than against numbers copied into this file.
 #define CTR_AP 1
 #include "../ap/ap_tizi.h"
+// Only the indices and AP_ItemsanityWeaponIndex are wanted here; the rest of the
+// itemsanity rules have their own harness (tools/test-itemsanity.c), so the
+// unused statics this header defines are expected rather than a smell.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 #include "../ap/ap_itemsanity_logic.h"
+#pragma GCC diagnostic pop
 
 static int g_failures;
 
