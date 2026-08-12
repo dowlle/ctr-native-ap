@@ -18,6 +18,7 @@
 #include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
+#include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #endif
 
 #include "226/R226.c"
@@ -361,6 +362,7 @@
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"
+#include "../ap/ap_tizi.c"
 #endif
 
 #endif

@@ -27,6 +27,7 @@
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
 #include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
+#include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 
 // The freestanding reward-policy header spells out the model ids it can return
 // so the out-of-engine test harness can include it alone. Pin each one to the
@@ -3570,6 +3571,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// accumulating on top of the previous connection would hand the player a
 		// doubled boost tier on every reconnect.
 		AP_CapabilityReset();
+		// Tizi Helper (#223): both receipts are booleans rebuilt from the same
+		// authoritative replay, so a reconnect or a slot switch can never carry
+		// one slot's helper into another's session.
+		AP_TiziReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3759,13 +3764,33 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_CharacterReceive((int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX));
 		}
 
+		// Tizi Helper (#223, idx 188). Its own index, no overlap with anything.
+		else if (idx == AP_TIZI_ITEM_INDEX)
+		{
+			AP_TiziReceiveHelper();
+		}
+
 		// Itemsanity weapon unlocks (indexes 95..105): booleans by weapon type.
 		// Duplicate receipts are harmless; reconnect/slot reset clears the set
 		// before the authoritative ReceivedItems replay rebuilds it.
+		//
+		// COMPOSITION FIX (#227 + #223). The Tizi branch predicted a "dedupe, not
+		// a conflict" here and that prediction is wrong for an else-if chain: the
+		// `Mask` weapon is index 101, which is INSIDE this range (95 + 11), so
+		// this branch matches first and #223's separate `idx == 101` arm becomes
+		// dead code. AP_TiziHelperActive() ANDs helperReceived with maskReceived
+		// whenever itemsanity is on, so losing that call leaves the Tizi helper
+		// permanently inert on exactly the seeds it is specified to work on.
+		// The fan-out below is the fix: this branch owns the whole range and
+		// forwards the Mask to #223 explicitly, so the behaviour no longer
+		// depends on which of the two lands first. REQUIRED CHANGE for whichever
+		// of #227 / #223 merges second -- it is not carried by either PR today.
 		else if (idx >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
 		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
 		{
 			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
+			if (idx == AP_TIZI_MASK_ITEM_INDEX)
+				AP_TiziReceiveMask();
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
@@ -4787,6 +4812,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
