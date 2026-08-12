@@ -7,8 +7,8 @@
 // (tools/test-feed-class.c) can pin the precedence deterministically without
 // pulling in the game. The hub item feed resolves a font colour from the class
 // ordinal returned here, and the reward-glow marker tint (AP_ClassTint in
-// ap_hooks.c) resolves from the same ordinal, so the two presentations share
-// ONE precedence and can never disagree about it.
+// ap_reward_policy.h) resolves from the same ordinal, so the two presentations
+// share ONE precedence and can never disagree about it.
 
 // AP item flags, as carried by NetworkItem.flags and the scout cache: bit0 =
 // progression, bit1 = useful, bit2 = trap, 0 = filler. Any other bits are

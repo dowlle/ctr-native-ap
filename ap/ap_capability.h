@@ -116,6 +116,23 @@ enum
 #define AP_CAPABILITY_PC_ITEM_FIRST_INDEX 31
 #define AP_CAPABILITY_PC_ITEM_COUNT (AP_CAP_ROSTER_COUNT * AP_CAP_CHAIN_COUNT)
 
+// ── Character unlock items (issues #54 / #209) ─────────────────────────────
+// The 16 racers, minted straight after the per-character capability block at
+// item indices 123..138, in the SAME apworld roster order.
+//
+// COMPOSITION NOTE. The character-phase branch owns the full version of this
+// block -- these two constants plus AP_CharacterReceive() and the playability
+// query -- in this same file. This branch needs ONLY the index range, because
+// the reward-display policy has to classify a character unlock (ap_items.h) and
+// that is a display decision with no receive path behind it here. The #ifndef
+// mirrors the AP_IDX_* precedent in ap_items.h / ap_hooks.h; when the two
+// branches compose, keep the character-phase block and drop this one. The values
+// are copied from it verbatim so the two can never disagree in the meantime.
+#ifndef AP_CHARACTER_ITEM_FIRST_INDEX
+#define AP_CHARACTER_ITEM_FIRST_INDEX 123
+#define AP_CHARACTER_ITEM_COUNT AP_CAP_ROSTER_COUNT
+#endif
+
 // Boost tiers. Index-keyed and ladder-ordered: the tier IS the number of
 // received Progressive Boost copies, clamped to the seed's ceiling.
 enum

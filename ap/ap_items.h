@@ -2,6 +2,8 @@
 #define AP_ITEMS_H
 #ifdef CTR_AP
 
+#include "ap_capability.h" // capability item index ranges (the crystal category)
+
 // AP item-id -> AdvProgress category mapping for CTR-Native.
 //
 // Icebound's items (data/items.json) are GENERIC category counters, not
@@ -53,6 +55,43 @@
 #define AP_ITEM_INDEX_COUNT 15
 #endif
 
+// ── Lettersanity item block (issue #148) ───────────────────────────────────
+// 16 tracks x the three C/T/R letters, item indices 139..186, track-major.
+//
+// COMPOSITION NOTE, same shape as the character-unlock block in ap_capability.h:
+// the lettersanity branch owns these in ap_seedcfg.h, next to the rest of the
+// per-seed letter config. This header cannot reach for that one -- ap_items.h is
+// freestanding on purpose, so the out-of-engine policy harness can compile it
+// without the seed parser -- and it needs the range to classify a letter for the
+// reward display. Values copied verbatim; when the branches compose, keep the
+// ap_seedcfg.h block and drop this one. Leaving both is harmless in the
+// meantime: the replacement lists are identical, so whichever header a
+// translation unit sees second is a benign redefinition.
+#ifndef CTR_LETTER_ITEM_FIRST_INDEX
+#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_LETTER_COUNT 3
+#define CTR_LETTER_ITEM_FIRST_INDEX 139
+#endif
+
+// ── Itemsanity weapon unlocks (issue #145) ─────────────────────────────────
+// Item indices 95..105, in held-ID order (0..4, 6..11). Same composition story
+// as the letters above: the itemsanity branch owns these in ap_itemsanity_logic.h
+// and this header cannot include it, so the range is mirrored here to classify a
+// weapon for the reward display. Keep that branch's block when they compose.
+#ifndef AP_ITEMSANITY_ITEM_FIRST_INDEX
+#define AP_ITEMSANITY_WEAPON_COUNT 11
+#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+#endif
+
+// ── Gas Pedal (item index 187) ─────────────────────────────────────────────
+// Sits alone between the letter block and the Tizi Helper. No branch owns a
+// constant for it yet -- no client receives it -- so unlike every other block
+// here this define has no upstream to defer to; whoever builds the receive path
+// should take it from here rather than minting a second one.
+#ifndef AP_GAS_PEDAL_ITEM_INDEX
+#define AP_GAS_PEDAL_ITEM_INDEX 187
+#endif
+
 typedef enum
 {
 	AP_CAT_TROPHY = 0,
@@ -62,14 +101,23 @@ typedef enum
 	AP_CAT_TOKEN,
 	AP_CAT_GEM,
 	AP_CAT_KEY,
-	AP_CAT_COUNT, // number of bit-pool categories
-	AP_CAT_WUMPA, // filler, no bit pool
+	AP_CAT_COUNT,   // number of bit-pool categories
+	AP_CAT_WUMPA,   // filler, no bit pool
+	// Every CTR progression item with NO vanilla model of its own: the capability
+	// ladder (#219), the itemsanity weapon unlocks (#145), the character unlocks
+	// (#54/#209), the lettersanity letters (#148) and Gas Pedal. No bit pool. The
+	// name is the MODEL these present as, not the feature they come from -- the
+	// ruling is that all of them read as the purple crystal, so a player never has
+	// to tell CTR's own progression apart from a foreign multiworld item by
+	// squinting at a marker's tint.
+	AP_CAT_CRYSTAL,
 	AP_CAT_NONE
 } AP_ItemCat;
 
 static AP_ItemCat AP_ItemCategory(long long id)
 {
-	switch (id - AP_ITEM_BASE)
+	long long idx = id - AP_ITEM_BASE;
+	switch (idx)
 	{
 	case 0:  return AP_CAT_TROPHY;   // Trophy
 	case 1:  return AP_CAT_SAPPHIRE; // Sapphire Relic
@@ -81,7 +129,82 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		return AP_CAT_GEM;   // Red/Green/Blue/Yellow/Purple Gem
 	case 14: return AP_CAT_KEY;   // Key
 	case 15: return AP_CAT_WUMPA; // Wumpa Fruit (filler)
-	default: return AP_CAT_NONE;
+	default:
+		// ── The CRYSTAL categories: CTR progression with no model of its own ──
+		//
+		// The capability ladder (#219): the shared-global block (Progressive
+		// Boost/Top Speed/Acceleration/Turning, indices 27..30) and the
+		// per-character block (indices 31..94).
+		if (idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
+		    idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
+			return AP_CAT_CRYSTAL;
+
+		// The character unlocks (#54/#209, indices 123..138). Ruled: a character
+		// unlock IS a CTR progression item and reads as the same purple
+		// crystal as the ladder, not as a generic Archipelago marker. They join the
+		// category rather than getting one of their own because every answer the
+		// display policy gives them is the ladder's -- same model, same tint, same
+		// scale, same plum fallback -- and a second category whose every arm
+		// duplicated the first is a seam that can only ever drift apart.
+		//
+		// This is DISPLAY ONLY. AP_CAT_CRYSTAL has no bit pool (it sits past
+		// AP_CAT_COUNT, so AP_CATEGORY_POOLS cannot index it) and no consumer
+		// outside ap_reward_policy.h, so widening it grants nothing, gates nothing
+		// and counts nothing. The receive path for these items is unchanged and
+		// lives on the character-phase branch.
+		if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+		    idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+			return AP_CAT_CRYSTAL;
+
+		// The lettersanity letters (#148, indices 139..186). Ruled in for the same
+		// reason as the racers: uniform visuals for CTR progression content.
+		if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
+		    idx < CTR_LETTER_ITEM_FIRST_INDEX +
+		              CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+			return AP_CAT_CRYSTAL;
+
+		// The itemsanity weapon unlocks (#145, indices 95..105) and Gas Pedal
+		// (187), the last two families the ruling reached. These are reachable in a
+		// real seed today, unlike Gas Pedal, whose receive path nobody has built --
+		// it is classified here anyway so the display cannot be the thing that
+		// still needs doing when it lands.
+		if (idx >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
+		    idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
+			return AP_CAT_CRYSTAL;
+		if (idx == AP_GAS_PEDAL_ITEM_INDEX)
+			return AP_CAT_CRYSTAL;
+
+		// ── Why this list is enumerated and not "whatever the flags say" ──
+		//
+		// The rule these blocks share is "a CTR PROGRESSION item with no vanilla
+		// model of its own reads as the crystal instead of a generic Archipelago
+		// marker". It deliberately does NOT read the item's AP classification, and
+		// it must not be refactored into doing so, however close the two now look.
+		//
+		// worlds/ctr/data/items.json classifies exactly three runs as
+		// `progression`: 0..14 (Trophy, the three relic tiers, the tokens, the gems,
+		// the Key), 95..105 and 139..187. Keying the crystal off that flag would
+		// turn every OG CTR reward into a crystal and delete #212/#219's whole
+		// point -- those five have vanilla models and the entire design is that they
+		// keep them. It would also MISS the two families that motivated the crystal
+		// in the first place: the 68 capability items and the 16 racers ship as
+		// `useful`, so a flag test would leave them on the marker. Enumeration is
+		// the honest encoding; the classification is a separate apworld question
+		// with a separate answer.
+		//
+		// Marker material, still, and each on purpose: traps (16..20),
+		// comfort/surface items (21..26), the wumpa bundles (120..121), Progressive
+		// Starting Wumpa (122) and the Tizi Helper (188). None of these is CTR
+		// progression -- they are traps, filler and comfort -- and the trap case is
+		// the one that would actively mislead: a trap wearing the same purple
+		// crystal as a capability upgrade loses the salmon warning colour the class
+		// tints exist to give it.
+		//
+		// A FOREIGN item never reaches any of this. AP_PadDisplayKind only runs an
+		// id through here for a slot playing CTR (its ap_net_player_is_ctr guard),
+		// so another game's item is marker material by construction, not by falling
+		// off the end of this list.
+		return AP_CAT_NONE;
 	}
 }
 

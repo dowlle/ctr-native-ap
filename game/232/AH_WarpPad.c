@@ -185,7 +185,7 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					lightDir = &warppadObj->lightDirToken;
 				}
 #ifdef CTR_AP
-				else if (modelID == STATIC_KEY)
+				else if (modelID == STATIC_KEY || modelID == STATIC_CRYSTAL)
 				{
 					// AP: a boss Key can occupy a reward glow slot (vanilla never
 					// puts a key here, so this dispatch had no case for it and the
@@ -194,6 +194,17 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					// vanilla's requirement-icon key does — via the gem slot, which
 					// vanilla itself uses for keys ("store in Gem array, intended by
 					// ND") and which the AP birth path already seeds.
+					//
+					// #219's crystal is the SAME case, and it is live: the hub's own
+					// model pack does carry STATIC_CRYSTAL (see the residency note in
+					// ap_hooks.c), so a capability-ladder reward really does reach a
+					// pad slot as a crystal -- and _ThTick gives it USE_SPECULAR_LIGHT
+					// to match the arena crystal (UI_Instance.c:85-90). Without a
+					// lightDir here that specular stayed world-fixed while the model
+					// spun, exactly like the key: purple facing the light, near-BLACK
+					// facing away, on a shard thin enough to read as a dark bar. The
+					// gem slot is seeded on both AP birth paths (:2333, :2418) and all
+					// five D232 entries are identical, so it needs no new seeding.
 					lightDir = &warppadObj->lightDirGem;
 				}
 #endif
@@ -1232,6 +1243,12 @@ WarpPad_AnimateOpen:
 				// pointer reassignment is a native pattern; SpinRewards/scale below
 				// read the new model->id. Unscouted / unresolved / no marker model ->
 				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
+				// Every model it DOES return is resident on this level (the pad
+				// resolves with the drawable-only fallback, ap_hooks.c), so the tint
+				// resolved below always belongs to the model this slot really draws.
+				// The residency test stays as a guard: a slot whose swap silently
+				// failed would be coloured for a reward it is not showing, and that is
+				// how an own Wumpa Fruit rendered as a near-black marker (#212).
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
 					// #212: another CTR player's OG reward keeps its own model and is
@@ -1363,6 +1380,20 @@ WarpPad_AnimateOpen:
 						// the glow key reads as the golden boss key, not a black blob.
 						apPrize->colorRGBA = 0xdca6000; // vanilla golden key
 						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
+					case STATIC_CRYSTAL:
+						// #219: an OWN CTR progression/capability item -> the OG purple
+						// crystal, specular like the arena crystal (UI_Instance.c:90).
+						// A peer crystal is ghosted below (colorRGBA forced to 0 there),
+						// exactly like the peer OG rewards.
+						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
+					case PU_WUMPA_FRUIT:
+						// #222: an OWN Wumpa Fruit package -> the fruit model's natural
+						// colours (vanilla renders it unmodulated; RB_Fruit.c never tints
+						// it). A peer package is ghosted below.
+						apPrize->colorRGBA = 0;
 						break;
 					default:
 						// STATIC_TROPHY / any other own reward -> natural, untinted
