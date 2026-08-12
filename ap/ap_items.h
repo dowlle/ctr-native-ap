@@ -2,6 +2,8 @@
 #define AP_ITEMS_H
 #ifdef CTR_AP
 
+#include "ap_capability.h" // capability item index ranges (the crystal category)
+
 // AP item-id -> AdvProgress category mapping for CTR-Native.
 //
 // Icebound's items (data/items.json) are GENERIC category counters, not
@@ -62,14 +64,16 @@ typedef enum
 	AP_CAT_TOKEN,
 	AP_CAT_GEM,
 	AP_CAT_KEY,
-	AP_CAT_COUNT, // number of bit-pool categories
-	AP_CAT_WUMPA, // filler, no bit pool
+	AP_CAT_COUNT,   // number of bit-pool categories
+	AP_CAT_WUMPA,   // filler, no bit pool
+	AP_CAT_CRYSTAL, // CTR progression/capability items, no bit pool (#219)
 	AP_CAT_NONE
 } AP_ItemCat;
 
 static AP_ItemCat AP_ItemCategory(long long id)
 {
-	switch (id - AP_ITEM_BASE)
+	long long idx = id - AP_ITEM_BASE;
+	switch (idx)
 	{
 	case 0:  return AP_CAT_TROPHY;   // Trophy
 	case 1:  return AP_CAT_SAPPHIRE; // Sapphire Relic
@@ -81,7 +85,15 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		return AP_CAT_GEM;   // Red/Green/Blue/Yellow/Purple Gem
 	case 14: return AP_CAT_KEY;   // Key
 	case 15: return AP_CAT_WUMPA; // Wumpa Fruit (filler)
-	default: return AP_CAT_NONE;
+	default:
+		// CTR progression/capability items (#219): the shared-global capability
+		// block (Progressive Boost/Top Speed/Acceleration/Turning, indices 27..30)
+		// and the per-character block (indices 31..94). One crystal category for
+		// the whole ladder; the display resolver renders these as crystals.
+		if (idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
+		    idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
+			return AP_CAT_CRYSTAL;
+		return AP_CAT_NONE;
 	}
 }
 

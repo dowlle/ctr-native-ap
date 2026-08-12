@@ -13,6 +13,7 @@
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 
 struct GameTracker;
+struct Instance;
 
 // Called once per frame from the main loop (CTR_Main in MainMain.c).
 void AP_OnFrame(struct GameTracker *gGT);
@@ -270,10 +271,33 @@ int AP_WarpPadRewardGhost(int globalBit);
 // advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
 // tier-specific packed colorRGBA for an OWN relic scouted at this location; the
 // AP classification colour (or the one uniform "surprise" colour, when the seed
-// sets ctr_options.ap_item_type_colors = 0) for an Archipelago-logo marker; or 0
-// to keep the caller's default colour (own gem/trophy/token/key, ghosted peer
-// rewards, unscouted). Caller applies it to relic + gem + marker models.
+// sets ctr_options.ap_item_type_colors = 0) for an Archipelago-logo marker; the
+// OG purple for an own CRYSTAL (#219); or 0 to keep the caller's default colour
+// (own gem/trophy/token/key/wumpa, ghosted peer rewards, unscouted). Caller
+// applies it to relic + gem + marker + crystal models.
 int AP_WarpPadRewardTint(int globalBit);
+
+// ── Reward-prop display scale (issues #219/#221/#222) ──
+// Category display-scale MULTIPLIER for a scouted reward, in fixed point where
+// 0x1000 = 1.0 (no adjustment). The token ceremony prop (game/221.c, game/222.c)
+// is born at the vanilla token's grow limit; different reward models are
+// different intrinsic sizes, so the resolver returns how much larger/smaller
+// this category's prop should finish. First-pass values tuned in game per
+// category (the scale, tint, lighting and translucency checks in the rolling
+// testing list). 0x1000 for everything unresolved / marker / OG-token-sized.
+int AP_WarpPadRewardScale(int globalBit);
+
+// ── Token ceremony reward prop (issue #221) ──
+// Re-present `prop` (the CTR-token ceremony instance, sdata->ptrToken, born as
+// the vanilla STATIC_TOKEN) with the reward that ACTUALLY sits at `globalBit`:
+// same model, tint, translucency and category scale as the pad glow uses, so
+// the prop matches the resolved banner text. Returns 0 (leave the vanilla token
+// untouched) when AP is inactive, the location is not scouted/checkable, or the
+// resolved model is not resident for this track -- the safe vanilla fallback.
+// Caller: game/221.c (crystal challenge) and game/222.c (token race), before the
+// prop is first shown. Mirrors the pad-glow colour/flag reset from #213, so a
+// reassigned prop never keeps the token's stale colour.
+int AP_CeremonyRewardProp(struct Instance *prop, int globalBit);
 
 // ── Requirement-hologram relic tint (closed pad) ──
 // The relic icon shown on a LOCKED pad advertises that pad's relic REQUIREMENT.

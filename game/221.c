@@ -282,6 +282,14 @@ void CC_EndEvent_DrawMenu()
 	if (token != NULL)
 #endif
 	{
+#ifdef CTR_AP
+		// #221: before the prop is first shown, re-present the crystal-challenge
+		// token with the reward that actually sits at this location (same resolver
+		// as the pad glow), so the prop matches the AP banner. Returns 0 to keep
+		// the vanilla token when AP is inactive, the reward is unscouted, or the
+		// model is not resident.
+		AP_CeremonyRewardProp(token, tokenRewardBit);
+#endif
 		token->flags &= ~(HIDE_MODEL);
 		token->matrix.t[0] = UI_ConvertX_2(pos.x, CC_SCREEN_DEPTH);
 		token->matrix.t[1] = UI_ConvertY_2(0xA2 - 0x18, CC_SCREEN_DEPTH);
@@ -299,6 +307,21 @@ void CC_EndEvent_DrawMenu()
 				token->scale.y += CC_TOKEN_GROW_STEP;
 				token->scale.z += CC_TOKEN_GROW_STEP;
 			}
+#ifdef CTR_AP
+			// #219/#222/#221: clamp the ceremony prop at the resolved reward
+			// category's display scale (see the same clamp in game/222.c). First-
+			// pass scale values, tuned in game per category.
+			{
+				s32 growLimit = (s32)((u32)CC_TOKEN_GROW_LIMIT *
+				                      (u32)AP_WarpPadRewardScale(tokenRewardBit) >> 12);
+				if (token->scale.x > growLimit)
+				{
+					token->scale.x = (s16)growLimit;
+					token->scale.y = (s16)growLimit;
+					token->scale.z = (s16)growLimit;
+				}
+			}
+#endif
 		}
 	}
 	else if (elapsedFrames == CTR_SECONDS_TO_FRAMES(1))
