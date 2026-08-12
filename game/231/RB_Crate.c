@@ -287,6 +287,16 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 			driver->numTimesHitWeaponBox++;
 			driver->itemRollTimer = 90;
 
+#ifdef CTR_AP
+			// Tizi Helper (#223). The roll this line starts resolves ~90 frames
+			// later in VehPhysGeneral_SetHeldItem, which no longer knows WHICH
+			// crate began it -- so the identity has to be recorded here, at the
+			// only point where the crate instance is in hand. Arms nothing
+			// unless this is one of the four Papu's Pyramid start-line boxes and
+			// the helper is active for the local player.
+			AP_TiziOnWeaponBoxHit(driver, crateInst);
+#endif
+
 			if ((sdata->gGT->gameMode1 & ROLLING_ITEM) == 0)
 			{
 				OtherFX_Play(0x5d, 0);
