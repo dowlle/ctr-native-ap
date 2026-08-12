@@ -36,9 +36,14 @@ struct ApCreditLine
 };
 
 // Order (per the #117 build brief): maintainer, randomizer design, decomp
-// contributors, ported-mod authors, libraries.
+// contributors, ported-mod authors, asset attributions, libraries.
 static const struct ApCreditLine AP_CREDITS_LINES[] = {
-    {1, "CRASH TEAM RACING ARCHIPELAGO"},
+    // Opening thank-you (issue #231). The sentence is 53 characters, so it does
+    // not fit AP_CREDITS_FIELD_WIDTH on one line; it is split at the clause
+    // boundary and both halves are centred by the prepend hook. The second half
+    // carries the section title the line replaced.
+    {1, "THANKS FOR PLAYING THE"},
+    {1, "CRASH TEAM RACING ARCHIPELAGO!"},
     {0, ""},
     {1, "CREATED BY"},
     {0, "APPIE/DOWLLE"},
@@ -76,7 +81,18 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, ""},
     {1, "PORTED MODS"},
     {0, "OPTIONS MENU - THECODINGBOB"},
+    // 0.2.0 ports the aspect-ratio/widescreen work, the borderless fullscreen
+    // toggle and the PSX dithering toggle from the same fork (issue #231).
+    {0, "GRAPHICS OPTIONS - THECODINGBOB"},
     {0, "RESERVES METER - SUPERSTARXALIEN"},
+    {0, ""},
+    // THIRD_PARTY_NOTICES.md "Archipelago Logo Marker": the marker mesh comes
+    // from MMRecompRando (GPL-3.0) and the logo it depicts is (c) 2022 Krista
+    // Corkos and Christopher Wilson (CC BY-NC 4.0). Both credits are permanent.
+    {1, "ARCHIPELAGO LOGO MARKER"},
+    {0, "MESH - MMRECOMPRANDO PROJECT"},
+    {0, "LOGO DESIGN - KRISTA CORKOS"},
+    {0, "AND CHRISTOPHER WILSON"},
     {0, ""},
     {1, "LIBRARIES"},
     {0, "PSY-X - REDRIVER2 PROJECT"},
