@@ -989,6 +989,17 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	rng = CTR_MipsSra(MixRNG_Scramble(), 0x3);
 	rng = CTR_MipsSubLo(rng, CTR_MipsMulLo(CTR_MipsDiv(rng, 0xc8), 0xc8));
 
+#ifdef CTR_AP
+	// #145 itemsanity: carry the weighted table and the roll past the switch, so
+	// the downstream single-warpball and 3-missile caps below can substitute from
+	// the same eligibility set the draw filter used. Left null for the item sets
+	// that never reach the filter; AP_ItemsanitySubstituteOwned then falls back to
+	// the frozen weapon list, which still preserves ownership.
+	const unsigned char *apRollTable = 0;
+	int apRollTableCount = 0;
+	unsigned apRoll = 0;
+#endif
+
 	switch (itemSet)
 	{
 	case ITEMSET_Race1:
@@ -998,6 +1009,14 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	case ITEMSET_BattleDefault:
 	case ITEMSET_BossRace:
 		driver->heldItemID = charPtr[itemSet][(rng * numWeapons[itemSet]) / 0xc8];
+#ifdef CTR_AP
+		apRollTable = charPtr[itemSet];
+		apRollTableCount = numWeapons[itemSet];
+		apRoll = (unsigned)rng;
+		driver->heldItemID = AP_ItemsanityFilterRoll(driver, driver->heldItemID,
+		                                           apRoll, apRollTable,
+		                                           apRollTableCount);
+#endif
 		break;
 
 	// uses int array instead of char,
@@ -1080,6 +1099,16 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		else
 		{
 			driver->heldItemID = 0xb;
+#ifdef CTR_AP
+			// #145: ordinary substitution, so it must respect ownership. The
+			// substitute is never Warpball or Missile x3 themselves, so the
+			// one-at-a-time rule this branch enforces still holds, and a
+			// surviving Missile x3 still meets the holder cap just below.
+			driver->heldItemID = AP_ItemsanitySubstituteOwned(driver,
+			                                                driver->heldItemID,
+			                                                apRoll, apRollTable,
+			                                                apRollTableCount);
+#endif
 		}
 	}
 
@@ -1103,6 +1132,16 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		else
 		{
 			driver->heldItemID = 0x2;
+#ifdef CTR_AP
+			// #145: same rule as the warpball cap above. Missile x3 stays out of
+			// the pool so this ceiling survives, and Warpball stays out because
+			// the rule above has already run and would not claim WARPBALL_HELD
+			// for a weapon handed out here.
+			driver->heldItemID = AP_ItemsanitySubstituteOwned(driver,
+			                                                driver->heldItemID,
+			                                                apRoll, apRollTable,
+			                                                apRollTableCount);
+#endif
 		}
 	}
 

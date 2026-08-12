@@ -762,6 +762,18 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// block above appends only codes that already passed the same
 		// checked+missing membership test, so it cannot reintroduce an invalid id
 		// after the count; its own drops are reported by the "+N ... to scout" line.
+		// COMPOSITION NOTE (#214 + #227): the two blocks are disjoint location
+		// classes despite both saying "itemsanity" -- #109's are the physical item
+		// BOXES (their own code block, membership-filtered via AP_BoxMap_ScoutCodes),
+		// #145's are the 22 frozen WEAPON-use codes at 35016000+. Both append to the
+		// same scout list; neither reads the other's codes.
+		//
+		// Itemsanity is an ordered global class with no AdvProgress bits and no
+		// elastic subset. Server membership is its authoritative on/off signal;
+		// scout all 22 frozen codes when present so the shared class emitter can
+		// resolve foreign sent-item feed entries exactly like podium rungs.
+		for (int i = 0; i < 22; i++)
+			scout_add((int64_t)(35016000 + i));
 		if (!locs.empty())
 			g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr,
