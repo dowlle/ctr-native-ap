@@ -438,6 +438,16 @@ unsigned AP_StateGen(void);
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
+// Is this pad in the §6 box re-entry window (issue #232)? The destination's
+// trophy race is checked, this pad's stage-2 is not met, and unbroken AP item
+// boxes still stand behind the destination -- so AP_PadState keeps the pad at 2
+// Raceable and the map paints it green. AH_WarpPad.c reads this on both of its
+// surfaces: the entry gate keeps offering a plain adventure re-race (the only
+// way to break a box), and the pad is born OPEN instead of advertising a stage-2
+// requirement it is not actually withholding entry on. Same keying as
+// AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
+int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
+
 // ── Gem-cup return hub (destination-shuffle correctness) ──
 // Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a
 // cup's four track loads clobber gGT->prevLEV (each MainRaceTrack_RequestLoad

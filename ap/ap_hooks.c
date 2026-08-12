@@ -23,6 +23,7 @@
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
+#include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -1162,34 +1163,37 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// bit, so they cannot ride in uncBits and are counted separately.
 	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
 
-	// Done is terminal: every destination location checked. A done pad has
-	// nothing left by definition, so hard-locking it never gates progression --
-	// which is only true while "nothing left" also counts the boxes.
-	if (uncN == 0 && boxesLeft == 0)
-		return 5;
+	// The table itself lives in ap_pad_state.h so the harness can pin it out of
+	// engine; everything above is the gather. Requirements key off the PHYSICAL
+	// pad, lifecycle facts off the DESTINATION, which is the model's whole
+	// keying invariant.
+	return AP_PadStateDecide(AP_DestIsRace(destLevelID),
+	                         AP_PadStage1Met(physLevelID),
+	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
+	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
+	                         uncN, boxesLeft);
+}
 
-	if (!AP_PadStage1Met(physLevelID))
-		return 1; // Locked: entry requirement unmet
-
+// Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
+// destination's trophy race is already checked and the pad is STILL state 2
+// Raceable -- which, for a race destination with the trophy checked, can only
+// come from the standing-box branch of the table ("stays Raceable and enterable
+// until they are gone"). Any other route to 2 either has an unchecked trophy or
+// a non-race destination, both excluded here.
+//
+// Defined ON TOP of AP_PadState rather than beside it deliberately: the entry
+// gate and the pad's look in AH_WarpPad.c consume this, so they cannot drift
+// from the state the map paints. That drift IS issue #232 -- the state model
+// promised the pad stayed enterable and the gate had no path for it.
+int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
+{
+	if (!ctr_cfg_active())
+		return 0;
 	if (!AP_DestIsRace(destLevelID))
-		return 2; // reduced lifecycle (trial/arena/cup): stage-1 met + checks left
-
-	// Race destination: full two-stage lifecycle.
+		return 0;
 	if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
-		return 2; // Raceable: trophy race (primary check) still available
-
-	// Trophy checked, more checks remain -> stage-2 phase (keyed by physical pad).
-	if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-	{
-		// §6: never Re-lock a pad with boxes still standing behind it. Re-locked
-		// means "come back after stage 2", and for a box that is simply wrong --
-		// the box is breakable on any adventure race of this track right now, so
-		// the pad stays Raceable and enterable until they are gone.
-		if (boxesLeft > 0)
-			return 2;
-		return 3; // Re-locked: stage-2 requirement not yet met
-	}
-	return 4;     // Tier-2 open: relic TT / CTR token checks available
+		return 0;
+	return AP_PadState(physLevelID, destLevelID) == 2;
 }
 
 // ---------------------------------------------------------------------------

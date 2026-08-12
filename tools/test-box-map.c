@@ -27,13 +27,18 @@
 //      created, so a reduced seating tier stands fewer boxes and no more,
 //   9. the §6 pad predicate: how many boxes are still standing behind a track,
 //  10. the scout-list filter: only codes this world created may go on the wire,
-//      which is the precondition a peer-bound box's feed line depends on.
+//      which is the precondition a peer-bound box's feed line depends on,
+//  11. the whole Warp-Pad State Model v2 table (ap/ap_pad_state.h), including
+//      the cell issue #232 turned on: a trophy-checked, stage-2-locked pad with
+//      boxes still standing stays Raceable, so the entry gate must let the
+//      player back in for them.
 
 #include <stdio.h>
 #include <string.h> // memset
 
 #include "../ap/ap_box_map.h"
 #include "../ap/ap_placement_table.h"
+#include "../ap/ap_pad_state.h"
 
 static int g_failures = 0;
 
@@ -661,6 +666,74 @@ static void test_scout_codes(void)
 	expect_int(AP_BoxMap_ScoutCodes(0, &w, out, 4), 0, "no predicate -> nothing scouted");
 }
 
+// ── 11. the pad state table, incl. the #232 box re-entry cell ────────────────
+
+// Named arguments for the calls below: the table takes six ints and reads badly
+// positionally, and getting one of them backwards is exactly the class of bug
+// this section exists to catch.
+#define RACE     1
+#define NONRACE  0
+#define S1_MET   1
+#define S1_UNMET 0
+#define TROPHY   1
+#define NO_TROPHY 0
+#define S2_MET   1
+#define S2_UNMET 0
+
+static void test_pad_state_table(void)
+{
+	printf("\n-- the pad state table (Warp-Pad State Model v2) --\n");
+
+	// Done (5) is terminal and beats every other fact, INCLUDING an unmet
+	// stage 1: nothing is left, so there is nothing to gate.
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 0, 0), 5,
+	           "nothing left at all -> Done");
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, NO_TROPHY, S2_UNMET, 0, 0), 5,
+	           "nothing left, stage 1 unmet -> still Done");
+
+	// ... but a standing box IS something left, so it holds Done off. This is
+	// the half #214 landed; without it a box behind a finished pad is stranded
+	// by the hard lock.
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 0, 1), 4,
+	           "every reward checked but a box stands -> NOT Done");
+
+	// Locked (1) outranks everything below it.
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, NO_TROPHY, S2_UNMET, 3, 0), 1,
+	           "stage 1 unmet -> Locked");
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, TROPHY, S2_UNMET, 1, 4), 1,
+	           "stage 1 unmet, boxes standing -> STILL Locked (entry is the gate)");
+
+	// Reduced lifecycle: a trial / arena / cup destination has no trophy race
+	// and no second stage, so stage 1 plus anything left means enterable.
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, NO_TROPHY, S2_MET, 1, 0), 2,
+	           "trial/arena/cup dest with a check left -> Raceable");
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, NO_TROPHY, S2_UNMET, 0, 2), 2,
+	           "non-race dest, only boxes left -> Raceable, stage 2 is not its gate");
+
+	// Race destination, first pass.
+	expect_int(AP_PadStateDecide(RACE, S1_MET, NO_TROPHY, S2_UNMET, 5, 0), 2,
+	           "trophy unwon -> Raceable whatever stage 2 says");
+
+	// THE #232 CELL. Trophy checked and stage 2 unmet is Re-locked ONLY once the
+	// boxes are gone; while any stands the pad stays 2 Raceable, which is what
+	// AH_WarpPad.c's entry gate and born look now both follow (AP_PadBoxReRaceable
+	// is defined as "state 2 with the trophy checked", so these two rows are
+	// exactly the two answers it can give).
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 3, 1), 2,
+	           "trophy checked, stage 2 unmet, ONE box standing -> Raceable (#232)");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 3, 0), 3,
+	           "trophy checked, stage 2 unmet, no boxes left -> Re-locked");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 0, 7), 2,
+	           "boxes are the ONLY thing left -> still Raceable, never Re-locked");
+
+	// Stage 2 met is the tier-2 tier, boxes or not -- the relic / token menu
+	// owns entry there, so #232 must not divert it.
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 2, 0), 4,
+	           "trophy checked, stage 2 met -> Tier-2 open");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 2, 3), 4,
+	           "stage 2 met with boxes standing -> still Tier-2 open");
+}
+
 int main(void)
 {
 	printf("AP item box map + spawn-set bookkeeping (#109)\n");
@@ -676,6 +749,7 @@ int main(void)
 	test_reduced_seating_tier();
 	test_pad_boxes_left();
 	test_scout_codes();
+	test_pad_state_table();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");
