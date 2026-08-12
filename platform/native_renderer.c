@@ -13,6 +13,7 @@
 #include "platform/native_log.h"
 #include "platform/native_perf.h"
 #include "platform/native_renderer.h"
+#include "platform/native_config.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -310,10 +311,20 @@ internal void NativeRenderer_SetPresentationAspect(int width, int height)
 
 internal void NativeRenderer_UpdatePresentationViewport(void)
 {
-	int viewportW;
-	int viewportH;
+	int effAspectW = s_presentAspectW;
+	int effAspectH = s_presentAspectH;
 
-	if ((g_windowWidth <= 0) || (g_windowHeight <= 0) || (s_presentAspectW <= 0) || (s_presentAspectH <= 0))
+	// Aspect-ratio override (ported from thecodingbob/ctr-native, branch
+	// widescreen-option): for a non-4:3 selection the presentation viewport is
+	// letterboxed to that ratio instead of the window's own aspect. 4:3 keeps
+	// the window-derived defaults, so vanilla behaviour is unchanged.
+	if (Widescreen_GetAspectRatio(&effAspectW, &effAspectH) == 0)
+	{
+		effAspectW = s_presentAspectW;
+		effAspectH = s_presentAspectH;
+	}
+
+	if ((g_windowWidth <= 0) || (g_windowHeight <= 0) || (effAspectW <= 0) || (effAspectH <= 0))
 	{
 		s_presentViewport.x = 0;
 		s_presentViewport.y = 0;
@@ -322,28 +333,11 @@ internal void NativeRenderer_UpdatePresentationViewport(void)
 		return;
 	}
 
-	viewportW = g_windowWidth;
-	viewportH = (viewportW * s_presentAspectH) / s_presentAspectW;
+	Widescreen_LetterboxViewport(g_windowWidth, g_windowHeight, effAspectW, effAspectH,
+	                             &s_presentViewport.w, &s_presentViewport.h);
 
-	if (viewportH > g_windowHeight)
-	{
-		viewportH = g_windowHeight;
-		viewportW = (viewportH * s_presentAspectW) / s_presentAspectH;
-	}
-
-	if (viewportW < 1)
-	{
-		viewportW = 1;
-	}
-	if (viewportH < 1)
-	{
-		viewportH = 1;
-	}
-
-	s_presentViewport.w = viewportW;
-	s_presentViewport.h = viewportH;
-	s_presentViewport.x = (g_windowWidth - viewportW) / 2;
-	s_presentViewport.y = (g_windowHeight - viewportH) / 2;
+	s_presentViewport.x = (g_windowWidth - s_presentViewport.w) / 2;
+	s_presentViewport.y = (g_windowHeight - s_presentViewport.h) / 2;
 }
 
 internal void NativeRenderer_ClearHostRect(int x, int y, int width, int height)
@@ -419,6 +413,7 @@ typedef struct
 	GLint psxSemiTransPassLoc;
 	GLint psxDrawMaskSetLoc;
 	GLint psxTextureOutputStpLoc;
+	GLint disableDitherLoc;
 } GTEShader;
 
 internal int NativeRenderer_Shader_CheckShaderStatus(GLuint shader);
@@ -444,6 +439,7 @@ GLint u_texelSizeLoc;
 GLint u_psxSemiTransPassLoc;
 GLint u_psxDrawMaskSetLoc;
 GLint u_psxTextureOutputStpLoc;
+GLint u_disableDitherLoc;
 
 #define GPU_SAMPLE_TEXTURE_4BIT_FUNC                                             \
 	"	// returns 16 bit colour\n"                                                \
@@ -492,12 +488,14 @@ GLint u_psxTextureOutputStpLoc;
 	"	}\n"
 
 #define GPU_DITHERING                                             \
+	"	uniform int disableDither;\n"                                \
 	"	const mat4 c_dither = mat4(\n"                              \
 	"		-4.0,  +0.0,  -3.0,  +1.0,\n"                              \
 	"		+2.0,  -2.0,  +3.0,  -1.0,\n"                              \
 	"		-3.0,  +1.0,  -4.0,  +0.0,\n"                              \
 	"		+3.0,  -1.0,  +2.0,  -2.0) / 255.0;\n"                     \
 	"	vec4 dither(vec4 color) {\n"                                \
+	"		if (disableDither != 0) return color;\n"                   \
 	"		ivec2 dc = ivec2(mod(floor(v_ditherCoord), 4.0));\n"       \
 	"		color.xyz += vec3(c_dither[dc.x][dc.y] * v_texcoord.w);\n" \
 	"		return color;\n"                                           \
@@ -807,6 +805,7 @@ internal void NativeRenderer_CompilePSXShader(GTEShader *sh, const char *source)
 	sh->psxSemiTransPassLoc = glGetUniformLocation(sh->shader, "psxSemiTransPass");
 	sh->psxDrawMaskSetLoc = glGetUniformLocation(sh->shader, "psxDrawMaskSet");
 	sh->psxTextureOutputStpLoc = glGetUniformLocation(sh->shader, "psxTextureOutputStp");
+	sh->disableDitherLoc = glGetUniformLocation(sh->shader, "disableDither");
 }
 
 internal void NativeRenderer_InitialisePSXShaders(void)
@@ -1071,6 +1070,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_psxSemiTransPassLoc = s_gteShader4.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader4.psxDrawMaskSetLoc;
 		u_psxTextureOutputStpLoc = s_gteShader4.psxTextureOutputStpLoc;
+		u_disableDitherLoc = s_gteShader4.disableDitherLoc;
 		break;
 	case TF_8_BIT:
 		NativeRenderer_SetShader(s_gteShader8.shader);
@@ -1082,6 +1082,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_psxSemiTransPassLoc = s_gteShader8.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader8.psxDrawMaskSetLoc;
 		u_psxTextureOutputStpLoc = s_gteShader8.psxTextureOutputStpLoc;
+		u_disableDitherLoc = s_gteShader8.disableDitherLoc;
 		break;
 	case TF_16_BIT:
 		NativeRenderer_SetShader(s_gteShader16.shader);
@@ -1093,6 +1094,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_psxSemiTransPassLoc = s_gteShader16.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader16.psxDrawMaskSetLoc;
 		u_psxTextureOutputStpLoc = s_gteShader16.psxTextureOutputStpLoc;
+		u_disableDitherLoc = s_gteShader16.disableDitherLoc;
 		break;
 	case TF_32_BIT_RGBA:
 		NativeRenderer_SetShader(s_gteShader32Rgba.shader);
@@ -1104,6 +1106,7 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 		u_psxSemiTransPassLoc = s_gteShader32Rgba.psxSemiTransPassLoc;
 		u_psxDrawMaskSetLoc = s_gteShader32Rgba.psxDrawMaskSetLoc;
 		u_psxTextureOutputStpLoc = s_gteShader32Rgba.psxTextureOutputStpLoc;
+		u_disableDitherLoc = s_gteShader32Rgba.disableDitherLoc;
 		break;
 	}
 
@@ -1123,6 +1126,10 @@ void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat)
 	if (u_bilinearFilterLoc >= 0)
 	{
 		glUniform1i(u_bilinearFilterLoc, g_cfg_bilinearFiltering);
+	}
+	if (u_disableDitherLoc >= 0)
+	{
+		glUniform1i(u_disableDitherLoc, Widescreen_DitherUniform(g_config.dithering));
 	}
 	NativeRenderer_SetPSXTextureSemiTransPass(0);
 
