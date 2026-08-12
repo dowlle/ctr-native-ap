@@ -56,6 +56,7 @@ extern "C" {
 }
 #include "../ap/ap_charname.h"
 #include "../ap/ap_editstat_bounds.h"
+#include "../ap/ap_garageskip.h"
 #include "../ap/ap_pauserow.h"
 
 static int g_failures = 0;
@@ -904,6 +905,144 @@ static void test_the_shift_is_saturating_not_wrapping()
 	check_eq(AP_PauseRow_ToVanillaIndex(99), AP_PAUSEROW_COUNT - 2, "and high");
 }
 
+// ---------------------------------------------------------------------------
+// PART 7 -- the garage skip's session latch.
+//
+// THIS SECTION EXISTS BECAUSE THE FIRST CUT SOFT-LOCKED THE GAME. The latch was
+// a function-local static cleared only when the seed stopped owning the racer,
+// which on a character-phase seed never happens, so it was effectively a
+// once-per-process flag. menuGarage's state is
+// DISABLE_INPUT_ALLOW_FUNCPTRS | EXECUTE_FUNCPTR, meaning its funcPtr is the
+// ONLY thing driving that screen, so the skip's early return on a second visit
+// left a dead screen needing a restart. Two reachable routes:
+//
+//   1. Cancelling the adventure name-entry OSK, which retail sends back to the
+//      garage (game/SubmitName.c:514-517).
+//   2. Starting a second new adventure in the same process, since the static
+//      outlives the garage level load.
+//
+// The re-arm signal is CS_Garage_ZoomOut, which has exactly two callers, one per
+// route. The frame sequences below are those two routes, driven through the same
+// header the engine calls.
+// ---------------------------------------------------------------------------
+
+// A racer id standing in for "the seed owns the choice", and the sentinel for
+// "it does not" that AP_CharSwap_GarageRacer returns.
+static const int kSeedOwnsRacer = 7;
+static const int kNoCharacterPhase = -1;
+
+// One garage frame. Returns 1 if this frame performed the commit and handoff.
+static int garageFrame(AP_GarageSkipState *s, int apRacer)
+{
+	if (!AP_GarageSkip_Owns(apRacer))
+	{
+		AP_GarageSkip_ShouldCommit(s, apRacer); // re-arm, then run the retail garage
+		return 0;
+	}
+	return AP_GarageSkip_ShouldCommit(s, apRacer);
+}
+
+// How many of `frames` consecutive garage frames committed.
+static int garageCommits(AP_GarageSkipState *s, int apRacer, int frames)
+{
+	int n = 0;
+	for (int i = 0; i < frames; i++)
+		n += garageFrame(s, apRacer);
+	return n;
+}
+
+static void test_the_skip_commits_once_per_garage_session()
+{
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1, "the first garage frame commits and hands off");
+	check_eq(garageCommits(&s, kSeedOwnsRacer, 120), 0,
+	         "and no later frame in the same session repeats the handoff");
+}
+
+static void test_cancelling_the_name_entry_does_not_soft_lock()
+{
+	// THE FIRST SOFT-LOCK. The player cancels the OSK, retail points
+	// ptrDesiredMenu back at the garage and calls CS_Garage_ZoomOut(1). Without
+	// the re-arm the skip returned early forever and the screen was dead.
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+
+	garageCommits(&s, kSeedOwnsRacer, 30); // first session, commits once
+	AP_GarageSkip_NewSession(&s);          // CS_Garage_ZoomOut(1) on CANCEL
+
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1,
+	         "returning from a cancelled name entry commits again rather than dead-ending");
+	check_eq(garageCommits(&s, kSeedOwnsRacer, 120), 0, "and still only once for that session");
+}
+
+static void test_a_second_adventure_does_not_soft_lock()
+{
+	// THE SECOND SOFT-LOCK. A new adventure reloads the garage, CS_Garage_Init
+	// calls CS_Garage_ZoomOut(0), but the old latch was a process-lifetime static
+	// that survived the level load.
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+	garageCommits(&s, kSeedOwnsRacer, 30);
+
+	AP_GarageSkip_NewSession(&s); // CS_Garage_Init -> CS_Garage_ZoomOut(0)
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1, "a second new adventure commits again");
+
+	AP_GarageSkip_NewSession(&s);
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1, "and a third, and so on");
+}
+
+static void test_many_sessions_each_commit_exactly_once()
+{
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+
+	for (int session = 0; session < 25; session++)
+	{
+		AP_GarageSkip_NewSession(&s);
+		check_eq(garageCommits(&s, kSeedOwnsRacer, 60), 1,
+		         "every garage session commits exactly once, however many there are");
+	}
+}
+
+static void test_a_seed_without_the_phase_never_commits_and_leaves_the_latch_armed()
+{
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+
+	check_eq(garageCommits(&s, kNoCharacterPhase, 60), 0,
+	         "with no character phase the skip never commits, so the retail garage runs");
+
+	// And the latch must not have been consumed by those frames: a connect
+	// mid-garage has to be able to take over.
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1,
+	         "a seed taking ownership mid-session still commits");
+}
+
+static void test_losing_the_seed_mid_session_rearms()
+{
+	// A disconnect while sitting in the garage. The skip stops owning the screen,
+	// and the latch must be left armed rather than stale, so a reconnect commits.
+	AP_GarageSkipState s;
+	AP_GarageSkip_NewSession(&s);
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1, "committed while the seed owned the racer");
+
+	check_eq(garageCommits(&s, kNoCharacterPhase, 10), 0, "then the seed goes away");
+	check_eq(garageFrame(&s, kSeedOwnsRacer), 1, "and a reconnect commits again");
+}
+
+static void test_the_latch_tolerates_a_null_state()
+{
+	// Defensive: the engine passes a file-scope address so this cannot happen
+	// there, but the helpers are inline and shared, and a silent wrong answer
+	// would be worse than a no-op.
+	check_eq(AP_GarageSkip_ShouldCommit(NULL, kSeedOwnsRacer), 0, "a null state never commits");
+	AP_GarageSkip_NewSession(NULL); // must not fault
+	check(AP_GarageSkip_Owns(kSeedOwnsRacer) == 1, "ownership is a pure test of the racer id");
+	check(AP_GarageSkip_Owns(kNoCharacterPhase) == 0, "and a negative racer means retail runs");
+}
+
 int main()
 {
 	test_default_first_connect();
@@ -949,8 +1088,16 @@ int main()
 	test_losing_the_row_lands_somewhere_harmless();
 	test_the_shift_is_saturating_not_wrapping();
 
+	test_the_skip_commits_once_per_garage_session();
+	test_cancelling_the_name_entry_does_not_soft_lock();
+	test_a_second_adventure_does_not_soft_lock();
+	test_many_sessions_each_commit_exactly_once();
+	test_a_seed_without_the_phase_never_commits_and_leaves_the_latch_armed();
+	test_losing_the_seed_mid_session_rearms();
+	test_the_latch_tolerates_a_null_state();
+
 	if (g_failures == 0)
-		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row): all checks passed\n");
+		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row + skip latch): all checks passed\n");
 	else
 		std::printf("character persistence: %d FAILURE(S)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;

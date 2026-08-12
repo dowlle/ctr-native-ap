@@ -6,6 +6,15 @@
 static const s16 AP_GARAGE_STAT_BAR_BY_RANK[AP_CAP_STAT_RANK_COUNT] = {
 	13, 26, 39, 52, 78,
 };
+
+// Per-SESSION latch for the adventure-start garage skip (#54/#209).
+//
+// File scope rather than a gGarage member, because gGarage mirrors a retail
+// overlay-233 data layout that is size-asserted, and rather than a
+// function-local static, because CS_Garage_ZoomOut below has to re-arm it and
+// that is the whole point: see ap/ap_garageskip.h for the two soft-locks a
+// process-lifetime latch caused here.
+static struct AP_GarageSkipState apGarageSkip = {0};
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7784-0x800b7834
@@ -29,6 +38,24 @@ void CS_Garage_ZoomOut(char zoomState)
 	gGarage.delayOneSecond = 0;
 
 	sdata->gGT->gameMode2 &= ~(GARAGE_OSK);
+
+#ifdef CTR_AP
+	// A garage SESSION begins here, so re-arm the adventure-start skip (#54/#209).
+	//
+	// This function has exactly two callers and they are precisely the two ways a
+	// garage session starts: CS_Garage_Init below (zoomState 0, a fresh garage
+	// level load) and the name-entry CANCEL branch (zoomState 1,
+	// game/SubmitName.c:516, which points ptrDesiredMenu back at this menu). It is
+	// therefore the complete lifecycle signal, not a best-effort one.
+	//
+	// Re-arming here is what stops the skip from soft-locking the game. Its latch
+	// used to live for the whole process, so on any second visit to the garage the
+	// skip returned before re-issuing its OSK handoff, and menuGarage's state
+	// (DISABLE_INPUT_ALLOW_FUNCPTRS | EXECUTE_FUNCPTR) means its funcPtr is the
+	// only thing driving that screen: an early return left nothing at all. Both a
+	// cancelled name entry and a second new adventure in one process reached it.
+	AP_GarageSkip_NewSession(&apGarageSkip);
+#endif
 
 	// if just entered garage
 	if (zoomState == 0)
@@ -131,22 +158,24 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	// and lasts a frame: the hub's own load re-queues from the value written
 	// here.
 	{
-		// File-static rather than a gGarage field: gGarage mirrors a retail
-		// overlay-233 data layout and is size-asserted, so the latch stays
-		// outside it.
-		static int apSkipDone = 0;
-
 		int apRacer = AP_CharSwap_GarageRacer();
 
-		if (apRacer >= 0)
+		if (AP_GarageSkip_Owns(apRacer))
 		{
-			// One-shot. ptrDesiredMenu takes a frame or two to become the active
-			// menu, and this funcPtr keeps running meanwhile; the writes are
-			// idempotent but the sound effect and the name restore are not.
-			if (!apSkipDone)
+			// Commit once per garage SESSION, not once per process. The latch is
+			// re-armed from CS_Garage_ZoomOut, which is the single signal meaning
+			// "a garage session begins" and covers both routes back into this
+			// function: a fresh garage load via CS_Garage_Init, and a cancelled
+			// name entry via game/SubmitName.c:516. ap/ap_garageskip.h records
+			// the two soft-locks a process-lifetime latch produced here.
+			//
+			// Re-running the commit is safe: both writes set the same values, and
+			// SubmitName_RestoreName(0) only re-seeds the OSK from
+			// prevNameEntered. The sound and the log line are the only things
+			// worth not repeating every frame, which is the whole job of the
+			// latch.
+			if (AP_GarageSkip_ShouldCommit(&apGarageSkip, apRacer))
 			{
-				apSkipDone = 1;
-
 				sdata->ptrDesiredMenu = &data.menuSubmitName;
 
 				data.characterIDs[0] = (s16)apRacer;
@@ -160,7 +189,9 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 			return;
 		}
 
-		apSkipDone = 0;
+		// The seed does not own the racer. Re-arm (so a later connect commits)
+		// and fall through to the retail garage below.
+		AP_GarageSkip_ShouldCommit(&apGarageSkip, apRacer);
 	}
 #endif
 

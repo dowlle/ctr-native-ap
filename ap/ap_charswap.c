@@ -716,6 +716,19 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 		return 0;
 	if (sdata->pause_state != 0)
 		return 0;
+	// No RectMenu may still own the screen.
+	//
+	// This gate was missing, and the #238 pause row is what exposed the gap: that
+	// row resumes the game and leaves a request behind, and PAUSE_1 is cleared by
+	// the RESUME branch immediately while the menu itself closes over several
+	// frames (RECTMENU_Hide only sets NEEDS_TO_CLOSE). Without this test the
+	// picker could open while the pause menu was still live, so both surfaces
+	// owned the screen at once, which is the whole thing the request mechanism
+	// exists to avoid. `ptrActiveMenu != NULL` is the engine's own way of asking
+	// this: MainFreeze_IfPressStart refuses to raise the pause menu on exactly
+	// that test.
+	if (sdata->ptrActiveMenu != NULL)
+		return 0;
 	return 1;
 }
 
