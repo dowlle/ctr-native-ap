@@ -242,6 +242,12 @@ void AP_AiDifficultyCommit(void);
 //     wumpa, any apworld-invented item, and every item of another GAME) ->
 //     STATIC_AP, the Archipelago-logo marker.
 // The generic white gem is retired and is never returned any more.
+// Every model returned is RESIDENT on the level being drawn. A category model
+// that is not loaded here -- the hub carries no Wumpa Fruit (#222) and no
+// crystal (#219) of its own -- resolves to the marker instead, so a pad slot can
+// never be coloured as a reward whose model it failed to take on. That mismatch
+// is the #212 near-black marker. The ghost and tint answers resolve the same
+// way, so all three agree about a slot.
 // Returns -1 when not connected, not yet scouted, the bit is not a checkable
 // location, or the marker model is not registered yet, so the caller keeps the
 // placeholder model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
@@ -249,7 +255,10 @@ int AP_WarpPadRewardModel(int globalBit);
 
 // 1 when the scouted reward here is another CTR PLAYER's OG reward, which keeps
 // its real model but renders TRANSLUCENT (#212 point 2, the time-trial ghost
-// treatment). 0 for own rewards, for marker items and for anything unresolved.
+// treatment). 0 for own rewards, for marker items and for anything unresolved,
+// including a peer reward that fell back to the marker because its model is not
+// loaded here: the ghost writer needs colorRGBA 0, and the untextured marker at
+// 0 is the near-black slot.
 // The caller must zero colorRGBA on this path -- see the ghost block in
 // AH_WarpPad_ThTick for why the ghost writer requires it.
 int AP_WarpPadRewardGhost(int globalBit);
@@ -269,7 +278,9 @@ int AP_WarpPadRewardGhost(int globalBit);
 // sets ctr_options.ap_item_type_colors = 0) for an Archipelago-logo marker; the
 // OG purple for an own CRYSTAL (#219); or 0 to keep the caller's default colour
 // (own gem/trophy/token/key/wumpa, ghosted peer rewards, unscouted). Caller
-// applies it to relic + gem + marker + crystal models.
+// applies it to relic + gem + marker + crystal models. It never answers 0 for a
+// slot showing the MARKER, whoever owns the item: the marker is untextured and
+// renders near-black at colorRGBA 0 (#212).
 int AP_WarpPadRewardTint(int globalBit);
 
 // ── Reward-prop display scale (issues #219/#221/#222) ──

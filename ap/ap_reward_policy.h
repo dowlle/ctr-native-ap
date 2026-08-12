@@ -108,7 +108,7 @@ static inline int AP_RewardScaleForCat(AP_ItemCat cat)
 // Tint for an OWN model-keeping reward, 0 = keep the caller's natural colour.
 // The crystal's OG purple (#219) is the only model-keeping category that is
 // recoloured by the policy; the ghosted peer path never reaches this (the ghost
-// writer needs colorRGBA 0). Marker tint is separate (AP_MarkerTint, ap_hooks.c).
+// writer needs colorRGBA 0). Marker tint is AP_MarkerTintForFlags below.
 static inline unsigned AP_RewardTintForCat(AP_ItemCat cat)
 {
 	switch (cat)
@@ -126,6 +126,166 @@ static inline unsigned AP_RewardTintForCat(AP_ItemCat cat)
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
 	default:
+		return 0;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MARKER TINT (#124, revised by #212). Moved here from ap_hooks.c so the
+// harness pins the colours a marker can actually wear: the near-black failure
+// mode below is invisible to a policy test that only sees category -> model.
+// ---------------------------------------------------------------------------
+
+// Packed as (R << 0x14) | (G << 0xc) | (B << 0x4), matching the relic tints.
+#define AP_PACK_TINT(r, g, b) \
+	(int)(((unsigned)(r) << 0x14) | ((unsigned)(g) << 0xc) | ((unsigned)(b) << 0x4))
+
+// In-game-legible approximations of the standard AP scheme, not literal hex
+// values from it: these are read on a small spinning model at PSX draw distance,
+// so they are pushed for separation rather than fidelity. Filler cyan and useful
+// slate blue are the pair most at risk of collapsing into each other, so they are
+// split hard on the green channel. Final values are Stef's in-game call.
+#define AP_TINT_PROGRESSION AP_PACK_TINT(0xc0, 0x88, 0xf0) // plum
+#define AP_TINT_USEFUL      AP_PACK_TINT(0x50, 0x78, 0xe0) // slate blue
+#define AP_TINT_FILLER      AP_PACK_TINT(0x40, 0xe8, 0xe0) // cyan
+#define AP_TINT_TRAP        AP_PACK_TINT(0xff, 0x80, 0x60) // salmon
+
+// #212 point 5: the ONE colour every marker wears when the seed asks for AP item
+// types to stay a surprise (ctr_options.ap_item_type_colors = 0). Greyish white,
+// Stef's stated candidate: it is the only neutral that stays neutral under the
+// marker's multiplicative-ish tint lerp without collapsing toward any class hue,
+// and it cannot be confused with a gem-cup gem because it is never on a gem.
+// Never modulate to 0 here (near-black bug) -- the value stays well clear of it.
+#define AP_TINT_UNIFORM     AP_PACK_TINT(0xd0, 0xd0, 0xc8) // greyish white
+
+// AP item flags: bit0 = progression, bit1 = useful, bit2 = trap, 0 = filler.
+// The precedence that resolves them is the freestanding AP_ItemFlagsClass
+// (ap_item_flags.h), shared with the hub feed so the two presentations can
+// never disagree about a class.
+static inline int AP_ClassTint(unsigned flags)
+{
+	// Progression wins over useful when an item carries both, matching how AP's
+	// own clients present it.
+	switch (AP_ItemFlagsClass(flags))
+	{
+	case AP_ITEM_CLASS_PROGRESSION: return AP_TINT_PROGRESSION;
+	case AP_ITEM_CLASS_USEFUL:      return AP_TINT_USEFUL;
+	case AP_ITEM_CLASS_TRAP:        return AP_TINT_TRAP;
+	case AP_ITEM_CLASS_FILLER:      return AP_TINT_FILLER;
+	}
+	return AP_TINT_FILLER;
+}
+
+// The colour ONE Archipelago-logo marker wears, honouring the seed's surprise
+// toggle (#212 point 5). typeColorsEnabled is ctr_options.ap_item_type_colors as
+// parsed: absent or nonzero -> the class tints above, i.e. exactly the display
+// every shipped client renders; 0 -> the single uniform colour, so the AP item
+// pool stays a surprise.
+//
+// The key is EXPECTED but not required: the apworld half of #212 lands after the
+// 0.2.0 name freeze, and a seed generated before it carries no such key. That is
+// why the parse defaults to 1 rather than to the new behaviour -- an old seed on
+// this client must glow the way it does today, not silently switch to grey.
+//
+// Every answer this can give is a real colour; none of them is 0. A marker drawn
+// at colorRGBA 0 renders near-black (it is untextured and its own colours are
+// lerped toward colorRGBA), which is the #212 defect this policy exists to make
+// unreachable, so the harness pins that too.
+static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
+{
+	if (!typeColorsEnabled)
+		return AP_TINT_UNIFORM;
+	return AP_ClassTint(flags);
+}
+
+// ---------------------------------------------------------------------------
+// PRESENTATION -- which of the three treatments one scouted reward gets (#212).
+// One resolver feeds the model, the tint and the ghost flag, so those three can
+// never disagree about what a slot is showing.
+// ---------------------------------------------------------------------------
+
+#define AP_PAD_DISP_VANILLA 0 // my own OG CTR reward -> its vanilla model, untouched
+#define AP_PAD_DISP_GHOST   1 // another CTR player's OG reward -> same model, ghosted
+#define AP_PAD_DISP_MARKER  2 // everything else -> the Archipelago-logo marker
+#define AP_PAD_DISP_NONE    3 // undecidable right now -> leave the placeholder alone
+
+// Presentation for one scouted reward.
+//
+//   cat             its category, already resolved from the item id;
+//   own             1 when the reward belongs to this slot's player;
+//   modelDrawable   1 when the category's own model can be drawn on THIS surface
+//                   right now (see AP_RewardModelForCat + the caller's residency
+//                   check). gGT->modelPtr[] is refilled per level from the LEV's
+//                   model list, so a category model that exists in the engine is
+//                   not necessarily loaded here: the hub warp pads have no Wumpa
+//                   Fruit (#222) and no crystal (#219) model of their own;
+//   markerAvailable 1 when the Archipelago-logo marker model is parked.
+//
+// A model-keeping category whose model is NOT drawable falls back to the marker
+// rather than to "keep whatever model the instance already had". That fallback
+// is the #212 near-black defect: the pad slot kept the marker model it was
+// showing a moment earlier while the tint was resolved as a model-keeping
+// reward, i.e. no tint at all, and an untextured marker at colorRGBA 0 renders
+// near-black. Falling back to the marker keeps model and tint on the same
+// answer, and the marker is the presentation #212 group 3 already prescribes
+// for anything the pad cannot show as itself.
+static inline int AP_RewardPresentation(AP_ItemCat cat, int own, int modelDrawable,
+                                        int markerAvailable)
+{
+	if (AP_RewardKeepsModel(cat) && modelDrawable)
+		return own ? AP_PAD_DISP_VANILLA : AP_PAD_DISP_GHOST;
+
+	// Marker material. Without the marker model parked we have nothing to show it
+	// with (the white gem is retired), so the slot keeps its placeholder rather
+	// than inventing a stand-in that would lie about the reward.
+	return markerAvailable ? AP_PAD_DISP_MARKER : AP_PAD_DISP_NONE;
+}
+
+// Final colorRGBA for a pad-glow slot, 0 = keep the caller's natural per-model
+// colour. `cat` is only read on the VANILLA path; `flags` and typeColorsEnabled
+// only on the MARKER path.
+static inline int AP_RewardPadTint(int kind, AP_ItemCat cat, unsigned flags,
+                                   int typeColorsEnabled)
+{
+	// The Archipelago-logo marker carries the classification (or the one uniform
+	// surprise colour) in its tint; the marker's own colours are neutral greys so
+	// this lerps cleanly. Same answer for my own non-OG items as for anyone
+	// else's -- #212 draws no local/foreign line here.
+	if (kind == AP_PAD_DISP_MARKER)
+		return AP_MarkerTintForFlags(flags, typeColorsEnabled);
+
+	// A GHOSTED peer reward takes NO tint: the ghost writer needs colorRGBA 0 (see
+	// the ghost block in AH_WarpPad_ThTick), and the caller forces it to 0 anyway.
+	if (kind != AP_PAD_DISP_VANILLA)
+		return 0;
+
+	switch (cat)
+	{
+	case AP_CAT_SAPPHIRE:
+		return 0x020a5ff0; // blue (vanilla relic colour)
+	case AP_CAT_GOLD:
+		return 0x0ffc6290; // gold
+	case AP_CAT_PLATINUM:
+		return 0x0ebebf50; // platinum / pale silver
+	// #219: an OWN crystal keeps the OG purple crystal colour (UI_Instance.c:90
+	// sets the same 0xd22fff0 at birth for a menu crystal). A PEER crystal never
+	// reaches this case -- the ghosted kind returns 0 above, and the ghost writer
+	// needs colorRGBA 0 anyway.
+	case AP_CAT_CRYSTAL:
+		return (int)AP_RewardTintForCat(AP_CAT_CRYSTAL);
+	case AP_CAT_TROPHY:
+	case AP_CAT_TOKEN:
+	case AP_CAT_GEM:
+	case AP_CAT_KEY:
+	case AP_CAT_COUNT:
+	case AP_CAT_WUMPA:
+	case AP_CAT_NONE:
+	default:
+		// Own gem / trophy / token / key / wumpa -> keep the natural colour path
+		// the glow switch already applies per model (gem-cup colour, untinted
+		// trophy, token group colour, golden key, the fruit's own colours). Own
+		// filler and traps no longer reach here at all: they are marker items now,
+		// handled above.
 		return 0;
 	}
 }

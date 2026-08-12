@@ -1201,6 +1201,12 @@ WarpPad_AnimateOpen:
 				// pointer reassignment is a native pattern; SpinRewards/scale below
 				// read the new model->id. Unscouted / unresolved / no marker model ->
 				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
+				// Every model it DOES return is resident on this level (the pad
+				// resolves with the drawable-only fallback, ap_hooks.c), so the tint
+				// resolved below always belongs to the model this slot really draws.
+				// The residency test stays as a guard: a slot whose swap silently
+				// failed would be coloured for a reward it is not showing, and that is
+				// how an own Wumpa Fruit rendered as a near-black marker (#212).
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
 					// #212: another CTR player's OG reward keeps its own model and is
