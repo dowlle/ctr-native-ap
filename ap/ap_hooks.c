@@ -356,12 +356,32 @@ static int AP_ClassFontColor(unsigned flags)
 // three can never disagree about what a slot is showing.
 
 // 1 when `model` is loaded for the level that is on screen right now.
-// gGT->modelPtr[] is refilled per level from the LEV's model list (see
-// ap_spawn.c), so a model id the engine knows is not necessarily drawable here:
-// the hub warp pads carry the trophy / relic / token / gem / key set and the
-// parked AP marker, but no Wumpa Fruit (#222) and no crystal (#219). A slot told
-// to show a model that is not resident would keep the model it already had while
-// being coloured as the reward it cannot show -- the #212 near-black marker.
+//
+// gGT->modelPtr[] is rebuilt on every load: LibraryOfModels_Clear wipes it, the
+// driver MPK's global model list goes in first (LOAD_Hub.c:68-81 ->
+// LOAD_ModelPtrs.c:25-28), then the level's own models on top (LOAD_Hub.c:95).
+// So what is drawable depends on WHICH PACK the surface runs on, and the packs
+// disagree:
+//
+//   - the adventure HUB runs on the 1P arcade pack (BI_1PARCADEPACK +
+//     characterID, LOAD_Assets.c:164 -- the hub takes no other branch there).
+//     That pack's model list carries gem / CRYSTAL / relic / trophy / key /
+//     token, so a #219 capability reward IS drawable on a hub warp pad;
+//   - the ARENAS, cutscenes, credits and the garage run on the adventure pack
+//     (BI_ADVENTUREPACK + characterID, LOAD_Assets.c:119-128), whose list has
+//     the same set MINUS the crystal -- so the #221 ceremony prop keeps its
+//     documented vanilla-token fallback there;
+//   - NO pack carries PU_WUMPA_FRUIT. That model comes from a track's own LEV,
+//     which is why an own Wumpa Fruit on a hub pad has no model of its own
+//     (#222) and falls back to the marker (#212).
+//
+// Read out of a retail NTSC-U BIGFILE.BIG rather than assumed: each pack's
+// NULL-terminated Model* list at ptrMPK+4 was walked directly. An earlier
+// revision of this comment claimed the hub had no crystal either; it does.
+//
+// A slot told to show a model that is not resident would keep the model it
+// already had while being coloured as the reward it cannot show -- the #212
+// near-black marker.
 static int AP_RewardModelDrawable(int model)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -393,12 +413,21 @@ static int AP_RewardModelDrawable(int model)
 // CTR token and keeps that token when it cannot show the resolved model
 // (AP_CeremonyRewardProp's own residency guard), which is its documented #221
 // fallback.
+//
+// `outKeptCat` is the model-keeping category this reward WOULD have shown, kept
+// even when the surface could not draw it. Only the tint reads it: a #219
+// capability reward that falls back to the marker still has to look like the
+// crystal it is (AP_MarkerFallbackTint), and by then `outCat` has already been
+// cleared to AP_CAT_NONE for the model and scale resolvers.
 static int AP_PadDisplayKind(long long item, int player, int requireDrawable,
-                             AP_ItemCat *outCat)
+                             AP_ItemCat *outCat, AP_ItemCat *outKeptCat)
 {
 	AP_ItemCat cat = AP_CAT_NONE;
 	int own = (player == ap_net_self_slot());
 	int kind;
+
+	if (outKeptCat)
+		*outKeptCat = AP_CAT_NONE;
 
 	if (!own)
 	{
@@ -421,6 +450,9 @@ static int AP_PadDisplayKind(long long item, int player, int requireDrawable,
 		if (!AP_RewardKeepsModel(cat))
 			cat = AP_CAT_NONE;
 	}
+
+	if (outKeptCat)
+		*outKeptCat = cat;
 
 	// The marker is the fallback for a reward whose own model is not loaded, so
 	// its availability is asked the same way as any other model's rather than from
@@ -452,7 +484,7 @@ static int AP_PadDisplayKind(long long item, int player, int requireDrawable,
 // AP_PAD_DISP_NONE for anything not checkable or not yet scouted, which every
 // caller reads as "leave the vanilla/placeholder presentation alone".
 static int AP_PadDisplayForBit(int globalBit, int requireDrawable, AP_ItemCat *outCat,
-                               unsigned *outFlags)
+                               unsigned *outFlags, AP_ItemCat *outKeptCat)
 {
 	long code;
 	long long item = 0;
@@ -463,6 +495,8 @@ static int AP_PadDisplayForBit(int globalBit, int requireDrawable, AP_ItemCat *o
 		*outCat = AP_CAT_NONE;
 	if (outFlags)
 		*outFlags = 0;
+	if (outKeptCat)
+		*outKeptCat = AP_CAT_NONE;
 
 	code = AP_LookupLocationCode(globalBit);
 	if (code < 0)
@@ -472,7 +506,7 @@ static int AP_PadDisplayForBit(int globalBit, int requireDrawable, AP_ItemCat *o
 
 	if (outFlags)
 		*outFlags = flags;
-	return AP_PadDisplayKind(item, player, requireDrawable, outCat);
+	return AP_PadDisplayKind(item, player, requireDrawable, outCat, outKeptCat);
 }
 
 // ---------------------------------------------------------------------------
@@ -490,7 +524,7 @@ static int AP_PadDisplayForBit(int globalBit, int requireDrawable, AP_ItemCat *o
 static int AP_RewardModelFor(int globalBit, int requireDrawable)
 {
 	AP_ItemCat cat = AP_CAT_NONE;
-	int kind = AP_PadDisplayForBit(globalBit, requireDrawable, &cat, NULL);
+	int kind = AP_PadDisplayForBit(globalBit, requireDrawable, &cat, NULL, NULL);
 
 	switch (kind)
 	{
@@ -515,7 +549,7 @@ static int AP_RewardModelFor(int globalBit, int requireDrawable)
 
 static int AP_RewardGhostFor(int globalBit, int requireDrawable)
 {
-	return AP_PadDisplayForBit(globalBit, requireDrawable, NULL, NULL) ==
+	return AP_PadDisplayForBit(globalBit, requireDrawable, NULL, NULL, NULL) ==
 	               AP_PAD_DISP_GHOST
 	           ? 1
 	           : 0;
@@ -524,13 +558,21 @@ static int AP_RewardGhostFor(int globalBit, int requireDrawable)
 static int AP_RewardTintFor(int globalBit, int requireDrawable)
 {
 	AP_ItemCat cat = AP_CAT_NONE;
+	AP_ItemCat keptCat = AP_CAT_NONE;
 	unsigned flags = 0;
-	int kind = AP_PadDisplayForBit(globalBit, requireDrawable, &cat, &flags);
+	int kind = AP_PadDisplayForBit(globalBit, requireDrawable, &cat, &flags, &keptCat);
 
 	// Marker classification vs own-reward colour is the freestanding policy's
 	// call, so the harness pins every colour a slot can end up wearing -- and the
 	// one colour it must never wear, colorRGBA 0 on the untextured marker.
-	return AP_RewardPadTint(kind, cat, flags, ctr_cfg.ap_item_type_colors);
+	//
+	// The VANILLA path wants the category the surface is actually drawing (`cat`);
+	// the MARKER path wants the one it could NOT draw (`keptCat`), so a #219
+	// capability reward that fell back still wears the crystal's colour instead of
+	// borrowing the AP class of whatever item happens to sit there. The two are
+	// the same value on every path except that fallback.
+	return AP_RewardPadTint(kind, kind == AP_PAD_DISP_MARKER ? keptCat : cat, flags,
+	                        ctr_cfg.ap_item_type_colors);
 }
 
 // The pad glow (see header). It reassigns a live instance's model pointer, so it
@@ -572,7 +614,7 @@ int AP_WarpPadRewardTint(int globalBit)
 int AP_WarpPadRewardScale(int globalBit)
 {
 	AP_ItemCat cat = AP_CAT_NONE;
-	int kind = AP_PadDisplayForBit(globalBit, 0, &cat, NULL);
+	int kind = AP_PadDisplayForBit(globalBit, 0, &cat, NULL, NULL);
 
 	if (kind != AP_PAD_DISP_VANILLA && kind != AP_PAD_DISP_GHOST)
 		return 0x1000; // marker / unresolved / unscouted -> token's own scale

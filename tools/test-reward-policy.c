@@ -26,7 +26,10 @@
 //     renders near-black;
 //   - the colour a pad slot ends up with (AP_RewardPadTint) for every class,
 //     both values of ctr_options.ap_item_type_colors, and the invariant that a
-//     marker NEVER resolves to 0.
+//     marker NEVER resolves to 0;
+//   - the #219 fallback colour (AP_MarkerFallbackTint): a capability crystal the
+//     surface cannot draw wears plum rather than the item's own AP class, which
+//     the apworld ships as `useful`, and no other category makes that claim.
 
 #include <stdio.h>
 
@@ -255,21 +258,65 @@ int main(void)
 	expect_pad_tint(AP_CAT_TROPHY, 1, 1, 0, 1, 0, "own trophy keeps its natural colour");
 	expect_pad_tint(AP_CAT_GEM, 0, 1, 0, 1, 0, "a ghosted peer reward takes no tint");
 
-	// ── The invariant behind the whole defect: a MARKER never resolves to 0 ──
-	// The marker is untextured and its colours are lerped toward colorRGBA, so a
-	// zero here is the near-black slot Stef saw. No flag combination, in either
-	// colour mode, may produce one.
+	// ── #219: a crystal that FELL BACK to the marker still reads as a crystal ──
+	// The apworld ships every capability item as `useful` (see the note on
+	// AP_MarkerFallbackTint), so taking the item's AP class here would paint the
+	// #219 reward slate blue on a surface whose pack has no crystal and purple on
+	// one that does -- one reward, two looks. The fallback claims plum whatever
+	// the item's flags say, and only for the crystal.
+	expect_pad_tint(AP_CAT_CRYSTAL, 1, 0, AP_ITEM_FLAG_USEFUL, 1, 0x0c088f00,
+	                "#219 own capability crystal falls back to the PLUM marker, not slate blue");
+	expect_pad_tint(AP_CAT_CRYSTAL, 0, 0, AP_ITEM_FLAG_USEFUL, 1, 0x0c088f00,
+	                "a peer's fallen-back crystal gets the same plum");
+	expect_pad_tint(AP_CAT_CRYSTAL, 1, 0, 0, 1, 0x0c088f00,
+	                "missing flags cannot demote a fallen-back crystal to filler cyan");
+	expect_pad_tint(AP_CAT_CRYSTAL, 1, 0, AP_ITEM_FLAG_USEFUL, 0, 0x0d0d0c80,
+	                "the surprise toggle still wins over the crystal's own colour");
+	// The claim is the CRYSTAL's alone: every other fallback keeps reading the
+	// item's classification, which is the #212 behaviour this must not disturb.
+	expect_pad_tint(AP_CAT_TROPHY, 1, 0, AP_ITEM_FLAG_PROGRESSION, 1, 0x0c088f00,
+	                "a fallen-back trophy still takes its item's class");
+	expect_pad_tint(AP_CAT_WUMPA, 1, 0, AP_ITEM_FLAG_USEFUL, 1, 0x05078e00,
+	                "a fallen-back wumpa still takes its item's class");
+
+	// The two marker entry points must agree on everything that was marker
+	// material to begin with, so the crystal claim above cannot leak into #212's
+	// ordinary classification path.
 	{
 		unsigned f;
 		int colors;
-		int zero = 0;
+		int disagree = 0;
 
 		for (colors = 0; colors <= 1; colors++)
 			for (f = 0; f < 8; f++)
-				if (AP_RewardPadTint(AP_PAD_DISP_MARKER, AP_CAT_NONE, f, colors) == 0)
-					zero = 1;
+				if (AP_MarkerFallbackTint(AP_CAT_NONE, f, colors) !=
+				    AP_MarkerTintForFlags(f, colors))
+					disagree = 1;
 
-		printf("%-4s no marker tint is 0 over every flag combination and both colour modes\n",
+		printf("%-4s AP_MarkerFallbackTint(AP_CAT_NONE) == AP_MarkerTintForFlags everywhere\n",
+		       disagree ? "FAIL" : "ok");
+		if (disagree)
+			g_failures++;
+	}
+
+	// ── The invariant behind the whole defect: a MARKER never resolves to 0 ──
+	// The marker is untextured and its colours are lerped toward colorRGBA, so a
+	// zero here is the near-black slot Stef saw. No flag combination, in either
+	// colour mode, may produce one -- and now no fallback category either, since
+	// a fallen-back reward reaches the marker carrying its category.
+	{
+		unsigned f;
+		int colors;
+		int c;
+		int zero = 0;
+
+		for (c = 0; c <= (int)AP_CAT_NONE; c++)
+			for (colors = 0; colors <= 1; colors++)
+				for (f = 0; f < 8; f++)
+					if (AP_RewardPadTint(AP_PAD_DISP_MARKER, (AP_ItemCat)c, f, colors) == 0)
+						zero = 1;
+
+		printf("%-4s no marker tint is 0 over every category, flag combination and colour mode\n",
 		       zero ? "FAIL" : "ok");
 		if (zero)
 			g_failures++;

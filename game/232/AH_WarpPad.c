@@ -185,7 +185,7 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					lightDir = &warppadObj->lightDirToken;
 				}
 #ifdef CTR_AP
-				else if (modelID == STATIC_KEY)
+				else if (modelID == STATIC_KEY || modelID == STATIC_CRYSTAL)
 				{
 					// AP: a boss Key can occupy a reward glow slot (vanilla never
 					// puts a key here, so this dispatch had no case for it and the
@@ -194,6 +194,17 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					// vanilla's requirement-icon key does — via the gem slot, which
 					// vanilla itself uses for keys ("store in Gem array, intended by
 					// ND") and which the AP birth path already seeds.
+					//
+					// #219's crystal is the SAME case, and it is live: the hub's own
+					// model pack does carry STATIC_CRYSTAL (see the residency note in
+					// ap_hooks.c), so a capability-ladder reward really does reach a
+					// pad slot as a crystal -- and _ThTick gives it USE_SPECULAR_LIGHT
+					// to match the arena crystal (UI_Instance.c:85-90). Without a
+					// lightDir here that specular stayed world-fixed while the model
+					// spun, exactly like the key: purple facing the light, near-BLACK
+					// facing away, on a shard thin enough to read as a dark bar. The
+					// gem slot is seeded on both AP birth paths (:2333, :2418) and all
+					// five D232 entries are identical, so it needs no new seeding.
 					lightDir = &warppadObj->lightDirGem;
 				}
 #endif

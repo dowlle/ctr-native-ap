@@ -198,6 +198,38 @@ static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
 	return AP_ClassTint(flags);
 }
 
+// The colour a marker wears for a reward that FELL BACK to it. `keptCat` is the
+// model-keeping category the surface could not draw, AP_CAT_NONE for ordinary
+// marker material.
+//
+// #219 specifies a capability-ladder reward as a PURPLE crystal. Where the
+// crystal model is not resident the reward becomes a marker, and that marker
+// must still read as the same reward. Reading the item's AP class instead
+// renders it SLATE BLUE, because the apworld ships every capability item as
+// `useful`, not `progression` -- worlds/ctr/progressive_capability.py says so in
+// as many words ("none of these items are `progression`; they ride as `useful`
+// filler-replacement content"), and worlds/ctr/data/items.json carries that
+// classification on all 68 of them. So the same reward would look like two
+// different things depending only on which model pack the surface happens to
+// have loaded. Plum is the marker's own progression colour, so the fallback
+// stays inside the palette #212 already defined rather than inventing a hue.
+//
+// Only the crystal is claimed here. A WUMPA package that falls back is filler,
+// and the class tint already answers cyan for it -- the #212 case this policy
+// was written for -- so it keeps taking the class answer.
+//
+// The seed's surprise toggle still wins: a per-category colour IS an item-type
+// leak, which is exactly what ap_item_type_colors = 0 exists to turn off.
+static inline int AP_MarkerFallbackTint(AP_ItemCat keptCat, unsigned flags,
+                                        int typeColorsEnabled)
+{
+	if (!typeColorsEnabled)
+		return AP_TINT_UNIFORM;
+	if (keptCat == AP_CAT_CRYSTAL)
+		return AP_TINT_PROGRESSION;
+	return AP_ClassTint(flags);
+}
+
 // ---------------------------------------------------------------------------
 // PRESENTATION -- which of the three treatments one scouted reward gets (#212).
 // One resolver feeds the model, the tint and the ghost flag, so those three can
@@ -215,10 +247,12 @@ static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
 //   own             1 when the reward belongs to this slot's player;
 //   modelDrawable   1 when the category's own model can be drawn on THIS surface
 //                   right now (see AP_RewardModelForCat + the caller's residency
-//                   check). gGT->modelPtr[] is refilled per level from the LEV's
-//                   model list, so a category model that exists in the engine is
-//                   not necessarily loaded here: the hub warp pads have no Wumpa
-//                   Fruit (#222) and no crystal (#219) model of their own;
+//                   check). gGT->modelPtr[] is refilled per level, so a category
+//                   model that exists in the engine is not necessarily loaded
+//                   here: no model pack carries PU_WUMPA_FRUIT (#222), and the
+//                   adventure pack behind the arenas / cutscenes / garage carries
+//                   no crystal (#219) -- see the residency note in ap_hooks.c for
+//                   which pack each surface runs on;
 //   markerAvailable 1 when the Archipelago-logo marker model is parked.
 //
 // A model-keeping category whose model is NOT drawable falls back to the marker
@@ -250,9 +284,12 @@ static inline int AP_RewardPadTint(int kind, AP_ItemCat cat, unsigned flags,
 	// The Archipelago-logo marker carries the classification (or the one uniform
 	// surprise colour) in its tint; the marker's own colours are neutral greys so
 	// this lerps cleanly. Same answer for my own non-OG items as for anyone
-	// else's -- #212 draws no local/foreign line here.
+	// else's -- #212 draws no local/foreign line here. A reward that fell back to
+	// the marker from a model-keeping category keeps that category's identity
+	// instead (AP_MarkerFallbackTint); `cat` is AP_CAT_NONE for everything that
+	// was marker material to begin with, which is the classification path above.
 	if (kind == AP_PAD_DISP_MARKER)
-		return AP_MarkerTintForFlags(flags, typeColorsEnabled);
+		return AP_MarkerFallbackTint(cat, flags, typeColorsEnabled);
 
 	// A GHOSTED peer reward takes NO tint: the ghost writer needs colorRGBA 0 (see
 	// the ghost block in AH_WarpPad_ThTick), and the caller forces it to 0 anyway.
