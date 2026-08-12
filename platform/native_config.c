@@ -29,6 +29,7 @@ NativeConfig g_config = {
 	"",    // password
 	true,  // updateCheck (default on: the pair-version notice is informational)
 	"",    // updateLastSeen (empty = the title notice has never been shown)
+	false, // boxAuthor (off: an authoring tool, not a player option)
 #endif
 };
 
@@ -66,6 +67,12 @@ const ConfigEntry g_configEntries[] = {
 	// has no CFG_STRING row drawing anyway (it would fall through to "%d%%").
 	// Written by the title-screen notice itself, never by a menu row.
 	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
+	// Authoring section: its own section rather than a row under [Archipelago]
+	// because it is a tool, not a way to play, and a section header says that
+	// without a paragraph of menu text. A plain CFG_BOOL in a new section needs
+	// no menu code at all -- BuildSectionMap picks it up and the generic section
+	// renderer draws it (game/230/MM_ConfigMenu.c).
+	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
 #endif
 };
 

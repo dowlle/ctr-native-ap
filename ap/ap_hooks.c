@@ -20,6 +20,10 @@
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
+#include "ap_author.h"     // in-game box placement author mode (#182)
+#include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
+#include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -835,6 +839,115 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
+// ── §6: boxes behind a pad ──────────────────────────────────────────────────
+//
+// RULED 2026-08-11 (rulings note §6). AP_PadUncollectedGlowBits enumerates tier
+// bits and podium rungs, and neither of those is a box: itemsanity box locations
+// (#109) carry no AdvProgress bit at all. So a trophy win with boxes still
+// standing Re-locked the pad and stranded them until stage 2, and a track whose
+// tier bits were all checked went Done, which HARD-LOCKS the pad and made those
+// boxes unreachable for the rest of the seed.
+//
+// This is counted, not enumerated into outBits, and deliberately so: the glow
+// cycle shows REWARD placeholders (trophy / relic / token models) and a box has
+// no placeholder to show. The count feeds AP_PadState's lifecycle decisions only;
+// the glow itself is byte-identical.
+//
+// THE PREDICATE IS THE SPAWN PREDICATE. A box counts as uncollected only if it
+// could actually be broken: it needs GEOMETRY (a placement at that slot on that
+// level) and a LIVE location (in this slot's seed, per §7) that is not yet
+// checked. Counting bare locations instead would let a seed that created more box
+// locations than the placement set covers keep a pad green forever.
+static int AP_PadTrackBoxSlots(int levelID)
+{
+	// Per-level placement counts, rebuilt only when the placement table changes
+	// (a load, or an author-mode drop/undo). AP_PadState runs per pad per frame,
+	// so re-walking 241..512 placements for every pad every frame would be real
+	// work for a number that changes about twice a session.
+	static int s_slots[AP_BOX_TRACK_COUNT];
+	static int s_gen = -1;
+
+	int gen;
+
+	if (levelID < 0 || levelID >= AP_BOX_TRACK_COUNT)
+		return 0;
+
+	AP_Author_EnsureLoaded();
+	gen = AP_Author_PlacementGeneration();
+	if (gen != s_gen)
+	{
+		int i, n = AP_Author_PlacementCount();
+
+		for (i = 0; i < AP_BOX_TRACK_COUNT; i++)
+			s_slots[i] = 0;
+
+		for (i = 0; i < n; i++)
+		{
+			int lvl;
+			if (!AP_Author_PlacementGet(i, &lvl, 0, 0, 0, 0))
+				continue;
+			if (lvl < 0 || lvl >= AP_BOX_TRACK_COUNT)
+				continue;
+			if (s_slots[lvl] >= AP_BOX_SLOTS_PER_TRACK)
+				continue; // past the frozen ceiling: no name, never spawns
+			s_slots[lvl]++;
+		}
+		s_gen = gen;
+	}
+
+	return s_slots[levelID];
+}
+
+// Server truth, in the shape AP_BoxMap_CountStanding wants. ap_boxes.c holds its
+// own pair for the spawn set; these two ask the same two questions of the same
+// two sets, which is what keeps the pad's idea of "still standing" identical to
+// the track's.
+static int AP_PadBoxLive(long code, void *ctx)
+{
+	(void)ctx;
+	return ap_net_location_exists((long long)code); // §7: live in this slot's seed
+}
+
+static int AP_PadBoxChecked(long code, void *ctx)
+{
+	(void)ctx;
+	return ap_net_location_checked((long long)code); // already broken
+}
+
+static int AP_PadTrackBoxesLeft(int levelID)
+{
+	// The count itself is AP_BoxMap_CountStanding (freestanding, and exercised by
+	// tools/test-box-map.c); this only supplies the two server-truth predicates,
+	// which are the SAME pair the spawn set is built from -- §7 liveness and the
+	// checked set. One rule, one implementation, so the pad and the track can
+	// never disagree about what is still standing.
+	return AP_BoxMap_CountStanding(levelID, AP_PadTrackBoxSlots(levelID),
+	                               AP_PadBoxLive, AP_PadBoxChecked, 0);
+}
+
+// How many breakable boxes still stand behind this pad's destination. A cup pad
+// aggregates its four legs, exactly as AP_PadUncollectedGlowBits does for rungs
+// and for the same reason: a cup leg is not independently raceable from the hub,
+// so a Done cup pad would strand its legs' boxes permanently.
+static int AP_PadUncollectedBoxCount(int destLevelID)
+{
+	int leg, n = 0;
+
+	if (!ctr_cfg_active())
+		return 0;
+
+	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
+		return AP_PadTrackBoxesLeft(destLevelID);
+
+	if (destLevelID >= 100 && destLevelID < 105)
+	{
+		int cup = destLevelID - 100;
+		for (leg = 0; leg < 4; leg++)
+			n += AP_PadTrackBoxesLeft(ctr_cfg_cup_leg(cup, leg));
+	}
+	return n;
+}
+
 // Reward-type group of a glow bit -> the prize slot that owns it under
 // by_reward_type (issue #59). The three groups are exactly the three slots the
 // pad already births as trophy / relic / token placeholders
@@ -1022,6 +1135,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.
 	int uncBits[24];
 	int uncN;
+	int boxesLeft;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1043,25 +1157,43 @@ int AP_PadState(int physLevelID, int destLevelID)
 	uncN = AP_PadUncollectedGlowBits(destLevelID,
 	                                 uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
 
-	// Done is terminal: every destination location checked. A done pad has
-	// nothing left by definition, so hard-locking it never gates progression.
-	if (uncN == 0)
-		return 5;
+	// Box-AWARE, and for the same reason the count above is rung-aware (§6, ruled
+	// 2026-08-11): both Done and Re-locked strand whatever is left behind the pad,
+	// and an itemsanity box is exactly such a location. Boxes carry no AdvProgress
+	// bit, so they cannot ride in uncBits and are counted separately.
+	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
 
-	if (!AP_PadStage1Met(physLevelID))
-		return 1; // Locked: entry requirement unmet
+	// The table itself lives in ap_pad_state.h so the harness can pin it out of
+	// engine; everything above is the gather. Requirements key off the PHYSICAL
+	// pad, lifecycle facts off the DESTINATION, which is the model's whole
+	// keying invariant.
+	return AP_PadStateDecide(AP_DestIsRace(destLevelID),
+	                         AP_PadStage1Met(physLevelID),
+	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
+	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
+	                         uncN, boxesLeft);
+}
 
+// Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
+// destination's trophy race is already checked and the pad is STILL state 2
+// Raceable -- which, for a race destination with the trophy checked, can only
+// come from the standing-box branch of the table ("stays Raceable and enterable
+// until they are gone"). Any other route to 2 either has an unchecked trophy or
+// a non-race destination, both excluded here.
+//
+// Defined ON TOP of AP_PadState rather than beside it deliberately: the entry
+// gate and the pad's look in AH_WarpPad.c consume this, so they cannot drift
+// from the state the map paints. That drift IS issue #232 -- the state model
+// promised the pad stayed enterable and the gate had no path for it.
+int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
+{
+	if (!ctr_cfg_active())
+		return 0;
 	if (!AP_DestIsRace(destLevelID))
-		return 2; // reduced lifecycle (trial/arena/cup): stage-1 met + checks left
-
-	// Race destination: full two-stage lifecycle.
+		return 0;
 	if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
-		return 2; // Raceable: trophy race (primary check) still available
-
-	// Trophy checked, more checks remain -> stage-2 phase (keyed by physical pad).
-	if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-		return 3; // Re-locked: stage-2 requirement not yet met
-	return 4;     // Tier-2 open: relic TT / CTR token checks available
+		return 0;
+	return AP_PadState(physLevelID, destLevelID) == 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -3291,6 +3423,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_goal_sent = 0;
 		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_FeedConnectReset(); // drop stale toasts + re-arm initial-inventory absorb
+		// Same discipline, same call site (2026-08-11, Bandi-slot session): the
+		// trap registry is per-session state, and a primed-but-unfired trap that
+		// survived a reconnect fired on a DIFFERENT slot -- one the server had
+		// never sent a trap to. See AP_Trap_ConnectReset in ap_traps.h.
+		AP_Trap_ConnectReset();
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -3772,6 +3909,18 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	                  phase, track, position, rungTag, code);
 }
 
+// Item box wrapper (#109). Two class policies, both from the 2026-08-10 ruling:
+// a box is NOT a ceremony award (it is earned mid-race, not in a result block),
+// and it DOES take a feed line, because "the check and the feed line are the
+// entire effect" -- there is no pickup, no weapon roll and no wumpa to show for
+// it, so the feed line is the only acknowledgement the player gets.
+void AP_EmitBoxCheck(int levelID, int slot, long code)
+{
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] item box: level=%d slot=%d (Item Box %d) location %ld\n",
+	                  levelID, slot, slot + 1, code);
+}
+
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
 // (the native half of feat/podium-checks; the apworld declares the rung locations
 // + emits podium_checks slot_data, ap_seedcfg parses it into ctr_cfg.podium). The
@@ -4205,6 +4354,18 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Box placement author mode (#182) and the additive model loader it draws
+	// through (#109 / #124 groundwork). Author first, loader second, so a
+	// placement dropped this frame gets its marker in the same frame instead of
+	// one frame later. Both self-gate: the author mode on the "Box Author Mode"
+	// option, the loader on having any spawn requests at all.
+	AP_Author_OnFrame(gGT);
+	// The #109 runtime boxes, between the two on purpose: author mode has already
+	// decided whether it owns this level's markers (it stands the boxes down when
+	// it does), and the loader has not run yet, so a box added this frame is born
+	// this frame rather than next.
+	AP_Boxes_OnFrame(gGT);
+	AP_Spawn_OnFrame(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.

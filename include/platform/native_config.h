@@ -57,6 +57,10 @@ typedef struct
 	// section menu, and it is state rather than an option. Empty = never shown.
 	bool updateCheck;
 	char updateLastSeen[32];
+	// Archipelago: in-game AP box placement author mode (#182, tooling for
+	// #109). Off by default; this toggle IS the gate for the author keys, so a
+	// release player who never opens the menu can never reach them.
+	bool boxAuthor;
 #endif
 } NativeConfig;
 
