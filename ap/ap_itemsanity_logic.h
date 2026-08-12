@@ -8,6 +8,15 @@
 #define AP_ITEMSANITY_WEAPON_COUNT 11
 #define AP_ITEMSANITY_NO_ITEM 0xF
 
+// Frozen 0.2.0 datapackage append: weapon items occupy indexes 95..105 in held
+// ID order (0..4, 6..11). Rebuilt from ReceivedItems on every fresh connect.
+//
+// Moved here from ap_hooks.c (its only runtime reader) by the v2 review-client
+// composition so the host harness can assert against the real constant: #223's
+// Mask item index falls INSIDE this range, which makes the overlap a
+// correctness invariant rather than a coincidence. See tools/test-tizi-helper.c.
+#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+
 static int AP_ItemsanityWeaponIndex(int heldItemID)
 {
 	if (heldItemID >= 0 && heldItemID <= 4)
