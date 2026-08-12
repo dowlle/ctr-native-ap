@@ -1106,6 +1106,17 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		}
 	}
 
+#ifdef CTR_AP
+	// Tizi Helper (#223): the local player broke one of the four Papu's Pyramid
+	// start-line boxes with the helper active, so this roll pays out a Mask.
+	// LAST, after every vanilla substitution above (spring rewrite, boss-race
+	// replacement, the 3-missile cap), so nothing can overwrite it -- and still
+	// BEFORE the held-count line below, so an overridden 3-missile roll does not
+	// leave the player holding three masks. Inert in every other case: the
+	// filter returns its input unless a helper box armed this exact roll.
+	driver->heldItemID = (u8)AP_TiziFilterRoll(driver, driver->heldItemID);
+#endif
+
 	// Set number of held items
 	if ((u32)driver->heldItemID - 0xA < 0x2)
 	{
