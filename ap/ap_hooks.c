@@ -47,9 +47,8 @@ CTR_STATIC_ASSERT(AP_MODEL_KEY     == STATIC_KEY);
 // on; if the apworld's item table order changes, update both together.
 #define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
 
-// Frozen 0.2.0 datapackage append: weapon items occupy indexes 95..105 in held
-// ID order (0..4, 6..11). Rebuilt from ReceivedItems on every fresh connect.
-#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+// AP_ITEMSANITY_ITEM_FIRST_INDEX now lives in ap_itemsanity_logic.h so the host
+// harness can pin the #223 Mask overlap against the real constant.
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
 
 // ==============================================================

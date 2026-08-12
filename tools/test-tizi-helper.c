@@ -25,6 +25,13 @@
 
 #include "../ap/ap_tizi_logic.h"
 
+// Prototypes and item indices only, no engine dependency. Pulled in so the
+// composition invariant in section 3 can be asserted against the real
+// constants rather than against numbers copied into this file.
+#define CTR_AP 1
+#include "../ap/ap_tizi.h"
+#include "../ap/ap_itemsanity_logic.h"
+
 static int g_failures;
 
 static void check(int condition, const char *what)
@@ -169,6 +176,58 @@ static void test_the_selection_never_reads_past_the_census(void)
 	      "count, not array size, bounds the census");
 }
 
+// ---------------------------------------------------------------------------
+// 3. Composition invariant: the Mask receipt stays reachable with itemsanity on
+//
+// #223's Mask index and #145's weapon-item range are not independent. If the
+// Mask sits inside the range, the ReceivedItems drain in ap_hooks.c is an
+// else-if chain in which the itemsanity arm matches FIRST, so a separate
+// `idx == AP_TIZI_MASK_ITEM_INDEX` arm is dead code and AP_TiziReceiveMask() is
+// never called -- which, per the activation table above, leaves the helper
+// permanently inert on exactly the seeds it exists for. The v2 composition
+// resolved that by having the itemsanity arm forward the Mask explicitly.
+//
+// These assertions pin the two facts that make the forward mandatory. If a
+// future renumber moves the Mask out of the range, the second one fails and
+// whoever renumbers is told to revisit the drain rather than discovering it in
+// game.
+// ---------------------------------------------------------------------------
+
+static void test_the_mask_index_agrees_with_the_itemsanity_numbering(void)
+{
+	// The Mask is held item 0x7, which the itemsanity numbering places at
+	// weapon slot 6, i.e. apworld item index 95 + 6 = 101.
+	check(AP_ItemsanityWeaponIndex(AP_TIZI_HELD_ITEM_MASK) == 6,
+	      "Mask is itemsanity weapon slot 6");
+	check(AP_TIZI_MASK_ITEM_INDEX ==
+	          AP_ITEMSANITY_ITEM_FIRST_INDEX +
+	              AP_ItemsanityWeaponIndex(AP_TIZI_HELD_ITEM_MASK),
+	      "#223's Mask item index is derived from the itemsanity numbering");
+}
+
+static void test_the_mask_receipt_needs_the_itemsanity_drain_to_forward_it(void)
+{
+	// The overlap itself. While this holds, the itemsanity arm owns index 101
+	// and MUST call AP_TiziReceiveMask(); nothing else in the chain can.
+	check(AP_TIZI_MASK_ITEM_INDEX >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
+	          AP_TIZI_MASK_ITEM_INDEX <
+	              AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT,
+	      "Mask index is inside the itemsanity range, so the drain must fan it out");
+
+	// And the consequence that makes it matter: with itemsanity on, a helper
+	// with no Mask receipt is inert.
+	check(!AP_TiziHelperActive(1, 1, 0),
+	      "helper without the Mask receipt is inert while itemsanity is on");
+	check(AP_TiziHelperActive(1, 1, 1),
+	      "helper with the Mask receipt is active while itemsanity is on");
+
+	// The Tizi Helper item itself is outside the range, so its own arm is fine.
+	check(AP_TIZI_ITEM_INDEX < AP_ITEMSANITY_ITEM_FIRST_INDEX ||
+	          AP_TIZI_ITEM_INDEX >=
+	              AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT,
+	      "the Tizi Helper item index does not collide with the itemsanity range");
+}
+
 int main(void)
 {
 	test_no_helper_is_never_active();
@@ -185,6 +244,9 @@ int main(void)
 	test_a_missing_track_length_is_refused();
 	test_the_row_is_reported_in_track_order();
 	test_the_selection_never_reads_past_the_census();
+
+	test_the_mask_index_agrees_with_the_itemsanity_numbering();
+	test_the_mask_receipt_needs_the_itemsanity_drain_to_forward_it();
 
 	if (g_failures == 0)
 		printf("tizi helper (activation table + row selection): all checks passed\n");
