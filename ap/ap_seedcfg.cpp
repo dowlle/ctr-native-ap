@@ -359,7 +359,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// client sees will not carry the key at all. Absent / null / unparseable ->
 	// json_int's default of 1 -> classification tints, i.e. exactly the display
 	// this client shipped with. Only an explicit 0 turns the tints off; any other
-	// value is read as "on" by the consumer (AP_MarkerTint), so a future apworld
+	// value is read as "on" by the consumer (AP_MarkerTintForFlags), so a future apworld
 	// that widens this into an enum cannot accidentally blank the markers.
 	ctr_cfg.ap_item_type_colors = json_int(opt, "ap_item_type_colors", 1);
 	if (!ctr_cfg.ap_item_type_colors)

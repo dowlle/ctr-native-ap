@@ -218,6 +218,14 @@ void AA_EndEvent_DrawMenu(void)
 			if (shouldDrawToken)
 			{
 				hudR->depthBiasNormal = 1;
+#ifdef CTR_AP
+				// #221: before the prop is first shown, re-present the CTR token
+				// with the reward that actually sits at this token-challenge
+				// location (same resolver as the pad glow), so the prop matches
+				// the AP banner. Returns 0 to keep the vanilla token when AP is
+				// inactive, the reward is unscouted, or the model is not resident.
+				AP_CeremonyRewardProp(hudToken, rewardBit);
+#endif
 				hudToken->flags &= ~HIDE_MODEL;
 				hudToken->matrix.t[0] = hudT->matrix.t[0];
 				hudToken->matrix.t[1] = UI_ConvertY_2(letterPos.y + 0x18, AA_SCREEN_DEPTH);
@@ -228,6 +236,23 @@ void AA_EndEvent_DrawMenu(void)
 					hudToken->scale.y += AA_TOKEN_GROW_STEP;
 					hudToken->scale.z += AA_TOKEN_GROW_STEP;
 				}
+#ifdef CTR_AP
+				// #219/#222/#221: clamp the ceremony prop at the resolved reward
+				// category's display scale. The vanilla grow loop above targets
+				// the TOKEN's final size; a crystal or wumpa prop must finish at
+				// its own (smaller) size, so this caps it once it catches up.
+				// First-pass scale values, tuned in game per category.
+				{
+					s32 growLimit = (s32)((u32)AA_TOKEN_GROW_LIMIT *
+					                      (u32)AP_WarpPadRewardScale(rewardBit) >> 12);
+					if (hudToken->scale.x > growLimit)
+					{
+						hudToken->scale.x = (s16)growLimit;
+						hudToken->scale.y = (s16)growLimit;
+						hudToken->scale.z = (s16)growLimit;
+					}
+				}
+#endif
 
 				if (tokenAwardTextFrame >= 0)
 				{
