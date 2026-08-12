@@ -3785,6 +3785,12 @@ static int AP_ItemsanityActive(void)
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
 }
 
+// Called from VehPickupItem_ShootOnCirclePress with the driver's own held id,
+// before vanilla folds Bomb/Bomb x3/Missile x3 into the shared Missile branch.
+// That press is the committed-use edge: VehPhysProc has already spent the item
+// by the time the fire request reaches here, and the request flag is cleared
+// before this call, so one press emits its pair exactly once. AP_EmitClassCheck
+// adds the absent-code and already-checked guards on top.
 void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -3793,15 +3799,16 @@ void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 	if (!AP_ItemsanityActive() || !gGT || driver != gGT->drivers[0])
 		return;
 
-	plain = AP_ItemsanityLocationCode(heldItemID, 0);
-	juiced = AP_ItemsanityLocationCode(heldItemID, 1);
+	// juiced comes back as -1 below 10 Wumpa, and both codes come back as -1 for
+	// an id that mints nothing, so the shared emitter's absent-code guard covers
+	// the whole fan-out.
+	(void)AP_ItemsanityUseCodes(heldItemID, driver->numWumpas, &plain, &juiced);
 	AP_EmitClassCheck(plain, 0, -1, 0, 1,
 	                  "[AP CHECK] itemsanity use: weapon=%d juiced=0 location %ld\n",
 	                  heldItemID, plain);
-	if (driver->numWumpas >= 10)
-		AP_EmitClassCheck(juiced, 0, -1, 0, 1,
-		                  "[AP CHECK] itemsanity use: weapon=%d juiced=1 location %ld\n",
-		                  heldItemID, juiced);
+	AP_EmitClassCheck(juiced, 0, -1, 0, 1,
+	                  "[AP CHECK] itemsanity use: weapon=%d juiced=1 location %ld\n",
+	                  heldItemID, juiced);
 }
 
 int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
@@ -3823,6 +3830,33 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 		// no weapon, and grant one fruit through the engine's normal clamp/effect.
 		RB_Player_ModifyWumpa(driver, 1);
 		AP_AppendLog("[AP ITEMSANITY] no eligible roulette weapon; granted Wumpa\n");
+	}
+	return filtered;
+}
+
+// Ownership guard for vanilla's downstream item rewrites. The draw filter above
+// only settles the roll itself; the single-warpball rule and the two-holders
+// 3-missile cap rewrite that result afterwards and would otherwise hand out an
+// unreceived weapon. Only the boss-race rewrite and the Crystal Challenge
+// hardcode are ruled bypasses, so they deliberately do not call this.
+int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
+	unsigned roll, const unsigned char *table, int tableCount)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int filtered;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return proposed;
+
+	filtered = AP_ItemsanitySubstituteDownstream(proposed, roll, table,
+	                                            tableCount, ap_itemsanity_owned);
+	if (filtered == AP_ITEMSANITY_NO_ITEM)
+	{
+		// Same ruled Empty Crates shape as the draw filter.
+		RB_Player_ModifyWumpa(driver, 1);
+		AP_AppendLog("[AP ITEMSANITY] no eligible substitute weapon; granted Wumpa\n");
 	}
 	return filtered;
 }
