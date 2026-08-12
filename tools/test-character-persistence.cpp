@@ -56,6 +56,7 @@ extern "C" {
 }
 #include "../ap/ap_charname.h"
 #include "../ap/ap_editstat_bounds.h"
+#include "../ap/ap_pauserow.h"
 
 static int g_failures = 0;
 
@@ -794,6 +795,115 @@ static void test_the_fallback_always_returns_something_drawable()
 	      "two empty strings still return a drawable string");
 }
 
+// ---------------------------------------------------------------------------
+// PART 6 -- the hub pause menu's SELECT CHARACTER row (#238).
+//
+// The row is inserted below RESUME, which renumbers everything under it. Two
+// things there are pure index arithmetic that reads as obviously correct and is
+// not: the up/down wiring (an off-by-one gives an unreachable row or a cursor
+// trap, which no build gate notices) and the selection shift across a row-set
+// swap (rowSelected persists across pause opens, so a connect or disconnect
+// mid-session has to carry the highlight, and the two directions must be exact
+// inverses or the highlight walks a row per swap).
+//
+// Both come from ap/ap_pauserow.h, which is the table MainFreeze.c builds the
+// real MenuRow array from, so this sweeps the shipped wiring rather than a copy.
+// ---------------------------------------------------------------------------
+
+static void test_every_pause_row_is_reachable_both_ways()
+{
+	bool reachedByDown[AP_PAUSEROW_COUNT] = {false};
+	bool reachedByUp[AP_PAUSEROW_COUNT] = {false};
+
+	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
+	{
+		int up = AP_PAUSEROW_NAV[r][0];
+		int down = AP_PAUSEROW_NAV[r][1];
+
+		check(up >= 0 && up < AP_PAUSEROW_COUNT, "every up target is a real row");
+		check(down >= 0 && down < AP_PAUSEROW_COUNT, "every down target is a real row");
+		check(up != r, "no row traps the cursor by pointing up at itself");
+		check(down != r, "no row traps the cursor by pointing down at itself");
+
+		reachedByUp[up] = true;
+		reachedByDown[down] = true;
+	}
+
+	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
+	{
+		check(reachedByUp[r], "every row is reachable by pressing up from somewhere");
+		check(reachedByDown[r], "every row is reachable by pressing down from somewhere");
+	}
+}
+
+static void test_pause_row_navigation_is_a_single_cycle()
+{
+	// Walking down from RESUME must visit all five rows and come back, which is
+	// what makes the wiring one wrapping list rather than two disjoint loops.
+	int at = AP_PAUSEROW_RESUME;
+	for (int step = 0; step < AP_PAUSEROW_COUNT; step++)
+	{
+		check_eq(at, step, "walking down from RESUME visits the rows in order");
+		at = AP_PAUSEROW_NAV[at][1];
+	}
+	check_eq(at, AP_PAUSEROW_RESUME, "and wraps back to RESUME");
+
+	// Up is the exact reverse of down, everywhere.
+	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
+	{
+		check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_NAV[r][1]][0], r, "up undoes down");
+		check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_NAV[r][0]][1], r, "down undoes up");
+	}
+}
+
+static void test_select_character_sits_directly_below_resume()
+{
+	check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_RESUME][1], AP_PAUSEROW_CHARACTER,
+	         "down from RESUME reaches SELECT CHARACTER");
+	check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_CHARACTER][0], AP_PAUSEROW_RESUME,
+	         "and up from it returns to RESUME");
+}
+
+static void test_the_selection_shift_round_trips()
+{
+	// The retail set has four rows (0..3). Every one of them must survive a trip
+	// into the AP set and back unchanged, or the highlight walks on every
+	// connect and disconnect.
+	for (int vanillaRow = 0; vanillaRow <= 3; vanillaRow++)
+	{
+		int there = AP_PauseRow_ToApIndex(vanillaRow);
+		check(there >= 0 && there < AP_PAUSEROW_COUNT, "the shifted row is in range");
+		check(there != AP_PAUSEROW_CHARACTER, "and never lands on the new row itself");
+		check_eq(AP_PauseRow_ToVanillaIndex(there), vanillaRow, "and it round-trips back");
+	}
+}
+
+static void test_losing_the_row_lands_somewhere_harmless()
+{
+	// SELECT CHARACTER has no retail counterpart. A player highlighting it when
+	// the seed disconnects must land on RESUME, not on the row that happens to
+	// take its index, and never on the terminator.
+	check_eq(AP_PauseRow_ToVanillaIndex(AP_PAUSEROW_CHARACTER), 0,
+	         "highlighting the row when it disappears falls back to RESUME");
+
+	for (int apRow = 0; apRow < AP_PAUSEROW_COUNT; apRow++)
+	{
+		int back = AP_PauseRow_ToVanillaIndex(apRow);
+		check(back >= 0 && back <= 3, "no AP row maps onto the retail terminator or past it");
+	}
+}
+
+static void test_the_shift_is_saturating_not_wrapping()
+{
+	// Defensive: rowSelected is an s16 read back out of a struct a savestate can
+	// restore, so out-of-range input must clamp rather than wrap into a valid
+	// looking row.
+	check_eq(AP_PauseRow_ToApIndex(-5), AP_PAUSEROW_RESUME, "a negative row clamps to RESUME");
+	check_eq(AP_PauseRow_ToApIndex(99), AP_PAUSEROW_COUNT - 1, "a huge row clamps to the last row");
+	check_eq(AP_PauseRow_ToVanillaIndex(-5), 0, "and the same both ways, low");
+	check_eq(AP_PauseRow_ToVanillaIndex(99), AP_PAUSEROW_COUNT - 2, "and high");
+}
+
 int main()
 {
 	test_default_first_connect();
@@ -832,8 +942,15 @@ int main()
 	test_the_fallback_survives_a_missing_localised_name();
 	test_the_fallback_always_returns_something_drawable();
 
+	test_every_pause_row_is_reachable_both_ways();
+	test_pause_row_navigation_is_a_single_cycle();
+	test_select_character_sits_directly_below_resume();
+	test_the_selection_shift_round_trips();
+	test_losing_the_row_lands_somewhere_harmless();
+	test_the_shift_is_saturating_not_wrapping();
+
 	if (g_failures == 0)
-		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback): all checks passed\n");
+		std::printf("character persistence (seat orderings + stored-value bound + garage gate + portrait fallback + pause row): all checks passed\n");
 	else
 		std::printf("character persistence: %d FAILURE(S)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;

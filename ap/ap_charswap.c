@@ -642,6 +642,37 @@ int AP_CharSwap_PickerOpen(void)
 	return ap_cs_open;
 }
 
+// The adventure-hub pause menu asked for the picker (#238).
+//
+// It cannot be opened from inside the pause, and should not be:
+// ap_cs_safeToOpen refuses while PAUSE_1 or sdata->pause_state is set, because
+// the pause owns the vehicle-freeze bits and its RectMenu owns input, and two
+// modal surfaces fighting over both is the interaction hazard the spike's matrix
+// row 22 flagged. So the pause row resumes the game through the vanilla RESUME
+// path and leaves this request behind; AP_CharSwap_Tick picks it up on the first
+// frame that is genuinely safe, a frame or two later once the unpause settles.
+//
+// A request is one bit with no deadline, on the same reasoning ap_charseat.h
+// gives for the seat deferral: it is honoured when the hub is safe and dropped
+// when the hub goes away, so nothing has to guess how many frames an unpause
+// takes. It cannot leak into a later session, because leaving the hub clears it.
+static int ap_cs_pauseRequest = 0;
+
+void AP_CharSwap_RequestPickerFromPause(void)
+{
+	if (!AP_CharSwap_PauseRowLive())
+		return;
+	ap_cs_pauseRequest = 1;
+}
+
+// Whether the pause menu should carry the row at all. Deliberately the same
+// condition AP_CharSwap_Tick gates itself on, so a row can never be offered on a
+// seed where selecting it would do nothing.
+int AP_CharSwap_PauseRowLive(void)
+{
+	return AP_CharSwap_FeatureLive() || AP_DevKeysEnabled();
+}
+
 static int ap_cs_tileForCharacter(int characterID)
 {
 	int i;
@@ -818,6 +849,29 @@ static void ap_cs_completeSwap(struct GameTracker *gGT)
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
+// Opening the picker, in one place. Both ways in (the dev key and the #238 pause
+// row) go through here, so a safety condition can never be enforced on one entry
+// point and forgotten on the other.
+static int ap_cs_tryOpen(struct GameTracker *gGT)
+{
+	if (!ap_cs_safeToOpen(gGT))
+		return 0;
+
+	ap_cs_open = 1;
+	ap_cs_editFocus = 0;
+	ap_cs_cursor = ap_cs_tileForCharacter(data.characterIDs[0]);
+	ap_cs_setFreeze(gGT, 1);
+	ap_cs_logPackage("open", gGT->drivers[0], data.characterIDs[0]);
+	return 1;
+}
+
+static void ap_cs_close(struct GameTracker *gGT)
+{
+	ap_cs_open = 0;
+	ap_cs_editFocus = 0;
+	ap_cs_setFreeze(gGT, 0);
+}
+
 static void ap_cs_devKeys(struct GameTracker *gGT)
 {
 	static const int keys[3] = {AP_CS_KEY_PICKER, AP_CS_KEY_PROG, AP_CS_KEY_EDIT};
@@ -835,19 +889,9 @@ static void ap_cs_devKeys(struct GameTracker *gGT)
 		if (k == 0)
 		{
 			if (ap_cs_open)
-			{
-				ap_cs_open = 0;
-				ap_cs_editFocus = 0;
-				ap_cs_setFreeze(gGT, 0);
-			}
-			else if (ap_cs_safeToOpen(gGT))
-			{
-				ap_cs_open = 1;
-				ap_cs_editFocus = 0;
-				ap_cs_cursor = ap_cs_tileForCharacter(data.characterIDs[0]);
-				ap_cs_setFreeze(gGT, 1);
-				ap_cs_logPackage("open", gGT->drivers[0], data.characterIDs[0]);
-			}
+				ap_cs_close(gGT);
+			else
+				ap_cs_tryOpen(gGT);
 		}
 		// The two mode-cycle dev keys only move the DEV fallbacks, and only
 		// matter while no seed is connected: with a seed live, the resolvers
@@ -947,11 +991,13 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 //
 // We do NOT clear the bits we consume. The pad word is recomputed wholesale at
 // :345, later in this same frame, so a clear here would be overwritten before
-// any other consumer looked at it -- suppression is not achievable from this
-// slot. The picker's hold on the kart comes from VEH_FREEZE_DOOR instead, which
-// VehPhysProc_Driving_PhysLinear honours (game/Vehicle/VehPhysProc.c:407-411).
-// Start still reaches the pause menu while the picker is open; integrating the
-// two surfaces is issue #238, not this fix.
+// any other consumer looked at it -- suppression is simply not achievable from
+// this slot. The picker's hold on the kart comes from VEH_FREEZE_DOOR instead,
+// which VehPhysProc_Driving_PhysLinear honours
+// (game/Vehicle/VehPhysProc.c:407-411), and the one other consumer that mattered
+// is refused at its own source rather than by stealing its input:
+// MainFreeze_IfPressStart returns early while the picker is open, so Start
+// cannot raise the pause menu on top of it (#238, and the spike matrix's row 22).
 static void ap_cs_input(struct GameTracker *gGT)
 {
 	unsigned int tap;
@@ -1306,10 +1352,26 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 			ap_cs_editFocus = 0;
 			ap_cs_frozeDriver = 0; // the level changed; the bit went with it
 		}
+		// A pause-menu request does not survive leaving the hub. The player asked
+		// to pick a character in THIS hub session; carrying the bit across a level
+		// load would pop the picker open somewhere they did not ask for it.
+		ap_cs_pauseRequest = 0;
 		return;
 	}
 
 	ap_cs_devKeys(gGT);
+
+	// Honour a pending #238 pause-menu request. The row resumed the game and left
+	// this behind, so the first frames after it are still unsafe (PAUSE_1 is
+	// cleared by the RESUME path but sdata->pause_state and the freeze bits take
+	// a moment to settle, and MainFreeze sets a 5-frame unpause cooldown). No
+	// timer waits that out: the request simply survives until ap_cs_safeToOpen
+	// agrees, which is the same "no deadline" reasoning the seat machine uses.
+	if (ap_cs_pauseRequest && !ap_cs_open)
+	{
+		if (ap_cs_tryOpen(gGT))
+			ap_cs_pauseRequest = 0;
+	}
 
 	if (!ap_cs_open)
 		return;

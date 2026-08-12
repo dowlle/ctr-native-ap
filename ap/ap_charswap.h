@@ -29,8 +29,25 @@ void AP_CharSwap_Tick(struct GameTracker *gGT);
 // per frame, so this runs exactly once per frame while the hub is up.
 void AP_CharPicker_Draw(void);
 
-// True while the picker owns input (used to keep the driver frozen).
+// True while the picker owns input. Used to keep the driver frozen, to hide the
+// hub minimap that would otherwise draw over it, and to refuse a Start press so
+// the pause menu cannot open on top of it.
 int AP_CharSwap_PickerOpen(void);
+
+// The adventure-hub pause menu's SELECT CHARACTER row was chosen (#238).
+//
+// Records a request rather than opening the picker directly: the picker refuses
+// to open while the game is paused, and rightly so, since the pause owns the
+// vehicle-freeze bits and its RectMenu owns input. The caller resumes through
+// the vanilla RESUME path and AP_CharSwap_Tick opens the picker on the first
+// safe frame after that. The request has no deadline and is dropped if the hub
+// goes away before it can be honoured.
+void AP_CharSwap_RequestPickerFromPause(void);
+
+// Should the adventure-hub pause menu carry a SELECT CHARACTER row at all?
+// True on a seed carrying the character phase, and on a dev-keys build so the
+// manual matrix can reach the row without a seed connected.
+int AP_CharSwap_PauseRowLive(void);
 
 // Does this seed carry the character phase (unlocks, a racer lock, a non-vanilla
 // stat source, a chosen starting racer or a forced starting class)? A 0.2.0 seed
