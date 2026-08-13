@@ -524,11 +524,25 @@ static void AP_BoxBreak(struct GameTracker *gGT, int i, struct Instance *boxInst
 	s_liveCount--;
 }
 
+// Is this the local human player? Shared by every attribution path a box
+// break can arrive through (kart contact below, weapon/explosion in the
+// section further down): the drivers[0] test is what keeps a second local
+// player in splitscreen from sending our checks, matching the convention
+// every other AP module uses, and the ACTION_BOT test excludes AI-driven
+// karts and AI-fired weapons alike.
+static int AP_BoxOwnedByLocalPlayer(struct GameTracker *gGT, struct Driver *d)
+{
+	if (d == 0 || d != gGT->drivers[0])
+		return 0;
+	if ((d->actionsFlagSet & ACTION_BOT) != 0)
+		return 0;
+
+	return 1;
+}
+
 // The local human player, if this instance is one. The PLAYER bucket holds
-// human drivers only (AI live in ROBOT, BOTS.c:3097), so the ACTION_BOT test is
-// belt and braces rather than the isolation itself; the drivers[0] test is what
-// keeps a second local player in splitscreen from sending our checks, matching
-// the convention every other AP module uses.
+// human drivers only (AI live in ROBOT, BOTS.c:3097), so AP_BoxOwnedByLocalPlayer's
+// ACTION_BOT test is belt and braces rather than the isolation itself.
 static int AP_BoxHitByLocalPlayer(struct GameTracker *gGT, struct Instance *hitInst)
 {
 	struct Driver *d;
@@ -537,12 +551,7 @@ static int AP_BoxHitByLocalPlayer(struct GameTracker *gGT, struct Instance *hitI
 		return 0;
 
 	d = (struct Driver *)hitInst->thread->object;
-	if (d == 0 || d != gGT->drivers[0])
-		return 0;
-	if ((d->actionsFlagSet & ACTION_BOT) != 0)
-		return 0;
-
-	return 1;
+	return AP_BoxOwnedByLocalPlayer(gGT, d);
 }
 
 // ── per-frame ───────────────────────────────────────────────────────────────
@@ -591,6 +600,74 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 
 		if (!AP_BoxHitByLocalPlayer(gGT, hit))
 			continue;
+
+		AP_BoxBreak(gGT, i, inst);
+	}
+}
+
+// ── weapon / explosion break (issue #234, dispatcher task #18) ─────────────
+//
+// Vanilla crates have no separate "a weapon passed through me" event distinct
+// from detonating: a flying weapon's own BSP collision search finds the
+// crate's hitbox and calls its LInC (RB_CrateWeapon_LInC -> ThCollide, RB_Crate.c),
+// which explodes the crate via RB_CrateAny_ExplodeInit AND signals the weapon
+// itself to detonate (RB_MovingExplosive_Explode -> RB_Burst_Init, RB_Burst.c).
+// RB_Burst_Init is the single choke point for every moving-explosive
+// detonation -- bomb, missile, thrown shield, all born as a TrackerWeapon,
+// RB_MovingExplosive.c has exactly one call site for the Explode path -- so
+// hooking it here covers "weapon passes through" and "explosion" as the one
+// event vanilla itself treats them as. AP boxes have no BSP presence (see the
+// header), so they were never reachable through that path at all; this is
+// the parallel, non-BSP route for the same outcome.
+//
+// PLAYER-attribution mirrors RB_CrateAny_GetDriver (RB_Crate.c): the
+// TrackerWeapon carries driverParent, "who shot me". Ruled by Stef 2026-08-12:
+// AP boxes break from weapons/items passing through them and from
+// PLAYER-caused explosions; opponent-caused explosions do not count. Reuses
+// AP_BoxOwnedByLocalPlayer, the exact same test the kart-contact path above
+// uses, so a bot-fired weapon is excluded the same way a bot's kart is.
+void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponInst,
+                               struct Driver *attacker, int radiusSquared)
+{
+	int i;
+
+	// Same load-safety invariant as AP_Boxes_OnFrame (2026-08-11 crash class,
+	// issue #232): s_live[]'s spawn handles are only good while the AP box
+	// system's own per-frame tick has kept them current, which it does not do
+	// mid-load. A weapon detonation is not expected during a load transition,
+	// but nothing enforces that from the caller's side, so the same guard
+	// applies here rather than trusting the call site.
+	if (gGT == 0 || weaponInst == 0)
+		return;
+	if (sdata == 0 || sdata->Loading.stage != LOAD_IDLE)
+		return;
+	if (!ctr_cfg_active() || s_liveCount == 0)
+		return;
+	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
+		return;
+
+	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	{
+		struct Instance *inst;
+		int dx, dy, dz, distSq;
+
+		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
+			continue;
+
+		// Plain int distance, matching the convention already used for this
+		// kind of check elsewhere in the codebase (e.g. RB_GetThread_ClosestTracker,
+		// RB_Tracker.c); box and weapon positions are both real LEV-scale
+		// coordinates, never near enough to the range that would overflow.
+		dx = s_live[i].x - weaponInst->matrix.t[0];
+		dy = s_live[i].y - weaponInst->matrix.t[1];
+		dz = s_live[i].z - weaponInst->matrix.t[2];
+		distSq = dx * dx + dy * dy + dz * dz;
+		if (distSq > radiusSquared)
+			continue;
+
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue; // waiting for its model, or between a pool reset and a birth
 
 		AP_BoxBreak(gGT, i, inst);
 	}
