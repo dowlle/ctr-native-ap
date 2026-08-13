@@ -31,7 +31,11 @@
 //  11. the whole Warp-Pad State Model v2 table (ap/ap_pad_state.h), including
 //      the cell issue #232 turned on: a trophy-checked, stage-2-locked pad with
 //      boxes still standing stays Raceable, so the entry gate must let the
-//      player back in for them.
+//      player back in for them,
+//  12. the weapon-explosion proximity predicate (AP_BoxMap_WithinRadius),
+//      including the int32-square overflow boundary a REJECTed candidate hit
+//      (issue #234): the per-axis early-out must stay correct exactly at and
+//      around the point where squaring a delta would wrap.
 
 #include <stdio.h>
 #include <string.h> // memset
@@ -806,6 +810,64 @@ static void test_combined_232_265_sequence(void)
 	           "checking the last box makes the pad Done");
 }
 
+// ── 12. weapon-explosion proximity, overflow safety (#234, 2026-08-13 REJECT) ─
+//
+// AP_BoxMap_WithinRadius was extracted from the box-breakability candidate
+// after a DeepSeek review REJECTed it: the original inline `dx*dx+dy*dy+dz*dz`
+// in a 32-bit int overflows to a NEGATIVE distSq once a single axis delta
+// passes ~46,341, and the failure direction is a WRONG break (a far box reads
+// as in-range and gets sent). This section pins the overflow boundary itself,
+// not just ordinary in/out-of-radius cases, since that boundary is exactly
+// what the original bug crossed without anyone noticing.
+
+static void test_within_radius(void)
+{
+	printf("\n-- AP_BoxMap_WithinRadius: overflow-safe proximity (#234) --\n");
+
+	// Ordinary cases, small numbers, radius in the range the AP call site
+	// actually uses (missile 0x80=128, bomb 0x140=320, juiced bomb 0x200=512).
+	expect_int(AP_BoxMap_WithinRadius(0, 0, 0, 0, 0, 0, 128), 1,
+	           "same point is always within radius");
+	expect_int(AP_BoxMap_WithinRadius(100, 0, 0, 0, 0, 0, 128), 1,
+	           "100 units away, radius 128 -> in range");
+	expect_int(AP_BoxMap_WithinRadius(200, 0, 0, 0, 0, 0, 128), 0,
+	           "200 units away on one axis alone, radius 128 -> out of range");
+	expect_int(AP_BoxMap_WithinRadius(90, 90, 0, 0, 0, 0, 128), 1,
+	           "diagonal 90/90 (dist ~127) just inside radius 128");
+	expect_int(AP_BoxMap_WithinRadius(91, 91, 0, 0, 0, 0, 128), 0,
+	           "diagonal 91/91 (dist ~128.7) just outside radius 128");
+
+	// Exact boundary: dist == radius counts as within range (<=, not <).
+	expect_int(AP_BoxMap_WithinRadius(512, 0, 0, 0, 0, 0, 512), 1,
+	           "distance exactly equal to radius counts as within range");
+	expect_int(AP_BoxMap_WithinRadius(513, 0, 0, 0, 0, 0, 512), 0,
+	           "one unit past the radius is out of range");
+
+	// THE OVERFLOW BOUNDARY. sqrt(INT_MAX) is ~46,340.95, so a single-axis
+	// delta of 46,341 is the smallest value whose OWN SQUARE overflows a
+	// 32-bit int (46341^2 = 2,147,488,281 > INT_MAX 2,147,483,647). The old
+	// inline code squared deltas before any bound check, so this exact value
+	// wrapped negative and read as "in range" no matter how large the radius
+	// was. The real placement extremes the review cited (N. Gin Labs z up to
+	// 27,796; Sewer Speedway z span 26,880+29) are well inside this boundary
+	// on their own, but a weapon detonating far off one end of a long track
+	// while a box stands at the other can plausibly cross it -- the predicate
+	// must be correct at the boundary regardless of how close real seeds get.
+	expect_int(AP_BoxMap_WithinRadius(46341, 0, 0, 0, 0, 0, 512), 0,
+	           "single-axis delta at the int32-square overflow boundary -> correctly out of range");
+	expect_int(AP_BoxMap_WithinRadius(-46341, 0, 0, 0, 0, 0, 512), 0,
+	           "negative-axis delta at the same boundary -> correctly out of range");
+	expect_int(AP_BoxMap_WithinRadius(100000, -100000, 50000, 0, 0, 0, 512), 0,
+	           "full-range extreme deltas on all three axes -> correctly out of range, no wrap");
+
+	// Centred on a non-origin point, so the early-out is exercised on real
+	// deltas rather than accidentally testing against zero on both sides.
+	expect_int(AP_BoxMap_WithinRadius(1000, 2000, 3000, 1050, 2000, 3000, 128), 1,
+	           "50 units off a non-origin centre, radius 128 -> in range");
+	expect_int(AP_BoxMap_WithinRadius(1000, 2000, 3000, 46341 + 1000, 2000, 3000, 512), 0,
+	           "overflow-boundary delta off a non-origin centre -> correctly out of range");
+}
+
 int main(void)
 {
 	printf("AP item box map + spawn-set bookkeeping (#109)\n");
@@ -825,6 +887,7 @@ int main(void)
 	test_tier2_route_table();
 	test_pad_route_codes();
 	test_combined_232_265_sequence();
+	test_within_radius();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");
