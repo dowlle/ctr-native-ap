@@ -13,8 +13,12 @@ int main()
 		return 2;
 	if (AP_RewardKeepsModel(AP_CAT_NONE))
 		return 3;
-	if (AP_RewardModelForCat(AP_CAT_WUMPA) != AP_MODEL_WUMPA)
+	// Matrix rule 4: a Wumpa package is Archipelago-logo material and has no
+	// model of its own.
+	if (AP_RewardModelForCat(AP_CAT_WUMPA) != -1)
 		return 4;
+	if (AP_RewardModelForCat(AP_CAT_CRYSTAL) != AP_MODEL_CRYSTAL)
+		return 7;
 	if (AP_RewardScaleForCat(AP_CAT_CRYSTAL) != 0x1400)
 		return 5;
 	return AP_RewardTintForCat(AP_CAT_CRYSTAL) == 0x0d22fff0u ? 0 : 6;

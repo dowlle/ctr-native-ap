@@ -195,16 +195,24 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					// vanilla itself uses for keys ("store in Gem array, intended by
 					// ND") and which the AP birth path already seeds.
 					//
-					// #219's crystal is the SAME case, and it is live: the hub's own
-					// model pack does carry STATIC_CRYSTAL (see the residency note in
-					// ap_hooks.c), so a capability-ladder reward really does reach a
-					// pad slot as a crystal -- and _ThTick gives it USE_SPECULAR_LIGHT
-					// to match the arena crystal (UI_Instance.c:85-90). Without a
-					// lightDir here that specular stayed world-fixed while the model
-					// spun, exactly like the key: purple facing the light, near-BLACK
-					// facing away, on a shard thin enough to read as a dark bar. The
-					// gem slot is seeded on both AP birth paths (:2333, :2418) and all
-					// five D232 entries are identical, so it needs no new seeding.
+					// #219's crystal is the SAME case, and it is live on every surface
+					// now: a CTR non-base-game progression reward always reaches a pad
+					// slot as a crystal, because ap_crystal_model.c parks a stand-in
+					// wherever the level did not load the retail one. (An earlier
+					// revision of this comment justified the arm by claiming the hub's
+					// model pack carries STATIC_CRYSTAL. That claim was wrong, and the
+					// arm was dead on the one surface the defect was reported from.)
+					//
+					// It matters only for the RETAIL crystal, which _ThTick gives
+					// USE_SPECULAR_LIGHT to match the arena one (UI_Instance.c:85-90).
+					// Without a lightDir here that specular stayed world-fixed while
+					// the model spun, exactly like the key: purple facing the light,
+					// near-BLACK facing away, on a shard thin enough to read as a dark
+					// bar. The stand-in is untextured and takes no specular at all, so
+					// it is indifferent to this -- seeding the light for it is free and
+					// keeps the two crystals on one path. The gem slot is seeded on
+					// both AP birth paths (:2333, :2418) and all five D232 entries are
+					// identical, so it needs no new seeding.
 					lightDir = &warppadObj->lightDirGem;
 				}
 #endif
@@ -1351,18 +1359,27 @@ WarpPad_AnimateOpen:
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
 					case STATIC_CRYSTAL:
-						// #219: an OWN CTR progression/capability item -> the OG purple
-						// crystal, specular like the arena crystal (UI_Instance.c:90).
-						// A peer crystal is ghosted below (colorRGBA forced to 0 there),
-						// exactly like the peer OG rewards.
+						// Matrix rule 3: an OWN CTR non-base-game progression item -> the
+						// purple crystal. A peer's is ghosted below (colorRGBA forced to 0
+						// there), exactly like the peer base-game rewards.
+						//
+						// TWO MODELS ANSWER THIS ID and they need opposite treatment, which
+						// is why the branch is on the pointer and not on the id. The retail
+						// arena crystal is textured and wants the specular light the menu
+						// crystal uses (UI_Instance.c:90). The stand-in this project parks
+						// when the level did not load that one (ap_crystal_model.c) is
+						// UNTEXTURED, and the specular writer bails at tex == 0 and draws
+						// nothing at all (RenderBucket_QueueExecute.c:2924, :3063) -- so
+						// giving it the specular treatment would make an own progression
+						// reward invisible, which is a worse failure than the fallback bars
+						// this whole change exists to fix. It takes the marker's plain-prim
+						// route instead: neutral greys lerped toward the purple by
+						// alphaScale, same mechanism as STATIC_AP below.
 						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
-						apPrize->flags |= USE_SPECULAR_LIGHT;
-						break;
-					case PU_WUMPA_FRUIT:
-						// #222: an OWN Wumpa Fruit package -> the fruit model's natural
-						// colours (vanilla renders it unmodulated; RB_Fruit.c never tints
-						// it). A peer package is ghosted below.
-						apPrize->colorRGBA = 0;
+						if (AP_CrystalModel_IsStandIn(apPrize->model))
+							apPrize->alphaScale = AP_CRYSTAL_TINT_STRENGTH;
+						else
+							apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
 					default:
 						// STATIC_TROPHY / any other own reward -> natural, untinted

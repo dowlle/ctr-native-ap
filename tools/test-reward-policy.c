@@ -228,7 +228,7 @@ int main(void)
 	expect_keep(AP_CAT_GEM, 1, "#212 Gem keeps its model");
 	expect_keep(AP_CAT_KEY, 1, "#212 Key keeps its model");
 	expect_keep(AP_CAT_CRYSTAL, 1, "#219 crystal keeps its model");
-	expect_keep(AP_CAT_WUMPA, 1, "#222 wumpa keeps its model");
+	expect_keep(AP_CAT_WUMPA, 0, "matrix rule 4: a wumpa PACKAGE is marker material");
 	expect_keep(AP_CAT_COUNT, 0, "bit-pool sentinel is marker material");
 	expect_keep(AP_CAT_NONE, 0, "unmapped is marker material");
 
@@ -241,7 +241,7 @@ int main(void)
 	expect_model(AP_CAT_GEM,      AP_MODEL_GEM,     "Gem -> gem model");
 	expect_model(AP_CAT_KEY,      AP_MODEL_KEY,     "Key -> key model");
 	expect_model(AP_CAT_CRYSTAL,  AP_MODEL_CRYSTAL, "#219 crystal -> crystal model");
-	expect_model(AP_CAT_WUMPA,    AP_MODEL_WUMPA,   "#222 wumpa -> wumpa model");
+	expect_model(AP_CAT_WUMPA,    -1, "matrix rule 4: wumpa has no own model any more");
 	expect_model(AP_CAT_COUNT,    -1, "marker material -> no own model");
 	expect_model(AP_CAT_NONE,     -1, "marker material -> no own model");
 
@@ -254,7 +254,7 @@ int main(void)
 	expect_scale(AP_CAT_GEM,      0x1400, "gem = pad default scale");
 	expect_scale(AP_CAT_KEY,      0x1400, "key = pad default scale");
 	expect_scale(AP_CAT_CRYSTAL,  0x1400, "#219 crystal = pad default scale (in-game pass)");
-	expect_scale(AP_CAT_WUMPA,    0x1400, "#222 wumpa = pad default scale (in-game pass)");
+	expect_scale(AP_CAT_WUMPA,    0x1400, "wumpa is marker material; scale only reads as the default");
 	expect_scale(AP_CAT_COUNT,    0x1400, "marker material -> pad default scale");
 	expect_scale(AP_CAT_NONE,     0x1400, "marker material -> pad default scale");
 
@@ -291,16 +291,19 @@ int main(void)
 	expect_kind(AP_CAT_GEM, 0, 1, 1, AP_PAD_DISP_GHOST, "peer gem stays ghosted");
 	expect_kind(AP_CAT_CRYSTAL, 1, 1, 1, AP_PAD_DISP_VANILLA, "#219 own crystal, model loaded");
 	expect_kind(AP_CAT_CRYSTAL, 0, 1, 1, AP_PAD_DISP_GHOST, "#219 peer crystal, model loaded");
-	expect_kind(AP_CAT_WUMPA, 1, 1, 1, AP_PAD_DISP_VANILLA, "#222 own wumpa, model loaded");
-	expect_kind(AP_CAT_WUMPA, 0, 1, 1, AP_PAD_DISP_GHOST, "#222 peer wumpa, model loaded");
-	expect_kind(AP_CAT_WUMPA, 1, 0, 1, AP_PAD_DISP_MARKER, "#212 own wumpa, model NOT loaded");
-	expect_kind(AP_CAT_WUMPA, 0, 0, 1, AP_PAD_DISP_MARKER, "#212 peer wumpa, model NOT loaded");
+	// Matrix rule 4 has no local/non-local axis and no residency axis: a wumpa
+	// package is the marker in all four combinations. The first two rows are the
+	// ones that changed -- they used to be VANILLA and GHOST.
+	expect_kind(AP_CAT_WUMPA, 1, 1, 1, AP_PAD_DISP_MARKER, "rule 4: own wumpa is the marker even where the fruit is loaded");
+	expect_kind(AP_CAT_WUMPA, 0, 1, 1, AP_PAD_DISP_MARKER, "rule 4: a peer wumpa is the marker, NOT a ghost");
+	expect_kind(AP_CAT_WUMPA, 1, 0, 1, AP_PAD_DISP_MARKER, "rule 4: own wumpa, fruit not loaded");
+	expect_kind(AP_CAT_WUMPA, 0, 0, 1, AP_PAD_DISP_MARKER, "rule 4: peer wumpa, fruit not loaded");
 	expect_kind(AP_CAT_CRYSTAL, 1, 0, 1, AP_PAD_DISP_MARKER, "#212 own crystal, model NOT loaded");
 	expect_kind(AP_CAT_TROPHY, 1, 0, 1, AP_PAD_DISP_MARKER, "own trophy, model NOT loaded");
 	expect_kind(AP_CAT_NONE, 1, 1, 1, AP_PAD_DISP_MARKER, "marker material is always the marker");
 	expect_kind(AP_CAT_NONE, 0, 1, 1, AP_PAD_DISP_MARKER, "#212 group 3 draws no own/peer line");
 	expect_kind(AP_CAT_NONE, 1, 1, 0, AP_PAD_DISP_NONE, "no marker model parked -> placeholder");
-	expect_kind(AP_CAT_WUMPA, 1, 0, 0, AP_PAD_DISP_NONE, "no model, no marker -> placeholder");
+	expect_kind(AP_CAT_WUMPA, 1, 0, 0, AP_PAD_DISP_NONE, "no marker parked -> placeholder");
 	// The fallback must never hand a surface a marker it cannot draw either: with
 	// the marker unavailable the answer is the placeholder, never a model-keeping
 	// presentation whose model is missing.
@@ -325,8 +328,8 @@ int main(void)
 	                "ap_item_type_colors = 0 -> the one greyish white");
 	expect_pad_tint(AP_CAT_WUMPA, 1, 0, 0, 0, 0x0d0d0c80,
 	                "uniform mode covers the fallback marker too");
-	expect_pad_tint(AP_CAT_WUMPA, 1, 1, 0, 1, 0,
-	                "#222 own wumpa as a fruit keeps the model's own colours");
+	expect_pad_tint(AP_CAT_WUMPA, 1, 1, 0, 1, 0x040e8e00,
+	                "rule 4: an own wumpa is cyan marker even where the fruit IS loaded");
 	expect_pad_tint(AP_CAT_CRYSTAL, 1, 1, 0, 1, 0x0d22fff0,
 	                "#219 own crystal keeps the OG purple");
 	expect_pad_tint(AP_CAT_SAPPHIRE, 1, 1, 0, 1, 0x020a5ff0, "own sapphire relic blue");
@@ -354,7 +357,7 @@ int main(void)
 	expect_pad_tint(AP_CAT_TROPHY, 1, 0, AP_ITEM_FLAG_PROGRESSION, 1, 0x0c088f00,
 	                "a fallen-back trophy still takes its item's class");
 	expect_pad_tint(AP_CAT_WUMPA, 1, 0, AP_ITEM_FLAG_USEFUL, 1, 0x05078e00,
-	                "a fallen-back wumpa still takes its item's class");
+	                "a wumpa marker still takes its item's class");
 
 	// ── The ruling, end to end from real item ids ──
 	// Every CTR progression item presents as the purple crystal where the crystal
@@ -443,6 +446,143 @@ int main(void)
 		       zero ? "FAIL" : "ok");
 		if (zero)
 			g_failures++;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// THE WARP-PAD GLOW MATRIX (Stef, 2026-08-13, binding). One block that walks
+	// all four rules, so a future edit that satisfies some other reading of the
+	// display design fails here rather than in game. Every colour is pinned as the
+	// exact packed value; the near-black invariant above covers the marker rows.
+	// ─────────────────────────────────────────────────────────────────────────
+	{
+		// Rule 1: LOCAL CTR base-game -> original model, fully visible.
+		// "Fully visible" is the VANILLA kind: it is GHOST that makes a slot
+		// translucent, so asserting the kind IS asserting the opacity.
+		expect_item_display(AP_ITEM_BASE + 0, 1, 1, AP_ITEM_FLAG_PROGRESSION, 1,
+		                    AP_MODEL_TROPHY, 0,
+		                    "rule 1: own Trophy -> original model, untinted");
+		expect_item_display(AP_ITEM_BASE + 14, 1, 1, AP_ITEM_FLAG_PROGRESSION, 1,
+		                    AP_MODEL_KEY, 0,
+		                    "rule 1: own Key -> original model");
+		expect_item_display(AP_ITEM_BASE + 9, 1, 1, AP_ITEM_FLAG_PROGRESSION, 1,
+		                    AP_MODEL_GEM, 0,
+		                    "rule 1: own Gem -> original model");
+		expect_kind(AP_CAT_TROPHY, 1, 1, 1, AP_PAD_DISP_VANILLA,
+		            "rule 1: local base-game is never translucent");
+
+		// Stef's confirmed consequence 1: base-game PROGRESSION stays on its
+		// original model. These five carry the progression flag and are the exact
+		// rows that would turn into crystals under the superseded 2026-08-12
+		// reading, so this is the assertion that pins the ruling that replaced it.
+		expect_cat(AP_ITEM_BASE + 0,  AP_CAT_TROPHY,   "consequence 1: Trophy is NOT a crystal");
+		expect_cat(AP_ITEM_BASE + 1,  AP_CAT_SAPPHIRE, "consequence 1: Relic is NOT a crystal");
+		expect_cat(AP_ITEM_BASE + 4,  AP_CAT_TOKEN,    "consequence 1: Token is NOT a crystal");
+		expect_cat(AP_ITEM_BASE + 9,  AP_CAT_GEM,      "consequence 1: Gem is NOT a crystal");
+		expect_cat(AP_ITEM_BASE + 14, AP_CAT_KEY,      "consequence 1: Key is NOT a crystal");
+
+		// Rule 2: NON-LOCAL CTR base-game -> original model, TRANSLUCENT. The
+		// ghost path requires tint 0 (the ghost writer reads its mask colour from a
+		// scratchpad word only refreshed on the colorRGBA == 0 branch), so the 0 in
+		// these rows is a correctness constraint, not a look.
+		expect_item_display(AP_ITEM_BASE + 0, 0, 1, AP_ITEM_FLAG_PROGRESSION, 1,
+		                    AP_MODEL_TROPHY, 0,
+		                    "rule 2: a peer's Trophy -> same model, ghosted");
+		expect_kind(AP_CAT_KEY, 0, 1, 1, AP_PAD_DISP_GHOST,
+		            "rule 2: non-local base-game IS translucent");
+
+		// Rule 3: CTR non-base-game progression -> the purple crystal; local
+		// visible, non-local translucent. The crystal is drawable on every surface
+		// now (ap_crystal_model.c parks a stand-in wherever the level did not load
+		// the retail one), which is why the drawable-1 rows are the real ones and
+		// the drawable-0 fallback rows above are the defence in depth.
+		expect_item_display(AP_ITEM_BASE + AP_CAPABILITY_ITEM_FIRST_INDEX, 1, 1,
+		                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0x0d22fff0,
+		                    "rule 3: own capability -> purple crystal, fully visible");
+		expect_item_display(AP_ITEM_BASE + AP_CAPABILITY_ITEM_FIRST_INDEX, 0, 1,
+		                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0,
+		                    "rule 3: a peer's capability -> translucent crystal");
+		expect_item_display(AP_ITEM_BASE + AP_CHARACTER_ITEM_FIRST_INDEX, 1, 1,
+		                    AP_ITEM_FLAG_USEFUL, 1, AP_MODEL_CRYSTAL, 0x0d22fff0,
+		                    "rule 3: own character unlock -> purple crystal");
+
+		// Rule 4: everything else -> the AP logo, NEVER translucent, coloured by
+		// the option or grey-white. Stef's confirmed consequence 2 is the
+		// never-translucent half, and it is worth walking exhaustively because it
+		// is a claim about a NEGATIVE: no category that reaches the marker may ever
+		// come back GHOST, for either ownership.
+		{
+			int c;
+			int ghosted = 0;
+
+			for (c = 0; c <= (int)AP_CAT_NONE; c++)
+			{
+				if (AP_RewardKeepsModel((AP_ItemCat)c))
+					continue;
+				if (AP_RewardPresentation((AP_ItemCat)c, 0, 1, 1) == AP_PAD_DISP_GHOST ||
+				    AP_RewardPresentation((AP_ItemCat)c, 0, 0, 1) == AP_PAD_DISP_GHOST ||
+				    AP_RewardPresentation((AP_ItemCat)c, 1, 1, 1) == AP_PAD_DISP_GHOST ||
+				    AP_RewardPresentation((AP_ItemCat)c, 1, 0, 1) == AP_PAD_DISP_GHOST)
+					ghosted = 1;
+			}
+
+			printf("%-4s consequence 2: the AP logo is NEVER translucent, any category, either owner\n",
+			       ghosted ? "FAIL" : "ok");
+			if (ghosted)
+				g_failures++;
+		}
+
+		// Consequence 2's other half: the logo's ONLY variation is type colour vs
+		// grey-white. Resolve the whole presentation for both owners rather than
+		// calling the tint helper twice -- the helper takes no ownership argument,
+		// so comparing it against itself would assert nothing. The claim under test
+		// is that OWNERSHIP CANNOT REACH THE COLOUR AT ALL: both owners land on the
+		// marker and both markers resolve to the same value.
+		{
+			unsigned f;
+			int colors;
+			int split = 0;
+
+			for (colors = 0; colors <= 1; colors++)
+				for (f = 0; f < 8; f++)
+				{
+					int ownKind = AP_RewardPresentation(AP_CAT_NONE, 1, 1, 1);
+					int peerKind = AP_RewardPresentation(AP_CAT_NONE, 0, 1, 1);
+					int own = AP_RewardPadTint(ownKind, AP_CAT_NONE, f, colors);
+					int peer = AP_RewardPadTint(peerKind, AP_CAT_NONE, f, colors);
+
+					if (ownKind != AP_PAD_DISP_MARKER || peerKind != AP_PAD_DISP_MARKER)
+						split = 1;
+					if (own != peer)
+						split = 1;
+					// And the OFF mode really is one single colour, not a palette.
+					if (!colors && own != AP_TINT_UNIFORM)
+						split = 1;
+					// While ON gives the class colour, so the two modes are genuinely
+					// different answers and not an accidentally-constant tint.
+					if (colors && own != AP_ClassTint(f))
+						split = 1;
+				}
+
+			printf("%-4s consequence 2: the logo's only variation is type colour vs grey-white\n",
+			       split ? "FAIL" : "ok");
+			if (split)
+				g_failures++;
+		}
+
+		// Rule 4, the concrete rows a player meets: a trap keeps its salmon
+		// warning, a wumpa package its filler cyan, and neither becomes a crystal.
+		expect_item_display(AP_ITEM_BASE + 16, 1, 1, AP_ITEM_FLAG_TRAP, 1,
+		                    WANT_MARKER_MODEL, 0x0ff80600,
+		                    "rule 4: own trap -> salmon AP logo, never a crystal");
+		expect_item_display(AP_ITEM_BASE + 15, 1, 1, 0, 1,
+		                    WANT_MARKER_MODEL, 0x040e8e00,
+		                    "rule 4: own Wumpa package -> cyan AP logo, not the fruit");
+		expect_item_display(AP_ITEM_BASE + 15, 0, 1, 0, 1,
+		                    WANT_MARKER_MODEL, 0x040e8e00,
+		                    "rule 4: a peer's Wumpa package -> the same cyan logo, undimmed");
+		expect_item_display(AP_ITEM_BASE + 16, 1, 1, AP_ITEM_FLAG_TRAP, 0,
+		                    WANT_MARKER_MODEL, 0x0d0d0c80,
+		                    "rule 4: colours off -> the one greyish white");
 	}
 
 	printf("\n%s\n", g_failures ? "FAILURES PRESENT" : "all assertions passed");

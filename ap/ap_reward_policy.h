@@ -8,6 +8,33 @@
 // or the network client. The production resolver in ap_hooks.c consumes exactly
 // these functions, never a second copy of the policy.
 //
+// ── THE WARP-PAD GLOW MATRIX (Stef, 2026-08-13, binding) ──
+//
+// The ruling of record for what a warp-pad glow slot shows. It replaces every
+// earlier single-model reading, including the 2026-08-12 "all CTR progression is
+// a crystal" one. Four axes: CTR vs non-CTR, local vs non-local, base-game vs
+// non-base-game, progression vs other.
+//
+//   1. LOCAL CTR base-game items      -> the original model, fully visible.
+//   2. NON-LOCAL CTR base-game items  -> the original model, TRANSLUCENT.
+//   3. CTR NON-base-game PROGRESSION  -> the purple crystal; local fully
+//                                        visible, non-local translucent.
+//   4. Everything else                -> the Archipelago logo, NEVER
+//                                        translucent, coloured per the #48
+//                                        ap_item_type_colors option or greyish
+//                                        white when that option is off.
+//
+// Two consequences Stef confirmed explicitly, both of which this header encodes:
+//
+//   - base-game PROGRESSION (trophies, relics, gems, keys, tokens) renders as
+//     the ORIGINAL models, not as crystals. Crystals are exclusively for
+//     non-base-game progression: capability chains, character unlocks, and the
+//     other CTR progression families with no vanilla model of their own;
+//   - the AP logo's ONLY variation is type colour vs grey-white. It is never
+//     dimmed for being non-local. Rule 4 has no local/non-local axis at all,
+//     which is why AP_RewardPresentation returns MARKER for marker material
+//     regardless of ownership -- the one place that would otherwise ghost it.
+//
 // Compiled ONLY when CTR_AP is defined, like the rest of ap/.
 
 #ifdef CTR_AP
@@ -20,20 +47,28 @@
 // ap_hooks.c static-asserts each one against the engine constant so the mirror
 // can never drift.
 #define AP_MODEL_CRYSTAL 0x60 // STATIC_CRYSTAL
-#define AP_MODEL_WUMPA   0x02 // PU_WUMPA_FRUIT
 #define AP_MODEL_TROPHY  0x62 // STATIC_TROPHY
 #define AP_MODEL_RELIC   0x61 // STATIC_RELIC
 #define AP_MODEL_TOKEN   0x7d // STATIC_TOKEN
 #define AP_MODEL_GEM     0x5f // STATIC_GEM
 #define AP_MODEL_KEY     0x63 // STATIC_KEY
 
-// 1 when a category KEEPS its own model -- an OG CTR reward (trophy / relic /
-// token / gem / key), a CTR progression crystal (every CTR progression family
-// with no vanilla model of its own -- see AP_ItemCategory for the list), or a
-// Wumpa Fruit
-// package (#222). These are the categories the local/peer VANILLA/GHOST split
-// applies to. 0 = marker material (everything else). This is THE one testable
-// category decision every model-based reward surface consumes.
+// 1 when a category KEEPS a model of its own -- matrix rules 1-3. That is the
+// base-game pad rewards (trophy / relic / token / gem / key, rules 1-2) and the
+// CTR non-base-game progression crystal (rule 3; see AP_ItemCategory for the
+// families). These are exactly the categories the local/peer VANILLA/GHOST split
+// applies to. 0 = Archipelago-logo material, matrix rule 4.
+//
+// This is THE one testable category decision every model-based reward surface
+// consumes.
+//
+// AP_CAT_WUMPA IS RULE 4, and the reasoning is worth keeping because #222 spent a
+// commit on the other answer. A Wumpa Fruit PACKAGE is an Archipelago item -- a
+// quantity bundle the multiworld invented -- not one of the five rewards a
+// vanilla warp pad can hold, so it is not base-game under rule 1/2; and it is
+// filler, so it is not rule 3 either. Rule 4 is what is left, and it is also the
+// answer that retires the original #212 near-black defect at its root: the fruit
+// model's absence from the hub was the residency hole that produced it.
 static inline int AP_RewardKeepsModel(AP_ItemCat cat)
 {
 	switch (cat)
@@ -46,8 +81,8 @@ static inline int AP_RewardKeepsModel(AP_ItemCat cat)
 	case AP_CAT_GEM:
 	case AP_CAT_KEY:
 	case AP_CAT_CRYSTAL:
-	case AP_CAT_WUMPA:
 		return 1;
+	case AP_CAT_WUMPA:
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
 	default:
@@ -70,7 +105,7 @@ static inline int AP_RewardModelForCat(AP_ItemCat cat)
 	case AP_CAT_GEM:      return AP_MODEL_GEM;
 	case AP_CAT_KEY:      return AP_MODEL_KEY;
 	case AP_CAT_CRYSTAL:  return AP_MODEL_CRYSTAL;
-	case AP_CAT_WUMPA:    return AP_MODEL_WUMPA;
+	case AP_CAT_WUMPA:
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
 	default:              return -1;
@@ -99,6 +134,9 @@ static inline int AP_RewardScaleForCat(AP_ItemCat cat)
 	case AP_CAT_GEM:
 	case AP_CAT_KEY:
 	case AP_CAT_CRYSTAL:
+	// AP_CAT_WUMPA is marker material since the glow matrix, so it only ever
+	// reaches this arm as "the default"; it stays listed to keep the switch
+	// exhaustive, not because the value carries meaning for it.
 	case AP_CAT_WUMPA:
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
@@ -225,9 +263,9 @@ static inline int AP_MarkerTintForFlags(unsigned flags, int typeColorsEnabled)
 // hue, and it is the right colour on the merits, since the ruling that put these
 // items on the crystal is precisely that they ARE CTR progression.
 //
-// Only the crystal is claimed here. A WUMPA package that falls back is filler,
-// and the class tint already answers cyan for it -- the #212 case this policy
-// was written for -- so it keeps taking the class answer.
+// Only the crystal is claimed here, and since the glow matrix it is the only
+// category that CAN reach this with a kept category at all: everything else that
+// wears a marker is rule 4 and arrives with AP_CAT_NONE, taking the class answer.
 //
 // The seed's surprise toggle still wins: a per-category colour IS an item-type
 // leak, which is exactly what ap_item_type_colors = 0 exists to turn off.
@@ -259,11 +297,13 @@ static inline int AP_MarkerFallbackTint(AP_ItemCat keptCat, unsigned flags,
 //   modelDrawable   1 when the category's own model can be drawn on THIS surface
 //                   right now (see AP_RewardModelForCat + the caller's residency
 //                   check). gGT->modelPtr[] is refilled per level, so a category
-//                   model that exists in the engine is not necessarily loaded
-//                   here: no model pack carries PU_WUMPA_FRUIT (#222), and the
-//                   adventure pack behind the arenas / cutscenes / garage carries
-//                   no crystal (#219) -- see the residency note in ap_hooks.c for
-//                   which pack each surface runs on;
+//                   model that exists in the engine is not automatically loaded
+//                   here. Of the models this policy can name, the crystal is now
+//                   made resident on every surface by ap_crystal_model.c, so in
+//                   practice only the base-game rewards can answer 0 -- but the
+//                   parameter stays, because "the surface can draw it" is the
+//                   question a display resolver has to be able to ask at all
+//                   (Lessons Learned §24);
 //   markerAvailable 1 when the Archipelago-logo marker model is parked.
 //
 // A model-keeping category whose model is NOT drawable falls back to the marker
@@ -329,11 +369,11 @@ static inline int AP_RewardPadTint(int kind, AP_ItemCat cat, unsigned flags,
 	case AP_CAT_WUMPA:
 	case AP_CAT_NONE:
 	default:
-		// Own gem / trophy / token / key / wumpa -> keep the natural colour path
-		// the glow switch already applies per model (gem-cup colour, untinted
-		// trophy, token group colour, golden key, the fruit's own colours). Own
-		// filler and traps no longer reach here at all: they are marker items now,
-		// handled above.
+		// Own gem / trophy / token / key -> keep the natural colour path the glow
+		// switch already applies per model (gem-cup colour, untinted trophy, token
+		// group colour, golden key). That is matrix rule 1: a local base-game item
+		// renders as its original, untouched. Own filler, traps and Wumpa packages
+		// do not reach here at all -- they are rule 4, handled above.
 		return 0;
 	}
 }

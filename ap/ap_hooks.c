@@ -19,6 +19,7 @@
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
+#include "ap_crystal_model.h" // the stand-in crystal for CTR progression rewards (#219)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 
@@ -26,7 +27,6 @@
 // so the out-of-engine test harness can include it alone. Pin each one to the
 // engine's MODEL_ID enum here so the mirror can never silently drift.
 CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
-CTR_STATIC_ASSERT(AP_MODEL_WUMPA   == PU_WUMPA_FRUIT);
 CTR_STATIC_ASSERT(AP_MODEL_TROPHY  == STATIC_TROPHY);
 CTR_STATIC_ASSERT(AP_MODEL_RELIC   == STATIC_RELIC);
 CTR_STATIC_ASSERT(AP_MODEL_TOKEN   == STATIC_TOKEN);
@@ -360,28 +360,38 @@ static int AP_ClassFontColor(unsigned flags)
 // gGT->modelPtr[] is rebuilt on every load: LibraryOfModels_Clear wipes it, the
 // driver MPK's global model list goes in first (LOAD_Hub.c:68-81 ->
 // LOAD_ModelPtrs.c:25-28), then the level's own models on top (LOAD_Hub.c:95).
-// So what is drawable depends on WHICH PACK the surface runs on, and the packs
-// disagree:
+// So residency is a property of the LEVEL, and this function asks the level.
 //
-//   - the adventure HUB runs on the 1P arcade pack (BI_1PARCADEPACK +
-//     characterID, LOAD_Assets.c:164 -- the hub takes no other branch there).
-//     That pack's model list carries gem / CRYSTAL / relic / trophy / key /
-//     token, so a #219 capability reward IS drawable on a hub warp pad;
-//   - the ARENAS, cutscenes, credits and the garage run on the adventure pack
-//     (BI_ADVENTUREPACK + characterID, LOAD_Assets.c:119-128), whose list has
-//     the same set MINUS the crystal -- so the #221 ceremony prop keeps its
-//     documented vanilla-token fallback there;
-//   - NO pack carries PU_WUMPA_FRUIT. That model comes from a track's own LEV,
-//     which is why an own Wumpa Fruit on a hub pad has no model of its own
-//     (#222) and falls back to the marker (#212).
+// It deliberately does not reason about which asset pack a surface runs on. An
+// earlier revision of this comment did, claiming the adventure hub runs the 1P
+// arcade pack and therefore carries the crystal. That was wrong twice over, and
+// the second way is the instructive one:
 //
-// Read out of a retail NTSC-U BIGFILE.BIG rather than assumed: each pack's
-// NULL-terminated Model* list at ptrMPK+4 was walked directly. An earlier
-// revision of this comment claimed the hub had no crystal either; it does.
+//   - wrong at source. A hub level sets ADVENTURE_ARENA in load stage 0
+//     (LOAD_TenStages.c:161-166), so LOAD_DriverMPK takes the BI_ADVENTUREPACK
+//     branch at LOAD_Assets.c:118-130 and never reaches the BI_1PARCADEPACK
+//     line, which is the plain-1P-race branch;
+//   - wrong as a KIND of claim. Even stated correctly, "pack P contains model M"
+//     is a fact about retail asset data that no build of this repo can check and
+//     no test can pin. It was argued from BIGFILE walks whose decoders disagree
+//     with each other, and the version of it that shipped cost Stef an in-game
+//     gate (2026-08-12: capability rewards showing fallback bars on a hub pad).
 //
-// A slot told to show a model that is not resident would keep the model it
-// already had while being coloured as the reward it cannot show -- the #212
-// near-black marker.
+// So the two models this policy can ask for no longer depend on the answer:
+//
+//   - the CRYSTAL is made resident rather than assumed. ap_crystal_model.c parks
+//     a stand-in gem of this project's own in the crystal slot on any frame where
+//     the level did not fill it, so AP_MODEL_CRYSTAL is drawable everywhere. Where
+//     the retail crystal IS loaded it keeps the slot and draws as itself;
+//   - PU_WUMPA_FRUIT is no longer asked for at all. Under Stef's warp-pad glow
+//     matrix (2026-08-13) a Wumpa Fruit package is not a base-game pad reward and
+//     not CTR progression, so it is Archipelago-logo material like every other
+//     AP-invented item -- see AP_RewardKeepsModel.
+//
+// The residency test itself stays, because it is what keeps model and colour on
+// one answer: a slot told to show a model that is not resident would keep the
+// model it already had while being coloured as the reward it cannot show, which
+// is the #212 near-black marker.
 static int AP_RewardModelDrawable(int model)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -4344,6 +4354,11 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Park the #219 stand-in crystal, but only where the level did not load the
+	// retail one. Same per-frame reason as the marker, plus one of its own: this
+	// slot IS inside LibraryOfModels_Clear's range, so every level load wipes it
+	// and the next frame decides again which crystal that surface should have.
+	AP_CrystalModel_Register(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.

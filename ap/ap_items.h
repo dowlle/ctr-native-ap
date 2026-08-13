@@ -128,7 +128,11 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	case 9: case 10: case 11: case 12: case 13:
 		return AP_CAT_GEM;   // Red/Green/Blue/Yellow/Purple Gem
 	case 14: return AP_CAT_KEY;   // Key
-	case 15: return AP_CAT_WUMPA; // Wumpa Fruit (filler)
+	// Wumpa Fruit (filler). Still its own category -- other code counts wumpa --
+	// but MARKER material for display since the glow matrix: an AP wumpa package
+	// is an invented quantity bundle, not one of the five rewards a vanilla warp
+	// pad holds, so it is rule 4. See AP_RewardKeepsModel.
+	case 15: return AP_CAT_WUMPA;
 	default:
 		// ── The CRYSTAL categories: CTR progression with no model of its own ──
 		//
