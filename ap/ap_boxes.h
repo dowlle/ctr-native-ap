@@ -66,6 +66,8 @@
 #include "ap_box_map.h" // the code block, the LevelID -> track derivation, the set builder
 
 struct GameTracker;
+struct Instance;
+struct Driver;
 
 // How close the local player's kart has to get, in LEV world units. The engine's
 // own driver hit radius is 0x40 (THREAD_DRIVER_HIT_RADIUS, namespace_Proc.h:60),
@@ -82,6 +84,18 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT);
 
 // How many AP boxes are standing on the current level. Diagnostics only.
 int AP_Boxes_LiveCount(void);
+
+// A moving weapon (bomb, missile, thrown shield) has just detonated (issue
+// #234, dispatcher task #18). Called from RB_Burst_Init (game/231/RB_Burst.c),
+// the single choke point for every moving-explosive detonation, right after
+// it derives its own blast radius -- so `radiusSquared` here is that same
+// value, not a restated one (Lessons Learned §5). `weaponInst` gives the
+// blast's position; `attacker` is the TrackerWeapon's driverParent, "who shot
+// me". Breaks every live AP box within radius, but ONLY when `attacker` is
+// the local human player: an opponent-caused explosion (or a bot's) does not
+// break AP boxes, mirroring the existing kart-contact rule.
+void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponInst,
+                               struct Driver *attacker, int radiusSquared);
 
 #endif // CTR_AP
 #endif // AP_BOXES_H
