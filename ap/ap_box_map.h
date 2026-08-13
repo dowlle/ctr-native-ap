@@ -268,5 +268,40 @@ static inline int AP_BoxMap_ScoutCodes(int (*inWorldFn)(long, void *), void *ctx
 	return written;
 }
 
+// ── proximity, overflow-safe ─────────────────────────────────────────────────
+//
+// Is point (px,py,pz) within `radius` (LEV world units, NOT squared) of centre
+// (cx,cy,cz)? Extracted 2026-08-13 after a DeepSeek review REJECTed the box-
+// breakability (#234) candidate for exactly the bug this shape prevents: a
+// naive `dx*dx + dy*dy + dz*dz` in a 32-bit int overflows and wraps NEGATIVE
+// once a single axis delta exceeds ~46,341, and real LEV-scale positions on a
+// large track can be that far apart. A wrapped-negative distSq passes a
+// `distSq > radiusSquared` skip test, so the failure silently turns "far
+// away" into "in range" -- a wrong location check sent, not a missed one.
+//
+// The per-axis early-out below runs BEFORE any squaring, so every squared
+// term is already bounded to `radius` by the time it is computed: the sum can
+// never exceed 3 * radius * radius, which is safe in a 32-bit int for any
+// radius this project actually uses (the largest AP call site is 0x200 = 512,
+// giving a worst case of 786,432, nowhere near the ~2.1 billion int32 ceiling).
+//
+// Freestanding like the rest of this header: pure arithmetic, no engine
+// types, testable out of engine (tools/test-box-map.c).
+static inline int AP_BoxMap_WithinRadius(int px, int py, int pz, int cx, int cy, int cz, int radius)
+{
+	int dx = px - cx;
+	int dy = py - cy;
+	int dz = pz - cz;
+
+	if (dx > radius || dx < -radius)
+		return 0;
+	if (dy > radius || dy < -radius)
+		return 0;
+	if (dz > radius || dz < -radius)
+		return 0;
+
+	return (dx * dx + dy * dy + dz * dz) <= (radius * radius);
+}
+
 #endif // CTR_AP
 #endif // AP_BOX_MAP_H

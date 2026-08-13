@@ -555,7 +555,7 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 // AP_BoxOwnedByLocalPlayer, the exact same test the kart-contact path above
 // uses, so a bot-fired weapon is excluded the same way a bot's kart is.
 void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponInst,
-                               struct Driver *attacker, int radiusSquared)
+                               struct Driver *attacker, int radius)
 {
 	int i;
 
@@ -577,20 +577,18 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
 	{
 		struct Instance *inst;
-		int dx, dy, dz, distSq;
 
 		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
 			continue;
 
-		// Plain int distance, matching the convention already used for this
-		// kind of check elsewhere in the codebase (e.g. RB_GetThread_ClosestTracker,
-		// RB_Tracker.c); box and weapon positions are both real LEV-scale
-		// coordinates, never near enough to the range that would overflow.
-		dx = s_live[i].x - weaponInst->matrix.t[0];
-		dy = s_live[i].y - weaponInst->matrix.t[1];
-		dz = s_live[i].z - weaponInst->matrix.t[2];
-		distSq = dx * dx + dy * dy + dz * dz;
-		if (distSq > radiusSquared)
+		// Overflow-safe proximity (2026-08-13 REJECT fix-forward): the loop
+		// always sweeps all 15 slots regardless of distance, so a naive
+		// dx*dx+dy*dy+dz*dz in a plain int wrapped negative for a far box on a
+		// large track and broke it by mistake. AP_BoxMap_WithinRadius
+		// (ap_box_map.h) is the freestanding, harness-tested replacement.
+		if (!AP_BoxMap_WithinRadius(s_live[i].x, s_live[i].y, s_live[i].z,
+		                            weaponInst->matrix.t[0], weaponInst->matrix.t[1],
+		                            weaponInst->matrix.t[2], radius))
 			continue;
 
 		inst = AP_Spawn_Instance(s_live[i].spawn);
