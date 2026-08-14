@@ -270,7 +270,7 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 
 	// lastValid non-null but not pointing into the live mesh -> stale probe-miss
 	// pointer (see AP_LastValidInMesh). Bail before the ->checkpointIndex read that
-	// crashes, and log once per episode so the Artemis build proves WHEN it fires:
+	// crashes, and log once per episode so the build host proves WHEN it fires:
 	// load!=IDLE or gm1 & LOADING(0x40000000) => loading window; else post-birth.
 	if (!AP_LastValidInMesh(gGT, d->lastValid))
 	{

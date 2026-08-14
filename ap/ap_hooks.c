@@ -320,7 +320,7 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 // values from it: these are read on a small spinning model at PSX draw distance,
 // so they are pushed for separation rather than fidelity. Filler cyan and useful
 // slate blue are the pair most at risk of collapsing into each other, so they are
-// split hard on the green channel. Final values are Stef's in-game call.
+// split hard on the green channel. Final values are a ruling.
 #define AP_TINT_PROGRESSION AP_PACK_TINT(0xc0, 0x88, 0xf0) // plum
 #define AP_TINT_USEFUL      AP_PACK_TINT(0x50, 0x78, 0xe0) // slate blue
 #define AP_TINT_FILLER      AP_PACK_TINT(0x40, 0xe8, 0xe0) // cyan
@@ -328,7 +328,7 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 
 // #212 point 5: the ONE colour every marker wears when the seed asks for AP item
 // types to stay a surprise (ctr_options.ap_item_type_colors = 0). Greyish white,
-// Stef's stated candidate: it is the only neutral that stays neutral under the
+// The ruling candidate: it is the only neutral that stays neutral under the
 // marker's multiplicative-ish tint lerp without collapsing toward any class hue,
 // and it cannot be confused with a gem-cup gem because it is never on a gem.
 // Never modulate to 0 here (near-black bug) -- the value stays well clear of it.
@@ -374,7 +374,7 @@ static int AP_MarkerTint(unsigned flags)
 // text colouring path, so this picks fixed, always-present flat ptrColors
 // entries: purple (N_GIN_PURPLE) progression, blue (CRASH_BLUE) useful, cyan
 // (POLAR_CYAN) filler, red (CORTEX_RED) trap. The exact hues are a legibility
-// call (Stef's, in-game on Artemis): the marker tints are packed model RGBA and
+// call (a design ruling): the marker tints are packed model RGBA and
 // do not map 1:1 onto the palette.
 static int AP_ClassFontColor(unsigned flags)
 {
@@ -2311,7 +2311,7 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
 // (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
-// Stef's Deck 3P replayed trap). Dedup: persist the highest server item index
+// a Deck 3-player replayed trap). Dedup: persist the highest server item index
 // whose batch was effect-applied, per seed+slot, in ctr-ap-fxseen.txt next to
 // the exe (tab-separated: seed<TAB>slot<TAB>max). Replayed items at or below
 // the stored index still count for gates but skip their effect. Unknown index
