@@ -210,7 +210,25 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 			else
 			{
 				warppadRot = AH_WarpPad_GetSpawnPosRot(warppadPos.v);
-				VehBirth_SetBottomFromPos(&posBottom, &warppadPos);
+#ifdef CTR_AP
+				// AH_WarpPad_GetSpawnPosRot returns NULL when no pad in this hub
+				// matches gGT->prevLEV, and it does NOT write posData on that
+				// path (AH_WarpPad.c:15-22), so warppadPos would stay
+				// uninitialised stack. The rotation branch below already guards
+				// on warppadRot == NULL (VehBirth_ShouldUseStartlineInAdv); the
+				// position branch does not. Unreachable in retail -- you never
+				// load a hub from itself -- but the hub character swap
+				// (ap_charswap.c) re-requests the CURRENT hub, which makes
+				// prevLEV == levelID and hits it every time.
+				if (warppadRot == NULL)
+				{
+					VehBirth_SetStartlinePosition(d, level1, &posBottom);
+				}
+				else
+#endif
+				{
+					VehBirth_SetBottomFromPos(&posBottom, &warppadPos);
+				}
 			}
 		}
 		else
@@ -567,6 +585,16 @@ void VehBirth_SetConsts(struct Driver *driver)
 			dst[3] = (u8)(rawValue >> 24);
 		}
 	}
+
+#ifdef CTR_AP
+	// AP stat package, applied AFTER the vanilla loop over the same struct
+	// Driver offsets. Deliberately a post-pass and not a widened metaPhys table:
+	// value[] is indexed by engineID, which is also the engine-audio index
+	// (HOWL_Engine.c:147, VehBirth.c:587), so widening the class enum would
+	// change engine sound per character. No vanilla data layout is touched and
+	// the call is a no-op unless an AP package is active.
+	AP_CharSwap_ApplyStatPackage(driver);
+#endif
 
 	return;
 }
