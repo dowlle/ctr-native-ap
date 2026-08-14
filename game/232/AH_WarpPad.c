@@ -155,7 +155,7 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 	// sits between the two yaw rotations. A half-turn about X conjugates a Y
 	// rotation into its negation, so the yaws do not cancel and the marker never
 	// locks square to the camera; it just stops spinning and changes shape as you
-	// drive. Stef's verdict was "the AP logo now doesnt do any rotation".
+	// drive. The ruled verdict was "the AP logo now doesnt do any rotation".
 	//
 	// If a real billboard is ever wanted, follow the engine's OWN pattern rather
 	// than pb->rot: the locked-pad digit code a few hundred lines below faces the
@@ -1390,7 +1390,7 @@ WarpPad_AnimateOpen:
 					// own fade supplies the colour instead. This is why the tint helper
 					// already answers 0 for a ghosted slot: the two must agree.
 					//
-					// Consequence to check in game (Artemis): models that carry no useful
+					// Consequence to check in game (the test host): models that carry no useful
 					// unmodulated colour of their own -- key, gem -- ghost DARK. If that
 					// reads badly, the pre-analysed fallback is the pad token's translucency
 					// path (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT), which keeps colorRGBA but
