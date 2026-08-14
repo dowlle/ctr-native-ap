@@ -3662,6 +3662,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
 		{
 			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
+			// The Mask index is shared with the Tizi Helper (#223). This chain is
+			// first-match-wins, so the Tizi arm below can never see it; set the
+			// Tizi flag here too. Both sets are idempotent booleans -- this IS the
+			// dedupe the Tizi commit describes, made explicit.
+			if (idx == AP_TIZI_MASK_ITEM_INDEX)
+			{
+				AP_TiziReceiveMask();
+			}
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
