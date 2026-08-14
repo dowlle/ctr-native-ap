@@ -29,6 +29,8 @@ The randomization logic lives in the companion apworld, [`dowlle/ctr-archipelago
 
 Like every Archipelago game, CTR needs a YAML options file per player at generation time: install `ctr.apworld` into your Archipelago installation, use the Launcher's **Generate Template Options** to get the CTR template YAML, set your slot name and options, and hand it to whoever generates the multiworld. Only the generator needs the apworld; as a player you just need the YAML you submitted, the client setup above, and your slot name.
 
+Seeds with itemsanity turned on place AP item boxes around the tracks. There is nothing extra to install: the placement set ships inside the client, and which boxes actually stand is decided by your own slot's seed. See [Item boxes](SETUP.md#item-boxes) in the setup guide, which also covers the `ap-box-placements.json` override and the name desync it can cause.
+
 New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/).
 
 ## Building from source
