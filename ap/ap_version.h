@@ -8,6 +8,6 @@
 // version, e.g. 0.1.0-beta.6.1): the engine and the AP release move on
 // different trains. Surfaced in the window title and the startup log; update
 // this define as part of tagging a release.
-#define CTR_AP_VERSION "v0.1.5"
+#define CTR_AP_VERSION "v0.2.0-pre1"
 
 #endif // AP_VERSION_H
