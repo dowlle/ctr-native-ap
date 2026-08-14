@@ -123,10 +123,9 @@ static int AP_BoxChecked(long code, void *ctx)
 
 // Should this level's race carry AP boxes at all?
 //
-// ADVENTURE MODE ONLY, and this is a DECISION, not a ruling -- flagged in the
-// build note. The ruling says boxes appear in every race type "including relic
-// races", which is about the adventure pad modes (trophy / relic / token /
-// crystal), all of which pass here. Arcade, VS and battle do not, for two
+// ADVENTURE PAD MODES ONLY. The ruling says boxes appear in every race type
+// "including relic races", which is about the adventure pad modes (trophy /
+// relic / token / crystal). Arcade, VS and battle do not carry boxes, for two
 // reasons:
 //
 //   * logic. The apworld gives every box its track's pad-access rules for free
@@ -138,11 +137,25 @@ static int AP_BoxChecked(long code, void *ctx)
 //     AP_RACE_ARCADE for anything outside ADVENTURE_MODE (ap_hooks.c:3494-3496)
 //     and the podium fan-out fires only on an adventure trophy race.
 //
-// Boss races are adventure races on box tracks, so they are IN. Nothing is
-// gained by excluding them: it is the same track and the same location.
+// Boss races are adventure races on box tracks, so they are IN; ADVENTURE_MODE
+// alone covers them (confirmed empirically, e.g. the Oxide boss-race box hit in
+// the 2026-08-12 session log).
+//
+// RELIC_RACE was assumed to fold into ADVENTURE_MODE the same way and was NOT
+// explicitly tested here. It does not: a live session on Slide Coliseum (a
+// trial track whose primary mode IS relic races) found zero AP boxes standing
+// and zero trial-track box checks logged, confirmed root cause by Stef
+// 2026-08-12 22:36 -- this gate was the bypass. RELIC_RACE is added explicitly
+// rather than trusted to already be covered.
+//
+// TIME_TRIAL and CRYSTAL_CHALLENGE are NOT added here even though ruling #8
+// names "every race type": no report has confirmed either is actually reached
+// through a box track with the same gap, and CRYSTAL_CHALLENGE only occurs on
+// battle tracks (never a box track per AP_BoxMap_ApTrack), so it is moot in
+// practice. Extending to TIME_TRIAL needs its own confirmed report.
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
-	return (gGT->gameMode1 & ADVENTURE_MODE) != 0;
+	return (gGT->gameMode1 & (ADVENTURE_MODE | RELIC_RACE)) != 0;
 }
 
 // ── the live set ────────────────────────────────────────────────────────────

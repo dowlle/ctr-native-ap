@@ -43,13 +43,21 @@
 // through an AP box, you do not bounce off it. Vanilla crates get that from the
 // BSP hitbox, and a box is a check, not an obstacle.
 //
-// RELIC-RACE COEXISTENCE is by construction, with no engine edit. The weapon
-// crate strip (INSTANCE.c:380-427) walks the LEV's InstDef array and clears
-// DRAW_COLLISION_MASK on PU_FRUIT_CRATE / PU_RANDOM_CRATE in TIME_TRIAL and
-// RELIC_RACE. Our boxes are born through INSTANCE_Birth3D and never appear in
-// that array, so the strip cannot reach them. The same loop is the only place
-// gGT->timeCratesInLEV is incremented, and nothing here touches it, so the
-// relic clock economy is untouched.
+// RELIC-RACE COEXISTENCE with the vanilla crate strip is by construction, with
+// no engine edit. The weapon crate strip (INSTANCE.c:380-427) walks the LEV's
+// InstDef array and clears DRAW_COLLISION_MASK on PU_FRUIT_CRATE /
+// PU_RANDOM_CRATE in TIME_TRIAL and RELIC_RACE. Our boxes are born through
+// INSTANCE_Birth3D and never appear in that array, so the strip cannot reach
+// them. The same loop is the only place gGT->timeCratesInLEV is incremented,
+// and nothing here touches it, so the relic clock economy is untouched.
+//
+// That reasoning covers only ONE of the two gates a box has to clear. The
+// OTHER is AP_BoxesRaceCarriesBoxes (ap_boxes.c), which decides whether the
+// whole set builder runs at all, and it originally tested ADVENTURE_MODE
+// alone on the unverified assumption that relic races fold into it. They do
+// not: trial tracks (whose primary mode IS relic races) spawned zero boxes in
+// a live session, confirmed root cause 2026-08-12 22:36. RELIC_RACE is now
+// explicit in that gate; see the comment there.
 //
 // Compiled ONLY when CTR_AP is defined, like the rest of ap/.
 
