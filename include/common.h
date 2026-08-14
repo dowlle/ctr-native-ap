@@ -10,6 +10,7 @@
 #include <ctr_gte.h>
 #include <ctr_scratchpad.h>
 #include <prim.h>
+#include <widescreen.h>
 
 #include <game_layouts.h>
 
