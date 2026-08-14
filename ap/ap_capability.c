@@ -547,6 +547,19 @@ static int AP_CapabilityStatRankValue(const struct MetaPhys *row, int rank)
 	return v[NUM_CLASSES - 1] + (v[NUM_CLASSES - 1] - v[NUM_CLASSES - 2]);
 }
 
+// The absolute value the ladder holds at `rank` for the stat row at `offset`,
+// or -1 when the offset has no metaPhys row. Public so DISPLAY surfaces (the
+// hub picker, issue #251) can promise exactly what this module writes instead
+// of reimplementing the ladder -- the picker's vanilla-plus-delta model was
+// precisely that reimplementation drifting from the physics.
+int AP_CapabilityRankValueForOffset(int offset, int rank)
+{
+	const struct MetaPhys *row = AP_CapabilityMetaRow(offset);
+	if (row == 0)
+		return -1;
+	return AP_CapabilityStatRankValue(row, rank);
+}
+
 // Write one stat into the driver exactly the way VehBirth_SetConsts does -- by
 // the row's own offset and size -- so a u8 / s8 / s16 field lands byte-identical
 // to an engine write and no field is named twice.
