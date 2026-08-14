@@ -30,9 +30,9 @@
 //     its refusal codes are in ap_tizi_logic.h, which the host harness drives
 //     directly. See that header for why this is derived rather than tabulated.
 //
-// NOT VERIFIED IN GAME. Atlas has no disc, so the four crates this picks on the
-// real Papu's Pyramid LEV have never been observed. The rule fails closed and
-// logs its full census either way, so an Artemis pass reads one log line to
+// NOT VERIFIED IN GAME. The build host has no disc, so the four crates this
+// picks on the real Papu's Pyramid LEV have never been observed. The rule fails
+// closed and logs its full census either way, so an in-game pass reads one line to
 // confirm or refute the mapping. Until that pass runs, treat the four-box
 // identity as unverified -- the rolling testing list carries it.
 // ---------------------------------------------------------------------------

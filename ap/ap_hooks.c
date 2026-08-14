@@ -3682,18 +3682,16 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_CharacterReceive((int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX));
 		}
 
-		// Tizi Helper (#223, idx 188) and the itemsanity `Mask` weapon it needs
-		// when itemsanity is on (idx 101). Two booleans; the ruled AND lives in
-		// ap_tizi_logic.h. The Mask index is claimed here as well as by the #145
-		// itemsanity drain when that lands -- both are idempotent sets of
-		// independent flags, so the merge-up is a dedupe, not a conflict.
+		// Tizi Helper (#223, idx 188). Two booleans gate the helper; the ruled AND
+		// lives in ap_tizi_logic.h. Only the helper item is claimed here -- the
+		// `Mask` half (idx 101) is set from inside the itemsanity arm above,
+		// because that arm's 95..105 range already covers it and this chain is
+		// first-match-wins. A second `idx == AP_TIZI_MASK_ITEM_INDEX` arm used to
+		// sit here and was unreachable; it is gone rather than kept as dead code,
+		// so the Mask has exactly one claim site.
 		else if (idx == AP_TIZI_ITEM_INDEX)
 		{
 			AP_TiziReceiveHelper();
-		}
-		else if (idx == AP_TIZI_MASK_ITEM_INDEX)
-		{
-			AP_TiziReceiveMask();
 		}
 
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the

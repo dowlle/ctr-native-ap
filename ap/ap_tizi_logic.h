@@ -58,7 +58,7 @@ enum
 // letting a genuinely separate box join it.
 #define AP_TIZI_ROW_SPAN_FRACTION 64
 
-// The ruled activation gate (Stef, 2026-08-10; #223 items 3 and 4).
+// The ruled activation gate (ruled 2026-08-10; #223 items 3 and 4).
 //
 //   itemsanity off -> the helper item alone activates.
 //   itemsanity on  -> the helper item AND the separate Mask weapon item.
