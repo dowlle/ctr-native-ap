@@ -357,6 +357,21 @@ int AP_LocationCheckedByBit(int globalBit);
 // bit / not connected.
 int AP_LocationExistsByBit(int globalBit);
 
+// Itemsanity (#145): use-time check emission and receive-gated roulette.
+// The filters are local-player and active-seed safe; inactive/absent seeds and
+// nonlocal drivers receive the vanilla roll unchanged.
+// AP_ItemsanityOnUse takes the driver's own held id at the circle-press choke
+// point, never the folded fire-time weapon id. AP_ItemsanitySubstituteOwned
+// keeps vanilla's downstream item rewrites inside the received set, and never
+// re-issues Warpball or Missile x3, whose one-at-a-time and two-holder caps are
+// the rewrites it is standing inside.
+void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID);
+int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
+                            const unsigned char *table, int tableCount);
+int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
+                                 unsigned roll, const unsigned char *table,
+                                 int tableCount);
+
 // Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
 // Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant
 // answer to "does the player own this specific tier on this track". Two disjoint
