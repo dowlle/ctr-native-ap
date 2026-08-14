@@ -496,6 +496,32 @@ static int ap_cs_effectiveValue(int statIndex, int characterID)
 	int base = ap_cs_vanillaValue(statIndex, characterID);
 	if (base < 0)
 		return -1;
+	// Seed-driven progressive mode (issue #251): the physics writes ABSOLUTE
+	// ladder values (#13's ruling -- character choice is cosmetic), so the
+	// picker must promise the same rank-anchored value for every racer. The
+	// vanilla-plus-delta model below misstated exactly this case: it showed
+	// per-racer class bars the per-frame writer had already overridden. The
+	// value comes from the SAME function the writer uses, never a local
+	// restatement of the ladder. Dev fallback (no seed) keeps the old model:
+	// its per-character branch is characterID-keyed on purpose so the manual
+	// matrix stays falsifiable on screen.
+	if (ctr_cfg_active() && ap_cs_progMode != AP_CS_MODE_OFF)
+	{
+		int chain = ap_cs_progChainForStat(statIndex);
+		if (chain >= 0)
+		{
+			int rank = (ap_cs_progMode == AP_CS_MODE_PERCHAR)
+			               ? AP_CapabilityStatRankForCharacter(chain, characterID)
+			               : AP_CapabilityStatRankFor(chain);
+			int v;
+			if (rank < 0)
+				rank = 0;
+			v = AP_CapabilityRankValueForOffset(
+			    ap_cs_stats[statIndex].driverOffset, rank);
+			if (v >= 0)
+				return ap_cs_clamp(statIndex, v);
+		}
+	}
 	return ap_cs_clamp(statIndex, base + ap_cs_progDelta(statIndex, characterID) + ap_cs_editDelta(statIndex, characterID));
 }
 

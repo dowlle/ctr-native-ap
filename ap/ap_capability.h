@@ -205,6 +205,12 @@ int AP_CapabilityStatRankFor(int chain);
 // or a per-character row cannot be identified.
 int AP_CapabilityStatRankForCharacter(int chain, int characterID);
 
+// The absolute ladder value at `rank` for the stat row at driver-struct
+// `offset`, or -1 when no metaPhys row matches. For display surfaces (the hub
+// picker, issue #251): promise exactly what the per-frame writer computes,
+// never a reimplementation of the ladder.
+int AP_CapabilityRankValueForOffset(int offset, int rank);
+
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke
 // point every boost in the game passes through). Returns 0 to drop the grant
 // entirely, or 1 to let it through, having possibly rewritten *reserves and
