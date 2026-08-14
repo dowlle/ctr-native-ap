@@ -282,6 +282,11 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 	struct Instance *inst;
 	struct MetaDataMODEL *meta;
 	struct GameTracker *gGT = sdata->gGT;
+#ifdef CTR_AP
+	// The loop below walks `levInstDef` forward, so keep the base for the AP
+	// hand-off at the end (#223 needs the whole array, not the last entry).
+	struct InstDef *apLevInstDefBase = levInstDef;
+#endif
 
 	for (int i = 0; i < numInst; i++)
 	{
@@ -441,6 +446,14 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		// next InstDef
 		levInstDef++;
 	}
+
+#ifdef CTR_AP
+	// Tizi Helper (#223): hand the finished LEV instance table to the AP layer.
+	// AFTER the loop, so every entry's ptrInstance is filled in. The hook only
+	// stores the pointer and the count; the crate census it needs is built on
+	// first use, in-race, when the level's checkpoint chain is certainly up.
+	AP_TiziLevelInstances(apLevInstDefBase, numInst);
+#endif
 }
 
 
