@@ -20,13 +20,25 @@
 //                          delay; when it elapses the slot goes FIRING (effect on,
 //                          timed); when the duration elapses the slot CLEARS.
 //
-// ── The mid-race exception (RULED 2026-08-11, rulings note §5) ──
-// A trap that ARRIVES while a race is already running fires IMMEDIATELY: it
-// bypasses both the lapIndex >= 1 window and the random delay roll. Itemsanity
-// boxes (#109) deliver traps mid-race, and a trap earned by breaking a box on lap
-// 1 that then sits silent until lap 2 of some LATER race reads as a bug, not as
-// suspense. Outside a race the primed-then-next-race behaviour above is unchanged,
-// which is still every trap that arrives from a menu, a hub or a ceremony.
+// ── The mid-race rule (RULED 2026-08-13, superseding the 08-11 instant fire) ──
+// A trap that ARRIVES while a race is already running fires after a SHORT FIXED
+// DELAY (AP_TRAP_MIDRACE_DELAY_MS, ap_trap_sched.h), measured from the receipt and
+// with no lap gate. Itemsanity boxes (#109) deliver traps mid-race, and a trap
+// earned by breaking a box on lap 1 that then sits silent until lap 2 of some LATER
+// race reads as a bug, not as suspense -- so the lap deferral is not the answer.
+// Neither is the same-frame instant fire that replaced it in ed4fe2b8b: it landed
+// the effect inside the item-drain frame section and was root-caused as the
+// regression behind two live freeze/crash reports on 2026-08-12. Outside a race the
+// primed-then-next-race behaviour above is unchanged, which is still every trap
+// that arrives from a menu, a hub or a ceremony.
+//
+// ── The apply rule ──
+// Every effect is applied ONLY on a frame that is safe to mutate: on a live track,
+// level loaded, countdown observed and finished, the local driver born, and no
+// menu / cutscene / end-of-race / pause in progress. An apply that cannot proceed
+// safely WAITS for the next tick -- it is never forced through and never dropped
+// silently. Boss races are deliberately inside this window, not excluded from it.
+// ap_trap_sched.h owns the schedule; ap_traps.c owns what "safe" means here.
 //
 // The effects themselves are applied at engine call-sites: the environmental ones
 // (icy road, low gravity) scale physics scalars in VehPhysForce; the control ones
@@ -99,9 +111,12 @@ void AP_Trap_ConnectReset(void);
 // while that effect is FIRING. gGT is the live GameTracker.
 void AP_TrapTick(struct GameTracker *gGT);
 
-// Poll debug keybinds (Numpad 1..6) to test-fire traps without an AP server. Called
-// from AP_OnFrame. See ap_traps.c for the key map. No-op in a normal session
-// (the keys are not in the gameplay input map).
+// Poll debug keybinds (Numpad 1..6) to DELIVER traps without an AP server, through
+// the same AP_TrapReceive the item pipeline uses -- press one mid-race and it takes
+// the mid-race delay, press one in the hub and it primes. No key bypasses the
+// schedule any more. Called from AP_OnFrame. See ap_traps.c for the key map. No-op
+// in a normal session (the keys are not in the gameplay input map, and the whole
+// poll is dead unless ap-config.txt sets dev_keys=1).
 void AP_TrapDebugKeys(void);
 
 // Parse one ap-config.txt line for a trap test trigger (prefix "debug_trap=").
