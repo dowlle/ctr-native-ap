@@ -359,6 +359,7 @@
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_marker_model.c"
+#include "../ap/ap_box_model.c"
 #include "../ap/ap_capability.c"
 #include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"

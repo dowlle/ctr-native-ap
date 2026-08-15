@@ -5,6 +5,7 @@
 #include <stdlib.h> // rand(), same source of cosmetic spin the vanilla shatter uses
 
 #include "ap_boxes.h"
+#include "ap_box_model.h"
 #include "ap_spawn.h"   // additive model loader: the crates themselves
 #include "ap_author.h"  // the placement table (one reader, shared with #182)
 #include "ap_seedcfg.h" // ctr_cfg_active(): is a seed loaded at all
@@ -166,16 +167,13 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 // crate is the intended endgame look anyway, so the diagnostic and the design
 // are the same thing. Do NOT re-promote STATIC_AP here.
 //
-// Returns -1 when the model is not in this level's model list, which is a real
-// possibility worth logging rather than assuming: the crate is stripped of
-// DRAW_COLLISION_MASK in relic and time-trial modes (INSTANCE.c:384-397) but
-// that only touches instance flags, so the MODEL should still be resident. If
-// this ever logs, the relic-race half of the ruling has a genuine asset problem.
+// Most levels use the resident retail model. Trial tracks such as Turbo Track
+// do not carry it, so AP_BoxModel_Ensure installs the small AP-owned fallback
+// into that otherwise-null per-level slot. The fallback is not STATIC_AP: the
+// many-instance AP-logo path previously made track floors disappear.
 static int AP_BoxModel(struct GameTracker *gGT)
 {
-	if (gGT->modelPtr[PU_RANDOM_CRATE] != 0)
-		return PU_RANDOM_CRATE;
-	return -1;
+	return AP_BoxModel_Ensure(gGT);
 }
 
 static void AP_BoxesForget(void)
@@ -264,7 +262,7 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 			char msg[112];
 			s_modelWarned = 1;
 			snprintf(msg, sizeof msg,
-			         "[AP BOX] level %d has no PU_RANDOM_CRATE model; %d box(es) cannot be drawn\n",
+			         "[AP BOX] level %d could not register a crate model; %d box(es) cannot be drawn\n",
 			         s_level, s_liveCount);
 			AP_LogLine(msg);
 		}
