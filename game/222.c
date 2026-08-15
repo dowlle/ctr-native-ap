@@ -99,9 +99,14 @@ void AA_EndEvent_DrawMenu(void)
 	// For trophy race, check 1st place
 	b32 didWin = (driver->driverRank == 0);
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
+#ifdef CTR_AP
+	if (ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2)
+		didEarnCtrToken = AP_LetterTokenEarned(
+			gGT->levelID, didWin, driver->PickupLetterHUD.numCollected);
+#endif
 
 	// If adventure mode
-	if ((gGT->gameMode1 & ADVENTURE_MODE) != 0)
+	if ((gGT->gameMode1 & ADVENTURE_MODE) != 0 && (gGT->gameMode2 & TOKEN_RACE) != 0)
 	{
 		if (didEarnCtrToken)
 		{

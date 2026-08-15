@@ -124,6 +124,19 @@ void AP_SeatLocalChoice(struct AP_SeatState *s, unsigned rev);
 // deferral is outstanding, which is the per-frame cost of holding one.
 int AP_SeatIdle(const struct AP_SeatState *s, unsigned rev);
 
+// Which racer is authoritative RIGHT NOW, or AP_SEAT_NONE when nothing sane is.
+//
+// Stateless: it reads the same inputs AP_SeatStep does and applies the same
+// precedence, but keeps no bookkeeping and consumes no revision, so a caller
+// that is not the per-frame seat driver can ask the question without disturbing
+// a deferral. The adventure-start garage gate is that caller -- it has to know
+// the answer at a moment that is not a seat frame at all.
+//
+// `busy` and `hubReady` are ignored: those govern WHEN a seat may be applied,
+// not WHICH racer is right, and the garage is committing a value rather than
+// changing one under a live driver.
+int AP_SeatResolve(const struct AP_SeatInput *in);
+
 // Advance one frame. Never touches game state itself: it returns what to do.
 void AP_SeatStep(struct AP_SeatState *s, const struct AP_SeatInput *in,
                  struct AP_SeatAction *out);

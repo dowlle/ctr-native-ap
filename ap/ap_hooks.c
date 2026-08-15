@@ -21,6 +21,11 @@
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
+#include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
+#include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
+#include "ap_author.h"     // in-game box placement author mode (#182)
+#include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
+#include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -28,6 +33,11 @@
 // effect. Kept next to AP_ITEM_BASE/AP_ITEM_INDEX_COUNT (ap_items.h) this depends
 // on; if the apworld's item table order changes, update both together.
 #define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
+
+// Frozen 0.2.0 datapackage append: weapon items occupy indexes 95..105 in held
+// ID order (0..4, 6..11). Rebuilt from ReceivedItems on every fresh connect.
+#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
 
 // ==============================================================
 // Archipelago integration. Parts:
@@ -321,7 +331,7 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 // values from it: these are read on a small spinning model at PSX draw distance,
 // so they are pushed for separation rather than fidelity. Filler cyan and useful
 // slate blue are the pair most at risk of collapsing into each other, so they are
-// split hard on the green channel. Final values are Stef's in-game call.
+// split hard on the green channel. Final values are a ruling.
 #define AP_TINT_PROGRESSION AP_PACK_TINT(0xc0, 0x88, 0xf0) // plum
 #define AP_TINT_USEFUL      AP_PACK_TINT(0x50, 0x78, 0xe0) // slate blue
 #define AP_TINT_FILLER      AP_PACK_TINT(0x40, 0xe8, 0xe0) // cyan
@@ -329,7 +339,7 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 
 // #212 point 5: the ONE colour every marker wears when the seed asks for AP item
 // types to stay a surprise (ctr_options.ap_item_type_colors = 0). Greyish white,
-// Stef's stated candidate: it is the only neutral that stays neutral under the
+// The ruling candidate: it is the only neutral that stays neutral under the
 // marker's multiplicative-ish tint lerp without collapsing toward any class hue,
 // and it cannot be confused with a gem-cup gem because it is never on a gem.
 // Never modulate to 0 here (near-black bug) -- the value stays well clear of it.
@@ -375,7 +385,7 @@ static int AP_MarkerTint(unsigned flags)
 // text colouring path, so this picks fixed, always-present flat ptrColors
 // entries: purple (N_GIN_PURPLE) progression, blue (CRASH_BLUE) useful, cyan
 // (POLAR_CYAN) filler, red (CORTEX_RED) trap. The exact hues are a legibility
-// call (Stef's, in-game on Artemis): the marker tints are packed model RGBA and
+// call (a design ruling): the marker tints are packed model RGBA and
 // do not map 1:1 onto the palette.
 static int AP_ClassFontColor(unsigned flags)
 {
@@ -836,6 +846,115 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
+// ── §6: boxes behind a pad ──────────────────────────────────────────────────
+//
+// RULED 2026-08-11 (rulings note §6). AP_PadUncollectedGlowBits enumerates tier
+// bits and podium rungs, and neither of those is a box: itemsanity box locations
+// (#109) carry no AdvProgress bit at all. So a trophy win with boxes still
+// standing Re-locked the pad and stranded them until stage 2, and a track whose
+// tier bits were all checked went Done, which HARD-LOCKS the pad and made those
+// boxes unreachable for the rest of the seed.
+//
+// This is counted, not enumerated into outBits, and deliberately so: the glow
+// cycle shows REWARD placeholders (trophy / relic / token models) and a box has
+// no placeholder to show. The count feeds AP_PadState's lifecycle decisions only;
+// the glow itself is byte-identical.
+//
+// THE PREDICATE IS THE SPAWN PREDICATE. A box counts as uncollected only if it
+// could actually be broken: it needs GEOMETRY (a placement at that slot on that
+// level) and a LIVE location (in this slot's seed, per §7) that is not yet
+// checked. Counting bare locations instead would let a seed that created more box
+// locations than the placement set covers keep a pad green forever.
+static int AP_PadTrackBoxSlots(int levelID)
+{
+	// Per-level placement counts, rebuilt only when the placement table changes
+	// (a load, or an author-mode drop/undo). AP_PadState runs per pad per frame,
+	// so re-walking 241..512 placements for every pad every frame would be real
+	// work for a number that changes about twice a session.
+	static int s_slots[AP_BOX_TRACK_COUNT];
+	static int s_gen = -1;
+
+	int gen;
+
+	if (levelID < 0 || levelID >= AP_BOX_TRACK_COUNT)
+		return 0;
+
+	AP_Author_EnsureLoaded();
+	gen = AP_Author_PlacementGeneration();
+	if (gen != s_gen)
+	{
+		int i, n = AP_Author_PlacementCount();
+
+		for (i = 0; i < AP_BOX_TRACK_COUNT; i++)
+			s_slots[i] = 0;
+
+		for (i = 0; i < n; i++)
+		{
+			int lvl;
+			if (!AP_Author_PlacementGet(i, &lvl, 0, 0, 0, 0))
+				continue;
+			if (lvl < 0 || lvl >= AP_BOX_TRACK_COUNT)
+				continue;
+			if (s_slots[lvl] >= AP_BOX_SLOTS_PER_TRACK)
+				continue; // past the frozen ceiling: no name, never spawns
+			s_slots[lvl]++;
+		}
+		s_gen = gen;
+	}
+
+	return s_slots[levelID];
+}
+
+// Server truth, in the shape AP_BoxMap_CountStanding wants. ap_boxes.c holds its
+// own pair for the spawn set; these two ask the same two questions of the same
+// two sets, which is what keeps the pad's idea of "still standing" identical to
+// the track's.
+static int AP_PadBoxLive(long code, void *ctx)
+{
+	(void)ctx;
+	return ap_net_location_exists((long long)code); // §7: live in this slot's seed
+}
+
+static int AP_PadBoxChecked(long code, void *ctx)
+{
+	(void)ctx;
+	return ap_net_location_checked((long long)code); // already broken
+}
+
+static int AP_PadTrackBoxesLeft(int levelID)
+{
+	// The count itself is AP_BoxMap_CountStanding (freestanding, and exercised by
+	// tools/test-box-map.c); this only supplies the two server-truth predicates,
+	// which are the SAME pair the spawn set is built from -- §7 liveness and the
+	// checked set. One rule, one implementation, so the pad and the track can
+	// never disagree about what is still standing.
+	return AP_BoxMap_CountStanding(levelID, AP_PadTrackBoxSlots(levelID),
+	                               AP_PadBoxLive, AP_PadBoxChecked, 0);
+}
+
+// How many breakable boxes still stand behind this pad's destination. A cup pad
+// aggregates its four legs, exactly as AP_PadUncollectedGlowBits does for rungs
+// and for the same reason: a cup leg is not independently raceable from the hub,
+// so a Done cup pad would strand its legs' boxes permanently.
+static int AP_PadUncollectedBoxCount(int destLevelID)
+{
+	int leg, n = 0;
+
+	if (!ctr_cfg_active())
+		return 0;
+
+	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
+		return AP_PadTrackBoxesLeft(destLevelID);
+
+	if (destLevelID >= 100 && destLevelID < 105)
+	{
+		int cup = destLevelID - 100;
+		for (leg = 0; leg < 4; leg++)
+			n += AP_PadTrackBoxesLeft(ctr_cfg_cup_leg(cup, leg));
+	}
+	return n;
+}
+
 // Reward-type group of a glow bit -> the prize slot that owns it under
 // by_reward_type (issue #59). The three groups are exactly the three slots the
 // pad already births as trophy / relic / token placeholders
@@ -1023,6 +1142,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.
 	int uncBits[24];
 	int uncN;
+	int boxesLeft;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1044,25 +1164,43 @@ int AP_PadState(int physLevelID, int destLevelID)
 	uncN = AP_PadUncollectedGlowBits(destLevelID,
 	                                 uncBits, (int)(sizeof uncBits / sizeof uncBits[0]));
 
-	// Done is terminal: every destination location checked. A done pad has
-	// nothing left by definition, so hard-locking it never gates progression.
-	if (uncN == 0)
-		return 5;
+	// Box-AWARE, and for the same reason the count above is rung-aware (§6, ruled
+	// 2026-08-11): both Done and Re-locked strand whatever is left behind the pad,
+	// and an itemsanity box is exactly such a location. Boxes carry no AdvProgress
+	// bit, so they cannot ride in uncBits and are counted separately.
+	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
 
-	if (!AP_PadStage1Met(physLevelID))
-		return 1; // Locked: entry requirement unmet
+	// The table itself lives in ap_pad_state.h so the harness can pin it out of
+	// engine; everything above is the gather. Requirements key off the PHYSICAL
+	// pad, lifecycle facts off the DESTINATION, which is the model's whole
+	// keying invariant.
+	return AP_PadStateDecide(AP_DestIsRace(destLevelID),
+	                         AP_PadStage1Met(physLevelID),
+	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
+	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
+	                         uncN, boxesLeft);
+}
 
+// Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
+// destination's trophy race is already checked and the pad is STILL state 2
+// Raceable -- which, for a race destination with the trophy checked, can only
+// come from the standing-box branch of the table ("stays Raceable and enterable
+// until they are gone"). Any other route to 2 either has an unchecked trophy or
+// a non-race destination, both excluded here.
+//
+// Defined ON TOP of AP_PadState rather than beside it deliberately: the entry
+// gate and the pad's look in AH_WarpPad.c consume this, so they cannot drift
+// from the state the map paints. That drift IS issue #232 -- the state model
+// promised the pad stayed enterable and the gate had no path for it.
+int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
+{
+	if (!ctr_cfg_active())
+		return 0;
 	if (!AP_DestIsRace(destLevelID))
-		return 2; // reduced lifecycle (trial/arena/cup): stage-1 met + checks left
-
-	// Race destination: full two-stage lifecycle.
+		return 0;
 	if (!AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY))
-		return 2; // Raceable: trophy race (primary check) still available
-
-	// Trophy checked, more checks remain -> stage-2 phase (keyed by physical pad).
-	if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-		return 3; // Re-locked: stage-2 requirement not yet met
-	return 4;     // Tier-2 open: relic TT / CTR token checks available
+		return 0;
+	return AP_PadState(physLevelID, destLevelID) == 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -2307,12 +2445,13 @@ static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
 // cache as it opens each location, so the own component follows checked-state
 // synchronously and cannot race the ReceivedItems drain. See AP_GateCountForeign.
 static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
+static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 
 // ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
 // (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
-// Stef's Deck 3P replayed trap). Dedup: persist the highest server item index
+// a Deck 3-player replayed trap). Dedup: persist the highest server item index
 // whose batch was effect-applied, per seed+slot, in ctr-ap-fxseen.txt next to
 // the exe (tab-separated: seed<TAB>slot<TAB>max). Replayed items at or below
 // the stored index still count for gates but skip their effect. Unknown index
@@ -3310,8 +3449,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_recv_count[k] = 0;
 			ap_recv_count_foreign[k] = 0; // #85: rebuilds from the resent ReceivedItems list
 		}
+		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
+		for (k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
+			ap_itemsanity_owned[k] = 0;
 		AP_SurfaceReset(); // rebuilt by the authoritative ReceivedItems replay below
 		// Capability chains (#12/#13): same discipline. These are COUNTS, not
 		// one-shot effects, so the resent full list must rebuild them from zero --
@@ -3329,6 +3471,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		ap_goal_sent = 0;
 		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_FeedConnectReset(); // drop stale toasts + re-arm initial-inventory absorb
+		// Same discipline, same call site (2026-08-11, Bandi-slot session): the
+		// trap registry is per-session state, and a primed-but-unfired trap that
+		// survived a reconnect fired on a DIFFERENT slot -- one the server had
+		// never sent a trap to. See AP_Trap_ConnectReset in ap_traps.h.
+		AP_Trap_ConnectReset();
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -3489,6 +3636,23 @@ static void AP_NetTick(struct GameTracker *gGT)
 		{
 			AP_CapabilityReceivePerCharacter((int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX));
 		}
+		else if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
+		         idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+		{
+			int li = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
+			ap_letter_received[li / CTR_CFG_LETTER_COUNT][li % CTR_CFG_LETTER_COUNT] = 1;
+		}
+
+		// Itemsanity weapon unlocks (indexes 95..105): booleans by weapon type.
+		// Duplicate receipts are harmless; reconnect/slot reset clears the set
+		// before the authoritative ReceivedItems replay rebuilds it.
+		else if (idx >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
+		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
+		{
+			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
+			if (idx == AP_TIZI_MASK_ITEM_INDEX)
+				AP_TiziReceiveMask();
+		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
 		// same roster order as the capability blocks above. Receiving one makes
@@ -3509,11 +3673,6 @@ static void AP_NetTick(struct GameTracker *gGT)
 		{
 			AP_TiziReceiveHelper();
 		}
-		else if (idx == AP_TIZI_MASK_ITEM_INDEX)
-		{
-			AP_TiziReceiveMask();
-		}
-
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
 		// local player in-race (issue #11). Not a gate item, so it never touches
 		// ap_recv_count. Cosmetic/QoL only; still logged as filler/unmapped below.
@@ -3848,6 +4007,136 @@ static void AP_EmitClassCheck(long code,
 		AP_FeedOnLocationSent(code);
 }
 
+int AP_LetterAvailable(int track, int letter)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
+	if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT || letter < 0 || letter >= 3) return 1;
+	return AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
+	                              ctr_cfg.lettersanity_locations[track][letter],
+	                              ap_letter_received[track][letter]);
+}
+
+long AP_LetterLocation(int track, int letter)
+{
+	if (!ctr_cfg_active() || track < 0 || track >= 16 || letter < 0 || letter >= 3) return -1;
+	return ctr_cfg.lettersanity_locations[track][letter];
+}
+
+void AP_LetterCollected(int track, int letter)
+{
+	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, 0,
+	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
+}
+
+int AP_LettersRequiredMet(int track)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
+	return AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
+	                                 ctr_cfg.lettersanity_locations[track],
+	                                 ap_letter_received[track]);
+}
+
+int AP_LettersRequiredCount(int track)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 3;
+	return AP_LettersRequiredCountPure(1, ctr_cfg.lettersanity_mode,
+	                                   ctr_cfg.lettersanity_locations[track]);
+}
+
+int AP_LetterTokenEarned(int track, int didWin, int collected)
+{
+	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2 ||
+	    track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT)
+		return didWin && collected == 3;
+	return AP_LetterTokenEarnedPure(didWin, collected, 1,
+	                                ctr_cfg.lettersanity_mode,
+	                                ctr_cfg.lettersanity_locations[track],
+	                                ap_letter_received[track]);
+}
+
+static int AP_ItemsanityActive(void)
+{
+	// Server location-set membership is the authoritative all-or-none toggle.
+	// This also makes absent/old slot_data inert without a bespoke parser path.
+	return ctr_cfg_active() && ap_net_location_exists(35016000L);
+}
+
+// Called from VehPickupItem_ShootOnCirclePress with the driver's own held id,
+// before vanilla folds Bomb/Bomb x3/Missile x3 into the shared Missile branch.
+// That press is the committed-use edge: VehPhysProc has already spent the item
+// by the time the fire request reaches here, and the request flag is cleared
+// before this call, so one press emits its pair exactly once. AP_EmitClassCheck
+// adds the absent-code and already-checked guards on top.
+void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	long plain;
+	long juiced;
+	if (!AP_ItemsanityActive() || !gGT || driver != gGT->drivers[0])
+		return;
+
+	// juiced comes back as -1 below 10 Wumpa, and both codes come back as -1 for
+	// an id that mints nothing, so the shared emitter's absent-code guard covers
+	// the whole fan-out.
+	(void)AP_ItemsanityUseCodes(heldItemID, driver->numWumpas, &plain, &juiced);
+	AP_EmitClassCheck(plain, 0, -1, 0, 1,
+	                  "[AP CHECK] itemsanity use: weapon=%d juiced=0 location %ld\n",
+	                  heldItemID, plain);
+	AP_EmitClassCheck(juiced, 0, -1, 0, 1,
+	                  "[AP CHECK] itemsanity use: weapon=%d juiced=1 location %ld\n",
+	                  heldItemID, juiced);
+}
+
+int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
+	const unsigned char *table, int tableCount)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int filtered;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return rolled;
+
+	filtered = AP_ItemsanitySubstituteRoll(rolled, roll, table, tableCount,
+	                                      ap_itemsanity_owned);
+	if (filtered == AP_ITEMSANITY_NO_ITEM)
+	{
+		// Ruled Empty Crates shape: keep the box/roulette acquisition path, hold
+		// no weapon, and grant one fruit through the engine's normal clamp/effect.
+		RB_Player_ModifyWumpa(driver, 1);
+		AP_AppendLog("[AP ITEMSANITY] no eligible roulette weapon; granted Wumpa\n");
+	}
+	return filtered;
+}
+
+// Ownership guard for vanilla's downstream item rewrites. The draw filter above
+// only settles the roll itself; the single-warpball rule and the two-holders
+// 3-missile cap rewrite that result afterwards and would otherwise hand out an
+// unreceived weapon. Only the boss-race rewrite and the Crystal Challenge
+// hardcode are ruled bypasses, so they deliberately do not call this.
+int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
+	unsigned roll, const unsigned char *table, int tableCount)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int filtered;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return proposed;
+
+	filtered = AP_ItemsanitySubstituteDownstream(proposed, roll, table,
+	                                            tableCount, ap_itemsanity_owned);
+	if (filtered == AP_ITEMSANITY_NO_ITEM)
+	{
+		// Same ruled Empty Crates shape as the draw filter.
+		RB_Player_ModifyWumpa(driver, 1);
+		AP_AppendLog("[AP ITEMSANITY] no eligible substitute weapon; granted Wumpa\n");
+	}
+	return filtered;
+}
+
 // Podium wrapper: preserve the shipped log text and make the two podium-specific
 // policies explicit. Rungs join the ceremony ledger and stay out of the feed per
 // #63 because one result can fan out into several simultaneous checks.
@@ -3857,6 +4146,18 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	AP_EmitClassCheck(code, 1, -1, rungTag, 0,
 	                  "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
 	                  phase, track, position, rungTag, code);
+}
+
+// Item box wrapper (#109). Two class policies, both from the 2026-08-10 ruling:
+// a box is NOT a ceremony award (it is earned mid-race, not in a result block),
+// and it DOES take a feed line, because "the check and the feed line are the
+// entire effect" -- there is no pickup, no weapon roll and no wumpa to show for
+// it, so the feed line is the only acknowledgement the player gets.
+void AP_EmitBoxCheck(int levelID, int slot, long code)
+{
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] item box: level=%d slot=%d (Item Box %d) location %ld\n",
+	                  levelID, slot, slot + 1, code);
 }
 
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks
@@ -4292,6 +4593,18 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Box placement author mode (#182) and the additive model loader it draws
+	// through (#109 / #124 groundwork). Author first, loader second, so a
+	// placement dropped this frame gets its marker in the same frame instead of
+	// one frame later. Both self-gate: the author mode on the "Box Author Mode"
+	// option, the loader on having any spawn requests at all.
+	AP_Author_OnFrame(gGT);
+	// The #109 runtime boxes, between the two on purpose: author mode has already
+	// decided whether it owns this level's markers (it stands the boxes down when
+	// it does), and the loader has not run yet, so a box added this frame is born
+	// this frame rather than next.
+	AP_Boxes_OnFrame(gGT);
+	AP_Spawn_OnFrame(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a
 	// cheap comparison on every other frame. See ap_verify.c.

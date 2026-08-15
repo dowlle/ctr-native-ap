@@ -513,13 +513,13 @@ static const struct MetaPhys *AP_CapabilityMetaRow(int offset)
 // Ranks 0..3 (VERY LOW / LOW / MEDIUM / HIGH) are the row's own four engine-class
 // values sorted weakest-first -- the engine's numbers, not ours.
 //
-// Rank 4 (VERY HIGH) is the ruled above-vanilla step (Stef, 2026-08-08: "add
+// Rank 4 (VERY HIGH) is the ruled above-vanilla step (ruled 2026-08-08: "add
 // VERY HIGH above the best vanilla HIGH anchor as a real extra unlockable
 // step"). **Its MAGNITUDE has never been ruled**, only its existence, so this
 // build takes the smallest defensible choice and continues the table's own top
 // step: VERY HIGH = HIGH + (HIGH - MEDIUM). On the retail anchors that is top
 // speed 14280, boosted top speed 15780, acceleration 576, turn rate 32, drift
-// turn 22, turn response 6000. It is a BALANCE number, it is Stef's call, and it
+// turn 22, turn response 6000. It is a BALANCE number, it is a ruling, and it
 // lives in this one expression so changing it is a one-line change rather than a
 // hunt through six constants.
 static int AP_CapabilityStatRankValue(const struct MetaPhys *row, int rank)
@@ -545,6 +545,19 @@ static int AP_CapabilityStatRankValue(const struct MetaPhys *row, int rank)
 		return v[rank];
 
 	return v[NUM_CLASSES - 1] + (v[NUM_CLASSES - 1] - v[NUM_CLASSES - 2]);
+}
+
+// The absolute value the ladder holds at `rank` for the stat row at `offset`,
+// or -1 when the offset has no metaPhys row. Public so DISPLAY surfaces (the
+// hub picker, issue #251) can promise exactly what this module writes instead
+// of reimplementing the ladder -- the picker's vanilla-plus-delta model was
+// precisely that reimplementation drifting from the physics.
+int AP_CapabilityRankValueForOffset(int offset, int rank)
+{
+	const struct MetaPhys *row = AP_CapabilityMetaRow(offset);
+	if (row == 0)
+		return -1;
+	return AP_CapabilityStatRankValue(row, rank);
 }
 
 // Write one stat into the driver exactly the way VehBirth_SetConsts does -- by

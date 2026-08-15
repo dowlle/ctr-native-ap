@@ -25,7 +25,7 @@
 //               time, the start-line rev boost, the Turbo pickup and the
 //               10-wumpa Super Engine. Turbo PADS still work -- that is the
 //               design's explicit invariant, so every track stays drivable at
-//               the bottom of the chain. Field-confirmed by Stef in the Test Lab
+//               the bottom of the chain. Field-confirmed in the Test Lab
 //               build on 2026-08-09 21:31 (the boost weapon fires, is consumed,
 //               and does nothing).
 //   1 BOOST     everything grants again, but the boost-speed cap is clamped to
@@ -204,6 +204,12 @@ int AP_CapabilityStatRankFor(int chain);
 // lookup. Returns -1 when Progressive Stats is inactive, the chain is invalid,
 // or a per-character row cannot be identified.
 int AP_CapabilityStatRankForCharacter(int chain, int characterID);
+
+// The absolute ladder value at `rank` for the stat row at driver-struct
+// `offset`, or -1 when no metaPhys row matches. For display surfaces (the hub
+// picker, issue #251): promise exactly what the per-frame writer computes,
+// never a reimplementation of the ladder.
+int AP_CapabilityRankValueForOffset(int offset, int rank);
 
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke
 // point every boost in the game passes through). Returns 0 to drop the grant

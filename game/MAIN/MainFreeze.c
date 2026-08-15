@@ -950,6 +950,25 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		return;
 	}
 
+#ifdef CTR_AP
+	// #238: SELECT CHARACTER, only present on the AP row set built in
+	// MainFreeze_GetMenuPtr.
+	//
+	// The picker cannot open from inside the pause, and should not: the pause
+	// owns the vehicle-freeze bits and this RectMenu owns input, so a picker
+	// opened here would be two modal surfaces fighting over both. That is the
+	// interaction the character-picker spike's matrix row 22 flagged as the most
+	// likely rough edge. So this records a request and then falls into the
+	// vanilla RESUME path verbatim by rewriting stringID: the unpause is the
+	// game's own, not a re-implementation of it, and AP_CharSwap_Tick opens the
+	// picker on the first frame that is genuinely safe afterwards.
+	if (stringID == LNG_SELECT_CHARACTER)
+	{
+		AP_CharSwap_RequestPickerFromPause();
+		stringID = LNG_RESUME;
+	}
+#endif
+
 	// must wait 5 frames until next pause
 	gGT->cooldownFromUnpauseUntilPause = 5;
 
@@ -1146,6 +1165,72 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 			hintString = LNG_AKU_AKU_HINTS;
 		}
 
+#ifdef CTR_AP
+		// #238: a SELECT CHARACTER row in the adventure-hub pause menu, so the
+		// picker has a real entry point instead of only a dev key.
+		//
+		// The row set is SWAPPED rather than grown. data.rowsAdvHub is
+		// `struct MenuRow[5]` inside struct rData (include/regionsEXE.h:2005),
+		// which carries retail memory-offset annotations throughout and has
+		// explicit UsaRetail padding declared immediately after it, so widening it
+		// in place would shift menuAdvHub and everything past it. Pointing
+		// menu->rows at an AP-owned table is the move PR #211 made for the main
+		// menu, and this function already rewrites a row field on every call, so a
+		// per-call row assignment is in keeping with it.
+		//
+		// The menu grows by one 8-pixel small-font line and is vertically centred
+		// (state 0x8C83 sets USE_SMALL_FONT, and bit 1 selects centring in
+		// RECTMENU.c:558-563), so it extends four pixels each way from y=0xAF and
+		// stays well inside the 216-line draw environment. Checked rather than
+		// assumed, because an off-screen panel is exactly what the picker's own
+		// stat block got wrong.
+		if (AP_CharSwap_PauseRowLive())
+		{
+			// RESUME / SELECT CHARACTER / hints / QUIT / OPTIONS. The vertical
+			// wiring comes from AP_PAUSEROW_NAV rather than being written out
+			// here, so the harness sweeps the same table the menu is built from.
+			// Left and right point at self, as they do in the retail table.
+			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_COUNT + 1] = {
+			    {LNG_RESUME, 0, 0, AP_PAUSEROW_RESUME, AP_PAUSEROW_RESUME},
+			    {LNG_SELECT_CHARACTER, 0, 0, AP_PAUSEROW_CHARACTER, AP_PAUSEROW_CHARACTER},
+			    {LNG_AKU_AKU_HINTS, 0, 0, AP_PAUSEROW_HINTS, AP_PAUSEROW_HINTS},
+			    {LNG_QUIT, 0, 0, AP_PAUSEROW_QUIT, AP_PAUSEROW_QUIT},
+			    {LNG_OPTIONS, 0, 0, AP_PAUSEROW_OPTIONS, AP_PAUSEROW_OPTIONS},
+			    {-1, 0, 0, 0, 0},
+			};
+			int r;
+
+			for (r = 0; r < AP_PAUSEROW_COUNT; r++)
+			{
+				apRowsAdvHub[r].rowOnPressUp = AP_PAUSEROW_NAV[r][0];
+				apRowsAdvHub[r].rowOnPressDown = AP_PAUSEROW_NAV[r][1];
+			}
+
+			apRowsAdvHub[AP_PAUSEROW_HINTS].stringIndex = (s16)hintString;
+
+			// rowSelected persists across pause opens, so swapping row sets
+			// mid-session has to carry the highlight across. Without this a player
+			// sitting on OPTIONS would land on the terminator when a disconnect
+			// takes the row away; MainFreeze_MenuPtrDefault's switch returns
+			// harmlessly on an unknown stringIndex, but "the menu closed and did
+			// nothing" is still a bug worth not shipping.
+			if (data.menuAdvHub.rows != &apRowsAdvHub[0])
+			{
+				data.menuAdvHub.rowSelected = (s16)AP_PauseRow_ToApIndex(data.menuAdvHub.rowSelected);
+			}
+
+			data.menuAdvHub.rows = &apRowsAdvHub[0];
+			return &data.menuAdvHub;
+		}
+
+		if (data.menuAdvHub.rows != &data.rowsAdvHub[0])
+		{
+			// Back to the retail row set: no seed, or a seed without the phase.
+			data.menuAdvHub.rowSelected = (s16)AP_PauseRow_ToVanillaIndex(data.menuAdvHub.rowSelected);
+			data.menuAdvHub.rows = &data.rowsAdvHub[0];
+		}
+#endif
+
 		data.rowsAdvHub[1].stringIndex = hintString;
 		return &data.menuAdvHub;
 	}
@@ -1199,6 +1284,36 @@ void MainFreeze_IfPressStart(void)
 	{
 		return;
 	}
+
+#ifdef CTR_AP
+	// The character picker is a modal surface of its own: it holds VEH_FREEZE_DOOR
+	// and reads the pad directly, so letting Start raise the pause menu on top of
+	// it would give two surfaces the same input and the same freeze bit. That is
+	// the spike matrix's row 22 hazard, and this closes it.
+	//
+	// It has to be refused HERE. The picker runs from AP_OnFrame
+	// (game/MAIN/MainMain.c:323), ahead of the frame's own gamepad update at
+	// :345, so it reads the previous frame's taps and cannot consume this one.
+	// Refusing at the source is the only mechanism available, and it is also the
+	// more deterministic one: exactly one modal owns the screen at a time.
+	// Triangle closes the picker, after which Start behaves normally.
+	//
+	// This refusal sits alongside nine existing ones in this function and shares
+	// their shape: the caller (game/MAIN/MainFrame.c:444-448) writes gameModeEnd
+	// and sets the pause cooldown around this call whether or not it returns
+	// early, so an early return here is no different from the AkuAkuHintState or
+	// ptrActiveMenu ones directly above.
+	//
+	// One consequence worth knowing rather than hiding: the caller's condition is
+	// an OR, so this also declines the controller-unplugged auto-pause while the
+	// picker is open. On a desktop build the keyboard feeds the same pad, so the
+	// picker stays closable with Triangle, but that is reasoning rather than an
+	// observation and it is named in the candidate note as a rig check.
+	if (AP_CharSwap_PickerOpen())
+	{
+		return;
+	}
+#endif
 
 	gameMode1 = gGT->gameMode1;
 

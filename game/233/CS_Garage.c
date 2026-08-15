@@ -6,6 +6,15 @@
 static const s16 AP_GARAGE_STAT_BAR_BY_RANK[AP_CAP_STAT_RANK_COUNT] = {
 	13, 26, 39, 52, 78,
 };
+
+// Per-SESSION latch for the adventure-start garage skip (#54/#209).
+//
+// File scope rather than a gGarage member, because gGarage mirrors a retail
+// overlay-233 data layout that is size-asserted, and rather than a
+// function-local static, because CS_Garage_ZoomOut below has to re-arm it and
+// that is the whole point: see ap/ap_garageskip.h for the two soft-locks a
+// process-lifetime latch caused here.
+static struct AP_GarageSkipState apGarageSkip = {0};
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7784-0x800b7834
@@ -30,6 +39,24 @@ void CS_Garage_ZoomOut(char zoomState)
 
 	sdata->gGT->gameMode2 &= ~(GARAGE_OSK);
 
+#ifdef CTR_AP
+	// A garage SESSION begins here, so re-arm the adventure-start skip (#54/#209).
+	//
+	// This function has exactly two callers and they are precisely the two ways a
+	// garage session starts: CS_Garage_Init below (zoomState 0, a fresh garage
+	// level load) and the name-entry CANCEL branch (zoomState 1,
+	// game/SubmitName.c:516, which points ptrDesiredMenu back at this menu). It is
+	// therefore the complete lifecycle signal, not a best-effort one.
+	//
+	// Re-arming here is what stops the skip from soft-locking the game. Its latch
+	// used to live for the whole process, so on any second visit to the garage the
+	// skip returned before re-issuing its OSK handoff, and menuGarage's state
+	// (DISABLE_INPUT_ALLOW_FUNCPTRS | EXECUTE_FUNCPTR) means its funcPtr is the
+	// only thing driving that screen: an early return left nothing at all. Both a
+	// cancelled name entry and a second new adventure in one process reached it.
+	AP_GarageSkip_NewSession(&apGarageSkip);
+#endif
+
 	// if just entered garage
 	if (zoomState == 0)
 	{
@@ -39,6 +66,33 @@ void CS_Garage_ZoomOut(char zoomState)
 		Audio_SetState_Safe(AUDIO_GARAGE);
 	}
 }
+
+#ifdef CTR_AP
+// Force the AP-authoritative racer over whatever a Garage confirm just wrote.
+//
+// The two commit sites below (:479-480 and :576-577 here, :380 and :466 before
+// this file grew the skip block) are the only places in the tree that can seat
+// a racer of the player's choosing at adventure start. When the seed owns the
+// racer they are unreachable, because
+// CS_Garage_MenuProc returns early -- but writing the invariant at the point of
+// the write, rather than trusting the arrangement that keeps us away from it,
+// is what stops a future refactor of the skip from silently reopening the
+// unlock bypass.
+static void CS_Garage_ApplyApRacerOverride(void)
+{
+	int apRacer = AP_CharSwap_GarageRacer();
+
+	if (apRacer < 0)
+		return; // no character phase on this seed: retail behaviour, untouched
+	if (data.characterIDs[0] == (s16)apRacer)
+		return;
+
+	AP_LogLine("[AP CHARSWAP] garage commit overridden; the seed owns the racer\n");
+
+	data.characterIDs[0] = (s16)apRacer;
+	sdata->advProgress.characterID = (s16)apRacer;
+}
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b7834-0x800b854c
 void CS_Garage_MenuProc(struct RectMenu *param_1)
@@ -57,12 +111,93 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 	struct MetaDataCHAR *MDC = &data.MetaDataCharacters[currCharacterID];
 	int nameIndex = MDC->name_LNG_long;
 	RECT r;
+#ifndef CTR_AP
+	// Read only by the retail bar block below, which the AP build replaces with
+	// the shared renderer (ap/ap_statbar.h).
 	Color white = MakeColor(0xFF, 0xFF, 0xFF);
 	Color black = MakeColor(0, 0, 0);
+#endif
 
 	// CameraDC, freecam mode
 	gGT->cameraDC[0].cameraMode = 3;
 
+#ifdef CTR_AP
+	// ------------------------------------------------------------------
+	// The adventure-start character select is SKIPPED when the seed owns the
+	// racer (#54/#209).
+	//
+	// THE BYPASS THIS CLOSES. This function is the whole of the vanilla garage
+	// picker (registered as the menuGarage funcPtr, game/233/D233.c:11-23, run
+	// per frame from game/RECTMENU.c:943-954), and it commits the highlighted
+	// racer to data.characterIDs[0] plus sdata->advProgress.characterID at
+	// :479-480 and again at :576-577. Those are precisely the two fields AP seats
+	// the seed's racer into, and the garage writes them afterwards, so the
+	// player's pick simply won. Observed live on a seed whose starting racer was
+	// Neo Cortex with character unlocks on: picking Dingodile made you Dingodile.
+	// data.characterIDs[0] is then the authority for both the adventure MPK fetch
+	// (game/LOAD/LOAD_Assets.c:128) and the driver birth (VehBirth.c:688-696), so
+	// the wrong racer really is the one that races.
+	//
+	// WHY SKIP RATHER THAN FILTER. The garage's roster is
+	// gGarage.unusedArr_garageChars, the eight vanilla starters (D233.c:29). It
+	// has no row for Penta, Oxide or any unlockable, so a seed that starts you as
+	// one of them cannot be expressed here at all. Constraining the picker to a
+	// single legal tile would also present a choice that is not one.
+	//
+	// HOW THE SKIP WORKS. It performs exactly what the double-tap confirm branch
+	// performs -- the same two writes, the same SubmitName_RestoreName(0), the
+	// same handoff to the OSK -- with the racer AP resolved instead of the
+	// highlighted one, and returns before any input or drawing. Everything
+	// downstream (name entry, profile slot, hub load) is the untouched retail
+	// path. This runs only with LOAD_IDLE, because MainFrame_RenderFrame.c:54-60
+	// gates RECTMENU_ProcessState on it, so the handoff can never fire mid-load.
+	//
+	// It sits AFTER the freecam camera-mode write above deliberately. That line
+	// runs on every frame of the retail garage, and the on-screen keyboard this
+	// hands off to draws over the garage scene, so skipping it would hand the OSK
+	// a camera state no retail path ever gives it.
+	//
+	// The garage may briefly have loaded the previous racer's model, since the
+	// MPK was queued from data.characterIDs[0] before we ran. That is cosmetic
+	// and lasts a frame: the hub's own load re-queues from the value written
+	// here.
+	{
+		int apRacer = AP_CharSwap_GarageRacer();
+
+		if (AP_GarageSkip_Owns(apRacer))
+		{
+			// Commit once per garage SESSION, not once per process. The latch is
+			// re-armed from CS_Garage_ZoomOut, which is the single signal meaning
+			// "a garage session begins" and covers both routes back into this
+			// function: a fresh garage load via CS_Garage_Init, and a cancelled
+			// name entry via game/SubmitName.c:516. ap/ap_garageskip.h records
+			// the two soft-locks a process-lifetime latch produced here.
+			//
+			// Re-running the commit is safe: both writes set the same values, and
+			// SubmitName_RestoreName(0) only re-seeds the OSK from
+			// prevNameEntered. The sound and the log line are the only things
+			// worth not repeating every frame, which is the whole job of the
+			// latch.
+			if (AP_GarageSkip_ShouldCommit(&apGarageSkip, apRacer))
+			{
+				sdata->ptrDesiredMenu = &data.menuSubmitName;
+
+				data.characterIDs[0] = (s16)apRacer;
+				sdata->advProgress.characterID = (s16)apRacer;
+
+				SubmitName_RestoreName(0);
+				OtherFX_Play(1, 1);
+
+				AP_LogLine("[AP CHARSWAP] adventure-start garage select skipped; the seed owns the racer\n");
+			}
+			return;
+		}
+
+		// The seed does not own the racer. Re-arm (so a later connect commits)
+		// and fall through to the retail garage below.
+		AP_GarageSkip_ShouldCommit(&apGarageSkip, apRacer);
+	}
+#endif
 
 	// subtract transition timer by one frame
 	garageFrames = gGarage.numFramesCurr_GarageMove - 1;
@@ -153,15 +288,39 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 
 	// 7 pixels tall
 	u16 statBarStart_Y = 33;
+#ifndef CTR_AP
+	// The AP build passes only the first row's Y and steps by the shared pitch.
 	u16 statBarEnd_Y = 40;
 
 	u16 statBarShadows_Y = 34;
+#endif
 
 	// Draw class name
 	DecalFont_DrawLine(sdata->lngStrings[gGarage.unusedArr_lngIndex[i]], classNamePosX, 15, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 	// bar length (animated)
 
+#ifdef CTR_AP
+	// The bars are drawn through the shared renderer (ap/ap_statbar.h), which is
+	// this very block with gGarage.barLen and the locals turned into arguments.
+	// The hub character picker calls the same function, so the two AP surfaces
+	// cannot drift apart -- the whole point of the #220 ruling that the picker
+	// look like the Garage.
+	//
+	// The Garage still passes its OWN colour array, so nothing about its
+	// appearance depends on the AP copy the hub uses. The retail block below is
+	// preserved verbatim for the vanilla build, which is therefore byte-identical:
+	// only the AP build routes through here, and the AP build is the one where
+	// these bars are already AP-driven (PR #218 replaces their lengths with the
+	// received rank).
+	for (i = 0; i < 3; i++)
+	{
+		AP_StatBar_Draw(statBarPosX, statBarStart_Y + i * AP_STATBAR_ROW_PITCH,
+		                gGarage.barLen[i], gGarage.barColors,
+		                gGT->pushBuffer_UI.ptrOT, primMem);
+	}
+
+#else
 	for (i = 0; i < 3; i++)
 	{
 		barLen = &gGarage.barLen[i];
@@ -257,6 +416,7 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 		statBarEnd_Y += 15;
 		statBarShadows_Y += 15;
 	}
+#endif
 
 	s16 classMaxLen = DecalFont_GetLineWidth(sdata->lngStrings[LNG_INTERMEDIATE], 1);
 
@@ -380,6 +540,17 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 					data.characterIDs[0] = gGarage.unusedArr_garageChars[currSelectIndex];
 					sdata->advProgress.characterID = data.characterIDs[0];
 
+#ifdef CTR_AP
+					// Belt and braces on the unlock bypass (#54/#209). The skip
+					// at the top of this function returns before we can get
+					// here whenever the seed owns the racer, so this cannot
+					// currently fire -- but this is one of only two lines in
+					// the tree that can seat a racer the seed did not choose,
+					// and the invariant is worth stating where it is enforced
+					// rather than only where it is arranged.
+					CS_Garage_ApplyApRacerOverride();
+#endif
+
 					SubmitName_RestoreName(0);
 					OtherFX_Play(1, 1);
 				}
@@ -465,6 +636,11 @@ SKIP_CONTROLS:
 
 			data.characterIDs[0] = gGarage.unusedArr_garageChars[currSelectIndex];
 			sdata->advProgress.characterID = data.characterIDs[0];
+
+#ifdef CTR_AP
+			// The second of the two commit sites; same reasoning as the first.
+			CS_Garage_ApplyApRacerOverride();
+#endif
 
 			SubmitName_RestoreName(0);
 			OtherFX_Play(1, 1);

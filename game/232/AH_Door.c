@@ -181,7 +181,16 @@ void AH_Door_ThTick(struct Thread *t)
 		// This sits at the point in the flow retail released at (door open, camera
 		// transition finished) and is a no-op unless the flag is actually stuck,
 		// so the driver re-init runs once rather than every frame.
-		if ((gGT->gameMode2 & VEH_FREEZE_DOOR) != 0)
+		//
+		// EXCEPT while the character picker owns the screen (#54/#209, #238). It
+		// holds this same flag AND writes this same INIT slot for as long as it is
+		// open (ap/ap_charfreeze.h), and this release cannot tell a stuck flag
+		// from a held one. Without the test below, standing in a hub whose door is
+		// open hands the kart back under an open picker and logs a release line
+		// every frame. The picker releases both halves itself on close, after
+		// which a genuinely stuck flag is released here on the next frame, exactly
+		// as before.
+		if (((gGT->gameMode2 & VEH_FREEZE_DOOR) != 0) && (AP_CharSwap_PickerOpen() == 0))
 		{
 			gGT->gameMode2 &= ~VEH_FREEZE_DOOR;
 			driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;

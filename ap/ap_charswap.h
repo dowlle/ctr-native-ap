@@ -29,8 +29,41 @@ void AP_CharSwap_Tick(struct GameTracker *gGT);
 // per frame, so this runs exactly once per frame while the hub is up.
 void AP_CharPicker_Draw(void);
 
-// True while the picker owns input (used to keep the driver frozen).
+// True while the picker owns input. Used to keep the driver frozen, to refuse a
+// Start press so the pause menu cannot open on top of it, and to stop AH_Door's
+// #51 release from taking the picker's own kart freeze back.
 int AP_CharSwap_PickerOpen(void);
+
+// Must the hub's standing HUD stand down this frame?
+//
+// One question, asked by every hub HUD site, so they cannot drift apart. The
+// picker is a full-screen modal drawn late in the hub UI pass, and everything
+// the hub keeps permanently on screen is submitted BEFORE it and therefore
+// lands on top of it (AddPrim prepends and walks,
+// platform/native_libgpu.c:309). The minimap group was the first surface caught
+// doing this; the relic / key / trophy counters across the top of the screen
+// were the second, found in live play on 2026-08-12.
+//
+// Suppressing the draw is deliberate rather than re-ordering two ordering
+// tables against each other: the picker holds the kart and the input while it
+// is up, so a standing counter has nothing useful to say, and a skipped draw
+// cannot be defeated later by a submission-order detail the way a re-order can.
+int AP_CharSwap_HubHudHidden(void);
+
+// The adventure-hub pause menu's SELECT CHARACTER row was chosen (#238).
+//
+// Records a request rather than opening the picker directly: the picker refuses
+// to open while the game is paused, and rightly so, since the pause owns the
+// vehicle-freeze bits and its RectMenu owns input. The caller resumes through
+// the vanilla RESUME path and AP_CharSwap_Tick opens the picker on the first
+// safe frame after that. The request has no deadline and is dropped if the hub
+// goes away before it can be honoured.
+void AP_CharSwap_RequestPickerFromPause(void);
+
+// Should the adventure-hub pause menu carry a SELECT CHARACTER row at all?
+// True on a seed carrying the character phase, and on a dev-keys build so the
+// manual matrix can reach the row without a seed connected.
+int AP_CharSwap_PauseRowLive(void);
 
 // Does this seed carry the character phase (unlocks, a racer lock, a non-vanilla
 // stat source, a chosen starting racer or a forced starting class)? A 0.2.0 seed
@@ -48,6 +81,18 @@ int AP_CharSwap_FeatureLive(void);
 // waits for the hub. The first seat of a connection is not gated, because the
 // hub births the player during its own load.
 void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT);
+
+// The racer the adventure-start Garage character select must commit, or -1 when
+// this seed does not carry the character phase and the retail garage should run
+// untouched. When it returns a racer, the garage's own picker is SKIPPED: the
+// seed (or the racer persisted from a previous session) decides who you start
+// as, and switching afterwards is the hub picker's job.
+//
+// The gate applies in all-unlocked mode too. The garage can only ever offer the
+// eight vanilla starters (gGarage.unusedArr_garageChars, game/233/D233.c:29),
+// so leaving it live there would not be "the comfortable way to choose" -- it
+// would be a second, narrower picker that silently overwrites the seated racer.
+int AP_CharSwap_GarageRacer(void);
 
 // Re-arm the one-shot seat above on a fresh connect, so a reconnect or a slot
 // switch re-applies the authoritative racer instead of keeping whatever the

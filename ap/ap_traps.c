@@ -89,6 +89,7 @@ typedef struct
 	int rolled;       // 1 once fireDelayMs has been drawn for the current window
 	int fireDelayMs;  // PRIMED: ms left before firing (rolled once in-window)
 	int remainingMs;  // FIRING: ms of effect left
+	int instant;      // PRIMED: arrived mid-race -> fire on the next tick (§5)
 } TrapInstance;
 
 #define AP_TRAP_REGISTRY_CAP 16
@@ -147,14 +148,36 @@ static const char *AP_TrapName(int effect)
 	}
 }
 
+// Is a race running RIGHT NOW: mid-race, countdown finished, not paused, not in a
+// menu / cutscene / end-of-race block? Shared by the receive path (§5: does this
+// trap arrive mid-race?) and by AP_TrapTick's own window test, so the two can
+// never drift apart.
+//
+// Anchors: gameMode flags namespace_Main.h; trafficLightsTimer < 1 = lights out,
+// which is the same test PlayLevel.c:338 uses.
+static int AP_TrapRaceActive(struct GameTracker *gGT)
+{
+	if (gGT == 0)
+		return 0;
+	return (gGT->gameMode1 &
+	        (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
+	       gGT->trafficLightsTimer < 1;
+}
+
 // ── AP item pipeline seam ──
 void AP_TrapReceive(int effect)
 {
-	int i;
+	int  i;
+	int  midRace;
 	char msg[96];
 
 	if (effect < 0 || effect >= AP_TRAP_COUNT)
 		return;
+
+	// §5: WHERE the trap lands decides its lifecycle, and the answer is captured
+	// here, at receive time, rather than inferred later -- by the time the tick
+	// runs, "was a race running when this arrived" is no longer knowable.
+	midRace = AP_TrapRaceActive(sdata != 0 ? sdata->gGT : 0);
 
 	for (i = 0; i < AP_TRAP_REGISTRY_CAP; i++)
 	{
@@ -165,7 +188,9 @@ void AP_TrapReceive(int effect)
 			g_traps[i].rolled = 0;
 			g_traps[i].fireDelayMs = 0;
 			g_traps[i].remainingMs = 0;
-			snprintf(msg, sizeof msg, "[AP TRAP] primed: %s (slot %d)\n",
+			g_traps[i].instant = midRace;
+			snprintf(msg, sizeof msg, "[AP TRAP] %s: %s (slot %d)\n",
+			         midRace ? "received mid-race, firing now" : "primed",
 			         AP_TrapName(effect), i);
 			AP_LogLine(msg);
 			return;
@@ -174,12 +199,45 @@ void AP_TrapReceive(int effect)
 	AP_LogLine("[AP TRAP] registry full -- trap dropped\n");
 }
 
+void AP_Trap_ConnectReset(void)
+{
+	int i, e;
+	int had = 0;
+
+	for (i = 0; i < AP_TRAP_REGISTRY_CAP; i++)
+	{
+		if (g_traps[i].state != TRAP_EMPTY)
+			had++;
+		g_traps[i].state = TRAP_EMPTY;
+		g_traps[i].rolled = 0;
+		g_traps[i].fireDelayMs = 0;
+		g_traps[i].remainingMs = 0;
+		g_traps[i].instant = 0;
+	}
+
+	// Clear the firing flags in the same breath. The physics call-sites read these
+	// directly and run before the next AP_TrapTick recomputes them, so leaving a
+	// stale 1 here would keep an effect applied for a frame past the reset.
+	for (e = 0; e < AP_TRAP_COUNT; e++)
+		g_active[e] = 0;
+
+	if (had > 0)
+	{
+		char msg[96];
+		snprintf(msg, sizeof msg,
+		         "[AP TRAP] fresh connect: dropped %d trap instance(s) from the previous session\n",
+		         had);
+		AP_LogLine(msg);
+	}
+}
+
 // Fire an already-chosen slot NOW (used both by the lap-gate path and the debug
 // instant-fire keys). Transitions PRIMED/EMPTY -> FIRING.
 static void AP_TrapFireSlot(int i)
 {
 	char msg[96];
 	g_traps[i].state = TRAP_FIRING;
+	g_traps[i].instant = 0;
 	g_traps[i].remainingMs = AP_TRAP_DURATION_MS[g_traps[i].effect];
 	snprintf(msg, sizeof msg, "[AP TRAP] FIRING: %s (%d ms, slot %d)\n",
 	         AP_TrapName(g_traps[i].effect), g_traps[i].remainingMs, i);
@@ -311,11 +369,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 		elapsedMs = 32; // defensive: a paused/odd frame shouldn't stall the timers
 
 	// Race window: mid-race, countdown finished, not paused/menu/cutscene/EOR.
-	// (Anchors: gameMode flags namespace_Main.h; trafficLightsTimer<1 = lights out,
-	//  PlayLevel.c:338 uses the same test.)
-	raceActive = (gGT->gameMode1 &
-	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1;
+	raceActive = AP_TrapRaceActive(gGT);
 
 	// On lap 2 or later (lapIndex is 0-based: 0=lap1, 1=lap2, 2=lap3; PlayLevel.c:126),
 	// and not past the finish (lapIndex < numLaps).
@@ -329,6 +383,21 @@ void AP_TrapTick(struct GameTracker *gGT)
 		switch (t->state)
 		{
 		case TRAP_PRIMED:
+			// §5, and it is checked BEFORE the lap window on purpose: an instant
+			// trap bypasses both the lapIndex >= 1 gate and the delay roll.
+			if (t->instant)
+			{
+				if (raceActive)
+				{
+					AP_TrapFireSlot(i);
+					break;
+				}
+				// The race ended between the receive and this tick (a lap-3 finish
+				// line, a pause into quit). The moment it was earned in is gone, so
+				// it drops back to an ordinary primed trap rather than ambushing the
+				// player the instant the NEXT race's lights go out.
+				t->instant = 0;
+			}
 			if (lapWindow)
 			{
 				if (!t->rolled)
