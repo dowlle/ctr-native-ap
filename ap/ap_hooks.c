@@ -32,6 +32,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
+#include "ap_useful.h"     // H-dossier useful grants
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
@@ -3839,6 +3840,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// ap_turbogrant_logic.h.
 		AP_TurboGrantReset();
 		AP_WumpaConnectReset();
+		AP_UsefulConnectReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -4064,6 +4066,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// (the first itemsanity item) that #223 needs for the Mask.
 			if (idx == AP_TURBOGRANT_TURBO_ITEM_INDEX)
 				AP_TurboGrantReceiveTurboWeapon();
+		}
+		else if (idx >= AP_USEFUL_ITEM_FIRST_INDEX &&
+		         idx < AP_USEFUL_ITEM_FIRST_INDEX + AP_USEFUL_ITEM_COUNT)
+		{
+			AP_UsefulReceive((int)(idx - AP_USEFUL_ITEM_FIRST_INDEX));
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -4652,6 +4659,12 @@ static int AP_ItemsanityActive(void)
 	// Server location-set membership is the authoritative all-or-none toggle.
 	// This also makes absent/old slot_data inert without a bespoke parser path.
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
+}
+
+int AP_ItemsanityWeaponAvailable(int heldItemID)
+{
+	return !AP_ItemsanityActive() ||
+	       AP_ItemsanityUseIsOwned(heldItemID, ap_itemsanity_owned);
 }
 
 // Called from VehPickupItem_ShootOnCirclePress with the driver's own held id,
@@ -5639,6 +5652,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// the snapshot describes is still the live one.
 	AP_DemoCamTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
 	                        // one pending grant into an empty in-race weapon slot
