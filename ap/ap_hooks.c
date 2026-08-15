@@ -1266,7 +1266,7 @@ static int ap_goal_sent = 0;
 // "the first N in a fixed order".
 // Without slot_data (vanilla / no AP config) we keep the legacy behaviour:
 // the first Oxide beat is the goal.
-static void AP_FeedEnqueue(const char *text, int color); // defined with the feed block below
+static void AP_FeedEnqueue(const char *text, int color, int playCue); // defined with the feed block below
 
 void AP_EvaluateGoal(void)
 {
@@ -1290,7 +1290,7 @@ void AP_EvaluateGoal(void)
 		{
 			warned = 1;
 			AP_LogLine("[AP GOAL] auto-goal disabled: seed schema is newer than this client\n");
-			AP_FeedEnqueue("GOAL CHECK OFF: seed needs a newer client", ORANGE);
+			AP_FeedEnqueue("GOAL CHECK OFF: seed needs a newer client", ORANGE, 0);
 		}
 		return;
 	}
@@ -1859,7 +1859,7 @@ char *AP_Credits_PrependScroll(char *origScroll)
 // lost) and shows them on the next 1P surface.
 // Storage cap: big enough that the "%s FROM %s" format below (item<=31 +
 // " FROM " + player<=23) can never be truncated, so no -Wformat-truncation.
-#define AP_FEED_TEXT_CAP           64
+#define AP_FEED_TEXT_CAP           96
 #define AP_FEED_ITEM_CAP           32
 #define AP_FEED_PLAYER_CAP         24
 // Wording lives here (retunable), consistent with the ceremony block above.
@@ -1873,6 +1873,7 @@ typedef struct
 	char text[AP_FEED_TEXT_CAP];
 	int  color;      // DecalFontStyle index resolved from the item's AP class (#195)
 	int  framesLeft; // visible lifetime remaining
+	int  playCue;    // received-item cue, consumed only when promoted in a race
 } AP_FeedLine;
 
 static AP_FeedLine ap_feed_queue[AP_FEED_QUEUE_MAX]; // FIFO of pending lines
@@ -1886,6 +1887,13 @@ static int       ap_feed_primed = 0;  // 0 while absorbing the initial inventory
 static long long ap_feed_hwm = -1;    // highest already-known server index
 static int       ap_feed_quiet = 0;   // consecutive no-new-item frames (priming)
 
+// A self-bound podium rung is shown immediately with its rung reason. The
+// server then echoes the same item through ReceivedItems; suppress that one
+// generic echo so the player sees one descriptive line and hears one cue.
+#define AP_FEED_SELF_RUNG_MAX 8
+static long long ap_feed_self_rung_items[AP_FEED_SELF_RUNG_MAX];
+static int ap_feed_self_rung_count = 0;
+
 static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
                                // BOTH feed surfaces since #192, key name kept)
 int AP_HubFeedOn(void)
@@ -1894,7 +1902,7 @@ int AP_HubFeedOn(void)
 }
 
 // Append a ready-formatted line to the pending queue. Oldest is dropped if full.
-static void AP_FeedEnqueue(const char *text, int color)
+static void AP_FeedEnqueue(const char *text, int color, int playCue)
 {
 	if (ap_feed_qcount >= AP_FEED_QUEUE_MAX)
 	{
@@ -1905,7 +1913,33 @@ static void AP_FeedEnqueue(const char *text, int color)
 	snprintf(ap_feed_queue[slot].text, AP_FEED_TEXT_CAP, "%s", text);
 	ap_feed_queue[slot].color = color;
 	ap_feed_queue[slot].framesLeft = 0;
+	ap_feed_queue[slot].playCue = playCue;
 	ap_feed_qcount++;
+}
+
+static void AP_FeedRememberSelfRung(long long item)
+{
+	if (ap_feed_self_rung_count >= AP_FEED_SELF_RUNG_MAX)
+	{
+		memmove(&ap_feed_self_rung_items[0], &ap_feed_self_rung_items[1],
+		        sizeof(ap_feed_self_rung_items[0]) * (AP_FEED_SELF_RUNG_MAX - 1));
+		ap_feed_self_rung_count--;
+	}
+	ap_feed_self_rung_items[ap_feed_self_rung_count++] = item;
+}
+
+static int AP_FeedConsumeSelfRung(long long item)
+{
+	for (int i = 0; i < ap_feed_self_rung_count; i++)
+	{
+		if (ap_feed_self_rung_items[i] != item)
+			continue;
+		memmove(&ap_feed_self_rung_items[i], &ap_feed_self_rung_items[i + 1],
+		        sizeof(ap_feed_self_rung_items[0]) * (ap_feed_self_rung_count - i - 1));
+		ap_feed_self_rung_count--;
+		return 1;
+	}
+	return 0;
 }
 
 // Clear feed state on a fresh (re)connect: drop stale toasts and re-arm the
@@ -1919,6 +1953,7 @@ void AP_FeedConnectReset(void)
 	ap_feed_qcount = 0;
 	ap_feed_vcount = 0;
 	ap_feed_stagger = 0;
+	ap_feed_self_rung_count = 0;
 }
 
 // One drained received item. While unprimed (initial inventory) it is swallowed
@@ -1941,6 +1976,8 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 		return; // replayed inventory entry -> already known
 	if (index > ap_feed_hwm)
 		ap_feed_hwm = index;
+	if (AP_FeedConsumeSelfRung(item))
+		return; // descriptive podium-rung line already queued
 
 	int self = ap_net_self_slot();
 	// Display rule: own slot OR the server (slot <= 0) shows just the item; anyone
@@ -1970,7 +2007,7 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 
 	// Colour by AP class, not by own/foreign: an own filler reads cyan exactly
 	// like a foreign one. own only shaped the wording above.
-	AP_FeedEnqueue(line, AP_ClassFontColor(flags));
+	AP_FeedEnqueue(line, AP_ClassFontColor(flags), 1);
 }
 
 // A location WE just checked that feeds SOMEONE ELSE. The received feed only ever
@@ -2021,7 +2058,7 @@ static void AP_FeedOnLocationSent(long code)
 	// so it never truncates. Class-coloured like a received line; a sent item is
 	// never our own, but that no longer drives the colour.
 	snprintf(line, sizeof line, AP_FEED_FMT_SENT, itemS, playerS);
-	AP_FeedEnqueue(line, AP_ClassFontColor(flags));
+	AP_FeedEnqueue(line, AP_ClassFontColor(flags), 0);
 }
 
 // Called once after each frame's received-item drain (n = items drained this
@@ -2050,7 +2087,7 @@ void AP_FeedEndDrain(int drainedThisFrame)
 // eviction order are literally the same code in a race as on the hub; the only
 // per-surface value is where the block is anchored. Callers guarantee it runs at
 // most once per frame (see the block comment above).
-static void AP_FeedTickAndDraw(int x, int baseY)
+static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.
@@ -2069,6 +2106,9 @@ static void AP_FeedTickAndDraw(int x, int baseY)
 			snprintf(v->text, AP_FEED_TEXT_CAP, "%s", q->text);
 			v->color = q->color; // classification colour follows the line through the queue
 			v->framesLeft = AP_FEED_LIFETIME_FRAMES; // lifetime starts now (visible)
+			v->playCue = 0;
+			if (playableRace && q->playCue)
+				OtherFX_Play(0x41, 1); // retail 10-Wumpa / juiced-up pickup cue
 			ap_feed_vcount++;
 			ap_feed_stagger = AP_FEED_STAGGER_FRAMES;
 		}
@@ -2107,7 +2147,7 @@ void AP_FeedDrawHub(void)
 	if (!ctr_cfg_active() || !ap_hub_feed_on)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y);
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent
@@ -2135,7 +2175,7 @@ void AP_FeedDrawRace(void)
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y);
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);
 }
 
 // Persistent "this seed is from a newer apworld -- update the client" banner
@@ -3982,6 +4022,60 @@ enum
 	AP_RUNG_FINISH_ANY    = 4,
 };
 
+static const char *AP_RungFeedReason(int rungTag)
+{
+	switch (rungTag)
+	{
+	case AP_RUNG_HELD_1ST:      return "BE IN 1ST";
+	case AP_RUNG_HELD_3RD:      return "BE IN 3RD";
+	case AP_RUNG_HELD_5TH:      return "BE IN 5TH";
+	case AP_RUNG_FINISH_PODIUM: return "FINISH ON PODIUM";
+	case AP_RUNG_FINISH_ANY:    return "FINISH";
+	default:                    return "PODIUM RUNG";
+	}
+}
+
+static void AP_FeedOnRungSent(long code, int rungTag)
+{
+	long long item = 0;
+	int player = -1;
+	unsigned flags = 0;
+	if (!ap_net_scout_known(code, &item, &player, &flags))
+		return;
+
+	char itemRaw[64], playerRaw[64];
+	char itemS[AP_FEED_ITEM_CAP], playerS[AP_FEED_PLAYER_CAP];
+	char line[AP_FEED_TEXT_CAP];
+	if (ap_net_scout_text(code, itemRaw, (int)sizeof itemRaw,
+	                      playerRaw, (int)sizeof playerRaw))
+	{
+		AP_CeremonySanitize(itemRaw, itemS, (int)sizeof itemS);
+		AP_CeremonySanitize(playerRaw, playerS, (int)sizeof playerS);
+	}
+	else
+	{
+		itemS[0] = '\0';
+		playerS[0] = '\0';
+	}
+	if (AP_CeremonyNameIsBlank(itemS))
+		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
+
+	const char *reason = AP_RungFeedReason(rungTag);
+	if (player == ap_net_self_slot())
+	{
+		snprintf(line, sizeof line, "%s (%s)", itemS, reason);
+		AP_FeedRememberSelfRung(item);
+		AP_FeedEnqueue(line, AP_ClassFontColor(flags), 1);
+	}
+	else
+	{
+		if (playerS[0] == '\0')
+			snprintf(playerS, sizeof playerS, "%s", "PLAYER");
+		snprintf(line, sizeof line, "%s TO %s (%s)", itemS, playerS, reason);
+		AP_FeedEnqueue(line, AP_ClassFontColor(flags), 0);
+	}
+}
+
 // Held-position debounce: the live position must hold stable for this long before
 // its held rung fires, so a one-or-two-frame overtake flicker at a pass cannot
 // earn a rung. Short by design (decision 4, 2026-07-16 wayfinder): "if the game
@@ -3996,14 +4090,14 @@ enum
 // item-box, itemsanity and lettersanity checks. Ceremony participation and the
 // sent-item feed are deliberately caller decisions: not every class is earned in
 // a race-end award block, and bursty classes must be able to suppress feed spam.
-static void AP_EmitClassCheck(long code,
+static int AP_EmitClassCheck(long code,
                               int addToCeremonyLedger, int ledgerBit, int ledgerTag,
                               int toastSentItem, const char *logFmt, ...)
 {
 	if (code < 0)
-		return; // location absent this seed
+		return 0; // location absent this seed
 	if (ap_net_location_checked(code))
-		return; // already checked (re-fire / re-win / reload)
+		return 0; // already checked (re-fire / re-win / reload)
 
 	char msg[128];
 	va_list args;
@@ -4017,6 +4111,7 @@ static void AP_EmitClassCheck(long code,
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
 		AP_FeedOnLocationSent(code);
+	return 1;
 }
 
 int AP_LetterAvailable(int track, int letter)
@@ -4155,9 +4250,10 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 static void AP_EmitRung(int track, long code, int rungTag, int position,
                         const char *phase)
 {
-	AP_EmitClassCheck(code, 1, -1, rungTag, 0,
-	                  "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
-	                  phase, track, position, rungTag, code);
+	if (AP_EmitClassCheck(code, 1, -1, rungTag, 0,
+	                      "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
+	                      phase, track, position, rungTag, code))
+		AP_FeedOnRungSent(code, rungTag);
 }
 
 // Item box wrapper (#109). Two class policies, both from the 2026-08-10 ruling:
