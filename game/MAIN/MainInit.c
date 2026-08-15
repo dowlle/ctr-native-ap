@@ -162,6 +162,12 @@ void MainInit_JitPoolsReset(struct GameTracker *gGT)
 {
 	JitPool_Clear(&gGT->JitPools.thread);
 	JitPool_Clear(&gGT->JitPools.instance);
+#ifdef CTR_AP
+	// AP spawn entries retain pointers into the instance pool. A same-map
+	// restart clears that pool without calling MainInit_JitPoolsNew, so those
+	// pointers must be invalidated at the clear boundary itself.
+	AP_Spawn_OnPoolReset();
+#endif
 	JitPool_Clear(&gGT->JitPools.smallStack);
 	JitPool_Clear(&gGT->JitPools.mediumStack);
 	JitPool_Clear(&gGT->JitPools.largeStack);
@@ -281,11 +287,6 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 		             rdata.s_InstancePool);
 	}
-	// The pool was just re-inited, so every instance the additive model loader
-	// handed out is now a pointer into a rebuilt free list. Tell it here rather
-	// than letting it infer a reload from a levelID change: a race RESTART
-	// re-inits the pool without the level changing at all.
-	AP_Spawn_OnPoolReset();
 #else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);
