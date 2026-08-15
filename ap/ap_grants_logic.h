@@ -30,6 +30,25 @@ static void AP_GrantLedgerRestore(AP_GrantLedger *ledger,
 	ledger->inFlight = 0;
 }
 
+static void AP_GrantLedgerBeginReplay(AP_GrantLedger *ledger)
+{
+	ledger->received = 0;
+	ledger->fired = 0;
+	ledger->inFlight = 0;
+}
+
+static void AP_GrantLedgerReceive(AP_GrantLedger *ledger,
+	long long persistedFired)
+{
+	if (persistedFired < 0)
+		persistedFired = 0;
+	ledger->received++;
+	/* Reconcile the replay prefix before exposing later, genuinely pending
+	 * receipts. This is safe while the full list arrives in several batches. */
+	if (ledger->fired < persistedFired)
+		ledger->fired++;
+}
+
 static long long AP_GrantLedgerPending(const AP_GrantLedger *ledger)
 {
 	long long pending = ledger->received - ledger->fired -

@@ -22,6 +22,7 @@
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
+#include "ap_grants.h"     // queued on-demand Turbo grant (#224)
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
@@ -3476,6 +3477,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// authoritative replay, so a reconnect or a slot switch can never carry
 		// one slot's helper into another's session.
 		AP_TiziReset();
+		AP_GrantConnectReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3664,6 +3666,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
 			if (idx == AP_TIZI_MASK_ITEM_INDEX)
 				AP_TiziReceiveMask();
+		}
+
+		else if (idx == AP_TURBO_GRANT_ITEM_INDEX)
+		{
+			AP_TurboGrantReceive();
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -4071,6 +4078,13 @@ static int AP_ItemsanityActive(void)
 	// Server location-set membership is the authoritative all-or-none toggle.
 	// This also makes absent/old slot_data inert without a bespoke parser path.
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
+}
+
+int AP_ItemsanityOwnsWeapon(int heldItemID)
+{
+	int index = AP_ItemsanityWeaponIndex(
+		AP_ItemsanityCanonicalWeapon(heldItemID));
+	return index >= 0 && ap_itemsanity_owned[index] != 0;
 }
 
 // Called from VehPickupItem_ShootOnCirclePress with the driver's own held id,
@@ -4704,6 +4718,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+	AP_TurboGrantTick(gGT); // #224: queue and deliver a normal held Turbo
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)

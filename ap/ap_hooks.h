@@ -10,6 +10,8 @@
 
 #ifdef CTR_AP
 
+int AP_ItemsanityOwnsWeapon(int heldItemID);
+
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 

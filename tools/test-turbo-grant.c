@@ -63,6 +63,20 @@ static void test_reconnect_rebuild_and_duplicate_counts(void)
 	assert(AP_GrantLedgerPending(&ledger) == 2);
 }
 
+static void test_batched_replay_hides_already_fired_prefix(void)
+{
+	AP_GrantLedger ledger;
+	AP_GrantLedgerBeginReplay(&ledger);
+	AP_GrantLedgerReceive(&ledger, 2);
+	assert(ledger.received == 1 && ledger.fired == 1);
+	assert(AP_GrantLedgerPending(&ledger) == 0);
+	AP_GrantLedgerReceive(&ledger, 2);
+	assert(ledger.received == 2 && ledger.fired == 2);
+	assert(AP_GrantLedgerPending(&ledger) == 0);
+	AP_GrantLedgerReceive(&ledger, 2);
+	assert(AP_GrantLedgerPending(&ledger) == 1);
+}
+
 static void test_slot_identity_load_does_not_leak(void)
 {
 	AP_GrantLedger ledger;
@@ -93,6 +107,7 @@ int main(void)
 	test_delivery_is_not_consumption();
 	test_death_or_restart_requeues_inflight();
 	test_reconnect_rebuild_and_duplicate_counts();
+	test_batched_replay_hides_already_fired_prefix();
 	test_slot_identity_load_does_not_leak();
 	test_hostile_persisted_count_is_clamped();
 	puts("Turbo Grant accounting: PASS");

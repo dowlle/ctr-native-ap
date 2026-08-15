@@ -1145,6 +1145,7 @@ void VehPickupItem_ShootOnCirclePress(struct Driver *d)
 	// 12-missile ceiling) swallow the projectile. It reads d->heldItemID, the
 	// true weapon identity, before the shared Bomb/Missile rewrite below.
 	AP_ItemsanityOnUse(d, (int)d->heldItemID);
+	AP_TurboGrantOnWeaponFire(d, (int)d->heldItemID);
 #endif
 
 	weapon = d->heldItemID;
