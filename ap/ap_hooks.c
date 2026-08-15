@@ -1794,10 +1794,13 @@ char *AP_Credits_PrependScroll(char *origScroll)
 // enter at the bottom and push older lines up; a deep queue drains oldest-first,
 // one line per stagger interval.
 //
-// Two draw surfaces, never both in the same frame:
-//   * the HUB anchor, bottom-left, unchanged from the shipped feed;
-//   * the RACE anchor, upper-left of the track view, placed to clear the 1P race
-//     HUD (see AP_FEED_RACE_X / AP_FEED_RACE_BASE_Y for the arithmetic).
+// Two draw surfaces, never both in the same frame, both anchored at the SAME
+// bottom-left point: the original race anchor placed the feed in a mid-screen
+// band clear of the race HUD, but that put it mid-screen above the kart,
+// directly in the sightline (Stef's finding, N. Gin Labs screenshot,
+// 2026-08-12). Reusing the hub's own anchor is deliberate, not a placeholder
+// -- the ruling was to reuse the hub anchor/behavior verbatim in race mode
+// rather than invent a new position.
 // RenderAllHUD picks exactly one of the hub and race branches per frame
 // (MainFrame_RenderFrame.c: the ADVENTURE_ARENA if/else), the two hub sites are
 // themselves mutually exclusive (LOAD_IsOpen_AdvHub), and the race sites are the
@@ -1821,32 +1824,16 @@ char *AP_Credits_PrependScroll(char *origScroll)
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 
-// ── RACE anchor (issue #192) ────────────────────────────────────────────────
-// The hub anchor cannot be reused in a race: the 1P race HUD owns the whole left
-// column, and the feed would print straight through it. What is actually there,
-// read off the live element table and draw sites rather than from a screenshot:
-//   * the race clock + lap times block, drawn at (0x14, 8) (UI_RenderFrame.c's
-//     UI_DrawRaceClock call), FONT_BIG plus three lap rows -> roughly y 8..0x3c;
-//   * the rank list: numbers at x 0x34 and icons at x 0x14, y = rank * 0x1b +
-//     0x39 for four ranks (UI_Rank.c:139 and :180-183) -> y 0x39..0xa0;
-//   * the position readout at hudStructPtr[5] = (70, 171) in FONT_BIG
-//     (data.hud_1P_P1, zGlobal_DATA.c) -> the bottom-left corner, y ~0xa0..0xc8;
-//   * the map at (500, 195) and the reserves/speed block at (490, 206+), both
-//     bottom-RIGHT; the weapon box at (232, 5) and the turbo counter + its bar
-//     (x 0x14a..0x214, y 0x20..0x32) across the top.
-// That leaves the band between the clock block and the position readout, to the
-// right of the rank icons, free: x from 0x60, y from about 0x40 to 0x90. The
-// feed's newest line anchors at the bottom of that band and older lines stack
-// upward, so five lines occupy y 0x44..0x74 -- clear of every element above.
-// Left-justified like the hub feed, so an over-long line overflows toward the
-// empty right half of the screen instead of over the rank icons.
-//
-// 2P/3P/4P are deliberately NOT drawn: every coordinate here is a 1P-viewport
-// coordinate, and the split-screen HUD tables move each element per viewport.
-// Local multiplayer keeps queueing lines (nothing is lost) and shows them on the
-// next 1P surface.
-#define AP_FEED_RACE_X             0x60
-#define AP_FEED_RACE_BASE_Y        0x74 // bottom (newest) line anchor, in-race
+// ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
+// Previously the race surface used its own mid-screen band (upper-left of the
+// track view) to clear the 1P race HUD -- but that put the feed above the kart,
+// in the sightline (Stef's finding, N. Gin Labs screenshot, 2026-08-12). Ruled
+// fix: reuse the hub's own bottom-left anchor (AP_FEED_X / AP_FEED_BASE_Y)
+// verbatim instead of inventing a new position, same as the hub surface below.
+// 2P/3P/4P stay NOT drawn (see AP_FeedDrawRace): AP_FEED_X/AP_FEED_BASE_Y are
+// still 1P-viewport coordinates, and the split-screen HUD tables move each
+// element per viewport. Local multiplayer keeps queueing lines (nothing is
+// lost) and shows them on the next 1P surface.
 // Storage cap: big enough that the "%s FROM %s" format below (item<=31 +
 // " FROM " + player<=23) can never be truncated, so no -Wformat-truncation.
 #define AP_FEED_TEXT_CAP           64
@@ -2102,11 +2089,13 @@ void AP_FeedDrawHub(void)
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent
 // or received mid-race is seen when it happens instead of on the next hub entry.
+// Anchored at the SAME bottom-left point as the hub surface (see the RACE
+// anchor comment above); this is not a coincidence, it is the fix.
 //
 // Two extra gates the hub surface does not need:
-//   * 1P ONLY. Every coordinate in the race anchor is a 1P-viewport coordinate
-//     (see AP_FEED_RACE_X). In split-screen the line would land in an arbitrary
-//     place in an arbitrary viewport, so the feed stays queued instead.
+//   * 1P ONLY. AP_FEED_X/AP_FEED_BASE_Y are 1P-viewport coordinates. In
+//     split-screen the line would land in an arbitrary place in an arbitrary
+//     viewport, so the feed stays queued instead.
 //   * NOT WHILE PAUSED. The pause menu draws over the HUD, and a feed printing
 //     through it would be both ugly and unreadable. Skipping the whole tick (not
 //     just the draw) also FREEZES the lifetimes: a line does not burn its four
@@ -2123,7 +2112,7 @@ void AP_FeedDrawRace(void)
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_RACE_X, AP_FEED_RACE_BASE_Y);
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y);
 }
 
 // Persistent "this seed is from a newer apworld -- update the client" banner
