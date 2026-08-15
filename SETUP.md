@@ -109,6 +109,57 @@ screen (`config.ini`) take precedence when both exist. The example file also
 documents a few optional quality of life toggles (`skip_hints`, `map_flash`),
 which can equally be changed in the in-game options menu.
 
+## Item boxes
+
+If your YAML turned on itemsanity, the tracks carry AP item boxes: crates placed
+around the course that send a location check when you break them. A broken box
+stays broken for the rest of the seed, across reconnects and relaunches, because
+the client asks the server what has already been checked rather than keeping its
+own tally.
+
+You do not have to install anything for this. The placement set, meaning where
+every box stands on every track, is compiled into the client, so the boxes are
+simply there once your seed includes them.
+
+Two things decide whether a box appears:
+
+- **Your seed.** A box stands only if your slot actually has that location. If
+  your options created fewer box locations than the placement set covers, or none
+  at all, you get exactly the ones your seed created and no more. That is
+  correct, not a missing download.
+- **Whether you already broke it.** Checked boxes do not come back.
+
+If a track looks empty and you expected boxes, open `ctr-ap.log`. Every level
+load writes one line saying how many boxes are standing out of how many
+placements the track holds and which placement set is live, plus, when nothing
+stands, which reason applies.
+
+### Overriding the placements
+
+Advanced, and almost nobody needs it. A file named `ap-box-placements.json` next
+to the executable **replaces** the compiled-in placement set wholesale, which is
+what makes testing a custom layout or applying a hotfix set possible without a
+new build. Delete the file to go back to the shipped set.
+
+Precedence is by existence, not by content: if the file is there it wins, even
+when it is empty. An empty file means zero boxes everywhere, because an operator
+who deliberately emptied it means exactly that, and quietly restoring the shipped
+placements behind their back would be the worse failure. The log names the live
+set on every run.
+
+Be aware of the desync an override can cause. Box names are positional: the third
+box listed for a track is that track's "Item Box 3", and that is the name your
+seed and any tracker were generated against. An override that puts a different
+number of boxes on a track, or the same boxes in a different order, re-points
+those names, so what you break and what your tracker shows will disagree. The
+client warns in the log when an override's total differs from the shipped set,
+but it cannot tell a deliberate custom layout from a truncated file, so that
+warning is the whole guard. Unless you are authoring placements, leave the file
+alone.
+
+The file format, and the in-game author mode that writes it, are documented in
+[docs/BOX_AUTHORING.md](docs/BOX_AUTHORING.md).
+
 ## Generating or hosting a multiworld
 
 Only the person generating the room needs the `ctr.apworld`. Download it from

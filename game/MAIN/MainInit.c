@@ -281,6 +281,11 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 		             rdata.s_InstancePool);
 	}
+	// The pool was just re-inited, so every instance the additive model loader
+	// handed out is now a pointer into a rebuilt free list. Tell it here rather
+	// than letting it infer a reload from a levelID change: a race RESTART
+	// re-inits the pool without the level changing at all.
+	AP_Spawn_OnPoolReset();
 #else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);

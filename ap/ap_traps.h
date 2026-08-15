@@ -10,15 +10,23 @@
 // stays here. Mirrors the ap_hooks.c convention.
 //
 // ── Design: the priming rule ──
-// A received trap does NOT fire immediately. It PRIMES silently and only FIRES
-// during an active race on LAP 2 OR LAP 3, at a random moment after priming. This
-// is shared framework behaviour for the whole trap family (not per-trap), so every
-// effect below inherits the same lifecycle:
+// A trap received OUTSIDE a race does NOT fire immediately. It PRIMES silently and
+// only FIRES during an active race on LAP 2 OR LAP 3, at a random moment after
+// priming. This is shared framework behaviour for the whole trap family (not
+// per-trap), so every effect below inherits the same lifecycle:
 //
 //   AP_TrapReceive(id)  -> a registry slot goes PRIMED (armed, hidden from player)
 //   AP_TrapTick()       -> per frame: once we are racing on lap 2/3, roll a random
 //                          delay; when it elapses the slot goes FIRING (effect on,
 //                          timed); when the duration elapses the slot CLEARS.
+//
+// ── The mid-race exception (RULED 2026-08-11, rulings note §5) ──
+// A trap that ARRIVES while a race is already running fires IMMEDIATELY: it
+// bypasses both the lapIndex >= 1 window and the random delay roll. Itemsanity
+// boxes (#109) deliver traps mid-race, and a trap earned by breaking a box on lap
+// 1 that then sits silent until lap 2 of some LATER race reads as a bug, not as
+// suspense. Outside a race the primed-then-next-race behaviour above is unchanged,
+// which is still every trap that arrives from a menu, a hub or a ceremony.
 //
 // The effects themselves are applied at engine call-sites: the environmental ones
 // (icy road, low gravity) scale physics scalars in VehPhysForce; the control ones
@@ -64,6 +72,25 @@ enum AP_TrapEffect
 // contract). This function stays the single native entry point the pipeline
 // calls.
 void AP_TrapReceive(int effect);
+
+// ── Connect / slot-swap reset ──
+// Drop every registry instance and every firing flag. Called from the fresh-connect
+// reset block in ap_hooks.c, alongside AP_FeedConnectReset and the received-item
+// tally reset, and for exactly the same reason: session state must not cross a
+// connection.
+//
+// FOUND LIVE 2026-08-11 (Bandi-slot session): a PRIMED-but-unfired trap survived a
+// reconnect onto a DIFFERENT slot and fired there. An Icy Road Trap sent to
+// Appie's slot from a Blizzard Bluff Finish-Any went off during Bandi's Slide
+// Coliseum relic race, on a slot the server log proves was never sent a trap. The
+// registry is per-session state keyed to nothing, so a reconnect has to clear it.
+//
+// A FIRING trap is cleared too, not left to run down: its effect belongs to the
+// previous connection just as much as a primed one does. The first-person camera
+// is restored on the next AP_TrapTick -- the restore latch is deliberately left
+// standing here, because this runs off the network path with no GameTracker in
+// hand and writing the camera from there is not a thing this module does.
+void AP_Trap_ConnectReset(void);
 
 // ── Per-frame driver ──
 // Called once per frame from AP_OnFrame (ap_hooks.c), BEFORE gamepad processing
