@@ -25,7 +25,7 @@
 //               time, the start-line rev boost, the Turbo pickup and the
 //               10-wumpa Super Engine. Turbo PADS still work -- that is the
 //               design's explicit invariant, so every track stays drivable at
-//               the bottom of the chain. Field-confirmed by Stef in the Test Lab
+//               the bottom of the chain. Field-confirmed in the Test Lab
 //               build on 2026-08-09 21:31 (the boost weapon fires, is consumed,
 //               and does nothing).
 //   1 BOOST     everything grants again, but the boost-speed cap is clamped to

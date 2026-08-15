@@ -278,6 +278,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.ap_item_type_colors = 1;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
+	ctr_cfg.lettersanity_mode = 0;
+	for (int t = 0; t < CTR_CFG_LETTER_TRACK_COUNT; t++)
+		for (int l = 0; l < CTR_CFG_LETTER_COUNT; l++)
+			ctr_cfg.lettersanity_locations[t][l] = -1;
 	ctr_cfg.podium_any_position = 0;
 	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
 	{
@@ -673,6 +677,24 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	//                finish_any; the held_* live rungs did not exist, stay absent.
 	// A rung absent from the seed (held_5th default-off, a rung the seed did not
 	// place, the whole feature off) is stored -1 so the native fan-out skips it.
+	auto lettersIt = j.find("lettersanity_checks");
+	if (lettersIt != j.end() && lettersIt->is_object())
+	{
+		ctr_cfg.lettersanity_mode = json_int(*lettersIt, "mode", 0);
+		auto locIt = lettersIt->find("locations");
+		if (locIt != lettersIt->end() && locIt->is_object())
+		{
+			for (auto it = locIt->begin(); it != locIt->end(); ++it)
+			{
+				int track;
+				try { track = std::stoi(it.key()); } catch (...) { continue; }
+				if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT || !it.value().is_array()) continue;
+				for (int l = 0; l < CTR_CFG_LETTER_COUNT && l < (int)it.value().size(); l++)
+					if (it.value()[l].is_number_integer()) ctr_cfg.lettersanity_locations[track][l] = it.value()[l].get<long>();
+			}
+		}
+	}
+
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{

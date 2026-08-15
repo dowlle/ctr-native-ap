@@ -155,7 +155,7 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 	// sits between the two yaw rotations. A half-turn about X conjugates a Y
 	// rotation into its negation, so the yaws do not cancel and the marker never
 	// locks square to the camera; it just stops spinning and changes shape as you
-	// drive. Stef's verdict was "the AP logo now doesnt do any rotation".
+	// drive. The ruled verdict was "the AP logo now doesnt do any rotation".
 	//
 	// If a real billboard is ever wanted, follow the engine's OWN pattern rather
 	// than pb->rot: the locked-pad digit code a few hundred lines below faces the
@@ -861,8 +861,32 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// softlock) and permanently disables this pad's live re-birth
 				// (ThTick's refresh requires boolEnteredWarppad==0). AnimateOpen
 				// keeps the pad inert and the player free.
+				//
+				// Issue #232: inert is WRONG while this destination still has
+				// unbroken AP item boxes. AP_PadState holds such a pad at 2
+				// Raceable ("stays Raceable and enterable until they are gone")
+				// and the map paints it green, but the gate had no box path, so
+				// a stage-2-locked pad refused all entry and stranded the boxes
+				// -- another player's items among them -- for the whole window
+				// between the trophy check and stage 2. The apworld gates a box
+				// on its track region, i.e. on stage 1 alone (verified against
+				// worlds/ctr Rules.py/Regions.py), so generation considers those
+				// boxes reachable in exactly that window.
+				//
+				// Keep offering entry, as a PLAIN adventure re-race: skip the
+				// tier-2 menu below (stage 2 does still own the relic / token
+				// tier) and skip the vanilla re-race hub-key gate further down
+				// (state-2 entry never had one on the first pass either). The
+				// destination's Trophy Race location is already checked and
+				// AP_NotifyAdvReward gates its send on wasChecked, so winning
+				// the re-race sends no duplicate check. Boxes break in any
+				// ADVENTURE_MODE race (AP_BoxesRaceCarriesBoxes), which this is.
 				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
+				{
+					if (AP_PadBoxReRaceable(physLevelID, levelID))
+						goto WarpPad_BoxReRace;
 					goto WarpPad_AnimateOpen;
+				}
 #endif
 
 				if (warppadObj->framesWarping < 61)
@@ -1000,6 +1024,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
+#ifdef CTR_AP
+	// Issue #232 box re-entry lands here, one label above the ordinary race
+	// entry, so a box re-race takes the SAME plain adventure load a first-pass
+	// trophy race takes -- no tier-2 mode bits, and jumping in below the
+	// hub-key re-race gate above on purpose (see the gate's own note).
+WarpPad_BoxReRace:
+#endif
 	warppadObj->boolEnteredWarppad = 1;
 	warppadObj->framesWarping++;
 	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1359,7 +1390,7 @@ WarpPad_AnimateOpen:
 					// own fade supplies the colour instead. This is why the tint helper
 					// already answers 0 for a ghosted slot: the two must agree.
 					//
-					// Consequence to check in game (Artemis): models that carry no useful
+					// Consequence to check in game (the test host): models that carry no useful
 					// unmodulated colour of their own -- key, gem -- ghost DARK. If that
 					// reads badly, the pre-analysed fallback is the pad token's translucency
 					// path (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT), which keeps colorRGBA but
@@ -1542,6 +1573,14 @@ static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
 	if (!ctr_cfg_active() ||
 	    warppadObj->levelID >= AH_WP_SLIDE_COLISEUM ||
 	    !AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
+		return 0;
+	// Issue #232: while unbroken item boxes remain behind the destination the
+	// pad is NOT re-locked -- AP_PadState holds it at 2 Raceable and ThTick lets
+	// the player in for a box re-race -- so advertising a stage-2 requirement
+	// here would render a closed pad the gate is not actually closing. Decline
+	// the re-lock; the caller falls through to its stage-1 advert, which the pad
+	// satisfies (AP_PadBoxReRaceable implies stage 1 met), so it births OPEN.
+	if (AP_PadBoxReRaceable(physLevelID, warppadObj->levelID))
 		return 0;
 	r = ctr_cfg_warp_stage2_req(physLevelID);
 	if (r == 0 || AP_BossReqMet(r))
@@ -1781,10 +1820,18 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// non-race dest this is already inert (the apworld emits stage2 type 0 -> the
 		// !unlocked term is false), but the guard makes it robust regardless of what
 		// the destination hosts. Matches ThTick's own dest-race gate at :654.
+		//
+		// Issue #232: NOT while unbroken item boxes remain behind the
+		// destination. AP_PadState keeps such a pad at 2 Raceable and ThTick
+		// admits a box re-race, so a closed pad advertising a stage-2
+		// requirement would be advertising a gate that is not being applied --
+		// the same gate/display split in the other direction. The trial / arena
+		// / cup twin of this decline lives in AP_Stage2RelockToUnlock.
 		if (ctr_cfg_active() &&
 		    warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
 		    AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY) &&
-		    !ctr_cfg_warp_stage2_unlocked(levelID))
+		    !ctr_cfg_warp_stage2_unlocked(levelID) &&
+		    !AP_PadBoxReRaceable(levelID, warppadObj->levelID))
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);
@@ -1877,7 +1924,14 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// stage-2-NOT-satisfied case is caught by the re-lock branch above (renders
 			// the stage-2 requirement); vanilla / no-slot_data (ctr_cfg_active()==0)
 			// still uses the hub-key gate, unchanged.
-			if (ctr_cfg_active() && ctr_cfg_warp_stage2_unlocked(levelID))
+			//
+			// Issue #232 rides the same OPEN render: a pad whose stage 2 is unmet
+			// but whose destination still has unbroken item boxes declined the
+			// re-lock above, and must not fall to GetKeysRequirement instead --
+			// that is the very phantom "Key xN" BUG-A lock, now on a pad ThTick
+			// happily admits. Born open, it reads as what it is: enterable.
+			if (ctr_cfg_active() && (ctr_cfg_warp_stage2_unlocked(levelID) ||
+			                         AP_PadBoxReRaceable(levelID, warppadObj->levelID)))
 			{
 				unlockItem_modelID = 0;
 				unlockItem_numOwned = 0;
