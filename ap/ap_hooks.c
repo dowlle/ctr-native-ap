@@ -23,6 +23,7 @@
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "ap_grants.h"     // queued on-demand Turbo grant (#224)
+#include "ap_useful.h"     // H-dossier useful grants
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
@@ -3479,6 +3480,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_TiziReset();
 		AP_GrantConnectReset();
 		AP_WumpaStartingReset();
+		AP_UsefulConnectReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3688,6 +3690,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_WUMPA_START_ITEM_INDEX)
 		{
 			AP_WumpaStartingReceive();
+		}
+		else if (idx >= AP_USEFUL_ITEM_FIRST_INDEX &&
+		         idx < AP_USEFUL_ITEM_FIRST_INDEX + AP_USEFUL_ITEM_COUNT)
+		{
+			AP_UsefulReceive((int)(idx - AP_USEFUL_ITEM_FIRST_INDEX));
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -4745,6 +4752,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_TrapTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_TurboGrantTick(gGT); // #224: queue and deliver a normal held Turbo
+	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)

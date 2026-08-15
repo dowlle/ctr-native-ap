@@ -17,6 +17,7 @@
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "../ap/ap_grants.h"     // queued on-demand Turbo grant (#224)
 #include "../ap/ap_wumpa.h"      // filler bundles, starting fruit and 10-fruit check
+#include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_statbar.h"    // Garage stat bar, shared with the hub picker (#220)
@@ -366,6 +367,7 @@
 #include "../ap/ap_charswap.c"
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_grants.c"
+#include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_author.c"
