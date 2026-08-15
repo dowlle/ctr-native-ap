@@ -3,6 +3,7 @@
 #include <common.h> // structs Driver/GameTracker + sdata + gameMode/enum flags + functions.h (RB_Player_ModifyWumpa)
 
 #include "ap_wumpa.h"
+#include "ap_wumpa_logic.h"
 #include "ap_hooks.h" // AP_LogLine (non-static log shim)
 
 // ============================================================================
@@ -30,6 +31,7 @@ static int g_wumpa_pending = 0;
 // that gap, so the latch closes it; it also re-arms per cup leg (END_OF_RACE
 // reset) so a mid-cup receipt cannot leak into the next leg's load gap.
 static int g_countdown_seen = 0;
+static int g_wumpa_starting = 0;
 
 // The local human player. Single-player Adventure: drivers[0]. Same convention as
 // the trap module's AP_TrapLocalDriver.
@@ -73,6 +75,34 @@ void AP_WumpaReceive(int count)
 		         "[AP WUMPA] banked +%d, discarded +%d (bank full at %d)\n",
 		         banked, discarded, AP_WUMPA_MAX);
 	AP_LogLine(msg);
+}
+
+void AP_WumpaStartingReset(void)
+{
+	g_wumpa_starting = 0;
+}
+
+void AP_WumpaStartingReceive(void)
+{
+	g_wumpa_starting = AP_WumpaStartingIncrement(g_wumpa_starting);
+}
+
+void AP_WumpaApplyStarting(struct Driver *driver)
+{
+	if (driver == 0 || g_wumpa_starting <= 0)
+		return;
+	/* VehBirth already handled CHEAT_WUMPA before this hook. Do not replace
+	 * its 99-fruit sentinel with the AP ladder. */
+	driver->numWumpas = AP_WumpaStartingValue(g_wumpa_starting,
+		(sdata->gGT->gameMode2 & CHEAT_WUMPA) != 0, driver->numWumpas);
+}
+
+void AP_WumpaReachedTen(struct Driver *driver)
+{
+	struct GameTracker *gGT = sdata != 0 ? sdata->gGT : 0;
+	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+		return;
+	AP_EmitWumpaCheck();
 }
 
 // ── Per-frame lifecycle ──

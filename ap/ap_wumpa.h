@@ -32,11 +32,26 @@
 #ifdef CTR_AP
 
 struct GameTracker;
+struct Driver;
+
+#define AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX 120
+#define AP_WUMPA_BIG_BUNDLE_ITEM_INDEX 121
+#define AP_WUMPA_START_ITEM_INDEX 122
 
 // A Wumpa Fruit filler item was received (count >= 1). Adds to the pending bank;
 // the actual grant happens in AP_WumpaTick during an active race. Called from the
 // received-item drain loop in ap_hooks.c (AP_NetTick).
 void AP_WumpaReceive(int count);
+
+// Progressive Starting Wumpa is a replay-derived count, not a one-shot effect.
+// Reset it on every fresh connection, rebuild it from ReceivedItems, and apply
+// the resulting 0..10 count at the canonical VehBirth fruit reset.
+void AP_WumpaStartingReset(void);
+void AP_WumpaStartingReceive(void);
+void AP_WumpaApplyStarting(struct Driver *driver);
+
+// Called from RB_Player_ModifyWumpa at the engine's exact <10 -> 10 edge.
+void AP_WumpaReachedTen(struct Driver *driver);
 
 // Per-frame driver. Called once per frame from AP_OnFrame (ap_hooks.c), alongside
 // AP_TrapTick. Drains the pending bank into drivers[0] when a race is active. gGT

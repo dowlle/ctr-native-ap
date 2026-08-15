@@ -3478,6 +3478,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// one slot's helper into another's session.
 		AP_TiziReset();
 		AP_GrantConnectReset();
+		AP_WumpaStartingReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3671,6 +3672,22 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_TURBO_GRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
+		}
+		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX)
+		{
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_WumpaReceive(3);
+		}
+		else if (idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
+		{
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_WumpaReceive(10);
+		}
+		else if (idx == AP_WUMPA_START_ITEM_INDEX)
+		{
+			AP_WumpaStartingReceive();
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -4184,6 +4201,15 @@ void AP_EmitBoxCheck(int levelID, int slot, long code)
 	AP_EmitClassCheck(code, 0, -1, -1, 1,
 	                  "[AP CHECK] item box: level=%d slot=%d (Item Box %d) location %ld\n",
 	                  levelID, slot, slot + 1, code);
+}
+
+void AP_EmitWumpaCheck(void)
+{
+	const long code = 35016100L;
+	if (!ctr_cfg_active() || !ap_net_location_exists(code))
+		return;
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] reached 10 Wumpa: location %ld\n", code);
 }
 
 // FINISH fan-out: fan a trophy-race finish out into podium-ladder location checks

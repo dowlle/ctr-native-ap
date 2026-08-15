@@ -399,6 +399,9 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	{
 		d->numWumpas = 99;
 	}
+#ifdef CTR_AP
+	AP_WumpaApplyStarting(d);
+#endif
 
 	d->numHeldItems = 0;
 	d->PickupLetterHUD.numCollected = 0;
