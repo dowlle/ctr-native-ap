@@ -20,6 +20,7 @@
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
@@ -3459,6 +3460,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// accumulating on top of the previous connection would hand the player a
 		// doubled boost tier on every reconnect.
 		AP_CapabilityReset();
+		// Tizi Helper (#223): both receipts are booleans rebuilt from the same
+		// authoritative replay, so a reconnect or a slot switch can never carry
+		// one slot's helper into another's session.
+		AP_TiziReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3645,6 +3650,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
 		{
 			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
+			if (idx == AP_TIZI_MASK_ITEM_INDEX)
+				AP_TiziReceiveMask();
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -3657,6 +3664,15 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_CharacterReceive((int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX));
 		}
 
+		// Tizi Helper (#223, idx 188) and the itemsanity `Mask` weapon it needs
+		// when itemsanity is on (idx 101). Two booleans; the ruled AND lives in
+		// ap_tizi_logic.h. The Mask index is claimed here as well as by the #145
+		// itemsanity drain when that lands -- both are idempotent sets of
+		// independent flags, so the merge-up is a dedupe, not a conflict.
+		else if (idx == AP_TIZI_ITEM_INDEX)
+		{
+			AP_TiziReceiveHelper();
+		}
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
 		// local player in-race (issue #11). Not a gate item, so it never touches
 		// ap_recv_count. Cosmetic/QoL only; still logged as filler/unmapped below.
@@ -4676,6 +4692,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
