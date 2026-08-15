@@ -83,6 +83,70 @@ typedef char ap_cap_roster_table_size_check
          ? 1
          : -1];
 
+// ── Character unlocks (#54/#209) ───────────────────────────────────────────
+// One flag per ENGINE character id, not per roster slot: every consumer (the
+// pad gate, the hub picker, the roster enforcement at birth) asks about a
+// character the engine names, so the roster->engine translation happens exactly
+// once, on receipt.
+static int g_character_unlocked[AP_CAP_ROSTER_COUNT];
+
+int AP_CapabilityRosterCharacter(int rosterSlot)
+{
+	if (rosterSlot < 0 || rosterSlot >= AP_CAP_ROSTER_COUNT)
+		return -1;
+	return AP_CAP_ROSTER_CHARACTER[rosterSlot];
+}
+
+void AP_CharacterReceive(int rosterSlot)
+{
+	int characterID = AP_CapabilityRosterCharacter(rosterSlot);
+	if (characterID < 0)
+		return;
+	if (g_character_unlocked[characterID])
+		return; // one copy each; a re-send on reconnect is not news
+	g_character_unlocked[characterID] = 1;
+	{
+		char msg[128];
+		snprintf(msg, sizeof msg,
+		         "[AP CHARACTER] unlocked %s (roster slot %d -> character %d)\n",
+		         data.MetaDataCharacters[characterID].name_Debug
+		             ? data.MetaDataCharacters[characterID].name_Debug
+		             : "?",
+		         rosterSlot, characterID);
+		AP_LogLine(msg);
+	}
+}
+
+int AP_CharacterUnlocked(int characterID)
+{
+	if (characterID < 0 || characterID >= AP_CAP_ROSTER_COUNT)
+		return 0;
+
+	// No character phase on this seed (or no seed at all): answer the way a
+	// pre-0.2.0 client does -- the eight racers vanilla lets into Adventure,
+	// plus whoever is currently being driven. Never widen the roster on a seed
+	// that did not ask for it.
+	//
+	// Keyed on character_phase_present, NOT on ctr_cfg_active(): an older seed
+	// is active and simply carries none of these keys, and `character_unlocks`
+	// would default to 0 there -- which the all-unlocked branch below reads as
+	// "every racer is available". That would hand a pre-0.2.0 seed the whole
+	// roster, the exact opposite of leaving it alone.
+	if (!ctr_cfg_active() || !ctr_cfg.character_phase_present)
+		return characterID <= PURA || characterID == data.characterIDs[0];
+
+	// The racer the seed starts you as is always yours.
+	if (characterID == ctr_cfg.starting_character)
+		return 1;
+
+	// All-unlocked comfort mode: the seed created no unlock items at all, so
+	// every racer is available immediately.
+	if (!ctr_cfg.character_unlocks)
+		return 1;
+
+	return g_character_unlocked[characterID] != 0;
+}
+
 void AP_CapabilityReset(void)
 {
 	int i, j;
@@ -93,6 +157,11 @@ void AP_CapabilityReset(void)
 			g_cap_recv_pc[i][j] = 0;
 	g_cap_pc_logged = 0;
 	g_cap_pc_unknown_logged = 0;
+	// Character unlocks reset with everything else: a reconnect replays the
+	// full ReceivedItems list, so a stale flag from a previous session would
+	// otherwise survive into a seed that never granted that racer.
+	for (i = 0; i < AP_CAP_ROSTER_COUNT; i++)
+		g_character_unlocked[i] = 0;
 }
 
 void AP_CapabilityReceive(int chain)
@@ -476,6 +545,19 @@ static int AP_CapabilityStatRankValue(const struct MetaPhys *row, int rank)
 		return v[rank];
 
 	return v[NUM_CLASSES - 1] + (v[NUM_CLASSES - 1] - v[NUM_CLASSES - 2]);
+}
+
+// The absolute value the ladder holds at `rank` for the stat row at `offset`,
+// or -1 when the offset has no metaPhys row. Public so DISPLAY surfaces (the
+// hub picker, issue #251) can promise exactly what this module writes instead
+// of reimplementing the ladder -- the picker's vanilla-plus-delta model was
+// precisely that reimplementation drifting from the physics.
+int AP_CapabilityRankValueForOffset(int offset, int rank)
+{
+	const struct MetaPhys *row = AP_CapabilityMetaRow(offset);
+	if (row == 0)
+		return -1;
+	return AP_CapabilityStatRankValue(row, rank);
 }
 
 // Write one stat into the driver exactly the way VehBirth_SetConsts does -- by

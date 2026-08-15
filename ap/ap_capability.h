@@ -116,6 +116,34 @@ enum
 #define AP_CAPABILITY_PC_ITEM_FIRST_INDEX 31
 #define AP_CAPABILITY_PC_ITEM_COUNT (AP_CAP_ROSTER_COUNT * AP_CAP_CHAIN_COUNT)
 
+// ── Character unlock items (issues #54 / #209) ─────────────────────────────
+// The 16 racers, minted straight after the per-character capability block at
+// item indices 123..138, in the SAME apworld roster order. Each seed creates 15
+// of them (everything but the racer you start as, which arrives precollected),
+// one copy each. They add no locations and gate nothing unless the seed turned
+// racer-locked pads on.
+//
+// The roster-slot -> engine-character mapping is the one already in
+// ap_capability.c (AP_CAP_ROSTER_CHARACTER); putting the unlock tracker in the
+// same translation unit is deliberate, so a future roster edit cannot fix one
+// table and miss the other.
+#define AP_CHARACTER_ITEM_FIRST_INDEX 123
+#define AP_CHARACTER_ITEM_COUNT AP_CAP_ROSTER_COUNT
+
+// Receive one character unlock, by ROSTER SLOT (idx - the base above).
+void AP_CharacterReceive(int rosterSlot);
+
+// Is this ENGINE character id playable right now? True for the seed's starting
+// racer, for any racer whose unlock has been received, and -- in the ruled
+// all-unlocked comfort mode -- for every racer. On a seed with no character
+// phase at all it answers for the eight vanilla Adventure starters, which is
+// what a pre-0.2.0 client enforces.
+int AP_CharacterUnlocked(int characterID);
+
+// Engine character id for a roster slot, or -1 when the slot is out of range.
+// The single reader of AP_CAP_ROSTER_CHARACTER outside this file.
+int AP_CapabilityRosterCharacter(int rosterSlot);
+
 // Boost tiers. Index-keyed and ladder-ordered: the tier IS the number of
 // received Progressive Boost copies, clamped to the seed's ceiling.
 enum
@@ -176,6 +204,12 @@ int AP_CapabilityStatRankFor(int chain);
 // lookup. Returns -1 when Progressive Stats is inactive, the chain is invalid,
 // or a per-character row cannot be identified.
 int AP_CapabilityStatRankForCharacter(int chain, int characterID);
+
+// The absolute ladder value at `rank` for the stat row at driver-struct
+// `offset`, or -1 when no metaPhys row matches. For display surfaces (the hub
+// picker, issue #251): promise exactly what the per-frame writer computes,
+// never a reimplementation of the ladder.
+int AP_CapabilityRankValueForOffset(int offset, int rank);
 
 // Boost-grant filter, called at the top of VehFire_Increment (the single choke
 // point every boost in the game passes through). Returns 0 to drop the grant
