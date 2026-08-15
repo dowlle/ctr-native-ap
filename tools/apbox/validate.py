@@ -28,21 +28,45 @@ num_colors = macro("AP_BOX_MODEL_NUM_COLORS")
 
 verts_body = re.sub(r"//[^\n]*", "", array_body("s_apBoxModelVerts"))
 vertex_bytes = [int(value) for value in re.findall(r"\b\d+\b", verts_body)]
+vertices = [tuple(vertex_bytes[i:i + 3])
+            for i in range(0, len(vertex_bytes), 3)]
+triangles = [vertices[i:i + 3] for i in range(0, len(vertices), 3)]
 colors = re.findall(r"0x[0-9a-fA-F]{8}", array_body("s_apBoxModelColors"))
 tri_colors = [int(value) for value in re.findall(
     r"AP_BOX_TRI\((\d+)\)", array_body("s_apBoxModelCommands"))]
+
+
+def nondegenerate(triangle) -> bool:
+    a, b, c = triangle
+    ab = tuple(b[i] - a[i] for i in range(3))
+    ac = tuple(c[i] - a[i] for i in range(3))
+    cross = (
+        ab[1] * ac[2] - ab[2] * ac[1],
+        ab[2] * ac[0] - ab[0] * ac[2],
+        ab[0] * ac[1] - ab[1] * ac[0],
+    )
+    return cross != (0, 0, 0)
 
 checks = {
     "vertex byte count": len(vertex_bytes) == num_verts * 3,
     "triangle vertex count": num_verts == num_tris * 3,
     "vertex byte range": all(0 <= value <= 255 for value in vertex_bytes),
+    "all triangles are nondegenerate": all(map(nondegenerate, triangles)),
+    "geometry spans all three axes": all(
+        max(vertex[axis] for vertex in vertices)
+        - min(vertex[axis] for vertex in vertices) >= 190
+        for axis in range(3)),
     "colour count": len(colors) == num_colors,
+    "colour cache fits renderer scratch": num_colors <= (0x400 - 0x140) // 4,
     "one strip restart per triangle": len(tri_colors) == num_tris,
     "command colour range": all(0 <= value < num_colors for value in tri_colors),
     "two triangles per cube face": all(tri_colors.count(i) == 2
                                          for i in range(num_colors)),
     "single final terminator": array_body("s_apBoxModelCommands").count(
         "0xffffffffu") == 1,
+    "triangle macro emits restart and stack slots 1, 2, 3": all(
+        token in src for token in
+        ("0x80010000u", "0x00020000u", "0x00030000u")),
     "fallback occupies only the missing crate slot":
         "gGT->modelPtr[PU_RANDOM_CRATE] = &s_apBoxModel" in model_src,
     "model identity matches the occupied slot":
