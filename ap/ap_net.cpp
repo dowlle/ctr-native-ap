@@ -596,6 +596,12 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 						scout_add((int64_t)rung[k]);
 			}
 		}
+		// Itemsanity is an ordered global class with no AdvProgress bits and no
+		// elastic subset. Server membership is its authoritative on/off signal;
+		// scout all 22 frozen codes when present so the shared class emitter can
+		// resolve foreign sent-item feed entries exactly like podium rungs.
+		for (int i = 0; i < 22; i++)
+			scout_add((int64_t)(35016000 + i));
 		// Itemsanity box locations (#109). They carry no AdvProgress bit and no
 		// podium rung, so they are absent from BOTH lists above -- which is exactly
 		// why a peer-bound box was silent in the item feed: AP_FeedOnLocationSent
