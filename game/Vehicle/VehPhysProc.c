@@ -472,6 +472,7 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 	// vanilla or pack-off seed keeps the exact class stats VehBirth_SetConsts
 	// wrote at birth.
 	AP_CapabilityStats(driver);
+	AP_TrapWeakenStats(driver);
 #endif
 
 	// state of kart

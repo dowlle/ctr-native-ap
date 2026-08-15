@@ -85,6 +85,8 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 	struct GameTracker *gGT = sdata->gGT;
 
 #ifdef CTR_AP
+	if (!AP_TrapAllowBoostGrant(driver))
+		return;
 	// Progressive Boost (#12), local player only, and only on a seed that turned
 	// the pack on. This function is the single choke point every boost in the game
 	// passes through -- pads, powerslides, hang time, the rev boost, the Turbo

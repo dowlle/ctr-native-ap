@@ -16,6 +16,7 @@
 // Raw keyboard probe for the debug keybinds (platform/native_input.c, CTR_AP
 // only). Same declaration ap_hooks.c uses -- keeps this module SDL-header-free.
 int Platform_InputRawKeyDown(int scancode);
+extern int g_dbg_wireframeMode;
 
 // Debug test-fire keys (SDL scancodes, externals/SDL/include/SDL3/SDL_scancode.h:
 // KP_1=89..KP_6=94). Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers
@@ -49,6 +50,14 @@ static const int AP_TRAP_DURATION_MS[AP_TRAP_COUNT] = {
     20000, // USF no-brake
     20000, // boost
     20000, // first person
+	0, 0, 0, 0,
+	20000, // empty crates
+	20000, // weakened kart
+	20000, // no boost
+	20000, // wireframe
+	0,     // nitro
+	20000, // reverse controls
+	0,     // red potion
 };
 
 // Random fire-delay window (ms) after the trap first enters the lap-2/3 window.
@@ -92,7 +101,7 @@ typedef struct
 	int instant;      // PRIMED: arrived mid-race -> fire on the next tick (§5)
 } TrapInstance;
 
-#define AP_TRAP_REGISTRY_CAP 16
+#define AP_TRAP_REGISTRY_CAP 32
 static TrapInstance g_traps[AP_TRAP_REGISTRY_CAP];
 
 // Per-effect "is at least one instance FIRING" flags, recomputed each tick. The
@@ -102,6 +111,8 @@ static int g_active[AP_TRAP_COUNT];
 // First-person camera latch: 1 while we are forcing the FP camera, so we know to
 // restore chase exactly once when the effect ends.
 static int g_fp_applied = 0;
+static int g_wireframe_applied = 0;
+static int g_wireframe_restore = 0;
 
 // ── tiny self-contained RNG (xorshift32) -- no dependency on the engine RNG ──
 static unsigned g_rng = 0;
@@ -144,6 +155,17 @@ static const char *AP_TrapName(int effect)
 	case AP_TRAP_USF_NOBRAKE: return "USF no-brake";
 	case AP_TRAP_BOOST:       return "boost";
 	case AP_TRAP_FIRSTPERSON: return "first-person";
+	case AP_TRAP_WUMPA_RESET: return "wumpa reset";
+	case AP_TRAP_FLATTEN: return "flatten";
+	case AP_TRAP_ITEM_REROLL: return "item reroll";
+	case AP_TRAP_AUTO_USE: return "auto-use";
+	case AP_TRAP_EMPTY_CRATES: return "empty crates";
+	case AP_TRAP_WEAKENED_KART: return "weakened kart";
+	case AP_TRAP_NO_BOOST: return "no boost";
+	case AP_TRAP_WIREFRAME: return "wireframe";
+	case AP_TRAP_NITRO: return "nitro";
+	case AP_TRAP_REVERSE_CONTROLS: return "reverse controls";
+	case AP_TRAP_RED_POTION: return "red potion";
 	default:                  return "?";
 	}
 }
@@ -242,6 +264,58 @@ static void AP_TrapFireSlot(int i)
 	snprintf(msg, sizeof msg, "[AP TRAP] FIRING: %s (%d ms, slot %d)\n",
 	         AP_TrapName(g_traps[i].effect), g_traps[i].remainingMs, i);
 	AP_LogLine(msg);
+}
+
+static int AP_TrapInstantEffect(int effect)
+{
+	return effect == AP_TRAP_WUMPA_RESET || effect == AP_TRAP_FLATTEN ||
+	       effect == AP_TRAP_ITEM_REROLL || effect == AP_TRAP_AUTO_USE ||
+	       effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION;
+}
+
+static void AP_TrapApplyInstant(TrapInstance *t)
+{
+	struct Driver *driver = AP_TrapLocalDriver();
+	int weapon;
+	if (!driver) return;
+	switch (t->effect)
+	{
+	case AP_TRAP_WUMPA_RESET:
+		RB_Player_ModifyWumpa(driver, -(int)driver->numWumpas);
+		break;
+	case AP_TRAP_FLATTEN:
+		VehPickState_NewState(driver, 2, driver, 0);
+		break;
+	case AP_TRAP_ITEM_REROLL:
+		if (driver->heldItemID != 0xf && driver->heldItemID != 0x10 &&
+		    driver->noItemTimer == 0)
+		{
+			driver->heldItemID = 0x10;
+			driver->itemRollTimer = 90;
+			if ((sdata->gGT->gameMode1 & ROLLING_ITEM) == 0)
+			{
+				OtherFX_Play(0x5d, 0);
+				sdata->gGT->gameMode1 |= ROLLING_ITEM;
+			}
+		}
+		break;
+	case AP_TRAP_AUTO_USE:
+		weapon = driver->heldItemID;
+		if (weapon != 0xf && weapon != 0x10 && driver->noItemTimer == 0)
+		{
+			driver->noItemTimer = driver->numHeldItems != 0 ? 5 : 0x1e;
+			if (driver->numHeldItems != 0)
+				driver->numHeldItems--;
+			AP_ItemsanityOnUse(driver, weapon);
+			AP_TurboGrantOnWeaponFire(driver, weapon);
+			if (weapon == 1 || weapon == 10 || weapon == 11)
+				weapon = 2;
+			VehPickupItem_ShootNow(driver, weapon, 0);
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 // Instant-fire one effect (debug). Reuses a spare slot.
@@ -421,6 +495,12 @@ void AP_TrapTick(struct GameTracker *gGT)
 			}
 			break;
 		case TRAP_FIRING:
+			if (AP_TrapInstantEffect(t->effect))
+			{
+				AP_TrapApplyInstant(t);
+				t->state = TRAP_EMPTY;
+				break;
+			}
 			t->remainingMs -= elapsedMs;
 			if (t->remainingMs <= 0)
 			{
@@ -446,6 +526,20 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	// First-person camera: force/restore based on the FP flag.
 	AP_TrapApplyCamera(gGT, g_active[AP_TRAP_FIRSTPERSON]);
+	if (g_active[AP_TRAP_WIREFRAME])
+	{
+		if (!g_wireframe_applied)
+		{
+			g_wireframe_restore = g_dbg_wireframeMode;
+			g_wireframe_applied = 1;
+		}
+		g_dbg_wireframeMode = 1;
+	}
+	else if (g_wireframe_applied)
+	{
+		g_dbg_wireframeMode = g_wireframe_restore;
+		g_wireframe_applied = 0;
+	}
 }
 
 // ── Engine physics/input call-sites ──
@@ -517,7 +611,21 @@ void AP_TrapForceBoost(struct Driver *driver)
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
                        int *buttonsHeld, int *cross, int *square)
 {
-	if (!g_active[AP_TRAP_USF_NOBRAKE] || !AP_TrapIsLocal(driver))
+	if (!AP_TrapIsLocal(driver))
+		return;
+
+	if (g_active[AP_TRAP_REVERSE_CONTROLS])
+	{
+		int left = *buttonsHeld & BTN_LEFT;
+		int right = *buttonsHeld & BTN_RIGHT;
+		*buttonsHeld &= ~(BTN_LEFT | BTN_RIGHT);
+		if (left) *buttonsHeld |= BTN_RIGHT;
+		if (right) *buttonsHeld |= BTN_LEFT;
+		if (pad != 0)
+			pad->stickLX = 0xff - pad->stickLX;
+	}
+
+	if (!g_active[AP_TRAP_USF_NOBRAKE])
 		return;
 
 	// Kill the brake button and force the throttle button for this frame's physics.
@@ -535,6 +643,27 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 		pad->stickLY = AP_STICK_NEUTRAL;
 		pad->stickRY = AP_STICK_NEUTRAL;
 	}
+}
+
+int AP_TrapWeaponBoxSuppressed(struct Driver *driver)
+{
+	return g_active[AP_TRAP_EMPTY_CRATES] && AP_TrapIsLocal(driver);
+}
+
+int AP_TrapAllowBoostGrant(struct Driver *driver)
+{
+	return !(g_active[AP_TRAP_NO_BOOST] && AP_TrapIsLocal(driver));
+}
+
+void AP_TrapWeakenStats(struct Driver *driver)
+{
+	if (!g_active[AP_TRAP_WEAKENED_KART] || !AP_TrapIsLocal(driver)) return;
+	driver->const_Speed_ClassStat /= 2;
+	driver->const_AccelSpeed_ClassStat /= 2;
+	driver->const_Accel_ClassStat /= 2;
+	driver->const_TurnRate /= 2;
+	driver->const_DriftTurnBase /= 2;
+	driver->const_TurnInputDelay /= 2;
 }
 
 #endif // CTR_AP

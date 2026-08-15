@@ -57,8 +57,23 @@ enum AP_TrapEffect
 	AP_TRAP_USF_NOBRAKE,   // forced Ultra Sacred Fire top speed, braking disabled
 	AP_TRAP_BOOST,         // forced (milder) boost/fire, braking still works
 	AP_TRAP_FIRSTPERSON,   // forced first-person / hood camera
+	AP_TRAP_WUMPA_RESET,
+	AP_TRAP_FLATTEN,
+	AP_TRAP_ITEM_REROLL,
+	AP_TRAP_AUTO_USE,
+	AP_TRAP_EMPTY_CRATES,
+	AP_TRAP_WEAKENED_KART,
+	AP_TRAP_NO_BOOST,
+	AP_TRAP_WIREFRAME,
+	AP_TRAP_NITRO,
+	AP_TRAP_REVERSE_CONTROLS,
+	AP_TRAP_RED_POTION,
 	AP_TRAP_COUNT
 };
+
+#define AP_TRAP_H_ITEM_FIRST_INDEX 106
+#define AP_TRAP_H_ITEM_COUNT 11
+#define AP_TRAP_LEGACY_ITEM_COUNT 5
 
 // ── AP item pipeline seam ──
 // Prime a trap by EFFECT id (0..AP_TRAP_COUNT-1). Idempotent-ish: adds one primed
@@ -142,6 +157,10 @@ void AP_TrapForceBoost(struct Driver *driver);
 // forces the throttle button on. No-op otherwise. Mutates only this frame's input.
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
                        int *buttonsHeld, int *cross, int *square);
+
+int AP_TrapWeaponBoxSuppressed(struct Driver *driver);
+int AP_TrapAllowBoostGrant(struct Driver *driver);
+void AP_TrapWeakenStats(struct Driver *driver);
 
 #endif // CTR_AP
 

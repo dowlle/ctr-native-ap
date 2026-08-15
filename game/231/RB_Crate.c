@@ -283,6 +283,16 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 				return 1;
 			}
 
+			#ifdef CTR_AP
+			if (AP_TrapWeaponBoxSuppressed(driver))
+			{
+				driver->heldItemID = 0xf;
+				driver->numTimesHitWeaponBox++;
+				AP_LogLine("[AP TRAP] weapon crate granted nothing\n");
+				return 1;
+			}
+			#endif
+
 			driver->heldItemID = 0x10;
 			driver->numTimesHitWeaponBox++;
 			driver->itemRollTimer = 90;

@@ -3605,7 +3605,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// pre-trap native ignores these ids by construction (idx fails the count
 		// guard and AP_ItemCategory -> AP_CAT_NONE -> logged filler/unmapped, below).
 		else if (idx >= AP_TRAP_ITEM_FIRST_INDEX &&
-		         idx < AP_TRAP_ITEM_FIRST_INDEX + AP_TRAP_COUNT)
+		         idx < AP_TRAP_ITEM_FIRST_INDEX + AP_TRAP_LEGACY_ITEM_COUNT)
 		{
 			long long srvIdx = ap_net_recv_batch_index(i);
 			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
@@ -3617,6 +3617,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 				         "[AP TRAP] replay dedup: trap at index %lld skipped\n", srvIdx);
 				AP_LogLine(skipmsg);
 			}
+		}
+		else if (idx >= AP_TRAP_H_ITEM_FIRST_INDEX &&
+		         idx < AP_TRAP_H_ITEM_FIRST_INDEX + AP_TRAP_H_ITEM_COUNT)
+		{
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_TrapReceive((int)(idx - AP_TRAP_H_ITEM_FIRST_INDEX) +
+				               AP_TRAP_WUMPA_RESET);
 		}
 
 		// Permanent comfort items (idx 21..25): remember presence for the natural
