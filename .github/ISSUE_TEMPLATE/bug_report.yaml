@@ -29,6 +29,7 @@ body:
         The version is printed on the `[AP BOOT]` line at the top of `ctr-ap.log`,
         next to the game executable.
       options:
+        - v0.1.5
         - v0.1.4.1
         - v0.1.4
         - v0.1.3
