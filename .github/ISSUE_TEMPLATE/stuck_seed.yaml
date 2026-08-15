@@ -31,6 +31,7 @@ body:
         On the `[AP BOOT]` line at the top of `ctr-ap.log`. Please also give the apworld
         version below: the client and the apworld ship as a pair and must match.
       options:
+        - v0.1.5
         - v0.1.4.1
         - v0.1.4
         - v0.1.3

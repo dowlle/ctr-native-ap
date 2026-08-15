@@ -33,7 +33,7 @@ struct GameTracker;
 // lands as ~47 levels of visible gradient while the class hue still supplies
 // three quarters of the colour. Lower it further for more modelling and less
 // classification; raise it back toward 0x1000 for flat, maximally legible class
-// colours. One of the values Stef tunes in-game.
+// colours. One of the values tuned in-game.
 #define AP_MARKER_TINT_STRENGTH 0x0c00
 
 // Park the marker model at gGT->modelPtr[STATIC_AP]. Idempotent and cheap (one

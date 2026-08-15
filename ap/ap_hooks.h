@@ -175,6 +175,11 @@ void AP_DrawVerifyWarning(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// Emit one AP item-box location check (#109). Lives here rather than in
+// ap_boxes.c so every optional location class routes through the one #176
+// emitter, with its absent-code guard, checked-state guard and diagnostic line.
+void AP_EmitBoxCheck(int levelID, int slot, long code);
+
 // 1 if Aku Aku mask hints should be SKIPPED. Read once from ap-config.txt
 // (line "skip_hints=1") at connect. Honoured at the single choke point
 // MainFrame_RequestMaskHint (#ifdef CTR_AP) by early-returning, so no hint is
@@ -359,6 +364,21 @@ int AP_LetterTokenEarned(int track, int didWin, int collected);
 // bit / not connected.
 int AP_LocationExistsByBit(int globalBit);
 
+// Itemsanity (#145): use-time check emission and receive-gated roulette.
+// The filters are local-player and active-seed safe; inactive/absent seeds and
+// nonlocal drivers receive the vanilla roll unchanged.
+// AP_ItemsanityOnUse takes the driver's own held id at the circle-press choke
+// point, never the folded fire-time weapon id. AP_ItemsanitySubstituteOwned
+// keeps vanilla's downstream item rewrites inside the received set, and never
+// re-issues Warpball or Missile x3, whose one-at-a-time and two-holder caps are
+// the rewrites it is standing inside.
+void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID);
+int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
+                            const unsigned char *table, int tableCount);
+int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
+                                 unsigned roll, const unsigned char *table,
+                                 int tableCount);
+
 // Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
 // Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant
 // answer to "does the player own this specific tier on this track". Two disjoint
@@ -439,6 +459,16 @@ unsigned AP_StateGen(void);
 // the location + lifecycle category (loaded destination track). Consumed by
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
+
+// Is this pad in the §6 box re-entry window (issue #232)? The destination's
+// trophy race is checked, this pad's stage-2 is not met, and unbroken AP item
+// boxes still stand behind the destination -- so AP_PadState keeps the pad at 2
+// Raceable and the map paints it green. AH_WarpPad.c reads this on both of its
+// surfaces: the entry gate keeps offering a plain adventure re-race (the only
+// way to break a box), and the pad is born OPEN instead of advertising a stage-2
+// requirement it is not actually withholding entry on. Same keying as
+// AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
+int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
 
 // ── Gem-cup return hub (destination-shuffle correctness) ──
 // Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a

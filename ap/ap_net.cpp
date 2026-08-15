@@ -15,6 +15,7 @@
 #include "ap_net.h"
 #include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
+#include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 
 #include <deque>
 #include <list>
@@ -595,6 +596,69 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 						scout_add((int64_t)rung[k]);
 			}
 		}
+		// Itemsanity is an ordered global class with no AdvProgress bits and no
+		// elastic subset. Server membership is its authoritative on/off signal;
+		// scout all 22 frozen codes when present so the shared class emitter can
+		// resolve foreign sent-item feed entries exactly like podium rungs.
+		for (int i = 0; i < 22; i++)
+			scout_add((int64_t)(35016000 + i));
+		// Itemsanity box locations (#109). They carry no AdvProgress bit and no
+		// podium rung, so they are absent from BOTH lists above -- which is exactly
+		// why a peer-bound box was silent in the item feed: AP_FeedOnLocationSent
+		// resolves its "ITEM TO PLAYER" line out of this scout cache, missed, and
+		// stayed deliberately quiet (found in the 2026-08-11 v2 retest: 5 of 12
+		// boxes fed the other slot and none toasted; own-bound boxes toasted fine
+		// via the ReceivedItems echo, which is why it read as partial).
+		//
+		// Filtered through the SAME checked+missing membership test
+		// ap_net_location_exists uses (#217), and for the same reason it exists:
+		// only codes this world actually created may go on the wire. MultiServer
+		// 0.6.7 hard-drops a connection on an invalid id in the scout path, so
+		// pushing the whole 270-code block blind would be a disconnect, not a
+		// diagnostic. A seed without the box class contributes nothing here.
+		//
+		// The filter itself is AP_BoxMap_ScoutCodes (freestanding, and exercised by
+		// tools/test-box-map.c); this supplies the membership predicate and copies
+		// the survivors onto the scout list.
+		{
+			struct BoxWorld
+			{
+				const std::set<int64_t> *chk;
+				const std::set<int64_t> *miss;
+
+				static int InWorld(long code, void *ctx)
+				{
+					BoxWorld *w = (BoxWorld *)ctx;
+					int64_t   c = (int64_t)code;
+					return w->chk->count(c) != 0 || w->miss->count(c) != 0;
+				}
+			};
+
+			// Named const refs first: these accessors return BY VALUE, so binding
+			// them extends the temporaries' lifetime to this block. Pointing at the
+			// call directly would take the address of an rvalue.
+			const std::set<int64_t> &chk = g_ap->get_checked_locations();
+			const std::set<int64_t> &miss = g_ap->get_missing_locations();
+
+			BoxWorld w;
+			w.chk = &chk;
+			w.miss = &miss;
+
+			long boxCodes[AP_BOX_LOCATION_COUNT];
+			int  boxScouts = AP_BoxMap_ScoutCodes(&BoxWorld::InWorld, &w,
+			                                      boxCodes, AP_BOX_LOCATION_COUNT);
+
+			for (int i = 0; i < boxScouts; i++)
+				locs.push_back((int64_t)boxCodes[i]);
+
+			if (boxScouts > 0)
+				std::fprintf(stderr, "[AP NET] +%d itemsanity box location(s) to scout\n",
+				             boxScouts);
+		}
+		// #217's empty guard and skip accounting are authoritative here. The box
+		// block above appends only codes that already passed the same
+		// checked+missing membership test, so it cannot reintroduce an invalid id
+		// after the count; its own drops are reported by the "+N ... to scout" line.
 		if (!locs.empty())
 			g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr,
