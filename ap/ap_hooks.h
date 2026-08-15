@@ -42,6 +42,15 @@ void AP_EvaluateGoal(void);
 // end-of-race draw functions (game/221.c, game/222.c, game/223.c).
 int AP_CeremonyDraw(int x, int y, int primaryBit, int includeLedger);
 
+// Timed variant for ceremonies with a fixed visible window. It anchors cycling
+// to ceremony elapsed time and compresses dwell only as far as needed to show
+// every distinct entry once before fly-out.
+int AP_CeremonyDrawTimed(int x, int y, int primaryBit, int includeLedger,
+                         int elapsedFrames, int visibleFrames);
+
+// Right-side fly-out center for a centered block with the given wrap width.
+int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth);
+
 // Highest relic tier the just-finished relic race sent (0 Sapphire, 1 Gold, 2
 // Platinum; -1 none). The truthful source for the relic ceremony's tier label +
 // relic colour (game/223.c, game/UI/UI_Clock.c), which vanilla derives from the
