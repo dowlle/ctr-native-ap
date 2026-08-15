@@ -408,6 +408,30 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// 30 pixels above botttom Y
 				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+
+#ifdef CTR_AP
+				int apBoxesLeft = 0;
+
+				// A trophy-complete pad can deliberately stay raceable while this
+				// destination still owns unchecked AP boxes (#232). Without an
+				// explanation that looks like a pad which failed to advance. Show the
+				// exact server-truth count below the title only in that transitional
+				// state; before the trophy it is ordinary race content, and at zero
+				// the line disappears as the pad advances normally.
+				if (levelID < AH_WP_SLIDE_COLISEUM &&
+				    AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
+					apBoxesLeft = AP_PadUncollectedBoxCount(levelID);
+
+				if (apBoxesLeft > 0)
+				{
+					char apBoxLine[32];
+					snprintf(apBoxLine, sizeof apBoxLine, "AP BOXES LEFT: %d", apBoxesLeft);
+					DecalFont_DrawLine(apBoxLine,
+					                   gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
+					                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+				}
+#endif
 			}
 
 			// if track is unlocked, ignore all other ELSE-IFs

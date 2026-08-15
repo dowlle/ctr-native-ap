@@ -937,7 +937,7 @@ static int AP_PadTrackBoxesLeft(int levelID)
 // aggregates its four legs, exactly as AP_PadUncollectedGlowBits does for rungs
 // and for the same reason: a cup leg is not independently raceable from the hub,
 // so a Done cup pad would strand its legs' boxes permanently.
-static int AP_PadUncollectedBoxCount(int destLevelID)
+int AP_PadUncollectedBoxCount(int destLevelID)
 {
 	int leg, n = 0;
 
