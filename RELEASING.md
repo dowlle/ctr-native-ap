@@ -169,9 +169,13 @@ the previous release's published notes. House style:
 - No em dashes anywhere in player-facing text.
 - Paragraphs on single lines: GitHub renders newlines in release notes as hard
   line breaks, so wrapped source text renders ragged.
-- Credits carry links; the setup guide is linked twice: the living copy
-  (`blob/main/SETUP.md`) for the banner and walkthrough mentions, the
-  tag-pinned copy (`blob/vX.Y.Z/SETUP.md`) labeled "as shipped".
+- The banner leads with the ap-pie.com guide (`https://ap-pie.com/guides/ctr`,
+  labeled "Setup guide (ap-pie.com)"): it is the canonical, always-current
+  player-facing setup surface (ruled 2026-07-22, "guides lead, videos
+  follow"; live since FEAT-40 shipped 2026-08-14). The GitHub SETUP.md links
+  follow it, kept for contributors and as a fallback: the living copy
+  (`blob/main/SETUP.md`) and the tag-pinned copy (`blob/vX.Y.Z/SETUP.md`)
+  labeled "as shipped".
 - Known limitations section includes every known issue, with workarounds.
 - Cross-check every claim in "New" against the Testing section's
   not-verified-in-game list IN THE SAME DOCUMENT. A feature on that list
