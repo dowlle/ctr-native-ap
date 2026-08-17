@@ -22,6 +22,7 @@
 #include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
+#include "../ap/ap_navspike.h"  // SPIKE ONLY, not for merge: runtime bot nav-path injection
 #endif
 
 #include "226/R226.c"
@@ -367,6 +368,7 @@
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
+#include "../ap/ap_navspike.c"
 #endif
 
 #endif

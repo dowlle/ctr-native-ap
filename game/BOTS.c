@@ -327,6 +327,14 @@ void BOTS_Adv_AdjustDifficulty(void)
 
 	BOTS_SetGlobalNavData(0);
 
+#ifdef CTR_AP
+	// SPIKE ONLY, not for merge (spike/020-nav-injection). Inert unless
+	// CTR_AP_NAV_SPIKE is set in the environment. BOTS_InitNavPath above is the
+	// only place the engine reads level1->LevNavTable, so retargeting the AI has
+	// to happen after that loop and before BOTS_GotoStartingLine takes frame 0.
+	AP_NavSpike_AfterInit();
+#endif
+
 	gGT->numBotsNextGame = 0;
 
 	if (((gameMode2 & CUP_ANY_KIND) == 0) || (gGT->cup.trackIndex == 0))
