@@ -431,6 +431,44 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
 					                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 				}
+
+				// Racer lock (#237). The pad's ITEM requirement already has a
+				// display: the 3D digit and reward models floating in front of
+				// the pad. A character lock had none, so a racer-locked pad was
+				// indistinguishable from an open one until you drove in and were
+				// refused. Draw the demanded racer here.
+				//
+				// ADDITIVE, never a replacement: this sits in the HUD layer while
+				// the item requirement stays in world space, so a pad that wants
+				// both a racer AND items shows both at once, which is exactly the
+				// case that was previously unreadable.
+				//
+				// Keyed by PHYSICAL pad, because that is what carries the lock --
+				// the same conversion every other requirement here uses.
+				{
+					int apLockPhys = ctr_cfg_warp_phys(levelID);
+					int apLockRacer = ctr_cfg_racer_lock(apLockPhys);
+
+					if (apLockRacer >= 0)
+					{
+						int apHave = AP_CharacterUnlocked(apLockRacer);
+						short apCx = (short)(gGT->pushBuffer[0].rect.x
+						                     + gGT->pushBuffer[0].rect.w / 2);
+						short apCy = (short)(gGT->pushBuffer[0].rect.y
+						                     + gGT->pushBuffer[0].rect.h - 62);
+
+						// Portrait centred above the title, dimmed until owned so
+						// "can I use this pad yet" reads without counting items.
+						AP_CharSwap_DrawPortraitAt(apLockRacer,
+						                           (short)(apCx - 16), apCy, !apHave);
+
+						DecalFont_DrawLine(apHave ? "RACER READY" : "RACER LOCKED",
+						                   apCx,
+						                   (short)(gGT->pushBuffer[0].rect.y
+						                           + gGT->pushBuffer[0].rect.h - 45),
+						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+					}
+				}
 #endif
 			}
 

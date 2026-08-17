@@ -29,6 +29,11 @@ void AP_CharSwap_Tick(struct GameTracker *gGT);
 // per frame, so this runs exactly once per frame while the hub is up.
 void AP_CharPicker_Draw(void);
 
+// Draw one racer's portrait anywhere on screen (#237). Used by the warp pad to
+// show which racer a locked pad demands; falls back to the short name when the
+// portrait is not resident in this hub's icon table. `dim` = not owned yet.
+void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim);
+
 // True while the picker owns input. Used to keep the driver frozen, to refuse a
 // Start press so the pause menu cannot open on top of it, and to stop AH_Door's
 // #51 release from taking the picker's own kart freeze back.
