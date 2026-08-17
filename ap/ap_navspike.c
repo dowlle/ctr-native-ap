@@ -8,6 +8,7 @@
 #include "ap_navspike.h"
 #include "ap_hooks.h" // AP_LogLine
 #include "ap_navrec.h" // mode 5: recorded-path loader
+#include "platform/native_config.h" // g_config.navUseRecorded
 
 // Storage for our own copy of the three paths. Static rather than malloc'd so
 // the pointers stay valid for the process lifetime and cannot be freed out from
@@ -98,7 +99,15 @@ void AP_NavSpike_AfterInit(void)
 {
 	char msg[256];
 
+	// The player-facing option maps onto mode 5 (inject recorded paths), the
+	// only mode that is a FEATURE. Modes 1-4 are reconnaissance and
+	// perturbation aids for developing this and stay on the environment
+	// switch -- nobody should reach "truncate lane 0 and see what breaks"
+	// from an options menu. An explicit env mode still wins, so a developer
+	// can override the option without editing config.ini.
 	int mode = AP_NavSpike_EnvInt("CTR_AP_NAV_SPIKE", 0);
+	if ((mode <= 0) && g_config.navUseRecorded)
+		mode = 5;
 	if (mode <= 0)
 		return;
 

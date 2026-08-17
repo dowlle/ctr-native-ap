@@ -33,6 +33,8 @@ NativeConfig g_config = {
 	true,  // updateCheck (default on: the pair-version notice is informational)
 	"",    // updateLastSeen (empty = the title notice has never been shown)
 	false, // boxAuthor (off: an authoring tool, not a player option)
+	false, // navRecord (off: this one writes files to the player's disk)
+	false, // navUseRecorded (off: changes how the AI drives)
 #endif
 };
 
@@ -85,6 +87,11 @@ const ConfigEntry g_configEntries[] = {
 	// no menu code at all -- BuildSectionMap picks it up and the generic section
 	// renderer draws it (game/230/MM_ConfigMenu.c).
 	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
+	// "Save" is in the label deliberately. The one option here that writes to
+	// the player's disk should say so on the row itself, not only in a manual
+	// nobody reads.
+	{"Authoring",   "nav_record",               "Save AI Lap Recordings",       CFG_BOOL, &g_config.navRecord},
+	{"Authoring",   "nav_use_recorded",         "Use Recorded AI Laps",         CFG_BOOL, &g_config.navUseRecorded},
 #endif
 };
 

@@ -8,6 +8,13 @@
 
 #include "ap_navrec.h"
 #include "ap_hooks.h" // AP_LogLine
+#include "platform/native_config.h" // g_config.navRecord
+#include <errno.h>
+#if defined(_WIN32)
+#include "platform/native_win32.h"
+#else
+#include <sys/stat.h>
+#endif
 
 int Platform_InputRawKeyDown(int scancode); // native_input.c
 
@@ -78,7 +85,13 @@ static void AP_NavRec_ReadEnvOnce(void)
 	if (g_armed >= 0)
 		return;
 
-	g_armed = (AP_NavRec_EnvInt("CTR_AP_NAV_REC", 0) > 0) ? 1 : 0;
+	// The OPTION decides whether we record, not the environment. `getenv`
+	// gating has no precedent in this tree, and more to the point an env var
+	// is not consent: it is invisible to a player who never reads a readme.
+	// The two shaping numbers stay env-overridable for authoring work, because
+	// they change the shape of the OUTPUT rather than whether anything is
+	// written to the player's disk at all.
+	g_armed = g_config.navRecord ? 1 : 0;
 	g_targetNodes = AP_NavRec_EnvInt("CTR_AP_NAV_REC_NODES", 230);
 	g_laneOffset = AP_NavRec_EnvInt("CTR_AP_NAV_REC_OFFSET", 500);
 
@@ -351,15 +364,45 @@ static int AP_NavRec_BuildLanes(void)
 	return 1;
 }
 
+// Everything this feature writes goes in ONE folder, so a player who changes
+// their mind can delete the whole thing without hunting loose files out of the
+// game directory. Created on demand, never on startup: with the option off,
+// the folder does not appear at all.
+#define AP_NAVREC_DIR "ap-navpaths"
+
+// Same portable shape native_memcard.c uses for its own save directory, kept
+// local rather than un-`internal`ing the assets helper: this is the only
+// caller and widening a platform API for one use is not worth it.
+static int AP_NavRec_MakeDir(const char *path)
+{
+#if defined(_WIN32)
+	if (CreateDirectoryA(path, NULL) != 0)
+		return 1;
+	return GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+	if (mkdir(path, 0777) == 0)
+		return 1;
+	return errno == EEXIST;
+#endif
+}
+
 static void AP_NavRec_Write(int levelID)
 {
 	char msg[256];
 
+	// Belt and braces. The caller is already gated on the option, but this is
+	// the only function in the build that creates files on a player's disk, so
+	// it re-checks rather than trusting its caller.
+	if (!g_config.navRecord)
+		return;
+
 	if (!AP_NavRec_BuildLanes())
 		return;
 
+	AP_NavRec_MakeDir(AP_NAVREC_DIR);
+
 	char path[128];
-	snprintf(path, sizeof path, "navpath-%d.bin", levelID);
+	snprintf(path, sizeof path, AP_NAVREC_DIR "/navpath-%d.bin", levelID);
 
 	FILE *f = fopen(path, "wb");
 	if (f == NULL)
@@ -382,7 +425,14 @@ static void AP_NavRec_Write(int levelID)
 	snprintf(msg, sizeof msg, "[AP NAVREC] wrote \"%s\": lanes %d/%d/%d nodes\n", path, g_outCount[0], g_outCount[1], g_outCount[2]);
 	AP_LogLine(msg);
 
-	snprintf(path, sizeof path, "navpath-%d.txt", levelID);
+	// The human-readable dump is an AUTHORING aid, not something a player who
+	// ticked one box should get: it is a per-node listing running to thousands
+	// of lines per track. Opt in separately via the environment, which is the
+	// right home for a developer switch.
+	if (AP_NavRec_EnvInt("CTR_AP_NAV_REC_DUMP", 0) <= 0)
+		return;
+
+	snprintf(path, sizeof path, AP_NAVREC_DIR "/navpath-%d.txt", levelID);
 	f = fopen(path, "w");
 	if (f != NULL)
 	{
@@ -523,7 +573,13 @@ int AP_NavRec_LoadForLevel(int levelID, struct NavHeader **outHeaders, struct Na
 	char path[128];
 	char msg[192];
 
-	snprintf(path, sizeof path, "navpath-%d.bin", levelID);
+	// Read-only, and gated on its OWN option: someone who wants recorded lines
+	// should not have to switch recording on to get them, since that is the
+	// half that writes to their disk.
+	if (!g_config.navUseRecorded)
+		return 0;
+
+	snprintf(path, sizeof path, AP_NAVREC_DIR "/navpath-%d.bin", levelID);
 
 	FILE *f = fopen(path, "rb");
 	if (f == NULL)

@@ -64,6 +64,19 @@ typedef struct
 	// #109). Off by default; this toggle IS the gate for the author keys, so a
 	// release player who never opens the menu can never reach them.
 	bool boxAuthor;
+	// AI lap authoring (#nav). TWO options, not one, because only the first of
+	// them touches the player's disk, and consent to that is a separate
+	// decision from consent to the gameplay change.
+	//
+	// navRecord WRITES FILES. It banks the laps you drive and saves them under
+	// `ap-navpaths/`. Off by default and it must stay that way: a player who
+	// never opens this menu must never find files they did not ask for.
+	//
+	// navUseRecorded only READS. It hands recorded paths to the bots in place
+	// of the ones baked into the level, so someone who wants community lines
+	// never has to turn recording on.
+	bool navRecord;
+	bool navUseRecorded;
 #endif
 } NativeConfig;
 
