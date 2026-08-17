@@ -4706,6 +4706,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_ShortcutKeys();
+	AP_NavRec_Tick(gGT);      // SPIKE ONLY: nav-path recorder (env-gated, inert by default)
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
 	                          // shown tier down when its time passes; race window only)

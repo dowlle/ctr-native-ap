@@ -7,6 +7,7 @@
 
 #include "ap_navspike.h"
 #include "ap_hooks.h" // AP_LogLine
+#include "ap_navrec.h" // mode 5: recorded-path loader
 
 // Storage for our own copy of the three paths. Static rather than malloc'd so
 // the pointers stay valid for the process lifetime and cannot be freed out from
@@ -66,6 +67,22 @@ static void AP_NavSpike_DumpPath(int i, const struct NavHeader *nh, const struct
 	         i, (unsigned)flagsOr, (unsigned)specialOr, laneChanges);
 	AP_LogLine(msg);
 
+	// Ground truth for the recorder: what magnitude does retail actually store in
+	// distToNextNav? A generated path has to land in the same range, and this is
+	// how we caught v1 saturating every node at 32767.
+	int dMin = 0x7FFFFFFF, dMax = -1, dSum = 0;
+	for (int f = 0; f < nh->numPoints; f++)
+	{
+		int v = (int)frames[f].distToNextNavXZ;
+		if (v < dMin)
+			dMin = v;
+		if (v > dMax)
+			dMax = v;
+		dSum += v;
+	}
+	snprintf(msg, sizeof msg, "[AP NAVSPIKE] path %d: distToNextNavXZ min=%d max=%d mean=%d\n", i, dMin, dMax, dSum / nh->numPoints);
+	AP_LogLine(msg);
+
 	int mid = nh->numPoints / 2;
 	int end = nh->numPoints - 1;
 	snprintf(msg, sizeof msg,
@@ -99,6 +116,38 @@ void AP_NavSpike_AfterInit(void)
 		return;
 
 	int injected = 0;
+
+	// Mode 5: inject RECORDED paths (ap_navrec) instead of a copy of the LEV's.
+	// Handled before the copy loop because a recorded path must also work on a
+	// level whose own nav data is absent -- which is exactly the custom-track
+	// case (a CrashTeamEditor track has LevNavTable == 0).
+	if (mode == 5)
+	{
+		struct NavHeader *hdrs[3] = {NULL, NULL, NULL};
+		struct NavFrame *frames[3] = {NULL, NULL, NULL};
+		int counts[3] = {0, 0, 0};
+
+		if (!AP_NavRec_LoadForLevel((int)sdata->gGT->levelID, hdrs, frames, counts))
+		{
+			AP_LogLine("[AP NAVSPIKE] mode 5: no recorded path for this level, leaving vanilla nav alone\n");
+			return;
+		}
+
+		for (int i = 0; i < 3; i++)
+		{
+			sdata->NavPath_ptrHeader[i] = hdrs[i];
+			sdata->NavPath_ptrNavFrameArray[i] = frames[i];
+			injected++;
+
+			snprintf(msg, sizeof msg, "[AP NAVSPIKE] path %d: INJECTED %d RECORDED nodes at %p\n", i, counts[i], (void *)frames[i]);
+			AP_LogLine(msg);
+		}
+
+		BOTS_SetGlobalNavData(0);
+		g_spikeActive = 1;
+		AP_LogLine("[AP NAVSPIKE] recorded paths active\n");
+		return;
+	}
 
 	for (int i = 0; i < 3; i++)
 	{
