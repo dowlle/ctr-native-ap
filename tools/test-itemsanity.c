@@ -765,13 +765,40 @@ static void test_duplicate_receipts_reconnect_and_slot_switch(void)
 		struct settle_ctx ctx = {1, -1, 0, 0, 0, 4, 0};
 		assert(model_settle_item(&ctx, 2, 5, table, 4, owned) == 0x0);
 	}
-	// a weapon received but absent from this rank's table is still no substitute:
-	// eligibility is table membership AND receipt, never receipt alone
-	owned[4] = 1;
-	assert(owned[4] == 1);
+	// SUPERSEDED RULING, 2026-08-17. This block used to assert the opposite --
+	// "a weapon received but absent from this rank's table is still no
+	// substitute: eligibility is table membership AND receipt, never receipt
+	// alone". That made an unlocked weapon unusable purely because of race
+	// position: Mask lives in back-of-pack tables only, so a player who owned
+	// Mask and nothing else drew Empty Crates on every roll while leading.
+	// Substitution now draws from the full owned pool, so receipt alone is
+	// enough. Rank weighting still decides any roll it can pay out in an owned
+	// weapon, because the vanilla roll is honoured first.
+	owned_clear(owned);
+	owned[AP_ItemsanityWeaponIndex(4)] = 1; // id 4, deliberately NOT in `table`
 	{
 		struct settle_ctx ctx = {1, -1, 0, 0, 0, 4, 0};
-		assert(model_settle_item(&ctx, 2, 5, table, 4, owned) == 0x0);
+		int got = model_settle_item(&ctx, 2, 5, table, 4, owned);
+		assert(got == 4);                          // substituted despite the table
+		assert(got != AP_ITEMSANITY_NO_ITEM);      // and no Empty Crate
+		assert(ctx.wumpaGrants == 0);
+	}
+
+	// The vanilla roll still wins when the player owns it, so an in-table
+	// weapon is not displaced by the wider pool.
+	owned[AP_ItemsanityWeaponIndex(0)] = 1;
+	{
+		struct settle_ctx ctx = {1, -1, 0, 0, 0, 4, 0};
+		assert(model_settle_item(&ctx, 0, 5, table, 4, owned) == 0x0);
+	}
+
+	// Owning nothing is still an Empty Crate. The full pool widens eligibility,
+	// it does not invent a weapon.
+	owned_clear(owned);
+	{
+		struct settle_ctx ctx = {1, -1, 0, 0, 0, 4, 0};
+		assert(model_settle_item(&ctx, 2, 5, table, 4, owned) == AP_ITEMSANITY_NO_ITEM);
+		assert(ctx.wumpaGrants == 1);
 	}
 }
 

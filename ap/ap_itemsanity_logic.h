@@ -124,17 +124,44 @@ static int AP_ItemsanitySelectOwned(unsigned roll, unsigned excludedMask,
 	return AP_ITEMSANITY_NO_ITEM;
 }
 
+// Substitution pool for a filtered roll: the FULL weapon list, never the
+// position-weighted table the roll came from.
+//
+// Ruled 2026-08-17. Substituting only from the rank-weighted table left an
+// unlocked weapon unusable purely because of race position: vanilla offers Mask
+// in back-of-pack tables only, so a player who owned Mask and nothing else drew
+// Empty Crates on every roll while leading, and itemsanity read as broken rather
+// than restrictive. Unlocking a weapon has to mean it can actually appear.
+//
+// Rank weighting is NOT discarded: both filters below honour the vanilla roll
+// first whenever it is a weapon the player owns, so ordinary position weighting
+// still decides every roll it can pay out. This pool governs only the case that
+// previously fell through to Wumpa.
+//
+// A null table is the documented "no weighted table in scope" path in
+// AP_ItemsanitySelectOwned, which is exactly the semantics wanted here, so this
+// reuses it rather than adding a second walk.
+#define AP_ITEMSANITY_FULL_POOL      0
+#define AP_ITEMSANITY_FULL_POOL_SIZE 0
+
 // Roulette draw filter: preserve the original weighted roll when it is received,
-// otherwise substitute from the same table. Nothing is excluded here: this runs
-// upstream of every vanilla cap, so a substituted Warpball or Missile x3 still
-// passes through the caps' own bookkeeping exactly like a natural roll.
+// otherwise substitute from the full owned pool. Nothing is excluded here: this
+// runs upstream of every vanilla cap, so a substituted Warpball or Missile x3
+// still passes through the caps' own bookkeeping exactly like a natural roll.
+//
+// `table`/`tableCount` stay in the signature: the caller's table is still the
+// thing `rolled` came from, and keeping the parameters means a future ruling can
+// re-narrow the pool without touching every call site.
 static int AP_ItemsanitySubstituteRoll(int rolled, unsigned roll,
 	const unsigned char *table, int tableCount,
 	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
 {
+	(void)table;
+	(void)tableCount;
 	if (AP_ItemsanityRollAllowed(rolled, owned))
 		return rolled;
-	return AP_ItemsanitySelectOwned(roll, 0, table, tableCount, owned);
+	return AP_ItemsanitySelectOwned(roll, 0, AP_ITEMSANITY_FULL_POOL,
+	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
 }
 
 // Downstream substitution filter. Vanilla's single-warpball rule and its
@@ -147,10 +174,16 @@ static int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
 	const unsigned char *table, int tableCount,
 	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
 {
+	(void)table;
+	(void)tableCount;
 	if (AP_ItemsanityRollAllowed(proposed, owned))
 		return proposed;
-	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_CAPPED_IDS, table,
-	                                tableCount, owned);
+	// Same full pool as the draw filter, but the two capped ids stay excluded:
+	// this runs AFTER vanilla's single-warpball and 3-missile caps, so handing
+	// one back here would undo the cap that just ran.
+	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_CAPPED_IDS,
+	                                AP_ITEMSANITY_FULL_POOL,
+	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
 }
 
 #endif
