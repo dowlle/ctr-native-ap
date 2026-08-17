@@ -7,6 +7,7 @@
 #include "ap_capability.h"
 #include "ap_hooks.h"    // AP_LogLine
 #include "ap_seedcfg.h"  // ctr_cfg + ctr_cfg_active()
+#include "ap_turbogrant_logic.h" // #224 item 6: the s16 reserve overflow rail
 
 // ============================================================================
 // PROGRESSIVE BOOST (#12) + PROGRESSIVE STATS (#13) -- native consumer.
@@ -455,6 +456,20 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 	// through untouched. Blue fire is tracked as its own tier but carries no
 	// extra physics in this build -- its values were to come from CTR Unlimited's
 	// Retro Fueled mode and have never been sourced. See ap_capability.h.
+
+	// #224 item 6: whatever payload survives the tier, the reserve sum it
+	// produces stays below the signed 16-bit boundary. VehFire_Increment
+	// accumulates into an s16 with wrapping arithmetic and nothing bounds it;
+	// vanilla never gets close, but the Turbo Grant makes a repeatable on-demand
+	// Turbo source real, so the bound stops being an accident of the numbers.
+	// Applied here because this is the one point every AP-governed boost passes
+	// through, and it is already gated on "a tier is enabled and this is the
+	// local player" -- a seed with the pack off never reaches this line and is
+	// byte-identical to vanilla. Below the boundary the clamp returns its input,
+	// so no reachable payload today changes.
+	*reserves = AP_TurboGrantClampReserves((int)driver->reserves,
+	                                       (int)driver->turbo_outsideTimer,
+	                                       *reserves, type);
 	return 1;
 }
 
