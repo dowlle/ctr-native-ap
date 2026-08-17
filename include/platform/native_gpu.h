@@ -16,6 +16,10 @@ extern DRAWENV activeDrawEnv;
 extern int g_GPUDisabledState;
 
 int NativeGpu_HasPendingSplits(void);
+
+// AP sideloaded textures: bind a host RGBA texture for subsequent textured
+// draws instead of emulated VRAM. Pass 0 to return to the VRAM texture.
+void NativeGpu_SetOverrideTexture(unsigned int texture, int width, int height);
 void ClearSplits(void);
 void DrawAllSplits(void);
 void ParsePrimitivesLinkedList(u32 *p, int singlePrimitive);

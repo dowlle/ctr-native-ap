@@ -128,6 +128,20 @@ int NativeGpu_HasPendingSplits(void)
 	return s_gpu.splitIndex > 0;
 }
 
+// AP sideloaded textures. The Psy-X DR_PSYX_TEX primitive already drives these
+// three fields (see the 0xB0 sub-type 0x01 case), but no CTR code emits that
+// primitive, so AP sets them directly around its own draws instead of inventing
+// a display-list packet. Passing texture == 0 restores the normal VRAM path.
+//
+// AddSplit reads these when it builds a split, so a change takes effect for
+// every textured draw queued after this call and NOT retroactively.
+void NativeGpu_SetOverrideTexture(unsigned int texture, int width, int height)
+{
+	s_gpu.overrideTexture = (TextureID)texture;
+	s_gpu.overrideTextureWidth = width;
+	s_gpu.overrideTextureHeight = height;
+}
+
 void ClearSplits(void)
 {
 	s_gpu.currentSplitDebugText = NULL;

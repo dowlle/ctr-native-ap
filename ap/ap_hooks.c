@@ -3,6 +3,10 @@
 #include <common.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h> // getenv (sideload texture proof)
+
+#include <platform/native_gpu.h>      // NativeGpu_SetOverrideTexture (sideload proof)
+#include <platform/native_renderer.h> // NativeRenderer_CreateRGBATexture (sideload proof)
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
@@ -4261,6 +4265,65 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 // and it DOES take a feed line, because "the check and the feed line are the
 // entire effect" -- there is no pickup, no weapon roll and no wumpa to show for
 // it, so the feed line is the only acknowledgement the player gets.
+
+// ── sideloaded-texture proof (temporary, env-gated, 2026-08-17) ─────────────
+//
+// Does the native GPU layer's overrideTexture path actually render? AddSplit
+// implements it fully (swaps the bound texture, zeroes tpage, overrides the
+// format) but NO CTR code has ever emitted the Psy-X DR_PSYX_TEX primitive that
+// drives it, so it has never run in this codebase.
+//
+// If it works, AP-owned models can carry their own RGBA texture: no VRAM space
+// hunting, no tpage-encoding change, no save-state format change, and the retail
+// draw path is untouched.
+//
+// Deliberately GLOBAL: every textured draw turns magenta while it is on. That is
+// an unmistakable yes/no, not a preview of the crate fix. Gated on
+// CTR_AP_TEXPROOF. Runs from the unconditional per-frame hook, NOT from the box
+// tick -- the box system stands down without a seed, which is why the first
+// attempt logged nothing at all.
+static void AP_TexProof(void)
+{
+	static int s_proofState; // 0 = unchecked, 1 = active, 2 = disabled
+
+	if (s_proofState != 0)
+		return;
+
+	if (getenv("CTR_AP_TEXPROOF") == 0)
+	{
+		s_proofState = 2;
+		AP_LogLine("[AP TEXPROOF] CTR_AP_TEXPROOF not set; proof inert (normal path)\n");
+		return;
+	}
+
+	{
+		static u8 pixels[16 * 16 * 4]; // opaque magenta, RGBA8
+		int       p;
+		unsigned  tex;
+
+		for (p = 0; p < 16 * 16; p++)
+		{
+			pixels[p * 4 + 0] = 0xFF;
+			pixels[p * 4 + 1] = 0x00;
+			pixels[p * 4 + 2] = 0xFF;
+			pixels[p * 4 + 3] = 0xFF;
+		}
+
+		tex = (unsigned)NativeRenderer_CreateRGBATexture(16, 16, pixels);
+		if (tex == 0)
+		{
+			AP_LogLine("[AP TEXPROOF] CreateRGBATexture returned 0 -- path unusable\n");
+			s_proofState = 2;
+			return;
+		}
+
+		NativeGpu_SetOverrideTexture(tex, 16, 16);
+		AP_LogLine("[AP TEXPROOF] override texture bound; textured draws should now be MAGENTA\n");
+		s_proofState = 1;
+	}
+}
+
+
 void AP_EmitBoxCheck(int levelID, int slot, long code)
 {
 	AP_EmitClassCheck(code, 0, -1, -1, 1,
@@ -4697,6 +4760,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// Crash-reporter context: cache the plain ints the signal/SEH handlers are
 	// allowed to read (walking game structures in a dying process is not).
 	AP_CrashNoteFrame((int)gGT->levelID, ap_net_is_connected());
+	AP_TexProof();
 	// Park the #124 AP-logo marker in its model slot. Idempotent, and re-running
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
