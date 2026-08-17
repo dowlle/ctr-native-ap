@@ -521,6 +521,13 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	if (!g_armed || (gGT == NULL))
 		return;
 
+	// Never sample while a load is in flight. The driver struct survives a level
+	// transition but the level data it points into does not, so a driver field
+	// like currBlockTouching can be non-NULL and still reference freed memory.
+	// Same guard the retail-crate harvest uses, and for the same reason.
+	if ((sdata == NULL) || (sdata->Loading.stage != LOAD_IDLE))
+		return;
+
 	int levelID = (int)gGT->levelID;
 
 	// New level: drop the whole corpus, it belongs to the old track.
@@ -532,6 +539,13 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		g_curFrames = 0;
 		g_curDirty = 0;
 		g_lastLapIndex = -1;
+		// Skip this frame outright. The driver's block pointer belongs to the
+		// level we just left; the engine repopulates it on the next gameplay
+		// frame. Sampling here dereferenced the old level's freed block data
+		// and crashed on entering Polar Pass (0xc0000005 at ap_navrec.c:577,
+		// live capture 2026-08-17 17:09). A NULL check does not help: the
+		// pointer is stale, not null.
+		return;
 	}
 
 	// Numpad 9, edge-triggered: bank whatever is in progress, then write.
