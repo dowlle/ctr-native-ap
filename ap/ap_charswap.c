@@ -720,7 +720,7 @@ void AP_CharSwap_RequestPickerFromPause(void)
 // seed where selecting it would do nothing.
 int AP_CharSwap_PauseRowLive(void)
 {
-	return AP_CharSwap_FeatureLive() || AP_DevKeysEnabled();
+	return AP_CharSwap_RosterBrowseLive() || AP_DevKeysEnabled();
 }
 
 static int ap_cs_tileForCharacter(int characterID)
@@ -1206,8 +1206,10 @@ static void ap_cs_input(struct GameTracker *gGT)
 // The two cases that has to separate are otherwise identical on the wire:
 //
 //   * an OLD seed, from an apworld that predates the feature, carrying none of
-//     the keys. It has no unlock items and no roster concept, so the picker
-//     must stay shut -- a pre-0.2.0 seed has to keep behaving like one.
+//     the keys. It has no unlock items and no roster concept, so everything
+//     the phase owns (seating, locks, stat packages, persistence) must stay
+//     shut. The picker itself is the ruled exception -- see
+//     AP_CharSwap_RosterBrowseLive below.
 //   * a NEW seed that set `character_unlocks: false` (the ruled all-unlocked
 //     comfort mode) and left everything else at its default: Crash as the
 //     starter, vanilla stats, no locks. Every scalar reads default, and yet all
@@ -1223,6 +1225,26 @@ int AP_CharSwap_FeatureLive(void)
 	if (!ctr_cfg_active())
 		return 0;
 	return ctr_cfg.character_phase_present != 0;
+}
+
+// Whether the hub picker is offered at all, a wider question than whether the
+// character phase is live (ruled 2026-08-17: async servers run old
+// seeds, and vanilla let you choose any of the eight Adventure starters at
+// save creation, so the picker only lifts the one-save-one-racer restriction
+// there). On a phase-less seed AP_CharacterUnlocked already answers exactly
+// that vanilla eight plus the current driver, so the grid offers no racer the
+// seed did not.
+//
+// A separate predicate rather than a widening of FeatureLive, because
+// everything the phase actually OWNS must stay dead on its own per-consumer
+// gates: no seat enforcement (a phase-less starting_character defaults to 0
+// and would stomp the save's racer), no garage override, no stat packages, no
+// locks, and no server persistence -- the swap is session-local.
+int AP_CharSwap_RosterBrowseLive(void)
+{
+	if (AP_CharSwap_FeatureLive())
+		return 1;
+	return ctr_cfg_active() && !ctr_cfg.character_phase_present;
 }
 
 // Apply the seed's starting racer once per session (spike seam 4's sibling).
@@ -1451,10 +1473,11 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 		return;
 
 	// Productionised gate (#54/#209). The picker is a real feature on any seed
-	// that carries the character phase; the dev-key path survives only as a way
-	// in when no such seed is connected, so the prototype's manual matrix stays
-	// runnable on a bare build.
-	if (!AP_CharSwap_FeatureLive() && !AP_DevKeysEnabled())
+	// that carries the character phase, and on a phase-less old seed as the
+	// browse-only roster (see AP_CharSwap_RosterBrowseLive); the dev-key path
+	// survives only as a way in when no seed is connected at all, so the
+	// prototype's manual matrix stays runnable on a bare build.
+	if (!AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
 		return;
 
 	// Apply any editable-stat package that has arrived from the server since the
