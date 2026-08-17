@@ -1258,7 +1258,8 @@ int AP_CharSwap_FeatureLive(void)
 // everything the phase actually OWNS must stay dead on its own per-consumer
 // gates: no seat enforcement (a phase-less starting_character defaults to 0
 // and would stomp the save's racer), no garage override, no locks, and no
-// server persistence -- the racer swap and the stat edits are session-local.
+// server persistence. Stat edits last for the session; the racer choice
+// lands in the local save exactly as a Garage pick would.
 int AP_CharSwap_RosterBrowseLive(void)
 {
 	if (AP_CharSwap_FeatureLive())
