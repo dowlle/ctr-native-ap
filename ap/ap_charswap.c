@@ -1621,6 +1621,45 @@ static const char *ap_cs_shortName(int characterID)
 	return AP_CharName_Pick(NULL, NULL);
 }
 
+// Draw one racer's portrait at an arbitrary screen position (#237).
+//
+// Split out of the picker grid so the warp pad can show the racer a locked pad
+// demands. The pad's ITEM requirement is a 3D digit display floating in front
+// of the pad; a character lock had no display at all, so a racer-locked pad
+// looked exactly like an open one until you drove into it and were refused.
+//
+// Shares the picker's residency fallback rather than copying it: a hub's icon
+// table is populated from the hub LEV plus the resident adventure MPK, so a
+// portrait may simply not be here, and drawing the short name is better than
+// drawing nothing. `dim` renders the not-yet-owned state.
+void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int iconID;
+	struct Icon *icon;
+	unsigned int tint;
+
+	if ((gGT == NULL) || ((unsigned)characterID >= AP_CS_TILES))
+		return;
+
+	iconID = data.MetaDataCharacters[characterID].iconID;
+	icon = ((unsigned)iconID < 0x88) ? gGT->ptrIcons[iconID] : NULL;
+	tint = dim ? 0x606060 : 0xffffff;
+
+	if (icon != NULL)
+	{
+		RECTMENU_DrawPolyGT4(icon, x, y, &gGT->backBuffer->primMem,
+		                     gGT->pushBuffer_UI.ptrOT, tint, tint, tint, tint,
+		                     TRANS_50_DECAL, FP(1.0));
+		return;
+	}
+
+	DecalFont_DrawLine((char *)ap_cs_shortName(characterID), x, y,
+	                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+	ap_cs_noteMissingPortrait(characterID, iconID);
+}
+
+
 static const char *ap_cs_ownershipLabel(void)
 {
 	if (ap_cs_progMode == AP_CS_MODE_GLOBAL)
