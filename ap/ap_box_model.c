@@ -6,9 +6,7 @@
 
 #include "ap_box_model.h"
 #include "ap_box_model_data.h"
-
-#include <platform/native_gpu.h>      // AP_TPAGE_SIDELOAD_BIT, NativeGpu_SetSideloadTexture
-#include <platform/native_renderer.h> // NativeRenderer_CreateRGBATexture
+#include "ap_retail_crate.h"
 
 struct ApBoxModelFrame
 {
@@ -23,67 +21,6 @@ static struct ApBoxModelFrame s_apBoxFrame;
 static struct ModelHeader s_apBoxHeader;
 static struct Model s_apBoxModel;
 static int s_apBoxBuilt;
-
-// ── sideloaded texture (scoping proof) ──────────────────────────────────────
-//
-// The cube opts into the AP host texture per PRIMITIVE by setting
-// AP_TPAGE_SIDELOAD_BIT in this layout's tpage. RenderBucket copies the layout's
-// tpage into the packet unmasked (`p->tpage = tex->tpage`), the GPU layer
-// assigns it to activeDrawEnv.tpage verbatim, and AddSplit binds the AP texture
-// for exactly those splits. Retail prims cannot set the bit -- their tpage words
-// are fixed data on the disc -- so nothing else is affected.
-//
-// ptrTexLayout is `struct TextureLayout **`, so the header needs an array of
-// pointers, not the layout itself. Index 1 in the command list means element 0
-// here (RenderBucket_GetCommandTexture is 1-based).
-#define AP_BOX_TEX_SIZE 16
-
-static struct TextureLayout  s_apBoxTexLayout;
-static struct TextureLayout *s_apBoxTexLayouts[1];
-static u8                    s_apBoxTexPixels[AP_BOX_TEX_SIZE * AP_BOX_TEX_SIZE * 4];
-static int                   s_apBoxTexReady;
-
-// Build the host texture once and register it in the AP sideload slot. Returns
-// non-zero when the cube may use its textured command list.
-static int AP_BoxModel_EnsureTexture(void)
-{
-	unsigned tex;
-	int      p;
-
-	if (s_apBoxTexReady)
-		return 1;
-
-	// PROOF CONTENT: flat magenta. The real implementation replaces this with
-	// the retail crate texture, converted from 4bpp + CLUT to RGBA on the CPU.
-	for (p = 0; p < AP_BOX_TEX_SIZE * AP_BOX_TEX_SIZE; p++)
-	{
-		s_apBoxTexPixels[p * 4 + 0] = 0xFF;
-		s_apBoxTexPixels[p * 4 + 1] = 0x00;
-		s_apBoxTexPixels[p * 4 + 2] = 0xFF;
-		s_apBoxTexPixels[p * 4 + 3] = 0xFF;
-	}
-
-	tex = (unsigned)NativeRenderer_CreateRGBATexture(AP_BOX_TEX_SIZE, AP_BOX_TEX_SIZE, s_apBoxTexPixels);
-	if (tex == 0)
-		return 0;
-
-	NativeGpu_SetSideloadTexture(tex, AP_BOX_TEX_SIZE, AP_BOX_TEX_SIZE);
-
-	s_apBoxTexLayout.tpage = AP_TPAGE_SIDELOAD_BIT;
-	s_apBoxTexLayout.clut = 0; // unused for an RGBA host texture
-	s_apBoxTexLayout.u0 = 0;
-	s_apBoxTexLayout.v0 = 0;
-	s_apBoxTexLayout.u1 = AP_BOX_TEX_SIZE - 1;
-	s_apBoxTexLayout.v1 = 0;
-	s_apBoxTexLayout.u2 = 0;
-	s_apBoxTexLayout.v2 = AP_BOX_TEX_SIZE - 1;
-	s_apBoxTexLayout.u3 = AP_BOX_TEX_SIZE - 1;
-	s_apBoxTexLayout.v3 = AP_BOX_TEX_SIZE - 1;
-
-	s_apBoxTexLayouts[0] = &s_apBoxTexLayout;
-	s_apBoxTexReady = 1;
-	return 1;
-}
 
 #define AP_BOX_FALLBACK_SCALE 0x1000
 
@@ -114,20 +51,12 @@ static void AP_BoxModel_Build(struct GameTracker *gGT)
 	s_apBoxHeader.scale.x = scale;
 	s_apBoxHeader.scale.y = scale;
 	s_apBoxHeader.scale.z = scale;
-	// Textured when the sideload texture registered, flat-shaded otherwise. The
-	// two command lists differ only in the texture index carried in each
-	// command's low bits, so a failure here degrades to the previous look rather
-	// than to a missing box.
-	if (AP_BoxModel_EnsureTexture())
-	{
-		s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommandsTex;
-		s_apBoxHeader.ptrTexLayout = s_apBoxTexLayouts;
-	}
-	else
-	{
-		s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommands;
-		s_apBoxHeader.ptrTexLayout = 0;
-	}
+	// Flat-shaded, untextured. This is the LAST RESORT, reached only when the
+	// retail crate could not be harvested, so it deliberately stays the plain
+	// vertex-coloured cube rather than borrowing the sideload slot: a fallback
+	// should look like a stand-in, not like a broken texture.
+	s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommands;
+	s_apBoxHeader.ptrTexLayout = 0;
 	s_apBoxHeader.ptrFrameData = &s_apBoxFrame.frame;
 	s_apBoxHeader.ptrColors = (u32 *)(uintptr_t)s_apBoxModelColors;
 	s_apBoxHeader.unk3 = 0;
@@ -153,6 +82,14 @@ int AP_BoxModel_Ensure(struct GameTracker *gGT)
 		return -1;
 	if (gGT->modelPtr[PU_RANDOM_CRATE] != 0)
 		return PU_RANDOM_CRATE;
+
+	// Prefer the real retail crate, harvested from the player's own game data
+	// and sampled through the AP sideload texture. Only if that is unavailable
+	// does the AP-owned cube stand in -- a box that looks wrong still beats a
+	// location that cannot be checked.
+	if (AP_RetailCrate_Ensure(gGT))
+		return PU_RANDOM_CRATE;
+
 	if (!s_apBoxBuilt)
 		AP_BoxModel_Build(gGT);
 
