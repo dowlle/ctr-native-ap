@@ -1145,6 +1145,11 @@ void VehPickupItem_ShootOnCirclePress(struct Driver *d)
 	// 12-missile ceiling) swallow the projectile. It reads d->heldItemID, the
 	// true weapon identity, before the shared Bomb/Missile rewrite below.
 	AP_ItemsanityOnUse(d, (int)d->heldItemID);
+	// #224 Turbo Grant: the same committed-use choke point, for the same reason.
+	// A delivered grant is only counted as spent once the player actually fires
+	// it, so this is where the persisted fired count moves. Reads the true held
+	// id before the shared Bomb/Missile rewrite below, like the line above.
+	AP_TurboGrantOnFire(d, (int)d->heldItemID);
 #endif
 
 	weapon = d->heldItemID;

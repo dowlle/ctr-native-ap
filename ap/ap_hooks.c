@@ -3498,6 +3498,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// authoritative replay, so a reconnect or a slot switch can never carry
 		// one slot's helper into another's session.
 		AP_TiziReset();
+		// Turbo Grant (#224): zero the session counters and reload this seed and
+		// slot's persisted FIRED count. Deliberately not the ap_fx_seen_max
+		// mechanism above -- that marks an item consumed when its batch drains,
+		// which would swallow a grant the player could not receive yet. See
+		// ap_turbogrant_logic.h.
+		AP_TurboGrantReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -3686,6 +3692,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_itemsanity_owned[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX] = 1;
 			if (idx == AP_TIZI_MASK_ITEM_INDEX)
 				AP_TiziReceiveMask();
+			// #224's ruled gate needs the same signal for the `Turbo` weapon
+			// (the first itemsanity item) that #223 needs for the Mask.
+			if (idx == AP_TURBOGRANT_TURBO_ITEM_INDEX)
+				AP_TurboGrantReceiveTurboWeapon();
 		}
 
 		// Character unlocks (idx 123..138, issues #54/#209): one item per racer,
@@ -3706,6 +3716,18 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_TIZI_ITEM_INDEX)
 		{
 			AP_TiziReceiveHelper();
+		}
+
+		// Turbo Grant (#224, idx 189). A COUNT, not a boolean: every receipt is
+		// one more Turbo the player is owed, and duplicates are legitimate. It is
+		// rebuilt from zero on each fresh connect (AP_TurboGrantReset above), so
+		// the server's full replay reconstructs exactly the same total -- which
+		// is why this must NOT be filtered through ap_fx_seen_max the way the
+		// trap and Wumpa arms are. A grant that has not been delivered yet is
+		// still owed, whatever index it arrived at.
+		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
+		{
+			AP_TurboGrantReceive();
 		}
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
 		// local player in-race (issue #11). Not a gate item, so it never touches
@@ -4815,6 +4837,8 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_TrapTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
+	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
+	                        // one pending grant into an empty in-race weapon slot
 	AP_ShortcutKeys();
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
