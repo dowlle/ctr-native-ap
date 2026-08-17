@@ -1018,6 +1018,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// Rem Adventure Arena
 				sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 
+#ifdef CTR_AP
+				// Racer lock enforcement: seat the demanded racer before the
+				// load reads characterIDs[0] (menu-driven relic/token entry).
+				AP_RacerLock_ForceForWarp(physLevelID);
+#endif
+
 				MainRaceTrack_RequestLoad(levelID);
 				goto WarpPad_TrophyAnimateOnly;
 			}
@@ -1067,6 +1073,16 @@ WarpPad_RequestLoad:
 
 	// Rem Adventure Arena
 	sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
+
+#ifdef CTR_AP
+	// Racer lock enforcement: seat the demanded racer before the load reads
+	// characterIDs[0], so the destination (trophy race, relic/trial, crystal
+	// challenge or cup) births the racer the lock names. Keyed by PHYSICAL
+	// pad, the same key the gate and the portrait use. The hub-return restore
+	// lives in AP_OnFrame's levelID-transition watcher (ap_hooks.c), the same
+	// home as the one-lap-cup restore.
+	AP_RacerLock_ForceForWarp(physLevelID);
+#endif
 
 	MainRaceTrack_RequestLoad(levelID);
 	goto WarpPad_AnimateOpen;

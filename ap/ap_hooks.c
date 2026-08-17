@@ -4785,6 +4785,18 @@ static void ap_onframe_body(struct GameTracker *gGT)
 				gGT->numLaps = 3;
 				AP_AppendLog("[AP CUP] one-lap override cleared (hub return)\n");
 			}
+
+			// Racer lock enforcement: a transition landing in a hub puts the
+			// player's own racer back (AH_WarpPad's warp commit seated the
+			// lock's racer for the destination). Same destination-levelID
+			// timing as the one-lap restore above: the watcher fires early in
+			// the hub load, before the driver MPK stage reads
+			// characterIDs[0], so the restored racer's model is what loads.
+			if ((int)gGT->levelID >= GEM_STONE_VALLEY &&
+			    (int)gGT->levelID <= CITADEL_CITY)
+			{
+				AP_RacerLock_RestoreOnHub();
+			}
 		}
 	}
 

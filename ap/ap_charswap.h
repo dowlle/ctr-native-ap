@@ -70,6 +70,14 @@ int AP_CharSwap_PauseRowLive(void);
 // with every character option off answers 0 and behaves like a pre-feature seed.
 int AP_CharSwap_FeatureLive(void);
 
+// Racer-lock enforcement (ruled 2026-08-17). ForceForWarp: called at the warp
+// commit with the PHYSICAL pad id; seats the pad's demanded racer (if any)
+// before the destination load, remembering the player's racer. RestoreOnHub:
+// called when a level transition lands in a hub; puts the remembered racer
+// back. Both are cheap no-ops when no lock / no enforcement is in flight.
+void AP_RacerLock_ForceForWarp(int physPadLevelID);
+void AP_RacerLock_RestoreOnHub(void);
+
 // Seat this slot's racer, once per authoritative answer: the value persisted in
 // per-slot AP data storage if there is one, otherwise the seed's YAML starting
 // racer. The racer is never an item, so nothing else would ever apply it.

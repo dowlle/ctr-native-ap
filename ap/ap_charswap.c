@@ -1314,6 +1314,43 @@ static void ap_cs_seatApply(int characterID, const char *source)
 	sdata->advProgress.characterID = (s16)characterID;
 }
 
+// ---------------------------------------------------------------------------
+// Racer-lock enforcement (ruled 2026-08-17): a racer-locked pad does not just
+// require OWNING the demanded racer, it races you AS them. The warp commit
+// seats the lock's racer before the destination load reads characterIDs[0]
+// (so the right driver MPK loads), and the first transition that lands back
+// in a hub seats the original racer again. Ownership already gated entry
+// (ctr_cfg_racer_lock_met inside ctr_cfg_warp_unlocked), so by the time a
+// warp commits, the demanded racer is guaranteed owned.
+// ---------------------------------------------------------------------------
+
+// The racer to put back on hub return, -1 when no enforcement is in flight.
+// Deliberately first-write-wins: chaining into a second locked pad before a
+// hub return still restores the racer the PLAYER chose, not the first lock's.
+static int ap_rl_prevRacer = -1;
+
+void AP_RacerLock_ForceForWarp(int physPadLevelID)
+{
+	int lock = ctr_cfg_racer_lock(physPadLevelID);
+
+	if (lock < 0)
+		return;
+	if (data.characterIDs[0] == (short)lock)
+		return; // already driving them; nothing to force, nothing to restore
+
+	if (ap_rl_prevRacer < 0)
+		ap_rl_prevRacer = data.characterIDs[0];
+	ap_cs_seatApply(lock, "racer lock enforcement (warp commit)");
+}
+
+void AP_RacerLock_RestoreOnHub(void)
+{
+	if (ap_rl_prevRacer < 0)
+		return;
+	ap_cs_seatApply(ap_rl_prevRacer, "racer lock release (hub return)");
+	ap_rl_prevRacer = -1;
+}
+
 // Which racer the adventure-start Garage must commit, or -1 when it should run
 // exactly as it always has (#54/#209).
 //
