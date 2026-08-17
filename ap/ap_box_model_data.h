@@ -52,4 +52,26 @@ static const u32 s_apBoxModelCommands[] = {
 	0xffffffffu,
 };
 
+// Textured variant: identical geometry, but every command carries texture index
+// 1 in its low 9 bits (RenderBucket_GetCommandTexture reads
+// `texIndex = command & 0x1ff`, 1-based into ptrTexLayout). Bit 0 does not
+// disturb the colour offset, which is `(command >> 7) & 0x1fc` and therefore
+// reads only bit 9 upwards.
+#define AP_BOX_TRI_TEX(ci) \
+	(0x80010001u | ((u32)(ci) << 9)), \
+	(0x00020001u | ((u32)(ci) << 9)), \
+	(0x00030001u | ((u32)(ci) << 9))
+
+static const u32 s_apBoxModelCommandsTex[] = {
+	AP_BOX_MODEL_NUM_COLORS,
+	AP_BOX_TRI_TEX(0), AP_BOX_TRI_TEX(0),
+	AP_BOX_TRI_TEX(1), AP_BOX_TRI_TEX(1),
+	AP_BOX_TRI_TEX(2), AP_BOX_TRI_TEX(2),
+	AP_BOX_TRI_TEX(3), AP_BOX_TRI_TEX(3),
+	AP_BOX_TRI_TEX(4), AP_BOX_TRI_TEX(4),
+	AP_BOX_TRI_TEX(5), AP_BOX_TRI_TEX(5),
+	0xffffffffu,
+};
+
+#undef AP_BOX_TRI_TEX
 #undef AP_BOX_TRI

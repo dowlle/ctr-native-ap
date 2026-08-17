@@ -99,6 +99,12 @@ typedef struct
 	int overrideTextureWidth;
 	int overrideTextureHeight;
 
+	// AP sideloaded texture: opted into per-primitive via AP_TPAGE_SIDELOAD_BIT
+	// rather than globally, so retail draws are untouched.
+	TextureID apSideloadTexture;
+	int apSideloadWidth;
+	int apSideloadHeight;
+
 	int drawPrimMode;
 	bool psxDrawMaskSet;
 	bool framebufferFeedbackRunActive;
@@ -140,6 +146,16 @@ void NativeGpu_SetOverrideTexture(unsigned int texture, int width, int height)
 	s_gpu.overrideTexture = (TextureID)texture;
 	s_gpu.overrideTextureWidth = width;
 	s_gpu.overrideTextureHeight = height;
+}
+
+// The AP sideload slot. Unlike overrideTexture this is NOT a mode switch: it
+// only supplies the texture that prims carrying AP_TPAGE_SIDELOAD_BIT sample,
+// so it can be registered once and left alone. Nothing retail can opt in.
+void NativeGpu_SetSideloadTexture(unsigned int texture, int width, int height)
+{
+	s_gpu.apSideloadTexture = (TextureID)texture;
+	s_gpu.apSideloadWidth = width;
+	s_gpu.apSideloadHeight = height;
 }
 
 void ClearSplits(void)
@@ -825,20 +841,41 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 
 	GPUDrawSplit *curSplit = &s_gpu.splits[s_gpu.splitIndex];
 
+	// AP sideloaded texture, per-primitive. A prim opts in by setting
+	// AP_TPAGE_SIDELOAD_BIT in its own tpage word, which reaches here because
+	// the textured-poly handlers assign `activeDrawEnv.tpage = poly->tpage`
+	// verbatim and RenderBucket copies `p->tpage = tex->tpage` unmasked.
+	//
+	// Bit 15 is chosen because every existing decoder reads below it: page X/Y
+	// bits 0-4, blend 5-6, colour depth 7-8, dither 9. So retail prims are
+	// unaffected and cannot accidentally carry the flag -- their tpage words are
+	// fixed data on the disc and never set it.
+	//
+	// This scopes per PRIMITIVE rather than per display-list position, which
+	// matters: a model's prims are spread across depth-sorted OT buckets, so
+	// bracketing packets around a draw could not have scoped reliably.
+	bool apSideload = textured && (tpage & AP_TPAGE_SIDELOAD_BIT) != 0 && s_gpu.apSideloadTexture != 0;
+
 	BlendMode blendMode = semiTrans ? GET_TPAGE_BLEND(tpage) : BM_NONE;
 	TexFormat texFormat = GetTPageFormat(tpage);
 	TextureID textureId = textured ? NativeRenderer_GetVRAMTexture() : NativeRenderer_GetWhiteTexture();
-	bool psxTexturedSemiTrans = semiTrans && textured && s_gpu.overrideTexture == 0;
+	bool psxTexturedSemiTrans = semiTrans && textured && s_gpu.overrideTexture == 0 && !apSideload;
 	// NOTE(aalhendi): PS1 framebuffer bit 15 follows sampled texture STP for
 	// textured draws unless E6 forces it. Recursive screen-copy effects depend
 	// on this bit surviving after the blended textured pass.
-	bool psxTextureOutputSTP = textured && s_gpu.overrideTexture == 0;
+	bool psxTextureOutputSTP = textured && s_gpu.overrideTexture == 0 && !apSideload;
 
 	if (textured && s_gpu.overrideTexture != 0)
 	{
 		// override texture format, zero tpage
 		texFormat = TF_32_BIT_RGBA;
 		textureId = s_gpu.overrideTexture;
+		psxTexturedSemiTrans = false;
+	}
+	else if (apSideload)
+	{
+		texFormat = TF_32_BIT_RGBA;
+		textureId = s_gpu.apSideloadTexture;
 		psxTexturedSemiTrans = false;
 	}
 
@@ -873,8 +910,16 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	split->dispenv = activeDispEnv;
 	split->debugText = s_gpu.currentSplitDebugText;
 
-	split->drawenv.tw.w = s_gpu.overrideTextureWidth;
-	split->drawenv.tw.h = s_gpu.overrideTextureHeight;
+	if (apSideload)
+	{
+		split->drawenv.tw.w = s_gpu.apSideloadWidth;
+		split->drawenv.tw.h = s_gpu.apSideloadHeight;
+	}
+	else
+	{
+		split->drawenv.tw.w = s_gpu.overrideTextureWidth;
+		split->drawenv.tw.h = s_gpu.overrideTextureHeight;
+	}
 
 	split->startVertex = s_gpu.vertexIndex;
 	split->numVerts = 0;

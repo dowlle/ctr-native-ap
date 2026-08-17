@@ -17,9 +17,18 @@ extern int g_GPUDisabledState;
 
 int NativeGpu_HasPendingSplits(void);
 
-// AP sideloaded textures: bind a host RGBA texture for subsequent textured
-// draws instead of emulated VRAM. Pass 0 to return to the VRAM texture.
+// Global texture override: bind a host RGBA texture for ALL subsequent textured
+// draws instead of emulated VRAM. Pass 0 to restore the VRAM texture. Blunt
+// instrument, used by the temporary sideload proof only.
 void NativeGpu_SetOverrideTexture(unsigned int texture, int width, int height);
+
+// AP sideloaded texture. Register once; an individual primitive opts in by
+// setting AP_TPAGE_SIDELOAD_BIT in its own tpage word, so the scope is
+// per-primitive and retail draws are untouched. Bit 15 is free: every existing
+// tpage decoder reads below it (page 0-4, blend 5-6, depth 7-8, dither 9).
+#define AP_TPAGE_SIDELOAD_BIT 0x8000
+
+void NativeGpu_SetSideloadTexture(unsigned int texture, int width, int height);
 void ClearSplits(void);
 void DrawAllSplits(void);
 void ParsePrimitivesLinkedList(u32 *p, int singlePrimitive);
