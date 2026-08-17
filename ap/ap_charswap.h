@@ -72,8 +72,8 @@ int AP_CharSwap_FeatureLive(void);
 
 // Is the hub picker offered at all? True whenever FeatureLive is, and ALSO on
 // a connected seed that predates the character phase, where the picker offers
-// the eight vanilla Adventure starters as a browse-only roster (session-local
-// swap; none of the phase's seating/lock/stat machinery runs).
+// the full sixteen-racer roster plus free per-character stat editing (both
+// session-local; none of the phase's seating/lock/persistence machinery runs).
 int AP_CharSwap_RosterBrowseLive(void);
 
 // Seat this slot's racer, once per authoritative answer: the value persisted in

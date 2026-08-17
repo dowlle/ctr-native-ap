@@ -320,6 +320,15 @@ static int ap_cs_resolvedEditMode(void)
 			return ctr_cfg.stat_owner;
 		return AP_CS_MODE_OFF;
 	}
+	// Browse mode (connected seed without the character phase): free
+	// per-character stat editing, by ruling (2026-08-18). The "a live seed
+	// said vanilla" reasoning below does not apply here -- an old seed said
+	// NOTHING about stats, and the player decides for themselves. Edits stay
+	// session-local: ap_cs_editPersist/editRestore keep their own
+	// character_phase_present gates, so nothing is written to (or restored
+	// from) AP data storage for a seed that cannot own that state.
+	if (ctr_cfg_active() && !ctr_cfg.character_phase_present)
+		return AP_CS_MODE_PERCHAR;
 	if (ctr_cfg_active())
 		return AP_CS_MODE_OFF;
 	return ap_cs_devEditMode;
@@ -640,6 +649,15 @@ static int ap_cs_devUnlockAll = 0;
 static int ap_cs_isUnlocked(int characterID)
 {
 	if (ap_cs_devUnlockAll && AP_DevKeysEnabled())
+		return 1;
+	// Browse mode (connected seed without the character phase): the whole
+	// roster is free, by ruling (2026-08-18). An old seed has no unlock
+	// economy to respect and can carry no racer-locked pads, so the "picker
+	// and the pad gate can never disagree" invariant above is vacuously safe,
+	// and the choice belongs to the player. Deliberately wider than
+	// AP_CharacterUnlocked's phase-less answer (the vanilla eight), which
+	// stays conservative for the machinery that ENFORCES things.
+	if (ctr_cfg_active() && !ctr_cfg.character_phase_present)
 		return 1;
 	return AP_CharacterUnlocked(characterID);
 }
@@ -1228,18 +1246,19 @@ int AP_CharSwap_FeatureLive(void)
 }
 
 // Whether the hub picker is offered at all, a wider question than whether the
-// character phase is live (ruled 2026-08-17: async servers run old
-// seeds, and vanilla let you choose any of the eight Adventure starters at
-// save creation, so the picker only lifts the one-save-one-racer restriction
-// there). On a phase-less seed AP_CharacterUnlocked already answers exactly
-// that vanilla eight plus the current driver, so the grid offers no racer the
-// seed did not.
+// character phase is live (ruled 2026-08-17, widened 2026-08-18: async servers
+// run old seeds, and on those the roster and the stats are the player's own
+// business). In browse mode the grid offers ALL SIXTEEN racers
+// (ap_cs_isUnlocked) and the stat panel is a free per-character editor
+// (ap_cs_resolvedEditMode) -- an old seed carries no unlock economy, no
+// capability logic and no racer-locked pads, so nothing the seed relies on
+// can be contradicted by either freedom.
 //
 // A separate predicate rather than a widening of FeatureLive, because
 // everything the phase actually OWNS must stay dead on its own per-consumer
 // gates: no seat enforcement (a phase-less starting_character defaults to 0
-// and would stomp the save's racer), no garage override, no stat packages, no
-// locks, and no server persistence -- the swap is session-local.
+// and would stomp the save's racer), no garage override, no locks, and no
+// server persistence -- the racer swap and the stat edits are session-local.
 int AP_CharSwap_RosterBrowseLive(void)
 {
 	if (AP_CharSwap_FeatureLive())
