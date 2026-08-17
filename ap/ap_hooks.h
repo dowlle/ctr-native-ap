@@ -479,6 +479,11 @@ int AP_PadState(int physLevelID, int destLevelID);
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
 
+// Number of unchecked item-box locations owned by a race destination. This is
+// the same server-truth count used by AP_PadState, exposed so the warp-pad HUD
+// can explain why a trophy-complete pad remains raceable.
+int AP_PadUncollectedBoxCount(int destLevelID);
+
 // ── Gem-cup return hub (destination-shuffle correctness) ──
 // Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a
 // cup's four track loads clobber gGT->prevLEV (each MainRaceTrack_RequestLoad

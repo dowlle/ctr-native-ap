@@ -5,6 +5,7 @@
 #include <stdlib.h> // rand(), same source of cosmetic spin the vanilla shatter uses
 
 #include "ap_boxes.h"
+#include "ap_box_model.h"
 #include "ap_spawn.h"   // additive model loader: the crates themselves
 #include "ap_author.h"  // the placement table (one reader, shared with #182)
 #include "ap_seedcfg.h" // ctr_cfg_active(): is a seed loaded at all
@@ -123,10 +124,9 @@ static int AP_BoxChecked(long code, void *ctx)
 
 // Should this level's race carry AP boxes at all?
 //
-// ADVENTURE MODE ONLY, and this is a DECISION, not a ruling -- flagged in the
-// build note. The ruling says boxes appear in every race type "including relic
-// races", which is about the adventure pad modes (trophy / relic / token /
-// crystal), all of which pass here. Arcade, VS and battle do not, for two
+// ADVENTURE PAD MODES ONLY. The ruling says boxes appear in every race type
+// "including relic races", which is about the adventure pad modes (trophy /
+// relic / token / crystal). Arcade, VS and battle do not carry boxes, for two
 // reasons:
 //
 //   * logic. The apworld gives every box its track's pad-access rules for free
@@ -138,11 +138,25 @@ static int AP_BoxChecked(long code, void *ctx)
 //     AP_RACE_ARCADE for anything outside ADVENTURE_MODE (ap_hooks.c:3494-3496)
 //     and the podium fan-out fires only on an adventure trophy race.
 //
-// Boss races are adventure races on box tracks, so they are IN. Nothing is
-// gained by excluding them: it is the same track and the same location.
+// Boss races are adventure races on box tracks, so they are IN; ADVENTURE_MODE
+// alone covers them (confirmed empirically, e.g. the Oxide boss-race box hit in
+// the 2026-08-12 session log).
+//
+// RELIC_RACE was assumed to fold into ADVENTURE_MODE the same way and was NOT
+// explicitly tested here. It does not: a live session on Slide Coliseum (a
+// trial track whose primary mode IS relic races) found zero AP boxes standing
+// and zero trial-track box checks logged, confirmed root cause by Stef
+// 2026-08-12 22:36 -- this gate was the bypass. RELIC_RACE is added explicitly
+// rather than trusted to already be covered.
+//
+// TIME_TRIAL and CRYSTAL_CHALLENGE are NOT added here even though ruling #8
+// names "every race type": no report has confirmed either is actually reached
+// through a box track with the same gap, and CRYSTAL_CHALLENGE only occurs on
+// battle tracks (never a box track per AP_BoxMap_ApTrack), so it is moot in
+// practice. Extending to TIME_TRIAL needs its own confirmed report.
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
-	return (gGT->gameMode1 & ADVENTURE_MODE) != 0;
+	return (gGT->gameMode1 & (ADVENTURE_MODE | RELIC_RACE)) != 0;
 }
 
 // ── the live set ────────────────────────────────────────────────────────────
@@ -153,16 +167,13 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 // crate is the intended endgame look anyway, so the diagnostic and the design
 // are the same thing. Do NOT re-promote STATIC_AP here.
 //
-// Returns -1 when the model is not in this level's model list, which is a real
-// possibility worth logging rather than assuming: the crate is stripped of
-// DRAW_COLLISION_MASK in relic and time-trial modes (INSTANCE.c:384-397) but
-// that only touches instance flags, so the MODEL should still be resident. If
-// this ever logs, the relic-race half of the ruling has a genuine asset problem.
+// Most levels use the resident retail model. Trial tracks such as Turbo Track
+// do not carry it, so AP_BoxModel_Ensure installs the small AP-owned fallback
+// into that otherwise-null per-level slot. The fallback is not STATIC_AP: the
+// many-instance AP-logo path previously made track floors disappear.
 static int AP_BoxModel(struct GameTracker *gGT)
 {
-	if (gGT->modelPtr[PU_RANDOM_CRATE] != 0)
-		return PU_RANDOM_CRATE;
-	return -1;
+	return AP_BoxModel_Ensure(gGT);
 }
 
 static void AP_BoxesForget(void)
@@ -251,7 +262,7 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 			char msg[112];
 			s_modelWarned = 1;
 			snprintf(msg, sizeof msg,
-			         "[AP BOX] level %d has no PU_RANDOM_CRATE model; %d box(es) cannot be drawn\n",
+			         "[AP BOX] level %d could not register a crate model; %d box(es) cannot be drawn\n",
 			         s_level, s_liveCount);
 			AP_LogLine(msg);
 		}

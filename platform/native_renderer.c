@@ -420,7 +420,7 @@ internal int NativeRenderer_Shader_CheckShaderStatus(GLuint shader);
 internal int NativeRenderer_Shader_CheckProgramStatus(GLuint program);
 internal ShaderID NativeRenderer_Shader_Compile(const char *source, bool isPsxShader);
 internal void NativeRenderer_GenerateCommonTextures(void);
-internal TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data);
+TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data);
 internal void NativeRenderer_CompilePSXShader(GTEShader *sh, const char *source);
 internal void NativeRenderer_InitialisePSXShaders(void);
 internal void NativeRenderer_InitRG8LUT(void);
@@ -776,7 +776,7 @@ internal void NativeRenderer_GenerateCommonTextures(void)
 	}
 }
 
-internal TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
+TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
 {
 	TextureID newTexture;
 	glGenTextures(1, &newTexture);
