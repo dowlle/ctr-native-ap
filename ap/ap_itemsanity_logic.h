@@ -8,6 +8,12 @@
 #define AP_ITEMSANITY_WEAPON_COUNT 11
 #define AP_ITEMSANITY_NO_ITEM 0xF
 
+// Frozen 0.2.0 datapackage append: the weapon items occupy apworld item indexes
+// 95..105 in held ID order (0..4, 6..11). It lives here rather than beside the
+// receive path in ap_hooks.c so the reward-display policy can classify a weapon
+// unlock (#219) without pulling in the runtime.
+#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+
 static int AP_ItemsanityWeaponIndex(int heldItemID)
 {
 	if (heldItemID >= 0 && heldItemID <= 4)

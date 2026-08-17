@@ -43,10 +43,9 @@
 #include <stdio.h>
 
 #include "ap_retail_crate.h"
+#include "ap_retail_asset.h" // AP_RetailAsset_ReadSubfile (shared with #219)
 #include "ap_hooks.h" // AP_LogLine
 
-#include <platform/native_assets.h>     // NativeAssets_OpenHostBigfile
-#include <platform/native_disc_image.h> // NativeDiscImage_* (disc-image players)
 #include <platform/native_gpu.h>        // AP_TPAGE_SIDELOAD_BIT, NativeGpu_SetSideloadTexture
 #include <platform/native_renderer.h> // NativeRenderer_CreateRGBATexture
 
@@ -180,35 +179,6 @@ static int AP_CrateBlit(const u8 *vrm, int vrmSize, int pageX, int pageY, int mi
 	return 1;
 }
 
-// ── raw BIGFILE access ──────────────────────────────────────────────────────
-//
-// Two sources, matching how the engine itself resolves assets: a loose
-// BIGFILE.BIG extracted next to the executable, or BIGFILE.BIG inside the
-// player's disc image. Whichever the player has, we read the same sectors.
-static int AP_CrateReadBigfileSectors(int sector, int sectorCount, u8 *dst)
-{
-	struct NativeDiscImageFile file;
-	FILE                      *fp;
-
-	fp = NativeAssets_OpenHostBigfile("rb");
-	if (fp != 0)
-	{
-		int ok = 0;
-
-		if (fseek(fp, (long)sector * 2048, SEEK_SET) == 0)
-			ok = (fread(dst, 1, (size_t)sectorCount * 2048, fp) == (size_t)sectorCount * 2048);
-
-		fclose(fp);
-		if (ok)
-			return 1;
-	}
-
-	if (NativeDiscImage_FindFile("BIGFILE.BIG", &file))
-		return NativeDiscImage_ReadDataSectors(&file, (u32)sector, (u32)sectorCount, dst);
-
-	return 0;
-}
-
 // ── the harvest ─────────────────────────────────────────────────────────────
 
 struct ApCrateRect
@@ -219,86 +189,6 @@ struct ApCrateRect
 	int clutX, clutY;
 	int atlasX, atlasY;
 };
-
-// Read one BIGFILE subfile into our own buffer and apply the engine's pointer
-// fixup.
-//
-// DELIBERATELY NOT via LOAD_ReadFile_ex. That is the engine's loader: it calls
-// CDSYS_SetMode_StreamData(), drives the CD callback machinery and borrows the
-// single global data.currSlot, all of which only ever run from the load state
-// machine. Calling it from a gameplay frame crashed on entry to a relic race
-// (access violation, before this file logged anything at all, 2026-08-17).
-//
-// The subfile is just bytes at a known offset, so we read them ourselves: the
-// entry table is already in memory at sdata->ptrBigfile1, entry.offset is a
-// sector index relative to BIGFILE, and the native asset layer can serve those
-// sectors from either a loose BIGFILE.BIG or the player's disc image. No engine
-// state is touched.
-// isDramFile distinguishes the TWO subfile shapes, which the engine handles with
-// two different callbacks and which are NOT interchangeable:
-//
-//   DRAM file (levels)  -- word 0 is the pointer-map offset, body starts at +4,
-//                          and the fixup must run (LOAD_DramFileCallback).
-//   VRAM file (textures)-- word 0 is 0x20, the packed-TIM marker, body starts at
-//                          0, and there is NO pointer map (LOAD_VramFileCallback).
-//
-// Running the fixup on a texture file reads 0x20 as a pointer-map offset and
-// then writes the buffer's base address into arbitrary offsets across the pixel
-// data until it walks off the end. That is exactly what crashed the first four
-// harvest attempts (2026-08-17).
-static u8 *AP_CrateReadSubfile(int subfileIndex, int isDramFile, u8 *dst, int dstSize, int *outSize)
-{
-	struct BigHeader *bigfile;
-	struct BigEntry  *entries;
-	int               offsetSectors, size, sectorCount;
-	int               ptrMapOffset;
-	u8               *body;
-
-	if (sdata == 0 || sdata->ptrBigfile1 == 0)
-		return 0;
-
-	bigfile = sdata->ptrBigfile1;
-	if (subfileIndex < 0 || subfileIndex >= bigfile->numEntry)
-		return 0;
-
-	entries = BIG_GETENTRY(bigfile);
-	offsetSectors = entries[subfileIndex].offset;
-	size = entries[subfileIndex].size;
-
-	if (size <= 4 || size > dstSize)
-		return 0;
-
-	// The reader writes whole sectors, so the buffer must hold the rounded size.
-	sectorCount = (size + 0x7FF) >> 11;
-	if (sectorCount * 2048 > dstSize)
-		return 0;
-
-	if (!AP_CrateReadBigfileSectors(offsetSectors, sectorCount, dst))
-		return 0;
-
-	if (!isDramFile)
-	{
-		// Texture file: raw from byte 0, no pointer map.
-		if (outSize != 0)
-			*outSize = size;
-		return dst;
-	}
-
-	// Word 0 is the pointer-map offset relative to the body at dst+4.
-	ptrMapOffset = *(const int *)dst;
-	body = dst + 4;
-
-	if (ptrMapOffset >= 0 && ptrMapOffset + 4 <= size - 4)
-	{
-		struct DramPointerMap *dpm = (struct DramPointerMap *)(body + ptrMapOffset);
-		LOAD_RunPtrMap((char *)body, (int *)DRAM_GETOFFSETS(dpm), dpm->numBytes >> 2);
-	}
-
-	if (outSize != 0)
-		*outSize = size - 4;
-
-	return body;
-}
 
 // Bounds-checked against the buffer the file was read into: after fixup every
 // pointer in the file must land inside it, so anything outside means the fixup
@@ -505,7 +395,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 
 	AP_LogLine("[AP CRATE] harvesting the retail crate from the game data...\n");
 
-	levBody = AP_CrateReadSubfile(AP_CRATE_SRC_LEV, 1, s_levBuf, AP_CRATE_LEV_BUF, &levSize);
+	levBody = AP_RetailAsset_ReadSubfile(AP_CRATE_SRC_LEV, 1, s_levBuf, AP_CRATE_LEV_BUF, &levSize);
 	if (levBody == 0)
 	{
 		AP_LogLine("[AP CRATE] could not read the source level file; keeping the fallback cube\n");
@@ -564,7 +454,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 		return 0;
 	}
 
-	vrmBody = AP_CrateReadSubfile(AP_CRATE_SRC_VRM, 0, s_vrmBuf, AP_CRATE_VRM_BUF, &vrmSize);
+	vrmBody = AP_RetailAsset_ReadSubfile(AP_CRATE_SRC_VRM, 0, s_vrmBuf, AP_CRATE_VRM_BUF, &vrmSize);
 	if (vrmBody == 0)
 	{
 		AP_LogLine("[AP CRATE] could not read the source texture file; keeping the fallback cube\n");
