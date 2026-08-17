@@ -4797,6 +4797,14 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			{
 				AP_RacerLock_RestoreOnHub();
 			}
+			// Quit-to-title mid-enforced-race: drop rather than restore.
+			// Without this the saved racer survived into the next adventure
+			// and its first hub entry overrode the fresh garage pick
+			// (review round 2 MINOR).
+			else if ((int)gGT->levelID == MAIN_MENU_LEVEL)
+			{
+				AP_RacerLock_DropOnTitle();
+			}
 		}
 	}
 

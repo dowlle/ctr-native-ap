@@ -79,6 +79,11 @@ int AP_CharSwap_FeatureLive(void);
 void AP_RacerLock_ForceForWarp(int physPadLevelID);
 void AP_RacerLock_RestoreOnHub(void);
 
+// Quit-to-title mid-enforcement: forget the saved racer instead of restoring
+// it (a dead session's racer must not override the next adventure's garage
+// pick). Called from the same transition watcher on a main-menu landing.
+void AP_RacerLock_DropOnTitle(void);
+
 // Seat this slot's racer, once per authoritative answer: the value persisted in
 // per-slot AP data storage if there is one, otherwise the seed's YAML starting
 // racer. The racer is never an item, so nothing else would ever apply it.

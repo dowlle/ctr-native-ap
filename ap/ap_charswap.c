@@ -1368,6 +1368,16 @@ void AP_RacerLock_RestoreOnHub(void)
 	ap_rl_prevRacer = -1;
 }
 
+// Quit-to-title DROPS the enforcement instead of restoring (review round 2
+// MINOR): the title sequence tears the adventure session down and a new
+// adventure's garage commits a fresh pick, so a restore fired on some later
+// hub entry would override that pick with a racer from a dead session. There
+// is nothing to seat at the title; forgetting is the whole fix.
+void AP_RacerLock_DropOnTitle(void)
+{
+	ap_rl_prevRacer = -1;
+}
+
 // Which racer the adventure-start Garage must commit, or -1 when it should run
 // exactly as it always has (#54/#209).
 //
