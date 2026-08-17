@@ -71,7 +71,8 @@ int AP_CharSwap_PauseRowLive(void);
 int AP_CharSwap_FeatureLive(void);
 
 // Racer-lock enforcement (ruled 2026-08-17). ForceForWarp: called at the warp
-// commit with the PHYSICAL pad id; seats the pad's demanded racer (if any)
+// commit with the PHYSICAL pad id; seats the pad's demanded racer (if any,
+// and only if owned)
 // before the destination load, remembering the player's racer. RestoreOnHub:
 // called when a level transition lands in a hub; puts the remembered racer
 // back. Both are cheap no-ops when no lock / no enforcement is in flight.
