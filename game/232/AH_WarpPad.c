@@ -454,8 +454,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						int apHave = AP_CharacterUnlocked(apLockRacer);
 						short apCx = (short)(gGT->pushBuffer[0].rect.x
 						                     + gGT->pushBuffer[0].rect.w / 2);
+						// The icon anchors at its TOP-LEFT and is up to ~32 high
+						// (DecalHUD_DrawPolyGT4 sizes it from the icon's own
+						// texture layout), so its bottom lands near y + 32. The
+						// RACER text below sits at h-45; h-82 keeps a clear gap.
+						// h-62 planted the icon straight through the text (Deck
+						// field check, 2026-08-17).
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 62);
+						                     + gGT->pushBuffer[0].rect.h - 82);
 
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
