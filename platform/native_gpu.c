@@ -1595,6 +1595,14 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT *poly = (SPRT *)polyTag;
 
+		// Sprites carry no tpage of their own and read the persistent
+		// activeDrawEnv one, which a preceding AP-owned poly may have left the
+		// sideload bit in (the textured tri/quad handlers assign poly->tpage
+		// verbatim, and only DR_TPAGE masks it back to 0x1FF). Nothing
+		// sideloaded is ever drawn as a sprite, so strip it here rather than
+		// let a sprite sample the AP atlas.
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;
+
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
 		GrVertex *firstVertex = &s_gpu.vertexBuffer[s_gpu.vertexIndex];
@@ -1646,6 +1654,8 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT_8 *poly = (SPRT_8 *)polyTag;
 
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;  // see case 0x64
+
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
 		GrVertex *firstVertex = &s_gpu.vertexBuffer[s_gpu.vertexIndex];
@@ -1679,6 +1689,8 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	case 0x7C:
 	{
 		SPRT_16 *poly = (SPRT_16 *)polyTag;
+
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;  // see case 0x64
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
