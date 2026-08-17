@@ -53,7 +53,8 @@ static int g_curFrames;
 static int g_curDirty;
 static struct AP_NavRecSample g_cur[AP_NAVREC_MAX_SAMPLES];
 
-static int g_armed = -1; // -1 = env not read yet
+static int g_armed = -1;   // -1 = never evaluated; else mirrors g_config.navRecord
+static int g_shapeRead;    // env shaping numbers read once
 static int g_targetNodes;
 static int g_laneOffset;
 static int g_keyLatch;
@@ -82,31 +83,50 @@ static int AP_NavRec_EnvInt(const char *name, int fallback)
 
 static void AP_NavRec_ReadEnvOnce(void)
 {
-	if (g_armed >= 0)
+	// The shaping numbers are read once: they are environment switches for
+	// authoring work and cannot change mid-session.
+	if (g_shapeRead == 0)
+	{
+		g_shapeRead = 1;
+		g_targetNodes = AP_NavRec_EnvInt("CTR_AP_NAV_REC_NODES", 230);
+		g_laneOffset = AP_NavRec_EnvInt("CTR_AP_NAV_REC_OFFSET", 500);
+
+		if (g_targetNodes < 8)
+			g_targetNodes = 8;
+		if (g_targetNodes > AP_NAVREC_MAX_NODES)
+			g_targetNodes = AP_NAVREC_MAX_NODES;
+	}
+
+	// The OPTION decides whether we record, and it is re-read EVERY tick rather
+	// than latched. Latching it would mean unticking "Save AI Lap Recordings"
+	// mid-session left the recorder running until the player restarted, which
+	// is exactly the surprise this option exists to prevent. An option about
+	// writing to someone's disk has to take effect when they turn it OFF, not
+	// only when they turn it on.
+	const int want = g_config.navRecord ? 1 : 0;
+	if (want == g_armed)
 		return;
 
-	// The OPTION decides whether we record, not the environment. `getenv`
-	// gating has no precedent in this tree, and more to the point an env var
-	// is not consent: it is invisible to a player who never reads a readme.
-	// The two shaping numbers stay env-overridable for authoring work, because
-	// they change the shape of the OUTPUT rather than whether anything is
-	// written to the player's disk at all.
-	g_armed = g_config.navRecord ? 1 : 0;
-	g_targetNodes = AP_NavRec_EnvInt("CTR_AP_NAV_REC_NODES", 230);
-	g_laneOffset = AP_NavRec_EnvInt("CTR_AP_NAV_REC_OFFSET", 500);
+	g_armed = want;
 
-	if (g_targetNodes < 8)
-		g_targetNodes = 8;
-	if (g_targetNodes > AP_NAVREC_MAX_NODES)
-		g_targetNodes = AP_NAVREC_MAX_NODES;
-
+	char msg[192];
 	if (g_armed)
 	{
-		char msg[192];
-		snprintf(msg, sizeof msg, "[AP NAVREC] auto-recorder armed. nodes=%d maxLaneOffset=%d. Every lap is banked; Numpad9 writes.\n",
+		snprintf(msg, sizeof msg, "[AP NAVREC] recorder armed by option. nodes=%d maxLaneOffset=%d. Every lap is banked; Numpad9 writes.\n",
 		         g_targetNodes, g_laneOffset);
-		AP_LogLine(msg);
 	}
+	else
+	{
+		// Drop what was banked. Someone who turns recording off is withdrawing
+		// consent, and holding their laps in memory to write later would not
+		// honour that.
+		g_lapCount = 0;
+		g_curCount = 0;
+		g_curFrames = 0;
+		g_curDirty = 0;
+		snprintf(msg, sizeof msg, "[AP NAVREC] recorder disarmed by option; banked laps discarded\n");
+	}
+	AP_LogLine(msg);
 }
 
 // ============================================================================
