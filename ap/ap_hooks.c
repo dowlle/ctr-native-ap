@@ -4800,7 +4800,12 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// Quit-to-title mid-enforced-race: drop rather than restore.
 			// Without this the saved racer survived into the next adventure
 			// and its first hub entry overrode the fresh garage pick
-			// (review round 2 MINOR).
+			// (review round 2 MINOR). One hub-bound path touches the title
+			// level transiently -- SelectProfile's queued hub load -- and
+			// the drop firing there is deliberate and harmless today
+			// (nothing can be armed at the save menu), but a change that
+			// lets the save menu open MID-enforcement would need this
+			// revisited or the restore would be lost with the drop.
 			else if ((int)gGT->levelID == MAIN_MENU_LEVEL)
 			{
 				AP_RacerLock_DropOnTitle();
