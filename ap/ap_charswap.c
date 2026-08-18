@@ -320,6 +320,15 @@ static int ap_cs_resolvedEditMode(void)
 			return ctr_cfg.stat_owner;
 		return AP_CS_MODE_OFF;
 	}
+	// Browse mode (connected seed without the character phase): free
+	// per-character stat editing, by ruling (2026-08-18). The "a live seed
+	// said vanilla" reasoning below does not apply here -- an old seed said
+	// NOTHING about stats, and the player decides for themselves. Edits stay
+	// session-local: ap_cs_editPersist/editRestore keep their own
+	// character_phase_present gates, so nothing is written to (or restored
+	// from) AP data storage for a seed that cannot own that state.
+	if (ctr_cfg_active() && !ctr_cfg.character_phase_present)
+		return AP_CS_MODE_PERCHAR;
 	if (ctr_cfg_active())
 		return AP_CS_MODE_OFF;
 	return ap_cs_devEditMode;
@@ -641,6 +650,15 @@ static int ap_cs_isUnlocked(int characterID)
 {
 	if (ap_cs_devUnlockAll && AP_DevKeysEnabled())
 		return 1;
+	// Browse mode (connected seed without the character phase): the whole
+	// roster is free, by ruling (2026-08-18). An old seed has no unlock
+	// economy to respect and can carry no racer-locked pads, so the "picker
+	// and the pad gate can never disagree" invariant above is vacuously safe,
+	// and the choice belongs to the player. Deliberately wider than
+	// AP_CharacterUnlocked's phase-less answer (the vanilla eight), which
+	// stays conservative for the machinery that ENFORCES things.
+	if (ctr_cfg_active() && !ctr_cfg.character_phase_present)
+		return 1;
 	return AP_CharacterUnlocked(characterID);
 }
 
@@ -720,7 +738,7 @@ void AP_CharSwap_RequestPickerFromPause(void)
 // seed where selecting it would do nothing.
 int AP_CharSwap_PauseRowLive(void)
 {
-	return AP_CharSwap_FeatureLive() || AP_DevKeysEnabled();
+	return AP_CharSwap_RosterBrowseLive() || AP_DevKeysEnabled();
 }
 
 static int ap_cs_tileForCharacter(int characterID)
@@ -1206,8 +1224,10 @@ static void ap_cs_input(struct GameTracker *gGT)
 // The two cases that has to separate are otherwise identical on the wire:
 //
 //   * an OLD seed, from an apworld that predates the feature, carrying none of
-//     the keys. It has no unlock items and no roster concept, so the picker
-//     must stay shut -- a pre-0.2.0 seed has to keep behaving like one.
+//     the keys. It has no unlock items and no roster concept, so everything
+//     the phase owns (seating, locks, stat packages, persistence) must stay
+//     shut. The picker itself is the ruled exception -- see
+//     AP_CharSwap_RosterBrowseLive below.
 //   * a NEW seed that set `character_unlocks: false` (the ruled all-unlocked
 //     comfort mode) and left everything else at its default: Crash as the
 //     starter, vanilla stats, no locks. Every scalar reads default, and yet all
@@ -1223,6 +1243,28 @@ int AP_CharSwap_FeatureLive(void)
 	if (!ctr_cfg_active())
 		return 0;
 	return ctr_cfg.character_phase_present != 0;
+}
+
+// Whether the hub picker is offered at all, a wider question than whether the
+// character phase is live (ruled 2026-08-17, widened 2026-08-18: async servers
+// run old seeds, and on those the roster and the stats are the player's own
+// business). In browse mode the grid offers ALL SIXTEEN racers
+// (ap_cs_isUnlocked) and the stat panel is a free per-character editor
+// (ap_cs_resolvedEditMode) -- an old seed carries no unlock economy, no
+// capability logic and no racer-locked pads, so nothing the seed relies on
+// can be contradicted by either freedom.
+//
+// A separate predicate rather than a widening of FeatureLive, because
+// everything the phase actually OWNS must stay dead on its own per-consumer
+// gates: no seat enforcement (a phase-less starting_character defaults to 0
+// and would stomp the save's racer), no garage override, no locks, and no
+// server persistence. Stat edits last for the session; the racer choice
+// lands in the local save exactly as a Garage pick would.
+int AP_CharSwap_RosterBrowseLive(void)
+{
+	if (AP_CharSwap_FeatureLive())
+		return 1;
+	return ctr_cfg_active() && !ctr_cfg.character_phase_present;
 }
 
 // Apply the seed's starting racer once per session (spike seam 4's sibling).
@@ -1259,6 +1301,10 @@ typedef char ap_cs_seatRosterMatchesEngine
 // Called from the fresh-connect path so a reconnect or a slot switch re-applies
 // the AUTHORITATIVE racer and the AUTHORITATIVE stat package instead of keeping
 // whatever the previous connection left in memory.
+// Defined with the enforcement block below; declared here so ConnectReset can
+// clear it. Tentative declaration + later initialized definition is one object.
+static int ap_rl_prevRacer;
+
 void AP_CharSwap_ConnectReset(void)
 {
 	AP_SeatReset(&ap_cs_seat);
@@ -1275,6 +1321,13 @@ void AP_CharSwap_ConnectReset(void)
 	// deltas and only a package that actually belongs to it can move them.
 	memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
 	memset(ap_cs_editPerChar, 0, sizeof ap_cs_editPerChar);
+
+	// Drop any in-flight racer-lock enforcement (review finding). On a
+	// reconnect the seat machine re-applies the authoritative racer anyway,
+	// undoing the forced seat, so a stale saved racer here could only
+	// mis-restore much later, on a hub return that no longer corresponds to
+	// any warp.
+	ap_rl_prevRacer = -1;
 }
 
 // Persist the racer the player just chose (spike seam 3, now real).
@@ -1312,6 +1365,59 @@ static void ap_cs_seatApply(int characterID, const char *source)
 
 	data.characterIDs[0] = (short)characterID;
 	sdata->advProgress.characterID = (s16)characterID;
+}
+
+// ---------------------------------------------------------------------------
+// Racer-lock enforcement (ruled 2026-08-17): a racer-locked pad does not just
+// require OWNING the demanded racer, it races you AS them. The warp commit
+// seats the lock's racer before the destination load reads characterIDs[0]
+// (so the right driver MPK loads), and the first transition that lands back
+// in a hub seats the original racer again. Ownership already gated entry
+// (ctr_cfg_racer_lock_met inside ctr_cfg_warp_unlocked), so by the time a
+// warp commits, the demanded racer is guaranteed owned.
+// ---------------------------------------------------------------------------
+
+// The racer to put back on hub return, -1 when no enforcement is in flight.
+// Deliberately first-write-wins: chaining into a second locked pad before a
+// hub return still restores the racer the PLAYER chose, not the first lock's.
+static int ap_rl_prevRacer = -1;
+
+void AP_RacerLock_ForceForWarp(int physPadLevelID)
+{
+	int lock = ctr_cfg_racer_lock(physPadLevelID);
+
+	if (lock < 0)
+		return;
+	// Last line of defense: never seat a racer the player does not own. Entry
+	// is refused further up (AH_WarpPad's per-class racer_lock_met gate), but
+	// seating an unowned racer is the failure that must be impossible -- their
+	// wins would check locations logic still holds behind the unlock item.
+	if (!ctr_cfg_racer_lock_met(physPadLevelID))
+		return;
+	if (data.characterIDs[0] == (short)lock)
+		return; // already driving them; nothing to force, nothing to restore
+
+	if (ap_rl_prevRacer < 0)
+		ap_rl_prevRacer = data.characterIDs[0];
+	ap_cs_seatApply(lock, "racer lock enforcement (warp commit)");
+}
+
+void AP_RacerLock_RestoreOnHub(void)
+{
+	if (ap_rl_prevRacer < 0)
+		return;
+	ap_cs_seatApply(ap_rl_prevRacer, "racer lock release (hub return)");
+	ap_rl_prevRacer = -1;
+}
+
+// Quit-to-title DROPS the enforcement instead of restoring (review round 2
+// MINOR): the title sequence tears the adventure session down and a new
+// adventure's garage commits a fresh pick, so a restore fired on some later
+// hub entry would override that pick with a racer from a dead session. There
+// is nothing to seat at the title; forgetting is the whole fix.
+void AP_RacerLock_DropOnTitle(void)
+{
+	ap_rl_prevRacer = -1;
 }
 
 // Which racer the adventure-start Garage must commit, or -1 when it should run
@@ -1451,10 +1557,11 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 		return;
 
 	// Productionised gate (#54/#209). The picker is a real feature on any seed
-	// that carries the character phase; the dev-key path survives only as a way
-	// in when no such seed is connected, so the prototype's manual matrix stays
-	// runnable on a bare build.
-	if (!AP_CharSwap_FeatureLive() && !AP_DevKeysEnabled())
+	// that carries the character phase, and on a phase-less old seed as the
+	// browse-only roster (see AP_CharSwap_RosterBrowseLive); the dev-key path
+	// survives only as a way in when no seed is connected at all, so the
+	// prototype's manual matrix stays runnable on a bare build.
+	if (!AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
 		return;
 
 	// Apply any editable-stat package that has arrived from the server since the

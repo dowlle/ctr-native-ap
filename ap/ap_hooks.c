@@ -4774,6 +4774,31 @@ static void ap_onframe_body(struct GameTracker *gGT)
 				gGT->numLaps = 3;
 				AP_AppendLog("[AP CUP] one-lap override cleared (hub return)\n");
 			}
+
+			// Racer lock enforcement: a transition landing in a hub puts the
+			// player's own racer back (AH_WarpPad's warp commit seated the
+			// lock's racer for the destination). Same destination-levelID
+			// timing as the one-lap restore above: the watcher fires early in
+			// the hub load, before the driver MPK stage reads
+			// characterIDs[0], so the restored racer's model is what loads.
+			if ((int)gGT->levelID >= GEM_STONE_VALLEY &&
+			    (int)gGT->levelID <= CITADEL_CITY)
+			{
+				AP_RacerLock_RestoreOnHub();
+			}
+			// Quit-to-title mid-enforced-race: drop rather than restore.
+			// Without this the saved racer survived into the next adventure
+			// and its first hub entry overrode the fresh garage pick
+			// (review round 2 MINOR). One hub-bound path touches the title
+			// level transiently -- SelectProfile's queued hub load -- and
+			// the drop firing there is deliberate and harmless today
+			// (nothing can be armed at the save menu), but a change that
+			// lets the save menu open MID-enforcement would need this
+			// revisited or the restore would be lost with the drop.
+			else if ((int)gGT->levelID == MAIN_MENU_LEVEL)
+			{
+				AP_RacerLock_DropOnTitle();
+			}
 		}
 	}
 
