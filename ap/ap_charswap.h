@@ -76,6 +76,19 @@ int AP_CharSwap_PauseRowLive(void);
 // with every character option off answers 0 and behaves like a pre-feature seed.
 int AP_CharSwap_FeatureLive(void);
 
+// Racer-lock enforcement (ruled 2026-08-17). ForceForWarp: called at the warp
+// commit with the PHYSICAL pad id; seats the pad's demanded racer (if any,
+// and only if owned)
+// before the destination load, remembering the player's racer. RestoreOnHub:
+// called when a level transition lands in a hub; puts the remembered racer
+// back. Both are cheap no-ops when no lock / no enforcement is in flight.
+void AP_RacerLock_ForceForWarp(int physPadLevelID);
+void AP_RacerLock_RestoreOnHub(void);
+
+// Quit-to-title mid-enforcement: forget the saved racer instead of restoring
+// it (a dead session's racer must not override the next adventure's garage
+// pick). Called from the same transition watcher on a main-menu landing.
+void AP_RacerLock_DropOnTitle(void);
 // Is the hub picker offered at all? True whenever FeatureLive is, and ALSO on
 // a connected seed that predates the character phase, where the picker offers
 // the full sixteen-racer roster plus free per-character stat editing. On such

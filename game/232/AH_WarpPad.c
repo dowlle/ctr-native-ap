@@ -779,6 +779,22 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// load. ctr_cfg_warp_phys is identity-safe: returns its input unchanged when
 	// slot_data is inactive or the map is identity, so this is a no-op pre-shuffle.
 	int physLevelID = ctr_cfg_warp_phys(levelID);
+
+	// Racer lock: refuse entry outright while the demanded racer is not owned
+	// (ruled 2026-08-17: a lock means you cannot drive in without the racer).
+	// The trophy-track flow already refuses via ctr_cfg_warp_unlocked's
+	// embedded ctr_cfg_racer_lock_met, but the CUP, TRIAL and ARENA classes
+	// never consult that gate (their pads are born on stage requirements
+	// alone), and the trophy flow's relic/token menu continues past it -- so
+	// gate every class here, at the one point all entry paths cross. Review
+	// finding on this branch: without this, a racer-locked cup pad whose
+	// stage-1 requirement is met was enterable without the racer, and the
+	// enforcement below would then seat an UNOWNED racer whose wins check
+	// locations logic still holds behind the unlock item.
+	// AnimateOpen, never TrophyAnimateOnly: the latter captures the kart with
+	// no menu ever coming (the 2026-07-14 Dragon Mines softlock).
+	if (!ctr_cfg_racer_lock_met(physLevelID))
+		goto WarpPad_AnimateOpen;
 #endif
 
 	// gem cups
@@ -1062,6 +1078,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// Rem Adventure Arena
 				sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 
+#ifdef CTR_AP
+				// Racer lock enforcement: seat the demanded racer before the
+				// load reads characterIDs[0] (menu-driven relic/token entry).
+				AP_RacerLock_ForceForWarp(physLevelID);
+#endif
+
 				MainRaceTrack_RequestLoad(levelID);
 				goto WarpPad_TrophyAnimateOnly;
 			}
@@ -1111,6 +1133,17 @@ WarpPad_RequestLoad:
 
 	// Rem Adventure Arena
 	sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
+
+#ifdef CTR_AP
+	// Racer lock enforcement: seat the demanded racer before the load reads
+	// characterIDs[0], so the destination (trophy race, relic/trial, crystal
+	// challenge or cup) births the racer the lock names. Keyed by PHYSICAL
+	// pad, the same key the unlock gate uses (and the racer-lock portrait
+	// display, PR #262, once both land). The hub-return restore
+	// lives in AP_OnFrame's levelID-transition watcher (ap_hooks.c), the same
+	// home as the one-lap-cup restore.
+	AP_RacerLock_ForceForWarp(physLevelID);
+#endif
 
 	MainRaceTrack_RequestLoad(levelID);
 	goto WarpPad_AnimateOpen;

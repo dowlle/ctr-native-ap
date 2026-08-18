@@ -1301,6 +1301,10 @@ typedef char ap_cs_seatRosterMatchesEngine
 // Called from the fresh-connect path so a reconnect or a slot switch re-applies
 // the AUTHORITATIVE racer and the AUTHORITATIVE stat package instead of keeping
 // whatever the previous connection left in memory.
+// Defined with the enforcement block below; declared here so ConnectReset can
+// clear it. Tentative declaration + later initialized definition is one object.
+static int ap_rl_prevRacer;
+
 void AP_CharSwap_ConnectReset(void)
 {
 	AP_SeatReset(&ap_cs_seat);
@@ -1317,6 +1321,13 @@ void AP_CharSwap_ConnectReset(void)
 	// deltas and only a package that actually belongs to it can move them.
 	memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
 	memset(ap_cs_editPerChar, 0, sizeof ap_cs_editPerChar);
+
+	// Drop any in-flight racer-lock enforcement (review finding). On a
+	// reconnect the seat machine re-applies the authoritative racer anyway,
+	// undoing the forced seat, so a stale saved racer here could only
+	// mis-restore much later, on a hub return that no longer corresponds to
+	// any warp.
+	ap_rl_prevRacer = -1;
 }
 
 // Persist the racer the player just chose (spike seam 3, now real).
@@ -1354,6 +1365,59 @@ static void ap_cs_seatApply(int characterID, const char *source)
 
 	data.characterIDs[0] = (short)characterID;
 	sdata->advProgress.characterID = (s16)characterID;
+}
+
+// ---------------------------------------------------------------------------
+// Racer-lock enforcement (ruled 2026-08-17): a racer-locked pad does not just
+// require OWNING the demanded racer, it races you AS them. The warp commit
+// seats the lock's racer before the destination load reads characterIDs[0]
+// (so the right driver MPK loads), and the first transition that lands back
+// in a hub seats the original racer again. Ownership already gated entry
+// (ctr_cfg_racer_lock_met inside ctr_cfg_warp_unlocked), so by the time a
+// warp commits, the demanded racer is guaranteed owned.
+// ---------------------------------------------------------------------------
+
+// The racer to put back on hub return, -1 when no enforcement is in flight.
+// Deliberately first-write-wins: chaining into a second locked pad before a
+// hub return still restores the racer the PLAYER chose, not the first lock's.
+static int ap_rl_prevRacer = -1;
+
+void AP_RacerLock_ForceForWarp(int physPadLevelID)
+{
+	int lock = ctr_cfg_racer_lock(physPadLevelID);
+
+	if (lock < 0)
+		return;
+	// Last line of defense: never seat a racer the player does not own. Entry
+	// is refused further up (AH_WarpPad's per-class racer_lock_met gate), but
+	// seating an unowned racer is the failure that must be impossible -- their
+	// wins would check locations logic still holds behind the unlock item.
+	if (!ctr_cfg_racer_lock_met(physPadLevelID))
+		return;
+	if (data.characterIDs[0] == (short)lock)
+		return; // already driving them; nothing to force, nothing to restore
+
+	if (ap_rl_prevRacer < 0)
+		ap_rl_prevRacer = data.characterIDs[0];
+	ap_cs_seatApply(lock, "racer lock enforcement (warp commit)");
+}
+
+void AP_RacerLock_RestoreOnHub(void)
+{
+	if (ap_rl_prevRacer < 0)
+		return;
+	ap_cs_seatApply(ap_rl_prevRacer, "racer lock release (hub return)");
+	ap_rl_prevRacer = -1;
+}
+
+// Quit-to-title DROPS the enforcement instead of restoring (review round 2
+// MINOR): the title sequence tears the adventure session down and a new
+// adventure's garage commits a fresh pick, so a restore fired on some later
+// hub entry would override that pick with a racer from a dead session. There
+// is nothing to seat at the title; forgetting is the whole fix.
+void AP_RacerLock_DropOnTitle(void)
+{
+	ap_rl_prevRacer = -1;
 }
 
 // Which racer the adventure-start Garage must commit, or -1 when it should run
