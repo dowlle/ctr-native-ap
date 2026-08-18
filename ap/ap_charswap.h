@@ -66,14 +66,23 @@ int AP_CharSwap_HubHudHidden(void);
 void AP_CharSwap_RequestPickerFromPause(void);
 
 // Should the adventure-hub pause menu carry a SELECT CHARACTER row at all?
-// True on a seed carrying the character phase, and on a dev-keys build so the
-// manual matrix can reach the row without a seed connected.
+// True whenever the picker is offered (RosterBrowseLive: any connected seed,
+// with or without the character phase), and on a dev-keys build so the manual
+// matrix can reach the row without a seed connected.
 int AP_CharSwap_PauseRowLive(void);
 
 // Does this seed carry the character phase (unlocks, a racer lock, a non-vanilla
 // stat source, a chosen starting racer or a forced starting class)? A 0.2.0 seed
 // with every character option off answers 0 and behaves like a pre-feature seed.
 int AP_CharSwap_FeatureLive(void);
+
+// Is the hub picker offered at all? True whenever FeatureLive is, and ALSO on
+// a connected seed that predates the character phase, where the picker offers
+// the full sixteen-racer roster plus free per-character stat editing. On such
+// a seed no SERVER state is written or restored (the phase's persistence
+// machinery stays gated off); the racer choice still lands in the local save
+// exactly as a Garage pick would, and stat edits last for the session.
+int AP_CharSwap_RosterBrowseLive(void);
 
 // Seat this slot's racer, once per authoritative answer: the value persisted in
 // per-slot AP data storage if there is one, otherwise the seed's YAML starting
