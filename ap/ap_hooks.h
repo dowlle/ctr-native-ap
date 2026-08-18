@@ -248,12 +248,18 @@ void AP_AiDifficultyCommit(void);
 // ── Reward glow (display model revised by #212) ──
 // Model id to DISPLAY in a warp-pad prize slot, for the location identified by
 // its AdvProgress global bit (= word*32 + bit) on the pad's DESTINATION track.
-// Returns the model of the AP item actually placed at that location:
-//   * an OG CTR reward (trophy / relic / token / gem / key) -> its own category
-//     model, whether it is MINE or another CTR PLAYER's (the peer's copy is
-//     ghost-rendered rather than re-modelled -- see AP_WarpPadRewardGhost);
-//   * everything else, mine or anyone's (traps, capability and comfort items,
-//     wumpa, any apworld-invented item, and every item of another GAME) ->
+// Returns the model of the AP item actually placed at that location, per the
+// warp-pad glow matrix recorded in ap_reward_policy.h:
+//   * a base-game CTR reward (trophy / relic / token / gem / key) -> its own
+//     category model, whether it is MINE or another CTR PLAYER's (the peer's
+//     copy is ghost-rendered rather than re-modelled -- AP_WarpPadRewardGhost);
+//   * a CTR PROGRESSION item with no vanilla model of its own (the capability
+//     ladder, weapon unlocks, character unlocks, letters, Gas Pedal) ->
+//     STATIC_CRYSTAL, mine solid and a peer's ghosted the same way (#219). Only
+//     while a crystal model is actually parked (ap_retail_crystal.c); without
+//     one these fall back to the marker below;
+//   * everything else, mine or anyone's (traps, comfort items, wumpa packages,
+//     any apworld-invented item, and every item of another GAME) ->
 //     STATIC_AP, the Archipelago-logo marker.
 // The generic white gem is retired and is never returned any more.
 // Returns -1 when not connected, not yet scouted, the bit is not a checkable
@@ -261,9 +267,10 @@ void AP_AiDifficultyCommit(void);
 // placeholder model. Used by AH_WarpPad_LInB (#ifdef CTR_AP).
 int AP_WarpPadRewardModel(int globalBit);
 
-// 1 when the scouted reward here is another CTR PLAYER's OG reward, which keeps
-// its real model but renders TRANSLUCENT (#212 point 2, the time-trial ghost
-// treatment). 0 for own rewards, for marker items and for anything unresolved.
+// 1 when the scouted reward here belongs to another CTR PLAYER and keeps a model
+// of its own -- base-game reward or progression crystal -- so it renders
+// TRANSLUCENT (#212 point 2, the time-trial ghost treatment). 0 for own rewards,
+// for marker items and for anything unresolved.
 // The caller must zero colorRGBA on this path -- see the ghost block in
 // AH_WarpPad_ThTick for why the ghost writer requires it.
 int AP_WarpPadRewardGhost(int globalBit);
@@ -279,6 +286,7 @@ int AP_WarpPadRewardGhost(int globalBit);
 // Reward-glow TINT. Vanilla renders every relic tier the same blue, so a glow
 // advertising a Sapphire / Gold / Platinum relic looked identical. Returns a
 // tier-specific packed colorRGBA for an OWN relic scouted at this location; the
+// vanilla crystal purple for an OWN progression crystal (#219); the
 // AP classification colour (or the one uniform "surprise" colour, when the seed
 // sets ctr_options.ap_item_type_colors = 0) for an Archipelago-logo marker; or 0
 // to keep the caller's default colour (own gem/trophy/token/key, ghosted peer

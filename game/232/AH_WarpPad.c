@@ -185,7 +185,7 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					lightDir = &warppadObj->lightDirToken;
 				}
 #ifdef CTR_AP
-				else if (modelID == STATIC_KEY)
+				else if (modelID == STATIC_KEY || modelID == STATIC_CRYSTAL)
 				{
 					// AP: a boss Key can occupy a reward glow slot (vanilla never
 					// puts a key here, so this dispatch had no case for it and the
@@ -194,6 +194,15 @@ void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadO
 					// vanilla's requirement-icon key does — via the gem slot, which
 					// vanilla itself uses for keys ("store in Gem array, intended by
 					// ND") and which the AP birth path already seeds.
+					//
+					// #219's crystal is the same case. _ThTick gives it
+					// USE_SPECULAR_LIGHT to match the crystal vanilla itself draws in
+					// the menus (UI_Instance.c:85-90), and without a lightDir here that
+					// specular would stay world-fixed while the model spun: purple
+					// facing the light, near-black facing away, on a shard thin enough
+					// to read as a dark bar. The gem slot is seeded on both AP birth
+					// paths and all five D232 entries are identical, so it needs no new
+					// seeding.
 					lightDir = &warppadObj->lightDirGem;
 				}
 #endif
@@ -1465,6 +1474,23 @@ WarpPad_AnimateOpen:
 						apPrize->colorRGBA = 0xdca6000; // vanilla golden key
 						apPrize->flags |= USE_SPECULAR_LIGHT;
 						break;
+					case STATIC_CRYSTAL:
+						// Matrix rule 3: a CTR progression item with no vanilla model of
+						// its own -> the purple crystal. A peer's is ghosted below, which
+						// forces colorRGBA back to 0 there, exactly like the peer base-game
+						// rewards.
+						//
+						// The model reaching this case is always the HARVESTED retail
+						// crystal (ap_retail_crystal.c) on a pad, because a hub carries no
+						// crystal of its own -- and it is textured, so the specular writer
+						// has a texture to work with and the treatment matches the crystal
+						// vanilla draws in the menus (UI_Instance.c:85-90, same colour and
+						// same specular). The resolver only ever names this model once one
+						// is actually parked, so an unavailable crystal arrives here as an
+						// Archipelago marker instead and never as a silently-failed swap.
+						apPrize->colorRGBA = AP_WarpPadRewardTint(apSlotBit[i]);
+						apPrize->flags |= USE_SPECULAR_LIGHT;
+						break;
 					default:
 						// STATIC_TROPHY / any other own reward -> natural, untinted
 						// colour (colorRGBA 0 = the INSTANCE_Birth3D default the trophy
@@ -1535,6 +1561,26 @@ WarpPad_AnimateOpen:
 					{
 						rewardScale2 = 0x1800;
 					}
+#ifdef CTR_AP
+					// #219: the crystal is much taller per unit of instance scale than
+					// anything vanilla puts on a pad, so the trophy default above would
+					// draw it roughly two and a half times the height of its neighbours.
+					//
+					// Derived, not picked. Every one of these models fills the same
+					// 0..255 vertex cube on every axis, so a model's rendered height is
+					// just header scale.y times the instance scale. Measured out of the
+					// retail pack: crystal 3137, relic 2040, trophy 1169. The vanilla pad
+					// rewards land between 8.4M (token) and 12.5M (relic) on that
+					// product; 0x1000 puts the crystal at 12.8M, inside the same family
+					// and within a few percent of the relic it sits beside.
+					//
+					// Still owed an in-game look: the arithmetic fixes the gross
+					// mismatch, it does not prove the result reads well.
+					else if (modelID == STATIC_CRYSTAL)
+					{
+						rewardScale2 = 0x1000;
+					}
+#endif
 				}
 
 				rewardScale2 = (u32)(rewardScale2 * rewardScale) >> 8;

@@ -19,6 +19,8 @@
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
+#include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
+#include "ap_retail_crystal.h" // the harvested retail crystal for CTR progression (#219)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
@@ -35,9 +37,20 @@
 // on; if the apworld's item table order changes, update both together.
 #define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
 
-// Frozen 0.2.0 datapackage append: weapon items occupy indexes 95..105 in held
-// ID order (0..4, 6..11). Rebuilt from ReceivedItems on every fresh connect.
-#define AP_ITEMSANITY_ITEM_FIRST_INDEX 95
+// ap_reward_policy.h stays freestanding by mirroring the engine's model ids
+// rather than including namespace_Instance.h. Pin every mirror against the real
+// enumerator here, where both are visible, so the copy cannot drift (#219).
+CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
+CTR_STATIC_ASSERT(AP_MODEL_GEM == STATIC_GEM);
+CTR_STATIC_ASSERT(AP_MODEL_RELIC == STATIC_RELIC);
+CTR_STATIC_ASSERT(AP_MODEL_TROPHY == STATIC_TROPHY);
+CTR_STATIC_ASSERT(AP_MODEL_KEY == STATIC_KEY);
+CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
+
+// Weapon ownership, rebuilt from ReceivedItems on every fresh connect. The item
+// index range itself now lives in ap_itemsanity_logic.h with the rest of the
+// frozen weapon facts, so the reward-display policy can classify a weapon unlock
+// without pulling in this runtime (#219).
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
 
 // ==============================================================
@@ -403,13 +416,15 @@ static int AP_ClassFontColor(unsigned flags)
 // The three presentations one scouted pad reward can have (#212). One resolver
 // feeds the model, the tint and the ghost flag, so those three can never
 // disagree about what a slot is showing.
-#define AP_PAD_DISP_VANILLA 0 // my own OG CTR reward -> its vanilla model, untouched
-#define AP_PAD_DISP_GHOST   1 // another CTR player's OG reward -> same model, ghosted
+#define AP_PAD_DISP_VANILLA 0 // my own model-keeping reward -> that model, untouched
+#define AP_PAD_DISP_GHOST   1 // another CTR player's -> the same model, ghosted
 #define AP_PAD_DISP_MARKER  2 // everything else -> the Archipelago-logo marker
 #define AP_PAD_DISP_NONE    3 // undecidable right now -> leave the placeholder alone
 
 // Resolve one scouted (item, player) pair to its presentation, and hand back the
-// OG category on the two model-keeping paths (AP_CAT_NONE otherwise).
+// model-keeping category on the two model paths (AP_CAT_NONE otherwise). Since
+// #219 that is the base-game rewards AND the CTR progression crystal, so "OG" no
+// longer describes the set -- see ap_reward_policy.h for the ruling.
 //
 // The sync gate is unchanged from #124 and still matters: the glow pass runs
 // every frame from connect, so resolving a FOREIGN item before scouts and slot
@@ -440,27 +455,28 @@ static int AP_PadDisplayKind(long long item, int player, AP_ItemCat *outCat)
 	if (own || ap_net_player_is_ctr(player))
 	{
 		cat = AP_ItemCategory(item);
-		switch (cat)
-		{
-		case AP_CAT_TROPHY:
-		case AP_CAT_SAPPHIRE:
-		case AP_CAT_GOLD:
-		case AP_CAT_PLATINUM:
-		case AP_CAT_TOKEN:
-		case AP_CAT_GEM:
-		case AP_CAT_KEY:
-			break; // an OG CTR reward: keeps its own model
-		// Wumpa, traps, capability/comfort items, anything an apworld invented:
-		// not an OG CTR reward, so it is marker material whoever owns it. Every
-		// remaining enumerator is spelled out (not folded into `default`) so
-		// -Wswitch-enum keeps flagging this switch if the category set ever grows.
-		case AP_CAT_COUNT:
-		case AP_CAT_WUMPA:
-		case AP_CAT_NONE:
-		default:
+
+		// The one category decision, in one place (ap_reward_policy.h): base-game
+		// rewards keep their vanilla model (matrix rules 1-2) and CTR progression
+		// keeps the crystal (rule 3). Wumpa packages, traps, comfort items and
+		// anything an apworld invents are marker material whoever owns them.
+		if (!AP_RewardKeepsModel(cat))
 			cat = AP_CAT_NONE;
-			break;
-		}
+
+		// ...and one drawability question, which is the half Lessons Learned §24
+		// says a display resolver must be able to ask. The crystal is not a stock
+		// per-level model: the hub's pack does not carry it, so it exists only
+		// where ap_retail_crystal.c managed to harvest and park one. If that
+		// failed, this reward is marker material exactly as it is today, rather
+		// than a slot left showing whichever placeholder it was born with while the
+		// tint is resolved for a crystal.
+		//
+		// Only the crystal is gated here. The base-game categories keep the
+		// arrangement they already had: AH_WarpPad_ThTick reassigns the model only
+		// when it is resident, and resolves the colour from the model the slot
+		// ENDS UP with, so those two can never disagree.
+		if (cat == AP_CAT_CRYSTAL && !AP_RetailCrystal_IsRegistered())
+			cat = AP_CAT_NONE;
 	}
 
 	if (outCat)
@@ -519,29 +535,11 @@ int AP_WarpPadRewardModel(int globalBit)
 
 	case AP_PAD_DISP_VANILLA:
 	case AP_PAD_DISP_GHOST:
-		// An OG CTR reward: its own vanilla model either way. The GHOST kind adds
+		// A model-keeping reward: the same model either way. The GHOST kind adds
 		// translucency at the instance (AP_WarpPadRewardGhost), never a different
-		// model -- a peer's Sapphire Relic stays a Sapphire Relic.
-		switch (cat)
-		{
-		case AP_CAT_TROPHY:
-			return STATIC_TROPHY;
-		case AP_CAT_SAPPHIRE:
-		case AP_CAT_GOLD:
-		case AP_CAT_PLATINUM:
-			return STATIC_RELIC;
-		case AP_CAT_TOKEN:
-			return STATIC_TOKEN;
-		case AP_CAT_GEM:
-			return STATIC_GEM;
-		case AP_CAT_KEY:
-			return STATIC_KEY;
-		case AP_CAT_COUNT:
-		case AP_CAT_WUMPA:
-		case AP_CAT_NONE:
-		default:
-			return -1; // unreachable: the two model kinds always carry an OG category
-		}
+		// model -- a peer's Sapphire Relic stays a Sapphire Relic, and a peer's
+		// progression item stays a crystal (matrix rules 2 and 3).
+		return AP_RewardModelForCat(cat);
 
 	default:
 		return -1; // not checkable / not scouted / marker unavailable -> placeholder
@@ -556,9 +554,10 @@ int AP_WarpPadRewardGhost(int globalBit)
 	return AP_PadDisplayForBit(globalBit, NULL, NULL) == AP_PAD_DISP_GHOST ? 1 : 0;
 }
 
-// Tier-specific relic tint for the reward glow (see header). colorRGBA is packed
-// as (R<<0x14)|(G<<0xc)|(B<<0x4); 0x020a5ff0 is the vanilla relic blue. Returns 0
-// to leave the caller's default colour untouched.
+// Per-category tint for the reward glow (see header): the relic tiers and, since
+// #219, the crystal's purple. colorRGBA is packed as (R<<0x14)|(G<<0xc)|(B<<0x4);
+// 0x020a5ff0 is the vanilla relic blue. Returns 0 to leave the caller's default
+// colour untouched.
 int AP_WarpPadRewardTint(int globalBit)
 {
 	AP_ItemCat cat = AP_CAT_NONE;
@@ -577,28 +576,11 @@ int AP_WarpPadRewardTint(int globalBit)
 	if (kind != AP_PAD_DISP_VANILLA)
 		return 0;
 
-	switch (cat)
-	{
-	case AP_CAT_SAPPHIRE:
-		return 0x020a5ff0; // blue (vanilla relic colour)
-	case AP_CAT_GOLD:
-		return 0x0ffc6290; // gold
-	case AP_CAT_PLATINUM:
-		return 0x0ebebf50; // platinum / pale silver
-	case AP_CAT_TROPHY:
-	case AP_CAT_TOKEN:
-	case AP_CAT_GEM:
-	case AP_CAT_KEY:
-	case AP_CAT_COUNT:
-	case AP_CAT_WUMPA:
-	case AP_CAT_NONE:
-	default:
-		// Own gem / trophy / token / key -> keep the natural colour path the glow
-		// switch already applies per model (gem-cup colour, untinted trophy, token
-		// group colour, golden key). Own filler and traps no longer reach here at
-		// all: they are marker items now, handled above.
-		return 0;
-	}
+	// Own relic tiers and the crystal's purple; 0 for everything whose natural
+	// per-model colour the glow switch already applies (gem-cup colour, untinted
+	// trophy, token group colour, golden key). Own filler and traps do not reach
+	// here at all: they are marker items, handled above.
+	return AP_RewardTintForCat(cat);
 }
 
 // Colour index of the OWN CTR Token scouted here (see header). The token item id
@@ -4701,6 +4683,13 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
 	AP_MarkerModel_Register(gGT);
+	// Park the #219 crystal in STATIC_CRYSTAL wherever the level left that slot
+	// empty -- which includes the adventure hub, whose model pack does not carry a
+	// crystal at all. Same idempotent every-frame contract as the marker above,
+	// and for the same reason: modelPtr[] is refilled per level, so a single
+	// well-timed call would not survive a hub swap or a savestate restore. The
+	// harvest itself runs at most once, on the first frame with no load in flight.
+	AP_RetailCrystal_Register(gGT);
 	// Box placement author mode (#182) and the additive model loader it draws
 	// through (#109 / #124 groundwork). Author first, loader second, so a
 	// placement dropped this frame gets its marker in the same frame instead of
