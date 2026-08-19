@@ -61,9 +61,10 @@ enum AP_TrapEffect
 };
 
 // ── AP item pipeline seam ──
-// Prime a trap by EFFECT id (0..AP_TRAP_COUNT-1). Idempotent-ish: adds one primed
-// instance to the registry (capacity AP_TRAP_REGISTRY_CAP; over capacity is
-// dropped with a log line). Called by whatever surfaces AP items.
+// Prime a trap by EFFECT id (0..AP_TRAP_COUNT-1). Adds one primed instance to
+// the registry (capacity AP_TRAP_REGISTRY_CAP; over capacity is dropped with a
+// log line). Repeated instances of one effect serialize: only one fires at a
+// time, so every received copy gets its full effect window.
 //
 // Wired: the apworld emits 5 trap items directly after Wumpa Fruit, one per
 // AP_TrapEffect in enum order, and ap_hooks.c's received-item loop maps
@@ -141,7 +142,7 @@ void AP_TrapForceBoost(struct Driver *driver);
 // analog sticks (so the stick-pull-back reverse/brake path also goes dead), and
 // forces the throttle button on. No-op otherwise. Mutates only this frame's input.
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
-                       int *buttonsHeld, int *cross, int *square);
+                       u32 *buttonsHeld, u32 *cross, u32 *square);
 
 #endif // CTR_AP
 

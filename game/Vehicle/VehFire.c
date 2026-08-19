@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_retro_fueled_logic.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005ab24-0x8005abfc.
 void VehFire_Audio(struct Driver *driver, int speed_cap)
@@ -389,7 +392,15 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 	        // Current speed cap is greater than 0x1000
 	        // AND
 	        // You are not on a super turbo pad
-	        (int)driver->const_SacredFireSpeed < (int)driver->fireSpeedCap && ((driver->stepFlagSet & COLL_STEP_TRIGGER_SUPER_TURBO_PAD) == 0)))
+	        (int)driver->const_SacredFireSpeed < (int)driver->fireSpeedCap && ((driver->stepFlagSet & COLL_STEP_TRIGGER_SUPER_TURBO_PAD) == 0)
+#ifdef CTR_AP
+	        // Retro-Fueled tier: ordinary powerslide and hang-time boosts add
+	        // reserves without demoting an already-held blue-fire speed cap.
+	        && !AP_RetroFueledShouldKeepFireCap(
+	               AP_CapabilityRetroFueled(driver), driver->fireSpeedCap,
+	               driver->const_SacredFireSpeed)
+#endif
+	        ))
 
 	{
 		driver->fireSpeedCap = (s16)newFireSpeedCap;

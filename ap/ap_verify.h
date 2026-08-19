@@ -29,9 +29,8 @@
 // verdict when anything relevant changed. Call from AP_OnFrame.
 void AP_VerifyOnFrame(void);
 
-// Persistent on-screen warning (adventure hub + hub map, next to the schema
-// warning) when a SOLO seed's goal is unreachable from the current state.
-// Self-gates; a no-op while the verdict is fine, advisory, or not computed.
+// Retained draw hook for call-site stability. Verifier verdicts are log-only;
+// schema/version incompatibility owns the separate player-facing warning.
 void AP_DrawVerifyWarning(void);
 
 #endif // CTR_AP

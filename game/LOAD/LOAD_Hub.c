@@ -19,13 +19,29 @@ void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID)
 	MEMPACK_SwapPacks(packID);
 	MEMPACK_ClearLowMem();
 
+#if defined(CTR_NATIVE)
+	// Native PTR scratch has process lifetime and fixed capacity. Rebind here as
+	// well as at initial load so a checkpoint or older state can never restore
+	// the former mempack-owned pointer.
+	sdata->PatchMem_Ptr = NativePtrScratch_Data();
+	sdata->PatchMem_Size = NativePtrScratch_Capacity();
+#else
 	sdata->PatchMem_Size = 1;
+#endif
 	gGT->level2 = 0;
 	gGT->levID_in_each_mempack[packID] = levID;
 
 	LOAD_AppendQueue(bigfile, LT_VRAM, LOAD_GetBigfileIndex(levID, 1, LVI_VRAM), NULL, NULL);
 	LOAD_AppendQueue(bigfile, LT_GETADDR, LOAD_GetBigfileIndex(levID, 1, LVI_LEV), NULL, LOAD_Callback_LEV);
-	LOAD_AppendQueue(bigfile, LT_SETADDR, LOAD_GetBigfileIndex(levID, 1, LVI_PTR), sdata->PatchMem_Ptr, LOAD_HubCallback);
+	{
+		int ptrIndex = LOAD_GetBigfileIndex(levID, 1, LVI_PTR);
+#if defined(CTR_NATIVE)
+		struct BigHeader *ptrBigfile = bigfile ? bigfile : sdata->ptrBigfile1;
+		struct BigEntry *entries = BIG_GETENTRY(ptrBigfile);
+		NativePtrScratch_Require((u32)entries[ptrIndex].size, "hub background PTR");
+#endif
+		LOAD_AppendQueue(bigfile, LT_SETADDR, ptrIndex, sdata->PatchMem_Ptr, LOAD_HubCallback);
+	}
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80033108-0x80033318.

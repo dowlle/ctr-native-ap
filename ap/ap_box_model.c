@@ -6,6 +6,7 @@
 
 #include "ap_box_model.h"
 #include "ap_box_model_data.h"
+#include "ap_hooks.h"
 #include "ap_retail_crate.h"
 
 struct ApBoxModelFrame
@@ -20,7 +21,10 @@ CTR_STATIC_ASSERT(offsetof(struct ApBoxModelFrame, verts) == 0x1c);
 static struct ApBoxModelFrame s_apBoxFrame;
 static struct ModelHeader s_apBoxHeader;
 static struct Model s_apBoxModel;
+static struct TextureLayout s_apBoxLayout;
+static struct TextureLayout *s_apBoxLayouts[1] = { &s_apBoxLayout };
 static int s_apBoxBuilt;
+static int s_apBoxTextured;
 
 #define AP_BOX_FALLBACK_SCALE 0x1000
 
@@ -78,25 +82,64 @@ static void AP_BoxModel_Build(struct GameTracker *gGT)
 
 int AP_BoxModel_Ensure(struct GameTracker *gGT)
 {
+	struct TextureLayout face;
+
 	if (gGT == 0)
 		return -1;
 	if (gGT->modelPtr[PU_RANDOM_CRATE] != 0)
 		return PU_RANDOM_CRATE;
 
-	// Prefer the real retail crate, harvested from the player's own game data
-	// and sampled through the AP sideload texture. Only if that is unavailable
-	// does the AP-owned cube stand in -- a box that looks wrong still beats a
-	// location that cannot be checked.
-	if (AP_RetailCrate_Ensure(gGT))
-		return PU_RANDOM_CRATE;
-
 	if (!s_apBoxBuilt)
 		AP_BoxModel_Build(gGT);
+	if (!s_apBoxTextured && AP_RetailCrate_EnsureTexture(&face))
+	{
+		s_apBoxLayout = face;
+		s_apBoxHeader.ptrTexLayout = s_apBoxLayouts;
+		s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommandsTex;
+		s_apBoxTextured = 1;
+	}
 
 	// PU_RANDOM_CRATE is a normal per-level slot and LibraryOfModels_Clear
 	// clears it on every transition. Reassert only while it is absent, so a
 	// retail model always wins on levels that carry one.
 	gGT->modelPtr[PU_RANDOM_CRATE] = &s_apBoxModel;
+	return PU_RANDOM_CRATE;
+}
+
+int AP_BoxModel_EnsureOwned(struct GameTracker *gGT)
+{
+	if (gGT == 0)
+		return -1;
+
+	if (!s_apBoxBuilt)
+		AP_BoxModel_Build(gGT);
+
+	// Relic LEVs never contain PU_RANDOM_CRATE. Do not treat a model harvested
+	// from another LEV as resident here: its pointer graph and texture remap can
+	// pass registration while still producing no visible instance. The AP cube
+	// owns all of its geometry and commands and is valid for this level.
+	gGT->modelPtr[PU_RANDOM_CRATE] = &s_apBoxModel;
+	return PU_RANDOM_CRATE;
+}
+
+int AP_BoxModel_EnsureRelic(struct GameTracker *gGT)
+{
+	struct TextureLayout face;
+
+	if (gGT == 0)
+		return -1;
+
+	// Stand first, decorate second. Texture harvesting can remain pending or fail
+	// forever without hiding a location or leaving invisible collision behind.
+	AP_BoxModel_EnsureOwned(gGT);
+	if (!s_apBoxTextured && AP_RetailCrate_EnsureTexture(&face))
+	{
+		s_apBoxLayout = face;
+		s_apBoxHeader.ptrTexLayout = s_apBoxLayouts;
+		s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommandsTex;
+		s_apBoxTextured = 1;
+		AP_LogLine("[AP BOX] relic race uses the AP-owned crate model (textured)\n");
+	}
 	return PU_RANDOM_CRATE;
 }
 

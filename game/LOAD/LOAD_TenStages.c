@@ -448,8 +448,17 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			// so the pointer maps dont bloat subpacks
 			MEMPACK_SwapPacks(0);
 
+#if defined(CTR_NATIVE)
+			// Pointer maps are transient native scratch, not gameplay allocations.
+			// The retail high-memory path made capacity depend on whatever had
+			// already consumed the pack; Appie2 left 38,072 bytes for a 47,104-byte
+			// physical read and crossed the 2 MiB backing-store boundary.
+			sdata->PatchMem_Ptr = NativePtrScratch_Data();
+			sdata->PatchMem_Size = NativePtrScratch_Capacity();
+#else
 			sdata->PatchMem_Size = MEMPACK_GetFreeBytes();
 			sdata->PatchMem_Ptr = MEMPACK_AllocHighMem(sdata->PatchMem_Size); //, "Patch Table Memory");
+#endif
 
 			// For Oxide-Intro and Credits, set active pack
 			MEMPACK_SwapPacks(gGT->activeMempackIndex);
@@ -468,7 +477,12 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		if (((u32)(levelID - GEM_STONE_VALLEY) < 0xe) || ((u32)(levelID - CREDITS_CRASH) < 0x14))
 		{
 			// add PTR file to loading queue
-			LOAD_AppendQueue(0, LT_SETADDR, LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_PTR), sdata->PatchMem_Ptr, LOAD_Callback_PatchMem);
+			int ptrIndex = LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_PTR);
+#if defined(CTR_NATIVE)
+			struct BigEntry *entries = BIG_GETENTRY(bigfile ? bigfile : sdata->ptrBigfile1);
+			NativePtrScratch_Require((u32)entries[ptrIndex].size, "initial level PTR");
+#endif
+			LOAD_AppendQueue(0, LT_SETADDR, ptrIndex, sdata->PatchMem_Ptr, LOAD_Callback_PatchMem);
 		}
 		break;
 	}

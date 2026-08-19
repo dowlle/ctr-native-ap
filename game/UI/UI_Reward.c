@@ -174,7 +174,16 @@ void UI_ThTick_Reward(struct Thread *bucket)
 	    ((*(int *)&gGT->bool_DrawOTag_InProgress & 0xff0100) == 0x100) &&
 
 	    // if any fade-in-from-black transition is over
-	    (0xfff < gGT->pushBuffer_UI.fadeFromBlack_currentValue))
+	    (0xfff < gGT->pushBuffer_UI.fadeFromBlack_currentValue)
+#ifdef CTR_AP
+	    // The hub picker owns the whole screen. Its 2D counter calls already
+	    // stand down, but these reward icons are persistent 3D instances whose
+	    // own thread clears HIDE_MODEL every frame. Gate that authoritative
+	    // visibility decision too, or relic/key/trophy icons leak through the
+	    // picker even though their numbers are gone.
+	    && !AP_CharSwap_HubHudHidden()
+#endif
+	)
 	{
 		flags = inst->flags & ~HIDE_MODEL;
 	}

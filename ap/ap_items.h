@@ -80,6 +80,11 @@
 // the index from here rather than minting a second one.
 #define AP_GAS_PEDAL_ITEM_INDEX 187
 
+// 0.2.0 Wumpa family, frozen immediately before character unlocks.
+#define AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX 120
+#define AP_WUMPA_BIG_BUNDLE_ITEM_INDEX 121
+#define AP_WUMPA_PROGRESSIVE_ITEM_INDEX 122
+
 typedef enum
 {
 	AP_CAT_TROPHY = 0,
@@ -118,6 +123,9 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		return AP_CAT_GEM;   // Red/Green/Blue/Yellow/Purple Gem
 	case 14: return AP_CAT_KEY;   // Key
 	case 15: return AP_CAT_WUMPA; // Wumpa Fruit (filler)
+	case AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX:
+	case AP_WUMPA_BIG_BUNDLE_ITEM_INDEX:
+		return AP_CAT_WUMPA;
 	default: break;
 	}
 
@@ -147,6 +155,8 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	// whose every arm duplicated the first is a seam that can only ever drift.
 	if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
 	    idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+		return AP_CAT_CRYSTAL;
+	if (idx == AP_WUMPA_PROGRESSIVE_ITEM_INDEX)
 		return AP_CAT_CRYSTAL;
 
 	// The letters (139..186) and Gas Pedal (187). Gas Pedal has no receive path in

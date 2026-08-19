@@ -196,6 +196,10 @@ void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta)
 		OtherFX_Play(0x41, 1);
 
 		driver->BattleHUD.juicedUpCooldown = 10;
+
+#ifdef CTR_AP
+		AP_WumpaReachedTen(driver);
+#endif
 	}
 }
 

@@ -34,6 +34,13 @@ void AP_NotifyGoal(int oxideSecond);
 // conditions: N bosses / N gems) and on the Oxide beat.
 void AP_EvaluateGoal(void);
 
+// Issue #244 presentation edge. AP_GoalArmLiveEvent marks an actual in-session
+// Oxide/boss/gem event; reconnect reconstruction never calls it. The Oxide
+// reward path claims a pending presentation to keep its vanilla ending. A goal
+// completed elsewhere is claimed by AP_OnFrame only from a safe idle hub.
+void AP_GoalArmLiveEvent(void);
+int AP_GoalClaimOxideEnding(void);
+
 // ── Race-end ceremony award text (display-only) ──
 // Draw the AP award block at x,y from the current race's just-sent checks +
 // primaryBit (the reward the ceremony celebrates, or -1 for ledger-only). Returns
@@ -123,6 +130,10 @@ int  AP_HubFeedOn(void);
 
 int AP_GateCount(int itemType);          // received count for one of the 15 item indices
 int AP_GateCountForeign(int itemType);   // #85: foreign-only split (multiworld + starting inv)
+// Verifier-only foreign/server-granted tally across the complete frozen 0.2.0
+// item index space (0..189). Own-location items are deliberately excluded and
+// are banked synchronously from scout+checked state by ap_verify.c.
+int AP_VerifyForeignItemCount(int itemIndex);
 int AP_GateCountTokenColour(int colour); // colour 0..4 = R,G,B,Y,P -> token idx 4+colour
 int AP_GateCountGemColour(int colour);   // colour 0..4 = R,G,B,Y,P -> gem   idx 9+colour
 
@@ -367,6 +378,7 @@ void AP_LetterCollected(int track, int letter);
 int AP_LettersRequiredMet(int track);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
+void AP_WumpaReachedTen(struct Driver *driver);
 
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).

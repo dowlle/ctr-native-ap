@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_trap_queue_logic.h"
 #include "ap_hooks.h" // AP_LogLine (non-static log shim)
 
 // ============================================================================
@@ -162,6 +163,15 @@ static int AP_TrapRaceActive(struct GameTracker *gGT)
 	return (gGT->gameMode1 &
 	        (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 	       gGT->trafficLightsTimer < 1;
+}
+
+static int AP_TrapSameEffectFiring(int effect)
+{
+	int i;
+	for (i = 0; i < AP_TRAP_REGISTRY_CAP; i++)
+		if (g_traps[i].state == TRAP_FIRING && g_traps[i].effect == effect)
+			return 1;
+	return 0;
 }
 
 // ── AP item pipeline seam ──
@@ -383,41 +393,36 @@ void AP_TrapTick(struct GameTracker *gGT)
 		switch (t->state)
 		{
 		case TRAP_PRIMED:
-			// §5, and it is checked BEFORE the lap window on purpose: an instant
-			// trap bypasses both the lapIndex >= 1 gate and the delay roll.
-			if (t->instant)
 			{
-				if (raceActive)
+				int action = AP_TrapPrimedActionFor(
+				    t->instant, raceActive, lapWindow, t->rolled,
+				    t->rolled && t->fireDelayMs <= 0,
+				    AP_TrapSameEffectFiring(t->effect));
+				switch (action)
 				{
-					AP_TrapFireSlot(i);
+				case AP_TRAP_PRIMED_DEMOTE_INSTANT:
+					// Its receipt-time race ended. Keep the item, but make it an
+					// ordinary later-race trap instead of a lights-out ambush.
+					t->instant = 0;
+					t->rolled = 0;
 					break;
-				}
-				// The race ended between the receive and this tick (a lap-3 finish
-				// line, a pause into quit). The moment it was earned in is gone, so
-				// it drops back to an ordinary primed trap rather than ambushing the
-				// player the instant the NEXT race's lights go out.
-				t->instant = 0;
-			}
-			if (lapWindow)
-			{
-				if (!t->rolled)
-				{
+				case AP_TRAP_PRIMED_ROLL_DELAY:
 					t->fireDelayMs = AP_TrapRandRange(AP_TRAP_FIRE_DELAY_MIN_MS,
 					                                  AP_TRAP_FIRE_DELAY_MAX_MS);
 					t->rolled = 1;
-				}
-				else
-				{
+					break;
+				case AP_TRAP_PRIMED_TICK_DELAY:
 					t->fireDelayMs -= elapsedMs;
-					if (t->fireDelayMs <= 0)
-						AP_TrapFireSlot(i);
+					break;
+				case AP_TRAP_PRIMED_FIRE:
+					AP_TrapFireSlot(i);
+					break;
+				case AP_TRAP_PRIMED_WAIT:
+				default:
+					if (!lapWindow && !t->instant)
+						t->rolled = 0;
+					break;
 				}
-			}
-			else
-			{
-				// Window closed (race ended before firing) -> re-roll next race so a
-				// primed trap always eventually fires on some lap 2/3.
-				t->rolled = 0;
 			}
 			break;
 		case TRAP_FIRING:
@@ -515,7 +520,7 @@ void AP_TrapForceBoost(struct Driver *driver)
 }
 
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
-                       int *buttonsHeld, int *cross, int *square)
+                       u32 *buttonsHeld, u32 *cross, u32 *square)
 {
 	if (!g_active[AP_TRAP_USF_NOBRAKE] || !AP_TrapIsLocal(driver))
 		return;

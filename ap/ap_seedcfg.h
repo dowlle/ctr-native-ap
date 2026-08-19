@@ -61,7 +61,7 @@ extern "C" {
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
-// ctr_cfg.oxide_final_count (1..18). Relic tiers are INDEPENDENT items with no
+// ctr_cfg.oxide_final_count (1..54 for total, otherwise 1..18). Relic tiers are INDEPENDENT items with no
 // downward hierarchy -- these mirror the apworld FinalOxideUnlock option exactly.
 #define OXIDE_FINAL_MODE_SAPPHIRE 0 // N Sapphire Relic items
 #define OXIDE_FINAL_MODE_GOLD     1 // N Gold Relic items
@@ -170,10 +170,16 @@ typedef struct
 	// MODE (OXIDE_FINAL_MODE_*) and oxide_final_count (1..18) is the shared count.
 	// 0 = Sapphire stays frozen = the pre-v0.1.1 default. See AP_OxideFinalOpen.
 	int oxide_final_unlock; // relic-goal mode (0 sapphire..4 total)
-	int oxide_final_count;  // relics required (1..18); default 18
+	int oxide_final_count;  // relics required (1..54 total, else 1..18); default 18
 	int shuffle_warp_pads;
 	int warppad_unlock_mode; // 0 vanilla / 1 random / 2 random_without_4_keys
 	int bossgarage_mode;     // 0 original4 / 1 same_hub / 2 trophies
+	// Logic-only 0.2.0 option scalars. These are emitted unconditionally by the
+	// apworld and consumed by the seed verifier; runtime gameplay already gets
+	// the resolved consequences through the feature-specific blocks below.
+	int logic_difficulty;    // 0 easy / 1 medium / 2 hard
+	int itemsanity;          // 0 off / 1 weapon items + use checks active
+	int shortcut_knowledge;  // 0 easy / 1 medium / 2 hard
 	// item #5 placement toggles (forward-looking; MVP native ignores them because
 	// locked gems/keys never enter the multiworld pool -> native never receives an
 	// item it must place). A future native build can branch on these to tell
@@ -318,6 +324,9 @@ typedef struct
 	// reads as "unknown" and answers with silence. Never parsed for meaning here
 	// (that is ap_version_cmp.h's job) and never read by a gate, check or item.
 	char world_version[CTR_CFG_VERSION_CAP];
+	// Human-facing prerelease/build identity, e.g. "0.2.0-alpha2". Additive
+	// diagnostic metadata only; compatibility checks use world_version above.
+	char build_version[CTR_CFG_VERSION_CAP];
 
 	int             warp_pad_map[CTR_CFG_PAD_COUNT];    // physical pad LevelID -> target trackID (identity default)
 	ctr_warp_unlock warp_pad_unlock[CTR_CFG_PAD_COUNT]; // per-pad two-stage resolved reqs (stage1.type 0 = native vanilla rule)

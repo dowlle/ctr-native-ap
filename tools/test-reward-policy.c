@@ -70,6 +70,8 @@ int main(void)
 	expect_item(21, AP_CAT_NONE, -1, 0, "first comfort item -> marker material");
 	expect_item(25, AP_CAT_NONE, -1, 0, "last comfort item -> marker material");
 	expect_item(26, AP_CAT_NONE, -1, 0, "the gap below the ladder -> marker material");
+	expect_item(120, AP_CAT_WUMPA, -1, 0, "Small Wumpa Bundle -> marker material");
+	expect_item(121, AP_CAT_WUMPA, -1, 0, "Big Wumpa Bundle -> marker material");
 
 	// ── Matrix rule 3: every CTR progression family is the purple crystal ──
 	// Both edges of every block, so a range that silently loses or gains an item
@@ -81,18 +83,19 @@ int main(void)
 	expect_item(94, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last per-character chain -> crystal");
 	expect_item(95, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first weapon unlock -> crystal");
 	expect_item(105, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last weapon unlock -> crystal");
+	expect_item(122, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "Progressive Starting Wumpa -> crystal");
 	expect_item(123, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first character unlock -> crystal");
 	expect_item(138, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last character unlock -> crystal");
 	expect_item(139, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first letter -> crystal");
 	expect_item(186, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last letter -> crystal");
 	expect_item(187, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "Gas Pedal -> crystal");
 
-	// The gaps between the crystal blocks must NOT be swept in. 106..122 sits
+	// The gaps between the crystal blocks must NOT be swept in. 106..119 sits
 	// between the weapon unlocks and the character unlocks, and 188 is the Tizi
 	// Helper -- a per-track assist, not a progression step, and nothing has ruled
 	// it into the family.
 	expect_item(106, AP_CAT_NONE, -1, 0, "just above the weapon unlocks -> marker material");
-	expect_item(122, AP_CAT_NONE, -1, 0, "just below the character unlocks -> marker material");
+	expect_item(119, AP_CAT_NONE, -1, 0, "just below the Wumpa family -> marker material");
 	expect_item(188, AP_CAT_NONE, -1, 0, "Tizi Helper -> marker material");
 	expect_item(400, AP_CAT_NONE, -1, 0, "an id no block owns -> marker material");
 

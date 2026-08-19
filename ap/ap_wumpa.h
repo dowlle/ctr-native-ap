@@ -38,6 +38,15 @@ struct GameTracker;
 // received-item drain loop in ap_hooks.c (AP_NetTick).
 void AP_WumpaReceive(int count);
 
+// Rebuild the persistent starting-fruit ladder from ReceivedItems. Called once
+// per Progressive Starting Wumpa receipt after AP_WumpaConnectReset zeroes it.
+void AP_WumpaReceiveStarting(void);
+
+// Clear slot-scoped state before the server's authoritative item replay. A
+// reconnect during a live race does not reapply starting fruit to that race;
+// the next off-track/race-start transition arms it normally.
+void AP_WumpaConnectReset(void);
+
 // Per-frame driver. Called once per frame from AP_OnFrame (ap_hooks.c), alongside
 // AP_TrapTick. Drains the pending bank into drivers[0] when a race is active. gGT
 // is the live GameTracker; no-op outside a race or with nothing pending.

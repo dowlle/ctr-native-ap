@@ -10,5 +10,11 @@ struct GameTracker;
 // available, and -1 when registration could not produce a usable model.
 int AP_BoxModel_Ensure(struct GameTracker *gGT);
 
+// Relic levels contain no resident weapon crate. Install the validated,
+// engine-independent AP cube directly instead of depending on a harvested
+// retail pointer graph becoming drawable in a different level file.
+int AP_BoxModel_EnsureOwned(struct GameTracker *gGT);
+int AP_BoxModel_EnsureRelic(struct GameTracker *gGT);
+
 #endif
 #endif

@@ -999,13 +999,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// Which types remain is read from AP_PadUncollectedBits
 						// (keyed by DESTINATION track = levelID here), which skips
 						// tiers this seed never placed -- so a checked/absent option
-						// is never offered. (The both-checked case is state 5 Done,
-						// hard-locked upstream, so it never reaches this menu.)
+						// is never offered. Boxes live outside those tier bits: when
+						// they are the only checks left, route to a plain re-race.
 						if (ctr_cfg_active())
 						{
 							int apUncMenu[5];
 							int apUncMenuN = AP_PadUncollectedBits(levelID, apUncMenu, 5);
 							int apTokenLeft = 0, apRelicLeft = 0, apk;
+							int apTier2Route;
 							for (apk = 0; apk < apUncMenuN; apk++)
 							{
 								int off = apUncMenu[apk] - levelID;
@@ -1017,25 +1018,38 @@ void AH_WarpPad_ThTick(struct Thread *t)
 									apRelicLeft = 1;
 							}
 
-							if (apTokenLeft && !apRelicLeft)
+							apTier2Route = AP_PadTier2RouteDecide(
+							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));
+
+							if (apTier2Route == AP_PAD_TIER2_TOKEN)
 							{
 								// only CTR Token challenge left -> enter directly
 								// (mirrors AH_WarpPad_MenuProc row 0); no menu shown.
 								gGT->gameMode2 |= TOKEN_RACE;
 								RECTMENU_Hide(&D232.menuTokenRelic);
 							}
-							else if (apRelicLeft && !apTokenLeft)
+							else if (apTier2Route == AP_PAD_TIER2_RELIC)
 							{
 								// only Relic Race left -> enter directly (row 1).
 								gGT->gameMode1 |= RELIC_RACE;
 								RECTMENU_Hide(&D232.menuTokenRelic);
 							}
-							else
+							else if (apTier2Route == AP_PAD_TIER2_MENU)
 							{
 								// both types have an unchecked location -> show the
 								// menu, cursor on an available row.
 								D232.menuTokenRelic.rowSelected = apTokenLeft ? 0 : 1;
 								RECTMENU_Show(&D232.menuTokenRelic);
+							}
+							else if (apTier2Route == AP_PAD_TIER2_BOX_RERACE)
+							{
+								RECTMENU_Hide(&D232.menuTokenRelic);
+								goto WarpPad_BoxReRace;
+							}
+							else
+							{
+								// Defensive only: state 5 Done is hard-locked upstream.
+								goto WarpPad_AnimateOpen;
 							}
 						}
 						else

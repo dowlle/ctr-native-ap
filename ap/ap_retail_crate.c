@@ -1,5 +1,6 @@
-// Harvest the retail weapon crate (crate_question, PU_RANDOM_CRATE) out of the
-// player's own game data, and hand it to the renderer as a sideloaded texture.
+// Harvest the retail weapon crate's pixels out of the player's own game data,
+// and hand them to the renderer as a sideloaded texture. No Model pointer from
+// the harvested LEV escapes this file.
 //
 // WHY THIS EXISTS
 // ---------------
@@ -24,18 +25,15 @@
 //    RenderBucket indexes it by `command & 0x1ff`, 1-based).
 // 4. Pull those texels and palettes out of the matching 1p VRM, convert 4bpp +
 //    CLUT to RGBA on the CPU, and pack them into one atlas.
-// 5. Rewrite the layouts in place to point at the atlas and carry
-//    AP_TPAGE_SIDELOAD_BIT, so only these primitives sample it.
+// 5. Copy the largest face layout by value, remapped to the atlas and carrying
+//    AP_TPAGE_SIDELOAD_BIT, for the AP-owned crate model to consume.
 //
 // HARVEST ONCE, NOT PER TRACK. The crate's texture bytes are byte-identical on
 // every track (verified: same texel+palette hash for all of 0/5/10/17); only
 // its VRAM location differs. So one harvest serves every relic race.
 //
-// The level buffer is retained for the lifetime of the process ON PURPOSE: the
-// harvested model's internal pointers point into it after fixup, so keeping it
-// avoids deep-copying a pointer graph whose element sizes are not recorded
-// anywhere. It is a static buffer, never the engine's MEMPACK, which is a bump
-// allocator with no free.
+// The level buffer is scratch storage only. Its fixed-up pointer graph is walked
+// during the harvest, but never registered with the live level or retained.
 
 #ifdef CTR_AP
 
@@ -68,12 +66,16 @@
 #define AP_CRATE_MAX_RECTS 8
 #define MODELHEADER_STRIDE 0x40 // CTR_STATIC_ASSERT'd in RenderBucket_QueueExecute.c
 
-static u8  s_levBuf[AP_CRATE_LEV_BUF]; // retained: the model points into it
+static u8  s_levBuf[AP_CRATE_LEV_BUF];
 static u8  s_vrmBuf[AP_CRATE_VRM_BUF];
 static u8  s_atlas[AP_CRATE_ATLAS_W * AP_CRATE_ATLAS_H * 4];
-static int s_harvestState; // 0 = untried, 1 = ready, 2 = failed (do not retry)
+// Unity-build name must be module-specific. ap_retail_crystal.c is included in
+// the same C translation unit and also owns a harvest state; a generic static
+// tentative definition silently coalesces in C, making a successful crystal
+// harvest falsely report the crate pixels ready before this module ever runs.
+static int s_crateHarvestState; // 0 = untried, 1 = ready, 2 = failed (do not retry)
 
-static struct Model *s_crateModel;
+static struct TextureLayout s_faceLayout;
 
 // Bounds for validating fixed-up pointers while walking the harvested file.
 static const u8 *s_levBase;
@@ -224,10 +226,12 @@ static struct Model *AP_CrateFindModel(struct Level *lev, const u8 *base, int si
 // Collect the distinct source rects the crate actually samples, and rewrite each
 // layout to the atlas as we go. Corner order is preserved by remapping every
 // corner relative to the rect origin, so orientation cannot flip.
-static int AP_CrateCollectAndRemap(struct Model *model, struct ApCrateRect *rects, int maxRects)
+static int AP_CrateCollectAndRemap(struct Model *model, struct ApCrateRect *rects, int maxRects,
+                                  struct TextureLayout *faceOut)
 {
 	int nRects = 0;
 	int packX = 0, packY = 0, rowH = 0;
+	int bestArea = 0;
 	int h;
 
 	for (h = 0; h < model->numHeaders; h++)
@@ -362,13 +366,22 @@ static int AP_CrateCollectAndRemap(struct Model *model, struct ApCrateRect *rect
 			// sideloaded, which is harmless: nothing samples VRAM for these
 			// prims, and the overlap check ignores non-16bpp pages.
 			tl->tpage = (u16)(tl->tpage | AP_TPAGE_SIDELOAD_BIT);
+
+			// The near-LOD question-mark face is the largest sampled square
+			// (64x64 in retail). Copy the remapped value, never its pointer.
+			if (rects[found].w == rects[found].h &&
+			    rects[found].w * rects[found].h > bestArea)
+			{
+				*faceOut = *tl;
+				bestArea = rects[found].w * rects[found].h;
+			}
 		}
 	}
 
-	return nRects;
+	return bestArea > 0 ? nRects : 0;
 }
 
-int AP_RetailCrate_Ensure(struct GameTracker *gGT)
+int AP_RetailCrate_EnsureTexture(struct TextureLayout *outFace)
 {
 	struct ApCrateRect rects[AP_CRATE_MAX_RECTS];
 	struct Level      *lev;
@@ -380,17 +393,18 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	unsigned           tex;
 	char               msg[160];
 
-	if (s_harvestState == 2)
+	if (s_crateHarvestState == 2)
 		return 0;
 
-	if (s_harvestState == 1)
+	if (s_crateHarvestState == 1)
 	{
-		if (gGT != 0 && s_crateModel != 0)
-			gGT->modelPtr[PU_RANDOM_CRATE] = s_crateModel;
+		if (outFace != 0)
+			*outFace = s_faceLayout;
 		return 1;
 	}
 
-	if (gGT == 0 || sdata == 0 || sdata->Loading.stage != LOAD_IDLE)
+	if (outFace == 0 || sdata == 0 || sdata->ptrBigfile1 == 0 ||
+	    sdata->Loading.stage != LOAD_IDLE)
 		return 0;
 
 	AP_LogLine("[AP CRATE] harvesting the retail crate from the game data...\n");
@@ -399,7 +413,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	if (levBody == 0)
 	{
 		AP_LogLine("[AP CRATE] could not read the source level file; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
@@ -420,7 +434,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	    (u8 *)lev->ptrModelsPtrArray < levBody || (u8 *)lev->ptrModelsPtrArray >= levBody + levSize)
 	{
 		AP_LogLine("[AP CRATE] level header failed validation; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
@@ -428,7 +442,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	if (model == 0)
 	{
 		AP_LogLine("[AP CRATE] crate_question absent from the source level; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
@@ -440,7 +454,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 
 	s_levBase = levBody;
 	s_levSize = levSize;
-	nRects = AP_CrateCollectAndRemap(model, rects, AP_CRATE_MAX_RECTS);
+	nRects = AP_CrateCollectAndRemap(model, rects, AP_CRATE_MAX_RECTS, &s_faceLayout);
 
 	{
 		char dbg[128];
@@ -450,7 +464,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	if (nRects <= 0)
 	{
 		AP_LogLine("[AP CRATE] no usable texture layouts; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
@@ -458,7 +472,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	if (vrmBody == 0)
 	{
 		AP_LogLine("[AP CRATE] could not read the source texture file; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
@@ -474,7 +488,7 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 		                  rects[i].h, rects[i].clutX, rects[i].clutY, rects[i].atlasX, rects[i].atlasY))
 		{
 			AP_LogLine("[AP CRATE] texel copy failed; keeping the fallback cube\n");
-			s_harvestState = 2;
+			s_crateHarvestState = 2;
 			return 0;
 		}
 	}
@@ -483,17 +497,16 @@ int AP_RetailCrate_Ensure(struct GameTracker *gGT)
 	if (tex == 0)
 	{
 		AP_LogLine("[AP CRATE] atlas upload failed; keeping the fallback cube\n");
-		s_harvestState = 2;
+		s_crateHarvestState = 2;
 		return 0;
 	}
 
 	NativeGpu_SetSideloadTexture(tex, AP_CRATE_ATLAS_W, AP_CRATE_ATLAS_H);
 
-	s_crateModel = model;
-	s_harvestState = 1;
-	gGT->modelPtr[PU_RANDOM_CRATE] = model;
+	s_crateHarvestState = 1;
+	*outFace = s_faceLayout;
 
-	snprintf(msg, sizeof msg, "[AP CRATE] harvested retail crate: %d headers, %d rect(s), atlas %dx%d\n",
+	snprintf(msg, sizeof msg, "[AP CRATE] harvested retail crate pixels: %d headers, %d rect(s), atlas %dx%d\n",
 	         model->numHeaders, nRects, AP_CRATE_ATLAS_W, AP_CRATE_ATLAS_H);
 	AP_LogLine(msg);
 

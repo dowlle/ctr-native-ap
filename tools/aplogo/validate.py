@@ -130,13 +130,14 @@ neutral = all(((c) & 0xFF) == ((c >> 8) & 0xFF) == ((c >> 16) & 0xFF) for c in c
 check(neutral, "every LUT entry is grey, so the class tint modulates cleanly")
 
 # The flat look fixed on 2026-08-06 was a LUT with almost no usable spread whose
-# top entry was 0xff (which is what read as a white sliver edge-on). Guard both.
+# top entry was 0xff. The budget-safe model deliberately omits the dark extrusion
+# rim, so its darkest retained face vertex is higher; guard useful face shading.
 print("\nshading has usable range")
 levels = sorted((c & 0xFF) for c in colors)
 check(len(colors) > 6, f"LUT carries per-vertex shading, not one entry per region ({len(colors)})")
 check(levels[-1] - levels[0] >= 120, f"grey spread {levels[-1] - levels[0]} is wide enough to read as shading")
 check(levels[-1] <= 232, f"brightest grey {levels[-1]} stays off the washed-out top end")
-check(levels[0] <= 48, f"darkest grey {levels[0]} is dark enough to read as shadow")
+check(levels[0] <= 80, f"darkest grey {levels[0]} is dark enough to read as face shadow")
 
 print()
 if fails:

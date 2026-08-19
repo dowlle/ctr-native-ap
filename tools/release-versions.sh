@@ -10,10 +10,19 @@ set -euo pipefail
 here="$(dirname "$(readlink -f "$0")")"
 root="$(cd "$here/.." && pwd)"
 
-ver=$(grep -oE '"v[^"]+"' "$root/ap/ap_version.h" | head -1 | tr -d '"')
+compat=$(awk '$2 == "CTR_AP_COMPAT_VERSION" { gsub(/"/, "", $3); print $3 }' \
+  "$root/ap/ap_version.h")
+build=$(awk '$2 == "CTR_AP_VERSION" { gsub(/"/, "", $3); print $3 }' \
+  "$root/ap/ap_version.h")
 lock="$root/ap/vendor/versions.lock"
 
-echo "CTR-AP release: ${ver}"
+if [ -z "$compat" ] || [ -z "$build" ]; then
+  echo "could not read CTR compatibility/build identities" >&2
+  exit 1
+fi
+
+echo "CTR-AP compatibility: ${compat}"
+echo "CTR-AP build: ${build}"
 echo "Vendored Archipelago networking dependencies (ap/vendor/versions.lock):"
 awk '
   /^\[/          { d = substr($0, 2, index($0,"]")-2) }

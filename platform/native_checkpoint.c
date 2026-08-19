@@ -1477,7 +1477,15 @@ internal void NativeCheckpoint_RelocateSDataPointers(const struct NativeCheckpoi
 
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrMPK);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrLevelFile);
+#if defined(CTR_NATIVE)
+	// PTR scratch is process-owned static storage, not part of a checkpoint's
+	// mempack ranges. Always bind a restored state to this process's live buffer;
+	// an ASLR-shifted address from the checkpoint image is never reusable.
+	sdata_static.PatchMem_Ptr = NativePtrScratch_Data();
+	sdata_static.PatchMem_Size = NativePtrScratch_Capacity();
+#else
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.PatchMem_Ptr);
+#endif
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrBigfileCdPos_2);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.modelMaskHints3D);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.gGT);

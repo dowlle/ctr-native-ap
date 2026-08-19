@@ -157,8 +157,26 @@ void RB_CtrLetter_LInB(struct Instance *inst)
 		int apLetter = AP_CtrLetterIndex(inst->model->id);
 		if (apLetter >= 0 && sdata->gGT->levelID >= 0 && sdata->gGT->levelID < 16)
 		{
-			if (AP_LetterAvailable(sdata->gGT->levelID, apLetter)) inst->flags &= ~DRAW_TRANSPARENT;
-			else inst->flags |= DRAW_TRANSPARENT;
+			if (AP_LetterAvailable(sdata->gGT->levelID, apLetter))
+			{
+				inst->flags &= ~(DRAW_TRANSPARENT | GHOST_DRAW_TRANSPARENT);
+				inst->flags |= USE_SPECULAR_LIGHT;
+				inst->alphaScale = 0;
+				inst->colorRGBA = 0xffc8000;
+			}
+			else
+			{
+				// The retail DRAW_TRANSPARENT path is the normal CTR-letter
+				// treatment and is not a strong unavailable-state cue. Use the
+				// renderer's ghost fade instead, matching the proven peer-reward
+				// treatment on adventure warp pads. This remains seek-safe: the
+				// flags are rebuilt every frame, so a mid-race receipt immediately
+				// restores the ordinary solid letter without a level reload.
+				inst->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+				inst->flags |= GHOST_DRAW_TRANSPARENT;
+				inst->alphaScale = 0xa00;
+				inst->colorRGBA = 0;
+			}
 		}
 	}
 #endif

@@ -11,10 +11,29 @@ static int failures;
 
 int main(void)
 {
+	static const int expected_level_ids[16] = {
+		3, 6, 9, 8, 14, 4, 5, 0, 2, 1, 12, 15, 7, 10, 11, 13
+	};
 	const long selected[3] = {1001, -1, 1003};
 	const unsigned char none[3] = {0, 0, 0};
 	const unsigned char selected_received[3] = {1, 0, 1};
 	const unsigned char all_received[3] = {1, 1, 1};
+	int seen = 0;
+	int row;
+
+	for (row = 0; row < 16; row++)
+	{
+		int level = AP_LetterItemRowToLevelIDPure(row);
+		EXPECT(level == expected_level_ids[row], "canonical letter row maps to its frozen level ID");
+		EXPECT(level >= 0 && level < 16 && (seen & (1 << level)) == 0,
+		       "letter row mapping is an in-range bijection");
+		if (level >= 0 && level < 16)
+			seen |= 1 << level;
+	}
+	EXPECT(seen == 0xffff, "letter row mapping covers every token track exactly once");
+	EXPECT(AP_LetterItemRowToLevelIDPure(-1) == -1, "negative letter row rejected");
+	EXPECT(AP_LetterItemRowToLevelIDPure(16) == -1, "past-end letter row rejected");
+	EXPECT(AP_LetterItemRowToLevelIDPure(5) == 4, "Tiger Temple row maps to level ID 4");
 
 	EXPECT(AP_LetterAvailablePure(0, 0, -1, 0), "inactive preserves vanilla pickup");
 	EXPECT(AP_LetterAvailablePure(1, 1, 1001, 0), "locations-only preserves vanilla pickup");

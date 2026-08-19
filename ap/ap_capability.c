@@ -5,6 +5,8 @@
 #include <stdio.h>
 
 #include "ap_capability.h"
+#include "ap_stat_ladder.h"
+#include "ap_retro_fueled_logic.h"
 #include "ap_hooks.h"    // AP_LogLine
 #include "ap_seedcfg.h"  // ctr_cfg + ctr_cfg_active()
 #include "ap_turbogrant_logic.h" // #224 item 6: the s16 reserve overflow rail
@@ -352,6 +354,25 @@ int AP_CapabilityBoostTier(void)
 	return tier;
 }
 
+int AP_CapabilityBoostTierForCharacter(int characterID)
+{
+	int ceiling;
+	int tier;
+
+	if (!AP_CapabilityBoostActive())
+		return -1;
+
+	tier = AP_CapabilityChainCountForCharacter(
+	    ctr_cfg.boost_mode, AP_CAP_CHAIN_BOOST, characterID);
+	if (tier < 0)
+		return -1;
+
+	ceiling = ctr_cfg.boost_blue_fire ? AP_CAP_BOOST_BLUEFIRE : AP_CAP_BOOST_USF;
+	if (tier > ceiling)
+		tier = ceiling;
+	return tier;
+}
+
 int AP_CapabilityStatRankFor(int chain)
 {
 	int rank;
@@ -452,10 +473,16 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 			*reserves = AP_CAP_PAD_RESERVES;
 	}
 
-	// AP_CAP_BOOST_USF and AP_CAP_BOOST_BLUEFIRE both let the full payload
-	// through untouched. Blue fire is tracked as its own tier but carries no
-	// extra physics in this build -- its values were to come from CTR Unlimited's
-	// Retro Fueled mode and have never been sourced. See ap_capability.h.
+	// Tier 3 is the Retro-Fueled capstone. Every genuine turbo pad becomes a
+	// blue-fire pad and starts one second of reserves, matching the reference
+	// module. Powerslide stacking and U-turn reserve retention are handled at
+	// their respective physics decisions because they are not grant properties.
+	if (AP_RetroFueledShouldRewritePad(tier == AP_CAP_BOOST_BLUEFIRE,
+	                                  type, TURBO_PAD, SUPER_ENGINE))
+	{
+		*reserves = AP_RETRO_FUELED_PAD_RESERVES;
+		*fireLevel = AP_RETRO_FUELED_FIRE_LEVEL;
+	}
 
 	// #224 item 6: whatever payload survives the tier, the reserve sum it
 	// produces stays below the signed 16-bit boundary. VehFire_Increment
@@ -471,6 +498,12 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 	                                       (int)driver->turbo_outsideTimer,
 	                                       *reserves, type);
 	return 1;
+}
+
+int AP_CapabilityRetroFueled(struct Driver *driver)
+{
+	return driver != 0 && AP_CapabilityIsLocal(driver) &&
+	       AP_CapabilityBoostTier() == AP_CAP_BOOST_BLUEFIRE;
 }
 
 // ── Stat ranks ──────────────────────────────────────────────────────────────
@@ -508,6 +541,9 @@ static const AP_CapStatRow AP_CAP_STAT_ROWS[] = {
 	{AP_CAP_CHAIN_TURNING,   TURN_INPUT_DELAY_OFFSET},       // turn response
 };
 
+typedef char ap_cap_stat_anchor_count_check
+    [(NUM_CLASSES == AP_STAT_LADDER_ANCHORS) ? 1 : -1];
+
 #define AP_CAP_STAT_ROW_COUNT ((int)(sizeof(AP_CAP_STAT_ROWS) / sizeof(AP_CAP_STAT_ROWS[0])))
 
 // The metaPhys row for an offset, or NULL. Linear over the 65-row table, called
@@ -528,38 +564,20 @@ static const struct MetaPhys *AP_CapabilityMetaRow(int offset)
 // Ranks 0..3 (VERY LOW / LOW / MEDIUM / HIGH) are the row's own four engine-class
 // values sorted weakest-first -- the engine's numbers, not ours.
 //
-// Rank 4 (VERY HIGH) is the ruled above-vanilla step (ruled 2026-08-08: "add
-// VERY HIGH above the best vanilla HIGH anchor as a real extra unlockable
-// step"). **Its MAGNITUDE has never been ruled**, only its existence, so this
-// build takes the smallest defensible choice and continues the table's own top
-// step: VERY HIGH = HIGH + (HIGH - MEDIUM). On the retail anchors that is top
+// Rank 4 (VERY HIGH) is the ruled above-vanilla step. Its 0.2.0 balance is the
+// smallest linear continuation of the table's own top step:
+// VERY HIGH = HIGH + (HIGH - MEDIUM). On the retail anchors that is top
 // speed 14280, boosted top speed 15780, acceleration 576, turn rate 32, drift
-// turn 22, turn response 6000. It is a BALANCE number, it is a ruling, and it
-// lives in this one expression so changing it is a one-line change rather than a
-// hunt through six constants.
+// turn 22, turn response 6000. The freestanding helper owns that formula so the
+// production consumer and focused boundary test cannot drift.
 static int AP_CapabilityStatRankValue(const struct MetaPhys *row, int rank)
 {
 	int v[NUM_CLASSES];
-	int i, j, t;
+	int i;
 
 	for (i = 0; i < NUM_CLASSES; i++)
 		v[i] = row->value[i];
-
-	// Insertion sort, ascending. Four elements, once per row per frame.
-	for (i = 1; i < NUM_CLASSES; i++)
-	{
-		t = v[i];
-		for (j = i - 1; j >= 0 && v[j] > t; j--)
-			v[j + 1] = v[j];
-		v[j + 1] = t;
-	}
-
-	if (rank < 0)
-		rank = 0;
-	if (rank < NUM_CLASSES)
-		return v[rank];
-
-	return v[NUM_CLASSES - 1] + (v[NUM_CLASSES - 1] - v[NUM_CLASSES - 2]);
+	return AP_StatLadderValue(v, rank);
 }
 
 // The absolute value the ladder holds at `rank` for the stat row at `offset`,

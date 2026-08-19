@@ -175,6 +175,21 @@ def tri_face_term(v0, v1, v2):
     return abs(n[1]) / mag
 
 
+flat_tris = [t for t in tris if tri_face_term(t[0], t[1], t[2]) > 0.99]
+print(f"triangle shape: keeping {len(flat_tris)} flat faces, dropping "
+      f"{len(tris) - len(flat_tris)} extrusion-rim faces", file=sys.stderr)
+
+# A reward pad can show three AP markers at once. The original fully extruded
+# source costs 216 POLY_G3 packets per marker: 6,048 primitive-memory bytes, or
+# 18,144 bytes for one pad before nearby hub geometry has finished rendering.
+# Live testing showed the same black/flashing floor failure here that many
+# author-mode marker instances produced earlier. Keep the source mesh's two
+# flat faces (front + back, so the spinning logo remains two-sided) and drop its
+# 120 thin extrusion-rim triangles. The silhouette and all six logo regions are
+# unchanged, while a three-marker pad falls from 648 to 288 triangles.
+tris = flat_tris
+
+
 def vertex_grey(v, ci, face):
     vnorm = (to_float(v)[2] - v_lo) / (v_hi - v_lo)
     s = region_w[ci] * (RIM_AMBIENT + RIM_FACE * face + TOP_GRADIENT * vnorm)
@@ -225,16 +240,16 @@ def emit(path):
     w("// Christopher Wilson, CC BY-NC 4.0. Both credits are permanent and owed")
     w("// in THIRD_PARTY_NOTICES before this ships.")
     w("//")
-    w("// Their mesh is an extruded 6-region silhouette drawn with flat prim")
+    w("// Their mesh is a 6-region silhouette drawn with flat prim")
     w("// colours and no texture (its combiner is SHADE x PRIMITIVE, no TEXEL),")
     w("// which is exactly what ctr-native's untextured POLY_G3 path wants. The")
     w("// colours are stored here as LUMINANCE so the per-class tint modulates a")
     w("// neutral base, per the ruled spec.")
     w("//")
-    w("// The greys are SHADED PER VERTEX (region luminance x a face term that")
-    w("// darkens the extruded rim x a light-from-above gradient), so the marker")
-    w("// reads as a solid object instead of a flat cut-out and its edge-on rim")
-    w("// goes dark rather than white. See the shading block in convert.py.")
+    w("// The source mesh's front and back faces are kept, while its costly thin")
+    w("// extrusion rim is omitted to protect the hub's primitive-memory budget")
+    w("// when three reward markers render together. The greys remain shaded per")
+    w("// vertex (region luminance + a light-from-above gradient).")
     w("")
     w(f"#define AP_MARKER_NUM_VERTS {len(verts)}")
     w(f"#define AP_MARKER_NUM_TRIS  {len(tris)}")

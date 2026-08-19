@@ -141,6 +141,30 @@ static void test_scalars_round_trip()
 	check_eq(ctr_cfg.stat_editing_allowed, 1, "stat_editing_allowed");
 }
 
+static void test_verifier_logic_scalars()
+{
+	parse("\"logic_difficulty\":0,\"itemsanity\":true,\"shortcut_knowledge\":2");
+	check_eq(ctr_cfg.logic_difficulty, 0, "logic_difficulty (easy)");
+	check_eq(ctr_cfg.itemsanity, 1, "itemsanity enabled");
+	check_eq(ctr_cfg.shortcut_knowledge, 2, "shortcut_knowledge (hard)");
+	parse("\"logic_difficulty\":99,\"itemsanity\":false,\"shortcut_knowledge\":-1");
+	check_eq(ctr_cfg.logic_difficulty, 1, "invalid logic_difficulty -> medium");
+	check_eq(ctr_cfg.itemsanity, 0, "itemsanity disabled");
+	check_eq(ctr_cfg.shortcut_knowledge, 0, "invalid shortcut_knowledge -> easy");
+}
+
+static void test_build_identity_round_trip()
+{
+	parse("\"world_version\":\"0.2.0\",\"build_version\":\"0.2.0-alpha2\"");
+	check(std::strcmp(ctr_cfg.world_version, "0.2.0") == 0,
+	      "numeric compatibility identity parses");
+	check(std::strcmp(ctr_cfg.build_version, "0.2.0-alpha2") == 0,
+	      "prerelease build identity parses");
+	parse("");
+	check(ctr_cfg.world_version[0] == '\0', "absent compatibility identity resets");
+	check(ctr_cfg.build_version[0] == '\0', "absent build identity resets");
+}
+
 static void test_out_of_range_values_fail_closed()
 {
 	// A racer this build cannot name must not become an array read into
@@ -229,6 +253,8 @@ int main()
 	test_absent_keys_are_pre_feature_behaviour();
 	test_phase_presence_is_key_presence_not_value();
 	test_scalars_round_trip();
+	test_verifier_logic_scalars();
+	test_build_identity_round_trip();
 	test_out_of_range_values_fail_closed();
 	test_progressive_never_exposes_an_edit_control();
 	test_racer_locks_block();

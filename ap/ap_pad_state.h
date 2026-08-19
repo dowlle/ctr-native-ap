@@ -3,8 +3,8 @@
 
 // The Warp-Pad State Model v2 decision, deliberately freestanding.
 //
-// AP_PadState (ap_hooks.c) gathers five facts about a pad from the seed config,
-// the location table and the box map; this header turns those five facts into
+// AP_PadState (ap_hooks.c) gathers six facts about a pad from the seed config,
+// the location table and the box map; this header turns those facts into
 // the state. Splitting the gather from the decision is what lets
 // tools/test-box-map.c pin the whole state table out of engine -- including the
 // §6 box cell, which is the one that decides whether a pad is enterable while
@@ -28,7 +28,8 @@
 // Arguments (all booleans except uncCount/boxesStanding, which are counts):
 //   destIsRace     the destination is one of the 16 shuffleable race tracks,
 //                  the only category carrying the full two-stage lifecycle
-//   stage1Met      the PHYSICAL pad's entry requirement is satisfied
+//   stage1Met      the PHYSICAL pad's item requirement is satisfied
+//   racerMet       the PHYSICAL pad's racer requirement is satisfied
 //   trophyChecked  the DESTINATION track's Trophy Race location is checked
 //   stage2Met      the PHYSICAL pad's stage-2 requirement is satisfied
 //                  (a pad with no stage-2 requirement reports met)
@@ -37,8 +38,9 @@
 //   boxesStanding  unbroken AP item boxes behind the destination (same
 //                  aggregation), which carry no AdvProgress bit and so cannot
 //                  ride in uncCount
-static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int trophyChecked,
-                                    int stage2Met, int uncCount, int boxesStanding)
+static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int racerMet,
+                                    int trophyChecked, int stage2Met,
+                                    int uncCount, int boxesStanding)
 {
 	// Done is terminal: every location behind the pad is settled. Hard-locking
 	// it can never gate progression, which is only true while "nothing left"
@@ -46,7 +48,7 @@ static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int trophyChe
 	if (uncCount == 0 && boxesStanding == 0)
 		return 5;
 
-	if (!stage1Met)
+	if (!stage1Met || !racerMet)
 		return 1;
 
 	// Reduced lifecycle (trial / arena / cup destination): stage-1 met and
@@ -72,6 +74,31 @@ static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int trophyChe
 	}
 
 	return 4; // relic Time Trial / CTR Token checks available
+}
+
+enum AP_PadTier2Route
+{
+	AP_PAD_TIER2_MENU,
+	AP_PAD_TIER2_TOKEN,
+	AP_PAD_TIER2_RELIC,
+	AP_PAD_TIER2_BOX_RERACE,
+	AP_PAD_TIER2_DONE
+};
+
+// Once stage 2 is open, choose only an entry path that can still produce a
+// check. Boxes are not represented by the token/relic bits, so the all-tier-
+// checked case needs its own plain adventure re-race instead of a dead menu.
+static inline int AP_PadTier2RouteDecide(int tokenLeft, int relicLeft, int boxesStanding)
+{
+	if (tokenLeft && relicLeft)
+		return AP_PAD_TIER2_MENU;
+	if (tokenLeft)
+		return AP_PAD_TIER2_TOKEN;
+	if (relicLeft)
+		return AP_PAD_TIER2_RELIC;
+	if (boxesStanding > 0)
+		return AP_PAD_TIER2_BOX_RERACE;
+	return AP_PAD_TIER2_DONE;
 }
 
 #endif // CTR_AP

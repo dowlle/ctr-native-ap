@@ -1,6 +1,18 @@
 #ifndef AP_LETTERSANITY_H
 #define AP_LETTERSANITY_H
 
+// Letter items are frozen in the apworld's canonical token-track order, while
+// every live pickup hook addresses a track by CTR's levelID. Keep the conversion
+// in one pure table so receipt state and pickup state cannot silently use two
+// different identity spaces (#278).
+static inline int AP_LetterItemRowToLevelIDPure(int row)
+{
+	static const unsigned char levelID[16] = {
+		3, 6, 9, 8, 14, 4, 5, 0, 2, 1, 12, 15, 7, 10, 11, 13
+	};
+	return (row >= 0 && row < 16) ? (int)levelID[row] : -1;
+}
+
 // Freestanding Lettersanity decisions shared by the engine hooks and the
 // out-of-engine harness. Modes: 0 off, 1 locations only, 2 locations and
 // items, 3 items only. A nonnegative location code marks a selected letter.

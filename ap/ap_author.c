@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 #include "ap_author.h"
+#include "ap_author_ready.h"
 #include "ap_spawn.h"
 #include "ap_marker_model.h"  // STATIC_AP (the AP-logo marker, #124)
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
@@ -626,6 +627,19 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 		}
 		return;
 	}
+
+	// #194: author markers use the same additive spawn pool as runtime boxes.
+	// During a level load or race restart the pool and PLAYER thread chain are
+	// being rebuilt; queuing markers or accepting author input in that window can
+	// leave work aimed at the old level and was the remaining safety asymmetry
+	// with AP_Boxes_OnFrame. Boss races remain authorable once their driver is
+	// born; this gate is about lifecycle readiness, not race type.
+	if (!AP_AuthorRuntimeReady(
+	        sdata != 0,
+	        sdata != 0 && sdata->Loading.stage == LOAD_IDLE,
+	        gGT->drivers[0] != 0,
+	        gGT->drivers[0] != 0 && gGT->drivers[0]->instSelf != 0))
+		return;
 
 	AP_Author_EnsureLoaded();
 

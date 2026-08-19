@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "../ap/ap_version_cmp.h"
+#include "../ap/ap_version.h"
 
 static int g_failures = 0;
 
@@ -24,11 +25,14 @@ static void expect(const char *seed, const char *client, int want, const char *w
 
 int main(void)
 {
+	expect("0.2.0", CTR_AP_COMPAT_VERSION, 0, "compiled Alpha 2 compatibility identity matches");
 	// Ordering: the cases the release trains actually produce.
 	expect("0.1.5",   "0.1.4",   1, "patch bump is newer");
 	expect("0.1.4.1", "0.1.4",   1, "hotfix component beats a missing one (D=0)");
 	expect("0.1.5",   "0.1.4.1", 1, "patch bump beats a hotfix on the older patch");
 	expect("0.2.0",   "0.1.9",   1, "minor bump is newer");
+	expect("0.2.0",   "v0.2.0",  0, "matched 0.2.0 pair is silent");
+	expect("0.2.0",   "v0.1.5",  1, "0.2.0 seed warns the previous stable client");
 	expect("1.0.0",   "0.9.9",   1, "major bump is newer");
 
 	// Equal and older: silent.

@@ -1780,6 +1780,18 @@ static const char *ap_cs_ownershipLabel(void)
 	return "VANILLA";
 }
 
+static const char *ap_cs_boostTierName(int tier)
+{
+	switch (tier)
+	{
+	case AP_CAP_BOOST_NONE: return "NONE";
+	case AP_CAP_BOOST_BOOST: return "BOOST";
+	case AP_CAP_BOOST_USF: return "USF";
+	case AP_CAP_BOOST_BLUEFIRE: return "BLUE";
+	default: return "?";
+	}
+}
+
 void AP_CharPicker_Draw(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -1791,6 +1803,7 @@ void AP_CharPicker_Draw(void)
 	int i;
 	int selectedChar;
 	int panelY;
+	int boostTier;
 
 	if (!ap_cs_open || (gGT == NULL))
 		return;
@@ -1798,6 +1811,7 @@ void AP_CharPicker_Draw(void)
 	ot = gGT->backBuffer->otMem.uiOT;
 	live = gGT->drivers[0];
 	selectedChar = ap_cs_tiles[ap_cs_cursor].characterID;
+	boostTier = AP_CapabilityBoostTierForCharacter(selectedChar);
 
 	// Backing plates first, icons on top -- the same two-pass order
 	// MM_Characters_MenuProc uses (game/230/MM_Characters.c:1024, 1157).
@@ -1923,9 +1937,23 @@ void AP_CharPicker_Draw(void)
 	// Ownership, editability and LOCKED share one line. They used to take two,
 	// which no longer fits, and LOCKED belongs beside the ownership label anyway:
 	// both answer "what am I allowed to do with this racer".
-	snprintf(line, sizeof line, "%s%s%s", ap_cs_ownershipLabel(),
-	         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
-	         ap_cs_isUnlocked(selectedChar) ? "" : "   LOCKED");
+	if (boostTier >= 0)
+	{
+		int boostCeiling = ctr_cfg.boost_blue_fire
+		                       ? AP_CAP_BOOST_BLUEFIRE
+		                       : AP_CAP_BOOST_USF;
+		snprintf(line, sizeof line, "%s  BOOST %d/%d %s%s%s",
+		         ap_cs_ownershipLabel(), boostTier, boostCeiling,
+		         ap_cs_boostTierName(boostTier),
+		         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
+		         ap_cs_isUnlocked(selectedChar) ? "" : "  LOCKED");
+	}
+	else
+	{
+		snprintf(line, sizeof line, "%s%s%s", ap_cs_ownershipLabel(),
+		         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
+		         ap_cs_isUnlocked(selectedChar) ? "" : "   LOCKED");
+	}
 	DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
 	                   (JUSTIFY_CENTER | (ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
 

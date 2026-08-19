@@ -13,6 +13,7 @@
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
+#include "ap_glow_slots_logic.h"
 #include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
@@ -29,6 +30,9 @@
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
 #include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
+#include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
+#include "ap_goal_presentation.h" // composed-goal credits edge (#244)
+#include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
 
 // Apworld item index of the FIRST trap item. The apworld's data/items.json lays
 // the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
@@ -982,47 +986,11 @@ static int AP_GlowBitRewardGroup(int globalBit)
 //     slot 0 -- the price of a fixed slot per type, and the point of the option.
 void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3)
 {
-	int i;
-
-	if (outSlot3 == 0)
-		return;
-	outSlot3[0] = -1;
-	outSlot3[1] = -1;
-	outSlot3[2] = -1;
-	if (bits == 0 || n <= 0)
-		return;
-	if (phase < 0)
-		phase = 0; // never let a wrapped clock drive a negative modulo
-
-	if (ctr_cfg_active() &&
-	    ctr_cfg.warp_pad_item_display == WARP_PAD_DISPLAY_BY_REWARD_TYPE)
-	{
-		for (i = 0; i < 3; i++)
-		{
-			int inGroup = 0;
-			int nth;
-			int j;
-			for (j = 0; j < n; j++)
-				if (AP_GlowBitRewardGroup(bits[j]) == i)
-					inGroup++;
-			if (inGroup == 0)
-				continue; // nothing of this type left -> slot stays hidden
-			nth = phase % inGroup;
-			for (j = 0; j < n; j++)
-				if (AP_GlowBitRewardGroup(bits[j]) == i && nth-- == 0)
-				{
-					outSlot3[i] = bits[j];
-					break;
-				}
-		}
-		return;
-	}
-
-	{
-		int base = (n > 3) ? phase * 3 : 0;
-		for (i = 0; i < 3; i++)
-			outSlot3[i] = (i < n) ? bits[(base + i) % n] : -1;
-	}
+	AP_GlowSlots_Select(
+	    bits, n, phase,
+	    ctr_cfg_active() &&
+	        ctr_cfg.warp_pad_item_display == WARP_PAD_DISPLAY_BY_REWARD_TYPE,
+	    AP_GlowBitRewardGroup, outSlot3);
 }
 
 // Is destination `destLevelID` one of the 16 shuffleable race tracks (the only
@@ -1159,6 +1127,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// keying invariant.
 	return AP_PadStateDecide(AP_DestIsRace(destLevelID),
 	                         AP_PadStage1Met(physLevelID),
+	                         ctr_cfg_racer_lock_met(physLevelID),
 	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
 	                         uncN, boxesLeft);
@@ -1223,6 +1192,7 @@ unsigned AP_StateGen(void)
 static int ap_oxide_first_beaten = 0;
 static int ap_oxide_final_beaten = 0;
 static int ap_goal_sent = 0;
+static AP_GoalPresentationState ap_goal_presentation = {0};
 
 // Send StatusUpdate(GOAL) once when the composed per-seed goal is met (issue
 // #152). ctr_cfg.goal_oxide/goal_bosses/goal_gems replace the old single
@@ -1283,24 +1253,14 @@ void AP_EvaluateGoal(void)
 	}
 	else
 	{
-		done = 1; // AND of every active condition below.
-		if (ctr_cfg.goal_oxide == 1)
-			done = done && ap_oxide_first_beaten;
-		else if (ctr_cfg.goal_oxide == 2)
-			done = done && ap_oxide_final_beaten;
-		// goal_oxide == 0: no Oxide requirement, contributes nothing.
-
-		if (ctr_cfg.goal_bosses > 0)
-		{
-			int won = 0, b;
-			for (b = 0; b < 4; b++)
-				if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-					won++;
-			done = done && (won >= ctr_cfg.goal_bosses);
-		}
-
-		if (ctr_cfg.goal_gems > 0)
-			done = done && (AP_GateCountGemSum() >= ctr_cfg.goal_gems);
+		int won = 0, b;
+		for (b = 0; b < 4; b++)
+			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+				won++;
+		done = AP_ComposedGoalMet(
+		    ctr_cfg.goal_oxide, ap_oxide_first_beaten, ap_oxide_final_beaten,
+		    ctr_cfg.goal_bosses, won,
+		    ctr_cfg.goal_gems, AP_GateCountGemSum());
 	}
 
 	if (done)
@@ -1315,6 +1275,18 @@ void AP_EvaluateGoal(void)
 		AP_AppendLog(msg);
 		ap_net_send_goal();
 	}
+
+	AP_GoalPresentationEvaluate(&ap_goal_presentation, done);
+}
+
+void AP_GoalArmLiveEvent(void)
+{
+	AP_GoalPresentationArm(&ap_goal_presentation);
+}
+
+int AP_GoalClaimOxideEnding(void)
+{
+	return AP_GoalPresentationClaim(&ap_goal_presentation);
 }
 
 // Per-session dedup so a grant site that re-enters (an end-event drawn every
@@ -2252,7 +2224,7 @@ static int AP_UpdateNoticeRefresh(void)
 	const char *seed = ctr_cfg.world_version;
 
 	if (!g_config.updateCheck || !ctr_cfg_active() || seed[0] == '\0' ||
-	    !AP_VersionNewer(seed, CTR_AP_VERSION))
+	    !AP_VersionNewer(seed, CTR_AP_COMPAT_VERSION))
 	{
 		ap_upd_armed = 0;
 		ap_upd_built_for[0] = '\0';
@@ -2279,14 +2251,14 @@ static int AP_UpdateNoticeRefresh(void)
 		// 512 px wide: the pair on one line measures ~630 px and would run off both
 		// edges centred. The words are untouched.
 		snprintf(ap_upd_line2, sizeof ap_upd_line2,
-		         "You are on v%s.", AP_VersionDigits(CTR_AP_VERSION));
+		         "You are on v%s.", AP_VersionDigits(CTR_AP_COMPAT_VERSION));
 
 		ap_upd_armed = 1;
 		ap_upd_title_show = -1; // a version we have not shown yet gets its own showing
 
 		snprintf(msg, sizeof msg, "[AP UPD] seed pair version %.*s > client %s\n",
 		         (int)(sizeof ctr_cfg.world_version - 1), AP_VersionDigits(seed),
-		         AP_VersionDigits(CTR_AP_VERSION));
+		         AP_VersionDigits(CTR_AP_COMPAT_VERSION));
 		AP_LogLine(msg);
 	}
 
@@ -2347,6 +2319,7 @@ void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing)
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
+	int newEarn = 0;
 
 	if (rewardBit < 0 || rewardBit >= 192)
 		return;
@@ -2396,6 +2369,7 @@ void AP_NotifyAdvReward(int rewardBit)
 		// #63: capture the checked-state BEFORE the send so a session replay /
 		// re-win of an already-checked location never re-toasts the sent line.
 		int wasChecked = ap_net_location_checked(code);
+		newEarn = !wasChecked;
 		// #188b: this is the ONE choke point every grant path funnels through,
 		// and not every caller gates on AP_LocationCheckedByBit before reaching
 		// it (the boss/story reward and Oxide-goal paths don't, unlike the
@@ -2427,6 +2401,16 @@ void AP_NotifyAdvReward(int rewardBit)
 	if (rewardBit >= ADV_REWARD_FIRST_TROPHY &&
 	    rewardBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
 		AP_SendPodiumChecks(rewardBit - ADV_REWARD_FIRST_TROPHY, 1);
+
+	// A personally earned boss check can be the last active arm of a composed
+	// goal. Keep this as a live edge rather than deriving it from reconnect
+	// state, otherwise every reconnect to a completed seed would replay credits.
+	if (newEarn && rewardBit >= ADV_REWARD_FIRST_BOSS_KEY &&
+	    rewardBit < ADV_REWARD_FIRST_BOSS_KEY + 4)
+	{
+		AP_GoalArmLiveEvent();
+		AP_EvaluateGoal();
+	}
 }
 
 void AP_NotifyGoal(int oxideSecond)
@@ -2436,6 +2420,7 @@ void AP_NotifyGoal(int oxideSecond)
 	// or set to the OTHER Oxide race, beating this one is NOT the win by
 	// itself -- so defer the StatusUpdate(GOAL) decision to AP_EvaluateGoal
 	// (which also fires per-frame for the item-based conditions).
+	AP_GoalArmLiveEvent();
 	if (oxideSecond)
 		ap_oxide_final_beaten = 1;
 	else
@@ -2479,6 +2464,12 @@ static int ap_recv_count[AP_ITEM_INDEX_COUNT] = {0};
 // cache as it opens each location, so the own component follows checked-state
 // synchronously and cannot race the ReceivedItems drain. See AP_GateCountForeign.
 static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
+
+// Complete 0.2.0 inventory projection for ap_verify.c. The gameplay counters
+// above intentionally remain the compact legacy 0..14 gate table; widening
+// this separate verifier tally avoids changing any live reward semantics.
+#define AP_VERIFY_ITEM_INDEX_COUNT (AP_TURBOGRANT_ITEM_INDEX + 1)
+static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 
 // ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
@@ -2572,6 +2563,13 @@ int AP_GateCountForeign(int itemType)
 	return ap_recv_count_foreign[itemType];
 }
 
+int AP_VerifyForeignItemCount(int itemIndex)
+{
+	if (itemIndex < 0 || itemIndex >= AP_VERIFY_ITEM_INDEX_COUNT)
+		return 0;
+	return ap_verify_recv_foreign[itemIndex];
+}
+
 int AP_GateCountTokenColour(int colour)
 {
 	if (colour < 0 || colour > 4)
@@ -2638,15 +2636,7 @@ int AP_OxideFinalOpen(void)
 	int g = AP_GateCount(AP_IDX_GOLD);
 	int p = AP_GateCount(AP_IDX_PLATINUM);
 
-	switch (ctr_cfg.oxide_final_unlock)
-	{
-	case OXIDE_FINAL_MODE_GOLD:     return g >= n;
-	case OXIDE_FINAL_MODE_PLATINUM: return p >= n;
-	case OXIDE_FINAL_MODE_ANY:      return (s >= n) || (g >= n) || (p >= n);
-	case OXIDE_FINAL_MODE_TOTAL:    return (s + g + p) >= n;
-	case OXIDE_FINAL_MODE_SAPPHIRE:
-	default:                        return s >= n;
-	}
+	return AP_RelicGoalMet(ctr_cfg.oxide_final_unlock, n, s, g, p);
 }
 
 // ── Requirement-hologram relic tint (closed pad; see the ap_hooks.h note) ──
@@ -3483,6 +3473,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_recv_count[k] = 0;
 			ap_recv_count_foreign[k] = 0; // #85: rebuilds from the resent ReceivedItems list
 		}
+		for (k = 0; k < AP_VERIFY_ITEM_INDEX_COUNT; k++)
+			ap_verify_recv_foreign[k] = 0;
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
@@ -3504,11 +3496,13 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// which would swallow a grant the player could not receive yet. See
 		// ap_turbogrant_logic.h.
 		AP_TurboGrantReset();
+		AP_WumpaConnectReset();
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
 		ap_oxide_final_beaten = 0;
 		ap_goal_sent = 0;
+		AP_GoalPresentationReset(&ap_goal_presentation);
 		ap_state_gen++; // fresh connect: slot_data (re)activates -> pad states may all shift
 		AP_FeedConnectReset(); // drop stale toasts + re-arm initial-inventory absorb
 		// Same discipline, same call site (2026-08-11, Bandi-slot session): the
@@ -3589,6 +3583,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
+	int liveItemBatch = ap_feed_primed;
 	int i;
 	char st[64];
 	AP_FmtState(gGT, st, sizeof st); // game-state breadcrumb for this drain (crash diag)
@@ -3602,6 +3597,26 @@ static void AP_NetTick(struct GameTracker *gGT)
 
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
+		// Full verifier inventory uses the same own-vs-foreign classifier as the
+		// legacy gate split. Own-world location rewards are reconstructed from
+		// scouts at the exact simulated collection edge; starting inventory,
+		// server grants and other players' items seed the fixed point here.
+		if (idx >= 0 && idx < AP_VERIFY_ITEM_INDEX_COUNT)
+		{
+			int       verifyPl  = ap_net_recv_batch_player(i);
+			long long verifyLoc = ap_net_recv_batch_location(i);
+			if (verifyPl != ap_net_self_slot() || verifyLoc <= 0)
+				ap_verify_recv_foreign[idx]++;
+			// The 0.2.0 verifier reads capability, weapon, character and letter
+			// inventory beyond the legacy 0..14 gate table. Receipt of any such
+			// item must invalidate its fixed point just like a Trophy or Key does.
+			if ((idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
+			     idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT) ||
+			    (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+			     idx < CTR_LETTER_ITEM_FIRST_INDEX +
+			           CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT))
+				ap_state_gen++;
+		}
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
 			ap_recv_count[idx]++;
@@ -3617,6 +3632,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 			if (pl != ap_net_self_slot() || loc <= 0)
 				ap_recv_count_foreign[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
+			if (liveItemBatch && idx >= AP_IDX_GEM_RED &&
+			    idx < AP_IDX_GEM_RED + 5)
+				AP_GoalArmLiveEvent();
 		}
 
 		// Trap items -> prime the matching trap effect. The apworld emits 5 trap
@@ -3680,7 +3698,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		         idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
 		{
 			int li = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
-			ap_letter_received[li / CTR_CFG_LETTER_COUNT][li % CTR_CFG_LETTER_COUNT] = 1;
+			int level = AP_LetterItemRowToLevelIDPure(li / CTR_CFG_LETTER_COUNT);
+			if (level >= 0)
+				ap_letter_received[level][li % CTR_CFG_LETTER_COUNT] = 1;
 		}
 
 		// Itemsanity weapon unlocks (indexes 95..105): booleans by weapon type.
@@ -3728,6 +3748,17 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
+		}
+		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
+		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
+		{
+			long long srvIdx = ap_net_recv_batch_index(i);
+			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
+				AP_WumpaReceive(idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ? 3 : 10);
+		}
+		else if (idx == AP_WUMPA_PROGRESSIVE_ITEM_INDEX)
+		{
+			AP_WumpaReceiveStarting();
 		}
 		// Wumpa Fruit filler (idx 15) -> bank one fruit; AP_WumpaTick hands it to the
 		// local player in-race (issue #11). Not a gate item, so it never touches
@@ -4137,6 +4168,16 @@ void AP_LetterCollected(int track, int letter)
 {
 	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, 0,
 	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
+}
+
+void AP_WumpaReachedTen(struct Driver *driver)
+{
+	const long code = 35016100L;
+	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
+	    driver != sdata->gGT->drivers[0] || !ap_net_location_exists(code))
+		return;
+	AP_EmitClassCheck(code, 0, -1, 0, 1,
+	                  "[AP WUMPA] reached 10 fruit\n");
 }
 
 int AP_LettersRequiredMet(int track)
@@ -4572,6 +4613,28 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        "\"type\": \"%s\"},\n",
 	        ap_last_race_track, ap_last_race_place,
 	        AP_RaceTypeName(ap_last_race_mode));
+	// Boss-to-hub transition diagnostics. These fields make the #269 zero-Key
+	// path distinguishable without guessing from symptoms: the two freeze bits
+	// are the known modal holds, podium_reward_id selects the boss/podium return
+	// path, and SPAWN_AT_BOSS changes where VehBirth places the driver. Keep the
+	// raw mode words as well so a future report does not lose an unknown bit.
+	{
+		struct Driver *driver = gGT->drivers[0];
+		fprintf(f,
+		        "  \"transition\": {\"level_id\": %d, \"prev_level_id\": %d, "
+		        "\"podium_reward_id\": %d, \"game_mode1\": %u, "
+		        "\"game_mode2\": %u, \"freeze_door\": %d, "
+		        "\"freeze_podium\": %d, \"spawn_at_boss\": %d, "
+		        "\"driver_present\": %d, \"driver_actions\": %u},\n",
+		        (int)gGT->levelID, (int)gGT->prevLEV,
+		        (int)gGT->podiumRewardID, (unsigned)gGT->gameMode1,
+		        (unsigned)gGT->gameMode2,
+		        (gGT->gameMode2 & VEH_FREEZE_DOOR) != 0,
+		        (gGT->gameMode2 & VEH_FREEZE_PODIUM) != 0,
+		        (gGT->gameMode2 & SPAWN_AT_BOSS) != 0,
+		        driver != NULL,
+		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u);
+	}
 	fprintf(f,
 	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "
 	        "\"goal_bosses\": %d, \"goal_gems\": %d, "
@@ -4585,11 +4648,20 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        ctr_cfg.bossgarage_mode, ctr_cfg.shuffle_warp_pads);
 
 	// The game's own cached counters (what gates/UI read) -- compare vs AP truth.
+	// numCtrTokens is a six-int struct, not a scalar. The former varargs call
+	// passed that whole struct to %d and happened to expose only its first word
+	// on the current ABI. Report the meaningful aggregate and both components
+	// explicitly: GAMEPROG counts the 16 race tokens in total and the four
+	// Crystal Challenge tokens separately in purple.
+	const int gameTokensRegular = gGT->currAdvProfile.numCtrTokens.total;
+	const int gameTokensPurple = gGT->currAdvProfile.numCtrTokens.purple;
 	fprintf(f,
 	        "  \"game_counters\": {\"trophies\": %d, \"relics\": %d, "
-	        "\"keys\": %d, \"tokens\": %d, \"completion_pct\": %d},\n",
+	        "\"keys\": %d, \"tokens\": %d, \"tokens_regular\": %d, "
+	        "\"tokens_purple\": %d, \"completion_pct\": %d},\n",
 	        gGT->currAdvProfile.numTrophies, gGT->currAdvProfile.numRelics,
-	        gGT->currAdvProfile.numKeys, gGT->currAdvProfile.numCtrTokens,
+	        gGT->currAdvProfile.numKeys, gameTokensRegular + gameTokensPurple,
+	        gameTokensRegular, gameTokensPurple,
 	        gGT->currAdvProfile.completionPercent);
 
 	// AP-side truth: received-item counts by type.
@@ -4843,6 +4915,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
 	                          // shown tier down when its time passes; race window only)
+	AP_BlueFireTick(gGT);     // #12: presentation-only blue exhaust at the capstone
 
 	// DeathLink (issue #6): send-edge detection, inbound-death queue firing, and
 	// the no-loop guard. Runs every frame / all modes (it gates its own adventure-
@@ -4870,6 +4943,28 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	{
 		ap_dbg_armed = 0;
 		return;
+	}
+
+	// #244: a non-Oxide arm can complete the composed goal during a race or an
+	// item drain. Wait for the ordinary idle-hub state before loading credits so
+	// no race ceremony, door cutscene, pause menu or character picker owns the
+	// transition. Oxide completion claims the same pending edge in game/222.c and
+	// retains its vanilla ending cutscene instead of taking this direct path.
+	if (ap_goal_presentation.creditsPending &&
+	    gGT->levelID >= GEM_STONE_VALLEY && gGT->levelID <= CITADEL_CITY &&
+	    LOAD_IsOpen_AdvHub() != 0 && gGT->drivers[0] != NULL &&
+	    (gGT->gameMode1 & (PAUSE_1 | LOADING | GAME_CUTSCENE)) == 0 &&
+	    (gGT->gameMode2 & (GAME_MODE2_VEH_FREEZE_MASK | SPAWN_AT_BOSS)) == 0 &&
+	    sdata->AkuAkuHintState == 0 && sdata->pause_state == 0 &&
+	    sdata->ptrActiveMenu == NULL)
+	{
+		if (AP_GoalPresentationClaim(&ap_goal_presentation))
+		{
+			AP_AppendLog("[AP GOAL] composed goal complete in hub -> credits\n");
+			RaceFlag_SetDrawOrder(0);
+			MainRaceTrack_RequestLoad(CREDITS_CRASH);
+			return;
+		}
 	}
 
 	// Throttle: act ~twice a second, not every frame.

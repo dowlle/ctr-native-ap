@@ -18,6 +18,8 @@
 
 // Pending fruit to hand the local player at the next grant opportunity.
 static int g_wumpa_pending = 0;
+static int g_wumpa_starting = 0;
+static int g_starting_applied = 1;
 
 // Countdown latch: set once the lights sequence is OBSERVED running on a live
 // track (trafficLightsTimer >= 1 while LOAD_IsOpen_RacingOrBattle()), cleared
@@ -75,6 +77,22 @@ void AP_WumpaReceive(int count)
 	AP_LogLine(msg);
 }
 
+void AP_WumpaReceiveStarting(void)
+{
+	if (g_wumpa_starting < AP_WUMPA_MAX)
+		g_wumpa_starting++;
+}
+
+void AP_WumpaConnectReset(void)
+{
+	g_wumpa_pending = 0;
+	g_wumpa_starting = 0;
+	// If this is a mid-race reconnect, do not duplicate a grant that may already
+	// be in the kart. AP_WumpaTick clears this as soon as it observes off-track or
+	// end-of-race, which arms the next real race start.
+	g_starting_applied = 1;
+}
+
 // ── Per-frame lifecycle ──
 void AP_WumpaTick(struct GameTracker *gGT)
 {
@@ -90,11 +108,14 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// mid-race receipt can grant immediately once the countdown has been seen).
 	onTrack = LOAD_IsOpen_RacingOrBattle();
 	if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
+	{
 		g_countdown_seen = 0;
+		g_starting_applied = 0;
+	}
 	else if (gGT->trafficLightsTimer >= 1)
 		g_countdown_seen = 1;
 
-	if (g_wumpa_pending <= 0)
+	if (g_wumpa_pending <= 0 && (g_wumpa_starting <= 0 || g_starting_applied))
 		return;
 
 	// Race window: mid-race, countdown finished, not paused/menu/cutscene/EOR.
@@ -118,6 +139,21 @@ void AP_WumpaTick(struct GameTracker *gGT)
 
 	local = AP_WumpaLocalDriver(gGT);
 	if (local == 0)
+		return;
+
+	if (!g_starting_applied)
+	{
+		if (g_wumpa_starting > 0)
+		{
+			RB_Player_ModifyWumpa(local, g_wumpa_starting);
+			snprintf(msg, sizeof msg, "[AP WUMPA] applied %d starting fruit (now %d)\n",
+			         g_wumpa_starting, (int)local->numWumpas);
+			AP_LogLine(msg);
+		}
+		g_starting_applied = 1;
+	}
+
+	if (g_wumpa_pending <= 0)
 		return;
 
 	// Hand the whole bank over in one call. RB_Player_ModifyWumpa caps at 10, plays

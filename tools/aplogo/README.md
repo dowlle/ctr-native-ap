@@ -34,15 +34,18 @@ marker that silently does not draw.
 
 Their display list draws the logo with `gsDPSetCombineLERP(... SHADE ...
 COMBINED, 0, PRIMITIVE, 0 ...)` and never samples a texel, so the six logo
-regions are flat primitive colours over a shaded, extruded silhouette. The shape
-lives in the geometry rather than in a texture, which is what lets it survive the
-trip into ctr-native's untextured `POLY_G3` path.
+regions are flat primitive colours over a shaded silhouette. The generated model
+keeps both flat faces but omits the source mesh's thin extrusion rim: a pad may
+render three markers together, and the full 216-triangle mesh consumed 18,144
+bytes of the hub's primitive memory in that case. The silhouette lives in the
+geometry rather than in a texture, which is what lets it survive the trip into
+ctr-native's untextured `POLY_G3` path.
 
 The six region colours are stored here as **luminance**, not as the logo's real
 colours. The ruled design requires a near-neutral base so the per-class tint
 modulates cleanly; a coloured base would muddy every class tint.
 
-## Attribution (owed before this ships)
+## Attribution
 
 Both credits are permanent and belong in `THIRD_PARTY_NOTICES` and the release
 notes:
@@ -51,5 +54,5 @@ notes:
 - The Archipelago logo itself: (c) 2022 Krista Corkos and Christopher Wilson,
   CC BY-NC 4.0 — attribution required, non-commercial only.
 
-A courtesy confirmation with the RecompRando team is also part of the ruled
-plan. None of that is written yet; this directory only records what is owed.
+Both credits are recorded in `THIRD_PARTY_NOTICES.md`. Keep that notice with
+every source and binary distribution that contains the marker.

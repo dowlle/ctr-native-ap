@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_retro_fueled_logic.h"
+#endif
 
 // budget: 4624
 // curr: 4380
@@ -629,7 +632,15 @@ CheckJumpButtons:
 	    (square != 0) &&
 
 	    // if you're not on any turbo pad
-	    ((driver->stepFlagSet & COLL_STEP_TRIGGER_TURBO_PAD_MASK) == 0))
+	    ((driver->stepFlagSet & COLL_STEP_TRIGGER_TURBO_PAD_MASK) == 0)
+#ifdef CTR_AP
+	    // Retro-Fueled U-turn: braking while holding Down, or during the landing
+	    // boost window used by the same maneuver, does not cancel reserves.
+	    && !AP_RetroFueledShouldKeepReserves(
+	           AP_CapabilityRetroFueled(driver),
+	           (buttonsHeld & BTN_DOWN) != 0, driver->jump_LandingBoost)
+#endif
+	    )
 	{
 		// Set Reserves to zero
 		driver->reserves = 0;

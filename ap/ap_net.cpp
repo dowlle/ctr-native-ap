@@ -13,9 +13,11 @@
 
 #include "apclient.hpp" // pulls wswrap + websocketpp + asio + nlohmann/json
 #include "ap_net.h"
+#include "ap_received_batch_logic.h"
 #include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
+#include "ap_held_checks.h"
 
 #include <deque>
 #include <list>
@@ -128,10 +130,9 @@ static bool g_scouts_done = false;
 
 // Locations whose LocationChecks was sent but whose server ReceivedItems echo has
 // not yet been drained (issue #85). In solo every own-world check produces a
-// ReceivedItems reply, so this drains to empty; the verifier withholds the
-// player-facing "not completable" banner while it is non-empty so a transient
-// send->receive snapshot cannot flash a false warning. Read via
-// ap_net_checks_in_flight. Cleared on slot-connect and shutdown.
+// ReceivedItems reply, so this drains to empty; the verifier records whether a
+// log verdict was computed from settled state. Read via ap_net_checks_in_flight.
+// Cleared on slot-connect and shutdown.
 static std::set<int64_t> g_pending_checks;
 
 // #188: locations earned while the client could not send (not yet connected, or
@@ -143,16 +144,9 @@ static std::set<int64_t> g_pending_checks;
 // ap_net_location_checked, but that reflects server-confirmed state, which never
 // advances while offline) down to one resend, matching the server's own
 // idempotent LocationChecks handling (requirement 2 of the issue).
-static std::set<int64_t> g_held_checks;
+static APHeldChecks g_held_checks;
 
-// Seed name + slot the currently-held g_held_checks were earned under (captured
-// from the identity active at hold time; see g_slot / APClient::get_seed()).
-// Compared against the identity of the NEXT successful slot-connect before
-// flushing: a reconnect to a different room or a different slot in the same
-// room must discard held checks rather than deliver them to the wrong world
-// (requirement 5 -- wrong-slot delivery is worse than the original bug).
-static std::string g_held_seed;
-static std::string g_held_slot;
+static bool ap_net_try_send_location(int64_t code);
 
 // AI-difficulty option sync. g_diff_value caches the last value learned from the
 // server (slot_data default seed, a Get reply, or a SetNotify update); g_diff_known
@@ -631,148 +625,46 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// a different slot in the same room mismatches and the held checks are
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
-		if (!g_held_checks.empty())
+		const std::string connectedSeed = g_ap->get_seed();
+		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
+		    connectedSeed, g_slot,
+		    [](int64_t code) {
+			    return g_ap->get_checked_locations().count(code) != 0;
+		    },
+		    [](int64_t code) { return ap_net_try_send_location(code); });
+		if (heldFlush.discarded != 0)
 		{
 			char line[96];
-			if (g_ap->get_seed() == g_held_seed && g_slot == g_held_slot)
-			{
-				std::snprintf(line, sizeof line,
-				              "[AP NET] resending %d check(s) held since the last disconnect\n",
-				              (int)g_held_checks.size());
-				AP_LogLine(line);
-				// Iterate a snapshot, not g_held_checks itself: ap_net_send_location
-				// re-inserts into g_held_checks on failure (guard exception / socket
-				// dead again immediately), which must not be lost -- swap it out
-				// first so a failed resend re-arms itself for the NEXT reconnect
-				// instead of being silently dropped here.
-				std::set<int64_t> retry;
-				retry.swap(g_held_checks);
-				for (int64_t code : retry)
-					ap_net_send_location((long long)code); // re-enters the connected path above
-			}
-			else
-			{
-				std::snprintf(line, sizeof line,
-				              "[AP NET] discarding %d held check(s) from a different seed/slot\n",
-				              (int)g_held_checks.size());
-				AP_LogLine(line);
-				g_held_checks.clear();
-			}
+			std::snprintf(line, sizeof line,
+			              "[AP NET] discarding %d held check(s) from a different seed/slot\n",
+			              heldFlush.discarded);
+			AP_LogLine(line);
 		}
-		g_held_seed = g_ap->get_seed();
-		g_held_slot = g_slot;
+		else if (heldFlush.sent || heldFlush.rearmed || heldFlush.settled)
+		{
+			char line[128];
+			std::snprintf(line, sizeof line,
+			              "[AP NET] held checks: sent=%d rearmed=%d already_settled=%d\n",
+			              heldFlush.sent, heldFlush.rearmed, heldFlush.settled);
+			AP_LogLine(line);
+		}
 		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
-		// Scout every CTR location so the warp pads can show the actual AP reward
-		// placed at each (and recolour pads whose location is already checked).
-		// One LocationScouts on connect; results arrive via the info handler.
-		//
-		// ONLY ids the server declared for this slot (checked + missing, the
-		// ap_net_location_exists sets) may be scouted. The static table lists
-		// every registered CTR location, but a post-#171 seed genuinely omits
-		// the relic Time Trials its exact counts removed -- and AP 0.6.7 with
-		// _speedups answers a scout for a nonexistent id by raising server-side
-		// and HARD-DROPPING the socket (KeyError: "No location 35012207 for
-		// player 1", proven live 2026-08-11: every default-relic 0.2.0 seed +
-		// this client died in a connect/disconnect loop). Filtering here is the
-		// whole fix; a skipped id has no reward to display anyway.
-		std::list<int64_t> locs;
+		// Scout the server-declared location union, not a second hand-maintained
+		// list of native location classes. checked + missing is the complete fixed
+		// location set for this slot; checking a location only moves it between the
+		// two sets. Every id is therefore valid for LocationScouts, including new
+		// optional classes that a future apworld adds. This also makes verifier
+		// coverage measurable against the same authoritative union.
 		const std::set<int64_t> &scout_chk = g_ap->get_checked_locations();
 		const std::set<int64_t> &scout_miss = g_ap->get_missing_locations();
-		int scout_skipped = 0;
-		auto scout_add = [&](int64_t code) {
-			if (scout_chk.count(code) || scout_miss.count(code))
-				locs.push_back(code);
-			else
-				scout_skipped++;
-		};
-		for (int i = 0; i < AP_LOCATION_TABLE_LEN; i++)
-			scout_add((int64_t)AP_LOCATION_TABLE[i].location_code);
-		// Podium-ladder rungs carry no AdvProgress bit, so they are absent from
-		// AP_LOCATION_TABLE -- scout them explicitly from the parsed per-seed config
-		// so the ceremony can resolve the item + player placed on each rung (else a
-		// foreign rung reward renders as the generic fallback). ctr_cfg is populated
-		// by ap_seedcfg_parse_json() just above.
-		if (ctr_cfg.podium_enabled)
-		{
-			for (int t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
-			{
-				const ctr_podium_rungs &pr = ctr_cfg.podium[t];
-				const long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {
-				    pr.held_1st, pr.held_3rd, pr.held_5th,
-				    pr.finish_podium, pr.finish_any};
-				for (int k = 0; k < CTR_CFG_PODIUM_RUNG_COUNT; k++)
-					if (rung[k] >= 0)
-						scout_add((int64_t)rung[k]);
-			}
-		}
-		// Itemsanity is an ordered global class with no AdvProgress bits and no
-		// elastic subset. Server membership is its authoritative on/off signal;
-		// scout all 22 frozen codes when present so the shared class emitter can
-		// resolve foreign sent-item feed entries exactly like podium rungs.
-		for (int i = 0; i < 22; i++)
-			scout_add((int64_t)(35016000 + i));
-		// Itemsanity box locations (#109). They carry no AdvProgress bit and no
-		// podium rung, so they are absent from BOTH lists above -- which is exactly
-		// why a peer-bound box was silent in the item feed: AP_FeedOnLocationSent
-		// resolves its "ITEM TO PLAYER" line out of this scout cache, missed, and
-		// stayed deliberately quiet (found in the 2026-08-11 v2 retest: 5 of 12
-		// boxes fed the other slot and none toasted; own-bound boxes toasted fine
-		// via the ReceivedItems echo, which is why it read as partial).
-		//
-		// Filtered through the SAME checked+missing membership test
-		// ap_net_location_exists uses (#217), and for the same reason it exists:
-		// only codes this world actually created may go on the wire. MultiServer
-		// 0.6.7 hard-drops a connection on an invalid id in the scout path, so
-		// pushing the whole 270-code block blind would be a disconnect, not a
-		// diagnostic. A seed without the box class contributes nothing here.
-		//
-		// The filter itself is AP_BoxMap_ScoutCodes (freestanding, and exercised by
-		// tools/test-box-map.c); this supplies the membership predicate and copies
-		// the survivors onto the scout list.
-		{
-			struct BoxWorld
-			{
-				const std::set<int64_t> *chk;
-				const std::set<int64_t> *miss;
-
-				static int InWorld(long code, void *ctx)
-				{
-					BoxWorld *w = (BoxWorld *)ctx;
-					int64_t   c = (int64_t)code;
-					return w->chk->count(c) != 0 || w->miss->count(c) != 0;
-				}
-			};
-
-			// Named const refs first: these accessors return BY VALUE, so binding
-			// them extends the temporaries' lifetime to this block. Pointing at the
-			// call directly would take the address of an rvalue.
-			const std::set<int64_t> &chk = g_ap->get_checked_locations();
-			const std::set<int64_t> &miss = g_ap->get_missing_locations();
-
-			BoxWorld w;
-			w.chk = &chk;
-			w.miss = &miss;
-
-			long boxCodes[AP_BOX_LOCATION_COUNT];
-			int  boxScouts = AP_BoxMap_ScoutCodes(&BoxWorld::InWorld, &w,
-			                                      boxCodes, AP_BOX_LOCATION_COUNT);
-
-			for (int i = 0; i < boxScouts; i++)
-				locs.push_back((int64_t)boxCodes[i]);
-
-			if (boxScouts > 0)
-				std::fprintf(stderr, "[AP NET] +%d itemsanity box location(s) to scout\n",
-				             boxScouts);
-		}
-		// #217's empty guard and skip accounting are authoritative here. The box
-		// block above appends only codes that already passed the same
-		// checked+missing membership test, so it cannot reintroduce an invalid id
-		// after the count; its own drops are reported by the "+N ... to scout" line.
+		std::set<int64_t> scout_all = scout_chk;
+		scout_all.insert(scout_miss.begin(), scout_miss.end());
+		std::list<int64_t> locs(scout_all.begin(), scout_all.end());
 		if (!locs.empty())
 			g_ap->LocationScouts(locs, 0);
 		std::fprintf(stderr,
-		             "[AP NET] slot connected; scouting %d locations (%d not in this seed, skipped)\n",
-		             (int)locs.size(), scout_skipped);
+		             "[AP NET] slot connected; scouting all %d server-declared locations\n",
+		             (int)locs.size());
 	});
 	g_ap->set_location_info_handler([](const std::list<APClient::NetworkItem> &items) {
 		for (const auto &it : items)
@@ -841,17 +733,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
-		for (const auto &it : items)
-		{
-			g_items.push_back((long long)it.item);
-			g_items_player.push_back((int)it.player);
-			g_items_index.push_back((long long)it.index);
-			g_items_location.push_back((long long)it.location);
-			g_items_flags.push_back(it.flags);
-			g_pending_checks.erase(it.location); // #85: this receipt settles its own check
-			std::fprintf(stderr, "[AP NET] received item %lld (index %d)\n",
-			             (long long)it.item, it.index);
-		}
+		AP_ReceivedBatchAppend(items, g_items, g_items_player, g_items_index,
+		                       g_items_location, g_items_flags, g_pending_checks);
+		// #147: a reconnect catch-up can contain hundreds or thousands of items.
+		// This handler runs inline inside apclientpp poll() on the game thread, so
+		// the former fprintf per item amplified one packet into an unbounded run of
+		// synchronous console writes. Keep one diagnostic per server batch instead.
+		if (!items.empty())
+			std::fprintf(stderr, "[AP NET] received %zu item(s), indices %d..%d\n",
+			             items.size(), items.front().index, items.back().index);
 	});
 	// DeathLink: incoming deaths arrive as a tagged Bounce. The handler fires
 	// inline on the poll thread like every other handler. It filters to the
@@ -962,19 +852,27 @@ extern "C" int ap_net_is_connected(void)
 	return (g_ap && g_ap->get_state() == APClient::State::SLOT_CONNECTED) ? 1 : 0;
 }
 
+static bool ap_net_try_send_location(int64_t code)
+{
+	if (!(g_ap && g_connected))
+		return false;
+
+	bool sent = false;
+	AP_NET_GUARD("send_location", {
+		g_ap->LocationChecks({code});
+		g_pending_checks.insert(code); // #85: in flight until its receipt drains
+		sent = true;
+	});
+	return sent;
+}
+
 extern "C" void ap_net_send_location(long long location_code)
 {
 	const int64_t code = (int64_t)location_code;
+	if (ap_net_try_send_location(code))
+		return;
 	if (g_ap && g_connected)
 	{
-		bool sent = false;
-		AP_NET_GUARD("send_location", {
-			g_ap->LocationChecks({code});
-			g_pending_checks.insert(code); // #85: in flight until its receipt drains
-			sent = true;
-		});
-		if (sent)
-			return;
 		// #188: the guarded call above threw (dying socket) and was logged by
 		// AP_NET_GUARD -- fall through to the same retention path as "not
 		// connected" instead of dropping the check silently.
@@ -983,7 +881,7 @@ extern "C" void ap_net_send_location(long long location_code)
 	// it flushes on the next successful slot-connect for this same seed/slot
 	// (see set_slot_connected_handler), and is deduped here if the caller's
 	// grant path re-fires while still offline.
-	g_held_checks.insert(code);
+	g_held_checks.hold(code);
 }
 
 extern "C" void ap_net_send_goal(void)
@@ -1061,6 +959,15 @@ extern "C" int ap_net_location_exists(long long location_code)
 		return 1;
 	const std::set<int64_t> &miss = g_ap->get_missing_locations();
 	return miss.count(code) ? 1 : 0;
+}
+
+extern "C" int ap_net_location_count(void)
+{
+	if (!g_ap)
+		return 0;
+	const std::set<int64_t> &chk = g_ap->get_checked_locations();
+	const std::set<int64_t> &miss = g_ap->get_missing_locations();
+	return (int)(chk.size() + miss.size());
 }
 
 extern "C" int ap_net_self_slot(void)

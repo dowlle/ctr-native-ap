@@ -228,7 +228,9 @@ project (<https://github.com/RecompRando/MMRecompRando>, `include/aplogo.h`),
 which is licensed GPL-3.0, the same license as this project.
 `tools/aplogo/convert.py` converts that mesh into the static C data the AP build
 compiles in; the conversion stores the mesh's six region colours as luminance so
-the per-class tint modulates a neutral base, and changes no geometry.
+the per-class tint modulates a neutral base. It preserves both flat logo faces
+and their silhouette while omitting the thin extrusion rim, reducing each
+marker from 216 to 96 triangles to protect the hub's primitive-memory budget.
 
 The Archipelago logo itself is copyright (c) 2022 Krista Corkos and Christopher
 Wilson, used under Creative Commons Attribution-NonCommercial 4.0
@@ -238,6 +240,25 @@ design, and both credits are permanent.
 
 License (mesh): GPL-3.0, per the MMRecompRando repository.
 License (logo design): CC BY-NC 4.0.
+
+## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
+
+Paths: `ap/ap_blue_fire.c`, `ap/ap_capability.c`,
+`game/Vehicle/VehFire.c`, `game/Vehicle/VehPhysProc.c`
+
+The Progressive Boost capstone adapts Retro-Fueled's pad payload, USF stacking,
+U-turn reserve retention, flame and plume palette data, NTSC VRAM positions,
+and palette-swap technique. CTR Archipelago gates the package on the selected
+character owning the third Progressive Boost tier. Retro-Fueled's title, start
+flag and turbo-pad texture assets are not included.
+
+Original mod: TheRedhotbr
+
+Blue-fire colour swap: Avery (`@TheMagicJam`)
+
+Source: <https://github.com/CTR-tools/CTR-ModSDK>
+
+License: GPL-3.0, the same license as this project.
 
 ## SDL3
 

@@ -3,23 +3,22 @@
 
 #ifdef CTR_AP
 
-// Supply the retail weapon crate where the engine never loads it.
+// Supply the retail weapon crate's face texture where the engine never loads
+// it. Geometry is deliberately NOT exported: a Model fixed up for another LEV
+// has proved unsafe and can register while remaining invisible.
 //
 // The relic variant of every track's level file omits `crate_question`
 // (PU_RANDOM_CRATE), so AP boxes cannot be drawn in any relic race. This
-// harvests the model and its texture out of a 1p level file in the player's own
-// game data and installs it, sampling through the AP sideload texture slot
-// rather than emulated VRAM.
+// harvests the texture out of a 1p level file in the player's own game data and
+// publishes it through the AP sideload texture slot rather than emulated VRAM.
 //
-// Returns non-zero when the retail crate is installed in gGT->modelPtr. Returns
-// zero when it is not available, in which case the caller should keep the
-// AP-owned fallback cube -- a failure here must never mean "no box at all".
+// Returns non-zero when outFace contains an AP-owned value copy of the retail
+// crate's largest face layout and the sideload atlas is ready. Returns zero
+// while unavailable or after failure. A failure here must never mean "no box".
 //
 // Safe to call every frame: the harvest runs at most once, and afterwards this
-// only reasserts the model slot, which LibraryOfModels_Clear wipes on every
-// level transition. Does nothing while a load is in flight, because the read
-// borrows the engine's single global load slot.
-int AP_RetailCrate_Ensure(struct GameTracker *gGT);
+// only copies twelve bytes into the caller's AP-owned layout.
+int AP_RetailCrate_EnsureTexture(struct TextureLayout *outFace);
 
 #endif // CTR_AP
 #endif // AP_RETAIL_CRATE_H

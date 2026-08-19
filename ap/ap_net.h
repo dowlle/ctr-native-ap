@@ -92,10 +92,15 @@ int  ap_net_location_checked(long long location_code);
 // carries this answer. Returns 0 if not connected.
 int  ap_net_location_exists(long long location_code);
 
+// Number of real locations in this slot. This is the size of the server's
+// checked + missing union, not a client-maintained class list. The verifier
+// uses it as a coverage invariant: a model that accounts for fewer locations
+// is incomplete and must not claim that the seed is blocked.
+int  ap_net_location_count(void);
+
 // Count of own location checks sent whose ReceivedItems echo has not yet drained
 // (issue #85). In solo every own check echoes, so this drains to 0. The seed-verify
-// sweep withholds the "not completable" banner while this is > 0 so a transient
-// send->receive snapshot cannot flash a false warning.
+// sweep records whether its log verdict was computed from settled state.
 int  ap_net_checks_in_flight(void);
 
 // Connected slot number, or -1 before connect.

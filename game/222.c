@@ -526,9 +526,14 @@ void AA_EndEvent_DrawMenu(void)
 		// If you have 4 keys (only here if you beat oxide)
 		else
 		{
-			// Always go to podium after oxide,
-			// with no key (0x38 = empty)
+			// Retail always enters an Oxide ending here. In AP, issue #244
+			// requires the composed seed goal first; AP_NotifyGoal below queues
+			// the presentation only when all active goal arms are satisfied.
+#ifndef CTR_AP
 			gGT->podiumRewardID = STATIC_BIG1;
+#else
+			gGT->podiumRewardID = NOFUNC;
+#endif
 
 			adv->storyFlags |= ADV_REWARD_OXIDE_FIRST_WIN_FLAGS;
 #ifdef CTR_AP
@@ -542,6 +547,10 @@ void AA_EndEvent_DrawMenu(void)
 				AP_NotifyGoal(1); // AP: beat Oxide (final win = goal)
 #endif
 			}
+#ifdef CTR_AP
+			if (AP_GoalClaimOxideEnding())
+				gGT->podiumRewardID = STATIC_BIG1;
+#endif
 		}
 	}
 

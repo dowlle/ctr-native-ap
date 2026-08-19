@@ -251,6 +251,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.boost_mode = 0;
 	ctr_cfg.boost_blue_fire = 0;
 	ctr_cfg.stats_mode = 0;
+	ctr_cfg.logic_difficulty = 1;
+	ctr_cfg.itemsanity = 0;
+	ctr_cfg.shortcut_knowledge = 0;
 	// Character phase (#54/#209). These defaults ARE the pre-character-phase
 	// behaviour: you drive Crash in his own class, no racer is an item, no pad
 	// demands one, and the stat table is the engine's. A seed that predates the
@@ -270,6 +273,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Pair version of the generating apworld (#150): unknown until parsed, and an
 	// unknown version is one the update notice must say nothing about.
 	ctr_cfg.world_version[0] = '\0';
+	ctr_cfg.build_version[0] = '\0';
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
@@ -403,6 +407,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.boost_mode = json_int(opt, "boost_mode", 0);
 	ctr_cfg.boost_blue_fire = json_int(opt, "boost_blue_fire", 0);
 	ctr_cfg.stats_mode = json_int(opt, "stats_mode", 0);
+	ctr_cfg.logic_difficulty = json_int(opt, "logic_difficulty", 1);
+	if (ctr_cfg.logic_difficulty < 0 || ctr_cfg.logic_difficulty > 2)
+		ctr_cfg.logic_difficulty = 1;
+	ctr_cfg.itemsanity = json_int(opt, "itemsanity", 0) ? 1 : 0;
+	ctr_cfg.shortcut_knowledge = json_int(opt, "shortcut_knowledge", 0);
+	if (ctr_cfg.shortcut_knowledge < 0 || ctr_cfg.shortcut_knowledge > 2)
+		ctr_cfg.shortcut_knowledge = 0;
 	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
 		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
@@ -494,6 +505,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	if (ctr_cfg.world_version[0] != '\0')
 		ap_cfg_log("[AP CFG] seed pair version (apworld world_version): %s\n",
 		           ctr_cfg.world_version);
+	json_str(opt, "build_version", ctr_cfg.build_version, sizeof ctr_cfg.build_version);
+	if (ctr_cfg.build_version[0] != '\0')
+		ap_cfg_log("[AP CFG] seed build label: %s\n", ctr_cfg.build_version);
 
 	// ── warp_pad_map: identity already set; overlay string-keyed entries ──
 	// slot_data v3 keys span "0".."27" (-> warp_pad_map) AND "100".."104" (-> the

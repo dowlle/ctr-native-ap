@@ -6,6 +6,9 @@
 #ifdef CTR_AP
 
 #include "ap_verify.h"
+#include "ap_box_map.h"
+#include "ap_verify_logic.h"
+#include "ap_relic_goal.h"
 
 // ---------------------------------------------------------------------------
 // Static vanilla topology (native is the source of truth).
@@ -66,7 +69,9 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 // 149 entries and the sweep then declared perfectly good seeds unbeatable.
 // If the rung model changes again, this follows it automatically.
 // ---------------------------------------------------------------------------
-#define AP_VF_MAX_LOCS 	(AP_LOCATION_TABLE_LEN + CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT)
+#define AP_VF_MAX_LOCS (AP_LOCATION_TABLE_LEN + \
+	CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
+	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + 23)
 
 typedef enum
 {
@@ -79,6 +84,10 @@ typedef enum
 	AP_VF_BOSS,       // boss race 0..3 -> garage hub keys + garage gate
 	AP_VF_OXIDE,      // N. Oxide's Challenge -> boss_req[4]
 	AP_VF_OXIDE_FIN,  // N. Oxide's Final Challenge -> boss_req[4] + relic mode
+	AP_VF_BOX,        // authored AP item box on a race track
+	AP_VF_LETTER,     // C/T/R pickup inside a token challenge
+	AP_VF_ITEMSANITY, // global weapon-use check (plain/juiced share access)
+	AP_VF_WUMPA,      // global reach-10-Wumpa check
 } ap_vf_kind;
 
 typedef struct
@@ -86,6 +95,7 @@ typedef struct
 	long code;    // AP location code
 	int  kind;    // ap_vf_kind
 	int  track;   // destination LevelID (races/trials/arenas/cups) or bossIdx
+	int  detail;  // podium rung / box slot (1-based) / letter / weapon index
 } ap_vf_loc;
 
 // ---------------------------------------------------------------------------
@@ -98,9 +108,9 @@ static int      ap_vf_reachable = 0;    // reachable at the fixed point
 static int      ap_vf_keys_fp = 0;      // Keys held at the fixed point
 static int      ap_vf_solo = 0;         // 1 = single-slot room (definitive)
 static unsigned ap_vf_gen = 0;          // AP_StateGen at last compute
-static char     ap_vf_line2[96];        // banner detail line
 static int      ap_vf_truncated = 0;    // worklist overflowed: verdict is not trustworthy
 static int      ap_vf_settled = 1;      // #85: last verdict computed with no checks in flight
+static int      ap_vf_coverage_exact = 0; // modeled locations == server-declared locations
 
 // #144: reachable/Keys last printed by the "waiting on other worlds" line, so a
 // resettle re-run (line 535) that lands on an unchanged multiworld snapshot
@@ -164,15 +174,7 @@ static int ap_vf_oxide_final_met(const int *counts)
 	int n = ctr_cfg.oxide_final_count > 0 ? ctr_cfg.oxide_final_count : 18;
 	int s = counts[AP_IDX_SAPPHIRE], g = counts[AP_IDX_GOLD],
 	    p = counts[AP_IDX_PLATINUM];
-	switch (ctr_cfg.oxide_final_unlock)
-	{
-	case OXIDE_FINAL_MODE_GOLD:     return g >= n;
-	case OXIDE_FINAL_MODE_PLATINUM: return p >= n;
-	case OXIDE_FINAL_MODE_ANY:      return s >= n || g >= n || p >= n;
-	case OXIDE_FINAL_MODE_TOTAL:    return s + g + p >= n;
-	case OXIDE_FINAL_MODE_SAPPHIRE:
-	default:                        return s >= n;
-	}
+	return AP_RelicGoalMet(ctr_cfg.oxide_final_unlock, n, s, g, p);
 }
 
 // Bank a location's OWN scouted item into the simulated counts (issue #85). A
@@ -187,42 +189,68 @@ static void ap_vf_bank_own(long code, int *counts)
 	    player == ap_net_self_slot())
 	{
 		long long idx = item - AP_ITEM_BASE;
-		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
+		if (idx >= 0 && idx < AP_VF_ITEM_COUNT)
 			counts[(int)idx]++;
 	}
 }
 
-// A podium rung fires from a gem-cup LEG as well as from the track's own pad
-// (issue #107): the placement listener hooks the race itself, and a cup leg is a
-// real load of that track, so winning a reachable cup collects the rungs of all
-// four leg tracks (ctr_cfg_cup_leg, identity-safe over data.advCupTrackIDs --
-// #166 -- the same accessor the cup-pad glow aggregates by; the apworld's
-// podium rule carries the same OR via the #86 joint podium region). Without
-// this branch, a seed whose Key progression runs through a cup-leg rung --
-// common under merged destination shuffle, where a cup can sit on a low-Key
-// pad -- sweeps to a false GOAL BLOCKED. Reachability of the cup uses the same
-// predicate as the cup's own reward: the pad that loads the cup destination,
-// its hub keys, and its stage-1 gate.
-static int ap_vf_cup_leg_open(int lid, const int *counts,
-                              const int *pad_for_dest)
+static int ap_vf_required_character(int pad)
 {
-	int cup, leg, legged, cpad, ckeys;
-	for (cup = 0; cup < 5; cup++)
+	if (!ctr_cfg.racer_locked_pads)
+		return -1;
+	if (pad >= 100 && pad <= 104)
+		return ctr_cfg.gem_cup_racer_lock[pad - 100];
+	if (pad >= 0 && pad < CTR_CFG_PAD_COUNT)
+		return ctr_cfg.racer_lock[pad];
+	return -1;
+}
+
+static AP_VerifyOptions ap_vf_options(void)
+{
+	AP_VerifyOptions o;
+	o.boost_mode = ctr_cfg.boost_mode;
+	o.stats_mode = ctr_cfg.stats_mode;
+	o.character_unlocks = ctr_cfg.character_unlocks;
+	o.starting_character = ctr_cfg.starting_character;
+	o.itemsanity = ctr_cfg.itemsanity;
+	o.logic_difficulty = ctr_cfg.logic_difficulty;
+	o.shortcut_knowledge = ctr_cfg.shortcut_knowledge;
+	return o;
+}
+
+static int ap_vf_pad_open(int pad, const int *counts)
+{
+	AP_VerifyOptions o = ap_vf_options();
+	int keys, required;
+	if (pad < 0)
+		return 0;
+	keys = pad >= 100 ? AP_VF_CUP_KEYS : ap_vf_pad_keys[pad];
+	if (keys < 0 || counts[AP_IDX_KEY] < keys || !ap_vf_stage1_met(pad, counts))
+		return 0;
+	required = ap_vf_required_character(pad);
+	return required < 0 || AP_VerifyCharacterUnlocked(&o, counts, required);
+}
+
+static int ap_vf_trophy_capable(int track, int pad, const int *counts)
+{
+	AP_VerifyOptions o = ap_vf_options();
+	return AP_VerifyTrophyCapabilityGate(&o, counts, track,
+		ap_vf_required_character(pad));
+}
+
+static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest)
+{
+	AP_VerifyOptions o = ap_vf_options();
+	int leg;
+	for (leg = 0; leg < 4; leg++)
 	{
-		legged = 0;
-		for (leg = 0; leg < 4; leg++)
-			if (ctr_cfg_cup_leg(cup, leg) == lid)
-				legged = 1;
-		if (!legged)
-			continue;
-		cpad = pad_for_dest[100 + cup];
-		if (cpad < 0)
-			continue;
-		ckeys = (cpad >= 100) ? AP_VF_CUP_KEYS : ap_vf_pad_keys[cpad];
-		if (counts[AP_IDX_KEY] >= ckeys && ap_vf_stage1_met(cpad, counts))
-			return 1;
+		int track = ctr_cfg_cup_leg(cup, leg);
+		int pad = track >= 0 && track < 105 ? pad_for_dest[track] : -1;
+		if (AP_VerifyFinishNeedsUSF(&o, track) &&
+			!AP_VerifyCapabilityGate(&o, counts, ap_vf_required_character(pad), 2, 0))
+			return 0;
 	}
-	return 0;
+	return 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +260,7 @@ static void ap_vf_recompute(void)
 {
 	ap_vf_loc  locs[AP_VF_MAX_LOCS];
 	char       state[AP_VF_MAX_LOCS]; // 0 open, 1 collected
-	int        counts[AP_ITEM_INDEX_COUNT];
+	int        counts[AP_VF_ITEM_COUNT];
 	int        n = 0, i, t;
 
 	ap_vf_truncated = 0; // per-sweep state: a stale flag must not poison later verdicts
@@ -243,6 +271,7 @@ static void ap_vf_recompute(void)
 		int bit = AP_LOCATION_TABLE[i].bit_index;
 		ap_vf_loc L;
 		L.code = AP_LOCATION_TABLE[i].location_code;
+		L.detail = -1;
 		if (bit >= 6 && bit <= 21)        { L.kind = AP_VF_TROPHY;  L.track = bit - 6; }
 		else if (bit >= 22 && bit <= 39)  { L.kind = (bit - 22 >= 16) ? AP_VF_TRIAL_TT : AP_VF_TIER2; L.track = bit - 22; }
 		else if (bit >= 40 && bit <= 57)  { L.kind = (bit - 40 >= 16) ? AP_VF_TRIAL_TT : AP_VF_TIER2; L.track = bit - 40; }
@@ -277,9 +306,49 @@ static void ap_vf_recompute(void)
 					locs[n].code = rung[i];
 					locs[n].kind = AP_VF_PODIUM;
 					locs[n].track = t;
+					locs[n].detail = i;
 					n++;
 				}
 		}
+
+	// 0.2.0 optional classes. Scout presence remains the final membership
+	// authority below, so frozen-but-disabled names never enter the verdict.
+	for (t = 0; t < AP_BOX_TRACK_COUNT; t++)
+		for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+		{
+			locs[n].code = AP_BoxMap_Code(t, i);
+			locs[n].kind = AP_VF_BOX;
+			locs[n].track = t;
+			locs[n].detail = i + 1;
+			n++;
+		}
+	for (t = 0; t < CTR_CFG_LETTER_TRACK_COUNT; t++)
+		for (i = 0; i < CTR_CFG_LETTER_COUNT; i++)
+			if (ctr_cfg.lettersanity_locations[t][i] >= 0)
+			{
+				locs[n].code = ctr_cfg.lettersanity_locations[t][i];
+				locs[n].kind = AP_VF_LETTER;
+				locs[n].track = t;
+				locs[n].detail = i;
+				n++;
+			}
+	for (i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
+	{
+		int juiced;
+		for (juiced = 0; juiced < 2; juiced++)
+		{
+			locs[n].code = 35016000L + i * 2 + juiced;
+			locs[n].kind = AP_VF_ITEMSANITY;
+			locs[n].track = -1;
+			locs[n].detail = i;
+			n++;
+		}
+	}
+	locs[n].code = 35016100L;
+	locs[n].kind = AP_VF_WUMPA;
+	locs[n].track = -1;
+	locs[n].detail = -1;
+	n++;
 
 	// Seed the simulated tally from the FOREIGN receipts only (multiworld items +
 	// starting inventory). OWN items are banked from the scout cache below -- when a
@@ -287,8 +356,8 @@ static void ap_vf_recompute(void)
 	// so the own component follows checked-state synchronously and never races the
 	// ReceivedItems drain (issue #85). The verdict is still "completable from here":
 	// the seed verdict on a fresh connect and a stuck-detector mid-run.
-	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
-		counts[i] = AP_GateCountForeign(i);
+	for (i = 0; i < AP_VF_ITEM_COUNT; i++)
+		counts[i] = AP_VerifyForeignItemCount(i);
 
 	// A location is IN this seed iff the connect-time scout knows it (options
 	// prune arenas/cups/rungs; the server only answers for locations that
@@ -348,25 +417,89 @@ static void ap_vf_recompute(void)
 			switch (locs[i].kind)
 			{
 			case AP_VF_TROPHY:
-			case AP_VF_PODIUM:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+					ap_vf_trophy_capable(lid, pad, counts);
+				break;
 			case AP_VF_TIER2:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+					ap_vf_trophy_capable(lid, pad, counts) &&
+					ap_vf_stage2_met(pad, counts);
+				break;
 			case AP_VF_TRIAL_TT:
 			case AP_VF_CRYSTAL:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts);
+				break;
 			case AP_VF_GEMCUP:
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
-				if (pad >= 0)
+				ok = ap_vf_pad_open(pad, counts) &&
+					ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
+				break;
+			case AP_VF_PODIUM:
+			{
+				AP_VerifyOptions opts = ap_vf_options();
+				int own, cup, finishRung, heldFirst;
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				finishRung = locs[i].detail >= 3;
+				heldFirst = locs[i].detail == 0;
+				own = ap_vf_pad_open(pad, counts);
+				if (own && (finishRung || (heldFirst && lid == 13)))
+					own = ap_vf_trophy_capable(lid, pad, counts);
+				if (own && opts.logic_difficulty == 0 &&
+					(heldFirst || locs[i].detail == 3) &&
+					AP_VerifyDifficultyTrack(lid))
+					own = AP_VerifyTrophyCapabilityGate(&opts, counts, lid,
+						ap_vf_required_character(pad));
+				ok = own;
+				for (cup = 0; cup < 5 && !ok; cup++)
 				{
-					int keys = (pad >= 100) ? AP_VF_CUP_KEYS : ap_vf_pad_keys[pad];
-					ok = counts[AP_IDX_KEY] >= keys && ap_vf_stage1_met(pad, counts);
-					if (ok && locs[i].kind == AP_VF_TIER2)
-						ok = ap_vf_stage2_met(pad, counts);
+					int leg, hasLeg = 0, cupPad = pad_for_dest[100 + cup];
+					for (leg = 0; leg < 4; leg++)
+						if (ctr_cfg_cup_leg(cup, leg) == lid) hasLeg = 1;
+					if (hasLeg && ap_vf_pad_open(cupPad, counts) &&
+						(!finishRung || ap_vf_cup_capable(cup, counts, pad_for_dest)) &&
+						(!heldFirst || lid != 13 ||
+						 ap_vf_trophy_capable(lid, pad, counts)))
+						ok = 1;
 				}
-				// Rungs only: the cup-leg alternative (issue #107, comment on
-				// ap_vf_cup_leg_open). Other kinds are earned exclusively
-				// through their own pad, so they keep the pad-only rule.
-				if (!ok && locs[i].kind == AP_VF_PODIUM)
-					ok = ap_vf_cup_leg_open(lid, counts, pad_for_dest);
+				break;
+			}
+			case AP_VF_BOX:
+			{
+				AP_VerifyOptions opts = ap_vf_options();
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+					AP_VerifyBoxGate(&opts, counts, lid, locs[i].detail,
+						ap_vf_required_character(pad));
+				break;
+			}
+			case AP_VF_LETTER:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+					ap_vf_trophy_capable(lid, pad, counts) &&
+					ap_vf_stage2_met(pad, counts);
+				if (ok && ctr_cfg.lettersanity_mode == 2)
+					ok = counts[139 + (int)(locs[i].code - 35012500L)] > 0;
+				break;
+			case AP_VF_ITEMSANITY:
+			{
+				AP_VerifyOptions opts = ap_vf_options();
+				ok = AP_VerifyWeaponOwned(counts, locs[i].detail);
+				if (ok && locs[i].detail == 0 && opts.boost_mode != 0)
+					ok = AP_VerifyCapabilityGate(&opts, counts, -1, 1, 0);
+				break;
+			}
+			case AP_VF_WUMPA:
+				ok = 1;
 				break;
 			case AP_VF_BOSS:
 			{
@@ -453,6 +586,7 @@ static void ap_vf_recompute(void)
 	}
 	ap_vf_keys_fp = counts[AP_IDX_KEY];
 	ap_vf_solo = (ap_net_player_count() == 1);
+	ap_vf_coverage_exact = (ap_vf_total == ap_net_location_count());
 	ap_vf_have = 1;
 	// #85: a verdict computed while an own check is still in flight is a transient
 	// snapshot; the banner waits for a settled one (the log still records this).
@@ -460,7 +594,7 @@ static void ap_vf_recompute(void)
 	// A truncated worklist means the sweep reasoned over a partial seed. Never
 	// report that as a definitive failure: an "I could not check this" verdict
 	// is useful, a false "your seed is broken" is worse than no verifier.
-	if (ap_vf_truncated)
+	if (ap_vf_truncated || !ap_vf_coverage_exact)
 		ap_vf_goal_ok = 1;
 
 	{
@@ -471,7 +605,12 @@ static void ap_vf_recompute(void)
 		// sweep can only see this world's own items, so "not reachable from here
 		// alone" is the NORMAL state early on -- alarming words here just send
 		// players to Discord with healthy seeds.
-		if (ap_vf_solo)
+		if (!ap_vf_coverage_exact)
+			snprintf(msg, sizeof msg,
+			         "[AP VERIFY] INDETERMINATE: model covers %d/%d server-declared "
+			         "locations. No completability claim is made.\n",
+			         ap_vf_total, ap_net_location_count());
+		else if (ap_vf_solo)
 			snprintf(msg, sizeof msg,
 			         "[AP VERIFY] %s: goal %s, %d/%d locations reachable, Keys %d "
 			         "(solo: definitive)\n",
@@ -509,7 +648,8 @@ static void ap_vf_recompute(void)
 		// means broken). In a multiworld it would enumerate locations that simply
 		// need other players' items -- 16 lines of noise under an informational
 		// header, so it stays solo-only.
-		if (ap_vf_solo && (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total))
+		if (ap_vf_coverage_exact && ap_vf_solo &&
+		    (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total))
 		{
 			int listed = 0;
 			for (i = 0; i < n && listed < 16; i++)
@@ -523,9 +663,6 @@ static void ap_vf_recompute(void)
 				}
 		}
 	}
-	snprintf(ap_vf_line2, sizeof ap_vf_line2,
-	         "goal blocked: %d/%d locations reachable, %d Keys obtainable",
-	         ap_vf_reachable, ap_vf_total, ap_vf_keys_fp);
 }
 
 void AP_VerifyOnFrame(void)
@@ -566,12 +703,10 @@ void AP_VerifyOnFrame(void)
 
 void AP_DrawVerifyWarning(void)
 {
-	if (!ap_vf_have || ap_vf_goal_ok || !ap_vf_solo || !ap_vf_settled)
-		return; // #85: withhold the banner until the verdict settled (no checks in flight)
-	static char warn1[] = "!! SEED NOT COMPLETABLE !!";
-	DecalFont_DrawLine(warn1, AP_FEED_X, 0x2c, FONT_SMALL, RED);
-	DecalFont_DrawLine(ap_vf_line2, AP_FEED_X, 0x2c + AP_FEED_LINE_H,
-	                   FONT_SMALL, RED);
+	// Deliberately log-only. The verifier duplicates a changing apworld logic
+	// surface and has produced player-facing false positives when a location
+	// class drifted. Keep the draw hook as a no-op so existing call sites remain
+	// stable; schema/version incompatibility retains its separate loud banner.
 }
 
 #endif // CTR_AP

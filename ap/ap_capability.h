@@ -32,12 +32,10 @@
 //               the linear cap's red-fire point, so no grant reaches USF speed.
 //   2 USF       the full super turbo pad payload; the top of the IMPLEMENTED
 //               chain.
-//   3 BLUE FIRE the 2026-07-26 capstone, only in the ladder when the seed set
-//               boost_blue_fire. **It carries no physics of its own yet** -- its
-//               values come from CTR Unlimited's Retro Fueled mode and have
-//               never been sourced, so this build tracks the tier honestly and
-//               drives it at USF rather than inventing numbers. See the loud
-//               note on AP_CAP_BOOST_BLUEFIRE below.
+//   3 BLUE FIRE the optional Retro-Fueled capstone. Genuine turbo pads become
+//               Blue Fire pads with one second of reserves, powerslides stack
+//               those reserves without losing the cap, U-turns retain them,
+//               and active exhaust uses the blue palette.
 // Super turbo pads act as NORMAL pads at every tier below USF, in both the speed
 // cap and the banked reserves, which is what makes a USF-dependent jump a real
 // progression gate (Cortex Castle, measured USF-only in the field notes).
@@ -47,8 +45,8 @@
 // chain. Ranks 0..3 are the engine's own four per-class values for that stat,
 // sorted weakest-first and read out of data.metaPhys at runtime rather than
 // copied into a table here (Lessons Learned #5: derive, never restate). Rank 4
-// is the ruled above-vanilla step; see AP_CapabilityStatRank for the one place
-// its magnitude is decided and why that magnitude is still provisional.
+// is the frozen 0.2.0 above-vanilla step: one continuation of the top engine
+// interval, HIGH + (HIGH - MEDIUM). See ap_stat_ladder.h.
 //
 // Three chains drive six engine stats:
 //   Progressive Top Speed     -> const_Speed_ClassStat, const_AccelSpeed_ClassStat
@@ -151,12 +149,9 @@ enum
 	AP_CAP_BOOST_NONE = 0,
 	AP_CAP_BOOST_BOOST,
 	AP_CAP_BOOST_USF,
-	// The capstone from the 2026-07-26 correction. Reachable ONLY when the seed
-	// set boost_blue_fire. Its speed/reserve values were to come from CTR
-	// Unlimited's Retro Fueled mode and have not been sourced by anyone on this
-	// project, so this build deliberately gives it USF's payload and no more --
-	// an invented number here would silently become the balance everybody then
-	// measures the capability matrix against.
+	// The Retro-Fueled capstone from the 2026-07-26 correction. Reachable only
+	// when the seed set boost_blue_fire. Pad grants, boost stacking and U-turn
+	// retention are mechanical; ap_blue_fire.c owns the matching exhaust palette.
 	AP_CAP_BOOST_BLUEFIRE,
 	AP_CAP_BOOST_COUNT
 };
@@ -193,6 +188,17 @@ void AP_CapabilityReceivePerCharacter(int blockIndex);
 // fails open to vanilla rather than to tier NONE). Read by the fire-grant filter;
 // exposed for logging.
 int AP_CapabilityBoostTier(void);
+
+// Menu-safe counterpart for an explicit engine character ID. Shared-global
+// mode returns the shared tier; per-character mode returns that racer's row.
+// Returns -1 when Progressive Boost is inactive or the racer cannot be mapped.
+int AP_CapabilityBoostTierForCharacter(int characterID);
+
+// True only for the local player while that character owns the tier-3
+// Retro-Fueled capstone. Physics hooks use this to keep the mechanical package
+// scoped to its owner instead of changing the rules for AI racers or seeds that
+// disabled Progressive Boost.
+int AP_CapabilityRetroFueled(struct Driver *driver);
 
 // Effective rank 0..4 for a stat chain on the character currently being driven,
 // or -1 when the stat pack is not active (same fail-open rule as above).

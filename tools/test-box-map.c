@@ -675,6 +675,8 @@ static void test_scout_codes(void)
 #define NONRACE  0
 #define S1_MET   1
 #define S1_UNMET 0
+#define RACER_MET   1
+#define RACER_UNMET 0
 #define TROPHY   1
 #define NO_TROPHY 0
 #define S2_MET   1
@@ -686,32 +688,36 @@ static void test_pad_state_table(void)
 
 	// Done (5) is terminal and beats every other fact, INCLUDING an unmet
 	// stage 1: nothing is left, so there is nothing to gate.
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 0, 0), 5,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 0, 0), 5,
 	           "nothing left at all -> Done");
-	expect_int(AP_PadStateDecide(RACE, S1_UNMET, NO_TROPHY, S2_UNMET, 0, 0), 5,
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, RACER_UNMET, NO_TROPHY, S2_UNMET, 0, 0), 5,
 	           "nothing left, stage 1 unmet -> still Done");
 
 	// ... but a standing box IS something left, so it holds Done off. This is
 	// the half #214 landed; without it a box behind a finished pad is stranded
 	// by the hard lock.
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 0, 1), 4,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 0, 1), 4,
 	           "every reward checked but a box stands -> NOT Done");
 
 	// Locked (1) outranks everything below it.
-	expect_int(AP_PadStateDecide(RACE, S1_UNMET, NO_TROPHY, S2_UNMET, 3, 0), 1,
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, RACER_MET, NO_TROPHY, S2_UNMET, 3, 0), 1,
 	           "stage 1 unmet -> Locked");
-	expect_int(AP_PadStateDecide(RACE, S1_UNMET, TROPHY, S2_UNMET, 1, 4), 1,
+	expect_int(AP_PadStateDecide(RACE, S1_UNMET, RACER_MET, TROPHY, S2_UNMET, 1, 4), 1,
 	           "stage 1 unmet, boxes standing -> STILL Locked (entry is the gate)");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_UNMET, NO_TROPHY, S2_UNMET, 3, 0), 1,
+	           "race pad item met, racer unmet -> Locked");
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, RACER_UNMET, NO_TROPHY, S2_MET, 1, 0), 1,
+	           "trial/arena/cup item met, racer unmet -> Locked");
 
 	// Reduced lifecycle: a trial / arena / cup destination has no trophy race
 	// and no second stage, so stage 1 plus anything left means enterable.
-	expect_int(AP_PadStateDecide(NONRACE, S1_MET, NO_TROPHY, S2_MET, 1, 0), 2,
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, RACER_MET, NO_TROPHY, S2_MET, 1, 0), 2,
 	           "trial/arena/cup dest with a check left -> Raceable");
-	expect_int(AP_PadStateDecide(NONRACE, S1_MET, NO_TROPHY, S2_UNMET, 0, 2), 2,
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, RACER_MET, NO_TROPHY, S2_UNMET, 0, 2), 2,
 	           "non-race dest, only boxes left -> Raceable, stage 2 is not its gate");
 
 	// Race destination, first pass.
-	expect_int(AP_PadStateDecide(RACE, S1_MET, NO_TROPHY, S2_UNMET, 5, 0), 2,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, NO_TROPHY, S2_UNMET, 5, 0), 2,
 	           "trophy unwon -> Raceable whatever stage 2 says");
 
 	// THE #232 CELL. Trophy checked and stage 2 unmet is Re-locked ONLY once the
@@ -719,19 +725,61 @@ static void test_pad_state_table(void)
 	// AH_WarpPad.c's entry gate and born look now both follow (AP_PadBoxReRaceable
 	// is defined as "state 2 with the trophy checked", so these two rows are
 	// exactly the two answers it can give).
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 3, 1), 2,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 3, 1), 2,
 	           "trophy checked, stage 2 unmet, ONE box standing -> Raceable (#232)");
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 3, 0), 3,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 3, 0), 3,
 	           "trophy checked, stage 2 unmet, no boxes left -> Re-locked");
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_UNMET, 0, 7), 2,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 0, 7), 2,
 	           "boxes are the ONLY thing left -> still Raceable, never Re-locked");
 
 	// Stage 2 met is the tier-2 tier, boxes or not -- the relic / token menu
 	// owns entry there, so #232 must not divert it.
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 2, 0), 4,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 2, 0), 4,
 	           "trophy checked, stage 2 met -> Tier-2 open");
-	expect_int(AP_PadStateDecide(RACE, S1_MET, TROPHY, S2_MET, 2, 3), 4,
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 2, 3), 4,
 	           "stage 2 met with boxes standing -> still Tier-2 open");
+}
+
+static void test_tier2_route_table(void)
+{
+	printf("\n-- tier-2 token/relic/box entry routing (#265) --\n");
+	expect_int(AP_PadTier2RouteDecide(1, 1, 0), AP_PAD_TIER2_MENU,
+	           "token and relic left -> show chooser");
+	expect_int(AP_PadTier2RouteDecide(1, 0, 0), AP_PAD_TIER2_TOKEN,
+	           "only token left -> direct token race");
+	expect_int(AP_PadTier2RouteDecide(0, 1, 0), AP_PAD_TIER2_RELIC,
+	           "only relic left -> direct relic race");
+	expect_int(AP_PadTier2RouteDecide(0, 0, 1), AP_PAD_TIER2_BOX_RERACE,
+	           "both tiers checked, one box left -> plain box re-race");
+	expect_int(AP_PadTier2RouteDecide(0, 0, 7), AP_PAD_TIER2_BOX_RERACE,
+	           "both tiers checked, many boxes left -> plain box re-race");
+	expect_int(AP_PadTier2RouteDecide(0, 0, 0), AP_PAD_TIER2_DONE,
+	           "nothing left -> defensive Done route, never a dead menu");
+}
+
+static void test_combined_232_265_sequence(void)
+{
+	printf("\n-- combined trophy, gate, tier-2 and boxes lifecycle (#232/#265) --\n");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, NO_TROPHY,
+	                            S2_UNMET, 3, 4), 2,
+	           "first trophy race is enterable with boxes standing");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY,
+	                            S2_UNMET, 2, 4), 2,
+	           "trophy return stays open before stage 2 while boxes stand");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY,
+	                            S2_MET, 2, 4), 4,
+	           "meeting stage 2 advances the same pad to tier 2");
+	expect_int(AP_PadTier2RouteDecide(1, 1, 4), AP_PAD_TIER2_MENU,
+	           "both ordinary tier-2 checks still use the chooser");
+	expect_int(AP_PadTier2RouteDecide(0, 1, 4), AP_PAD_TIER2_RELIC,
+	           "after the token check only relic remains");
+	expect_int(AP_PadTier2RouteDecide(0, 0, 4), AP_PAD_TIER2_BOX_RERACE,
+	           "after token and relic checks boxes get a plain re-race");
+	expect_int(AP_PadTier2RouteDecide(0, 0, 1), AP_PAD_TIER2_BOX_RERACE,
+	           "the last box still gets the plain re-race");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY,
+	                            S2_MET, 0, 0), 5,
+	           "checking the last box makes the pad Done");
 }
 
 int main(void)
@@ -750,6 +798,8 @@ int main(void)
 	test_pad_boxes_left();
 	test_scout_codes();
 	test_pad_state_table();
+	test_tier2_route_table();
+	test_combined_232_265_sequence();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");

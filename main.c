@@ -27,6 +27,7 @@
 #include "platform/native_log.h"
 #include "platform/native_memory.h"
 #include "platform/native_perf.h"
+#include "platform/native_ptr_scratch.h"
 #include "platform/native_replay_scheduler.h"
 #include "platform/native_savestate.h"
 
@@ -68,6 +69,7 @@
 #include "platform/native_memcard.c"
 #include "platform/native_memcard_adapter.c"
 #include "platform/native_perf.c"
+#include "platform/native_ptr_scratch.c"
 #include "platform/native_platform.c"
 #include "platform/native_replay_scheduler.c"
 #include "platform/native_renderer.c"

@@ -167,12 +167,16 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 // crate is the intended endgame look anyway, so the diagnostic and the design
 // are the same thing. Do NOT re-promote STATIC_AP here.
 //
-// Most levels use the resident retail model. Trial tracks such as Turbo Track
-// do not carry it, so AP_BoxModel_Ensure installs the small AP-owned fallback
-// into that otherwise-null per-level slot. The fallback is not STATIC_AP: the
-// many-instance AP-logo path previously made track floors disappear.
+// Ordinary levels use their resident retail model. Relic LEVs never carry that
+// model, so they install the small AP-owned cube directly. Do not prefer the
+// harvested cross-LEV retail pointer graph here: Alpha 1 proved that it can
+// register without yielding visible, breakable crates on Turbo Track. The AP
+// cube is not STATIC_AP; its bounded geometry also avoids the old many-logo
+// floor corruption.
 static int AP_BoxModel(struct GameTracker *gGT)
 {
+	if ((gGT->gameMode1 & RELIC_RACE) != 0)
+		return AP_BoxModel_EnsureRelic(gGT);
 	return AP_BoxModel_Ensure(gGT);
 }
 
@@ -351,6 +355,8 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	         s_seedHasBoxClass ? "carries the item_boxes class"
 	                           : "carries NO box locations");
 	AP_LogLine(msg);
+	if ((gGT->gameMode1 & RELIC_RACE) != 0 && s_liveCount > 0)
+		AP_LogLine("[AP BOX] relic race uses the AP-owned crate model (colored until texture harvest completes)\n");
 
 	// THE ZERO CASE, LOUD (packaging item 3). With the dev fallback retired a
 	// track can legitimately stand nothing, and the three reasons look identical
