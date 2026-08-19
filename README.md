@@ -1,12 +1,12 @@
 # CTR Archipelago (ctr-native-ap)
 
-Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. This is a native port of the game (built on the [CTR-native](https://github.com/CTR-tools/ctr-native) decompilation) with the Archipelago client built directly into it: no emulator, no ROM patching. It connects to the server, receives items, locks and unlocks warp pads, boss garages, doors and gem cups per seed, and sends your location checks and goal.
+Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. This is a native port of the game, built on the [CTR-native](https://github.com/CTR-tools/ctr-native) decompilation, with the Archipelago client integrated directly into it: no emulator and no ROM patching. It connects to the server, receives items, changes progression and access throughout Adventure Mode, and sends your location checks and goal.
 
-Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
+Visit the [CTR Archipelago page on AP-Pie](https://ap-pie.com/ctr) for the feature overview, option guidance and other player resources. Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
 
 ## Getting started
 
-You need three things: a release build, your own (NTSC-U) copy of the game, and your room details. The full walkthrough (including the optional space-saving asset extractor) is in [SETUP.md](SETUP.md); the short version:
+To play, you need a release build, your own NTSC-U copy of the game and your Archipelago room details. The complete walkthrough, troubleshooting guidance and optional space-saving asset extractor are in [SETUP.md](SETUP.md). The short version:
 
 **1. Download and extract a release.** Grab the archive for your platform from the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page: `ctr-archipelago-vX.Y.Z-windows-x86.zip` on Windows, or `ctr-archipelago-vX.Y.Z-linux-x86.tar.gz` on Linux and Steam Deck. The extracted folder contains the game executable and its support files.
 
@@ -23,15 +23,15 @@ The image must be the common single-track raw PSX BIN layout (MODE2/2352 sectors
 
 **3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game reconnects automatically on later launches. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead; see [SETUP.md](SETUP.md).
 
-## Joining a multiworld
+## Creating or joining a multiworld
 
-The randomization logic lives in the companion apworld, [`dowlle/ctr-archipelago-apworld`](https://github.com/dowlle/ctr-archipelago-apworld) (see the [CTR world README](https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md)).
+The randomization logic lives in the companion [`ctr.apworld`](https://github.com/dowlle/ctr-archipelago-apworld). The [CTR page on AP-Pie](https://ap-pie.com/ctr) provides the player-facing overview and option guidance; the [CTR world README](https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md) documents the apworld project itself.
 
-Like every Archipelago game, CTR needs a YAML options file per player at generation time: install `ctr.apworld` into your Archipelago installation, use the Launcher's **Generate Template Options** to get the CTR template YAML, set your slot name and options, and hand it to whoever generates the multiworld. Only the generator needs the apworld; as a player you just need the YAML you submitted, the client setup above, and your slot name.
+Like every Archipelago game, CTR needs one YAML options file per player when a room is generated. Install `ctr.apworld` into Archipelago, generate or create your CTR YAML, choose your slot name and options, and give the file to the person generating the multiworld. Only the generator needs the apworld installed. Once the room exists, each player needs the client setup above, the matching slot name and the room address.
 
 Seeds with itemsanity turned on place AP item boxes around the tracks. There is nothing extra to install: the placement set ships inside the client, and which boxes actually stand is decided by your own slot's seed. See [Item boxes](SETUP.md#item-boxes) in the setup guide, which also covers the `ap-box-placements.json` override and the name desync it can cause.
 
-New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/).
+New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/). For CTR-specific information, return to [ap-pie.com/ctr](https://ap-pie.com/ctr).
 
 ## Building from source
 
