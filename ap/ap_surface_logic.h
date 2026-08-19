@@ -35,7 +35,7 @@ static inline int AP_SurfaceResolveTerrain(int terrain, int naturalTerrain,
 {
 	int item;
 
-	// Weapon, cheat and Icy Road Trap effects pass naturalTerrain=0. They remain
+	// Weapon, cheat and Icy Road trap effects pass naturalTerrain=0. They remain
 	// effective even while Ignore Ice is held, as ruled for #15.
 	if (!naturalTerrain || !localDriver || held == NULL)
 		return terrain;

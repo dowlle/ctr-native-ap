@@ -466,7 +466,8 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 	square = buttonsHeld & BTN_SQUARE;
 
 #ifdef CTR_AP
-	// USF-no-brake trap: suppress braking + force throttle for the local player.
+	// Forced USF and Forced Boost: suppress braking for the local player, and force
+	// throttle for Forced USF only.
 	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
 	// Progressive Stats (#13): received ranks -> the kart's stat constants,
 	// applied before anything in this function reads them

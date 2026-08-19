@@ -9,36 +9,24 @@
 // physics/input/camera sites (each guarded by #ifdef CTR_AP) and everything else
 // stays here. Mirrors the ap_hooks.c convention.
 //
-// ── Design: the priming rule ──
-// A trap received OUTSIDE a race does NOT fire immediately. It PRIMES silently and
-// only FIRES during an active race on LAP 2 OR LAP 3, at a random moment after
-// priming. This is shared framework behaviour for the whole trap family (not
-// per-trap), so every effect below inherits the same lifecycle:
+// ── Where the rules live (#280) ──
+// The shipped one-size lifecycle is gone. It primed every out-of-race receipt
+// silently, waited for a racing lap, rolled a 0.5 to 8 second delay and ran every
+// effect for a flat 20 seconds. The trap rework design notebook (2026-08-19) rules
+// that timing belongs to the effect, so scheduling now comes from a per-effect
+// descriptor table in ap/ap_trap_sched_logic.h, which is pure and is driven
+// directly by tools/test-trap-scheduler.c on the host.
 //
-//   AP_TrapReceive(id)  -> a registry slot goes PRIMED (armed, hidden from player)
-//   AP_TrapTick()       -> per frame: once we are racing on lap 2/3, roll a random
-//                          delay; when it elapses the slot goes FIRING (effect on,
-//                          timed); when the duration elapses the slot CLEARS.
+// This module is the ENGINE HALF of that split. It observes the world once per
+// frame into an AP_TrapWorld, hands it to the scheduler, turns the scheduler's
+// events into log lines and on-screen presentation, and applies whichever effects
+// the scheduler reports active at the physics, input and camera call sites. It
+// decides nothing about timing, eligibility, duplicates or families.
 //
-// ── The mid-race exception (RULED 2026-08-11, rulings note §5) ──
-// A trap that ARRIVES while a race is already running fires IMMEDIATELY: it
-// bypasses both the lapIndex >= 1 window and the random delay roll. Itemsanity
-// boxes (#109) deliver traps mid-race, and a trap earned by breaking a box on lap
-// 1 that then sits silent until lap 2 of some LATER race reads as a bug, not as
-// suspense. Outside a race the primed-then-next-race behaviour above is unchanged,
-// which is still every trap that arrives from a menu, a hub or a ceremony.
-//
-// The effects themselves are applied at engine call-sites: the environmental ones
-// (icy road, low gravity) scale physics scalars in VehPhysForce; the control ones
-// (USF-no-brake, boost) pin driver speed/suppress braking in VehPhysGeneral /
-// VehPhysProc; the first-person trap drives the camera mode from AP_TrapTick.
-//
-// SCOPE NOTE: all five effects target the LOCAL PLAYER (drivers[0]) only -- as a
-// TRAP it should afflict the receiver. "Global low-friction / low-gravity" is
-// global across the whole TRACK SURFACE for that player (every quad turns icy /
-// floaty), matching CTR Unlimited's Icy Tracks / Moon Gravity feel, but it does
-// not touch the AI racers. Making icy/low-grav affect every racer instead is a
-// one-line change (drop the AP_TrapIsLocal() guard in the two VehPhysForce hooks).
+// SCOPE NOTE: every implemented effect targets the LOCAL PLAYER (drivers[0]) only.
+// Icy road and low gravity are global across the whole track surface for that
+// player, matching CTR Unlimited's Icy Tracks / Moon Gravity feel, but they do not
+// touch the AI racers.
 
 #ifdef CTR_AP
 
@@ -46,101 +34,89 @@ struct GameTracker;
 struct Driver;
 struct GamepadBuffer;
 
-// ── Effect ids ──
-// The v1 trap set. These are the
-// EFFECT ids, internal to native. The AP ITEM ids that map to them are owned by
-// the apworld and wired later -- see AP_TrapReceive's TODO seam.
-enum AP_TrapEffect
-{
-	AP_TRAP_ICY = 0,       // global low road friction (Unlimited "Icy Tracks")
-	AP_TRAP_LOWGRAV,       // low gravity            (Unlimited "Moon Gravity")
-	AP_TRAP_USF_NOBRAKE,   // forced Ultra Sacred Fire top speed, braking disabled
-	AP_TRAP_BOOST,         // forced (milder) boost/fire, braking still works
-	AP_TRAP_FIRSTPERSON,   // forced first-person / hood camera
-	AP_TRAP_COUNT
-};
+// Effect ids, the descriptor table and the scheduler itself.
+#include "ap_trap_sched_logic.h"
 
 // ── AP item pipeline seam ──
-// Prime a trap by EFFECT id (0..AP_TRAP_COUNT-1). Adds one primed instance to
-// the registry (capacity AP_TRAP_REGISTRY_CAP; over capacity is dropped with a
-// log line). Repeated instances of one effect serialize: only one fires at a
-// time, so every received copy gets its full effect window.
+// Arm one trap by EFFECT id. The apworld owns the item id space; ap_hooks.c
+// resolves a received item to an effect through the explicit table in
+// ap_trap_items.h (the trap ids are three separate runs, so no arithmetic can
+// derive an effect from an index). DO NOT invent AP item ids here.
 //
-// Wired: the apworld emits 5 trap items directly after Wumpa Fruit, one per
-// AP_TrapEffect in enum order, and ap_hooks.c's received-item loop maps
-// item index (AP_TRAP_ITEM_FIRST_INDEX + effect) to AP_TrapReceive(effect).
-// DO NOT invent AP item ids here -- the apworld owns that space (slot_data
-// contract). This function stays the single native entry point the pipeline
-// calls.
+// An effect id whose descriptor is still a wave 2 scaffold is accepted, armed and
+// reported once. It is never fired and never consumed, so a seed built against a
+// newer apworld cannot lose a trap or crash this client.
 void AP_TrapReceive(int effect);
 
 // ── Connect / slot-swap reset ──
-// Drop every registry instance and every firing flag. Called from the fresh-connect
-// reset block in ap_hooks.c, alongside AP_FeedConnectReset and the received-item
-// tally reset, and for exactly the same reason: session state must not cross a
-// connection.
+// Drop every armed and every active trap. Called from the fresh-connect reset
+// block in ap_hooks.c, alongside AP_FeedConnectReset and the received-item tally
+// reset, and for the same reason: session state must not cross a connection.
 //
-// FOUND LIVE 2026-08-11 (Bandi-slot session): a PRIMED-but-unfired trap survived a
-// reconnect onto a DIFFERENT slot and fired there. An Icy Road Trap sent to
-// Appie's slot from a Blizzard Bluff Finish-Any went off during Bandi's Slide
-// Coliseum relic race, on a slot the server log proves was never sent a trap. The
-// registry is per-session state keyed to nothing, so a reconnect has to clear it.
+// FOUND LIVE 2026-08-11 (Bandi-slot session): an armed-but-unfired trap survived a
+// reconnect onto a DIFFERENT slot and fired there. An Icy Road sent to Appie's slot
+// from a Blizzard Bluff Finish-Any went off during Bandi's Slide Coliseum relic
+// race, on a slot the server log proves was never sent a trap.
 //
-// A FIRING trap is cleared too, not left to run down: its effect belongs to the
-// previous connection just as much as a primed one does. The first-person camera
-// is restored on the next AP_TrapTick -- the restore latch is deliberately left
-// standing here, because this runs off the network path with no GameTracker in
-// hand and writing the camera from there is not a thing this module does.
+// An ACTIVE trap is dropped too, not left to run down: its effect belongs to the
+// previous connection just as much as an armed one does. The camera restore latch
+// is deliberately left standing, because this runs off the network path with no
+// GameTracker in hand; the next AP_TrapTick hands the camera back.
 void AP_Trap_ConnectReset(void);
 
 // ── Per-frame driver ──
 // Called once per frame from AP_OnFrame (ap_hooks.c), BEFORE gamepad processing
-// and the vehicle/camera update (MainMain.c:323). Advances every registry slot
-// through prime -> fire -> clear, and applies the first-person camera each frame
-// while that effect is FIRING. gGT is the live GameTracker.
+// and the vehicle/camera update (MainMain.c:323). Observes the world, steps the
+// scheduler, drains its events and owns the forced camera. gGT is the live
+// GameTracker.
 void AP_TrapTick(struct GameTracker *gGT);
 
 // Poll debug keybinds (Numpad 1..6) to test-fire traps without an AP server. Called
-// from AP_OnFrame. See ap_traps.c for the key map. No-op in a normal session
-// (the keys are not in the gameplay input map).
+// from AP_OnFrame. See ap_traps.c for the key map. Dead unless ap-config.txt sets
+// dev_keys=1.
 void AP_TrapDebugKeys(void);
 
 // Parse one ap-config.txt line for a trap test trigger (prefix "debug_trap=").
 // Called from AP_ReadConfig (ap_hooks.c) for each config line. Recognised values:
-//   icy | lowgrav | usf | boost | fp | all  -> PRIMES that trap at connect, so it
-// fires on lap 2/3 of the next race (exercises the real priming path). Unknown
-// values are ignored. Returns 1 if the line was consumed, 0 otherwise.
+//   icy | lowgrav | usf | boost | fp | all  -> arms that trap at connect, so it
+// runs its real schedule on the next eligible map. Unknown values are ignored.
+// Returns 1 if the line was consumed, 0 otherwise.
 int AP_TrapConfigLine(const char *line);
 
 // ── Engine physics/input call-sites (all invoked under #ifdef CTR_AP) ──
+// Signatures are unchanged from the pre-rework framework, so the engine-side diff
+// stays exactly where it already is.
 
 // VehPhysForce_OnGravity (VehPhysForce.c, after the per-quad low-gravity block):
 //   gravityY = AP_TrapGravity(driver, gravityY);
-// Returns gravityY scaled down while the low-gravity trap is FIRING on the local
-// player; returns it unchanged otherwise. Pure scalar transform, no side effects.
+// Returns gravityY scaled down while Low Gravity is active on the local player;
+// returns it unchanged otherwise. The reduced gravity is allowed to produce its
+// natural hang-time boost, which the ruling explicitly keeps.
+// Nonzero while the First Person trap owns cameraMode (see ap_democam.c).
+int AP_TrapOwnsCamera(void);
+
 int AP_TrapGravity(struct Driver *driver, int gravityY);
 
 // VehPhysForce_OnGravity (VehPhysForce.c, right after the two friction scalars are
 // time-scaled): AP_TrapFriction(driver, &perpendicularFriction, &forwardFriction);
-// Scales both grip coefficients down IN PLACE while the icy-road trap is FIRING on
-// the local player; leaves them untouched otherwise.
+// Scales both grip coefficients down IN PLACE while Icy Road is active on the
+// local player, across every driving surface.
 void AP_TrapFriction(struct Driver *driver, int *perpendicularFriction, int *forwardFriction);
 
 // VehPhysGeneral_GetBaseSpeed (VehPhysGeneral.c, immediately before the
 // `if (driver->reserves != 0)` boost-speed add): AP_TrapForceBoost(driver);
-// While the boost or USF-no-brake trap is FIRING on the local player, FLOORS
-// driver->reserves (only raised to the floor when below it, so banked reserves
-// survive) and FLOORS driver->fireSpeedCap (USF -> a true USF-tier cap computed
-// via the VehFire.c fire-level formula at super-turbo-pad fireLevel, boost ->
-// const_SingleTurboSpeed; never downgrades a higher cap). No-op otherwise.
+// While Forced USF or Forced Boost is active on the local player, FLOORS
+// driver->reserves and driver->fireSpeedCap. Floors, never pins: a player already
+// above the trap's tier keeps what they had. No-op otherwise.
 void AP_TrapForceBoost(struct Driver *driver);
 
 // VehPhysProc_Driving_PhysLinear (VehPhysProc.c, right after `square`/`cross` are
 // read from the pad): AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
-// While the USF-no-brake trap is FIRING on the local player, suppresses braking:
-// clears the brake button from the local button vars AND neutralises the pad's
-// analog sticks (so the stick-pull-back reverse/brake path also goes dead), and
-// forces the throttle button on. No-op otherwise. Mutates only this frame's input.
+// Applies the control half of the two boost-control traps to this frame's input:
+// Forced USF suppresses braking and analog reverse AND forces throttle; Forced
+// Boost suppresses braking only and leaves the throttle to the player. Both
+// restore reverse once the kart has been nearly stationary for about a second, so
+// the trap cannot leave a kart permanently stuck. No-op otherwise.
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
                        u32 *buttonsHeld, u32 *cross, u32 *square);
 

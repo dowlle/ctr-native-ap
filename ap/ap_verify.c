@@ -246,8 +246,8 @@ static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest
 	{
 		int track = ctr_cfg_cup_leg(cup, leg);
 		int pad = track >= 0 && track < 105 ? pad_for_dest[track] : -1;
-		if (AP_VerifyFinishNeedsUSF(&o, track) &&
-			!AP_VerifyCapabilityGate(&o, counts, ap_vf_required_character(pad), 2, 0))
+		if (!AP_VerifyCupLegCapability(&o, counts, track,
+				ap_vf_required_character(pad)))
 			return 0;
 	}
 	return 1;
@@ -423,12 +423,20 @@ static void ap_vf_recompute(void)
 					ap_vf_trophy_capable(lid, pad, counts);
 				break;
 			case AP_VF_TIER2:
+			{
+				// The per-location USF term is vacuous for every tier-2
+				// location but N. Gin Labs' Platinum, whose Relic Race needs
+				// two item boxes that are unreachable below USF.
+				AP_VerifyOptions opts = ap_vf_options();
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
 				ok = ap_vf_pad_open(pad, counts) &&
 					ap_vf_trophy_capable(lid, pad, counts) &&
-					ap_vf_stage2_met(pad, counts);
+					ap_vf_stage2_met(pad, counts) &&
+					AP_VerifyLocationCapabilityGate(&opts, counts,
+						locs[i].code, ap_vf_required_character(pad));
 				break;
+			}
 			case AP_VF_TRIAL_TT:
 			case AP_VF_CRYSTAL:
 				lid = locs[i].track;
@@ -463,9 +471,14 @@ static void ap_vf_recompute(void)
 					int leg, hasLeg = 0, cupPad = pad_for_dest[100 + cup];
 					for (leg = 0; leg < 4; leg++)
 						if (ctr_cfg_cup_leg(cup, leg) == lid) hasLeg = 1;
+					// The held-1st half of the Oxide term is vacuous when the
+					// boost chain is not randomized, exactly like the cup-leg
+					// term above: no pad gate precedes this call to absorb the
+					// capability gate's racer-unlock check, and the apworld's
+					// usf_term never evaluates a racer in that case.
 					if (hasLeg && ap_vf_pad_open(cupPad, counts) &&
 						(!finishRung || ap_vf_cup_capable(cup, counts, pad_for_dest)) &&
-						(!heldFirst || lid != 13 ||
+						(!heldFirst || lid != 13 || opts.boost_mode == 0 ||
 						 ap_vf_trophy_capable(lid, pad, counts)))
 						ok = 1;
 				}
@@ -573,11 +586,19 @@ static void ap_vf_recompute(void)
 		int gems_held = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
 		                (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
 		                (counts[AP_IDX_GEM_RED + 4] > 0);
+		// The Oxide condition also carries Oxide Station's finish capability:
+		// the challenge is raced on that track, so the goal must not resolve
+		// from boss_req[4] alone while the track's ordinary finish logic still
+		// demands the term. This gates the GOAL, not the two Oxide LOCATIONS,
+		// which keep their own boss_req reachability above.
+		AP_VerifyOptions goal_opts = ap_vf_options();
+		int oxide_finish = AP_VerifyOxideGoalFinish(&goal_opts, counts,
+			ap_vf_required_character(pad_for_dest[13]));
 		ap_vf_goal_ok = 1;
 		if (ctr_cfg.goal_oxide == 1)
-			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok;
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok && oxide_finish;
 		else if (ctr_cfg.goal_oxide == 2)
-			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok;
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok && oxide_finish;
 		// goal_oxide == 0: no Oxide requirement, contributes nothing.
 		if (ctr_cfg.goal_bosses > 0)
 			ap_vf_goal_ok = ap_vf_goal_ok && (bosses_won >= ctr_cfg.goal_bosses);

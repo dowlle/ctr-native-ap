@@ -185,4 +185,64 @@ static int AP_VerifyTrophyCapabilityGate(const AP_VerifyOptions *o,
 	return 1;
 }
 
+// Both Oxide goal conditions are raced on Oxide Station, so they carry that
+// track's finish term: the composed goal must not become true from Key 4 and
+// the companion flag alone while the ordinary Trophy Race logic still demands
+// the capability. AP_VerifyFinishNeedsUSF is the same USF-or-hard-knowledge
+// term the Trophy Race gate applies, not a second model of it. The difficulty
+// branch of the trophy gate is deliberately not reused: the apworld ANDs the
+// finish term only.
+//
+// The boost_mode guard is explicit here because the goal has no pad gate in
+// front of it to absorb the racer-unlock check the capability gate would
+// otherwise apply on a seed whose boost chain is not randomized. The apworld
+// term is unconditionally True in that case. The same guard protects every
+// capability call that is not behind ap_vf_pad_open on ITS OWN pad: the
+// cup-leg term (AP_VerifyCupLegCapability) and the podium held-1st cup branch
+// in ap_verify.c carry it for the same reason.
+static int AP_VerifyOxideGoalFinish(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int requiredCharacter)
+{
+	if (o->boost_mode == 0 || !AP_VerifyFinishNeedsUSF(o, 13))
+		return 1;
+	return AP_VerifyCapabilityGate(o, items, requiredCharacter, 2, 0);
+}
+
+// Locations that need USF although their TRACK's finish does not. Keyed by AP
+// location code because the ruling is per LOCATION: N. Gin Labs' Trophy Race,
+// Sapphire, Gold, CTR Token Challenge and cups stay ungated. Without USF two of
+// that track's item boxes cannot be reached in a Relic Race, which removes the
+// ten-second perfect-box bonus and USF speed together.
+#define AP_VF_LOC_LABS_PLATINUM 35012214L
+
+static int AP_VerifyLocationNeedsUSF(long code)
+{
+	return code == AP_VF_LOC_LABS_PLATINUM;
+}
+
+// The per-location USF term: the bare two-boost capability, racer-aware, and
+// vacuous when the boost chain is not randomized. Not the finish term -- these
+// locations have no hard-knowledge escape, because route knowledge does not
+// restore the unreachable boxes.
+static int AP_VerifyLocationCapabilityGate(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], long code, int requiredCharacter)
+{
+	if (o->boost_mode == 0 || !AP_VerifyLocationNeedsUSF(code))
+		return 1;
+	return AP_VerifyCapabilityGate(o, items, requiredCharacter, 2, 0);
+}
+
+// One cup LEG's finish term. The apworld's usf_term is unconditionally True
+// when the boost chain is not randomized and never evaluates a racer, while
+// AP_VerifyCapabilityGate always checks the pinned racer's unlock. Guarding
+// here keeps a legacy seed with a racer-locked USF leg pad from reporting the
+// whole cup blocked.
+static int AP_VerifyCupLegCapability(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int level, int requiredCharacter)
+{
+	if (o->boost_mode == 0 || !AP_VerifyFinishNeedsUSF(o, level))
+		return 1;
+	return AP_VerifyCapabilityGate(o, items, requiredCharacter, 2, 0);
+}
+
 #endif

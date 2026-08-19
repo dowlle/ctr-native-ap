@@ -61,6 +61,7 @@
 // compilable outside the engine (tools/test-reward-policy.c depends on that).
 #include "ap_capability.h"       // AP_CAPABILITY_* and AP_CHARACTER_* item blocks
 #include "ap_itemsanity_logic.h" // AP_ITEMSANITY_ITEM_FIRST_INDEX / _WEAPON_COUNT
+#include "ap_trap_items.h"       // the 19 trap identities, which are not one range
 
 // The lettersanity block is owned by ap_seedcfg.h, next to the rest of the
 // per-seed letter config. This header cannot reach for that one and stay
@@ -168,10 +169,18 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	if (idx == AP_GAS_PEDAL_ITEM_INDEX)
 		return AP_CAT_CRYSTAL;
 
-	// Everything else is Archipelago-logo material: traps (16..20), the comfort
-	// items (21..25), the Tizi Helper (188) and anything an apworld invents later.
-	// The Tizi Helper is deliberately NOT a crystal: it is a per-track assist, not
-	// a progression step, and nothing has ruled it into the family.
+	// Traps. Stated as its own branch rather than left to the fall-through: the 19
+	// identities are scattered across 16..20, 106..116 and 190..192, so "everything
+	// else" is no longer a description a reader can check, and a future family
+	// dropped into one of the gaps must not silently inherit the trap answer.
+	// The answer itself is unchanged, AP_CAT_NONE, which is the Archipelago logo.
+	if (AP_TrapItemIndexIsTrap((int)idx))
+		return AP_CAT_NONE;
+
+	// Everything else is Archipelago-logo material too: the comfort items (21..25),
+	// the Tizi Helper (188), the Turbo Grant (189) and anything an apworld invents
+	// later. The Tizi Helper is deliberately NOT a crystal: it is a per-track
+	// assist, not a progression step, and nothing has ruled it into the family.
 	return AP_CAT_NONE;
 }
 

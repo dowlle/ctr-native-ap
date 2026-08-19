@@ -35,6 +35,12 @@ static long AP_ItemsanityLocationCode(int heldItemID, int juiced)
 	return index < 0 ? -1 : 35016000L + index * 2 + (juiced != 0);
 }
 
+// CONSTRAINT: `!isCrystal` is the single enforcement point for the ruled Crystal
+// Challenge ownership exception. Every itemsanity filter, including the boss
+// catch-up guard, is gated on this predicate, so the arena hardcode in
+// VehPhysGeneral_SetHeldItem keeps granting its Bomb or Turbo regardless of the
+// received set. A Crystal Challenge is unwinnable without that item, so gating
+// it would lock the check behind itself.
 static int AP_ItemsanityShouldFilter(int featureActive, int isLocal,
 	int isAdventure, int isBattle, int isCrystal)
 {
@@ -173,9 +179,9 @@ static int AP_ItemsanitySubstituteRoll(int rolled, unsigned roll,
 // Downstream substitution filter. Vanilla's single-warpball rule and its
 // two-holders-of-3-missiles cap rewrite the settled item AFTER the draw filter
 // has run, so on their own they can hand out a weapon that was never received.
-// Every ordinary substitution goes through here; only the boss-race rewrite and
-// the Crystal Challenge hardcode stay ruled bypasses. Both capped ids are always
-// excluded, per AP_ITEMSANITY_CAPPED_IDS.
+// Every ordinary substitution goes through here; the Crystal Challenge hardcode
+// is the only remaining ruled bypass. Both capped ids are always excluded, per
+// AP_ITEMSANITY_CAPPED_IDS.
 static int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
 	const unsigned char *table, int tableCount,
 	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
@@ -190,6 +196,83 @@ static int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
 	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_CAPPED_IDS,
 	                                AP_ITEMSANITY_FULL_POOL,
 	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
+}
+
+// Boss-race catch-up ladder, strongest rung first. Retail's block names only
+// two of these ids itself (Missile x3 as the escalation target, single Missile
+// as the Komodo Joe cap); Bomb x3 and Bomb are a RULING by analogy, chosen as
+// the closest owned firepower when missiles are locked, not a derivation from
+// retail data. Mask, Clock and Warpball are the draws the rewrite REPLACES, so
+// no rung may hand one back. (Warpball's one-at-a-time flag is not the reason:
+// the boss block runs before the claim, so a Warpball leaving this block is
+// claimed normally.)
+#define AP_ITEMSANITY_BOSS_ASSIST_LADDER       {0xb, 0xa, 0x2, 0x1}
+#define AP_ITEMSANITY_BOSS_ASSIST_LADDER_COUNT 4
+
+// Ownership guard for the whole boss-race rewrite block.
+//
+// Ruled 2026-08-19: boss assistance is preserved but stops being an ownership
+// bypass. `rolled` is the already draw-filtered item the block started from and
+// `proposed` is what vanilla settled on. The result is, in order: `proposed`
+// when the block rewrote nothing or the player owns it; otherwise the strongest
+// owned rung strictly below `proposed`; otherwise `rolled`. A rung is never
+// selected ABOVE `proposed`, which is what keeps the Komodo Joe cap intact:
+// that line rewrites an owned Missile x3 DOWN, so handing the draw back there
+// would undo the cap, and the no-item sentinel applies instead.
+//
+// No roll is consumed. Assistance is a fixed ladder rather than a draw, so
+// taking the strongest owned rung preserves its "you are losing, here is your
+// best weapon" meaning and stays deterministic for a given owned set.
+static int AP_ItemsanityBossAssistWeapon(int rolled, int proposed,
+	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
+{
+	static const unsigned char ladder[AP_ITEMSANITY_BOSS_ASSIST_LADDER_COUNT] =
+		AP_ITEMSANITY_BOSS_ASSIST_LADDER;
+	int proposedRung = -1;
+	int rolledRung = -1;
+	int i;
+
+	// Self-enforced precondition: `rolled` must already have passed the draw
+	// filter. Today every path into the boss block does (the two-driver boss
+	// itemsets are both filtered), but the undecided-rank default arm is not,
+	// so if a future config ever routes it here the guard fails closed to the
+	// sentinel instead of handing the unfiltered draw back.
+	if (rolled != AP_ITEMSANITY_NO_ITEM &&
+	    !AP_ItemsanityRollAllowed(rolled, owned))
+		return AP_ITEMSANITY_NO_ITEM;
+
+	if (proposed == rolled)
+		return proposed;
+
+	if (AP_ItemsanityRollAllowed(proposed, owned))
+		return proposed;
+
+	for (i = 0; i < AP_ITEMSANITY_BOSS_ASSIST_LADDER_COUNT; i++)
+	{
+		if (ladder[i] == proposed)
+			proposedRung = i;
+		if (ladder[i] == rolled)
+			rolledRung = i;
+	}
+
+	// Every rewrite the block performs today lands on a ladder rung. An
+	// unrecognised target means the vanilla chain grew a case this ladder does
+	// not describe, so keep the draw rather than invent a replacement for it.
+	if (proposedRung < 0)
+		return rolled;
+
+	for (i = proposedRung + 1; i < AP_ITEMSANITY_BOSS_ASSIST_LADDER_COUNT; i++)
+		if (AP_ItemsanityRollAllowed((int)ladder[i], owned))
+			return (int)ladder[i];
+
+	// Nothing at or below the proposed rung is owned. Keeping the draw is only
+	// legal when the draw is not a STRONGER rung than the one vanilla settled
+	// on, which is the Komodo Joe case: handing that draw back would undo the
+	// cap, so the ruled no-item sentinel applies instead.
+	if (rolledRung >= 0 && rolledRung < proposedRung)
+		return AP_ITEMSANITY_NO_ITEM;
+
+	return rolled;
 }
 
 #endif

@@ -108,6 +108,10 @@ void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
 void AP_FeedDrawRace(void);
 int  AP_HubFeedOn(void);
+// One trap-state line (armed, incoming, active) on the same two surfaces, in the
+// trap class colour. The trap scheduler owns the wording; this is only delivery,
+// so trap presentation cannot drift from the item feed's look.
+void AP_FeedTrapLine(const char *text);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress
@@ -401,12 +405,16 @@ int AP_LocationExistsByBit(int globalBit);
 // keeps vanilla's downstream item rewrites inside the received set, and never
 // re-issues Warpball or Missile x3, whose one-at-a-time and two-holder caps are
 // the rewrites it is standing inside.
+// AP_ItemsanityBossAssist guards the boss-race rewrite block the same way, but
+// walks a fixed strength ladder instead of a substitution pool, because retail
+// catch-up assistance is a deliberate escalation rather than a draw.
 void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID);
 int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
                             const unsigned char *table, int tableCount);
 int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
                                  unsigned roll, const unsigned char *table,
                                  int tableCount);
+int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled);
 
 // Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
 // Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant

@@ -70,6 +70,101 @@ int main(void)
 	items[AP_VF_WEAPON_FIRST + 2] = 1; // Missile family
 	OK("difficulty gate accepts two distinct families", AP_VerifyTrophyCapabilityGate(&o, items, 3, -1));
 
+	// The composed goal's Oxide condition carries Oxide Station's finish term.
+	memset(items, 0, sizeof items);
+	memset(&o, 0, sizeof o);
+	o.character_unlocks = 1;
+	o.starting_character = 0;
+	o.logic_difficulty = 2;
+	o.boost_mode = 1;
+	o.shortcut_knowledge = 1;
+	OK("Oxide goal blocked with no boost", !AP_VerifyOxideGoalFinish(&o, items, -1));
+	items[AP_VF_BOOST_SHARED] = 1;
+	OK("Oxide goal blocked one rank below USF", !AP_VerifyOxideGoalFinish(&o, items, -1));
+	items[AP_VF_BOOST_SHARED] = 2;
+	OK("Oxide goal opens at USF", AP_VerifyOxideGoalFinish(&o, items, -1));
+	items[AP_VF_BOOST_SHARED] = 0;
+	o.shortcut_knowledge = 2;
+	OK("hard knowledge clears the Oxide goal bare", AP_VerifyOxideGoalFinish(&o, items, -1));
+	o.shortcut_knowledge = 1;
+	o.boost_mode = 0;
+	OK("Oxide goal term vacuous on an unrandomized boost chain",
+		AP_VerifyOxideGoalFinish(&o, items, -1));
+
+	memset(items, 0, sizeof items);
+	o.boost_mode = 2;
+	items[AP_VF_PC_FIRST + 0 * 4] = 2;    // Crash boost
+	items[AP_VF_CHARACTER_FIRST + 4] = 1; // Cortex unlocked, chain still empty
+	OK("Oxide goal takes any driveable racer on a free pad",
+		AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("Cortex-locked Oxide goal does not borrow Crash ranks",
+		!AP_VerifyOxideGoalFinish(&o, items, 1));
+
+	// N. Gin Labs: Platinum Time Trial, the one per-LOCATION USF ruling. No
+	// hard-knowledge escape and no effect on the track's other locations.
+	memset(items, 0, sizeof items);
+	memset(&o, 0, sizeof o);
+	o.character_unlocks = 1;
+	o.starting_character = 0;
+	o.logic_difficulty = 2;
+	o.boost_mode = 1;
+	OK("Labs Platinum blocked with no boost",
+		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	OK("Labs Sapphire/Gold/Token stay ungated at the same rank",
+		AP_VerifyLocationCapabilityGate(&o, items, 35012014L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012114L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012314L, -1));
+	items[AP_VF_BOOST_SHARED] = 1;
+	OK("Labs Platinum blocked one rank below USF",
+		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	items[AP_VF_BOOST_SHARED] = 2;
+	OK("Labs Platinum opens at USF",
+		AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+
+	items[AP_VF_BOOST_SHARED] = 0;
+	o.shortcut_knowledge = 2;
+	OK("hard knowledge does not escape Labs Platinum",
+		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	items[AP_VF_BOOST_SHARED] = 2;
+	OK("Labs Platinum still opens at USF on hard knowledge",
+		AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	items[AP_VF_BOOST_SHARED] = 0;
+	o.boost_mode = 0;
+	OK("Labs Platinum vacuous on an unrandomized boost chain",
+		AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+
+	memset(items, 0, sizeof items);
+	o.boost_mode = 2;
+	o.shortcut_knowledge = 0;
+	items[AP_VF_PC_FIRST + 0 * 4] = 2;
+	items[AP_VF_CHARACTER_FIRST + 4] = 1;
+	OK("Labs Platinum takes any driveable racer on a free pad",
+		AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	OK("Cortex-locked Labs Platinum does not borrow Crash ranks",
+		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, 1));
+
+	// Cup-leg term parity: an unrandomized boost chain never evaluates the
+	// leg pad's racer, matching the apworld's unconditional usf_term.
+	memset(&o, 0, sizeof o);
+	memset(items, 0, sizeof items);
+	o.character_unlocks = 1;
+	o.starting_character = 0;
+	o.boost_mode = 0;
+	OK("USF cup leg vacuous on an unrandomized boost chain even racer-locked",
+		AP_VerifyCupLegCapability(&o, items, 13, 1));
+	o.boost_mode = 1;
+	OK("USF cup leg blocks below USF once the chain is randomized",
+		!AP_VerifyCupLegCapability(&o, items, 13, -1));
+	items[AP_VF_BOOST_SHARED] = 2;
+	OK("USF cup leg opens at USF",
+		AP_VerifyCupLegCapability(&o, items, 13, -1));
+	OK("non-USF cup leg never gated",
+		AP_VerifyCupLegCapability(&o, items, 0, -1));
+	o.shortcut_knowledge = 2;
+	items[AP_VF_BOOST_SHARED] = 0;
+	OK("hard knowledge escapes the Oxide cup leg",
+		AP_VerifyCupLegCapability(&o, items, 13, -1));
+
 	printf("\n%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;
 }

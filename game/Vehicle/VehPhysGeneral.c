@@ -870,6 +870,13 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		if ((gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
 		{
 			// 7th Itemset (Crystal Challenge)
+			//
+			// CONSTRAINT (#145 itemsanity): selecting this itemset routes the
+			// draw to the hardcode below instead of a rank-weighted table, so
+			// the AP draw filter's call site is never reached at all. The ruled
+			// ownership exception therefore depends on this branch staying
+			// unconditional; a Crystal Challenge that fell through to a race
+			// itemset would start gating the arena's own item.
 			itemSet = ITEMSET_CrystalChallenge;
 		}
 		else
@@ -1028,6 +1035,15 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	case ITEMSET_CrystalChallenge:
 		// Item is bomb at Rocky Road, Nitro Court
 		// Item is turbo at Skull Rock and Rampage Ruins
+		//
+		// CONSTRAINT (#145 itemsanity, ruled exception): this hardcode grants
+		// Bomb or Turbo without consulting the received set, and stays that way.
+		// It is not the boss-rewrite bug class: there is no roll to preserve and
+		// no substitution pool, because a Crystal Challenge box has exactly one
+		// correct answer per arena and the challenge is unwinnable without it.
+		// The exception is enforced structurally rather than here: the
+		// `isCrystal` term in AP_ItemsanityShouldFilter keeps every itemsanity
+		// filter out of Crystal Challenge, so this case never reaches one.
 		item = 0x1;
 		if (gGT->levelID != SKULL_ROCK && gGT->levelID != RAMPAGE_RUINS)
 		{
@@ -1047,6 +1063,14 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	// In Boss race
 	if (gGT->gameMode1 & ADVENTURE_BOSS)
 	{
+#ifdef CTR_AP
+		// #145 itemsanity: the draw that the catch-up rewrites below start from.
+		// It has already passed the draw filter, so it is a weapon the player
+		// owns (or the no-item sentinel), which makes it the safe fallback when
+		// no rung of the catch-up ladder is owned.
+		int apBossRolled = driver->heldItemID;
+#endif
+
 		bossFails = sdata->advProgress.timesLostBossRace[gGT->bossID];
 
 		if (bossFails < 0x3)
@@ -1078,6 +1102,17 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		{
 			driver->heldItemID = 0x2;
 		}
+
+#ifdef CTR_AP
+		// #145: the catch-up rewrites above used to be an ownership bypass, so a
+		// player who had not unlocked Missile x3 still received it out of a
+		// Clock, Mask or Warpball draw. One call covers the whole block, placed
+		// after the Komodo Joe line so that cap is an input to the guard rather
+		// than something applied to its output: the ladder never selects a rung
+		// stronger than what vanilla settled on, so the cap survives.
+		driver->heldItemID = AP_ItemsanityBossAssist(driver, driver->heldItemID,
+		                                            apBossRolled);
+#endif
 	}
 
 	// Replace unused Spring item with Turbo
@@ -1207,8 +1242,8 @@ int VehPhysGeneral_GetBaseSpeed(struct Driver *driver)
 	}
 
 #ifdef CTR_AP
-	// Boost / USF-no-brake trap: floor reserves + fireSpeedCap so the boost-speed add
-	// below applies at USF tier or a milder tier (boost) for the local player.
+	// Forced Boost / Forced USF: floor reserves + fireSpeedCap so the boost-speed add
+	// below applies at USF tier, or the milder single-turbo tier, for the local player.
 	AP_TrapForceBoost(driver);
 #endif
 

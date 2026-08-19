@@ -14,7 +14,9 @@
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_glow_slots_logic.h"
-#include "ap_traps.h"     // trap-effect framework (per-frame tick + config trigger)
+#include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
+#include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
+#include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
@@ -34,16 +36,12 @@
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
 
-// Apworld item index of the FIRST trap item. The apworld's data/items.json lays
-// the 5 trap items out contiguously right after Wumpa Fruit (index 15), in the
-// same order as the AP_TrapEffect enum, so item index (16 + effect) maps to
-// effect. Kept next to AP_ITEM_BASE/AP_ITEM_INDEX_COUNT (ap_items.h) this depends
-// on; if the apworld's item table order changes, update both together.
-#define AP_TRAP_ITEM_FIRST_INDEX (AP_ITEM_INDEX_COUNT + 1)  // 15 (Wumpa) + 1 = 16
-
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
-// rather than including namespace_Instance.h. Pin every mirror against the real
-// enumerator here, where both are visible, so the copy cannot drift (#219).
+// rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE
+// for the same reason: the host harness has to compile it without ap_items.h. Pin
+// every mirror against the real definition here, where both are visible, so no
+// copy can drift (#219).
+CTR_STATIC_ASSERT(AP_TRAP_ITEM_ID_BASE == AP_ITEM_BASE);
 CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
 CTR_STATIC_ASSERT(AP_MODEL_GEM == STATIC_GEM);
 CTR_STATIC_ASSERT(AP_MODEL_RELIC == STATIC_RELIC);
@@ -1964,6 +1962,21 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 	AP_FeedEnqueue(line, AP_ClassFontColor(flags), 1);
 }
 
+// Trap-state line from the trap scheduler (ap_traps.c): armed, incoming, active.
+// Coloured as a trap so a warning reads the same as the receipt that produced it.
+// Deliberately outside the initial-inventory absorb window that gates the received
+// feed: an armed trap is live gameplay state, not a replayed receipt.
+void AP_FeedTrapLine(const char *text)
+{
+	char line[AP_FEED_TEXT_CAP];
+	if (!ctr_cfg_active() || text == 0)
+		return;
+	AP_CeremonySanitize(text, line, (int)sizeof line);
+	if (line[0] == '\0')
+		return;
+	AP_FeedEnqueue(line, CORTEX_RED, 1);
+}
+
 // A location WE just checked that feeds SOMEONE ELSE. The received feed only ever
 // shows items we RECEIVE, so a nonlocal send (gem cups, cup-leg podium rungs, any
 // ceremony a player skips past) would otherwise surface nothing (issue #63).
@@ -2468,7 +2481,15 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // Complete 0.2.0 inventory projection for ap_verify.c. The gameplay counters
 // above intentionally remain the compact legacy 0..14 gate table; widening
 // this separate verifier tally avoids changing any live reward semantics.
-#define AP_VERIFY_ITEM_INDEX_COUNT (AP_TURBOGRANT_ITEM_INDEX + 1)
+//
+// Sized from the HIGHEST index in the apworld table, which is no longer the Turbo
+// Grant: the 0.2.0 trap wave added Upside Down, Mirror Mode and Warpball Ambush at
+// 190..192, so the table is 193 long. Anything past the end is dropped by the
+// bounds check at the receive site rather than counted, so an undersized array
+// silently loses foreign receipts from the verifier's view.
+#define AP_VERIFY_ITEM_INDEX_COUNT (AP_TRAP_ITEM_INDEX_MAX + 1)
+CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT == 193);
+CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 
@@ -3379,6 +3400,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 			ap_skip_hints = (line[11] == '1'); // QoL: suppress Aku Aku mask hints
 		else if (AP_TrapConfigLine(line))
 			; // debug_trap=... -> prime a trap for testing (see ap_traps.c)
+		else if (AP_DemoCamConfigLine(line))
+			; // debug_democam=1 -> arm the Demo Camera prototype (see ap_democam.c)
 		else if (AP_ShortcutConfigLine(line))
 			; // shortcutless=... / shortcut_capture=... (see ap_shortcut.c)
 		else if (!strncmp(line, "dev_keys=", 9))
@@ -3510,6 +3533,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// survived a reconnect fired on a DIFFERENT slot -- one the server had
 		// never sent a trap to. See AP_Trap_ConnectReset in ap_traps.h.
 		AP_Trap_ConnectReset();
+		AP_DemoCam_ConnectReset(); // same rule: a camera snapshot cannot outlive its session
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -3637,20 +3661,21 @@ static void AP_NetTick(struct GameTracker *gGT)
 				AP_GoalArmLiveEvent();
 		}
 
-		// Trap items -> prime the matching trap effect. The apworld emits 5 trap
-		// items directly after Wumpa Fruit (idx 15), one per AP_TrapEffect in enum
-		// order, so idx 16..20 map to effect 0..4 (icy / lowgrav / usf-no-brake /
-		// boost / first-person). AP_TrapReceive arms the trap silently; it fires
-		// mid-race on a later lap and clears itself (ap_traps.c owns that lifecycle).
-		// Traps are not gate items, so they never touch ap_recv_count above. A
-		// pre-trap native ignores these ids by construction (idx fails the count
-		// guard and AP_ItemCategory -> AP_CAT_NONE -> logged filler/unmapped, below).
-		else if (idx >= AP_TRAP_ITEM_FIRST_INDEX &&
-		         idx < AP_TRAP_ITEM_FIRST_INDEX + AP_TRAP_COUNT)
+		// Trap items -> arm the matching trap effect. The 19 trap identities do NOT
+		// form one contiguous index window: they sit at 16..20, 106..116 and
+		// 190..192, with weapon unlocks, the Wumpa family, characters and letters in
+		// between, so the mapping is a table (ap_trap_items.h) and not arithmetic off
+		// a first index. An identity whose native effect is still a wave 2 scaffold
+		// is armed, logged once and retained; AP_TrapReceive never consumes what this
+		// build cannot perform. Traps are not gate items, so they never touch
+		// ap_recv_count above. A pre-trap native ignores these ids by construction
+		// (idx fails the count guard and AP_ItemCategory -> AP_CAT_NONE -> logged
+		// filler/unmapped, below).
+		else if (AP_TrapItemIndexIsTrap(idx))
 		{
 			long long srvIdx = ap_net_recv_batch_index(i);
 			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
-				AP_TrapReceive((int)(idx - AP_TRAP_ITEM_FIRST_INDEX));
+				AP_TrapReceive(AP_TrapEffectForItemIndex(idx));
 			else
 			{
 				char skipmsg[96];
@@ -4265,8 +4290,9 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 // Ownership guard for vanilla's downstream item rewrites. The draw filter above
 // only settles the roll itself; the single-warpball rule and the two-holders
 // 3-missile cap rewrite that result afterwards and would otherwise hand out an
-// unreceived weapon. Only the boss-race rewrite and the Crystal Challenge
-// hardcode are ruled bypasses, so they deliberately do not call this.
+// unreceived weapon. The Crystal Challenge hardcode is the only ruled bypass
+// left, so it deliberately does not call this; the boss-race block has its own
+// guard in AP_ItemsanityBossAssist below.
 int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 	unsigned roll, const unsigned char *table, int tableCount)
 {
@@ -4285,6 +4311,45 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 		// Same ruled Empty Crates shape as the draw filter.
 		RB_Player_ModifyWumpa(driver, 1);
 		AP_AppendLog("[AP ITEMSANITY] no eligible substitute weapon; granted Wumpa\n");
+	}
+	return filtered;
+}
+
+// Ownership guard for the boss-race rewrite block. Called once, after the whole
+// vanilla chain, with the draw the block started from and the item it settled
+// on, so the three catch-up branches and the Komodo Joe cap are all covered by
+// one call. Reads ap_itemsanity_owned, the same set AP_ItemsanityFilterRoll uses
+// for the initial roll, under the same gate.
+int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int filtered;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return proposed;
+
+	filtered = AP_ItemsanityBossAssistWeapon(rolled, proposed,
+	                                        ap_itemsanity_owned);
+	if (filtered == AP_ITEMSANITY_NO_ITEM && rolled != AP_ITEMSANITY_NO_ITEM)
+	{
+		// Same ruled Empty Crates shape as the filters above. Reachable when
+		// the guard itself had to withdraw the block's rewrite (the Komodo Joe
+		// cap with nothing owned at or below it). A sentinel that merely
+		// passed through untouched already granted its Wumpa in
+		// AP_ItemsanityFilterRoll; granting again here would stack a second
+		// fruit onto every empty boss draw.
+		RB_Player_ModifyWumpa(driver, 1);
+		AP_AppendLog("[AP ITEMSANITY] no eligible boss catch-up weapon; granted Wumpa\n");
+	}
+	else if (filtered != proposed)
+	{
+		char line[96];
+		snprintf(line, sizeof line,
+		         "[AP ITEMSANITY] boss catch-up %d not owned; substituted %d\n",
+		         proposed, filtered);
+		AP_AppendLog(line);
 	}
 	return filtered;
 }
@@ -4907,6 +4972,11 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
+	// Demo Camera PROTOTYPE: holds or force-clears the cinematic-camera
+	// engagement. Shares AP_TrapTick's placement for the same reason -- it runs
+	// before the camera PROC ticks this frame, so a clear lands while the camera
+	// the snapshot describes is still the live one.
+	AP_DemoCamTick(gGT);
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
 	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver

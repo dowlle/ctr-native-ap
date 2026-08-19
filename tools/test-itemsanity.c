@@ -124,9 +124,13 @@ static int model_settle_item(struct settle_ctx *ctx, int rolled, unsigned roll,
 			ctx->wumpaGrants++;
 	}
 
-	// :1044-1080 boss-race rewrite. RULED BYPASS: no AP hook here.
+	// :1052-1105 boss-race rewrite, then the AP ownership guard over the whole
+	// block. No longer a ruled bypass as of 2026-08-19; tools/test-boss-assist.c
+	// is the focused harness for the ladder itself.
 	if (ctx->bossFails >= 0)
 	{
+		int rolledBeforeBoss = held;
+
 		if (ctx->bossFails < 3 && (unsigned)held - 0x7 < 0x3)
 			held = 0xb;
 		else if (ctx->bossFails < 4 && (unsigned)held - 0x7 < 0x2)
@@ -135,6 +139,13 @@ static int model_settle_item(struct settle_ctx *ctx, int rolled, unsigned roll,
 			held = 0xb;
 		if (ctx->isDragonMines && held == 0xb)
 			held = 0x2;
+
+		if (ctx->filterActive)
+		{
+			held = AP_ItemsanityBossAssistWeapon(rolledBeforeBoss, held, owned);
+			if (held == AP_ITEMSANITY_NO_ITEM)
+				ctx->wumpaGrants++;
+		}
 	}
 
 	// :1083-1087 Spring rewrite. Ownership-safe already: the filter canonicalises
@@ -675,36 +686,61 @@ static void test_downstream_without_a_table(void)
 }
 
 // ==============================================================
-// The two ruled bypasses stay bypasses
+// Boss assistance is now guarded; Crystal Challenge stays the ruled bypass
 // ==============================================================
 
-static void test_ruled_boss_and_crystal_overrides(void)
+static void test_boss_assist_and_ruled_crystal_override(void)
 {
 	const unsigned char table[] = {0, 2, 7, 8, 9};
 	const int tableCount = 5;
 	unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
 
-	// Boss race, nothing received but Mask: vanilla rewrites Mask/Clock/Warpball
-	// to 3 Missiles regardless of ownership. Ruled over-permissive slack, kept.
+	// SUPERSEDED RULING, 2026-08-19. This block used to assert that the boss
+	// rewrite handed out 3 Missiles regardless of ownership, as ruled
+	// over-permissive slack. A tester received missiles during Ripper Roo
+	// without having unlocked them, so the rewrite is now ownership-guarded.
+
+	// Boss race, nothing received but Mask: the rewrite has no owned rung to
+	// escalate to, so the ownership-filtered Mask draw stands.
 	owned_clear(owned);
 	owned[AP_ItemsanityWeaponIndex(7)] = 1;
 	{
 		struct settle_ctx ctx = {1, 0, 0, 0, 0, 2, 0};
-		assert(model_settle_item(&ctx, 7, 11, table, tableCount, owned) == 0xb);
+		assert(model_settle_item(&ctx, 7, 11, table, tableCount, owned) == 0x7);
 		assert(ctx.wumpaGrants == 0);
 	}
-	// Clock at 4 losses, still rewritten
+	// Missile x3 received as well: the rewrite is legal and fires as in vanilla.
+	owned[AP_ItemsanityWeaponIndex(11)] = 1;
+	{
+		struct settle_ctx ctx = {1, 0, 0, 0, 0, 2, 0};
+		assert(model_settle_item(&ctx, 7, 11, table, tableCount, owned) == 0xb);
+	}
+	// Clock at 4 losses with Bomb x3 received instead: the ladder steps down one
+	// rung rather than granting the unreceived Missile x3.
 	owned_clear(owned);
 	owned[AP_ItemsanityWeaponIndex(8)] = 1;
+	owned[AP_ItemsanityWeaponIndex(10)] = 1;
 	{
 		struct settle_ctx ctx = {1, 4, 0, 0, 0, 2, 0};
-		assert(model_settle_item(&ctx, 8, 11, table, tableCount, owned) == 0xb);
+		assert(model_settle_item(&ctx, 8, 11, table, tableCount, owned) == 0xa);
 	}
-	// Komodo Joe: 3 Missiles become 1 Missile, also unfiltered
+	// Komodo Joe caps the rewrite at a single Missile, and the guard honours the
+	// cap: Bomb x3 sits ABOVE that rung, so an unreceived Missile falls to Bomb.
+	owned_clear(owned);
+	owned[AP_ItemsanityWeaponIndex(8)] = 1;
+	owned[AP_ItemsanityWeaponIndex(10)] = 1;
+	owned[AP_ItemsanityWeaponIndex(1)] = 1;
 	{
 		struct settle_ctx ctx = {1, 0, 1, 0, 0, 2, 0};
-		assert(model_settle_item(&ctx, 8, 11, table, tableCount, owned) == 0x2);
+		assert(model_settle_item(&ctx, 8, 11, table, tableCount, owned) == 0x1);
 	}
+	// Filter inactive: the whole block is vanilla again, unreceived item and all.
+	owned_clear(owned);
+	{
+		struct settle_ctx ctx = {0, 0, 0, 0, 0, 2, 0};
+		assert(model_settle_item(&ctx, 7, 11, table, tableCount, owned) == 0xb);
+	}
+
 	// Crystal Challenge hardcode: vanilla item by level, filter inactive
 	assert(model_crystal_item(0) == 0x1);
 	assert(model_crystal_item(1) == 0x0);
@@ -848,7 +884,7 @@ int main(void)
 	test_downstream_chained_substitutions();
 	test_downstream_never_returns_spring();
 	test_downstream_without_a_table();
-	test_ruled_boss_and_crystal_overrides();
+	test_boss_assist_and_ruled_crystal_override();
 	test_inactive_and_vanilla_policy();
 	test_duplicate_receipts_reconnect_and_slot_switch();
 	test_live_location_block_and_feed_membership();
