@@ -35,16 +35,27 @@ static long AP_ItemsanityLocationCode(int heldItemID, int juiced)
 	return index < 0 ? -1 : 35016000L + index * 2 + (juiced != 0);
 }
 
-// CONSTRAINT: `!isCrystal` is the single enforcement point for the ruled Crystal
-// Challenge ownership exception. Every itemsanity filter, including the boss
-// catch-up guard, is gated on this predicate, so the arena hardcode in
-// VehPhysGeneral_SetHeldItem keeps granting its Bomb or Turbo regardless of the
-// received set. A Crystal Challenge is unwinnable without that item, so gating
-// it would lock the check behind itself.
+// RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
+// itemsanity also applies to arenas."
+//
+// That ruling removed the Crystal Challenge ownership exception outright. This
+// predicate used to carry a `!isCrystal` term and was its single enforcement
+// point. The parameter is retained and every call site still passes the real
+// mode bit, so the harness can pin that a Crystal Challenge is now filtered like
+// any other Adventure context, and so a future exception has an obvious home. Do
+// not reintroduce the term without a ruling that supersedes the one above.
+//
+// Two consequences worth naming here, because neither is visible from this
+// function. The arena hardcode in VehPhysGeneral_SetHeldItem does not route
+// through any filter, so it carries a gate of its own,
+// AP_ItemsanityFilterCrystalGrant. And the check-mint site keeps its separate
+// ownership test, AP_ItemsanityUseIsOwned, which is now defence in depth rather
+// than the only thing standing between an arena and an unearned check.
 static int AP_ItemsanityShouldFilter(int featureActive, int isLocal,
 	int isAdventure, int isBattle, int isCrystal)
 {
-	return featureActive && isLocal && isAdventure && !isBattle && !isCrystal;
+	(void)isCrystal;
+	return featureActive && isLocal && isAdventure && !isBattle;
 }
 
 // Check fan-out for one committed weapon use. `heldItemID` must be the id the
@@ -71,6 +82,33 @@ static int AP_ItemsanityRollAllowed(int heldItemID,
 {
 	int index = AP_ItemsanityWeaponIndex(AP_ItemsanityCanonicalWeapon(heldItemID));
 	return index < 0 || owned[index] != 0;
+}
+
+// Ownership precondition for MINTING a check from a committed use.
+//
+// Ruled 2026-08-20, reversing the 2026-08-10 "over-permissive slack" ruling for
+// the same reason the boss-race half was reversed on 08-19: a tester rolled and
+// fired the arena's Turbo in a Crystal Challenge without owning the `Turbo`
+// weapon item and banked location 35016000, which races correctly refuse.
+//
+// Since the 2026-08-20 arena ruling this is DEFENCE IN DEPTH, not the only gate:
+// AP_ItemsanityFilterCrystalGrant now refuses the arena grant itself, so an
+// unowned weapon should never reach a fire in the first place. This stays because
+// the mint site is the one place every committed use passes through, whatever
+// granted the weapon, and because a grant path that forgets its own gate should
+// fail closed rather than pay out a check.
+//
+// Every path into the mint site holds an owned weapon once the filters above have
+// run, so this is a no-op for ADVENTURE races, for boss assistance and for a
+// correctly gated arena. Outside Adventure nothing is filtered at all, so there
+// it is a real gate rather than a no-op; the call site in ap_hooks.c carries the
+// reasoning. It is deliberately the same predicate the draw filter uses, so the
+// two can never disagree about what "owned" means. Ids that mint nothing anyway
+// (the two battle-only ids) stay allowed here and are dropped by the -1 codes.
+static int AP_ItemsanityUseIsOwned(int heldItemID,
+	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
+{
+	return AP_ItemsanityRollAllowed(heldItemID, owned);
 }
 
 // Held-id bit, for the substitution exclusion masks below.

@@ -346,6 +346,13 @@ static void test_exhaustive_invariants(void)
 					        AP_ItemsanityCanonicalWeapon(got)) >= 0)
 						assert(owned_holds(owned, got));
 
+					// Boss assistance is unaffected by the 2026-08-20 mint-site
+					// ownership precondition: whatever this guard leaves in the
+					// slot is always mintable, so firing it still banks its
+					// itemsanity check exactly as before.
+					if (got != AP_ITEMSANITY_NO_ITEM)
+						assert(AP_ItemsanityUseIsOwned(got, owned));
+
 					// the outcome is always the vanilla one, a strictly weaker
 					// ladder rung, the draw it started from, or the sentinel
 					assert(got == proposed || got == in ||
@@ -371,9 +378,11 @@ static void test_exhaustive_invariants(void)
 }
 
 // The guard is gated on exactly the predicate the draw filter is gated on, so a
-// Crystal Challenge, a battle, an Arcade race or a bot driver never reaches it.
-// Crystal Challenge is the one remaining ruled ownership exception, and this
-// predicate is where it is enforced.
+// battle, an Arcade race or a bot driver never reaches it. A Crystal Challenge
+// does not reach it either, but for a different reason since 2026-08-20: not an
+// exception in this predicate any more, simply that an arena is never a boss
+// race. The arena's own gate lives in AP_ItemsanityFilterCrystalGrant; see
+// test-itemsanity.c, test_crystal_arena_grant_and_check_gates.
 static void test_gate_matches_the_draw_filter(void)
 {
 	assert(AP_ItemsanityShouldFilter(1, 1, 1, 0, 0));  // Adventure race, local
@@ -381,7 +390,10 @@ static void test_gate_matches_the_draw_filter(void)
 	assert(!AP_ItemsanityShouldFilter(1, 0, 1, 0, 0)); // bot or remote driver
 	assert(!AP_ItemsanityShouldFilter(1, 1, 0, 0, 0)); // Arcade or VS
 	assert(!AP_ItemsanityShouldFilter(1, 1, 1, 1, 0)); // battle
-	assert(!AP_ItemsanityShouldFilter(1, 1, 1, 0, 1)); // ruled crystal exception
+	// RULED 2026-08-20: no crystal exception remains. A Crystal Challenge is not
+	// a boss race, so this guard is still unreachable there, but the predicate it
+	// shares with every other gate now answers the same way for arenas.
+	assert(AP_ItemsanityShouldFilter(1, 1, 1, 0, 1));
 }
 
 // The catch-up guard is a ladder, not a pool: given the same inputs it is
@@ -434,6 +446,13 @@ static void test_substitute_mints_its_own_checks(void)
 	assert(juiced == AP_ItemsanityLocationCode(0xa, 1));
 	assert(plain != AP_ItemsanityLocationCode(0xb, 0));
 	assert(juiced != AP_ItemsanityLocationCode(0xb, 1));
+
+	// The mint site gained an ownership precondition on 2026-08-20 (Kitkat's
+	// Crystal Challenge report). The substituted rung passes it, so the check
+	// still fans out; the unowned rung the guard REFUSED to hand over would not
+	// have, which is the same answer from the other direction.
+	assert(AP_ItemsanityUseIsOwned(got, owned));
+	assert(!AP_ItemsanityUseIsOwned(0xb, owned));
 }
 
 // The ladder is the load-bearing statement of retail intent, so its shape is

@@ -1044,14 +1044,13 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		// Item is bomb at Rocky Road, Nitro Court
 		// Item is turbo at Skull Rock and Rampage Ruins
 		//
-		// CONSTRAINT (#145 itemsanity, ruled exception): this hardcode grants
-		// Bomb or Turbo without consulting the received set, and stays that way.
-		// It is not the boss-rewrite bug class: there is no roll to preserve and
-		// no substitution pool, because a Crystal Challenge box has exactly one
-		// correct answer per arena and the challenge is unwinnable without it.
-		// The exception is enforced structurally rather than here: the
-		// `isCrystal` term in AP_ItemsanityShouldFilter keeps every itemsanity
-		// filter out of Crystal Challenge, so this case never reaches one.
+		// The #145 itemsanity ruled exception that used to live here is
+		// SUPERSEDED (2026-08-20): "The weapon should not arrive in the arenas at
+		// all, itemsanity also applies to arenas." The vanilla pick below is
+		// unchanged, but it is no longer exempt from ownership. The gate runs
+		// immediately after this switch rather than inside this case, at the one
+		// point both arena arms have converged on driver->heldItemID, so the
+		// vanilla `goto SetItem` control flow stays exactly as retail wrote it.
 		item = 0x1;
 		if (gGT->levelID != SKULL_ROCK && gGT->levelID != RAMPAGE_RUINS)
 		{
@@ -1067,6 +1066,23 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	SetItem:
 		driver->heldItemID = item;
 	}
+
+#ifdef CTR_AP
+	// Crystal Challenge grant gate (ruled 2026-08-20). Placed here, not in the
+	// case above, because the arena reaches driver->heldItemID by two paths: the
+	// Turbo arm assigns directly and breaks, the Bomb arm jumps to SetItem. One
+	// call after the switch covers both without touching vanilla's control flow.
+	//
+	// itemSet is the discriminator rather than the mode bit, so this can only fire
+	// on a draw the arena hardcode actually produced. Every rank-weighted itemset
+	// has already been ownership-filtered inside the switch, and the boss block
+	// below is unreachable for an arena, so nothing downstream re-opens the gate.
+	if (itemSet == ITEMSET_CrystalChallenge)
+	{
+		driver->heldItemID =
+			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID);
+	}
+#endif
 
 	// In Boss race
 	if (gGT->gameMode1 & ADVENTURE_BOSS)

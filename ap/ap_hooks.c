@@ -4252,6 +4252,36 @@ void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 	if (!AP_ItemsanityActive() || !gGT || driver != gGT->drivers[0])
 		return;
 
+	// Ownership precondition, ruled 2026-08-20. Every path the itemsanity filters
+	// actually cover arrives here holding a weapon the player received, so this
+	// is inert for ADVENTURE races and for boss assistance. It is NOT inert for
+	// the ruled Crystal Challenge exception: the arena hardcode grants its Bomb
+	// or Turbo without consulting the received set, and firing that used to bank
+	// the weapon's itemsanity check. The grant stays, because the challenge is
+	// unwinnable without it; the check does not.
+	//
+	// It is not inert OUTSIDE Adventure either, and that is deliberate rather
+	// than incidental. Arcade, VS, Time Trial and Battle are all excluded by
+	// AP_ItemsanityShouldFilter, so their rolls are never ownership-filtered, and
+	// before this test an unowned weapon fired in one of them banked its check
+	// exactly the way Kitkat's arena Turbo did. Gating the mint rather than the
+	// mode closes both routes with one rule, and it costs no reachable check: an
+	// itemsanity location already requires its own weapon item in logic, so a
+	// refusal here can only drop a check the player could not have earned.
+	//
+	// Deliberately keyed on the received set rather than on the Crystal mode bit,
+	// so any future unfiltered grant is covered by the same rule instead of
+	// needing an exception of its own.
+	if (!AP_ItemsanityUseIsOwned(heldItemID, ap_itemsanity_owned))
+	{
+		char refused[96];
+		snprintf(refused, sizeof refused,
+		         "[AP ITEMSANITY] use of unreceived weapon %d minted no check\n",
+		         heldItemID);
+		AP_AppendLog(refused);
+		return;
+	}
+
 	// juiced comes back as -1 below 10 Wumpa, and both codes come back as -1 for
 	// an id that mints nothing, so the shared emitter's absent-code guard covers
 	// the whole fan-out.
@@ -4349,12 +4379,46 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 	return alternative;
 }
 
+// Ownership guard for the Crystal Challenge arena hardcode.
+//
+// RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
+// itemsanity also applies to arenas." The arena grant is not a roll and does not
+// route through any of the filters here: VehPhysGeneral_SetHeldItem selects
+// ITEMSET_CrystalChallenge unconditionally and hands out Bomb or Turbo keyed on
+// level id alone. So the gate has to live at that hardcode, and this is it.
+//
+// Unowned means the arena hands over nothing. The ruled Empty Crates shape
+// applies exactly as it does to a refused roulette draw, because this IS a
+// roulette resolution: the arena's item arrives from a crate pickup through
+// VehPhysProc's roll-complete path, so refusing it without the fruit would make
+// an arena crate the only pickup in the game that pays out nothing at all.
+//
+// Uses AP_ItemsanityShouldFilter, the same predicate as every other gate in this
+// file, so the arena cannot drift away from the rest of itemsanity. That only
+// works because the ruling removed the `!isCrystal` term: before it, this call
+// would have been inert.
+int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
+		return proposed;
+
+	if (AP_ItemsanityRollAllowed(proposed, ap_itemsanity_owned))
+		return proposed;
+
+	RB_Player_ModifyWumpa(driver, 1);
+	AP_AppendLog("[AP ITEMSANITY] arena weapon not received; granted Wumpa\n");
+	return AP_ITEMSANITY_NO_ITEM;
+}
+
 // Ownership guard for vanilla's downstream item rewrites. The draw filter above
 // only settles the roll itself; the single-warpball rule and the two-holders
 // 3-missile cap rewrite that result afterwards and would otherwise hand out an
-// unreceived weapon. The Crystal Challenge hardcode is the only ruled bypass
-// left, so it deliberately does not call this; the boss-race block has its own
-// guard in AP_ItemsanityBossAssist below.
+// unreceived weapon. The Crystal Challenge hardcode has its own gate directly
+// above; the boss-race block has its own guard in AP_ItemsanityBossAssist below.
 int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 	unsigned roll, const unsigned char *table, int tableCount)
 {

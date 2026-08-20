@@ -16,6 +16,12 @@
 
 #define ALL_WEAPON_IDS {0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11}
 
+// The received set every pre-existing press test implicitly assumed. Those tests
+// cover the mint fan-out for a weapon the player legitimately holds, which after
+// the 2026-08-20 ownership precondition means a weapon they own.
+static const unsigned char apItemsanityHarnessAllOwned[AP_ITEMSANITY_WEAPON_COUNT] =
+	{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+
 // ==============================================================
 // Mirrors of the vanilla code the hooks sit in. Kept deliberately dumb and
 // annotated, so a drift in the engine shows up as a harness lie rather than a
@@ -69,12 +75,16 @@ static void emitter_emit(struct emitter *e, long code)
 // then reads d->heldItemID BEFORE the fold above. `fired` receives the id the
 // engine actually shoots with, to keep the two visibly separate.
 static void model_circle_press(struct emitter *e, int isLocal, int heldItemID,
-	int numWumpas, int *fired)
+	int numWumpas, const unsigned char *owned, int *fired)
 {
 	long plain;
 	long juiced;
 
-	if (isLocal) // ap_hooks.c: driver == gGT->drivers[0]
+	// ap_hooks.c AP_ItemsanityOnUse, in hook order: local driver, then the
+	// 2026-08-20 ownership precondition, then the code fan-out. The weapon still
+	// FIRES either way -- refusing the mint must never touch the engine's own
+	// fire path, which is what keeps a Crystal Challenge completable.
+	if (isLocal && AP_ItemsanityUseIsOwned(heldItemID, owned))
 	{
 		(void)AP_ItemsanityUseCodes(heldItemID, numWumpas, &plain, &juiced);
 		emitter_emit(e, plain);
@@ -180,11 +190,30 @@ static int model_settle_item(struct settle_ctx *ctx, int rolled, unsigned roll,
 	return held;
 }
 
-// Crystal Challenge hardcode, game/Vehicle/VehPhysGeneral.c:1023-1033.
-// RULED BYPASS: the filter is inactive for Crystal Challenge, so this is vanilla.
+// Crystal Challenge hardcode, game/Vehicle/VehPhysGeneral.c:1043-1066. The
+// vanilla pick, unchanged: Bomb at Rocky Road and Nitro Court, Turbo at Skull
+// Rock and Rampage Ruins.
 static int model_crystal_item(int isSkullRockOrRampage)
 {
 	return isSkullRockOrRampage ? 0x0 : 0x1;
+}
+
+// ap_hooks.c AP_ItemsanityFilterCrystalGrant, called from VehPhysGeneral.c
+// immediately after the itemset switch.
+//
+// RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
+// itemsanity also applies to arenas." The former ruled bypass is gone. Unowned
+// means no weapon plus the ruled Empty Crates fruit, because the arena item is a
+// roulette resolution off a crate pickup like any other.
+static int model_crystal_grant(int filterActive, int hardcoded,
+	const unsigned char *owned, int *wumpaGrants)
+{
+	if (!filterActive)
+		return hardcoded;
+	if (AP_ItemsanityRollAllowed(hardcoded, owned))
+		return hardcoded;
+	(*wumpaGrants)++;
+	return AP_ITEMSANITY_NO_ITEM;
 }
 
 static void owned_clear(unsigned char *owned)
@@ -294,7 +323,7 @@ static void test_press_path_all_ids_plain_and_juiced(void)
 	{
 		memset(&e, 0, sizeof e);
 		e.liveActive = 1;
-		model_circle_press(&e, 1, held[i], 0, &fired);
+		model_circle_press(&e, 1, held[i], 0, apItemsanityHarnessAllOwned, &fired);
 		assert(e.sentCount == 1);
 		assert(e.sent[0] == 35016000L + i * 2);
 		assert(fired == model_vanilla_fire_id(held[i]));
@@ -305,7 +334,7 @@ static void test_press_path_all_ids_plain_and_juiced(void)
 	{
 		memset(&e, 0, sizeof e);
 		e.liveActive = 1;
-		model_circle_press(&e, 1, held[i], 10, &fired);
+		model_circle_press(&e, 1, held[i], 10, apItemsanityHarnessAllOwned, &fired);
 		assert(e.sentCount == 2);
 		assert(e.sent[0] == 35016000L + i * 2);
 		assert(e.sent[1] == 35016001L + i * 2);
@@ -316,7 +345,7 @@ static void test_press_path_all_ids_plain_and_juiced(void)
 	memset(&e, 0, sizeof e);
 	e.liveActive = 1;
 	for (int i = 0; i < 4; i++)
-		model_circle_press(&e, 1, shared[i], 10, &fired);
+		model_circle_press(&e, 1, shared[i], 10, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 8);
 	for (int i = 0; i < e.sentCount; i++)
 		for (int k = i + 1; k < e.sentCount; k++)
@@ -338,7 +367,7 @@ static void test_press_emits_exactly_once(void)
 	memset(&e, 0, sizeof e);
 	e.liveActive = 1;
 	for (int press = 0; press < 8; press++)
-		model_circle_press(&e, 1, 10, 12, &fired);
+		model_circle_press(&e, 1, 10, 12, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 2);
 	assert(e.sent[0] == AP_ItemsanityLocationCode(10, 0));
 	assert(e.sent[1] == AP_ItemsanityLocationCode(10, 1));
@@ -346,13 +375,13 @@ static void test_press_emits_exactly_once(void)
 	// plain first at low wumpa, juiced later once the player is juiced
 	memset(&e, 0, sizeof e);
 	e.liveActive = 1;
-	model_circle_press(&e, 1, 9, 3, &fired);
+	model_circle_press(&e, 1, 9, 3, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 1);
-	model_circle_press(&e, 1, 9, 10, &fired);
+	model_circle_press(&e, 1, 9, 10, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 2);
 	assert(e.sent[0] == AP_ItemsanityLocationCode(9, 0));
 	assert(e.sent[1] == AP_ItemsanityLocationCode(9, 1));
-	model_circle_press(&e, 1, 9, 11, &fired);
+	model_circle_press(&e, 1, 9, 11, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 2);
 
 	// Spring and the battle-only ids never emit, however often they are pressed
@@ -360,20 +389,20 @@ static void test_press_emits_exactly_once(void)
 	e.liveActive = 1;
 	for (int i = 0; i < 3; i++)
 		for (int press = 0; press < 3; press++)
-			model_circle_press(&e, 1, mintsNothing[i], 12, &fired);
+			model_circle_press(&e, 1, mintsNothing[i], 12, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 0);
 
 	// a bot / remote driver press emits nothing, and still fires normally
 	memset(&e, 0, sizeof e);
 	e.liveActive = 1;
-	model_circle_press(&e, 0, 11, 12, &fired);
+	model_circle_press(&e, 0, 11, 12, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 0);
 	assert(fired == 2);
 
 	// seed off / class absent: the live location set is the authoritative toggle
 	memset(&e, 0, sizeof e);
 	e.liveActive = 0;
-	model_circle_press(&e, 1, 3, 12, &fired);
+	model_circle_press(&e, 1, 3, 12, apItemsanityHarnessAllOwned, &fired);
 	assert(e.sentCount == 0);
 }
 
@@ -746,6 +775,203 @@ static void test_boss_assist_and_ruled_crystal_override(void)
 	assert(model_crystal_item(1) == 0x0);
 }
 
+// Kitkat's report, 2026-08-20: the arena's Turbo could be rolled and fired in a
+// Crystal Challenge before the `Turbo` weapon item was found, and it banked the
+// itemsanity check. Races refused the same weapon.
+//
+// RULED the same day: "The weapon should not arrive in the arenas at all,
+// itemsanity also applies to arenas." So there are now TWO gates to pin. The
+// grant gate is the ruling; the check gate is defence in depth behind it.
+static void test_crystal_arena_grant_and_check_gates(void)
+{
+	// The four arenas and the vanilla item each hands out.
+	struct arena { const char *name; int skullRockOrRampage; int item; };
+	static const struct arena arenas[4] = {
+		{"Rocky Road",    0, 0x1},
+		{"Nitro Court",   0, 0x1},
+		{"Skull Rock",    1, 0x0},
+		{"Rampage Ruins", 1, 0x0},
+	};
+	const unsigned char raceTable[] = {0, 2, 7, 8, 9};
+	const int raceTableCount = 5;
+	unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+	struct emitter e;
+	int fired = -1;
+	int wumpa;
+	int a;
+
+	// A Crystal Challenge is now filtered like any other Adventure context, which
+	// is what lets the arena gate share one predicate with every other gate.
+	assert(AP_ItemsanityShouldFilter(1, 1, 1, 0, 1));
+
+	// --- Grant gate: nothing received, all four arenas ----------------------
+	owned_clear(owned);
+	for (a = 0; a < 4; a++)
+	{
+		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
+		assert(hardcoded == arenas[a].item);
+		wumpa = 0;
+		// THE RULING: no weapon arrives at all.
+		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) ==
+		       AP_ITEMSANITY_NO_ITEM);
+		// ... with the ruled Empty Crates fruit, exactly once.
+		assert(wumpa == 1);
+	}
+
+	// --- Grant gate: the arena's own weapon received ------------------------
+	for (a = 0; a < 4; a++)
+	{
+		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
+		owned_clear(owned);
+		owned[AP_ItemsanityWeaponIndex(hardcoded)] = 1;
+		wumpa = 0;
+		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) == hardcoded);
+		assert(wumpa == 0);
+	}
+
+	// --- Grant gate: owning the OTHER arena's weapon is not enough -----------
+	for (a = 0; a < 4; a++)
+	{
+		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
+		int other = hardcoded == 0x0 ? 0x1 : 0x0;
+		owned_clear(owned);
+		owned[AP_ItemsanityWeaponIndex(other)] = 1;
+		wumpa = 0;
+		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) ==
+		       AP_ITEMSANITY_NO_ITEM);
+		assert(wumpa == 1);
+	}
+
+	// --- Itemsanity off: the arena is untouched vanilla ----------------------
+	owned_clear(owned);
+	for (a = 0; a < 4; a++)
+	{
+		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
+		wumpa = 0;
+		assert(model_crystal_grant(0, hardcoded, owned, &wumpa) == hardcoded);
+		assert(wumpa == 0);
+	}
+
+	// --- The refused grant mints nothing when the empty slot is pressed ------
+	// The sentinel is the engine's own "no item held" value, so it has no
+	// location code and cannot mint. Pinned because the grant gate hands the
+	// sentinel straight to the same slot every fire path reads.
+	owned_clear(owned);
+	assert(AP_ItemsanityLocationCode(AP_ITEMSANITY_NO_ITEM, 0) == -1);
+	assert(AP_ItemsanityLocationCode(AP_ITEMSANITY_NO_ITEM, 1) == -1);
+	memset(&e, 0, sizeof e);
+	e.liveActive = 1;
+	model_circle_press(&e, 1, AP_ITEMSANITY_NO_ITEM, 12, owned, &fired);
+	assert(e.sentCount == 0);
+
+	// --- Owned arena weapon, fired: the check DOES bank ----------------------
+	for (a = 0; a < 4; a++)
+	{
+		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
+		int granted;
+		owned_clear(owned);
+		owned[AP_ItemsanityWeaponIndex(hardcoded)] = 1;
+		wumpa = 0;
+		granted = model_crystal_grant(1, hardcoded, owned, &wumpa);
+		assert(granted == hardcoded);
+		memset(&e, 0, sizeof e);
+		e.liveActive = 1;
+		model_circle_press(&e, 1, granted, 12, owned, &fired);
+		assert(e.sentCount == 2);
+		assert(e.sent[0] == AP_ItemsanityLocationCode(hardcoded, 0));
+		assert(e.sent[1] == AP_ItemsanityLocationCode(hardcoded, 1));
+	}
+
+	// --- Check gate as defence in depth --------------------------------------
+	// If some future grant path forgets its own gate and puts an unreceived
+	// weapon in the slot anyway, firing it still mints nothing. This is the
+	// original Kitkat scenario driven straight past the grant gate.
+	owned_clear(owned);
+	memset(&e, 0, sizeof e);
+	e.liveActive = 1;
+	model_circle_press(&e, 1, 0x0, 12, owned, &fired); // unowned Turbo in the slot
+	assert(e.sentCount == 0);
+	assert(!emitter_has(&e, 35016000L));
+	assert(!emitter_has(&e, 35016001L));
+	assert(fired == model_vanilla_fire_id(0x0)); // the engine still fires it
+	// Bomb shares the Missile fire branch, so a refusal must not leak a Missile
+	// check either.
+	memset(&e, 0, sizeof e);
+	e.liveActive = 1;
+	model_circle_press(&e, 1, 0x1, 12, owned, &fired);
+	assert(e.sentCount == 0);
+	assert(!emitter_has(&e, AP_ItemsanityLocationCode(1, 0)));
+	assert(!emitter_has(&e, AP_ItemsanityLocationCode(2, 0)));
+	assert(fired == 2);
+
+	// --- Race path unchanged -------------------------------------------------
+	owned_clear(owned);
+	owned[AP_ItemsanityWeaponIndex(7)] = 1; // Mask only
+	assert(!AP_ItemsanityRollAllowed(0, owned));
+	{
+		struct settle_ctx ctx = {1, -1, 0, 0, 0, 4, 0};
+		int settled = model_settle_item(&ctx, 0, 5, raceTable, raceTableCount, owned);
+		assert(settled == 0x7); // substituted to the owned Mask
+		memset(&e, 0, sizeof e);
+		e.liveActive = 1;
+		model_circle_press(&e, 1, settled, 12, owned, &fired);
+		assert(e.sentCount == 2);
+		assert(e.sent[0] == AP_ItemsanityLocationCode(7, 0));
+	}
+
+	// --- Boss assistance unchanged -------------------------------------------
+	owned_clear(owned);
+	owned[AP_ItemsanityWeaponIndex(8)] = 1;  // Clock
+	owned[AP_ItemsanityWeaponIndex(10)] = 1; // Bomb x3
+	{
+		struct settle_ctx ctx = {1, 4, 0, 0, 0, 2, 0};
+		int settled = model_settle_item(&ctx, 8, 11, raceTable, raceTableCount, owned);
+		assert(settled == 0xa); // stepped down to the owned Bomb x3
+		assert(AP_ItemsanityUseIsOwned(settled, owned));
+		memset(&e, 0, sizeof e);
+		e.liveActive = 1;
+		model_circle_press(&e, 1, settled, 12, owned, &fired);
+		assert(e.sentCount == 2);
+		assert(e.sent[0] == AP_ItemsanityLocationCode(10, 0));
+		assert(e.sent[1] == AP_ItemsanityLocationCode(10, 1));
+	}
+
+	// --- The precondition itself --------------------------------------------
+	owned_clear(owned);
+	// The two battle-only ids are not gated weapons at all, so they stay allowed
+	// and the refusal arm adds no new behaviour for them.
+	assert(AP_ItemsanityUseIsOwned(12, owned));
+	assert(AP_ItemsanityUseIsOwned(13, owned));
+	// Spring is canonically Turbo, so it follows Turbo's ownership. Either answer
+	// mints nothing, because Spring has no location code of its own, and vanilla
+	// rewrites it to Turbo right after the roll so the fire hook should never see
+	// it. Pinned so a future canonicalisation change cannot quietly open a second
+	// route to Turbo's check.
+	assert(!AP_ItemsanityUseIsOwned(5, owned));
+	assert(AP_ItemsanityLocationCode(5, 0) == -1);
+	assert(AP_ItemsanityLocationCode(5, 1) == -1);
+	{
+		unsigned char turboOnly[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+		turboOnly[AP_ItemsanityWeaponIndex(0)] = 1;
+		assert(AP_ItemsanityUseIsOwned(5, turboOnly));
+		memset(&e, 0, sizeof e);
+		e.liveActive = 1;
+		model_circle_press(&e, 1, 5, 12, turboOnly, &fired);
+		assert(e.sentCount == 0);
+	}
+	// and every one of the 11 becomes mintable exactly when it is received
+	for (int i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
+	{
+		const int ids[AP_ITEMSANITY_WEAPON_COUNT] = ALL_WEAPON_IDS;
+		owned_clear(owned);
+		owned[i] = 1;
+		assert(AP_ItemsanityUseIsOwned(ids[i], owned));
+		for (int k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
+			if (k != i)
+				assert(!AP_ItemsanityUseIsOwned(ids[k], owned));
+	}
+}
+
 // ==============================================================
 // Policy, receipts and session lifecycle
 // ==============================================================
@@ -759,7 +985,10 @@ static void test_inactive_and_vanilla_policy(void)
 	assert(!AP_ItemsanityShouldFilter(1, 0, 1, 0, 0)); // bot/nonlocal driver
 	assert(!AP_ItemsanityShouldFilter(1, 1, 0, 0, 0)); // non-Adventure mode
 	assert(!AP_ItemsanityShouldFilter(1, 1, 1, 1, 0)); // battle stays vanilla
-	assert(!AP_ItemsanityShouldFilter(1, 1, 1, 0, 1)); // ruled crystal override
+	// RULED 2026-08-20: a Crystal Challenge is filtered like any other Adventure
+	// context. This assertion is inverted from what it was; the ruled crystal
+	// override it used to pin no longer exists.
+	assert(AP_ItemsanityShouldFilter(1, 1, 1, 0, 1));
 	assert(AP_ItemsanityShouldFilter(1, 1, 1, 0, 0));
 
 	// the same policy gates the downstream substitution, so an Arcade or VS
@@ -885,6 +1114,7 @@ int main(void)
 	test_downstream_never_returns_spring();
 	test_downstream_without_a_table();
 	test_boss_assist_and_ruled_crystal_override();
+	test_crystal_arena_grant_and_check_gates();
 	test_inactive_and_vanilla_policy();
 	test_duplicate_receipts_reconnect_and_slot_switch();
 	test_live_location_block_and_feed_membership();
