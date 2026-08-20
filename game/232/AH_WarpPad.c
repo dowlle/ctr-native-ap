@@ -977,7 +977,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
 				{
 					if (AP_PadBoxReRaceable(physLevelID, levelID))
+					{
+						AP_PadLogRoute(physLevelID, levelID,
+						               AP_PAD_ROUTE_S2LOCKED_BOX_RERACE);
 						goto WarpPad_BoxReRace;
+					}
+					AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
 					goto WarpPad_AnimateOpen;
 				}
 #endif
@@ -1020,6 +1025,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 							apTier2Route = AP_PadTier2RouteDecide(
 							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));
+
+							// Log the tier-2 decision once, before the branch, so
+							// the five routes cannot drift from what is reported.
+							AP_PadLogRoute(physLevelID, levelID,
+							               AP_PAD_ROUTE_TIER2_BASE + apTier2Route);
 
 							if (apTier2Route == AP_PAD_TIER2_TOKEN)
 							{

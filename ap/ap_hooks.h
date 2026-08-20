@@ -523,6 +523,20 @@ int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
 // can explain why a trophy-complete pad remains raceable.
 int AP_PadUncollectedBoxCount(int destLevelID);
 
+// ── Pad entry-route diagnostic (issues #232 / #265) ──
+// Emit ONE "[AP PAD]" line describing the entry route this pad just took, and
+// the state it was read out of. Deduplicated on the whole reported tuple, so an
+// unchanged pad decision logs once per TRANSITION rather than once per frame --
+// the gates below run every frame the player stands on a pad.
+//
+// Written for the #232 / #265 combined sequence: it makes "which branch did the
+// pad take, and what did it believe" readable from a plain log, which is the
+// one thing the two issues' live re-test otherwise has to infer from behaviour.
+// No-op in vanilla mode. Same keying as AP_PadState (physical pad = requirement,
+// destination = locations). `route` is an enum AP_PadRoute value, declared in
+// ap_pad_state.h beside the decision it labels.
+void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
+
 // ── Gem-cup return hub (destination-shuffle correctness) ──
 // Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a
 // cup's four track loads clobber gGT->prevLEV (each MainRaceTrack_RequestLoad

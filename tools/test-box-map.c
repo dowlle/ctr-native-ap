@@ -757,6 +757,28 @@ static void test_tier2_route_table(void)
 	           "nothing left -> defensive Done route, never a dead menu");
 }
 
+// The diagnostic's route codes are what a live #232/#265 log is read through, so
+// a collision between the two halves would silently mislabel a branch. Pin the
+// shift here, out of engine, the same way the decisions above are pinned.
+static void test_pad_route_codes(void)
+{
+	printf("\n-- pad entry-route diagnostic codes (#232/#265) --\n");
+	expect_int(AP_PAD_ROUTE_S2LOCKED_BOX_RERACE != AP_PAD_ROUTE_S2LOCKED_INERT, 1,
+	           "the two stage-2-locked routes are distinct codes");
+	expect_int((int)AP_PAD_ROUTE_TIER2_BASE > (int)AP_PAD_TIER2_DONE, 1,
+	           "the tier-2 base clears every tier-2 enumerator");
+	expect_int(AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU > AP_PAD_ROUTE_S2LOCKED_INERT, 1,
+	           "no shifted tier-2 code collides with a stage-2-locked code");
+	expect_int(AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE, 19,
+	           "the tier-2 box re-race logs as its own code, not as the #232 one");
+	expect_int(AP_PAD_ROUTE_TIER2_BASE + AP_PadTier2RouteDecide(0, 0, 3),
+	           AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE,
+	           "a boxes-only decision logs the tier-2 box re-race code");
+	expect_int(AP_PAD_ROUTE_TIER2_BASE + AP_PadTier2RouteDecide(1, 1, 0),
+	           AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU,
+	           "a chooser decision logs the tier-2 menu code");
+}
+
 static void test_combined_232_265_sequence(void)
 {
 	printf("\n-- combined trophy, gate, tier-2 and boxes lifecycle (#232/#265) --\n");
@@ -799,6 +821,7 @@ int main(void)
 	test_scout_codes();
 	test_pad_state_table();
 	test_tier2_route_table();
+	test_pad_route_codes();
 	test_combined_232_265_sequence();
 
 	printf("\n%s (%d failure%s)\n",

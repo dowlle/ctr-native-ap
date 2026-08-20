@@ -1153,6 +1153,107 @@ int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
 	return AP_PadState(physLevelID, destLevelID) == 2;
 }
 
+// Human-readable name for an AP_PadRoute code. The tier-2 half is written out
+// as BASE + the tier-2 enumerator rather than as bare numbers, so a route added
+// to AP_PadTier2RouteDecide shows up here as a missing case, not a wrong label.
+static const char *AP_PadRouteName(int route)
+{
+	switch (route)
+	{
+	case AP_PAD_ROUTE_S2LOCKED_BOX_RERACE:
+		return "box-re-race(stage2-locked)";
+	case AP_PAD_ROUTE_S2LOCKED_INERT:
+		return "inert(stage2-locked)";
+	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU:
+		return "tier2-menu";
+	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_TOKEN:
+		return "tier2-token";
+	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_RELIC:
+		return "tier2-relic";
+	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE:
+		return "box-re-race(tier2)";
+	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_DONE:
+		return "done-defensive";
+	default:
+		break;
+	}
+	return "unknown";
+}
+
+// One "[AP PAD]" line per pad-decision TRANSITION (issues #232 / #265). Both
+// gates that call this sit inside AH_WarpPad_ThTick and therefore run every
+// frame the player stands on the pad, so the whole reported tuple is remembered
+// and an unchanged decision stays silent. Only one pad can be in the entry
+// sequence at a time, so a single remembered tuple cannot thrash between pads.
+void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
+{
+	static int s_phys = -1;
+	static int s_dest = -1;
+	static int s_route = -1;
+	static int s_state = -1;
+	static int s_trophy = -1;
+	static int s_token = -1;
+	static int s_relic = -1;
+	static int s_boxes = -1;
+
+	int uncBits[24];
+	int uncN;
+	int k;
+	int state;
+	int trophyChecked;
+	int tokenLeft = 0;
+	int relicLeft = 0;
+	int boxesLeft;
+	char msg[192];
+
+	if (!ctr_cfg_active())
+		return; // vanilla mode -- no AP pad lifecycle to describe
+	if (!AP_DestKnown(destLevelID))
+		return;
+
+	state = AP_PadState(physLevelID, destLevelID);
+	trophyChecked = AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
+	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
+
+	// The same enumerator and the same offsets the tier-2 chooser itself reads,
+	// so the logged flags cannot disagree with the decision they explain. These
+	// are "an unchecked location of this tier still exists" -- a tier this seed
+	// never placed reports 0 here exactly as it does to the chooser.
+	uncN = AP_PadUncollectedBits(destLevelID, uncBits,
+	                             (int)(sizeof uncBits / sizeof uncBits[0]));
+	for (k = 0; k < uncN; k++)
+	{
+		int off = uncBits[k] - destLevelID;
+		if (off == ADV_REWARD_FIRST_CTR_TOKEN)
+			tokenLeft = 1;
+		else if (off == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
+		         off == ADV_REWARD_FIRST_GOLD_RELIC ||
+		         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
+			relicLeft = 1;
+	}
+
+	if (physLevelID == s_phys && destLevelID == s_dest && route == s_route &&
+	    state == s_state && trophyChecked == s_trophy && tokenLeft == s_token &&
+	    relicLeft == s_relic && boxesLeft == s_boxes)
+		return; // nothing the line reports has changed since it was last emitted
+
+	s_phys = physLevelID;
+	s_dest = destLevelID;
+	s_route = route;
+	s_state = state;
+	s_trophy = trophyChecked;
+	s_token = tokenLeft;
+	s_relic = relicLeft;
+	s_boxes = boxesLeft;
+
+	snprintf(msg, sizeof msg,
+	         "[AP PAD] pad %d -> dest %d: state=%d trophy_checked=%d token_left=%d "
+	         "relic_left=%d boxes_left=%d route=%s\n",
+	         physLevelID, destLevelID, state, trophyChecked, tokenLeft, relicLeft,
+	         boxesLeft, AP_PadRouteName(route));
+	AP_LogLine(msg);
+}
+
 // ---------------------------------------------------------------------------
 // AP STATE GENERATION (Warp-Pad State Model v2, foundation for live re-birth).
 // A monotonically increasing counter bumped whenever something that can change a

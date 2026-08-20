@@ -101,5 +101,22 @@ static inline int AP_PadTier2RouteDecide(int tokenLeft, int relicLeft, int boxes
 	return AP_PAD_TIER2_DONE;
 }
 
+// Diagnostic route codes for AP_PadLogRoute (ap_hooks.c, issues #232 / #265).
+// The two gates in AH_WarpPad.c that can route an AP pad report which branch
+// they took through these; the tier-2 half is AP_PadTier2Route shifted by
+// AP_PAD_ROUTE_TIER2_BASE, so the tier-2 gate logs the decision it already made
+// instead of re-deriving it. The base is 16, far above the five tier-2 values,
+// so the two halves cannot collide even if either grows.
+//
+// Kept here beside the decision it labels, not in ap_hooks.h, so
+// tools/test-box-map.c can pin the mapping out of engine like the rest of the
+// state model.
+enum AP_PadRoute
+{
+	AP_PAD_ROUTE_S2LOCKED_BOX_RERACE = 0, // stage 2 locked, boxes stand -> plain re-race
+	AP_PAD_ROUTE_S2LOCKED_INERT      = 1, // stage 2 locked, nothing re-raceable -> inert
+	AP_PAD_ROUTE_TIER2_BASE          = 16 // + enum AP_PadTier2Route
+};
+
 #endif // CTR_AP
 #endif // AP_PAD_STATE_H
