@@ -7,7 +7,7 @@
 #include "ap_box_model.h"
 #include "ap_box_model_data.h"
 #include "ap_hooks.h"
-#include "ap_retail_crate.h"
+#include "ap_box_texture.h"
 
 struct ApBoxModelFrame
 {
@@ -56,7 +56,7 @@ static void AP_BoxModel_Build(struct GameTracker *gGT)
 	s_apBoxHeader.scale.y = scale;
 	s_apBoxHeader.scale.z = scale;
 	// Flat-shaded, untextured. This is the LAST RESORT, reached only when the
-	// retail crate could not be harvested, so it deliberately stays the plain
+	// box atlas could not be uploaded, so it deliberately stays the plain
 	// vertex-coloured cube rather than borrowing the sideload slot: a fallback
 	// should look like a stand-in, not like a broken texture.
 	s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommands;
@@ -91,7 +91,7 @@ int AP_BoxModel_Ensure(struct GameTracker *gGT)
 
 	if (!s_apBoxBuilt)
 		AP_BoxModel_Build(gGT);
-	if (!s_apBoxTextured && AP_RetailCrate_EnsureTexture(&face))
+	if (!s_apBoxTextured && AP_BoxTexture_EnsureFace(&face))
 	{
 		s_apBoxLayout = face;
 		s_apBoxHeader.ptrTexLayout = s_apBoxLayouts;
@@ -129,10 +129,10 @@ int AP_BoxModel_EnsureRelic(struct GameTracker *gGT)
 	if (gGT == 0)
 		return -1;
 
-	// Stand first, decorate second. Texture harvesting can remain pending or fail
+	// Stand first, decorate second. The texture upload can remain pending or fail
 	// forever without hiding a location or leaving invisible collision behind.
 	AP_BoxModel_EnsureOwned(gGT);
-	if (!s_apBoxTextured && AP_RetailCrate_EnsureTexture(&face))
+	if (!s_apBoxTextured && AP_BoxTexture_EnsureFace(&face))
 	{
 		s_apBoxLayout = face;
 		s_apBoxHeader.ptrTexLayout = s_apBoxLayouts;

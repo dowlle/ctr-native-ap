@@ -241,6 +241,29 @@ design, and both credits are permanent.
 License (mesh): GPL-3.0, per the MMRecompRando repository.
 License (logo design): CC BY-NC 4.0.
 
+## AP Box Texture (AP build only)
+
+Paths: `tools/apbox-texture/box_pink_*.png` (source art),
+`tools/apbox-texture/LICENSE-archipelago-icon.txt` (the license as supplied with
+the art), `ap/ap_box_texture_data.h` (generated)
+
+The face texture on an AP box is original art contributed by **JurnthReinal**,
+who derived it from the Archipelago icon. `tools/apbox-texture/convert.py` bakes
+the three supplied PNGs into the static 128x64 RGBA atlas the AP build compiles
+in and uploads as its sideload texture, so the AP box no longer takes its
+appearance from pixels harvested out of the player's own retail game data.
+
+The Archipelago icon the art derives from is copyright (c) 2022 Krista Corkos
+and Christopher Wilson, used under Creative Commons Attribution-NonCommercial
+4.0 (<https://creativecommons.org/licenses/by-nc/4.0/>). This project is
+non-commercial. Attribution is owed both to the contributed art and to the
+underlying icon design, and both credits are permanent.
+
+Credit the artist as "JurnthReinal" and by no other name.
+
+License (contributed art): CC BY-NC 4.0, as a derivative of the icon below.
+License (icon design): CC BY-NC 4.0.
+
 ## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
 
 Paths: `ap/ap_blue_fire.c`, `ap/ap_capability.c`,

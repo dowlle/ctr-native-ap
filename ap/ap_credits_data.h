@@ -94,6 +94,15 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "LOGO DESIGN - KRISTA CORKOS"},
     {0, "AND CHRISTOPHER WILSON"},
     {0, ""},
+    // THIRD_PARTY_NOTICES.md "AP Box Texture": the box face art was contributed
+    // by JurnthReinal, who derived it from the Archipelago icon, (c) 2022 Krista
+    // Corkos and Christopher Wilson (CC BY-NC 4.0). Credit the artist by that
+    // name only, at their request. Both credits are permanent.
+    {1, "AP BOX TEXTURE"},
+    {0, "ART - JURNTHREINAL"},
+    {0, "ICON DESIGN - KRISTA CORKOS"},
+    {0, "AND CHRISTOPHER WILSON"},
+    {0, ""},
     {1, "LIBRARIES"},
     {0, "PSY-X - REDRIVER2 PROJECT"},
     {0, "PSN00BSDK - LAMEGUY64"},
