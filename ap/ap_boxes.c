@@ -48,7 +48,11 @@ static int              s_liveCount;
 
 static int s_level = -1;    // level the live set was built for
 static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
-static int s_placeGen = -1; // AP_Author_PlacementGeneration() the set was built from
+// AP_Author_PlacementGeneration() the set was built from. Named per-module:
+// the unity build puts every file-static in ONE scope, and a bare `s_placeGen`
+// coalesced with ap_author.c's counter of the same name, so this comparison
+// read the counter against itself and the placement-change rebuild never fired.
+static int s_boxesPlaceGen = -1;
 static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
 static int s_modelWarned;   // "no crate model here" logged once per level
 static int s_spawnFull;     // the loader refused a box on this level: stop asking
@@ -312,7 +316,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 
 	AP_BoxesClear();
 	s_level = level;
-	s_placeGen = AP_Author_PlacementGeneration();
+	s_boxesPlaceGen = AP_Author_PlacementGeneration();
 	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
 
 	if (AP_BoxMap_ApTrack(level) < 0)
@@ -592,7 +596,7 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	AP_Author_EnsureLoaded();
 
 	level = (int)gGT->levelID;
-	if (level != s_level || AP_Author_PlacementGeneration() != s_placeGen ||
+	if (level != s_level || AP_Author_PlacementGeneration() != s_boxesPlaceGen ||
 	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode)
 		AP_BoxesRebuild(gGT, level);
 
