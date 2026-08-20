@@ -4287,6 +4287,68 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 	return filtered;
 }
 
+// Item Reroll's repeat guard (#280). The trap is ruled to exclude the previous
+// item when at least two valid alternatives exist, and to allow the same result
+// when only one is available.
+//
+// It lives here rather than in ap_traps.c because the eligible pool is
+// ap_itemsanity_owned, which this translation unit owns, and it reuses
+// AP_ItemsanitySelectOwned's existing exclusion mask rather than growing a second
+// pool walk. The same full-pool decision the draw filter documents applies: the
+// replacement is drawn from every owned weapon, not from the rank-weighted table,
+// so a reroll cannot be silently narrowed by race position.
+//
+// When itemsanity is not filtering this roll the player owns everything by
+// definition, so the pool is the whole weapon list. Reusing the real ownership
+// gate rather than testing AP_ItemsanityActive alone keeps the Crystal Challenge
+// and battle exceptions identical to every other filter here.
+//
+// No RNG draw is consumed: the roll that produced `rolled` is reused, so a given
+// seed and roll still produce one deterministic answer.
+int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
+{
+	static const unsigned char apTrapRerollAllOwned[AP_ITEMSANITY_WEAPON_COUNT] =
+		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+	struct GameTracker *gGT = sdata->gGT;
+	const unsigned char *owned;
+	int excluded;
+	int alternative;
+
+	if (!gGT || driver != gGT->drivers[0])
+		return rolled;
+
+	excluded = AP_TrapRerollExcludedItem();
+	if (excluded < 0)
+		return rolled;
+
+	// Compare canonically, so a Spring the engine is about to rewrite to Turbo
+	// does not read as a different weapon from the Turbo it becomes.
+	excluded = AP_ItemsanityCanonicalWeapon(excluded);
+	if (AP_ItemsanityWeaponIndex(excluded) < 0)
+		return rolled; // not one of the gated weapons; nothing to exclude against
+	if (AP_ItemsanityCanonicalWeapon(rolled) != excluded)
+		return rolled; // the roll already differs, which is the common case
+
+	owned = AP_ItemsanityShouldFilter(AP_ItemsanityActive(), 1,
+	    (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
+	        ? ap_itemsanity_owned : apTrapRerollAllOwned;
+
+	alternative = AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_ID_BIT((unsigned)excluded),
+	                                       AP_ITEMSANITY_FULL_POOL,
+	                                       AP_ITEMSANITY_FULL_POOL_SIZE, owned);
+	if (alternative == AP_ITEMSANITY_NO_ITEM)
+	{
+		// One valid item in the pool, so the ruling allows the repeat. This is
+		// not the itemsanity no-item path and must not grant a Wumpa: the player
+		// is still holding a legitimate weapon.
+		AP_AppendLog("[AP TRAP] Item Reroll: only one eligible weapon, repeat allowed\n");
+		return rolled;
+	}
+	return alternative;
+}
+
 // Ownership guard for vanilla's downstream item rewrites. The draw filter above
 // only settles the roll itself; the single-warpball rule and the two-holders
 // 3-missile cap rewrite that result afterwards and would otherwise hand out an

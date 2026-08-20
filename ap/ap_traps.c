@@ -67,6 +67,20 @@ int Platform_InputRawKeyDown(int scancode);
 #define AP_TRAP_RECOVER_MS       1000
 #define AP_TRAP_STATIONARY_SHIFT 4 // "nearly stationary" is under 1/16 top speed
 
+// ── Wave 2 batch 1 constants ──
+// The held-item sentinels, the slot classifier and the completion predicates
+// live in ap/ap_trap_observe_logic.h, included via ap_traps.h, so the harness
+// drives the same rules this file does. See that header for why the split
+// exists and for the three review defects it pins.
+//
+// Roulette length a weapon box starts, reused so a trap reroll spins for exactly
+// as long as a natural pickup (RB_Crate.c:288).
+#define AP_TRAP_ROLL_FRAMES 90
+// The juiced threshold the engine itself tests (VehPhysProc.c:156/327).
+#define AP_TRAP_JUICED_WUMPA 10
+// Warpball Ambush counts fifteen uninterrupted seconds in first place.
+#define AP_TRAP_LEAD_MS 15000
+
 static AP_TrapSched g_sched;
 static int g_sched_ready = 0;
 
@@ -86,6 +100,11 @@ static int g_prev_load = LOAD_IDLE;
 
 // Reverse-recovery accumulator, in milliseconds of near-stationary time.
 static int g_recover_ms = 0;
+
+// Reverse Steering applied its mirror to this frame's steering axis already.
+// Cleared once per frame in AP_TrapTick; see AP_TrapDriveInput for why a mirror
+// cannot simply be reapplied the way the boost-control writes can.
+static int g_trap_steer_mirrored = 0;
 
 static void AP_TrapEnsureReady(void)
 {
@@ -197,20 +216,363 @@ static int AP_TrapFinishOrPodium(struct GameTracker *gGT, struct Driver *local)
 	return local != 0 && (local->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
 }
 
-// Satisfied conditional predicates. Only the one Forced USF needs is observable
-// today; the rest arrive with the wave 2 effects that read them.
-static unsigned AP_TrapConditions(struct Driver *local)
+// ── Conditional predicates ──
+//
+// One observer per AP_TrapCondition bit. Each answers "does the prerequisite
+// genuinely hold this frame", nothing more: the scheduler decides what to do
+// about it. An observer that cannot tell reports 0, which keeps the trap armed,
+// because the shared ruling is that an unconsumable copy waits rather than
+// discharging harmlessly.
+
+// Is a fully resolved weapon in the slot? 0xF is the empty sentinel and 0x10 is
+// the roulette placeholder (VehPhysProc.c:316/536, RB_Crate.c:286), and the roll
+// is not settled until itemRollTimer reaches zero (VehPhysProc.c:320).
+static int AP_TrapHeldItemResolved(struct Driver *local)
+{
+	if (local == 0)
+		return 0;
+	return AP_TrapHeldItemIsResolved((int)local->heldItemID, (int)local->itemRollTimer,
+	                                 (int)local->noItemTimer);
+}
+
+// Would a fruit reset actually take anything away? Wumpa Wipeout is ruled to
+// respect the engine's own protection and stay armed rather than fire
+// harmlessly, so this mirrors the two early returns inside RB_Player_ModifyWumpa
+// (RB_Player.c:146 CHEAT_WUMPA, RB_Player.c:151 ACTION_MASK_WEAPON) exactly. A
+// mask GRAB is scripted control, which the shared lifecycle already suspends,
+// but it is named here too so the predicate is true independently of that.
+static int AP_TrapFruitProtected(struct GameTracker *gGT, struct Driver *local)
+{
+	if (gGT == 0 || local == 0)
+		return 1;
+	if ((gGT->gameMode2 & CHEAT_WUMPA) != 0)
+		return 1;
+	if ((local->actionsFlagSet & ACTION_MASK_WEAPON) != 0)
+		return 1;
+	return local->kartState == KS_MASK_GRABBED;
+}
+
+// The LEV instance table, handed over once per load from INSTANCE.c after every
+// entry's ptrInstance is filled. Same seam and same reason as the Tizi helper's:
+// there is no crate thread list to walk, because a crate has no thread at all
+// until a driver first touches it (RB_Crate.c:195-223).
+static struct InstDef *g_trap_lev_defs = 0;
+static int g_trap_lev_count = 0;
+static int g_trap_crate_epoch = -1;
+static int g_trap_crate_present = 0;
+
+void AP_TrapLevelInstances(struct InstDef *defs, int count)
+{
+	g_trap_lev_defs = defs;
+	// Same guard shape as AP_TiziLevelInstances: a null table means no entries,
+	// however large the count claims to be.
+	g_trap_lev_count = (defs != 0 && count > 0) ? count : 0;
+	g_trap_crate_epoch = -1; // force a fresh census on the next observation
+}
+
+// Forget the cached LEV table. The pointer is into the mempack arena, which a
+// dev savestate restore rewrites wholesale: native_checkpoint.c relocates the
+// pointer slots it knows about, and this cache is not one of them, so after a
+// cross-level restore it would address whatever now occupies those bytes. There
+// is nothing to relocate it TO either, because the restored level's InstDefs are
+// only re-published when INSTANCE.c next instantiates a level. Dropping the
+// cache is therefore the whole fix: the census answers "no eligible crates" and
+// Empty Crates stays armed until the next real load re-publishes the table,
+// which is the safe direction for a trap that is ruled to wait.
+void AP_TrapForgetLevelInstances(void)
+{
+	g_trap_lev_defs = 0;
+	g_trap_lev_count = 0;
+	g_trap_crate_epoch = -1;
+}
+
+// Does the loaded map carry at least one crate Empty Crates would suppress?
+//
+// The census counts weapon boxes and Wumpa crates, and tests DRAW_COLLISION_MASK
+// rather than the model id alone. That flag is exactly where the engine records
+// its own per-mode crate filtering (INSTANCE.c:385-432): Time Trial and Relic
+// Race clear it on both arcade crate models, and Crystal Challenge clears it on
+// the fruit crate. Reading the flag therefore gives the matrix's "conditional:
+// Wumpa crates" column for free and cannot drift from the engine's own rule.
+//
+// Cached per map epoch. The table only changes at a load, and walking a few
+// thousand InstDefs every frame to answer a question with a per-map answer would
+// be pure waste.
+static int AP_TrapEligibleCrates(int epoch)
+{
+	struct InstDef *def;
+	int i;
+
+	if (g_trap_crate_epoch == epoch)
+		return g_trap_crate_present;
+
+	g_trap_crate_epoch = epoch;
+	g_trap_crate_present = 0;
+
+	def = g_trap_lev_defs;
+	for (i = 0; i < g_trap_lev_count; i++, def++)
+	{
+		int modelID;
+		if (def->model == 0 || def->ptrInstance == 0)
+			continue;
+		// Same low-half mask the Tizi census uses on model->id.
+		modelID = (int)(def->model->id & 0xffff);
+		if (modelID != PU_RANDOM_CRATE && modelID != PU_FRUIT_CRATE)
+			continue;
+		if ((def->ptrInstance->flags & DRAW_COLLISION_MASK) == 0)
+			continue;
+		g_trap_crate_present = 1;
+		break;
+	}
+	return g_trap_crate_present;
+}
+
+// Continuous time the local player has held first place under active control,
+// in milliseconds. Warpball Ambush is ruled to reset this completely on losing
+// first place, and to EXCLUDE countdowns, pause, cutscenes and finish
+// ceremonies from elapsed lead time, which is a freeze rather than a reset. The
+// distinction is AP_TrapLeadAccumulate's, and is pinned in the harness.
+static int g_trap_lead_ms = 0;
+
+// Is there an AI racer that could still be told to fire? Finished, eliminated
+// and empty slots are excluded, per the ruling. driverRank is 0-based, so first
+// place is 0 (UI_Rank.c:86-87), and -1 means "not ranked this frame"
+// (PlayLevel.c:247).
+static int AP_TrapValidAiPresent(struct GameTracker *gGT, struct Driver *local)
+{
+	int i;
+	for (i = 0; i < 8; i++)
+	{
+		struct Driver *d = gGT->drivers[i];
+		if (d == 0 || d == local)
+			continue;
+		if ((d->actionsFlagSet & ACTION_BOT) == 0)
+			continue;
+		if ((d->actionsFlagSet & ACTION_RACE_FINISHED) != 0)
+			continue;
+		if (d->driverRank < 0)
+			continue;
+		return 1;
+	}
+	return 0;
+}
+
+static int AP_TrapAiLead(struct GameTracker *gGT, struct Driver *local, int counting,
+                         int elapsedMs)
+{
+	// No world and no driver is not "the player was overtaken", so it freezes
+	// like any other state the ruling excludes from elapsed time. The map and
+	// session boundaries are what genuinely clear this timer.
+	if (gGT == 0 || local == 0)
+		return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+
+	g_trap_lead_ms = AP_TrapLeadAccumulate(g_trap_lead_ms, (int)local->driverRank,
+	                                       AP_TrapValidAiPresent(gGT, local), counting,
+	                                       elapsedMs);
+	return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+}
+
+// Satisfied conditional predicates, assembled once per frame. `counting` is the
+// same "the player genuinely has the kart" test the scheduler applies before it
+// lets anything fire; only the lead timer needs it, because it is the one
+// predicate that accumulates rather than sampling.
+static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
+                                  int epoch, int counting, int elapsedMs)
 {
 	unsigned bits = 0;
+
 	if (local != 0 && (local->actionsFlagSet & ACTION_NEW_BOOST) != 0)
 		bits |= AP_TRAP_COND_EARNED_BOOST;
+
+	if (local != 0 && local->numWumpas >= AP_TRAP_JUICED_WUMPA &&
+	    !AP_TrapFruitProtected(gGT, local))
+		bits |= AP_TRAP_COND_TEN_WUMPA;
+
+	if (AP_TrapHeldItemResolved(local))
+		bits |= AP_TRAP_COND_HELD_ITEM;
+
+	if (AP_TrapEligibleCrates(epoch))
+		bits |= AP_TRAP_COND_ELIGIBLE_CRATES;
+
+	if (AP_TrapAiLead(gGT, local, counting, elapsedMs))
+		bits |= AP_TRAP_COND_AI_LEAD;
+
 	return bits;
+}
+
+// ── Instant effects ──
+//
+// The three instant effects in this wave all carry AP_TRAP_DURATION_ENGINE_NATURAL,
+// which means the scheduler holds the slot ACTIVE until the application code says
+// the outcome landed. That report is AP_TrapSchedEffectDone, and it is what lets a
+// serialized duplicate take its turn. Wumpa Wipeout reports on the spot because a
+// fruit reset has no aftermath; Item Reroll waits for the roulette to settle and
+// Forced Use waits for the weapon to actually leave the slot, because both are
+// ruled to wait rather than be consumed unsuccessfully.
+
+// Item Reroll: the weapon held when the trap fired, so the new roll can avoid it.
+// -1 when no reroll is in flight.
+static int g_trap_reroll_excluded = -1;
+// Forced Use: what the player was holding when the trap fired, so the runtime can
+// recognise the moment the engine actually consumed it.
+static int g_trap_use_pending = 0;
+static int g_trap_use_item = -1;
+static int g_trap_use_count = 0;
+
+// Give back the engine-wide bookkeeping a discarded weapon was holding.
+//
+// Two vanilla invariants are maintained by counters rather than by inspecting
+// inventories: at most one Warpball in play (WARPBALL_HELD, claimed at
+// VehPhysGeneral.c:1128-1130 and released when the object dies, RB_Warpball.c:38)
+// and at most two drivers holding Missile x3 (numPlayersWith3Missiles, claimed at
+// VehPhysGeneral.c:1160 and released in the slot-emptying block at
+// VehPhysProc.c:358-371, as the post-use lockout expires). Deleting a
+// held weapon outside the normal use path would leak both, and a leaked
+// WARPBALL_HELD silently denies Warpball to the whole field for the rest of the
+// race. The release conditions below are copied from those two release sites.
+static void AP_TrapReleaseHeldItemClaims(struct GameTracker *gGT, struct Driver *local)
+{
+	if (local->heldItemID == 0x9)
+		gGT->gameMode1 &= ~WARPBALL_HELD;
+
+	if (local->heldItemID == 0xB && (u8)gGT->numPlyrCurrGame > 2 &&
+	    (gGT->gameMode1 & BATTLE_MODE) == 0 && gGT->numPlayersWith3Missiles > 0)
+		gGT->numPlayersWith3Missiles--;
+}
+
+// Item Reroll: discard the held weapon and start CTR's ordinary roulette, exactly
+// as a weapon box does. The result is therefore drawn by the engine's own roll and
+// passes the Itemsanity draw filter unchanged, which is what the ruling asks for:
+// the seed's available weapon pool decides, and normal game rules decide whether
+// the result is juiced.
+static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
+{
+	AP_TrapReleaseHeldItemClaims(gGT, local);
+	g_trap_reroll_excluded = (int)local->heldItemID;
+
+	local->heldItemID = AP_TRAP_ITEM_ROLLING;
+	local->numHeldItems = 0;
+	local->noItemTimer = 0;
+	local->itemRollTimer = AP_TRAP_ROLL_FRAMES;
+	// Deliberately NOT touching PickupTimeboxHUD. A weapon box also seeds that
+	// HUD's start coordinates from the crate's screen position (RB_Crate.c:315-320)
+	// so the icon can fly in from the box that was broken. There is no box here,
+	// and setting only the cooldown would animate it from whatever coordinates the
+	// last real pickup left behind. The trap has its own presentation.
+	if ((gGT->gameMode1 & ROLLING_ITEM) == 0)
+		gGT->gameMode1 |= ROLLING_ITEM;
+}
+
+// Has the reroll settled? The roll resolves in VehPhysGeneral_SetHeldItem roughly
+// 90 frames later, and only then has the trap delivered what it promised.
+static void AP_TrapPollReroll(struct Driver *local)
+{
+	if (g_trap_reroll_excluded < 0)
+		return;
+	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_ITEM_REROLL))
+	{
+		// The slot went away underneath us (map change, connect reset). Drop the
+		// exclusion so it cannot leak onto an unrelated later roll.
+		g_trap_reroll_excluded = -1;
+		return;
+	}
+	if (local == 0)
+		return;
+	// A roll still in flight is the only reason to keep waiting. Anything else,
+	// including the finish line confiscating the slot mid-spin, is done. See
+	// AP_TrapRerollOutcome for why waiting on a resolve alone was a defect.
+	if (AP_TrapRerollOutcome((int)local->heldItemID, (int)local->itemRollTimer,
+	                         (int)local->noItemTimer) == AP_TRAP_OUTCOME_WAIT)
+		return;
+	g_trap_reroll_excluded = -1;
+	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_ITEM_REROLL);
+}
+
+// The exclusion the roll filter consults. Read once, at the moment the roll
+// resolves; -1 means no reroll is in flight and the filter is inert.
+int AP_TrapRerollExcludedItem(void)
+{
+	return g_trap_reroll_excluded;
+}
+
+// Forced Use: remember what has to leave the slot. The button injection itself
+// happens in AP_TrapDriveInput, because the fire path reads a TAPPED button and
+// the pad is only in hand there.
+static void AP_TrapArmForcedUse(struct Driver *local)
+{
+	g_trap_use_pending = 1;
+	g_trap_use_item = (int)local->heldItemID;
+	g_trap_use_count = (int)local->numHeldItems;
+}
+
+// Is a forced use still owed? True while the trap is armed, active and its press
+// has not yet landed. The map boundary consults this as well as the poll, so the
+// two can never disagree about whether the copy was spent.
+static int AP_TrapForcedUseOwed(struct Driver *local)
+{
+	if (!g_trap_use_pending || !AP_TrapSchedActive(&g_sched, AP_TRAP_FORCED_USE))
+		return 0;
+	// No driver to read means no evidence the use landed, and the ruling is to
+	// wait rather than be consumed unsuccessfully, so the trap is still owed.
+	if (local == 0)
+		return 1;
+	return AP_TrapForcedUseOutcome((int)local->heldItemID, (int)local->numHeldItems,
+	                               (int)local->noItemTimer, g_trap_use_item,
+	                               g_trap_use_count) == AP_TRAP_OUTCOME_WAIT;
+}
+
+// Did the forced use actually happen? The engine refuses the fire request in an
+// incompatible driver state, during a respawn and while a TNT is on the player's
+// head (VehPhysProc.c:485-489), so a consumed trap has to be proven rather than
+// assumed. See AP_TrapForcedUseOutcome for what counts as proof and why an empty
+// slot on its own does not.
+static void AP_TrapPollForcedUse(struct Driver *local)
+{
+	if (!g_trap_use_pending)
+		return;
+	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_FORCED_USE))
+	{
+		g_trap_use_pending = 0;
+		return;
+	}
+	if (AP_TrapForcedUseOwed(local))
+		return;
+	g_trap_use_pending = 0;
+	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
+}
+
+// Apply one instant effect at the moment the scheduler fires it. Called from the
+// event drain, which is the only place that sees the FIRE edge exactly once.
+static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
+{
+	if (gGT == 0 || local == 0)
+		return;
+
+	switch (effect)
+	{
+	case AP_TRAP_WUMPA_WIPEOUT:
+		// Through the engine's own helper, so the clamp, the juiced-state
+		// bookkeeping and the mask veto all behave exactly as they do for a
+		// normal hit. The predicate has already established that nothing is
+		// protecting the fruit, so this genuinely takes it.
+		RB_Player_ModifyWumpa(local, -AP_TRAP_JUICED_WUMPA);
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
+		break;
+	case AP_TRAP_ITEM_REROLL:
+		AP_TrapStartReroll(gGT, local);
+		break;
+	case AP_TRAP_FORCED_USE:
+		AP_TrapArmForcedUse(local);
+		break;
+	default:
+		break;
+	}
 }
 
 // ── Presentation ──
 // One place decides what the player is told, so the log and the on-screen feed can
 // never disagree about a trap's state.
-static void AP_TrapDrainEvents(void)
+static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 {
 	AP_TrapEvent ev;
 	char msg[128];
@@ -218,6 +580,10 @@ static void AP_TrapDrainEvents(void)
 	while (AP_TrapSchedPopEvent(&g_sched, &ev))
 	{
 		const char *name = AP_TrapName(ev.effect);
+		// The FIRE edge is seen exactly once here, which is what an instant
+		// effect needs: it has no ACTIVE frames of its own to act on.
+		if (ev.kind == AP_TRAP_EV_FIRE)
+			AP_TrapApplyInstant(gGT, local, ev.effect);
 		switch (ev.kind)
 		{
 		case AP_TRAP_EV_ARMED:
@@ -308,6 +674,10 @@ void AP_Trap_ConnectReset(void)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
 	g_recover_ms = 0;
+	g_trap_lead_ms = 0;
+	g_trap_reroll_excluded = -1;
+	g_trap_use_pending = 0;
+	g_trap_steer_mirrored = 0;
 
 	AP_LogLine("[AP TRAP] fresh connect: dropped every armed and active trap\n");
 }
@@ -324,11 +694,19 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "usf"))     AP_TrapReceive(AP_TRAP_USF_NOBRAKE);
 	else if (!strcmp(v, "boost"))   AP_TrapReceive(AP_TRAP_BOOST);
 	else if (!strcmp(v, "fp"))      AP_TrapReceive(AP_TRAP_FIRSTPERSON);
+	else if (!strcmp(v, "wumpa"))   AP_TrapReceive(AP_TRAP_WUMPA_WIPEOUT);
+	else if (!strcmp(v, "reroll"))  AP_TrapReceive(AP_TRAP_ITEM_REROLL);
+	else if (!strcmp(v, "use"))     AP_TrapReceive(AP_TRAP_FORCED_USE);
+	else if (!strcmp(v, "reverse")) AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "all"))
 	{
+		// Every effect this build can actually perform, which is no longer the
+		// leading AP_TRAP_COUNT block now that wave 2 activates effects out of
+		// order. The descriptor's own active flag is the authority.
 		int e;
-		for (e = 0; e < AP_TRAP_COUNT; e++)
-			AP_TrapReceive(e);
+		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+			if (AP_TRAP_DESC[e].active)
+				AP_TrapReceive(e);
 	}
 	return 1;
 }
@@ -365,8 +743,9 @@ void AP_TrapDebugKeys(void)
 			if (keys[k].effect < 0)
 			{
 				int e;
-				for (e = 0; e < AP_TRAP_COUNT; e++)
-					AP_TrapReceive(e);
+				for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+					if (AP_TRAP_DESC[e].active)
+						AP_TrapReceive(e);
 			}
 			else
 				AP_TrapReceive(keys[k].effect);
@@ -440,6 +819,10 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapEnsureReady();
 
+	// One frame, one steering mirror. Cleared here rather than at the end of the
+	// tick so it is also clear on any frame that returns early below.
+	g_trap_steer_mirrored = 0;
+
 	// Debug keys work anywhere, title screen included, but only when enabled via
 	// ap-config.txt dev_keys=1 (gate inside AP_TrapDebugKeys).
 	AP_TrapDebugKeys();
@@ -449,6 +832,19 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	loadStage = (sdata != 0) ? sdata->Loading.stage : LOAD_IDLE;
 	levelNow = gGT->levelID;
+	local = gGT->drivers[0];
+
+	// Engine-natural completion for anything that fired on an EARLIER tick.
+	//
+	// This runs before the map boundary on purpose. A forced press lands during
+	// physics, which happens after this tick returns, so the evidence always
+	// arrives one tick late. With the polls after the boundary block, a use that
+	// landed in frame N's physics was still "pending" when frame N+1's boundary
+	// ran, and the copy was re-armed as if it had never fired: one trap, two
+	// weapons. Crediting the outcome first means the boundary only ever sees
+	// genuinely unresolved copies.
+	AP_TrapPollReroll(local);
+	AP_TrapPollForcedUse(local);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
 	// source map is still standing, is what fixes the reported First Person
@@ -462,15 +858,32 @@ void AP_TrapTick(struct GameTracker *gGT)
 	g_prev_load = loadStage;
 	if (boundary)
 	{
+		// Forced Use is ruled to wait through transitions rather than be consumed
+		// unsuccessfully, but the shared lifecycle clears every ACTIVE copy at a
+		// map boundary. A copy that fired and never got its weapon away is
+		// therefore re-armed here, so the load costs the player a wait rather
+		// than the trap. Nothing else in this batch needs it: Wumpa Wipeout
+		// completes within its firing tick, and a reroll has already discarded
+		// the weapon by the time the load starts, so it was genuinely delivered.
+		//
+		// AP_TrapForcedUseOwed, not a bare pending flag: the poll above has
+		// already credited any use that landed, and this asks the same predicate
+		// so the two cannot disagree about whether the copy was spent.
+		int refireForcedUse = AP_TrapForcedUseOwed(local);
+
 		g_epoch++;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
 		AP_TrapApplyCamera(gGT, 0);
 		g_recover_ms = 0;
-	}
+		g_trap_lead_ms = 0;
+		g_trap_reroll_excluded = -1;
+		g_trap_use_pending = 0;
 
-	local = gGT->drivers[0];
+		if (refireForcedUse)
+			AP_TrapSchedReceive(&g_sched, AP_TRAP_FORCED_USE);
+	}
 
 	w.context = AP_TrapContextOf(gGT, loadStage);
 	w.mapEpoch = g_epoch;
@@ -478,11 +891,17 @@ void AP_TrapTick(struct GameTracker *gGT)
 	w.paused = (gGT->gameMode1 & PAUSE_ALL) != 0;
 	w.scripted = AP_TrapScripted(gGT, local);
 	w.finishOrPodium = AP_TrapFinishOrPodium(gGT, local);
-	w.conditions = AP_TrapConditions(local);
 	w.elapsedMs = gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32;
+	w.conditions = AP_TrapConditions(gGT, local, g_epoch,
+	                                 w.controlUnlocked && !w.paused && !w.scripted &&
+	                                     !w.finishOrPodium,
+	                                 w.elapsedMs);
 
 	AP_TrapSchedStep(&g_sched, &w);
-	AP_TrapDrainEvents();
+	// One drain: it carries the CLEAR events the polls above emitted, the events
+	// this step produced, and it is where an instant effect that fired on THIS
+	// tick gets applied. Its outcome is then read on the next tick's poll.
+	AP_TrapDrainEvents(gGT, local);
 
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = (unsigned char)AP_TrapSchedActive(&g_sched, e);
@@ -565,13 +984,62 @@ void AP_TrapForceBoost(struct Driver *driver)
 	}
 }
 
+// Mirror one steering axis about the centre the engine will measure it from.
+// stickLX runs 0 (full left) through 0x80 (neutral) to 0xFF (full right), and
+// VehPhysJoystick_GetStrengthAbsolute takes its centre from the racing-wheel
+// calibration when one is attached (VehPhysJoystick.c:80-84), so the reflection
+// has to use the same centre or a wheel would pick up a steady drift.
+static int AP_TrapMirrorStick(int value, int centre)
+{
+	int mirrored = centre * 2 - value;
+	if (mirrored < 0)
+		mirrored = 0;
+	if (mirrored > 0xFF)
+		mirrored = 0xFF;
+	return mirrored;
+}
+
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
-                       u32 *buttonsHeld, u32 *cross, u32 *square)
+                       u32 *buttonsHeld, u32 *buttonsTapped, u32 *cross, u32 *square)
 {
 	int usf = g_active[AP_TRAP_USF_NOBRAKE];
 	int boost = g_active[AP_TRAP_BOOST];
 
-	if ((!usf && !boost) || !AP_TrapIsLocal(driver))
+	if (!AP_TrapIsLocal(driver))
+		return;
+
+	// Reverse Steering. One write covers both ruled input paths: GAMEPAD.c:628
+	// folds the D-pad's BTN_LEFT and BTN_RIGHT into stickLX before physics runs,
+	// and the steering section later in this same PhysLinear call reads only
+	// stickLX (VehPhysProc.c:985). Acceleration, braking, hopping, weapon use and
+	// menus are untouched because none of them read this axis, and the menus are
+	// read out of GAMEPAD.c earlier in the frame, before this override exists.
+	// Airborne steering inverts too, for free, because it goes through the same
+	// axis wherever CTR accepts it.
+	//
+	// LATCHED, and that is load-bearing. The engine may call this hook more than
+	// once in a frame, which the two boost-control writes below survive because
+	// they assign constants. A mirror is its own inverse, so applying it twice
+	// would hand the player back normal steering and the trap would silently do
+	// nothing. The latch is cleared once per frame in AP_TrapTick.
+	if (g_active[AP_TRAP_REVERSE_STEERING] && pad != 0 && !g_trap_steer_mirrored)
+	{
+		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
+		pad->stickLX = (s16)AP_TrapMirrorStick((int)pad->stickLX, centre);
+		g_trap_steer_mirrored = 1;
+	}
+
+	// Forced Use. The weapon path fires on a TAPPED circle in a controllable kart
+	// state (VehPhysProc.c:485-489), so the trap presses the button for the player
+	// and lets the engine decide the rest: projectiles fire, TNT and beakers drop,
+	// shields and masks activate, a triple set loses exactly one round, and the
+	// held item keeps whatever juiced state it had. An incompatible state simply
+	// ignores the press, and the effect stays active and tries again next frame,
+	// which is the ruled "wait rather than consume unsuccessfully" behaviour.
+	if (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] && buttonsTapped != 0)
+		*buttonsTapped |= BTN_CIRCLE;
+
+	if (!usf && !boost)
 		return;
 
 	// Both traps disable braking. Forced Boost stops there: the player may release

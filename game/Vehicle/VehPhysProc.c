@@ -467,8 +467,11 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 
 #ifdef CTR_AP
 	// Forced USF and Forced Boost: suppress braking for the local player, and force
-	// throttle for Forced USF only.
-	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &cross, &square);
+	// throttle for Forced USF only. Also Reverse Steering, which mirrors
+	// ptrgamepad's stickLX for the steering section further down this same
+	// function, and Forced Use, which injects a tapped circle for the weapon
+	// check just below.
+	AP_TrapDriveInput(driver, ptrgamepad, &buttonsHeld, &buttonsTapped, &cross, &square);
 	// Progressive Stats (#13): received ranks -> the kart's stat constants,
 	// applied before anything in this function reads them
 	// (VehPhysGeneral_GetBaseSpeed below is the first consumer). Local player

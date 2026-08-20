@@ -33,9 +33,13 @@
 struct GameTracker;
 struct Driver;
 struct GamepadBuffer;
+struct InstDef;
 
 // Effect ids, the descriptor table and the scheduler itself.
 #include "ap_trap_sched_logic.h"
+// Pure observation predicates: held-item slot classification, engine-natural
+// completion for the two inventory traps, and the Warpball Ambush lead timer.
+#include "ap_trap_observe_logic.h"
 
 // ── AP item pipeline seam ──
 // Arm one trap by EFFECT id. The apworld owns the item id space; ap_hooks.c
@@ -117,8 +121,30 @@ void AP_TrapForceBoost(struct Driver *driver);
 // Boost suppresses braking only and leaves the throttle to the player. Both
 // restore reverse once the kart has been nearly stationary for about a second, so
 // the trap cannot leave a kart permanently stuck. No-op otherwise.
+// Applies the control half of the two boost-control traps, Reverse Steering's
+// mirrored steering axis and Forced Use's injected weapon press to this frame's
+// input. `buttonsTapped` joined the signature for Forced Use: the weapon path
+// fires on a tapped circle, not a held one.
 void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
-                       u32 *buttonsHeld, u32 *cross, u32 *square);
+                       u32 *buttonsHeld, u32 *buttonsTapped, u32 *cross, u32 *square);
+
+// INSTANCE.c hands over the finished LEV instance table once per load, after
+// every entry's ptrInstance is filled. Empty Crates' eligibility predicate needs
+// it: crates have no thread until a driver first touches one, so the instance
+// table is the only place a map's crates can be counted before the race starts.
+void AP_TrapLevelInstances(struct InstDef *defs, int count);
+
+// Drop that cached table. Called from the dev savestate restore path
+// (platform/native_checkpoint.c), which rewrites the mempack arena the table
+// points into without relocating this cache. The next census then reports no
+// eligible crates until a real level load republishes the table, which keeps
+// Empty Crates armed rather than reading relocated memory.
+void AP_TrapForgetLevelInstances(void);
+
+// Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
+// VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw
+// away, or -1 when no reroll is in flight and the filter is inert.
+int AP_TrapRerollExcludedItem(void);
 
 #endif // CTR_AP
 

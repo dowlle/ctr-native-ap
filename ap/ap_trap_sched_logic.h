@@ -204,22 +204,28 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP,
 	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 
-	// ── Wave 2: ruled in the notebook, scheduled here, not yet applied ──
+	// ── Wave 2 ──
 	// active = 0 means the scheduler arms a received copy, announces it once and
 	// then leaves it alone. Nothing is consumed and nothing crashes, so a seed
 	// carrying these items is safe on a client that cannot perform them yet.
+	// Wave 2 batch 1 turned four of these on; the rest are still scaffolds.
 	{"Wumpa Wipeout", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_TEN_WUMPA, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_TEN_WUMPA, 1, 0, AP_TRAP_WARNING_MS},
+	// STILL A SCAFFOLD. The ruling requires CTR's genuine squashed-kart state,
+	// which the engine calls "squish": VehPickState.c damageType 3 plays the
+	// squish sound, locks input briefly and sets squishTimer, the same state
+	// the Blizzard Bluff and N. Gin Labs hazards use. Activation via that
+	// damage entry is scheduled for the next batch.
 	{"Flatten", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
 	{"Item Reroll", AP_TRAP_CTX_WEAPONS, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_HELD_ITEM, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_HELD_ITEM, 1, 0, AP_TRAP_WARNING_MS},
 	{"Forced Use", AP_TRAP_CTX_WEAPONS, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_HELD_ITEM, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_HELD_ITEM, 1, 0, AP_TRAP_WARNING_MS},
 	{"Empty Crates", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_ELIGIBLE_CRATES, 0, 0, AP_TRAP_WARNING_MS},
@@ -237,7 +243,7 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
 	{"Reverse Steering", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_SHORT_WARNING,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	{"Red Potion", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},

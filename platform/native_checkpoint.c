@@ -1507,6 +1507,15 @@ internal void NativeCheckpoint_RelocateSDataPointers(const struct NativeCheckpoi
 #else
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.PatchMem_Ptr);
 #endif
+#ifdef CTR_AP
+	// The trap scheduler's Empty Crates predicate caches the LEV InstDef table
+	// (#280). That cache is an AP-layer static holding a mempack address, so it
+	// is neither part of the relocated pointer slots above nor re-bindable to a
+	// live buffer the way the PTR scratch is: the restored level's InstDefs are
+	// only republished when INSTANCE.c next instantiates a level. Drop it, and
+	// the next census re-walks from whatever the game publishes next.
+	AP_TrapForgetLevelInstances();
+#endif
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrBigfileCdPos_2);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.modelMaskHints3D);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.gGT);

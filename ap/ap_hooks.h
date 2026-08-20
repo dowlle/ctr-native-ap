@@ -416,6 +416,13 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
                                  int tableCount);
 int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled);
 
+// Item Reroll (#280): when the roll that resolves a trap-started roulette lands
+// on the very weapon the trap threw away, substitute a different owned one.
+// Returns the roll unchanged when no reroll is in flight, when the driver is not
+// the local player, or when the pool holds no eligible alternative. Consumes no
+// RNG draw and grants no Wumpa; it never widens the received weapon set.
+int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll);
+
 // Merged relic-tier ownership for `globalBit` (must be one of the 54 Sapphire/
 // Gold/Platinum Time Trial bits, 22..75) -- the package-3 (#28 R1) local-grant
 // answer to "does the player own this specific tier on this track". Two disjoint

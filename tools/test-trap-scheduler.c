@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "../ap/ap_trap_items.h"
+#include "../ap/ap_trap_observe_logic.h"
 #include "../ap/ap_trap_sched_logic.h"
 
 static int failures;
@@ -771,16 +772,18 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010018, AP_TRAP_USF_NOBRAKE, 1}, // renamed to Forced USF, id unchanged
 	{35010019, AP_TRAP_BOOST, 1},
 	{35010020, AP_TRAP_FIRSTPERSON, 1},
-	{35010106, AP_TRAP_WUMPA_WIPEOUT, 0},
+	// Wave 2 batch 1 made four of these buildable. Their ids did not move: an
+	// effect becoming performable is a native fact, not an apworld one.
+	{35010106, AP_TRAP_WUMPA_WIPEOUT, 1},
 	{35010107, AP_TRAP_FLATTEN, 0},
-	{35010108, AP_TRAP_ITEM_REROLL, 0},
-	{35010109, AP_TRAP_FORCED_USE, 0},
+	{35010108, AP_TRAP_ITEM_REROLL, 1},
+	{35010109, AP_TRAP_FORCED_USE, 1},
 	{35010110, AP_TRAP_EMPTY_CRATES, 0},
 	{35010111, AP_TRAP_WEAKENED_KART, 0},
 	{35010112, AP_TRAP_BOOST_BLOCKER, 0},
 	{35010113, AP_TRAP_WIREFRAME, 0},
 	{35010114, AP_TRAP_NITRO, 0},
-	{35010115, AP_TRAP_REVERSE_STEERING, 0},
+	{35010115, AP_TRAP_REVERSE_STEERING, 1},
 	{35010116, AP_TRAP_RED_POTION, 0},
 	{35010190, AP_TRAP_UPSIDE_DOWN, 0},
 	{35010191, AP_TRAP_MIRROR_MODE, 0},
@@ -843,12 +846,13 @@ static void case_item_id_map(void)
 		expect(name, AP_TrapItemIsBuildable(r->effect), r->buildable);
 	}
 
-	// Exactly the five wave 1 effects have a native effect today.
+	// The five wave 1 effects plus wave 2 batch 1's four have a native effect
+	// today. The other ten identities are still reserved.
 	{
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("exactly five identities are buildable", buildable, 5);
+		expect("exactly nine identities are buildable", buildable, 9);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -924,15 +928,20 @@ static void case_reserved_identity_receipt(void)
 		       count_ev(AP_TRAP_EV_INACTIVE, effect), 1);
 		expect("reserved identity never fires", count_ev(AP_TRAP_EV_FIRE, effect), 0);
 	}
-	expect("every reserved identity is retained armed", armedKept, 14);
+	expect("every reserved identity is retained armed", armedKept, 10);
 
-	// The five buildable ones behaved normally in the same batch. Only one member
-	// of the boost_control family can be active at once, which is the ruled
-	// behaviour, so this counts what actually ran rather than assuming five.
+	// The buildable ones behaved normally in the same batch. This counts what
+	// actually ran rather than assuming all nine, because two ruled behaviours
+	// deliberately hold some of them back in this world: only one member of the
+	// boost_control family may be active at once, and a conditional effect whose
+	// prerequisite is absent stays armed. With no conditions set, Forced USF
+	// waits for a boost event and the three inventory and fruit traps wait for a
+	// held item or ten Wumpa, leaving Icy Road, Low Gravity, Forced Boost, First
+	// Person and Reverse Steering to run.
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 4);
+	expect("buildable identities still run in the same batch", fired, 5);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1045,6 +1054,462 @@ static void case_engine_natural_requires_a_done_reporter(void)
 	       AP_TrapSchedArmedCount(&s, AP_TRAP_FLATTEN), 0);
 }
 
+// ── Wave 2, batch 1 ──
+//
+// Four effects were activated: Wumpa Wipeout, Item Reroll, Forced Use and
+// Reverse Steering. The cases below are per-effect rather than shared, because
+// the whole point of the rework is that timing belongs to the effect.
+
+// The roster this batch shipped, pinned explicitly. Activating an effect is a
+// one-character edit in the descriptor table, so the set of effects a build will
+// actually perform is exactly the kind of thing that drifts silently. The
+// excluded half is listed too: each of those is waiting on something real
+// (a missing engine state, an acceptance gate, a pending ruling), and flipping
+// one on by accident is the failure this case exists to catch.
+static void case_wave2_batch1_roster(void)
+{
+	AP_TrapSched s;
+	static const int active[] = {
+		AP_TRAP_ICY, AP_TRAP_LOWGRAV, AP_TRAP_USF_NOBRAKE, AP_TRAP_BOOST,
+		AP_TRAP_FIRSTPERSON, AP_TRAP_WUMPA_WIPEOUT, AP_TRAP_ITEM_REROLL,
+		AP_TRAP_FORCED_USE, AP_TRAP_REVERSE_STEERING,
+	};
+	static const int scaffold[] = {
+		AP_TRAP_FLATTEN, AP_TRAP_EMPTY_CRATES, AP_TRAP_WEAKENED_KART,
+		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME, AP_TRAP_NITRO,
+		AP_TRAP_RED_POTION, AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
+		AP_TRAP_WARPBALL_AMBUSH, AP_TRAP_DEMO_CAMERA,
+	};
+	int i;
+
+	AP_TrapSchedReset(&s);
+	for (i = 0; i < (int)(sizeof active / sizeof active[0]); i++)
+		expect("batch 1 effect is active", AP_TrapSchedIsEnabled(&s, active[i]), 1);
+	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
+		expect("excluded effect is still a scaffold",
+		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
+	expect("the roster is nine active effects and eleven scaffolds",
+	       (int)(sizeof active / sizeof active[0]) +
+	           (int)(sizeof scaffold / sizeof scaffold[0]),
+	       AP_TRAP_EFFECT_COUNT);
+}
+
+// None of the four joins a conflict family, and that is a deliberate reading of
+// the notebook rather than an oversight: an inventory or fruit effect shares no
+// engine resource with a camera or a boost tier. Pinned so a later batch that
+// adds a family has to come back here and say why.
+static void case_wave2_batch1_families(void)
+{
+	expect("Wumpa Wipeout joins no conflict family",
+	       AP_TRAP_DESC[AP_TRAP_WUMPA_WIPEOUT].family, AP_TRAP_FAMILY_NONE);
+	expect("Item Reroll joins no conflict family",
+	       AP_TRAP_DESC[AP_TRAP_ITEM_REROLL].family, AP_TRAP_FAMILY_NONE);
+	expect("Forced Use joins no conflict family",
+	       AP_TRAP_DESC[AP_TRAP_FORCED_USE].family, AP_TRAP_FAMILY_NONE);
+	expect("Reverse Steering joins no conflict family",
+	       AP_TRAP_DESC[AP_TRAP_REVERSE_STEERING].family, AP_TRAP_FAMILY_NONE);
+}
+
+// Wumpa Wipeout: hub-ineligible, gated on the juiced threshold, one second of
+// warning, and one successful reset per copy.
+static void case_wumpa_wipeout_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	hub.conditions = AP_TRAP_COND_TEN_WUMPA;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_WUMPA_WIPEOUT);
+
+	// Adventure hubs are ruled out of the Wumpa economy, so ten fruit there is
+	// still not an activation window.
+	run_ms(&s, &hub, 5000);
+	drain(&s);
+	expect("a juiced hub does not fire Wumpa Wipeout",
+	       count_ev(AP_TRAP_EV_FIRE, AP_TRAP_WUMPA_WIPEOUT), 0);
+	expect("the hub receipt announces itself armed",
+	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_WUMPA_WIPEOUT), 1);
+
+	// A race without ten fruit is the right context and the wrong condition.
+	race.mapEpoch = 2;
+	run_ms(&s, &race, 5000);
+	expect("a race below ten Wumpa does not fire it",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 0);
+	expect("and the copy is retained",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+
+	// Reaching ten starts the ruled one-second warning.
+	race.conditions = AP_TRAP_COND_TEN_WUMPA;
+	AP_TrapSchedStep(&s, &race);
+	drain(&s);
+	expect("ten Wumpa starts the warning",
+	       count_ev(AP_TRAP_EV_WARN, AP_TRAP_WUMPA_WIPEOUT), 1);
+	run_ms(&s, &race, 900);
+	expect("the warning holds the reset for its full second",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 0);
+	run_ms(&s, &race, 100);
+	expect("then it fires", AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+
+	// Engine-natural: the runtime reports the reset landed. A fruit reset has no
+	// aftermath, so the runtime reports on the firing tick, but the scheduler is
+	// what must not release the slot before that report arrives.
+	run_ms(&s, &race, 30000);
+	expect("it stays active until the runtime reports it done",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_WUMPA_WIPEOUT);
+	expect("the done report clears it",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 0);
+	expect("and consumes exactly the one copy", slots_used(&s), 0);
+}
+
+// Losing the fruit during the warning re-arms the copy instead of consuming it,
+// and each duplicate needs its own later ten-Wumpa trigger.
+static void case_wumpa_wipeout_duplicates_serialize(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_WUMPA_WIPEOUT);
+	AP_TrapSchedReceive(&s, AP_TRAP_WUMPA_WIPEOUT);
+
+	race.conditions = AP_TRAP_COND_TEN_WUMPA;
+	run_ms(&s, &race, 500); // mid-warning
+	race.conditions = 0;    // the player spends or loses fruit
+	AP_TrapSchedStep(&s, &race);
+	drain(&s);
+	expect("fruit lost during the warning re-arms the copy",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_WUMPA_WIPEOUT), 1);
+	expect("and does not consume it",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_WUMPA_WIPEOUT), 2);
+
+	// Back to ten: the first copy fires, the second waits its turn.
+	race.conditions = AP_TRAP_COND_TEN_WUMPA;
+	run_ms(&s, &race, 1100);
+	expect("the first copy fires on the next ten-Wumpa state",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+	expect("the duplicate waits behind it",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+
+	AP_TrapSchedEffectDone(&s, AP_TRAP_WUMPA_WIPEOUT);
+	run_ms(&s, &race, 1100);
+	expect("the second copy needs its own trigger and gets it",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_WUMPA_WIPEOUT);
+	expect("both copies are spent", slots_used(&s), 0);
+}
+
+// Item Reroll and Forced Use share a shape: a resolved held item is the
+// prerequisite, weaponless modes are the wrong context entirely, and the copy is
+// only released when the runtime reports the outcome landed.
+static void case_inventory_traps_wait_for_their_outcome(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld tt = world_in(AP_TRAP_CTX_TIME_TRIAL);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	tt.conditions = AP_TRAP_COND_HELD_ITEM;
+	race.conditions = AP_TRAP_COND_HELD_ITEM;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FORCED_USE);
+
+	// A Time Trial has no weapon inventory, so a held item there is not even a
+	// coherent state: the context column, not the predicate, is what refuses it.
+	run_ms(&s, &tt, 5000);
+	expect("Forced Use stays armed in a weaponless mode",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_FORCED_USE), 1);
+
+	race.mapEpoch = 2;
+	run_ms(&s, &race, 1100);
+	expect("it fires once a weapon-enabled race holds an item",
+	       AP_TrapSchedActive(&s, AP_TRAP_FORCED_USE), 1);
+
+	// The engine refuses a fire request in an incompatible driver state, so the
+	// scheduler must hold the copy open rather than assume the use landed.
+	run_ms(&s, &race, 60000);
+	expect("Forced Use is not consumed until the use is proven",
+	       AP_TrapSchedActive(&s, AP_TRAP_FORCED_USE), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_FORCED_USE);
+	expect("the done report consumes it",
+	       AP_TrapSchedActive(&s, AP_TRAP_FORCED_USE), 0);
+
+	// Item Reroll behaves the same way while its roulette spins.
+	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	run_ms(&s, &race, 1100);
+	expect("Item Reroll fires on a resolved held item",
+	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
+	run_ms(&s, &race, 10000);
+	expect("it holds the slot while the roulette spins",
+	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
+	expect("its duplicate waits for a later item",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_ITEM_REROLL), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_ITEM_REROLL);
+	run_ms(&s, &race, 1100);
+	expect("and then takes its own turn",
+	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
+}
+
+// Losing the held item during the warning re-arms both inventory traps: the
+// use-it-or-lose-it window is real counterplay, not a way to discard the trap.
+static void case_inventory_traps_rearm_on_lost_item(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	AP_TrapSchedReceive(&s, AP_TRAP_FORCED_USE);
+
+	race.conditions = AP_TRAP_COND_HELD_ITEM;
+	run_ms(&s, &race, 500);
+	race.conditions = 0; // the player fires the weapon during the warning
+	AP_TrapSchedStep(&s, &race);
+	drain(&s);
+	expect("Item Reroll re-arms when the item goes",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_ITEM_REROLL), 1);
+	expect("Forced Use re-arms when the item goes",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_FORCED_USE), 1);
+	expect("neither is consumed", slots_used(&s), 2);
+
+	// The next resolved item pays both, each with a fresh full warning.
+	race.conditions = AP_TRAP_COND_HELD_ITEM;
+	run_ms(&s, &race, 1100);
+	expect("both fire on the next held item",
+	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL) +
+	           AP_TrapSchedActive(&s, AP_TRAP_FORCED_USE),
+	       2);
+}
+
+// Reverse Steering: hub-eligible, one second of warning, exactly fifteen
+// seconds, and a duplicate that refreshes rather than stacking a second
+// inversion that would cancel the first.
+static void case_reverse_steering_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_REVERSE_STEERING);
+
+	// The matrix rules it eligible everywhere, hubs included: it disrupts
+	// steering without touching the doors-and-geometry safety the boost-control
+	// traps are held out of hubs for. The first step promotes the copy into its
+	// warning without ageing it, so the second's countdown starts here.
+	AP_TrapSchedStep(&s, &hub);
+	run_ms(&s, &hub, 900);
+	expect("the warning holds the inversion",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 0);
+	run_ms(&s, &hub, 100);
+	expect("Reverse Steering activates in a hub",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 1);
+	expect("with the ruled fifteen second window",
+	       remain_of(&s, AP_TRAP_REVERSE_STEERING), 15000);
+
+	run_ms(&s, &hub, 10000);
+	expect("it is still running ten seconds in",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 1);
+
+	// A duplicate refills the window on the spot instead of queueing a second
+	// inversion, which would cancel the first.
+	AP_TrapSchedReceive(&s, AP_TRAP_REVERSE_STEERING);
+	AP_TrapSchedStep(&s, &hub);
+	drain(&s);
+	expect("a duplicate refreshes the running effect",
+	       count_ev(AP_TRAP_EV_REFRESH, AP_TRAP_REVERSE_STEERING), 1);
+	expect("it does not queue a second inversion",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_REVERSE_STEERING), 0);
+	expect("and the window is full again",
+	       remain_of(&s, AP_TRAP_REVERSE_STEERING), 15000);
+
+	run_ms(&s, &hub, 15000);
+	drain(&s);
+	expect("the timer restores normal steering",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 0);
+	expect("exactly once", count_ev(AP_TRAP_EV_CLEAR, AP_TRAP_REVERSE_STEERING), 1);
+	expect("and nothing is left behind", slots_used(&s), 0);
+}
+
+// Every batch 1 effect ends at a map boundary, and an unfired warning survives
+// it. Reverse Steering must not carry inverted controls into the next track, and
+// an inventory trap that was still waiting for its outcome must not be spent by
+// a load the player did not choose.
+static void case_wave2_batch1_map_change(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld next = world_in(AP_TRAP_CTX_RACE);
+
+	race.conditions = AP_TRAP_COND_HELD_ITEM | AP_TRAP_COND_TEN_WUMPA;
+	next.conditions = AP_TRAP_COND_HELD_ITEM | AP_TRAP_COND_TEN_WUMPA;
+	next.mapEpoch = 2;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_REVERSE_STEERING);
+	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	run_ms(&s, &race, 1100);
+	expect("both are running before the load",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING) +
+	           AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL),
+	       2);
+
+	AP_TrapSchedStep(&s, &next);
+	drain(&s);
+	expect("inverted steering does not cross the map boundary",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 0);
+	expect("nor does the reroll's open slot",
+	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 0);
+	expect("both are reported cleared",
+	       count_ev(AP_TRAP_EV_CLEAR, AP_TRAP_REVERSE_STEERING) +
+	           count_ev(AP_TRAP_EV_CLEAR, AP_TRAP_ITEM_REROLL),
+	       2);
+	expect("and the registry is empty", slots_used(&s), 0);
+
+	// A copy still in its warning is returned to armed rather than consumed, so
+	// a load during the warning costs the player nothing.
+	AP_TrapSchedReceive(&s, AP_TRAP_WUMPA_WIPEOUT);
+	run_ms(&s, &next, 500);
+	expect("the copy is mid-warning",
+	       AP_TrapSchedStateOf(&s, AP_TRAP_WUMPA_WIPEOUT), AP_TRAP_SLOT_WARNING);
+	next.mapEpoch = 3;
+	AP_TrapSchedStep(&s, &next);
+	drain(&s);
+	expect("an unfired warning is returned to armed by the load",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_WUMPA_WIPEOUT), 1);
+	expect("the copy survives the load", slots_used(&s), 1);
+	expect("and was never consumed by it",
+	       count_ev(AP_TRAP_EV_FIRE, AP_TRAP_WUMPA_WIPEOUT), 0);
+	// The destination map is eligible too, so the same step that re-armed the
+	// copy also starts its warning again from the full second. That is the point
+	// of re-arming rather than consuming: the trap is intact and simply owes the
+	// player its warning a second time.
+	expect("and starts a fresh warning on the destination map",
+	       AP_TrapSchedStateOf(&s, AP_TRAP_WUMPA_WIPEOUT), AP_TRAP_SLOT_WARNING);
+}
+
+// ── Runtime observation predicates (wave 2 batch 1 review) ──
+//
+// These drive ap/ap_trap_observe_logic.h directly. The review found that every
+// runtime function in ap/ap_traps.c had zero coverage, and that two real defects
+// lived in exactly the unpinned observation code. The predicates that reduce to
+// integers were lifted into that header so they can be pinned here; the parts
+// that must walk engine state (the LEV crate census, choosing a valid AI
+// shooter) are NOT pinned, because faking an InstDef arena or a drivers array
+// would only test the mock.
+
+// Slot classification, which both inventory traps read as their prerequisite.
+static void case_held_item_slot_states(void)
+{
+	expect("an empty slot is empty",
+	       AP_TrapSlotContentsOf(AP_TRAP_ITEM_NONE, 0, 0), AP_TRAP_ITEM_STATE_EMPTY);
+	expect("the roulette placeholder is rolling",
+	       AP_TrapSlotContentsOf(AP_TRAP_ITEM_ROLLING, 90, 0), AP_TRAP_ITEM_STATE_ROLLING);
+	expect("a live roll timer is rolling even without the placeholder",
+	       AP_TrapSlotContentsOf(0x2, 40, 0), AP_TRAP_ITEM_STATE_ROLLING);
+	expect("a weapon inside the post-use lockout is not usable yet",
+	       AP_TrapSlotContentsOf(0x2, 0, 5), AP_TRAP_ITEM_STATE_LOCKED);
+	expect("a settled weapon with clear timers is resolved",
+	       AP_TrapSlotContentsOf(0x2, 0, 0), AP_TRAP_ITEM_STATE_RESOLVED);
+
+	// The condition bit the descriptors gate on is exactly "resolved".
+	expect("held-item condition holds only for a resolved slot",
+	       AP_TrapHeldItemIsResolved(0x2, 0, 0), 1);
+	expect("held-item condition rejects the lockout window",
+	       AP_TrapHeldItemIsResolved(0x2, 0, 5), 0);
+	expect("held-item condition rejects an empty slot",
+	       AP_TrapHeldItemIsResolved(AP_TRAP_ITEM_NONE, 0, 0), 0);
+	expect("held-item condition rejects a spinning roulette",
+	       AP_TrapHeldItemIsResolved(AP_TRAP_ITEM_ROLLING, 90, 0), 0);
+}
+
+// REVIEW DEFECT 1. Item Reroll hung ACTIVE forever when the race ended mid-spin,
+// because PlayLevel.c empties the slot without ever reaching the roll resolve.
+static void case_reroll_survives_a_destroyed_roulette(void)
+{
+	expect("a spinning roulette is still worth waiting for",
+	       AP_TrapRerollOutcome(AP_TRAP_ITEM_ROLLING, 90, 0), AP_TRAP_OUTCOME_WAIT);
+	expect("so is one whose placeholder cleared but whose timer has not",
+	       AP_TrapRerollOutcome(0x2, 40, 0), AP_TRAP_OUTCOME_WAIT);
+	expect("an ordinary resolve completes the reroll",
+	       AP_TrapRerollOutcome(0x2, 0, 0), AP_TRAP_OUTCOME_DONE);
+	// The defect: the finish line confiscates the slot mid-spin, so the resolve
+	// can never arrive. Waiting for it held the slot for the rest of the map and
+	// swallowed a serialized duplicate.
+	expect("a slot confiscated mid-spin completes rather than hanging",
+	       AP_TrapRerollOutcome(AP_TRAP_ITEM_NONE, 90, 0), AP_TRAP_OUTCOME_DONE);
+	expect("and so does one confiscated with the timer already clear",
+	       AP_TrapRerollOutcome(AP_TRAP_ITEM_NONE, 0, 0), AP_TRAP_OUTCOME_DONE);
+}
+
+// REVIEW DEFECT 2. Forced Use read the finish line's emptied slot as proof its
+// press had landed, and was consumed without ever firing the weapon.
+static void case_forced_use_distinguishes_use_from_confiscation(void)
+{
+	// Armed holding one Missile (id 2, count 0).
+	expect("holding the same weapon is not yet proof of a use",
+	       AP_TrapForcedUseOutcome(0x2, 0, 0, 0x2, 0), AP_TRAP_OUTCOME_WAIT);
+	expect("the post-use lockout starting is proof",
+	       AP_TrapForcedUseOutcome(0x2, 0, 0x1e, 0x2, 0), AP_TRAP_OUTCOME_DONE);
+	expect("a different weapon in the slot is proof",
+	       AP_TrapForcedUseOutcome(0x3, 0, 0, 0x2, 0), AP_TRAP_OUTCOME_DONE);
+
+	// The defect: an empty slot with a clear lockout and an undiminished count
+	// is the finish-line confiscation, and the ruling says wait.
+	expect("an emptied slot with no lockout is a confiscation, not a use",
+	       AP_TrapForcedUseOutcome(AP_TRAP_ITEM_NONE, 0, 0, 0x2, 0), AP_TRAP_OUTCOME_WAIT);
+	// An empty slot WITH a lockout is the tail of a genuine use, so it still counts.
+	expect("an emptied slot with a live lockout is still a use",
+	       AP_TrapForcedUseOutcome(AP_TRAP_ITEM_NONE, 0, 1, 0x2, 0), AP_TRAP_OUTCOME_DONE);
+
+	// Triple ammunition: armed holding Missile x3 (id 0xb) with three rounds.
+	expect("a full triple set is not yet a use",
+	       AP_TrapForcedUseOutcome(0xb, 3, 0, 0xb, 3), AP_TRAP_OUTCOME_WAIT);
+	expect("losing one round of a triple set is a use",
+	       AP_TrapForcedUseOutcome(0xb, 2, 0, 0xb, 3), AP_TRAP_OUTCOME_DONE);
+	expect("a triple set confiscated whole is not a use",
+	       AP_TrapForcedUseOutcome(AP_TRAP_ITEM_NONE, 3, 0, 0xb, 3), AP_TRAP_OUTCOME_WAIT);
+}
+
+// REVIEW DEFECT 3. The lead timer reset on every state the ruling says to
+// EXCLUDE from elapsed time, so one pause discarded a nearly complete countdown.
+static void case_lead_timer_freezes_and_resets_correctly(void)
+{
+	// Ordinary accumulation while leading a race that has AI in it.
+	expect("leading accumulates", AP_TrapLeadAccumulate(0, 0, 1, 1, 100), 100);
+	expect("and keeps accumulating", AP_TrapLeadAccumulate(14900, 0, 1, 1, 100), 15000);
+
+	// The ruled reset, and the ONLY reset: the player was genuinely overtaken.
+	expect("losing first place resets completely",
+	       AP_TrapLeadAccumulate(14900, 1, 1, 1, 100), 0);
+	expect("being well down the field also resets",
+	       AP_TrapLeadAccumulate(14900, 5, 1, 1, 100), 0);
+
+	// The defect: excluded states must freeze, not clear.
+	expect("pause and other excluded states freeze rather than reset",
+	       AP_TrapLeadAccumulate(14900, 0, 1, 0, 100), 14900);
+	expect("an unranked sort frame freezes rather than reading as overtaken",
+	       AP_TrapLeadAccumulate(14900, -1, 1, 1, 100), 14900);
+	expect("no valid AI freezes rather than reset",
+	       AP_TrapLeadAccumulate(14900, 0, 0, 1, 100), 14900);
+
+	// A frozen countdown resumes with its remaining time, which is the whole
+	// point of freezing: a pause must not cost the player their lead.
+	{
+		int ms = 14900;
+		ms = AP_TrapLeadAccumulate(ms, 0, 1, 0, 100); // paused
+		ms = AP_TrapLeadAccumulate(ms, -1, 1, 1, 100); // ranks re-sorting
+		ms = AP_TrapLeadAccumulate(ms, 0, 1, 1, 100); // control back
+		expect("a frozen countdown resumes and completes", ms >= 15000, 1);
+	}
+
+	// A negative or zero frame time cannot run the countdown backwards.
+	expect("a zero frame adds nothing", AP_TrapLeadAccumulate(500, 0, 1, 1, 0), 500);
+	expect("a negative frame adds nothing", AP_TrapLeadAccumulate(500, 0, 1, 1, -50), 500);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -1073,6 +1538,18 @@ int main(void)
 	case_receipt_during_podium_announces();
 	case_receipt_during_pause_announces();
 	case_engine_natural_requires_a_done_reporter();
+	case_wave2_batch1_roster();
+	case_wave2_batch1_families();
+	case_wumpa_wipeout_lifecycle();
+	case_wumpa_wipeout_duplicates_serialize();
+	case_inventory_traps_wait_for_their_outcome();
+	case_inventory_traps_rearm_on_lost_item();
+	case_reverse_steering_lifecycle();
+	case_wave2_batch1_map_change();
+	case_held_item_slot_states();
+	case_reroll_survives_a_destroyed_roulette();
+	case_forced_use_distinguishes_use_from_confiscation();
+	case_lead_timer_freezes_and_resets_correctly();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;

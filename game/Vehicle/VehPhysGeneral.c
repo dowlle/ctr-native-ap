@@ -1023,6 +1023,14 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		driver->heldItemID = AP_ItemsanityFilterRoll(driver, driver->heldItemID,
 		                                           apRoll, apRollTable,
 		                                           apRollTableCount);
+		// Item Reroll (#280): if this roulette was started by the trap and landed
+		// back on the weapon it threw away, take a different owned weapon.
+		// Deliberately HERE, immediately after the ownership filter and upstream
+		// of every vanilla cap below, so a substituted Warpball or Missile x3
+		// still goes through the single-warpball and two-holder bookkeeping
+		// exactly like a natural roll. Inert unless a trap reroll is in flight.
+		driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
+		                                            apRoll);
 #endif
 		break;
 

@@ -453,6 +453,11 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 	// stores the pointer and the count; the crate census it needs is built on
 	// first use, in-race, when the level's checkpoint chain is certainly up.
 	AP_TiziLevelInstances(apLevInstDefBase, numInst);
+	// Trap scheduler (#280): the same table, for Empty Crates' eligibility
+	// predicate. It has to be handed over after the per-mode filtering loop
+	// above, because that loop is where the engine clears DRAW_COLLISION_MASK on
+	// the crates a mode disables, and the census reads exactly that flag.
+	AP_TrapLevelInstances(apLevInstDefBase, numInst);
 #endif
 }
 
