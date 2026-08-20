@@ -3417,6 +3417,30 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 	fclose(f);
 }
 
+// Display names for the per-item-drain log below (AP_NetTick), matching the
+// existing AP_CAP_CHAIN_* order (ap_capability.h) and AP_SurfaceItem enum
+// (ap_surface.h) 1:1. Kept as its own small table here rather than reused from
+// ap_capability.c / ap_surface.c: those files export no name table today, and
+// this is a log-formatting concern, not capability or surface logic.
+static const char *const AP_LOG_CAP_CHAIN_NAME[AP_CAP_CHAIN_COUNT] = {
+	"boost", "top speed", "acceleration", "turning",
+};
+static const char *const AP_LOG_SURFACE_ITEM_NAME[AP_SURFACE_ITEM_COUNT] = {
+	"grass", "dirt", "snow", "water", "ice",
+};
+// Held-item-ID order (0..4 direct, 6..11 offset by one -- 5/Spring is excluded,
+// rewritten to Turbo before it can be gated), matching
+// AP_ItemsanityWeaponIndex (ap_itemsanity_logic.h). Sourced from the case
+// labels' own comments in game/Vehicle/VehPickupItem.c
+// (VehPickupItem_ShootNow's held-item switch), and cross-checked against the
+// two indices this file already pins independently:
+// AP_TURBOGRANT_TURBO_ITEM_INDEX (index 0 must be Turbo) and
+// AP_TIZI_MASK_ITEM_INDEX (index 6 must be Mask) both land correctly.
+static const char *const AP_LOG_ITEMSANITY_WEAPON_NAME[AP_ITEMSANITY_WEAPON_COUNT] = {
+	"Turbo", "Bomb", "Missile", "TNT/Nitro", "Beaker",
+	"Shield Bubble", "Mask", "Clock", "Warpball", "Bomb x3", "Missile x3",
+};
+
 static void AP_NetTick(struct GameTracker *gGT)
 {
 	if (!ap_net_started)
@@ -3804,6 +3828,82 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_item_count[c]++;
 			snprintf(msg, sizeof msg, "[AP ITEM] received %s (id %lld) -> have %d | %s\n",
 			         AP_CATEGORY_POOLS[c].name, items[i], ap_item_count[c], st);
+		}
+		// The branches below are log-text only (no bit pool, so nothing above
+		// tallies them): AP_ItemCategory answers AP_CAT_CRYSTAL or AP_CAT_NONE for
+		// all of them, which used to fall straight into the generic "filler/unmapped"
+		// line below even though the item was fully understood and handled above.
+		else if (idx >= AP_CAPABILITY_ITEM_FIRST_INDEX &&
+		         idx < AP_CAPABILITY_ITEM_FIRST_INDEX + AP_CAPABILITY_ITEM_COUNT)
+		{
+			int chain = (int)(idx - AP_CAPABILITY_ITEM_FIRST_INDEX);
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received capability item (id %lld) (capability: %s, shared) | %s\n",
+			         items[i], AP_LOG_CAP_CHAIN_NAME[chain], st);
+		}
+		else if (idx >= AP_CAPABILITY_PC_ITEM_FIRST_INDEX &&
+		         idx < AP_CAPABILITY_PC_ITEM_FIRST_INDEX + AP_CAPABILITY_PC_ITEM_COUNT)
+		{
+			int blockIndex = (int)(idx - AP_CAPABILITY_PC_ITEM_FIRST_INDEX);
+			int slot  = blockIndex / AP_CAP_CHAIN_COUNT;
+			int chain = blockIndex % AP_CAP_CHAIN_COUNT;
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received capability item (id %lld) (capability: %s, roster slot %d) | %s\n",
+			         items[i], AP_LOG_CAP_CHAIN_NAME[chain], slot, st);
+		}
+		else if (idx >= AP_SURFACE_ITEM_FIRST_INDEX &&
+		         idx < AP_SURFACE_ITEM_FIRST_INDEX + AP_SURFACE_ITEM_COUNT)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received surface item (id %lld) (surface: %s) | %s\n",
+			         items[i], AP_LOG_SURFACE_ITEM_NAME[idx - AP_SURFACE_ITEM_FIRST_INDEX], st);
+		}
+		else if (idx >= AP_ITEMSANITY_ITEM_FIRST_INDEX &&
+		         idx < AP_ITEMSANITY_ITEM_FIRST_INDEX + AP_ITEMSANITY_WEAPON_COUNT)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received itemsanity weapon item (id %lld) (weapon: %s) | %s\n",
+			         items[i], AP_LOG_ITEMSANITY_WEAPON_NAME[idx - AP_ITEMSANITY_ITEM_FIRST_INDEX], st);
+		}
+		else if (idx >= AP_CHARACTER_ITEM_FIRST_INDEX &&
+		         idx < AP_CHARACTER_ITEM_FIRST_INDEX + AP_CHARACTER_ITEM_COUNT)
+		{
+			int rosterSlot = (int)(idx - AP_CHARACTER_ITEM_FIRST_INDEX);
+			int characterID = AP_CapabilityRosterCharacter(rosterSlot);
+			const char *name = (characterID >= 0 && data.MetaDataCharacters[characterID].name_Debug)
+			                        ? data.MetaDataCharacters[characterID].name_Debug
+			                        : "?";
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received character unlock item (id %lld) (character: %s, roster slot %d) | %s\n",
+			         items[i], name, rosterSlot, st);
+		}
+		else if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
+		         idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+		{
+			int li = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
+			int level = AP_LetterItemRowToLevelIDPure(li / CTR_CFG_LETTER_COUNT);
+			int letterInTrack = li % CTR_CFG_LETTER_COUNT;
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received letter item (id %lld) (letter %d of %d, track %s) | %s\n",
+			         items[i], letterInTrack + 1, CTR_CFG_LETTER_COUNT,
+			         level >= 0 ? AP_AuthorLevelName(level) : "?", st);
+		}
+		else if (idx == AP_TIZI_ITEM_INDEX)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received Tizi Helper item (id %lld) | %s\n", items[i], st);
+		}
+		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received Turbo Grant item (id %lld) | %s\n", items[i], st);
+		}
+		else if (AP_TrapItemIndexIsTrap(idx))
+		{
+			int trapEffect = AP_TrapEffectForItemIndex(idx);
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received trap item (id %lld) (trap: %s) | %s\n",
+			         items[i], AP_TRAP_DESC[trapEffect].name, st);
 		}
 		else
 		{

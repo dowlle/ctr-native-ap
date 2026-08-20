@@ -111,5 +111,11 @@ int AP_Author_PlacementGet(int index, int *level, short *x, short *y, short *z, 
 // it to the value it built its own state from instead of polling every entry.
 int AP_Author_PlacementGeneration(void);
 
+// The debug enum name for a track/arena LevelID ("DINGO_CANYON", ...), or "?"
+// outside the authorable range (see s_levelNames in ap_author.c). Exported so a
+// second table of track names does not get invented elsewhere (ap_box_map.h's
+// same rule) -- ap_hooks.c's per-item receipt log reuses this one for letters.
+const char *AP_AuthorLevelName(int level);
+
 #endif // CTR_AP
 #endif // AP_AUTHOR_H

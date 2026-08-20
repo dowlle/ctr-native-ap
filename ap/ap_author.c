@@ -75,7 +75,9 @@ static const char *const s_levelNames[] = {
 };
 #define AP_AUTHOR_LEVEL_COUNT ((int)(sizeof(s_levelNames) / sizeof(s_levelNames[0])))
 
-static const char *AP_AuthorLevelName(int level)
+// Not static: ap_hooks.c's per-item receipt log reuses this for letter-item
+// track names (ap_author.h) rather than carrying a second table.
+const char *AP_AuthorLevelName(int level)
 {
 	if (level < 0 || level >= AP_AUTHOR_LEVEL_COUNT)
 		return "?";
