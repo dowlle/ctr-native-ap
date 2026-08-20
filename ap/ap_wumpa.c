@@ -23,7 +23,8 @@ static int g_starting_applied = 1;
 
 // Countdown latch: set once the lights sequence is OBSERVED running on a live
 // track (trafficLightsTimer >= 1 while LOAD_IsOpen_RacingOrBattle()), cleared
-// off-track and at END_OF_RACE. Guards the race-load gap: for a few frames
+// off-track, at END_OF_RACE, and on any non-idle load stage. Guards the
+// race-load gap: for a few frames
 // after a track load the race init has not yet stamped gameMode1 /
 // trafficLightsTimer, the stale free-roam values (no flags, timer 0) pass the
 // flag/timer test, and a grant there is wiped by VehBirth -- observed in the
@@ -88,8 +89,11 @@ void AP_WumpaConnectReset(void)
 	g_wumpa_pending = 0;
 	g_wumpa_starting = 0;
 	// If this is a mid-race reconnect, do not duplicate a grant that may already
-	// be in the kart. AP_WumpaTick clears this as soon as it observes off-track or
-	// end-of-race, which arms the next real race start.
+	// be in the kart. AP_WumpaTick clears this as soon as it observes off-track,
+	// end-of-race, OR a non-idle load stage, which arms the next real race start.
+	// The load stage joined that set on 2026-08-20 so a pause-menu restart counts
+	// as a boundary; a reconnect followed by a retry therefore reapplies the
+	// ladder in the restarted race rather than treating it as the same race.
 	g_starting_applied = 1;
 }
 
@@ -98,6 +102,7 @@ void AP_WumpaTick(struct GameTracker *gGT)
 {
 	int raceActive;
 	int onTrack;
+	int loading;
 	struct Driver *local;
 	char msg[96];
 
@@ -106,8 +111,37 @@ void AP_WumpaTick(struct GameTracker *gGT)
 
 	// Maintain the countdown latch every frame (even with an empty bank, so a
 	// mid-race receipt can grant immediately once the countdown has been seen).
+	//
+	// The load stage is part of the boundary test because of the pause-menu
+	// RESTART, reported against the Alpha as starting fruit that never comes back
+	// after a retry. That path (MainFreeze.c:984 "RESTART"/"RETRY", and the
+	// end-of-race RETRY at UI_RaceFlow.c:369) only sets Loading.stage =
+	// LOAD_RESTART; MainMain.c:208 then reinitializes the world in place without
+	// ever unloading overlay 1 and without passing through END_OF_RACE. So
+	// off-track and END_OF_RACE both stay false across a whole restart, the two
+	// latches survive it, and the restarted race starts with g_starting_applied
+	// still set: the ladder is applied once and then never again for as long as
+	// the player keeps retrying. Every other race boundary (hub, menu, next cup
+	// leg) does clear one of the other two, which is why a plain "next race"
+	// reapplies correctly and only the retry does not.
+	//
+	// It also closes the doomed-race window on the way out. MainMain keeps
+	// running the live scene, AP_OnFrame included, until the checkered flag
+	// covers the screen, and on those frames PAUSE_1 is already cleared and the
+	// mid-race timer is still negative -- so without this the whole pending bank
+	// drains into a race that is about to be torn down, and the fruit is gone
+	// with it. Clearing g_countdown_seen holds the bank until the restarted
+	// race's own countdown is observed. Every non-idle stage is a genuine race
+	// boundary (namespace_Main.h: VLC, RESTART, REQUESTED, FINISHED, TenStages),
+	// so testing the whole set rather than LOAD_RESTART alone costs nothing and
+	// arms the two latches identically for a restart and for a real load.
+	//
+	// No null test on sdata: LOAD_IsOpen_RacingOrBattle dereferences it
+	// unconditionally on the line above (LOAD_IsOpen.c:6), so a guard here would
+	// imply a case the preceding line has not already survived.
 	onTrack = LOAD_IsOpen_RacingOrBattle();
-	if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
+	loading = sdata->Loading.stage != LOAD_IDLE;
+	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
 		g_countdown_seen = 0;
 		g_starting_applied = 0;

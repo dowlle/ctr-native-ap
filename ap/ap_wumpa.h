@@ -24,6 +24,12 @@
 //     the next race (the first frame the race is active, after the countdown and
 //     after VehBirth has zeroed the kart's fruit).
 //   - Received DURING a race: granted live on the next frame.
+//   - A pause-menu RESTART (and the end-of-race RETRY) counts as a race
+//     boundary like any other: the starting ladder is applied again in the
+//     restarted race, and a bank that was still pending when the restart began
+//     is held for it rather than spent on the race being torn down. The engine
+//     reinitializes the world in place there, so neither the off-track test nor
+//     END_OF_RACE sees it; the tick watches the load stage for that reason.
 // A single bank drains in one RB_Player_ModifyWumpa call, so N banked fruit is one
 // grant of +N (still capped at 10). The bank itself is capped at 10 since a kart
 // can never hold more, and it resets each race with the fruit, so there is no
