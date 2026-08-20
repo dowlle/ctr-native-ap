@@ -112,6 +112,98 @@ static int AP_TrapForcedUseOutcome(int heldItemID, int numHeldItems, int noItemT
 	return AP_TRAP_OUTCOME_WAIT;
 }
 
+// ── Flatten ──
+//
+// Kart states, repeated as plain integers so this header stays engine-free and
+// the harness can drive it without the engine headers. Values are the decomp's
+// own enum (namespace_Vehicle.h:60-69); ap_traps.c static-asserts them against it.
+#define AP_TRAP_KS_NORMAL         0
+#define AP_TRAP_KS_CRASHING       1
+#define AP_TRAP_KS_DRIFTING       2
+#define AP_TRAP_KS_SPINNING       3
+#define AP_TRAP_KS_ENGINE_REVVING 4
+#define AP_TRAP_KS_MASK_GRABBED   5
+#define AP_TRAP_KS_BLASTED        6
+#define AP_TRAP_KS_ANTIVSHIFT     9
+#define AP_TRAP_KS_WARP_PAD       10
+#define AP_TRAP_KS_FREEZE         11
+
+// May the trap hand the engine a fresh squish this frame?
+//
+// The ruling suppresses Flatten during scripted movement, a mask rescue or
+// another incompatible damage animation, and fires it when the driver state
+// becomes valid. It DELIBERATELY allows activation while airborne, so nothing
+// here asks about ground contact.
+//
+// ALLOW-LIST, not a deny-list, and that distinction is load-bearing. Naming the
+// damage animations to refuse lets every SCRIPTED state through, because those
+// are not damage: KS_WARP_PAD (a hub pad or door), KS_FREEZE (the end-of-event
+// freeze) and KS_ENGINE_REVVING (the starting countdown) would all pass. Each of
+// them installs its own driver func table, and the squish branch re-points
+// DRIVER_FUNC_INIT at VehPhysProc_SpinFirst_Init, which overwrites the WHOLE
+// table (VehPhysProc.c:2337-2340). For the warp pad that erases
+// VehStuckProc_Warp_PhysAngular, the one stage the pad leaves installed
+// (VehStuckProc.c:1657-1670), and the warp can then never complete.
+//
+// The three states allowed here are the engine's own definition of a kart under
+// the player's control: the same test the weapon-fire path uses at
+// VehPhysProc.c:489.
+//
+// The protection terms mirror VehPickState_NewState's own early returns
+// (VehPickState.c:13-40) rather than inventing a policy. They are checked HERE,
+// before the call, for one specific reason: that function's bubble-shield branch
+// POPS the shield and then returns 0. Calling it while shielded would cost the
+// player their shield without flattening them, which is neither the harm the trap
+// promised nor anything its ruling asks for. Checking first makes the trap wait.
+//
+// squishTimer guards against re-squishing an already flattened kart, which the
+// damageType 3 branch does not check for itself the way the blasted branch does.
+//
+// pendingDamage is the engine's DEFERRED damage slot, and it must be empty.
+// VehPickState_NewState zeroes it at entry (VehPickState.c:9) before it does
+// anything else, so dispatching while a collision has queued damage DELETES that
+// queued hit: the player never takes it, its attacker is never credited, and its
+// DeathLink never sends. The window is a whole frame and is structural rather
+// than a race. VehPhysCrash_Attack queues the damage during the driver stages of
+// MainFrame_GameLogic (VehPhysCrash.c:152/170/192), and nothing consumes it until
+// VehPickupItem_ShootOnCirclePress at the top of the NEXT frame's
+// MainFrame_GameLogic (MainFrame.c:312) -- with AP_TrapTick running in between,
+// from AP_OnFrame at MainMain.c:323. A queued-but-unapplied hit is an
+// incompatible damage event under the ruling, so the trap waits for it to land.
+static int AP_TrapFlattenReady(int kartState, int squishTimer, int invincibleTimer,
+                               int maskWeapon, int hasBubbleShield, int pendingDamage)
+{
+	if (kartState != AP_TRAP_KS_NORMAL && kartState != AP_TRAP_KS_DRIFTING &&
+	    kartState != AP_TRAP_KS_ANTIVSHIFT)
+		return 0;
+	if (squishTimer != 0 || pendingDamage != 0)
+		return 0;
+	if (invincibleTimer != 0 || maskWeapon || hasBubbleShield)
+		return 0;
+	return 1;
+}
+
+// Has the engine finished with the squish it was given?
+//
+// Flatten is ruled to use the engine's natural flatten, follow-up spin and
+// recovery instead of a duration timer, so completion is "the squish timer ran
+// out and the kart is back under its own control". The follow-up spin is part of
+// that recovery: the damageType 3 branch falls through to the spinout init, so a
+// kart still spinning has not finished recovering.
+//
+// Allow-listed for the same reason the ready gate is: "back under its own
+// control" is the controllable set, and a scripted state is not the end of a
+// recovery. A squish whose timer runs out inside a warp pad or an end-of-event
+// freeze holds the slot until the driver is genuinely driving again, or until
+// the map boundary clears the copy.
+static int AP_TrapFlattenRecovered(int kartState, int squishTimer)
+{
+	if (squishTimer != 0)
+		return 0;
+	return kartState == AP_TRAP_KS_NORMAL || kartState == AP_TRAP_KS_DRIFTING ||
+	       kartState == AP_TRAP_KS_ANTIVSHIFT;
+}
+
 // ── Warpball Ambush lead timer ──
 //
 // REVIEW DEFECT 3. The ruling distinguishes two things the first cut collapsed

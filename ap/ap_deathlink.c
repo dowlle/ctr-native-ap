@@ -32,6 +32,22 @@ static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour on
 // would risk exactly the outgoing-send-on-received-death loop this must prevent.
 static int g_dl_swallow_edge = 0;
 
+// Suppression for damage the AP layer inflicts on the local player deliberately.
+// The Flatten trap (#280) drives the engine's own damage dispatch, which runs the
+// any_hit send hook exactly as a hazard would, and Flatten's ruling is that the
+// effect is self-inflicted and must not send DeathLink.
+//
+// Deliberately NOT g_dl_swallow_edge: that latch guards the mask-grab edge while a
+// RECEIVED death is being applied, and it is consumed by whichever edge arrives
+// next. Folding a second, unrelated no-send reason into it would let a trap
+// consume a guard the received-death path is still relying on.
+static int g_dl_trap_self_inflicted = 0;
+
+void AP_DeathLinkSuppressSelfInflicted(int on)
+{
+	g_dl_trap_self_inflicted = on ? 1 : 0;
+}
+
 // Send cooldown (frames). Observed live (2026-07-19 Deck 3-player session): a
 // RECEIVED death's forced mask grab bounces the kart state machine through
 // KS_MASK_GRABBED several times, producing 4-5 rising edges while the one-shot
@@ -170,6 +186,8 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 		return; // local player only
 	if (g_dl_swallow_edge)
 		return; // mid received-death application: never send
+	if (g_dl_trap_self_inflicted)
+		return; // a trap is driving this damage: ruled self-inflicted, never send
 
 	AP_DeathLinkFireLocal(gGT, AP_DeathLinkHitCause(damageType, reason));
 }
@@ -181,6 +199,11 @@ void AP_DeathLinkConnectReset(void)
 	g_dl_pending_recv = 0;
 	g_dl_pending_cause[0] = '\0';
 	g_dl_swallow_edge = 0;
+	// Defence in depth. The bracket around the trap's dispatch is set and cleared
+	// across one synchronous call, so this should already be 0; clearing it with
+	// the other send-edge state means a latch that somehow survived cannot silence
+	// real deaths for the rest of a session.
+	g_dl_trap_self_inflicted = 0;
 
 	// Opt in to the DeathLink tag for this seed. Safe to call unconditionally on a
 	// fresh connect: ctr_cfg was parsed in the slot-connected handler just before

@@ -5,6 +5,8 @@
 
 #include "ap_traps.h"
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
+#include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
+                          // self-inflicted attribution
 
 // ============================================================================
 // AP TRAP FRAMEWORK, engine half. See ap_traps.h for the contract and
@@ -402,13 +404,14 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 
 // ── Instant effects ──
 //
-// The three instant effects in this wave all carry AP_TRAP_DURATION_ENGINE_NATURAL,
-// which means the scheduler holds the slot ACTIVE until the application code says
-// the outcome landed. That report is AP_TrapSchedEffectDone, and it is what lets a
-// serialized duplicate take its turn. Wumpa Wipeout reports on the spot because a
-// fruit reset has no aftermath; Item Reroll waits for the roulette to settle and
-// Forced Use waits for the weapon to actually leave the slot, because both are
-// ruled to wait rather than be consumed unsuccessfully.
+// Every instant effect here carries AP_TRAP_DURATION_ENGINE_NATURAL, which means
+// the scheduler holds the slot ACTIVE until the application code says the outcome
+// landed. That report is AP_TrapSchedEffectDone, and it is what lets a serialized
+// duplicate take its turn. Wumpa Wipeout reports on the spot because a fruit reset
+// has no aftermath; Item Reroll waits for the roulette to settle, Forced Use waits
+// for the weapon to actually leave the slot, and Flatten waits out the engine's
+// own squish and spin recovery. All three of those are ruled to wait rather than
+// be consumed unsuccessfully.
 
 // Item Reroll: the weapon held when the trap fired, so the new roll can avoid it.
 // -1 when no reroll is in flight.
@@ -418,6 +421,30 @@ static int g_trap_reroll_excluded = -1;
 static int g_trap_use_pending = 0;
 static int g_trap_use_item = -1;
 static int g_trap_use_count = 0;
+
+// Flatten walks two stages, because the squish it asks for can be refused and
+// then has an aftermath. PENDING means the copy has fired but the engine has not
+// accepted the damage yet; APPLIED means it did, and the copy is waiting out the
+// engine's own recovery plus the ruled grace interval.
+static int g_trap_flatten_pending = 0;
+static int g_trap_flatten_applied = 0;
+static int g_trap_flatten_grace_ms = 0;
+
+// The kart-state values ap_trap_observe_logic.h repeats as plain integers really
+// are the engine's. If the decomp ever renumbers them, this stops the build here
+// rather than letting Flatten silently mis-read a damage animation as safe.
+typedef char ap_trap_ks_normal_matches[AP_TRAP_KS_NORMAL == KS_NORMAL ? 1 : -1];
+typedef char ap_trap_ks_crashing_matches[AP_TRAP_KS_CRASHING == KS_CRASHING ? 1 : -1];
+typedef char ap_trap_ks_drifting_matches[AP_TRAP_KS_DRIFTING == KS_DRIFTING ? 1 : -1];
+typedef char ap_trap_ks_spinning_matches[AP_TRAP_KS_SPINNING == KS_SPINNING ? 1 : -1];
+typedef char ap_trap_ks_maskgrab_matches[AP_TRAP_KS_MASK_GRABBED == KS_MASK_GRABBED ? 1 : -1];
+typedef char ap_trap_ks_blasted_matches[AP_TRAP_KS_BLASTED == KS_BLASTED ? 1 : -1];
+// The scripted states matter as much as the damage ones now that the gate is an
+// allow-list: these are the values it must keep refusing.
+typedef char ap_trap_ks_revving_matches[AP_TRAP_KS_ENGINE_REVVING == KS_ENGINE_REVVING ? 1 : -1];
+typedef char ap_trap_ks_antivshift_matches[AP_TRAP_KS_ANTIVSHIFT == KS_ANTIVSHIFT ? 1 : -1];
+typedef char ap_trap_ks_warppad_matches[AP_TRAP_KS_WARP_PAD == KS_WARP_PAD ? 1 : -1];
+typedef char ap_trap_ks_freeze_matches[AP_TRAP_KS_FREEZE == KS_FREEZE ? 1 : -1];
 
 // Give back the engine-wide bookkeeping a discarded weapon was holding.
 //
@@ -541,6 +568,113 @@ static void AP_TrapPollForcedUse(struct Driver *local)
 	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
 }
 
+// ── Flatten ──
+//
+// Grace interval after the engine finishes recovering, before a serialized
+// duplicate is allowed to warn. The ruling says "full recovery plus a short grace
+// interval" without naming a number; one second is this implementation's reading
+// of "short", chosen to match the warning length so two queued copies read as two
+// distinct events rather than one long mangling.
+#define AP_TRAP_FLATTEN_GRACE_MS 1000
+
+// Is the local driver in a state that can accept a fresh squish right now?
+static int AP_TrapFlattenCanApply(struct Driver *local)
+{
+	if (local == 0)
+		return 0;
+	return AP_TrapFlattenReady((int)local->kartState, (int)local->squishTimer,
+	                           (int)local->invincibleTimer,
+	                           (local->actionsFlagSet & ACTION_MASK_WEAPON) != 0,
+	                           local->instBubbleHold != 0,
+	                           (int)local->pendingDamageType);
+}
+
+// Hand the engine the squish.
+//
+// damageType 3 through VehPickState_NewState, which is the same entry the
+// Blizzard Bluff and N. Gin Labs hazards reach through RB_Hazard_HurtDriver and
+// the same one a turbo-landing driver reaches through pendingDamageType. Every
+// part of the effect therefore comes from the engine: the squish sound, the
+// 0.25 s input lock, the ~3.8 s squishTimer, the flattened model, the follow-up
+// spinout and the FLATMAN/STEAMROLLER skill-point fields.
+//
+// NO ATTACKER, and that is a deliberate reading of "attribute the effect as
+// self-inflicted without treating it as another player's weapon hit". Passing the
+// victim as its own attacker is an engine idiom (PlayLevel.c:446 does exactly
+// that for the out-of-bounds blast), but it also enters the attacker block at the
+// tail of VehPickState_NewState, which calls RB_Player_KillPlayer and, under
+// POINT_LIMIT, DECREMENTS the player's battle score. Docking a battle point is a
+// second, larger punishment the ruling never asked for, so the trap passes null:
+// the squish lands, and nobody is credited or charged for it. numTimesSquishedSomeone
+// is untouched either way, since it needs both a non-null attacker and reason 5.
+//
+// Returns 1 when the engine accepted the damage.
+static int AP_TrapApplyFlatten(struct Driver *local)
+{
+	int landed;
+
+	if (!AP_TrapFlattenCanApply(local))
+		return 0;
+
+	// The ruling attributes this as self-inflicted and explicitly forbids sending
+	// DeathLink for it, but the dispatch runs the any_hit send hook exactly as a
+	// hazard would. Bracket the call rather than special-casing the hook.
+	AP_DeathLinkSuppressSelfInflicted(1);
+	landed = VehPickState_NewState(local, 3, 0, 0);
+	AP_DeathLinkSuppressSelfInflicted(0);
+
+	return landed != 0;
+}
+
+// Drive Flatten's two stages. Runs once per tick alongside the other completion
+// polls, before the map boundary, for the same reason they do.
+static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
+{
+	if (!g_trap_flatten_pending && !g_trap_flatten_applied)
+		return;
+	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_FLATTEN))
+	{
+		// Map change or connect reset took the slot; drop the stage machine.
+		g_trap_flatten_pending = 0;
+		g_trap_flatten_applied = 0;
+		g_trap_flatten_grace_ms = 0;
+		return;
+	}
+
+	if (g_trap_flatten_pending)
+	{
+		// Retry until the driver state becomes valid. A mask, a shield, a running
+		// invincibility window or another damage animation all mean "not yet",
+		// and the ruling is to wait for a valid state rather than consume the
+		// copy on a squish that never happened.
+		if (!AP_TrapApplyFlatten(local))
+			return;
+		g_trap_flatten_pending = 0;
+		g_trap_flatten_applied = 1;
+		g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
+		return;
+	}
+
+	// Applied: wait out the engine's own squish and spin, then the grace interval,
+	// before releasing the slot to a serialized duplicate.
+	if (local == 0)
+		return;
+	if (!AP_TrapFlattenRecovered((int)local->kartState, (int)local->squishTimer))
+	{
+		g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
+		return;
+	}
+	if (g_trap_flatten_grace_ms > 0)
+	{
+		g_trap_flatten_grace_ms -= elapsedMs;
+		if (g_trap_flatten_grace_ms > 0)
+			return;
+	}
+	g_trap_flatten_applied = 0;
+	g_trap_flatten_grace_ms = 0;
+	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
+}
+
 // Apply one instant effect at the moment the scheduler fires it. Called from the
 // event drain, which is the only place that sees the FIRE edge exactly once.
 static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
@@ -563,6 +697,19 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		break;
 	case AP_TRAP_FORCED_USE:
 		AP_TrapArmForcedUse(local);
+		break;
+	case AP_TRAP_FLATTEN:
+		// Try immediately, so an ordinary flatten lands on the frame the warning
+		// ends. If the driver is mid-animation or protected, the poll retries.
+		g_trap_flatten_pending = 1;
+		g_trap_flatten_applied = 0;
+		g_trap_flatten_grace_ms = 0;
+		if (AP_TrapApplyFlatten(local))
+		{
+			g_trap_flatten_pending = 0;
+			g_trap_flatten_applied = 1;
+			g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
+		}
 		break;
 	default:
 		break;
@@ -678,6 +825,9 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
+	g_trap_flatten_pending = 0;
+	g_trap_flatten_applied = 0;
+	g_trap_flatten_grace_ms = 0;
 
 	AP_LogLine("[AP TRAP] fresh connect: dropped every armed and active trap\n");
 }
@@ -695,6 +845,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "boost"))   AP_TrapReceive(AP_TRAP_BOOST);
 	else if (!strcmp(v, "fp"))      AP_TrapReceive(AP_TRAP_FIRSTPERSON);
 	else if (!strcmp(v, "wumpa"))   AP_TrapReceive(AP_TRAP_WUMPA_WIPEOUT);
+	else if (!strcmp(v, "flatten")) AP_TrapReceive(AP_TRAP_FLATTEN);
 	else if (!strcmp(v, "reroll"))  AP_TrapReceive(AP_TRAP_ITEM_REROLL);
 	else if (!strcmp(v, "use"))     AP_TrapReceive(AP_TRAP_FORCED_USE);
 	else if (!strcmp(v, "reverse")) AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
@@ -845,6 +996,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	// genuinely unresolved copies.
 	AP_TrapPollReroll(local);
 	AP_TrapPollForcedUse(local);
+	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
 	// source map is still standing, is what fixes the reported First Person
@@ -870,6 +1022,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// already credited any use that landed, and this asks the same predicate
 		// so the two cannot disagree about whether the copy was spent.
 		int refireForcedUse = AP_TrapForcedUseOwed(local);
+		// Same rule for Flatten: only a copy still owed its squish comes back.
+		int refireFlatten =
+		    g_trap_flatten_pending && AP_TrapSchedActive(&g_sched, AP_TRAP_FLATTEN);
 
 		g_epoch++;
 		AP_TrapSchedMapChange(&g_sched);
@@ -880,7 +1035,16 @@ void AP_TrapTick(struct GameTracker *gGT)
 		g_trap_lead_ms = 0;
 		g_trap_reroll_excluded = -1;
 		g_trap_use_pending = 0;
+		// Flatten's stage machine does not survive the load either. A copy that
+		// fired but never got its squish away is re-armed below for the same
+		// reason Forced Use is; one that already landed has delivered its harm,
+		// and its leftover recovery wait belongs to a map that is going away.
+		g_trap_flatten_pending = 0;
+		g_trap_flatten_applied = 0;
+		g_trap_flatten_grace_ms = 0;
 
+		if (refireFlatten)
+			AP_TrapSchedReceive(&g_sched, AP_TRAP_FLATTEN);
 		if (refireForcedUse)
 			AP_TrapSchedReceive(&g_sched, AP_TRAP_FORCED_USE);
 	}

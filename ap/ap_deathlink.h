@@ -76,6 +76,14 @@ int AP_DeathLinkForceReset(struct Driver *d);
 // used to build a short, name-free cause string.
 void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason);
 
+// Bracket damage the AP layer inflicts on the local player on purpose, so the
+// any_hit hook above does not read it as a death worth broadcasting. The Flatten
+// trap (#280) wraps its damage-dispatch call in this: the ruling attributes the
+// squish as self-inflicted and explicitly forbids sending DeathLink for it. Call
+// with 1 immediately before the dispatch and 0 immediately after. It is a plain
+// flag rather than a counter, so brackets must never be nested.
+void AP_DeathLinkSuppressSelfInflicted(int on);
+
 #endif // CTR_AP
 
 #endif // AP_DEATHLINK_H

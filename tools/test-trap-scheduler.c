@@ -775,7 +775,7 @@ static const TrapIdRow TRAP_IDS[] = {
 	// Wave 2 batch 1 made four of these buildable. Their ids did not move: an
 	// effect becoming performable is a native fact, not an apworld one.
 	{35010106, AP_TRAP_WUMPA_WIPEOUT, 1},
-	{35010107, AP_TRAP_FLATTEN, 0},
+	{35010107, AP_TRAP_FLATTEN, 1}, // batch 2 opener
 	{35010108, AP_TRAP_ITEM_REROLL, 1},
 	{35010109, AP_TRAP_FORCED_USE, 1},
 	{35010110, AP_TRAP_EMPTY_CRATES, 0},
@@ -846,13 +846,13 @@ static void case_item_id_map(void)
 		expect(name, AP_TrapItemIsBuildable(r->effect), r->buildable);
 	}
 
-	// The five wave 1 effects plus wave 2 batch 1's four have a native effect
-	// today. The other ten identities are still reserved.
+	// The five wave 1 effects, wave 2 batch 1's four, and Flatten as the batch 2
+	// opener have a native effect today. The other nine identities are reserved.
 	{
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("exactly nine identities are buildable", buildable, 9);
+		expect("exactly ten identities are buildable", buildable, 10);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -928,7 +928,7 @@ static void case_reserved_identity_receipt(void)
 		       count_ev(AP_TRAP_EV_INACTIVE, effect), 1);
 		expect("reserved identity never fires", count_ev(AP_TRAP_EV_FIRE, effect), 0);
 	}
-	expect("every reserved identity is retained armed", armedKept, 10);
+	expect("every reserved identity is retained armed", armedKept, 9);
 
 	// The buildable ones behaved normally in the same batch. This counts what
 	// actually ran rather than assuming all nine, because two ruled behaviours
@@ -937,11 +937,11 @@ static void case_reserved_identity_receipt(void)
 	// prerequisite is absent stays armed. With no conditions set, Forced USF
 	// waits for a boost event and the three inventory and fruit traps wait for a
 	// held item or ten Wumpa, leaving Icy Road, Low Gravity, Forced Boost, First
-	// Person and Reverse Steering to run.
+	// Person, Reverse Steering and Flatten to run.
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 5);
+	expect("buildable identities still run in the same batch", fired, 6);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1073,9 +1073,11 @@ static void case_wave2_batch1_roster(void)
 		AP_TRAP_ICY, AP_TRAP_LOWGRAV, AP_TRAP_USF_NOBRAKE, AP_TRAP_BOOST,
 		AP_TRAP_FIRSTPERSON, AP_TRAP_WUMPA_WIPEOUT, AP_TRAP_ITEM_REROLL,
 		AP_TRAP_FORCED_USE, AP_TRAP_REVERSE_STEERING,
+		// Batch 2 opener, once the squish damage state was correctly identified.
+		AP_TRAP_FLATTEN,
 	};
 	static const int scaffold[] = {
-		AP_TRAP_FLATTEN, AP_TRAP_EMPTY_CRATES, AP_TRAP_WEAKENED_KART,
+		AP_TRAP_EMPTY_CRATES, AP_TRAP_WEAKENED_KART,
 		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME, AP_TRAP_NITRO,
 		AP_TRAP_RED_POTION, AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
 		AP_TRAP_WARPBALL_AMBUSH, AP_TRAP_DEMO_CAMERA,
@@ -1084,11 +1086,11 @@ static void case_wave2_batch1_roster(void)
 
 	AP_TrapSchedReset(&s);
 	for (i = 0; i < (int)(sizeof active / sizeof active[0]); i++)
-		expect("batch 1 effect is active", AP_TrapSchedIsEnabled(&s, active[i]), 1);
+		expect("implemented effect is active", AP_TrapSchedIsEnabled(&s, active[i]), 1);
 	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
 		expect("excluded effect is still a scaffold",
 		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
-	expect("the roster is nine active effects and eleven scaffolds",
+	expect("the roster is ten active effects and ten scaffolds",
 	       (int)(sizeof active / sizeof active[0]) +
 	           (int)(sizeof scaffold / sizeof scaffold[0]),
 	       AP_TRAP_EFFECT_COUNT);
@@ -1108,6 +1110,17 @@ static void case_wave2_batch1_families(void)
 	       AP_TRAP_DESC[AP_TRAP_FORCED_USE].family, AP_TRAP_FAMILY_NONE);
 	expect("Reverse Steering joins no conflict family",
 	       AP_TRAP_DESC[AP_TRAP_REVERSE_STEERING].family, AP_TRAP_FAMILY_NONE);
+	// Flatten owns a damage animation, not a camera or a boost tier, so it shares
+	// no resource with either existing family. It serializes against ITSELF
+	// through the ordinary duplicate policy, which is what its ruling asks for.
+	expect("Flatten joins no conflict family",
+	       AP_TRAP_DESC[AP_TRAP_FLATTEN].family, AP_TRAP_FAMILY_NONE);
+	expect("Flatten serializes its own duplicates",
+	       AP_TRAP_DESC[AP_TRAP_FLATTEN].duplicate, AP_TRAP_DUP_SERIALIZE);
+	expect("Flatten takes the engine's recovery, not a timer",
+	       AP_TRAP_DESC[AP_TRAP_FLATTEN].duration, AP_TRAP_DURATION_ENGINE_NATURAL);
+	expect("Flatten is eligible everywhere, hubs included",
+	       AP_TRAP_DESC[AP_TRAP_FLATTEN].contexts, AP_TRAP_CTX_ALL);
 }
 
 // Wumpa Wipeout: hub-ineligible, gated on the juiced threshold, one second of
@@ -1510,6 +1523,178 @@ static void case_lead_timer_freezes_and_resets_correctly(void)
 	expect("a negative frame adds nothing", AP_TrapLeadAccumulate(500, 0, 1, 1, -50), 500);
 }
 
+// ── Flatten (batch 2 opener) ──
+
+// The state gate that decides whether the engine may be handed a fresh squish.
+// The ruling suppresses Flatten during a mask rescue and other incompatible
+// damage animations, and DELIBERATELY allows it airborne, so nothing here tests
+// ground contact: there is no ground term to get wrong.
+static void case_flatten_ready_gate(void)
+{
+	// Ordinary driving, drifting and the anti-vshift window all accept a squish.
+	// These three are the engine's own controllable set (VehPhysProc.c:489).
+	expect("normal driving accepts a squish",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0, 0, 0, 0), 1);
+	expect("drifting accepts a squish",
+	       AP_TrapFlattenReady(AP_TRAP_KS_DRIFTING, 0, 0, 0, 0, 0), 1);
+	expect("the anti-vshift window accepts a squish",
+	       AP_TrapFlattenReady(AP_TRAP_KS_ANTIVSHIFT, 0, 0, 0, 0, 0), 1);
+
+	// Incompatible damage animations and the mask rescue all wait.
+	expect("a mask rescue waits",
+	       AP_TrapFlattenReady(AP_TRAP_KS_MASK_GRABBED, 0, 0, 0, 0, 0), 0);
+	expect("a spinout waits", AP_TrapFlattenReady(AP_TRAP_KS_SPINNING, 0, 0, 0, 0, 0), 0);
+	expect("a blast waits", AP_TrapFlattenReady(AP_TRAP_KS_BLASTED, 0, 0, 0, 0, 0), 0);
+	expect("a crash waits", AP_TrapFlattenReady(AP_TRAP_KS_CRASHING, 0, 0, 0, 0, 0), 0);
+
+	// REVIEW DEFECT A. Scripted movement is not a damage animation, so a gate that
+	// lists damage states to refuse lets all of it through. Each of these installs
+	// its own driver func table, and the squish routes DRIVER_FUNC_INIT at
+	// VehPhysProc_SpinFirst_Init, which overwrites the whole table. In a hub warp
+	// pad that erases VehStuckProc_Warp_PhysAngular, the only stage the pad leaves
+	// running, and the warp can never finish: the player is stranded in the hub.
+	expect("a hub warp pad waits, and is not torn out from under the player",
+	       AP_TrapFlattenReady(AP_TRAP_KS_WARP_PAD, 0, 0, 0, 0, 0), 0);
+	expect("the end-of-event freeze waits",
+	       AP_TrapFlattenReady(AP_TRAP_KS_FREEZE, 0, 0, 0, 0, 0), 0);
+	expect("the starting countdown rev waits",
+	       AP_TrapFlattenReady(AP_TRAP_KS_ENGINE_REVVING, 0, 0, 0, 0, 0), 0);
+
+	// Already flattened: do not re-squish. damageType 3 has no such guard of its
+	// own, unlike the blasted branch, so this one is ours.
+	expect("an already flattened kart is not re-squished",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0xf00, 0, 0, 0, 0), 0);
+
+	// REVIEW DEFECT B. VehPickState_NewState zeroes pendingDamageType at entry,
+	// so dispatching on top of a queued collision hit deletes it outright: the
+	// player never takes it, its attacker is never credited, and its DeathLink
+	// never sends. The gap between VehPhysCrash_Attack queuing it and
+	// VehPickupItem_ShootOnCirclePress consuming it spans a whole frame, with
+	// AP_TrapTick running inside it, so this is structural rather than a race.
+	expect("a queued collision hit is waited for, not swallowed",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0, 0, 0, 2), 0);
+	expect("a queued turbo-land squish is waited for too",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0, 0, 0, 3), 0);
+
+	// Engine protection. Checked BEFORE the dispatch specifically so a bubble
+	// shield is not popped by an attempt that then refuses to flatten anyway.
+	expect("invincibility waits",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0x2a0, 0, 0, 0), 0);
+	expect("an active mask waits",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0, 1, 0, 0), 0);
+	expect("a bubble shield waits rather than being spent",
+	       AP_TrapFlattenReady(AP_TRAP_KS_NORMAL, 0, 0, 0, 1, 0), 0);
+}
+
+// Completion is the engine's own recovery, not a duration this trap invented.
+static void case_flatten_recovery_gate(void)
+{
+	expect("a running squish timer is not recovered",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_NORMAL, 0xf00), 0);
+	// damageType 3 falls through to the spinout init, so the follow-up spin is
+	// part of the recovery and must not be mistaken for the end of it.
+	expect("the follow-up spin is not recovered yet",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_SPINNING, 0), 0);
+	expect("a blast during recovery is not recovered",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_BLASTED, 0), 0);
+	// A scripted state is not the end of a recovery either, so an expired squish
+	// timer inside a warp pad or an end-of-event freeze still holds the slot.
+	expect("a warp pad is not a finished recovery",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_WARP_PAD, 0), 0);
+	expect("the end-of-event freeze is not a finished recovery",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_FREEZE, 0), 0);
+	expect("back to normal control is recovered",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_NORMAL, 0), 1);
+	expect("back to drifting is recovered too",
+	       AP_TrapFlattenRecovered(AP_TRAP_KS_DRIFTING, 0), 1);
+}
+
+// Scheduler-side lifecycle: one second of warning, hub eligible, engine-natural
+// completion, and duplicates that serialize instead of stacking.
+static void case_flatten_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+
+	AP_TrapSchedStep(&s, &hub);
+	drain(&s);
+	expect("an eligible receipt goes straight to its warning",
+	       count_ev(AP_TRAP_EV_WARN, AP_TRAP_FLATTEN), 1);
+	run_ms(&s, &hub, 900);
+	expect("the warning holds the squish for its full second",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 0);
+	run_ms(&s, &hub, 100);
+	expect("Flatten activates in a hub", AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+
+	// Engine-natural: the runtime holds the slot through the squish, the spin and
+	// the grace interval, and only then reports done.
+	run_ms(&s, &hub, 60000);
+	expect("it holds the slot until the runtime reports recovery",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_FLATTEN);
+	expect("the done report consumes it",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 0);
+	expect("and nothing is left behind", slots_used(&s), 0);
+}
+
+// Duplicates serialize: the second copy waits for the first to finish recovering
+// rather than squishing a kart that is already flattened.
+static void case_flatten_duplicates_serialize(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+
+	run_ms(&s, &race, 1100);
+	expect("the first copy fires", AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+	run_ms(&s, &race, 30000);
+	expect("the duplicate does not stack on top of it",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_FLATTEN), 1);
+
+	AP_TrapSchedEffectDone(&s, AP_TRAP_FLATTEN);
+	run_ms(&s, &race, 1100);
+	expect("the duplicate takes its own turn with its own warning",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_FLATTEN);
+	expect("both copies are spent", slots_used(&s), 0);
+}
+
+// Flatten and a running timed effect are independent: no shared family, so a
+// flatten neither waits for Reverse Steering nor cancels it.
+static void case_flatten_and_timed_effects_coexist(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_REVERSE_STEERING);
+	run_ms(&s, &race, 1100);
+	expect("Reverse Steering is running",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 1);
+
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	run_ms(&s, &race, 1100);
+	expect("Flatten fires without waiting for it",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+	expect("and Reverse Steering keeps running underneath",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 1);
+
+	// The inverted-steering window still ends on its own clock, unaffected. It has
+	// 13.9 s left by now: the fifteen started when it fired, and the eleven frames
+	// that carried Flatten through its own warning aged it by 1.1 s.
+	run_ms(&s, &race, 14000);
+	expect("the timed effect still ends on its own clock",
+	       AP_TrapSchedActive(&s, AP_TRAP_REVERSE_STEERING), 0);
+	expect("while Flatten is still waiting on the engine",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -1550,6 +1735,11 @@ int main(void)
 	case_reroll_survives_a_destroyed_roulette();
 	case_forced_use_distinguishes_use_from_confiscation();
 	case_lead_timer_freezes_and_resets_correctly();
+	case_flatten_ready_gate();
+	case_flatten_recovery_gate();
+	case_flatten_lifecycle();
+	case_flatten_duplicates_serialize();
+	case_flatten_and_timed_effects_coexist();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;

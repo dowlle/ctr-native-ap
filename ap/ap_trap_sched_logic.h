@@ -212,14 +212,16 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	{"Wumpa Wipeout", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_TEN_WUMPA, 1, 0, AP_TRAP_WARNING_MS},
-	// STILL A SCAFFOLD. The ruling requires CTR's genuine squashed-kart state,
-	// which the engine calls "squish": VehPickState.c damageType 3 plays the
-	// squish sound, locks input briefly and sets squishTimer, the same state
-	// the Blizzard Bluff and N. Gin Labs hazards use. Activation via that
-	// damage entry is scheduled for the next batch.
+	// Batch 2 opener. The genuine flattened state is damage type 3, which the
+	// decomp calls SQUISH. VehPickState.c handles it with the squish sound, a
+	// 0.25 s input lock and a ~3.8 s squishTimer, then falls through to the
+	// spinout exit. It is what the Blizzard Bluff and N. Gin Labs hazards
+	// inflict, and what a turbo-landing driver inflicts (VehPhysCrash.c:192),
+	// so Flatten keeps its frozen name and its ruling: drive the engine's own
+	// dispatch and take its natural recovery rather than timing anything here.
 	{"Flatten", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 	{"Item Reroll", AP_TRAP_CTX_WEAPONS, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_HELD_ITEM, 1, 0, AP_TRAP_WARNING_MS},
