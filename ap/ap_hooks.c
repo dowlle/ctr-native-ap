@@ -1772,7 +1772,7 @@ char *AP_Credits_PrependScroll(char *origScroll)
 // Two draw surfaces, never both in the same frame, both anchored at the SAME
 // bottom-left point: the original race anchor placed the feed in a mid-screen
 // band clear of the race HUD, but that put it mid-screen above the kart,
-// directly in the sightline (Stef's finding, N. Gin Labs screenshot,
+// directly in the sightline (finding from a live test, N. Gin Labs screenshot,
 // 2026-08-12). Reusing the hub's own anchor is deliberate, not a placeholder
 // -- the ruling was to reuse the hub anchor/behavior verbatim in race mode
 // rather than invent a new position.
@@ -1802,7 +1802,7 @@ char *AP_Credits_PrependScroll(char *origScroll)
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
 // track view) to clear the 1P race HUD -- but that put the feed above the kart,
-// in the sightline (Stef's finding, N. Gin Labs screenshot, 2026-08-12). Ruled
+// in the sightline (finding from a live test, N. Gin Labs screenshot, 2026-08-12). Ruled
 // fix: reuse the hub's own bottom-left anchor (AP_FEED_X / AP_FEED_BASE_Y)
 // verbatim instead of inventing a new position, same as the hub surface below.
 // 2P/3P/4P stay NOT drawn (see AP_FeedDrawRace): AP_FEED_X/AP_FEED_BASE_Y are

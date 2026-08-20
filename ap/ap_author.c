@@ -105,7 +105,7 @@ int AP_Author_Enabled(void)
 //
 // ⚠ THE ORDER MATTERS AND IS NOT A STYLE CHOICE. The #124 AP-logo marker
 // (STATIC_AP) used to be first here, and under author mode's many-instance usage
-// it makes track FLOORS disappear -- reported by Stef 2026-08-09, resolved
+// it makes track FLOORS disappear -- reported from a live test 2026-08-09, resolved
 // 2026-08-10 by exactly this swap and confirmed live. See the vault note
 // "2026-08-09 -- Bug -- AP logo placement markers make floor invisible". The
 // logo path stays as a second choice because it costs nothing to keep, but if it

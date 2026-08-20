@@ -149,7 +149,7 @@ static int AP_BoxChecked(long code, void *ctx)
 // RELIC_RACE was assumed to fold into ADVENTURE_MODE the same way and was NOT
 // explicitly tested here. It does not: a live session on Slide Coliseum (a
 // trial track whose primary mode IS relic races) found zero AP boxes standing
-// and zero trial-track box checks logged, confirmed root cause by Stef
+// and zero trial-track box checks logged, root cause confirmed from a live test
 // 2026-08-12 22:36 -- this gate was the bypass. RELIC_RACE is added explicitly
 // rather than trusted to already be covered.
 //

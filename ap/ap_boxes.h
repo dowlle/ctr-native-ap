@@ -4,7 +4,7 @@
 // AP item boxes (#109): the runtime half. Authored placements become real,
 // breakable crates that send a location check.
 //
-// RUNTIME SEMANTICS, ruled by Stef 2026-08-10 13:46/13:49 CEST:
+// RUNTIME SEMANTICS, ruled 2026-08-10 13:46/13:49 CEST:
 //   1. Visibility follows the seed. A box location that is in the seed has a
 //      crate standing on the track.
 //   2. Box-author mode (#182) always shows the FULL authored set regardless of
