@@ -326,7 +326,18 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 
 	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
-		data.PtrClipBuffer[i] = MEMPACK_AllocMem(MainDB_GetClipSize(gGT->levelID, gGT->numPlyrCurrGame) << 2);
+		int clipEntries = MainDB_GetClipSize(gGT->levelID, gGT->numPlyrCurrGame);
+#if defined(CTR_NATIVE)
+		// Clip records are per-frame render scratch, not gameplay state, and
+		// retail's MEMPACK_AllocMem(entries << 2) is the largest single
+		// allocation a level load makes. Taking it out of the pack is what
+		// stops a heavier racer package from deciding whether the load fits:
+		// the arena headroom a level keeps stopped varying with the request
+		// this loop used to make. See platform/native_clip_scratch.h.
+		data.PtrClipBuffer[i] = NativeClipScratch_Player((u32)i, (u32)clipEntries, (u32)gGT->numPlyrCurrGame);
+#else
+		data.PtrClipBuffer[i] = MEMPACK_AllocMem(clipEntries << 2);
+#endif
 	}
 
 #ifdef CTR_AP

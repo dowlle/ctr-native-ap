@@ -1412,10 +1412,31 @@ internal void NativeCheckpoint_RelocateDataPointers(const struct NativeCheckpoin
 	{
 		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &data.metaDataLEV[i].name_Debug);
 	}
+#if defined(CTR_NATIVE)
+	// Clip scratch is process-owned static storage, like the PTR scratch in
+	// NativeCheckpoint_RelocateSDataPointers: a restored state has to bind to
+	// this process's buffer, never to an address captured under a different
+	// layout. Slots past the restored player count are not read by the draw
+	// overlays, so they are cleared rather than pointed anywhere.
+	{
+		int clipPlayers = (int)sdata_static.gameTracker.numPlyrCurrGame;
+		int clipEntries = MainDB_GetClipSize(sdata_static.gameTracker.levelID, clipPlayers);
+		int clipUsable = (clipPlayers > 0) && NativeClipScratch_CanFit((u32)clipEntries, (u32)clipPlayers, NativeClipScratch_Capacity());
+
+		for (u32 i = 0; i < len(data.PtrClipBuffer); i++)
+		{
+			if (clipUsable && ((int)i < clipPlayers))
+				data.PtrClipBuffer[i] = NativeClipScratch_Player(i, (u32)clipEntries, (u32)clipPlayers);
+			else
+				data.PtrClipBuffer[i] = NULL;
+		}
+	}
+#else
 	for (u32 i = 0; i < len(data.PtrClipBuffer); i++)
 	{
 		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &data.PtrClipBuffer[i]);
 	}
+#endif
 	for (u32 i = 0; i < len(data.bossWeaponMetaPtr); i++)
 	{
 		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &data.bossWeaponMetaPtr[i]);
