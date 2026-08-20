@@ -10,6 +10,7 @@
 #include "ap_statbar.h"     // the Garage bar renderer, shared with the Garage
 #include "ap_charname.h"   // portrait-fallback name choice, shared with the harness
 #include "ap_charseat.h"   // deterministic stored-racer seat state machine
+#include "ap_pickerline.h" // the picker's info line, width-budgeted by the harness
 #include "ap_charswap.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
 
@@ -1751,7 +1752,12 @@ void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
 
 	iconID = data.MetaDataCharacters[characterID].iconID;
 	icon = ((unsigned)iconID < 0x88) ? gGT->ptrIcons[iconID] : NULL;
-	tint = dim ? 0x606060 : 0xffffff;
+	// 0x808080, not 0xffffff, for the owned case: the renderer doubles the
+	// texel-times-vertex-colour product, so 128 is the identity tint and 255 was
+	// 2x overbright, washing the portrait toward white. Same constant and the
+	// same reasoning as the picker grid; see AP_CharPicker_Draw. The dim value
+	// is left alone -- it is this pad's own not-yet-owned treatment.
+	tint = dim ? 0x606060 : 0x808080;
 
 	if (icon != NULL)
 	{
@@ -1766,19 +1772,6 @@ void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
 	ap_cs_noteMissingPortrait(characterID, iconID);
 }
 
-
-static const char *ap_cs_ownershipLabel(void)
-{
-	if (ap_cs_progMode == AP_CS_MODE_GLOBAL)
-		return "GLOBAL";
-	if (ap_cs_progMode == AP_CS_MODE_PERCHAR)
-		return "PER-CHARACTER";
-	if (ap_cs_editMode == AP_CS_MODE_GLOBAL)
-		return "GLOBAL";
-	if (ap_cs_editMode == AP_CS_MODE_PERCHAR)
-		return "PER-CHARACTER";
-	return "VANILLA";
-}
 
 static const char *ap_cs_boostTierName(int tier)
 {
@@ -1812,17 +1805,6 @@ void AP_CharPicker_Draw(void)
 	live = gGT->drivers[0];
 	selectedChar = ap_cs_tiles[ap_cs_cursor].characterID;
 	boostTier = AP_CapabilityBoostTierForCharacter(selectedChar);
-
-	// Backing plates first, icons on top -- the same two-pass order
-	// MM_Characters_MenuProc uses (game/230/MM_Characters.c:1024, 1157).
-	for (i = 0; i < AP_CS_TILES; i++)
-	{
-		r.x = ap_cs_tiles[i].posX;
-		r.y = ap_cs_tiles[i].posY;
-		r.w = AP_CS_TILE_W;
-		r.h = AP_CS_TILE_H;
-		RECTMENU_DrawInnerRect(&r, 0, ot);
-	}
 
 	// Cursor highlight: an OUTLINE on the tile border, never a filled box.
 	//
@@ -1864,14 +1846,29 @@ void AP_CharPicker_Draw(void)
 		struct Icon *icon = ((unsigned)iconID < 0x88) ? gGT->ptrIcons[iconID] : NULL;
 		unsigned int tint;
 
-		// A locked racer is drawn dimmed but IS drawn; the current character is
-		// drawn bright. Ruling 2026-08-08: the roster is not a secret.
-		if (characterID == data.characterIDs[0])
-			tint = 0xffffff;
-		else if (ap_cs_isUnlocked(characterID))
-			tint = 0x808080;
+		// A locked racer is drawn dimmed but IS drawn. Ruling 2026-08-08: the
+		// roster is not a secret.
+		//
+		// 0x808080 is the IDENTITY tint, not a half-brightness one, and that is
+		// the whole reason these three constants read the way they do. The
+		// renderer multiplies the texel by the vertex colour and then doubles it
+		// (platform/native_gpu.c:392 sets the texcoord.z "bright" term to 2,
+		// platform/native_renderer.c:602 applies it as v_color.xyz *= 2), so the
+		// scale factor is colour/128, and MakeColourNoShade
+		// (platform/native_gpu.c:637) writes 128 for exactly that reason. Retail
+		// agrees: the Arcade character select tints every selectable portrait
+		// with D230.characterSelect_NeutralColor = 0x808080
+		// (game/230/D230.c:543, used at game/230/MM_Characters.c:1052).
+		//
+		// So the old 0xffffff on the current racer was not "bright", it was 2x
+		// overbright: it clipped the portrait's highlights toward white and cost
+		// it colour rather than adding any. The current racer is identified by
+		// the yellow outline above, which is the retail idiom and does not
+		// occlude art, so this now only has to answer "may I pick this one".
+		if (ap_cs_isUnlocked(characterID))
+			tint = 0x808080; // full colour, retail neutral
 		else
-			tint = 0x404040;
+			tint = 0x404040; // half, so LOCKED reads at a glance
 
 		if (icon != NULL)
 		{
@@ -1899,6 +1896,41 @@ void AP_CharPicker_Draw(void)
 		}
 	}
 
+	// Backing plates LAST, which puts them BEHIND the portraits.
+	//
+	// This loop used to run first, and that is what made every portrait look
+	// like it had a grey-black filter over it. RECTMENU_DrawInnerRect with
+	// type 0 fills the tile with CTR_Box_DrawClearBox using
+	// sdata->DrawSolidBoxData[2] (game/RECTMENU.c:276), and that entry is
+	// 0x000000 (game/zGlobal_SDATA.c:346) drawn semi-transparent -- a 50% BLACK
+	// box the exact size of the tile, inset to 3,2 / w-6,h-4, which covers the
+	// portrait drawn at 6,4.
+	//
+	// It landed on top because the plates and the portraits share ONE ordering
+	// table: otMem.uiOT is the same pointer as pushBuffer_UI.ptrOT
+	// (include/namespace_Display.h:45). CtrGpu_LinkPrimToOT
+	// (include/gpu.h:131) links each new primitive at the HEAD, and the table is
+	// walked from the head, so the FIRST primitive added is drawn LAST and ends
+	// up on top. The cursor-highlight comment above records the same ordering
+	// being learned the hard way; the fix there was to stop drawing a filled box
+	// at all, so the plates kept the inverted order.
+	//
+	// Retail has the same two passes and runs them the other way round: icons at
+	// game/230/MM_Characters.c:1052, plates at game/230/MM_Characters.c:1163.
+	// This now matches it. Note that TRANS_50_DECAL on the portrait itself is
+	// NOT the problem and is deliberately unchanged -- on a textured primitive
+	// PS1 semi-transparency is per-texel, gated on the texture's STP bit, so it
+	// blends only the texels that ask for it and leaves the rest opaque. Retail
+	// passes TRANS_50_DECAL for its portraits too.
+	for (i = 0; i < AP_CS_TILES; i++)
+	{
+		r.x = ap_cs_tiles[i].posX;
+		r.y = ap_cs_tiles[i].posY;
+		r.w = AP_CS_TILE_W;
+		r.h = AP_CS_TILE_H;
+		RECTMENU_DrawInnerRect(&r, 0, ot);
+	}
+
 	// Title, raised with the grid. FONT_BIG is 17 tall
 	// (data.font_charPixHeight, game/zGlobal_DATA.c:2586-2592), so this ends at
 	// 19 and clears the first tile row at 22.
@@ -1919,7 +1951,7 @@ void AP_CharPicker_Draw(void)
 	// draw environment's 216-line floor (MainMain.c:534-537). Budget, all
 	// FONT_BIG 17 / FONT_SMALL 8:
 	//     130  name          (BIG,   ends 147)
-	//     150  ownership     (SMALL, ends 158)
+	//     150  boost         (SMALL, ends 158)
 	//     164..201 stat bars (three rows, 15 apart, each 7 tall + label)
 	//     206  controls      (SMALL, ends 214)
 	// The bars are 15 apart because that is the Garage's own row pitch
@@ -1928,31 +1960,25 @@ void AP_CharPicker_Draw(void)
 	// two-pixel band the old row 4 (192..200) and controls (198..206) shared.
 	// The first cut started this block at 0xD8 = 216, which IS the floor, so
 	// every line of it fell outside the framebuffer and the player saw no name,
-	// no ownership label and no stats at all.
+	// no boost row and no stats at all.
 	// ------------------------------------------------------------------
 	panelY = 130;
 	DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[selectedChar].name_LNG_long],
 	                   0x100, panelY, FONT_BIG, (JUSTIFY_CENTER | WHITE));
 
-	// Ownership, editability and LOCKED share one line. They used to take two,
-	// which no longer fits, and LOCKED belongs beside the ownership label anyway:
-	// both answer "what am I allowed to do with this racer".
-	if (boostTier >= 0)
+	// Boost tier, plus LOCKED when it applies. Nothing else: this line is
+	// centered on a 512-wide frame, so every character it carries that does NOT
+	// change as the cursor moves is spent pushing the ones that do off both
+	// edges. The ownership label and the editor marker used to sit here and did
+	// exactly that. See ap/ap_pickerline.h for the composition and the width
+	// budget the harness holds.
 	{
 		int boostCeiling = ctr_cfg.boost_blue_fire
 		                       ? AP_CAP_BOOST_BLUEFIRE
 		                       : AP_CAP_BOOST_USF;
-		snprintf(line, sizeof line, "%s  BOOST %d/%d %s%s%s",
-		         ap_cs_ownershipLabel(), boostTier, boostCeiling,
-		         ap_cs_boostTierName(boostTier),
-		         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
-		         ap_cs_isUnlocked(selectedChar) ? "" : "  LOCKED");
-	}
-	else
-	{
-		snprintf(line, sizeof line, "%s%s%s", ap_cs_ownershipLabel(),
-		         ap_cs_editorAvailable() ? "  [EDITABLE]" : "  (READ-ONLY)",
-		         ap_cs_isUnlocked(selectedChar) ? "" : "   LOCKED");
+		AP_PickerLine_Compose(line, sizeof line, boostTier, boostCeiling,
+		                      (boostTier >= 0) ? ap_cs_boostTierName(boostTier) : "",
+		                      ap_cs_isUnlocked(selectedChar));
 	}
 	DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
 	                   (JUSTIFY_CENTER | (ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
