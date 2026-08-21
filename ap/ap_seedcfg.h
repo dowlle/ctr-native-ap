@@ -281,9 +281,12 @@ typedef struct
 	// can tell "locks off" from "seed predates the feature" without inferring
 	// it from an empty array.
 	int racer_locked_pads;
-	//   penta_stats: 0 pal (Penta keeps his own TURN-class table) / 1 ntsc
-	// (the PAL/JP fifth "MAX" class, a best-of-each-axis cherry-pick of the
-	// four normal classes -- the same table USAUnlimitedPenta ships). ONLY
+	//   penta_stats: 0 ntsc, the DEFAULT (Penta keeps the ordinary TURN-class
+	// table he shares with Polar and Pura in NTSC-U, where he shipped
+	// unfinished) / 1 pal (the PAL/JP fifth "MAX" class, a best-of-each-axis
+	// cherry-pick of the four normal classes -- the same table
+	// USAUnlimitedPenta back-ports to NTSC-U). The labels were the wrong way
+	// round until 2026-08-21; the numbers were not, and did not move. ONLY
 	// meaningful while stat_source is vanilla; see below.
 	int penta_stats;
 	//   editable_stats: the RAW option, kept for diagnostics only. The stat
