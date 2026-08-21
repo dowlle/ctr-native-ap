@@ -1529,8 +1529,20 @@ internal void NativeCheckpoint_RelocateSDataPointers(const struct NativeCheckpoi
 	{
 		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.difficultyParams[i]);
 	}
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.nav_ptrFirstPoint);
-	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.nav_ptrLastPoint);
+	// The four nav slots (these two plus the NavPath_ptr* arrays below) are
+	// pointer-OR-image, not pointer-only. Ordinarily they address the LEV's nav
+	// data inside the mempack and the range branch relocates them exactly as
+	// before. When the AP layer has handed the AI a recorded lap
+	// (ap/ap_navrec.c) they instead address a module static in this executable's
+	// own image, which owns no checkpoint range: RelocateAddress finds no owner,
+	// so a pointer-only relocation leaves the slot exactly as it was saved. That
+	// is right inside one process and wrong across two, because the image can be
+	// mapped at a different base and the saved address then points at nothing.
+	// The image branch applies the same codeAnchor delta already used for the
+	// menu pointers and the draw callbacks, which is precisely the correction an
+	// image-static nav pointer needs.
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &sdata_static.nav_ptrFirstPoint);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &sdata_static.nav_ptrLastPoint);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.bestRobotRank);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrArray_XaSize);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrArray_NumXAs);
@@ -1585,18 +1597,22 @@ internal void NativeCheckpoint_RelocateSDataPointers(const struct NativeCheckpoi
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.ptrTimebox1);
 	NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.blank_NavHeader.last);
 
+	// Pointer-or-image for the same reason as nav_ptrFirstPoint above: these
+	// slots address the LEV's nav data normally and an image static when a
+	// recorded lap is driving the AI.
 	for (u32 i = 0; i < len(sdata_static.NavPath_ptrNavFrameArray); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.NavPath_ptrNavFrameArray[i]);
+		NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &sdata_static.NavPath_ptrNavFrameArray[i]);
 	}
 	for (u32 i = 0; i < len(sdata_static.NavPath_ptrHeader); i++)
 	{
-		NativeCheckpoint_RelocatePointerSlot(oldHeader, liveHeader, &sdata_static.NavPath_ptrHeader[i]);
+		NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &sdata_static.NavPath_ptrHeader[i]);
 	}
 	for (u32 i = 0; i < len(sdata_static.navBotList); i++)
 	{
 		NativeCheckpoint_RelocateLinkedList(oldHeader, liveHeader, &sdata_static.navBotList[i]);
 	}
+
 	for (u32 i = 0; i < len(sdata_static.queueSlots); i++)
 	{
 		NativeCheckpoint_RelocateLoadQueueSlot(oldHeader, liveHeader, &sdata_static.queueSlots[i]);
@@ -1893,6 +1909,27 @@ internal void NativeCheckpoint_RelocateRuntimePointers(const struct NativeCheckp
 	NativeCheckpoint_RelocateRectMenu(oldHeader, liveHeader, &gGarage.menuGarage);
 	NativeCheckpoint_RelocateCreditsPointers(oldHeader, liveHeader);
 	NativeCheckpoint_RelocateGameTrackerPointers(oldHeader, liveHeader);
+
+#ifdef CTR_AP
+	// LAST, and specifically after RelocateGameTrackerPointers. Relocating the
+	// nav slots is necessary but not sufficient: recorded AI lanes live in
+	// AP-layer statics, which are in no checkpointed region, so a state restored
+	// into a FRESH process finds them zeroed, with pointers that are
+	// arithmetically right and blank data behind them. This reloads the recording
+	// and republishes, or puts the engine back on the level's own nav data.
+	//
+	// The ordering is load-bearing. That fallback reaches gGT->level1->LevNavTable
+	// through BOTS_InitNavPath, and gGT->level1 is not rebased until
+	// RelocateGameTrackerPointers above. Called from inside
+	// RelocateSDataPointers, where the nav slots themselves are handled, it would
+	// dereference the saving process's level pointer: invisible in-process,
+	// because the two ranges coincide, and a fault on a cross-process restore.
+	// The nav slots it depends on are already done by then, and the success path
+	// touches no level data at all.
+	//
+	// A no-op when no recording is in play.
+	AP_NavRec_AfterCheckpointRestore();
+#endif
 }
 
 internal int NativeCheckpoint_CapturePointerSlotState(void *dst, int dstSize)
