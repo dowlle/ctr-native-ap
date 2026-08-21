@@ -85,6 +85,11 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     // toggle and the PSX dithering toggle from the same fork (issue #231).
     {0, "GRAPHICS OPTIONS - THECODINGBOB"},
     {0, "RESERVES METER - SUPERSTARXALIEN"},
+    // THIRD_PARTY_NOTICES.md "CTR ModSDK Retro-Fueled mechanics and Blue Fire
+    // palette": the Progressive Boost capstone adapts Retro-Fueled (original mod
+    // TheRedhotbr, GPL-3.0) and its blue-fire colour swap by Avery.
+    {0, "RETRO-FUELED BOOST - THEREDHOTBR"},
+    {0, "BLUE FIRE PALETTE - AVERY"},
     {0, ""},
     // THIRD_PARTY_NOTICES.md "Archipelago Logo Marker": the marker mesh comes
     // from MMRecompRando (GPL-3.0) and the logo it depicts is (c) 2022 Krista
