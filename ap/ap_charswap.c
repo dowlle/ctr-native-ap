@@ -182,7 +182,7 @@ static int ap_cs_pentaUsesMaxClass(int characterID)
 		return 0;
 	if (!ap_cs_vanillaStatsInPlay())
 		return 0;
-	return ctr_cfg.penta_stats == 1; // 0 pal (his own class) / 1 ntsc (MAX)
+	return ctr_cfg.penta_stats == 1; // 0 ntsc (his own TURN class) / 1 pal (MAX)
 }
 
 // Whether a HIGHER value is better on this stat's axis. Every row in the four
@@ -242,7 +242,7 @@ static int ap_cs_vanillaValue(int statIndex, int characterID)
 	if ((unsigned)engineID >= NUM_CLASSES)
 		return -1;
 
-	// Penta on the NTSC setting reads the PAL/JP fifth "MAX" class, which this
+	// Penta on the PAL setting reads the PAL/JP fifth "MAX" class, which this
 	// build does not have as a metaPhys column (NUM_CLASSES is 4 here; the
 	// PAL/JP EXE ships 5, as regionsEXE.h's own "4 for max, in pal" comment
 	// says). Rather than widen the table -- which would move engineID, and
