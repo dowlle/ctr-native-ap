@@ -385,6 +385,14 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 	int mineHitModel = 0;
 	int mineShouldInitFollower = 0;
 
+#ifdef CTR_AP
+	// AI lap recording: count the Mask and Turbo fires of the local player, for
+	// the lap container. Inert unless nav_record is on. This is the one place a
+	// held item actually fires, which is why the count sits here and not on the
+	// pickup.
+	AP_NavRec_NoteItemFire(d, weaponID);
+#endif
+
 	switch (weaponID)
 	{
 	// Turbo

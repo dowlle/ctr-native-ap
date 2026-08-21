@@ -5309,6 +5309,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
 	                        // one pending grant into an empty in-race weapon slot
 	AP_ShortcutKeys();
+	AP_NavRec_Tick(gGT);      // AI lap recorder; inert unless nav_record is on
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
 	AP_RelicTargetTick(gGT);  // issue #21: relic-race live target ladder (steps the
 	                          // shown tier down when its time passes; race window only)

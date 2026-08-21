@@ -327,6 +327,14 @@ void BOTS_Adv_AdjustDifficulty(void)
 
 	BOTS_SetGlobalNavData(0);
 
+#ifdef CTR_AP
+	// Recorded AI laps (nav_use_recorded). BOTS_InitNavPath above is the only
+	// place the engine reads level1->LevNavTable, so retargeting the AI has to
+	// happen after that loop and before BOTS_GotoStartingLine takes frame 0.
+	// Inert unless the option is on and a container exists for this level.
+	AP_NavRec_AfterBotsInit();
+#endif
+
 	gGT->numBotsNextGame = 0;
 
 	if (((gameMode2 & CUP_ANY_KIND) == 0) || (gGT->cup.trackIndex == 0))
