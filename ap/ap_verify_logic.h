@@ -208,28 +208,44 @@ static int AP_VerifyOxideGoalFinish(const AP_VerifyOptions *o,
 	return AP_VerifyCapabilityGate(o, items, requiredCharacter, 2, 0);
 }
 
-// Locations that need USF although their TRACK's finish does not. Keyed by AP
-// location code because the ruling is per LOCATION: N. Gin Labs' Trophy Race,
-// Sapphire, Gold, CTR Token Challenge and cups stay ungated. Without USF two of
-// that track's item boxes cannot be reached in a Relic Race, which removes the
-// ten-second perfect-box bonus and USF speed together.
+// Relic tier boost gates, keyed by AP location code (ruling 2026-08-21,
+// posting-pack fixing-pass session; supersedes the narrow 2026-08-19
+// Labs-Platinum entry, which is subsumed by the Platinum USF row below).
+// Mirrors apworld usf_finish.relic_tier_boost_min: every Gold and Platinum
+// Time Trial requires the FIRST boost rank, and the USF-class tracks require
+// the full two-boost rank -- Hot Air Skyway (row 12) and Oxide Station
+// (row 15) on both tiers, N. Gin Labs (row 14) on Platinum only. Sapphire
+// (35012000 block) carries no gate. Rows are the apworld's canonical relic
+// track order (35012000 + tier*100 + row, tier 1 = Gold, 2 = Platinum),
+// NOT game level ids -- keying by code sidesteps that identity space.
 #define AP_VF_LOC_LABS_PLATINUM 35012214L
 
-static int AP_VerifyLocationNeedsUSF(long code)
+static int AP_VerifyLocationBoostMin(long code)
 {
-	return code == AP_VF_LOC_LABS_PLATINUM;
+	long tier, row;
+	if (code < 35012100L || code > 35012217L)
+		return 0;
+	tier = (code - 35012000L) / 100L; /* 1 Gold, 2 Platinum */
+	row = (code - 35012000L) % 100L;
+	if (row > 17L)
+		return 0;
+	if (tier == 1L)
+		return (row == 12L || row == 15L) ? 2 : 1;
+	return (row == 12L || row == 14L || row == 15L) ? 2 : 1;
 }
 
-// The per-location USF term: the bare two-boost capability, racer-aware, and
-// vacuous when the boost chain is not randomized. Not the finish term -- these
-// locations have no hard-knowledge escape, because route knowledge does not
-// restore the unreachable boxes.
+// The per-location boost term: the bare capability at the tier's rank,
+// racer-aware, and vacuous when the boost chain is not randomized. Not the
+// finish term -- tier gates have no hard-knowledge escape, because route
+// knowledge does not substitute for boost reserves on a relic pace (and for
+// N. Gin Labs does not restore the unreachable boxes).
 static int AP_VerifyLocationCapabilityGate(const AP_VerifyOptions *o,
 	const int items[AP_VF_ITEM_COUNT], long code, int requiredCharacter)
 {
-	if (o->boost_mode == 0 || !AP_VerifyLocationNeedsUSF(code))
+	int need = AP_VerifyLocationBoostMin(code);
+	if (o->boost_mode == 0 || need == 0)
 		return 1;
-	return AP_VerifyCapabilityGate(o, items, requiredCharacter, 2, 0);
+	return AP_VerifyCapabilityGate(o, items, requiredCharacter, need, 0);
 }
 
 // One cup LEG's finish term. The apworld's usf_term is unconditionally True

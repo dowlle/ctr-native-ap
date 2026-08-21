@@ -424,9 +424,10 @@ static void ap_vf_recompute(void)
 				break;
 			case AP_VF_TIER2:
 			{
-				// The per-location USF term is vacuous for every tier-2
-				// location but N. Gin Labs' Platinum, whose Relic Race needs
-				// two item boxes that are unreachable below USF.
+				// The per-location boost term (2026-08-21 relic tier ruling):
+				// Gold and Platinum Time Trials carry a first-boost floor,
+				// the USF-class tracks carry the two-boost rank, and every
+				// other tier-2 location passes through vacuously.
 				AP_VerifyOptions opts = ap_vf_options();
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];

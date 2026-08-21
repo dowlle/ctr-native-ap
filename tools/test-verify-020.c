@@ -100,8 +100,10 @@ int main(void)
 	OK("Cortex-locked Oxide goal does not borrow Crash ranks",
 		!AP_VerifyOxideGoalFinish(&o, items, 1));
 
-	// N. Gin Labs: Platinum Time Trial, the one per-LOCATION USF ruling. No
-	// hard-knowledge escape and no effect on the track's other locations.
+	// Relic tier boost gates (2026-08-21 ruling): first-boost floor on every
+	// Gold and Platinum, USF on Hot Air Skyway (row 12) and Oxide Station
+	// (row 15) both tiers and N. Gin Labs (row 14) Platinum. Sapphire and
+	// out-of-range codes stay ungated. No hard-knowledge escape.
 	memset(items, 0, sizeof items);
 	memset(&o, 0, sizeof o);
 	o.character_unlocks = 1;
@@ -110,16 +112,35 @@ int main(void)
 	o.boost_mode = 1;
 	OK("Labs Platinum blocked with no boost",
 		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
-	OK("Labs Sapphire/Gold/Token stay ungated at the same rank",
+	OK("Labs Gold blocked with no boost",
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012114L, -1));
+	OK("ordinary Gold and Platinum blocked with no boost",
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012100L, -1) &&
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012200L, -1));
+	OK("Labs Sapphire and out-of-range codes stay ungated",
 		AP_VerifyLocationCapabilityGate(&o, items, 35012014L, -1) &&
-		AP_VerifyLocationCapabilityGate(&o, items, 35012114L, -1) &&
-		AP_VerifyLocationCapabilityGate(&o, items, 35012314L, -1));
+		AP_VerifyLocationCapabilityGate(&o, items, 35012314L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012099L, -1));
 	items[AP_VF_BOOST_SHARED] = 1;
+	OK("first boost opens ordinary Gold, Platinum and Labs Gold",
+		AP_VerifyLocationCapabilityGate(&o, items, 35012100L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012200L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012114L, -1));
 	OK("Labs Platinum blocked one rank below USF",
 		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	OK("HAS and Oxide blocked one rank below USF on both tiers",
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012112L, -1) &&
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012212L, -1) &&
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012115L, -1) &&
+		!AP_VerifyLocationCapabilityGate(&o, items, 35012215L, -1));
 	items[AP_VF_BOOST_SHARED] = 2;
 	OK("Labs Platinum opens at USF",
 		AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, -1));
+	OK("HAS and Oxide open at USF on both tiers",
+		AP_VerifyLocationCapabilityGate(&o, items, 35012112L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012212L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012115L, -1) &&
+		AP_VerifyLocationCapabilityGate(&o, items, 35012215L, -1));
 
 	items[AP_VF_BOOST_SHARED] = 0;
 	o.shortcut_knowledge = 2;
