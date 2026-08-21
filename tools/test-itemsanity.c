@@ -202,17 +202,20 @@ static int model_crystal_item(int isSkullRockOrRampage)
 // immediately after the itemset switch.
 //
 // RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
-// itemsanity also applies to arenas." The former ruled bypass is gone. Unowned
-// means no weapon plus the ruled Empty Crates fruit, because the arena item is a
-// roulette resolution off a crate pickup like any other.
+// itemsanity also applies to arenas." The former ruled bypass is gone.
+// RULED 2026-08-21 (posting-pack fixing pass): unowned means the empty slot and
+// nothing else -- no Empty Crates fruit. Wumpa has no function inside a Crystal
+// Challenge arena, so the consolation grant was a pointless side effect. The
+// wumpaGrants counter stays in the model so the tests can pin that it is NEVER
+// incremented on this path.
 static int model_crystal_grant(int filterActive, int hardcoded,
 	const unsigned char *owned, int *wumpaGrants)
 {
+	(void)wumpaGrants;
 	if (!filterActive)
 		return hardcoded;
 	if (AP_ItemsanityRollAllowed(hardcoded, owned))
 		return hardcoded;
-	(*wumpaGrants)++;
 	return AP_ITEMSANITY_NO_ITEM;
 }
 
@@ -814,8 +817,9 @@ static void test_crystal_arena_grant_and_check_gates(void)
 		// THE RULING: no weapon arrives at all.
 		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) ==
 		       AP_ITEMSANITY_NO_ITEM);
-		// ... with the ruled Empty Crates fruit, exactly once.
-		assert(wumpa == 1);
+		// ... and NO consolation fruit (ruled 2026-08-21: Wumpa is
+		// functionless in an arena).
+		assert(wumpa == 0);
 	}
 
 	// --- Grant gate: the arena's own weapon received ------------------------
@@ -839,7 +843,7 @@ static void test_crystal_arena_grant_and_check_gates(void)
 		wumpa = 0;
 		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) ==
 		       AP_ITEMSANITY_NO_ITEM);
-		assert(wumpa == 1);
+		assert(wumpa == 0);
 	}
 
 	// --- Itemsanity off: the arena is untouched vanilla ----------------------

@@ -4588,11 +4588,12 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 // ITEMSET_CrystalChallenge unconditionally and hands out Bomb or Turbo keyed on
 // level id alone. So the gate has to live at that hardcode, and this is it.
 //
-// Unowned means the arena hands over nothing. The ruled Empty Crates shape
-// applies exactly as it does to a refused roulette draw, because this IS a
-// roulette resolution: the arena's item arrives from a crate pickup through
-// VehPhysProc's roll-complete path, so refusing it without the fruit would make
-// an arena crate the only pickup in the game that pays out nothing at all.
+// Unowned means the arena hands over nothing, and ONLY nothing. RULED
+// 2026-08-21 (posting-pack fixing pass): the Empty Crates fruit does NOT apply
+// here, unlike every race-context refusal above. Wumpa has no function inside a
+// Crystal Challenge arena -- there is no roulette to juice and no reach-10
+// standing -- so the consolation fruit was a functionally pointless side
+// effect, not a compensation. The empty slot alone is the correct result.
 //
 // Uses AP_ItemsanityShouldFilter, the same predicate as every other gate in this
 // file, so the arena cannot drift away from the rest of itemsanity. That only
@@ -4610,8 +4611,7 @@ int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed)
 	if (AP_ItemsanityRollAllowed(proposed, ap_itemsanity_owned))
 		return proposed;
 
-	RB_Player_ModifyWumpa(driver, 1);
-	AP_AppendLog("[AP ITEMSANITY] arena weapon not received; granted Wumpa\n");
+	AP_AppendLog("[AP ITEMSANITY] arena weapon not received; slot left empty\n");
 	return AP_ITEMSANITY_NO_ITEM;
 }
 
