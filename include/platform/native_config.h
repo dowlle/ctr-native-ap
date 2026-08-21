@@ -64,6 +64,27 @@ typedef struct
 	// #109). Off by default; this toggle IS the gate for the author keys, so a
 	// release player who never opens the menu can never reach them.
 	bool boxAuthor;
+	// AI lap recording. THREE options, not one, because the three are separate
+	// decisions and only the first of them touches the player's disk.
+	//
+	// navRecord WRITES FILES. It banks the laps you drive and saves them under
+	// `ap-navpaths/` when the race ends. Off by default and it must stay that
+	// way: a player who never opens this menu must never find files they did not
+	// ask for.
+	//
+	// navUseRecorded only READS. It hands recorded laps to the bots in place of
+	// the ones baked into the level, so someone who wants recorded lines never
+	// has to turn recording on.
+	//
+	// navDriverName is the name stamped into a recording. Empty falls back to the
+	// Archipelago slot name above. It is CFG_STRING, and unlike updateLastSeen it
+	// IS a user option, so it lives in a visible section: the generic section menu
+	// draws it read-only (Config_DrawValue in game/230/MM_ConfigMenu.c) and it is
+	// edited in config.ini. An in-game text-entry widget is separate UI work and
+	// does not gate recording.
+	bool navRecord;
+	bool navUseRecorded;
+	char navDriverName[32];
 #endif
 } NativeConfig;
 

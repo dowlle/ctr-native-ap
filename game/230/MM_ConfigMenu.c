@@ -60,10 +60,11 @@ static void BuildSectionMap(void)
 		// this menu. Skip it so it never appears as a section here (its CFG_INT rows
 		// would also render as a bare "%d%%", duplicating that screen). The rows are
 		// contiguous, so skipping them leaves curSection on the prior section.
-		// The State section is config-file-only for the same reason plus one more:
-		// it holds remembered state (the pair-version notice's last-seen version,
-		// issue #150), not a user option, and its CFG_STRING row has no renderer in
-		// the generic section draw below. Written by the code that owns the state.
+		// The State section is config-file-only for a related reason: it holds
+		// remembered state (the pair-version notice's last-seen version, issue
+		// #150), not a user option. The generic section draw below DOES render
+		// CFG_STRING rows read-only now, so hiding this one is a decision about
+		// what it is, not a missing renderer. Written by the code that owns it.
 		if (strcmp(g_configEntries[i].section, "Audio") == 0 ||
 		    strcmp(g_configEntries[i].section, "State") == 0)
 			continue;
@@ -223,6 +224,13 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 	AiDiff_Step((int *)e->valuePtr, dir);
 }
 
+// Characters of a CFG_STRING value that fit between a row label and the right
+// edge of the value column at FONT_SMALL (13 px per character). The label column
+// starts at 0x38 and values are right-justified at 0x1DC, which leaves 420 px;
+// a label of a dozen characters takes about 155 of them. 20 keeps a long value
+// clear of the longest label this menu has.
+#define CFG_STRING_INLINE_MAX 20
+
 static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf)
 {
 	if (e->type == CFG_BOOL)
@@ -234,6 +242,27 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	{
 		DecalFont_DrawLineOT((char *)Enum_Label(e),
 			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+	}
+	else if (e->type == CFG_STRING)
+	{
+		// READ-ONLY, and it costs no new input handling: none of the edit paths
+		// in this menu can reach a string row. Cross toggles only CFG_BOOL,
+		// left/right steps only CFG_ENUM, and the slider loop touches only
+		// CFG_INT. So the row shows its value and config.ini is where it is
+		// edited. Empty renders as "-", matching the connection manager.
+		const char *src = (const char *)e->valuePtr;
+		int n = 0;
+
+		while ((src[n] != '\0') && (n < CFG_STRING_INLINE_MAX))
+		{
+			buf[n] = src[n];
+			n++;
+		}
+		if (n == 0)
+			buf[n++] = '-';
+		buf[n] = '\0';
+
+		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else
 	{

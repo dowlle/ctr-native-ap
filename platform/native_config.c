@@ -33,6 +33,9 @@ NativeConfig g_config = {
 	true,  // updateCheck (default on: the pair-version notice is informational)
 	"",    // updateLastSeen (empty = the title notice has never been shown)
 	false, // boxAuthor (off: an authoring tool, not a player option)
+	false, // navRecord (off: this one writes files to the player's disk)
+	false, // navUseRecorded (off: changes how the AI drives)
+	"",    // navDriverName (empty = fall back to the Archipelago slot name)
 #endif
 };
 
@@ -75,8 +78,9 @@ const ConfigEntry g_configEntries[] = {
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
 	// State section: config-file-only, exactly like [Audio] above -- gated out of
 	// BuildSectionMap (game/230/MM_ConfigMenu.c) so it is never a menu section.
-	// This is remembered state, not an option, and the generic section renderer
-	// has no CFG_STRING row drawing anyway (it would fall through to "%d%%").
+	// This is remembered state, not an option, which is the reason it is hidden.
+	// (The generic renderer does draw CFG_STRING rows read-only now, so hiding
+	// this one is a decision about what it IS, no longer a missing renderer.)
 	// Written by the title-screen notice itself, never by a menu row.
 	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
 	// Authoring section: its own section rather than a row under [Archipelago]
@@ -85,6 +89,14 @@ const ConfigEntry g_configEntries[] = {
 	// no menu code at all -- BuildSectionMap picks it up and the generic section
 	// renderer draws it (game/230/MM_ConfigMenu.c).
 	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
+	// "Save" is in the label deliberately. The one option in this build that
+	// writes to the player's disk should say so on the row itself, not only in a
+	// manual nobody reads.
+	{"Authoring",   "nav_record",               "Save AI Lap Recordings",       CFG_BOOL, &g_config.navRecord},
+	{"Authoring",   "nav_use_recorded",         "Use Recorded AI Laps",         CFG_BOOL, &g_config.navUseRecorded},
+	// Read-only on the menu, edited in config.ini. Empty renders as "-" and means
+	// the Archipelago slot name is used instead.
+	{"Authoring",   "nav_driver_name",          "Driver Name",                  CFG_STRING, g_config.navDriverName, 0, (int)sizeof(g_config.navDriverName), 0},
 #endif
 };
 
