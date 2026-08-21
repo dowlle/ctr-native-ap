@@ -5042,18 +5042,30 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// The game's own cached counters (what gates/UI read) -- compare vs AP truth.
 	// numCtrTokens is a six-int struct, not a scalar. The former varargs call
 	// passed that whole struct to %d and happened to expose only its first word
-	// on the current ABI. Report the meaningful aggregate and both components
-	// explicitly: GAMEPROG counts the 16 race tokens in total and the four
-	// Crystal Challenge tokens separately in purple.
+	// on the current ABI. Report the meaningful aggregate and every component
+	// explicitly: GAMEPROG counts the 16 race tokens per colour AND in total,
+	// and the four Crystal Challenge tokens separately in purple. The per-colour
+	// mirrors exist because received_items reports the five token colours
+	// separately and a pad requirement can name a specific colour, so an
+	// aggregate alone cannot identify a wrong regular-colour mirror (#281).
+	// Identities a valid dump must satisfy: tokens_regular == red+green+blue+
+	// yellow, tokens == tokens_regular + tokens_purple.
 	const int gameTokensRegular = gGT->currAdvProfile.numCtrTokens.total;
 	const int gameTokensPurple = gGT->currAdvProfile.numCtrTokens.purple;
 	fprintf(f,
 	        "  \"game_counters\": {\"trophies\": %d, \"relics\": %d, "
 	        "\"keys\": %d, \"tokens\": %d, \"tokens_regular\": %d, "
+	        "\"tokens_red\": %d, \"tokens_green\": %d, \"tokens_blue\": %d, "
+	        "\"tokens_yellow\": %d, "
 	        "\"tokens_purple\": %d, \"completion_pct\": %d},\n",
 	        gGT->currAdvProfile.numTrophies, gGT->currAdvProfile.numRelics,
 	        gGT->currAdvProfile.numKeys, gameTokensRegular + gameTokensPurple,
-	        gameTokensRegular, gameTokensPurple,
+	        gameTokensRegular,
+	        gGT->currAdvProfile.numCtrTokens.red,
+	        gGT->currAdvProfile.numCtrTokens.green,
+	        gGT->currAdvProfile.numCtrTokens.blue,
+	        gGT->currAdvProfile.numCtrTokens.yellow,
+	        gameTokensPurple,
 	        gGT->currAdvProfile.completionPercent);
 
 	// AP-side truth: received-item counts by type.
