@@ -50,13 +50,20 @@
 // (ap_cs_hubReady in ap_charswap.c), and no picker or swap in flight. A receipt
 // arriving mid-race applies on the next safe hub frame instead.
 //
-// A plain SEAT is deliberately NOT gated that way. It resolves a revision the
-// server just handed us, which on a fresh connect is the asynchronous `Get` reply
-// arriving a few frames behind the subscribe's seeded default -- before the hub
-// is up, and before the hub's own load births the player. Making that wait would
-// spawn the player as the seed's starter and correct it only on the load after,
-// which is the bug persistence exists to prevent. Deadline-free restore: hub
-// only. Server-driven resolution: apply where we stand.
+// A plain SEAT applies "where we stand" only while NO live local driver exists.
+// On a fresh boot that is the whole connect window -- the asynchronous `Get`
+// reply lands before the hub's own load births the player, and waiting for
+// hubReady there would spawn the player as the seed's starter and correct it
+// only on the load after, which is the bug persistence exists to prevent. But a
+// mid-session reconnect steps the same machine while the player is DRIVING
+// (observed live 2026-08-21: the reconnect reset re-armed the seat and the
+// resolution landed mid-race, switching the racer fields under a forced-racer
+// race). So every application -- SEAT, RESTORE, and the DEFER stand-in -- is
+// gated on `applySafe`: either no live local driver (loads, boot, race
+// teardown; the write lands before the next birth reads it) or a hubReady
+// frame (where the caller rebirths the driver in place). A held resolution
+// keeps its revision unresolved and retries every frame, so the first teardown
+// or hub frame applies it.
 //
 // EVERY EXIT IS QUIET OR ONE-SHOT. Retrying costs a bitmask test per frame and
 // emits nothing; the caller logs only on the transitions below, each of which
@@ -101,6 +108,7 @@ struct AP_SeatInput
 	unsigned unlockedMask; // bit i = AP_CharacterUnlocked(i)
 	int      busy;         // picker open / swap requested / reload in flight
 	int      hubReady;     // adventure hub idle: safe to change a seated racer
+	int      driverAlive;  // a live local driver exists (gGT->drivers[0] != NULL)
 };
 
 struct AP_SeatAction

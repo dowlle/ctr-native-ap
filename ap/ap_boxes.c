@@ -177,13 +177,6 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 // register without yielding visible, breakable crates on Turbo Track. The AP
 // cube is not STATIC_AP; its bounded geometry also avoids the old many-logo
 // floor corruption.
-static int AP_BoxModel(struct GameTracker *gGT)
-{
-	if ((gGT->gameMode1 & RELIC_RACE) != 0)
-		return AP_BoxModel_EnsureRelic(gGT);
-	return AP_BoxModel_Ensure(gGT);
-}
-
 static void AP_BoxesForget(void)
 {
 	int i;
@@ -249,7 +242,7 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 {
 	Vec3  pos;
 	SVec3 rot;
-	int   modelID;
+	struct Model *model;
 
 	if (s_live[i].spawn != AP_SPAWN_INVALID)
 		return;
@@ -262,8 +255,8 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	if (s_spawnFull)
 		return;
 
-	modelID = AP_BoxModel(gGT);
-	if (modelID < 0)
+	model = AP_BoxModel_GetOwned(gGT);
+	if (model == 0)
 	{
 		if (!s_modelWarned)
 		{
@@ -284,7 +277,7 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	rot.y = s_live[i].rotY;
 	rot.z = 0;
 
-	s_live[i].spawn = AP_Spawn_Add(modelID, &pos, &rot, AP_SPAWN_LIFE_LEVEL, s_boxName);
+	s_live[i].spawn = AP_Spawn_AddModel(model, &pos, &rot, AP_SPAWN_LIFE_LEVEL, s_boxName);
 	if (s_live[i].spawn == AP_SPAWN_INVALID)
 		s_spawnFull = 1;
 }
@@ -360,7 +353,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	                           : "carries NO box locations");
 	AP_LogLine(msg);
 	if ((gGT->gameMode1 & RELIC_RACE) != 0 && s_liveCount > 0)
-		AP_LogLine("[AP BOX] relic race uses the AP-owned crate model (colored until texture harvest completes)\n");
+		AP_LogLine("[AP BOX] relic race uses the AP-owned crate model\n");
 
 	// THE ZERO CASE, LOUD (packaging item 3). With the dev fallback retired a
 	// track can legitimately stand nothing, and the three reasons look identical

@@ -1140,7 +1140,18 @@ extern "C" void ap_net_character_subscribe(int slot_default)
 	// Seed the seed's own starting racer so it is effective before the Get
 	// round-trips; a stored per-slot value (i.e. you already swapped in an
 	// earlier session) overwrites it through the retrieved handler.
-	if (slot_default >= 0 && slot_default <= 15)
+	//
+	// ONLY when nothing is known yet. This runs again on every fresh
+	// slot-connect, and apclientpp's automatic reconnect after a transient drop
+	// reaches here WITHOUT the shutdown that clears g_char_known -- so an
+	// unconditional seed overwrote the known stored racer with the seed's
+	// starter and bumped the revision, and the re-armed seat machine seated the
+	// starter over the racer the player was actually driving (observed live
+	// 2026-08-21, mid-race after a full disconnect/reconnect). A known value is
+	// already the best answer until the Get reply refreshes it; same-slot
+	// reconnects keep it, and a slot/server switch goes through
+	// ap_net_shutdown, which clears g_char_known and re-enables the seed.
+	if (slot_default >= 0 && slot_default <= 15 && !g_char_known)
 	{
 		g_char_value = slot_default;
 		g_char_known = true;

@@ -1022,6 +1022,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 								         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
 									apRelicLeft = 1;
 							}
+							// Letters are checks of the CTR Challenge race type. A checked
+							// Token must not hide or hard-lock that race while any enabled
+							// letter location remains.
+							if (AP_PadUncollectedLetterCount(levelID) > 0)
+								apTokenLeft = 1;
 
 							apTier2Route = AP_PadTier2RouteDecide(
 							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));

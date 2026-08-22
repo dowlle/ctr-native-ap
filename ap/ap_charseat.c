@@ -18,6 +18,16 @@ static int ap_seat_unlocked(unsigned mask, int characterID)
 	return (mask & (1u << characterID)) != 0u;
 }
 
+// May a seat change be APPLIED on this frame? Yes while no live local driver
+// exists (boot, loads, race teardown: the field write lands before the next
+// birth reads it), and yes on an idle hub frame (the caller rebirths the driver
+// in place there). No while the player is driving anywhere else -- a mid-race
+// application changes the racer under them (see the header).
+static int ap_seat_applySafe(const struct AP_SeatInput *in)
+{
+	return !in->driverAlive || in->hubReady;
+}
+
 void AP_SeatReset(struct AP_SeatState *s)
 {
 	if (s == 0)
@@ -124,12 +134,14 @@ void AP_SeatStep(struct AP_SeatState *s, const struct AP_SeatInput *in,
 			// test per frame and changes nothing, forever.
 			return;
 		}
-		if (!in->hubReady)
+		if (!ap_seat_applySafe(in))
 		{
 			// Eligible, but not on a frame where changing the seated racer is
 			// safe. The receipt can land mid-race; hold the choice and apply it
-			// on the next hub frame instead of switching the player's racer out
-			// from under them.
+			// on the next safe frame (an idle hub, or a teardown window where no
+			// driver is alive) instead of switching the player's racer out from
+			// under them. Applying during the teardown is what lets a race exit
+			// birth the restored racer instead of the stale one.
 			return;
 		}
 		// The unlock receipt landed. This is the ordering the whole deferral
@@ -169,8 +181,12 @@ void AP_SeatStep(struct AP_SeatState *s, const struct AP_SeatInput *in,
 		// A stand-in is only for the FIRST seat of a connection, where the
 		// alternative is whatever stale racer the local save holds. Mid-session
 		// the player is already driving something legitimate, so a stored value
-		// that is not yet eligible must not drag them back to the starter.
-		if (!s->seated && ap_seat_unlocked(in->unlockedMask, in->startingChar))
+		// that is not yet eligible must not drag them back to the starter. A
+		// live driver means mid-session even right after a reconnect reset
+		// (s->seated was cleared): the racer being driven IS the legitimate
+		// current choice, so no stand-in may replace it.
+		if (!s->seated && !in->driverAlive &&
+		    ap_seat_unlocked(in->unlockedMask, in->startingChar))
 		{
 			out->character = in->startingChar;
 			s->seated      = 1;
@@ -178,14 +194,16 @@ void AP_SeatStep(struct AP_SeatState *s, const struct AP_SeatInput *in,
 		return;
 	}
 
-	// A plain seat is NOT hub-gated. It resolves a revision the server just
-	// handed us, which on a fresh connect means the asynchronous `Get` reply
-	// landing a few frames behind the subscribe's seeded default -- before the
-	// hub is up, and before its load births the player. Waiting for hubReady
-	// there would spawn the player as the seed's starter and only correct it on
-	// the load after, which is the bug persistence exists to prevent. Only a
-	// DEFERRED restore waits, because only a deferral has no deadline and can
-	// therefore land at an arbitrary moment.
+	// A plain seat applies immediately while no live driver exists (the fresh
+	// -connect flow: the `Get` reply must land before the hub's load births the
+	// player). With a live driver it waits for a safe frame exactly like a
+	// deferred restore -- a mid-session reconnect resolves its revision while
+	// the player is driving, and applying it there switches the racer under
+	// them (observed live 2026-08-21, mid-race). Holding leaves the revision
+	// unresolved, so this retries every frame until a teardown or hub frame.
+	if (!ap_seat_applySafe(in))
+		return;
+
 	out->action    = AP_SEAT_ACT_SEAT;
 	out->character = wanted;
 	out->fromStore = (wanted != in->startingChar);

@@ -29,6 +29,7 @@
 
 struct GameTracker;
 struct Instance;
+struct Model;
 
 // Opaque handle. >= 0 is a live entry; AP_SPAWN_INVALID is the failure value
 // every add path returns when the table is full.
@@ -74,6 +75,12 @@ enum
 // short string literal would be read past its end. Pass a char[16]; the engine's
 // own call sites pass fields of a resident struct for the same reason.
 AP_SpawnHandle AP_Spawn_Add(int modelID, const Vec3 *pos, const SVec3 *rot, int lifetime, const char *name);
+
+// Add a spawn backed by an AP-owned model pointer instead of a modelPtr[] id.
+// The model must have static lifetime. This keeps an AP visual distinct from a
+// resident retail model without replacing the retail model's global id slot.
+AP_SpawnHandle AP_Spawn_AddModel(struct Model *model, const Vec3 *pos, const SVec3 *rot,
+                                int lifetime, const char *name);
 
 // Move / re-orient / resize / recolour a live entry. All are cheap: they mark
 // the entry dirty and the next AP_Spawn_OnFrame rewrites the instance.

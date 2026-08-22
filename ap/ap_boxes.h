@@ -69,9 +69,11 @@ struct GameTracker;
 
 // How close the local player's kart has to get, in LEV world units. The engine's
 // own driver hit radius is 0x40 (THREAD_DRIVER_HIT_RADIUS, namespace_Proc.h:60),
-// so 0x60 is the kart plus roughly half a crate. LinkedCollide_Radius takes the
-// SQUARED value despite its parameter name, which is why the square is derived
-// here rather than written out (Lessons Learned §5).
+// so 0x60 is the kart plus roughly half a crate -- and the AP box renders at
+// EXACTLY retail crate size (AP_BoxModel_DeriveScale, ap_box_model.c; ruled
+// 2026-08-21), so the crate number is the box number. LinkedCollide_Radius
+// takes the SQUARED value despite its parameter name, which is why the square
+// is derived here rather than written out (Lessons Learned §5).
 #define AP_BOX_HIT_RADIUS         0x60
 #define AP_BOX_HIT_RADIUS_SQUARED (AP_BOX_HIT_RADIUS * AP_BOX_HIT_RADIUS)
 

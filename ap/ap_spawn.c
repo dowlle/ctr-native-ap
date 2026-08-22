@@ -16,6 +16,7 @@ struct ApSpawnEntry
 {
 	int              used;
 	int              modelID;
+	struct Model    *model; // AP-owned direct model, or NULL for modelPtr[modelID]
 	int              lifetime;
 	Vec3             pos;
 	SVec3            rot;
@@ -55,7 +56,8 @@ static struct ApSpawnEntry *AP_SpawnEntry(AP_SpawnHandle h)
 	return &s_spawns[h];
 }
 
-AP_SpawnHandle AP_Spawn_Add(int modelID, const Vec3 *pos, const SVec3 *rot, int lifetime, const char *name)
+static AP_SpawnHandle AP_SpawnAdd(int modelID, struct Model *model, const Vec3 *pos,
+                                  const SVec3 *rot, int lifetime, const char *name)
 {
 	int i;
 
@@ -66,6 +68,7 @@ AP_SpawnHandle AP_Spawn_Add(int modelID, const Vec3 *pos, const SVec3 *rot, int 
 
 		s_spawns[i].used = 1;
 		s_spawns[i].modelID = modelID;
+		s_spawns[i].model = model;
 		s_spawns[i].lifetime = lifetime;
 		s_spawns[i].pos = (pos != 0) ? *pos : (Vec3){{0, 0, 0}};
 		s_spawns[i].rot = (rot != 0) ? *rot : (SVec3){{0, 0, 0}};
@@ -86,6 +89,19 @@ AP_SpawnHandle AP_Spawn_Add(int modelID, const Vec3 *pos, const SVec3 *rot, int 
 		AP_LogLine(msg);
 	}
 	return AP_SPAWN_INVALID;
+}
+
+AP_SpawnHandle AP_Spawn_Add(int modelID, const Vec3 *pos, const SVec3 *rot, int lifetime, const char *name)
+{
+	return AP_SpawnAdd(modelID, 0, pos, rot, lifetime, name);
+}
+
+AP_SpawnHandle AP_Spawn_AddModel(struct Model *model, const Vec3 *pos, const SVec3 *rot,
+                                int lifetime, const char *name)
+{
+	if (model == 0)
+		return AP_SPAWN_INVALID;
+	return AP_SpawnAdd(-1, model, pos, rot, lifetime, name);
 }
 
 void AP_Spawn_SetPos(AP_SpawnHandle h, const Vec3 *pos)
@@ -250,14 +266,21 @@ void AP_Spawn_OnFrame(struct GameTracker *gGT)
 			// Bound off the array itself: the id space differs per BUILD
 			// (namespace_Main.h:1001-1003) and the AP marker parks at the last
 			// slot, so a hard-coded ceiling would be wrong on one of them.
-			if (e->modelID < 0 ||
-			    e->modelID >= (int)(sizeof(gGT->modelPtr) / sizeof(gGT->modelPtr[0])))
-				continue;
+			if (e->model != 0)
+			{
+				m = e->model;
+			}
+			else
+			{
+				if (e->modelID < 0 ||
+				    e->modelID >= (int)(sizeof(gGT->modelPtr) / sizeof(gGT->modelPtr[0])))
+					continue;
 
-			// modelPtr[] is refilled per level from the LEV's model list
-			// (LibraryOfModels.c:4-20), so a model that is not in this level is
-			// simply NULL and the entry waits rather than failing.
-			m = gGT->modelPtr[e->modelID];
+				// modelPtr[] is refilled per level from the LEV's model list
+				// (LibraryOfModels.c:4-20), so a model that is not in this level is
+				// simply NULL and the entry waits rather than failing.
+				m = gGT->modelPtr[e->modelID];
+			}
 			if (m == 0)
 				continue;
 

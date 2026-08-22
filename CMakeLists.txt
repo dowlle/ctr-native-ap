@@ -11,6 +11,7 @@ set(CTR_NATIVE_VERSION "0.1.0-beta.6.1")
 # Build clean:  cmake -S . -B build
 # Build mod:    cmake -S . -B build-ap -DCTR_AP=ON   (outputs ctr_native_ap.exe)
 option(CTR_AP "Build with Archipelago integration" OFF)
+option(CTR_AP_AUTHORING "Expose Archipelago authoring tools (developer builds only)" OFF)
 
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
@@ -102,6 +103,9 @@ target_compile_definitions(ctr_native PRIVATE
 # so the clean and mod exes never clobber each other.
 if(CTR_AP)
     target_compile_definitions(ctr_native PRIVATE CTR_AP)
+    if(CTR_AP_AUTHORING)
+        target_compile_definitions(ctr_native PRIVATE CTR_AP_AUTHORING)
+    endif()
     set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
 
     # Archipelago networking (apclientpp). Compiled as an isolated C++17 static

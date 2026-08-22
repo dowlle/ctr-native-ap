@@ -379,6 +379,7 @@ int AP_LocationCheckedByBit(int globalBit);
 int AP_LetterAvailable(int track, int letter);
 long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
+void AP_LetterUnavailableTouched(int track, int letter);
 int AP_LettersRequiredMet(int track);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
@@ -522,6 +523,11 @@ int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD
 // can explain why a trophy-complete pad remains raceable.
 int AP_PadUncollectedBoxCount(int destLevelID);
+
+// Number of enabled Lettersanity locations still unchecked for a race
+// destination. These belong to the CTR Challenge race type and therefore keep
+// its side of the tier-2 route available even after the Token check itself.
+int AP_PadUncollectedLetterCount(int destLevelID);
 
 // ── Pad entry-route diagnostic (issues #232 / #265) ──
 // Emit ONE "[AP PAD]" line describing the entry route this pad just took, and

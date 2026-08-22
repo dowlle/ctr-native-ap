@@ -698,6 +698,8 @@ static void test_pad_state_table(void)
 	// by the hard lock.
 	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 0, 1), 4,
 	           "every reward checked but a box stands -> NOT Done");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_MET, 1, 0), 4,
+	           "a remaining letter location keeps the pad out of Done");
 
 	// Locked (1) outranks everything below it.
 	expect_int(AP_PadStateDecide(RACE, S1_UNMET, RACER_MET, NO_TROPHY, S2_UNMET, 3, 0), 1,
@@ -744,9 +746,9 @@ static void test_tier2_route_table(void)
 {
 	printf("\n-- tier-2 token/relic/box entry routing (#265) --\n");
 	expect_int(AP_PadTier2RouteDecide(1, 1, 0), AP_PAD_TIER2_MENU,
-	           "token and relic left -> show chooser");
+	           "token side (Token or letters) and relic left -> show chooser");
 	expect_int(AP_PadTier2RouteDecide(1, 0, 0), AP_PAD_TIER2_TOKEN,
-	           "only token left -> direct token race");
+	           "only token side (Token or letters) left -> direct token race");
 	expect_int(AP_PadTier2RouteDecide(0, 1, 0), AP_PAD_TIER2_RELIC,
 	           "only relic left -> direct relic race");
 	expect_int(AP_PadTier2RouteDecide(0, 0, 1), AP_PAD_TIER2_BOX_RERACE,

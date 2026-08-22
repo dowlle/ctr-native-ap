@@ -52,25 +52,58 @@ static const u32 s_apBoxModelCommands[] = {
 	0xffffffffu,
 };
 
-// Textured variant: identical geometry, but every command carries texture index
-// 1 in its low 9 bits (RenderBucket_GetCommandTexture reads
-// `texIndex = command & 0x1ff`, 1-based into ptrTexLayout). Bit 0 does not
-// disturb the colour offset, which is `(command >> 7) & 0x1fc` and therefore
-// reads only bit 9 upwards.
-#define AP_BOX_TRI_TEX(ci) \
-	(0x80010001u | ((u32)(ci) << 9)), \
-	(0x00020001u | ((u32)(ci) << 9)), \
-	(0x00030001u | ((u32)(ci) << 9))
+// Textured variant. The texture index lives in the low 9 bits
+// (RenderBucket_GetCommandTexture is 1-based into ptrTexLayout). Those bits do
+// not disturb the colour offset, `(command >> 7) & 0x1fc`.
+//
+// UV CORNER ROLES, NOT ONE SHARED PAIR. The primitive writer pairs
+// TextureLayout corner k with strip vertex k. Roles are assigned in the
+// OUTSIDE VIEW of each face, not in an abstract face plane: texture top sits
+// on the world +Y (up) corners of every side face, and texture left sits on
+// the corner an outside viewer sees on their left (screen right = up x
+// outwardNormal under the engine's proper-rotation camera with the PSX
+// y-down screen). byte1 pairs with pos.z and byte2 with pos.y in the
+// renderer's packed vertex path, so byte2 is the vertical -- the first
+// alpha3 table read byte2 as depth and shipped every face upside down, with
+// half of them horizontally mirrored on top of that (observed live
+// 2026-08-21). In the outside view the twelve triangles reduce to two
+// patterns for the four sides plus the top, and one pair for the bottom:
+//
+//   1  BR,BL,TL   triangle A of front / back / left / right / top
+//   2  BR,TL,TR   triangle B of front / back / left / right / top
+//   3  TL,TR,BR   triangle A of bottom
+//   4  TL,BR,BL   triangle B of bottom
+//
+// The top face's art top points toward +Z, the bottom face's toward +Z seen
+// from below; caps have no canonical up, these keep the seams consistent.
+// Verified with the outside-view rasterizer replay
+// (tools/apbox-texture/orientation-replay.py): every face renders the art
+// exactly, upright and unmirrored, and the same replay reproduces the
+// upside-down/mirrored pattern of the previous table as its anchor.
+#define AP_BOX_TRI_TEX(ci, ti) \
+	(0x80010000u | (u32)(ti) | ((u32)(ci) << 9)), \
+	(0x00020000u | (u32)(ti) | ((u32)(ci) << 9)), \
+	(0x00030000u | (u32)(ti) | ((u32)(ci) << 9))
 
 static const u32 s_apBoxModelCommandsTex[] = {
 	AP_BOX_MODEL_NUM_COLORS,
-	AP_BOX_TRI_TEX(0), AP_BOX_TRI_TEX(0),
-	AP_BOX_TRI_TEX(1), AP_BOX_TRI_TEX(1),
-	AP_BOX_TRI_TEX(2), AP_BOX_TRI_TEX(2),
-	AP_BOX_TRI_TEX(3), AP_BOX_TRI_TEX(3),
-	AP_BOX_TRI_TEX(4), AP_BOX_TRI_TEX(4),
-	AP_BOX_TRI_TEX(5), AP_BOX_TRI_TEX(5),
+	AP_BOX_TRI_TEX(0, 1), AP_BOX_TRI_TEX(0, 2), // front
+	AP_BOX_TRI_TEX(1, 1), AP_BOX_TRI_TEX(1, 2), // back
+	AP_BOX_TRI_TEX(2, 1), AP_BOX_TRI_TEX(2, 2), // left
+	AP_BOX_TRI_TEX(3, 1), AP_BOX_TRI_TEX(3, 2), // right
+	AP_BOX_TRI_TEX(4, 1), AP_BOX_TRI_TEX(4, 2), // top
+	AP_BOX_TRI_TEX(5, 3), AP_BOX_TRI_TEX(5, 4), // bottom
 	0xffffffffu,
+};
+
+// The textured cube's colour table. The shader multiplies every sampled texel
+// by the Gouraud colour, so the fallback cube's orange/brown palette above
+// would tint the contributed art orange (observed live: the pink flower
+// rendered cream/orange). 0x80 is the PSX neutral multiplier; six identical
+// entries keep the command list's colour indices valid for both variants.
+static const u32 s_apBoxModelColorsTex[AP_BOX_MODEL_NUM_COLORS] = {
+	0x00808080, 0x00808080, 0x00808080,
+	0x00808080, 0x00808080, 0x00808080,
 };
 
 #undef AP_BOX_TRI_TEX

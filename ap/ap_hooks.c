@@ -940,6 +940,22 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	return n;
 }
 
+int AP_PadUncollectedLetterCount(int destLevelID)
+{
+	int letter, n = 0;
+
+	if (!ctr_cfg_active() || destLevelID < 0 || destLevelID >= CTR_CFG_LETTER_TRACK_COUNT)
+		return 0;
+
+	for (letter = 0; letter < CTR_CFG_LETTER_COUNT; letter++)
+	{
+		long code = ctr_cfg.lettersanity_locations[destLevelID][letter];
+		if (code >= 0 && ap_net_location_exists(code) && !ap_net_location_checked(code))
+			n++;
+	}
+	return n;
+}
+
 // Reward-type group of a glow bit -> the prize slot that owns it under
 // by_reward_type (issue #59). The three groups are exactly the three slots the
 // pad already births as trophy / relic / token placeholders
@@ -1092,6 +1108,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int uncBits[24];
 	int uncN;
 	int boxesLeft;
+	int lettersLeft;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1118,6 +1135,10 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// and an itemsanity box is exactly such a location. Boxes carry no AdvProgress
 	// bit, so they cannot ride in uncBits and are counted separately.
 	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
+	// Letter locations carry no AdvProgress reward bit, just like boxes. They
+	// belong to this destination's CTR Challenge and must keep the pad out of
+	// Done even after the ordinary Token location is checked.
+	lettersLeft = AP_PadUncollectedLetterCount(destLevelID);
 
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
@@ -1128,7 +1149,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         ctr_cfg_racer_lock_met(physLevelID),
 	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
-	                         uncN, boxesLeft);
+	                         uncN + lettersLeft, boxesLeft);
 }
 
 // Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
@@ -4394,6 +4415,21 @@ void AP_LetterCollected(int track, int letter)
 {
 	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, 0,
 	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
+}
+
+void AP_LetterUnavailableTouched(int track, int letter)
+{
+	static const char names[CTR_CFG_LETTER_COUNT] = {'C', 'T', 'R'};
+	char msg[160];
+	long code = AP_LetterLocation(track, letter);
+
+	if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT ||
+	    letter < 0 || letter >= CTR_CFG_LETTER_COUNT)
+		return;
+	snprintf(msg, sizeof msg,
+	         "[AP LETTER] pickup refused: track=%d letter=%c location=%ld; Lettersanity item not received\n",
+	         track, names[letter], code);
+	AP_AppendLog(msg);
 }
 
 void AP_WumpaReachedTen(struct Driver *driver)

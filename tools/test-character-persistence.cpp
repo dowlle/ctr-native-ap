@@ -282,8 +282,9 @@ static void test_a_restore_waits_for_a_safe_hub_frame()
 	s.frame();
 	check_eq(s.state.pending, 7, "the stored racer is deferred");
 
-	s.in.hubReady = 0; // the player started a race while the deferral stood
-	s.unlock(7);       // and the unlock lands mid-race
+	s.in.hubReady = 0;    // the player started a race while the deferral stood
+	s.in.driverAlive = 1; // and is driving
+	s.unlock(7);          // and the unlock lands mid-race
 	s.frames(600);
 	check_eq(s.seatedChar, 3, "the racer is NOT changed during the race");
 	check_eq(s.state.pending, 7, "the choice is held, not dropped");
@@ -402,6 +403,95 @@ static void test_reconnect_reapplies_the_stored_racer()
 	s.serverSays(9); // the stored value comes back
 	s.frame();
 	check_eq(s.seatedChar, 9, "the reconnect restores the racer, it does not undo the swap");
+}
+
+// THE 2026-08-21 RECONNECT REGRESSION (Alpha3Matrix stack5). A transient drop
+// auto-reconnects while the player is mid-race. The connect reset re-arms the
+// seat machine and zeroes the unlock mask (only the seed's starter reads
+// unlocked until the batched replay re-delivers the rest), while the fixed
+// subscribe keeps the KNOWN stored racer instead of re-seeding the starter.
+// Nothing may change the racer fields while the race runs -- not the deferral,
+// not a stand-in, not a plain seat -- and the held resolution must apply in
+// the teardown window so the exit birth reads it.
+static void test_a_mid_race_reconnect_never_switches_the_racer()
+{
+	Sim s(/*starting*/ 15, /*save*/ 0);
+	s.unlock(0);
+	s.serverSays(0); // the stored racer from an earlier session
+	s.frame();
+	check_eq(s.seatedChar, 0, "the session drives the stored racer");
+
+	// Enter a race, then the connection drops and auto-reconnects mid-race.
+	s.in.hubReady = 0;
+	s.in.driverAlive = 1;
+	AP_SeatReset(&s.state);              // AP_CharSwap_ConnectReset re-arms the seat
+	s.in.unlockedMask = (1u << 15);      // capability reset: only the starter is unlocked
+	// ap_net keeps known=1 / stored=0 (the subscribe no longer re-seeds), so the
+	// machine re-resolves the SAME revision: stored 0, unlock not replayed yet.
+	s.frame();
+	check_eq(s.lastAction, AP_SEAT_ACT_DEFER, "the stored racer defers while its unlock replays");
+	check_eq(s.seatedChar, 0, "and no stand-in replaces the racer being driven");
+
+	s.frames(120); // the replay drains while the race continues
+	check_eq(s.seatedChar, 0, "mid-race, nothing changes the racer fields");
+
+	s.unlock(0); // the stored racer's unlock replays mid-race
+	s.frames(120);
+	check_eq(s.seatedChar, 0, "the eligible restore is still held during the race");
+	check_eq(s.state.pending, 0, "and stays pending rather than being dropped");
+
+	s.in.driverAlive = 0; // race exit: the level tears down, no local driver
+	s.frame();
+	check_eq(s.lastAction, AP_SEAT_ACT_RESTORE, "the restore applies in the teardown window");
+	check_eq(s.seatedChar, 0, "so the exit birth reads the stored racer, not the starter");
+}
+
+// Same reconnect shape, but the resolution lands as a PLAIN SEAT: another
+// device stored a different (already unlocked) racer while we raced. It must
+// hold exactly like a deferred restore and apply on the teardown.
+static void test_a_mid_race_server_seat_waits_for_the_teardown()
+{
+	Sim s(/*starting*/ 15, /*save*/ 0);
+	s.unlock(0);
+	s.unlock(4);
+	s.serverSays(0);
+	s.frame();
+	check_eq(s.seatedChar, 0, "the session drives the stored racer");
+
+	s.in.hubReady = 0;
+	s.in.driverAlive = 1;
+	s.serverSays(4); // another device swapped to 4, whose unlock we already hold
+	s.frames(120);
+	check_eq(s.seatedChar, 0, "a mid-race server resolution is held, not applied");
+
+	s.in.driverAlive = 0; // race exit teardown
+	s.frame();
+	check_eq(s.lastAction, AP_SEAT_ACT_SEAT, "the held seat applies in the teardown window");
+	check_eq(s.seatedChar, 4, "before the next birth reads the fields");
+}
+
+// A reconnect reset while the player stands in the HUB must not seat a
+// stand-in either: the racer being driven is the legitimate current choice,
+// and only its own deferral resolution may change it.
+static void test_an_in_hub_reconnect_seats_no_stand_in()
+{
+	Sim s(/*starting*/ 15, /*save*/ 0);
+	s.unlock(0);
+	s.serverSays(0);
+	s.frame();
+	check_eq(s.seatedChar, 0, "the session drives the stored racer");
+
+	s.in.driverAlive = 1; // standing in the hub with a live driver
+	AP_SeatReset(&s.state);
+	s.in.unlockedMask = (1u << 15); // replay in flight again
+	s.frame();
+	check_eq(s.lastAction, AP_SEAT_ACT_DEFER, "the stored racer defers");
+	check_eq(s.seatedChar, 0, "without the starter stand-in replacing the driven racer");
+
+	s.unlock(0);
+	s.frame();
+	check_eq(s.seatedChar, 0, "and resolves back to the same racer once the unlock replays");
+	check_eq(s.state.pending, AP_SEAT_NONE, "closing the deferral");
 }
 
 // A slot switch is a reset plus a different seed. Nothing may carry over.
@@ -1471,6 +1561,9 @@ int main()
 	test_a_newer_server_value_supersedes_a_deferral();
 	test_the_picker_is_never_overwritten();
 	test_reconnect_reapplies_the_stored_racer();
+	test_a_mid_race_reconnect_never_switches_the_racer();
+	test_a_mid_race_server_seat_waits_for_the_teardown();
+	test_an_in_hub_reconnect_seats_no_stand_in();
 	test_slot_switch_carries_nothing_over();
 	test_an_out_of_roster_stored_racer_falls_back();
 

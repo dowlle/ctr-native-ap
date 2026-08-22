@@ -66,6 +66,25 @@ int main()
 	expect(mixed.sent == 1 && mixed.rearmed == 1 && held.size() == 1,
 	       "mixed flush preserves only the failed send");
 
+	// Representative Lettersanity locations across different tracks. All 48
+	// identities use this same queue, so sample the shared path rather than
+	// duplicating the same assertion for every C, T and R.
+	APHeldChecks letters;
+	std::vector<int64_t> letterSent;
+	letters.onConnected("letter-seed", "letter-slot", isSettled,
+	                    [&](int64_t code) { letterSent.push_back(code); return true; });
+	letters.hold(35012503); // Roo's Tubes: C
+	letters.hold(35012503); // repeated collision/send path while offline
+	letters.hold(35012525); // Blizzard Bluff: T
+	letters.hold(35012544); // N. Gin Labs: R
+	auto letterFlush = letters.onConnected(
+	    "letter-seed", "letter-slot", isSettled,
+	    [&](int64_t code) { letterSent.push_back(code); return true; });
+	expect(letterFlush.sent == 3 && letters.empty(),
+	       "representative letter checks survive same-room reconnect");
+	expect(letterSent == std::vector<int64_t>({35012503, 35012525, 35012544}),
+	       "representative letter checks flush once each in code order");
+
 	std::printf("\n%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;
 }

@@ -83,12 +83,13 @@ const ConfigEntry g_configEntries[] = {
 	// this one is a decision about what it IS, no longer a missing renderer.)
 	// Written by the title-screen notice itself, never by a menu row.
 	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
-	// Authoring section: its own section rather than a row under [Archipelago]
-	// because it is a tool, not a way to play, and a section header says that
-	// without a paragraph of menu text. A plain CFG_BOOL in a new section needs
-	// no menu code at all -- BuildSectionMap picks it up and the generic section
-	// renderer draws it (game/230/MM_ConfigMenu.c).
+	// Box placement editing is absent from ordinary public builds. Keeping the
+	// row out of g_configEntries means NativeConfig_Load cannot revive it from a
+	// stale box_author=true, while ap_author.c independently forces the runtime
+	// gate off as defence in depth. Dedicated authoring builds opt in explicitly.
+#ifdef CTR_AP_AUTHORING
 	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
+#endif
 	// "Save" is in the label deliberately. The one option in this build that
 	// writes to the player's disk should say so on the row itself, not only in a
 	// manual nobody reads.

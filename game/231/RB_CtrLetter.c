@@ -28,7 +28,20 @@ int RB_CtrLetter_ThCollide(struct Thread *letterTh, struct Thread *driverTh, voi
 	driver = driverTh->object;
 #ifdef CTR_AP
 	int apLetter = AP_CtrLetterIndex(letterInst->model->id);
-	if (apLetter >= 0 && !AP_LetterAvailable(sdata->gGT->levelID, apLetter)) return 0;
+	if (apLetter >= 0 && !AP_LetterAvailable(sdata->gGT->levelID, apLetter))
+	{
+		// `padding` is owned by the AP build and starts at zero when this letter's
+		// per-race object is born. The collision callback can run every frame while
+		// the kart overlaps a ghost letter, so log the refusal once for this letter
+		// instance rather than flooding ctr-ap.log.
+		struct CtrLetter *letterObj = letterTh->object;
+		if (letterObj != NULL && letterObj->padding == 0)
+		{
+			letterObj->padding = 1;
+			AP_LetterUnavailableTouched(sdata->gGT->levelID, apLetter);
+		}
+		return 0;
+	}
 #endif
 
 	pb = &sdata->gGT->pushBuffer[driver->driverID];
@@ -141,6 +154,7 @@ void RB_CtrLetter_LInB(struct Instance *inst)
 		letterObj->rot.x = 0;
 		letterObj->rot.y = 0;
 		letterObj->rot.z = 0;
+		letterObj->padding = 0;
 
 		inst->scale.x = 0x1800;
 		inst->scale.y = 0x1800;

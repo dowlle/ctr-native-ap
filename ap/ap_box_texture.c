@@ -92,13 +92,17 @@ int AP_BoxTexture_EnsureFace(struct TextureLayout *outFace)
 
 	// Corner order matches the retail layout this replaces: top-left,
 	// bottom-left, top-right, and a fourth corner that repeats the third
-	// because the source layout is a triangle. Preserved exactly so the face
-	// cannot arrive mirrored or rotated relative to what shipped.
+	// because the source layout is a triangle. The far corners stop at W-2 /
+	// H-2: PSX rasterization never samples a rect's last texel column or row,
+	// so the contributed art carries magenta filler there (confirmed with the
+	// artist, 2026-08-21). Retail hardware skips it; our GL path samples
+	// inclusively and was painting that filler as a magenta fringe on two edges
+	// of every face.
 	s_apBoxTextureFace.u0 = (u8)(AP_BOX_TEXTURE_FACE_X);
 	s_apBoxTextureFace.v0 = (u8)(AP_BOX_TEXTURE_FACE_Y);
 	s_apBoxTextureFace.u1 = (u8)(AP_BOX_TEXTURE_FACE_X);
-	s_apBoxTextureFace.v1 = (u8)(AP_BOX_TEXTURE_FACE_Y + AP_BOX_TEXTURE_FACE_H - 1);
-	s_apBoxTextureFace.u2 = (u8)(AP_BOX_TEXTURE_FACE_X + AP_BOX_TEXTURE_FACE_W - 1);
+	s_apBoxTextureFace.v1 = (u8)(AP_BOX_TEXTURE_FACE_Y + AP_BOX_TEXTURE_FACE_H - 2);
+	s_apBoxTextureFace.u2 = (u8)(AP_BOX_TEXTURE_FACE_X + AP_BOX_TEXTURE_FACE_W - 2);
 	s_apBoxTextureFace.v2 = (u8)(AP_BOX_TEXTURE_FACE_Y);
 	s_apBoxTextureFace.u3 = s_apBoxTextureFace.u2;
 	s_apBoxTextureFace.v3 = s_apBoxTextureFace.v2;

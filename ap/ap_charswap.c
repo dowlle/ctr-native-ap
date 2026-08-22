@@ -1368,6 +1368,43 @@ static void ap_cs_seatApply(int characterID, const char *source)
 	sdata->advProgress.characterID = (s16)characterID;
 }
 
+// Apply a seat while the player may be STANDING in the hub with a live driver.
+// The field writes alone are not enough there: the driver was already born from
+// the old value, so the player keeps driving the old racer -- with the
+// per-character capability chain following it -- until the next level load
+// (observed live 2026-08-21: a post-reconnect restore left the picker, the
+// fields and the driven kart disagreeing). So after the write, reload the hub
+// in place exactly the way the picker's own swap does: same position/rotation
+// restore, same pendingSwap/restorePos machinery, and the reload's driver birth
+// reads the new characterIDs[0]. Deliberately NO persist and NO
+// AP_SeatLocalChoice: this applies a value the seat machine already resolved
+// from the server, not a new local choice.
+static void ap_cs_seatApplyLive(struct GameTracker *gGT, int characterID, const char *source)
+{
+	int changed = (characterID >= 0 && characterID <= NITROS_OXIDE &&
+	               data.characterIDs[0] != (short)characterID);
+
+	ap_cs_seatApply(characterID, source);
+
+	if (!changed || gGT == NULL || gGT->drivers[0] == NULL || !ap_cs_safeToOpen(gGT))
+		return; // no live idle-hub driver: the next birth picks the write up itself
+
+	{
+		struct Driver *d = gGT->drivers[0];
+
+		ap_cs_savedPos[0] = d->posCurr.x;
+		ap_cs_savedPos[1] = d->posCurr.y;
+		ap_cs_savedPos[2] = d->posCurr.z;
+		ap_cs_savedRotY = d->rotCurr.y;
+		ap_cs_savedLevel = gGT->levelID;
+
+		ap_cs_setFreeze(gGT, 0);
+		ap_cs_pendingSwap = 1;
+		ap_cs_restorePos = 1;
+		MainRaceTrack_RequestLoad(gGT->levelID);
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Racer-lock enforcement (ruled 2026-08-17): a racer-locked pad does not just
 // require OWNING the demanded racer, it races you AS them. The warp commit
@@ -1459,6 +1496,7 @@ int AP_CharSwap_GarageRacer(void)
 	in.startingChar = ctr_cfg.starting_character;
 	in.busy         = 0;
 	in.hubReady     = 0;
+	in.driverAlive  = 0; // ignored by AP_SeatResolve, initialized for hygiene
 	in.unlockedMask = 0u;
 	for (i = 0; i < AP_SEAT_ROSTER; i++)
 	{
@@ -1493,12 +1531,19 @@ void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT)
 	in.known        = ap_net_character_known(&in.stored);
 	in.startingChar = ctr_cfg.starting_character;
 	in.busy         = (ap_cs_open || ap_cs_pendingSwap || ap_cs_restorePos);
-	// Safe-frame test for a DEFERRED restore: the adventure hub open and idle
-	// with a live local driver. A deferral has no deadline, so its restore can
-	// land at any time, including mid-race, and this is what keeps it from
-	// changing the racer there. Server-driven seats are not gated on it (see
-	// ap_charseat.h): they must land before the hub's own load births the player.
-	in.hubReady     = ap_cs_hubReady(gGT);
+	// Safe-frame test for applying a seat over a LIVE driver. This is the
+	// picker's own "may a swap run here" test, not bare hubReady: applying now
+	// reloads the hub in place (ap_cs_seatApplyLive), so a cutscene, the pause
+	// menu, or a door/podium freeze must hold the application exactly as they
+	// hold the picker. A held application retries every frame and lands on the
+	// next genuinely idle hub frame or driver-teardown window. Seats with no
+	// live driver (boot, loads) are not gated on this (see ap_charseat.h).
+	in.hubReady     = ap_cs_safeToOpen(gGT);
+	// A live local driver means an application would change the racer being
+	// DRIVEN, not just the fields the next birth reads. The seat machine holds
+	// its resolution while this is set and hubReady is not (mid-race), and the
+	// live-apply below rebirths in place when it is.
+	in.driverAlive  = (gGT != NULL && gGT->drivers[0] != NULL);
 	in.unlockedMask = 0u;
 	for (i = 0; i < AP_SEAT_ROSTER; i++)
 	{
@@ -1511,8 +1556,9 @@ void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT)
 	switch (act.action)
 	{
 	case AP_SEAT_ACT_SEAT:
-		ap_cs_seatApply(act.character, act.fromStore ? "restored from AP data storage"
-		                                             : "seed starting racer");
+		ap_cs_seatApplyLive(gGT, act.character,
+		                    act.fromStore ? "restored from AP data storage"
+		                                  : "seed starting racer");
 		break;
 
 	case AP_SEAT_ACT_DEFER:
@@ -1541,10 +1587,11 @@ void AP_CharSwap_SeatStartingCharacter(struct GameTracker *gGT)
 		break;
 
 	case AP_SEAT_ACT_RESTORE:
-		// The unlock arrived. Note that this writes the same two fields a Garage
-		// confirm writes, so an in-hub restore takes visible effect at the next
-		// driver birth rather than re-loading the level under the player.
-		ap_cs_seatApply(act.character, "restored from AP data storage");
+		// The unlock arrived. On an idle hub frame this reloads the hub in
+		// place so the restored racer is actually driven (and the
+		// per-character capability chain follows it); during a teardown window
+		// the plain field write is enough because the coming birth reads it.
+		ap_cs_seatApplyLive(gGT, act.character, "restored from AP data storage");
 		break;
 
 	default:

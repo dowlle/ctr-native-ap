@@ -75,6 +75,11 @@ static const char *const s_levelNames[] = {
 };
 #define AP_AUTHOR_LEVEL_COUNT ((int)(sizeof(s_levelNames) / sizeof(s_levelNames[0])))
 
+// Keep the exported placement-file identity discoverable in public binaries
+// even though the compiler can prove the authoring UI is disabled there. The
+// release-pair gate uses this exact JSON line to match client and apworld.
+const char AP_ClientExportIdentity[] = "  \"client\": \"" CTR_AP_VERSION "\",";
+
 // Not static: ap_hooks.c's per-item receipt log reuses this for letter-item
 // track names (ap_author.h) rather than carrying a second table.
 const char *AP_AuthorLevelName(int level)
@@ -91,10 +96,18 @@ static int AP_AuthorLevelIsAuthorable(int level)
 
 int AP_Author_Enabled(void)
 {
+	// Public AP builds retain the authored placement table because runtime AP
+	// boxes consume it, but the placement editor itself is a developer tool.
+	// Compile it live only in an explicit authoring build. This also neutralises
+	// a stale box_author=true from an older public config.ini.
+#ifndef CTR_AP_AUTHORING
+	return 0;
+#else
 	// The menu toggle mutates g_config in place, so this follows it live. Without
 	// a config.ini the field holds its compiled default (off), which is the right
 	// answer for a player who never opened the menu.
 	return g_config.boxAuthor ? 1 : 0;
+#endif
 }
 
 // ── the marker model ────────────────────────────────────────────────────────

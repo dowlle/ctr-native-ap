@@ -417,6 +417,20 @@ void MakeTexcoordQuad(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, u8 *uv3, s16 
 	vertex[3].dither = dither;
 	vertex[3].page = texPage;
 	vertex[3].clut = clut;
+
+	// AP's RGBA sideload uses UVs as direct atlas texel coordinates. The native
+	// shader also adds tcx/tcy * 0.5; those auxiliary fields are otherwise left
+	// as stale vertex-buffer contents here, which magnifies/crops the AP art in
+	// a run-dependent way. Retail texture paths retain their existing behavior.
+	if (((u16)page & AP_TPAGE_SIDELOAD_BIT) != 0)
+	{
+		int i;
+		for (i = 0; i < 4; i++)
+		{
+			vertex[i].tcx = 0;
+			vertex[i].tcy = 0;
+		}
+	}
 	/*
 	if (g_cfg_bilinearFiltering)
 	{
@@ -463,6 +477,18 @@ void MakeTexcoordTriangle(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, s16 page,
 	vertex[2].dither = dither;
 	vertex[2].page = texPage;
 	vertex[2].clut = clut;
+
+	// See MakeTexcoordQuad: sideload UVs must not inherit auxiliary offsets from
+	// an earlier primitive that occupied these vertex-buffer slots.
+	if (((u16)page & AP_TPAGE_SIDELOAD_BIT) != 0)
+	{
+		int i;
+		for (i = 0; i < 3; i++)
+		{
+			vertex[i].tcx = 0;
+			vertex[i].tcy = 0;
+		}
+	}
 	/*
 	if (g_cfg_bilinearFiltering)
 	{
