@@ -15,6 +15,7 @@
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_glow_slots_logic.h"
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
+#include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
 #include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
@@ -3459,6 +3460,17 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 				// stale save bit)
 				adv->rewards[bit >> 5] &= ~(1u << (bit & 31));
 				changed = 1;
+				// Diagnostics only (#269, 2026-08-23 bundle inspection): the
+				// clear used to be silent, so a log could not show that a
+				// boss win's local key bit was present at hub birth and gone
+				// a tick later. Rare by construction (one line per leaked bit).
+				{
+					char msg[128];
+					snprintf(msg, sizeof msg,
+					         "[AP ITEM] cleared unbacked reward bit %d (local grant not backed by a received item) | lvl=%d\n",
+					         bit, (int)sdata->gGT->levelID);
+					AP_AppendLog(msg);
+				}
 			}
 		}
 	}
@@ -4723,6 +4735,31 @@ int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled)
 static void AP_EmitRung(int track, long code, int rungTag, int position,
                         const char *phase)
 {
+	// Alpha 4 progression-integrity diagnostic. AP_EmitClassCheck deliberately
+	// treats a negative code as an absent per-seed rung, but that silent return
+	// made "listener did not fire" indistinguishable from "slot_data omitted the
+	// rung" in support bundles. A positive configured code can also disagree with
+	// the server's checked+missing location set; log that before preserving the
+	// existing send attempt so this patch changes evidence only, never behavior.
+	if (code < 0)
+	{
+		char line[160];
+		snprintf(line, sizeof line,
+		         "[AP CHECK DIAG] podium %s refused: track=%d pos=%d rung=%d "
+		         "slot_data_code=%ld (rung absent from seed config)\n",
+		         phase, track, position, rungTag, code);
+		AP_AppendLog(line);
+	}
+	else if (!ap_net_location_exists(code))
+	{
+		char line[176];
+		snprintf(line, sizeof line,
+		         "[AP CHECK DIAG] podium %s membership mismatch: track=%d pos=%d "
+		         "rung=%d slot_data_code=%ld server_exists=0 connected=%d; "
+		         "preserving send attempt\n",
+		         phase, track, position, rungTag, code, ap_net_is_connected());
+		AP_AppendLog(line);
+	}
 	if (AP_EmitClassCheck(code, 1, -1, rungTag, 0,
 	                      "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
 	                      phase, track, position, rungTag, code))
@@ -5036,6 +5073,40 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        "\"countdown_seen\": %d, \"debounce_ms\": %d},\n",
 	        ap_held_cand_pos, ap_held_cand_ms, ap_held_best_pos,
 	        ap_held_countdown_seen, AP_HELD_DEBOUNCE_MS);
+	// Current-track rung contract versus live server membership. This is the
+	// minimum state needed to distinguish parser/config drift from a listener or
+	// network-send defect in the Roo's Tubes Held 3rd/5th report. Keep it generic
+	// so the same diagnostic covers every randomized cup leg and trophy track.
+	{
+		int track = (int)gGT->levelID;
+		long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {-1, -1, -1, -1, -1};
+		if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		{
+			const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+			rung[0] = pr->held_1st;
+			rung[1] = pr->held_3rd;
+			rung[2] = pr->held_5th;
+			rung[3] = pr->finish_podium;
+			rung[4] = pr->finish_any;
+		}
+		fprintf(f,
+		        "  \"podium_current_track\": {\"enabled\": %d, \"track\": %d, "
+		        "\"codes\": [%ld,%ld,%ld,%ld,%ld], "
+		        "\"exists\": [%d,%d,%d,%d,%d], "
+		        "\"checked\": [%d,%d,%d,%d,%d]},\n",
+		        ctr_cfg.podium_enabled, track,
+		        rung[0], rung[1], rung[2], rung[3], rung[4],
+		        rung[0] >= 0 && ap_net_location_exists(rung[0]),
+		        rung[1] >= 0 && ap_net_location_exists(rung[1]),
+		        rung[2] >= 0 && ap_net_location_exists(rung[2]),
+		        rung[3] >= 0 && ap_net_location_exists(rung[3]),
+		        rung[4] >= 0 && ap_net_location_exists(rung[4]),
+		        rung[0] >= 0 && ap_net_location_checked(rung[0]),
+		        rung[1] >= 0 && ap_net_location_checked(rung[1]),
+		        rung[2] >= 0 && ap_net_location_checked(rung[2]),
+		        rung[3] >= 0 && ap_net_location_checked(rung[3]),
+		        rung[4] >= 0 && ap_net_location_checked(rung[4]));
+	}
 	fprintf(f,
 	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
 	        "\"type\": \"%s\"},\n",
@@ -5048,12 +5119,45 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// raw mode words as well so a future report does not lose an unknown bit.
 	{
 		struct Driver *driver = gGT->drivers[0];
+		// `diag` (2026-08-23 Alpha 3 bundle inspection): the fields the two
+		// hub-lock bundles were missing. Which hold the kart is under (kart
+		// state + the DRIVER_FUNC_INIT identity the picker and the door freeze
+		// both swap), whether a pause / RectMenu / mask hint still owns the
+		// screen, the picker's own state machine, the trap scheduler's slot
+		// counts, and the authoritative received-Key count beside the cosmetic
+		// profile count that VehBirth's door-freeze test actually reads.
+		AP_TransitionDiag diag;
+		char diagText[512];
+		memset(&diag, 0, sizeof diag);
+		diag.kartState = driver != NULL ? (int)driver->kartState : -1;
+		if (driver == NULL)
+			diag.initFunc = AP_DIAG_INIT_NO_DRIVER;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == NULL)
+			diag.initFunc = AP_DIAG_INIT_NULL;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_Driving_Init)
+			diag.initFunc = AP_DIAG_INIT_DRIVING;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_FreezeEndEvent_Init)
+			diag.initFunc = AP_DIAG_INIT_FREEZE_END;
+		else
+			diag.initFunc = AP_DIAG_INIT_OTHER;
+		diag.pauseState = (int)sdata->pause_state;
+		diag.activeMenu = sdata->ptrActiveMenu != NULL;
+		diag.akuHintState = (int)sdata->AkuAkuHintState;
+		diag.loadingStage = (int)sdata->Loading.stage;
+		AP_CharSwap_DiagState(&diag.pickerOpen, &diag.pickerPending, &diag.pickerRestore);
+		AP_TrapDiagCounts(&diag.trapsArmed, &diag.trapsWarning, &diag.trapsActive,
+		                  &diag.trapsSuspended);
+		diag.receivedKeys = AP_GateCount(AP_IDX_KEY);
+		diag.profileKeys = (int)gGT->currAdvProfile.numKeys;
+		AP_TransitionDiagFormat(diagText, (int)sizeof diagText, &diag);
+
 		fprintf(f,
 		        "  \"transition\": {\"level_id\": %d, \"prev_level_id\": %d, "
 		        "\"podium_reward_id\": %d, \"game_mode1\": %u, "
 		        "\"game_mode2\": %u, \"freeze_door\": %d, "
 		        "\"freeze_podium\": %d, \"spawn_at_boss\": %d, "
-		        "\"driver_present\": %d, \"driver_actions\": %u},\n",
+		        "\"driver_present\": %d, \"driver_actions\": %u, "
+		        "\"diag\": %s},\n",
 		        (int)gGT->levelID, (int)gGT->prevLEV,
 		        (int)gGT->podiumRewardID, (unsigned)gGT->gameMode1,
 		        (unsigned)gGT->gameMode2,
@@ -5061,7 +5165,8 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        (gGT->gameMode2 & VEH_FREEZE_PODIUM) != 0,
 		        (gGT->gameMode2 & SPAWN_AT_BOSS) != 0,
 		        driver != NULL,
-		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u);
+		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u,
+		        diagText);
 	}
 	fprintf(f,
 	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "

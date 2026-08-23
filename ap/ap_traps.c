@@ -1085,6 +1085,34 @@ int AP_TrapOwnsCamera(void)
 	return g_fp_applied || AP_TrapSchedActive(&g_sched, AP_TRAP_FIRSTPERSON);
 }
 
+void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
+{
+	int i, nArmed = 0, nWarning = 0, nActive = 0, nSuspended = 0;
+	AP_TrapEnsureReady();
+	for (i = 0; i < AP_TRAP_SCHED_CAP; i++)
+	{
+		const AP_TrapSlot *slot = &g_sched.slots[i];
+		if (slot->state == AP_TRAP_SLOT_ARMED)
+			nArmed++;
+		else if (slot->state == AP_TRAP_SLOT_WARNING)
+			nWarning++;
+		else if (slot->state == AP_TRAP_SLOT_ACTIVE)
+		{
+			nActive++;
+			if (slot->suspended)
+				nSuspended++;
+		}
+	}
+	if (armed != NULL)
+		*armed = nArmed;
+	if (warning != NULL)
+		*warning = nWarning;
+	if (active != NULL)
+		*active = nActive;
+	if (suspended != NULL)
+		*suspended = nSuspended;
+}
+
 int AP_TrapGravity(struct Driver *driver, int gravityY)
 {
 	if (g_active[AP_TRAP_LOWGRAV] && AP_TrapIsLocal(driver))

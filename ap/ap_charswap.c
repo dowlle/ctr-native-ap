@@ -700,6 +700,16 @@ int AP_CharSwap_PickerOpen(void)
 	return ap_cs_open;
 }
 
+void AP_CharSwap_DiagState(int *open, int *pendingSwap, int *restorePos)
+{
+	if (open != NULL)
+		*open = ap_cs_open;
+	if (pendingSwap != NULL)
+		*pendingSwap = ap_cs_pendingSwap;
+	if (restorePos != NULL)
+		*restorePos = ap_cs_restorePos;
+}
+
 // Defined in terms of the picker being open rather than repeating the test at
 // each draw site, so the HUD sites cannot answer this differently from one
 // another. It is a separate name because it is a separate question: "the picker
