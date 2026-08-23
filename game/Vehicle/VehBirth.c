@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_firstkey_freeze.h"
+#endif
 
 static int VehBirth_IsDoor5InstDef(struct InstDef *instDef)
 {
@@ -168,7 +171,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	}
 	else
 	{
-		if ((gGT->podiumRewardID == STATIC_KEY) && (gGT->currAdvProfile.numKeys == 1))
+		if ((gGT->podiumRewardID == STATIC_KEY) &&
+#ifdef CTR_AP
+		    AP_FirstKeyFreezeShouldArm((int)gGT->currAdvProfile.numKeys,
+		                               AP_GateCount(AP_IDX_KEY))
+#else
+		    (gGT->currAdvProfile.numKeys == 1)
+#endif
+		   )
 		{
 			doorInst = VehBirth_FindDoor5(level1);
 		}
