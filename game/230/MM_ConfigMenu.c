@@ -175,12 +175,28 @@ static const int   s_dlinkValues[] = {-1, 0, 1, 2};
 static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
+// Sustained-trap comfort window. Zero is stored for Full race so config.ini
+// remains readable and the scheduler does not need a magic large duration.
+static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
+static const char *s_trapDurationNames[]  = {"10 SEC", "15 SEC", "20 SEC", "25 SEC",
+	"30 SEC", "45 SEC", "60 SEC", "90 SEC", "FULL RACE"};
+#define TRAP_DURATION_COUNT ((int)(sizeof(s_trapDurationValues) / sizeof(s_trapDurationValues[0])))
+
 static int Dlink_Index(int value)
 {
 	for (int i = 0; i < DLINK_COUNT; i++)
 		if (s_dlinkValues[i] == value)
 			return i;
 	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
+static int TrapDuration_Index(int value)
+{
+	int i;
+	for (i = 0; i < TRAP_DURATION_COUNT; i++)
+		if (s_trapDurationValues[i] == value)
+			return i;
+	return 1; // invalid hand-edited values render and step from recommended 15 s
 }
 #endif
 
@@ -193,6 +209,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.trapDuration)
+		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -218,6 +236,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > DLINK_COUNT - 1)
 			i = DLINK_COUNT - 1;
 		*(int *)e->valuePtr = s_dlinkValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.trapDuration)
+	{
+		int i = TrapDuration_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > TRAP_DURATION_COUNT - 1)
+			i = TRAP_DURATION_COUNT - 1;
+		*(int *)e->valuePtr = s_trapDurationValues[i];
 		return;
 	}
 #endif

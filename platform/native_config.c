@@ -27,6 +27,7 @@ NativeConfig g_config = {
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
+	15,    // trapDuration (recommended default, seconds; 0 = full race)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -73,6 +74,7 @@ const ConfigEntry g_configEntries[] = {
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
 	{"Archipelago", "death_link",               "DeathLink",                    CFG_ENUM, &g_config.deathLink},
+	{"Archipelago", "trap_duration",            "Trap Duration",                CFG_ENUM, &g_config.trapDuration},
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
@@ -109,6 +111,20 @@ bool NativeConfig_HasIni(void)
 {
 	return g_configIniPresent;
 }
+
+#ifdef CTR_AP
+int NativeConfig_TrapDurationMs(void)
+{
+	static const int allowed[] = {10, 15, 20, 25, 30, 45, 60, 90};
+	int i;
+	if (g_config.trapDuration == 0)
+		return 0;
+	for (i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++)
+		if (g_config.trapDuration == allowed[i])
+			return allowed[i] * 1000;
+	return 15000;
+}
+#endif
 
 bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen)
 {
@@ -203,6 +219,13 @@ void NativeConfig_Load(void)
 	}
 
 	fclose(f);
+#ifdef CTR_AP
+	// Keep the in-memory/menu value inside the public ladder even when a player
+	// hand-edited an unsupported value. Zero is the intentional Full race token.
+	if (g_config.trapDuration != 0 &&
+	    NativeConfig_TrapDurationMs() != g_config.trapDuration * 1000)
+		g_config.trapDuration = 15;
+#endif
 }
 
 // Look up the entry table row that owns a section/key pair (i.e. one this build

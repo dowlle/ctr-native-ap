@@ -1061,6 +1061,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	                                     !w.finishOrPodium,
 	                                 w.elapsedMs);
 
+	AP_TrapSchedSetDuration(&g_sched, NativeConfig_TrapDurationMs());
 	AP_TrapSchedStep(&g_sched, &w);
 	// One drain: it carries the CLEAR events the polls above emitted, the events
 	// this step produced, and it is where an instant effect that fired on THIS
@@ -1128,7 +1129,8 @@ void AP_TrapFriction(struct Driver *driver, int *perpendicularFriction, int *for
 		// per-terrain groundFrictionScale multiplies in (VehPhysForce.c:306-307),
 		// so off-road drag is cut to about 16 percent as well. Kept as deliberate
 		// counterplay (issue #116; Ignore Off-Road is a separate item, #14). With
-		// map-lifetime duration this now lasts the whole map rather than 20 seconds.
+		// The client Trap Duration option owns how long this treatment lasts;
+		// Full race preserves the former map-lifetime behaviour.
 		*perpendicularFriction = (*perpendicularFriction * AP_TRAP_FRICTION_SCALE) / 256;
 		*forwardFriction = (*forwardFriction * AP_TRAP_FRICTION_SCALE) / 256;
 	}

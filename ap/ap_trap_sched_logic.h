@@ -333,6 +333,10 @@ typedef struct
 	int eventHead;
 	int eventCount;
 	int eventsLost;
+	// -1 = descriptor's legacy policy, 0 = full race, >0 = selected timed window.
+	// Runtime sets this from config.ini; the sentinel keeps standalone callers
+	// source-compatible and makes descriptor tests explicit.
+	int durationOverrideMs;
 } AP_TrapSched;
 
 // One frame of observed world state. Everything the scheduler is allowed to know.
@@ -404,6 +408,12 @@ static inline void AP_TrapSchedReset(AP_TrapSched *s)
 	s->eventHead = 0;
 	s->eventCount = 0;
 	s->eventsLost = 0;
+	s->durationOverrideMs = -1;
+}
+
+static inline void AP_TrapSchedSetDuration(AP_TrapSched *s, int durationMs)
+{
+	s->durationOverrideMs = durationMs < 0 ? -1 : durationMs;
 }
 
 // Turn one effect on or off for this scheduler. Wave 2 activates its effects one
@@ -589,25 +599,27 @@ static inline void AP_TrapSchedEffectDone(AP_TrapSched *s, int effect)
 }
 
 // ── Internals used by the step ──
+static inline int AP_TrapSchedUsesClientDuration(const AP_TrapDescriptor *d)
+{
+	return d->duration == AP_TRAP_DURATION_FIXED_MS ||
+	       d->duration == AP_TRAP_DURATION_MAP_LIFETIME;
+}
+
+static inline int AP_TrapSchedEffectiveDuration(const AP_TrapSched *s,
+	                                             const AP_TrapDescriptor *d)
+{
+	if (s->durationOverrideMs >= 0 && AP_TrapSchedUsesClientDuration(d))
+		return s->durationOverrideMs == 0 ? -1 : s->durationOverrideMs;
+	return d->duration == AP_TRAP_DURATION_FIXED_MS ? d->durationMs : -1;
+}
+
 static inline void AP_TrapSchedFire(AP_TrapSched *s, int i)
 {
 	const AP_TrapDescriptor *d = &AP_TRAP_DESC[s->slots[i].effect];
 	s->slots[i].state = AP_TRAP_SLOT_ACTIVE;
 	s->slots[i].suspended = 0;
 	s->slots[i].warnMs = 0;
-	switch (d->duration)
-	{
-	case AP_TRAP_DURATION_FIXED_MS:
-		s->slots[i].remainMs = d->durationMs;
-		break;
-	case AP_TRAP_DURATION_MAP_LIFETIME:
-	case AP_TRAP_DURATION_ENGINE_NATURAL:
-	default:
-		// Neither is counted down. Map-lifetime ends at AP_TrapSchedMapChange,
-		// engine-natural at AP_TrapSchedEffectDone.
-		s->slots[i].remainMs = -1;
-		break;
-	}
+	s->slots[i].remainMs = AP_TrapSchedEffectiveDuration(s, d);
 	AP_TrapSchedEmit(s, AP_TRAP_EV_FIRE, s->slots[i].effect, i);
 }
 
@@ -619,6 +631,11 @@ static inline int AP_TrapSchedEligible(const AP_TrapSched *s, const AP_TrapWorld
 {
 	const AP_TrapDescriptor *d = &AP_TRAP_DESC[effect];
 	if (!AP_TrapSchedIsEnabled(s, effect))
+		return 0;
+	// A configured duration turns the governed effects into playable-event traps:
+	// receipts in hubs, menus and loading remain armed for the next event.
+	if (s->durationOverrideMs >= 0 && AP_TrapSchedUsesClientDuration(d) &&
+	    (w->context == 0 || w->context == AP_TRAP_CTX_HUB))
 		return 0;
 	if ((w->context & d->contexts) == 0)
 		return 0;
@@ -697,6 +714,12 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 			continue;
 		if (s->slots[i].remainMs < 0)
 			continue; // map-lifetime or engine-natural, not on a clock
+		// Only genuinely playable event frames consume a configured comfort
+		// window. The -1 legacy sentinel retains descriptor behaviour for pure
+		// callers that deliberately do not opt into the client policy.
+		if (s->durationOverrideMs >= 0 &&
+		    (!w->controlUnlocked || w->context == 0 || w->context == AP_TRAP_CTX_HUB))
+			continue;
 		s->slots[i].remainMs -= dt;
 		if (s->slots[i].remainMs <= 0)
 		{
@@ -795,8 +818,8 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 					running = i;
 			if (running >= 0)
 			{
-				if (d->duration == AP_TRAP_DURATION_FIXED_MS)
-					s->slots[running].remainMs = d->durationMs;
+				if (AP_TrapSchedUsesClientDuration(d))
+					s->slots[running].remainMs = AP_TrapSchedEffectiveDuration(s, d);
 				AP_TrapSchedEmit(s, AP_TRAP_EV_REFRESH, effect, running);
 				s->slots[best].state = AP_TRAP_SLOT_EMPTY;
 				continue;

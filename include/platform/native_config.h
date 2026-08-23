@@ -42,6 +42,8 @@ typedef struct
 	                            // any_hit: every landed hit). The menu row and the F9
 	                            // toggle both edit this; ap_deathlink.c reads it
 	                            // every frame.
+	int  trapDuration;          // Archipelago: sustained trap lifetime in seconds.
+	                            // 10/15/20/25/30/45/60/90, or 0 = full race.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
@@ -128,5 +130,12 @@ bool NativeConfig_FullscreenNeedsReapply(bool want, bool have);
 // true if a config.ini was present at load time. Consumers (e.g. the AP layer)
 // use this to decide config.ini precedence over legacy flat config files.
 bool NativeConfig_HasIni(void);
+
+#ifdef CTR_AP
+// Return a valid persisted Trap Duration value in milliseconds. Unknown or
+// hand-edited values fail to the recommended 15-second default; 0 means the
+// scheduler's full-race policy.
+int NativeConfig_TrapDurationMs(void);
+#endif
 
 #endif
