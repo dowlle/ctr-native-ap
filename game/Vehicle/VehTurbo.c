@@ -76,8 +76,8 @@ void VehTurbo_ThDestroy(struct Thread *t)
 	struct Driver *d = turboObj->driver;
 	d->actionsFlagSet &= ~ACTION_TURBO_ITEM;
 
-	INSTANCE_Death(t->inst);
 	INSTANCE_Death(turboObj->inst);
+	INSTANCE_Death(t->inst);
 }
 
 static void VehTurbo_TransformOffset(struct Instance *driverInst, s16 x, s16 y, s16 z, s32 *out)

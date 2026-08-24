@@ -973,13 +973,15 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 				// 2,3 = 1 (itemset2)
 				// 4,5 = 2 (itemset3)
 				// 6,7 = 3 (itemset4)
-				itemSet = CTR_MipsSra(CTR_MipsAddLo(driver->driverRank, (u32)driver->driverRank >> 31), 1);
-
 				// if in 2nd place, get itemSet2
-				if (itemSet == 1)
+				if (driver->driverRank == 1)
 				{
 				Itemset2:
 					itemSet = ITEMSET_Race2;
+				}
+				else
+				{
+					itemSet = CTR_MipsSra(CTR_MipsAddLo(driver->driverRank, (u32)driver->driverRank >> 31), 1);
 				}
 			}
 		}
