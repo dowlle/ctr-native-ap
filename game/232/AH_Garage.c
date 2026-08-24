@@ -282,7 +282,7 @@ LAB_800aec34:
 
 		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
 
-		    ((view.x + view.w) >> 1), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
+		    (view.x + (view.w >> 1)), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
 	}
 
 	if (bossIsOpen)
@@ -318,7 +318,7 @@ LAB_800aec34:
 		if (sdata->AkuAkuHintState == 0 &&
 		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
 		{
-			DecalFont_DrawLine(advert, ((view.x + view.w) >> 1), advertY, FONT_SMALL,
+			DecalFont_DrawLine(advert, (view.x + (view.w >> 1)), advertY, FONT_SMALL,
 			                   0xffff8000);
 		}
 	}
