@@ -16,6 +16,9 @@
 #include "ap_glow_slots_logic.h"
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
 #include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
+#include "ap_checkdiag_once.h" // once-per-connect gate for [AP CHECK DIAG] lines (log-spam guard)
+
+static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
 #include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
@@ -3692,6 +3695,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// never sent a trap to. See AP_Trap_ConnectReset in ap_traps.h.
 		AP_Trap_ConnectReset();
 		AP_DemoCam_ConnectReset(); // same rule: a camera snapshot cannot outlive its session
+		// Re-arm the once-per-connect [AP CHECK DIAG] lines: a new connect means a
+		// (possibly) new seed config, so each absent-rung / mismatch shape may log
+		// one fresh line. See ap_checkdiag_once.h for the spam this prevents.
+		AP_CheckDiagOnceReset(&ap_checkdiag_once);
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -4743,22 +4750,36 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	// existing send attempt so this patch changes evidence only, never behavior.
 	if (code < 0)
 	{
-		char line[160];
-		snprintf(line, sizeof line,
-		         "[AP CHECK DIAG] podium %s refused: track=%d pos=%d rung=%d "
-		         "slot_data_code=%ld (rung absent from seed config)\n",
-		         phase, track, position, rungTag, code);
-		AP_AppendLog(line);
+		// Once per (track, rung, phase) per connect: the per-tick trophy
+		// reconcile re-evaluates this constantly, and on a pre-schema-7 seed
+		// (held_5th absent everywhere) the unconditional line flooded the log.
+		if (AP_CheckDiagOnce(&ap_checkdiag_once, AP_CHECKDIAG_ABSENT,
+		                     phase[0] == 'f', track, rungTag))
+		{
+			char line[208];
+			snprintf(line, sizeof line,
+			         "[AP CHECK DIAG] podium %s refused: track=%d pos=%d rung=%d "
+			         "slot_data_code=%ld (rung absent from seed config; "
+			         "repeats suppressed until reconnect)\n",
+			         phase, track, position, rungTag, code);
+			AP_AppendLog(line);
+		}
 	}
 	else if (!ap_net_location_exists(code))
 	{
-		char line[176];
-		snprintf(line, sizeof line,
-		         "[AP CHECK DIAG] podium %s membership mismatch: track=%d pos=%d "
-		         "rung=%d slot_data_code=%ld server_exists=0 connected=%d; "
-		         "preserving send attempt\n",
-		         phase, track, position, rungTag, code, ap_net_is_connected());
-		AP_AppendLog(line);
+		// Same once-per-connect gate as the absent branch: the send attempt
+		// below is preserved on every call; only the log line is deduplicated.
+		if (AP_CheckDiagOnce(&ap_checkdiag_once, AP_CHECKDIAG_MISMATCH,
+		                     phase[0] == 'f', track, rungTag))
+		{
+			char line[224];
+			snprintf(line, sizeof line,
+			         "[AP CHECK DIAG] podium %s membership mismatch: track=%d pos=%d "
+			         "rung=%d slot_data_code=%ld server_exists=0 connected=%d; "
+			         "preserving send attempt (repeats suppressed until reconnect)\n",
+			         phase, track, position, rungTag, code, ap_net_is_connected());
+			AP_AppendLog(line);
+		}
 	}
 	if (AP_EmitClassCheck(code, 1, -1, rungTag, 0,
 	                      "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
