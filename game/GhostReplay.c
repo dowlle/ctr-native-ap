@@ -65,13 +65,10 @@ void GhostReplay_ThTick(struct Thread *t)
 		return;
 	}
 
-	if (d->reserves > 0)
+	d->reserves = (s16)CTR_MipsSubLo((u16)d->reserves, gGT->elapsedTimeMS);
+	if (d->reserves < 0)
 	{
-		d->reserves -= gGT->elapsedTimeMS;
-		if (d->reserves < 0)
-		{
-			d->reserves = 0;
-		}
+		d->reserves = 0;
 	}
 
 	if ((gGT->trafficLightsTimer < 1) && (d->ghostBoolStarted == 0))
@@ -306,11 +303,11 @@ void GhostReplay_ThTick(struct Thread *t)
 				}
 				else if (maxFrame > 0)
 				{
-					inst->animFrame = maxFrame;
+					inst->animFrame = 0;
 				}
 				else
 				{
-					inst->animFrame = 0;
+					inst->animFrame = maxFrame;
 				}
 
 				buffer += GHOST_SIZE_ANIMATION;

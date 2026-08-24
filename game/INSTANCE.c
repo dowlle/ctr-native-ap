@@ -386,31 +386,31 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 
 		b32 boolRelicOnly = ((((u32)modelID - STATIC_TIME_CRATE_02) < 2) || (modelID == STATIC_TIME_CRATE_01));
 
-		if ((gGT->gameMode1 & TIME_TRIAL) != 0)
+		if (((gGT->gameMode1 & TIME_TRIAL) != 0) && (boolArcadeOnly || boolRelicOnly))
 		{
-			if (boolArcadeOnly || boolRelicOnly)
-			{
-				inst->flags &= ~DRAW_COLLISION_MASK;
-			}
+			inst->flags &= ~DRAW_COLLISION_MASK;
 		}
-
 		else if ((gGT->gameMode1 & RELIC_RACE) != 0)
 		{
-			if (boolArcadeOnly)
-			{
-				inst->flags &= ~DRAW_COLLISION_MASK;
-			}
-
 			if (boolRelicOnly)
 			{
 				gGT->timeCratesInLEV++;
 
-				// temporary, until timebox thread is ready
+				// temporary, until timebox thread is ready (kept off-retail:
+				// our relic-race flow was runtime-tested with this bit set)
 				inst->flags |= 1;
 			}
+			else if (boolArcadeOnly)
+			{
+				inst->flags &= ~DRAW_COLLISION_MASK;
+			}
+		}
+		else if (boolRelicOnly)
+		{
+			inst->flags &= ~DRAW_COLLISION_MASK;
 		}
 
-		else if ((gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
+		if ((gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
 		{
 			if (modelID == STATIC_CRYSTAL)
 			{
