@@ -115,7 +115,7 @@ void Vector_SpecLightNoSpin3D(struct Instance *inst, const SVec3 *rot, const SVe
 	struct GameTracker *gGT = sdata->gGT;
 	struct InstDrawPerPlayer *idpp = INST_GETIDPP(inst);
 
-	ConvertRotToMatrix(&lightMatrix, rot);
+	ConvertRotToMatrix_Transpose(&lightMatrix, rot);
 	Vector_LightMatrixMul(&lightMatrix, &light, &lightLocal);
 
 	inst->unk53 = (char)lightLocal.x;

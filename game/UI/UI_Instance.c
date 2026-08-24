@@ -348,8 +348,8 @@ void UI_INSTANCE_InitAll(void)
 		sdata->relicTime_1min = relicTime / 0xe100;
 		sdata->relicTime_10sec = (relicTime / 0x2580) % 6;
 		sdata->relicTime_1sec = (relicTime / 0x3c0) % 10;
-		sdata->relicTime_10ms = ((relicTime * 100) / 0x3c0) % 10;
-		sdata->relicTime_1ms = ((relicTime * 1000) / 0x3c0) % 10;
+		sdata->relicTime_10ms = (relicTime / 0x60) % 10;
+		sdata->relicTime_1ms = ((relicTime * 100) / 0x3c0) % 10;
 
 		return;
 	}
