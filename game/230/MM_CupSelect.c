@@ -120,7 +120,7 @@ void MM_CupSelect_MenuProc(struct RectMenu *menu)
 		if (cupIndex == menu->rowSelected)
 		{
 			// Make text flash
-			if ((sdata->frameCounter & 2) != 0)
+			if ((sdata->frameCounter & 2) == 0)
 			{
 				txtColor |= 4;
 			}

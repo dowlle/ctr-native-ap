@@ -262,7 +262,7 @@ void MM_Characters_DrawWindows(b32 boolShowDrivers)
 		ptrCurr = &D230.characterSelect_charIDs_curr[iVar6];
 
 		iVar10->animFrame = 0;
-		iVar10->vertSplit = 0;
+		iVar10->animIndex = 0;
 
 		uVar4 = MM_Characters_GetModelByName((int *)data.MetaDataCharacters[(int)*ptrCurr].name_Debug);
 

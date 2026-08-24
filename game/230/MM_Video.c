@@ -50,7 +50,7 @@ void MM_Video_KickCD(CdlLOC *location)
 	int CdlMode;
 	u8 mode[4];
 
-	if ((location != NULL) && (V230.ptrCdLoc != &V230.cdLocation2))
+	if ((location != NULL) && (V230.ptrCdLoc != &V230.cdLocation1))
 	{
 		V230.field12_0x20 = 0;
 		V230.ptrCdLoc = location;
