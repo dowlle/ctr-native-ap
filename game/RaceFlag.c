@@ -631,7 +631,7 @@ SKIP_LOADING_TEXT:
 
 	// === Rest of Iterations ===
 	// Now executing without branching
-	for (column = 1; column < 36; column++)
+	for (column = 1; column < 35; column++)
 	{
 		union RaceFlagScreenBuffer *writeScreen = &scratch->screen[toggle];
 		toggle = toggle ^ 1;
