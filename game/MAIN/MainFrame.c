@@ -749,18 +749,12 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 			{
 				visMem->visOVertSrc[playerIndex] = camDC->visOVertSrc;
 
+#if defined(CTR_NATIVE)
+				// Retail replays even a NULL source (reads PSX low memory);
+				// skip the replay on native instead of faulting.
 				if (camDC->visOVertSrc != NULL)
-				{
-					MainFrame_ReplacePackedVisList(visMem->visOVertList[playerIndex], camDC->visOVertSrc, ((level->numWaterVertices + 0x1f) >> 5) << 2);
-				}
-				else
-				{
-					memcpy(visMem->visOVertList[playerIndex], level->unk5, ((level->numWaterVertices + 0x1f) >> 5) << 2);
-				}
-			}
-			else if (visMem->visOVertSrc[playerIndex] == NULL)
-			{
-				memcpy(visMem->visOVertList[playerIndex], level->unk5, ((level->numWaterVertices + 0x1f) >> 5) << 2);
+#endif
+				MainFrame_ReplacePackedVisList(visMem->visOVertList[playerIndex], camDC->visOVertSrc, ((level->numWaterVertices + 0x1f) >> 5) << 2);
 			}
 		}
 		else
@@ -769,18 +763,12 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 			{
 				visMem->visSCVertSrc[playerIndex] = camDC->visSCVertSrc;
 
+#if defined(CTR_NATIVE)
+				// Retail replays even a NULL source (reads PSX low memory);
+				// skip the replay on native instead of faulting.
 				if (camDC->visSCVertSrc != NULL)
-				{
-					MainFrame_ReplacePackedVisList(visMem->visSCVertList[playerIndex], camDC->visSCVertSrc, ((level->numSCVert + 0x1f) >> 5) << 2);
-				}
-				else
-				{
-					memcpy(visMem->visSCVertList[playerIndex], level->unk_170, ((level->numSCVert + 0x1f) >> 5) << 2);
-				}
-			}
-			else if (visMem->visSCVertSrc[playerIndex] == NULL)
-			{
-				memcpy(visMem->visSCVertList[playerIndex], level->unk_170, ((level->numSCVert + 0x1f) >> 5) << 2);
+#endif
+				MainFrame_ReplacePackedVisList(visMem->visSCVertList[playerIndex], camDC->visSCVertSrc, ((level->numSCVert + 0x1f) >> 5) << 2);
 			}
 		}
 	}
