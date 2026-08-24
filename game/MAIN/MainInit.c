@@ -686,7 +686,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	gGT->stars.distance = lev1->stars.distance;
 
 	// confetti
+	// Retail zeroes the whole 32-bit word here, clearing the adjacent field too.
 	gGT->confetti.numParticles_curr = 0;
+	gGT->confetti.unk1 = 0;
 	gGT->confetti.numParticles_max = 0;
 	gGT->confetti.unk2 = 0;
 	gGT->confetti.velY = -10;

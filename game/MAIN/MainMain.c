@@ -509,10 +509,7 @@ void StateZero()
 	struct GamepadSystem *gGS;
 	gGS = sdata->gGamepads;
 
-// already zero, part of BSS
-#if 0
 	memset(gGT, 0, sizeof(struct GameTracker));
-#endif
 
 	// Set Video Mode to NTSC
 	SetVideoMode(0);
