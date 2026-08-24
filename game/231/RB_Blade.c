@@ -36,6 +36,11 @@ void RB_Blade_LInB(struct Instance *inst)
 
 	struct Blade *bladeObj;
 
+	if (inst->thread != NULL)
+	{
+		return;
+	}
+
 	struct Thread *t = PROC_BirthWithObject(
 	    // creation flags
 	    SIZE_RELATIVE_POOL_BUCKET(sizeof(struct Blade), NONE, SMALL, STATIC),
