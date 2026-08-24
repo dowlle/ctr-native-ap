@@ -160,6 +160,7 @@ void DecalHUD_Arrow2D(struct Icon *icon, s16 posX, s16 posY, struct PrimMem *pri
 	{
 		return;
 	}
+	scale = (s16)scale;
 
 	topRightCornerAndPageXY = CTR_ReadU32LE(&icon->texLayout.u1);
 	topLeftCornerAndPaletteXY = CTR_ReadU32LE(&icon->texLayout.u0);
