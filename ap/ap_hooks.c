@@ -1036,7 +1036,12 @@ static int AP_DestKnown(int destLevelID)
 // same helper ThTick's load gate uses). NON-race categories mirror LInB's
 // per-class branch: randomized requirement when slot_data provides one, else the
 // vanilla fallback for that class. Keyed by the PHYSICAL pad LevelID.
-static int AP_PadStage1Met(int physLevelID)
+//
+// Non-static since the Gem Cup AP-box policy (WO-A3): ap_boxes.c needs the SAME
+// per-class stage-1 answer for the pad that hosts a cup leg's individual race,
+// and a second implementation of this routing is exactly the divergence the
+// policy exists to remove. Declared in ap_hooks.h.
+int AP_PadStage1Met(int physLevelID)
 {
 	int i, owned;
 

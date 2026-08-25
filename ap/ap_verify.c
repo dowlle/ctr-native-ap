@@ -8,47 +8,18 @@
 #include "ap_verify.h"
 #include "ap_box_map.h"
 #include "ap_verify_logic.h"
+#include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
 
 // ---------------------------------------------------------------------------
 // Static vanilla topology (native is the source of truth).
 //
-// Keys required to physically STAND at a pad / garage: the minimum received-Key
-// count that opens every hub door between the N. Sanity Beach spawn and that
-// pad's hub. Mirrors AH_Door.c (NSB->GSV 1 key, NSB->Glacier doorID 4 = 2
-// keys, other doors D232.arrKeysNeeded = {2,1,2,3,4}) and matches the
-// apworld's world.json hub spine: N. Sanity 0, Gem Stone Valley 1, Lost Ruins
-// 1, Glacier Park 2, Citadel City 3, Cups Room 2. Keyed by physical pad
-// LevelID; -1 = not an adventure warp pad (battle maps 20/22/24..27).
+// The hub-spine Key table this sweep needs used to be a private copy here. It
+// now lives in ap_cup_box_policy.h, because the Gem Cup AP-box policy (WO-A3)
+// needs the SAME structural reachability predicate and two copies of a topology
+// table drift. AP_HubKeysForPad is that table's accessor: received Keys needed
+// to stand at a physical pad, -1 for a non-adventure pad. Values unchanged.
 // ---------------------------------------------------------------------------
-static const int ap_vf_pad_keys[CTR_CFG_PAD_COUNT] = {
-	/*  0 Dingo Canyon   (Lost Ruins)   */ 1,
-	/*  1 Dragon Mines   (Glacier Park) */ 2,
-	/*  2 Blizzard Bluff (Glacier Park) */ 2,
-	/*  3 Crash Cove     (N. Sanity)    */ 0,
-	/*  4 Tiger Temple   (Lost Ruins)   */ 1,
-	/*  5 Papu's Pyramid (Lost Ruins)   */ 1,
-	/*  6 Roo's Tubes    (N. Sanity)    */ 0,
-	/*  7 Hot Air Skyway (Citadel City) */ 3,
-	/*  8 Sewer Speedway (N. Sanity)    */ 0,
-	/*  9 Mystery Caves  (N. Sanity)    */ 0,
-	/* 10 Cortex Castle  (Citadel City) */ 3,
-	/* 11 N. Gin Labs    (Citadel City) */ 3,
-	/* 12 Polar Pass     (Glacier Park) */ 2,
-	/* 13 Oxide Station  (Citadel City) */ 3,
-	/* 14 Coco Park      (Lost Ruins)   */ 1,
-	/* 15 Tiny Arena     (Glacier Park) */ 2,
-	/* 16 Slide Coliseum (Gem Stone V.) */ 1,
-	/* 17 Turbo Track    (Gem Stone V.) */ 1,
-	/* 18 Nitro Court    (Citadel City) */ 3,
-	/* 19 Rampage Ruins  (Lost Ruins)   */ 1,
-	/* 20 (battle map)                  */ -1,
-	/* 21 Skull Rock     (N. Sanity)    */ 0,
-	/* 22 (battle map)                  */ -1,
-	/* 23 Rocky Road     (Glacier Park) */ 2,
-	/* 24..27 (battle maps)             */ -1, -1, -1, -1,
-};
-#define AP_VF_CUP_KEYS 2 // Cups Room (physical cup pads 100..104)
 
 // Keys required to stand at each boss garage (garage hub). Oxide's own Key-4
 // requirement (boss_req[4]) subsumes his Gem Stone Valley hub cost.
@@ -156,7 +127,7 @@ static int ap_vf_stage1_met(int lid, const int *counts)
 		return owned >= 5;
 	}
 	// Battle arenas: vanilla rule is the hub-key gate ONLY (the sweep already
-	// applies that via ap_vf_pad_keys), never a trophy floor.
+	// applies that via AP_HubKeysForPad), never a trophy floor.
 	if (lid == 18 || lid == 19 || lid == 21 || lid == 23)
 		return 1;
 	return counts[AP_IDX_TROPHY] >= data.metaDataLEV[lid].numTrophiesToOpen;
@@ -224,7 +195,7 @@ static int ap_vf_pad_open(int pad, const int *counts)
 	int keys, required;
 	if (pad < 0)
 		return 0;
-	keys = pad >= 100 ? AP_VF_CUP_KEYS : ap_vf_pad_keys[pad];
+	keys = AP_HubKeysForPad(pad);
 	if (keys < 0 || counts[AP_IDX_KEY] < keys || !ap_vf_stage1_met(pad, counts))
 		return 0;
 	required = ap_vf_required_character(pad);
@@ -391,7 +362,7 @@ static void ap_vf_recompute(void)
 		pad_for_dest[i] = -1;
 	for (i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
-		if (ap_vf_pad_keys[i] < 0)
+		if (AP_HubKeysForPad(i) < 0)
 			continue;
 		int d = ctr_cfg_warp_dest(i);
 		if (d >= 0 && d <= 104)
