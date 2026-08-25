@@ -39,6 +39,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
+#include "ap_oxide_entry.h" // pure Oxide garage entry-readiness predicate (WO-A1)
 
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
 // rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE
@@ -1344,6 +1345,22 @@ static AP_GoalPresentationState ap_goal_presentation = {0};
 // the first Oxide beat is the goal.
 static void AP_FeedEnqueue(const char *text, int color, int playCue); // defined with the feed block below
 
+// How many of the four boss RACES the player has personally won, in the one
+// form every consumer of goal_bosses must use: the boss-race LOCATION being
+// CHECKED (server truth). Never CHECK_ADV_BIT on bits 94-97 and never received
+// Keys -- those are the Key item pool's mirror, rewritten by AP_ApplyItems from
+// RECEIVED items on every reconcile tick (the BUG-D class). Factored out of
+// AP_EvaluateGoal so the goal evaluator, the goal advert and the Oxide garage
+// gate (WO-A1) cannot drift apart about what "won a boss race" means.
+static int AP_ComposedBossesWon(void)
+{
+	int won = 0, b;
+	for (b = 0; b < 4; b++)
+		if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+			won++;
+	return won;
+}
+
 void AP_EvaluateGoal(void)
 {
 	int done;
@@ -1377,10 +1394,7 @@ void AP_EvaluateGoal(void)
 	}
 	else
 	{
-		int won = 0, b;
-		for (b = 0; b < 4; b++)
-			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-				won++;
+		int won = AP_ComposedBossesWon();
 		done = AP_ComposedGoalMet(
 		    ctr_cfg.goal_oxide, ap_oxide_first_beaten, ap_oxide_final_beaten,
 		    ctr_cfg.goal_bosses, won,
@@ -3040,6 +3054,30 @@ int AP_BossGarageOpen(int bossIdx)
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
+// THE canonical Oxide garage entry gate (WO-A1). Every Oxide entry surface --
+// the map icon (AH_Map.c), the in-hub door presentation (AH_Garage_LInB), the
+// collision/refusal and the actual level load (AH_Garage_ThTick) -- asks this
+// one function, so a fix cannot land on the door while another path stays open.
+//
+// Composition, in AP_OxideEntryReady:
+//   * the ordinary configured requirement, boss_req[4] (normally four Keys);
+//   * AND, when goal_oxide != 0, every ACTIVE companion goal condition.
+// Encounter selection is deliberately NOT here: AP_OxideFinalOpen() still
+// decides whether the first or the final challenge loads once you are inside.
+//
+// Without slot_data this is the Phase-1 fallback the two gate sites already
+// carried (four received Keys), unchanged -- there is no goal to compose.
+int AP_OxideGarageOpen(void)
+{
+	if (!ctr_cfg_active())
+		return AP_GateCount(AP_IDX_KEY) >= 4;
+
+	return AP_OxideEntryReady(AP_BossReqMet(&ctr_cfg.boss_req[4]) != 0,
+	                          ctr_cfg.goal_oxide,
+	                          ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
+	                          ctr_cfg.goal_gems, AP_GateCountGemSum());
+}
+
 // ── #24: plain-text requirement advert for the boss-class gates ──
 // Warp pads advertise their configured requirement with an icon + count, but the
 // four boss garages and Oxide's garage door only ever spoke through the vanilla
@@ -3193,6 +3231,29 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	else
 		snprintf(out, (size_t)cap, "Requires: %d %s (have %d)", need, noun, owned);
 
+	// WO-A1: Oxide's door is also the goal gate whenever goal_oxide != 0, so
+	// the line above is only half the truth there -- a player holding four Keys
+	// would read "Requires: 4 Keys (have 4)" at a door that correctly refuses to
+	// open. Append the active companion conditions, in the same words and from
+	// the same helpers AP_GoalAdvert and AP_OxideGarageOpen use, so the advert
+	// and the gate cannot disagree. Appends nothing when goal_oxide == 0, which
+	// is exactly when the gate applies no companion conjunction either.
+	if (bossIdx == 4 && ctr_cfg.goal_oxide != 0)
+	{
+		int used = (int)strlen(out);
+
+		if (ctr_cfg.goal_bosses > 0 && used < cap)
+			used += snprintf(out + used, (size_t)(cap - used),
+			                 " + win %d of 4 boss races (have %d)",
+			                 ctr_cfg.goal_bosses, AP_ComposedBossesWon());
+		if (used < 0 || used > cap)
+			used = cap;
+		if (ctr_cfg.goal_gems > 0 && used < cap)
+			snprintf(out + used, (size_t)(cap - used),
+			         " + hold %d of 5 Gems (have %d)",
+			         ctr_cfg.goal_gems, AP_GateCountGemSum());
+	}
+
 	return 1;
 }
 
@@ -3207,7 +3268,7 @@ int AP_GoalAdvert(char *out, int cap)
 {
 	char part[3][80];
 	int n_parts = 0;
-	int pos, i, b, won;
+	int pos, i, won;
 
 	if (out == 0 || cap <= 0)
 		return 0;
@@ -3225,10 +3286,7 @@ int AP_GoalAdvert(char *out, int cap)
 
 	if (ctr_cfg.goal_bosses > 0)
 	{
-		won = 0;
-		for (b = 0; b < 4; b++)
-			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-				won++;
+		won = AP_ComposedBossesWon();
 		snprintf(part[n_parts++], sizeof part[0],
 		         "win %d of 4 boss races (have %d)", ctr_cfg.goal_bosses, won);
 	}
