@@ -46,6 +46,11 @@ static void expect_item(long long index, AP_ItemCat wantCat, int wantModel, int 
 	expect(AP_RewardTintForCat(cat), wantTint, "own tint", id);
 }
 
+static void expect_scale(AP_ItemCat cat, int want, const char *why)
+{
+	expect(AP_RewardScaleForCat(cat), want, why, 0);
+}
+
 #define CRYSTAL_PURPLE 0x0d22fff0
 
 int main(void)
@@ -108,6 +113,11 @@ int main(void)
 	// AP_CAT_CRYSTAL must stay OUT of the bit-pool range: it is display-only, and
 	// an enumerator below AP_CAT_COUNT would let AP_CATEGORY_POOLS index it.
 	expect(AP_CAT_CRYSTAL > AP_CAT_COUNT, 1, "AP_CAT_CRYSTAL sits past AP_CAT_COUNT", 0);
+
+	// Ceremony props use the same category policy but need model-relative scale.
+	expect_scale(AP_CAT_TOKEN, 0x1000, "token ceremony scale stays 1x");
+	expect_scale(AP_CAT_SAPPHIRE, 0x0c00, "relic ceremony scale is reduced");
+	expect_scale(AP_CAT_CRYSTAL, 0x1400, "crystal ceremony scale is enlarged");
 
 	if (g_failures != 0)
 	{

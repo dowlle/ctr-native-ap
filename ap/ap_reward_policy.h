@@ -142,5 +142,29 @@ static int AP_RewardTintForCat(AP_ItemCat cat)
 	}
 }
 
+// Ceremony props are born at the vanilla token scale. Return a fixed-point
+// multiplier (0x1000 = 1.0) matching the established warp-pad model sizes.
+static int AP_RewardScaleForCat(AP_ItemCat cat)
+{
+	switch (cat)
+	{
+	case AP_CAT_TOKEN:
+		return 0x1000;
+	case AP_CAT_SAPPHIRE:
+	case AP_CAT_GOLD:
+	case AP_CAT_PLATINUM:
+		return 0x0c00;
+	case AP_CAT_TROPHY:
+	case AP_CAT_GEM:
+	case AP_CAT_KEY:
+	case AP_CAT_CRYSTAL:
+	case AP_CAT_WUMPA:
+	case AP_CAT_COUNT:
+	case AP_CAT_NONE:
+	default:
+		return 0x1400;
+	}
+}
+
 #endif // CTR_AP
 #endif // AP_REWARD_POLICY_H

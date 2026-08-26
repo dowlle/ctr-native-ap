@@ -282,6 +282,9 @@ void CC_EndEvent_DrawMenu()
 	if (token != NULL)
 #endif
 	{
+#ifdef CTR_AP
+		AP_CeremonyRewardProp(token, tokenRewardBit);
+#endif
 		token->flags &= ~(HIDE_MODEL);
 		token->matrix.t[0] = UI_ConvertX_2(pos.x, CC_SCREEN_DEPTH);
 		token->matrix.t[1] = UI_ConvertY_2(0xA2 - 0x18, CC_SCREEN_DEPTH);
@@ -299,6 +302,14 @@ void CC_EndEvent_DrawMenu()
 				token->scale.y += CC_TOKEN_GROW_STEP;
 				token->scale.z += CC_TOKEN_GROW_STEP;
 			}
+#ifdef CTR_AP
+			{
+				s32 growLimit = (s32)((u32)CC_TOKEN_GROW_LIMIT *
+				                      (u32)AP_WarpPadRewardScale(tokenRewardBit) >> 12);
+				if (token->scale.x > growLimit)
+					token->scale.x = token->scale.y = token->scale.z = (s16)growLimit;
+			}
+#endif
 		}
 	}
 	else if (elapsedFrames == CTR_SECONDS_TO_FRAMES(1))

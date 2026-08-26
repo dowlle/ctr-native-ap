@@ -223,6 +223,9 @@ void AA_EndEvent_DrawMenu(void)
 			if (shouldDrawToken)
 			{
 				hudR->depthBiasNormal = 1;
+#ifdef CTR_AP
+				AP_CeremonyRewardProp(hudToken, rewardBit);
+#endif
 				hudToken->flags &= ~HIDE_MODEL;
 				hudToken->matrix.t[0] = hudT->matrix.t[0];
 				hudToken->matrix.t[1] = UI_ConvertY_2(letterPos.y + 0x18, AA_SCREEN_DEPTH);
@@ -233,6 +236,14 @@ void AA_EndEvent_DrawMenu(void)
 					hudToken->scale.y += AA_TOKEN_GROW_STEP;
 					hudToken->scale.z += AA_TOKEN_GROW_STEP;
 				}
+#ifdef CTR_AP
+				{
+					s32 growLimit = (s32)((u32)AA_TOKEN_GROW_LIMIT *
+					                      (u32)AP_WarpPadRewardScale(rewardBit) >> 12);
+					if (hudToken->scale.x > growLimit)
+						hudToken->scale.x = hudToken->scale.y = hudToken->scale.z = (s16)growLimit;
+				}
+#endif
 
 				if (tokenAwardTextFrame >= 0)
 				{
