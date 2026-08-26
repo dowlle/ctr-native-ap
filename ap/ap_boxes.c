@@ -626,6 +626,44 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 // PLAYER-caused explosions; opponent-caused explosions do not count. Reuses
 // AP_BoxOwnedByLocalPlayer, the exact same test the kart-contact path above
 // uses, so a bot-fired weapon is excluded the same way a bot's kart is.
+int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
+                          struct Driver *attacker, int oldX, int oldY, int oldZ)
+{
+	int i;
+
+	if (gGT == 0 || weaponInst == 0)
+		return 0;
+	if (sdata == 0 || sdata->Loading.stage != LOAD_IDLE)
+		return 0;
+	if (!ctr_cfg_active() || s_liveCount == 0)
+		return 0;
+	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
+		return 0;
+
+	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	{
+		struct Instance *inst;
+
+		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
+			continue;
+		if (!AP_BoxMap_SegmentWithinRadius(
+		        s_live[i].x, s_live[i].y, s_live[i].z,
+		        oldX, oldY, oldZ,
+		        weaponInst->matrix.t[0], weaponInst->matrix.t[1],
+		        weaponInst->matrix.t[2], AP_BOX_HIT_RADIUS))
+			continue;
+
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue;
+
+		AP_BoxBreak(gGT, i, inst);
+		return 1;
+	}
+
+	return 0;
+}
+
 void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponInst,
                                struct Driver *attacker, int radius)
 {

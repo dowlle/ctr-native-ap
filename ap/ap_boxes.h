@@ -114,5 +114,11 @@ int AP_Boxes_LiveCount(void);
 void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponInst,
                                struct Driver *attacker, int radius);
 
+// Swept direct contact for a moving Bomb, Missile or thrown Shield. Breaks the
+// first AP box touched and returns non-zero so the caller can run the weapon's
+// normal explosion path.
+int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
+                          struct Driver *attacker, int oldX, int oldY, int oldZ);
+
 #endif // CTR_AP
 #endif // AP_BOXES_H

@@ -303,5 +303,42 @@ static inline int AP_BoxMap_WithinRadius(int px, int py, int pz, int cx, int cy,
 	return (dx * dx + dy * dy + dz * dz) <= (radius * radius);
 }
 
+// Did a moving weapon's centre pass within `radius` of a box during this
+// frame? Testing only the new position lets a fast missile tunnel through a
+// runtime AP box. This capsule test covers the whole old->new segment.
+static inline int AP_BoxMap_SegmentWithinRadius(int px, int py, int pz,
+	int ax, int ay, int az, int bx, int by, int bz, int radius)
+{
+	long long vx, vy, vz, wx, wy, wz;
+	long long vv, dot, ww, rr;
+
+	if (radius < 0)
+		return 0;
+	if (px < (ax < bx ? ax : bx) - radius || px > (ax > bx ? ax : bx) + radius ||
+	    py < (ay < by ? ay : by) - radius || py > (ay > by ? ay : by) + radius ||
+	    pz < (az < bz ? az : bz) - radius || pz > (az > bz ? az : bz) + radius)
+		return 0;
+
+	vx = (long long)bx - ax;
+	vy = (long long)by - ay;
+	vz = (long long)bz - az;
+	wx = (long long)px - ax;
+	wy = (long long)py - ay;
+	wz = (long long)pz - az;
+	vv = vx * vx + vy * vy + vz * vz;
+	if (vv == 0)
+		return AP_BoxMap_WithinRadius(px, py, pz, ax, ay, az, radius);
+
+	dot = wx * vx + wy * vy + wz * vz;
+	if (dot <= 0)
+		return AP_BoxMap_WithinRadius(px, py, pz, ax, ay, az, radius);
+	if (dot >= vv)
+		return AP_BoxMap_WithinRadius(px, py, pz, bx, by, bz, radius);
+
+	ww = wx * wx + wy * wy + wz * wz;
+	rr = (long long)radius * radius;
+	return ww * vv - dot * dot <= rr * vv;
+}
+
 #endif // CTR_AP
 #endif // AP_BOX_MAP_H
