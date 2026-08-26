@@ -1,5 +1,6 @@
 #include <common.h>
 #include <stdio.h>
+#include <ctr_menu_ux.h>
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
@@ -403,6 +404,51 @@ static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char
 	out[n] = '\0';
 }
 
+// The retail decal font maps lowercase and uppercase ASCII to the same glyph.
+// For the case-sensitive AP slot only, draw a direct white line beneath each
+// byte that is actually uppercase, backed by a three-pixel black rectangle.
+// This mirrors the font's white fill / black outline contrast and stays visible
+// across both the yellow selection bar and the menu background art. Do not use
+// the font's `_` glyph: its baseline is not visible on this small-font row.
+static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, uint32_t *ot)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const int charWidth = data.font_charPixWidth[FONT_SMALL];
+
+	for (int i = 0; slot[i] != '\0'; i++)
+	{
+		if (CTR_MenuSlotCharNeedsCaseMark((unsigned char)slot[i]))
+		{
+			LINE_F2 *line = gGT->backBuffer->primMem.cursor;
+			POLY_F4 *stroke = (POLY_F4 *)(line + 1);
+			int x = valueX + DecalFont_GetLineWidthStrlen((char *)slot, i, FONT_SMALL);
+
+			// Link the white center first. OT insertion is LIFO, so the black backing
+			// linked afterward is drawn first and the white line lands on top.
+			CtrGpu_WriteColorCode(&line->r0, *data.ptrColor[WHITE]);
+			line->x0 = x + 1;
+			line->y0 = y + 9;
+			line->x1 = x + charWidth - 2;
+			line->y1 = y + 9;
+			addLineF2(ot, line);
+
+			CtrGpu_WriteColorCode(&stroke->r0, 0);
+			setPolyF4(stroke);
+			stroke->x0 = x;
+			stroke->y0 = y + 8;
+			stroke->x1 = x + charWidth - 1;
+			stroke->y1 = y + 8;
+			stroke->x2 = x;
+			stroke->y2 = y + 11;
+			stroke->x3 = x + charWidth - 1;
+			stroke->y3 = y + 11;
+			AddPrim(ot, stroke);
+
+			gGT->backBuffer->primMem.cursor = (void *)(stroke + 1);
+		}
+	}
+}
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
@@ -509,6 +555,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
 		Conn_FormatValue(e, masked, editing, buf, sizeof buf);
 		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, WHITE, ot);
+		if (strcmp(e->key, "slot") == 0)
+			Conn_DrawSlotCaseMarks((const char *)e->valuePtr, valueX, y, ot);
 
 		if (j == menu->rowSelected)
 		{
@@ -632,6 +680,25 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				*(bool *)e->valuePtr ^= 1;
 		}
 
+		// Boolean rows now follow the same left/right value-editing convention as
+		// enums and sliders: left is OFF, right is ON. Cross/Circle still toggles.
+		{
+			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			if (e->type == CFG_BOOL)
+			{
+				if ((pad->buttonsTapped & BTN_LEFT) != 0)
+				{
+					CTR_MenuBoolStep((bool *)e->valuePtr, -1);
+					OtherFX_Play(0, 1);
+				}
+				if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+				{
+					CTR_MenuBoolStep((bool *)e->valuePtr, +1);
+					OtherFX_Play(0, 1);
+				}
+			}
+		}
+
 		// enum entries: tap left/right to step through the preset ladder
 		{
 			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
@@ -722,6 +789,13 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 			}
 		}
+
+#ifdef CTR_AP
+		// Keep the tester-visible pair identity available in-game, without using a
+		// main-menu row or colliding with the denser section submenus.
+		DecalFont_DrawLineOT("CTR-AP " CTR_AP_VERSION,
+			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+#endif
 	}
 
 	{

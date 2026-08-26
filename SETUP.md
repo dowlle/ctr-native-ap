@@ -66,6 +66,8 @@ Connection** and fill in your room details:
   automatically for hosted rooms; for a server on your own machine use
   `ws://localhost:38281` or just `localhost:38281`.
 - **Slot**: your player name in the room, spelled exactly as it appears there.
+  Slot names are case-sensitive, so copy the capitalization exactly. The in-game
+  font marks uppercase letters with a short outlined white line underneath.
 - **Password**: the room password, or leave it blank if there is none.
 
 Select **Connect**. The status line on the same screen shows the connection
@@ -208,6 +210,9 @@ report if you see it.
 
 ## Troubleshooting
 
+- `InvalidSlot` or `Slot not found`: copy the slot name from the room page
+  exactly, including uppercase and lowercase letters. You can also correct the
+  saved `slot` value under `[Connection]` in `config.ini`.
 - "Missing or incomplete assets" at startup: the `assets` folder holds no
   usable disc image, or a file did not extract. Make sure the `assets` folder
   sits in the same directory as `ctr_native_ap.exe` and holds either a raw

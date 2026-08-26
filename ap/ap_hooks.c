@@ -9,6 +9,7 @@
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
+#include <ctr_menu_ux.h>     // connection-menu error guidance
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
@@ -4204,7 +4205,9 @@ const char *AP_Net_StatusLine(void)
 	case AP_NET_STATUS_ERROR:
 	{
 		const char *e = ap_net_last_error();
-		if (e && *e)
+		if (CTR_MenuErrorIsInvalidSlot(e))
+			snprintf(line, sizeof line, "%s", CTR_MenuInvalidSlotMessage());
+		else if (e && *e)
 			snprintf(line, sizeof line, "Error: %s", e);
 		else
 			snprintf(line, sizeof line, "Connection error");
