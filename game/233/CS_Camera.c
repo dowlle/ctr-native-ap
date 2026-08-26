@@ -5,8 +5,20 @@ u8 CS_Camera_BoolGotoBoss(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	// If just got 18th relic
+	// If the relic requirement that opens Oxide's Final Challenge is now met.
+	// AP (WO-A4): follow the SHIPPED gate (AP_OxideFinalOpen, issue #23 --
+	// per-seed relic mode + count) instead of the retail 18-Sapphire rule.
+	// Under AP `numRelics` counts RECEIVED Sapphire Relic items, so the retail
+	// rule fires on the 18th item to arrive from anywhere in the multiworld,
+	// which is not this seed's Oxide gate. Vanilla answer is unchanged.
+#ifdef CTR_AP
+	if ((gGT->podiumRewardID == STATIC_RELIC) &&
+	    AP_OxideFinalPresentationReady(ctr_cfg_active(),
+	                                   gGT->currAdvProfile.numRelics,
+	                                   AP_OxideFinalOpen()))
+#else
 	if ((gGT->podiumRewardID == STATIC_RELIC) && (gGT->currAdvProfile.numRelics >= 18))
+#endif
 	{
 		// If Oxide was not beaten twice yet
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) == 0)
@@ -376,7 +388,18 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				return;
 			}
 
+			// AP (WO-A4): same gate as CS_Camera_BoolGotoBoss above. These two
+			// MUST use one predicate: BoolGotoBoss decides that a boss cutscene
+			// happens at all, and this decides it is the OXIDE_RELICS_<hub> one.
+			// If they disagreed, a relic win would enter the boss path and then
+			// fall through to the ordinary hub intro (bossCutsceneIndex -1).
+#ifdef CTR_AP
+			if (!AP_OxideFinalPresentationReady(ctr_cfg_active(),
+			                                    gGT->currAdvProfile.numRelics,
+			                                    AP_OxideFinalOpen()))
+#else
 			if (gGT->currAdvProfile.numRelics < 18)
+#endif
 			{
 				D233.bossCutsceneIndex = -1;
 				return;

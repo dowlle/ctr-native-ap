@@ -489,6 +489,17 @@ int AP_BossReqMet(const ctr_req *r);
 // IMPLEMENTED C-SIDE in ap_hooks.c (needs AP_LocationCheckedByBit).
 int AP_BossGarageOpen(int bossIdx);
 
+// WO-A1: THE canonical Oxide garage entry gate. Every Oxide entry surface (map
+// icon, in-hub door presentation, collision/refusal, level load) must call this
+// and nothing else, so no entry path can survive a fix applied to another one.
+// Composes the configured boss_req[4] requirement with -- when goal_oxide != 0
+// -- every active companion goal condition (goal_bosses checked boss-race
+// LOCATIONS, goal_gems distinct received Gems), exactly as AP_EvaluateGoal
+// composes them. Encounter selection stays AP_OxideFinalOpen()'s job. Without
+// slot_data this is the unchanged Phase-1 rule (four received Keys).
+// IMPLEMENTED C-SIDE in ap_hooks.c; the pure decision is ap/ap_oxide_entry.h.
+int AP_OxideGarageOpen(void);
+
 // #24: plain-text requirement advert for a boss-class gate (bossIdx 0..3 = the
 // four boss garages, 4 = Oxide's garage door). Writes a line such as
 // "Requires: 18 Gold Relics (have 12)" into `out` and returns 1; returns 0 when
