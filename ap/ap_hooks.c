@@ -9,12 +9,17 @@
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
+#include <ctr_menu_ux.h>     // connection-menu error guidance
 #include "ap_locations.h" // generated bit_index -> AP location_code table (99 locs)
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_glow_slots_logic.h"
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
+#include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
+#include "ap_checkdiag_once.h" // once-per-connect gate for [AP CHECK DIAG] lines (log-spam guard)
+
+static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
 #include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
@@ -35,6 +40,7 @@
 #include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
+#include "ap_oxide_entry.h" // pure Oxide garage entry-readiness predicate (WO-A1)
 
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
 // rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE
@@ -1032,7 +1038,12 @@ static int AP_DestKnown(int destLevelID)
 // same helper ThTick's load gate uses). NON-race categories mirror LInB's
 // per-class branch: randomized requirement when slot_data provides one, else the
 // vanilla fallback for that class. Keyed by the PHYSICAL pad LevelID.
-static int AP_PadStage1Met(int physLevelID)
+//
+// Non-static since the Gem Cup AP-box policy (WO-A3): ap_boxes.c needs the SAME
+// per-class stage-1 answer for the pad that hosts a cup leg's individual race,
+// and a second implementation of this routing is exactly the divergence the
+// policy exists to remove. Declared in ap_hooks.h.
+int AP_PadStage1Met(int physLevelID)
 {
 	int i, owned;
 
@@ -1340,6 +1351,22 @@ static AP_GoalPresentationState ap_goal_presentation = {0};
 // the first Oxide beat is the goal.
 static void AP_FeedEnqueue(const char *text, int color, int playCue); // defined with the feed block below
 
+// How many of the four boss RACES the player has personally won, in the one
+// form every consumer of goal_bosses must use: the boss-race LOCATION being
+// CHECKED (server truth). Never CHECK_ADV_BIT on bits 94-97 and never received
+// Keys -- those are the Key item pool's mirror, rewritten by AP_ApplyItems from
+// RECEIVED items on every reconcile tick (the BUG-D class). Factored out of
+// AP_EvaluateGoal so the goal evaluator, the goal advert and the Oxide garage
+// gate (WO-A1) cannot drift apart about what "won a boss race" means.
+static int AP_ComposedBossesWon(void)
+{
+	int won = 0, b;
+	for (b = 0; b < 4; b++)
+		if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
+			won++;
+	return won;
+}
+
 void AP_EvaluateGoal(void)
 {
 	int done;
@@ -1373,10 +1400,7 @@ void AP_EvaluateGoal(void)
 	}
 	else
 	{
-		int won = 0, b;
-		for (b = 0; b < 4; b++)
-			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-				won++;
+		int won = AP_ComposedBossesWon();
 		done = AP_ComposedGoalMet(
 		    ctr_cfg.goal_oxide, ap_oxide_first_beaten, ap_oxide_final_beaten,
 		    ctr_cfg.goal_bosses, won,
@@ -3036,6 +3060,30 @@ int AP_BossGarageOpen(int bossIdx)
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
+// THE canonical Oxide garage entry gate (WO-A1). Every Oxide entry surface --
+// the map icon (AH_Map.c), the in-hub door presentation (AH_Garage_LInB), the
+// collision/refusal and the actual level load (AH_Garage_ThTick) -- asks this
+// one function, so a fix cannot land on the door while another path stays open.
+//
+// Composition, in AP_OxideEntryReady:
+//   * the ordinary configured requirement, boss_req[4] (normally four Keys);
+//   * AND, when goal_oxide != 0, every ACTIVE companion goal condition.
+// Encounter selection is deliberately NOT here: AP_OxideFinalOpen() still
+// decides whether the first or the final challenge loads once you are inside.
+//
+// Without slot_data this is the Phase-1 fallback the two gate sites already
+// carried (four received Keys), unchanged -- there is no goal to compose.
+int AP_OxideGarageOpen(void)
+{
+	if (!ctr_cfg_active())
+		return AP_GateCount(AP_IDX_KEY) >= 4;
+
+	return AP_OxideEntryReady(AP_BossReqMet(&ctr_cfg.boss_req[4]) != 0,
+	                          ctr_cfg.goal_oxide,
+	                          ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
+	                          ctr_cfg.goal_gems, AP_GateCountGemSum());
+}
+
 // ── #24: plain-text requirement advert for the boss-class gates ──
 // Warp pads advertise their configured requirement with an icon + count, but the
 // four boss garages and Oxide's garage door only ever spoke through the vanilla
@@ -3189,6 +3237,29 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	else
 		snprintf(out, (size_t)cap, "Requires: %d %s (have %d)", need, noun, owned);
 
+	// WO-A1: Oxide's door is also the goal gate whenever goal_oxide != 0, so
+	// the line above is only half the truth there -- a player holding four Keys
+	// would read "Requires: 4 Keys (have 4)" at a door that correctly refuses to
+	// open. Append the active companion conditions, in the same words and from
+	// the same helpers AP_GoalAdvert and AP_OxideGarageOpen use, so the advert
+	// and the gate cannot disagree. Appends nothing when goal_oxide == 0, which
+	// is exactly when the gate applies no companion conjunction either.
+	if (bossIdx == 4 && ctr_cfg.goal_oxide != 0)
+	{
+		int used = (int)strlen(out);
+
+		if (ctr_cfg.goal_bosses > 0 && used < cap)
+			used += snprintf(out + used, (size_t)(cap - used),
+			                 " + win %d of 4 boss races (have %d)",
+			                 ctr_cfg.goal_bosses, AP_ComposedBossesWon());
+		if (used < 0 || used > cap)
+			used = cap;
+		if (ctr_cfg.goal_gems > 0 && used < cap)
+			snprintf(out + used, (size_t)(cap - used),
+			         " + hold %d of 5 Gems (have %d)",
+			         ctr_cfg.goal_gems, AP_GateCountGemSum());
+	}
+
 	return 1;
 }
 
@@ -3203,7 +3274,7 @@ int AP_GoalAdvert(char *out, int cap)
 {
 	char part[3][80];
 	int n_parts = 0;
-	int pos, i, b, won;
+	int pos, i, won;
 
 	if (out == 0 || cap <= 0)
 		return 0;
@@ -3221,10 +3292,7 @@ int AP_GoalAdvert(char *out, int cap)
 
 	if (ctr_cfg.goal_bosses > 0)
 	{
-		won = 0;
-		for (b = 0; b < 4; b++)
-			if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-				won++;
+		won = AP_ComposedBossesWon();
 		snprintf(part[n_parts++], sizeof part[0],
 		         "win %d of 4 boss races (have %d)", ctr_cfg.goal_bosses, won);
 	}
@@ -3459,6 +3527,17 @@ static void AP_ApplyItems(struct AdvProgress *adv)
 				// stale save bit)
 				adv->rewards[bit >> 5] &= ~(1u << (bit & 31));
 				changed = 1;
+				// Diagnostics only (#269, 2026-08-23 bundle inspection): the
+				// clear used to be silent, so a log could not show that a
+				// boss win's local key bit was present at hub birth and gone
+				// a tick later. Rare by construction (one line per leaked bit).
+				{
+					char msg[128];
+					snprintf(msg, sizeof msg,
+					         "[AP ITEM] cleared unbacked reward bit %d (local grant not backed by a received item) | lvl=%d\n",
+					         bit, (int)sdata->gGT->levelID);
+					AP_AppendLog(msg);
+				}
 			}
 		}
 	}
@@ -3680,6 +3759,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// never sent a trap to. See AP_Trap_ConnectReset in ap_traps.h.
 		AP_Trap_ConnectReset();
 		AP_DemoCam_ConnectReset(); // same rule: a camera snapshot cannot outlive its session
+		// Re-arm the once-per-connect [AP CHECK DIAG] lines: a new connect means a
+		// (possibly) new seed config, so each absent-rung / mismatch shape may log
+		// one fresh line. See ap_checkdiag_once.h for the spam this prevents.
+		AP_CheckDiagOnceReset(&ap_checkdiag_once);
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -4122,7 +4205,9 @@ const char *AP_Net_StatusLine(void)
 	case AP_NET_STATUS_ERROR:
 	{
 		const char *e = ap_net_last_error();
-		if (e && *e)
+		if (CTR_MenuErrorIsInvalidSlot(e))
+			snprintf(line, sizeof line, "%s", CTR_MenuInvalidSlotMessage());
+		else if (e && *e)
 			snprintf(line, sizeof line, "Error: %s", e);
 		else
 			snprintf(line, sizeof line, "Connection error");
@@ -4723,6 +4808,45 @@ int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled)
 static void AP_EmitRung(int track, long code, int rungTag, int position,
                         const char *phase)
 {
+	// Alpha 4 progression-integrity diagnostic. AP_EmitClassCheck deliberately
+	// treats a negative code as an absent per-seed rung, but that silent return
+	// made "listener did not fire" indistinguishable from "slot_data omitted the
+	// rung" in support bundles. A positive configured code can also disagree with
+	// the server's checked+missing location set; log that before preserving the
+	// existing send attempt so this patch changes evidence only, never behavior.
+	if (code < 0)
+	{
+		// Once per (track, rung, phase) per connect: the per-tick trophy
+		// reconcile re-evaluates this constantly, and on a pre-schema-7 seed
+		// (held_5th absent everywhere) the unconditional line flooded the log.
+		if (AP_CheckDiagOnce(&ap_checkdiag_once, AP_CHECKDIAG_ABSENT,
+		                     phase[0] == 'f', track, rungTag))
+		{
+			char line[208];
+			snprintf(line, sizeof line,
+			         "[AP CHECK DIAG] podium %s refused: track=%d pos=%d rung=%d "
+			         "slot_data_code=%ld (rung absent from seed config; "
+			         "repeats suppressed until reconnect)\n",
+			         phase, track, position, rungTag, code);
+			AP_AppendLog(line);
+		}
+	}
+	else if (!ap_net_location_exists(code))
+	{
+		// Same once-per-connect gate as the absent branch: the send attempt
+		// below is preserved on every call; only the log line is deduplicated.
+		if (AP_CheckDiagOnce(&ap_checkdiag_once, AP_CHECKDIAG_MISMATCH,
+		                     phase[0] == 'f', track, rungTag))
+		{
+			char line[224];
+			snprintf(line, sizeof line,
+			         "[AP CHECK DIAG] podium %s membership mismatch: track=%d pos=%d "
+			         "rung=%d slot_data_code=%ld server_exists=0 connected=%d; "
+			         "preserving send attempt (repeats suppressed until reconnect)\n",
+			         phase, track, position, rungTag, code, ap_net_is_connected());
+			AP_AppendLog(line);
+		}
+	}
 	if (AP_EmitClassCheck(code, 1, -1, rungTag, 0,
 	                      "[AP CHECK] podium %s: track=%d pos=%d rung=%d location %ld\n",
 	                      phase, track, position, rungTag, code))
@@ -5036,6 +5160,40 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        "\"countdown_seen\": %d, \"debounce_ms\": %d},\n",
 	        ap_held_cand_pos, ap_held_cand_ms, ap_held_best_pos,
 	        ap_held_countdown_seen, AP_HELD_DEBOUNCE_MS);
+	// Current-track rung contract versus live server membership. This is the
+	// minimum state needed to distinguish parser/config drift from a listener or
+	// network-send defect in the Roo's Tubes Held 3rd/5th report. Keep it generic
+	// so the same diagnostic covers every randomized cup leg and trophy track.
+	{
+		int track = (int)gGT->levelID;
+		long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {-1, -1, -1, -1, -1};
+		if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		{
+			const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+			rung[0] = pr->held_1st;
+			rung[1] = pr->held_3rd;
+			rung[2] = pr->held_5th;
+			rung[3] = pr->finish_podium;
+			rung[4] = pr->finish_any;
+		}
+		fprintf(f,
+		        "  \"podium_current_track\": {\"enabled\": %d, \"track\": %d, "
+		        "\"codes\": [%ld,%ld,%ld,%ld,%ld], "
+		        "\"exists\": [%d,%d,%d,%d,%d], "
+		        "\"checked\": [%d,%d,%d,%d,%d]},\n",
+		        ctr_cfg.podium_enabled, track,
+		        rung[0], rung[1], rung[2], rung[3], rung[4],
+		        rung[0] >= 0 && ap_net_location_exists(rung[0]),
+		        rung[1] >= 0 && ap_net_location_exists(rung[1]),
+		        rung[2] >= 0 && ap_net_location_exists(rung[2]),
+		        rung[3] >= 0 && ap_net_location_exists(rung[3]),
+		        rung[4] >= 0 && ap_net_location_exists(rung[4]),
+		        rung[0] >= 0 && ap_net_location_checked(rung[0]),
+		        rung[1] >= 0 && ap_net_location_checked(rung[1]),
+		        rung[2] >= 0 && ap_net_location_checked(rung[2]),
+		        rung[3] >= 0 && ap_net_location_checked(rung[3]),
+		        rung[4] >= 0 && ap_net_location_checked(rung[4]));
+	}
 	fprintf(f,
 	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
 	        "\"type\": \"%s\"},\n",
@@ -5048,12 +5206,45 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// raw mode words as well so a future report does not lose an unknown bit.
 	{
 		struct Driver *driver = gGT->drivers[0];
+		// `diag` (2026-08-23 Alpha 3 bundle inspection): the fields the two
+		// hub-lock bundles were missing. Which hold the kart is under (kart
+		// state + the DRIVER_FUNC_INIT identity the picker and the door freeze
+		// both swap), whether a pause / RectMenu / mask hint still owns the
+		// screen, the picker's own state machine, the trap scheduler's slot
+		// counts, and the authoritative received-Key count beside the cosmetic
+		// profile count that VehBirth's door-freeze test actually reads.
+		AP_TransitionDiag diag;
+		char diagText[512];
+		memset(&diag, 0, sizeof diag);
+		diag.kartState = driver != NULL ? (int)driver->kartState : -1;
+		if (driver == NULL)
+			diag.initFunc = AP_DIAG_INIT_NO_DRIVER;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == NULL)
+			diag.initFunc = AP_DIAG_INIT_NULL;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_Driving_Init)
+			diag.initFunc = AP_DIAG_INIT_DRIVING;
+		else if (driver->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_FreezeEndEvent_Init)
+			diag.initFunc = AP_DIAG_INIT_FREEZE_END;
+		else
+			diag.initFunc = AP_DIAG_INIT_OTHER;
+		diag.pauseState = (int)sdata->pause_state;
+		diag.activeMenu = sdata->ptrActiveMenu != NULL;
+		diag.akuHintState = (int)sdata->AkuAkuHintState;
+		diag.loadingStage = (int)sdata->Loading.stage;
+		AP_CharSwap_DiagState(&diag.pickerOpen, &diag.pickerPending, &diag.pickerRestore);
+		AP_TrapDiagCounts(&diag.trapsArmed, &diag.trapsWarning, &diag.trapsActive,
+		                  &diag.trapsSuspended);
+		diag.receivedKeys = AP_GateCount(AP_IDX_KEY);
+		diag.profileKeys = (int)gGT->currAdvProfile.numKeys;
+		AP_TransitionDiagFormat(diagText, (int)sizeof diagText, &diag);
+
 		fprintf(f,
 		        "  \"transition\": {\"level_id\": %d, \"prev_level_id\": %d, "
 		        "\"podium_reward_id\": %d, \"game_mode1\": %u, "
 		        "\"game_mode2\": %u, \"freeze_door\": %d, "
 		        "\"freeze_podium\": %d, \"spawn_at_boss\": %d, "
-		        "\"driver_present\": %d, \"driver_actions\": %u},\n",
+		        "\"driver_present\": %d, \"driver_actions\": %u, "
+		        "\"diag\": %s},\n",
 		        (int)gGT->levelID, (int)gGT->prevLEV,
 		        (int)gGT->podiumRewardID, (unsigned)gGT->gameMode1,
 		        (unsigned)gGT->gameMode2,
@@ -5061,7 +5252,8 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        (gGT->gameMode2 & VEH_FREEZE_PODIUM) != 0,
 		        (gGT->gameMode2 & SPAWN_AT_BOSS) != 0,
 		        driver != NULL,
-		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u);
+		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u,
+		        diagText);
 	}
 	fprintf(f,
 	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "

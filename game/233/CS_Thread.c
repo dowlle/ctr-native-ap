@@ -722,7 +722,20 @@ processOpcode:
 
 	case 0x21:
 		D233.bossCutsceneIndex = opcodeMeta->arg1.i;
+		// Retail: a cutscene script asking for boss cutscene 0 (OXIDE_TROPHIES)
+		// is redirected to 9 (OXIDE_RELICS_GEMSTONE) once the player holds the
+		// 18 relics that open the Final Challenge -- Oxide taunts about relics
+		// rather than trophies. AP (WO-A4): follow the shipped Final-Challenge
+		// gate, exactly as the two CS_Camera.c sites now do. `0x11 <` is
+		// `>= 18`; the vanilla answer is unchanged.
+#ifdef CTR_AP
+		if ((D233.bossCutsceneIndex == 0) &&
+		    AP_OxideFinalPresentationReady(ctr_cfg_active(),
+		                                   gGT->currAdvProfile.numRelics,
+		                                   AP_OxideFinalOpen()))
+#else
 		if ((D233.bossCutsceneIndex == 0) && (0x11 < gGT->currAdvProfile.numRelics))
+#endif
 		{
 			D233.bossCutsceneIndex = 9;
 		}

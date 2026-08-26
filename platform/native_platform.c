@@ -220,8 +220,10 @@ internal void Platform_HandleKey(int key, char down)
 			Platform_TakeScreenshot();
 			break;
 		case SDL_SCANCODE_F3:
-			g_cfg_bilinearFiltering ^= 1;
-			Platform_LogWarn("[CTR Native] filtering mode: %d\n", g_cfg_bilinearFiltering);
+			// Debug toggle for the same option the menu edits; the per-frame
+			// sync in Platform_BeginFrame pushes it into the renderer.
+			g_config.textureFiltering = !g_config.textureFiltering;
+			Platform_LogWarn("[CTR Native] filtering mode: %d\n", g_config.textureFiltering ? 1 : 0);
 			break;
 		case SDL_SCANCODE_F5:
 			NativeSaveState_RequestSave();
@@ -255,6 +257,11 @@ void Platform_Init(const char *title, int width, int height)
 
 	s_platformInitialized = 1;
 
+	// Apply the persisted texture-filtering choice before the renderer builds
+	// its shaders and first textures; the per-frame sync in Platform_BeginFrame
+	// keeps later menu/F3 edits live.
+	g_cfg_bilinearFiltering = g_config.textureFiltering ? 1 : 0;
+
 	if (!NativeRenderer_InitialiseRender(windowName, width, height, g_config.fullscreen))
 	{
 		Platform_LogError("[CTR Native] Failed to initialise window\n");
@@ -283,19 +290,19 @@ void Platform_Shutdown(void)
 
 	s_platformInitialized = 0;
 #if defined(CTR_INTERNAL)
+	NativeRenderer_FinishGpuMeasurements();
 	NativePerf_Shutdown();
 	NativeReplayScheduler_Shutdown();
 #endif
 	Platform_InputShutdown();
+	NativeAudio_Shutdown();
+	NativeRenderer_Shutdown();
 
 	if (g_window != NULL)
 	{
 		SDL_DestroyWindow(g_window);
 		g_window = NULL;
 	}
-
-	NativeAudio_Shutdown();
-	NativeRenderer_Shutdown();
 
 	SDL_Quit();
 
@@ -304,6 +311,11 @@ void Platform_Shutdown(void)
 
 void Platform_BeginFrame(void)
 {
+	// Texture filtering follows the persisted option (menu row or the F3 debug
+	// toggle); the GTE shaders read the renderer flag per draw, so this sync is
+	// all a live edit needs.
+	g_cfg_bilinearFiltering = g_config.textureFiltering ? 1 : 0;
+
 	// Sync g_config.fullscreen with actual window state (ported from
 	// thecodingbob/ctr-native, branch fullscreen-option). The option can be set
 	// in the options menu or toggled with F11 / Alt+Enter; this keeps the
@@ -366,10 +378,6 @@ void Platform_EndScene(void)
 
 	if (s_pinnedVramDisplayFrames > 0)
 	{
-		// NOTE(aalhendi): Direct VRAM presentation skips StoreFrameBuffer.
-		// Do not let the next DrawSync read stale framebuffer texture data back
-		// into PSX VRAM after a movie/frame upload.
-		NativeRenderer_DiscardFramebufferReadback();
 		if (s_pinnedVramDisplayCustomRect)
 		{
 			NativeRenderer_PresentVRAMRect(s_pinnedVramDisplayX, s_pinnedVramDisplayY, s_pinnedVramDisplayW, s_pinnedVramDisplayH);
@@ -378,6 +386,7 @@ void Platform_EndScene(void)
 		{
 			NativeRenderer_PresentVRAMDisplay();
 		}
+		NativeRenderer_EndGpuFrame();
 		NativeRenderer_SwapWindow();
 		s_pinnedVramDisplayFrames--;
 		if (s_pinnedVramDisplayFrames <= 0)
@@ -391,7 +400,20 @@ void Platform_EndScene(void)
 	// NOTE(aalhendi): Keep the displayed VRAM region current for screen-copy
 	// effects without forcing a CPU readback.
 	NativeRenderer_StoreFrameBuffer(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
-
+	if (NativeRenderer_UsesDirectPresent())
+	{
+		// Render-scale modes other than Original: the PSX-sized VRAM copy above
+		// keeps every feedback effect fed, but the presented image comes
+		// straight from the scaled main target instead of the 15-bit VRAM
+		// roundtrip. The pinned VRAM-display paths earlier in this function
+		// deliberately keep presenting VRAM: their content exists only there.
+		NativeRenderer_PresentMainRenderTarget();
+	}
+	else
+	{
+		NativeRenderer_PresentVRAMRect(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
+	}
+	NativeRenderer_EndGpuFrame();
 	NativeRenderer_SwapWindow();
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_END_SCENE);
 }
@@ -408,8 +430,8 @@ void Platform_EndFrame(void)
 
 void Platform_PresentVRAMDisplay(void)
 {
+	Platform_PinVRAMDisplayFrames(1);
 	Platform_BeginScene();
-	NativeRenderer_PresentVRAMDisplay();
 	Platform_EndFrame();
 }
 

@@ -7,7 +7,7 @@ int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)
 	s16 font_buttonPixWidth;
 	s16 font_puncPixWidth;
 	int pixLength;
-	char c;
+	u8 c;
 #if BUILD == JpnRetail
 	u32 isRacingWheel;
 #endif

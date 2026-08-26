@@ -674,7 +674,8 @@ static void VehEmitter_SkidmarkAudio(struct Thread *thread, struct Driver *d, st
 			distort = 0x92;
 		}
 
-		u32 lr = 0x80u - (((u32)(u8)d->simpTurnState << 24) >> 26);
+		int panOffset = CTR_MipsSra(CTR_MipsSll((u8)d->simpTurnState, 24), 26);
+		u32 lr = (u32)CTR_MipsSubLo(0x80, panOffset);
 		u32 echo = ((d->actionsFlagSet & ACTION_ENGINE_ECHO) != 0);
 		u32 flags = HowlSfx_Pack(lr, (u32)distort, (u32)(vol + (absTurn >> 1)), echo);
 

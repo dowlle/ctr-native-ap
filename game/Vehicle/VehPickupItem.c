@@ -213,11 +213,11 @@ static void VehPickupItem_MissileLoadPlayerView(struct GameTracker *gGT, struct 
 
 static void VehPickupItem_MissileLoadAiView(struct Driver *driver)
 {
-	SVECTOR rot = {driver->rotCurr.x, driver->rotCurr.y, driver->rotCurr.z, 0};
+	SVec3 rot = {.x = driver->rotCurr.x, .y = driver->rotCurr.y, .z = driver->rotCurr.z};
 	MATRIX matrix = {0};
 	MATRIX unusedInverse;
 
-	RotMatrix(&rot, &matrix);
+	ConvertRotToMatrix(&matrix, &rot);
 	matrix.t[0] = CTR_MipsSra(driver->posCurr.x, 8);
 	matrix.t[1] = CTR_MipsSra(driver->posCurr.y, 8);
 	matrix.t[2] = CTR_MipsSra(driver->posCurr.z, 8);
@@ -860,7 +860,7 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 			modelID = DYNAMIC_SHIELD;
 		}
 
-		struct Instance *instColor = INSTANCE_Birth3D(gGT->modelPtr[modelID], sdata->s_shield, 0);
+		struct Instance *instColor = INSTANCE_Birth3D(gGT->modelPtr[modelID], sdata->s_shield, weaponTh);
 
 		struct Instance *instHighlight = INSTANCE_Birth3D(gGT->modelPtr[DYNAMIC_HIGHLIGHT], highlightName, weaponTh);
 

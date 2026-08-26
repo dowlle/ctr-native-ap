@@ -9,11 +9,20 @@ void NativeRenderer_Shutdown(void);
 void NativeRenderer_ResetDevice(void);
 void NativeRenderer_BeginScene(void);
 void NativeRenderer_EndScene(void);
+void NativeRenderer_EndGpuFrame(void);
+void NativeRenderer_FinishGpuMeasurements(void);
 void NativeRenderer_UpdateSwapIntervalState(int swapInterval);
 void NativeRenderer_SwapWindow(void);
 void NativeRenderer_StoreFrameBuffer(int x, int y, int w, int h);
 void NativeRenderer_PresentVRAMDisplay(void);
 void NativeRenderer_PresentVRAMRect(int x, int y, int w, int h);
+// Present the main render target directly to the window viewport, skipping the
+// VRAM roundtrip. Used by every render-scale mode except Original; the packed
+// PSX-sized VRAM copy is still produced for feedback effects.
+void NativeRenderer_PresentMainRenderTarget(void);
+// True when the player's render-scale mode presents through the direct blit
+// (any mode except Original). Platform_EndScene picks its present path off it.
+int NativeRenderer_UsesDirectPresent(void);
 void NativeRenderer_SaveVRAM(const char *outputFileName, int x, int y, int width, int height, int readFromFramebuffer);
 void NativeRenderer_Clear(int x, int y, int w, int h, u8 r, u8 g, u8 b);
 // Map a rectangle expressed in display-space game coordinates (the space menu
@@ -25,8 +34,6 @@ void NativeRenderer_ClearVRAM(int x, int y, int w, int h, u8 r, u8 g, u8 b);
 void NativeRenderer_CopyVRAM(u16 *src, int x, int y, int w, int h, int dstX, int dstY);
 void NativeRenderer_ReadVRAM(u16 *dst, int x, int y, int dstW, int dstH);
 void NativeRenderer_UpdateVRAM(void);
-void NativeRenderer_ReadFramebufferDataToVRAM(void);
-void NativeRenderer_DiscardFramebufferReadback(void);
 int NativeRenderer_GetVRAMStateSize(void);
 int NativeRenderer_CaptureVRAMState(void *dst, int dstSize);
 int NativeRenderer_RestoreVRAMState(const void *src, int srcSize);
@@ -35,7 +42,8 @@ TextureID NativeRenderer_GetVRAMTexture(void);
 TextureID NativeRenderer_GetWhiteTexture(void);
 void NativeRenderer_SetBlendMode(BlendMode blendMode);
 void NativeRenderer_SetStencilMode(int drawPrim);
-void NativeRenderer_SetOffscreenState(const RECT16 *offscreenRect, const DISPENV *displayEnv, int enable);
+void NativeRenderer_SetOffscreenState(const RECT16 *offscreenRect, int enable);
+void NativeRenderer_SetProjection(const RECT16 *drawRect, const DISPENV *displayEnv, int offscreen);
 void NativeRenderer_SetupClipMode(const RECT16 *clipRect, const DISPENV *displayEnv, int enable);
 void NativeRenderer_SetTexture(TextureID texture, TexFormat texFormat);
 void NativeRenderer_SetOverrideTextureSize(int width, int height);

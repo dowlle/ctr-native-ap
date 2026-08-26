@@ -17,6 +17,16 @@ typedef struct
 	bool fullscreen;            // Video & QoL: borderless fullscreen window (default windowed)
 	int  aspectRatio;           // Video & QoL: 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10, 3 = 21:9
 	bool dithering;             // Video & QoL: PSX-authentic dithering (default on)
+	int  renderScale;           // Video & QoL: internal render scale. 1 = original PSX
+	                            // raster + shipped VRAM presentation (default),
+	                            // 2/3/4 = fixed multiples, 0 = native window.
+	                            // See include/platform/native_render_scale.h.
+	bool smoothScaling;         // Video & QoL: presentation filter for scaled render
+	                            // modes. true = smooth (linear, default),
+	                            // false = sharp (nearest). No effect at Original.
+	bool textureFiltering;      // Video & QoL: bilinear PSX texture sampling in the
+	                            // GTE shaders (default off: PSX-authentic point
+	                            // sampling). Also flipped by the F3 debug key.
 	// Audio: the vanilla audio screen's volumes (0-255) and stereo/mono mode.
 	// Config-file-only -- persisted to config.ini [Audio] and edited through that
 	// screen (game/MAIN/MainFreeze.c), NOT the in-game options menu (the [Audio]
@@ -42,6 +52,8 @@ typedef struct
 	                            // any_hit: every landed hit). The menu row and the F9
 	                            // toggle both edit this; ap_deathlink.c reads it
 	                            // every frame.
+	int  trapDuration;          // Archipelago: sustained trap lifetime in seconds.
+	                            // 10/15/20/25/30/45/60/90, or 0 = full race.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are
@@ -128,5 +140,12 @@ bool NativeConfig_FullscreenNeedsReapply(bool want, bool have);
 // true if a config.ini was present at load time. Consumers (e.g. the AP layer)
 // use this to decide config.ini precedence over legacy flat config files.
 bool NativeConfig_HasIni(void);
+
+#ifdef CTR_AP
+// Return a valid persisted Trap Duration value in milliseconds. Unknown or
+// hand-edited values fail to the recommended 15-second default; 0 means the
+// scheduler's full-race policy.
+int NativeConfig_TrapDurationMs(void);
+#endif
 
 #endif

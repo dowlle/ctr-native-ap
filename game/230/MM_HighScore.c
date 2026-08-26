@@ -96,16 +96,17 @@ void MM_HighScore_Draw(u16 trackIndex, u32 rowIndex, u32 posX, u32 posY)
 		                    D230.transitionMeta_HighScores[7].currY + offsetY + 0x2b, FONT_SMALL, 0);
 
 		// Character Name
-		MM_HighScore_Text3D(entry[0].name, D230.transitionMeta_HighScores[7].currX + offsetX + 0x160, D230.transitionMeta_HighScores[7].currY + offsetY + 0x39,
+		MM_HighScore_Text3D(entry[0].name, D230.transitionMeta_HighScores[8].currX + offsetX + 0x160, D230.transitionMeta_HighScores[8].currY + offsetY + 0x39,
 		                    FONT_BIG, entry[0].characterID + 5);
 
 		// Draw time string
-		MM_HighScore_Text3D(RECTMENU_DrawTime(entry[0].time), D230.transitionMeta_HighScores[7].currX + offsetX + 0x160,
-		                    D230.transitionMeta_HighScores[7].currY + offsetY + 0x4a, FONT_SMALL, 0);
+		// Retail also uses currX as the Y transition base here.
+		MM_HighScore_Text3D(RECTMENU_DrawTime(entry[0].time), D230.transitionMeta_HighScores[8].currX + offsetX + 0x160,
+		                    D230.transitionMeta_HighScores[8].currX + offsetY + 0x4a, FONT_SMALL, 0);
 
 		// Character Icon
-		RECTMENU_DrawPolyGT4(gGT->ptrIcons[data.MetaDataCharacters[entry[0].characterID].iconID], D230.transitionMeta_HighScores[7].currX + (offsetX + 0x124),
-		                     D230.transitionMeta_HighScores[7].currY + (offsetY + 0x38), &gGT->backBuffer->primMem, (gGT->pushBuffer_UI).ptrOT, iconColor,
+		RECTMENU_DrawPolyGT4(gGT->ptrIcons[data.MetaDataCharacters[entry[0].characterID].iconID], D230.transitionMeta_HighScores[8].currX + (offsetX + 0x124),
+		                     D230.transitionMeta_HighScores[8].currY + (offsetY + 0x38), &gGT->backBuffer->primMem, (gGT->pushBuffer_UI).ptrOT, iconColor,
 		                     iconColor, iconColor, iconColor, 1, 0x1000);
 	}
 

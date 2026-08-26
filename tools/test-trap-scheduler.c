@@ -1695,6 +1695,64 @@ static void case_flatten_and_timed_effects_coexist(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
 }
 
+static void case_client_trap_duration_policy(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld locked = race;
+	AP_TrapWorld next = race;
+	static const int choices[] = {10000, 15000, 20000, 25000, 30000,
+	                              45000, 60000, 90000};
+	int i;
+
+	// Every public timed choice replaces both former map-lifetime and fixed
+	// descriptor durations. Engine-natural effects remain outside this policy.
+	for (i = 0; i < (int)(sizeof(choices) / sizeof(choices[0])); i++)
+	{
+		AP_TrapSchedReset(&s);
+		AP_TrapSchedSetDuration(&s, choices[i]);
+		expect("timed choice governs former map-lifetime effects",
+		       AP_TrapSchedEffectiveDuration(&s, &AP_TRAP_DESC[AP_TRAP_ICY]), choices[i]);
+		expect("timed choice governs existing fixed effects",
+		       AP_TrapSchedEffectiveDuration(&s, &AP_TRAP_DESC[AP_TRAP_BOOST]), choices[i]);
+		expect("timed choice excludes engine-natural effects",
+		       AP_TrapSchedEffectiveDuration(&s, &AP_TRAP_DESC[AP_TRAP_FLATTEN]), -1);
+	}
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedSetDuration(&s, 10000);
+	AP_TrapSchedReceive(&s, AP_TRAP_ICY);
+	run_ms(&s, &hub, 2000);
+	expect("duration trap received in hub stays armed",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_ICY), 1);
+	run_ms(&s, &race, 1100);
+	expect("duration trap fires in the next playable event",
+	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
+	run_ms(&s, &race, 9900);
+	expect("ten-second choice is still active before its last frame",
+	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
+	locked.controlUnlocked = 0;
+	run_ms(&s, &locked, 5000);
+	expect("control-locked frames do not consume duration",
+	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
+	run_ms(&s, &race, 100);
+	expect("timed choice expires on the final playable frame",
+	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 0);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedSetDuration(&s, 0);
+	AP_TrapSchedReceive(&s, AP_TRAP_FIRSTPERSON);
+	run_ms(&s, &race, 1100);
+	run_ms(&s, &race, 120000);
+	expect("Full race ignores elapsed playable time",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+	next.mapEpoch++;
+	AP_TrapSchedStep(&s, &next);
+	expect("Full race clears at the race or map boundary",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 0);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -1740,6 +1798,7 @@ int main(void)
 	case_flatten_lifecycle();
 	case_flatten_duplicates_serialize();
 	case_flatten_and_timed_effects_coexist();
+	case_client_trap_duration_policy();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;

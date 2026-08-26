@@ -509,6 +509,18 @@ unsigned AP_StateGen(void);
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
+// Is the PHYSICAL pad's stage-1 (entry) requirement satisfied? The per-class
+// routing AP_PadState gathers with: race pads 0..15 through
+// ctr_cfg_warp_unlocked, trial pads 16/17, battle arenas 18/19/21/23 (their
+// vanilla branch is the hub-key gate) and cup pads 100..104. Randomized
+// slot_data requirements override every class fallback. Does NOT include the
+// racer lock for the non-race classes, so AND ctr_cfg_racer_lock_met when the
+// caller needs the full entry answer.
+//
+// Exposed for the Gem Cup AP-box policy (WO-A3, ap_boxes.c), which has to ask
+// this exact question about the pad hosting a cup leg's INDIVIDUAL race.
+int AP_PadStage1Met(int physLevelID);
+
 // Is this pad in the §6 box re-entry window (issue #232)? The destination's
 // trophy race is checked, this pad's stage-2 is not met, and unbroken AP item
 // boxes still stand behind the destination -- so AP_PadState keeps the pad at 2

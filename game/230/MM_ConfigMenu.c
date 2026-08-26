@@ -1,5 +1,6 @@
 #include <common.h>
 #include <stdio.h>
+#include <ctr_menu_ux.h>
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
@@ -122,6 +123,24 @@ static const int   s_aspectValues[] = {0, 1, 2, 3};
 static const char *s_aspectNames[]  = {"4:3", "16:9", "16:10", "21:9"};
 #define ASPECT_COUNT ((int)(sizeof(s_aspectValues) / sizeof(s_aspectValues[0])))
 
+// Render-scale ladder (CFG_ENUM). Values are the raw modes the renderer
+// consumes (include/platform/native_render_scale.h): 1 = shipped PSX raster
+// and VRAM presentation, 2/3/4 = fixed multiples, 0 = window-sized raster.
+// Ladder order runs ORIGINAL -> 4X -> NATIVE so stepping right means
+// "sharper"; the raw value is what gets stored, and out-of-ladder hand edits
+// render and step as ORIGINAL (the renderer clamps them the same way).
+static const int   s_renderScaleValues[] = {1, 2, 3, 4, 0};
+static const char *s_renderScaleNames[]  = {"ORIGINAL", "2X", "3X", "4X", "NATIVE"};
+#define RENDER_SCALE_COUNT ((int)(sizeof(s_renderScaleValues) / sizeof(s_renderScaleValues[0])))
+
+static int RenderScale_Index(int value)
+{
+	for (int i = 0; i < RENDER_SCALE_COUNT; i++)
+		if (s_renderScaleValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as ORIGINAL
+}
+
 static int Aspect_Index(int value)
 {
 	for (int i = 0; i < ASPECT_COUNT; i++)
@@ -175,12 +194,28 @@ static const int   s_dlinkValues[] = {-1, 0, 1, 2};
 static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
+// Sustained-trap comfort window. Zero is stored for Full race so config.ini
+// remains readable and the scheduler does not need a magic large duration.
+static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
+static const char *s_trapDurationNames[]  = {"10 SEC", "15 SEC", "20 SEC", "25 SEC",
+	"30 SEC", "45 SEC", "60 SEC", "90 SEC", "FULL RACE"};
+#define TRAP_DURATION_COUNT ((int)(sizeof(s_trapDurationValues) / sizeof(s_trapDurationValues[0])))
+
 static int Dlink_Index(int value)
 {
 	for (int i = 0; i < DLINK_COUNT; i++)
 		if (s_dlinkValues[i] == value)
 			return i;
 	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
+static int TrapDuration_Index(int value)
+{
+	int i;
+	for (i = 0; i < TRAP_DURATION_COUNT; i++)
+		if (s_trapDurationValues[i] == value)
+			return i;
+	return 1; // invalid hand-edited values render and step from recommended 15 s
 }
 #endif
 
@@ -190,9 +225,13 @@ static const char *Enum_Label(const ConfigEntry *e)
 {
 	if (e->valuePtr == &g_config.aspectRatio)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.renderScale)
+		return s_renderScaleNames[RenderScale_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.trapDuration)
+		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -209,6 +248,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		*(int *)e->valuePtr = s_aspectValues[i];
 		return;
 	}
+	if (e->valuePtr == &g_config.renderScale)
+	{
+		int i = RenderScale_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > RENDER_SCALE_COUNT - 1)
+			i = RENDER_SCALE_COUNT - 1;
+		*(int *)e->valuePtr = s_renderScaleValues[i];
+		return;
+	}
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 	{
@@ -218,6 +267,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > DLINK_COUNT - 1)
 			i = DLINK_COUNT - 1;
 		*(int *)e->valuePtr = s_dlinkValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.trapDuration)
+	{
+		int i = TrapDuration_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > TRAP_DURATION_COUNT - 1)
+			i = TRAP_DURATION_COUNT - 1;
+		*(int *)e->valuePtr = s_trapDurationValues[i];
 		return;
 	}
 #endif
@@ -345,6 +404,51 @@ static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char
 	out[n] = '\0';
 }
 
+// The retail decal font maps lowercase and uppercase ASCII to the same glyph.
+// For the case-sensitive AP slot only, draw a direct white line beneath each
+// byte that is actually uppercase, backed by a three-pixel black rectangle.
+// This mirrors the font's white fill / black outline contrast and stays visible
+// across both the yellow selection bar and the menu background art. Do not use
+// the font's `_` glyph: its baseline is not visible on this small-font row.
+static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, uint32_t *ot)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const int charWidth = data.font_charPixWidth[FONT_SMALL];
+
+	for (int i = 0; slot[i] != '\0'; i++)
+	{
+		if (CTR_MenuSlotCharNeedsCaseMark((unsigned char)slot[i]))
+		{
+			LINE_F2 *line = gGT->backBuffer->primMem.cursor;
+			POLY_F4 *stroke = (POLY_F4 *)(line + 1);
+			int x = valueX + DecalFont_GetLineWidthStrlen((char *)slot, i, FONT_SMALL);
+
+			// Link the white center first. OT insertion is LIFO, so the black backing
+			// linked afterward is drawn first and the white line lands on top.
+			CtrGpu_WriteColorCode(&line->r0, *data.ptrColor[WHITE]);
+			line->x0 = x + 1;
+			line->y0 = y + 9;
+			line->x1 = x + charWidth - 2;
+			line->y1 = y + 9;
+			addLineF2(ot, line);
+
+			CtrGpu_WriteColorCode(&stroke->r0, 0);
+			setPolyF4(stroke);
+			stroke->x0 = x;
+			stroke->y0 = y + 8;
+			stroke->x1 = x + charWidth - 1;
+			stroke->y1 = y + 8;
+			stroke->x2 = x;
+			stroke->y2 = y + 11;
+			stroke->x3 = x + charWidth - 1;
+			stroke->y3 = y + 11;
+			AddPrim(ot, stroke);
+
+			gGT->backBuffer->primMem.cursor = (void *)(stroke + 1);
+		}
+	}
+}
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
@@ -451,6 +555,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
 		Conn_FormatValue(e, masked, editing, buf, sizeof buf);
 		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, WHITE, ot);
+		if (strcmp(e->key, "slot") == 0)
+			Conn_DrawSlotCaseMarks((const char *)e->valuePtr, valueX, y, ot);
 
 		if (j == menu->rowSelected)
 		{
@@ -574,6 +680,25 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				*(bool *)e->valuePtr ^= 1;
 		}
 
+		// Boolean rows now follow the same left/right value-editing convention as
+		// enums and sliders: left is OFF, right is ON. Cross/Circle still toggles.
+		{
+			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			if (e->type == CFG_BOOL)
+			{
+				if ((pad->buttonsTapped & BTN_LEFT) != 0)
+				{
+					CTR_MenuBoolStep((bool *)e->valuePtr, -1);
+					OtherFX_Play(0, 1);
+				}
+				if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+				{
+					CTR_MenuBoolStep((bool *)e->valuePtr, +1);
+					OtherFX_Play(0, 1);
+				}
+			}
+		}
+
 		// enum entries: tap left/right to step through the preset ladder
 		{
 			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
@@ -664,6 +789,13 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 			}
 		}
+
+#ifdef CTR_AP
+		// Keep the tester-visible pair identity available in-game, without using a
+		// main-menu row or colliding with the denser section submenus.
+		DecalFont_DrawLineOT("CTR-AP " CTR_AP_VERSION,
+			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+#endif
 	}
 
 	{

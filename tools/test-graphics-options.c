@@ -100,6 +100,13 @@ static void TestConfigDefaults(void)
 	if (ar) EXPECT_INT("aspect_ratio is CFG_ENUM", ar->type, CFG_ENUM);
 	if (fs) EXPECT_INT("fullscreen is CFG_BOOL", fs->type, CFG_BOOL);
 	if (di) EXPECT_INT("dithering is CFG_BOOL", di->type, CFG_BOOL);
+#ifdef CTR_AP
+	const ConfigEntry *td = FindEntry("Archipelago", "trap_duration");
+	EXPECT_INT("default trapDuration", g_config.trapDuration, 15);
+	EXPECT_INT("default trap duration milliseconds", NativeConfig_TrapDurationMs(), 15000);
+	EXPECT_TRUE("trap_duration entry present", td != NULL);
+	if (td) EXPECT_INT("trap_duration is CFG_ENUM", td->type, CFG_ENUM);
+#endif
 }
 
 // The enum ladder lives in MM_ConfigMenu.c (game code, not compiled here), but
@@ -228,17 +235,56 @@ static void TestPersistenceRoundTrip(void)
 	SetEntry("Video & QoL", "aspect_ratio", 3);
 	SetEntry("Video & QoL", "fullscreen", 1);
 	SetEntry("Video & QoL", "dithering", 0);
+	SetEntry("Video & QoL", "render_scale", 0);
+	SetEntry("Video & QoL", "smooth_scaling", 0);
+	SetEntry("Video & QoL", "texture_filtering", 1);
+#ifdef CTR_AP
+	SetEntry("Archipelago", "trap_duration", 90);
+#endif
 	NativeConfig_Save();
 
 	// Reset the in-memory state to defaults so the reload is a real test.
 	g_config.aspectRatio = 0;
 	g_config.fullscreen = 0;
 	g_config.dithering = 1;
+	g_config.renderScale = 1;
+	g_config.smoothScaling = 1;
+	g_config.textureFiltering = 0;
+#ifdef CTR_AP
+	g_config.trapDuration = 15;
+#endif
 	NativeConfig_Load();
 
 	EXPECT_INT("persisted aspectRatio", g_config.aspectRatio, 3);
 	EXPECT_INT("persisted fullscreen", g_config.fullscreen, 1);
 	EXPECT_INT("persisted dithering", g_config.dithering, 0);
+	EXPECT_INT("persisted renderScale (Native)", g_config.renderScale, 0);
+	EXPECT_INT("persisted smoothScaling", g_config.smoothScaling, 0);
+	EXPECT_INT("persisted textureFiltering", g_config.textureFiltering, 1);
+
+	// A hand-edited out-of-ladder render_scale snaps onto the ladder at load,
+	// keeping the menu row and the running renderer in agreement.
+	SetEntry("Video & QoL", "render_scale", 9);
+	NativeConfig_Save();
+	g_config.renderScale = 1;
+	NativeConfig_Load();
+	EXPECT_INT("out-of-ladder render_scale clamps at load", g_config.renderScale, 4);
+	SetEntry("Video & QoL", "render_scale", -5);
+	NativeConfig_Save();
+	NativeConfig_Load();
+	EXPECT_INT("negative render_scale clamps to Original at load", g_config.renderScale, 1);
+	SetEntry("Video & QoL", "render_scale", 0);
+	NativeConfig_Save();
+	NativeConfig_Load();
+	EXPECT_INT("Native render_scale survives the load clamp", g_config.renderScale, 0);
+#ifdef CTR_AP
+	EXPECT_INT("persisted trap duration", g_config.trapDuration, 90);
+	EXPECT_INT("persisted trap duration milliseconds", NativeConfig_TrapDurationMs(), 90000);
+	g_config.trapDuration = 0;
+	EXPECT_INT("full race maps to scheduler token zero", NativeConfig_TrapDurationMs(), 0);
+	g_config.trapDuration = 17;
+	EXPECT_INT("unsupported trap duration fails to 15 seconds", NativeConfig_TrapDurationMs(), 15000);
+#endif
 
 	// The three options live under the Video & QoL section with the right keys.
 	FILE *f = fopen("config.ini", "r");
@@ -247,21 +293,36 @@ static void TestPersistenceRoundTrip(void)
 	{
 		char buf[256];
 		int sawAspect = 0, sawFull = 0, sawDither = 0, inVideo = 0;
+#ifdef CTR_AP
+		int sawTrapDuration = 0, inArchipelago = 0;
+#endif
 		while (fgets(buf, sizeof(buf), f))
 		{
 			if (buf[0] == '[')
+			{
 				inVideo = strncmp(buf, "[Video & QoL]", 13) == 0;
+			#ifdef CTR_AP
+				inArchipelago = strncmp(buf, "[Archipelago]", 13) == 0;
+			#endif
+			}
 			else if (inVideo && strstr(buf, "aspect_ratio") != NULL && strstr(buf, "= 3") != NULL)
 				sawAspect = 1;
 			else if (inVideo && strstr(buf, "fullscreen") != NULL && strstr(buf, "= true") != NULL)
 				sawFull = 1;
 			else if (inVideo && strstr(buf, "dithering") != NULL && strstr(buf, "= false") != NULL)
 				sawDither = 1;
+		#ifdef CTR_AP
+			else if (inArchipelago && strstr(buf, "trap_duration") != NULL && strstr(buf, "= 90") != NULL)
+				sawTrapDuration = 1;
+		#endif
 		}
 		fclose(f);
 		EXPECT_INT("config.ini has aspect_ratio = 3", sawAspect, 1);
 		EXPECT_INT("config.ini has fullscreen = true", sawFull, 1);
 		EXPECT_INT("config.ini has dithering = false", sawDither, 1);
+	#ifdef CTR_AP
+		EXPECT_INT("config.ini has trap_duration = 90", sawTrapDuration, 1);
+	#endif
 	}
 }
 

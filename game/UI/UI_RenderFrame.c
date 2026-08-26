@@ -1231,7 +1231,7 @@ void UI_RenderFrame_Wumpa3D_2P3P4P(struct GameTracker *gGT)
 
 		if (driver->numWumpas >= 10)
 		{
-			u8 shineColor = sdata->wumpaShineColor1[0][0];
+			u8 shineColor = (u8)sdata->wumpaShineResult;
 			prim->r0 = shineColor;
 			prim->g0 = shineColor;
 			prim->b0 = shineColor;

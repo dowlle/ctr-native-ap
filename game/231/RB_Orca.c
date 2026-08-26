@@ -55,7 +55,8 @@ struct ParticleEmitter emSet_OrcaSplash[7] = {
             .initOffset = 5,
             .InitTypes.AxisInit =
                 {
-                    .baseValue = {.startVal = 0x3E8, .velocity = 0x28, .accel = 0x64},
+                    .baseValue = {.startVal = 0x3E8, .velocity = 0x28, .accel = 0},
+                    .rngSeed = {.startVal = 0x64},
                 },
         },
 

@@ -27,28 +27,21 @@ void DebugFont_DrawNumbers(int index, int screenPosX, int screenPosY)
 {
 	POLY_FT4 *p;
 	u32 *ot;
-	u32 uVar4;
-	u32 uVar5;
-	u32 uVar6;
 	u32 topU;
 	u32 bottomU;
 	u32 topV;
 	u32 bottomV;
 	struct GameTracker *gGT = sdata->gGT;
 
-	uVar6 = screenPosX + 7;
-	uVar5 = (screenPosY + 0) << 0x10;
-	uVar4 = (screenPosY + 7) << 0x10;
-
 	p = (POLY_FT4 *)gGT->backBuffer->primMem.cursor;
 	ot = (u32 *)gGT->pushBuffer_UI.ptrOT;
 	gGT->backBuffer->primMem.cursor = p + 1;
 
 	CtrGpu_WriteColorCode(&p->r0, 0x2e000000);
-	CtrGpu_WritePackedXY(&p->x0, (u32)(screenPosX | uVar5));
-	CtrGpu_WritePackedXY(&p->x3, uVar6 | uVar4);
-	CtrGpu_WritePackedXY(&p->x1, uVar6 | uVar5);
-	CtrGpu_WritePackedXY(&p->x2, (u32)(screenPosX | uVar4));
+	CtrGpu_WritePackedXY(&p->x0, CTR_PackS16Pair(screenPosX, screenPosY));
+	CtrGpu_WritePackedXY(&p->x3, CTR_PackS16Pair(screenPosX + 7, screenPosY + 7));
+	CtrGpu_WritePackedXY(&p->x1, CTR_PackS16Pair(screenPosX + 7, screenPosY));
+	CtrGpu_WritePackedXY(&p->x2, CTR_PackS16Pair(screenPosX, screenPosY + 7));
 
 	// Each character is 7x7 pixels,
 	// '0' is 6th character on 2nd row

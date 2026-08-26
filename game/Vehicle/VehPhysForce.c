@@ -176,10 +176,13 @@ void VehPhysForce_OnGravity(struct Driver *driver, Vec3 *velocity)
 
 	TerrainFlags terrainFlags = driver->terrainMeta1->flags;
 	int terminalVelocity = driver->const_TerminalVelocity;
-	if ((localY < 0) && ((terrainFlags & TERRAIN_FLAG_MUD_PHYSICS) != 0) && (originalLocalY < -0x100))
+	if ((localY < 0) && ((terrainFlags & TERRAIN_FLAG_MUD_PHYSICS) != 0))
 	{
 		terminalVelocity = 0x100;
-		originalLocalY = -0x100;
+		if (originalLocalY < -0x100)
+		{
+			originalLocalY = -0x100;
+		}
 	}
 
 	int clampedLocalY = localY;

@@ -302,15 +302,31 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 						iVar3 = 0;
 						iVar5 = 0;
 
-						// check 4 boss keys
-						for (iVar3 = 0; iVar3 < 4; iVar3++)
+#ifdef CTR_AP
+						// AP (WO-A1): light Oxide's garage from the SAME authority
+						// its physical door uses (AP_OxideGarageOpen, AH_Garage.c),
+						// exactly as the four boss garages below already delegate to
+						// AP_BossGarageOpen. The vanilla loop reads the four key bits,
+						// which AP_ApplyItems rewrites from RECEIVED Keys every
+						// reconcile tick -- so it would paint the garage open on Key 4
+						// while the composed-goal gate correctly keeps the door shut.
+						if (ctr_cfg_active())
 						{
-							bit = iVar3 + ADV_REWARD_FIRST_BOSS_KEY;
-
-							if (CHECK_ADV_BIT(adv->rewards, bit) == 0)
+							open = (AP_OxideGarageOpen() != 0);
+						}
+						else
+#endif
+						{
+							// check 4 boss keys
+							for (iVar3 = 0; iVar3 < 4; iVar3++)
 							{
-								open = false;
-								break;
+								bit = iVar3 + ADV_REWARD_FIRST_BOSS_KEY;
+
+								if (CHECK_ADV_BIT(adv->rewards, bit) == 0)
+								{
+									open = false;
+									break;
+								}
 							}
 						}
 						if (!open)

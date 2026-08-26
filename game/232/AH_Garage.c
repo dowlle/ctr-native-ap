@@ -192,15 +192,14 @@ LAB_800aeb6c:
 	if (levelID == GEM_STONE_VALLEY)
 	{
 #ifdef CTR_AP
-		// AP Phase 2: per-seed Oxide garage requirement (boss_req[4]) when
-		// slot_data active; else Phase-1 fixed 4 received Keys. The apworld
-		// resolves Oxide to {type:2,count:4} (keys), so default behaviour matches.
-		if (ctr_cfg_active())
-		{
-			if (!AP_BossReqMet(&ctr_cfg.boss_req[4]))
-				goto LAB_800aebd0;
-		}
-		else if (AP_GateCount(AP_IDX_KEY) < 4)
+		// AP: THE canonical Oxide entry gate (WO-A1). Was the per-seed garage
+		// requirement (boss_req[4], normally four received Keys) alone, which
+		// opened the door on `Any% + All Four Bosses` with zero boss races won.
+		// AP_OxideGarageOpen composes that same requirement with every active
+		// companion goal condition when goal_oxide != 0, and still falls back to
+		// the unchanged Phase-1 four-Key rule without slot_data. The map icon and
+		// AH_Garage_LInB call the same function, so no entry path is left open.
+		if (!AP_OxideGarageOpen())
 			goto LAB_800aebd0;
 #else
 		// ripper roo boss key
@@ -282,7 +281,7 @@ LAB_800aec34:
 
 		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
 
-		    ((view.x + view.w) >> 1), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
+		    (view.x + (view.w >> 1)), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
 	}
 
 	if (bossIsOpen)
@@ -301,7 +300,10 @@ LAB_800aec34:
 	// his hint box. Oxide's door is hubID 0 -> boss index 4; the four boss garages
 	// are hubID 1..4 -> boss index 0..3.
 	{
-		char advert[64];
+		// 128, not 64: Oxide's line (advertBoss 4) can now carry the composed
+		// goal's companion terms as well as the door requirement (WO-A1), e.g.
+		// "Requires: 4 Keys (have 4) + win 4 of 4 boss races (have 1)".
+		char advert[128];
 		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
 
 		// The challenge name above is FONT_BIG drawn from its TOP edge, so the
@@ -318,7 +320,7 @@ LAB_800aec34:
 		if (sdata->AkuAkuHintState == 0 &&
 		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
 		{
-			DecalFont_DrawLine(advert, ((view.x + view.w) >> 1), advertY, FONT_SMALL,
+			DecalFont_DrawLine(advert, (view.x + (view.w >> 1)), advertY, FONT_SMALL,
 			                   0xffff8000);
 		}
 	}
@@ -513,14 +515,10 @@ void AH_Garage_LInB(struct Instance *inst)
 	if (levelID == GEM_STONE_VALLEY)
 	{
 #ifdef CTR_AP
-		// AP Phase 2: per-seed Oxide garage requirement (boss_req[4]) when active;
-		// else Phase-1 fixed 4 received Keys.
-		if (ctr_cfg_active())
-		{
-			if (!AP_BossReqMet(&ctr_cfg.boss_req[4]))
-				goto GarageLocked;
-		}
-		else if (AP_GateCount(AP_IDX_KEY) < 4)
+		// AP: the same canonical entry gate the ThTick collision/load path uses
+		// (WO-A1). Presentation and gate MUST come from one predicate, or the
+		// door renders open while the load refuses (or the reverse).
+		if (!AP_OxideGarageOpen())
 			goto GarageLocked;
 		bossIsOpen = true;
 #else

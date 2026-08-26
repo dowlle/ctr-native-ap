@@ -509,10 +509,7 @@ void StateZero()
 	struct GamepadSystem *gGS;
 	gGS = sdata->gGamepads;
 
-// already zero, part of BSS
-#if 0
 	memset(gGT, 0, sizeof(struct GameTracker));
-#endif
 
 	// Set Video Mode to NTSC
 	SetVideoMode(0);
@@ -575,7 +572,9 @@ void StateZero()
 	gGT->trafficLightsTimer = 0xfffffc40;
 
 	Timer_Init();
-	DrawSyncCallback(&MainDrawCb_DrawSync);
+	EnterCriticalSection();
+	sdata->MainDrawCb_DrawSyncPtr = (void *)(uintptr_t)DrawSyncCallback(&MainDrawCb_DrawSync);
+	ExitCriticalSection();
 
 	MEMCARD_InitCard();
 	VSync(0);
@@ -626,6 +625,7 @@ void StateZero()
 	else
 	{
 		gGT->levelID = NAUGHTY_DOG_CRATE;
+		memcpy(gGT->levelName, sdata->s_ndi, sizeof(sdata->s_ndi));
 	}
 	// gGT->levelID = OXIDE_TRUE_ENDING;
 

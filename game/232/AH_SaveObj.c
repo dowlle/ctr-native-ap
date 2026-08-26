@@ -281,16 +281,16 @@ void AH_SaveObj_LInB(struct Instance *savInst)
 
 			savInst->flags |= HIDE_MODEL;
 
-			spawn = gGT->level1->ptrSpawnType2_PosRot;
-
-			if (spawn == NULL)
+			// Retail gates on the spawn count, not the pointer.
+			if (gGT->level1->numSpawnType2_PosRot == 0)
 			{
 				save->inst = NULL;
 			}
 			else
 			{
+				spawn = gGT->level1->ptrSpawnType2_PosRot;
 				struct SpawnPosRot *saveSpawn = spawn->posRot;
-				inst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_SCAN], R232.s_scan, 0);
+				inst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_SCAN], R232.s_scan, t);
 				save->inst = inst;
 
 				// NOTE(aalhendi): Native low-RAM audit candidate only. Retail

@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <platform/native_config.h>
+#include <platform/native_render_scale.h>
 
 // Options live in "config.ini" in the working directory -- the same place the AP
 // layer reads "ap-config.txt" from (see ap/ap_hooks.c AP_ReadConfig). Ported from
@@ -18,6 +19,9 @@ NativeConfig g_config = {
 	false, // fullscreen (default windowed)
 	0,     // aspectRatio (0 = 4:3, vanilla)
 	true,  // dithering (default on: PSX-authentic)
+	1,     // renderScale (1 = original PSX raster, the shipped default)
+	true,  // smoothScaling (default on: linear presentation at scaled modes)
+	false, // textureFiltering (default off: PSX-authentic point sampling)
 	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
 	-1,    // volMusic
 	-1,    // volVoice
@@ -27,6 +31,7 @@ NativeConfig g_config = {
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
+	15,    // trapDuration (recommended default, seconds; 0 = full race)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -52,6 +57,14 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "dithering",                "Dithering",                    CFG_BOOL, &g_config.dithering},
 	{"Video & QoL", "fullscreen",               "Fullscreen",                   CFG_BOOL, &g_config.fullscreen},
 	{"Video & QoL", "aspect_ratio",             "Aspect Ratio",                 CFG_ENUM, &g_config.aspectRatio},
+	// Render-scale ladder (CFG_ENUM): 1 = ORIGINAL (shipped raster + VRAM
+	// present, the default), 2/3/4 = fixed multiples, 0 = NATIVE (window-sized
+	// raster). Stored as the raw mode value; the renderer clamps out-of-ladder
+	// hand edits (NativeRenderScale_ClampMode) and applies edits on the next
+	// frame boundary, so none of these rows needs a menu-exit hook.
+	{"Video & QoL", "render_scale",             "Render Scale",                 CFG_ENUM, &g_config.renderScale},
+	{"Video & QoL", "smooth_scaling",           "Smooth Scaling",               CFG_BOOL, &g_config.smoothScaling},
+	{"Video & QoL", "texture_filtering",        "Texture Filtering",            CFG_BOOL, &g_config.textureFiltering},
 	// Audio section: config-file-only. Hidden from the in-game options menu (gated
 	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
 	// through the vanilla audio screen and a CFG_INT would render there as a bare
@@ -73,6 +86,7 @@ const ConfigEntry g_configEntries[] = {
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
 	{"Archipelago", "death_link",               "DeathLink",                    CFG_ENUM, &g_config.deathLink},
+	{"Archipelago", "trap_duration",            "Trap Duration",                CFG_ENUM, &g_config.trapDuration},
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
@@ -109,6 +123,20 @@ bool NativeConfig_HasIni(void)
 {
 	return g_configIniPresent;
 }
+
+#ifdef CTR_AP
+int NativeConfig_TrapDurationMs(void)
+{
+	static const int allowed[] = {10, 15, 20, 25, 30, 45, 60, 90};
+	int i;
+	if (g_config.trapDuration == 0)
+		return 0;
+	for (i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++)
+		if (g_config.trapDuration == allowed[i])
+			return allowed[i] * 1000;
+	return 15000;
+}
+#endif
 
 bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen)
 {
@@ -203,6 +231,19 @@ void NativeConfig_Load(void)
 	}
 
 	fclose(f);
+
+	// Snap a hand-edited render_scale onto the supported ladder at load, the
+	// same clamp the renderer applies every frame. This keeps the menu row and
+	// the running renderer in agreement for out-of-ladder values (a persisted
+	// 9 would otherwise render at 4x while the row reads ORIGINAL).
+	g_config.renderScale = NativeRenderScale_ClampMode(g_config.renderScale);
+#ifdef CTR_AP
+	// Keep the in-memory/menu value inside the public ladder even when a player
+	// hand-edited an unsupported value. Zero is the intentional Full race token.
+	if (g_config.trapDuration != 0 &&
+	    NativeConfig_TrapDurationMs() != g_config.trapDuration * 1000)
+		g_config.trapDuration = 15;
+#endif
 }
 
 // Look up the entry table row that owns a section/key pair (i.e. one this build

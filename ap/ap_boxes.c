@@ -9,6 +9,7 @@
 #include "ap_spawn.h"   // additive model loader: the crates themselves
 #include "ap_author.h"  // the placement table (one reader, shared with #182)
 #include "ap_seedcfg.h" // ctr_cfg_active(): is a seed loaded at all
+#include "ap_cup_box_policy.h" // WO-A3: the freestanding cup-leg access decision
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
 
@@ -54,6 +55,7 @@ static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
 // read the counter against itself and the placement-change rebuild never fired.
 static int s_boxesPlaceGen = -1;
 static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
+static int s_cupPolicy = -1; // WO-A3 cup-leg access decision the set was built under
 static int s_modelWarned;   // "no crate model here" logged once per level
 static int s_spawnFull;     // the loader refused a box on this level: stop asking
 static int s_standDown;     // author mode / no seed: logged once per transition
@@ -161,6 +163,60 @@ static int AP_BoxChecked(long code, void *ctx)
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
 	return (gGT->gameMode1 & (ADVENTURE_MODE | RELIC_RACE)) != 0;
+}
+
+// ── the Gem Cup leg gate (WO-A3, ruled 2026-08-24 10:51 CEST) ───────────────
+//
+// The gate above answers "does this RACE TYPE carry boxes". It admits every
+// Adventure-mode race, and a Gem Cup leg is an Adventure-mode race, so through
+// Alpha 4 a cup leg stood, collided with and dispatched the leg track's boxes
+// on cup entry alone. The apworld never put them in reach that way: it parents
+// every box to its own track's region, reached through that track's randomized
+// PHYSICAL warp pad, and Universal Tracker rebuilds the same shape. Native sent
+// checks the logic had not placed.
+//
+// The ruling does not move the apworld locations into the cup region. It makes
+// the cup a second PHYSICAL collection opportunity for boxes the player can
+// already reach individually: a leg shows its boxes only while the individual
+// race behind its physical pad is accessible NOW, and cup access alone grants
+// nothing. One cup may therefore mix legs with boxes and legs without them.
+//
+// The gather, all four terms:
+//   * ADVENTURE_CUP in gameMode1 is the cup leg itself. It is set once at cup
+//     entry (AH_WarpPad.c) and holds across all four legs. Arcade cups are
+//     gameMode2 CUP_ANY_KIND and are already outside ADVENTURE_MODE, so they
+//     never reach here.
+//   * gGT->levelID during a leg is the leg's DESTINATION track, so
+//     ctr_cfg_warp_phys recovers the physical pad that individually loads it.
+//     That is identity-safe: an inactive or legacy slot_data (no destination
+//     shuffle on the wire) returns the input unchanged, which is exactly the
+//     unshuffled answer. It scans warp_pad_map AND gem_cup_map, so the pad may
+//     legitimately be an ordinary race, trial, arena or CUP physical pad, which
+//     is what `merged` shuffle allows.
+//   * AP_PadStage1Met is that pad's own stage-1 requirement through the same
+//     per-class routing AP_PadState uses; ctr_cfg_racer_lock_met is its racer
+//     lock (#54/#209), reporting met for an unlocked pad.
+//   * received Keys are the structural hub term, which no pad-item helper
+//     carries -- see ap_cup_box_policy.h for why ctr_cfg_warp_unlocked alone is
+//     not sufficient.
+//
+// Computed per frame rather than latched at cup entry: the terms can be
+// satisfied mid-cup by a received Key, racer or requirement item, and the
+// rebuild below reacts to the change, so the next leg load (and a live leg)
+// agree with the pad's current state instead of a stale entry snapshot.
+static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
+{
+	int phys;
+
+	if ((gGT->gameMode1 & ADVENTURE_CUP) == 0)
+		return AP_BoxPolicyAllows(0, -1, 0, 0, 0); // non-cup: unchanged
+
+	phys = ctr_cfg_warp_phys(level);
+
+	return AP_BoxPolicyAllows(1, phys,
+	                          AP_GateCount(AP_IDX_KEY),
+	                          AP_PadStage1Met(phys),
+	                          ctr_cfg_racer_lock_met(phys));
 }
 
 // ── the live set ────────────────────────────────────────────────────────────
@@ -311,11 +367,26 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	s_level = level;
 	s_boxesPlaceGen = AP_Author_PlacementGeneration();
 	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
+	s_cupPolicy = AP_BoxesCupLegAllows(gGT, level);
 
 	if (AP_BoxMap_ApTrack(level) < 0)
 		return; // hub, arena, menu: not a box track
 	if (!AP_BoxesRaceCarriesBoxes(gGT))
 		return; // arcade / VS / battle: outside the boxes' own logic
+
+	// WO-A3, and BEFORE the set builder on purpose. Standing the set down is the
+	// whole implementation: nothing is spawned, so AP_BoxesTick walks nothing, so
+	// no collision can fire and no check can be dispatched. Hiding the models and
+	// leaving the checks earnable would be the same divergence in a new place.
+	if (!s_cupPolicy)
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] level %d (ap track %d): Gem Cup leg, but its individual race pad %d is "
+		         "not accessible now -- no AP boxes on this leg (cup access grants no box logic)\n",
+		         level, AP_BoxMap_ApTrack(level), ctr_cfg_warp_phys(level));
+		AP_LogLine(msg);
+		return;
+	}
 
 	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
@@ -589,8 +660,15 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	AP_Author_EnsureLoaded();
 
 	level = (int)gGT->levelID;
+	// The cup-leg decision joins the rebuild triggers (WO-A3): its terms are
+	// received Keys, a received racer and received requirement items, every one
+	// of which can arrive mid-cup. Without it a leg entered while its individual
+	// pad was shut would stay boxless for the rest of the session even after the
+	// pad opened, and the acceptance row is precisely that the next cup load
+	// changes.
 	if (level != s_level || AP_Author_PlacementGeneration() != s_boxesPlaceGen ||
-	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode)
+	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode ||
+	    AP_BoxesCupLegAllows(gGT, level) != s_cupPolicy)
 		AP_BoxesRebuild(gGT, level);
 
 	if (s_liveCount > 0)

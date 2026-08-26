@@ -39,6 +39,12 @@ void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim);
 // #51 release from taking the picker's own kart freeze back.
 int AP_CharSwap_PickerOpen(void);
 
+// Diagnostics only (ap-state.json `transition.diag`, 2026-08-23 bundle
+// inspection): the picker's own state machine, so a bundle taken while the kart
+// will not move after a swap can say whether the picker still thinks it is
+// busy. Each out-pointer may be NULL.
+void AP_CharSwap_DiagState(int *open, int *pendingSwap, int *restorePos);
+
 // Must the hub's standing HUD stand down this frame?
 //
 // One question, asked by every hub HUD site, so they cannot drift apart. The

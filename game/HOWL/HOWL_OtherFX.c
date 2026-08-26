@@ -45,7 +45,7 @@ int OtherFX_Play_LowLevel(u32 soundID, u8 boolAntiSpam, u32 flags)
 	struct GameTracker *gGT = sdata->gGT;
 	struct ChannelStats *channel;
 	int count;
-	s16 id;
+	u16 id;
 	struct OtherFX *ptrOtherFX;
 	u32 LR = HowlSfx_LR(flags);
 	u32 distortion = HowlSfx_Distortion(flags);

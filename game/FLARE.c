@@ -142,12 +142,12 @@ void FLARE_ThTick(struct Thread *th)
 	FLARE_WriteTexture(p2, icon, texWord1);
 	CtrGpu_WritePackedXY(&p0->x2, MFC2(12));
 	CtrGpu_WritePackedXY(&p0->x3, MFC2(13));
-	CtrGpu_WritePackedXY(&p1->x2, MFC2(13));
-	CtrGpu_WritePackedXY(&p1->x3, MFC2(14));
-	CtrGpu_WritePackedXY(&p2->x0, MFC2(12));
-	CtrGpu_WritePackedXY(&p2->x1, MFC2(13));
-	CtrGpu_WritePackedXY(&p3->x1, MFC2(13));
-	CtrGpu_WritePackedXY(&p3->x0, MFC2(14));
+	CtrGpu_WritePackedXY(&p1->x3, MFC2(13));
+	CtrGpu_WritePackedXY(&p1->x2, MFC2(14));
+	CtrGpu_WritePackedXY(&p2->x2, MFC2(12));
+	CtrGpu_WritePackedXY(&p2->x3, MFC2(13));
+	CtrGpu_WritePackedXY(&p3->x3, MFC2(13));
+	CtrGpu_WritePackedXY(&p3->x2, MFC2(14));
 	s32 depth = MFC2(18);
 
 	FLARE_LoadGridRow(409);
@@ -155,10 +155,10 @@ void FLARE_ThTick(struct Thread *th)
 	FLARE_WriteColors(p2);
 	FLARE_WriteColors(p3);
 	FLARE_WriteTexture(p3, icon, texWord1);
-	CtrGpu_WritePackedXY(&p2->x2, MFC2(12));
-	CtrGpu_WritePackedXY(&p2->x3, MFC2(13));
-	CtrGpu_WritePackedXY(&p3->x2, MFC2(13));
-	CtrGpu_WritePackedXY(&p3->x3, MFC2(14));
+	CtrGpu_WritePackedXY(&p2->x0, MFC2(12));
+	CtrGpu_WritePackedXY(&p2->x1, MFC2(13));
+	CtrGpu_WritePackedXY(&p3->x1, MFC2(13));
+	CtrGpu_WritePackedXY(&p3->x0, MFC2(14));
 
 	depth = (depth >> 8) - 2;
 	if (depth < 0)

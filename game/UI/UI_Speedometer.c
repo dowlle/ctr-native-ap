@@ -4,7 +4,7 @@
 void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 {
 	int minScale = 0;
-	int maxScale = FP8_INT(driver->const_AccelSpeed_ClassStat) + FP8_INT(driver->const_SacredFireSpeed);
+	int maxScale = CTR_MipsSra(CTR_MipsAddLo(driver->const_AccelSpeed_ClassStat, driver->const_SacredFireSpeed), 8);
 	int speed = driver->speedometerNeedleValue;
 	int minAngle, maxAngle;
 	int accelSpeedInt = FP8_INT(driver->const_AccelSpeed_ClassStat);
@@ -53,7 +53,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[2].pos.x = posX + (FP_INT(sin[1] * needleWidth) + needleCenterX);
 	p->v[2].pos.y = posY + (yLen + needleCenterY);
 
@@ -62,7 +62,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[1].pos.x = posX - (FP_INT(sin[0] * needleWidth) - needleCenterX);
 	p->v[1].pos.y = posY - (yLen - needleCenterY);
 
@@ -71,7 +71,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[0].pos.x = posX + (FP_INT(sin[0] * needleHeight) + needleCenterX);
 	p->v[0].pos.y = posY + (yLen + needleCenterY);
 
@@ -91,7 +91,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[2].pos.x = posX - (FP_INT(sin[1] * needleWidth) - needleCenterX);
 	p->v[2].pos.y = posY - (yLen - needleCenterY);
 
@@ -100,7 +100,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[1].pos.x = posX - (FP_INT(sin[0] * needleWidth) - needleCenterX);
 	p->v[1].pos.y = posY - (yLen - needleCenterY);
 
@@ -109,7 +109,7 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 	{
 		yLen += FP8(2) - 1;
 	}
-	yLen /= FP8(2);
+	yLen = CTR_MipsSra(yLen, 9);
 	p->v[0].pos.x = posX + (FP_INT(sin[0] * needleHeight) + needleCenterX);
 	p->v[0].pos.y = posY + (yLen + needleCenterY);
 
@@ -123,8 +123,8 @@ void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 #define SPEEDO_RED    0xdb
 
 const Color DrawSpeedBG_Colors[7] = {
-    [0].self = SPEEDO_GREEN,  [1].self = SPEEDO_GREEN, [2].self = SPEEDO_GREEN, [3].self = SPEEDO_GREEN,
-    [4].self = SPEEDO_YELLOW, [5].self = SPEEDO_RED,   [6].self = SPEEDO_RED,
+    [0].self = SPEEDO_GREEN,  [1].self = SPEEDO_GREEN, [2].self = SPEEDO_GREEN, [3].self = SPEEDO_YELLOW,
+    [4].self = SPEEDO_RED,    [5].self = SPEEDO_RED,   [6].self = SPEEDO_RED,
 };
 
 #else
@@ -134,7 +134,7 @@ const Color DrawSpeedBG_Colors[7] = {
 #define SPEEDO_RED    MakeColor(0xdb, 0, 0)
 
 const Color DrawSpeedBG_Colors[7] = {
-    SPEEDO_GREEN, SPEEDO_GREEN, SPEEDO_GREEN, SPEEDO_GREEN, SPEEDO_YELLOW, SPEEDO_RED, SPEEDO_RED,
+    SPEEDO_GREEN, SPEEDO_GREEN, SPEEDO_GREEN, SPEEDO_YELLOW, SPEEDO_RED, SPEEDO_RED, SPEEDO_RED,
 };
 #endif
 
@@ -213,7 +213,7 @@ void UI_DrawSpeedBG(void)
 			return;
 		}
 
-		p->t.texpage = (Texpage){.code = 0xE1, .dither = 1};
+		p->t.texpage = (Texpage){.code = 0xE1, .dither = 1, .y_VRAM_EXP = 1};
 		p->p.tag.self = 0;
 
 		Color color = MakeColor(0, 0, 0);

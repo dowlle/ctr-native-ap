@@ -503,11 +503,13 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	gGT->pushBuffer[0].distanceToScreen_PREV = 0x100;
 	gGT->pushBuffer[0].distanceToScreen_CURR = 0x100;
 
-	// reset root thread for each bucket
-	for (int i = 0; i < NUM_BUCKETS; i++)
-	{
-		gGT->threadBuckets[i].thread = 0;
-	}
+	// Retail clears the whole bucket table and marks the buckets that keep
+	// ticking while paused.
+	memset(gGT->threadBuckets, 0, sizeof(gGT->threadBuckets));
+	gGT->threadBuckets[STATIC].boolCantPause = 1;
+	gGT->threadBuckets[WARPPAD].boolCantPause = 1;
+	gGT->threadBuckets[CAMERA].boolCantPause = 1;
+	gGT->threadBuckets[HUD].boolCantPause = 1;
 
 	// particles
 	gGT->particleList_ordinary = NULL;
@@ -686,7 +688,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	gGT->stars.distance = lev1->stars.distance;
 
 	// confetti
+	// Retail zeroes the whole 32-bit word here, clearing the adjacent field too.
 	gGT->confetti.numParticles_curr = 0;
+	gGT->confetti.unk1 = 0;
 	gGT->confetti.numParticles_max = 0;
 	gGT->confetti.unk2 = 0;
 	gGT->confetti.velY = -10;

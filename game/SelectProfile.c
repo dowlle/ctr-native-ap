@@ -155,7 +155,7 @@ void SelectProfile_DrawAdvProfile(struct AdvProgress *adv, int posX, int posY, s
 		int iconID = data.MetaDataCharacters[characterID].iconID;
 		struct SelectProfileLoadSaveObj *obj = (struct SelectProfileLoadSaveObj *)sdata->ptrLoadSaveObj;
 
-		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 10, posY + 6, &gGT->backBuffer->primMem, gGT->backBuffer->otMem.uiOT, iconColor, iconColor,
+		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 10, posY + 6, &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, iconColor, iconColor,
 		                     iconColor, iconColor, 1, 0x1000);
 
 		DecalFont_DrawLine(adv->name, posX + 0x6c, posY + 0x29, FONT_BIG, nameColor | 0xffff8000);
@@ -418,7 +418,7 @@ void SelectProfile_DrawGhostProfile(struct GhostProfile *profile, int posX, int 
 
 		DecalFont_DrawLine(sdata->lngStrings[mdLev->name_LNG], posX + 0x64, posY + 0x1e, FONT_SMALL, 0xffff801d);
 		DecalFont_DrawLine(RECTMENU_DrawTime(profile->trackTime), posX + 0x78, posY + 10, FONT_BIG, 0xffff8001);
-		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 8, posY + 5, &gGT->backBuffer->primMem, gGT->backBuffer->otMem.uiOT, sdata->ghostIconColor,
+		RECTMENU_DrawPolyGT4(gGT->ptrIcons[iconID], posX + 8, posY + 5, &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, sdata->ghostIconColor,
 		                     sdata->ghostIconColor, sdata->ghostIconColor, sdata->ghostIconColor, TRANS_50_DECAL, 0x1000);
 	}
 	else
@@ -554,9 +554,9 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 			OtherFX_Play(0, 1);
 		}
 
-		if (((tap & (BTN_CROSS | BTN_CIRCLE)) == 0) || ((numRows == 0) && (sdata->memcardAction != 1)))
+		if (((tap & (BTN_CROSS_one | BTN_CIRCLE)) == 0) || ((numRows == 0) && (sdata->memcardAction != 1)))
 		{
-			if ((tap & (BTN_TRIANGLE | BTN_SQUARE)) != 0)
+			if ((tap & (BTN_TRIANGLE | BTN_SQUARE_one)) != 0)
 			{
 				OtherFX_Play(2, 1);
 				handled = 1;
@@ -576,7 +576,7 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 	}
 	else
 	{
-		u32 cancel = (tap & (BTN_TRIANGLE | BTN_SQUARE)) != 0;
+		u32 cancel = (tap & (BTN_TRIANGLE | BTN_SQUARE_one)) != 0;
 
 		if (cancel)
 		{
@@ -586,7 +586,7 @@ u32 SelectProfile_InputLogic(struct RectMenu *menu, s16 numRows, u32 confirmFlag
 
 		handled = cancel;
 
-		if (((confirmFlags & 2) != 0) && ((tap & (BTN_CROSS | BTN_CIRCLE)) != 0))
+		if (((confirmFlags & 2) != 0) && ((tap & (BTN_CROSS_one | BTN_CIRCLE)) != 0))
 		{
 			OtherFX_Play(1, 1);
 			handled = 1;
@@ -788,7 +788,9 @@ static void SelectProfile_DrawGhostRows(struct RectMenu *menu, int rowCount, int
 	int rowCountWithEmpty = sdata->numGhostProfilesSaved + canChooseEmptySlot;
 	struct GhostProfile *profile = &sdata->ghostProfile_memcard[0];
 
-	subtitleVisible = strlen(sdata->lngStrings[data.lngIndex_LoadSave[(sdata->memcardAction * 2) + 1]]) != 0;
+	// NOTE(aalhendi): Retail tests the Adventure subtitle table here, but
+	// draws the Ghost subtitle table below.
+	subtitleVisible = strlen(sdata->lngStrings[data.lngStringsSaveLoadDelete[(sdata->memcardAction * 2) + 1]]) != 0;
 
 	if (rowCount < 7)
 	{
@@ -933,9 +935,9 @@ static int SelectProfile_ProcessOverwritePrompt(void)
 			overwriteMenu->rowSelected++;
 		}
 	}
-	else if ((tap & (BTN_CROSS | BTN_CIRCLE | BTN_TRIANGLE | BTN_SQUARE)) != 0)
+	else if ((tap & (BTN_CROSS_one | BTN_CIRCLE | BTN_TRIANGLE | BTN_SQUARE_one)) != 0)
 	{
-		if ((tap & (BTN_CROSS | BTN_CIRCLE)) != 0)
+		if ((tap & (BTN_CROSS_one | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
 			confirm = overwriteMenu->rowSelected == 0;
@@ -1163,7 +1165,7 @@ static void SelectProfile_DrawMemcardMessage(int screen, int color, int menuFlag
 			if (strlen(line) != 0)
 			{
 				int font = (i == 0) ? FONT_BIG : FONT_SMALL;
-				int y = (i == 0) ? 0x26 : 0x2e + (i * 10);
+				int y = (i == 0) ? 0x26 : 0x2e + (i * (data.font_charPixHeight[FONT_SMALL] + 2));
 				int lineColor = color | 0xffff8000;
 
 				if (((sdata->frameCounter & 4) == 0) && (i == 0))
@@ -1313,14 +1315,18 @@ static void SelectProfile_FinalizeAdventure(struct RectMenu *menu)
 
 	if (mode == 0x20)
 	{
-		if ((*SelectProfile_AllProfiles_ExitToPrevious() == 0) && (sdata->memcardAction == 0))
+		if (*SelectProfile_AllProfiles_ExitToPrevious() == 0)
 		{
 			sdata->advProfileIndex = menu->rowSelected;
+		}
+
+		if ((*SelectProfile_AllProfiles_ExitToPrevious() == 0) && (sdata->memcardAction == 0))
+		{
 			GAMEPROG_AdvPercent(&sdata->advProgress);
 			sdata->ptrDesiredMenu = &data.menuQueueLoadHub;
 			// NOTE(aalhendi): Retail 0x8004a8a0-0x8004a8c4 queues through currLEV.
 			gGT->currLEV = sdata->advProgress.HubLevYouSavedOn;
-			data.menuQueueLoadHub.rowSelected = 3;
+			data.menuGreenLoadSave.rowSelected = 3;
 		}
 		else
 		{
@@ -1440,7 +1446,7 @@ void SelectProfile_AllProfiles_MenuProc(struct RectMenu *menu)
 		{
 			if (sdata->mcScreenText == MC_SCREEN_WARNING_NOCARD)
 			{
-				if ((sdata->buttonTapPerPlayer[0] & (BTN_CROSS | BTN_CIRCLE)) != 0)
+				if ((sdata->buttonTapPerPlayer[0] & (BTN_CROSS_one | BTN_CIRCLE)) != 0)
 				{
 					OtherFX_Play(1, 1);
 					if (sdata->boolSaveCupProgress == 0)

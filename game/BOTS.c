@@ -535,7 +535,7 @@ void BOTS_SetRotation(struct Driver *bot, int useSpawnYaw)
 		bot->botData.estimateRotNav[0] = nf->rot[0];
 		rot = ratan2(CTR_MipsNegLo(dx), CTR_MipsNegLo(dz));
 		bot->botData.estimateRotNav[1] = (u8)CTR_MipsSra(CTR_MipsAddLo(rot, 0x800), 4);
-		bot->botData.estimateRotNav[2] = nf->rot[1];
+		bot->botData.estimateRotNav[2] = nf->rot[2];
 	}
 	else
 	{
@@ -1763,7 +1763,7 @@ UpdateTireColorTimer:
 		botInstance->alphaScale = (s16)CTR_MipsSra(CTR_MipsAddLo(CTR_MipsMulLo((u16)botInstance->alphaScale, 100), transparency), 8);
 	}
 
-	if (((botDriver->actionsFlagSet & ACTION_FRONT_SKID) == 0) || ((navActionFlags & (ACTION_BACK_SKID | ACTION_FRONT_SKID)) == 0))
+	if (((botDriver->actionsFlagSet & ACTION_FRONT_SKID) == 0) || ((navFrameFlags & (BOTS_NAV_FLAG_DRIFT_LEFT | BOTS_NAV_FLAG_DRIFT_RIGHT)) == 0))
 	{
 		botDriver->turbo_MeterRoomLeft = 0;
 		botDriver->botData.aiPhysics.turboMeter = 0;
@@ -2910,8 +2910,8 @@ u32 BOTS_ChangeState(struct Driver *driverVictim, int damageType, struct Driver 
 
 	if (driverAttacker != NULL && damageType != 0)
 	{
-		driverAttacker->numTimesAttacked++;
-		switch (damageType)
+		driverAttacker->numTimesAttacking++;
+		switch (reason)
 		{
 		case 1:
 			driverAttacker->numTimesBombsHitSomeone++;

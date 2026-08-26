@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_firstkey_freeze.h"
+#endif
 
 static int VehBirth_IsDoor5InstDef(struct InstDef *instDef)
 {
@@ -168,7 +171,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	}
 	else
 	{
-		if ((gGT->podiumRewardID == STATIC_KEY) && (gGT->currAdvProfile.numKeys == 1))
+		if ((gGT->podiumRewardID == STATIC_KEY) &&
+#ifdef CTR_AP
+		    AP_FirstKeyFreezeShouldArm((int)gGT->currAdvProfile.numKeys,
+		                               AP_GateCount(AP_IDX_KEY))
+#else
+		    (gGT->currAdvProfile.numKeys == 1)
+#endif
+		   )
 		{
 			doorInst = VehBirth_FindDoor5(level1);
 		}
@@ -187,6 +197,22 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 			int rotY = doorInst->rot.y;
 
 			gGT->gameMode2 |= VEH_FREEZE_DOOR;
+#ifdef CTR_AP
+			// Diagnostics only (#269, 2026-08-23 bundle inspection). The test
+			// above reads the COSMETIC numKeys rebuilt from reward bits, which a
+			// first boss win sets locally (game/222.c) before AP_ApplyItems can
+			// reconcile it, so it can read 1 with zero RECEIVED Keys. Log both
+			// counts at the moment the freeze arms so a bundle can show which
+			// path armed it. AH_Door's #51 release logs the matching release.
+			{
+				char msg[160];
+				snprintf(msg, sizeof msg,
+				         "[AP DOOR] armed first-key door freeze: podiumRewardID=%d profile_keys=%d received_keys=%d lvl=%d prev=%d\n",
+				         (int)gGT->podiumRewardID, (int)gGT->currAdvProfile.numKeys,
+				         AP_GateCount(AP_IDX_KEY), (int)gGT->levelID, (int)gGT->prevLEV);
+				AP_LogLine(msg);
+			}
+#endif
 			posBottom.x = doorInst->pos.x + VehBirth_ScaleTrig(MATH_Cos(rotY), 800) + VehBirth_ScaleTrig(MATH_Cos(rotY + 0x400), 0x200);
 			posBottom.y = doorInst->pos.y + 0x17a;
 			posBottom.z = doorInst->pos.z + VehBirth_ScaleTrig(MATH_Sin(rotY), 800) + VehBirth_ScaleTrig(MATH_Sin(rotY + 0x400), 0x200);

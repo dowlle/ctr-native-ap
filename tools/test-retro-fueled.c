@@ -47,6 +47,19 @@ int main(void)
 	expect(!AP_RetroFueledShouldKeepReserves(0, 1, 1),
 	       "lower tiers retain retail cancellation");
 
+	expect(AP_RetroFueledShouldSuppressForcedCross(1, 1, 1, 0, 0),
+	       "u-turn input frees the brake from the forced accelerator");
+	expect(AP_RetroFueledShouldSuppressForcedCross(1, 1, 0, 1, 0),
+	       "landing boost window frees the brake too");
+	expect(!AP_RetroFueledShouldSuppressForcedCross(1, 1, 1, 0, 1),
+	       "holding cross keeps the forced accelerator");
+	expect(!AP_RetroFueledShouldSuppressForcedCross(1, 0, 1, 0, 0),
+	       "no brake means the retail forced accelerator stands");
+	expect(!AP_RetroFueledShouldSuppressForcedCross(1, 1, 0, 0, 0),
+	       "plain braking keeps the retail forced accelerator");
+	expect(!AP_RetroFueledShouldSuppressForcedCross(0, 1, 1, 0, 0),
+	       "lower tiers keep the retail forced accelerator");
+
 	expect(AP_RETRO_FUELED_PAD_RESERVES == 960,
 	       "pad payload is exactly one second");
 	expect(AP_RETRO_FUELED_FIRE_LEVEL == 0x800,

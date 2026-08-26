@@ -16,7 +16,7 @@ void UI_BattleDrawHeadArrows(struct Driver *player)
 	s16 sVar3;
 	s16 sVar4;
 	s16 sVar5;
-	int iVar6;
+	s16 iVar6;
 	s16 outXY[2];
 	u32 flag;
 	u32 color;
@@ -68,7 +68,7 @@ void UI_BattleDrawHeadArrows(struct Driver *player)
 
 		// If currentDriver more than 768 units away from this player,
 		// don't draw that driver's arrow
-		if (0x90000 > playerDistance)
+		if (0x90000 >= playerDistance)
 		{
 			continue;
 		}
@@ -124,12 +124,10 @@ void UI_BattleDrawHeadArrows(struct Driver *player)
 		currTeam = currDriver->BattleHUD.teamID;
 
 		// color data
-		color = *(u32 *)data.ptrColor[PLAYER_BLUE + currTeam];
-
-		// it's all the same color
-		CtrGpu_WriteColorCode(&p->g3.r0, (color & 0xffffff) | 0x30000000);
-		CtrGpu_WriteColorCode(&p->g3.r1, color | 0x30000000);
-		CtrGpu_WriteColorCode(&p->g3.r2, color | 0x30000000);
+		u32 *gradient = (u32 *)data.ptrColor[PLAYER_BLUE + currTeam];
+		CtrGpu_WriteColorCode(&p->g3.r0, (gradient[0] & 0xffffff) | 0x30000000);
+		CtrGpu_WriteColorCode(&p->g3.r1, gradient[1] | 0x30000000);
+		CtrGpu_WriteColorCode(&p->g3.r2, gradient[2] | 0x30000000);
 
 		uint32_t *ot = gGT->pushBuffer[playerID].ptrOT;
 
@@ -249,7 +247,7 @@ LAB_8004fe8c:
 	// set pointer of the missile or warpball chasing the player
 	d->thTrackingMe = trackerTh;
 
-	if (timer != 0)
+	if (data.trackerTimer[driverid] != 0)
 	{
 		data.trackerTimer[driverid]--;
 	}

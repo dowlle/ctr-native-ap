@@ -128,7 +128,6 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 	u32 uVar5;
 	struct Driver *psVar8;
 	struct Driver *psVar9;
-	struct Driver *psVar10;
 	struct PushBuffer *pushBuffer;
 	int iVar11;
 	struct Thread *psVar12;
@@ -263,32 +262,29 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 #if defined(CTR_NATIVE)
 		for (psVar12 = gGT->threadBuckets[0].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 		{
-			psVar9 = (struct Driver *)psVar12->object;
-			psVar10 = psVar9;
-			if (psVar9->driverID == 0)
+			struct Driver *currentDriver = (struct Driver *)psVar12->object;
+
+			if (currentDriver->driverID == 0)
 			{
-			LAB_80035098:
-				psVar8 = psVar9;
-				psVar9 = psVar10;
+				psVar8 = currentDriver;
+				continue;
 			}
-			else
+
+			if (currentDriver->driverID == 1)
 			{
-				if (psVar9->driverID == 1)
-				{
-					psVar9 = psVar9;
-				}
-				psVar10 = psVar8;
-#ifdef CTR_NATIVE
-				// NOTE(aalhendi): Retail may read PSX low memory before driver 0 appears.
-				if (psVar8 == NULL)
-				{
-					continue;
-				}
-#endif
-				if ((u8)psVar9->numTimesAttacking < (u8)psVar8->numTimesAttacking)
-				{
-					goto LAB_80035098;
-				}
+				psVar9 = currentDriver;
+			}
+
+			// NOTE(aalhendi): Retail may read PSX low memory before driver 0 appears.
+			if (psVar8 == NULL)
+			{
+				continue;
+			}
+
+			if ((u8)currentDriver->numTimesAttacking < (u8)psVar8->numTimesAttacking)
+			{
+				psVar9 = psVar8;
+				psVar8 = currentDriver;
 			}
 		}
 #endif
@@ -298,7 +294,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			psVar8->quip2 = (s16)iVar4;
 		}
 
-		for (iVar4 = 0; iVar4 < NUM_BUCKETS; iVar4++)
+		for (iVar4 = 0; iVar4 < PAUSE; iVar4++)
 		{
 			if ((((gGT->gameMode1 & DEBUG_MENU) == 0) || ((gGT->threadBuckets[iVar4].boolCantPause & 1) != 0)) &&
 
@@ -753,18 +749,12 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 			{
 				visMem->visOVertSrc[playerIndex] = camDC->visOVertSrc;
 
+#if defined(CTR_NATIVE)
+				// Retail replays even a NULL source (reads PSX low memory);
+				// skip the replay on native instead of faulting.
 				if (camDC->visOVertSrc != NULL)
-				{
-					MainFrame_ReplacePackedVisList(visMem->visOVertList[playerIndex], camDC->visOVertSrc, ((level->numWaterVertices + 0x1f) >> 5) << 2);
-				}
-				else
-				{
-					memcpy(visMem->visOVertList[playerIndex], level->unk5, ((level->numWaterVertices + 0x1f) >> 5) << 2);
-				}
-			}
-			else if (visMem->visOVertSrc[playerIndex] == NULL)
-			{
-				memcpy(visMem->visOVertList[playerIndex], level->unk5, ((level->numWaterVertices + 0x1f) >> 5) << 2);
+#endif
+				MainFrame_ReplacePackedVisList(visMem->visOVertList[playerIndex], camDC->visOVertSrc, ((level->numWaterVertices + 0x1f) >> 5) << 2);
 			}
 		}
 		else
@@ -773,18 +763,12 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 			{
 				visMem->visSCVertSrc[playerIndex] = camDC->visSCVertSrc;
 
+#if defined(CTR_NATIVE)
+				// Retail replays even a NULL source (reads PSX low memory);
+				// skip the replay on native instead of faulting.
 				if (camDC->visSCVertSrc != NULL)
-				{
-					MainFrame_ReplacePackedVisList(visMem->visSCVertList[playerIndex], camDC->visSCVertSrc, ((level->numSCVert + 0x1f) >> 5) << 2);
-				}
-				else
-				{
-					memcpy(visMem->visSCVertList[playerIndex], level->unk_170, ((level->numSCVert + 0x1f) >> 5) << 2);
-				}
-			}
-			else if (visMem->visSCVertSrc[playerIndex] == NULL)
-			{
-				memcpy(visMem->visSCVertList[playerIndex], level->unk_170, ((level->numSCVert + 0x1f) >> 5) << 2);
+#endif
+				MainFrame_ReplacePackedVisList(visMem->visSCVertList[playerIndex], camDC->visSCVertSrc, ((level->numSCVert + 0x1f) >> 5) << 2);
 			}
 		}
 	}
