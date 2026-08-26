@@ -18,6 +18,7 @@
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
+#include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
@@ -375,6 +376,7 @@
 #include "../ap/ap_charswap.c"
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_turbogrant.c"
+#include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_author.c"
