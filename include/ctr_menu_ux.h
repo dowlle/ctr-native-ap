@@ -31,4 +31,9 @@ static inline const char *CTR_MenuInvalidSlotMessage(void)
 	return "Slot not found; case matters";
 }
 
+static inline const char *CTR_MenuSlotCaseHint(void)
+{
+	return "UNDERLINES MARK CAPITALS";
+}
+
 #endif

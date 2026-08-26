@@ -598,6 +598,13 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// taken unless the connected seed was built by a newer pair.
 	AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
 
+	// Use the same bottom footer position as the Options version to explain the
+	// case markers at their point of use. A newer-version notice owns this area
+	// when armed and takes priority over the static hint.
+	if (!AP_ConnUpdateNoticeActive())
+		DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
+			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+
 	// Pad hint while a row is being edited, so the controller exits are
 	// discoverable. Drawn as a footer rather than on the row itself: the text
 	// value is left-justified and grows rightward as it is typed, so there is no

@@ -182,6 +182,8 @@ void AP_DrawTitleUpdateNotice(uint32_t *ot);
 // here to find out which version the seed wants. Draws its lines centred on
 // `centreX` starting at `y`, `spacing` apart.
 void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing);
+// True while the detailed Connection-screen update notice owns the footer.
+int AP_ConnUpdateNoticeActive(void);
 
 // ── Seed completability verification (ap_verify.c) ──
 // Typed requirement comparator against an arbitrary counts array (15 AP_IDX_*
