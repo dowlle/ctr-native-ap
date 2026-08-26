@@ -868,6 +868,29 @@ static void test_within_radius(void)
 	           "overflow-boundary delta off a non-origin centre -> correctly out of range");
 }
 
+static void test_swept_weapon_contact(void)
+{
+	printf("\n-- AP_BoxMap_SegmentWithinRadius: projectile pass-through --\n");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 0, 0, 500, 0, 0, 96), 1,
+	           "fast projectile crosses box between endpoints");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 96, 0, 500, 96, 0, 96), 1,
+	           "swept capsule includes radius boundary");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 97, 0, 500, 97, 0, 96), 0,
+	           "parallel pass just outside radius misses");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -200, -200, 0, 200, 200, 0, 32), 1,
+	           "diagonal crossing hits");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -200, -150, 0, 200, 250, 0, 32), 0,
+	           "diagonal near miss stays out");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           50, 0, 0, 50, 0, 0, 96), 1,
+	           "stationary weapon falls back to point radius");
+}
+
 int main(void)
 {
 	printf("AP item box map + spawn-set bookkeeping (#109)\n");
@@ -888,6 +911,7 @@ int main(void)
 	test_pad_route_codes();
 	test_combined_232_265_sequence();
 	test_within_radius();
+	test_swept_weapon_contact();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");

@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_boxes.h"
+#endif
 
 typedef int (*MovingExplosiveCollideFunc)(struct Thread *, struct Thread *, void *, struct ScratchpadStruct *);
 
@@ -227,6 +230,11 @@ LAB_800adc08:;
 #endif
 
 	int elapsedTime = gGT->elapsedTimeMS;
+#ifdef CTR_AP
+	int oldX = inst->matrix.t[0];
+	int oldY = inst->matrix.t[1];
+	int oldZ = inst->matrix.t[2];
+#endif
 	inst->matrix.t[0] += (((int)tw->vel.x * elapsedTime) >> 5);
 	inst->matrix.t[1] += (((int)tw->vel.y * elapsedTime) >> 5);
 	inst->matrix.t[2] += (((int)tw->vel.z * elapsedTime) >> 5);
@@ -249,6 +257,17 @@ LAB_800adc08:;
 		// convert 3 rotation shorts into rotation matrix
 		ConvertRotToMatrix(&inst->matrix, &tw->dir);
 	}
+
+#ifdef CTR_AP
+	// Runtime AP boxes have no baked BSP hitbox. Test the whole movement segment
+	// before vanilla searches the BSP, then use the normal weapon explosion so
+	// sound, ownership bookkeeping and the existing blast hook remain intact.
+	if (AP_Boxes_OnWeaponMove(gGT, inst, tw->driverParent, oldX, oldY, oldZ))
+	{
+		RB_MovingExplosive_Explode(t, inst, tw);
+		return;
+	}
+#endif
 
 	posA.x = inst->matrix.t[0];
 	posA.y = inst->matrix.t[1] + -0x40;
