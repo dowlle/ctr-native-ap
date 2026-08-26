@@ -1,5 +1,10 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_boxes.h" // AP_Boxes_OnWeaponExplode: not visible via unity-build
+                                // order alone, ap_boxes.c is included after this file
+#endif
+
 static struct InstDrawPerPlayer *RB_Burst_GetIDPP(struct Instance *inst, int playerIndex)
 {
 	return (struct InstDrawPerPlayer *)((char *)inst + sizeof(struct Instance) + (playerIndex * sizeof(struct InstDrawPerPlayer)));
@@ -451,6 +456,16 @@ void RB_Burst_Init(struct Instance *weaponInst)
 	}
 
 	sps->Input1.modelID = modelID;
+
+#ifdef CTR_AP
+	// #234 / dispatcher task #18: AP boxes break from a player-caused weapon
+	// detonation too, not only kart contact. Reuses the exact blast radius
+	// just derived above rather than restating it (Lessons Learned §5); LINEAR
+	// hitRadius, not hitRadiusSquared, so AP_Boxes_OnWeaponExplode can early-out
+	// per axis before squaring (2026-08-13 fix-forward, overflow REJECT). See
+	// AP_Boxes_OnWeaponExplode (ap/ap_boxes.c) for the attribution rule.
+	AP_Boxes_OnWeaponExplode(gGT, weaponInst, tw->driverParent, sps->Input1.hitRadius);
+#endif
 
 	sps->Union.ThBuckColl.thread = weaponInst->thread;
 	sps->Union.ThBuckColl.funcCallback = RB_Burst_CollThBucket;
