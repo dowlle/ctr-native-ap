@@ -32,9 +32,11 @@ int main(void)
 	CHECK("null error safe", !CTR_MenuErrorIsInvalidSlot(NULL));
 	CHECK("InvalidSlot guidance stable",
 		strcmp(CTR_MenuInvalidSlotMessage(), "Slot not found; case matters") == 0);
+	CHECK("slot case hint stable",
+		strcmp(CTR_MenuSlotCaseHint(), "UNDERLINES MARK CAPITALS") == 0);
 
 	if (failures != 0)
 		return 1;
-	puts("PASS menu UX helpers (13 checks)");
+	puts("PASS menu UX helpers (14 checks)");
 	return 0;
 }

@@ -2475,6 +2475,11 @@ void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing)
 	AP_UpdateNoticeDrawDetail(ot, centreX, y, spacing);
 }
 
+int AP_ConnUpdateNoticeActive(void)
+{
+	return AP_UpdateNoticeRefresh();
+}
+
 void AP_NotifyAdvReward(int rewardBit)
 {
 	char msg[192];
