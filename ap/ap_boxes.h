@@ -20,6 +20,15 @@
 //      from anything this client remembers.
 //   7. The vanilla crate break animation plays on the break.
 //   8. Boxes spawn in every race type INCLUDING relic races.
+//   9. GEM CUP LEGS FOLLOW PHYSICAL-PAD ACCESS (ruled 2026-08-24 10:51 CEST,
+//      WO-A3). Access to a Gem Cup grants NO AP-box logic. A leg shows,
+//      collides with and dispatches its authored boxes only while the
+//      corresponding INDIVIDUAL race is accessible now through its randomized
+//      physical pad, so one cup may mix legs with boxes and legs without them.
+//      Rule 8 is unchanged for every non-cup race. The decision is
+//      ap_cup_box_policy.h; ap_boxes.c does the gather and applies it BEFORE
+//      the live set is built, so visuals, collision and dispatch cannot
+//      diverge.
 //
 // HOW COLLISION IS DONE, and why it is not the BSP.
 //
