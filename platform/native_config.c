@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <platform/native_config.h>
+#include <platform/native_render_scale.h>
 
 // Options live in "config.ini" in the working directory -- the same place the AP
 // layer reads "ap-config.txt" from (see ap/ap_hooks.c AP_ReadConfig). Ported from
@@ -230,6 +231,12 @@ void NativeConfig_Load(void)
 	}
 
 	fclose(f);
+
+	// Snap a hand-edited render_scale onto the supported ladder at load, the
+	// same clamp the renderer applies every frame. This keeps the menu row and
+	// the running renderer in agreement for out-of-ladder values (a persisted
+	// 9 would otherwise render at 4x while the row reads ORIGINAL).
+	g_config.renderScale = NativeRenderScale_ClampMode(g_config.renderScale);
 #ifdef CTR_AP
 	// Keep the in-memory/menu value inside the public ladder even when a player
 	// hand-edited an unsupported value. Zero is the intentional Full race token.

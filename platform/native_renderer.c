@@ -1009,10 +1009,6 @@ internal ShaderID NativeRenderer_Shader_Compile(const char *source, bool isPsxSh
 
 	strcat(extra_vs_defines, "#define VERTEX\n");
 	strcat(extra_fs_defines, "#define FRAGMENT\n");
-	if (g_cfg_bilinearFiltering)
-	{
-		strcat(extra_fs_defines, "#define BILINEAR_FILTER\n");
-	}
 
 	const char *vs_list_psx[] = {GLSL_HEADER_VERT, extra_vs_defines, gpu_shader_common, GTE_VERTEX_SHADER};
 	const char *fs_list_psx[] = {GLSL_HEADER_FRAG, extra_fs_defines, gpu_shader_common, GPU_DITHERING, source};
@@ -1118,6 +1114,11 @@ TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
 	glGenTextures(1, &newTexture);
 
 	glBindTexture(GL_TEXTURE_2D, newTexture);
+	// Known limitation: the filter is baked at creation time, so an RGBA
+	// texture created before a Texture Filtering toggle keeps its old
+	// min/mag filter (the GTE shaders' bilinear uniform is live regardless;
+	// only the AP box atlas uses this path today). Independent-review
+	// finding, accepted as cosmetic.
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_cfg_bilinearFiltering ? GL_LINEAR : GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_cfg_bilinearFiltering ? GL_LINEAR : GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

@@ -24,6 +24,18 @@ int main(void)
 	expect(NativeRenderScale_ClampMode(7) == 4, "hand-edited 7 clamps to 4x");
 	expect(NativeRenderScale_ClampMode(-3) == 1, "hand-edited negative clamps to original");
 
+	// Every clamped value lands on the menu ladder {0, 1, 2, 3, 4}, which is
+	// what keeps the options row's label and the running renderer in agreement
+	// (the loader applies this same clamp to hand-edited config values).
+	{
+		int probe;
+		for (probe = -6; probe <= 9; probe++)
+		{
+			const int m = NativeRenderScale_ClampMode(probe);
+			expect((m >= 0) && (m <= 4), "clamped mode is on the menu ladder");
+		}
+	}
+
 	// Present-path selection: only Original keeps the shipped VRAM roundtrip.
 	expect(!NativeRenderScale_ModeUsesDirectPresent(1), "original presents through VRAM");
 	expect(NativeRenderScale_ModeUsesDirectPresent(2), "2x presents directly");

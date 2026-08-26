@@ -235,6 +235,9 @@ static void TestPersistenceRoundTrip(void)
 	SetEntry("Video & QoL", "aspect_ratio", 3);
 	SetEntry("Video & QoL", "fullscreen", 1);
 	SetEntry("Video & QoL", "dithering", 0);
+	SetEntry("Video & QoL", "render_scale", 0);
+	SetEntry("Video & QoL", "smooth_scaling", 0);
+	SetEntry("Video & QoL", "texture_filtering", 1);
 #ifdef CTR_AP
 	SetEntry("Archipelago", "trap_duration", 90);
 #endif
@@ -244,6 +247,9 @@ static void TestPersistenceRoundTrip(void)
 	g_config.aspectRatio = 0;
 	g_config.fullscreen = 0;
 	g_config.dithering = 1;
+	g_config.renderScale = 1;
+	g_config.smoothScaling = 1;
+	g_config.textureFiltering = 0;
 #ifdef CTR_AP
 	g_config.trapDuration = 15;
 #endif
@@ -252,6 +258,25 @@ static void TestPersistenceRoundTrip(void)
 	EXPECT_INT("persisted aspectRatio", g_config.aspectRatio, 3);
 	EXPECT_INT("persisted fullscreen", g_config.fullscreen, 1);
 	EXPECT_INT("persisted dithering", g_config.dithering, 0);
+	EXPECT_INT("persisted renderScale (Native)", g_config.renderScale, 0);
+	EXPECT_INT("persisted smoothScaling", g_config.smoothScaling, 0);
+	EXPECT_INT("persisted textureFiltering", g_config.textureFiltering, 1);
+
+	// A hand-edited out-of-ladder render_scale snaps onto the ladder at load,
+	// keeping the menu row and the running renderer in agreement.
+	SetEntry("Video & QoL", "render_scale", 9);
+	NativeConfig_Save();
+	g_config.renderScale = 1;
+	NativeConfig_Load();
+	EXPECT_INT("out-of-ladder render_scale clamps at load", g_config.renderScale, 4);
+	SetEntry("Video & QoL", "render_scale", -5);
+	NativeConfig_Save();
+	NativeConfig_Load();
+	EXPECT_INT("negative render_scale clamps to Original at load", g_config.renderScale, 1);
+	SetEntry("Video & QoL", "render_scale", 0);
+	NativeConfig_Save();
+	NativeConfig_Load();
+	EXPECT_INT("Native render_scale survives the load clamp", g_config.renderScale, 0);
 #ifdef CTR_AP
 	EXPECT_INT("persisted trap duration", g_config.trapDuration, 90);
 	EXPECT_INT("persisted trap duration milliseconds", NativeConfig_TrapDurationMs(), 90000);

@@ -257,6 +257,11 @@ void Platform_Init(const char *title, int width, int height)
 
 	s_platformInitialized = 1;
 
+	// Apply the persisted texture-filtering choice before the renderer builds
+	// its shaders and first textures; the per-frame sync in Platform_BeginFrame
+	// keeps later menu/F3 edits live.
+	g_cfg_bilinearFiltering = g_config.textureFiltering ? 1 : 0;
+
 	if (!NativeRenderer_InitialiseRender(windowName, width, height, g_config.fullscreen))
 	{
 		Platform_LogError("[CTR Native] Failed to initialise window\n");
