@@ -693,7 +693,23 @@ CheckJumpButtons:
 
 		// Assume you're holding Cross, because
 		// you have Reserves and you aren't slowing down
-		cross = 0x10;
+#ifdef CTR_AP
+		// Retro-Fueled U-turn, second half: keeping reserves through the
+		// U-turn (above) is not enough on its own. While reserves are
+		// nonzero this line pretends the player is holding Cross, and the
+		// Square-held brake/reverse path below only engages when cross is
+		// zero -- so the retained reserves would lock the kart to the
+		// accelerator and the U-turn could never start. The reference
+		// module patches this same immediate (holdingX_withReserves) to
+		// zero while the U-turn input is held without Cross; mirror that.
+		if (!AP_RetroFueledShouldSuppressForcedCross(
+		        AP_CapabilityRetroFueled(driver), square != 0,
+		        (buttonsHeld & BTN_DOWN) != 0, driver->jump_LandingBoost,
+		        cross != 0))
+#endif
+		{
+			cross = 0x10;
+		}
 	}
 
 
