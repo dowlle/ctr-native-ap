@@ -14,6 +14,7 @@
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 
 struct GameTracker;
+struct Instance;
 
 // Called once per frame from the main loop (CTR_Main in MainMain.c).
 void AP_OnFrame(struct GameTracker *gGT);
@@ -309,6 +310,13 @@ int AP_WarpPadRewardGhost(int globalBit);
 // to keep the caller's default colour (own gem/trophy/token/key, ghosted peer
 // rewards, unscouted). Caller applies it to relic + gem + marker models.
 int AP_WarpPadRewardTint(int globalBit);
+
+// Re-present a token/challenge ceremony prop with the scouted reward at this
+// location. Returns 0 when the vanilla token must remain as the safe fallback.
+int AP_CeremonyRewardProp(struct Instance *prop, int globalBit);
+
+// Fixed-point ceremony scale multiplier for the resolved reward (0x1000 = 1x).
+int AP_WarpPadRewardScale(int globalBit);
 
 // ── Requirement-hologram relic tint (closed pad) ──
 // The relic icon shown on a LOCKED pad advertises that pad's relic REQUIREMENT.

@@ -591,6 +591,95 @@ int AP_WarpPadRewardTint(int globalBit)
 	return AP_RewardTintForCat(cat);
 }
 
+int AP_WarpPadRewardScale(int globalBit)
+{
+	AP_ItemCat cat = AP_CAT_NONE;
+	int kind = AP_PadDisplayForBit(globalBit, &cat, NULL);
+
+	if (kind != AP_PAD_DISP_VANILLA && kind != AP_PAD_DISP_GHOST)
+		return 0x1000;
+	return AP_RewardScaleForCat(cat);
+}
+
+int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
+{
+	struct GameTracker *gGT;
+	int model;
+	int ghost;
+	int tint;
+
+	if (prop == 0 || !ctr_cfg_active())
+		return 0;
+
+	model = AP_WarpPadRewardModel(globalBit);
+	if (model < 0)
+		return 0;
+	gGT = sdata->gGT;
+	if (gGT == 0 || gGT->modelPtr[model] == 0)
+		return 0;
+
+	ghost = AP_WarpPadRewardGhost(globalBit);
+	tint = AP_WarpPadRewardTint(globalBit);
+	prop->model = gGT->modelPtr[model];
+	prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT | GHOST_DRAW_TRANSPARENT);
+	prop->alphaScale = 0;
+
+	switch (prop->model->id)
+	{
+	case STATIC_RELIC:
+		prop->colorRGBA = tint ? tint : 0x020a5ff0;
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	case STATIC_CRYSTAL:
+		prop->colorRGBA = tint ? tint : 0x0d22fff0;
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	case STATIC_TOKEN:
+	{
+		int tg = AP_WarpPadRewardTokenColour(globalBit);
+		if (tg < 0)
+			tg = data.metaDataLEV[gGT->levelID].ctrTokenGroupID;
+		prop->colorRGBA = ((u32)data.AdvCups[tg].color[0] << 0x14) |
+		                  ((u32)data.AdvCups[tg].color[1] << 0xc) |
+		                  ((u32)data.AdvCups[tg].color[2] << 0x4);
+		prop->flags |= (DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+		break;
+	}
+	case STATIC_GEM:
+	{
+		int gc = AP_WarpPadRewardGemColour(globalBit);
+		if (gc >= 0)
+			prop->colorRGBA = ((u32)data.AdvCups[gc].color[0] << 0x14) |
+			                  ((u32)data.AdvCups[gc].color[1] << 0xc) |
+			                  ((u32)data.AdvCups[gc].color[2] << 0x4);
+		else
+			prop->colorRGBA = tint;
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	}
+	case STATIC_AP:
+		prop->colorRGBA = tint;
+		prop->alphaScale = AP_MARKER_TINT_STRENGTH;
+		break;
+	case STATIC_KEY:
+		prop->colorRGBA = 0x0dca6000;
+		prop->flags |= USE_SPECULAR_LIGHT;
+		break;
+	default:
+		prop->colorRGBA = 0;
+		break;
+	}
+
+	if (ghost)
+	{
+		prop->colorRGBA = 0;
+		prop->alphaScale = AP_PAD_GHOST_ALPHA;
+		prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+		prop->flags |= GHOST_DRAW_TRANSPARENT;
+	}
+	return 1;
+}
+
 // Colour index of the OWN CTR Token scouted here (see header). The token item id
 // encodes its colour: ids AP_ITEM_BASE+4..8 = R,G,B,Y,P (AP_IDX_TOKEN_RED = 4),
 // which lines up with data.AdvCups[0..4]. Foreign / unscouted / non-token -> -1.
