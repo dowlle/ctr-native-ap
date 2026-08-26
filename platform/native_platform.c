@@ -9,7 +9,6 @@
 #include "platform/native_log.h"
 #include "platform/native_perf.h"
 #include "platform/native_renderer.h"
-#include "platform/native_render_scale.h"
 #include "platform/native_config.h"
 #include "platform/native_replay_scheduler.h"
 #include "platform/native_savestate.h"
@@ -221,8 +220,10 @@ internal void Platform_HandleKey(int key, char down)
 			Platform_TakeScreenshot();
 			break;
 		case SDL_SCANCODE_F3:
-			g_cfg_bilinearFiltering ^= 1;
-			Platform_LogWarn("[CTR Native] filtering mode: %d\n", g_cfg_bilinearFiltering);
+			// Debug toggle for the same option the menu edits; the per-frame
+			// sync in Platform_BeginFrame pushes it into the renderer.
+			g_config.textureFiltering = !g_config.textureFiltering;
+			Platform_LogWarn("[CTR Native] filtering mode: %d\n", g_config.textureFiltering ? 1 : 0);
 			break;
 		case SDL_SCANCODE_F5:
 			NativeSaveState_RequestSave();
@@ -305,6 +306,11 @@ void Platform_Shutdown(void)
 
 void Platform_BeginFrame(void)
 {
+	// Texture filtering follows the persisted option (menu row or the F3 debug
+	// toggle); the GTE shaders read the renderer flag per draw, so this sync is
+	// all a live edit needs.
+	g_cfg_bilinearFiltering = g_config.textureFiltering ? 1 : 0;
+
 	// Sync g_config.fullscreen with actual window state (ported from
 	// thecodingbob/ctr-native, branch fullscreen-option). The option can be set
 	// in the options menu or toggled with F11 / Alt+Enter; this keeps the
@@ -389,13 +395,13 @@ void Platform_EndScene(void)
 	// NOTE(aalhendi): Keep the displayed VRAM region current for screen-copy
 	// effects without forcing a CPU readback.
 	NativeRenderer_StoreFrameBuffer(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
-	if (NativeRenderScale_Factor() > 1)
+	if (NativeRenderer_UsesDirectPresent())
 	{
-		// Internal render-scale experiment: the PSX-sized VRAM copy above keeps
-		// every feedback effect fed, but the presented image comes straight
-		// from the scaled main target instead of the 15-bit VRAM roundtrip.
-		// The pinned VRAM-display paths earlier in this function deliberately
-		// keep presenting VRAM: their content exists only there.
+		// Render-scale modes other than Original: the PSX-sized VRAM copy above
+		// keeps every feedback effect fed, but the presented image comes
+		// straight from the scaled main target instead of the 15-bit VRAM
+		// roundtrip. The pinned VRAM-display paths earlier in this function
+		// deliberately keep presenting VRAM: their content exists only there.
 		NativeRenderer_PresentMainRenderTarget();
 	}
 	else

@@ -18,6 +18,9 @@ NativeConfig g_config = {
 	false, // fullscreen (default windowed)
 	0,     // aspectRatio (0 = 4:3, vanilla)
 	true,  // dithering (default on: PSX-authentic)
+	1,     // renderScale (1 = original PSX raster, the shipped default)
+	true,  // smoothScaling (default on: linear presentation at scaled modes)
+	false, // textureFiltering (default off: PSX-authentic point sampling)
 	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
 	-1,    // volMusic
 	-1,    // volVoice
@@ -53,6 +56,14 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "dithering",                "Dithering",                    CFG_BOOL, &g_config.dithering},
 	{"Video & QoL", "fullscreen",               "Fullscreen",                   CFG_BOOL, &g_config.fullscreen},
 	{"Video & QoL", "aspect_ratio",             "Aspect Ratio",                 CFG_ENUM, &g_config.aspectRatio},
+	// Render-scale ladder (CFG_ENUM): 1 = ORIGINAL (shipped raster + VRAM
+	// present, the default), 2/3/4 = fixed multiples, 0 = NATIVE (window-sized
+	// raster). Stored as the raw mode value; the renderer clamps out-of-ladder
+	// hand edits (NativeRenderScale_ClampMode) and applies edits on the next
+	// frame boundary, so none of these rows needs a menu-exit hook.
+	{"Video & QoL", "render_scale",             "Render Scale",                 CFG_ENUM, &g_config.renderScale},
+	{"Video & QoL", "smooth_scaling",           "Smooth Scaling",               CFG_BOOL, &g_config.smoothScaling},
+	{"Video & QoL", "texture_filtering",        "Texture Filtering",            CFG_BOOL, &g_config.textureFiltering},
 	// Audio section: config-file-only. Hidden from the in-game options menu (gated
 	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
 	// through the vanilla audio screen and a CFG_INT would render there as a bare
