@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005607c-0x80056220.
 void UI_CupStandings_FinalizeCupRanks(void)
 {
@@ -526,7 +530,17 @@ void UI_CupStandings_InputAndDraw(void)
 			int cupTrack = gGT->cup.trackIndex;
 
 			// If this is not the last race in the cup
+#ifdef CTR_CUSTOM_TRACKS
+			// Baby T Park event destination: a redirected cup ran ONE race, so
+			// it is complete at trackIndex 1 and falls through to the gem award
+			// below instead of loading a leg 1 that does not exist for it. The
+			// predicate is the same one AH_WarpPad.c used to redirect the entry,
+			// reading the same config, so the two forks cannot disagree -- a cup
+			// that became a single race always completes as one.
+			if (!CustomTrack_CupIsComplete(cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0, cupTrack))
+#else
 			if (cupTrack < 4)
+#endif
 			{
 				// If not in Arcade or VS cup
 				if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
@@ -558,6 +572,21 @@ void UI_CupStandings_InputAndDraw(void)
 				}
 
 				gGT->cup.trackIndex = 0;
+
+#ifdef CTR_CUSTOM_TRACKS
+				// Undo the event destination's 7-lap override the moment its cup
+				// is over. Nothing in adventure re-derives numLaps between races,
+				// so without this the next trophy/boss/relic race entered from
+				// the hub would inherit 7 laps. 3 is the boot default
+				// (MainMain.c) and what MM_MenuFlow.c writes on every main-menu
+				// row press, so it is the correct resting value. Written here
+				// rather than only in the AP frame watcher so a clean build with
+				// the guard on is equally correct.
+				if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+				{
+					gGT->numLaps = 3;
+				}
+#endif
 
 				// Array with the final ranking of each player
 				ranks = &data.cupPositionPerPlayer[0];

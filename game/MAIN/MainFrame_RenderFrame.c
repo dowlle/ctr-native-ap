@@ -39,7 +39,20 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	{
 		if (gGT->visMem1 != 0)
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			// Every retail LEV has an animated-texture table, so retail can
+			// dereference ptr_anim_tex unconditionally. A custom track need not:
+			// CrashTeamEditor emits a null ptr_anim_tex for a track that authored
+			// no animated textures, and CTR_CycleTex_LEV walks the list from the
+			// first frame the level renders, so the null goes straight to a crash
+			// on load. Written as an extra term on the existing condition rather
+			// than a nested if so the guard-off preprocessor output is unchanged
+			// down to the brace. (Baby T Park itself has a non-null table; the
+			// guard covers the custom-track class, not this one track.)
+			if (lev != 0 && lev->ptr_anim_tex != 0)
+#else
 			if (lev != 0)
+#endif
 			{
 				CTR_CycleTex_LEV(lev->ptr_anim_tex, gGT->timer);
 			}

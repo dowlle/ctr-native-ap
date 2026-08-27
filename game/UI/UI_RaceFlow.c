@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005572c-0x80055840.
 void UI_RaceEnd_GetDriverClock(struct Driver *driver)
 {
@@ -453,6 +457,17 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 
 		if ((gGT->gameMode1 & ADVENTURE_CUP) != 0)
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			// Undo the event destination's lap override on the abandon path too.
+			// The cup-end restore in UI_CupStandings.c only runs when the cup is
+			// played out; a player who quits the 7-lap race would otherwise carry 7
+			// laps into the next adventure race.
+			if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+			{
+				gGT->numLaps = 3;
+			}
+#endif
+
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
 			s16 cupReturn = GEM_STONE_VALLEY;
 #ifdef CTR_AP
