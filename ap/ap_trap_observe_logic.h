@@ -72,6 +72,13 @@ static int AP_TrapCrateRewardSuppressed(int effectActive, int driverIsLocal,
 	return effectActive && driverIsLocal && !driverIsBot;
 }
 
+// Boost Blocker rejects every new boost grant for the local receiver while
+// leaving AI and remote/non-local drivers on the untouched engine path.
+static int AP_TrapBoostGrantAllowed(int effectActive, int driverIsLocal)
+{
+	return !effectActive || !driverIsLocal;
+}
+
 // ── Engine-natural completion ──
 enum AP_TrapOutcome
 {

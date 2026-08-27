@@ -82,7 +82,8 @@ void AP_TrapDebugKeys(void);
 
 // Parse one ap-config.txt line for a trap test trigger (prefix "debug_trap=").
 // Called from AP_ReadConfig (ap_hooks.c) for each config line. Recognised values:
-//   icy | lowgrav | usf | boost | fp | empty | all  -> arms that trap at connect,
+//   icy | lowgrav | usf | boost | fp | empty | blocker | wireframe | all
+// arms that trap at connect,
 // so it runs its real schedule on the next eligible map. Unknown values are ignored.
 // Returns 1 if the line was consumed, 0 otherwise.
 int AP_TrapConfigLine(const char *line);
@@ -150,6 +151,11 @@ void AP_TrapForgetLevelInstances(void);
 // only its reward for the local trap receiver. Other crate/object classes never
 // enter this hook.
 int AP_TrapSuppressCrateReward(struct Driver *driver);
+
+// VehFire_Increment's first gate. Returns zero while Boost Blocker owns the local
+// kart, suppressing pads, powerslides, hang time, rev boosts and item boosts at
+// their shared choke point. AI and non-local drivers always pass through.
+int AP_TrapAllowBoostGrant(struct Driver *driver);
 
 // Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw

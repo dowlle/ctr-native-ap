@@ -94,6 +94,12 @@ static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
 
+// Wireframe ownership preserves the renderer's pre-trap debug setting. While the
+// trap owns it the value is forced every frame, then restored exactly once.
+extern int g_dbg_wireframeMode;
+static int g_wireframe_owned = 0;
+static int g_wireframe_previous = 0;
+
 // Map-boundary tracking. levelID alone is not enough: a restart and a Cup leg onto
 // the same track keep the id, so the load itself has to count as a boundary.
 static int g_epoch = 0;
@@ -136,6 +142,12 @@ int AP_TrapSuppressCrateReward(struct Driver *driver)
 	                                    AP_TrapIsLocal(driver),
 	                                    driver != 0 &&
 	                                        (driver->actionsFlagSet & ACTION_BOT) != 0);
+}
+
+int AP_TrapAllowBoostGrant(struct Driver *driver)
+{
+	return AP_TrapBoostGrantAllowed(g_active[AP_TRAP_BOOST_BLOCKER],
+	                                AP_TrapIsLocal(driver));
 }
 
 static const char *AP_TrapName(int effect)
@@ -857,7 +869,9 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "reroll"))  AP_TrapReceive(AP_TRAP_ITEM_REROLL);
 	else if (!strcmp(v, "use"))     AP_TrapReceive(AP_TRAP_FORCED_USE);
 	else if (!strcmp(v, "empty"))   AP_TrapReceive(AP_TRAP_EMPTY_CRATES);
-	else if (!strcmp(v, "reverse")) AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
+	else if (!strcmp(v, "blocker"))   AP_TrapReceive(AP_TRAP_BOOST_BLOCKER);
+	else if (!strcmp(v, "wireframe")) AP_TrapReceive(AP_TRAP_WIREFRAME);
+	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -934,6 +948,36 @@ static void AP_TrapApplyCamera(struct GameTracker *gGT, int wantFP)
 		gGT->cameraDC[0].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
 		g_fp_applied = 0;
 	}
+}
+
+static void AP_TrapApplyWireframe(int wantWireframe)
+{
+	if (wantWireframe)
+	{
+		if (!g_wireframe_owned)
+		{
+			g_wireframe_previous = g_dbg_wireframeMode;
+			g_wireframe_owned = 1;
+		}
+		g_dbg_wireframeMode = 1;
+	}
+	else if (g_wireframe_owned)
+	{
+		g_dbg_wireframeMode = g_wireframe_previous;
+		g_wireframe_owned = 0;
+	}
+}
+
+static void AP_TrapApplyBoostBlocker(struct Driver *local, int active)
+{
+	if (!active || local == 0)
+		return;
+
+	// Reserves are the engine's fire lifetime and speed-add gate. Clear both the
+	// lifetime and its tier every frame so activation deletes existing fire and
+	// no later write outside VehFire_Increment can keep a stale tier alive.
+	local->reserves = 0;
+	local->fireSpeedCap = 0;
 }
 
 // Near-stationary accumulator for the reverse-recovery guard. Kept on the frame
@@ -1040,6 +1084,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
 		AP_TrapApplyCamera(gGT, 0);
+		AP_TrapApplyWireframe(0);
 		g_recover_ms = 0;
 		g_trap_lead_ms = 0;
 		g_trap_reroll_excluded = -1;
@@ -1082,6 +1127,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapTrackRecovery(local, w.elapsedMs);
 	AP_TrapApplyCamera(gGT, g_active[AP_TRAP_FIRSTPERSON]);
+	AP_TrapApplyWireframe(g_active[AP_TRAP_WIREFRAME]);
+	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
 }
 
 // ── Engine physics/input call-sites ──

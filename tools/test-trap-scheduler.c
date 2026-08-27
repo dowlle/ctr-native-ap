@@ -183,22 +183,22 @@ static void case_inactive_scaffold_retained(void)
 
 	AP_TrapSchedReset(&s);
 	expect("scaffold is disabled by default",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_WIREFRAME), 0);
-	AP_TrapSchedReceive(&s, AP_TRAP_WIREFRAME);
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_NITRO), 0);
+	AP_TrapSchedReceive(&s, AP_TRAP_NITRO);
 	run(&s, &w, 200);
 	drain(&s);
 	expect("scaffold logs exactly one inactive line",
-	       count_ev(AP_TRAP_EV_INACTIVE, AP_TRAP_WIREFRAME), 1);
+	       count_ev(AP_TRAP_EV_INACTIVE, AP_TRAP_NITRO), 1);
 	expect("scaffold does not use the armed presentation",
-	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_WIREFRAME), 0);
-	expect("scaffold never fires", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_WIREFRAME), 0);
-	expect("scaffold stays armed", AP_TrapSchedArmedCount(&s, AP_TRAP_WIREFRAME), 1);
+	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_NITRO), 0);
+	expect("scaffold never fires", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_NITRO), 0);
+	expect("scaffold stays armed", AP_TrapSchedArmedCount(&s, AP_TRAP_NITRO), 1);
 
 	// Wave 2 flips one effect on without touching the descriptor table.
-	AP_TrapSchedEnable(&s, AP_TRAP_WIREFRAME, 1);
+	AP_TrapSchedEnable(&s, AP_TRAP_NITRO, 1);
 	run_ms(&s, &w, 1100);
 	expect("enabling the effect activates the retained copy",
-	       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+	       AP_TrapSchedActive(&s, AP_TRAP_NITRO), 1);
 }
 
 // Map-lifetime effects are not on a clock; fixed-duration effects are; and an
@@ -700,7 +700,7 @@ static void case_identity_reset(void)
 	// And the reset restores the shipped roster, so a scheduler that had wave 2
 	// effects switched on does not carry them into the next session.
 	expect("reset restores the default roster",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_BOOST_BLOCKER), 0);
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_NITRO), 0);
 
 	// Nothing lingers to fire on the next connection.
 	run_ms(&s, &hub, 5000);
@@ -780,8 +780,8 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010109, AP_TRAP_FORCED_USE, 1},
 	{35010110, AP_TRAP_EMPTY_CRATES, 1},
 	{35010111, AP_TRAP_WEAKENED_KART, 0},
-	{35010112, AP_TRAP_BOOST_BLOCKER, 0},
-	{35010113, AP_TRAP_WIREFRAME, 0},
+	{35010112, AP_TRAP_BOOST_BLOCKER, 1},
+	{35010113, AP_TRAP_WIREFRAME, 1},
 	{35010114, AP_TRAP_NITRO, 0},
 	{35010115, AP_TRAP_REVERSE_STEERING, 1},
 	{35010116, AP_TRAP_RED_POTION, 0},
@@ -847,12 +847,13 @@ static void case_item_id_map(void)
 	}
 
 	// The five wave 1 effects, wave 2 batch 1's four, and Flatten as the batch 2
-	// opener have a native effect today. The other nine identities are reserved.
+	// opener plus this batch's Boost Blocker and Wireframe have native effects.
+	// The other six identities are reserved.
 	{
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("exactly eleven identities are buildable", buildable, 11);
+		expect("exactly thirteen identities are buildable", buildable, 13);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -928,7 +929,7 @@ static void case_reserved_identity_receipt(void)
 		       count_ev(AP_TRAP_EV_INACTIVE, effect), 1);
 		expect("reserved identity never fires", count_ev(AP_TRAP_EV_FIRE, effect), 0);
 	}
-	expect("every reserved identity is retained armed", armedKept, 8);
+	expect("every reserved identity is retained armed", armedKept, 6);
 
 	// The buildable ones behaved normally in the same batch. This counts what
 	// actually ran rather than assuming all nine, because two ruled behaviours
@@ -941,7 +942,7 @@ static void case_reserved_identity_receipt(void)
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 6);
+	expect("buildable identities still run in the same batch", fired, 7);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1076,10 +1077,11 @@ static void case_wave2_batch1_roster(void)
 		// Batch 2 opener, once the squish damage state was correctly identified.
 		AP_TRAP_FLATTEN,
 		AP_TRAP_EMPTY_CRATES,
+		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME,
 	};
 	static const int scaffold[] = {
 		AP_TRAP_WEAKENED_KART,
-		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME, AP_TRAP_NITRO,
+		AP_TRAP_NITRO,
 		AP_TRAP_RED_POTION, AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
 		AP_TRAP_WARPBALL_AMBUSH, AP_TRAP_DEMO_CAMERA,
 	};
@@ -1091,7 +1093,7 @@ static void case_wave2_batch1_roster(void)
 	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
 		expect("excluded effect is still a scaffold",
 		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
-	expect("the roster is eleven active effects and nine scaffolds",
+	expect("the roster is thirteen active effects and seven scaffolds",
 	       (int)(sizeof active / sizeof active[0]) +
 	           (int)(sizeof scaffold / sizeof scaffold[0]),
 	       AP_TRAP_EFFECT_COUNT);
@@ -1804,6 +1806,68 @@ static void case_empty_crates_lifecycle(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 1);
 }
 
+static void case_boost_blocker_policy(void)
+{
+	expect("Boost Blocker rejects a local boost grant",
+	       AP_TrapBoostGrantAllowed(1, 1), 0);
+	expect("Boost Blocker leaves AI and non-local boost grants alone",
+	       AP_TrapBoostGrantAllowed(1, 0), 1);
+	expect("boost grants pass when Boost Blocker is inactive",
+	       AP_TrapBoostGrantAllowed(0, 1), 1);
+}
+
+static void case_boost_blocker_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_BOOST_BLOCKER);
+	run_ms(&s, &hub, 2000);
+	expect("Boost Blocker stays armed in a hub",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_BOOST_BLOCKER), 1);
+
+	run_ms(&s, &race, 1100);
+	expect("Boost Blocker activates after its race warning",
+	       AP_TrapSchedActive(&s, AP_TRAP_BOOST_BLOCKER), 1);
+	run_ms(&s, &race, 10000);
+	AP_TrapSchedReceive(&s, AP_TRAP_BOOST_BLOCKER);
+	run_ms(&s, &race, 100);
+	expect("a duplicate refreshes Boost Blocker without stacking",
+	       slots_used(&s), 1);
+	run_ms(&s, &race, 10000);
+	expect("refreshed Boost Blocker still owns its full new window",
+	       AP_TrapSchedActive(&s, AP_TRAP_BOOST_BLOCKER), 1);
+	run_ms(&s, &race, 5100);
+	expect("Boost Blocker clears after fifteen refreshed seconds",
+	       AP_TrapSchedActive(&s, AP_TRAP_BOOST_BLOCKER), 0);
+}
+
+static void case_wireframe_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_WIREFRAME);
+	run_ms(&s, &race, 1100);
+	expect("Wireframe activates after its warning",
+	       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+
+	AP_TrapSchedReceive(&s, AP_TRAP_WIREFRAME);
+	run_ms(&s, &race, 2000);
+	expect("a Wireframe duplicate queues for a later map",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_WIREFRAME), 1);
+	race.mapEpoch++;
+	AP_TrapSchedStep(&s, &race);
+	expect("active Wireframe clears at the loading boundary",
+	       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 0);
+	run_ms(&s, &race, 1100);
+	expect("queued Wireframe activates on the next map",
+	       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -1852,6 +1916,9 @@ int main(void)
 	case_client_trap_duration_policy();
 	case_empty_crates_reward_policy();
 	case_empty_crates_lifecycle();
+	case_boost_blocker_policy();
+	case_boost_blocker_lifecycle();
+	case_wireframe_lifecycle();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;
