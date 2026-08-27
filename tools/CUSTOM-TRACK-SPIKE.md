@@ -1,24 +1,26 @@
-# Custom-track loader — Baby T Park event spike (rung 1)
+# Custom-track loader — Baby T Park event spike (rungs 1 + 2a)
 
 Build-time flag: `CTR_CUSTOM_TRACKS`. Off by default; with it off the build is
 identical to `main` (see [Guard-off identity](#guard-off-identity) for the
 evidence).
 
 With the flag on and a `[CustomTracks]` section in `config.ini`, the game
-hash-verifies one community custom track's `.lev`/`.vrm` pair and serves those
-bytes in place of an arcade track's BIGFILE subfile group. Separately, a runtime
-flag turns the configured Gem Cup destination into a single 7-lap race on that
-track, awarding its gem through the cup's own award path.
+hash-verifies one community custom track's `.lev`/`.vrm` pair, turns the
+configured Gem Cup destination into a single 7-lap race on that track, and
+serves the custom bytes **for that race only**. The arcade slot the track
+borrows keeps its retail race everywhere else in the same session.
 
 ## What this rung does and does not do
 
-Does: load a verified custom track, guard the one custom-track crash the engine
-has on the render path, expand the MEMPACK arena so a >2 MiB track fits, and
-wire the Purple Gem Cup destination to a single race.
+Does: load a verified custom track for the event race only, guard the one
+custom-track crash the engine has on the render path, expand the MEMPACK arena
+so a >2 MiB track fits, wire the Purple Gem Cup destination to a single race,
+make the AP-box gate on that race a deliberate answer, and correct the cup leg
+counter for a one-leg cup.
 
-Does not: read anything from slot_data (rung 2 replaces the config parse with
-it, see [Rung-2 seam](#rung-2-seam)), place AP boxes or CTR letters on the custom
-track, handle relic races on it, or load the track's music (`.sca`).
+Does not: read anything from slot_data (rung 2b replaces the config parse with
+it), supply AP-box or CTR-letter **placement** for the custom track, handle
+relic races on it, or load the track's music (`.sca`).
 
 ## Configuration
 
@@ -35,9 +37,10 @@ custom_track_vrm_sha256 = 2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de4350837
 custom_track_lev_sha256 = 96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8
 
 ; --- event destination ---
-custom_track_race      = 1
-custom_track_race_cup  = 4
-custom_track_race_laps = 7
+custom_track_race       = 1
+custom_track_race_cup   = 4
+custom_track_race_laps  = 7
+custom_track_race_boxes = 1
 ```
 
 | Key | Meaning | Default |
@@ -48,9 +51,57 @@ custom_track_race_laps = 7
 | `custom_track_race` | 1 turns the event destination on | 0 |
 | `custom_track_race_cup` | which cup's destination is replaced | 4 (Purple Gem Cup) |
 | `custom_track_race_laps` | lap count for the single race, 1..7 | 7 |
+| `custom_track_race_boxes` | 1 allows AP boxes on the event race | 1 (the ruled default) |
 
 Missing keys, an empty value, no `[CustomTracks]` section, or no `config.ini` at
 all each mean "no custom track", and the build then behaves like retail.
+
+`custom_track_race = 0` verifies the content and then serves nothing, because
+serving is conditional on the event race being the load in flight (below) and
+with the race off no load qualifies. It is useful as a config/hash check and
+nothing else. There is deliberately **no** "map this track globally" mode: that
+was rung 1's behaviour and rung 2a removed it.
+
+### Serving is conditional on the event race
+
+The custom track borrows an arcade slot, but the ruling replaces one
+destination, not the slot. So the override is keyed on the load in flight, not
+on the subfile index: a race pad to the host track loads BIGFILE bytes in the
+very same session where the event cup loads custom bytes, from the same eight
+subfile indices.
+
+Three facts decide it, read from `gGT` inside `LOAD_ReadFile_ex`: the level being
+loaded, whether `ADVENTURE_CUP` is set, and `cup.cupID`. All three are committed
+before the first subfile read of any level, in one call chain:
+
+| Order | What | Where |
+|---|---|---|
+| 1 | `gGT->cup.cupID` | `AH_WarpPad.c`, at the pad, frames earlier |
+| 2 | `gGT->gameMode1` gets `AddBitsConfig0` | `MainMain.c`, `LOAD_REQUESTED` handling |
+| 3 | `gGT->levelID` | `LOAD_Level.c`, in `LOAD_LevelFile` |
+| 4 | ten-stage loader armed | `LOAD_Level.c` |
+
+Arcade-track subfiles are requested only in ten-stage **stage 6**, at least six
+frames later, and `LOAD_LevelFile` has exactly one caller. There is no prefetch,
+streaming, speculative or background read of an arcade-track group anywhere else
+in the tree: every other queue index is a fixed `BI_*` region, and hub streaming
+is hard-guarded to hub levelIDs. The main-menu track preview reads BIGFILE
+sectors directly and never enters this path at all, so a custom track has no
+preview video.
+
+`ADVENTURE_CUP` is the load-bearing term. It has one setter (the gem-cup branch
+of the warp pad) and is cleared through `Loading.OnBegin.RemBitsConfig0` on every
+exit — cup played out, exit to map, pause-quit — which lands in `MainMain.c`
+before the next load starts. `gGT->cup.cupID`, by contrast, is **never reset** and
+holds its last value forever, so it must never be tested on its own. Arcade cups
+cannot reach the predicate at all: they signal through `CUP_ANY_KIND` in
+`gameMode2` and never set `ADVENTURE_CUP`.
+
+Two known holes, neither reachable today: `ap/ap_retail_asset.c` reads BIGFILE
+sectors directly and would bypass this gate if it ever gained a track-index
+caller, and the gate does not test the `BigHeader` pointer because this build
+loads exactly one archive (`ptrBigfile1` and `ptrBigfileCdPos_2` are the same
+object). A second archive would make a subfile index ambiguous.
 
 ### Why the levelID must be 0..17
 
@@ -130,9 +181,32 @@ Keeping the cup identity carries two consequences worth knowing:
   rather than 7, and `LOAD_Assets.c` forces the roster to Ripper Roo, Papu Papu,
   Komodo Joe and Pinstripe. Both key on `cupID == 4`. This is inherited, not
   chosen; breaking it would mean touching four more files.
-- **The HUD reads "TRACK 1/4".** `UI_RaceFlow.c` prints the leg counter from the
-  cup machinery, which still thinks it is on leg 1 of 4. Cosmetic, and left alone
-  in rung 1 rather than adding a fifth touch point.
+- **The HUD used to read "TRACK 1/4".** Fixed in rung 2a: both sites — the
+  pre-race banner in `UI_RaceFlow.c` and the standings screen in
+  `UI_CupStandings.c` — take the denominator from the same predicate as the
+  completion fork, so a one-leg cup reads "TRACK 1/1". The `"4"` was a literal
+  inside the `sprintf` format string in both places.
+
+### AP boxes on the event race
+
+The event race sets `ADVENTURE_CUP`, so `ap_boxes.c` treated it as a gem-cup leg
+and gated its boxes on `ctr_cfg_warp_phys(level)` — the physical retail pad that
+happens to host the mapped slot, which has nothing to do with the event. That
+fall-through is now an explicit verdict in the policy header:
+
+| Verdict | Meaning |
+|---|---|
+| `CTR_CT_BOX_UNCHANGED` | not the event race; the existing cup-leg policy stands |
+| `CTR_CT_BOX_ALLOW` | the event race, boxes on — takes `ap_boxes.c`'s non-cup path, so no unrelated pad gates it |
+| `CTR_CT_BOX_DENY` | the event race, boxes off — the set is stood down, so nothing spawns and no check can dispatch |
+
+Default is ALLOW, per the ruled check set. **What ALLOW does not yet buy:**
+placement still resolves through the host slot's retail identity
+(`AP_BoxMap_ApTrack` maps the mapped levelID to the retail track's AP-track id),
+so until the apworld descriptor supplies this track's own placements, allowing
+boxes spawns the *retail* track's boxes at *retail* coordinates on custom
+geometry. That is why the verdict is configurable rather than hard-coded — the
+gate is deliberate, the data behind it is not there yet.
 
 ### Lap-count restore
 
@@ -250,15 +324,20 @@ cc -Wall -Wextra -m32 -DCTR_CUSTOM_TRACKS -DCTR_NATIVE -DBUILD=926 -I . -I inclu
 `test-custom-track-policy` pins the decisions and the digest primitive out of
 engine: SHA-256 against the published NIST vectors, the digest comparison's
 accept/reject edges, pair auto-expand, the mappable-levelID bound, each of the
-redirect's five terms shown independently load-bearing, and a 7,200-configuration
-sweep asserting the warp-pad fork and the cup-standings fork agree on every
-reachable config.
+redirect's five terms shown independently load-bearing, the serve context, the
+box verdict, the HUD leg count, and a 7,200-configuration sweep. The sweep
+asserts, for every configuration, that the warp-pad and cup-standings forks
+agree, that the box verdict speaks only for loads it owns, that the leg counter
+matches the redirect, and — the rung-2a invariant — that a load identical to the
+event race except that no gem cup is in progress is **never** served.
 
 `test-custom-track-load` compiles the real loader and drives it against real
-files: the disarmed states, the happy path end to end, and every refusal (wrong
-hash, truncated file, missing file, missing folder, absent digest, malformed
-digest, out-of-range levelID) — each asserting on the loader's own log output,
-because a silent fallback is the failure mode this feature exists to prevent.
+files: the disarmed states, the happy path end to end, every refusal (wrong hash,
+truncated file, missing file, missing folder, absent digest, malformed digest,
+out-of-range levelID) each asserting on the loader's own log output, box denial,
+"race off serves nothing", and an end-to-end retail-pad-stays-retail scenario
+showing the same eight subfile indices answered three different ways in one
+armed session.
 
 ## Guard-off identity
 
@@ -278,6 +357,6 @@ address.
 
 - The custom track keeps the RETAIL slot's identity for ghosts and saved times,
   because the slot's levelID is unchanged. Do not save ghosts or times on it.
-- Whichever arcade track's slot is taken over is replaced **everywhere** in the
-  game, not just in the event destination.
 - The track's music (`.sca`) is not loaded; the retail slot's music plays.
+- A custom track has no track-preview video: the main menu reads preview sectors
+  from BIGFILE directly, bypassing the loader entirely.
