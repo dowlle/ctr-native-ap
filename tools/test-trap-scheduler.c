@@ -183,22 +183,22 @@ static void case_inactive_scaffold_retained(void)
 
 	AP_TrapSchedReset(&s);
 	expect("scaffold is disabled by default",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_NITRO), 0);
-	AP_TrapSchedReceive(&s, AP_TRAP_NITRO);
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 0);
+	AP_TrapSchedReceive(&s, AP_TRAP_DEMO_CAMERA);
 	run(&s, &w, 200);
 	drain(&s);
 	expect("scaffold logs exactly one inactive line",
-	       count_ev(AP_TRAP_EV_INACTIVE, AP_TRAP_NITRO), 1);
+	       count_ev(AP_TRAP_EV_INACTIVE, AP_TRAP_DEMO_CAMERA), 1);
 	expect("scaffold does not use the armed presentation",
-	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_NITRO), 0);
-	expect("scaffold never fires", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_NITRO), 0);
-	expect("scaffold stays armed", AP_TrapSchedArmedCount(&s, AP_TRAP_NITRO), 1);
+	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_DEMO_CAMERA), 0);
+	expect("scaffold never fires", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_DEMO_CAMERA), 0);
+	expect("scaffold stays armed", AP_TrapSchedArmedCount(&s, AP_TRAP_DEMO_CAMERA), 1);
 
 	// Wave 2 flips one effect on without touching the descriptor table.
-	AP_TrapSchedEnable(&s, AP_TRAP_NITRO, 1);
+	AP_TrapSchedEnable(&s, AP_TRAP_DEMO_CAMERA, 1);
 	run_ms(&s, &w, 1100);
 	expect("enabling the effect activates the retained copy",
-	       AP_TrapSchedActive(&s, AP_TRAP_NITRO), 1);
+	       AP_TrapSchedActive(&s, AP_TRAP_DEMO_CAMERA), 1);
 }
 
 // Map-lifetime effects are not on a clock; fixed-duration effects are; and an
@@ -700,7 +700,7 @@ static void case_identity_reset(void)
 	// And the reset restores the shipped roster, so a scheduler that had wave 2
 	// effects switched on does not carry them into the next session.
 	expect("reset restores the default roster",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_NITRO), 0);
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 0);
 
 	// Nothing lingers to fire on the next connection.
 	run_ms(&s, &hub, 5000);
@@ -779,15 +779,15 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010108, AP_TRAP_ITEM_REROLL, 1},
 	{35010109, AP_TRAP_FORCED_USE, 1},
 	{35010110, AP_TRAP_EMPTY_CRATES, 1},
-	{35010111, AP_TRAP_WEAKENED_KART, 0},
+	{35010111, AP_TRAP_WEAKENED_KART, 1},
 	{35010112, AP_TRAP_BOOST_BLOCKER, 1},
 	{35010113, AP_TRAP_WIREFRAME, 1},
-	{35010114, AP_TRAP_NITRO, 0},
+	{35010114, AP_TRAP_NITRO, 1},
 	{35010115, AP_TRAP_REVERSE_STEERING, 1},
-	{35010116, AP_TRAP_RED_POTION, 0},
-	{35010190, AP_TRAP_UPSIDE_DOWN, 0},
-	{35010191, AP_TRAP_MIRROR_MODE, 0},
-	{35010192, AP_TRAP_WARPBALL_AMBUSH, 0},
+	{35010116, AP_TRAP_RED_POTION, 1},
+	{35010190, AP_TRAP_UPSIDE_DOWN, 1},
+	{35010191, AP_TRAP_MIRROR_MODE, 1},
+	{35010192, AP_TRAP_WARPBALL_AMBUSH, 1},
 };
 #define TRAP_ID_COUNT ((int)(sizeof TRAP_IDS / sizeof TRAP_IDS[0]))
 
@@ -853,7 +853,7 @@ static void case_item_id_map(void)
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("exactly thirteen identities are buildable", buildable, 13);
+		expect("all nineteen identities are buildable", buildable, 19);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -929,7 +929,7 @@ static void case_reserved_identity_receipt(void)
 		       count_ev(AP_TRAP_EV_INACTIVE, effect), 1);
 		expect("reserved identity never fires", count_ev(AP_TRAP_EV_FIRE, effect), 0);
 	}
-	expect("every reserved identity is retained armed", armedKept, 6);
+	expect("no shipped identity remains reserved", armedKept, 0);
 
 	// The buildable ones behaved normally in the same batch. This counts what
 	// actually ran rather than assuming all nine, because two ruled behaviours
@@ -942,7 +942,7 @@ static void case_reserved_identity_receipt(void)
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 7);
+	expect("buildable identities still run in the same batch", fired, 8);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1077,13 +1077,13 @@ static void case_wave2_batch1_roster(void)
 		// Batch 2 opener, once the squish damage state was correctly identified.
 		AP_TRAP_FLATTEN,
 		AP_TRAP_EMPTY_CRATES,
-		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME,
+		AP_TRAP_WEAKENED_KART, AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME,
+		AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
+		AP_TRAP_WARPBALL_AMBUSH,
+		AP_TRAP_NITRO, AP_TRAP_RED_POTION,
 	};
 	static const int scaffold[] = {
-		AP_TRAP_WEAKENED_KART,
-		AP_TRAP_NITRO,
-		AP_TRAP_RED_POTION, AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
-		AP_TRAP_WARPBALL_AMBUSH, AP_TRAP_DEMO_CAMERA,
+		AP_TRAP_DEMO_CAMERA,
 	};
 	int i;
 
@@ -1093,7 +1093,7 @@ static void case_wave2_batch1_roster(void)
 	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
 		expect("excluded effect is still a scaffold",
 		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
-	expect("the roster is thirteen active effects and seven scaffolds",
+	expect("the roster is nineteen active effects and one prototype scaffold",
 	       (int)(sizeof active / sizeof active[0]) +
 	           (int)(sizeof scaffold / sizeof scaffold[0]),
 	       AP_TRAP_EFFECT_COUNT);
@@ -1816,6 +1816,69 @@ static void case_boost_blocker_policy(void)
 	       AP_TrapBoostGrantAllowed(0, 1), 1);
 }
 
+static void case_weakened_boost_policy(void)
+{
+	expect("inactive Weakened Kart preserves a pack-off tier",
+	       AP_TrapWeakenedBoostTier(0, -1, 2), -1);
+	expect("pack-off vanilla USF capability weakens to ordinary boost",
+	       AP_TrapWeakenedBoostTier(1, -1, 2), 1);
+	expect("Blue Fire weakens to USF",
+	       AP_TrapWeakenedBoostTier(1, 3, 2), 2);
+	expect("USF weakens to ordinary boost",
+	       AP_TrapWeakenedBoostTier(1, 2, 2), 1);
+	expect("ordinary boost weakens to no boost",
+	       AP_TrapWeakenedBoostTier(1, 1, 2), 0);
+	expect("no boost stays at its floor",
+	       AP_TrapWeakenedBoostTier(1, 0, 2), 0);
+}
+
+static void case_hazard_projection_distance(void)
+{
+	expect("a stopped kart still gets a visible minimum hazard lead",
+	       AP_TrapHazardDistance(0, 1750), 160);
+	expect("reverse speed projects by magnitude",
+	       AP_TrapHazardDistance(-0x3000, 1750),
+	       AP_TrapHazardDistance(0x3000, 1750));
+	expect("ordinary race speed projects between the safety clamps",
+	       AP_TrapHazardDistance(0x3000, 1750), 328);
+	expect("extreme speed cannot project beyond the terrain probe budget",
+	       AP_TrapHazardDistance(0x7ffff, 1750), 420);
+}
+
+static void case_remaining_roster_contracts(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+
+	expect("Weakened Kart runs for twenty seconds",
+	       AP_TRAP_DESC[AP_TRAP_WEAKENED_KART].durationMs, 20000);
+	expect("Upside Down uses the provisional fifteen-second comfort window",
+	       AP_TRAP_DESC[AP_TRAP_UPSIDE_DOWN].durationMs, 15000);
+	expect("Mirror Mode runs for fifteen seconds",
+	       AP_TRAP_DESC[AP_TRAP_MIRROR_MODE].durationMs, 15000);
+	expect("Upside Down is a camera transform",
+	       AP_TRAP_DESC[AP_TRAP_UPSIDE_DOWN].family, AP_TRAP_FAMILY_CAMERA_TRANSFORM);
+	expect("Mirror Mode is a camera transform",
+	       AP_TRAP_DESC[AP_TRAP_MIRROR_MODE].family, AP_TRAP_FAMILY_CAMERA_TRANSFORM);
+	expect("Nitro waits for a safe projected target",
+	       AP_TRAP_DESC[AP_TRAP_NITRO].condition, AP_TRAP_COND_SAFE_HAZARD);
+	expect("Red Potion waits for a safe projected target",
+	       AP_TRAP_DESC[AP_TRAP_RED_POTION].condition, AP_TRAP_COND_SAFE_HAZARD);
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_NITRO);
+	run_ms(&s, &race, 2000);
+	expect("Nitro remains armed without safe ground",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_NITRO), 1);
+	race.conditions = AP_TRAP_COND_SAFE_HAZARD;
+	run_ms(&s, &race, 1100);
+	expect("Nitro fires after a safe-ground warning",
+	       AP_TrapSchedActive(&s, AP_TRAP_NITRO), 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_NITRO);
+	expect("a successful Nitro birth consumes exactly one copy",
+	       slots_used(&s), 0);
+}
+
 static void case_boost_blocker_lifecycle(void)
 {
 	AP_TrapSched s;
@@ -1917,6 +1980,9 @@ int main(void)
 	case_empty_crates_reward_policy();
 	case_empty_crates_lifecycle();
 	case_boost_blocker_policy();
+	case_weakened_boost_policy();
+	case_hazard_projection_distance();
+	case_remaining_roster_contracts();
 	case_boost_blocker_lifecycle();
 	case_wireframe_lifecycle();
 

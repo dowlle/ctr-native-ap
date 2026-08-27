@@ -10,6 +10,7 @@
 #include "ap_hooks.h"    // AP_LogLine
 #include "ap_seedcfg.h"  // ctr_cfg + ctr_cfg_active()
 #include "ap_turbogrant_logic.h" // #224 item 6: the s16 reserve overflow rail
+#include "ap_traps.h"
 
 // ============================================================================
 // PROGRESSIVE BOOST (#12) + PROGRESSIVE STATS (#13) -- native consumer.
@@ -33,6 +34,7 @@ static int g_cap_pc_logged;
 // cannot be identified. That path fails open to vanilla, and a bound that drops
 // behaviour silently is the exact pattern Lessons Learned #4 is about.
 static int g_cap_pc_unknown_logged;
+static int g_cap_weaken_stats_applied;
 
 // ── Roster order: WIRE order, not engine order ──────────────────────────────
 //
@@ -433,7 +435,7 @@ int AP_CapabilityStatRankForCharacter(int chain, int characterID)
 
 int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, int *fireLevel)
 {
-	const int tier = AP_CapabilityBoostTier();
+	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityBoostTier());
 
 	if (tier < 0 || !AP_CapabilityIsLocal(driver))
 		return 1;
@@ -503,7 +505,7 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 int AP_CapabilityRetroFueled(struct Driver *driver)
 {
 	return driver != 0 && AP_CapabilityIsLocal(driver) &&
-	       AP_CapabilityBoostTier() == AP_CAP_BOOST_BLUEFIRE;
+	       AP_TrapWeakenBoostTier(AP_CapabilityBoostTier()) == AP_CAP_BOOST_BLUEFIRE;
 }
 
 // ── Stat ranks ──────────────────────────────────────────────────────────────
@@ -624,8 +626,12 @@ static void AP_CapabilityWriteStat(struct Driver *driver, const struct MetaPhys 
 void AP_CapabilityStats(struct Driver *driver)
 {
 	int i;
+	int weakened;
 
-	if (!AP_CapabilityStatsActive() || !AP_CapabilityIsLocal(driver))
+	if (!AP_CapabilityIsLocal(driver))
+		return;
+	weakened = AP_TrapWeakenedActive(driver);
+	if (!AP_CapabilityStatsActive() && !weakened && !g_cap_weaken_stats_applied)
 		return;
 
 	// Written every frame rather than once on a rank change: six stores, no
@@ -643,10 +649,25 @@ void AP_CapabilityStats(struct Driver *driver)
 
 		rank = AP_CapabilityStatRankFor(AP_CAP_STAT_ROWS[i].chain);
 		if (rank < 0)
-			continue;
+		{
+			// Pack-off: derive the permanent vanilla anchor from the same character
+			// engine class VehBirth uses. Never inspect last frame's field, because
+			// that may already contain our temporary downgrade.
+			int characterID = data.characterIDs[driver->driverID];
+			int engineID = data.MetaDataCharacters[characterID].engineID;
+			int nativeValue = row->value[engineID];
+			int r;
+			for (r = 0; r < AP_STAT_LADDER_ANCHORS; r++)
+				if (AP_CapabilityStatRankValue(row, r) == nativeValue)
+					break;
+			rank = r < AP_STAT_LADDER_ANCHORS ? r : 0;
+		}
+		if (weakened && rank > 0)
+			rank--;
 
 		AP_CapabilityWriteStat(driver, row, AP_CapabilityStatRankValue(row, rank));
 	}
+	g_cap_weaken_stats_applied = weakened;
 }
 
 #endif // CTR_AP

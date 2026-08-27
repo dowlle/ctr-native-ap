@@ -79,6 +79,27 @@ static int AP_TrapBoostGrantAllowed(int effectActive, int driverIsLocal)
 	return !effectActive || !driverIsLocal;
 }
 
+static int AP_TrapWeakenedBoostTier(int effectActive, int permanentTier,
+                                    int vanillaUsfTier)
+{
+	int tier;
+	if (!effectActive)
+		return permanentTier;
+	tier = permanentTier < 0 ? vanillaUsfTier : permanentTier;
+	return tier > 0 ? tier - 1 : 0;
+}
+
+static int AP_TrapHazardDistance(int speedApprox, int travelMs)
+{
+	int distance;
+	if (speedApprox < 0)
+		speedApprox = -speedApprox;
+	distance = (speedApprox * travelMs) >> 16;
+	if (distance < 160) distance = 160;
+	if (distance > 420) distance = 420;
+	return distance;
+}
+
 // ── Engine-natural completion ──
 enum AP_TrapOutcome
 {

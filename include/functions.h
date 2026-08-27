@@ -1199,6 +1199,7 @@ int VehCalc_MapToRange(int val, int oldMin, int oldMax, int newMin, int newMax);
 int VehPickupItem_MaskBoolGoodGuy(struct Driver *d);
 int RB_Hazard_HurtDriver(struct Driver *driverVictim, int damageType, struct Driver *driverAttacker, int reason);
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags);
+int VehPickupItem_TrapHazardAt(struct Driver *d, int weaponID, const SVec3 *target);
 int VehPickState_NewState(struct Driver *victimDriver, int damageType, struct Driver *attackDriver, int reason);
 void RB_Follower_Init(struct Driver *d, struct Thread *mineTh);
 void VehPhysForce_CounterSteer(struct Driver *driver);
