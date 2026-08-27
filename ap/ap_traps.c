@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_democam.h"
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
 #include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
                           // self-inflicted attribution
@@ -474,6 +475,9 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 	if (AP_TrapAiLead(gGT, local, counting, elapsedMs) && gGT != 0 &&
 	    (gGT->gameMode1 & WARPBALL_HELD) == 0)
 		bits |= AP_TRAP_COND_AI_LEAD;
+
+	if (AP_DemoCamCanEngage(gGT))
+		bits |= AP_TRAP_COND_DEMO_CAMERA;
 
 	return bits;
 }
@@ -1016,6 +1020,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "nitro"))     AP_TrapReceive(AP_TRAP_NITRO);
 	else if (!strcmp(v, "potion"))    AP_TrapReceive(AP_TRAP_RED_POTION);
 	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
+	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -1301,6 +1306,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapTrackRecovery(local, w.elapsedMs);
 	AP_TrapApplyCamera(gGT, g_active[AP_TRAP_FIRSTPERSON]);
+	AP_DemoCamSetTrapActive(g_active[AP_TRAP_DEMO_CAMERA]);
 	AP_TrapApplyWireframe(g_active[AP_TRAP_WIREFRAME]);
 	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
 	AP_TrapClampWeakenedFire(local);

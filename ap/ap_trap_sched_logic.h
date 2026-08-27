@@ -31,7 +31,7 @@
 // These are NATIVE effect ids, internal to this client. The apworld item id they
 // arrive from is a separate space that the apworld owns, and the mapping between
 // the two is the explicit table in ap_trap_items.h. Do not reintroduce arithmetic
-// between them: the 19 trap identities are not one contiguous item window.
+// between them: the 20 trap identities are not one contiguous item window.
 //
 // AP_TRAP_USF_NOBRAKE keeps its id and its symbol. The apworld renamed the item
 // from "No Brakes" to "Forced USF", which is a display change only; item ids never
@@ -155,7 +155,8 @@ enum AP_TrapCondition
 	AP_TRAP_COND_HELD_ITEM = 1 << 2,       // a fully resolved weapon is in the slot
 	AP_TRAP_COND_ELIGIBLE_CRATES = 1 << 3, // this map has weapon or Wumpa crates
 	AP_TRAP_COND_AI_LEAD = 1 << 4,         // 15 continuous seconds in first, valid AI
-	AP_TRAP_COND_SAFE_HAZARD = 1 << 5      // projected line reaches drivable ground
+	AP_TRAP_COND_SAFE_HAZARD = 1 << 5,     // projected line reaches drivable ground
+	AP_TRAP_COND_DEMO_CAMERA = 1 << 6      // retail cinematic camera has a safe owner
 };
 
 // One second, the ruled warning for every effect that takes one.
@@ -265,14 +266,15 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	 AP_TRAP_COND_AI_LEAD, 1, 0, 0},
 	{"Demo Camera", AP_TRAP_CTX_AI_RACE | AP_TRAP_CTX_TIME_TRIAL,
 	 AP_TRAP_TIMING_SUSTAINED_TIMED, AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH,
-	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_DEMO_CAMERA, 1, 15000,
+	 AP_TRAP_WARNING_MS},
 };
 
 // ── Registry ──
 //
 // Capacity bounds the BACKLOG, not the roster: one effect can hold several slots
 // at once when its duplicates serialize. 16 was sized when five effects existed.
-// The 0.2.0 apworld ships 19 trap identities, several of them conditional and able
+// The 0.2.0 apworld ships 20 trap identities, several of them conditional and able
 // to sit armed indefinitely (every Wumpa Wipeout copy needs its own 10-Wumpa
 // trigger, every Warpball Ambush copy its own 15-second lead), so a trap-heavy
 // seed can plausibly carry more than 16 unresolved copies. Over capacity is

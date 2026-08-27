@@ -9,7 +9,7 @@
 //
 // Every case here is a lifecycle rule from the trap rework design notebook
 // (2026-08-19) or from the Alpha 2 triage ruling on boost-control serialization.
-// The last two cases pin the apworld item identity table instead: the 19 trap ids
+// The last two cases pin the apworld item identity table instead: the 20 trap ids
 // are scattered across three runs, so the mapping is data and data can be wrong.
 
 #include <stdio.h>
@@ -175,29 +175,26 @@ static void case_armed_on_ineligible_receipt(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_BOOST), 1);
 }
 
-// A wave 2 scaffold is armed and reported once, never fired, never consumed.
-static void case_inactive_scaffold_retained(void)
+// Demo Camera waits for the runtime's safe-camera predicate instead of spending
+// its timed window against a camera it cannot own.
+static void case_demo_camera_waits_for_safe_target(void)
 {
 	AP_TrapSched s;
 	AP_TrapWorld w = world_in(AP_TRAP_CTX_RACE);
 
 	AP_TrapSchedReset(&s);
-	expect("scaffold is disabled by default",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 0);
+	expect("Demo Camera is enabled by default",
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 1);
 	AP_TrapSchedReceive(&s, AP_TRAP_DEMO_CAMERA);
 	run(&s, &w, 200);
 	drain(&s);
-	expect("scaffold logs exactly one inactive line",
-	       count_ev(AP_TRAP_EV_INACTIVE, AP_TRAP_DEMO_CAMERA), 1);
-	expect("scaffold does not use the armed presentation",
-	       count_ev(AP_TRAP_EV_ARMED, AP_TRAP_DEMO_CAMERA), 0);
-	expect("scaffold never fires", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_DEMO_CAMERA), 0);
-	expect("scaffold stays armed", AP_TrapSchedArmedCount(&s, AP_TRAP_DEMO_CAMERA), 1);
-
-	// Wave 2 flips one effect on without touching the descriptor table.
-	AP_TrapSchedEnable(&s, AP_TRAP_DEMO_CAMERA, 1);
+	expect("unsafe camera target leaves the trap armed",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_DEMO_CAMERA), 1);
+	expect("unsafe camera target never starts the warning",
+	       count_ev(AP_TRAP_EV_WARN, AP_TRAP_DEMO_CAMERA), 0);
+	w.conditions = AP_TRAP_COND_DEMO_CAMERA;
 	run_ms(&s, &w, 1100);
-	expect("enabling the effect activates the retained copy",
+	expect("safe camera target activates the retained copy",
 	       AP_TrapSchedActive(&s, AP_TRAP_DEMO_CAMERA), 1);
 }
 
@@ -547,10 +544,9 @@ static void case_camera_family_queues(void)
 	AP_TrapWorld w = world_in(AP_TRAP_CTX_RACE);
 
 	AP_TrapSchedReset(&s);
-	AP_TrapSchedEnable(&s, AP_TRAP_DEMO_CAMERA, 1);
-
 	AP_TrapSchedReceive(&s, AP_TRAP_DEMO_CAMERA);
 	AP_TrapSchedReceive(&s, AP_TRAP_FIRSTPERSON);
+	w.conditions = AP_TRAP_COND_DEMO_CAMERA;
 	run_ms(&s, &w, 1100);
 	drain(&s);
 	expect("first camera transform fires",
@@ -697,10 +693,9 @@ static void case_identity_reset(void)
 	expect("reset drops every applied effect",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 0);
 
-	// And the reset restores the shipped roster, so a scheduler that had wave 2
-	// effects switched on does not carry them into the next session.
+	// And the reset restores the shipped roster.
 	expect("reset restores the default roster",
-	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 0);
+	       AP_TrapSchedIsEnabled(&s, AP_TRAP_DEMO_CAMERA), 1);
 
 	// Nothing lingers to fire on the next connection.
 	run_ms(&s, &hub, 5000);
@@ -788,6 +783,7 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010190, AP_TRAP_UPSIDE_DOWN, 1},
 	{35010191, AP_TRAP_MIRROR_MODE, 1},
 	{35010192, AP_TRAP_WARPBALL_AMBUSH, 1},
+	{35010193, AP_TRAP_DEMO_CAMERA, 1},
 };
 #define TRAP_ID_COUNT ((int)(sizeof TRAP_IDS / sizeof TRAP_IDS[0]))
 
@@ -811,7 +807,7 @@ static const long long NON_TRAP_IDS[] = {
 	35010187,  // Gas Pedal
 	35010188,  // Tizi Helper
 	35010189,  // Turbo Grant, immediately before the camera transforms
-	35010193,  // one past the end of the table
+	35010194,  // one past the end of the table
 	35010500,  // far past the end
 	35009999,  // one below the item base
 	35000000,  // far below the item base
@@ -824,7 +820,7 @@ static void case_item_id_map(void)
 {
 	int i, idx;
 
-	expect("the table holds all 19 trap identities", AP_TRAP_ITEM_MAP_COUNT, 19);
+	expect("the table holds all 20 trap identities", AP_TRAP_ITEM_MAP_COUNT, 20);
 
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 	{
@@ -853,7 +849,7 @@ static void case_item_id_map(void)
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("all nineteen identities are buildable", buildable, 19);
+		expect("all twenty identities are buildable", buildable, 20);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -875,7 +871,7 @@ static void case_item_id_map(void)
 	}
 
 	// Exhaustive sweep of the whole item table: every index that is not one of the
-	// 19 must be refused, so a family dropped into one of the gaps between the runs
+	// 20 must be refused, so a family dropped into one of the gaps between the runs
 	// cannot quietly become a trap.
 	{
 		int wrong = 0, traps = 0;
@@ -889,15 +885,14 @@ static void case_item_id_map(void)
 				wrong++;
 			traps += AP_TrapItemIndexIsTrap(idx);
 		}
-		expect("no index in 0..192 is misclassified", wrong, 0);
-		expect("exactly 19 indices are traps", traps, 19);
+		expect("no index in 0..193 is misclassified", wrong, 0);
+		expect("exactly 20 indices are traps", traps, 20);
 	}
 }
 
-// A received identity this build has no effect for is armed, reported once and
-// kept. A buildable one runs its schedule as usual. Both drive the real receive
-// path: id, then map lookup, then AP_TrapSchedReceive.
-static void case_reserved_identity_receipt(void)
+// Every shipped identity drives the real receive path: id, then map lookup,
+// then AP_TrapSchedReceive. Conditional effects may remain armed in this world.
+static void case_shipped_identity_receipt(void)
 {
 	AP_TrapSched s;
 	AP_TrapWorld w = world_in(AP_TRAP_CTX_RACE);
@@ -912,7 +907,7 @@ static void case_reserved_identity_receipt(void)
 		expect("every identity is accepted by the registry",
 		       AP_TrapSchedReceive(&s, effect) >= 0, 1);
 	}
-	expect("all 19 fit in the registry", slots_used(&s), 19);
+	expect("all 20 fit in the registry", slots_used(&s), 20);
 
 	run_ms(&s, &w, 2000);
 	drain(&s);
@@ -931,8 +926,8 @@ static void case_reserved_identity_receipt(void)
 	}
 	expect("no shipped identity remains reserved", armedKept, 0);
 
-	// The buildable ones behaved normally in the same batch. This counts what
-	// actually ran rather than assuming all nine, because two ruled behaviours
+	// The effects behaved normally in the same batch. This counts what actually
+	// ran rather than assuming all twenty, because ruled behaviours
 	// deliberately hold some of them back in this world: only one member of the
 	// boost_control family may be active at once, and a conditional effect whose
 	// prerequisite is absent stays armed. With no conditions set, Forced USF
@@ -1067,7 +1062,7 @@ static void case_engine_natural_requires_a_done_reporter(void)
 // excluded half is listed too: each of those is waiting on something real
 // (a missing engine state, an acceptance gate, a pending ruling), and flipping
 // one on by accident is the failure this case exists to catch.
-static void case_wave2_batch1_roster(void)
+static void case_complete_roster(void)
 {
 	AP_TrapSched s;
 	static const int active[] = {
@@ -1081,8 +1076,6 @@ static void case_wave2_batch1_roster(void)
 		AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
 		AP_TRAP_WARPBALL_AMBUSH,
 		AP_TRAP_NITRO, AP_TRAP_RED_POTION,
-	};
-	static const int scaffold[] = {
 		AP_TRAP_DEMO_CAMERA,
 	};
 	int i;
@@ -1090,13 +1083,8 @@ static void case_wave2_batch1_roster(void)
 	AP_TrapSchedReset(&s);
 	for (i = 0; i < (int)(sizeof active / sizeof active[0]); i++)
 		expect("implemented effect is active", AP_TrapSchedIsEnabled(&s, active[i]), 1);
-	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
-		expect("excluded effect is still a scaffold",
-		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
-	expect("the roster is nineteen active effects and one prototype scaffold",
-	       (int)(sizeof active / sizeof active[0]) +
-	           (int)(sizeof scaffold / sizeof scaffold[0]),
-	       AP_TRAP_EFFECT_COUNT);
+	expect("the roster is twenty active effects",
+	       (int)(sizeof active / sizeof active[0]), AP_TRAP_EFFECT_COUNT);
 }
 
 // None of the four joins a conflict family, and that is a deliberate reading of
@@ -1935,7 +1923,7 @@ int main(void)
 {
 	case_warning_then_fire();
 	case_armed_on_ineligible_receipt();
-	case_inactive_scaffold_retained();
+	case_demo_camera_waits_for_safe_target();
 	case_duration_classes();
 	case_pause_freeze();
 	case_scripted_suspend_resume();
@@ -1954,12 +1942,12 @@ int main(void)
 	case_conditional_predicates();
 	case_registry_capacity();
 	case_item_id_map();
-	case_reserved_identity_receipt();
+	case_shipped_identity_receipt();
 	case_condition_lost_during_warning();
 	case_receipt_during_podium_announces();
 	case_receipt_during_pause_announces();
 	case_engine_natural_requires_a_done_reporter();
-	case_wave2_batch1_roster();
+	case_complete_roster();
 	case_wave2_batch1_families();
 	case_wumpa_wipeout_lifecycle();
 	case_wumpa_wipeout_duplicates_serialize();

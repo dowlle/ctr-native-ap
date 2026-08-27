@@ -21,7 +21,7 @@
 
 static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
-#include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
+#include "ap_democam.h"   // Demo Camera trap and direct live-test trigger
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
@@ -2724,12 +2724,12 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // this separate verifier tally avoids changing any live reward semantics.
 //
 // Sized from the HIGHEST index in the apworld table, which is no longer the Turbo
-// Grant: the 0.2.0 trap wave added Upside Down, Mirror Mode and Warpball Ambush at
-// 190..192, so the table is 193 long. Anything past the end is dropped by the
+// Grant: the 0.2.0 trap wave added four identities at 190..193, so the table is
+// 194 long. Anything past the end is dropped by the
 // bounds check at the receive site rather than counted, so an undersized array
 // silently loses foreign receipts from the verifier's view.
 #define AP_VERIFY_ITEM_INDEX_COUNT (AP_TRAP_ITEM_INDEX_MAX + 1)
-CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT == 193);
+CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT == 194);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
@@ -3986,9 +3986,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 				AP_GoalArmLiveEvent();
 		}
 
-		// Trap items -> arm the matching trap effect. The 19 trap identities do NOT
+		// Trap items -> arm the matching trap effect. The 20 trap identities do NOT
 		// form one contiguous index window: they sit at 16..20, 106..116 and
-		// 190..192, with weapon unlocks, the Wumpa family, characters and letters in
+		// 190..193, with weapon unlocks, the Wumpa family, characters and letters in
 		// between, so the mapping is a table (ap_trap_items.h) and not arithmetic off
 		// a first index. An identity whose native effect is still a wave 2 scaffold
 		// is armed, logged once and retained; AP_TrapReceive never consumes what this
@@ -5646,7 +5646,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
-	// Demo Camera PROTOTYPE: holds or force-clears the cinematic-camera
+	// Demo Camera: holds or force-clears the cinematic-camera
 	// engagement. Shares AP_TrapTick's placement for the same reason -- it runs
 	// before the camera PROC ticks this frame, so a clear lands while the camera
 	// the snapshot describes is still the live one.
