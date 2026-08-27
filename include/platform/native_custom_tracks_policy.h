@@ -7,7 +7,7 @@
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
 // engine, with no disc, no display, no config file and no seed.
 //
-// THREE DECISIONS LIVE HERE.
+// FIVE DECISIONS LIVE HERE.
 //
 // 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
 //    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
@@ -36,6 +36,42 @@
 //    not be able to disagree. They are computed from the same inputs, so a
 //    cup that redirected at the pad cannot fail to complete at the results
 //    screen.
+//
+// 4. SERVE CONTEXT (rung 2a). The custom track takes over an existing arcade
+//    slot, but the ruling replaces exactly ONE destination -- the event cup --
+//    not the host slot's retail race. So the override is conditional on the
+//    load in flight actually BEING the redirected race, not merely on the
+//    subfile index belonging to the host slot. A retail race pad to the host
+//    slot loads retail bytes in the same session where the event cup loads
+//    custom bytes.
+//
+//    The three facts that decide it are all committed before the first subfile
+//    read of a level, in this order, in one call chain:
+//      gGT->cup.cupID        AH_WarpPad.c, at the pad, frames earlier
+//      gGT->gameMode1        MainMain.c, applying Loading.OnBegin.AddBitsConfig0
+//      gGT->levelID          LOAD_Level.c, in LOAD_LevelFile
+//      Loading.stage = 0     LOAD_Level.c, arming the ten-stage loader
+//    Arcade-track subfiles are requested only in ten-stage stage 6, at least six
+//    frames later, and LOAD_LevelFile has exactly one caller. There is no
+//    prefetch, streaming, speculative or background read of an arcade-track
+//    group anywhere else in the tree: every other queue index is a fixed
+//    BI_* region, and hub streaming is hard-guarded to hub levelIDs.
+//
+//    ADVENTURE_CUP is the load-bearing term. It has one setter (the gem-cup
+//    branch of the warp pad) and is cleared through Loading.OnBegin.RemBitsConfig0
+//    on every exit -- cup played out, exit to map, pause-quit -- which lands at
+//    MainMain.c before the next load starts. gGT->cup.cupID, by contrast, is
+//    NEVER reset and stays at its last value forever, so it must never be tested
+//    on its own. Arcade cups cannot reach this predicate at all: they set
+//    CUP_ANY_KIND in gameMode2 and never ADVENTURE_CUP.
+//
+// 5. AP-BOX GATE (rung 2a). The redirected race sets ADVENTURE_CUP for reward
+//    routing, so ap_boxes.c would otherwise treat it as a gem-cup LEG and gate
+//    its boxes on the physical retail pad that hosts the mapped slot -- a pad
+//    that has nothing to do with the event. The verdict below makes that a
+//    deliberate answer instead of a fall-through. Default is ALLOW, per the
+//    ruled check set. See the enum for what is still missing before those boxes
+//    mean anything.
 //
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
@@ -98,6 +134,42 @@ struct CustomTrackFeatureConfig
 	int raceEnabled;  // runtime flag: is the event destination active at all
 	int raceCupID;    // cup whose destination is replaced (4 == Purple Gem Cup)
 	int raceLaps;     // lap count for the single race (7, per the ruling)
+	int raceBoxes;    // 1 = AP boxes allowed on the event race (the ruled default)
+};
+
+// The facts about the load currently in flight that decide whether a subfile
+// read is the event race's. Gathered in engine (game/LOAD/LOAD_File.c) from
+// gGT and passed in, so this header and the loader stay engine-free and the
+// harness can drive every combination without a GameTracker.
+struct CustomTrackLoadContext
+{
+	int levelID;            // gGT->levelID: the level being loaded
+	int adventureCupActive; // (gGT->gameMode1 & ADVENTURE_CUP) != 0
+	int cupID;              // gGT->cup.cupID -- MEANINGLESS without the flag above
+};
+
+// What the AP-box layer should do about the level being loaded.
+enum CustomTrackBoxVerdict
+{
+	// Not the event race: ap_boxes.c's existing cup-leg policy stands.
+	CTR_CT_BOX_UNCHANGED = 0,
+
+	// The event race, boxes on. ap_boxes.c treats it as a non-cup race rather
+	// than a gem-cup leg, so its boxes are not gated on the physical retail pad
+	// that happens to host the mapped slot.
+	//
+	// WHAT THIS DOES NOT YET MEAN. Box PLACEMENT still comes from the host
+	// slot's retail identity (AP_BoxMap_ApTrack resolves the mapped levelID to
+	// the retail track's AP-track id), so until the apworld descriptor supplies
+	// the custom track's own placements, allowing boxes here spawns the RETAIL
+	// track's boxes at RETAIL coordinates on custom geometry. That is why the
+	// verdict is configurable: this gate is deliberate, the data behind it is
+	// not there yet.
+	CTR_CT_BOX_ALLOW = 1,
+
+	// The event race, boxes off. Stands the set down entirely -- nothing spawns,
+	// so nothing can collide and no check can dispatch.
+	CTR_CT_BOX_DENY = 2
 };
 
 // A subfile index's role within a mapped track's group, or CTR_CT_ROLE_NONE if
@@ -210,6 +282,58 @@ static int CustomTrackPolicy_CupIsComplete(const struct CustomTrackFeatureConfig
 		return (trackIndexAfterIncrement >= 1) ? 1 : 0;
 
 	return (trackIndexAfterIncrement >= 4) ? 1 : 0;
+}
+
+// How many legs the HUD should say this cup has: 1 for a redirected cup, 4
+// otherwise. Same predicate as CupIsComplete, so the counter can never disagree
+// with the leg the game will actually load next.
+static int CustomTrackPolicy_CupLegCount(const struct CustomTrackFeatureConfig *cfg, int cupID, int isAdventureCup)
+{
+	return CustomTrackPolicy_ShouldRedirectCup(cfg, cupID, isAdventureCup) ? 1 : 4;
+}
+
+// Is the load in flight the event race, so that its subfile group should be
+// served from the custom track rather than the BIGFILE?
+//
+// This is decision 4 above. Every term is independently load-bearing:
+//   adventureCupActive -- the only reliable "a gem cup is in progress" signal.
+//                         Without it, cupID's staleness (it is never reset)
+//                         would make every later race on the host slot serve
+//                         custom bytes, which is the bug this decision exists
+//                         to remove.
+//   ShouldRedirectCup  -- folds in raceEnabled, contentVerified and the cupID
+//                         match. Reusing it rather than restating the terms is
+//                         what keeps serving and redirecting from disagreeing:
+//                         the loader cannot serve a race the pad did not send
+//                         the player to, and cannot refuse one it did.
+//   levelID match      -- a gem cup whose legs were shuffled onto other tracks
+//                         still loads those legs from the BIGFILE.
+//
+// isAdventureCup is passed as 1 rather than gathered: ADVENTURE_CUP is set only
+// by the adventure gem-cup branch of the warp pad, and arcade cups signal
+// through CUP_ANY_KIND in gameMode2 instead, so adventureCupActive already
+// implies the adventure family.
+static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *cfg, const struct CustomTrackLoadContext *ctx)
+{
+	if (cfg == NULL || ctx == NULL)
+		return 0;
+
+	if (!ctx->adventureCupActive)
+		return 0;
+
+	if (!CustomTrackPolicy_ShouldRedirectCup(cfg, ctx->cupID, 1))
+		return 0;
+
+	return (ctx->levelID == cfg->mappedLevelID) ? 1 : 0;
+}
+
+// What the AP-box layer should do about this load. See the verdict enum.
+static int CustomTrackPolicy_BoxVerdict(const struct CustomTrackFeatureConfig *cfg, const struct CustomTrackLoadContext *ctx)
+{
+	if (!CustomTrackPolicy_ShouldServe(cfg, ctx))
+		return CTR_CT_BOX_UNCHANGED;
+
+	return cfg->raceBoxes ? CTR_CT_BOX_ALLOW : CTR_CT_BOX_DENY;
 }
 
 #endif // CTR_CUSTOM_TRACKS

@@ -217,6 +217,7 @@ void CustomTrack_Load(void)
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.raceCupID = 4;
 	s_customTrackConfig.raceLaps = 7;
+	s_customTrackConfig.raceBoxes = 1;
 	s_customTrackVrm.verdict = CTR_CT_VERDICT_NO_PATH;
 	s_customTrackLev.verdict = CTR_CT_VERDICT_NO_PATH;
 
@@ -281,6 +282,8 @@ void CustomTrack_Load(void)
 			s_customTrackConfig.raceCupID = CustomTrack_ParseInt(value);
 		else if (strcmp(key, "custom_track_race_laps") == 0)
 			s_customTrackConfig.raceLaps = CustomTrack_ParseInt(value);
+		else if (strcmp(key, "custom_track_race_boxes") == 0)
+			s_customTrackConfig.raceBoxes = (CustomTrack_ParseInt(value) > 0) ? 1 : 0;
 	}
 
 	fclose(f);
@@ -308,7 +311,7 @@ void CustomTrack_Load(void)
 	if (s_customTrackVrm.verdict == CTR_CT_VERDICT_OK && s_customTrackLev.verdict == CTR_CT_VERDICT_OK)
 	{
 		s_customTrackConfig.contentVerified = 1;
-		printf("[CustomTracks] armed: levelID %d serves the configured track (subfiles %d..%d)\n",
+		printf("[CustomTracks] content verified: levelID %d group is subfiles %d..%d\n",
 		       s_customTrackConfig.mappedLevelID,
 		       s_customTrackConfig.mappedLevelID * CTR_CT_GROUP_SIZE,
 		       s_customTrackConfig.mappedLevelID * CTR_CT_GROUP_SIZE + CTR_CT_GROUP_SIZE - 1);
@@ -324,6 +327,15 @@ void CustomTrack_Load(void)
 		return;
 	}
 
+	if (!s_customTrackConfig.raceEnabled)
+	{
+		// Serving is conditional on the event race being the load in flight, so
+		// with the race off there is no load that qualifies and the track is
+		// never served. Verification still ran, which makes this a useful
+		// config/hash check, but nothing in the game changes.
+		printf("[CustomTracks] event destination off: nothing will be served\n");
+	}
+
 	if (s_customTrackConfig.raceEnabled)
 	{
 		if (CustomTrackPolicy_RaceLaps(&s_customTrackConfig, s_customTrackConfig.raceCupID, 1) == 0)
@@ -337,6 +349,11 @@ void CustomTrack_Load(void)
 			printf("[CustomTracks] event destination: cup %d becomes a single %d-lap race on levelID %d\n",
 			       s_customTrackConfig.raceCupID, s_customTrackConfig.raceLaps,
 			       s_customTrackConfig.mappedLevelID);
+			printf("[CustomTracks] AP boxes on the event race: %s\n",
+			       s_customTrackConfig.raceBoxes ? "allowed" : "denied");
+			printf("[CustomTracks] levelID %d serves custom bytes ONLY for that race; "
+			       "its retail race pad still loads retail bytes\n",
+			       s_customTrackConfig.mappedLevelID);
 		}
 	}
 }
@@ -349,7 +366,7 @@ const struct CustomTrackFeatureConfig *CustomTrack_Config(void)
 	return &s_customTrackConfig;
 }
 
-int CustomTrack_GetOverride(int subfileIndex, const char **outPath, u32 *outSize)
+int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize)
 {
 	const struct CustomTrackSource *source;
 	struct stat st;
@@ -358,11 +375,20 @@ int CustomTrack_GetOverride(int subfileIndex, const char **outPath, u32 *outSize
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
 
+	// Cheapest terms first: this runs on EVERY BIGFILE read in the game, and for
+	// all but the event race's own two subfiles it must fall out immediately.
 	if (!s_customTrackConfig.contentVerified)
 		return 0;
 
 	role = CustomTrackPolicy_SubfileRole(subfileIndex, s_customTrackConfig.mappedLevelID);
 	if (role == CTR_CT_ROLE_NONE)
+		return 0;
+
+	// The index is in the mapped group, but that alone does not make this read
+	// the event race's -- the host slot's own retail race reads the same eight
+	// indices. Only the load context can tell them apart, and it is what keeps
+	// that retail race retail.
+	if (!CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx))
 		return 0;
 
 	source = (role == CTR_CT_ROLE_LEV) ? &s_customTrackLev : &s_customTrackVrm;
@@ -447,6 +473,22 @@ int CustomTrack_CupRaceLaps(int cupID, int isAdventureCup)
 int CustomTrack_CupIsComplete(int cupID, int isAdventureCup, int trackIndexAfterIncrement)
 {
 	return CustomTrackPolicy_CupIsComplete(CustomTrack_Config(), cupID, isAdventureCup, trackIndexAfterIncrement);
+}
+
+int CustomTrack_CupLegCount(int cupID, int isAdventureCup)
+{
+	return CustomTrackPolicy_CupLegCount(CustomTrack_Config(), cupID, isAdventureCup);
+}
+
+int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = levelID;
+	ctx.adventureCupActive = adventureCupActive;
+	ctx.cupID = cupID;
+
+	return CustomTrackPolicy_BoxVerdict(CustomTrack_Config(), &ctx);
 }
 
 int CustomTrack_RaceFeatureEnabled(void)

@@ -46,14 +46,22 @@ void CustomTrack_Load(void);
 // in native_custom_tracks_policy.h. Calls CustomTrack_Load if it has not run.
 const struct CustomTrackFeatureConfig *CustomTrack_Config(void);
 
-// If subfileIndex belongs to the mapped track's group and the loader is armed,
-// return 1 and set *outPath to the source file serving that slot (an internal
-// static buffer, valid until the next CustomTrack_GetOverride call) and
-// *outSize to its byte size. Returns 0 for every other index, and for any index
-// in the group whose file has changed size since it was verified -- a file
-// swapped under a running game is refused for that read rather than served
-// unverified.
-int CustomTrack_GetOverride(int subfileIndex, const char **outPath, u32 *outSize);
+// If subfileIndex belongs to the mapped track's group, the loader is armed, AND
+// the load in flight is the event race (ctx), return 1 and set *outPath to the
+// source file serving that slot (an internal static buffer, valid until the next
+// CustomTrack_GetOverride call) and *outSize to its byte size.
+//
+// The ctx term is what keeps the host slot's RETAIL race retail. The custom
+// track takes over an arcade slot, but the ruling replaces one destination, not
+// the slot: a race pad to the host track must load BIGFILE bytes in the very
+// same session where the event cup loads custom bytes. Callers gather ctx from
+// gGT; see the policy header's decision 4 for why those facts are always
+// committed before the first subfile read of a level.
+//
+// Returns 0 for every other index, and for any index in the group whose file has
+// changed size since it was verified -- a file swapped under a running game is
+// refused for that read rather than served unverified.
+int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize);
 
 // Fill dst with the source file's bytes, zero-padding the tail out to bufBytes
 // (the sector-rounded buffer size the CD path allocated). fileBytes is the size
@@ -83,6 +91,17 @@ int CustomTrack_CupRaceLaps(int cupID, int isAdventureCup);
 // Has the cup finished, given the leg index AFTER UI_CupStandings' increment?
 // Answers 4 legs for a vanilla cup and 1 for a redirected one.
 int CustomTrack_CupIsComplete(int cupID, int isAdventureCup, int trackIndexAfterIncrement);
+
+// How many legs the HUD's "TRACK n/N" counter should name: 1 for a redirected
+// cup, 4 otherwise. Same predicate as CustomTrack_CupIsComplete, so the label
+// cannot promise legs the game will never load.
+int CustomTrack_CupLegCount(int cupID, int isAdventureCup);
+
+// What the AP-box layer should do about the level being loaded: one of
+// CTR_CT_BOX_UNCHANGED / CTR_CT_BOX_ALLOW / CTR_CT_BOX_DENY. Takes the same
+// facts as the serve decision, because "is this the event race" is the same
+// question in both places.
+int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID);
 
 // Is the event destination active at all, for any cup? Used by the lap-count
 // restores, which need to know whether this build could have written a

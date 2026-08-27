@@ -218,12 +218,26 @@ LAB_80055930:
 			                   ((gGT->pushBuffer[0].rect.y - (transition + -7)) + -6), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 			// Track 1/4, 2/4, 3/4, 4/4 in cup
+#ifdef CTR_CUSTOM_TRACKS
+			// A redirected event cup has ONE leg, not four, so the retail "/4" would
+			// promise legs the game will never load. Same predicate as the completion
+			// fork, so the counter cannot disagree with it.
+			sprintf(trackText, "%s %ld/%d",
+
+			        sdata->lngStrings[LNG_TRACK],
+
+			        // Track Index (0, 1, 2, 3) + 1
+			        CTR_PRINTF_PSX_LONG((gGT->cup.trackIndex) + 1),
+
+			        CustomTrack_CupLegCount(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0));
+#else
 			sprintf(trackText, "%s %ld/4",
 
 			        sdata->lngStrings[LNG_TRACK],
 
 			        // Track Index (0, 1, 2, 3) + 1
 			        CTR_PRINTF_PSX_LONG((gGT->cup.trackIndex) + 1));
+#endif
 
 			// string of top title bar
 			pcVar6 = trackText;

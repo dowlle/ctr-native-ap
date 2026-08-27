@@ -244,12 +244,26 @@ void UI_CupStandings_InputAndDraw(void)
 	char text[24];
 
 	// TRACK 1/4, 2/4, 3/4, 4/4
+#ifdef CTR_CUSTOM_TRACKS
+	// A redirected event cup has ONE leg, not four, so the retail "/4" would
+	// promise legs the game will never load. Same predicate as the completion
+	// fork, so the counter cannot disagree with it.
+	sprintf(text, "%s %ld/%d",
+
+	        sdata->lngStrings[LNG_TRACK],
+
+	        // Track Index (0, 1, 2, 3) + 1
+	        CTR_PRINTF_PSX_LONG(gGT->cup.trackIndex + 1),
+
+	        CustomTrack_CupLegCount(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0));
+#else
 	sprintf(text, "%s %ld/4",
 
 	        sdata->lngStrings[LNG_TRACK],
 
 	        // Track Index (0, 1, 2, 3) + 1
 	        CTR_PRINTF_PSX_LONG(gGT->cup.trackIndex + 1));
+#endif
 
 	DecalFont_DrawLine(text, local_58[0], local_58[1] + 0x11, 2, 0xffff8000);
 

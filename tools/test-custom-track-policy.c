@@ -254,7 +254,18 @@ static struct CustomTrackFeatureConfig ruled_config(void)
 	cfg.raceEnabled = 1;
 	cfg.raceCupID = 4;
 	cfg.raceLaps = 7;
+	cfg.raceBoxes = 1;
 	return cfg;
+}
+
+static struct CustomTrackLoadContext make_ctx(int levelID, int adventureCupActive, int cupID)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = levelID;
+	ctx.adventureCupActive = adventureCupActive;
+	ctx.cupID = cupID;
+	return ctx;
 }
 
 static void test_redirect_terms(void)
@@ -374,16 +385,72 @@ static void test_fork_consistency(void)
 							int completeAt1;
 							int completeAt4;
 
+							struct CustomTrackLoadContext ctx;
+							struct CustomTrackLoadContext retailCtx;
+
 							cfg.raceEnabled = enabled;
 							cfg.contentVerified = verified;
 							cfg.mappedLevelID = mapped;
 							cfg.raceCupID = 4;
 							cfg.raceLaps = laps;
+							cfg.raceBoxes = 1;
 
 							redirected = CustomTrackPolicy_ShouldRedirectCup(&cfg, cup, adventure);
 							completeAt1 = CustomTrackPolicy_CupIsComplete(&cfg, cup, adventure, 1);
 							completeAt4 = CustomTrackPolicy_CupIsComplete(&cfg, cup, adventure, 4);
 							checked++;
+
+							// THE RUNG-2A INVARIANT. A load that looks exactly
+							// like the event race except that no gem cup is in
+							// progress -- i.e. the host slot's own retail race
+							// pad -- must NEVER be served custom bytes. Asserted
+							// for every config, not just the ruled one, because
+							// this is the property the whole serve-context
+							// decision exists to guarantee.
+							ctx = make_ctx(mapped, 1, cup);
+							retailCtx = make_ctx(mapped, 0, cup);
+
+							if (CustomTrackPolicy_ShouldServe(&cfg, &retailCtx))
+							{
+								printf("FAIL retail pad served custom bytes: enabled=%d verified=%d "
+								       "mapped=%d cup=%d\n",
+								       enabled, verified, mapped, cup);
+								g_failures++;
+								return;
+							}
+
+							// Serving implies the pad redirected. The loader can
+							// never serve a race the warp pad did not send the
+							// player to.
+							if (CustomTrackPolicy_ShouldServe(&cfg, &ctx) &&
+							    !CustomTrackPolicy_ShouldRedirectCup(&cfg, cup, 1))
+							{
+								printf("FAIL served without a redirect: enabled=%d verified=%d "
+								       "mapped=%d cup=%d\n",
+								       enabled, verified, mapped, cup);
+								g_failures++;
+								return;
+							}
+
+							// The box verdict speaks only for loads it owns.
+							if ((CustomTrackPolicy_BoxVerdict(&cfg, &ctx) != CTR_CT_BOX_UNCHANGED) !=
+							    CustomTrackPolicy_ShouldServe(&cfg, &ctx))
+							{
+								printf("FAIL box verdict disagrees with serve: enabled=%d verified=%d "
+								       "mapped=%d cup=%d\n",
+								       enabled, verified, mapped, cup);
+								g_failures++;
+								return;
+							}
+
+							// The HUD counter agrees with the completion fork.
+							if (CustomTrackPolicy_CupLegCount(&cfg, cup, adventure) !=
+							    (redirected ? 1 : 4))
+							{
+								printf("FAIL leg count disagrees with redirect: cup=%d\n", cup);
+								g_failures++;
+								return;
+							}
 
 							// Redirected exactly when the cup ends after one race.
 							if (redirected != completeAt1)
@@ -435,6 +502,113 @@ static void test_fork_consistency(void)
 	printf("  consistency sweep: %d configurations, forks agree on every one\n", checked);
 }
 
+
+// ---------------------------------------------------------------------------
+// 6. Serve context -- the rung-2a deliverable.
+// ---------------------------------------------------------------------------
+
+// THE RULED SEMANTICS, stated as a test: only the event cup's destination
+// becomes Baby T Park. The host slot's own retail race must still load retail
+// bytes, in the SAME session, from the SAME eight subfile indices.
+static void test_serve_context(void)
+{
+	struct CustomTrackFeatureConfig cfg = ruled_config(); // mapped onto levelID 6
+	struct CustomTrackLoadContext ctx;
+
+	// The event race: a gem cup is in progress, it is the configured cup, and
+	// the level being loaded is the mapped slot.
+	ctx = make_ctx(6, 1, 4);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "event race serves custom bytes");
+
+	// TERM: adventureCupActive. The host slot's RETAIL race pad. This is the
+	// case rung 2a exists to fix, and it is also why cupID must never be tested
+	// alone: cup.cupID is never reset, so after any Purple cup it still reads 4
+	// forever. Only the ADVENTURE_CUP flag distinguishes the two loads.
+	ctx = make_ctx(6, 0, 4);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0,
+	           "retail race pad to the host slot loads retail bytes (stale cupID 4)");
+
+	// TERM: cupID match. A different gem cup whose legs were shuffled onto the
+	// host slot still races the retail track.
+	ctx = make_ctx(6, 1, 1);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0,
+	           "another gem cup's leg on the host slot loads retail bytes");
+	ctx = make_ctx(6, 1, 0);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "Red cup leg on the host slot stays retail");
+
+	// TERM: levelID match. The event cup loading anything else serves nothing.
+	ctx = make_ctx(7, 1, 4);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "a different level in the event cup stays retail");
+	ctx = make_ctx(25, 1, 4);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "a hub load in the event cup stays retail");
+
+	// TERM: contentVerified, and TERM: raceEnabled -- both folded in through
+	// ShouldRedirectCup, so an unverified or disabled feature serves nothing
+	// even on a load that otherwise looks exactly like the event race.
+	ctx = make_ctx(6, 1, 4);
+	cfg.contentVerified = 0;
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "unverified content serves nothing");
+	cfg = ruled_config();
+	cfg.raceEnabled = 0;
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "event destination off serves nothing");
+
+	// NULLs are refused rather than dereferenced.
+	cfg = ruled_config();
+	expect_int(CustomTrackPolicy_ShouldServe(NULL, &ctx), 0, "NULL config serves nothing");
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, NULL), 0, "NULL context serves nothing");
+
+	// A configurable event cup moves the whole answer with it, so nothing may be
+	// keyed on the literal 4.
+	cfg = ruled_config();
+	cfg.raceCupID = 2;
+	ctx = make_ctx(6, 1, 2);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "a reconfigured event cup serves");
+	ctx = make_ctx(6, 1, 4);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "cup 4 no longer serves once cup 2 is the event");
+}
+
+// ---------------------------------------------------------------------------
+// 7. HUD leg count and the AP-box verdict.
+// ---------------------------------------------------------------------------
+
+static void test_leg_count(void)
+{
+	struct CustomTrackFeatureConfig cfg = ruled_config();
+
+	expect_int(CustomTrackPolicy_CupLegCount(&cfg, 4, 1), 1, "redirected cup reads TRACK n/1");
+	expect_int(CustomTrackPolicy_CupLegCount(&cfg, 0, 1), 4, "Red cup still reads TRACK n/4");
+	expect_int(CustomTrackPolicy_CupLegCount(&cfg, 4, 0), 4, "an arcade cup still reads TRACK n/4");
+
+	cfg.raceEnabled = 0;
+	expect_int(CustomTrackPolicy_CupLegCount(&cfg, 4, 1), 4, "feature off reads TRACK n/4");
+}
+
+static void test_box_verdict(void)
+{
+	struct CustomTrackFeatureConfig cfg = ruled_config();
+	struct CustomTrackLoadContext ctx = make_ctx(6, 1, 4);
+
+	// Ruled default: boxes allowed on the event race.
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_ALLOW, "event race allows boxes by default");
+
+	cfg.raceBoxes = 0;
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_DENY, "boxes can be denied on the event race");
+
+	// Everything that is not the event race leaves the existing cup-leg policy
+	// alone -- the verdict must never speak for a load it does not own.
+	cfg = ruled_config();
+	ctx = make_ctx(6, 0, 4);
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_UNCHANGED, "retail pad: box policy unchanged");
+	ctx = make_ctx(6, 1, 1);
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_UNCHANGED, "another cup's leg: unchanged");
+	ctx = make_ctx(3, 1, 4);
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_UNCHANGED, "a different level: unchanged");
+
+	cfg.raceBoxes = 0;
+	expect_int(CustomTrackPolicy_BoxVerdict(&cfg, &ctx), CTR_CT_BOX_UNCHANGED,
+	           "denying boxes never leaks onto a non-event load");
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -442,6 +616,9 @@ int main(void)
 	test_pair_auto_expand();
 	test_redirect_terms();
 	test_cup_completion();
+	test_serve_context();
+	test_leg_count();
+	test_box_verdict();
 	test_fork_consistency();
 
 	if (g_failures != 0)

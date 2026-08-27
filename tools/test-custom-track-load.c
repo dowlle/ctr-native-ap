@@ -197,6 +197,20 @@ static void load_capturing_log(void)
 // Scenarios.
 // ---------------------------------------------------------------------------
 
+// The load context of the event race itself: a gem cup is in progress, it is
+// the configured cup, and the level being loaded is the mapped slot. Every
+// "should this be served" question in this file is asked in THIS context unless
+// a scenario deliberately varies it.
+static struct CustomTrackLoadContext event_ctx(void)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = 6;
+	ctx.adventureCupActive = 1;
+	ctx.cupID = 4;
+	return ctx;
+}
+
 static char g_vrmHash[NATIVE_SHA256_HEX_BYTES];
 static char g_levHash[NATIVE_SHA256_HEX_BYTES];
 
@@ -255,11 +269,12 @@ static void expect_fully_disarmed(const char *what)
 
 	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
 	{
+		struct CustomTrackLoadContext ctx = event_ctx();
 		const char *path = NULL;
 		u32 size = 0;
 
 		snprintf(label, sizeof(label), "%s: subfile %d falls back to BIGFILE", what, 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &path, &size), 0, label);
+		expect_int(CustomTrack_GetOverride(48 + i, &ctx, &path, &size), 0, label);
 	}
 }
 
@@ -285,6 +300,7 @@ static void test_config_without_section(void)
 
 static void test_happy_path(void)
 {
+	struct CustomTrackLoadContext ctx = event_ctx();
 	const char *path;
 	u32 size;
 	int i;
@@ -293,7 +309,7 @@ static void test_happy_path(void)
 	write_good_config();
 	load_capturing_log();
 
-	expect_log_contains("armed", "happy path announces arming");
+	expect_log_contains("content verified", "happy path announces verification");
 	expect_int(CustomTrack_Config()->contentVerified, 1, "happy path: contentVerified");
 	expect_int(CustomTrack_Config()->mappedLevelID, 6, "happy path: mapped levelID parsed");
 	expect_int(CustomTrack_Config()->raceLaps, 7, "happy path: laps parsed");
@@ -317,16 +333,16 @@ static void test_happy_path(void)
 		path = NULL;
 		size = 0;
 		snprintf(label, sizeof(label), "happy path: subfile %d is served", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &path, &size), 1, label);
+		expect_int(CustomTrack_GetOverride(48 + i, &ctx, &path, &size), 1, label);
 
 		snprintf(label, sizeof(label), "happy path: subfile %d serves the %s", 48 + i, wantLev ? "lev" : "vrm");
 		expect_int((int)size, wantLev ? TEST_LEV_BYTES : TEST_VRM_BYTES, label);
 	}
 
 	// The neighbouring tracks' subfiles are untouched.
-	expect_int(CustomTrack_GetOverride(47, &path, &size), 0, "happy path: subfile 47 is not served");
-	expect_int(CustomTrack_GetOverride(56, &path, &size), 0, "happy path: subfile 56 is not served");
-	expect_int(CustomTrack_GetOverride(0, &path, &size), 0, "happy path: subfile 0 is not served");
+	expect_int(CustomTrack_GetOverride(47, &ctx, &path, &size), 0, "happy path: subfile 47 is not served");
+	expect_int(CustomTrack_GetOverride(56, &ctx, &path, &size), 0, "happy path: subfile 56 is not served");
+	expect_int(CustomTrack_GetOverride(0, &ctx, &path, &size), 0, "happy path: subfile 0 is not served");
 
 	// ReadFile's contract: fill the payload, zero-pad out to the sector-rounded
 	// buffer. LOAD_ReadFile_ex allocates ceil(size/2048)*2048 and the CD path it
@@ -342,7 +358,7 @@ static void test_happy_path(void)
 		memset(buf, 0xCD, sectorBytes); // poison, so padding must be written
 		path = NULL;
 		size = 0;
-		CustomTrack_GetOverride(49, &path, &size); // odd slot: the LEV
+		CustomTrack_GetOverride(49, &ctx, &path, &size); // odd slot: the LEV
 
 		expect_int(CustomTrack_ReadFile(path, buf, sectorBytes, size), 1, "happy path: ReadFile succeeds");
 
@@ -559,9 +575,10 @@ static void test_bad_lap_count(void)
 	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 0, "bad laps: Purple keeps four legs");
 }
 
-static void test_race_flag_off_still_serves(void)
+static void test_race_flag_off_serves_nothing(void)
 {
 	char text[2048];
+	struct CustomTrackLoadContext ctx = event_ctx();
 	const char *path = NULL;
 	u32 size = 0;
 
@@ -578,17 +595,112 @@ static void test_race_flag_off_still_serves(void)
 	write_config(text);
 	load_capturing_log();
 
-	// The loader and the event destination are independent seams: a verified
-	// track can be mapped onto a slot without the Gem Cup being touched.
-	expect_int(CustomTrack_Config()->contentVerified, 1, "race off: content verified");
-	expect_int(CustomTrack_GetOverride(48, &path, &size), 1, "race off: track is still served");
+	// Verification still runs, which makes this a useful config/hash check. But
+	// serving is conditional on the event race being the load in flight, and
+	// with the race off no load qualifies -- so nothing is ever served. There is
+	// deliberately no "map this track globally" mode: that is exactly the
+	// behaviour rung 2a removed.
+	expect_int(CustomTrack_Config()->contentVerified, 1, "race off: content still verified");
+	expect_log_contains("nothing will be served", "race off says so plainly");
+	expect_int(CustomTrack_GetOverride(48, &ctx, &path, &size), 0, "race off: nothing is served");
+	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 0, "race off: the LEV is not served either");
 	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 0, "race off: redirect is off");
 	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 0, "race off: Purple keeps four legs");
 	expect_int(CustomTrack_CupIsComplete(4, 1, 4), 1, "race off: Purple completes at leg 4");
+	expect_int(CustomTrack_CupLegCount(4, 1), 4, "race off: HUD still reads TRACK n/4");
+}
+
+// THE RUNG-2A DELIVERABLE, end to end against real files: in ONE armed session,
+// the event cup's load is served the custom track's bytes and the host slot's
+// own retail race pad is not. Same eight subfile indices, different answer.
+static void test_retail_pad_stays_retail(void)
+{
+	struct CustomTrackLoadContext eventLoad = event_ctx();
+	struct CustomTrackLoadContext retailPad;
+	struct CustomTrackLoadContext otherCupLeg;
+	struct CustomTrackLoadContext otherLevel;
+	const char *path = NULL;
+	u32 size = 0;
+	int i;
+
+	reset_loader();
+	write_good_config();
+	load_capturing_log();
+	expect_int(CustomTrack_Config()->contentVerified, 1, "retail-pad test: armed");
+	expect_log_contains("still loads retail bytes", "arming says the retail pad is unaffected");
+
+	// A race pad to the host slot. cup.cupID is deliberately left at 4 here:
+	// the engine never resets it, so after any Purple cup it reads 4 forever.
+	// Only ADVENTURE_CUP being clear separates this load from the event race,
+	// which is precisely why it is the load-bearing term.
+	retailPad = event_ctx();
+	retailPad.adventureCupActive = 0;
+
+	// Another gem cup whose legs were shuffled onto the host slot.
+	otherCupLeg = event_ctx();
+	otherCupLeg.cupID = 1;
+
+	// The event cup loading some other level.
+	otherLevel = event_ctx();
+	otherLevel.levelID = 7;
+
+	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
+	{
+		char label[128];
+
+		snprintf(label, sizeof(label), "event race: subfile %d serves custom bytes", 48 + i);
+		expect_int(CustomTrack_GetOverride(48 + i, &eventLoad, &path, &size), 1, label);
+
+		snprintf(label, sizeof(label), "retail pad: subfile %d falls back to BIGFILE", 48 + i);
+		expect_int(CustomTrack_GetOverride(48 + i, &retailPad, &path, &size), 0, label);
+
+		snprintf(label, sizeof(label), "another cup's leg: subfile %d falls back to BIGFILE", 48 + i);
+		expect_int(CustomTrack_GetOverride(48 + i, &otherCupLeg, &path, &size), 0, label);
+
+		snprintf(label, sizeof(label), "other level: subfile %d falls back to BIGFILE", 48 + i);
+		expect_int(CustomTrack_GetOverride(48 + i, &otherLevel, &path, &size), 0, label);
+	}
+
+	// The AP-box verdict follows the same split, and defaults to allowed.
+	expect_int(CustomTrack_BoxVerdict(6, 1, 4), CTR_CT_BOX_ALLOW, "event race: boxes allowed by default");
+	expect_int(CustomTrack_BoxVerdict(6, 0, 4), CTR_CT_BOX_UNCHANGED, "retail pad: box policy unchanged");
+	expect_int(CustomTrack_BoxVerdict(6, 1, 1), CTR_CT_BOX_UNCHANGED, "another cup's leg: box policy unchanged");
+
+	// And so does the HUD counter.
+	expect_int(CustomTrack_CupLegCount(4, 1), 1, "event cup reads TRACK n/1");
+	expect_int(CustomTrack_CupLegCount(1, 1), 4, "another gem cup reads TRACK n/4");
+}
+
+static void test_boxes_can_be_denied(void)
+{
+	char text[2048];
+
+	reset_loader();
+	snprintf(text, sizeof(text),
+	         "[CustomTracks]\n"
+	         "custom_track_level = 6\n"
+	         "custom_track_vrm = tracks/track.vrm\n"
+	         "custom_track_lev = tracks/track.lev\n"
+	         "custom_track_vrm_sha256 = %s\n"
+	         "custom_track_lev_sha256 = %s\n"
+	         "custom_track_race = 1\n"
+	         "custom_track_race_boxes = 0\n",
+	         g_vrmHash, g_levHash);
+	write_config(text);
+	load_capturing_log();
+
+	expect_log_contains("AP boxes on the event race: denied", "denied boxes are announced");
+	expect_int(CustomTrack_BoxVerdict(6, 1, 4), CTR_CT_BOX_DENY, "boxes denied on the event race");
+	expect_int(CustomTrack_BoxVerdict(6, 0, 4), CTR_CT_BOX_UNCHANGED, "denial never leaks onto the retail pad");
+
+	// Denying boxes changes nothing else about the event race.
+	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 1, "boxes denied: the race still redirects");
+	expect_int(CustomTrack_CupRaceLaps(4, 1), 7, "boxes denied: still 7 laps");
 }
 
 static void test_serve_time_size_recheck(void)
 {
+	struct CustomTrackLoadContext ctx = event_ctx();
 	const char *path = NULL;
 	u32 size = 0;
 
@@ -596,14 +708,14 @@ static void test_serve_time_size_recheck(void)
 	write_good_config();
 	load_capturing_log();
 	expect_int(CustomTrack_Config()->contentVerified, 1, "size recheck: armed to begin with");
-	expect_int(CustomTrack_GetOverride(49, &path, &size), 1, "size recheck: serves before the swap");
+	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 1, "size recheck: serves before the swap");
 
 	// Swap the file under the running game. Startup verification already passed,
 	// so only the serve-time check can catch this.
 	write_blob("tracks/track.lev", 99, TEST_LEV_BYTES - 2048);
 
-	expect_int(CustomTrack_GetOverride(49, &path, &size), 0, "size recheck: refuses the swapped file");
-	expect_int(CustomTrack_GetOverride(48, &path, &size), 1, "size recheck: the untouched VRM still serves");
+	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 0, "size recheck: refuses the swapped file");
+	expect_int(CustomTrack_GetOverride(48, &ctx, &path, &size), 1, "size recheck: the untouched VRM still serves");
 
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES); // restore
 }
@@ -633,7 +745,9 @@ int main(void)
 	test_out_of_range_level();
 	test_missing_level_key();
 	test_bad_lap_count();
-	test_race_flag_off_still_serves();
+	test_race_flag_off_serves_nothing();
+	test_retail_pad_stays_retail();
+	test_boxes_can_be_denied();
 	test_serve_time_size_recheck();
 
 	if (g_failures != 0)
