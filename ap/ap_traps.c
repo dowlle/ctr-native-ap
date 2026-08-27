@@ -130,6 +130,14 @@ static int AP_TrapIsLocal(struct Driver *driver)
 	return driver != 0 && driver == AP_TrapLocalDriver();
 }
 
+int AP_TrapSuppressCrateReward(struct Driver *driver)
+{
+	return AP_TrapCrateRewardSuppressed(g_active[AP_TRAP_EMPTY_CRATES],
+	                                    AP_TrapIsLocal(driver),
+	                                    driver != 0 &&
+	                                        (driver->actionsFlagSet & ACTION_BOT) != 0);
+}
+
 static const char *AP_TrapName(int effect)
 {
 	if (effect < 0 || effect >= AP_TRAP_EFFECT_COUNT)
@@ -848,6 +856,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "flatten")) AP_TrapReceive(AP_TRAP_FLATTEN);
 	else if (!strcmp(v, "reroll"))  AP_TrapReceive(AP_TRAP_ITEM_REROLL);
 	else if (!strcmp(v, "use"))     AP_TrapReceive(AP_TRAP_FORCED_USE);
+	else if (!strcmp(v, "empty"))   AP_TrapReceive(AP_TRAP_EMPTY_CRATES);
 	else if (!strcmp(v, "reverse")) AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "all"))
 	{

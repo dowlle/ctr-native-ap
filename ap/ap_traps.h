@@ -82,8 +82,8 @@ void AP_TrapDebugKeys(void);
 
 // Parse one ap-config.txt line for a trap test trigger (prefix "debug_trap=").
 // Called from AP_ReadConfig (ap_hooks.c) for each config line. Recognised values:
-//   icy | lowgrav | usf | boost | fp | all  -> arms that trap at connect, so it
-// runs its real schedule on the next eligible map. Unknown values are ignored.
+//   icy | lowgrav | usf | boost | fp | empty | all  -> arms that trap at connect,
+// so it runs its real schedule on the next eligible map. Unknown values are ignored.
 // Returns 1 if the line was consumed, 0 otherwise.
 int AP_TrapConfigLine(const char *line);
 
@@ -145,6 +145,11 @@ void AP_TrapLevelInstances(struct InstDef *defs, int count);
 // eligible crates until a real level load republishes the table, which keeps
 // Empty Crates armed rather than reading relocated memory.
 void AP_TrapForgetLevelInstances(void);
+
+// Called after an ordinary weapon or Wumpa crate has broken. Nonzero suppresses
+// only its reward for the local trap receiver. Other crate/object classes never
+// enter this hook.
+int AP_TrapSuppressCrateReward(struct Driver *driver);
 
 // Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw

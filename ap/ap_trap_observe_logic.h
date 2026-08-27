@@ -63,6 +63,15 @@ static int AP_TrapHeldItemIsResolved(int heldItemID, int itemRollTimer, int noIt
 	       AP_TRAP_ITEM_STATE_RESOLVED;
 }
 
+// Empty Crates suppresses only the reward for the local human who received the
+// effect. Crate breakage stays in the engine call site; this pure predicate pins
+// the player/AI ownership boundary in the host harness.
+static int AP_TrapCrateRewardSuppressed(int effectActive, int driverIsLocal,
+                                        int driverIsBot)
+{
+	return effectActive && driverIsLocal && !driverIsBot;
+}
+
 // ── Engine-natural completion ──
 enum AP_TrapOutcome
 {

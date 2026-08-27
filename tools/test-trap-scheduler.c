@@ -778,7 +778,7 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010107, AP_TRAP_FLATTEN, 1}, // batch 2 opener
 	{35010108, AP_TRAP_ITEM_REROLL, 1},
 	{35010109, AP_TRAP_FORCED_USE, 1},
-	{35010110, AP_TRAP_EMPTY_CRATES, 0},
+	{35010110, AP_TRAP_EMPTY_CRATES, 1},
 	{35010111, AP_TRAP_WEAKENED_KART, 0},
 	{35010112, AP_TRAP_BOOST_BLOCKER, 0},
 	{35010113, AP_TRAP_WIREFRAME, 0},
@@ -852,7 +852,7 @@ static void case_item_id_map(void)
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("exactly ten identities are buildable", buildable, 10);
+		expect("exactly eleven identities are buildable", buildable, 11);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -928,7 +928,7 @@ static void case_reserved_identity_receipt(void)
 		       count_ev(AP_TRAP_EV_INACTIVE, effect), 1);
 		expect("reserved identity never fires", count_ev(AP_TRAP_EV_FIRE, effect), 0);
 	}
-	expect("every reserved identity is retained armed", armedKept, 9);
+	expect("every reserved identity is retained armed", armedKept, 8);
 
 	// The buildable ones behaved normally in the same batch. This counts what
 	// actually ran rather than assuming all nine, because two ruled behaviours
@@ -1075,9 +1075,10 @@ static void case_wave2_batch1_roster(void)
 		AP_TRAP_FORCED_USE, AP_TRAP_REVERSE_STEERING,
 		// Batch 2 opener, once the squish damage state was correctly identified.
 		AP_TRAP_FLATTEN,
+		AP_TRAP_EMPTY_CRATES,
 	};
 	static const int scaffold[] = {
-		AP_TRAP_EMPTY_CRATES, AP_TRAP_WEAKENED_KART,
+		AP_TRAP_WEAKENED_KART,
 		AP_TRAP_BOOST_BLOCKER, AP_TRAP_WIREFRAME, AP_TRAP_NITRO,
 		AP_TRAP_RED_POTION, AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
 		AP_TRAP_WARPBALL_AMBUSH, AP_TRAP_DEMO_CAMERA,
@@ -1090,7 +1091,7 @@ static void case_wave2_batch1_roster(void)
 	for (i = 0; i < (int)(sizeof scaffold / sizeof scaffold[0]); i++)
 		expect("excluded effect is still a scaffold",
 		       AP_TrapSchedIsEnabled(&s, scaffold[i]), 0);
-	expect("the roster is ten active effects and ten scaffolds",
+	expect("the roster is eleven active effects and nine scaffolds",
 	       (int)(sizeof active / sizeof active[0]) +
 	           (int)(sizeof scaffold / sizeof scaffold[0]),
 	       AP_TRAP_EFFECT_COUNT);
@@ -1753,6 +1754,56 @@ static void case_client_trap_duration_policy(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 0);
 }
 
+static void case_empty_crates_reward_policy(void)
+{
+	expect("inactive Empty Crates preserves the local reward",
+	       AP_TrapCrateRewardSuppressed(0, 1, 0), 0);
+	expect("active Empty Crates suppresses the local human reward",
+	       AP_TrapCrateRewardSuppressed(1, 1, 0), 1);
+	expect("active Empty Crates preserves a remote human reward",
+	       AP_TrapCrateRewardSuppressed(1, 0, 0), 0);
+	expect("active Empty Crates preserves an AI reward",
+	       AP_TrapCrateRewardSuppressed(1, 0, 1), 0);
+	expect("a defensive local-bot combination never suppresses AI",
+	       AP_TrapCrateRewardSuppressed(1, 1, 1), 0);
+}
+
+static void case_empty_crates_lifecycle(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld empty = race;
+
+	AP_TrapSchedReset(&s);
+	empty.conditions = 0;
+	AP_TrapSchedReceive(&s, AP_TRAP_EMPTY_CRATES);
+	run_ms(&s, &empty, 2000);
+	expect("Empty Crates waits on a map without eligible crates",
+	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 0);
+	expect("the waiting Empty Crates copy remains armed",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_EMPTY_CRATES), 1);
+
+	race.conditions = AP_TRAP_COND_ELIGIBLE_CRATES;
+	run_ms(&s, &race, 1100);
+	expect("Empty Crates activates after its warning on an eligible map",
+	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 1);
+
+	AP_TrapSchedReceive(&s, AP_TRAP_EMPTY_CRATES);
+	run_ms(&s, &race, 2000);
+	expect("an Empty Crates duplicate does not stack on the current map",
+	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 1);
+	expect("an Empty Crates duplicate queues for a later map",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_EMPTY_CRATES), 1);
+
+	race.mapEpoch++;
+	AP_TrapSchedStep(&s, &race);
+	expect("the active Empty Crates copy clears on map change",
+	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 0);
+	run_ms(&s, &race, 1100);
+	expect("the queued Empty Crates copy activates on the next eligible map",
+	       AP_TrapSchedActive(&s, AP_TRAP_EMPTY_CRATES), 1);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -1799,6 +1850,8 @@ int main(void)
 	case_flatten_duplicates_serialize();
 	case_flatten_and_timed_effects_coexist();
 	case_client_trap_duration_policy();
+	case_empty_crates_reward_policy();
+	case_empty_crates_lifecycle();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;
