@@ -155,6 +155,17 @@ int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID);
 // non-vanilla numLaps without caring which cup did it.
 int CustomTrack_RaceFeatureEnabled(void);
 
+// Is the load in flight the event race? The same three facts and the same
+// decision as the subfile override, without naming a subfile. Asked by
+// MainInit_GetPrimMemSize, which has to size the frame's primitive arena for
+// whichever track is about to load and cannot wait for a subfile read to say so.
+int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
+
+// Every line this feature emits goes through here. Writes to stdout, which the
+// harnesses assert on, and in an AP build also to AP_LogLine, which is the sink
+// that reaches ctr-ap.log.
+void CustomTrack_Log(const char *fmt, ...);
+
 #endif // CTR_CUSTOM_TRACKS
 
 #endif // NATIVE_CUSTOM_TRACKS_H

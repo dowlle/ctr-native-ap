@@ -1187,6 +1187,64 @@ static void test_sky_primitive_budget(void)
 	free(arena);
 }
 
+// ---------------------------------------------------------------------------
+// The primitive arena a served load is given.
+// ---------------------------------------------------------------------------
+//
+// The arena is sized per LEVEL ID from a retail table, so a custom track
+// borrowing a slot inherits a budget chosen for someone else's geometry. The
+// expansion is keyed on the SAME decision as serving the bytes, which is what
+// keeps the two from disagreeing: a load that races retail content out of the
+// BIGFILE must also get retail's arena, and a load that races custom bytes must
+// get the arena those bytes were measured against.
+//
+// This is the seam that pins the pair together, because CustomTrack_ServingLoad
+// is what MainInit_PrimMem asks and CustomTrack_GetOverride is what the reader
+// asks, and they must answer identically for the same load.
+static void test_prim_arena_for_served_load(void)
+{
+	const unsigned long retailArena = 0x67uL << 10; // the borrowed slot's own budget
+	struct CustomTrackLoadContext eventLoad;
+	struct CustomTrackLoadContext retailPad;
+	const char *path = NULL;
+	u32 size = 0;
+
+	arm_with(good_descriptor());
+
+	eventLoad = event_ctx();
+	retailPad = event_ctx();
+	retailPad.adventureCupActive = 0; // cupID deliberately left stale
+
+	// The event race: served, and expanded.
+	expect_int(CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID), 1,
+	           "the event race is a served load");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, retailArena) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "so it gets the measured arena");
+
+	// A retail pad to the very same host slot in the same armed session: not
+	// served, so not expanded. Same slot, same session, different answer.
+	expect_int(CustomTrack_ServingLoad(retailPad.levelID, retailPad.adventureCupActive, retailPad.cupID), 0,
+	           "a retail pad to the host slot is not a served load");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailArena) == retailArena, 1,
+	           "so it keeps the retail arena byte for byte");
+
+	// The two questions agree: the load that gets custom bytes is the load that
+	// gets the expanded arena.
+	expect_int(CustomTrack_GetOverride(TEST_HOST * CTR_CT_GROUP_SIZE + 1, &eventLoad, &path, &size),
+	           CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID),
+	           "serving the bytes and sizing the arena are the same decision");
+	expect_int(CustomTrack_GetOverride(TEST_HOST * CTR_CT_GROUP_SIZE + 1, &retailPad, &path, &size),
+	           CustomTrack_ServingLoad(retailPad.levelID, retailPad.adventureCupActive, retailPad.cupID),
+	           "and they agree on the retail pad too");
+
+	// With the feature disarmed nothing is expanded, whatever the load says.
+	CustomTrack_ClearSeedDescriptor();
+	expect_int(CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID), 0,
+	           "a withdrawn descriptor serves no load");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailArena) == retailArena, 1,
+	           "and expands no arena");
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -1221,6 +1279,7 @@ int main(void)
 	test_serve_time_size_recheck();
 	test_absent_camera_path();
 	test_sky_primitive_budget();
+	test_prim_arena_for_served_load();
 
 	if (g_failures != 0)
 	{

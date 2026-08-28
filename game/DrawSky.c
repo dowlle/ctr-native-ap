@@ -37,8 +37,8 @@ static void DrawSky_NoteClamped(void)
 		return;
 
 	warned = 1;
-	printf("[CustomTracks] this level's skybox does not fit the primitive budget for its level slot; "
-	       "the far side of the sky is not drawn\n");
+	CustomTrack_Log("[CustomTracks] sky clamped: the skybox did not fit the frame's primitive arena, "
+	                "so the far side of the sky is not drawn\n");
 }
 #endif
 

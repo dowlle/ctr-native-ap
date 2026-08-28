@@ -21,7 +21,8 @@ the wire means the feature is fully off, whatever `config.ini` holds.**
 Does: load a verified custom track for the event race only, guard the
 custom-track crashes the engine has on the render path, on its two race cameras
 and on its per-level primitive budget, expand the MEMPACK arena so a >2 MiB
-track fits, wire the Purple Gem Cup destination to a single race, make the
+track fits, size the frame's primitive arena from measured demand instead of the
+borrowed slot's retail table, wire the Purple Gem Cup destination to a single race, make the
 AP-box gate on that race a deliberate answer, and correct the cup leg counter
 for a one-leg cup.
 
@@ -460,6 +461,50 @@ the same rung, and the descriptor does not measure star counts. The count is
 also read through a `u16`, so a negative `s16` in a custom LEV would ask for up
 to 65,535 stars.
 
+### Sizing the arena instead of only clamping to it
+
+The clamps above keep the client alive, but they were never the right resting
+state: they draw as much as the borrowed slot's budget allows and silently drop
+the rest. Under `CTR_CUSTOM_TRACKS` the retail table is not binding, and the same
+argument the [MEMPACK](#mempack) expansion already made applies here.
+
+`MainInit_PrimMem` now takes the retail figure from `MainInit_GetPrimMemSize` --
+which is ASM-verified and deliberately untouched -- and raises it to
+`CTR_CT_PRIM_ARENA_BYTES` (1 MiB) **only for a load the loader is actually
+serving the custom track for**. A retail race in the same binary allocates
+exactly the bytes it always did.
+
+1 MiB is measured, not chosen:
+
+| | bytes |
+|---|---|
+| sky, worst four-segment frame | 310,464 |
+| level geometry, every quadblock at near LOD | 496,704 |
+| both at once, which cannot actually happen | 807,168 |
+| `CTR_CT_PRIM_ARENA_BYTES` | **1,048,576** |
+
+Three ceilings were checked rather than assumed, and each is asserted in
+`tools/test-custom-track-policy.c`:
+
+- **GPU link tokens.** Ranges are handed tokens counting *down* from `0x00f00000`
+  (`platform/native_gpu_links.c`), so every registered range shares a
+  15,728,640-byte budget. Two 1 MiB arenas plus the OT pair and the swapchain
+  pair come to 4,218,928 — 27% of it. An over-large arena would fail **loudly**:
+  `NativeGpuLinks_RegisterRangeChecked` aborts at startup rather than truncating.
+- **MEMPACK.** 5,418,356 bytes were free during this race on the 8 MiB arena the
+  custom-track build already selects; the expansion costs 1,886,208 of that.
+- **No 16-bit primitive offsets anywhere downstream.** `PrimMem`'s own fields are
+  `u32`/`void *`, and the GPU tags carry 24-bit *tokens* rather than truncated
+  pointers, so nothing narrows an address as the arena grows.
+
+The expansion is a **floor, not a replacement**: a slot whose retail budget was
+already larger keeps it, so turning the feature on can never give a custom track
+less room than the slot it borrowed.
+
+With the arena sized to the demand, the clamps become what they should have been
+from the start — a safety net for a track that exceeds even this, not the
+operative path.
+
 ### Why this only appeared after the camera fix
 
 Not a frame-count coincidence, and the frame numbers are not comparable: the two
@@ -474,6 +519,43 @@ level had never rendered a frame and `DrawSky_Full` had never run. Fixing the
 camera let initialization finish, and the sky overrun then landed on the first
 rendered frames. The two are sequential failures on the same load, not a
 regression introduced by the camera fix.
+
+### Where this feature's log goes
+
+Everything the feature prints now goes through `CustomTrack_Log`
+(`platform/native_custom_tracks.c`), which writes to **stdout** — what the
+harnesses capture and assert on — and, in an AP build, also hands the same text
+to `AP_LogLine`, the sink that reaches `ctr-ap.log`.
+
+Before that helper existed every `[CustomTracks]` line was a bare `printf` to
+stdout, so none of it survived a real session: a run that refused a track, or
+clamped a sky, left no evidence any log grep could find. Both halves matter —
+dropping stdout would blind the harnesses, and the missing `AP_LogLine` half is
+what made the first runtime question about the sky clamp unanswerable.
+
+`AP_LogLine` is bound by prototype, the way every other game-side AP call site
+does it, so the loader stays linkable in a clean non-AP build.
+
+### The arena high-water report
+
+`RenderAllLevelGeometry` samples `primMem->cursor` three times — before the
+terrain, after it, and after the sky — and reports the **worst frame of the
+level load**, once, through the same sink:
+
+```
+[CustomTracks] prim arena high-water N/CAP bytes: other draws A, terrain +B
+               (P prims, L leaves), sky +C, F free
+```
+
+`other draws` is the load-bearing number: terrain is the 22nd of the frame's
+primitive writers and the sky is the 23rd, so both live on whatever the HUD, the
+weather, the karts, the crates, the tires and the shadows left behind.
+
+The worst frame is reported rather than the first, because a load's opening
+frames draw an almost empty world, and one line per load rather than per frame
+because 60 lines a second is not evidence. It exists because `DrawLevelOvr1P`'s
+own failure is completely silent, which is what made a black floor impossible to
+tell apart from a dozen other causes.
 
 ### Siblings checked
 
@@ -672,6 +754,16 @@ on the guard, a cursor already past the guard, the two different primitive sizes
 the two call sites ask about, and the measured demand figures including the fact
 that the budget table's own ceiling is smaller than this track's sky.
 
+`test-custom-track-load` additionally pins the seam the arena expansion rides
+on: that `CustomTrack_ServingLoad` — what `MainInit_PrimMem` asks — and
+`CustomTrack_GetOverride` — what the subfile reader asks — give the **same**
+answer for the same load, so the bytes a race is served and the arena it is
+given can never disagree. It checks the event race and a retail pad to the very
+same host slot in one armed session, and that a withdrawn descriptor expands
+nothing. `test-custom-track-policy` pins the arena decision itself: retail loads
+keep their exact figure, the expansion is a floor rather than a replacement, and
+the three ceilings above hold as arithmetic.
+
 ## Guard-off identity
 
 With `CTR_CUSTOM_TRACKS` off, the preprocessed `main.c` translation unit (5.6 MB
@@ -685,7 +777,12 @@ The count is **thirteen** typedefs in a non-AP build, measured against
 `game/CAM.c` (six), and the primitive-budget guard added two more such blocks, to
 `game/DrawSky.c` and `game/RenderStars.c` (thirteen). Both of those files carry
 `CTR_STATIC_ASSERT`s of their own near the top, which is why two `#include`
-blocks shift seven names. An AP build additionally shows the
+blocks shift seven names. The arena-sizing change added `#include` blocks to
+`game/MAIN/MainInit.c` and `game/MAIN/MainFrame_RenderFrame.c` and did **not**
+move the count at all: neither file contains a `CTR_STATIC_ASSERT`, and
+`__LINE__` shifts are confined to the file they occur in, so its guard-off
+output is byte-identical to the previous head in both configurations. An AP
+build additionally shows the
 `ap/ap_seedcfg.cpp` custom-tracks parse itself, which is deliberate and
 documented under [Lifecycle](#lifecycle): a guard-off AP build still parses the
 block so its verifier stays correct about displacement.
@@ -714,13 +811,16 @@ address.
 - The minimap is blank on a track whose `ST1_MAP` entry is absent, which Baby T
   Park's is. The descriptor's `minimap` flag does not cause this and does not
   prevent it — it is measured and logged but inert on the native side.
-- **The event track's sky is visibly incomplete.** Its skybox wants about three
-  times the primitive arena the borrowed slot is given, so roughly the first
-  third of each frame's sky is drawn and the rest is not. Expect the far side of
-  the sky to be missing, and the boundary to move as the camera turns. This is
-  the clamp working: without it the client aborts. The one-line
-  `[CustomTracks]` log on the first clamped frame is the marker.
-- No descriptor flag measures sky faces or star counts, so a track that will
-  clip its sky is not refused and cannot be predicted from the wire. It races
-  correctly, it just does not look right. A check rung that measures primitive
-  demand at pack time is the real fix and is not in this rung.
+- No descriptor flag measures sky faces, star counts or geometry density, so a
+  track whose per-frame primitive demand exceeds even the expanded arena is not
+  refused and cannot be predicted from the wire. It races correctly; it clips.
+  A check rung that measures primitive demand at pack time is the real fix and is
+  not in this rung.
+- **This track's BSP is unusually coarse: 12.4 quadblocks per leaf, against 2.5
+  to 5.6 on every retail arcade track**, and none of its leaves carry a LOD
+  render flag. The BSP leaf is the culling unit, so for the same visible screen
+  area it submits roughly two to four times the quadblocks retail would, all on
+  the expensive four-face path. Its total geometry is ordinary — 2,388
+  quadblocks, where four retail tracks carry more — so this is a packing
+  property, not a size problem, and no amount of arena covers a track that
+  cannot cull.

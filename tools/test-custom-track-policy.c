@@ -842,6 +842,74 @@ static void test_prim_fits(void)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 11. How big the primitive arena is.
+// ---------------------------------------------------------------------------
+
+static void test_prim_arena_bytes(void)
+{
+	const unsigned long retailSlot6 = 0x67uL << 10; // 105,472
+	const unsigned long retailWidest = 0x6euL << 10; // 112,640, the table's largest real entry
+
+	// A load that is not the event race is handed the retail figure untouched.
+	// This is the whole retail-identity argument: the same binary races both,
+	// and only the custom track's load differs.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailSlot6) == retailSlot6, 1,
+	           "a retail load keeps the retail arena exactly");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailWidest) == retailWidest, 1,
+	           "including the table's widest entry");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, CTR_CT_PRIM_ARENA_BYTES + 1) == CTR_CT_PRIM_ARENA_BYTES + 1, 1,
+	           "and a hypothetical huge one");
+
+	// The event race gets the measured arena.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, retailSlot6) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "the event race gets the measured arena");
+
+	// It is a FLOOR, not a replacement: a slot whose retail budget was already
+	// larger must not be shrunk by turning the feature on.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, CTR_CT_PRIM_ARENA_BYTES + 4096) == CTR_CT_PRIM_ARENA_BYTES + 4096, 1,
+	           "a bigger retail arena is never shrunk");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, CTR_CT_PRIM_ARENA_BYTES) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "an exactly-equal arena is unchanged");
+
+	// --- the demand it was sized against -----------------------------------
+	{
+		const unsigned long skyWorst = 4uL * 2772uL * 0x1CuL;  // 310,464
+		const unsigned long geomWorst = 2388uL * 4uL * 0x34uL; // 496,704: every quadblock, near LOD
+
+		expect_int(CTR_CT_PRIM_ARENA_BYTES > skyWorst, 1, "the arena covers the worst sky frame");
+		expect_int(CTR_CT_PRIM_ARENA_BYTES > geomWorst, 1, "and the whole level at near LOD");
+		expect_int(CTR_CT_PRIM_ARENA_BYTES > skyWorst + geomWorst, 1,
+		           "and both at once, which cannot actually happen");
+
+		// The retail table could not have expressed this at any value.
+		expect_int((255uL << 10) < skyWorst, 1, "the retail table's ceiling could not hold even the sky");
+	}
+
+	// --- the ceilings it was checked against --------------------------------
+	{
+		// GPU link tokens are handed out counting DOWN from this base, so every
+		// registered range shares it (platform/native_gpu_links.c).
+		const unsigned long tokenBudget = 0x00f00000uL; // 15,728,640
+		const unsigned long otPair = 2uL * 0x2000uL;    // 1P/2P OT, MainInit_OTMem
+		const unsigned long swapPair = 2uL * ((1uL << 12) | 0x18uL);
+		const unsigned long registered = 2uL * CTR_CT_PRIM_ARENA_BYTES + otPair + swapPair;
+
+		expect_int(registered < tokenBudget, 1, "both arenas plus OT and swapchain fit the token space");
+		expect_int(registered * 3 < tokenBudget, 1, "with room to spare three times over");
+
+		// MEMPACK, measured free during this race on the 8 MiB arena the
+		// custom-track build already selects.
+		{
+			const unsigned long freeDuringRace = 5418356uL;
+			const unsigned long cost = 2uL * (CTR_CT_PRIM_ARENA_BYTES - retailSlot6);
+
+			expect_int(cost < freeDuringRace, 1, "the expansion fits the free MEMPACK measured in a real race");
+			expect_int(cost * 2 < freeDuringRace, 1, "with more than half of it still free afterwards");
+		}
+	}
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -855,6 +923,7 @@ int main(void)
 	test_measured_flags();
 	test_st1_entry_present();
 	test_prim_fits();
+	test_prim_arena_bytes();
 	test_fork_consistency();
 
 	if (g_failures != 0)

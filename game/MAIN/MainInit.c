@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 #ifdef CTR_NATIVE
 static void MainInit_InitVisMemBspListNodes(struct VisMem *visMem, struct mesh_info *mesh)
 {
@@ -152,6 +156,35 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	{
 		return;
 	}
+
+#ifdef CTR_CUSTOM_TRACKS
+	// MainInit_GetPrimMemSize is left alone deliberately -- it is an
+	// ASM-verified retail function and its answer for the borrowed slot stays
+	// exactly what retail computes. The custom track's arena is chosen HERE,
+	// after it, and only for a load the loader is actually serving, so a retail
+	// race in this same binary allocates the same bytes it always did.
+	//
+	// The retail table cannot express an arena this track can use: it is
+	// u8 << 10, ceiling 261,120 bytes, and this track's sky alone wants 310,464.
+	// Outside the table there is no such limit, which is the same argument the
+	// MEMPACK expansion already made for the level payload.
+	//
+	// All three facts the serving decision needs are committed before the
+	// ten-stage loader is armed (see tools/CUSTOM-TRACK-SPIKE.md), and this
+	// runs inside that machine, so asking here is safe.
+	{
+		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, (unsigned long)size);
+
+		if (chosen != (unsigned long)size)
+		{
+			CustomTrack_Log("[CustomTracks] primitive arena %d -> %lu bytes for this race "
+			                "(the borrowed slot's retail budget cannot hold this track)\n",
+			                size, chosen);
+			size = (int)chosen;
+		}
+	}
+#endif
 
 	MainDB_PrimMem(&gGT->db[0].primMem, size);
 	MainDB_PrimMem(&gGT->db[1].primMem, size);

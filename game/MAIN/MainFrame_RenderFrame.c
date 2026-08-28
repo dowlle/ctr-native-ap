@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
@@ -11,6 +15,40 @@
 
 #ifdef CTR_INTERNAL
 volatile int gCtrDebugSkipLevelGeometry = 0;
+#endif
+
+#ifdef CTR_CUSTOM_TRACKS
+// Reports the frame that came closest to running the primitive arena dry, once
+// per level load. Tracked rather than printed live because the interesting
+// frame is not the first one -- the load's opening frames draw an almost empty
+// world -- and because a per-frame line at 60 Hz is not evidence, it is noise.
+//
+// `beforeGeom` is what every earlier writer in the frame already took, which is
+// the number that decides whether terrain had room. `capacity` is the whole
+// arena; the usable ceiling is 0x100 below it.
+static void RenderAllLevelGeometry_NotePrimSpend(unsigned long capacity, unsigned long beforeGeom, unsigned long afterGeom,
+                                                 unsigned long afterSky, int leavesDrawn, int terrainPrims)
+{
+	static unsigned long worstSpend = 0;
+	static unsigned long reportedFor = 0;
+
+	// A new arena size means a new level load; start the search again.
+	if (reportedFor != capacity)
+	{
+		reportedFor = capacity;
+		worstSpend = 0;
+	}
+
+	if (afterSky <= worstSpend)
+		return;
+
+	worstSpend = afterSky;
+
+	CustomTrack_Log("[CustomTracks] prim arena high-water %lu/%lu bytes: other draws %lu, terrain +%lu (%d prims, "
+	                "%d leaves), sky +%lu, %lu free\n",
+	                afterSky, capacity, beforeGeom, afterGeom - beforeGeom, terrainPrims, leavesDrawn,
+	                afterSky - afterGeom, (capacity > afterSky) ? (capacity - afterSky) : 0);
+}
 #endif
 
 void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
@@ -966,10 +1004,42 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		                                           gGT->visMem1->bspList[0], (char)numPlyrCurrGame);
 
 		// 226-229
+#ifdef CTR_CUSTOM_TRACKS
+		// Arena accounting for the one frame that needs explaining.
+		//
+		// DrawLevelOvr1P is the 22nd of the frame's primitive writers and the
+		// sky is the 23rd, so terrain and sky live on whatever the HUD, the
+		// weather, the karts, the crates and the shadows left behind. When the
+		// arena runs out mid-terrain, DrawLevelOvr1P abandons the REST of level
+		// rendering for the frame -- it does not skip one quadblock, it returns
+		// -- and it says nothing at all. That silence is why the first report of
+		// a black floor could not be told apart from a dozen other causes.
+		//
+		// Reported once per level load, for the worst frame seen rather than
+		// the first, because the first frames of a load are not the steady
+		// state the player describes.
+		{
+			struct PrimMem *pm = &gGT->backBuffer->primMem;
+			unsigned long before = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+			unsigned long afterGeom;
+			unsigned long afterSky;
+
+			DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, pm, gGT->visMem1->visFaceList[0],
+			               level1->ptr_tex_waterEnvMap);
+			afterGeom = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+
+			DrawSky_Full(level1->ptr_skybox, pushBuffer, pm);
+			afterSky = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+
+			RenderAllLevelGeometry_NotePrimSpend(pm->capacityBytes, before, afterGeom, afterSky, gGT->bspLeafsDrawn,
+			                                     pm->primitiveCount);
+		}
+#else
 		DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, &gGT->backBuffer->primMem, gGT->visMem1->visFaceList[0],
 		               level1->ptr_tex_waterEnvMap); // waterEnvMap?
 
 		DrawSky_Full(level1->ptr_skybox, pushBuffer, &gGT->backBuffer->primMem);
+#endif
 
 		// skybox gradient
 		if ((level1->configFlags & 1) != 0)

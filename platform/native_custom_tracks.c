@@ -4,12 +4,44 @@
 #include <platform/native_sha256.h>
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
 
+#ifdef CTR_AP
+// Bound by prototype, the way every other game-side AP call site does it
+// (game/MEMPACK.c, game/231/RB_Blowup.c). Declared in ap/ap_hooks.h.
+void AP_LogLine(const char *msg);
+#endif
+
 // Custom-track loader, engine half. See native_custom_tracks.h for the model
 // and native_custom_tracks_policy.h for every decision this file asks.
+
+// Every line this feature emits goes through here.
+//
+// It keeps writing to stdout, which is what the harnesses capture and assert
+// on, AND in an AP build hands the same text to AP_LogLine, the sink that
+// reaches ctr-ap.log. Before this existed the feature logged with bare printf
+// to stdout only, so none of it survived a real session: a run that refused a
+// track or clamped a sky left no evidence any log grep could find. Both halves
+// matter -- dropping stdout would blind the harnesses, and the missing
+// AP_LogLine half is what made the first runtime question unanswerable.
+void CustomTrack_Log(const char *fmt, ...)
+{
+	char line[512];
+	va_list args;
+
+	va_start(args, fmt);
+	vsnprintf(line, sizeof line, fmt, args);
+	va_end(args);
+
+	fputs(line, stdout);
+
+#ifdef CTR_AP
+	AP_LogLine(line);
+#endif
+}
 
 #define CUSTOM_TRACK_PATH_MAX 512
 #define CUSTOM_TRACK_HASH_CHUNK 65536
@@ -126,24 +158,24 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	if (source->expectedHash[0] == '\0')
 	{
 		source->verdict = CTR_CT_VERDICT_NO_EXPECTED;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
 		return;
 	}
 
 	if (strlen(source->expectedHash) != NATIVE_SHA256_DIGEST_BYTES * 2)
 	{
 		source->verdict = CTR_CT_VERDICT_BAD_EXPECTED;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
 		return;
 	}
 
 	if (stat(source->path, &st) != 0 || st.st_size <= 0)
 	{
 		source->verdict = CTR_CT_VERDICT_FILE_MISSING;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
 		return;
 	}
 
@@ -151,8 +183,8 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	if (f == NULL)
 	{
 		source->verdict = CTR_CT_VERDICT_READ_FAILED;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
 		return;
 	}
 
@@ -167,8 +199,8 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	{
 		fclose(f);
 		source->verdict = CTR_CT_VERDICT_READ_FAILED;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
 		return;
 	}
 	fclose(f);
@@ -179,17 +211,17 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	if (!NativeSha256_HexEquals(source->expectedHash, actualHex))
 	{
 		source->verdict = CTR_CT_VERDICT_HASH_MISMATCH;
-		printf("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
-		       CustomTrack_VerdictText(source->verdict));
-		printf("[CustomTracks]   expected %s\n", source->expectedHash);
-		printf("[CustomTracks]   actual   %s\n", actualHex);
+		CustomTrack_Log("[CustomTracks] REFUSED %s \"%s\": %s\n", roleName, source->path,
+                                CustomTrack_VerdictText(source->verdict));
+		CustomTrack_Log("[CustomTracks]   expected %s\n", source->expectedHash);
+		CustomTrack_Log("[CustomTracks]   actual   %s\n", actualHex);
 		return;
 	}
 
 	source->verdict = CTR_CT_VERDICT_OK;
 	source->verifiedSize = total;
-	printf("[CustomTracks] verified %s \"%s\" (%u bytes, sha256 %s)\n", roleName, source->path,
-	       (unsigned)total, actualHex);
+	CustomTrack_Log("[CustomTracks] verified %s \"%s\" (%u bytes, sha256 %s)\n", roleName, source->path,
+                        (unsigned)total, actualHex);
 }
 
 void CustomTrack_Load(void)
@@ -218,7 +250,7 @@ void CustomTrack_Load(void)
 	if (f == NULL)
 	{
 		// No config is a valid state: behave exactly like the retail build.
-		printf("[CustomTracks] config.ini not found, loader disarmed\n");
+		CustomTrack_Log("[CustomTracks] config.ini not found, loader disarmed\n");
 		return;
 	}
 
@@ -274,13 +306,13 @@ void CustomTrack_Load(void)
 
 	if (s_customTrackVrm.path[0] == '\0' && s_customTrackLev.path[0] == '\0')
 	{
-		printf("[CustomTracks] no track files configured; the feature stays off\n");
+		CustomTrack_Log("[CustomTracks] no track files configured; the feature stays off\n");
 		return;
 	}
 
-	printf("[CustomTracks] track files configured; awaiting a seed descriptor\n");
-	printf("[CustomTracks]   vrm \"%s\"\n", s_customTrackVrm.path);
-	printf("[CustomTracks]   lev \"%s\"\n", s_customTrackLev.path);
+	CustomTrack_Log("[CustomTracks] track files configured; awaiting a seed descriptor\n");
+	CustomTrack_Log("[CustomTracks]   vrm \"%s\"\n", s_customTrackVrm.path);
+	CustomTrack_Log("[CustomTracks]   lev \"%s\"\n", s_customTrackLev.path);
 }
 
 void CustomTrack_ClearSeedDescriptor(void)
@@ -293,7 +325,7 @@ void CustomTrack_ClearSeedDescriptor(void)
 
 	// A seed that goes away takes the whole feature with it. Nothing is served
 	// and every cup is back to its vanilla legs on the very next read.
-	printf("[CustomTracks] seed descriptor withdrawn; the feature is off\n");
+	CustomTrack_Log("[CustomTracks] seed descriptor withdrawn; the feature is off\n");
 	memset(&s_descriptor, 0, sizeof(s_descriptor));
 	s_haveDescriptor = 0;
 	CustomTrack_ResetArmedState();
@@ -326,9 +358,9 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	cupID = d->replacesCupLevelID - 100;
 
-	printf("[CustomTracks] seed descriptor: cup LevelID %d -> single %d-lap race on host "
-	       "slot %d (boxes %s)\n",
-	       d->replacesCupLevelID, d->laps, d->hostLevelID, d->boxes ? "allowed" : "denied");
+	CustomTrack_Log("[CustomTracks] seed descriptor: cup LevelID %d -> single %d-lap race on host "
+                        "slot %d (boxes %s)\n",
+                        d->replacesCupLevelID, d->laps, d->hostLevelID, d->boxes ? "allowed" : "denied");
 
 	// Wire-shape validation already ran in ap_seedcfg; this is the engine's own
 	// authority over what it can actually serve, and it is deliberately separate.
@@ -337,28 +369,28 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// producing a wrong-content race.
 	if (!CustomTrackPolicy_LevelIDIsMappable(d->hostLevelID))
 	{
-		printf("[CustomTracks] REFUSED: host slot %d is not an arcade slot 0..%d\n",
-		       d->hostLevelID, CTR_CT_MAX_LEVELS - 1);
+		CustomTrack_Log("[CustomTracks] REFUSED: host slot %d is not an arcade slot 0..%d\n",
+                                d->hostLevelID, CTR_CT_MAX_LEVELS - 1);
 		return 0;
 	}
 
 	if (cupID < 0 || cupID > 4)
 	{
-		printf("[CustomTracks] REFUSED: cup LevelID %d is not a Gem Cup 100..104\n",
-		       d->replacesCupLevelID);
+		CustomTrack_Log("[CustomTracks] REFUSED: cup LevelID %d is not a Gem Cup 100..104\n",
+                                d->replacesCupLevelID);
 		return 0;
 	}
 
 	if (d->laps < 1 || d->laps > 7)
 	{
-		printf("[CustomTracks] REFUSED: %d laps is outside 1..7\n", d->laps);
+		CustomTrack_Log("[CustomTracks] REFUSED: %d laps is outside 1..7\n", d->laps);
 		return 0;
 	}
 
 	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns, cupID, &why))
 	{
-		printf("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
-		       why, d->flagAiNav, d->flagSpawns, CustomTrackPolicy_RequiredSpawns(cupID));
+		CustomTrack_Log("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
+                                why, d->flagAiNav, d->flagSpawns, CustomTrackPolicy_RequiredSpawns(cupID));
 		return 0;
 	}
 
@@ -367,9 +399,9 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		// The seed names a track this client has no files for. Loud, because the
 		// player CAN fix it, and total, because the alternative is racing the
 		// host slot's retail track for a Gem the seed thinks is on Baby T Park.
-		printf("[CustomTracks] REFUSED: this seed binds a custom track, but config.ini "
-		       "names no custom_track_lev/custom_track_vrm files for it\n");
-		printf("[CustomTracks] the cup stays vanilla; add the track files to play this seed\n");
+		CustomTrack_Log("[CustomTracks] REFUSED: this seed binds a custom track, but config.ini "
+                                "names no custom_track_lev/custom_track_vrm files for it\n");
+		CustomTrack_Log("[CustomTracks] the cup stays vanilla; add the track files to play this seed\n");
 		return 0;
 	}
 
@@ -393,22 +425,22 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		// Loud and total: no bytes served AND the cup stays vanilla. Serving
 		// retail bytes for a race the seed thinks is the custom track is exactly
 		// the silent wrong-content outcome the digests exist to prevent.
-		printf("[CustomTracks] DISARMED: content did not match the seed's digests "
-		       "(vrm: %s, lev: %s)\n",
-		       CustomTrack_VerdictText(s_customTrackVrm.verdict),
-		       CustomTrack_VerdictText(s_customTrackLev.verdict));
-		printf("[CustomTracks] the cup stays vanilla and no custom bytes are served\n");
+		CustomTrack_Log("[CustomTracks] DISARMED: content did not match the seed's digests "
+                                "(vrm: %s, lev: %s)\n",
+                                CustomTrack_VerdictText(s_customTrackVrm.verdict),
+                                CustomTrack_VerdictText(s_customTrackLev.verdict));
+		CustomTrack_Log("[CustomTracks] the cup stays vanilla and no custom bytes are served\n");
 		s_customTrackConfig.raceEnabled = 0;
 		s_customTrackConfig.mappedLevelID = -1;
 		return 0;
 	}
 
 	s_customTrackConfig.contentVerified = 1;
-	printf("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
-	       cupID, d->laps, d->hostLevelID);
-	printf("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
-	       "race pad still loads retail bytes\n",
-	       d->hostLevelID);
+	CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
+                        cupID, d->laps, d->hostLevelID);
+	CustomTrack_Log("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
+                        "race pad still loads retail bytes\n",
+                        d->hostLevelID);
 	return 1;
 }
 
@@ -454,9 +486,9 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	// the game is running -- without turning every level load into a hash.
 	if (stat(source->path, &st) != 0 || (u32)st.st_size != source->verifiedSize)
 	{
-		printf("[CustomTracks] REFUSED subfile %d: \"%s\" changed since it was verified, "
-		       "falling back to BIGFILE\n",
-		       subfileIndex, source->path);
+		CustomTrack_Log("[CustomTracks] REFUSED subfile %d: \"%s\" changed since it was verified, "
+                                "falling back to BIGFILE\n",
+                                subfileIndex, source->path);
 		return 0;
 	}
 
@@ -467,9 +499,9 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	if (outSize)
 		*outSize = source->verifiedSize;
 
-	printf("[CustomTracks] serving subfile %d (%s) from \"%s\" (%u bytes)\n", subfileIndex,
-	       (role == CTR_CT_ROLE_LEV) ? "lev" : "vrm", s_customTrackResolved,
-	       (unsigned)source->verifiedSize);
+	CustomTrack_Log("[CustomTracks] serving subfile %d (%s) from \"%s\" (%u bytes)\n", subfileIndex,
+                        (role == CTR_CT_ROLE_LEV) ? "lev" : "vrm", s_customTrackResolved,
+                        (unsigned)source->verifiedSize);
 	return 1;
 }
 
@@ -487,7 +519,7 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 	f = fopen(path, "rb");
 	if (f == NULL)
 	{
-		printf("[CustomTracks] ERROR: could not reopen \"%s\"\n", path);
+		CustomTrack_Log("[CustomTracks] ERROR: could not reopen \"%s\"\n", path);
 		return 0;
 	}
 
@@ -496,8 +528,8 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 
 	if (got != (size_t)fileBytes)
 	{
-		printf("[CustomTracks] ERROR: short read on \"%s\" (%u of %u bytes)\n", path, (unsigned)got,
-		       (unsigned)fileBytes);
+		CustomTrack_Log("[CustomTracks] ERROR: short read on \"%s\" (%u of %u bytes)\n", path, (unsigned)got,
+                                (unsigned)fileBytes);
 		return 0;
 	}
 
@@ -543,6 +575,17 @@ int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
 	ctx.cupID = cupID;
 
 	return CustomTrackPolicy_BoxVerdict(CustomTrack_Config(), &ctx);
+}
+
+int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = levelID;
+	ctx.adventureCupActive = adventureCupActive;
+	ctx.cupID = cupID;
+
+	return CustomTrackPolicy_ShouldServe(CustomTrack_Config(), &ctx);
 }
 
 int CustomTrack_RaceFeatureEnabled(void)

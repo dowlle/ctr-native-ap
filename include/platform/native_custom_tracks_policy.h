@@ -7,7 +7,7 @@
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
 // engine, with no disc, no display, no config file and no seed.
 //
-// SEVEN DECISIONS LIVE HERE.
+// EIGHT DECISIONS LIVE HERE.
 //
 // 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
 //    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
@@ -124,6 +124,44 @@
 //    that. The predicate below therefore answers "does one more primitive fit",
 //    and the call sites stop drawing rather than overrun.
 //
+// 8. HOW BIG THE PRIMITIVE ARENA IS. Decision 7 clamps emitters to the arena.
+//    This one asks whether the arena is the right size in the first place, and
+//    for a custom track it is not: the retail table is indexed by the borrowed
+//    slot, so the track is handed a budget chosen for someone else's geometry.
+//
+//    The retail table cannot express a bigger one. It is u8 << 10, ceiling
+//    261,120 bytes, and the event track's SKY ALONE wants 310,464 -- so under
+//    the table the sky is unservable at any table value, and the clamp is not a
+//    safety net but the operative path. Outside the table there is no such
+//    limit: this is the same argument the MEMPACK expansion already made, and
+//    the same answer.
+//
+//    CTR_CT_PRIM_ARENA_BYTES is 1 MiB, sized from measurement rather than taste:
+//      sky, worst 4-segment frame ....................  310,464
+//      level geometry, EVERY quadblock at near LOD ...  496,704
+//      both at once, which cannot actually happen ....  807,168
+//    1,048,576 covers that impossible worst case with 30% to spare, and every
+//    real frame by a wide margin. Three ceilings were checked against it rather
+//    than assumed, and each is asserted in tools/test-custom-track-policy.c:
+//      - GPU link tokens. Ranges are handed tokens counting DOWN from
+//        0x00f00000 (platform/native_gpu_links.c), so all registered ranges
+//        share a 15,728,640-byte budget. Two prim arenas at 1 MiB plus the OT
+//        pair and the swapchain pair come to 4,218,928 -- 27% of it. Over-large
+//        would fail LOUDLY: NativeGpuLinks_RegisterRangeChecked aborts at
+//        startup rather than silently truncating.
+//      - MEMPACK. Measured 5,418,356 bytes free during this race on the 8 MiB
+//        arena the custom-track build already selects; the expansion costs
+//        1,886,208 of it.
+//      - Nothing downstream stores a primitive offset in 16 bits. PrimMem's own
+//        fields are u32/void*, and the GPU tags carry 24-bit tokens, not
+//        truncated pointers.
+//
+//    RETAIL IS NOT RESIZED. The expansion applies only to a load the loader is
+//    actually serving the custom track for, so a retail track in a
+//    custom-tracks build keeps its retail arena byte for byte. That is why the
+//    predicate takes the serving flag rather than reading a build-time constant:
+//    the same binary races both, and only one of them has a reason to differ.
+//
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
 // must not merely fall back to the retail bytes for the LEV -- it must also
@@ -152,6 +190,11 @@
 // A custom track therefore always takes over an existing arcade slot.
 #define CTR_CT_MAX_LEVELS  18
 #define CTR_CT_GROUP_SIZE  8
+
+// The primitive arena a served custom track gets, in bytes, in place of the
+// retail per-slot table value. See decision 8 for the measurements behind it
+// and the three ceilings it was checked against.
+#define CTR_CT_PRIM_ARENA_BYTES 0x100000uL
 
 // Which half of a mode-pair a BIGFILE subfile slot is.
 enum CustomTrackSubfileRole
@@ -477,6 +520,25 @@ static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize
 		return 0;
 
 	return ((unsigned long)(g - c) > primSize) ? 1 : 0;
+}
+
+// The frame's primitive arena size in bytes: the retail table's answer, unless
+// this load is the event race. Decision 8 above.
+//
+// `retailBytes` is what MainInit_GetPrimMemSize computed from
+// data.primMem_SizePerLEV_1P (or its 2P/4P siblings) for the borrowed slot, and
+// is returned unchanged for every load that is not the custom track's -- so a
+// retail race in a custom-tracks build is byte-for-byte unaffected.
+//
+// The expansion is a floor, not a replacement: if a slot's retail budget were
+// ever larger than CTR_CT_PRIM_ARENA_BYTES this returns the retail figure, so
+// the custom track can never be given LESS room than the slot it borrowed.
+static unsigned long CustomTrackPolicy_PrimArenaBytes(int servingCustomTrack, unsigned long retailBytes)
+{
+	if (!servingCustomTrack)
+		return retailBytes;
+
+	return (retailBytes > CTR_CT_PRIM_ARENA_BYTES) ? retailBytes : CTR_CT_PRIM_ARENA_BYTES;
 }
 
 #endif // CTR_CUSTOM_TRACKS
