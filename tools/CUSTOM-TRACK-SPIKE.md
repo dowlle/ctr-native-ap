@@ -19,10 +19,11 @@ the wire means the feature is fully off, whatever `config.ini` holds.**
 ## What this rung does and does not do
 
 Does: load a verified custom track for the event race only, guard the
-custom-track crashes the engine has on the render path and on its two race
-cameras, expand the MEMPACK arena so a >2 MiB track fits, wire the Purple Gem
-Cup destination to a single race, make the AP-box gate on that race a deliberate
-answer, and correct the cup leg counter for a one-leg cup.
+custom-track crashes the engine has on the render path, on its two race cameras
+and on its per-level primitive budget, expand the MEMPACK arena so a >2 MiB
+track fits, wire the Purple Gem Cup destination to a single race, make the
+AP-box gate on that race a deliberate answer, and correct the cup leg counter
+for a one-leg cup.
 
 Does not: read anything from slot_data (rung 2b replaces the config parse with
 it), supply AP-box or CTR-letter **placement** for the custom track, handle
@@ -396,6 +397,116 @@ still answers on count alone, so a dev-key democam session on a track with no
 EOR table engages and then does nothing. `MM_Title.c` guards `count > 2` before
 reading index 3. Neither is reachable on this race.
 
+## The per-level primitive budget
+
+Each frame gets a fixed primitive arena, and its size is looked up **by level
+ID**: `data.primMem_SizePerLEV_1P[levelID] << 10` (`game/MAIN/MainInit.c`,
+`MainInit_GetPrimMemSize`). A custom track borrows an arcade slot, so it
+inherits the budget retail chose for **that slot's** geometry while bringing its
+own. For host slot 6 that is `0x67 << 10` = 105,472 bytes, with
+`guardEnd = end - 0x100` leaving 105,216 usable.
+
+Most emitters already bound themselves against `PrimMem::guardEnd`, because
+retail's own content could approach it — fifteen files do. Two did not, and both
+take their iteration count straight from the level file, which means a custom
+track sets it:
+
+| Emitter | Count comes from |
+|---|---|
+| `DrawSky_Piece` (`game/DrawSky.c`) | `skybox->numFaces[segment]` |
+| `RenderStars` (`game/RenderStars.c`) | `lev->stars.numStars`, via `MainInit.c` |
+
+Past the end of the arena this is not a visual artifact. The native port maps
+the draw arenas to 24-bit GPU tokens, and `NativeGpuLinks_FromHostPointer`
+(`platform/native_gpu_links.c`) `abort()`s on a pointer it has no token for — so
+the first primitive linked past `primMem->end` is a hard `SIGABRT`.
+
+### Measured
+
+Relocating the real files through the engine's own `LOAD_RunPtrMap` and reading
+`lev->ptr_skybox`:
+
+| Content | worst 4-segment frame | POLY_G3 bytes | % of its own budget |
+|---|---|---|---|
+| 18 retail arcade tracks | 69 – 385 faces | 1,932 – 10,780 | **1.8% – 9.9%** |
+| (4 of those 18) | no skybox at all | 0 | 0% |
+| Baby T Park | **11,088 faces** | **310,464** | **294%** |
+
+The event track carries **2,772 faces in every one of its eight segments**, and
+`DrawSky_Full` draws four segments per frame. So one frame demands 310,464 bytes
+from a 105,472-byte arena — it overruns by 205,248 bytes **before any other draw
+in the frame**. It is a 29x outlier against the worst retail track.
+
+### Why the fix is a clamp and not a bigger buffer
+
+The budget table is `u8[0x1c]` shifted left by 10, so the largest value it can
+express is `255 << 10` = 261,120 bytes — **smaller than this one track's sky**.
+There is no value that would have fitted, so growing the buffer was never an
+available answer. `CustomTrackPolicy_PrimFits` therefore answers "does one more
+primitive fit", and the two unbounded emitters stop drawing when it says no.
+
+The sky clamp sits at the top of `DrawSky_Piece`'s face loop rather than at the
+emit, so a segment with no room left costs one compare instead of a full GTE
+projection pass over 2,772 faces every frame. It logs once per process, not once
+per frame. `RenderStars` reserves a `TILE_1` **plus** its trailing draw-mode
+packet, because stopping with room for only the star would leave that packet to
+overrun instead; the packet is separately guarded for the case where the loop
+never ran at all.
+
+`RenderStars` is bounded pre-emptively. The event track sets `numStars` to 0 and
+never enters that loop — the two retail tracks that do have a star field ask for
+300, about 3.5% of their budgets — but it is the other half of the same hole, in
+the same rung, and the descriptor does not measure star counts. The count is
+also read through a `u16`, so a negative `s16` in a custom LEV would ask for up
+to 65,535 stars.
+
+### Why this only appeared after the camera fix
+
+Not a frame-count coincidence, and the frame numbers are not comparable: the two
+crashes came from different sessions, so how long the player spent in the hub
+first differs. The ordering is in the call graph.
+
+`MainInit_FinalizeInit` runs one camera tick at the end of the level load —
+`ThTick_RunBucket(gGT->threadBuckets[CAMERA].thread)`, `game/MAIN/MainInit.c` —
+and the fly-in crash was rooted there. That is **before** the main loop reaches
+`MainFrame_RenderFrame` (`game/MAIN/MainMain.c`) for the first time, so the
+level had never rendered a frame and `DrawSky_Full` had never run. Fixing the
+camera let initialization finish, and the sky overrun then landed on the first
+rendered frames. The two are sequential failures on the same load, not a
+regression introduced by the camera fix.
+
+### Siblings checked
+
+Every other primitive emitter reachable in a 1P arcade race frame was audited
+and left alone, because each is either already guarded or bounded by something a
+custom track cannot set:
+
+- Already guarded against `guardEnd`: `Particle.c`, `RenderBucket_QueueExecute.c`
+  (ten sites), `VehGroundShadow.c`, `VehGroundSkids.c`, `RB_Spider.c`,
+  `PushBuffer.c`, `UI_RaceHud.c`, `UI_Meter.c`, `UI_RenderFrame.c`, `FLARE.c`,
+  `CTR_Box.c`, `RECTMENU.c`, `prim.c`.
+- `DrawLevelOvr1P` guards against `primMem->end` with per-bucket reserves, and
+  its `HasBucketPrimReserve` deliberately tolerates `cursor > end` so it fails
+  closed if an earlier emitter already overran.
+- Bounded by a fixed cap rather than level data: `RenderWeather`
+  (`weather_intensity` is a `u8`, so ≤1020 particles), `DrawConfetti`
+  (hard-coded 250/200), `Torch_Main` (12), `CAM_SkyboxGlow` (3), `RaceFlag`
+  (10×35), `DotLights` (4), and the HUD/icon writers (fixed element counts).
+- Not primitive emitters at all: `RenderLists_Init1P2P`, `CTR_CycleTex_*`.
+
+One related finding recorded rather than fixed: `AnimateWater_Common` walks
+`numWaterVertices` from the LEV with no bound, but it mutates vertex colours in
+place inside the level's own MEMPACK allocation and never touches `PrimMem`, so
+it cannot produce this abort. Baby T Park reports 0 water vertices.
+
+The `>2 MiB LEV` shim flagged in [MEMPACK](#mempack) was re-checked against this
+crash and is **not** implicated.
+`DrawLevelOvr1P_TryConvertNativeMempackPointerToPsxWord` feeds exactly one
+consumer, which returns a single `s8` used only as an OT index offset. It can
+perturb draw order by ±127 entries but can never produce an out-of-range
+*primitive* pointer, and an unknown token makes `NativeGpuLinks_ToHostPointer`
+return NULL rather than abort. It remains visual-only, as recorded.
+
 ## MEMPACK
 
 The custom track's resident payload is 2,470,836 bytes. The retail-pressure
@@ -546,6 +657,21 @@ before the array is indexed, which is load-bearing rather than defensive because
 `CAM_EndOfRace` asks about index 2 on a table it has only proven to have
 `count > 1`.
 
+The primitive-budget clamp is pinned the same two ways. `test-custom-track-load`
+builds a LEV image whose `Level::ptr_skybox` carries the event track's measured
+face counts, relocates it, computes the worst four-segment frame from the same
+rotation `DrawSky_Full` uses, and asserts it overruns the levelID-6 arena by
+exactly 205,248 bytes — then drives the clamp over that demand and asserts the
+cursor never passes `guardEnd`, that it stops short of the demand, and that it
+still fills the arena exactly rather than giving up early. It repeats the walk on
+a retail-shaped sky and asserts **every** face is drawn, so the clamp is shown
+inert on retail rather than merely assumed to be, and on a level with no skybox
+at all (four of the 18 retail arcade tracks). `test-custom-track-policy` pins
+`CustomTrackPolicy_PrimFits` itself: the exact edge where a primitive would land
+on the guard, a cursor already past the guard, the two different primitive sizes
+the two call sites ask about, and the measured demand figures including the fact
+that the budget table's own ceiling is smaller than this track's sky.
+
 ## Guard-off identity
 
 With `CTR_CUSTOM_TRACKS` off, the preprocessed `main.c` translation unit (5.6 MB
@@ -554,11 +680,18 @@ without AP, 6.3 MB with it — the whole unity build either way) differs from
 typedefs, shifted by the added `#include` blocks. Those typedefs generate no
 code. There are no other differences.
 
-The count is **six** typedefs in a non-AP build (it was five before the camera
-guard added an `#include` block to `game/CAM.c`). An AP build shows fifteen, plus
-the `ap/ap_seedcfg.cpp` custom-tracks parse itself, which is deliberate and
+The count is **thirteen** typedefs in a non-AP build, measured against
+`origin/main`. It was five before the camera guard added an `#include` block to
+`game/CAM.c` (six), and the primitive-budget guard added two more such blocks, to
+`game/DrawSky.c` and `game/RenderStars.c` (thirteen). Both of those files carry
+`CTR_STATIC_ASSERT`s of their own near the top, which is why two `#include`
+blocks shift seven names. An AP build additionally shows the
+`ap/ap_seedcfg.cpp` custom-tracks parse itself, which is deliberate and
 documented under [Lifecycle](#lifecycle): a guard-off AP build still parses the
 block so its verifier stays correct about displacement.
+
+The number that matters is the other one: **zero** non-static-assert lines
+differ, in both the AP and non-AP configurations, at every step.
 
 To reproduce, preprocess `main.c` with `cc -E -P` and the guard-off flags in this
 tree and in a worktree at `origin/main`, normalising `CTR_NATIVE_BUILD_ID` and
@@ -581,3 +714,13 @@ address.
 - The minimap is blank on a track whose `ST1_MAP` entry is absent, which Baby T
   Park's is. The descriptor's `minimap` flag does not cause this and does not
   prevent it — it is measured and logged but inert on the native side.
+- **The event track's sky is visibly incomplete.** Its skybox wants about three
+  times the primitive arena the borrowed slot is given, so roughly the first
+  third of each frame's sky is drawn and the rest is not. Expect the far side of
+  the sky to be missing, and the boundary to move as the camera turns. This is
+  the clamp working: without it the client aborts. The one-line
+  `[CustomTracks]` log on the first clamped frame is the marker.
+- No descriptor flag measures sky faces or star counts, so a track that will
+  clip its sky is not refused and cannot be predicted from the wire. It races
+  correctly, it just does not look right. A check rung that measures primitive
+  demand at pack time is the real fix and is not in this rung.

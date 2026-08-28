@@ -966,6 +966,227 @@ static void test_absent_camera_path(void)
 	free(image);
 }
 
+// ---------------------------------------------------------------------------
+// A skybox that does not fit the level slot's primitive budget.
+// ---------------------------------------------------------------------------
+//
+// The engine sizes the frame's primitive arena BY LEVEL ID
+// (data.primMem_SizePerLEV_1P[levelID] << 10, game/MAIN/MainInit.c). A custom
+// track borrows an arcade slot, so it inherits a budget retail chose for that
+// slot's content while bringing its own. DrawSky trusted the LEV's face counts
+// against that budget, and past the end of the arena the native GPU-link bridge
+// has no token for the primitive's address and aborts.
+//
+// Measured by relocating the real files through LOAD_RunPtrMap: the event
+// track's skybox has 2,772 faces in EVERY one of its eight segments, and
+// DrawSky_Full draws four segments per frame. The 18 retail arcade tracks have
+// 69 to 385 faces across their worst four, and four of them have no skybox at
+// all. This scenario builds both shapes and drives the clamp over them.
+
+#define SKY_TEST_SEGMENTS NUM_SKYBOX_SEGMENTS
+
+// Lay out a DRAM-file image whose Level::ptr_skybox points at a Skybox with the
+// given per-segment face counts. The faces themselves are never read -- what is
+// under test is the DEMAND those counts create -- so all eight segments point at
+// one small shared array rather than megabytes of unread face records.
+static char *build_lev_image_with_sky(const int *facesPerSegment, char **outBody)
+{
+	const int levelSize = ((int)sizeof(struct Level) + 3) & ~3;
+	const int skyOff = levelSize;
+	const int vertsOff = skyOff + (int)sizeof(struct Skybox);
+	const int facesOff = vertsOff + (int)sizeof(struct ShortVertex);
+	const int ptrMapOff = facesOff + (int)sizeof(struct SkyboxFace);
+
+	int offsets[2 + SKY_TEST_SEGMENTS];
+	int numOffsets = 0;
+	int i;
+
+	int imageSize = 4 + ptrMapOff + (int)sizeof(struct DramPointerMap) + (int)sizeof(offsets);
+	char *image = calloc(1, (size_t)imageSize);
+	char *body;
+	struct Skybox *sky;
+
+	if (image == NULL)
+	{
+		printf("FAIL: out of memory building a LEV image\n");
+		g_failures++;
+		return NULL;
+	}
+
+	*(int *)&image[0] = ptrMapOff;
+	body = &image[4];
+
+	*(int *)&body[offsetof(struct Level, ptr_skybox)] = skyOff;
+	offsets[numOffsets++] = (int)offsetof(struct Level, ptr_skybox);
+
+	sky = (struct Skybox *)(void *)&body[skyOff];
+	sky->numVertex = 1;
+	*(int *)&body[skyOff + (int)offsetof(struct Skybox, ptrVertex)] = vertsOff;
+	offsets[numOffsets++] = skyOff + (int)offsetof(struct Skybox, ptrVertex);
+
+	for (i = 0; i < SKY_TEST_SEGMENTS; i++)
+	{
+		sky->numFaces[i] = (s16)facesPerSegment[i];
+		*(int *)&body[skyOff + (int)offsetof(struct Skybox, ptrFaces) + i * 4] = facesOff;
+		offsets[numOffsets++] = skyOff + (int)offsetof(struct Skybox, ptrFaces) + i * 4;
+	}
+
+	((struct DramPointerMap *)&body[ptrMapOff])->numBytes = numOffsets * 4;
+	memcpy(DRAM_GETOFFSETS((struct DramPointerMap *)&body[ptrMapOff]), offsets, (size_t)numOffsets * 4);
+	LOAD_RunPtrMap(body, DRAM_GETOFFSETS((struct DramPointerMap *)&body[ptrMapOff]), numOffsets);
+
+	*outBody = body;
+	return image;
+}
+
+// The worst four-segment frame, over all eight camera rotations. DrawSky_Full
+// draws base, base+1, base-1 and base-2 modulo 8 (game/DrawSky.c).
+static long sky_worst_four(const struct Skybox *sky)
+{
+	long worst = 0;
+	int b;
+
+	for (b = 0; b < SKY_TEST_SEGMENTS; b++)
+	{
+		const int idx[4] = { b, (b + 1) & 7, (b - 1) & 7, (b - 2) & 7 };
+		long sum = 0;
+		int k;
+
+		for (k = 0; k < 4; k++)
+			sum += (u16)sky->numFaces[idx[k]];
+
+		if (sum > worst)
+			worst = sum;
+	}
+
+	return worst;
+}
+
+// Walk `faces` faces through the clamp the way DrawSky_Piece does, and report
+// how many were emitted and where the cursor ended up.
+static long sky_emit_clamped(char *arenaStart, const char *guard, long faces, char **cursorOut)
+{
+	char *prim = arenaStart;
+	long emitted = 0;
+	long i;
+
+	for (i = 0; i < faces; i++)
+	{
+		if (!CustomTrackPolicy_PrimFits(prim, sizeof(POLY_G3), guard))
+			break;
+
+		prim += sizeof(POLY_G3);
+		emitted++;
+	}
+
+	*cursorOut = prim;
+	return emitted;
+}
+
+static void test_sky_primitive_budget(void)
+{
+	// data.primMem_SizePerLEV_1P[6] == 0x67 (game/zGlobal_DATA.c), shifted
+	// left by 10 in MainInit.c for a 1P race.
+	const long budget = 0x67L << 10;
+	const long usable = budget - 0x100; // MainDB_PrimMem: guardEnd = end - 0x100
+
+	// Measured shapes.
+	const int eventTrack[SKY_TEST_SEGMENTS] = { 2772, 2772, 2772, 2772, 2772, 2772, 2772, 2772 };
+	const int retailSlot6[SKY_TEST_SEGMENTS] = { 48, 48, 48, 48, 48, 48, 48, 48 }; // 192 across four
+
+	char *arena = malloc((size_t)budget);
+	char *body;
+	char *image;
+	char *cursor;
+	const char *guard;
+	struct Level *lev;
+	struct Skybox *sky;
+	long worst;
+	long emitted;
+
+	if (arena == NULL)
+	{
+		printf("FAIL: out of memory allocating a stand-in primitive arena\n");
+		g_failures++;
+		return;
+	}
+	guard = arena + usable;
+
+	// --- the event track's shape -------------------------------------------
+	image = build_lev_image_with_sky(eventTrack, &body);
+	if (image == NULL)
+	{
+		free(arena);
+		return;
+	}
+
+	lev = (struct Level *)body;
+	sky = lev->ptr_skybox;
+	expect_int(sky != NULL, 1, "the skybox pointer was relocated");
+	expect_int(sky->numVertex, 1, "and points at the skybox we built");
+	expect_int((u16)sky->numFaces[0], 2772, "the event track's first segment is 2,772 faces");
+
+	worst = sky_worst_four(sky);
+	expect_int(worst == 11088, 1, "four segments of it are 11,088 faces");
+	expect_int(worst * (long)sizeof(POLY_G3) > usable, 1, "which is more than the whole arena holds");
+
+	// Unclamped, this is where the abort came from: the cursor would run
+	// 205,248 bytes past the end of a 105,472-byte arena.
+	expect_int(worst * (long)sizeof(POLY_G3) - usable == 205248L, 1,
+	           "and overruns it by 205,248 bytes");
+
+	emitted = sky_emit_clamped(arena, guard, worst, &cursor);
+
+	// The clamp stops inside the arena, every time, and draws as much sky as
+	// the budget allows rather than refusing the frame outright.
+	expect_int(cursor <= guard, 1, "the clamped cursor never passes the guard");
+	expect_int(emitted < worst, 1, "the clamp did stop short of the demand");
+	expect_int(emitted > 0, 1, "but still drew as much sky as fits");
+	expect_int(emitted == usable / (long)sizeof(POLY_G3), 1, "filling the arena exactly");
+
+	free(image);
+
+	// --- a retail-shaped sky must be untouched ------------------------------
+	image = build_lev_image_with_sky(retailSlot6, &body);
+	if (image == NULL)
+	{
+		free(arena);
+		return;
+	}
+
+	lev = (struct Level *)body;
+	sky = lev->ptr_skybox;
+	worst = sky_worst_four(sky);
+	expect_int(worst == 192, 1, "retail slot 6's sky is 192 faces across four segments");
+
+	emitted = sky_emit_clamped(arena, guard, worst, &cursor);
+	expect_int(emitted == worst, 1, "every retail sky face is drawn, so the clamp is inert on retail");
+	expect_int(cursor <= guard, 1, "and the cursor stays well inside the arena");
+
+	free(image);
+
+	// --- a level with no skybox at all --------------------------------------
+	// Four of the 18 retail arcade tracks have a NULL ptr_skybox, and
+	// DrawSky_Full returns before touching the context. Pinned so the added
+	// guardEnd plumbing cannot introduce a dereference on that path.
+	{
+		const int noFaces[SKY_TEST_SEGMENTS] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+		image = build_lev_image_with_sky(noFaces, &body);
+		if (image != NULL)
+		{
+			lev = (struct Level *)body;
+			expect_int(sky_worst_four(lev->ptr_skybox), 0, "an empty skybox demands nothing");
+			emitted = sky_emit_clamped(arena, guard, 0, &cursor);
+			expect_int(emitted == 0, 1, "and emits nothing");
+			expect_int(cursor == arena, 1, "leaving the cursor where it started");
+			free(image);
+		}
+	}
+
+	free(arena);
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -999,6 +1220,7 @@ int main(void)
 	test_withdrawal();
 	test_serve_time_size_recheck();
 	test_absent_camera_path();
+	test_sky_primitive_budget();
 
 	if (g_failures != 0)
 	{

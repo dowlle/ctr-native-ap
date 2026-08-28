@@ -769,6 +769,79 @@ static void test_st1_entry_present(void)
 	expect_int(CustomTrackPolicy_St1EntryPresent(4, -1, entries), 0, "a negative index is absent");
 }
 
+// ---------------------------------------------------------------------------
+// 10. Room for one more primitive -- the sky and star clamps.
+// ---------------------------------------------------------------------------
+
+// POLY_G3 is 0x1C bytes and TILE_1 is 0x0C, both static-asserted in engine
+// (include/psx/libgpu.h, game/RenderStars.c). Restated as literals because this
+// harness is engine-free.
+#define T_POLY_G3_SIZE 0x1CuL
+#define T_TILE_1_SIZE  0x0CuL
+
+static void test_prim_fits(void)
+{
+	// A stand-in arena. Only the addresses matter, never the contents.
+	static char arena[256];
+	const char *start = arena;
+	const char *guard = arena + 128; // this arena's "guardEnd"
+
+	// The ordinary answer: room measured from the cursor to the guard.
+	expect_int(CustomTrackPolicy_PrimFits(start, T_POLY_G3_SIZE, guard), 1, "a fresh arena has room");
+	expect_int(CustomTrackPolicy_PrimFits(guard - 100, T_POLY_G3_SIZE, guard), 1, "100 bytes short of the guard has room");
+
+	// The exact edge. The engine's idiom is that `cursor + size >= guard` means
+	// NO room, so a primitive landing exactly ON the guard is refused -- that is
+	// what preserves the 0x100 bytes retail reserves past it.
+	expect_int(CustomTrackPolicy_PrimFits(guard - (T_POLY_G3_SIZE + 1), T_POLY_G3_SIZE, guard), 1,
+	           "one byte more than the primitive needs is room");
+	expect_int(CustomTrackPolicy_PrimFits(guard - T_POLY_G3_SIZE, T_POLY_G3_SIZE, guard), 0,
+	           "landing exactly on the guard is refused");
+	expect_int(CustomTrackPolicy_PrimFits(guard - (T_POLY_G3_SIZE - 1), T_POLY_G3_SIZE, guard), 0,
+	           "one byte short is refused");
+
+	// A cursor already at or past the guard. Not defensiveness: an emitter
+	// earlier in the frame can leave it there, and this one must then refuse
+	// rather than compute a negative span and wrap it into a huge positive.
+	expect_int(CustomTrackPolicy_PrimFits(guard, T_POLY_G3_SIZE, guard), 0, "a cursor on the guard is full");
+	expect_int(CustomTrackPolicy_PrimFits(guard + 1, T_POLY_G3_SIZE, guard), 0, "a cursor past the guard is full");
+	expect_int(CustomTrackPolicy_PrimFits(guard + 100, T_POLY_G3_SIZE, guard), 0, "far past the guard is still full");
+
+	// The size argument is honoured, so the two call sites get different
+	// answers at the same cursor. RenderStars reserves a TILE_1 plus its
+	// trailing draw-mode packet, so it must be able to ask for more than one
+	// primitive's worth.
+	expect_int(CustomTrackPolicy_PrimFits(guard - 0x10, T_TILE_1_SIZE, guard), 1, "a TILE_1 fits in 0x10 bytes");
+	expect_int(CustomTrackPolicy_PrimFits(guard - 0x10, T_POLY_G3_SIZE, guard), 0, "a POLY_G3 does not");
+
+	expect_int(CustomTrackPolicy_PrimFits(NULL, T_POLY_G3_SIZE, guard), 0, "a NULL cursor is full");
+	expect_int(CustomTrackPolicy_PrimFits(start, T_POLY_G3_SIZE, NULL), 0, "a NULL guard is full");
+
+	// --- the measured demand this clamp exists for -------------------------
+	// data.primMem_SizePerLEV_1P[6] is 0x67 (game/zGlobal_DATA.c), and
+	// MainInit.c shifts it left by 10 for a 1P race.
+	{
+		const long budget = 0x67L << 10; // 105,472 bytes for levelID 6
+		const long usable = budget - 0x100;
+
+		// DrawSky_Full draws four of the skybox's eight segments per frame.
+		// Measured on the event track: 2,772 faces in every segment.
+		const long eventFaces = 4L * 2772L;
+		const long eventBytes = eventFaces * (long)T_POLY_G3_SIZE;
+
+		// The worst of the 18 retail arcade tracks, measured the same way.
+		const long retailWorstBytes = 385L * (long)T_POLY_G3_SIZE;
+
+		expect_int(eventBytes > usable, 1, "the event track's sky alone overruns the arena");
+		expect_int(eventBytes > 2 * budget, 1, "and by more than double the whole arena");
+		expect_int(retailWorstBytes < usable / 8, 1, "while the worst retail sky uses under an eighth of it");
+
+		// Growing the budget is not an available answer: the table is u8 << 10.
+		expect_int((255L << 10) < eventBytes, 1,
+		           "even the largest budget that table can express is smaller than this one sky");
+	}
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -781,6 +854,7 @@ int main(void)
 	test_box_verdict();
 	test_measured_flags();
 	test_st1_entry_present();
+	test_prim_fits();
 	test_fork_consistency();
 
 	if (g_failures != 0)

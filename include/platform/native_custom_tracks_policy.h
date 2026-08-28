@@ -7,7 +7,7 @@
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
 // engine, with no disc, no display, no config file and no seed.
 //
-// SIX DECISIONS LIVE HERE.
+// SEVEN DECISIONS LIVE HERE.
 //
 // 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
 //    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
@@ -96,6 +96,33 @@
 //    what the predicate below answers. It subsumes the count threshold rather
 //    than replacing it, which is why a call site can swap one for the other
 //    without changing what retail content does.
+//
+// 7. IS THERE ROOM FOR ONE MORE PRIMITIVE. The engine gives each frame a fixed
+//    primitive arena whose size is looked up BY LEVEL ID
+//    (data.primMem_SizePerLEV_1P[levelID] << 10, game/MAIN/MainInit.c). A custom
+//    track borrows an arcade slot, so it inherits the budget retail sized for
+//    THAT slot's geometry -- a number chosen for entirely different content.
+//
+//    Most emitters already bound themselves against PrimMem::guardEnd, because
+//    retail's own content could get close to it. Two do not, and both take their
+//    iteration count straight from the level file, so a custom track sets it:
+//    DrawSky (skybox->numFaces) and RenderStars (stars.numStars). Past the end
+//    of the arena the native port's GPU-link bridge has no token for the
+//    primitive's address and aborts, so an unbounded emitter is a hard crash
+//    rather than a visual artifact.
+//
+//    Measured on the event track against the levelID-6 budget of 0x67 << 10 =
+//    105,472 bytes: its skybox carries 2,772 faces in EVERY one of its eight
+//    segments, and DrawSky draws four segments per frame, so one frame demands
+//    up to 11,088 POLY_G3 = 310,464 bytes -- 294% of the whole arena, before any
+//    other draw. Across the 18 retail arcade tracks the same measurement is 69
+//    to 385 faces, 1.8% to 9.9% of their budgets. The event track is a 29x
+//    outlier, which is why retail never needed the bound.
+//
+//    Growing the arena is not an available answer: the budget is a u8 << 10, so
+//    its ceiling is 261,120 bytes and this one track's sky alone wants more than
+//    that. The predicate below therefore answers "does one more primitive fit",
+//    and the call sites stop drawing rather than overrun.
 //
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
@@ -424,6 +451,32 @@ static int CustomTrackPolicy_St1EntryPresent(int count, int index, const void *c
 		return 0;
 
 	return (entries[index] != NULL) ? 1 : 0;
+}
+
+// Is there room for one more primitive of `primSize` bytes before the frame's
+// primitive arena runs out? This is decision 7 above.
+//
+// `cursor` is PrimMem::cursor and `guard` is PrimMem::guardEnd, passed as void *
+// so this header stays engine-free. The sense matches the engine's own house
+// idiom -- `(char *)cursor + primSize >= (char *)guardEnd` means "no room" -- so
+// a call site reads the same way as the fifteen emitters that already bound
+// themselves this way.
+//
+// Two edge cases are answers, not defensiveness. A cursor already at or past
+// the guard returns 0 rather than computing a negative span, which matters
+// because an emitter earlier in the frame can leave it there and this one must
+// then refuse rather than wrap. And the comparison is strict (`>`), so a
+// primitive that would land exactly on the guard is refused, preserving the
+// 0x100 bytes retail reserves past it for the CD reader's sector-rounded tail.
+static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize, const void *guard)
+{
+	const char *c = (const char *)cursor;
+	const char *g = (const char *)guard;
+
+	if ((c == NULL) || (g == NULL) || (c >= g))
+		return 0;
+
+	return ((unsigned long)(g - c) > primSize) ? 1 : 0;
 }
 
 #endif // CTR_CUSTOM_TRACKS

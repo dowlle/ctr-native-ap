@@ -1,10 +1,19 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 struct DrawSkyContext
 {
 	const struct ShortVertex *verts;
 	uint32_t *ot;
 	u32 screenBounds;
+#ifdef CTR_CUSTOM_TRACKS
+	// Where the frame's primitive arena runs out. Carried on the context
+	// because DrawSky_Piece has no other route to the PrimMem.
+	const void *primGuardEnd;
+#endif
 };
 
 struct DrawSkyScratch
@@ -16,6 +25,22 @@ struct DrawSkyScratch
 CTR_STATIC_ASSERT(sizeof(struct DrawSkyScratch) == 0x8);
 CTR_STATIC_ASSERT(offsetof(struct DrawSkyScratch, baseFaceOffset) == 0x0);
 CTR_STATIC_ASSERT(offsetof(struct DrawSkyScratch, baseCountOffset) == 0x4);
+
+#ifdef CTR_CUSTOM_TRACKS
+// Said once per process, not once per frame: the clamp holds every frame the
+// track is on screen, and a per-frame line would bury the log at 60 Hz.
+static void DrawSky_NoteClamped(void)
+{
+	static int warned = 0;
+
+	if (warned)
+		return;
+
+	warned = 1;
+	printf("[CustomTracks] this level's skybox does not fit the primitive budget for its level slot; "
+	       "the far side of the sky is not drawn\n");
+}
+#endif
 
 static u32 DrawSky_ReadWord(const void *base, int offset)
 {
@@ -96,6 +121,22 @@ static u32 *DrawSky_Piece(struct Skybox *skybox, struct DrawSkyContext *ctx, int
 		u32 sxy2;
 		u32 gteFlag;
 
+#ifdef CTR_CUSTOM_TRACKS
+		// Retail sizes the primitive arena per levelID and its own skyboxes fit
+		// inside it with room to spare, so this loop is written to trust
+		// numFaces. A custom track inherits the borrowed slot's budget while
+		// bringing its own sky, and the event track's sky wants roughly three
+		// times the whole arena, so the trust has to end somewhere. Stopping
+		// here rather than at the emit skips the GTE transform too, which is
+		// what keeps a 2,772-face segment from costing a full projection pass
+		// per frame once there is no room left to draw into.
+		if (!CustomTrackPolicy_PrimFits(prim, sizeof(POLY_G3), ctx->primGuardEnd))
+		{
+			DrawSky_NoteClamped();
+			break;
+		}
+#endif
+
 		DrawSky_LoadFaceVertices(ctx, face);
 		gte_rtpt_b();
 
@@ -148,6 +189,9 @@ void DrawSky_Full(void *skybox, struct PushBuffer *pb, struct PrimMem *primMem)
 		ctx.verts = sky->ptrVertex;
 		ctx.ot = &pb->ptrOT[0x3ff];
 		ctx.screenBounds = DrawSky_ReadWord(pb, 0x20);
+#ifdef CTR_CUSTOM_TRACKS
+		ctx.primGuardEnd = primMem->guardEnd;
+#endif
 
 		faceIndex = (int)(baseFaceOffset >> 2);
 		countIndex = (int)(baseCountOffset >> 1);
