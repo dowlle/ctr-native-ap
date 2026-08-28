@@ -170,6 +170,12 @@ int AP_TrapWeakenBoostTier(int permanentTier);
 // on their normal path.
 void AP_TrapRenderTransform(struct PushBuffer *pb);
 
+// Native GTE's NCLIP uses projected winding for face rejection. A one-axis
+// reflection reverses that winding, so the native backend negates NCLIP while
+// Mirror Mode owns a reflected GTE matrix. Normal HUD/object matrices stay on
+// their original culling path.
+int AP_TrapMirrorCullFlip(void);
+
 // Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw
 // away, or -1 when no reroll is in flight and the filter is inert.

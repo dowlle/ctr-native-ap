@@ -978,6 +978,37 @@ static void case_condition_lost_during_warning(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
 }
 
+// Hazard projection is a start gate, not a frame-perfect warning gate. Track
+// seams and jumps may briefly lose the ground query after the player has already
+// seen the warning; the warning must not loop, and the engine retries the actual
+// spawn quietly once the scheduler fires it.
+static void case_hazard_warning_commits_once(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld safe = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld airborne = world_in(AP_TRAP_CTX_RACE);
+	int effects[2] = {AP_TRAP_NITRO, AP_TRAP_RED_POTION};
+	int i;
+
+	safe.conditions = AP_TRAP_COND_SAFE_HAZARD;
+	for (i = 0; i < 2; i++)
+	{
+		AP_TrapSchedReset(&s);
+		AP_TrapSchedReceive(&s, effects[i]);
+		AP_TrapSchedStep(&s, &safe);
+		drain(&s);
+		expect("hazard starts exactly one warning",
+		       count_ev(AP_TRAP_EV_WARN, effects[i]), 1);
+
+		run_ms(&s, &airborne, 1100);
+		drain(&s);
+		expect("lost ground does not re-arm the warning",
+		       count_ev(AP_TRAP_EV_REARM, effects[i]), 0);
+		expect("committed hazard reaches its quiet spawn retry",
+		       AP_TrapSchedActive(&s, effects[i]), 1);
+	}
+}
+
 // An armed trap is never a silent wait: receipts during the results screen and
 // during pause still announce, even though nothing may fire there.
 static void case_receipt_during_podium_announces(void)
@@ -1944,6 +1975,7 @@ int main(void)
 	case_item_id_map();
 	case_shipped_identity_receipt();
 	case_condition_lost_during_warning();
+	case_hazard_warning_commits_once();
 	case_receipt_during_podium_announces();
 	case_receipt_during_pause_announces();
 	case_engine_natural_requires_a_done_reporter();

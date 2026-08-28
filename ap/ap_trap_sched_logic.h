@@ -647,6 +647,15 @@ static inline int AP_TrapSchedEligible(const AP_TrapSched *s, const AP_TrapWorld
 	return 1;
 }
 
+// A projected hazard commits once its warning begins. Ground can disappear for
+// a frame while the kart crosses a seam or becomes airborne; re-arming there
+// would replay the warning every time the projection flickers. The engine-side
+// spawn path already retries quietly until it has a valid landing point.
+static inline int AP_TrapSchedWarningConditionIsSticky(int effect)
+{
+	return AP_TRAP_DESC[effect].condition == AP_TRAP_COND_SAFE_HAZARD;
+}
+
 // May an effect that has finished its warning actually begin? The starting
 // countdown may show a warning, but nothing begins before the player has control,
 // and podium, finish ceremonies and scripted sequences never start an effect.
@@ -742,7 +751,8 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 		// consuming it: Item Reroll, Forced Use and Wumpa Wipeout all rule
 		// that losing the held item or the fruit during the warning keeps the
 		// trap waiting for the next eligible moment.
-		if (!AP_TrapSchedEligible(s, w, s->slots[i].effect))
+		if (!AP_TrapSchedEligible(s, w, s->slots[i].effect) &&
+		    !AP_TrapSchedWarningConditionIsSticky(s->slots[i].effect))
 		{
 			s->slots[i].state = AP_TRAP_SLOT_ARMED;
 			s->slots[i].warnMs = 0;

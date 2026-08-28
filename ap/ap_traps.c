@@ -1379,6 +1379,11 @@ void AP_TrapRenderTransform(struct PushBuffer *pb)
 	}
 }
 
+int AP_TrapMirrorCullFlip(void)
+{
+	return g_active[AP_TRAP_MIRROR_MODE] != 0;
+}
+
 int AP_TrapGravity(struct Driver *driver, int gravityY)
 {
 	if (g_active[AP_TRAP_LOWGRAV] && AP_TrapIsLocal(driver))
