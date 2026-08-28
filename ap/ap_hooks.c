@@ -21,6 +21,7 @@
 
 static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
+#include "ap_fxseen_logic.h" // room-aware one-shot replay ledger rows (#299)
 #include "ap_democam.h"   // Demo Camera trap and direct live-test trigger
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
@@ -2739,14 +2740,18 @@ static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETT
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
 // (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
 // a Deck 3-player replayed trap). Dedup: persist the highest server item index
-// whose batch was effect-applied, per seed+slot, in ctr-ap-fxseen.txt next to
-// the exe (tab-separated: seed<TAB>slot<TAB>max). Replayed items at or below
+// whose batch was effect-applied, per room endpoint+seed+slot, in
+// ctr-ap-fxseen.txt next to the exe (tab-separated:
+// endpoint<TAB>seed<TAB>slot<TAB>max). Replayed items at or below
 // the stored index still count for gates but skip their effect. Unknown index
-// (-1) applies -- never swallow a live trap.
+// (-1) applies -- never swallow a live trap. Legacy three-column rows are
+// deliberately ignored: they cannot distinguish a reconnect from a fresh room,
+// so trusting them could suppress a legitimate effect in the new room.
 #define AP_FXSEEN_FILE "ctr-ap-fxseen.txt"
 static long long ap_fx_seen_max = -1; // highest server index whose effect ran
 static char ap_fx_seed[128] = "";
 static char ap_fx_slot[64] = "";
+static char ap_fx_endpoint[192] = "";
 
 static void AP_FxSeenLoad(void)
 {
@@ -2758,17 +2763,18 @@ static void AP_FxSeenLoad(void)
 		ap_fx_seed[0] = '\0';
 	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
 		ap_fx_slot[0] = '\0';
+	if (!ap_net_room_endpoint(ap_fx_endpoint, sizeof ap_fx_endpoint))
+		ap_fx_endpoint[0] = '\0';
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f == NULL)
 		return;
 	while (fgets(line, sizeof line, f))
 	{
-		char seed[128], slot[64];
-		long long max;
-		if (sscanf(line, "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
-		    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+		AP_FxSeenRow row;
+		if (AP_FxSeenParseRow(line, &row) &&
+		    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
 		{
-			ap_fx_seen_max = max;
+			ap_fx_seen_max = row.max;
 			break;
 		}
 	}
@@ -2779,20 +2785,19 @@ static void AP_FxSeenStore(void)
 {
 	// Read-modify-write the tiny file, preserving other seed/slot rows.
 	FILE *f;
-	char rows[8][320];
+	char rows[32][512];
 	int nrows = 0, i;
 
-	if (ap_fx_seed[0] == '\0')
+	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
 		return;
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f != NULL)
 	{
-		while (nrows < 8 && fgets(rows[nrows], sizeof rows[0], f))
+		while (nrows < 32 && fgets(rows[nrows], sizeof rows[0], f))
 		{
-			char seed[128], slot[64];
-			long long max;
-			if (sscanf(rows[nrows], "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
-			    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+			AP_FxSeenRow row;
+			if (AP_FxSeenParseRow(rows[nrows], &row) &&
+			    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
 				continue; // our old row: superseded below
 			nrows++;
 		}
@@ -2803,7 +2808,8 @@ static void AP_FxSeenStore(void)
 		return;
 	for (i = 0; i < nrows; i++)
 		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%lld\n", ap_fx_seed, ap_fx_slot, ap_fx_seen_max);
+	fprintf(f, "%s\t%s\t%s\t%lld\n", ap_fx_endpoint, ap_fx_seed, ap_fx_slot,
+	        ap_fx_seen_max);
 	fclose(f);
 }
 

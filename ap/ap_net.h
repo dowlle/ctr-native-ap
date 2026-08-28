@@ -144,6 +144,11 @@ const char *ap_net_last_error(void); // last slot-refused reason, "" if none
 // player can tell a dead address apart from a handshake still in progress.
 int  ap_net_host(char *buf, int n);
 
+// Stable identity of the room being dialled, including its port. Unlike the
+// short status host above, this distinguishes two separately hosted instances
+// of the same generated seed. Scheme and a trailing slash are normalized away.
+int  ap_net_room_endpoint(char *buf, int n);
+
 // ── AI-difficulty option sync (data storage) ──
 // Per-slot difficulty override lives in the server's data storage under the key
 // "ctr_difficulty_<slot>" (writable, unlike read-only slot_data). apclientpp's

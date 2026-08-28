@@ -20,6 +20,8 @@
 #include "ap_held_checks.h"
 
 #include <deque>
+#include <algorithm>
+#include <cctype>
 #include <list>
 #include <string>
 #include <set>
@@ -83,6 +85,7 @@ static std::string           g_last_error;
 // attempts themselves have to time out rather than being refused outright.
 static const int             AP_NET_UNREACHABLE_FAILS = 3;
 static std::string           g_host;
+static std::string           g_room_endpoint;
 static int                   g_socket_fails = 0;
 
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
@@ -102,6 +105,22 @@ static std::string ap_net_host_of(const std::string &uri)
 	if (colon != std::string::npos)
 		h.erase(colon);
 	return h;
+}
+
+static std::string ap_net_endpoint_of(const std::string &uri)
+{
+	std::string endpoint = uri.empty() ? "localhost" : uri;
+	const auto scheme = endpoint.find("://");
+	if (scheme != std::string::npos)
+		endpoint.erase(0, scheme + 3);
+	while (!endpoint.empty() && endpoint.back() == '/')
+		endpoint.pop_back();
+	std::transform(endpoint.begin(), endpoint.end(), endpoint.begin(),
+	               [](unsigned char c) { return (char)std::tolower(c); });
+	for (char &c : endpoint)
+		if (c == '\t' || c == '\r' || c == '\n')
+			c = '_';
+	return endpoint;
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -777,6 +796,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		             source.c_str(), cause.c_str());
 	});
 	g_host = ap_net_host_of(uri ? uri : "localhost"); // #146: named by the status line
+	g_room_endpoint = ap_net_endpoint_of(uri ? uri : "localhost");
 	g_socket_fails = 0;
 	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
 	g_last_error.clear();
@@ -1053,6 +1073,14 @@ extern "C" int ap_net_host(char *buf, int n)
 		return 0;
 	std::snprintf(buf, (size_t)n, "%s", g_host.c_str());
 	return buf[0] != '\0';
+}
+
+extern "C" int ap_net_room_endpoint(char *buf, int n)
+{
+	if (buf == nullptr || n <= 0)
+		return 0;
+	std::snprintf(buf, (size_t)n, "%s", g_room_endpoint.c_str());
+	return !g_room_endpoint.empty();
 }
 
 extern "C" int ap_net_drain_items(long long *out, int max)
@@ -1467,6 +1495,7 @@ extern "C" void ap_net_shutdown(void)
 	g_host.clear();     // #146: no host to name once the client is gone
 	g_socket_fails = 0;
 	g_uri_secure = false;
+	g_room_endpoint.clear();
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on
 	// "a reconnect line, then a fresh client run start with no shutdown lines",
 	// and the log had no way to say whether the teardown had completed. Now it
