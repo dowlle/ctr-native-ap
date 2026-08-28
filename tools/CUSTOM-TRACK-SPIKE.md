@@ -18,11 +18,11 @@ the wire means the feature is fully off, whatever `config.ini` holds.**
 
 ## What this rung does and does not do
 
-Does: load a verified custom track for the event race only, guard the one
-custom-track crash the engine has on the render path, expand the MEMPACK arena
-so a >2 MiB track fits, wire the Purple Gem Cup destination to a single race,
-make the AP-box gate on that race a deliberate answer, and correct the cup leg
-counter for a one-leg cup.
+Does: load a verified custom track for the event race only, guard the
+custom-track crashes the engine has on the render path and on its two race
+cameras, expand the MEMPACK arena so a >2 MiB track fits, wire the Purple Gem
+Cup destination to a single race, make the AP-box gate on that race a deliberate
+answer, and correct the cup leg counter for a one-leg cup.
 
 Does not: read anything from slot_data (rung 2b replaces the config parse with
 it), supply AP-box or CTR-letter **placement** for the custom track, handle
@@ -302,6 +302,100 @@ all three exits, so the feature is equally correct in a clean and an AP build:
 3 is the boot default and what `MM_MenuFlow.c` writes on every main-menu row
 press, so it is the correct resting value.
 
+## Absent entries in the level's ST1 table
+
+Every level carries a `SpawnType1` pointer table (`struct Level::ptrSpawnType1`)
+whose entries are indexed by the `ST1_*` enum: minimap, object spawns,
+end-of-race cameras, the intro camera path, the two ghosts, credits.
+
+Retail says "this level has no X" by making the table **short**, so every engine
+consumer guards with a count threshold and then dereferences the entry
+unconditionally. Measured by relocating the real files through the engine's own
+`LOAD_RunPtrMap`:
+
+| Content | `count` | `ST1_CAMERA_PATH` | `ST1_CAMERA_EOR` |
+|---|---|---|---|
+| all 18 retail arcade LEVs | 4 | non-NULL on every one | non-NULL on every one |
+| all 7 retail battle arenas | 0 | out of bounds | out of bounds |
+| Baby T Park | **7** | **NULL** | **NULL** |
+
+A custom track need not use retail's encoding, and this one does not. It emits a
+**full-width table and expresses absence as a NULL entry**: the slot is left out
+of the LEV's pointer map, so `LOAD_RunPtrMap` never relocates it and it arrives
+as 0. Baby T Park's `ST1_MAP`, `ST1_CAMERA_EOR`, `ST1_CAMERA_PATH` and
+`ST1_CREDITS` are all NULL inside a seven-entry table. That walks straight past
+every count threshold in the engine.
+
+Two of those thresholds are reachable on the event race, and both crashed:
+
+- **The start-line fly-in.** `CAM_FollowDriver_Normal` guards on `count < 4` and
+  then hands `CAM_StartLine_FlyIn` `ptrEnd = cameraPath + 0x354`. With
+  `cameraPath` NULL that dereferences 0x354 on the first frame the level
+  renders. This is the crash the event candidate hit, ~107 frames after the hub
+  handed off to the race.
+- **The end-of-race camera.** `CAM_EndOfRace` arms
+  `CAMERA_FLAG_ARCADE_END_OF_RACE_REQUESTED` on `count > 1`, and the block in
+  `CAM_ThTick` guards on `count < 3` and then reads `*ptrs[ST1_CAMERA_EOR]` to
+  get the camera count. Same shape, one race later: it fires the frame the first
+  driver crosses the line, which on this race is the win the Gem depends on.
+
+The fix asks the question the consumers meant to ask — "is the entry at this
+index really there" — through `CustomTrackPolicy_St1EntryPresent` in
+`include/platform/native_custom_tracks_policy.h`. It subsumes the count
+threshold rather than replacing it (`index < count` for `ST1_CAMERA_PATH` **is**
+`count >= 4`), which is why swapping one for the other cannot change what retail
+content does: on retail the two agree in both directions, as the table above
+shows and the harnesses assert.
+
+Behaviour with the entry absent is the one a level without those cameras already
+gets:
+
+- no camera path — the fly-in reports itself done immediately and `x = 0x1000`,
+  exactly the battle-map branch;
+- no EOR table — `CAM_EndOfRace` takes its `CAM_EndOfRace_Battle` branch, so the
+  race ends on the battle-map end-of-race camera.
+
+Three call sites, all in `game/CAM.c`, all inside `#ifdef CTR_CUSTOM_TRACKS`:
+
+| Site | Was | Now |
+|---|---|---|
+| `CAM_EndOfRace` | `count > 1` | + the `ST1_CAMERA_EOR` entry is present |
+| `CAM_FollowDriver_Normal` fly-in | `count < 4` | the `ST1_CAMERA_PATH` entry is absent |
+| `CAM_ThTick` EOR block | `count < 3` only | + skip if the entry is NULL |
+
+The third is not redundant with the first. `CAM_EndOfRace` is the engine's only
+writer of that flag, but `ap/ap_democam.c` sets
+`AP_DEMOCAM_FLAG_ARCADE_EOR_REQUESTED` straight onto `cDC->flags`, and its own
+`AP_DemoCamEorTableUsable` answers on `count >= 3` and a non-NULL *table header*
+— never the entry — so it would arm on exactly the shape that crashes. Guarding
+the dereference itself covers that path too.
+
+**Consumers checked and deliberately left alone.** Every other read of the table
+was audited against this race (adventure cup, single player, five karts, not
+battle, not time trial, boxes denied, ghosts off):
+
+- `ST1_MAP` (`UI_Map.c`, `UI_RenderFrame.c`) is reachable — the descriptor's
+  `minimap` flag is inert on the native side, so the engine still draws the
+  minimap — but both consumers already null-check the pointer they fetch, so
+  Baby T Park's NULL means *no minimap*, not a crash.
+- `ST1_SPAWN` (`RB_Plant.c`, `RB_Orca.c`, `RB_FlameJet.c`, `RB_Armadillo.c`) is
+  unreachable: each needs a LEV instance carrying a specific retail model id.
+  Worth recording that these guard `count > 0` and then read index 1, and that
+  15 of the 18 retail arcade LEVs ship a NULL `ST1_SPAWN` — so this is a latent
+  retail bug, not a custom-track one.
+- `ST1_NTROPY` / `ST1_NOXIDE` (`GhostReplay.c`) is time-trial only, and Baby T
+  Park's entries are non-NULL anyway.
+- `ST1_CREDITS` (`CS_Credits.c`) is credits-level only, `ST1_CAMERA_PATH` in
+  `MM_Title.c` is title-screen only, and `AH_Map.c` is hub only — all three
+  reached only on retail LEVs.
+- `CAM_Path_GetNumPoints` / `CAM_Path_Move` already null-check the entry and are
+  overlay-233 menu and cutscene paths regardless.
+
+Not fixed here, and recorded rather than discovered: `AP_DemoCamEorTableUsable`
+still answers on count alone, so a dev-key democam session on a track with no
+EOR table engages and then does nothing. `MM_Title.c` guards `count > 2` before
+reading index 3. Neither is reachable on this race.
+
 ## MEMPACK
 
 The custom track's resident payload is 2,470,836 bytes. The retail-pressure
@@ -438,17 +532,36 @@ truncated file, missing file, missing folder, absent digest, malformed digest,
 out-of-range levelID) each asserting on the loader's own log output, box denial,
 "race off serves nothing", and an end-to-end retail-pad-stays-retail scenario
 showing the same eight subfile indices answered three different ways in one
-armed session.
+armed session. It also pins the ST1 table shape: it builds a DRAM-file image
+whose pointer map omits the camera slots, relocates it through the engine's own
+`LOAD_RunPtrMap` (the function is compiled into the harness, so there is no
+transcription to drift), and asserts that the omission is what produces the NULL
+— then that both count thresholds `CAM.c` used to guard its two cameras with
+**pass** on that table while the predicate that replaced them refuses, and that
+on a retail-shaped table old and new agree in both directions.
+
+`test-custom-track-policy` covers the same predicate as a truth table, against
+the three measured table shapes, plus its bounds behaviour: the index check runs
+before the array is indexed, which is load-bearing rather than defensive because
+`CAM_EndOfRace` asks about index 2 on a table it has only proven to have
+`count > 1`.
 
 ## Guard-off identity
 
-With `CTR_CUSTOM_TRACKS` off, the preprocessed `main.c` translation unit (6.4 MB,
-the whole unity build) differs from `main` only in the `__LINE__`-derived names
-of five unused `CTR_STATIC_ASSERT` typedefs, shifted by the added `#include`
-blocks. Those typedefs generate no code. There are no other differences.
+With `CTR_CUSTOM_TRACKS` off, the preprocessed `main.c` translation unit (5.6 MB
+without AP, 6.3 MB with it — the whole unity build either way) differs from
+`main` only in the `__LINE__`-derived names of unused `CTR_STATIC_ASSERT`
+typedefs, shifted by the added `#include` blocks. Those typedefs generate no
+code. There are no other differences.
 
-To reproduce, preprocess `main.c` with the guard-off AP flags in this tree and in
-a worktree at `origin/main`, normalising `CTR_NATIVE_BUILD_ID` and
+The count is **six** typedefs in a non-AP build (it was five before the camera
+guard added an `#include` block to `game/CAM.c`). An AP build shows fifteen, plus
+the `ap/ap_seedcfg.cpp` custom-tracks parse itself, which is deliberate and
+documented under [Lifecycle](#lifecycle): a guard-off AP build still parses the
+block so its verifier stays correct about displacement.
+
+To reproduce, preprocess `main.c` with `cc -E -P` and the guard-off flags in this
+tree and in a worktree at `origin/main`, normalising `CTR_NATIVE_BUILD_ID` and
 `CTR_NATIVE_VERSION` (they embed the git hash and would otherwise differ), then
 diff. A whole-binary comparison additionally requires both trees to be clean at
 the same commit, since a dirty tree makes the build ID longer and shifts every
@@ -461,3 +574,10 @@ address.
 - The track's music (`.sca`) is not loaded; the retail slot's music plays.
 - A custom track has no track-preview video: the main menu reads preview sectors
   from BIGFILE directly, bypassing the loader entirely.
+- A track with no `ST1_CAMERA_PATH` has no start-line fly-in: the race begins on
+  the follow camera with the countdown already up. A track with no
+  `ST1_CAMERA_EOR` ends on the battle-map end-of-race camera rather than a
+  cinematic angle. Baby T Park has neither entry, so the event race shows both.
+- The minimap is blank on a track whose `ST1_MAP` entry is absent, which Baby T
+  Park's is. The descriptor's `minimap` flag does not cause this and does not
+  prevent it — it is measured and logged but inert on the native side.

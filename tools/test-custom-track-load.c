@@ -63,11 +63,45 @@
 
 #include "platform/native_custom_tracks.c"
 
+// The engine's own pointer-map fixup, compiled here for the same reason the
+// loader is: the ST1 scenario below turns on exactly how a LEV expresses an
+// absent table entry, and a transcription of LOAD_RunPtrMap could drift from
+// the one the game runs. Pulling in the translation unit costs five stubs (see
+// below) and nothing else -- none of its other functions are called.
+#include "game/LOAD/LOAD_Assets.c"
+
 // regionsEXE.h defines the global `sdata` pointer as &sdata_static, so pulling
 // in common.h drags in that one symbol. The loader never dereferences it -- it
 // touches no engine state at all -- so an empty definition is all the link
 // needs, and it stays empty precisely BECAUSE the loader is engine-independent.
 struct sData sdata_static;
+
+// The rest of LOAD_Assets.c's link footprint. LOAD_RunPtrMap itself references
+// none of these; they are here so the translation unit links, and are wired to
+// abort rather than to no-op so a test that started calling one says so.
+struct Data data;
+NativeConfig g_config;
+
+void LOAD_AppendQueue(struct BigHeader *bigfile, int type, int fileIndex, void *destinationPtr, void (*callback)(struct LoadQueueSlot *))
+{
+	(void)bigfile; (void)type; (void)fileIndex; (void)destinationPtr; (void)callback;
+	printf("FAIL: LOAD_AppendQueue is not available in this harness\n");
+	abort();
+}
+
+void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex, void *ptrDst, u32 *sizePtr, void (*callback)(struct LoadQueueSlot *))
+{
+	(void)bigfile; (void)loadType; (void)subfileIndex; (void)ptrDst; (void)sizePtr; (void)callback;
+	printf("FAIL: LOAD_ReadFile_ex is not available in this harness\n");
+	abort();
+}
+
+void *MEMPACK_AllocMem(int size)
+{
+	(void)size;
+	printf("FAIL: MEMPACK_AllocMem is not available in this harness\n");
+	abort();
+}
 
 static int g_failures = 0;
 static char g_log[65536];
@@ -762,6 +796,176 @@ static void test_serve_time_size_recheck(void)
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES); // restore
 }
 
+// ---------------------------------------------------------------------------
+// An absent camera in the level's ST1 table.
+// ---------------------------------------------------------------------------
+//
+// The loader serves a custom track's LEV byte for byte, so whatever the
+// packager put in that file's SpawnType1 table is what the engine consumes. The
+// scenario this pins is the one that crashed the event candidate.
+//
+// HOW A LEV SAYS "THIS ENTRY IS NOT HERE". A DRAM file's first word is the
+// offset of its pointer map; the body follows at byte 4; LOAD_RunPtrMap walks
+// the map and adds the body's load address to every slot the map lists. A slot
+// the map does NOT list is never touched, so a stored 0 stays 0 and arrives as
+// a NULL pointer. That is the entire mechanism, and it is why an absent entry
+// is invisible to a count check: the table is full width, the hole is inside it.
+//
+// Retail never does this. Relocated through this same function, all 18 arcade
+// LEVs in the NTSC-U BIGFILE come back with count == 4 and a non-NULL entry at
+// both camera indices, and all 7 battle arenas come back with count == 0. Baby
+// T Park comes back with count == 7 and NULLs at ST1_MAP, ST1_CAMERA_EOR,
+// ST1_CAMERA_PATH and ST1_CREDITS. So the two encodings of "no intro camera"
+// are a short table (retail) and a full table with a hole (this track), and
+// only the first is what the engine's count thresholds were written against.
+//
+// The images below are built rather than shipped: the real .lev is a 2.4 MB
+// third-party asset that is not in this repository, and the table shape is the
+// only part of it this test is about.
+
+#define ST1_TEST_ENTRIES 7
+
+// Lay out a DRAM-file image whose Level::ptrSpawnType1 points at a table of
+// `count` entries, where `present` says which of them the pointer map lists.
+// Returns the malloc'd image; *outBody is the relocated body.
+static char *build_lev_image(int count, const int *present, char **outBody)
+{
+	const int levelSize = ((int)sizeof(struct Level) + 3) & ~3;
+	const int st1Off = levelSize;
+	const int entriesOff = st1Off + (int)sizeof(struct SpawnType1);
+	const int targetsOff = entriesOff + ST1_TEST_ENTRIES * 4;
+	const int targetSize = 16;
+	const int ptrMapOff = targetsOff + ST1_TEST_ENTRIES * targetSize;
+
+	// The map always lists Level::ptrSpawnType1 itself, plus one slot per
+	// present entry. An absent entry is simply left out -- that omission IS the
+	// thing under test, so it must not be written as a special case elsewhere.
+	int offsets[1 + ST1_TEST_ENTRIES];
+	int numOffsets = 0;
+	int i;
+
+	int imageSize = 4 + ptrMapOff + (int)sizeof(struct DramPointerMap) + (int)sizeof(offsets);
+	char *image = calloc(1, (size_t)imageSize);
+	char *body;
+
+	if (image == NULL)
+	{
+		printf("FAIL: out of memory building a LEV image\n");
+		g_failures++;
+		return NULL;
+	}
+
+	*(int *)&image[0] = ptrMapOff;
+	body = &image[4];
+
+	// Pre-relocation, every listed slot holds a body-relative offset.
+	*(int *)&body[offsetof(struct Level, ptrSpawnType1)] = st1Off;
+	offsets[numOffsets++] = (int)offsetof(struct Level, ptrSpawnType1);
+
+	*(int *)&body[st1Off] = count;
+
+	for (i = 0; i < ST1_TEST_ENTRIES; i++)
+	{
+		if (!present[i])
+			continue; // left at 0 and out of the map: this is an absent entry
+
+		*(int *)&body[entriesOff + i * 4] = targetsOff + i * targetSize;
+		offsets[numOffsets++] = entriesOff + i * 4;
+	}
+
+	((struct DramPointerMap *)&body[ptrMapOff])->numBytes = numOffsets * 4;
+	memcpy(DRAM_GETOFFSETS((struct DramPointerMap *)&body[ptrMapOff]), offsets, (size_t)numOffsets * 4);
+
+	// The engine's own fixup, exactly as LOAD_DramFileCallback invokes it.
+	LOAD_RunPtrMap(body, DRAM_GETOFFSETS((struct DramPointerMap *)&body[ptrMapOff]), numOffsets);
+
+	*outBody = body;
+	return image;
+}
+
+static void test_absent_camera_path(void)
+{
+	// Baby T Park's measured shape: a full-width table with four holes.
+	const int babyTPark[ST1_TEST_ENTRIES] = {
+		0, // ST1_MAP          -- no minimap
+		1, // ST1_SPAWN
+		0, // ST1_CAMERA_EOR   -- no end-of-race cameras
+		0, // ST1_CAMERA_PATH  -- no start-line fly-in path
+		1, // ST1_NTROPY
+		1, // ST1_NOXIDE
+		0  // ST1_CREDITS
+	};
+	// A retail arcade track: short table, every entry present.
+	const int retailArcade[ST1_TEST_ENTRIES] = { 1, 1, 1, 1, 0, 0, 0 };
+
+	char *body;
+	char *image = build_lev_image(7, babyTPark, &body);
+	struct Level *lev;
+	struct SpawnType1 *st1;
+	void **entries;
+
+	if (image == NULL)
+		return;
+
+	lev = (struct Level *)body;
+	st1 = lev->ptrSpawnType1;
+
+	// The relocation did happen -- otherwise "everything is NULL" would pass
+	// the assertions below for the wrong reason.
+	expect_int(st1 == (struct SpawnType1 *)(body + (((int)sizeof(struct Level) + 3) & ~3)), 1,
+	           "the table pointer was relocated to the body");
+	expect_int(st1->count, 7, "the table is full width");
+
+	entries = ST1_GETPOINTERS(st1);
+	expect_int(entries[ST1_SPAWN] != NULL, 1, "a listed entry relocated to a real address");
+	expect_int(entries[ST1_NTROPY] != NULL, 1, "and so did the N. Tropy ghost");
+	expect_int(entries[ST1_NOXIDE] != NULL, 1, "and the Oxide ghost");
+
+	// The omission is what produces the NULL. No zeroing, no sentinel.
+	expect_int(entries[ST1_CAMERA_PATH] == NULL, 1, "an unlisted entry arrives NULL");
+	expect_int(entries[ST1_CAMERA_EOR] == NULL, 1, "and so does the end-of-race one");
+	expect_int(entries[ST1_MAP] == NULL, 1, "and the minimap");
+	expect_int(entries[ST1_CREDITS] == NULL, 1, "and the credits camera");
+
+	// THE REGRESSION. Both count thresholds CAM.c used to guard its two cameras
+	// with pass on this table, which is why the fly-in dereferenced NULL + 0x354
+	// at CAM.c's fly-in interpolation and the end-of-race block would have
+	// dereferenced NULL the frame the first driver finished.
+	expect_int(st1->count < 4, 0, "the old fly-in threshold does NOT catch this table");
+	expect_int(st1->count < 3, 0, "nor does the old end-of-race threshold");
+
+	// What the guards ask now. Both refuse, so the fly-in reports itself done
+	// and the end-of-race camera is never armed.
+	expect_int(CustomTrackPolicy_St1EntryPresent(st1->count, ST1_CAMERA_PATH, (const void *const *)entries), 0,
+	           "the fly-in guard refuses a track with no camera path");
+	expect_int(CustomTrackPolicy_St1EntryPresent(st1->count, ST1_CAMERA_EOR, (const void *const *)entries), 0,
+	           "the end-of-race guard refuses a track with no EOR table");
+
+	free(image);
+
+	// The same walk on a retail-shaped table, where the guards must be inert.
+	image = build_lev_image(4, retailArcade, &body);
+	if (image == NULL)
+		return;
+
+	lev = (struct Level *)body;
+	st1 = lev->ptrSpawnType1;
+	entries = ST1_GETPOINTERS(st1);
+
+	expect_int(st1->count, 4, "a retail arcade table is four entries");
+	expect_int(entries[ST1_CAMERA_PATH] != NULL, 1, "with an intro camera path");
+	expect_int(entries[ST1_CAMERA_EOR] != NULL, 1, "and end-of-race cameras");
+
+	// Old and new agree on retail content, in both directions. This is the
+	// safety argument for the swap, asserted rather than asserted-to.
+	expect_int(CustomTrackPolicy_St1EntryPresent(st1->count, ST1_CAMERA_PATH, (const void *const *)entries),
+	           st1->count >= 4, "the fly-in guard matches the old threshold on retail");
+	expect_int(CustomTrackPolicy_St1EntryPresent(st1->count, ST1_CAMERA_EOR, (const void *const *)entries),
+	           st1->count >= 3, "and the end-of-race guard matches its own");
+
+	free(image);
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -794,6 +998,7 @@ int main(void)
 	test_descriptor_replacement();
 	test_withdrawal();
 	test_serve_time_size_recheck();
+	test_absent_camera_path();
 
 	if (g_failures != 0)
 	{

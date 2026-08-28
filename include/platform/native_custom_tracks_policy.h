@@ -7,7 +7,7 @@
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
 // engine, with no disc, no display, no config file and no seed.
 //
-// FIVE DECISIONS LIVE HERE.
+// SIX DECISIONS LIVE HERE.
 //
 // 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
 //    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
@@ -72,6 +72,30 @@
 //    deliberate answer instead of a fall-through. Default is ALLOW, per the
 //    ruled check set. See the enum for what is still missing before those boxes
 //    mean anything.
+//
+// 6. IS AN ST1 TABLE ENTRY REALLY THERE. Every level carries a SpawnType1
+//    pointer table (struct Level::ptrSpawnType1) whose entries are indexed by
+//    the ST1_* enum -- minimap, object spawns, end-of-race cameras, the intro
+//    camera path, the two ghosts, credits. Retail encodes "this level has no X"
+//    by making the table SHORT, so every engine consumer guards with a count
+//    threshold and then dereferences the entry unconditionally. Measured across
+//    the retail NTSC-U BIGFILE, all 18 arcade tracks have count == 4 with a
+//    non-NULL entry in every one of those four slots, and all 7 battle arenas
+//    have count == 0 -- so on retail content a count threshold and "the entry is
+//    really there" are the same question, and the engine is right.
+//
+//    A custom track need not agree. A community packager can emit a FULL-WIDTH
+//    table and encode absence as a NULL entry instead: the entry's slot is
+//    simply left out of the LEV's pointer map, so LOAD_RunPtrMap never relocates
+//    it and it arrives as 0. Baby T Park does exactly that -- count == 7 with
+//    ST1_MAP, ST1_CAMERA_EOR, ST1_CAMERA_PATH and ST1_CREDITS all NULL -- which
+//    walks straight past every count threshold in the engine.
+//
+//    So the question a consumer actually needs answered is not "is the table
+//    long enough" but "is the entry at this index really there", and that is
+//    what the predicate below answers. It subsumes the count threshold rather
+//    than replacing it, which is why a call site can swap one for the other
+//    without changing what retail content does.
 //
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
@@ -376,6 +400,30 @@ static int CustomTrackPolicy_BoxVerdict(const struct CustomTrackFeatureConfig *c
 		return CTR_CT_BOX_UNCHANGED;
 
 	return cfg->raceBoxes ? CTR_CT_BOX_ALLOW : CTR_CT_BOX_DENY;
+}
+
+// Does the level's SpawnType1 table really carry an entry at `index`? This is
+// decision 6 above: the question every ST1 consumer means to ask, in place of
+// the count threshold it currently asks instead.
+//
+// Takes plain scalars rather than a struct SpawnType1 * so this header stays
+// engine-free. `count` is the table's own count field, `index` an ST1_* value,
+// and `entries` the pointer array that follows the count (ST1_GETPOINTERS at
+// the call site, which is address arithmetic and dereferences nothing). The
+// bounds test is evaluated BEFORE entries[index], so passing the array of a
+// short table is safe: this never reads past the count the caller reported.
+//
+// The count half is exactly the threshold it replaces -- `index < count` for
+// ST1_CAMERA_PATH (3) is `count >= 4`, and for ST1_CAMERA_EOR (2) is
+// `count >= 3` -- so a call site that swaps its threshold for this predicate
+// changes behaviour only on a table that is long enough AND has a hole in it,
+// which no retail level has.
+static int CustomTrackPolicy_St1EntryPresent(int count, int index, const void *const *entries)
+{
+	if (entries == NULL || index < 0 || index >= count)
+		return 0;
+
+	return (entries[index] != NULL) ? 1 : 0;
 }
 
 #endif // CTR_CUSTOM_TRACKS

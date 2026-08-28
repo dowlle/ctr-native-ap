@@ -34,7 +34,12 @@
 //      in one header: for every reachable config, the answer AH_WarpPad.c uses
 //      to redirect and the answer UI_CupStandings.c uses to complete the cup
 //      agree. A cup that becomes a single race always finishes as one, and a
-//      cup that did not redirect always keeps its four legs.
+//      cup that did not redirect always keeps its four legs,
+//   7. ST1 table entry presence, against the three real table shapes: that the
+//      count thresholds CAM.c used to guard its two cameras with both PASS on
+//      Baby T Park's full-width-with-holes table while the predicate that
+//      replaced them refuses, and that on every retail shape -- arcade and
+//      battle -- the two agree, which is the safety argument for the swap.
 //
 // MUTATION SENSITIVITY. Each redirect term is asserted in a pair of rows that
 // differ in that term alone, so dropping any one of them from
@@ -655,6 +660,115 @@ static void test_measured_flags(void)
 	expect_int(CustomTrackPolicy_FlagsSupportRace(0, 8, 4, NULL), 0, "a NULL reason is allowed");
 }
 
+// ---------------------------------------------------------------------------
+// 9. ST1 table entry presence -- the camera-absent guard.
+// ---------------------------------------------------------------------------
+
+// The ST1_* values, restated here because this harness is engine-free by
+// design and include/namespace_Level.h is engine. They are a wire format in
+// practice: they index the pointer array inside a LEV's SpawnType1 table, so a
+// build that disagreed with the file would be reading the wrong slot. Pinning
+// them here is deliberate -- if the enum in namespace_Level.h is ever
+// reordered, these rows stop describing the tracks they claim to describe.
+enum
+{
+	T_ST1_MAP = 0,
+	T_ST1_SPAWN = 1,
+	T_ST1_CAMERA_EOR = 2,
+	T_ST1_CAMERA_PATH = 3,
+	T_ST1_NTROPY = 4,
+	T_ST1_NOXIDE = 5,
+	T_ST1_CREDITS = 6
+};
+
+// Three real table shapes, measured by relocating real LEVs through the
+// engine's own LOAD_RunPtrMap and reading struct Level::ptrSpawnType1.
+//
+//   retail arcade -- all 18 tracks in the NTSC-U BIGFILE: count == 4, and
+//                    ST1_CAMERA_EOR and ST1_CAMERA_PATH non-NULL on every one.
+//                    (15 of the 18 carry a NULL ST1_SPAWN, which is why "some
+//                    entry is NULL" alone is not the interesting condition.)
+//   retail battle -- all 7 arenas: count == 0, so no index is in bounds.
+//   Baby T Park   -- count == 7 with ST1_MAP, ST1_CAMERA_EOR, ST1_CAMERA_PATH
+//                    and ST1_CREDITS NULL. The full-width-table-with-holes
+//                    encoding no retail level uses.
+//
+// A non-NULL entry's actual value is irrelevant to the predicate, so these use
+// a single dummy address to stand for "present".
+static void test_st1_entry_present(void)
+{
+	static const int present = 0;
+	const void *const *entries;
+
+	const void *retailArcade[4] = { &present, NULL, &present, &present };
+	const void *retailBattle[1] = { NULL }; // count 0; the array is never indexed
+	const void *babyTPark[7] = { NULL, &present, NULL, NULL, &present, &present, NULL };
+
+	// --- the shape the crash was reported on -------------------------------
+	entries = babyTPark;
+
+	// What the engine used to ask. Both thresholds pass, which is the bug:
+	// CAM.c's fly-in guard was count < 4 and its end-of-race guard count < 3.
+	expect_int(7 >= 4, 1, "Baby T Park clears the old count < 4 fly-in threshold");
+	expect_int(7 >= 3, 1, "Baby T Park clears the old count < 3 end-of-race threshold");
+
+	// What it asks now. Both refuse, which is the fix.
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_CAMERA_PATH, entries), 0,
+	           "Baby T Park has no intro camera path");
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_CAMERA_EOR, entries), 0,
+	           "Baby T Park has no end-of-race cameras");
+
+	// The same table's entries that ARE there still read as present, so the
+	// predicate is answering per-index rather than condemning the whole table.
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_SPAWN, entries), 1, "it does have object spawns");
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_NTROPY, entries), 1, "and an N. Tropy ghost");
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_NOXIDE, entries), 1, "and an Oxide ghost");
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_MAP, entries), 0, "but no minimap");
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_CREDITS, entries), 0, "and no credits camera");
+
+	// --- retail must be unchanged ------------------------------------------
+	// This is the whole safety argument for swapping the thresholds: on retail
+	// content the new predicate and the old count test give the same answer, so
+	// no retail track can change behaviour.
+	entries = retailArcade;
+	expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_PATH, entries), 1,
+	           "a retail arcade track has an intro camera path");
+	expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_EOR, entries), 1,
+	           "and end-of-race cameras");
+	expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_PATH, entries), 4 >= 4,
+	           "so the fly-in guard agrees with the old threshold on retail");
+	expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_EOR, entries), 4 >= 3,
+	           "and so does the end-of-race guard");
+
+	entries = retailBattle;
+	expect_int(CustomTrackPolicy_St1EntryPresent(0, T_ST1_CAMERA_PATH, entries), 0,
+	           "a battle arena has no intro camera path");
+	expect_int(CustomTrackPolicy_St1EntryPresent(0, T_ST1_CAMERA_EOR, entries), 0,
+	           "nor end-of-race cameras");
+	expect_int(CustomTrackPolicy_St1EntryPresent(0, T_ST1_CAMERA_PATH, entries), 0 >= 4,
+	           "so the fly-in guard agrees with the old threshold on battle maps");
+	expect_int(CustomTrackPolicy_St1EntryPresent(0, T_ST1_CAMERA_EOR, entries), 0 >= 3,
+	           "and so does the end-of-race guard");
+
+	// --- the bound is checked BEFORE the array is indexed -------------------
+	// Load-bearing, not defensive: CAM_EndOfRace's guard runs on a table it has
+	// only proven to have count > 1, and asks about index 2. A predicate that
+	// indexed first would read one past the end of a two-entry table.
+	entries = retailArcade;
+	expect_int(CustomTrackPolicy_St1EntryPresent(2, T_ST1_CAMERA_EOR, entries), 0,
+	           "index 2 is out of bounds in a two-entry table");
+	expect_int(CustomTrackPolicy_St1EntryPresent(3, T_ST1_CAMERA_EOR, entries), 1,
+	           "and in bounds in a three-entry table");
+	expect_int(CustomTrackPolicy_St1EntryPresent(3, T_ST1_CAMERA_PATH, entries), 0,
+	           "while index 3 is not");
+
+	// Degenerate inputs cannot be made to read anything.
+	expect_int(CustomTrackPolicy_St1EntryPresent(7, T_ST1_CAMERA_PATH, NULL), 0, "a NULL array is absent");
+	expect_int(CustomTrackPolicy_St1EntryPresent(0, 0, entries), 0, "an empty table is absent");
+	expect_int(CustomTrackPolicy_St1EntryPresent(-1, 0, entries), 0, "a negative count is absent");
+	expect_int(CustomTrackPolicy_St1EntryPresent(4, -1, entries), 0, "a negative index is absent");
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -666,6 +780,7 @@ int main(void)
 	test_leg_count();
 	test_box_verdict();
 	test_measured_flags();
+	test_st1_entry_present();
 	test_fork_consistency();
 
 	if (g_failures != 0)
