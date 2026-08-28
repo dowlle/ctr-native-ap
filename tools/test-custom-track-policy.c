@@ -609,6 +609,52 @@ static void test_box_verdict(void)
 	           "denying boxes never leaks onto a non-event load");
 }
 
+
+// ---------------------------------------------------------------------------
+// 8. Measured capability flags (rung 2c).
+// ---------------------------------------------------------------------------
+
+// Only two of the descriptor's eight measured flags gate the race, and both are
+// hard requirements of the ruled semantics rather than preferences. The other
+// six are carried so the check rungs above the Gem have an honest input when
+// they land; refusing on a flag this build cannot act on would reject tracks it
+// can perfectly well serve.
+static void test_measured_flags(void)
+{
+	const char *why;
+
+	// The Purple Gem Cup grids five karts: MainInit_Drivers gives cupID 4
+	// numPlyrCurrGame + 4 rather than a full field, and LOAD_Assets forces that
+	// roster to the four bosses. Every other adventure cup grids eight.
+	expect_int(CustomTrackPolicy_RequiredSpawns(4), 5, "the Purple cup grids five karts");
+	expect_int(CustomTrackPolicy_RequiredSpawns(0), 8, "Red grids eight");
+	expect_int(CustomTrackPolicy_RequiredSpawns(3), 8, "Yellow grids eight");
+
+	// ai_nav: the ruling says AI bots on, and a track with no LevNavTable has no
+	// paths for them to drive. Racing it alone would silently drop half the ruled
+	// behaviour, so it is refused rather than degraded.
+	why = NULL;
+	expect_int(CustomTrackPolicy_FlagsSupportRace(0, 8, 4, &why), 0, "no AI nav is refused");
+	expect_int(why != NULL, 1, "and says why");
+
+	// spawns: one DriverSpawn slot per kart on the grid.
+	why = NULL;
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 4, 4, &why), 0, "4 spawns is one short for cup 4");
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 5, 4, &why), 1, "5 spawns is exactly enough");
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 8, 4, &why), 1, "8 spawns is plenty");
+
+	// The same track measured against a cup that grids eight.
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 5, 1, &why), 0, "5 spawns is short for cup 1");
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 8, 1, &why), 1, "8 spawns covers cup 1");
+
+	// Baby T Park's own measured shape: 8 spawns, AI nav present.
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, 8, 4, &why), 1, "the event track's shape is servable");
+
+	// outWhy is optional: the loader passes one, a caller that only wants the
+	// verdict must not have to.
+	expect_int(CustomTrackPolicy_FlagsSupportRace(0, 8, 4, NULL), 0, "a NULL reason is allowed");
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -619,6 +665,7 @@ int main(void)
 	test_serve_context();
 	test_leg_count();
 	test_box_verdict();
+	test_measured_flags();
 	test_fork_consistency();
 
 	if (g_failures != 0)

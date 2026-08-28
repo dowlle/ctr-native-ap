@@ -1,8 +1,9 @@
-// Integration assertions for the custom-track loader against REAL files on
-// disk (Baby T Park event spike, rung 1). Where tools/test-custom-track-policy.c
-// pins the decisions, this pins the half that needs a filesystem: config
-// parsing, content verification, the accept/reject verdicts, and the bytes
-// GetOverride/ReadFile actually serve.
+// Integration assertions for the custom-track loader against REAL files on disk
+// (Baby T Park event spike, rungs 1/2a/2c). Where
+// tools/test-custom-track-policy.c pins the decisions and
+// tools/test-custom-tracks-seedcfg.cpp pins the wire parse, this pins the half
+// that needs a filesystem: config parsing, seed-descriptor application, content
+// verification, and the bytes GetOverride/ReadFile actually serve.
 //
 // It compiles the REAL loader -- platform/native_custom_tracks.c is included
 // directly, so there is no reimplementation to drift. That also puts the file's
@@ -17,35 +18,40 @@
 // which only hold with 32-bit pointers. Exit 0 = every assertion held.
 //
 // The binding behaviour under test, in one sentence: the loader serves a custom
-// track's bytes only when both source files hash to exactly what the feature
-// config promised, and every other outcome refuses loudly and falls back to the
-// retail BIGFILE rather than serving something the config did not name.
+// track's bytes only for the race a SEED told it about, only after both files
+// hash to exactly what that seed promised, and every other outcome refuses
+// loudly and falls back to the retail BIGFILE.
+//
+// WHAT RUNG 2C CHANGED. config.ini now carries only the two file paths. The
+// digests, lap count, host slot, replaced cup and box policy all arrive in a
+// seed descriptor, and no descriptor means the feature is fully off however
+// config.ini is written. That is why almost every scenario below is "apply a
+// descriptor and see what happens" rather than "write a config and reload".
 //
 // What this pins:
-//   1. the disarmed states that must behave exactly like retail: no config.ini,
-//      a config.ini with no [CustomTracks] section, and a section naming no
-//      files,
-//   2. the happy path end to end: parse, hash, arm, and then serve the right
+//   1. the off states that must behave exactly like retail: no config.ini, no
+//      track files, and -- new in 2c -- files configured but no seed,
+//   2. the happy path end to end: parse, apply, hash, arm, then serve the right
 //      source file for each of the eight subfile slots,
-//   3. every refusal, each as its own scenario: wrong hash, a truncated file, a
-//      missing file, a missing folder, an absent expected digest, a malformed
-//      expected digest, and an out-of-range levelID,
-//   4. that a refusal is LOUD -- each scenario asserts on the loader's own log
-//      output, because a silent fallback is the failure mode this feature
-//      exists to prevent,
-//   5. that a refusal is TOTAL: contentVerified staying 0 also switches the
-//      Purple-destination redirect off, so unverified content cannot produce a
-//      7-lap race on the retail track sitting in the mapped slot,
-//   6. the serve-time size re-check, which catches a file swapped or truncated
-//      after startup verification,
-//   7. that ReadFile fills the payload and zero-pads the sector-rounded tail,
-//      which is the contract LOAD_ReadFile_ex's CD path is written against.
+//   3. every refusal, each as its own scenario, and each asserting the same two
+//      things: nothing is served AND the cup is left vanilla. Those must move
+//      together, because serving without the redirect races retail bytes for the
+//      seed's Gem, and redirecting without serving races the host slot's retail
+//      track for it,
+//   4. that a refusal is LOUD -- scenarios assert on the loader's own log,
+//      because a silent fallback is the failure mode this feature exists to
+//      prevent,
+//   5. the two measured flags the loader actually acts on (ai_nav, spawns),
+//   6. descriptor lifecycle: idempotence by content (this is called every frame,
+//      so a repeat must not re-hash a multi-MiB file), replacement by a
+//      different seed, and withdrawal,
+//   7. the serve-time size re-check, and ReadFile's zero-padded sector tail.
 //
 // NOTE ON CIRCULARITY: the expected digests here are produced by the same
-// SHA-256 this file links. That is deliberate -- what is under test here is the
+// SHA-256 this file links. That is deliberate -- what is under test is the
 // loader's accept/reject wiring, not the digest. The primitive itself is pinned
 // independently against the published NIST vectors in
-// tools/test-custom-track-policy.c, so a broken SHA-256 fails there.
+// tools/test-custom-track-policy.c.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,6 +86,14 @@ static void expect_log_contains(const char *needle, const char *what)
 		return;
 	printf("FAIL %s: loader log did not mention \"%s\"\n", what, needle);
 	printf("  log was:\n%s\n", g_log);
+	g_failures++;
+}
+
+static void expect_log_silent(const char *what)
+{
+	if (g_log[0] == '\0')
+		return;
+	printf("FAIL %s: loader logged when it should have said nothing:\n%s\n", what, g_log);
 	g_failures++;
 }
 
@@ -154,68 +168,52 @@ static void reset_loader(void)
 	memset(&s_customTrackConfig, 0, sizeof(s_customTrackConfig));
 	memset(&s_customTrackVrm, 0, sizeof(s_customTrackVrm));
 	memset(&s_customTrackLev, 0, sizeof(s_customTrackLev));
+	memset(&s_descriptor, 0, sizeof(s_descriptor));
+	s_haveDescriptor = 0;
 }
 
-// Run CustomTrack_Load with its stdout captured into g_log, so a scenario can
-// assert that a refusal was actually announced.
-static void load_capturing_log(void)
-{
-	FILE *redirected;
-	FILE *readback;
-	size_t got;
-	int savedFd = dup(fileno(stdout));
-
-	fflush(stdout);
-	g_log[0] = '\0';
-
-	redirected = freopen("loader.log", "w", stdout);
-	if (redirected == NULL)
-	{
-		close(savedFd);
-		printf("FAIL: could not capture loader stdout\n");
-		g_failures++;
-		return;
-	}
-
-	CustomTrack_Load();
-
-	fflush(stdout);
-	dup2(savedFd, fileno(stdout));
-	close(savedFd);
-	clearerr(stdout);
-
-	readback = fopen("loader.log", "rb");
-	if (readback != NULL)
-	{
-		got = fread(g_log, 1, sizeof(g_log) - 1, readback);
-		g_log[got] = '\0';
-		fclose(readback);
-	}
-}
+// Run loader calls with stdout captured into g_log, so a scenario can assert
+// what was (or was not) announced.
+#define CAPTURING(stmt)                                                                            \
+	do                                                                                             \
+	{                                                                                              \
+		int savedFd = dup(fileno(stdout));                                                         \
+		FILE *readback;                                                                            \
+		size_t got;                                                                                \
+		fflush(stdout);                                                                            \
+		g_log[0] = '\0';                                                                           \
+		if (freopen("loader.log", "w", stdout) == NULL)                                            \
+		{                                                                                          \
+			close(savedFd);                                                                        \
+			break;                                                                                 \
+		}                                                                                          \
+		stmt;                                                                                      \
+		fflush(stdout);                                                                            \
+		dup2(savedFd, fileno(stdout));                                                             \
+		close(savedFd);                                                                            \
+		clearerr(stdout);                                                                          \
+		readback = fopen("loader.log", "rb");                                                      \
+		if (readback != NULL)                                                                      \
+		{                                                                                          \
+			got = fread(g_log, 1, sizeof(g_log) - 1, readback);                                    \
+			g_log[got] = '\0';                                                                     \
+			fclose(readback);                                                                      \
+		}                                                                                          \
+	} while (0)
 
 // ---------------------------------------------------------------------------
-// Scenarios.
+// Fixtures.
 // ---------------------------------------------------------------------------
-
-// The load context of the event race itself: a gem cup is in progress, it is
-// the configured cup, and the level being loaded is the mapped slot. Every
-// "should this be served" question in this file is asked in THIS context unless
-// a scenario deliberately varies it.
-static struct CustomTrackLoadContext event_ctx(void)
-{
-	struct CustomTrackLoadContext ctx;
-
-	ctx.levelID = 6;
-	ctx.adventureCupActive = 1;
-	ctx.cupID = 4;
-	return ctx;
-}
 
 static char g_vrmHash[NATIVE_SHA256_HEX_BYTES];
 static char g_levHash[NATIVE_SHA256_HEX_BYTES];
 
 #define TEST_VRM_BYTES 4096
 #define TEST_LEV_BYTES 9000 // deliberately not a multiple of 2048
+#define TEST_HOST      6    // the arcade slot the bytes borrow
+#define TEST_CUP_LEVEL 104  // Purple Gem Cup
+#define TEST_CUP       4
+#define TEST_BASE      (TEST_HOST * CTR_CT_GROUP_SIZE)
 
 static void make_track_files(void)
 {
@@ -226,77 +224,138 @@ static void make_track_files(void)
 	hash_file_hex("tracks/track.lev", g_levHash);
 }
 
-static void write_good_config(void)
+// config.ini as rung 2c leaves it: two paths and nothing else.
+static void write_paths_config(void)
 {
-	char text[2048];
-
-	snprintf(text, sizeof(text),
-	         "[Video]\n"
-	         "fullscreen = 1\n"
-	         "\n"
-	         "; the loader's own section\n"
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n"
-	         "custom_track_race_cup = 4\n"
-	         "custom_track_race_laps = 7\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
+	write_config("[Video]\n"
+	             "fullscreen = 1\n"
+	             "\n"
+	             "; the loader's own section -- paths only; the seed says the rest\n"
+	             "[CustomTracks]\n"
+	             "custom_track_vrm = tracks/track.vrm\n"
+	             "custom_track_lev = tracks/track.lev\n");
 }
 
-// Assert the loader is fully disarmed: no bytes served for any subfile in the
-// mapped group, and the event destination left vanilla.
-static void expect_fully_disarmed(const char *what)
+// The event seed's descriptor, matching the fixture files.
+static struct CustomTrackSeedDescriptor good_descriptor(void)
 {
-	char label[128];
+	struct CustomTrackSeedDescriptor d;
+
+	memset(&d, 0, sizeof(d));
+	d.laps = 7;
+	d.hostLevelID = TEST_HOST;
+	d.replacesCupLevelID = TEST_CUP_LEVEL;
+	d.boxes = 1;
+	snprintf(d.levSha256, sizeof(d.levSha256), "%s", g_levHash);
+	snprintf(d.vrmSha256, sizeof(d.vrmSha256), "%s", g_vrmHash);
+	d.flagCrates = 1;
+	d.flagCtrLetters = 1;
+	d.flagRelicCrates = 1;
+	d.flagAiNav = 1;
+	d.flagMinimap = 0;
+	d.flagGhosts = 0;
+	d.flagSpawns = 8;
+	d.flagCheckpoints = 35;
+	return d;
+}
+
+// The load context of the event race: a gem cup is in progress, it is the
+// replaced cup, and the level being loaded is the host slot.
+static struct CustomTrackLoadContext event_ctx(void)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = TEST_HOST;
+	ctx.adventureCupActive = 1;
+	ctx.cupID = TEST_CUP;
+	return ctx;
+}
+
+// Assert the loader is fully off: no bytes for any subfile in the host group,
+// and the event destination left vanilla.
+static void expect_fully_off(const char *what)
+{
+	struct CustomTrackLoadContext ctx = event_ctx();
+	char label[160];
 	int i;
 
 	snprintf(label, sizeof(label), "%s: contentVerified", what);
 	expect_int(CustomTrack_Config()->contentVerified, 0, label);
 
 	snprintf(label, sizeof(label), "%s: redirect off", what);
-	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 0, label);
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 0, label);
 
 	snprintf(label, sizeof(label), "%s: feature reports disabled", what);
 	expect_int(CustomTrack_RaceFeatureEnabled(), 0, label);
 
-	snprintf(label, sizeof(label), "%s: Purple keeps four legs", what);
-	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 0, label);
+	snprintf(label, sizeof(label), "%s: the cup keeps four legs", what);
+	expect_int(CustomTrack_CupIsComplete(TEST_CUP, 1, 1), 0, label);
+
+	snprintf(label, sizeof(label), "%s: HUD reads TRACK n/4", what);
+	expect_int(CustomTrack_CupLegCount(TEST_CUP, 1), 4, label);
+
+	snprintf(label, sizeof(label), "%s: box policy untouched", what);
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 1, TEST_CUP), CTR_CT_BOX_UNCHANGED, label);
 
 	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
 	{
-		struct CustomTrackLoadContext ctx = event_ctx();
 		const char *path = NULL;
 		u32 size = 0;
 
-		snprintf(label, sizeof(label), "%s: subfile %d falls back to BIGFILE", what, 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &ctx, &path, &size), 0, label);
+		snprintf(label, sizeof(label), "%s: subfile %d falls back to BIGFILE", what, TEST_BASE + i);
+		expect_int(CustomTrack_GetOverride(TEST_BASE + i, &ctx, &path, &size), 0, label);
 	}
 }
+
+// Bring the loader up with paths configured and a descriptor applied.
+static void arm_with(struct CustomTrackSeedDescriptor d)
+{
+	reset_loader();
+	write_paths_config();
+	CAPTURING(CustomTrack_Load());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+}
+
+// ---------------------------------------------------------------------------
+// Off states.
+// ---------------------------------------------------------------------------
 
 static void test_no_config_file(void)
 {
 	reset_loader();
 	unlink("config.ini");
-	load_capturing_log();
+	CAPTURING(CustomTrack_Load());
 
 	expect_log_contains("config.ini not found", "no config.ini announces itself");
-	expect_fully_disarmed("no config.ini");
+	expect_fully_off("no config.ini");
 }
 
-static void test_config_without_section(void)
+static void test_config_without_paths(void)
 {
 	reset_loader();
 	write_config("[Video]\nfullscreen = 1\n[Audio]\nvolume = 80\n");
-	load_capturing_log();
+	CAPTURING(CustomTrack_Load());
 
-	expect_log_contains("no track configured", "config without [CustomTracks] announces itself");
-	expect_fully_disarmed("config without [CustomTracks]");
+	expect_log_contains("no track files configured", "a config with no paths announces itself");
+	expect_fully_off("config without paths");
 }
+
+// THE RUNG-2C PRECEDENCE RULE. Files configured, loader loaded, but no seed has
+// spoken: the feature is off. There is no longer any config-only path to a
+// working custom track.
+static void test_paths_but_no_seed(void)
+{
+	reset_loader();
+	write_paths_config();
+	CAPTURING(CustomTrack_Load());
+
+	expect_log_contains("awaiting a seed descriptor", "the loader says it is waiting on a seed");
+	expect_fully_off("paths configured but no seed");
+}
+
+// ---------------------------------------------------------------------------
+// The happy path.
+// ---------------------------------------------------------------------------
 
 static void test_happy_path(void)
 {
@@ -305,26 +364,23 @@ static void test_happy_path(void)
 	u32 size;
 	int i;
 
-	reset_loader();
-	write_good_config();
-	load_capturing_log();
+	arm_with(good_descriptor());
 
-	expect_log_contains("content verified", "happy path announces verification");
+	expect_log_contains("armed", "arming is announced");
+	expect_log_contains("still loads retail bytes", "arming says the retail pad is unaffected");
 	expect_int(CustomTrack_Config()->contentVerified, 1, "happy path: contentVerified");
-	expect_int(CustomTrack_Config()->mappedLevelID, 6, "happy path: mapped levelID parsed");
-	expect_int(CustomTrack_Config()->raceLaps, 7, "happy path: laps parsed");
-	expect_int(CustomTrack_Config()->raceCupID, 4, "happy path: cup parsed");
+	expect_int(CustomTrack_Config()->mappedLevelID, TEST_HOST, "happy path: host slot from the seed");
+	expect_int(CustomTrack_Config()->raceLaps, 7, "happy path: laps from the seed");
+	expect_int(CustomTrack_Config()->raceCupID, TEST_CUP, "happy path: cup from the seed");
 
-	// The redirect is on, and only for the configured cup.
-	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 1, "happy path: Purple redirects");
-	expect_int(CustomTrack_CupRaceLevelID(4, 1), 6, "happy path: races levelID 6");
-	expect_int(CustomTrack_CupRaceLaps(4, 1), 7, "happy path: races 7 laps");
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 1, "happy path: the cup redirects");
+	expect_int(CustomTrack_CupRaceLevelID(TEST_CUP, 1), TEST_HOST, "happy path: races the host slot");
+	expect_int(CustomTrack_CupRaceLaps(TEST_CUP, 1), 7, "happy path: races 7 laps");
 	expect_int(CustomTrack_CupRaceRedirectActive(0, 1), 0, "happy path: Red does not redirect");
-	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 1, "happy path: Purple completes after one race");
-	expect_int(CustomTrack_CupIsComplete(0, 1, 1), 0, "happy path: Red still needs four legs");
+	expect_int(CustomTrack_CupIsComplete(TEST_CUP, 1, 1), 1, "happy path: completes after one race");
+	expect_int(CustomTrack_CupLegCount(TEST_CUP, 1), 1, "happy path: HUD reads TRACK n/1");
 
-	// Pair auto-expand, through the real serving path: all four mode-pairs are
-	// answered by the single .vrm/.lev pair, with the right parity and size.
+	// Pair auto-expand through the real serving path.
 	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
 	{
 		char label[128];
@@ -332,21 +388,21 @@ static void test_happy_path(void)
 
 		path = NULL;
 		size = 0;
-		snprintf(label, sizeof(label), "happy path: subfile %d is served", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &ctx, &path, &size), 1, label);
+		snprintf(label, sizeof(label), "happy path: subfile %d is served", TEST_BASE + i);
+		expect_int(CustomTrack_GetOverride(TEST_BASE + i, &ctx, &path, &size), 1, label);
 
-		snprintf(label, sizeof(label), "happy path: subfile %d serves the %s", 48 + i, wantLev ? "lev" : "vrm");
+		snprintf(label, sizeof(label), "happy path: subfile %d serves the %s", TEST_BASE + i,
+		         wantLev ? "lev" : "vrm");
 		expect_int((int)size, wantLev ? TEST_LEV_BYTES : TEST_VRM_BYTES, label);
 	}
 
-	// The neighbouring tracks' subfiles are untouched.
-	expect_int(CustomTrack_GetOverride(47, &ctx, &path, &size), 0, "happy path: subfile 47 is not served");
-	expect_int(CustomTrack_GetOverride(56, &ctx, &path, &size), 0, "happy path: subfile 56 is not served");
-	expect_int(CustomTrack_GetOverride(0, &ctx, &path, &size), 0, "happy path: subfile 0 is not served");
+	expect_int(CustomTrack_GetOverride(TEST_BASE - 1, &ctx, &path, &size), 0,
+	           "happy path: the subfile below the group is not served");
+	expect_int(CustomTrack_GetOverride(TEST_BASE + CTR_CT_GROUP_SIZE, &ctx, &path, &size), 0,
+	           "happy path: the subfile above the group is not served");
 
 	// ReadFile's contract: fill the payload, zero-pad out to the sector-rounded
-	// buffer. LOAD_ReadFile_ex allocates ceil(size/2048)*2048 and the CD path it
-	// mirrors leaves no stale bytes in the tail.
+	// buffer, matching what LOAD_ReadFile_ex's CD path allocates.
 	{
 		u32 sectorBytes = ((TEST_LEV_BYTES + 2047u) / 2048u) * 2048u;
 		unsigned char *buf = (unsigned char *)malloc(sectorBytes);
@@ -358,7 +414,7 @@ static void test_happy_path(void)
 		memset(buf, 0xCD, sectorBytes); // poison, so padding must be written
 		path = NULL;
 		size = 0;
-		CustomTrack_GetOverride(49, &ctx, &path, &size); // odd slot: the LEV
+		CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &path, &size);
 
 		expect_int(CustomTrack_ReadFile(path, buf, sectorBytes, size), 1, "happy path: ReadFile succeeds");
 
@@ -372,16 +428,14 @@ static void test_happy_path(void)
 			}
 			fclose(f);
 		}
-		expect_int(memcmp(buf, expected, TEST_LEV_BYTES), 0, "happy path: served bytes are the file's bytes");
+		expect_int(memcmp(buf, expected, TEST_LEV_BYTES), 0, "happy path: served bytes are the file's");
 
 		for (j = TEST_LEV_BYTES; j < sectorBytes; j++)
-		{
 			if (buf[j] != 0)
 			{
 				tailClean = 0;
 				break;
 			}
-		}
 		expect_int(tailClean, 1, "happy path: sector tail is zero-padded");
 
 		free(buf);
@@ -389,313 +443,301 @@ static void test_happy_path(void)
 	}
 }
 
+// The rung-2a deliverable, still true under a seed descriptor: in one armed
+// session the event race is served custom bytes and the host slot's own retail
+// race pad is not.
+static void test_retail_pad_stays_retail(void)
+{
+	struct CustomTrackLoadContext eventLoad = event_ctx();
+	struct CustomTrackLoadContext retailPad;
+	struct CustomTrackLoadContext otherCupLeg;
+	const char *path = NULL;
+	u32 size = 0;
+	int i;
+
+	arm_with(good_descriptor());
+
+	retailPad = event_ctx();
+	retailPad.adventureCupActive = 0; // cupID deliberately left stale at 4
+	otherCupLeg = event_ctx();
+	otherCupLeg.cupID = 1;
+
+	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
+	{
+		char label[128];
+
+		snprintf(label, sizeof(label), "event race: subfile %d serves custom bytes", TEST_BASE + i);
+		expect_int(CustomTrack_GetOverride(TEST_BASE + i, &eventLoad, &path, &size), 1, label);
+
+		snprintf(label, sizeof(label), "retail pad: subfile %d falls back to BIGFILE", TEST_BASE + i);
+		expect_int(CustomTrack_GetOverride(TEST_BASE + i, &retailPad, &path, &size), 0, label);
+
+		snprintf(label, sizeof(label), "another cup's leg: subfile %d falls back", TEST_BASE + i);
+		expect_int(CustomTrack_GetOverride(TEST_BASE + i, &otherCupLeg, &path, &size), 0, label);
+	}
+
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 1, TEST_CUP), CTR_CT_BOX_ALLOW,
+	           "event race: boxes allowed when the seed says so");
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 0, TEST_CUP), CTR_CT_BOX_UNCHANGED,
+	           "retail pad: box policy unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// Refusals: content.
+// ---------------------------------------------------------------------------
+
 static void test_wrong_hash(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	// A well-formed digest that is simply not this file's.
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = 0000000000000000000000000000000000000000000000000000000000000000\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash);
-	write_config(text);
-	load_capturing_log();
+	snprintf(d.levSha256, sizeof(d.levSha256),
+	         "0000000000000000000000000000000000000000000000000000000000000000");
+	arm_with(d);
 
-	expect_log_contains("sha256 mismatch", "wrong hash names the mismatch");
-	expect_log_contains("DISARMED", "wrong hash disarms loudly");
-	expect_log_contains("expected 0000", "wrong hash prints the expected digest");
-	expect_fully_disarmed("wrong hash");
+	expect_log_contains("sha256 mismatch", "wrong digest names the mismatch");
+	expect_log_contains("DISARMED", "wrong digest disarms loudly");
+	expect_log_contains("the cup stays vanilla", "wrong digest says the cup is untouched");
+	expect_fully_off("seed digest does not match the file");
 }
 
 static void test_truncated_file(void)
 {
-	reset_loader();
-	write_good_config();
-	// Same path, same expected digest, fewer bytes: the packaging accident the
-	// hash check exists to catch.
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES - 512);
-	load_capturing_log();
+	arm_with(good_descriptor());
 
-	expect_log_contains("sha256 mismatch", "truncated file is a mismatch");
-	expect_fully_disarmed("truncated file");
+	expect_log_contains("sha256 mismatch", "a truncated file is a mismatch");
+	expect_fully_off("truncated file");
 
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES); // restore
 }
 
 static void test_missing_file(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
 	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/does-not-exist.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	write_config("[CustomTracks]\n"
+	             "custom_track_vrm = tracks/track.vrm\n"
+	             "custom_track_lev = tracks/does-not-exist.lev\n");
+	CAPTURING(CustomTrack_Load());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
 
-	expect_log_contains("file missing or empty", "missing file is named");
-	expect_fully_disarmed("missing file");
+	expect_log_contains("file missing or empty", "a missing file is named");
+	expect_fully_off("missing file");
 }
 
 static void test_missing_folder(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = no-such-folder/track.vrm\n"
-	         "custom_track_lev = no-such-folder/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
-
-	expect_log_contains("file missing or empty", "missing folder is refused like a missing file");
-	expect_fully_disarmed("missing folder");
-}
-
-static void test_no_expected_hash(void)
-{
 	reset_loader();
 	write_config("[CustomTracks]\n"
-	             "custom_track_level = 6\n"
-	             "custom_track_vrm = tracks/track.vrm\n"
-	             "custom_track_lev = tracks/track.lev\n"
-	             "custom_track_race = 1\n");
-	load_capturing_log();
+	             "custom_track_vrm = no-such-folder/track.vrm\n"
+	             "custom_track_lev = no-such-folder/track.lev\n");
+	CAPTURING(CustomTrack_Load());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
 
-	// Naming files with no digests must NOT be treated as "nothing to check".
-	expect_log_contains("no expected sha256", "absent digest is refused, not skipped");
-	expect_fully_disarmed("no expected hash");
+	expect_log_contains("file missing or empty", "a missing folder is refused like a missing file");
+	expect_fully_off("missing folder");
 }
 
-static void test_malformed_expected_hash(void)
+// A seed binds a custom track this client has no files for. Loud, because the
+// player CAN fix it, and total, because the alternative is racing the host
+// slot's retail track for a Gem the seed thinks is on the custom track.
+static void test_seed_without_local_files(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
 	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = deadbeef\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash);
-	write_config(text);
-	load_capturing_log();
+	write_config("[Video]\nfullscreen = 1\n");
+	CAPTURING(CustomTrack_Load());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
 
-	expect_log_contains("not 64 hex digits", "short digest is refused as malformed");
-	expect_fully_disarmed("malformed expected hash");
+	expect_log_contains("names no custom_track_lev/custom_track_vrm files",
+	                    "a seed with no local files says exactly that");
+	expect_log_contains("add the track files", "and tells the player how to fix it");
+	expect_fully_off("seed binds a track this client has no files for");
 }
 
-static void test_out_of_range_level(void)
+// ---------------------------------------------------------------------------
+// Refusals: descriptor values the engine cannot serve.
+// ---------------------------------------------------------------------------
+
+static void test_bad_host_slot(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	// 18 is NITRO_COURT, the first battle arena: past the end of
-	// data.ArcadeDifficulty[18], which is indexed by levelID unchecked.
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 18\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	d.hostLevelID = 18; // NITRO_COURT: past data.ArcadeDifficulty[18]
+	arm_with(d);
+	expect_log_contains("not an arcade slot", "an out-of-range host slot is refused");
+	expect_fully_off("host slot 18");
 
-	expect_log_contains("must be an arcade slot", "out-of-range levelID is refused");
-	expect_fully_disarmed("out-of-range levelID");
+	d = good_descriptor();
+	d.hostLevelID = -1;
+	arm_with(d);
+	expect_fully_off("host slot -1");
 }
 
-static void test_missing_level_key(void)
+static void test_bad_cup(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	d.replacesCupLevelID = 105;
+	arm_with(d);
+	expect_log_contains("is not a Gem Cup", "an out-of-range cup LevelID is refused");
+	expect_fully_off("cup LevelID 105");
 
-	expect_log_contains("must be an arcade slot", "files with no slot are refused");
-	expect_fully_disarmed("no custom_track_level");
+	// A cup INDEX where a LevelID belongs is the mistake most likely to be made.
+	d = good_descriptor();
+	d.replacesCupLevelID = 4;
+	arm_with(d);
+	expect_fully_off("cup index 4 sent where a LevelID belongs");
 }
 
-static void test_bad_lap_count(void)
+static void test_bad_laps(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n"
-	         "custom_track_race_laps = 99\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	d.laps = 8;
+	arm_with(d);
+	expect_log_contains("outside 1..7", "an out-of-range lap count is refused");
+	expect_fully_off("8 laps");
 
-	// The content is fine, so the loader still ARMS and serves the track; only
-	// the event destination is refused. These are separable failures.
-	expect_log_contains("custom_track_race_laps must be 1..7", "illegal lap count is refused");
-	expect_int(CustomTrack_Config()->contentVerified, 1, "bad laps: content still verified");
-	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 0, "bad laps: redirect is off");
-	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 0, "bad laps: Purple keeps four legs");
+	d = good_descriptor();
+	d.laps = 0;
+	arm_with(d);
+	expect_fully_off("0 laps");
 }
 
-static void test_race_flag_off_serves_nothing(void)
+// The two measured flags the loader actually acts on. The other six are carried
+// and logged but inert, so a track that measured false for them still arms.
+static void test_measured_flags(void)
 {
-	char text[2048];
-	struct CustomTrackLoadContext ctx = event_ctx();
-	const char *path = NULL;
-	u32 size = 0;
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 0\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	d.flagAiNav = 0;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "a track with no AI nav is refused");
+	expect_fully_off("ai_nav false");
 
-	// Verification still runs, which makes this a useful config/hash check. But
-	// serving is conditional on the event race being the load in flight, and
-	// with the race off no load qualifies -- so nothing is ever served. There is
-	// deliberately no "map this track globally" mode: that is exactly the
-	// behaviour rung 2a removed.
-	expect_int(CustomTrack_Config()->contentVerified, 1, "race off: content still verified");
-	expect_log_contains("nothing will be served", "race off says so plainly");
-	expect_int(CustomTrack_GetOverride(48, &ctx, &path, &size), 0, "race off: nothing is served");
-	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 0, "race off: the LEV is not served either");
-	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 0, "race off: redirect is off");
-	expect_int(CustomTrack_CupIsComplete(4, 1, 1), 0, "race off: Purple keeps four legs");
-	expect_int(CustomTrack_CupIsComplete(4, 1, 4), 1, "race off: Purple completes at leg 4");
-	expect_int(CustomTrack_CupLegCount(4, 1), 4, "race off: HUD still reads TRACK n/4");
+	// The Purple cup grids five karts (one player + four bosses), so four spawns
+	// is one short and five is exactly enough.
+	d = good_descriptor();
+	d.flagSpawns = 4;
+	arm_with(d);
+	expect_log_contains("fewer driver spawns", "too few spawns is refused");
+	expect_fully_off("4 spawns for a 5-kart grid");
+
+	d = good_descriptor();
+	d.flagSpawns = 5;
+	arm_with(d);
+	expect_int(CustomTrack_Config()->contentVerified, 1, "5 spawns is exactly enough for cup 4");
+
+	// A non-Purple cup grids eight, so the same track would need more.
+	d = good_descriptor();
+	d.replacesCupLevelID = 101;
+	d.flagSpawns = 5;
+	arm_with(d);
+	expect_fully_off("5 spawns for a non-Purple cup's 8-kart grid");
+
+	// The inert six do not gate the race.
+	d = good_descriptor();
+	d.flagCrates = 0;
+	d.flagCtrLetters = 0;
+	d.flagRelicCrates = 0;
+	d.flagMinimap = 0;
+	d.flagGhosts = 0;
+	arm_with(d);
+	expect_int(CustomTrack_Config()->contentVerified, 1, "the inert flags do not gate the race");
 }
 
-// THE RUNG-2A DELIVERABLE, end to end against real files: in ONE armed session,
-// the event cup's load is served the custom track's bytes and the host slot's
-// own retail race pad is not. Same eight subfile indices, different answer.
-static void test_retail_pad_stays_retail(void)
+// ---------------------------------------------------------------------------
+// Box policy and descriptor lifecycle.
+// ---------------------------------------------------------------------------
+
+static void test_boxes_denied(void)
 {
-	struct CustomTrackLoadContext eventLoad = event_ctx();
-	struct CustomTrackLoadContext retailPad;
-	struct CustomTrackLoadContext otherCupLeg;
-	struct CustomTrackLoadContext otherLevel;
-	const char *path = NULL;
-	u32 size = 0;
-	int i;
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	write_good_config();
-	load_capturing_log();
-	expect_int(CustomTrack_Config()->contentVerified, 1, "retail-pad test: armed");
-	expect_log_contains("still loads retail bytes", "arming says the retail pad is unaffected");
+	// The event YAML emits boxes:false, because placement still resolves through
+	// the host slot's retail identity: allowing them would light the HOST track's
+	// box locations at the host track's coordinates.
+	d.boxes = 0;
+	arm_with(d);
 
-	// A race pad to the host slot. cup.cupID is deliberately left at 4 here:
-	// the engine never resets it, so after any Purple cup it reads 4 forever.
-	// Only ADVENTURE_CUP being clear separates this load from the event race,
-	// which is precisely why it is the load-bearing term.
-	retailPad = event_ctx();
-	retailPad.adventureCupActive = 0;
+	expect_int(CustomTrack_Config()->contentVerified, 1, "boxes denied: still armed");
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 1, TEST_CUP), CTR_CT_BOX_DENY,
+	           "boxes:false denies boxes on the event race");
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 0, TEST_CUP), CTR_CT_BOX_UNCHANGED,
+	           "denial never leaks onto the retail pad");
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 1, 1), CTR_CT_BOX_UNCHANGED,
+	           "denial never leaks onto another cup's leg");
 
-	// Another gem cup whose legs were shuffled onto the host slot.
-	otherCupLeg = event_ctx();
-	otherCupLeg.cupID = 1;
-
-	// The event cup loading some other level.
-	otherLevel = event_ctx();
-	otherLevel.levelID = 7;
-
-	for (i = 0; i < CTR_CT_GROUP_SIZE; i++)
-	{
-		char label[128];
-
-		snprintf(label, sizeof(label), "event race: subfile %d serves custom bytes", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &eventLoad, &path, &size), 1, label);
-
-		snprintf(label, sizeof(label), "retail pad: subfile %d falls back to BIGFILE", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &retailPad, &path, &size), 0, label);
-
-		snprintf(label, sizeof(label), "another cup's leg: subfile %d falls back to BIGFILE", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &otherCupLeg, &path, &size), 0, label);
-
-		snprintf(label, sizeof(label), "other level: subfile %d falls back to BIGFILE", 48 + i);
-		expect_int(CustomTrack_GetOverride(48 + i, &otherLevel, &path, &size), 0, label);
-	}
-
-	// The AP-box verdict follows the same split, and defaults to allowed.
-	expect_int(CustomTrack_BoxVerdict(6, 1, 4), CTR_CT_BOX_ALLOW, "event race: boxes allowed by default");
-	expect_int(CustomTrack_BoxVerdict(6, 0, 4), CTR_CT_BOX_UNCHANGED, "retail pad: box policy unchanged");
-	expect_int(CustomTrack_BoxVerdict(6, 1, 1), CTR_CT_BOX_UNCHANGED, "another cup's leg: box policy unchanged");
-
-	// And so does the HUD counter.
-	expect_int(CustomTrack_CupLegCount(4, 1), 1, "event cup reads TRACK n/1");
-	expect_int(CustomTrack_CupLegCount(1, 1), 4, "another gem cup reads TRACK n/4");
+	// Denying boxes changes nothing else about the race.
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 1, "boxes denied: still redirects");
+	expect_int(CustomTrack_CupRaceLaps(TEST_CUP, 1), 7, "boxes denied: still 7 laps");
 }
 
-static void test_boxes_can_be_denied(void)
+// ApplySeedDescriptor runs once a frame from AP_OnFrame, so a repeat with the
+// same descriptor must cost a memcmp and nothing else. An empty log is the
+// observable: re-hashing would announce itself.
+static void test_apply_is_idempotent(void)
 {
-	char text[2048];
+	struct CustomTrackSeedDescriptor d = good_descriptor();
 
-	reset_loader();
-	snprintf(text, sizeof(text),
-	         "[CustomTracks]\n"
-	         "custom_track_level = 6\n"
-	         "custom_track_vrm = tracks/track.vrm\n"
-	         "custom_track_lev = tracks/track.lev\n"
-	         "custom_track_vrm_sha256 = %s\n"
-	         "custom_track_lev_sha256 = %s\n"
-	         "custom_track_race = 1\n"
-	         "custom_track_race_boxes = 0\n",
-	         g_vrmHash, g_levHash);
-	write_config(text);
-	load_capturing_log();
+	arm_with(d);
+	expect_int(CustomTrack_Config()->contentVerified, 1, "armed once");
 
-	expect_log_contains("AP boxes on the event race: denied", "denied boxes are announced");
-	expect_int(CustomTrack_BoxVerdict(6, 1, 4), CTR_CT_BOX_DENY, "boxes denied on the event race");
-	expect_int(CustomTrack_BoxVerdict(6, 0, 4), CTR_CT_BOX_UNCHANGED, "denial never leaks onto the retail pad");
+	CAPTURING(expect_int(CustomTrack_ApplySeedDescriptor(&d), 1, "a repeat apply stays armed"));
+	expect_log_silent("an unchanged descriptor re-hashes nothing");
 
-	// Denying boxes changes nothing else about the event race.
-	expect_int(CustomTrack_CupRaceRedirectActive(4, 1), 1, "boxes denied: the race still redirects");
-	expect_int(CustomTrack_CupRaceLaps(4, 1), 7, "boxes denied: still 7 laps");
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_log_silent("and still says nothing on a third frame");
+	expect_int(CustomTrack_Config()->contentVerified, 1, "still armed after repeats");
+}
+
+// A different seed replaces the descriptor outright rather than merging into it.
+static void test_descriptor_replacement(void)
+{
+	struct CustomTrackSeedDescriptor d = good_descriptor();
+
+	arm_with(d);
+	expect_int(CustomTrack_Config()->raceLaps, 7, "first seed: 7 laps");
+	expect_int(CustomTrack_Config()->raceCupID, TEST_CUP, "first seed: cup 4");
+
+	d.laps = 3;
+	d.replacesCupLevelID = 101; // Green
+	d.hostLevelID = 9;
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+
+	expect_int(CustomTrack_Config()->contentVerified, 1, "second seed arms");
+	expect_int(CustomTrack_Config()->raceLaps, 3, "second seed: 3 laps");
+	expect_int(CustomTrack_Config()->raceCupID, 1, "second seed: cup 1");
+	expect_int(CustomTrack_Config()->mappedLevelID, 9, "second seed: host slot 9");
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 0, "the old cup no longer redirects");
+	expect_int(CustomTrack_CupRaceRedirectActive(1, 1), 1, "the new cup does");
+
+	// A refused replacement must not leave the old seed's track armed.
+	d.laps = 99;
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_fully_off("a refused replacement does not leave the old seed armed");
+}
+
+// Disconnecting, or connecting to a seed with no block, takes the whole feature
+// with it.
+static void test_withdrawal(void)
+{
+	arm_with(good_descriptor());
+	expect_int(CustomTrack_Config()->contentVerified, 1, "armed before withdrawal");
+
+	CAPTURING(CustomTrack_ClearSeedDescriptor());
+	expect_log_contains("withdrawn", "withdrawal announces itself");
+	expect_fully_off("descriptor withdrawn");
+
+	// NULL is the same thing, since the AP bridge may pass one.
+	arm_with(good_descriptor());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(NULL));
+	expect_fully_off("a NULL descriptor withdraws");
 }
 
 static void test_serve_time_size_recheck(void)
@@ -704,18 +746,18 @@ static void test_serve_time_size_recheck(void)
 	const char *path = NULL;
 	u32 size = 0;
 
-	reset_loader();
-	write_good_config();
-	load_capturing_log();
-	expect_int(CustomTrack_Config()->contentVerified, 1, "size recheck: armed to begin with");
-	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 1, "size recheck: serves before the swap");
+	arm_with(good_descriptor());
+	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &path, &size), 1,
+	           "size recheck: serves first");
 
 	// Swap the file under the running game. Startup verification already passed,
 	// so only the serve-time check can catch this.
 	write_blob("tracks/track.lev", 99, TEST_LEV_BYTES - 2048);
 
-	expect_int(CustomTrack_GetOverride(49, &ctx, &path, &size), 0, "size recheck: refuses the swapped file");
-	expect_int(CustomTrack_GetOverride(48, &ctx, &path, &size), 1, "size recheck: the untouched VRM still serves");
+	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &path, &size), 0,
+	           "size recheck: refuses the swapped file");
+	expect_int(CustomTrack_GetOverride(TEST_BASE, &ctx, &path, &size), 1,
+	           "size recheck: the untouched VRM still serves");
 
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES); // restore
 }
@@ -734,20 +776,23 @@ int main(void)
 	make_track_files();
 
 	test_no_config_file();
-	test_config_without_section();
+	test_config_without_paths();
+	test_paths_but_no_seed();
 	test_happy_path();
+	test_retail_pad_stays_retail();
 	test_wrong_hash();
 	test_truncated_file();
 	test_missing_file();
 	test_missing_folder();
-	test_no_expected_hash();
-	test_malformed_expected_hash();
-	test_out_of_range_level();
-	test_missing_level_key();
-	test_bad_lap_count();
-	test_race_flag_off_serves_nothing();
-	test_retail_pad_stays_retail();
-	test_boxes_can_be_denied();
+	test_seed_without_local_files();
+	test_bad_host_slot();
+	test_bad_cup();
+	test_bad_laps();
+	test_measured_flags();
+	test_boxes_denied();
+	test_apply_is_idempotent();
+	test_descriptor_replacement();
+	test_withdrawal();
 	test_serve_time_size_recheck();
 
 	if (g_failures != 0)

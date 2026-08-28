@@ -1,14 +1,20 @@
-# Custom-track loader — Baby T Park event spike (rungs 1 + 2a)
+# Custom-track loader — Baby T Park event spike (rungs 1, 2a, 2c)
 
 Build-time flag: `CTR_CUSTOM_TRACKS`. Off by default; with it off the build is
 identical to `main` (see [Guard-off identity](#guard-off-identity) for the
 evidence).
 
-With the flag on and a `[CustomTracks]` section in `config.ini`, the game
-hash-verifies one community custom track's `.lev`/`.vrm` pair, turns the
-configured Gem Cup destination into a single 7-lap race on that track, and
-serves the custom bytes **for that race only**. The arcade slot the track
-borrows keeps its retail race everywhere else in the same session.
+With the flag on, a `[CustomTracks]` section in `config.ini` naming two files,
+and a **seed that carries a `custom_tracks` block**, the game hash-verifies one
+community custom track's `.lev`/`.vrm` pair, turns the seed's named Gem Cup
+destination into a single race on that track, and serves the custom bytes **for
+that race only**. The arcade slot the track borrows keeps its retail race
+everywhere else in the same session.
+
+Rung 2c moved the descriptor to slot_data. `config.ini` now says only **where the
+two files are**; the seed says everything else — both digests, the lap count, the
+host slot, which cup is replaced, and whether AP boxes are allowed. **No block on
+the wire means the feature is fully off, whatever `config.ini` holds.**
 
 ## What this rung does and does not do
 
@@ -24,43 +30,109 @@ relic races on it, or load the track's music (`.sca`).
 
 ## Configuration
 
-All keys live in a `[CustomTracks]` section of the `config.ini` next to the
-executable. Paths are resolved from the working directory the game runs in.
+### Client side: `config.ini` — two paths, nothing else
 
 ```ini
 [CustomTracks]
-; --- loader ---
-custom_track_level      = 6
-custom_track_vrm        = tracks/baby-t-park/baby-t-park_v1.0.0.vrm
-custom_track_lev        = tracks/baby-t-park/baby-t-park_v1.0.0.lev
-custom_track_vrm_sha256 = 2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de43508375834092e83
-custom_track_lev_sha256 = 96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8
-
-; --- event destination ---
-custom_track_race       = 1
-custom_track_race_cup   = 4
-custom_track_race_laps  = 7
-custom_track_race_boxes = 1
+custom_track_vrm = tracks/baby-t-park/baby-t-park_v1.0.0.vrm
+custom_track_lev = tracks/baby-t-park/baby-t-park_v1.0.0.lev
 ```
 
-| Key | Meaning | Default |
-|---|---|---|
-| `custom_track_level` | arcade slot the track takes over, 0..17 | none (loader stays disarmed) |
-| `custom_track_vrm` / `custom_track_lev` | the two source files | none |
-| `custom_track_vrm_sha256` / `custom_track_lev_sha256` | 64 hex digits each, case-insensitive | none — **required**, an absent digest is a refusal, not a skip |
-| `custom_track_race` | 1 turns the event destination on | 0 |
-| `custom_track_race_cup` | which cup's destination is replaced | 4 (Purple Gem Cup) |
-| `custom_track_race_laps` | lap count for the single race, 1..7 | 7 |
-| `custom_track_race_boxes` | 1 allows AP boxes on the event race | 1 (the ruled default) |
+Paths are resolved from the working directory the game runs in. No paths, no
+`[CustomTracks]` section, or no `config.ini` at all each mean "this client has no
+custom track files", and the build behaves like retail.
 
-Missing keys, an empty value, no `[CustomTracks]` section, or no `config.ini` at
-all each mean "no custom track", and the build then behaves like retail.
+Everything else the loader needs is deliberately **not** here. The seed is the
+single authority on what gets served, so a local file cannot talk this client
+into racing content the seed did not name.
 
-`custom_track_race = 0` verifies the content and then serves nothing, because
-serving is conditional on the event race being the load in flight (below) and
-with the race off no load qualifies. It is useful as a config/hash check and
-nothing else. There is deliberately **no** "map this track globally" mode: that
-was rung 1's behaviour and rung 2a removed it.
+### Seed side: the `custom_tracks` slot_data block (schema 8)
+
+```jsonc
+"custom_tracks": {
+  "enabled": true,
+  "version": 1,                     // the block's OWN shape guard
+  "tracks": [{
+    "id": "baby-t-park",
+    "lev_sha256": "96ad…", "vrm_sha256": "2dca…",
+    "laps": 7,                      // 1..7
+    "host_level_id": 6,             // 0..17, the arcade slot the bytes borrow
+    "replaces_cup_level_id": 104,   // Purple Gem Cup, as a LevelID
+    "boxes": false,                 // AP boxes on the event race
+    "flags": { "crates": true, "ctr_letters": true, "relic_crates": true,
+               "ai_nav": true, "minimap": false, "ghosts": false,
+               "spawns": 8, "checkpoints": 35 }
+  }]
+}
+```
+
+`version` is the block's own guard, independent of `schema_version`.
+`schema_version` answers "may this native trust this seed at all"; `version`
+answers "does it understand this block's fields". A version this build does not
+know is **refused**, not read field by field — and it also raises `schema_newer`,
+because "update the client" is genuinely the right advice and the loud banner
+already says it. A malformed block at a *known* version refuses without the
+banner: that is a generation bug, and telling the player to update misdirects
+them.
+
+Refusal is **total** and never partial. Any problem — unknown version, missing
+field, malformed digest, out-of-range value, more than one entry — leaves the
+feature entirely off and the named cup at its vanilla four legs. There is no
+half-understood state, because a client that displaced a cup it cannot serve
+would leave the Gem unreachable, and one that served without displacing would
+race four retail legs the seed's logic says do not exist.
+
+The wire list may hold more than one entry so that a second bound track is a data
+change rather than a redesign. **This build has exactly one loader slot and
+refuses a list of two**, rather than silently serving one of them.
+
+### Precedence
+
+| | |
+|---|---|
+| no seed / no block / unreadable block | feature fully off, whatever `config.ini` says |
+| block present and readable | its values win; `config.ini` supplies only the file paths |
+| block readable, but this client has no files for it | refused loudly, cup left vanilla — the player can fix this by adding the files |
+
+### Measured flags
+
+All eight are required on the wire: a descriptor that omits one is not
+self-describing, and a silently defaulted capability is the same class of
+plausible-but-wrong state the digests guard against.
+
+Only **two** gate the race today, and both are hard requirements of the ruled
+semantics rather than preferences:
+
+- `ai_nav` — the ruling says AI bots on, and a track with no `LevNavTable` has no
+  paths for them to drive.
+- `spawns` — one `DriverSpawn` slot per kart on the grid. The Purple Gem Cup
+  grids **five** (`MainInit_Drivers` gives cupID 4 `numPlyrCurrGame + 4`, and
+  `LOAD_Assets` forces the roster to the four bosses); every other adventure cup
+  grids eight.
+
+The other six are parsed, logged and inert. They exist so the check rungs above
+the Gem have an honest input when they land; refusing on a flag this build cannot
+act on would reject tracks it can perfectly well serve.
+
+### Displacement
+
+A cup bound to a custom track **legs nothing**. The wire still carries its
+complete four-track `gem_cup_legs` row — it has to, or the block stops being the
+complete mapping every other consumer relies on — so that row is a don't-care
+this client must *actively* not care about.
+
+`ap/ap_verify.c` takes the same view as the apworld's logic map, in both places
+it reads cup legs:
+
+- `ap_vf_cup_capable` returns "capable" immediately for a displaced cup, instead
+  of ANDing four leg capability terms belonging to tracks the player never races.
+- the podium scan skips a displaced cup entirely, because that loop credits a cup
+  as an *additive* route to a track's podium rungs, and a displaced cup grants no
+  such route.
+
+Emptying a cup's legs is always safe for solvability: a cup leg is only ever an
+additive path to a track's podium rungs and the track's own warp pad stays an
+independent path, so removing legs can never orphan a rung.
 
 ### Serving is conditional on the event race
 
@@ -200,7 +272,15 @@ fall-through is now an explicit verdict in the policy header:
 | `CTR_CT_BOX_ALLOW` | the event race, boxes on — takes `ap_boxes.c`'s non-cup path, so no unrelated pad gates it |
 | `CTR_CT_BOX_DENY` | the event race, boxes off — the set is stood down, so nothing spawns and no check can dispatch |
 
-Default is ALLOW, per the ruled check set. **What ALLOW does not yet buy:**
+The wire default is ALLOW, per the ruled check set, and the seed chooses per
+race. **The event seed emits `boxes: false`**, and the reason is not cosmetic:
+`AP_BoxMap_ApTrack` keys on engine LevelID alone, so allowing boxes would light
+the HOST slot's retail track box locations at retail coordinates. The ALLOW
+branch deliberately bypasses the pad gate for the event race, so those would be
+live `Roo's Tubes: Item Box N` sends available to a player who never reached
+Roo's Tubes' physical pad — an out-of-logic send hazard, not just wrong scenery.
+
+**What ALLOW does not yet buy:**
 placement still resolves through the host slot's retail identity
 (`AP_BoxMap_ApTrack` maps the mapped levelID to the retail track's AP-track id),
 so until the apworld descriptor supplies this track's own placements, allowing
@@ -297,6 +377,27 @@ Separately, the LEV *format* has its own ceilings a large track can hit, all
 independent of MEMPACK: `QuadBlock::index` is `u16[9]` (65,536 vertices max),
 `blockID` is `s16` (32,767 quadblocks), and `BspChildId` is `s16` (32,767 BSP
 nodes).
+
+## Lifecycle
+
+`CustomTrack_Load()` runs once at startup and reads only the two paths. slot_data
+arrives at connect, so the descriptor is pushed in later, from `AP_OnFrame`'s
+per-frame watcher block in `ap/ap_hooks.c` — the parse has no hook of its own.
+`CustomTrack_ApplySeedDescriptor` is therefore **idempotent by content**: an
+unchanged descriptor costs one `memcmp` and re-hashes nothing, which is what
+makes a per-frame call affordable against a multi-MiB file.
+
+A seed that goes away, or one with no block, calls
+`CustomTrack_ClearSeedDescriptor` and the whole feature switches off on the next
+read. A different seed replaces the descriptor outright rather than merging into
+it, and a *refused* replacement leaves nothing of the previous one armed.
+
+Hashing happens on the frame a new descriptor arrives. For a 2.4 MB track that is
+a one-off stall at connect, while the player is in the hub or the menu.
+
+**A build with `CTR_CUSTOM_TRACKS` off still parses the block** (the parse lives
+in `ap/ap_seedcfg.cpp`, under `CTR_AP`), so its verifier stays correct about
+displacement, and it logs once that the seed binds a track it cannot load.
 
 ## Building
 

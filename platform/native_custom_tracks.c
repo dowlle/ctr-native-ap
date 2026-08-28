@@ -25,6 +25,8 @@ struct CustomTrackSource
 };
 
 static struct CustomTrackFeatureConfig s_customTrackConfig;
+static struct CustomTrackSeedDescriptor s_descriptor;
+static int s_haveDescriptor = 0;
 static struct CustomTrackSource s_customTrackVrm;
 static struct CustomTrackSource s_customTrackLev;
 static int s_customTracksLoaded = 0;
@@ -56,6 +58,26 @@ static const char *CustomTrack_VerdictText(int verdict)
 	}
 }
 
+// Put everything the seed decides back to "no custom track". The two file paths
+// are NOT cleared: they come from config.ini, are read once at startup, and
+// outlive any number of seeds.
+static void CustomTrack_ResetArmedState(void)
+{
+	s_customTrackConfig.mappedLevelID = -1;
+	s_customTrackConfig.contentVerified = 0;
+	s_customTrackConfig.raceEnabled = 0;
+	s_customTrackConfig.raceCupID = -1;
+	s_customTrackConfig.raceLaps = 0;
+	s_customTrackConfig.raceBoxes = 0;
+
+	s_customTrackVrm.expectedHash[0] = '\0';
+	s_customTrackLev.expectedHash[0] = '\0';
+	s_customTrackVrm.verdict = CTR_CT_VERDICT_NO_PATH;
+	s_customTrackLev.verdict = CTR_CT_VERDICT_NO_PATH;
+	s_customTrackVrm.verifiedSize = 0;
+	s_customTrackLev.verifiedSize = 0;
+}
+
 static char *CustomTrack_Trim(char *s)
 {
 	while (isspace((unsigned char)*s))
@@ -69,32 +91,6 @@ static char *CustomTrack_Trim(char *s)
 	return s;
 }
 
-// Parse a non-negative decimal integer, or -1 if the whole string is not one.
-// Deliberately strict: a typo in config must read as "not configured" rather
-// than as a partially-parsed levelID.
-static int CustomTrack_ParseInt(const char *s)
-{
-	int value = 0;
-	const char *c;
-
-	if (s == NULL || *s == '\0')
-		return -1;
-
-	for (c = s; *c != '\0'; c++)
-	{
-		if (!isdigit((unsigned char)*c))
-			return -1;
-		value = value * 10 + (*c - '0');
-		if (value > 100000)
-			return -1;
-	}
-
-	return value;
-}
-
-// Copy a config value into a fixed field, always NUL-terminated. Written with
-// an explicit length rather than strncpy so an over-long value truncates
-// deliberately instead of tripping -Wstringop-truncation on a same-sized copy.
 static void CustomTrack_CopyField(char *dst, size_t dstSize, const char *src)
 {
 	size_t len = strlen(src);
@@ -211,15 +207,12 @@ void CustomTrack_Load(void)
 	memset(&s_customTrackVrm, 0, sizeof(s_customTrackVrm));
 	memset(&s_customTrackLev, 0, sizeof(s_customTrackLev));
 
-	// Disarmed defaults. raceCupID 4 is the Purple Gem Cup and raceLaps 7 is the
-	// ruled lap count, so a config that only turns the feature on and names the
-	// files gets the ruled behaviour without restating it.
-	s_customTrackConfig.mappedLevelID = -1;
-	s_customTrackConfig.raceCupID = 4;
-	s_customTrackConfig.raceLaps = 7;
-	s_customTrackConfig.raceBoxes = 1;
-	s_customTrackVrm.verdict = CTR_CT_VERDICT_NO_PATH;
-	s_customTrackLev.verdict = CTR_CT_VERDICT_NO_PATH;
+	// Disarmed until a seed hands over a descriptor. There is deliberately no
+	// config.ini path to a working feature any more: no block on the wire means
+	// the feature is fully off, whatever config.ini says.
+	memset(&s_descriptor, 0, sizeof(s_descriptor));
+	s_haveDescriptor = 0;
+	CustomTrack_ResetArmedState();
 
 	f = fopen("config.ini", "r");
 	if (f == NULL)
@@ -266,96 +259,157 @@ void CustomTrack_Load(void)
 		if (*value == '\0')
 			continue;
 
-		if (strcmp(key, "custom_track_level") == 0)
-			s_customTrackConfig.mappedLevelID = CustomTrack_ParseInt(value);
-		else if (strcmp(key, "custom_track_vrm") == 0)
+		// config.ini carries ONLY where the two files are. Everything else the
+		// loader needs -- both digests, the lap count, the host slot, which cup is
+		// replaced, and whether boxes are allowed -- arrives from slot_data, so
+		// the seed is the single authority on what is served and a local file
+		// cannot talk this client into racing content the seed did not name.
+		if (strcmp(key, "custom_track_vrm") == 0)
 			CustomTrack_CopyField(s_customTrackVrm.path, sizeof(s_customTrackVrm.path), value);
 		else if (strcmp(key, "custom_track_lev") == 0)
 			CustomTrack_CopyField(s_customTrackLev.path, sizeof(s_customTrackLev.path), value);
-		else if (strcmp(key, "custom_track_vrm_sha256") == 0)
-			CustomTrack_CopyField(s_customTrackVrm.expectedHash, sizeof(s_customTrackVrm.expectedHash), value);
-		else if (strcmp(key, "custom_track_lev_sha256") == 0)
-			CustomTrack_CopyField(s_customTrackLev.expectedHash, sizeof(s_customTrackLev.expectedHash), value);
-		else if (strcmp(key, "custom_track_race") == 0)
-			s_customTrackConfig.raceEnabled = (CustomTrack_ParseInt(value) > 0) ? 1 : 0;
-		else if (strcmp(key, "custom_track_race_cup") == 0)
-			s_customTrackConfig.raceCupID = CustomTrack_ParseInt(value);
-		else if (strcmp(key, "custom_track_race_laps") == 0)
-			s_customTrackConfig.raceLaps = CustomTrack_ParseInt(value);
-		else if (strcmp(key, "custom_track_race_boxes") == 0)
-			s_customTrackConfig.raceBoxes = (CustomTrack_ParseInt(value) > 0) ? 1 : 0;
 	}
 
 	fclose(f);
 
 	if (s_customTrackVrm.path[0] == '\0' && s_customTrackLev.path[0] == '\0')
 	{
-		printf("[CustomTracks] no track configured, loader disarmed\n");
+		printf("[CustomTracks] no track files configured; the feature stays off\n");
 		return;
 	}
 
-	if (!CustomTrackPolicy_LevelIDIsMappable(s_customTrackConfig.mappedLevelID))
-	{
-		// Out-of-range slots are refused rather than clamped: data.ArcadeDifficulty
-		// is [18] and data.metaDataLEV is [0x41], both indexed by gGT->levelID
-		// with no range check.
-		printf("[CustomTracks] REFUSED: custom_track_level must be an arcade slot 0..%d (got %d)\n",
-		       CTR_CT_MAX_LEVELS - 1, s_customTrackConfig.mappedLevelID);
-		s_customTrackConfig.mappedLevelID = -1;
+	printf("[CustomTracks] track files configured; awaiting a seed descriptor\n");
+	printf("[CustomTracks]   vrm \"%s\"\n", s_customTrackVrm.path);
+	printf("[CustomTracks]   lev \"%s\"\n", s_customTrackLev.path);
+}
+
+void CustomTrack_ClearSeedDescriptor(void)
+{
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+
+	if (!s_haveDescriptor)
 		return;
+
+	// A seed that goes away takes the whole feature with it. Nothing is served
+	// and every cup is back to its vanilla legs on the very next read.
+	printf("[CustomTracks] seed descriptor withdrawn; the feature is off\n");
+	memset(&s_descriptor, 0, sizeof(s_descriptor));
+	s_haveDescriptor = 0;
+	CustomTrack_ResetArmedState();
+}
+
+int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
+{
+	const char *why = NULL;
+	int cupID;
+
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+
+	if (d == NULL)
+	{
+		CustomTrack_ClearSeedDescriptor();
+		return 0;
 	}
+
+	// Idempotent by content. This is called every frame from AP_OnFrame rather
+	// than from a connect callback, because the parse has no hook of its own;
+	// re-hashing a multi-MiB track 60 times a second is not an option, so an
+	// unchanged descriptor must cost a memcmp and nothing else.
+	if (s_haveDescriptor && memcmp(&s_descriptor, d, sizeof(s_descriptor)) == 0)
+		return s_customTrackConfig.contentVerified;
+
+	s_descriptor = *d;
+	s_haveDescriptor = 1;
+	CustomTrack_ResetArmedState();
+
+	cupID = d->replacesCupLevelID - 100;
+
+	printf("[CustomTracks] seed descriptor: cup LevelID %d -> single %d-lap race on host "
+	       "slot %d (boxes %s)\n",
+	       d->replacesCupLevelID, d->laps, d->hostLevelID, d->boxes ? "allowed" : "denied");
+
+	// Wire-shape validation already ran in ap_seedcfg; this is the engine's own
+	// authority over what it can actually serve, and it is deliberately separate.
+	// A value that is well-formed on the wire can still be one this build cannot
+	// honour, and refusing here is what keeps a plausible descriptor from
+	// producing a wrong-content race.
+	if (!CustomTrackPolicy_LevelIDIsMappable(d->hostLevelID))
+	{
+		printf("[CustomTracks] REFUSED: host slot %d is not an arcade slot 0..%d\n",
+		       d->hostLevelID, CTR_CT_MAX_LEVELS - 1);
+		return 0;
+	}
+
+	if (cupID < 0 || cupID > 4)
+	{
+		printf("[CustomTracks] REFUSED: cup LevelID %d is not a Gem Cup 100..104\n",
+		       d->replacesCupLevelID);
+		return 0;
+	}
+
+	if (d->laps < 1 || d->laps > 7)
+	{
+		printf("[CustomTracks] REFUSED: %d laps is outside 1..7\n", d->laps);
+		return 0;
+	}
+
+	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns, cupID, &why))
+	{
+		printf("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
+		       why, d->flagAiNav, d->flagSpawns, CustomTrackPolicy_RequiredSpawns(cupID));
+		return 0;
+	}
+
+	if (s_customTrackVrm.path[0] == '\0' || s_customTrackLev.path[0] == '\0')
+	{
+		// The seed names a track this client has no files for. Loud, because the
+		// player CAN fix it, and total, because the alternative is racing the
+		// host slot's retail track for a Gem the seed thinks is on Baby T Park.
+		printf("[CustomTracks] REFUSED: this seed binds a custom track, but config.ini "
+		       "names no custom_track_lev/custom_track_vrm files for it\n");
+		printf("[CustomTracks] the cup stays vanilla; add the track files to play this seed\n");
+		return 0;
+	}
+
+	// The seed is the authority on content: its digests, not config.ini's.
+	CustomTrack_CopyField(s_customTrackLev.expectedHash, sizeof(s_customTrackLev.expectedHash),
+	                      d->levSha256);
+	CustomTrack_CopyField(s_customTrackVrm.expectedHash, sizeof(s_customTrackVrm.expectedHash),
+	                      d->vrmSha256);
+
+	s_customTrackConfig.mappedLevelID = d->hostLevelID;
+	s_customTrackConfig.raceCupID = cupID;
+	s_customTrackConfig.raceLaps = d->laps;
+	s_customTrackConfig.raceBoxes = d->boxes ? 1 : 0;
+	s_customTrackConfig.raceEnabled = 1;
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
 
-	if (s_customTrackVrm.verdict == CTR_CT_VERDICT_OK && s_customTrackLev.verdict == CTR_CT_VERDICT_OK)
+	if (s_customTrackVrm.verdict != CTR_CT_VERDICT_OK || s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
 	{
-		s_customTrackConfig.contentVerified = 1;
-		printf("[CustomTracks] content verified: levelID %d group is subfiles %d..%d\n",
-		       s_customTrackConfig.mappedLevelID,
-		       s_customTrackConfig.mappedLevelID * CTR_CT_GROUP_SIZE,
-		       s_customTrackConfig.mappedLevelID * CTR_CT_GROUP_SIZE + CTR_CT_GROUP_SIZE - 1);
-	}
-	else
-	{
-		// Loud and total: the retail track loads AND the event destination keeps
-		// its vanilla legs. Never a silent wrong-content race.
-		printf("[CustomTracks] DISARMED: track content did not verify (vrm: %s, lev: %s)\n",
+		// Loud and total: no bytes served AND the cup stays vanilla. Serving
+		// retail bytes for a race the seed thinks is the custom track is exactly
+		// the silent wrong-content outcome the digests exist to prevent.
+		printf("[CustomTracks] DISARMED: content did not match the seed's digests "
+		       "(vrm: %s, lev: %s)\n",
 		       CustomTrack_VerdictText(s_customTrackVrm.verdict),
 		       CustomTrack_VerdictText(s_customTrackLev.verdict));
-		printf("[CustomTracks] retail track bytes will be served and the event destination stays vanilla\n");
-		return;
+		printf("[CustomTracks] the cup stays vanilla and no custom bytes are served\n");
+		s_customTrackConfig.raceEnabled = 0;
+		s_customTrackConfig.mappedLevelID = -1;
+		return 0;
 	}
 
-	if (!s_customTrackConfig.raceEnabled)
-	{
-		// Serving is conditional on the event race being the load in flight, so
-		// with the race off there is no load that qualifies and the track is
-		// never served. Verification still ran, which makes this a useful
-		// config/hash check, but nothing in the game changes.
-		printf("[CustomTracks] event destination off: nothing will be served\n");
-	}
-
-	if (s_customTrackConfig.raceEnabled)
-	{
-		if (CustomTrackPolicy_RaceLaps(&s_customTrackConfig, s_customTrackConfig.raceCupID, 1) == 0)
-		{
-			printf("[CustomTracks] REFUSED: custom_track_race_laps must be 1..7 (got %d); event destination stays vanilla\n",
-			       s_customTrackConfig.raceLaps);
-			s_customTrackConfig.raceEnabled = 0;
-		}
-		else
-		{
-			printf("[CustomTracks] event destination: cup %d becomes a single %d-lap race on levelID %d\n",
-			       s_customTrackConfig.raceCupID, s_customTrackConfig.raceLaps,
-			       s_customTrackConfig.mappedLevelID);
-			printf("[CustomTracks] AP boxes on the event race: %s\n",
-			       s_customTrackConfig.raceBoxes ? "allowed" : "denied");
-			printf("[CustomTracks] levelID %d serves custom bytes ONLY for that race; "
-			       "its retail race pad still loads retail bytes\n",
-			       s_customTrackConfig.mappedLevelID);
-		}
-	}
+	s_customTrackConfig.contentVerified = 1;
+	printf("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
+	       cupID, d->laps, d->hostLevelID);
+	printf("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
+	       "race pad still loads retail bytes\n",
+	       d->hostLevelID);
+	return 1;
 }
 
 const struct CustomTrackFeatureConfig *CustomTrack_Config(void)

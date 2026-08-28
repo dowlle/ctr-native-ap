@@ -213,6 +213,16 @@ static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest
 {
 	AP_VerifyOptions o = ap_vf_options();
 	int leg;
+	// A cup displaced by this seed's custom_tracks block LEGS NOTHING: it is one
+	// race on a custom track, not four retail legs. The wire still carries its
+	// complete four-track gem_cup_legs row -- it has to, or the block stops being
+	// the complete mapping every other consumer relies on -- so the row is a
+	// don't-care this verifier has to actively not care about. Reading it would
+	// verify a cup this seed does not contain, and would gate the Gem behind
+	// capability terms belonging to tracks the player never races.
+	if (ctr_cfg_cup_displaced(cup))
+		return 1;
+
 	for (leg = 0; leg < 4; leg++)
 	{
 		int track = ctr_cfg_cup_leg(cup, leg);
@@ -441,6 +451,13 @@ static void ap_vf_recompute(void)
 				for (cup = 0; cup < 5 && !ok; cup++)
 				{
 					int leg, hasLeg = 0, cupPad = pad_for_dest[100 + cup];
+					// Same displacement rule as ap_vf_cup_capable, and it matters
+					// more here: this loop credits a cup as an ADDITIVE route to a
+					// track's podium rungs. A displaced cup races none of its
+					// retail legs, so it grants no such route and its wire row
+					// must not be scanned at all.
+					if (ctr_cfg_cup_displaced(cup))
+						continue;
 					for (leg = 0; leg < 4; leg++)
 						if (ctr_cfg_cup_leg(cup, leg) == lid) hasLeg = 1;
 					// The held-1st half of the Oxide term is vacuous when the

@@ -137,6 +137,17 @@ struct CustomTrackFeatureConfig
 	int raceBoxes;    // 1 = AP boxes allowed on the event race (the ruled default)
 };
 
+// How many karts the engine will put on the grid for a redirected cup's race.
+// MainInit_Drivers gives the Purple Gem Cup (cupID 4) numPlyrCurrGame + 4 rather
+// than a full field, and LOAD_Assets forces that roster to the four bosses; any
+// other adventure cup gets the usual eight. The number matters because a track's
+// measured spawn count has to cover it -- a grid with more karts than the track
+// has DriverSpawn slots has nowhere to put the surplus.
+static int CustomTrackPolicy_RequiredSpawns(int cupID)
+{
+	return (cupID == 4) ? 5 : 8;
+}
+
 // The facts about the load currently in flight that decide whether a subfile
 // read is the event race's. Gathered in engine (game/LOAD/LOAD_File.c) from
 // gGT and passed in, so this header and the loader stay engine-free and the
@@ -325,6 +336,37 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 		return 0;
 
 	return (ctx->levelID == cfg->mappedLevelID) ? 1 : 0;
+}
+
+// Can the engine actually run the event race on a track with these measured
+// capabilities? Returns 1 when it can, or 0 with *outWhy set to a short reason.
+//
+// Only two of the eight measured flags are load-bearing today, and both are
+// hard requirements of the ruled semantics rather than preferences:
+//   ai_nav -- the ruling says AI bots on, and a track with no LevNavTable has no
+//             paths for them to drive. Racing it alone would silently drop half
+//             the ruled behaviour.
+//   spawns -- the grid needs a DriverSpawn slot per kart (see RequiredSpawns).
+// The other six are recorded, logged and inert: they exist so the check rungs
+// above the Gem have an honest input when they land. Refusing on a flag this
+// build cannot act on would reject tracks it can perfectly well serve.
+static int CustomTrackPolicy_FlagsSupportRace(int aiNav, int spawns, int cupID, const char **outWhy)
+{
+	if (!aiNav)
+	{
+		if (outWhy)
+			*outWhy = "the track reports no AI nav paths, and the event race runs bots";
+		return 0;
+	}
+
+	if (spawns < CustomTrackPolicy_RequiredSpawns(cupID))
+	{
+		if (outWhy)
+			*outWhy = "the track has fewer driver spawns than this cup's grid needs";
+		return 0;
+	}
+
+	return 1;
 }
 
 // What the AP-box layer should do about this load. See the verdict enum.

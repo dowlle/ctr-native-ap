@@ -57,7 +57,12 @@ extern "C" {
 //   5 = oxide_final_unlock relic-goal mode + oxide_final_count (issue #23)
 //   4 = type-4 relic-tier colour + goal-rework; 3 = podium + stage-2 padgate;
 //   2 = two-stage contract; 1 = flat pre-two-stage.
-#define CTR_CFG_SCHEMA_KNOWN 7
+// v8 adds the conditional top-level custom_tracks block (below): a community
+// track bound to a Gem Cup destination, DISPLACING that cup's retail legs in
+// logic. An old native on such a seed would race the retail four-leg cup while
+// the seed's logic says that cup legs nothing -- the reachability-desync class
+// the schema number exists for, so the bump is required rather than additive.
+#define CTR_CFG_SCHEMA_KNOWN 8
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -146,6 +151,54 @@ typedef struct
 	ctr_req stage1; // open the trophy race
 	ctr_req stage2; // open the relic Time Trials + CTR Token Challenge
 } ctr_warp_unlock;
+
+// ── custom_tracks (schema 8) ────────────────────────────────────────────────
+//
+// A community custom track bound to a Gem Cup destination. When the seed carries
+// this block, the named cup stops running four retail leg tracks and becomes a
+// single race on the custom track; winning it awards that cup's Gem through the
+// cup's own gem path.
+//
+// The block carries its OWN version, independent of schema_version. The two
+// answer different questions: schema_version is "may this native trust this seed
+// at all", version is "does it understand this block's fields". gem_cup_legs had
+// no equivalent, which is why every future custom-track field would otherwise
+// have needed a full schema bump. A version this build does not know is refused
+// rather than read field by field.
+#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 1
+#define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
+
+// The describe step's MEASURED capabilities. Every one is required on the wire:
+// a descriptor that omits a flag is not self-describing, and a silently
+// defaulted capability is the same class of plausible-but-wrong state the
+// digests guard against.
+typedef struct
+{
+	int crates;
+	int ctr_letters;
+	int relic_crates;
+	int ai_nav;
+	int minimap;
+	int ghosts;
+	int spawns;      // 1..8
+	int checkpoints; // 1..255
+} ctr_custom_track_flags;
+
+typedef struct
+{
+	int laps;                  // 1..7
+	int host_level_id;         // 0..17, the arcade slot whose bytes are borrowed
+	int replaces_cup_level_id; // 100..104
+	int boxes;                 // 1 = AP boxes allowed on the event race
+
+	// Both digests are the seed's authority on content. The apworld never opens
+	// the files: it validates the shape and forwards them, and native hashes the
+	// real bytes and stays disarmed on any mismatch.
+	char lev_sha256[CTR_CFG_CT_HEX_CAP];
+	char vrm_sha256[CTR_CFG_CT_HEX_CAP];
+
+	ctr_custom_track_flags flags;
+} ctr_custom_track;
 
 typedef struct
 {
@@ -387,6 +440,19 @@ typedef struct
 	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
 	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
 	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
+
+	// custom_tracks (schema 8). custom_tracks_ok is 1 only when the block was
+	// present AND fully readable; a present-but-unreadable block leaves it 0 and
+	// the feature entirely off. There is deliberately no partial state: a native
+	// that half-understands the block would run a retail cup the seed's logic
+	// says legs nothing.
+	//
+	// custom_tracks_seen records that SOMETHING was on the wire under that key,
+	// which is what distinguishes "this seed has no custom track" from "this
+	// seed has one I could not read" in the logs.
+	int              custom_tracks_seen;
+	int              custom_tracks_ok;
+	ctr_custom_track custom_track; // exactly one entry in this build
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -427,6 +493,19 @@ void ctr_cfg_set_vanilla_cup_legs(const int *legs);
 // cup/leg returns -1 (caller error, no sane fallback). Safe to call
 // unconditionally, mirroring ctr_cfg_warp_phys.
 int ctr_cfg_cup_leg(int cup, int leg);
+
+// Has cup 0..4 been handed over to a custom track by this seed's custom_tracks
+// block? A displaced cup LEGS NOTHING: the wire still carries its complete
+// four-track gem_cup_legs row (it has to, or the block stops being the complete
+// mapping every other consumer relies on), and every logic-side reader must
+// actively ignore it. The apworld does the same split on its side --
+// world.gem_cup_legs_table is what it serializes, world.gem_cup_legs is that
+// table with displaced cups emptied.
+//
+// Identity-safe: 0 when slot_data is inactive, when the seed carries no
+// custom_tracks block, or when the block was unreadable. Out-of-range cup
+// returns 0.
+int ctr_cfg_cup_displaced(int cup);
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=

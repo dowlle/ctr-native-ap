@@ -5,6 +5,7 @@
 
 #include <common.h>
 #include <platform/native_custom_tracks_policy.h>
+#include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
 
 // Custom-track loader, engine-facing half (Baby T Park event spike, rung 1).
 // The decisions this file's implementation asks are all in
@@ -12,10 +13,12 @@
 // content verification and the byte serving -- everything that needs a
 // filesystem and therefore cannot be unit-tested out of engine.
 //
-// THE MODEL. One community custom track ships one .lev and one .vrm. The
-// feature config names both files, the SHA-256 each must hash to, and the
-// arcade levelID the track takes over. On startup the loader hashes both files
-// and either arms itself or refuses. Once armed, every BIGFILE read whose
+// THE MODEL. One community custom track ships one .lev and one .vrm. config.ini
+// says where those two files are; the SEED says what they must hash to, how many
+// laps the race is, which arcade slot the bytes borrow and which cup is replaced.
+// When a seed carrying that descriptor connects, the loader hashes both files
+// and either arms itself or refuses. No seed means no custom track, whatever
+// config.ini holds. Once armed, every BIGFILE read whose
 // subfile index falls inside that levelID's 8-subfile group is served from the
 // matching source file instead of BIGFILE.BIG, with the single (vrm, lev) pair
 // expanded across all four mode slots (see the policy header).
@@ -36,11 +39,55 @@
 // nothing and every call site above is compiled out, so a guard-off build is
 // identical to main.
 
-// Parse the [CustomTracks] section of config.ini and verify the configured
-// track's content, once, at startup. Safe to call when config.ini is absent or
-// has no [CustomTracks] section: the loader simply stays disarmed and the build
-// behaves like retail. Idempotent.
+// What a seed says about its bound custom track. Everything the loader needs
+// except where the two files are: the seed is the authority on content and on
+// what the event race is, and config.ini only says where to look.
+//
+// This is the rung-2 seam the earlier rungs were shaped around. It is filled
+// from the slot_data custom_tracks block (ap/ap_hooks.c translates ctr_cfg into
+// it); nothing below this struct knows the wire exists.
+struct CustomTrackSeedDescriptor
+{
+	int laps;                // 1..7
+	int hostLevelID;         // 0..17, the arcade slot whose bytes are borrowed
+	int replacesCupLevelID;  // 100..104
+	int boxes;               // 1 = AP boxes allowed on the event race
+
+	char levSha256[NATIVE_SHA256_HEX_BYTES];
+	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
+
+	// The describe step's measured capabilities. Only aiNav and spawns gate the
+	// race today (see CustomTrackPolicy_FlagsSupportRace); the rest are carried
+	// so the check rungs above the Gem have an honest input when they land.
+	int flagCrates;
+	int flagCtrLetters;
+	int flagRelicCrates;
+	int flagAiNav;
+	int flagMinimap;
+	int flagGhosts;
+	int flagSpawns;
+	int flagCheckpoints;
+};
+
+// Read the [CustomTracks] section of config.ini, once, at startup. It carries
+// ONLY the two file paths now; the loader stays disarmed until a seed hands over
+// a descriptor. Safe to call when config.ini is absent. Idempotent.
 void CustomTrack_Load(void);
+
+// Hand the loader a seed's descriptor: validate what this build can actually
+// serve, then hash both files against the seed's digests and arm on success.
+// Returns 1 when armed. Every failure is loud and total -- no bytes served AND
+// the cup left at its vanilla four legs, because serving retail bytes for a race
+// the seed thinks is the custom track is the silent wrong-content outcome the
+// digests exist to prevent.
+//
+// Idempotent by content: an unchanged descriptor costs a memcmp, which is what
+// lets AP_OnFrame call it every frame instead of needing a connect callback.
+int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d);
+
+// No seed, no block, or an unreadable one: the feature goes fully off. Nothing
+// is served and every cup is back to its vanilla legs on the next read.
+void CustomTrack_ClearSeedDescriptor(void);
 
 // The parsed feature config, never NULL. Callers pass it to the pure decisions
 // in native_custom_tracks_policy.h. Calls CustomTrack_Load if it has not run.
