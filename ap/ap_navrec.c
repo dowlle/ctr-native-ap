@@ -1068,10 +1068,12 @@ void AP_NavRec_DrawBotNames(void)
 			continue;
 
 		data.font_charPixWidth[FONT_SMALL] = (s16)width;
-		DecalFont_DrawLine(s_navrecDriverName, screen[0] + 1, screen[1] - 3,
-		                   FONT_SMALL, JUSTIFY_CENTER | BLACK);
 		DecalFont_DrawLine(s_navrecDriverName, screen[0], screen[1] - 4,
 		                   FONT_SMALL, JUSTIFY_CENTER | WHITE);
+		// CTR's ordering table renders later submissions behind earlier ones.
+		// Match MM_HighScore_Text3D: foreground first, offset shadow second.
+		DecalFont_DrawLine(s_navrecDriverName, screen[0] + 1, screen[1] - 3,
+		                   FONT_SMALL, JUSTIFY_CENTER | BLACK);
 	}
 
 	data.font_charPixWidth[FONT_SMALL] = (s16)oldWidth;
