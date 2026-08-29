@@ -530,34 +530,36 @@ static int CustomTrackPolicy_ParseNavUuid(const char *text, unsigned char out[CT
 // be positive. Anything the decimal parse cannot account for in full -- an empty
 // value, a sign, a stray character, an overflow -- is refused, and the caller
 // falls back to the default revision rather than guessing at intent.
-#define CTR_CT_NAV_REV_MAX 0x7FFFFFFFuL
+#define CTR_CT_NAV_REV_MAX 0x7FFFFFFFu
 
 static int CustomTrackPolicy_ParseNavRevision(const char *text, unsigned int *out)
 {
-	unsigned long v = 0;
-	int           digits = 0;
+	unsigned int v = 0;
+	int          digits = 0;
 
 	if (text == NULL || out == NULL || text[0] == '\0')
 		return 0;
 
 	for (; *text != '\0'; text++)
 	{
-		unsigned long digit;
+		unsigned int digit;
 		if (*text < '0' || *text > '9')
 			return 0;
-		digit = (unsigned long)(*text - '0');
-		// Check before multiplying. On the shipped 32-bit Windows target an
-		// unsigned long wraps before a post-update comparison can see it.
-		if (v > (CTR_CT_NAV_REV_MAX - digit) / 10uL)
+		digit = (unsigned int)(*text - '0');
+		// Enforce the bound in the destination type before multiplying. The
+		// shipped Windows target is 32-bit, so a post-update check is too late.
+		if (v > CTR_CT_NAV_REV_MAX / 10u ||
+		    (v == CTR_CT_NAV_REV_MAX / 10u &&
+		     digit > CTR_CT_NAV_REV_MAX % 10u))
 			return 0;
-		v = (v * 10uL) + digit;
+		v = (v * 10u) + digit;
 		digits++;
 	}
 
-	if (digits == 0 || v == 0uL)
+	if (digits == 0 || v == 0u)
 		return 0;
 
-	*out = (unsigned int)v;
+	*out = v;
 	return 1;
 }
 
