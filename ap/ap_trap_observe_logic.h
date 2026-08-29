@@ -267,4 +267,27 @@ static int AP_TrapLeadAccumulate(int prevMs, int driverRank, int aiPresent, int 
 	return prevMs + (elapsedMs > 0 ? elapsedMs : 0);
 }
 
+// Once the ruled lead has been earned, a pre-existing Warpball may keep this
+// copy waiting without making the player earn the lead again. In particular,
+// being overtaken during that singleton wait must not clear `earned`. The owner
+// clears the state only after a successful birth or at a map/session boundary.
+typedef struct AP_TrapLeadState
+{
+	int elapsedMs;
+	int earned;
+} AP_TrapLeadState;
+
+static AP_TrapLeadState AP_TrapLeadUpdate(AP_TrapLeadState prev, int driverRank,
+                                          int aiPresent, int counting, int elapsedMs,
+                                          int requiredMs)
+{
+	if (prev.earned)
+		return prev;
+	prev.elapsedMs = AP_TrapLeadAccumulate(prev.elapsedMs, driverRank, aiPresent,
+	                                      counting, elapsedMs);
+	if (prev.elapsedMs >= requiredMs)
+		prev.earned = 1;
+	return prev;
+}
+
 #endif // AP_TRAP_OBSERVE_LOGIC_H

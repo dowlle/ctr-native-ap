@@ -366,7 +366,7 @@ static int AP_TrapEligibleCrates(int epoch)
 // first place, and to EXCLUDE countdowns, pause, cutscenes and finish
 // ceremonies from elapsed lead time, which is a freeze rather than a reset. The
 // distinction is AP_TrapLeadAccumulate's, and is pinned in the harness.
-static int g_trap_lead_ms = 0;
+static AP_TrapLeadState g_trap_lead;
 static SVec3 g_trap_hazard_target;
 
 static int AP_TrapProjectHazardTarget(struct GameTracker *gGT, struct Driver *local)
@@ -437,12 +437,12 @@ static int AP_TrapAiLead(struct GameTracker *gGT, struct Driver *local, int coun
 	// like any other state the ruling excludes from elapsed time. The map and
 	// session boundaries are what genuinely clear this timer.
 	if (gGT == 0 || local == 0)
-		return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+		return g_trap_lead.earned;
 
-	g_trap_lead_ms = AP_TrapLeadAccumulate(g_trap_lead_ms, (int)local->driverRank,
-	                                       AP_TrapValidAiPresent(gGT, local), counting,
-	                                       elapsedMs);
-	return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+	g_trap_lead = AP_TrapLeadUpdate(g_trap_lead, (int)local->driverRank,
+	                               AP_TrapValidAiPresent(gGT, local), counting,
+	                               elapsedMs, AP_TRAP_LEAD_MS);
+	return g_trap_lead.earned;
 }
 
 // Satisfied conditional predicates, assembled once per frame. `counting` is the
@@ -745,7 +745,8 @@ static int AP_TrapFireWarpball(struct GameTracker *gGT, struct Driver *local)
 	shooter->numWumpas = oldWumpas;
 	if (gGT->threadBuckets[TRACKING].thread == before)
 		return 0;
-	g_trap_lead_ms = 0;
+	g_trap_lead.elapsedMs = 0;
+	g_trap_lead.earned = 0;
 	return 1;
 }
 
@@ -981,7 +982,8 @@ void AP_Trap_ConnectReset(void)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
 	g_recover_ms = 0;
-	g_trap_lead_ms = 0;
+	g_trap_lead.elapsedMs = 0;
+	g_trap_lead.earned = 0;
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
@@ -1260,7 +1262,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		AP_TrapApplyCamera(gGT, 0);
 		AP_TrapApplyWireframe(0);
 		g_recover_ms = 0;
-		g_trap_lead_ms = 0;
+		g_trap_lead.elapsedMs = 0;
+		g_trap_lead.earned = 0;
 		g_trap_reroll_excluded = -1;
 		g_trap_use_pending = 0;
 		// Flatten's stage machine does not survive the load either. A copy that

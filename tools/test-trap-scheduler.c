@@ -1545,6 +1545,33 @@ static void case_lead_timer_freezes_and_resets_correctly(void)
 	expect("a negative frame adds nothing", AP_TrapLeadAccumulate(500, 0, 1, 1, -50), 500);
 }
 
+// Review blocker: the lead can complete while retail's singleton is occupied.
+// The player may then lose first before that Warpball disappears, but the copy
+// has already earned its fire and must not demand another fifteen-second lead.
+static void case_warpball_earned_wait_is_latched(void)
+{
+	AP_TrapLeadState lead = {0, 0};
+
+	lead = AP_TrapLeadUpdate(lead, 0, 1, 1, 15000, 15000);
+	expect("Warpball lead becomes earned at fifteen seconds", lead.earned, 1);
+	expect("earned Warpball retains its completed timer", lead.elapsedMs, 15000);
+
+	// A pre-existing Warpball keeps the condition hidden in production. The
+	// observer still runs, and this overtaken frame is the exact former defect.
+	lead = AP_TrapLeadUpdate(lead, 2, 1, 1, 100, 15000);
+	expect("losing first during singleton wait preserves earned Warpball",
+	       lead.earned, 1);
+	expect("singleton wait does not restart the completed timer", lead.elapsedMs, 15000);
+
+	// Successful birth owns the reset. A serialized duplicate starts from this
+	// cleared state and therefore cannot inherit the previous copy's earned lead.
+	lead.elapsedMs = 0;
+	lead.earned = 0;
+	lead = AP_TrapLeadUpdate(lead, 0, 1, 1, 100, 15000);
+	expect("serialized duplicate requires a fresh lead", lead.earned, 0);
+	expect("serialized duplicate starts a new timer", lead.elapsedMs, 100);
+}
+
 // ── Flatten (batch 2 opener) ──
 
 // The state gate that decides whether the engine may be handed a fresh squish.
@@ -1991,6 +2018,7 @@ int main(void)
 	case_reroll_survives_a_destroyed_roulette();
 	case_forced_use_distinguishes_use_from_confiscation();
 	case_lead_timer_freezes_and_resets_correctly();
+	case_warpball_earned_wait_is_latched();
 	case_flatten_ready_gate();
 	case_flatten_recovery_gate();
 	case_flatten_lifecycle();
