@@ -1,7 +1,8 @@
 #ifndef NATIVE_CUSTOM_TRACKS_POLICY_H
 #define NATIVE_CUSTOM_TRACKS_POLICY_H
 
-// Custom-track loader DECISIONS, ruled for the Baby T Park event spike (rung 1).
+// Custom-track loader DECISIONS, ruled for the Baby T Park event spike. Each
+// decision's own heading carries its rung, so this line cannot go stale.
 // Deliberately freestanding, exactly like ap_cup_box_policy.h: the gather and
 // the I/O live in engine (platform/native_custom_tracks.c), the decisions live
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
