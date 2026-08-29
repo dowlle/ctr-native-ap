@@ -11,7 +11,10 @@
 //   nav_record        writes files under ap-navpaths/. Nothing else in this
 //                     build creates files on a player's disk unasked, and this
 //                     option is the whole consent surface for that.
-//   nav_use_recorded  reads one back and points the AI at it. Reading only, so
+//   nav_use_recorded  reads them back and points the AI at them. Up to three
+//                     containers fill the three engine lanes, preferring a
+//                     different contributor per lane so a race is not one
+//                     person's line under one name seven times. Reading only, so
 //                     someone who wants recorded lines never has to switch on
 //                     the half that writes.
 //   nav_driver_name   the name stamped into the file. Empty falls back to the
@@ -46,14 +49,17 @@ void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID);
 
 // Called at the end of NativeCheckpoint_RelocateSDataPointers. Relocation cannot
 // repair a state restored into a fresh process, where these lanes are zeroed, so
-// this reloads the newest recording for the level and republishes it, and falls
-// back to the level's own nav data when it cannot.
+// this reassembles the same lane set for the level and republishes it, and falls
+// back to the level's own nav data when it cannot. Selection is deterministic,
+// so an unchanged folder restores the field the race started with.
 void AP_NavRec_AfterCheckpointRestore(void);
 
-// Draw the sanitized contributor name above every bot currently using the
-// loaded community recording. The 0.2.0 playback path gives the whole field
-// one contributor's three lanes; the later per-bot loader will replace this
-// one-name mapping without changing the projection/draw surface.
+// Draw the sanitized contributor name above every bot currently driving a
+// recorded lane. The loader fills the three engine lanes from up to three
+// different people's containers, so the name is per lane: a bot carries the name
+// on the file feeding the lane it is following, read from botData.botPath each
+// frame. A lane whose file carries no name draws no label and leaves the other
+// lanes drawing theirs.
 void AP_NavRec_DrawBotNames(void);
 
 // Custom-track loader seam. A package owns a permanent 16-byte UUID and a
