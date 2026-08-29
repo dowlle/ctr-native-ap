@@ -165,8 +165,11 @@ typedef struct
 // no equivalent, which is why every future custom-track field would otherwise
 // have needed a full schema bump. A version this build does not know is refused
 // rather than read field by field.
-#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 1
+#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 2
 #define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
+#define CTR_CFG_CT_ID_CAP              64
+#define CTR_CFG_CT_UUID_CAP            37
+#define CTR_CFG_CT_VERSION_CAP         32
 
 // The describe step's MEASURED capabilities. Every one is required on the wire:
 // a descriptor that omits a flag is not self-describing, and a silently
@@ -186,6 +189,14 @@ typedef struct
 
 typedef struct
 {
+	char id[CTR_CFG_CT_ID_CAP];
+	char package_uuid[CTR_CFG_CT_UUID_CAP];
+	char package_version[CTR_CFG_CT_VERSION_CAP];
+	char minimum_client_version[CTR_CFG_CT_VERSION_CAP];
+	char minimum_apworld_version[CTR_CFG_CT_VERSION_CAP];
+	char navigation_uuid[CTR_CFG_CT_UUID_CAP];
+	unsigned int navigation_revision;
+
 	int laps;                  // 1..7
 	int host_level_id;         // 0..17, the arcade slot whose bytes are borrowed
 	int replaces_cup_level_id; // 100..104

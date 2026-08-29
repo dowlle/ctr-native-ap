@@ -12,6 +12,9 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_track_manager.h>
+#endif
 
 struct GameTracker;
 struct Instance;
@@ -200,6 +203,18 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
 void AP_VerifyOnFrame(void);
 void AP_DrawVerifyWarning(void);
+
+#ifdef CTR_CUSTOM_TRACKS
+// Alpha6 manager-light state shared by OPTIONS > Custom Content, connect-time
+// seed preflight, and the Gem Cup entry gate.
+const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
+int AP_CustomContentSeedSelected(void);
+int AP_CustomContentRequired(void);
+void AP_CustomContentRescan(void);
+void AP_CustomContentVerify(void);
+int AP_CustomContentGateEventEntry(int forceVerify);
+void AP_DrawCustomContentWarning(void);
+#endif
 
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation

@@ -79,6 +79,7 @@
 #include "platform/native_state.c"
 #include "platform/native_str.c"
 #include "platform/native_config.c"
+#include "platform/native_custom_track_manager.c"
 #include "platform/native_custom_tracks.c"
 
 #ifndef CC

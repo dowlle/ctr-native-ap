@@ -5,6 +5,7 @@
 
 #include <common.h>
 #include <platform/native_custom_tracks_policy.h>
+#include <platform/native_custom_track_manager.h>
 #include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
 
 // Custom-track loader, engine-facing half, for the Baby T Park event spike.
@@ -90,6 +91,17 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d);
 // No seed, no block, or an unreadable one: the feature goes fully off. Nothing
 // is served and every cup is back to its vanilla legs on the next read.
 void CustomTrack_ClearSeedDescriptor(void);
+
+// Point the loader at a manager-verified package without touching config.ini.
+// The next descriptor application re-hashes these exact paths. Returns 1 only
+// for a Ready package whose paths, title and navigation identity fit the loader.
+int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
+	                              const struct CustomTrackManagerStatus *status);
+
+// Hash the armed LEV and VRM again immediately before an event entry. A failed
+// recheck disarms the custom race so same-size content replacement cannot slip
+// past the cheap serve-time stat check.
+int CustomTrack_ReverifyArmedContent(void);
 
 // The parsed feature config, never NULL. Callers pass it to the pure decisions
 // in native_custom_tracks_policy.h. Calls CustomTrack_Load if it has not run.
@@ -181,6 +193,11 @@ int CustomTrack_RaceFeatureEnabled(void);
 // MainInit_GetPrimMemSize, which has to size the frame's primitive arena for
 // whichever track is about to load and cannot wait for a subfile read to say so.
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
+
+// The retail trophy-track identity eligible for podium checks on this load, or
+// -1 while custom bytes are being served. A borrowed host levelID is a loading
+// vehicle, not the custom track's AP identity.
+int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID);
 
 // The recording identity this load races under, for the AI-recording seam in
 // ap/ap_navrec.h. Returns 1 and fills outUuid/outRevision only when this load

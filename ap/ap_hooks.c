@@ -8,6 +8,7 @@
 #include "ap_hooks.h"
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
+#include <platform/native_assets.h>
 #endif
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
@@ -65,6 +66,15 @@ CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
 // frozen weapon facts, so the reward-display policy can classify a weapon unlock
 // without pulling in this runtime (#219).
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+
+#ifdef CTR_CUSTOM_TRACKS
+static struct CustomTrackManagerStatus ap_custom_content_status;
+static int ap_custom_content_scanned = 0;
+static int ap_custom_content_seed_selected = 0;
+static int ap_custom_content_required = 0;
+static unsigned int ap_custom_content_gate_timer = 0;
+static int ap_custom_content_gate_cached = 0;
+#endif
 
 // ==============================================================
 // Archipelago integration. Parts:
@@ -924,6 +934,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 		// 0..15 carries no podium rungs and is skipped by AP_AppendTrackRungGlow.
 		int cup = destLevelID - 100;
 		int leg;
+		// A displaced cup runs one custom race and legs no retail track. Its
+		// complete four-leg row remains on the wire as the seed's retail table,
+		// but advertising those rungs on this pad would promise checks the race
+		// cannot honestly emit.
+		if (!AP_GlowSlots_CupLegRungsEligible(ctr_cfg_cup_displaced(cup)))
+			return count;
 		for (leg = 0; leg < 4 && count < cap; leg++)
 			AP_AppendTrackRungGlow(ctr_cfg_cup_leg(cup, leg), outBits, cap,
 			                       &count);
@@ -3746,6 +3762,180 @@ static const char *const AP_LOG_ITEMSANITY_WEAPON_NAME[AP_ITEMSANITY_WEAPON_COUN
 	"Shield Bubble", "Mask", "Clock", "Warpball", "Bomb x3", "Missile x3",
 };
 
+#ifdef CTR_CUSTOM_TRACKS
+static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
+{
+	const ctr_custom_track *track = &ctr_cfg.custom_track;
+	memset(requirement, 0, sizeof *requirement);
+	requirement->id = track->id;
+	requirement->packageUuid = track->package_uuid;
+	requirement->packageVersion = track->package_version;
+	requirement->minimumClientVersion = track->minimum_client_version;
+	requirement->minimumApworldVersion = track->minimum_apworld_version;
+	requirement->levSha256 = track->lev_sha256;
+	requirement->vrmSha256 = track->vrm_sha256;
+	requirement->navigationUuid = track->navigation_uuid;
+	requirement->navigationRevision = track->navigation_revision;
+	requirement->laps = track->laps;
+	requirement->boxes = track->boxes;
+	requirement->flagCrates = track->flags.crates;
+	requirement->flagCtrLetters = track->flags.ctr_letters;
+	requirement->flagRelicCrates = track->flags.relic_crates;
+	requirement->flagAiNav = track->flags.ai_nav;
+	requirement->flagMinimap = track->flags.minimap;
+	requirement->flagGhosts = track->flags.ghosts;
+	requirement->flagSpawns = track->flags.spawns;
+	requirement->flagCheckpoints = track->flags.checkpoints;
+}
+
+static void AP_CustomContentBuildDescriptor(struct CustomTrackSeedDescriptor *descriptor)
+{
+	const ctr_custom_track *track = &ctr_cfg.custom_track;
+	memset(descriptor, 0, sizeof *descriptor);
+	descriptor->laps = track->laps;
+	descriptor->hostLevelID = track->host_level_id;
+	descriptor->replacesCupLevelID = track->replaces_cup_level_id;
+	descriptor->boxes = track->boxes;
+	snprintf(descriptor->levSha256, sizeof descriptor->levSha256, "%s", track->lev_sha256);
+	snprintf(descriptor->vrmSha256, sizeof descriptor->vrmSha256, "%s", track->vrm_sha256);
+	descriptor->flagCrates = track->flags.crates;
+	descriptor->flagCtrLetters = track->flags.ctr_letters;
+	descriptor->flagRelicCrates = track->flags.relic_crates;
+	descriptor->flagAiNav = track->flags.ai_nav;
+	descriptor->flagMinimap = track->flags.minimap;
+	descriptor->flagGhosts = track->flags.ghosts;
+	descriptor->flagSpawns = track->flags.spawns;
+	descriptor->flagCheckpoints = track->flags.checkpoints;
+}
+
+static int AP_CustomContentActivateReady(void)
+{
+	struct CustomTrackSeedDescriptor descriptor;
+	if (!ap_custom_content_seed_selected ||
+	    ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+	    !CustomTrack_UseManagedPackage(CustomTrackManager_BabyTPark(), &ap_custom_content_status))
+		return 0;
+	AP_CustomContentBuildDescriptor(&descriptor);
+	return CustomTrack_ApplySeedDescriptor(&descriptor);
+}
+
+static void AP_CustomContentPreflightSeed(int autoFinalize)
+{
+	struct CustomTrackManagerRequirement requirement;
+	ap_custom_content_seed_selected = ctr_cfg_active() && ctr_cfg.custom_tracks_ok;
+	ap_custom_content_gate_cached = 0;
+
+	if (!ap_custom_content_seed_selected)
+	{
+		CustomTrack_ClearSeedDescriptor();
+		ap_custom_content_required = ctr_cfg_active() && ctr_cfg.custom_tracks_seen;
+		if (ap_custom_content_required)
+		{
+			memset(&ap_custom_content_status, 0, sizeof ap_custom_content_status);
+			ap_custom_content_status.state = CTR_CT_MANAGER_INCOMPATIBLE;
+			snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail,
+			         "This seed's custom-track descriptor is not usable by Alpha6.");
+			ap_custom_content_scanned = 1;
+		}
+		else
+		{
+			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+			                               CustomTrackManager_BabyTPark(),
+			                               &ap_custom_content_status);
+			ap_custom_content_scanned = 1;
+		}
+		return;
+	}
+
+	AP_CustomContentBuildRequirement(&requirement);
+	CustomTrackManager_Preflight(NativeAssets_GetAssetDir(), &requirement,
+	                             autoFinalize, &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	ap_custom_content_required = ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+	                             !AP_CustomContentActivateReady();
+	if (ap_custom_content_required)
+		CustomTrack_ClearSeedDescriptor();
+}
+
+const struct CustomTrackManagerStatus *AP_CustomContentStatus(void)
+{
+	if (!ap_custom_content_scanned)
+	{
+		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+		                               CustomTrackManager_BabyTPark(),
+		                               &ap_custom_content_status);
+		ap_custom_content_scanned = 1;
+	}
+	return &ap_custom_content_status;
+}
+
+int AP_CustomContentSeedSelected(void)
+{
+	return ap_custom_content_seed_selected;
+}
+
+int AP_CustomContentRequired(void)
+{
+	return ap_custom_content_required;
+}
+
+void AP_CustomContentRescan(void)
+{
+	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
+	{
+		AP_CustomContentPreflightSeed(1);
+		return;
+	}
+	CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+	                               CustomTrackManager_BabyTPark(),
+	                               &ap_custom_content_status);
+	if (ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
+	    ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_INVALID)
+		CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(),
+		                                   CustomTrackManager_BabyTPark(),
+		                                   &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+}
+
+void AP_CustomContentVerify(void)
+{
+	CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(),
+	                                 CustomTrackManager_BabyTPark(),
+	                                 &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	AP_CustomContentRescan();
+}
+
+int AP_CustomContentGateEventEntry(int forceVerify)
+{
+	unsigned int now = (unsigned int)sdata->gGT->timer;
+	if (!ap_custom_content_seed_selected)
+		return !ap_custom_content_required;
+	if (!forceVerify && ap_custom_content_gate_cached && now - ap_custom_content_gate_timer < 120)
+		return 1;
+
+	AP_CustomContentPreflightSeed(0);
+	if (ap_custom_content_required || !CustomTrack_ReverifyArmedContent())
+	{
+		ap_custom_content_required = 1;
+		ap_custom_content_gate_cached = 0;
+		return 0;
+	}
+	ap_custom_content_gate_timer = now;
+	ap_custom_content_gate_cached = 1;
+	return 1;
+}
+
+void AP_DrawCustomContentWarning(void)
+{
+	if (!ap_custom_content_required)
+		return;
+	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+	DecalFont_DrawLine("Open OPTIONS > Custom Content, add files, then Rescan.",
+	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+}
+#endif
+
 static void AP_NetTick(struct GameTracker *gGT)
 {
 	if (!ap_net_started)
@@ -3869,6 +4059,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// one fresh line. See ap_checkdiag_once.h for the spam this prevents.
 		AP_CheckDiagOnceReset(&ap_checkdiag_once);
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
+#ifdef CTR_CUSTOM_TRACKS
+		// slot_data was parsed by the callback inside ap_net_poll above. Refuse
+		// gameplay immediately if this seed selects content that is not Ready;
+		// the Options Rescan action can satisfy and unlock this same seed later.
+		AP_CustomContentPreflightSeed(1);
+#endif
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
 		// seeded by this seed's slot_data default. ap_diff_pulled re-arms the one-shot
@@ -4486,6 +4682,21 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 	return AP_RACE_TROPHY;
 }
 
+// A custom track's host levelID is only a byte-serving vehicle. Keep retail
+// podium checks on the retail identity for ordinary loads, but answer no track
+// while the loader is serving custom bytes. Genuine custom-track position
+// rungs need their own datapackage identity and are deliberately absent today.
+static int AP_RetailPodiumTrack(struct GameTracker *gGT)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return CustomTrack_RetailPodiumLevelID((int)gGT->levelID,
+	                                        (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                                        gGT->cup.cupID);
+#else
+	return (int)gGT->levelID;
+#endif
+}
+
 // Rung tags -- also the pseudo-bit rung index order (AP_LookupLocationCode):
 //   0 held_1st  1 held_3rd  2 held_5th   (LIVE, from the position listener)
 //   3 finish_podium  4 finish_any        (FINAL, from the finish edge)
@@ -5096,11 +5307,14 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
 	if (finishedNow && !ap_finish_prev && inRace)
 	{
+		int podiumTrack;
+
 		// driverRank is frozen once you cross the line (nobody can pass a
 		// finished racer), so this is the authoritative final placement.
 		ap_last_race_track = (int)gGT->levelID;
 		ap_last_race_place = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
 		ap_last_race_mode  = AP_ClassifyRace(gGT);
+		podiumTrack = AP_RetailPodiumTrack(gGT);
 
 		char m[160];
 		snprintf(m, sizeof m,
@@ -5115,7 +5329,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// Native fan-out: only trophy races carry podium rungs (relic/token/
 		// crystal share the same levelIDs, so the type gate is load-bearing).
 		if (ap_last_race_mode == AP_RACE_TROPHY)
-			AP_SendPodiumChecks(ap_last_race_track, ap_last_race_place);
+			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
 	}
 	else if (!finishedNow && ap_finish_prev)
 	{
@@ -5154,6 +5368,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	// at a pass never confirms.
 	{
 		int onTrack = LOAD_IsOpen_RacingOrBattle();
+		int podiumTrack = AP_RetailPodiumTrack(gGT);
 		if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
 			ap_held_countdown_seen = 0;
 		else if (gGT->trafficLightsTimer >= 1)
@@ -5164,7 +5379,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 		    gGT->trafficLightsTimer < 1 && onTrack && ap_held_countdown_seen;
 
-		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY && ap_live_position >= 1)
+		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY &&
+		    podiumTrack >= 0 && ap_live_position >= 1)
 		{
 			int elapsedMs = gGT->elapsedTimeMS;
 			if (elapsedMs <= 0)
@@ -5186,7 +5402,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 			// position, so a later worse hold has nothing new to add.
 			if (ap_held_cand_ms >= AP_HELD_DEBOUNCE_MS && ap_held_cand_pos < ap_held_best_pos)
 			{
-				AP_SendHeldChecks((int)gGT->levelID, ap_held_cand_pos);
+				AP_SendHeldChecks(podiumTrack, ap_held_cand_pos);
 				ap_held_best_pos = ap_held_cand_pos;
 			}
 		}
@@ -5587,41 +5803,9 @@ static void ap_onframe_body(struct GameTracker *gGT)
 		}
 
 #ifdef CTR_CUSTOM_TRACKS
-		// Push this seed's custom-track descriptor into the loader. slot_data
-		// arrives at connect, long after CustomTrack_Load() read the two file
-		// paths from config.ini at startup, and the parse has no hook of its own
-		// -- so this rides the same per-frame watcher block as the boot log and
-		// the levelID transition above. CustomTrack_ApplySeedDescriptor is
-		// idempotent by content, so an unchanged seed costs one memcmp a frame
-		// and only a genuinely new descriptor pays for the hash.
-		//
-		// Absence is authoritative in both directions: no active seed, no block,
-		// or a block that did not parse all mean the feature is fully off,
-		// whatever config.ini says.
-		if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
-		{
-			struct CustomTrackSeedDescriptor apCtDesc;
-			const ctr_custom_track *apCt = &ctr_cfg.custom_track;
-
-			memset(&apCtDesc, 0, sizeof apCtDesc);
-			apCtDesc.laps = apCt->laps;
-			apCtDesc.hostLevelID = apCt->host_level_id;
-			apCtDesc.replacesCupLevelID = apCt->replaces_cup_level_id;
-			apCtDesc.boxes = apCt->boxes;
-			snprintf(apCtDesc.levSha256, sizeof apCtDesc.levSha256, "%s", apCt->lev_sha256);
-			snprintf(apCtDesc.vrmSha256, sizeof apCtDesc.vrmSha256, "%s", apCt->vrm_sha256);
-			apCtDesc.flagCrates = apCt->flags.crates;
-			apCtDesc.flagCtrLetters = apCt->flags.ctr_letters;
-			apCtDesc.flagRelicCrates = apCt->flags.relic_crates;
-			apCtDesc.flagAiNav = apCt->flags.ai_nav;
-			apCtDesc.flagMinimap = apCt->flags.minimap;
-			apCtDesc.flagGhosts = apCt->flags.ghosts;
-			apCtDesc.flagSpawns = apCt->flags.spawns;
-			apCtDesc.flagCheckpoints = apCt->flags.checkpoints;
-
-			CustomTrack_ApplySeedDescriptor(&apCtDesc);
-		}
-		else
+		// Connect-time preflight and explicit Rescan own activation. Per-frame
+		// work only enforces absence/required as authoritative in both directions.
+		if (!ap_custom_content_seed_selected || ap_custom_content_required)
 		{
 			CustomTrack_ClearSeedDescriptor();
 		}

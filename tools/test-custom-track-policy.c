@@ -527,6 +527,8 @@ static void test_serve_context(void)
 	// the level being loaded is the mapped slot.
 	ctx = make_ctx(6, 1, 4);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "event race serves custom bytes");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(&cfg, &ctx), -1,
+	           "event race cannot masquerade as the host slot's podium identity");
 
 	// TERM: adventureCupActive. The host slot's RETAIL race pad. This is the
 	// case rung 2a exists to fix, and it is also why cupID must never be tested
@@ -535,12 +537,16 @@ static void test_serve_context(void)
 	ctx = make_ctx(6, 0, 4);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0,
 	           "retail race pad to the host slot loads retail bytes (stale cupID 4)");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(&cfg, &ctx), 6,
+	           "retail race pad keeps the host slot's podium identity");
 
 	// TERM: cupID match. A different gem cup whose legs were shuffled onto the
 	// host slot still races the retail track.
 	ctx = make_ctx(6, 1, 1);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0,
 	           "another gem cup's leg on the host slot loads retail bytes");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(&cfg, &ctx), 6,
+	           "another cup's retail leg keeps the host slot's podium identity");
 	ctx = make_ctx(6, 1, 0);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "Red cup leg on the host slot stays retail");
 
@@ -556,6 +562,8 @@ static void test_serve_context(void)
 	ctx = make_ctx(6, 1, 4);
 	cfg.contentVerified = 0;
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "unverified content serves nothing");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(&cfg, &ctx), 6,
+	           "an unverified loader suppresses no retail podium identity by itself");
 	cfg = ruled_config();
 	cfg.raceEnabled = 0;
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "event destination off serves nothing");
@@ -564,6 +572,10 @@ static void test_serve_context(void)
 	cfg = ruled_config();
 	expect_int(CustomTrackPolicy_ShouldServe(NULL, &ctx), 0, "NULL config serves nothing");
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, NULL), 0, "NULL context serves nothing");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(NULL, &ctx), 6,
+	           "NULL config leaves a real load's retail podium identity alone");
+	expect_int(CustomTrackPolicy_RetailPodiumLevelID(&cfg, NULL), -1,
+	           "NULL load context has no podium identity");
 
 	// A configurable event cup moves the whole answer with it, so nothing may be
 	// keyed on the literal 4.

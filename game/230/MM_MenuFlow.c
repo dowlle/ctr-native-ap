@@ -5,6 +5,9 @@
 extern struct MenuRow s_rowsMainMenuBasicConfig[];
 extern struct MenuRow s_rowsMainMenuWithSBConfig[];
 extern struct RectMenu g_configMenu;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+void MM_ConfigMenu_OpenCustomContent(void);
+#endif
 
 // NOTE(aalhendi): ASM-verified against retail 230 0x800abaf0-0x800abcac.
 u8 MM_TransitionInOut(struct TransitionMeta *meta, int framesPassed, int numFrames)
@@ -69,6 +72,17 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	{
 		mainMenu->rows = &s_rowsMainMenuBasicConfig[0];
 	}
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A connected seed that displaced a cup cannot proceed through the main
+	// menu until its exact package is Ready. Rescan on the manager screen can
+	// unlock this same seed without reconnecting or regenerating.
+	if (AP_CustomContentRequired())
+	{
+		MM_ConfigMenu_OpenCustomContent();
+		return;
+	}
+#endif
 
 	MM_ParseCheatCodes();
 	MM_ToggleRows_Difficulty();

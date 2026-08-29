@@ -66,6 +66,8 @@ static void expect_str(const char *got, const char *want, const char *name)
 
 static const char *LEV_HASH = "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8";
 static const char *VRM_HASH = "2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de43508375834092e83";
+static const char *PACKAGE_UUID = "60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e";
+static const char *NAVIGATION_UUID = "898a9315-693f-4ed3-b6a0-fbe50db8bc40";
 
 static int vanilla_legs[20] = {3, 9, 2, 5, 6, 14, 12, 10, 4, 8, 1, 11, 0, 15, 7, 13, 6, 5, 1, 7};
 
@@ -85,8 +87,13 @@ static nlohmann::json good_flags(void)
 static nlohmann::json good_entry(void)
 {
 	return {{"id", "baby-t-park"},
+	        {"package_uuid", PACKAGE_UUID},
+	        {"package_version", "1.0.0"},
+	        {"minimum_client_version", "0.2.0-alpha6"},
+	        {"minimum_apworld_version", "0.2.0-alpha6"},
 	        {"lev_sha256", LEV_HASH},
 	        {"vrm_sha256", VRM_HASH},
+	        {"navigation", {{"uuid", NAVIGATION_UUID}, {"revision", 1}}},
 	        {"laps", 7},
 	        {"host_level_id", 6},
 	        {"replaces_cup_level_id", 104},
@@ -96,7 +103,7 @@ static nlohmann::json good_entry(void)
 
 static nlohmann::json good_block(void)
 {
-	return {{"enabled", true}, {"version", 1}, {"tracks", nlohmann::json::array({good_entry()})}};
+	return {{"enabled", true}, {"version", 2}, {"tracks", nlohmann::json::array({good_entry()})}};
 }
 
 // Assert the whole feature is off AND no cup was displaced. Every refusal case
@@ -132,6 +139,13 @@ static void test_happy_path(void)
 	expect_eq(ctr_cfg.custom_track.host_level_id, 6, "host_level_id");
 	expect_eq(ctr_cfg.custom_track.replaces_cup_level_id, 104, "replaces_cup_level_id");
 	expect_eq(ctr_cfg.custom_track.boxes, 0, "boxes:false is honoured");
+	expect_str(ctr_cfg.custom_track.id, "baby-t-park", "track id");
+	expect_str(ctr_cfg.custom_track.package_uuid, PACKAGE_UUID, "package UUID");
+	expect_str(ctr_cfg.custom_track.package_version, "1.0.0", "package version");
+	expect_str(ctr_cfg.custom_track.minimum_client_version, "0.2.0-alpha6", "minimum client");
+	expect_str(ctr_cfg.custom_track.minimum_apworld_version, "0.2.0-alpha6", "minimum apworld");
+	expect_str(ctr_cfg.custom_track.navigation_uuid, NAVIGATION_UUID, "navigation UUID");
+	expect_eq((int)ctr_cfg.custom_track.navigation_revision, 1, "navigation revision");
 	expect_str(ctr_cfg.custom_track.lev_sha256, LEV_HASH, "lev digest");
 	expect_str(ctr_cfg.custom_track.vrm_sha256, VRM_HASH, "vrm digest");
 
@@ -196,7 +210,7 @@ static void test_unknown_block_version(void)
 {
 	nlohmann::json doc = base();
 	doc["custom_tracks"] = good_block();
-	doc["custom_tracks"]["version"] = 2;
+	doc["custom_tracks"]["version"] = 3;
 	ap_seedcfg_parse_json(doc);
 
 	expect_eq(ctr_cfg.custom_tracks_seen, 1, "unknown version is still seen");
@@ -380,6 +394,67 @@ static void test_digests(void)
 	expect_eq(ctr_cfg.custom_tracks_ok, 1, "an uppercase digest is accepted");
 }
 
+static void test_package_and_navigation_identity(void)
+{
+	// Every v2 identity field is required. json_str deliberately yields an
+	// empty destination for absent, non-string, or oversized values, and each
+	// such case must refuse the whole descriptor.
+	static const char *required[] = {
+	    "id", "package_uuid", "package_version", "minimum_client_version",
+	    "minimum_apworld_version",
+	};
+	for (unsigned i = 0; i < sizeof(required) / sizeof(required[0]); i++)
+	{
+		char what[112];
+		nlohmann::json doc = base();
+		doc["custom_tracks"] = good_block();
+		doc["custom_tracks"]["tracks"][0].erase(required[i]);
+		ap_seedcfg_parse_json(doc);
+		std::snprintf(what, sizeof what, "missing %s", required[i]);
+		expect_refused(what);
+	}
+
+	struct
+	{
+		const char *field;
+		nlohmann::json value;
+		const char *what;
+	} bad[] = {
+	    {"package_uuid", "not-a-uuid", "malformed package UUID"},
+	    {"package_uuid", "60D5A8A8-B69A-4F6A-A0D8-9A43D91E3F2Eextra", "oversized package UUID"},
+	    {"package_version", "", "empty package version"},
+	    {"package_version", "1.0.0\nunsafe", "non-plain package version"},
+	    {"minimum_client_version", 6, "non-string minimum client"},
+	    {"minimum_apworld_version", "alpha6\\unsafe", "non-plain minimum apworld"},
+	};
+	for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+	{
+		nlohmann::json doc = base();
+		doc["custom_tracks"] = good_block();
+		doc["custom_tracks"]["tracks"][0][bad[i].field] = bad[i].value;
+		ap_seedcfg_parse_json(doc);
+		expect_refused(bad[i].what);
+	}
+
+	nlohmann::json doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0].erase("navigation");
+	ap_seedcfg_parse_json(doc);
+	expect_refused("missing navigation object");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["navigation"]["uuid"] = "bad";
+	ap_seedcfg_parse_json(doc);
+	expect_refused("malformed navigation UUID");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["navigation"]["revision"] = 0;
+	ap_seedcfg_parse_json(doc);
+	expect_refused("navigation revision zero");
+}
+
 static void test_flags(void)
 {
 	static const char *boolFlags[] = {"crates", "ctr_letters", "relic_crates", "ai_nav",
@@ -470,6 +545,7 @@ int main(void)
 	test_block_shapes();
 	test_field_ranges();
 	test_digests();
+	test_package_and_navigation_identity();
 	test_flags();
 	test_schema_gate();
 

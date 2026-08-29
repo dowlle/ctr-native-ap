@@ -823,11 +823,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// no menu ever coming (the 2026-07-14 Dragon Mines softlock).
 	if (!ctr_cfg_racer_lock_met(physLevelID))
 		goto WarpPad_AnimateOpen;
+#ifdef CTR_CUSTOM_TRACKS
+	// A seed-selected package that is not Ready blocks every event entry, not
+	// only the displaced cup. This keeps AP gameplay behind the manager-light
+	// preflight even if a malformed descriptor could not name its destination.
+	if (AP_CustomContentRequired())
+		goto WarpPad_AnimateOpen;
+#endif
 #endif
 
 	// gem cups
 	if (levelID >= AH_WP_ADV_CUP)
 	{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		// A displaced destination is not enterable until the exact package this
+		// seed requires verifies. The gate re-hashes at event entry, so even a
+		// same-size file swap after connect is refused before loading begins.
+		if (ctr_cfg_active() && ctr_cfg_cup_displaced(levelID - AH_WP_ADV_CUP) &&
+		    !AP_CustomContentGateEventEntry(warppadObj->framesWarping == 60))
+			goto WarpPad_AnimateOpen;
+#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;

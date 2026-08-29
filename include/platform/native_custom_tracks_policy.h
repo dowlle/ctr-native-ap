@@ -870,6 +870,31 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 	return (ctx->levelID == cfg->mappedLevelID) ? 1 : 0;
 }
 
+// Which RETAIL trophy-track identity may receive podium-rung checks for this
+// load, or -1 when the load is serving custom bytes.
+//
+// A custom track borrows an arcade levelID only as a byte-serving vehicle. That
+// physical slot is not the custom destination's AP identity: reporting its
+// position ladder would, for example, award Roo's Tubes rungs while racing
+// Baby T Park on host levelID 6. Genuine custom-track rungs need their own
+// datapackage identity later. Until then, a served custom load has no retail
+// podium identity at all.
+//
+// Every non-served load returns its real levelID unchanged. The AP caller keeps
+// the existing 0..15 trophy-track range and race-type gates, so this helper does
+// not broaden podium eligibility for hubs, trials or other modes.
+static int CustomTrackPolicy_RetailPodiumLevelID(const struct CustomTrackFeatureConfig *cfg,
+                                                 const struct CustomTrackLoadContext *ctx)
+{
+	if (ctx == NULL)
+		return -1;
+
+	if (CustomTrackPolicy_ShouldServe(cfg, ctx))
+		return -1;
+
+	return ctx->levelID;
+}
+
 // Can the engine actually run the event race on a track with these measured
 // capabilities? Returns 1 when it can, or 0 with *outWhy set to a short reason.
 //

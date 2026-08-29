@@ -943,6 +943,9 @@ void UI_RenderFrame_AdvHub(void)
 	// Seed-verify warning: RED banner when a SOLO seed's goal is provably
 	// unreachable from the current state (ap_verify.c). Self-gates.
 	AP_DrawVerifyWarning();
+#ifdef CTR_CUSTOM_TRACKS
+	AP_DrawCustomContentWarning();
+#endif
 	// Hub character picker (spike, #54/R7). Self-gates; the other half of the
 	// pair is in AH_Map.c and the two passes are mutually exclusive per frame.
 	AP_CharPicker_Draw();

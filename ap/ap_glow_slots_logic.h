@@ -3,6 +3,14 @@
 
 typedef int (*AP_GlowSlotGroupFn)(int bit);
 
+// A displaced Gem Cup runs one custom race and has no retail legs in logic.
+// Its complete retail leg row still travels in slot data for identity/fallback,
+// so presentation must ask the displacement bit before advertising those rungs.
+static inline int AP_GlowSlots_CupLegRungsEligible(int cupDisplaced)
+{
+	return cupDisplaced ? 0 : 1;
+}
+
 // Select the advertised reward bit for each of the three physical prize slots.
 // A negative output hides that slot. `byRewardType` assigns group 0/1/2 to the
 // corresponding slot; otherwise all rewards share one three-wide window.

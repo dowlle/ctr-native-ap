@@ -116,6 +116,36 @@ static int ctr_hex64(const char *s)
 	return s[64] == '\0';
 }
 
+static int ctr_uuid(const char *s)
+{
+	int i;
+	if (s == NULL || std::strlen(s) != 36)
+		return 0;
+	for (i = 0; i < 36; i++)
+	{
+		const char c = s[i];
+		if (i == 8 || i == 13 || i == 18 || i == 23)
+		{
+			if (c != '-')
+				return 0;
+		}
+		else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+			return 0;
+	}
+	return 1;
+}
+
+static int ctr_plain_text(const char *s)
+{
+	const unsigned char *p = reinterpret_cast<const unsigned char *>(s);
+	if (p == NULL || *p == '\0')
+		return 0;
+	for (; *p != '\0'; p++)
+		if (*p < 0x20 || *p == '"' || *p == '\\')
+			return 0;
+	return 1;
+}
+
 static int json_int(const nlohmann::json &j, const char *key, int dflt)
 {
 	auto it = j.find(key);
@@ -653,6 +683,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			ctr_custom_track ct;
 			std::memset(&ct, 0, sizeof ct);
 			const char *reject = NULL;
+			int navigationRevision = -1;
 
 			if (!t.is_object())
 			{
@@ -660,20 +691,40 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			}
 			else
 			{
+				json_str(t, "id", ct.id, sizeof ct.id);
+				json_str(t, "package_uuid", ct.package_uuid, sizeof ct.package_uuid);
+				json_str(t, "package_version", ct.package_version, sizeof ct.package_version);
+				json_str(t, "minimum_client_version", ct.minimum_client_version,
+				         sizeof ct.minimum_client_version);
+				json_str(t, "minimum_apworld_version", ct.minimum_apworld_version,
+				         sizeof ct.minimum_apworld_version);
 				ct.laps = json_int(t, "laps", -1);
 				ct.host_level_id = json_int(t, "host_level_id", -1);
 				ct.replaces_cup_level_id = json_int(t, "replaces_cup_level_id", -1);
-				ct.boxes = json_int(t, "boxes", 1); // ruled wire default
+				ct.boxes = json_int(t, "boxes", -1);
 
 				json_str(t, "lev_sha256", ct.lev_sha256, sizeof ct.lev_sha256);
 				json_str(t, "vrm_sha256", ct.vrm_sha256, sizeof ct.vrm_sha256);
 
+				auto navIt = t.find("navigation");
+				if (navIt == t.end() || !navIt->is_object())
+				{
+					reject = "navigation object missing";
+				}
+				else
+				{
+					json_str(*navIt, "uuid", ct.navigation_uuid, sizeof ct.navigation_uuid);
+					navigationRevision = json_int(*navIt, "revision", -1);
+					if (navigationRevision > 0)
+						ct.navigation_revision = (unsigned int)navigationRevision;
+				}
+
 				auto flIt = t.find("flags");
-				if (flIt == t.end() || !flIt->is_object())
+				if (reject == NULL && (flIt == t.end() || !flIt->is_object()))
 				{
 					reject = "flags object missing";
 				}
-				else
+				else if (reject == NULL)
 				{
 					// All eight required. -1 is a sentinel no legitimate flag can
 					// carry, so an absent key is caught rather than defaulted.
@@ -699,7 +750,19 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 
 				if (reject == NULL)
 				{
-					if (ct.laps < 1 || ct.laps > 7)
+					if (!ctr_plain_text(ct.id))
+						reject = "id missing or invalid";
+					else if (!ctr_uuid(ct.package_uuid))
+						reject = "package_uuid is not a canonical UUID";
+					else if (!ctr_plain_text(ct.package_version))
+						reject = "package_version missing or invalid";
+					else if (!ctr_plain_text(ct.minimum_client_version))
+						reject = "minimum_client_version missing or invalid";
+					else if (!ctr_plain_text(ct.minimum_apworld_version))
+						reject = "minimum_apworld_version missing or invalid";
+					else if (!ctr_uuid(ct.navigation_uuid) || navigationRevision < 1)
+						reject = "navigation identity missing or invalid";
+					else if (ct.laps < 1 || ct.laps > 7)
 						reject = "laps outside 1..7";
 					else if (ct.host_level_id < 0 || ct.host_level_id > 17)
 						reject = "host_level_id is not an arcade slot 0..17";
@@ -709,6 +772,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						reject = "lev_sha256 is not 64 hex digits";
 					else if (!ctr_hex64(ct.vrm_sha256))
 						reject = "vrm_sha256 is not 64 hex digits";
+					else if (ct.boxes != 0)
+						reject = "boxes must be false in Alpha6";
 				}
 			}
 
@@ -978,6 +1043,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	if (ctr_cfg.custom_tracks_ok)
 	{
 		const ctr_custom_track &ct = ctr_cfg.custom_track;
+		ap_cfg_log("[AP CFG] custom_tracks: %s package %s version %s; navigation %s rev %u\n",
+		           ct.id, ct.package_uuid, ct.package_version, ct.navigation_uuid,
+		           ct.navigation_revision);
 		ap_cfg_log("[AP CFG] custom_tracks: cup LevelID %d becomes a single %d-lap race "
 		           "on host slot %d (boxes %s)\n",
 		           ct.replaces_cup_level_id, ct.laps, ct.host_level_id,

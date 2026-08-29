@@ -26,6 +26,8 @@ int Platform_GetVBlankCount(void);
 void Platform_WaitUntilVBlank(int targetVBlank);
 void Platform_PollHostEvents(void);
 int Platform_PollInput(void);
+int Platform_SetClipboardText(const char *text);
+int Platform_OpenURL(const char *url);
 
 #if defined(CTR_NATIVE)
 int NikoGetEnterKey(void);

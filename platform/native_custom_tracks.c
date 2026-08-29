@@ -408,6 +408,63 @@ void CustomTrack_ClearSeedDescriptor(void)
 	CustomTrack_ResetArmedState();
 }
 
+int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
+	                              const struct CustomTrackManagerStatus *status)
+{
+	unsigned char uuid[CTR_CT_NAV_UUID_BYTES];
+
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+	if (package == NULL || status == NULL || status->state != CTR_CT_MANAGER_READY ||
+	    status->levPath[0] == '\0' || status->vrmPath[0] == '\0' ||
+	    strlen(status->levPath) >= sizeof s_customTrackLev.path ||
+	    strlen(status->vrmPath) >= sizeof s_customTrackVrm.path ||
+	    !CustomTrackPolicy_NameFits(package->title, NULL) ||
+	    !CustomTrackPolicy_ParseNavUuid(package->navigationUuid, uuid) ||
+	    package->navigationRevision == 0)
+	{
+		CustomTrack_Log("[CustomTracks] REFUSED manager package: invalid or not Ready\n");
+		return 0;
+	}
+
+	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, status->levPath);
+	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, status->vrmPath);
+	CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, package->title);
+	memcpy(s_customTrackConfig.navTrackUuid, uuid, sizeof uuid);
+	s_customTrackConfig.navRevision = package->navigationRevision;
+	s_customTrackConfig.navIdentityValid = 1;
+
+	// A path or package handoff must invalidate the descriptor memcmp cache. The
+	// next ApplySeedDescriptor owns the full digest check before it can arm.
+	memset(&s_descriptor, 0, sizeof s_descriptor);
+	s_haveDescriptor = 0;
+	CustomTrack_ResetArmedState();
+	CustomTrack_Log("[CustomTracks] manager selected %s %s from \"%s\"\n",
+	                package->title, package->version, status->packageRoot);
+	return 1;
+}
+
+int CustomTrack_ReverifyArmedContent(void)
+{
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+	if (!s_haveDescriptor || !s_customTrackConfig.contentVerified)
+		return 0;
+
+	CustomTrack_VerifySource(&s_customTrackVrm, "vrm preflight");
+	CustomTrack_VerifySource(&s_customTrackLev, "lev preflight");
+	if (s_customTrackVrm.verdict != CTR_CT_VERDICT_OK ||
+	    s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
+	{
+		CustomTrack_Log("[CustomTracks] event-entry preflight failed; custom race disarmed\n");
+		s_customTrackConfig.contentVerified = 0;
+		s_customTrackConfig.raceEnabled = 0;
+		s_customTrackConfig.mappedLevelID = -1;
+		return 0;
+	}
+	return 1;
+}
+
 int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
@@ -687,6 +744,17 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 	ctx.cupID = cupID;
 
 	return CustomTrackPolicy_ShouldServe(CustomTrack_Config(), &ctx);
+}
+
+int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = levelID;
+	ctx.adventureCupActive = adventureCupActive;
+	ctx.cupID = cupID;
+
+	return CustomTrackPolicy_RetailPodiumLevelID(CustomTrack_Config(), &ctx);
 }
 
 int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupID, unsigned char outUuid[CTR_CT_NAV_UUID_BYTES],

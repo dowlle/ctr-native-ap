@@ -4,17 +4,19 @@ Build-time flag: `CTR_CUSTOM_TRACKS`. Off by default; with it off the build is
 identical to `main` (see [Guard-off identity](#guard-off-identity) for the
 evidence).
 
-With the flag on, a `[CustomTracks]` section in `config.ini` naming two files,
-and a **seed that carries a `custom_tracks` block**, the game hash-verifies one
-community custom track's `.lev`/`.vrm` pair, turns the seed's named Gem Cup
-destination into a single race on that track, and serves the custom bytes **for
-that race only**. The arcade slot the track borrows keeps its retail race
-everywhere else in the same session.
+With the flag on, manager-light discovers user-supplied files under
+`assets/tracks/<id>/original/`, verifies them against the Alpha6 package
+registry, and creates its local manifest. A **seed that carries a
+`custom_tracks` block** selects that approved package and turns the seed's named
+Gem Cup destination into a single race on it. The arcade slot the track borrows
+keeps its retail race everywhere else in the same session.
 
-Rung 2c moved the descriptor to slot_data. `config.ini` now says only **where the
-two files are**; the seed says everything else — both digests, the lap count, the
-host slot, which cup is replaced, and whether AP boxes are allowed. **No block on
-the wire means the feature is fully off, whatever `config.ini` holds.**
+Slot-data v2 carries the complete expected identity: package UUID and version,
+compatible client/apworld versions, both hashes, navigation UUID and revision,
+lap count, host slot, displaced cup and capabilities. **No block on the wire
+means the feature is fully off even when local files are installed.** The old
+`config.ini` paths remain only as a private event-package compatibility seam;
+public Alpha6 activation is manager-owned.
 
 ## What this rung does and does not do
 
@@ -31,8 +33,7 @@ the track's own name everywhere the player reads it, grid as many karts as the
 track reports spawn slots for instead of the boss field's five, and draw the AI
 opponents from the loaded pack instead of the fixed four bosses.
 
-Does not: read anything from slot_data (rung 2b replaces the config parse with
-it), supply AP-box or CTR-letter **placement** for the custom track, handle
+Does not: supply AP-box or CTR-letter **placement** for the custom track, handle
 relic races on it, load the track's music (`.sca`), size split-screen or attract
 loads (nothing has been measured for them), bound
 `RenderLists_PushChild`'s 51-record drop (counted, not clamped — see
@@ -49,47 +50,43 @@ at all.
 
 ## Configuration
 
-### Client side: `config.ini` — two paths, a label, and an identity
+### Client side: manager-light package
 
-```ini
-[CustomTracks]
-custom_track_vrm = tracks/baby-t-park/baby-t-park_v1.0.0.vrm
-custom_track_lev = tracks/baby-t-park/baby-t-park_v1.0.0.lev
-custom_track_name = BABY T PARK
-custom_track_nav_uuid = 898a9315-693f-4ed3-b6a0-fbe50db8bc40
-custom_track_nav_rev = 1
+```text
+assets/tracks/baby-t-park/
+  manifest.json
+  original/
+    track.lev
+    track.vrm
 ```
 
-Paths are resolved from the working directory the game runs in. No paths, no
-`[CustomTracks]` section, or no `config.ini` at all each mean "this client has no
-custom track files", and the build behaves like retail.
+The player supplies only the two original files. Rescan recognizes their exact
+hash pair. Verify or Finish Setup atomically creates or repairs the canonical
+manager-owned manifest. The Options menu shows package, author, source,
+compatibility and current-seed state, and provides source, clipboard YAML and
+file YAML actions. No third-party track asset belongs in the public package.
 
-Everything else the loader needs is deliberately **not** here. The seed is the
-single authority on what gets **served**, so a local file cannot talk this client
-into racing content the seed did not name.
-
-`custom_track_name` is the first exception, and it is an exception precisely
-because it changes nothing about what is served — see
-[the displaced cup's name](#the-displaced-cups-name). It is optional; missing,
-empty, or unusable all mean "show the retail cup name".
-
-`custom_track_nav_uuid` and `custom_track_nav_rev` are the second, for the same
-reason and with the same caveat — see
-[the package's recording identity](#the-packages-recording-identity). Both are
-optional. A missing or malformed UUID means this build stamps and matches no
-custom-track recording identity; the track is still served either way.
-
-Baby T Park's minted values are the ones shown above.
+The private Hypnoshark package may continue to carry the prepared files and
+legacy configuration as a compatibility measure. That path is not the public
+Alpha6 opt-in mechanism.
 
 ### Seed side: the `custom_tracks` slot_data block (schema 8)
 
 ```jsonc
 "custom_tracks": {
   "enabled": true,
-  "version": 1,                     // the block's OWN shape guard
+  "version": 2,                     // the block's OWN shape guard
   "tracks": [{
     "id": "baby-t-park",
+    "package_uuid": "60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e",
+    "package_version": "1.0.0",
+    "minimum_client_version": "0.2.0-alpha6",
+    "minimum_apworld_version": "0.2.0-alpha6",
     "lev_sha256": "96ad…", "vrm_sha256": "2dca…",
+    "navigation": {
+      "uuid": "898a9315-693f-4ed3-b6a0-fbe50db8bc40",
+      "revision": 1
+    },
     "laps": 7,                      // 1..7
     "host_level_id": 6,             // 0..17, the arcade slot the bytes borrow
     "replaces_cup_level_id": 104,   // Purple Gem Cup, as a LevelID
@@ -125,9 +122,11 @@ refuses a list of two**, rather than silently serving one of them.
 
 | | |
 |---|---|
-| no seed / no block / unreadable block | feature fully off, whatever `config.ini` says |
-| block present and readable | its values win; `config.ini` supplies only the file paths |
-| block readable, but this client has no files for it | refused loudly, cup left vanilla — the player can fix this by adding the files |
+| no seed / no block | feature fully off, even if a package is installed |
+| malformed or unsupported block | content required; never substitute retail cup behaviour silently |
+| readable block, package not Ready | keep connection for diagnostics, show persistent Content Required, block event entry |
+| readable block, package Ready | arm the manager paths; Rescan can reach this state on the same connected seed |
+| files changed after connect | event-entry rehash disarms and returns to Content Required |
 
 ### Measured flags
 
@@ -1130,6 +1129,9 @@ cc -Wall -Wextra -DCTR_CUSTOM_TRACKS -I include \
 
 cc -Wall -Wextra -m32 -DCTR_CUSTOM_TRACKS -DCTR_NATIVE -DBUILD=926 -I . -I include \
    -o /tmp/test-custom-track-load tools/test-custom-track-load.c && /tmp/test-custom-track-load
+
+cc -Wall -Wextra -Werror -DCTR_CUSTOM_TRACKS -I include -I . \
+   -o /tmp/test-custom-track-manager tools/test-custom-track-manager.c && /tmp/test-custom-track-manager
 ```
 
 `test-custom-track-policy` pins the decisions and the digest primitive out of
@@ -1155,6 +1157,13 @@ transcription to drift), and asserts that the omission is what produces the NULL
 — then that both count thresholds `CAM.c` used to guard its two cameras with
 **pass** on that table while the predicate that replaced them refuses, and that
 on a retail-shaped table old and new agree in both directions.
+
+`test-custom-track-manager` compiles the real manager-light foundation and
+drives a synthetic registered package through Not Installed, Missing Files,
+Hash Mismatch, manifest creation/repair, Ready, YAML export and changed-after-
+verification refusal. It pins the deterministic folder layout, proves the
+saved fragment is byte-identical to the clipboard-ready rendering, and needs no
+third-party track asset.
 
 `test-custom-track-policy` covers the same predicate as a truth table, against
 the three measured table shapes, plus its bounds behaviour: the index check runs
