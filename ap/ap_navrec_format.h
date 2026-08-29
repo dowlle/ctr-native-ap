@@ -21,8 +21,11 @@
 #include <stddef.h>
 #include <string.h>
 
-#define AP_NAVREC_FORMAT_VERSION 2
-#define AP_NAVREC_HEADER_BYTES   96
+#define AP_NAVREC_FORMAT_VERSION_V2 2
+#define AP_NAVREC_FORMAT_VERSION_V3 3
+#define AP_NAVREC_FORMAT_VERSION    AP_NAVREC_FORMAT_VERSION_V2
+#define AP_NAVREC_HEADER_BYTES      96
+#define AP_NAVREC_HEADER_BYTES_V3   128
 #define AP_NAVREC_LAPDIR_BYTES   32
 #define AP_NAVREC_TRAILER_BYTES  8
 #define AP_NAVREC_NODE_BYTES     20
@@ -98,6 +101,14 @@
 // trackKind values.
 #define AP_NAVREC_TRACK_RETAIL 0
 #define AP_NAVREC_TRACK_NONAV  1
+
+// A zero identity is the legacy retail interpretation: levelId names the
+// actual retail track. Custom packages use a permanent author-controlled UUID
+// plus a navigation compatibility revision. The physical level slot is still
+// retained separately in levelId, but never decides custom-track compatibility.
+#define AP_NAVREC_IDENTITY_RETAIL 0
+#define AP_NAVREC_IDENTITY_CUSTOM 1
+#define AP_NAVREC_TRACK_UUID_BYTES 16
 
 // Reader results. Named rather than a bare 0/1 so a rejection produces a log
 // line that says which rule failed.
@@ -185,6 +196,9 @@ struct AP_NavRecMeta
 	short         difficultyPreset; // -1 unknown
 	unsigned char shortcutTier;     // 0 unknown, 1 easy, 2 medium, 3 hard
 	unsigned int  trackKind;
+	unsigned char identityKind;
+	unsigned char trackUuid[AP_NAVREC_TRACK_UUID_BYTES];
+	unsigned int  navRevision;
 };
 
 // What the reader recovers. Text fields are NUL terminated here even though the
@@ -201,8 +215,26 @@ struct AP_NavRecFileInfo
 	short                   difficultyPreset;
 	unsigned char           shortcutTier;
 	unsigned int            lapCount;
+	unsigned char           identityKind;
+	unsigned char           trackUuid[AP_NAVREC_TRACK_UUID_BYTES];
+	unsigned int            navRevision;
 	struct AP_NavRecLapInfo laps[AP_NAVREC_MAX_LAPS];
 };
+
+static int AP_NavRecFormat_IdentityMatches(const struct AP_NavRecFileInfo *info, int levelId,
+                                           unsigned char identityKind, const unsigned char trackUuid[AP_NAVREC_TRACK_UUID_BYTES],
+                                           unsigned int navRevision)
+{
+	if ((info == NULL) || (info->levelId != levelId))
+		return 0;
+	if (identityKind == AP_NAVREC_IDENTITY_RETAIL)
+		return info->identityKind == AP_NAVREC_IDENTITY_RETAIL;
+	if ((identityKind != AP_NAVREC_IDENTITY_CUSTOM) || (trackUuid == NULL))
+		return 0;
+	return (info->identityKind == AP_NAVREC_IDENTITY_CUSTOM) &&
+	       (memcmp(info->trackUuid, trackUuid, AP_NAVREC_TRACK_UUID_BYTES) == 0) &&
+	       (info->navRevision == navRevision);
+}
 
 // Bounded-cost lookup over the retail corridor. Built once per level, queried
 // once per decimated node.
@@ -806,6 +838,15 @@ static unsigned int AP_NavRecFormat_Size(const struct AP_NavRecLapInfo *laps, un
 	return size + (unsigned int)AP_NAVREC_TRAILER_BYTES;
 }
 
+static unsigned int AP_NavRecFormat_SizeForMeta(const struct AP_NavRecMeta *meta, const struct AP_NavRecLapInfo *laps,
+                                                unsigned int lapCount)
+{
+	unsigned int size = AP_NavRecFormat_Size(laps, lapCount);
+	if ((meta != NULL) && (meta->identityKind == AP_NAVREC_IDENTITY_CUSTOM))
+		size += AP_NAVREC_HEADER_BYTES_V3 - AP_NAVREC_HEADER_BYTES;
+	return size;
+}
+
 static void AP_NavRecFormat_PutText(unsigned char *field, unsigned int fieldSize, const char *src)
 {
 	unsigned int n = 0;
@@ -832,7 +873,9 @@ static int AP_NavRecFormat_Write(void *buf, unsigned int cap, const struct AP_Na
 {
 	unsigned char *p = (unsigned char *)buf;
 	unsigned int   total;
-	unsigned int   dirAt = AP_NAVREC_HEADER_BYTES;
+	unsigned int   headerBytes;
+	unsigned int   version;
+	unsigned int   dirAt;
 	unsigned int   payloadAt;
 	unsigned int   i;
 
@@ -847,7 +890,12 @@ static int AP_NavRecFormat_Write(void *buf, unsigned int cap, const struct AP_Na
 			return AP_NAVREC_ERR_NODECOUNT;
 	}
 
-	total = AP_NavRecFormat_Size(laps, lapCount);
+	if ((meta->identityKind != AP_NAVREC_IDENTITY_RETAIL) && (meta->identityKind != AP_NAVREC_IDENTITY_CUSTOM))
+		return AP_NAVREC_ERR_HEADER_SHAPE;
+	version = (meta->identityKind == AP_NAVREC_IDENTITY_CUSTOM) ? AP_NAVREC_FORMAT_VERSION_V3 : AP_NAVREC_FORMAT_VERSION_V2;
+	headerBytes = (version == AP_NAVREC_FORMAT_VERSION_V3) ? AP_NAVREC_HEADER_BYTES_V3 : AP_NAVREC_HEADER_BYTES;
+	dirAt = headerBytes;
+	total = AP_NavRecFormat_SizeForMeta(meta, laps, lapCount);
 	if (total > cap)
 		return AP_NAVREC_ERR_CAPACITY;
 
@@ -857,8 +905,8 @@ static int AP_NavRecFormat_Write(void *buf, unsigned int cap, const struct AP_Na
 	p[1] = 'A';
 	p[2] = 'V';
 	p[3] = '2';
-	AP_NavRecFormat_PutU16(p + 0x04, AP_NAVREC_FORMAT_VERSION);
-	AP_NavRecFormat_PutU16(p + 0x06, AP_NAVREC_HEADER_BYTES);
+	AP_NavRecFormat_PutU16(p + 0x04, version);
+	AP_NavRecFormat_PutU16(p + 0x06, headerBytes);
 	AP_NavRecFormat_PutU32(p + 0x08, total);
 	AP_NavRecFormat_PutU32(p + 0x0C, (unsigned int)meta->levelId);
 	AP_NavRecFormat_PutText(p + 0x10, AP_NAVREC_CLIENTVER_FIELD, meta->clientVersion);
@@ -871,6 +919,12 @@ static int AP_NavRecFormat_Write(void *buf, unsigned int cap, const struct AP_Na
 	p[0x57] = 0;
 	AP_NavRecFormat_PutU32(p + 0x58, meta->trackKind);
 	AP_NavRecFormat_PutU32(p + 0x5C, 0);
+	if (version == AP_NAVREC_FORMAT_VERSION_V3)
+	{
+		p[0x60] = AP_NAVREC_IDENTITY_CUSTOM;
+		memcpy(p + 0x64, meta->trackUuid, AP_NAVREC_TRACK_UUID_BYTES);
+		AP_NavRecFormat_PutU32(p + 0x74, meta->navRevision);
+	}
 
 	payloadAt = dirAt + (AP_NAVREC_LAPDIR_BYTES * lapCount);
 
@@ -977,7 +1031,9 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	const unsigned char *p = (const unsigned char *)buf;
 	unsigned int         total;
 	unsigned int         lapCount;
-	unsigned int         dirAt = AP_NAVREC_HEADER_BYTES;
+	unsigned int         version;
+	unsigned int         headerBytes;
+	unsigned int         dirAt;
 	unsigned int         payloadFloor;
 	unsigned int         hashAt;
 	unsigned int         spanAt[AP_NAVREC_MAX_LAPS * 2];
@@ -995,11 +1051,15 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	if ((p[0] != 'N') || (p[1] != 'A') || (p[2] != 'V') || (p[3] != '2'))
 		return AP_NAVREC_ERR_MAGIC;
 
-	if (AP_NavRecFormat_GetU16(p + 0x04) != AP_NAVREC_FORMAT_VERSION)
+	version = AP_NavRecFormat_GetU16(p + 0x04);
+	if ((version != AP_NAVREC_FORMAT_VERSION_V2) && (version != AP_NAVREC_FORMAT_VERSION_V3))
 		return AP_NAVREC_ERR_VERSION;
 
-	if (AP_NavRecFormat_GetU16(p + 0x06) != AP_NAVREC_HEADER_BYTES)
+	headerBytes = AP_NavRecFormat_GetU16(p + 0x06);
+	if (((version == AP_NAVREC_FORMAT_VERSION_V2) && (headerBytes != AP_NAVREC_HEADER_BYTES)) ||
+	    ((version == AP_NAVREC_FORMAT_VERSION_V3) && (headerBytes != AP_NAVREC_HEADER_BYTES_V3)))
 		return AP_NAVREC_ERR_HEADER_SHAPE;
+	dirAt = headerBytes;
 	if (p[0x56] != AP_NAVREC_NODE_BYTES)
 		return AP_NAVREC_ERR_HEADER_SHAPE;
 
@@ -1020,7 +1080,7 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 		return AP_NAVREC_ERR_HASH;
 
 	memset(info, 0, sizeof *info);
-	info->formatVersion = AP_NAVREC_FORMAT_VERSION;
+	info->formatVersion = version;
 	info->totalSize = total;
 	info->levelId = (int)AP_NavRecFormat_GetU32(p + 0x0C);
 	memcpy(info->clientVersion, p + 0x10, AP_NAVREC_CLIENTVER_FIELD);
@@ -1032,6 +1092,14 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	info->shortcutTier = p[0x54];
 	info->trackKind = AP_NavRecFormat_GetU32(p + 0x58);
 	info->lapCount = lapCount;
+	if (version == AP_NAVREC_FORMAT_VERSION_V3)
+	{
+		if (p[0x60] != AP_NAVREC_IDENTITY_CUSTOM)
+			return AP_NAVREC_ERR_HEADER_SHAPE;
+		info->identityKind = AP_NAVREC_IDENTITY_CUSTOM;
+		memcpy(info->trackUuid, p + 0x64, AP_NAVREC_TRACK_UUID_BYTES);
+		info->navRevision = AP_NavRecFormat_GetU32(p + 0x74);
+	}
 
 	// Bounds first, for every lap, before a single byte of payload is read.
 	for (i = 0; i < lapCount; i++)

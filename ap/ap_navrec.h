@@ -56,4 +56,11 @@ void AP_NavRec_AfterCheckpointRestore(void);
 // one-name mapping without changing the projection/draw surface.
 void AP_NavRec_DrawBotNames(void);
 
+// Custom-track loader seam. A package owns a permanent 16-byte UUID and a
+// navigation compatibility revision. Set this before BOTS_InitNavPath for a
+// custom load and clear it before an ordinary retail load. The physical engine
+// level ID is deliberately not part of the identity.
+void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int navRevision);
+void AP_NavRec_ClearActiveCustomTrack(void);
+
 #endif // AP_NAVREC_H
