@@ -9,6 +9,7 @@
 #include "ap_author_ready.h"
 #include "ap_spawn.h"
 #include "ap_marker_model.h"  // STATIC_AP (the AP-logo marker, #124)
+#include "ap_box_model.h"     // AP_BoxModel_SpawnPos: the shared crate spawn transform
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
@@ -157,9 +158,13 @@ static void AP_AuthorSpawnMarker(struct GameTracker *gGT, int i)
 	if (modelID < 0)
 		return; // model not up yet; retried next frame, silently
 
-	pos.x = s_place[i].x;
-	pos.y = s_place[i].y;
-	pos.z = s_place[i].z;
+	// THE SAME TRANSFORM THE RUNTIME BOX USES (ap_box_model.c). A placement row
+	// is a ground anchor and a crate model's origin is its centre, so the marker
+	// is lifted by the marker model's own measured base offset -- which puts its
+	// lowest face on the anchor, exactly where the runtime crate's lowest face
+	// will be. Author mode therefore previews the shipped height rather than the
+	// half-buried one, without either half owning a private copy of the rule.
+	AP_BoxModel_SpawnPos(gGT->modelPtr[modelID], s_place[i].x, s_place[i].y, s_place[i].z, &pos);
 	rot.x = 0;
 	rot.y = s_place[i].rotY;
 	rot.z = 0;

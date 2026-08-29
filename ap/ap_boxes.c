@@ -354,9 +354,12 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 		return; // retried next frame once the level's models are up
 	}
 
-	pos.x = s_live[i].x;
-	pos.y = s_live[i].y;
-	pos.z = s_live[i].z;
+	// The authored row is a GROUND anchor (it is a kart position, and a kart's
+	// origin is its ground contact point), while a crate model's origin is its
+	// centre, so the row is passed through the shared spawn transform rather than
+	// copied into the matrix. Author-mode markers call the same helper, which is
+	// what makes a dropped box preview the height it will really stand at.
+	AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
 	rot.x = 0;
 	rot.y = s_live[i].rotY;
 	rot.z = 0;
@@ -674,15 +677,22 @@ int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
 
 		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
 			continue;
+
+		// The LIVE INSTANCE, not the authored row. The row is a ground anchor and
+		// the crate stands a measured lift above it (AP_BoxModel_SpawnPos), so
+		// testing against the row would leave the collision centre behind on the
+		// road while the model moved: the visible crate and the earnable check are
+		// not allowed to diverge, and reading the same matrix the renderer draws
+		// from is what makes that structural rather than remembered.
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue; // waiting for its model, or between a pool reset and a birth
+
 		if (!AP_BoxMap_SegmentWithinRadius(
-		        s_live[i].x, s_live[i].y, s_live[i].z,
+		        inst->matrix.t[0], inst->matrix.t[1], inst->matrix.t[2],
 		        oldX, oldY, oldZ,
 		        weaponInst->matrix.t[0], weaponInst->matrix.t[1],
 		        weaponInst->matrix.t[2], AP_BOX_HIT_RADIUS))
-			continue;
-
-		inst = AP_Spawn_Instance(s_live[i].spawn);
-		if (inst == 0)
 			continue;
 
 		AP_BoxBreak(gGT, i, inst);
@@ -719,19 +729,22 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
 			continue;
 
+		// The live instance for the same reason as the weapon-move path above:
+		// the collision centre is the visible centre, never the authored anchor
+		// the crate is lifted off.
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue; // waiting for its model, or between a pool reset and a birth
+
 		// Overflow-safe proximity (2026-08-13 REJECT fix-forward): the loop
 		// always sweeps all 15 slots regardless of distance, so a naive
 		// dx*dx+dy*dy+dz*dz in a plain int wrapped negative for a far box on a
 		// large track and broke it by mistake. AP_BoxMap_WithinRadius
 		// (ap_box_map.h) is the freestanding, harness-tested replacement.
-		if (!AP_BoxMap_WithinRadius(s_live[i].x, s_live[i].y, s_live[i].z,
+		if (!AP_BoxMap_WithinRadius(inst->matrix.t[0], inst->matrix.t[1], inst->matrix.t[2],
 		                            weaponInst->matrix.t[0], weaponInst->matrix.t[1],
 		                            weaponInst->matrix.t[2], radius))
 			continue;
-
-		inst = AP_Spawn_Instance(s_live[i].spawn);
-		if (inst == 0)
-			continue; // waiting for its model, or between a pool reset and a birth
 
 		AP_BoxBreak(gGT, i, inst);
 	}
