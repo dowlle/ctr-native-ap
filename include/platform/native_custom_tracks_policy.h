@@ -7,7 +7,7 @@
 // here so tools/test-custom-track-policy.c can pin the whole truth table out of
 // engine, with no disc, no display, no config file and no seed.
 //
-// EIGHT DECISIONS LIVE HERE.
+// NINE DECISIONS LIVE HERE.
 //
 // 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
 //    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
@@ -156,11 +156,79 @@
 //        fields are u32/void*, and the GPU tags carry 24-bit tokens, not
 //        truncated pointers.
 //
-//    RETAIL IS NOT RESIZED. The expansion applies only to a load the loader is
-//    actually serving the custom track for, so a retail track in a
-//    custom-tracks build keeps its retail arena byte for byte. That is why the
-//    predicate takes the serving flag rather than reading a build-time constant:
-//    the same binary races both, and only one of them has a reason to differ.
+//    WHICH LOADS GET THE FLOOR. Rung 1 gave it only to a load the loader was
+//    serving custom bytes for, on the argument that only a borrowed slot has a
+//    budget chosen for someone else's geometry. The 2026-08-29 run showed that
+//    argument was too narrow. The adventure hub (levelID 25) takes its arena
+//    from the ADVENTURE_ARENA branch of MainInit_GetPrimMemSize -- 0x1c000 =
+//    114,688 bytes, a constant, not the table -- and its worst frame in that
+//    run spent 106,324 of it, leaving 8,364 free. That is 93% of a budget the
+//    PS1 sized for PS1 draw pressure, and the native client draws more per
+//    frame than the PS1 build did.
+//
+//    8,364 free is below DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC (0x2700
+//    = 9,984), the largest reserve DrawLevelOvr1P_HasBucketPrimReserve asks
+//    for. What that does NOT establish is that any reserve check actually
+//    failed: the reserve is tested during terrain and that figure is measured
+//    after the sky, and a frame that DID fail a reserve abandons the rest of
+//    level rendering and therefore records a SMALLER spend than a frame that
+//    completed. The high-water instrument is structurally unable to answer the
+//    question it was built for, which is why decision 8's companion in
+//    platform/native_custom_tracks.c now counts refused reserves directly.
+//
+//    So the floor is widened on headroom, not on a proven exhaustion: every
+//    1P level load (numPlyrCurrGame == 1) gets it. 2P/3P/4P and the
+//    numPlyrCurrGame == 0 attract path keep their retail arenas, because
+//    nothing has been measured for them.
+//
+//    THE FOURTH CEILING, checked for the widening and asserted with the other
+//    three: MEMPACK has room for the floor on EVERY 1P load, not just the
+//    custom race. Any load that runs at all under CTR_NATIVE_MEMPACK_RETAIL_
+//    PRESSURE fits the retail window, 0x144e10 = 1,330,704 bytes, prim arenas
+//    included. A custom-tracks build replaces those arenas inside an 8 MiB
+//    pack (8,386,560 usable), so the worst conceivable 1P demand is the whole
+//    retail window plus both floors, 1,330,704 + 2,097,152 = 3,427,856, with
+//    4,958,704 spare. The custom race is the separate case rung 1 measured:
+//    5,418,356 free against a cost of 1,886,208.
+//
+//    The GPU-token ceiling does not compound across loads.
+//    MainFrame_RegisterGpuLinkRanges calls NativeGpuLinks_Reset() before it
+//    registers, so exactly six ranges are ever live and each level load starts
+//    the token space over -- widening the floor to every 1P load registers the
+//    same six ranges it always did, at the same sizes rung 1 checked.
+//
+//    RETAIL SIZING IS STILL UNTOUCHED WITH THE GUARD OFF. MainInit_GetPrimMemSize
+//    is ASM-verified and unmodified; the floor is applied after it, inside
+//    #ifdef CTR_CUSTOM_TRACKS, and CTR_CUSTOM_TRACKS is what selects the 8 MiB
+//    pack in the first place. A build without the guard allocates exactly the
+//    bytes retail allocates, for every level and every player count.
+//
+// 9. HOW MANY RENDERED QUADBLOCKS FIT. Decision 8 hands terrain a much larger
+//    arena, so DrawLevelOvr1P now runs further into a level's geometry before
+//    anything stops it. That makes a pre-existing unbounded write reachable.
+//
+//    DrawLevelOvr1P_AppendRenderedQuadBlock stores a pointer at the scratch
+//    cursor and advances it, with no end test. The cursor is seeded to
+//    sdata_static.quadBlocksRendered, which is struct QuadBlock *[0x100], and
+//    the next member of that struct is the GamepadSystem. Retail bounded this
+//    by arithmetic that no longer holds: the arena ran out first. Enlarge the
+//    arena and the 257th rendered quadblock in a bucket writes over the pad
+//    state instead.
+//
+//    The bound is the END OF THE ARRAY, not the 0x40 per-player stride. In 1P
+//    the base is &quadBlocksRendered[0] and retail lets that one list use all
+//    0x100 slots; clamping at 0x40 would refuse work retail does on every
+//    frame of every level. Split-screen bases at 0x40/0x80/0xC0 can still run
+//    into the next player's region exactly as retail does -- that is retail's
+//    own layout and this decision does not change it. What it stops is the
+//    write PAST the array, which is memory corruption in any build.
+//
+//    Two call sites, one predicate. The append asks for two slots, because the
+//    entry it is about to write must still leave room for the NULL terminator
+//    DrawLevelOvr1P_TerminateRenderedListCursor writes after the last entry;
+//    the terminator asks for one. Refusing at 0xFF entries rather than 0x100
+//    is the cost of keeping the terminator in bounds, and a bucket that
+//    renders 255 quadblocks has already lost the frame to the reserve checks.
 //
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
@@ -191,10 +259,23 @@
 #define CTR_CT_MAX_LEVELS  18
 #define CTR_CT_GROUP_SIZE  8
 
-// The primitive arena a served custom track gets, in bytes, in place of the
-// retail per-slot table value. See decision 8 for the measurements behind it
-// and the three ceilings it was checked against.
+// The primitive arena floor, in bytes, for a served custom track and for every
+// 1P level load. See decision 8 for the measurements behind it and the four
+// ceilings it was checked against.
 #define CTR_CT_PRIM_ARENA_BYTES 0x100000uL
+
+// The player count MainInit_GetPrimMemSize treats as a single-player level
+// load, and the only one decision 8 widens the floor to.
+#define CTR_CT_PRIM_ARENA_ONE_PLAYER 1
+
+// How many entries sdata_static.quadBlocksRendered holds. Decision 9 bounds
+// the append against the end of that array; tools/test-custom-track-load.c
+// asserts this against the engine's own declaration so the two cannot drift.
+#define CTR_CT_RENDERED_QUADBLOCK_SLOTS 0x100uL
+
+// How many slots an append has to see free: the entry itself, plus the one the
+// NULL terminator will need after it.
+#define CTR_CT_RENDERED_APPEND_SLOTS 2uL
 
 // Which half of a mode-pair a BIGFILE subfile slot is.
 enum CustomTrackSubfileRole
@@ -522,23 +603,59 @@ static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize
 	return ((unsigned long)(g - c) > primSize) ? 1 : 0;
 }
 
-// The frame's primitive arena size in bytes: the retail table's answer, unless
-// this load is the event race. Decision 8 above.
+// The frame's primitive arena size in bytes: what MainInit_GetPrimMemSize
+// computed, raised to CTR_CT_PRIM_ARENA_BYTES when this load qualifies for the
+// floor. Decision 8 above.
 //
-// `retailBytes` is what MainInit_GetPrimMemSize computed from
-// data.primMem_SizePerLEV_1P (or its 2P/4P siblings) for the borrowed slot, and
-// is returned unchanged for every load that is not the custom track's -- so a
-// retail race in a custom-tracks build is byte-for-byte unaffected.
+// `retailBytes` is the retail answer for this load -- a table lookup
+// (data.primMem_SizePerLEV_1P and its 2P/4P siblings) or one of the four
+// constants MainInit_GetPrimMemSize returns for the non-arcade cases.
 //
-// The expansion is a floor, not a replacement: if a slot's retail budget were
-// ever larger than CTR_CT_PRIM_ARENA_BYTES this returns the retail figure, so
-// the custom track can never be given LESS room than the slot it borrowed.
-static unsigned long CustomTrackPolicy_PrimArenaBytes(int servingCustomTrack, unsigned long retailBytes)
+// Two independent reasons to raise it, either one sufficient:
+//   servingCustomTrack -- the slot's budget was chosen for someone else's
+//     geometry, and the event track's sky alone exceeds what the table can
+//     express.
+//   numPlyrCurrGame == 1 -- measured headroom. The hub's worst frame sat at
+//     93% of a constant the PS1 chose, and a frame that crosses it loses the
+//     rest of level rendering silently.
+// Everything else keeps its retail bytes exactly: split-screen, the attract
+// path, and every load in a build without CTR_CUSTOM_TRACKS.
+//
+// The expansion is a floor, not a replacement: a load whose retail budget is
+// already larger than CTR_CT_PRIM_ARENA_BYTES keeps it, so no load can ever be
+// given LESS room than retail gave it.
+static unsigned long CustomTrackPolicy_PrimArenaBytes(int servingCustomTrack, int numPlyrCurrGame, unsigned long retailBytes)
 {
-	if (!servingCustomTrack)
+	if (!servingCustomTrack && (numPlyrCurrGame != CTR_CT_PRIM_ARENA_ONE_PLAYER))
 		return retailBytes;
 
 	return (retailBytes > CTR_CT_PRIM_ARENA_BYTES) ? retailBytes : CTR_CT_PRIM_ARENA_BYTES;
+}
+
+// Is there room for `slots` more entries of `slotBytes` each before the
+// rendered-quadblock list runs off the end of its array? Decision 9 above.
+//
+// `cursor` is the scratch cursor DrawLevelOvr1P_AppendRenderedQuadBlock is
+// about to write through and `listEnd` one past the last entry of
+// sdata_static.quadBlocksRendered, both passed as void * so this header stays
+// engine-free.
+//
+// Same shape and same edge behaviour as CustomTrackPolicy_PrimFits, for the
+// same reason: a cursor already at or past the end answers "no" rather than
+// computing a negative span, because a previous frame's bucket can leave it
+// there and this one must refuse rather than wrap. The comparison is >= rather
+// than > because `slots` already counts every entry the caller intends to
+// write, terminator included -- landing exactly on the end is the last legal
+// write, not one past it.
+static int CustomTrackPolicy_RenderedSlotsFit(const void *cursor, const void *listEnd, unsigned long slotBytes, unsigned long slots)
+{
+	const char *c = (const char *)cursor;
+	const char *e = (const char *)listEnd;
+
+	if ((c == NULL) || (e == NULL) || (c >= e))
+		return 0;
+
+	return ((unsigned long)(e - c) >= (slotBytes * slots)) ? 1 : 0;
 }
 
 #endif // CTR_CUSTOM_TRACKS

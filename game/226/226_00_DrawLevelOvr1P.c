@@ -202,6 +202,39 @@ CTR_STATIC_ASSERT(sizeof(struct OverlayRDATA_226_BucketSetupRecord) == 0x64);
 CTR_STATIC_ASSERT(sizeof(((struct OverlayRDATA_226 *)0)->scratchInitTable) == 0x60);
 CTR_STATIC_ASSERT(sizeof(((struct OverlayRDATA_226 *)0)->clipRecordJumpTable) == 0x60);
 
+#ifdef CTR_CUSTOM_TRACKS
+// Included here rather than at the top of the file on purpose. CTR_STATIC_ASSERT
+// builds its typedef name out of __LINE__, so anything added above the five
+// asserts renames all five, and this file has to stay byte-identical with the
+// guard off.
+#include <platform/native_custom_tracks.h>
+#include <platform/native_custom_tracks_policy.h>
+
+// One past the last entry of the rendered-quadblock array. Every base the
+// engine seeds the cursor with -- sdata_static.quadBlocksRendered for 1P, and
+// the &[0x40]/&[0x80]/&[0xC0] split-screen bases -- points into this one array,
+// so this is the bound that matters for all of them. Decision 9.
+static struct QuadBlock **DrawLevelOvr1P_RenderedListEnd(void)
+{
+	return &sdata_static.quadBlocksRendered[len(sdata_static.quadBlocksRendered)];
+}
+
+CTR_STATIC_ASSERT(len(sdata_static.quadBlocksRendered) == CTR_CT_RENDERED_QUADBLOCK_SLOTS);
+
+// A bucket's primitive reserve was refused, which means DrawLevelOvr1P is about
+// to return and leave the rest of this frame's level geometry undrawn. Recorded
+// where it happens because nothing downstream can see it: the caller gets void
+// and the frame's spend goes DOWN, not up.
+static void DrawLevelOvr1P_NoteBucketReserveRefused(const struct PrimMem *primMem, u32 reserve)
+{
+	u8 *curr = primMem->cursor;
+	u8 *end = primMem->end;
+
+	CustomTrackDiag_NoteReserveRefused((unsigned long)reserve + sDrawLevelOvr1P_PrimReserveBias,
+	                                   (curr <= end) ? (unsigned long)(end - curr) : 0uL);
+}
+#endif
+
 static void DrawLevelOvr1P_SetGridFaceSlot(const struct DrawLevelOvr1PScratchVertex *projected, int faceIndex);
 static int DrawLevelOvr1P_IsDeepestSubdivisionFrame(const struct DrawLevelOvr1PScratchVertex *projected);
 static void Ovr226_800a0d34_SetEntryGteAndCameraScratch(struct PushBuffer *pb);
@@ -7364,6 +7397,19 @@ static void DrawLevelOvr1P_AppendRenderedQuadBlock(struct QuadBlock *block)
 		return;
 	}
 
+#ifdef CTR_CUSTOM_TRACKS
+	// Retail bounded this by arithmetic rather than by a test: the primitive
+	// arena ran out long before a bucket could render 256 quadblocks. The
+	// measured-demand floor removes that accident, and the next member of
+	// sdata_static after this array is the GamepadSystem. Two slots, because the
+	// terminator still has to fit after the entry. Decision 9.
+	if (!CustomTrackPolicy_RenderedSlotsFit(renderedList, DrawLevelOvr1P_RenderedListEnd(), sizeof *renderedList, CTR_CT_RENDERED_APPEND_SLOTS))
+	{
+		CustomTrackDiag_NoteRenderedListFull();
+		return;
+	}
+#endif
+
 	*renderedList = block;
 	DrawLevelOvr1P_SetRenderedListCursor(renderedList + 1);
 }
@@ -7374,6 +7420,15 @@ static void DrawLevelOvr1P_TerminateRenderedListCursor(void)
 
 	if (renderedList != NULL)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		// The append above leaves a slot for this one, so the only way to arrive
+		// here with no room is a cursor the engine seeded past the array. Same
+		// predicate, one slot. Decision 9.
+		if (!CustomTrackPolicy_RenderedSlotsFit(renderedList, DrawLevelOvr1P_RenderedListEnd(), sizeof *renderedList, 1uL))
+		{
+			return;
+		}
+#endif
 		*renderedList = NULL;
 	}
 }
@@ -8030,6 +8085,9 @@ static int Ovr226_800a0ef4_DrawFullDynamicBspList(struct VisMemBspListNode *slot
 		{
 			if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC))
 			{
+#ifdef CTR_CUSTOM_TRACKS
+				DrawLevelOvr1P_NoteBucketReserveRefused(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC);
+#endif
 				return 0;
 			}
 
@@ -8134,6 +8192,9 @@ static int DrawLevelOvr1P_DrawSplitGroundListABspList(struct VisMemBspListNode *
 		{
 			if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT))
 			{
+#ifdef CTR_CUSTOM_TRACKS
+				DrawLevelOvr1P_NoteBucketReserveRefused(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT);
+#endif
 				return 0;
 			}
 
@@ -8260,6 +8321,9 @@ static int DrawLevelOvr1P_DrawNonWaterRenderedList(struct QuadBlock **renderedLi
 
 		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, reserve))
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			DrawLevelOvr1P_NoteBucketReserveRefused(primMem, reserve);
+#endif
 			return 0;
 		}
 
@@ -8390,6 +8454,9 @@ static int DrawLevelOvr1P_DrawBspListQuadBlocks(struct VisMemBspListNode *slot, 
 		{
 			if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, reserve))
 			{
+#ifdef CTR_CUSTOM_TRACKS
+				DrawLevelOvr1P_NoteBucketReserveRefused(primMem, reserve);
+#endif
 				return 0;
 			}
 
@@ -9071,6 +9138,9 @@ static int Ovr226_800a1e30_DrawWaterBspList(struct VisMemBspListNode *slot, stru
 		{
 			if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT))
 			{
+#ifdef CTR_CUSTOM_TRACKS
+				DrawLevelOvr1P_NoteBucketReserveRefused(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT);
+#endif
 				return 0;
 			}
 
@@ -9552,6 +9622,9 @@ static int Ovr226_800a2904_DrawWaterRenderedListWithDefaultHandler(struct QuadBl
 
 		if (!DrawLevelOvr1P_HasBucketPrimReserve(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT))
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			DrawLevelOvr1P_NoteBucketReserveRefused(primMem, DRAW_LEVEL_OVR1P_BUCKET_RESERVE_DEFAULT);
+#endif
 			return 0;
 		}
 

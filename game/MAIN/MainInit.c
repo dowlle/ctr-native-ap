@@ -159,28 +159,37 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 
 #ifdef CTR_CUSTOM_TRACKS
 	// MainInit_GetPrimMemSize is left alone deliberately -- it is an
-	// ASM-verified retail function and its answer for the borrowed slot stays
-	// exactly what retail computes. The custom track's arena is chosen HERE,
-	// after it, and only for a load the loader is actually serving, so a retail
-	// race in this same binary allocates the same bytes it always did.
+	// ASM-verified retail function and its answer stays exactly what retail
+	// computes. The floor is applied HERE, after it, so a build without
+	// CTR_CUSTOM_TRACKS allocates retail's bytes for every level and every
+	// player count.
 	//
-	// The retail table cannot express an arena this track can use: it is
-	// u8 << 10, ceiling 261,120 bytes, and this track's sky alone wants 310,464.
-	// Outside the table there is no such limit, which is the same argument the
-	// MEMPACK expansion already made for the level payload.
+	// Two reasons a load qualifies, and they are different arguments:
+	//
+	//   Serving the custom track. The retail table cannot express an arena this
+	//   track can use -- u8 << 10, ceiling 261,120 bytes, against a sky that
+	//   alone wants 310,464. Outside the table there is no such limit, which is
+	//   the same argument the MEMPACK expansion already made for the payload.
+	//
+	//   A 1P level load. Measured on 2026-08-29: the adventure hub's worst
+	//   frame spent 106,324 of the 114,688 bytes the ADVENTURE_ARENA branch
+	//   hands it, and a frame that crosses that line loses the rest of its
+	//   level geometry without saying so. See decision 8 in
+	//   native_custom_tracks_policy.h for the four ceilings the floor was
+	//   checked against, MEMPACK's included.
 	//
 	// All three facts the serving decision needs are committed before the
 	// ten-stage loader is armed (see tools/CUSTOM-TRACK-SPIKE.md), and this
 	// runs inside that machine, so asking here is safe.
 	{
 		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
-		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, (unsigned long)size);
+		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
 
 		if (chosen != (unsigned long)size)
 		{
-			CustomTrack_Log("[CustomTracks] primitive arena %d -> %lu bytes for this race "
-			                "(the borrowed slot's retail budget cannot hold this track)\n",
-			                size, chosen);
+			CustomTrack_Log("[CustomTracks] level %d primitive arena %d -> %lu bytes (%s)\n", (int)gGT->levelID, size, chosen,
+			                serving ? "the borrowed slot's retail budget cannot hold this track"
+			                        : "measured 1P headroom: the retail budget leaves too little for the frame's last writers");
 			size = (int)chosen;
 		}
 	}

@@ -848,29 +848,69 @@ static void test_prim_fits(void)
 
 static void test_prim_arena_bytes(void)
 {
-	const unsigned long retailSlot6 = 0x67uL << 10; // 105,472
+	const unsigned long retailSlot6 = 0x67uL << 10;  // 105,472
 	const unsigned long retailWidest = 0x6euL << 10; // 112,640, the table's largest real entry
+	const unsigned long retailHub = 0x1c000uL;       // 114,688, MainInit_GetPrimMemSize's ADVENTURE_ARENA branch
 
-	// A load that is not the event race is handed the retail figure untouched.
-	// This is the whole retail-identity argument: the same binary races both,
-	// and only the custom track's load differs.
-	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailSlot6) == retailSlot6, 1,
-	           "a retail load keeps the retail arena exactly");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailWidest) == retailWidest, 1,
-	           "including the table's widest entry");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(0, CTR_CT_PRIM_ARENA_BYTES + 1) == CTR_CT_PRIM_ARENA_BYTES + 1, 1,
+	// Split-screen and the attract path are handed the retail figure untouched.
+	// This is the retail-identity argument for everything the widening does NOT
+	// cover: nothing has been measured for those loads, so nothing changes.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 2, retailSlot6) == retailSlot6, 1,
+	           "a 2P load keeps the retail arena exactly");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 3, retailWidest) == retailWidest, 1,
+	           "so does 3P, including the table's widest entry");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 4, retailWidest) == retailWidest, 1, "and 4P");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 0, 0x25800uL) == 0x25800uL, 1,
+	           "and the numPlyrCurrGame == 0 attract path");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 2, CTR_CT_PRIM_ARENA_BYTES + 1) == CTR_CT_PRIM_ARENA_BYTES + 1, 1,
 	           "and a hypothetical huge one");
 
-	// The event race gets the measured arena.
-	expect_int(CustomTrackPolicy_PrimArenaBytes(1, retailSlot6) == CTR_CT_PRIM_ARENA_BYTES, 1,
-	           "the event race gets the measured arena");
+	// Every 1P level load gets the floor, whether or not a custom track is being
+	// served. This is the widening the hub measurement bought.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, retailHub) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "the adventure hub's 1P load gets the floor");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, retailSlot6) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "so does a retail 1P arcade race");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, 0x1e000uL) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "and the 1P intro-race constant");
 
-	// It is a FLOOR, not a replacement: a slot whose retail budget was already
-	// larger must not be shrunk by turning the feature on.
-	expect_int(CustomTrackPolicy_PrimArenaBytes(1, CTR_CT_PRIM_ARENA_BYTES + 4096) == CTR_CT_PRIM_ARENA_BYTES + 4096, 1,
-	           "a bigger retail arena is never shrunk");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(1, CTR_CT_PRIM_ARENA_BYTES) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	// The custom track's own reason still stands alone, independently of the
+	// player count, because its argument is the borrowed slot rather than
+	// measured headroom.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, 1, retailSlot6) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "the event race gets the measured arena");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, 2, retailSlot6) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "and would still get it at a player count the widening does not cover");
+
+	// It is a FLOOR, not a replacement: a load whose retail budget was already
+	// larger must not be shrunk by turning the feature on. Checked on both
+	// reasons, because either one alone reaches this branch.
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, 2, CTR_CT_PRIM_ARENA_BYTES + 4096) == CTR_CT_PRIM_ARENA_BYTES + 4096, 1,
+	           "a bigger retail arena is never shrunk for a served track");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, CTR_CT_PRIM_ARENA_BYTES + 4096) == CTR_CT_PRIM_ARENA_BYTES + 4096, 1,
+	           "nor for a 1P load");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, 1, CTR_CT_PRIM_ARENA_BYTES) == CTR_CT_PRIM_ARENA_BYTES, 1,
 	           "an exactly-equal arena is unchanged");
+
+	// --- what the hub measurement does and does not say ---------------------
+	{
+		// 2026-08-29 diagnostic run, levelID 25, retail budget 114,688.
+		const unsigned long hubWorstFrame = 106324uL;
+		const unsigned long hubFree = retailHub - hubWorstFrame; // 8,364
+		const unsigned long fullDynamicReserve = 0x2700uL;       // DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC
+
+		expect_int(hubFree == 8364uL, 1, "the hub's worst COMPLETED frame left 8,364 bytes");
+		expect_int(hubFree < fullDynamicReserve, 1,
+		           "less than the largest bucket reserve, so a frame in that state cannot take the full-dynamic path");
+
+		// What it does NOT establish, and the reason the refusal counter had to
+		// be added: the reserve is tested during terrain and this figure is
+		// sampled after the sky, and a frame that DID refuse abandons the rest
+		// of level rendering, so it spends LESS and never becomes the maximum.
+		// The high-water mark bounds completed frames only.
+		expect_int(CTR_CT_PRIM_ARENA_BYTES - hubWorstFrame > fullDynamicReserve * 90uL, 1,
+		           "the floor leaves the hub's measured worst frame room for ninety more full-dynamic buckets");
+	}
 
 	// --- the demand it was sized against -----------------------------------
 	{
@@ -898,6 +938,13 @@ static void test_prim_arena_bytes(void)
 		expect_int(registered < tokenBudget, 1, "both arenas plus OT and swapchain fit the token space");
 		expect_int(registered * 3 < tokenBudget, 1, "with room to spare three times over");
 
+		// The token ceiling does not compound across level loads:
+		// MainFrame_RegisterGpuLinkRanges calls NativeGpuLinks_Reset() first, so
+		// exactly these six ranges are ever live no matter how many loads the
+		// session has been through. Widening the floor to every 1P load
+		// registers the same six at the same sizes.
+		expect_int(6 <= 64, 1, "six live ranges against NATIVE_GPU_LINK_MAX_RANGES");
+
 		// MEMPACK, measured free during this race on the 8 MiB arena the
 		// custom-track build already selects.
 		{
@@ -907,7 +954,77 @@ static void test_prim_arena_bytes(void)
 			expect_int(cost < freeDuringRace, 1, "the expansion fits the free MEMPACK measured in a real race");
 			expect_int(cost * 2 < freeDuringRace, 1, "with more than half of it still free afterwards");
 		}
+
+		// The fourth ceiling, added for the 1P widening: MEMPACK has room on
+		// EVERY 1P load, not only the one race that was measured. Any load that
+		// runs at all under retail pressure fits the retail window whole, prim
+		// arenas included, so the worst conceivable demand under the guard is
+		// that window plus both floors -- an over-estimate, since it double
+		// counts the retail arenas the floor replaces.
+		{
+			const unsigned long retailWindow = 0x144e10uL;                   // CTR_NATIVE_MEMPACK_SIZE, retail pressure
+			const unsigned long expandedPack = (8uL * 1024uL * 1024uL) - 0x800uL; // the pack CTR_CUSTOM_TRACKS selects
+			const unsigned long worstDemand = retailWindow + 2uL * CTR_CT_PRIM_ARENA_BYTES;
+
+			expect_int(retailWindow == 1330704uL, 1, "the retail window is 1,330,704 bytes");
+			expect_int(expandedPack == 8386560uL, 1, "and the expanded pack 8,386,560");
+			expect_int(worstDemand == 3427856uL, 1, "so the worst 1P demand is 3,427,856");
+			expect_int(worstDemand < expandedPack, 1, "which fits the expanded pack");
+			expect_int(expandedPack - worstDemand > 2uL * CTR_CT_PRIM_ARENA_BYTES, 1,
+			           "with more spare than the floor itself costs");
+		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 12. How many rendered quadblocks fit.
+// ---------------------------------------------------------------------------
+
+static void test_rendered_slots_fit(void)
+{
+	// A stand-in for sdata_static.quadBlocksRendered. The engine's own array is
+	// asserted against CTR_CT_RENDERED_QUADBLOCK_SLOTS at its declaration in
+	// game/226/226_00_DrawLevelOvr1P.c, so the length used here is the length
+	// the call sites use.
+	void *slots[CTR_CT_RENDERED_QUADBLOCK_SLOTS];
+	void **base = &slots[0];
+	void **end = &slots[CTR_CT_RENDERED_QUADBLOCK_SLOTS];
+	const unsigned long slotBytes = sizeof *base;
+
+	expect_int(CTR_CT_RENDERED_QUADBLOCK_SLOTS == 0x100uL, 1, "the array holds 256 entries");
+	expect_int(CTR_CT_RENDERED_APPEND_SLOTS == 2uL, 1, "an append needs the entry plus the terminator's slot");
+
+	// An empty list has room for both call sites.
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(base, end, slotBytes, CTR_CT_RENDERED_APPEND_SLOTS), 1,
+	           "an empty list can be appended to");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(base, end, slotBytes, 1uL), 1, "and terminated");
+
+	// The exact edges, which is what the mutation check moves.
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(&slots[0xFD], end, slotBytes, CTR_CT_RENDERED_APPEND_SLOTS), 1,
+	           "the 254th entry still leaves the terminator a slot");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(&slots[0xFE], end, slotBytes, CTR_CT_RENDERED_APPEND_SLOTS), 1,
+	           "so does the 255th, which fills the array exactly");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(&slots[0xFF], end, slotBytes, CTR_CT_RENDERED_APPEND_SLOTS), 0,
+	           "the 256th is refused, because its terminator would land past the array");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(&slots[0xFF], end, slotBytes, 1uL), 1,
+	           "but the last slot can still hold the terminator");
+
+	// Retail's own behaviour, which is what a corrupting write looks like from
+	// the outside: the cursor sitting exactly at the end, or past it.
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(end, end, slotBytes, 1uL), 0, "a cursor at the end writes nothing");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(end + 4, end, slotBytes, 1uL), 0, "nor does one already past it");
+
+	// Null on either side answers "no room" rather than computing a span.
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(NULL, end, slotBytes, 1uL), 0, "a null cursor fits nothing");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(base, NULL, slotBytes, 1uL), 0, "nor does a null end");
+
+	// The split-screen bases point into the same array, which is why the bound
+	// is the array's end and not the 0x40 per-player stride: clamping at the
+	// stride would refuse work retail does on ordinary 1P frames.
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(&slots[0x40], end, slotBytes, 0xC0uL), 1,
+	           "player 1's base can still reach the end of the array, as retail lets it");
+	expect_int(CustomTrackPolicy_RenderedSlotsFit(base, end, slotBytes, 0x100uL), 1,
+	           "and 1P can use all 256 slots, which a per-player clamp would have refused");
 }
 
 int main(void)
@@ -924,6 +1041,7 @@ int main(void)
 	test_st1_entry_present();
 	test_prim_fits();
 	test_prim_arena_bytes();
+	test_rendered_slots_fit();
 	test_fork_consistency();
 
 	if (g_failures != 0)

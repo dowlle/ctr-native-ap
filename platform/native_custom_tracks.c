@@ -595,4 +595,153 @@ int CustomTrack_RaceFeatureEnabled(void)
 	return (cfg->raceEnabled && cfg->contentVerified) ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Per-load render accounting. See native_custom_tracks.h for why the rung-1
+// high-water line could not answer the question it was built for.
+
+struct CustomTrackDiagLoad
+{
+	int levelID;
+	int active;    // a frame has been seen for this levelID
+	int frameOpen; // between BeginFrame and NoteFrameSpend, which is the only
+	               // window whose drops belong to this load. Split-screen never
+	               // opens it, so a 3P race cannot leave its refusals in the
+	               // report of the 1P load before it.
+
+	unsigned long capacityBytes;
+	unsigned long frames;
+
+	// The frame with the largest post-sky spend, and its breakdown.
+	unsigned long worstSpend;
+	unsigned long worstBeforeGeom;
+	unsigned long worstAfterGeom;
+	int worstPrimCount;
+	int worstLeavesDrawn;
+
+	// Events a completed frame cannot show.
+	unsigned long reserveRefusals;
+	unsigned long tightestReserve; // what the bucket wanted, on the closest refusal
+	unsigned long tightestFree;    // what was left when it wanted it
+	unsigned long renderedListFull;
+	unsigned long bspRecordsDropped;
+};
+
+static struct CustomTrackDiagLoad sCustomTrackDiag;
+
+static void CustomTrackDiag_Begin(int levelID, unsigned long capacityBytes)
+{
+	memset(&sCustomTrackDiag, 0, sizeof sCustomTrackDiag);
+	sCustomTrackDiag.levelID = levelID;
+	sCustomTrackDiag.capacityBytes = capacityBytes;
+	sCustomTrackDiag.active = 1;
+}
+
+void CustomTrackDiag_FlushLevelLoad(void)
+{
+	struct CustomTrackDiagLoad *d = &sCustomTrackDiag;
+	unsigned long freeBytes;
+
+	if (!d->active || d->frames == 0)
+	{
+		d->active = 0;
+		return;
+	}
+
+	freeBytes = (d->capacityBytes > d->worstSpend) ? (d->capacityBytes - d->worstSpend) : 0;
+
+	CustomTrack_Log("[CustomTracks] level %d over %lu frames: prim arena worst frame %lu/%lu bytes "
+	                "(other draws %lu, terrain +%lu, sky +%lu, %lu free, %d primitives across %d leaves); "
+	                "reserve refused %lu, rendered list full %lu, bsp records dropped %lu\n",
+	                d->levelID, d->frames, d->worstSpend, d->capacityBytes, d->worstBeforeGeom,
+	                d->worstAfterGeom - d->worstBeforeGeom, d->worstSpend - d->worstAfterGeom, freeBytes, d->worstPrimCount,
+	                d->worstLeavesDrawn, d->reserveRefusals, d->renderedListFull, d->bspRecordsDropped);
+
+	if (d->reserveRefusals != 0)
+	{
+		// Loud and separate, because this is the prefix cut itself rather than a
+		// figure that hints at it: the frame stopped drawing level geometry
+		// partway through and told the player nothing.
+		CustomTrack_Log("[CustomTracks] level %d LOST LEVEL GEOMETRY: a bucket reserve was refused %lu times across %lu "
+		                "frames, closest %lu bytes wanted with %lu left, and DrawLevelOvr1P abandoned the rest of each "
+		                "of those frames\n",
+		                d->levelID, d->reserveRefusals, d->frames, d->tightestReserve, d->tightestFree);
+	}
+
+	if (d->renderedListFull != 0)
+	{
+		CustomTrack_Log("[CustomTracks] level %d rendered-quadblock list hit the end of its %lu slots %lu times; "
+		                "those appends were refused rather than written past the array\n",
+		                d->levelID, CTR_CT_RENDERED_QUADBLOCK_SLOTS, d->renderedListFull);
+	}
+
+	d->active = 0;
+}
+
+void CustomTrackDiag_BeginFrame(int levelID, unsigned long capacityBytes)
+{
+	struct CustomTrackDiagLoad *d = &sCustomTrackDiag;
+
+	// levelID keys the load rather than the arena size rung 1 used, because two
+	// different levels can share a budget and one level can be loaded twice in a
+	// session -- both of which merged into a single report before. Capacity is
+	// still part of the key so a same-level reload with a different arena starts
+	// a fresh report.
+	if (!d->active || d->levelID != levelID || d->capacityBytes != capacityBytes)
+	{
+		CustomTrackDiag_FlushLevelLoad();
+		CustomTrackDiag_Begin(levelID, capacityBytes);
+	}
+
+	d->frames++;
+	d->frameOpen = 1;
+}
+
+void CustomTrackDiag_NoteFrameSpend(unsigned long beforeGeomBytes, unsigned long afterGeomBytes, unsigned long afterSkyBytes, int primCount,
+                                    int leavesDrawn)
+{
+	struct CustomTrackDiagLoad *d = &sCustomTrackDiag;
+
+	d->frameOpen = 0;
+
+	if (!d->active || afterSkyBytes <= d->worstSpend)
+		return;
+
+	d->worstSpend = afterSkyBytes;
+	d->worstBeforeGeom = beforeGeomBytes;
+	d->worstAfterGeom = afterGeomBytes;
+	d->worstPrimCount = primCount;
+	d->worstLeavesDrawn = leavesDrawn;
+}
+
+void CustomTrackDiag_NoteReserveRefused(unsigned long reserveBytes, unsigned long freeBytes)
+{
+	struct CustomTrackDiagLoad *d = &sCustomTrackDiag;
+
+	if (!d->frameOpen)
+		return;
+
+	d->reserveRefusals++;
+
+	// Keep the refusal that came closest to fitting. The smallest shortfall is
+	// the one that says how much headroom this load actually needed, and it is
+	// the figure a later sizing decision would be based on.
+	if (d->reserveRefusals == 1 || (reserveBytes - freeBytes) < (d->tightestReserve - d->tightestFree))
+	{
+		d->tightestReserve = reserveBytes;
+		d->tightestFree = freeBytes;
+	}
+}
+
+void CustomTrackDiag_NoteRenderedListFull(void)
+{
+	if (sCustomTrackDiag.frameOpen)
+		sCustomTrackDiag.renderedListFull++;
+}
+
+void CustomTrackDiag_NoteBspRecordDropped(void)
+{
+	if (sCustomTrackDiag.frameOpen)
+		sCustomTrackDiag.bspRecordsDropped++;
+}
+
 #endif // CTR_CUSTOM_TRACKS

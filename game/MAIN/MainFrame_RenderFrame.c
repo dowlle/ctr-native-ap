@@ -17,40 +17,6 @@
 volatile int gCtrDebugSkipLevelGeometry = 0;
 #endif
 
-#ifdef CTR_CUSTOM_TRACKS
-// Reports the frame that came closest to running the primitive arena dry, once
-// per level load. Tracked rather than printed live because the interesting
-// frame is not the first one -- the load's opening frames draw an almost empty
-// world -- and because a per-frame line at 60 Hz is not evidence, it is noise.
-//
-// `beforeGeom` is what every earlier writer in the frame already took, which is
-// the number that decides whether terrain had room. `capacity` is the whole
-// arena; the usable ceiling is 0x100 below it.
-static void RenderAllLevelGeometry_NotePrimSpend(unsigned long capacity, unsigned long beforeGeom, unsigned long afterGeom,
-                                                 unsigned long afterSky, int leavesDrawn, int terrainPrims)
-{
-	static unsigned long worstSpend = 0;
-	static unsigned long reportedFor = 0;
-
-	// A new arena size means a new level load; start the search again.
-	if (reportedFor != capacity)
-	{
-		reportedFor = capacity;
-		worstSpend = 0;
-	}
-
-	if (afterSky <= worstSpend)
-		return;
-
-	worstSpend = afterSky;
-
-	CustomTrack_Log("[CustomTracks] prim arena high-water %lu/%lu bytes: other draws %lu, terrain +%lu (%d prims, "
-	                "%d leaves), sky +%lu, %lu free\n",
-	                afterSky, capacity, beforeGeom, afterGeom - beforeGeom, terrainPrims, leavesDrawn,
-	                afterSky - afterGeom, (capacity > afterSky) ? (capacity - afterSky) : 0);
-}
-#endif
-
 void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 {
 	struct Level *lev = gGT->level1;
@@ -1000,6 +966,13 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		RenderLists_PreInit();
 		gGT->bspLeafsDrawn = 0;
 
+#ifdef CTR_CUSTOM_TRACKS
+		// Opened before the BSP walk, not before the terrain, because
+		// RenderLists_Init1P2P is where records get dropped and those drops
+		// belong to this frame's accounting too.
+		CustomTrackDiag_BeginFrame((int)gGT->levelID, gGT->backBuffer->primMem.capacityBytes);
+#endif
+
 		gGT->bspLeafsDrawn += RenderLists_Init1P2P(ptr_mesh_info->bspRoot, gGT->visMem1->visLeafList[0], pushBuffer, (u32)&gGT->LevRenderLists[0],
 		                                           gGT->visMem1->bspList[0], (char)numPlyrCurrGame);
 
@@ -1015,9 +988,10 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		// -- and it says nothing at all. That silence is why the first report of
 		// a black floor could not be told apart from a dozen other causes.
 		//
-		// Reported once per level load, for the worst frame seen rather than
-		// the first, because the first frames of a load are not the steady
-		// state the player describes.
+		// The spend below is the worst COMPLETED frame, which is why it cannot
+		// stand alone: a frame that ran out spends less than one that did not,
+		// so exhaustion hides from this number. The refusal counter next to it
+		// in the summary is what actually answers the question.
 		{
 			struct PrimMem *pm = &gGT->backBuffer->primMem;
 			unsigned long before = (unsigned long)((char *)pm->cursor - (char *)pm->start);
@@ -1031,8 +1005,7 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 			DrawSky_Full(level1->ptr_skybox, pushBuffer, pm);
 			afterSky = (unsigned long)((char *)pm->cursor - (char *)pm->start);
 
-			RenderAllLevelGeometry_NotePrimSpend(pm->capacityBytes, before, afterGeom, afterSky, gGT->bspLeafsDrawn,
-			                                     pm->primitiveCount);
+			CustomTrackDiag_NoteFrameSpend(before, afterGeom, afterSky, pm->primitiveCount, gGT->bspLeafsDrawn);
 		}
 #else
 		DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, &gGT->backBuffer->primMem, gGT->visMem1->visFaceList[0],

@@ -131,6 +131,20 @@ static void expect_log_silent(const char *what)
 	g_failures++;
 }
 
+static int log_line_count(void)
+{
+	int lines = 0;
+	const char *p;
+
+	for (p = g_log; *p != '\0'; p++)
+	{
+		if (*p == '\n')
+			lines++;
+	}
+
+	return lines;
+}
+
 // ---------------------------------------------------------------------------
 // Scenario plumbing.
 // ---------------------------------------------------------------------------
@@ -1215,18 +1229,22 @@ static void test_prim_arena_for_served_load(void)
 	retailPad = event_ctx();
 	retailPad.adventureCupActive = 0; // cupID deliberately left stale
 
-	// The event race: served, and expanded.
+	// The event race: served, and expanded on the SERVING term alone. Asked at a
+	// player count the 1P widening does not cover, so the two reasons for the
+	// floor stay separable and this assertion still pins the loader seam rather
+	// than the widening.
 	expect_int(CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID), 1,
 	           "the event race is a served load");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(1, retailArena) == CTR_CT_PRIM_ARENA_BYTES, 1,
-	           "so it gets the measured arena");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(1, 2, retailArena) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "so it gets the measured arena on the serving term alone");
 
 	// A retail pad to the very same host slot in the same armed session: not
-	// served, so not expanded. Same slot, same session, different answer.
+	// served, so the serving term expands nothing. Same slot, same session,
+	// different answer.
 	expect_int(CustomTrack_ServingLoad(retailPad.levelID, retailPad.adventureCupActive, retailPad.cupID), 0,
 	           "a retail pad to the host slot is not a served load");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailArena) == retailArena, 1,
-	           "so it keeps the retail arena byte for byte");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 2, retailArena) == retailArena, 1,
+	           "so at a player count the widening skips it keeps the retail arena byte for byte");
 
 	// The two questions agree: the load that gets custom bytes is the load that
 	// gets the expanded arena.
@@ -1237,12 +1255,332 @@ static void test_prim_arena_for_served_load(void)
 	           CustomTrack_ServingLoad(retailPad.levelID, retailPad.adventureCupActive, retailPad.cupID),
 	           "and they agree on the retail pad too");
 
-	// With the feature disarmed nothing is expanded, whatever the load says.
+	// With the feature disarmed the serving term expands nothing, whatever the
+	// load says.
 	CustomTrack_ClearSeedDescriptor();
 	expect_int(CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID), 0,
 	           "a withdrawn descriptor serves no load");
-	expect_int(CustomTrackPolicy_PrimArenaBytes(0, retailArena) == retailArena, 1,
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 2, retailArena) == retailArena, 1,
 	           "and expands no arena");
+}
+
+// ---------------------------------------------------------------------------
+// The floor on a RETAIL level load, and retail sizing left alone.
+// ---------------------------------------------------------------------------
+//
+// The widening's whole point is that it applies to loads the loader knows
+// nothing about, so it has to be shown working in a session where the loader is
+// armed for a completely different track AND in a session where it is disarmed
+// entirely. It runs the retail sizing rule itself -- the same branch structure
+// MainInit_GetPrimMemSize uses -- rather than a hand-copied number, so a change
+// to that function's constants shows up here as a changed input, not a silently
+// stale expectation.
+static unsigned long retail_prim_arena_bytes(int numPlyr, int levelID, int adventureArena)
+{
+	// The retail 1P table, game/zGlobal_DATA.c. Only the entries this test
+	// asks about are transcribed; the rest are zero, which the bound below
+	// never reaches.
+	static const unsigned char sizePerLev1P[] = {0x5f, 0x67, 0x67, 0x5f, 0x6e, 0x5f, 0x67, 0x67, 0x67, 0x5f, 0x67, 0x5f, 0x5f, 0x5f,
+	                                             0x5f, 0x67, 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x00, 0x00, 0x00};
+
+	if (numPlyr != 1)
+		return 0; // this helper speaks only for the 1P branch
+
+	if (adventureArena)
+		return 0x1c000uL;
+
+	if ((unsigned)(levelID - 30) < 9u) // INTRO_RACE_TODAY .. INTRO_OXIDE
+		return 0x1e000uL;
+
+	if (levelID < 25) // GEM_STONE_VALLEY
+		return (unsigned long)sizePerLev1P[levelID] << 10;
+
+	return 0x17c00uL;
+}
+
+static void test_prim_arena_for_retail_load(void)
+{
+	const unsigned long hubRetail = retail_prim_arena_bytes(1, 25, 1);
+	const unsigned long arcadeRetail = retail_prim_arena_bytes(1, 6, 0);
+	struct CustomTrackLoadContext hubLoad;
+
+	// The figures the retail rule produces for the two loads under test, pinned
+	// so a change to MainInit_GetPrimMemSize's constants is visible here.
+	expect_int(hubRetail == 114688uL, 1, "the hub's retail arena is 114,688 bytes");
+	expect_int(arcadeRetail == 105472uL, 1, "and a levelID-6 1P race's is 105,472");
+
+	// A session armed for the event track. The hub is a completely different
+	// level and the loader serves it nothing, yet it still gets the floor --
+	// which is exactly what the widening is.
+	arm_with(good_descriptor());
+
+	hubLoad = event_ctx();
+	hubLoad.levelID = 25;
+
+	expect_int(CustomTrack_ServingLoad(hubLoad.levelID, hubLoad.adventureCupActive, hubLoad.cupID), 0,
+	           "the hub is not a served load, even in an armed session");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, hubRetail) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "and it gets the floor anyway, on the 1P term");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, arcadeRetail) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "so does a retail 1P arcade race in the same session");
+
+	// Disarmed: the loader is doing nothing at all and the floor still applies,
+	// because it does not depend on the loader.
+	CustomTrack_ClearSeedDescriptor();
+	expect_int(CustomTrack_ServingLoad(hubLoad.levelID, hubLoad.adventureCupActive, hubLoad.cupID), 0,
+	           "a withdrawn descriptor serves the hub nothing");
+	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 1, hubRetail) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "and the hub still gets the floor");
+
+	// RETAIL SIZING IS UNTOUCHED. Every load the widening does not cover keeps
+	// the exact bytes the retail rule computed, in the same armed session.
+	{
+		int levelID;
+
+		for (levelID = 0; levelID < 25; levelID++)
+		{
+			unsigned long retail = retail_prim_arena_bytes(1, levelID, 0);
+
+			if (CustomTrackPolicy_PrimArenaBytes(0, 2, retail) != retail)
+			{
+				expect_int(0, 1, "a 2P load kept its retail arena");
+				break;
+			}
+			if (CustomTrackPolicy_PrimArenaBytes(0, 4, retail) != retail)
+			{
+				expect_int(0, 1, "a 4P load kept its retail arena");
+				break;
+			}
+		}
+		expect_int(levelID, 25, "all 25 arcade slots keep retail sizing outside 1P");
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The rendered-quadblock list stops at the end of its array.
+// ---------------------------------------------------------------------------
+//
+// The engine's own array length is tied to CTR_CT_RENDERED_QUADBLOCK_SLOTS by a
+// CTR_STATIC_ASSERT next to the bound in game/226/226_00_DrawLevelOvr1P.c, so
+// drift is a build failure rather than something this harness has to catch.
+// What it pins here is the BEHAVIOUR of the two call sites: that the pair of
+// predicate calls the engine makes stops writing at the array's end, and that
+// the same loop without them writes into what follows.
+//
+// The layout mirrors sdata_static: the array, and immediately after it the
+// GamepadSystem, which is what a 257th rendered quadblock actually overwrites.
+struct RenderedListImage
+{
+	void *slots[CTR_CT_RENDERED_QUADBLOCK_SLOTS];
+	unsigned char neighbour[512];
+};
+
+// The bounded call site, in the order the engine runs it: append until the
+// bucket is done, then terminate.
+static unsigned long rendered_list_append_bounded(struct RenderedListImage *image, unsigned long appends)
+{
+	void **cursor = &image->slots[0];
+	void **end = &image->slots[CTR_CT_RENDERED_QUADBLOCK_SLOTS];
+	unsigned long written = 0;
+	unsigned long i;
+
+	for (i = 0; i < appends; i++)
+	{
+		if (!CustomTrackPolicy_RenderedSlotsFit(cursor, end, sizeof *cursor, CTR_CT_RENDERED_APPEND_SLOTS))
+			continue;
+
+		*cursor = (void *)(uintptr_t)(i + 1);
+		cursor++;
+		written++;
+	}
+
+	if (CustomTrackPolicy_RenderedSlotsFit(cursor, end, sizeof *cursor, 1uL))
+		*cursor = NULL;
+
+	return written;
+}
+
+// The same loop with the bound removed: what this code did before, and what
+// retail's arena arithmetic used to make unreachable.
+static unsigned long rendered_list_append_unbounded(struct RenderedListImage *image, unsigned long appends)
+{
+	void **cursor = &image->slots[0];
+	unsigned long i;
+
+	for (i = 0; i < appends; i++)
+	{
+		*cursor = (void *)(uintptr_t)(i + 1);
+		cursor++;
+	}
+
+	*cursor = NULL;
+	return appends;
+}
+
+static int neighbour_is_clean(const struct RenderedListImage *image)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof image->neighbour; i++)
+	{
+		if (image->neighbour[i] != 0xAA)
+			return 0;
+	}
+
+	return 1;
+}
+
+static void test_rendered_quadblock_bound(void)
+{
+	struct RenderedListImage image;
+	unsigned long written;
+
+	// A bucket that renders fewer than the array holds is untouched by the
+	// bound: every append lands, and the terminator lands after it. This is the
+	// retail-behaviour half, and it covers every frame of every retail level.
+	memset(&image, 0, sizeof image);
+	memset(image.neighbour, 0xAA, sizeof image.neighbour);
+	written = rendered_list_append_bounded(&image, 200uL);
+	expect_int(written == 200uL, 1, "200 rendered quadblocks all land");
+	expect_int(image.slots[199] == (void *)(uintptr_t)200uL, 1, "the last one is where it should be");
+	expect_int(image.slots[200] == NULL, 1, "and the terminator follows it");
+	expect_int(neighbour_is_clean(&image), 1, "nothing was written past the array");
+
+	// Exactly full: 255 entries plus the terminator fills all 256 slots. One
+	// less and the bound would be refusing work retail does.
+	memset(&image, 0, sizeof image);
+	memset(image.neighbour, 0xAA, sizeof image.neighbour);
+	written = rendered_list_append_bounded(&image, 255uL);
+	expect_int(written == 255uL, 1, "255 rendered quadblocks all land");
+	expect_int(image.slots[254] == (void *)(uintptr_t)255uL, 1, "the 255th is the last entry");
+	expect_int(image.slots[255] == NULL, 1, "and the terminator takes the final slot exactly");
+	expect_int(neighbour_is_clean(&image), 1, "still nothing past the array");
+
+	// Past the array: the appends are refused and the neighbour survives.
+	memset(&image, 0, sizeof image);
+	memset(image.neighbour, 0xAA, sizeof image.neighbour);
+	written = rendered_list_append_bounded(&image, 400uL);
+	expect_int(written == 255uL, 1, "400 rendered quadblocks stop at 255");
+	expect_int(image.slots[255] == NULL, 1, "the terminator still lands in the last slot");
+	expect_int(neighbour_is_clean(&image), 1, "and the array's neighbour is untouched");
+
+	// The same loop without the bound writes past the array and into the
+	// neighbour. That is the corruption the bound exists for, shown rather than
+	// asserted about. 300 rather than 400 only because the stand-in neighbour
+	// here is 512 bytes and the real one is a whole GamepadSystem.
+	memset(&image, 0, sizeof image);
+	memset(image.neighbour, 0xAA, sizeof image.neighbour);
+	rendered_list_append_unbounded(&image, 300uL);
+	expect_int(neighbour_is_clean(&image), 0, "unbounded, the neighbour IS overwritten");
+	expect_int(image.neighbour[0] != 0xAA, 1, "starting at its very first byte");
+}
+
+// ---------------------------------------------------------------------------
+// The per-load render report says one thing per load.
+// ---------------------------------------------------------------------------
+//
+// Rung 1 printed on every new per-load maximum -- 101 lines in one session --
+// and keyed the load on the arena size, so two levels sharing a budget merged
+// into one report. This drives the real accumulator (it is compiled into this
+// harness with the rest of platform/native_custom_tracks.c) and pins the two
+// things that fixed: the line count, and that the counters a completed frame
+// cannot show reach the report.
+static void feed_frames(int levelID, unsigned long capacity, int frames, unsigned long spendPerFrame)
+{
+	int i;
+
+	for (i = 0; i < frames; i++)
+	{
+		CustomTrackDiag_BeginFrame(levelID, capacity);
+		CustomTrackDiag_NoteFrameSpend(spendPerFrame / 2uL, (spendPerFrame * 3uL) / 4uL, spendPerFrame + (unsigned long)i, 100 + i, 40);
+	}
+}
+
+static void test_render_report_is_one_line_per_load(void)
+{
+	const unsigned long hubCapacity = 0x1c000uL;
+
+	// A quiet load of 600 frames, then a level change. The change is what emits,
+	// so exactly one line appears and it names the level that just ended.
+	CAPTURING({
+		feed_frames(25, hubCapacity, 600, 90000uL);
+		CustomTrackDiag_BeginFrame(6, CTR_CT_PRIM_ARENA_BYTES);
+		CustomTrackDiag_NoteFrameSpend(0uL, 0uL, 1uL, 0, 0);
+	});
+	expect_int(log_line_count(), 1, "600 quiet frames produce exactly one line");
+	expect_log_contains("level 25 over 600 frames", "and it names the load that ended and its frame count");
+	expect_log_contains("reserve refused 0, rendered list full 0, bsp records dropped 0",
+	                    "with all three drop counters at zero");
+
+	// Two DIFFERENT levels that share an arena size are two loads, not one. Rung
+	// 1 keyed the report on the arena size alone, so a hub-to-hub move -- and
+	// under the floor every 1P load has the same capacity -- merged into a
+	// single report.
+	CustomTrackDiag_FlushLevelLoad(); // close the level-6 load opened above
+	CAPTURING({
+		feed_frames(25, CTR_CT_PRIM_ARENA_BYTES, 5, 90000uL);
+		feed_frames(26, CTR_CT_PRIM_ARENA_BYTES, 5, 90000uL);
+		CustomTrackDiag_FlushLevelLoad();
+	});
+	expect_int(log_line_count(), 2, "two levels sharing an arena size report separately");
+	expect_log_contains("level 25 over 5 frames", "the first load is named");
+	expect_log_contains("level 26 over 5 frames", "and so is the second");
+
+	// Set the accumulator back up for the assertions below.
+	CAPTURING({
+		CustomTrackDiag_BeginFrame(6, CTR_CT_PRIM_ARENA_BYTES);
+		CustomTrackDiag_NoteFrameSpend(0uL, 0uL, 1uL, 0, 0);
+	});
+
+	// Flushing the load that is still open emits its own single line, and
+	// flushing again says nothing: a load is reported once.
+	CAPTURING(CustomTrackDiag_FlushLevelLoad());
+	expect_int(log_line_count(), 1, "the open load flushes as one line");
+	expect_log_contains("level 6 over 1 frames", "naming the load that was in flight");
+
+	CAPTURING(CustomTrackDiag_FlushLevelLoad());
+	expect_log_silent("a second flush of the same load says nothing");
+
+	// A load that refused reserves reports the count AND a loud second line
+	// carrying the closest refusal, because that is the prefix cut itself.
+	CAPTURING({
+		CustomTrackDiag_BeginFrame(25, hubCapacity);
+		CustomTrackDiag_NoteReserveRefused(9984uL, 8000uL); // 1,984 short
+		CustomTrackDiag_NoteReserveRefused(6656uL, 6000uL); // 656 short: the closest
+		CustomTrackDiag_NoteRenderedListFull();
+		CustomTrackDiag_NoteBspRecordDropped();
+		CustomTrackDiag_NoteBspRecordDropped();
+		CustomTrackDiag_NoteFrameSpend(1000uL, 2000uL, 3000uL, 7, 3);
+		CustomTrackDiag_FlushLevelLoad();
+	});
+	expect_int(log_line_count(), 3, "a load with drops reports the summary plus two loud lines");
+	expect_log_contains("reserve refused 2, rendered list full 1, bsp records dropped 2",
+	                    "the summary carries all three counters");
+	expect_log_contains("LOST LEVEL GEOMETRY: a bucket reserve was refused 2 times across 1 frames",
+	                    "the loud line names the prefix cut");
+	expect_log_contains("closest 6656 bytes wanted with 6000 left", "and reports the CLOSEST refusal, not the first");
+	expect_log_contains("rendered-quadblock list hit the end", "the bound reports itself too");
+
+	// Counters raised BETWEEN this load's frames belong to no frame of it and
+	// are discarded. That is what keeps a split-screen race, which never opens a
+	// frame here, out of the report of the 1P load it interleaves with: the load
+	// stays open the whole time, so nothing resets these counters on its own.
+	CAPTURING({
+		CustomTrackDiag_BeginFrame(25, hubCapacity);
+		CustomTrackDiag_NoteFrameSpend(1uL, 2uL, 3uL, 1, 1);
+
+		CustomTrackDiag_NoteReserveRefused(9984uL, 0uL); // outside any open frame
+		CustomTrackDiag_NoteBspRecordDropped();
+		CustomTrackDiag_NoteRenderedListFull();
+
+		CustomTrackDiag_BeginFrame(25, hubCapacity);
+		CustomTrackDiag_NoteFrameSpend(1uL, 2uL, 4uL, 1, 1);
+		CustomTrackDiag_FlushLevelLoad();
+	});
+	expect_int(log_line_count(), 1, "and the load still reports as one line");
+	expect_log_contains("level 25 over 2 frames", "with both of its own frames counted");
+	expect_log_contains("reserve refused 0, rendered list full 0, bsp records dropped 0",
+	                    "drops outside an open frame reach no report");
 }
 
 int main(void)
@@ -1280,6 +1618,9 @@ int main(void)
 	test_absent_camera_path();
 	test_sky_primitive_budget();
 	test_prim_arena_for_served_load();
+	test_prim_arena_for_retail_load();
+	test_rendered_quadblock_bound();
+	test_render_report_is_one_line_per_load();
 
 	if (g_failures != 0)
 	{

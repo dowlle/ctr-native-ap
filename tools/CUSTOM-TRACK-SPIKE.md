@@ -22,13 +22,21 @@ Does: load a verified custom track for the event race only, guard the
 custom-track crashes the engine has on the render path, on its two race cameras
 and on its per-level primitive budget, expand the MEMPACK arena so a >2 MiB
 track fits, size the frame's primitive arena from measured demand instead of the
-borrowed slot's retail table, wire the Purple Gem Cup destination to a single race, make the
-AP-box gate on that race a deliberate answer, and correct the cup leg counter
-for a one-leg cup.
+borrowed slot's retail table on every 1P load, bound the rendered-quadblock list
+that a bigger arena makes reachable, report one render summary per level load
+with the three drop counters a high-water mark cannot show, wire the Purple Gem
+Cup destination to a single race, make the AP-box gate on that race a deliberate
+answer, and correct the cup leg counter for a one-leg cup.
 
 Does not: read anything from slot_data (rung 2b replaces the config parse with
 it), supply AP-box or CTR-letter **placement** for the custom track, handle
-relic races on it, or load the track's music (`.sca`).
+relic races on it, load the track's music (`.sca`), size split-screen or attract
+loads (nothing has been measured for them), bound
+`RenderLists_PushChild`'s 51-record drop (counted, not clamped — see
+[the rendered-quadblock bound](#the-rendered-quadblock-bound)), or claim the hub
+black patches are fixed. The hub floor is widened on measured **headroom**; the
+run that follows this rung is what says whether the hub was crossing its budget
+at all.
 
 ## Configuration
 
@@ -470,9 +478,15 @@ argument the [MEMPACK](#mempack) expansion already made applies here.
 
 `MainInit_PrimMem` now takes the retail figure from `MainInit_GetPrimMemSize` --
 which is ASM-verified and deliberately untouched -- and raises it to
-`CTR_CT_PRIM_ARENA_BYTES` (1 MiB) **only for a load the loader is actually
-serving the custom track for**. A retail race in the same binary allocates
-exactly the bytes it always did.
+`CTR_CT_PRIM_ARENA_BYTES` (1 MiB) for a load that qualifies. Two independent
+reasons qualify a load, and either one is enough:
+
+- **the loader is serving the custom track for it**, because the borrowed slot's
+  budget was chosen for someone else's geometry, and
+- **it is a 1P level load** (`numPlyrCurrGame == 1`), on measured headroom.
+
+Split-screen, the `numPlyrCurrGame == 0` attract path, and every load in a build
+without `CTR_CUSTOM_TRACKS` allocate exactly the bytes retail allocates.
 
 1 MiB is measured, not chosen:
 
@@ -483,7 +497,7 @@ exactly the bytes it always did.
 | both at once, which cannot actually happen | 807,168 |
 | `CTR_CT_PRIM_ARENA_BYTES` | **1,048,576** |
 
-Three ceilings were checked rather than assumed, and each is asserted in
+Four ceilings were checked rather than assumed, and each is asserted in
 `tools/test-custom-track-policy.c`:
 
 - **GPU link tokens.** Ranges are handed tokens counting *down* from `0x00f00000`
@@ -496,6 +510,19 @@ Three ceilings were checked rather than assumed, and each is asserted in
 - **No 16-bit primitive offsets anywhere downstream.** `PrimMem`'s own fields are
   `u32`/`void *`, and the GPU tags carry 24-bit *tokens* rather than truncated
   pointers, so nothing narrows an address as the arena grows.
+- **MEMPACK on *every* 1P load**, not only the one race that was measured. Any
+  load that runs at all under retail pressure fits the retail window whole
+  (`0x144e10` = 1,330,704 bytes), prim arenas included. A custom-tracks build
+  replaces those arenas inside an 8 MiB pack (8,386,560 usable), so the worst
+  conceivable 1P demand is that window plus both floors — 3,427,856 bytes, with
+  4,958,704 spare. The figure over-counts, because it does not subtract the
+  retail arenas the floor replaces.
+
+The GPU-token ceiling does **not** compound across level loads.
+`MainFrame_RegisterGpuLinkRanges` calls `NativeGpuLinks_Reset()` before it
+registers, so exactly six ranges are ever live and each load starts the token
+space over. Widening the floor to every 1P load registers the same six ranges at
+the same sizes.
 
 The expansion is a **floor, not a replacement**: a slot whose retail budget was
 already larger keeps it, so turning the feature on can never give a custom track
@@ -504,6 +531,26 @@ less room than the slot it borrowed.
 With the arena sized to the demand, the clamps become what they should have been
 from the start — a safety net for a track that exceeds even this, not the
 operative path.
+
+#### What the hub measurement does and does not establish
+
+The 2026-08-29 diagnostic run put the adventure hub (levelID 25, retail budget
+`0x1c000` = 114,688 bytes) at a worst frame of 106,324 bytes, leaving 8,364 —
+93% spent, against a constant the PS1 chose for PS1 draw pressure. 8,364 is less
+than `DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC` (`0x2700` = 9,984), the
+largest reserve `DrawLevelOvr1P_HasBucketPrimReserve` asks for.
+
+That is **headroom evidence, not exhaustion evidence**, and the difference
+matters. The reserve is tested during terrain while the figure is sampled after
+the sky; and more importantly a frame that *did* refuse a reserve abandons the
+rest of level rendering, so it spends **less** than a frame that completed and
+never becomes the maximum. The high-water mark is structurally unable to show
+the failure it was built to show. That is why the report now counts refusals
+directly — see [the per-load render report](#the-per-load-render-report).
+
+So the floor is widened on headroom. Whether the hub was actually crossing its
+budget is a question the next run answers, not one this rung claims to have
+settled.
 
 ### Why this only appeared after the camera fix
 
@@ -536,26 +583,78 @@ what made the first runtime question about the sky clamp unanswerable.
 `AP_LogLine` is bound by prototype, the way every other game-side AP call site
 does it, so the loader stays linkable in a clean non-AP build.
 
-### The arena high-water report
+### The per-load render report
 
-`RenderAllLevelGeometry` samples `primMem->cursor` three times — before the
-terrain, after it, and after the sky — and reports the **worst frame of the
-level load**, once, through the same sink:
+`RenderAllLevelGeometry` opens a frame's accounting before the BSP walk and
+closes it after the sky, sampling `primMem->cursor` three times — before the
+terrain, after it, and after the sky. One line is emitted **per level load**,
+when the level changes, through `CustomTrack_Log`:
 
 ```
-[CustomTracks] prim arena high-water N/CAP bytes: other draws A, terrain +B
-               (P prims, L leaves), sky +C, F free
+[CustomTracks] level L over N frames: prim arena worst frame W/CAP bytes
+               (other draws A, terrain +B, sky +C, F free, P primitives across
+               E leaves); reserve refused R, rendered list full U, bsp records
+               dropped D
 ```
 
-`other draws` is the load-bearing number: terrain is the 22nd of the frame's
-primitive writers and the sky is the 23rd, so both live on whatever the HUD, the
-weather, the karts, the crates, the tires and the shadows left behind.
+`other draws` is the load-bearing arena number: terrain is the 22nd of the
+frame's primitive writers and the sky is the 23rd, so both live on whatever the
+HUD, the weather, the karts, the crates, the tires and the shadows left behind.
 
-The worst frame is reported rather than the first, because a load's opening
-frames draw an almost empty world, and one line per load rather than per frame
-because 60 lines a second is not evidence. It exists because `DrawLevelOvr1P`'s
-own failure is completely silent, which is what made a black floor impossible to
-tell apart from a dozen other causes.
+The three counters at the end are what the rung-1 version was missing. The
+high-water mark reports the worst **completed** frame, and a frame that ran the
+arena dry completes *less* work and therefore spends *less*, so exhaustion hides
+from it. Each counter is recorded where it happens:
+
+| counter | where | what it means |
+|---|---|---|
+| `reserve refused` | `DrawLevelOvr1P`'s six `HasBucketPrimReserve` failure sites | the prefix cut itself: the frame stopped drawing level geometry partway through |
+| `rendered list full` | `DrawLevelOvr1P_AppendRenderedQuadBlock` | the rendered-quadblock bound refused an append that retail would have written past the array |
+| `bsp records dropped` | `RenderLists_PushChild` | the 51-record scratch stack was full and a whole subtree was never walked |
+
+A non-zero `reserve refused` also emits its own loud line naming the load, the
+frame count, and the *closest* refusal — the reserve that was wanted and the
+bytes that were left — because the smallest shortfall is the figure a later
+sizing decision would be based on. A non-zero `rendered list full` emits one
+too.
+
+Rung 1 printed on every new per-load maximum, which was 101 lines in one
+session, keyed the load on the arena size (so two levels sharing a budget merged
+into one report), and still could not answer the question. This version prints
+once per load, keys on `levelID` **and** capacity, and counts the three events
+that a completed frame cannot show. Counting is scoped to the window between
+`CustomTrackDiag_BeginFrame` and `CustomTrackDiag_NoteFrameSpend`, which
+split-screen never opens, so a 3P race cannot leave its refusals in the report
+of the 1P load before it.
+
+### The rendered-quadblock bound
+
+`DrawLevelOvr1P_AppendRenderedQuadBlock` stored a pointer at the scratch cursor
+and advanced it with **no end test**. The cursor is seeded to
+`sdata_static.quadBlocksRendered`, which is `struct QuadBlock *[0x100]`, and the
+next member of that struct is the `GamepadSystem`. Retail bounded this by
+arithmetic rather than by a test: the primitive arena ran out first. The floor
+above removes that accident, so the bound had to become explicit **before** the
+arena was widened, not after.
+
+The bound is the **end of the array**, not the `0x40` per-player stride. In 1P
+the base is `&quadBlocksRendered[0]` and retail lets that one list use all 256
+slots, so clamping at the stride would refuse work retail does on ordinary
+frames. Split-screen bases at `0x40`/`0x80`/`0xC0` can still run into the next
+player's region exactly as retail does — that is retail's own layout, and this
+does not change it. What it stops is the write *past* the array.
+
+Two call sites, one predicate (`CustomTrackPolicy_RenderedSlotsFit`). The append
+asks for two slots, because the entry it is about to write must leave room for
+the `NULL` terminator that follows the last one; the terminator asks for one.
+The array's length is tied to `CTR_CT_RENDERED_QUADBLOCK_SLOTS` by a
+`CTR_STATIC_ASSERT` beside the bound, so drift is a build failure.
+
+`RenderLists_PushChild`'s silent 51-record drop was audited alongside it and is
+**orthogonal to the arena**: the BSP walk runs before any primitive is written,
+so the floor neither helps nor hurts it. It is counted rather than bounded,
+because dropping a subtree is a competing explanation for missing geometry and
+the honest next step is to find out whether it happens at all.
 
 ### Siblings checked
 
@@ -760,9 +859,42 @@ on: that `CustomTrack_ServingLoad` — what `MainInit_PrimMem` asks — and
 answer for the same load, so the bytes a race is served and the arena it is
 given can never disagree. It checks the event race and a retail pad to the very
 same host slot in one armed session, and that a withdrawn descriptor expands
-nothing. `test-custom-track-policy` pins the arena decision itself: retail loads
-keep their exact figure, the expansion is a floor rather than a replacement, and
-the three ceilings above hold as arithmetic.
+nothing. Those assertions all ask at a player count the 1P widening does not
+cover, so the serving term stays separately load-bearing.
+
+The 1P widening has its own case in `test-custom-track-load`, because the point
+of it is that it applies to loads the loader knows nothing about. It runs the
+retail sizing rule itself — the same branch structure `MainInit_GetPrimMemSize`
+uses, so a change to that function's constants shows up as a changed input
+rather than a stale expectation — and asserts that the hub gets the floor both
+in a session armed for a completely different track *and* in a disarmed one,
+while all 25 arcade slots keep retail sizing at 2P and 4P.
+
+`test-custom-track-policy` pins the arena decision itself: split-screen and the
+attract path keep their exact figure, every 1P load gets the floor, the
+expansion is a floor rather than a replacement on **both** reasons, the four
+ceilings above hold as arithmetic, and the hub measurement is recorded together
+with what it does not establish.
+
+The rendered-quadblock bound is pinned twice.
+`test-custom-track-policy` pins `CustomTrackPolicy_RenderedSlotsFit` itself:
+the 254th and 255th entries fit, the 256th is refused because its terminator
+would land past the array, the last slot still takes a terminator, a cursor at
+or past the end fits nothing, and both split-screen and 1P can still reach the
+end of the array — the assertion that would fail if the bound had been put at
+the `0x40` stride. `test-custom-track-load` drives the two call sites over an
+array with a canary behind it, in the layout `sdata_static` actually has, and
+asserts that 200 and 255 appends land untouched, that 400 stop at 255 with the
+canary clean, and that the same loop *without* the bound overwrites the canary
+from its first byte.
+
+Every one of these is mutation-checked. Reverting the sizing predicate to its
+rung-1 form turns three assertions red in each harness; moving the floor to 2P
+turns four red in the policy harness and eight in the loader harness; dropping
+the append's second slot, moving the fit comparison from `>=` to `>`, or
+changing the array length by one each turn assertions red in both. The array
+length is additionally tied to the engine's own declaration by a
+`CTR_STATIC_ASSERT`, so that last mutation is a **build failure** as well.
 
 ## Guard-off identity
 
@@ -779,23 +911,41 @@ The count is **thirteen** typedefs in a non-AP build, measured against
 `CTR_STATIC_ASSERT`s of their own near the top, which is why two `#include`
 blocks shift seven names. The arena-sizing change added `#include` blocks to
 `game/MAIN/MainInit.c` and `game/MAIN/MainFrame_RenderFrame.c` and did **not**
-move the count at all: neither file contains a `CTR_STATIC_ASSERT`, and
-`__LINE__` shifts are confined to the file they occur in, so its guard-off
-output is byte-identical to the previous head in both configurations. An AP
-build additionally shows the
-`ap/ap_seedcfg.cpp` custom-tracks parse itself, which is deliberate and
-documented under [Lifecycle](#lifecycle): a guard-off AP build still parses the
-block so its verifier stays correct about displacement.
+move the count: neither file contains a `CTR_STATIC_ASSERT`, and `__LINE__`
+shifts are confined to the file they occur in. The 1P widening added `#include`
+blocks to two files that **do** carry them —
+`game/226/226_00_DrawLevelOvr1P.c` (five) and `game/RenderLevel/RenderLists.c`
+(one) — and did not move the count either, because in both files the block is
+placed **below** the asserts for exactly that reason. There is a comment saying
+so at each site. An AP build additionally shows the `ap/ap_seedcfg.cpp`
+custom-tracks parse itself, which is deliberate and documented under
+[Lifecycle](#lifecycle): a guard-off AP build still parses the block so its
+verifier stays correct about displacement.
 
 The number that matters is the other one: **zero** non-static-assert lines
 differ, in both the AP and non-AP configurations, at every step.
 
-To reproduce, preprocess `main.c` with `cc -E -P` and the guard-off flags in this
-tree and in a worktree at `origin/main`, normalising `CTR_NATIVE_BUILD_ID` and
-`CTR_NATIVE_VERSION` (they embed the git hash and would otherwise differ), then
-diff. A whole-binary comparison additionally requires both trees to be clean at
-the same commit, since a dirty tree makes the build ID longer and shifts every
-address.
+To reproduce, preprocess `main.c` with `cc -E` and the guard-off flags in this
+tree and at the commit being compared against, normalising `CTR_NATIVE_BUILD_ID`
+and `CTR_NATIVE_VERSION` (they embed the git hash and would otherwise differ),
+then diff and filter out `# NNN "file"` line markers.
+
+**Do not compare the linked binaries.** `CTR_SPLIT_DEBUG` strips the debug info
+into a `.debug` sidecar and stamps the binary with a `.gnu_debuglink` carrying
+that sidecar's CRC, so the shipped binary changes whenever a line number moves
+even though no instruction did. Compare the *object* instead, compiled with
+`-g0` so line numbering cannot reach it:
+
+```
+cc -c -m32 -msse -g0 -O3 -DNDEBUG -std=gnu99 -O2 -DBUILD=926 -DCTR_INTERNAL \
+   -DCTR_NATIVE -DCTR_NATIVE_BUILD_ID='"pinned"' -DCTR_NATIVE_VERSION='"pinned"' \
+   -I include -I <builddir>/generated -I <builddir>/externals/SDL/include-revision \
+   -I externals/SDL/include main.c -o /tmp/off.o
+```
+
+Run it with and without `-DCTR_AP`, at both commits, and `sha256sum` the four
+objects. For the 1P widening those objects are byte-identical to the previous
+head in both configurations.
 
 ## Caveats
 

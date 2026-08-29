@@ -166,6 +166,51 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 // that reaches ctr-ap.log.
 void CustomTrack_Log(const char *fmt, ...);
 
+// ---------------------------------------------------------------------------
+// Per-load render accounting.
+//
+// Rung 1 printed a line on every new per-load maximum. That was 101 lines in
+// one session and it still could not answer the question it was built for: a
+// frame that ran the arena dry abandons the rest of level rendering, so it
+// spends LESS than a frame that completed and never becomes the maximum. The
+// accumulator below keeps the high-water mark, adds the three events that a
+// completed frame cannot show, and emits ONE line per level load.
+//
+// Everything here is a plain counter written from the render path and read once
+// per load. No allocation, no formatting, nothing that costs a frame.
+
+// A bucket's primitive reserve was refused, so DrawLevelOvr1P returned and the
+// rest of this frame's level geometry was not drawn. `reserveBytes` is what the
+// bucket asked for, `freeBytes` what the arena had left. This is the direct
+// evidence for the prefix cut; the high-water mark alone is not.
+void CustomTrackDiag_NoteReserveRefused(unsigned long reserveBytes, unsigned long freeBytes);
+
+// The rendered-quadblock list reached the end of its array and an append was
+// refused. Decision 9. Retail would have written past the array here.
+void CustomTrackDiag_NoteRenderedListFull(void);
+
+// RenderLists_PushChild dropped a BSP record because the 51-record scratch
+// stack was full, so a whole subtree was never walked. Independent of the
+// primitive arena and a competing explanation for missing geometry, which is
+// why it is counted next to the arena figures rather than assumed away.
+void CustomTrackDiag_NoteBspRecordDropped(void);
+
+// Open a frame's accounting. Called from RenderAllLevelGeometry BEFORE the BSP
+// walk, so that everything the frame drops -- BSP records included -- lands in
+// the right load's counters. A `levelID` or arena size different from the load
+// in progress flushes that load's summary first.
+void CustomTrackDiag_BeginFrame(int levelID, unsigned long capacityBytes);
+
+// Close it, with the arena cursor sampled before the terrain, after it and
+// after the sky. `primCount` is PrimMem::primitiveCount at the sky sample --
+// everything the frame has emitted, not the terrain's share alone.
+void CustomTrackDiag_NoteFrameSpend(unsigned long beforeGeomBytes, unsigned long afterGeomBytes, unsigned long afterSkyBytes, int primCount,
+                                    int leavesDrawn);
+
+// Emit the summary for the load in progress and forget it. Safe to call when no
+// frames have been seen, in which case it does nothing.
+void CustomTrackDiag_FlushLevelLoad(void);
+
 #endif // CTR_CUSTOM_TRACKS
 
 #endif // NATIVE_CUSTOM_TRACKS_H
