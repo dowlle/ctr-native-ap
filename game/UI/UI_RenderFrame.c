@@ -896,6 +896,11 @@ void UI_RenderFrame_Racing()
 	// with the hub passes, so the feed still ticks exactly once per frame.
 	AP_FeedDrawRace();
 
+	// Community AI identity: the loaded NAV2 contributor is projected above
+	// every bot currently driving that recording. Self-gates on recorded-lap
+	// playback, a non-empty sanitized name, 1P, unpaused and unfinished race.
+	AP_NavRec_DrawBotNames();
+
 	// Box placement author mode (#182): one status line while the mode is on.
 	// Self-gates on the "Box Author Mode" option, so this is a call and a
 	// compare for everyone else. Drawn after the feed so the authoring

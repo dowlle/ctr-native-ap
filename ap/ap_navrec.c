@@ -8,6 +8,7 @@
 
 #include "ap_navrec.h"
 #include "ap_navrec_format.h"
+#include "ap_navrec_label_logic.h"
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
 #include "ap_version.h"             // CTR_AP_VERSION
 #include "platform/native_config.h" // g_config.navRecord / navUseRecorded / navDriverName
@@ -146,6 +147,7 @@ static short s_navrecCharacterId = -1;
 // Read only by the savestate restore path.
 static int s_navrecLanesLive;
 static int s_navrecLanesLevel = -1;
+static char s_navrecDriverName[AP_NAVREC_NAME_FIELD + 1];
 
 // ============================================================================
 // Small helpers
@@ -799,6 +801,12 @@ static int AP_NavRec_TryLoadFile(const char *path, int levelID)
 		return 0;
 	}
 
+	// Read() has already applied the format's printable-ASCII/length sanitizer.
+	// Retain the exact accepted identity beside the live lanes so no draw path
+	// ever reopens or reparses a community file.
+	memset(s_navrecDriverName, 0, sizeof s_navrecDriverName);
+	memcpy(s_navrecDriverName, info.driverName, strlen(info.driverName));
+
 	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
 	{
 		if ((unsigned int)lane < info.lapCount)
@@ -859,6 +867,10 @@ static int AP_NavRec_LoadForLevel(int levelID)
 	if (!g_config.navUseRecorded)
 		return 0;
 
+	// A failed reload must not leave the previous track's contributor painted
+	// above bots now driving retail lanes.
+	s_navrecDriverName[0] = '\0';
+
 	highest = AP_NavRec_HighestIndex(levelID);
 	if (highest == 0)
 		return 0;
@@ -913,6 +925,7 @@ void AP_NavRec_AfterBotsInit(void)
 
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
+	s_navrecDriverName[0] = '\0';
 
 	if (!g_config.navUseRecorded)
 		return;
@@ -971,6 +984,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// at lanes that may be blank.
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
+	s_navrecDriverName[0] = '\0';
 
 	if (sdata->gGT->level1 == NULL)
 	{
@@ -983,6 +997,84 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	BOTS_SetGlobalNavData(0);
 
 	AP_LogLine("[AP NAVREC] restore: no usable recording, nav pointers rebuilt from the level\n");
+}
+
+// ============================================================================
+// Community-driver labels
+// ============================================================================
+
+// Penguin-MODSK's Bot_Trackrom proves this presentation shape on PS1: project
+// a point above the kart through the 1P ViewProj matrix, hide it behind/very
+// near the camera, and shrink FONT_SMALL in six depth bands. Native uses the
+// same engine projection and font path, with explicit clipping and a shadow so
+// pale tracks do not erase a white username.
+void AP_NavRec_DrawBotNames(void)
+{
+	struct GameTracker *gGT;
+	MATRIX *view;
+	int firstBot;
+	int totalDrivers;
+	int i;
+	int oldWidth;
+
+	if (!s_navrecLanesLive || (s_navrecDriverName[0] == '\0'))
+		return;
+	if ((sdata == NULL) || ((gGT = sdata->gGT) == NULL))
+		return;
+	if ((gGT->numPlyrCurrGame != 1) || ((gGT->gameMode1 & PAUSE_ALL) != 0))
+		return;
+	if ((gGT->drivers[0] == NULL) || ((gGT->drivers[0]->actionsFlagSet & ACTION_RACE_FINISHED) != 0))
+		return;
+
+	firstBot = (int)(unsigned char)gGT->numPlyrCurrGame;
+	totalDrivers = firstBot + (int)(unsigned char)gGT->numBotsNextGame;
+	if (totalDrivers > 8)
+		totalDrivers = 8;
+
+	view = &gGT->pushBuffer[0].matrix_ViewProj;
+	oldWidth = data.font_charPixWidth[FONT_SMALL];
+
+	for (i = firstBot; i < totalDrivers; i++)
+	{
+		struct Driver *bot = gGT->drivers[i];
+		SVECTOR world;
+		s16 screen[2];
+		u32 flag;
+		s32 depth;
+		int width;
+
+		if ((bot == NULL) || (bot->instSelf == NULL) || (bot->invisibleTimer != 0))
+			continue;
+		if ((bot->actionsFlagSet & ACTION_RACE_FINISHED) != 0)
+			continue;
+
+		world.vx = (s16)(bot->posCurr.x >> 8);
+		world.vy = (s16)((bot->posCurr.y >> 8) + 75);
+		world.vz = (s16)(bot->posCurr.z >> 8);
+		world.pad = 0;
+
+		gte_SetRotMatrix(view);
+		gte_SetTransMatrix(view);
+		CTR_GteLoadSV0(&world);
+		gte_rtps();
+		CTR_GteStoreSXY(screen);
+		gte_stsz(&depth);
+		gte_stflg(&flag);
+
+		width = AP_NavRec_LabelWidthForDepth((int)depth);
+		if ((width == 0) || ((flag & 0x40000u) != 0))
+			continue;
+		if ((screen[0] < -32) || (screen[0] > 544) || (screen[1] < -12) || (screen[1] > 228))
+			continue;
+
+		data.font_charPixWidth[FONT_SMALL] = (s16)width;
+		DecalFont_DrawLine(s_navrecDriverName, screen[0] + 1, screen[1] - 3,
+		                   FONT_SMALL, JUSTIFY_CENTER | BLACK);
+		DecalFont_DrawLine(s_navrecDriverName, screen[0], screen[1] - 4,
+		                   FONT_SMALL, JUSTIFY_CENTER | WHITE);
+	}
+
+	data.font_charPixWidth[FONT_SMALL] = (s16)oldWidth;
 }
 
 // ============================================================================

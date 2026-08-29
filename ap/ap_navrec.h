@@ -50,4 +50,10 @@ void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID);
 // back to the level's own nav data when it cannot.
 void AP_NavRec_AfterCheckpointRestore(void);
 
+// Draw the sanitized contributor name above every bot currently using the
+// loaded community recording. The 0.2.0 playback path gives the whole field
+// one contributor's three lanes; the later per-bot loader will replace this
+// one-name mapping without changing the projection/draw surface.
+void AP_NavRec_DrawBotNames(void);
+
 #endif // AP_NAVREC_H
