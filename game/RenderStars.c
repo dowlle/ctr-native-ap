@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 CTR_STATIC_ASSERT(sizeof(TILE_1) == 0x0C);
 CTR_STATIC_ASSERT(offsetof(TILE_1, tag) == 0x00);
 CTR_STATIC_ASSERT(offsetof(TILE_1, r0) == 0x04);
@@ -175,6 +179,26 @@ void RenderStars(struct PushBuffer *pb, struct PrimMem *primMem, struct Stars *s
 			gteFlag = CFC2(31);
 			sxy = MFC2(14);
 
+#ifdef CTR_CUSTOM_TRACKS
+			// Same class as the DrawSky clamp, and unbounded for the same
+			// reason: starIndex comes from the level file (lev->stars.numStars,
+			// via MainInit.c) and retail's own values are small -- the only two
+			// arcade tracks with a star field ask for 300, about 3.5% of their
+			// budgets. Nothing clamps the field on the way in, and the count is
+			// read through a u16, so a negative s16 in a custom LEV would ask
+			// for up to 65,535 stars. The event track sets 0 and never reaches
+			// this loop; the bound is here because this is the other half of
+			// the same hole, not because this track opens it.
+			//
+			// The draw-mode packet after the loop is why the reserve is a
+			// TILE_1 plus a CtrGpuDrawModePacket: stopping with room for only
+			// the star would leave the packet to overrun instead.
+			if (!CustomTrackPolicy_PrimFits(prim, sizeof(TILE_1) + sizeof(struct CtrGpuDrawModePacket), primMem->guardEnd))
+			{
+				break;
+			}
+#endif
+
 			if (RenderStars_IsVisible(gteFlag, sxy))
 			{
 				TILE_1 *star = (TILE_1 *)prim;
@@ -190,6 +214,15 @@ void RenderStars(struct PushBuffer *pb, struct PrimMem *primMem, struct Stars *s
 
 		// Retail emits a length-2 draw-env packet: E1 tpage followed by a
 		// zero terminator word.
+#ifdef CTR_CUSTOM_TRACKS
+		// The loop's own reserve covers this packet, but only if the loop ran
+		// at all -- a level with no stars, or one whose stars were all culled,
+		// arrives here having proven nothing about the remaining room.
+		if (!CustomTrackPolicy_PrimFits(prim, sizeof(struct CtrGpuDrawModePacket), primMem->guardEnd))
+		{
+			continue;
+		}
+#endif
 		struct CtrGpuDrawModePacket *drawMode = (struct CtrGpuDrawModePacket *)prim;
 		drawMode->drawMode = 0xe1000a20;
 		drawMode->terminator = 0;

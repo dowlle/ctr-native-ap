@@ -12,6 +12,9 @@
 #include "ap_cup_box_policy.h" // WO-A3: the freestanding cup-leg access decision
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h> // the event race's own box verdict
+#endif
 
 // ============================================================================
 // AP ITEM BOXES -- runtime. See ap_boxes.h for the ruled semantics, for why the
@@ -210,6 +213,31 @@ static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
 
 	if ((gGT->gameMode1 & ADVENTURE_CUP) == 0)
 		return AP_BoxPolicyAllows(0, -1, 0, 0, 0); // non-cup: unchanged
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The custom-track event race sets ADVENTURE_CUP for reward routing (see
+	// AH_WarpPad.c: clearing it would award a trophy instead of the gem), but it
+	// is NOT a gem-cup leg. Left to the code below it would be gated on
+	// ctr_cfg_warp_phys(level), i.e. on the physical retail pad that happens to
+	// host the mapped arcade slot -- a pad with nothing to do with this event.
+	// Make that a deliberate answer instead of a fall-through.
+	//
+	// ALLOW takes the non-cup path, so the event race's boxes are not gated on
+	// that unrelated pad. DENY stands the set down entirely. Note what ALLOW
+	// does not yet buy: placement still resolves through the host slot's retail
+	// identity, so until the apworld descriptor supplies this track's own
+	// placements it spawns retail boxes at retail coordinates. That is why the
+	// verdict is configurable rather than hard-coded.
+	switch (CustomTrack_BoxVerdict(level, 1, gGT->cup.cupID))
+	{
+	case CTR_CT_BOX_ALLOW:
+		return AP_BoxPolicyAllows(0, -1, 0, 0, 0);
+	case CTR_CT_BOX_DENY:
+		return 0;
+	default:
+		break;
+	}
+#endif
 
 	phys = ctr_cfg_warp_phys(level);
 

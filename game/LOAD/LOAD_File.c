@@ -18,6 +18,10 @@ void LOAD_StringToUpper(char *path)
 #include <platform/native_cd.h>
 #endif
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8007c118-0x8007c208.
 int LOAD_InitCDvol(void)
 {
@@ -341,10 +345,46 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	}
 #endif
 
+#ifdef CTR_CUSTOM_TRACKS
+	// A verified custom track serves this subfile from disk instead of the
+	// BIGFILE, but ONLY while the load in flight is the event race. The track
+	// takes over an arcade slot, and that slot's own retail race reads the same
+	// eight subfile indices; without the context terms below it would be served
+	// the custom bytes too, which the ruling does not ask for.
+	//
+	// All three facts are committed before the first subfile read of a level:
+	// cup.cupID at the warp pad, gameMode1 in MainMain's LOAD_REQUESTED handling,
+	// levelID in LOAD_LevelFile -- all before the ten-stage loader is armed, and
+	// arcade-track groups are requested only in stage 6. See the policy header's
+	// decision 4 for the full ordering argument.
+	//
+	// Only the SIZE is taken from the override, because eOffs below still
+	// addresses the (now unused) BIGFILE slot and the CdlSetloc in the read loop
+	// has to stay valid. Buffer allocation and the callback chain are identical
+	// to the BIGFILE path either way.
+	struct CustomTrackLoadContext ctCtx;
+	const char *ctOverridePath = NULL;
+	u32 ctOverrideSize = 0;
+	int ctOverride;
+
+	ctCtx.levelID = (int)sdata->gGT->levelID;
+	ctCtx.adventureCupActive = (sdata->gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	ctCtx.cupID = sdata->gGT->cup.cupID;
+
+	ctOverride = CustomTrack_GetOverride(subfileIndex, &ctCtx, &ctOverridePath, &ctOverrideSize);
+#endif
+
 	// get size and offset of subfile
 	struct BigEntry *entry = BIG_GETENTRY(bigfile);
 	int eSize = entry[subfileIndex].size;
 	int eOffs = entry[subfileIndex].offset;
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (ctOverride)
+	{
+		eSize = (int)ctOverrideSize;
+	}
+#endif
 
 	*sizePtr = eSize;
 
@@ -403,6 +443,26 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 			sdata->callbackCdReadSuccess = NULL;
 			CdReadCallback(NULL);
 		}
+
+#ifdef CTR_CUSTOM_TRACKS
+		if (ctOverride)
+		{
+			// Local-file read: no CD retry semantics, so this is always a single
+			// pass. Mirror the native CdRead contract -- fill the sector-rounded
+			// buffer, zero-padding the tail -- and on the async path raise the same
+			// completion callback CdRead would have raised. On a read failure
+			// (logged in CustomTrack_ReadFile) still break rather than spin:
+			// retrying a missing or short local file cannot succeed, and the
+			// CdlDiskError callback drives the queue's existing retry path.
+			int ctSectorBytes = sectorCount << 0xb;
+			int ctOk = CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
+			if (callback != NULL)
+			{
+				LOAD_ReadFileASyncCallback((u8)(ctOk ? CdlComplete : CdlDiskError), NULL);
+			}
+			break;
+		}
+#endif
 
 		uVar5 &= CdRead(sectorCount, ptrDst, 0x80);
 

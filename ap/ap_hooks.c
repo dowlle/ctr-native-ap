@@ -6,6 +6,9 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
+#endif
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
@@ -5582,6 +5585,63 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// boot call is the one place the real vanilla table crosses into it.
 			ctr_cfg_set_vanilla_cup_legs(data.advCupTrackIDs);
 		}
+
+#ifdef CTR_CUSTOM_TRACKS
+		// Push this seed's custom-track descriptor into the loader. slot_data
+		// arrives at connect, long after CustomTrack_Load() read the two file
+		// paths from config.ini at startup, and the parse has no hook of its own
+		// -- so this rides the same per-frame watcher block as the boot log and
+		// the levelID transition above. CustomTrack_ApplySeedDescriptor is
+		// idempotent by content, so an unchanged seed costs one memcmp a frame
+		// and only a genuinely new descriptor pays for the hash.
+		//
+		// Absence is authoritative in both directions: no active seed, no block,
+		// or a block that did not parse all mean the feature is fully off,
+		// whatever config.ini says.
+		if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
+		{
+			struct CustomTrackSeedDescriptor apCtDesc;
+			const ctr_custom_track *apCt = &ctr_cfg.custom_track;
+
+			memset(&apCtDesc, 0, sizeof apCtDesc);
+			apCtDesc.laps = apCt->laps;
+			apCtDesc.hostLevelID = apCt->host_level_id;
+			apCtDesc.replacesCupLevelID = apCt->replaces_cup_level_id;
+			apCtDesc.boxes = apCt->boxes;
+			snprintf(apCtDesc.levSha256, sizeof apCtDesc.levSha256, "%s", apCt->lev_sha256);
+			snprintf(apCtDesc.vrmSha256, sizeof apCtDesc.vrmSha256, "%s", apCt->vrm_sha256);
+			apCtDesc.flagCrates = apCt->flags.crates;
+			apCtDesc.flagCtrLetters = apCt->flags.ctr_letters;
+			apCtDesc.flagRelicCrates = apCt->flags.relic_crates;
+			apCtDesc.flagAiNav = apCt->flags.ai_nav;
+			apCtDesc.flagMinimap = apCt->flags.minimap;
+			apCtDesc.flagGhosts = apCt->flags.ghosts;
+			apCtDesc.flagSpawns = apCt->flags.spawns;
+			apCtDesc.flagCheckpoints = apCt->flags.checkpoints;
+
+			CustomTrack_ApplySeedDescriptor(&apCtDesc);
+		}
+		else
+		{
+			CustomTrack_ClearSeedDescriptor();
+		}
+#else
+		// This build has no custom-track support compiled in, but the seed may
+		// still bind one. Say so once: the cup's legs are displaced in this
+		// seed's logic, so racing its four retail legs here is the same
+		// reachability desync an out-of-date client would produce, and the
+		// player needs to know why the Gem is not coming.
+		{
+			static int apCtWarned = 0;
+			if (!apCtWarned && ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
+			{
+				apCtWarned = 1;
+				AP_AppendLog("[AP CFG] *** this seed binds a custom track to a Gem Cup, and "
+				             "this build cannot load custom tracks. That cup is not "
+				             "completable here. ***\n");
+			}
+		}
+#endif
 		if ((int)gGT->levelID != ap_prev_level)
 		{
 			char m[96];

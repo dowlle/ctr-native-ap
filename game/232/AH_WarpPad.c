@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
 s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 {
@@ -411,6 +415,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				else
 				{
 					warppadLNG = sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
+
+#ifdef CTR_CUSTOM_TRACKS
+					// A displaced cup does not race the tracks this pad's retail name
+					// promises, so the name is the one thing on the pad that is
+					// simply false. The cup index here is the PAD's own, not
+					// gGT->cup.cupID: standing at a pad is the moment before cupID is
+					// written, and that field is never reset, so it still holds
+					// whichever cup was entered last.
+					{
+						const char *ctName = CustomTrack_CupDisplayName(levelID - AH_WP_ADV_CUP, 1);
+
+						if (ctName != NULL)
+							warppadLNG = (char *)ctName;
+					}
+#endif
 				}
 
 				// midpoing X,
@@ -847,6 +866,34 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// entered after a cup are back on vanilla lap counts.
 		if (ctr_cfg_active() && ctr_cfg.one_lap_cups)
 			gGT->numLaps = 1;
+#endif
+
+#ifdef CTR_CUSTOM_TRACKS
+		// Baby T Park event destination (ruled 2026-08-28). When the loader is
+		// armed and the feature is on, this cup's destination stops being four
+		// retail legs and becomes ONE race on the custom track: 7 laps, AI on
+		// (MainInit_Drivers still spawns the cup's bots because ADVENTURE_CUP
+		// stays set), and the Purple Gem awarded through the cup's own award
+		// path in UI_CupStandings.
+		//
+		// ADVENTURE_CUP is deliberately left SET. Clearing it to get plain-race
+		// behaviour would route the results screen to the trophy branch in
+		// game/222.c, which awards ADV_REWARD_FIRST_TROPHY for the levelID -- the
+		// wrong progress bit, the wrong AP location and a trophy on the podium.
+		// The gem only exists on the cup path, so the cup path is what we keep;
+		// the single race is expressed purely as "this cup has one leg", which
+		// is the fork in UI_CupStandings.c reading this same predicate.
+		//
+		// numLaps is written after the AP one-lap block above so the event's
+		// ruled lap count wins over the one_lap_cups QoL option on a seed that
+		// has both. gGT->numLaps is a char and the policy refuses anything
+		// outside 1..7, so this cannot truncate.
+		if (CustomTrack_CupRaceRedirectActive(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0))
+		{
+			gGT->numLaps = (char)CustomTrack_CupRaceLaps(gGT->cup.cupID, 1);
+			levelID = CustomTrack_CupRaceLevelID(gGT->cup.cupID, 1);
+			goto WarpPad_RequestLoad;
+		}
 #endif
 
 #ifdef CTR_AP

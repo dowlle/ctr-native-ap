@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
@@ -39,7 +43,20 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	{
 		if (gGT->visMem1 != 0)
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			// Every retail LEV has an animated-texture table, so retail can
+			// dereference ptr_anim_tex unconditionally. A custom track need not:
+			// CrashTeamEditor emits a null ptr_anim_tex for a track that authored
+			// no animated textures, and CTR_CycleTex_LEV walks the list from the
+			// first frame the level renders, so the null goes straight to a crash
+			// on load. Written as an extra term on the existing condition rather
+			// than a nested if so the guard-off preprocessor output is unchanged
+			// down to the brace. (Baby T Park itself has a non-null table; the
+			// guard covers the custom-track class, not this one track.)
+			if (lev != 0 && lev->ptr_anim_tex != 0)
+#else
 			if (lev != 0)
+#endif
 			{
 				CTR_CycleTex_LEV(lev->ptr_anim_tex, gGT->timer);
 			}
@@ -949,14 +966,53 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		RenderLists_PreInit();
 		gGT->bspLeafsDrawn = 0;
 
+#ifdef CTR_CUSTOM_TRACKS
+		// Opened before the BSP walk, not before the terrain, because
+		// RenderLists_Init1P2P is where records get dropped and those drops
+		// belong to this frame's accounting too.
+		CustomTrackDiag_BeginFrame((int)gGT->levelID, gGT->backBuffer->primMem.capacityBytes);
+#endif
+
 		gGT->bspLeafsDrawn += RenderLists_Init1P2P(ptr_mesh_info->bspRoot, gGT->visMem1->visLeafList[0], pushBuffer, (u32)&gGT->LevRenderLists[0],
 		                                           gGT->visMem1->bspList[0], (char)numPlyrCurrGame);
 
 		// 226-229
+#ifdef CTR_CUSTOM_TRACKS
+		// Arena accounting for the one frame that needs explaining.
+		//
+		// DrawLevelOvr1P is the 22nd of the frame's primitive writers and the
+		// sky is the 23rd, so terrain and sky live on whatever the HUD, the
+		// weather, the karts, the crates and the shadows left behind. When the
+		// arena runs out mid-terrain, DrawLevelOvr1P abandons the REST of level
+		// rendering for the frame -- it does not skip one quadblock, it returns
+		// -- and it says nothing at all. That silence is why the first report of
+		// a black floor could not be told apart from a dozen other causes.
+		//
+		// The spend below is the worst COMPLETED frame, which is why it cannot
+		// stand alone: a frame that ran out spends less than one that did not,
+		// so exhaustion hides from this number. The refusal counter next to it
+		// in the summary is what actually answers the question.
+		{
+			struct PrimMem *pm = &gGT->backBuffer->primMem;
+			unsigned long before = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+			unsigned long afterGeom;
+			unsigned long afterSky;
+
+			DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, pm, gGT->visMem1->visFaceList[0],
+			               level1->ptr_tex_waterEnvMap);
+			afterGeom = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+
+			DrawSky_Full(level1->ptr_skybox, pushBuffer, pm);
+			afterSky = (unsigned long)((char *)pm->cursor - (char *)pm->start);
+
+			CustomTrackDiag_NoteFrameSpend(before, afterGeom, afterSky, pm->primitiveCount, gGT->bspLeafsDrawn);
+		}
+#else
 		DrawLevelOvr1P(&gGT->LevRenderLists[0], pushBuffer, (struct BSP *)ptr_mesh_info, &gGT->backBuffer->primMem, gGT->visMem1->visFaceList[0],
 		               level1->ptr_tex_waterEnvMap); // waterEnvMap?
 
 		DrawSky_Full(level1->ptr_skybox, pushBuffer, &gGT->backBuffer->primMem);
+#endif
 
 		// skybox gradient
 		if ((level1->configFlags & 1) != 0)

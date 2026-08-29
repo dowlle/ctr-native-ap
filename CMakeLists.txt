@@ -13,6 +13,14 @@ set(CTR_NATIVE_VERSION "0.1.0-beta.6.1")
 option(CTR_AP "Build with Archipelago integration" OFF)
 option(CTR_AP_AUTHORING "Expose Archipelago authoring tools (developer builds only)" OFF)
 
+# Custom-track loader (Baby T Park event spike, rung 1): OFF = retail behaviour;
+# ON = hash-verify a configured .lev/.vrm pair and serve it in place of an
+# arcade track's BIGFILE subfile group, and make the configured Gem Cup
+# destination a single race on it. Every source change is inside
+# #ifdef CTR_CUSTOM_TRACKS, so with this OFF the build is identical to main.
+#   cmake -S . -B build-ct -DCTR_AP=ON -DCTR_CUSTOM_TRACKS=ON
+option(CTR_CUSTOM_TRACKS "Load a hash-verified custom track from disk" OFF)
+
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
     # The AP mod enables CXX (apclientpp/asio); it must be -m32 too or its
@@ -98,6 +106,27 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE_VERSION=\"${CTR_NATIVE_VERSION}\"
     CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
 )
+
+# Custom-track loader. platform/native_custom_tracks.c is part of the main.c
+# unity build and its whole body is #ifdef CTR_CUSTOM_TRACKS, so the option only
+# has to add compile definitions; with it OFF the file expands to nothing.
+#
+# The expanded MEMPACK arena comes with it, and is not separable. A retail
+# arcade track's resident payload fits the 1.27 MiB retail allocator; the
+# custom track this spike loads is 2,470,836 bytes, so the retail-pressure
+# window cannot hold it at all and the load would fail in MEMPACK_AllocMem.
+# CTR_NATIVE_MEMPACK_RETAIL_PRESSURE=0 selects the 8 MiB arena in
+# platform/native_memory.c. Audited for this spike: the allocator, the sector
+# arithmetic in LOAD_ReadFile_ex and the pointer-map fixup in LOAD_RunPtrMap are
+# all 32-bit-clean with orders of magnitude of headroom. See
+# tools/CUSTOM-TRACK-SPIKE.md for the two known deviations the expanded arena
+# brings with it.
+if(CTR_CUSTOM_TRACKS)
+    target_compile_definitions(ctr_native PRIVATE
+        CTR_CUSTOM_TRACKS
+        CTR_NATIVE_MEMPACK_RETAIL_PRESSURE=0
+    )
+endif()
 
 # Archipelago mod build: enable the AP code path and emit a distinct binary
 # so the clean and mod exes never clobber each other.
