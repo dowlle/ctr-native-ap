@@ -91,8 +91,11 @@ static const char *CustomTrack_VerdictText(int verdict)
 }
 
 // Put everything the seed decides back to "no custom track". The two file paths
-// are NOT cleared: they come from config.ini, are read once at startup, and
-// outlive any number of seeds.
+// and the display name are NOT cleared: all three come from config.ini, are read
+// once at startup, and outlive any number of seeds. Leaving the name in place
+// cannot show it on a cup that is no longer displaced, because
+// CustomTrackPolicy_CupDisplayName answers through the redirect predicate that
+// this function just turned off.
 static void CustomTrack_ResetArmedState(void)
 {
 	s_customTrackConfig.mappedLevelID = -1;
@@ -291,18 +294,45 @@ void CustomTrack_Load(void)
 		if (*value == '\0')
 			continue;
 
-		// config.ini carries ONLY where the two files are. Everything else the
-		// loader needs -- both digests, the lap count, the host slot, which cup is
-		// replaced, and whether boxes are allowed -- arrives from slot_data, so
-		// the seed is the single authority on what is served and a local file
-		// cannot talk this client into racing content the seed did not name.
+		// config.ini carries ONLY where the two files are, and what to call the
+		// track on screen. Everything else the loader needs -- both digests, the
+		// lap count, the host slot, which cup is replaced, and whether boxes are
+		// allowed -- arrives from slot_data, so the seed is the single authority
+		// on what is SERVED and a local file cannot talk this client into racing
+		// content the seed did not name.
+		//
+		// The name is here and not on the wire precisely because it is the one
+		// thing that changes nothing about what is served. Decision 10 records
+		// that a descriptor field is the proper long-term home for it.
 		if (strcmp(key, "custom_track_vrm") == 0)
 			CustomTrack_CopyField(s_customTrackVrm.path, sizeof(s_customTrackVrm.path), value);
 		else if (strcmp(key, "custom_track_lev") == 0)
 			CustomTrack_CopyField(s_customTrackLev.path, sizeof(s_customTrackLev.path), value);
+		else if (strcmp(key, "custom_track_name") == 0)
+			CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof(s_customTrackConfig.raceName), value);
 	}
 
 	fclose(f);
+
+	// A name that cannot go on screen is dropped HERE, once, with a reason,
+	// rather than being re-judged silently at every draw. The cup then shows the
+	// retail name, which is exactly what a client with no name configured shows.
+	if (s_customTrackConfig.raceName[0] != '\0')
+	{
+		const char *why = NULL;
+
+		if (CustomTrackPolicy_NameFits(s_customTrackConfig.raceName, &why))
+		{
+			CustomTrack_Log("[CustomTracks] displaced cup will be called \"%s\" (%d of %d pixels at FONT_BIG)\n",
+			                s_customTrackConfig.raceName,
+			                CustomTrackPolicy_NameWidthPixels(s_customTrackConfig.raceName), CTR_CT_NAME_MAX_PIXELS);
+		}
+		else
+		{
+			CustomTrack_Log("[CustomTracks] custom_track_name ignored: %s; the cup keeps its retail name\n", why);
+			s_customTrackConfig.raceName[0] = '\0';
+		}
+	}
 
 	if (s_customTrackVrm.path[0] == '\0' && s_customTrackLev.path[0] == '\0')
 	{
@@ -564,6 +594,11 @@ int CustomTrack_CupIsComplete(int cupID, int isAdventureCup, int trackIndexAfter
 int CustomTrack_CupLegCount(int cupID, int isAdventureCup)
 {
 	return CustomTrackPolicy_CupLegCount(CustomTrack_Config(), cupID, isAdventureCup);
+}
+
+const char *CustomTrack_CupDisplayName(int cupID, int isAdventureCup)
+{
+	return CustomTrackPolicy_CupDisplayName(CustomTrack_Config(), cupID, isAdventureCup);
 }
 
 int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)

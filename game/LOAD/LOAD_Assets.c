@@ -4,6 +4,10 @@
 #include <platform/native_checkpoint.h>
 #endif
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800326b4-0x80032700.
 void LOAD_RunPtrMap(char *origin, int *patchArr, int numPtrs)
 {
@@ -139,7 +143,24 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		    ((gameMode1 & ADVENTURE_CUP) != 0) &&
 
 		    // purple gem cup
-		    (gGT->cup.cupID == 4))
+		    (gGT->cup.cupID == 4)
+
+#ifdef CTR_CUSTOM_TRACKS
+		    // ... unless this load IS the event race. A displaced cup keeps
+		    // cupID 4 because the Gem hangs off that identity, which is the only
+		    // reason it would otherwise inherit the four-boss field below. Falling
+		    // through to the ordinary 1P arcade branch instead swaps the boss pack
+		    // for the player's own arcade pack, and that pack is what makes a
+		    // shuffled field possible at all -- see decision 11.
+		    //
+		    // Same predicate as the subfile override and the arena sizing, so the
+		    // roster a race gets, the arena it is given and the bytes it is served
+		    // can never disagree about which race this is. All three facts it
+		    // reads are committed before the ten-stage loader is armed, and this
+		    // function is called from stage 6.
+		    && !CustomTrack_ServingLoad((int)gGT->levelID, 1, gGT->cup.cupID)
+#endif
+		)
 		{
 			// high lod model
 			LOAD_AppendQueue(bigfile, LT_GETADDR, BI_RACERMODELHI + data.characterIDs[0], &data.driverModelExtras[0].fileBase, LOAD_DriverMPK_SetPointer);
@@ -158,6 +179,44 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		if ((gameMode1 & (TIME_TRIAL | MAIN_MENU)) != MAIN_MENU)
 		{
 			LOAD_Robots1P(data.characterIDs[0]);
+
+#ifdef CTR_CUSTOM_TRACKS
+			// The event race, and only it, races a shuffled field. This PERMUTES
+			// what LOAD_Robots1P just wrote rather than choosing from the roster,
+			// which is what makes it safe without checking anything: an AI's model
+			// is resolved by name against the single pack queued below
+			// (VehBirth_GetModelByName), so an id outside that pack is a
+			// null-pointer crash, not a wrong model. Every permutation of
+			// LOAD_Robots1P's seven ids is still seven distinct ids, still none of
+			// them the player's, still all of them in that pack.
+			//
+			// Placed after the LOAD_Robots1P call rather than inside it because
+			// AH_WarpPad.c calls that function every hub frame for the grid order,
+			// and a shuffle there would be overwritten by this load anyway.
+			if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+			{
+				int rosterIDs[CTR_CT_ROBOT_SLOTS];
+				int rosterDraws[CTR_CT_ROBOT_SLOTS - 1];
+
+				for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+					rosterIDs[i] = data.characterIDs[CTR_CT_ROBOT_FIRST_SLOT + i];
+
+				// The adventure stream, which is what AH_WarpPad.c's grid shuffle
+				// already draws from, so this consumes an RNG the race path is
+				// already known to perturb rather than introducing a new one.
+				for (i = 0; i < CTR_CT_ROBOT_SLOTS - 1; i++)
+					rosterDraws[i] = RngDeadCoed(&sdata->advRng);
+
+				CustomTrackPolicy_PermuteRoster(rosterIDs, CTR_CT_ROBOT_SLOTS, rosterDraws);
+
+				for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+					data.characterIDs[CTR_CT_ROBOT_FIRST_SLOT + i] = (s16)rosterIDs[i];
+
+				CustomTrack_Log("[CustomTracks] event race field: %d %d %d %d (of %d candidates)\n",
+				                (int)data.characterIDs[1], (int)data.characterIDs[2], (int)data.characterIDs[3],
+				                (int)data.characterIDs[4], CTR_CT_ROBOT_SLOTS);
+			}
+#endif
 		}
 
 		// arcade mpk

@@ -70,6 +70,13 @@
 // below) and nothing else -- none of its other functions are called.
 #include "game/LOAD/LOAD_Assets.c"
 
+// The engine's own RNG, compiled in for the same reason as the fixup above. The
+// event race's field is a permutation driven by these exact draws, and the
+// roster scenario below runs the real LOAD_Robots1P through the real generator
+// rather than a stand-in. It is self-contained -- two words of state, no engine
+// globals -- so it costs no stubs, and LOAD_Assets.c now needs it to link.
+#include "game/MixRNG/RngDeadCoed.c"
+
 // regionsEXE.h defines the global `sdata` pointer as &sdata_static, so pulling
 // in common.h drags in that one symbol. The loader never dereferences it -- it
 // touches no engine state at all -- so an empty definition is all the link
@@ -82,9 +89,26 @@ struct sData sdata_static;
 struct Data data;
 NativeConfig g_config;
 
+// LOAD_AppendQueue aborts by default, like the other stubs, so a test that
+// started calling one says so. The roster scenario is the one exception: it
+// drives the real LOAD_DriverMPK to find out WHICH PACK the event race queues,
+// which is the fork the shuffle depends on, so for the length of that scenario
+// the stub records the queued subfile indices instead of aborting.
+static int g_queueRecording = 0;
+static int g_queued[8];
+static int g_queuedCount = 0;
+
 void LOAD_AppendQueue(struct BigHeader *bigfile, int type, int fileIndex, void *destinationPtr, void (*callback)(struct LoadQueueSlot *))
 {
-	(void)bigfile; (void)type; (void)fileIndex; (void)destinationPtr; (void)callback;
+	(void)bigfile; (void)type; (void)destinationPtr; (void)callback;
+
+	if (g_queueRecording)
+	{
+		if (g_queuedCount < (int)(sizeof g_queued / sizeof g_queued[0]))
+			g_queued[g_queuedCount++] = fileIndex;
+		return;
+	}
+
 	printf("FAIL: LOAD_AppendQueue is not available in this harness\n");
 	abort();
 }
@@ -119,6 +143,23 @@ static void expect_log_contains(const char *needle, const char *what)
 	if (strstr(g_log, needle) != NULL)
 		return;
 	printf("FAIL %s: loader log did not mention \"%s\"\n", what, needle);
+	printf("  log was:\n%s\n", g_log);
+	g_failures++;
+}
+
+static void expect_str(const char *got, const char *want, const char *what)
+{
+	if (got != NULL && strcmp(got, want) == 0)
+		return;
+	printf("FAIL %s:\n  got  %s\n  want %s\n", what, got == NULL ? "(null)" : got, want);
+	g_failures++;
+}
+
+static void expect_log_lacks(const char *needle, const char *what)
+{
+	if (strstr(g_log, needle) == NULL)
+		return;
+	printf("FAIL %s: loader log mentioned \"%s\" when it should not have\n", what, needle);
 	printf("  log was:\n%s\n", g_log);
 	g_failures++;
 }
@@ -1583,6 +1624,300 @@ static void test_render_report_is_one_line_per_load(void)
 	                    "drops outside an open frame reach no report");
 }
 
+// ---------------------------------------------------------------------------
+// The displaced cup's display name, through the REAL config parse.
+//
+// The policy harness pins the width rule and the gate as arithmetic. This pins
+// the half that only exists in engine: that the key is read out of config.ini
+// at all, that an unusable value is dropped once with a reason instead of being
+// re-judged at every draw, and -- the part that would be easy to get wrong --
+// that the name is NOT armed state. It comes from config.ini like the two
+// paths, so it must survive a descriptor being withdrawn and replaced, while
+// still never reaching a cup that is no longer displaced.
+// ---------------------------------------------------------------------------
+
+static void write_named_config(const char *nameLine)
+{
+	char text[512];
+
+	snprintf(text, sizeof text,
+	         "[CustomTracks]\n"
+	         "custom_track_vrm = tracks/track.vrm\n"
+	         "custom_track_lev = tracks/track.lev\n"
+	         "%s",
+	         nameLine);
+	write_config(text);
+}
+
+static void test_display_name_from_config(void)
+{
+	struct CustomTrackSeedDescriptor d = good_descriptor();
+
+	// The ordinary case: the key is read, accepted, and announced with the width
+	// it measured, so a log from a real session says why a name was taken.
+	reset_loader();
+	write_named_config("custom_track_name = BABY T PARK\n");
+	CAPTURING(CustomTrack_Load());
+	expect_log_contains("will be called \"BABY T PARK\"", "the configured name is announced");
+	expect_log_contains("187 of 238 pixels", "and the width it measured is in the log");
+
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_str(CustomTrack_CupDisplayName(TEST_CUP, 1), "BABY T PARK", "the displaced cup takes the configured name");
+	expect_int(CustomTrack_CupDisplayName(TEST_CUP, 0) == NULL, 1, "an arcade cup of the same id does not");
+	expect_int(CustomTrack_CupDisplayName(0, 1) == NULL, 1, "and neither does another gem cup");
+
+	// The name outlives the descriptor, exactly as the two paths do -- but it
+	// cannot be SHOWN while nothing is displaced, because the accessor asks the
+	// redirect predicate first. Both halves in one scenario, because getting one
+	// right and the other wrong is the plausible failure.
+	CAPTURING(CustomTrack_ClearSeedDescriptor());
+	expect_int(CustomTrack_CupDisplayName(TEST_CUP, 1) == NULL, 1, "a withdrawn seed shows the retail name");
+	expect_str(CustomTrack_Config()->raceName, "BABY T PARK", "but the configured name is still held");
+
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_str(CustomTrack_CupDisplayName(TEST_CUP, 1), "BABY T PARK", "and comes back with the next seed");
+
+	// A refused seed leaves nothing armed, so it also leaves nothing renamed.
+	d = good_descriptor();
+	d.hostLevelID = 18;
+	reset_loader();
+	write_named_config("custom_track_name = BABY T PARK\n");
+	CAPTURING(CustomTrack_Load());
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_int(CustomTrack_CupDisplayName(TEST_CUP, 1) == NULL, 1, "a refused seed renames nothing");
+
+	// An unusable name is dropped at parse time with a reason, and the loader
+	// still arms -- the name is presentation and must never be able to refuse a
+	// track the seed bound.
+	d = good_descriptor();
+	reset_loader();
+	write_named_config("custom_track_name = A VERY LONG CUSTOM TRACK NAME INDEED\n");
+	CAPTURING(CustomTrack_Load());
+	expect_log_contains("custom_track_name ignored", "an over-wide name is refused loudly");
+	expect_log_contains("keeps its retail name", "and says what happens instead");
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_int(CustomTrack_Config()->contentVerified, 1, "an unusable name does not stop the track arming");
+	expect_int(CustomTrack_CupDisplayName(TEST_CUP, 1) == NULL, 1, "and the cup keeps its retail name");
+
+	// No key at all is the same outcome, with nothing said about it: a client
+	// that configured no name is not doing anything wrong.
+	d = good_descriptor();
+	reset_loader();
+	write_paths_config();
+	CAPTURING(CustomTrack_Load());
+	expect_log_lacks("custom_track_name", "no key configured says nothing about names");
+	CAPTURING(CustomTrack_ApplySeedDescriptor(&d));
+	expect_int(CustomTrack_CupDisplayName(TEST_CUP, 1) == NULL, 1, "no name configured shows the retail name");
+}
+
+// ---------------------------------------------------------------------------
+// The event race's field, through the REAL LOAD_Robots1P and the REAL RNG.
+//
+// This is the assertion the whole of decision 11 rests on. An AI's model is
+// resolved by NAME against the single MPK pack the load queued, so the field
+// may only ever hold characters that pack carries -- and the pack for player P
+// is built around exactly what LOAD_Robots1P(P) writes. Permuting that output
+// keeps the property; selecting from the roster would not.
+//
+// So the scenario drives the engine's own composer for every one of the sixteen
+// characters a player can be, permutes with real draws from the real generator,
+// and asserts on the result rather than on the reasoning.
+// ---------------------------------------------------------------------------
+
+static void test_event_roster(void)
+{
+	int player;
+	int roll;
+	int distinctFields = 0;
+	int seen[8][8][8][8];
+
+	memset(seen, 0, sizeof seen);
+
+	for (player = 0; player < 16; player++)
+	{
+		int baseline[CTR_CT_ROBOT_SLOTS];
+		int i;
+
+		// The engine's own composer, not a transcription of it.
+		LOAD_Robots1P((short)player);
+
+		for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+			baseline[i] = data.characterIDs[CTR_CT_ROBOT_FIRST_SLOT + i];
+
+		// What the pack guarantee actually says: every id LOAD_Robots1P produces
+		// is one of the eight base characters, and none of them is the player.
+		// The permutation below cannot break either, but if a future change to
+		// LOAD_Robots1P broke them the shuffle would inherit the break, so they
+		// are asserted against the engine here rather than assumed.
+		for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+		{
+			expect_int(baseline[i] >= 0 && baseline[i] < 8, 1, "LOAD_Robots1P only names characters the pack carries");
+			expect_int(baseline[i] != player, 1, "and never the player's own character");
+		}
+
+		sdata->advRng.state0 = 0x30215400;
+		sdata->advRng.state1 = 0x493583fe;
+
+		for (roll = 0; roll < 64; roll++)
+		{
+			int draws[CTR_CT_ROBOT_SLOTS - 1];
+			int ids[CTR_CT_ROBOT_SLOTS];
+			int j;
+
+			for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+				ids[i] = baseline[i];
+
+			for (i = 0; i < CTR_CT_ROBOT_SLOTS - 1; i++)
+				draws[i] = RngDeadCoed(&sdata->advRng);
+
+			CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, draws);
+
+			// The three rules, checked on the four ids that actually reach the
+			// grid: MainInit_Drivers spawns drivers 1..4 for this cup.
+			for (i = 0; i < 4; i++)
+			{
+				expect_int(ids[i] >= 0 && ids[i] < 8, 1, "every racer is in the pack the load queued");
+				expect_int(ids[i] != player, 1, "the player is never on track twice");
+
+				for (j = 0; j < i; j++)
+					expect_int(ids[i] != ids[j], 1, "no character races itself");
+			}
+
+			if (!seen[ids[0]][ids[1]][ids[2]][ids[3]])
+			{
+				seen[ids[0]][ids[1]][ids[2]][ids[3]] = 1;
+				distinctFields++;
+			}
+		}
+	}
+
+	// The rows above all pass on a shuffle that does nothing, so this is the one
+	// that fails if the swap is dropped: sixteen players times sixty-four rolls
+	// must produce far more than the single field the four-boss branch gave.
+	// C(7,4) * 4! = 840 ordered fields exist; the count only has to show that
+	// the roll is live and reaches many of them.
+	expect_int(distinctFields > 100, 1, "the event race draws a fresh field, not one fixed lineup");
+
+	// And the field is composed at all only for the event race. This is the
+	// same predicate as the byte serving and the arena sizing, so a retail pad
+	// to the very same host slot in the very same armed session keeps the
+	// engine's own roster -- the seam a wrong predicate here would break.
+	{
+		struct CustomTrackSeedDescriptor d = good_descriptor();
+		struct CustomTrackLoadContext retail = event_ctx();
+
+		arm_with(d);
+
+		expect_int(CustomTrack_ServingLoad(TEST_HOST, 1, TEST_CUP), 1, "the event race composes a field");
+
+		retail.adventureCupActive = 0;
+		expect_int(CustomTrack_ServingLoad(retail.levelID, retail.adventureCupActive, retail.cupID), 0,
+		           "a retail pad to the same host slot does not");
+		expect_int(CustomTrack_ServingLoad(TEST_HOST, 1, 0), 0, "and neither does another cup's leg");
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WHICH PACK the event race queues, through the real LOAD_DriverMPK.
+//
+// The scenario above pins the permutation. This pins the fork it depends on,
+// and it is the fork that a shuffle would silently no-op without: an AI's model
+// is resolved by name against the ONE pack the load queued, so shuffling while
+// the four-boss pack is still queued would hand three of the four drivers a
+// character whose model is not resident -- a NULL out of
+// VehBirth_GetModelByName straight into a dereference.
+//
+// So the assertion is on the queued subfile index, not on the branch condition:
+// dropping the serve term from that condition leaves the boss pack queued and
+// turns these rows red.
+// ---------------------------------------------------------------------------
+
+static int queued_contains(int subfileIndex)
+{
+	int i;
+
+	for (i = 0; i < g_queuedCount; i++)
+		if (g_queued[i] == subfileIndex)
+			return 1;
+
+	return 0;
+}
+
+static void run_driver_mpk(int levelID, int adventureCup, int cupID, int player)
+{
+	struct GameTracker gt;
+
+	memset(&gt, 0, sizeof gt);
+	gt.levelID = (short)levelID;
+	gt.gameMode1 = adventureCup ? ADVENTURE_CUP : 0;
+	gt.cup.cupID = cupID;
+
+	sdata->gGT = &gt;
+	data.characterIDs[0] = (short)player;
+
+	g_queuedCount = 0;
+	g_queueRecording = 1;
+	CAPTURING(LOAD_DriverMPK(NULL, 1, NULL));
+	g_queueRecording = 0;
+
+	sdata->gGT = NULL;
+}
+
+static void test_event_roster_uses_the_arcade_pack(void)
+{
+	const int player = 0;
+
+	arm_with(good_descriptor());
+
+	// The event race. It must queue the player's own 1P arcade pack -- the one
+	// carrying all seven opponents -- and must NOT queue the four-boss pack.
+	run_driver_mpk(TEST_HOST, 1, TEST_CUP, player);
+	expect_int(queued_contains(BI_1PARCADEPACK + player), 1, "the event race queues the player's 1P arcade pack");
+	expect_int(queued_contains(BI_2PARCADEPACK + 7), 0, "and not the four-boss pack");
+	expect_int(data.characterIDs[1] == RIPPER_ROO && data.characterIDs[2] == PAPU_PAPU &&
+	               data.characterIDs[3] == KOMODO_JOE && data.characterIDs[4] == PINSTRIPE,
+	           0, "and does not race the fixed boss lineup");
+	expect_log_contains("event race field:", "and says which four karts it drew");
+
+	// Every id it composed is still one the queued pack carries. This is the
+	// pack guarantee and the shuffle checked together, on the real fork.
+	{
+		int i;
+
+		for (i = 1; i <= 4; i++)
+		{
+			expect_int(data.characterIDs[i] >= 0 && data.characterIDs[i] < 8, 1,
+			           "the event race's field is inside the pack it queued");
+			expect_int(data.characterIDs[i] != player, 1, "and never the player");
+		}
+	}
+
+	// The SAME cup, in the SAME armed session, when this load is not the event
+	// race: the Purple cup's own legs still get retail's four bosses out of the
+	// boss pack. The displacement replaces one destination, not the cup.
+	run_driver_mpk(3, 1, TEST_CUP, player);
+	expect_int(queued_contains(BI_2PARCADEPACK + 7), 1, "a non-event leg of the same cup still queues the boss pack");
+	expect_int(queued_contains(BI_1PARCADEPACK + player), 0, "and not the arcade pack");
+	expect_int(data.characterIDs[1], RIPPER_ROO, "and races Ripper Roo");
+	expect_int(data.characterIDs[4], PINSTRIPE, "through Pinstripe");
+
+	// A retail race pad to the very host slot the custom track borrowed, in the
+	// same session. Not a cup at all, so it takes the ordinary arcade branch and
+	// the engine's own roster order, unshuffled.
+	run_driver_mpk(TEST_HOST, 0, TEST_CUP, player);
+	expect_int(queued_contains(BI_1PARCADEPACK + player), 1, "a retail pad queues the arcade pack");
+	expect_log_lacks("event race field:", "and composes no event field");
+	expect_int(data.characterIDs[1], 1, "leaving LOAD_Robots1P's own order in place");
+	expect_int(data.characterIDs[7], 7, "all the way down");
+
+	// With the loader disarmed the event race does not exist, so the cup is back
+	// to the four bosses -- the guard-off shape, reached at runtime.
+	CAPTURING(CustomTrack_ClearSeedDescriptor());
+	run_driver_mpk(TEST_HOST, 1, TEST_CUP, player);
+	expect_int(queued_contains(BI_2PARCADEPACK + 7), 1, "a withdrawn seed puts the boss pack back");
+	expect_int(data.characterIDs[1], RIPPER_ROO, "and the boss lineup with it");
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -1621,6 +1956,9 @@ int main(void)
 	test_prim_arena_for_retail_load();
 	test_rendered_quadblock_bound();
 	test_render_report_is_one_line_per_load();
+	test_display_name_from_config();
+	test_event_roster();
+	test_event_roster_uses_the_arcade_pack();
 
 	if (g_failures != 0)
 	{

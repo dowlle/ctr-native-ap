@@ -213,6 +213,13 @@ void UI_CupStandings_InputAndDraw(void)
 	int index = 0x22E;
 	int cupID = gGT->cup.cupID;
 
+#ifdef CTR_CUSTOM_TRACKS
+	// What a displaced cup is called, or NULL for the retail name. Assigned only
+	// on the adventure-cup branch below, so it can never displace the two other
+	// strings that reach the same draw: the level name and the arcade cup name.
+	const char *ctCupName = NULL;
+#endif
+
 	if ((sdata->menuReadyToPass & 4) == 0)
 	{
 		// Level ID
@@ -225,6 +232,13 @@ void UI_CupStandings_InputAndDraw(void)
 		if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
 		{
 			index = data.AdvCups[cupID].lngIndex_CupName;
+
+#ifdef CTR_CUSTOM_TRACKS
+			// A displaced cup's standings are the standings of one race on a
+			// track the retail cup name does not name. Same redirect predicate as
+			// the leg counter below and the completion fork above it.
+			ctCupName = CustomTrack_CupDisplayName(cupID, 1);
+#endif
 		}
 
 		// If Arcade or VS cup
@@ -235,7 +249,13 @@ void UI_CupStandings_InputAndDraw(void)
 	}
 
 	// title text
-	DecalFont_DrawLine(sdata->lngStrings[index], local_58[0], local_58[1] - 0x11, 1, 0xffff8000);
+	DecalFont_DrawLine(
+#ifdef CTR_CUSTOM_TRACKS
+	    ctCupName != NULL ? (char *)ctCupName : sdata->lngStrings[index],
+#else
+	    sdata->lngStrings[index],
+#endif
+	    local_58[0], local_58[1] - 0x11, 1, 0xffff8000);
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_STANDINGS], local_58[0], local_58[1], 1, 0xffff8000);
 

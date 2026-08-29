@@ -79,6 +79,13 @@ void UI_RaceStart_IntroText1P(void)
 	RECT rect;
 	int colors[2];
 
+#ifdef CTR_CUSTOM_TRACKS
+	// What a displaced cup is called, or NULL for the retail name. Set only on
+	// the adventure-cup branch below, so the arcade/VS branch that shares the
+	// draw site cannot pick it up.
+	const char *ctCupName = NULL;
+#endif
+
 	gGT = sdata->gGT;
 
 	// by default, do not transition
@@ -151,6 +158,14 @@ void UI_RaceStart_IntroText1P(void)
 				// Get Cup ID
 				iVar2 = gGT->cup.cupID;
 				txtArray = &data.advCupStringIndex[0];
+
+#ifdef CTR_CUSTOM_TRACKS
+				// A displaced cup is one race on someone else's track, so the
+				// retail cup name over the start line names content the player is
+				// not about to race. Same redirect predicate as the leg counter
+				// below, so the banner's two halves cannot disagree.
+				ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);
+#endif
 			}
 
 			// Get the name of the cup
@@ -211,7 +226,12 @@ LAB_80055930:
 			// Name of Cup
 
 			// uVar9 * 4
-			DecalFont_DrawLine(sdata->lngStrings[textID],
+			DecalFont_DrawLine(
+#ifdef CTR_CUSTOM_TRACKS
+			    ctCupName != NULL ? (char *)ctCupName : sdata->lngStrings[textID],
+#else
+			    sdata->lngStrings[textID],
+#endif
 
 			                   gGT->pushBuffer[0].rect.x + ((gGT->pushBuffer[0].rect.w << 0x10) >> 0x11),
 

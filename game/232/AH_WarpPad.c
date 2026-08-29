@@ -415,6 +415,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				else
 				{
 					warppadLNG = sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
+
+#ifdef CTR_CUSTOM_TRACKS
+					// A displaced cup does not race the tracks this pad's retail name
+					// promises, so the name is the one thing on the pad that is
+					// simply false. The cup index here is the PAD's own, not
+					// gGT->cup.cupID: standing at a pad is the moment before cupID is
+					// written, and that field is never reset, so it still holds
+					// whichever cup was entered last.
+					{
+						const char *ctName = CustomTrack_CupDisplayName(levelID - AH_WP_ADV_CUP, 1);
+
+						if (ctName != NULL)
+							warppadLNG = (char *)ctName;
+					}
+#endif
 				}
 
 				// midpoing X,

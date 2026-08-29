@@ -144,6 +144,25 @@ int CustomTrack_CupIsComplete(int cupID, int isAdventureCup, int trackIndexAfter
 // cannot promise legs the game will never load.
 int CustomTrack_CupLegCount(int cupID, int isAdventureCup);
 
+// What to call cup `cupID` on screen, or NULL for "use the retail name".
+//
+// A displaced cup keeps the retail cup's identity everywhere the engine reasons
+// about it, because that identity is what the Gem hangs off -- but it no longer
+// races that cup's tracks, so the retail cup's NAME is the one thing on screen
+// that is simply false. This answers the three places the player reads it: the
+// hub pad label (AH_WarpPad.c), the race-start banner (UI_RaceFlow.c) and the
+// standings title (UI_CupStandings.c).
+//
+// The name comes from config.ini's custom_track_name, NOT from the descriptor:
+// a presentation string must not be able to change what is served, and a schema
+// change days before the event is not worth a label. Decision 10 in the policy
+// header records that a descriptor field is the proper long-term home.
+//
+// The returned pointer is owned by the loader and stays valid for the life of
+// the process. No name configured, and a name the layout cannot take, both
+// answer NULL, which every call site reads as the retail name.
+const char *CustomTrack_CupDisplayName(int cupID, int isAdventureCup);
+
 // What the AP-box layer should do about the level being loaded: one of
 // CTR_CT_BOX_UNCHANGED / CTR_CT_BOX_ALLOW / CTR_CT_BOX_DENY. Takes the same
 // facts as the serve decision, because "is this the event race" is the same

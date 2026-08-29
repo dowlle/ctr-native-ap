@@ -260,6 +260,7 @@ static struct CustomTrackFeatureConfig ruled_config(void)
 	cfg.raceCupID = 4;
 	cfg.raceLaps = 7;
 	cfg.raceBoxes = 1;
+	strcpy(cfg.raceName, "BABY T PARK");
 	return cfg;
 }
 
@@ -1027,6 +1028,323 @@ static void test_rendered_slots_fit(void)
 	           "and 1P can use all 256 slots, which a per-player clamp would have refused");
 }
 
+// ---------------------------------------------------------------------------
+// Decision 10: what a displaced cup is called, and what the layout will take.
+//
+// Two separate questions, pinned separately because they fail differently. The
+// WIDTH rule is arithmetic and must match DecalFont_GetLineWidthStrlen exactly,
+// including the two glyph classes that are not one character width. The
+// DISPLAY rule is a gate: a name reaches the screen only for a cup the redirect
+// predicate says is displaced right now, and every other answer is NULL, which
+// every call site reads as the retail name.
+// ---------------------------------------------------------------------------
+
+static void test_name_width(void)
+{
+	// The ceiling itself, derived rather than asserted as a bare number: the
+	// widest retail adventure cup name is 14 plain glyphs at FONT_BIG. If
+	// CTR_CT_NAME_MAX_PIXELS is ever moved off that, this is the row that says so.
+	expect_int(CustomTrackPolicy_NameWidthPixels("PURPLE GEM CUP"), CTR_CT_NAME_MAX_PIXELS,
+	           "the widest retail cup name IS the ceiling");
+	expect_int(CustomTrackPolicy_NameWidthPixels("YELLOW GEM CUP"), CTR_CT_NAME_MAX_PIXELS,
+	           "and so is the other 14-character one");
+
+	// Plain glyphs, including the space, are one character width each.
+	expect_int(CustomTrackPolicy_NameWidthPixels(""), 0, "an empty name is zero wide");
+	expect_int(CustomTrackPolicy_NameWidthPixels("A"), CTR_CT_FONT_BIG_CHAR_PX, "one glyph");
+	expect_int(CustomTrackPolicy_NameWidthPixels("A B"), 3 * CTR_CT_FONT_BIG_CHAR_PX, "a space is a glyph");
+	expect_int(CustomTrackPolicy_NameWidthPixels("BABY T PARK"), 11 * CTR_CT_FONT_BIG_CHAR_PX,
+	           "the event name is 11 glyphs");
+
+	// The two classes DecalFont_GetLineWidthStrlen does NOT charge one character
+	// width for. Getting either wrong is how a bound that looks right lets a name
+	// through that does not fit, so both are pinned against the engine's rule and
+	// not against a round number.
+	expect_int(CustomTrackPolicy_NameWidthPixels("."), CTR_CT_FONT_BIG_PUNC_PX, "a period is punctuation-wide");
+	expect_int(CustomTrackPolicy_NameWidthPixels(":"), CTR_CT_FONT_BIG_PUNC_PX, "so is a colon");
+	expect_int(CustomTrackPolicy_NameWidthPixels("@"), CTR_CT_FONT_BIG_BUTTON_PX + CTR_CT_FONT_BIG_CHAR_PX,
+	           "a button glyph is charged BOTH widths");
+	expect_int(CustomTrackPolicy_NameWidthPixels("[^*"), 3 * (CTR_CT_FONT_BIG_BUTTON_PX + CTR_CT_FONT_BIG_CHAR_PX),
+	           "and so are the other three");
+
+	expect_int(CustomTrackPolicy_NameWidthPixels(NULL), 0, "a NULL name is zero wide");
+}
+
+static void test_name_fits(void)
+{
+	const char *why;
+	char longName[CTR_CT_NAME_MAX + 8];
+	char wide[32];
+	char withControl[8];
+	int i;
+
+	// The ceiling is inclusive: a name exactly as wide as the widest retail cup
+	// name is a name the layout has already been shown to take.
+	expect_int(CustomTrackPolicy_NameFits("PURPLE GEM CUP", NULL), 1, "the ceiling itself fits");
+	expect_int(CustomTrackPolicy_NameFits("BABY T PARK", NULL), 1, "the event name fits");
+
+	// One glyph past it does not. This is the row that fails if the comparison
+	// is moved from > to >=, or if the ceiling is raised.
+	for (i = 0; i < 15; i++)
+		wide[i] = 'W';
+	wide[15] = '\0';
+	expect_int(CustomTrackPolicy_NameWidthPixels(wide), 15 * CTR_CT_FONT_BIG_CHAR_PX, "15 glyphs is 255 pixels");
+	why = NULL;
+	expect_int(CustomTrackPolicy_NameFits(wide, &why), 0, "one glyph past the widest retail name is refused");
+	expect_int(why != NULL, 1, "and says why");
+
+	// Eight button glyphs are only eight characters but 264 pixels, so a bound
+	// that counted characters instead of measuring width would pass this.
+	expect_int(CustomTrackPolicy_NameFits("@@@@@@@@", NULL), 0, "eight button glyphs are too wide to count as eight");
+	expect_int(CustomTrackPolicy_NameFits("@@@@@@@", NULL), 1, "seven of them still fit");
+
+	// Absence is not an error, it is "use the retail name".
+	why = NULL;
+	expect_int(CustomTrackPolicy_NameFits("", &why), 0, "an empty name is no name");
+	expect_int(CustomTrackPolicy_NameFits(NULL, &why), 0, "and neither is a NULL one");
+
+	// Bytes the width rule cannot honestly measure are refused rather than
+	// rendered at a width they do not have.
+	withControl[0] = 'A';
+	withControl[1] = 0x01;
+	withControl[2] = 'B';
+	withControl[3] = '\0';
+	expect_int(CustomTrackPolicy_NameFits(withControl, NULL), 0, "a font control byte is refused");
+	withControl[1] = (char)0xC3;
+	expect_int(CustomTrackPolicy_NameFits(withControl, NULL), 0, "and so is a non-ASCII byte");
+	withControl[1] = 0x7f;
+	expect_int(CustomTrackPolicy_NameFits(withControl, NULL), 0, "and DEL");
+	withControl[1] = 0x20;
+	expect_int(CustomTrackPolicy_NameFits(withControl, NULL), 1, "a space is fine");
+
+	// The buffer bound is separate from the layout bound: a name that would have
+	// to be truncated to be stored is refused, because a truncated name is a
+	// different string than the one that was configured.
+	for (i = 0; i < CTR_CT_NAME_MAX; i++)
+		longName[i] = '.'; // punctuation, so this is a LENGTH refusal, not a width one
+	longName[CTR_CT_NAME_MAX] = '\0';
+	expect_int(CustomTrackPolicy_NameFits(longName, NULL), 0, "a name that fills the buffer is refused");
+}
+
+static void test_display_name(void)
+{
+	struct CustomTrackFeatureConfig cfg = ruled_config();
+
+	// The displaced cup, and only it.
+	expect_str(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1), "BABY T PARK", "the displaced cup gets the custom name");
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 0, 1) == NULL, 1, "the Red cup keeps its retail name");
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 3, 1) == NULL, 1, "and so does the Yellow cup");
+
+	// The adventure term is load-bearing here for the same reason it is in the
+	// redirect: cupID is shared with arcade cups and is never reset, so an
+	// arcade cup 4 must not pick up the adventure cup's name.
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 0) == NULL, 1, "an arcade cup 4 keeps its retail name");
+
+	// Every term that turns the redirect off turns the name off with it, so the
+	// label can never name a track the player is not about to race.
+	cfg = ruled_config();
+	cfg.raceEnabled = 0;
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1) == NULL, 1, "feature off: retail name");
+
+	cfg = ruled_config();
+	cfg.contentVerified = 0;
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1) == NULL, 1, "content unverified: retail name");
+
+	cfg = ruled_config();
+	cfg.mappedLevelID = 18;
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1) == NULL, 1, "unmappable slot: retail name");
+
+	// A configured name that does not fit is the retail name, not a clipped one.
+	cfg = ruled_config();
+	strcpy(cfg.raceName, "A VERY LONG CUSTOM TRACK NAME");
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1) == NULL, 1, "an over-wide name falls back to retail");
+
+	cfg = ruled_config();
+	cfg.raceName[0] = '\0';
+	expect_int(CustomTrackPolicy_CupDisplayName(&cfg, 4, 1) == NULL, 1, "no name configured falls back to retail");
+
+	// The name and the race are the same answer. Whatever the config, a cup is
+	// renamed exactly when it is redirected and has a usable name -- there is no
+	// state where the pad says Baby T Park and the pad loads the Purple legs.
+	{
+		int cupID;
+		int adv;
+		int enabled;
+		int verified;
+
+		for (cupID = 0; cupID < 6; cupID++)
+			for (adv = 0; adv < 2; adv++)
+				for (enabled = 0; enabled < 2; enabled++)
+					for (verified = 0; verified < 2; verified++)
+					{
+						struct CustomTrackFeatureConfig c = ruled_config();
+						int renamed;
+						int redirected;
+
+						c.raceEnabled = enabled;
+						c.contentVerified = verified;
+
+						renamed = CustomTrackPolicy_CupDisplayName(&c, cupID, adv) != NULL;
+						redirected = CustomTrackPolicy_ShouldRedirectCup(&c, cupID, adv);
+
+						expect_int(renamed, redirected, "a cup is renamed exactly when it is redirected");
+					}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Decision 11: the shuffled field.
+//
+// The property under test is NOT that the shuffle is well distributed. It is
+// that the output is a PERMUTATION of the input for every possible draw,
+// because that is the whole safety argument: LOAD_Robots1P's seven ids are
+// seven distinct ids, none of them the player's, all of them in the pack the
+// load queues, and a permutation of them is still all three. If the shuffle
+// could ever drop, duplicate or invent an id, an AI would be handed a character
+// whose model is not in the pack, and VehBirth_GetModelByName would return NULL
+// into a caller that dereferences it.
+// ---------------------------------------------------------------------------
+
+static void expect_permutation(const int *before, const int *after, int count, const char *what)
+{
+	int i;
+	int j;
+
+	for (i = 0; i < count; i++)
+	{
+		int found = 0;
+
+		for (j = 0; j < count; j++)
+			if (after[j] == before[i])
+				found++;
+
+		if (found != 1)
+		{
+			printf("FAIL %s: id %d appears %d times after the shuffle\n", what, before[i], found);
+			g_failures++;
+			return;
+		}
+	}
+}
+
+static void test_shuffle_pick(void)
+{
+	int rng;
+
+	// The pick is always a valid offset into what is left, which is what keeps
+	// the swap in bounds. Driven with the extremes rather than typical values,
+	// because a modulo bound fails at the extremes.
+	expect_int(CustomTrackPolicy_ShufflePick(0, 7), 0, "a zero draw picks the first");
+	expect_int(CustomTrackPolicy_ShufflePick(0xfff, 7) < 7, 1, "a saturated draw stays in range");
+	expect_int(CustomTrackPolicy_ShufflePick(-1, 7) < 7, 1, "and so does a negative one");
+	expect_int(CustomTrackPolicy_ShufflePick(-1, 7) >= 0, 1, "with no negative offset");
+
+	// The last step has exactly one candidate, so it must not divide by zero or
+	// reach past the end.
+	expect_int(CustomTrackPolicy_ShufflePick(0xfff, 1), 0, "one candidate left picks itself");
+	expect_int(CustomTrackPolicy_ShufflePick(0xfff, 0), 0, "and zero candidates picks nothing");
+
+	for (rng = 0; rng < 4096; rng++)
+	{
+		int n;
+
+		for (n = 1; n <= CTR_CT_ROBOT_SLOTS; n++)
+		{
+			int pick = CustomTrackPolicy_ShufflePick(rng, n);
+
+			if (pick < 0 || pick >= n)
+			{
+				printf("FAIL shuffle pick out of range: draw %d of %d gave %d\n", rng, n, pick);
+				g_failures++;
+				return;
+			}
+		}
+	}
+}
+
+static void test_permute_roster(void)
+{
+	// The seven ids LOAD_Robots1P writes for a player who is character 0: every
+	// other character in the pack, in order, with the player's own id absent.
+	static const int robots1p[CTR_CT_ROBOT_SLOTS] = {1, 2, 3, 4, 5, 6, 7};
+	int draws[CTR_CT_ROBOT_SLOTS - 1];
+	int ids[CTR_CT_ROBOT_SLOTS];
+	int seenFirstFour[16];
+	int distinctFields = 0;
+	int trial;
+	int i;
+
+	// Adversarial draws first. A shuffle that is only a permutation for
+	// well-behaved input is not a safety argument.
+	for (i = 0; i < CTR_CT_ROBOT_SLOTS - 1; i++)
+		draws[i] = 0;
+	memcpy(ids, robots1p, sizeof ids);
+	CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, draws);
+	expect_permutation(robots1p, ids, CTR_CT_ROBOT_SLOTS, "all-zero draws still permute");
+
+	for (i = 0; i < CTR_CT_ROBOT_SLOTS - 1; i++)
+		draws[i] = -1;
+	memcpy(ids, robots1p, sizeof ids);
+	CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, draws);
+	expect_permutation(robots1p, ids, CTR_CT_ROBOT_SLOTS, "all-ones draws still permute");
+
+	// A sweep over the draw space, asserting the permutation property every time
+	// and counting how many distinct four-kart fields come out of it. The count
+	// is what fails if the swap is dropped or made a no-op: a shuffle that does
+	// nothing still passes every permutation assertion above.
+	memset(seenFirstFour, 0, sizeof seenFirstFour);
+	for (trial = 0; trial < 4096; trial++)
+	{
+		int key = 0;
+
+		for (i = 0; i < CTR_CT_ROBOT_SLOTS - 1; i++)
+			draws[i] = (trial * 2654435761u) >> (i * 3);
+
+		memcpy(ids, robots1p, sizeof ids);
+		CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, draws);
+		expect_permutation(robots1p, ids, CTR_CT_ROBOT_SLOTS, "every draw permutes");
+
+		// The player is character 0 and was never in the input, so it must never
+		// be in the output either -- the "no player twice on track" rule, held
+		// without the shuffle having to know about it.
+		for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
+			if (ids[i] == 0)
+			{
+				printf("FAIL the player's own character reached an AI slot\n");
+				g_failures++;
+				return;
+			}
+
+		// Only the first four slots reach the grid: MainInit_Drivers spawns
+		// drivers 1..4 for this cup. Key them as a set-with-order and count the
+		// distinct fields the sweep produced.
+		for (i = 0; i < 4; i++)
+			key = key * 8 + ids[i];
+
+		key &= 0xfff;
+		if (!seenFirstFour[key & 15])
+		{
+			seenFirstFour[key & 15] = 1;
+			distinctFields++;
+		}
+	}
+
+	expect_int(distinctFields > 1, 1, "the shuffle actually varies the four karts that race");
+
+	// Degenerate inputs are refusals, not crashes.
+	memcpy(ids, robots1p, sizeof ids);
+	CustomTrackPolicy_PermuteRoster(ids, 1, draws);
+	expect_permutation(robots1p, ids, CTR_CT_ROBOT_SLOTS, "a one-element roster is left alone");
+	CustomTrackPolicy_PermuteRoster(NULL, CTR_CT_ROBOT_SLOTS, draws);
+	CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, NULL);
+
+	// The slot constants have to name the array LOAD_Robots1P actually fills:
+	// data.characterIDs is s16[8], slot 0 is the player, so seven opponents
+	// starting at slot 1 is the whole rest of it. A change to either constant
+	// that broke that would walk off the end of characterIDs.
+	expect_int(CTR_CT_ROBOT_FIRST_SLOT + CTR_CT_ROBOT_SLOTS, 8, "the shuffle covers exactly characterIDs[1..7]");
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -1042,6 +1360,11 @@ int main(void)
 	test_prim_fits();
 	test_prim_arena_bytes();
 	test_rendered_slots_fit();
+	test_name_width();
+	test_name_fits();
+	test_display_name();
+	test_shuffle_pick();
+	test_permute_roster();
 	test_fork_consistency();
 
 	if (g_failures != 0)

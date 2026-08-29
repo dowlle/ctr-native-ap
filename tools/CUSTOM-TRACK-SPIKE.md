@@ -26,26 +26,34 @@ borrowed slot's retail table on every 1P load, bound the rendered-quadblock list
 that a bigger arena makes reachable, report one render summary per level load
 with the three drop counters a high-water mark cannot show, wire the Purple Gem
 Cup destination to a single race, make the AP-box gate on that race a deliberate
-answer, and correct the cup leg counter for a one-leg cup.
+answer, correct the cup leg counter for a one-leg cup, call the displaced cup by
+the track's own name everywhere the player reads it, and draw the race's four AI
+opponents fresh from the seven the loaded pack carries instead of the fixed four
+bosses.
 
 Does not: read anything from slot_data (rung 2b replaces the config parse with
 it), supply AP-box or CTR-letter **placement** for the custom track, handle
 relic races on it, load the track's music (`.sca`), size split-screen or attract
 loads (nothing has been measured for them), bound
 `RenderLists_PushChild`'s 51-record drop (counted, not clamped — see
-[the rendered-quadblock bound](#the-rendered-quadblock-bound)), or claim the hub
+[the rendered-quadblock bound](#the-rendered-quadblock-bound)), put the event
+track's name on the wire (it is a client string this rung, see
+[the displaced cup's name](#the-displaced-cups-name)), race AI drawn from all
+sixteen characters (no shipped asset pack allows it, see
+[the field](#the-field)), grid eight karts, or claim the hub
 black patches are fixed. The hub floor is widened on measured **headroom**; the
 run that follows this rung is what says whether the hub was crossing its budget
 at all.
 
 ## Configuration
 
-### Client side: `config.ini` — two paths, nothing else
+### Client side: `config.ini` — two paths and a label
 
 ```ini
 [CustomTracks]
 custom_track_vrm = tracks/baby-t-park/baby-t-park_v1.0.0.vrm
 custom_track_lev = tracks/baby-t-park/baby-t-park_v1.0.0.lev
+custom_track_name = BABY T PARK
 ```
 
 Paths are resolved from the working directory the game runs in. No paths, no
@@ -53,8 +61,13 @@ Paths are resolved from the working directory the game runs in. No paths, no
 custom track files", and the build behaves like retail.
 
 Everything else the loader needs is deliberately **not** here. The seed is the
-single authority on what gets served, so a local file cannot talk this client
+single authority on what gets **served**, so a local file cannot talk this client
 into racing content the seed did not name.
+
+`custom_track_name` is the one exception, and it is an exception precisely
+because it changes nothing about what is served — see
+[the displaced cup's name](#the-displaced-cups-name). It is optional; missing,
+empty, or unusable all mean "show the retail cup name".
 
 ### Seed side: the `custom_tracks` slot_data block (schema 8)
 
@@ -260,14 +273,150 @@ as "this cup has one leg".
 Keeping the cup identity carries two consequences worth knowing:
 
 - **The field is 5 karts, not 8.** `MainInit_Drivers` gives the Purple cup 4 AI
-  rather than 7, and `LOAD_Assets.c` forces the roster to Ripper Roo, Papu Papu,
-  Komodo Joe and Pinstripe. Both key on `cupID == 4`. This is inherited, not
-  chosen; breaking it would mean touching four more files.
+  rather than 7, keyed on `cupID == 4`. That is inherited and is left inherited;
+  see [the field](#the-field) for what it would cost to change and why the
+  composition was changed instead.
 - **The HUD used to read "TRACK 1/4".** Fixed in rung 2a: both sites — the
   pre-race banner in `UI_RaceFlow.c` and the standings screen in
   `UI_CupStandings.c` — take the denominator from the same predicate as the
   completion fork, so a one-leg cup reads "TRACK 1/1". The `"4"` was a literal
   inside the `sprintf` format string in both places.
+
+### The displaced cup's name
+
+A displaced cup keeps the retail cup's identity everywhere the engine reasons
+about it, because that identity is what the Gem hangs off. It no longer races
+that cup's tracks, though, so the retail cup's **name** is the one thing on
+screen that is simply false.
+
+Three sites put an adventure cup's name in front of a 1P player, and they are
+all of them — the whole tree was swept for reads of
+`data.AdvCups[].lngIndex_CupName` and `data.advCupStringIndex`:
+
+| Site | Function | When the player reads it |
+|---|---|---|
+| `game/232/AH_WarpPad.c` | `AH_WarpPad_ThTick` | standing at the gem-cup pad in the hub |
+| `game/UI/UI_RaceFlow.c` | `UI_RaceStart_IntroText1P` | the race-start banner, above `TRACK 1/1` |
+| `game/UI/UI_CupStandings.c` | `UI_CupStandings_InputAndDraw` | the standings title after the race |
+
+Nothing else shows one. The adventure pause menu titles from
+`metaDataLEV[hubID].name_LNG` or a fixed `LNG_*`; the results screens, the podium
+and the gem ceremony are icon-based and read `data.AdvCups[].color` only; the map
+and HUD draw no cup name at all. `MM_CupSelect.c` and the `ArcadeCups` branch of
+`UI_CupStandings.c` are arcade-only and unreachable from 1P adventure.
+
+All three now ask `CustomTrack_CupDisplayName`, gated on the **same redirect
+predicate** as the lap count, the leg counter and the completion fork, so the
+label cannot name a track the player is not about to race. The pad passes its own
+cup index rather than `gGT->cup.cupID`, because standing at a pad is the moment
+*before* `cupID` is written and that field is never reset.
+
+**Where the name comes from.** `config.ini`, not the descriptor. The descriptor
+is the authority on what is served, and a presentation string must not be able to
+reach that decision; a schema bump to put a label on screen is also not a trade
+worth making days before the event. A descriptor field is the proper long-term
+home — a seed knows the track's name and every client should agree on it — and
+this is recorded as decision 10 rather than left implied.
+
+**Why it is bounded and not clipped.** `DecalFont_DrawLine` walks to the NUL and
+keeps emitting centred glyphs; there is no clip anywhere in the font path. So an
+over-long name does not truncate, it runs off both edges of a 512-pixel screen.
+The bound is retail's own widest adventure cup name at `FONT_BIG` — `PURPLE GEM
+CUP` and `YELLOW GEM CUP`, 14 glyphs at 17px = **238 pixels** — measured with the
+engine's own width rule rather than counted in characters, because the rule is
+not one width per byte: `:` and `.` are 11px, and the four PSX button glyphs
+`@ [ ^ *` are charged 16px **plus** the character width, so eight of them are
+264px in eight characters. A name is also refused for holding a byte outside
+`0x20..0x7e`, which is what makes the width rule exact for everything left, and
+for filling the 64-byte config buffer, because a truncated name is a different
+string than the one configured.
+
+Refusal is announced once, at parse time, and the cup keeps its retail name. A
+name can never refuse a track: an unusable `custom_track_name` still arms the
+loader.
+
+### The field
+
+Ruled 2026-08-29, after measuring why the field was the four bosses.
+
+**What the measurement found.** An AI driver's model is not positional and is not
+indexed by character id. `VehBirth_NonGhost` turns `data.characterIDs[i]` into a
+debug **name** through `data.MetaDataCharacters[id].name_Debug` and hands it to
+`VehBirth_GetModelByName`, which linear-searches `data.driverModelExtras` (3
+slots, empty on the 1P path) and then `sdata->PLYROBJECTLIST` — the **one** MPK
+pack the load queued. A name that is not in that pack returns NULL, and
+`INSTANCE_Birth3D(m, m->name, t)` dereferences it on the spot.
+
+So a character id outside the loaded pack is **a null-pointer crash, not a wrong
+model**, and the pack — not the engine — is the constraint.
+
+**Why "randomly any of the 16" is not reachable from this rung.**
+`LOAD_DriverMPK` queues exactly one pack, and no retail pack carries all sixteen:
+
+| Pack family | Count | Contents |
+|---|---|---|
+| `BI_1PARCADEPACK + playerChar` | 16 | the player plus the seven opponents `LOAD_Robots1P` names for them, always drawn from characters 0..7 |
+| `BI_2PARCADEPACK + 7` | 1 | the four bosses, and only those four |
+| `BI_2PARCADEPACK + 0..6` | 7 | 2P robot sets, all ids 0..7 |
+
+Reaching characters 8..15 as AI therefore needs **asset work, not a policy
+change**: sideloading models into the three `driverModelExtras` slots (the
+gem-cup branch already does this for the player, so the mechanism exists) or a
+purpose-built pack. Three sideloaded slots would make a pool of ten. That is a
+real option and it is recorded, not taken: whether a `BI_RACERMODELHI` model
+renders correctly as an AI, with the pack's VRM rather than its own, cannot be
+answered without running the game, and this rung ships without a runtime run.
+
+**What is reachable, and what shipped.** The displaced race inherited the boss
+branch only because it is still `cupID == 4`. That branch now also asks whether
+this load *is* the event race — `CustomTrack_ServingLoad`, the same predicate as
+the byte serving and the arena sizing — and the event race falls through to the
+ordinary 1P arcade branch instead. It gets the player's own arcade pack, and with
+it seven candidates instead of four fixed bosses. Four AI slots out of seven
+candidates is **35 distinct fields**, redrawn on every load, instead of one.
+
+The shuffle is expressed as a **permutation of what `LOAD_Robots1P` already
+produced**, never as a selection from the roster, and that is the whole safety
+argument rather than a stylistic choice. `LOAD_Robots1P` writes seven distinct
+ids, none of them the player's, every one of them in the pack the same branch is
+about to queue — so every permutation of them is seven distinct ids, none of them
+the player's, all of them in the pack, without the shuffle having to check any of
+the three. It is a permutation for *any* draw values, so a bad draw can make the
+field boring but cannot make it invalid.
+
+Draws come from `sdata->advRng` through `RngDeadCoed`, the same stream and the
+same masking idiom `AH_WarpPad.c`'s grid shuffle already uses, so this consumes an
+RNG the race path is known to perturb rather than introducing a new one. Nothing
+in the AP check flow reads it.
+
+**The field stays five karts.** Eight was measured as reachable — the 1P pack
+carries all seven opponents and the event descriptor reports eight `DriverSpawn`
+slots — and it is not taken, because it is four coupled changes rather than one:
+
+- `MainInit_Drivers`' `numPlyrCurrGame + 4` for `cupID == 4`;
+- `CustomTrackPolicy_RequiredSpawns`, 5 → 8;
+- the five-column icon layout at `UI_CupStandings.c`'s `cupID == 4` fork, which
+  drops every driver past the fifth to position (0, 0);
+- the champion-pole term in `AH_WarpPad.c`, which only matches ids below 8.
+
+The second of those moves a **refusal edge**: a descriptor reporting fewer than
+eight spawns would then refuse the whole feature and leave the cup vanilla. That
+is a total-refusal failure mode introduced for a presentation-level improvement,
+on a path that cannot be runtime-verified before the event. Five karts of seven
+possible racers is the subset that costs no refusal edge and no layout fork.
+
+**One visible consequence of the pack swap.** The boss branch loaded
+`BI_RACERMODELHI + characterIDs[0]` into `driverModelExtras[0]`, so the player's
+own kart was a high-LOD model. The arcade branch does not: the player resolves
+out of the pack like every other driver, which is what a normal single race
+already does. The kart count on track is unchanged at five, so this costs nothing
+against the primitive arena.
+
+**Recorded, not fixed.** Two soft gaps exist for any AI id ≥ 8 and are reasons the
+sideload option is not free: AI voice banks come from `Bank_Load(54)`, which
+covers characters 0..7 only, and `AH_WarpPad.c`'s speed-champion pole placement
+matches only ids below 8. Neither is reachable on the shipped subset, since every
+id it can produce is already 0..7.
 
 ### AP boxes on the event race
 
@@ -888,7 +1037,44 @@ asserts that 200 and 255 appends land untouched, that 400 stop at 255 with the
 canary clean, and that the same loop *without* the bound overwrites the canary
 from its first byte.
 
-Every one of these is mutation-checked. Reverting the sizing predicate to its
+The displaced cup's **name** is pinned on both halves. `test-custom-track-policy`
+pins the width rule against `DecalFont_GetLineWidthStrlen`'s own three constants,
+including the two glyph classes that are not one character width, and derives the
+238-pixel ceiling from `PURPLE GEM CUP` rather than asserting it as a bare
+number; it pins the refusals (a byte the font has no width for, a name that fills
+the buffer, one glyph past the ceiling, eight button glyphs that a
+character-counting bound would have passed); and it sweeps every combination of
+cup, adventure term, feature flag and verification flag asserting that **a cup is
+renamed exactly when it is redirected** — the invariant that stops the pad saying
+Baby T Park while it loads the Purple legs. `test-custom-track-load` pins the half
+that only exists in engine: the key is read from a real `config.ini`, an unusable
+value is dropped once with a reason **and the loader still arms**, and the name
+survives a descriptor being withdrawn and replaced while never being shown for a
+cup that is no longer displaced.
+
+The **field** is pinned three ways. `test-custom-track-policy` pins the pick's
+range across the whole 12-bit draw space and every remaining count, and pins that
+`CustomTrackPolicy_PermuteRoster` is a permutation for adversarial draws as well
+as ordinary ones — all-zero, all-ones, and a 4,096-step sweep — which is the
+property the safety argument rests on. `test-custom-track-load` runs the **real**
+`LOAD_Robots1P` and the **real** `RngDeadCoed` for all sixteen characters a player
+can be, 64 rolls each, asserting on every roll that the four karts that reach the
+grid are distinct, none of them the player, and all inside the pack, and that the
+sweep produces more than 100 distinct fields rather than one. It then drives the
+**real** `LOAD_DriverMPK` and asserts on the queued subfile index: the event race
+queues `BI_1PARCADEPACK + player` and not `BI_2PARCADEPACK + 7`, while a
+non-event leg of the same cup, a retail pad to the same host slot, and a
+withdrawn descriptor all still get the boss pack and the fixed boss lineup in the
+same session.
+
+Every one of these is mutation-checked. Dropping the serve term from
+`LOAD_DriverMPK`'s cup branch turns nine assertions red in the loader harness;
+making the permutation a no-op turns two red in each; moving the width
+comparison from `>` to `>=` turns two red, raising the pixel ceiling turns five
+red, and charging a button glyph one width instead of two turns four red, all in
+the policy harness; dropping the redirect gate from the name accessor turns five
+red in the policy harness and four in the loader harness. Reverting the sizing
+predicate to its
 rung-1 form turns three assertions red in each harness; moving the floor to 2P
 turns four red in the policy harness and eight in the loader harness; dropping
 the append's second slot, moving the fit comparison from `>=` to `>`, or
@@ -917,7 +1103,11 @@ blocks to two files that **do** carry them —
 `game/226/226_00_DrawLevelOvr1P.c` (five) and `game/RenderLevel/RenderLists.c`
 (one) — and did not move the count either, because in both files the block is
 placed **below** the asserts for exactly that reason. There is a comment saying
-so at each site. An AP build additionally shows the `ap/ap_seedcfg.cpp`
+so at each site. The name and field work added one more `#include` block, to
+`game/LOAD/LOAD_Assets.c`, and did not move the count: that file carries no
+`CTR_STATIC_ASSERT`, and `__LINE__` shifts are confined to the file they occur
+in. Its three other files — `AH_WarpPad.c`, `UI_RaceFlow.c` and
+`UI_CupStandings.c` — already included the header before this rung. An AP build additionally shows the `ap/ap_seedcfg.cpp`
 custom-tracks parse itself, which is deliberate and documented under
 [Lifecycle](#lifecycle): a guard-off AP build still parses the block so its
 verifier stays correct about displacement.
@@ -951,6 +1141,14 @@ head in both configurations.
 
 - The custom track keeps the RETAIL slot's identity for ghosts and saved times,
   because the slot's levelID is unchanged. Do not save ghosts or times on it.
+- The displaced cup's name is a per-client string. Two players on the same seed
+  with different `custom_track_name` values see different names for the same
+  race, and a player with no key set sees `PURPLE GEM CUP`. A descriptor field
+  is what makes every client agree, and it is not in this rung.
+- The event race's AI are drawn from the eight base characters only. The bosses
+  and the unlockables cannot appear, because no shipped MPK pack carries them
+  alongside the base roster and an id outside the loaded pack is a crash rather
+  than a wrong model. See [the field](#the-field).
 - The track's music (`.sca`) is not loaded; the retail slot's music plays.
 - A custom track has no track-preview video: the main menu reads preview sectors
   from BIGFILE directly, bypassing the loader entirely.

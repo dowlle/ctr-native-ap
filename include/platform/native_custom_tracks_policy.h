@@ -230,6 +230,91 @@
 //    is the cost of keeping the terminator in bounds, and a bucket that
 //    renders 255 quadblocks has already lost the frame to the reserve checks.
 //
+// 10. WHAT THE DISPLACED CUP IS CALLED. A displaced cup keeps the retail cup's
+//    identity everywhere the engine reasons about it -- cupID, the gem award
+//    path, the AdvCups colour -- because that identity is what the Gem hangs
+//    off. But it no longer races the retail cup's tracks, so the retail cup's
+//    NAME is now the one thing on screen that is simply false: the pad, the
+//    race-start banner and the standings title all still say the borrowed cup's
+//    name over a single race on someone else's track.
+//
+//    The name is a CLIENT presentation string, not a wire field. It comes from
+//    config.ini alongside the two file paths, deliberately not from the
+//    descriptor: the descriptor is the authority on what is SERVED, and no
+//    presentation string can change that. A future descriptor field is the
+//    proper long-term home -- a seed knows the track's name and every client
+//    should agree on it -- but adding one is a schema change, and a schema
+//    change to put a label on screen is not a trade worth making days before
+//    the event this rung exists for.
+//
+//    Absence is not an error. No key, an empty value, or a name the layout
+//    cannot take all mean "use the retail name", exactly as a client with no
+//    config.ini races retail. The only thing that can go wrong here is a name
+//    that does not fit, and it is bounded rather than clipped because the draw
+//    path has no clip: DecalFont_DrawLine walks to the NUL and keeps emitting
+//    glyphs, centred, past both edges of the screen.
+//
+//    The bound is retail's own widest adventure cup name at FONT_BIG, measured
+//    with the engine's own width rule rather than counted in characters,
+//    because the rule is not one width per byte: ':' and '.' are narrower and
+//    the four PSX button glyphs '@' '[' '^' '*' are wider. See
+//    CTR_CT_NAME_MAX_PIXELS.
+//
+// 11. WHO THE DISPLACED CUP RACES AGAINST. Measured, because the answer decides
+//    what is even possible here, and the measurement contradicts the obvious
+//    design.
+//
+//    An AI driver's model is not positional and is not indexed by character id.
+//    VehBirth_NonGhost (game/Vehicle/VehBirth.c) turns data.characterIDs[i] into
+//    a debug NAME via data.MetaDataCharacters[id].name_Debug and hands it to
+//    VehBirth_GetModelByName, which linear-searches data.driverModelExtras (3
+//    slots) and then sdata->PLYROBJECTLIST -- the ONE MPK pack the load queued.
+//    A name that is not in that pack returns NULL, and the caller dereferences
+//    it immediately. So a character id outside the loaded pack is not a wrong
+//    model, it is a null-pointer crash on the first frame of the race.
+//
+//    That makes the pack, not the engine, the constraint. LOAD_DriverMPK
+//    queues exactly one pack per load, and the retail BIGFILE ships no pack
+//    carrying all sixteen characters:
+//      BI_1PARCADEPACK + playerChar   16 packs, each the player plus the seven
+//                                     opponents LOAD_Robots1P names for them,
+//                                     all drawn from characters 0..7
+//      BI_2PARCADEPACK + 7            the four bosses, and only those four
+//    Every other family (2P robot sets, time-trial, adventure) is smaller or
+//    equally closed. So "any of the sixteen, per race" is not reachable from
+//    this rung: it needs asset work -- sideloading models into the three
+//    driverModelExtras slots, or a purpose-built pack -- not a policy change.
+//
+//    What IS reachable is a different pack. The displaced race inherits the
+//    boss branch of LOAD_DriverMPK only because it is still cupID 4; take the
+//    ordinary 1P arcade branch instead and the pool becomes the seven
+//    characters LOAD_Robots1P wrote, which the pack is guaranteed to carry
+//    BECAUSE LOAD_Robots1P is what the pack was built around. Four AI slots
+//    drawn from seven candidates is 35 distinct fields instead of one.
+//
+//    The shuffle is therefore expressed as a PERMUTATION OF WHAT LOAD_Robots1P
+//    ALREADY PRODUCED, never as a selection from the roster. That is what makes
+//    it safe by construction rather than by checking: LOAD_Robots1P writes
+//    seven distinct ids, none of them the player's, all of them in the pack, so
+//    every permutation of them is seven distinct ids, none of them the player's,
+//    all of them in the pack. No duplicate can appear, the player cannot appear
+//    twice on track, and no id can escape the pack, without the shuffle having
+//    to know any of those three things.
+//
+//    THE FIELD STAYS FIVE KARTS. MainInit_Drivers gives cupID 4
+//    numPlyrCurrGame + 4 and that is left alone. Eight was measured as
+//    reachable -- the 1P pack carries all seven opponents, and the event
+//    descriptor reports eight DriverSpawn slots -- but it is four coupled
+//    changes rather than one (the driver count, RequiredSpawns, the five-column
+//    standings layout at UI_CupStandings.c's cupID == 4 fork, and the
+//    champion-pole term in AH_WarpPad.c that only matches ids below 8), and
+//    raising RequiredSpawns moves a REFUSAL edge: a descriptor reporting fewer
+//    than eight spawns would then refuse the whole feature and leave the cup
+//    vanilla. Widening a refusal edge for a presentation-level improvement, on
+//    a path that cannot be runtime-verified before the event, is the trade this
+//    rung declines. Five karts of seven possible racers is the subset that
+//    costs no refusal edge and no layout fork.
+//
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
 // must not merely fall back to the retail bytes for the LEV -- it must also
@@ -277,6 +362,46 @@
 // NULL terminator will need after it.
 #define CTR_CT_RENDERED_APPEND_SLOTS 2uL
 
+// --- decision 10: what the displaced cup is called -------------------------
+
+// Storage for the configured name, terminator included. This is a BUFFER bound,
+// not the layout bound: a name is accepted on its rendered width, and this only
+// says how much room the config parse keeps one in.
+#define CTR_CT_NAME_MAX 64
+
+// FONT_BIG's three width constants, from data.font_charPixWidth[FONT_BIG],
+// data.font_puncPixWidth[FONT_BIG] and data.font_buttonPixWidth[FONT_BIG]
+// (game/zGlobal_DATA.c). All three cup-name draw sites pass FONT_BIG, so it is
+// the only font this bound has to model.
+#define CTR_CT_FONT_BIG_CHAR_PX   17
+#define CTR_CT_FONT_BIG_PUNC_PX   11
+#define CTR_CT_FONT_BIG_BUTTON_PX 16
+
+// The widest retail ADVENTURE cup name at FONT_BIG, in pixels. "YELLOW GEM CUP"
+// and "PURPLE GEM CUP" are both 14 characters and every glyph in them is
+// CTR_CT_FONT_BIG_CHAR_PX wide, so 14 * 17 = 238.
+//
+// Retail sets the ceiling because all three draw sites are retail layouts
+// composed around these exact strings, and none of them clips: DecalFont_DrawLine
+// walks to the NUL and keeps emitting centred glyphs past both screen edges.
+#define CTR_CT_NAME_MAX_PIXELS 238
+
+// The printable range a configured name may use. Everything outside it is
+// refused rather than rendered: the bytes below 0x20 are the font's own control
+// codes (DecalFont_GetLineWidthStrlen skips widths for c <= 2 and treats the
+// rest as glyphs), and bytes above 0x7e are not ASCII, so neither has a width
+// this bound could honestly compute.
+#define CTR_CT_NAME_FIRST_PRINTABLE 0x20
+#define CTR_CT_NAME_LAST_PRINTABLE  0x7e
+
+// --- decision 11: who the displaced cup races against ----------------------
+
+// The slots LOAD_Robots1P fills, and therefore the slots the shuffle permutes:
+// data.characterIDs[1 .. CTR_CT_ROBOT_SLOTS], the seven opponents the 1P arcade
+// pack was built around. Slot 0 is the player and is never touched.
+#define CTR_CT_ROBOT_FIRST_SLOT 1
+#define CTR_CT_ROBOT_SLOTS      7
+
 // Which half of a mode-pair a BIGFILE subfile slot is.
 enum CustomTrackSubfileRole
 {
@@ -310,6 +435,18 @@ struct CustomTrackFeatureConfig
 	int raceCupID;    // cup whose destination is replaced (4 == Purple Gem Cup)
 	int raceLaps;     // lap count for the single race (7, per the ruling)
 	int raceBoxes;    // 1 = AP boxes allowed on the event race (the ruled default)
+
+	// --- decision 10: the displaced cup's display name ---
+	//
+	// What to call the cup on screen while it is displaced, or "" for "use the
+	// retail name". Unlike every field above it this comes from config.ini, not
+	// from the seed, and it therefore does NOT belong to the armed state: it is
+	// read once at startup and outlives any number of descriptors, exactly like
+	// the two file paths. CustomTrack_ResetArmedState leaves it alone for that
+	// reason. A stale name can never reach the screen anyway, because
+	// CustomTrackPolicy_CupDisplayName answers only for a cup the redirect
+	// predicate says is displaced right now.
+	char raceName[CTR_CT_NAME_MAX];
 };
 
 // How many karts the engine will put on the grid for a redirected cup's race.
@@ -542,6 +679,150 @@ static int CustomTrackPolicy_FlagsSupportRace(int aiNav, int spawns, int cupID, 
 	}
 
 	return 1;
+}
+
+// --- decision 10 ------------------------------------------------------------
+
+// The rendered width of `name` at FONT_BIG, in pixels, by the same rule
+// DecalFont_GetLineWidthStrlen uses (game/DecalFont.c): the four PSX button
+// glyphs are charge plus a button surcharge, ':' and '.' swap the character
+// width for the narrower punctuation width, and everything else is one
+// character width. Only the NTSC-U rule is modelled; the '~' escape exists on
+// later builds only and CustomTrackPolicy_NameFits refuses every byte the rule
+// above does not cover, so there is nothing else for this to get wrong.
+static int CustomTrackPolicy_NameWidthPixels(const char *name)
+{
+	int width = 0;
+	const unsigned char *p;
+
+	if (name == NULL)
+		return 0;
+
+	for (p = (const unsigned char *)name; *p != '\0'; p++)
+	{
+		unsigned char c = *p;
+
+		if (c == '@' || c == '[' || c == '^' || c == '*')
+			width += CTR_CT_FONT_BIG_BUTTON_PX;
+
+		if (c == ':' || c == '.')
+			width += CTR_CT_FONT_BIG_PUNC_PX - CTR_CT_FONT_BIG_CHAR_PX;
+
+		width += CTR_CT_FONT_BIG_CHAR_PX;
+	}
+
+	return width;
+}
+
+// May this configured name go on screen? Returns 1 when it may, or 0 with
+// *outWhy set. Refusing is never an error state -- the caller falls back to the
+// retail cup name, which is what a client with no name configured shows.
+//
+// Three ways to be refused, and the width is only one of them. A name is also
+// refused for holding a byte the width rule cannot honestly measure, and for
+// not fitting the config parse's own buffer, because a name truncated to fit
+// would put a different string on screen than the one that was configured.
+static int CustomTrackPolicy_NameFits(const char *name, const char **outWhy)
+{
+	const unsigned char *p;
+	int len = 0;
+
+	if (name == NULL || name[0] == '\0')
+	{
+		if (outWhy)
+			*outWhy = "no name configured";
+		return 0;
+	}
+
+	for (p = (const unsigned char *)name; *p != '\0'; p++, len++)
+	{
+		if (*p < CTR_CT_NAME_FIRST_PRINTABLE || *p > CTR_CT_NAME_LAST_PRINTABLE)
+		{
+			if (outWhy)
+				*outWhy = "the name holds a byte the font has no width for";
+			return 0;
+		}
+	}
+
+	if (len >= CTR_CT_NAME_MAX)
+	{
+		if (outWhy)
+			*outWhy = "the name is longer than the name buffer";
+		return 0;
+	}
+
+	if (CustomTrackPolicy_NameWidthPixels(name) > CTR_CT_NAME_MAX_PIXELS)
+	{
+		if (outWhy)
+			*outWhy = "the name is wider than the widest retail cup name the layout was built for";
+		return 0;
+	}
+
+	return 1;
+}
+
+// What to call cup `cupID` on screen: the configured name while that cup is
+// displaced, or NULL for "use the retail name".
+//
+// Gated on the SAME redirect predicate as the lap count, the leg counter and
+// the completion fork, so the label cannot name a track the player is not about
+// to race. A refused or absent name answers NULL, which is the retail name --
+// there is no partial state where the cup is displaced but called something
+// broken.
+static const char *CustomTrackPolicy_CupDisplayName(const struct CustomTrackFeatureConfig *cfg, int cupID, int isAdventureCup)
+{
+	if (!CustomTrackPolicy_ShouldRedirectCup(cfg, cupID, isAdventureCup))
+		return NULL;
+
+	if (!CustomTrackPolicy_NameFits(cfg->raceName, NULL))
+		return NULL;
+
+	return cfg->raceName;
+}
+
+// --- decision 11 ------------------------------------------------------------
+
+// Which of the seven opponent slots the i'th step of the shuffle swaps with.
+// `rng` is one RngDeadCoed draw and `remaining` is how many slots are still
+// unplaced, so the result is a slot offset in [0, remaining).
+//
+// The masking is AH_WarpPad.c's own grid-shuffle idiom, kept identical on
+// purpose: RngDeadCoed returns a full 32-bit word whose high bits carry the
+// xor constant, and the low twelve are what that shuffle has always reduced.
+static int CustomTrackPolicy_ShufflePick(int rng, int remaining)
+{
+	if (remaining <= 1)
+		return 0;
+
+	return (rng & 0xfff) % remaining;
+}
+
+// Fisher-Yates over ids[0..count), consuming one draw per step from draws[],
+// which must hold count-1 entries. In place, no allocation, no engine types:
+// the caller copies data.characterIDs in and back out, so this header stays
+// compilable with nothing but the C it is written in.
+//
+// This is a PERMUTATION FOR ANY DRAW VALUES, including adversarial ones, and
+// that is the property the safety argument rests on rather than on the draws
+// being well distributed. Whatever comes out is the same seven ids that went
+// in, so it is still seven distinct ids, still none of them the player's, and
+// still every one of them in the pack the load queued. A bad draw can only
+// make the field boring; it cannot make it invalid.
+static void CustomTrackPolicy_PermuteRoster(int *ids, int count, const int *draws)
+{
+	int i;
+
+	if (ids == NULL || draws == NULL || count < 2)
+		return;
+
+	for (i = 0; i < count - 1; i++)
+	{
+		int pick = i + CustomTrackPolicy_ShufflePick(draws[i], count - i);
+		int tmp = ids[i];
+
+		ids[i] = ids[pick];
+		ids[pick] = tmp;
+	}
 }
 
 // What the AP-box layer should do about this load. See the verdict enum.
