@@ -1223,9 +1223,14 @@ void AP_NavRec_AfterCheckpointRestore(void)
 
 // Penguin-MODSK's Bot_Trackrom proves this presentation shape on PS1: project
 // a point above the kart through the 1P ViewProj matrix, hide it behind/very
-// near the camera, and shrink FONT_SMALL in six depth bands. Native uses the
-// same engine projection and font path, with explicit clipping and a shadow so
-// pale tracks do not erase a white username.
+// near the camera, and shrink FONT_SMALL in depth bands. Native uses the same
+// engine projection and font path, with explicit clipping and a shadow so pale
+// tracks do not erase a white username.
+//
+// The bands also carry the draw-distance cap: past AP_NAVREC_LABEL_MAX_DEPTH the
+// width comes back 0, so the branch that hides a label behind the camera hides
+// one too far away as well. ap_navrec_label_logic.h has the measured basis for
+// that boundary.
 //
 // The name is keyed on the lane the bot is DRIVING, read from botData.botPath
 // every frame rather than latched. That field is what BOTS.c indexes
