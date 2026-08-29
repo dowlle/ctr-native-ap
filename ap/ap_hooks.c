@@ -30,6 +30,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_democam.h"   // Demo Camera trap and direct live-test trigger
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
+#include "ap_wumpa_dispatch.h" // freestanding "which Wumpa code does this crossing send"
+#include "ap_cup_box_policy.h" // AP_BoxPadAccessible: the shared individual-pad rule
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
@@ -58,6 +60,13 @@ CTR_STATIC_ASSERT(AP_TRAP_ITEM_ID_BASE == AP_ITEM_BASE);
 CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
 CTR_STATIC_ASSERT(AP_MODEL_GEM == STATIC_GEM);
 CTR_STATIC_ASSERT(AP_MODEL_RELIC == STATIC_RELIC);
+#ifdef CTR_CUSTOM_TRACKS
+// manager-light measures wumpa_collectible by walking a LEV's instance table for
+// these two model ids, and mirrors them because platform code compiles without
+// the engine headers. This is the one place both definitions are visible.
+CTR_STATIC_ASSERT(CTR_CT_MODEL_FRUIT_CRATE == PU_FRUIT_CRATE);
+CTR_STATIC_ASSERT(CTR_CT_MODEL_WUMPA_FRUIT == PU_WUMPA_FRUIT);
+#endif
 CTR_STATIC_ASSERT(AP_MODEL_TROPHY == STATIC_TROPHY);
 CTR_STATIC_ASSERT(AP_MODEL_KEY == STATIC_KEY);
 CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
@@ -3785,6 +3794,7 @@ static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequiremen
 	requirement->flagAiNav = track->flags.ai_nav;
 	requirement->flagMinimap = track->flags.minimap;
 	requirement->flagGhosts = track->flags.ghosts;
+	requirement->flagWumpaCollectible = track->flags.wumpa_collectible;
 	requirement->flagSpawns = track->flags.spawns;
 	requirement->flagCheckpoints = track->flags.checkpoints;
 }
@@ -3805,6 +3815,7 @@ static void AP_CustomContentBuildDescriptor(struct CustomTrackSeedDescriptor *de
 	descriptor->flagAiNav = track->flags.ai_nav;
 	descriptor->flagMinimap = track->flags.minimap;
 	descriptor->flagGhosts = track->flags.ghosts;
+	descriptor->flagWumpaCollectible = track->flags.wumpa_collectible;
 	descriptor->flagSpawns = track->flags.spawns;
 	descriptor->flagCheckpoints = track->flags.checkpoints;
 }
@@ -4870,14 +4881,104 @@ void AP_LetterUnavailableTouched(int track, int letter)
 	AP_AppendLog(msg);
 }
 
+// Gather the facts the Wumpa dispatch reads. Split from the decision so
+// tools/test-wumpa-dispatch.c can pin the truth table out of engine; this half
+// is the part that needs a live GameTracker.
+//
+// The DESTINATION, not the physical pad. `gGT->levelID` during a race is the
+// track actually loaded, which under destination shuffle IS the destination --
+// so loading Crash Cove from another pad already reads as Crash Cove here and
+// the identity rule needs no special case. `ctr_cfg_warp_phys` inverts it back
+// to the physical pad, which is what the cup-leg access terms are keyed by.
+static void AP_WumpaGatherFacts(struct GameTracker *gGT,
+                                struct AP_WumpaDispatchFacts *facts)
+{
+	int level;
+	int phys;
+
+	memset(facts, 0, sizeof *facts);
+	facts->wumpa = &ctr_cfg.wumpa;
+	facts->destLevelID = -1;
+	facts->servingCupLevelID = -1;
+	facts->seedPackageUuid = ctr_cfg.custom_track.package_uuid;
+	facts->seedCustomOk = ctr_cfg.custom_tracks_ok;
+	facts->seedWumpaCollectible = ctr_cfg.custom_track.flags.wumpa_collectible;
+
+	if (gGT == 0)
+		return;
+	level = (int)gGT->levelID;
+	if (level >= 0 && level < CTR_CFG_WUMPA_TRACK_COUNT)
+		facts->destLevelID = level;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The SAME predicate that owns the custom bytes answers whether this load is
+	// the event race. Asking anything else here is how a recording's identity
+	// and the geometry it was recorded against drift apart, and the argument
+	// applies just as directly to a location code.
+	facts->servingCustom = CustomTrack_ServingLoad(
+	    level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+	if (facts->servingCustom)
+		facts->servingCupLevelID = 100 + gGT->cup.cupID;
+#endif
+	if (facts->servingCustom)
+		return; // the retail terms below describe a race that is not running
+
+	// A gem-cup leg, and NOT the custom event race: that race sets ADVENTURE_CUP
+	// for reward routing but legs no track, which is why the test above returns
+	// before reaching this line.
+	facts->isCupLeg = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	if (!facts->isCupLeg)
+		return;
+
+	phys = ctr_cfg_warp_phys(level);
+	facts->padAccessible = AP_BoxPadAccessible(phys,
+	                                           AP_GateCount(AP_IDX_KEY),
+	                                           AP_PadStage1Met(phys),
+	                                           ctr_cfg_racer_lock_met(phys));
+}
+
 void AP_WumpaReachedTen(struct Driver *driver)
 {
-	const long code = 35016100L;
+	struct AP_WumpaDispatchFacts facts;
+	char msg[192];
+	int reason = AP_WUMPA_SENT;
+	long code;
+
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
-	    driver != sdata->gGT->drivers[0] || !ap_net_location_exists(code))
+	    driver != sdata->gGT->drivers[0])
+		return;
+
+	AP_WumpaGatherFacts(sdata->gGT, &facts);
+	code = AP_WumpaResolveCode(&facts, &reason);
+	if (code < 0)
+	{
+		// Refusals are logged rather than swallowed. A player whose per-track
+		// check did not fire has to be able to tell "this seed has no check for
+		// this track" from "the client refused the content it was handed", and
+		// only one of those is worth reporting as a bug. Mode-off is the single
+		// silent case, because an off seed would otherwise log on every race.
+		if (reason != AP_WUMPA_REFUSE_MODE_OFF)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP WUMPA] reached 10 fruit, no check sent: %s "
+			         "(level=%d cupLeg=%d custom=%d)\n",
+			         AP_WumpaRefusalText(reason), facts.destLevelID,
+			         facts.isCupLeg, facts.servingCustom);
+			AP_AppendLog(msg);
+		}
+		return;
+	}
+
+	// Server location membership stays the final gate, exactly as it was before
+	// per-track: the wire says which codes this seed MINTED, the server says
+	// which ones are live for this slot, and a code that is not live is not sent.
+	// AP_EmitClassCheck adds the ordinary already-checked dedup on top, which is
+	// what makes reaching 10 twice on one track one location and reaching it on
+	// two tracks two locations.
+	if (!ap_net_location_exists(code))
 		return;
 	AP_EmitClassCheck(code, 0, -1, 0, 1,
-	                  "[AP WUMPA] reached 10 fruit\n");
+	                  "[AP WUMPA] reached 10 fruit (location %ld)\n", code);
 }
 
 int AP_LettersRequiredMet(int track)

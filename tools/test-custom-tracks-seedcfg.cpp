@@ -81,6 +81,9 @@ static nlohmann::json good_flags(void)
 {
 	return {{"crates", true},   {"ctr_letters", true}, {"relic_crates", true},
 	        {"ai_nav", true},   {"minimap", false},    {"ghosts", false},
+	        // Block version 3. Measured from the real v1.0.0 LEV: 8 fruit crates,
+	        // 40 guaranteed fruit against a target of 10.
+	        {"wumpa_collectible", true},
 	        {"spawns", 8},      {"checkpoints", 35}};
 }
 
@@ -103,7 +106,9 @@ static nlohmann::json good_entry(void)
 
 static nlohmann::json good_block(void)
 {
-	return {{"enabled", true}, {"version", 2}, {"tracks", nlohmann::json::array({good_entry()})}};
+	return {{"enabled", true},
+	        {"version", CTR_CFG_CT_BLOCK_VERSION_KNOWN},
+	        {"tracks", nlohmann::json::array({good_entry()})}};
 }
 
 // Assert the whole feature is off AND no cup was displaced. Every refusal case
@@ -155,6 +160,8 @@ static void test_happy_path(void)
 	expect_eq(ctr_cfg.custom_track.flags.ai_nav, 1, "flags.ai_nav");
 	expect_eq(ctr_cfg.custom_track.flags.minimap, 0, "flags.minimap");
 	expect_eq(ctr_cfg.custom_track.flags.ghosts, 0, "flags.ghosts");
+	expect_eq(ctr_cfg.custom_track.flags.wumpa_collectible, 1,
+	          "flags.wumpa_collectible");
 	expect_eq(ctr_cfg.custom_track.flags.spawns, 8, "flags.spawns");
 	expect_eq(ctr_cfg.custom_track.flags.checkpoints, 35, "flags.checkpoints");
 
@@ -210,7 +217,7 @@ static void test_unknown_block_version(void)
 {
 	nlohmann::json doc = base();
 	doc["custom_tracks"] = good_block();
-	doc["custom_tracks"]["version"] = 3;
+	doc["custom_tracks"]["version"] = CTR_CFG_CT_BLOCK_VERSION_KNOWN + 1;
 	ap_seedcfg_parse_json(doc);
 
 	expect_eq(ctr_cfg.custom_tracks_seen, 1, "unknown version is still seen");
@@ -225,6 +232,15 @@ static void test_unknown_block_version(void)
 	ap_seedcfg_parse_json(doc);
 	expect_eq(ctr_cfg.schema_newer, 1, "missing block version raises the update banner");
 	expect_refused("missing block version");
+
+	// The version this build SUPERSEDED is unknown in exactly the same way, and
+	// for a reason worth spelling out: a version-2 entry carries no measured
+	// wumpa_collectible, and a per-track Wumpa check must never guess one. The
+	// only safe reading of a version-2 block is "not this build's".
+	doc["custom_tracks"]["version"] = CTR_CFG_CT_BLOCK_VERSION_KNOWN - 1;
+	ap_seedcfg_parse_json(doc);
+	expect_eq(ctr_cfg.schema_newer, 1, "a superseded block version also raises the banner");
+	expect_refused("superseded block version");
 }
 
 // A malformed-but-known-version block is a generation bug, not a version gap.
@@ -458,7 +474,7 @@ static void test_package_and_navigation_identity(void)
 static void test_flags(void)
 {
 	static const char *boolFlags[] = {"crates", "ctr_letters", "relic_crates", "ai_nav",
-	                                  "minimap", "ghosts"};
+	                                  "minimap", "ghosts", "wumpa_collectible"};
 
 	// Every flag is required: a descriptor that omits one is not self-describing,
 	// and a silently defaulted capability is the same class of plausible-but-wrong

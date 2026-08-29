@@ -33,7 +33,16 @@ static const struct CustomTrackManagerPackage s_babyTParkPackage = {
 	"898a9315-693f-4ed3-b6a0-fbe50db8bc40",
 	1,
 	7,
-	1, 1, 1, 1, 0, 0, 8, 35
+	// crates, ctr_letters, relic_crates, ai_nav, minimap, ghosts,
+	// wumpa_collectible, spawns, checkpoints.
+	//
+	// wumpa_collectible is TRUE and was measured, not assumed: the v1.0.0 LEV
+	// whose digest is above carries 8 PU_FRUIT_CRATE instances and 0 loose
+	// PU_WUMPA_FRUIT, so its guaranteed floor is 40 fruit against a target of 10.
+	// CustomTrackManager_ScanPackage re-derives that from the installed bytes on
+	// every scan and refuses the package if the two ever disagree, so this value
+	// is a claim the files have to keep earning rather than a constant.
+	1, 1, 1, 1, 0, 0, 1, 8, 35
 };
 
 static void Manager_SetDetail(struct CustomTrackManagerStatus *status, int state,
@@ -142,6 +151,7 @@ static int Manager_PackageSupported(const struct CustomTrackManagerPackage *pack
 	       (package->flagAiNav == 0 || package->flagAiNav == 1) &&
 	       (package->flagMinimap == 0 || package->flagMinimap == 1) &&
 	       (package->flagGhosts == 0 || package->flagGhosts == 1) &&
+	       (package->flagWumpaCollectible == 0 || package->flagWumpaCollectible == 1) &&
 	       package->flagSpawns >= 1 && package->flagSpawns <= 8 &&
 	       package->flagCheckpoints >= 1 && package->flagCheckpoints <= 255;
 }
@@ -231,6 +241,133 @@ static int Manager_HashFile(const char *path, char outHex[NATIVE_SHA256_HEX_BYTE
 	NativeSha256_Final(&ctx, digest);
 	NativeSha256_ToHex(digest, outHex);
 	*outBytes = total;
+	return 1;
+}
+
+// ── the wumpa_collectible measurement ──────────────────────────────────────
+//
+// A CTE/Saphi LEV is a relocatable DRAM image:
+//
+//   file[0..4)          int ptrMapOffset, relative to the PAYLOAD
+//   file[4..)           the payload; `struct Level` sits at payload[0]
+//   payload[ptrMapOffset]  the DramPointerMap, which LOAD_RunPtrMap uses to
+//                          rebase every pointer field. Before relocation those
+//                          fields therefore hold payload-relative OFFSETS.
+//
+// Only three header fields are needed, all read as little-endian u32 at the
+// offsets namespace_Level.h documents: `numInstances` (+0x0C) and `ptrInstDefs`
+// (+0x10), plus the pointer-map offset that bounds the payload. The instance
+// table is `numInstances` records of `sizeof(struct InstDef)` == 0x40, each
+// carrying its `modelID` as an int at +0x3C.
+//
+// Every read is bounds-checked against the payload BEFORE it happens, and the
+// table is streamed a record at a time rather than slurped: this walks a file
+// the player supplied, and although the hashes have already matched by the time
+// it runs, a parser that trusts its input because something else validated it is
+// how the next parser bug gets written.
+#define CTR_CT_LEV_HEADER_NUM_INSTANCES 0x0C
+#define CTR_CT_LEV_HEADER_PTR_INSTDEFS  0x10
+#define CTR_CT_LEV_INSTDEF_STRIDE       0x40
+#define CTR_CT_LEV_INSTDEF_MODEL_ID     0x3C
+
+// `struct Level::numInstances` is a u32 with no engine-side range check, so a
+// corrupt or hostile value would otherwise size an unbounded walk. Retail levels
+// run to a few hundred instances; 65,536 is far above anything authored and
+// still bounds the loop to a fraction of a second.
+#define CTR_CT_LEV_MAX_INSTANCES 65536
+
+static int Manager_ReadU32LE(FILE *file, long offset, unsigned long *out)
+{
+	unsigned char raw[4];
+
+	if (offset < 0 || fseek(file, offset, SEEK_SET) != 0)
+		return 0;
+	if (fread(raw, 1, sizeof raw, file) != sizeof raw)
+		return 0;
+	*out = (unsigned long)raw[0] | ((unsigned long)raw[1] << 8) |
+	       ((unsigned long)raw[2] << 16) | ((unsigned long)raw[3] << 24);
+	return 1;
+}
+
+int CustomTrackManager_MeasureWumpa(const char *levPath,
+	                                 struct CustomTrackWumpaMeasurement *out)
+{
+	struct stat st;
+	FILE *file;
+	unsigned long ptrMapOffset;
+	unsigned long numInstances;
+	unsigned long ptrInstDefs;
+	unsigned long payloadBytes;
+	unsigned long tableBytes;
+	unsigned long i;
+	int fruitCrates = 0;
+	int looseFruit = 0;
+	int ok = 0;
+
+	if (levPath == NULL || out == NULL)
+		return 0;
+	memset(out, 0, sizeof *out);
+
+	if (stat(levPath, &st) != 0 || st.st_size <= 4)
+		return 0;
+	payloadBytes = (unsigned long)st.st_size - 4;
+
+	file = fopen(levPath, "rb");
+	if (file == NULL)
+		return 0;
+
+	// The pointer map bounds the payload's own data: everything `struct Level`
+	// points at lives BEFORE it, and the map runs to end of file.
+	if (!Manager_ReadU32LE(file, 0, &ptrMapOffset) ||
+	    ptrMapOffset < CTR_CT_LEV_INSTDEF_STRIDE || ptrMapOffset > payloadBytes)
+		goto done;
+
+	if (!Manager_ReadU32LE(file, 4 + CTR_CT_LEV_HEADER_NUM_INSTANCES,
+	                       &numInstances) ||
+	    !Manager_ReadU32LE(file, 4 + CTR_CT_LEV_HEADER_PTR_INSTDEFS,
+	                       &ptrInstDefs))
+		goto done;
+
+	if (numInstances == 0)
+	{
+		// A level with no instances at all is measurable and measures zero. That
+		// is a real answer, not a failure: it has no crates and no fruit.
+		ok = 1;
+		goto done;
+	}
+	if (numInstances > CTR_CT_LEV_MAX_INSTANCES)
+		goto done;
+
+	// The whole table must sit inside the payload, ahead of the pointer map.
+	// Written as a subtraction rather than `ptrInstDefs + tableBytes` so the sum
+	// cannot wrap on a hostile offset.
+	tableBytes = numInstances * (unsigned long)CTR_CT_LEV_INSTDEF_STRIDE;
+	if (ptrInstDefs >= ptrMapOffset || tableBytes > ptrMapOffset - ptrInstDefs)
+		goto done;
+
+	for (i = 0; i < numInstances; i++)
+	{
+		unsigned long modelID;
+		const long offset = (long)(4 + ptrInstDefs +
+		                           i * (unsigned long)CTR_CT_LEV_INSTDEF_STRIDE +
+		                           CTR_CT_LEV_INSTDEF_MODEL_ID);
+		if (!Manager_ReadU32LE(file, offset, &modelID))
+			goto done;
+		if (modelID == CTR_CT_MODEL_FRUIT_CRATE)
+			fruitCrates++;
+		else if (modelID == CTR_CT_MODEL_WUMPA_FRUIT)
+			looseFruit++;
+	}
+	ok = 1;
+
+done:
+	fclose(file);
+	if (!ok)
+		return 0;
+	out->fruitCrates = fruitCrates;
+	out->looseFruit = looseFruit;
+	out->guaranteedFruit = fruitCrates * CTR_CT_WUMPA_PER_CRATE_MIN + looseFruit;
+	out->collectible = out->guaranteedFruit >= CTR_CT_WUMPA_TARGET;
 	return 1;
 }
 
@@ -408,6 +545,7 @@ static int Manager_RenderManifest(const struct CustomTrackManagerPackage *packag
 		"    \"ai_nav\": %s,\n"
 		"    \"minimap\": %s,\n"
 		"    \"ghosts\": %s,\n"
+		"    \"wumpa_collectible\": %s,\n"
 		"    \"spawns\": %d,\n"
 		"    \"checkpoints\": %d,\n"
 		"    \"ap_boxes\": false\n"
@@ -423,6 +561,7 @@ static int Manager_RenderManifest(const struct CustomTrackManagerPackage *packag
 		package->flagAiNav ? "true" : "false",
 		package->flagMinimap ? "true" : "false",
 		package->flagGhosts ? "true" : "false",
+		package->flagWumpaCollectible ? "true" : "false",
 		package->flagSpawns, package->flagCheckpoints);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;
@@ -635,6 +774,35 @@ int CustomTrackManager_ScanPackage(const char *assetsRoot,
 	outStatus->levBytes = foundLevBytes;
 	outStatus->vrmBytes = foundVrmBytes;
 
+	// The measured capability, re-derived from the bytes that just hash-matched.
+	//
+	// The digests already prove these are the release's files, so this walk can
+	// never legitimately disagree with the registry -- which is exactly why a
+	// disagreement is worth refusing on. It means the registry's measurement was
+	// taken against different bytes than the ones the digests describe, and a
+	// per-track Wumpa check would then be minted for a track that cannot pay it.
+	// Deriving it here rather than trusting the constant is what turns the
+	// registry entry into a claim the files keep earning.
+	if (!CustomTrackManager_MeasureWumpa(outStatus->levPath, &outStatus->wumpa))
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR,
+		                  "The LEV verified but its instance table could not be "
+		                  "read, so this track's Wumpa capability is unknown.");
+		return outStatus->state;
+	}
+	outStatus->wumpaMeasured = 1;
+	if (outStatus->wumpa.collectible != package->flagWumpaCollectible)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED,
+		                  "%s %s measures %d guaranteed Wumpa (%d fruit crates, "
+		                  "%d loose) but the registry says wumpa_collectible=%d.",
+		                  package->title, package->version,
+		                  outStatus->wumpa.guaranteedFruit,
+		                  outStatus->wumpa.fruitCrates, outStatus->wumpa.looseFruit,
+		                  package->flagWumpaCollectible);
+		return outStatus->state;
+	}
+
 	if (!Manager_RenderManifest(package, outStatus, expectedManifest, sizeof expectedManifest))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED, "The package manifest is too large for manager-light.");
@@ -708,6 +876,7 @@ static int Manager_RequirementMatches(const struct CustomTrackManagerPackage *pa
 	       requirement->flagAiNav == package->flagAiNav &&
 	       requirement->flagMinimap == package->flagMinimap &&
 	       requirement->flagGhosts == package->flagGhosts &&
+	       requirement->flagWumpaCollectible == package->flagWumpaCollectible &&
 	       requirement->flagSpawns == package->flagSpawns &&
 	       requirement->flagCheckpoints == package->flagCheckpoints;
 }
@@ -779,6 +948,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		"      ai_nav: %s\n"
 		"      minimap: %s\n"
 		"      ghosts: %s\n"
+		"      wumpa_collectible: %s\n"
 		"      spawns: %d\n"
 		"      checkpoints: %d\n",
 		package->id, package->packageUuid, package->version,
@@ -791,6 +961,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		package->flagAiNav ? "true" : "false",
 		package->flagMinimap ? "true" : "false",
 		package->flagGhosts ? "true" : "false",
+		package->flagWumpaCollectible ? "true" : "false",
 		package->flagSpawns, package->flagCheckpoints);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;

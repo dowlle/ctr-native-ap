@@ -11,6 +11,58 @@
 #define CTR_CT_MANAGER_DETAIL_MAX 256
 #define CTR_CT_MANAGER_UUID_BYTES 37
 
+// ── measuring `wumpa_collectible` out of a verified LEV ────────────────────
+//
+// The descriptor's per-track Reach 10 Wumpa capability is MEASURED, not
+// declared: can the local player actually reach ten Wumpa Fruit on this track?
+// It is deliberately not inferred from the broad `crates` flag, because a track
+// can carry weapon boxes, TNT and relic time crates and still offer no route to
+// ten fruit at all.
+//
+// The measurement walks the level's own instance table and counts the two
+// instance kinds that pay fruit:
+//
+//   * PU_FRUIT_CRATE   one fruit crate. RB_Crate.c pays `MixRNG % 4 + 5`, so the
+//                      GUARANTEED floor per crate is five, not the average.
+//   * PU_WUMPA_FRUIT   one loose fruit on the track, worth exactly one.
+//
+// Ten or more guaranteed fruit in a single lap is `true`. Using the floor rather
+// than the mean is what makes the answer honest for the worst roll a player can
+// get; counting one lap rather than the descriptor's lap count is the same
+// conservatism one step further out.
+//
+// The two model ids are mirrored from `enum MODEL_ID`
+// (include/namespace_Instance.h) rather than included, because this file is
+// platform code that has to compile without the engine headers -- the same
+// reason ap_reward_policy.h mirrors its model ids. ap_hooks.c sees both
+// definitions and static-asserts them equal, so neither mirror can drift.
+#define CTR_CT_MODEL_WUMPA_FRUIT 0x02
+#define CTR_CT_MODEL_FRUIT_CRATE 0x07
+#define CTR_CT_WUMPA_PER_CRATE_MIN 5
+#define CTR_CT_WUMPA_TARGET 10
+
+// What the walk found. Reported in the log and in the status detail on a
+// mismatch, so a package that measures unexpectedly is diagnosable from a
+// support bundle rather than only from a rebuild.
+struct CustomTrackWumpaMeasurement
+{
+	int fruitCrates;     // PU_FRUIT_CRATE instances
+	int looseFruit;      // PU_WUMPA_FRUIT instances
+	int guaranteedFruit; // fruitCrates * CTR_CT_WUMPA_PER_CRATE_MIN + looseFruit
+	int collectible;     // guaranteedFruit >= CTR_CT_WUMPA_TARGET
+};
+
+// Measure a LEV. Returns 1 and fills `out` only when the file's own structure
+// could be walked entirely within its bounds; returns 0 for a file that cannot
+// be read, whose pointer map or instance table falls outside the payload, or
+// whose instance count is implausible.
+//
+// A 0 is never "no fruit". The caller must treat it as "not measurable" and
+// refuse, because an unmeasured capability and a measured false are different
+// states and only one of them is a package this build may serve.
+int CustomTrackManager_MeasureWumpa(const char *levPath,
+	                                 struct CustomTrackWumpaMeasurement *out);
+
 // Stable package states for the Options-menu surface and seed preflight. Scan
 // is synchronous in manager-light; VERIFYING is reserved for the UI while it
 // is driving a scan and never escapes CustomTrackManager_ScanPackage itself.
@@ -54,6 +106,11 @@ struct CustomTrackManagerPackage
 	int flagAiNav;
 	int flagMinimap;
 	int flagGhosts;
+	// The measured Reach 10 Wumpa capability. Held in the release registry like
+	// every other measured flag, and re-derived from the installed bytes on every
+	// scan: a package whose files measure something the registry does not claim
+	// is refused rather than served.
+	int flagWumpaCollectible;
 	int flagSpawns;
 	int flagCheckpoints;
 };
@@ -71,6 +128,11 @@ struct CustomTrackManagerStatus
 	char actualVrmSha256[NATIVE_SHA256_HEX_BYTES];
 	unsigned long levBytes;
 	unsigned long vrmBytes;
+	// What the installed LEV actually measured. Valid once the scan has reached
+	// the measurement step; `wumpaMeasured` is 0 before that and for any file the
+	// walk could not complete.
+	int wumpaMeasured;
+	struct CustomTrackWumpaMeasurement wumpa;
 };
 
 // Seed-owned requirement compared against the release-owned registry before a
@@ -96,6 +158,7 @@ struct CustomTrackManagerRequirement
 	int flagAiNav;
 	int flagMinimap;
 	int flagGhosts;
+	int flagWumpaCollectible;
 	int flagSpawns;
 	int flagCheckpoints;
 };

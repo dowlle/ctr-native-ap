@@ -75,7 +75,7 @@ Alpha6 opt-in mechanism.
 ```jsonc
 "custom_tracks": {
   "enabled": true,
-  "version": 2,                     // the block's OWN shape guard
+  "version": 3,                     // the block's OWN shape guard
   "tracks": [{
     "id": "baby-t-park",
     "package_uuid": "60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e",
@@ -93,10 +93,16 @@ Alpha6 opt-in mechanism.
     "boxes": false,                 // AP boxes on the event race
     "flags": { "crates": true, "ctr_letters": true, "relic_crates": true,
                "ai_nav": true, "minimap": false, "ghosts": false,
+               "wumpa_collectible": true,
                "spawns": 8, "checkpoints": 35 }
   }]
 }
 ```
+
+Version 3 (2026-08-29) added the required measured `wumpa_collectible`
+capability. A version-2 entry carries no such measurement and a per-track Wumpa
+check must never guess one, so this build refuses a version-2 block rather than
+reading it with the flag defaulted either way.
 
 `version` is the block's own guard, independent of `schema_version`.
 `schema_version` answers "may this native trust this seed at all"; `version`
@@ -130,7 +136,7 @@ refuses a list of two**, rather than silently serving one of them.
 
 ### Measured flags
 
-All eight are required on the wire: a descriptor that omits one is not
+All nine are required on the wire: a descriptor that omits one is not
 self-describing, and a silently defaulted capability is the same class of
 plausible-but-wrong state the digests guard against.
 
@@ -144,9 +150,30 @@ semantics rather than preferences:
   `LOAD_Assets` forces the roster to the four bosses); every other adventure cup
   grids eight.
 
-The other six are parsed, logged and inert. They exist so the check rungs above
-the Gem have an honest input when they land; refusing on a flag this build cannot
-act on would reject tracks it can perfectly well serve.
+One more gates a CHECK rather than the race. `wumpa_collectible` (block version
+3, 2026-08-29) answers whether ten Wumpa Fruit are actually reachable on this
+track, and the per-track Reach 10 Wumpa check refuses to send this destination's
+code unless the wire and this descriptor both say true. It is deliberately not
+inferred from `crates`: a track can carry weapon boxes, TNT and relic time crates
+with no route to ten fruit at all.
+
+Manager-light MEASURES it rather than trusting the registry constant. It walks
+the hash-verified LEV's own instance table and counts `PU_FRUIT_CRATE` (modelID
+7) and loose `PU_WUMPA_FRUIT` (modelID 2), then takes the guaranteed floor: five
+fruit per fruit crate, because `RB_Crate.c` pays `MixRNG % 4 + 5`, plus one per
+loose fruit. Ten or more is true. Every scan re-derives it, and a package whose
+bytes disagree with the registry is refused — the digests already prove these are
+the release's files, so a disagreement can only mean the registry was measured
+against different bytes, and a seed would then mint a per-track Wumpa check for a
+track that cannot pay it.
+
+Measured against the real Baby T Park v1.0.0 LEV
+(`96ad9f74…f20015ad`): 8 fruit crates, 0 loose fruit, 40 guaranteed against a
+target of 10, so the registry's `true` is evidence rather than a claim.
+
+The remaining five are parsed, logged and inert. They exist so the check rungs
+above the Gem have an honest input when they land; refusing on a flag this build
+cannot act on would reject tracks it can perfectly well serve.
 
 ### Displacement
 
@@ -1163,7 +1190,15 @@ drives a synthetic registered package through Not Installed, Missing Files,
 Hash Mismatch, manifest creation/repair, Ready, YAML export and changed-after-
 verification refusal. It pins the deterministic folder layout, proves the
 saved fragment is byte-identical to the clipboard-ready rendering, and needs no
-third-party track asset.
+third-party track asset. Since the `wumpa_collectible` measurement landed its
+fixture LEV is a real relocatable image built in the harness rather than three
+bytes of text, and it additionally pins the measurement itself: the guaranteed
+floor per fruit crate, loose fruit, a crate-only track measuring false, an empty
+instance table measuring zero, each bounds refusal (absent file, undersized file,
+pointer map outside the payload, instance table overrunning it, an absurd
+instance count, an out-of-range instance pointer), the manifest and YAML export
+of the measured value, and the refusal when the registry claims a capability the
+installed bytes do not support.
 
 `test-custom-track-policy` covers the same predicate as a truth table, against
 the three measured table shapes, plus its bounds behaviour: the index check runs
