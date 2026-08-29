@@ -104,6 +104,7 @@ static void CustomTrack_ResetArmedState(void)
 	s_customTrackConfig.raceCupID = -1;
 	s_customTrackConfig.raceLaps = 0;
 	s_customTrackConfig.raceBoxes = 0;
+	s_customTrackConfig.raceFieldSize = 0;
 
 	s_customTrackVrm.expectedHash[0] = '\0';
 	s_customTrackLev.expectedHash[0] = '\0';
@@ -445,7 +446,15 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	s_customTrackConfig.raceCupID = cupID;
 	s_customTrackConfig.raceLaps = d->laps;
 	s_customTrackConfig.raceBoxes = d->boxes ? 1 : 0;
+
+	// The field follows the track. Derived once, here, so the driver count, the
+	// standings layout and the harnesses all read one number instead of each
+	// re-clamping the raw spawn count.
+	s_customTrackConfig.raceFieldSize = CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
 	s_customTrackConfig.raceEnabled = 1;
+
+	CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
+	                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
@@ -610,6 +619,17 @@ int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
 	ctx.cupID = cupID;
 
 	return CustomTrackPolicy_BoxVerdict(CustomTrack_Config(), &ctx);
+}
+
+int CustomTrack_EventFieldSize(int levelID, int adventureCupActive, int cupID)
+{
+	struct CustomTrackLoadContext ctx;
+
+	ctx.levelID = levelID;
+	ctx.adventureCupActive = adventureCupActive;
+	ctx.cupID = cupID;
+
+	return CustomTrackPolicy_EventFieldSize(CustomTrack_Config(), &ctx);
 }
 
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)

@@ -302,7 +302,21 @@ void UI_CupStandings_InputAndDraw(void)
 	{
 		sVar5 = (s16)i;
 		// If you are in Purple Gem Cup
+#ifdef CTR_CUSTOM_TRACKS
+		// The Purple layout lays five icons in one row and collapses everything
+		// past the fifth to (0,0), so a displaced cup that grids more than five
+		// would stack its extra icons in the corner. The ordinary eight-kart
+		// layout below -- two rows of four -- already handles 0..7, so the fork
+		// asks how many karts raced rather than which cup it was.
+		//
+		// The test is on numDrivers, not on the serve predicate, because it is
+		// the field size that the layout actually cares about: a vanilla Purple
+		// cup always grids five and takes exactly the branch it always took,
+		// and a displaced cup clamped down to five does too.
+		if (CustomTrackPolicy_StandingsUsesNarrowLayout(gGT->cup.cupID, numDrivers))
+#else
 		if (gGT->cup.cupID == 4)
+#endif
 		{
 			if (i < 5)
 			{

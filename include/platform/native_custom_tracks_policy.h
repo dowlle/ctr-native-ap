@@ -308,19 +308,75 @@
 //    twice on track, and no id can escape the pack, without the shuffle having
 //    to know any of those three things.
 //
-//    THE FIELD STAYS FIVE KARTS. MainInit_Drivers gives cupID 4
-//    numPlyrCurrGame + 4 and that is left alone. Eight was measured as
-//    reachable -- the 1P pack carries all seven opponents, and the event
-//    descriptor reports eight DriverSpawn slots -- but it is four coupled
-//    changes rather than one (the driver count, RequiredSpawns, the five-column
-//    standings layout at UI_CupStandings.c's cupID == 4 fork, and the
-//    champion-pole term in AH_WarpPad.c that only matches ids below 8), and
-//    raising RequiredSpawns moves a REFUSAL edge: a descriptor reporting fewer
-//    than eight spawns would then refuse the whole feature and leave the cup
-//    vanilla. Widening a refusal edge for a presentation-level improvement, on
-//    a path that cannot be runtime-verified before the event, is the trade this
-//    rung declines. Five karts of seven possible racers is the subset that
-//    costs no refusal edge and no layout fork.
+//    HOW MANY KARTS (rung 3c). Ruled 2026-08-29: race the whole field, not four
+//    of it. The size is not a constant but follows the track, because the
+//    descriptor's spawn count is the only thing that knows how many grid slots
+//    the packager authored:
+//
+//        field = clamp(descriptor spawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX)
+//
+//    Following the track rather than flipping 5 to 8 is what keeps the REFUSAL
+//    EDGE where it was. RequiredSpawns still asks for five, so a descriptor that
+//    would have been served before is still served; a track reporting six grids
+//    six instead of being refused for not reporting eight. Refusing a whole
+//    event because a track is one grid slot short of a number the client picked
+//    is the failure mode this shape exists to avoid.
+//
+//    Eight is the ceiling because struct Level::DriverSpawn is a FIXED,
+//    INLINE array of exactly 8 (include/namespace_Level.h) with no count field
+//    and no range check anywhere -- indexing is
+//    level->DriverSpawn[kartSpawnOrderArray[driverID]] in VehBirth.c, and both
+//    indices are bounded by construction. So the ceiling is structural, and an
+//    over-large field would not crash, it would silently spawn karts on
+//    whatever bytes the packager left in the unauthored slots. That is the
+//    outcome the clamp exists to prevent, and it is why the spawn count is
+//    believed rather than the array length.
+//
+//    Five is the floor because it is what the cup grids today, so a descriptor
+//    that under-reports can never make the event race SMALLER than the version
+//    that shipped.
+//
+//    Four engine facts were measured before raising the number, and three of
+//    them needed nothing:
+//      - the grid shuffle (AH_WarpPad.c) always permutes seven entries and is
+//        keyed on neither the field size nor the cup, so it already fills eight
+//        slots; the five-kart grid simply left three of them empty.
+//      - BOTS_Adv_CopySpawnOrder overwrites that shuffle for cupID 4 with
+//        data.kartSpawnOrder.purple_cup_1/_2 = 0x03020100 / 0x07060504, which
+//        decodes to the IDENTITY mapping over all eight slots. Correct for any
+//        field size; it is why the vanilla Purple grid is deterministic.
+//      - the points table is int[8] = {9,6,3,1,0,0,0,0} and both readers clamp
+//        to four regardless of field size, so positions 5..8 already scored
+//        zero. Nothing in the gem award, the cup ranks or the AP check dispatch
+//        reads a kart count at all -- winning is
+//        data.cupPositionPerPlayer[0] == drivers[0]->driverID, which is
+//        field-size blind.
+//      - the item-set switch in VehPhysGeneral.c already has a `case 8`, so
+//        item quality by position moves to the standard eight-kart curve.
+//
+//    Two did need changing, and both are the same shape as the pack swap above:
+//    a `cupID == 4` term that assumes the boss field.
+//      - the standings icon layout, which lays five in one row and collapses
+//        every icon past the fifth to (0,0). The ordinary eight-kart layout
+//        two rows of four is already there and already handles 0..7; the fork
+//        now asks the field size rather than the cup.
+//      - the audio banks (HOWL_Music.c), which exclude cupID 4 from bank 54
+//        the "8 drivers" bank and instead load five INDIVIDUAL character banks,
+//        one per kart. That exists because the boss field is characters 8..11,
+//        which bank 54 does not cover. Once the roster is base characters the
+//        exclusion is backwards, and at eight karts it is a hole: drivers 5..7
+//        would have no bank loaded at all.
+//
+//    The champion-pole term in AH_WarpPad.c was measured and needs nothing: its
+//    loop is already 1..8 and its ordered branch produces the identity mapping,
+//    which is correct at any field size.
+//
+//    WHAT THE SHUFFLE MEANS AT A FULL FIELD. With seven candidates in seven
+//    slots the permutation no longer selects who races -- everyone races. It
+//    still decides which character sits in which grid slot, because
+//    CopySpawnOrder maps driver i to slot i, so it remains a live grid-order
+//    roll rather than dead code. It is kept for the smaller fields an adaptive
+//    size can still produce, where it does choose the racers.
 //
 // WHY THE LOADER-READY TERM IS LOAD-BEARING. ShouldRedirectCup requires
 // contentVerified. A track whose hash did not match, or whose file is missing,
@@ -409,6 +465,16 @@
 #define CTR_CT_ROBOT_FIRST_SLOT 1
 #define CTR_CT_ROBOT_SLOTS      7
 
+// How many karts the event race grids, as a range rather than a constant.
+//
+// The ceiling is structural: struct Level::DriverSpawn is a fixed inline array
+// of exactly 8 with no count and no range check, and data.characterIDs is
+// s16[8], so eight is what the engine can seat. The floor is what the cup
+// gridded before this rung, so an under-reporting descriptor can never make the
+// event race smaller than the version that shipped.
+#define CTR_CT_FIELD_MIN 5
+#define CTR_CT_FIELD_MAX 8
+
 // Which half of a mode-pair a BIGFILE subfile slot is.
 enum CustomTrackSubfileRole
 {
@@ -454,6 +520,13 @@ struct CustomTrackFeatureConfig
 	// CustomTrackPolicy_CupDisplayName answers only for a cup the redirect
 	// predicate says is displaced right now.
 	char raceName[CTR_CT_NAME_MAX];
+
+	// How many karts the event race grids, player included: the descriptor's
+	// measured spawn count clamped into CTR_CT_FIELD_MIN..CTR_CT_FIELD_MAX. It
+	// is derived once, when the descriptor is applied, so every consumer -- the
+	// driver count, the standings layout, the harnesses -- reads one number
+	// rather than re-clamping the raw spawn count and risking a disagreement.
+	int raceFieldSize;
 };
 
 // How many karts the engine will put on the grid for a redirected cup's race.
@@ -802,6 +875,76 @@ static int CustomTrackPolicy_ShufflePick(int rng, int remaining)
 		return 0;
 
 	return (rng & 0xfff) % remaining;
+}
+
+// How many karts a track reporting `spawns` grid slots should race, player
+// included. Clamped rather than refused: the descriptor's spawn count is the
+// only measurement of how many grid slots the packager authored, and
+// struct Level::DriverSpawn has no count field for the engine to check it
+// against, so a field larger than the track authored would seat karts on
+// unauthored bytes rather than fail.
+//
+// Following the count keeps the refusal edge where it was. RequiredSpawns still
+// asks for CTR_CT_FIELD_MIN, so nothing that was served before is refused now,
+// and a track reporting six grids six instead of being refused for not
+// reporting eight.
+static int CustomTrackPolicy_FieldSizeForSpawns(int spawns)
+{
+	if (spawns < CTR_CT_FIELD_MIN)
+		return CTR_CT_FIELD_MIN;
+
+	if (spawns > CTR_CT_FIELD_MAX)
+		return CTR_CT_FIELD_MAX;
+
+	return spawns;
+}
+
+// How many karts this load grids, or 0 when it is not the event race.
+//
+// Asked by MainInit_Drivers for the driver count and by UI_CupStandings.c for
+// the icon layout, through the same serve predicate as the byte serving, the
+// arena sizing and the roster -- so the karts a race seats, the icons its
+// standings lay out and the bytes it is served cannot disagree about which race
+// this is.
+static int CustomTrackPolicy_EventFieldSize(const struct CustomTrackFeatureConfig *cfg, const struct CustomTrackLoadContext *ctx)
+{
+	if (!CustomTrackPolicy_ShouldServe(cfg, ctx))
+		return 0;
+
+	// Defensive: a config that somehow carries an unclamped size is clamped
+	// again here rather than trusted, because this number indexes a fixed
+	// 8-entry array two call sites downstream.
+	return CustomTrackPolicy_FieldSizeForSpawns(cfg->raceFieldSize);
+}
+
+// Does the cup-standings screen lay its icons out with the Purple cup's
+// five-in-a-row layout, rather than the ordinary two-rows-of-four?
+//
+// The Purple layout places i < 5 across one row and collapses every icon past
+// the fifth to (0, 0), so it is correct for exactly five karts and silently
+// stacks anything more in the corner. The question the fork therefore has to
+// ask is the FIELD SIZE, not the cup: a vanilla Purple cup always grids five
+// and keeps the branch it always took, and a displaced cup clamped down to five
+// keeps it too, while a displaced cup that grids six or more drops into the
+// eight-kart layout that already handles 0..7.
+static int CustomTrackPolicy_StandingsUsesNarrowLayout(int cupID, int numDrivers)
+{
+	return (cupID == 4 && numDrivers <= CTR_CT_FIELD_MIN) ? 1 : 0;
+}
+
+// How many drivers MainInit_Drivers seats for a load, given the retail count it
+// would otherwise use and the event field size (0 when this is not the event
+// race). Kept here rather than inline so the arithmetic that turns a field size
+// into a driver count is pinned out of engine.
+//
+// numPlyrCurrGame is added rather than assumed to be 1 because the retail branch
+// this replaces is itself written as numPlyrCurrGame + 4.
+static int CustomTrackPolicy_DriverCount(int retailCount, int numPlyrCurrGame, int eventFieldSize)
+{
+	if (eventFieldSize <= 0)
+		return retailCount;
+
+	return numPlyrCurrGame + (eventFieldSize - 1);
 }
 
 // Fisher-Yates over ids[0..count), consuming one draw per step from draws[],

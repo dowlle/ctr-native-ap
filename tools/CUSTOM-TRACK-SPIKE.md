@@ -27,9 +27,9 @@ that a bigger arena makes reachable, report one render summary per level load
 with the three drop counters a high-water mark cannot show, wire the Purple Gem
 Cup destination to a single race, make the AP-box gate on that race a deliberate
 answer, correct the cup leg counter for a one-leg cup, call the displaced cup by
-the track's own name everywhere the player reads it, and draw the race's four AI
-opponents fresh from the seven the loaded pack carries instead of the fixed four
-bosses.
+the track's own name everywhere the player reads it, grid as many karts as the
+track reports spawn slots for instead of the boss field's five, and draw the AI
+opponents from the loaded pack instead of the fixed four bosses.
 
 Does not: read anything from slot_data (rung 2b replaces the config parse with
 it), supply AP-box or CTR-letter **placement** for the custom track, handle
@@ -40,7 +40,9 @@ loads (nothing has been measured for them), bound
 track's name on the wire (it is a client string this rung, see
 [the displaced cup's name](#the-displaced-cups-name)), race AI drawn from all
 sixteen characters (no shipped asset pack allows it, see
-[the field](#the-field)), grid eight karts, or claim the hub
+[the field](#the-field)), grid more than the eight karts
+`struct Level::DriverSpawn` can seat (see
+[how many karts](#how-many-karts)), or claim the hub
 black patches are fixed. The hub floor is widened on measured **headroom**; the
 run that follows this rung is what says whether the hub was crossing its budget
 at all.
@@ -389,34 +391,89 @@ same masking idiom `AH_WarpPad.c`'s grid shuffle already uses, so this consumes 
 RNG the race path is known to perturb rather than introducing a new one. Nothing
 in the AP check flow reads it.
 
-**The field stays five karts.** Eight was measured as reachable — the 1P pack
-carries all seven opponents and the event descriptor reports eight `DriverSpawn`
-slots — and it is not taken, because it is four coupled changes rather than one:
+### How many karts
 
-- `MainInit_Drivers`' `numPlyrCurrGame + 4` for `cupID == 4`;
-- `CustomTrackPolicy_RequiredSpawns`, 5 → 8;
-- the five-column icon layout at `UI_CupStandings.c`'s `cupID == 4` fork, which
-  drops every driver past the fifth to position (0, 0);
-- the champion-pole term in `AH_WarpPad.c`, which only matches ids below 8.
+Ruled 2026-08-29 (rung 3c): race the whole field. The size is not a constant but
+follows the track,
 
-The second of those moves a **refusal edge**: a descriptor reporting fewer than
-eight spawns would then refuse the whole feature and leave the cup vanilla. That
-is a total-refusal failure mode introduced for a presentation-level improvement,
-on a path that cannot be runtime-verified before the event. Five karts of seven
-possible racers is the subset that costs no refusal edge and no layout fork.
+```
+field = clamp(descriptor spawns, 5, 8)
+```
+
+because the descriptor's spawn count is the only measurement of how many grid
+slots the packager authored. Baby T Park reports eight, so the event race grids
+eight.
+
+**Why it follows the track instead of flipping 5 to 8.** A hard eight-spawn
+requirement would move a **refusal edge**: a track one slot short would refuse
+the whole feature and leave the cup vanilla, which is a total-refusal failure
+mode traded for a presentation improvement. Clamping instead leaves
+`CustomTrackPolicy_RequiredSpawns` at five, so nothing that was served before is
+refused now, and a track reporting six grids six.
+
+**Why eight is the ceiling.** `struct Level::DriverSpawn` is a **fixed, inline
+array of exactly 8** (`include/namespace_Level.h`) with no count field and no
+range check anywhere. Indexing is
+`level->DriverSpawn[kartSpawnOrderArray[driverID]]` (`VehBirth.c`), and both
+indices are bounded by construction, so an over-large field would not crash — it
+would silently seat karts on whatever bytes the packager left in unauthored
+slots. That is the outcome the clamp prevents, and it is why the descriptor's
+count is believed rather than the array's length. Five is the floor because it is
+what the cup gridded before, so an under-reporting descriptor can never make the
+race smaller than the version that shipped.
+
+**Four engine facts were measured before raising the number, and three needed
+nothing:**
+
+| Measured | Verdict |
+|---|---|
+| the grid shuffle (`AH_WarpPad.c`) | already permutes seven entries, keyed on neither field size nor cup — the five-kart grid simply left three slots empty |
+| `BOTS_Adv_CopySpawnOrder(purple_cup_1/_2)` | `0x03020100` / `0x07060504` decode to the **identity** mapping over all eight slots; correct at any field size, and why the vanilla Purple grid is deterministic |
+| points and the gem award | `cupPointsPerPosition` is `int[8] = {9,6,3,1,0,0,0,0}` and both readers clamp to four regardless of field size; winning is `cupPositionPerPlayer[0] == drivers[0]->driverID`, which reads no kart count at all, and neither does the AP check dispatch |
+| the item-set switch (`VehPhysGeneral.c`) | already has a `case 8`, so item quality by position moves to the standard eight-kart curve |
+
+**Two did need changing, and both are the same shape as the pack swap — a
+`cupID == 4` term that assumed the boss field:**
+
+- **the standings icon layout.** The Purple fork lays five in one row and
+  collapses every icon past the fifth to (0, 0). The ordinary eight-kart layout
+  (two rows of four) is already present and already handles 0..7, so the fork now
+  asks the field size rather than the cup.
+- **the audio banks** (`HOWL_Music.c`, two sites). Purple is excluded from bank
+  54, the "8 drivers" bank, and instead loads **five individual character banks,
+  one per kart** — because the boss field is characters 8..11, which bank 54 does
+  not carry. Once the roster became base characters that exclusion was backwards,
+  and at eight karts it is a hole: drivers 5..7 would have no bank loaded at all.
+  Both sites now ask the serve predicate, so the event race takes the ordinary
+  arcade audio path.
+
+The champion-pole term in `AH_WarpPad.c` was measured and needs nothing: its loop
+is already `1..8` and its ordered branch produces the identity mapping.
+
+**What the shuffle means at a full field.** With seven candidates in seven slots
+the permutation no longer selects who races — everyone races. It still decides
+which character sits in which grid slot, because `CopySpawnOrder` maps driver `i`
+to slot `i`, so it stays a live grid-order roll rather than dead code. It is kept
+for the smaller fields the clamp can still produce, where it does choose the
+racers.
 
 **One visible consequence of the pack swap.** The boss branch loaded
 `BI_RACERMODELHI + characterIDs[0]` into `driverModelExtras[0]`, so the player's
 own kart was a high-LOD model. The arcade branch does not: the player resolves
 out of the pack like every other driver, which is what a normal single race
-already does. The kart count on track is unchanged at five, so this costs nothing
-against the primitive arena.
+already does.
 
-**Recorded, not fixed.** Two soft gaps exist for any AI id ≥ 8 and are reasons the
-sideload option is not free: AI voice banks come from `Bank_Load(54)`, which
-covers characters 0..7 only, and `AH_WarpPad.c`'s speed-champion pole placement
-matches only ids below 8. Neither is reachable on the shipped subset, since every
-id it can produce is already 0..7.
+**Recorded, not fixed.** The two soft gaps for AI ids ≥ 8 remain reasons the
+sideload option is not free — AI voice banks cover characters 0..7 only, and the
+speed-champion pole placement matches only ids below 8. Neither is reachable,
+since every id the shuffle can produce is already 0..7.
+
+Also recorded, and **pre-existing**: `AH_WarpPad.c` reads
+`data.metaDataLEV[levelID]` for the champion lookup with `levelID` still the
+pad's own 100..104 for a gem-cup pad, against a 65-entry array. The champion id
+it reads is therefore out-of-bounds data for every gem cup, vanilla included.
+Untouched here because it predates this work and behaves identically at five
+karts and eight.
 
 ### AP boxes on the event race
 
@@ -1067,7 +1124,29 @@ non-event leg of the same cup, a retail pad to the same host slot, and a
 withdrawn descriptor all still get the boss pack and the fixed boss lineup in the
 same session.
 
-Every one of these is mutation-checked. Dropping the serve term from
+The **field size** is pinned as two guarantees, because they fail differently.
+`test-custom-track-policy` sweeps the clamp over spawn counts from −4 to 20 —
+well outside the 1..8 the wire validates, because the clamp is the last thing
+between a descriptor and an index into a fixed 8-entry array — and asserts every
+result lands in range, that under-reporting grids the floor rather than shrinking
+the race, and that over-reporting is capped rather than seating a kart on an
+unauthored slot. It then asserts separately that **the refusal edge did not
+move**: every spawn count servable before the field grew is still servable, and
+one below the floor is still refused. It also pins the two engine forks the size
+drives — the driver count and the standings layout — including that the two
+agree, which is what stops a seated field reaching a layout that cannot lay it
+out. `test-custom-track-load` drives the same path through the **real loader**:
+an 8-spawn descriptor grids eight, a 6-spawn descriptor grids six instead of
+being refused, a 5-spawn descriptor grids the floor, and a 4-spawn descriptor is
+refused exactly as it always was.
+
+Every one of these is mutation-checked. Raising the clamp ceiling to 9 or
+dropping the floor to 4 turns three assertions red in each harness; raising
+`RequiredSpawns` to 8 alongside the field — the change the adaptive shape exists
+to avoid — turns seven red in the policy harness and five in the loader harness;
+keying the standings layout on the cup instead of the field size turns seven and
+two red; and making the driver count ignore the event field turns three red in
+each. Dropping the serve term from
 `LOAD_DriverMPK`'s cup branch turns nine assertions red in the loader harness;
 making the permutation a no-op turns two red in each; moving the width
 comparison from `>` to `>=` turns two red, raising the pixel ceiling turns five
@@ -1107,7 +1186,10 @@ so at each site. The name and field work added one more `#include` block, to
 `game/LOAD/LOAD_Assets.c`, and did not move the count: that file carries no
 `CTR_STATIC_ASSERT`, and `__LINE__` shifts are confined to the file they occur
 in. Its three other files — `AH_WarpPad.c`, `UI_RaceFlow.c` and
-`UI_CupStandings.c` — already included the header before this rung. An AP build additionally shows the `ap/ap_seedcfg.cpp`
+`UI_CupStandings.c` — already included the header before this rung. The field
+work added one more, to `game/HOWL/HOWL_Music.c`, which likewise carries no
+`CTR_STATIC_ASSERT`; `MainInit.c` and `UI_CupStandings.c` already had theirs.
+Placement was checked before the edit rather than inferred from the result. An AP build additionally shows the `ap/ap_seedcfg.cpp`
 custom-tracks parse itself, which is deliberate and documented under
 [Lifecycle](#lifecycle): a guard-off AP build still parses the block so its
 verifier stays correct about displacement.
@@ -1145,6 +1227,14 @@ head in both configurations.
   with different `custom_track_name` values see different names for the same
   race, and a player with no key set sees `PURPLE GEM CUP`. A descriptor field
   is what makes every client agree, and it is not in this rung.
+- The event race grids as many karts as the descriptor reports spawn slots for,
+  capped at eight. A packager that over-reports seats karts on grid slots it
+  never authored; nothing in the engine can catch that, because
+  `struct Level::DriverSpawn` has no count to check against.
+- Three more karts than the previous rung draw three more karts' worth of
+  primitives per frame. The measured peak for this race was ~390 KB of the 1 MiB
+  arena, so the headroom is large, but the figure predates the wider field and
+  the next live run is what confirms it.
 - The event race's AI are drawn from the eight base characters only. The bosses
   and the unlockables cannot appear, because no shipped MPK pack carries them
   alongside the base roster and an id outside the loaded pack is a crash rather

@@ -182,6 +182,19 @@ int CustomTrack_RaceFeatureEnabled(void);
 // whichever track is about to load and cannot wait for a subfile read to say so.
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 
+// How many karts this load grids, player included, or 0 when it is not the
+// event race: the descriptor's measured spawn count clamped into
+// CTR_CT_FIELD_MIN..CTR_CT_FIELD_MAX.
+//
+// Asked by MainInit_Drivers for the driver count and by UI_CupStandings.c for
+// the icon layout. It follows the track rather than being a constant because
+// struct Level::DriverSpawn is a fixed inline array of 8 with no count and no
+// range check, so a field bigger than the packager authored would seat karts on
+// unauthored bytes rather than fail. Clamping also keeps the refusal edge where
+// it was: a track reporting six grids six instead of being refused for not
+// reporting eight.
+int CustomTrack_EventFieldSize(int levelID, int adventureCupActive, int cupID);
+
 // Every line this feature emits goes through here. Writes to stdout, which the
 // harnesses assert on, and in an AP build also to AP_LogLine, which is the sink
 // that reaches ctr-ap.log.

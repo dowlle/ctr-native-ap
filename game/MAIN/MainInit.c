@@ -462,6 +462,19 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		    (gGT->cup.cupID == 4))
 		{
 			numDrivers = numPlyrCurrGame + 4;
+
+#ifdef CTR_CUSTOM_TRACKS
+			// A displaced cup races the whole field the track can seat, not the
+			// four the boss lineup assumed. The size follows the descriptor's
+			// measured spawn count rather than being a constant, because
+			// struct Level::DriverSpawn has no count for the engine to check a
+			// larger field against. Same serve predicate as the roster and the
+			// bytes, so the karts seated and the models loaded for them cannot
+			// disagree.
+			numDrivers = CustomTrackPolicy_DriverCount(
+			    numDrivers, numPlyrCurrGame,
+			    CustomTrack_EventFieldSize((int)gGT->levelID, 1, gGT->cup.cupID));
+#endif
 		}
 
 		else if (numPlyrCurrGame == 1)

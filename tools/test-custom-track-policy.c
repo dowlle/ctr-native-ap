@@ -262,6 +262,7 @@ static struct CustomTrackFeatureConfig ruled_config(void)
 	cfg.raceLaps = 7;
 	cfg.raceBoxes = 1;
 	strcpy(cfg.raceName, "BABY T PARK");
+	cfg.raceFieldSize = CTR_CT_FIELD_MAX; // the event track reports 8 spawn slots
 	return cfg;
 }
 
@@ -630,10 +631,15 @@ static void test_measured_flags(void)
 {
 	const char *why;
 
-	// The Purple Gem Cup grids five karts: MainInit_Drivers gives cupID 4
-	// numPlyrCurrGame + 4 rather than a full field, and LOAD_Assets forces that
-	// roster to the four bosses. Every other adventure cup grids eight.
-	expect_int(CustomTrackPolicy_RequiredSpawns(4), 5, "the Purple cup grids five karts");
+	// RequiredSpawns is what a track must report to be served at all, and for
+	// the Purple cup that is five -- what MainInit_Drivers grids for cupID 4
+	// before any displacement. Since rung 3c it is a FLOOR rather than the field
+	// size: the displaced race grids up to what the track reports (see
+	// test_field_size), and this number is deliberately NOT raised with it, so
+	// nothing that was served before is refused now.
+	expect_int(CustomTrackPolicy_RequiredSpawns(4), 5, "the Purple cup needs five spawn slots");
+	expect_int(CustomTrackPolicy_RequiredSpawns(4), CTR_CT_FIELD_MIN,
+	           "and the refusal edge sits exactly on the field floor");
 	expect_int(CustomTrackPolicy_RequiredSpawns(0), 8, "Red grids eight");
 	expect_int(CustomTrackPolicy_RequiredSpawns(3), 8, "Yellow grids eight");
 
@@ -1316,10 +1322,12 @@ static void test_permute_roster(void)
 				return;
 			}
 
-		// Only the first four slots reach the grid: MainInit_Drivers spawns
-		// drivers 1..4 for this cup. Key them as a set-with-order and count the
-		// distinct fields the sweep produced.
-		for (i = 0; i < 4; i++)
+		// How many of these slots reach the grid depends on the field size, so
+		// the sweep keys on the smallest field the clamp can produce -- the
+		// four AI of a CTR_CT_FIELD_MIN grid. That is the case where the
+		// permutation still SELECTS the racers rather than only ordering them,
+		// and therefore the one that has to keep varying.
+		for (i = 0; i < CTR_CT_FIELD_MIN - 1; i++)
 			key = key * 8 + ids[i];
 
 		key &= 0xfff;
@@ -1330,7 +1338,7 @@ static void test_permute_roster(void)
 		}
 	}
 
-	expect_int(distinctFields > 1, 1, "the shuffle actually varies the four karts that race");
+	expect_int(distinctFields > 1, 1, "the shuffle varies which karts race at the smallest field");
 
 	// Degenerate inputs are refusals, not crashes.
 	memcpy(ids, robots1p, sizeof ids);
@@ -1344,6 +1352,162 @@ static void test_permute_roster(void)
 	// starting at slot 1 is the whole rest of it. A change to either constant
 	// that broke that would walk off the end of characterIDs.
 	expect_int(CTR_CT_ROBOT_FIRST_SLOT + CTR_CT_ROBOT_SLOTS, 8, "the shuffle covers exactly characterIDs[1..7]");
+}
+
+// ---------------------------------------------------------------------------
+// Decision 11, rung 3c: how many karts the event race grids.
+//
+// The size follows the track rather than being a constant, so what has to be
+// pinned is the CLAMP and the fact that raising the field did not move the
+// refusal edge. Those are two different guarantees and they fail differently:
+// a broken clamp seats karts on grid slots the packager never authored, and a
+// moved refusal edge turns a track that used to race into a cup left vanilla.
+// ---------------------------------------------------------------------------
+
+static void test_field_size(void)
+{
+	struct CustomTrackFeatureConfig cfg = ruled_config();
+	struct CustomTrackLoadContext ctx = make_ctx(6, 1, 4);
+	int spawns;
+
+	// The event track's own measured shape: 8 spawn slots, so a full grid.
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 8, "the event race grids eight");
+
+	// The clamp, across every value a descriptor can carry. flags.spawns is
+	// validated to 1..8 on the wire (ap_seedcfg.cpp), but the clamp is asserted
+	// well outside that because it is the last thing standing between a
+	// descriptor and an index into a fixed 8-entry array.
+	for (spawns = -4; spawns <= 20; spawns++)
+	{
+		int got = CustomTrackPolicy_FieldSizeForSpawns(spawns);
+
+		if (got < CTR_CT_FIELD_MIN || got > CTR_CT_FIELD_MAX)
+		{
+			printf("FAIL field size out of range: %d spawns gave %d\n", spawns, got);
+			g_failures++;
+			return;
+		}
+	}
+
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(8), 8, "8 spawns grids 8");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(7), 7, "7 spawns grids 7");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(6), 6, "6 spawns grids 6");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(5), 5, "5 spawns grids 5");
+
+	// Under-reporting cannot shrink the race below what shipped, and
+	// over-reporting cannot seat a kart the engine has no spawn slot for.
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(4), CTR_CT_FIELD_MIN, "4 spawns still grids the floor");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(0), CTR_CT_FIELD_MIN, "and so does 0");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(9), CTR_CT_FIELD_MAX, "9 spawns is capped at the ceiling");
+	expect_int(CustomTrackPolicy_FieldSizeForSpawns(64), CTR_CT_FIELD_MAX, "and so is 64");
+
+	// The ceiling is the engine's, not a preference: struct Level::DriverSpawn
+	// is a fixed inline array of 8 and data.characterIDs is s16[8], so the
+	// largest field the clamp can name is exactly the last valid index plus one.
+	expect_int(CTR_CT_FIELD_MAX, CTR_CT_ROBOT_FIRST_SLOT + CTR_CT_ROBOT_SLOTS,
+	           "the field ceiling is the driver array's length");
+
+	// A field is only ever asked for a load that IS the event race, through the
+	// same predicate as the bytes and the arena. Everything else answers 0,
+	// which every call site reads as "leave the retail count alone".
+	ctx = make_ctx(6, 0, 4);
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 0, "a retail pad to the host slot grids retail");
+	ctx = make_ctx(6, 1, 1);
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 0, "another cup's leg grids retail");
+	ctx = make_ctx(3, 1, 4);
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 0, "another level grids retail");
+
+	cfg = ruled_config();
+	cfg.raceEnabled = 0;
+	ctx = make_ctx(6, 1, 4);
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 0, "feature off grids retail");
+
+	cfg = ruled_config();
+	cfg.contentVerified = 0;
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), 0, "unverified content grids retail");
+
+	// A config carrying an unclamped size is clamped at the point of use rather
+	// than trusted, because this number reaches a fixed-length array.
+	cfg = ruled_config();
+	cfg.raceFieldSize = 99;
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), CTR_CT_FIELD_MAX, "a bad stored size is clamped at use");
+	cfg.raceFieldSize = 0;
+	expect_int(CustomTrackPolicy_EventFieldSize(&cfg, &ctx), CTR_CT_FIELD_MIN, "and so is an unset one");
+
+	// THE REFUSAL EDGE DID NOT MOVE. Every spawn count that was served before
+	// the field grew is still served, and grids at least what it used to. This
+	// is the assertion that fails if RequiredSpawns is raised to 8 alongside
+	// the field, which is the change this shape exists to avoid.
+	for (spawns = CTR_CT_FIELD_MIN; spawns <= CTR_CT_FIELD_MAX; spawns++)
+	{
+		expect_int(CustomTrackPolicy_FlagsSupportRace(1, spawns, 4, NULL), 1,
+		           "every spawn count that was servable still is");
+		expect_int(CustomTrackPolicy_FieldSizeForSpawns(spawns) >= CTR_CT_FIELD_MIN, 1,
+		           "and never grids less than it did before");
+	}
+
+	expect_int(CustomTrackPolicy_FlagsSupportRace(1, CTR_CT_FIELD_MIN - 1, 4, NULL), 0,
+	           "one short of the floor is still refused, as it always was");
+}
+
+// The two engine forks the field size drives, pinned as decisions so a mutation
+// in either turns a row red rather than only showing up on screen.
+static void test_driver_count_and_layout(void)
+{
+	int drivers;
+	int cupID;
+
+	// MainInit_Drivers' arithmetic. Retail for cupID 4 at 1P is
+	// numPlyrCurrGame + 4 == 5; the event race replaces it with the field size.
+	expect_int(CustomTrackPolicy_DriverCount(5, 1, 8), 8, "a full field seats eight drivers");
+	expect_int(CustomTrackPolicy_DriverCount(5, 1, 6), 6, "a six-slot track seats six");
+	expect_int(CustomTrackPolicy_DriverCount(5, 1, 5), 5, "and the floor seats what retail did");
+
+	// A load that is not the event race keeps the retail count untouched, for
+	// every count retail can produce. This is the row that fails if the fork
+	// stops asking and starts overwriting.
+	expect_int(CustomTrackPolicy_DriverCount(5, 1, 0), 5, "the vanilla Purple cup still seats five");
+	expect_int(CustomTrackPolicy_DriverCount(8, 1, 0), 8, "an ordinary 1P cup still seats eight");
+	expect_int(CustomTrackPolicy_DriverCount(6, 2, 0), 6, "and 2P still seats six");
+	expect_int(CustomTrackPolicy_DriverCount(2, 1, 0), 2, "and a boss race still seats two");
+
+	// The standings layout fork. The narrow layout is correct for exactly the
+	// five it was composed for, and must not be reached above that -- icons past
+	// the fifth collapse to (0,0) there.
+	for (drivers = 1; drivers <= CTR_CT_FIELD_MAX; drivers++)
+	{
+		int narrow = CustomTrackPolicy_StandingsUsesNarrowLayout(4, drivers);
+
+		expect_int(narrow, drivers <= CTR_CT_FIELD_MIN ? 1 : 0, "the narrow layout ends where its row does");
+	}
+
+	// And it is the Purple cup's layout only. Every other cup keeps whatever it
+	// had at every field size, so this fork cannot reach a retail screen.
+	for (cupID = 0; cupID < 6; cupID++)
+	{
+		if (cupID == 4)
+			continue;
+
+		for (drivers = 1; drivers <= CTR_CT_FIELD_MAX; drivers++)
+			expect_int(CustomTrackPolicy_StandingsUsesNarrowLayout(cupID, drivers), 0,
+			           "no other cup reaches the narrow layout");
+	}
+
+	// The two forks agree with each other: whenever the field size drives the
+	// driver count above the floor, the layout that count reaches is the wide
+	// one. A disagreement here is exactly the corner-stacked icons.
+	{
+		int spawns;
+
+		for (spawns = CTR_CT_FIELD_MIN; spawns <= CTR_CT_FIELD_MAX; spawns++)
+		{
+			int field = CustomTrackPolicy_FieldSizeForSpawns(spawns);
+			int count = CustomTrackPolicy_DriverCount(5, 1, field);
+
+			expect_int(CustomTrackPolicy_StandingsUsesNarrowLayout(4, count), count <= CTR_CT_FIELD_MIN ? 1 : 0,
+			           "the layout the seated field reaches can lay that many icons out");
+		}
+	}
 }
 
 int main(void)
@@ -1366,6 +1530,8 @@ int main(void)
 	test_display_name();
 	test_shuffle_pick();
 	test_permute_roster();
+	test_field_size();
+	test_driver_count_and_layout();
 	test_fork_consistency();
 
 	if (g_failures != 0)

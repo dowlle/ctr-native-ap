@@ -1774,9 +1774,12 @@ static void test_event_roster(void)
 
 			CustomTrackPolicy_PermuteRoster(ids, CTR_CT_ROBOT_SLOTS, draws);
 
-			// The three rules, checked on the four ids that actually reach the
-			// grid: MainInit_Drivers spawns drivers 1..4 for this cup.
-			for (i = 0; i < 4; i++)
+			// The three rules, checked on EVERY slot rather than on the first
+			// four. At CTR_CT_FIELD_MAX all seven reach the grid, so all seven
+			// have to hold them; at a smaller field the extra rows are simply
+			// checking slots that will not be seated, which costs nothing and
+			// keeps the assertion independent of the field size.
+			for (i = 0; i < CTR_CT_ROBOT_SLOTS; i++)
 			{
 				expect_int(ids[i] >= 0 && ids[i] < 8, 1, "every racer is in the pack the load queued");
 				expect_int(ids[i] != player, 1, "the player is never on track twice");
@@ -1879,19 +1882,76 @@ static void test_event_roster_uses_the_arcade_pack(void)
 	expect_int(data.characterIDs[1] == RIPPER_ROO && data.characterIDs[2] == PAPU_PAPU &&
 	               data.characterIDs[3] == KOMODO_JOE && data.characterIDs[4] == PINSTRIPE,
 	           0, "and does not race the fixed boss lineup");
-	expect_log_contains("event race field:", "and says which four karts it drew");
+	expect_log_contains("event race field:", "and says which karts it drew");
 
-	// Every id it composed is still one the queued pack carries. This is the
-	// pack guarantee and the shuffle checked together, on the real fork.
+	// Every id it composed is still one the queued pack carries, checked across
+	// ALL seven opponent slots now that a full field seats all of them. This is
+	// the pack guarantee and the shuffle checked together, on the real fork.
 	{
 		int i;
+		int j;
 
-		for (i = 1; i <= 4; i++)
+		for (i = CTR_CT_ROBOT_FIRST_SLOT; i < CTR_CT_ROBOT_FIRST_SLOT + CTR_CT_ROBOT_SLOTS; i++)
 		{
 			expect_int(data.characterIDs[i] >= 0 && data.characterIDs[i] < 8, 1,
 			           "the event race's field is inside the pack it queued");
 			expect_int(data.characterIDs[i] != player, 1, "and never the player");
+
+			for (j = CTR_CT_ROBOT_FIRST_SLOT; j < i; j++)
+				expect_int(data.characterIDs[i] != data.characterIDs[j], 1, "and never twice");
 		}
+	}
+
+	// The field the descriptor's spawn count asks for, through the real
+	// predicate. Baby T Park reports eight slots, so the event race seats a full
+	// grid; the same load in a session armed for a five-slot track seats five.
+	expect_int(CustomTrack_EventFieldSize(TEST_HOST, 1, TEST_CUP), CTR_CT_FIELD_MAX,
+	           "an 8-spawn descriptor grids a full field");
+	expect_int(CustomTrack_EventFieldSize(TEST_HOST, 0, TEST_CUP), 0, "a retail pad grids retail");
+
+	{
+		struct CustomTrackSeedDescriptor narrow = good_descriptor();
+
+		narrow.flagSpawns = 5;
+		arm_with(narrow);
+		expect_log_contains("grids 5 karts", "a 5-spawn track says so when it arms");
+		expect_int(CustomTrack_EventFieldSize(TEST_HOST, 1, TEST_CUP), CTR_CT_FIELD_MIN,
+		           "and grids the floor rather than being refused");
+
+		narrow.flagSpawns = 6;
+		arm_with(narrow);
+		expect_int(CustomTrack_EventFieldSize(TEST_HOST, 1, TEST_CUP), 6,
+		           "a 6-spawn track grids six rather than being refused for not reporting eight");
+
+		// One below the floor is still refused, exactly as before the field grew:
+		// the point of following the spawn count is that this edge did not move.
+		narrow.flagSpawns = 4;
+		arm_with(narrow);
+		expect_log_contains("REFUSED", "one short of the floor is still refused");
+		expect_int(CustomTrack_EventFieldSize(TEST_HOST, 1, TEST_CUP), 0, "and grids nothing");
+
+		arm_with(good_descriptor());
+	}
+
+	// End to end, from the armed descriptor to the two numbers the engine uses:
+	// the driver count MainInit_Drivers seats and the standings layout that
+	// count reaches. Driven through the real loader rather than through a
+	// hand-built config, so a descriptor whose spawn count stopped reaching the
+	// field size would show up here rather than only on screen.
+	{
+		int field = CustomTrack_EventFieldSize(TEST_HOST, 1, TEST_CUP);
+		int seated = CustomTrackPolicy_DriverCount(5, 1, field);
+
+		expect_int(seated, CTR_CT_FIELD_MAX, "the armed event race seats a full grid");
+		expect_int(CustomTrackPolicy_StandingsUsesNarrowLayout(TEST_CUP, seated), 0,
+		           "and its standings take the eight-icon layout, not the five-in-a-row one");
+
+		// The same cup on a load that is not the event race keeps retail's five
+		// and therefore keeps retail's layout, in the same armed session.
+		expect_int(CustomTrackPolicy_DriverCount(5, 1, CustomTrack_EventFieldSize(3, 1, TEST_CUP)), 5,
+		           "a non-event leg of the same cup still seats five");
+		expect_int(CustomTrackPolicy_StandingsUsesNarrowLayout(TEST_CUP, 5), 1,
+		           "and still lays them out five in a row");
 	}
 
 	// The SAME cup, in the SAME armed session, when this load is not the event
