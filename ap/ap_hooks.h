@@ -15,6 +15,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
+#include "ap_custom_pad_logic.h"
 #endif
 
 struct GameTracker;
@@ -507,17 +508,21 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
 // AP_PODIUM_PSEUDO_BASE + track*CTR_CFG_PODIUM_RUNG_COUNT + rung (schema >= 6:
 // 0 held_1st / 1 held_3rd / 2 held_5th / 3 finish_podium / 4 finish_any), safely
-// above the 192-bit AdvProgress space (max = 0x100 + 15*5 + 4 = 335). AP_Lookup
-// LocationCode translates them to the per-seed rung location codes, so every
-// downstream bit-keyed helper (reward model, tint, checked-state, scouts -- rungs
-// are already scouted for the ceremony) works on rungs unchanged.
+// above the 192-bit AdvProgress space. Custom builds extend the logical track
+// range with the 32 frozen generic slots and reserve direct pseudo-bits for the
+// custom Trophy and per-destination Wumpa check. AP_LookupLocationCode translates
+// them to per-seed location codes, so every downstream bit-keyed helper (reward
+// model, tint, checked-state and scouts) works unchanged.
 //
 // AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS the still-unchecked rung
 // pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
-// the rungs of all four leg tracks (advCupTrackIDs). GLOW-ONLY on purpose: the
-// tier-2 menu and AP_PadState keep consuming the tier-only enumerators, so adding
-// rungs to the glow can never distort mode selection or the Done state.
+// the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
+// its generic Trophy, podium and per-destination Wumpa identities instead of the
+// absent retail Gem and leg identities. AP_PadState consumes this same complete
+// enumeration specifically so Done can never strand an attached check.
+#ifndef CTR_CUSTOM_TRACKS
 #define AP_PODIUM_PSEUDO_BASE 0x100
+#endif
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──

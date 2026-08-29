@@ -261,15 +261,24 @@ static const char *AP_TrophyName(int globalBit)
 	}
 }
 
-// Resolve a global AdvProgress bit to its AP location code, or -1 if not a
-// checkable location. Podium-rung PSEUDO-BITS (>= AP_PODIUM_PSEUDO_BASE, see
-// ap_hooks.h) translate to the per-seed rung codes here, so every bit-keyed
-// consumer (checked-state, reward model/tint, scouts) handles rungs unchanged.
+// Resolve a process-local progress identity to its seed-carried AP wire code,
+// or -1 when it is not a checkable location. The custom Trophy and Wumpa
+// identities are direct pseudo-bits; podium identities use the shared
+// retail-plus-custom logical track range. Every bit-keyed consumer (checked
+// state, reward model/tint and scouts) therefore handles them unchanged.
 static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
+#ifdef CTR_CUSTOM_TRACKS
+	if (globalBit == AP_CUSTOM_TROPHY_PSEUDO_BIT ||
+	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
+		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
+#endif
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		return AP_PodiumPseudoLocationCode(&ctr_cfg, globalBit);
+#else
 		int off = globalBit - AP_PODIUM_PSEUDO_BASE;
 		int track = off / CTR_CFG_PODIUM_RUNG_COUNT;
 		int rung = off % CTR_CFG_PODIUM_RUNG_COUNT;
@@ -285,9 +294,10 @@ static long AP_LookupLocationCode(int globalBit)
 		case 1:  code = pr->held_3rd;      break;
 		case 2:  code = pr->held_5th;      break;
 		case 3:  code = pr->finish_podium; break;
-		default: code = pr->finish_any;    break; // rung 4
+		default: code = pr->finish_any;    break;
 		}
-		return (code > 0) ? code : -1; // -1 = rung absent from this seed
+		return (code > 0) ? code : -1;
+#endif
 	}
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 	{
@@ -817,6 +827,9 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 //                 Turbo Track carry no trophy/token location
 //   arena 18,19,21,23 : 1 crystal (battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN)
 //   cup   100..104     : 1 gem ((dest-100) + FIRST_GEM)
+static int AP_PadBoxLive(long code, void *ctx);
+static int AP_PadBoxChecked(long code, void *ctx);
+
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 {
 	static const int kRaceTierBit[5] = {
@@ -875,6 +888,12 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 	}
 	else if (destLevelID >= 100 && destLevelID < 105)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+			return AP_CustomPadAppendUnchecked(
+				&ctr_cfg, destLevelID, 0, outBits, cap, count,
+				AP_PadBoxLive, AP_PadBoxChecked, 0);
+#endif
 		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4. Never a
 		// removed slot -- shuffle_gems off PINS this location (place_locked_item),
 		// it stays a real self-consistent AP check (see the package-3 build note).
@@ -894,7 +913,11 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 {
 	int rung;
+#ifdef CTR_CUSTOM_TRACKS
+	if (track < 0 || track >= AP_PODIUM_LOGICAL_TRACK_COUNT)
+#else
 	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
+#endif
 		return;
 	for (rung = 0; rung < CTR_CFG_PODIUM_RUNG_COUNT && *count < cap; rung++)
 	{
@@ -922,11 +945,21 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 // appends that track's own rungs. For a CUP destination (100..104) it appends the
 // rungs of ALL FOUR of the cup's leg tracks (data.advCupTrackIDs), because a cup
 // pad's position checks live on its legs -- without this a cup pad under-advertises
-// (decision 3, 2026-07-16 wayfinder). Kept separate from AP_PadUncollectedBits so
-// the tier-2 menu and AP_PadState semantics stay byte-identical (glow only).
+// (decision 3, 2026-07-16 wayfinder). Kept separate from
+// AP_PadUncollectedBits so the tier-2 menu stays tier-only. AP_PadState consumes
+// the glow-complete enumeration because a Done lock may not strand a rung.
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
-	int count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+	int count;
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return AP_CustomPadAppendUnchecked(
+			&ctr_cfg, destLevelID, ctr_cfg.podium_enabled,
+			outBits, cap, 0, AP_PadBoxLive, AP_PadBoxChecked, 0);
+#endif
+
+	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
 
 	if (!ctr_cfg.podium_enabled)
 		return count;
@@ -1060,6 +1093,13 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	if (destLevelID >= 100 && destLevelID < 105)
 	{
 		int cup = destLevelID - 100;
+#ifdef CTR_CUSTOM_TRACKS
+		// A displaced cup runs no retail legs.  Until custom box identities and
+		// placements exist, counting the wire row's retail boxes here would keep
+		// the custom pad open for checks it cannot serve.
+		if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+			return 0;
+#endif
 		for (leg = 0; leg < 4; leg++)
 			n += AP_PadTrackBoxesLeft(ctr_cfg_cup_leg(cup, leg));
 	}
@@ -4726,9 +4766,8 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 }
 
 // A custom track's host levelID is only a byte-serving vehicle. Keep retail
-// podium checks on the retail identity for ordinary loads, but answer no track
-// while the loader is serving custom bytes. Genuine custom-track position
-// rungs need their own datapackage identity and are deliberately absent today.
+// podium checks on the retail identity for ordinary loads; while custom bytes
+// are served, return the frozen generic custom-slot identity carried by v4.
 static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 {
 #ifdef CTR_CUSTOM_TRACKS

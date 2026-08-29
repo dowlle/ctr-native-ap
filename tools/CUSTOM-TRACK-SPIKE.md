@@ -1159,6 +1159,9 @@ cc -Wall -Wextra -m32 -DCTR_CUSTOM_TRACKS -DCTR_NATIVE -DBUILD=926 -I . -I inclu
 
 cc -Wall -Wextra -Werror -DCTR_CUSTOM_TRACKS -I include -I . \
    -o /tmp/test-custom-track-manager tools/test-custom-track-manager.c && /tmp/test-custom-track-manager
+
+cc -std=c99 -Wall -Wextra -Werror -I . -I ap \
+   -o /tmp/test-custom-pad-lifecycle tools/test-custom-pad-lifecycle.c && /tmp/test-custom-pad-lifecycle
 ```
 
 `test-custom-track-policy` pins the decisions and the digest primitive out of
@@ -1199,6 +1202,13 @@ pointer map outside the payload, instance table overrunning it, an absurd
 instance count, an out-of-range instance pointer), the manifest and YAML export
 of the measured value, and the refusal when the registry claims a capability the
 installed bytes do not support.
+
+`test-custom-pad-lifecycle` compiles the exact custom identity bridge used by
+the hub pad. It pins all 32 generic podium-slot indices, the non-overlapping
+pseudo-bit mapping for Trophy, podium and per-destination Wumpa, and the complete
+Baby T Park lifecycle: six unchecked locations before the race, Wumpa alone
+keeping the pad enterable if it was missed, and Done only after every attached
+custom location is checked. Package or measured-capability drift fails closed.
 
 `test-custom-track-policy` covers the same predicate as a truth table, against
 the three measured table shapes, plus its bounds behaviour: the index check runs
