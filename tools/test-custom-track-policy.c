@@ -1,6 +1,7 @@
 // Out-of-engine assertions for the custom-track loader's DECISIONS and its
-// content-verification primitive (Baby T Park event spike, rung 1, ruled
-// 2026-08-28). Compiles the REAL code: include/platform/native_sha256.h and
+// content-verification primitive, for the Baby T Park event spike. Each
+// decision's own heading in native_custom_tracks_policy.h carries its rung, so
+// this line cannot go stale. Compiles the REAL code: include/platform/native_sha256.h and
 // include/platform/native_custom_tracks_policy.h are freestanding by design and
 // include nothing from the engine, so this harness links nothing from the game
 // and runs on any host, with no disc, no display and no seed.

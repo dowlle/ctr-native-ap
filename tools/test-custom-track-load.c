@@ -1,5 +1,7 @@
-// Integration assertions for the custom-track loader against REAL files on disk
-// (Baby T Park event spike, rungs 1/2a/2c). Where
+// Integration assertions for the custom-track loader against REAL files on disk,
+// for the Baby T Park event spike. Each decision's own heading in
+// native_custom_tracks_policy.h carries its rung, so this line cannot go stale.
+// Where
 // tools/test-custom-track-policy.c pins the decisions and
 // tools/test-custom-tracks-seedcfg.cpp pins the wire parse, this pins the half
 // that needs a filesystem: config parsing, seed-descriptor application, content

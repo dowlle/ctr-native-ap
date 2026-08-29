@@ -7,7 +7,9 @@
 #include <platform/native_custom_tracks_policy.h>
 #include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
 
-// Custom-track loader, engine-facing half (Baby T Park event spike, rung 1).
+// Custom-track loader, engine-facing half, for the Baby T Park event spike.
+// Each decision's own heading in native_custom_tracks_policy.h carries its rung,
+// so this line cannot go stale.
 // The decisions this file's implementation asks are all in
 // native_custom_tracks_policy.h; what lives here is the config parse, the
 // content verification and the byte serving -- everything that needs a

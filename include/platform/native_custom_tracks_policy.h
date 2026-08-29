@@ -10,31 +10,33 @@
 //
 // ELEVEN DECISIONS LIVE HERE.
 //
-// 1. PAIR AUTO-EXPAND. A retail arcade track occupies a contiguous group of 8
-//    BIGFILE subfiles at [levelID*8, levelID*8 + 8) because BI_ARCADETRACKS is
-//    0. The group is four (vrm, lev) mode-pairs: even slots 0/2/4/6 are VRMs,
-//    odd slots 1/3/5/7 are the per-mode LEVs (1P, 2P, 4P, relic). A community
-//    custom track ships exactly ONE .lev and ONE .vrm, so the loader expands
-//    that single pair across all four mode slots in memory rather than making
-//    the packager write eight files. A 1P race reads only slots 0 and 1, so the
-//    expansion costs nothing on the path the spike actually exercises; slots
-//    2..7 exist so a 2P/4P/relic entry serves plausible bytes instead of the
-//    retail track's, which would be a silent content swap mid-group.
+// 1. PAIR AUTO-EXPAND (rung 1). A retail arcade track occupies a contiguous
+//    group of 8 BIGFILE subfiles at [levelID*8, levelID*8 + 8) because
+//    BI_ARCADETRACKS is 0. The group is four (vrm, lev) mode-pairs: even slots
+//    0/2/4/6 are VRMs, odd slots 1/3/5/7 are the per-mode LEVs (1P, 2P, 4P,
+//    relic). A community custom track ships exactly ONE .lev and ONE .vrm, so
+//    the loader expands that single pair across all four mode slots in memory
+//    rather than making the packager write eight files. A 1P race reads only
+//    slots 0 and 1, so the expansion costs nothing on the path the spike
+//    actually exercises; slots 2..7 exist so a 2P/4P/relic entry serves
+//    plausible bytes instead of the retail track's, which would be a silent
+//    content swap mid-group.
 //
-// 2. CONTENT VERDICT. Serving a track subfile is serving unverified bytes into
-//    the engine's load path. Every source file is hashed and compared against
-//    the digest the feature config names BEFORE the first byte is served, and
-//    any verdict other than OK refuses the whole track. The verdict enum is
-//    ordered by how loudly it should read in a log, not by severity.
+// 2. CONTENT VERDICT (rung 1). Serving a track subfile is serving unverified
+//    bytes into the engine's load path. Every source file is hashed and
+//    compared against the digest the feature config names BEFORE the first byte
+//    is served, and any verdict other than OK refuses the whole track. The
+//    verdict enum is ordered by how loudly it should read in a log, not by
+//    severity.
 //
-// 3. PURPLE-DESTINATION REDIRECT. Ruled 2026-08-28: when the spike feature is
-//    enabled, the seed's Purple Gem Cup destination becomes a full race-track
-//    destination running the custom track -- a SINGLE race, 7 laps, AI on, and
-//    winning it awards the Purple Gem through the cup's own award path. The
-//    redirect is expressed here as two pure answers -- "does this cup entry
-//    become a single race" and "is this leg the cup's last" -- because those
-//    are the two forks the engine takes, in two different files, and they must
-//    not be able to disagree. They are computed from the same inputs, so a
+// 3. PURPLE-DESTINATION REDIRECT (rung 1). Ruled 2026-08-28: when the spike
+//    feature is enabled, the seed's Purple Gem Cup destination becomes a full
+//    race-track destination running the custom track -- a SINGLE race, 7 laps,
+//    AI on, and winning it awards the Purple Gem through the cup's own award
+//    path. The redirect is expressed here as two pure answers -- "does this cup
+//    entry become a single race" and "is this leg the cup's last" -- because
+//    those are the two forks the engine takes, in two different files, and they
+//    must not be able to disagree. They are computed from the same inputs, so a
 //    cup that redirected at the pad cannot fail to complete at the results
 //    screen.
 //
@@ -125,10 +127,11 @@
 //    that. The predicate below therefore answers "does one more primitive fit",
 //    and the call sites stop drawing rather than overrun.
 //
-// 8. HOW BIG THE PRIMITIVE ARENA IS. Decision 7 clamps emitters to the arena.
-//    This one asks whether the arena is the right size in the first place, and
-//    for a custom track it is not: the retail table is indexed by the borrowed
-//    slot, so the track is handed a budget chosen for someone else's geometry.
+// 8. HOW BIG THE PRIMITIVE ARENA IS (rung 3a). Decision 7 clamps emitters to
+//    the arena. This one asks whether the arena is the right size in the first
+//    place, and for a custom track it is not: the retail table is indexed by
+//    the borrowed slot, so the track is handed a budget chosen for someone
+//    else's geometry.
 //
 //    The retail table cannot express a bigger one. It is u8 << 10, ceiling
 //    261,120 bytes, and the event track's SKY ALONE wants 310,464 -- so under
@@ -157,15 +160,15 @@
 //        fields are u32/void*, and the GPU tags carry 24-bit tokens, not
 //        truncated pointers.
 //
-//    WHICH LOADS GET THE FLOOR. Rung 1 gave it only to a load the loader was
-//    serving custom bytes for, on the argument that only a borrowed slot has a
-//    budget chosen for someone else's geometry. The 2026-08-29 run showed that
-//    argument was too narrow. The adventure hub (levelID 25) takes its arena
-//    from the ADVENTURE_ARENA branch of MainInit_GetPrimMemSize -- 0x1c000 =
-//    114,688 bytes, a constant, not the table -- and its worst frame in that
-//    run spent 106,324 of it, leaving 8,364 free. That is 93% of a budget the
-//    PS1 sized for PS1 draw pressure, and the native client draws more per
-//    frame than the PS1 build did.
+//    WHICH LOADS GET THE FLOOR. The first version of this decision gave it only
+//    to a load the loader was serving custom bytes for, on the argument that only
+//    a borrowed slot has a budget chosen for someone else's geometry. The
+//    2026-08-29 run showed that argument was too narrow. The adventure hub
+//    (levelID 25) takes its arena from the ADVENTURE_ARENA branch of
+//    MainInit_GetPrimMemSize -- 0x1c000 = 114,688 bytes, a constant, not the
+//    table -- and its worst frame in that run spent 106,324 of it, leaving 8,364
+//    free. That is 93% of a budget the PS1 sized for PS1 draw pressure, and the
+//    native client draws more per frame than the PS1 build did.
 //
 //    8,364 free is below DRAW_LEVEL_OVR1P_BUCKET_RESERVE_FULL_DYNAMIC (0x2700
 //    = 9,984), the largest reserve DrawLevelOvr1P_HasBucketPrimReserve asks
@@ -189,14 +192,14 @@
 //    included. A custom-tracks build replaces those arenas inside an 8 MiB
 //    pack (8,386,560 usable), so the worst conceivable 1P demand is the whole
 //    retail window plus both floors, 1,330,704 + 2,097,152 = 3,427,856, with
-//    4,958,704 spare. The custom race is the separate case rung 1 measured:
+//    4,958,704 spare. The custom race is the separate case already measured:
 //    5,418,356 free against a cost of 1,886,208.
 //
 //    The GPU-token ceiling does not compound across loads.
 //    MainFrame_RegisterGpuLinkRanges calls NativeGpuLinks_Reset() before it
 //    registers, so exactly six ranges are ever live and each level load starts
 //    the token space over -- widening the floor to every 1P load registers the
-//    same six ranges it always did, at the same sizes rung 1 checked.
+//    same six ranges it always did, at the sizes already checked.
 //
 //    RETAIL SIZING IS STILL UNTOUCHED WITH THE GUARD OFF. MainInit_GetPrimMemSize
 //    is ASM-verified and unmodified; the floor is applied after it, inside
@@ -204,9 +207,10 @@
 //    pack in the first place. A build without the guard allocates exactly the
 //    bytes retail allocates, for every level and every player count.
 //
-// 9. HOW MANY RENDERED QUADBLOCKS FIT. Decision 8 hands terrain a much larger
-//    arena, so DrawLevelOvr1P now runs further into a level's geometry before
-//    anything stops it. That makes a pre-existing unbounded write reachable.
+// 9. HOW MANY RENDERED QUADBLOCKS FIT (rung 3a). Decision 8 hands terrain a
+//    much larger arena, so DrawLevelOvr1P now runs further into a level's
+//    geometry before anything stops it. That makes a pre-existing unbounded
+//    write reachable.
 //
 //    DrawLevelOvr1P_AppendRenderedQuadBlock stores a pointer at the scratch
 //    cursor and advances it, with no end test. The cursor is seeded to
@@ -231,13 +235,13 @@
 //    is the cost of keeping the terminator in bounds, and a bucket that
 //    renders 255 quadblocks has already lost the frame to the reserve checks.
 //
-// 10. WHAT THE DISPLACED CUP IS CALLED. A displaced cup keeps the retail cup's
-//    identity everywhere the engine reasons about it -- cupID, the gem award
-//    path, the AdvCups colour -- because that identity is what the Gem hangs
-//    off. But it no longer races the retail cup's tracks, so the retail cup's
-//    NAME is now the one thing on screen that is simply false: the pad, the
-//    race-start banner and the standings title all still say the borrowed cup's
-//    name over a single race on someone else's track.
+// 10. WHAT THE DISPLACED CUP IS CALLED (rung 3b). A displaced cup keeps the
+//    retail cup's identity everywhere the engine reasons about it -- cupID,
+//    the gem award path, the AdvCups colour -- because that identity is what
+//    the Gem hangs off. But it no longer races the retail cup's tracks, so the
+//    retail cup's NAME is now the one thing on screen that is simply false:
+//    the pad, the race-start banner and the standings title all still say the
+//    borrowed cup's name over a single race on someone else's track.
 //
 //    The name is a CLIENT presentation string, not a wire field. It comes from
 //    config.ini alongside the two file paths, deliberately not from the
@@ -261,9 +265,9 @@
 //    the four PSX button glyphs '@' '[' '^' '*' are wider. See
 //    CTR_CT_NAME_MAX_PIXELS.
 //
-// 11. WHO THE DISPLACED CUP RACES AGAINST. Measured, because the answer decides
-//    what is even possible here, and the measurement contradicts the obvious
-//    design.
+// 11. WHO THE DISPLACED CUP RACES AGAINST (rung 3b). Measured, because the
+//    answer decides what is even possible here, and the measurement
+//    contradicts the obvious design.
 //
 //    An AI driver's model is not positional and is not indexed by character id.
 //    VehBirth_NonGhost (game/Vehicle/VehBirth.c) turns data.characterIDs[i] into

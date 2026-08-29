@@ -1,4 +1,4 @@
-# Custom-track loader — Baby T Park event spike (rungs 1, 2a, 2c)
+# Custom-track loader — Baby T Park event spike
 
 Build-time flag: `CTR_CUSTOM_TRACKS`. Off by default; with it off the build is
 identical to `main` (see [Guard-off identity](#guard-off-identity) for the
@@ -750,10 +750,10 @@ when the level changes, through `CustomTrack_Log`:
 frame's primitive writers and the sky is the 23rd, so both live on whatever the
 HUD, the weather, the karts, the crates, the tires and the shadows left behind.
 
-The three counters at the end are what the rung-1 version was missing. The
-high-water mark reports the worst **completed** frame, and a frame that ran the
-arena dry completes *less* work and therefore spends *less*, so exhaustion hides
-from it. Each counter is recorded where it happens:
+The three counters at the end are what the first version of this report was
+missing. The high-water mark reports the worst **completed** frame, and a frame
+that ran the arena dry completes *less* work and therefore spends *less*, so
+exhaustion hides from it. Each counter is recorded where it happens:
 
 | counter | where | what it means |
 |---|---|---|
@@ -767,12 +767,12 @@ bytes that were left — because the smallest shortfall is the figure a later
 sizing decision would be based on. A non-zero `rendered list full` emits one
 too.
 
-Rung 1 printed on every new per-load maximum, which was 101 lines in one
-session, keyed the load on the arena size (so two levels sharing a budget merged
-into one report), and still could not answer the question. This version prints
-once per load, keys on `levelID` **and** capacity, and counts the three events
-that a completed frame cannot show. Counting is scoped to the window between
-`CustomTrackDiag_BeginFrame` and `CustomTrackDiag_NoteFrameSpend`, which
+The first version printed on every new per-load maximum, which was 101 lines in
+one session, keyed the load on the arena size (so two levels sharing a budget
+merged into one report), and still could not answer the question. This version
+prints once per load, keys on `levelID` **and** capacity, and counts the three
+events that a completed frame cannot show. Counting is scoped to the window
+between `CustomTrackDiag_BeginFrame` and `CustomTrackDiag_NoteFrameSpend`, which
 split-screen never opens, so a 3P race cannot leave its refusals in the report
 of the 1P load before it.
 
@@ -1075,7 +1075,7 @@ red, and charging a button glyph one width instead of two turns four red, all in
 the policy harness; dropping the redirect gate from the name accessor turns five
 red in the policy harness and four in the loader harness. Reverting the sizing
 predicate to its
-rung-1 form turns three assertions red in each harness; moving the floor to 2P
+first form turns three assertions red in each harness; moving the floor to 2P
 turns four red in the policy harness and eight in the loader harness; dropping
 the append's second slot, moving the fit comparison from `>=` to `>`, or
 changing the array length by one each turn assertions red in both. The array
