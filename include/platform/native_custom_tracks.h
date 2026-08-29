@@ -182,6 +182,20 @@ int CustomTrack_RaceFeatureEnabled(void);
 // whichever track is about to load and cannot wait for a subfile read to say so.
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 
+// The recording identity this load races under, for the AI-recording seam in
+// ap/ap_navrec.h. Returns 1 and fills outUuid/outRevision only when this load
+// serves the custom track AND config.ini gave the package a well-formed
+// identity. Returns 0 for every retail load -- including the race pad to the
+// host slot in an armed session, and a cup exit -- and for a build whose
+// identity is missing or malformed.
+//
+// The caller turns 0 into AP_NavRec_ClearActiveCustomTrack(), so a 0 always
+// means "this is a retail line's world", never "leave the last answer
+// standing". Keyed on CustomTrack_ServingLoad so a recording's identity cannot
+// disagree with the bytes, the arena, or the character pack.
+int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupID, unsigned char outUuid[CTR_CT_NAV_UUID_BYTES],
+                                   unsigned int *outRevision);
+
 // How many karts this load grids, player included, or 0 when it is not the
 // event race: the descriptor's measured spawn count clamped into
 // CTR_CT_FIELD_MIN..CTR_CT_FIELD_MAX.

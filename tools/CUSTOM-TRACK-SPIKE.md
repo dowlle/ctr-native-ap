@@ -49,13 +49,15 @@ at all.
 
 ## Configuration
 
-### Client side: `config.ini` — two paths and a label
+### Client side: `config.ini` — two paths, a label, and an identity
 
 ```ini
 [CustomTracks]
 custom_track_vrm = tracks/baby-t-park/baby-t-park_v1.0.0.vrm
 custom_track_lev = tracks/baby-t-park/baby-t-park_v1.0.0.lev
 custom_track_name = BABY T PARK
+custom_track_nav_uuid = 898a9315-693f-4ed3-b6a0-fbe50db8bc40
+custom_track_nav_rev = 1
 ```
 
 Paths are resolved from the working directory the game runs in. No paths, no
@@ -66,10 +68,18 @@ Everything else the loader needs is deliberately **not** here. The seed is the
 single authority on what gets **served**, so a local file cannot talk this client
 into racing content the seed did not name.
 
-`custom_track_name` is the one exception, and it is an exception precisely
+`custom_track_name` is the first exception, and it is an exception precisely
 because it changes nothing about what is served — see
 [the displaced cup's name](#the-displaced-cups-name). It is optional; missing,
 empty, or unusable all mean "show the retail cup name".
+
+`custom_track_nav_uuid` and `custom_track_nav_rev` are the second, for the same
+reason and with the same caveat — see
+[the package's recording identity](#the-packages-recording-identity). Both are
+optional. A missing or malformed UUID means this build stamps and matches no
+custom-track recording identity; the track is still served either way.
+
+Baby T Park's minted values are the ones shown above.
 
 ### Seed side: the `custom_tracks` slot_data block (schema 8)
 
@@ -336,6 +346,62 @@ string than the one configured.
 Refusal is announced once, at parse time, and the cup keeps its retail name. A
 name can never refuse a track: an unusable `custom_track_name` still arms the
 loader.
+
+### The package's recording identity
+
+Decision 11. Recorded AI lines (`ap/ap_navrec.c`) are replayed only on the track
+they were recorded against, and a custom package is identified by a permanent
+**16-byte UUID** plus a **navigation compatibility revision** rather than by the
+engine slot it happens to occupy.
+
+**Why the physical slot cannot be the identity.** The custom track borrows a
+retail arcade slot, so the slot says nothing about which geometry is loaded. Two
+recordings can carry the same `levelId` and describe completely different
+corridors: one from the retail track, one from the custom track that displaced
+it in some other session. A slot-keyed identity accepts both for both, which
+puts bots on a racing line for geometry that is not there.
+
+**Why it is not derived.** The identity is author-controlled and coordinator-
+minted, deliberately **not** a function of the track name, the host slot, or
+either content digest. A presentation-only update — a retexture, a name change, a
+repack that leaves the racing line alone — must keep every recording made against
+the package valid, and any derived identity would invalidate all of them on a
+change that did not move a single navigation node. The **revision** is the field
+that moves, and it moves only when the navigable geometry does.
+
+Baby T Park's minted identity is `898a9315-693f-4ed3-b6a0-fbe50db8bc40` at
+revision **1**.
+
+**Where it comes from.** `config.ini`, not the descriptor, for exactly the reason
+the name is — it changes nothing about what is served, and a schema bump days
+before the event is not a trade worth making. A descriptor field is the proper
+long-term home, for a stronger reason than the name has: a per-client identity
+means two players on one seed can disagree about whether a recording is valid,
+and a packager should not have to hand-edit an ini for their recordings to
+travel. This is recorded as decision 11 rather than left implied.
+
+**How a load gets its identity.** `CustomTrack_NavIdentityForLoad` answers on the
+**same serve predicate** as the bytes, the arena and the character pack
+(`CustomTrack_ServingLoad`), so a recording's identity cannot disagree with the
+geometry actually loaded. `game/BOTS.c` asks it once per load, before the
+`BOTS_InitNavPath` loop and therefore before `AP_NavRec_AfterBotsInit` opens a
+file. Both branches are unconditional, so no load inherits the previous one's
+answer: a cup exit, a race pad to the host slot in an armed session, and an
+ordinary retail race all clear the identity.
+
+**An identity can never refuse a track.** A missing or malformed
+`custom_track_nav_uuid` is announced once, at parse time, and leaves the build
+with no custom-track recording identity to stamp or match; the track is still
+served and still raced. `custom_track_nav_rev` defaults to 1, and a malformed
+revision falls back to 1 rather than guessing. A revision without a UUID
+identifies nothing and is ignored.
+
+**What this does to recordings made before it.** Every pre-existing recording is
+NAV2 and therefore carries the legacy retail interpretation. While the custom
+track is active, all of them are rejected — including one that was in fact
+recorded on the custom track's geometry, because a NAV2 file has no field that
+could say so. Those have to be re-recorded under NAV3. The reverse also holds: a
+NAV3 recording is rejected on a retail load of the same slot.
 
 ### The field
 

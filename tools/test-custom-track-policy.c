@@ -1510,6 +1510,90 @@ static void test_driver_count_and_layout(void)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Decision 11: the package's recording identity, parsed out of config.ini.
+//
+// The invariant every case below shares: a malformed identity is refused, and
+// refusing it is cheap. It costs the recordings, never the race -- nothing in
+// this parser can reach the serve decision.
+// ---------------------------------------------------------------------------
+
+static void expect_uuid_rejected(const char *text, const char *what)
+{
+	unsigned char out[CTR_CT_NAV_UUID_BYTES];
+	int           i;
+
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+		out[i] = 0xAB;
+
+	expect_int(CustomTrackPolicy_ParseNavUuid(text, out), 0, what);
+
+	// A refusal must not have written a partial value.
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+	{
+		if (out[i] != 0xAB)
+		{
+			printf("FAIL %s: a refused parse wrote byte %d\n", what, i);
+			g_failures++;
+			return;
+		}
+	}
+}
+
+static void test_nav_uuid_parse(void)
+{
+	// Baby T Park's minted identity, the value this event ships with.
+	static const unsigned char babyT[CTR_CT_NAV_UUID_BYTES] = {0x89, 0x8a, 0x93, 0x15, 0x69, 0x3f, 0x4e, 0xd3,
+	                                                           0xb6, 0xa0, 0xfb, 0xe5, 0x0d, 0xb8, 0xbc, 0x40};
+	unsigned char              out[CTR_CT_NAV_UUID_BYTES];
+	unsigned int               rev;
+	int                        i;
+
+	expect_int(CustomTrackPolicy_ParseNavUuid("898a9315-693f-4ed3-b6a0-fbe50db8bc40", out), 1,
+	           "the minted Baby T Park UUID parses");
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+		expect_int((int)out[i], (int)babyT[i], "minted UUID byte");
+
+	// Case is presentation, not identity.
+	expect_int(CustomTrackPolicy_ParseNavUuid("898A9315-693F-4ED3-B6A0-FBE50DB8BC40", out), 1, "uppercase hex parses");
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+		expect_int((int)out[i], (int)babyT[i], "uppercase UUID byte");
+
+	// An all-zero UUID is a well-formed value. It is not special-cased here:
+	// navIdentityValid is what says whether an identity exists, so the parser
+	// does not need a second way to say "none".
+	expect_int(CustomTrackPolicy_ParseNavUuid("00000000-0000-0000-0000-000000000000", out), 1, "the zero UUID parses");
+
+	expect_uuid_rejected(NULL, "a NULL value is refused");
+	expect_uuid_rejected("", "an empty value is refused");
+	expect_uuid_rejected("898a9315-693f-4ed3-b6a0-fbe50db8bc4", "one digit short is refused");
+	expect_uuid_rejected("898a9315-693f-4ed3-b6a0-fbe50db8bc400", "one digit long is refused");
+	expect_uuid_rejected("898a9315693f4ed3b6a0fbe50db8bc40", "the unhyphenated form is refused");
+	expect_uuid_rejected("898a9315-693f-4ed3-b6a0-fbe50db8bcg0", "a non-hex digit is refused");
+	expect_uuid_rejected("898a9315_693f_4ed3_b6a0_fbe50db8bc40", "the wrong separator is refused");
+	expect_uuid_rejected("898a93-15693f-4ed3-b6a0-fbe50db8bc40", "hyphens in the wrong places are refused");
+	expect_uuid_rejected(" 898a9315-693f-4ed3-b6a0-fbe50db8bc40", "a leading space is refused");
+	expect_uuid_rejected("898a9315-693f-4ed3-b6a0-fbe50db8bc40 ", "a trailing space is refused");
+
+	// Revisions. 0 is reserved for "no identity", so it is not configurable.
+	rev = 0xFFFFFFFFu;
+	expect_int(CustomTrackPolicy_ParseNavRevision("1", &rev), 1, "revision 1 parses");
+	expect_int((int)rev, 1, "revision 1 value");
+
+	expect_int(CustomTrackPolicy_ParseNavRevision("42", &rev), 1, "a multi-digit revision parses");
+	expect_int((int)rev, 42, "revision 42 value");
+
+	rev = 7;
+	expect_int(CustomTrackPolicy_ParseNavRevision("0", &rev), 0, "revision 0 is refused");
+	expect_int((int)rev, 7, "a refused revision leaves the caller's value alone");
+	expect_int(CustomTrackPolicy_ParseNavRevision("", &rev), 0, "an empty revision is refused");
+	expect_int(CustomTrackPolicy_ParseNavRevision("-1", &rev), 0, "a negative revision is refused");
+	expect_int(CustomTrackPolicy_ParseNavRevision("1.0", &rev), 0, "a non-integer revision is refused");
+	expect_int(CustomTrackPolicy_ParseNavRevision("2x", &rev), 0, "a trailing character is refused");
+	expect_int(CustomTrackPolicy_ParseNavRevision("99999999999", &rev), 0, "an overflowing revision is refused");
+	expect_int((int)rev, 7, "no refusal above disturbed the caller's value");
+}
+
 int main(void)
 {
 	test_sha256_vectors();
@@ -1532,6 +1616,7 @@ int main(void)
 	test_permute_roster();
 	test_field_size();
 	test_driver_count_and_layout();
+	test_nav_uuid_parse();
 	test_fork_consistency();
 
 	if (g_failures != 0)

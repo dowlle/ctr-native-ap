@@ -233,6 +233,8 @@ void CustomTrack_Load(void)
 	FILE *f;
 	char line[1024];
 	char section[64] = "";
+	char navUuidText[64] = "";
+	char navRevText[32] = "";
 
 	// Idempotent: parse and verify exactly once per run.
 	if (s_customTracksLoaded)
@@ -304,13 +306,19 @@ void CustomTrack_Load(void)
 		//
 		// The name is here and not on the wire precisely because it is the one
 		// thing that changes nothing about what is served. Decision 10 records
-		// that a descriptor field is the proper long-term home for it.
+		// that a descriptor field is the proper long-term home for it. The two
+		// nav-identity keys below join it for the same reason, and carry the
+		// same caveat: decision 11 records that they belong in the descriptor.
 		if (strcmp(key, "custom_track_vrm") == 0)
 			CustomTrack_CopyField(s_customTrackVrm.path, sizeof(s_customTrackVrm.path), value);
 		else if (strcmp(key, "custom_track_lev") == 0)
 			CustomTrack_CopyField(s_customTrackLev.path, sizeof(s_customTrackLev.path), value);
 		else if (strcmp(key, "custom_track_name") == 0)
 			CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof(s_customTrackConfig.raceName), value);
+		else if (strcmp(key, "custom_track_nav_uuid") == 0)
+			CustomTrack_CopyField(navUuidText, sizeof(navUuidText), value);
+		else if (strcmp(key, "custom_track_nav_rev") == 0)
+			CustomTrack_CopyField(navRevText, sizeof(navRevText), value);
 	}
 
 	fclose(f);
@@ -333,6 +341,44 @@ void CustomTrack_Load(void)
 			CustomTrack_Log("[CustomTracks] custom_track_name ignored: %s; the cup keeps its retail name\n", why);
 			s_customTrackConfig.raceName[0] = '\0';
 		}
+	}
+
+	// Decision 11: resolve the package's recording identity, once, here, for the
+	// same reason the name is resolved here -- so no later caller has to re-judge
+	// the text and risk disagreeing about it.
+	//
+	// Every failure below lands in the same place: navIdentityValid stays 0, the
+	// track is still served, and recordings simply fall back to the legacy retail
+	// interpretation. A malformed identity costs the AI lines, never the race.
+	if (navUuidText[0] != '\0')
+	{
+		if (CustomTrackPolicy_ParseNavUuid(navUuidText, s_customTrackConfig.navTrackUuid))
+		{
+			s_customTrackConfig.navIdentityValid = 1;
+			s_customTrackConfig.navRevision = 1; // the default when no revision is configured
+
+			if (navRevText[0] != '\0' && !CustomTrackPolicy_ParseNavRevision(navRevText, &s_customTrackConfig.navRevision))
+			{
+				s_customTrackConfig.navRevision = 1;
+				CustomTrack_Log("[CustomTracks] custom_track_nav_rev \"%s\" is not a positive whole number; "
+				                "using revision 1\n",
+				                navRevText);
+			}
+
+			CustomTrack_Log("[CustomTracks] recordings identify as %s revision %u\n", navUuidText,
+			                s_customTrackConfig.navRevision);
+		}
+		else
+		{
+			CustomTrack_Log("[CustomTracks] custom_track_nav_uuid \"%s\" is not a canonical 8-4-4-4-12 UUID; "
+			                "this build stamps and matches no custom-track recording identity\n",
+			                navUuidText);
+		}
+	}
+	else if (navRevText[0] != '\0')
+	{
+		CustomTrack_Log("[CustomTracks] custom_track_nav_rev is set but custom_track_nav_uuid is not; "
+		                "a revision alone identifies nothing and is ignored\n");
 	}
 
 	if (s_customTrackVrm.path[0] == '\0' && s_customTrackLev.path[0] == '\0')
@@ -641,6 +687,33 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 	ctx.cupID = cupID;
 
 	return CustomTrackPolicy_ShouldServe(CustomTrack_Config(), &ctx);
+}
+
+int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupID, unsigned char outUuid[CTR_CT_NAV_UUID_BYTES],
+                                   unsigned int *outRevision)
+{
+	const struct CustomTrackFeatureConfig *cfg;
+	int                                    i;
+
+	if (outUuid == NULL || outRevision == NULL)
+		return 0;
+
+	// The identity answers for exactly the loads the BYTES answer for. Asking
+	// the same predicate here is what keeps a recording's identity and the
+	// geometry it was recorded against from ever disagreeing: if this load is
+	// not serving the custom track, it is a retail load and carries the retail
+	// identity, whatever config.ini holds.
+	if (!CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
+		return 0;
+
+	cfg = CustomTrack_Config();
+	if (!cfg->navIdentityValid)
+		return 0;
+
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+		outUuid[i] = cfg->navTrackUuid[i];
+	*outRevision = cfg->navRevision;
+	return 1;
 }
 
 int CustomTrack_RaceFeatureEnabled(void)

@@ -432,6 +432,131 @@
 // says how much room the config parse keeps one in.
 #define CTR_CT_NAME_MAX 64
 
+// --- decision 11: what a recording says it was recorded on -----------------
+//
+// A package owns a permanent 16-byte UUID and a navigation compatibility
+// revision, and a recorded AI line is only replayed on the identity it was
+// recorded against (ap/ap_navrec_format.h, AP_NavRecFormat_IdentityMatches).
+//
+// The identity is author-controlled and coordinator-minted. It is deliberately
+// NOT derived from the track name, the host slot, or either content digest: a
+// presentation-only update -- a retexture, a name change, a repack that leaves
+// the racing line alone -- must keep every recording made against the package
+// valid, and any derived identity would break them all. The revision is what
+// moves, and only when the navigable geometry moves.
+//
+// Like the display name (decision 10), this reaches the client from config.ini
+// rather than from slot_data, and for the same reason: it changes nothing about
+// what is SERVED. That also makes it the same kind of provisional home. A
+// descriptor field is the proper long-term home for both, so that every client
+// on a seed agrees without each packager having to hand-edit an ini.
+#define CTR_CT_NAV_UUID_BYTES 16
+
+// Canonical 8-4-4-4-12 text form, terminator included: 32 hex digits and four
+// hyphens. The parse accepts this shape and nothing else.
+#define CTR_CT_NAV_UUID_TEXT_LEN 36
+
+static int CustomTrackPolicy_HexDigit(unsigned char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return 10 + (c - 'a');
+	if (c >= 'A' && c <= 'F')
+		return 10 + (c - 'A');
+	return -1;
+}
+
+// Parse the canonical hyphenated UUID text into 16 bytes. Returns 1 only for a
+// completely well-formed value; every malformed shape returns 0 and leaves out
+// untouched, which the caller turns into "no NAV3 identity" rather than into a
+// refusal of the track. A misconfigured identity must never cost the player the
+// race -- it costs the recordings, which is the recoverable half.
+static int CustomTrackPolicy_ParseNavUuid(const char *text, unsigned char out[CTR_CT_NAV_UUID_BYTES])
+{
+	unsigned char bytes[CTR_CT_NAV_UUID_BYTES];
+	int           i;
+	int           n = 0;
+
+	if (text == NULL || out == NULL)
+		return 0;
+
+	for (i = 0; i < CTR_CT_NAV_UUID_TEXT_LEN; i++)
+	{
+		if (text[i] == '\0')
+			return 0; // shorter than the canonical form
+	}
+	if (text[CTR_CT_NAV_UUID_TEXT_LEN] != '\0')
+		return 0; // longer than the canonical form
+
+	for (i = 0; i < CTR_CT_NAV_UUID_TEXT_LEN; i++)
+	{
+		unsigned char c = (unsigned char)text[i];
+
+		if (i == 8 || i == 13 || i == 18 || i == 23)
+		{
+			if (c != '-')
+				return 0;
+			continue;
+		}
+
+		if (c == '-')
+			return 0; // a hyphen anywhere else is not this shape
+		{
+			int hi, lo;
+
+			hi = CustomTrackPolicy_HexDigit(c);
+			if (hi < 0)
+				return 0;
+			i++;
+			lo = CustomTrackPolicy_HexDigit((unsigned char)text[i]);
+			if (lo < 0)
+				return 0;
+			if (n >= CTR_CT_NAV_UUID_BYTES)
+				return 0;
+			bytes[n++] = (unsigned char)((hi << 4) | lo);
+		}
+	}
+
+	if (n != CTR_CT_NAV_UUID_BYTES)
+		return 0;
+
+	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
+		out[i] = bytes[i];
+	return 1;
+}
+
+// A revision of 0 is reserved for "no identity", so a configured revision must
+// be positive. Anything the decimal parse cannot account for in full -- an empty
+// value, a sign, a stray character, an overflow -- is refused, and the caller
+// falls back to the default revision rather than guessing at intent.
+#define CTR_CT_NAV_REV_MAX 0x7FFFFFFFuL
+
+static int CustomTrackPolicy_ParseNavRevision(const char *text, unsigned int *out)
+{
+	unsigned long v = 0;
+	int           digits = 0;
+
+	if (text == NULL || out == NULL || text[0] == '\0')
+		return 0;
+
+	for (; *text != '\0'; text++)
+	{
+		if (*text < '0' || *text > '9')
+			return 0;
+		v = (v * 10uL) + (unsigned long)(*text - '0');
+		if (v > CTR_CT_NAV_REV_MAX)
+			return 0;
+		digits++;
+	}
+
+	if (digits == 0 || v == 0uL)
+		return 0;
+
+	*out = (unsigned int)v;
+	return 1;
+}
+
 // FONT_BIG's three width constants, from data.font_charPixWidth[FONT_BIG],
 // data.font_puncPixWidth[FONT_BIG] and data.font_buttonPixWidth[FONT_BIG]
 // (game/zGlobal_DATA.c). All three cup-name draw sites pass FONT_BIG, so it is
@@ -527,6 +652,21 @@ struct CustomTrackFeatureConfig
 	// driver count, the standings layout, the harnesses -- reads one number
 	// rather than re-clamping the raw spawn count and risking a disagreement.
 	int raceFieldSize;
+
+	// --- decision 11: the package's recording identity ---
+	//
+	// Read from config.ini exactly like raceName, and non-armed for the same
+	// reason: it describes the PACKAGE, not the seed's decision to serve it, so
+	// it is read once at startup and outlives any number of descriptors.
+	// CustomTrack_ResetArmedState leaves it alone.
+	//
+	// navIdentityValid is 0 when no UUID was configured or the configured one
+	// was malformed. Both mean the same thing to every reader: this build has no
+	// NAV3 identity to stamp or match, so recordings fall back to the legacy
+	// retail interpretation. Neither ever stops the track being served.
+	int           navIdentityValid;
+	unsigned char navTrackUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int  navRevision;
 };
 
 // How many karts the engine will put on the grid for a redirected cup's race.
