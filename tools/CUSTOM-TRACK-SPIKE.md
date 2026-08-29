@@ -450,6 +450,43 @@ nothing:**
 The champion-pole term in `AH_WarpPad.c` was measured and needs nothing: its loop
 is already `1..8` and its ordered branch produces the identity mapping.
 
+#### Does the wider field fit the arena
+
+Yes, and by a bound rather than by a run. The verified live run measured this
+race at a worst frame of **389,484 bytes** against the 1 MiB floor, over 3,092
+frames, with all three drop counters zero.
+
+Take the most pessimistic assumption available — that *every* byte of that frame
+is per-kart cost scaling linearly with the field, which is plainly false, since
+terrain, sky, HUD and weather do not care how many karts are on track:
+
+| | bytes |
+|---|---|
+| measured worst frame, five karts | 389,484 |
+| the same frame scaled 5 → 8 karts | 623,174 |
+| `CTR_CT_PRIM_ARENA_BYTES` | 1,048,576 |
+| spare | 425,402 |
+
+That is 59% of the floor, and the spare is 42x the largest bucket reserve
+(`0x2700` = 9,984). Turned around: for the wider field to overflow, the
+kart-proportional share **alone** would have to exceed 1,098,486 bytes — more
+than the entire measured frame including terrain and sky. Not reachable, so this
+needs no live run.
+
+For scale, the retail levelID-6 budget was 105,472 bytes and the five-kart race
+already spent 3.7x that. The floor is doing all the work on this track whatever
+the field size.
+
+The two related hazards are untouched by kart count: the rendered-quadblock bound
+counts *terrain* quadblocks, and the 51-record BSP stack is walked before any
+primitive is written. GPU tokens are unchanged at six ranges of the same sizes.
+
+What is worth watching instead is **MEMPACK**: three more karts means three more
+model instances and their allocations, and instance-pool sizing has starved
+MEMPACK before. The 8 MiB pack this build selects makes it very likely fine, and
+the instrument is the `[AP POOL] free=` telemetry, not the per-load render
+report.
+
 **What the shuffle means at a full field.** With seven candidates in seven slots
 the permutation no longer selects who races — everyone races. It still decides
 which character sits in which grid slot, because `CopySpawnOrder` maps driver `i`
@@ -468,12 +505,27 @@ sideload option is not free — AI voice banks cover characters 0..7 only, and t
 speed-champion pole placement matches only ids below 8. Neither is reachable,
 since every id the shuffle can produce is already 0..7.
 
-Also recorded, and **pre-existing**: `AH_WarpPad.c` reads
-`data.metaDataLEV[levelID]` for the champion lookup with `levelID` still the
-pad's own 100..104 for a gem-cup pad, against a 65-entry array. The champion id
-it reads is therefore out-of-bounds data for every gem cup, vanilla included.
-Untouched here because it predates this work and behaves identically at five
-karts and eight.
+Also recorded, and **pre-existing**: `AH_WarpPad.c`'s champion lookup indexes
+`data.metaDataLEV[levelID]` with `levelID` still the pad's own 100..104 for a
+gem-cup pad, against a `struct MetaDataLEV[0x41]` — 35 to 39 entries past the
+end. The `champID` it gets is therefore out-of-bounds data for every gem cup,
+vanilla included. The tree already knows this array needs guarding at that call
+path: `AH_WarpPad.c:412` guards it with `levelID < AH_WP_ADV_CUP` and another
+site repeats the guard with a comment saying `metaDataLEV` is valid for
+track/trial/arena LevelIDs but **not** cup pads. The champion site is the one
+that missed the idiom.
+
+It is **not purely a read**. `champID` feeds `if ((champID < 8) && ...)`, and if
+the out-of-range bytes satisfy that, the branch rewrites all eight entries of
+`sdata->kartSpawnOrderArray`. What masks it is the identity mapping recorded
+above: `BOTS_Adv_CopySpawnOrder` overwrites that array for cupID 4 afterwards, so
+the grid comes out right regardless. Reachability is exactly the five cup pads;
+every other pad has a levelID under 25.
+
+Untouched here because it predates this work, affects vanilla identically, is
+masked downstream, and behaves the same at five karts and eight — and because it
+sits beside the champion-pole term, so it wants ruling on together with that
+rather than separately.
 
 ### AP boxes on the event race
 
@@ -1232,9 +1284,12 @@ head in both configurations.
   never authored; nothing in the engine can catch that, because
   `struct Level::DriverSpawn` has no count to check against.
 - Three more karts than the previous rung draw three more karts' worth of
-  primitives per frame. The measured peak for this race was ~390 KB of the 1 MiB
-  arena, so the headroom is large, but the figure predates the wider field and
-  the next live run is what confirms it.
+  primitives per frame. This is **settled by arithmetic, not pending a live
+  run** — see [does the wider field fit the arena](#does-the-wider-field-fit-the-arena).
+  What is worth watching instead is MEMPACK: three more karts means three more
+  model instances and their allocations. The custom-tracks build has the 8 MiB
+  pack so this is very likely fine, and the instrument is the `[AP POOL] free=`
+  telemetry rather than the per-load render report.
 - The event race's AI are drawn from the eight base characters only. The bosses
   and the unlockables cannot appear, because no shipped MPK pack carries them
   alongside the base roster and an id outside the loaded pack is a crash rather
