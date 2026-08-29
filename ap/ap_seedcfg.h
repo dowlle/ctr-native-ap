@@ -171,7 +171,11 @@ typedef struct
 // version-2 entry carries no such measurement, and a Wumpa check must never
 // guess one, so a version-2 block is refused here rather than read with the flag
 // defaulted in either direction.
-#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 3
+// 4 (2026-08-30) adds the frozen generic slot and exact Trophy/podium location
+// codes. These identities cannot be inferred from a mutable package title or
+// its position in the wire array, so older block versions are refused.
+#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 4
+#define CTR_CFG_CT_SLOT_COUNT          32
 #define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
 #define CTR_CFG_CT_ID_CAP              64
 #define CTR_CFG_CT_UUID_CAP            37
@@ -209,6 +213,7 @@ typedef struct
 	unsigned int navigation_revision;
 
 	int laps;                  // 1..7
+	int slot;                  // 1..32 frozen generic datapackage identity
 	int host_level_id;         // 0..17, the arcade slot whose bytes are borrowed
 	int replaces_cup_level_id; // 100..104
 	int boxes;                 // 1 = AP boxes allowed on the event race
@@ -218,6 +223,9 @@ typedef struct
 	// real bytes and stays disarmed on any mismatch.
 	char lev_sha256[CTR_CFG_CT_HEX_CAP];
 	char vrm_sha256[CTR_CFG_CT_HEX_CAP];
+
+	long trophy_location;      // Custom Track N: Trophy Race
+	ctr_podium_rungs podium;   // generic custom-slot rungs, -1 = absent
 
 	ctr_custom_track_flags flags;
 } ctr_custom_track;

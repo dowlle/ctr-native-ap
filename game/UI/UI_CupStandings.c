@@ -673,6 +673,12 @@ void UI_CupStandings_InputAndDraw(void)
 					{
 						int bitIndex = ADV_REWARD_FIRST_GEM + i;
 						u32 *rewardsSet = sdata->advProgress.rewards;
+						int customTrackTrophy = 0;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+						customTrackTrophy = ctr_cfg_active() &&
+							CustomTrack_CupRaceRedirectActive(i, 1);
+#endif
 
 #ifdef CTR_AP
 						// AP: the vanilla "already won?" gate reads adv->rewards, but
@@ -684,7 +690,9 @@ void UI_CupStandings_InputAndDraw(void)
 						// the AP location CHECKED-state instead (same fix class as
 						// the trophy gate in 222.c and ThTick:601 f9fbfa7a0).
 						// AP_NotifyAdvReward dedupes, so a re-win is safe.
-						if (ctr_cfg_active() ? !AP_LocationCheckedByBit(bitIndex)
+						if (ctr_cfg_active() ? (customTrackTrophy
+							? !AP_CustomTrackTrophyChecked()
+							: !AP_LocationCheckedByBit(bitIndex))
 						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
 #else
 						if (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0)
@@ -692,7 +700,10 @@ void UI_CupStandings_InputAndDraw(void)
 						{
 							UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
-							AP_NotifyAdvReward(bitIndex); // AP: gem cup location check
+							if (customTrackTrophy)
+								AP_NotifyCustomTrackTrophy();
+							else
+								AP_NotifyAdvReward(bitIndex); // AP: retail gem cup location check
 #endif
 
 							// unlock Roo, Papu, Joe, Pinstripe, FCrash

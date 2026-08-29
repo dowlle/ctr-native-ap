@@ -28,6 +28,11 @@ void AP_OnFrame(struct GameTracker *gGT);
 // AdvProgress bit index (= word*32 + bit); resolved to an AP location code.
 void AP_NotifyAdvReward(int rewardBit);
 
+// Generic custom-slot Trophy identity. A displaced cup's retail Gem bit remains
+// presentation state only; the AP check is the custom Trophy code from slot data.
+int AP_CustomTrackTrophyChecked(void);
+void AP_NotifyCustomTrackTrophy(void);
+
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).

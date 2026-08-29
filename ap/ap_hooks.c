@@ -4732,6 +4732,11 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 {
 #ifdef CTR_CUSTOM_TRACKS
+	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	    CustomTrack_ServingLoad((int)gGT->levelID,
+	                            (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                            gGT->cup.cupID))
+		return CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
 	return CustomTrack_RetailPodiumLevelID((int)gGT->levelID,
 	                                        (gGT->gameMode1 & ADVENTURE_CUP) != 0,
 	                                        gGT->cup.cupID);
@@ -4844,6 +4849,32 @@ static int AP_EmitClassCheck(long code,
 		AP_FeedOnLocationSent(code);
 	return 1;
 }
+
+#ifdef CTR_CUSTOM_TRACKS
+int AP_CustomTrackTrophyChecked(void)
+{
+	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	       ctr_cfg.custom_track.trophy_location > 0 &&
+	       ap_net_location_checked(ctr_cfg.custom_track.trophy_location);
+}
+
+void AP_NotifyCustomTrackTrophy(void)
+{
+	int podiumTrack;
+	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok)
+		return;
+	AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
+	                  1, -1, -1, 1,
+	                  "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
+	                  ctr_cfg.custom_track.slot,
+	                  ctr_cfg.custom_track.trophy_location);
+	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
+	AP_SendPodiumChecks(podiumTrack, 1);
+}
+#else
+int AP_CustomTrackTrophyChecked(void) { return 0; }
+void AP_NotifyCustomTrackTrophy(void) {}
+#endif
 
 int AP_LetterAvailable(int track, int letter)
 {
@@ -5346,12 +5377,19 @@ static void AP_SendPodiumChecks(int track, int placement)
 {
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
-		return; // only the 16 trophy races carry rungs
 	if (placement < 1)
 		return; // -1 = placement unknown -> nothing to fan out
 
-	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+	const ctr_podium_rungs *pr = NULL;
+	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		pr = &ctr_cfg.podium[track];
+#ifdef CTR_CUSTOM_TRACKS
+	else if (ctr_cfg.custom_tracks_ok &&
+	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
+		pr = &ctr_cfg.custom_track.podium;
+#endif
+	if (pr == NULL)
+		return;
 
 	if (placement == 1)
 		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, placement, "finish");
@@ -5372,12 +5410,19 @@ static void AP_SendHeldChecks(int track, int position)
 {
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
-		return;
 	if (position < 1)
 		return;
 
-	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+	const ctr_podium_rungs *pr = NULL;
+	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		pr = &ctr_cfg.podium[track];
+#ifdef CTR_CUSTOM_TRACKS
+	else if (ctr_cfg.custom_tracks_ok &&
+	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
+		pr = &ctr_cfg.custom_track.podium;
+#endif
+	if (pr == NULL)
+		return;
 
 	if (position == 1)
 		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, position, "held");
@@ -5400,6 +5445,11 @@ static void AP_ReconcilePodiumFromTrophies(void)
 	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
 		if (AP_LocationCheckedByBit(lid + ADV_REWARD_FIRST_TROPHY))
 			AP_SendPodiumChecks(lid, 1); // trophy won => 1st => all rungs
+#ifdef CTR_CUSTOM_TRACKS
+	if (ctr_cfg.custom_tracks_ok && AP_CustomTrackTrophyChecked())
+		AP_SendPodiumChecks(CTR_CFG_PODIUM_TRACK_COUNT +
+		                    ctr_cfg.custom_track.slot - 1, 1);
+#endif
 }
 
 // Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure

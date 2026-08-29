@@ -5,6 +5,7 @@
 //   c++ -m32 -std=c++17 -DCTR_AP -Iap -Iap/vendor/json/include \
 //     tools/test-custom-tracks-seedcfg.cpp ap/ap_seedcfg.cpp \
 //     -o /tmp/test-custom-tracks-seedcfg && /tmp/test-custom-tracks-seedcfg
+//   python extract-slot-data.py | /tmp/test-custom-tracks-seedcfg --stdin
 //
 // Exit 0 = every assertion held. The parser logs to stderr; the harness reports
 // on stdout, so `2>/dev/null` gives a clean transcript.
@@ -34,6 +35,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include "../ap/ap_seedcfg.h"
@@ -98,10 +100,13 @@ static nlohmann::json good_entry(void)
 	        {"vrm_sha256", VRM_HASH},
 	        {"navigation", {{"uuid", NAVIGATION_UUID}, {"revision", 1}}},
 	        {"laps", 7},
+	        {"slot", 1},
 	        {"host_level_id", 6},
 	        {"replaces_cup_level_id", 104},
 	        {"boxes", false}, // the event YAML emits false; see the rung-2b analysis
-	        {"flags", good_flags()}};
+	        {"flags", good_flags()},
+	        {"locations", {{"trophy", 35016300},
+	                       {"podium", {35016400, 35016401, -1, 35016403, 35016404}}}}};
 }
 
 static nlohmann::json good_block(void)
@@ -141,6 +146,7 @@ static void test_happy_path(void)
 	expect_eq(ctr_cfg.schema_newer, 0, "schema 8 is understood, no update banner");
 
 	expect_eq(ctr_cfg.custom_track.laps, 7, "laps");
+	expect_eq(ctr_cfg.custom_track.slot, 1, "generic slot");
 	expect_eq(ctr_cfg.custom_track.host_level_id, 6, "host_level_id");
 	expect_eq(ctr_cfg.custom_track.replaces_cup_level_id, 104, "replaces_cup_level_id");
 	expect_eq(ctr_cfg.custom_track.boxes, 0, "boxes:false is honoured");
@@ -153,6 +159,12 @@ static void test_happy_path(void)
 	expect_eq((int)ctr_cfg.custom_track.navigation_revision, 1, "navigation revision");
 	expect_str(ctr_cfg.custom_track.lev_sha256, LEV_HASH, "lev digest");
 	expect_str(ctr_cfg.custom_track.vrm_sha256, VRM_HASH, "vrm digest");
+	expect_eq((int)ctr_cfg.custom_track.trophy_location, 35016300, "custom trophy code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_1st, 35016400, "held 1st code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_3rd, 35016401, "held 3rd code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_5th, -1, "held 5th absent");
+	expect_eq((int)ctr_cfg.custom_track.podium.finish_podium, 35016403, "finish podium code");
+	expect_eq((int)ctr_cfg.custom_track.podium.finish_any, 35016404, "finish any code");
 
 	expect_eq(ctr_cfg.custom_track.flags.crates, 1, "flags.crates");
 	expect_eq(ctr_cfg.custom_track.flags.ctr_letters, 1, "flags.ctr_letters");
@@ -173,6 +185,47 @@ static void test_happy_path(void)
 	expect_eq(ctr_cfg_cup_displaced(3), 0, "Yellow is not displaced");
 	expect_eq(ctr_cfg_cup_displaced(-1), 0, "out-of-range cup is not displaced");
 	expect_eq(ctr_cfg_cup_displaced(5), 0, "out-of-range cup is not displaced");
+}
+
+// Parse a complete slot_data document emitted by the real apworld. This mode
+// lets an exact generated archive cross the Python/C++ boundary without a
+// copied fixture or a second parser implementation in the audit script.
+static void test_external_slot_data(void)
+{
+	nlohmann::json doc;
+	try
+	{
+		std::cin >> doc;
+	}
+	catch (const std::exception &exc)
+	{
+		checks++;
+		failures++;
+		std::printf("FAIL external slot_data is not readable JSON (%s)\n", exc.what());
+		return;
+	}
+	ap_seedcfg_parse_json(doc);
+
+	expect_eq(ctr_cfg.custom_tracks_seen, 1, "external block seen");
+	expect_eq(ctr_cfg.custom_tracks_ok, 1, "external block usable");
+	expect_eq(ctr_cfg.custom_track.slot, 1, "external generic slot");
+	expect_eq(ctr_cfg.custom_track.replaces_cup_level_id, 104,
+	          "external Purple destination");
+	expect_eq((int)ctr_cfg.custom_track.trophy_location, 35016300,
+	          "external custom Trophy code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_1st, 35016400,
+	          "external held 1st code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_3rd, 35016401,
+	          "external held 3rd code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_5th, -1,
+	          "external held 5th absent");
+	expect_eq((int)ctr_cfg.custom_track.podium.finish_podium, 35016403,
+	          "external finish podium code");
+	expect_eq((int)ctr_cfg.custom_track.podium.finish_any, 35016404,
+	          "external finish any code");
+	expect_eq(ctr_cfg.custom_track.flags.wumpa_collectible, 1,
+	          "external Wumpa capability");
+	expect_eq(ctr_cfg_cup_displaced(4), 1, "external Purple cup displaced");
 }
 
 // The displaced cup's gem_cup_legs row stays complete on the wire, and native
@@ -316,6 +369,8 @@ static void test_field_ranges(void)
 	    {"laps", 0, "laps 0"},
 	    {"laps", 8, "laps 8"},
 	    {"laps", -1, "laps -1"},
+	    {"slot", 0, "slot 0"},
+	    {"slot", 33, "slot 33"},
 	    {"host_level_id", -1, "host_level_id -1"},
 	    {"host_level_id", 18, "host_level_id 18 (a battle arena)"},
 	    {"host_level_id", 25, "host_level_id 25 (a hub)"},
@@ -334,7 +389,7 @@ static void test_field_ranges(void)
 	}
 
 	// Missing required scalars are refused, not defaulted.
-	const char *required[] = {"laps", "host_level_id", "replaces_cup_level_id"};
+	const char *required[] = {"laps", "slot", "host_level_id", "replaces_cup_level_id"};
 	for (unsigned i = 0; i < sizeof(required) / sizeof(required[0]); i++)
 	{
 		char what[96];
@@ -362,6 +417,39 @@ static void test_field_ranges(void)
 	doc["custom_tracks"]["tracks"][0]["replaces_cup_level_id"] = 104;
 	ap_seedcfg_parse_json(doc);
 	expect_eq(ctr_cfg.custom_tracks_ok, 1, "opposite range extremes parse");
+}
+
+static void test_location_codes(void)
+{
+	nlohmann::json doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0].erase("locations");
+	ap_seedcfg_parse_json(doc);
+	expect_refused("missing locations object");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["locations"]["trophy"] = -1;
+	ap_seedcfg_parse_json(doc);
+	expect_refused("missing custom Trophy code");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["locations"]["podium"] = {1, 2, 3, 4};
+	ap_seedcfg_parse_json(doc);
+	expect_refused("four-code custom podium array");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["locations"]["podium"][2] = 0;
+	ap_seedcfg_parse_json(doc);
+	expect_refused("zero custom podium code");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0]["locations"]["podium"][2] = -2;
+	ap_seedcfg_parse_json(doc);
+	expect_refused("custom podium code below absent sentinel");
 }
 
 static void test_digests(void)
@@ -548,9 +636,16 @@ static void test_schema_gate(void)
 	expect_eq(CTR_CFG_SCHEMA_KNOWN, 8, "this build understands schema 8");
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	ctr_cfg_set_vanilla_cup_legs(vanilla_legs);
+	if (argc == 2 && std::strcmp(argv[1], "--stdin") == 0)
+	{
+		test_external_slot_data();
+		std::printf("%s exact custom-tracks slot_data (%d checks, %d failures)\n",
+		            failures ? "FAIL" : "PASS", checks, failures);
+		return failures ? 1 : 0;
+	}
 
 	test_happy_path();
 	test_displaced_cup_keeps_its_wire_row();
@@ -560,6 +655,7 @@ int main(void)
 	test_malformed_does_not_raise_the_banner();
 	test_block_shapes();
 	test_field_ranges();
+	test_location_codes();
 	test_digests();
 	test_package_and_navigation_identity();
 	test_flags();

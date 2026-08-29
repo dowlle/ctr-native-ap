@@ -189,6 +189,15 @@ static int json_int(const nlohmann::json &j, const char *key, int dflt)
 	}
 }
 
+static long json_long(const nlohmann::json &j, const char *key, long dflt)
+{
+	auto it = j.find(key);
+	if (it == j.end() || !it->is_number_integer())
+		return dflt;
+	try { return it->get<long>(); }
+	catch (...) { return dflt; }
+}
+
 // String-valued counterpart to json_int, for the handful of ctr_options keys that
 // carry text (today: world_version). Always leaves `out` NUL-terminated, and an
 // absent / null / non-string / oversized value leaves it EMPTY -- the additive-key
@@ -739,12 +748,57 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				json_str(t, "minimum_apworld_version", ct.minimum_apworld_version,
 				         sizeof ct.minimum_apworld_version);
 				ct.laps = json_int(t, "laps", -1);
+				ct.slot = json_int(t, "slot", -1);
 				ct.host_level_id = json_int(t, "host_level_id", -1);
 				ct.replaces_cup_level_id = json_int(t, "replaces_cup_level_id", -1);
 				ct.boxes = json_int(t, "boxes", -1);
 
 				json_str(t, "lev_sha256", ct.lev_sha256, sizeof ct.lev_sha256);
 				json_str(t, "vrm_sha256", ct.vrm_sha256, sizeof ct.vrm_sha256);
+				ct.trophy_location = -1;
+				ct.podium.held_1st = -1;
+				ct.podium.held_3rd = -1;
+				ct.podium.held_5th = -1;
+				ct.podium.finish_podium = -1;
+				ct.podium.finish_any = -1;
+
+				auto locationsIt = t.find("locations");
+				if (locationsIt == t.end() || !locationsIt->is_object())
+				{
+					reject = "locations object missing";
+				}
+				else
+				{
+					ct.trophy_location = json_long(*locationsIt, "trophy", -1);
+					auto podiumIt = locationsIt->find("podium");
+					if (podiumIt == locationsIt->end() || !podiumIt->is_array() ||
+					    podiumIt->size() != CTR_CFG_PODIUM_RUNG_COUNT)
+					{
+						reject = "locations.podium must contain five codes";
+					}
+					else
+					{
+						long *codes[CTR_CFG_PODIUM_RUNG_COUNT] = {
+							&ct.podium.held_1st, &ct.podium.held_3rd,
+							&ct.podium.held_5th, &ct.podium.finish_podium,
+							&ct.podium.finish_any,
+						};
+						for (int i = 0; i < CTR_CFG_PODIUM_RUNG_COUNT; i++)
+						{
+							if (!(*podiumIt)[i].is_number_integer())
+							{
+								reject = "locations.podium carries a non-integer code";
+								break;
+							}
+							*codes[i] = (*podiumIt)[i].get<long>();
+							if (*codes[i] < -1 || *codes[i] == 0)
+							{
+								reject = "locations.podium carries an invalid code";
+								break;
+							}
+						}
+					}
+				}
 
 				auto navIt = t.find("navigation");
 				if (navIt == t.end() || !navIt->is_object())
@@ -811,6 +865,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						reject = "navigation identity missing or invalid";
 					else if (ct.laps < 1 || ct.laps > 7)
 						reject = "laps outside 1..7";
+					else if (ct.slot < 1 || ct.slot > CTR_CFG_CT_SLOT_COUNT)
+						reject = "slot outside 1..32";
 					else if (ct.host_level_id < 0 || ct.host_level_id > 17)
 						reject = "host_level_id is not an arcade slot 0..17";
 					else if (ct.replaces_cup_level_id < 100 || ct.replaces_cup_level_id > 104)
@@ -821,6 +877,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						reject = "vrm_sha256 is not 64 hex digits";
 					else if (ct.boxes != 0)
 						reject = "boxes must be false in Alpha6";
+					else if (ct.trophy_location <= 0)
+						reject = "locations.trophy must be a positive AP code";
 				}
 			}
 
