@@ -1,4 +1,4 @@
-# AI lap recording container, format version 2
+# AI lap recording container, format versions 2 and 3
 
 Status: specification for the 0.2.0 recorder slice. This is the file the client
 writes when `nav_record` is on, and the only file the client reads when
@@ -10,6 +10,11 @@ of the information a recorded lap needs. `struct NavFrame`
 assertion on it, and `BOTS.c` walks arrays of it directly. It does not change,
 now or later. Everything the recorder adds lives in the container beside the raw
 `NavFrame` arrays.
+
+Version 3 extends the header for custom-track identity. Version 2 remains the
+retail writer shape and stays readable. A v3 file carries the custom package's
+permanent UUID and its navigation compatibility revision. Its physical engine
+slot remains diagnostic and never decides custom-track compatibility.
 
 Version 1, the throwaway spike container (magic `NAVR`, level id, three counts,
 three raw `NavFrame` arrays), is not readable by a version 2 reader and is not
@@ -35,11 +40,11 @@ first four bytes rather than misparsed.
 
 ```
 +--------------------------------------+  0x00
-|  FileHeader                96 bytes  |
-+--------------------------------------+  0x60
+|  FileHeader            96/128 bytes  |
++--------------------------------------+  headerSize
 |  LapDirectory[lapCount]    32 bytes  |
 |  each, lapCount is 1 to 3            |
-+--------------------------------------+  0x60 + 32*lapCount
++--------------------------------------+  headerSize + 32*lapCount
 |  Lap payloads, in directory order:   |
 |    NavFrame[nodeCount]  20 bytes ea. |
 |    timestamps[nodeCount] 4 bytes ea. |
@@ -54,13 +59,13 @@ entry, and a reader must validate those offsets rather than recompute them. The
 writer emits them in directory order and contiguously, but a reader that assumes
 so would be trusting the writer instead of checking the file.
 
-### FileHeader, 96 bytes at 0x00
+### FileHeader, 96 or 128 bytes at 0x00
 
 | Offset | Size | Type   | Field            | Value and meaning |
 |--------|------|--------|------------------|-------------------|
 | 0x00   | 4    | u8[4]  | magic            | `4E 41 56 32`, ASCII `NAV2`. The container family marker. Constant across format versions 2 and later. |
-| 0x04   | 2    | u16    | formatVersion    | 2 for this document. |
-| 0x06   | 2    | u16    | headerSize       | 96. The size of this header, so a later version can grow it without moving the directory blindly. |
+| 0x04   | 2    | u16    | formatVersion    | 2 for retail/legacy recordings; 3 for custom-track recordings. |
+| 0x06   | 2    | u16    | headerSize       | 96 for v2; 128 for v3. The lap directory begins here. |
 | 0x08   | 4    | u32    | totalSize        | Total file size in bytes, including the 8-byte trailer. |
 | 0x0C   | 4    | s32    | levelId          | Engine `gGT->levelID` at record time. The reader uses it to confirm the file belongs to the level being loaded. |
 | 0x10   | 32   | u8[32] | clientVersion    | `CTR_AP_VERSION` from `ap/ap_version.h` at record time, NUL padded. Informational: a reader must not reject on it. It exists so a physics or recorder change in a later build can be traced to the laps it invalidated. |
@@ -74,7 +79,22 @@ so would be trusting the writer instead of checking the file.
 | 0x58   | 4    | u32    | trackKind        | 0 when the level shipped a retail nav table (`level1->LevNavTable` non-null with at least one non-null lane), 1 when it did not. Custom tracks are 1. This is the reason a lap's `shortcutFlag` can be "unknown" and is recorded separately so a consumer does not have to infer it. |
 | 0x5C   | 4    | u32    | reserved1        | 0. |
 
-### LapDirectory entry, 32 bytes, at 0x60 + 32 * index
+Version 3 adds:
+
+| Offset | Size | Type | Field | Value and meaning |
+|--------|------|------|-------|-------------------|
+| 0x60 | 1 | u8 | identityKind | 1, meaning a custom-track identity. |
+| 0x61 | 3 | u8[3] | reserved | 0. |
+| 0x64 | 16 | u8[16] | trackUuid | Permanent author-controlled package UUID. Renames, translations, textures and music do not change it. |
+| 0x74 | 4 | u32 | navRevision | Navigation compatibility revision. Increment only when geometry, checkpoints or navigation compatibility invalidate old lines. |
+| 0x78 | 8 | u8[8] | reserved | 0. |
+
+A custom loader sets the active UUID and revision before bot navigation is
+initialized and clears it before an ordinary retail load. Playback requires an
+exact UUID and revision match. A v2 level-ID-only recording is never eligible
+while a custom identity is active, even if both use the same physical slot.
+
+### LapDirectory entry, 32 bytes, at headerSize + 32 * index
 
 | Within | Size | Type | Field            | Value and meaning |
 |--------|------|------|------------------|-------------------|
@@ -198,12 +218,9 @@ and a return to vanilla nav data. It is never a fallback to partial content.
 1. The file is at least 96 + 32 + 8 bytes.
 2. `magic` equals `NAV2`. Anything else, including the version 1 magic `NAVR`,
    is rejected.
-3. `formatVersion` equals 2 exactly. A higher version is rejected with a message
-   naming the version found and the version understood, because a newer client
-   wrote it. A lower version is rejected as well: there is no version below 2 in
-   this family. A reader must never attempt a best-effort parse of a version it
-   does not know.
-4. `headerSize` equals 96 and `navFrameSize` equals 20.
+3. `formatVersion` is 2 or 3. Every other value is rejected. A reader must never
+   attempt a best-effort parse of a version it does not know.
+4. `headerSize` equals 96 for v2 or 128 for v3, and `navFrameSize` equals 20.
 5. `totalSize` equals the actual file size and does not exceed a sanity cap of
    1 MiB. Three laps of 1024 nodes is about 74 KiB, so the cap is roughly
    fourteen times the largest legitimate file.

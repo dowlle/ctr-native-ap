@@ -148,10 +148,32 @@ static short s_navrecCharacterId = -1;
 static int s_navrecLanesLive;
 static int s_navrecLanesLevel = -1;
 static char s_navrecDriverName[AP_NAVREC_NAME_FIELD + 1];
+static unsigned char s_navrecActiveIdentityKind;
+static unsigned char s_navrecActiveTrackUuid[AP_NAVREC_TRACK_UUID_BYTES];
+static unsigned int  s_navrecActiveNavRevision;
 
 // ============================================================================
 // Small helpers
 // ============================================================================
+
+void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int navRevision)
+{
+	if (uuid == NULL)
+	{
+		AP_NavRec_ClearActiveCustomTrack();
+		return;
+	}
+	s_navrecActiveIdentityKind = AP_NAVREC_IDENTITY_CUSTOM;
+	memcpy(s_navrecActiveTrackUuid, uuid, AP_NAVREC_TRACK_UUID_BYTES);
+	s_navrecActiveNavRevision = navRevision;
+}
+
+void AP_NavRec_ClearActiveCustomTrack(void)
+{
+	s_navrecActiveIdentityKind = AP_NAVREC_IDENTITY_RETAIL;
+	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
+	s_navrecActiveNavRevision = 0;
+}
 
 // Same portable shape native_memcard.c uses for its own save directory, kept
 // local rather than widening a platform API for one caller.
@@ -628,8 +650,11 @@ static void AP_NavRec_Write(int levelID)
 	meta.difficultyPreset = (short)g_config.aiDifficulty;
 	meta.shortcutTier = AP_NavRec_ShortcutTier();
 	meta.trackKind = s_navrecTrackKind;
+	meta.identityKind = s_navrecActiveIdentityKind;
+	memcpy(meta.trackUuid, s_navrecActiveTrackUuid, sizeof meta.trackUuid);
+	meta.navRevision = s_navrecActiveNavRevision;
 
-	size = AP_NavRecFormat_Size(laps, written);
+	size = AP_NavRecFormat_SizeForMeta(&meta, laps, written);
 	buf = (unsigned char *)malloc(size);
 	if (buf == NULL)
 	{
@@ -797,6 +822,14 @@ static int AP_NavRec_TryLoadFile(const char *path, int levelID)
 	if (info.levelId != levelID)
 	{
 		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" was recorded on level %d, not %d\n", path, info.levelId, levelID);
+		AP_LogLine(msg);
+		return 0;
+	}
+
+	if (!AP_NavRecFormat_IdentityMatches(&info, levelID, s_navrecActiveIdentityKind,
+	                                    s_navrecActiveTrackUuid, s_navrecActiveNavRevision))
+	{
+		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" does not match the active track identity/revision\n", path);
 		AP_LogLine(msg);
 		return 0;
 	}

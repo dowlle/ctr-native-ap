@@ -94,6 +94,57 @@ int main(void)
 	}
 
 	// ---------------------------------------------------------------
+	// Custom-track identity: same physical slot is not the identity
+	// ---------------------------------------------------------------
+	{
+		static const unsigned char babyUuid[AP_NAVREC_TRACK_UUID_BYTES] = {
+			0x42, 0x61, 0x62, 0x79, 0x54, 0x50, 0x61, 0x72,
+			0x6b, 0x00, 0x20, 0x26, 0x08, 0x29, 0x00, 0x01};
+		unsigned int n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 400 * 256, 0, 0),
+		                                                  AP_NAVREC_TARGET_NODES, g_nodes[0], g_stamps[0]);
+
+		memset(laps, 0, sizeof laps);
+		laps[0].nodeCount = n;
+		laps[0].lapFrames = 900;
+		laps[0].sampleCount = 900;
+		laps[0].clean = 1;
+		nodePtrs[0] = g_nodes[0];
+		stampPtrs[0] = g_stamps[0];
+
+		memset(&meta, 0, sizeof meta);
+		meta.levelId = 6; // Roo's Tubes physical slot, deliberately displaced
+		meta.clientVersion = "custom-id-test";
+		meta.driverName = "Appie";
+		meta.identityKind = AP_NAVREC_IDENTITY_CUSTOM;
+		memcpy(meta.trackUuid, babyUuid, sizeof babyUuid);
+		meta.navRevision = 7;
+
+		rc = AP_NavRecFormat_Write(g_file, sizeof g_file, &meta, laps, 1, nodePtrs, stampPtrs, &size);
+		check(rc == AP_NAVREC_OK, "a custom-track container serialises");
+		check(AP_NavRecFormat_GetU16(g_file + 0x04) == AP_NAVREC_FORMAT_VERSION_V3,
+		      "a custom identity selects format version 3");
+		check(AP_NavRecFormat_GetU16(g_file + 0x06) == AP_NAVREC_HEADER_BYTES_V3,
+		      "a custom identity uses the extended header");
+
+		rc = AP_NavRecFormat_Read(g_file, size, &info, g_back, g_backStamps);
+		check(rc == AP_NAVREC_OK, "a custom-track container reads back");
+		check(info.levelId == 6, "the displaced physical slot remains informational");
+		check(info.identityKind == AP_NAVREC_IDENTITY_CUSTOM, "custom identity kind survives the round trip");
+		check(memcmp(info.trackUuid, babyUuid, sizeof babyUuid) == 0, "custom track UUID survives the round trip");
+		check(info.navRevision == 7, "navigation compatibility revision survives the round trip");
+		check(AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 7),
+		      "the same custom UUID and navigation revision match");
+		check(!AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 8),
+		      "a navigation revision change invalidates the old line");
+		check(!AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_RETAIL, NULL, 0),
+		      "a custom line cannot masquerade as the retail track in its physical slot");
+		memset(&info, 0, sizeof info);
+		info.levelId = 6;
+		check(!AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 7),
+		      "a legacy Roo's Tubes line cannot masquerade as a custom track in slot 6");
+	}
+
+	// ---------------------------------------------------------------
 	// Decimation: node count, and the monotonic timestamps the pace
 	// controller in a later release depends on.
 	// ---------------------------------------------------------------
@@ -409,10 +460,10 @@ int main(void)
 
 			memcpy(saved, g_file + 0x04, 2);
 
-			AP_NavRecFormat_PutU16(g_file + 0x04, 3);
+			AP_NavRecFormat_PutU16(g_file + 0x04, 4);
 			AP_NavRecFormat_PutU64(g_file + size - 8, AP_NavRecFormat_Hash(g_file, size - 8));
 			check(AP_NavRecFormat_Read(g_file, size, &info, g_back, g_backStamps) == AP_NAVREC_ERR_VERSION,
-			      "a version 3 container with a VALID hash is still rejected by a version 2 reader");
+			      "an unknown future container version with a VALID hash is rejected");
 
 			AP_NavRecFormat_PutU16(g_file + 0x04, 1);
 			AP_NavRecFormat_PutU64(g_file + size - 8, AP_NavRecFormat_Hash(g_file, size - 8));
