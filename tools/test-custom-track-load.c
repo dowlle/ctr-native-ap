@@ -308,7 +308,11 @@ static char g_levHash[NATIVE_SHA256_HEX_BYTES];
 
 static void make_track_files(void)
 {
+#ifdef _WIN32
+	mkdir("tracks");
+#else
 	mkdir("tracks", 0755);
+#endif
 	write_blob("tracks/track.vrm", 11, TEST_VRM_BYTES);
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES);
 	hash_file_hex("tracks/track.vrm", g_vrmHash);
