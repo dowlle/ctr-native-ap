@@ -146,6 +146,32 @@ static int ctr_plain_text(const char *s)
 	return 1;
 }
 
+// The custom DESTINATION roles this build understands, and the Gem Cup LevelID
+// each one hands over. The apworld keys `wumpa_checks.custom_destinations` by
+// the same role words it keys `custom_tracks.replaces` by, so this is the one
+// place the word becomes a LevelID -- everything downstream compares integers.
+//
+// An unknown role resolves to -1 and its slot is skipped. That is the correct
+// answer for a role a newer apworld supports and this build does not: the
+// destination exists in the seed, this client cannot serve it, and no code for
+// it should ever be sent.
+static int ctr_cup_level_id_for_role(const char *role)
+{
+	static const struct
+	{
+		const char *role;
+		int cupLevelID;
+	} roles[] = {
+		{"purple_gem_cup", 104},
+	};
+	if (role == NULL)
+		return -1;
+	for (size_t i = 0; i < sizeof roles / sizeof roles[0]; i++)
+		if (std::strcmp(role, roles[i].role) == 0)
+			return roles[i].cupLevelID;
+	return -1;
+}
+
 static int json_int(const nlohmann::json &j, const char *key, int dflt)
 {
 	auto it = j.find(key);
@@ -332,6 +358,20 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	// wumpa_checks: an absent block is the option being off, so the cleared state
+	// IS the default -- except that every CODE clears to -1 rather than 0, because
+	// 0 is a plausible-looking location code while -1 is the absent sentinel every
+	// other block in this file already uses.
+	std::memset(&ctr_cfg.wumpa, 0, sizeof ctr_cfg.wumpa);
+	ctr_cfg.wumpa.mode = CTR_CFG_WUMPA_OFF;
+	ctr_cfg.wumpa.global_code = -1;
+	for (int t = 0; t < CTR_CFG_WUMPA_TRACK_COUNT; t++)
+		ctr_cfg.wumpa.tracks[t] = -1;
+	for (int c = 0; c < CTR_CFG_WUMPA_CUSTOM_MAX; c++)
+	{
+		ctr_cfg.wumpa.custom[c].cup_level_id = -1;
+		ctr_cfg.wumpa.custom[c].code = -1;
+	}
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
@@ -726,7 +766,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				}
 				else if (reject == NULL)
 				{
-					// All eight required. -1 is a sentinel no legitimate flag can
+					// All nine required. -1 is a sentinel no legitimate flag can
 					// carry, so an absent key is caught rather than defaulted.
 					const nlohmann::json &fl = *flIt;
 					ct.flags.crates = json_int(fl, "crates", -1);
@@ -735,12 +775,19 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 					ct.flags.ai_nav = json_int(fl, "ai_nav", -1);
 					ct.flags.minimap = json_int(fl, "minimap", -1);
 					ct.flags.ghosts = json_int(fl, "ghosts", -1);
+					// Block version 3. Absent is refused rather than assumed
+					// false: "no measurement" and "measured no route to ten
+					// fruit" are different states, and only one of them is a
+					// descriptor this build may serve.
+					ct.flags.wumpa_collectible =
+					    json_int(fl, "wumpa_collectible", -1);
 					ct.flags.spawns = json_int(fl, "spawns", -1);
 					ct.flags.checkpoints = json_int(fl, "checkpoints", -1);
 
 					if (ct.flags.crates < 0 || ct.flags.ctr_letters < 0 ||
 					    ct.flags.relic_crates < 0 || ct.flags.ai_nav < 0 ||
-					    ct.flags.minimap < 0 || ct.flags.ghosts < 0)
+					    ct.flags.minimap < 0 || ct.flags.ghosts < 0 ||
+					    ct.flags.wumpa_collectible < 0)
 						reject = "a boolean flag is missing";
 					else if (ct.flags.spawns < 1 || ct.flags.spawns > 8)
 						reject = "flags.spawns outside 1..8";
@@ -787,6 +834,131 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			{
 				ctr_cfg.custom_track = ct;
 				ctr_cfg.custom_tracks_ok = 1;
+			}
+		}
+	}
+
+	// ── wumpa_checks (2026-08-29 specification, Lane A) ────────────────────
+	//
+	// Reaching ten fruit in a race is a check. This block says which shape the
+	// seed uses and, in per-track mode, which code belongs to which destination.
+	// THE WIRE IS THE AUTHORITY: this build must never hardcode the per-track
+	// range, because which of the 19 destination codes a seed carries -- and
+	// whether the custom destination slot is live at all -- is a per-seed
+	// decision. Server location membership stays the final send gate on top.
+	//
+	// The block is ABSENT on an off seed, and absent on every pre-2026-08-29
+	// seed. Both leave mode at CTR_CFG_WUMPA_OFF and every code at -1, so
+	// nothing is emitted, which is exactly what those seeds meant.
+	//
+	// A pre-2026-08-29 seed with the check ON carried a different shape
+	// ({enabled, locations:[35016100]}). It is read as GLOBAL below: `mode` is
+	// absent, `enabled` is true, and the one code it lists is the permanent
+	// global one. That is the only reading of that shape, and refusing it would
+	// break every already-rolled seed for no gain.
+	//
+	// Refusal is per-entry rather than total, unlike custom_tracks. A missing
+	// destination is one check that never fires, not a reachability desync: the
+	// server's location list is what says the check exists, and this block only
+	// says which code goes with which destination.
+	auto wumpaIt = j.find("wumpa_checks");
+	if (wumpaIt != j.end() && wumpaIt->is_object())
+	{
+		const nlohmann::json &w = *wumpaIt;
+		// `mode` absent means the legacy shape; `enabled` true in that shape
+		// meant the single global check, which is mode 1.
+		int mode = json_int(w, "mode", -1);
+		if (mode < 0)
+			mode = json_int(w, "enabled", 0) ? CTR_CFG_WUMPA_GLOBAL
+			                                 : CTR_CFG_WUMPA_OFF;
+
+		if (mode != CTR_CFG_WUMPA_GLOBAL && mode != CTR_CFG_WUMPA_PER_TRACK)
+		{
+			// An unknown mode is a seed from a newer apworld. Emitting nothing
+			// is the only answer that cannot send a wrong code; the #8 banner
+			// already covers telling the player to update.
+			ap_cfg_log("[AP CFG] wumpa_checks mode=%d is not a mode this build "
+			           "understands; no Wumpa check will be sent\n", mode);
+		}
+		else
+		{
+			ctr_cfg.wumpa.mode = mode;
+			// Legacy shape: no `global` key, one entry in `locations`.
+			auto globalIt = w.find("global");
+			if (globalIt != w.end() && globalIt->is_number_integer())
+				ctr_cfg.wumpa.global_code = globalIt->get<long>();
+			else if (mode == CTR_CFG_WUMPA_GLOBAL)
+			{
+				auto legacyIt = w.find("locations");
+				if (legacyIt != w.end() && legacyIt->is_array() &&
+				    legacyIt->size() == 1 && (*legacyIt)[0].is_number_integer())
+					ctr_cfg.wumpa.global_code = (*legacyIt)[0].get<long>();
+			}
+
+			auto trIt = w.find("retail_tracks");
+			if (trIt != w.end() && trIt->is_object())
+			{
+				for (auto it = trIt->begin(); it != trIt->end(); ++it)
+				{
+					int lid;
+					try { lid = std::stoi(it.key()); } catch (...) { continue; }
+					if (lid < 0 || lid >= CTR_CFG_WUMPA_TRACK_COUNT ||
+					    !it.value().is_number_integer())
+						continue; // only the 18 retail race destinations
+					ctr_cfg.wumpa.tracks[lid] = it.value().get<long>();
+				}
+			}
+
+			auto cdIt = w.find("custom_destinations");
+			if (cdIt != w.end() && cdIt->is_object())
+			{
+				for (auto it = cdIt->begin(); it != cdIt->end(); ++it)
+				{
+					// The role word is resolved to its Gem Cup LevelID here,
+					// once, so the emit path compares two integers on a race
+					// frame instead of re-parsing a string. An unknown role is
+					// skipped rather than refused: it is a destination this
+					// build cannot serve, and the slot for it simply stays
+					// empty.
+					const int cupLevelID = ctr_cup_level_id_for_role(it.key().c_str());
+					if (cupLevelID < 0 || !it.value().is_object())
+						continue;
+					if (ctr_cfg.wumpa.custom_count >= CTR_CFG_WUMPA_CUSTOM_MAX)
+					{
+						ap_cfg_log("[AP CFG] wumpa_checks carries more custom "
+						           "destinations than this build can hold (%d); "
+						           "the extras are ignored\n",
+						           CTR_CFG_WUMPA_CUSTOM_MAX);
+						break;
+					}
+
+					const nlohmann::json &d = it.value();
+					ctr_wumpa_custom_destination slot;
+					std::memset(&slot, 0, sizeof slot);
+					slot.cup_level_id = cupLevelID;
+					slot.code = json_int(d, "code", -1);
+					slot.wumpa_collectible = json_int(d, "wumpa_collectible", -1);
+					json_str(d, "package_uuid", slot.package_uuid,
+					         sizeof slot.package_uuid);
+
+					if (slot.code < 0)
+						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
+						           "'%s' carries no usable code; it is ignored\n",
+						           it.key().c_str());
+					else if (slot.wumpa_collectible < 0)
+						// A destination slot that does not state the measured
+						// capability is not self-describing, and a Wumpa check
+						// must never guess it.
+						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
+						           "'%s' states no wumpa_collectible; it is "
+						           "ignored\n", it.key().c_str());
+					else if (!ctr_uuid(slot.package_uuid))
+						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
+						           "'%s' names no canonical package UUID; it is "
+						           "ignored\n", it.key().c_str());
+					else
+						ctr_cfg.wumpa.custom[ctr_cfg.wumpa.custom_count++] = slot;
+				}
 			}
 		}
 	}
@@ -1053,9 +1225,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ap_cfg_log("[AP CFG] custom_tracks lev sha256 %s\n", ct.lev_sha256);
 		ap_cfg_log("[AP CFG] custom_tracks vrm sha256 %s\n", ct.vrm_sha256);
 		ap_cfg_log("[AP CFG] custom_tracks flags: crates=%d letters=%d relic=%d ai_nav=%d "
-		           "minimap=%d ghosts=%d spawns=%d checkpoints=%d\n",
+		           "minimap=%d ghosts=%d wumpa=%d spawns=%d checkpoints=%d\n",
 		           ct.flags.crates, ct.flags.ctr_letters, ct.flags.relic_crates,
-		           ct.flags.ai_nav, ct.flags.minimap, ct.flags.ghosts, ct.flags.spawns,
+		           ct.flags.ai_nav, ct.flags.minimap, ct.flags.ghosts,
+		           ct.flags.wumpa_collectible, ct.flags.spawns,
 		           ct.flags.checkpoints);
 		ap_cfg_log("[AP CFG] custom_tracks: cup %d legs NOTHING in logic; its wire "
 		           "gem_cup_legs row is present and deliberately ignored\n",
@@ -1065,6 +1238,33 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	{
 		ap_cfg_log("[AP CFG] custom_tracks was on the wire but is not usable; every cup "
 		           "runs its vanilla legs\n");
+	}
+
+	// Wumpa checks: one line for the mode, then the resolved mapping, so a
+	// support bundle answers "why did my per-track check not fire" without a
+	// second run.
+	if (ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL)
+	{
+		ap_cfg_log("[AP CFG] wumpa_checks: global, code %ld\n",
+		           ctr_cfg.wumpa.global_code);
+	}
+	else if (ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_PER_TRACK)
+	{
+		int minted = 0;
+		for (int t = 0; t < CTR_CFG_WUMPA_TRACK_COUNT; t++)
+			if (ctr_cfg.wumpa.tracks[t] >= 0)
+				minted++;
+		ap_cfg_log("[AP CFG] wumpa_checks: per-track, %d of %d retail "
+		           "destinations, %d custom destination(s)\n",
+		           minted, CTR_CFG_WUMPA_TRACK_COUNT,
+		           ctr_cfg.wumpa.custom_count);
+		for (int c = 0; c < ctr_cfg.wumpa.custom_count; c++)
+			ap_cfg_log("[AP CFG] wumpa_checks custom destination: cup LevelID "
+			           "%d -> code %ld, package %s, wumpa_collectible=%d\n",
+			           ctr_cfg.wumpa.custom[c].cup_level_id,
+			           ctr_cfg.wumpa.custom[c].code,
+			           ctr_cfg.wumpa.custom[c].package_uuid,
+			           ctr_cfg.wumpa.custom[c].wumpa_collectible);
 	}
 
 	for (int c = 0; c < 5; c++)

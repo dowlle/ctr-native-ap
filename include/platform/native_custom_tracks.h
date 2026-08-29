@@ -61,13 +61,17 @@ struct CustomTrackSeedDescriptor
 
 	// The describe step's measured capabilities. Only aiNav and spawns gate the
 	// race today (see CustomTrackPolicy_FlagsSupportRace); the rest are carried
-	// so the check rungs above the Gem have an honest input when they land.
+	// so the check rungs above the Gem have an honest input when they land. The
+	// first of those rungs has now landed: flagWumpaCollectible is what the
+	// per-track Reach 10 Wumpa check cross-checks the wire against before it
+	// sends a custom destination's code.
 	int flagCrates;
 	int flagCtrLetters;
 	int flagRelicCrates;
 	int flagAiNav;
 	int flagMinimap;
 	int flagGhosts;
+	int flagWumpaCollectible;
 	int flagSpawns;
 	int flagCheckpoints;
 };

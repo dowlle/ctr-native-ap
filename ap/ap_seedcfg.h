@@ -165,7 +165,13 @@ typedef struct
 // no equivalent, which is why every future custom-track field would otherwise
 // have needed a full schema bump. A version this build does not know is refused
 // rather than read field by field.
-#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 2
+//
+// 3 (2026-08-29) adds the required measured `wumpa_collectible` capability that
+// the per-track Reach 10 Wumpa checks gate a custom destination's check on. A
+// version-2 entry carries no such measurement, and a Wumpa check must never
+// guess one, so a version-2 block is refused here rather than read with the flag
+// defaulted in either direction.
+#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 3
 #define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
 #define CTR_CFG_CT_ID_CAP              64
 #define CTR_CFG_CT_UUID_CAP            37
@@ -183,6 +189,11 @@ typedef struct
 	int ai_nav;
 	int minimap;
 	int ghosts;
+	// Block version 3. Can the local player actually reach ten Wumpa Fruit on
+	// this track? Measured from the hash-verified LEV by manager-light, NOT
+	// inferred from `crates`: a track can carry weapon boxes, TNT and relic time
+	// crates with no route to ten fruit at all.
+	int wumpa_collectible;
 	int spawns;      // 1..8
 	int checkpoints; // 1..255
 } ctr_custom_track_flags;
@@ -210,6 +221,64 @@ typedef struct
 
 	ctr_custom_track_flags flags;
 } ctr_custom_track;
+
+// ── wumpa_checks (2026-08-29 specification, Lane A) ─────────────────────────
+//
+// Reaching ten Wumpa Fruit in a race is a check. `wumpa_checks.mode` says which
+// shape this seed uses:
+//
+//   0 off        the block is absent entirely; nothing is ever emitted.
+//   1 global     ONE location for the whole seed, at the permanent 35016100.
+//   2 per_track  one location per race DESTINATION -- 18 retail destinations
+//                keyed by engine LevelID, plus at most one custom destination
+//                keyed by its destination role. NOT also the global one.
+//
+// THE WIRE IS THE AUTHORITY ON WHICH CODES EXIST. This build must never
+// hardcode the per-track range: which of the 19 destination codes a seed
+// carries, and whether the custom slot is live at all, is a per-seed decision
+// the apworld makes and this block reports. Server location membership stays
+// the final send gate on top of that, exactly as it was before per-track.
+#define CTR_CFG_WUMPA_OFF        0
+#define CTR_CFG_WUMPA_GLOBAL     1
+#define CTR_CFG_WUMPA_PER_TRACK  2
+
+// The 18 retail race destinations are LevelIDs 0..17, which is the same dense
+// space the item-box and pad tables already use.
+#define CTR_CFG_WUMPA_TRACK_COUNT 18
+
+// This build serves one custom destination at a time, so one slot is enough.
+// The array shape is what makes a second supported role a data change here
+// rather than a redesign.
+#define CTR_CFG_WUMPA_CUSTOM_MAX 1
+
+// One custom DESTINATION SLOT: a role that a package can occupy, and the code
+// the seed minted for that role. The identity is the ROLE, not the package --
+// a different package occupying the same role keeps this code.
+typedef struct
+{
+	// The Gem Cup LevelID (100..104) this role hands over, resolved from the
+	// role word at parse time so the emit path compares LevelIDs rather than
+	// re-parsing strings on a race frame.
+	int  cup_level_id;
+	long code;              // the AP location code, or -1 for an empty slot
+	int  wumpa_collectible; // the capability slot data asserts for this package
+	// The package the seed bound to this role. Compared against the seed's own
+	// custom_tracks entry before anything is emitted: a destination whose
+	// package identity does not match is refused rather than served the wrong
+	// track's code.
+	char package_uuid[CTR_CFG_CT_UUID_CAP];
+} ctr_wumpa_custom_destination;
+
+typedef struct
+{
+	int  mode;          // CTR_CFG_WUMPA_OFF / _GLOBAL / _PER_TRACK
+	long global_code;   // 35016100 in global mode, -1 otherwise
+	// Per retail destination LevelID 0..17: the location code, or -1 for a
+	// destination this seed did not mint a check for.
+	long tracks[CTR_CFG_WUMPA_TRACK_COUNT];
+	int  custom_count;
+	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
+} ctr_wumpa_checks;
 
 typedef struct
 {
@@ -464,6 +533,11 @@ typedef struct
 	int              custom_tracks_seen;
 	int              custom_tracks_ok;
 	ctr_custom_track custom_track; // exactly one entry in this build
+
+	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
+	// the wire" and "the block said off", which are the same thing to every
+	// caller: nothing is emitted.
+	ctr_wumpa_checks wumpa;
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
