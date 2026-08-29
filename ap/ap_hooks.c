@@ -9,6 +9,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
 #include <platform/native_assets.h>
+#include "ap_custom_track_download.h"
 #endif
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
@@ -3819,6 +3820,18 @@ static int AP_CustomContentActivateReady(void)
 	return CustomTrack_ApplySeedDescriptor(&descriptor);
 }
 
+static void AP_CustomContentLogStatus(const char *action)
+{
+	char line[768];
+	const struct CustomTrackManagerStatus *status = &ap_custom_content_status;
+	snprintf(line, sizeof line,
+	         "[CustomTracks] manager %.32s: %.32s; %.240s; folder=\"%.360s\"\n",
+	         action, CustomTrackManager_StateText(status->state),
+	         status->detail[0] != '\0' ? status->detail : "no detail",
+	         status->packageRoot[0] != '\0' ? status->packageRoot : "unresolved");
+	AP_AppendLog(line);
+}
+
 static void AP_CustomContentPreflightSeed(int autoFinalize)
 {
 	struct CustomTrackManagerRequirement requirement;
@@ -3884,6 +3897,7 @@ void AP_CustomContentRescan(void)
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
 	{
 		AP_CustomContentPreflightSeed(1);
+		AP_CustomContentLogStatus("Rescan");
 		return;
 	}
 	CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
@@ -3895,6 +3909,7 @@ void AP_CustomContentRescan(void)
 		                                   CustomTrackManager_BabyTPark(),
 		                                   &ap_custom_content_status);
 	ap_custom_content_scanned = 1;
+	AP_CustomContentLogStatus("Rescan");
 }
 
 void AP_CustomContentVerify(void)
@@ -3904,6 +3919,22 @@ void AP_CustomContentVerify(void)
 	                                 &ap_custom_content_status);
 	ap_custom_content_scanned = 1;
 	AP_CustomContentRescan();
+}
+
+int AP_CustomContentDownloadStart(void)
+{
+	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(), package,
+	                                 &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	return ap_custom_track_download_start(ap_custom_content_status.packageRoot,
+	                                      package->downloadApiUrl, package->version,
+	                                      package->levSha256, package->vrmSha256);
+}
+
+int AP_CustomContentDownloadStatus(char *detail, int detailBytes)
+{
+	return ap_custom_track_download_status(detail, detailBytes);
 }
 
 int AP_CustomContentGateEventEntry(int forceVerify)
@@ -3931,7 +3962,7 @@ void AP_DrawCustomContentWarning(void)
 	if (!ap_custom_content_required)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-	DecalFont_DrawLine("Open OPTIONS > Custom Content, add files, then Rescan.",
+	DecalFont_DrawLine("Open OPTIONS > Custom Content to download or verify the track.",
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif
@@ -4064,6 +4095,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// gameplay immediately if this seed selects content that is not Ready;
 		// the Options Rescan action can satisfy and unlock this same seed later.
 		AP_CustomContentPreflightSeed(1);
+		AP_CustomContentLogStatus("seed preflight");
 #endif
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,

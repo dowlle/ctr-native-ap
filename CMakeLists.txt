@@ -158,6 +158,9 @@ if(CTR_AP)
     find_package(ZLIB REQUIRED)
 
     add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp ap/ap_crash_terminate.cpp)
+    if(CTR_CUSTOM_TRACKS)
+        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
+    endif()
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     target_include_directories(ap_net PRIVATE
@@ -167,7 +170,8 @@ if(CTR_AP)
         ${AP_VENDOR}/asio/include
         ${AP_VENDOR}/json/include
         ${CMAKE_SOURCE_DIR}/ap)
-    target_link_libraries(ap_net PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
+    find_package(Threads REQUIRED)
+    target_link_libraries(ap_net PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
     target_compile_definitions(ap_net PRIVATE
         CTR_AP
         AP_NO_SCHEMA
@@ -193,8 +197,10 @@ if(CTR_AP)
     target_link_libraries(ctr_native ap_net)
     if(WIN32)
         target_link_libraries(ctr_native ws2_32 crypt32)
+        if(CTR_CUSTOM_TRACKS)
+            target_link_libraries(ctr_native winhttp)
+        endif()
     else()
-        find_package(Threads REQUIRED)
         target_link_libraries(ctr_native Threads::Threads)
     endif()
     target_link_options(ctr_native PRIVATE -static-libstdc++)

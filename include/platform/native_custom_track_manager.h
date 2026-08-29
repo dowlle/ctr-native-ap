@@ -40,6 +40,7 @@ struct CustomTrackManagerPackage
 	const char *title;
 	const char *author;
 	const char *sourceUrl;
+	const char *downloadApiUrl;
 	const char *minimumClientVersion;
 	const char *minimumApworldVersion;
 	const char *levSha256;
@@ -112,9 +113,9 @@ int CustomTrackManager_PrepareFolder(const char *assetsRoot,
 	                                  const struct CustomTrackManagerPackage *package,
 	                                  struct CustomTrackManagerStatus *outStatus);
 
-// Hash the two original files and validate the manager-owned canonical
-// manifest. No files are written. READY means files, identity and manifest all
-// agree; verified files without a manifest return MANIFEST_MISSING.
+// Discover and hash the two original files, then validate the manager-owned
+// canonical manifest. Saphi's UUID filenames are accepted directly; players do
+// not have to rename them to track.lev / track.vrm. No files are written.
 int CustomTrackManager_ScanPackage(const char *assetsRoot,
 	                                const struct CustomTrackManagerPackage *package,
 	                                struct CustomTrackManagerStatus *outStatus);

@@ -104,17 +104,6 @@ struct RectMenu g_configMenu = {
 	.funcPtr = MM_MenuProc_Config,
 };
 
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-void MM_ConfigMenu_OpenCustomContent(void)
-{
-	if (s_numSections == 0)
-		BuildSectionMap();
-	s_currentSection = s_customContentSection;
-	g_configMenu.rowSelected = 0;
-	sdata->ptrDesiredMenu = &g_configMenu;
-}
-#endif
-
 static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSelected,
                               const int localRow, int *value, const int min, const int max, const int step)
 {
@@ -648,14 +637,16 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 #ifdef CTR_CUSTOM_TRACKS
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
+	"Download Saphi",
 	"Rescan",
-	"Verify / Finish Setup",
-	"Open Official Source",
-	"Copy Source Link",
+	"Verify / Setup",
+	"Open Source",
 	"Copy YAML",
 	"Save YAML",
 };
-static char s_customContentMessage[128] = "Add the original files to the package folder, then Rescan.";
+static char s_customContentMessage[128] =
+	"Download from Saphi, or add the original LEV and VRM files, then Rescan.";
+static int s_customContentDownloadActive = 0;
 
 static void CustomContent_SetMessage(const char *message)
 {
@@ -666,6 +657,48 @@ static void CustomContent_SetMessage(const char *message)
 	s_customContentMessage[len] = '\0';
 }
 
+static void CustomContent_DrawMessage(uint32_t *ot)
+{
+	char first[35];
+	char second[35];
+	const char *cursor = s_customContentMessage;
+	int line;
+
+	for (line = 0; line < 2 && *cursor != '\0'; line++)
+	{
+		char *out = line == 0 ? first : second;
+		int count = 0;
+		int lastSpace = -1;
+
+		while (cursor[count] != '\0' && count < 34)
+		{
+			out[count] = cursor[count];
+			if (cursor[count] == ' ')
+				lastSpace = count;
+			count++;
+		}
+		if (cursor[count] != '\0' && lastSpace > 0)
+			count = lastSpace;
+		out[count] = '\0';
+		cursor += count;
+		while (*cursor == ' ')
+			cursor++;
+	}
+	if (line == 2 && *cursor != '\0')
+	{
+		int len = (int)strlen(second);
+		if (len > 30)
+			len = 30;
+		memcpy(second + len, "...", 4);
+	}
+
+	DecalFont_DrawLineOT(first, 0x100, 0xB8, FONT_SMALL,
+	                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
+	if (line > 1)
+		DecalFont_DrawLineOT(second, 0x100, 0xC6, FONT_SMALL,
+		                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
+}
+
 static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
@@ -673,16 +706,39 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	struct CustomTrackManagerStatus exported;
 	char line[160];
 	char yaml[4096];
+	char downloadMessage[128];
+	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	if (s_customContentDownloadActive)
+	{
+		CustomContent_SetMessage(downloadMessage);
+		if (downloadState == AP_CT_DOWNLOAD_SUCCEEDED)
+		{
+			s_customContentDownloadActive = 0;
+			AP_CustomContentVerify();
+			status = AP_CustomContentStatus();
+			CustomContent_SetMessage(status->detail);
+		}
+		else if (downloadState == AP_CT_DOWNLOAD_FAILED)
+			s_customContentDownloadActive = 0;
+	}
 
 	if ((pad->buttonsTapped & BTN_UP) != 0)
 	{
-		menu->rowSelected = menu->rowSelected > 0 ? menu->rowSelected - 1 : CUSTOM_CONTENT_ACTION_COUNT - 1;
+		int row = menu->rowSelected % 3;
+		menu->rowSelected += row > 0 ? -1 : 2;
 		OtherFX_Play(0, 1);
 	}
 	if ((pad->buttonsTapped & BTN_DOWN) != 0)
 	{
-		menu->rowSelected = menu->rowSelected < CUSTOM_CONTENT_ACTION_COUNT - 1 ? menu->rowSelected + 1 : 0;
+		int row = menu->rowSelected % 3;
+		menu->rowSelected += row < 2 ? 1 : -2;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+	{
+		menu->rowSelected = (menu->rowSelected + 3) % CUSTOM_CONTENT_ACTION_COUNT;
 		OtherFX_Play(0, 1);
 	}
 
@@ -692,24 +748,31 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 		switch (menu->rowSelected)
 		{
 		case 0:
+			if (AP_CustomContentDownloadStart())
+			{
+				s_customContentDownloadActive = 1;
+				CustomContent_SetMessage("Starting verified download from Project Saphi...");
+			}
+			else
+			{
+				AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
+				CustomContent_SetMessage(downloadMessage);
+			}
+			break;
+		case 1:
 			AP_CustomContentRescan();
 			status = AP_CustomContentStatus();
 			CustomContent_SetMessage(status->detail);
 			break;
-		case 1:
+		case 2:
 			AP_CustomContentVerify();
 			status = AP_CustomContentStatus();
 			CustomContent_SetMessage(status->detail);
 			break;
-		case 2:
+		case 3:
 			CustomContent_SetMessage(Platform_OpenURL(package->sourceUrl)
 			                        ? "Opened the official Project Saphi page."
 			                        : "Could not open the official source page.");
-			break;
-		case 3:
-			CustomContent_SetMessage(Platform_SetClipboardText(package->sourceUrl)
-			                        ? "Official source link copied."
-			                        : "Could not copy the source link.");
 			break;
 		case 4:
 			if (CustomTrackManager_RenderYaml(package, status, yaml, sizeof yaml) &&
@@ -730,30 +793,33 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 
 	status = AP_CustomContentStatus();
 	DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
-	snprintf(line, sizeof line, "%s  v%s  by %s", package->title, package->version, package->author);
-	DecalFont_DrawLineOT(line, 0x100, 0x36, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "Status: %s", CustomTrackManager_StateText(status->state));
-	DecalFont_DrawLineOT(line, 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
-	DecalFont_DrawLineOT(AP_CustomContentSeedSelected()
-	                     ? (AP_CustomContentRequired() ? "Seed: REQUIRED - gameplay locked" : "Seed: required package Ready")
-	                     : "Seed: not selected (optional install)",
-	                   0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "Requires %s  |  Source: Project Saphi", package->minimumClientVersion);
-	DecalFont_DrawLineOT(line, 0x100, 0x6C, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	DecalFont_DrawLineOT((char *)package->title, 0x100, 0x36,
+	                   FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	snprintf(line, sizeof line, "v%s  |  %s  |  Project Saphi", package->version, package->author);
+	DecalFont_DrawLineOT(line, 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	snprintf(line, sizeof line, "Status: %s  |  Seed: %s",
+	         downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state),
+	         AP_CustomContentSeedSelected()
+	             ? (AP_CustomContentRequired() ? "REQUIRED" : "READY")
+	             : "OPTIONAL");
+	DecalFont_DrawLineOT(line, 0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER |
+	                   (AP_CustomContentRequired() ? RED : ORANGE), ot);
 
 	for (i = 0; i < CUSTOM_CONTENT_ACTION_COUNT; i++)
 	{
-		int y = 0x78 + i * 0x0E;
-		DecalFont_DrawLineOT((char *)s_customContentActions[i], 0x38, y, FONT_SMALL, ORANGE, ot);
+		int column = i / 3;
+		int row = i % 3;
+		int x = column == 0 ? 0x38 : 0x118;
+		int y = 0x78 + row * 0x18;
+		DecalFont_DrawLineOT((char *)s_customContentActions[i], x, y, FONT_SMALL, ORANGE, ot);
 		if (i == menu->rowSelected)
 		{
-			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			RECT sel = {column == 0 ? 0x30 : 0x110, y - 2, 0xC0, 0x0C};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
 	}
 
-	DecalFont_DrawLineOT(s_customContentMessage, 0x100, 0xCA,
-	                   FONT_SMALL, JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
+	CustomContent_DrawMessage(ot);
 }
 #endif
 #endif // CTR_AP
@@ -774,13 +840,6 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active())
 	{
 		OtherFX_Play(2, 1);
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		if (s_currentSection == s_customContentSection && AP_CustomContentRequired())
-		{
-			CustomContent_SetMessage("This seed requires Ready content before you can leave.");
-		}
-		else
-#endif
 		if (s_currentSection >= 0)
 		{
 			menu->rowSelected = s_currentSection;
@@ -941,7 +1000,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		for (int i = 0; i < s_numSections; i++)
 		{
 			int y = startY + i * spacing;
-			DecalFont_DrawLineOT((char *)s_sectionName[i], labelX, y, FONT_SMALL, ORANGE, ot);
+			int color = ORANGE;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			if (i == s_customContentSection && AP_CustomContentRequired())
+				color = RED;
+#endif
+			DecalFont_DrawLineOT((char *)s_sectionName[i], labelX, y, FONT_SMALL, color, ot);
 			if (i == menu->rowSelected)
 			{
 				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};

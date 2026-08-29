@@ -11,6 +11,8 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <platform/native_win32.h>
+#else
+#include <dirent.h>
 #endif
 
 #define CTR_CT_MANAGER_HASH_CHUNK 65536
@@ -23,6 +25,7 @@ static const struct CustomTrackManagerPackage s_babyTParkPackage = {
 	"Baby T Park",
 	"Lockheart",
 	"https://www.projectsaphi.com/tracks/101",
+	"https://www.projectsaphi.com/api/v2/tracks/101/downloads",
 	"0.2.0-alpha6",
 	"0.2.0-alpha6",
 	"96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8",
@@ -128,6 +131,7 @@ static int Manager_PackageSupported(const struct CustomTrackManagerPackage *pack
 	       Manager_IsPlainText(package->title) &&
 	       Manager_IsPlainText(package->author) &&
 	       Manager_IsPlainText(package->sourceUrl) &&
+	       Manager_IsPlainText(package->downloadApiUrl) &&
 	       Manager_IsPlainText(package->minimumClientVersion) &&
 	       Manager_IsPlainText(package->minimumApworldVersion) &&
 	       package->navigationRevision > 0 &&
@@ -230,9 +234,154 @@ static int Manager_HashFile(const char *path, char outHex[NATIVE_SHA256_HEX_BYTE
 	return 1;
 }
 
+static int Manager_AsciiLower(int c)
+{
+	return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+static int Manager_HasExtension(const char *name, const char *extension)
+{
+	size_t nameLen;
+	size_t extLen;
+	size_t i;
+
+	if (name == NULL || extension == NULL)
+		return 0;
+	nameLen = strlen(name);
+	extLen = strlen(extension);
+	if (nameLen <= extLen)
+		return 0;
+	for (i = 0; i < extLen; i++)
+		if (Manager_AsciiLower((unsigned char)name[nameLen - extLen + i]) !=
+		    Manager_AsciiLower((unsigned char)extension[i]))
+			return 0;
+	return 1;
+}
+
+static int Manager_IsSafeFileName(const char *name)
+{
+	const unsigned char *p = (const unsigned char *)name;
+	if (p == NULL || *p == '\0' || !strcmp(name, ".") || !strcmp(name, ".."))
+		return 0;
+	for (; *p != '\0'; p++)
+		if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+		       (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.'))
+			return 0;
+	return 1;
+}
+
+static const char *Manager_BaseName(const char *path)
+{
+	const char *slash;
+	const char *backslash;
+	if (path == NULL)
+		return "";
+	slash = strrchr(path, '/');
+	backslash = strrchr(path, '\\');
+	if (backslash != NULL && (slash == NULL || backslash > slash))
+		slash = backslash;
+	return slash == NULL ? path : slash + 1;
+}
+
+static int Manager_ConsiderSource(const char *original, const char *name,
+	                              const char *extension, const char *expectedHash,
+	                              char *bestPath, char bestHash[NATIVE_SHA256_HEX_BYTES],
+	                              unsigned long *bestBytes, int *outCandidates,
+	                              int *outUnreadable)
+{
+	char path[CTR_CT_MANAGER_PATH_MAX];
+	char hash[NATIVE_SHA256_HEX_BYTES];
+	unsigned long bytes;
+	int missing;
+
+	if (!Manager_IsSafeFileName(name) || !Manager_HasExtension(name, extension))
+		return 1;
+	(*outCandidates)++;
+	if (!Manager_Join(path, sizeof path, original, name))
+		return 0;
+	if (!Manager_HashFile(path, hash, &bytes, &missing))
+	{
+		if (!missing)
+			*outUnreadable = 1;
+		return 1;
+	}
+	if (!NativeSha256_HexEquals(expectedHash, hash))
+		return 1;
+	if (bestPath[0] == '\0' || strcmp(name, Manager_BaseName(bestPath)) < 0)
+	{
+		snprintf(bestPath, CTR_CT_MANAGER_PATH_MAX, "%s", path);
+		snprintf(bestHash, NATIVE_SHA256_HEX_BYTES, "%s", hash);
+		*bestBytes = bytes;
+	}
+	return 1;
+}
+
+static int Manager_FindVerifiedSource(const char *original, const char *extension,
+	                                  const char *expectedHash, char *bestPath,
+	                                  char bestHash[NATIVE_SHA256_HEX_BYTES],
+	                                  unsigned long *bestBytes, int *outCandidates,
+	                                  int *outUnreadable)
+{
+	bestPath[0] = '\0';
+	bestHash[0] = '\0';
+	*bestBytes = 0;
+	*outCandidates = 0;
+	*outUnreadable = 0;
+#if defined(_WIN32)
+	{
+		char pattern[CTR_CT_MANAGER_PATH_MAX];
+		WIN32_FIND_DATAA data;
+		HANDLE find;
+		if (!Manager_Join(pattern, sizeof pattern, original, "*"))
+			return 0;
+		find = FindFirstFileA(pattern, &data);
+		if (find == INVALID_HANDLE_VALUE)
+			return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND;
+		do
+		{
+			if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+			    !Manager_ConsiderSource(original, data.cFileName, extension, expectedHash,
+			                            bestPath, bestHash, bestBytes, outCandidates, outUnreadable))
+			{
+				FindClose(find);
+				return 0;
+			}
+		} while (FindNextFileA(find, &data));
+		FindClose(find);
+	}
+#else
+	{
+		DIR *dir = opendir(original);
+		struct dirent *entry;
+		if (dir == NULL)
+			return errno == ENOENT;
+		errno = 0;
+		while ((entry = readdir(dir)) != NULL)
+			if (!Manager_ConsiderSource(original, entry->d_name, extension, expectedHash,
+			                            bestPath, bestHash, bestBytes, outCandidates, outUnreadable))
+			{
+				closedir(dir);
+				return 0;
+			}
+		if (errno != 0)
+		{
+			closedir(dir);
+			return 0;
+		}
+		closedir(dir);
+	}
+#endif
+	return 1;
+}
+
 static int Manager_RenderManifest(const struct CustomTrackManagerPackage *package,
+	                              const struct CustomTrackManagerStatus *status,
 	                              char *dst, size_t dstSize)
 {
+	const char *levName = Manager_BaseName(status->levPath);
+	const char *vrmName = Manager_BaseName(status->vrmPath);
+	if (!Manager_IsSafeFileName(levName) || !Manager_IsSafeFileName(vrmName))
+		return 0;
 	int wrote = snprintf(dst, dstSize,
 		"{\n"
 		"  \"schema_version\": 1,\n"
@@ -248,8 +397,8 @@ static int Manager_RenderManifest(const struct CustomTrackManagerPackage *packag
 		"  \"minimum_client_version\": \"%s\",\n"
 		"  \"minimum_apworld_version\": \"%s\",\n"
 		"  \"files\": {\n"
-		"    \"lev\": {\"path\": \"original/track.lev\", \"sha256\": \"%s\"},\n"
-		"    \"vrm\": {\"path\": \"original/track.vrm\", \"sha256\": \"%s\"}\n"
+		"    \"lev\": {\"path\": \"original/%s\", \"sha256\": \"%s\"},\n"
+		"    \"vrm\": {\"path\": \"original/%s\", \"sha256\": \"%s\"}\n"
 		"  },\n"
 		"  \"navigation\": {\"uuid\": \"%s\", \"revision\": %u},\n"
 		"  \"capabilities\": {\n"
@@ -266,7 +415,7 @@ static int Manager_RenderManifest(const struct CustomTrackManagerPackage *packag
 		"}\n",
 		package->id, package->packageUuid, package->version, package->title,
 		package->author, package->sourceUrl, package->minimumClientVersion,
-		package->minimumApworldVersion, package->levSha256, package->vrmSha256,
+		package->minimumApworldVersion, levName, package->levSha256, vrmName, package->vrmSha256,
 		package->navigationUuid, package->navigationRevision,
 		package->flagCrates ? "true" : "false",
 		package->flagCtrLetters ? "true" : "false",
@@ -417,9 +566,18 @@ int CustomTrackManager_ScanPackage(const char *assetsRoot,
 	                                const struct CustomTrackManagerPackage *package,
 	                                struct CustomTrackManagerStatus *outStatus)
 {
-	int levMissing;
-	int vrmMissing;
+	int levCandidates;
+	int vrmCandidates;
+	int levUnreadable;
+	int vrmUnreadable;
 	int manifestMissing;
+	char original[CTR_CT_MANAGER_PATH_MAX];
+	char foundLev[CTR_CT_MANAGER_PATH_MAX];
+	char foundVrm[CTR_CT_MANAGER_PATH_MAX];
+	char foundLevHash[NATIVE_SHA256_HEX_BYTES];
+	char foundVrmHash[NATIVE_SHA256_HEX_BYTES];
+	unsigned long foundLevBytes;
+	unsigned long foundVrmBytes;
 	char expectedManifest[CTR_CT_MANAGER_TEXT_MAX];
 	char actualManifest[CTR_CT_MANAGER_TEXT_MAX];
 
@@ -434,39 +592,50 @@ int CustomTrackManager_ScanPackage(const char *assetsRoot,
 	if (!Manager_BuildPaths(assetsRoot, package, outStatus))
 		return outStatus->state;
 
-	if (!Manager_HashFile(outStatus->levPath, outStatus->actualLevSha256, &outStatus->levBytes, &levMissing) && !levMissing)
+	if (!Manager_Join(original, sizeof original, outStatus->packageRoot, "original") ||
+	    !Manager_FindVerifiedSource(original, ".lev", package->levSha256,
+	                                foundLev, foundLevHash, &foundLevBytes,
+	                                &levCandidates, &levUnreadable) ||
+	    !Manager_FindVerifiedSource(original, ".vrm", package->vrmSha256,
+	                                foundVrm, foundVrmHash, &foundVrmBytes,
+	                                &vrmCandidates, &vrmUnreadable))
 	{
-		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Could not read track.lev.");
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Could not scan the original track folder.");
 		return outStatus->state;
 	}
-	if (!Manager_HashFile(outStatus->vrmPath, outStatus->actualVrmSha256, &outStatus->vrmBytes, &vrmMissing) && !vrmMissing)
+	if (levUnreadable || vrmUnreadable)
 	{
-		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Could not read track.vrm.");
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "One or more candidate track files could not be read.");
 		return outStatus->state;
 	}
 
-	if (levMissing && vrmMissing)
+	if (levCandidates == 0 && vrmCandidates == 0)
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED,
-		                  "Add original/track.lev and original/track.vrm, then Rescan.");
+		                  "Download from Saphi, or add the LEV and VRM to original, then Rescan.");
 		return outStatus->state;
 	}
-	if (levMissing || vrmMissing)
+	if (levCandidates == 0 || vrmCandidates == 0)
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_MISSING_FILES,
-		                  "%s is missing or empty.", levMissing ? "original/track.lev" : "original/track.vrm");
+		                  "No %s file was found in the original folder.", levCandidates == 0 ? "LEV" : "VRM");
 		return outStatus->state;
 	}
-	if (!NativeSha256_HexEquals(package->levSha256, outStatus->actualLevSha256) ||
-	    !NativeSha256_HexEquals(package->vrmSha256, outStatus->actualVrmSha256))
+	if (foundLev[0] == '\0' || foundVrm[0] == '\0')
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_HASH_MISMATCH,
-		                  "The installed files do not match %s %s from the official source.",
+		                  "The LEV or VRM does not match %s %s from the official source.",
 		                  package->title, package->version);
 		return outStatus->state;
 	}
+	snprintf(outStatus->levPath, sizeof outStatus->levPath, "%s", foundLev);
+	snprintf(outStatus->vrmPath, sizeof outStatus->vrmPath, "%s", foundVrm);
+	snprintf(outStatus->actualLevSha256, sizeof outStatus->actualLevSha256, "%s", foundLevHash);
+	snprintf(outStatus->actualVrmSha256, sizeof outStatus->actualVrmSha256, "%s", foundVrmHash);
+	outStatus->levBytes = foundLevBytes;
+	outStatus->vrmBytes = foundVrmBytes;
 
-	if (!Manager_RenderManifest(package, expectedManifest, sizeof expectedManifest))
+	if (!Manager_RenderManifest(package, outStatus, expectedManifest, sizeof expectedManifest))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED, "The package manifest is too large for manager-light.");
 		return outStatus->state;
@@ -504,7 +673,7 @@ int CustomTrackManager_FinalizePackage(const char *assetsRoot,
 		return 1;
 	if (state != CTR_CT_MANAGER_MANIFEST_MISSING && state != CTR_CT_MANAGER_MANIFEST_INVALID)
 		return 0;
-	if (!Manager_RenderManifest(package, manifest, sizeof manifest) ||
+	if (!Manager_RenderManifest(package, outStatus, manifest, sizeof manifest) ||
 	    !Manager_WriteAtomic(outStatus->manifestPath, manifest))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Could not write manifest.json.");

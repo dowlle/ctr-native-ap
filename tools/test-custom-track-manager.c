@@ -69,6 +69,7 @@ static struct CustomTrackManagerPackage fixture_package(void)
 		"Fixture Track",
 		"Fixture Author",
 		"https://example.invalid/tracks/fixture",
+		"https://example.invalid/api/tracks/fixture/downloads",
 		"0.2.0-alpha6",
 		"0.2.0-alpha6",
 		// sha256("abc") and sha256("def")
@@ -141,7 +142,7 @@ int main(void)
 	write_file(status.levPath, "abc");
 	expect_int(CustomTrackManager_ScanPackage(assets, &package, &status),
 	           CTR_CT_MANAGER_MISSING_FILES, "one source file is Missing Files");
-	expect_contains(status.detail, "track.vrm", "missing role is named");
+	expect_contains(status.detail, "VRM", "missing role is named");
 
 	write_file(status.vrmPath, "wrong");
 	expect_int(CustomTrackManager_ScanPackage(assets, &package, &status),
@@ -203,6 +204,35 @@ int main(void)
 	           CTR_CT_MANAGER_HASH_MISMATCH, "content drift returns to mismatch");
 	expect_int(CustomTrackManager_FinalizePackage(assets, &package, &status), 0,
 	           "content drift cannot be papered over with a new manifest");
+
+	// Project Saphi preserves creator-facing UUID filenames. A player can copy
+	// those downloads into original unchanged; discovery is by extension + the
+	// release-owned hash, not by a magic track.lev / track.vrm spelling.
+	{
+		char original[CTR_CT_MANAGER_PATH_MAX];
+		char canonicalLev[CTR_CT_MANAGER_PATH_MAX];
+		char canonicalVrm[CTR_CT_MANAGER_PATH_MAX];
+		char uuidLev[CTR_CT_MANAGER_PATH_MAX];
+		char uuidVrm[CTR_CT_MANAGER_PATH_MAX];
+		Manager_Join(original, sizeof original, status.packageRoot, "original");
+		Manager_Join(canonicalLev, sizeof canonicalLev, original, "track.lev");
+		Manager_Join(canonicalVrm, sizeof canonicalVrm, original, "track.vrm");
+		remove(canonicalLev);
+		remove(canonicalVrm);
+		Manager_Join(uuidLev, sizeof uuidLev, original, "aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb_v1.2.3.lev");
+		Manager_Join(uuidVrm, sizeof uuidVrm, original, "cccccccc-1111-4222-8333-dddddddddddd_v1.2.3.vrm");
+		write_file(uuidLev, "abc");
+		write_file(uuidVrm, "def");
+		expect_int(CustomTrackManager_ScanPackage(assets, &package, &status),
+		           CTR_CT_MANAGER_MANIFEST_INVALID, "UUID source filenames are discovered by verified content");
+		expect_contains(status.levPath, "aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb_v1.2.3.lev",
+		                "discovered LEV path preserves the Saphi filename");
+		expect_int(CustomTrackManager_FinalizePackage(assets, &package, &status), 1,
+		           "finalize repairs the manifest for discovered filenames");
+		read_file(status.manifestPath, saved, sizeof saved);
+		expect_contains(saved, "original/aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb_v1.2.3.lev",
+		                "manifest records the verified source filename");
+	}
 
 	invalid.id = "../escape";
 	expect_int(CustomTrackManager_ScanPackage(assets, &invalid, &status),

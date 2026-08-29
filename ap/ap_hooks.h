@@ -14,6 +14,7 @@
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
+#include "ap_custom_track_download.h"
 #endif
 
 struct GameTracker;
@@ -212,6 +213,8 @@ int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);
 void AP_CustomContentVerify(void);
+int AP_CustomContentDownloadStart(void);
+int AP_CustomContentDownloadStatus(char *detail, int detailBytes);
 int AP_CustomContentGateEventEntry(int forceVerify);
 void AP_DrawCustomContentWarning(void);
 #endif
