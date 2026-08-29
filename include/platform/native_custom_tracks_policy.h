@@ -76,16 +76,17 @@
 //    ruled check set. See the enum for what is still missing before those boxes
 //    mean anything.
 //
-// 6. IS AN ST1 TABLE ENTRY REALLY THERE. Every level carries a SpawnType1
-//    pointer table (struct Level::ptrSpawnType1) whose entries are indexed by
-//    the ST1_* enum -- minimap, object spawns, end-of-race cameras, the intro
-//    camera path, the two ghosts, credits. Retail encodes "this level has no X"
-//    by making the table SHORT, so every engine consumer guards with a count
-//    threshold and then dereferences the entry unconditionally. Measured across
-//    the retail NTSC-U BIGFILE, all 18 arcade tracks have count == 4 with a
-//    non-NULL entry in every one of those four slots, and all 7 battle arenas
-//    have count == 0 -- so on retail content a count threshold and "the entry is
-//    really there" are the same question, and the engine is right.
+// 6. IS AN ST1 TABLE ENTRY REALLY THERE (rung 2d). Every level carries a
+//    SpawnType1 pointer table (struct Level::ptrSpawnType1) whose entries are
+//    indexed by the ST1_* enum -- minimap, object spawns, end-of-race cameras,
+//    the intro camera path, the two ghosts, credits. Retail encodes "this level
+//    has no X" by making the table SHORT, so every engine consumer guards with
+//    a count threshold and then dereferences the entry unconditionally.
+//    Measured across the retail NTSC-U BIGFILE, all 18 arcade tracks have count
+//    == 4 with a non-NULL entry in every one of those four slots, and all 7
+//    battle arenas have count == 0 -- so on retail content a count threshold
+//    and "the entry is really there" are the same question, and the engine is
+//    right.
 //
 //    A custom track need not agree. A community packager can emit a FULL-WIDTH
 //    table and encode absence as a NULL entry instead: the entry's slot is
@@ -100,11 +101,12 @@
 //    than replacing it, which is why a call site can swap one for the other
 //    without changing what retail content does.
 //
-// 7. IS THERE ROOM FOR ONE MORE PRIMITIVE. The engine gives each frame a fixed
-//    primitive arena whose size is looked up BY LEVEL ID
-//    (data.primMem_SizePerLEV_1P[levelID] << 10, game/MAIN/MainInit.c). A custom
-//    track borrows an arcade slot, so it inherits the budget retail sized for
-//    THAT slot's geometry -- a number chosen for entirely different content.
+// 7. IS THERE ROOM FOR ONE MORE PRIMITIVE (rung 2d). The engine gives each
+//    frame a fixed primitive arena whose size is looked up BY LEVEL ID
+//    (data.primMem_SizePerLEV_1P[levelID] << 10, game/MAIN/MainInit.c). A
+//    custom track borrows an arcade slot, so it inherits the budget retail
+//    sized for THAT slot's geometry -- a number chosen for entirely different
+//    content.
 //
 //    Most emitters already bound themselves against PrimMem::guardEnd, because
 //    retail's own content could get close to it. Two do not, and both take their
