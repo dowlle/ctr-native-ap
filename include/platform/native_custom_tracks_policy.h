@@ -542,11 +542,15 @@ static int CustomTrackPolicy_ParseNavRevision(const char *text, unsigned int *ou
 
 	for (; *text != '\0'; text++)
 	{
+		unsigned long digit;
 		if (*text < '0' || *text > '9')
 			return 0;
-		v = (v * 10uL) + (unsigned long)(*text - '0');
-		if (v > CTR_CT_NAV_REV_MAX)
+		digit = (unsigned long)(*text - '0');
+		// Check before multiplying. On the shipped 32-bit Windows target an
+		// unsigned long wraps before a post-update comparison can see it.
+		if (v > (CTR_CT_NAV_REV_MAX - digit) / 10uL)
 			return 0;
+		v = (v * 10uL) + digit;
 		digits++;
 	}
 

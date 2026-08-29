@@ -1594,6 +1594,9 @@ static void test_nav_uuid_parse(void)
 
 	expect_int(CustomTrackPolicy_ParseNavRevision("42", &rev), 1, "a multi-digit revision parses");
 	expect_int((int)rev, 42, "revision 42 value");
+	expect_int(CustomTrackPolicy_ParseNavRevision("2147483647", &rev), 1,
+	           "the maximum navigation revision parses");
+	expect_int((int)rev, 2147483647, "maximum navigation revision value");
 
 	rev = 7;
 	expect_int(CustomTrackPolicy_ParseNavRevision("0", &rev), 0, "revision 0 is refused");
@@ -1602,6 +1605,8 @@ static void test_nav_uuid_parse(void)
 	expect_int(CustomTrackPolicy_ParseNavRevision("-1", &rev), 0, "a negative revision is refused");
 	expect_int(CustomTrackPolicy_ParseNavRevision("1.0", &rev), 0, "a non-integer revision is refused");
 	expect_int(CustomTrackPolicy_ParseNavRevision("2x", &rev), 0, "a trailing character is refused");
+	expect_int(CustomTrackPolicy_ParseNavRevision("2147483648", &rev), 0,
+	           "one past the navigation revision maximum is refused");
 	expect_int(CustomTrackPolicy_ParseNavRevision("99999999999", &rev), 0, "an overflowing revision is refused");
 	expect_int((int)rev, 7, "no refusal above disturbed the caller's value");
 }
