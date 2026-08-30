@@ -85,6 +85,46 @@ int main()
 	expect(letterSent == std::vector<int64_t>({35012503, 35012525, 35012544}),
 	       "representative letter checks flush once each in code order");
 
+	// Bounded-reconnect suspension (2026-08-30): a check earned while offline
+	// must SURVIVE the pre-connect retry-budget stop. The suspension tears down
+	// the network client but deliberately does NOT touch g_held_checks (see
+	// ap_net_apply_retry_stop in ap_net.cpp); the checks stay held and flush on
+	// the later manual recovery, exactly once.
+	{
+		APHeldChecks suspended;
+		std::vector<int64_t> suspendedSent;
+		suspended.onConnected("susp-seed", "susp-slot", isSettled,
+		                      [](int64_t) { return false; });
+		suspended.hold(5001);
+		suspended.hold(5002);
+		// The retry budget stops; this is a no-op for the held queue (the
+		// production teardown path never calls into it).
+		auto afterStop = suspended.onConnected("susp-seed", "susp-slot",
+		                                       [](int64_t) { return false; },
+		                                       [](int64_t) { return false; });
+		expect(afterStop.rearmed == 2 && suspended.size() == 2,
+		       "held checks survive a suspension that leaves them unsent");
+		auto recovered = suspended.onConnected(
+		    "susp-seed", "susp-slot", isSettled,
+		    [&](int64_t code) { suspendedSent.push_back(code); return true; });
+		expect(recovered.sent == 2 && suspended.empty(),
+		       "manual recovery after suspension flushes the held checks once");
+		expect(suspendedSent == std::vector<int64_t>({5001, 5002}),
+		       "post-suspension flush sends each held check exactly once");
+		// Fail-closed stays true after the suspension: a check held offline and
+		// then recovered into a DIFFERENT slot is discarded, never delivered.
+		suspended.hold(5003);
+		auto wrongSlot = suspended.onConnected("susp-seed", "other-slot", isSettled,
+		                                       [&](int64_t code) {
+			                                       suspendedSent.push_back(code);
+			                                       return true;
+		                                       });
+		expect(wrongSlot.discarded == 1 && suspended.empty(),
+		       "post-suspension flush to a different slot is fail-closed (discarded)");
+		expect(suspendedSent == std::vector<int64_t>({5001, 5002}),
+		       "fail-closed discard never sends the mismatched check");
+	}
+
 	std::printf("\n%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;
 }

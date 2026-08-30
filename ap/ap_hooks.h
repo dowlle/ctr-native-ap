@@ -255,7 +255,9 @@ int AP_MapFlashOn(void);
 void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 
 // One-line connection status for the menu's status row ("Not connected" /
-// "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
+// "Connecting..." / "Connected" / "Error: <reason>" / "Auto-retry stopped,
+// press Connect" when the pre-connect attempt budget is exhausted). Points at a
+// static buffer.
 const char *AP_Net_StatusLine(void);
 
 // Graceful client teardown before process exit (main-menu QUIT row, #211): the

@@ -4575,11 +4575,11 @@ const char *AP_Net_StatusLine(void)
 		break;
 	case AP_NET_STATUS_UNREACHABLE:
 	{
-		// Names what could not be reached so a dead address, a wrong port or a
-		// server that is not up yet reads differently from a handshake still in
-		// progress (issue #146). The client is still retrying either way. The uri
-		// row above this one carries the full address, so a trimmed host here
-		// costs the player nothing.
+		// Post-connect drop: names what could not be reached so a dead address,
+		// a wrong port or a server that is not up yet reads differently from a
+		// handshake still in progress (issue #146). The client is still retrying
+		// either way. The uri row above this one carries the full address, so a
+		// trimmed host here costs the player nothing.
 		char host[64];
 		if (ap_net_host(host, sizeof host))
 		{
@@ -4591,6 +4591,13 @@ const char *AP_Net_StatusLine(void)
 			snprintf(line, sizeof line, "Cannot reach server, retrying");
 		break;
 	}
+	case AP_NET_STATUS_RETRY_STOPPED:
+		// Pre-connect budget exhausted: automatic attempts have stopped and the
+		// only way forward is the Connect row below. Deliberately does not say
+		// "Cannot reach", "Not connected" or anything "retrying" -- the state is
+		// a stopped one, and the uri row above still shows the target address.
+		snprintf(line, sizeof line, "Auto-retry stopped, press Connect");
+		break;
 	case AP_NET_STATUS_ERROR:
 	{
 		const char *e = ap_net_last_error();

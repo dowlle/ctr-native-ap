@@ -13,6 +13,7 @@
 
 #include "apclient.hpp" // pulls wswrap + websocketpp + asio + nlohmann/json
 #include "ap_net.h"
+#include "ap_retry_budget.h" // bounded pre-connect reconnect budget (pure logic)
 #include "ap_received_batch_logic.h"
 #include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
@@ -83,10 +84,24 @@ static std::string           g_last_error;
 // Attempts back off 1.5s / 3s / 6s / ... (capped at 15s), so three failures is
 // at least nine seconds of trying before the line changes -- longer when the
 // attempts themselves have to time out rather than being refused outright.
+//
+// 2026-08-30 ruling (bounded automatic reconnect): while the current client run
+// has never reached SLOT_CONNECTED (startup or a manual dial), the same
+// AP_NET_UNREACHABLE_FAILS boundary is now a hard retry BUDGET, not a message
+// toggle. The budgeted failures are each logged once, the terminal one emits a
+// single summary line, and the client is torn down after the poll that burns the
+// last attempt so no fourth attempt is ever made. The pure state machine lives in
+// ap_retry_budget.h (driven by tools/test-retry-budget.cpp); g_stop_pending is
+// the deferred-teardown flag set inside the socket-error handler and consumed by
+// ap_net_poll() after g_ap->poll() returns (deleting g_ap from inside its own
+// callback is unsafe). Once the run HAS connected, a later drop keeps the old
+// background recovery (status UNREACHABLE, still retrying) so a player mid-seed
+// is not stranded; only the message changes.
 static const int             AP_NET_UNREACHABLE_FAILS = 3;
+static APRetryBudget         g_retry(AP_NET_UNREACHABLE_FAILS);
+static bool                  g_stop_pending = false; // deferred retry-stop teardown
 static std::string           g_host;
 static std::string           g_room_endpoint;
-static int                   g_socket_fails = 0;
 
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
 // the full address, and the status row it shares only has room for a short host,
@@ -547,13 +562,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_ap->set_socket_connected_handler([]() {
 		// The room answered a websocket handshake, so it is reachable: any
 		// unreachable verdict is stale and the failure run starts over (#146).
-		g_socket_fails = 0;
+		g_retry.onSocketUp();
 		if (g_status != AP_NET_STATUS_ERROR)
 			g_status = AP_NET_STATUS_CONNECTING; // socket up; slot handshake pending
 		std::fprintf(stderr, "[AP NET] socket connected\n");
 		AP_LogLine("[AP NET] socket connected\n");
 	});
 	g_ap->set_socket_disconnected_handler([]() {
+		if (g_stop_pending)
+			return; // deliberate retry-stop teardown: no "(auto-retrying)" line
 		g_connected = false;
 		// Not an error unless the slot was refused; apclientpp will auto-retry.
 		if (g_status != AP_NET_STATUS_ERROR)
@@ -566,9 +583,19 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// consumed this, so a room that was never reachable produced no ctr-ap.log
 	// trace at all and no status change. Attempts back off to one every 15s, so
 	// logging each of them cannot flood the file.
+	//
+	// 2026-08-30: this is where the bounded pre-connect budget lives. Each
+	// attempt inside the budget logs once with its own reason (wrong host,
+	// refused port, DNS, TLS all ride the same lifecycle and keep their
+	// diagnostic reason); the attempt that exhausts the budget logs one terminal
+	// summary and defers teardown to ap_net_poll() (deleting g_ap from inside
+	// its own callback is unsafe). Post-connect recovery is untouched: it keeps
+	// retrying and only renames the status, exactly as before.
 	g_ap->set_socket_error_handler([](const std::string &msg) {
-		if (g_socket_fails < AP_NET_UNREACHABLE_FAILS)
-			g_socket_fails++;
+		const bool wasStopped = g_retry.stopped();
+		const bool budgetExhausted = g_retry.onSocketError();
+		if (wasStopped)
+			return; // suspended: never count or log again until a manual Connect
 		char line[256];
 		std::snprintf(line, sizeof line, "[AP NET] connect attempt failed: %s\n",
 		              msg.empty() ? "unknown error" : msg.c_str());
@@ -590,17 +617,34 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "%s", line);
 			AP_LogLine(line);
 		}
-		// Past the threshold, say what cannot be reached instead of sitting on
-		// "Connecting..." forever. Retrying is unchanged; only the message moves.
+		// A refusal reason or a live slot outranks a stray socket error.
 		if (g_status == AP_NET_STATUS_ERROR || g_status == AP_NET_STATUS_CONNECTED)
-			return; // a refusal reason / a live slot outranks a stray socket error
-		if (g_socket_fails >= AP_NET_UNREACHABLE_FAILS && !g_host.empty() &&
+			return;
+		if (budgetExhausted)
+		{
+			// Pre-connect budget exhausted: stop automatic attempts entirely. The
+			// client is torn down after this poll returns (see ap_net_poll); the
+			// terminal status + host survive so the menu can say Connect retries.
+			g_stop_pending = true;
+			g_status = AP_NET_STATUS_RETRY_STOPPED;
+			std::snprintf(line, sizeof line,
+			              "[AP NET] cannot reach %s after %d attempts; automatic "
+			              "retries stopped (select Connect to retry)\n",
+			              g_host.empty() ? "server" : g_host.c_str(), g_retry.fails());
+			std::fprintf(stderr, "%s", line);
+			AP_LogLine(line);
+			return;
+		}
+		// Post-connect recovery: past the threshold, say what cannot be reached
+		// instead of sitting on "Connecting..." forever. Retrying is unchanged;
+		// only the message moves. The budget never stops this path.
+		if (g_retry.everConnected() && !g_host.empty() &&
 		    g_status != AP_NET_STATUS_UNREACHABLE)
 		{
 			g_status = AP_NET_STATUS_UNREACHABLE;
 			std::snprintf(line, sizeof line,
 			              "[AP NET] cannot reach %s after %d attempts (still retrying)\n",
-			              g_host.c_str(), g_socket_fails);
+			              g_host.c_str(), g_retry.fails());
 			AP_LogLine(line);
 		}
 	});
@@ -613,7 +657,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_connected = true;
 		g_status = AP_NET_STATUS_CONNECTED;
 		g_last_error.clear();
-		g_socket_fails = 0; // #146: the run of failures ended here
+		g_retry.onSlotConnected(); // #146: run of failures ended; later drops recover
 		// Fresh connect: signal ap_hooks to zero its received-item tallies, and
 		// drop any stale queue/scout state from a previous connection (server
 		// switch carried the old seed's items into memory otherwise). The server
@@ -797,7 +841,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_host = ap_net_host_of(uri ? uri : "localhost"); // #146: named by the status line
 	g_room_endpoint = ap_net_endpoint_of(uri ? uri : "localhost");
-	g_socket_fails = 0;
+	g_retry.start(false); // fresh bounded startup budget for this client run
+	g_stop_pending = false;
 	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
 	g_last_error.clear();
 	return 0;
@@ -807,10 +852,12 @@ extern "C" void ap_net_connect_slot(const char *slot, const char *password)
 {
 	g_slot = slot ? slot : "";
 	g_password = password ? password : "";
-	// Fresh parameters: re-arm the unreachable threshold so a new attempt starts
-	// from "Connecting..." rather than inheriting the previous verdict (#146).
-	g_socket_fails = 0;
-	if (g_status == AP_NET_STATUS_UNREACHABLE)
+	// Fresh parameters: re-arm the budget + unreachable threshold so a new
+	// attempt starts from "Connecting..." rather than inheriting the previous
+	// verdict (#146), and the stopped state is cleared for the new dial.
+	g_retry.start(false);
+	g_stop_pending = false;
+	if (g_status == AP_NET_STATUS_UNREACHABLE || g_status == AP_NET_STATUS_RETRY_STOPPED)
 		g_status = AP_NET_STATUS_CONNECTING;
 }
 
@@ -861,10 +908,51 @@ static void ap_net_note_net_exception(const char *where, const char *what)
 		}                                                           \
 	} while (0)
 
+static void ap_net_apply_retry_stop(void);
+
 extern "C" void ap_net_poll(void)
 {
 	if (g_ap)
 		AP_NET_GUARD("poll", g_ap->poll());
+	// Deferred retry-stop teardown. The socket-error handler only sets the flag:
+	// deleting g_ap from inside its own callback is unsafe (the callback runs
+	// inside g_ap->poll()). Teardown happens here, on the game thread, after
+	// poll() has returned, through the non-reentrant internal path below. The
+	// host and the terminal RETRY_STOPPED status are preserved for the menu.
+	if (g_stop_pending)
+		ap_net_apply_retry_stop();
+}
+
+// Bounded-retry teardown (2026-08-30).
+// Reached from ap_net_poll AFTER g_ap->poll() returns, never from inside a
+// handler. It preserves the target endpoint, terminal status, and held checks
+// so a later manual Connect can recover the same room safely.
+static void ap_net_apply_retry_stop(void)
+{
+	if (!g_ap)
+		return;
+	delete g_ap;
+	g_ap = nullptr;
+	g_connected = false;
+	g_items.clear();
+	g_items_player.clear();
+	g_items_index.clear();
+	g_items_location.clear();
+	g_items_flags.clear();
+	g_recv_batch_n = 0;
+	g_scouts.clear();
+	g_scouts_done = false;
+	g_pending_checks.clear();
+	g_dl_incoming = false;
+	g_diff_known = false;
+	g_char_known = false;
+	g_edit_known = false;
+	g_status = AP_NET_STATUS_RETRY_STOPPED; // set last: delete may fire handlers
+	g_last_error.clear();
+	g_retry.start(false); // fresh budget waits inertly until the next manual dial
+	g_stop_pending = false;
+	// Do not log here: the budget-exhausting socket-error handler already emitted
+	// the single terminal summary required by the lifecycle contract.
 }
 
 extern "C" int ap_net_is_connected(void)
@@ -1493,7 +1581,8 @@ extern "C" void ap_net_shutdown(void)
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone
-	g_socket_fails = 0;
+	g_retry.start(false); // fresh bounded budget for the next client run
+	g_stop_pending = false;
 	g_uri_secure = false;
 	g_room_endpoint.clear();
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on

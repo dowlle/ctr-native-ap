@@ -72,8 +72,10 @@ Connection** and fill in your room details:
 
 Select **Connect**. The status line on the same screen shows the connection
 state (Connecting… / Connected / an error message). Your settings are saved to
-`config.ini` next to the executable, and the game reconnects automatically on
-later launches.
+`config.ini` next to the executable, and the game dials automatically on later
+launches. A startup dial that cannot reach the room stops after a few automatic
+attempts instead of retrying forever: the status line then says that automatic
+attempts stopped, and selecting **Connect** retries with the same settings.
 
 ## Your first five minutes
 
@@ -92,7 +94,11 @@ available gates; traps arm silently and fire during a later race.
 
 If the connection drops, reconnect before completing another location. In the
 current release, a check completed while disconnected is not resent later. The
-Connection screen shows the current state and any error message.
+Connection screen shows the current state and any error message. A drop after
+you have connected once keeps the client recovering in the background, so a
+player mid-seed is not stranded away from the main-menu Connection screen; a
+startup or manual dial that never reached a room stops after a few automatic
+attempts and waits for you to select Connect.
 
 The client verifies the seed after connecting. If the hub shows a red **SEED NOT
 COMPLETABLE** warning, stop and report it with your YAML and spoiler log. For a

@@ -129,11 +129,12 @@ int  ap_net_player_is_ctr(int player);
 // to a one-line string for the menu.
 enum
 {
-	AP_NET_STATUS_IDLE = 0,    // no client / not dialed
-	AP_NET_STATUS_CONNECTING,  // socket up or slot handshake pending
-	AP_NET_STATUS_CONNECTED,   // slot connected
-	AP_NET_STATUS_ERROR,       // slot refused (see ap_net_last_error)
-	AP_NET_STATUS_UNREACHABLE  // socket keeps failing; still retrying (see ap_net_host)
+	AP_NET_STATUS_IDLE = 0,       // no client / not dialed
+	AP_NET_STATUS_CONNECTING,     // socket up or slot handshake pending
+	AP_NET_STATUS_CONNECTED,      // slot connected
+	AP_NET_STATUS_ERROR,          // slot refused (see ap_net_last_error)
+	AP_NET_STATUS_UNREACHABLE,    // post-connect drop: socket keeps failing, still retrying (see ap_net_host)
+	AP_NET_STATUS_RETRY_STOPPED   // pre-connect budget exhausted: automatic attempts stopped (see ap_net_host)
 };
 int  ap_net_status(void);
 const char *ap_net_last_error(void); // last slot-refused reason, "" if none
