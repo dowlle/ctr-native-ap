@@ -66,7 +66,14 @@ void AP_NavRec_DrawBotNames(void);
 // navigation compatibility revision. Set this before BOTS_InitNavPath for a
 // custom load and clear it before an ordinary retail load. The physical engine
 // level ID is deliberately not part of the identity.
+//
+// Block is the third arm: a load that SERVES custom-track bytes but has no
+// usable navigation identity. Falling back to Clear there would let the
+// borrowed host LevelID match retail recordings onto custom geometry and stamp
+// laps recorded here as retail lines; blocked, this module neither loads nor
+// writes a recording for the load and the level's own lanes run.
 void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int navRevision);
 void AP_NavRec_ClearActiveCustomTrack(void);
+void AP_NavRec_BlockRecordedLanes(void);
 
 #endif // AP_NAVREC_H

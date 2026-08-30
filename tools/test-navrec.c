@@ -50,6 +50,32 @@ static unsigned int MakeCircleLap(struct AP_NavRecSample *out, unsigned int fram
 	return frames;
 }
 
+// An OPEN lap: the same circle, but the sweep stops short of closing, leaving
+// last->first as a chord the cyclic follower would have to drive. gapPermille
+// is the missing fraction of the loop in thousandths. This is the shape the
+// recorder used to bank for the standing-start lap (which begins on the grid,
+// not the line) and for post-reversal fragments; the test fixtures derive
+// their radii and gaps from boundary values measured on shipped community
+// recordings.
+static unsigned int MakeArcLap(struct AP_NavRecSample *out, unsigned int frames, int radius, unsigned int gapPermille)
+{
+	double       sweep = 6.283185307179586 * ((double)(1000u - gapPermille) / 1000.0);
+	unsigned int i;
+
+	for (i = 0; i < frames; i++)
+	{
+		double a = (sweep * (double)i) / (double)frames;
+
+		out[i].x = (int)((double)radius * cos(a));
+		out[i].y = 0;
+		out[i].z = (int)((double)radius * sin(a));
+		out[i].rotY = (short)((i * 0x1000) / frames);
+		out[i].flags = 0;
+		out[i].checkpoint = (unsigned char)((i * 24u) / frames);
+	}
+	return frames;
+}
+
 static struct AP_NavRecSample  g_samples[4000];
 static struct AP_NavRecNode    g_nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
 static unsigned int            g_stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
@@ -103,8 +129,10 @@ static unsigned int FakeBuild(unsigned char *out, int levelId, const char *autho
 	for (i = 0; i < lapCount; i++)
 	{
 		// A different radius per lap, so a lane's line says which lap it took.
+		// The base radius keeps the loop above AP_NAVREC_MIN_LAP_UNITS, so a
+		// fixture lap is a credible closed lap under the closure rule.
 		unsigned int frames = 900u + (i * 10u);
-		unsigned int n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, frames, (400 + ((int)i * 20)) * 256, 0, 0),
+		unsigned int n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, frames, (1000 + ((int)i * 20)) * 256, 0, 0),
 		                                          AP_NAVREC_TARGET_NODES, g_nodes[i], g_stamps[i]);
 
 		laps[i].nodeCount = n;
@@ -155,6 +183,61 @@ static void FakeAdd(unsigned int index, const char *author, unsigned int lapCoun
 	g_folder.count++;
 }
 
+// A container whose laps mix open and closed shapes, the way real files
+// written before the boundary discipline do: `openMask` bit i makes lap i an
+// open arc with a grid-sized gap (values derived from a measured standing-
+// start lap: 230 nodes, ~276-unit spacing, ~670-unit closure), other laps are
+// closed circles. Lap 0 gets the SHORTEST frame count, so an open lap 0 here
+// is also the file's "fastest lap", exactly the lap the plan hands lane 0.
+static void FakeAddMixed(unsigned int index, const char *author, unsigned int lapCount, unsigned int openMask)
+{
+	struct AP_NavRecLapInfo     laps[AP_NAVREC_MAX_LAPS];
+	const struct AP_NavRecNode *nodePtrs[AP_NAVREC_MAX_LAPS];
+	const unsigned int         *stampPtrs[AP_NAVREC_MAX_LAPS];
+	struct AP_NavRecMeta        meta;
+	unsigned int                at = g_folder.count;
+	unsigned int                size = 0;
+	unsigned int                i;
+
+	if (at >= FAKE_MAX_FILES)
+		return;
+
+	memset(laps, 0, sizeof laps);
+
+	for (i = 0; i < lapCount; i++)
+	{
+		unsigned int frames = 700u + (i * 100u);
+		unsigned int n;
+
+		if ((openMask >> i) & 1u)
+			n = AP_NavRecFormat_Decimate(g_samples, MakeArcLap(g_samples, frames, 10176 * 256, 11), AP_NAVREC_TARGET_NODES,
+			                             g_nodes[i], g_stamps[i]);
+		else
+			n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, frames, (10176 + ((int)i * 60)) * 256, 0, 0),
+			                             AP_NAVREC_TARGET_NODES, g_nodes[i], g_stamps[i]);
+
+		laps[i].nodeCount = n;
+		laps[i].lapFrames = frames;
+		laps[i].sampleCount = frames;
+		laps[i].clean = 1;
+		laps[i].laneHint = (unsigned char)i;
+		nodePtrs[i] = g_nodes[i];
+		stampPtrs[i] = g_stamps[i];
+	}
+
+	memset(&meta, 0, sizeof meta);
+	meta.levelId = g_folder.levelId;
+	meta.clientVersion = "lane-test";
+	meta.driverName = author;
+	meta.identityKind = AP_NAVREC_IDENTITY_RETAIL;
+
+	g_folder.index[at] = index;
+	if (AP_NavRecFormat_Write(g_folder.bytes[at], FAKE_FILE_CAP, &meta, laps, lapCount, nodePtrs, stampPtrs, &size) != AP_NAVREC_OK)
+		size = 0;
+	g_folder.size[at] = size;
+	g_folder.count++;
+}
+
 static void FakeAddCustom(unsigned int index, const char *author, const unsigned char *uuid, unsigned int navRevision)
 {
 	unsigned int at = g_folder.count;
@@ -171,6 +254,8 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 {
 	struct FakeFolder       *f = (struct FakeFolder *)ctx;
 	struct AP_NavRecFileInfo info;
+	unsigned int             closed[AP_NAVREC_MAX_LAPS];
+	unsigned int             closedCount;
 	unsigned int             i;
 
 	for (i = 0; i < f->count; i++)
@@ -188,8 +273,14 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 		if (!AP_NavRecFormat_IdentityMatches(&info, f->levelId, f->identityKind, f->uuid, f->navRevision))
 			return 1;
 
+		// Same rule as the loader: only closed laps count, and a file with
+		// none fills no lane, exactly like any other rejected candidate.
+		closedCount = AP_NavRecFormat_ClosedLaps(&info, g_fetchNodes, closed);
+		if (closedCount == 0)
+			return 1;
+
 		out->usable = 1;
-		out->lapCount = info.lapCount;
+		out->lapCount = closedCount;
 		memcpy(out->driverName, info.driverName, sizeof out->driverName);
 		return 1;
 	}
@@ -1414,6 +1505,186 @@ int main(void)
 		laneLap[0] = 0xEEu;
 		AP_NavRecLane_Plan(0, laneFile, laneLap);
 		check((laneFile[0] == 0xEEu) && (laneLap[0] == 0xEEu), "planning lanes for no files touches nothing");
+	}
+
+	// ---------------------------------------------------------------
+	// Cyclic closure. The engine drives every lane as a closed loop, so a
+	// lap that does not end where it starts puts its whole discontinuity on
+	// the finish line: every lap boundary the recorder can produce is a line
+	// crossing. Fixture geometry is derived from boundary values measured on
+	// shipped community recordings across retail tracks.
+	// ---------------------------------------------------------------
+	{
+		unsigned int n;
+
+		// A genuine line-to-line lap: closes within one decimation step.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 1000 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check(AP_NavRecFormat_LapClosed(g_nodes[0], n) == 1, "a line-to-line lap is a closed loop");
+
+		// The standing-start shape: a full-size lap whose start sits a grid
+		// offset away from its end (measured: ~276-unit spacing, ~700-unit
+		// closure). The wrap would double back at the line.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeArcLap(g_samples, 900, 10176 * 256, 11), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check(AP_NavRecFormat_LapClosed(g_nodes[0], n) == 0, "a standing-start-shaped lap is not a closed loop");
+
+		// A big-track lap with a wide but honest wrap (measured: ~550-unit
+		// spacing, ~650-unit closure; decimation's own tail contributes one
+		// full step of that). This one is NOT rejected: its wrap is barely
+		// over one of its own segments.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeArcLap(g_samples, 1900, 20200 * 256, 1), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check(AP_NavRecFormat_LapClosed(g_nodes[0], n) == 1, "a big-track lap with a wide honest wrap stays eligible");
+
+		// A boundary fragment: seconds of driving between two line events
+		// (measured: a 36-frame "lap"). Too short to be any lap at all.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeArcLap(g_samples, 36, 230 * 256, 500), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check((n == 0) || (AP_NavRecFormat_LapClosed(g_nodes[0], n) == 0), "a boundary fragment is not a closed loop");
+
+		// A tight closed orbit (a spin at the line) closes perfectly and is
+		// still no lap; without the length floor it would put a lane in orbit
+		// around the start line.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 300, 300 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check((n == 0) || (AP_NavRecFormat_LapClosed(g_nodes[0], n) == 0), "a tight closed orbit is not a lap");
+
+		check(AP_NavRecFormat_LapClosed(NULL, 230) == 0, "a NULL lane is not a closed loop");
+	}
+
+	// ---------------------------------------------------------------
+	// Lap boundary discipline. Only a lap that both started and ended with
+	// a forward line crossing banks; the standing-start lap and the two
+	// halves of a reversal are dropped at the boundary.
+	// ---------------------------------------------------------------
+	{
+		int open = 0;
+
+		check(AP_NavRecFormat_LapBoundaryBanks(0, 1, &open) == 0, "the standing-start lap does not bank at its first crossing");
+		check(open == 1, "the first forward crossing opens a lap on the line");
+		check(AP_NavRecFormat_LapBoundaryBanks(1, 2, &open) == 1, "a line-to-line lap banks");
+		check(open == 1, "banking a lap leaves the next one open on the line");
+		check(AP_NavRecFormat_LapBoundaryBanks(2, 1, &open) == 0, "a backwards crossing banks nothing");
+		check(open == 0, "a backwards crossing closes the line-start state");
+		check(AP_NavRecFormat_LapBoundaryBanks(1, 2, &open) == 0, "the fragment up to the recrossing does not bank");
+		check(open == 1, "the forward recrossing opens a fresh lap on the line");
+		check(AP_NavRecFormat_LapBoundaryBanks(2, 3, &open) == 1, "the full lap after a reversal banks again");
+		check(AP_NavRecFormat_LapBoundaryBanks(3, 4, NULL) == 0, "a NULL state banks nothing");
+	}
+
+	// ---------------------------------------------------------------
+	// Closed-lap eligibility through the real reader, retail-shaped and
+	// custom-shaped. Files stay readable; the unclosed lap just never feeds
+	// a lane. Before this rule the plan handed lane 0 the file's first (and
+	// fastest) lap regardless, which is exactly where a standing-start lap
+	// or fragment landed.
+	// ---------------------------------------------------------------
+	{
+		static const unsigned char babyUuid[AP_NAVREC_TRACK_UUID_BYTES] = {
+			0x89, 0x8a, 0x93, 0x15, 0x69, 0x3f, 0x4e, 0xd3,
+			0xb6, 0xa0, 0xfb, 0xe5, 0x0d, 0xb8, 0xbc, 0x40};
+		unsigned int closed[AP_NAVREC_MAX_LAPS];
+		unsigned int closedCount;
+
+		// Retail-shaped: three laps, the fastest one open.
+		FakeReset(0);
+		FakeAddMixed(1, "Appie", 3, 0x1u);
+		check(g_folder.size[0] != 0, "a mixed retail container serialises");
+		check(AP_NavRecFormat_Read(g_folder.bytes[0], g_folder.size[0], &info, g_back, g_backStamps) == AP_NAVREC_OK,
+		      "a file holding an unclosed lap still reads");
+		closedCount = AP_NavRecFormat_ClosedLaps(&info, g_back, closed);
+		check(closedCount == 2u, "two of its three laps are eligible");
+		check((closed[0] == 1u) && (closed[1] == 2u), "the eligible laps keep file order and exclude the open lap");
+
+		// Custom-shaped: a NAV3 container with the right identity whose only
+		// lap is open. Identity is necessary but no longer sufficient.
+		{
+			unsigned int                n = AP_NavRecFormat_Decimate(g_samples, MakeArcLap(g_samples, 900, 10176 * 256, 11),
+			                                                         AP_NAVREC_TARGET_NODES, g_nodes[0], g_stamps[0]);
+			unsigned int                size2 = 0;
+
+			memset(laps, 0, sizeof laps);
+			laps[0].nodeCount = n;
+			laps[0].lapFrames = 900;
+			laps[0].sampleCount = 900;
+			laps[0].clean = 1;
+			nodePtrs[0] = g_nodes[0];
+			stampPtrs[0] = g_stamps[0];
+
+			memset(&meta, 0, sizeof meta);
+			meta.levelId = 6;
+			meta.clientVersion = "closure-test";
+			meta.driverName = "Appie";
+			meta.identityKind = AP_NAVREC_IDENTITY_CUSTOM;
+			memcpy(meta.trackUuid, babyUuid, sizeof babyUuid);
+			meta.navRevision = 1;
+
+			check(AP_NavRecFormat_Write(g_file, sizeof g_file, &meta, laps, 1, nodePtrs, stampPtrs, &size2) == AP_NAVREC_OK,
+			      "a custom container with an open lap serialises");
+			check(AP_NavRecFormat_Read(g_file, size2, &info, g_back, g_backStamps) == AP_NAVREC_OK,
+			      "a custom container with an open lap still reads");
+			check(AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 1),
+			      "its identity still matches the active custom track");
+			check(AP_NavRecFormat_ClosedLaps(&info, g_back, closed) == 0u,
+			      "its open lap is still not eligible for a lane");
+		}
+	}
+
+	// ---------------------------------------------------------------
+	// The whole chain: a file whose fastest lap is open never feeds it to a
+	// lane, and a file with no closed lap at all is passed over for an older
+	// good one, which is the fallback a corrupt file has always had.
+	// ---------------------------------------------------------------
+	{
+		struct AP_NavRecLaneCandidate cand;
+		unsigned int                  chosen[AP_NAVREC_LANES];
+		char                          author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
+		unsigned int                  laneFile[AP_NAVREC_LANES];
+		unsigned int                  laneLap[AP_NAVREC_LANES];
+		unsigned int                  closed[AP_NAVREC_MAX_LAPS];
+		unsigned int                  closedCount;
+		unsigned int                  opened;
+		unsigned int                  n;
+		int                           lane;
+		int                           openLapDrives = 0;
+
+		FakeReset(0);
+		FakeAddMixed(7, "Appie", 3, 0x1u);
+
+		memset(author, 0, sizeof author);
+		memset(&cand, 0, sizeof cand);
+		check(FakeFetch(&g_folder, 7, &cand) == 1 && cand.usable == 1 && cand.lapCount == 2u,
+		      "a candidate reports its CLOSED lap count, not its raw one");
+
+		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		AP_NavRecLane_Plan(n, laneFile, laneLap);
+		check(n == 1u, "the mixed file is still chosen");
+
+		check(AP_NavRecFormat_Read(g_folder.bytes[0], g_folder.size[0], &info, g_back, g_backStamps) == AP_NAVREC_OK,
+		      "the placement pass reads the mixed file");
+		closedCount = AP_NavRecFormat_ClosedLaps(&info, g_back, closed);
+		for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+		{
+			if (laneLap[lane] >= closedCount)
+				continue; // the loader synthesises this lane laterally, as ever
+			if (closed[laneLap[lane]] == 0u)
+				openLapDrives = 1;
+		}
+		check(!openLapDrives, "no lane ever drives the open lap");
+
+		// Newest file has no closed lap at all: it fills nothing and hides
+		// nothing older.
+		FakeReset(0);
+		FakeAdd(1, "BEXUS", 3, 0);
+		FakeAddMixed(2, "Appie", 1, 0x1u);
+
+		memset(author, 0, sizeof author);
+		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		check(n == 1u, "a file with no closed lap fills no lane");
+		check(chosen[0] == 1u, "the older good file races instead");
+		check(strcmp(author[0], "BEXUS") == 0, "the older file's contributor is the one on the grid");
+		check(opened == 2u, "the no-closed-lap file still cost one open");
 	}
 
 	printf("\n%d failure(s)\n", g_failures);

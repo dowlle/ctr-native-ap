@@ -325,9 +325,16 @@ void BOTS_Adv_AdjustDifficulty(void)
 	// a recording and it runs a few lines further down; by then the answer has
 	// to already be standing.
 	//
-	// Both branches run unconditionally, so no load can inherit the previous
+	// Every arm runs unconditionally, so no load can inherit the previous
 	// load's answer: a cup exit, a race pad to the host slot in an armed session
-	// and an ordinary retail race all come through here and all clear.
+	// and an ordinary retail race all come through here and all settle it.
+	//
+	// A load that SERVES custom bytes but yields no identity (the config-only
+	// path with a missing or malformed UUID) must BLOCK rather than clear:
+	// cleared, the borrowed host LevelID would match retail recordings onto
+	// custom geometry, and laps recorded here would be stamped as retail lines
+	// of the host slot. The same ServingLoad predicate that decides the bytes
+	// decides this, so geometry and recording policy cannot disagree.
 	//
 	// There is deliberately no CTR_CUSTOM_TRACKS-off arm. Nothing else in the
 	// tree calls AP_NavRec_SetActiveCustomTrack, so a build without the loader
@@ -341,6 +348,8 @@ void BOTS_Adv_AdjustDifficulty(void)
 		if (CustomTrack_NavIdentityForLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID, ctNavUuid,
 		                                   &ctNavRevision))
 			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
+		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+			AP_NavRec_BlockRecordedLanes();
 		else
 			AP_NavRec_ClearActiveCustomTrack();
 	}

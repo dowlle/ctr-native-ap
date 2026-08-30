@@ -287,6 +287,40 @@ judgement about how good the data is. A lap whose `goBackCount` varies but is
 otherwise nonsense produces bad rewinds rather than a hang, and that is a quality
 problem, which is where a reader's responsibility stops.
 
+## Cyclic closure, a lane-eligibility rule
+
+The engine drives every lane as a closed loop: past the last node the follower
+wraps to the first one and drives the connecting segment like any other. A lap
+whose last and first nodes are far apart therefore makes every bot on its lane
+visibly double back or lurch, and it does so exactly at the finish line,
+because every lap boundary the recorder can produce is a line event.
+
+Two open-lap shapes were measured in shipped recordings before this rule
+existed: the standing-start lap, which begins on the GRID rather than the line
+and closes 2.3x to 3.6x its own node spacing away, and boundary fragments left
+by a blast or a reverse crossing of the line, seconds-long "laps" closing up to
+234x their spacing, which their short frame count then sorts to the front of
+the file as its "fastest lap".
+
+A lap is eligible to feed a lane only if:
+
+- its last-to-first XZ distance is at most `max(2 * mean XZ node spacing,
+  500)`. A genuine line-to-line lap closes within one decimation step plus one
+  frame of travel; measured across a 162-file community corpus, real laps stay
+  under 1.8x their median spacing and every failure sits at 2.0x or above. The
+  500-unit floor is one retail lane separation, the same displacement the
+  synthetic-lane fallback already ships.
+- its total XZ arc length, wrap included, is at least 4000 units, which
+  excludes a tight closed orbit (a spin at the line) no real track can produce.
+
+This is deliberately NOT a container-validity rule. A file holding an open lap
+still reads, so nothing already on disk becomes unreadable; the open lap simply
+never feeds a lane, and a file with no eligible lap at all is passed over for
+an older one exactly like a corrupt file. The writer applies the same rule, so
+a client never publishes a lap it would itself refuse to drive; upstream of
+both, the recorder only banks a lap that both started and ended with a forward
+line crossing, so neither open shape is captured in the first place.
+
 ## Driver name
 
 `driverName` is 32 bytes. At most 24 characters are ever written into it, so

@@ -85,6 +85,38 @@
 // NavFrame units. Matches the measured retail lane separation.
 #define AP_NAVREC_FALLBACK_LANE_OFFSET 500
 
+// Cyclic-closure acceptance for one lap. The engine treats every lane as a
+// closed loop: past the last node the follower drives straight back to the
+// first one, consuming the last node's distToNextNav like any other segment.
+// So a lap is only usable as a lane if it ENDS where it STARTS; the wrap
+// segment of a lap that does not is driven, visibly, at the finish line,
+// because every lap boundary the recorder can produce sits on the start line.
+//
+// The bound is relative to the lap's own node spacing. A line-to-line lap's
+// expected wrap is one decimation step (the tail the even spacing leaves
+// undecimated) plus at most one frame of travel; measured over a 162-file
+// community corpus across every retail track, genuine laps close within
+// 1.8x their median spacing and the failures (standing-start laps that begin
+// on the grid, and short boundary fragments left by a blast or a reverse
+// crossing of the line) sit at 2.3x to 234x. Twice the mean spacing splits
+// those populations with margin on both sides.
+//
+// The absolute floor keeps the relative rule honest at both extremes: a lap
+// whose spacing is tiny (a fragment) must not pass because 2x tiny is tiny,
+// and a big-track lap with 550-unit spacing must not fail for a wrap the
+// engine's own synthesised lanes already exceed. One retail lane separation,
+// the same 500 units SynthLane displaces a whole lane by, is the displacement
+// this codebase already ships as acceptable.
+#define AP_NAVREC_CLOSURE_SLACK_UNITS 500
+
+// Shortest credible closed lap, total XZ arc length in NavFrame units. Guards
+// the degenerate case the closure rule alone cannot: a tight loop of samples
+// (a spin at the line) closes on itself perfectly and would put a lane in
+// orbit around the start line. Eight retail lane widths is under a thirteenth
+// of the shortest real lap in the measured corpus (230 nodes at 240+ units),
+// so no drivable track trips it.
+#define AP_NAVREC_MIN_LAP_UNITS 4000
+
 // Uniform grid over the retail corridor, so the shortcut test costs a bounded
 // amount per node instead of scanning every retail node. See GridBuild.
 #define AP_NAVREC_GRID_DIM    64
@@ -467,6 +499,104 @@ static void AP_NavRecFormat_FillDistances(struct AP_NavRecNode *nodes, unsigned 
 		nodes[n].distToNextNavXZ = (short)((xz > 32767.0) ? 32767.0 : xz);
 		nodes[n].distToNextNavXYZ = (short)((xyz > 32767.0) ? 32767.0 : xyz);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Cyclic closure
+// ---------------------------------------------------------------------------
+
+// 1 when this lap is a closed loop the engine may drive cyclically, 0 when its
+// wrap segment is a discontinuity. See AP_NAVREC_CLOSURE_SLACK_UNITS for the
+// measured basis of the bound.
+//
+// This is a LANE-ELIGIBILITY rule, not a container-validity rule: a reader
+// still decodes a file holding an unclosed lap, so nothing already on disk
+// becomes unreadable; the lap simply never feeds a lane.
+static int AP_NavRecFormat_LapClosed(const struct AP_NavRecNode *nodes, unsigned int count)
+{
+	double       total = 0.0;
+	double       mean;
+	double       closure;
+	double       bound;
+	unsigned int n;
+
+	if ((nodes == NULL) || (count < 2u))
+		return 0;
+
+	for (n = 0; n + 1u < count; n++)
+	{
+		double dx = (double)(nodes[n + 1u].posX - nodes[n].posX);
+		double dz = (double)(nodes[n + 1u].posZ - nodes[n].posZ);
+		total += sqrt((dx * dx) + (dz * dz));
+	}
+
+	{
+		double dx = (double)(nodes[0].posX - nodes[count - 1u].posX);
+		double dz = (double)(nodes[0].posZ - nodes[count - 1u].posZ);
+		closure = sqrt((dx * dx) + (dz * dz));
+	}
+
+	if ((total + closure) < (double)AP_NAVREC_MIN_LAP_UNITS)
+		return 0;
+
+	mean = total / (double)(count - 1u);
+	bound = 2.0 * mean;
+	if (bound < (double)AP_NAVREC_CLOSURE_SLACK_UNITS)
+		bound = (double)AP_NAVREC_CLOSURE_SLACK_UNITS;
+
+	return closure <= bound;
+}
+
+// Which of a decoded file's laps are closed loops, in file order. Returns the
+// count; outLapIndex must hold AP_NAVREC_MAX_LAPS entries. This is the one
+// mapping the loader and the harness both use, so the lap a lane takes is the
+// lap the harness asserted about.
+static unsigned int AP_NavRecFormat_ClosedLaps(const struct AP_NavRecFileInfo *info,
+                                               struct AP_NavRecNode nodes[][AP_NAVREC_MAX_NODES],
+                                               unsigned int outLapIndex[AP_NAVREC_MAX_LAPS])
+{
+	unsigned int found = 0;
+	unsigned int i;
+
+	if ((info == NULL) || (nodes == NULL) || (outLapIndex == NULL))
+		return 0;
+
+	for (i = 0; (i < info->lapCount) && (i < (unsigned int)AP_NAVREC_MAX_LAPS); i++)
+	{
+		if (AP_NavRecFormat_LapClosed(nodes[i], info->laps[i].nodeCount))
+			outLapIndex[found++] = i;
+	}
+
+	return found;
+}
+
+// Lap-boundary discipline for the recorder. Called when the driver's lapIndex
+// CHANGED; answers whether the samples driven since the previous boundary are
+// a closed line-to-line lap worth banking, and tracks whether the lap now
+// starting begins on the line.
+//
+// Only a +1 step is a forward line crossing. The race's standing-start lap
+// begins on the GRID, not the line, so the first +1 ends a lap that is not a
+// loop; a -1 step is the line crossed backwards (a blast or a reversal), which
+// both invalidates the samples in hand and means the +1 that follows ends a
+// short line-to-line fragment, not a lap. Both shapes were measured in shipped
+// recordings before this rule existed, and both put their whole discontinuity
+// on the finish line.
+//
+// *openAtLine starts at 0 each race. Returns 1 when the finished samples may
+// be banked.
+static int AP_NavRecFormat_LapBoundaryBanks(int lastLapIndex, int lapIndex, int *openAtLine)
+{
+	int forward;
+	int banks;
+
+	if (openAtLine == NULL)
+		return 0;
+
+	forward = (lapIndex == (lastLapIndex + 1));
+	banks = forward && *openAtLine;
+	*openAtLine = forward;
+	return banks;
 }
 
 // Arc-length decimate one lap of raw samples into `targetNodes` evenly spaced
