@@ -42,11 +42,12 @@ void CS_Garage_ZoomOut(char zoomState)
 #ifdef CTR_AP
 	// A garage SESSION begins here, so re-arm the adventure-start skip (#54/#209).
 	//
-	// This function has exactly two callers and they are precisely the two ways a
-	// garage session starts: CS_Garage_Init below (zoomState 0, a fresh garage
-	// level load) and the name-entry CANCEL branch (zoomState 1,
-	// game/SubmitName.c:516, which points ptrDesiredMenu back at this menu). It is
-	// therefore the complete lifecycle signal, not a best-effort one.
+	// CS_Garage_Init below always calls this (zoomState 0, a fresh garage level
+	// load). The name-entry CANCEL branch calls it (zoomState 1) only when the
+	// AP handler declines the exit and the retail return to this menu executes
+	// (game/SubmitName.c, Adventure Cancel). An AP-skipped name-entry Cancel
+	// never reaches this function; it leaves for the main-menu level instead, see
+	// CS_Garage_APNameEntryCancelToMainMenu.
 	//
 	// Re-arming here is what stops the skip from soft-locking the game. Its latch
 	// used to live for the whole process, so on any second visit to the garage the
@@ -91,6 +92,35 @@ static void CS_Garage_ApplyApRacerOverride(void)
 
 	data.characterIDs[0] = (s16)apRacer;
 	sdata->advProgress.characterID = (s16)apRacer;
+}
+
+// AP-owned Adventure name-entry Cancel: leave the garage level entirely.
+//
+// Called first from the Adventure CANCEL branch of SubmitName_MenuProc (H6-02).
+// When this name-entry session was reached through the AP garage skip and AP
+// still owns the racer, there is no real character choice to revisit, so this
+// runs the same state, cleanup and load sequence the retail garage's Back uses
+// to reach the title (CS_Garage_MenuProc's "return to main menu" branch above,
+// MAIN_MENU_TITLE + Garage_Leave + MAIN_MENU_LEVEL). When the predicate fails
+// it returns 0 and the caller keeps its unchanged retail fallback, which points
+// ptrDesiredMenu back at this garage and calls CS_Garage_ZoomOut(1).
+//
+// Deliberately an engine helper, not a pure helper: it performs the
+// garage-owned exit. It does not point at D230.menuMainMenu while overlay 233
+// is active, and it deliberately does not call CS_Garage_ZoomOut, so an
+// AP-owned Cancel cannot re-arm the skip and reopen name entry.
+int CS_Garage_APNameEntryCancelToMainMenu(void)
+{
+	int apRacer = AP_CharSwap_GarageRacer();
+
+	if (!AP_GarageSkip_ShouldExitToMainMenu(&apGarageSkip, apRacer))
+		return 0;
+
+	// Exact transition used when Back leaves the retail garage.
+	sdata->mainMenuState = MAIN_MENU_TITLE;
+	Garage_Leave();
+	MainRaceTrack_RequestLoad(MAIN_MENU_LEVEL);
+	return 1;
 }
 #endif
 
@@ -167,11 +197,14 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 		if (AP_GarageSkip_Owns(apRacer))
 		{
 			// Commit once per garage SESSION, not once per process. The latch is
-			// re-armed from CS_Garage_ZoomOut, which is the single signal meaning
-			// "a garage session begins" and covers both routes back into this
-			// function: a fresh garage load via CS_Garage_Init, and a cancelled
-			// name entry via game/SubmitName.c:516. ap/ap_garageskip.h records
-			// the two soft-locks a process-lifetime latch produced here.
+			// re-armed from CS_Garage_ZoomOut, which means "a garage session
+			// begins": a fresh garage load via CS_Garage_Init always re-arms. A
+			// cancelled name entry no longer returns here at all when AP owns the
+			// racer: it exits to the main-menu level instead (see
+			// CS_Garage_APNameEntryCancelToMainMenu), and a later new Adventure is
+			// re-armed by CS_Garage_Init on the fresh load. The retail fallback
+			// return still re-arms. ap/ap_garageskip.h records the two soft-locks
+			// a process-lifetime latch produced here.
 			//
 			// Re-running the commit is safe: both writes set the same values, and
 			// SubmitName_RestoreName(0) only re-seeds the OSK from

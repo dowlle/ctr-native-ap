@@ -25,17 +25,21 @@
 //   2. Starting a SECOND new adventure in the same process. The static outlives
 //      the garage level load, so the same thing happens on the fresh garage.
 //
-// The re-arm signal is CS_Garage_ZoomOut, which is exactly "a garage session
-// begins" and has precisely two callers, one for each path above:
-// CS_Garage_Init (zoomState 0, a fresh garage load, game/233/CS_Garage.c) and
-// the OSK CANCEL branch (zoomState 1, game/SubmitName.c:516). Nothing else in
-// the tree calls it, so the lifecycle is closed rather than best-effort.
+// The re-arm signal is CS_Garage_ZoomOut, which is "a garage session begins"
+// and has two callers: CS_Garage_Init (zoomState 0, a fresh garage load,
+// game/233/CS_Garage.c) and the retail name-entry CANCEL fallback (zoomState 1,
+// game/SubmitName.c). The re-arm used to be unconditional on every name-entry
+// Cancel, which cured the dead screen but then closed the loop the other way:
+// the garage committed the seed racer again and reopened name entry forever
+// (H6-02). AP-owned Cancel now leaves the garage level instead, see
+// AP_GarageSkip_ShouldExitToMainMenu, so ZoomOut re-arms only for the fresh
+// load and for the retail fallback returns it still serves.
 //
 // The decision lives here, as a pure function over a tiny struct, so
 // tools/test-character-persistence.cpp can drive the frame sequences that
 // produced both soft-locks. The engine half is then only "call NewSession from
-// ZoomOut, call ShouldCommit from MenuProc", which is the part a reader can
-// check by eye.
+// ZoomOut, call ShouldCommit from MenuProc, call ShouldExitToMainMenu from the
+// Cancel branch", which is the part a reader can check by eye.
 // ---------------------------------------------------------------------------
 
 struct AP_GarageSkipState
@@ -45,7 +49,10 @@ struct AP_GarageSkipState
 };
 
 // A garage session begins: a fresh garage load, or a return from a cancelled
-// name entry. Re-arms the commit unconditionally.
+// name entry whose Cancel the AP handler declined and the retail fallback ran.
+// An AP-skipped name-entry Cancel no longer passes through here at all: it
+// exits to the main-menu level, and the next garage load re-arms through
+// CS_Garage_Init. Re-arms the commit unconditionally.
 static inline void AP_GarageSkip_NewSession(struct AP_GarageSkipState *s)
 {
 	if (s == 0)
@@ -87,6 +94,21 @@ static inline int AP_GarageSkip_ShouldCommit(struct AP_GarageSkipState *s, int a
 static inline int AP_GarageSkip_Owns(int apRacer)
 {
 	return apRacer >= 0;
+}
+
+// Should a cancelled Adventure name entry leave the garage level entirely?
+//
+// True only when this garage session actually performed the AP handoff and AP
+// still owns the racer. Current ownership alone is not enough: AP may connect
+// after the retail picker has already opened name entry.
+static inline int AP_GarageSkip_ShouldExitToMainMenu(
+	const struct AP_GarageSkipState *s,
+	int apRacer)
+{
+	if (s == 0)
+		return 0;
+
+	return (s->committed != 0) && AP_GarageSkip_Owns(apRacer);
 }
 
 #endif // AP_GARAGESKIP_H
