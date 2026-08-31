@@ -32,6 +32,7 @@ from typing import Any
 API_ROOT = "https://www.projectsaphi.com"
 TRACKS_URL = f"{API_ROOT}/api/v3/tracks?per_page=100&include_standards=0&include_events=0&include_downloads=1"
 MODES = ("time_trial", "relic_race", "ctr_challenge", "arcade", "crystal_challenge")
+STATIC_ANALYSIS_RESULTS = {"Detected", "Not detected", "Indeterminate", "Error"}
 RESULTS = ("Yes", "No", "Not tested")
 STATIC_RESULTS = ("Detected", "Not detected", "Indeterminate", "Error")
 SCHEMA_VERSION = 2
@@ -448,6 +449,7 @@ def command_analyze(args: argparse.Namespace) -> None:
     catalogue = load_json(args.root / "catalogue.json")
     if not catalogue: raise SystemExit("run sync first")
     previous = inventory(args.root)
+    previous_schema_current = previous.get("schema_version") == SCHEMA_VERSION
     existing = {entry["variant_id"]: entry for entry in previous["entries"] if entry.get("variant_id")}
     entries: list[dict[str, Any]] = []
     desired_ids = {variant_id(track["id"], version["version"], version["lev"]["id"], version["vrm"]["id"])
@@ -483,10 +485,13 @@ def command_analyze(args: argparse.Namespace) -> None:
             base.update({"variant_id": vid, "lev_path": str(lev.relative_to(args.root)),
                          "vrm_path": str(vrm.relative_to(args.root))})
             prior = existing.get(vid)
+            prior_analysis = prior.get("verification", {}).get("file_analysis", {}) if prior else {}
+            structural_semantics_current = all(
+                prior_analysis.get(mode, {}).get("result") in STATIC_ANALYSIS_RESULTS for mode in MODES)
             metadata_unchanged = prior is not None and all(prior.get(key) == base.get(key) for key in
                 ("track_id", "name", "author", "track_type", "collection", "version",
                  "saphi_modes", "consistent", "lev_media_id", "vrm_media_id", "lev_crc32", "vrm_crc32"))
-            if metadata_unchanged and prior.get("status") == "verified" and \
+            if previous_schema_current and structural_semantics_current and metadata_unchanged and prior.get("status") == "verified" and \
                valid_cached_media(lev_media, lev) and valid_cached_media(vrm_media, vrm) and \
                sha256_file(lev) == prior.get("verification", {}).get("lev_sha256") and \
                sha256_file(vrm) == prior.get("verification", {}).get("vrm_sha256"):
@@ -733,6 +738,8 @@ def rows_for_export(root: Path) -> list[dict[str, Any]]:
         differences = []
         for mode in MODES:
             analysis = report.get("file_analysis", {}).get(mode, {}).get("result", "Error")
+            if analysis not in STATIC_ANALYSIS_RESULTS:
+                raise ValueError("legacy or invalid static evidence must be regenerated with analyze before export")
             tested = runtime.get(mode, {}).get("result", "Not tested")
             row[f"{mode} File analysis"] = analysis
             row[f"{mode} In-game test"] = tested

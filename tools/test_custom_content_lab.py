@@ -673,5 +673,35 @@ class LabTests(unittest.TestCase):
         self.assertEqual(completed[0], completed[1])
         self.assertEqual(completed[1], completed[2])
 
+    def test_legacy_static_yes_no_is_regenerated_not_reinterpreted(self):
+        track_id, lev_id, vrm_id = 70, 700, 701
+        lev, vrm = lab.cache_paths(self.root, track_id, "1.0.0", lev_id, vrm_id)
+        lev.parent.mkdir(parents=True); make_lev(lev)
+        vrm.write_bytes(b"\0" * 16 + b"\1\0\1\0\0\0")
+        def media(path, mid, role):
+            return {"id": mid, "type": role, "version": "1.0.0", "modes": ["time_trial"],
+                    "file_size": path.stat().st_size, "crc32_hash": lab.file_crc32(path),
+                    "download_url": f"https://www.projectsaphi.com/media/{mid}"}
+        catalogue = {"schema_version": 2, "tracks": [{"id": track_id, "name": "Legacy", "author": "A",
+            "collection": "saphi", "type": "race", "versions": [{"version": "1.0.0",
+            "lev": media(lev, lev_id, "lev"), "vrm": media(vrm, vrm_id, "vrm"),
+            "saphi_modes": ["time_trial"], "consistent": True, "inconsistency": ""}]}]}
+        lab.atomic_json(self.root / "catalogue.json", catalogue)
+        args = argparse.Namespace(root=self.root, verifier=self.verifier, offline=True)
+        lab.command_analyze(args)
+        legacy = lab.inventory(self.root); legacy["schema_version"] = 1
+        for cell in legacy["entries"][0]["verification"]["file_analysis"].values(): cell["result"] = "Yes"
+        lab.atomic_json(self.root / "inventory.json", legacy)
+        with self.assertRaisesRegex(ValueError, "must be regenerated"):
+            lab.rows_for_export(self.root)
+        with mock.patch.object(lab, "run_verifier", wraps=lab.run_verifier) as verifier:
+            lab.command_analyze(args)
+            self.assertEqual(verifier.call_count, 1)
+        repaired = lab.inventory(self.root)
+        self.assertEqual(repaired["schema_version"], 2)
+        results = {cell["result"] for cell in repaired["entries"][0]["verification"]["file_analysis"].values()}
+        self.assertTrue(results <= lab.STATIC_ANALYSIS_RESULTS)
+        self.assertNotIn("Yes", results); self.assertNotIn("No", results)
+
 
 if __name__ == "__main__": unittest.main()
