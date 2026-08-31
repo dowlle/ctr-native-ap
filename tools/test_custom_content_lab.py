@@ -195,6 +195,9 @@ class LabTests(unittest.TestCase):
     def test_formula_text_is_neutralized(self):
         rows = [{"name": " =1+1", "author": "\t+cmd", "collection": "-2+3",
                  "version": "@SUM(A1)", "notes": " =cmd", "existing_saphi_tags": "+tag",
+                 "status": "verified"},
+                {"name": "Matsuri — 東京", "author": "Appie & Garma", "collection": "Saphi!",
+                 "version": "v1.2.3-β", "notes": "normal punctuation: /, (), #", "existing_saphi_tags": "arcade",
                  "status": "verified"}]
         original = lab.rows_for_export
         lab.rows_for_export = lambda root: rows
@@ -208,6 +211,9 @@ class LabTests(unittest.TestCase):
             values = [cell for row in workbook.active.iter_rows(min_row=2) for cell in row]
             self.assertTrue(all(cell.data_type == "s" for cell in values))
             self.assertTrue(values[0].value.startswith("'"))
+            normal = [cell.value for cell in workbook.active[3]]
+            self.assertIn("Matsuri — 東京", normal)
+            self.assertIn("normal punctuation: /, (), #", normal)
             export_manifest = json.loads((generation / "manifest.json").read_text())
             self.assertTrue(export_manifest["xlsx_text_escaped"])
             self.assertFalse(workbook._external_links)
@@ -319,6 +325,20 @@ class LabTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "variant_id"):
             lab.inventory(self.root)
 
+    def test_identity_domains_change_only_for_their_exact_inputs(self):
+        base_variant = lab.variant_id(1, "1.0.0", 2, 3)
+        for changed in ((4, "1.0.0", 2, 3), (1, "1.0.1", 2, 3),
+                        (1, "1.0.0", 4, 3), (1, "1.0.0", 2, 4)):
+            with self.subTest(identity=changed):
+                self.assertNotEqual(lab.variant_id(*changed), base_variant)
+        base_content = lab.identity_hash(["a" * 64, "b" * 64])
+        self.assertNotEqual(lab.identity_hash(["c" * 64, "b" * 64]), base_content)
+        self.assertNotEqual(lab.identity_hash(["a" * 64, "c" * 64]), base_content)
+        with self.assertRaisesRegex(ValueError, "control-free"):
+            lab.variant_id(1, "1.0\x00.0", 2, 3)
+        with self.assertRaisesRegex(ValueError, "NUL-free"):
+            lab.identity_hash(["a\x00b", "c"])
+
     def test_pagination_collects_101_and_rejects_loops(self):
         def track(tid):
             def media(mid, role):
@@ -355,6 +375,28 @@ class LabTests(unittest.TestCase):
         with mock.patch.object(lab.urllib.request, "urlopen", return_value=OversizedResponse()):
             with self.assertRaisesRegex(ValueError, "page limit"):
                 lab.fetch_json(lab.TRACKS_URL)
+
+    def test_local_json_depth_size_version_and_ledger_bounds(self):
+        nested = value = {}
+        for _ in range(66):
+            child = {}; value["x"] = child; value = child
+        with self.assertRaisesRegex(ValueError, "nesting"):
+            lab.check_json_depth(nested, "fixture")
+
+        oversized = self.root / "oversized.json"; oversized.write_text("{}\n")
+        with mock.patch.object(lab, "MAX_JSON_BYTES", 1), self.assertRaisesRegex(ValueError, "byte limit"):
+            lab.load_json(oversized)
+
+        response = self.response()
+        prototype = response["data"][0]["downloads"]
+        response["data"][0]["downloads"] = [dict(prototype[index % 2], id=1000 + index,
+            version=f"1.0.{index // 2}") for index in range((lab.MAX_VERSIONS + 1) * 2)]
+        with self.assertRaisesRegex(ValueError, "bounded list|too many versions"):
+            lab.catalogue_from_response(response)
+
+        lab.atomic_json(self.root / "verdicts.json", {"schema_version": 2, "verdicts": {"a": {}, "b": {}}})
+        with mock.patch.object(lab, "MAX_LEDGER_RECORDS", 1), self.assertRaisesRegex(ValueError, "record limit"):
+            lab.verdicts(self.root)
 
     def test_atomic_json_faults_leave_one_complete_document(self):
         path = self.root / "state.json"
