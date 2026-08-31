@@ -438,6 +438,26 @@ class LabTests(unittest.TestCase):
         finally:
             lab._fault_hook = None
 
+    def test_durable_session_move_faults_leave_one_complete_name(self):
+        session = self.root / "session"; session.mkdir()
+        source, destination = session / "manifest.json", session / "manifest.consumed.json"
+        stages = ("before_replace", "after_replace", "after_directory_sync")
+        try:
+            for wanted in stages:
+                source.unlink(missing_ok=True); destination.unlink(missing_ok=True)
+                source.write_text('{"complete":true}\n')
+                def fail(stage, target, expected=wanted):
+                    if stage == expected and target == destination: raise RuntimeError(expected)
+                lab._fault_hook = fail
+                with self.subTest(stage=wanted), self.assertRaisesRegex(RuntimeError, wanted):
+                    lab.durable_replace(source, destination)
+                existing = [path for path in (source, destination) if path.exists()]
+                self.assertEqual(len(existing), 1)
+                self.assertEqual(json.loads(existing[0].read_text()), {"complete": True})
+                lab._fault_hook = None
+        finally:
+            lab._fault_hook = None
+
     def test_identical_bytes_keep_separate_verdicts_until_explicit_copy(self):
         entries = []
         for tid, lev_id, vrm_id in ((30, 300, 301), (31, 310, 311)):

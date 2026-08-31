@@ -90,6 +90,18 @@ def atomic_json(path: Path, value: Any) -> None:
         raise
 
 
+def durable_replace(source: Path, destination: Path) -> None:
+    if source.parent.resolve() != destination.parent.resolve():
+        raise ValueError("durable replacement must remain in one directory")
+    fault_point("before_replace", destination)
+    os.replace(source, destination)
+    fault_point("after_replace", destination)
+    directory = os.open(destination.parent, os.O_RDONLY)
+    try: os.fsync(directory)
+    finally: os.close(directory)
+    fault_point("after_directory_sync", destination)
+
+
 def load_json(path: Path, default: Any = None) -> Any:
     if not path.exists():
         return default
@@ -675,8 +687,8 @@ def command_collect_session(args: argparse.Namespace) -> None:
         "recorded_at": datetime.now(timezone.utc).isoformat()}
     atomic_json(args.root / "verdicts.json", data)
     consumed = args.root / "session" / f"manifest.{manifest['nonce']}.consumed.json"
-    os.replace(manifest_path, consumed)
-    os.replace(receipt_path, args.root / "session" / f"receipt.{manifest['nonce']}.consumed.json")
+    durable_replace(manifest_path, consumed)
+    durable_replace(receipt_path, args.root / "session" / f"receipt.{manifest['nonce']}.consumed.json")
     print(f"Collected Steam-attested {manifest['mode']}={args.result} for {entry['variant_id']}.")
 
 
@@ -717,9 +729,9 @@ def command_abort_session(args: argparse.Namespace) -> None:
     manifest = load_json(source)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("nonce"), str):
         raise SystemExit("no prepared session to abort")
-    os.replace(source, session / f"manifest.{manifest['nonce']}.aborted.json")
+    durable_replace(source, session / f"manifest.{manifest['nonce']}.aborted.json")
     receipt = session / "receipt.json"
-    if receipt.exists(): os.replace(receipt, session / f"receipt.{manifest['nonce']}.aborted.json")
+    if receipt.exists(): durable_replace(receipt, session / f"receipt.{manifest['nonce']}.aborted.json")
     print(f"Aborted and consumed review session {manifest['nonce']}.")
 
 
