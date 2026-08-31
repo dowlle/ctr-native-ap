@@ -115,9 +115,9 @@ class LabTests(unittest.TestCase):
         lab.atomic_json(receipt_path, receipt)
 
         armed_path = self.root / "session" / "armed.json"
-        stale = dict(prepared); stale["expires_at"] = "2000-01-01T00:00:00+00:00"
+        stale = dict(prepared); stale["expires_unix"] = 1
         lab.atomic_json(armed_path, stale)
-        with self.assertRaisesRegex(SystemExit, "expired"):
+        with self.assertRaisesRegex(SystemExit, "lifetime|expired"):
             lab.command_collect_session(collect_args)
         lab.atomic_json(armed_path, prepared)
 

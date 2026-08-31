@@ -623,8 +623,13 @@ def command_collect_session(args: argparse.Namespace) -> None:
     manifest = load_json(manifest_path)
     receipt = load_json(receipt_path)
     if not isinstance(manifest, dict) or not isinstance(receipt, dict): raise SystemExit("session manifest and receipt are required")
-    expires = datetime.fromisoformat(manifest["expires_at"])
-    if datetime.now(timezone.utc) > expires: raise SystemExit("session manifest expired")
+    created_unix, expires_unix = manifest.get("created_unix"), manifest.get("expires_unix")
+    now_unix = int(datetime.now(timezone.utc).timestamp())
+    if (isinstance(created_unix, bool) or isinstance(expires_unix, bool) or
+            not isinstance(created_unix, int) or not isinstance(expires_unix, int) or
+            expires_unix <= created_unix or expires_unix - created_unix > 3600):
+        raise SystemExit("session manifest lifetime is invalid")
+    if now_unix >= expires_unix: raise SystemExit("session manifest expired")
     fields = ("nonce", "variant_id", "content_id", "track_id", "version", "lev_media_id", "vrm_media_id",
               "lev_sha256", "vrm_sha256", "lev_bytes", "vrm_bytes", "host", "mode")
     if any(receipt.get(field) != manifest.get(field) for field in fields):
