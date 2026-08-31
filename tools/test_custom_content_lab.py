@@ -703,5 +703,30 @@ class LabTests(unittest.TestCase):
         self.assertTrue(results <= lab.STATIC_ANALYSIS_RESULTS)
         self.assertNotIn("Yes", results); self.assertNotIn("No", results)
 
+    def test_structural_golden_command_binds_identity_bytes_and_measurements(self):
+        lev, vrm = lab.cache_paths(self.root, 80, "1.0.0", 800, 801)
+        lev.parent.mkdir(parents=True); make_lev(lev)
+        vrm.write_bytes(b"\0" * 16 + b"\1\0\1\0\0\0")
+        report = lab.run_verifier(self.verifier, lev, vrm)
+        entry = {"track_id": 80, "name": "Golden", "author": "A", "track_type": "race",
+            "collection": "saphi", "version": "1.0.0", "saphi_modes": [], "status": "verified",
+            "lev_media_id": 800, "vrm_media_id": 801,
+            "lev_path": str(lev.relative_to(self.root)), "vrm_path": str(vrm.relative_to(self.root)),
+            "variant_id": lab.variant_id(80, "1.0.0", 800, 801),
+            "content_id": lab.content_id(report), "verification": report}
+        lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": [entry]})
+        expected = {field: entry[field] for field in
+                    ("track_id", "name", "version", "lev_media_id", "vrm_media_id", "variant_id", "content_id")}
+        expected.update({field: report[field] for field in
+                         ("loadable", "lev_bytes", "vrm_bytes", "lev_sha256", "vrm_sha256",
+                          "measurements", "file_analysis")})
+        golden_file = self.root / "goldens.json"
+        lab.atomic_json(golden_file, {"schema_version": 1, "goldens": [expected]})
+        lab.command_verify_structural_goldens(argparse.Namespace(root=self.root, golden_file=golden_file))
+        expected["measurements"] = dict(expected["measurements"], checkpoints=999)
+        lab.atomic_json(golden_file, {"schema_version": 1, "goldens": [expected]})
+        with self.assertRaisesRegex(SystemExit, "measurements"):
+            lab.command_verify_structural_goldens(argparse.Namespace(root=self.root, golden_file=golden_file))
+
 
 if __name__ == "__main__": unittest.main()
