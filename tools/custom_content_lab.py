@@ -256,6 +256,7 @@ def download_media(media: dict[str, Any], target: Path) -> None:
         return
     if target.exists(): quarantine(target, "integrity")
     partial = target.with_suffix(target.suffix + ".part")
+    if partial.is_symlink(): quarantine(partial, "symlink")
     start = partial.stat().st_size if partial.exists() else 0
     if start > expected:
         quarantine(partial, "oversized")

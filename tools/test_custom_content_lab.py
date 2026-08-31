@@ -318,6 +318,27 @@ class LabTests(unittest.TestCase):
                  self.assertRaisesRegex(IOError, "Content-Range"):
                 lab.download_media(media, target)
 
+    def test_download_never_follows_a_partial_file_symlink(self):
+        payload = b"trusted"
+        media = {"file_size": len(payload), "crc32_hash": f"{zlib.crc32(payload) & 0xffffffff:08x}",
+                 "download_url": "/media/no-symlink"}
+        target = self.root / "media/4/lev-5.lev"; target.parent.mkdir(parents=True)
+        outside = self.root / "outside.bin"; outside.write_bytes(b"do not touch")
+        partial = target.with_suffix(".lev.part"); partial.symlink_to(outside)
+
+        class Response(io.BytesIO):
+            status = 200; headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload)), \
+             mock.patch.object(lab.time, "sleep"):
+            lab.download_media(media, target)
+        self.assertEqual(outside.read_bytes(), b"do not touch")
+        self.assertEqual(target.read_bytes(), payload)
+        quarantined = list(target.parent.glob("*.quarantine-*-symlink"))
+        self.assertEqual(len(quarantined), 1)
+        self.assertTrue(quarantined[0].is_symlink())
+
     def test_serialized_identity_mismatch_is_rejected(self):
         lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": [{
             "track_id": 1, "version": "1.0.0", "lev_media_id": 2, "vrm_media_id": 3,
