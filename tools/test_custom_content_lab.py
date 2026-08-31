@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import io
 import zlib
+import urllib.error
 from unittest import mock
 from pathlib import Path
 
@@ -175,12 +176,75 @@ class LabTests(unittest.TestCase):
             with self.assertRaisesRegex(IOError, "Content-Range"):
                 lab.download_media(media, target)
 
+    def test_download_resume_status_and_stream_bounds(self):
+        payload = b"0123456789"
+        media = {"file_size": len(payload), "crc32_hash": f"{zlib.crc32(payload) & 0xffffffff:08x}",
+                 "download_url": "/media/bounds"}
+        target = self.root / "media/2/lev-3.lev"; target.parent.mkdir(parents=True)
+
+        class Response(io.BytesIO):
+            def __init__(self, data, status=200, headers=None):
+                super().__init__(data); self.status = status; self.headers = headers or {}
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        partial = target.with_suffix(".lev.part")
+        partial.write_bytes(payload[:4])
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload, 200)), \
+             mock.patch.object(lab.time, "sleep"):
+            lab.download_media(media, target)
+        self.assertEqual(target.read_bytes(), payload, "a server ignoring Range restarts from zero")
+
+        target.unlink()
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload[:-1], 200)), \
+             mock.patch.object(lab.time, "sleep"):
+            with self.assertRaisesRegex(IOError, "early EOF"): lab.download_media(media, target)
+        partial.unlink(missing_ok=True)
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload + b"x", 200)), \
+             mock.patch.object(lab.time, "sleep"):
+            with self.assertRaisesRegex(IOError, "exceeded"): lab.download_media(media, target)
+
+        partial.write_bytes(payload)
+        error416 = urllib.error.HTTPError(media["download_url"], 416, "range", {}, None)
+        with mock.patch.object(lab.urllib.request, "urlopen", side_effect=error416), \
+             mock.patch.object(lab.time, "sleep"):
+            lab.download_media(media, target)
+        self.assertEqual(target.read_bytes(), payload, "416 accepts only an already complete valid part")
+
+        target.unlink(); partial.unlink(missing_ok=True)
+        error429 = urllib.error.HTTPError(media["download_url"], 429, "rate", {"Retry-After": "nonsense"}, None)
+        with mock.patch.object(lab.urllib.request, "urlopen", side_effect=error429) as request, \
+             mock.patch.object(lab.time, "sleep"):
+            with self.assertRaises(urllib.error.HTTPError): lab.download_media(media, target)
+        self.assertEqual(request.call_count, 6)
+
     def test_serialized_identity_mismatch_is_rejected(self):
         lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": [{
             "track_id": 1, "version": "1.0.0", "lev_media_id": 2, "vrm_media_id": 3,
             "variant_id": "0" * 64}]})
         with self.assertRaisesRegex(ValueError, "variant_id"):
             lab.inventory(self.root)
+
+    def test_pagination_collects_101_and_rejects_loops(self):
+        def track(tid):
+            def media(mid, role):
+                return {"id": mid, "type": role, "version": "1.0.0", "modes": ["time_trial"],
+                        "file_size": 1, "crc32_hash": "00000000", "download_url": f"/media/{mid}"}
+            return {"id": tid, "name": f"Track {tid}", "author_id": 1, "author": "A",
+                    "collection_id": 1, "collection": "saphi", "type_id": 1, "type": "race",
+                    "is_active": True, "downloads": [media(tid * 2, "lev"), media(tid * 2 + 1, "vrm")]}
+        pages = [{"data": [track(i) for i in range(1, 101)], "meta": {"current_page": 1, "last_page": 2}},
+                 {"data": [track(101)], "meta": {"current_page": 2, "last_page": 2}}]
+        with mock.patch.object(lab, "fetch_json", side_effect=pages):
+            lab.command_sync(argparse.Namespace(root=self.root, catalogue_file=None))
+        self.assertEqual(len(json.loads((self.root / "catalogue.json").read_text())["tracks"]), 101)
+
+        loop_url = lab.TRACKS_URL
+        looping = [{"data": [], "links": {"next": "/api/v3/loop"}},
+                   {"data": [], "links": {"next": loop_url}}]
+        with mock.patch.object(lab, "fetch_json", side_effect=looping):
+            with self.assertRaisesRegex(ValueError, "loop"):
+                lab.command_sync(argparse.Namespace(root=self.root, catalogue_file=None))
 
     def test_atomic_json_faults_leave_one_complete_document(self):
         path = self.root / "state.json"
