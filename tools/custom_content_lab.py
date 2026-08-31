@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import zlib
 import urllib.error
 import urllib.parse
@@ -42,6 +43,7 @@ MAX_PAGES = 1000
 MAX_TRACKS = 100000
 MAX_VERSIONS = 100
 MAX_LEDGER_RECORDS = 500000
+MAX_API_INTEGER = (1 << 63) - 1
 _fault_hook = None
 
 
@@ -109,14 +111,16 @@ def fetch_json(url: str) -> Any:
 
 
 def positive_int(value: Any, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{field} must be a positive integer")
+    if (isinstance(value, bool) or not isinstance(value, int) or
+            value <= 0 or value > MAX_API_INTEGER):
+        raise ValueError(f"{field} must be a bounded positive integer")
     return value
 
 
 def bounded_text(value: Any, field: str) -> str:
-    if not isinstance(value, str) or len(value) > MAX_TEXT or "\x00" in value:
-        raise ValueError(f"{field} must be a string of at most {MAX_TEXT} characters")
+    if (not isinstance(value, str) or len(value) > MAX_TEXT or
+            any(unicodedata.category(character) == "Cc" for character in value)):
+        raise ValueError(f"{field} must be control-free text of at most {MAX_TEXT} characters")
     return value
 
 

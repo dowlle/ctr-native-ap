@@ -130,11 +130,48 @@ class LabTests(unittest.TestCase):
 
     def test_untrusted_boundaries(self):
         with self.assertRaises(ValueError): lab.positive_int(True, "id")
-        with self.assertRaises(ValueError): lab.saphi_url("https://evil.invalid/file")
-        with self.assertRaises(ValueError): lab.saphi_url("//evil.invalid/file")
+        with self.assertRaises(ValueError): lab.positive_int(1 << 200, "id")
+        for hostile in ("https://evil.invalid/file", "//evil.invalid/file",
+                        "http://www.projectsaphi.com/file",
+                        "https://user@www.projectsaphi.com/file",
+                        "https://www.projectsaphi.com:444/file"):
+            with self.subTest(url=hostile), self.assertRaises(ValueError):
+                lab.saphi_url(hostile)
+        for hostile in ("nul\0text", "line\nbreak", "tab\ttext"):
+            with self.subTest(text=repr(hostile)), self.assertRaises(ValueError):
+                lab.bounded_text(hostile, "public text")
+        self.assertEqual(lab.bounded_text("legal / \\ .. ∕ ⁄ ⧸", "public text"),
+                         "legal / \\ .. ∕ ⁄ ⧸")
         lev, vrm = lab.cache_paths(self.root, 1, "../../escape", 2, 3)
         self.assertEqual(lev.parent, self.root / "media" / "1")
         self.assertEqual(vrm.parent, self.root / "media" / "1")
+        outside = self.root / "outside"; outside.mkdir()
+        (self.root / "media").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlinked cache"):
+            lab.cache_paths(self.root, 1, "1.0.0", 2, 3)
+
+    def test_catalogue_schema_rejects_hostile_scalars(self):
+        mutations = {
+            "boolean track id": ("id", True),
+            "huge track id": ("id", 1 << 200),
+            "overlong name": ("name", "x" * (lab.MAX_TEXT + 1)),
+            "control name": ("name", "bad\nname"),
+        }
+        for label, (field, value) in mutations.items():
+            response = self.response()
+            response["data"][0][field] = value
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                lab.catalogue_from_response(response)
+
+        response = self.response()
+        response["data"][0]["downloads"][0]["modes"] = ["crystal_challenge", "unknown"]
+        with self.assertRaisesRegex(ValueError, "unsupported tag"):
+            lab.catalogue_from_response(response)
+
+        response = self.response()
+        response["data"][0]["downloads"][0]["crc32_hash"] = "123"
+        with self.assertRaisesRegex(ValueError, "eight hexadecimal"):
+            lab.catalogue_from_response(response)
 
     def test_formula_text_is_neutralized(self):
         rows = [{"name": " =1+1", "author": "\t+cmd", "collection": "-2+3",
