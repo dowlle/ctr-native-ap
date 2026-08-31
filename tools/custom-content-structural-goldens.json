@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "authority": "Frozen Project Saphi files; structural evidence only, not runtime playability",
+  "goldens": [
+    {
+      "track_id": 25,
+      "name": "Matsuri",
+      "version": "1.1.0",
+      "lev_media_id": 150,
+      "vrm_media_id": 151,
+      "variant_id": "4ea14d95d8307fec49e6141bd442ad8351b8f1766ac0edada972a9b8aaa79f52",
+      "content_id": "a8cefc8a029c9bd18c55eba5d96b3981ae2421c65efc9e1539a73633de9f6675",
+      "loadable": true,
+      "lev_bytes": 2225788,
+      "vrm_bytes": 458808,
+      "lev_sha256": "a4bfafc6e1be30ff29d439a23e6c9427278e50aedfe7b767fca49fd8665eb859",
+      "vrm_sha256": "5ad103efe40d44d91216ff9d8034870df59a090e3edbd09c830690f555fbc239",
+      "measurements": {
+        "checkpoints": 167,
+        "crystals": 0,
+        "finish_lines": 0,
+        "fruit_crates": 0,
+        "instances": 0,
+        "letter_c": 0,
+        "letter_r": 0,
+        "letter_t": 0,
+        "loose_wumpa": 0,
+        "nav_paths": 0,
+        "ordinary_crates": 0,
+        "relic_crates": 0,
+        "spawns": 8,
+        "start_lines": 0
+      },
+      "file_analysis": {
+        "arcade": {"reason": "recognized arcade structure not detected", "result": "Not detected"},
+        "crystal_challenge": {"reason": "recognized crystal structure not detected", "result": "Not detected"},
+        "ctr_challenge": {"reason": "recognized CTR structure not detected", "result": "Not detected"},
+        "relic_race": {"reason": "recognized relic-race structure not detected", "result": "Not detected"},
+        "time_trial": {"reason": "recognized checkpoint graph detected", "result": "Detected"}
+      }
+    },
+    {
+      "track_id": 47,
+      "name": "Arabian Heights Night",
+      "version": "1.1.0",
+      "lev_media_id": 706,
+      "vrm_media_id": 707,
+      "variant_id": "a7d0b0cc468f528bb981f420eeca554e5120eb040adae6b2e5f1487c07cce58f",
+      "content_id": "be84f93f8cfa6ff0c0d5c7321ed00eaeb29057f0e4c12ed51451c349f3af6e38",
+      "loadable": true,
+      "lev_bytes": 2443084,
+      "vrm_bytes": 458808,
+      "lev_sha256": "8093b663855d3fd0096fd2980a85bc6efe334c0aff250e8a33eea11909e5c21c",
+      "vrm_sha256": "044024f265783dd285a3f9e76ee29d336cb3c34d81274d1a7ff2510d67680da8",
+      "measurements": {
+        "checkpoints": 90,
+        "crystals": 0,
+        "finish_lines": 0,
+        "fruit_crates": 4,
+        "instances": 81,
+        "letter_c": 3,
+        "letter_r": 0,
+        "letter_t": 0,
+        "loose_wumpa": 0,
+        "nav_paths": 3,
+        "ordinary_crates": 31,
+        "relic_crates": 46,
+        "spawns": 8,
+        "start_lines": 0
+      },
+      "file_analysis": {
+        "arcade": {"reason": "recognized checkpoint, spawn, and navigation structures detected", "result": "Detected"},
+        "crystal_challenge": {"reason": "recognized crystal structure not detected", "result": "Not detected"},
+        "ctr_challenge": {"reason": "recognized CTR structure not detected", "result": "Not detected"},
+        "relic_race": {"reason": "recognized checkpoint graph and relic crates detected", "result": "Detected"},
+        "time_trial": {"reason": "recognized checkpoint graph detected", "result": "Detected"}
+      }
+    }
+  ]
+}

@@ -847,6 +847,30 @@ def command_cleanup_exports(args: argparse.Namespace) -> None:
     print(f"removed {removed} non-current verified export generation(s)")
 
 
+def command_verify_structural_goldens(args: argparse.Namespace) -> None:
+    document = load_json(args.golden_file)
+    if not isinstance(document, dict) or not isinstance(document.get("goldens"), list):
+        raise SystemExit("structural golden file must contain a goldens list")
+    for expected in document["goldens"]:
+        if not isinstance(expected, dict) or not isinstance(expected.get("variant_id"), str):
+            raise SystemExit("malformed structural golden entry")
+        entry = verified_entry(args.root, expected["variant_id"])
+        for field in ("track_id", "name", "version", "lev_media_id", "vrm_media_id", "variant_id", "content_id"):
+            if entry.get(field) != expected.get(field):
+                raise SystemExit(f"structural golden drift for {expected['variant_id']}: {field}")
+        report = entry["verification"]
+        for field in ("loadable", "lev_bytes", "vrm_bytes", "lev_sha256", "vrm_sha256", "measurements", "file_analysis"):
+            if report.get(field) != expected.get(field):
+                raise SystemExit(f"structural golden drift for {expected['variant_id']}: {field}")
+        for role in ("lev", "vrm"):
+            path = (args.root / entry[f"{role}_path"]).resolve()
+            if (not path.is_file() or path.is_symlink() or
+                    path.stat().st_size != expected[f"{role}_bytes"] or
+                    sha256_file(path) != expected[f"{role}_sha256"]):
+                raise SystemExit(f"structural golden cached {role.upper()} drift for {expected['variant_id']}")
+    print(f"verified {len(document['goldens'])} exact structural golden(s)")
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     result.add_argument("--root", type=Path, default=Path("custom-content-lab"))
@@ -896,6 +920,10 @@ def parser() -> argparse.ArgumentParser:
     cleanup = commands.add_parser("cleanup-exports")
     cleanup.add_argument("--keep", type=int, default=2, choices=range(0, 101))
     cleanup.set_defaults(func=command_cleanup_exports)
+    goldens = commands.add_parser("verify-structural-goldens")
+    goldens.add_argument("--golden-file", type=Path,
+                         default=Path(__file__).with_name("custom-content-structural-goldens.json"))
+    goldens.set_defaults(func=command_verify_structural_goldens)
     return result
 
 

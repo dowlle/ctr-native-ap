@@ -31,6 +31,8 @@ python3 tools/custom_content_lab.py --root custom-content-lab sync
 python3 tools/custom_content_lab.py --root custom-content-lab analyze \
   --verifier ./custom-content-verify
 python3 tools/custom_content_lab.py --root custom-content-lab export
+python3 tools/custom_content_lab.py --root custom-content-lab \
+  verify-structural-goldens
 ```
 
 Downloads are confined to numeric track/media cache paths on Project Saphi's
@@ -43,6 +45,12 @@ Analysis checkpoints a full reconciled inventory after every pair. Completed
 entries are skipped only while their metadata, CRC32, SHA-256, and cached files
 remain unchanged. A failure remains an exact, hash-bound error record rather
 than deleting the rest of the scan.
+
+`verify-structural-goldens` pins the exact Saphi media identities, hashes,
+measurements, and cautious structural results for the Matsuri 1.1.0 and Arabian
+Heights Night 1.1.0 discrepancy controls. It also re-hashes their cached bytes.
+These are structural regressions only; they do not replace the Steam-backed
+positive and negative runtime controls required for each reviewable mode.
 
 Exports are published beneath `custom-content-lab/exports/<generation>/` as
 `report.json`, `report.xlsx`, and `manifest.json`. Only the generation named by
