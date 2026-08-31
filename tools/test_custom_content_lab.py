@@ -74,18 +74,24 @@ class LabTests(unittest.TestCase):
         self.assertEqual(good["status"], "verified")
         self.assertEqual(good["verification"]["file_analysis"]["time_trial"]["result"], "Detected")
         self.assertEqual([row["status"] for row in inv["entries"][1:]], ["inconsistent", "inconsistent"])
-        manifest = self.root / "session.json"
+        good["lev_crc32"] = lab.file_crc32(self.root / good["lev_path"])
+        good["vrm_crc32"] = lab.file_crc32(self.root / good["vrm_path"])
+        lab.atomic_json(self.root / "inventory.json", inv)
+        manifest = self.root / "session" / "manifest.json"
         lab.command_prepare_session(argparse.Namespace(root=self.root, variant_id=good["variant_id"],
-                                    mode="time_trial", host=6, minutes=30, manifest=manifest))
+                                    mode="time_trial", host=6, minutes=30))
         prepared = json.loads(manifest.read_text())
         self.assertEqual(prepared["variant_id"], good["variant_id"])
         self.assertEqual(prepared["host"], 6)
         executable = self.root / "ctr_native_ap"; executable.write_bytes(b"build")
         receipt = dict(prepared, executable_sha256=lab.sha256_file(executable),
-                       git_commit="a" * 40, dirty=False, complete=True)
-        receipt_path = self.root / "receipt.json"; lab.atomic_json(receipt_path, receipt)
-        lab.command_collect_session(argparse.Namespace(root=self.root, manifest=manifest,
-            receipt=receipt_path, executable=executable, reviewer="Tester", steam_attested=True,
+                       git_commit="a" * 40, dirty=False, complete=True,
+                       feature_configuration="test", start_time_unix=1, end_time_unix=2,
+                       executable_path=str(executable.resolve()))
+        receipt_path = self.root / "session" / "receipt.json"; lab.atomic_json(receipt_path, receipt)
+        manifest.replace(self.root / "session" / "armed.json")
+        lab.command_collect_session(argparse.Namespace(root=self.root,
+            executable=executable, reviewer="Tester", steam_attested=True,
             result="Yes", notes="fixture pass"))
         record = lab.verdicts(self.root)["verdicts"][good["variant_id"]]
         self.assertEqual(record["lev_sha256"], good["verification"]["lev_sha256"])

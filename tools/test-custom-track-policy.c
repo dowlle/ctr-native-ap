@@ -275,6 +275,7 @@ static struct CustomTrackLoadContext make_ctx(int levelID, int adventureCupActiv
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
+	ctx.mode = CTR_CT_MODE_NONE;
 	return ctx;
 }
 
@@ -593,12 +594,16 @@ static void test_serve_context(void)
 	// Developer verification is a separate, explicit authority: it serves only
 	// the selected host slot and does not need or create an adventure cup.
 	cfg = ruled_config();
-	cfg.verificationActive = 1;
 	cfg.authority = CTR_CT_AUTHORITY_VERIFICATION;
+	cfg.intendedMode = CTR_CT_MODE_ARCADE;
 	cfg.raceEnabled = 0;
 	ctx = make_ctx(6, 0, 99);
+	ctx.mode = CTR_CT_MODE_ARCADE;
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "verification session serves its exact host slot");
+	ctx.mode = CTR_CT_MODE_TIME_TRIAL;
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "verification session refuses another mode on the same host");
 	ctx = make_ctx(7, 0, 99);
+	ctx.mode = CTR_CT_MODE_ARCADE;
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "verification session leaves every other slot retail");
 	cfg.contentVerified = 0;
 	ctx = make_ctx(6, 0, 99);

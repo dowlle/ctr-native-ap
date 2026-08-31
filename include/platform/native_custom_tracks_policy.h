@@ -631,10 +631,11 @@ enum CustomTrackVerdict
 struct CustomTrackFeatureConfig
 {
 	int authority; // enum CustomTrackAuthority: the sole owner of custom bytes
+	unsigned int authorityGeneration; // changes on every arm/disarm transition
+	int intendedMode; // enum CustomTrackReviewMode; verification only
 	// --- loader ---
 	int mappedLevelID; // arcade slot the custom track takes over, or -1 for none
 	int contentVerified; // 1 once BOTH source files hashed OK
-	int verificationActive; // explicit developer review session, never set by a seed
 
 	// --- Purple-destination-as-race seam ---
 	int raceEnabled;  // runtime flag: is the event destination active at all
@@ -684,6 +685,16 @@ enum CustomTrackAuthority
 	CTR_CT_AUTHORITY_SEED = 2
 };
 
+enum CustomTrackReviewMode
+{
+	CTR_CT_MODE_NONE = 0,
+	CTR_CT_MODE_TIME_TRIAL = 1,
+	CTR_CT_MODE_RELIC_RACE = 2,
+	CTR_CT_MODE_CTR_CHALLENGE = 3,
+	CTR_CT_MODE_ARCADE = 4,
+	CTR_CT_MODE_CRYSTAL_CHALLENGE = 5
+};
+
 // How many karts the engine will put on the grid for a redirected cup's race.
 // MainInit_Drivers gives the Purple Gem Cup (cupID 4) numPlyrCurrGame + 4 rather
 // than a full field, and LOAD_Assets forces that roster to the four bosses; any
@@ -704,6 +715,7 @@ struct CustomTrackLoadContext
 	int levelID;            // gGT->levelID: the level being loaded
 	int adventureCupActive; // (gGT->gameMode1 & ADVENTURE_CUP) != 0
 	int cupID;              // gGT->cup.cupID -- MEANINGLESS without the flag above
+	int mode;               // enum CustomTrackReviewMode, exact current runtime mode
 };
 
 // What the AP-box layer should do about the level being loaded.
@@ -882,7 +894,8 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 	 * borrows one arcade slot so a reviewer can run an exact hash-bound pair,
 	 * while the normal event path below remains adventure-cup-only. */
 	if (cfg->authority == CTR_CT_AUTHORITY_VERIFICATION)
-		return cfg->contentVerified && ctx->levelID == cfg->mappedLevelID;
+		return cfg->contentVerified && cfg->intendedMode != CTR_CT_MODE_NONE &&
+		       ctx->levelID == cfg->mappedLevelID && ctx->mode == cfg->intendedMode;
 
 	if (!ctx->adventureCupActive)
 		return 0;

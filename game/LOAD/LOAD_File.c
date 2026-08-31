@@ -365,13 +365,27 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	struct CustomTrackLoadContext ctCtx;
 	const char *ctOverridePath = NULL;
 	u32 ctOverrideSize = 0;
+	unsigned int ctOverrideGeneration = 0;
 	int ctOverride;
 
 	ctCtx.levelID = (int)sdata->gGT->levelID;
 	ctCtx.adventureCupActive = (sdata->gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	ctCtx.cupID = sdata->gGT->cup.cupID;
+	if ((sdata->gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
+		ctCtx.mode = CTR_CT_MODE_CRYSTAL_CHALLENGE;
+	else if ((sdata->gGT->gameMode1 & RELIC_RACE) != 0)
+		ctCtx.mode = CTR_CT_MODE_RELIC_RACE;
+	else if ((sdata->gGT->gameMode2 & TOKEN_RACE) != 0)
+		ctCtx.mode = CTR_CT_MODE_CTR_CHALLENGE;
+	else if ((sdata->gGT->gameMode1 & TIME_TRIAL) != 0)
+		ctCtx.mode = CTR_CT_MODE_TIME_TRIAL;
+	else if ((sdata->gGT->gameMode1 & ARCADE_MODE) != 0)
+		ctCtx.mode = CTR_CT_MODE_ARCADE;
+	else
+		ctCtx.mode = CTR_CT_MODE_NONE;
 
-	ctOverride = CustomTrack_GetOverride(subfileIndex, &ctCtx, &ctOverridePath, &ctOverrideSize);
+	ctOverride = CustomTrack_GetOverrideBound(subfileIndex, &ctCtx, &ctOverridePath,
+	                                         &ctOverrideSize, &ctOverrideGeneration);
 #endif
 
 	// get size and offset of subfile
@@ -455,7 +469,8 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 			// retrying a missing or short local file cannot succeed, and the
 			// CdlDiskError callback drives the queue's existing retry path.
 			int ctSectorBytes = sectorCount << 0xb;
-			int ctOk = CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
+			int ctOk = CustomTrack_ReadFileBound(ctOverridePath, ptrDst, (u32)ctSectorBytes,
+			                                     ctOverrideSize, ctOverrideGeneration);
 			if (callback != NULL)
 			{
 				LOAD_ReadFileASyncCallback((u8)(ctOk ? CdlComplete : CdlDiskError), NULL);

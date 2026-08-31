@@ -43,6 +43,16 @@ execute_process(
 if(NOT CTR_NATIVE_GIT_HASH)
     set(CTR_NATIVE_GIT_HASH "unknown")
 endif()
+execute_process(
+    COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE CTR_NATIVE_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT CTR_NATIVE_GIT_COMMIT)
+    set(CTR_NATIVE_GIT_COMMIT "unknown")
+endif()
 
 execute_process(
     COMMAND git diff --quiet --exit-code
@@ -52,9 +62,11 @@ execute_process(
 )
 if(CTR_NATIVE_GIT_DIRTY EQUAL 0)
     set(CTR_NATIVE_BUILD_ID "${CTR_NATIVE_GIT_HASH}")
+    set(CTR_NATIVE_DIRTY_VALUE 0)
 else()
     string(TIMESTAMP CTR_NATIVE_BUILD_TIMESTAMP "%Y%m%d%H%M%S" UTC)
     set(CTR_NATIVE_BUILD_ID "${CTR_NATIVE_GIT_HASH}-dirty-${CTR_NATIVE_BUILD_TIMESTAMP}")
+    set(CTR_NATIVE_DIRTY_VALUE 1)
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse -Wno-error -g")
@@ -105,6 +117,8 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_INTERNAL
     CTR_NATIVE_VERSION=\"${CTR_NATIVE_VERSION}\"
     CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
+    CTR_NATIVE_GIT_COMMIT=\"${CTR_NATIVE_GIT_COMMIT}\"
+    CTR_NATIVE_GIT_DIRTY=${CTR_NATIVE_DIRTY_VALUE}
 )
 
 # Custom-track loader. platform/native_custom_tracks.c is part of the main.c
@@ -159,7 +173,7 @@ if(CTR_AP)
 
     add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp ap/ap_crash_terminate.cpp)
     if(CTR_CUSTOM_TRACKS)
-        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
+        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp ap/ap_verification_session.cpp)
     endif()
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
@@ -174,6 +188,7 @@ if(CTR_AP)
     target_link_libraries(ap_net PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
     target_compile_definitions(ap_net PRIVATE
         CTR_AP
+        $<$<BOOL:${CTR_CUSTOM_TRACKS}>:CTR_CUSTOM_TRACKS>
         AP_NO_SCHEMA
         ASIO_STANDALONE _WEBSOCKETPP_CPP11_THREAD_=1 _WEBSOCKETPP_CPP11_STL_=1)
     # wss:// TLS + permessage-deflate stay enabled on every target (release

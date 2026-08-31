@@ -511,20 +511,35 @@ def command_prepare_session(args: argparse.Namespace) -> None:
     if entry["track_type"] != "race": raise SystemExit("battle runtime review is Unsupported")
     if args.mode == "crystal_challenge": raise SystemExit("crystal_challenge battle review is Unsupported")
     if args.host < 0 or args.host > 17: raise SystemExit("host must be an arcade level ID from 0 through 17")
+    if args.minutes < 1 or args.minutes > 60: raise SystemExit("session lifetime must be from 1 through 60 minutes")
     report = entry["verification"]
+    lev_path = (args.root / entry["lev_path"]).resolve()
+    vrm_path = (args.root / entry["vrm_path"]).resolve()
+    if (not lev_path.is_file() or lev_path.is_symlink() or lev_path.stat().st_size != report["lev_bytes"] or
+        file_crc32(lev_path) != entry["lev_crc32"] or sha256_file(lev_path) != report["lev_sha256"] or
+        not vrm_path.is_file() or vrm_path.is_symlink() or vrm_path.stat().st_size != report["vrm_bytes"] or
+        file_crc32(vrm_path) != entry["vrm_crc32"] or sha256_file(vrm_path) != report["vrm_sha256"]):
+        raise SystemExit("cached pair no longer matches inventory; analyze again")
+    session_dir = args.root / "session"
+    manifest_path = session_dir / "manifest.json"
+    armed_path = session_dir / "armed.json"
+    receipt_path = session_dir / "receipt.json"
+    if manifest_path.exists() or armed_path.exists() or receipt_path.exists():
+        raise SystemExit("a prepared or uncollected session already exists")
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(minutes=args.minutes)
     manifest = {"schema_version": SCHEMA_VERSION, "nonce": secrets.token_hex(32),
                 "variant_id": entry["variant_id"], "content_id": entry["content_id"],
                 "track_id": entry["track_id"], "version": entry["version"],
                 "lev_media_id": entry["lev_media_id"], "vrm_media_id": entry["vrm_media_id"],
-                "lev_path": str((args.root / entry["lev_path"]).resolve()),
-                "vrm_path": str((args.root / entry["vrm_path"]).resolve()),
+                "lev_path": str(lev_path), "vrm_path": str(vrm_path),
                 "lev_sha256": report["lev_sha256"], "vrm_sha256": report["vrm_sha256"],
                 "lev_bytes": report["lev_bytes"], "vrm_bytes": report["vrm_bytes"],
                 "host": args.host, "mode": args.mode,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=args.minutes)).isoformat()}
-    atomic_json(args.manifest, manifest)
-    print(f"Prepared one-use Steam review session {manifest['nonce']} at {args.manifest}.")
+                "created_at": now.isoformat(), "expires_at": expiry.isoformat(),
+                "created_unix": int(now.timestamp()), "expires_unix": int(expiry.timestamp())}
+    atomic_json(manifest_path, manifest)
+    print(f"Prepared one-use Steam review session {manifest['nonce']} at {manifest_path}.")
     print("Start the configured development build through Steam. The lab did not launch CTR.")
 
 
@@ -537,21 +552,35 @@ def sha256_file(path: Path) -> str:
 
 def command_collect_session(args: argparse.Namespace) -> None:
     if not args.steam_attested: raise SystemExit("reviewer Steam-launch attestation is required")
-    manifest = load_json(args.manifest)
-    receipt = load_json(args.receipt)
+    manifest_path = args.root / "session" / "armed.json"
+    receipt_path = args.root / "session" / "receipt.json"
+    manifest = load_json(manifest_path)
+    receipt = load_json(receipt_path)
     if not isinstance(manifest, dict) or not isinstance(receipt, dict): raise SystemExit("session manifest and receipt are required")
     expires = datetime.fromisoformat(manifest["expires_at"])
     if datetime.now(timezone.utc) > expires: raise SystemExit("session manifest expired")
-    fields = ("nonce", "variant_id", "content_id", "lev_sha256", "vrm_sha256", "host", "mode")
+    fields = ("nonce", "variant_id", "content_id", "track_id", "version", "lev_media_id", "vrm_media_id",
+              "lev_sha256", "vrm_sha256", "lev_bytes", "vrm_bytes", "host", "mode")
     if any(receipt.get(field) != manifest.get(field) for field in fields):
         raise SystemExit("session receipt does not match manifest")
     executable_hash = sha256_file(args.executable.resolve())
     if receipt.get("executable_sha256") != executable_hash: raise SystemExit("receipt executable hash mismatch")
-    if receipt.get("complete") is not True or not receipt.get("git_commit"):
+    if not isinstance(receipt.get("executable_path"), str) or Path(receipt["executable_path"]).resolve() != args.executable.resolve():
+        raise SystemExit("receipt executable path mismatch")
+    if (receipt.get("complete") is not True or not isinstance(receipt.get("git_commit"), str) or
+        not re.fullmatch(r"[0-9a-fA-F]{40}", receipt["git_commit"]) or
+        not isinstance(receipt.get("dirty"), bool) or
+        not isinstance(receipt.get("feature_configuration"), str) or
+        not isinstance(receipt.get("start_time_unix"), int) or
+        not isinstance(receipt.get("end_time_unix"), int) or
+        receipt["end_time_unix"] < receipt["start_time_unix"]):
         raise SystemExit("receipt is incomplete")
     entry = verified_entry(args.root, manifest["variant_id"])
     if entry["content_id"] != manifest["content_id"]: raise SystemExit("inventory content identity changed")
     data = verdicts(args.root)
+    for prior in data["verdicts"].values():
+        for mode_record in prior.get("modes", {}).values():
+            if mode_record.get("nonce") == manifest["nonce"]: raise SystemExit("session receipt nonce was already collected")
     record = data["verdicts"].setdefault(entry["variant_id"], {
         "variant_id": entry["variant_id"], "content_id": entry["content_id"],
         "track_id": entry["track_id"], "version": entry["version"],
@@ -560,12 +589,28 @@ def command_collect_session(args: argparse.Namespace) -> None:
     record["modes"][manifest["mode"]] = {"result": args.result, "notes": args.notes or "",
         "launch_method": "user-steam-attested", "reviewer": args.reviewer,
         "git_commit": receipt["git_commit"], "dirty": bool(receipt.get("dirty")),
+        "feature_configuration": receipt["feature_configuration"],
+        "start_time_unix": receipt["start_time_unix"], "end_time_unix": receipt["end_time_unix"],
         "executable_sha256": executable_hash, "nonce": manifest["nonce"],
         "recorded_at": datetime.now(timezone.utc).isoformat()}
     atomic_json(args.root / "verdicts.json", data)
-    consumed = args.manifest.with_suffix(args.manifest.suffix + ".consumed")
-    os.replace(args.manifest, consumed)
+    consumed = args.root / "session" / f"manifest.{manifest['nonce']}.consumed.json"
+    os.replace(manifest_path, consumed)
+    os.replace(receipt_path, args.root / "session" / f"receipt.{manifest['nonce']}.consumed.json")
     print(f"Collected Steam-attested {manifest['mode']}={args.result} for {entry['variant_id']}.")
+
+
+def command_abort_session(args: argparse.Namespace) -> None:
+    session = args.root / "session"
+    source = session / "armed.json"
+    if not source.exists(): source = session / "manifest.json"
+    manifest = load_json(source)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("nonce"), str):
+        raise SystemExit("no prepared session to abort")
+    os.replace(source, session / f"manifest.{manifest['nonce']}.aborted.json")
+    receipt = session / "receipt.json"
+    if receipt.exists(): os.replace(receipt, session / f"receipt.{manifest['nonce']}.aborted.json")
+    print(f"Aborted and consumed review session {manifest['nonce']}.")
 
 
 def rows_for_export(root: Path) -> list[dict[str, Any]]:
@@ -683,19 +728,18 @@ def parser() -> argparse.ArgumentParser:
     prepare = commands.add_parser("prepare-session")
     prepare.add_argument("variant_id")
     prepare.add_argument("mode", choices=MODES)
-    prepare.add_argument("--manifest", type=Path, required=True)
     prepare.add_argument("--host", type=int, required=True)
     prepare.add_argument("--minutes", type=int, default=30)
     prepare.set_defaults(func=command_prepare_session)
     collect = commands.add_parser("collect-session")
-    collect.add_argument("--manifest", type=Path, required=True)
-    collect.add_argument("--receipt", type=Path, required=True)
     collect.add_argument("--executable", type=Path, required=True)
     collect.add_argument("--reviewer", required=True)
     collect.add_argument("--steam-attested", action="store_true")
     collect.add_argument("--result", choices=("Yes", "No"), required=True)
     collect.add_argument("--notes")
     collect.set_defaults(func=command_collect_session)
+    abort = commands.add_parser("abort-session")
+    abort.set_defaults(func=command_abort_session)
     export = commands.add_parser("export")
     export.set_defaults(func=command_export)
     return result

@@ -4142,6 +4142,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_CheckDiagOnceReset(&ap_checkdiag_once);
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 #ifdef CTR_CUSTOM_TRACKS
+		// A network session is authoritative before its descriptor is even
+		// considered. Developer verification is offline-only and must never
+		// survive a connect whose seed has no, missing, or invalid package.
+		CustomTrack_ClearSeedDescriptor();
 		// slot_data was parsed by the callback inside ap_net_poll above. Refuse
 		// gameplay immediately if this seed selects content that is not Ready;
 		// the Options Rescan action can satisfy and unlock this same seed later.
@@ -6032,6 +6036,16 @@ static void ap_onframe_body(struct GameTracker *gGT)
 		}
 
 #ifdef CTR_CUSTOM_TRACKS
+		{
+			int reviewMode = CTR_CT_MODE_NONE;
+			if ((gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0) reviewMode = CTR_CT_MODE_CRYSTAL_CHALLENGE;
+			else if ((gGT->gameMode1 & RELIC_RACE) != 0) reviewMode = CTR_CT_MODE_RELIC_RACE;
+			else if ((gGT->gameMode2 & TOKEN_RACE) != 0) reviewMode = CTR_CT_MODE_CTR_CHALLENGE;
+			else if ((gGT->gameMode1 & TIME_TRIAL) != 0) reviewMode = CTR_CT_MODE_TIME_TRIAL;
+			else if ((gGT->gameMode1 & ARCADE_MODE) != 0) reviewMode = CTR_CT_MODE_ARCADE;
+			CustomTrack_VerificationTick((int)gGT->levelID, reviewMode,
+			                             (gGT->gameMode1 & END_OF_RACE) != 0);
+		}
 		// Connect-time preflight and explicit Rescan own activation. Per-frame
 		// work only enforces absence/required as authoritative in both directions.
 		if (!ap_custom_content_seed_selected || ap_custom_content_required)

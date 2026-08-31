@@ -322,6 +322,32 @@ static void make_track_files(void)
 	hash_file_hex("tracks/track.lev", g_levHash);
 }
 
+#define VERIFY_FIXTURE_MAP 0x1200u
+#define VERIFY_FIXTURE_BYTES (4u + VERIFY_FIXTURE_MAP + 4u)
+static void put_fixture_u32(unsigned char *bytes, size_t offset, unsigned long value)
+{
+	bytes[offset] = (unsigned char)value;
+	bytes[offset + 1] = (unsigned char)(value >> 8);
+	bytes[offset + 2] = (unsigned char)(value >> 16);
+	bytes[offset + 3] = (unsigned char)(value >> 24);
+}
+
+static void make_verification_pair(const char *levPath, const char *vrmPath)
+{
+	unsigned char lev[VERIFY_FIXTURE_BYTES];
+	unsigned char vrm[22] = {0};
+	FILE *f;
+	memset(lev, 0, sizeof lev);
+	put_fixture_u32(lev, 0, VERIFY_FIXTURE_MAP);
+	put_fixture_u32(lev, 4 + VERIFY_FIXTURE_MAP, 0);
+	vrm[16] = 1;
+	vrm[18] = 1;
+	f = fopen(levPath, "wb");
+	if (f == NULL || fwrite(lev, 1, sizeof lev, f) != sizeof lev || fclose(f) != 0) exit(2);
+	f = fopen(vrmPath, "wb");
+	if (f == NULL || fwrite(vrm, 1, sizeof vrm, f) != sizeof vrm || fclose(f) != 0) exit(2);
+}
+
 // config.ini as rung 2c leaves it: two paths and nothing else.
 static void write_paths_config(void)
 {
@@ -363,6 +389,7 @@ static struct CustomTrackLoadContext event_ctx(void)
 {
 	struct CustomTrackLoadContext ctx;
 
+	memset(&ctx, 0, sizeof ctx);
 	ctx.levelID = TEST_HOST;
 	ctx.adventureCupActive = 1;
 	ctx.cupID = TEST_CUP;
@@ -379,6 +406,14 @@ static void expect_fully_off(const char *what)
 
 	snprintf(label, sizeof(label), "%s: contentVerified", what);
 	expect_int(CustomTrack_Config()->contentVerified, 0, label);
+	snprintf(label, sizeof(label), "%s: authority NONE", what);
+	expect_int(CustomTrack_Config()->authority, CTR_CT_AUTHORITY_NONE, label);
+	snprintf(label, sizeof(label), "%s: intended mode cleared", what);
+	expect_int(CustomTrack_Config()->intendedMode, CTR_CT_MODE_NONE, label);
+	snprintf(label, sizeof(label), "%s: descriptor cleared", what);
+	expect_int(s_haveDescriptor, 0, label);
+	snprintf(label, sizeof(label), "%s: owned bytes cleared", what);
+	expect_int(s_verificationPair.lev == NULL && s_verificationPair.vrm == NULL, 1, label);
 
 	snprintf(label, sizeof(label), "%s: redirect off", what);
 	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 0, label);
@@ -836,6 +871,94 @@ static void test_withdrawal(void)
 	arm_with(good_descriptor());
 	CAPTURING(CustomTrack_ApplySeedDescriptor(NULL));
 	expect_fully_off("a NULL descriptor withdraws");
+}
+
+static void test_verification_authority_is_exact_and_immutable(void)
+{
+	struct CustomTrackLoadContext ctx;
+	const char *token = NULL;
+	u32 size = 0;
+	unsigned int generation = 0;
+	char levHash[NATIVE_SHA256_HEX_BYTES], vrmHash[NATIVE_SHA256_HEX_BYTES];
+	unsigned char *served;
+	unsigned char expectedFirst;
+
+	reset_loader();
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash);
+	hash_file_hex("verify.vrm", vrmHash);
+	expectedFirst = 0;
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22,
+	                                      TEST_HOST, CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification pair arms only after full validation");
+	expect_int(CustomTrack_Config()->authority, CTR_CT_AUTHORITY_VERIFICATION,
+	           "verification is the sole active authority");
+
+	memset(&ctx, 0, sizeof ctx);
+	ctx.levelID = TEST_HOST;
+	ctx.mode = CTR_CT_MODE_TIME_TRIAL;
+	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &token, &size), 0,
+	           "same host in the wrong mode is refused");
+	ctx.mode = CTR_CT_MODE_ARCADE;
+	expect_int(CustomTrack_GetOverrideBound(TEST_BASE + 1, &ctx, &token, &size, &generation), 1,
+	           "the exact host and mode receive the immutable LEV");
+
+	write_blob("verify.lev", 99, size);
+	served = malloc(size);
+	if (served == NULL) exit(2);
+	expect_int(CustomTrack_ReadFileBound(token, served, size, size, generation), 1,
+	           "source replacement cannot change armed bytes");
+	expect_int(served[0], expectedFirst, "served LEV remains the originally hashed image");
+	free(served);
+
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "a new authority generation can arm");
+	served = malloc(size); if (served == NULL) exit(2);
+	expect_int(CustomTrack_ReadFileBound(token, served, size, size, generation), 0,
+	           "a token captured from an older generation is refused");
+	free(served);
+	expect_fully_off("a mixed-generation copy attempt disarms the pair");
+
+	{
+		struct CustomTrackSeedDescriptor rejected = good_descriptor();
+		make_verification_pair("verify.lev", "verify.vrm");
+		hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+		expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+		                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+		                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+		           "verification arms before an invalid seed transition");
+		rejected.hostLevelID = 99;
+		CAPTURING(CustomTrack_ApplySeedDescriptor(&rejected));
+		expect_fully_off("an invalid seed transition cannot retain verification authority");
+	}
+
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash);
+	hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22,
+	                                      TEST_HOST, CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification can re-arm for withdrawal test");
+	ctx.mode = CTR_CT_MODE_ARCADE;
+	expect_int(CustomTrack_GetOverrideBound(TEST_BASE, &ctx, &token, &size, &generation), 1,
+	           "one-use session begins on its first target load");
+	CustomTrack_VerificationTick(TEST_HOST, CTR_CT_MODE_ARCADE, 1);
+	expect_fully_off("successful verification run completion consumes authority");
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification re-arms for explicit AP withdrawal");
+	CAPTURING(CustomTrack_ClearSeedDescriptor());
+	expect_fully_off("AP-style descriptor withdrawal revokes descriptorless verification");
+	expect_int(s_verificationPair.lev == NULL && s_verificationPair.vrm == NULL, 1,
+	           "verification withdrawal frees both owned buffers");
 }
 
 static void test_serve_time_size_recheck(void)
@@ -2018,6 +2141,7 @@ int main(void)
 	test_apply_is_idempotent();
 	test_descriptor_replacement();
 	test_withdrawal();
+	test_verification_authority_is_exact_and_immutable();
 	test_serve_time_size_recheck();
 	test_absent_camera_path();
 	test_sky_primitive_budget();

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #ifdef CTR_AP
 // Bound by prototype, the way every other game-side AP call site does it
@@ -65,6 +66,8 @@ static int s_customTracksLoaded = 0;
 static struct CustomContentOwnedPair s_verificationPair;
 static const char s_verificationLevToken[] = "<verification-lev-buffer>";
 static const char s_verificationVrmToken[] = "<verification-vrm-buffer>";
+static int s_verificationLoadStarted;
+static long long s_verificationExpiresUnix;
 
 // Scratch used to hand a resolved path back to the caller. The game reads track
 // subfiles one at a time on a single thread, so a single buffer is fine.
@@ -99,13 +102,20 @@ static const char *CustomTrack_VerdictText(int verdict)
 // cannot show it on a cup that is no longer displaced, because
 // CustomTrackPolicy_CupDisplayName answers through the redirect predicate that
 // this function just turned off.
-static void CustomTrack_ResetArmedState(void)
+static void CustomTrack_Disarm(const char *reason)
 {
+	unsigned int nextGeneration = s_customTrackConfig.authorityGeneration + 1u;
+	if (nextGeneration == 0) nextGeneration = 1;
 	CustomContentVerify_FreePair(&s_verificationPair);
+	s_verificationLoadStarted = 0;
+	s_verificationExpiresUnix = 0;
+	memset(&s_descriptor, 0, sizeof(s_descriptor));
+	s_haveDescriptor = 0;
 	s_customTrackConfig.authority = CTR_CT_AUTHORITY_NONE;
+	s_customTrackConfig.authorityGeneration = nextGeneration;
+	s_customTrackConfig.intendedMode = CTR_CT_MODE_NONE;
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.contentVerified = 0;
-	s_customTrackConfig.verificationActive = 0;
 	s_customTrackConfig.raceEnabled = 0;
 	s_customTrackConfig.raceCupID = -1;
 	s_customTrackConfig.raceLaps = 0;
@@ -118,6 +128,8 @@ static void CustomTrack_ResetArmedState(void)
 	s_customTrackLev.verdict = CTR_CT_VERDICT_NO_PATH;
 	s_customTrackVrm.verifiedSize = 0;
 	s_customTrackLev.verifiedSize = 0;
+	if (reason != NULL && reason[0] != '\0')
+		CustomTrack_Log("[CustomTracks] disarmed: %s\n", reason);
 }
 
 static char *CustomTrack_Trim(char *s)
@@ -256,7 +268,7 @@ void CustomTrack_Load(void)
 	// the feature is fully off, whatever config.ini says.
 	memset(&s_descriptor, 0, sizeof(s_descriptor));
 	s_haveDescriptor = 0;
-	CustomTrack_ResetArmedState();
+	CustomTrack_Disarm(NULL);
 
 	f = fopen("config.ini", "r");
 	if (f == NULL)
@@ -403,17 +415,15 @@ void CustomTrack_ClearSeedDescriptor(void)
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
 
-	if (!s_haveDescriptor && !s_customTrackConfig.verificationActive)
+	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_NONE && !s_haveDescriptor)
 		return;
-	if (s_customTrackConfig.verificationActive)
+	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION)
 		CustomTrack_Log("[VerificationLab] verification authority revoked\n");
 
 	// A seed that goes away takes the whole feature with it. Nothing is served
 	// and every cup is back to its vanilla legs on the very next read.
 	CustomTrack_Log("[CustomTracks] seed descriptor withdrawn; the feature is off\n");
-	memset(&s_descriptor, 0, sizeof(s_descriptor));
-	s_haveDescriptor = 0;
-	CustomTrack_ResetArmedState();
+	CustomTrack_Disarm("seed descriptor withdrawn");
 }
 
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
@@ -444,9 +454,7 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 	// A path or package handoff must invalidate the descriptor memcmp cache. The
 	// next ApplySeedDescriptor owns the full digest check before it can arm.
-	memset(&s_descriptor, 0, sizeof s_descriptor);
-	s_haveDescriptor = 0;
-	CustomTrack_ResetArmedState();
+	CustomTrack_Disarm("managed package changed");
 	CustomTrack_Log("[CustomTracks] manager selected %s %s from \"%s\"\n",
 	                package->title, package->version, status->packageRoot);
 	return 1;
@@ -454,7 +462,9 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	                            const char *levSha256, const char *vrmSha256,
-	                            int hostLevelID, const char *title)
+	                            u32 levBytes, u32 vrmBytes,
+	                            int hostLevelID, int intendedMode,
+	                            long long expiresUnix, const char *title)
 {
 	struct CustomContentOwnedPair pair;
 	char verifyError[256];
@@ -462,6 +472,8 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 		CustomTrack_Load();
 	if (levPath == NULL || vrmPath == NULL || levSha256 == NULL || vrmSha256 == NULL ||
 	    !CustomTrackPolicy_LevelIDIsMappable(hostLevelID) ||
+	    intendedMode < CTR_CT_MODE_TIME_TRIAL || intendedMode > CTR_CT_MODE_ARCADE ||
+	    expiresUnix <= (long long)time(NULL) ||
 	    strlen(levPath) >= sizeof s_customTrackLev.path ||
 	    strlen(vrmPath) >= sizeof s_customTrackVrm.path)
 	{
@@ -471,16 +483,15 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 
 	/* Review mode owns no seed descriptor. Clear its cache so a later AP frame
 	 * cannot mistake this developer-only selection for seed authority. */
-	memset(&s_descriptor, 0, sizeof s_descriptor);
-	s_haveDescriptor = 0;
-	CustomTrack_ResetArmedState();
+	CustomTrack_Disarm("starting verification arm");
 	if (!CustomContentVerify_ReadPair(levPath, vrmPath, &pair, verifyError, sizeof verifyError))
 	{
 		CustomTrack_Log("[VerificationLab] DISARMED: pair is not load-safe: %s\n", verifyError);
 		return 0;
 	}
 	if (!NativeSha256_HexEquals(levSha256, pair.report.levSha256) ||
-	    !NativeSha256_HexEquals(vrmSha256, pair.report.vrmSha256))
+	    !NativeSha256_HexEquals(vrmSha256, pair.report.vrmSha256) ||
+	    pair.levBytes != (size_t)levBytes || pair.vrmBytes != (size_t)vrmBytes)
 	{
 		CustomContentVerify_FreePair(&pair);
 		CustomTrack_Log("[VerificationLab] DISARMED: exact media hashes did not match\n");
@@ -492,8 +503,9 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	s_verificationPair = pair;
 	s_customTrackConfig.mappedLevelID = hostLevelID;
 	s_customTrackConfig.contentVerified = 1;
-	s_customTrackConfig.verificationActive = 1;
+	s_customTrackConfig.intendedMode = intendedMode;
 	s_customTrackConfig.authority = CTR_CT_AUTHORITY_VERIFICATION;
+	s_verificationExpiresUnix = expiresUnix;
 	CustomTrack_Log("[VerificationLab] armed exact media on arcade host slot %d\n", hostLevelID);
 	return 1;
 }
@@ -511,9 +523,7 @@ int CustomTrack_ReverifyArmedContent(void)
 	    s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
 	{
 		CustomTrack_Log("[CustomTracks] event-entry preflight failed; custom race disarmed\n");
-		memset(&s_descriptor, 0, sizeof s_descriptor);
-		s_haveDescriptor = 0;
-		CustomTrack_ResetArmedState();
+		CustomTrack_Disarm("seed content preflight failed");
 		return 0;
 	}
 	return 1;
@@ -540,9 +550,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	if (s_haveDescriptor && memcmp(&s_descriptor, d, sizeof(s_descriptor)) == 0)
 		return s_customTrackConfig.contentVerified;
 
-	s_descriptor = *d;
-	s_haveDescriptor = 1;
-	CustomTrack_ResetArmedState();
+	CustomTrack_Disarm("seed transition");
 
 	cupID = d->replacesCupLevelID - 100;
 
@@ -633,6 +641,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackConfig.authority = CTR_CT_AUTHORITY_SEED;
+	s_descriptor = *d;
+	s_haveDescriptor = 1;
 	CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
                         cupID, d->laps, d->hostLevelID);
 	CustomTrack_Log("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
@@ -649,7 +659,9 @@ const struct CustomTrackFeatureConfig *CustomTrack_Config(void)
 	return &s_customTrackConfig;
 }
 
-int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize)
+int CustomTrack_GetOverrideBound(int subfileIndex, const struct CustomTrackLoadContext *ctx,
+	                             const char **outPath, u32 *outSize,
+	                             unsigned int *outGeneration)
 {
 	const struct CustomTrackSource *source;
 	struct stat st;
@@ -674,10 +686,12 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	if (!CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx))
 		return 0;
 
-	if (s_customTrackConfig.verificationActive)
+	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION)
 	{
+		s_verificationLoadStarted = 1;
 		if (outPath) *outPath = (role == CTR_CT_ROLE_LEV) ? s_verificationLevToken : s_verificationVrmToken;
 		if (outSize) *outSize = (u32)((role == CTR_CT_ROLE_LEV) ? s_verificationPair.levBytes : s_verificationPair.vrmBytes);
+		if (outGeneration) *outGeneration = s_customTrackConfig.authorityGeneration;
 		return 1;
 	}
 
@@ -702,6 +716,8 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 		*outPath = s_customTrackResolved;
 	if (outSize)
 		*outSize = source->verifiedSize;
+	if (outGeneration)
+		*outGeneration = s_customTrackConfig.authorityGeneration;
 
 	CustomTrack_Log("[CustomTracks] serving subfile %d (%s) from \"%s\" (%u bytes)\n", subfileIndex,
                         (role == CTR_CT_ROLE_LEV) ? "lev" : "vrm", s_customTrackResolved,
@@ -709,13 +725,35 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	return 1;
 }
 
-int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileBytes)
+void CustomTrack_VerificationTick(int levelID, int mode, int runComplete)
+{
+	if (s_customTrackConfig.authority != CTR_CT_AUTHORITY_VERIFICATION)
+		return;
+	if ((s_verificationExpiresUnix != 0 && (long long)time(NULL) >= s_verificationExpiresUnix) ||
+	    (s_verificationLoadStarted && (runComplete || levelID != s_customTrackConfig.mappedLevelID ||
+	                                  mode != s_customTrackConfig.intendedMode)))
+		CustomTrack_Disarm(runComplete ? "verification run completed" : "verification scope exited or expired");
+}
+
+int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx,
+	                         const char **outPath, u32 *outSize)
+{
+	return CustomTrack_GetOverrideBound(subfileIndex, ctx, outPath, outSize, NULL);
+}
+
+int CustomTrack_ReadFileBound(const char *path, void *dst, u32 bufBytes, u32 fileBytes,
+	                          unsigned int expectedGeneration)
 {
 	FILE *f;
 	size_t got;
 
 	if (path == NULL || dst == NULL)
 		return 0;
+	if (expectedGeneration != s_customTrackConfig.authorityGeneration)
+	{
+		CustomTrack_Disarm("authority changed between override and file copy");
+		return 0;
+	}
 	if (path == s_verificationLevToken || path == s_verificationVrmToken)
 	{
 		const unsigned char *source = path == s_verificationLevToken ? s_verificationPair.lev : s_verificationPair.vrm;
@@ -757,6 +795,12 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 	return 1;
 }
 
+int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileBytes)
+{
+	return CustomTrack_ReadFileBound(path, dst, bufBytes, fileBytes,
+	                                s_customTrackConfig.authorityGeneration);
+}
+
 int CustomTrack_CupRaceRedirectActive(int cupID, int isAdventureCup)
 {
 	return CustomTrackPolicy_ShouldRedirectCup(CustomTrack_Config(), cupID, isAdventureCup);
@@ -794,6 +838,7 @@ int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
+	ctx.mode = CTR_CT_MODE_NONE;
 
 	return CustomTrackPolicy_BoxVerdict(CustomTrack_Config(), &ctx);
 }
@@ -805,6 +850,7 @@ int CustomTrack_EventFieldSize(int levelID, int adventureCupActive, int cupID)
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
+	ctx.mode = CTR_CT_MODE_NONE;
 
 	return CustomTrackPolicy_EventFieldSize(CustomTrack_Config(), &ctx);
 }
@@ -816,6 +862,7 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
+	ctx.mode = CTR_CT_MODE_NONE;
 
 	return CustomTrackPolicy_ShouldServe(CustomTrack_Config(), &ctx);
 }
@@ -827,6 +874,7 @@ int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cup
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
+	ctx.mode = CTR_CT_MODE_NONE;
 
 	return CustomTrackPolicy_RetailPodiumLevelID(CustomTrack_Config(), &ctx);
 }

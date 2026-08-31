@@ -108,7 +108,10 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 // the custom bytes until process exit.
 int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	                            const char *levSha256, const char *vrmSha256,
-	                            int hostLevelID, const char *title);
+	                            u32 levBytes, u32 vrmBytes,
+	                            int hostLevelID, int intendedMode,
+	                            long long expiresUnix, const char *title);
+void CustomTrack_VerificationTick(int levelID, int mode, int runComplete);
 
 // Hash the armed LEV and VRM again immediately before an event entry. A failed
 // recheck disarms the custom race so same-size content replacement cannot slip
@@ -135,11 +138,16 @@ const struct CustomTrackFeatureConfig *CustomTrack_Config(void);
 // changed size since it was verified -- a file swapped under a running game is
 // refused for that read rather than served unverified.
 int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize);
+int CustomTrack_GetOverrideBound(int subfileIndex, const struct CustomTrackLoadContext *ctx,
+	                             const char **outPath, u32 *outSize,
+	                             unsigned int *outGeneration);
 
 // Fill dst with the source file's bytes, zero-padding the tail out to bufBytes
 // (the sector-rounded buffer size the CD path allocated). fileBytes is the size
 // CustomTrack_GetOverride reported. Returns 1 on success, 0 on any I/O error.
 int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileBytes);
+int CustomTrack_ReadFileBound(const char *path, void *dst, u32 bufBytes, u32 fileBytes,
+	                          unsigned int expectedGeneration);
 
 // --- Purple-destination-as-race seam -------------------------------------
 //
