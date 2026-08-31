@@ -65,19 +65,50 @@ class LabTests(unittest.TestCase):
         self.assertEqual(good["status"], "verified")
         self.assertEqual(good["verification"]["file_analysis"]["time_trial"]["result"], "Yes")
         self.assertEqual([row["status"] for row in inv["entries"][1:]], ["inconsistent", "inconsistent"])
-        lab.command_verdict(argparse.Namespace(root=self.root, key=good["key"], mode="time_trial",
-                                               result="Yes", notes="fixture pass", client_build="test"))
-        record = lab.verdicts(self.root)["verdicts"][good["key"]]
+        manifest = self.root / "session.json"
+        lab.command_prepare_session(argparse.Namespace(root=self.root, variant_id=good["variant_id"],
+                                    mode="time_trial", host=6, minutes=30, manifest=manifest))
+        prepared = json.loads(manifest.read_text())
+        self.assertEqual(prepared["variant_id"], good["variant_id"])
+        self.assertEqual(prepared["host"], 6)
+        executable = self.root / "ctr_native_ap"; executable.write_bytes(b"build")
+        receipt = dict(prepared, executable_sha256=lab.sha256_file(executable),
+                       git_commit="a" * 40, dirty=False, complete=True)
+        receipt_path = self.root / "receipt.json"; lab.atomic_json(receipt_path, receipt)
+        lab.command_collect_session(argparse.Namespace(root=self.root, manifest=manifest,
+            receipt=receipt_path, executable=executable, reviewer="Tester", steam_attested=True,
+            result="Yes", notes="fixture pass"))
+        record = lab.verdicts(self.root)["verdicts"][good["variant_id"]]
         self.assertEqual(record["lev_sha256"], good["verification"]["lev_sha256"])
+        self.assertEqual(record["modes"]["time_trial"]["launch_method"], "user-steam-attested")
         out_json, out_xlsx = self.root / "export.json", self.root / "export.xlsx"
         lab.command_export(argparse.Namespace(root=self.root, json=out_json, xlsx=out_xlsx))
         exported = json.loads(out_json.read_text())
         self.assertEqual(exported["entries"][0]["time_trial In-game test"], "Yes")
         self.assertTrue(out_xlsx.exists() and out_xlsx.stat().st_size > 0)
-        command = lab.native_launch_command(self.root, Path("/tmp/ctr_native_ap"), good, 6)
-        self.assertIn("--verify-lev-sha256", command)
-        self.assertIn(good["verification"]["lev_sha256"], command)
-        self.assertEqual(command[command.index("--verify-host") + 1], "6")
+
+    def test_untrusted_boundaries(self):
+        with self.assertRaises(ValueError): lab.positive_int(True, "id")
+        with self.assertRaises(ValueError): lab.saphi_url("https://evil.invalid/file")
+        with self.assertRaises(ValueError): lab.saphi_url("//evil.invalid/file")
+        lev, vrm = lab.cache_paths(self.root, 1, "../../escape", 2, 3)
+        self.assertEqual(lev.parent, self.root / "media" / "1")
+        self.assertEqual(vrm.parent, self.root / "media" / "1")
+
+    def test_formula_text_is_neutralized(self):
+        rows = [{"name": " =1+1", "author": "+cmd", "status": "verified"}]
+        original = lab.rows_for_export
+        lab.rows_for_export = lambda root: rows
+        try:
+            out_json, out_xlsx = self.root / "formula.json", self.root / "formula.xlsx"
+            lab.command_export(argparse.Namespace(root=self.root, json=out_json, xlsx=out_xlsx))
+            from openpyxl import load_workbook
+            workbook = load_workbook(out_xlsx, data_only=False)
+            values = [cell for row in workbook.active.iter_rows(min_row=2) for cell in row]
+            self.assertTrue(all(cell.data_type == "s" for cell in values))
+            self.assertTrue(values[0].value.startswith("'"))
+        finally:
+            lab.rows_for_export = original
 
 
 if __name__ == "__main__": unittest.main()
