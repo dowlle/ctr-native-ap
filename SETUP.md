@@ -22,6 +22,11 @@ extract the disc. A `.chd` image uses the extractor in the appendix. If you are
 generating the multiworld yourself, you also need the matching `ctr.apworld`
 and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hosting-a-multiworld).
 
+For a guided first setup, use the
+[CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
+file for this exact prerelease, open the
+[Alpha6 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha6).
+
 ## Step 1: get the game executable
 
 Download and extract the archive for your platform from the
@@ -92,13 +97,13 @@ you receive, and the ones your checks send to other players, appear in the feed
 during the race as well as in the Adventure hub. Progression items update your
 available gates; traps arm silently and fire during a later race.
 
-If the connection drops, reconnect before completing another location. In the
-current release, a check completed while disconnected is not resent later. The
-Connection screen shows the current state and any error message. A drop after
-you have connected once keeps the client recovering in the background, so a
-player mid-seed is not stranded away from the main-menu Connection screen; a
-startup or manual dial that never reached a room stops after a few automatic
-attempts and waits for you to select Connect.
+If the connection drops, checks completed offline are retained and sent after
+you reconnect to the same seed and slot. The Connection screen shows the
+current state and any error message. A drop after you have connected once keeps
+the client recovering in the background, so a player mid-seed is not stranded
+away from the main-menu Connection screen; a startup or manual dial that never
+reached a room stops after a few automatic attempts and waits for you to select
+Connect.
 
 The client verifies the seed after connecting. If the hub shows a red **SEED NOT
 COMPLETABLE** warning, stop and report it with your YAML and spoiler log. For a
@@ -119,11 +124,12 @@ which can equally be changed in the in-game options menu.
 
 ## Item boxes
 
-If your YAML turned on itemsanity, the tracks carry AP item boxes: crates placed
-around the course that send a location check when you break them. A broken box
-stays broken for the rest of the seed, across reconnects and relaunches, because
-the client asks the server what has already been checked rather than keeping its
-own tally.
+If your YAML turned on `box_locations`, the tracks carry AP item boxes: crates
+placed around the course that send a location check when you break them. This
+is separate from `itemsanity`, which controls received weapon items and weapon-
+use checks. A broken AP box stays broken for the rest of the seed, across
+reconnects and relaunches, because the client asks the server what has already
+been checked rather than keeping its own tally.
 
 You do not have to install anything for this. The placement set, meaning where
 every box stands on every track, is compiled into the client, so the boxes are
@@ -142,42 +148,39 @@ load writes one line saying how many boxes are standing out of how many
 placements the track holds and which placement set is live, plus, when nothing
 stands, which reason applies.
 
-### Overriding the placements
-
-Advanced, and almost nobody needs it. A file named `ap-box-placements.json` next
-to the executable **replaces** the compiled-in placement set wholesale, which is
-what makes testing a custom layout or applying a hotfix set possible without a
-new build. Delete the file to go back to the shipped set.
-
-Precedence is by existence, not by content: if the file is there it wins, even
-when it is empty. An empty file means zero boxes everywhere, because an operator
-who deliberately emptied it means exactly that, and quietly restoring the shipped
-placements behind their back would be the worse failure. The log names the live
-set on every run.
-
-Be aware of the desync an override can cause. Box names are positional: the third
-box listed for a track is that track's "Item Box 3", and that is the name your
-seed and any tracker were generated against. An override that puts a different
-number of boxes on a track, or the same boxes in a different order, re-points
-those names, so what you break and what your tracker shows will disagree. The
-client warns in the log when an override's total differs from the shipped set,
-but it cannot tell a deliberate custom layout from a truncated file, so that
-warning is the whole guard. Unless you are authoring placements, leave the file
-alone.
-
-The file format, and the in-game author mode that writes it, are documented in
-[docs/BOX_AUTHORING.md](docs/BOX_AUTHORING.md).
-
 ## Generating or hosting a multiworld
 
+Create your player file with the
+[Alpha6 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha6).
+Download the resulting YAML and give it to the person generating the room. The
+Builder prepares and validates player configuration; it does not generate the
+seed or host the playable server.
+
 Only the person generating the room needs the `ctr.apworld`. Download it from
-the same release as the client and install it by double-clicking it or placing it
-in Archipelago's `custom_worlds` folder. In the Archipelago Launcher, choose
-**Generate Template Options**, select Crash Team Racing, set the player name and
-options in the generated YAML, and add that YAML to the room's player files.
+the same release as the client and install it by double-clicking it or placing
+it in Archipelago's `custom_worlds` folder. Add every player's YAML to the
+generator's `Players` folder, then generate and host the resulting multiworld
+through Archipelago as usual.
+
+As an offline alternative to AP-Pie, use **Generate Template Options** in the
+Archipelago Launcher after installing the matching `ctr.apworld`, then edit the
+generated Crash Team Racing YAML locally.
 
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
+
+## Experimental custom content in Alpha6
+
+The public archive contains no custom-track files. Alpha6 recognizes one
+experimental Baby T Park package supplied by its creator. Open **OPTIONS →
+Custom Content** to inspect it, follow the creator link and verify the installed
+files. **Ready** means the files are compatible; it does not make a generated
+seed use the track.
+
+To use the preview, export its YAML fragment from the manager and add that block
+to the player YAML before generating the room. Every player whose slot requires
+the track must install the same verified package. A missing or mismatched package
+fails closed instead of loading the displaced retail race.
 
 ## Optional: controllers and Steam Input
 
