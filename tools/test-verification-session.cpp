@@ -67,10 +67,11 @@ int main()
 	json started; { std::ifstream input(receipt); input >> started; }
 	expect(started["complete"] == false && started["executable_sha256"].get<std::string>().size() == 64,
 	       "started receipt is incomplete and executable-bound");
-	expect(ap_verification_session_finalize_receipt(receipt, error, sizeof error) == 1, "receipt finalizes once");
+	expect(ap_verification_session_finalize_receipt(receipt, 1, 1, error, sizeof error) == 1, "receipt finalizes once");
 	json finished; { std::ifstream input(receipt); input >> finished; }
-	expect(finished["complete"] == true && finished.contains("end_time_unix"), "final receipt has process end evidence");
-	expect(ap_verification_session_finalize_receipt(receipt, error, sizeof error) == 0, "completed receipt cannot be reused");
+	expect(finished["complete"] == true && finished.contains("end_time_unix") && finished["target_loaded"] == true,
+	       "final receipt has process and target-load evidence");
+	expect(ap_verification_session_finalize_receipt(receipt, 1, 1, error, sizeof error) == 0, "completed receipt cannot be reused");
 
 	std::cout << "verification session: " << checks << " checks, " << failures << " failures\n";
 	return failures ? 1 : 0;

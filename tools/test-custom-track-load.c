@@ -969,6 +969,8 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	expect_int(CustomTrack_GetOverrideBound(TEST_BASE, &ctx, &token, &size, &generation), 1,
 	           "one-use session begins on its first target load");
 	CustomTrack_VerificationTick(TEST_HOST, CTR_CT_MODE_ARCADE, 1);
+	expect_int(CustomTrack_VerificationWasLoaded(), 1, "receipt evidence records that target bytes were requested");
+	expect_int(CustomTrack_VerificationRunCompleted(), 1, "receipt evidence records native run completion");
 	expect_fully_off("successful verification run completion consumes authority");
 	make_verification_pair("verify.lev", "verify.vrm");
 	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);

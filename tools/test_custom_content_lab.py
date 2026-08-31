@@ -92,7 +92,7 @@ class LabTests(unittest.TestCase):
         receipt = dict(prepared, executable_sha256=lab.sha256_file(executable),
                        git_commit="a" * 40, dirty=False, complete=True,
                        feature_configuration="test", start_time_unix=1, end_time_unix=2,
-                       executable_path=str(executable.resolve()))
+                       executable_path=str(executable.resolve()), target_loaded=True, run_completed=True)
         receipt_path = self.root / "session" / "receipt.json"; lab.atomic_json(receipt_path, receipt)
         manifest.replace(self.root / "session" / "armed.json")
         collect_args = argparse.Namespace(root=self.root, executable=executable, reviewer="Tester",
@@ -103,6 +103,14 @@ class LabTests(unittest.TestCase):
         collect_args.steam_attested = True; collect_args.executable = wrong_executable
         with self.assertRaisesRegex(SystemExit, "hash mismatch"):
             lab.command_collect_session(collect_args)
+        collect_args.executable = executable
+        receipt["target_loaded"] = False; lab.atomic_json(receipt_path, receipt)
+        with self.assertRaisesRegex(SystemExit, "incomplete"):
+            lab.command_collect_session(collect_args)
+        receipt["target_loaded"] = True; receipt["run_completed"] = False; lab.atomic_json(receipt_path, receipt)
+        with self.assertRaisesRegex(SystemExit, "run-completion"):
+            lab.command_collect_session(collect_args)
+        receipt["run_completed"] = True; lab.atomic_json(receipt_path, receipt)
         lab.command_collect_session(argparse.Namespace(root=self.root,
             executable=executable, reviewer="Tester", steam_attested=True,
             result="Yes", notes="fixture pass"))

@@ -112,6 +112,8 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	                            int hostLevelID, int intendedMode,
 	                            long long expiresUnix, const char *title);
 void CustomTrack_VerificationTick(int levelID, int mode, int runComplete);
+int CustomTrack_VerificationWasLoaded(void);
+int CustomTrack_VerificationRunCompleted(void);
 
 // Hash the armed LEV and VRM again immediately before an event entry. A failed
 // recheck disarms the custom race so same-size content replacement cannot slip

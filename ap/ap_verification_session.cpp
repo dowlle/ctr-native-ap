@@ -211,7 +211,7 @@ extern "C" int ap_verification_session_write_receipt(const char *receipt_path,
 }
 
 extern "C" int ap_verification_session_finalize_receipt(const char *receipt_path,
-	char *error, int error_bytes)
+	int target_loaded, int run_completed, char *error, int error_bytes)
 {
 	if (!receipt_path) { fail(error,error_bytes,"receipt path is required"); return 0; }
 	try {
@@ -219,6 +219,8 @@ extern "C" int ap_verification_session_finalize_receipt(const char *receipt_path
 		json receipt = json::parse(input, nullptr, true, true);
 		if (!receipt.is_object() || receipt.value("complete", true)) throw std::runtime_error("receipt is missing or already complete");
 		receipt["complete"] = true;
+		receipt["target_loaded"] = target_loaded != 0;
+		receipt["run_completed"] = run_completed != 0;
 		receipt["end_time_unix"] = static_cast<long long>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		if (!atomic_json_file(receipt_path, receipt)) throw std::runtime_error("could not durably finalize receipt");
 		fail(error,error_bytes,""); return 1;

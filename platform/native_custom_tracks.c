@@ -68,6 +68,8 @@ static const char s_verificationLevToken[] = "<verification-lev-buffer>";
 static const char s_verificationVrmToken[] = "<verification-vrm-buffer>";
 static int s_verificationLoadStarted;
 static long long s_verificationExpiresUnix;
+static int s_verificationWasLoaded;
+static int s_verificationRunCompleted;
 
 // Scratch used to hand a resolved path back to the caller. The game reads track
 // subfiles one at a time on a single thread, so a single buffer is fine.
@@ -506,6 +508,8 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	s_customTrackConfig.intendedMode = intendedMode;
 	s_customTrackConfig.authority = CTR_CT_AUTHORITY_VERIFICATION;
 	s_verificationExpiresUnix = expiresUnix;
+	s_verificationWasLoaded = 0;
+	s_verificationRunCompleted = 0;
 	CustomTrack_Log("[VerificationLab] armed exact media on arcade host slot %d\n", hostLevelID);
 	return 1;
 }
@@ -689,6 +693,7 @@ int CustomTrack_GetOverrideBound(int subfileIndex, const struct CustomTrackLoadC
 	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION)
 	{
 		s_verificationLoadStarted = 1;
+		s_verificationWasLoaded = 1;
 		if (outPath) *outPath = (role == CTR_CT_ROLE_LEV) ? s_verificationLevToken : s_verificationVrmToken;
 		if (outSize) *outSize = (u32)((role == CTR_CT_ROLE_LEV) ? s_verificationPair.levBytes : s_verificationPair.vrmBytes);
 		if (outGeneration) *outGeneration = s_customTrackConfig.authorityGeneration;
@@ -729,11 +734,15 @@ void CustomTrack_VerificationTick(int levelID, int mode, int runComplete)
 {
 	if (s_customTrackConfig.authority != CTR_CT_AUTHORITY_VERIFICATION)
 		return;
+	if (runComplete && s_verificationLoadStarted) s_verificationRunCompleted = 1;
 	if ((s_verificationExpiresUnix != 0 && (long long)time(NULL) >= s_verificationExpiresUnix) ||
 	    (s_verificationLoadStarted && (runComplete || levelID != s_customTrackConfig.mappedLevelID ||
 	                                  mode != s_customTrackConfig.intendedMode)))
 		CustomTrack_Disarm(runComplete ? "verification run completed" : "verification scope exited or expired");
 }
+
+int CustomTrack_VerificationWasLoaded(void) { return s_verificationWasLoaded; }
+int CustomTrack_VerificationRunCompleted(void) { return s_verificationRunCompleted; }
 
 int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx,
 	                         const char **outPath, u32 *outSize)

@@ -36,6 +36,7 @@ int ap_verification_session_write_receipt(const char *receipt_path,
 	                                       const char *feature_configuration,
 	                                       char *error, int error_bytes);
 int ap_verification_session_finalize_receipt(const char *receipt_path,
+	                                          int target_loaded, int run_completed,
 	                                          char *error, int error_bytes);
 int ap_verification_session_consume_manifest(const char *pending_path,
 	                                          const char *armed_path,

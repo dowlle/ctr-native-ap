@@ -353,6 +353,8 @@ int main(int argc, char *argv[])
 		char sessionError[512];
 		CustomTrack_ClearSeedDescriptor();
 		if (!ap_verification_session_finalize_receipt("custom-content-lab/session/receipt.json",
+		                                               CustomTrack_VerificationWasLoaded(),
+		                                               CustomTrack_VerificationRunCompleted(),
 		                                               sessionError, sizeof sessionError))
 			fprintf(stderr, "[VerificationLab] could not finalize machine receipt: %s\n", sessionError);
 	}

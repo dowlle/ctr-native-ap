@@ -622,8 +622,11 @@ def command_collect_session(args: argparse.Namespace) -> None:
         not isinstance(receipt.get("feature_configuration"), str) or
         not isinstance(receipt.get("start_time_unix"), int) or
         not isinstance(receipt.get("end_time_unix"), int) or
+        receipt.get("target_loaded") is not True or
         receipt["end_time_unix"] < receipt["start_time_unix"]):
         raise SystemExit("receipt is incomplete")
+    if args.result == "Yes" and receipt.get("run_completed") is not True:
+        raise SystemExit("a Yes verdict requires native run-completion evidence")
     entry = verified_entry(args.root, manifest["variant_id"])
     if entry["content_id"] != manifest["content_id"]: raise SystemExit("inventory content identity changed")
     data = verdicts(args.root)
@@ -640,6 +643,7 @@ def command_collect_session(args: argparse.Namespace) -> None:
         "git_commit": receipt["git_commit"], "dirty": bool(receipt.get("dirty")),
         "feature_configuration": receipt["feature_configuration"],
         "start_time_unix": receipt["start_time_unix"], "end_time_unix": receipt["end_time_unix"],
+        "target_loaded": True, "run_completed": bool(receipt.get("run_completed")),
         "executable_sha256": executable_hash, "nonce": manifest["nonce"],
         "recorded_at": datetime.now(timezone.utc).isoformat()}
     atomic_json(args.root / "verdicts.json", data)
