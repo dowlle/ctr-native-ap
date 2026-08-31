@@ -678,6 +678,12 @@ int CustomTrack_GetOverrideBound(int subfileIndex, const struct CustomTrackLoadC
 	// all but the event race's own two subfiles it must fall out immediately.
 	if (!s_customTrackConfig.contentVerified)
 		return 0;
+	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION &&
+	    s_verificationExpiresUnix != 0 && (long long)time(NULL) >= s_verificationExpiresUnix)
+	{
+		CustomTrack_Disarm("verification session expired before load");
+		return 0;
+	}
 
 	role = CustomTrackPolicy_SubfileRole(subfileIndex, s_customTrackConfig.mappedLevelID);
 	if (role == CTR_CT_ROLE_NONE)
@@ -688,7 +694,11 @@ int CustomTrack_GetOverrideBound(int subfileIndex, const struct CustomTrackLoadC
 	// indices. Only the load context can tell them apart, and it is what keeps
 	// that retail race retail.
 	if (!CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx))
+	{
+		if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION)
+			CustomTrack_Disarm("verification host was entered outside its exact mode");
 		return 0;
+	}
 
 	if (s_customTrackConfig.authority == CTR_CT_AUTHORITY_VERIFICATION)
 	{

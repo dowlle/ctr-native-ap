@@ -895,7 +895,8 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 	 * while the normal event path below remains adventure-cup-only. */
 	if (cfg->authority == CTR_CT_AUTHORITY_VERIFICATION)
 		return cfg->contentVerified && cfg->intendedMode != CTR_CT_MODE_NONE &&
-		       ctx->levelID == cfg->mappedLevelID && ctx->mode == cfg->intendedMode;
+		       !ctx->adventureCupActive && ctx->levelID == cfg->mappedLevelID &&
+		       ctx->mode == cfg->intendedMode;
 
 	if (!ctx->adventureCupActive)
 		return 0;

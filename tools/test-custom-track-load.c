@@ -961,6 +961,27 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	ctx.mode = CTR_CT_MODE_TIME_TRIAL;
 	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &token, &size), 0,
 	           "same host in the wrong mode is refused");
+	expect_fully_off("wrong mode on the verification host consumes authority");
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification re-arms after wrong-mode consumption");
+	ctx.mode = CTR_CT_MODE_ARCADE;
+	ctx.adventureCupActive = 1;
+	ctx.cupID = TEST_CUP;
+	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &token, &size), 0,
+	           "a cup on the verification host is refused");
+	expect_fully_off("cup entry consumes verification authority");
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification re-arms after cup consumption");
+	ctx.adventureCupActive = 0;
+	ctx.cupID = 0;
 	ctx.mode = CTR_CT_MODE_ARCADE;
 	expect_int(CustomTrack_GetOverrideBound(TEST_BASE + 1, &ctx, &token, &size, &generation), 1,
 	           "the exact host and mode receive the immutable LEV");
