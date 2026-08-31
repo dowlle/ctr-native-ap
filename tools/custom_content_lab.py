@@ -452,6 +452,8 @@ def command_analyze(args: argparse.Namespace) -> None:
                          "lev_crc32": lev_media.get("crc32_hash"), "vrm_crc32": vrm_media.get("crc32_hash")})
             lev, vrm = cache_paths(args.root, track["id"], version["version"], lev_media["id"], vrm_media["id"])
             vid = variant_id(track["id"], version["version"], lev_media["id"], vrm_media["id"])
+            base.update({"variant_id": vid, "lev_path": str(lev.relative_to(args.root)),
+                         "vrm_path": str(vrm.relative_to(args.root))})
             prior = existing.get(vid)
             metadata_unchanged = prior is not None and all(prior.get(key) == base.get(key) for key in
                 ("track_id", "name", "author", "track_type", "collection", "version",
@@ -469,12 +471,17 @@ def command_analyze(args: argparse.Namespace) -> None:
                     download_media(lev_media, lev)
                     download_media(vrm_media, vrm)
                 report = run_verifier(args.verifier, lev, vrm)
-                base.update({"variant_id": vid, "content_id": content_id(report), "status": "verified", "lev_path": str(lev.relative_to(args.root)),
-                             "vrm_path": str(vrm.relative_to(args.root)), "verification": report})
+                base.update({"content_id": content_id(report), "status": "verified", "verification": report})
                 if prior and prior.get("notes") and not base["notes"]:
                     base["notes"] = prior["notes"]
             except Exception as exc:  # retained as evidence; one bad track must not erase the sweep
                 base.update({"status": "error", "notes": str(exc)})
+                if lev.is_file() and vrm.is_file() and not lev.is_symlink() and not vrm.is_symlink():
+                    failure_report = {"schema_version": SCHEMA_VERSION, "loadable": False,
+                        "lev_sha256": sha256_file(lev), "vrm_sha256": sha256_file(vrm),
+                        "lev_bytes": lev.stat().st_size, "vrm_bytes": vrm.stat().st_size,
+                        "file_analysis": {mode: {"result": "Error", "reason": str(exc)} for mode in MODES}}
+                    base.update({"content_id": content_id(failure_report), "verification": failure_report})
             entries.append(base)
             processed_ids.add(vid)
             checkpoint(vid)

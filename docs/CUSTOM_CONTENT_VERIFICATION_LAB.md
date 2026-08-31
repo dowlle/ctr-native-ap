@@ -1,69 +1,114 @@
 # CTR Custom Content Verification Lab
 
-This development-only vertical slice inventories Project Saphi v3 media without
-changing creator files or Saphi metadata. Every result belongs to an exact
-`track id + semantic version + LEV SHA-256 + VRM SHA-256` identity.
+This is a development-only Project Saphi v3 inventory and review workflow. It
+does not alter creator files or publish Saphi metadata. Public API values are
+untrusted input and static analysis never grants loader authority.
 
-The evidence vocabulary is deliberately identical to Saphi's API tags:
-`time_trial`, `relic_race`, `ctr_challenge`, `arcade`, and
-`crystal_challenge`. `adventure_mode` is outside this race/battle lab.
+The exact Saphi mode slugs are `time_trial`, `relic_race`, `ctr_challenge`,
+`arcade`, and `crystal_challenge`. Battle files are inventoried, but their
+runtime support is `Unsupported` until a separate battle-selector integration
+exists.
 
-## Build and inventory
+## Identities and evidence
+
+`variant_id` identifies one Saphi upload pair using the NUL-delimited track ID,
+semantic version, LEV media ID, and VRM media ID. It is the inventory, queue,
+session, and verdict key. `content_id` identifies reused bytes using the two
+SHA-256 values. Equal content IDs are provenance only: verdicts are never
+inherited automatically. `copy-verdict` performs an explicit, audited copy
+after both variants' bytes are revalidated.
+
+File analysis reports `Detected`, `Not detected`, `Indeterminate`, or `Error`.
+Those values describe recognized structures, not playability. Only a
+Steam-backed human review records an in-game `Yes` or `No`.
+
+## Build, synchronize, and analyze
 
 ```sh
-cc -std=c99 -O2 -I. -Iinclude tools/custom-content-verify.c -o custom-content-verify
+cc -std=c11 -O2 -Wall -Wextra -I. -Iinclude \
+  tools/custom-content-verify.c -o custom-content-verify
 python3 tools/custom_content_lab.py --root custom-content-lab sync
 python3 tools/custom_content_lab.py --root custom-content-lab analyze \
   --verifier ./custom-content-verify
-python3 tools/custom_content_lab.py --root custom-content-lab export \
-  --json custom-content-lab/saphi-verification.json \
-  --xlsx custom-content-lab/saphi-verification.xlsx
+python3 tools/custom_content_lab.py --root custom-content-lab export
 ```
 
-Downloads use `.part` files, resume with HTTP Range, are rate-limited, and are
-stored by Saphi track/version/media IDs. Inventory is atomically checkpointed
-after every exact media pair, so an interrupted sweep resumes safely. LEV/VRM
-mode-signature mismatches are retained as inconsistent evidence and never
-guessed into a pair.
+Downloads are confined to numeric track/media cache paths on Project Saphi's
+HTTPS origin. Cached and downloaded files must match Saphi's exact size and
+CRC32. Resumption accepts only a matching `206 Content-Range`; integrity
+failures are quarantined. Catalogue pagination, JSON size/depth, track/media
+counts, retries, and text fields are bounded.
 
-## File analysis and in-game review
+Analysis checkpoints a full reconciled inventory after every pair. Completed
+entries are skipped only while their metadata, CRC32, SHA-256, and cached files
+remain unchanged. A failure remains an exact, hash-bound error record rather
+than deleting the rest of the scan.
 
-File analysis is static evidence, not a claim that a track was played. Each of
-the five tags has two independent `Yes` / `No` / `Not tested` columns in the
-exports: `File analysis` and `In-game test`.
+Exports are published beneath `custom-content-lab/exports/<generation>/` as
+`report.json`, `report.xlsx`, and `manifest.json`. Only the generation named by
+the atomically replaced `exports/current.json` is published. Formula-like XLSX
+text is stored as text, and the manifest records whether escaping occurred.
 
-Browse the pending queue:
+## Queue controls
 
 ```sh
-python3 tools/custom_content_lab.py --root custom-content-lab queue
+python3 tools/custom_content_lab.py --root custom-content-lab queue \
+  --difference --pending --mode arcade --newest-only --page-size 50
 ```
 
-An AP + custom-tracks development build accepts an exact review launch. The
-helper supplies absolute paths and both hashes, and the native loader refuses
-startup on any mismatch:
+Filters for author, track type, collection, exact Saphi mode, differences, and
+pending runtime evidence can be combined. Text and `--json` output share the
+same stable ordering and cursor pagination. Rows print the short variant ID and
+both media IDs.
+
+## User-driven Steam review
+
+The lab never starts CTR. Prepare one exact race-mode session:
 
 ```sh
-python3 tools/custom_content_lab.py --root custom-content-lab launch EXACT_KEY \
-  --client ./build/ctr_native_ap --host 6
+python3 tools/custom_content_lab.py --root custom-content-lab prepare-session \
+  VARIANT_ID arcade --host 6 --minutes 30
 ```
 
-Select the named arcade host slot in the client. Only that slot is overridden
-for that process; no cup is redirected and no seed metadata is changed. For a
-single browse/launch/record loop use:
+This revalidates the cached pair and writes the only accepted production input:
+`custom-content-lab/session/manifest.json`. Start the configured development
+build yourself through Steam. At startup the client validates the fixed
+manifest, consumes it to `armed.json`, retains the exact hashed bytes, and
+writes `receipt.json` for its own executable image and compile-time commit.
+Authority is offline-only, host-and-mode exact, generation-bound, and one-use.
+It is revoked on AP connection, seed activity, expiry, target exit, completion,
+load failure, or process teardown. A direct executable launch is not valid
+runtime evidence.
+
+After the Steam-started process exits normally and finalizes the receipt:
 
 ```sh
-python3 tools/custom_content_lab.py --root custom-content-lab review arcade \
-  --client ./build/ctr_native_ap --host 6 --client-build DEV_BUILD_ID
+python3 tools/custom_content_lab.py --root custom-content-lab collect-session \
+  --executable /exact/path/to/ctr_native_ap --reviewer NAME \
+  --steam-attested --result Yes --notes "review notes"
 ```
 
-Manual verdicts are written atomically to `verdicts.json` and repeat the exact
-LEV/VRM hashes. A verdict therefore cannot silently follow a later upload that
-reuses a semantic version.
+Collection independently hashes the configured executable and requires matching
+nonce, upload identity, content identity, byte counts, hashes, host, mode,
+commit, feature configuration, start/end times, and explicit Steam attestation.
+It consumes both manifest and receipt. Use `abort-session` to consume an
+unwanted or failed attempt.
 
-## Current boundary
+## Verification harnesses
 
-The lab does not publish or alter Saphi tags, implement randomizer placement,
-or build custom cups. Review launch deliberately reuses a retail arcade slot;
-battle-map launch is not yet wired into the native battle selector. Static
-analysis confirms structural ingredients only. Runtime behavior, route quality,
-AI driving quality, and challenge completable-ness remain in-game evidence.
+```sh
+cc -std=c11 -Wall -Wextra -Werror -I. -Iinclude \
+  tools/test-custom-content-verify.c -o /tmp/test-custom-content-verify
+/tmp/test-custom-content-verify
+
+cc -std=c11 -O1 -g -Wall -Wextra -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -I. -Iinclude \
+  tools/fuzz-custom-content-verify.c -o /tmp/fuzz-custom-content-verify
+/tmp/fuzz-custom-content-verify [known-good.lev known-good.vrm]
+
+python3 tools/test_custom_content_lab.py
+```
+
+The canonical 32-bit policy and loader harnesses remain the regression gate for
+the existing seed-driven Alpha6 path. A completed lab review additionally
+requires the matching real Steam receipt; static tests cannot replace it.

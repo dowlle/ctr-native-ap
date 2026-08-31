@@ -46,11 +46,13 @@ static int read_file(const char*path,size_t max,unsigned char**out,size_t*n,char
 static int has_slot(const struct LevView*l,size_t wanted){size_t i;for(i=0;i<l->slotCount;i++)if((((size_t)rd32(l->slots+4*i)>>2)<<2)==wanted)return 1;return 0;}
 static int lev_map(const unsigned char*f,size_t n,struct LevView*l,char*e,size_t en)
 {
-	size_t i,j,end;uint32_t nb;if(n<8){seterr(e,en,"LEV too small");return 0;}memset(l,0,sizeof(*l));l->p=f+4;l->n=n-4;l->map=rd32(f);
+	size_t i,end;uint32_t nb;unsigned char*seen;if(n<8){seterr(e,en,"LEV too small");return 0;}memset(l,0,sizeof(*l));l->p=f+4;l->n=n-4;l->map=rd32(f);
 	if((l->map&3)||l->map<0x190||!fits(l->map,4,l->n)){seterr(e,en,"invalid LEV pointer-map offset");return 0;}nb=rd32(l->p+l->map);
 	if((nb&3)||nb/4>l->map/4){seterr(e,en,"invalid LEV pointer-map byte count");return 0;}end=l->map+4+(size_t)nb;
 	if(end!=l->n){seterr(e,en,"truncated pointer map or trailing LEV bytes");return 0;}l->slots=l->p+l->map+4;l->slotCount=nb/4;
-	for(i=0;i<l->slotCount;i++){size_t s=((size_t)rd32(l->slots+4*i)>>2)<<2;uint32_t t;if(!fits(s,4,l->map)){seterr(e,en,"pointer-map slot outside retained payload");return 0;}for(j=0;j<i;j++)if((((size_t)rd32(l->slots+4*j)>>2)<<2)==s){seterr(e,en,"duplicate pointer-map slot");return 0;}t=rd32(l->p+s);if((t&0xf0000000u)||t>=l->map){seterr(e,en,"patched or out-of-range pointer target");return 0;}}
+	seen=(unsigned char*)calloc((l->map+3)/4,1);if(!seen){seterr(e,en,"pointer-map validation allocation failed");return 0;}
+	for(i=0;i<l->slotCount;i++){uint32_t raw=rd32(l->slots+4*i);size_t s=((size_t)raw>>2)<<2;uint32_t t;if(raw&3u){free(seen);seterr(e,en,"unaligned pointer-map slot");return 0;}if(!fits(s,4,l->map)){free(seen);seterr(e,en,"pointer-map slot outside retained payload");return 0;}if(seen[s/4]){free(seen);seterr(e,en,"duplicate pointer-map slot");return 0;}seen[s/4]=1;t=rd32(l->p+s);if((t&0xf0000000u)||t>=l->map){free(seen);seterr(e,en,"patched or out-of-range pointer target");return 0;}}
+	free(seen);
 	return 1;
 }
 static int pointer(const struct LevView*l,size_t slot,size_t need,size_t*out,char*e,size_t en){uint32_t v;if(!fits(slot,4,l->map)){seterr(e,en,"required pointer slot outside LEV");return 0;}v=rd32(l->p+slot);if(!v){*out=0;return 1;}if(!has_slot(l,slot)||!fits(v,need,l->map)){seterr(e,en,"required pointer missing from map or out of range");return 0;}*out=v;return 1;}
@@ -73,7 +75,12 @@ static int analyze(const unsigned char*f,size_t n,struct CustomContentVerificati
 	derive(o);o->loadable=1;return 1;
 }
 
-int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!p){seterr(e,en,"output pair required");return 0;}memset(p,0,sizeof(*p));if(!read_file(a,LEV_MAX,&p->lev,&p->levBytes,e,en)||!read_file(b,VRM_MAX,&p->vrm,&p->vrmBytes,e,en)){CustomContentVerify_FreePair(p);return 0;}digest(p->lev,p->levBytes,p->report.levSha256);digest(p->vrm,p->vrmBytes,p->report.vrmSha256);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;if(!vrm_valid(p->vrm,p->vrmBytes,e,en)||!analyze(p->lev,p->levBytes,&p->report,e,en)){CustomContentVerify_FreePair(p);return 0;}seterr(e,en,"");return 1;}
+static void reset_report(struct CustomContentOwnedPair*p){char a[NATIVE_SHA256_HEX_BYTES],b[NATIVE_SHA256_HEX_BYTES];snprintf(a,sizeof a,"%s",p->report.levSha256);snprintf(b,sizeof b,"%s",p->report.vrmSha256);memset(&p->report,0,sizeof p->report);snprintf(p->report.levSha256,sizeof p->report.levSha256,"%s",a);snprintf(p->report.vrmSha256,sizeof p->report.vrmSha256,"%s",b);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;}
+static void analysis_error(struct CustomContentVerification*o,const char*why){int i;for(i=0;i<CTR_CCV_MODE_COUNT;i++)evidence(o,i,CTR_CCV_ERROR,why);}
+int CustomContentVerify_AcquirePair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!p){seterr(e,en,"output pair required");return 0;}memset(p,0,sizeof(*p));if(!read_file(a,LEV_MAX,&p->lev,&p->levBytes,e,en)||!read_file(b,VRM_MAX,&p->vrm,&p->vrmBytes,e,en)){CustomContentVerify_FreePair(p);return 0;}digest(p->lev,p->levBytes,p->report.levSha256);digest(p->vrm,p->vrmBytes,p->report.vrmSha256);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;seterr(e,en,"");return 1;}
+int CustomContentVerify_AnalyzePair(struct CustomContentOwnedPair*p,char*e,size_t en){if(!p||!p->lev||!p->vrm){seterr(e,en,"acquired pair required");return 0;}reset_report(p);if(!analyze(p->lev,p->levBytes,&p->report,e,en)){analysis_error(&p->report,e&&e[0]?e:"LEV analysis failed");p->report.loadable=0;return 0;}p->report.loadable=0;seterr(e,en,"");return 1;}
+int CustomContentVerify_ValidateLoadablePair(struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AnalyzePair(p,e,en))return 0;if(!vrm_valid(p->vrm,p->vrmBytes,e,en)){p->report.loadable=0;return 0;}p->report.loadable=1;seterr(e,en,"");return 1;}
+int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AcquirePair(a,b,p,e,en))return 0;if(!CustomContentVerify_ValidateLoadablePair(p,e,en)){CustomContentVerify_FreePair(p);return 0;}return 1;}
 void CustomContentVerify_FreePair(struct CustomContentOwnedPair*p){if(!p)return;free(p->lev);free(p->vrm);memset(p,0,sizeof(*p));}
 int CustomContentVerify_Files(const char*a,const char*b,struct CustomContentVerification*o,char*e,size_t en){struct CustomContentOwnedPair p;if(!o){seterr(e,en,"output required");return 0;}if(!CustomContentVerify_ReadPair(a,b,&p,e,en)){memset(o,0,sizeof(*o));return 0;}*o=p.report;CustomContentVerify_FreePair(&p);return 1;}
 const char*CustomContentVerify_ModeSlug(int m){static const char*s[]={"time_trial","relic_race","ctr_challenge","arcade","crystal_challenge"};return m>=0&&m<5?s[m]:"unknown";}

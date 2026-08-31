@@ -70,14 +70,25 @@ struct CustomContentOwnedPair
 	struct CustomContentVerification report;
 };
 
-// Verifies and measures an exact LEV/VRM pair. Returns one only when both files
-// are readable and the LEV's bounded structures are internally consistent.
-// A structurally valid absence is a NO mode result; malformed input is an
-// overall failure and never degrades to a capability answer.
+// Analysis and loader authority are deliberately separate. AcquirePair owns
+// and hashes the exact bytes once. AnalyzePair may report cautious structural
+// evidence but never grants loader authority. Only ValidateLoadablePair sets
+// report.loadable and may be followed by a native loader handoff.
+int CustomContentVerify_AcquirePair(const char *levPath, const char *vrmPath,
+	                                 struct CustomContentOwnedPair *pair,
+	                                 char *error, size_t errorBytes);
+int CustomContentVerify_AnalyzePair(struct CustomContentOwnedPair *pair,
+	                                 char *error, size_t errorBytes);
+int CustomContentVerify_ValidateLoadablePair(struct CustomContentOwnedPair *pair,
+	                                          char *error, size_t errorBytes);
+
+// Convenience API for the reporting CLI: acquire, analyze, and validate.
 int CustomContentVerify_Files(const char *levPath, const char *vrmPath,
 	                           struct CustomContentVerification *out,
 	                           char *error, size_t errorBytes);
 
+// Convenience API for the loader: acquire and validate, retaining the owned
+// immutable buffers on success.
 int CustomContentVerify_ReadPair(const char *levPath, const char *vrmPath,
 	                              struct CustomContentOwnedPair *pair,
 	                              char *error, size_t errorBytes);
