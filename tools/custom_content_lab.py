@@ -277,7 +277,9 @@ def download_media(media: dict[str, Any], target: Path) -> None:
                 if resumed:
                     content_range = response.headers.get("Content-Range", "")
                     match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", content_range)
-                    if not match or int(match.group(1)) != start or int(match.group(3)) != expected or int(match.group(2)) < start:
+                    if (not match or int(match.group(1)) != start or
+                            int(match.group(2)) != expected - 1 or
+                            int(match.group(3)) != expected):
                         raise IOError("invalid Content-Range for resumed download")
                 elif start and status == 200:
                     start = 0

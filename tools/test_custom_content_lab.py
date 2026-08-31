@@ -283,6 +283,35 @@ class LabTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError): lab.download_media(media, target)
         self.assertEqual(request.call_count, 6)
 
+    def test_download_quarantines_oversized_part_and_requires_exact_range(self):
+        payload = b"abcdefghij"
+        media = {"file_size": len(payload), "crc32_hash": f"{zlib.crc32(payload) & 0xffffffff:08x}",
+                 "download_url": "/media/exact-range"}
+        target = self.root / "media/3/lev-4.lev"; target.parent.mkdir(parents=True)
+        partial = target.with_suffix(".lev.part")
+
+        class Response(io.BytesIO):
+            def __init__(self, data, status=200, headers=None):
+                super().__init__(data); self.status = status; self.headers = headers or {}
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        partial.write_bytes(payload + b"oversized")
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload)), \
+             mock.patch.object(lab.time, "sleep"):
+            lab.download_media(media, target)
+        self.assertEqual(target.read_bytes(), payload)
+        self.assertTrue(list(target.parent.glob("*.quarantine-*-oversized")))
+
+        for content_range in ("garbage", "bytes 3-8/10", "bytes 3-9/11"):
+            target.unlink(missing_ok=True); partial.write_bytes(payload[:3])
+            response = Response(payload[3:], 206, {"Content-Range": content_range})
+            with self.subTest(content_range=content_range), \
+                 mock.patch.object(lab.urllib.request, "urlopen", return_value=response), \
+                 mock.patch.object(lab.time, "sleep"), \
+                 self.assertRaisesRegex(IOError, "Content-Range"):
+                lab.download_media(media, target)
+
     def test_serialized_identity_mismatch_is_rejected(self):
         lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": [{
             "track_id": 1, "version": "1.0.0", "lev_media_id": 2, "vrm_media_id": 3,
