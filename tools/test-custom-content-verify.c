@@ -8,6 +8,9 @@
 #include <string.h>
 #include <unistd.h>
 
+static int g_faultStage;
+static int ccv_fault(int stage) { return stage == g_faultStage; }
+#define CTR_CCV_FAULT(stage) ccv_fault(stage)
 #define CTR_CUSTOM_TRACKS 1
 #include "platform/native_custom_content_verify.c"
 
@@ -82,6 +85,14 @@ int main(void)
 	snprintf(vrm, sizeof vrm, "%s/track.vrm", root);
 	write_bytes(lev, image, build_lev(image, 1));
 	validVrm[16]=1; validVrm[18]=1; write_bytes(vrm, validVrm, sizeof validVrm);
+	for (int stage = CTR_CCV_FAULT_AFTER_LEV_COPY; stage <= CTR_CCV_FAULT_AFTER_HASHING; stage++)
+	{
+		g_faultStage = stage;
+		expect(!CustomContentVerify_AcquirePair(lev, vrm, &pair, error, sizeof error), "acquisition fault fails closed");
+		expect(pair.lev == NULL && pair.vrm == NULL && pair.levBytes == 0 && pair.vrmBytes == 0,
+		       "acquisition fault frees every partial buffer");
+	}
+	g_faultStage = 0;
 	expect(CustomContentVerify_AcquirePair(lev, vrm, &pair, error, sizeof error), "pair acquisition owns exact bytes");
 	expect(CustomContentVerify_AnalyzePair(&pair, error, sizeof error), "analysis succeeds independently");
 	expect(pair.report.loadable == 0, "analysis alone never grants loader authority");
@@ -160,6 +171,13 @@ int main(void)
 
 	remove(vrm);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "missing VRM refused");
+	write_bytes(vrm, validVrm, sizeof validVrm);
+	{
+		char linkPath[256];
+		snprintf(linkPath, sizeof linkPath, "%s/link.lev", root);
+		expect(symlink(lev, linkPath) == 0, "symlink fixture created");
+		expect(!CustomContentVerify_AcquirePair(linkPath, vrm, &pair, error, sizeof error), "symlinked LEV refused before acquisition");
+	}
 
 	printf("custom-content verifier: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

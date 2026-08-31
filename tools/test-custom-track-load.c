@@ -238,6 +238,16 @@ static void hash_file_hex(const char *path, char out[NATIVE_SHA256_HEX_BYTES])
 	NativeSha256_ToHex(digest, out);
 }
 
+static void hash_bytes_hex(const void *bytes, size_t count, char out[NATIVE_SHA256_HEX_BYTES])
+{
+	struct NativeSha256Ctx ctx;
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	NativeSha256_Init(&ctx);
+	NativeSha256_Update(&ctx, bytes, count);
+	NativeSha256_Final(&ctx, digest);
+	NativeSha256_ToHex(digest, out);
+}
+
 static void write_config(const char *text)
 {
 	FILE *f = fopen("config.ini", "w");
@@ -882,6 +892,7 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	char levHash[NATIVE_SHA256_HEX_BYTES], vrmHash[NATIVE_SHA256_HEX_BYTES];
 	unsigned char *served;
 	unsigned char expectedFirst;
+	char servedHash[NATIVE_SHA256_HEX_BYTES];
 
 	reset_loader();
 	make_verification_pair("verify.lev", "verify.vrm");
@@ -910,6 +921,16 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	expect_int(CustomTrack_ReadFileBound(token, served, size, size, generation), 1,
 	           "source replacement cannot change armed bytes");
 	expect_int(served[0], expectedFirst, "served LEV remains the originally hashed image");
+	hash_bytes_hex(served, size, servedHash);
+	expect_str(servedHash, levHash, "bytes copied into loader destination match session LEV SHA-256");
+	free(served);
+	expect_int(CustomTrack_GetOverrideBound(TEST_BASE, &ctx, &token, &size, &generation), 1,
+	           "the exact host and mode receive the immutable VRM");
+	served = malloc(size); if (served == NULL) exit(2);
+	expect_int(CustomTrack_ReadFileBound(token, served, size, size, generation), 1,
+	           "immutable VRM copies into the loader destination");
+	hash_bytes_hex(served, size, servedHash);
+	expect_str(servedHash, vrmHash, "bytes copied into loader destination match session VRM SHA-256");
 	free(served);
 
 	make_verification_pair("verify.lev", "verify.vrm");

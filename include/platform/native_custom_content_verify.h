@@ -8,6 +8,9 @@
 
 #define CTR_CCV_MODE_COUNT 5
 #define CTR_CCV_REASON_MAX 192
+#define CTR_CCV_FAULT_AFTER_LEV_COPY 1
+#define CTR_CCV_FAULT_AFTER_VRM_COPY 2
+#define CTR_CCV_FAULT_AFTER_HASHING 3
 
 enum CustomContentEvidence
 {

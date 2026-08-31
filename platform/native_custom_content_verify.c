@@ -20,6 +20,9 @@
 #define CHECK_SIZE 0x0c
 #define NAV_HEAD 0x4c
 #define NAV_FRAME 0x14
+#ifndef CTR_CCV_FAULT
+#define CTR_CCV_FAULT(stage) 0
+#endif
 
 enum { PU_WUMPA=2, PU_TNT=6, PU_FRUIT=7, PU_RANDOM=8, PU_TIME1=9, PU_TIME2=10,
 	PU_TIME3=11, START=0x15, FINISH=0x23, STATIC_TNT=0x27, STATIC_TIME1=0x5c,
@@ -77,7 +80,7 @@ static int analyze(const unsigned char*f,size_t n,struct CustomContentVerificati
 
 static void reset_report(struct CustomContentOwnedPair*p){char a[NATIVE_SHA256_HEX_BYTES],b[NATIVE_SHA256_HEX_BYTES];snprintf(a,sizeof a,"%s",p->report.levSha256);snprintf(b,sizeof b,"%s",p->report.vrmSha256);memset(&p->report,0,sizeof p->report);snprintf(p->report.levSha256,sizeof p->report.levSha256,"%s",a);snprintf(p->report.vrmSha256,sizeof p->report.vrmSha256,"%s",b);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;}
 static void analysis_error(struct CustomContentVerification*o,const char*why){int i;for(i=0;i<CTR_CCV_MODE_COUNT;i++)evidence(o,i,CTR_CCV_ERROR,why);}
-int CustomContentVerify_AcquirePair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!p){seterr(e,en,"output pair required");return 0;}memset(p,0,sizeof(*p));if(!read_file(a,LEV_MAX,&p->lev,&p->levBytes,e,en)||!read_file(b,VRM_MAX,&p->vrm,&p->vrmBytes,e,en)){CustomContentVerify_FreePair(p);return 0;}digest(p->lev,p->levBytes,p->report.levSha256);digest(p->vrm,p->vrmBytes,p->report.vrmSha256);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;seterr(e,en,"");return 1;}
+int CustomContentVerify_AcquirePair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!p){seterr(e,en,"output pair required");return 0;}memset(p,0,sizeof(*p));if(!read_file(a,LEV_MAX,&p->lev,&p->levBytes,e,en)||CTR_CCV_FAULT(CTR_CCV_FAULT_AFTER_LEV_COPY)){seterr(e,en,"LEV acquisition fault");CustomContentVerify_FreePair(p);return 0;}if(!read_file(b,VRM_MAX,&p->vrm,&p->vrmBytes,e,en)||CTR_CCV_FAULT(CTR_CCV_FAULT_AFTER_VRM_COPY)){seterr(e,en,"VRM acquisition fault");CustomContentVerify_FreePair(p);return 0;}digest(p->lev,p->levBytes,p->report.levSha256);digest(p->vrm,p->vrmBytes,p->report.vrmSha256);if(CTR_CCV_FAULT(CTR_CCV_FAULT_AFTER_HASHING)){seterr(e,en,"hashing fault");CustomContentVerify_FreePair(p);return 0;}p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;seterr(e,en,"");return 1;}
 int CustomContentVerify_AnalyzePair(struct CustomContentOwnedPair*p,char*e,size_t en){if(!p||!p->lev||!p->vrm){seterr(e,en,"acquired pair required");return 0;}reset_report(p);if(!analyze(p->lev,p->levBytes,&p->report,e,en)){analysis_error(&p->report,e&&e[0]?e:"LEV analysis failed");p->report.loadable=0;return 0;}p->report.loadable=0;seterr(e,en,"");return 1;}
 int CustomContentVerify_ValidateLoadablePair(struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AnalyzePair(p,e,en))return 0;if(!vrm_valid(p->vrm,p->vrmBytes,e,en)){p->report.loadable=0;return 0;}p->report.loadable=1;seterr(e,en,"");return 1;}
 int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AcquirePair(a,b,p,e,en))return 0;if(!CustomContentVerify_ValidateLoadablePair(p,e,en)){CustomContentVerify_FreePair(p);return 0;}return 1;}
