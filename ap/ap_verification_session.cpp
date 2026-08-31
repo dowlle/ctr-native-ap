@@ -14,8 +14,10 @@
 #include <string>
 
 #if defined(_WIN32)
+#include <io.h>
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -92,6 +94,34 @@ bool confined_media_path(const char *text) {
 		}
 		return true;
 	} catch (...) { return false; }
+}
+bool atomic_json_file(const std::filesystem::path &destination, const json &value) {
+	std::filesystem::path temporary = destination; temporary += ".tmp";
+	const std::string encoded = value.dump(2) + "\n";
+	FILE *stream = std::fopen(temporary.string().c_str(), "wb");
+	if (!stream) return false;
+	bool ok = std::fwrite(encoded.data(), 1, encoded.size(), stream) == encoded.size() && std::fflush(stream) == 0;
+#if defined(_WIN32)
+	if (ok) ok = _commit(_fileno(stream)) == 0;
+#else
+	if (ok) ok = fsync(fileno(stream)) == 0;
+#endif
+	if (std::fclose(stream) != 0) ok = false;
+	if (!ok) { std::filesystem::remove(temporary); return false; }
+#if defined(_WIN32)
+	if (!MoveFileExA(temporary.string().c_str(), destination.string().c_str(),
+	                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		std::filesystem::remove(temporary); return false;
+	}
+#else
+	if (std::rename(temporary.string().c_str(), destination.string().c_str()) != 0) {
+		std::filesystem::remove(temporary); return false;
+	}
+	int directory = open(destination.parent_path().string().c_str(), O_RDONLY | O_DIRECTORY);
+	if (directory < 0 || fsync(directory) != 0) { if (directory >= 0) close(directory); return false; }
+	close(directory);
+#endif
+	return true;
 }
 }
 
@@ -175,14 +205,7 @@ extern "C" int ap_verification_session_write_receipt(const char *receipt_path,
 			{"host",session->host},{"mode",session->mode == 1 ? "time_trial" : session->mode == 2 ? "relic_race" : session->mode == 3 ? "ctr_challenge" : "arcade"},
 			{"start_time_unix",now},{"git_commit",git_commit},{"dirty",dirty != 0},{"feature_configuration",feature_configuration},
 			{"executable_path",exe},{"executable_sha256",exe_hash}};
-		std::filesystem::path destination(receipt_path), temporary = destination;
-		temporary += ".tmp";
-		std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-		if (!stream) throw std::runtime_error("could not create receipt temporary file");
-		stream << receipt.dump(2) << '\n'; stream.flush();
-		if (!stream) throw std::runtime_error("could not write receipt");
-		stream.close();
-		std::filesystem::rename(temporary, destination);
+		if (!atomic_json_file(receipt_path, receipt)) throw std::runtime_error("could not durably publish receipt");
 		fail(error,error_bytes,""); return 1;
 	} catch (const std::exception &exc) { fail(error,error_bytes,exc.what()); return 0; }
 }
@@ -197,12 +220,25 @@ extern "C" int ap_verification_session_finalize_receipt(const char *receipt_path
 		if (!receipt.is_object() || receipt.value("complete", true)) throw std::runtime_error("receipt is missing or already complete");
 		receipt["complete"] = true;
 		receipt["end_time_unix"] = static_cast<long long>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		std::filesystem::path destination(receipt_path), temporary = destination; temporary += ".tmp";
-		std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-		if (!output) throw std::runtime_error("could not create final receipt temporary file");
-		output << receipt.dump(2) << '\n'; output.flush();
-		if (!output) throw std::runtime_error("could not finalize receipt");
-		output.close(); std::filesystem::rename(temporary, destination);
+		if (!atomic_json_file(receipt_path, receipt)) throw std::runtime_error("could not durably finalize receipt");
 		fail(error,error_bytes,""); return 1;
 	} catch (const std::exception &exc) { fail(error,error_bytes,exc.what()); return 0; }
+}
+
+extern "C" int ap_verification_session_consume_manifest(const char *pending_path,
+	const char *armed_path, char *error, int error_bytes)
+{
+	if (!pending_path || !armed_path) { fail(error,error_bytes,"manifest paths are required"); return 0; }
+#if defined(_WIN32)
+	if (!MoveFileExA(pending_path, armed_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		fail(error,error_bytes,"could not atomically consume manifest"); return 0;
+	}
+#else
+	if (std::rename(pending_path, armed_path) != 0) { fail(error,error_bytes,"could not atomically consume manifest"); return 0; }
+	const auto parent = std::filesystem::path(armed_path).parent_path();
+	int directory = open(parent.string().c_str(), O_RDONLY | O_DIRECTORY);
+	if (directory < 0 || fsync(directory) != 0) { if (directory >= 0) close(directory); fail(error,error_bytes,"could not sync consumed manifest"); return 0; }
+	close(directory);
+#endif
+	fail(error,error_bytes,""); return 1;
 }

@@ -42,6 +42,11 @@ MAX_PAGES = 1000
 MAX_TRACKS = 100000
 MAX_VERSIONS = 100
 MAX_LEDGER_RECORDS = 500000
+_fault_hook = None
+
+
+def fault_point(stage: str, path: Path) -> None:
+    if _fault_hook is not None: _fault_hook(stage, path)
 
 
 def check_json_depth(value: Any, label: str, maximum: int = 64) -> None:
@@ -56,17 +61,24 @@ def check_json_depth(value: Any, label: str, maximum: int = 64) -> None:
 
 def atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    fault_point("before_write", path)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, indent=2, ensure_ascii=False, sort_keys=True)
             stream.write("\n")
+            fault_point("after_write", path)
             stream.flush()
+            fault_point("after_flush", path)
             os.fsync(stream.fileno())
+            fault_point("after_file_sync", path)
+        fault_point("before_replace", path)
         os.replace(temporary, path)
+        fault_point("after_replace", path)
         directory = os.open(path.parent, os.O_RDONLY)
         try: os.fsync(directory)
         finally: os.close(directory)
+        fault_point("after_directory_sync", path)
     except BaseException:
         try:
             os.unlink(temporary)

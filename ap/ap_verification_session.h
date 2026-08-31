@@ -37,6 +37,9 @@ int ap_verification_session_write_receipt(const char *receipt_path,
 	                                       char *error, int error_bytes);
 int ap_verification_session_finalize_receipt(const char *receipt_path,
 	                                          char *error, int error_bytes);
+int ap_verification_session_consume_manifest(const char *pending_path,
+	                                          const char *armed_path,
+	                                          char *error, int error_bytes);
 
 #ifdef __cplusplus
 }

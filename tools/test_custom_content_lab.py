@@ -93,12 +93,23 @@ class LabTests(unittest.TestCase):
                        executable_path=str(executable.resolve()))
         receipt_path = self.root / "session" / "receipt.json"; lab.atomic_json(receipt_path, receipt)
         manifest.replace(self.root / "session" / "armed.json")
+        collect_args = argparse.Namespace(root=self.root, executable=executable, reviewer="Tester",
+            steam_attested=False, result="Yes", notes="fixture pass")
+        with self.assertRaisesRegex(SystemExit, "attestation"):
+            lab.command_collect_session(collect_args)
+        wrong_executable = self.root / "wrong-build"; wrong_executable.write_bytes(b"other")
+        collect_args.steam_attested = True; collect_args.executable = wrong_executable
+        with self.assertRaisesRegex(SystemExit, "hash mismatch"):
+            lab.command_collect_session(collect_args)
         lab.command_collect_session(argparse.Namespace(root=self.root,
             executable=executable, reviewer="Tester", steam_attested=True,
             result="Yes", notes="fixture pass"))
         record = lab.verdicts(self.root)["verdicts"][good["variant_id"]]
         self.assertEqual(record["lev_sha256"], good["verification"]["lev_sha256"])
         self.assertEqual(record["modes"]["time_trial"]["launch_method"], "user-steam-attested")
+        with self.assertRaisesRegex(SystemExit, "required"):
+            lab.command_collect_session(argparse.Namespace(root=self.root, executable=executable,
+                reviewer="Tester", steam_attested=True, result="Yes", notes="reuse"))
         lab.command_export(argparse.Namespace(root=self.root))
         current = json.loads((self.root / "exports/current.json").read_text())
         generation = self.root / "exports" / current["generation_id"]
@@ -116,7 +127,9 @@ class LabTests(unittest.TestCase):
         self.assertEqual(vrm.parent, self.root / "media" / "1")
 
     def test_formula_text_is_neutralized(self):
-        rows = [{"name": " =1+1", "author": "+cmd", "status": "verified"}]
+        rows = [{"name": " =1+1", "author": "\t+cmd", "collection": "-2+3",
+                 "version": "@SUM(A1)", "notes": " =cmd", "existing_saphi_tags": "+tag",
+                 "status": "verified"}]
         original = lab.rows_for_export
         lab.rows_for_export = lambda root: rows
         try:
@@ -168,6 +181,85 @@ class LabTests(unittest.TestCase):
             "variant_id": "0" * 64}]})
         with self.assertRaisesRegex(ValueError, "variant_id"):
             lab.inventory(self.root)
+
+    def test_atomic_json_faults_leave_one_complete_document(self):
+        path = self.root / "state.json"
+        old, new = {"generation": "old", "rows": [1, 2]}, {"generation": "new", "rows": [3, 4]}
+        lab.atomic_json(path, old)
+        stages = ("before_write", "after_write", "after_flush", "after_file_sync",
+                  "before_replace", "after_replace", "after_directory_sync")
+        try:
+            for stage in stages:
+                lab.atomic_json(path, old)
+                def fail(current, target, wanted=stage):
+                    if current == wanted and target == path: raise RuntimeError(wanted)
+                lab._fault_hook = fail
+                with self.assertRaisesRegex(RuntimeError, stage): lab.atomic_json(path, new)
+                self.assertIn(json.loads(path.read_text()), (old, new))
+                self.assertFalse(list(path.parent.glob(f".{path.name}.*.tmp")))
+                lab._fault_hook = None
+        finally:
+            lab._fault_hook = None
+
+    def test_failed_workbook_never_publishes_half_generation(self):
+        original = lab.rows_for_export
+        lab.rows_for_export = lambda root: [{"track_id": 1, "name": "stable"}]
+        try:
+            lab.command_export(argparse.Namespace(root=self.root))
+            before = json.loads((self.root / "exports/current.json").read_text())
+            with mock.patch("openpyxl.workbook.workbook.Workbook.save", side_effect=RuntimeError("xlsx fault")):
+                with self.assertRaisesRegex(RuntimeError, "xlsx fault"):
+                    lab.command_export(argparse.Namespace(root=self.root))
+            after = json.loads((self.root / "exports/current.json").read_text())
+            self.assertEqual(after, before)
+            generation = self.root / "exports" / before["generation_id"]
+            manifest = json.loads((generation / "manifest.json").read_text())
+            self.assertEqual(lab.sha256_file(generation / "report.json"), manifest["report_json_sha256"])
+            self.assertEqual(lab.sha256_file(generation / "report.xlsx"), manifest["report_xlsx_sha256"])
+        finally:
+            lab.rows_for_export = original
+
+    def test_inventory_rerun_preserves_unprocessed_tail(self):
+        tracks = []
+        for tid in (20, 21):
+            lev, vrm = lab.cache_paths(self.root, tid, "1.0.0", tid * 10, tid * 10 + 1)
+            lev.parent.mkdir(parents=True, exist_ok=True); make_lev(lev)
+            vrm.write_bytes(b"\0" * 16 + b"\1\0\1\0\0\0")
+            def media(path, mid, role):
+                return {"id": mid, "type": role, "version": "1.0.0", "modes": ["time_trial"],
+                        "file_size": path.stat().st_size, "crc32_hash": lab.file_crc32(path),
+                        "download_url": f"https://www.projectsaphi.com/media/{mid}"}
+            tracks.append({"id": tid, "name": f"Track {tid}", "author": "Tester", "collection": "saphi",
+                "type": "race", "versions": [{"version": "1.0.0", "lev": media(lev, tid * 10, "lev"),
+                "vrm": media(vrm, tid * 10 + 1, "vrm"), "saphi_modes": ["time_trial"],
+                "consistent": True, "inconsistency": ""}]})
+        catalogue = {"schema_version": 2, "tracks": tracks}
+        lab.atomic_json(self.root / "catalogue.json", catalogue)
+        args = argparse.Namespace(root=self.root, verifier=self.verifier, offline=True)
+        lab.command_analyze(args)
+        original = lab.inventory(self.root)
+        self.assertEqual(len(original["entries"]), 2)
+
+        catalogue["tracks"][0]["name"] = "Track 20 revised"
+        lab.atomic_json(self.root / "catalogue.json", catalogue)
+        fired = False
+        def interrupt(stage, target):
+            nonlocal fired
+            if not fired and target == self.root / "inventory.json" and stage == "after_directory_sync":
+                fired = True; raise RuntimeError("interrupt after first committed entry")
+        lab._fault_hook = interrupt
+        try:
+            with self.assertRaisesRegex(RuntimeError, "interrupt"):
+                lab.command_analyze(args)
+        finally:
+            lab._fault_hook = None
+        partial = lab.inventory(self.root)
+        self.assertEqual(len(partial["entries"]), 2)
+        self.assertEqual({row["track_id"] for row in partial["entries"]}, {20, 21})
+        lab.command_analyze(args)
+        finished = lab.inventory(self.root)
+        self.assertEqual(len(finished["entries"]), 2)
+        self.assertEqual(next(row for row in finished["entries"] if row["track_id"] == 20)["name"], "Track 20 revised")
 
 
 if __name__ == "__main__": unittest.main()

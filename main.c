@@ -236,7 +236,8 @@ int main(int argc, char *argv[])
 				CustomTrack_ClearSeedDescriptor();
 				fprintf(stderr, "[VerificationLab] receipt failed; authority revoked: %s\n", sessionError);
 			}
-			else if (rename(manifestPath, armedManifestPath) != 0)
+			else if (!ap_verification_session_consume_manifest(manifestPath, armedManifestPath,
+			                                                   sessionError, sizeof sessionError))
 			{
 				CustomTrack_ClearSeedDescriptor();
 				remove(receiptPath);
