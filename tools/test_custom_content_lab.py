@@ -430,6 +430,47 @@ class LabTests(unittest.TestCase):
         self.assertEqual(page["rows"][0]["version"], "1.1.0")
         args.cursor = -1
         with self.assertRaisesRegex(SystemExit, "nonnegative"): lab.command_queue(args)
+        args.cursor = 0; args.page_size = 201
+        with self.assertRaisesRegex(SystemExit, "1 through 200"): lab.command_queue(args)
+
+    def test_queue_filters_combine_and_pagination_is_input_order_independent(self):
+        entries = []
+        specifications = (
+            (50, "Same name", "Alice", "race", "community", ["arcade"], "Not detected"),
+            (51, "Same name", "Bob", "race", "community", ["arcade"], "Detected"),
+            (52, "Other", "Alice", "battle", "community", ["crystal_challenge"], "Detected"),
+            (53, "Other", "Alice", "race", "official", ["arcade"], "Not detected"),
+        )
+        for index, (tid, name, author, kind, collection, modes, arcade_result) in enumerate(specifications, 1):
+            report = {"lev_sha256": f"{index:064x}", "vrm_sha256": f"{index + 10:064x}",
+                      "file_analysis": {mode: {"result": arcade_result if mode == "arcade" else "Not detected"}
+                                        for mode in lab.MODES}}
+            entries.append({"track_id": tid, "name": name, "author": author, "track_type": kind,
+                "collection": collection, "version": "1.0.0", "saphi_modes": modes, "status": "verified",
+                "lev_media_id": index * 2, "vrm_media_id": index * 2 + 1,
+                "variant_id": lab.variant_id(tid, "1.0.0", index * 2, index * 2 + 1),
+                "content_id": lab.content_id(report), "verification": report})
+
+        def collect(order):
+            lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": order})
+            args = argparse.Namespace(root=self.root, author="Alice", track_type="race", collection="community",
+                mode="arcade", pending=True, difference=True, newest_only=False,
+                cursor=0, page_size=1, json=True)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output): lab.command_queue(args)
+            first = json.loads(output.getvalue())
+            second = {"rows": []}
+            if first["next_cursor"] is not None:
+                args.cursor = first["next_cursor"]
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output): lab.command_queue(args)
+                second = json.loads(output.getvalue())
+            return [row["variant_id"] for row in first["rows"] + second["rows"]]
+
+        forward = collect(entries)
+        backward = collect(list(reversed(entries)))
+        self.assertEqual(forward, backward)
+        self.assertEqual(forward, [entries[0]["variant_id"]])
 
     def test_failed_workbook_never_publishes_half_generation(self):
         original = lab.rows_for_export

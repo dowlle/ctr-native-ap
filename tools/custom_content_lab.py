@@ -517,6 +517,7 @@ def command_analyze(args: argparse.Namespace) -> None:
 
 def command_queue(args: argparse.Namespace) -> None:
     if args.cursor < 0: raise SystemExit("cursor must be nonnegative")
+    if args.page_size < 1 or args.page_size > 200: raise SystemExit("page size must be from 1 through 200")
     ledger = verdicts(args.root)["verdicts"]
     rows = []
     for entry in inventory(args.root)["entries"]:
