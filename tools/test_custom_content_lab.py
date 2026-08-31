@@ -596,5 +596,61 @@ class LabTests(unittest.TestCase):
         self.assertEqual(len(finished["entries"]), 2)
         self.assertEqual(next(row for row in finished["entries"] if row["track_id"] == 20)["name"], "Track 20 revised")
 
+    def test_inventory_restart_after_first_middle_and_final_checkpoint_is_deterministic(self):
+        completed = []
+        for stop_after in (1, 2, 3):
+            root = self.root / f"case-{stop_after}"
+            tracks = []
+            for tid in (60, 61, 62):
+                lev, vrm = lab.cache_paths(root, tid, "1.0.0", tid * 10, tid * 10 + 1)
+                lev.parent.mkdir(parents=True, exist_ok=True); make_lev(lev)
+                vrm.write_bytes(b"\0" * 16 + b"\1\0\1\0\0\0")
+                def media(path, mid, role):
+                    return {"id": mid, "type": role, "version": "1.0.0", "modes": ["time_trial"],
+                            "file_size": path.stat().st_size, "crc32_hash": lab.file_crc32(path),
+                            "download_url": f"https://www.projectsaphi.com/media/{mid}"}
+                tracks.append({"id": tid, "name": f"Track {tid}", "author": "Tester", "collection": "saphi",
+                    "type": "race", "versions": [{"version": "1.0.0", "lev": media(lev, tid * 10, "lev"),
+                    "vrm": media(vrm, tid * 10 + 1, "vrm"), "saphi_modes": ["time_trial"],
+                    "consistent": True, "inconsistency": ""}]})
+            catalogue = {"schema_version": 2, "tracks": tracks}
+            lab.atomic_json(root / "catalogue.json", catalogue)
+            args = argparse.Namespace(root=root, verifier=self.verifier, offline=True)
+            lab.command_analyze(args)
+            for track in catalogue["tracks"]: track["name"] += " revised"
+            lab.atomic_json(root / "catalogue.json", catalogue)
+
+            checkpoints = 0
+            def interrupt(stage, target):
+                nonlocal checkpoints
+                if target == root / "inventory.json" and stage == "after_directory_sync":
+                    checkpoints += 1
+                    if checkpoints == stop_after: raise RuntimeError(f"interrupt {stop_after}")
+            calls = 0
+            actual_verifier = lab.run_verifier
+            def counted(*arguments):
+                nonlocal calls
+                calls += 1
+                return actual_verifier(*arguments)
+            lab._fault_hook = interrupt
+            try:
+                with mock.patch.object(lab, "run_verifier", side_effect=counted):
+                    with self.assertRaisesRegex(RuntimeError, f"interrupt {stop_after}"):
+                        lab.command_analyze(args)
+                    partial = lab.inventory(root)
+                    self.assertEqual(len(partial["entries"]), 3, "the prior tail survives every checkpoint")
+                    lab._fault_hook = None
+                    lab.command_analyze(args)
+            finally:
+                lab._fault_hook = None
+            self.assertEqual(calls, 3, "restart does not re-verify already committed entries")
+            final = lab.inventory(root)
+            self.assertEqual([row["name"] for row in final["entries"]],
+                             ["Track 60 revised", "Track 61 revised", "Track 62 revised"])
+            final.pop("scan_id", None)
+            completed.append(final)
+        self.assertEqual(completed[0], completed[1])
+        self.assertEqual(completed[1], completed[2])
+
 
 if __name__ == "__main__": unittest.main()
