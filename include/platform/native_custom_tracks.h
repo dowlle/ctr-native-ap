@@ -102,6 +102,14 @@ void CustomTrack_ClearSeedDescriptor(void);
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status);
 
+// Arm an explicit developer verification session from command-line supplied,
+// exact-version evidence. This never redirects a cup and fails closed unless
+// both files match their SHA-256 digests. The selected host slot alone serves
+// the custom bytes until process exit.
+int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
+	                            const char *levSha256, const char *vrmSha256,
+	                            int hostLevelID, const char *title);
+
 // Hash the armed LEV and VRM again immediately before an event entry. A failed
 // recheck disarms the custom race so same-size content replacement cannot slip
 // past the cheap serve-time stat check.

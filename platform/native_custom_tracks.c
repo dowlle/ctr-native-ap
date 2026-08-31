@@ -100,6 +100,7 @@ static void CustomTrack_ResetArmedState(void)
 {
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.contentVerified = 0;
+	s_customTrackConfig.verificationActive = 0;
 	s_customTrackConfig.raceEnabled = 0;
 	s_customTrackConfig.raceCupID = -1;
 	s_customTrackConfig.raceLaps = 0;
@@ -441,6 +442,50 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 	CustomTrack_ResetArmedState();
 	CustomTrack_Log("[CustomTracks] manager selected %s %s from \"%s\"\n",
 	                package->title, package->version, status->packageRoot);
+	return 1;
+}
+
+int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
+	                            const char *levSha256, const char *vrmSha256,
+	                            int hostLevelID, const char *title)
+{
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+	if (levPath == NULL || vrmPath == NULL || levSha256 == NULL || vrmSha256 == NULL ||
+	    !CustomTrackPolicy_LevelIDIsMappable(hostLevelID) ||
+	    strlen(levPath) >= sizeof s_customTrackLev.path ||
+	    strlen(vrmPath) >= sizeof s_customTrackVrm.path)
+	{
+		CustomTrack_Log("[VerificationLab] REFUSED invalid launch arguments\n");
+		return 0;
+	}
+
+	/* Review mode owns no seed descriptor. Clear its cache so a later AP frame
+	 * cannot mistake this developer-only selection for seed authority. */
+	memset(&s_descriptor, 0, sizeof s_descriptor);
+	s_haveDescriptor = 0;
+	CustomTrack_ResetArmedState();
+	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, levPath);
+	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, vrmPath);
+	CustomTrack_CopyField(s_customTrackLev.expectedHash, sizeof s_customTrackLev.expectedHash, levSha256);
+	CustomTrack_CopyField(s_customTrackVrm.expectedHash, sizeof s_customTrackVrm.expectedHash, vrmSha256);
+	if (title != NULL && CustomTrackPolicy_NameFits(title, NULL))
+		CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, title);
+
+	CustomTrack_VerifySource(&s_customTrackVrm, "verification vrm");
+	CustomTrack_VerifySource(&s_customTrackLev, "verification lev");
+	if (s_customTrackVrm.verdict != CTR_CT_VERDICT_OK ||
+	    s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
+	{
+		CustomTrack_Log("[VerificationLab] DISARMED: exact media hashes did not match\n");
+		CustomTrack_ResetArmedState();
+		return 0;
+	}
+
+	s_customTrackConfig.mappedLevelID = hostLevelID;
+	s_customTrackConfig.contentVerified = 1;
+	s_customTrackConfig.verificationActive = 1;
+	CustomTrack_Log("[VerificationLab] armed exact media on arcade host slot %d\n", hostLevelID);
 	return 1;
 }
 

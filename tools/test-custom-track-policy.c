@@ -254,6 +254,7 @@ static void test_pair_auto_expand(void)
 static struct CustomTrackFeatureConfig ruled_config(void)
 {
 	struct CustomTrackFeatureConfig cfg;
+	memset(&cfg, 0, sizeof cfg);
 
 	cfg.mappedLevelID = 6;
 	cfg.contentVerified = 1;
@@ -396,6 +397,7 @@ static void test_fork_consistency(void)
 							struct CustomTrackLoadContext ctx;
 							struct CustomTrackLoadContext retailCtx;
 
+							memset(&cfg, 0, sizeof cfg);
 							cfg.raceEnabled = enabled;
 							cfg.contentVerified = verified;
 							cfg.mappedLevelID = mapped;
@@ -585,6 +587,19 @@ static void test_serve_context(void)
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "a reconfigured event cup serves");
 	ctx = make_ctx(6, 1, 4);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "cup 4 no longer serves once cup 2 is the event");
+
+	// Developer verification is a separate, explicit authority: it serves only
+	// the selected host slot and does not need or create an adventure cup.
+	cfg = ruled_config();
+	cfg.verificationActive = 1;
+	cfg.raceEnabled = 0;
+	ctx = make_ctx(6, 0, 99);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "verification session serves its exact host slot");
+	ctx = make_ctx(7, 0, 99);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "verification session leaves every other slot retail");
+	cfg.contentVerified = 0;
+	ctx = make_ctx(6, 0, 99);
+	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 0, "verification session fails closed without hashes");
 }
 
 // ---------------------------------------------------------------------------

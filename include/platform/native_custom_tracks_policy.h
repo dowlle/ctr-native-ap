@@ -633,6 +633,7 @@ struct CustomTrackFeatureConfig
 	// --- loader ---
 	int mappedLevelID; // arcade slot the custom track takes over, or -1 for none
 	int contentVerified; // 1 once BOTH source files hashed OK
+	int verificationActive; // explicit developer review session, never set by a seed
 
 	// --- Purple-destination-as-race seam ---
 	int raceEnabled;  // runtime flag: is the event destination active at all
@@ -866,6 +867,12 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 {
 	if (cfg == NULL || ctx == NULL)
 		return 0;
+
+	/* The verification lab is an explicit process-launch mode.  It deliberately
+	 * borrows one arcade slot so a reviewer can run an exact hash-bound pair,
+	 * while the normal event path below remains adventure-cup-only. */
+	if (cfg->verificationActive)
+		return cfg->contentVerified && ctx->levelID == cfg->mappedLevelID;
 
 	if (!ctx->adventureCupActive)
 		return 0;

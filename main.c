@@ -154,6 +154,9 @@ static int NativeArg_IsVersion(const char *arg)
 
 int main(int argc, char *argv[])
 {
+	const char *verifyLev = NULL, *verifyVrm = NULL, *verifyLevHash = NULL, *verifyVrmHash = NULL;
+	const char *verifyTitle = NULL;
+	int verifyHost = 0;
 	for (int argIndex = 1; argIndex < argc; argIndex++)
 	{
 		if (NativeArg_IsVersion(argv[argIndex]))
@@ -161,6 +164,14 @@ int main(int argc, char *argv[])
 			printf("CTR Native %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
 			return 0;
 		}
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		if (strcmp(argv[argIndex], "--verify-lev") == 0 && argIndex + 1 < argc) verifyLev = argv[++argIndex];
+		else if (strcmp(argv[argIndex], "--verify-vrm") == 0 && argIndex + 1 < argc) verifyVrm = argv[++argIndex];
+		else if (strcmp(argv[argIndex], "--verify-lev-sha256") == 0 && argIndex + 1 < argc) verifyLevHash = argv[++argIndex];
+		else if (strcmp(argv[argIndex], "--verify-vrm-sha256") == 0 && argIndex + 1 < argc) verifyVrmHash = argv[++argIndex];
+		else if (strcmp(argv[argIndex], "--verify-host") == 0 && argIndex + 1 < argc) verifyHost = atoi(argv[++argIndex]);
+		else if (strcmp(argv[argIndex], "--verify-title") == 0 && argIndex + 1 < argc) verifyTitle = argv[++argIndex];
+#endif
 	}
 
 	printf("[CTR Native] Starting...\n");
@@ -240,6 +251,18 @@ int main(int argc, char *argv[])
 	// digest out of the load path and makes a content refusal visible at startup
 	// instead of on the warp pad.
 	CustomTrack_Load();
+#if defined(CTR_AP)
+	if (verifyLev || verifyVrm || verifyLevHash || verifyVrmHash)
+	{
+		if (!verifyLev || !verifyVrm || !verifyLevHash || !verifyVrmHash ||
+		    !CustomTrack_ArmVerification(verifyLev, verifyVrm, verifyLevHash,
+		                                 verifyVrmHash, verifyHost, verifyTitle))
+		{
+			fprintf(stderr, "[VerificationLab] Exact-version launch refused.\n");
+			return NativeConsole_Return(1);
+		}
+	}
+#endif
 #endif
 
 #if defined(CTR_INTERNAL)
