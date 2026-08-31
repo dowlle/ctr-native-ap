@@ -83,8 +83,10 @@ class LabTests(unittest.TestCase):
         good["vrm_crc32"] = lab.file_crc32(self.root / good["vrm_path"])
         lab.atomic_json(self.root / "inventory.json", inv)
         manifest = self.root / "session" / "manifest.json"
-        lab.command_prepare_session(argparse.Namespace(root=self.root, variant_id=good["variant_id"],
-                                    mode="time_trial", host=6, minutes=30))
+        with mock.patch.object(lab.subprocess, "run") as spawn:
+            lab.command_prepare_session(argparse.Namespace(root=self.root, variant_id=good["variant_id"],
+                                        mode="time_trial", host=6, minutes=30))
+            spawn.assert_not_called()
         prepared = json.loads(manifest.read_text())
         self.assertEqual(prepared["variant_id"], good["variant_id"])
         self.assertEqual(prepared["host"], 6)
@@ -104,6 +106,21 @@ class LabTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "hash mismatch"):
             lab.command_collect_session(collect_args)
         collect_args.executable = executable
+
+        for field, hostile in (("nonce", "0" * 64), ("host", 7), ("mode", "arcade")):
+            changed = dict(receipt); changed[field] = hostile
+            lab.atomic_json(receipt_path, changed)
+            with self.subTest(receipt_field=field), self.assertRaisesRegex(SystemExit, "does not match"):
+                lab.command_collect_session(collect_args)
+        lab.atomic_json(receipt_path, receipt)
+
+        armed_path = self.root / "session" / "armed.json"
+        stale = dict(prepared); stale["expires_at"] = "2000-01-01T00:00:00+00:00"
+        lab.atomic_json(armed_path, stale)
+        with self.assertRaisesRegex(SystemExit, "expired"):
+            lab.command_collect_session(collect_args)
+        lab.atomic_json(armed_path, prepared)
+
         receipt["target_loaded"] = False; lab.atomic_json(receipt_path, receipt)
         with self.assertRaisesRegex(SystemExit, "incomplete"):
             lab.command_collect_session(collect_args)
@@ -111,9 +128,11 @@ class LabTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "run-completion"):
             lab.command_collect_session(collect_args)
         receipt["run_completed"] = True; lab.atomic_json(receipt_path, receipt)
-        lab.command_collect_session(argparse.Namespace(root=self.root,
-            executable=executable, reviewer="Tester", steam_attested=True,
-            result="Yes", notes="fixture pass"))
+        with mock.patch.object(lab.subprocess, "run") as spawn:
+            lab.command_collect_session(argparse.Namespace(root=self.root,
+                executable=executable, reviewer="Tester", steam_attested=True,
+                result="Yes", notes="fixture pass"))
+            spawn.assert_not_called()
         record = lab.verdicts(self.root)["verdicts"][good["variant_id"]]
         self.assertEqual(record["lev_sha256"], good["verification"]["lev_sha256"])
         self.assertEqual(record["modes"]["time_trial"]["launch_method"], "user-steam-attested")
