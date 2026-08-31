@@ -435,6 +435,9 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+	/* Package selection is an authority transition even when the candidate is
+	 * malformed. Never keep serving the previous seed or review pair. */
+	CustomTrack_Disarm("managed package changed");
 	if (package == NULL || status == NULL || status->state != CTR_CT_MANAGER_READY ||
 	    status->levPath[0] == '\0' || status->vrmPath[0] == '\0' ||
 	    strlen(status->levPath) >= sizeof s_customTrackLev.path ||
@@ -456,7 +459,6 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 	// A path or package handoff must invalidate the descriptor memcmp cache. The
 	// next ApplySeedDescriptor owns the full digest check before it can arm.
-	CustomTrack_Disarm("managed package changed");
 	CustomTrack_Log("[CustomTracks] manager selected %s %s from \"%s\"\n",
 	                package->title, package->version, status->packageRoot);
 	return 1;

@@ -967,6 +967,15 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 0,
 	           "invalid-host verification transition is refused");
 	expect_fully_off("failed verification transition clears prior seed authority");
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification arms before rejected package transition");
+	expect_int(CustomTrack_UseManagedPackage(NULL, NULL), 0,
+	           "invalid manager package transition is refused");
+	expect_fully_off("failed package transition clears prior verification authority");
 
 	reset_loader();
 	make_verification_pair("verify.lev", "verify.vrm");
