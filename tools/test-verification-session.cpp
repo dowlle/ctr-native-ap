@@ -62,8 +62,13 @@ int main()
 	expect(!std::filesystem::exists(manifest) && std::filesystem::exists("custom-content-lab/session/armed.json"),
 	       "consumed manifest cannot arm a second process");
 	const char *receipt = "custom-content-lab/session/receipt.json";
+	std::ofstream("outside-receipt") << "untouched";
+	symlink(std::filesystem::absolute("outside-receipt").c_str(),
+	        "custom-content-lab/session/receipt.json.tmp");
 	expect(ap_verification_session_write_receipt(receipt, &session, std::string(40,'d').c_str(), 1,
 	                                             "test", error, sizeof error) == 1, "running executable receipt starts");
+	std::string outside_text; { std::ifstream outside("outside-receipt"); outside >> outside_text; }
+	expect(outside_text == "untouched", "receipt publication never follows a planted predictable temp symlink");
 	json started; { std::ifstream input(receipt); input >> started; }
 	expect(started["complete"] == false && started["executable_sha256"].get<std::string>().size() == 64,
 	       "started receipt is incomplete and executable-bound");

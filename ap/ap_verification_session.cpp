@@ -12,9 +12,13 @@
 #include <fstream>
 #include <set>
 #include <string>
+#include <vector>
 
 #if defined(_WIN32)
+#include <fcntl.h>
 #include <io.h>
+#include <process.h>
+#include <sys/stat.h>
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -96,10 +100,31 @@ bool confined_media_path(const char *text) {
 	} catch (...) { return false; }
 }
 bool atomic_json_file(const std::filesystem::path &destination, const json &value) {
-	std::filesystem::path temporary = destination; temporary += ".tmp";
+	std::filesystem::path temporary;
+	int descriptor = -1;
+#if defined(_WIN32)
+	static unsigned long counter;
+	for (unsigned attempt = 0; attempt < 100 && descriptor < 0; ++attempt) {
+		temporary = destination;
+		temporary += ".tmp." + std::to_string(_getpid()) + "." + std::to_string(++counter);
+		descriptor = _open(temporary.string().c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY,
+		                   _S_IREAD | _S_IWRITE);
+	}
+#else
+	std::string pattern = destination.string() + ".tmp.XXXXXX";
+	std::vector<char> writable(pattern.begin(), pattern.end()); writable.push_back('\0');
+	descriptor = mkstemp(writable.data());
+	if (descriptor >= 0) temporary = writable.data();
+#endif
+	if (descriptor < 0) return false;
 	const std::string encoded = value.dump(2) + "\n";
-	FILE *stream = std::fopen(temporary.string().c_str(), "wb");
-	if (!stream) return false;
+#if defined(_WIN32)
+	FILE *stream = _fdopen(descriptor, "wb");
+	if (!stream) { _close(descriptor); std::filesystem::remove(temporary); return false; }
+#else
+	FILE *stream = fdopen(descriptor, "wb");
+	if (!stream) { close(descriptor); std::filesystem::remove(temporary); return false; }
+#endif
 	bool ok = std::fwrite(encoded.data(), 1, encoded.size(), stream) == encoded.size() && std::fflush(stream) == 0;
 #if defined(_WIN32)
 	if (ok) ok = _commit(_fileno(stream)) == 0;
