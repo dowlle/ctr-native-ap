@@ -257,6 +257,7 @@ static struct CustomTrackFeatureConfig ruled_config(void)
 	memset(&cfg, 0, sizeof cfg);
 
 	cfg.mappedLevelID = 6;
+	cfg.authority = CTR_CT_AUTHORITY_SEED;
 	cfg.contentVerified = 1;
 	cfg.raceEnabled = 1;
 	cfg.raceCupID = 4;
@@ -398,6 +399,7 @@ static void test_fork_consistency(void)
 							struct CustomTrackLoadContext retailCtx;
 
 							memset(&cfg, 0, sizeof cfg);
+							cfg.authority = CTR_CT_AUTHORITY_SEED;
 							cfg.raceEnabled = enabled;
 							cfg.contentVerified = verified;
 							cfg.mappedLevelID = mapped;
@@ -592,6 +594,7 @@ static void test_serve_context(void)
 	// the selected host slot and does not need or create an adventure cup.
 	cfg = ruled_config();
 	cfg.verificationActive = 1;
+	cfg.authority = CTR_CT_AUTHORITY_VERIFICATION;
 	cfg.raceEnabled = 0;
 	ctx = make_ctx(6, 0, 99);
 	expect_int(CustomTrackPolicy_ShouldServe(&cfg, &ctx), 1, "verification session serves its exact host slot");

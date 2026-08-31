@@ -1,249 +1,81 @@
 #ifdef CTR_CUSTOM_TRACKS
-
 #include <platform/native_custom_content_verify.h>
-
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <stdint.h>
+#include <unistd.h>
 
-#define CCV_LEVEL_NUM_INSTANCES 0x0c
-#define CCV_LEVEL_PTR_INSTDEFS 0x10
-#define CCV_LEVEL_DRIVER_SPAWN 0x6c
-#define CCV_LEVEL_CHECKPOINT_COUNT 0x148
-#define CCV_LEVEL_NAV_TABLE 0x188
-#define CCV_INSTDEF_STRIDE 0x40
-#define CCV_INSTDEF_MODEL_ID 0x3c
-#define CCV_MAX_INSTANCES 65536ul
-#define CCV_MAX_CHECKPOINTS 65535ul
-#define CCV_DRIVER_SPAWNS 8
-#define CCV_SPAWN_BYTES 12
-#define CCV_NAV_PATHS 3
+#define LEV_MAX (16u*1024u*1024u)
+#define VRM_MAX (4u*1024u*1024u)
+#define INST_N 0x0c
+#define INST_P 0x10
+#define SPAWN_P 0x6c
+#define CHECK_N 0x148
+#define CHECK_P 0x14c
+#define NAV_P 0x188
+#define INST_SIZE 0x40
+#define MODEL_P 0x3c
+#define CHECK_SIZE 0x0c
+#define NAV_HEAD 0x4c
+#define NAV_FRAME 0x14
 
-enum
+enum { PU_WUMPA=2, PU_TNT=6, PU_FRUIT=7, PU_RANDOM=8, PU_TIME1=9, PU_TIME2=10,
+	PU_TIME3=11, START=0x15, FINISH=0x23, STATIC_TNT=0x27, STATIC_TIME1=0x5c,
+	CRYSTAL=0x60, STATIC_TIME2=0x64, STATIC_TIME3=0x65, LETTER_C=0x93,
+	LETTER_T=0x94, LETTER_R=0x95 };
+
+struct LevView { const unsigned char *p; size_t n,map; const unsigned char *slots; size_t slotCount; };
+static void seterr(char*d,size_t n,const char*s){if(d&&n)snprintf(d,n,"%s",s);}
+static uint32_t rd32(const unsigned char*p){return(uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
+static int rd16s(const unsigned char*p){unsigned v=p[0]|((unsigned)p[1]<<8);return(v&0x8000)?(int)v-0x10000:(int)v;}
+static int fits(size_t at,size_t n,size_t limit){return at<=limit&&n<=limit-at;}
+static void digest(const unsigned char*p,size_t n,char out[NATIVE_SHA256_HEX_BYTES]){struct NativeSha256Ctx c;unsigned char d[NATIVE_SHA256_DIGEST_BYTES];(void)NativeSha256_HexEquals;NativeSha256_Init(&c);NativeSha256_Update(&c,p,n);NativeSha256_Final(&c,d);NativeSha256_ToHex(d,out);}
+
+static int read_file(const char*path,size_t max,unsigned char**out,size_t*n,char*e,size_t en)
 {
-	CCV_PU_WUMPA = 0x02,
-	CCV_PU_EXPLOSIVE_CRATE = 0x06,
-	CCV_PU_FRUIT_CRATE = 0x07,
-	CCV_PU_RANDOM_CRATE = 0x08,
-	CCV_PU_TIME_CRATE_1 = 0x09,
-	CCV_PU_TIME_CRATE_2 = 0x0a,
-	CCV_PU_TIME_CRATE_3 = 0x0b,
-	CCV_START_LINE = 0x15,
-	CCV_FINISH_LINE = 0x23,
-	CCV_STATIC_TNT = 0x27,
-	CCV_STATIC_TIME_CRATE_1 = 0x5c,
-	CCV_STATIC_CRYSTAL = 0x60,
-	CCV_STATIC_TIME_CRATE_2 = 0x64,
-	CCV_STATIC_TIME_CRATE_3 = 0x65,
-	CCV_STATIC_C = 0x93,
-	CCV_STATIC_T = 0x94,
-	CCV_STATIC_R = 0x95
-};
-
-static void ccv_error(char *dst, size_t bytes, const char *text)
-{
-	if (dst == NULL || bytes == 0) return;
-	snprintf(dst, bytes, "%s", text);
+	struct stat a,b;FILE*f;unsigned char*p;size_t got;
+	if(!path||lstat(path,&a)||!S_ISREG(a.st_mode)){seterr(e,en,"file is missing, symlinked, or not regular");return 0;}
+	if(a.st_size<=0||(uint64_t)a.st_size>max){seterr(e,en,"file size is outside configured limit");return 0;}
+	f=fopen(path,"rb");if(!f){seterr(e,en,"file could not be opened");return 0;}p=malloc((size_t)a.st_size);if(!p){fclose(f);seterr(e,en,"allocation failed");return 0;}
+	got=fread(p,1,(size_t)a.st_size,f);if(got!=(size_t)a.st_size||fgetc(f)!=EOF||fstat(fileno(f),&b)||a.st_dev!=b.st_dev||a.st_ino!=b.st_ino||a.st_size!=b.st_size){free(p);fclose(f);seterr(e,en,"file changed or short-read during acquisition");return 0;}
+	fclose(f);*out=p;*n=got;return 1;
 }
 
-static int ccv_read_u32(FILE *file, unsigned long offset, unsigned long *out)
+static int has_slot(const struct LevView*l,size_t wanted){size_t i;for(i=0;i<l->slotCount;i++)if((((size_t)rd32(l->slots+4*i)>>2)<<2)==wanted)return 1;return 0;}
+static int lev_map(const unsigned char*f,size_t n,struct LevView*l,char*e,size_t en)
 {
-	unsigned char raw[4];
-	if (offset > 0x7ffffffful || fseek(file, (long)offset, SEEK_SET) != 0 ||
-	    fread(raw, 1, sizeof raw, file) != sizeof raw)
-		return 0;
-	*out = (unsigned long)raw[0] | ((unsigned long)raw[1] << 8) |
-	       ((unsigned long)raw[2] << 16) | ((unsigned long)raw[3] << 24);
+	size_t i,j,end;uint32_t nb;if(n<8){seterr(e,en,"LEV too small");return 0;}memset(l,0,sizeof(*l));l->p=f+4;l->n=n-4;l->map=rd32(f);
+	if((l->map&3)||l->map<0x190||!fits(l->map,4,l->n)){seterr(e,en,"invalid LEV pointer-map offset");return 0;}nb=rd32(l->p+l->map);
+	if((nb&3)||nb/4>l->map/4){seterr(e,en,"invalid LEV pointer-map byte count");return 0;}end=l->map+4+(size_t)nb;
+	if(end!=l->n){seterr(e,en,"truncated pointer map or trailing LEV bytes");return 0;}l->slots=l->p+l->map+4;l->slotCount=nb/4;
+	for(i=0;i<l->slotCount;i++){size_t s=((size_t)rd32(l->slots+4*i)>>2)<<2;uint32_t t;if(!fits(s,4,l->map)){seterr(e,en,"pointer-map slot outside retained payload");return 0;}for(j=0;j<i;j++)if((((size_t)rd32(l->slots+4*j)>>2)<<2)==s){seterr(e,en,"duplicate pointer-map slot");return 0;}t=rd32(l->p+s);if((t&0xf0000000u)||t>=l->map){seterr(e,en,"patched or out-of-range pointer target");return 0;}}
 	return 1;
 }
+static int pointer(const struct LevView*l,size_t slot,size_t need,size_t*out,char*e,size_t en){uint32_t v;if(!fits(slot,4,l->map)){seterr(e,en,"required pointer slot outside LEV");return 0;}v=rd32(l->p+slot);if(!v){*out=0;return 1;}if(!has_slot(l,slot)||!fits(v,need,l->map)){seterr(e,en,"required pointer missing from map or out of range");return 0;}*out=v;return 1;}
 
-static int ccv_hash_file(const char *path, char out[NATIVE_SHA256_HEX_BYTES],
-	                     unsigned long *outBytes)
+static int vrm_image(const unsigned char*p,size_t n,char*e,size_t en){unsigned x,y,w,h;size_t px;if(n<20){seterr(e,en,"VRM header truncated");return 0;}x=p[12]|p[13]<<8;y=p[14]|p[15]<<8;w=p[16]|p[17]<<8;h=p[18]|p[19]<<8;if(!w||!h||x+w>1024||y+h>512||(size_t)w>SIZE_MAX/(size_t)h/2){seterr(e,en,"VRM rectangle invalid");return 0;}px=(size_t)w*h*2;if(n!=20+px){seterr(e,en,"VRM pixel size invalid");return 0;}return 1;}
+static int vrm_valid(const unsigned char*p,size_t n,char*e,size_t en){size_t at;if(n<4){seterr(e,en,"VRM too small");return 0;}if(rd32(p)!=0x20)return vrm_image(p,n,e,en);at=4;for(;;){size_t z;if(!fits(at,4,n)){seterr(e,en,"packed VRM missing terminator");return 0;}z=rd32(p+at);at+=4;if(!z)return at==n?1:(seterr(e,en,"packed VRM trailing bytes"),0);if(z<20||!fits(at,z,n)||!vrm_image(p+at,z,e,en))return 0;at+=z;}}
+
+static void evidence(struct CustomContentVerification*o,int m,int value,const char*why){o->fileAnalysis[m].result=value;snprintf(o->fileAnalysis[m].reason,sizeof o->fileAnalysis[m].reason,"%s",why);}
+static void derive(struct CustomContentVerification*o){struct CustomContentMeasurements*m=&o->measured;evidence(o,0,m->checkpoints?CTR_CCV_DETECTED:CTR_CCV_NOT_DETECTED,m->checkpoints?"recognized checkpoint graph detected":"recognized checkpoint graph not detected");evidence(o,1,m->checkpoints&&m->relicCrates?CTR_CCV_DETECTED:CTR_CCV_NOT_DETECTED,m->checkpoints&&m->relicCrates?"recognized checkpoint graph and relic crates detected":"recognized relic-race structure not detected");evidence(o,2,m->checkpoints&&m->letterC&&m->letterT&&m->letterR?CTR_CCV_DETECTED:CTR_CCV_NOT_DETECTED,m->checkpoints&&m->letterC&&m->letterT&&m->letterR?"recognized checkpoint graph and C/T/R instances detected":"recognized CTR structure not detected");evidence(o,3,m->checkpoints&&m->spawns>=2&&m->navPaths?CTR_CCV_DETECTED:CTR_CCV_NOT_DETECTED,m->checkpoints&&m->spawns>=2&&m->navPaths?"recognized checkpoint, spawn, and navigation structures detected":"recognized arcade structure not detected");evidence(o,4,m->spawns&&m->crystals?CTR_CCV_DETECTED:CTR_CCV_NOT_DETECTED,m->spawns&&m->crystals?"recognized spawn and crystals detected":"recognized crystal structure not detected");}
+
+static int analyze(const unsigned char*f,size_t n,struct CustomContentVerification*o,char*e,size_t en)
 {
-	struct NativeSha256Ctx ctx;
-	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-	unsigned char buf[65536];
-	struct stat st;
-	FILE *file;
-	size_t got;
-	unsigned long total = 0;
-	(void)NativeSha256_HexEquals; // keep the shared header warning-clean here
-
-	if (path == NULL || stat(path, &st) != 0 || st.st_size <= 0) return 0;
-	file = fopen(path, "rb");
-	if (file == NULL) return 0;
-	NativeSha256_Init(&ctx);
-	while ((got = fread(buf, 1, sizeof buf, file)) > 0)
-	{
-		NativeSha256_Update(&ctx, buf, got);
-		total += (unsigned long)got;
-	}
-	if (ferror(file)) { fclose(file); return 0; }
-	fclose(file);
-	NativeSha256_Final(&ctx, digest);
-	NativeSha256_ToHex(digest, out);
-	*outBytes = total;
-	return 1;
+	struct LevView l;size_t inst=0,cp=0,nav=0,i;uint32_t count;if(!lev_map(f,n,&l,e,en))return 0;
+	count=rd32(l.p+INST_N);if(count>65536||!pointer(&l,INST_P,(size_t)count*INST_SIZE,&inst,e,en)||(count&&!inst)){seterr(e,en,"invalid instance table");return 0;}o->measured.instances=count;
+	for(i=0;i<count;i++){uint32_t m=rd32(l.p+inst+i*INST_SIZE+MODEL_P);switch(m){case PU_WUMPA:o->measured.looseWumpa++;break;case PU_FRUIT:o->measured.fruitCrates++;o->measured.ordinaryCrates++;break;case PU_RANDOM:case PU_TNT:case STATIC_TNT:o->measured.ordinaryCrates++;break;case PU_TIME1:case PU_TIME2:case PU_TIME3:case STATIC_TIME1:case STATIC_TIME2:case STATIC_TIME3:o->measured.relicCrates++;break;case LETTER_C:o->measured.letterC++;break;case LETTER_T:o->measured.letterT++;break;case LETTER_R:o->measured.letterR++;break;case CRYSTAL:o->measured.crystals++;break;case START:o->measured.startLines++;break;case FINISH:o->measured.finishLines++;break;}}
+	count=rd32(l.p+CHECK_N);if(count){unsigned char seen[254]={0};size_t cur=0,steps=0;if(count>254||!pointer(&l,CHECK_P,(size_t)count*CHECK_SIZE,&cp,e,en)||!cp){seterr(e,en,"invalid checkpoint table");return 0;}for(i=0;i<count;i++){size_t k;for(k=8;k<12;k++){unsigned v=l.p[cp+i*12+k];if(v!=0xff&&v>=count){seterr(e,en,"checkpoint index out of range");return 0;}}}while(!seen[cur]&&steps<count){seen[cur]=1;cur=l.p[cp+cur*12+8];steps++;if(cur==0xff||cur>=count){seterr(e,en,"checkpoint chain does not cycle");return 0;}}o->measured.checkpoints=count;}
+	for(i=0;i<8;i++){size_t j;int nz=0;for(j=0;j<12;j++)nz|=l.p[SPAWN_P+i*12+j];if(nz)o->measured.spawns++;}
+	if(!pointer(&l,NAV_P,12,&nav,e,en))return 0;
+	if(nav)for(i=0;i<3;i++){size_t h=0;unsigned points;if(!pointer(&l,nav+i*4,NAV_HEAD,&h,e,en))return 0;if(!h||rd16s(l.p+h)!=-0x1303)continue;points=l.p[h+2]|l.p[h+3]<<8;if(!points||!fits(h,NAV_HEAD+((size_t)points+1)*NAV_FRAME,l.map)){seterr(e,en,"navigation frame range invalid");return 0;}o->measured.navPaths++;}
+	derive(o);o->loadable=1;return 1;
 }
 
-static int ccv_range(unsigned long start, unsigned long bytes, unsigned long limit)
-{
-	return start <= limit && bytes <= limit - start;
-}
-
-static int ccv_nonzero(FILE *file, unsigned long offset, unsigned long bytes)
-{
-	unsigned char raw[CCV_SPAWN_BYTES];
-	unsigned long i;
-	if (bytes > sizeof raw || fseek(file, (long)offset, SEEK_SET) != 0 ||
-	    fread(raw, 1, (size_t)bytes, file) != bytes) return -1;
-	for (i = 0; i < bytes; i++) if (raw[i] != 0) return 1;
-	return 0;
-}
-
-static void ccv_mode(struct CustomContentVerification *out, int mode, int yes,
-	                 const char *reason)
-{
-	out->fileAnalysis[mode].result = yes ? CTR_CCV_YES : CTR_CCV_NO;
-	snprintf(out->fileAnalysis[mode].reason,
-	         sizeof out->fileAnalysis[mode].reason, "%s", reason);
-}
-
-static void ccv_derive_modes(struct CustomContentVerification *out)
-{
-	const struct CustomContentMeasurements *m = &out->measured;
-	ccv_mode(out, CTR_CCV_TIME_TRIAL,
-	         m->checkpoints > 0,
-	         m->checkpoints > 0
-	             ? "checkpoint/restart graph found"
-	             : "requires a checkpoint/restart graph");
-	ccv_mode(out, CTR_CCV_RELIC_RACE,
-	         m->checkpoints > 0 && m->relicCrates > 0,
-	         m->checkpoints > 0 && m->relicCrates > 0
-	             ? "checkpoint graph and relic time crates found"
-	             : "requires checkpoints and at least one relic time crate");
-	ccv_mode(out, CTR_CCV_CTR_CHALLENGE,
-	         m->checkpoints > 0 && m->letterC > 0 && m->letterT > 0 && m->letterR > 0,
-	         m->checkpoints > 0 && m->letterC > 0 && m->letterT > 0 && m->letterR > 0
-	             ? "checkpoint graph and C/T/R instances found"
-	             : "requires checkpoints and all three C/T/R instances");
-	ccv_mode(out, CTR_CCV_ARCADE,
-	         m->checkpoints > 0 && m->spawns >= 2 && m->navPaths > 0,
-	         m->checkpoints > 0 && m->spawns >= 2 && m->navPaths > 0
-	             ? "checkpoints, multi-kart spawns and embedded bot paths found"
-	             : "requires checkpoints, at least two spawns and embedded bot paths");
-	ccv_mode(out, CTR_CCV_CRYSTAL_CHALLENGE,
-	         m->spawns > 0 && m->crystals > 0,
-	         m->spawns > 0 && m->crystals > 0
-	             ? "driver spawn and crystal instances found"
-	             : "requires a driver spawn and crystal instances");
-}
-
-int CustomContentVerify_Files(const char *levPath, const char *vrmPath,
-	                           struct CustomContentVerification *out,
-	                           char *error, size_t errorBytes)
-{
-	FILE *file = NULL;
-	unsigned long ptrMap, payloadBytes, numInstances, instDefs, tableBytes;
-	unsigned long checkpoints, navTable, i;
-
-	if (out == NULL) { ccv_error(error, errorBytes, "output is required"); return 0; }
-	memset(out, 0, sizeof *out);
-	if (!ccv_hash_file(levPath, out->levSha256, &out->levBytes))
-	{ ccv_error(error, errorBytes, "LEV is missing, empty or unreadable"); return 0; }
-	if (!ccv_hash_file(vrmPath, out->vrmSha256, &out->vrmBytes))
-	{ ccv_error(error, errorBytes, "VRM is missing, empty or unreadable"); return 0; }
-	if (out->levBytes < 8) { ccv_error(error, errorBytes, "LEV is too small"); return 0; }
-	payloadBytes = out->levBytes - 4;
-	file = fopen(levPath, "rb");
-	if (file == NULL) { ccv_error(error, errorBytes, "LEV could not be reopened"); return 0; }
-	if (!ccv_read_u32(file, 0, &ptrMap) || ptrMap < 0x190 || ptrMap > payloadBytes)
-	{ ccv_error(error, errorBytes, "LEV pointer-map offset is invalid"); goto fail; }
-	if (!ccv_read_u32(file, 4 + CCV_LEVEL_NUM_INSTANCES, &numInstances) ||
-	    !ccv_read_u32(file, 4 + CCV_LEVEL_PTR_INSTDEFS, &instDefs) ||
-	    numInstances > CCV_MAX_INSTANCES)
-	{ ccv_error(error, errorBytes, "LEV instance header is invalid"); goto fail; }
-	tableBytes = numInstances * CCV_INSTDEF_STRIDE;
-	if (numInstances > 0 && !ccv_range(instDefs, tableBytes, ptrMap))
-	{ ccv_error(error, errorBytes, "LEV instance table is out of bounds"); goto fail; }
-	out->measured.instances = numInstances;
-	for (i = 0; i < numInstances; i++)
-	{
-		unsigned long model;
-		if (!ccv_read_u32(file, 4 + instDefs + i * CCV_INSTDEF_STRIDE + CCV_INSTDEF_MODEL_ID, &model))
-		{ ccv_error(error, errorBytes, "LEV instance table is truncated"); goto fail; }
-		switch (model)
-		{
-		case CCV_PU_WUMPA: out->measured.looseWumpa++; break;
-		case CCV_PU_FRUIT_CRATE: out->measured.fruitCrates++; out->measured.ordinaryCrates++; break;
-		case CCV_PU_RANDOM_CRATE:
-		case CCV_PU_EXPLOSIVE_CRATE:
-		case CCV_STATIC_TNT: out->measured.ordinaryCrates++; break;
-		case CCV_PU_TIME_CRATE_1:
-		case CCV_PU_TIME_CRATE_2:
-		case CCV_PU_TIME_CRATE_3:
-		case CCV_STATIC_TIME_CRATE_1:
-		case CCV_STATIC_TIME_CRATE_2:
-		case CCV_STATIC_TIME_CRATE_3: out->measured.relicCrates++; break;
-		case CCV_STATIC_C: out->measured.letterC++; break;
-		case CCV_STATIC_T: out->measured.letterT++; break;
-		case CCV_STATIC_R: out->measured.letterR++; break;
-		case CCV_STATIC_CRYSTAL: out->measured.crystals++; break;
-		case CCV_START_LINE: out->measured.startLines++; break;
-		case CCV_FINISH_LINE: out->measured.finishLines++; break;
-		default: break;
-		}
-	}
-	if (!ccv_read_u32(file, 4 + CCV_LEVEL_CHECKPOINT_COUNT, &checkpoints) ||
-	    checkpoints > CCV_MAX_CHECKPOINTS)
-	{ ccv_error(error, errorBytes, "LEV checkpoint count is invalid"); goto fail; }
-	out->measured.checkpoints = checkpoints;
-	for (i = 0; i < CCV_DRIVER_SPAWNS; i++)
-	{
-		int present;
-		unsigned long at = CCV_LEVEL_DRIVER_SPAWN + i * CCV_SPAWN_BYTES;
-		if (!ccv_range(at, CCV_SPAWN_BYTES, ptrMap))
-		{ ccv_error(error, errorBytes, "LEV driver-spawn table is out of bounds"); goto fail; }
-		present = ccv_nonzero(file, 4 + at, CCV_SPAWN_BYTES);
-		if (present < 0) { ccv_error(error, errorBytes, "LEV driver-spawn table is truncated"); goto fail; }
-		if (present) out->measured.spawns++;
-	}
-	if (!ccv_read_u32(file, 4 + CCV_LEVEL_NAV_TABLE, &navTable))
-	{ ccv_error(error, errorBytes, "LEV navigation field is unreadable"); goto fail; }
-	if (navTable != 0)
-	{
-		if (!ccv_range(navTable, CCV_NAV_PATHS * 4, ptrMap))
-		{ ccv_error(error, errorBytes, "LEV navigation table is out of bounds"); goto fail; }
-		for (i = 0; i < CCV_NAV_PATHS; i++)
-		{
-			unsigned long path;
-			if (!ccv_read_u32(file, 4 + navTable + i * 4, &path))
-			{ ccv_error(error, errorBytes, "LEV navigation table is truncated"); goto fail; }
-			if (path != 0 && path < ptrMap) out->measured.navPaths++;
-		}
-	}
-	fclose(file);
-	ccv_derive_modes(out);
-	ccv_error(error, errorBytes, "");
-	return 1;
-fail:
-	fclose(file);
-	memset(out, 0, sizeof *out);
-	return 0;
-}
-
-const char *CustomContentVerify_ModeSlug(int mode)
-{
-	static const char *slugs[CTR_CCV_MODE_COUNT] = {
-		"time_trial", "relic_race", "ctr_challenge", "arcade", "crystal_challenge"};
-	return mode >= 0 && mode < CTR_CCV_MODE_COUNT ? slugs[mode] : "unknown";
-}
-
-const char *CustomContentVerify_EvidenceText(int evidence)
-{
-	if (evidence == CTR_CCV_YES) return "Yes";
-	if (evidence == CTR_CCV_NO) return "No";
-	return "Not tested";
-}
-
+int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!p){seterr(e,en,"output pair required");return 0;}memset(p,0,sizeof(*p));if(!read_file(a,LEV_MAX,&p->lev,&p->levBytes,e,en)||!read_file(b,VRM_MAX,&p->vrm,&p->vrmBytes,e,en)){CustomContentVerify_FreePair(p);return 0;}digest(p->lev,p->levBytes,p->report.levSha256);digest(p->vrm,p->vrmBytes,p->report.vrmSha256);p->report.levBytes=p->levBytes;p->report.vrmBytes=p->vrmBytes;if(!vrm_valid(p->vrm,p->vrmBytes,e,en)||!analyze(p->lev,p->levBytes,&p->report,e,en)){CustomContentVerify_FreePair(p);return 0;}seterr(e,en,"");return 1;}
+void CustomContentVerify_FreePair(struct CustomContentOwnedPair*p){if(!p)return;free(p->lev);free(p->vrm);memset(p,0,sizeof(*p));}
+int CustomContentVerify_Files(const char*a,const char*b,struct CustomContentVerification*o,char*e,size_t en){struct CustomContentOwnedPair p;if(!o){seterr(e,en,"output required");return 0;}if(!CustomContentVerify_ReadPair(a,b,&p,e,en)){memset(o,0,sizeof(*o));return 0;}*o=p.report;CustomContentVerify_FreePair(&p);return 1;}
+const char*CustomContentVerify_ModeSlug(int m){static const char*s[]={"time_trial","relic_race","ctr_challenge","arcade","crystal_challenge"};return m>=0&&m<5?s[m]:"unknown";}
+const char*CustomContentVerify_EvidenceText(int r){if(r==CTR_CCV_DETECTED)return"Detected";if(r==CTR_CCV_NOT_DETECTED)return"Not detected";if(r==CTR_CCV_ERROR)return"Error";return"Indeterminate";}
 #endif

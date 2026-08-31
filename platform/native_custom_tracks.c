@@ -62,6 +62,9 @@ static int s_haveDescriptor = 0;
 static struct CustomTrackSource s_customTrackVrm;
 static struct CustomTrackSource s_customTrackLev;
 static int s_customTracksLoaded = 0;
+static struct CustomContentOwnedPair s_verificationPair;
+static const char s_verificationLevToken[] = "<verification-lev-buffer>";
+static const char s_verificationVrmToken[] = "<verification-vrm-buffer>";
 
 // Scratch used to hand a resolved path back to the caller. The game reads track
 // subfiles one at a time on a single thread, so a single buffer is fine.
@@ -98,6 +101,8 @@ static const char *CustomTrack_VerdictText(int verdict)
 // this function just turned off.
 static void CustomTrack_ResetArmedState(void)
 {
+	CustomContentVerify_FreePair(&s_verificationPair);
+	s_customTrackConfig.authority = CTR_CT_AUTHORITY_NONE;
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.contentVerified = 0;
 	s_customTrackConfig.verificationActive = 0;
@@ -398,8 +403,10 @@ void CustomTrack_ClearSeedDescriptor(void)
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
 
-	if (!s_haveDescriptor)
+	if (!s_haveDescriptor && !s_customTrackConfig.verificationActive)
 		return;
+	if (s_customTrackConfig.verificationActive)
+		CustomTrack_Log("[VerificationLab] verification authority revoked\n");
 
 	// A seed that goes away takes the whole feature with it. Nothing is served
 	// and every cup is back to its vanilla legs on the very next read.
@@ -449,6 +456,8 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	                            const char *levSha256, const char *vrmSha256,
 	                            int hostLevelID, const char *title)
 {
+	struct CustomContentOwnedPair pair;
+	char verifyError[256];
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
 	if (levPath == NULL || vrmPath == NULL || levSha256 == NULL || vrmSha256 == NULL ||
@@ -465,26 +474,26 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	memset(&s_descriptor, 0, sizeof s_descriptor);
 	s_haveDescriptor = 0;
 	CustomTrack_ResetArmedState();
-	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, levPath);
-	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, vrmPath);
-	CustomTrack_CopyField(s_customTrackLev.expectedHash, sizeof s_customTrackLev.expectedHash, levSha256);
-	CustomTrack_CopyField(s_customTrackVrm.expectedHash, sizeof s_customTrackVrm.expectedHash, vrmSha256);
+	if (!CustomContentVerify_ReadPair(levPath, vrmPath, &pair, verifyError, sizeof verifyError))
+	{
+		CustomTrack_Log("[VerificationLab] DISARMED: pair is not load-safe: %s\n", verifyError);
+		return 0;
+	}
+	if (!NativeSha256_HexEquals(levSha256, pair.report.levSha256) ||
+	    !NativeSha256_HexEquals(vrmSha256, pair.report.vrmSha256))
+	{
+		CustomContentVerify_FreePair(&pair);
+		CustomTrack_Log("[VerificationLab] DISARMED: exact media hashes did not match\n");
+		return 0;
+	}
 	if (title != NULL && CustomTrackPolicy_NameFits(title, NULL))
 		CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, title);
 
-	CustomTrack_VerifySource(&s_customTrackVrm, "verification vrm");
-	CustomTrack_VerifySource(&s_customTrackLev, "verification lev");
-	if (s_customTrackVrm.verdict != CTR_CT_VERDICT_OK ||
-	    s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
-	{
-		CustomTrack_Log("[VerificationLab] DISARMED: exact media hashes did not match\n");
-		CustomTrack_ResetArmedState();
-		return 0;
-	}
-
+	s_verificationPair = pair;
 	s_customTrackConfig.mappedLevelID = hostLevelID;
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackConfig.verificationActive = 1;
+	s_customTrackConfig.authority = CTR_CT_AUTHORITY_VERIFICATION;
 	CustomTrack_Log("[VerificationLab] armed exact media on arcade host slot %d\n", hostLevelID);
 	return 1;
 }
@@ -502,9 +511,9 @@ int CustomTrack_ReverifyArmedContent(void)
 	    s_customTrackLev.verdict != CTR_CT_VERDICT_OK)
 	{
 		CustomTrack_Log("[CustomTracks] event-entry preflight failed; custom race disarmed\n");
-		s_customTrackConfig.contentVerified = 0;
-		s_customTrackConfig.raceEnabled = 0;
-		s_customTrackConfig.mappedLevelID = -1;
+		memset(&s_descriptor, 0, sizeof s_descriptor);
+		s_haveDescriptor = 0;
+		CustomTrack_ResetArmedState();
 		return 0;
 	}
 	return 1;
@@ -623,6 +632,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	}
 
 	s_customTrackConfig.contentVerified = 1;
+	s_customTrackConfig.authority = CTR_CT_AUTHORITY_SEED;
 	CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
                         cupID, d->laps, d->hostLevelID);
 	CustomTrack_Log("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
@@ -664,6 +674,13 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	if (!CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx))
 		return 0;
 
+	if (s_customTrackConfig.verificationActive)
+	{
+		if (outPath) *outPath = (role == CTR_CT_ROLE_LEV) ? s_verificationLevToken : s_verificationVrmToken;
+		if (outSize) *outSize = (u32)((role == CTR_CT_ROLE_LEV) ? s_verificationPair.levBytes : s_verificationPair.vrmBytes);
+		return 1;
+	}
+
 	source = (role == CTR_CT_ROLE_LEV) ? &s_customTrackLev : &s_customTrackVrm;
 
 	// The content was hashed at startup. Re-hashing on every subfile read would
@@ -696,6 +713,18 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 {
 	FILE *f;
 	size_t got;
+
+	if (path == NULL || dst == NULL)
+		return 0;
+	if (path == s_verificationLevToken || path == s_verificationVrmToken)
+	{
+		const unsigned char *source = path == s_verificationLevToken ? s_verificationPair.lev : s_verificationPair.vrm;
+		size_t sourceBytes = path == s_verificationLevToken ? s_verificationPair.levBytes : s_verificationPair.vrmBytes;
+		if (source == NULL || sourceBytes != fileBytes || bufBytes < fileBytes) return 0;
+		memcpy(dst, source, fileBytes);
+		if (bufBytes > fileBytes) memset((char *)dst + fileBytes, 0, bufBytes - fileBytes);
+		return 1;
+	}
 
 	if (path == NULL || dst == NULL)
 		return 0;

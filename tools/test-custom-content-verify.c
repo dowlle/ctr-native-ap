@@ -12,9 +12,10 @@
 #include "platform/native_custom_content_verify.c"
 
 #define BODY_INST 0x220
-#define BODY_NAV 0x620
-#define BODY_PTRMAP 0x700
-#define IMAGE_BYTES (4 + BODY_PTRMAP + 4)
+#define BODY_CHECK 0x500
+#define BODY_NAV 0x700
+#define BODY_PTRMAP 0x1200
+#define IMAGE_BYTES (4 + BODY_PTRMAP + 4 + 6 * 4)
 
 static int checks;
 static int failures;
@@ -40,26 +41,29 @@ static void write_bytes(const char *path, const void *data, size_t bytes)
 static size_t build_lev(unsigned char *b, int full)
 {
 	static const unsigned long models[] = {
-		CCV_START_LINE, CCV_FINISH_LINE, CCV_PU_RANDOM_CRATE,
-		CCV_STATIC_TIME_CRATE_1, CCV_STATIC_TIME_CRATE_2,
-		CCV_STATIC_C, CCV_STATIC_T, CCV_STATIC_R, CCV_STATIC_CRYSTAL};
+		START, FINISH, PU_RANDOM, STATIC_TIME1, STATIC_TIME2,
+		LETTER_C, LETTER_T, LETTER_R, CRYSTAL};
+	static const unsigned long navHeads[] = {0x740, 0x880, 0x9c0};
+	static const unsigned long slots[] = {INST_P, CHECK_P, NAV_P, BODY_NAV, BODY_NAV+4, BODY_NAV+8};
 	size_t i;
 	memset(b, 0, IMAGE_BYTES);
 	put32(b, 0, BODY_PTRMAP);
-	put32(b, 4 + CCV_LEVEL_NUM_INSTANCES, full ? 9 : 0);
-	put32(b, 4 + CCV_LEVEL_PTR_INSTDEFS, BODY_INST);
-	put32(b, 4 + CCV_LEVEL_CHECKPOINT_COUNT, full ? 35 : 0);
+	put32(b, 4 + INST_N, full ? 9 : 0);
+	put32(b, 4 + INST_P, full ? BODY_INST : 0);
+	put32(b, 4 + CHECK_N, full ? 35 : 0);
 	if (full)
 	{
 		for (i = 0; i < sizeof models / sizeof models[0]; i++)
-			put32(b, 4 + BODY_INST + i * CCV_INSTDEF_STRIDE + CCV_INSTDEF_MODEL_ID, models[i]);
-		for (i = 0; i < 8; i++) b[4 + CCV_LEVEL_DRIVER_SPAWN + i * CCV_SPAWN_BYTES] = (unsigned char)(i + 1);
-		put32(b, 4 + CCV_LEVEL_NAV_TABLE, BODY_NAV);
-		put32(b, 4 + BODY_NAV, 0x680);
-		put32(b, 4 + BODY_NAV + 4, 0x690);
-		put32(b, 4 + BODY_NAV + 8, 0x6a0);
+			put32(b, 4 + BODY_INST + i * INST_SIZE + MODEL_P, models[i]);
+		for (i = 0; i < 8; i++) b[4 + SPAWN_P + i * 12] = (unsigned char)(i + 1);
+		put32(b, 4 + CHECK_P, BODY_CHECK);
+		for (i = 0; i < 35; i++) { memset(b + 4 + BODY_CHECK + i * 12 + 8, 0xff, 4); b[4 + BODY_CHECK + i * 12 + 8] = (unsigned char)((i + 1) % 35); }
+		put32(b, 4 + NAV_P, BODY_NAV);
+		for (i = 0; i < 3; i++) { put32(b, 4 + BODY_NAV + i * 4, navHeads[i]); b[4 + navHeads[i]] = 0xfd; b[4 + navHeads[i] + 1] = 0xec; b[4 + navHeads[i] + 2] = 4; }
+		put32(b, 4 + BODY_PTRMAP, (sizeof slots / sizeof slots[0]) * 4);
+		for (i = 0; i < sizeof slots / sizeof slots[0]; i++) put32(b, 4 + BODY_PTRMAP + 4 + i * 4, slots[i]);
 	}
-	return IMAGE_BYTES;
+	return full ? IMAGE_BYTES : (4 + BODY_PTRMAP + 4);
 }
 
 int main(void)
@@ -69,13 +73,14 @@ int main(void)
 	unsigned char image[IMAGE_BYTES];
 	struct CustomContentVerification v;
 	FILE *f;
+	unsigned char validVrm[22] = {0};
 
 	if (mkdtemp(root) == NULL) return 2;
 	snprintf(lev, sizeof lev, "%s/track.lev", root);
 	snprintf(vrm, sizeof vrm, "%s/track.vrm", root);
 	write_bytes(lev, image, build_lev(image, 1));
-	write_bytes(vrm, "vrm", 3);
-	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "full fixture verifies");
+	validVrm[16]=1; validVrm[18]=1; write_bytes(vrm, validVrm, sizeof validVrm);
+	{ int ok = CustomContentVerify_Files(lev, vrm, &v, error, sizeof error); if (!ok) printf("fixture error: %s\n", error); expect(ok, "full fixture verifies"); }
 	expect(v.measured.instances == 9, "instance count");
 	expect(v.measured.checkpoints == 35, "checkpoint count");
 	expect(v.measured.spawns == 8, "spawn count");
@@ -85,12 +90,31 @@ int main(void)
 	expect(v.measured.letterC == 1 && v.measured.letterT == 1 && v.measured.letterR == 1, "letter counts");
 	expect(v.measured.crystals == 1, "crystal count");
 	for (int i = 0; i < CTR_CCV_MODE_COUNT; i++)
-		expect(v.fileAnalysis[i].result == CTR_CCV_YES, "full fixture mode yes");
+		expect(v.fileAnalysis[i].result == CTR_CCV_DETECTED, "full fixture mode detected");
+
+	build_lev(image, 1); put32(image, 4 + BODY_PTRMAP, 5);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "non-multiple pointer-map bytes refused");
+	build_lev(image, 1); put32(image, 4 + BODY_PTRMAP + 4 + 4, INST_P);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "duplicate pointer slot refused");
+	build_lev(image, 1); put32(image, 4 + INST_P, BODY_PTRMAP + 4);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "pointer target beyond payload refused");
+	build_lev(image, 1); put32(image, 4 + BODY_CHECK + 8, 250);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "checkpoint edge beyond count refused");
+	build_lev(image, 1); write_bytes(lev, image, IMAGE_BYTES);
+	write_bytes(vrm, validVrm, sizeof validVrm - 1);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "truncated VRM pixels refused");
+	validVrm[16] = 0; write_bytes(vrm, validVrm, sizeof validVrm);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "zero-width VRM refused");
+	validVrm[16] = 1; write_bytes(vrm, validVrm, sizeof validVrm);
 
 	write_bytes(lev, image, build_lev(image, 0));
 	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "empty valid fixture verifies");
 	for (int i = 0; i < CTR_CCV_MODE_COUNT; i++)
-		expect(v.fileAnalysis[i].result == CTR_CCV_NO, "empty fixture mode no");
+		expect(v.fileAnalysis[i].result == CTR_CCV_NOT_DETECTED, "empty fixture mode not detected");
 
 	f = fopen(lev, "r+b"); put32(image, 0, 0xfffffffful); fwrite(image, 1, IMAGE_BYTES, f); fclose(f);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "bad pointer map refused");

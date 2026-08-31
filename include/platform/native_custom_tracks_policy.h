@@ -630,6 +630,7 @@ enum CustomTrackVerdict
 // config.ini today and from slot_data in a later rung.
 struct CustomTrackFeatureConfig
 {
+	int authority; // enum CustomTrackAuthority: the sole owner of custom bytes
 	// --- loader ---
 	int mappedLevelID; // arcade slot the custom track takes over, or -1 for none
 	int contentVerified; // 1 once BOTH source files hashed OK
@@ -674,6 +675,13 @@ struct CustomTrackFeatureConfig
 	int           navIdentityValid;
 	unsigned char navTrackUuid[CTR_CT_NAV_UUID_BYTES];
 	unsigned int  navRevision;
+};
+
+enum CustomTrackAuthority
+{
+	CTR_CT_AUTHORITY_NONE = 0,
+	CTR_CT_AUTHORITY_VERIFICATION = 1,
+	CTR_CT_AUTHORITY_SEED = 2
 };
 
 // How many karts the engine will put on the grid for a redirected cup's race.
@@ -774,6 +782,8 @@ static int CustomTrackPolicy_ShouldRedirectCup(const struct CustomTrackFeatureCo
 {
 	if (cfg == NULL)
 		return 0;
+	if (cfg->authority != CTR_CT_AUTHORITY_SEED)
+		return 0;
 
 	if (!cfg->raceEnabled)
 		return 0;
@@ -871,7 +881,7 @@ static int CustomTrackPolicy_ShouldServe(const struct CustomTrackFeatureConfig *
 	/* The verification lab is an explicit process-launch mode.  It deliberately
 	 * borrows one arcade slot so a reviewer can run an exact hash-bound pair,
 	 * while the normal event path below remains adventure-cup-only. */
-	if (cfg->verificationActive)
+	if (cfg->authority == CTR_CT_AUTHORITY_VERIFICATION)
 		return cfg->contentVerified && ctx->levelID == cfg->mappedLevelID;
 
 	if (!ctx->adventureCupActive)

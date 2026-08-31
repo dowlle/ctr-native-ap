@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 // Integration assertions for the custom-track loader against REAL files on disk,
 // for the Baby T Park event spike. Each decision's own heading in
 // native_custom_tracks_policy.h carries its rung, so this line cannot go stale.
@@ -63,6 +64,7 @@
 
 #define CTR_CUSTOM_TRACKS 1
 
+#include "platform/native_custom_content_verify.c"
 #include "platform/native_custom_tracks.c"
 
 // The engine's own pointer-map fixup, compiled here for the same reason the
@@ -255,6 +257,7 @@ static void write_config(const char *text)
 // what lets one process exercise every scenario without re-exec.
 static void reset_loader(void)
 {
+	CustomContentVerify_FreePair(&s_verificationPair);
 	s_customTracksLoaded = 0;
 	memset(&s_customTrackConfig, 0, sizeof(s_customTrackConfig));
 	memset(&s_customTrackVrm, 0, sizeof(s_customTrackVrm));

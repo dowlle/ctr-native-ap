@@ -23,6 +23,7 @@ import zlib
 import urllib.error
 import urllib.parse
 import urllib.request
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,7 @@ MAX_PAGE_BYTES = 16 * 1024 * 1024
 MAX_PAGES = 1000
 MAX_TRACKS = 100000
 MAX_VERSIONS = 100
+MAX_LEDGER_RECORDS = 500000
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -69,7 +71,15 @@ def load_json(path: Path, default: Any = None) -> Any:
     if path.stat().st_size > MAX_JSON_BYTES:
         raise ValueError(f"JSON exceeds {MAX_JSON_BYTES} byte limit: {path}")
     with path.open("r", encoding="utf-8") as stream:
-        return json.load(stream)
+        value = json.load(stream)
+    def check_depth(node: Any, depth: int = 0) -> None:
+        if depth > 64: raise ValueError(f"JSON nesting exceeds limit: {path}")
+        if isinstance(node, dict):
+            for child in node.values(): check_depth(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node: check_depth(child, depth + 1)
+    check_depth(value)
+    return value
 
 
 def fetch_json(url: str) -> Any:
@@ -231,28 +241,53 @@ def download_media(media: dict[str, Any], target: Path) -> None:
     if start:
         headers["Range"] = f"bytes={start}-"
     url = saphi_url(media["download_url"])
-    request = urllib.request.Request(url, headers=headers)
     global _last_download_request
-    for attempt in range(7):
+    for attempt in range(6):
         delay = 0.55 - (time.monotonic() - _last_download_request)
         if delay > 0: time.sleep(delay)
         try:
             _last_download_request = time.monotonic()
+            request = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(request, timeout=60) as response:
-                resumed = start > 0 and getattr(response, "status", None) == 206
-                if start and not resumed:
+                status = getattr(response, "status", None)
+                resumed = start > 0 and status == 206
+                if resumed:
+                    content_range = response.headers.get("Content-Range", "")
+                    match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", content_range)
+                    if not match or int(match.group(1)) != start or int(match.group(3)) != expected or int(match.group(2)) < start:
+                        raise IOError("invalid Content-Range for resumed download")
+                elif start and status == 200:
                     start = 0
+                elif start:
+                    raise IOError("range request did not return 206 or restartable 200")
                 mode = "ab" if resumed else "wb"
                 with partial.open(mode) as stream:
-                    shutil.copyfileobj(response, stream, length=128 * 1024)
+                    remaining = expected - start
+                    while remaining:
+                        chunk = response.read(min(128 * 1024, remaining))
+                        if not chunk: raise IOError("early EOF while downloading media")
+                        stream.write(chunk)
+                        remaining -= len(chunk)
+                    if response.read(1): raise IOError("download exceeded Saphi file_size")
                     stream.flush()
                     os.fsync(stream.fileno())
             break
         except urllib.error.HTTPError as exc:
-            if exc.code != 429 or attempt == 6: raise
+            if exc.code == 416 and partial.exists() and valid_cached_media(media, partial):
+                break
+            if exc.code != 429 or attempt == 5: raise
             retry_after = exc.headers.get("Retry-After")
-            try: wait = max(1.0, float(retry_after))
-            except (TypeError, ValueError): wait = min(60.0, 2.0 ** attempt)
+            try:
+                wait = float(retry_after)
+                if wait < 0: raise ValueError
+            except (TypeError, ValueError):
+                try:
+                    when = parsedate_to_datetime(retry_after)
+                    if when.tzinfo is None: when = when.replace(tzinfo=timezone.utc)
+                    wait = max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+                except (TypeError, ValueError, OverflowError):
+                    wait = min(60.0, (2.0 ** attempt) + secrets.randbelow(1000) / 1000.0)
+            wait = min(60.0, wait)
             time.sleep(wait)
     if partial.stat().st_size != expected:
         raise IOError(f"incomplete download: got {partial.stat().st_size}, expected {expected}")
@@ -260,6 +295,9 @@ def download_media(media: dict[str, Any], target: Path) -> None:
         quarantine(partial, "crc32")
         raise IOError("downloaded media CRC32 does not match Saphi")
     os.replace(partial, target)
+    directory = os.open(target.parent, os.O_RDONLY)
+    try: os.fsync(directory)
+    finally: os.close(directory)
 
 
 def cache_paths(root: Path, track_id: int, version: str, lev_id: int, vrm_id: int) -> tuple[Path, Path]:
@@ -302,11 +340,26 @@ def run_verifier(executable: Path, lev: Path, vrm: Path) -> dict[str, Any]:
 
 
 def inventory(root: Path) -> dict[str, Any]:
-    return load_json(root / "inventory.json", {"schema_version": SCHEMA_VERSION, "entries": []})
+    data = load_json(root / "inventory.json", {"schema_version": SCHEMA_VERSION, "entries": []})
+    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+        raise ValueError("inventory must contain an entries list")
+    for entry in data["entries"]:
+        if not isinstance(entry, dict): raise ValueError("inventory entry must be an object")
+        if entry.get("variant_id"):
+            expected = variant_id(entry["track_id"], entry["version"], entry["lev_media_id"], entry["vrm_media_id"])
+            if entry["variant_id"] != expected: raise ValueError("serialized variant_id mismatch")
+        if entry.get("content_id"):
+            expected = content_id(entry.get("verification", {}))
+            if entry["content_id"] != expected: raise ValueError("serialized content_id mismatch")
+    return data
 
 
 def verdicts(root: Path) -> dict[str, Any]:
-    return load_json(root / "verdicts.json", {"schema_version": SCHEMA_VERSION, "verdicts": {}})
+    data = load_json(root / "verdicts.json", {"schema_version": SCHEMA_VERSION, "verdicts": {}})
+    if not isinstance(data, dict) or not isinstance(data.get("verdicts"), dict):
+        raise ValueError("verdict ledger must contain a verdicts object")
+    if len(data["verdicts"]) > MAX_LEDGER_RECORDS: raise ValueError("verdict ledger record limit exceeded")
+    return data
 
 
 def command_sync(args: argparse.Namespace) -> None:
@@ -348,8 +401,23 @@ def command_sync(args: argparse.Namespace) -> None:
 def command_analyze(args: argparse.Namespace) -> None:
     catalogue = load_json(args.root / "catalogue.json")
     if not catalogue: raise SystemExit("run sync first")
-    existing = {entry["variant_id"]: entry for entry in inventory(args.root)["entries"] if entry.get("variant_id")}
-    entries = []
+    previous = inventory(args.root)
+    existing = {entry["variant_id"]: entry for entry in previous["entries"] if entry.get("variant_id")}
+    entries: list[dict[str, Any]] = []
+    desired_ids = {variant_id(track["id"], version["version"], version["lev"]["id"], version["vrm"]["id"])
+                   for track in catalogue["tracks"] for version in track["versions"]
+                   if version.get("consistent") and version.get("lev") and version.get("vrm")}
+    processed_ids: set[str] = set()
+    scan_id = secrets.token_hex(16)
+    catalogue_digest = hashlib.sha256(json.dumps(catalogue, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def checkpoint(last: str | None) -> None:
+        preserved = [entry for key, entry in existing.items()
+                     if key in desired_ids and key not in processed_ids]
+        atomic_json(args.root / "inventory.json", {"schema_version": SCHEMA_VERSION,
+                    "scan_id": scan_id, "catalogue_digest": catalogue_digest,
+                    "last_completed_identity": last, "entries": entries + preserved})
+
     for track in catalogue["tracks"]:
         for version in track["versions"]:
             base = {"track_id": track["id"], "name": track["name"], "author": track["author"],
@@ -359,27 +427,39 @@ def command_analyze(args: argparse.Namespace) -> None:
             if not version["consistent"]:
                 base["status"] = "inconsistent"
                 entries.append(base)
-                atomic_json(args.root / "inventory.json", {"schema_version": SCHEMA_VERSION, "entries": entries})
+                checkpoint(None)
                 continue
             lev_media, vrm_media = version["lev"], version["vrm"]
             base.update({"lev_media_id": lev_media["id"], "vrm_media_id": vrm_media["id"],
                          "lev_crc32": lev_media.get("crc32_hash"), "vrm_crc32": vrm_media.get("crc32_hash")})
             lev, vrm = cache_paths(args.root, track["id"], version["version"], lev_media["id"], vrm_media["id"])
+            vid = variant_id(track["id"], version["version"], lev_media["id"], vrm_media["id"])
+            prior = existing.get(vid)
+            metadata_unchanged = prior is not None and all(prior.get(key) == base.get(key) for key in
+                ("track_id", "name", "author", "track_type", "collection", "version",
+                 "saphi_modes", "consistent", "lev_media_id", "vrm_media_id", "lev_crc32", "vrm_crc32"))
+            if metadata_unchanged and prior.get("status") == "verified" and \
+               valid_cached_media(lev_media, lev) and valid_cached_media(vrm_media, vrm) and \
+               sha256_file(lev) == prior.get("verification", {}).get("lev_sha256") and \
+               sha256_file(vrm) == prior.get("verification", {}).get("vrm_sha256"):
+                entries.append(prior)
+                processed_ids.add(vid)
+                checkpoint(vid)
+                continue
             try:
                 if not args.offline:
                     download_media(lev_media, lev)
                     download_media(vrm_media, vrm)
                 report = run_verifier(args.verifier, lev, vrm)
-                vid = variant_id(track["id"], version["version"], lev_media["id"], vrm_media["id"])
                 base.update({"variant_id": vid, "content_id": content_id(report), "status": "verified", "lev_path": str(lev.relative_to(args.root)),
                              "vrm_path": str(vrm.relative_to(args.root)), "verification": report})
-                prior = existing.get(vid)
                 if prior and prior.get("notes") and not base["notes"]:
                     base["notes"] = prior["notes"]
             except Exception as exc:  # retained as evidence; one bad track must not erase the sweep
                 base.update({"status": "error", "notes": str(exc)})
             entries.append(base)
-            atomic_json(args.root / "inventory.json", {"schema_version": SCHEMA_VERSION, "entries": entries})
+            processed_ids.add(vid)
+            checkpoint(vid)
     print(f"analysed {len(entries)} exact versions")
 
 
@@ -518,7 +598,6 @@ def command_export(args: argparse.Namespace) -> None:
     rows = rows_for_export(args.root)
     output = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(),
               "source": TRACKS_URL, "modes": list(MODES), "entries": rows}
-    atomic_json(args.json, output)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill
@@ -550,17 +629,32 @@ def command_export(args: argparse.Namespace) -> None:
         table = Table(displayName="SaphiVerification", ref=sheet.dimensions)
         table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
         sheet.add_table(table)
-    args.xlsx.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{args.xlsx.stem}.", suffix=".xlsx", dir=args.xlsx.parent)
-    os.close(fd)
+    generation_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ-") + secrets.token_hex(8)
+    exports = args.root / "exports"
+    exports.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{generation_id}.", dir=exports))
+    report_json = staging / "report.json"
+    report_xlsx = staging / "report.xlsx"
     try:
-        workbook.save(temporary_name)
-        os.replace(temporary_name, args.xlsx)
+        atomic_json(report_json, output)
+        workbook.save(report_xlsx)
+        with report_xlsx.open("rb") as stream: os.fsync(stream.fileno())
+        manifest = {"schema_version": SCHEMA_VERSION, "generation_id": generation_id,
+                    "row_count": len(rows), "xlsx_text_escaped": escaped,
+                    "report_json_sha256": sha256_file(report_json),
+                    "report_xlsx_sha256": sha256_file(report_xlsx)}
+        atomic_json(staging / "manifest.json", manifest)
+        generation = exports / generation_id
+        os.replace(staging, generation)
+        directory = os.open(exports, os.O_RDONLY)
+        try: os.fsync(directory)
+        finally: os.close(directory)
+        atomic_json(exports / "current.json", {"schema_version": SCHEMA_VERSION,
+                                                "generation_id": generation_id})
     except BaseException:
-        try: os.unlink(temporary_name)
-        except FileNotFoundError: pass
+        if staging.exists(): shutil.rmtree(staging)
         raise
-    print(f"exported {len(rows)} rows to {args.json} and {args.xlsx}")
+    print(f"published {len(rows)} rows as export generation {generation_id}")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -603,8 +697,6 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--notes")
     collect.set_defaults(func=command_collect_session)
     export = commands.add_parser("export")
-    export.add_argument("--json", type=Path, required=True)
-    export.add_argument("--xlsx", type=Path, required=True)
     export.set_defaults(func=command_export)
     return result
 

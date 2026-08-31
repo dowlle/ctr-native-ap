@@ -11,9 +11,10 @@
 
 enum CustomContentEvidence
 {
-	CTR_CCV_NOT_TESTED = 0,
-	CTR_CCV_NO = 1,
-	CTR_CCV_YES = 2
+	CTR_CCV_INDETERMINATE = 0,
+	CTR_CCV_NOT_DETECTED = 1,
+	CTR_CCV_DETECTED = 2,
+	CTR_CCV_ERROR = 3
 };
 
 enum CustomContentMode
@@ -55,8 +56,18 @@ struct CustomContentVerification
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
 	unsigned long levBytes;
 	unsigned long vrmBytes;
+	int loadable;
 	struct CustomContentMeasurements measured;
 	struct CustomContentModeEvidence fileAnalysis[CTR_CCV_MODE_COUNT];
+};
+
+struct CustomContentOwnedPair
+{
+	unsigned char *lev;
+	unsigned char *vrm;
+	size_t levBytes;
+	size_t vrmBytes;
+	struct CustomContentVerification report;
 };
 
 // Verifies and measures an exact LEV/VRM pair. Returns one only when both files
@@ -66,6 +77,11 @@ struct CustomContentVerification
 int CustomContentVerify_Files(const char *levPath, const char *vrmPath,
 	                           struct CustomContentVerification *out,
 	                           char *error, size_t errorBytes);
+
+int CustomContentVerify_ReadPair(const char *levPath, const char *vrmPath,
+	                              struct CustomContentOwnedPair *pair,
+	                              char *error, size_t errorBytes);
+void CustomContentVerify_FreePair(struct CustomContentOwnedPair *pair);
 
 const char *CustomContentVerify_ModeSlug(int mode);
 const char *CustomContentVerify_EvidenceText(int evidence);

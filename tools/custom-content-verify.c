@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +34,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "verification failed: %s\n", error);
 		return 1;
 	}
-	printf("{\n  \"schema_version\": 1,\n  \"lev_sha256\": \"%s\",\n  \"vrm_sha256\": \"%s\",\n", v.levSha256, v.vrmSha256);
+	printf("{\n  \"schema_version\": 2,\n  \"loadable\": %s,\n  \"lev_sha256\": \"%s\",\n  \"vrm_sha256\": \"%s\",\n", v.loadable ? "true" : "false", v.levSha256, v.vrmSha256);
 	printf("  \"lev_bytes\": %lu,\n  \"vrm_bytes\": %lu,\n", v.levBytes, v.vrmBytes);
 	printf("  \"measurements\": {\"instances\": %lu, \"checkpoints\": %lu, \"spawns\": %lu, \"nav_paths\": %lu, \"ordinary_crates\": %lu, \"fruit_crates\": %lu, \"loose_wumpa\": %lu, \"relic_crates\": %lu, \"letter_c\": %lu, \"letter_t\": %lu, \"letter_r\": %lu, \"crystals\": %lu, \"start_lines\": %lu, \"finish_lines\": %lu},\n",
 	       v.measured.instances, v.measured.checkpoints, v.measured.spawns,
