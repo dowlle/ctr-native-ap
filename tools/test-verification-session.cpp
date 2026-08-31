@@ -85,6 +85,11 @@ int main()
 	       "one-use manifest is durably consumed");
 	expect(!std::filesystem::exists(manifest) && std::filesystem::exists("custom-content-lab/session/armed.json"),
 	       "consumed manifest cannot arm a second process");
+	write_json(manifest, valid);
+	expect(ap_verification_session_consume_manifest(manifest.c_str(), "custom-content-lab/session/armed.json",
+	                                               error, sizeof error) == 0 && std::filesystem::exists(manifest),
+	       "a second pending manifest cannot replace an existing armed session");
+	std::filesystem::remove(manifest);
 	const char *receipt = "custom-content-lab/session/receipt.json";
 	std::ofstream("outside-receipt") << "untouched";
 	symlink(std::filesystem::absolute("outside-receipt").c_str(),

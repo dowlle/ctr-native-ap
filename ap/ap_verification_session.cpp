@@ -264,8 +264,11 @@ extern "C" int ap_verification_session_consume_manifest(const char *pending_path
 	const char *armed_path, char *error, int error_bytes)
 {
 	if (!pending_path || !armed_path) { fail(error,error_bytes,"manifest paths are required"); return 0; }
+	if (std::filesystem::exists(armed_path)) {
+		fail(error,error_bytes,"an armed manifest already exists"); return 0;
+	}
 #if defined(_WIN32)
-	if (!MoveFileExA(pending_path, armed_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+	if (!MoveFileExA(pending_path, armed_path, MOVEFILE_WRITE_THROUGH)) {
 		fail(error,error_bytes,"could not atomically consume manifest"); return 0;
 	}
 #else
