@@ -11,7 +11,8 @@ requires:
 Crash Team Racing:
   progression_balancing: normal
   accessibility: full
-  goal: allgemcups
+  oxide_goal: none
+  gems_required_goal: 5
   oxide_final_challenge_unlock: sapphire_relics
   oxide_final_challenge_relic_count: 18
   shuffle_gems: 'false'
@@ -30,9 +31,10 @@ Crash Team Racing:
   podium_any_position_rung: 'false'
   podium_held_rungs: 'false'
   podium_held_fifth_rung: 'false'
+  box_locations: 'true'
   one_lap_cups: 'true'
   death_link: 'off'
   deathlink_amnesty: 1
-  sapphire_relic_progression: full
-  gold_relic_progression: full
-  platinum_relic_progression: full
+  sapphire_relic_count: 18
+  gold_relic_count: 18
+  platinum_relic_count: 18

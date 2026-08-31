@@ -11,7 +11,7 @@ requires:
 Crash Team Racing:
   progression_balancing: normal
   accessibility: full
-  goal: oxidefinal
+  oxide_goal: 101_percent
   oxide_final_challenge_unlock: sapphire_relics
   oxide_final_challenge_relic_count: 18
   shuffle_gems: 'true'
@@ -33,9 +33,9 @@ Crash Team Racing:
   one_lap_cups: 'false'
   death_link: 'off'
   deathlink_amnesty: 1
-  sapphire_relic_progression: full
-  gold_relic_progression: full
-  platinum_relic_progression: full
+  sapphire_relic_count: 18
+  gold_relic_count: 18
+  platinum_relic_count: 18
 
   start_inventory:
     {Key: 2, Trophy: 8, Purple CTR Token: 2}
