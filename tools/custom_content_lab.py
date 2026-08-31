@@ -728,6 +728,8 @@ def rows_for_export(root: Path) -> list[dict[str, Any]]:
 
 def command_export(args: argparse.Namespace) -> None:
     rows = rows_for_export(args.root)
+    exports = args.root / "exports"
+    exports.mkdir(parents=True, exist_ok=True)
     output = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(),
               "source": TRACKS_URL, "modes": list(MODES), "entries": rows}
     try:
@@ -737,10 +739,13 @@ def command_export(args: argparse.Namespace) -> None:
     except ImportError as exc:
         raise SystemExit("openpyxl is required for spreadsheet export") from exc
     workbook = Workbook()
+    fault_point("after_workbook_create", exports)
     sheet = workbook.active
     sheet.title = "Verification"
+    fault_point("after_sheet_setup", exports)
     headers = list(rows[0]) if rows else ["track_id"]
     sheet.append(headers)
+    fault_point("after_headers", exports)
     escaped = False
     for row in rows:
         sheet.append([row.get(header) for header in headers])
@@ -749,38 +754,47 @@ def command_export(args: argparse.Namespace) -> None:
                 cell.value = "'" + cell.value
                 cell.number_format = "@"
                 escaped = True
+    fault_point("after_rows", exports)
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1F4E78")
+    fault_point("after_styles", exports)
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     for column in sheet.columns:
         width = min(55, max(10, max(len(str(cell.value or "")) for cell in column) + 2))
         sheet.column_dimensions[column[0].column_letter].width = width
+    fault_point("after_dimensions", exports)
     if rows:
         table = Table(displayName="SaphiVerification", ref=sheet.dimensions)
         table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
         sheet.add_table(table)
+    fault_point("after_table", exports)
     generation_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ-") + secrets.token_hex(8)
-    exports = args.root / "exports"
-    exports.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{generation_id}.", dir=exports))
     report_json = staging / "report.json"
     report_xlsx = staging / "report.xlsx"
     try:
         atomic_json(report_json, output)
+        fault_point("before_xlsx_save", report_xlsx)
         workbook.save(report_xlsx)
+        fault_point("after_xlsx_save", report_xlsx)
         with report_xlsx.open("rb") as stream: os.fsync(stream.fileno())
+        fault_point("after_xlsx_sync", report_xlsx)
         manifest = {"schema_version": SCHEMA_VERSION, "generation_id": generation_id,
                     "row_count": len(rows), "xlsx_text_escaped": escaped,
                     "report_json_sha256": sha256_file(report_json),
                     "report_xlsx_sha256": sha256_file(report_xlsx)}
         atomic_json(staging / "manifest.json", manifest)
         generation = exports / generation_id
+        fault_point("before_generation_replace", generation)
         os.replace(staging, generation)
+        fault_point("after_generation_replace", generation)
         directory = os.open(exports, os.O_RDONLY)
         try: os.fsync(directory)
         finally: os.close(directory)
+        fault_point("after_exports_sync", exports)
+        fault_point("before_current_publish", exports / "current.json")
         atomic_json(exports / "current.json", {"schema_version": SCHEMA_VERSION,
                                                 "generation_id": generation_id})
     except BaseException:

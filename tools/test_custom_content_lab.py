@@ -385,6 +385,28 @@ class LabTests(unittest.TestCase):
         finally:
             lab.rows_for_export = original
 
+    def test_every_export_construction_fault_preserves_current_generation(self):
+        original = lab.rows_for_export
+        lab.rows_for_export = lambda root: [{"track_id": 1, "name": "stable", "author": "A"}]
+        stages = ("after_workbook_create", "after_sheet_setup", "after_headers", "after_rows",
+                  "after_styles", "after_dimensions", "after_table", "before_xlsx_save",
+                  "after_xlsx_save", "after_xlsx_sync", "before_generation_replace",
+                  "after_generation_replace", "after_exports_sync", "before_current_publish")
+        try:
+            lab.command_export(argparse.Namespace(root=self.root))
+            before = json.loads((self.root / "exports/current.json").read_text())
+            for wanted in stages:
+                def fail(stage, target, expected=wanted):
+                    if stage == expected: raise RuntimeError(expected)
+                lab._fault_hook = fail
+                with self.subTest(stage=wanted), self.assertRaisesRegex(RuntimeError, wanted):
+                    lab.command_export(argparse.Namespace(root=self.root))
+                self.assertEqual(json.loads((self.root / "exports/current.json").read_text()), before)
+                lab._fault_hook = None
+        finally:
+            lab._fault_hook = None
+            lab.rows_for_export = original
+
     def test_inventory_rerun_preserves_unprocessed_tail(self):
         tracks = []
         for tid in (20, 21):
