@@ -16,6 +16,7 @@ using json = nlohmann::json;
 static int checks, failures;
 static void expect(bool value, const char *name) { ++checks; if (!value) { ++failures; std::cout << "FAIL " << name << "\n"; } }
 static void write_json(const std::filesystem::path &path, const json &value) { std::ofstream(path) << value.dump(2) << '\n'; }
+static void write_text(const std::filesystem::path &path, const std::string &value) { std::ofstream(path) << value; }
 
 int main()
 {
@@ -42,16 +43,39 @@ int main()
 	expect(ap_verification_session_load(manifest.c_str(), &session, error, sizeof error) == 1, "valid fixed manifest loads");
 	expect(session.host == 6 && session.mode == 4 && session.lev_bytes == 3, "validated fields cross the C boundary");
 
-	for (const std::string mutation : {"unknown", "expired", "identity", "battle", "escape"}) {
+	for (const std::string mutation : {"unknown", "missing", "expired", "identity", "battle", "escape",
+	                                  "negative", "host-low", "host-high", "oversized", "boolean", "mode-type"}) {
 		json hostile = valid;
 		if (mutation == std::string("unknown")) hostile["surprise"] = true;
+		if (mutation == std::string("missing")) hostile.erase("host");
 		if (mutation == std::string("expired")) hostile["expires_unix"] = now - 1;
 		if (mutation == std::string("identity")) hostile["variant_id"] = std::string(64,'0');
 		if (mutation == std::string("battle")) hostile["mode"] = "crystal_challenge";
 		if (mutation == std::string("escape")) hostile["lev_path"] = std::filesystem::absolute("outside.lev").string();
+		if (mutation == std::string("negative")) hostile["track_id"] = -1;
+		if (mutation == std::string("host-low")) hostile["host"] = -1;
+		if (mutation == std::string("host-high")) hostile["host"] = 18;
+		if (mutation == std::string("oversized")) hostile["lev_bytes"] = 16 * 1024 * 1024 + 1;
+		if (mutation == std::string("boolean")) hostile["lev_media_id"] = true;
+		if (mutation == std::string("mode-type")) hostile["mode"] = 4;
 		write_json(manifest, hostile);
 		expect(ap_verification_session_load(manifest.c_str(), &session, error, sizeof error) == 0,
 		       (std::string("hostile manifest refused: ") + mutation).c_str());
+	}
+
+	{
+		std::string duplicate = valid.dump();
+		duplicate.pop_back();
+		duplicate += ",\"host\":7}";
+		write_text(manifest, duplicate);
+		expect(ap_verification_session_load(manifest.c_str(), &session, error, sizeof error) == 0,
+		       "duplicate manifest key is rejected instead of taking the last value");
+	}
+	for (int boundary_host : {0, 17}) {
+		json boundary = valid; boundary["host"] = boundary_host;
+		write_json(manifest, boundary);
+		expect(ap_verification_session_load(manifest.c_str(), &session, error, sizeof error) == 1 &&
+		       session.host == boundary_host, "valid host boundary survives exact parsing");
 	}
 
 	write_json(manifest, valid);

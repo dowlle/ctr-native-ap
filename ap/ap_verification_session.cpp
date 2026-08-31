@@ -161,7 +161,15 @@ extern "C" int ap_verification_session_load(const char *manifest_path,
 		const auto size = std::filesystem::file_size(manifest_path);
 		if (size == 0 || size > 64 * 1024) throw std::runtime_error("manifest size is outside 1..65536 bytes");
 		std::ifstream stream(manifest_path, std::ios::binary);
-		json root = json::parse(stream, nullptr, true, true);
+		std::set<std::string> keys;
+		json::parser_callback_t reject_duplicates = [&keys](int depth, json::parse_event_t event, json &parsed) {
+			if (depth == 1 && event == json::parse_event_t::key) {
+				const std::string key = parsed.get<std::string>();
+				if (!keys.insert(key).second) throw std::runtime_error("duplicate manifest field: " + key);
+			}
+			return true;
+		};
+		json root = json::parse(stream, reject_duplicates, true, true);
 		if (!root.is_object()) throw std::runtime_error("manifest must be an object");
 		const std::set<std::string> allowed = {"schema_version","nonce","variant_id","content_id","track_id","version",
 			"lev_media_id","vrm_media_id","lev_path","vrm_path","lev_sha256","vrm_sha256","lev_bytes","vrm_bytes",
