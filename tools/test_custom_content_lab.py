@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import contextlib
 import json
 import struct
 import tempfile
@@ -264,6 +265,62 @@ class LabTests(unittest.TestCase):
                 lab._fault_hook = None
         finally:
             lab._fault_hook = None
+
+    def test_identical_bytes_keep_separate_verdicts_until_explicit_copy(self):
+        entries = []
+        for tid, lev_id, vrm_id in ((30, 300, 301), (31, 310, 311)):
+            lev, vrm = lab.cache_paths(self.root, tid, "1.0.0", lev_id, vrm_id)
+            lev.parent.mkdir(parents=True, exist_ok=True); make_lev(lev)
+            vrm.write_bytes(b"\0" * 16 + b"\1\0\1\0\0\0")
+            report = {"lev_sha256": lab.sha256_file(lev), "vrm_sha256": lab.sha256_file(vrm),
+                      "lev_bytes": lev.stat().st_size, "vrm_bytes": vrm.stat().st_size,
+                      "file_analysis": {mode: {"result": "Not detected", "reason": "fixture"} for mode in lab.MODES}}
+            entries.append({"track_id": tid, "name": f"Track {tid}", "author": "A", "track_type": "race",
+                "collection": "saphi", "version": "1.0.0", "saphi_modes": [], "consistent": True,
+                "notes": "", "lev_media_id": lev_id, "vrm_media_id": vrm_id,
+                "lev_crc32": lab.file_crc32(lev), "vrm_crc32": lab.file_crc32(vrm),
+                "lev_path": str(lev.relative_to(self.root)), "vrm_path": str(vrm.relative_to(self.root)),
+                "variant_id": lab.variant_id(tid, "1.0.0", lev_id, vrm_id),
+                "content_id": lab.content_id(report), "status": "verified", "verification": report})
+        self.assertNotEqual(entries[0]["variant_id"], entries[1]["variant_id"])
+        self.assertEqual(entries[0]["content_id"], entries[1]["content_id"])
+        lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": entries})
+        source = entries[0]
+        ledger = {"schema_version": 2, "verdicts": {source["variant_id"]: {
+            "variant_id": source["variant_id"], "content_id": source["content_id"],
+            "track_id": source["track_id"], "version": source["version"],
+            "lev_media_id": source["lev_media_id"], "vrm_media_id": source["vrm_media_id"],
+            "lev_sha256": source["verification"]["lev_sha256"], "vrm_sha256": source["verification"]["vrm_sha256"],
+            "modes": {"arcade": {"result": "Yes", "nonce": "review-1"}}}}}
+        lab.atomic_json(self.root / "verdicts.json", ledger)
+        self.assertNotIn(entries[1]["variant_id"], lab.verdicts(self.root)["verdicts"])
+        lab.command_copy_verdict(argparse.Namespace(root=self.root, source_variant_id=entries[0]["variant_id"],
+            destination_variant_id=entries[1]["variant_id"], reviewer="Tester", reason="same bytes confirmed"))
+        copied = lab.verdicts(self.root)["verdicts"][entries[1]["variant_id"]]["modes"]["arcade"]
+        self.assertEqual(copied["copied_from_variant"], entries[0]["variant_id"])
+        self.assertEqual(copied["copy_reason"], "same bytes confirmed")
+
+    def test_queue_newest_semver_beats_prerelease_and_invalid_text(self):
+        entries = []
+        for index, version in enumerate(("1.0.0", "1.1.0-alpha", "1.1.0", "not-semver"), 1):
+            lev_hash, vrm_hash = f"{index:064x}", f"{index + 10:064x}"
+            report = {"lev_sha256": lev_hash, "vrm_sha256": vrm_hash,
+                      "file_analysis": {mode: {"result": "Not detected"} for mode in lab.MODES}}
+            entries.append({"track_id": 40, "name": "Versions", "author": "A", "track_type": "race",
+                "collection": "saphi", "version": version, "saphi_modes": ["arcade"], "status": "verified",
+                "lev_media_id": index * 2, "vrm_media_id": index * 2 + 1,
+                "variant_id": lab.variant_id(40, version, index * 2, index * 2 + 1),
+                "content_id": lab.content_id(report), "verification": report})
+        lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": list(reversed(entries))})
+        args = argparse.Namespace(root=self.root, author=None, track_type=None, collection=None, mode="arcade",
+            pending=True, difference=False, newest_only=True, cursor=0, page_size=200, json=True)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output): lab.command_queue(args)
+        page = json.loads(output.getvalue())
+        self.assertEqual(len(page["rows"]), 1)
+        self.assertEqual(page["rows"][0]["version"], "1.1.0")
+        args.cursor = -1
+        with self.assertRaisesRegex(SystemExit, "nonnegative"): lab.command_queue(args)
 
     def test_failed_workbook_never_publishes_half_generation(self):
         original = lab.rows_for_export
