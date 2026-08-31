@@ -5,6 +5,9 @@ import json
 import struct
 import tempfile
 import unittest
+import io
+import zlib
+from unittest import mock
 from pathlib import Path
 
 import custom_content_lab as lab
@@ -128,8 +131,43 @@ class LabTests(unittest.TestCase):
             self.assertTrue(values[0].value.startswith("'"))
             export_manifest = json.loads((generation / "manifest.json").read_text())
             self.assertTrue(export_manifest["xlsx_text_escaped"])
+            self.assertFalse(workbook._external_links)
         finally:
             lab.rows_for_export = original
+
+    def test_download_rejects_bad_cache_and_bad_range(self):
+        payload = b"trusted bytes"
+        media = {"file_size": len(payload), "crc32_hash": f"{zlib.crc32(payload) & 0xffffffff:08x}",
+                 "download_url": "/media/test"}
+        target = self.root / "media/1/lev-2.lev"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"x" * len(payload))
+
+        class Response(io.BytesIO):
+            def __init__(self, data, status=200, headers=None):
+                super().__init__(data); self.status = status; self.headers = headers or {}
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=Response(payload)):
+            lab.download_media(media, target)
+        self.assertEqual(target.read_bytes(), payload)
+        self.assertTrue(list(target.parent.glob("*.quarantine-*-integrity")))
+
+        target.unlink()
+        partial = target.with_suffix(".lev.part")
+        partial.write_bytes(payload[:3])
+        response = Response(payload[3:], 206, {"Content-Range": f"bytes 4-{len(payload)-1}/{len(payload)}"})
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(IOError, "Content-Range"):
+                lab.download_media(media, target)
+
+    def test_serialized_identity_mismatch_is_rejected(self):
+        lab.atomic_json(self.root / "inventory.json", {"schema_version": 2, "entries": [{
+            "track_id": 1, "version": "1.0.0", "lev_media_id": 2, "vrm_media_id": 3,
+            "variant_id": "0" * 64}]})
+        with self.assertRaisesRegex(ValueError, "variant_id"):
+            lab.inventory(self.root)
 
 
 if __name__ == "__main__": unittest.main()

@@ -44,6 +44,16 @@ MAX_VERSIONS = 100
 MAX_LEDGER_RECORDS = 500000
 
 
+def check_json_depth(value: Any, label: str, maximum: int = 64) -> None:
+    def visit(node: Any, depth: int) -> None:
+        if depth > maximum: raise ValueError(f"JSON nesting exceeds limit: {label}")
+        if isinstance(node, dict):
+            for child in node.values(): visit(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node: visit(child, depth + 1)
+    visit(value, 0)
+
+
 def atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -72,13 +82,7 @@ def load_json(path: Path, default: Any = None) -> Any:
         raise ValueError(f"JSON exceeds {MAX_JSON_BYTES} byte limit: {path}")
     with path.open("r", encoding="utf-8") as stream:
         value = json.load(stream)
-    def check_depth(node: Any, depth: int = 0) -> None:
-        if depth > 64: raise ValueError(f"JSON nesting exceeds limit: {path}")
-        if isinstance(node, dict):
-            for child in node.values(): check_depth(child, depth + 1)
-        elif isinstance(node, list):
-            for child in node: check_depth(child, depth + 1)
-    check_depth(value)
+    check_json_depth(value, str(path))
     return value
 
 
@@ -87,7 +91,9 @@ def fetch_json(url: str) -> Any:
     with urllib.request.urlopen(request, timeout=30) as response:
         raw = response.read(MAX_PAGE_BYTES + 1)
         if len(raw) > MAX_PAGE_BYTES: raise ValueError("Saphi response exceeds page limit")
-        return json.loads(raw)
+        value = json.loads(raw)
+        check_json_depth(value, url)
+        return value
 
 
 def positive_int(value: Any, field: str) -> int:
@@ -176,6 +182,7 @@ def catalogue_from_response(response: dict[str, Any]) -> dict[str, Any]:
         if track.get("type") not in {"race", "battle"}:
             continue
         tid = positive_int(track.get("id"), "track.id")
+        if not isinstance(track.get("is_active"), bool): raise ValueError("track.is_active must be boolean")
         if tid in seen_tracks: raise ValueError(f"duplicate track id {tid}")
         seen_tracks.add(tid)
         versions = media_versions(track)
@@ -191,7 +198,7 @@ def catalogue_from_response(response: dict[str, Any]) -> dict[str, Any]:
                        "collection_id": positive_int(track.get("collection_id"), "track.collection_id"),
                        "collection": bounded_text(track.get("collection"), "track.collection"),
                        "type_id": positive_int(track.get("type_id"), "track.type_id"),
-                       "type": track["type"], "is_active": bool(track.get("is_active")),
+                       "type": track["type"], "is_active": track.get("is_active"),
                        "versions": versions})
         if len(tracks) > MAX_TRACKS: raise ValueError("normalized track limit exceeded")
     return {"schema_version": SCHEMA_VERSION,
@@ -359,6 +366,13 @@ def verdicts(root: Path) -> dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("verdicts"), dict):
         raise ValueError("verdict ledger must contain a verdicts object")
     if len(data["verdicts"]) > MAX_LEDGER_RECORDS: raise ValueError("verdict ledger record limit exceeded")
+    for key, record in data["verdicts"].items():
+        if not isinstance(record, dict) or record.get("variant_id") != key:
+            raise ValueError("verdict ledger key does not match serialized variant_id")
+        expected = variant_id(record["track_id"], record["version"], record["lev_media_id"], record["vrm_media_id"])
+        if key != expected: raise ValueError("verdict ledger variant_id mismatch")
+        expected_content = identity_hash([record["lev_sha256"], record["vrm_sha256"]])
+        if record.get("content_id") != expected_content: raise ValueError("verdict ledger content_id mismatch")
     return data
 
 
@@ -384,6 +398,10 @@ def command_sync(args: argparse.Namespace) -> None:
                 continue
             meta = page.get("meta", {}) if isinstance(page.get("meta"), dict) else {}
             current, last = meta.get("current_page"), meta.get("last_page")
+            if current is not None or last is not None:
+                if (isinstance(current, bool) or isinstance(last, bool) or not isinstance(current, int) or
+                    not isinstance(last, int) or current < 1 or last < current):
+                    raise ValueError("inconsistent Saphi page metadata")
             if isinstance(current, int) and isinstance(last, int) and current < last:
                 parsed = urllib.parse.urlsplit(url)
                 query = urllib.parse.parse_qs(parsed.query)
@@ -464,6 +482,7 @@ def command_analyze(args: argparse.Namespace) -> None:
 
 
 def command_queue(args: argparse.Namespace) -> None:
+    if args.cursor < 0: raise SystemExit("cursor must be nonnegative")
     ledger = verdicts(args.root)["verdicts"]
     rows = []
     for entry in inventory(args.root)["entries"]:
@@ -482,13 +501,24 @@ def command_queue(args: argparse.Namespace) -> None:
         rows.append(dict(entry, pending=pending, differences=differences))
 
     def version_key(value: Any) -> tuple[Any, ...]:
-        match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:[-+]([0-9A-Za-z.-]+))?", str(value))
-        return (0, *(int(match.group(i)) for i in range(1, 4)), match.group(4) or "") if match else (1, str(value))
+        text = str(value)
+        match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?", text)
+        if not match: return (1, text.casefold(), text)
+        prerelease = match.group(4)
+        identifiers = tuple((0, int(part)) if part.isdigit() else (1, part.casefold())
+                            for part in prerelease.split(".")) if prerelease else ()
+        return (0, int(match.group(1)), int(match.group(2)), int(match.group(3)),
+                0 if prerelease else 1, identifiers)
     rows.sort(key=lambda row: (row["track_id"], version_key(row["version"]),
                                row["lev_media_id"], row["vrm_media_id"], row["variant_id"]))
     if args.newest_only:
-        newest = {}
-        for row in rows: newest[row["track_id"]] = row
+        newest: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            current = newest.get(row["track_id"])
+            candidate_key, current_key = version_key(row["version"]), version_key(current["version"]) if current else None
+            if current is None or (candidate_key[0] == 0 and current_key[0] != 0) or \
+               (candidate_key[0] == current_key[0] and candidate_key > current_key):
+                newest[row["track_id"]] = row
         rows = sorted(newest.values(), key=lambda row: (row["track_id"], row["variant_id"]))
     start = args.cursor
     page = rows[start:start + args.page_size]
@@ -600,6 +630,36 @@ def command_collect_session(args: argparse.Namespace) -> None:
     print(f"Collected Steam-attested {manifest['mode']}={args.result} for {entry['variant_id']}.")
 
 
+def command_copy_verdict(args: argparse.Namespace) -> None:
+    source = verified_entry(args.root, args.source_variant_id)
+    destination = verified_entry(args.root, args.destination_variant_id)
+    if source["variant_id"] == destination["variant_id"]: raise SystemExit("source and destination variants must differ")
+    if source["content_id"] != destination["content_id"]: raise SystemExit("variants do not share exact content bytes")
+    for entry in (source, destination):
+        report = entry["verification"]
+        for role in ("lev", "vrm"):
+            path = (args.root / entry[f"{role}_path"]).resolve()
+            if not path.is_file() or path.is_symlink() or sha256_file(path) != report[f"{role}_sha256"]:
+                raise SystemExit(f"{entry['variant_id']} {role.upper()} no longer matches inventory")
+    data = verdicts(args.root)
+    source_record = data["verdicts"].get(source["variant_id"])
+    if not source_record or not source_record.get("modes"): raise SystemExit("source variant has no verdicts to copy")
+    if destination["variant_id"] in data["verdicts"]: raise SystemExit("destination already has a verdict record")
+    copied_at = datetime.now(timezone.utc).isoformat()
+    modes = {}
+    for mode, record in source_record["modes"].items():
+        modes[mode] = dict(record, copied_from_variant=source["variant_id"], copied_by=args.reviewer,
+                           copied_at=copied_at, copy_reason=args.reason)
+    data["verdicts"][destination["variant_id"]] = {
+        "variant_id": destination["variant_id"], "content_id": destination["content_id"],
+        "track_id": destination["track_id"], "version": destination["version"],
+        "lev_media_id": destination["lev_media_id"], "vrm_media_id": destination["vrm_media_id"],
+        "lev_sha256": destination["verification"]["lev_sha256"],
+        "vrm_sha256": destination["verification"]["vrm_sha256"], "modes": modes}
+    atomic_json(args.root / "verdicts.json", data)
+    print(f"Copied {len(modes)} explicit verdict(s) from {source['variant_id']} to {destination['variant_id']}.")
+
+
 def command_abort_session(args: argparse.Namespace) -> None:
     session = args.root / "session"
     source = session / "armed.json"
@@ -622,18 +682,18 @@ def rows_for_export(root: Path) -> list[dict[str, Any]]:
                                                 "vrm_crc32", "status", "notes", "variant_id", "content_id")}
         report = entry.get("verification", {})
         row.update({"lev_sha256": report.get("lev_sha256"), "vrm_sha256": report.get("vrm_sha256"),
-                    "existing_saphi_tags": ", ".join(entry.get("saphi_modes", []))})
+                    "existing_saphi_tags": ", ".join(entry.get("saphi_modes", [])),
+                    "runtime_support": "Unsupported" if entry.get("track_type") == "battle" else "Steam review"})
         runtime = ledger.get(entry.get("variant_id", ""), {}).get("modes", {})
         differences = []
         for mode in MODES:
-            analysis = report.get("file_analysis", {}).get(mode, {}).get("result", "Not tested")
+            analysis = report.get("file_analysis", {}).get(mode, {}).get("result", "Error")
             tested = runtime.get(mode, {}).get("result", "Not tested")
             row[f"{mode} File analysis"] = analysis
             row[f"{mode} In-game test"] = tested
             tagged = mode in entry.get("saphi_modes", [])
-            if analysis == "Yes" and not tagged: differences.append(f"{mode}: file Yes, Saphi absent")
-            if analysis == "No" and tagged: differences.append(f"{mode}: file No, Saphi present")
-            if tested != "Not tested" and tested != analysis: differences.append(f"{mode}: file {analysis}, game {tested}")
+            if analysis == "Detected" and not tagged: differences.append(f"{mode}: structure detected, Saphi absent")
+            if analysis == "Not detected" and tagged: differences.append(f"{mode}: structure not detected, Saphi present")
         row["differences"] = "; ".join(differences)
         rows.append(row)
     return rows
@@ -702,6 +762,25 @@ def command_export(args: argparse.Namespace) -> None:
     print(f"published {len(rows)} rows as export generation {generation_id}")
 
 
+def command_cleanup_exports(args: argparse.Namespace) -> None:
+    exports = args.root / "exports"
+    current = load_json(exports / "current.json")
+    if not isinstance(current, dict) or not isinstance(current.get("generation_id"), str):
+        raise SystemExit("no valid current export generation")
+    generations = sorted(path for path in exports.iterdir() if path.is_dir() and not path.name.startswith("."))
+    removable = [path for path in generations if path.name != current["generation_id"]]
+    removed = 0
+    for path in removable[:-args.keep] if args.keep else removable:
+        manifest = load_json(path / "manifest.json")
+        if (not isinstance(manifest, dict) or manifest.get("generation_id") != path.name or
+            sha256_file(path / "report.json") != manifest.get("report_json_sha256") or
+            sha256_file(path / "report.xlsx") != manifest.get("report_xlsx_sha256")):
+            raise SystemExit(f"refusing to remove unverified export generation {path.name}")
+        shutil.rmtree(path)
+        removed += 1
+    print(f"removed {removed} non-current verified export generation(s)")
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     result.add_argument("--root", type=Path, default=Path("custom-content-lab"))
@@ -740,8 +819,17 @@ def parser() -> argparse.ArgumentParser:
     collect.set_defaults(func=command_collect_session)
     abort = commands.add_parser("abort-session")
     abort.set_defaults(func=command_abort_session)
+    copy = commands.add_parser("copy-verdict")
+    copy.add_argument("source_variant_id")
+    copy.add_argument("destination_variant_id")
+    copy.add_argument("--reviewer", required=True)
+    copy.add_argument("--reason", required=True)
+    copy.set_defaults(func=command_copy_verdict)
     export = commands.add_parser("export")
     export.set_defaults(func=command_export)
+    cleanup = commands.add_parser("cleanup-exports")
+    cleanup.add_argument("--keep", type=int, default=2, choices=range(0, 101))
+    cleanup.set_defaults(func=command_cleanup_exports)
     return result
 
 
