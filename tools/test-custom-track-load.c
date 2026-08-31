@@ -893,6 +893,56 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	unsigned char *served;
 	unsigned char expectedFirst;
 	char servedHash[NATIVE_SHA256_HEX_BYTES];
+	int filesystemMutation;
+
+	/* Paths are discovery inputs only. Exercise every operation named by the
+	 * repair contract against both roles after arming, then prove the served
+	 * buffers still have the hashes captured before the operation. */
+	for (filesystemMutation = 0; filesystemMutation < 5; filesystemMutation++)
+	{
+		const char *paths[2] = {"verify.lev", "verify.vrm"};
+		const int fileIndexes[2] = {TEST_BASE + 1, TEST_BASE};
+		char expectedHashes[2][NATIVE_SHA256_HEX_BYTES];
+		int role;
+
+		reset_loader();
+		make_verification_pair(paths[0], paths[1]);
+		hash_file_hex(paths[0], expectedHashes[0]);
+		hash_file_hex(paths[1], expectedHashes[1]);
+		expect_int(CustomTrack_ArmVerification(paths[0], paths[1], expectedHashes[0], expectedHashes[1],
+		                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+		                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+		           "filesystem mutation fixture arms");
+		for (role = 0; role < 2; role++)
+		{
+			char temporary[32];
+			snprintf(temporary, sizeof temporary, "%s.changed", paths[role]);
+			unlink(temporary);
+			switch (filesystemMutation)
+			{
+			case 0: write_blob(paths[role], 91 + role, role ? 22 : VERIFY_FIXTURE_BYTES); break;
+			case 1: expect_int(truncate(paths[role], 1), 0, "armed source truncates"); break;
+			case 2: expect_int(unlink(paths[role]), 0, "armed source unlinks"); break;
+			case 3: expect_int(rename(paths[role], temporary), 0, "armed source renames"); break;
+			case 4:
+				write_blob(temporary, 73 + role, role ? 22 : VERIFY_FIXTURE_BYTES);
+				expect_int(rename(temporary, paths[role]), 0, "armed source atomically replaces");
+				break;
+			}
+		}
+		memset(&ctx, 0, sizeof ctx); ctx.levelID = TEST_HOST; ctx.mode = CTR_CT_MODE_ARCADE;
+		for (role = 0; role < 2; role++)
+		{
+			expect_int(CustomTrack_GetOverrideBound(fileIndexes[role], &ctx, &token, &size, &generation), 1,
+			           "mutated source path cannot revoke immutable owned bytes");
+			served = malloc(size); if (served == NULL) exit(2);
+			expect_int(CustomTrack_ReadFileBound(token, served, size, size, generation), 1,
+			           "mutated source path cannot alter served bytes");
+			hash_bytes_hex(served, size, servedHash);
+			expect_str(servedHash, expectedHashes[role], "served bytes retain their pre-mutation digest");
+			free(served);
+		}
+	}
 
 	reset_loader();
 	make_verification_pair("verify.lev", "verify.vrm");
