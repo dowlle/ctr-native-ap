@@ -79,13 +79,28 @@ int main(void)
 			total += AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, t, r);
 	expect("second pass over the full grid is fully suppressed", total, 0);
 
-	// 5. Out-of-range shapes are never suppressed (and never corrupt state).
+	// 5. The first and last frozen custom podium slots are real diagnostic keys.
+	AP_CheckDiagOnceReset(&s);
+	expect("custom slot 1 / logical track 16 fires once",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 16, 2), 1);
+	expect("custom slot 1 repeat is suppressed",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 16, 2), 0);
+	expect("custom slot 32 / logical track 47 fires once",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 47, 2), 1);
+	expect("custom slot 32 repeat is suppressed",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 47, 2), 0);
+	// Seed one unrelated in-range cell so the corruption probe below has a
+	// known suppressed value independent of the custom-slot assertions.
+	expect("retail track state seeded before out-of-range probes",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 5, 2), 1);
+
+	// 6. Truly out-of-range shapes are never suppressed (and never corrupt state).
 	expect("track -1 always fires",
 	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, -1, 2), 1);
 	expect("track -1 fires again",
 	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, -1, 2), 1);
-	expect("track 16 always fires",
-	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 16, 2), 1);
+	expect("track 48 always fires",
+	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 48, 2), 1);
 	expect("rung 5 always fires",
 	       AP_CheckDiagOnce(&s, AP_CHECKDIAG_ABSENT, 1, 5, 5), 1);
 	expect("branch 2 always fires",

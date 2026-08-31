@@ -233,6 +233,14 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 	struct GameTracker *gGT = sdata->gGT;
 	u16 *podium = th->object;
 
+#ifdef CTR_AP
+	// The custom Trophy check is sent on the Cup-standings continue press, after
+	// the race screen has finished drawing. Present its scouted reward (plus the
+	// podium-rung ledger) on the hub podium where the player can actually see it.
+	if (sdata->ptrActiveMenu == NULL)
+		AP_CustomTrackTrophyCeremonyDraw(0x100, 0x38);
+#endif
+
 	if (podium[0] == 0)
 	{
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_RIP_Init;

@@ -698,7 +698,12 @@ void UI_CupStandings_InputAndDraw(void)
 						if (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0)
 #endif
 						{
-							UNLOCK_ADV_BIT(rewardsSet, bitIndex);
+							// A custom Trophy borrows this Cup's ceremony machinery, not
+							// its progression rewards. Do not fabricate the displaced Gem
+							// bit: AP would clear it on the next reconcile, and the player
+							// would see a Purple Gem instead of the actual scouted item.
+							if (!customTrackTrophy)
+								UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
 							if (customTrackTrophy)
 								AP_NotifyCustomTrackTrophy();
@@ -706,9 +711,13 @@ void UI_CupStandings_InputAndDraw(void)
 								AP_NotifyAdvReward(bitIndex); // AP: retail gem cup location check
 #endif
 
-							// unlock Roo, Papu, Joe, Pinstripe, FCrash
-							bitIndex = GAME_UNLOCK_BIT_BOSS_CHARACTER_FIRST + i;
-							UNLOCK_ADV_BIT(sdata->gameProgress.unlocks, bitIndex);
+							// The boss character belongs to the displaced retail Cup too.
+							// Only a real Gem Cup win may grant it.
+							if (!customTrackTrophy)
+							{
+								bitIndex = GAME_UNLOCK_BIT_BOSS_CHARACTER_FIRST + i;
+								UNLOCK_ADV_BIT(sdata->gameProgress.unlocks, bitIndex);
+							}
 
 							// Set podium reward model to Gem
 							gGT->podiumRewardID = STATIC_GEM;

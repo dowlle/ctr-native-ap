@@ -75,6 +75,13 @@ int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth);
 // AP_ApplyItems-clobbered advProgress bits. -1 during pre-race draws.
 int AP_CeremonyRelicTier(void);
 
+// A newly sent custom Trophy check crosses a level load before its podium is
+// drawn. These helpers keep that presentation latched only for that podium,
+// render the scouted AP reward text/prop, and clear it on podium completion.
+int  AP_CustomTrackTrophyCeremonyDraw(int x, int y);
+int  AP_CustomTrackTrophyCeremonyProp(struct Instance *prop);
+void AP_CustomTrackTrophyCeremonyEnd(void);
+
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
 // the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum

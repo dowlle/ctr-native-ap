@@ -19,7 +19,7 @@
 #ifndef AP_CHECKDIAG_ONCE_H
 #define AP_CHECKDIAG_ONCE_H
 
-#define AP_CHECKDIAG_TRACKS 16 // the 16 trophy tracks carrying podium rungs
+#define AP_CHECKDIAG_TRACKS 48 // 16 retail trophy tracks + 32 frozen custom slots
 #define AP_CHECKDIAG_RUNGS  5  // AP_RUNG_HELD_1ST .. AP_RUNG_FINISH_ANY
 
 // Diagnostic branches inside AP_EmitRung.

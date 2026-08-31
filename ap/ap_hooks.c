@@ -10,6 +10,7 @@
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
 #include <platform/native_assets.h>
 #include "ap_custom_track_download.h"
+#include "ap_custom_trophy_ceremony_logic.h"
 #endif
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
@@ -42,6 +43,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "ap_useful.h"     // H-dossier useful grants
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
+#include "ap_held_race_rearm.h" // pure per-attempt boundary latch for held rungs
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
@@ -1638,6 +1640,9 @@ typedef struct
 
 static AP_CeremonyEntry ap_ceremony_ledger[AP_CEREMONY_MAX];
 static int ap_ceremony_count = 0;
+#ifdef CTR_CUSTOM_TRACKS
+static ap_custom_trophy_ceremony_state ap_custom_trophy_ceremony;
+#endif
 
 // Cleared when a new race starts (the finish-flag falling edge in the race
 // listener), so each ceremony shows only its own race's just-earned checks.
@@ -1804,6 +1809,10 @@ static void AP_RelicTargetTick(struct GameTracker *gGT)
 // rung -- so a lone trophy/token/crystal reads as just "<ITEM> AWARDED".
 static const char *AP_CeremonyPrefix(int bit, int rung)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	if (bit == AP_CUSTOM_TROPHY_PSEUDO_BIT)
+		return "CUSTOM TROPHY";
+#endif
 	if (rung == 0)
 		return "HELD 1ST";
 	if (rung == 1)
@@ -1988,6 +1997,38 @@ int AP_CeremonyDrawTimed(int x, int y, int primaryBit, int includeLedger,
 {
 	return AP_CeremonyDrawInternal(x, y, primaryBit, includeLedger,
 	                              elapsedFrames, visibleFrames);
+}
+
+int AP_CustomTrackTrophyCeremonyDraw(int x, int y)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (!AP_CustomTrophyCeremonyActive(&ap_custom_trophy_ceremony))
+		return 0;
+	return AP_CeremonyDraw(x, y, AP_CUSTOM_TROPHY_PSEUDO_BIT, 1);
+#else
+	(void)x;
+	(void)y;
+	return 0;
+#endif
+}
+
+int AP_CustomTrackTrophyCeremonyProp(struct Instance *prop)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (!AP_CustomTrophyCeremonyActive(&ap_custom_trophy_ceremony))
+		return 0;
+	return AP_CeremonyRewardProp(prop, AP_CUSTOM_TROPHY_PSEUDO_BIT);
+#else
+	(void)prop;
+	return 0;
+#endif
+}
+
+void AP_CustomTrackTrophyCeremonyEnd(void)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	AP_CustomTrophyCeremonyEnd(&ap_custom_trophy_ceremony);
+#endif
 }
 
 int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth)
@@ -4140,6 +4181,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// (possibly) new seed config, so each absent-rung / mismatch shape may log
 		// one fresh line. See ap_checkdiag_once.h for the spam this prevents.
 		AP_CheckDiagOnceReset(&ap_checkdiag_once);
+#ifdef CTR_CUSTOM_TRACKS
+		AP_CustomTrophyCeremonyReset(&ap_custom_trophy_ceremony);
+#endif
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 #ifdef CTR_CUSTOM_TRACKS
 		// slot_data was parsed by the callback inside ap_net_poll above. Refuse
@@ -4907,13 +4951,15 @@ int AP_CustomTrackTrophyChecked(void)
 void AP_NotifyCustomTrackTrophy(void)
 {
 	int podiumTrack;
+	int sent;
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok)
 		return;
-	AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
-	                  1, -1, -1, 1,
-	                  "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
-	                  ctr_cfg.custom_track.slot,
-	                  ctr_cfg.custom_track.trophy_location);
+	sent = AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
+	                         1, AP_CUSTOM_TROPHY_PSEUDO_BIT, -1, 1,
+	                         "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
+	                         ctr_cfg.custom_track.slot,
+	                         ctr_cfg.custom_track.trophy_location);
+	AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
 	AP_SendPodiumChecks(podiumTrack, 1);
 }
@@ -5598,10 +5644,18 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	{
 		int onTrack = LOAD_IsOpen_RacingOrBattle();
 		int podiumTrack = AP_RetailPodiumTrack(gGT);
-		if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
-			ap_held_countdown_seen = 0;
-		else if (gGT->trafficLightsTimer >= 1)
-			ap_held_countdown_seen = 1;
+		if (AP_HeldRaceRearmStep(
+		        onTrack, sdata->Loading.stage == LOAD_IDLE,
+		        (gGT->gameMode1 & END_OF_RACE) != 0,
+		        gGT->trafficLightsTimer, &ap_held_countdown_seen))
+		{
+			// A newly observed countdown is the authoritative start of an
+			// attempt. Restart, Exit to Map, and track/cup-leg changes can tear
+			// down an attempt without an ACTION_RACE_FINISHED falling edge.
+			ap_held_best_pos = 99;
+			ap_held_cand_pos = -1;
+			ap_held_cand_ms  = 0;
+		}
 
 		int heldWindow =
 		    (gGT->gameMode1 &
