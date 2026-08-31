@@ -946,6 +946,16 @@ static void test_verification_authority_is_exact_and_immutable(void)
 
 	reset_loader();
 	make_verification_pair("verify.lev", "verify.vrm");
+	write_blob("verify.lev", 99, VERIFY_FIXTURE_BYTES);
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 0,
+	           "a hash-matching but structurally invalid pair cannot arm loader authority");
+	expect_fully_off("rejected verification pair reaches no loader override");
+
+	reset_loader();
+	make_verification_pair("verify.lev", "verify.vrm");
 	hash_file_hex("verify.lev", levHash);
 	hash_file_hex("verify.vrm", vrmHash);
 	expectedFirst = 0;
