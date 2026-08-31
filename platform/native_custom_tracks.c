@@ -472,6 +472,9 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 	char verifyError[256];
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+	/* Every arm attempt is an authority transition. A malformed replacement
+	 * must never leave the previous seed or verification authority live. */
+	CustomTrack_Disarm("starting verification arm");
 	if (levPath == NULL || vrmPath == NULL || levSha256 == NULL || vrmSha256 == NULL ||
 	    !CustomTrackPolicy_LevelIDIsMappable(hostLevelID) ||
 	    intendedMode < CTR_CT_MODE_TIME_TRIAL || intendedMode > CTR_CT_MODE_ARCADE ||
@@ -483,9 +486,6 @@ int CustomTrack_ArmVerification(const char *levPath, const char *vrmPath,
 		return 0;
 	}
 
-	/* Review mode owns no seed descriptor. Clear its cache so a later AP frame
-	 * cannot mistake this developer-only selection for seed authority. */
-	CustomTrack_Disarm("starting verification arm");
 	if (!CustomContentVerify_ReadPair(levPath, vrmPath, &pair, verifyError, sizeof verifyError))
 	{
 		CustomTrack_Log("[VerificationLab] DISARMED: pair is not load-safe: %s\n", verifyError);

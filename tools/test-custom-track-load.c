@@ -894,6 +894,7 @@ static void test_verification_authority_is_exact_and_immutable(void)
 	unsigned char expectedFirst;
 	char servedHash[NATIVE_SHA256_HEX_BYTES];
 	int filesystemMutation;
+	struct CustomTrackSeedDescriptor transitionSeed;
 
 	/* Paths are discovery inputs only. Exercise every operation named by the
 	 * repair contract against both roles after arming, then prove the served
@@ -943,6 +944,29 @@ static void test_verification_authority_is_exact_and_immutable(void)
 			free(served);
 		}
 	}
+
+	reset_loader();
+	make_verification_pair("verify.lev", "verify.vrm");
+	hash_file_hex("verify.lev", levHash); hash_file_hex("verify.vrm", vrmHash);
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 1,
+	           "verification arms before malformed replacement");
+	expect_int(CustomTrack_ArmVerification(NULL, "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, TEST_HOST,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 0,
+	           "malformed verification replacement is refused");
+	expect_fully_off("failed verification replacement clears prior verification authority");
+
+	transitionSeed = good_descriptor();
+	arm_with(transitionSeed);
+	expect_int(CustomTrack_Config()->authority, CTR_CT_AUTHORITY_SEED,
+	           "seed arms before malformed verification transition");
+	expect_int(CustomTrack_ArmVerification("verify.lev", "verify.vrm", levHash, vrmHash,
+	                                      VERIFY_FIXTURE_BYTES, 22, 99,
+	                                      CTR_CT_MODE_ARCADE, (long long)time(NULL) + 3600, "VERIFY"), 0,
+	           "invalid-host verification transition is refused");
+	expect_fully_off("failed verification transition clears prior seed authority");
 
 	reset_loader();
 	make_verification_pair("verify.lev", "verify.vrm");
