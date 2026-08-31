@@ -400,6 +400,7 @@ def command_sync(args: argparse.Namespace) -> None:
     else:
         response = None
         combined: list[Any] = []
+        combined_by_id: dict[int, Any] = {}
         url = TRACKS_URL
         seen_urls: set[str] = set()
         for _ in range(MAX_PAGES):
@@ -408,7 +409,15 @@ def command_sync(args: argparse.Namespace) -> None:
             page = fetch_json(url)
             if not isinstance(page, dict) or not isinstance(page.get("data"), list):
                 raise ValueError("invalid Saphi page")
-            combined.extend(page["data"])
+            for track in page["data"]:
+                if not isinstance(track, dict): raise ValueError("Saphi track row must be an object")
+                track_id = positive_int(track.get("id"), "track.id")
+                previous = combined_by_id.get(track_id)
+                if previous is not None:
+                    if previous != track: raise ValueError(f"conflicting duplicate Saphi track id {track_id}")
+                    continue
+                combined_by_id[track_id] = track
+                combined.append(track)
             if len(combined) > MAX_TRACKS: raise ValueError("Saphi total track limit exceeded")
             next_url = page.get("links", {}).get("next") if isinstance(page.get("links"), dict) else None
             if next_url:

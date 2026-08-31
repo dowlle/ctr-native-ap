@@ -328,7 +328,7 @@ class LabTests(unittest.TestCase):
                     "collection_id": 1, "collection": "saphi", "type_id": 1, "type": "race",
                     "is_active": True, "downloads": [media(tid * 2, "lev"), media(tid * 2 + 1, "vrm")]}
         pages = [{"data": [track(i) for i in range(1, 101)], "meta": {"current_page": 1, "last_page": 2}},
-                 {"data": [track(101)], "meta": {"current_page": 2, "last_page": 2}}]
+                 {"data": [track(100), track(101)], "meta": {"current_page": 2, "last_page": 2}}]
         with mock.patch.object(lab, "fetch_json", side_effect=pages):
             lab.command_sync(argparse.Namespace(root=self.root, catalogue_file=None))
         self.assertEqual(len(json.loads((self.root / "catalogue.json").read_text())["tracks"]), 101)
@@ -339,6 +339,22 @@ class LabTests(unittest.TestCase):
         with mock.patch.object(lab, "fetch_json", side_effect=looping):
             with self.assertRaisesRegex(ValueError, "loop"):
                 lab.command_sync(argparse.Namespace(root=self.root, catalogue_file=None))
+
+        conflicting = track(100); conflicting["name"] = "conflict"
+        pages = [{"data": [track(100)], "meta": {"current_page": 1, "last_page": 2}},
+                 {"data": [conflicting], "meta": {"current_page": 2, "last_page": 2}}]
+        with mock.patch.object(lab, "fetch_json", side_effect=pages):
+            with self.assertRaisesRegex(ValueError, "conflicting duplicate"):
+                lab.command_sync(argparse.Namespace(root=self.root, catalogue_file=None))
+
+    def test_fetch_json_rejects_oversized_page_body(self):
+        class OversizedResponse(io.BytesIO):
+            def __init__(self): super().__init__(b"x" * (lab.MAX_PAGE_BYTES + 1))
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+        with mock.patch.object(lab.urllib.request, "urlopen", return_value=OversizedResponse()):
+            with self.assertRaisesRegex(ValueError, "page limit"):
+                lab.fetch_json(lab.TRACKS_URL)
 
     def test_atomic_json_faults_leave_one_complete_document(self):
         path = self.root / "state.json"
