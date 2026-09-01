@@ -58,7 +58,8 @@ enum AP_WumpaRefusal
 	AP_WUMPA_REFUSE_NO_CUSTOM_SLOT,// no destination slot for the serving cup
 	AP_WUMPA_REFUSE_CUSTOM_PACKAGE,// slot names a different package than the seed
 	AP_WUMPA_REFUSE_NOT_COLLECTIBLE,// the measured capability says no route to 10
-	AP_WUMPA_REFUSE_CAPABILITY_DISAGREE // wire and descriptor disagree
+	AP_WUMPA_REFUSE_CAPABILITY_DISAGREE, // wire and descriptor disagree
+	AP_WUMPA_REFUSE_CUSTOM_FAULTED // serving package faulted during this load
 };
 
 // Everything the decision reads, gathered by the caller. Kept as one struct so
@@ -74,6 +75,7 @@ struct AP_WumpaDispatchFacts
 
 	// ── custom ──
 	int servingCustom;   // CustomTrack_ServingLoad said the custom bytes are live
+	int customFaulted;   // serving package was disarmed by a sticky serve fault
 	int servingCupLevelID; // the Gem Cup LevelID that load is running under
 	// The seed's own custom_tracks descriptor, for the cross-check. `ok` is
 	// ctr_cfg.custom_tracks_ok: 0 means there is no usable descriptor at all.
@@ -129,6 +131,12 @@ static inline long AP_WumpaResolveCode(const struct AP_WumpaDispatchFacts *f,
 	{
 		if (outReason != 0)
 			*outReason = AP_WUMPA_REFUSE_MODE_OFF;
+		return -1;
+	}
+	if (f->customFaulted)
+	{
+		if (outReason != 0)
+			*outReason = AP_WUMPA_REFUSE_CUSTOM_FAULTED;
 		return -1;
 	}
 
@@ -210,6 +218,7 @@ static inline const char *AP_WumpaRefusalText(int reason)
 	case AP_WUMPA_REFUSE_CUSTOM_PACKAGE: return "custom destination names a different package";
 	case AP_WUMPA_REFUSE_NOT_COLLECTIBLE: return "this package measured no route to 10 fruit";
 	case AP_WUMPA_REFUSE_CAPABILITY_DISAGREE: return "wire and descriptor disagree on wumpa_collectible";
+	case AP_WUMPA_REFUSE_CUSTOM_FAULTED: return "custom package faulted during this load";
 	default: return "unknown reason";
 	}
 }

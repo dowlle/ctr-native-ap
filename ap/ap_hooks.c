@@ -5096,6 +5096,7 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	// applies just as directly to a location code.
 	facts->servingCustom = CustomTrack_ServingLoad(
 	    level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+	facts->customFaulted = CustomTrack_ServeFaultReason() != NULL;
 	if (facts->servingCustom)
 		facts->servingCupLevelID = 100 + gGT->cup.cupID;
 #endif
