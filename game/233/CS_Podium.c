@@ -8,6 +8,10 @@ void CS_DestroyPodium_StartDriving(void)
 	struct GameTracker *gGT = sdata->gGT;
 	struct Thread *t = gGT->threadBuckets[OTHER].thread;
 
+#ifdef CTR_AP
+	AP_CustomTrackTrophyCeremonyEnd();
+#endif
+
 	// enable HUD
 	gGT->hudFlags |= 1;
 
@@ -429,6 +433,13 @@ void CS_Podium_Prize_Init(u32 prizeModel, const char *prizeName, s16 *posOnScree
 	inst->scale.z = 0x2000;
 	inst->flags |= HIDE_MODEL;
 
+#ifdef CTR_AP
+	// A custom Trophy reuses the Gem podium as a transport, but the prop itself
+	// must advertise the item actually placed at the custom Trophy location.
+	if (AP_CustomTrackTrophyCeremonyProp(inst))
+		prizeModel = inst->model->id;
+#endif
+
 	prize = inst->thread->object;
 	inst->thread->funcThDestroy = CS_Podium_Prize_ThDestroy;
 
@@ -456,6 +467,12 @@ void CS_Podium_Prize_Init(u32 prizeModel, const char *prizeName, s16 *posOnScree
 	case STATIC_BIG1:
 		inst->flags |= HIDE_MODEL;
 		goto center_target;
+
+#ifdef CTR_AP
+	case STATIC_AP:
+		// Model, tint and transparency were resolved from the custom Trophy scout.
+		goto center_target;
+#endif
 
 	case STATIC_GEM:
 	{

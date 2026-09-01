@@ -8,7 +8,22 @@
 #include <psx/gtereg.h>
 #include <psx/libgte.h>
 
+#if defined(CTR_AP)
+extern int AP_TrapMirrorCullFlip(void);
+#endif
+
 GTERegisters gteRegs;
+
+#if defined(CTR_AP)
+static int NativeGte_RotMatrixReversesWinding(void)
+{
+	s64 det =
+		(s64)C2_R11 * ((s64)C2_R22 * C2_R33 - (s64)C2_R23 * C2_R32) -
+		(s64)C2_R12 * ((s64)C2_R21 * C2_R33 - (s64)C2_R23 * C2_R31) +
+		(s64)C2_R13 * ((s64)C2_R21 * C2_R32 - (s64)C2_R22 * C2_R31);
+	return det < 0;
+}
+#endif
 
 #define GTE_SF(op)    ((op >> 19) & 1)
 #define GTE_MX(op)    ((op >> 17) & 3)
@@ -348,6 +363,10 @@ int GTE_operator(int op)
 
 	case 0x06:
 		C2_MAC0 = (int)(F((s64)(C2_SX0 * C2_SY1) + (C2_SX1 * C2_SY2) + (C2_SX2 * C2_SY0) - (C2_SX0 * C2_SY2) - (C2_SX1 * C2_SY0) - (C2_SX2 * C2_SY1)));
+#if defined(CTR_AP)
+		if (AP_TrapMirrorCullFlip() && NativeGte_RotMatrixReversesWinding())
+			C2_MAC0 = -C2_MAC0;
+#endif
 		C2_FLAG = 0;
 		return 1;
 

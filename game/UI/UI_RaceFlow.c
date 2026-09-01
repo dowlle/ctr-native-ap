@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005572c-0x80055840.
 void UI_RaceEnd_GetDriverClock(struct Driver *driver)
 {
@@ -75,6 +79,13 @@ void UI_RaceStart_IntroText1P(void)
 	RECT rect;
 	int colors[2];
 
+#ifdef CTR_CUSTOM_TRACKS
+	// What a displaced cup is called, or NULL for the retail name. Set only on
+	// the adventure-cup branch below, so the arcade/VS branch that shares the
+	// draw site cannot pick it up.
+	const char *ctCupName = NULL;
+#endif
+
 	gGT = sdata->gGT;
 
 	// by default, do not transition
@@ -147,6 +158,14 @@ void UI_RaceStart_IntroText1P(void)
 				// Get Cup ID
 				iVar2 = gGT->cup.cupID;
 				txtArray = &data.advCupStringIndex[0];
+
+#ifdef CTR_CUSTOM_TRACKS
+				// A displaced cup is one race on someone else's track, so the
+				// retail cup name over the start line names content the player is
+				// not about to race. Same redirect predicate as the leg counter
+				// below, so the banner's two halves cannot disagree.
+				ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);
+#endif
 			}
 
 			// Get the name of the cup
@@ -207,19 +226,38 @@ LAB_80055930:
 			// Name of Cup
 
 			// uVar9 * 4
-			DecalFont_DrawLine(sdata->lngStrings[textID],
+			DecalFont_DrawLine(
+#ifdef CTR_CUSTOM_TRACKS
+			    ctCupName != NULL ? (char *)ctCupName : sdata->lngStrings[textID],
+#else
+			    sdata->lngStrings[textID],
+#endif
 
 			                   gGT->pushBuffer[0].rect.x + ((gGT->pushBuffer[0].rect.w << 0x10) >> 0x11),
 
 			                   ((gGT->pushBuffer[0].rect.y - (transition + -7)) + -6), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 			// Track 1/4, 2/4, 3/4, 4/4 in cup
+#ifdef CTR_CUSTOM_TRACKS
+			// A redirected event cup has ONE leg, not four, so the retail "/4" would
+			// promise legs the game will never load. Same predicate as the completion
+			// fork, so the counter cannot disagree with it.
+			sprintf(trackText, "%s %ld/%d",
+
+			        sdata->lngStrings[LNG_TRACK],
+
+			        // Track Index (0, 1, 2, 3) + 1
+			        CTR_PRINTF_PSX_LONG((gGT->cup.trackIndex) + 1),
+
+			        CustomTrack_CupLegCount(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0));
+#else
 			sprintf(trackText, "%s %ld/4",
 
 			        sdata->lngStrings[LNG_TRACK],
 
 			        // Track Index (0, 1, 2, 3) + 1
 			        CTR_PRINTF_PSX_LONG((gGT->cup.trackIndex) + 1));
+#endif
 
 			// string of top title bar
 			pcVar6 = trackText;
@@ -453,6 +491,17 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 
 		if ((gGT->gameMode1 & ADVENTURE_CUP) != 0)
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			// Undo the event destination's lap override on the abandon path too.
+			// The cup-end restore in UI_CupStandings.c only runs when the cup is
+			// played out; a player who quits the 7-lap race would otherwise carry 7
+			// laps into the next adventure race.
+			if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+			{
+				gGT->numLaps = 3;
+			}
+#endif
+
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
 			s16 cupReturn = GEM_STONE_VALLEY;
 #ifdef CTR_AP

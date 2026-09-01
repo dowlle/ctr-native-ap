@@ -3,8 +3,8 @@
 
 // The Warp-Pad State Model v2 decision, deliberately freestanding.
 //
-// AP_PadState (ap_hooks.c) gathers six facts about a pad from the seed config,
-// the location table and the box map; this header turns those facts into
+// AP_PadState (ap_hooks.c) gathers lifecycle facts about a pad from the seed
+// config, location table and runtime maps; this header turns those facts into
 // the state. Splitting the gather from the decision is what lets
 // tools/test-box-map.c pin the whole state table out of engine -- including the
 // §6 box cell, which is the one that decides whether a pad is enterable while
@@ -25,7 +25,7 @@
 //   4 Tier-2 open race dest, stage-2 met, checks remain                PERIWINKLE
 //   5 Done        nothing left behind the pad; HARD-LOCKED, pure UX    GRAY
 //
-// Arguments (all booleans except uncCount/boxesStanding, which are counts):
+// Arguments (all booleans except the final two counts):
 //   destIsRace     the destination is one of the 16 shuffleable race tracks,
 //                  the only category carrying the full two-stage lifecycle
 //   stage1Met      the PHYSICAL pad's item requirement is satisfied
@@ -35,17 +35,19 @@
 //                  (a pad with no stage-2 requirement reports met)
 //   uncCount       still-unchecked reward locations behind the destination
 //                  (tier bits + podium rungs; cup pads aggregate their legs)
-//   boxesStanding  unbroken AP item boxes behind the destination (same
-//                  aggregation), which carry no AdvProgress bit and so cannot
-//                  ride in uncCount
+//   reRaceChecksStanding
+//                  checks that require keeping a plain race route open before
+//                  stage 2: unbroken AP boxes plus an unchecked per-track Wumpa
+//                  check. They carry no AdvProgress bit and cannot identify the
+//                  required route through uncCount alone.
 static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int racerMet,
                                     int trophyChecked, int stage2Met,
-                                    int uncCount, int boxesStanding)
+                                    int uncCount, int reRaceChecksStanding)
 {
 	// Done is terminal: every location behind the pad is settled. Hard-locking
 	// it can never gate progression, which is only true while "nothing left"
-	// also counts the boxes.
-	if (uncCount == 0 && boxesStanding == 0)
+	// also counts checks without an AdvProgress bit, including boxes and Wumpa.
+	if (uncCount == 0 && reRaceChecksStanding == 0)
 		return 5;
 
 	if (!stage1Met || !racerMet)
@@ -61,14 +63,12 @@ static inline int AP_PadStateDecide(int destIsRace, int stage1Met, int racerMet,
 
 	if (!stage2Met)
 	{
-		// §6: never Re-lock a pad with boxes still standing behind it.
-		// Re-locked means "come back after stage 2", and for a box that is
-		// simply wrong -- the box is breakable on any adventure race of this
-		// track right now, so the pad stays Raceable and enterable until they
-		// are gone. Issue #232 is what happens when a surface ignores this:
-		// the map painted the pad green off this branch while the entry gate
-		// refused, stranding another player's items behind the boxes.
-		if (boxesStanding > 0)
+		// Never Re-lock while a check still needs the phase-1 plain race.
+		// AP boxes and per-track Wumpa both fire there before stage 2, so the
+		// pad stays Raceable until they are settled. Issue #232 demonstrated
+		// the failure mode: a green state without a matching entry route strands
+		// locations behind the pad.
+		if (reRaceChecksStanding > 0)
 			return 2;
 		return 3;
 	}
@@ -84,6 +84,41 @@ enum AP_PadTier2Route
 	AP_PAD_TIER2_BOX_RERACE,
 	AP_PAD_TIER2_DONE
 };
+
+// The CTR Challenge side remains useful while its Token, any Lettersanity
+// letter, or the track-owned Wumpa check is unchecked. Kept freestanding so the
+// lifecycle harness pins the Wumpa-only case that originally stranded the check.
+static inline int AP_PadTokenSideLeft(int tokenLeft, int lettersLeft, int wumpaLeft)
+{
+	return tokenLeft || lettersLeft || wumpaLeft;
+}
+
+// Count unchecked track-owned Wumpa locations across a Cup's four legs.
+// `trackLeft` is parallel to `tracks`; repeated track ids are alternative
+// occurrences of one location and therefore count once. The mask is sufficient
+// for the current 18 retail destinations and deliberately rejects ids >= 32.
+static inline int AP_PadCupWumpaCount(const int tracks[4], const int trackLeft[4],
+                                     int trackCount)
+{
+	unsigned int seen = 0;
+	int leg;
+	int count = 0;
+
+	for (leg = 0; leg < 4; leg++)
+	{
+		int track = tracks[leg];
+		unsigned int bit;
+		if (track < 0 || track >= trackCount || track >= 32)
+			continue;
+		bit = 1u << track;
+		if (seen & bit)
+			continue;
+		seen |= bit;
+		if (trackLeft[leg])
+			count++;
+	}
+	return count;
+}
 
 // Once stage 2 is open, choose only an entry path that can still produce a
 // check. Boxes are not represented by the token/relic bits, so the all-tier-
@@ -113,7 +148,7 @@ static inline int AP_PadTier2RouteDecide(int tokenLeft, int relicLeft, int boxes
 // state model.
 enum AP_PadRoute
 {
-	AP_PAD_ROUTE_S2LOCKED_BOX_RERACE = 0, // stage 2 locked, boxes stand -> plain re-race
+	AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE = 0, // stage 2 locked, box/Wumpa -> plain re-race
 	AP_PAD_ROUTE_S2LOCKED_INERT      = 1, // stage 2 locked, nothing re-raceable -> inert
 	AP_PAD_ROUTE_TIER2_BASE          = 16 // + enum AP_PadTier2Route
 };

@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h> // the load's recording identity
+#endif
+
 enum
 {
 	BOTS_ADV_MAX_LOSS_DIFFICULTY_INDEX = 10,
@@ -314,6 +318,42 @@ void BOTS_Adv_AdjustDifficulty(void)
 		sdata->const_0x30215400 = 0x30215400;
 		sdata->const_0x493583fe = 0x493583fe;
 	}
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// Which track's recordings may replay on this load. Settled BEFORE the
+	// BOTS_InitNavPath loop below, because AP_NavRec_AfterBotsInit is what opens
+	// a recording and it runs a few lines further down; by then the answer has
+	// to already be standing.
+	//
+	// Every arm runs unconditionally, so no load can inherit the previous
+	// load's answer: a cup exit, a race pad to the host slot in an armed session
+	// and an ordinary retail race all come through here and all settle it.
+	//
+	// A load that SERVES custom bytes but yields no identity (the config-only
+	// path with a missing or malformed UUID) must BLOCK rather than clear:
+	// cleared, the borrowed host LevelID would match retail recordings onto
+	// custom geometry, and laps recorded here would be stamped as retail lines
+	// of the host slot. The same ServingLoad predicate that decides the bytes
+	// decides this, so geometry and recording policy cannot disagree.
+	//
+	// There is deliberately no CTR_CUSTOM_TRACKS-off arm. Nothing else in the
+	// tree calls AP_NavRec_SetActiveCustomTrack, so a build without the loader
+	// leaves the navrec identity statics at their zero-initialised value, which
+	// IS AP_NAVREC_IDENTITY_RETAIL. Clearing it there would be a no-op that cost
+	// this file its guard-off object identity for nothing.
+	{
+		unsigned char ctNavUuid[CTR_CT_NAV_UUID_BYTES];
+		unsigned int  ctNavRevision;
+
+		if (CustomTrack_NavIdentityForLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID, ctNavUuid,
+		                                   &ctNavRevision))
+			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
+		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+			AP_NavRec_BlockRecordedLanes();
+		else
+			AP_NavRec_ClearActiveCustomTrack();
+	}
+#endif
 
 	for (s16 i = 0; i < BOTS_NAV_PATH_COUNT; i++)
 	{

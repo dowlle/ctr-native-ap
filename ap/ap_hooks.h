@@ -12,6 +12,11 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_track_manager.h>
+#include "ap_custom_track_download.h"
+#include "ap_custom_pad_logic.h"
+#endif
 
 struct GameTracker;
 struct Instance;
@@ -23,6 +28,11 @@ void AP_OnFrame(struct GameTracker *gGT);
 // instant the player earns a checkable adventure reward. rewardBit is the
 // AdvProgress bit index (= word*32 + bit); resolved to an AP location code.
 void AP_NotifyAdvReward(int rewardBit);
+
+// Generic custom-slot Trophy identity. A displaced cup's retail Gem bit remains
+// presentation state only; the AP check is the custom Trophy code from slot data.
+int AP_CustomTrackTrophyChecked(void);
+void AP_NotifyCustomTrackTrophy(void);
 
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
@@ -64,6 +74,13 @@ int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth);
 // relic colour (game/223.c, game/UI/UI_Clock.c), which vanilla derives from the
 // AP_ApplyItems-clobbered advProgress bits. -1 during pre-race draws.
 int AP_CeremonyRelicTier(void);
+
+// A newly sent custom Trophy check crosses a level load before its podium is
+// drawn. These helpers keep that presentation latched only for that podium,
+// render the scouted AP reward text/prop, and clear it on podium completion.
+int  AP_CustomTrackTrophyCeremonyDraw(int x, int y);
+int  AP_CustomTrackTrophyCeremonyProp(struct Instance *prop);
+void AP_CustomTrackTrophyCeremonyEnd(void);
 
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
@@ -201,6 +218,20 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 void AP_VerifyOnFrame(void);
 void AP_DrawVerifyWarning(void);
 
+#ifdef CTR_CUSTOM_TRACKS
+// Alpha6 manager-light state shared by OPTIONS > Custom Content, connect-time
+// seed preflight, and the Gem Cup entry gate.
+const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
+int AP_CustomContentSeedSelected(void);
+int AP_CustomContentRequired(void);
+void AP_CustomContentRescan(void);
+void AP_CustomContentVerify(void);
+int AP_CustomContentDownloadStart(void);
+int AP_CustomContentDownloadStatus(char *detail, int detailBytes);
+int AP_CustomContentGateEventEntry(int forceVerify);
+void AP_DrawCustomContentWarning(void);
+#endif
+
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
@@ -231,7 +262,9 @@ int AP_MapFlashOn(void);
 void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 
 // One-line connection status for the menu's status row ("Not connected" /
-// "Connecting..." / "Connected" / "Error: <reason>"). Points at a static buffer.
+// "Connecting..." / "Connected" / "Error: <reason>" / "Auto-retry stopped,
+// press Connect" when the pre-connect attempt budget is exhausted). Points at a
+// static buffer.
 const char *AP_Net_StatusLine(void);
 
 // Graceful client teardown before process exit (main-menu QUIT row, #211): the
@@ -484,17 +517,22 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
 // AP_PODIUM_PSEUDO_BASE + track*CTR_CFG_PODIUM_RUNG_COUNT + rung (schema >= 6:
 // 0 held_1st / 1 held_3rd / 2 held_5th / 3 finish_podium / 4 finish_any), safely
-// above the 192-bit AdvProgress space (max = 0x100 + 15*5 + 4 = 335). AP_Lookup
-// LocationCode translates them to the per-seed rung location codes, so every
-// downstream bit-keyed helper (reward model, tint, checked-state, scouts -- rungs
-// are already scouted for the ceremony) works on rungs unchanged.
+// above the 192-bit AdvProgress space. Custom builds extend the logical track
+// range with the 32 frozen generic slots and reserve direct pseudo-bits for the
+// custom Trophy and per-destination Wumpa check. AP_LookupLocationCode translates
+// them to per-seed location codes, so every downstream bit-keyed helper (reward
+// model, tint, checked-state and scouts) works unchanged.
 //
 // AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS the still-unchecked rung
 // pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
-// the rungs of all four leg tracks (advCupTrackIDs). GLOW-ONLY on purpose: the
-// tier-2 menu and AP_PadState keep consuming the tier-only enumerators, so adding
-// rungs to the glow can never distort mode selection or the Done state.
+// the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
+// its generic Trophy, podium and per-destination Wumpa identities instead of the
+// absent retail Gem and leg identities. AP_PadState consumes this enumeration
+// together with the separate box, letter and retail Wumpa counts so Done can
+// never strand an attached check.
+#ifndef CTR_CUSTOM_TRACKS
 #define AP_PODIUM_PSEUDO_BASE 0x100
+#endif
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──
@@ -535,20 +573,25 @@ int AP_PadState(int physLevelID, int destLevelID);
 // this exact question about the pad hosting a cup leg's INDIVIDUAL race.
 int AP_PadStage1Met(int physLevelID);
 
-// Is this pad in the §6 box re-entry window (issue #232)? The destination's
-// trophy race is checked, this pad's stage-2 is not met, and unbroken AP item
-// boxes still stand behind the destination -- so AP_PadState keeps the pad at 2
-// Raceable and the map paints it green. AH_WarpPad.c reads this on both of its
-// surfaces: the entry gate keeps offering a plain adventure re-race (the only
-// way to break a box), and the pad is born OPEN instead of advertising a stage-2
-// requirement it is not actually withholding entry on. Same keying as
+// Is this pad in the phase-1 re-entry window? The destination's Trophy Race is
+// checked, stage 2 is not met, and an AP box or per-track Wumpa check still
+// needs a plain adventure race. AP_PadState keeps it at 2 Raceable. The entry
+// gate offers that race and the pad is born OPEN instead of advertising a
+// stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
-int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
+int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD
 // can explain why a trophy-complete pad remains raceable.
 int AP_PadUncollectedBoxCount(int destLevelID);
+
+// Number of unchecked per-track Reach 10 Wumpa locations genuinely served by
+// this destination: one for a retail race, or the deduplicated set owned by a
+// Gem Cup's four retail legs. Global mode does not hold individual pads open.
+// A displaced Alpha6 custom Cup already enumerates its custom Wumpa pseudo-bit
+// through AP_CustomPadAppendUnchecked and therefore returns zero here.
+int AP_PadUncollectedWumpaCount(int destLevelID);
 
 // Number of enabled Lettersanity locations still unchecked for a race
 // destination. These belong to the CTR Challenge race type and therefore keep

@@ -29,6 +29,13 @@ Thirteen profiles, promoted after the v0.1.3 pre-release sweep so the whole
 sweep is reproducible from the repo alone. Each YAML carries its own
 `description` explaining what the combination stresses. The roster:
 
+The profiles use the current option names. When an option is renamed or an
+item family grows, generation of all thirteen profiles is itself a release
+gate: no unknown-option warning is allowed, and a profile must not rely on an
+option that the generator silently ignores. Profiles with podium locations
+deliberately disabled enable Box Locations so their current item pools still
+have enough capacity without weakening the verifier scenario.
+
 - `profile-community-01` -- Bethany's verbatim v0.1.2 report config (see below).
 - `profile-candidate-02..06, -08` -- the de-confounding variations staged for
   the v0.1.3 sweep (structural merged shuffle vs custom weights, goal modes,

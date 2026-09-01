@@ -896,6 +896,13 @@ void UI_RenderFrame_Racing()
 	// with the hub passes, so the feed still ticks exactly once per frame.
 	AP_FeedDrawRace();
 
+	// Community AI identity: each recorded lane's contributor is projected above
+	// the bots driving that lane, so a field assembled from several people's
+	// recordings shows several names. Self-gates on recorded-lap playback, a
+	// non-empty sanitized name, 1P, unpaused and unfinished race, and a bot
+	// close enough to read.
+	AP_NavRec_DrawBotNames();
+
 	// Box placement author mode (#182): one status line while the mode is on.
 	// Self-gates on the "Box Author Mode" option, so this is a call and a
 	// compare for everyone else. Drawn after the feed so the authoring
@@ -938,6 +945,9 @@ void UI_RenderFrame_AdvHub(void)
 	// Seed-verify warning: RED banner when a SOLO seed's goal is provably
 	// unreachable from the current state (ap_verify.c). Self-gates.
 	AP_DrawVerifyWarning();
+#ifdef CTR_CUSTOM_TRACKS
+	AP_DrawCustomContentWarning();
+#endif
 	// Hub character picker (spike, #54/R7). Self-gates; the other half of the
 	// pair is in AH_Map.c and the two passes are mutually exclusive per frame.
 	AP_CharPicker_Draw();

@@ -25,6 +25,13 @@ struct RenderListsScratchRecord
 
 CTR_STATIC_ASSERT(sizeof(struct RenderListsScratchRecord) == 0x10);
 
+#ifdef CTR_CUSTOM_TRACKS
+// Below the assert on purpose: CTR_STATIC_ASSERT names its typedef after
+// __LINE__, so anything inserted above it renames the assert and this file has
+// to stay byte-identical with the guard off.
+#include <platform/native_custom_tracks.h>
+#endif
+
 static int RenderLists_IsVisible(const int *visLeafList, BspChildId childID)
 {
 	u32 rawChildID = (u16)childID;
@@ -222,6 +229,15 @@ static void RenderLists_PushChild(struct BSP *bspRoot, const int *visLeafList, s
 
 	if (*stack >= stackEnd)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		// The scratch stack holds 51 records (0x400 - 0xd0, 0x10 each) and a
+		// full one drops a whole subtree without a word. That produces missing
+		// geometry too, so it is counted alongside the arena figures rather than
+		// assumed away when a report of black patches has to be explained. The
+		// primitive arena does not affect this: the walk runs before any
+		// primitive is written, so decision 8 neither helps nor hurts it.
+		CustomTrackDiag_NoteBspRecordDropped();
+#endif
 		return;
 	}
 

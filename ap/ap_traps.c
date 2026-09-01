@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_democam.h"
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
 #include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
                           // self-inflicted attribution
@@ -94,6 +95,12 @@ static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
 
+// Wireframe ownership preserves the renderer's pre-trap debug setting. While the
+// trap owns it the value is forced every frame, then restored exactly once.
+extern int g_dbg_wireframeMode;
+static int g_wireframe_owned = 0;
+static int g_wireframe_previous = 0;
+
 // Map-boundary tracking. levelID alone is not enough: a restart and a Cup leg onto
 // the same track keep the id, so the load itself has to count as a boundary.
 static int g_epoch = 0;
@@ -128,6 +135,31 @@ static struct Driver *AP_TrapLocalDriver(void)
 static int AP_TrapIsLocal(struct Driver *driver)
 {
 	return driver != 0 && driver == AP_TrapLocalDriver();
+}
+
+int AP_TrapSuppressCrateReward(struct Driver *driver)
+{
+	return AP_TrapCrateRewardSuppressed(g_active[AP_TRAP_EMPTY_CRATES],
+	                                    AP_TrapIsLocal(driver),
+	                                    driver != 0 &&
+	                                        (driver->actionsFlagSet & ACTION_BOT) != 0);
+}
+
+int AP_TrapAllowBoostGrant(struct Driver *driver)
+{
+	return AP_TrapBoostGrantAllowed(g_active[AP_TRAP_BOOST_BLOCKER],
+	                                AP_TrapIsLocal(driver));
+}
+
+int AP_TrapWeakenedActive(struct Driver *driver)
+{
+	return g_active[AP_TRAP_WEAKENED_KART] && AP_TrapIsLocal(driver);
+}
+
+int AP_TrapWeakenBoostTier(int permanentTier)
+{
+	return AP_TrapWeakenedBoostTier(g_active[AP_TRAP_WEAKENED_KART],
+	                                permanentTier, AP_CAP_BOOST_USF);
 }
 
 static const char *AP_TrapName(int effect)
@@ -334,7 +366,46 @@ static int AP_TrapEligibleCrates(int epoch)
 // first place, and to EXCLUDE countdowns, pause, cutscenes and finish
 // ceremonies from elapsed lead time, which is a freeze rather than a reset. The
 // distinction is AP_TrapLeadAccumulate's, and is pinned in the harness.
-static int g_trap_lead_ms = 0;
+static AP_TrapLeadState g_trap_lead;
+static SVec3 g_trap_hazard_target;
+
+static int AP_TrapProjectHazardTarget(struct GameTracker *gGT, struct Driver *local)
+{
+	struct ScratchpadStruct *sps;
+	SVec3 top, bottom;
+	int speed, distance;
+
+	if (gGT == 0 || local == 0 || local->instSelf == 0 || gGT->level1 == 0 ||
+	    gGT->level1->ptr_mesh_info == 0)
+		return 0;
+	if (local->kartState != KS_NORMAL && local->kartState != KS_DRIFTING &&
+	    local->kartState != KS_ANTIVSHIFT)
+		return 0;
+
+	speed = local->speedApprox;
+	distance = AP_TrapHazardDistance(speed, 1750);
+
+	top.x = local->instSelf->matrix.t[0] +
+	        ((local->instSelf->matrix.m[0][2] * distance) >> 12);
+	top.y = local->instSelf->matrix.t[1] - 1000;
+	top.z = local->instSelf->matrix.t[2] +
+	        ((local->instSelf->matrix.m[2][2] * distance) >> 12);
+	bottom = top;
+	bottom.y += 2000;
+
+	sps = &sdata->scratchpadStruct;
+	sps->Union.QuadBlockColl.quadFlagsWanted = QUADBLOCK_FLAG_GROUND;
+	sps->Union.QuadBlockColl.quadFlagsIgnored =
+	    QUADBLOCK_FLAG_KILL_PLANE | QUADBLOCK_FLAG_NO_COLLISION_RESPONSE |
+	    QUADBLOCK_FLAG_TRIGGER;
+	sps->Union.QuadBlockColl.searchFlags = COLL_SEARCH_HIGH_LOD;
+	sps->ptr_mesh_info = gGT->level1->ptr_mesh_info;
+	COLL_SearchBSP_CallbackQUADBLK(&top, &bottom, sps, 0);
+	if (sps->boolDidTouchQuadblock == 0)
+		return 0;
+	g_trap_hazard_target = sps->Union.QuadBlockColl.hitPos;
+	return 1;
+}
 
 // Is there an AI racer that could still be told to fire? Finished, eliminated
 // and empty slots are excluded, per the ruling. driverRank is 0-based, so first
@@ -366,12 +437,12 @@ static int AP_TrapAiLead(struct GameTracker *gGT, struct Driver *local, int coun
 	// like any other state the ruling excludes from elapsed time. The map and
 	// session boundaries are what genuinely clear this timer.
 	if (gGT == 0 || local == 0)
-		return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+		return g_trap_lead.earned;
 
-	g_trap_lead_ms = AP_TrapLeadAccumulate(g_trap_lead_ms, (int)local->driverRank,
-	                                       AP_TrapValidAiPresent(gGT, local), counting,
-	                                       elapsedMs);
-	return g_trap_lead_ms >= AP_TRAP_LEAD_MS;
+	g_trap_lead = AP_TrapLeadUpdate(g_trap_lead, (int)local->driverRank,
+	                               AP_TrapValidAiPresent(gGT, local), counting,
+	                               elapsedMs, AP_TRAP_LEAD_MS);
+	return g_trap_lead.earned;
 }
 
 // Satisfied conditional predicates, assembled once per frame. `counting` is the
@@ -395,9 +466,18 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 
 	if (AP_TrapEligibleCrates(epoch))
 		bits |= AP_TRAP_COND_ELIGIBLE_CRATES;
+	if (counting &&
+	    (AP_TrapSchedArmedCount(&g_sched, AP_TRAP_NITRO) > 0 ||
+	     AP_TrapSchedArmedCount(&g_sched, AP_TRAP_RED_POTION) > 0) &&
+	    AP_TrapProjectHazardTarget(gGT, local))
+		bits |= AP_TRAP_COND_SAFE_HAZARD;
 
-	if (AP_TrapAiLead(gGT, local, counting, elapsedMs))
+	if (AP_TrapAiLead(gGT, local, counting, elapsedMs) && gGT != 0 &&
+	    (gGT->gameMode1 & WARPBALL_HELD) == 0)
 		bits |= AP_TRAP_COND_AI_LEAD;
+
+	if (AP_DemoCamCanEngage(gGT))
+		bits |= AP_TRAP_COND_DEMO_CAMERA;
 
 	return bits;
 }
@@ -429,6 +509,7 @@ static int g_trap_use_count = 0;
 static int g_trap_flatten_pending = 0;
 static int g_trap_flatten_applied = 0;
 static int g_trap_flatten_grace_ms = 0;
+static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
 
 // The kart-state values ap_trap_observe_logic.h repeats as plain integers really
 // are the engine's. If the decomp ever renumbers them, this stops the build here
@@ -626,6 +707,80 @@ static int AP_TrapApplyFlatten(struct Driver *local)
 	return landed != 0;
 }
 
+static int AP_TrapFireWarpball(struct GameTracker *gGT, struct Driver *local)
+{
+	struct Driver *shooter = 0;
+	struct Thread *before;
+	int lowestRank = -1;
+	int oldWumpas;
+	int i;
+
+	if (gGT == 0 || local == 0 || (gGT->gameMode1 & WARPBALL_HELD) != 0)
+		return 0;
+	for (i = 0; i < 8; i++)
+	{
+		struct Driver *d = gGT->drivers[i];
+		if (d == 0 || d == local || (d->actionsFlagSet & ACTION_BOT) == 0 ||
+		    (d->actionsFlagSet & ACTION_RACE_FINISHED) != 0 || d->driverRank < 0)
+			continue;
+		if (d->kartState == KS_MASK_GRABBED || d->kartState == KS_WARP_PAD ||
+		    d->kartState == KS_FREEZE)
+			continue;
+		if ((int)d->driverRank > lowestRank)
+		{
+			lowestRank = (int)d->driverRank;
+			shooter = d;
+		}
+	}
+	if (shooter == 0)
+		return 0;
+
+	// ShootNow supports an AI Driver even though ordinary AI item selection never
+	// grants Warpballs. Claim the singleton first and force non-juiced payload.
+	gGT->gameMode1 |= WARPBALL_HELD;
+	before = gGT->threadBuckets[TRACKING].thread;
+	oldWumpas = shooter->numWumpas;
+	shooter->numWumpas = 0;
+	VehPickupItem_ShootNow(shooter, 9, 0);
+	shooter->numWumpas = oldWumpas;
+	if (gGT->threadBuckets[TRACKING].thread == before)
+		return 0;
+	g_trap_lead.elapsedMs = 0;
+	g_trap_lead.earned = 0;
+	return 1;
+}
+
+static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *local)
+{
+	int effect;
+	if (gGT == 0 || local == 0 || sdata == 0 || sdata->Loading.stage != LOAD_IDLE ||
+	    !AP_TrapControlUnlocked(gGT, local) || (gGT->gameMode1 & PAUSE_ALL) != 0 ||
+	    AP_TrapScripted(gGT, local) || AP_TrapFinishOrPodium(gGT, local))
+		return;
+	for (effect = 0; effect < AP_TRAP_EFFECT_COUNT; effect++)
+	{
+		int done = 0;
+		if (!g_trap_spawn_pending[effect])
+			continue;
+		if (!AP_TrapSchedActive(&g_sched, effect))
+		{
+			g_trap_spawn_pending[effect] = 0;
+			continue;
+		}
+		if (effect == AP_TRAP_WARPBALL_AMBUSH)
+			done = AP_TrapFireWarpball(gGT, local);
+		else if ((effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION) &&
+		         AP_TrapProjectHazardTarget(gGT, local))
+			done = VehPickupItem_TrapHazardAt(local,
+			    effect == AP_TRAP_NITRO ? 3 : 4, &g_trap_hazard_target);
+		if (done)
+		{
+			g_trap_spawn_pending[effect] = 0;
+			AP_TrapSchedEffectDone(&g_sched, effect);
+		}
+	}
+}
+
 // Drive Flatten's two stages. Runs once per tick alongside the other completion
 // polls, before the map boundary, for the same reason they do.
 static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
@@ -710,6 +865,12 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 			g_trap_flatten_applied = 1;
 			g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
 		}
+		break;
+	case AP_TRAP_WARPBALL_AMBUSH:
+	case AP_TRAP_NITRO:
+	case AP_TRAP_RED_POTION:
+		g_trap_spawn_pending[effect] = 1;
+		AP_TrapPollSpawnedInstants(gGT, local);
 		break;
 	default:
 		break;
@@ -821,13 +982,16 @@ void AP_Trap_ConnectReset(void)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
 	g_recover_ms = 0;
-	g_trap_lead_ms = 0;
+	g_trap_lead.elapsedMs = 0;
+	g_trap_lead.earned = 0;
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
 	g_trap_flatten_pending = 0;
 	g_trap_flatten_applied = 0;
 	g_trap_flatten_grace_ms = 0;
+	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+		g_trap_spawn_pending[e] = 0;
 
 	AP_LogLine("[AP TRAP] fresh connect: dropped every armed and active trap\n");
 }
@@ -848,7 +1012,17 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "flatten")) AP_TrapReceive(AP_TRAP_FLATTEN);
 	else if (!strcmp(v, "reroll"))  AP_TrapReceive(AP_TRAP_ITEM_REROLL);
 	else if (!strcmp(v, "use"))     AP_TrapReceive(AP_TRAP_FORCED_USE);
-	else if (!strcmp(v, "reverse")) AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
+	else if (!strcmp(v, "empty"))   AP_TrapReceive(AP_TRAP_EMPTY_CRATES);
+	else if (!strcmp(v, "weakened")) AP_TrapReceive(AP_TRAP_WEAKENED_KART);
+	else if (!strcmp(v, "blocker"))   AP_TrapReceive(AP_TRAP_BOOST_BLOCKER);
+	else if (!strcmp(v, "wireframe")) AP_TrapReceive(AP_TRAP_WIREFRAME);
+	else if (!strcmp(v, "upside"))    AP_TrapReceive(AP_TRAP_UPSIDE_DOWN);
+	else if (!strcmp(v, "mirror"))    AP_TrapReceive(AP_TRAP_MIRROR_MODE);
+	else if (!strcmp(v, "warpball"))  AP_TrapReceive(AP_TRAP_WARPBALL_AMBUSH);
+	else if (!strcmp(v, "nitro"))     AP_TrapReceive(AP_TRAP_NITRO);
+	else if (!strcmp(v, "potion"))    AP_TrapReceive(AP_TRAP_RED_POTION);
+	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
+	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -927,6 +1101,57 @@ static void AP_TrapApplyCamera(struct GameTracker *gGT, int wantFP)
 	}
 }
 
+static void AP_TrapApplyWireframe(int wantWireframe)
+{
+	if (wantWireframe)
+	{
+		if (!g_wireframe_owned)
+		{
+			g_wireframe_previous = g_dbg_wireframeMode;
+			g_wireframe_owned = 1;
+		}
+		g_dbg_wireframeMode = 1;
+	}
+	else if (g_wireframe_owned)
+	{
+		g_dbg_wireframeMode = g_wireframe_previous;
+		g_wireframe_owned = 0;
+	}
+}
+
+static void AP_TrapApplyBoostBlocker(struct Driver *local, int active)
+{
+	if (!active || local == 0)
+		return;
+
+	// Reserves are the engine's fire lifetime and speed-add gate. Clear both the
+	// lifetime and its tier every frame so activation deletes existing fire and
+	// no later write outside VehFire_Increment can keep a stale tier alive.
+	local->reserves = 0;
+	local->fireSpeedCap = 0;
+}
+
+static void AP_TrapClampWeakenedFire(struct Driver *local)
+{
+	int tier, cap;
+	if (local == 0 || !g_active[AP_TRAP_WEAKENED_KART] || local->reserves == 0)
+		return;
+
+	tier = AP_TrapWeakenBoostTier(AP_CapabilityBoostTier());
+	if (tier <= AP_CAP_BOOST_NONE)
+		cap = 0;
+	else if (tier == AP_CAP_BOOST_BOOST)
+		cap = local->const_SacredFireSpeed;
+	else
+		cap = (int)local->const_SingleTurboSpeed +
+		      ((0x800 * ((int)local->const_SacredFireSpeed -
+		                 (int)local->const_SingleTurboSpeed)) >> 8);
+	if (cap > 32767)
+		cap = 32767;
+	if ((int)local->fireSpeedCap > cap)
+		local->fireSpeedCap = (s16)cap;
+}
+
 // Near-stationary accumulator for the reverse-recovery guard. Kept on the frame
 // tick rather than inside the input hook, which the engine may call more than once
 // per frame.
@@ -997,6 +1222,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	AP_TrapPollReroll(local);
 	AP_TrapPollForcedUse(local);
 	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
+	AP_TrapPollSpawnedInstants(gGT, local);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
 	// source map is still standing, is what fixes the reported First Person
@@ -1025,14 +1251,19 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// Same rule for Flatten: only a copy still owed its squish comes back.
 		int refireFlatten =
 		    g_trap_flatten_pending && AP_TrapSchedActive(&g_sched, AP_TRAP_FLATTEN);
+		int refireNitro = g_trap_spawn_pending[AP_TRAP_NITRO];
+		int refirePotion = g_trap_spawn_pending[AP_TRAP_RED_POTION];
+		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
 
 		g_epoch++;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
 		AP_TrapApplyCamera(gGT, 0);
+		AP_TrapApplyWireframe(0);
 		g_recover_ms = 0;
-		g_trap_lead_ms = 0;
+		g_trap_lead.elapsedMs = 0;
+		g_trap_lead.earned = 0;
 		g_trap_reroll_excluded = -1;
 		g_trap_use_pending = 0;
 		// Flatten's stage machine does not survive the load either. A copy that
@@ -1042,11 +1273,16 @@ void AP_TrapTick(struct GameTracker *gGT)
 		g_trap_flatten_pending = 0;
 		g_trap_flatten_applied = 0;
 		g_trap_flatten_grace_ms = 0;
+		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+			g_trap_spawn_pending[e] = 0;
 
 		if (refireFlatten)
 			AP_TrapSchedReceive(&g_sched, AP_TRAP_FLATTEN);
 		if (refireForcedUse)
 			AP_TrapSchedReceive(&g_sched, AP_TRAP_FORCED_USE);
+		if (refireNitro) AP_TrapSchedReceive(&g_sched, AP_TRAP_NITRO);
+		if (refirePotion) AP_TrapSchedReceive(&g_sched, AP_TRAP_RED_POTION);
+		if (refireWarpball) AP_TrapSchedReceive(&g_sched, AP_TRAP_WARPBALL_AMBUSH);
 	}
 
 	w.context = AP_TrapContextOf(gGT, loadStage);
@@ -1073,6 +1309,10 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapTrackRecovery(local, w.elapsedMs);
 	AP_TrapApplyCamera(gGT, g_active[AP_TRAP_FIRSTPERSON]);
+	AP_DemoCamSetTrapActive(g_active[AP_TRAP_DEMO_CAMERA]);
+	AP_TrapApplyWireframe(g_active[AP_TRAP_WIREFRAME]);
+	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
+	AP_TrapClampWeakenedFire(local);
 }
 
 // ── Engine physics/input call-sites ──
@@ -1112,6 +1352,39 @@ void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
 		*active = nActive;
 	if (suspended != NULL)
 		*suspended = nSuspended;
+}
+
+void AP_TrapRenderTransform(struct PushBuffer *pb)
+{
+	int x;
+	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || pb != &sdata->gGT->pushBuffer[0])
+		return;
+
+	// Negating the projection X row mirrors only camera-projected geometry.
+	if (g_active[AP_TRAP_MIRROR_MODE])
+	{
+		pb->matrix_ViewProj.t[0] = -pb->matrix_ViewProj.t[0];
+		for (x = 0; x < 3; x++)
+			pb->matrix_ViewProj.m[0][x] = -pb->matrix_ViewProj.m[0][x];
+	}
+
+	// A 180-degree camera roll negates both screen axes. The family scheduler
+	// prevents this from overlapping Mirror Mode or another camera transform.
+	if (g_active[AP_TRAP_UPSIDE_DOWN])
+	{
+		pb->matrix_ViewProj.t[0] = -pb->matrix_ViewProj.t[0];
+		pb->matrix_ViewProj.t[1] = -pb->matrix_ViewProj.t[1];
+		for (x = 0; x < 3; x++)
+		{
+			pb->matrix_ViewProj.m[0][x] = -pb->matrix_ViewProj.m[0][x];
+			pb->matrix_ViewProj.m[1][x] = -pb->matrix_ViewProj.m[1][x];
+		}
+	}
+}
+
+int AP_TrapMirrorCullFlip(void)
+{
+	return g_active[AP_TRAP_MIRROR_MODE] != 0;
 }
 
 int AP_TrapGravity(struct Driver *driver, int gravityY)

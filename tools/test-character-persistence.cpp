@@ -1015,9 +1015,12 @@ static void test_the_shift_is_saturating_not_wrapping()
 //   2. Starting a second new adventure in the same process, since the static
 //      outlives the garage level load.
 //
-// The re-arm signal is CS_Garage_ZoomOut, which has exactly two callers, one per
-// route. The frame sequences below are those two routes, driven through the same
-// header the engine calls.
+// The re-arm signal is CS_Garage_ZoomOut: a fresh garage load always calls it,
+// and the name-entry CANCEL branch calls it only when the AP exit handler
+// declines and the retail return runs (H6-02). An AP-owned Cancel leaves the
+// garage level entirely, which is why the screen-level simulator in PART 7a
+// asserts the routing rather than the re-entry. The frame sequences here are
+// the two original routes, driven through the same header the engine calls.
 // ---------------------------------------------------------------------------
 
 // A racer id standing in for "the seed owns the choice", and the sentinel for
@@ -1045,6 +1048,115 @@ static int garageCommits(AP_GarageSkipState *s, int apRacer, int frames)
 	return n;
 }
 
+// ---------------------------------------------------------------------------
+// PART 7a -- screen-level model of the garage -> name-entry flow (H6-02).
+//
+// The helpers above drive the skip latch frame by frame; this tiny simulator
+// models the MENUS around it so the Cancel routing can be asserted end to end:
+// GARAGE -> NAME_ENTRY -> MAIN_MENU (AP-owned Cancel) or -> PROFILE (Save),
+// with the retail return to GARAGE preserved for every case the AP handler
+// declines.
+//
+// It mirrors the engine seams exactly:
+//   * a garage frame calls AP_GarageSkip_ShouldCommit (CS_Garage_MenuProc) and
+//     the commit hands off to name entry without calling CS_Garage_ZoomOut;
+//   * the Adventure Cancel branch runs the AP exit first and, only when it
+//     declines, the unchanged retail statements run the return
+//     (CS_Garage_ZoomOut(1), which starts a garage session);
+//   * a fresh Adventure reloads the garage through CS_Garage_ZoomOut(0), and a
+//     confirmed name reaches the profile menu through SelectProfile_ToggleMode.
+// ---------------------------------------------------------------------------
+enum MenuScreen
+{
+	MENU_GARAGE,
+	MENU_NAME_ENTRY,
+	MENU_MAIN_MENU,
+	MENU_PROFILE,
+};
+
+struct MenuSim
+{
+	enum MenuScreen screen;
+	AP_GarageSkipState skip;
+	int apRacer; // what AP_CharSwap_GarageRacer() returns right now
+	int nameEntryOpens;
+	int mainMenuLoads;
+};
+
+static void menuSimInit(struct MenuSim *m)
+{
+	memset(m, 0, sizeof(*m));
+	m->screen = MENU_GARAGE;
+}
+
+// One frame of the whole menu flow. `apRacer` is the value
+// AP_CharSwap_GarageRacer() returns that frame.
+static void menuFrame(struct MenuSim *m, int apRacer)
+{
+	m->apRacer = apRacer;
+
+	if (m->screen != MENU_GARAGE)
+		return;
+
+	// CS_Garage_MenuProc: the AP branch, then the retail picker below it.
+	if (AP_GarageSkip_Owns(apRacer))
+	{
+		if (AP_GarageSkip_ShouldCommit(&m->skip, apRacer))
+		{
+			m->screen = MENU_NAME_ENTRY;
+			m->nameEntryOpens++;
+		}
+	}
+	else
+	{
+		AP_GarageSkip_ShouldCommit(&m->skip, apRacer); // re-arm, retail runs
+	}
+}
+
+// Starting a new Adventure: CS_Garage_Init -> CS_Garage_ZoomOut(0).
+static void menuNewAdventure(struct MenuSim *m)
+{
+	m->screen = MENU_GARAGE;
+	AP_GarageSkip_NewSession(&m->skip);
+}
+
+// The retail picker's double-tap confirm: opens name entry with no AP commit.
+static void menuRetailConfirm(struct MenuSim *m)
+{
+	if (m->screen != MENU_GARAGE)
+		return;
+	m->screen = MENU_NAME_ENTRY;
+	m->nameEntryOpens++;
+}
+
+// The player presses CANCEL on the Adventure name entry. SubmitName_MenuProc's
+// AP handler runs first; only when it declines do the unchanged retail
+// statements point back at the garage and call CS_Garage_ZoomOut(1).
+static void menuCancelNameEntry(struct MenuSim *m)
+{
+	if (m->screen != MENU_NAME_ENTRY)
+		return;
+
+	if (AP_GarageSkip_ShouldExitToMainMenu(&m->skip, m->apRacer))
+	{
+		m->screen = MENU_MAIN_MENU;
+		m->mainMenuLoads++;
+		return;
+	}
+
+	m->screen = MENU_GARAGE;
+	AP_GarageSkip_NewSession(&m->skip);
+}
+
+// The player confirms the name (SAVE). SelectProfile_ToggleMode(1) then
+// ptrDesiredMenu = menuFourAdvProfiles; no garage session starts.
+static void menuConfirmNameEntry(struct MenuSim *m)
+{
+	if (m->screen != MENU_NAME_ENTRY)
+		return;
+	m->screen = MENU_PROFILE;
+}
+
 static void test_the_skip_commits_once_per_garage_session()
 {
 	AP_GarageSkipState s;
@@ -1055,20 +1167,122 @@ static void test_the_skip_commits_once_per_garage_session()
 	         "and no later frame in the same session repeats the handoff");
 }
 
-static void test_cancelling_the_name_entry_does_not_soft_lock()
+static void test_ap_cancel_exits_to_the_main_menu_and_never_reopens()
 {
-	// THE FIRST SOFT-LOCK. The player cancels the OSK, retail points
-	// ptrDesiredMenu back at the garage and calls CS_Garage_ZoomOut(1). Without
-	// the re-arm the skip returned early forever and the screen was dead.
-	AP_GarageSkipState s;
-	AP_GarageSkip_NewSession(&s);
+	// H6-02. The player cancels the AP-opened name entry. There is no real
+	// character choice to revisit, so the Cancel must leave for the main menu,
+	// once, and the next 120 frames must not reopen the prompt.
+	struct MenuSim m;
+	menuSimInit(&m);
 
-	garageCommits(&s, kSeedOwnsRacer, 30); // first session, commits once
-	AP_GarageSkip_NewSession(&s);          // CS_Garage_ZoomOut(1) on CANCEL
+	menuNewAdventure(&m);
+	menuFrame(&m, kSeedOwnsRacer); // first garage frame commits and hands off
+	check_eq(m.nameEntryOpens, 1, "AP-owned garage opens name entry exactly once");
 
-	check_eq(garageFrame(&s, kSeedOwnsRacer), 1,
-	         "returning from a cancelled name entry commits again rather than dead-ending");
-	check_eq(garageCommits(&s, kSeedOwnsRacer, 120), 0, "and still only once for that session");
+	menuCancelNameEntry(&m);
+	check_eq(m.screen, MENU_MAIN_MENU, "cancelling an AP-skipped name entry goes to the main menu");
+	check_eq(m.mainMenuLoads, 1, "and requests the main-menu level exactly once");
+
+	for (int i = 0; i < 120; i++)
+		menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 1, "and 120 later frames never reopen name entry");
+	check_eq(m.mainMenuLoads, 1, "nor reload the main menu");
+}
+
+static void test_a_new_adventure_after_the_cancel_opens_name_entry_once()
+{
+	// H6-02. After the AP-owned Cancel, a second new Adventure in the same
+	// process is re-armed by CS_Garage_Init -> CS_Garage_ZoomOut(0) and must
+	// open name entry exactly once again, never repeating it.
+	struct MenuSim m;
+	menuSimInit(&m);
+
+	menuNewAdventure(&m);
+	menuFrame(&m, kSeedOwnsRacer);
+	menuCancelNameEntry(&m);
+	check_eq(m.screen, MENU_MAIN_MENU, "the first cancel reached the main menu");
+
+	menuNewAdventure(&m); // CS_Garage_Init -> CS_Garage_ZoomOut(0)
+	check_eq(m.screen, MENU_GARAGE, "a new Adventure reloads the garage");
+
+	menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 2, "the new session opens name entry exactly once");
+	check_eq(m.mainMenuLoads, 1, "and does not load the main menu again");
+
+	for (int i = 0; i < 120; i++)
+		menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 2, "and no later frame reopens it");
+}
+
+static void test_disconnecting_before_cancel_keeps_the_retail_return()
+{
+	// H6-02. If the player disconnects while the keyboard is up, the AP exit
+	// declines and the retail return to the garage must stand: no main-menu
+	// load, and the disconnected garage never reopens the prompt.
+	struct MenuSim m;
+	menuSimInit(&m);
+
+	menuNewAdventure(&m);
+	menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 1, "AP-owned garage opened name entry");
+
+	m.apRacer = kNoCharacterPhase; // disconnect while the keyboard is up
+	menuCancelNameEntry(&m);
+	check_eq(m.screen, MENU_GARAGE, "a disconnected Cancel returns to the garage");
+	check_eq(m.mainMenuLoads, 0, "and never loads the main menu");
+
+	for (int i = 0; i < 120; i++)
+		menuFrame(&m, kNoCharacterPhase);
+	check_eq(m.nameEntryOpens, 1, "and disconnected garage frames never reopen name entry");
+	check_eq(m.mainMenuLoads, 0, "nor load the main menu");
+}
+
+static void test_a_late_connect_during_the_keyboard_does_not_claim_the_skip()
+{
+	// H6-02. A retail picker opened name entry while AP was absent. AP connects
+	// during the keyboard, so ownership now says AP owns the racer, but this
+	// session was never reached through the skip: Cancel must still return to
+	// the garage. Current ownership alone must not claim an AP-skipped session.
+	struct MenuSim m;
+	menuSimInit(&m);
+
+	menuNewAdventure(&m);
+	menuFrame(&m, kNoCharacterPhase); // AP absent: the retail picker runs
+	menuRetailConfirm(&m);            // the player's double-tap opens the OSK
+	check_eq(m.nameEntryOpens, 1, "the retail confirm opened name entry without the AP skip");
+
+	m.apRacer = kSeedOwnsRacer; // AP connects while the keyboard is up
+	menuCancelNameEntry(&m);
+	check_eq(m.screen, MENU_GARAGE, "a Cancel with late AP ownership still returns to the garage");
+	check_eq(m.mainMenuLoads, 0, "and never loads the main menu");
+
+	// The retail return re-armed the latch, so a later AP-owned frame can take
+	// over afresh, exactly the mid-garage takeover the skip supports.
+	menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 2, "the re-armed garage commits again for AP");
+	check_eq(m.mainMenuLoads, 0, "and still never loads the main menu");
+}
+
+static void test_confirming_an_ap_opened_name_reaches_the_profile()
+{
+	// H6-02. Confirming the AP-opened name must reach the profile menu without
+	// loading the main menu, and a later new Adventure still opens name entry
+	// exactly once.
+	struct MenuSim m;
+	menuSimInit(&m);
+
+	menuNewAdventure(&m);
+	menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 1, "AP-owned garage opened name entry");
+
+	menuConfirmNameEntry(&m);
+	check_eq(m.screen, MENU_PROFILE, "confirming reaches the profile menu");
+	check_eq(m.mainMenuLoads, 0, "without loading the main menu");
+
+	menuNewAdventure(&m);
+	menuFrame(&m, kSeedOwnsRacer);
+	check_eq(m.nameEntryOpens, 2, "a later new Adventure opens name entry exactly once");
+	check_eq(m.mainMenuLoads, 0, "and never loads the main menu");
 }
 
 static void test_a_second_adventure_does_not_soft_lock()
@@ -1596,7 +1810,11 @@ int main()
 	test_the_shift_is_saturating_not_wrapping();
 
 	test_the_skip_commits_once_per_garage_session();
-	test_cancelling_the_name_entry_does_not_soft_lock();
+	test_ap_cancel_exits_to_the_main_menu_and_never_reopens();
+	test_a_new_adventure_after_the_cancel_opens_name_entry_once();
+	test_disconnecting_before_cancel_keeps_the_retail_return();
+	test_a_late_connect_during_the_keyboard_does_not_claim_the_skip();
+	test_confirming_an_ap_opened_name_reaches_the_profile();
 	test_a_second_adventure_does_not_soft_lock();
 	test_many_sessions_each_commit_exactly_once();
 	test_a_seed_without_the_phase_never_commits_and_leaves_the_latch_armed();

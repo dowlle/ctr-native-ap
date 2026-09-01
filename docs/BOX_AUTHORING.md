@@ -95,6 +95,30 @@ saved.
 
 `rot_y` is the kart's facing, in the same angle space `InstDef.rot` uses.
 
+### The row is a ground anchor, and the crate is lifted off it
+
+`pos` is where the KART was, and a kart's origin is its ground contact point, not
+its centre: `VehBirth_TeleportSelf` spawns a racer at the quadblock hit height
+with no vertical offset, and the swept driver collision is a sphere whose radius
+(`COLL_MOVED_PLAYER_HIT_RADIUS`, 25) equals how far its centre sits above the
+origin (`originToCenter`, 25), so the sphere's lowest point is the origin itself.
+A crate model's origin, by contrast, is its centre. Copying the row straight into
+the spawn matrix therefore buried the bottom half of every AP crate.
+
+So the row stays exactly as authored, and the SPAWN lifts the model by its own
+measured base offset -- the distance from its origin down to its lowest face, at
+the header scale the level derives -- which puts the crate's bottom face on the
+authored anchor. For the shipped cube at the retail-derived scale that lift is 54
+world units, half its 108-unit rendered height.
+
+`AP_BoxModel_SpawnPos` (`ap/ap_box_model.c`) is the only place this happens, and
+runtime boxes and author-mode markers both call it, so **a box dropped in author
+mode previews the height the runtime box will stand at**. X and Z are carried
+through untouched. The collision side follows the same rule from the other
+direction: every proximity test reads the spawned instance's own matrix, never
+the row it was lifted off, so the visible crate and the earnable check cannot
+diverge. The arithmetic is freestanding in `ap/ap_box_offset_logic.h`.
+
 `level` is the `enum LevelID` name, for the benefit of whoever reads the file.
 `level_id` is the authoritative field.
 
@@ -215,3 +239,21 @@ disc, no display and no seed. What it pins:
   what stops a pad locking over uncollected boxes,
 - the scout-list filter: only codes this world created may go on the wire, which
   is the precondition a peer-bound box's feed line depends on.
+
+Two more harnesses cover the spawn height:
+
+    cc -Wall -Wextra -DCTR_AP -o /tmp/test-box-offset tools/test-box-offset.c && /tmp/test-box-offset
+    python3 tools/test-box-anchor-premise.py
+
+`test-box-offset` measures the SHIPPED cube out of `ap_box_model_data.h` with the
+shipped walk and pins the numbers the correction rests on: 36 vertices, the
+per-axis byte ranges, the retail-derived scale `0x910`, the 108-unit rendered
+height, and the 54-unit lift -- including that a retail crate centred the same
+way needs the identical lift, and that the pre-correction behaviour (lift 0)
+fails the centred-origin invariant.
+
+`test-box-anchor-premise` checks the two ENGINE claims no C harness can reach,
+against the decompiled sources themselves: that `Driver.posCurr` is still the
+kart's ground contact point, and that one model unit is still `headerScale/0x1000`
+world units. A decomp correction that moves either one fails this check instead
+of silently making every AP crate float or sink.

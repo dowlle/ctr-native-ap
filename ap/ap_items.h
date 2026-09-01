@@ -61,7 +61,7 @@
 // compilable outside the engine (tools/test-reward-policy.c depends on that).
 #include "ap_capability.h"       // AP_CAPABILITY_* and AP_CHARACTER_* item blocks
 #include "ap_itemsanity_logic.h" // AP_ITEMSANITY_ITEM_FIRST_INDEX / _WEAPON_COUNT
-#include "ap_trap_items.h"       // the 19 trap identities, which are not one range
+#include "ap_trap_items.h"       // the 20 trap identities, which are not one range
 
 // The lettersanity block is owned by ap_seedcfg.h, next to the rest of the
 // per-seed letter config. This header cannot reach for that one and stay
@@ -170,7 +170,7 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		return AP_CAT_CRYSTAL;
 
 	// Traps. Stated as its own branch rather than left to the fall-through: the 19
-	// identities are scattered across 16..20, 106..116 and 190..192, so "everything
+	// identities are scattered across 16..20, 106..116 and 190..193, so "everything
 	// else" is no longer a description a reader can check, and a future family
 	// dropped into one of the gaps must not silently inherit the trap answer.
 	// The answer itself is unchanged, AP_CAT_NONE, which is the Archipelago logo.

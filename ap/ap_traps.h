@@ -34,6 +34,7 @@ struct GameTracker;
 struct Driver;
 struct GamepadBuffer;
 struct InstDef;
+struct PushBuffer;
 
 // Effect ids, the descriptor table and the scheduler itself.
 #include "ap_trap_sched_logic.h"
@@ -82,8 +83,10 @@ void AP_TrapDebugKeys(void);
 
 // Parse one ap-config.txt line for a trap test trigger (prefix "debug_trap=").
 // Called from AP_ReadConfig (ap_hooks.c) for each config line. Recognised values:
-//   icy | lowgrav | usf | boost | fp | all  -> arms that trap at connect, so it
-// runs its real schedule on the next eligible map. Unknown values are ignored.
+//   icy | lowgrav | usf | boost | fp | empty | weakened | blocker | wireframe
+//   nitro | potion | upside | mirror | warpball | all
+// arms that trap at connect,
+// so it runs its real schedule on the next eligible map. Unknown values are ignored.
 // Returns 1 if the line was consumed, 0 otherwise.
 int AP_TrapConfigLine(const char *line);
 
@@ -145,6 +148,33 @@ void AP_TrapLevelInstances(struct InstDef *defs, int count);
 // eligible crates until a real level load republishes the table, which keeps
 // Empty Crates armed rather than reading relocated memory.
 void AP_TrapForgetLevelInstances(void);
+
+// Called after an ordinary weapon or Wumpa crate has broken. Nonzero suppresses
+// only its reward for the local trap receiver. Other crate/object classes never
+// enter this hook.
+int AP_TrapSuppressCrateReward(struct Driver *driver);
+
+// VehFire_Increment's first gate. Returns zero while Boost Blocker owns the local
+// kart, suppressing pads, powerslides, hang time, rev boosts and item boosts at
+// their shared choke point. AI and non-local drivers always pass through.
+int AP_TrapAllowBoostGrant(struct Driver *driver);
+
+// Capability-layer seams for Weakened Kart. The tier helper returns an effective
+// Progressive Boost tier with one temporary downgrade while active; -1 means the
+// pack is off and is treated as vanilla USF capability for the downgrade only.
+int AP_TrapWeakenedActive(struct Driver *driver);
+int AP_TrapWeakenBoostTier(int permanentTier);
+
+// PushBuffer_SetMatrixVP calls this after building the gameplay view-projection
+// matrix. It transforms 3D projection rows only, leaving screen-space HUD draws
+// on their normal path.
+void AP_TrapRenderTransform(struct PushBuffer *pb);
+
+// Native GTE's NCLIP uses projected winding for face rejection. A one-axis
+// reflection reverses that winding, so the native backend negates NCLIP while
+// Mirror Mode owns a reflected GTE matrix. Normal HUD/object matrices stay on
+// their original culling path.
+int AP_TrapMirrorCullFlip(void);
 
 // Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw

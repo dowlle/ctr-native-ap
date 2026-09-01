@@ -2,7 +2,7 @@
 
 Play **Crash Team Racing (PS1, 1999)** as an [Archipelago](https://archipelago.gg) multiworld randomizer, natively on your PC. This is a native port of the game, built on the [CTR-native](https://github.com/CTR-tools/ctr-native) decompilation, with the Archipelago client integrated directly into it: no emulator and no ROM patching. It connects to the server, receives items, changes progression and access throughout Adventure Mode, and sends your location checks and goal.
 
-Visit the [CTR Archipelago page on AP-Pie](https://ap-pie.com/ctr) for the feature overview, option guidance and other player resources. Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
+Visit the [CTR Archipelago page on AP-Pie](https://ap-pie.com/ctr) for the feature overview and player resources, follow the [CTR setup guide](https://ap-pie.com/guides/ctr), or use the [CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr) to create a player file. Builds are published on the [Releases](https://github.com/dowlle/ctr-native-ap/releases) page.
 
 ## Getting started
 
@@ -21,15 +21,19 @@ CTR-Archipelago/
 
 The image must be the common single-track raw PSX BIN layout (MODE2/2352 sectors, data track starting at byte 0). A 2048-byte `.iso` will not work: it strips the sector data needed for audio and video.
 
-**3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game reconnects automatically on later launches. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead; see [SETUP.md](SETUP.md).
+**3. Connect to your room.** Run the executable, go to **OPTIONS → Connection**, type your server address (for example `archipelago.gg:38281`), slot name, and password, and select **Connect**. Settings persist in `config.ini` next to the executable and the game dials automatically on later launches. A startup dial that cannot reach the room stops after a few automatic attempts instead of retrying forever; the Connection screen then says automatic attempts stopped, and selecting **Connect** retries. If the connection drops mid-session after you have connected once, the client keeps recovering in the background so you are not stranded away from the menu. Secure connections (`wss://`, for archipelago.gg rooms) are used automatically. Prefer a text file? Copy [`ap-config.example.txt`](ap-config.example.txt) to `ap-config.txt` instead; see [SETUP.md](SETUP.md).
 
 ## Creating or joining a multiworld
 
 The randomization logic lives in the companion [`ctr.apworld`](https://github.com/dowlle/ctr-archipelago-apworld). The [CTR page on AP-Pie](https://ap-pie.com/ctr) provides the player-facing overview and option guidance; the [CTR world README](https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md) documents the apworld project itself.
 
-Like every Archipelago game, CTR needs one YAML options file per player when a room is generated. Install `ctr.apworld` into Archipelago, generate or create your CTR YAML, choose your slot name and options, and give the file to the person generating the multiworld. Only the generator needs the apworld installed. Once the room exists, each player needs the client setup above, the matching slot name and the room address.
+Like every Archipelago game, CTR needs one YAML options file per player when a room is generated. The [CTR YAML Builder on AP-Pie](https://ap-pie.com/apworlds?build=ctr) is the recommended way to choose a slot name and options and download that player file. It prepares the YAML but does not generate or host the multiworld. Give the downloaded file to the person generating the room. Only the generator needs the matching `ctr.apworld` installed. Once the room exists, each player needs the client setup above, the matching slot name and the room address.
 
-Seeds with itemsanity turned on place AP item boxes around the tracks. There is nothing extra to install: the placement set ships inside the client, and which boxes actually stand is decided by your own slot's seed. See [Item boxes](SETUP.md#item-boxes) in the setup guide, which also covers the `ap-box-placements.json` override and the name desync it can cause.
+Seeds with `box_locations` turned on place AP item boxes around the tracks. This is separate from `itemsanity`, which controls received weapons and weapon-use checks. There is nothing extra to install: the placement set ships inside the client, and which boxes actually stand is decided by your own slot's seed. See [Item boxes](SETUP.md#item-boxes) in the setup guide.
+
+## Optional custom content
+
+Public releases contain no custom-track files. When a release recognizes a supported package, **OPTIONS → Custom Content** shows its creator source and verifies the installed files before marking it Ready. Ready means the local content is compatible; it does not opt a generated seed into using the track. Export the package's YAML fragment and add it to the player YAML before generation. A seed that requires missing or mismatched content fails closed instead of loading a different retail race.
 
 New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/). For CTR-specific information, return to [ap-pie.com/ctr](https://ap-pie.com/ctr).
 

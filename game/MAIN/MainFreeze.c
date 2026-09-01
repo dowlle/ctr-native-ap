@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800379f4-0x80037bc0.
 void MainFreeze_ConfigDrawNPC105(s16 startX, s16 startY, s16 radius, int angleStep, s16 angle, char *color, uint32_t *otMem, struct PrimMem *primMem)
@@ -1134,6 +1138,17 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 			int apCupReturn = AP_CupReturnHub();
 			if (apCupReturn >= 0)
 				levID = (s16)apCupReturn;
+#endif
+
+#ifdef CTR_CUSTOM_TRACKS
+			// Undo the event destination's lap override on the abandon path too.
+			// The cup-end restore in UI_CupStandings.c only runs when the cup is
+			// played out; a player who quits the 7-lap race would otherwise carry 7
+			// laps into the next adventure race.
+			if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+			{
+				gGT->numLaps = 3;
+			}
 #endif
 
 			// when loading is done remove bits for Adventure Cup, relic, and crystal challenge

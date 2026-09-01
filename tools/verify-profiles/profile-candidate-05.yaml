@@ -11,7 +11,8 @@ requires:
 Crash Team Racing:
   progression_balancing: normal
   accessibility: full
-  goal: allbosses
+  oxide_goal: none
+  bosses_required_goal: 4
   oxide_final_challenge_unlock: sapphire_relics
   oxide_final_challenge_relic_count: 18
   shuffle_gems: 'true'
@@ -33,6 +34,6 @@ Crash Team Racing:
   one_lap_cups: 'false'
   death_link: 'off'
   deathlink_amnesty: 1
-  sapphire_relic_progression: full
-  gold_relic_progression: full
-  platinum_relic_progression: full
+  sapphire_relic_count: 18
+  gold_relic_count: 18
+  platinum_relic_count: 18

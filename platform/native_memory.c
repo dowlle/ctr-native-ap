@@ -25,9 +25,18 @@
 #define CTR_NATIVE_MEMPACK_START_OFFSET 0xba9f0u
 #define CTR_NATIVE_MEMPACK_SIZE         0x144e10u
 #else
+// The expanded arena keeps retail's 2 KiB tail guard. Retail computes its pack
+// size as ramSize - startOffset - 0x800 (game/MEMPACK.c), and every read path
+// derived from it assumes that slack exists: CD reads always write whole 2 KiB
+// sectors, but not every allocation is sector-rounded (the language buffer is
+// 0x3F04, LOAD_Assets.c), so a read at the very top of the pack can legally
+// overrun by up to 2047 bytes. Under retail pressure that lands in the unused
+// tail of the backing array; without this subtraction endOfAllocator would sit
+// exactly at the end of s_mempackMemory and the same overrun would write past
+// the array into whatever .bss follows it.
 #define CTR_NATIVE_MEMPACK_BUFFER_SIZE  (8u * 1024u * 1024u)
 #define CTR_NATIVE_MEMPACK_START_OFFSET 0u
-#define CTR_NATIVE_MEMPACK_SIZE         CTR_NATIVE_MEMPACK_BUFFER_SIZE
+#define CTR_NATIVE_MEMPACK_SIZE         (CTR_NATIVE_MEMPACK_BUFFER_SIZE - 0x800u)
 #endif
 
 union NativeScratchpadStorage
