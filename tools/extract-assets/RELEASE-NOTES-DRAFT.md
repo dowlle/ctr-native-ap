@@ -50,6 +50,10 @@ the full walkthrough.
   credits end. Your goal is already sent to the multiworld at that point --
   close the game and relaunch. A relaunch shows your completed seed correctly.
 
+### Reporting a problem
+
+Bugs, crashes and stuck seeds go to the [issue tracker](https://github.com/dowlle/ctr-native-ap/issues/new/choose). Run `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux and Steam Deck) next to the executable and attach the archive it creates, together with your exact version, platform, and seed or YAML. For questions, use the [Crash Team Racing channel](https://discord.com/channels/731205301247803413/1222304293751750777) on the Archipelago Discord.
+
 ### Credits
 
 - The CTR-tools CTR-ModSDK decompilation project, which this port is built on.

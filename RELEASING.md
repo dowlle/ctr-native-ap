@@ -183,6 +183,14 @@ the previous release's published notes. House style:
   (v0.1.2 claimed cup-leg rungs were in logic while its own Testing section
   listed them as unverified; the claim was half wrong, see #86.)
 - A "What's next" section from the roadmap keeps expectations honest.
+- The notes end with a "Reporting a problem" block (issue chooser link,
+  support bundle, Discord channel), as in the template. Every player-facing
+  surface names the same reporting path.
+- Walk every open issue labelled `announced` (a maintainer comment promised
+  "shipped", "next release" or "pending"; the nightly tracker sweep applies
+  the label). Each one is either in this release and named in the notes, or
+  gets a comment saying which release it moved to. The sweep note lists them
+  under "Promise ledger".
 
 ## 7. Publish
 
@@ -229,8 +237,10 @@ the previous release's published notes. House style:
       has diverged), push to our own index fork, and open the PR with
       `--repo ionium-ap/Archipelago-index --base main`. This step was missed
       for v0.1.1, which left every index a release behind for four days.
-- [ ] Announce (community Discord), and route bug reports to the issue
-      tracker.
+- [ ] Close or comment on every `announced` issue that this release resolves,
+      then remove the label. Nothing stays `announced` across two releases.
+- [ ] Announce in the Crash Team Racing channel on the Archipelago Discord,
+      and route bug reports to the issue tracker.
 - [ ] Fast-forward `master` to the upstream head: `git fetch upstream && git
       push origin upstream/master:master`. `master` is a read-only mirror of
       `CTR-tools/ctr-native` kept so "what changed upstream since we last

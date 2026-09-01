@@ -208,8 +208,9 @@ If the game crashes, or a seed seems impossible to progress, run
 the game folder. It creates one small archive (`ctr-ap-support-<date>.zip` /
 `.tar.gz`) containing the game log, the AP log, the crash report if there was
 one, and your connection settings with the password removed. No game data is
-included. Attach that archive to your report on Discord or GitHub together
-with a line about what you were doing; if the seed itself seems broken,
+included. Attach that archive to a [GitHub issue](https://github.com/dowlle/ctr-native-ap/issues/new/choose),
+or bring it to the [Crash Team Racing channel](https://discord.com/channels/731205301247803413/1222304293751750777)
+on the Archipelago Discord, together with a line about what you were doing; if the seed itself seems broken,
 include your YAML and the spoiler log too.
 
 The client also checks every seed on connect: if a solo seed cannot be

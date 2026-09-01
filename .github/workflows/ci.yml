@@ -1,0 +1,32 @@
+name: CI
+
+# Host harnesses: every tools/test-*.c and .cpp listed in tools/ci/harnesses.txt
+# is compiled against the freestanding _logic.h headers and run. A new harness
+# file that is not listed (or skipped with a reason) fails the job, so adding a
+# harness means deciding whether CI runs it. The 32-bit C++ harnesses compile the
+# real slot_data parser and need the pinned vendor headers, fetched by
+# ap/vendor/fetch-deps.sh exactly as a build does.
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'release/**', 'ci/**']
+
+permissions:
+  contents: read
+
+jobs:
+  harnesses:
+    name: host harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (32-bit capable)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-multilib g++-multilib
+      - name: Vendor headers (pinned by ap/vendor/versions.lock)
+        run: bash ap/vendor/fetch-deps.sh
+      - name: Build and run
+        run: python3 tools/ci/run-harnesses.py
