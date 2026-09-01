@@ -31,7 +31,7 @@
 // These are NATIVE effect ids, internal to this client. The apworld item id they
 // arrive from is a separate space that the apworld owns, and the mapping between
 // the two is the explicit table in ap_trap_items.h. Do not reintroduce arithmetic
-// between them: the 19 trap identities are not one contiguous item window.
+// between them: the 20 trap identities are not one contiguous item window.
 //
 // AP_TRAP_USF_NOBRAKE keeps its id and its symbol. The apworld renamed the item
 // from "No Brakes" to "Forced USF", which is a display change only; item ids never
@@ -154,7 +154,9 @@ enum AP_TrapCondition
 	AP_TRAP_COND_TEN_WUMPA = 1 << 1,       // player is holding 10 Wumpa (juiced)
 	AP_TRAP_COND_HELD_ITEM = 1 << 2,       // a fully resolved weapon is in the slot
 	AP_TRAP_COND_ELIGIBLE_CRATES = 1 << 3, // this map has weapon or Wumpa crates
-	AP_TRAP_COND_AI_LEAD = 1 << 4          // 15 continuous seconds in first, valid AI
+	AP_TRAP_COND_AI_LEAD = 1 << 4,         // 15 continuous seconds in first, valid AI
+	AP_TRAP_COND_SAFE_HAZARD = 1 << 5,     // projected line reaches drivable ground
+	AP_TRAP_COND_DEMO_CAMERA = 1 << 6      // retail cinematic camera has a safe owner
 };
 
 // One second, the ruled warning for every effect that takes one.
@@ -230,48 +232,49 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	 AP_TRAP_COND_HELD_ITEM, 1, 0, AP_TRAP_WARNING_MS},
 	{"Empty Crates", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_ELIGIBLE_CRATES, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_ELIGIBLE_CRATES, 1, 0, AP_TRAP_WARNING_MS},
 	{"Weakened Kart", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_SUSTAINED_TIMED,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 20000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 20000, AP_TRAP_WARNING_MS},
 	{"Boost Blocker", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_BOOST_CONTROL,
-	 AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	{"Wireframe", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 	{"Nitro", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_SAFE_HAZARD, 1, 0, AP_TRAP_WARNING_MS},
 	{"Reverse Steering", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_SHORT_WARNING,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	{"Red Potion", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_NONE, 0, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_SAFE_HAZARD, 1, 0, AP_TRAP_WARNING_MS},
 	// PROVISIONAL duration: the notebook leaves 15 versus 20 seconds to a live
 	// comfort test. 15 is the lower-risk placeholder.
 	{"Upside Down", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_CAMERA_TRANSFORM,
-	 AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	{"Mirror Mode", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_CAMERA_TRANSFORM,
-	 AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	// The countdown is deliberately hidden and the Warpball itself is the warning,
 	// so this one has no warning window either.
 	{"Warpball Ambush", AP_TRAP_CTX_AI_RACE, AP_TRAP_TIMING_CONDITIONAL_AMBUSH,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_AI_LEAD, 0, 0, 0},
+	 AP_TRAP_COND_AI_LEAD, 1, 0, 0},
 	{"Demo Camera", AP_TRAP_CTX_AI_RACE | AP_TRAP_CTX_TIME_TRIAL,
 	 AP_TRAP_TIMING_SUSTAINED_TIMED, AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH,
-	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_NONE, 0, 15000, AP_TRAP_WARNING_MS},
+	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_DEMO_CAMERA, 1, 15000,
+	 AP_TRAP_WARNING_MS},
 };
 
 // ── Registry ──
 //
 // Capacity bounds the BACKLOG, not the roster: one effect can hold several slots
 // at once when its duplicates serialize. 16 was sized when five effects existed.
-// The 0.2.0 apworld ships 19 trap identities, several of them conditional and able
+// The 0.2.0 apworld ships 20 trap identities, several of them conditional and able
 // to sit armed indefinitely (every Wumpa Wipeout copy needs its own 10-Wumpa
 // trigger, every Warpball Ambush copy its own 15-second lead), so a trap-heavy
 // seed can plausibly carry more than 16 unresolved copies. Over capacity is
@@ -644,6 +647,15 @@ static inline int AP_TrapSchedEligible(const AP_TrapSched *s, const AP_TrapWorld
 	return 1;
 }
 
+// A projected hazard commits once its warning begins. Ground can disappear for
+// a frame while the kart crosses a seam or becomes airborne; re-arming there
+// would replay the warning every time the projection flickers. The engine-side
+// spawn path already retries quietly until it has a valid landing point.
+static inline int AP_TrapSchedWarningConditionIsSticky(int effect)
+{
+	return AP_TRAP_DESC[effect].condition == AP_TRAP_COND_SAFE_HAZARD;
+}
+
 // May an effect that has finished its warning actually begin? The starting
 // countdown may show a warning, but nothing begins before the player has control,
 // and podium, finish ceremonies and scripted sequences never start an effect.
@@ -739,7 +751,8 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 		// consuming it: Item Reroll, Forced Use and Wumpa Wipeout all rule
 		// that losing the held item or the fruit during the warning keeps the
 		// trap waiting for the next eligible moment.
-		if (!AP_TrapSchedEligible(s, w, s->slots[i].effect))
+		if (!AP_TrapSchedEligible(s, w, s->slots[i].effect) &&
+		    !AP_TrapSchedWarningConditionIsSticky(s->slots[i].effect))
 		{
 			s->slots[i].state = AP_TRAP_SLOT_ARMED;
 			s->slots[i].warnMs = 0;

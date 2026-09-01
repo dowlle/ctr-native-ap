@@ -57,7 +57,12 @@ extern "C" {
 //   5 = oxide_final_unlock relic-goal mode + oxide_final_count (issue #23)
 //   4 = type-4 relic-tier colour + goal-rework; 3 = podium + stage-2 padgate;
 //   2 = two-stage contract; 1 = flat pre-two-stage.
-#define CTR_CFG_SCHEMA_KNOWN 7
+// v8 adds the conditional top-level custom_tracks block (below): a community
+// track bound to a Gem Cup destination, DISPLACING that cup's retail legs in
+// logic. An old native on such a seed would race the retail four-leg cup while
+// the seed's logic says that cup legs nothing -- the reachability-desync class
+// the schema number exists for, so the bump is required rather than additive.
+#define CTR_CFG_SCHEMA_KNOWN 8
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -146,6 +151,142 @@ typedef struct
 	ctr_req stage1; // open the trophy race
 	ctr_req stage2; // open the relic Time Trials + CTR Token Challenge
 } ctr_warp_unlock;
+
+// ── custom_tracks (schema 8) ────────────────────────────────────────────────
+//
+// A community custom track bound to a Gem Cup destination. When the seed carries
+// this block, the named cup stops running four retail leg tracks and becomes a
+// single race on the custom track; winning it awards that cup's Gem through the
+// cup's own gem path.
+//
+// The block carries its OWN version, independent of schema_version. The two
+// answer different questions: schema_version is "may this native trust this seed
+// at all", version is "does it understand this block's fields". gem_cup_legs had
+// no equivalent, which is why every future custom-track field would otherwise
+// have needed a full schema bump. A version this build does not know is refused
+// rather than read field by field.
+//
+// 3 (2026-08-29) adds the required measured `wumpa_collectible` capability that
+// the per-track Reach 10 Wumpa checks gate a custom destination's check on. A
+// version-2 entry carries no such measurement, and a Wumpa check must never
+// guess one, so a version-2 block is refused here rather than read with the flag
+// defaulted in either direction.
+// 4 (2026-08-30) adds the frozen generic slot and exact Trophy/podium location
+// codes. These identities cannot be inferred from a mutable package title or
+// its position in the wire array, so older block versions are refused.
+#define CTR_CFG_CT_BLOCK_VERSION_KNOWN 4
+#define CTR_CFG_CT_SLOT_COUNT          32
+#define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
+#define CTR_CFG_CT_ID_CAP              64
+#define CTR_CFG_CT_UUID_CAP            37
+#define CTR_CFG_CT_VERSION_CAP         32
+
+// The describe step's MEASURED capabilities. Every one is required on the wire:
+// a descriptor that omits a flag is not self-describing, and a silently
+// defaulted capability is the same class of plausible-but-wrong state the
+// digests guard against.
+typedef struct
+{
+	int crates;
+	int ctr_letters;
+	int relic_crates;
+	int ai_nav;
+	int minimap;
+	int ghosts;
+	// Block version 3. Can the local player actually reach ten Wumpa Fruit on
+	// this track? Measured from the hash-verified LEV by manager-light, NOT
+	// inferred from `crates`: a track can carry weapon boxes, TNT and relic time
+	// crates with no route to ten fruit at all.
+	int wumpa_collectible;
+	int spawns;      // 1..8
+	int checkpoints; // 1..255
+} ctr_custom_track_flags;
+
+typedef struct
+{
+	char id[CTR_CFG_CT_ID_CAP];
+	char package_uuid[CTR_CFG_CT_UUID_CAP];
+	char package_version[CTR_CFG_CT_VERSION_CAP];
+	char minimum_client_version[CTR_CFG_CT_VERSION_CAP];
+	char minimum_apworld_version[CTR_CFG_CT_VERSION_CAP];
+	char navigation_uuid[CTR_CFG_CT_UUID_CAP];
+	unsigned int navigation_revision;
+
+	int laps;                  // 1..7
+	int slot;                  // 1..32 frozen generic datapackage identity
+	int host_level_id;         // 0..17, the arcade slot whose bytes are borrowed
+	int replaces_cup_level_id; // 100..104
+	int boxes;                 // 1 = AP boxes allowed on the event race
+
+	// Both digests are the seed's authority on content. The apworld never opens
+	// the files: it validates the shape and forwards them, and native hashes the
+	// real bytes and stays disarmed on any mismatch.
+	char lev_sha256[CTR_CFG_CT_HEX_CAP];
+	char vrm_sha256[CTR_CFG_CT_HEX_CAP];
+
+	long trophy_location;      // Custom Track N: Trophy Race
+	ctr_podium_rungs podium;   // generic custom-slot rungs, -1 = absent
+
+	ctr_custom_track_flags flags;
+} ctr_custom_track;
+
+// ── wumpa_checks (2026-08-29 specification, Lane A) ─────────────────────────
+//
+// Reaching ten Wumpa Fruit in a race is a check. `wumpa_checks.mode` says which
+// shape this seed uses:
+//
+//   0 off        the block is absent entirely; nothing is ever emitted.
+//   1 global     ONE location for the whole seed, at the permanent 35016100.
+//   2 per_track  one location per race DESTINATION -- 18 retail destinations
+//                keyed by engine LevelID, plus at most one custom destination
+//                keyed by its destination role. NOT also the global one.
+//
+// THE WIRE IS THE AUTHORITY ON WHICH CODES EXIST. This build must never
+// hardcode the per-track range: which of the 19 destination codes a seed
+// carries, and whether the custom slot is live at all, is a per-seed decision
+// the apworld makes and this block reports. Server location membership stays
+// the final send gate on top of that, exactly as it was before per-track.
+#define CTR_CFG_WUMPA_OFF        0
+#define CTR_CFG_WUMPA_GLOBAL     1
+#define CTR_CFG_WUMPA_PER_TRACK  2
+
+// The 18 retail race destinations are LevelIDs 0..17, which is the same dense
+// space the item-box and pad tables already use.
+#define CTR_CFG_WUMPA_TRACK_COUNT 18
+
+// This build serves one custom destination at a time, so one slot is enough.
+// The array shape is what makes a second supported role a data change here
+// rather than a redesign.
+#define CTR_CFG_WUMPA_CUSTOM_MAX 1
+
+// One custom DESTINATION SLOT: a role that a package can occupy, and the code
+// the seed minted for that role. The identity is the ROLE, not the package --
+// a different package occupying the same role keeps this code.
+typedef struct
+{
+	// The Gem Cup LevelID (100..104) this role hands over, resolved from the
+	// role word at parse time so the emit path compares LevelIDs rather than
+	// re-parsing strings on a race frame.
+	int  cup_level_id;
+	long code;              // the AP location code, or -1 for an empty slot
+	int  wumpa_collectible; // the capability slot data asserts for this package
+	// The package the seed bound to this role. Compared against the seed's own
+	// custom_tracks entry before anything is emitted: a destination whose
+	// package identity does not match is refused rather than served the wrong
+	// track's code.
+	char package_uuid[CTR_CFG_CT_UUID_CAP];
+} ctr_wumpa_custom_destination;
+
+typedef struct
+{
+	int  mode;          // CTR_CFG_WUMPA_OFF / _GLOBAL / _PER_TRACK
+	long global_code;   // 35016100 in global mode, -1 otherwise
+	// Per retail destination LevelID 0..17: the location code, or -1 for a
+	// destination this seed did not mint a check for.
+	long tracks[CTR_CFG_WUMPA_TRACK_COUNT];
+	int  custom_count;
+	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
+} ctr_wumpa_checks;
 
 typedef struct
 {
@@ -387,6 +528,24 @@ typedef struct
 	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
 	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
 	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
+
+	// custom_tracks (schema 8). custom_tracks_ok is 1 only when the block was
+	// present AND fully readable; a present-but-unreadable block leaves it 0 and
+	// the feature entirely off. There is deliberately no partial state: a native
+	// that half-understands the block would run a retail cup the seed's logic
+	// says legs nothing.
+	//
+	// custom_tracks_seen records that SOMETHING was on the wire under that key,
+	// which is what distinguishes "this seed has no custom track" from "this
+	// seed has one I could not read" in the logs.
+	int              custom_tracks_seen;
+	int              custom_tracks_ok;
+	ctr_custom_track custom_track; // exactly one entry in this build
+
+	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
+	// the wire" and "the block said off", which are the same thing to every
+	// caller: nothing is emitted.
+	ctr_wumpa_checks wumpa;
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -427,6 +586,19 @@ void ctr_cfg_set_vanilla_cup_legs(const int *legs);
 // cup/leg returns -1 (caller error, no sane fallback). Safe to call
 // unconditionally, mirroring ctr_cfg_warp_phys.
 int ctr_cfg_cup_leg(int cup, int leg);
+
+// Has cup 0..4 been handed over to a custom track by this seed's custom_tracks
+// block? A displaced cup LEGS NOTHING: the wire still carries its complete
+// four-track gem_cup_legs row (it has to, or the block stops being the complete
+// mapping every other consumer relies on), and every logic-side reader must
+// actively ignore it. The apworld does the same split on its side --
+// world.gem_cup_legs_table is what it serializes, world.gem_cup_legs is that
+// table with displaced cups emptied.
+//
+// Identity-safe: 0 when slot_data is inactive, when the seed carries no
+// custom_tracks block, or when the block was unreadable. Out-of-range cup
+// returns 0.
+int ctr_cfg_cup_displaced(int cup);
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=

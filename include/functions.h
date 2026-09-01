@@ -1082,6 +1082,9 @@ void CS_Garage_ZoomOut(char zoomState);
 void CS_Garage_MenuProc(struct RectMenu *param_1);
 void CS_Garage_Init(void);
 struct RectMenu *CS_Garage_GetMenuPtr(void);
+#ifdef CTR_AP
+int CS_Garage_APNameEntryCancelToMainMenu(void);
+#endif
 void CS_BoxScene_InstanceSplitLines(void);
 void ThTick_RunBucket(struct Thread *thread);
 void ThTick_FastRET(struct Thread *thread);
@@ -1199,6 +1202,7 @@ int VehCalc_MapToRange(int val, int oldMin, int oldMax, int newMin, int newMax);
 int VehPickupItem_MaskBoolGoodGuy(struct Driver *d);
 int RB_Hazard_HurtDriver(struct Driver *driverVictim, int damageType, struct Driver *driverAttacker, int reason);
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags);
+int VehPickupItem_TrapHazardAt(struct Driver *d, int weaponID, const SVec3 *target);
 int VehPickState_NewState(struct Driver *victimDriver, int damageType, struct Driver *attackDriver, int reason);
 void RB_Follower_Init(struct Driver *d, struct Thread *mineTh);
 void VehPhysForce_CounterSteer(struct Driver *driver);

@@ -63,6 +63,43 @@ static int AP_TrapHeldItemIsResolved(int heldItemID, int itemRollTimer, int noIt
 	       AP_TRAP_ITEM_STATE_RESOLVED;
 }
 
+// Empty Crates suppresses only the reward for the local human who received the
+// effect. Crate breakage stays in the engine call site; this pure predicate pins
+// the player/AI ownership boundary in the host harness.
+static int AP_TrapCrateRewardSuppressed(int effectActive, int driverIsLocal,
+                                        int driverIsBot)
+{
+	return effectActive && driverIsLocal && !driverIsBot;
+}
+
+// Boost Blocker rejects every new boost grant for the local receiver while
+// leaving AI and remote/non-local drivers on the untouched engine path.
+static int AP_TrapBoostGrantAllowed(int effectActive, int driverIsLocal)
+{
+	return !effectActive || !driverIsLocal;
+}
+
+static int AP_TrapWeakenedBoostTier(int effectActive, int permanentTier,
+                                    int vanillaUsfTier)
+{
+	int tier;
+	if (!effectActive)
+		return permanentTier;
+	tier = permanentTier < 0 ? vanillaUsfTier : permanentTier;
+	return tier > 0 ? tier - 1 : 0;
+}
+
+static int AP_TrapHazardDistance(int speedApprox, int travelMs)
+{
+	int distance;
+	if (speedApprox < 0)
+		speedApprox = -speedApprox;
+	distance = (speedApprox * travelMs) >> 16;
+	if (distance < 160) distance = 160;
+	if (distance > 420) distance = 420;
+	return distance;
+}
+
 // ── Engine-natural completion ──
 enum AP_TrapOutcome
 {
@@ -228,6 +265,29 @@ static int AP_TrapLeadAccumulate(int prevMs, int driverRank, int aiPresent, int 
 	if (driverRank < 0 || !aiPresent || !counting)
 		return prevMs; // unknown rank, or an excluded state: freeze, never clear
 	return prevMs + (elapsedMs > 0 ? elapsedMs : 0);
+}
+
+// Once the ruled lead has been earned, a pre-existing Warpball may keep this
+// copy waiting without making the player earn the lead again. In particular,
+// being overtaken during that singleton wait must not clear `earned`. The owner
+// clears the state only after a successful birth or at a map/session boundary.
+typedef struct AP_TrapLeadState
+{
+	int elapsedMs;
+	int earned;
+} AP_TrapLeadState;
+
+static AP_TrapLeadState AP_TrapLeadUpdate(AP_TrapLeadState prev, int driverRank,
+                                          int aiPresent, int counting, int elapsedMs,
+                                          int requiredMs)
+{
+	if (prev.earned)
+		return prev;
+	prev.elapsedMs = AP_TrapLeadAccumulate(prev.elapsedMs, driverRank, aiPresent,
+	                                      counting, elapsedMs);
+	if (prev.elapsedMs >= requiredMs)
+		prev.earned = 1;
+	return prev;
 }
 
 #endif // AP_TRAP_OBSERVE_LOGIC_H

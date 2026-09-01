@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
 s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 {
@@ -411,6 +415,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				else
 				{
 					warppadLNG = sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
+
+#ifdef CTR_CUSTOM_TRACKS
+					// A displaced cup does not race the tracks this pad's retail name
+					// promises, so the name is the one thing on the pad that is
+					// simply false. The cup index here is the PAD's own, not
+					// gGT->cup.cupID: standing at a pad is the moment before cupID is
+					// written, and that field is never reset, so it still holds
+					// whichever cup was entered last.
+					{
+						const char *ctName = CustomTrack_CupDisplayName(levelID - AH_WP_ADV_CUP, 1);
+
+						if (ctName != NULL)
+							warppadLNG = (char *)ctName;
+					}
+#endif
 				}
 
 				// midpoing X,
@@ -804,11 +823,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// no menu ever coming (the 2026-07-14 Dragon Mines softlock).
 	if (!ctr_cfg_racer_lock_met(physLevelID))
 		goto WarpPad_AnimateOpen;
+#ifdef CTR_CUSTOM_TRACKS
+	// A seed-selected package that is not Ready blocks every event entry, not
+	// only the displaced cup. This keeps AP gameplay behind the manager-light
+	// preflight even if a malformed descriptor could not name its destination.
+	if (AP_CustomContentRequired())
+		goto WarpPad_AnimateOpen;
+#endif
 #endif
 
 	// gem cups
 	if (levelID >= AH_WP_ADV_CUP)
 	{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		// A displaced destination is not enterable until the exact package this
+		// seed requires verifies. The gate re-hashes at event entry, so even a
+		// same-size file swap after connect is refused before loading begins.
+		if (ctr_cfg_active() && ctr_cfg_cup_displaced(levelID - AH_WP_ADV_CUP) &&
+		    !AP_CustomContentGateEventEntry(warppadObj->framesWarping == 60))
+			goto WarpPad_AnimateOpen;
+#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -847,6 +881,34 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// entered after a cup are back on vanilla lap counts.
 		if (ctr_cfg_active() && ctr_cfg.one_lap_cups)
 			gGT->numLaps = 1;
+#endif
+
+#ifdef CTR_CUSTOM_TRACKS
+		// Baby T Park event destination (ruled 2026-08-28). When the loader is
+		// armed and the feature is on, this cup's destination stops being four
+		// retail legs and becomes ONE race on the custom track: 7 laps, AI on
+		// (MainInit_Drivers still spawns the cup's bots because ADVENTURE_CUP
+		// stays set), and the Purple Gem awarded through the cup's own award
+		// path in UI_CupStandings.
+		//
+		// ADVENTURE_CUP is deliberately left SET. Clearing it to get plain-race
+		// behaviour would route the results screen to the trophy branch in
+		// game/222.c, which awards ADV_REWARD_FIRST_TROPHY for the levelID -- the
+		// wrong progress bit, the wrong AP location and a trophy on the podium.
+		// The gem only exists on the cup path, so the cup path is what we keep;
+		// the single race is expressed purely as "this cup has one leg", which
+		// is the fork in UI_CupStandings.c reading this same predicate.
+		//
+		// numLaps is written after the AP one-lap block above so the event's
+		// ruled lap count wins over the one_lap_cups QoL option on a seed that
+		// has both. gGT->numLaps is a char and the policy refuses anything
+		// outside 1..7, so this cannot truncate.
+		if (CustomTrack_CupRaceRedirectActive(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0))
+		{
+			gGT->numLaps = (char)CustomTrack_CupRaceLaps(gGT->cup.cupID, 1);
+			levelID = CustomTrack_CupRaceLevelID(gGT->cup.cupID, 1);
+			goto WarpPad_RequestLoad;
+		}
 #endif
 
 #ifdef CTR_AP
@@ -955,11 +1017,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// (ThTick's refresh requires boolEnteredWarppad==0). AnimateOpen
 				// keeps the pad inert and the player free.
 				//
-				// Issue #232: inert is WRONG while this destination still has
-				// unbroken AP item boxes. AP_PadState holds such a pad at 2
+				// Issue #232 plus per-track Wumpa: inert is WRONG while this
+				// destination still has an AP box or Wumpa check needing a plain
+				// race. AP_PadState holds such a pad at 2
 				// Raceable ("stays Raceable and enterable until they are gone")
-				// and the map paints it green, but the gate had no box path, so
-				// a stage-2-locked pad refused all entry and stranded the boxes
+				// and the map paints it green, but the gate needs a matching path
+				// or a stage-2-locked pad strands those remaining checks
 				// -- another player's items among them -- for the whole window
 				// between the trophy check and stage 2. The apworld gates a box
 				// on its track region, i.e. on stage 1 alone (verified against
@@ -972,14 +1035,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// (state-2 entry never had one on the first pass either). The
 				// destination's Trophy Race location is already checked and
 				// AP_NotifyAdvReward gates its send on wasChecked, so winning
-				// the re-race sends no duplicate check. Boxes break in any
-				// ADVENTURE_MODE race (AP_BoxesRaceCarriesBoxes), which this is.
+				// the re-race sends no duplicate check. Boxes break and the
+				// Wumpa crossing can fire in this ordinary ADVENTURE_MODE race.
 				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
 				{
-					if (AP_PadBoxReRaceable(physLevelID, levelID))
+					if (AP_PadPhase1ReRaceable(physLevelID, levelID))
 					{
 						AP_PadLogRoute(physLevelID, levelID,
-						               AP_PAD_ROUTE_S2LOCKED_BOX_RERACE);
+						               AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
 						goto WarpPad_BoxReRace;
 					}
 					AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
@@ -1022,11 +1085,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 								         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
 									apRelicLeft = 1;
 							}
-							// Letters are checks of the CTR Challenge race type. A checked
-							// Token must not hide or hard-lock that race while any enabled
-							// letter location remains.
-							if (AP_PadUncollectedLetterCount(levelID) > 0)
-								apTokenLeft = 1;
+							// Letters and per-track Wumpa can both fire in the CTR
+							// Challenge. A checked Token must not hide or hard-lock that
+							// race while either family remains.
+							apTokenLeft = AP_PadTokenSideLeft(
+							    apTokenLeft,
+							    AP_PadUncollectedLetterCount(levelID),
+							    AP_PadUncollectedWumpaCount(levelID));
 
 							apTier2Route = AP_PadTier2RouteDecide(
 							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));
@@ -1750,13 +1815,13 @@ static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
 	    warppadObj->levelID >= AH_WP_SLIDE_COLISEUM ||
 	    !AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
 		return 0;
-	// Issue #232: while unbroken item boxes remain behind the destination the
+	// Issue #232 plus per-track Wumpa: while a plain-race check remains the
 	// pad is NOT re-locked -- AP_PadState holds it at 2 Raceable and ThTick lets
-	// the player in for a box re-race -- so advertising a stage-2 requirement
+	// player in for a re-race -- so advertising a stage-2 requirement
 	// here would render a closed pad the gate is not actually closing. Decline
 	// the re-lock; the caller falls through to its stage-1 advert, which the pad
-	// satisfies (AP_PadBoxReRaceable implies stage 1 met), so it births OPEN.
-	if (AP_PadBoxReRaceable(physLevelID, warppadObj->levelID))
+	// satisfies (AP_PadPhase1ReRaceable implies stage 1 met), so it births OPEN.
+	if (AP_PadPhase1ReRaceable(physLevelID, warppadObj->levelID))
 		return 0;
 	r = ctr_cfg_warp_stage2_req(physLevelID);
 	if (r == 0 || AP_BossReqMet(r))
@@ -1997,9 +2062,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// !unlocked term is false), but the guard makes it robust regardless of what
 		// the destination hosts. Matches ThTick's own dest-race gate at :654.
 		//
-		// Issue #232: NOT while unbroken item boxes remain behind the
+		// Issue #232 plus per-track Wumpa: NOT while a plain-race check remains
 		// destination. AP_PadState keeps such a pad at 2 Raceable and ThTick
-		// admits a box re-race, so a closed pad advertising a stage-2
+		// admits a re-race, so a closed pad advertising a stage-2
 		// requirement would be advertising a gate that is not being applied --
 		// the same gate/display split in the other direction. The trial / arena
 		// / cup twin of this decline lives in AP_Stage2RelockToUnlock.
@@ -2007,7 +2072,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		    warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
 		    AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY) &&
 		    !ctr_cfg_warp_stage2_unlocked(levelID) &&
-		    !AP_PadBoxReRaceable(levelID, warppadObj->levelID))
+		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID))
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);
@@ -2107,7 +2172,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// that is the very phantom "Key xN" BUG-A lock, now on a pad ThTick
 			// happily admits. Born open, it reads as what it is: enterable.
 			if (ctr_cfg_active() && (ctr_cfg_warp_stage2_unlocked(levelID) ||
-			                         AP_PadBoxReRaceable(levelID, warppadObj->levelID)))
+			                         AP_PadPhase1ReRaceable(levelID, warppadObj->levelID)))
 			{
 				unlockItem_modelID = 0;
 				unlockItem_numOwned = 0;

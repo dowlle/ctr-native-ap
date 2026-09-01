@@ -8,6 +8,8 @@
 
 #include "ap_navrec.h"
 #include "ap_navrec_format.h"
+#include "ap_navrec_label_logic.h"
+#include "ap_navrec_lane_logic.h"
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
 #include "ap_version.h"             // CTR_AP_VERSION
 #include "platform/native_config.h" // g_config.navRecord / navUseRecorded / navDriverName
@@ -51,11 +53,9 @@ CTR_STATIC_ASSERT(OFFSETOF(struct NavFrame, specialBits) == OFFSETOF(struct AP_N
 // the next one. The reader takes the highest number present for the level.
 #define AP_NAVREC_MAX_FILE_INDEX 999
 
-// How many candidate recordings the loader will try before giving up. A rejected
-// file falls back to the next lower number, so one corrupt newest file cannot
-// hide every good older one, but a folder full of corrupt files must not cost a
-// race start hundreds of reads either.
-#define AP_NAVREC_MAX_LOAD_ATTEMPTS 8
+// The loader's open budget, AP_NAVREC_MAX_LOAD_ATTEMPTS, lives with the
+// selection rule in ap_navrec_lane_logic.h so the harness asserts the same
+// number this build uses.
 
 // Held-item ids, from the switch in VehPickupItem_ShootNow. Only these two are
 // counted; the format records no other item.
@@ -111,6 +111,23 @@ static unsigned int        s_navrecLaneStamps[AP_NAVREC_LANES][AP_NAVREC_MAX_NOD
 static struct NavHeader    s_navrecLaneHeader[AP_NAVREC_LANES];
 static unsigned int        s_navrecLaneNodes[AP_NAVREC_LANES];
 
+// One candidate container, decoded. This CANNOT be the lane storage any more:
+// the loader now reads several files per level, and decoding the second one into
+// the lanes would overwrite lines the first one already owns while the engine is
+// about to read them. It lives for the length of a load and is released before
+// the race starts, so nothing persists between levels.
+struct AP_NavRecLoadBuf
+{
+	struct AP_NavRecNode nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+	unsigned int         stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+};
+
+struct AP_NavRecFetchCtx
+{
+	int                      levelID;
+	struct AP_NavRecLoadBuf *buf;
+};
+
 static struct AP_NavRecScratch *s_navrecScratch;
 
 // Mirrors g_config.navRecord. Starts at 0, the option's own default, so a build
@@ -147,9 +164,99 @@ static short s_navrecCharacterId = -1;
 static int s_navrecLanesLive;
 static int s_navrecLanesLevel = -1;
 
+// Who each lane belongs to. Per lane, not per level: a race can now be driven on
+// three different people's lines at once, and the name over a bot has to be the
+// name on the file that bot is actually following. s_navrecLaneLapIndex is which
+// lap of that file the lane took, or AP_NAVREC_LANE_SYNTH when the lane is a
+// lateral offset of another one rather than a recorded line.
+#define AP_NAVREC_LANE_SYNTH (-1)
+
+static char         s_navrecLaneDriverName[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
+static unsigned int s_navrecLaneFileIndex[AP_NAVREC_LANES];
+static int          s_navrecLaneLapIndex[AP_NAVREC_LANES];
+
+static unsigned char s_navrecActiveIdentityKind;
+static unsigned char s_navrecActiveTrackUuid[AP_NAVREC_TRACK_UUID_BYTES];
+static unsigned int  s_navrecActiveNavRevision;
+
+// Set for a load that serves custom-track bytes without a usable navigation
+// identity. Falling back to the retail interpretation there would let the
+// borrowed host LevelID do exactly what NAV3 exists to prevent: retail
+// recordings would inject onto custom geometry, and laps recorded here would
+// be stamped as retail lines of the host slot. Blocked means neither happens:
+// no recording loads, no recording is written, and the level's own lanes run.
+static int s_navrecIdentityBlocked;
+
+// Whether the lap currently being driven started with a forward crossing of
+// the start line. The standing-start lap and post-reversal fragments do not,
+// and are dropped at the boundary instead of banked; see
+// AP_NavRecFormat_LapBoundaryBanks.
+static int s_navrecLapOpenAtLine;
+
 // ============================================================================
 // Small helpers
 // ============================================================================
+
+void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int navRevision)
+{
+	if (uuid == NULL)
+	{
+		AP_NavRec_ClearActiveCustomTrack();
+		return;
+	}
+	s_navrecActiveIdentityKind = AP_NAVREC_IDENTITY_CUSTOM;
+	memcpy(s_navrecActiveTrackUuid, uuid, AP_NAVREC_TRACK_UUID_BYTES);
+	s_navrecActiveNavRevision = navRevision;
+	s_navrecIdentityBlocked = 0;
+}
+
+void AP_NavRec_ClearActiveCustomTrack(void)
+{
+	s_navrecActiveIdentityKind = AP_NAVREC_IDENTITY_RETAIL;
+	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
+	s_navrecActiveNavRevision = 0;
+	s_navrecIdentityBlocked = 0;
+}
+
+void AP_NavRec_BlockRecordedLanes(void)
+{
+	// The blocked state keeps a retail-shaped identity in the statics so any
+	// path that reads them without checking the flag matches nothing custom,
+	// but the flag is what load and write actually honour.
+	s_navrecActiveIdentityKind = AP_NAVREC_IDENTITY_RETAIL;
+	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
+	s_navrecActiveNavRevision = 0;
+	s_navrecIdentityBlocked = 1;
+}
+
+// The active identity, in the form the log lines use.
+static void AP_NavRec_DescribeIdentity(unsigned char kind, const unsigned char *uuid, unsigned int revision, char *out, size_t cap)
+{
+	if (kind != AP_NAVREC_IDENTITY_CUSTOM)
+	{
+		snprintf(out, cap, "retail");
+		return;
+	}
+
+	snprintf(out, cap,
+	         "custom %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x rev %u",
+	         uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7], uuid[8], uuid[9], uuid[10], uuid[11],
+	         uuid[12], uuid[13], uuid[14], uuid[15], revision);
+}
+
+// A failed or partial load must not leave the previous track's contributors
+// painted above bots now driving someone else's lines, or the level's own.
+static void AP_NavRec_ClearLaneIdentity(void)
+{
+	int lane;
+
+	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	{
+		s_navrecLaneDriverName[lane][0] = '\0';
+		s_navrecLaneFileIndex[lane] = 0;
+		s_navrecLaneLapIndex[lane] = AP_NAVREC_LANE_SYNTH;
+	}
+}
 
 // Same portable shape native_memcard.c uses for its own save directory, kept
 // local rather than widening a platform API for one caller.
@@ -289,17 +396,26 @@ static unsigned char AP_NavRec_ShortcutTier(void)
 // Arming
 // ============================================================================
 
-static void AP_NavRec_DropBank(void)
+// Reset the lap in progress without touching the bank. Used at a boundary
+// whose finished samples are not a closed lap: the standing-start lap or a
+// post-reversal fragment.
+static void AP_NavRec_DropCurrentLap(void)
 {
-	s_navrecBankCount = 0;
 	s_navrecCurSamples = 0;
 	s_navrecCurFrames = 0;
 	s_navrecCurDirty = 0;
 	s_navrecCurMaskFires = 0;
 	s_navrecCurTurboFires = 0;
+}
+
+static void AP_NavRec_DropBank(void)
+{
+	s_navrecBankCount = 0;
+	AP_NavRec_DropCurrentLap();
 	s_navrecLastLapIndex = -1;
 	s_navrecWrittenThisRace = 0;
 	s_navrecEndSeen = 0;
+	s_navrecLapOpenAtLine = 0;
 }
 
 // The option is re-read EVERY tick rather than latched. Latching it would mean
@@ -431,11 +547,7 @@ static void AP_NavRec_BankLap(void)
 
 	if (s_navrecCurSamples < 16u)
 	{
-		s_navrecCurSamples = 0;
-		s_navrecCurFrames = 0;
-		s_navrecCurDirty = 0;
-		s_navrecCurMaskFires = 0;
-		s_navrecCurTurboFires = 0;
+		AP_NavRec_DropCurrentLap();
 		return;
 	}
 
@@ -467,11 +579,7 @@ static void AP_NavRec_BankLap(void)
 			// Everything banked is clean and already at least as good as the lap
 			// just finished.
 			AP_LogLine("[AP NAVREC] lap bank full and this lap is not an improvement, dropping it\n");
-			s_navrecCurSamples = 0;
-			s_navrecCurFrames = 0;
-			s_navrecCurDirty = 0;
-			s_navrecCurMaskFires = 0;
-			s_navrecCurTurboFires = 0;
+			AP_NavRec_DropCurrentLap();
 			return;
 		}
 
@@ -497,11 +605,7 @@ static void AP_NavRec_BankLap(void)
 	         s_navrecCurMaskFires, s_navrecCurTurboFires, s_navrecCurDirty ? "DIRTY (respawn, hit or crash), will not be written" : "clean");
 	AP_LogLine(msg);
 
-	s_navrecCurSamples = 0;
-	s_navrecCurFrames = 0;
-	s_navrecCurDirty = 0;
-	s_navrecCurMaskFires = 0;
-	s_navrecCurTurboFires = 0;
+	AP_NavRec_DropCurrentLap();
 }
 
 // ============================================================================
@@ -571,6 +675,15 @@ static void AP_NavRec_Write(int levelID)
 	if (!g_config.navRecord || (s_navrecScratch == NULL))
 		return;
 
+	// A served custom load without a navigation identity cannot stamp a lap
+	// truthfully: written as retail it would later inject onto the host slot's
+	// real retail races. Nothing is saved, and the reason is on record.
+	if (s_navrecIdentityBlocked)
+	{
+		AP_LogLine("[AP NAVREC] recording disabled for this load: the served custom track supplies no navigation identity\n");
+		return;
+	}
+
 	selected = AP_NavRec_SelectLaps(order);
 	if (selected == 0)
 	{
@@ -588,6 +701,17 @@ static void AP_NavRec_Write(int levelID)
 		if (nodes == 0)
 		{
 			snprintf(msg, sizeof msg, "[AP NAVREC] lap %u could not be decimated, skipping it\n", lap);
+			AP_LogLine(msg);
+			continue;
+		}
+
+		// The banking discipline should make this unreachable, but this is the
+		// last gate before a lap reaches someone's disk, and the loader applies
+		// the same rule, so a lap this build refuses to drive is a lap it also
+		// refuses to publish.
+		if (!AP_NavRecFormat_LapClosed(s_navrecScratch->nodes[written], nodes))
+		{
+			snprintf(msg, sizeof msg, "[AP NAVREC] lap %u is not a closed loop, skipping it\n", lap);
 			AP_LogLine(msg);
 			continue;
 		}
@@ -626,8 +750,11 @@ static void AP_NavRec_Write(int levelID)
 	meta.difficultyPreset = (short)g_config.aiDifficulty;
 	meta.shortcutTier = AP_NavRec_ShortcutTier();
 	meta.trackKind = s_navrecTrackKind;
+	meta.identityKind = s_navrecActiveIdentityKind;
+	memcpy(meta.trackUuid, s_navrecActiveTrackUuid, sizeof meta.trackUuid);
+	meta.navRevision = s_navrecActiveNavRevision;
 
-	size = AP_NavRecFormat_Size(laps, written);
+	size = AP_NavRecFormat_SizeForMeta(&meta, laps, written);
 	buf = (unsigned char *)malloc(size);
 	if (buf == NULL)
 	{
@@ -725,18 +852,18 @@ static void AP_NavRec_PublishLane(int lane, unsigned int nodes)
 	s_navrecLaneHeader[lane].last = &s_navrecLane[lane].engine[nodes];
 }
 
-// Try ONE container file. Returns 1 when the three engine lanes are filled from
-// it, 0 when the file is missing or was rejected.
-static int AP_NavRec_TryLoadFile(const char *path, int levelID)
+// Read and validate ONE container file into `into`. Returns 1 when the file is
+// usable and `info` describes it, 0 when it is missing or was rejected. Rejection
+// is still whole-file: nothing here salvages part of a bad container, and no lane
+// is touched either way.
+static int AP_NavRec_ReadCandidate(const char *path, int levelID, struct AP_NavRecLoadBuf *into, struct AP_NavRecFileInfo *info)
 {
-	struct AP_NavRecFileInfo info;
 	char                     msg[512];
 	FILE                    *f;
 	long                     len;
 	unsigned char           *buf;
 	unsigned int             size;
 	int                      rc;
-	int                      lane;
 
 	f = fopen(path, "rb");
 	if (f == NULL)
@@ -777,12 +904,11 @@ static int AP_NavRec_TryLoadFile(const char *path, int levelID)
 	}
 	fclose(f);
 
-	// The lane union is the decode target, so a valid file lands straight in the
-	// storage the engine will be pointed at, with no second copy. Read() forces
-	// the node fields that can hang the engine, rejects a lap whose goBackCount
-	// never varies, and sanitizes the name, so nothing below has to trust the
-	// file.
-	rc = AP_NavRecFormat_Read(buf, size, &info, &s_navrecLane[0].wire, s_navrecLaneStamps);
+	// A valid file lands in the load buffer, never straight in the lanes: those
+	// belong to files this one may not replace. Read() forces the node fields
+	// that can hang the engine, rejects a lap whose goBackCount never varies, and
+	// sanitizes the name, so nothing below has to trust the file.
+	rc = AP_NavRecFormat_Read(buf, size, info, into->nodes, into->stamps);
 	free(buf);
 
 	if (rc != AP_NAVREC_OK)
@@ -792,53 +918,117 @@ static int AP_NavRec_TryLoadFile(const char *path, int levelID)
 		return 0;
 	}
 
-	if (info.levelId != levelID)
+	if (info->levelId != levelID)
 	{
-		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" was recorded on level %d, not %d\n", path, info.levelId, levelID);
+		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" was recorded on level %d, not %d\n", path, info->levelId, levelID);
 		AP_LogLine(msg);
 		return 0;
 	}
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	if (!AP_NavRecFormat_IdentityMatches(info, levelID, s_navrecActiveIdentityKind,
+	                                    s_navrecActiveTrackUuid, s_navrecActiveNavRevision))
 	{
-		if ((unsigned int)lane < info.lapCount)
-		{
-			AP_NavRec_PublishLane(lane, info.laps[lane].nodeCount);
-			continue;
-		}
+		char fileIdent[80];
+		char activeIdent[80];
 
-		// Fewer than three laps in the file. Fill the rest by displacing lane 0
-		// sideways, alternating side. One recorded lap still yields three usable
-		// lanes; the bots stack less than they would on a single line and they
-		// stay on the road, because the offset is a fixed lateral step rather
-		// than an unbounded guess. goBackCount comes across untouched, so the
-		// synthesised lane keeps the checkpoint progression the killplane rewind
-		// needs.
-		{
-			int lateral = ((lane & 1) != 0) ? AP_NAVREC_FALLBACK_LANE_OFFSET : -AP_NAVREC_FALLBACK_LANE_OFFSET;
-
-			AP_NavRecFormat_SynthLane(s_navrecLane[0].wire, s_navrecLaneNodes[0], lateral, s_navrecLane[lane].wire);
-			memcpy(s_navrecLaneStamps[lane], s_navrecLaneStamps[0], sizeof(unsigned int) * s_navrecLaneNodes[0]);
-			AP_NavRec_PublishLane(lane, s_navrecLaneNodes[0]);
-		}
-	}
-
-	snprintf(msg, sizeof msg, "[AP NAVREC] loaded \"%s\": driver \"%s\", %u recorded lap(s), client %s\n", path,
-	         (info.driverName[0] != '\0') ? info.driverName : "(anonymous)", info.lapCount, info.clientVersion);
-	AP_LogLine(msg);
-
-	if (info.lapCount < AP_NAVREC_LANES)
-	{
-		snprintf(msg, sizeof msg, "[AP NAVREC] only %u lap(s) in the file; %u lane(s) synthesised as lateral offsets\n", info.lapCount,
-		         (unsigned int)AP_NAVREC_LANES - info.lapCount);
+		AP_NavRec_DescribeIdentity(info->identityKind, info->trackUuid, info->navRevision, fileIdent, sizeof fileIdent);
+		AP_NavRec_DescribeIdentity(s_navrecActiveIdentityKind, s_navrecActiveTrackUuid, s_navrecActiveNavRevision, activeIdent,
+		                           sizeof activeIdent);
+		snprintf(msg, sizeof msg, "[AP NAVREC] load: rejecting \"%s\": recorded as %s, this load is %s\n", path, fileIdent, activeIdent);
 		AP_LogLine(msg);
+		return 0;
 	}
 
 	return 1;
 }
 
-// Load the newest usable container for this level and fill all three engine
-// lanes from it.
+// Give one lane a recorded lap out of the load buffer, and the name of the file
+// it came from.
+//
+// Read() has already applied the format's printable-ASCII/length sanitizer, so
+// the retained name is the exact accepted identity and no draw path ever reopens
+// or reparses a community file.
+static void AP_NavRec_CommitLane(int lane, const struct AP_NavRecLoadBuf *from, const struct AP_NavRecFileInfo *info, unsigned int lap,
+                                 unsigned int fileIndex)
+{
+	unsigned int nodes = info->laps[lap].nodeCount;
+
+	memcpy(s_navrecLane[lane].wire, from->nodes[lap], sizeof(struct AP_NavRecNode) * nodes);
+	memcpy(s_navrecLaneStamps[lane], from->stamps[lap], sizeof(unsigned int) * nodes);
+
+	memset(s_navrecLaneDriverName[lane], 0, sizeof s_navrecLaneDriverName[lane]);
+	memcpy(s_navrecLaneDriverName[lane], info->driverName, strlen(info->driverName));
+	s_navrecLaneFileIndex[lane] = fileIndex;
+	s_navrecLaneLapIndex[lane] = (int)lap;
+
+	AP_NavRec_PublishLane(lane, nodes);
+}
+
+// Fill a lane its file could not, by displacing another lane sideways and
+// alternating side.
+//
+// One recorded lap still yields three usable lanes; the bots stack less than
+// they would on a single line and they stay on the road, because the offset is a
+// fixed lateral step rather than an unbounded guess. goBackCount comes across
+// untouched, so the synthesised lane keeps the checkpoint progression the
+// killplane rewind needs. The name comes across too: the line is still that
+// contributor's, moved over.
+static void AP_NavRec_SynthLaneFrom(int lane, int srcLane)
+{
+	int          lateral = ((lane & 1) != 0) ? AP_NAVREC_FALLBACK_LANE_OFFSET : -AP_NAVREC_FALLBACK_LANE_OFFSET;
+	unsigned int nodes = s_navrecLaneNodes[srcLane];
+
+	AP_NavRecFormat_SynthLane(s_navrecLane[srcLane].wire, nodes, lateral, s_navrecLane[lane].wire);
+	memcpy(s_navrecLaneStamps[lane], s_navrecLaneStamps[srcLane], sizeof(unsigned int) * nodes);
+
+	memcpy(s_navrecLaneDriverName[lane], s_navrecLaneDriverName[srcLane], sizeof s_navrecLaneDriverName[lane]);
+	s_navrecLaneFileIndex[lane] = s_navrecLaneFileIndex[srcLane];
+	s_navrecLaneLapIndex[lane] = AP_NAVREC_LANE_SYNTH;
+
+	AP_NavRec_PublishLane(lane, nodes);
+}
+
+// The candidate source AP_NavRecLane_Select scans. Returns 0 for a gap, which
+// costs nothing, and 1 for a file that was opened, whether or not it survived
+// validation.
+static int AP_NavRec_FetchCandidate(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCandidate *out)
+{
+	struct AP_NavRecFetchCtx *c = (struct AP_NavRecFetchCtx *)ctx;
+	struct AP_NavRecFileInfo  info;
+	unsigned int              closed[AP_NAVREC_MAX_LAPS];
+	unsigned int              closedCount;
+	char                      path[160];
+	char                      msg[224];
+
+	AP_NavRec_PathForIndex(c->levelID, fileIndex, path, sizeof path);
+	if (!AP_NavRec_FileExists(path))
+		return 0;
+
+	out->fileIndex = fileIndex;
+
+	if (!AP_NavRec_ReadCandidate(path, c->levelID, c->buf, &info))
+		return 1;
+
+	// Only laps that are closed loops count. A file with none is passed over
+	// like any other rejected candidate, so an older good file can still fill
+	// the lanes; the laps a lane may take are exactly the ones the placement
+	// pass will pick through the same AP_NavRecFormat_ClosedLaps mapping.
+	closedCount = AP_NavRecFormat_ClosedLaps(&info, c->buf->nodes, closed);
+	if (closedCount == 0)
+	{
+		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" holds no closed lap; skipping it\n", path);
+		AP_LogLine(msg);
+		return 1;
+	}
+
+	out->usable = 1;
+	out->lapCount = closedCount;
+	memcpy(out->driverName, info.driverName, sizeof out->driverName);
+	return 1;
+}
+
+// Fill the three engine lanes for this level from up to three DISTINCT usable
+// containers, preferring a different author for each.
 //
 // Newest FIRST, then downward. A rejected file is rejected whole, which is the
 // format's rule and stays true, but refusing to look any further would let one
@@ -846,43 +1036,211 @@ static int AP_NavRec_TryLoadFile(const char *path, int levelID)
 // means those older ones are exactly what the player still has. Falling back is
 // choosing a different file, not salvaging a bad one. Every rejection is logged
 // with its reason, so a player can see which file is the problem.
+//
+// The scan runs twice over the chosen files: once to decide, once to place. A
+// container is up to 74 KiB and there are at most three of them, so paying for a
+// second read at a level load buys a loader that never holds a half-built lane
+// set, and never needs a second decode buffer to avoid it.
 static int AP_NavRec_LoadForLevel(int levelID)
 {
-	char         path[160];
-	char         msg[192];
-	unsigned int highest;
-	unsigned int attempts = 0;
-	unsigned int index;
+	struct AP_NavRecFetchCtx fetchCtx;
+	struct AP_NavRecFileInfo info;
+	struct AP_NavRecLoadBuf *buf;
+	char                     author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
+	char                     path[160];
+	char                     msg[384]; // holds a full path plus a driver name and a client version
+	unsigned int             chosen[AP_NAVREC_LANES];
+	unsigned int             laneFile[AP_NAVREC_LANES];
+	unsigned int             laneLap[AP_NAVREC_LANES];
+	int                      lanePublished[AP_NAVREC_LANES];
+	unsigned int             chosenCount;
+	unsigned int             published = 0;
+	unsigned int             highest;
+	unsigned int             opened = 0;
+	unsigned int             c;
+	int                      lane;
+	int                      firstPublished = -1;
 
 	// Read-only, and gated on its OWN option: someone who wants recorded lines
 	// should not have to switch on the half that writes to their disk.
 	if (!g_config.navUseRecorded)
 		return 0;
 
+	AP_NavRec_ClearLaneIdentity();
+
+	// A served custom load without a navigation identity loads NOTHING. The
+	// retail interpretation would match on the borrowed host LevelID and put
+	// retail lines under bots on custom geometry; the level's own lanes are the
+	// only source proven to belong to what is on screen.
+	if (s_navrecIdentityBlocked)
+	{
+		AP_LogLine("[AP NAVREC] recorded lanes disabled for this load: the served custom track supplies no navigation identity; "
+		           "the level's own lanes stay\n");
+		return 0;
+	}
+
 	highest = AP_NavRec_HighestIndex(levelID);
 	if (highest == 0)
 		return 0;
 
-	for (index = highest; (index >= 1u) && (attempts < AP_NAVREC_MAX_LOAD_ATTEMPTS); index--)
+	buf = (struct AP_NavRecLoadBuf *)malloc(sizeof *buf);
+	if (buf == NULL)
 	{
-		AP_NavRec_PathForIndex(levelID, index, path, sizeof path);
-
-		// Gaps are free to skip: no file, nothing to attempt.
-		if (!AP_NavRec_FileExists(path))
-			continue;
-
-		attempts++;
-		if (AP_NavRec_TryLoadFile(path, levelID))
-			return 1;
+		AP_LogLine("[AP NAVREC] load: out of memory for the decode buffer\n");
+		return 0;
 	}
 
-	if (attempts >= AP_NAVREC_MAX_LOAD_ATTEMPTS)
-		snprintf(msg, sizeof msg, "[AP NAVREC] gave up after %d rejected recording(s) for level %d\n", AP_NAVREC_MAX_LOAD_ATTEMPTS, levelID);
-	else
-		snprintf(msg, sizeof msg, "[AP NAVREC] no usable recording for level %d\n", levelID);
-	AP_LogLine(msg);
+	fetchCtx.levelID = levelID;
+	fetchCtx.buf = buf;
 
-	return 0;
+	memset(author, 0, sizeof author);
+	chosenCount = AP_NavRecLane_Select(highest, AP_NAVREC_MAX_LOAD_ATTEMPTS, AP_NavRec_FetchCandidate, &fetchCtx, chosen, author, &opened);
+
+	if (chosenCount == 0)
+	{
+		free(buf);
+		if (opened >= AP_NAVREC_MAX_LOAD_ATTEMPTS)
+			snprintf(msg, sizeof msg, "[AP NAVREC] gave up after %d rejected recording(s) for level %d\n", AP_NAVREC_MAX_LOAD_ATTEMPTS,
+			         levelID);
+		else
+			snprintf(msg, sizeof msg, "[AP NAVREC] no usable recording for level %d\n", levelID);
+		AP_LogLine(msg);
+		return 0;
+	}
+
+	AP_NavRecLane_Plan(chosenCount, laneFile, laneLap);
+	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+		lanePublished[lane] = 0;
+
+	for (c = 0; c < chosenCount; c++)
+	{
+		unsigned int closed[AP_NAVREC_MAX_LAPS];
+		unsigned int closedCount;
+
+		AP_NavRec_PathForIndex(levelID, chosen[c], path, sizeof path);
+
+		// A file that vanished or turned unreadable between the two passes leaves
+		// its lanes unpublished; they are filled from a lane that did load, below.
+		if (!AP_NavRec_ReadCandidate(path, levelID, buf, &info))
+			continue;
+
+		// The same mapping the selection pass used: a lane only ever takes a lap
+		// that is a closed loop, and the lap indices stay in file order so a file
+		// whose laps all pass commits byte for byte as it always has.
+		closedCount = AP_NavRecFormat_ClosedLaps(&info, buf->nodes, closed);
+
+		snprintf(msg, sizeof msg, "[AP NAVREC] loaded \"%s\": driver \"%s\", %u recorded lap(s), %u closed, client %s\n", path,
+		         (info.driverName[0] != '\0') ? info.driverName : "(anonymous)", info.lapCount, closedCount, info.clientVersion);
+		AP_LogLine(msg);
+
+		if (closedCount < info.lapCount)
+		{
+			unsigned int lap;
+
+			for (lap = 0; lap < info.lapCount; lap++)
+			{
+				unsigned int k;
+				int          isClosed = 0;
+
+				for (k = 0; k < closedCount; k++)
+				{
+					if (closed[k] == lap)
+						isClosed = 1;
+				}
+
+				if (!isClosed)
+				{
+					snprintf(msg, sizeof msg,
+					         "[AP NAVREC]   lap %u is not a closed loop (its wrap would jump at the finish line); not eligible\n", lap);
+					AP_LogLine(msg);
+				}
+			}
+		}
+
+		for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+		{
+			if (laneFile[lane] != c)
+				continue;
+			if (laneLap[lane] >= closedCount)
+				continue;
+
+			AP_NavRec_CommitLane(lane, buf, &info, closed[laneLap[lane]], chosen[c]);
+			lanePublished[lane] = 1;
+			if (firstPublished < 0)
+				firstPublished = lane;
+			published++;
+		}
+	}
+
+	free(buf);
+
+	if (published == 0)
+	{
+		snprintf(msg, sizeof msg, "[AP NAVREC] no usable recording for level %d\n", levelID);
+		AP_LogLine(msg);
+		return 0;
+	}
+
+	// Lanes with no line of their own: a file that ran out of laps, or one that
+	// stopped being readable. Prefer that file's own first lane, so the offset is
+	// a displacement of the line it belongs beside.
+	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	{
+		int src;
+
+		if (lanePublished[lane])
+			continue;
+
+		src = (int)laneFile[lane];
+		if (!lanePublished[src])
+			src = firstPublished;
+
+		AP_NavRec_SynthLaneFrom(lane, src);
+		lanePublished[lane] = 1;
+	}
+
+	return 1;
+}
+
+// One line per level load: which file and which of its laps each lane drives,
+// and whose name the bots on it will carry.
+static void AP_NavRec_LogLaneSummary(int levelID, const char *what)
+{
+	char msg[512];
+	char ident[80];
+	int  at;
+	int  lane;
+
+	AP_NavRec_DescribeIdentity(s_navrecActiveIdentityKind, s_navrecActiveTrackUuid, s_navrecActiveNavRevision, ident, sizeof ident);
+	at = snprintf(msg, sizeof msg, "[AP NAVREC] recorded lanes %s on level %d (identity %s):", what, levelID, ident);
+
+	for (lane = 0; (lane < AP_NAVREC_LANES) && (at > 0) && (at < (int)sizeof msg); lane++)
+	{
+		char lap[16];
+
+		if (s_navrecLaneLapIndex[lane] == AP_NAVREC_LANE_SYNTH)
+			snprintf(lap, sizeof lap, "offset");
+		else
+			snprintf(lap, sizeof lap, "lap %d", s_navrecLaneLapIndex[lane]);
+
+		at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = %03u %s \"%s\" %u node(s);", lane, s_navrecLaneFileIndex[lane], lap,
+		               (s_navrecLaneDriverName[lane][0] != '\0') ? s_navrecLaneDriverName[lane] : "(anonymous)", s_navrecLaneNodes[lane]);
+	}
+
+	// Turn the trailing separator into the newline every log line ends with, or
+	// terminate in place when the line was long enough to truncate.
+	if ((at > 0) && (at < (int)sizeof msg))
+	{
+		msg[at - 1] = '\n';
+		msg[at] = '\0';
+	}
+	else
+	{
+		msg[sizeof msg - 2] = '\n';
+		msg[sizeof msg - 1] = '\0';
+	}
+
+	AP_LogLine(msg);
 }
 
 // ============================================================================
@@ -908,11 +1266,11 @@ static void AP_NavRec_PointEngineAtLanes(int levelID)
 
 void AP_NavRec_AfterBotsInit(void)
 {
-	char msg[192];
-	int  levelID;
+	int levelID;
 
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
+	AP_NavRec_ClearLaneIdentity();
 
 	if (!g_config.navUseRecorded)
 		return;
@@ -925,10 +1283,7 @@ void AP_NavRec_AfterBotsInit(void)
 		return;
 
 	AP_NavRec_PointEngineAtLanes(levelID);
-
-	snprintf(msg, sizeof msg, "[AP NAVREC] recorded lanes active on level %d: %u/%u/%u nodes\n", levelID, s_navrecLaneNodes[0],
-	         s_navrecLaneNodes[1], s_navrecLaneNodes[2]);
-	AP_LogLine(msg);
+	AP_NavRec_LogLaneSummary(levelID, "active");
 }
 
 // ============================================================================
@@ -946,20 +1301,21 @@ void AP_NavRec_AfterBotsInit(void)
 // and to fall back to the level's own nav data when that is not possible.
 void AP_NavRec_AfterCheckpointRestore(void)
 {
-	char msg[192];
-	int  levelID;
-	int  lane;
+	int levelID;
+	int lane;
 
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
 
 	levelID = (int)sdata->gGT->levelID;
 
+	// Same folder, same rule, same field: the selection is deterministic, so a
+	// restore reassembles the lane set the race started with unless the files
+	// themselves changed underneath it.
 	if (g_config.navUseRecorded && AP_NavRec_LoadForLevel(levelID))
 	{
 		AP_NavRec_PointEngineAtLanes(levelID);
-		snprintf(msg, sizeof msg, "[AP NAVREC] restore: recorded lanes reloaded for level %d\n", levelID);
-		AP_LogLine(msg);
+		AP_NavRec_LogLaneSummary(levelID, "reloaded after a savestate restore");
 		return;
 	}
 
@@ -971,6 +1327,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// at lanes that may be blank.
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
+	AP_NavRec_ClearLaneIdentity();
 
 	if (sdata->gGT->level1 == NULL)
 	{
@@ -983,6 +1340,125 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	BOTS_SetGlobalNavData(0);
 
 	AP_LogLine("[AP NAVREC] restore: no usable recording, nav pointers rebuilt from the level\n");
+}
+
+// ============================================================================
+// Community-driver labels
+// ============================================================================
+
+// Penguin-MODSK's Bot_Trackrom proves this presentation shape on PS1: project
+// a point above the kart through the 1P ViewProj matrix, hide it behind/very
+// near the camera, and shrink FONT_SMALL in depth bands. Native uses the same
+// engine projection and font path, with explicit clipping and a shadow so pale
+// tracks do not erase a white username.
+//
+// The bands also carry the draw-distance cap: past AP_NAVREC_LABEL_MAX_DEPTH the
+// width comes back 0, so the branch that hides a label behind the camera hides
+// one too far away as well. ap_navrec_label_logic.h has the measured basis for
+// that boundary.
+//
+// The name is keyed on the lane the bot is DRIVING, read from botData.botPath
+// every frame rather than latched. That field is what BOTS.c indexes
+// sdata->NavPath_ptr* with, and it is not fixed for the race: the overtake path
+// in BOTS_ThTick_Drive reassigns it. Reading it per frame is the only mapping
+// that stays true whatever the engine does with it.
+void AP_NavRec_DrawBotNames(void)
+{
+	struct GameTracker *gGT;
+	MATRIX *view;
+	int firstBot;
+	int totalDrivers;
+	int i;
+	int lane;
+	int named = 0;
+	int oldWidth;
+
+	if (!s_navrecLanesLive)
+		return;
+
+	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	{
+		if (s_navrecLaneDriverName[lane][0] != '\0')
+			named = 1;
+	}
+	if (!named)
+		return;
+
+	if ((sdata == NULL) || ((gGT = sdata->gGT) == NULL))
+		return;
+	if ((gGT->numPlyrCurrGame != 1) || ((gGT->gameMode1 & PAUSE_ALL) != 0))
+		return;
+	if ((gGT->drivers[0] == NULL) || ((gGT->drivers[0]->actionsFlagSet & ACTION_RACE_FINISHED) != 0))
+		return;
+
+	firstBot = (int)(unsigned char)gGT->numPlyrCurrGame;
+	totalDrivers = firstBot + (int)(unsigned char)gGT->numBotsNextGame;
+	if (totalDrivers > 8)
+		totalDrivers = 8;
+
+	view = &gGT->pushBuffer[0].matrix_ViewProj;
+	oldWidth = data.font_charPixWidth[FONT_SMALL];
+
+	for (i = firstBot; i < totalDrivers; i++)
+	{
+		struct Driver *bot = gGT->drivers[i];
+		char *name; // DecalFont_DrawLine takes char *, so this cannot be const
+		SVECTOR world;
+		s16 screen[2];
+		u32 flag;
+		s32 depth;
+		int width;
+
+		if ((bot == NULL) || (bot->instSelf == NULL) || (bot->invisibleTimer != 0))
+			continue;
+		if ((bot->actionsFlagSet & ACTION_RACE_FINISHED) != 0)
+			continue;
+
+		// botData only means anything for a driver the AI owns. A human converted
+		// to AI mid-race memsets it before assigning botPath, so the flag is the
+		// thing to test, not the driver's index in the field.
+		if ((bot->actionsFlagSet & ACTION_BOT) == 0)
+			continue;
+
+		lane = (int)bot->botData.botPath;
+		if ((lane < 0) || (lane >= AP_NAVREC_LANES))
+			continue;
+
+		// An unnamed contributor draws no label, which is what an empty name has
+		// always done here. Now it is per lane: the other lanes still draw.
+		name = s_navrecLaneDriverName[lane];
+		if (name[0] == '\0')
+			continue;
+
+		world.vx = (s16)(bot->posCurr.x >> 8);
+		world.vy = (s16)((bot->posCurr.y >> 8) + 75);
+		world.vz = (s16)(bot->posCurr.z >> 8);
+		world.pad = 0;
+
+		gte_SetRotMatrix(view);
+		gte_SetTransMatrix(view);
+		CTR_GteLoadSV0(&world);
+		gte_rtps();
+		CTR_GteStoreSXY(screen);
+		gte_stsz(&depth);
+		gte_stflg(&flag);
+
+		width = AP_NavRec_LabelWidthForDepth((int)depth);
+		if ((width == 0) || ((flag & 0x40000u) != 0))
+			continue;
+		if ((screen[0] < -32) || (screen[0] > 544) || (screen[1] < -12) || (screen[1] > 228))
+			continue;
+
+		data.font_charPixWidth[FONT_SMALL] = (s16)width;
+		DecalFont_DrawLine(name, screen[0], screen[1] - 4,
+		                   FONT_SMALL, JUSTIFY_CENTER | WHITE);
+		// CTR's ordering table renders later submissions behind earlier ones.
+		// Match MM_HighScore_Text3D: foreground first, offset shadow second.
+		DecalFont_DrawLine(name, screen[0] + 1, screen[1] - 3,
+		                   FONT_SMALL, JUSTIFY_CENTER | BLACK);
+	}
+
+	data.font_charPixWidth[FONT_SMALL] = (s16)oldWidth;
 }
 
 // ============================================================================
@@ -1071,10 +1547,21 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		// no key to press: a player who ticked the option and drove a race has
 		// already said what they want, and a hidden key would be an authoring
 		// affordance in a player-facing feature.
+		//
+		// The final lap banks only if it started on the line. In a one-lap race
+		// the lap in hand is the standing-start lap, which begins on the grid
+		// and is not a loop; banking it is how grid-anchored lines used to reach
+		// files and teleport bots at the finish.
 		if (!s_navrecWrittenThisRace)
 		{
 			s_navrecWrittenThisRace = 1;
-			AP_NavRec_BankLap();
+			if (s_navrecLapOpenAtLine)
+				AP_NavRec_BankLap();
+			else if (s_navrecCurSamples > 0)
+			{
+				AP_LogLine("[AP NAVREC] final lap did not start on the line (standing start or reversal); dropping it\n");
+				AP_NavRec_DropCurrentLap();
+			}
 			AP_NavRec_Write(levelID);
 		}
 		s_navrecEndSeen = 1;
@@ -1092,11 +1579,24 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	if (gGT->trafficLightsTimer > 0)
 		return;
 
-	// Lap boundary: bank the lap just finished and start the next one.
+	// Lap boundary. Only a lap that both STARTED and ENDED with a forward line
+	// crossing is a closed loop worth banking. The standing-start lap begins on
+	// the grid; a backwards crossing (blast or reversal) invalidates the samples
+	// in hand and makes the segment up to the next forward crossing a fragment.
+	// Both used to be banked, and both put a discontinuity exactly on the finish
+	// line of any lane they later fed.
 	{
 		int lapIndex = (int)d->lapIndex;
 		if ((s_navrecLastLapIndex >= 0) && (lapIndex != s_navrecLastLapIndex))
-			AP_NavRec_BankLap();
+		{
+			if (AP_NavRecFormat_LapBoundaryBanks(s_navrecLastLapIndex, lapIndex, &s_navrecLapOpenAtLine))
+				AP_NavRec_BankLap();
+			else
+			{
+				AP_LogLine("[AP NAVREC] lap boundary without a closed lap behind it (standing start or reversal); dropping the samples\n");
+				AP_NavRec_DropCurrentLap();
+			}
+		}
 		s_navrecLastLapIndex = lapIndex;
 	}
 

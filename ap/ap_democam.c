@@ -37,7 +37,8 @@ CTR_STATIC_ASSERT(AP_DEMOCAM_FLAG_ARCADE_EOR_ACTIVE == CAMERA_FLAG_ARCADE_END_OF
 
 static struct ApDemoCamState ap_democam;
 static int ap_democam_enabled;    // ap-config.txt debug_democam=1
-static int ap_democam_want;       // toggle state the live tester drives
+static int ap_democam_want;       // direct toggle state the live tester drives
+static int ap_democam_trap_want;  // scheduler-owned shipped trap state
 static int ap_democam_forceClear; // a connect reset asked for a release next tick
 
 static const char *AP_DemoCamReasonName(int reason)
@@ -279,6 +280,21 @@ static void AP_DemoCamCollect(struct GameTracker *gGT, struct ApDemoCamIdentity 
 	*outPB = pb;
 }
 
+int AP_DemoCamCanEngage(struct GameTracker *gGT)
+{
+	struct ApDemoCamIdentity ident;
+	struct ApDemoCamGate gate;
+	struct CameraDC *cDC;
+	struct PushBuffer *pb;
+	AP_DemoCamCollect(gGT, &ident, &gate, &cDC, &pb);
+	return AP_DemoCam_CanEngage(&gate);
+}
+
+void AP_DemoCamSetTrapActive(int active)
+{
+	ap_democam_trap_want = active != 0;
+}
+
 // ── Release helper ──
 // Reads the CURRENT camera, hands it to the state machine, and writes back only
 // when the snapshot actually belonged to it. An abandoned release writes
@@ -353,6 +369,7 @@ void AP_DemoCam_ConnectReset(void)
 	// restores when the camera is still the snapshotted one and abandons when it
 	// is not.
 	ap_democam_want = 0;
+	ap_democam_trap_want = 0;
 	if (ap_democam.engaged)
 	{
 		ap_democam_forceClear = 1;
@@ -373,7 +390,7 @@ void AP_DemoCamTick(struct GameTracker *gGT)
 
 	AP_DemoCamDebugKey();
 
-	if (!ap_democam_enabled && !ap_democam.engaged)
+	if (!ap_democam_enabled && !ap_democam_trap_want && !ap_democam.engaged)
 		return;
 
 	AP_DemoCamCollect(gGT, &ident, &gate, &cDC, &pb);
@@ -388,7 +405,8 @@ void AP_DemoCamTick(struct GameTracker *gGT)
 		reason = AP_DemoCam_ForcedClearReason(&gate, levelChanged, pointersChanged);
 		if (reason == AP_DEMOCAM_CLEAR_NONE && ap_democam_forceClear)
 			reason = AP_DEMOCAM_CLEAR_CONNECT_RESET;
-		if (reason == AP_DEMOCAM_CLEAR_NONE && !ap_democam_want)
+		if (reason == AP_DEMOCAM_CLEAR_NONE &&
+		    !ap_democam_want && !ap_democam_trap_want)
 			reason = AP_DEMOCAM_CLEAR_REQUEST;
 
 		if (reason != AP_DEMOCAM_CLEAR_NONE)
@@ -410,7 +428,8 @@ void AP_DemoCamTick(struct GameTracker *gGT)
 
 	ap_democam_forceClear = 0;
 
-	if (!ap_democam_want || !AP_DemoCam_CanEngage(&gate))
+	if ((!ap_democam_want && !ap_democam_trap_want) ||
+	    !AP_DemoCam_CanEngage(&gate))
 		return;
 
 	AP_DemoCamRead(cDC, pb, &fields);

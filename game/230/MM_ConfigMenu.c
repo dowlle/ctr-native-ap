@@ -5,6 +5,10 @@
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
 #include <platform/native_input.h>
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_assets.h>
+#include <platform/native_custom_track_manager.h>
+#endif
 #endif
 
 // In-game options menu. Ported from thecodingbob/ctr-native (branch
@@ -46,9 +50,13 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 static void MM_MenuProc_Config(struct RectMenu *menu);
 
 // Section lookup built from g_configEntries at first use
-static int s_sectionToEntry[16];
-static int s_sectionCount[16];
+static int s_sectionToEntry[20];
+static int s_sectionCount[20];
+static const char *s_sectionName[20];
 static int s_numSections = 0;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+static int s_customContentSection = -1;
+#endif
 
 static void BuildSectionMap(void)
 {
@@ -74,10 +82,18 @@ static void BuildSectionMap(void)
 			curSection = g_configEntries[i].section;
 			s_sectionToEntry[s_numSections] = i;
 			s_sectionCount[s_numSections] = 0;
+			s_sectionName[s_numSections] = curSection;
 			s_numSections++;
 		}
 		s_sectionCount[s_numSections - 1]++;
 	}
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	s_customContentSection = s_numSections;
+	s_sectionToEntry[s_numSections] = -1;
+	s_sectionCount[s_numSections] = 0;
+	s_sectionName[s_numSections] = "Custom Content";
+	s_numSections++;
+#endif
 }
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
@@ -617,6 +633,195 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
 }
+
+#ifdef CTR_CUSTOM_TRACKS
+#define CUSTOM_CONTENT_ACTION_COUNT 6
+static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
+	"Download Saphi",
+	"Rescan",
+	"Verify / Setup",
+	"Open Source",
+	"Copy YAML",
+	"Save YAML",
+};
+static char s_customContentMessage[128] =
+	"Download from Saphi, or add the original LEV and VRM files, then Rescan.";
+static int s_customContentDownloadActive = 0;
+
+static void CustomContent_SetMessage(const char *message)
+{
+	size_t len = strlen(message);
+	if (len >= sizeof s_customContentMessage)
+		len = sizeof s_customContentMessage - 1;
+	memcpy(s_customContentMessage, message, len);
+	s_customContentMessage[len] = '\0';
+}
+
+static void CustomContent_DrawMessage(uint32_t *ot)
+{
+	char first[35];
+	char second[35];
+	const char *cursor = s_customContentMessage;
+	int line;
+
+	for (line = 0; line < 2 && *cursor != '\0'; line++)
+	{
+		char *out = line == 0 ? first : second;
+		int count = 0;
+		int lastSpace = -1;
+
+		while (cursor[count] != '\0' && count < 34)
+		{
+			out[count] = cursor[count];
+			if (cursor[count] == ' ')
+				lastSpace = count;
+			count++;
+		}
+		if (cursor[count] != '\0' && lastSpace > 0)
+			count = lastSpace;
+		out[count] = '\0';
+		cursor += count;
+		while (*cursor == ' ')
+			cursor++;
+	}
+	if (line == 2 && *cursor != '\0')
+	{
+		int len = (int)strlen(second);
+		if (len > 30)
+			len = 30;
+		memcpy(second + len, "...", 4);
+	}
+
+	DecalFont_DrawLineOT(first, 0x100, 0xB8, FONT_SMALL,
+	                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
+	if (line > 1)
+		DecalFont_DrawLineOT(second, 0x100, 0xC6, FONT_SMALL,
+		                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
+}
+
+static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+{
+	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
+	struct CustomTrackManagerStatus exported;
+	char line[160];
+	char yaml[4096];
+	char downloadMessage[128];
+	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
+	int i;
+
+	if (s_customContentDownloadActive)
+	{
+		CustomContent_SetMessage(downloadMessage);
+		if (downloadState == AP_CT_DOWNLOAD_SUCCEEDED)
+		{
+			s_customContentDownloadActive = 0;
+			AP_CustomContentVerify();
+			status = AP_CustomContentStatus();
+			CustomContent_SetMessage(status->detail);
+		}
+		else if (downloadState == AP_CT_DOWNLOAD_FAILED)
+			s_customContentDownloadActive = 0;
+	}
+
+	if ((pad->buttonsTapped & BTN_UP) != 0)
+	{
+		int row = menu->rowSelected % 3;
+		menu->rowSelected += row > 0 ? -1 : 2;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_DOWN) != 0)
+	{
+		int row = menu->rowSelected % 3;
+		menu->rowSelected += row < 2 ? 1 : -2;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+	{
+		menu->rowSelected = (menu->rowSelected + 3) % CUSTOM_CONTENT_ACTION_COUNT;
+		OtherFX_Play(0, 1);
+	}
+
+	if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
+	{
+		OtherFX_Play(1, 1);
+		switch (menu->rowSelected)
+		{
+		case 0:
+			if (AP_CustomContentDownloadStart())
+			{
+				s_customContentDownloadActive = 1;
+				CustomContent_SetMessage("Starting verified download from Project Saphi...");
+			}
+			else
+			{
+				AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
+				CustomContent_SetMessage(downloadMessage);
+			}
+			break;
+		case 1:
+			AP_CustomContentRescan();
+			status = AP_CustomContentStatus();
+			CustomContent_SetMessage(status->detail);
+			break;
+		case 2:
+			AP_CustomContentVerify();
+			status = AP_CustomContentStatus();
+			CustomContent_SetMessage(status->detail);
+			break;
+		case 3:
+			CustomContent_SetMessage(Platform_OpenURL(package->sourceUrl)
+			                        ? "Opened the official Project Saphi page."
+			                        : "Could not open the official source page.");
+			break;
+		case 4:
+			if (CustomTrackManager_RenderYaml(package, status, yaml, sizeof yaml) &&
+			    Platform_SetClipboardText(yaml))
+				CustomContent_SetMessage("Verified custom_tracks YAML copied.");
+			else
+				CustomContent_SetMessage("Copy YAML requires a Ready package.");
+			break;
+		case 5:
+			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status,
+			                                &exported))
+				CustomContent_SetMessage("Saved custom_tracks.generated.yaml.");
+			else
+				CustomContent_SetMessage("Save YAML requires a Ready package.");
+			break;
+		}
+	}
+
+	status = AP_CustomContentStatus();
+	DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+	DecalFont_DrawLineOT((char *)package->title, 0x100, 0x36,
+	                   FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	snprintf(line, sizeof line, "v%s  |  %s  |  Project Saphi", package->version, package->author);
+	DecalFont_DrawLineOT(line, 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	snprintf(line, sizeof line, "Status: %s  |  Seed: %s",
+	         downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state),
+	         AP_CustomContentSeedSelected()
+	             ? (AP_CustomContentRequired() ? "REQUIRED" : "READY")
+	             : "OPTIONAL");
+	DecalFont_DrawLineOT(line, 0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER |
+	                   (AP_CustomContentRequired() ? RED : ORANGE), ot);
+
+	for (i = 0; i < CUSTOM_CONTENT_ACTION_COUNT; i++)
+	{
+		int column = i / 3;
+		int row = i % 3;
+		int x = column == 0 ? 0x38 : 0x118;
+		int y = 0x78 + row * 0x18;
+		DecalFont_DrawLineOT((char *)s_customContentActions[i], x, y, FONT_SMALL, ORANGE, ot);
+		if (i == menu->rowSelected)
+		{
+			RECT sel = {column == 0 ? 0x30 : 0x110, y - 2, 0xC0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+
+	CustomContent_DrawMessage(ot);
+}
+#endif
 #endif // CTR_AP
 
 static void MM_MenuProc_Config(struct RectMenu *menu)
@@ -659,7 +864,14 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		const int firstEntry = s_sectionToEntry[sec];
 
 #ifdef CTR_AP
-		// The Connection section has bespoke text-edit / connect behaviour.
+		// Connection and Custom Content have bespoke action/state surfaces.
+#ifdef CTR_CUSTOM_TRACKS
+		if (sec == s_customContentSection)
+		{
+			MM_ConfigProc_CustomContent(menu, ot, pad);
+		}
+		else
+#endif
 		if (strcmp(g_configEntries[firstEntry].section, "Connection") == 0)
 		{
 			MM_ConfigProc_Connection(menu, ot, pad);
@@ -787,9 +999,13 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		for (int i = 0; i < s_numSections; i++)
 		{
-			const ConfigEntry *e = &g_configEntries[s_sectionToEntry[i]];
 			int y = startY + i * spacing;
-			DecalFont_DrawLineOT((char *)e->section, labelX, y, FONT_SMALL, ORANGE, ot);
+			int color = ORANGE;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			if (i == s_customContentSection && AP_CustomContentRequired())
+				color = RED;
+#endif
+			DecalFont_DrawLineOT((char *)s_sectionName[i], labelX, y, FONT_SMALL, color, ot);
 			if (i == menu->rowSelected)
 			{
 				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};

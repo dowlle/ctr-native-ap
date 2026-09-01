@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002dd24-0x8002dd74
 void Music_SetIntro(void)
 {
@@ -195,7 +199,18 @@ u32 Music_AsyncParseBanks(void)
 		        ((uVar4 & 0x8c100000) == 0) &&
 
 		        // If not purple gem cup
-		        (((uVar4 & ADVENTURE_CUP) == 0) || (gGT->cup.cupID != 4))
+		        (((uVar4 & ADVENTURE_CUP) == 0) || (gGT->cup.cupID != 4)
+#ifdef CTR_CUSTOM_TRACKS
+		         // ... or it is the Purple cup, but displaced. Purple is excluded
+		         // from bank 54 because its field is characters 8..11, which the
+		         // "8 drivers" bank does not carry; it loads five individual
+		         // character banks instead. A displaced cup races BASE characters
+		         // out of the 1P arcade pack, so bank 54 is exactly its roster --
+		         // and past five karts the per-cup path is a hole, because it
+		         // loads one bank per kart up to five and nothing after that.
+		         || CustomTrack_ServingLoad(level, (uVar4 & ADVENTURE_CUP) != 0, gGT->cup.cupID)
+#endif
+		             )
 
 		            ) ||
 
@@ -227,7 +242,17 @@ u32 Music_AsyncParseBanks(void)
 			    ((gGT->gameMode1 & ADVENTURE_CUP) == 0) ||
 
 			    // If this is not the purple gem cup
+#ifdef CTR_CUSTOM_TRACKS
+			    // ... or it is, but displaced. The other half of the same
+			    // decision: with bank 54 loaded above, the displaced race takes
+			    // the ordinary per-player path, which loads an individual bank
+			    // only for a player character bank 54 does not carry. Its AI are
+			    // all base characters, so bank 54 covers every one of them.
+			    (gGT->cup.cupID != 4 ||
+			     CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)))
+#else
 			    (gGT->cup.cupID != 4))
+#endif
 			{
 				// numPlyrCurrGame
 				if (sdata->bankCount < gGT->numPlyrCurrGame)

@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 #ifdef CTR_NATIVE
 static void MainInit_InitVisMemBspListNodes(struct VisMem *visMem, struct mesh_info *mesh)
 {
@@ -152,6 +156,44 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	{
 		return;
 	}
+
+#ifdef CTR_CUSTOM_TRACKS
+	// MainInit_GetPrimMemSize is left alone deliberately -- it is an
+	// ASM-verified retail function and its answer stays exactly what retail
+	// computes. The floor is applied HERE, after it, so a build without
+	// CTR_CUSTOM_TRACKS allocates retail's bytes for every level and every
+	// player count.
+	//
+	// Two reasons a load qualifies, and they are different arguments:
+	//
+	//   Serving the custom track. The retail table cannot express an arena this
+	//   track can use -- u8 << 10, ceiling 261,120 bytes, against a sky that
+	//   alone wants 310,464. Outside the table there is no such limit, which is
+	//   the same argument the MEMPACK expansion already made for the payload.
+	//
+	//   A 1P level load. Measured on 2026-08-29: the adventure hub's worst
+	//   frame spent 106,324 of the 114,688 bytes the ADVENTURE_ARENA branch
+	//   hands it, and a frame that crosses that line loses the rest of its
+	//   level geometry without saying so. See decision 8 in
+	//   native_custom_tracks_policy.h for the four ceilings the floor was
+	//   checked against, MEMPACK's included.
+	//
+	// All three facts the serving decision needs are committed before the
+	// ten-stage loader is armed (see tools/CUSTOM-TRACK-SPIKE.md), and this
+	// runs inside that machine, so asking here is safe.
+	{
+		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
+
+		if (chosen != (unsigned long)size)
+		{
+			CustomTrack_Log("[CustomTracks] level %d primitive arena %d -> %lu bytes (%s)\n", (int)gGT->levelID, size, chosen,
+			                serving ? "the borrowed slot's retail budget cannot hold this track"
+			                        : "measured 1P headroom: the retail budget leaves too little for the frame's last writers");
+			size = (int)chosen;
+		}
+	}
+#endif
 
 	MainDB_PrimMem(&gGT->db[0].primMem, size);
 	MainDB_PrimMem(&gGT->db[1].primMem, size);
@@ -420,6 +462,19 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		    (gGT->cup.cupID == 4))
 		{
 			numDrivers = numPlyrCurrGame + 4;
+
+#ifdef CTR_CUSTOM_TRACKS
+			// A displaced cup races the whole field the track can seat, not the
+			// four the boss lineup assumed. The size follows the descriptor's
+			// measured spawn count rather than being a constant, because
+			// struct Level::DriverSpawn has no count for the engine to check a
+			// larger field against. Same serve predicate as the roster and the
+			// bytes, so the karts seated and the models loaded for them cannot
+			// disagree.
+			numDrivers = CustomTrackPolicy_DriverCount(
+			    numDrivers, numPlyrCurrGame,
+			    CustomTrack_EventFieldSize((int)gGT->levelID, 1, gGT->cup.cupID));
+#endif
 		}
 
 		else if (numPlyrCurrGame == 1)

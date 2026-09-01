@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 
 enum
 {
@@ -548,7 +552,24 @@ void CAM_EndOfRace(struct CameraDC *cDC, struct Driver *d)
 #if BUILD > SepReview
 
 	// If not in Battle Mode and track path points exist and game is on 1P or 2P mode
+#ifdef CTR_CUSTOM_TRACKS
+	// The count > 1 term stands in for "this level has end-of-race cameras",
+	// which on retail it does: battle arenas have count == 0 and every arcade
+	// track has count == 4 with a non-NULL ST1_CAMERA_EOR. A custom track can
+	// have a long table with that slot NULL (Baby T Park: count == 7), and the
+	// consumer this flag arms -- the EOR block in CAM_ThTick -- dereferences the
+	// entry to read its camera count. Asking for the entry itself sends such a
+	// track down the branch a level without EOR cameras already takes, so it
+	// gets the battle-map end-of-race camera rather than a null dereference the
+	// frame the first driver crosses the line. Note the term is a strict
+	// tightening of count > 1: ST1_CAMERA_EOR is index 2, so the predicate also
+	// requires count > 2, which no retail level fails.
+	if (((gGT->gameMode1 & BATTLE_MODE) == 0) && (1 < gGT->level1->ptrSpawnType1->count) && (gGT->numPlyrCurrGame < 3) &&
+	    CustomTrackPolicy_St1EntryPresent(gGT->level1->ptrSpawnType1->count, ST1_CAMERA_EOR,
+	                                      (const void *const *)ST1_GETPOINTERS(gGT->level1->ptrSpawnType1)))
+#else
 	if (((gGT->gameMode1 & BATTLE_MODE) == 0) && (1 < gGT->level1->ptrSpawnType1->count) && (gGT->numPlyrCurrGame < 3))
+#endif
 	{
 		// Activate end-of-race cDC flag in CameraDC struct
 		cDC->flags |= CAMERA_FLAG_ARCADE_END_OF_RACE_REQUESTED;
@@ -1628,7 +1649,22 @@ LAB_8001ab04:
 			s32 flyInDone = 0;
 
 			// No camera + No ghosts (battle maps)
+#ifdef CTR_CUSTOM_TRACKS
+			// Retail encodes "no intro camera path" by making the ST1 table
+			// short, so count < 4 is a sound test on retail content -- all 18
+			// arcade tracks have count == 4 with a non-NULL ST1_CAMERA_PATH,
+			// and all 7 battle arenas have count == 0. A custom track can
+			// instead ship a full-width table with a NULL in that slot (Baby T
+			// Park: count == 7, ST1_CAMERA_PATH NULL), which clears this
+			// threshold and then hands CAM_StartLine_FlyIn ptrEnd == 0x354 to
+			// dereference. Asking whether the entry is really there covers both
+			// encodings and is identical to count < 4 whenever it is not NULL.
+			// Written as a swapped condition rather than a nested if so the
+			// guard-off preprocessor output is unchanged down to the brace.
+			if (!CustomTrackPolicy_St1EntryPresent(st1->count, ST1_CAMERA_PATH, (const void *const *)pointers))
+#else
 			if (st1->count < 4)
+#endif
 			{
 				// startline fly-in is done
 				flyInDone = 1;
@@ -1894,6 +1930,22 @@ void CAM_ThTick(struct Thread *t)
 
 	void **ptrs = ST1_GETPOINTERS(psVar14);
 	psVar19 = ptrs[ST1_CAMERA_EOR];
+
+#ifdef CTR_CUSTOM_TRACKS
+	// CAM_EndOfRace already refuses to arm this block for a level whose
+	// ST1_CAMERA_EOR entry is absent, but it is not the only writer of the
+	// flag: ap/ap_democam.c sets AP_DEMOCAM_FLAG_ARCADE_EOR_REQUESTED straight
+	// onto cDC->flags, and its own AP_DemoCamEorTableUsable answers on count
+	// alone, so it would arm on exactly the table shape that crashes here.
+	// Guarding the dereference itself rather than trusting the arming keeps
+	// that path safe too. Skipping leaves psVar21 at 0, which is the same "no
+	// end-of-race camera was picked" outcome the count check a few lines above
+	// already produces. Additive, so guard-off output is unchanged.
+	if (!CustomTrackPolicy_St1EntryPresent(psVar14->count, ST1_CAMERA_EOR, (const void *const *)ptrs))
+	{
+		goto SkipNewCameraEOR;
+	}
+#endif
 
 	// number of EOR cameras
 	sVar6 = *psVar19;

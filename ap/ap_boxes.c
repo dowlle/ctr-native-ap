@@ -12,6 +12,9 @@
 #include "ap_cup_box_policy.h" // WO-A3: the freestanding cup-leg access decision
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h> // the event race's own box verdict
+#endif
 
 // ============================================================================
 // AP ITEM BOXES -- runtime. See ap_boxes.h for the ruled semantics, for why the
@@ -211,6 +214,31 @@ static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
 	if ((gGT->gameMode1 & ADVENTURE_CUP) == 0)
 		return AP_BoxPolicyAllows(0, -1, 0, 0, 0); // non-cup: unchanged
 
+#ifdef CTR_CUSTOM_TRACKS
+	// The custom-track event race sets ADVENTURE_CUP for reward routing (see
+	// AH_WarpPad.c: clearing it would award a trophy instead of the gem), but it
+	// is NOT a gem-cup leg. Left to the code below it would be gated on
+	// ctr_cfg_warp_phys(level), i.e. on the physical retail pad that happens to
+	// host the mapped arcade slot -- a pad with nothing to do with this event.
+	// Make that a deliberate answer instead of a fall-through.
+	//
+	// ALLOW takes the non-cup path, so the event race's boxes are not gated on
+	// that unrelated pad. DENY stands the set down entirely. Note what ALLOW
+	// does not yet buy: placement still resolves through the host slot's retail
+	// identity, so until the apworld descriptor supplies this track's own
+	// placements it spawns retail boxes at retail coordinates. That is why the
+	// verdict is configurable rather than hard-coded.
+	switch (CustomTrack_BoxVerdict(level, 1, gGT->cup.cupID))
+	{
+	case CTR_CT_BOX_ALLOW:
+		return AP_BoxPolicyAllows(0, -1, 0, 0, 0);
+	case CTR_CT_BOX_DENY:
+		return 0;
+	default:
+		break;
+	}
+#endif
+
 	phys = ctr_cfg_warp_phys(level);
 
 	return AP_BoxPolicyAllows(1, phys,
@@ -326,9 +354,12 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 		return; // retried next frame once the level's models are up
 	}
 
-	pos.x = s_live[i].x;
-	pos.y = s_live[i].y;
-	pos.z = s_live[i].z;
+	// The authored row is a GROUND anchor (it is a kart position, and a kart's
+	// origin is its ground contact point), while a crate model's origin is its
+	// centre, so the row is passed through the shared spawn transform rather than
+	// copied into the matrix. Author-mode markers call the same helper, which is
+	// what makes a dropped box preview the height it will really stand at.
+	AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
 	rot.x = 0;
 	rot.y = s_live[i].rotY;
 	rot.z = 0;
@@ -646,15 +677,22 @@ int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
 
 		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
 			continue;
+
+		// The LIVE INSTANCE, not the authored row. The row is a ground anchor and
+		// the crate stands a measured lift above it (AP_BoxModel_SpawnPos), so
+		// testing against the row would leave the collision centre behind on the
+		// road while the model moved: the visible crate and the earnable check are
+		// not allowed to diverge, and reading the same matrix the renderer draws
+		// from is what makes that structural rather than remembered.
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue; // waiting for its model, or between a pool reset and a birth
+
 		if (!AP_BoxMap_SegmentWithinRadius(
-		        s_live[i].x, s_live[i].y, s_live[i].z,
+		        inst->matrix.t[0], inst->matrix.t[1], inst->matrix.t[2],
 		        oldX, oldY, oldZ,
 		        weaponInst->matrix.t[0], weaponInst->matrix.t[1],
 		        weaponInst->matrix.t[2], AP_BOX_HIT_RADIUS))
-			continue;
-
-		inst = AP_Spawn_Instance(s_live[i].spawn);
-		if (inst == 0)
 			continue;
 
 		AP_BoxBreak(gGT, i, inst);
@@ -691,19 +729,22 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 		if (!s_live[i].used || s_live[i].spawn == AP_SPAWN_INVALID)
 			continue;
 
+		// The live instance for the same reason as the weapon-move path above:
+		// the collision centre is the visible centre, never the authored anchor
+		// the crate is lifted off.
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue; // waiting for its model, or between a pool reset and a birth
+
 		// Overflow-safe proximity (2026-08-13 REJECT fix-forward): the loop
 		// always sweeps all 15 slots regardless of distance, so a naive
 		// dx*dx+dy*dy+dz*dz in a plain int wrapped negative for a far box on a
 		// large track and broke it by mistake. AP_BoxMap_WithinRadius
 		// (ap_box_map.h) is the freestanding, harness-tested replacement.
-		if (!AP_BoxMap_WithinRadius(s_live[i].x, s_live[i].y, s_live[i].z,
+		if (!AP_BoxMap_WithinRadius(inst->matrix.t[0], inst->matrix.t[1], inst->matrix.t[2],
 		                            weaponInst->matrix.t[0], weaponInst->matrix.t[1],
 		                            weaponInst->matrix.t[2], radius))
 			continue;
-
-		inst = AP_Spawn_Instance(s_live[i].spawn);
-		if (inst == 0)
-			continue; // waiting for its model, or between a pool reset and a birth
 
 		AP_BoxBreak(gGT, i, inst);
 	}

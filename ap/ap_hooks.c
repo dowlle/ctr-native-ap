@@ -6,6 +6,12 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
+#include <platform/native_assets.h>
+#include "ap_custom_track_download.h"
+#include "ap_custom_trophy_ceremony_logic.h"
+#endif
 #include "ap_ceremony_logic.h"
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
@@ -21,9 +27,12 @@
 
 static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
-#include "ap_democam.h"   // Demo Camera PROTOTYPE (no item identity; debug trigger only)
+#include "ap_fxseen_logic.h" // room-aware one-shot replay ledger rows (#299)
+#include "ap_democam.h"   // Demo Camera trap and direct live-test trigger
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
+#include "ap_wumpa_dispatch.h" // freestanding "which Wumpa code does this crossing send"
+#include "ap_cup_box_policy.h" // AP_BoxPadAccessible: the shared individual-pad rule
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
@@ -34,6 +43,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "ap_useful.h"     // H-dossier useful grants
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
+#include "ap_held_race_rearm.h" // pure per-attempt boundary latch for held rungs
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
@@ -52,6 +62,13 @@ CTR_STATIC_ASSERT(AP_TRAP_ITEM_ID_BASE == AP_ITEM_BASE);
 CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
 CTR_STATIC_ASSERT(AP_MODEL_GEM == STATIC_GEM);
 CTR_STATIC_ASSERT(AP_MODEL_RELIC == STATIC_RELIC);
+#ifdef CTR_CUSTOM_TRACKS
+// manager-light measures wumpa_collectible by walking a LEV's instance table for
+// these two model ids, and mirrors them because platform code compiles without
+// the engine headers. This is the one place both definitions are visible.
+CTR_STATIC_ASSERT(CTR_CT_MODEL_FRUIT_CRATE == PU_FRUIT_CRATE);
+CTR_STATIC_ASSERT(CTR_CT_MODEL_WUMPA_FRUIT == PU_WUMPA_FRUIT);
+#endif
 CTR_STATIC_ASSERT(AP_MODEL_TROPHY == STATIC_TROPHY);
 CTR_STATIC_ASSERT(AP_MODEL_KEY == STATIC_KEY);
 CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
@@ -61,6 +78,15 @@ CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
 // frozen weapon facts, so the reward-display policy can classify a weapon unlock
 // without pulling in this runtime (#219).
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+
+#ifdef CTR_CUSTOM_TRACKS
+static struct CustomTrackManagerStatus ap_custom_content_status;
+static int ap_custom_content_scanned = 0;
+static int ap_custom_content_seed_selected = 0;
+static int ap_custom_content_required = 0;
+static unsigned int ap_custom_content_gate_timer = 0;
+static int ap_custom_content_gate_cached = 0;
+#endif
 
 // ==============================================================
 // Archipelago integration. Parts:
@@ -237,15 +263,24 @@ static const char *AP_TrophyName(int globalBit)
 	}
 }
 
-// Resolve a global AdvProgress bit to its AP location code, or -1 if not a
-// checkable location. Podium-rung PSEUDO-BITS (>= AP_PODIUM_PSEUDO_BASE, see
-// ap_hooks.h) translate to the per-seed rung codes here, so every bit-keyed
-// consumer (checked-state, reward model/tint, scouts) handles rungs unchanged.
+// Resolve a process-local progress identity to its seed-carried AP wire code,
+// or -1 when it is not a checkable location. The custom Trophy and Wumpa
+// identities are direct pseudo-bits; podium identities use the shared
+// retail-plus-custom logical track range. Every bit-keyed consumer (checked
+// state, reward model/tint and scouts) therefore handles them unchanged.
 static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
+#ifdef CTR_CUSTOM_TRACKS
+	if (globalBit == AP_CUSTOM_TROPHY_PSEUDO_BIT ||
+	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
+		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
+#endif
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		return AP_PodiumPseudoLocationCode(&ctr_cfg, globalBit);
+#else
 		int off = globalBit - AP_PODIUM_PSEUDO_BASE;
 		int track = off / CTR_CFG_PODIUM_RUNG_COUNT;
 		int rung = off % CTR_CFG_PODIUM_RUNG_COUNT;
@@ -261,9 +296,10 @@ static long AP_LookupLocationCode(int globalBit)
 		case 1:  code = pr->held_3rd;      break;
 		case 2:  code = pr->held_5th;      break;
 		case 3:  code = pr->finish_podium; break;
-		default: code = pr->finish_any;    break; // rung 4
+		default: code = pr->finish_any;    break;
 		}
-		return (code > 0) ? code : -1; // -1 = rung absent from this seed
+		return (code > 0) ? code : -1;
+#endif
 	}
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 	{
@@ -793,6 +829,9 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 //                 Turbo Track carry no trophy/token location
 //   arena 18,19,21,23 : 1 crystal (battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN)
 //   cup   100..104     : 1 gem ((dest-100) + FIRST_GEM)
+static int AP_PadBoxLive(long code, void *ctx);
+static int AP_PadBoxChecked(long code, void *ctx);
+
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 {
 	static const int kRaceTierBit[5] = {
@@ -851,6 +890,12 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 	}
 	else if (destLevelID >= 100 && destLevelID < 105)
 	{
+#ifdef CTR_CUSTOM_TRACKS
+		if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+			return AP_CustomPadAppendUnchecked(
+				&ctr_cfg, destLevelID, 0, outBits, cap, count,
+				AP_PadBoxLive, AP_PadBoxChecked, 0);
+#endif
 		// Gem cup (Gem, bits 106..110), keyed by cup colour 0..4. Never a
 		// removed slot -- shuffle_gems off PINS this location (place_locked_item),
 		// it stays a real self-consistent AP check (see the package-3 build note).
@@ -870,7 +915,11 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 {
 	int rung;
+#ifdef CTR_CUSTOM_TRACKS
+	if (track < 0 || track >= AP_PODIUM_LOGICAL_TRACK_COUNT)
+#else
 	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
+#endif
 		return;
 	for (rung = 0; rung < CTR_CFG_PODIUM_RUNG_COUNT && *count < cap; rung++)
 	{
@@ -898,11 +947,21 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 // appends that track's own rungs. For a CUP destination (100..104) it appends the
 // rungs of ALL FOUR of the cup's leg tracks (data.advCupTrackIDs), because a cup
 // pad's position checks live on its legs -- without this a cup pad under-advertises
-// (decision 3, 2026-07-16 wayfinder). Kept separate from AP_PadUncollectedBits so
-// the tier-2 menu and AP_PadState semantics stay byte-identical (glow only).
+// (decision 3, 2026-07-16 wayfinder). Kept separate from
+// AP_PadUncollectedBits so the tier-2 menu stays tier-only. AP_PadState consumes
+// the glow-complete enumeration because a Done lock may not strand a rung.
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
-	int count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+	int count;
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return AP_CustomPadAppendUnchecked(
+			&ctr_cfg, destLevelID, ctr_cfg.podium_enabled,
+			outBits, cap, 0, AP_PadBoxLive, AP_PadBoxChecked, 0);
+#endif
+
+	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
 
 	if (!ctr_cfg.podium_enabled)
 		return count;
@@ -920,6 +979,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 		// 0..15 carries no podium rungs and is skipped by AP_AppendTrackRungGlow.
 		int cup = destLevelID - 100;
 		int leg;
+		// A displaced cup runs one custom race and legs no retail track. Its
+		// complete four-leg row remains on the wire as the seed's retail table,
+		// but advertising those rungs on this pad would promise checks the race
+		// cannot honestly emit.
+		if (!AP_GlowSlots_CupLegRungsEligible(ctr_cfg_cup_displaced(cup)))
+			return count;
 		for (leg = 0; leg < 4 && count < cap; leg++)
 			AP_AppendTrackRungGlow(ctr_cfg_cup_leg(cup, leg), outBits, cap,
 			                       &count);
@@ -1030,10 +1095,61 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	if (destLevelID >= 100 && destLevelID < 105)
 	{
 		int cup = destLevelID - 100;
+#ifdef CTR_CUSTOM_TRACKS
+		// A displaced cup runs no retail legs.  Until custom box identities and
+		// placements exist, counting the wire row's retail boxes here would keep
+		// the custom pad open for checks it cannot serve.
+		if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+			return 0;
+#endif
 		for (leg = 0; leg < 4; leg++)
 			n += AP_PadTrackBoxesLeft(ctr_cfg_cup_leg(cup, leg));
 	}
 	return n;
+}
+
+// Per-track Wumpa checks carry no AdvProgress bit, so they need the same
+// count-only lifecycle bridge as AP boxes and Lettersanity. A standalone race
+// owns its one destination code. A Gem Cup aggregates the distinct track-owned
+// codes of all four legs so checking the Gem cannot hard-lock a remaining
+// Wumpa route. Repeated legs are alternatives to one location and count once.
+static int AP_PadTrackWumpaLeft(int levelID)
+{
+	long code;
+
+	if (levelID < 0 || levelID >= CTR_CFG_WUMPA_TRACK_COUNT)
+		return 0;
+	code = ctr_cfg.wumpa.tracks[levelID];
+	return code >= 0 && ap_net_location_exists(code) &&
+	       !ap_net_location_checked(code);
+}
+
+int AP_PadUncollectedWumpaCount(int destLevelID)
+{
+	int tracks[4];
+	int trackLeft[4];
+	int leg;
+
+	if (!ctr_cfg_active() || ctr_cfg.wumpa.mode != CTR_CFG_WUMPA_PER_TRACK)
+		return 0;
+	if (destLevelID >= 0 && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
+		return AP_PadTrackWumpaLeft(destLevelID);
+	if (destLevelID < 100 || destLevelID >= 105)
+		return 0;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The direct Alpha6 custom destination already includes its Wumpa location
+	// in AP_CustomPadAppendUnchecked. Its serialized retail leg row is ignored.
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return 0;
+#endif
+
+	for (leg = 0; leg < 4; leg++)
+	{
+		tracks[leg] = ctr_cfg_cup_leg(destLevelID - 100, leg);
+		trackLeft[leg] = AP_PadTrackWumpaLeft(tracks[leg]);
+	}
+	return AP_PadCupWumpaCount(tracks, trackLeft, CTR_CFG_WUMPA_TRACK_COUNT);
 }
 
 int AP_PadUncollectedLetterCount(int destLevelID)
@@ -1210,6 +1326,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int uncN;
 	int boxesLeft;
 	int lettersLeft;
+	int wumpaLeft;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1240,6 +1357,11 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// belong to this destination's CTR Challenge and must keep the pad out of
 	// Done even after the ordinary Token location is checked.
 	lettersLeft = AP_PadUncollectedLetterCount(destLevelID);
+	// Per-track Wumpa is track-owned but has several physical routes. Keep a
+	// standalone pad and every legging Cup out of Done until the server checks
+	// it. Before stage 2 it needs the plain Trophy-race route; after stage 2 the
+	// entry chooser treats it as a CTR Challenge-side reason to remain open.
+	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
@@ -1250,21 +1372,21 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         ctr_cfg_racer_lock_met(physLevelID),
 	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
-	                         uncN + lettersLeft, boxesLeft);
+	                         uncN + lettersLeft + wumpaLeft,
+	                         boxesLeft + wumpaLeft);
 }
 
-// Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
+// Is this pad in the phase-1 re-entry window? True exactly when the
 // destination's trophy race is already checked and the pad is STILL state 2
-// Raceable -- which, for a race destination with the trophy checked, can only
-// come from the standing-box branch of the table ("stays Raceable and enterable
-// until they are gone"). Any other route to 2 either has an unchecked trophy or
-// a non-race destination, both excluded here.
+// Raceable. For a race destination with the trophy checked, that means an AP
+// box or per-track Wumpa check still needs a plain adventure re-race. Any other
+// route to 2 has an unchecked trophy or a non-race destination, both excluded.
 //
 // Defined ON TOP of AP_PadState rather than beside it deliberately: the entry
 // gate and the pad's look in AH_WarpPad.c consume this, so they cannot drift
 // from the state the map paints. That drift IS issue #232 -- the state model
 // promised the pad stayed enterable and the gate had no path for it.
-int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
+int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID)
 {
 	if (!ctr_cfg_active())
 		return 0;
@@ -1282,8 +1404,8 @@ static const char *AP_PadRouteName(int route)
 {
 	switch (route)
 	{
-	case AP_PAD_ROUTE_S2LOCKED_BOX_RERACE:
-		return "box-re-race(stage2-locked)";
+	case AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE:
+		return "plain-re-race(stage2-locked)";
 	case AP_PAD_ROUTE_S2LOCKED_INERT:
 		return "inert(stage2-locked)";
 	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU:
@@ -1317,6 +1439,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	static int s_token = -1;
 	static int s_relic = -1;
 	static int s_boxes = -1;
+	static int s_wumpa = -1;
 
 	int uncBits[24];
 	int uncN;
@@ -1326,6 +1449,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	int tokenLeft = 0;
 	int relicLeft = 0;
 	int boxesLeft;
+	int wumpaLeft;
 	char msg[192];
 
 	if (!ctr_cfg_active())
@@ -1336,6 +1460,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	state = AP_PadState(physLevelID, destLevelID);
 	trophyChecked = AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
 	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
+	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 
 	// The same enumerator and the same offsets the tier-2 chooser itself reads,
 	// so the logged flags cannot disagree with the decision they explain. These
@@ -1353,10 +1478,12 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 		         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
 			relicLeft = 1;
 	}
+	tokenLeft = AP_PadTokenSideLeft(
+	    tokenLeft, AP_PadUncollectedLetterCount(destLevelID), wumpaLeft);
 
 	if (physLevelID == s_phys && destLevelID == s_dest && route == s_route &&
 	    state == s_state && trophyChecked == s_trophy && tokenLeft == s_token &&
-	    relicLeft == s_relic && boxesLeft == s_boxes)
+	    relicLeft == s_relic && boxesLeft == s_boxes && wumpaLeft == s_wumpa)
 		return; // nothing the line reports has changed since it was last emitted
 
 	s_phys = physLevelID;
@@ -1367,12 +1494,13 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	s_token = tokenLeft;
 	s_relic = relicLeft;
 	s_boxes = boxesLeft;
+	s_wumpa = wumpaLeft;
 
 	snprintf(msg, sizeof msg,
 	         "[AP PAD] pad %d -> dest %d: state=%d trophy_checked=%d token_left=%d "
-	         "relic_left=%d boxes_left=%d route=%s\n",
+	         "relic_left=%d boxes_left=%d wumpa_left=%d route=%s\n",
 	         physLevelID, destLevelID, state, trophyChecked, tokenLeft, relicLeft,
-	         boxesLeft, AP_PadRouteName(route));
+	         boxesLeft, wumpaLeft, AP_PadRouteName(route));
 	AP_LogLine(msg);
 }
 
@@ -1568,6 +1696,9 @@ typedef struct
 
 static AP_CeremonyEntry ap_ceremony_ledger[AP_CEREMONY_MAX];
 static int ap_ceremony_count = 0;
+#ifdef CTR_CUSTOM_TRACKS
+static ap_custom_trophy_ceremony_state ap_custom_trophy_ceremony;
+#endif
 
 // Cleared when a new race starts (the finish-flag falling edge in the race
 // listener), so each ceremony shows only its own race's just-earned checks.
@@ -1734,6 +1865,10 @@ static void AP_RelicTargetTick(struct GameTracker *gGT)
 // rung -- so a lone trophy/token/crystal reads as just "<ITEM> AWARDED".
 static const char *AP_CeremonyPrefix(int bit, int rung)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	if (bit == AP_CUSTOM_TROPHY_PSEUDO_BIT)
+		return "CUSTOM TROPHY";
+#endif
 	if (rung == 0)
 		return "HELD 1ST";
 	if (rung == 1)
@@ -1918,6 +2053,38 @@ int AP_CeremonyDrawTimed(int x, int y, int primaryBit, int includeLedger,
 {
 	return AP_CeremonyDrawInternal(x, y, primaryBit, includeLedger,
 	                              elapsedFrames, visibleFrames);
+}
+
+int AP_CustomTrackTrophyCeremonyDraw(int x, int y)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (!AP_CustomTrophyCeremonyActive(&ap_custom_trophy_ceremony))
+		return 0;
+	return AP_CeremonyDraw(x, y, AP_CUSTOM_TROPHY_PSEUDO_BIT, 1);
+#else
+	(void)x;
+	(void)y;
+	return 0;
+#endif
+}
+
+int AP_CustomTrackTrophyCeremonyProp(struct Instance *prop)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (!AP_CustomTrophyCeremonyActive(&ap_custom_trophy_ceremony))
+		return 0;
+	return AP_CeremonyRewardProp(prop, AP_CUSTOM_TROPHY_PSEUDO_BIT);
+#else
+	(void)prop;
+	return 0;
+#endif
+}
+
+void AP_CustomTrackTrophyCeremonyEnd(void)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	AP_CustomTrophyCeremonyEnd(&ap_custom_trophy_ceremony);
+#endif
 }
 
 int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth)
@@ -2724,12 +2891,12 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // this separate verifier tally avoids changing any live reward semantics.
 //
 // Sized from the HIGHEST index in the apworld table, which is no longer the Turbo
-// Grant: the 0.2.0 trap wave added Upside Down, Mirror Mode and Warpball Ambush at
-// 190..192, so the table is 193 long. Anything past the end is dropped by the
+// Grant: the 0.2.0 trap wave added four identities at 190..193, so the table is
+// 194 long. Anything past the end is dropped by the
 // bounds check at the receive site rather than counted, so an undersized array
 // silently loses foreign receipts from the verifier's view.
 #define AP_VERIFY_ITEM_INDEX_COUNT (AP_TRAP_ITEM_INDEX_MAX + 1)
-CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT == 193);
+CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT == 194);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
@@ -2739,14 +2906,18 @@ static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETT
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
 // (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
 // a Deck 3-player replayed trap). Dedup: persist the highest server item index
-// whose batch was effect-applied, per seed+slot, in ctr-ap-fxseen.txt next to
-// the exe (tab-separated: seed<TAB>slot<TAB>max). Replayed items at or below
+// whose batch was effect-applied, per room endpoint+seed+slot, in
+// ctr-ap-fxseen.txt next to the exe (tab-separated:
+// endpoint<TAB>seed<TAB>slot<TAB>max). Replayed items at or below
 // the stored index still count for gates but skip their effect. Unknown index
-// (-1) applies -- never swallow a live trap.
+// (-1) applies -- never swallow a live trap. Legacy three-column rows are
+// deliberately ignored: they cannot distinguish a reconnect from a fresh room,
+// so trusting them could suppress a legitimate effect in the new room.
 #define AP_FXSEEN_FILE "ctr-ap-fxseen.txt"
 static long long ap_fx_seen_max = -1; // highest server index whose effect ran
 static char ap_fx_seed[128] = "";
 static char ap_fx_slot[64] = "";
+static char ap_fx_endpoint[192] = "";
 
 static void AP_FxSeenLoad(void)
 {
@@ -2758,17 +2929,18 @@ static void AP_FxSeenLoad(void)
 		ap_fx_seed[0] = '\0';
 	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
 		ap_fx_slot[0] = '\0';
+	if (!ap_net_room_endpoint(ap_fx_endpoint, sizeof ap_fx_endpoint))
+		ap_fx_endpoint[0] = '\0';
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f == NULL)
 		return;
 	while (fgets(line, sizeof line, f))
 	{
-		char seed[128], slot[64];
-		long long max;
-		if (sscanf(line, "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
-		    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+		AP_FxSeenRow row;
+		if (AP_FxSeenParseRow(line, &row) &&
+		    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
 		{
-			ap_fx_seen_max = max;
+			ap_fx_seen_max = row.max;
 			break;
 		}
 	}
@@ -2779,20 +2951,19 @@ static void AP_FxSeenStore(void)
 {
 	// Read-modify-write the tiny file, preserving other seed/slot rows.
 	FILE *f;
-	char rows[8][320];
+	char rows[32][512];
 	int nrows = 0, i;
 
-	if (ap_fx_seed[0] == '\0')
+	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
 		return;
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f != NULL)
 	{
-		while (nrows < 8 && fgets(rows[nrows], sizeof rows[0], f))
+		while (nrows < 32 && fgets(rows[nrows], sizeof rows[0], f))
 		{
-			char seed[128], slot[64];
-			long long max;
-			if (sscanf(rows[nrows], "%127[^\t]\t%63[^\t]\t%lld", seed, slot, &max) == 3 &&
-			    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+			AP_FxSeenRow row;
+			if (AP_FxSeenParseRow(rows[nrows], &row) &&
+			    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
 				continue; // our old row: superseded below
 			nrows++;
 		}
@@ -2803,7 +2974,8 @@ static void AP_FxSeenStore(void)
 		return;
 	for (i = 0; i < nrows; i++)
 		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%lld\n", ap_fx_seed, ap_fx_slot, ap_fx_seen_max);
+	fprintf(f, "%s\t%s\t%s\t%lld\n", ap_fx_endpoint, ap_fx_seed, ap_fx_slot,
+	        ap_fx_seen_max);
 	fclose(f);
 }
 
@@ -3737,6 +3909,212 @@ static const char *const AP_LOG_ITEMSANITY_WEAPON_NAME[AP_ITEMSANITY_WEAPON_COUN
 	"Shield Bubble", "Mask", "Clock", "Warpball", "Bomb x3", "Missile x3",
 };
 
+#ifdef CTR_CUSTOM_TRACKS
+static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
+{
+	const ctr_custom_track *track = &ctr_cfg.custom_track;
+	memset(requirement, 0, sizeof *requirement);
+	requirement->id = track->id;
+	requirement->packageUuid = track->package_uuid;
+	requirement->packageVersion = track->package_version;
+	requirement->minimumClientVersion = track->minimum_client_version;
+	requirement->minimumApworldVersion = track->minimum_apworld_version;
+	requirement->levSha256 = track->lev_sha256;
+	requirement->vrmSha256 = track->vrm_sha256;
+	requirement->navigationUuid = track->navigation_uuid;
+	requirement->navigationRevision = track->navigation_revision;
+	requirement->laps = track->laps;
+	requirement->boxes = track->boxes;
+	requirement->flagCrates = track->flags.crates;
+	requirement->flagCtrLetters = track->flags.ctr_letters;
+	requirement->flagRelicCrates = track->flags.relic_crates;
+	requirement->flagAiNav = track->flags.ai_nav;
+	requirement->flagMinimap = track->flags.minimap;
+	requirement->flagGhosts = track->flags.ghosts;
+	requirement->flagWumpaCollectible = track->flags.wumpa_collectible;
+	requirement->flagSpawns = track->flags.spawns;
+	requirement->flagCheckpoints = track->flags.checkpoints;
+}
+
+static void AP_CustomContentBuildDescriptor(struct CustomTrackSeedDescriptor *descriptor)
+{
+	const ctr_custom_track *track = &ctr_cfg.custom_track;
+	memset(descriptor, 0, sizeof *descriptor);
+	descriptor->laps = track->laps;
+	descriptor->hostLevelID = track->host_level_id;
+	descriptor->replacesCupLevelID = track->replaces_cup_level_id;
+	descriptor->boxes = track->boxes;
+	snprintf(descriptor->levSha256, sizeof descriptor->levSha256, "%s", track->lev_sha256);
+	snprintf(descriptor->vrmSha256, sizeof descriptor->vrmSha256, "%s", track->vrm_sha256);
+	descriptor->flagCrates = track->flags.crates;
+	descriptor->flagCtrLetters = track->flags.ctr_letters;
+	descriptor->flagRelicCrates = track->flags.relic_crates;
+	descriptor->flagAiNav = track->flags.ai_nav;
+	descriptor->flagMinimap = track->flags.minimap;
+	descriptor->flagGhosts = track->flags.ghosts;
+	descriptor->flagWumpaCollectible = track->flags.wumpa_collectible;
+	descriptor->flagSpawns = track->flags.spawns;
+	descriptor->flagCheckpoints = track->flags.checkpoints;
+}
+
+static int AP_CustomContentActivateReady(void)
+{
+	struct CustomTrackSeedDescriptor descriptor;
+	if (!ap_custom_content_seed_selected ||
+	    ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+	    !CustomTrack_UseManagedPackage(CustomTrackManager_BabyTPark(), &ap_custom_content_status))
+		return 0;
+	AP_CustomContentBuildDescriptor(&descriptor);
+	return CustomTrack_ApplySeedDescriptor(&descriptor);
+}
+
+static void AP_CustomContentLogStatus(const char *action)
+{
+	char line[768];
+	const struct CustomTrackManagerStatus *status = &ap_custom_content_status;
+	snprintf(line, sizeof line,
+	         "[CustomTracks] manager %.32s: %.32s; %.240s; folder=\"%.360s\"\n",
+	         action, CustomTrackManager_StateText(status->state),
+	         status->detail[0] != '\0' ? status->detail : "no detail",
+	         status->packageRoot[0] != '\0' ? status->packageRoot : "unresolved");
+	AP_AppendLog(line);
+}
+
+static void AP_CustomContentPreflightSeed(int autoFinalize)
+{
+	struct CustomTrackManagerRequirement requirement;
+	ap_custom_content_seed_selected = ctr_cfg_active() && ctr_cfg.custom_tracks_ok;
+	ap_custom_content_gate_cached = 0;
+
+	if (!ap_custom_content_seed_selected)
+	{
+		CustomTrack_ClearSeedDescriptor();
+		ap_custom_content_required = ctr_cfg_active() && ctr_cfg.custom_tracks_seen;
+		if (ap_custom_content_required)
+		{
+			memset(&ap_custom_content_status, 0, sizeof ap_custom_content_status);
+			ap_custom_content_status.state = CTR_CT_MANAGER_INCOMPATIBLE;
+			snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail,
+			         "This seed's custom-track descriptor is not usable by this client.");
+			ap_custom_content_scanned = 1;
+		}
+		else
+		{
+			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+			                               CustomTrackManager_BabyTPark(),
+			                               &ap_custom_content_status);
+			ap_custom_content_scanned = 1;
+		}
+		return;
+	}
+
+	AP_CustomContentBuildRequirement(&requirement);
+	CustomTrackManager_Preflight(NativeAssets_GetAssetDir(), &requirement,
+	                             autoFinalize, &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	ap_custom_content_required = ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+	                             !AP_CustomContentActivateReady();
+	if (ap_custom_content_required)
+		CustomTrack_ClearSeedDescriptor();
+}
+
+const struct CustomTrackManagerStatus *AP_CustomContentStatus(void)
+{
+	if (!ap_custom_content_scanned)
+	{
+		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+		                               CustomTrackManager_BabyTPark(),
+		                               &ap_custom_content_status);
+		ap_custom_content_scanned = 1;
+	}
+	return &ap_custom_content_status;
+}
+
+int AP_CustomContentSeedSelected(void)
+{
+	return ap_custom_content_seed_selected;
+}
+
+int AP_CustomContentRequired(void)
+{
+	return ap_custom_content_required;
+}
+
+void AP_CustomContentRescan(void)
+{
+	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
+	{
+		AP_CustomContentPreflightSeed(1);
+		AP_CustomContentLogStatus("Rescan");
+		return;
+	}
+	CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
+	                               CustomTrackManager_BabyTPark(),
+	                               &ap_custom_content_status);
+	if (ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
+	    ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_INVALID)
+		CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(),
+		                                   CustomTrackManager_BabyTPark(),
+		                                   &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	AP_CustomContentLogStatus("Rescan");
+}
+
+void AP_CustomContentVerify(void)
+{
+	CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(),
+	                                 CustomTrackManager_BabyTPark(),
+	                                 &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	AP_CustomContentRescan();
+}
+
+int AP_CustomContentDownloadStart(void)
+{
+	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(), package,
+	                                 &ap_custom_content_status);
+	ap_custom_content_scanned = 1;
+	return ap_custom_track_download_start(ap_custom_content_status.packageRoot,
+	                                      package->downloadApiUrl, package->version,
+	                                      package->levSha256, package->vrmSha256);
+}
+
+int AP_CustomContentDownloadStatus(char *detail, int detailBytes)
+{
+	return ap_custom_track_download_status(detail, detailBytes);
+}
+
+int AP_CustomContentGateEventEntry(int forceVerify)
+{
+	unsigned int now = (unsigned int)sdata->gGT->timer;
+	if (!ap_custom_content_seed_selected)
+		return !ap_custom_content_required;
+	if (!forceVerify && ap_custom_content_gate_cached && now - ap_custom_content_gate_timer < 120)
+		return 1;
+
+	AP_CustomContentPreflightSeed(0);
+	if (ap_custom_content_required || !CustomTrack_ReverifyArmedContent())
+	{
+		ap_custom_content_required = 1;
+		ap_custom_content_gate_cached = 0;
+		return 0;
+	}
+	ap_custom_content_gate_timer = now;
+	ap_custom_content_gate_cached = 1;
+	return 1;
+}
+
+void AP_DrawCustomContentWarning(void)
+{
+	if (!ap_custom_content_required)
+		return;
+	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+	DecalFont_DrawLine("Open OPTIONS > Custom Content to download or verify the track.",
+	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+}
+#endif
+
 static void AP_NetTick(struct GameTracker *gGT)
 {
 	if (!ap_net_started)
@@ -3859,7 +4237,17 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// (possibly) new seed config, so each absent-rung / mismatch shape may log
 		// one fresh line. See ap_checkdiag_once.h for the spam this prevents.
 		AP_CheckDiagOnceReset(&ap_checkdiag_once);
+#ifdef CTR_CUSTOM_TRACKS
+		AP_CustomTrophyCeremonyReset(&ap_custom_trophy_ceremony);
+#endif
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
+#ifdef CTR_CUSTOM_TRACKS
+		// slot_data was parsed by the callback inside ap_net_poll above. Refuse
+		// gameplay immediately if this seed selects content that is not Ready;
+		// the Options Rescan action can satisfy and unlock this same seed later.
+		AP_CustomContentPreflightSeed(1);
+		AP_CustomContentLogStatus("seed preflight");
+#endif
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
 		// seeded by this seed's slot_data default. ap_diff_pulled re-arms the one-shot
@@ -3986,9 +4374,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 				AP_GoalArmLiveEvent();
 		}
 
-		// Trap items -> arm the matching trap effect. The 19 trap identities do NOT
+		// Trap items -> arm the matching trap effect. The 20 trap identities do NOT
 		// form one contiguous index window: they sit at 16..20, 106..116 and
-		// 190..192, with weapon unlocks, the Wumpa family, characters and letters in
+		// 190..193, with weapon unlocks, the Wumpa family, characters and letters in
 		// between, so the mapping is a table (ap_trap_items.h) and not arithmetic off
 		// a first index. An identity whose native effect is still a wave 2 scaffold
 		// is armed, logged once and retained; AP_TrapReceive never consumes what this
@@ -4287,11 +4675,11 @@ const char *AP_Net_StatusLine(void)
 		break;
 	case AP_NET_STATUS_UNREACHABLE:
 	{
-		// Names what could not be reached so a dead address, a wrong port or a
-		// server that is not up yet reads differently from a handshake still in
-		// progress (issue #146). The client is still retrying either way. The uri
-		// row above this one carries the full address, so a trimmed host here
-		// costs the player nothing.
+		// Post-connect drop: names what could not be reached so a dead address,
+		// a wrong port or a server that is not up yet reads differently from a
+		// handshake still in progress (issue #146). The client is still retrying
+		// either way. The uri row above this one carries the full address, so a
+		// trimmed host here costs the player nothing.
 		char host[64];
 		if (ap_net_host(host, sizeof host))
 		{
@@ -4303,6 +4691,13 @@ const char *AP_Net_StatusLine(void)
 			snprintf(line, sizeof line, "Cannot reach server, retrying");
 		break;
 	}
+	case AP_NET_STATUS_RETRY_STOPPED:
+		// Pre-connect budget exhausted: automatic attempts have stopped and the
+		// only way forward is the Connect row below. Deliberately does not say
+		// "Cannot reach", "Not connected" or anything "retrying" -- the state is
+		// a stopped one, and the uri row above still shows the target address.
+		snprintf(line, sizeof line, "Auto-retry stopped, press Connect");
+		break;
 	case AP_NET_STATUS_ERROR:
 	{
 		const char *e = ap_net_last_error();
@@ -4477,6 +4872,25 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 	return AP_RACE_TROPHY;
 }
 
+// A custom track's host levelID is only a byte-serving vehicle. Keep retail
+// podium checks on the retail identity for ordinary loads; while custom bytes
+// are served, return the frozen generic custom-slot identity carried by v4.
+static int AP_RetailPodiumTrack(struct GameTracker *gGT)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	    CustomTrack_ServingLoad((int)gGT->levelID,
+	                            (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                            gGT->cup.cupID))
+		return CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
+	return CustomTrack_RetailPodiumLevelID((int)gGT->levelID,
+	                                        (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                                        gGT->cup.cupID);
+#else
+	return (int)gGT->levelID;
+#endif
+}
+
 // Rung tags -- also the pseudo-bit rung index order (AP_LookupLocationCode):
 //   0 held_1st  1 held_3rd  2 held_5th   (LIVE, from the position listener)
 //   3 finish_podium  4 finish_any        (FINAL, from the finish edge)
@@ -4582,6 +4996,34 @@ static int AP_EmitClassCheck(long code,
 	return 1;
 }
 
+#ifdef CTR_CUSTOM_TRACKS
+int AP_CustomTrackTrophyChecked(void)
+{
+	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	       ctr_cfg.custom_track.trophy_location > 0 &&
+	       ap_net_location_checked(ctr_cfg.custom_track.trophy_location);
+}
+
+void AP_NotifyCustomTrackTrophy(void)
+{
+	int podiumTrack;
+	int sent;
+	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok)
+		return;
+	sent = AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
+	                         1, AP_CUSTOM_TROPHY_PSEUDO_BIT, -1, 1,
+	                         "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
+	                         ctr_cfg.custom_track.slot,
+	                         ctr_cfg.custom_track.trophy_location);
+	AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
+	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
+	AP_SendPodiumChecks(podiumTrack, 1);
+}
+#else
+int AP_CustomTrackTrophyChecked(void) { return 0; }
+void AP_NotifyCustomTrackTrophy(void) {}
+#endif
+
 int AP_LetterAvailable(int track, int letter)
 {
 	if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2) return 1;
@@ -4618,14 +5060,96 @@ void AP_LetterUnavailableTouched(int track, int letter)
 	AP_AppendLog(msg);
 }
 
+// Gather the facts the Wumpa dispatch reads. Split from the decision so
+// tools/test-wumpa-dispatch.c can pin the truth table out of engine; this half
+// is the part that needs a live GameTracker.
+//
+// The DESTINATION, not the physical pad. `gGT->levelID` during a race is the
+// track actually loaded, which under destination shuffle IS the destination --
+// so loading Crash Cove from another pad or as a Gem Cup leg already reads as
+// Crash Cove here and the identity rule needs no special case. The apworld
+// gives the location an OR route from the standalone race and every legging Cup,
+// so native must not re-impose the former individual-pad gate here.
+static void AP_WumpaGatherFacts(struct GameTracker *gGT,
+                                struct AP_WumpaDispatchFacts *facts)
+{
+	int level;
+
+	memset(facts, 0, sizeof *facts);
+	facts->wumpa = &ctr_cfg.wumpa;
+	facts->destLevelID = -1;
+	facts->servingCupLevelID = -1;
+	facts->seedPackageUuid = ctr_cfg.custom_track.package_uuid;
+	facts->seedCustomOk = ctr_cfg.custom_tracks_ok;
+	facts->seedWumpaCollectible = ctr_cfg.custom_track.flags.wumpa_collectible;
+
+	if (gGT == 0)
+		return;
+	level = (int)gGT->levelID;
+	if (level >= 0 && level < CTR_CFG_WUMPA_TRACK_COUNT)
+		facts->destLevelID = level;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The SAME predicate that owns the custom bytes answers whether this load is
+	// the event race. Asking anything else here is how a recording's identity
+	// and the geometry it was recorded against drift apart, and the argument
+	// applies just as directly to a location code.
+	facts->servingCustom = CustomTrack_ServingLoad(
+	    level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+	if (facts->servingCustom)
+		facts->servingCupLevelID = 100 + gGT->cup.cupID;
+#endif
+	if (facts->servingCustom)
+		return; // the retail terms below describe a race that is not running
+
+	// A gem-cup leg, and NOT the custom event race: that race sets ADVENTURE_CUP
+	// for reward routing but legs no track, which is why the test above returns
+	// before reaching this line.
+	facts->isCupLeg = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+}
+
 void AP_WumpaReachedTen(struct Driver *driver)
 {
-	const long code = 35016100L;
+	struct AP_WumpaDispatchFacts facts;
+	char msg[192];
+	int reason = AP_WUMPA_SENT;
+	long code;
+
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
-	    driver != sdata->gGT->drivers[0] || !ap_net_location_exists(code))
+	    driver != sdata->gGT->drivers[0])
+		return;
+
+	AP_WumpaGatherFacts(sdata->gGT, &facts);
+	code = AP_WumpaResolveCode(&facts, &reason);
+	if (code < 0)
+	{
+		// Refusals are logged rather than swallowed. A player whose per-track
+		// check did not fire has to be able to tell "this seed has no check for
+		// this track" from "the client refused the content it was handed", and
+		// only one of those is worth reporting as a bug. Mode-off is the single
+		// silent case, because an off seed would otherwise log on every race.
+		if (reason != AP_WUMPA_REFUSE_MODE_OFF)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP WUMPA] reached 10 fruit, no check sent: %s "
+			         "(level=%d cupLeg=%d custom=%d)\n",
+			         AP_WumpaRefusalText(reason), facts.destLevelID,
+			         facts.isCupLeg, facts.servingCustom);
+			AP_AppendLog(msg);
+		}
+		return;
+	}
+
+	// Server location membership stays the final gate, exactly as it was before
+	// per-track: the wire says which codes this seed MINTED, the server says
+	// which ones are live for this slot, and a code that is not live is not sent.
+	// AP_EmitClassCheck adds the ordinary already-checked dedup on top, which is
+	// what makes reaching 10 twice on one track one location and reaching it on
+	// two tracks two locations.
+	if (!ap_net_location_exists(code))
 		return;
 	AP_EmitClassCheck(code, 0, -1, 0, 1,
-	                  "[AP WUMPA] reached 10 fruit\n");
+	                  "[AP WUMPA] reached 10 fruit (location %ld)\n", code);
 }
 
 int AP_LettersRequiredMet(int track)
@@ -4993,12 +5517,19 @@ static void AP_SendPodiumChecks(int track, int placement)
 {
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
-		return; // only the 16 trophy races carry rungs
 	if (placement < 1)
 		return; // -1 = placement unknown -> nothing to fan out
 
-	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+	const ctr_podium_rungs *pr = NULL;
+	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		pr = &ctr_cfg.podium[track];
+#ifdef CTR_CUSTOM_TRACKS
+	else if (ctr_cfg.custom_tracks_ok &&
+	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
+		pr = &ctr_cfg.custom_track.podium;
+#endif
+	if (pr == NULL)
+		return;
 
 	if (placement == 1)
 		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, placement, "finish");
@@ -5019,12 +5550,19 @@ static void AP_SendHeldChecks(int track, int position)
 {
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	if (track < 0 || track >= CTR_CFG_PODIUM_TRACK_COUNT)
-		return;
 	if (position < 1)
 		return;
 
-	const ctr_podium_rungs *pr = &ctr_cfg.podium[track];
+	const ctr_podium_rungs *pr = NULL;
+	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
+		pr = &ctr_cfg.podium[track];
+#ifdef CTR_CUSTOM_TRACKS
+	else if (ctr_cfg.custom_tracks_ok &&
+	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
+		pr = &ctr_cfg.custom_track.podium;
+#endif
+	if (pr == NULL)
+		return;
 
 	if (position == 1)
 		AP_EmitRung(track, pr->held_1st, AP_RUNG_HELD_1ST, position, "held");
@@ -5047,6 +5585,11 @@ static void AP_ReconcilePodiumFromTrophies(void)
 	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
 		if (AP_LocationCheckedByBit(lid + ADV_REWARD_FIRST_TROPHY))
 			AP_SendPodiumChecks(lid, 1); // trophy won => 1st => all rungs
+#ifdef CTR_CUSTOM_TRACKS
+	if (ctr_cfg.custom_tracks_ok && AP_CustomTrackTrophyChecked())
+		AP_SendPodiumChecks(CTR_CFG_PODIUM_TRACK_COUNT +
+		                    ctr_cfg.custom_track.slot - 1, 1);
+#endif
 }
 
 // Called every frame (all game modes) from AP_OnFrame, BEFORE the adventure
@@ -5087,11 +5630,14 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
 	if (finishedNow && !ap_finish_prev && inRace)
 	{
+		int podiumTrack;
+
 		// driverRank is frozen once you cross the line (nobody can pass a
 		// finished racer), so this is the authoritative final placement.
 		ap_last_race_track = (int)gGT->levelID;
 		ap_last_race_place = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
 		ap_last_race_mode  = AP_ClassifyRace(gGT);
+		podiumTrack = AP_RetailPodiumTrack(gGT);
 
 		char m[160];
 		snprintf(m, sizeof m,
@@ -5106,7 +5652,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// Native fan-out: only trophy races carry podium rungs (relic/token/
 		// crystal share the same levelIDs, so the type gate is load-bearing).
 		if (ap_last_race_mode == AP_RACE_TROPHY)
-			AP_SendPodiumChecks(ap_last_race_track, ap_last_race_place);
+			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
 	}
 	else if (!finishedNow && ap_finish_prev)
 	{
@@ -5145,17 +5691,27 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	// at a pass never confirms.
 	{
 		int onTrack = LOAD_IsOpen_RacingOrBattle();
-		if (!onTrack || (gGT->gameMode1 & END_OF_RACE) != 0)
-			ap_held_countdown_seen = 0;
-		else if (gGT->trafficLightsTimer >= 1)
-			ap_held_countdown_seen = 1;
+		int podiumTrack = AP_RetailPodiumTrack(gGT);
+		if (AP_HeldRaceRearmStep(
+		        onTrack, sdata->Loading.stage == LOAD_IDLE,
+		        (gGT->gameMode1 & END_OF_RACE) != 0,
+		        gGT->trafficLightsTimer, &ap_held_countdown_seen))
+		{
+			// A newly observed countdown is the authoritative start of an
+			// attempt. Restart, Exit to Map, and track/cup-leg changes can tear
+			// down an attempt without an ACTION_RACE_FINISHED falling edge.
+			ap_held_best_pos = 99;
+			ap_held_cand_pos = -1;
+			ap_held_cand_ms  = 0;
+		}
 
 		int heldWindow =
 		    (gGT->gameMode1 &
 		     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 		    gGT->trafficLightsTimer < 1 && onTrack && ap_held_countdown_seen;
 
-		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY && ap_live_position >= 1)
+		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY &&
+		    podiumTrack >= 0 && ap_live_position >= 1)
 		{
 			int elapsedMs = gGT->elapsedTimeMS;
 			if (elapsedMs <= 0)
@@ -5177,7 +5733,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 			// position, so a later worse hold has nothing new to add.
 			if (ap_held_cand_ms >= AP_HELD_DEBOUNCE_MS && ap_held_cand_pos < ap_held_best_pos)
 			{
-				AP_SendHeldChecks((int)gGT->levelID, ap_held_cand_pos);
+				AP_SendHeldChecks(podiumTrack, ap_held_cand_pos);
 				ap_held_best_pos = ap_held_cand_pos;
 			}
 		}
@@ -5576,6 +6132,31 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// boot call is the one place the real vanilla table crosses into it.
 			ctr_cfg_set_vanilla_cup_legs(data.advCupTrackIDs);
 		}
+
+#ifdef CTR_CUSTOM_TRACKS
+		// Connect-time preflight and explicit Rescan own activation. Per-frame
+		// work only enforces absence/required as authoritative in both directions.
+		if (!ap_custom_content_seed_selected || ap_custom_content_required)
+		{
+			CustomTrack_ClearSeedDescriptor();
+		}
+#else
+		// This build has no custom-track support compiled in, but the seed may
+		// still bind one. Say so once: the cup's legs are displaced in this
+		// seed's logic, so racing its four retail legs here is the same
+		// reachability desync an out-of-date client would produce, and the
+		// player needs to know why the Gem is not coming.
+		{
+			static int apCtWarned = 0;
+			if (!apCtWarned && ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
+			{
+				apCtWarned = 1;
+				AP_AppendLog("[AP CFG] *** this seed binds a custom track to a Gem Cup, and "
+				             "this build cannot load custom tracks. That cup is not "
+				             "completable here. ***\n");
+			}
+		}
+#endif
 		if ((int)gGT->levelID != ap_prev_level)
 		{
 			char m[96];
@@ -5646,7 +6227,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
 	AP_TrapTick(gGT);
-	// Demo Camera PROTOTYPE: holds or force-clears the cinematic-camera
+	// Demo Camera: holds or force-clears the cinematic-camera
 	// engagement. Shares AP_TrapTick's placement for the same reason -- it runs
 	// before the camera PROC ticks this frame, so a clear lands while the camera
 	// the snapshot describes is still the live one.

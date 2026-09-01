@@ -511,6 +511,18 @@ void SubmitName_MenuProc(struct RectMenu *menu)
 		// if hit CANCEL
 		if (selection < 0)
 		{
+#ifdef CTR_AP
+			// AP-owned session reached through the garage skip: there is no real
+			// character choice to revisit, so leave for the main menu instead of
+			// returning to a garage that would just commit and reopen this screen
+			// (H6-02). When it declines, the retail statements below remain the
+			// unchanged fallback.
+			if (CS_Garage_APNameEntryCancelToMainMenu())
+			{
+				return;
+			}
+#endif
+
 			// Change active Menu back to Adv char select
 			sdata->ptrDesiredMenu = CS_Garage_GetMenuPtr();
 			CS_Garage_ZoomOut(1);

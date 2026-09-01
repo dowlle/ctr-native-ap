@@ -42,7 +42,7 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 // ---------------------------------------------------------------------------
 #define AP_VF_MAX_LOCS (AP_LOCATION_TABLE_LEN + \
 	CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
-	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + 23)
+	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + 29)
 
 typedef enum
 {
@@ -59,6 +59,7 @@ typedef enum
 	AP_VF_LETTER,     // C/T/R pickup inside a token challenge
 	AP_VF_ITEMSANITY, // global weapon-use check (plain/juiced share access)
 	AP_VF_WUMPA,      // global reach-10-Wumpa check
+	AP_VF_CUSTOM,     // generic custom Trophy or podium rung -> assigned surface
 } ap_vf_kind;
 
 typedef struct
@@ -213,6 +214,16 @@ static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest
 {
 	AP_VerifyOptions o = ap_vf_options();
 	int leg;
+	// A cup displaced by this seed's custom_tracks block LEGS NOTHING: it is one
+	// race on a custom track, not four retail legs. The wire still carries its
+	// complete four-track gem_cup_legs row -- it has to, or the block stops being
+	// the complete mapping every other consumer relies on -- so the row is a
+	// don't-care this verifier has to actively not care about. Reading it would
+	// verify a cup this seed does not contain, and would gate the Gem behind
+	// capability terms belonging to tracks the player never races.
+	if (ctr_cfg_cup_displaced(cup))
+		return 1;
+
 	for (leg = 0; leg < 4; leg++)
 	{
 		int track = ctr_cfg_cup_leg(cup, leg);
@@ -281,6 +292,32 @@ static void ap_vf_recompute(void)
 					n++;
 				}
 		}
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The displaced retail cup Gem is absent from this seed's scout set. Replace
+	// it in the model with the generic custom Trophy and this seed's enabled
+	// custom podium rungs, all reached through the assigned destination surface.
+	if (ctr_cfg.custom_tracks_ok)
+	{
+		long custom[1 + CTR_CFG_PODIUM_RUNG_COUNT] = {
+			ctr_cfg.custom_track.trophy_location,
+			ctr_cfg.custom_track.podium.held_1st,
+			ctr_cfg.custom_track.podium.held_3rd,
+			ctr_cfg.custom_track.podium.held_5th,
+			ctr_cfg.custom_track.podium.finish_podium,
+			ctr_cfg.custom_track.podium.finish_any,
+		};
+		for (i = 0; i < 1 + CTR_CFG_PODIUM_RUNG_COUNT; i++)
+			if (custom[i] > 0)
+			{
+				locs[n].code = custom[i];
+				locs[n].kind = AP_VF_CUSTOM;
+				locs[n].track = ctr_cfg.custom_track.replaces_cup_level_id;
+				locs[n].detail = i - 1;
+				n++;
+			}
+	}
+#endif
 
 	// 0.2.0 optional classes. Scout presence remains the final membership
 	// authority below, so frozen-but-disabled names never enter the verdict.
@@ -421,6 +458,12 @@ static void ap_vf_recompute(void)
 				ok = ap_vf_pad_open(pad, counts) &&
 					ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
 				break;
+			case AP_VF_CUSTOM:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
+				break;
 			case AP_VF_PODIUM:
 			{
 				AP_VerifyOptions opts = ap_vf_options();
@@ -441,6 +484,13 @@ static void ap_vf_recompute(void)
 				for (cup = 0; cup < 5 && !ok; cup++)
 				{
 					int leg, hasLeg = 0, cupPad = pad_for_dest[100 + cup];
+					// Same displacement rule as ap_vf_cup_capable, and it matters
+					// more here: this loop credits a cup as an ADDITIVE route to a
+					// track's podium rungs. A displaced cup races none of its
+					// retail legs, so it grants no such route and its wire row
+					// must not be scanned at all.
+					if (ctr_cfg_cup_displaced(cup))
+						continue;
 					for (leg = 0; leg < 4; leg++)
 						if (ctr_cfg_cup_leg(cup, leg) == lid) hasLeg = 1;
 					// The held-1st half of the Oxide term is vacuous when the

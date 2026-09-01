@@ -3,7 +3,7 @@ game: Crash Team Racing
 description: Gap profile 07b, the retired candidate 07 reworked per the #87 guard. Trophy weight 1 (the legal minimum) with Key 0 keeps the trophy spine nearly absent, so pads still gate almost entirely on tokens, relics and gems, restoring the aggregate-gate and no-spine stress the original candidate intended.
 Crash Team Racing:
   accessibility: full
-  goal: oxide
+  oxide_goal: any_percent
   shuffle_gems: 'true'
   include_gem_cups: 'true'
   include_battle_arenas: 'true'

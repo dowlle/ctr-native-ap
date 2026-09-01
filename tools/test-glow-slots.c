@@ -69,12 +69,21 @@ static void testCyclesStillWork(void)
 	       "grouped multi-reward slots still cycle within type");
 }
 
+static void testDisplacedCupAdvertisesNoRetailLegRungs(void)
+{
+	expect(AP_GlowSlots_CupLegRungsEligible(0) == 1,
+	       "ordinary cup advertises its retail leg rungs");
+	expect(AP_GlowSlots_CupLegRungsEligible(1) == 0,
+	       "displaced cup advertises no absent retail leg rungs");
+}
+
 int main(void)
 {
 	testSingleOnePile();
 	testSingleGrouped();
 	testCyclesStillWork();
-	printf("%s: 2008 phase checks plus 2 cycle checks\n",
+	testDisplacedCupAdvertisesNoRetailLegRungs();
+	printf("%s: 2008 phase checks plus 4 focused checks\n",
 	       failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

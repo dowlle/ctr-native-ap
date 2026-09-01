@@ -80,11 +80,31 @@ struct Driver;
 
 // How close the local player's kart has to get, in LEV world units. The engine's
 // own driver hit radius is 0x40 (THREAD_DRIVER_HIT_RADIUS, namespace_Proc.h:60),
-// so 0x60 is the kart plus roughly half a crate -- and the AP box renders at
-// EXACTLY retail crate size (AP_BoxModel_DeriveScale, ap_box_model.c; ruled
-// 2026-08-21), so the crate number is the box number. LinkedCollide_Radius
-// takes the SQUARED value despite its parameter name, which is why the square
-// is derived here rather than written out (Lessons Learned §5).
+// so 0x60 is the kart plus part of a crate -- and the AP box renders at EXACTLY
+// retail crate size (AP_BoxModel_DeriveScale, ap_box_model.c; ruled 2026-08-21),
+// so the crate number is the box number. LinkedCollide_Radius takes the SQUARED
+// value despite its parameter name, which is why the square is derived here
+// rather than written out (Lessons Learned §5).
+//
+// WHAT 0x60 BUYS NOW THAT THE CRATE STANDS ON ITS ANCHOR RATHER THAN STRADDLING
+// IT. Measured, because the original "roughly half a crate" was an estimate and
+// the measured half-crate is 54, not 32 (ap_box_offset_logic.h derives it):
+//
+//   * LinkedCollide_Radius is a full sphere test between two instance matrices,
+//     and a driver instance sits at posCurr, i.e. on the road
+//     (VehPhysForce_TranslateMatrix_UpdateInstanceMatrix; the 0x13 nudge below it
+//     applies only while squished). The crate's centre is now 54 above that
+//     plane, so the sphere's HORIZONTAL reach is sqrt(0x60^2 - 54^2) = 79.
+//   * 79 is where a kart's own collision sphere (radius 25, COLL.c:2169) touches
+//     the side of a 108-unit crate: 54 + 25. The test now fires at about the
+//     point of contact, where before -- with the sphere centred on the crate's
+//     bottom face -- it fired some 17 units early and did not reach the crate's
+//     top face at all.
+//
+// That is why the radius is left alone by the height correction rather than
+// re-tuned to preserve the old footprint. If live play wants the older, more
+// generous capture back, 0x6e restores the 96-unit horizontal reach; it is a
+// one-line change and this comment is the arithmetic for it.
 #define AP_BOX_HIT_RADIUS         0x60
 #define AP_BOX_HIT_RADIUS_SQUARED (AP_BOX_HIT_RADIUS * AP_BOX_HIT_RADIUS)
 

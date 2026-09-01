@@ -88,6 +88,11 @@ void VehFire_Increment(struct Driver *driver, int reserves, u32 type, int fireLe
 	struct GameTracker *gGT = sdata->gGT;
 
 #ifdef CTR_AP
+	// Boost Blocker owns this choke point before capability filtering, so no boost
+	// source can recreate reserves or fire while the timed effect is active.
+	if (!AP_TrapAllowBoostGrant(driver))
+		return;
+
 	// Progressive Boost (#12), local player only, and only on a seed that turned
 	// the pack on. This function is the single choke point every boost in the game
 	// passes through -- pads, powerslides, hang time, the rev boost, the Turbo

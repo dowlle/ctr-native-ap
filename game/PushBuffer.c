@@ -437,6 +437,10 @@ void PushBuffer_SetMatrixVP(struct PushBuffer *pb)
 #undef r800
 	}
 
+#ifdef CTR_AP
+	AP_TrapRenderTransform(pb);
+#endif
+
 	// store camera matrix,
 	// otherwise oxide intro cutscene bugs out,
 	// when crash is sleeping on the grassy hill

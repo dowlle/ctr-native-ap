@@ -246,6 +246,16 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 				return 1;
 			}
 
+#ifdef CTR_AP
+			// Empty Crates (#280) keeps the break, sound, animation and cooldown,
+			// but gives the receiving local player no roulette. AI and other
+			// drivers remain on the vanilla path.
+			if (AP_TrapSuppressCrateReward(driver))
+			{
+				return 1;
+			}
+#endif
+
 			if ((driver->heldItemID != 0xf) && (driver->noItemTimer == 0))
 			{
 				return 1;
@@ -377,6 +387,15 @@ int RB_CrateFruit_ThCollide(struct Thread *crateThread, struct Thread *colliding
 			{
 				return 1;
 			}
+
+#ifdef CTR_AP
+			// The crate has already shattered. Suppress only the local reward, so
+			// no HUD fruit or delayed Wumpa grant is queued.
+			if (AP_TrapSuppressCrateReward(driver))
+			{
+				return 1;
+			}
+#endif
 
 			random = MixRNG_Scramble();
 			newWumpa = random;

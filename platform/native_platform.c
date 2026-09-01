@@ -791,6 +791,30 @@ int Platform_PollInput(void)
 	return 1;
 }
 
+int Platform_SetClipboardText(const char *text)
+{
+	if (text == NULL || text[0] == '\0')
+		return 0;
+	if (!SDL_SetClipboardText(text))
+	{
+		Platform_LogWarn("[CTR Native] Could not set clipboard: %s\n", SDL_GetError());
+		return 0;
+	}
+	return 1;
+}
+
+int Platform_OpenURL(const char *url)
+{
+	if (url == NULL || url[0] == '\0')
+		return 0;
+	if (!SDL_OpenURL(url))
+	{
+		Platform_LogWarn("[CTR Native] Could not open URL: %s\n", SDL_GetError());
+		return 0;
+	}
+	return 1;
+}
+
 int NikoGetEnterKey(void)
 {
 	const bool *kb = SDL_GetKeyboardState(NULL);

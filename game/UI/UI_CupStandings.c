@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005607c-0x80056220.
 void UI_CupStandings_FinalizeCupRanks(void)
 {
@@ -209,6 +213,13 @@ void UI_CupStandings_InputAndDraw(void)
 	int index = 0x22E;
 	int cupID = gGT->cup.cupID;
 
+#ifdef CTR_CUSTOM_TRACKS
+	// What a displaced cup is called, or NULL for the retail name. Assigned only
+	// on the adventure-cup branch below, so it can never displace the two other
+	// strings that reach the same draw: the level name and the arcade cup name.
+	const char *ctCupName = NULL;
+#endif
+
 	if ((sdata->menuReadyToPass & 4) == 0)
 	{
 		// Level ID
@@ -221,6 +232,13 @@ void UI_CupStandings_InputAndDraw(void)
 		if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
 		{
 			index = data.AdvCups[cupID].lngIndex_CupName;
+
+#ifdef CTR_CUSTOM_TRACKS
+			// A displaced cup's standings are the standings of one race on a
+			// track the retail cup name does not name. Same redirect predicate as
+			// the leg counter below and the completion fork above it.
+			ctCupName = CustomTrack_CupDisplayName(cupID, 1);
+#endif
 		}
 
 		// If Arcade or VS cup
@@ -231,7 +249,13 @@ void UI_CupStandings_InputAndDraw(void)
 	}
 
 	// title text
-	DecalFont_DrawLine(sdata->lngStrings[index], local_58[0], local_58[1] - 0x11, 1, 0xffff8000);
+	DecalFont_DrawLine(
+#ifdef CTR_CUSTOM_TRACKS
+	    ctCupName != NULL ? (char *)ctCupName : sdata->lngStrings[index],
+#else
+	    sdata->lngStrings[index],
+#endif
+	    local_58[0], local_58[1] - 0x11, 1, 0xffff8000);
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_STANDINGS], local_58[0], local_58[1], 1, 0xffff8000);
 
@@ -240,12 +264,26 @@ void UI_CupStandings_InputAndDraw(void)
 	char text[24];
 
 	// TRACK 1/4, 2/4, 3/4, 4/4
+#ifdef CTR_CUSTOM_TRACKS
+	// A redirected event cup has ONE leg, not four, so the retail "/4" would
+	// promise legs the game will never load. Same predicate as the completion
+	// fork, so the counter cannot disagree with it.
+	sprintf(text, "%s %ld/%d",
+
+	        sdata->lngStrings[LNG_TRACK],
+
+	        // Track Index (0, 1, 2, 3) + 1
+	        CTR_PRINTF_PSX_LONG(gGT->cup.trackIndex + 1),
+
+	        CustomTrack_CupLegCount(gGT->cup.cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0));
+#else
 	sprintf(text, "%s %ld/4",
 
 	        sdata->lngStrings[LNG_TRACK],
 
 	        // Track Index (0, 1, 2, 3) + 1
 	        CTR_PRINTF_PSX_LONG(gGT->cup.trackIndex + 1));
+#endif
 
 	DecalFont_DrawLine(text, local_58[0], local_58[1] + 0x11, 2, 0xffff8000);
 
@@ -264,7 +302,21 @@ void UI_CupStandings_InputAndDraw(void)
 	{
 		sVar5 = (s16)i;
 		// If you are in Purple Gem Cup
+#ifdef CTR_CUSTOM_TRACKS
+		// The Purple layout lays five icons in one row and collapses everything
+		// past the fifth to (0,0), so a displaced cup that grids more than five
+		// would stack its extra icons in the corner. The ordinary eight-kart
+		// layout below -- two rows of four -- already handles 0..7, so the fork
+		// asks how many karts raced rather than which cup it was.
+		//
+		// The test is on numDrivers, not on the serve predicate, because it is
+		// the field size that the layout actually cares about: a vanilla Purple
+		// cup always grids five and takes exactly the branch it always took,
+		// and a displaced cup clamped down to five does too.
+		if (CustomTrackPolicy_StandingsUsesNarrowLayout(gGT->cup.cupID, numDrivers))
+#else
 		if (gGT->cup.cupID == 4)
+#endif
 		{
 			if (i < 5)
 			{
@@ -526,7 +578,17 @@ void UI_CupStandings_InputAndDraw(void)
 			int cupTrack = gGT->cup.trackIndex;
 
 			// If this is not the last race in the cup
+#ifdef CTR_CUSTOM_TRACKS
+			// Baby T Park event destination: a redirected cup ran ONE race, so
+			// it is complete at trackIndex 1 and falls through to the gem award
+			// below instead of loading a leg 1 that does not exist for it. The
+			// predicate is the same one AH_WarpPad.c used to redirect the entry,
+			// reading the same config, so the two forks cannot disagree -- a cup
+			// that became a single race always completes as one.
+			if (!CustomTrack_CupIsComplete(cupID, (gGT->gameMode2 & CUP_ANY_KIND) == 0, cupTrack))
+#else
 			if (cupTrack < 4)
+#endif
 			{
 				// If not in Arcade or VS cup
 				if ((gGT->gameMode2 & CUP_ANY_KIND) == 0)
@@ -558,6 +620,21 @@ void UI_CupStandings_InputAndDraw(void)
 				}
 
 				gGT->cup.trackIndex = 0;
+
+#ifdef CTR_CUSTOM_TRACKS
+				// Undo the event destination's 7-lap override the moment its cup
+				// is over. Nothing in adventure re-derives numLaps between races,
+				// so without this the next trophy/boss/relic race entered from
+				// the hub would inherit 7 laps. 3 is the boot default
+				// (MainMain.c) and what MM_MenuFlow.c writes on every main-menu
+				// row press, so it is the correct resting value. Written here
+				// rather than only in the AP frame watcher so a clean build with
+				// the guard on is equally correct.
+				if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+				{
+					gGT->numLaps = 3;
+				}
+#endif
 
 				// Array with the final ranking of each player
 				ranks = &data.cupPositionPerPlayer[0];
@@ -596,6 +673,12 @@ void UI_CupStandings_InputAndDraw(void)
 					{
 						int bitIndex = ADV_REWARD_FIRST_GEM + i;
 						u32 *rewardsSet = sdata->advProgress.rewards;
+						int customTrackTrophy = 0;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+						customTrackTrophy = ctr_cfg_active() &&
+							CustomTrack_CupRaceRedirectActive(i, 1);
+#endif
 
 #ifdef CTR_AP
 						// AP: the vanilla "already won?" gate reads adv->rewards, but
@@ -607,20 +690,34 @@ void UI_CupStandings_InputAndDraw(void)
 						// the AP location CHECKED-state instead (same fix class as
 						// the trophy gate in 222.c and ThTick:601 f9fbfa7a0).
 						// AP_NotifyAdvReward dedupes, so a re-win is safe.
-						if (ctr_cfg_active() ? !AP_LocationCheckedByBit(bitIndex)
+						if (ctr_cfg_active() ? (customTrackTrophy
+							? !AP_CustomTrackTrophyChecked()
+							: !AP_LocationCheckedByBit(bitIndex))
 						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
 #else
 						if (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0)
 #endif
 						{
-							UNLOCK_ADV_BIT(rewardsSet, bitIndex);
+							// A custom Trophy borrows this Cup's ceremony machinery, not
+							// its progression rewards. Do not fabricate the displaced Gem
+							// bit: AP would clear it on the next reconcile, and the player
+							// would see a Purple Gem instead of the actual scouted item.
+							if (!customTrackTrophy)
+								UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
-							AP_NotifyAdvReward(bitIndex); // AP: gem cup location check
+							if (customTrackTrophy)
+								AP_NotifyCustomTrackTrophy();
+							else
+								AP_NotifyAdvReward(bitIndex); // AP: retail gem cup location check
 #endif
 
-							// unlock Roo, Papu, Joe, Pinstripe, FCrash
-							bitIndex = GAME_UNLOCK_BIT_BOSS_CHARACTER_FIRST + i;
-							UNLOCK_ADV_BIT(sdata->gameProgress.unlocks, bitIndex);
+							// The boss character belongs to the displaced retail Cup too.
+							// Only a real Gem Cup win may grant it.
+							if (!customTrackTrophy)
+							{
+								bitIndex = GAME_UNLOCK_BIT_BOSS_CHARACTER_FIRST + i;
+								UNLOCK_ADV_BIT(sdata->gameProgress.unlocks, bitIndex);
+							}
 
 							// Set podium reward model to Gem
 							gGT->podiumRewardID = STATIC_GEM;
