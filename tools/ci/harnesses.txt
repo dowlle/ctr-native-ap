@@ -58,3 +58,4 @@ tools/test-version-compare.c
 tools/test-wumpa-dispatch.c
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-wumpa-seedcfg.cpp
+tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
