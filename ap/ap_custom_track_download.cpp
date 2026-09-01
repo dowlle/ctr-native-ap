@@ -101,7 +101,7 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 	{
 		if (raw.size() - body_start > max_bytes)
 		{
-			error = "Project Saphi returned a file larger than Alpha6 accepts.";
+			error = "Project Saphi returned a file larger than this client accepts.";
 			return false;
 		}
 		body.assign(raw.begin() + body_start, raw.end());
@@ -148,7 +148,7 @@ std::wstring widen_ascii(const std::string &text)
 bool https_get(const std::string &path, size_t max_bytes,
 	           std::vector<unsigned char> &body, std::string &error)
 {
-	HINTERNET session = WinHttpOpen(L"CTR-AP-alpha6/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+	HINTERNET session = WinHttpOpen(L"CTR-AP-alpha7/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 	                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	if (!session)
 	{
@@ -184,7 +184,7 @@ bool https_get(const std::string &path, size_t max_bytes,
 			break;
 		if (body.size() + available > max_bytes)
 		{
-			error = "Project Saphi returned a file larger than Alpha6 accepts.";
+			error = "Project Saphi returned a file larger than this client accepts.";
 			ok = false;
 			break;
 		}
@@ -253,7 +253,7 @@ bool https_get(const std::string &path, size_t max_bytes,
 		asio::connect(stream.next_layer(), resolver.resolve(kSaphiHost, "443"));
 		stream.handshake(asio::ssl::stream_base::client);
 		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + kSaphiHost +
-		                            "\r\nUser-Agent: CTR-AP-alpha6/1.0\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+		                            "\r\nUser-Agent: CTR-AP-alpha7/1.0\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
 		asio::write(stream, asio::buffer(request));
 		std::vector<unsigned char> raw;
 		unsigned char chunk[16384];
@@ -265,7 +265,7 @@ bool https_get(const std::string &path, size_t max_bytes,
 			{
 				if (raw.size() + got > max_bytes + 64 * 1024)
 				{
-					error = "Project Saphi returned a file larger than Alpha6 accepts.";
+					error = "Project Saphi returned a file larger than this client accepts.";
 					return false;
 				}
 				raw.insert(raw.end(), chunk, chunk + got);
@@ -381,13 +381,13 @@ void worker(std::string package_root, std::string api_url, std::string version,
 		if (!https_get(lev.path, kTrackFileMax, lev_bytes, error) || lev_bytes.size() != lev.size)
 			throw std::runtime_error(error.empty() ? "The Saphi LEV download was incomplete." : error);
 		if (!hash_matches(lev_bytes, lev_hash))
-			throw std::runtime_error("The downloaded LEV does not match the Alpha6 release registry.");
+			throw std::runtime_error("The downloaded LEV does not match this release registry.");
 
 		set_state(AP_CT_DOWNLOAD_RUNNING, "Downloading Baby T Park VRM from Saphi...");
 		if (!https_get(vrm.path, kTrackFileMax, vrm_bytes, error) || vrm_bytes.size() != vrm.size)
 			throw std::runtime_error(error.empty() ? "The Saphi VRM download was incomplete." : error);
 		if (!hash_matches(vrm_bytes, vrm_hash))
-			throw std::runtime_error("The downloaded VRM does not match the Alpha6 release registry.");
+			throw std::runtime_error("The downloaded VRM does not match this release registry.");
 
 		const std::string original = join_path(package_root, "original");
 		const std::string lev_temp = join_path(original, ".saphi-track.lev.part");

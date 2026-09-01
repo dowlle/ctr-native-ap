@@ -822,7 +822,7 @@ int CustomTrackManager_ScanPackage(const char *assetsRoot,
 	if (strcmp(expectedManifest, actualManifest) != 0)
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_MANIFEST_INVALID,
-		                  "manifest.json does not match the Alpha6 package registry; Verify can repair it.");
+		                  "manifest.json does not match the current release package registry; Verify can repair it.");
 		return outStatus->state;
 	}
 
@@ -896,13 +896,13 @@ int CustomTrackManager_Preflight(const char *assetsRoot,
 	if (requirement == NULL || !Manager_TextEqual(requirement->id, package->id))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED,
-		                  "This Alpha6 client does not recognize the seed's custom track package.");
+		                  "This client release does not recognize the seed's custom track package.");
 		return outStatus->state;
 	}
 	if (!Manager_RequirementMatches(package, requirement))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_INCOMPATIBLE,
-		                  "The seed's Baby T Park identity does not match the Alpha6 package registry.");
+		                  "The seed's Baby T Park identity does not match the current release package registry.");
 		return outStatus->state;
 	}
 

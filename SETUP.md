@@ -25,7 +25,7 @@ and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hos
 For a guided first setup, use the
 [CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
 file for this exact prerelease, open the
-[Alpha6 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha6).
+[Alpha7 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha7).
 
 ## Step 1: get the game executable
 
@@ -151,7 +151,7 @@ stands, which reason applies.
 ## Generating or hosting a multiworld
 
 Create your player file with the
-[Alpha6 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha6).
+[Alpha7 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha7).
 Download the resulting YAML and give it to the person generating the room. The
 Builder prepares and validates player configuration; it does not generate the
 seed or host the playable server.
@@ -169,9 +169,9 @@ generated Crash Team Racing YAML locally.
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
 
-## Experimental custom content in Alpha6
+## Experimental custom content in Alpha7
 
-The public archive contains no custom-track files. Alpha6 recognizes one
+The public archive contains no custom-track files. Alpha7 recognizes one
 experimental Baby T Park package supplied by its creator. Open **OPTIONS →
 Custom Content** to inspect it, follow the creator link and verify the installed
 files. **Ready** means the files are compatible; it does not make a generated

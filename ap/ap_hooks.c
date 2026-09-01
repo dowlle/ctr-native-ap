@@ -3995,7 +3995,7 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 			memset(&ap_custom_content_status, 0, sizeof ap_custom_content_status);
 			ap_custom_content_status.state = CTR_CT_MANAGER_INCOMPATIBLE;
 			snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail,
-			         "This seed's custom-track descriptor is not usable by Alpha6.");
+			         "This seed's custom-track descriptor is not usable by this client.");
 			ap_custom_content_scanned = 1;
 		}
 		else

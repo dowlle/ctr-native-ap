@@ -876,7 +876,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 					else if (!ctr_hex64(ct.vrm_sha256))
 						reject = "vrm_sha256 is not 64 hex digits";
 					else if (ct.boxes != 0)
-						reject = "boxes must be false in Alpha6";
+						reject = "boxes must be false in the current custom-track preview";
 					else if (ct.trophy_location <= 0)
 						reject = "locations.trophy must be a positive AP code";
 				}
