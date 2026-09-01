@@ -49,7 +49,8 @@ def header_command(src):
         # continuation: option-looking line, or a line that names the source file
         if body.startswith("/tmp/") or body.startswith("&&"):
             break  # the run step; we run the binary ourselves
-        if body.startswith("-") or body.startswith("\\") or body.endswith("\\") or "-o /tmp/" in body:
+        if (body.startswith("-") or body.startswith("\\") or body.endswith("\\") or "-o /tmp/" in body
+                or re.match(r"^(tools|ap|platform|game|include)/", body)):
             cmd += " " + body
         else:
             break

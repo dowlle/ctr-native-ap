@@ -55,6 +55,6 @@ tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c
 tools/test-version-compare.c
-tools/test-wumpa-dispatch.c skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-wumpa-dispatch.c
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
-tools/test-wumpa-seedcfg.cpp skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-wumpa-seedcfg.cpp
