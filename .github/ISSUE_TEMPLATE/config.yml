@@ -3,9 +3,12 @@ contact_links:
   - name: Setup and troubleshooting guide
     url: https://github.com/dowlle/ctr-native-ap/blob/main/SETUP.md
     about: Installing, extracting your disc, Steam Deck and Linux notes, and the common fixes. Worth a look before filing.
-  - name: Randomization, generation and logic
-    url: https://github.com/dowlle/ctr-archipelago-apworld/issues/new/choose
-    about: Issues with seed generation, options or logic live in the companion apworld repository. If you are unsure, file here anyway and it will be moved.
+  - name: What the options do
+    url: https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md
+    about: The CTR world README documents every YAML option. Generation, option and logic problems are filed here too, with the "Stuck or impossible seed" form.
+  - name: Questions and feedback on Discord
+    url: https://discord.com/channels/731205301247803413/1222304293751750777
+    about: The Crash Team Racing channel on the Archipelago Discord (invite discord.gg/8Z65BR2). Good for questions; bugs and stuck seeds are easier to track here.
   - name: New to Archipelago itself
     url: https://archipelago.gg/tutorial/
     about: Setting up a multiworld, YAMLs and rooms in general, rather than anything CTR-specific.

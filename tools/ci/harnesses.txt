@@ -4,21 +4,30 @@ tools/test-author-ready.c
 tools/test-blue-fire.c
 tools/test-boss-assist.c
 tools/test-box-map.c
+tools/test-box-offset.c
 tools/test-ceremony-banner.c
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-character-phase-seedcfg.cpp
 tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
+tools/test-custom-pad-lifecycle.c
+tools/test-custom-track-load.c
+tools/test-custom-track-manager.c
+tools/test-custom-track-policy.c
+tools/test-custom-tracks-seedcfg.cpp
+tools/test-custom-trophy-ceremony.c
 tools/test-democam.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
 tools/test-firstkey-freeze.c
+tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
 tools/test-goal-presentation.c
 tools/test-graphics-options.c
 tools/test-h-useful.c
 tools/test-held-checks.cpp
+tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-itemsanity.c
 tools/test-lettersanity-seedcfg.cpp
@@ -26,6 +35,7 @@ tools/test-lettersanity.c
 tools/test-menu-ux.c
 tools/test-native-clip-scratch.c
 tools/test-native-ptr-scratch.c
+tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-entry.c
@@ -35,6 +45,7 @@ tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c
 tools/test-retro-fueled.c
+tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
@@ -44,4 +55,7 @@ tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c
 tools/test-version-compare.c
+tools/test-wumpa-dispatch.c
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-wumpa-seedcfg.cpp
+tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header

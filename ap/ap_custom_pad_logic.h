@@ -25,6 +25,15 @@
 #define AP_CUSTOM_TROPHY_PSEUDO_BIT    0x200
 #define AP_CUSTOM_WUMPA_PSEUDO_BIT     0x201
 
+// A selected custom destination can be entered only while the manager is
+// Ready and no serve-time fault remains latched. Rescan clears the latter only
+// after it has verified and re-armed the package.
+static inline int AP_CustomPadContentReady(int seedSelected, int contentRequired,
+	                                       const char *serveFaultReason)
+{
+	return seedSelected && !contentRequired && serveFaultReason == 0;
+}
+
 static inline int AP_CustomPadOwnsDestination(const ctr_seed_config *cfg,
 	                                           int destLevelID)
 {

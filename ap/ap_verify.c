@@ -34,18 +34,22 @@ static const int ap_vf_boss_keys[4] = {
 static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 
 // ---------------------------------------------------------------------------
-// Location worklist: the static table entries plus every podium rung the seed
-// can carry. The multiplier is DERIVED from CTR_CFG_PODIUM_RUNG_COUNT on
-// purpose: this used to hardcode 3 (the pre-Phase-A ladder) while the fill loop
-// below already wrote 5 rungs per track, so the worklist silently truncated at
-// 149 entries and the sweep then declared perfectly good seeds unbeatable.
-// If the rung model changes again, this follows it automatically.
+// Location worklist: every location family the seed can carry. The maximum
+// wire set is 101 static + 80 podium + 270 boxes + 48 letters + 22 itemsanity
+// + 19 Wumpa + 6 custom Trophy/podium = 546 today. Keep a small margin for a
+// future family addition, while deriving every variable block from its owner.
 // ---------------------------------------------------------------------------
-#define AP_VF_MAX_LOCS (AP_LOCATION_TABLE_LEN + \
+#define AP_VF_CUSTOM_LOCATION_COUNT (1 + CTR_CFG_PODIUM_RUNG_COUNT)
+#define AP_VF_MAX_WIRE_LOCS (AP_LOCATION_TABLE_LEN + \
 	CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
 	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + \
 	AP_ITEMSANITY_WEAPON_COUNT * 2 + CTR_CFG_WUMPA_TRACK_COUNT + \
-	CTR_CFG_WUMPA_CUSTOM_MAX)
+	CTR_CFG_WUMPA_CUSTOM_MAX + AP_VF_CUSTOM_LOCATION_COUNT)
+#define AP_VF_LOCATION_SAFETY_MARGIN 8
+#define AP_VF_MAX_LOCS (AP_VF_MAX_WIRE_LOCS + AP_VF_LOCATION_SAFETY_MARGIN)
+
+typedef char ap_vf_worklist_holds_max_wire_set[
+	(AP_VF_MAX_LOCS >= AP_VF_MAX_WIRE_LOCS) ? 1 : -1];
 
 typedef enum
 {

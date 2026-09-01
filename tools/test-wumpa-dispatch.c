@@ -372,6 +372,33 @@ static void test_custom_refusals(void)
 	}
 }
 
+static void test_custom_faulted(void)
+{
+	ctr_wumpa_checks blocks[2] = { global_block(), per_track_block() };
+	const char *modes[2] = { "global", "per-track" };
+	int mode;
+	int cupLeg;
+
+	add_custom(&blocks[1], PURPLE_CUP_LEVEL_ID, CUSTOM_CODE, 1, PACKAGE_UUID);
+	for (mode = 0; mode < 2; mode++)
+	for (cupLeg = 0; cupLeg <= 1; cupLeg++)
+	{
+		struct AP_WumpaDispatchFacts f = retail_facts(
+		    &blocks[mode], LEVEL_ROOS_TUBES);
+		char name[96];
+		int reason;
+
+		f.isCupLeg = cupLeg;
+		f.customFaulted = 1;
+		snprintf(name, sizeof name, "faulted %s %s sends nothing",
+		         modes[mode], cupLeg ? "cup leg" : "standalone load");
+		expect_long(resolve(&f, &reason), -1, name);
+		snprintf(name, sizeof name, "faulted %s %s names the serve fault",
+		         modes[mode], cupLeg ? "cup leg" : "standalone load");
+		expect_int(reason, AP_WUMPA_REFUSE_CUSTOM_FAULTED, name);
+	}
+}
+
 // ── the lookup itself ───────────────────────────────────────────────────────
 
 static void test_slot_lookup(void)
@@ -406,7 +433,7 @@ static void test_refusal_text(void)
 	// Every enumerator has a phrase, and none of them is the fallback. A refusal
 	// that logs "unknown reason" is a refusal nobody can act on.
 	for (reason = AP_WUMPA_SENT;
-	     reason <= AP_WUMPA_REFUSE_CAPABILITY_DISAGREE; reason++)
+	     reason <= AP_WUMPA_REFUSE_CUSTOM_FAULTED; reason++)
 	{
 		checks++;
 		if (strcmp(AP_WumpaRefusalText(reason), "unknown reason") == 0)
@@ -551,6 +578,7 @@ int main(void)
 	test_gem_cup_route();
 	test_per_track_custom();
 	test_custom_refusals();
+	test_custom_faulted();
 	test_slot_lookup();
 	test_refusal_text();
 	test_sweep();
