@@ -33,6 +33,12 @@ Seeds with itemsanity turned on place AP item boxes around the tracks. There is 
 
 New to Archipelago itself? Start with the [Archipelago tutorials](https://archipelago.gg/tutorial/). For CTR-specific information, return to [ap-pie.com/ctr](https://ap-pie.com/ctr).
 
+## Reporting a problem
+
+Bugs, crashes, stuck seeds and ideas all go to this repository's [issue tracker](https://github.com/dowlle/ctr-native-ap/issues/new/choose), whichever half of the project seems at fault. The forms ask for the details that resolve a report in one pass, and generation-side issues are routed from here. Before filing, run `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux and Steam Deck) next to the executable and attach the archive it creates: it contains the logs with your password removed and no game data. See [Reporting a crash or a stuck seed](SETUP.md#reporting-a-crash-or-a-stuck-seed) in the setup guide.
+
+For questions and feedback, the [Crash Team Racing channel](https://discord.com/channels/731205301247803413/1222304293751750777) on the [Archipelago Discord](https://discord.gg/8Z65BR2) is the place.
+
 ## Building from source
 
 Developers and the curious: see [BUILDING.md](BUILDING.md) for prerequisites, build steps for the vanilla and AP builds, and the project architecture. For the plain native port of CTR without Archipelago, see upstream [CTR-tools/ctr-native](https://github.com/CTR-tools/ctr-native).

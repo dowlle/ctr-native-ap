@@ -23,23 +23,16 @@ body:
     validations:
       required: true
 
-  - type: dropdown
+  - type: input
     id: version
     attributes:
       label: Client version
       description: |
-        On the `[AP BOOT]` line at the top of `ctr-ap.log`. Please also give the apworld
-        version below: the client and the apworld ship as a pair and must match.
-      options:
-        - v0.1.5
-        - v0.1.4.1
-        - v0.1.4
-        - v0.1.3
-        - v0.1.2
-        - v0.1.1
-        - v0.1.0
-        - Built from source
-        - Not sure
+        Copy it from the `[AP BOOT]` line at the top of `ctr-ap.log`, next to the game
+        executable, for example `v0.2.0-alpha7` or `v0.1.5`. Prereleases count. Write
+        "built from source" if that applies. Please also give the APWorld version below:
+        the client and the APWorld ship as a pair and must match.
+      placeholder: v0.2.0-alpha7
     validations:
       required: true
 
