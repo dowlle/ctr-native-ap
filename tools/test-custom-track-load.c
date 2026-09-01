@@ -851,10 +851,19 @@ static void test_serve_time_size_recheck(void)
 
 	expect_int(CustomTrack_GetOverride(TEST_BASE + 1, &ctx, &path, &size), 0,
 	           "size recheck: refuses the swapped file");
-	expect_int(CustomTrack_GetOverride(TEST_BASE, &ctx, &path, &size), 1,
-	           "size recheck: the untouched VRM still serves");
+	expect_int(CustomTrack_GetOverride(TEST_BASE, &ctx, &path, &size), 0,
+	           "size recheck: the untouched VRM is refused after the fault");
+	expect_int(CustomTrack_ServingLoad(TEST_HOST, 1, TEST_CUP), 0,
+	           "size recheck: the faulted load is no longer custom");
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 0,
+	           "size recheck: the faulted cup no longer redirects");
+	expect_int(CustomTrack_ServeFaultReason() != NULL, 1,
+	           "size recheck: the fault reason is sticky");
 
 	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES); // restore
+	arm_with(good_descriptor());
+	expect_int(CustomTrack_ServeFaultReason() == NULL, 1,
+	           "size recheck: successful verify clears the fault");
 }
 
 // ---------------------------------------------------------------------------

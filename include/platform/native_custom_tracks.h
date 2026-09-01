@@ -107,6 +107,10 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 // past the cheap serve-time stat check.
 int CustomTrack_ReverifyArmedContent(void);
 
+// Sticky reason for a serve-time stat/size refusal, or NULL when no such fault
+// is latched. A successful managed-package verification clears the fault.
+const char *CustomTrack_ServeFaultReason(void);
+
 // The parsed feature config, never NULL. Callers pass it to the pure decisions
 // in native_custom_tracks_policy.h. Calls CustomTrack_Load if it has not run.
 const struct CustomTrackFeatureConfig *CustomTrack_Config(void);
@@ -123,9 +127,9 @@ const struct CustomTrackFeatureConfig *CustomTrack_Config(void);
 // gGT; see the policy header's decision 4 for why those facts are always
 // committed before the first subfile read of a level.
 //
-// Returns 0 for every other index, and for any index in the group whose file has
-// changed size since it was verified -- a file swapped under a running game is
-// refused for that read rather than served unverified.
+// Returns 0 for every other index. A changed or missing source disarms the
+// custom race and latches a serve fault, so that read and every later subfile
+// in the load are refused rather than mixing custom and retail identities.
 int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize);
 
 // Fill dst with the source file's bytes, zero-padding the tail out to bufBytes
