@@ -728,8 +728,8 @@ static void test_pad_state_table(void)
 
 	// THE #232 CELL. Trophy checked and stage 2 unmet is Re-locked ONLY once the
 	// boxes are gone; while any stands the pad stays 2 Raceable, which is what
-	// AH_WarpPad.c's entry gate and born look now both follow (AP_PadBoxReRaceable
-	// is defined as "state 2 with the trophy checked", so these two rows are
+	// AH_WarpPad.c's entry gate and born look now both follow
+	// AP_PadPhase1ReRaceable ("state 2 with the trophy checked"), so these rows are
 	// exactly the two answers it can give).
 	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 3, 1), 2,
 	           "trophy checked, stage 2 unmet, ONE box standing -> Raceable (#232)");
@@ -737,6 +737,10 @@ static void test_pad_state_table(void)
 	           "trophy checked, stage 2 unmet, no boxes left -> Re-locked");
 	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 0, 7), 2,
 	           "boxes are the ONLY thing left -> still Raceable, never Re-locked");
+	expect_int(AP_PadStateDecide(RACE, S1_MET, RACER_MET, TROPHY, S2_UNMET, 1, 1), 2,
+	           "Wumpa is the only re-race check left -> phase 1 stays Raceable");
+	expect_int(AP_PadStateDecide(NONRACE, S1_MET, RACER_MET, NO_TROPHY, S2_MET, 1, 1), 2,
+	           "a Cup with a leg Wumpa left stays Raceable after its Gem");
 
 	// Stage 2 met is the tier-2 tier, boxes or not -- the relic / token menu
 	// owns entry there, so #232 must not divert it.
@@ -761,6 +765,27 @@ static void test_tier2_route_table(void)
 	           "both tiers checked, many boxes left -> plain box re-race");
 	expect_int(AP_PadTier2RouteDecide(0, 0, 0), AP_PAD_TIER2_DONE,
 	           "nothing left -> defensive Done route, never a dead menu");
+	expect_int(AP_PadTokenSideLeft(0, 0, 1), 1,
+	           "Wumpa alone keeps the CTR Challenge side available");
+	expect_int(AP_PadTokenSideLeft(0, 0, 0), 0,
+	           "no Token, letters or Wumpa closes the CTR Challenge side");
+}
+
+static void test_cup_wumpa_count(void)
+{
+	int tracks[4] = {3, 3, 9, 17};
+	int left[4] = {1, 1, 1, 0};
+
+	printf("\n-- Cup Wumpa lifecycle aggregation --\n");
+	expect_int(AP_PadCupWumpaCount(tracks, left, 18), 2,
+	           "a repeated Cup leg counts its track-owned Wumpa location once");
+	left[2] = 0;
+	expect_int(AP_PadCupWumpaCount(tracks, left, 18), 1,
+	           "a checked distinct leg no longer holds the Cup open");
+	tracks[3] = 18;
+	left[3] = 1;
+	expect_int(AP_PadCupWumpaCount(tracks, left, 18), 1,
+	           "an out-of-range leg cannot invent a Wumpa location");
 }
 
 // The diagnostic's route codes are what a live #232/#265 log is read through, so
@@ -769,7 +794,7 @@ static void test_tier2_route_table(void)
 static void test_pad_route_codes(void)
 {
 	printf("\n-- pad entry-route diagnostic codes (#232/#265) --\n");
-	expect_int(AP_PAD_ROUTE_S2LOCKED_BOX_RERACE != AP_PAD_ROUTE_S2LOCKED_INERT, 1,
+	expect_int(AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE != AP_PAD_ROUTE_S2LOCKED_INERT, 1,
 	           "the two stage-2-locked routes are distinct codes");
 	expect_int((int)AP_PAD_ROUTE_TIER2_BASE > (int)AP_PAD_TIER2_DONE, 1,
 	           "the tier-2 base clears every tier-2 enumerator");
@@ -908,6 +933,7 @@ int main(void)
 	test_scout_codes();
 	test_pad_state_table();
 	test_tier2_route_table();
+	test_cup_wumpa_count();
 	test_pad_route_codes();
 	test_combined_232_265_sequence();
 	test_within_radius();

@@ -527,8 +527,9 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
 // the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
 // its generic Trophy, podium and per-destination Wumpa identities instead of the
-// absent retail Gem and leg identities. AP_PadState consumes this same complete
-// enumeration specifically so Done can never strand an attached check.
+// absent retail Gem and leg identities. AP_PadState consumes this enumeration
+// together with the separate box, letter and retail Wumpa counts so Done can
+// never strand an attached check.
 #ifndef CTR_CUSTOM_TRACKS
 #define AP_PODIUM_PSEUDO_BASE 0x100
 #endif
@@ -572,20 +573,25 @@ int AP_PadState(int physLevelID, int destLevelID);
 // this exact question about the pad hosting a cup leg's INDIVIDUAL race.
 int AP_PadStage1Met(int physLevelID);
 
-// Is this pad in the §6 box re-entry window (issue #232)? The destination's
-// trophy race is checked, this pad's stage-2 is not met, and unbroken AP item
-// boxes still stand behind the destination -- so AP_PadState keeps the pad at 2
-// Raceable and the map paints it green. AH_WarpPad.c reads this on both of its
-// surfaces: the entry gate keeps offering a plain adventure re-race (the only
-// way to break a box), and the pad is born OPEN instead of advertising a stage-2
-// requirement it is not actually withholding entry on. Same keying as
+// Is this pad in the phase-1 re-entry window? The destination's Trophy Race is
+// checked, stage 2 is not met, and an AP box or per-track Wumpa check still
+// needs a plain adventure race. AP_PadState keeps it at 2 Raceable. The entry
+// gate offers that race and the pad is born OPEN instead of advertising a
+// stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
-int AP_PadBoxReRaceable(int physLevelID, int destLevelID);
+int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD
 // can explain why a trophy-complete pad remains raceable.
 int AP_PadUncollectedBoxCount(int destLevelID);
+
+// Number of unchecked per-track Reach 10 Wumpa locations genuinely served by
+// this destination: one for a retail race, or the deduplicated set owned by a
+// Gem Cup's four retail legs. Global mode does not hold individual pads open.
+// A displaced Alpha6 custom Cup already enumerates its custom Wumpa pseudo-bit
+// through AP_CustomPadAppendUnchecked and therefore returns zero here.
+int AP_PadUncollectedWumpaCount(int destLevelID);
 
 // Number of enabled Lettersanity locations still unchecked for a race
 // destination. These belong to the CTR Challenge race type and therefore keep

@@ -20,9 +20,9 @@
 //   3. per_track retail -> the DESTINATION level's code. Destination, not
 //                          physical pad: loading Crash Cove from another pad
 //                          still sends Crash Cove's code.
-//   4. cup leg          -> the destination's own physical pad must be accessible
-//                          right now, the same AP_BoxPadAccessible answer the
-//                          AP-box policy uses. Cup access alone grants nothing.
+//   4. cup leg          -> the resolved leg destination's same track-owned code.
+//                          The apworld models the standalone race and every
+//                          legging Cup as alternative routes to that location.
 //   5. per_track custom -> resolve the serving package and destination role
 //                          through the predicate that owns custom bytes, and
 //                          send the bound destination-slot code only when the
@@ -55,7 +55,6 @@ enum AP_WumpaRefusal
 	AP_WUMPA_REFUSE_NO_GLOBAL,     // global mode with no global code on the wire
 	AP_WUMPA_REFUSE_UNKNOWN_LEVEL, // destination is not a retail race level 0..17
 	AP_WUMPA_REFUSE_NO_TRACK_CODE, // this seed minted no check for that level
-	AP_WUMPA_REFUSE_CUP_PAD,       // cup leg, that track's own pad is not open
 	AP_WUMPA_REFUSE_NO_CUSTOM_SLOT,// no destination slot for the serving cup
 	AP_WUMPA_REFUSE_CUSTOM_PACKAGE,// slot names a different package than the seed
 	AP_WUMPA_REFUSE_NOT_COLLECTIBLE,// the measured capability says no route to 10
@@ -72,7 +71,6 @@ struct AP_WumpaDispatchFacts
 	// ── retail ──
 	int destLevelID; // the DESTINATION track being raced, 0..17, or -1
 	int isCupLeg;    // this race is an Adventure Gem Cup leg
-	int padAccessible; // AP_BoxPadAccessible for the destination's physical pad
 
 	// ── custom ──
 	int servingCustom;   // CustomTrack_ServingLoad said the custom bytes are live
@@ -177,12 +175,6 @@ static inline long AP_WumpaResolveCode(const struct AP_WumpaDispatchFacts *f,
 			reason = AP_WUMPA_REFUSE_UNKNOWN_LEVEL;
 		else if (f->wumpa->tracks[f->destLevelID] < 0)
 			reason = AP_WUMPA_REFUSE_NO_TRACK_CODE;
-		else if (f->isCupLeg && !f->padAccessible)
-			// The AP-box ruling, applied to this check: a cup leg may collect
-			// fruit on a track the seed's logic cannot yet reach through that
-			// track's own physical pad, and awarding the check there would hand
-			// out a location the logic does not believe is reachable.
-			reason = AP_WUMPA_REFUSE_CUP_PAD;
 		else
 			code = f->wumpa->tracks[f->destLevelID];
 		break;
@@ -214,7 +206,6 @@ static inline const char *AP_WumpaRefusalText(int reason)
 	case AP_WUMPA_REFUSE_NO_GLOBAL: return "global mode carries no global code";
 	case AP_WUMPA_REFUSE_UNKNOWN_LEVEL: return "not a retail race destination";
 	case AP_WUMPA_REFUSE_NO_TRACK_CODE: return "no check minted for this destination";
-	case AP_WUMPA_REFUSE_CUP_PAD: return "cup leg, this track's own pad is not open yet";
 	case AP_WUMPA_REFUSE_NO_CUSTOM_SLOT: return "no custom destination slot for this cup";
 	case AP_WUMPA_REFUSE_CUSTOM_PACKAGE: return "custom destination names a different package";
 	case AP_WUMPA_REFUSE_NOT_COLLECTIBLE: return "this package measured no route to 10 fruit";

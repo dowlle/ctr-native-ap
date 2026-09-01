@@ -185,12 +185,11 @@ static void test_global(void)
 	expect_int(reason, AP_WUMPA_SENT, "global mode reports a send");
 
 	// The global identity is deliberately not a destination's, so it is valid on
-	// every race where fruit can be collected -- including a cup leg on a track
-	// whose own pad is shut, and including the custom event race.
+	// every race where fruit can be collected, including Cup legs and the custom
+	// event race.
 	f.isCupLeg = 1;
-	f.padAccessible = 0;
 	expect_long(resolve(&f, &reason), GLOBAL_CODE,
-	            "global mode ignores the cup pad rule");
+	            "global mode is valid on a Cup leg");
 
 	f = custom_facts(&w, PURPLE_CUP_LEVEL_ID, PACKAGE_UUID, 1);
 	expect_long(resolve(&f, &reason), GLOBAL_CODE,
@@ -225,8 +224,7 @@ static void test_per_track_retail(void)
 	// DESTINATION IDENTITY. The caller passes gGT->levelID, which under
 	// destination shuffle is the track actually loaded -- so loading Crash Cove
 	// from the Roo's Tubes pad arrives here as Crash Cove and sends Crash Cove's
-	// code. The physical pad never enters this decision except through the cup
-	// access term.
+	// code. The physical pad never enters this decision.
 	f.destLevelID = LEVEL_CRASH_COVE;
 	expect_long(resolve(&f, &reason), CRASH_COVE_CODE,
 	            "destination shuffle preserves destination identity");
@@ -247,33 +245,24 @@ static void test_per_track_retail(void)
 	expect_long(resolve(&f, &reason), -1, "a cup LevelID is not a race destination");
 }
 
-static void test_gem_cup_pad_rule(void)
+static void test_gem_cup_route(void)
 {
 	ctr_wumpa_checks w = per_track_block();
 	struct AP_WumpaDispatchFacts f = retail_facts(&w, LEVEL_CRASH_COVE);
 	int reason;
 
-	// The ruled AP-box policy, applied to this check: cup access alone grants
-	// nothing. A leg on a track whose own physical pad is not open cannot award
-	// that track's location, because the seed's logic does not believe the
-	// location is reachable yet.
+	// The apworld gives every legging Cup an alternative route to this one
+	// track-owned location. Native therefore dispatches from the resolved leg
+	// identity without consulting the standalone pad.
 	f.isCupLeg = 1;
-	f.padAccessible = 0;
-	expect_long(resolve(&f, &reason), -1, "a cup leg behind a shut pad sends nothing");
-	expect_int(reason, AP_WUMPA_REFUSE_CUP_PAD, "the pad rule is named");
-
-	// And it CAN award it afterwards. Both halves matter: a rule that only ever
-	// refuses is indistinguishable from the feature being broken.
-	f.padAccessible = 1;
 	expect_long(resolve(&f, &reason), CRASH_COVE_CODE,
-	            "the same leg sends once that track's pad is open");
+	            "a Cup leg sends its resolved track-owned Wumpa code");
+	expect_int(reason, AP_WUMPA_SENT, "the Cup route is reported as a send");
 
-	// Outside a cup the pad terms are not consulted at all, which keeps every
-	// ordinary Adventure race, boss race and relic race on the pre-policy rule.
+	// Outside a Cup the same destination identity sends the same one location.
 	f.isCupLeg = 0;
-	f.padAccessible = 0;
 	expect_long(resolve(&f, &reason), CRASH_COVE_CODE,
-	            "a non-cup race never consults the pad terms");
+	            "the standalone race is the alternative route to the same code");
 }
 
 // ── step 5: per-track custom destination ────────────────────────────────────
@@ -439,7 +428,7 @@ static void test_refusal_text(void)
 static void test_sweep(void)
 {
 	ctr_wumpa_checks w;
-	int mode, level, cupLeg, pad, custom, cupID, slotCollectible, seedCollectible;
+	int mode, level, cupLeg, custom, cupID, slotCollectible, seedCollectible;
 	int seedOk, sameUuid;
 	int cases = 0;
 	int sent = 0;
@@ -447,7 +436,6 @@ static void test_sweep(void)
 	for (mode = 0; mode <= 2; mode++)
 	for (level = -1; level < CTR_CFG_WUMPA_TRACK_COUNT; level++)
 	for (cupLeg = 0; cupLeg <= 1; cupLeg++)
-	for (pad = 0; pad <= 1; pad++)
 	for (custom = 0; custom <= 1; custom++)
 	for (cupID = 100; cupID <= 104; cupID++)
 	for (slotCollectible = 0; slotCollectible <= 1; slotCollectible++)
@@ -475,7 +463,6 @@ static void test_sweep(void)
 		f.wumpa = &w;
 		f.destLevelID = level;
 		f.isCupLeg = cupLeg;
-		f.padAccessible = pad;
 		f.servingCustom = custom;
 		f.servingCupLevelID = custom ? cupID : -1;
 		f.seedCustomOk = seedOk;
@@ -538,17 +525,8 @@ static void test_sweep(void)
 			       seedOk, sameUuid, slotCollectible, seedCollectible);
 		}
 
-		// 6. The Gem Cup rule. A retail per-track send during a cup leg requires
-		//    that destination's own pad to be accessible.
-		checks++;
-		if (mode == CTR_CFG_WUMPA_PER_TRACK && !custom && cupLeg && code >= 0 &&
-		    !pad)
-		{
-			failures++;
-			printf("FAIL sweep: cup leg sent %ld behind a shut pad\n", code);
-		}
-
-		// 7. A retail per-track send is always the destination's OWN code.
+		// 6. A retail per-track send is always the destination's OWN code,
+		//    including when that destination is running as a Cup leg.
 		checks++;
 		if (mode == CTR_CFG_WUMPA_PER_TRACK && !custom && code >= 0 &&
 		    code != w.tracks[level])
@@ -570,7 +548,7 @@ int main(void)
 	test_off();
 	test_global();
 	test_per_track_retail();
-	test_gem_cup_pad_rule();
+	test_gem_cup_route();
 	test_per_track_custom();
 	test_custom_refusals();
 	test_slot_lookup();

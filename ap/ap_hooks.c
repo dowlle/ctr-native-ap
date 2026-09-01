@@ -1108,6 +1108,50 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	return n;
 }
 
+// Per-track Wumpa checks carry no AdvProgress bit, so they need the same
+// count-only lifecycle bridge as AP boxes and Lettersanity. A standalone race
+// owns its one destination code. A Gem Cup aggregates the distinct track-owned
+// codes of all four legs so checking the Gem cannot hard-lock a remaining
+// Wumpa route. Repeated legs are alternatives to one location and count once.
+static int AP_PadTrackWumpaLeft(int levelID)
+{
+	long code;
+
+	if (levelID < 0 || levelID >= CTR_CFG_WUMPA_TRACK_COUNT)
+		return 0;
+	code = ctr_cfg.wumpa.tracks[levelID];
+	return code >= 0 && ap_net_location_exists(code) &&
+	       !ap_net_location_checked(code);
+}
+
+int AP_PadUncollectedWumpaCount(int destLevelID)
+{
+	int tracks[4];
+	int trackLeft[4];
+	int leg;
+
+	if (!ctr_cfg_active() || ctr_cfg.wumpa.mode != CTR_CFG_WUMPA_PER_TRACK)
+		return 0;
+	if (destLevelID >= 0 && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
+		return AP_PadTrackWumpaLeft(destLevelID);
+	if (destLevelID < 100 || destLevelID >= 105)
+		return 0;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The direct Alpha6 custom destination already includes its Wumpa location
+	// in AP_CustomPadAppendUnchecked. Its serialized retail leg row is ignored.
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return 0;
+#endif
+
+	for (leg = 0; leg < 4; leg++)
+	{
+		tracks[leg] = ctr_cfg_cup_leg(destLevelID - 100, leg);
+		trackLeft[leg] = AP_PadTrackWumpaLeft(tracks[leg]);
+	}
+	return AP_PadCupWumpaCount(tracks, trackLeft, CTR_CFG_WUMPA_TRACK_COUNT);
+}
+
 int AP_PadUncollectedLetterCount(int destLevelID)
 {
 	int letter, n = 0;
@@ -1282,6 +1326,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int uncN;
 	int boxesLeft;
 	int lettersLeft;
+	int wumpaLeft;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1312,6 +1357,11 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// belong to this destination's CTR Challenge and must keep the pad out of
 	// Done even after the ordinary Token location is checked.
 	lettersLeft = AP_PadUncollectedLetterCount(destLevelID);
+	// Per-track Wumpa is track-owned but has several physical routes. Keep a
+	// standalone pad and every legging Cup out of Done until the server checks
+	// it. Before stage 2 it needs the plain Trophy-race route; after stage 2 the
+	// entry chooser treats it as a CTR Challenge-side reason to remain open.
+	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
@@ -1322,21 +1372,21 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         ctr_cfg_racer_lock_met(physLevelID),
 	                         AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
-	                         uncN + lettersLeft, boxesLeft);
+	                         uncN + lettersLeft + wumpaLeft,
+	                         boxesLeft + wumpaLeft);
 }
 
-// Is this pad in the §6 box re-entry window (issue #232)? True exactly when the
+// Is this pad in the phase-1 re-entry window? True exactly when the
 // destination's trophy race is already checked and the pad is STILL state 2
-// Raceable -- which, for a race destination with the trophy checked, can only
-// come from the standing-box branch of the table ("stays Raceable and enterable
-// until they are gone"). Any other route to 2 either has an unchecked trophy or
-// a non-race destination, both excluded here.
+// Raceable. For a race destination with the trophy checked, that means an AP
+// box or per-track Wumpa check still needs a plain adventure re-race. Any other
+// route to 2 has an unchecked trophy or a non-race destination, both excluded.
 //
 // Defined ON TOP of AP_PadState rather than beside it deliberately: the entry
 // gate and the pad's look in AH_WarpPad.c consume this, so they cannot drift
 // from the state the map paints. That drift IS issue #232 -- the state model
 // promised the pad stayed enterable and the gate had no path for it.
-int AP_PadBoxReRaceable(int physLevelID, int destLevelID)
+int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID)
 {
 	if (!ctr_cfg_active())
 		return 0;
@@ -1354,8 +1404,8 @@ static const char *AP_PadRouteName(int route)
 {
 	switch (route)
 	{
-	case AP_PAD_ROUTE_S2LOCKED_BOX_RERACE:
-		return "box-re-race(stage2-locked)";
+	case AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE:
+		return "plain-re-race(stage2-locked)";
 	case AP_PAD_ROUTE_S2LOCKED_INERT:
 		return "inert(stage2-locked)";
 	case AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU:
@@ -1389,6 +1439,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	static int s_token = -1;
 	static int s_relic = -1;
 	static int s_boxes = -1;
+	static int s_wumpa = -1;
 
 	int uncBits[24];
 	int uncN;
@@ -1398,6 +1449,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	int tokenLeft = 0;
 	int relicLeft = 0;
 	int boxesLeft;
+	int wumpaLeft;
 	char msg[192];
 
 	if (!ctr_cfg_active())
@@ -1408,6 +1460,7 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	state = AP_PadState(physLevelID, destLevelID);
 	trophyChecked = AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY) ? 1 : 0;
 	boxesLeft = AP_PadUncollectedBoxCount(destLevelID);
+	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 
 	// The same enumerator and the same offsets the tier-2 chooser itself reads,
 	// so the logged flags cannot disagree with the decision they explain. These
@@ -1425,10 +1478,12 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 		         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
 			relicLeft = 1;
 	}
+	tokenLeft = AP_PadTokenSideLeft(
+	    tokenLeft, AP_PadUncollectedLetterCount(destLevelID), wumpaLeft);
 
 	if (physLevelID == s_phys && destLevelID == s_dest && route == s_route &&
 	    state == s_state && trophyChecked == s_trophy && tokenLeft == s_token &&
-	    relicLeft == s_relic && boxesLeft == s_boxes)
+	    relicLeft == s_relic && boxesLeft == s_boxes && wumpaLeft == s_wumpa)
 		return; // nothing the line reports has changed since it was last emitted
 
 	s_phys = physLevelID;
@@ -1439,12 +1494,13 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	s_token = tokenLeft;
 	s_relic = relicLeft;
 	s_boxes = boxesLeft;
+	s_wumpa = wumpaLeft;
 
 	snprintf(msg, sizeof msg,
 	         "[AP PAD] pad %d -> dest %d: state=%d trophy_checked=%d token_left=%d "
-	         "relic_left=%d boxes_left=%d route=%s\n",
+	         "relic_left=%d boxes_left=%d wumpa_left=%d route=%s\n",
 	         physLevelID, destLevelID, state, trophyChecked, tokenLeft, relicLeft,
-	         boxesLeft, AP_PadRouteName(route));
+	         boxesLeft, wumpaLeft, AP_PadRouteName(route));
 	AP_LogLine(msg);
 }
 
@@ -5010,14 +5066,14 @@ void AP_LetterUnavailableTouched(int track, int letter)
 //
 // The DESTINATION, not the physical pad. `gGT->levelID` during a race is the
 // track actually loaded, which under destination shuffle IS the destination --
-// so loading Crash Cove from another pad already reads as Crash Cove here and
-// the identity rule needs no special case. `ctr_cfg_warp_phys` inverts it back
-// to the physical pad, which is what the cup-leg access terms are keyed by.
+// so loading Crash Cove from another pad or as a Gem Cup leg already reads as
+// Crash Cove here and the identity rule needs no special case. The apworld
+// gives the location an OR route from the standalone race and every legging Cup,
+// so native must not re-impose the former individual-pad gate here.
 static void AP_WumpaGatherFacts(struct GameTracker *gGT,
                                 struct AP_WumpaDispatchFacts *facts)
 {
 	int level;
-	int phys;
 
 	memset(facts, 0, sizeof *facts);
 	facts->wumpa = &ctr_cfg.wumpa;
@@ -5050,14 +5106,6 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	// for reward routing but legs no track, which is why the test above returns
 	// before reaching this line.
 	facts->isCupLeg = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
-	if (!facts->isCupLeg)
-		return;
-
-	phys = ctr_cfg_warp_phys(level);
-	facts->padAccessible = AP_BoxPadAccessible(phys,
-	                                           AP_GateCount(AP_IDX_KEY),
-	                                           AP_PadStage1Met(phys),
-	                                           ctr_cfg_racer_lock_met(phys));
 }
 
 void AP_WumpaReachedTen(struct Driver *driver)
