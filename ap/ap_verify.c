@@ -8,6 +8,7 @@
 #include "ap_verify.h"
 #include "ap_box_map.h"
 #include "ap_verify_logic.h"
+#include "ap_verify_wumpa.h"
 #include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
 
@@ -42,7 +43,9 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 // ---------------------------------------------------------------------------
 #define AP_VF_MAX_LOCS (AP_LOCATION_TABLE_LEN + \
 	CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
-	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + 29)
+	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + \
+	AP_ITEMSANITY_WEAPON_COUNT * 2 + CTR_CFG_WUMPA_TRACK_COUNT + \
+	CTR_CFG_WUMPA_CUSTOM_MAX)
 
 typedef enum
 {
@@ -244,6 +247,8 @@ static void ap_vf_recompute(void)
 	char       state[AP_VF_MAX_LOCS]; // 0 open, 1 collected
 	int        counts[AP_VF_ITEM_COUNT];
 	int        n = 0, i, t;
+	AP_VerifyWumpaLocation wumpa_locs[CTR_CFG_WUMPA_TRACK_COUNT +
+		CTR_CFG_WUMPA_CUSTOM_MAX];
 
 	ap_vf_truncated = 0; // per-sweep state: a stale flag must not poison later verdicts
 
@@ -352,11 +357,15 @@ static void ap_vf_recompute(void)
 			n++;
 		}
 	}
-	locs[n].code = 35016100L;
-	locs[n].kind = AP_VF_WUMPA;
-	locs[n].track = -1;
-	locs[n].detail = -1;
-	n++;
+	for (i = 0, t = AP_VerifyWumpaWorklist(&ctr_cfg.wumpa, wumpa_locs,
+	     CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX); i < t; i++)
+	{
+		locs[n].code = wumpa_locs[i].code;
+		locs[n].kind = AP_VF_WUMPA;
+		locs[n].track = wumpa_locs[i].destination;
+		locs[n].detail = -1;
+		n++;
+	}
 
 	// Seed the simulated tally from the FOREIGN receipts only (multiworld items +
 	// starting inventory). OWN items are banked from the scout cache below -- when a
@@ -411,12 +420,29 @@ static void ap_vf_recompute(void)
 		if (d >= 0 && d <= 104 && pad_for_dest[d] < 0)
 			pad_for_dest[d] = i;
 	}
+	AP_VerifyWumpaRoutes wumpa_routes;
+	memset(&wumpa_routes, 0, sizeof wumpa_routes);
+	for (i = 0; i < 105; i++)
+		if (pad_for_dest[i] >= 0)
+			wumpa_routes.destination_open[i] =
+				(unsigned char)ap_vf_pad_open(pad_for_dest[i], counts);
+	for (i = 0; i < 5; i++)
+	{
+		int leg;
+		wumpa_routes.cup_displaced[i] = (unsigned char)ctr_cfg_cup_displaced(i);
+		for (leg = 0; leg < 4; leg++)
+			wumpa_routes.cup_legs[i][leg] = ctr_cfg_cup_leg(i, leg);
+	}
 
 	// Fixed-point sweep: open everything reachable, bank own items, repeat.
 	int progress = 1;
 	while (progress)
 	{
 		progress = 0;
+		for (i = 0; i < 105; i++)
+			if (pad_for_dest[i] >= 0)
+				wumpa_routes.destination_open[i] =
+					(unsigned char)ap_vf_pad_open(pad_for_dest[i], counts);
 		for (i = 0; i < n; i++)
 		{
 			if (state[i])
@@ -534,7 +560,7 @@ static void ap_vf_recompute(void)
 				break;
 			}
 			case AP_VF_WUMPA:
-				ok = 1;
+				ok = AP_VerifyWumpaReachable(locs[i].track, &wumpa_routes);
 				break;
 			case AP_VF_BOSS:
 			{
