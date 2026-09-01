@@ -176,11 +176,25 @@ static void test_pad_lifecycle(void)
 	           "custom cup still respects its physical racer lock");
 }
 
+static void test_serve_fault_reentry(void)
+{
+	const char *fault = "Package file changed after verification.";
+	expect_int(AP_CustomPadContentReady(1, 0, fault), 0,
+	           "serve fault refuses custom-pad re-entry");
+	expect_int(AP_CustomPadContentReady(1, 1, fault), 0,
+	           "content remains required while the fault is latched");
+	expect_int(AP_CustomPadContentReady(1, 0, NULL), 1,
+	           "successful verify clears the fault and unlocks re-entry");
+	expect_int(AP_CustomPadContentReady(0, 0, NULL), 0,
+	           "a seed without custom content leaves the loader withdrawn");
+}
+
 int main(void)
 {
 	test_identity_bridge();
 	test_fail_closed_identity();
 	test_pad_lifecycle();
+	test_serve_fault_reentry();
 	printf("%s: custom pad identity and lifecycle regression\n",
 	       failures ? "FAIL" : "PASS");
 	return failures != 0;

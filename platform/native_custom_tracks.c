@@ -62,6 +62,7 @@ static int s_haveDescriptor = 0;
 static struct CustomTrackSource s_customTrackVrm;
 static struct CustomTrackSource s_customTrackLev;
 static int s_customTracksLoaded = 0;
+static char s_customTrackServeFault[128];
 
 // Scratch used to hand a resolved path back to the caller. The game reads track
 // subfiles one at a time on a single thread, so a single buffer is fine.
@@ -465,6 +466,11 @@ int CustomTrack_ReverifyArmedContent(void)
 	return 1;
 }
 
+const char *CustomTrack_ServeFaultReason(void)
+{
+	return s_customTrackServeFault[0] != '\0' ? s_customTrackServeFault : NULL;
+}
+
 int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
@@ -578,6 +584,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	}
 
 	s_customTrackConfig.contentVerified = 1;
+	s_customTrackServeFault[0] = '\0';
 	CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
                         cupID, d->laps, d->hostLevelID);
 	CustomTrack_Log("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
@@ -628,9 +635,14 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	// the game is running -- without turning every level load into a hash.
 	if (stat(source->path, &st) != 0 || (u32)st.st_size != source->verifiedSize)
 	{
+		CustomTrack_CopyField(s_customTrackServeFault, sizeof s_customTrackServeFault,
+		                      "Package file changed after verification.");
 		CustomTrack_Log("[CustomTracks] REFUSED subfile %d: \"%s\" changed since it was verified, "
-                                "falling back to BIGFILE\n",
-                                subfileIndex, source->path);
+		                        "custom race disarmed\n",
+		                        subfileIndex, source->path);
+		s_customTrackConfig.contentVerified = 0;
+		s_customTrackConfig.raceEnabled = 0;
+		s_customTrackConfig.mappedLevelID = -1;
 		return 0;
 	}
 

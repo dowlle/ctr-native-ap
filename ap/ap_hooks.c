@@ -5096,6 +5096,7 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	// applies just as directly to a location code.
 	facts->servingCustom = CustomTrack_ServingLoad(
 	    level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+	facts->customFaulted = CustomTrack_ServeFaultReason() != NULL;
 	if (facts->servingCustom)
 		facts->servingCupLevelID = 100 + gGT->cup.cupID;
 #endif
@@ -6136,7 +6137,18 @@ static void ap_onframe_body(struct GameTracker *gGT)
 #ifdef CTR_CUSTOM_TRACKS
 		// Connect-time preflight and explicit Rescan own activation. Per-frame
 		// work only enforces absence/required as authoritative in both directions.
-		if (!ap_custom_content_seed_selected || ap_custom_content_required)
+		const char *ctServeFault = CustomTrack_ServeFaultReason();
+		if (ctServeFault != NULL)
+		{
+			ap_custom_content_required = 1;
+			ap_custom_content_gate_cached = 0;
+			ap_custom_content_status.state = CTR_CT_MANAGER_HASH_MISMATCH;
+			snprintf(ap_custom_content_status.detail,
+			         sizeof ap_custom_content_status.detail, "%s", ctServeFault);
+			ap_custom_content_scanned = 1;
+		}
+		if (!AP_CustomPadContentReady(ap_custom_content_seed_selected,
+		                              ap_custom_content_required, ctServeFault))
 		{
 			CustomTrack_ClearSeedDescriptor();
 		}
