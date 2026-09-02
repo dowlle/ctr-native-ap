@@ -479,6 +479,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 					if (apLockRacer >= 0)
 					{
+						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
 						short apCx = (short)(gGT->pushBuffer[0].rect.x
 						                     + gGT->pushBuffer[0].rect.w / 2);
@@ -496,7 +497,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						AP_CharSwap_DrawPortraitAt(apLockRacer,
 						                           (short)(apCx - 16), apCy, !apHave);
 
-						DecalFont_DrawLine(apHave ? "RACER READY" : "RACER LOCKED",
+						if (!apHave)
+						{
+							snprintf(apRacerLine, sizeof apRacerLine, "REQUIRES %s",
+							         sdata->lngStrings[data.MetaDataCharacters[apLockRacer].name_LNG_short]);
+						}
+
+						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
 						                   (short)(gGT->pushBuffer[0].rect.y
 						                           + gGT->pushBuffer[0].rect.h - 45),

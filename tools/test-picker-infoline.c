@@ -55,20 +55,20 @@ int main(void)
 	expect_text(line, "BOOST 0/3 NONE", "unlocked racer, no tier yet");
 
 	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
-	expect_text(line, "BOOST 0/3 NONE  LOCKED", "locked racer, no tier yet");
+	expect_text(line, "BOOST 0/3 NONE  NOT UNLOCKED", "locked racer, no tier yet");
 
 	AP_PickerLine_Compose(line, sizeof line, TIER_BLUEFIRE, TIER_BLUEFIRE, "BLUE", 1);
 	expect_text(line, "BOOST 3/3 BLUE", "unlocked racer at the ceiling");
 
 	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_USF, "BOOST", 0);
-	expect_text(line, "BOOST 1/2 BOOST  LOCKED", "locked racer, USF ceiling");
+	expect_text(line, "BOOST 1/2 BOOST  NOT UNLOCKED", "locked racer, USF ceiling");
 
 	// No boost capability on the seed: no BOOST clause at all.
 	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", 1);
 	expect_text(line, "", "unlocked racer, seed grants no boost");
 
 	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", 0);
-	expect_text(line, "LOCKED", "locked racer, seed grants no boost");
+	expect_text(line, "NOT UNLOCKED", "locked racer, seed grants no boost");
 
 	// Nothing seed-wide leaks back on.
 	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
