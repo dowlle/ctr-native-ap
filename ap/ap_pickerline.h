@@ -33,7 +33,7 @@
 // Compose the line. `tierName` is the caller's name for `tier` (the picker's
 // ap_cs_boostTierName); `tier < 0` means the seed gives this racer no boost
 // capability at all, in which case there is no BOOST clause to show and the
-// line is either "LOCKED" or empty.
+// line is either "NOT UNLOCKED" or empty.
 //
 // Returns the length written, so a caller or harness can check it.
 static int AP_PickerLine_Compose(char *out, unsigned long outSize, int tier, int ceiling, const char *tierName, int unlocked)
@@ -46,11 +46,11 @@ static int AP_PickerLine_Compose(char *out, unsigned long outSize, int tier, int
 	if (tier >= 0)
 	{
 		n = snprintf(out, (size_t)outSize, "BOOST %d/%d %s%s", tier, ceiling, (tierName != 0) ? tierName : "?",
-		             unlocked ? "" : "  LOCKED");
+		             unlocked ? "" : "  NOT UNLOCKED");
 	}
 	else
 	{
-		n = snprintf(out, (size_t)outSize, "%s", unlocked ? "" : "LOCKED");
+		n = snprintf(out, (size_t)outSize, "%s", unlocked ? "" : "NOT UNLOCKED");
 	}
 
 	// snprintf returns what it WOULD have written. Report what is there.
