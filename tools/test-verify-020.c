@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define CTR_AP
 #include "../ap/ap_verify_logic.h"
+#include "../ap/ap_verify_wumpa.h"
 
 static int failures;
 #define OK(label, expr) do { int got = !!(expr); \
@@ -11,11 +13,62 @@ int main(void)
 {
 	AP_VerifyOptions o;
 	int items[AP_VF_ITEM_COUNT];
+	ctr_wumpa_checks wumpa;
+	AP_VerifyWumpaLocation wloc[CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX];
+	AP_VerifyWumpaRoutes routes;
+	int wn, i;
 	memset(&o, 0, sizeof o);
 	memset(items, 0, sizeof items);
 	o.character_unlocks = 1;
 	o.starting_character = 0;
 	o.logic_difficulty = 2;
+
+	memset(&wumpa, 0, sizeof wumpa);
+	for (i = 0; i < CTR_CFG_WUMPA_TRACK_COUNT; i++)
+		wumpa.tracks[i] = -1;
+	wumpa.global_code = 99001;
+	wumpa.mode = CTR_CFG_WUMPA_GLOBAL;
+	wn = AP_VerifyWumpaWorklist(&wumpa, wloc,
+		CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX);
+	OK("global Wumpa uses the parsed wire code only",
+		wn == 1 && wloc[0].code == 99001 && wloc[0].destination == -1);
+
+	wumpa.mode = CTR_CFG_WUMPA_PER_TRACK;
+	for (i = 0; i < 16; i++)
+		wumpa.tracks[i] = 99100 + i;
+	wn = AP_VerifyWumpaWorklist(&wumpa, wloc,
+		CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX);
+	OK("per-track Wumpa takes all 16 parsed retail entries", wn == 16);
+	OK("absent trial-track code is not invented", wloc[wn - 1].destination == 15);
+	wumpa.tracks[16] = 99116;
+	wn = AP_VerifyWumpaWorklist(&wumpa, wloc,
+		CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX);
+	OK("present trial-track code joins the worklist",
+		wn == 17 && wloc[16].destination == 16 && wloc[16].code == 99116);
+	wumpa.custom_count = 1;
+	wumpa.custom[0].cup_level_id = 104;
+	wumpa.custom[0].code = 99200;
+	wn = AP_VerifyWumpaWorklist(&wumpa, wloc,
+		CTR_CFG_WUMPA_TRACK_COUNT + CTR_CFG_WUMPA_CUSTOM_MAX);
+	OK("parsed custom destination joins the worklist",
+		wn == 18 && wloc[17].destination == 104 && wloc[17].code == 99200);
+
+	memset(&routes, 0, sizeof routes);
+	for (i = 0; i < 5; i++)
+		memset(routes.cup_legs[i], -1, sizeof routes.cup_legs[i]);
+	routes.destination_open[6] = 1;
+	OK("standalone route reaches its track-owned Wumpa location",
+		AP_VerifyWumpaReachable(6, &routes));
+	routes.destination_open[100] = 1;
+	routes.cup_legs[0][2] = 7;
+	OK("Cup-only route reaches its track-owned Wumpa location",
+		AP_VerifyWumpaReachable(7, &routes));
+	routes.cup_displaced[0] = 1;
+	OK("displaced Cup does not expose retail Wumpa",
+		!AP_VerifyWumpaReachable(7, &routes));
+	routes.destination_open[104] = 1;
+	OK("custom Wumpa follows its destination surface",
+		AP_VerifyWumpaReachable(104, &routes));
 
 	OK("starting racer is usable", AP_VerifyCharacterUnlocked(&o, items, 0));
 	OK("locked Cortex starts unavailable", !AP_VerifyCharacterUnlocked(&o, items, 1));
