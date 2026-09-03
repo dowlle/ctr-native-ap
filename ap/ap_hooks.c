@@ -51,7 +51,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
-#include "ap_oxide_entry.h" // pure Oxide garage entry-readiness predicate (WO-A1)
+#include "ap_oxide_encounter.h" // pure Oxide garage encounter + gate decision (#320/#321)
+#include "ap_goal_line.h"       // pure compact pause-menu goal checklist (#322)
 
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
 // rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE
@@ -3327,28 +3328,77 @@ int AP_BossGarageOpen(int bossIdx)
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
-// THE canonical Oxide garage entry gate (WO-A1). Every Oxide entry surface --
-// the map icon (AH_Map.c), the in-hub door presentation (AH_Garage_LInB), the
+// Has the player personally cleared Oxide's FIRST challenge in this seed?
+//
+// Read from AUTHORITATIVE checked-location state, never from the
+// ap_oxide_first_beaten session boolean: that boolean is reset on every
+// connect (see the slot-reset block), so a reconnecting player would be
+// offered the first challenge again when the Final one is what comes next.
+// The location check itself is server truth and survives reconnect, profile
+// load and hub re-entry, which is exactly what issue #321's implementation
+// check 2 asks for.
+int AP_OxideFirstChallengeCleared(void)
+{
+	return AP_LocationCheckedByBit(AP_GOAL_BIT_OXIDE_FIRST) != 0;
+}
+
+// Gather the inputs the one Oxide decision needs. Factored out so the gate,
+// the encounter selector and the locked-door advert cannot assemble different
+// answers to the same questions -- the drift this rework exists to end.
+static AP_OxideGarageInputs AP_OxideInputs(void)
+{
+	AP_OxideGarageInputs in;
+
+	in.garageReqMet = AP_BossReqMet(&ctr_cfg.boss_req[4]) != 0;
+	in.goalOxide = ctr_cfg.goal_oxide;
+	in.firstCleared = AP_OxideFirstChallengeCleared();
+	in.finalRelicMet = AP_OxideFinalOpen() != 0;
+	in.goalBosses = ctr_cfg.goal_bosses;
+	in.bossesWon = AP_ComposedBossesWon();
+	in.goalGems = ctr_cfg.goal_gems;
+	in.gemsHeld = AP_GateCountGemSum();
+	return in;
+}
+
+// THE canonical Oxide garage entry gate. Every Oxide entry surface -- the map
+// icon (AH_Map.c), the in-hub door presentation (AH_Garage_LInB), the
 // collision/refusal and the actual level load (AH_Garage_ThTick) -- asks this
 // one function, so a fix cannot land on the door while another path stays open.
 //
-// Composition, in AP_OxideEntryReady:
-//   * the ordinary configured requirement, boss_req[4] (normally four Keys);
-//   * AND, when goal_oxide != 0, every ACTIVE companion goal condition.
-// Encounter selection is deliberately NOT here: AP_OxideFinalOpen() still
-// decides whether the first or the final challenge loads once you are inside.
+// Composition is now ENCOUNTER-AWARE (issues #320/#321, ruling of 2026-09-03);
+// the whole rule and the reasoning behind it live in ap/ap_oxide_encounter.h.
+// In short: the door opens for the encounter the garage is currently OFFERING,
+// which is the first challenge until it has been cleared. The companion goal
+// arms gate only the selected finale, and goal_oxide 3 (`disabled`) shuts the
+// garage in every state.
 //
 // Without slot_data this is the Phase-1 fallback the two gate sites already
 // carried (four received Keys), unchanged -- there is no goal to compose.
 int AP_OxideGarageOpen(void)
 {
+	AP_OxideGarageInputs in;
+
 	if (!ctr_cfg_active())
 		return AP_GateCount(AP_IDX_KEY) >= 4;
 
-	return AP_OxideEntryReady(AP_BossReqMet(&ctr_cfg.boss_req[4]) != 0,
-	                          ctr_cfg.goal_oxide,
-	                          ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
-	                          ctr_cfg.goal_gems, AP_GateCountGemSum());
+	in = AP_OxideInputs();
+	return AP_OxideGarageIsOpen(&in);
+}
+
+// Which encounter the garage is offering. THE selector: an uncleared first
+// challenge takes priority even when the relic requirement for the Final
+// Challenge is already satisfied, so a relic-rich player cannot skip the first
+// check (the second half of issue #321's defect). Without slot_data the
+// vanilla rule stands, and AP_OxideFinalOpen() already falls back to it.
+int AP_OxideOffersFinalChallenge(void)
+{
+	AP_OxideGarageInputs in;
+
+	if (!ctr_cfg_active())
+		return AP_OxideFinalOpen();
+
+	in = AP_OxideInputs();
+	return AP_OxideGarageOffersFinal(&in);
 }
 
 // ── #24: plain-text requirement advert for the boss-class gates ──
@@ -3405,6 +3455,27 @@ static int AP_ReqOwned(const ctr_req *r)
 static const char *AP_ADVERT_COLOURS[5] = {"Red", "Green", "Blue", "Yellow",
                                            "Purple"};
 
+static int AP_ReqPhrase(const ctr_req *r, char *out, int cap);
+static int AP_OxideGateAdvert(char *out, int cap);
+
+// Appends `text` at `used` within a `cap`-sized buffer and returns the new
+// cursor, clamped so a truncated append cannot walk past the end. snprintf's
+// "length it WOULD have written" return is the trap this exists to avoid: the
+// advert buffers are small enough (AH_Garage.c gives 128) that a long
+// composition really can truncate.
+static int AP_AdvertAppend(char *out, int cap, int used, const char *text)
+{
+	int add;
+
+	if (out == 0 || cap <= 0 || used >= cap - 1)
+		return (cap > 0) ? cap - 1 : 0;
+	add = snprintf(out + used, (size_t)(cap - used), "%s", text);
+	if (add < 0)
+		return used;
+	used += add;
+	return (used > cap - 1) ? cap - 1 : used;
+}
+
 // Writes the advert line for boss `bossIdx` (0..3 = Roo, Papu, Komodo, Pinstripe;
 // 4 = Oxide) into `out` and returns 1, or returns 0 when there is nothing to
 // advertise. Returning 0 deliberately leaves the vanilla Aku hint as the only
@@ -3412,11 +3483,6 @@ static const char *AP_ADVERT_COLOURS[5] = {"Red", "Green", "Blue", "Yellow",
 // wording is correct and inventing a second line would be noise.
 int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 {
-	const ctr_req *r;
-	const char *noun;
-	const char *tint = "";
-	int owned, need;
-
 	if (out == 0 || cap <= 0)
 		return 0;
 	if (!ctr_cfg_active())
@@ -3424,11 +3490,16 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 0;
 
+	// Oxide's door fronts two encounters with different requirements, so it
+	// gets its own encounter-aware line (#321). Everything below is the
+	// single-requirement shape the four boss garages still use.
+	if (bossIdx == 4)
+		return AP_OxideGateAdvert(out, cap);
+
 	// Modes 0/1 gate on RACES WON, not on items held (see AP_BossGarageOpen), so
 	// the advert has to speak in races or it would advertise a requirement that
-	// is not the one being enforced. Oxide (bossIdx 4) never routes through the
-	// track-list gate, so it always falls to the requirement branch below.
-	if (bossIdx < 4 && (ctr_cfg.bossgarage_mode == 0 || ctr_cfg.bossgarage_mode == 1) &&
+	// is not the one being enforced.
+	if ((ctr_cfg.bossgarage_mode == 0 || ctr_cfg.bossgarage_mode == 1) &&
 	    ctr_cfg.boss_n_tracks[bossIdx] > 0)
 	{
 		int listed = ctr_cfg.boss_n_tracks[bossIdx];
@@ -3454,7 +3525,21 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 		return 1;
 	}
 
-	r = &ctr_cfg.boss_req[bossIdx];
+	return AP_ReqPhrase(&ctr_cfg.boss_req[bossIdx], out, cap);
+}
+
+// "4 Keys (have 2)" for a resolved requirement, written into `out`. Returns 0
+// when the requirement resolves to nothing to say. Factored out of
+// AP_BossGateAdvert so Oxide's encounter-aware advert can name the SAME door
+// requirement in the SAME words without a second copy of the noun table.
+static int AP_ReqPhrase(const ctr_req *r, char *out, int cap)
+{
+	const char *noun;
+	const char *tint = "";
+	int owned, need;
+
+	if (out == 0 || cap <= 0 || r == 0)
+		return 0;
 	if (r->type == 0 || r->count <= 0)
 		return 0; // no requirement resolved -> nothing to advertise
 
@@ -3504,91 +3589,180 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	else
 		snprintf(out, (size_t)cap, "Requires: %d %s (have %d)", need, noun, owned);
 
-	// WO-A1: Oxide's door is also the goal gate whenever goal_oxide != 0, so
-	// the line above is only half the truth there -- a player holding four Keys
-	// would read "Requires: 4 Keys (have 4)" at a door that correctly refuses to
-	// open. Append the active companion conditions, in the same words and from
-	// the same helpers AP_GoalAdvert and AP_OxideGarageOpen use, so the advert
-	// and the gate cannot disagree. Appends nothing when goal_oxide == 0, which
-	// is exactly when the gate applies no companion conjunction either.
-	if (bossIdx == 4 && ctr_cfg.goal_oxide != 0)
-	{
-		int used = (int)strlen(out);
+	return 1;
+}
 
-		if (ctr_cfg.goal_bosses > 0 && used < cap)
-			used += snprintf(out + used, (size_t)(cap - used),
-			                 " + win %d of 4 boss races (have %d)",
-			                 ctr_cfg.goal_bosses, AP_ComposedBossesWon());
-		if (used < 0 || used > cap)
-			used = cap;
-		if (ctr_cfg.goal_gems > 0 && used < cap)
-			snprintf(out + used, (size_t)(cap - used),
-			         " + hold %d of 5 Gems (have %d)",
-			         ctr_cfg.goal_gems, AP_GateCountGemSum());
+// Is the requirement `r` already satisfied by what the player holds? Reads the
+// SAME AP_ReqOwned tally the phrase above prints, so a term can never be
+// listed as blocking while its own printed numbers say it is met.
+static int AP_ReqPhraseSatisfied(const ctr_req *r)
+{
+	if (r == 0 || r->type == 0 || r->count <= 0)
+		return 1;
+	return AP_ReqOwned(r) >= r->count;
+}
+
+// The configured Oxide Final Challenge relic requirement, in words: "18
+// Sapphire Relics (have 12)". Mirrors AP_RelicGoalMet's mode table case for
+// case -- including which tally each mode compares -- so the advert and
+// AP_OxideFinalOpen cannot disagree about what is being counted.
+static int AP_OxideFinalRelicPhrase(char *out, int cap)
+{
+	int n = ctr_cfg.oxide_final_count;
+	int sapphire = AP_GateCount(AP_IDX_SAPPHIRE);
+	int gold = AP_GateCount(AP_IDX_GOLD);
+	int platinum = AP_GateCount(AP_IDX_PLATINUM);
+	int best = sapphire;
+
+	if (out == 0 || cap <= 0)
+		return 0;
+	if (n <= 0)
+		n = 18; // the vanilla rule, same fallback ap_verify.c uses
+
+	if (gold > best)
+		best = gold;
+	if (platinum > best)
+		best = platinum;
+
+	switch (ctr_cfg.oxide_final_unlock)
+	{
+	case 1:
+		snprintf(out, (size_t)cap, "%d Gold Relics (have %d)", n, gold);
+		break;
+	case 2:
+		snprintf(out, (size_t)cap, "%d Platinum Relics (have %d)", n, platinum);
+		break;
+	case 3:
+		// "at least one tier reaches N", so the useful tally is the best tier.
+		snprintf(out, (size_t)cap, "%d Relics of one tier (have %d)", n, best);
+		break;
+	case 4:
+		snprintf(out, (size_t)cap, "%d Relics in total (have %d)", n,
+		         sapphire + gold + platinum);
+		break;
+	case 0:
+	default:
+		snprintf(out, (size_t)cap, "%d Sapphire Relics (have %d)", n, sapphire);
+		break;
 	}
+	return 1;
+}
+
+// Oxide's locked-door advert (issue #321 implementation check 5). The four
+// boss garages keep AP_ReqPhrase's single-requirement line; Oxide's door is
+// different because it fronts TWO encounters with different requirements, and
+// the shipped line could describe neither: it always led with the shared Key
+// requirement, even when the Key requirement was long satisfied and the real
+// blocker was relics, boss wins or Gems.
+//
+// What this writes:
+//   * `disabled` (#320): the garage never opens, so no requirement line can be
+//     truthful. Say that instead of printing an instruction the player could
+//     follow to completion and still find the door shut.
+//   * the FINAL encounter is named, because "Requires: 18 Sapphire Relics" at a
+//     door the player last saw open on four Keys is otherwise unexplained. The
+//     FIRST encounter is not named: it is the ordinary door and naming it would
+//     only cost width on the surface issue #322 is already fighting for.
+//   * only the terms that are actually BLOCKING, in gate order. A satisfied
+//     term is omitted -- this advert is only ever drawn at a LOCKED door
+//     (AH_Garage.c draws it under `if (!bossIsOpen)`), so every line it
+//     produces is a list of what is left to do.
+//
+// The encounter and which terms apply come from the SAME AP_OxideGarageEvaluate
+// decision the gate itself uses, so the door and its explanation cannot
+// disagree.
+static int AP_OxideGateAdvert(char *out, int cap)
+{
+	AP_OxideGarageInputs in = AP_OxideInputs();
+	AP_OxideGarageState st = AP_OxideGarageEvaluate(&in);
+	const ctr_req *door = &ctr_cfg.boss_req[4];
+	char part[80];
+	int used = 0;
+	int listed = 0;
+
+	if (st.encounter == AP_OXIDE_ENCOUNTER_NONE)
+	{
+		snprintf(out, (size_t)cap, "N. Oxide's garage stays shut in this seed");
+		return 1;
+	}
+
+	out[0] = '\0';
+	if (st.encounter == AP_OXIDE_ENCOUNTER_FINAL)
+		used = AP_AdvertAppend(out, cap, used, "Final Challenge ");
+
+	if (!AP_ReqPhraseSatisfied(door) && AP_ReqPhrase(door, part, (int)sizeof part))
+	{
+		used = AP_AdvertAppend(out, cap, used, part); // carries its own "Requires: "
+		listed = 1;
+	}
+
+	if (st.needsRelics && !in.finalRelicMet &&
+	    AP_OxideFinalRelicPhrase(part, (int)sizeof part))
+	{
+		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
+		used = AP_AdvertAppend(out, cap, used, part);
+		listed = 1;
+	}
+
+	if (st.needsCompanions && in.goalBosses > 0 && in.bossesWon < in.goalBosses)
+	{
+		snprintf(part, sizeof part, "win %d of 4 boss races (have %d)",
+		         in.goalBosses, in.bossesWon);
+		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
+		used = AP_AdvertAppend(out, cap, used, part);
+		listed = 1;
+	}
+
+	if (st.needsCompanions && in.goalGems > 0 && in.gemsHeld < in.goalGems)
+	{
+		snprintf(part, sizeof part, "hold %d of 5 Gems (have %d)",
+		         in.goalGems, in.gemsHeld);
+		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
+		used = AP_AdvertAppend(out, cap, used, part);
+		listed = 1;
+	}
+
+	// Nothing read as blocking. The gate and this function share their inputs,
+	// so that means the door is open and the caller is not drawing this anyway;
+	// fall back to the plain requirement line rather than emitting a fragment.
+	if (!listed)
+		return AP_ReqPhrase(door, out, cap);
 
 	return 1;
 }
 
-// #152: plain-text requirement advert for the composed goal, written exactly
-// like AP_BossGateAdvert and reading the SAME ctr_cfg fields and
-// AP_GateCount*/AP_LocationCheckedByBit helpers AP_EvaluateGoal reads, so the
-// two cannot disagree. Writes a line such as "Goal: beat N. Oxide's Final
-// Challenge (not yet) and win 2 of 4 boss races (have 1) and hold 3 of 5
-// Gems (have 1)" into `out` and returns 1; returns 0 when there is nothing
-// to advertise (no slot_data -- the vanilla Aku hints stay the only message).
+// #152/#322: the pause menu's composed-goal readout. Reads the SAME ctr_cfg
+// fields and AP_GateCount*/AP_LocationCheckedByBit helpers AP_EvaluateGoal
+// reads, so the two cannot disagree about progress.
+//
+// The SHAPE changed in #322. It used to build one prose sentence -- "Goal: beat
+// N. Oxide's Final Challenge (not yet) and win 2 of 4 boss races (have 1) and
+// hold 3 of 5 Gems (have 1)" -- which AH_Pause.c draws once with
+// DecalFont_DrawLine. That does not wrap, and the longest shape is about three
+// times the safe pause-page width, so a tester on the 1 September Alpha 7
+// stream could not read his own goal. It is now the approved compact
+// checklist, "GOAL: OXIDE 2 - BOSS 3/4 - GEM 4/5", built by
+// ap/ap_goal_line.h -- see that header for the labels, the omission rules and
+// why a wrap and a marquee were both rejected.
+//
+// Returns 1 when a line was written, 0 when there is nothing to advertise (no
+// slot_data -- the vanilla Aku hints stay the only message -- or no active
+// goal arm, which generate_early already rejects on a real seed).
 int AP_GoalAdvert(char *out, int cap)
 {
-	char part[3][80];
-	int n_parts = 0;
-	int pos, i, won;
-
 	if (out == 0 || cap <= 0)
 		return 0;
 	if (!ctr_cfg_active())
 		return 0;
 
-	if (ctr_cfg.goal_oxide == 1)
-		snprintf(part[n_parts++], sizeof part[0],
-		         "beat N. Oxide (%s)", ap_oxide_first_beaten ? "done" : "not yet");
-	else if (ctr_cfg.goal_oxide == 2)
-		snprintf(part[n_parts++], sizeof part[0],
-		         "beat N. Oxide's Final Challenge (%s)",
-		         ap_oxide_final_beaten ? "done" : "not yet");
-	// goal_oxide == 0: no Oxide requirement, nothing to advertise for it.
-
-	if (ctr_cfg.goal_bosses > 0)
-	{
-		won = AP_ComposedBossesWon();
-		snprintf(part[n_parts++], sizeof part[0],
-		         "win %d of 4 boss races (have %d)", ctr_cfg.goal_bosses, won);
-	}
-
-	if (ctr_cfg.goal_gems > 0)
-		snprintf(part[n_parts++], sizeof part[0],
-		         "hold %d of 5 Gems (have %d)", ctr_cfg.goal_gems,
-		         AP_GateCountGemSum());
-
-	if (n_parts == 0)
-		return 0; // nothing resolved -- should not happen on a real seed
-		          // (generate_early rejects the all-off combination)
-
-	pos = snprintf(out, (size_t)cap, "Goal: %s", part[0]);
-	if (pos < 0)
-		pos = 0;
-	if (pos > cap)
-		pos = cap;
-	for (i = 1; i < n_parts && pos < cap; i++)
-	{
-		int add = snprintf(out + pos, (size_t)(cap - pos), " and %s", part[i]);
-		if (add < 0)
-			break;
-		pos += add;
-		if (pos > cap)
-			pos = cap;
-	}
-
-	return 1;
+	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and
+	// `disabled` (3) both omit it: neither is a completion condition. Whether
+	// the Oxide race has been BEATEN is deliberately not shown -- under the
+	// approved encounter flow the enabled arms gate the selected finale, so
+	// winning it completes the composed goal in the same moment.
+	return AP_GoalLineFormat(out, cap, ctr_cfg.goal_oxide,
+	                         ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
+	                         ctr_cfg.goal_gems, AP_GateCountGemSum());
 }
 
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;

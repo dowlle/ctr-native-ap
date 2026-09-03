@@ -23,6 +23,7 @@ tools/test-firstkey-freeze.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
+tools/test-goal-line.c
 tools/test-goal-presentation.c
 tools/test-graphics-options.c
 tools/test-h-useful.c
@@ -38,7 +39,7 @@ tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-oxide-cutscene.c
-tools/test-oxide-entry.c
+tools/test-oxide-encounter.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp

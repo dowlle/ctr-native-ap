@@ -732,7 +732,7 @@ processOpcode:
 		if ((D233.bossCutsceneIndex == 0) &&
 		    AP_OxideFinalPresentationReady(ctr_cfg_active(),
 		                                   gGT->currAdvProfile.numRelics,
-		                                   AP_OxideFinalOpen()))
+		                                   AP_OxideOffersFinalChallenge()))
 #else
 		if ((D233.bossCutsceneIndex == 0) && (0x11 < gGT->currAdvProfile.numRelics))
 #endif

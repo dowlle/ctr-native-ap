@@ -15,7 +15,7 @@ u8 CS_Camera_BoolGotoBoss(void)
 	if ((gGT->podiumRewardID == STATIC_RELIC) &&
 	    AP_OxideFinalPresentationReady(ctr_cfg_active(),
 	                                   gGT->currAdvProfile.numRelics,
-	                                   AP_OxideFinalOpen()))
+	                                   AP_OxideOffersFinalChallenge()))
 #else
 	if ((gGT->podiumRewardID == STATIC_RELIC) && (gGT->currAdvProfile.numRelics >= 18))
 #endif
@@ -404,7 +404,7 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 #ifdef CTR_AP
 			if (!AP_OxideFinalPresentationReady(ctr_cfg_active(),
 			                                    gGT->currAdvProfile.numRelics,
-			                                    AP_OxideFinalOpen()))
+			                                    AP_OxideOffersFinalChallenge()))
 #else
 			if (gGT->currAdvProfile.numRelics < 18)
 #endif

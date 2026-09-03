@@ -403,11 +403,15 @@ LAB_800aede8:
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_BOSS;
 
 #ifdef CTR_AP
-		// AP Phase 2 (issue #23): Oxide's Final Challenge unlock honours the
-		// per-seed relic-goal MODE + COUNT (ctr_cfg.oxide_final_unlock /
-		// oxide_final_count), resolved by AP_OxideFinalOpen against the received
-		// relic-tier counts. Phase-1 fallback (no slot_data) = vanilla 18 Sapphire.
-		if ((levelID == GEM_STONE_VALLEY) && AP_OxideFinalOpen())
+		// AP (issue #321): which Oxide encounter loads. Was AP_OxideFinalOpen()
+		// alone -- the per-seed relic-goal MODE + COUNT (issue #23) -- which
+		// handed the Final Challenge to any player already holding enough
+		// relics, skipping an uncleared first challenge entirely. The selector
+		// now asks AP_OxideOffersFinalChallenge(), which still requires that
+		// relic gate but only AFTER the first challenge is cleared, read from
+		// server-checked location state so a reconnect cannot forget. Phase-1
+		// fallback (no slot_data) = the vanilla 18-Sapphire rule, unchanged.
+		if ((levelID == GEM_STONE_VALLEY) && AP_OxideOffersFinalChallenge())
 #else
 		if ((levelID == GEM_STONE_VALLEY) && (gGT->currAdvProfile.numRelics == 18))
 #endif
