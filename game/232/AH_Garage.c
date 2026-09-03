@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_oxide_garage_advert.h"
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae8a0-0x800ae8e0.
 void AH_Garage_ThDestroy(struct Thread *t)
 {
@@ -272,6 +276,35 @@ LAB_800aec34:
 	}
 
 	RECT view = gGT->pushBuffer[0].rect;
+	int challengeY = (view.y + view.h) - 0x1e;
+
+#ifdef CTR_AP
+	char advert[128];
+	int advertVisible = 0;
+	int advertLines = 0;
+
+	// Format the locked-door panel before drawing its title so both can be
+	// laid out as one bottom-anchored block. The previous implementation fixed
+	// the panel at bottom-13: only one FONT_SMALL line fit, while the realistic
+	// four-line Final panel ended at bottom+19 and the structural five-line
+	// maximum ended at bottom+27. Count the actual explicit lines and shift the
+	// title plus panel upward by exactly that overflow.
+	if (!bossIsOpen && sdata->AkuAkuHintState == 0)
+	{
+		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+
+		advertVisible = AP_BossGateAdvert(advertBoss, advert,
+		                                    (int)sizeof advert);
+		if (advertVisible)
+		{
+			advertLines = AP_OxideGarageAdvertLineCount(advert);
+			challengeY = AP_OxideGarageBlockTitleY(
+				view.y + view.h, challengeY,
+				data.font_charPixHeight[FONT_BIG],
+				data.font_charPixHeight[FONT_SMALL], advertLines);
+		}
+	}
+#endif
 
 	// if aku is not giving a hint
 	if (sdata->AkuAkuHintState == 0)
@@ -281,7 +314,7 @@ LAB_800aec34:
 
 		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
 
-		    (view.x + (view.w >> 1)), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
+		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
 	}
 
 	if (bossIsOpen)
@@ -300,26 +333,13 @@ LAB_800aec34:
 	// his hint box. Oxide's door is hubID 0 -> boss index 4; the four boss garages
 	// are hubID 1..4 -> boss index 0..3.
 	{
-		// 128, not 64: Oxide's line (advertBoss 4) can now carry the composed
+		// 128, not 64: Oxide's line can now carry the composed
 		// goal's companion terms as well as the door requirement (WO-A1), e.g.
 		// "FINAL CHALLENGE\rSAPPHIRE 12/18\rBOSSES 1/4\rGEMS 3/5" -- '\r'
 		// separated, one term per panel line (2026-09-03 repair, #322 review).
-		char advert[128];
-		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+		int advertY = challengeY + data.font_charPixHeight[FONT_BIG];
 
-		// The challenge name above is FONT_BIG drawn from its TOP edge, so the
-		// advert has to start a full FONT_BIG line lower or it lands inside the
-		// title's glyph band (0x14 did exactly that: the title occupies
-		// bottom-0x1e .. bottom-0x0d, the advert started at bottom-0x14). Stack it
-		// the way the engine stacks its own wrapped lines -- advance by
-		// font_charPixHeight of the line above (DecalFont_DrawMultiLineStrlen) --
-		// which is data-driven and stays correct if the region tables differ. The
-		// FONT_SMALL line is 8 px, so it still clears the 1P viewport bottom
-		// (rect.h, 0xd8 NTSC) with room to spare.
-		int advertY = ((view.y + view.h) - 0x1e) + data.font_charPixHeight[FONT_BIG];
-
-		if (sdata->AkuAkuHintState == 0 &&
-		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
+		if (advertVisible)
 		{
 			// DecalFont_DrawMultiLine, not DrawLine: AP_BossGateAdvert's Oxide
 			// branch (advertBoss 4) can now return several '\r'-separated panel

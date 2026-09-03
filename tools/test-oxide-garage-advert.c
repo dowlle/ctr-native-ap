@@ -27,6 +27,15 @@ static int failures;
 // established budget.
 #define AP_GARAGE_SAFE_WIDTH_PX 460
 
+// Actual NTSC-U font metrics from game/zGlobal_DATA.c. The production caller
+// passes the corresponding data.font_charPixHeight entries into the pure
+// layout helper, so these assertions exercise the real FONT_BIG/FONT_SMALL
+// vertical advances rather than an unrelated test-only spacing model.
+#define AP_GARAGE_VIEW_BOTTOM_PX 216
+#define AP_GARAGE_TITLE_Y_PX     (AP_GARAGE_VIEW_BOTTOM_PX - 30)
+#define AP_GARAGE_FONT_BIG_H_PX  17
+#define AP_GARAGE_FONT_SMALL_H_PX 8
+
 static int LineWidth(const char *s)
 {
 	int w = 0;
@@ -112,6 +121,38 @@ int main(void)
 	char out[256];
 
 	// ---------------------------------------------------------------------
+	// VERTICAL BOUNDS. The title and every explicit panel line form one block.
+	// Pin all formatter shapes, including the realistic four-line Final and
+	// structural five-line maximum, to FONT_BIG=17/FONT_SMALL=8 and the retail
+	// 216px viewport. The last line must end at or above the viewport bottom,
+	// and the first panel line must begin after the title glyph band.
+	// ---------------------------------------------------------------------
+	{
+		int lines;
+
+		CHECK("actual FONT_BIG height is 17 px", AP_GARAGE_FONT_BIG_H_PX == 17);
+		CHECK("actual FONT_SMALL height is 8 px", AP_GARAGE_FONT_SMALL_H_PX == 8);
+		for (lines = 1; lines <= 5; lines++)
+		{
+			int titleY = AP_OxideGarageBlockTitleY(
+				AP_GARAGE_VIEW_BOTTOM_PX, AP_GARAGE_TITLE_Y_PX,
+				AP_GARAGE_FONT_BIG_H_PX, AP_GARAGE_FONT_SMALL_H_PX,
+				lines);
+			int panelY = titleY + AP_GARAGE_FONT_BIG_H_PX;
+			int panelBottom = panelY + lines * AP_GARAGE_FONT_SMALL_H_PX;
+
+			CHECK("vertical layout: panel begins after the title", panelY >=
+			      titleY + AP_GARAGE_FONT_BIG_H_PX);
+			CHECK("vertical layout: every panel line stays in viewport",
+			      panelBottom <= AP_GARAGE_VIEW_BOTTOM_PX);
+		}
+		CHECK("four-line Final shifts title up by 19 px",
+		      AP_OxideGarageBlockTitleY(216, 186, 17, 8, 4) == 167);
+		CHECK("five-line Final shifts title up by 27 px",
+		      AP_OxideGarageBlockTitleY(216, 186, 17, 8, 5) == 159);
+	}
+
+	// ---------------------------------------------------------------------
 	// CLOSED GARAGE (#320 disabled). One short line, no requirement claimed.
 	// ---------------------------------------------------------------------
 	{
@@ -155,6 +196,8 @@ int main(void)
 		      strstr(out, "GEMS 2/5") != 0);
 		lines = CheckPanelWidth("first challenge, door + boss + gem", out);
 		CHECK("first + companions: exactly 3 lines, none dropped", lines == 3);
+		CHECK("line counter follows the rendered FIRST panel",
+		      AP_OxideGarageAdvertLineCount(out) == lines);
 	}
 
 	// ---------------------------------------------------------------------
@@ -184,6 +227,8 @@ int main(void)
 		lines = CheckPanelWidth("FINAL worst case (header+door+relic+boss+gem)",
 		                        out);
 		CHECK("final worst case: exactly 5 lines, none dropped", lines == 5);
+		CHECK("line counter follows the structural Final maximum",
+		      AP_OxideGarageAdvertLineCount(out) == lines);
 
 		// The realistic Final Challenge worst case: door already met (as it
 		// structurally must be once firstCleared holds), so header + relic +

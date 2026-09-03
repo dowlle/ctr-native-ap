@@ -59,6 +59,49 @@
 #define AP_OXIDE_RELIC_MODE_BEST_TIER  3
 #define AP_OXIDE_RELIC_MODE_TOTAL      4
 
+// Count the explicit panel lines consumed by DecalFont_DrawMultiLine. CTR's
+// formatter treats '\r' as a hard line break. A non-empty panel therefore has
+// one line plus one for every '\r'.
+static inline int AP_OxideGarageAdvertLineCount(const char *panel)
+{
+	int lines = 0;
+
+	if (panel == 0 || panel[0] == '\0')
+		return 0;
+	lines = 1;
+	for (; *panel != '\0'; panel++)
+		if (*panel == '\r')
+			lines++;
+	return lines;
+}
+
+// Keep the challenge title and its locked-door panel together as one block.
+// `preferredTitleY` is retail's title position. The returned title Y preserves
+// it when the block fits and otherwise shifts the whole block upward just far
+// enough that the final panel line remains inside `viewportBottom`.
+//
+// The caller passes the actual region font metrics from
+// data.font_charPixHeight, not duplicated layout guesses. This stays pure so
+// the host harness can pin the NTSC-U values (FONT_BIG 17, FONT_SMALL 8) over
+// every possible formatter line count.
+static inline int AP_OxideGarageBlockTitleY(int viewportBottom,
+	int preferredTitleY, int titleHeight, int panelLineHeight, int panelLines)
+{
+	int blockBottom;
+
+	if (titleHeight < 0)
+		titleHeight = 0;
+	if (panelLineHeight < 0)
+		panelLineHeight = 0;
+	if (panelLines < 0)
+		panelLines = 0;
+
+	blockBottom = preferredTitleY + titleHeight + panelLineHeight * panelLines;
+	if (blockBottom > viewportBottom)
+		preferredTitleY -= blockBottom - viewportBottom;
+	return preferredTitleY;
+}
+
 // Compact "<TINT ><NOUN> <owned>/<need>" line for one resolved requirement,
 // e.g. "SAPPHIRE 12/18" or "KEYS 2/4". Returns 1 when a line was written, 0
 // when the requirement resolves to nothing to say (type NONE or count <= 0),
