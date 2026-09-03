@@ -61,4 +61,14 @@ static inline int AP_LetterTokenEarnedPure(int didWin, int collected,
 	       AP_LettersRequiredMetPure(active, mode, codes, received);
 }
 
+// AP_LetterCollected's AP_EmitClassCheck toastSentItem argument (#319): a
+// newly collected letter must queue the same "<ITEM> TO <PLAYER>" sent-item
+// feed line as any other class when the scouted item belongs to another
+// slot. Named (not a bare literal) so the single source of truth is visible
+// at the call site and mutation-testable from tools/test-lettersanity-remote-feed.c.
+// AP_LocationSentShouldToastPure (ap_class_check_policy.h) still suppresses
+// the toast for a local recipient, since the ReceivedItems echo already
+// shows those once through AP_FeedOnItemReceived.
+#define AP_LETTER_TOAST_SENT_ITEM 1
+
 #endif
