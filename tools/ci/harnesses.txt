@@ -40,6 +40,7 @@ tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
+tools/test-oxide-garage-advert.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp

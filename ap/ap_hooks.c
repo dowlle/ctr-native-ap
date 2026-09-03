@@ -53,6 +53,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
 #include "ap_oxide_encounter.h" // pure Oxide garage encounter + gate decision (#320/#321)
 #include "ap_goal_line.h"       // pure compact pause-menu goal checklist (#322)
+#include "ap_oxide_garage_advert.h" // pure multi-line garage panel (#322 repair, 2026-09-03)
 
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
 // rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE
@@ -3458,24 +3459,6 @@ static const char *AP_ADVERT_COLOURS[5] = {"Red", "Green", "Blue", "Yellow",
 static int AP_ReqPhrase(const ctr_req *r, char *out, int cap);
 static int AP_OxideGateAdvert(char *out, int cap);
 
-// Appends `text` at `used` within a `cap`-sized buffer and returns the new
-// cursor, clamped so a truncated append cannot walk past the end. snprintf's
-// "length it WOULD have written" return is the trap this exists to avoid: the
-// advert buffers are small enough (AH_Garage.c gives 128) that a long
-// composition really can truncate.
-static int AP_AdvertAppend(char *out, int cap, int used, const char *text)
-{
-	int add;
-
-	if (out == 0 || cap <= 0 || used >= cap - 1)
-		return (cap > 0) ? cap - 1 : 0;
-	add = snprintf(out + used, (size_t)(cap - used), "%s", text);
-	if (add < 0)
-		return used;
-	used += add;
-	return (used > cap - 1) ? cap - 1 : used;
-}
-
 // Writes the advert line for boss `bossIdx` (0..3 = Roo, Papu, Komodo, Pinstripe;
 // 4 = Oxide) into `out` and returns 1, or returns 0 when there is nothing to
 // advertise. Returning 0 deliberately leaves the vanilla Aku hint as the only
@@ -3592,62 +3575,6 @@ static int AP_ReqPhrase(const ctr_req *r, char *out, int cap)
 	return 1;
 }
 
-// Is the requirement `r` already satisfied by what the player holds? Reads the
-// SAME AP_ReqOwned tally the phrase above prints, so a term can never be
-// listed as blocking while its own printed numbers say it is met.
-static int AP_ReqPhraseSatisfied(const ctr_req *r)
-{
-	if (r == 0 || r->type == 0 || r->count <= 0)
-		return 1;
-	return AP_ReqOwned(r) >= r->count;
-}
-
-// The configured Oxide Final Challenge relic requirement, in words: "18
-// Sapphire Relics (have 12)". Mirrors AP_RelicGoalMet's mode table case for
-// case -- including which tally each mode compares -- so the advert and
-// AP_OxideFinalOpen cannot disagree about what is being counted.
-static int AP_OxideFinalRelicPhrase(char *out, int cap)
-{
-	int n = ctr_cfg.oxide_final_count;
-	int sapphire = AP_GateCount(AP_IDX_SAPPHIRE);
-	int gold = AP_GateCount(AP_IDX_GOLD);
-	int platinum = AP_GateCount(AP_IDX_PLATINUM);
-	int best = sapphire;
-
-	if (out == 0 || cap <= 0)
-		return 0;
-	if (n <= 0)
-		n = 18; // the vanilla rule, same fallback ap_verify.c uses
-
-	if (gold > best)
-		best = gold;
-	if (platinum > best)
-		best = platinum;
-
-	switch (ctr_cfg.oxide_final_unlock)
-	{
-	case 1:
-		snprintf(out, (size_t)cap, "%d Gold Relics (have %d)", n, gold);
-		break;
-	case 2:
-		snprintf(out, (size_t)cap, "%d Platinum Relics (have %d)", n, platinum);
-		break;
-	case 3:
-		// "at least one tier reaches N", so the useful tally is the best tier.
-		snprintf(out, (size_t)cap, "%d Relics of one tier (have %d)", n, best);
-		break;
-	case 4:
-		snprintf(out, (size_t)cap, "%d Relics in total (have %d)", n,
-		         sapphire + gold + platinum);
-		break;
-	case 0:
-	default:
-		snprintf(out, (size_t)cap, "%d Sapphire Relics (have %d)", n, sapphire);
-		break;
-	}
-	return 1;
-}
-
 // Oxide's locked-door advert (issue #321 implementation check 5). The four
 // boss garages keep AP_ReqPhrase's single-requirement line; Oxide's door is
 // different because it fronts TWO encounters with different requirements, and
@@ -3655,80 +3582,37 @@ static int AP_OxideFinalRelicPhrase(char *out, int cap)
 // requirement, even when the Key requirement was long satisfied and the real
 // blocker was relics, boss wins or Gems.
 //
-// What this writes:
-//   * `disabled` (#320): the garage never opens, so no requirement line can be
-//     truthful. Say that instead of printing an instruction the player could
-//     follow to completion and still find the door shut.
-//   * the FINAL encounter is named, because "Requires: 18 Sapphire Relics" at a
-//     door the player last saw open on four Keys is otherwise unexplained. The
-//     FIRST encounter is not named: it is the ordinary door and naming it would
-//     only cost width on the surface issue #322 is already fighting for.
-//   * only the terms that are actually BLOCKING, in gate order. A satisfied
-//     term is omitted -- this advert is only ever drawn at a LOCKED door
-//     (AH_Garage.c draws it under `if (!bossIsOpen)`), so every line it
-//     produces is a list of what is left to do.
+// 2026-09-03 REPAIR (Sonnet review of the #320-322 candidate): this used to
+// join every blocking term into ONE line with " + " and draw it with the
+// non-wrapping DecalFont_DrawLine into a 128-byte buffer. The worst case
+// (Final Challenge naming plus a relic term plus Boss and Gem terms) measured
+// roughly 1489 px against the ~460 px safe width the same pixel model gives
+// the pause checklist -- worse than the advert this branch replaced, because
+// it added a "Final Challenge " header and the relic phrase on top of what
+// was already there.
 //
-// The encounter and which terms apply come from the SAME AP_OxideGarageEvaluate
-// decision the gate itself uses, so the door and its explanation cannot
-// disagree.
+// The fix moved to ap/ap_oxide_garage_advert.h's pure AP_OxideGarageAdvertFormat
+// (mirrors ap_goal_line.h's split: pure formatting logic tools/test-oxide-
+// garage-advert.c can drive without an engine, plus this thin function that
+// resolves the real ctr_cfg/AP_GateCount*/AP_ReqOwned values). This function's
+// only job now is gathering those real numbers; see the header for the panel
+// shape, the omission rule and the width proof.
 static int AP_OxideGateAdvert(char *out, int cap)
 {
 	AP_OxideGarageInputs in = AP_OxideInputs();
 	AP_OxideGarageState st = AP_OxideGarageEvaluate(&in);
 	const ctr_req *door = &ctr_cfg.boss_req[4];
-	char part[80];
-	int used = 0;
-	int listed = 0;
+	int n = ctr_cfg.oxide_final_count;
 
-	if (st.encounter == AP_OXIDE_ENCOUNTER_NONE)
-	{
-		snprintf(out, (size_t)cap, "N. Oxide's garage stays shut in this seed");
-		return 1;
-	}
+	if (n <= 0)
+		n = 18; // the vanilla rule, same fallback ap_verify.c uses
 
-	out[0] = '\0';
-	if (st.encounter == AP_OXIDE_ENCOUNTER_FINAL)
-		used = AP_AdvertAppend(out, cap, used, "Final Challenge ");
-
-	if (!AP_ReqPhraseSatisfied(door) && AP_ReqPhrase(door, part, (int)sizeof part))
-	{
-		used = AP_AdvertAppend(out, cap, used, part); // carries its own "Requires: "
-		listed = 1;
-	}
-
-	if (st.needsRelics && !in.finalRelicMet &&
-	    AP_OxideFinalRelicPhrase(part, (int)sizeof part))
-	{
-		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
-		used = AP_AdvertAppend(out, cap, used, part);
-		listed = 1;
-	}
-
-	if (st.needsCompanions && in.goalBosses > 0 && in.bossesWon < in.goalBosses)
-	{
-		snprintf(part, sizeof part, "win %d of 4 boss races (have %d)",
-		         in.goalBosses, in.bossesWon);
-		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
-		used = AP_AdvertAppend(out, cap, used, part);
-		listed = 1;
-	}
-
-	if (st.needsCompanions && in.goalGems > 0 && in.gemsHeld < in.goalGems)
-	{
-		snprintf(part, sizeof part, "hold %d of 5 Gems (have %d)",
-		         in.goalGems, in.gemsHeld);
-		used = AP_AdvertAppend(out, cap, used, listed ? " + " : "Requires: ");
-		used = AP_AdvertAppend(out, cap, used, part);
-		listed = 1;
-	}
-
-	// Nothing read as blocking. The gate and this function share their inputs,
-	// so that means the door is open and the caller is not drawing this anyway;
-	// fall back to the plain requirement line rather than emitting a fragment.
-	if (!listed)
-		return AP_ReqPhrase(door, out, cap);
-
-	return 1;
+	return AP_OxideGarageAdvertFormat(
+		st, door->type, door->count, door->colour, AP_ReqOwned(door),
+		in.finalRelicMet, ctr_cfg.oxide_final_unlock, n,
+		AP_GateCount(AP_IDX_SAPPHIRE), AP_GateCount(AP_IDX_GOLD),
+		AP_GateCount(AP_IDX_PLATINUM), in.goalBosses, in.bossesWon,
+		in.goalGems, in.gemsHeld, out, cap);
 }
 
 // #152/#322: the pause menu's composed-goal readout. Reads the SAME ctr_cfg

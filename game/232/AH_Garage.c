@@ -302,7 +302,8 @@ LAB_800aec34:
 	{
 		// 128, not 64: Oxide's line (advertBoss 4) can now carry the composed
 		// goal's companion terms as well as the door requirement (WO-A1), e.g.
-		// "Requires: 4 Keys (have 4) + win 4 of 4 boss races (have 1)".
+		// "FINAL CHALLENGE\rSAPPHIRE 12/18\rBOSSES 1/4\rGEMS 3/5" -- '\r'
+		// separated, one term per panel line (2026-09-03 repair, #322 review).
 		char advert[128];
 		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
 
@@ -320,8 +321,16 @@ LAB_800aec34:
 		if (sdata->AkuAkuHintState == 0 &&
 		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
 		{
-			DecalFont_DrawLine(advert, (view.x + (view.w >> 1)), advertY, FONT_SMALL,
-			                   0xffff8000);
+			// DecalFont_DrawMultiLine, not DrawLine: AP_BossGateAdvert's Oxide
+			// branch (advertBoss 4) can now return several '\r'-separated panel
+			// lines (2026-09-03 repair). The four boss garages still return a
+			// single line with no '\r', which draws identically to before. 480
+			// (0x1e0) is a safety margin above every line the compact panel can
+			// produce (proven under 460 px in tools/test-oxide-garage-advert.c),
+			// not a load-bearing wrap width -- the '\r' breaks alone decide
+			// where the panel's lines fall.
+			DecalFont_DrawMultiLine(advert, (view.x + (view.w >> 1)), advertY,
+			                        0x1e0, FONT_SMALL, 0xffff8000);
 		}
 	}
 #endif

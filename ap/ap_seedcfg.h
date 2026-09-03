@@ -705,7 +705,13 @@ int AP_OxideFirstChallengeCleared(void);
 // there is nothing to advertise (no slot_data -> the vanilla Aku hints are still
 // accurate, so the caller must leave them as the only message). Mirrors the gate
 // it describes: modes 0/1 advertise races won, everything else the resolved
-// requirement. IMPLEMENTED C-SIDE in ap_hooks.c.
+// requirement. bossIdx 4 (Oxide) can return SEVERAL '\r'-separated lines
+// instead of one -- Oxide's door fronts two encounters and can have up to
+// four blocking terms at once, so its branch renders a compact one-term-per-
+// line panel (2026-09-03 repair, #322 review) instead of joining every term
+// into one unwrapped line; the caller must draw the result with
+// DecalFont_DrawMultiLine, not DecalFont_DrawLine. IMPLEMENTED C-SIDE in
+// ap_hooks.c.
 int AP_BossGateAdvert(int bossIdx, char *out, int cap);
 
 // #152/#322: the pause menu's composed-goal readout. Writes the approved
