@@ -1977,6 +1977,290 @@ static void case_wireframe_lifecycle(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
 }
 
+// ── #280 accessibility follow-up ──
+//
+// The scheduler already freezes everything on pause (case_pause_freeze above):
+// remainMs does not age, no warning starts and nothing fires. What was missing
+// is presentation, which forced First Person, Wireframe, Upside Down, Mirror
+// Mode and Demo Camera onto the pause menu itself. The fix is one predicate,
+// AP_TrapEffectVisible (ap_trap_observe_logic.h), applied at all five call
+// sites in ap_traps.c: ACTIVE stays exactly what the scheduler says, but
+// presentation shows only when the game is not paused. These cases pin that
+// predicate composed with the real scheduler, which is everything the runtime
+// call sites do -- and, for Demo Camera, pin that its own raceActive gate
+// (ap_democam.c/ap_democam_logic.h, exercised in tools/test-democam.c) already
+// excludes PAUSE_ALL, so it needs no predicate call of its own.
+
+static void case_trap_effect_visible_predicate(void)
+{
+	expect("active and unpaused presents", AP_TrapEffectVisible(1, 0), 1);
+	expect("active and paused does not present", AP_TrapEffectVisible(1, 1), 0);
+	expect("inactive and unpaused does not present", AP_TrapEffectVisible(0, 0), 0);
+	expect("inactive and paused does not present", AP_TrapEffectVisible(0, 1), 0);
+}
+
+// First Person is map-lifetime: there is no remaining duration to preserve, only
+// ACTIVE, which must never waver while presentation is suppressed and restored.
+static void case_pause_hides_first_person(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	int cycle;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FIRSTPERSON);
+	run_ms(&s, &race, 1100);
+	expect("First Person activates", AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+	expect("presented while running",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), race.paused), 1);
+	drain(&s);
+
+	for (cycle = 0; cycle < 5; cycle++)
+	{
+		run_ms(&s, &paused, 2000);
+		expect("stays active through the pause",
+		       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+		expect("not presented while paused",
+		       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), paused.paused), 0);
+
+		run_ms(&s, &race, 100);
+		expect("stays active after unpausing",
+		       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+		expect("presented again after unpausing",
+		       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), race.paused), 1);
+	}
+
+	drain(&s);
+	expect("no fresh warning across the pause cycles",
+	       count_ev(AP_TRAP_EV_WARN, AP_TRAP_FIRSTPERSON), 0);
+	expect("no fresh fire across the pause cycles",
+	       count_ev(AP_TRAP_EV_FIRE, AP_TRAP_FIRSTPERSON), 0);
+}
+
+// Wireframe is map-lifetime too, and its own apply site (AP_TrapApplyWireframe)
+// has a restore latch, same shape as First Person's camera latch. The predicate
+// composition is identical; this pins it on the effect the apply-site owns a
+// different piece of engine state for.
+static void case_pause_hides_wireframe(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	int cycle;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_WIREFRAME);
+	run_ms(&s, &race, 1100);
+	expect("Wireframe activates", AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+
+	for (cycle = 0; cycle < 5; cycle++)
+	{
+		run_ms(&s, &paused, 2000);
+		expect("stays active through the pause",
+		       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+		expect("not presented while paused",
+		       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), paused.paused), 0);
+
+		run_ms(&s, &race, 100);
+		expect("stays active after unpausing",
+		       AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), 1);
+		expect("presented again after unpausing",
+		       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_WIREFRAME), race.paused), 1);
+	}
+}
+
+// Mirror Mode is fixed-duration: the case that actually has a remaining
+// duration to leak. Pausing for a long stretch must not cost it a single
+// millisecond, and unpausing must resume with the identical remainder.
+static void case_pause_hides_mirror_mode_preserves_duration(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	int before;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_MIRROR_MODE);
+	run_ms(&s, &race, 1100);
+	run_ms(&s, &race, 5000);
+	expect("Mirror Mode is active before the pause",
+	       AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), 1);
+	expect("presented before the pause",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), race.paused), 1);
+	before = remain_of(&s, AP_TRAP_MIRROR_MODE);
+	expect("some duration remains before the pause", before > 0, 1);
+
+	run_ms(&s, &paused, 20000);
+	expect("remaining duration is untouched by a long pause",
+	       remain_of(&s, AP_TRAP_MIRROR_MODE), before);
+	expect("not presented while paused",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), paused.paused), 0);
+
+	run_ms(&s, &race, 100);
+	expect("resumes with the exact same remaining duration",
+	       remain_of(&s, AP_TRAP_MIRROR_MODE), before - FRAME_MS);
+	expect("presented again after unpausing",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), race.paused), 1);
+}
+
+// Upside Down is Mirror Mode's family sibling, same fixed-duration shape, pinned
+// separately because it is a distinct call site (the second half of
+// AP_TrapRenderTransform) reading the same persisted pause flag.
+static void case_pause_hides_upside_down_preserves_duration(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	int before;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_UPSIDE_DOWN);
+	run_ms(&s, &race, 1100);
+	run_ms(&s, &race, 3000);
+	before = remain_of(&s, AP_TRAP_UPSIDE_DOWN);
+	expect("some duration remains before the pause", before > 0, 1);
+
+	run_ms(&s, &paused, 9000);
+	expect("remaining duration is untouched by the pause",
+	       remain_of(&s, AP_TRAP_UPSIDE_DOWN), before);
+	expect("not presented while paused",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_UPSIDE_DOWN), paused.paused), 0);
+
+	run_ms(&s, &race, 100);
+	expect("resumes with the exact same remaining duration",
+	       remain_of(&s, AP_TRAP_UPSIDE_DOWN), before - FRAME_MS);
+	expect("presented again after unpausing",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_UPSIDE_DOWN), race.paused), 1);
+}
+
+// Demo Camera is scheduled exactly like Mirror Mode -- ACTIVE and remainMs are
+// scheduler state, frozen by pause already. AP_DemoCamSetTrapActive is
+// deliberately NOT gated by AP_TrapEffectVisible in ap_traps.c, because
+// ap_democam.c's own raceActive gate already excludes PAUSE_ALL (pinned in
+// tools/test-democam.c). This case exists so the scheduler half of that story --
+// the trap staying armed/active/timed through the pause -- is pinned here too.
+static void case_pause_hides_demo_camera(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused;
+	int before;
+
+	race.conditions = AP_TRAP_COND_DEMO_CAMERA;
+	paused = race;
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_DEMO_CAMERA);
+	run_ms(&s, &race, 1100);
+	run_ms(&s, &race, 3000);
+	expect("Demo Camera is active before the pause",
+	       AP_TrapSchedActive(&s, AP_TRAP_DEMO_CAMERA), 1);
+	before = remain_of(&s, AP_TRAP_DEMO_CAMERA);
+	expect("some duration remains before the pause", before > 0, 1);
+
+	run_ms(&s, &paused, 9000);
+	expect("remaining duration is untouched by the pause",
+	       remain_of(&s, AP_TRAP_DEMO_CAMERA), before);
+	expect("still active while paused", AP_TrapSchedActive(&s, AP_TRAP_DEMO_CAMERA), 1);
+
+	run_ms(&s, &race, 100);
+	expect("resumes with the exact same remaining duration",
+	       remain_of(&s, AP_TRAP_DEMO_CAMERA), before - FRAME_MS);
+}
+
+// Map exit while paused must hand ordinary ownership back and must not leak the
+// suppressed effect (or a stuck "paused" reading) into the destination map. The
+// runtime clears g_active[] and calls the apply functions with 0 at the boundary
+// regardless of pause, and AP_TrapEffectVisible only ever asks the CURRENT
+// frame's active/paused pair, so nothing here can outlive the map that set it.
+static void case_pause_accessibility_map_exit_no_leak(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	AP_TrapWorld next;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FIRSTPERSON);
+	run_ms(&s, &race, 1100);
+	expect("First Person is active before exiting", AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+
+	run_ms(&s, &paused, 2000);
+	expect("still active, but suppressed, at the moment of exit",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+
+	// The map-exit boundary, taken while the world still reads paused, exactly as
+	// AP_TrapTick calls AP_TrapSchedMapChange at the start of a load.
+	AP_TrapSchedMapChange(&s);
+	expect("map exit clears ACTIVE even while paused",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 0);
+	expect("nothing presents once ACTIVE is cleared, paused or not",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1), 0);
+	expect("and the same holds the instant the pause bit clears too",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 0), 0);
+
+	// Destination map. Unpaused, unrelated to the trap that just exited.
+	next = world_in(AP_TRAP_CTX_RACE);
+	next.mapEpoch = race.mapEpoch + 1;
+	run_ms(&s, &next, 3000);
+	expect("no First Person leaks into the next map",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 0);
+	expect("the next map's own First Person receipt still presents normally",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_FIRSTPERSON), 0);
+
+	AP_TrapSchedReceive(&s, AP_TRAP_FIRSTPERSON);
+	run_ms(&s, &next, 1100);
+	expect("a fresh receipt on the destination map activates and presents normally",
+	       AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), 1);
+	expect("nothing about the earlier pause suppresses it",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_FIRSTPERSON), next.paused), 1);
+}
+
+// A connect reset while paused (reconnect, slot swap) is the same shape as a map
+// exit: AP_Trap_ConnectReset drops every slot and zeroes g_active[] regardless of
+// the live pause bit, so nothing the reset touches can survive it.
+static void case_pause_accessibility_connect_reset_no_leak(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+
+	paused.paused = 1;
+
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_MIRROR_MODE);
+	run_ms(&s, &race, 1100);
+	run_ms(&s, &paused, 2000);
+	expect("Mirror Mode is active, but suppressed, when the reconnect happens",
+	       AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), 1);
+
+	// AP_Trap_ConnectReset calls AP_TrapSchedReset, which this stands in for.
+	AP_TrapSchedReset(&s);
+	expect("connect reset drops the slot outright",
+	       AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), 0);
+	expect("nothing presents post-reset regardless of the stale pause reading",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), 1), 0);
+
+	AP_TrapSchedReceive(&s, AP_TRAP_MIRROR_MODE);
+	run_ms(&s, &race, 1100);
+	expect("a trap armed after the reconnect presents normally",
+	       AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), 1);
+	expect("and is genuinely visible, not suppressed by anything left over",
+	       AP_TrapEffectVisible(AP_TrapSchedActive(&s, AP_TRAP_MIRROR_MODE), race.paused), 1);
+}
+
 int main(void)
 {
 	case_warning_then_fire();
@@ -2033,6 +2317,14 @@ int main(void)
 	case_remaining_roster_contracts();
 	case_boost_blocker_lifecycle();
 	case_wireframe_lifecycle();
+	case_trap_effect_visible_predicate();
+	case_pause_hides_first_person();
+	case_pause_hides_wireframe();
+	case_pause_hides_mirror_mode_preserves_duration();
+	case_pause_hides_upside_down_preserves_duration();
+	case_pause_hides_demo_camera();
+	case_pause_accessibility_map_exit_no_leak();
+	case_pause_accessibility_connect_reset_no_leak();
 
 	printf("%s: %d checks\n", failures ? "FAIL" : "PASS", checks);
 	return failures != 0;
