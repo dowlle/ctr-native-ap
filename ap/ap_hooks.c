@@ -22,6 +22,7 @@
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_item_aliases.h" // native display aliases for long item names (#324)
 #include "ap_rung_feed_reason_logic.h" // freestanding held-position reason text (#324)
+#include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_glow_slots_logic.h"
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
 #include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
@@ -2415,11 +2416,9 @@ static void AP_FeedOnLocationSent(long code)
 	long long item = 0;
 	int player = -1;
 	unsigned flags = 0;
-	if (!ap_net_scout_known(code, &item, &player, &flags))
-		return;
-
-	if (player == ap_net_self_slot())
-		return; // own item: the ReceivedItems echo already toasts it -- avoid a dupe
+	int scoutKnown = ap_net_scout_known(code, &item, &player, &flags);
+	if (!AP_LocationSentShouldToastPure(scoutKnown, player == ap_net_self_slot()))
+		return; // unscouted: cannot attribute; own item: the ReceivedItems echo already toasts it
 
 	char itemRaw[64], playerRaw[64];
 	char itemS[AP_FEED_ITEM_CAP], playerS[AP_FEED_PLAYER_CAP];
@@ -4997,10 +4996,8 @@ static int AP_EmitClassCheck(long code,
                               int addToCeremonyLedger, int ledgerBit, int ledgerTag,
                               int toastSentItem, const char *logFmt, ...)
 {
-	if (code < 0)
-		return 0; // location absent this seed
-	if (ap_net_location_checked(code))
-		return 0; // already checked (re-fire / re-win / reload)
+	if (!AP_ClassCheckShouldSendPure(code, ap_net_location_checked(code)))
+		return 0; // absent this seed, or already checked (re-fire / re-win / reload / reconnect)
 
 	char msg[128];
 	va_list args;
@@ -5062,7 +5059,12 @@ long AP_LetterLocation(int track, int letter)
 
 void AP_LetterCollected(int track, int letter)
 {
-	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, 0,
+	// #319: a letter whose scouted item belongs to another slot must queue the
+	// normal sent-item feed line, same as any other class. AP_EmitClassCheck's
+	// own-checked guard still dedupes a re-touch, reload or reconnect, and
+	// AP_FeedOnLocationSent still suppresses the toast for a local recipient
+	// (that case is already shown once through the received-item path).
+	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, AP_LETTER_TOAST_SENT_ITEM,
 	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
 }
 
