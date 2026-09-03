@@ -1,7 +1,7 @@
 // Out-of-engine assertions for the Lettersanity sent-item notification fix
 // (issue #319). Compiles the REAL freestanding guards used by ap_hooks.c
 // (ap_class_check_policy.h, plus the AP_LETTER_TOAST_SENT_ITEM flag in
-// ap_lettersanity.h) -- both headers are self-contained, so this harness
+// ap_lettersanity.h): both headers are self-contained, so this harness
 // links nothing from the game.
 //
 //   cc -Wall -Wextra -o /tmp/test-lettersanity-remote-feed tools/test-lettersanity-remote-feed.c && /tmp/test-lettersanity-remote-feed
