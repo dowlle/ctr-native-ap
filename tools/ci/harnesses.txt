@@ -29,6 +29,7 @@ tools/test-h-useful.c
 tools/test-held-checks.cpp
 tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-lettersanity-seedcfg.cpp
 tools/test-lettersanity.c

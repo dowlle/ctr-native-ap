@@ -20,6 +20,8 @@
 #include "ap_net.h"       // C API into the apclientpp network client (ap_net.cpp)
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
+#include "ap_item_aliases.h" // native display aliases for long item names (#324)
+#include "ap_rung_feed_reason_logic.h" // freestanding held-position reason text (#324)
 #include "ap_glow_slots_logic.h"
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
 #include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
@@ -1940,6 +1942,7 @@ static void AP_CeremonyDrawEntry(int x, int y, long code, int bit, int rung)
 	char item[40], player[24];
 	char line[80];
 	int player_slot = -1;
+	long long itemId = 0;
 	int sp;
 	int flashOn = (sdata->gGT->timer & 1);
 
@@ -1952,6 +1955,12 @@ static void AP_CeremonyDrawEntry(int x, int y, long code, int bit, int rung)
 	{
 		item[0] = '\0';
 		player[0] = '\0';
+	}
+	{
+		char alias[40];
+		if (ap_net_scout_known(code, &itemId, NULL, NULL) &&
+		    AP_ItemDisplayAlias(itemId, alias, (int)sizeof alias))
+			AP_CeremonySanitize(alias, item, (int)sizeof item);
 	}
 	if (AP_CeremonyNameIsBlank(item))
 		snprintf(item, sizeof item, "%s", AP_CEREMONY_ITEM_UNKNOWN);
@@ -2352,6 +2361,11 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 		itemS[0] = '\0';
 		playerS[0] = '\0';
 	}
+	{
+		char alias[AP_FEED_ITEM_CAP];
+		if (AP_ItemDisplayAlias(item, alias, (int)sizeof alias))
+			AP_CeremonySanitize(alias, itemS, (int)sizeof itemS);
+	}
 	if (AP_CeremonyNameIsBlank(itemS))
 		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
 
@@ -2398,9 +2412,10 @@ static void AP_FeedOnLocationSent(long code)
 	// expected; if it is somehow absent we cannot attribute the item -> stay silent.
 	// The scout also carries the destination item's AP flags, so a sent line gets
 	// the same classification colouring as a received one (#195).
+	long long item = 0;
 	int player = -1;
 	unsigned flags = 0;
-	if (!ap_net_scout_known(code, NULL, &player, &flags))
+	if (!ap_net_scout_known(code, &item, &player, &flags))
 		return;
 
 	if (player == ap_net_self_slot())
@@ -2418,6 +2433,11 @@ static void AP_FeedOnLocationSent(long code)
 	{
 		itemS[0] = '\0';
 		playerS[0] = '\0';
+	}
+	{
+		char alias[AP_FEED_ITEM_CAP];
+		if (AP_ItemDisplayAlias(item, alias, (int)sizeof alias))
+			AP_CeremonySanitize(alias, itemS, (int)sizeof itemS);
 	}
 	if (AP_CeremonyNameIsBlank(itemS))
 		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
@@ -4906,15 +4926,11 @@ enum
 
 static const char *AP_RungFeedReason(int rungTag)
 {
-	switch (rungTag)
-	{
-	case AP_RUNG_HELD_1ST:      return "BE IN 1ST";
-	case AP_RUNG_HELD_3RD:      return "BE IN 3RD";
-	case AP_RUNG_HELD_5TH:      return "BE IN 5TH";
-	case AP_RUNG_FINISH_PODIUM: return "FINISH ON PODIUM";
-	case AP_RUNG_FINISH_ANY:    return "FINISH";
-	default:                    return "PODIUM RUNG";
-	}
+	// AP_RUNG_HELD_1ST/3RD/5TH == 0/1/2 and AP_RUNG_FINISH_PODIUM/ANY == 3/4
+	// (the enum above); AP_RungFeedReasonPure is the freestanding pure form
+	// tools/test-item-aliases.c pins directly, so this stays the single source
+	// of the wording rather than a copy of it.
+	return AP_RungFeedReasonPure(rungTag);
 }
 
 static void AP_FeedOnRungSent(long code, int rungTag)
@@ -4938,6 +4954,11 @@ static void AP_FeedOnRungSent(long code, int rungTag)
 	{
 		itemS[0] = '\0';
 		playerS[0] = '\0';
+	}
+	{
+		char alias[AP_FEED_ITEM_CAP];
+		if (AP_ItemDisplayAlias(item, alias, (int)sizeof alias))
+			AP_CeremonySanitize(alias, itemS, (int)sizeof itemS);
 	}
 	if (AP_CeremonyNameIsBlank(itemS))
 		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);

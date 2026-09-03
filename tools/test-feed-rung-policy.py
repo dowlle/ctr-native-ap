@@ -5,12 +5,19 @@ from pathlib import Path
 
 
 source = (Path(__file__).parents[1] / "ap" / "ap_hooks.c").read_text(encoding="utf-8")
+# The held-position reason wording (issue #324) lives in the freestanding
+# ap_rung_feed_reason_logic.h, which ap_hooks.c's AP_RungFeedReason now
+# delegates to (tools/test-item-aliases.c pins it directly via a runtime call).
+reason_source = (Path(__file__).parents[1] / "ap" / "ap_rung_feed_reason_logic.h").read_text(encoding="utf-8")
 
-assert 'return "BE IN 1ST";' in source
-assert 'return "BE IN 3RD";' in source
-assert 'return "BE IN 5TH";' in source
-assert 'return "FINISH ON PODIUM";' in source
-assert 'return "FINISH";' in source
+assert 'return "IN 1ST";' in reason_source
+assert 'return "IN 3RD";' in reason_source
+assert 'return "IN 5TH";' in reason_source
+assert '"BE IN 1ST"' not in reason_source
+assert '"BE IN 3RD"' not in reason_source
+assert '"BE IN 5TH"' not in reason_source
+assert 'return "FINISH ON PODIUM";' in reason_source
+assert 'return "FINISH";' in reason_source
 assert 'AP_FeedOnRungSent(code, rungTag);' in source
 assert 'AP_FeedRememberSelfRung(item);' in source
 assert 'if (AP_FeedConsumeSelfRung(item))' in source
