@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_oxide_garage_advert.h"
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ae8a0-0x800ae8e0.
 void AH_Garage_ThDestroy(struct Thread *t)
 {
@@ -272,6 +276,35 @@ LAB_800aec34:
 	}
 
 	RECT view = gGT->pushBuffer[0].rect;
+	int challengeY = (view.y + view.h) - 0x1e;
+
+#ifdef CTR_AP
+	char advert[128];
+	int advertVisible = 0;
+	int advertLines = 0;
+
+	// Format the locked-door panel before drawing its title so both can be
+	// laid out as one bottom-anchored block. The previous implementation fixed
+	// the panel at bottom-13: only one FONT_SMALL line fit, while the realistic
+	// four-line Final panel ended at bottom+19 and the structural five-line
+	// maximum ended at bottom+27. Count the actual explicit lines and shift the
+	// title plus panel upward by exactly that overflow.
+	if (!bossIsOpen && sdata->AkuAkuHintState == 0)
+	{
+		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+
+		advertVisible = AP_BossGateAdvert(advertBoss, advert,
+		                                    (int)sizeof advert);
+		if (advertVisible)
+		{
+			advertLines = AP_OxideGarageAdvertLineCount(advert);
+			challengeY = AP_OxideGarageBlockTitleY(
+				view.y + view.h, challengeY,
+				data.font_charPixHeight[FONT_BIG],
+				data.font_charPixHeight[FONT_SMALL], advertLines);
+		}
+	}
+#endif
 
 	// if aku is not giving a hint
 	if (sdata->AkuAkuHintState == 0)
@@ -281,7 +314,7 @@ LAB_800aec34:
 
 		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
 
-		    (view.x + (view.w >> 1)), ((view.y + view.h) - 0x1e), 1, 0xffff8000);
+		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
 	}
 
 	if (bossIsOpen)
@@ -300,28 +333,24 @@ LAB_800aec34:
 	// his hint box. Oxide's door is hubID 0 -> boss index 4; the four boss garages
 	// are hubID 1..4 -> boss index 0..3.
 	{
-		// 128, not 64: Oxide's line (advertBoss 4) can now carry the composed
+		// 128, not 64: Oxide's line can now carry the composed
 		// goal's companion terms as well as the door requirement (WO-A1), e.g.
-		// "Requires: 4 Keys (have 4) + win 4 of 4 boss races (have 1)".
-		char advert[128];
-		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+		// "FINAL CHALLENGE\rSAPPHIRE 12/18\rBOSSES 1/4\rGEMS 3/5" -- '\r'
+		// separated, one term per panel line (2026-09-03 repair, #322 review).
+		int advertY = challengeY + data.font_charPixHeight[FONT_BIG];
 
-		// The challenge name above is FONT_BIG drawn from its TOP edge, so the
-		// advert has to start a full FONT_BIG line lower or it lands inside the
-		// title's glyph band (0x14 did exactly that: the title occupies
-		// bottom-0x1e .. bottom-0x0d, the advert started at bottom-0x14). Stack it
-		// the way the engine stacks its own wrapped lines -- advance by
-		// font_charPixHeight of the line above (DecalFont_DrawMultiLineStrlen) --
-		// which is data-driven and stays correct if the region tables differ. The
-		// FONT_SMALL line is 8 px, so it still clears the 1P viewport bottom
-		// (rect.h, 0xd8 NTSC) with room to spare.
-		int advertY = ((view.y + view.h) - 0x1e) + data.font_charPixHeight[FONT_BIG];
-
-		if (sdata->AkuAkuHintState == 0 &&
-		    AP_BossGateAdvert(advertBoss, advert, (int)sizeof advert))
+		if (advertVisible)
 		{
-			DecalFont_DrawLine(advert, (view.x + (view.w >> 1)), advertY, FONT_SMALL,
-			                   0xffff8000);
+			// DecalFont_DrawMultiLine, not DrawLine: AP_BossGateAdvert's Oxide
+			// branch (advertBoss 4) can now return several '\r'-separated panel
+			// lines (2026-09-03 repair). The four boss garages still return a
+			// single line with no '\r', which draws identically to before. 480
+			// (0x1e0) is a safety margin above every line the compact panel can
+			// produce (proven under 460 px in tools/test-oxide-garage-advert.c),
+			// not a load-bearing wrap width -- the '\r' breaks alone decide
+			// where the panel's lines fall.
+			DecalFont_DrawMultiLine(advert, (view.x + (view.w >> 1)), advertY,
+			                        0x1e0, FONT_SMALL, 0xffff8000);
 		}
 	}
 #endif
@@ -403,11 +432,15 @@ LAB_800aede8:
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_BOSS;
 
 #ifdef CTR_AP
-		// AP Phase 2 (issue #23): Oxide's Final Challenge unlock honours the
-		// per-seed relic-goal MODE + COUNT (ctr_cfg.oxide_final_unlock /
-		// oxide_final_count), resolved by AP_OxideFinalOpen against the received
-		// relic-tier counts. Phase-1 fallback (no slot_data) = vanilla 18 Sapphire.
-		if ((levelID == GEM_STONE_VALLEY) && AP_OxideFinalOpen())
+		// AP (issue #321): which Oxide encounter loads. Was AP_OxideFinalOpen()
+		// alone -- the per-seed relic-goal MODE + COUNT (issue #23) -- which
+		// handed the Final Challenge to any player already holding enough
+		// relics, skipping an uncleared first challenge entirely. The selector
+		// now asks AP_OxideOffersFinalChallenge(), which still requires that
+		// relic gate but only AFTER the first challenge is cleared, read from
+		// server-checked location state so a reconnect cannot forget. Phase-1
+		// fallback (no slot_data) = the vanilla 18-Sapphire rule, unchanged.
+		if ((levelID == GEM_STONE_VALLEY) && AP_OxideOffersFinalChallenge())
 #else
 		if ((levelID == GEM_STONE_VALLEY) && (gGT->currAdvProfile.numRelics == 18))
 #endif
