@@ -2,11 +2,13 @@
 //
 // WO-A4: Oxide cutscene trigger characterization.
 //
-// WHAT IS ACTUALLY EXECUTED HERE. Two pure predicates:
+// WHAT IS ACTUALLY EXECUTED HERE. Pure production predicates:
 //   ap/ap_oxide_cutscene.h  AP_OxideFinalPresentationReady -- the shared gate
 //                           the three relic-cutscene sites now ask
 //   ap/ap_relic_goal.h      AP_RelicGoalMet -- what AP_OxideFinalOpen() resolves
 //                           the per-seed mode + count to
+//   ap/ap_oxide_encounter.h AP_OxideGarageOffersFinal, composed with
+//                           AP_OxideFinalEncounterPresentationReady
 // plus a MODEL of the surrounding engine flow (BossCutsceneModel below). The
 // model is a transcription of the real control flow, line-referenced against
 // the source it mirrors; it is NOT the engine. It exists so the trigger map is
@@ -23,6 +25,7 @@
 
 #include "../ap/ap_oxide_cutscene.h"
 #include "../ap/ap_relic_goal.h"
+#include "../ap/ap_oxide_encounter.h"
 
 static int failures;
 
@@ -116,6 +119,27 @@ static int FinalOpen(int mode, int count, int sapph, int gold, int plat)
 int main(void)
 {
 	struct PodiumState s;
+	// Compose the production encounter decision with the production cutscene
+	// predicate. The encounter selector alone must not announce an unmet relic
+	// milestone, and relic-rich players must still clear the first challenge.
+	for (int goal = 0; goal <= 3; goal++)
+	for (int first = 0; first <= 1; first++)
+	for (int relic = 0; relic <= 1; relic++)
+	{
+		AP_OxideGarageInputs in = {0};
+		in.goalOxide = goal;
+		in.firstCleared = first;
+		in.finalRelicMet = relic;
+		in.garageReqMet = 1;
+		int offered = AP_OxideGarageOffersFinal(&in);
+		CHECK("encounter/relic presentation matrix",
+		      AP_OxideFinalEncounterPresentationReady(1, 18, offered, relic) ==
+		          (goal != AP_OXIDE_GOAL_DISABLED && first && relic));
+		CHECK("encounter inputs cannot override retail below threshold",
+		      !AP_OxideFinalEncounterPresentationReady(0, 17, offered, relic));
+		CHECK("retail threshold independent of encounter inputs",
+		      AP_OxideFinalEncounterPresentationReady(0, 18, offered, relic));
+	}
 
 	// =====================================================================
 	// 1. RETAIL PARITY. Without slot_data every answer must be the vanilla

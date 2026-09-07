@@ -47,11 +47,9 @@
 // ---------------------------------------------------------------------------
 
 // `cfgActive` is ctr_cfg_active(); `vanillaRelics` is
-// gGT->currAdvProfile.numRelics; `apFinalOpen` is now
-// AP_OxideOffersFinalChallenge() -- the encounter SELECTOR (#321), not the
-// bare relic gate. The cutscene has to follow whichever encounter the garage
-// actually loads, and since the RC ruling an uncleared first challenge takes
-// priority over a satisfied relic requirement.
+// gGT->currAdvProfile.numRelics. `apFinalOpen` is the resolved AP presentation
+// gate. Engine call sites use AP_OxideFinalEncounterPresentationReady below
+// to compose the encounter selector with the relic threshold.
 // Returns non-zero when the Final-Challenge presentation should play.
 static inline int AP_OxideFinalPresentationReady(int cfgActive,
                                                  int vanillaRelics,
@@ -61,6 +59,19 @@ static inline int AP_OxideFinalPresentationReady(int cfgActive,
 		return apFinalOpen != 0;
 
 	return vanillaRelics >= 18;
+}
+
+// The next encounter can already be Final while its relic gate is still shut.
+// Keep the relic invitation behind that gate, as before the encounter rework,
+// and also require the first challenge to have been cleared. Companions remain
+// garage-entry requirements; this cutscene announces the relic milestone.
+static inline int AP_OxideFinalEncounterPresentationReady(int cfgActive,
+                                                          int vanillaRelics,
+                                                          int offersFinal,
+                                                          int finalRelicMet)
+{
+	return AP_OxideFinalPresentationReady(cfgActive, vanillaRelics,
+	                                      offersFinal && finalRelicMet);
 }
 
 #endif // AP_OXIDE_CUTSCENE_H
