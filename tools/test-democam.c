@@ -398,6 +398,54 @@ int main(void)
 		       AP_DemoCam_CanEngage(&g), 1);
 	}
 
+	// ── pause (#280 accessibility follow-up): toggling purely on raceActive
+	// releases and re-engages cleanly, repeatedly ──
+	//
+	// ap_traps.c does not gate AP_DemoCamSetTrapActive on pause at all: the
+	// runtime keeps asking for the engagement the whole time the game is
+	// paused. What actually suppresses it is that AP_DemoCamRaceActive
+	// (ap_democam.c) already folds PAUSE_ALL into raceActive, so
+	// AP_DemoCam_ForcedClearReason selects RACE_ENDED the instant pause starts
+	// and AP_DemoCam_CanEngage refuses to re-engage until it clears. This is
+	// the same forced-clear path run_forced_clear("race window closed", ...)
+	// above already proves once; this proves it survives the toggle repeatedly,
+	// the way a player mashing Start would exercise it, with no drift and no
+	// camera flag left behind.
+	AP_DemoCam_Reset(&st);
+	seed_fields(&f);
+	before = f;
+	{
+		int cycle;
+		struct ApDemoCamGate active = gate_ok();
+		struct ApDemoCamGate paused = gate_ok();
+		paused.raceActive = 0;
+
+		for (cycle = 0; cycle < 6; cycle++)
+		{
+			expect("engage while running succeeds",
+			       AP_DemoCam_Engage(&st, &id, &f), AP_DEMOCAM_ENGAGE_OK);
+			simulate_cinematic_frames(&f);
+
+			expect("pausing selects the race-window-closed reason",
+			       AP_DemoCam_ForcedClearReason(&paused, 0, 0),
+			       AP_DEMOCAM_CLEAR_RACE_ENDED);
+			expect("pausing restores byte-exact",
+			       AP_DemoCam_Release(&st, &id, &f, AP_DEMOCAM_CLEAR_RACE_ENDED),
+			       AP_DEMOCAM_RELEASE_RESTORED);
+			expect("no engagement can start while paused",
+			       AP_DemoCam_CanEngage(&paused), 0);
+			expect("unpausing reopens engagement", AP_DemoCam_CanEngage(&active), 1);
+
+			f.flags &= ~(unsigned)AP_DEMOCAM_FLAG_RESEAT_MASK; // engine self-clears these
+		}
+	}
+	expect("repeated pause/unpause cycles leave non-flag state byte-exact",
+	       fields_equal_except_flags(&f, &before), 1);
+	expect_u("repeated pause/unpause cycles leave no camera flag behind",
+	         f.flags, before.flags);
+	expect("repeated pause/unpause cycles counted six engagements",
+	       (int)st.engageCount, 6);
+
 	printf("%s\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

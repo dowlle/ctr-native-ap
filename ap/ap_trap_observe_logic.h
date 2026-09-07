@@ -89,6 +89,18 @@ static int AP_TrapWeakenedBoostTier(int effectActive, int permanentTier,
 	return tier > 0 ? tier - 1 : 0;
 }
 
+// Pause accessibility (#280 follow-up). Five effects override ordinary
+// camera/renderer presentation (First Person, Wireframe, Upside Down, Mirror
+// Mode, Demo Camera): while the pause menu holds control, the override is
+// suspended and ordinary presentation shows through, but the trap's own
+// active/timer state is untouched, so unpausing resumes the exact same effect
+// with the exact same remaining duration. This is the one predicate every call
+// site applies; keeping it in one place is what makes the five sites agree.
+static int AP_TrapEffectVisible(int effectActive, int paused)
+{
+	return effectActive && !paused;
+}
+
 static int AP_TrapHazardDistance(int speedApprox, int travelMs)
 {
 	int distance;

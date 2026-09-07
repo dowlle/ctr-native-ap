@@ -95,6 +95,13 @@ static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
 
+// Mirror of this frame's w.paused, for the two render-path call sites below that
+// do not receive an AP_TrapWorld: they read g_active directly, on a call path
+// AP_TrapTick does not drive (game/PushBuffer.c, platform/native_gte_core.c).
+// Refreshed unconditionally every AP_TrapTick, so it can never outlive the frame
+// it describes and cannot suppress a later map's legitimate presentation.
+static int g_trap_paused = 0;
+
 // Wireframe ownership preserves the renderer's pre-trap debug setting. While the
 // trap owns it the value is forced every frame, then restored exactly once.
 extern int g_dbg_wireframeMode;
@@ -981,6 +988,7 @@ void AP_Trap_ConnectReset(void)
 	// keep an effect applied for a frame past the reset.
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
+	g_trap_paused = 0;
 	g_recover_ms = 0;
 	g_trap_lead.elapsedMs = 0;
 	g_trap_lead.earned = 0;
@@ -1289,6 +1297,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	w.mapEpoch = g_epoch;
 	w.controlUnlocked = AP_TrapControlUnlocked(gGT, local);
 	w.paused = (gGT->gameMode1 & PAUSE_ALL) != 0;
+	g_trap_paused = w.paused;
 	w.scripted = AP_TrapScripted(gGT, local);
 	w.finishOrPodium = AP_TrapFinishOrPodium(gGT, local);
 	w.elapsedMs = gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32;
@@ -1308,9 +1317,16 @@ void AP_TrapTick(struct GameTracker *gGT)
 		g_active[e] = (unsigned char)AP_TrapSchedActive(&g_sched, e);
 
 	AP_TrapTrackRecovery(local, w.elapsedMs);
-	AP_TrapApplyCamera(gGT, g_active[AP_TRAP_FIRSTPERSON]);
+	// First Person and Wireframe force presentation every frame while active, so
+	// pause suppresses each the same way the map-boundary reset above already
+	// does: call the apply function with 0, which restores ordinary chase/debug
+	// state through the latch each already keeps, then hands it back once
+	// unpaused. Demo Camera needs no such gate here: AP_DemoCamRaceActive already
+	// excludes PAUSE_ALL, so it releases its engagement (or never engages) while
+	// paused without this flag's help.
+	AP_TrapApplyCamera(gGT, AP_TrapEffectVisible(g_active[AP_TRAP_FIRSTPERSON], w.paused));
 	AP_DemoCamSetTrapActive(g_active[AP_TRAP_DEMO_CAMERA]);
-	AP_TrapApplyWireframe(g_active[AP_TRAP_WIREFRAME]);
+	AP_TrapApplyWireframe(AP_TrapEffectVisible(g_active[AP_TRAP_WIREFRAME], w.paused));
 	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
 	AP_TrapClampWeakenedFire(local);
 }
@@ -1361,7 +1377,10 @@ void AP_TrapRenderTransform(struct PushBuffer *pb)
 		return;
 
 	// Negating the projection X row mirrors only camera-projected geometry.
-	if (g_active[AP_TRAP_MIRROR_MODE])
+	// Suppressed while paused (g_trap_paused, set in AP_TrapTick) so the pause
+	// menu itself renders the ordinary way; the trap's own active state is
+	// untouched underneath.
+	if (AP_TrapEffectVisible(g_active[AP_TRAP_MIRROR_MODE], g_trap_paused))
 	{
 		pb->matrix_ViewProj.t[0] = -pb->matrix_ViewProj.t[0];
 		for (x = 0; x < 3; x++)
@@ -1370,7 +1389,7 @@ void AP_TrapRenderTransform(struct PushBuffer *pb)
 
 	// A 180-degree camera roll negates both screen axes. The family scheduler
 	// prevents this from overlapping Mirror Mode or another camera transform.
-	if (g_active[AP_TRAP_UPSIDE_DOWN])
+	if (AP_TrapEffectVisible(g_active[AP_TRAP_UPSIDE_DOWN], g_trap_paused))
 	{
 		pb->matrix_ViewProj.t[0] = -pb->matrix_ViewProj.t[0];
 		pb->matrix_ViewProj.t[1] = -pb->matrix_ViewProj.t[1];
@@ -1384,7 +1403,7 @@ void AP_TrapRenderTransform(struct PushBuffer *pb)
 
 int AP_TrapMirrorCullFlip(void)
 {
-	return g_active[AP_TRAP_MIRROR_MODE] != 0;
+	return AP_TrapEffectVisible(g_active[AP_TRAP_MIRROR_MODE], g_trap_paused);
 }
 
 int AP_TrapGravity(struct Driver *driver, int gravityY)
