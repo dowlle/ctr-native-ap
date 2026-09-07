@@ -6,6 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
+        Thanks for leaving your feedback here. I'm taking a break from development at the moment, but please keep reporting bugs and sharing ideas so I can come back to them later. Replies and fixes may take a while, and I can't give a timeline.
+
         Use this when the game itself works but the **seed** looks wrong: a check you cannot
         reach, a door that will not open, or a run that cannot be finished.
 
@@ -44,21 +46,6 @@ body:
       placeholder: ctr 0.1.4 on Archipelago 0.6.7
     validations:
       required: false
-
-  - type: dropdown
-    id: seed-verifier
-    attributes:
-      label: Did the game show a red "SEED NOT COMPLETABLE" warning on the hub?
-      description: |
-        The client checks every solo seed when it connects. That verdict, either way,
-        is one of the fastest ways to tell a real logic bug from a false alarm,
-        and both answers have been wrong before, so say what you actually saw.
-      options:
-        - "No warning appeared"
-        - "Yes, the warning appeared"
-        - Did not notice
-    validations:
-      required: true
 
   - type: dropdown
     id: solo-or-multi
@@ -119,8 +106,9 @@ body:
       description: |
         Run `support-bundle.bat` (Windows) or `./support-bundle.sh` (Linux and Steam Deck)
         from the game folder and drag the archive in here. Passwords are stripped and no
-        game data is included. The AP log records which locations the verifier considered
-        unreachable, which is usually the answer.
+        game data is included. In current 0.2.0 builds, seed-verifier results are recorded in
+        `ctr-ap.log` rather than shown as a red hub warning. Include the log even if you
+        saw no warning; its diagnostics can help investigate the report.
 
         If you have the spoiler log for the seed, attach that too, but only if you are
         happy to have it public: it reveals the whole seed.

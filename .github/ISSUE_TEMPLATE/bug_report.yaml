@@ -6,8 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. Most of the time we can fix a bug from one good report,
-        and the fields below are the ones that have actually saved a round trip in past reports.
+        Thanks for leaving your feedback here. I'm taking a break from development at the moment, but please keep reporting bugs and sharing ideas so I can come back to them later. Replies and fixes may take a while, and I can't give a timeline.
 
         If a **seed looks impossible to finish** rather than broken, use the
         "Stuck or impossible seed" form instead.

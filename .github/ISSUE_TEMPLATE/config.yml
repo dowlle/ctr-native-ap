@@ -6,9 +6,9 @@ contact_links:
   - name: What the options do
     url: https://github.com/dowlle/ctr-archipelago-apworld/blob/main/worlds/ctr/README.md
     about: The CTR world README documents every YAML option. Generation, option and logic problems are filed here too, with the "Stuck or impossible seed" form.
-  - name: Questions and feedback on Discord
+  - name: Community questions on Discord
     url: https://discord.com/channels/731205301247803413/1222304293751750777
-    about: The Crash Team Racing channel on the Archipelago Discord (invite discord.gg/8Z65BR2). Good for questions; bugs and stuck seeds are easier to track here.
+    about: The Crash Team Racing channel on the Archipelago Discord (invite discord.gg/8Z65BR2). For community questions. Please file bugs, stuck seeds and suggestions here on GitHub so I can review them when I return.
   - name: New to Archipelago itself
     url: https://archipelago.gg/tutorial/
     about: Setting up a multiworld, YAMLs and rooms in general, rather than anything CTR-specific.

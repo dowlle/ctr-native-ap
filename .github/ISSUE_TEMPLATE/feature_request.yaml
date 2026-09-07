@@ -6,9 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ideas are welcome and several shipped features started as one. The questions below
-        are the ones that get asked in the comments every time, so answering them up front
-        gets the idea triaged in one pass instead of three.
+        Thanks for leaving your feedback here. I'm taking a break from development at the moment, but please keep reporting bugs and sharing ideas so I can come back to them later. Replies and fixes may take a while, and I can't give a timeline.
 
         Not knowing an answer is fine. Leave it blank.
 
