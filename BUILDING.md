@@ -118,6 +118,44 @@ cmake --build build-ap
 
 Output: `ctr_native_ap.exe` (Windows) or `ctr_native_ap` (Linux). It reads its server connection from `ap-config.txt` next to the executable (see [`ap-config.example.txt`](ap-config.example.txt)).
 
+## GitHub build artifacts
+
+The **Build clients** workflow builds Windows x86 and Linux x86 on pull requests,
+main/release/CI branch pushes, version tags, and manual dispatch. Each platform
+builds the AP client with custom tracks enabled and the vanilla client with AP
+and custom tracks disabled. Authoring tools are disabled in both configurations.
+
+Download the artifact for the exact workflow commit from the Actions run. It
+contains a client archive for each configuration, separate exact `.debug`
+sidecars, and SHA-256 files. Keep each sidecar's original filename when placing
+it beside its executable; the embedded debuglink checks its name and CRC.
+Linux executable permissions are preserved inside the tarball.
+
+These are native build artifacts. They do not contain a disc image or
+`ctr.apworld`, and are not a substitute for the versioned-pair release gates in
+RELEASING.md. Select and test the matching apworld before publishing a release.
+The workflow has read-only repository permissions and never publishes releases,
+signs executables, submits samples externally, or runs gameplay.
+
+Linux uses a digest-pinned Debian Bookworm container and rejects ELF binaries
+requiring glibc newer than 2.38. Windows uses the existing MinGW32/MSYS2
+toolchain and rejects unexpected non-system DLL imports. Both platforms verify
+32-bit architecture, stripped output, and the exact debuglink CRC before upload.
+Windows additionally checks ASLR/NX flags; Linux rejects an executable stack and
+embedded runtime search paths. BUILD.json records the source commit, toolchain,
+installed package versions, vendor lock hash, executable hash and sidecar hash.
+
+Actions are pinned to full commit SHAs; Dependabot proposes updates. OS package
+repositories still supply rolling security updates, so this is an attributable
+build process, not a claim of byte-for-byte reproducibility across dates. MSYS2
+has deprecated MINGW32; a future toolchain migration needs separate x86 runtime
+acceptance. Do not silently switch this pointer-sensitive engine to x64.
+
+To reproduce the recipe in an environment with the workflow's dependencies,
+use a clean checkout and run `bash tools/ci/build-clients.sh linux` or
+`bash tools/ci/build-clients.sh windows` from an MSYS2 MINGW32 shell. Existing
+`build-ci-*` or `client-artifacts` directories are refused rather than reused.
+
 ## Running development builds
 
 Development builds run from `build/` expect the disc image next to the source tree:
