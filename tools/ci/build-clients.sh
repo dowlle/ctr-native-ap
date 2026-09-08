@@ -12,8 +12,10 @@ if [ -e client-artifacts ] || [ -e build-ci-ap ] || [ -e build-ci-vanilla ]; the
   echo 'Use a fresh checkout/build directory; preserve prior artifacts.' >&2
   exit 1
 fi
-if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+source_status=$(git status --porcelain --untracked-files=normal)
+if [ -n "$source_status" ]; then
   echo 'Build provenance requires a clean checkout, including untracked files.' >&2
+  printf '%s\n' "$source_status" >&2
   exit 1
 fi
 mkdir client-artifacts
