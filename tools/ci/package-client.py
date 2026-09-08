@@ -133,7 +133,8 @@ def main():
     shutil.copy2(str(exe) + '.debug', sidecar)
     for file in (archive, sidecar):
         Path(str(file) + '.sha256').write_text(f'{digest(file)}  {file.name}\n')
-    print(json.dumps(evidence, indent=2))
+    print(json.dumps({key: value for key, value in evidence.items()
+                      if key != 'installed_packages'}, indent=2))
 
 
 if __name__ == '__main__':
