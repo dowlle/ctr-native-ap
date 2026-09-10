@@ -9,7 +9,8 @@ With much of my attention on my partner's recovery, I've relied more than usual 
 ## Highlights
 
 - A community-tested stable 0.2.0 client and matching apworld, with the major randomization and native integration work from the Alpha releases brought together.
-- More forgiving AP-box kart and direct-projectile contact. Explosion range, ownership and placement behavior are unchanged. Some awkward placements can still remain, especially on custom or user-authored tracks.
+- More forgiving AP-box kart and direct-projectile contact. Some awkward placements can still remain; identifiable reports will help us address those individually.
+- Secure AP connections now verify the server's certificate name as well as its trust chain, and datapackage-cache paths reject unsafe components.
 - Recorded AI lap collection and playback are included as experimental features and remain off by default. Playback currently shares up to three recorded lines across opponents, so contributor names can repeat. Per-racer assignment, broader contributor-pool selection, finish-line smoothing and ordinary-crate interaction remain planned corrections for 0.2.1. Recorded AI cannot collect AP check boxes.
 - Setup documentation explains asset extraction, recorded-AI files and options, troubleshooting, and the local support-bundle workflow.
 
@@ -19,9 +20,7 @@ This release ships no game data. Provide the game files from your own NTSC-U (No
 
 ## Testing and support
 
-This is a community-tested 0.2.0 release. The release preparation baseline includes 58 native harnesses with 5 documented skips and 1,427 apworld tests with 1 documented skip. The full named apworld fuzz matrix also passed its baseline run. Remaining gameplay and verifier coverage is best extended through community testing. The 0.2.x fixes in this release have been verified at source and in their applicable automated checks.
-
-<!-- Draft testing placeholder: update the automated-check counts above if the final release run changes them. -->
+This is a community-tested 0.2.0 release. Automated coverage includes native harnesses, apworld unit tests, the full eleven-part generation fuzz matrix, and targeted connection/cache checks. These checks do not cover every gameplay or connect-time verifier scenario. Community testing will help extend that coverage, with reproduced issues and verified fixes feeding into matching 0.2.x client/apworld releases.
 
 ## Known limitations
 
@@ -45,4 +44,4 @@ Parts of this project were developed with AI assistance. See the AI disclosure i
 
 Please report crashes, freezes, connection problems, inaccessible checks, incorrect pad or box behavior, or other regressions through the [GitHub issue chooser](https://github.com/dowlle/ctr-native-ap/issues/new/choose). Include the client version, platform, seed or YAML, reproduction steps, and the local support bundle when relevant. The bundle is intended for inspection and does not upload automatically.
 
-There is no response calendar or guaranteed response time. Community reports remain welcome and help guide 0.2.x fixes.
+Reports are welcome even when the cause is unclear. We will check the version, settings and reproduction evidence before deciding on a fix.
