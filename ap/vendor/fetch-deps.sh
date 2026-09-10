@@ -105,6 +105,26 @@ fetch_one() { # $1 = dep
   fi
 }
 
+# Apply only to the exact upstream tree; repeated fetches are idempotent.
+# verify mode never repairs or modifies an existing tree.
+apply_local_patch() {
+  local dep="$1" patch dir got want patch_hash
+  patch=$(lock_get "$dep" patch)
+  [ -n "$patch" ] || return 0
+  dir=$(lock_get "$dep" dir)
+  patch_hash=$(sha256sum "$patch" | cut -d' ' -f1)
+  [ "$patch_hash" = "$(lock_get "$dep" patch_sha256)" ] || {
+    echo "!! $dep: local patch hash mismatch" >&2; return 1;
+  }
+  got=$(tree_hash "$dir")
+  want=$(lock_get "$dep" tree_sha256)
+  [ "$got" = "$want" ] && return 0
+  [ "$got" = "$(lock_get "$dep" upstream_tree_sha256)" ] || {
+    echo "!! $dep: refusing to patch an unexpected tree" >&2; return 1;
+  }
+  git apply --no-index --directory="$dir" "$patch"
+}
+
 # --- verify one dep against the manifest ------------------------------------
 verify_one() { # $1 = dep ; returns 0 ok, 1 mismatch
   local dep="$1" dir want got
@@ -133,6 +153,7 @@ case "$mode" in
     for d in $(deps); do
       [ "$(lock_get "$d" optional)" = "true" ] && continue
       fetch_one "$d"
+      apply_local_patch "$d"
     done
     for d in $(deps); do
       [ "$(lock_get "$d" optional)" = "true" ] && continue
@@ -149,6 +170,7 @@ case "$mode" in
     for d in $(deps); do
       [ "$(lock_get "$d" optional)" = "true" ] && continue
       fetch_one "$d"
+      apply_local_patch "$d"
       dir=$(lock_get "$d" dir)
       printf '%s\t%s\n' "$d" "$(tree_hash "$dir")"
     done

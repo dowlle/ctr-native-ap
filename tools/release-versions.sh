@@ -28,7 +28,11 @@ awk '
   /^\[/          { d = substr($0, 2, index($0,"]")-2) }
   /^version *=/  { v=$0; sub(/^version *= */,"",v); ver[d]=v }
   /^sha *=/      { s=$0; sub(/^sha *= */,"",s);     sha[d]=s }
+  /^patch_sha256 *=/ { p=$0; sub(/^patch_sha256 *= */,"",p); patch[d]=p }
   END {
     split("apclientpp wswrap websocketpp asio json", a, " ")
-    for (i=1; i<=5; i++) printf "  %-12s %-9s %s\n", a[i], ver[a[i]], sha[a[i]]
+    for (i=1; i<=5; i++) {
+      printf "  %-12s %-9s %s\n", a[i], ver[a[i]], sha[a[i]]
+      if (patch[a[i]] != "") printf "    local security patch sha256: %s\n", patch[a[i]]
+    }
   }' "$lock"

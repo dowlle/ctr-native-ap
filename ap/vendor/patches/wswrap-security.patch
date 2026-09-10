@@ -1,0 +1,41 @@
+--- a/include/wswrap_websocketpp.hpp
++++ b/include/wswrap_websocketpp.hpp
+@@ -105,7 +105,7 @@
+ 
+             bool is_init;
+             if (_secure)
+-                is_init = init_wss(!is_localhost, cert_store);
++                is_init = init_wss(!is_localhost, cert_store, uri.get_host());
+             else
+                 is_init = init_ws();
+ 
+@@ -296,7 +296,7 @@
+             return true;
+         }
+ 
+-        bool init_wss(bool validate_cert, const std::string& cert_store)
++        bool init_wss(bool validate_cert, const std::string& cert_store, const std::string& host)
+         {
+             #ifdef WSWRAP_WITH_SSL
+             auto* impl = init<WSS_IMPL>();
+@@ -305,7 +305,7 @@
+             auto& client = impl->first;
+ 
+             std::string store_path = cert_store; // make a copy for capture
+-            client.set_tls_init_handler([this, validate_cert, store_path] (std::weak_ptr<void>) -> SSLContextPtr {
++            client.set_tls_init_handler([this, validate_cert, store_path, host] (std::weak_ptr<void>) -> SSLContextPtr {
+                 SSLContextPtr ctx = std::make_shared<SSLContext>(SSLContext::sslv23);
+                 asio::error_code ec;
+                 ctx->set_options(SSLContext::default_workarounds |
+@@ -351,7 +351,10 @@
+ #endif
+                     }
+                     ctx->set_verify_mode(asio::ssl::verify_peer, ec);
+-                    if (ec) warn("Error in ssl init: mode: %s\n", ec.message().c_str());
++                    if (ec) return SSLContextPtr();
++                    // Verify DNS names and IP SANs, in addition to the CA chain.
++                    ctx->set_verify_callback(asio::ssl::host_name_verification(host), ec);
++                    if (ec) return SSLContextPtr();
+                 }
+                 return ctx;
+             });

@@ -28,7 +28,12 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q gcc-multilib g++-multilib
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -q
+          sudo apt-get install -y -q libssl-dev:i386 zlib1g-dev:i386 openssl
       - name: Vendor headers (pinned by ap/vendor/versions.lock)
         run: bash ap/vendor/fetch-deps.sh
       - name: Build and run
         run: python3 tools/ci/run-harnesses.py
+      - name: TLS and cache boundary regressions
+        run: bash tools/security/run.sh
