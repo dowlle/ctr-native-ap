@@ -44,6 +44,8 @@ The release cycle's development order, settled during the 0.1.4 cycle:
 
 ## 1. Gates (nothing ships red)
 
+For 0.2.0, the maintainer has approved a community-tested baseline. The in-game playtest and verifier sweep below are documented testing debt, not prerequisites for this release. Automated checks, complete matching packages and honest known limitations still apply. Follow-up reports go through GitHub Issues, reproduction and verified fixes before a paired 0.2.x release. Recorded-AI corrections are planned for 0.2.1; generalized custom-track work remains separate for 0.3.0.
+
 - [ ] Full fuzz clean on the apworld release commit: ~14,000 generations, zero
       failures (the fuzzer randomizes all options, so option-combo corners are
       covered). Smaller smoke runs are for iteration only.

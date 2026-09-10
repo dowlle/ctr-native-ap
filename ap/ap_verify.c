@@ -11,6 +11,7 @@
 #include "ap_verify_wumpa.h"
 #include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
+#include "ap_oxide_encounter.h" // the ONE Oxide encounter + gate decision (#320/#321)
 
 // ---------------------------------------------------------------------------
 // Static vanilla topology (native is the source of truth).
@@ -154,6 +155,37 @@ static int ap_vf_oxide_final_met(const int *counts)
 	int s = counts[AP_IDX_SAPPHIRE], g = counts[AP_IDX_GOLD],
 	    p = counts[AP_IDX_PLATINUM];
 	return AP_RelicGoalMet(ctr_cfg.oxide_final_unlock, n, s, g, p);
+}
+
+// The Oxide garage decision under SIMULATION (issues #320/#321). `firstCleared`
+// is what the sweep has proven about the first challenge so far, and the boss /
+// gem tallies are the sweep's own current state -- so this reads exactly the
+// runtime decision (ap/ap_oxide_encounter.h) with simulated inputs instead of
+// live ones, rather than a second interpretation of the same rule. Under
+// goal_oxide 3 (`disabled`) it returns shut, which is right even though a
+// disabled seed contains neither location for the sweep to ask about.
+static int ap_vf_oxide_open(int wantFinal, int firstCleared, int bossesWon,
+                            const int *counts)
+{
+	AP_OxideGarageInputs in;
+	AP_OxideGarageState st;
+
+	in.garageReqMet = AP_ReqMetCounts(&ctr_cfg.boss_req[4], counts) != 0;
+	in.goalOxide = ctr_cfg.goal_oxide;
+	in.firstCleared = firstCleared;
+	in.finalRelicMet = ap_vf_oxide_final_met(counts) != 0;
+	in.goalBosses = ctr_cfg.goal_bosses;
+	in.bossesWon = bossesWon;
+	in.goalGems = ctr_cfg.goal_gems;
+	in.gemsHeld = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
+	              (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
+	              (counts[AP_IDX_GEM_RED + 4] > 0);
+
+	st = AP_OxideGarageEvaluate(&in);
+	if (!st.open)
+		return 0;
+	return st.encounter == (wantFinal ? AP_OXIDE_ENCOUNTER_FINAL
+	                                  : AP_OXIDE_ENCOUNTER_FIRST);
 }
 
 // Bank a location's OWN scouted item into the simulated counts (issue #85). A
@@ -440,6 +472,7 @@ static void ap_vf_recompute(void)
 
 	// Fixed-point sweep: open everything reachable, bank own items, repeat.
 	int progress = 1;
+	int oxide_bosses_won = 0, oxide_first_open = 0;
 	while (progress)
 	{
 		progress = 0;
@@ -447,6 +480,22 @@ static void ap_vf_recompute(void)
 			if (pad_for_dest[i] >= 0)
 				wumpa_routes.destination_open[i] =
 					(unsigned char)ap_vf_pad_open(pad_for_dest[i], counts);
+		// The two Oxide rows need the sweep's CURRENT verdict on the boss races
+		// and on the first challenge (#321). Recomputed once per pass, before
+		// the row loop, so every row in a pass reads the same snapshot instead
+		// of a half-updated one -- the fixed point still converges because a
+		// later pass sees anything this one opened.
+		oxide_bosses_won = 0;
+		oxide_first_open = 0;
+		for (i = 0; i < n; i++)
+		{
+			if (!state[i])
+				continue;
+			if (locs[i].kind == AP_VF_BOSS)
+				oxide_bosses_won++;
+			else if (locs[i].kind == AP_VF_OXIDE)
+				oxide_first_open = 1;
+		}
 		for (i = 0; i < n; i++)
 		{
 			if (state[i])
@@ -600,11 +649,21 @@ static void ap_vf_recompute(void)
 				break;
 			}
 			case AP_VF_OXIDE:
-				ok = AP_ReqMetCounts(&ctr_cfg.boss_req[4], counts);
+				// Was boss_req[4] alone, which over-stated reachability on an
+				// any_percent seed: the first challenge is that seed's finale
+				// and also takes the Boss and Gem arms (#321).
+				ok = ap_vf_oxide_open(0, 0, oxide_bosses_won, counts);
 				break;
 			case AP_VF_OXIDE_FIN:
-				ok = AP_ReqMetCounts(&ctr_cfg.boss_req[4], counts) &&
-				     ap_vf_oxide_final_met(counts);
+				// The Final Challenge is only offered after the first challenge
+				// has been CLEARED, so its reachability inherits the first
+				// challenge's -- under any_percent that inheritance carries the
+				// companion arms, which is exactly what the shipped
+				// "boss_req[4] + relics" rule was missing. `oxide_first_open`
+				// is the sweep's own verdict on the first challenge, so the two
+				// rows cannot disagree.
+				ok = oxide_first_open &&
+				     ap_vf_oxide_open(1, 1, oxide_bosses_won, counts);
 				break;
 			}
 			if (!ok)
@@ -651,7 +710,11 @@ static void ap_vf_recompute(void)
 			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok && oxide_finish;
 		else if (ctr_cfg.goal_oxide == 2)
 			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok && oxide_finish;
-		// goal_oxide == 0: no Oxide requirement, contributes nothing.
+		// goal_oxide 0 (`optional`) and 3 (`disabled`, issue #320): Oxide is not
+		// a completion condition, so it contributes nothing here -- the same
+		// else-if fall-through AP_ComposedGoalMet uses, kept in lockstep with
+		// it. A `disabled` seed additionally carries neither Oxide location, so
+		// oxide_ok / oxide_fin_ok stay 0 and are simply never consulted.
 		if (ctr_cfg.goal_bosses > 0)
 			ap_vf_goal_ok = ap_vf_goal_ok && (bosses_won >= ctr_cfg.goal_bosses);
 		if (ctr_cfg.goal_gems > 0)

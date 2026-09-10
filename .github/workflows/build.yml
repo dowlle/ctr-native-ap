@@ -1,0 +1,85 @@
+name: Build clients
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'release/**', 'ci/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+# Build artifacts only. No release uploads, credentials, signing or game assets.
+permissions:
+  contents: read
+
+concurrency:
+  group: clients-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux x86 (glibc <= 2.38)
+    runs-on: ubuntu-24.04
+    container: debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+    timeout-minutes: 45
+    steps:
+      - name: Install multiarch toolchain
+        run: |
+          dpkg --add-architecture i386
+          apt-get update -q
+          apt-get install -y --no-install-recommends \
+            ca-certificates git python3 cmake ninja-build pkg-config \
+            gcc-multilib g++-multilib libssl-dev:i386 zlib1g-dev:i386 \
+            libx11-dev:i386 libxext-dev:i386 libxrandr-dev:i386 \
+            libxcursor-dev:i386 libxi-dev:i386 libxfixes-dev:i386 \
+            libgl1-mesa-dev:i386 libasound2-dev:i386 libudev-dev:i386 \
+            libdbus-1-dev:i386 libpulse-dev:i386 libwayland-dev:i386 \
+            libxkbcommon-dev:i386
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build and verify both configurations
+        shell: bash
+        env:
+          PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash tools/ci/build-clients.sh linux
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clients-linux-x86-${{ github.sha }}
+          path: client-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  windows:
+    name: Windows x86 (MinGW32)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Keep checkout line endings consistent with MSYS2 Git
+        shell: bash
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: MINGW32
+          update: true
+          cache: false
+          install: >-
+            git python
+            mingw-w64-i686-gcc mingw-w64-i686-cmake
+            mingw-w64-i686-ninja mingw-w64-i686-openssl
+            mingw-w64-i686-zlib
+      - name: Build and verify both configurations
+        run: bash tools/ci/build-clients.sh windows
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clients-windows-x86-${{ github.sha }}
+          path: client-artifacts/*
+          if-no-files-found: error
+          retention-days: 30

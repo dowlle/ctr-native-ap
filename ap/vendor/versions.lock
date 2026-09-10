@@ -17,6 +17,9 @@
 #   macro        version-macro name checked by CMake, or "-" (tree hash only)
 #   macro_value  expected macro value, or "-"
 #   tree_sha256  sha256 of the extracted file tree (see fetch-deps.sh tree_hash)
+#   patch / patch_sha256  optional committed patch and its checksum
+#   upstream_tree_sha256 exact unmodified input when a local patch is applied
+#                tree_sha256 always describes the final build input
 #   optional     "true" = not fetched/verified by default (see valijson)
 
 [apclientpp]
@@ -28,7 +31,10 @@ macro_file = apclient.hpp
 macro = APCLIENTPP_VERSION_INITIALIZER
 macro_value = {0, 6, 4}
 version = 0.6.4
-tree_sha256 = 0580cdda7323cbc619b4a06c79c3d09fba5285a05817849e3acb688af74c80c5
+upstream_tree_sha256 = 0580cdda7323cbc619b4a06c79c3d09fba5285a05817849e3acb688af74c80c5
+patch = patches/apclientpp-security.patch
+patch_sha256 = f3d2d50cd08f6ddbf536802db587da1c68e80824efde2b3edd4eca48437a8ba5
+tree_sha256 = 087b34c6ffb8609cde948e2d63f7b49f7d99eeb86223dbf2bebf3b697c81bcbd
 
 [wswrap]
 url = https://github.com/black-sliver/wswrap.git
@@ -39,7 +45,10 @@ macro_file = include/wswrap.hpp
 macro = WSWRAP_VERSION
 macro_value = 10300
 version = 1.03.00
-tree_sha256 = 89fc486a42a956efbb5364561f628238127fc1312e7225ff8cd0f8736b29ef6c
+upstream_tree_sha256 = 89fc486a42a956efbb5364561f628238127fc1312e7225ff8cd0f8736b29ef6c
+patch = patches/wswrap-security.patch
+patch_sha256 = 7a6da5816ebadc5828161c317bd01ea64b083307fd5a98e9f044bf68a76837bd
+tree_sha256 = 40e4340b5f2aae411548665794f3df9dbb78c65ec61b9ff47d8c5aa66477f4e5
 
 [websocketpp]
 url = https://github.com/zaphoyd/websocketpp.git

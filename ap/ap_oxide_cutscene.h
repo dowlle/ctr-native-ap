@@ -39,7 +39,7 @@
 // that same rule, so the two halves agree by construction.
 //
 // SCOPE. This is deliberately NOT the WO-A1 garage ENTRY predicate
-// (ap/ap_oxide_entry.h). Entry readiness asks "may the player go through the
+// (ap/ap_oxide_encounter.h). That decision asks "may the player go through the
 // door"; this asks "which Oxide encounter is the door now offering". They are
 // different questions with different inputs and are kept apart on purpose.
 // The title-screen Oxide intro (game/230/MM_Title.c, gGT->boolSeenOxideIntro)
@@ -47,7 +47,9 @@
 // ---------------------------------------------------------------------------
 
 // `cfgActive` is ctr_cfg_active(); `vanillaRelics` is
-// gGT->currAdvProfile.numRelics; `apFinalOpen` is AP_OxideFinalOpen().
+// gGT->currAdvProfile.numRelics. `apFinalOpen` is the resolved AP presentation
+// gate. Engine call sites use AP_OxideFinalEncounterPresentationReady below
+// to compose the encounter selector with the relic threshold.
 // Returns non-zero when the Final-Challenge presentation should play.
 static inline int AP_OxideFinalPresentationReady(int cfgActive,
                                                  int vanillaRelics,
@@ -57,6 +59,19 @@ static inline int AP_OxideFinalPresentationReady(int cfgActive,
 		return apFinalOpen != 0;
 
 	return vanillaRelics >= 18;
+}
+
+// The next encounter can already be Final while its relic gate is still shut.
+// Keep the relic invitation behind that gate, as before the encounter rework,
+// and also require the first challenge to have been cleared. Companions remain
+// garage-entry requirements; this cutscene announces the relic milestone.
+static inline int AP_OxideFinalEncounterPresentationReady(int cfgActive,
+                                                          int vanillaRelics,
+                                                          int offersFinal,
+                                                          int finalRelicMet)
+{
+	return AP_OxideFinalPresentationReady(cfgActive, vanillaRelics,
+	                                      offersFinal && finalRelicMet);
 }
 
 #endif // AP_OXIDE_CUTSCENE_H

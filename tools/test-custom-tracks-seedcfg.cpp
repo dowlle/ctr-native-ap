@@ -626,14 +626,23 @@ static void test_schema_gate(void)
 	expect_eq(ctr_cfg_active(), 0, "schema 0 is inactive");
 	expect_refused("schema 0");
 
-	// Schema 8 is this build's ceiling; 9 is newer and raises the banner, but the
-	// block still parses best-effort like every other field.
-	doc = {{"ctr_options", {{"schema_version", 9}}}};
+	// Schema 9 is this build's ceiling (issue #320 added goal_oxide `disabled`);
+	// 10 is newer and raises the banner, but the block still parses best-effort
+	// like every other field. The ceiling is asserted as CTR_CFG_SCHEMA_KNOWN + 1
+	// rather than a literal so the next bump does not need this row edited, while
+	// the ceiling itself is still pinned below.
+	doc = {{"ctr_options", {{"schema_version", CTR_CFG_SCHEMA_KNOWN + 1}}}};
 	doc["custom_tracks"] = good_block();
 	ap_seedcfg_parse_json(doc);
-	expect_eq(ctr_cfg.schema_newer, 1, "schema 9 raises the update banner");
+	expect_eq(ctr_cfg.schema_newer, 1, "a newer schema raises the update banner");
 
-	expect_eq(CTR_CFG_SCHEMA_KNOWN, 8, "this build understands schema 8");
+	doc = {{"ctr_options", {{"schema_version", CTR_CFG_SCHEMA_KNOWN}}}};
+	doc["custom_tracks"] = good_block();
+	ap_seedcfg_parse_json(doc);
+	expect_eq(ctr_cfg.schema_newer, 0,
+	          "this build's own ceiling does not raise the banner");
+
+	expect_eq(CTR_CFG_SCHEMA_KNOWN, 9, "this build understands schema 9");
 }
 
 int main(int argc, char **argv)

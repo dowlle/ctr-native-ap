@@ -148,6 +148,67 @@ load writes one line saying how many boxes are standing out of how many
 placements the track holds and which placement set is live, plus, when nothing
 stands, which reason applies.
 
+AP boxes break when your kart touches their collection area, when your moving
+bomb, missile or thrown shield hits them, or when your weapon explodes close
+enough. Direct projectile hits check the movement between frames. Opponent
+karts and weapons cannot collect your AP boxes. Kart and direct-projectile
+contact have extra tolerance; weapon explosion ranges are unchanged.
+
+## Experimental recorded AI laps
+
+Recording your laps and using recorded lines are separate options under
+**OPTIONS → Authoring**. Both default to off. You can collect laps without
+changing how the opponents drive.
+
+### Save your laps
+
+1. Enable **Save AI Lap Recordings** before starting a race. To set the name
+   saved in your recordings, close the game and edit `nav_driver_name` under
+   `[Authoring]` in `config.ini`. If empty, it uses your configured AP slot name.
+   The **Driver Name** row displays the value but cannot edit it.
+2. Complete a multi-lap race and continue to its results. Only eligible clean,
+   complete laps are saved, up to three per recording. The standing-start lap
+   is excluded because it starts on the grid rather than at the finish line;
+   a one-lap race therefore does not provide a usable recording.
+3. Look in `ap-navpaths`, beside the `config.ini` used by your game. This is
+   relative to the game's working directory, which may differ from the
+   executable's folder. `ctr-ap.log` records each saved file and explains when
+   no eligible lap was saved.
+
+Files are named `navpath-<track-number>-<recording-number>.navlap`. New recordings
+use an unused number and preserve earlier files. Nothing is uploaded. Turning
+recording off during a race discards its unsaved laps.
+
+### Use recordings
+
+Close the game before adding `.navlap` files to `ap-navpaths`. Keep the track
+number in the filename. If a filename already exists, give the incoming file
+an unused three-digit recording number from `001` to `999`; do not overwrite
+the existing file. Custom-track recordings must match the package's navigation
+identity and revision as well as the expected filename. Changing a filename
+does not make a recording compatible with another track.
+
+Enable **Use Recorded AI Laps**, then start a race on the matching track.
+You can leave **Save AI Lap Recordings** off. To return to the track's normal
+AI lines, turn **Use Recorded AI Laps** off and start a new race. Your recordings
+remain on disk.
+
+**Current playback is experimental.** The loader searches newest files first,
+opens at most eight candidates and chooses up to three usable recordings,
+preferring different contributor names. Those recordings fill three shared AI
+lines. Names can repeat across opponents; fewer recordings can also produce
+offset copies of a line. The field is not randomly selected, and each racer
+does not yet own a distinct recording with vanilla AI filling the remaining
+places. If no usable recording loads, the track's own navigation remains in use.
+
+Recorded lines do not guarantee the original lap time. Finish-line movement
+and ordinary-crate interactions still need improvement and gameplay testing.
+Independent racer assignment and vanilla fallback are planned corrections.
+For troubleshooting, search `ctr-ap.log` for `[AP NAVREC]`: it lists selected
+files, lane assignments and reasons recordings were skipped. Include that log,
+your client version, track and relevant recording when reporting a problem
+through [Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed).
+
 ## Generating or hosting a multiworld
 
 Create your player file with the

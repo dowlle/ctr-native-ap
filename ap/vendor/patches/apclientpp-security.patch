@@ -1,0 +1,31 @@
+--- a/defaultdatapackagestore.hpp
++++ b/defaultdatapackagestore.hpp
+@@ -204,7 +204,27 @@
+         std::copy_if(game.begin(), game.end(), std::back_inserter(safe_game), sanitize);
+         std::copy_if(checksum.begin(), checksum.end(), std::back_inserter(safe_checksum), sanitize);
+ 
+-        if (safe_game.empty() || safe_checksum != checksum)
++        auto unsafe_component = [](const std::string& value) {
++            if (value.empty()) return false; // Empty checksum selects legacy cache.
++            if (value == "." || value == ".." || value.back() == '.' || value.back() == ' ')
++                return true;
++            // Windows device names remain special even with a file extension.
++            auto stem = value.substr(0, value.find('.'));
++            while (!stem.empty() && stem.back() == ' ') stem.pop_back();
++            std::transform(stem.begin(), stem.end(), stem.begin(), [](unsigned char c) {
++                return c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c;
++            });
++            if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
++                stem == "CONIN$" || stem == "CONOUT$" || stem == "CONERR$" ||
++                (stem.size() == 4 && (stem.substr(0, 3) == "COM" || stem.substr(0, 3) == "LPT") &&
++                 stem[3] >= '1' && stem[3] <= '9'))
++                return true;
++            return std::any_of(value.begin(), value.end(), [](unsigned char c) {
++                return c < 32 || c == 127;
++            });
++        };
++        if (safe_game.empty() || safe_checksum != checksum ||
++            unsafe_component(safe_game) || unsafe_component(safe_checksum))
+             return {}; // invalid
+         if (checksum.empty())
+             return _path / (safe_game + ".json");

@@ -23,6 +23,7 @@ tools/test-firstkey-freeze.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
+tools/test-goal-line.c
 tools/test-goal-presentation.c
 tools/test-graphics-options.c
 tools/test-h-useful.c
@@ -31,6 +32,7 @@ tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-item-aliases.c
 tools/test-itemsanity.c
+tools/test-lettersanity-remote-feed.c
 tools/test-lettersanity-seedcfg.cpp
 tools/test-lettersanity.c
 tools/test-menu-ux.c
@@ -39,7 +41,8 @@ tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-oxide-cutscene.c
-tools/test-oxide-entry.c
+tools/test-oxide-encounter.c
+tools/test-oxide-garage-advert.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp

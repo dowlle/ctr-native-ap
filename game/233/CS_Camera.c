@@ -13,8 +13,9 @@ u8 CS_Camera_BoolGotoBoss(void)
 	// which is not this seed's Oxide gate. Vanilla answer is unchanged.
 #ifdef CTR_AP
 	if ((gGT->podiumRewardID == STATIC_RELIC) &&
-	    AP_OxideFinalPresentationReady(ctr_cfg_active(),
+	    AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
 	                                   gGT->currAdvProfile.numRelics,
+	                                   AP_OxideOffersFinalChallenge(),
 	                                   AP_OxideFinalOpen()))
 #else
 	if ((gGT->podiumRewardID == STATIC_RELIC) && (gGT->currAdvProfile.numRelics >= 18))
@@ -402,8 +403,9 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			// If they disagreed, a relic win would enter the boss path and then
 			// fall through to the ordinary hub intro (bossCutsceneIndex -1).
 #ifdef CTR_AP
-			if (!AP_OxideFinalPresentationReady(ctr_cfg_active(),
+			if (!AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
 			                                    gGT->currAdvProfile.numRelics,
+			                                    AP_OxideOffersFinalChallenge(),
 			                                    AP_OxideFinalOpen()))
 #else
 			if (gGT->currAdvProfile.numRelics < 18)

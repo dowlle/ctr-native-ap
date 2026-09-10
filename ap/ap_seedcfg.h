@@ -62,7 +62,14 @@ extern "C" {
 // logic. An old native on such a seed would race the retail four-leg cup while
 // the seed's logic says that cup legs nothing -- the reachability-desync class
 // the schema number exists for, so the bump is required rather than additive.
-#define CTR_CFG_SCHEMA_KNOWN 8
+// v9 adds goal_oxide value 3, `disabled` (issue #320): the Oxide garage never
+// opens and both Oxide race LOCATIONS are absent from the seed. A v8 client
+// reads 3 through AP_ComposedGoalMet's else-if chain and correctly contributes
+// no Oxide completion arm -- and then leaves the garage WIDE OPEN, because its
+// entry predicate only ever special-cased value 0. It would also still expect
+// two location checks the seed does not contain. That is a behaviour mismatch
+// the player would never see explained, so v9 is a GATE, not an additive key.
+#define CTR_CFG_SCHEMA_KNOWN 9
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -664,13 +671,33 @@ int AP_BossGarageOpen(int bossIdx);
 // WO-A1: THE canonical Oxide garage entry gate. Every Oxide entry surface (map
 // icon, in-hub door presentation, collision/refusal, level load) must call this
 // and nothing else, so no entry path can survive a fix applied to another one.
-// Composes the configured boss_req[4] requirement with -- when goal_oxide != 0
-// -- every active companion goal condition (goal_bosses checked boss-race
-// LOCATIONS, goal_gems distinct received Gems), exactly as AP_EvaluateGoal
-// composes them. Encounter selection stays AP_OxideFinalOpen()'s job. Without
-// slot_data this is the unchanged Phase-1 rule (four received Keys).
-// IMPLEMENTED C-SIDE in ap_hooks.c; the pure decision is ap/ap_oxide_entry.h.
+// Composes the configured boss_req[4] requirement with the requirements of the
+// encounter the garage is currently OFFERING (issues #320/#321): the relic
+// gate for the Final Challenge, and every active companion goal condition
+// (goal_bosses checked boss-race LOCATIONS, goal_gems distinct received Gems)
+// when that encounter is this seed's selected finale. Under goal_oxide 3
+// (`disabled`) it is shut in every state. Encounter selection is part of the
+// SAME decision -- AP_OxideOffersFinalChallenge() below reads it -- because
+// keeping them apart is what let the gate and the selector drift.
+// Without slot_data this is the unchanged Phase-1 rule (four received Keys).
+// IMPLEMENTED C-SIDE in ap_hooks.c; the pure decision is
+// ap/ap_oxide_encounter.h.
 int AP_OxideGarageOpen(void);
+
+// Which Oxide encounter the garage is offering: non-zero for the Final
+// Challenge, zero for the first challenge. Reads AUTHORITATIVE checked-location
+// state for the first clear, so an uncleared first challenge takes priority
+// even when the relic requirement for the Final Challenge is already met, and
+// so reconnecting cannot forget which visit is next. Every site that chooses
+// WHICH encounter to present -- the garage level load, the boss-cutscene
+// selector -- must ask this rather than AP_OxideFinalOpen() alone.
+// IMPLEMENTED C-SIDE in ap_hooks.c.
+int AP_OxideOffersFinalChallenge(void);
+
+// Has this seed's first Oxide challenge been cleared, per server-checked
+// location state? Exposed for the presentation sites that need the same
+// authority the encounter selector uses. IMPLEMENTED C-SIDE in ap_hooks.c.
+int AP_OxideFirstChallengeCleared(void);
 
 // #24: plain-text requirement advert for a boss-class gate (bossIdx 0..3 = the
 // four boss garages, 4 = Oxide's garage door). Writes a line such as
@@ -678,16 +705,23 @@ int AP_OxideGarageOpen(void);
 // there is nothing to advertise (no slot_data -> the vanilla Aku hints are still
 // accurate, so the caller must leave them as the only message). Mirrors the gate
 // it describes: modes 0/1 advertise races won, everything else the resolved
-// requirement. IMPLEMENTED C-SIDE in ap_hooks.c.
+// requirement. bossIdx 4 (Oxide) can return SEVERAL '\r'-separated lines
+// instead of one -- Oxide's door fronts two encounters and can have up to
+// four blocking terms at once, so its branch renders a compact one-term-per-
+// line panel (2026-09-03 repair, #322 review) instead of joining every term
+// into one unwrapped line; the caller must draw the result with
+// DecalFont_DrawMultiLine, not DecalFont_DrawLine. IMPLEMENTED C-SIDE in
+// ap_hooks.c.
 int AP_BossGateAdvert(int bossIdx, char *out, int cap);
 
-// #152: plain-text requirement advert for the composed goal. Writes a line
-// mirroring the exact AND of active conditions AP_EvaluateGoal checks (e.g.
-// "Goal: beat N. Oxide (Final) AND win 2 of 4 boss races (1) AND hold 3
-// Gems (1)") into `out` and returns 1; returns 0 when there is nothing to
-// advertise (no slot_data). Same pattern as AP_BossGateAdvert -- reads the
-// same ctr_cfg fields and AP_GateCount* helpers AP_EvaluateGoal reads, so the
-// two cannot disagree. IMPLEMENTED C-SIDE in ap_hooks.c.
+// #152/#322: the pause menu's composed-goal readout. Writes the approved
+// compact one-line checklist -- "GOAL: OXIDE 2 - BOSS 3/4 - GEM 4/5" -- into
+// `out` and returns 1; returns 0 when there is nothing to advertise (no
+// slot_data, or no active goal arm). Reads the same ctr_cfg fields and
+// AP_GateCount* helpers AP_EvaluateGoal reads, so the two cannot disagree.
+// The shape itself is ap/ap_goal_line.h. This is the completion CHECKLIST, not
+// the next-encounter advert: which Oxide visit is available and why the garage
+// is shut belongs to AP_BossGateAdvert. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_GoalAdvert(char *out, int cap);
 
 #ifdef __cplusplus

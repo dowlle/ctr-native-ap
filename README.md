@@ -31,6 +31,10 @@ Like every Archipelago game, CTR needs one YAML options file per player when a r
 
 Seeds with `box_locations` turned on place AP item boxes around the tracks. This is separate from `itemsanity`, which controls received weapons and weapon-use checks. There is nothing extra to install: the placement set ships inside the client, and which boxes actually stand is decided by your own slot's seed. See [Item boxes](SETUP.md#item-boxes) in the setup guide.
 
+You can also save your own laps and try experimental recorded AI lines. Both
+options are off by default. See [Recorded AI laps](SETUP.md#experimental-recorded-ai-laps)
+for setup, file handling and the current shared-line limitations.
+
 ## Optional custom content
 
 Public releases contain no custom-track files. When a release recognizes a supported package, **OPTIONS → Custom Content** shows its creator source and verifies the installed files before marking it Ready. Ready means the local content is compatible; it does not opt a generated seed into using the track. Export the package's YAML fragment and add it to the player YAML before generation. A seed that requires missing or mismatched content fails closed instead of loading a different retail race.

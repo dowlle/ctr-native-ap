@@ -730,8 +730,9 @@ processOpcode:
 		// `>= 18`; the vanilla answer is unchanged.
 #ifdef CTR_AP
 		if ((D233.bossCutsceneIndex == 0) &&
-		    AP_OxideFinalPresentationReady(ctr_cfg_active(),
+		    AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
 		                                   gGT->currAdvProfile.numRelics,
+		                                   AP_OxideOffersFinalChallenge(),
 		                                   AP_OxideFinalOpen()))
 #else
 		if ((D233.bossCutsceneIndex == 0) && (0x11 < gGT->currAdvProfile.numRelics))
