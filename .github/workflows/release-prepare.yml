@@ -1,0 +1,193 @@
+name: Prepare release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Pair build version, for example 0.2.0-rc-prep1"
+        required: true
+        type: string
+      native_run_id:
+        description: "Successful native Build clients run ID"
+        required: true
+        type: string
+      native_source_commit:
+        description: "Full native source commit used by that run"
+        required: true
+        type: string
+      apworld_run_id:
+        description: "Successful ctr-world run ID containing the ctr.apworld artifact"
+        required: true
+        type: string
+      apworld_source_commit:
+        description: "Full apworld source commit used by that run"
+        required: true
+        type: string
+      apworld_repo:
+        description: "Repository that owns the apworld run"
+        required: true
+        default: dowlle/ctr-archipelago-apworld
+        type: string
+      apworld_artifact_name:
+        description: "Artifact name in the apworld run"
+        required: true
+        default: ctr.apworld
+        type: string
+
+# This workflow prepares an uploadable artifact only. It never creates a tag or
+# GitHub release. The native and companion runs are selected by exact IDs and
+# their source heads are checked before any bytes are assembled.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact native source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.native_source_commit }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out the exact apworld source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.apworld_repo }}
+          ref: ${{ inputs.apworld_source_commit }}
+          fetch-depth: 1
+          path: apworld-source
+          persist-credentials: false
+
+      - name: Verify successful run identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN_ID: ${{ inputs.native_run_id }}
+          NATIVE_SOURCE_COMMIT: ${{ inputs.native_source_commit }}
+          APWORLD_RUN_ID: ${{ inputs.apworld_run_id }}
+          APWORLD_SOURCE_COMMIT: ${{ inputs.apworld_source_commit }}
+          APWORLD_REPO: ${{ inputs.apworld_repo }}
+        run: |
+          set -euo pipefail
+          check_run() {
+            local run_id="$1" repo="$2" expected="$3" mode="$4"
+            gh run view "$run_id" --repo "$repo" --json status,conclusion,headSha > run.json
+            python3 - "$expected" "$mode" run.json <<'PY'
+          import json
+          import sys
+          expected, mode, path = sys.argv[1:]
+          run = json.load(open(path, encoding="utf-8"))
+          if run.get("status") != "completed" or run.get("conclusion") != "success":
+              raise SystemExit(f"run is not successful: {run}")
+          if len(expected) != 40 or any(c not in "0123456789abcdef" for c in expected):
+              raise SystemExit(f"source commit is not a full hexadecimal id: {expected}")
+          if mode == "apworld" and run.get("headSha") != expected:
+              raise SystemExit(
+                  f"apworld run head {run.get('headSha')} does not match {expected}"
+              )
+          # Native pull_request runs may build GitHub's synthetic merge commit;
+          # BUILD.json and the archive name are checked against the source
+          # checkout by the assembler below.
+          print(f"successful {mode} run head: {run.get('headSha')}; requested source: {expected}")
+          PY
+          }
+          check_run "$NATIVE_RUN_ID" "$GITHUB_REPOSITORY" "$NATIVE_SOURCE_COMMIT" native
+          check_run "$APWORLD_RUN_ID" "$APWORLD_REPO" "$APWORLD_SOURCE_COMMIT" apworld
+
+      - name: Download exact hosted native artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN_ID: ${{ inputs.native_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$NATIVE_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir native-artifacts
+
+      - name: Download exact packed apworld
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APWORLD_RUN_ID: ${{ inputs.apworld_run_id }}
+          APWORLD_REPO: ${{ inputs.apworld_repo }}
+          APWORLD_ARTIFACT_NAME: ${{ inputs.apworld_artifact_name }}
+        run: |
+          set -euo pipefail
+          gh run download "$APWORLD_RUN_ID" \
+            --repo "$APWORLD_REPO" \
+            --name "$APWORLD_ARTIFACT_NAME" \
+            --dir apworld-artifact
+          test "$(find apworld-artifact -type f -name ctr.apworld | wc -l)" -eq 1
+
+      - name: Compare packed apworld with the exact source commit
+        run: |
+          set -euo pipefail
+          downloaded="$(find apworld-artifact -type f -name ctr.apworld -print -quit)"
+          mkdir -p apworld-repacked
+          python3 apworld-source/worlds/ctr/tools/build_apworld.py apworld-repacked/ctr.apworld
+          python3 - "$downloaded" apworld-repacked/ctr.apworld <<'PY'
+          import sys
+          import zipfile
+
+          def members(path):
+              with zipfile.ZipFile(path) as archive:
+                  entries = [(info.filename, archive.read(info))
+                             for info in archive.infolist() if not info.is_dir()]
+              names = [name for name, _ in entries]
+              if len(names) != len(set(names)):
+                  raise SystemExit(f"duplicate apworld member in {path}")
+              return sorted(entries)
+
+          downloaded, rebuilt = map(members, sys.argv[1:])
+          if downloaded != rebuilt:
+              raise SystemExit("downloaded apworld differs from the exact source repack")
+          print(f"apworld member bytes match ({len(downloaded)} files; ZIP timestamps ignored)")
+          PY
+
+      - name: Install Archipelago for the release template
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ArchipelagoMW/Archipelago
+          ref: debe4cf035c7c15efe6fb95f72343af0d420c68c # 0.6.7
+          fetch-depth: 1
+          path: archipelago
+          persist-credentials: false
+
+      - name: Generate template from the exact apworld
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate template
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -r archipelago/requirements.txt
+          mkdir -p archipelago/custom_worlds generated-template
+          cp "$(find apworld-artifact -type f -name ctr.apworld -print -quit)" archipelago/custom_worlds/ctr.apworld
+          (cd archipelago && SKIP_REQUIREMENTS_UPDATE=1 python -c \
+            "from Options import generate_yaml_templates; generate_yaml_templates('../generated-template', False)")
+          template_path="$(find generated-template -type f -name 'Crash Team Racing.yaml' -print -quit)"
+          test -n "$template_path" -a -s "$template_path"
+          cp "$template_path" generated-template/Crash.Team.Racing.yaml
+
+      - name: Assemble the complete eleven-asset set
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 tools/release/assemble-release.py \
+            --native-source . \
+            --windows-artifacts native-artifacts \
+            --linux-artifacts native-artifacts \
+            --apworld "$(find apworld-artifact -type f -name ctr.apworld -print -quit)" \
+            --template generated-template/Crash.Team.Racing.yaml \
+            --version "$RELEASE_VERSION" \
+            --output-dir release
+
+      - name: Upload prepared release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ctr-release-${{ inputs.version }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
