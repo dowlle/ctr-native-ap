@@ -24,8 +24,15 @@ and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hos
 
 For a guided first setup, use the
 [CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
-file for this exact prerelease, open the
-[Alpha7 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha7).
+file for stable 0.2.0, open the
+[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
+
+**Choose your next step:** if your room is already generated, install the
+client and connect using the host's details. If the host is still collecting
+players, make a YAML (your settings file) and send it to them. If you are
+generating the room, install the matching APWorld (the package that adds CTR
+to Archipelago) and follow the
+[hosting guide](https://ap-pie.com/guides/hosting-a-multiworld).
 
 ## Step 1: get the game executable
 
@@ -212,7 +219,7 @@ through [Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed).
 ## Generating or hosting a multiworld
 
 Create your player file with the
-[Alpha7 CTR YAML Builder](https://ap-pie.com/apworlds?build=ctr&version=0.2.0-alpha7).
+[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
 Download the resulting YAML and give it to the person generating the room. The
 Builder prepares and validates player configuration; it does not generate the
 seed or host the playable server.
@@ -230,9 +237,9 @@ generated Crash Team Racing YAML locally.
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
 
-## Experimental custom content in Alpha7
+## Experimental custom content in 0.2.0
 
-The public archive contains no custom-track files. Alpha7 recognizes one
+The public archive contains no custom-track files. Version 0.2.0 recognizes one
 experimental Baby T Park package supplied by its creator. Open **OPTIONS →
 Custom Content** to inspect it, follow the creator link and verify the installed
 files. **Ready** means the files are compatible; it does not make a generated
