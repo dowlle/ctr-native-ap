@@ -9,6 +9,7 @@ With much of my attention on my partner's recovery, I've relied more than usual 
 ## Highlights
 
 - A community-tested stable 0.2.0 client and matching apworld, with the major randomization and native integration work from the Alpha releases brought together.
+- Character unlocks and hub swapping, optional progressive stats and boost, expanded traps, and the in-race Turbo filler item are part of the 0.2.0 feature set.
 - More forgiving AP-box kart and direct-projectile contact. Some awkward placements can still remain; identifiable reports will help us address those individually.
 - Secure AP connections now verify the server's certificate name as well as its trust chain, and datapackage-cache paths reject unsafe components.
 - Recorded AI lap collection and playback are included as experimental features and remain off by default. Playback currently shares up to three recorded lines across opponents, so contributor names can repeat. Per-racer assignment, broader contributor-pool selection, finish-line smoothing and ordinary-crate interaction remain planned corrections for 0.2.1. Recorded AI cannot collect AP check boxes.
@@ -27,6 +28,8 @@ This is a community-tested 0.2.0 release. Automated coverage includes native har
 - NTSC-U discs only. PAL and Japanese discs are not supported.
 - `.chd` images require `chdman` on your PATH.
 - Recorded AI is experimental, default-off, and currently has the shared-lane and finish-smoothing limitations described above.
+- Large reconnect backlogs still need gameplay coverage. Per-item console logging was reduced, but network parsing remains on the game thread; please include the support bundle if a reconnect causes a long freeze.
+- Optional checks for breaking every time crate in a Relic Race remain deferred to 0.2.1.
 - Generalized custom-track support is planned for 0.3.0. Development builds for that work are not part of this release.
 
 ## Credits
