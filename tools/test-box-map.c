@@ -41,6 +41,7 @@
 #include <string.h> // memset
 
 #include "../ap/ap_box_map.h"
+#include "../ap/ap_boxes.h" // shared kart/direct-projectile collection radius
 #include "../ap/ap_placement_table.h"
 #include "../ap/ap_pad_state.h"
 
@@ -896,6 +897,23 @@ static void test_within_radius(void)
 static void test_swept_weapon_contact(void)
 {
 	printf("\n-- AP_BoxMap_SegmentWithinRadius: projectile pass-through --\n");
+	// Real AP-box radius: a near miss under the old radius now collects, but
+	// a nearby parallel line or another vertical level must remain outside.
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 54, 0,
+	           -500, 0, 95, 500, 0, 95, AP_BOX_HIT_RADIUS), 1,
+	           "ground-level pass 95 units beside lifted box collects");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 54, 0,
+	           -500, 0, 97, 500, 0, 97, AP_BOX_HIT_RADIUS), 0,
+	           "ground-level pass 97 units beside lifted box misses");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 0, 100, 500, 0, 100, AP_BOX_HIT_RADIUS), 1,
+	           "direct projectile gets the expanded contact tolerance");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 0, 111, 500, 0, 111, AP_BOX_HIT_RADIUS), 0,
+	           "nearby parallel projectile outside contact area misses");
+	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
+	           -500, 111, 0, 500, 111, 0, AP_BOX_HIT_RADIUS), 0,
+	           "vertically separated projectile outside contact area misses");
 	expect_int(AP_BoxMap_SegmentWithinRadius(0, 0, 0,
 	           -500, 0, 0, 500, 0, 0, 96), 1,
 	           "fast projectile crosses box between endpoints");

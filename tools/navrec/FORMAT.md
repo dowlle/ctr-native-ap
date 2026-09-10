@@ -545,21 +545,23 @@ once-per-race cost at a moment when nothing is being driven.
   would then be handed to the next recording. Here the filesystem decides.
 - The cap is 999 recordings per level. With every number taken the writer refuses
   and says so rather than overwriting anything.
-- One client has one driver name, so per track is also per driver.
-- The reader, under `nav_use_recorded`, loads the NEWEST recording for the level,
-  meaning the highest number present. The whole range is probed rather than
-  stopping at the first gap, so deleting a file out of the middle does not hide
-  everything above it. The result is cached per level, so a savestate restore
-  does not repeat the scan; the cache is refreshed when the level changes or the
-  recorder writes a file, and can be stale only for a file dropped into the
-  folder mid-session.
-- If the newest recording is REJECTED, the reader falls back to the next lower
-  number, and keeps descending until one loads or it has tried eight. Each
-  rejection is logged with its reason. This does not weaken the whole-file
-  rejection rule: a rejected file is still rejected entirely, and falling back is
-  choosing a different file rather than salvaging a bad one. Without it, one
-  corrupt newest recording would hide every good older one, and under a scheme
-  that never overwrites, those older ones are exactly what the player still has.
+- The recorder stamps the configured driver name into each file; the folder can
+  also contain manually imported recordings from other contributors.
+- Under `nav_use_recorded`, the reader searches newest-first and selects up to
+  three usable containers, preferring different contributor names. It opens at
+  most eight files, including rejected files and repeated authors. Gaps in file
+  numbering do not consume that budget. Older unique authors can be missed
+  when newer files exhaust it. Selection is deterministic, not randomized.
+- Duplicate-author files can fill spare lanes after the distinct-author scan.
+  With fewer selected files, the lane plan reuses their laps; missing lanes are
+  synthesized as lateral offsets. Names belong to the three shared lanes,
+  not independently to each racer. This is not per-racer vanilla fallback.
+- Only closed-loop laps from compatible containers feed playback. A file with
+  no eligible lap is skipped; filtering does not smooth accepted lap seams.
+  If nothing usable loads, the track's own navigation remains in place.
+- The highest file number is cached per level and refreshed on a level change
+  or a recorder write. Restart the game after importing files so a cached scan
+  cannot hide them. Rejections and lane assignments are logged.
 - The extension is `.navlap`, so a leftover version 1 file can never be handed to
   a version 2 reader by name.
 

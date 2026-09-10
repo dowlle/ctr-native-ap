@@ -13,8 +13,9 @@
 //                     option is the whole consent surface for that.
 //   nav_use_recorded  reads them back and points the AI at them. Up to three
 //                     containers fill the three engine lanes, preferring a
-//                     different contributor per lane so a race is not one
-//                     person's line under one name seven times. Reading only, so
+//                     different contributor per lane. Names can still repeat:
+//                     lanes are shared, and duplicate-author files can fill
+//                     spare lanes. Reading only, so
 //                     someone who wants recorded lines never has to switch on
 //                     the half that writes.
 //   nav_driver_name   the name stamped into the file. Empty falls back to the
@@ -27,8 +28,8 @@
 // freestanding ap/ap_navrec_format.h, which tools/test-navrec.c compiles
 // directly.
 //
-// Playback of named bots, the widened lane table, the pace controller and the
-// 1 to 7 field are a later release and are deliberately absent here.
+// Labels currently identify shared lanes. Independent named racers, the widened
+// lane table, the pace controller and the 1 to 7 field are later work.
 // ============================================================================
 
 // Per-frame sampling, the option state machine and the end-of-race write. Called
