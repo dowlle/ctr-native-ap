@@ -91,6 +91,7 @@ static int ap_custom_content_seed_selected = 0;
 static int ap_custom_content_required = 0;
 static unsigned int ap_custom_content_gate_timer = 0;
 static int ap_custom_content_gate_cached = 0;
+static int ap_oxide_final_content_required = 0;
 #endif
 
 // ==============================================================
@@ -3439,7 +3440,40 @@ int AP_OxideGarageOpen(void)
 		return AP_GateCount(AP_IDX_KEY) >= 4;
 
 	in = AP_OxideInputs();
+	if (AP_OxideGarageOffersFinal(&in) && !AP_OxideFinalVenueReady())
+		return 0;
 	return AP_OxideGarageIsOpen(&in);
+}
+
+int AP_OxideFinalVenueReady(void)
+{
+	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
+		return 1;
+	if (!ctr_cfg.oxide_final_venue.valid)
+		return 0;
+	if (ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION)
+		return 1;
+#ifdef CTR_CUSTOM_TRACKS
+	return !ap_oxide_final_content_required && CustomTrack_OxideFinalReady();
+#else
+	return 0;
+#endif
+}
+
+int AP_OxideFinalVenueEntryReady(void)
+{
+	if (!AP_OxideFinalVenueReady())
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	if (ctr_cfg_active() && ctr_cfg.schema_version >= 11 &&
+	    ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+	    !CustomTrack_ReverifyOxideFinalContent())
+	{
+		ap_oxide_final_content_required = 1;
+		return 0;
+	}
+#endif
+	return 1;
 }
 
 // Which encounter the garage is offering. THE selector: an uncleared first
@@ -4024,6 +4058,30 @@ static const char *const AP_LOG_ITEMSANITY_WEAPON_NAME[AP_ITEMSANITY_WEAPON_COUN
 };
 
 #ifdef CTR_CUSTOM_TRACKS
+static void AP_OxideFinalContentPreflight(void)
+{
+	struct OxideFinalTrackDescriptor d;
+	ap_oxide_final_content_required = 0;
+	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
+	{
+		CustomTrack_ClearOxideFinalDescriptor();
+		return;
+	}
+	if (!ctr_cfg.oxide_final_venue.valid)
+	{
+		CustomTrack_ClearOxideFinalDescriptor();
+		ap_oxide_final_content_required = 1;
+		return;
+	}
+	memset(&d, 0, sizeof d);
+	d.enabled = ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+	d.hostLevelID = ctr_cfg.oxide_final_venue.host_level_id;
+	snprintf(d.levSha256, sizeof d.levSha256, "%s", ctr_cfg.oxide_final_venue.lev_sha256);
+	snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", ctr_cfg.oxide_final_venue.vrm_sha256);
+	if (!CustomTrack_ApplyOxideFinalDescriptor(&d, NativeAssets_GetAssetDir()))
+		ap_oxide_final_content_required = 1;
+}
+
 static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
 {
 	const ctr_custom_track *track = &ctr_cfg.custom_track;
@@ -4221,6 +4279,13 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 
 void AP_DrawCustomContentWarning(void)
 {
+	if (ap_oxide_final_content_required)
+	{
+		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+		DecalFont_DrawLine("Exact bundled files missing or mismatched. Oxide 2 is locked.",
+		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		return;
+	}
 	if (!ap_custom_content_required)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
@@ -4361,6 +4426,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// the Options Rescan action can satisfy and unlock this same seed later.
 		AP_CustomContentPreflightSeed(1);
 		AP_CustomContentLogStatus("seed preflight");
+		AP_OxideFinalContentPreflight();
 #endif
 
 		// AI-difficulty option sync: subscribe to (and fetch) the per-slot override,
@@ -5208,6 +5274,7 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	facts->seedPackageUuid = ctr_cfg.custom_track.package_uuid;
 	facts->seedCustomOk = ctr_cfg.custom_tracks_ok;
 	facts->seedWumpaCollectible = ctr_cfg.custom_track.flags.wumpa_collectible;
+	facts->oxideFinalCode = ctr_cfg.oxide_final_venue.wumpa_location;
 
 	if (gGT == 0)
 		return;
@@ -5216,6 +5283,10 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 		facts->destLevelID = level;
 
 #ifdef CTR_CUSTOM_TRACKS
+	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
+	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
+	if (facts->servingOxideFinal)
+		return;
 	// The SAME predicate that owns the custom bytes answers whether this load is
 	// the event race. Asking anything else here is how a recording's identity
 	// and the geometry it was recorded against drift apart, and the argument

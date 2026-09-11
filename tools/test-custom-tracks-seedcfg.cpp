@@ -642,7 +642,7 @@ static void test_schema_gate(void)
 	expect_eq(ctr_cfg.schema_newer, 0,
 	          "this build's own ceiling does not raise the banner");
 
-	expect_eq(CTR_CFG_SCHEMA_KNOWN, 10, "this build understands schema 10");
+	expect_eq(CTR_CFG_SCHEMA_KNOWN, 11, "this build understands schema 11");
 }
 
 int main(int argc, char **argv)

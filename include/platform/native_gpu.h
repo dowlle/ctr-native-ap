@@ -34,8 +34,13 @@ int NativeGpu_HasPendingSplits(void);
 // Sprites are the one path that reads a tpage they do not own -- the persistent
 // activeDrawEnv one -- so the SPRT handlers strip this bit before use.
 #define AP_TPAGE_SIDELOAD_BIT 0x8000
+// Independent retail-letter atlas (#203). Both flags are AP-owned model
+// layouts only, never level quadblocks or sprite draw environments.
+#define AP_TPAGE_TRIAL_LETTER_BIT 0x4000
+#define AP_TPAGE_SIDELOAD_MASK (AP_TPAGE_SIDELOAD_BIT | AP_TPAGE_TRIAL_LETTER_BIT)
 
 void NativeGpu_SetSideloadTexture(unsigned int texture, int width, int height);
+void NativeGpu_SetTrialLetterTexture(unsigned int texture, int width, int height);
 void ClearSplits(void);
 void DrawAllSplits(void);
 void ParsePrimitivesLinkedList(u32 *p, int singlePrimitive);

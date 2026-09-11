@@ -61,6 +61,11 @@ static struct CustomTrackSeedDescriptor s_descriptor;
 static int s_haveDescriptor = 0;
 static struct CustomTrackSource s_customTrackVrm;
 static struct CustomTrackSource s_customTrackLev;
+static struct OxideFinalTrackDescriptor s_oxideFinalDescriptor;
+static struct CustomTrackSource s_oxideFinalVrm;
+static struct CustomTrackSource s_oxideFinalLev;
+static int s_haveOxideFinalDescriptor;
+static int s_oxideFinalVerified;
 static int s_customTracksLoaded = 0;
 static char s_customTrackServeFault[128];
 
@@ -227,6 +232,69 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	source->verifiedSize = total;
 	CustomTrack_Log("[CustomTracks] verified %s \"%s\" (%u bytes, sha256 %s)\n", roleName, source->path,
                         (unsigned)total, actualHex);
+}
+
+void CustomTrack_ClearOxideFinalDescriptor(void)
+{
+	memset(&s_oxideFinalDescriptor, 0, sizeof s_oxideFinalDescriptor);
+	memset(&s_oxideFinalVrm, 0, sizeof s_oxideFinalVrm);
+	memset(&s_oxideFinalLev, 0, sizeof s_oxideFinalLev);
+	s_haveOxideFinalDescriptor = 0;
+	s_oxideFinalVerified = 0;
+}
+
+int CustomTrack_ApplyOxideFinalDescriptor(const struct OxideFinalTrackDescriptor *d,
+	                                       const char *assetDir)
+{
+	if (d == NULL || !d->enabled)
+	{
+		CustomTrack_ClearOxideFinalDescriptor();
+		return d != NULL;
+	}
+	if (s_haveOxideFinalDescriptor && !memcmp(&s_oxideFinalDescriptor, d, sizeof *d))
+		return s_oxideFinalVerified;
+	CustomTrack_ClearOxideFinalDescriptor();
+	s_oxideFinalDescriptor = *d;
+	s_haveOxideFinalDescriptor = 1;
+	if (assetDir == NULL || d->hostLevelID != 13 ||
+	    snprintf(s_oxideFinalLev.path, sizeof s_oxideFinalLev.path,
+	             "%s/tracks/cortex-vortex/CVortex Arcade All.lev", assetDir) >= (int)sizeof s_oxideFinalLev.path ||
+	    snprintf(s_oxideFinalVrm.path, sizeof s_oxideFinalVrm.path,
+	             "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", assetDir) >= (int)sizeof s_oxideFinalVrm.path)
+	{
+		CustomTrack_Log("[CortexVortex] REFUSED: bundled asset path or host LevelID is invalid\n");
+		return 0;
+	}
+	CustomTrack_CopyField(s_oxideFinalLev.expectedHash, sizeof s_oxideFinalLev.expectedHash, d->levSha256);
+	CustomTrack_CopyField(s_oxideFinalVrm.expectedHash, sizeof s_oxideFinalVrm.expectedHash, d->vrmSha256);
+	CustomTrack_VerifySource(&s_oxideFinalLev, "Cortex Vortex lev");
+	CustomTrack_VerifySource(&s_oxideFinalVrm, "Cortex Vortex vrm");
+	s_oxideFinalVerified = s_oxideFinalLev.verdict == CTR_CT_VERDICT_OK &&
+	                       s_oxideFinalVrm.verdict == CTR_CT_VERDICT_OK;
+	if (!s_oxideFinalVerified)
+		CustomTrack_Log("[CortexVortex] REFUSED: exact bundled pair is missing or mismatched; Final Challenge will not load\n");
+	else
+		CustomTrack_Log("[CortexVortex] armed for N. Oxide's Final Challenge only\n");
+	return s_oxideFinalVerified;
+}
+
+int CustomTrack_ReverifyOxideFinalContent(void)
+{
+	if (!s_haveOxideFinalDescriptor || !s_oxideFinalDescriptor.enabled)
+		return 1;
+	CustomTrack_VerifySource(&s_oxideFinalLev, "Cortex Vortex lev preflight");
+	CustomTrack_VerifySource(&s_oxideFinalVrm, "Cortex Vortex vrm preflight");
+	s_oxideFinalVerified = s_oxideFinalLev.verdict == CTR_CT_VERDICT_OK &&
+	                       s_oxideFinalVrm.verdict == CTR_CT_VERDICT_OK;
+	return s_oxideFinalVerified;
+}
+
+int CustomTrack_OxideFinalReady(void) { return s_oxideFinalVerified; }
+
+int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
+{
+	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
+	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
 
 void CustomTrack_Load(void)
@@ -609,6 +677,24 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+
+	if (ctx != NULL && CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID,
+	                                                ctx->adventureBossActive))
+	{
+		role = CustomTrackPolicy_SubfileRole(subfileIndex, s_oxideFinalDescriptor.hostLevelID);
+		if (role == CTR_CT_ROLE_NONE) return 0;
+		source = (role == CTR_CT_ROLE_LEV) ? &s_oxideFinalLev : &s_oxideFinalVrm;
+		if (stat(source->path, &st) != 0 || (u32)st.st_size != source->verifiedSize)
+		{
+			s_oxideFinalVerified = 0;
+			CustomTrack_Log("[CortexVortex] REFUSED subfile %d: bundled file changed after verification\n", subfileIndex);
+			return 0;
+		}
+		CustomTrack_CopyField(s_customTrackResolved, sizeof s_customTrackResolved, source->path);
+		if (outPath) *outPath = s_customTrackResolved;
+		if (outSize) *outSize = source->verifiedSize;
+		return 1;
+	}
 
 	// Cheapest terms first: this runs on EVERY BIGFILE read in the game, and for
 	// all but the event race's own two subfiles it must fall out immediately.

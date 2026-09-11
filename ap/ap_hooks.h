@@ -178,6 +178,8 @@ int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 // completion condition exactly. When slot_data is absent, falls back to the
 // Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
 int AP_OxideFinalOpen(void);
+int AP_OxideFinalVenueReady(void);
+int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected
 // seed's slot_data schema is NEWER than this build understands (issue #8;

@@ -374,6 +374,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
+	ctr_cfg.oxide_final_venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+	ctr_cfg.oxide_final_venue.host_level_id = -1;
+	ctr_cfg.oxide_final_venue.location = -1;
+	ctr_cfg.oxide_final_venue.wumpa_location = -1;
 	// wumpa_checks: an absent block is the option being off, so the cleared state
 	// IS the default -- except that every CODE clears to -1 rather than 0, because
 	// 0 is a plausible-looking location code while -1 is the absent sentinel every
@@ -908,6 +913,60 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// schema 11: the Final Challenge venue is independent from ordinary boss
+	// shuffle and from the Gem Cup custom-track descriptor above.
+	auto oxideVenueIt = j.find("oxide_final_venue");
+	if (oxideVenueIt != j.end())
+	{
+		ctr_oxide_final_venue venue;
+		std::memset(&venue, 0, sizeof venue);
+		venue.seen = 1;
+		venue.host_level_id = -1;
+		venue.location = -1;
+		venue.wumpa_location = -1;
+		const char *reject = NULL;
+		char track[32] = "";
+		char opponent[32] = "";
+		const int selected = json_int(opt, "oxide_final_track", -1);
+		const int expectedWumpa =
+		    selected == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+		    json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK
+		        ? 35016121 : -1;
+
+		if (!oxideVenueIt->is_object()) reject = "block is not an object";
+		else
+		{
+			const nlohmann::json &v = *oxideVenueIt;
+			json_str(v, "track", track, sizeof track);
+			json_str(v, "opponent", opponent, sizeof opponent);
+			json_str(v, "lev_sha256", venue.lev_sha256, sizeof venue.lev_sha256);
+			json_str(v, "vrm_sha256", venue.vrm_sha256, sizeof venue.vrm_sha256);
+			venue.host_level_id = json_int(v, "host_level_id", -1);
+			venue.location = json_long(v, "location", -1);
+			venue.wumpa_location = json_long(v, "wumpa_location", -1);
+			if (json_int(v, "version", 0) != 1) reject = "unsupported version";
+			else if (!std::strcmp(track, "cortex_vortex")) venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+			else if (!std::strcmp(track, "oxide_station")) venue.track = CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+			else reject = "unknown track";
+			if (!reject && selected != venue.track) reject = "option and descriptor track disagree";
+			if (!reject && std::strcmp(opponent, "nitros_oxide")) reject = "opponent is not Nitros Oxide";
+			if (!reject && venue.location != 35011105) reject = "Final Challenge location is not 35011105";
+			if (!reject && venue.host_level_id != 13) reject = "host level is not Oxide Station";
+			if (!reject && venue.wumpa_location != expectedWumpa)
+				reject = "Cortex Vortex Wumpa identity disagrees with options";
+			if (!reject && venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+			    (std::strcmp(venue.lev_sha256,
+			                 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13") ||
+			     std::strcmp(venue.vrm_sha256,
+			                 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d")))
+				reject = "Cortex Vortex hashes are not the approved Lockheart pair";
+		}
+		if (reject)
+			ap_cfg_log("[AP CFG] *** oxide_final_venue REFUSED: %s; Final Challenge admission disabled ***\n", reject);
+		else venue.valid = 1;
+		ctr_cfg.oxide_final_venue = venue;
+	}
+
 	// ── trial_track_checks (schema 10, issue #203) ──────────────────────────
 	auto trialIt = j.find("trial_track_checks");
 	if (trialIt != j.end() && trialIt->is_object() &&
@@ -1363,6 +1422,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ap_cfg_log("[AP CFG] custom_tracks was on the wire but is not usable; every cup "
 		           "runs its vanilla legs\n");
 	}
+	if (ctr_cfg.oxide_final_venue.valid)
+		ap_cfg_log("[AP CFG] oxide_final_venue: %s, opponent Nitros Oxide, location %ld\n",
+		           ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX
+		               ? "Cortex Vortex" : "Oxide Station",
+		           ctr_cfg.oxide_final_venue.location);
+	else if (ctr_cfg.oxide_final_venue.seen)
+		ap_cfg_log("[AP CFG] oxide_final_venue is unusable; Final Challenge admission disabled\n");
 
 	// Wumpa checks: one line for the mode, then the resolved mapping, so a
 	// support bundle answers "why did my per-track check not fire" without a

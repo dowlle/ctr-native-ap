@@ -76,6 +76,21 @@ struct CustomTrackSeedDescriptor
 	int flagCheckpoints;
 };
 
+struct OxideFinalTrackDescriptor
+{
+	int enabled;
+	int hostLevelID;
+	char levSha256[NATIVE_SHA256_HEX_BYTES];
+	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
+};
+
+int CustomTrack_ApplyOxideFinalDescriptor(const struct OxideFinalTrackDescriptor *d,
+	                                       const char *assetDir);
+void CustomTrack_ClearOxideFinalDescriptor(void);
+int CustomTrack_ReverifyOxideFinalContent(void);
+int CustomTrack_OxideFinalReady(void);
+int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive);
+
 // Read the [CustomTracks] section of config.ini, once, at startup. It carries
 // ONLY the two file paths now; the loader stays disarmed until a seed hands over
 // a descriptor. Safe to call when config.ini is absent. Idempotent.

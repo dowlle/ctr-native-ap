@@ -69,7 +69,9 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 10
+#define CTR_CFG_SCHEMA_KNOWN 11
+#define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
+#define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2
 #define CTR_CFG_TRIAL_CHECK_COUNT 2
 #define CTR_CFG_TRIAL_TROPHY 0
@@ -132,6 +134,18 @@ typedef struct
 	int count;
 	int colour;
 } ctr_req;
+
+typedef struct
+{
+	int seen;
+	int valid;
+	int track;
+	int host_level_id;
+	long location;
+	long wumpa_location;
+	char lev_sha256[65];
+	char vrm_sha256[65];
+} ctr_oxide_final_venue;
 
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
 // the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
@@ -555,6 +569,11 @@ typedef struct
 	int              custom_tracks_seen;
 	int              custom_tracks_ok;
 	ctr_custom_track custom_track; // exactly one entry in this build
+
+	// schema 11: independent N. Oxide Final Challenge venue. The opponent is
+	// frozen to Nitros Oxide and the location to 35011105; malformed or changed
+	// identities fail closed rather than falling back to Oxide Station.
+	ctr_oxide_final_venue oxide_final_venue;
 
 	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
 	// the wire" and "the block said off", which are the same thing to every

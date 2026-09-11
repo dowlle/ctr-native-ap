@@ -43,6 +43,8 @@ tools/test-navrec.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
 tools/test-oxide-garage-advert.c
+tools/test-oxide-weapon-schedule.c
+tools/test-oxide-final-venue-seedcfg.cpp
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp
@@ -56,6 +58,7 @@ tools/test-surface-items.c skip build-fail under the generic recipe; give it a b
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
 tools/test-trial-track-seedcfg.cpp
+tools/test-trial-letters.c
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c

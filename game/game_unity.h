@@ -22,9 +22,11 @@
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
+#include "../ap/ap_oxide_weapon_schedule.h"
 #include "../ap/ap_statbar.h"    // Garage stat bar, shared with the hub picker (#220)
 #include "../ap/ap_charstatrow.h" // picker stat rows vs package slots (#54/#209)
 #include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
+#include "../ap/ap_trial_letters.h"
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
 #include "../ap/ap_navrec.h"    // AI lap recorder, and recorded-lap playback for the bots
@@ -379,6 +381,7 @@
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
+#include "../ap/ap_trial_letters.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"

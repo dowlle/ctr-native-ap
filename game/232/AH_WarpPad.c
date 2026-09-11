@@ -148,8 +148,8 @@ static struct MenuRow s_rowsTrialTrophyCtrRelic[] = {
 };
 static void AH_WarpPad_TrialMenuProc(struct RectMenu *menu)
 {
-	RECTMENU_Hide(menu);
 	if (menu == NULL) return;
+	RECTMENU_Hide(menu);
 	if (menu->rows == s_rowsTrialTrophyCtrRelic)
 	{
 		if (menu->rowSelected == 1) sdata->gGT->gameMode2 |= TOKEN_RACE;
@@ -983,7 +983,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (ctr_cfg_active() && ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM])
 		{
 			struct RectMenu *trialMenu =
-				(ctr_cfg.trial_track_mode[levelID - AH_WP_SLIDE_COLISEUM] >= 2)
+				(ctr_cfg.trial_track_mode[levelID - AH_WP_SLIDE_COLISEUM] >= 2 && AP_TrialLetters_Prepare())
 				? &s_menuTrialTrophyCtrRelic : &s_menuTrialTrophyRelic;
 			if (sdata->boolOpenTokenRelicMenu == 0)
 			{
@@ -993,6 +993,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			}
 			if ((RECTMENU_BoolHidden(trialMenu) & 0xffff) == 0)
 				goto WarpPad_TrophyAnimateOnly;
+			// Like the retail Trophy/CTR/Relic branch below: re-arm the
+			// selector before leaving, so returning to either pad offers it again.
+			sdata->boolOpenTokenRelicMenu = 0;
+			warppadObj->boolEnteredWarppad = 0;
 		}
 		else
 		#endif
