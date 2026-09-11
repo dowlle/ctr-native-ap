@@ -55,6 +55,7 @@ tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
+tools/test-trial-track-seedcfg.cpp
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c

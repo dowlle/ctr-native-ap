@@ -341,6 +341,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.logic_difficulty = 1;
 	ctr_cfg.itemsanity = 0;
 	ctr_cfg.shortcut_knowledge = 0;
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+	{
+		ctr_cfg.trial_track_mode[t] = 0;
+		ctr_cfg.trial_track_valid[t] = 0;
+		for (int c = 0; c < CTR_CFG_TRIAL_CHECK_COUNT; c++)
+			ctr_cfg.trial_track_locations[t][c] = -1;
+	}
 	// Character phase (#54/#209). These defaults ARE the pre-character-phase
 	// behaviour: you drive Crash in his own class, no racer is an item, no pad
 	// demands one, and the stat table is the engine's. A seed that predates the
@@ -521,6 +528,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.shortcut_knowledge = json_int(opt, "shortcut_knowledge", 0);
 	if (ctr_cfg.shortcut_knowledge < 0 || ctr_cfg.shortcut_knowledge > 2)
 		ctr_cfg.shortcut_knowledge = 0;
+	ctr_cfg.trial_track_mode[0] = json_int(opt, "slide_coliseum_races", 0);
+	ctr_cfg.trial_track_mode[1] = json_int(opt, "turbo_track_races", 0);
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+		if (ctr_cfg.trial_track_mode[t] < 0 || ctr_cfg.trial_track_mode[t] > 2)
+			ctr_cfg.trial_track_mode[t] = 0;
 	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
 		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
@@ -893,6 +905,60 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				ctr_cfg.custom_track = ct;
 				ctr_cfg.custom_tracks_ok = 1;
 			}
+		}
+	}
+
+	// ── trial_track_checks (schema 10, issue #203) ──────────────────────────
+	auto trialIt = j.find("trial_track_checks");
+	if (trialIt != j.end() && trialIt->is_object() &&
+	    json_int(*trialIt, "enabled", 0))
+	{
+		auto locationsIt = trialIt->find("locations");
+		if (locationsIt != trialIt->end() && locationsIt->is_object())
+		{
+			for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+			{
+				const char *key = t == 0 ? "16" : "17";
+				auto rowIt = locationsIt->find(key);
+				if (rowIt == locationsIt->end() || !rowIt->is_array() || rowIt->size() != 2)
+					continue;
+				long trophy = -1, ctr = -1;
+				try
+				{
+					trophy = (*rowIt)[CTR_CFG_TRIAL_TROPHY].get<long>();
+					ctr = (*rowIt)[CTR_CFG_TRIAL_CTR].get<long>();
+				}
+				catch (...) { continue; }
+				int valid = trophy > 0 && (ctr == -1 || ctr > 0) && trophy != ctr;
+				if (ctr > 0 && ctr_cfg.trial_track_mode[t] < 2) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] >= 2 && ctr <= 0) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] < 1) valid = 0;
+				if (!valid)
+				{
+					ap_cfg_log("[AP CFG] trial track %s check row refused (mode=%d trophy=%ld ctr=%ld)\n",
+					           key, ctr_cfg.trial_track_mode[t], trophy, ctr);
+					continue;
+				}
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_TROPHY] = trophy;
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_CTR] = ctr;
+				ctr_cfg.trial_track_valid[t] = 1;
+			}
+		}
+	}
+
+	// A code may identify only one trial event, even across the two tracks.
+	for (int a = 0; a < CTR_CFG_TRIAL_TRACK_COUNT; a++)
+	for (int b = a + 1; b < CTR_CFG_TRIAL_TRACK_COUNT; b++)
+	for (int ca = 0; ca < CTR_CFG_TRIAL_CHECK_COUNT; ca++)
+	for (int cb = 0; cb < CTR_CFG_TRIAL_CHECK_COUNT; cb++)
+	{
+		long lhs = ctr_cfg.trial_track_locations[a][ca];
+		long rhs = ctr_cfg.trial_track_locations[b][cb];
+		if (lhs > 0 && lhs == rhs)
+		{
+			ap_cfg_log("[AP CFG] duplicate trial-track location code %ld; disabling both tracks\n", lhs);
+			ctr_cfg.trial_track_valid[a] = 0;
+			ctr_cfg.trial_track_valid[b] = 0;
 		}
 	}
 

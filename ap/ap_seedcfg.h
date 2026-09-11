@@ -69,7 +69,11 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 9
+#define CTR_CFG_SCHEMA_KNOWN 10
+#define CTR_CFG_TRIAL_TRACK_COUNT 2
+#define CTR_CFG_TRIAL_CHECK_COUNT 2
+#define CTR_CFG_TRIAL_TROPHY 0
+#define CTR_CFG_TRIAL_CTR 1
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -328,6 +332,9 @@ typedef struct
 	int logic_difficulty;    // 0 easy / 1 medium / 2 hard
 	int itemsanity;          // 0 off / 1 weapon items + use checks active
 	int shortcut_knowledge;  // 0 easy / 1 medium / 2 hard
+	int trial_track_mode[CTR_CFG_TRIAL_TRACK_COUNT]; // level 16/17: 0 off, 1 Trophy, 2 Trophy+CTR
+	long trial_track_locations[CTR_CFG_TRIAL_TRACK_COUNT][CTR_CFG_TRIAL_CHECK_COUNT];
+	int trial_track_valid[CTR_CFG_TRIAL_TRACK_COUNT];
 	// item #5 placement toggles (forward-looking; MVP native ignores them because
 	// locked gems/keys never enter the multiworld pool -> native never receives an
 	// item it must place). A future native build can branch on these to tell
