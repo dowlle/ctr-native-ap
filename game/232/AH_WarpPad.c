@@ -134,44 +134,6 @@ void AH_WarpPad_MenuProc(struct RectMenu *menu)
 	}
 }
 
-#ifdef CTR_AP
-static struct MenuRow s_rowsTrialTrophyRelic[] = {
-	{LNG_TROPHY_RACE, 0, 1, 0, 0},
-	{LNG_RELIC_RACE, 0, 1, 1, 1},
-	{-1, 0, 0, 0, 0},
-};
-static struct MenuRow s_rowsTrialTrophyCtrRelic[] = {
-	{LNG_TROPHY_RACE, 0, 1, 0, 0},
-	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
-	{LNG_RELIC_RACE, 0, 1, 2, 2},
-	{-1, 0, 0, 0, 0},
-};
-static void AH_WarpPad_TrialMenuProc(struct RectMenu *menu)
-{
-	if (menu == NULL) return;
-	RECTMENU_Hide(menu);
-	if (menu->rows == s_rowsTrialTrophyCtrRelic)
-	{
-		if (menu->rowSelected == 1) sdata->gGT->gameMode2 |= TOKEN_RACE;
-		else if (menu->rowSelected == 2) sdata->gGT->gameMode1 |= RELIC_RACE;
-	}
-	else if (menu->rowSelected == 1)
-		sdata->gGT->gameMode1 |= RELIC_RACE;
-}
-static struct RectMenu s_menuTrialTrophyRelic = {
-	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE, .posX_curr = 0x100,
-	.posY_curr = 0x6c, .state = 0x100803,
-	.rows = s_rowsTrialTrophyRelic, .funcPtr = AH_WarpPad_TrialMenuProc,
-	.drawStyle = 4,
-};
-static struct RectMenu s_menuTrialTrophyCtrRelic = {
-	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE, .posX_curr = 0x100,
-	.posY_curr = 0x6c, .state = 0x100803,
-	.rows = s_rowsTrialTrophyCtrRelic, .funcPtr = AH_WarpPad_TrialMenuProc,
-	.drawStyle = 4,
-};
-#endif
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abdfc-0x800abf48.
 void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadObj, int index, int x, int y, int z)
 {
@@ -982,19 +944,53 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		#ifdef CTR_AP
 		if (ctr_cfg_active() && ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM])
 		{
-			struct RectMenu *trialMenu =
-				(ctr_cfg.trial_track_mode[levelID - AH_WP_SLIDE_COLISEUM] >= 2 && AP_TrialLetters_Prepare())
-				? &s_menuTrialTrophyCtrRelic : &s_menuTrialTrophyRelic;
-			if (sdata->boolOpenTokenRelicMenu == 0)
+			int track = levelID - AH_WP_SLIDE_COLISEUM;
+			int tokenLeft, relicLeft, boxLeft, wumpaLeft, route;
+			int relicBits[3];
+			// Match ordinary AP pads: the unchecked Trophy is phase one and loads
+			// directly. Only phase two chooses among still-productive race types.
+			if (!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY))
+				goto WarpPad_RequestLoad;
+			tokenLeft = ctr_cfg.trial_track_mode[track] >= 2 &&
+				ctr_cfg.trial_track_locations[track][CTR_CFG_TRIAL_CTR] > 0 &&
+				!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_CTR) &&
+				AP_TrialLetters_Prepare();
+			relicLeft = AP_PadUncollectedBits(levelID, relicBits, 3) > 0;
+			boxLeft = AP_PadUncollectedBoxCount(levelID);
+			wumpaLeft = AP_PadUncollectedWumpaCount(levelID);
+			// Trial Wumpa checks can be earned in a plain rerace. Do not invent a
+			// CTR challenge when its location is absent or its retail assets failed.
+			boxLeft += wumpaLeft;
+			route = AP_PadTier2RouteDecide(tokenLeft, relicLeft, boxLeft);
+			AP_PadLogRoute(levelID, levelID, AP_PAD_ROUTE_TIER2_BASE + route);
+			if (route == AP_PAD_TIER2_TOKEN)
 			{
-				trialMenu->rowSelected = 0;
-				RECTMENU_Show(trialMenu);
-				sdata->boolOpenTokenRelicMenu = 1;
+				gGT->gameMode2 |= TOKEN_RACE;
+				RECTMENU_Hide(&D232.menuTokenRelic);
 			}
-			if ((RECTMENU_BoolHidden(trialMenu) & 0xffff) == 0)
-				goto WarpPad_TrophyAnimateOnly;
-			// Like the retail Trophy/CTR/Relic branch below: re-arm the
-			// selector before leaving, so returning to either pad offers it again.
+			else if (route == AP_PAD_TIER2_RELIC)
+			{
+				gGT->gameMode1 |= RELIC_RACE;
+				RECTMENU_Hide(&D232.menuTokenRelic);
+			}
+			else if (route == AP_PAD_TIER2_MENU)
+			{
+				if (sdata->boolOpenTokenRelicMenu == 0)
+				{
+					D232.menuTokenRelic.rowSelected = tokenLeft ? 0 : 1;
+					RECTMENU_Show(&D232.menuTokenRelic);
+					sdata->boolOpenTokenRelicMenu = 1;
+				}
+				if ((RECTMENU_BoolHidden(&D232.menuTokenRelic) & 0xffff) == 0)
+					goto WarpPad_TrophyAnimateOnly;
+			}
+			else if (route == AP_PAD_TIER2_BOX_RERACE)
+			{
+				RECTMENU_Hide(&D232.menuTokenRelic);
+				goto WarpPad_RequestLoad;
+			}
+			else
+				goto WarpPad_AnimateOpen;
 			sdata->boolOpenTokenRelicMenu = 0;
 			warppadObj->boolEnteredWarppad = 0;
 		}

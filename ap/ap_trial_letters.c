@@ -16,7 +16,48 @@
 // Process-owned, aligned storage, never MEMPACK or a borrowed track buffer.
 static u32 s_trialLev[768000/4];
 static struct Model *s_trialModels[3];
+static struct BoundingBox s_trialLetterBoxOffset[3];
+static struct BoundingBox s_trialLetterBox[3];
 static int s_trialAssets; // 0 untried, 1 ready, -1 refused (logged once)
+
+static int AP_TrialLetters_FindRetailBoxes(unsigned char *body, unsigned map)
+{
+    struct Level *level=(struct Level *)body;
+    struct mesh_info *mesh=level->ptr_mesh_info;
+    struct InstDef *defs=level->ptrInstDefs;
+    struct InstDef *letterDefs[3]={0};
+    uintptr_t lo=(uintptr_t)body, hi=lo+map;
+    int found[3]={0}, i, j, k;
+    if (!mesh || !defs || (uintptr_t)mesh<lo || (uintptr_t)(mesh+1)>hi ||
+        (uintptr_t)defs<lo || level->numInstances>65536 ||
+        (uintptr_t)(defs+level->numInstances)>hi || !mesh->bspRoot ||
+        (uintptr_t)mesh->bspRoot<lo || mesh->numBspNodes<=0 || mesh->numBspNodes>65536 ||
+        (uintptr_t)(mesh->bspRoot+mesh->numBspNodes)>hi) return 0;
+    for (i=0; i<(int)level->numInstances; ++i)
+        if (defs[i].modelID>=STATIC_C && defs[i].modelID<=STATIC_R)
+            letterDefs[defs[i].modelID-STATIC_C]=&defs[i];
+    for (i=0; i<3; ++i) if (!letterDefs[i]) return 0;
+    for (i=0; i<mesh->numBspNodes; ++i) {
+        struct BSP *node=&mesh->bspRoot[i], *hit;
+        if (!(node->flag & BSP_NODE_FLAG_LEAF) || !node->data.leaf.bspHitboxArray) continue;
+        hit=node->data.leaf.bspHitboxArray;
+        if ((uintptr_t)hit<lo || (uintptr_t)(hit+1)>hi) return 0;
+        for (j=0; j<2048 && (uintptr_t)(hit+j+1)<=hi && hit[j].flag; ++j) {
+            if ((hit[j].flag>>8)!=BSP_HITBOX_CLASS_TOUCH) continue;
+            for (k=0; k<3; ++k) if (!found[k] && hit[j].data.hitbox.instDef==letterDefs[k]) {
+                s_trialLetterBoxOffset[k]=hit[j].box;
+                s_trialLetterBoxOffset[k].min.x-=letterDefs[k]->pos.x;
+                s_trialLetterBoxOffset[k].min.y-=letterDefs[k]->pos.y;
+                s_trialLetterBoxOffset[k].min.z-=letterDefs[k]->pos.z;
+                s_trialLetterBoxOffset[k].max.x-=letterDefs[k]->pos.x;
+                s_trialLetterBoxOffset[k].max.y-=letterDefs[k]->pos.y;
+                s_trialLetterBoxOffset[k].max.z-=letterDefs[k]->pos.z;
+                found[k]=1;
+            }
+        }
+    }
+    return found[0] && found[1] && found[2];
+}
 
 int AP_TrialLetters_Prepare(void)
 {
@@ -57,6 +98,7 @@ int AP_TrialLetters_Prepare(void)
                 t->tpage=(t->tpage & 0x60) | AP_TPAGE_TRIAL_LETTER_BIT;
             }
         }
+        if (!AP_TrialLetters_FindRetailBoxes(body,map)) goto refused;
     }
     s_trialAssets=1;
     AP_LogLine("[AP TRIAL LETTERS] retail C/T/R models and independent texture ready\n");
@@ -92,8 +134,8 @@ static void AP_TrialLetters_Tick(struct Thread *t)
 {
     struct GameTracker *gGT=sdata->gGT;
     struct Driver *d;
-    double prev[3], curr[3];
-    int i, letter=t->inst->model->id-STATIC_C;
+    SVec3 prev, curr;
+    int letter=t->inst->model->id-STATIC_C;
     if (t->flags & THREAD_FLAG_DEAD) return;
     RB_CtrLetter_ThTick(t);
     if (sdata->Loading.stage!=LOAD_IDLE || !AP_TrialLetters_Active(gGT) ||
@@ -101,11 +143,13 @@ static void AP_TrialLetters_Tick(struct Thread *t)
     d=gGT->drivers[0];
     if (!d || !d->instSelf || !d->instSelf->thread ||
         (d->actionsFlagSet & (ACTION_RACE_FINISHED|ACTION_WARP))) return;
-    for (i=0; i<3; ++i) {
-        prev[i]=d->posPrev.v[i]/256.0+d->originToCenter.v[i];
-        curr[i]=d->posCurr.v[i]/256.0+d->originToCenter.v[i];
-    }
-    if (AP_TrialLetterHit(prev,curr,AP_TRIAL_LETTER_POS[gGT->levelID-16][letter])) {
+    prev.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.x,8),d->originToCenter.x);
+    prev.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.y,8),d->originToCenter.y);
+    prev.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.z,8),d->originToCenter.z);
+    curr.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x,8),d->originToCenter.x);
+    curr.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.y,8),d->originToCenter.y);
+    curr.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z,8),d->originToCenter.z);
+    if (AP_TrialLetterHit(&prev,&curr,&s_trialLetterBox[letter])) {
         struct ScratchpadStruct collision={0};
         collision.Input1.modelID=DYNAMIC_PLAYER;
         // Real HUD animation, sound, count and thread death. Level 16/17 are
@@ -132,6 +176,12 @@ void AP_TrialLetters_Spawn(struct GameTracker *gGT)
         obj->rot.y=AP_TRIAL_LETTER_YAW[track][i];
         ConvertRotToMatrix(&inst->matrix,&obj->rot);
         for (axis=0; axis<3; ++axis) inst->matrix.t[axis]=AP_TRIAL_LETTER_POS[track][i][axis];
+        s_trialLetterBox[i].min.x=s_trialLetterBoxOffset[i].min.x+AP_TRIAL_LETTER_POS[track][i][0];
+        s_trialLetterBox[i].min.y=s_trialLetterBoxOffset[i].min.y+AP_TRIAL_LETTER_POS[track][i][1];
+        s_trialLetterBox[i].min.z=s_trialLetterBoxOffset[i].min.z+AP_TRIAL_LETTER_POS[track][i][2];
+        s_trialLetterBox[i].max.x=s_trialLetterBoxOffset[i].max.x+AP_TRIAL_LETTER_POS[track][i][0];
+        s_trialLetterBox[i].max.y=s_trialLetterBoxOffset[i].max.y+AP_TRIAL_LETTER_POS[track][i][1];
+        s_trialLetterBox[i].max.z=s_trialLetterBoxOffset[i].max.z+AP_TRIAL_LETTER_POS[track][i][2];
         inst->scale=(SVec3){{0x1800,0x1800,0x1800}};
         inst->colorRGBA=0xffc8000;
         inst->flags=DRAW_COLLISION_MASK|DRAW_TRANSPARENT|USE_SPECULAR_LIGHT;

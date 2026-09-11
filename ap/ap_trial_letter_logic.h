@@ -66,23 +66,23 @@ static int AP_TrialPointerMapValid(const unsigned char *file, size_t size)
     return 1;
 }
 
-// Swept local-kart sphere: catches high-speed passes, including airborne ones.
-// World doubles avoid overflow at opposite s16 map extremes. Teleports over
-// 512 world units only test the current endpoint, never collect through walls.
-static int AP_TrialLetterHit(const double prev[3], const double curr[3], const short anchor[3])
+// Retail C/T/R letters are class-4 TOUCH hitboxes. The engine first intersects
+// the kart's swept 25-unit AABB with the authored BSP box, then dispatches the
+// retail pickup callback. Reuse that exact predicate with the donor box moved
+// to the authored trial-track position.
+static int AP_TrialLetterHit(const SVec3 *prev, const SVec3 *curr,
+                             const struct BoundingBox *box)
 {
-    double v[3], q[3], len=0, dot=0, dist=0, t;
-    int i;
-    for (i=0; i<3; ++i) {
-        v[i]=curr[i]-prev[i]; q[i]=anchor[i]-prev[i];
-        len+=v[i]*v[i]; dot+=v[i]*q[i];
-    }
-    t = len > 0 && len <= 512.0*512.0 ? dot/len : 1.0;
-    if (t<0) t=0;
-    if (t>1) t=1;
-    for (i=0; i<3; ++i) { double d=q[i]-t*v[i]; dist+=d*d; }
-    // 25-unit kart sphere plus a 32-unit letter pickup envelope.
-    return dist < 57.0*57.0;
+    const int radius=0x19;
+    int minX=(prev->x<curr->x?prev->x:curr->x)-radius;
+    int minY=(prev->y<curr->y?prev->y:curr->y)-radius;
+    int minZ=(prev->z<curr->z?prev->z:curr->z)-radius;
+    int maxX=(prev->x>curr->x?prev->x:curr->x)+radius;
+    int maxY=(prev->y>curr->y?prev->y:curr->y)+radius;
+    int maxZ=(prev->z>curr->z?prev->z:curr->z)+radius;
+    return minX<=box->max.x && box->min.x<=maxX &&
+           minY<=box->max.y && box->min.y<=maxY &&
+           minZ<=box->max.z && box->min.z<=maxZ;
 }
 
 // Pixel lookup in the pinned packed-TIM VRM, without uploading the donor

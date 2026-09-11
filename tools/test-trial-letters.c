@@ -78,7 +78,11 @@ static void reset(int level)
     gt.gameMode1=ADVENTURE_MODE;gt.gameMode2=TOKEN_RACE;
     gt.drivers[0]=&driver;driver.instSelf=&kart;kart.thread=&kartThread;kartThread.object=&driver;
     for(i=0;i<2;i++) {ctr_cfg.trial_track_valid[i]=1;ctr_cfg.trial_track_mode[i]=2;}
-    for(i=0;i<3;i++) {models[i].id=STATIC_C+i;s_trialModels[i]=&models[i];}
+    for(i=0;i<3;i++) {
+        models[i].id=STATIC_C+i;s_trialModels[i]=&models[i];
+        s_trialLetterBoxOffset[i].min=(SVec3){{-32,-48,-24}};
+        s_trialLetterBoxOffset[i].max=(SVec3){{40,56,28}};
+    }
     liveCfg=1;s_trialAssets=1;births=0;sounds=0;pickups=0;
 }
 
@@ -128,12 +132,14 @@ static void production_cases(void)
 int main(void)
 {
     unsigned char bad[64]={0},rgba[512]; unsigned out;
-    double a[3]={-100,0,0},b[3]={100,0,0};short anchor[3]={0,0,0};
+    SVec3 a={{-100,0,0}},b={{100,0,0}};
+    struct BoundingBox box={.min={{-32,-48,-24}},.max={{40,56,28}}};
     production_cases();
-    assert(AP_TrialLetterHit(a,b,anchor));
-    a[1]=b[1]=57;assert(!AP_TrialLetterHit(a,b,anchor));
-    a[1]=b[1]=0;a[0]=-1000;b[0]=1000;assert(!AP_TrialLetterHit(a,b,anchor));
-    b[0]=0;assert(AP_TrialLetterHit(a,b,anchor));
+    assert(AP_TrialLetterHit(&a,&b,&box));
+    a.y=b.y=82;assert(!AP_TrialLetterHit(&a,&b,&box));
+    a.y=b.y=81;assert(AP_TrialLetterHit(&a,&b,&box));
+    a.y=b.y=0;a.x=b.x=-58;assert(!AP_TrialLetterHit(&a,&b,&box));
+    a.x=b.x=-57;assert(AP_TrialLetterHit(&a,&b,&box));
     assert(!AP_TrialPointerMapValid(NULL,0));assert(!AP_TrialPointerMapValid(bad,sizeof(bad)));
     bad[0]=32;bad[36]=4;bad[40]=0;bad[4]=4;assert(AP_TrialPointerMapValid(bad,sizeof(bad)));
     bad[40]=32;assert(!AP_TrialPointerMapValid(bad,sizeof(bad)));
