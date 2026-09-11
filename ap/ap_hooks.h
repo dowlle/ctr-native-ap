@@ -512,6 +512,12 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 // count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 
+// Schema-10 standalone race identities for Slide Coliseum and Turbo Track.
+// These locations have no AdvProgress bit and must never use levelID arithmetic.
+int AP_TrialTrackConfigured(int levelID);
+int AP_TrialTrackLocationChecked(int levelID, int challenge);
+void AP_NotifyTrialTrackRace(int levelID, int challenge);
+
 // ── Podium rungs in the reward glow ──
 // Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),
 // so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:

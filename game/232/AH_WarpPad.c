@@ -134,6 +134,44 @@ void AH_WarpPad_MenuProc(struct RectMenu *menu)
 	}
 }
 
+#ifdef CTR_AP
+static struct MenuRow s_rowsTrialTrophyRelic[] = {
+	{LNG_TROPHY_RACE, 0, 1, 0, 0},
+	{LNG_RELIC_RACE, 0, 1, 1, 1},
+	{-1, 0, 0, 0, 0},
+};
+static struct MenuRow s_rowsTrialTrophyCtrRelic[] = {
+	{LNG_TROPHY_RACE, 0, 1, 0, 0},
+	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
+	{LNG_RELIC_RACE, 0, 1, 2, 2},
+	{-1, 0, 0, 0, 0},
+};
+static void AH_WarpPad_TrialMenuProc(struct RectMenu *menu)
+{
+	RECTMENU_Hide(menu);
+	if (menu == NULL) return;
+	if (menu->rows == s_rowsTrialTrophyCtrRelic)
+	{
+		if (menu->rowSelected == 1) sdata->gGT->gameMode2 |= TOKEN_RACE;
+		else if (menu->rowSelected == 2) sdata->gGT->gameMode1 |= RELIC_RACE;
+	}
+	else if (menu->rowSelected == 1)
+		sdata->gGT->gameMode1 |= RELIC_RACE;
+}
+static struct RectMenu s_menuTrialTrophyRelic = {
+	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE, .posX_curr = 0x100,
+	.posY_curr = 0x6c, .state = 0x100803,
+	.rows = s_rowsTrialTrophyRelic, .funcPtr = AH_WarpPad_TrialMenuProc,
+	.drawStyle = 4,
+};
+static struct RectMenu s_menuTrialTrophyCtrRelic = {
+	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE, .posX_curr = 0x100,
+	.posY_curr = 0x6c, .state = 0x100803,
+	.rows = s_rowsTrialTrophyCtrRelic, .funcPtr = AH_WarpPad_TrialMenuProc,
+	.drawStyle = 4,
+};
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abdfc-0x800abf48.
 void AH_WarpPad_SpinRewards(struct Instance *prizeInst, struct WarpPad *warppadObj, int index, int x, int y, int z)
 {
@@ -941,7 +979,24 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
-		sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
+		#ifdef CTR_AP
+		if (ctr_cfg_active() && ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM])
+		{
+			struct RectMenu *trialMenu =
+				(ctr_cfg.trial_track_mode[levelID - AH_WP_SLIDE_COLISEUM] >= 2)
+				? &s_menuTrialTrophyCtrRelic : &s_menuTrialTrophyRelic;
+			if (sdata->boolOpenTokenRelicMenu == 0)
+			{
+				trialMenu->rowSelected = 0;
+				RECTMENU_Show(trialMenu);
+				sdata->boolOpenTokenRelicMenu = 1;
+			}
+			if ((RECTMENU_BoolHidden(trialMenu) & 0xffff) == 0)
+				goto WarpPad_TrophyAnimateOnly;
+		}
+		else
+		#endif
+			sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
 		goto WarpPad_RequestLoad;
 	}
 

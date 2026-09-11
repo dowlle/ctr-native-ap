@@ -837,6 +837,29 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 static int AP_PadBoxLive(long code, void *ctx);
 static int AP_PadBoxChecked(long code, void *ctx);
 
+static long AP_TrialTrackLocation(int levelID, int challenge)
+{
+	int track = levelID - 16;
+	if (!ctr_cfg_active() || track < 0 || track >= CTR_CFG_TRIAL_TRACK_COUNT ||
+	    challenge < 0 || challenge >= CTR_CFG_TRIAL_CHECK_COUNT ||
+	    !ctr_cfg.trial_track_valid[track])
+		return -1;
+	return ctr_cfg.trial_track_locations[track][challenge];
+}
+
+int AP_TrialTrackConfigured(int levelID)
+{
+	int track = levelID - 16;
+	return ctr_cfg_active() && track >= 0 && track < CTR_CFG_TRIAL_TRACK_COUNT &&
+	       ctr_cfg.trial_track_valid[track];
+}
+
+int AP_TrialTrackLocationChecked(int levelID, int challenge)
+{
+	long code = AP_TrialTrackLocation(levelID, challenge);
+	return code > 0 && ap_net_location_checked(code);
+}
+
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 {
 	static const int kRaceTierBit[5] = {
@@ -909,6 +932,19 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 			outBits[count++] = bit;
 	}
 
+	return count;
+}
+
+static int AP_TrialTrackUncheckedCount(int levelID)
+{
+	int challenge;
+	int count = 0;
+	for (challenge = 0; challenge < CTR_CFG_TRIAL_CHECK_COUNT; challenge++)
+	{
+		long code = AP_TrialTrackLocation(levelID, challenge);
+		if (code > 0 && !ap_net_location_checked(code))
+			count++;
+	}
 	return count;
 }
 
@@ -1367,6 +1403,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// it. Before stage 2 it needs the plain Trophy-race route; after stage 2 the
 	// entry chooser treats it as a CTR Challenge-side reason to remain open.
 	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
+	uncN += AP_TrialTrackUncheckedCount(destLevelID);
 
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
@@ -5070,6 +5107,14 @@ static int AP_EmitClassCheck(long code,
 	if (toastSentItem)
 		AP_FeedOnLocationSent(code);
 	return 1;
+}
+
+void AP_NotifyTrialTrackRace(int levelID, int challenge)
+{
+	long code = AP_TrialTrackLocation(levelID, challenge);
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
+	                  levelID, challenge, code);
 }
 
 #ifdef CTR_CUSTOM_TRACKS
