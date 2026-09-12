@@ -1526,7 +1526,8 @@ WarpPad_AnimateOpen:
 	// warppadObj->levelID, which LInB set to ctr_cfg_warp_dest(physical). ONE helper,
 	// AP_PadUncollectedBits, enumerates the still-unchecked AP reward locations for
 	// ANY destination category -- race 0..15 (up to 5 tiers, cycled 3 at a time),
-	// trial 16/17 (up to 3 relic Time-Trial tiers), arena 18/19/21/23 (1 crystal),
+	// trial 16/17 (up to 3 relic Time-Trial tiers, plus the Trophy and CTR
+	// Challenge pseudo-bits the glow enumerator adds, #343), arena 18/19/21/23 (1 crystal),
 	// cup 100..104 (1 gem). LInB now births 3 prize slots for EVERY one of these pad
 	// classes, so the instances exist regardless of what the destination hosts: a
 	// trial/arena/cup pad hosting a race fills all 3; an identity arena/cup fills

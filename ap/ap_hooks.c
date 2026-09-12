@@ -25,6 +25,7 @@
 #include "ap_rung_feed_reason_logic.h" // freestanding held-position reason text (#324)
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_glow_slots_logic.h"
+#include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
 #include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
 #include "ap_checkdiag_once.h" // once-per-connect gate for [AP CHECK DIAG] lines (log-spam guard)
@@ -275,9 +276,12 @@ static const char *AP_TrophyName(int globalBit)
 // identities are direct pseudo-bits; podium identities use the shared
 // retail-plus-custom logical track range. Every bit-keyed consumer (checked
 // state, reward model/tint and scouts) therefore handles them unchanged.
+static long AP_TrialTrackLocation(int levelID, int challenge);
+
 static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
+	int trialPseudo, trialChallenge;
 #ifdef CTR_CUSTOM_TRACKS
 	if (globalBit == AP_CUSTOM_CTR_PSEUDO_BIT)
 		return ctr_cfg_active() && ctr_cfg.custom_tracks_ok && ctr_cfg.custom_ctr_enabled
@@ -286,6 +290,12 @@ static long AP_LookupLocationCode(int globalBit)
 	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
 		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
 #endif
+	// #343: the trial Trophy and CTR Challenge have no AdvProgress bit.
+	if (AP_TrialPseudoDecode(globalBit, &trialPseudo, &trialChallenge))
+	{
+		long code = AP_TrialTrackLocation(16 + trialPseudo, trialChallenge);
+		return code > 0 ? code : -1;
+	}
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
 	{
 		int trial = (globalBit - AP_PODIUM_PSEUDO_BASE) / CTR_CFG_PODIUM_RUNG_COUNT
@@ -844,8 +854,9 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap)
 // tiers (no location_code in this seed) are skipped. Categories:
 //   race  0..15 : 5 tiers (trophy +0x06, sapphire +0x16, gold +0x28,
 //                 platinum +0x3a, CTR token +0x4c)
-//   trial 16,17 : 3 relic tiers (sapphire/gold/platinum) -- Slide Coliseum +
-//                 Turbo Track carry no trophy/token location
+//   trial 16,17 : 3 relic tiers (sapphire/gold/platinum). Their Trophy and
+//                 CTR Challenge have no bit; AP_PadUncollectedGlowBits adds
+//                 them as pseudo-bits (#343)
 //   arena 18,19,21,23 : 1 crystal (battleTrackArr[dest-18] + FIRST_PURPLE_TOKEN)
 //   cup   100..104     : 1 gem ((dest-100) + FIRST_GEM)
 static int AP_PadBoxLive(long code, void *ctx);
@@ -949,19 +960,6 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
-static int AP_TrialTrackUncheckedCount(int levelID)
-{
-	int challenge;
-	int count = 0;
-	for (challenge = 0; challenge < CTR_CFG_TRIAL_CHECK_COUNT; challenge++)
-	{
-		long code = AP_TrialTrackLocation(levelID, challenge);
-		if (code > 0 && !ap_net_location_checked(code))
-			count++;
-	}
-	return count;
-}
-
 // Append the still-unchecked podium rung pseudo-bits of ONE race track (0..15) to
 // outBits, advancing *count. Shared by the race-pad path and the cup-pad
 // aggregation below. AP_LookupLocationCode returns -1 for a rung this seed does
@@ -1018,6 +1016,14 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 #endif
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+
+	// #343: a trial pad also offers its Trophy and CTR Challenge. They have no
+	// AdvProgress bit, so they ride as pseudo-bits. Glow only: the tier-2
+	// picker reads AP_PadUncollectedBits as its "relics left" test.
+	if (AP_TrialTrackConfigured(destLevelID))
+		count = AP_TrialPadAppendUnchecked(
+			ctr_cfg.trial_track_locations[destLevelID - 16], destLevelID - 16,
+			outBits, cap, count, AP_PadBoxChecked, 0);
 
 	if (!ctr_cfg.podium_enabled)
 		return count;
@@ -1238,10 +1244,14 @@ int AP_PadUncollectedLetterCount(int destLevelID)
 //            span from the first sapphire bit up to the first CTR token bit.
 //   2 TOKEN  everything else the glow enumerators can produce: the CTR Token
 //            challenge, a gem-cup gem and an arena crystal (purple token).
+// A trial pad's Trophy and CTR Challenge pseudo-bits (#343) join groups 0 and 2.
 // Bit ranges follow the enumerators above, which build every bit as
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
+	if (trialGroup >= 0)
+		return trialGroup; // #343: trial Trophy -> race slot, CTR Challenge -> token slot
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
 		return 0; // podium rung -- rides with its track's trophy
 	if (globalBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
@@ -1429,7 +1439,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// it. Before stage 2 it needs the plain Trophy-race route; after stage 2 the
 	// entry chooser treats it as a CTR Challenge-side reason to remain open.
 	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
-	uncN += AP_TrialTrackUncheckedCount(destLevelID);
+	// The trial Trophy and CTR Challenge are already in uncBits (#343).
 
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL

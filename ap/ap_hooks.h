@@ -542,7 +542,9 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge);
 // pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
 // the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
 // its generic Trophy, podium and per-destination Wumpa identities instead of the
-// absent retail Gem and leg identities. AP_PadState consumes this enumeration
+// absent retail Gem and leg identities. A configured trial (16/17) adds its
+// Trophy and CTR Challenge pseudo-bits (ap_trial_pad_glow.h, #343), which have
+// no AdvProgress bit. AP_PadState consumes this enumeration
 // together with the separate box, letter and retail Wumpa counts so Done can
 // never strand an attached check.
 #ifndef CTR_CUSTOM_TRACKS
