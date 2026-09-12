@@ -19,6 +19,11 @@
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
+#include "ap_door_history.h"
+
+static APDoorHistory g_doors;
+static unsigned g_doors_sent = 0;
+static void ap_doors_flush();
 
 #include <deque>
 #include <algorithm>
@@ -689,6 +694,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
 		const std::string connectedSeed = g_ap->get_seed();
+		g_doors.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		g_doors_sent = 0;
+		AP_LogLine("[AP DOOR] connected: session reset, inventory/storage barrier pending\n");
+		g_ap->SetNotify({g_doors.key});
+		g_ap->Get({g_doors.key});
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -752,6 +762,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// key->value map); SetNotify + Set(want_reply) -> SetReply (key, new value).
 	// Both fire inline on the poll thread, same as every other handler.
 	g_ap->set_retrieved_handler([](const std::map<std::string, nlohmann::json> &keys) {
+		auto doors = keys.find(g_doors.key);
+		if (g_connected && doors != keys.end()) {
+			g_doors.retrieved(doors->second);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP DOOR] retrieved valid=%d history=%x pending=%x\n", g_doors.valid, g_doors.history, g_doors.pending);
+			AP_LogLine(line);
+			ap_doors_flush();
+		}
 		auto it = keys.find(ap_diff_key());
 		if (it != keys.end() && it->second.is_number_integer())
 		{
@@ -778,6 +796,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
+		if (g_connected && key == g_doors.key) {
+			g_doors.reply(value);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP DOOR] reply valid=%d history=%x pending=%x\n", g_doors.valid, g_doors.history, g_doors.pending);
+			AP_LogLine(line);
+			g_doors_sent &= g_doors.pending;
+			ap_doors_flush();
+		}
 		if (key == ap_diff_key() && value.is_number_integer())
 		{
 			g_diff_value = value.get<int>();
@@ -921,6 +947,7 @@ extern "C" void ap_net_poll(void)
 	// host and the terminal RETRY_STOPPED status are preserved for the menu.
 	if (g_stop_pending)
 		ap_net_apply_retry_stop();
+	ap_doors_flush();
 }
 
 // Bounded-retry teardown (2026-08-30).
@@ -1214,6 +1241,38 @@ extern "C" int ap_net_drain_items(long long *out, int max)
 		n++;
 	}
 	return n;
+}
+
+static void ap_doors_flush()
+{
+	if (!g_ap || !g_connected || !g_doors.barrier || !g_doors.valid) return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
+	unsigned bits = g_doors.pending & ~g_doors_sent;
+	if (!bits) return;
+	AP_NET_GUARD("doors_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "or"; op.value = bits;
+		if (g_ap->Set(g_doors.key, 0, true, {op})) g_doors_sent |= bits;
+	});
+}
+
+extern "C" int ap_net_doors_ready(void)
+{
+	return g_connected && g_doors.barrier && g_doors.valid && g_items.empty() && !g_recv_reset;
+}
+extern "C" unsigned ap_net_doors_history(void) { return g_doors.history | g_doors.pending; }
+extern "C" unsigned ap_net_doors_session(void) { return g_recv_reset ? 0 : g_doors.session; }
+extern "C" void ap_net_doors_mark_session(unsigned bit) { if (ap_net_doors_ready()) g_doors.session |= bit & 15u; }
+extern "C" void ap_net_doors_record(unsigned bit)
+{
+	if (g_doors.identity.empty() || g_recv_reset) return;
+	unsigned before = g_doors.session;
+	g_doors.record(bit); ap_doors_flush();
+	if (before != g_doors.session) {
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP DOOR] completed bit=%x session=%x pending=%x ready=%d\n", bit, g_doors.session, g_doors.pending, ap_net_doors_ready());
+		AP_LogLine(line);
+	}
 }
 
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
@@ -1566,6 +1625,8 @@ extern "C" void ap_net_shutdown(void)
 	}
 	g_connected = false;
 	g_items.clear();
+	g_doors.disconnected();
+	g_doors_sent = 0;
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

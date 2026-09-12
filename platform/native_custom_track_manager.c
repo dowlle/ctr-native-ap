@@ -45,6 +45,18 @@ static const struct CustomTrackManagerPackage s_babyTParkPackage = {
 	1, 1, 1, 1, 0, 0, 1, 8, 35
 };
 
+static const struct CustomTrackManagerPackage s_babyTParkCurrent = {
+	"baby-t-park", "2c7c7846-2ead-5b8f-a218-beca5792106e", "1.0.2",
+	"Baby T Park", "Lockheart",
+	"https://www.projectsaphi.com/tracks/101",
+	"https://www.projectsaphi.com/api/v2/tracks/101/downloads",
+	"0.3.0-letters1", "0.3.0-letters1",
+	"be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
+	"1a0ff56b51562292ecc30c14e7a2e6d315f641feaa00990d4242abe46434f692",
+	"07395277-d2c2-5544-9cde-5ad9976c06fd", 1, 7,
+	1, 1, 1, 1, 0, 0, 1, 8, 35
+};
+
 static void Manager_SetDetail(struct CustomTrackManagerStatus *status, int state,
 	                          const char *fmt, ...)
 {
@@ -167,7 +179,10 @@ static int Manager_BuildPaths(const char *assetsRoot,
 	status->state = CTR_CT_MANAGER_IO_ERROR;
 
 	if (!Manager_Join(tracks, sizeof tracks, assetsRoot, "tracks") ||
-	    !Manager_Join(status->packageRoot, sizeof status->packageRoot, tracks, package->id) ||
+	    !Manager_Join(status->packageRoot, sizeof status->packageRoot, tracks,
+	                  strcmp(package->packageUuid, s_babyTParkCurrent.packageUuid) == 0 &&
+	                  strcmp(package->version, s_babyTParkCurrent.version) == 0 ?
+	                  "baby-t-park-1.0.2" : package->id) ||
 	    !Manager_Join(original, sizeof original, status->packageRoot, "original") ||
 	    !Manager_Join(status->levPath, sizeof status->levPath, original, "track.lev") ||
 	    !Manager_Join(status->vrmPath, sizeof status->vrmPath, original, "track.vrm") ||
@@ -881,25 +896,34 @@ static int Manager_RequirementMatches(const struct CustomTrackManagerPackage *pa
 	       requirement->flagCheckpoints == package->flagCheckpoints;
 }
 
+const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
+	const struct CustomTrackManagerRequirement *requirement)
+{
+	const struct CustomTrackManagerPackage *legacy = CustomTrackManager_BabyTPark();
+	if (Manager_RequirementMatches(legacy, requirement)) return legacy;
+	if (Manager_RequirementMatches(&s_babyTParkCurrent, requirement)) return &s_babyTParkCurrent;
+	return NULL;
+}
+
 int CustomTrackManager_Preflight(const char *assetsRoot,
 	                              const struct CustomTrackManagerRequirement *requirement,
 	                              int autoFinalize,
 	                              struct CustomTrackManagerStatus *outStatus)
 {
-	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	const struct CustomTrackManagerPackage *package = CustomTrackManager_MatchingPackage(requirement);
 	int state;
 
 	if (outStatus == NULL)
 		return CTR_CT_MANAGER_IO_ERROR;
 	memset(outStatus, 0, sizeof *outStatus);
 
-	if (requirement == NULL || !Manager_TextEqual(requirement->id, package->id))
+	if (requirement == NULL || !Manager_TextEqual(requirement->id, "baby-t-park"))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED,
 		                  "This client release does not recognize the seed's custom track package.");
 		return outStatus->state;
 	}
-	if (!Manager_RequirementMatches(package, requirement))
+	if (package == NULL)
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_INCOMPATIBLE,
 		                  "The seed's Baby T Park identity does not match the current release package registry.");

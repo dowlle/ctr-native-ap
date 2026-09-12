@@ -238,6 +238,11 @@ void ap_net_deathlink_send(const char *cause);
 int  ap_net_deathlink_take(char *cause_buf, int cause_n);
 
 void ap_net_shutdown(void);
+int ap_net_doors_ready(void);
+unsigned ap_net_doors_history(void);
+unsigned ap_net_doors_session(void);
+void ap_net_doors_mark_session(unsigned bit);
+void ap_net_doors_record(unsigned bit);
 
 #ifdef __cplusplus
 }

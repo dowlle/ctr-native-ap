@@ -1,5 +1,41 @@
 #include <common.h>
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+static struct MetaDataBOSS s_cortexVortexOxideWeapons[14];
+static const struct MetaDataBOSS s_cortexVortexOxideWeaponTemplate[14] = {
+	{0x00, 0x02, 0x66, 0x01, 0x02, 0x00},
+	{0x10, 0x02, 0x64, 0x01, 0x02, 0x00},
+	{0x21, 0x03, 0x03, 0x01, 0x0c, 0x01},
+	{0x2f, 0x03, 0x01, 0x01, 0x0c, 0x00},
+	{0x3b, 0x02, 0x0f, 0x01, 0x0c, 0x01},
+	{0x40, 0x03, 0x01, 0x01, 0x0c, 0x00},
+	{0x46, 0x02, 0x04, 0x01, 0x0c, 0x01},
+	{0x56, 0x02, 0x0f, 0x01, 0x0c, 0x01},
+	{0x5d, 0x02, 0x04, 0x01, 0x0c, 0x01},
+	{0x60, 0x02, 0x0f, 0x01, 0x0c, 0x01},
+	{0x65, 0x02, 0x04, 0x01, 0x0c, 0x01},
+	{0x66, 0x02, 0x0f, 0x01, 0x0c, 0x01},
+	{0x7f, 0x02, 0x04, 0x01, 0x0c, 0x01},
+	{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+};
+
+static void PickupBots_InitCortexVortexOxideWeapons(struct GameTracker *gGT)
+{
+	int i;
+	int lastCheckpoint = gGT->level1 != NULL ? gGT->level1->cnt_restart_points - 1 : -1;
+
+	memcpy(s_cortexVortexOxideWeapons, s_cortexVortexOxideWeaponTemplate,
+	       sizeof s_cortexVortexOxideWeapons);
+	if (lastCheckpoint < 0)
+		return;
+	for (i = 0; i < 13; i++)
+		s_cortexVortexOxideWeapons[i].trackCheckpoint =
+		    (u8)AP_OxideWeaponCheckpoint(
+		        s_cortexVortexOxideWeaponTemplate[i].trackCheckpoint,
+		        lastCheckpoint);
+}
+#endif
+
 void PickupBots_Init(void)
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80040850-0x800408b8.
@@ -14,6 +50,16 @@ void PickupBots_Init(void)
 	{
 		hub = 0;
 	}
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (CustomTrack_OxideFinalServing(lev, sdata->gGT->bossID,
+	                                  (sdata->gGT->gameMode1 & ADVENTURE_BOSS) != 0))
+	{
+		PickupBots_InitCortexVortexOxideWeapons(sdata->gGT);
+		sdata->bossWeaponMeta = s_cortexVortexOxideWeapons;
+		return;
+	}
+#endif
 
 	if (hub > -1)
 	{
@@ -199,6 +245,12 @@ static void PickupBots_SetBossCooldown(struct MetaDataBOSS *bossMeta)
 static struct MetaDataBOSS *PickupBots_GetInitialBossMeta(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
+	                                  (gGT->gameMode1 & ADVENTURE_BOSS) != 0))
+		return s_cortexVortexOxideWeapons;
+#endif
 
 	if (gGT->levelID == OXIDE_STATION)
 	{

@@ -69,7 +69,13 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 9
+#define CTR_CFG_SCHEMA_KNOWN 13
+#define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
+#define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
+#define CTR_CFG_TRIAL_TRACK_COUNT 2
+#define CTR_CFG_TRIAL_CHECK_COUNT 2
+#define CTR_CFG_TRIAL_TROPHY 0
+#define CTR_CFG_TRIAL_CTR 1
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -95,7 +101,9 @@ extern "C" {
 // LevelIDs and classify as trophy races, so they earn the destination track's
 // rungs too (the held listener + finish fan-out run during cup legs).
 #define CTR_CFG_PODIUM_TRACK_COUNT 16
-#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_PODIUM_STORAGE_COUNT 18
+#define AP_TRIAL_PODIUM_LOGICAL_BASE 48
+#define CTR_CFG_LETTER_TRACK_COUNT 18
 #define CTR_CFG_LETTER_COUNT 3
 #define CTR_LETTER_ITEM_FIRST_INDEX 139
 
@@ -128,6 +136,18 @@ typedef struct
 	int count;
 	int colour;
 } ctr_req;
+
+typedef struct
+{
+	int seen;
+	int valid;
+	int track;
+	int host_level_id;
+	long location;
+	long wumpa_location;
+	char lev_sha256[65];
+	char vrm_sha256[65];
+} ctr_oxide_final_venue;
 
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
 // the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
@@ -310,6 +330,7 @@ typedef struct
 	// always active (the apworld's generate_early rejects the all-off
 	// combination). 0 means "this condition is off" for all three, uniformly.
 	int goal_oxide;  // 0 none / 1 first (Oxide's Challenge) / 2 final (Oxide's Final Challenge)
+	int oxide_1_optional; // schema 13, goal2 only: 0 mandatory, 1 optional, 2 true filler
 	int goal_bosses; // 0-4: how many of the 4 boss races must be personally won
 	int goal_gems;   // 0-5: how many of the 5 Gems must be held
 	int relic_min_time;
@@ -328,6 +349,9 @@ typedef struct
 	int logic_difficulty;    // 0 easy / 1 medium / 2 hard
 	int itemsanity;          // 0 off / 1 weapon items + use checks active
 	int shortcut_knowledge;  // 0 easy / 1 medium / 2 hard
+	int trial_track_mode[CTR_CFG_TRIAL_TRACK_COUNT]; // level 16/17: 0 off, 1 Trophy, 2 Trophy+CTR
+	long trial_track_locations[CTR_CFG_TRIAL_TRACK_COUNT][CTR_CFG_TRIAL_CHECK_COUNT];
+	int trial_track_valid[CTR_CFG_TRIAL_TRACK_COUNT];
 	// item #5 placement toggles (forward-looking; MVP native ignores them because
 	// locked gems/keys never enter the multiworld pool -> native never receives an
 	// item it must place). A future native build can branch on these to tell
@@ -532,9 +556,14 @@ typedef struct
 	// pre-podium seeds, in which case podium_enabled stays 0 and no rung fires.
 	int              podium_enabled;      // podium_checks.enabled
 	int              podium_any_position; // podium_checks.any_position
-	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
+	ctr_podium_rungs podium[CTR_CFG_PODIUM_STORAGE_COUNT]; // real LevelID; custom logical bank stays 16..47
 	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
 	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
+	int custom_ctr_enabled;
+	long custom_ctr_location;
+	int custom_lettersanity_mode;
+	long custom_letter_locations[CTR_CFG_LETTER_COUNT];
+	long custom_letter_items[CTR_CFG_LETTER_COUNT];
 
 	// custom_tracks (schema 8). custom_tracks_ok is 1 only when the block was
 	// present AND fully readable; a present-but-unreadable block leaves it 0 and
@@ -548,6 +577,11 @@ typedef struct
 	int              custom_tracks_seen;
 	int              custom_tracks_ok;
 	ctr_custom_track custom_track; // exactly one entry in this build
+
+	// schema 11: independent N. Oxide Final Challenge venue. The opponent is
+	// frozen to Nitros Oxide and the location to 35011105; malformed or changed
+	// identities fail closed rather than falling back to Oxide Station.
+	ctr_oxide_final_venue oxide_final_venue;
 
 	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
 	// the wire" and "the block said off", which are the same thing to every

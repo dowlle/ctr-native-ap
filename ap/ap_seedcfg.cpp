@@ -341,6 +341,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.logic_difficulty = 1;
 	ctr_cfg.itemsanity = 0;
 	ctr_cfg.shortcut_knowledge = 0;
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+	{
+		ctr_cfg.trial_track_mode[t] = 0;
+		ctr_cfg.trial_track_valid[t] = 0;
+		for (int c = 0; c < CTR_CFG_TRIAL_CHECK_COUNT; c++)
+			ctr_cfg.trial_track_locations[t][c] = -1;
+	}
 	// Character phase (#54/#209). These defaults ARE the pre-character-phase
 	// behaviour: you drive Crash in his own class, no racer is an item, no pad
 	// demands one, and the stat table is the engine's. A seed that predates the
@@ -367,6 +374,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
+	ctr_cfg.oxide_final_venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+	ctr_cfg.oxide_final_venue.host_level_id = -1;
+	ctr_cfg.oxide_final_venue.location = -1;
+	ctr_cfg.oxide_final_venue.wumpa_location = -1;
 	// wumpa_checks: an absent block is the option being off, so the cleared state
 	// IS the default -- except that every CODE clears to -1 rather than 0, because
 	// 0 is a plausible-looking location code while -1 is the absent sentinel every
@@ -390,11 +402,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
+	ctr_cfg.custom_ctr_enabled = 0;
+	ctr_cfg.custom_ctr_location = -1;
+	ctr_cfg.custom_lettersanity_mode = 0;
+	for (int l = 0; l < CTR_CFG_LETTER_COUNT; ++l)
+		ctr_cfg.custom_letter_locations[l] = ctr_cfg.custom_letter_items[l] = -1;
 	for (int t = 0; t < CTR_CFG_LETTER_TRACK_COUNT; t++)
 		for (int l = 0; l < CTR_CFG_LETTER_COUNT; l++)
 			ctr_cfg.lettersanity_locations[t][l] = -1;
 	ctr_cfg.podium_any_position = 0;
-	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+	for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 	{
 		ctr_cfg.podium[i].held_1st = -1;
 		ctr_cfg.podium[i].held_3rd = -1;
@@ -467,6 +484,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.goal_bosses = json_int(opt, "goal_bosses", legacy_bosses);
 		ctr_cfg.goal_gems = json_int(opt, "goal_gems", legacy_gems);
 	}
+	const auto oxideFirstMode = opt.find("oxide_1_optional");
+	ctr_cfg.oxide_1_optional = schema >= 13 && ctr_cfg.goal_oxide == 2 &&
+	                         oxideFirstMode != opt.end() && oxideFirstMode->is_number_integer() &&
+	                         (*oxideFirstMode == 1 || *oxideFirstMode == 2)
+	                         ? oxideFirstMode->get<int>() : 0;
 	ctr_cfg.relic_min_time = json_int(opt, "relic_min_time", 0);
 	ctr_cfg.relics_require_perfect = json_int(opt, "relics_require_perfect", 0);
 	// schema >= 5: oxide_final_unlock is a relic-goal MODE and oxide_final_count
@@ -521,6 +543,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.shortcut_knowledge = json_int(opt, "shortcut_knowledge", 0);
 	if (ctr_cfg.shortcut_knowledge < 0 || ctr_cfg.shortcut_knowledge > 2)
 		ctr_cfg.shortcut_knowledge = 0;
+	ctr_cfg.trial_track_mode[0] = json_int(opt, "slide_coliseum_races", 0);
+	ctr_cfg.trial_track_mode[1] = json_int(opt, "turbo_track_races", 0);
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+		if (ctr_cfg.trial_track_mode[t] < 0 || ctr_cfg.trial_track_mode[t] > 2)
+			ctr_cfg.trial_track_mode[t] = 0;
 	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
 		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
@@ -896,6 +923,114 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// schema 11: the Final Challenge venue is independent from ordinary boss
+	// shuffle and from the Gem Cup custom-track descriptor above.
+	auto oxideVenueIt = j.find("oxide_final_venue");
+	if (oxideVenueIt != j.end())
+	{
+		ctr_oxide_final_venue venue;
+		std::memset(&venue, 0, sizeof venue);
+		venue.seen = 1;
+		venue.host_level_id = -1;
+		venue.location = -1;
+		venue.wumpa_location = -1;
+		const char *reject = NULL;
+		char track[32] = "";
+		char opponent[32] = "";
+		const int selected = json_int(opt, "oxide_final_track", -1);
+		const int expectedWumpa =
+		    selected == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+		    json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK
+		        ? 35016121 : -1;
+
+		if (!oxideVenueIt->is_object()) reject = "block is not an object";
+		else
+		{
+			const nlohmann::json &v = *oxideVenueIt;
+			json_str(v, "track", track, sizeof track);
+			json_str(v, "opponent", opponent, sizeof opponent);
+			json_str(v, "lev_sha256", venue.lev_sha256, sizeof venue.lev_sha256);
+			json_str(v, "vrm_sha256", venue.vrm_sha256, sizeof venue.vrm_sha256);
+			venue.host_level_id = json_int(v, "host_level_id", -1);
+			venue.location = json_long(v, "location", -1);
+			venue.wumpa_location = json_long(v, "wumpa_location", -1);
+			if (json_int(v, "version", 0) != 1) reject = "unsupported version";
+			else if (!std::strcmp(track, "cortex_vortex")) venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+			else if (!std::strcmp(track, "oxide_station")) venue.track = CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+			else reject = "unknown track";
+			if (!reject && selected != venue.track) reject = "option and descriptor track disagree";
+			if (!reject && std::strcmp(opponent, "nitros_oxide")) reject = "opponent is not Nitros Oxide";
+			if (!reject && venue.location != 35011105) reject = "Final Challenge location is not 35011105";
+			if (!reject && venue.host_level_id != 13) reject = "host level is not Oxide Station";
+			if (!reject && venue.wumpa_location != expectedWumpa)
+				reject = "Cortex Vortex Wumpa identity disagrees with options";
+			if (!reject && venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+			    (std::strcmp(venue.lev_sha256,
+			                 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13") ||
+			     std::strcmp(venue.vrm_sha256,
+			                 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d")))
+				reject = "Cortex Vortex hashes are not the approved Lockheart pair";
+		}
+		if (reject)
+			ap_cfg_log("[AP CFG] *** oxide_final_venue REFUSED: %s; Final Challenge admission disabled ***\n", reject);
+		else venue.valid = 1;
+		ctr_cfg.oxide_final_venue = venue;
+	}
+
+	// ── trial_track_checks (schema 10, issue #203) ──────────────────────────
+	auto trialIt = j.find("trial_track_checks");
+	if (trialIt != j.end() && trialIt->is_object() &&
+	    json_int(*trialIt, "enabled", 0))
+	{
+		auto locationsIt = trialIt->find("locations");
+		if (locationsIt != trialIt->end() && locationsIt->is_object())
+		{
+			for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+			{
+				const char *key = t == 0 ? "16" : "17";
+				auto rowIt = locationsIt->find(key);
+				if (rowIt == locationsIt->end() || !rowIt->is_array() || rowIt->size() != 2)
+					continue;
+				long trophy = -1, ctr = -1;
+				try
+				{
+					trophy = (*rowIt)[CTR_CFG_TRIAL_TROPHY].get<long>();
+					ctr = (*rowIt)[CTR_CFG_TRIAL_CTR].get<long>();
+				}
+				catch (...) { continue; }
+				int valid = trophy > 0 && (ctr == -1 || ctr > 0) && trophy != ctr;
+				if (ctr > 0 && ctr_cfg.trial_track_mode[t] < 2) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] >= 2 && ctr <= 0) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] < 1) valid = 0;
+				if (!valid)
+				{
+					ap_cfg_log("[AP CFG] trial track %s check row refused (mode=%d trophy=%ld ctr=%ld)\n",
+					           key, ctr_cfg.trial_track_mode[t], trophy, ctr);
+					continue;
+				}
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_TROPHY] = trophy;
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_CTR] = ctr;
+				ctr_cfg.trial_track_valid[t] = 1;
+			}
+		}
+	}
+
+	// A code may identify only one trial event, even across the two tracks.
+	for (int a = 0; a < CTR_CFG_TRIAL_TRACK_COUNT; a++)
+	for (int b = a + 1; b < CTR_CFG_TRIAL_TRACK_COUNT; b++)
+	for (int ca = 0; ca < CTR_CFG_TRIAL_CHECK_COUNT; ca++)
+	for (int cb = 0; cb < CTR_CFG_TRIAL_CHECK_COUNT; cb++)
+	{
+		long lhs = ctr_cfg.trial_track_locations[a][ca];
+		long rhs = ctr_cfg.trial_track_locations[b][cb];
+		if (lhs > 0 && lhs == rhs)
+		{
+			ap_cfg_log("[AP CFG] duplicate trial-track location code %ld; disabling both tracks\n", lhs);
+			ctr_cfg.trial_track_valid[a] = 0;
+			ctr_cfg.trial_track_valid[b] = 0;
+		}
+	}
+
 	// ── wumpa_checks (2026-08-29 specification, Lane A) ────────────────────
 	//
 	// Reaching ten fruit in a race is a check. This block says which shape the
@@ -1162,6 +1297,106 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// Custom mode ownership is explicit in the pinned parent descriptor. Asset
+	// presence alone never admits CTR, and sparse addresses never become hosts.
+	auto exactInteger = [](const nlohmann::json &value, long long expected) {
+		if (!value.is_number_integer()) return false;
+		if (value.is_number_unsigned())
+			return expected >= 0 && value.get<unsigned long long>() == (unsigned long long)expected;
+		return value.get<long long>() == expected;
+	};
+	if (ctr_cfg.custom_tracks_ok && schema >= 12)
+	{
+		const auto &parent = (*ctIt)["tracks"][0];
+		auto modes = parent.find("modes");
+		bool modesValid = modes == parent.end() || modes->is_object();
+		if (modes != parent.end() && modes->is_object())
+			for (auto it = modes->begin(); it != modes->end(); ++it)
+				if (it.key() != "ctr_challenge" || !it.value().is_boolean()) modesValid = false;
+		if (!modesValid)
+		{
+			ctr_cfg.custom_tracks_ok = 0;
+			ap_cfg_log("[AP CFG] malformed custom mode declaration; custom load disarmed\n");
+		}
+		if (modesValid && modes != parent.end() && modes->is_object() &&
+		    modes->contains("ctr_challenge") && (*modes)["ctr_challenge"].is_boolean() &&
+		    (*modes)["ctr_challenge"].get<bool>())
+		{
+			const auto &locations = parent["locations"];
+			long expected = 35023000L + ctr_cfg.custom_track.slot - 1;
+			if (ctr_cfg.custom_track.flags.ctr_letters && locations.is_object() &&
+			    locations.contains("ctr") && exactInteger(locations["ctr"], expected))
+			{
+				ctr_cfg.custom_ctr_enabled = 1;
+				ctr_cfg.custom_ctr_location = expected;
+			}
+			else ctr_cfg.custom_tracks_ok = 0;
+		}
+	}
+	auto customLetters = j.find("custom_lettersanity_checks");
+	if (customLetters == j.end() && ctr_cfg.custom_ctr_enabled && ctr_cfg.lettersanity_mode != 0)
+	{
+		ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+		ctr_cfg.custom_ctr_location = -1;
+		ap_cfg_log("[AP CFG] custom CTR letter block missing; custom load disarmed\n");
+	}
+	if (customLetters != j.end())
+	{
+		bool valid = customLetters->is_object() && ctr_cfg.custom_tracks_ok && ctr_cfg.custom_ctr_enabled;
+		int mode = 0, count = 0;
+		if (valid)
+		{
+			valid = customLetters->contains("version") && exactInteger((*customLetters)["version"], 1);
+			for (int n = 1; n <= 3; ++n)
+			{
+				if (customLetters->contains("mode") && exactInteger((*customLetters)["mode"], n)) mode = n;
+				if (customLetters->contains("letters_per_track") && exactInteger((*customLetters)["letters_per_track"], n)) count = n;
+			}
+			valid = valid && mode != 0 && count != 0 && mode == ctr_cfg.lettersanity_mode &&
+			        lettersIt != j.end() && lettersIt->is_object() &&
+			        lettersIt->contains("letters_per_track") &&
+			        exactInteger((*lettersIt)["letters_per_track"], count) &&
+			        customLetters->contains("tracks") && (*customLetters)["tracks"].is_array() &&
+			        (*customLetters)["tracks"].size() == 1;
+		}
+		long locations[3] = {-1, -1, -1}, items[3] = {-1, -1, -1};
+		if (valid)
+		{
+			const auto &track = (*customLetters)["tracks"][0];
+			valid = track.is_object() && track.contains("slot") &&
+			        exactInteger(track["slot"], ctr_cfg.custom_track.slot) &&
+			        track.contains("locations") && track["locations"].is_array() && track["locations"].size() == 3 &&
+			        track.contains("items") && track["items"].is_array() && track["items"].size() == 3;
+			int selected = 0;
+			for (int l = 0; valid && l < 3; ++l)
+			{
+				long loc = 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				long item = 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				bool chosen = mode == 3 || exactInteger(track["locations"][l], loc);
+				locations[l] = chosen && mode != 3 ? loc : -1;
+				items[l] = chosen && mode != 1 ? item : -1;
+				valid = exactInteger(track["locations"][l], locations[l]) && exactInteger(track["items"][l], items[l]);
+				selected += chosen;
+			}
+			valid = valid && selected == (mode == 3 ? 3 : count);
+		}
+		if (valid)
+		{
+			ctr_cfg.custom_lettersanity_mode = mode;
+			for (int l = 0; l < 3; ++l)
+			{
+				ctr_cfg.custom_letter_locations[l] = locations[l];
+				ctr_cfg.custom_letter_items[l] = items[l];
+			}
+		}
+		else
+		{
+			ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+			ctr_cfg.custom_ctr_location = -1;
+			ap_cfg_log("[AP CFG] custom letter mode/identity REFUSED; custom load disarmed\n");
+		}
+	}
+
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{
@@ -1183,9 +1418,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			{
 				int lid;
 				try { lid = std::stoi(it.key()); } catch (...) { continue; }
-				if (lid < 0 || lid >= CTR_CFG_PODIUM_TRACK_COUNT)
+				if (lid < 0 || lid >= CTR_CFG_PODIUM_STORAGE_COUNT ||
+				    (lid >= 16 && (schema < 13 || !ctr_cfg.trial_track_valid[lid-16] ||
+				                   ctr_cfg.trial_track_mode[lid-16] < 1 ||
+				                   it.key() != std::to_string(lid))))
 					continue; // only the 16 trophy races carry rungs
 				const nlohmann::json &r = it.value();
+				if (lid >= 16)
+				{
+					if (!r.is_array() || r.size() != CTR_CFG_PODIUM_RUNG_COUNT) continue;
+					bool owned = true;
+					for (int k=0; k<CTR_CFG_PODIUM_RUNG_COUNT; k++)
+						if (!r[k].is_number_integer() ||
+						    (r[k] != -1 && r[k] != 35015200+(lid-16)*5+k)) owned=false;
+					if (!owned) continue;
+				}
 				ctr_podium_rungs &pr = ctr_cfg.podium[lid];
 				if (schema >= 6)
 				{
@@ -1297,6 +1544,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ap_cfg_log("[AP CFG] custom_tracks was on the wire but is not usable; every cup "
 		           "runs its vanilla legs\n");
 	}
+	if (ctr_cfg.oxide_final_venue.valid)
+		ap_cfg_log("[AP CFG] oxide_final_venue: %s, opponent Nitros Oxide, location %ld\n",
+		           ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX
+		               ? "Cortex Vortex" : "Oxide Station",
+		           ctr_cfg.oxide_final_venue.location);
+	else if (ctr_cfg.oxide_final_venue.seen)
+		ap_cfg_log("[AP CFG] oxide_final_venue is unusable; Final Challenge admission disabled\n");
 
 	// Wumpa checks: one line for the mode, then the resolved mapping, so a
 	// support bundle answers "why did my per-track check not fire" without a
@@ -1337,7 +1591,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ap_cfg_log( "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
 	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
 	if (ctr_cfg.podium_enabled)
-		for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+		for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 		{
 			const ctr_podium_rungs &pr = ctr_cfg.podium[i];
 			if (pr.held_1st >= 0 || pr.held_3rd >= 0 || pr.held_5th >= 0 ||

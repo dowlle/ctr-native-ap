@@ -9,10 +9,10 @@
 // different trains. Surfaced in the window title and the startup log; update
 // this define as part of tagging a release.
 // Numeric compatibility identity used for seed/client update comparisons.
-#define CTR_AP_COMPAT_VERSION "v0.2.0"
+#define CTR_AP_COMPAT_VERSION "v0.2.1"
 
 // Tester-visible build identity. Prerelease labels belong here because the
 // Archipelago world manifest only accepts numeric major.minor.patch versions.
-#define CTR_AP_VERSION "v0.2.0"
+#define CTR_AP_VERSION "v0.2.1-alpha1"
 
 #endif // AP_VERSION_H

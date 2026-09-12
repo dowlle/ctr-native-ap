@@ -2,6 +2,7 @@
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
+#include "../../ap/ap_instance_pool_logic.h"
 #endif
 
 #ifdef CTR_NATIVE
@@ -182,7 +183,9 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	// ten-stage loader is armed (see tools/CUSTOM-TRACK-SPIKE.md), and this
 	// runs inside that machine, so asking here is safe.
 	{
-		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID);
+		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
+		              CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
+	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
 
 		if (chosen != (unsigned long)size)
@@ -325,7 +328,22 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		{
 			apInstExtra = 48;
 		}
-		JitPool_Init(&gGT->JitPools.instance, (renderBucketSize >> 5) + apInstExtra,
+		// Three world letters plus their three HUD instances on the two trial
+		// tracks. No retail pool budget changes outside these destinations.
+		if ((gGT->levelID == SLIDE_COLISEUM || gGT->levelID == TURBO_TRACK) &&
+		    (gGT->gameMode2 & TOKEN_RACE))
+			apInstExtra = 6;
+		int instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
+#ifdef CTR_CUSTOM_TRACKS
+		int customServing = CustomTrack_ServingLoad((int)gGT->levelID,
+		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
+		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
+		                                (gameMode & ADVENTURE_BOSS) != 0);
+		if (gGT->level1 != NULL)
+			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, customServing,
+			                                           gGT->level1->numInstances);
+#endif
+		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
 		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 		             rdata.s_InstancePool);
 	}
@@ -626,6 +644,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 
 	if ((gGT->hudFlags & 2) != 0)
 	{
+#ifdef CTR_AP
+		AP_TrialLetters_Register(gGT);
+#endif
 		UI_INSTANCE_InitAll();
 	}
 
@@ -673,6 +694,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 
 	// copy InstDef to InstancePool
 	INSTANCE_LevInitAll(lev1->ptrInstDefs, lev1->numInstances);
+#ifdef CTR_AP
+	AP_TrialLetters_Spawn(gGT);
+#endif
 
 	// Debug_ToggleNormalSpawn == normal spawn
 	if (gGT->Debug_ToggleNormalSpawn != 0)

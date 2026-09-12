@@ -20,6 +20,35 @@ int main(void)
 	const unsigned char all_received[3] = {1, 1, 1};
 	int seen = 0;
 	int row;
+	int custom_cases = 0;
+	for (int slot = 1; slot <= AP_CUSTOM_LETTER_SLOT_COUNT; ++slot)
+	for (int mode = 0; mode <= 3; ++mode)
+	for (int mask = 1; mask < 8; ++mask)
+	for (int receipt = 0; receipt < 8; ++receipt)
+	{
+		long codes[3];
+		unsigned char received[3];
+		int required = mode == 2 ? 0 : 3;
+		int met = 1;
+		for (int l = 0; l < 3; ++l)
+		{
+			int chosen = (mask >> l) & 1;
+			codes[l] = chosen && mode != 3 ? 35020000L + (slot - 1) * 3 + l : -1;
+			received[l] = (receipt >> l) & 1;
+			if (mode == 2) required += chosen;
+			if ((mode == 3 || (mode == 2 && chosen)) && !received[l]) met = 0;
+			int available = mode < 2 || ((mode == 3 || chosen) && received[l]);
+			if (AP_LetterAvailablePure(1, mode, codes[l], received[l]) != available) failures++;
+		}
+		if (AP_LettersRequiredCountPure(1, mode, codes) != required) failures++;
+		if (AP_LettersRequiredMetPure(1, mode, codes, received) != met) failures++;
+		for (int collected = 0; collected <= 3; ++collected)
+		for (int win = 0; win <= 1; ++win)
+			if (AP_LetterTokenEarnedPure(win, collected, 1, mode, codes, received) !=
+			    (win && collected == required && met)) failures++;
+		custom_cases++;
+	}
+	printf("custom sparse gate matrix: %d slot/mode/selection/receipt cases\n", custom_cases);
 
 	for (row = 0; row < 16; row++)
 	{

@@ -37,6 +37,7 @@ static AP_OxideGarageState Eval(int req, int goalOxide, int firstCleared,
 	in.bossesWon = bossesWon;
 	in.goalGems = goalGems;
 	in.gemsHeld = gemsHeld;
+	in.firstOptional = 0;
 	return AP_OxideGarageEvaluate(&in);
 }
 
@@ -57,6 +58,33 @@ static int Encounter(int req, int goalOxide, int firstCleared, int relics,
 int main(void)
 {
 	int mode, i;
+	// Exhaustive opt-in selection: no missing final term is bypassed; other
+	// goal modes and mandatory-first selection retain their old behavior.
+	{
+		int rows = 0;
+		for (int goal = 0; goal < 4; goal++)
+		for (int optional = 0; optional < 3; optional++)
+		for (int cleared = 0; cleared < 2; cleared++)
+		for (int req = 0; req < 2; req++)
+		for (int relics = 0; relics < 2; relics++)
+		for (int bosses = 3; bosses <= 4; bosses++)
+		for (int gems = 4; gems <= 5; gems++)
+		{
+			AP_OxideGarageInputs in = {req, goal, cleared, relics,
+			                                4, bosses, 5, gems, optional};
+			AP_OxideGarageState st = AP_OxideGarageEvaluate(&in);
+			int wantFinal = cleared || (goal == 2 && optional && req &&
+			                            relics && bosses == 4 && gems == 5);
+			int encounter = goal == 3 ? 0 : (wantFinal ? 2 : 1);
+			int open = goal != 3 && req && (!wantFinal || relics) &&
+			           (!((goal == 1 && !wantFinal) || (goal == 2 && wantFinal)) ||
+			            (bosses == 4 && gems == 5));
+			if (st.encounter != encounter || st.open != open)
+				failures++;
+			rows++;
+		}
+		printf("optional-first selection: %d exhaustive rows\n", rows);
+	}
 
 	// ---------------------------------------------------------------------
 	// ENCOUNTER SELECTION. An uncleared first challenge is always what the

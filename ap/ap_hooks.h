@@ -33,6 +33,8 @@ void AP_NotifyAdvReward(int rewardBit);
 // presentation state only; the AP check is the custom Trophy code from slot data.
 int AP_CustomTrackTrophyChecked(void);
 void AP_NotifyCustomTrackTrophy(void);
+int AP_CustomTrackCtrChecked(void);
+void AP_NotifyCustomTrackCtr(int didWin, int collected);
 
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
@@ -178,6 +180,8 @@ int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 // completion condition exactly. When slot_data is absent, falls back to the
 // Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
 int AP_OxideFinalOpen(void);
+int AP_OxideFinalVenueReady(void);
+int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected
 // seed's slot_data schema is NEWER than this build understands (issue #8;
@@ -428,6 +432,11 @@ long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
 void AP_LetterUnavailableTouched(int track, int letter);
 int AP_LettersRequiredMet(int track);
+int AP_DoorHistoryOpen(int level, int door);
+int AP_DoorHistoryReady(void);
+int AP_DoorHistoryEnabled(void);
+void AP_DoorHistoryRecord(int level, int door);
+void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
@@ -511,6 +520,12 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 // tiers; arena 18/19/21/23 = 1 crystal; cup 100..104 = 1 gem) and returns the
 // count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
+
+// Schema-10 standalone race identities for Slide Coliseum and Turbo Track.
+// These locations have no AdvProgress bit and must never use levelID arithmetic.
+int AP_TrialTrackConfigured(int levelID);
+int AP_TrialTrackLocationChecked(int levelID, int challenge);
+void AP_NotifyTrialTrackRace(int levelID, int challenge);
 
 // ── Podium rungs in the reward glow ──
 // Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),

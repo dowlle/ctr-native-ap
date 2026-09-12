@@ -22,6 +22,9 @@ void AH_Door_ThDestroy(struct Thread *t)
 
 static char AH_Door_IsOpenByRewards(s16 levelID, s16 doorID)
 {
+#ifdef CTR_AP
+	if (AP_DoorHistoryEnabled()) return AP_DoorHistoryOpen(levelID, doorID);
+#endif
 	if ((levelID == N_SANITY_BEACH) && (doorID == 4))
 	{
 		return (sdata->advProgress.storyFlags & ADV_REWARD_DOOR_BEACH_TO_GLACIER_PARK_MASK) != 0;
@@ -49,6 +52,37 @@ static char AH_Door_IsOpenByRewards(s16 levelID, s16 doorID)
 
 	return false;
 }
+
+#ifdef CTR_AP
+/* Late server replies use the same pose as birth. Never steal a cutscene. */
+static void AH_Door_ApplyHistoryPose(struct Instance *inst, struct WoodDoor *door)
+{
+	SVec3 rot;
+	if (!AP_DoorHistoryEnabled()) return;
+	if (door->otherDoor == NULL || (door->camFlags & WdCam_CutscenePlaying) != 0)
+		return;
+	AP_DoorHistoryReconcile(sdata->gGT->levelID, door->doorID);
+	if (AP_DoorHistoryOpen(sdata->gGT->levelID, door->doorID))
+	{
+		if (door->doorRot.y == 0x400) return;
+		door->doorRot.y = 0x400;
+		rot.x = door->doorRot.x; rot.z = door->doorRot.z;
+		rot.y = inst->instDef->rot.y + 0x400;
+		ConvertRotToMatrix(&inst->matrix, &rot);
+		rot.y = inst->instDef->rot.y - 0x400;
+		ConvertRotToMatrix(&door->otherDoor->matrix, &rot);
+	}
+	else if (door->doorRot.y == 0x400)
+	{
+		/* Inventory reset or a different room cannot retain an open pose. */
+		door->doorRot.y = 0;
+		rot.x = door->doorRot.x; rot.z = door->doorRot.z;
+		rot.y = inst->instDef->rot.y;
+		ConvertRotToMatrix(&inst->matrix, &rot);
+		ConvertRotToMatrix(&door->otherDoor->matrix, &rot);
+	}
+}
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 overlay 232 0x800afa60-0x800b072c.
 void AH_Door_ThTick(struct Thread *t)
@@ -85,6 +119,10 @@ void AH_Door_ThTick(struct Thread *t)
 	doorIsOpen = false;
 
 	lev = gGT->levelID;
+
+#ifdef CTR_AP
+	AH_Door_ApplyHistoryPose(doorInst, door);
+#endif
 
 	// NOTE(aalhendi): Retail derives open state from adventure rewards here.
 	doorIsOpen = AH_Door_IsOpenByRewards(lev, doorID);
@@ -581,6 +619,9 @@ void AH_Door_ThTick(struct Thread *t)
 		sdata->advProgress.storyFlags |= ADV_REWARD_DOOR_GLACIER_PARK_TO_CITADEL_CITY_MASK;
 	}
 
+#ifdef CTR_AP
+	AP_DoorHistoryRecord(lev, doorID);
+#endif
 	cDC->flags |= CAMERA_FLAG_TRANSITION_BACK;
 
 	driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
@@ -733,6 +774,13 @@ void AH_Door_LInB(struct Instance *inst)
 
 	headers->flags |= 2;
 
+#ifdef CTR_AP
+	if (AP_DoorHistoryEnabled())
+	{
+		AH_Door_ApplyHistoryPose(inst, woodDoor);
+		return;
+	}
+#endif
 	if (
 	    // Level ID is N Sanity Beach, check door to Glacier Park
 	    (levelID == N_SANITY_BEACH && woodDoor->doorID == 4 && ((sdata->advProgress.storyFlags & ADV_REWARD_DOOR_BEACH_TO_GLACIER_PARK_MASK) != 0)) ||

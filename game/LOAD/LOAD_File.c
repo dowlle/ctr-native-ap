@@ -370,6 +370,8 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	ctCtx.levelID = (int)sdata->gGT->levelID;
 	ctCtx.adventureCupActive = (sdata->gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	ctCtx.cupID = sdata->gGT->cup.cupID;
+	ctCtx.bossID = sdata->gGT->bossID;
+	ctCtx.adventureBossActive = (sdata->gGT->gameMode1 & ADVENTURE_BOSS) != 0;
 
 	ctOverride = CustomTrack_GetOverride(subfileIndex, &ctCtx, &ctOverridePath, &ctOverrideSize);
 #endif
