@@ -62,6 +62,7 @@
 #include "ap_capability.h"       // AP_CAPABILITY_* and AP_CHARACTER_* item blocks
 #include "ap_itemsanity_logic.h" // AP_ITEMSANITY_ITEM_FIRST_INDEX / _WEAPON_COUNT
 #include "ap_trap_items.h"       // the 20 trap identities, which are not one range
+#include "ap_lettersanity.h"      // which item ids are letters: retail, trial and custom
 
 // The lettersanity block is owned by ap_seedcfg.h, next to the rest of the
 // per-seed letter config. This header cannot reach for that one and stay
@@ -160,12 +161,20 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	if (idx == AP_WUMPA_PROGRESSIVE_ITEM_INDEX)
 		return AP_CAT_CRYSTAL;
 
-	// The letters (139..186) and Gas Pedal (187). Gas Pedal has no receive path in
-	// any client, and is classified here anyway so the display cannot be the thing
-	// still outstanding when one lands.
-	if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
-	    idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+	// The letters: retail (139..186), Slide Coliseum and Turbo Track (194..199)
+	// and the custom-track block. Asked through ap_lettersanity.h, the same
+	// predicates the receive path uses, so a letter family added there cannot
+	// fall through to the AP marker here again (0.2.1 trial and custom letters
+	// did). Gas Pedal (187) has no receive path in any client, and is classified
+	// here anyway so the display cannot be the thing still outstanding when one
+	// lands.
+	if (idx >= 0 && idx < 0x10000 && AP_LetterItemIndexIsLetterPure((int)idx))
 		return AP_CAT_CRYSTAL;
+	{
+		int letterSlot, letterIndex;
+		if (AP_CustomLetterItemToIdentityPure(id, &letterSlot, &letterIndex))
+			return AP_CAT_CRYSTAL;
+	}
 	if (idx == AP_GAS_PEDAL_ITEM_INDEX)
 		return AP_CAT_CRYSTAL;
 
