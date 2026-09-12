@@ -218,7 +218,7 @@ int main(void)
 		!AP_VerifyLocationCapabilityGate(&o, items, AP_VF_LOC_LABS_PLATINUM, 1));
 
 	// Cup-leg term parity: an unrandomized boost chain never evaluates the
-	// leg pad's racer, matching the apworld's unconditional usf_term.
+	// cup pad's racer, matching the apworld's unconditional usf_term.
 	memset(&o, 0, sizeof o);
 	memset(items, 0, sizeof items);
 	o.character_unlocks = 1;
@@ -238,6 +238,25 @@ int main(void)
 	items[AP_VF_BOOST_SHARED] = 0;
 	OK("hard knowledge escapes the Oxide cup leg",
 		AP_VerifyCupLegCapability(&o, items, 13, -1));
+
+	// One cup racer must own the USF needed by every gated leg.
+	memset(items, 0, sizeof items);
+	o.character_unlocks = 0;
+	o.boost_mode = 2;
+	o.shortcut_knowledge = 0;
+	items[AP_VF_PC_FIRST + AP_VerifyRosterSlot(3) * 4] = 2; // Coco
+	items[AP_VF_PC_FIRST + AP_VerifyRosterSlot(4) * 4] = 1; // N. Gin
+	items[AP_VF_PC_FIRST + AP_VerifyRosterSlot(5) * 4] = 1; // Dingodile
+	OK("Yellow HAS leg cannot borrow Coco USF for N. Gin",
+		!AP_VerifyCupLegCapability(&o, items, 7, 4));
+	OK("Green Castle leg cannot borrow Coco USF for Dingodile",
+		!AP_VerifyCupLegCapability(&o, items, 10, 5));
+	items[AP_VF_PC_FIRST + AP_VerifyRosterSlot(4) * 4] = 2;
+	items[AP_VF_PC_FIRST + AP_VerifyRosterSlot(5) * 4] = 2;
+	OK("Yellow HAS leg opens on N. Gin's own USF",
+		AP_VerifyCupLegCapability(&o, items, 7, 4));
+	OK("Green Castle leg opens on Dingodile's own USF",
+		AP_VerifyCupLegCapability(&o, items, 10, 5));
 
 	printf("\n%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;

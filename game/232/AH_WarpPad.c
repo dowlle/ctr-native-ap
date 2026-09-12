@@ -4,6 +4,60 @@
 #include <platform/native_custom_tracks.h>
 #endif
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+static int apCustomRaceChoice = -2;
+static struct {
+	struct Driver *driver;
+	int positionY;
+	SVec3 scale;
+	int flags;
+	s16 split, camera;
+	s16 turnAngle, rotationY;
+} apCustomWarpSnapshot;
+static void AH_WarpPad_CustomRaceCapture(struct GameTracker *gGT)
+{
+	struct Driver *driver = gGT->drivers[0];
+	apCustomWarpSnapshot.driver = driver;
+	apCustomWarpSnapshot.positionY = driver->posCurr.y;
+	apCustomWarpSnapshot.turnAngle = driver->turnAngleCurr;
+	apCustomWarpSnapshot.rotationY = driver->rotCurr.y;
+	apCustomWarpSnapshot.scale = driver->instSelf->scale;
+	apCustomWarpSnapshot.flags = driver->instSelf->flags & (REFLECTIVE | HIDE_MODEL);
+	apCustomWarpSnapshot.split = driver->instSelf->vertSplit;
+	apCustomWarpSnapshot.camera = gGT->cameraDC[driver->driverID].cameraMode;
+}
+static void AH_WarpPad_CustomRaceRestore(struct GameTracker *gGT)
+{
+	struct Driver *driver = gGT->drivers[0];
+	if (apCustomWarpSnapshot.driver != driver) return;
+	driver->posCurr.y = apCustomWarpSnapshot.positionY;
+	driver->turnAngleCurr = apCustomWarpSnapshot.turnAngle;
+	driver->rotCurr.y = apCustomWarpSnapshot.rotationY;
+	driver->instSelf->scale = apCustomWarpSnapshot.scale;
+	driver->instSelf->flags = (driver->instSelf->flags & ~(REFLECTIVE | HIDE_MODEL)) |
+	                         apCustomWarpSnapshot.flags;
+	driver->instSelf->vertSplit = apCustomWarpSnapshot.split;
+	gGT->cameraDC[driver->driverID].cameraMode = apCustomWarpSnapshot.camera;
+	apCustomWarpSnapshot.driver = NULL;
+}
+static void AH_WarpPad_CustomRaceMenuProc(struct RectMenu *menu)
+{
+	apCustomRaceChoice = menu->rowSelected;
+	RECTMENU_Hide(menu);
+}
+static struct MenuRow apCustomRaceRows[] = {
+	{LNG_TROPHY_RACE, 0, 1, 0, 0},
+	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
+	{-1, 0, 0, 0, 0}
+};
+static struct RectMenu apCustomRaceMenu = {
+	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
+	.posX_curr = 0x100, .posY_curr = 0x6c,
+	.state = 0x100803, .rows = apCustomRaceRows,
+	.funcPtr = AH_WarpPad_CustomRaceMenuProc, .drawStyle = 4
+};
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
 s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 {
@@ -850,6 +904,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		    !AP_CustomContentGateEventEntry(warppadObj->framesWarping == 60))
 			goto WarpPad_AnimateOpen;
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		if (warppadObj->framesWarping == 0 && ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&
+		    levelID == ctr_cfg.custom_track.replaces_cup_level_id)
+			AH_WarpPad_CustomRaceCapture(gGT);
+#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -858,6 +917,40 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		if (ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&
+		    levelID == ctr_cfg.custom_track.replaces_cup_level_id)
+		{
+			if (warppadObj->framesWarping == 61)
+			{
+				apCustomRaceChoice = -2;
+				apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
+				RECTMENU_Show(&apCustomRaceMenu);
+			}
+			if (apCustomRaceChoice == -2)
+				goto WarpPad_TrophyAnimateOnly;
+			if (apCustomRaceChoice < 0)
+			{
+				warppadObj->boolEnteredWarppad = 0;
+				warppadObj->framesWarping = 0;
+				AH_WarpPad_CustomRaceRestore(gGT);
+				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+				goto WarpPad_AnimateOpen;
+			}
+			gGT->gameMode2 &= ~TOKEN_RACE;
+			gGT->gameMode1 &= ~RELIC_RACE;
+			sdata->Loading.OnBegin.AddBitsConfig0 &= ~RELIC_RACE;
+			sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
+			sdata->Loading.OnBegin.AddBitsConfig8 &= ~TOKEN_RACE;
+			sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+			if (apCustomRaceChoice == 1)
+			{
+				gGT->gameMode2 |= TOKEN_RACE;
+				sdata->Loading.OnBegin.RemBitsConfig8 &= ~TOKEN_RACE;
+				sdata->Loading.OnBegin.AddBitsConfig8 |= TOKEN_RACE;
+			}
+		}
+#endif
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
 
 		gGT->cup.cupID = levelID - AH_WP_ADV_CUP;

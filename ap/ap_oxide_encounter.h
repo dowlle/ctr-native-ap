@@ -36,10 +36,9 @@
 // garage into a goal gate would lock content the seed never gated.
 //
 // ENCOUNTER PRIORITY. An UNCLEARED first challenge is always what the garage
-// offers, even when the relic requirement for the Final Challenge is already
-// satisfied. That is what stops a relic-rich player from skipping the first
-// check. Only after the first clear may the garage advance to the Final
-// Challenge.
+// offers unless schema-13 `oxide_1_optional` is enabled with goal_oxide=2 AND
+// every final entry term is satisfied. In that opt-in case a final win also
+// collects the first reward. Missing/disabled option preserves first priority.
 //
 // TRUTH SOURCES (the caller's job, restated here because getting it wrong is
 // the BUG-D class this area keeps relapsing into):
@@ -89,6 +88,7 @@ typedef struct AP_OxideGarageInputs
 	int bossesWon;
 	int goalGems;
 	int gemsHeld;
+	int firstOptional; // schema 13: only applies to the Final Challenge goal
 } AP_OxideGarageInputs;
 
 typedef struct AP_OxideGarageState
@@ -127,8 +127,12 @@ static inline AP_OxideGarageState AP_OxideGarageEvaluate(
 	if (in->goalOxide == AP_OXIDE_GOAL_DISABLED)
 		return st;
 
-	// An uncleared first challenge is always what the garage offers next.
-	st.encounter = in->firstCleared ? AP_OXIDE_ENCOUNTER_FINAL
+	// Opt-in skip only when EVERY final entry term is met. Before that the
+	// first race remains available, including its potentially required item.
+	st.encounter = (in->firstCleared ||
+	                (in->firstOptional && in->goalOxide == AP_OXIDE_GOAL_FINAL &&
+	                 in->garageReqMet && in->finalRelicMet &&
+	                 AP_OxideCompanionsMet(in))) ? AP_OXIDE_ENCOUNTER_FINAL
 	                               : AP_OXIDE_ENCOUNTER_FIRST;
 
 	if (st.encounter == AP_OXIDE_ENCOUNTER_FIRST)

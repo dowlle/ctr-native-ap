@@ -691,6 +691,7 @@ static int ap_cs_restorePos = 0;   // restore hub position after the reload
 static int ap_cs_savedPos[3];
 static int ap_cs_savedRotY;
 static int ap_cs_savedLevel = -1;
+static int ap_cs_savedNeighborHub = -1;
 static int ap_cs_fromCharacter = -1;
 
 static int ap_cs_keyPrev[3];
@@ -778,12 +779,28 @@ static int ap_cs_hubReady(struct GameTracker *gGT)
 	return 1;
 }
 
+static int ap_cs_hubTransitionIdle(struct GameTracker *gGT)
+{
+	if (!ap_cs_hubReady(gGT))
+		return 0;
+	// Background hub preloads do not change Loading.stage. A full character
+	// reload invalidates their mempack, and restoring inside a swap-only tunnel
+	// can wait forever for a neighboring level that was never re-queued.
+	if ((gGT->drivers[0]->stepFlagSet &
+	     (COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK | COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK)) != 0 ||
+	    gGT->bool_AdvHub_NeedToSwapLEV != 0 ||
+	    sdata->queueLength != 0 || sdata->queueReady == 0 ||
+	    sdata->load_inProgress != 0)
+		return 0;
+	return 1;
+}
+
 // A swap is only offered where the hub is genuinely idle. Cutscene / boss-key
 // door / mask-hint states already own the freeze bits and the camera, and the
 // podium freeze means a reward ceremony is running.
 static int ap_cs_safeToOpen(struct GameTracker *gGT)
 {
-	if (!ap_cs_hubReady(gGT))
+	if (!ap_cs_hubTransitionIdle(gGT))
 		return 0;
 	if ((gGT->gameMode1 & (PAUSE_1 | LOADING | GAME_CUTSCENE)) != 0)
 		return 0;
@@ -910,19 +927,63 @@ static void ap_cs_reapplyLive(struct GameTracker *gGT)
 // ---------------------------------------------------------------------------
 // The swap itself
 // ---------------------------------------------------------------------------
+static int ap_cs_neighborHub(struct GameTracker *gGT)
+{
+	int pack = gGT->activeMempackIndex;
+	int neighbor;
+	if ((pack != 1 && pack != 2) || gGT->level2 == NULL)
+		return -1;
+	neighbor = gGT->levID_in_each_mempack[3 - pack];
+	return neighbor >= GEM_STONE_VALLEY && neighbor <= CITADEL_CITY &&
+	       neighbor != gGT->levelID ? neighbor : -1;
+}
+
+// Full reload discards the already-preloaded adjacent hub even when no queue
+// is active. Re-prime it at the safe default spawn, before restoring a position
+// that may only carry the tunnel's swap-now flag (not its earlier preload flag).
+static int ap_cs_neighborReadyForRestore(struct GameTracker *gGT)
+{
+	int pack;
+	if (ap_cs_savedNeighborHub < 0 || gGT->levelID != ap_cs_savedLevel)
+		return 1;
+	if (sdata->queueLength != 0 || sdata->queueReady == 0 ||
+	    sdata->load_inProgress != 0)
+		return 0;
+	pack = gGT->activeMempackIndex;
+	if ((pack != 1 && pack != 2) || sdata->ptrBigfile1 == NULL)
+		return 0;
+	pack = 3 - pack;
+	if (gGT->level2 != NULL &&
+	    gGT->levID_in_each_mempack[pack] == ap_cs_savedNeighborHub)
+		return 1;
+	// A null level with no pending callback is not a valid cached preload.
+	if (gGT->level2 == NULL)
+		gGT->levID_in_each_mempack[pack] = -1;
+	AP_LogLine("[AP CHARSWAP] restoring neighboring hub preload before position\n");
+	LOAD_Hub_ReadFile(sdata->ptrBigfile1, ap_cs_savedNeighborHub, pack);
+	return 0;
+}
+
 static void ap_cs_requestSwap(struct GameTracker *gGT, int characterID)
 {
-	struct Driver *d = gGT->drivers[0];
+	struct Driver *d;
 	char msg[160];
 
-	if (d == NULL)
+	// Revalidate before changing/persisting the character or releasing freeze.
+	// Readiness may have changed after opening the picker.
+	if (!ap_cs_hubTransitionIdle(gGT))
+	{
+		AP_LogLine("[AP CHARSWAP] deferred: hub transition or background load owns hub\n");
 		return;
+	}
+	d = gGT->drivers[0];
 
 	ap_cs_savedPos[0] = d->posCurr.x;
 	ap_cs_savedPos[1] = d->posCurr.y;
 	ap_cs_savedPos[2] = d->posCurr.z;
 	ap_cs_savedRotY = d->rotCurr.y;
 	ap_cs_savedLevel = gGT->levelID;
+	ap_cs_savedNeighborHub = ap_cs_neighborHub(gGT);
 	ap_cs_fromCharacter = data.characterIDs[0];
 
 	// The character the hub reloads with. advProgress.characterID is the same
@@ -969,6 +1030,8 @@ static void ap_cs_completeSwap(struct GameTracker *gGT)
 
 	if (d == NULL)
 		return;
+	if (!ap_cs_neighborReadyForRestore(gGT))
+		return;
 
 	if (gGT->levelID == ap_cs_savedLevel)
 	{
@@ -992,6 +1055,7 @@ static void ap_cs_completeSwap(struct GameTracker *gGT)
 
 	ap_cs_restorePos = 0;
 	ap_cs_pendingSwap = 0;
+	ap_cs_savedNeighborHub = -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -1407,6 +1471,7 @@ static void ap_cs_seatApplyLive(struct GameTracker *gGT, int characterID, const 
 		ap_cs_savedPos[2] = d->posCurr.z;
 		ap_cs_savedRotY = d->rotCurr.y;
 		ap_cs_savedLevel = gGT->levelID;
+		ap_cs_savedNeighborHub = ap_cs_neighborHub(gGT);
 
 		ap_cs_setFreeze(gGT, 0);
 		ap_cs_pendingSwap = 1;
@@ -1654,6 +1719,15 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 	}
 
 	ap_cs_devKeys(gGT);
+
+	// Same hub/driver still exists: release our own freeze, not the level-change
+	// drop path, if background transition ownership arrives while browsing.
+	if (ap_cs_open && !ap_cs_hubTransitionIdle(gGT))
+	{
+		ap_cs_open = 0;
+		ap_cs_editFocus = 0;
+		ap_cs_setFreeze(gGT, 0);
+	}
 
 	// Honour a pending #238 pause-menu request. The row resumed the game and left
 	// this behind, so the first frames after it are still unsafe (PAUSE_1 is

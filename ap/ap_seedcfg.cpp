@@ -402,11 +402,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
+	ctr_cfg.custom_ctr_enabled = 0;
+	ctr_cfg.custom_ctr_location = -1;
+	ctr_cfg.custom_lettersanity_mode = 0;
+	for (int l = 0; l < CTR_CFG_LETTER_COUNT; ++l)
+		ctr_cfg.custom_letter_locations[l] = ctr_cfg.custom_letter_items[l] = -1;
 	for (int t = 0; t < CTR_CFG_LETTER_TRACK_COUNT; t++)
 		for (int l = 0; l < CTR_CFG_LETTER_COUNT; l++)
 			ctr_cfg.lettersanity_locations[t][l] = -1;
 	ctr_cfg.podium_any_position = 0;
-	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+	for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 	{
 		ctr_cfg.podium[i].held_1st = -1;
 		ctr_cfg.podium[i].held_3rd = -1;
@@ -479,6 +484,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.goal_bosses = json_int(opt, "goal_bosses", legacy_bosses);
 		ctr_cfg.goal_gems = json_int(opt, "goal_gems", legacy_gems);
 	}
+	const auto oxideFirstMode = opt.find("oxide_1_optional");
+	ctr_cfg.oxide_1_optional = schema >= 13 && ctr_cfg.goal_oxide == 2 &&
+	                         oxideFirstMode != opt.end() && oxideFirstMode->is_number_integer() &&
+	                         (*oxideFirstMode == 1 || *oxideFirstMode == 2)
+	                         ? oxideFirstMode->get<int>() : 0;
 	ctr_cfg.relic_min_time = json_int(opt, "relic_min_time", 0);
 	ctr_cfg.relics_require_perfect = json_int(opt, "relics_require_perfect", 0);
 	// schema >= 5: oxide_final_unlock is a relic-goal MODE and oxide_final_count
@@ -1287,6 +1297,106 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// Custom mode ownership is explicit in the pinned parent descriptor. Asset
+	// presence alone never admits CTR, and sparse addresses never become hosts.
+	auto exactInteger = [](const nlohmann::json &value, long long expected) {
+		if (!value.is_number_integer()) return false;
+		if (value.is_number_unsigned())
+			return expected >= 0 && value.get<unsigned long long>() == (unsigned long long)expected;
+		return value.get<long long>() == expected;
+	};
+	if (ctr_cfg.custom_tracks_ok && schema >= 12)
+	{
+		const auto &parent = (*ctIt)["tracks"][0];
+		auto modes = parent.find("modes");
+		bool modesValid = modes == parent.end() || modes->is_object();
+		if (modes != parent.end() && modes->is_object())
+			for (auto it = modes->begin(); it != modes->end(); ++it)
+				if (it.key() != "ctr_challenge" || !it.value().is_boolean()) modesValid = false;
+		if (!modesValid)
+		{
+			ctr_cfg.custom_tracks_ok = 0;
+			ap_cfg_log("[AP CFG] malformed custom mode declaration; custom load disarmed\n");
+		}
+		if (modesValid && modes != parent.end() && modes->is_object() &&
+		    modes->contains("ctr_challenge") && (*modes)["ctr_challenge"].is_boolean() &&
+		    (*modes)["ctr_challenge"].get<bool>())
+		{
+			const auto &locations = parent["locations"];
+			long expected = 35023000L + ctr_cfg.custom_track.slot - 1;
+			if (ctr_cfg.custom_track.flags.ctr_letters && locations.is_object() &&
+			    locations.contains("ctr") && exactInteger(locations["ctr"], expected))
+			{
+				ctr_cfg.custom_ctr_enabled = 1;
+				ctr_cfg.custom_ctr_location = expected;
+			}
+			else ctr_cfg.custom_tracks_ok = 0;
+		}
+	}
+	auto customLetters = j.find("custom_lettersanity_checks");
+	if (customLetters == j.end() && ctr_cfg.custom_ctr_enabled && ctr_cfg.lettersanity_mode != 0)
+	{
+		ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+		ctr_cfg.custom_ctr_location = -1;
+		ap_cfg_log("[AP CFG] custom CTR letter block missing; custom load disarmed\n");
+	}
+	if (customLetters != j.end())
+	{
+		bool valid = customLetters->is_object() && ctr_cfg.custom_tracks_ok && ctr_cfg.custom_ctr_enabled;
+		int mode = 0, count = 0;
+		if (valid)
+		{
+			valid = customLetters->contains("version") && exactInteger((*customLetters)["version"], 1);
+			for (int n = 1; n <= 3; ++n)
+			{
+				if (customLetters->contains("mode") && exactInteger((*customLetters)["mode"], n)) mode = n;
+				if (customLetters->contains("letters_per_track") && exactInteger((*customLetters)["letters_per_track"], n)) count = n;
+			}
+			valid = valid && mode != 0 && count != 0 && mode == ctr_cfg.lettersanity_mode &&
+			        lettersIt != j.end() && lettersIt->is_object() &&
+			        lettersIt->contains("letters_per_track") &&
+			        exactInteger((*lettersIt)["letters_per_track"], count) &&
+			        customLetters->contains("tracks") && (*customLetters)["tracks"].is_array() &&
+			        (*customLetters)["tracks"].size() == 1;
+		}
+		long locations[3] = {-1, -1, -1}, items[3] = {-1, -1, -1};
+		if (valid)
+		{
+			const auto &track = (*customLetters)["tracks"][0];
+			valid = track.is_object() && track.contains("slot") &&
+			        exactInteger(track["slot"], ctr_cfg.custom_track.slot) &&
+			        track.contains("locations") && track["locations"].is_array() && track["locations"].size() == 3 &&
+			        track.contains("items") && track["items"].is_array() && track["items"].size() == 3;
+			int selected = 0;
+			for (int l = 0; valid && l < 3; ++l)
+			{
+				long loc = 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				long item = 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				bool chosen = mode == 3 || exactInteger(track["locations"][l], loc);
+				locations[l] = chosen && mode != 3 ? loc : -1;
+				items[l] = chosen && mode != 1 ? item : -1;
+				valid = exactInteger(track["locations"][l], locations[l]) && exactInteger(track["items"][l], items[l]);
+				selected += chosen;
+			}
+			valid = valid && selected == (mode == 3 ? 3 : count);
+		}
+		if (valid)
+		{
+			ctr_cfg.custom_lettersanity_mode = mode;
+			for (int l = 0; l < 3; ++l)
+			{
+				ctr_cfg.custom_letter_locations[l] = locations[l];
+				ctr_cfg.custom_letter_items[l] = items[l];
+			}
+		}
+		else
+		{
+			ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+			ctr_cfg.custom_ctr_location = -1;
+			ap_cfg_log("[AP CFG] custom letter mode/identity REFUSED; custom load disarmed\n");
+		}
+	}
+
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{
@@ -1308,9 +1418,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			{
 				int lid;
 				try { lid = std::stoi(it.key()); } catch (...) { continue; }
-				if (lid < 0 || lid >= CTR_CFG_PODIUM_TRACK_COUNT)
+				if (lid < 0 || lid >= CTR_CFG_PODIUM_STORAGE_COUNT ||
+				    (lid >= 16 && (schema < 13 || !ctr_cfg.trial_track_valid[lid-16] ||
+				                   ctr_cfg.trial_track_mode[lid-16] < 1 ||
+				                   it.key() != std::to_string(lid))))
 					continue; // only the 16 trophy races carry rungs
 				const nlohmann::json &r = it.value();
+				if (lid >= 16)
+				{
+					if (!r.is_array() || r.size() != CTR_CFG_PODIUM_RUNG_COUNT) continue;
+					bool owned = true;
+					for (int k=0; k<CTR_CFG_PODIUM_RUNG_COUNT; k++)
+						if (!r[k].is_number_integer() ||
+						    (r[k] != -1 && r[k] != 35015200+(lid-16)*5+k)) owned=false;
+					if (!owned) continue;
+				}
 				ctr_podium_rungs &pr = ctr_cfg.podium[lid];
 				if (schema >= 6)
 				{
@@ -1469,7 +1591,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ap_cfg_log( "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
 	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
 	if (ctr_cfg.podium_enabled)
-		for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+		for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 		{
 			const ctr_podium_rungs &pr = ctr_cfg.podium[i];
 			if (pr.held_1st >= 0 || pr.held_3rd >= 0 || pr.held_5th >= 0 ||

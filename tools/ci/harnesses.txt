@@ -1,6 +1,8 @@
 # Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.
+tools/test-instance-pool.c
 # Regenerate with: tools/ci/run-harnesses.py --write-list
 tools/test-author-ready.c
+tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
 tools/test-box-map.c
@@ -42,6 +44,9 @@ tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
+tools/test-oxide-optional-result.py
+tools/test-trial-letter-visual.py
+tools/test-trial-podium-result.py
 tools/test-oxide-garage-advert.c
 tools/test-oxide-weapon-schedule.c
 tools/test-oxide-final-venue-seedcfg.cpp
@@ -57,6 +62,8 @@ tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
+tools/test-tunnel-charswap-production.py
+tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-trial-letters.c
 tools/test-trap-scheduler.c

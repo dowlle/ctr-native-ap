@@ -73,6 +73,28 @@ int main()
     ap_seedcfg_parse_json(d);
     EXPECT(ctr_cfg.oxide_final_venue.valid, 0, "missing descriptor refused");
 
+    for (int schema = 12; schema <= 13; schema++)
+    for (int goal = 0; goal <= 3; goal++)
+    for (int flag = 0; flag <= 3; flag++) {
+        d = {{"ctr_options", {{"schema_version", schema}, {"goal_oxide", goal},
+                               {"oxide_1_optional", flag}}}};
+        ap_seedcfg_parse_json(d);
+        EXPECT(ctr_cfg.oxide_1_optional,
+               schema == 13 && goal == 2 && (flag == 1 || flag == 2) ? flag : 0,
+               "optional-first is schema/goal/flag constrained");
+    }
+    d = {{"ctr_options", {{"schema_version", 13}, {"goal_oxide", 2}}}};
+    ap_seedcfg_parse_json(d);
+    EXPECT(ctr_cfg.oxide_1_optional, 0, "absent option resets mandatory first");
+    for (const auto &bad : {nlohmann::json(true), nlohmann::json(false),
+                           nlohmann::json(1.5), nlohmann::json(2.5),
+                           nlohmann::json("true_filler"), nlohmann::json(nullptr),
+                           nlohmann::json(18446744073709551615ULL),
+                           nlohmann::json(4294967297ULL), nlohmann::json(4294967298ULL)}) {
+        d["ctr_options"]["oxide_1_optional"] = bad;
+        ap_seedcfg_parse_json(d);
+        EXPECT(ctr_cfg.oxide_1_optional, 0, "malformed optional-first enum refused");
+    }
     std::printf("%s oxide-final venue seedcfg (%d checks, %d failures)\n", failures ? "FAIL" : "PASS", checks, failures);
     return failures ? 1 : 0;
 }

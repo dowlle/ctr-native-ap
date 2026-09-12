@@ -2,6 +2,7 @@
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
+#include "../../ap/ap_instance_pool_logic.h"
 #endif
 
 #ifdef CTR_NATIVE
@@ -332,7 +333,17 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		if ((gGT->levelID == SLIDE_COLISEUM || gGT->levelID == TURBO_TRACK) &&
 		    (gGT->gameMode2 & TOKEN_RACE))
 			apInstExtra = 6;
-		JitPool_Init(&gGT->JitPools.instance, (renderBucketSize >> 5) + apInstExtra,
+		int instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
+#ifdef CTR_CUSTOM_TRACKS
+		int customServing = CustomTrack_ServingLoad((int)gGT->levelID,
+		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
+		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
+		                                (gameMode & ADVENTURE_BOSS) != 0);
+		if (gGT->level1 != NULL)
+			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, customServing,
+			                                           gGT->level1->numInstances);
+#endif
+		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
 		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 		             rdata.s_InstancePool);
 	}

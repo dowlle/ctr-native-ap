@@ -33,6 +33,8 @@ void AP_NotifyAdvReward(int rewardBit);
 // presentation state only; the AP check is the custom Trophy code from slot data.
 int AP_CustomTrackTrophyChecked(void);
 void AP_NotifyCustomTrackTrophy(void);
+int AP_CustomTrackCtrChecked(void);
+void AP_NotifyCustomTrackCtr(int didWin, int collected);
 
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
@@ -430,6 +432,11 @@ long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
 void AP_LetterUnavailableTouched(int track, int letter);
 int AP_LettersRequiredMet(int track);
+int AP_DoorHistoryOpen(int level, int door);
+int AP_DoorHistoryReady(void);
+int AP_DoorHistoryEnabled(void);
+void AP_DoorHistoryRecord(int level, int door);
+void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);

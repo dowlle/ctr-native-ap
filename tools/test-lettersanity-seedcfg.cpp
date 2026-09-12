@@ -50,5 +50,23 @@ int main()
 	EXPECT(ctr_cfg.lettersanity_locations[1][0] == -1, "malformed entries stay absent");
 
 	std::printf("\n%s\n", failures ? "FAILURES PRESENT" : "all assertions passed");
+	nlohmann::json trials = {
+		{"ctr_options", {{"schema_version", 12}}},
+		{"lettersanity_checks", {
+			{"mode", 2},
+			{"locations", {{"16", {35012548, -1, 35012550}},
+			               {"17", {-1, 35012552, 35012553}}}}
+		}}
+	};
+	ap_seedcfg_parse_json(trials);
+	EXPECT(!ctr_cfg.schema_newer, "schema 12 accepted by paired client");
+	EXPECT(ctr_cfg.lettersanity_locations[16][0] == 35012548, "Slide C code parsed");
+	EXPECT(ctr_cfg.lettersanity_locations[17][2] == 35012553, "Turbo R code parsed");
+	ap_seedcfg_parse_json(absent);
+	EXPECT(ctr_cfg.lettersanity_locations[16][0] == -1, "Slide state resets on old seed");
+	EXPECT(ctr_cfg.lettersanity_locations[17][2] == -1, "Turbo state resets on old seed");
+	absent["ctr_options"]["schema_version"] = CTR_CFG_SCHEMA_KNOWN + 1;
+	ap_seedcfg_parse_json(absent);
+	EXPECT(ctr_cfg.schema_newer, "future schema retains compatibility warning");
 	return failures != 0;
 }

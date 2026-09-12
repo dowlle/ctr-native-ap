@@ -554,7 +554,12 @@ void AA_EndEvent_DrawMenu(void)
 
 			adv->storyFlags |= ADV_REWARD_OXIDE_FIRST_WIN_FLAGS;
 #ifdef CTR_AP
-			AP_NotifyGoal(0); // AP: beat Oxide (first win)
+			// Opt-in final wins collect both rewards in one notification;
+			// preserve the legacy first-then-final sequence in all other modes.
+			if (!(gGT->bossID == AA_OXIDE_SECOND_WIN_BOSS_ID &&
+			      ctr_cfg_active() && ctr_cfg.goal_oxide == 2 &&
+			      ctr_cfg.oxide_1_optional))
+				AP_NotifyGoal(0); // AP: beat Oxide (first win)
 #endif
 
 			if (gGT->bossID == AA_OXIDE_SECOND_WIN_BOSS_ID)

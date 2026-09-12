@@ -69,7 +69,7 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 11
+#define CTR_CFG_SCHEMA_KNOWN 13
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2
@@ -101,7 +101,9 @@ extern "C" {
 // LevelIDs and classify as trophy races, so they earn the destination track's
 // rungs too (the held listener + finish fan-out run during cup legs).
 #define CTR_CFG_PODIUM_TRACK_COUNT 16
-#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_PODIUM_STORAGE_COUNT 18
+#define AP_TRIAL_PODIUM_LOGICAL_BASE 48
+#define CTR_CFG_LETTER_TRACK_COUNT 18
 #define CTR_CFG_LETTER_COUNT 3
 #define CTR_LETTER_ITEM_FIRST_INDEX 139
 
@@ -328,6 +330,7 @@ typedef struct
 	// always active (the apworld's generate_early rejects the all-off
 	// combination). 0 means "this condition is off" for all three, uniformly.
 	int goal_oxide;  // 0 none / 1 first (Oxide's Challenge) / 2 final (Oxide's Final Challenge)
+	int oxide_1_optional; // schema 13, goal2 only: 0 mandatory, 1 optional, 2 true filler
 	int goal_bosses; // 0-4: how many of the 4 boss races must be personally won
 	int goal_gems;   // 0-5: how many of the 5 Gems must be held
 	int relic_min_time;
@@ -553,9 +556,14 @@ typedef struct
 	// pre-podium seeds, in which case podium_enabled stays 0 and no rung fires.
 	int              podium_enabled;      // podium_checks.enabled
 	int              podium_any_position; // podium_checks.any_position
-	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
+	ctr_podium_rungs podium[CTR_CFG_PODIUM_STORAGE_COUNT]; // real LevelID; custom logical bank stays 16..47
 	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
 	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
+	int custom_ctr_enabled;
+	long custom_ctr_location;
+	int custom_lettersanity_mode;
+	long custom_letter_locations[CTR_CFG_LETTER_COUNT];
+	long custom_letter_items[CTR_CFG_LETTER_COUNT];
 
 	// custom_tracks (schema 8). custom_tracks_ok is 1 only when the block was
 	// present AND fully readable; a present-but-unreadable block leaves it 0 and

@@ -35,6 +35,32 @@ jobs:
         run: bash ap/vendor/fetch-deps.sh
       - name: Build and run
         run: python3 tools/ci/run-harnesses.py
+      - name: BSP instance collision regression
+        run: python3 tools/test-bsp-instance.py
+      - name: Production custom CTR results
+        run: python3 tools/test-custom-ctr-result.py
+      - name: Production custom letter verifier
+        run: python3 tools/test-custom-letter-verifier.py
+      - name: Production custom race picker
+        run: python3 tools/test-custom-race-picker.py
+      - name: Production custom letter hooks
+        run: python3 tools/test-custom-letter-hooks.py
+      - name: Custom package profile activation
+        run: python3 tools/test-custom-profile-activation.py
+      - name: Oxide optional-first production win notifications
+        run: python3 tools/test-oxide-optional-result.py
+      - name: Trial and retail letter availability visuals
+        run: python3 tools/test-trial-letter-visual.py
+      - name: Trial podium production fan-out
+        run: python3 tools/test-trial-podium-result.py
+      - name: Tunnel character swap production readiness
+        run: python3 tools/test-tunnel-charswap-production.py
+      - name: Trial hub pad state transitions
+        run: python3 tools/test-trial-pad-state-production.py
+      - name: All-track CTR letter-ready timeline
+        run: python3 tools/test-letter-ready-feed-production.py
+      - name: Persisted hub door production regressions
+        run: python3 tools/test-door-history-production.py
       - name: TLS and cache boundary regressions
         run: bash tools/security/run.sh
       - name: Release assembly boundary checks

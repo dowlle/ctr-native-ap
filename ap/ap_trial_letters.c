@@ -152,8 +152,8 @@ static void AP_TrialLetters_Tick(struct Thread *t)
     if (AP_TrialLetterHit(&prev,&curr,&s_trialLetterBox[letter])) {
         struct ScratchpadStruct collision={0};
         collision.Input1.modelID=DYNAMIC_PLAYER;
-        // Real HUD animation, sound, count and thread death. Level 16/17 are
-        // deliberately outside Lettersanity: no letter AP checks are emitted.
+        // Shared retail collision owns item gating, check dispatch, real HUD
+        // animation, sound, count and thread death for admitted trial letters.
         RB_CtrLetter_ThCollide(t,d->instSelf->thread,t->funcThCollide,&collision);
     }
 }

@@ -642,12 +642,91 @@ static void test_schema_gate(void)
 	expect_eq(ctr_cfg.schema_newer, 0,
 	          "this build's own ceiling does not raise the banner");
 
-	expect_eq(CTR_CFG_SCHEMA_KNOWN, 11, "this build understands schema 11");
+	expect_eq(CTR_CFG_SCHEMA_KNOWN, 13, "this build understands schema 13");
+}
+
+static void test_custom_letter_ownership(void)
+{
+	for (int mode = 1; mode <= 3; ++mode)
+	for (int count = 1; count <= 3; ++count)
+	{
+		auto doc = base();
+		doc["ctr_options"]["schema_version"] = 12;
+		doc["custom_tracks"] = good_block();
+		auto &parent = doc["custom_tracks"]["tracks"][0];
+		parent["modes"] = {{"ctr_challenge", true}};
+		parent["locations"]["ctr"] = 35023000;
+		doc["lettersanity_checks"] = {{"mode", mode}, {"letters_per_track", count}};
+		nlohmann::json locations = nlohmann::json::array();
+		nlohmann::json items = nlohmann::json::array();
+		for (int l = 0; l < 3; ++l)
+		{
+			bool chosen = mode == 3 || l < count;
+			locations.push_back(chosen && mode != 3 ? 35020000 + l : -1);
+			items.push_back(chosen && mode != 1 ? 35021000 + l : -1);
+		}
+		doc["custom_lettersanity_checks"] = {
+			{"version", 1}, {"mode", mode}, {"letters_per_track", count},
+			{"tracks", nlohmann::json::array({{{"slot", 1}, {"locations", locations}, {"items", items}}})}};
+		ap_seedcfg_parse_json(doc);
+		expect_eq(ctr_cfg.custom_tracks_ok, 1, "custom letter parent admitted");
+		expect_eq(ctr_cfg.custom_ctr_enabled, 1, "custom CTR explicitly admitted");
+		expect_eq(ctr_cfg.custom_lettersanity_mode, mode, "custom letter mode retained");
+		for (int l = 0; l < 3; ++l)
+		{
+			expect_eq(ctr_cfg.custom_letter_locations[l], locations[l].get<int>(), "sparse custom location");
+			expect_eq(ctr_cfg.custom_letter_items[l], items[l].get<int>(), "sparse custom item");
+		}
+		for (int fault = 0; fault < 11; ++fault)
+		{
+			auto bad = doc;
+			auto &row = bad["custom_lettersanity_checks"]["tracks"][0];
+			if (fault == 0) row["slot"] = 2;
+			if (fault == 1) row["items"][0] = true;
+			if (fault == 2) row["locations"][0] = 35012500;
+			if (fault == 3) bad["custom_tracks"]["tracks"][0].erase("modes");
+			if (fault == 4) bad["custom_lettersanity_checks"]["tracks"].push_back(row);
+			if (fault == 5) bad.erase("custom_lettersanity_checks");
+			if (fault == 6) bad["custom_tracks"]["tracks"][0]["modes"]["ctr_challenge"] = 1;
+			if (fault == 7) bad["custom_tracks"]["tracks"][0]["modes"]["relic"] = true;
+			if (fault == 8) bad["lettersanity_checks"]["letters_per_track"] = count == 3 ? 1 : count + 1;
+			if (fault == 9) bad["lettersanity_checks"]["letters_per_track"] = true;
+			if (fault == 10) bad["lettersanity_checks"].erase("letters_per_track");
+			ap_seedcfg_parse_json(bad);
+			expect_eq(ctr_cfg.custom_tracks_ok, 0, "forged custom identity disarms load");
+			expect_eq(ctr_cfg.custom_lettersanity_mode, 0, "refusal retains no letter mode");
+		}
+		ap_seedcfg_parse_json(base());
+		expect_eq(ctr_cfg.custom_ctr_enabled, 0, "next seed clears custom CTR");
+		expect_eq(ctr_cfg.custom_letter_items[0], -1, "next seed clears sparse items");
+	}
 }
 
 int main(int argc, char **argv)
 {
 	ctr_cfg_set_vanilla_cup_legs(vanilla_legs);
+	if (argc == 2 && std::strcmp(argv[1], "--letter-room") == 0)
+	{
+		nlohmann::json doc;
+		std::cin >> doc;
+		ap_seedcfg_parse_json(doc);
+		expect_eq(ctr_cfg.custom_tracks_ok, 1, "actual letter room custom parent usable");
+		expect_eq(ctr_cfg.custom_ctr_enabled, 1, "actual letter room CTR admitted");
+		expect_eq(ctr_cfg.custom_ctr_location, 35023000, "actual room CTR identity");
+		expect_eq(ctr_cfg.custom_lettersanity_mode, 2, "actual room custom letter mode");
+		const auto &row = doc["custom_lettersanity_checks"]["tracks"][0];
+		for (int l = 0; l < 3; ++l)
+		{
+			expect_eq(ctr_cfg.custom_letter_locations[l], row["locations"][l].get<int>(), "actual room custom location");
+			expect_eq(ctr_cfg.custom_letter_items[l], row["items"][l].get<int>(), "actual room custom item");
+			for (int track = 16; track <= 17; ++track)
+				expect_eq(ctr_cfg.lettersanity_locations[track][l],
+				          doc["lettersanity_checks"]["locations"][std::to_string(track)][l].get<int>(),
+				          "actual room trial letter identity");
+		}
+		std::printf("%s actual letter-room parser (%d checks, %d failures)\n", failures ? "FAIL" : "PASS", checks, failures);
+		return failures ? 1 : 0;
+	}
 	if (argc == 2 && std::strcmp(argv[1], "--stdin") == 0)
 	{
 		test_external_slot_data();
@@ -669,6 +748,7 @@ int main(int argc, char **argv)
 	test_package_and_navigation_identity();
 	test_flags();
 	test_schema_gate();
+	test_custom_letter_ownership();
 
 	std::printf("%s custom-tracks seedcfg (%d checks, %d failures)\n", failures ? "FAIL" : "PASS",
 	            checks, failures);
