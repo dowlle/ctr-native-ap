@@ -167,12 +167,16 @@ static void test_cases(void)
 				expect(ids[i] != ids[j], "case never duplicates an opponent");
 		}
 
-		// The opportunity is exactly the selected guest when its Hit location is
-		// present and unchecked.
+		// Correction A: the opportunity is the FIRST seated non-player target
+		// whose Hit location is present and unchecked. The fixture cases check no
+		// Hit locations, so every seated id qualifies and the opportunity is the
+		// first seat (guest when present, else the first base id).
 		{
-			int guest = c["expected_guest"].get<int>();
 			int opp = AP_HitEncounterOpportunity(level, player);
-			expect_eq(opp, guest, "opportunity equals selected guest");
+			if (n > 0)
+				expect_eq(opp, want[0].get<int>(), "opportunity is the first seated target");
+			else
+				expect_eq(opp, -1, "empty field -> no opportunity");
 		}
 	}
 }

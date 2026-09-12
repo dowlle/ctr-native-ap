@@ -123,11 +123,13 @@ static inline int AP_HitGuestEligiblePure(int guest, const unsigned char *trigge
 	return triggerMet[guest] ? 1 : 0;
 }
 
-// The guest this destination would ACTUALLY seat and that still has an unchecked
-// Hit location -- the "eligible unchecked Hit opportunity" AP_PadState keeps a
-// pad open for. Mirrors AP_HitSelectFieldPure's guest choice exactly (first
-// eligible pinned, else first eligible reserve), then requires that same guest's
-// location to be present-and-unchecked. Returns the guest id, or -1.
+// Is there a Hit opportunity behind this destination for `player`? Computed
+// from the ACTUAL field AP_HitSelectFieldPure would seat, so pad routing and the
+// loaded field can never diverge: the opportunity is the first seated
+// non-player target whose Hit location is present and unchecked. Defaults (0..7)
+// AND guests (8..15) both count -- the apworld logic relies on default targets
+// appearing on ordinary Trophy races, and the pad must keep offering the plain
+// rerace while any of them is still unchecked. Returns that target id, or -1.
 //
 // `unchecked` is 0/1 per engine id: the seed carries the location AND the server
 // has not checked it. A checked/absent location is no opportunity.
@@ -136,28 +138,17 @@ static inline int AP_HitOpportunityPure(const ctr_hit_candidates *cand,
                                         const unsigned char *unchecked,
                                         int player)
 {
+	ap_hit_field field;
 	int i;
-	int guest = -1;
 
 	if (cand == NULL)
 		return -1;
 
-	for (i = 0; i < cand->pinned.count && guest < 0; i++)
-	{
-		int id = cand->pinned.ids[i];
-		if (id != player && eligible[id])
-			guest = id;
-	}
-	for (i = 0; i < cand->reserve.count && guest < 0; i++)
-	{
-		int id = cand->reserve.ids[i];
-		if (id != player && eligible[id])
-			guest = id;
-	}
-
-	if (guest < 0 || !unchecked[guest])
-		return -1;
-	return guest;
+	AP_HitSelectFieldPure(cand, eligible, player, AP_HIT_FIELD_MAX, &field);
+	for (i = 0; i < field.count; i++)
+		if (field.ids[i] != player && unchecked[field.ids[i]])
+			return field.ids[i];
+	return -1;
 }
 
 // The EFFECTIVE player engine id at a physical pad: a met racer lock OVERRIDES
@@ -194,14 +185,31 @@ static inline int AP_HitOrdinaryAppliesPure(int isAdventure, int destLevelID,
 	return 1;
 }
 
+// Can this ordinary destination host a Hit opportunity? Trials (16/17) require
+// a valid trial row: an invalid row has no Trophy route, so a Hit opportunity
+// there would keep the pad open with no way to earn the check (item D). Cup ids
+// are excluded (ticket 11). `trialValid` is the trial_track_valid row for the
+// destination's trial (ignored for 0..15).
+static inline int AP_HitPadDestEligiblePure(int destLevelID, int trialValid)
+{
+	if (destLevelID < 0 || destLevelID > AP_HIT_ORDINARY_TRACK_MAX)
+		return 0;
+	if (destLevelID >= 16 && !trialValid)
+		return 0;
+	return 1;
+}
+
 // Is this the kind of live race a Hit check may be awarded in? Adventure
-// ordinary race, no boss/cup/time-trial/arcade/battle/relic/token/crystal. The
-// generic victim dispatch stays reusable, but the award is scoped to the slice.
+// ordinary races AND Adventure boss races. A boss Hit check is reachable at the
+// boss race whether or not the boss is cleared (the boss clear only unlocks its
+// ordinary appearances), and the apworld logic relies on that route. Cup (ticket
+// 11), time trial, arcade, battle, relic, token and crystal are rejected.
 static inline int AP_HitRaceSupportedPure(int isAdventure, int isBoss, int isCup,
                                           int isTimeTrial, int isArcade, int isBattle,
                                           int isRelic, int isToken, int isCrystal)
 {
-	return isAdventure && !isBoss && !isCup && !isTimeTrial && !isArcade &&
+	(void)isBoss; // boss races are supported
+	return isAdventure && !isCup && !isTimeTrial && !isArcade &&
 	       !isBattle && !isRelic && !isToken && !isCrystal;
 }
 

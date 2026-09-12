@@ -132,6 +132,42 @@ static void test_no_opportunity(void)
 	expect_eq(frame(&c, 0, 1, 1, &route), AP_HIT_CHOOSER_NONE, "no opportunity -> none");
 }
 
+// Correction B: ONE shared restore helper for both cancel paths. Only the Relic
+// and Token bits return to their snapshot; unrelated bits changed while the menu
+// was open survive.
+static void test_restore_bits(void)
+{
+	const unsigned token = 0x8u;        // stand-in for TOKEN_RACE (gameMode2)
+	const unsigned relic = 0x4000000u;  // stand-in for RELIC_RACE (gameMode1)
+	const unsigned other1 = 0x100u;     // unrelated gameMode1 bit
+	const unsigned other2 = 0x200u;     // unrelated gameMode2 bit
+
+	// Snapshot: Relic set, Token clear.
+	int savedGm1 = (int)relic;
+	int savedGm2 = 0;
+	unsigned savedAdd0 = relic, savedRem0 = 0;
+	unsigned savedAdd8 = 0, savedRem8 = token;
+
+	// Current: Relic cleared, Token set, unrelated bits changed while open.
+	int gm1 = (int)other1;
+	int gm2 = (int)(token | other2);
+	unsigned add0 = 0, rem0 = relic;
+	unsigned add8 = token, rem8 = 0;
+
+	AP_HitChooserRestoreBitsPure(token, relic, savedGm1, savedGm2,
+	                             savedAdd0, savedRem0, savedAdd8, savedRem8,
+	                             &gm1, &gm2, &add0, &rem0, &add8, &rem8);
+
+	expect_eq((gm1 & relic) != 0, 1, "relic bit restored to snapshot");
+	expect_eq((gm1 & other1) != 0, 1, "unrelated gameMode1 bit survives");
+	expect_eq((gm2 & token) == 0, 1, "token bit restored to snapshot (clear)");
+	expect_eq((gm2 & other2) != 0, 1, "unrelated gameMode2 bit survives");
+	expect_eq((add0 & relic) != 0, 1, "AddBitsConfig0 relic restored");
+	expect_eq((rem0 & relic) == 0, 1, "RemBitsConfig0 relic restored (clear)");
+	expect_eq((add8 & token) == 0, 1, "AddBitsConfig8 token restored (clear)");
+	expect_eq((rem8 & token) != 0, 1, "RemBitsConfig8 token restored");
+}
+
 int main(void)
 {
 	test_open_wait_apply();
@@ -140,6 +176,7 @@ int main(void)
 	test_vanish();
 	test_plain_only();
 	test_no_opportunity();
+	test_restore_bits();
 
 	printf("%s: %d checks, %d failures\n", g_failures ? "FAIL" : "PASS", g_checks, g_failures);
 	return g_failures ? 1 : 0;

@@ -206,6 +206,39 @@ static void test_opportunity(void)
 		expect_eq(AP_HitOpportunityPure(&cup, elig, unc, 0), 15,
 		          "reserve opportunity without a pin");
 	}
+
+	// Correction A: DEFAULT targets count too. With no guest eligible, the base
+	// field still offers an opportunity for an unchecked default racer.
+	{
+		unsigned char e3[CTR_CFG_HIT_CHARACTER_COUNT];
+		unsigned char u3[CTR_CFG_HIT_CHARACTER_COUNT];
+		zero_elig(e3); // defaults only, no guest eligible
+		memset(u3, 0, sizeof u3);
+		u3[7] = 1; // first base id, unchecked
+		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 0), 7,
+		          "default target seated and unchecked -> opportunity");
+		// Player is that default: it is skipped, so it is no opportunity.
+		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 7), -1,
+		          "player default target excluded");
+		u3[0] = 1;
+		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 7), 0,
+		          "next unchecked default is the opportunity");
+		// Every seated target checked -> none.
+		memset(u3, 0, sizeof u3);
+		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 0), -1,
+		          "all seated targets checked -> no opportunity");
+	}
+}
+
+static void test_pad_dest_eligible(void)
+{
+	expect_eq(AP_HitPadDestEligiblePure(3, 1), 1, "retail track eligible");
+	expect_eq(AP_HitPadDestEligiblePure(16, 1), 1, "valid trial 16 eligible");
+	expect_eq(AP_HitPadDestEligiblePure(17, 1), 1, "valid trial 17 eligible");
+	expect_eq(AP_HitPadDestEligiblePure(16, 0), 0, "invalid trial 16 refused");
+	expect_eq(AP_HitPadDestEligiblePure(17, 0), 0, "invalid trial 17 refused");
+	expect_eq(AP_HitPadDestEligiblePure(18, 1), 0, "arena refused");
+	expect_eq(AP_HitPadDestEligiblePure(100, 1), 0, "cup refused");
 }
 
 static void test_damage_acceptance(void)
@@ -334,7 +367,7 @@ static void test_race_supported(void)
 	// Adventure ordinary race only.
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 0, 0), 1, "adventure ordinary supported");
 	expect_eq(AP_HitRaceSupportedPure(0, 0, 0, 0, 0, 0, 0, 0, 0), 0, "not adventure refused");
-	expect_eq(AP_HitRaceSupportedPure(1, 1, 0, 0, 0, 0, 0, 0, 0), 0, "boss refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 1, 0, 0, 0, 0, 0, 0, 0), 1, "boss race supported (correction C)");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 1, 0, 0, 0, 0, 0, 0), 0, "cup refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 1, 0, 0, 0, 0, 0), 0, "time trial refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 1, 0, 0, 0, 0), 0, "arcade refused");
@@ -430,6 +463,7 @@ int main(void)
 {
 	test_select_ordering();
 	test_opportunity();
+	test_pad_dest_eligible();
 	test_damage_acceptance();
 	test_effective_player();
 	test_extras();

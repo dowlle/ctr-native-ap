@@ -1311,12 +1311,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 				else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
 				{
-					gGT->gameMode1 = apHitChooser.savedGm1;
-					gGT->gameMode2 = apHitChooser.savedGm2;
-					sdata->Loading.OnBegin.AddBitsConfig0 = apHitChooser.savedAdd0;
-					sdata->Loading.OnBegin.RemBitsConfig0 = apHitChooser.savedRem0;
-					sdata->Loading.OnBegin.AddBitsConfig8 = apHitChooser.savedAdd8;
-					sdata->Loading.OnBegin.RemBitsConfig8 = apHitChooser.savedRem8;
+					// Restore only the route bits the chooser owns, so unrelated
+					// bits the engine changed while the menu was open survive.
+					AP_HitChooserRestoreBitsPure(
+					    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+					    apHitChooser.savedGm1, apHitChooser.savedGm2,
+					    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+					    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+					    &gGT->gameMode1, &gGT->gameMode2,
+					    &sdata->Loading.OnBegin.AddBitsConfig0,
+					    &sdata->Loading.OnBegin.RemBitsConfig0,
+					    &sdata->Loading.OnBegin.AddBitsConfig8,
+					    &sdata->Loading.OnBegin.RemBitsConfig8);
 					sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
 					warppadObj->boolEnteredWarppad = 0;
 					warppadObj->framesWarping = 0;
@@ -1581,28 +1587,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					}
 					else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
 					{
-						// Restore only the route bits the chooser owns (Relic in
-						// gameMode1/Config0, Token in gameMode2/Config8), so flags
-						// the engine changed while the menu was open survive. Then
-						// release the captured kart and warp state.
-						const unsigned apRelic = (unsigned)RELIC_RACE;
-						const unsigned apToken = (unsigned)TOKEN_RACE;
-						gGT->gameMode1 = (int)(((unsigned)gGT->gameMode1 & ~apRelic) |
-						                       ((unsigned)apHitChooser.savedGm1 & apRelic));
-						gGT->gameMode2 = (int)(((unsigned)gGT->gameMode2 & ~apToken) |
-						                       ((unsigned)apHitChooser.savedGm2 & apToken));
-						sdata->Loading.OnBegin.AddBitsConfig0 =
-						    (sdata->Loading.OnBegin.AddBitsConfig0 & ~apRelic) |
-						    (apHitChooser.savedAdd0 & apRelic);
-						sdata->Loading.OnBegin.RemBitsConfig0 =
-						    (sdata->Loading.OnBegin.RemBitsConfig0 & ~apRelic) |
-						    (apHitChooser.savedRem0 & apRelic);
-						sdata->Loading.OnBegin.AddBitsConfig8 =
-						    (sdata->Loading.OnBegin.AddBitsConfig8 & ~apToken) |
-						    (apHitChooser.savedAdd8 & apToken);
-						sdata->Loading.OnBegin.RemBitsConfig8 =
-						    (sdata->Loading.OnBegin.RemBitsConfig8 & ~apToken) |
-						    (apHitChooser.savedRem8 & apToken);
+						// Restore only the route bits the chooser owns, so flags
+						// the engine changed while the menu was open survive.
+						AP_HitChooserRestoreBitsPure(
+						    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+						    apHitChooser.savedGm1, apHitChooser.savedGm2,
+						    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+						    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+						    &gGT->gameMode1, &gGT->gameMode2,
+						    &sdata->Loading.OnBegin.AddBitsConfig0,
+						    &sdata->Loading.OnBegin.RemBitsConfig0,
+						    &sdata->Loading.OnBegin.AddBitsConfig8,
+						    &sdata->Loading.OnBegin.RemBitsConfig8);
 						sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
 						warppadObj->boolEnteredWarppad = 0;
 						warppadObj->framesWarping = 0;

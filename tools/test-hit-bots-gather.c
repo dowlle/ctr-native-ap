@@ -127,6 +127,19 @@ static void test_hub_arena_is_not_a_race(void)
 	expect((g_flags & 128u) == 0, "ADVENTURE_ARENA alone is not raceSupported");
 }
 
+static void test_boss_race_supported(void)
+{
+	// Correction C: a boss Hit check is reachable at the boss race whether or not
+	// the boss is cleared. ADVENTURE_BOSS is the sign bit (IS_BOSS_RACE).
+	setup();
+	gGT.gameMode1 = ADVENTURE_MODE | (int)ADVENTURE_BOSS;
+	gGT.gameMode2 = 0;
+	hit(1, 1, 0, 0);
+	expect_eq(g_calls, 1, "boss race gathers");
+	expect((g_flags & 128u) != 0, "boss race is raceSupported");
+	expect((g_flags & 32u) != 0, "boss race: player attacker");
+}
+
 static void test_unsupported_modes(void)
 {
 	static const int modes[] = {
@@ -136,7 +149,6 @@ static void test_unsupported_modes(void)
 	    ADVENTURE_MODE | BATTLE_MODE,
 	    ADVENTURE_MODE | RELIC_RACE,
 	    ADVENTURE_MODE | CRYSTAL_CHALLENGE,
-	    ADVENTURE_MODE | (int)ADVENTURE_BOSS,
 	};
 	for (unsigned i = 0; i < sizeof modes / sizeof modes[0]; i++)
 	{
@@ -209,6 +221,7 @@ int main(void)
 {
 	test_trophy_race_adventure_mode();
 	test_hub_arena_is_not_a_race();
+	test_boss_race_supported();
 	test_unsupported_modes();
 	test_victim_validation();
 	test_attribution_flags();

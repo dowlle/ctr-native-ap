@@ -1543,19 +1543,44 @@ static int AP_HitEffectivePlayer(int physLevelID)
 	return AP_HitEffectivePlayerPure(chosen, lock, ctr_cfg_racer_lock_met(physLevelID));
 }
 
-// Is there an eligible, unchecked Hit guest opportunity behind this pad? Any
-// ordinary destination whose roster can seat an eligible guest with an unchecked
-// Hit location participates: the sixteen retail tracks (0..15) and the two trial
-// Trophy tracks (16/17). Cups are ticket 11. Counted by AP_PadState as BOTH a
+// Is there a Hit opportunity behind this pad? Any ordinary destination whose
+// ACTUAL field seats an eligible guest or default with an unchecked Hit location
+// participates: the sixteen retail tracks (0..15) and the two trial Trophy tracks
+// (16/17). A trial whose trial row is invalid has no Trophy route, so it never
+// reports an opportunity (the pad must not stay open with nothing to earn);
+// logged once per trial. Cups are ticket 11. Counted by AP_PadState as BOTH a
 // remaining location and a plain-rerace check, so Done cannot hard-lock the pad
-// while the guest can still be encountered, and a stage-2-locked pad keeps its
+// while a target can still be encountered, and a stage-2-locked pad keeps its
 // phase-1 plain rerace. Also consumed by AH_WarpPad.c's tier-2 choosers.
 int AP_HitPadOpportunity(int physLevelID, int destLevelID)
 {
+	int trialValid = 1;
+
 	if (!AP_HitEncounterEnabled())
 		return 0;
-	if (destLevelID < 0 || destLevelID > AP_HIT_ORDINARY_TRACK_MAX)
+	if (destLevelID == 16 || destLevelID == 17)
+	{
+		int trial = destLevelID - 16;
+		trialValid = ctr_cfg.trial_track_valid[trial];
+		if (!AP_HitPadDestEligiblePure(destLevelID, trialValid))
+		{
+			static unsigned s_trialInvalidLogged;
+			if ((s_trialInvalidLogged & (1u << trial)) == 0)
+			{
+				char msg[128];
+				s_trialInvalidLogged |= (1u << trial);
+				snprintf(msg, sizeof msg,
+				         "[AP HIT] trial destination %d has no valid trial row; "
+				         "no Hit opportunity\n",
+				         destLevelID);
+				AP_LogLine(msg);
+			}
+			return 0;
+		}
+	}
+	else if (!AP_HitPadDestEligiblePure(destLevelID, 1))
 		return 0;
+
 	return AP_HitEncounterOpportunity(destLevelID, AP_HitEffectivePlayer(physLevelID)) >= 0;
 }
 

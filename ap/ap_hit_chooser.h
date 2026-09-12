@@ -58,6 +58,30 @@ static inline void AP_HitChooserSetChoice(ap_hit_chooser *c, int route)
 	c->choice = route;
 }
 
+// Restore ONLY the route bits the chooser owns from the open-time snapshot:
+// Relic in gameMode1 / AddBitsConfig0 / RemBitsConfig0, Token in gameMode2 /
+// AddBitsConfig8 / RemBitsConfig8. Every unrelated bit the engine changed while
+// the menu was open survives. Both the ordinary and trial cancel paths call
+// this, so neither can drift into a whole-word restore (the ticket 06 manager
+// fix, regressed on the trial path). The caller restores the menu latch and
+// releases the kart separately.
+static inline void AP_HitChooserRestoreBitsPure(
+    unsigned tokenBit, unsigned relicBit,
+    int savedGm1, int savedGm2,
+    unsigned savedAdd0, unsigned savedRem0,
+    unsigned savedAdd8, unsigned savedRem8,
+    int *curGm1, int *curGm2,
+    unsigned *curAdd0, unsigned *curRem0,
+    unsigned *curAdd8, unsigned *curRem8)
+{
+	*curGm1 = (int)(((unsigned)*curGm1 & ~relicBit) | ((unsigned)savedGm1 & relicBit));
+	*curGm2 = (int)(((unsigned)*curGm2 & ~tokenBit) | ((unsigned)savedGm2 & tokenBit));
+	*curAdd0 = (*curAdd0 & ~relicBit) | (savedAdd0 & relicBit);
+	*curRem0 = (*curRem0 & ~relicBit) | (savedRem0 & relicBit);
+	*curAdd8 = (*curAdd8 & ~tokenBit) | (savedAdd8 & tokenBit);
+	*curRem8 = (*curRem8 & ~tokenBit) | (savedRem8 & tokenBit);
+}
+
 // One frame. `gm*`/`add*`/`rem*`/`menuFlag` are the engine's CURRENT values;
 // they are snapshotted the first time the menu opens so CANCEL can restore them.
 // Returns an AP_HIT_CHOOSER_* action; APPLY also writes *outRoute.

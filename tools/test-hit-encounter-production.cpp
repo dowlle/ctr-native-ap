@@ -145,19 +145,21 @@ static void test_trigger_to_next_load(void)
 	ap_seedcfg_parse_json(g_fixture);
 
 	// Before either authoritative win: Fake Crash is not eligible, so Crash
-	// Cove's field is the ordinary base roster with no guest.
+	// Cove's field is the ordinary base roster with no guest. Default racers are
+	// Hit targets, so a default opportunity still exists (correction A).
 	expect_eq(AP_HitEncounterGuestEligible(14), 0, "guest ineligible before win");
-	expect_eq(AP_HitEncounterOpportunity(3, 0), -1, "no opportunity before win");
 	{
 		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
 		expect_eq(n, 7, "pre-win field size");
 		expect(!field_has(ids, n, 14), "pre-win field has no Fake Crash");
+		expect_eq(AP_HitEncounterOpportunity(3, 0), ids[0],
+		          "pre-win opportunity is a seated default");
 	}
 
 	// Win Crash Cove (35011000) -> the NEXT load reconstructs eligibility.
 	g_checked.insert(35011000);
 	expect_eq(AP_HitEncounterGuestEligible(14), 1, "guest eligible after win");
-	expect_eq(AP_HitEncounterOpportunity(3, 0), 14, "opportunity after win");
+	expect_eq(AP_HitEncounterOpportunity(3, 0), 14, "opportunity after win is the guest");
 	{
 		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
 		expect_eq(n, 7, "post-win field size");
@@ -169,12 +171,14 @@ static void test_trigger_to_next_load(void)
 	g_checked.insert(35011003);
 	expect_eq(AP_HitEncounterGuestEligible(14), 1, "second trigger unlocks");
 
-	// A checked Hit location removes the opportunity without changing the roster.
+	// A checked guest Hit advances the opportunity to the next seated target
+	// without changing the roster.
 	g_checked.insert(35025014);
-	expect_eq(AP_HitEncounterOpportunity(3, 0), -1, "checked Hit removes opportunity");
 	{
 		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
 		expect_eq(ids[0], 14, "roster still seats the unlocked guest");
+		expect_eq(AP_HitEncounterOpportunity(3, 0), ids[1],
+		          "checked guest Hit -> next seated target");
 	}
 }
 
@@ -456,6 +460,68 @@ static void test_seed_change_and_reconnect(void)
 	expect_eq(AP_HitEncounterGuestEligible(14), 1, "new seed: FC eligible after its win");
 }
 
+// Correction A: default racers (0..7) are Hit targets. A pad has an opportunity
+// when the ACTUAL seated field contains an unchecked target, guests and defaults
+// alike.
+static void test_default_target_opportunity(void)
+{
+	int ids[AP_HIT_FIELD_MAX];
+	int n, opp, i;
+
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+
+	// No guest eligible at level 0: the field is base defaults, and an unchecked
+	// default is an opportunity.
+	n = AP_HitEncounterBuildField(0, 0, 7, ids);
+	expect(n > 0, "level 0 field non-empty");
+	opp = AP_HitEncounterOpportunity(0, 0);
+	expect(field_has(ids, n, opp), "opportunity is a seated target");
+	expect_eq(opp, ids[0], "first seated target is the opportunity");
+
+	// Checking the first target advances the opportunity to the next seat.
+	g_checked.insert(35025000LL + ids[0]);
+	opp = AP_HitEncounterOpportunity(0, 0);
+	expect_eq(opp, ids[1], "opportunity advances past a checked target");
+
+	// Every seated target checked -> none.
+	for (i = 0; i < n; i++)
+		g_checked.insert(35025000LL + ids[i]);
+	expect_eq(AP_HitEncounterOpportunity(0, 0), -1, "all seated targets checked -> none");
+
+	// A default not seated for this player never becomes the opportunity.
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	n = AP_HitEncounterBuildField(0, 0, 7, ids);
+	{
+		int notSeated = -1;
+		for (i = 0; i < 8; i++)
+			if (!field_has(ids, n, i))
+			{
+				notSeated = i;
+				break;
+			}
+		expect(notSeated >= 0, "a default is not seated");
+		g_checked.insert(35025000LL + notSeated);
+		opp = AP_HitEncounterOpportunity(0, 0);
+		expect(opp != notSeated, "unseated target is not the opportunity");
+	}
+}
+
+// Correction C: boss races award Hit checks; feature off stays inert.
+static void test_boss_race_feature_off(void)
+{
+	nlohmann::json off = g_fixture;
+	off["ctr_options"]["hit_character"] = false;
+	off.erase("hit_character_encounters");
+	ap_seedcfg_parse_json(off);
+	g_emitCount = 0;
+	// Boss-race accepted flags (raceSupported bit included); feature off -> none.
+	AP_HitEncounterOnDamage(10, 1, kAccepted);
+	expect_eq(g_emitCount, 0, "boss race with feature off emits nothing");
+	ap_seedcfg_parse_json(g_fixture);
+}
+
 int main(int argc, char **argv)
 {
 	const char *path = argc > 1 ? argv[1] : "tools/fixtures/ctr_hit_character_seed2101.json";
@@ -486,6 +552,8 @@ int main(int argc, char **argv)
 	test_repeat_and_reconnect_dedup();
 	test_all_guest_eligibility();
 	test_seed_change_and_reconnect();
+	test_default_target_opportunity();
+	test_boss_race_feature_off();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);
