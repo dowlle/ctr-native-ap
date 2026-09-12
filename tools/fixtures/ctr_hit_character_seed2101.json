@@ -1,0 +1,1295 @@
+{
+  "Seed": "2101",
+  "Slot": "Tester1",
+  "TotalLocations": 174,
+  "schema_version": 14,
+  "ctr_options": {
+    "schema_version": 14,
+    "goal": 0,
+    "goal_oxide": 1,
+    "oxide_1_optional": 0,
+    "goal_bosses": 0,
+    "goal_gems": 0,
+    "oxide_final_unlock": 0,
+    "oxide_final_count": 18,
+    "oxide_final_track": 0,
+    "shuffle_warp_pads": true,
+    "warp_pad_shuffle_categories": [
+      "crystals",
+      "cups",
+      "tracks"
+    ],
+    "warp_pad_shuffle_grouping": "merged",
+    "shuffle_gems": true,
+    "shuffle_keys": true,
+    "warppad_unlock_mode": 1,
+    "slide_coliseum_races": 1,
+    "turbo_track_races": 1,
+    "bossgarage_mode": 2,
+    "warp_pad_item_display": 0,
+    "ap_item_type_colors": true,
+    "one_lap_cups": true,
+    "death_link": 0,
+    "deathlink_amnesty": 1,
+    "relic_progression": {
+      "Sapphire Relic": true,
+      "Gold Relic": true,
+      "Platinum Relic": true
+    },
+    "relic_tier_locations": {
+      "Sapphire Relic": [
+        35012000,
+        35012001,
+        35012002,
+        35012003,
+        35012004,
+        35012005,
+        35012006,
+        35012007,
+        35012008,
+        35012009,
+        35012010,
+        35012011,
+        35012012,
+        35012013,
+        35012014,
+        35012015,
+        35012016,
+        35012017
+      ],
+      "Gold Relic": [
+        35012100,
+        35012101,
+        35012102,
+        35012103,
+        35012104,
+        35012105,
+        35012106,
+        35012107,
+        35012108,
+        35012109,
+        35012110,
+        35012111,
+        35012112,
+        35012113,
+        35012114,
+        35012115,
+        35012116,
+        35012117
+      ],
+      "Platinum Relic": []
+    },
+    "world_version": "0.2.1",
+    "build_version": "0.2.1-alpha1",
+    "boost_mode": 0,
+    "boost_blue_fire": false,
+    "stats_mode": 0,
+    "logic_difficulty": 1,
+    "itemsanity": false,
+    "hit_character": true,
+    "wumpa_bundles": false,
+    "progressive_starting_wumpa": 0,
+    "wumpa_check": 0,
+    "tizi_helper": false,
+    "turbo_grant": false,
+    "lettersanity": 0,
+    "box_locations": false,
+    "shortcut_knowledge": 0,
+    "starting_character": 4,
+    "starting_stat_class": 0,
+    "character_unlocks": true,
+    "racer_locked_pads": 0,
+    "penta_stats": 0,
+    "editable_stats": 0,
+    "stat_source": 0,
+    "stat_owner": 0,
+    "stat_editing_allowed": false
+  },
+  "warp_pad_map": {
+    "0": 18,
+    "1": 4,
+    "2": 103,
+    "3": 3,
+    "4": 5,
+    "5": 1,
+    "6": 7,
+    "7": 12,
+    "8": 14,
+    "9": 21,
+    "10": 9,
+    "11": 104,
+    "12": 15,
+    "13": 16,
+    "14": 17,
+    "15": 8,
+    "16": 23,
+    "17": 6,
+    "18": 100,
+    "19": 10,
+    "20": 20,
+    "21": 19,
+    "22": 22,
+    "23": 101,
+    "24": 24,
+    "25": 25,
+    "26": 26,
+    "27": 27,
+    "100": 11,
+    "101": 13,
+    "102": 102,
+    "103": 0,
+    "104": 2
+  },
+  "warp_pad_unlock": {
+    "3": {
+      "stage1": {
+        "type": 1,
+        "count": 2,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 1,
+        "count": 2,
+        "colour": -1
+      }
+    },
+    "6": {
+      "stage1": {
+        "type": 1,
+        "count": 0,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "9": {
+      "stage1": {
+        "type": 1,
+        "count": 2,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "8": {
+      "stage1": {
+        "type": 1,
+        "count": 0,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "14": {
+      "stage1": {
+        "type": 4,
+        "count": 3,
+        "colour": 0
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "4": {
+      "stage1": {
+        "type": 4,
+        "count": 3,
+        "colour": 1
+      },
+      "stage2": {
+        "type": 1,
+        "count": 4,
+        "colour": -1
+      }
+    },
+    "5": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 0
+      },
+      "stage2": {
+        "type": 2,
+        "count": 2,
+        "colour": -1
+      }
+    },
+    "0": {
+      "stage1": {
+        "type": 2,
+        "count": 2,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "2": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 2
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "1": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 2
+      },
+      "stage2": {
+        "type": 2,
+        "count": 1,
+        "colour": -1
+      }
+    },
+    "12": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 4
+      },
+      "stage2": {
+        "type": 3,
+        "count": 4,
+        "colour": 2
+      }
+    },
+    "15": {
+      "stage1": {
+        "type": 4,
+        "count": 8,
+        "colour": 1
+      },
+      "stage2": {
+        "type": 1,
+        "count": 2,
+        "colour": -1
+      }
+    },
+    "7": {
+      "stage1": {
+        "type": 8,
+        "count": 3,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 4,
+        "count": 4,
+        "colour": 0
+      }
+    },
+    "10": {
+      "stage1": {
+        "type": 6,
+        "count": 8,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 6,
+        "count": 3,
+        "colour": -1
+      }
+    },
+    "11": {
+      "stage1": {
+        "type": 8,
+        "count": 3,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "13": {
+      "stage1": {
+        "type": 1,
+        "count": 8,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "21": {
+      "stage1": {
+        "type": 1,
+        "count": 0,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "19": {
+      "stage1": {
+        "type": 7,
+        "count": 4,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 4,
+        "count": 4,
+        "colour": 0
+      }
+    },
+    "23": {
+      "stage1": {
+        "type": 8,
+        "count": 2,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "18": {
+      "stage1": {
+        "type": 4,
+        "count": 8,
+        "colour": 1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "16": {
+      "stage1": {
+        "type": 3,
+        "count": 1,
+        "colour": 2
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "17": {
+      "stage1": {
+        "type": 1,
+        "count": 8,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 3,
+        "count": 1,
+        "colour": 4
+      }
+    },
+    "100": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 0
+      },
+      "stage2": {
+        "type": 6,
+        "count": 4,
+        "colour": -1
+      }
+    },
+    "101": {
+      "stage1": {
+        "type": 1,
+        "count": 6,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 2,
+        "count": 2,
+        "colour": -1
+      }
+    },
+    "102": {
+      "stage1": {
+        "type": 3,
+        "count": 2,
+        "colour": 1
+      },
+      "stage2": {
+        "type": 0,
+        "count": 0,
+        "colour": -1
+      }
+    },
+    "103": {
+      "stage1": {
+        "type": 4,
+        "count": 6,
+        "colour": 1
+      },
+      "stage2": {
+        "type": 3,
+        "count": 2,
+        "colour": 4
+      }
+    },
+    "104": {
+      "stage1": {
+        "type": 2,
+        "count": 2,
+        "colour": -1
+      },
+      "stage2": {
+        "type": 3,
+        "count": 2,
+        "colour": 4
+      }
+    }
+  },
+  "boss_garage_req": {
+    "ripper_roo": {
+      "type": 1,
+      "count": 4
+    },
+    "papu_papu": {
+      "type": 1,
+      "count": 8
+    },
+    "komodo_joe": {
+      "type": 1,
+      "count": 12
+    },
+    "pinstripe": {
+      "type": 1,
+      "count": 16
+    },
+    "oxide": {
+      "type": 2,
+      "count": 4
+    }
+  },
+  "podium_checks": {
+    "enabled": true,
+    "locations": {
+      "3": [
+        35015100,
+        35015101,
+        -1,
+        35015103,
+        35015002
+      ],
+      "6": [
+        35015104,
+        35015105,
+        -1,
+        35015107,
+        35015005
+      ],
+      "9": [
+        35015108,
+        35015109,
+        -1,
+        35015111,
+        35015008
+      ],
+      "8": [
+        35015112,
+        35015113,
+        -1,
+        35015115,
+        35015011
+      ],
+      "14": [
+        35015116,
+        35015117,
+        -1,
+        35015119,
+        35015014
+      ],
+      "4": [
+        35015120,
+        35015121,
+        -1,
+        35015123,
+        35015017
+      ],
+      "5": [
+        35015124,
+        35015125,
+        -1,
+        35015127,
+        35015020
+      ],
+      "0": [
+        35015128,
+        35015129,
+        -1,
+        35015131,
+        35015023
+      ],
+      "2": [
+        35015132,
+        35015133,
+        -1,
+        35015135,
+        35015026
+      ],
+      "1": [
+        35015136,
+        35015137,
+        -1,
+        35015139,
+        35015029
+      ],
+      "12": [
+        35015140,
+        35015141,
+        -1,
+        35015143,
+        35015032
+      ],
+      "15": [
+        35015144,
+        35015145,
+        -1,
+        35015147,
+        35015035
+      ],
+      "7": [
+        35015148,
+        35015149,
+        -1,
+        35015151,
+        35015038
+      ],
+      "10": [
+        35015152,
+        35015153,
+        -1,
+        35015155,
+        35015041
+      ],
+      "11": [
+        35015156,
+        35015157,
+        -1,
+        35015159,
+        35015044
+      ],
+      "13": [
+        35015160,
+        35015161,
+        -1,
+        35015163,
+        35015047
+      ],
+      "16": [
+        35015200,
+        35015201,
+        -1,
+        35015203,
+        35015204
+      ],
+      "17": [
+        35015205,
+        35015206,
+        -1,
+        35015208,
+        35015209
+      ]
+    }
+  },
+  "racer_locks": {
+    "enabled": false,
+    "requested_count": 0,
+    "eligible_count": 22,
+    "pads": {}
+  },
+  "oxide_final_venue": {
+    "version": 1,
+    "track": "cortex_vortex",
+    "opponent": "nitros_oxide",
+    "location": 35011105,
+    "wumpa_location": -1,
+    "host_level_id": 13,
+    "lev_sha256": "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13",
+    "vrm_sha256": "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+  },
+  "trial_track_checks": {
+    "enabled": true,
+    "locations": {
+      "16": [
+        35016200,
+        -1
+      ],
+      "17": [
+        35016201,
+        -1
+      ]
+    }
+  },
+  "hit_character_encounters": {
+    "schema": 1,
+    "locations": {
+      "0": 35025000,
+      "1": 35025001,
+      "2": 35025002,
+      "3": 35025003,
+      "4": 35025004,
+      "5": 35025005,
+      "6": 35025006,
+      "7": 35025007,
+      "8": 35025008,
+      "9": 35025009,
+      "10": 35025010,
+      "11": 35025011,
+      "12": 35025012,
+      "13": 35025013,
+      "14": 35025014,
+      "15": 35025015
+    },
+    "policy": {
+      "seed": 3838108652,
+      "self_character": "never_seat_player",
+      "boss_eligible_after_clear": true,
+      "guest_slots": 1
+    },
+    "tracks": {
+      "0": {
+        "base": [
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3
+        ],
+        "pinned": [],
+        "reserve": [
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11
+        ]
+      },
+      "1": {
+        "base": [
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "pinned": [
+          11
+        ],
+        "reserve": [
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "2": {
+        "base": [
+          6,
+          7,
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "pinned": [
+          13
+        ],
+        "reserve": [
+          14,
+          15,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ]
+      },
+      "3": {
+        "base": [
+          7,
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "pinned": [
+          14
+        ],
+        "reserve": [
+          15,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ]
+      },
+      "4": {
+        "base": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "pinned": [],
+        "reserve": [
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "5": {
+        "base": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0
+        ],
+        "pinned": [
+          9
+        ],
+        "reserve": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8
+        ]
+      },
+      "6": {
+        "base": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1
+        ],
+        "pinned": [
+          10
+        ],
+        "reserve": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9
+        ]
+      },
+      "7": {
+        "base": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2
+        ],
+        "pinned": [
+          8
+        ],
+        "reserve": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10
+        ]
+      },
+      "8": {
+        "base": [
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3
+        ],
+        "pinned": [
+          14
+        ],
+        "reserve": [
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11
+        ]
+      },
+      "9": {
+        "base": [
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "pinned": [],
+        "reserve": [
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "10": {
+        "base": [
+          6,
+          7,
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "pinned": [],
+        "reserve": [
+          14,
+          15,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ]
+      },
+      "11": {
+        "base": [
+          7,
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "pinned": [],
+        "reserve": [
+          15,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ]
+      },
+      "12": {
+        "base": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "pinned": [
+          13
+        ],
+        "reserve": [
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "13": {
+        "base": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0
+        ],
+        "pinned": [
+          15
+        ],
+        "reserve": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8
+        ]
+      },
+      "14": {
+        "base": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1
+        ],
+        "pinned": [],
+        "reserve": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9
+        ]
+      },
+      "15": {
+        "base": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2
+        ],
+        "pinned": [],
+        "reserve": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10
+        ]
+      },
+      "16": {
+        "base": [
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3
+        ],
+        "pinned": [
+          12
+        ],
+        "reserve": [
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11
+        ]
+      },
+      "17": {
+        "base": [
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "pinned": [
+          12
+        ],
+        "reserve": [
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      }
+    },
+    "cups": {
+      "100": {
+        "base": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "pinned": [],
+        "reserve": [
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "101": {
+        "base": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0
+        ],
+        "pinned": [],
+        "reserve": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8
+        ]
+      },
+      "102": {
+        "base": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1
+        ],
+        "pinned": [],
+        "reserve": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9
+        ]
+      },
+      "103": {
+        "base": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2
+        ],
+        "pinned": [],
+        "reserve": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10
+        ]
+      },
+      "104": {
+        "base": [
+          4,
+          5,
+          6,
+          7,
+          0,
+          1,
+          2,
+          3
+        ],
+        "pinned": [],
+        "reserve": [
+          12,
+          13,
+          14,
+          15,
+          8,
+          9,
+          10,
+          11
+        ]
+      }
+    },
+    "unlock_triggers": {
+      "8": {
+        "kind": "boss",
+        "any_of": [
+          35011103
+        ]
+      },
+      "9": {
+        "kind": "boss",
+        "any_of": [
+          35011101
+        ]
+      },
+      "10": {
+        "kind": "boss",
+        "any_of": [
+          35011100
+        ]
+      },
+      "11": {
+        "kind": "boss",
+        "any_of": [
+          35011102
+        ]
+      },
+      "12": {
+        "kind": "track",
+        "any_of": [
+          35016200,
+          35016201
+        ]
+      },
+      "13": {
+        "kind": "track",
+        "any_of": [
+          35011008,
+          35011010
+        ]
+      },
+      "14": {
+        "kind": "track",
+        "any_of": [
+          35011000,
+          35011003
+        ]
+      },
+      "15": {
+        "kind": "boss",
+        "any_of": [
+          35011104,
+          35011105
+        ]
+      }
+    },
+    "bosses": {
+      "35011100": 10,
+      "35011101": 9,
+      "35011102": 11,
+      "35011103": 8,
+      "35011104": 15,
+      "35011105": 15
+    }
+  }
+}

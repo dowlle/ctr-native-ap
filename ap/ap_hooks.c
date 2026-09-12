@@ -55,6 +55,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
 #include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
+#include "ap_hit_policy.h" // freestanding Hit Character encounter decisions (ticket 06)
+#include "ap_hit_encounter.h" // Hit Character gather: eligibility + roster + dispatch (ticket 06)
 #include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
@@ -1529,6 +1531,34 @@ int AP_PadStage1Met(int physLevelID)
 	return 1; // unknown pad -> treat as enterable (defensive; AP_PadState gates)
 }
 
+// The effective player at a physical pad. A met racer lock OVERRIDES the chosen
+// racer, because AH_WarpPad.c calls AP_RacerLock_ForceForWarp immediately before
+// the load reads characterIDs[0] -- so the hub-time chosen racer is not what
+// will actually race. Predicting from the chosen racer alone could advertise a
+// locked guest as an opponent, or seat the player as their own opponent.
+static int AP_HitEffectivePlayer(int physLevelID)
+{
+	int chosen = (data.characterIDs[0] >= 0) ? (int)data.characterIDs[0] : -1;
+	int lock = ctr_cfg_racer_lock(physLevelID);
+	return AP_HitEffectivePlayerPure(chosen, lock, ctr_cfg_racer_lock_met(physLevelID));
+}
+
+// Is there an eligible, unchecked Hit guest opportunity behind this pad? Any
+// ordinary destination whose roster can seat an eligible guest with an unchecked
+// Hit location participates: the sixteen retail tracks (0..15) and the two trial
+// Trophy tracks (16/17). Cups are ticket 11. Counted by AP_PadState as BOTH a
+// remaining location and a plain-rerace check, so Done cannot hard-lock the pad
+// while the guest can still be encountered, and a stage-2-locked pad keeps its
+// phase-1 plain rerace. Also consumed by AH_WarpPad.c's tier-2 choosers.
+int AP_HitPadOpportunity(int physLevelID, int destLevelID)
+{
+	if (!AP_HitEncounterEnabled())
+		return 0;
+	if (destLevelID < 0 || destLevelID > AP_HIT_ORDINARY_TRACK_MAX)
+		return 0;
+	return AP_HitEncounterOpportunity(destLevelID, AP_HitEffectivePlayer(physLevelID)) >= 0;
+}
+
 // The unified pad state (Warp-Pad State Model v2). Returns:
 //   1 = Locked      (stage-1 unmet)                         -> RED
 //   2 = Raceable    (stage-1 met, primary check available)  -> GREEN (flicker)
@@ -1552,6 +1582,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int boxesLeft;
 	int lettersLeft;
 	int wumpaLeft;
+	int hitOpp;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1589,6 +1620,14 @@ int AP_PadState(int physLevelID, int destLevelID)
 	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 	// The trial Trophy and CTR Challenge are already in uncBits (#343).
 
+	// Hit Character encounter (ticket 06): an eligible guest with an unchecked
+	// Hit location is a remaining check AND needs a plain race, so it joins both
+	// counters. Without the reRaceChecksStanding half a stage-2-locked pad would
+	// Re-lock and strand the guest; without the uncCount half the pad would go
+	// Done and hard-lock it.
+	hitOpp = AP_HitPadOpportunity(physLevelID, destLevelID);
+	uncN += hitOpp;
+
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
 	// pad, lifecycle facts off the DESTINATION, which is the model's whole
@@ -1599,7 +1638,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         AP_DestTrophyChecked(destLevelID),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
 	                         uncN + lettersLeft + wumpaLeft,
-	                         boxesLeft + wumpaLeft);
+	                         boxesLeft + wumpaLeft + hitOpp);
 }
 
 // Is this pad in the phase-1 re-entry window? True exactly when the
@@ -4739,6 +4778,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_TurboGrantReset();
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
+		AP_HitEncounterConnectReset(); // ticket 06: re-arm the Hit-check session mask
 		for (k = 0; k < 6; k++)
 			ap_notified_mask[k] = 0;
 		ap_oxide_first_beaten = 0;
@@ -5543,6 +5583,15 @@ static int AP_EmitClassCheck(long code,
 	if (toastSentItem)
 		AP_FeedOnLocationSent(code);
 	return 1;
+}
+
+// Hit Character encounter check (schema 14, ticket 06). Routed through the
+// shared class-check path so per-seed membership, server-checked dedup and the
+// sent-item feed are the same ones every other optional class uses.
+int AP_EmitHitCharacterCheck(long code)
+{
+	return AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                         "[AP CHECK] hit character location %ld\n", code);
 }
 
 void AP_NotifyTrialTrackRace(int levelID, int challenge)

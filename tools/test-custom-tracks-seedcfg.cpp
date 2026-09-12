@@ -626,11 +626,11 @@ static void test_schema_gate(void)
 	expect_eq(ctr_cfg_active(), 0, "schema 0 is inactive");
 	expect_refused("schema 0");
 
-	// Schema 9 is this build's ceiling (issue #320 added goal_oxide `disabled`);
-	// 10 is newer and raises the banner, but the block still parses best-effort
-	// like every other field. The ceiling is asserted as CTR_CFG_SCHEMA_KNOWN + 1
-	// rather than a literal so the next bump does not need this row edited, while
-	// the ceiling itself is still pinned below.
+	// CTR_CFG_SCHEMA_KNOWN is this build's ceiling; the next schema is newer and
+	// raises the banner, but the block still parses best-effort like every other
+	// field. The ceiling is asserted as CTR_CFG_SCHEMA_KNOWN + 1 rather than a
+	// literal so the next bump does not need this row edited, while the ceiling
+	// itself is still pinned below.
 	doc = {{"ctr_options", {{"schema_version", CTR_CFG_SCHEMA_KNOWN + 1}}}};
 	doc["custom_tracks"] = good_block();
 	ap_seedcfg_parse_json(doc);

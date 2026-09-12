@@ -69,6 +69,14 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
+//   14 = Hit Character encounters (ticket 05). The enabled scalar
+//        ctr_options.hit_character is emitted on EVERY 14 seed, on or off, and
+//        the conditional top-level hit_character_encounters block is emitted
+//        only when enabled. This is a GATE, not additive: a pre-14 client must
+//        not silently ignore the block (a seed whose 16 new Hit locations are
+//        live but whose native has no roster would strand those checks), so a
+//        pre-14 client shows the #8 banner on every 14 seed. See the strict
+//        admission parser and the rejection flag below.
 // v15 (schema 14 is claimed by the Hit Character candidate; integration order
 // settles the final number) adds ctr_options.cortex_vortex_track and the
 // conditional cortex_vortex_track block: Cortex Vortex as a full pad track on
@@ -361,6 +369,78 @@ typedef struct
 	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
 } ctr_wumpa_checks;
 
+// ── hit_character_encounters (schema 14, ticket 05) ─────────────────────────
+//
+// Native-owned, fully-resolved encounter tables. The apworld's fill_slot_data
+// does ALL of the mode/rotation/pin logic and emits ordered, resolved candidate
+// lists; native NEVER uses its gameplay RNG to reconstruct them. The block is
+// conditional on ctr_options.hit_character (a boolean emitted on every 14 seed,
+// on or off). The strict parser either reads the whole block into these
+// structures or refuses the seed outright -- there is no partial activation.
+//
+// Ordering is load-bearing (a candidate list is an ordered preference list), so
+// every list here preserves the wire order verbatim.
+#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 1
+#define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
+#define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
+#define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
+#define CTR_CFG_HIT_BOSS_COUNT         6  // canonical boss-win codes, see below
+#define CTR_CFG_HIT_TRIGGER_COUNT      8  // guest engine ids 8..15
+#define CTR_CFG_HIT_LIST_MAX           16 // hard bound on any candidate list
+#define CTR_CFG_HIT_TRIGGER_MAX        8  // max win codes in one any_of list
+#define CTR_CFG_HIT_REJECT_CAP         160 // bounded rejection diagnostic buffer
+
+// kind values for ctr_hit_trigger.kind.
+#define CTR_CFG_HIT_KIND_BOSS  0
+#define CTR_CFG_HIT_KIND_TRACK 1
+
+// One ordered candidate list. count <= CTR_CFG_HIT_LIST_MAX.
+typedef struct
+{
+	int count;
+	int ids[CTR_CFG_HIT_LIST_MAX];
+} ctr_hit_list;
+
+// The three candidate lists for one destination (ordinary track or cup):
+//   base    -- a permutation of the eight default engine ids 0..7
+//   pinned  -- the approved guest pin where the contract pins one (required),
+//              empty otherwise; cups always empty
+//   reserve -- a permutation of the eight non-default engine ids 8..15
+typedef struct
+{
+	ctr_hit_list base;
+	ctr_hit_list pinned;
+	ctr_hit_list reserve;
+} ctr_hit_candidates;
+
+// One guest's unlock trigger. kind is CTR_CFG_HIT_KIND_BOSS or _TRACK; any_of
+// holds the approved authoritative win codes (positive AP codes, no duplicates).
+typedef struct
+{
+	int  kind;
+	int  count;
+	long any_of[CTR_CFG_HIT_TRIGGER_MAX];
+} ctr_hit_trigger;
+
+// The whole parsed block. valid is 1 only when every required field was present,
+// exactly typed, in range and internally consistent; a refused seed leaves it 0
+// AND raises ctr_cfg.seed_rejected (see ap_seedcfg_rejected).
+typedef struct
+{
+	int          enabled;  // ctr_options.hit_character scalar was true
+	int          seen;     // block key was on the wire (even if null/malformed)
+	int          valid;    // fully parsed, admissible encounter data
+	int          schema;   // block schema (== CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN)
+	unsigned int seed;     // policy.seed, uint32
+	int          guest_slots;               // policy.guest_slots (== 1)
+	int          boss_eligible_after_clear; // policy flag (== true)
+	long         locations[CTR_CFG_HIT_CHARACTER_COUNT]; // engine id -> AP code
+	ctr_hit_candidates tracks[CTR_CFG_HIT_TRACK_COUNT];
+	ctr_hit_candidates cups[CTR_CFG_HIT_CUP_COUNT];
+	ctr_hit_trigger    triggers[CTR_CFG_HIT_TRIGGER_COUNT]; // index guest - 8
+	int          boss_identity[CTR_CFG_HIT_BOSS_COUNT]; // canonical key order
+} ctr_hit_encounters;
+
 typedef struct
 {
 	int schema_version; // 0 = not parsed -> Phase-1 fallback everywhere
@@ -636,6 +716,24 @@ typedef struct
 	// the wire" and "the block said off", which are the same thing to every
 	// caller: nothing is emitted.
 	ctr_wumpa_checks wumpa;
+
+	// hit_character_encounters (schema 14, ticket 05). valid=1 only for a
+	// fully-readable enabled block; disabled / legacy absence leaves it 0 and
+	// inert. Every parse re-clears it, so valid-to-invalid and valid-to-absent
+	// can never leave stale encounter data behind.
+	ctr_hit_encounters hit;
+
+	// Seed admission (ticket 05). Set when a schema>=1 seed carries a REQUIRED
+	// block this build cannot honour (today: an enabled hit_character_encounters
+	// that is absent, contradictory, malformed or an unknown block schema). It is
+	// deliberately separate from schema_newer: the #8 global banner is best
+	// effort and must never be the thing that blocks a session, while a required
+	// block mismatch MUST refuse admission. A refused seed leaves schema_version
+	// at 0 (whole config inactive) and carries a bounded diagnostic. Rejection is
+	// NOT raised for schema_version==0 / absent ctr_options -- that is the
+	// supported legacy fallback.
+	int  seed_rejected;
+	char seed_reject_reason[CTR_CFG_HIT_REJECT_CAP];
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -643,6 +741,22 @@ extern ctr_seed_config ctr_cfg;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
+
+// ── seed admission (ticket 05) ─────────────────────────────────────────────
+// 1 when the most recent ap_seedcfg_parse_json() refused the seed because a
+// REQUIRED block was absent/contradictory/malformed/unknown. The whole config is
+// left inactive (schema_version 0) and the network layer must not admit the
+// session. A schema_version==0 / absent-ctr_options seed is the supported legacy
+// fallback and is NEVER a rejection.
+int ap_seedcfg_rejected(void);
+
+// Bounded human-readable reason for the most recent rejection ("" if none).
+// Never NULL; stable until the next parse.
+const char *ap_seedcfg_reject_reason(void);
+
+// The parsed encounter tables, or NULL when slot_data is inactive or the block
+// was not fully readable. Callers must treat NULL as "feature off".
+const ctr_hit_encounters *ap_seedcfg_hit_encounters(void);
 
 // Remapped destination trackID for a physical pad LevelID. Accepts the full
 // shuffle ID space: physical pads 0..27 (warp_pad_map) and cup pads 100..104

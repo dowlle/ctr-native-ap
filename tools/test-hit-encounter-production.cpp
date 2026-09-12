@@ -1,0 +1,493 @@
+// g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include -I ap/vendor/json/include
+//     tools/test-hit-encounter-production.cpp ap/ap_seedcfg.cpp
+//     -o /tmp/test-hit-encounter-production && /tmp/test-hit-encounter-production
+//
+// Production coverage for the Hit Character encounter GATHER (ticket 06). The
+// real parser (ap/ap_seedcfg.cpp) and the real gather (ap/ap_hit_encounter.c)
+// are compiled in; only the network state and the check-send sink are stubbed.
+// This is the layer that cannot be reached by the freestanding policy harness:
+// trigger-to-next-load eligibility reconstruction from checked state, the roster
+// for all sixteen player choices, stock/extra planning, generic victim dispatch,
+// negative attribution and repeated/reconnect dedup.
+//
+// Build + run (from the repo root):
+//   g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include \
+//       -I ap/vendor/json/include tools/test-hit-encounter-production.cpp \
+//       ap/ap_seedcfg.cpp -o /tmp/test-hit-encounter-production && \
+//       /tmp/test-hit-encounter-production
+
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <set>
+#include <string>
+
+#include <nlohmann/json.hpp>
+
+#include "../ap/ap_seedcfg.h"
+
+// ── stubbed network / sink ─────────────────────────────────────────────────
+static std::set<long long> g_checked;
+static int g_emitCount;
+static long g_lastEmit;
+
+extern "C" int ap_net_location_checked(long long code)
+{
+	return g_checked.count(code) ? 1 : 0;
+}
+
+extern "C" int ap_net_location_exists(long long code)
+{
+	// Every canonical Hit location is present this seed; anything checked is
+	// present by definition.
+	if (code >= 35025000LL && code <= 35025015LL)
+		return 1;
+	return g_checked.count(code) ? 1 : 0;
+}
+
+extern "C" int AP_EmitHitCharacterCheck(long code)
+{
+	g_emitCount++;
+	g_lastEmit = code;
+	return 1;
+}
+
+extern "C" void AP_LogLine(const char *msg)
+{
+	(void)msg;
+}
+
+// The real gather, compiled as C++ in this translation unit.
+#include "../ap/ap_hit_encounter.c"
+
+// ── harness plumbing ───────────────────────────────────────────────────────
+static nlohmann::json g_fixture;
+static int g_checks;
+static int g_failures;
+
+static void expect(int ok, const char *what)
+{
+	g_checks++;
+	if (!ok)
+	{
+		std::printf("FAIL: %s\n", what);
+		g_failures++;
+	}
+}
+
+static void expect_eq(long long got, long long want, const char *what)
+{
+	g_checks++;
+	if (got != want)
+	{
+		std::printf("FAIL: %s (got %lld, want %lld)\n", what, got, want);
+		g_failures++;
+	}
+}
+
+// Flags for an accepted local-P1 hit on a live AI in a supported race.
+static const unsigned kAccepted = 1u | 2u | 16u | 32u | 128u; // AI|live|attacker|localP1|race
+// Type 4 while already damage-active still applies burn.
+static const unsigned kAcceptedBurning = kAccepted | 256u;
+
+static void reset_state(void)
+{
+	g_checked.clear();
+	g_emitCount = 0;
+	g_lastEmit = -1;
+	AP_HitEncounterConnectReset();
+}
+
+static bool field_has(const int *ids, int n, int id)
+{
+	for (int i = 0; i < n; i++)
+		if (ids[i] == id)
+			return true;
+	return false;
+}
+
+static void test_activation_and_candidates(void)
+{
+	ap_seedcfg_parse_json(g_fixture);
+	expect(ap_seedcfg_hit_encounters() != NULL, "fixture activates encounters");
+	expect_eq(AP_HitEncounterEnabled(), 1, "feature enabled");
+	expect(AP_HitEncounterCandidates(3) != NULL, "track 3 candidates");
+	expect(AP_HitEncounterCandidates(17) != NULL, "track 17 candidates");
+	expect(AP_HitEncounterCandidates(18) == NULL, "track 18 unsupported");
+	expect(AP_HitEncounterCandidates(100) != NULL, "cup 100 candidates");
+	expect(AP_HitEncounterCandidates(105) == NULL, "cup 105 unsupported");
+
+	// Feature-off and unsupported-destination loads must not apply the roster.
+	// Ticket 10: all ordinary tracks 0..15 AND the two trial Trophy tracks 16/17,
+	// single-player ordinary Adventure Trophy only.
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), 1, "track 3 applies");
+	expect_eq(AP_HitEncounterShouldApply(1, 0, 0, 0, 0, 0, 0, 0, 1), 1, "track 0 applies");
+	expect_eq(AP_HitEncounterShouldApply(1, 16, 0, 0, 0, 0, 0, 0, 1), 1, "trial 16 applies");
+	expect_eq(AP_HitEncounterShouldApply(1, 17, 0, 0, 0, 0, 0, 0, 1), 1, "trial 17 applies");
+	expect_eq(AP_HitEncounterShouldApply(0, 3, 0, 0, 0, 0, 0, 0, 1), 0, "no adventure does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 2), 0, "multiplayer does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 1, 0, 0, 0, 0, 0, 1), 0, "cup does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 0, 0, 1), 0, "boss does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 1, 0, 0, 0, 1), 0, "arcade mode does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 1, 0, 0, 1), 0, "relic does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 1, 0, 1), 0, "token does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 18, 0, 0, 0, 0, 0, 0, 1), 0, "arena 18 does not apply");
+
+	// The corrected AI field bound.
+	expect_eq(AP_HIT_FIELD_MAX, 7, "field max is seven AI seats");
+}
+
+static void test_trigger_to_next_load(void)
+{
+	int ids[AP_HIT_FIELD_MAX];
+
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+
+	// Before either authoritative win: Fake Crash is not eligible, so Crash
+	// Cove's field is the ordinary base roster with no guest.
+	expect_eq(AP_HitEncounterGuestEligible(14), 0, "guest ineligible before win");
+	expect_eq(AP_HitEncounterOpportunity(3, 0), -1, "no opportunity before win");
+	{
+		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
+		expect_eq(n, 7, "pre-win field size");
+		expect(!field_has(ids, n, 14), "pre-win field has no Fake Crash");
+	}
+
+	// Win Crash Cove (35011000) -> the NEXT load reconstructs eligibility.
+	g_checked.insert(35011000);
+	expect_eq(AP_HitEncounterGuestEligible(14), 1, "guest eligible after win");
+	expect_eq(AP_HitEncounterOpportunity(3, 0), 14, "opportunity after win");
+	{
+		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
+		expect_eq(n, 7, "post-win field size");
+		expect_eq(ids[0], 14, "post-win field seats the guest first");
+	}
+
+	// The other authoritative win code also unlocks the guest.
+	g_checked.clear();
+	g_checked.insert(35011003);
+	expect_eq(AP_HitEncounterGuestEligible(14), 1, "second trigger unlocks");
+
+	// A checked Hit location removes the opportunity without changing the roster.
+	g_checked.insert(35025014);
+	expect_eq(AP_HitEncounterOpportunity(3, 0), -1, "checked Hit removes opportunity");
+	{
+		int n = AP_HitEncounterBuildField(3, 0, 7, ids);
+		expect_eq(ids[0], 14, "roster still seats the unlocked guest");
+	}
+}
+
+static void test_full_roster_production(void)
+{
+	int ids[AP_HIT_FIELD_MAX];
+
+	// Every pinned ordinary track applies its pin. Sewer Speedway (8) pins Fake
+	// Crash just like Crash Cove (3).
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_checked.insert(35011000);
+	expect_eq(AP_HitEncounterBuildField(3, 0, 7, ids), 7, "track 3 roster applies");
+	expect_eq(AP_HitEncounterBuildField(8, 0, 7, ids), 7, "track 8 roster applies");
+	expect(field_has(ids, 7, 14), "track 8 seats Fake Crash");
+
+	// A reserve guest is seated on an unpinned ordinary level when its trigger is
+	// met (Penta, 13, on level 0 which has no pin).
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_checked.insert(35011008); // Penta trigger
+	{
+		int n = AP_HitEncounterBuildField(0, 0, 7, ids);
+		expect_eq(n, 7, "track 0 field size");
+		expect(field_has(ids, n, 13), "reserve guest seated on an unpinned level");
+	}
+}
+
+static void test_player_exclusion(void)
+{
+	int ids[AP_HIT_FIELD_MAX];
+
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_checked.insert(35011000); // Fake Crash eligible
+
+	// A player who is Fake Crash must not be seated as their own opponent.
+	{
+		int n = AP_HitEncounterBuildField(3, 14, 7, ids);
+		expect_eq(n, 7, "player=14 field size");
+		expect(!field_has(ids, n, 14), "player=14 never seats self");
+	}
+
+	// Every other player still gets the guest.
+	for (int p = 0; p < 16; p++)
+	{
+		int n = AP_HitEncounterBuildField(3, p, 7, ids);
+		expect(!field_has(ids, n, p), "field never seats the player");
+		if (p != 14)
+			expect(field_has(ids, n, 14), "non-14 player gets Fake Crash");
+	}
+}
+
+static void test_extras_for_all_players(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_checked.insert(35011000); // Fake Crash eligible
+
+	for (int p = 0; p < 16; p++)
+	{
+		int ids[AP_HIT_FIELD_MAX];
+		int extras[3] = {-1, -1, -1};
+		int n = AP_HitEncounterBuildField(3, p, 7, ids);
+		int need = AP_HitEncounterExtras(ids, n, p, extras, 3);
+
+		if (p <= 7)
+		{
+			// Default player: the arcade pack covers every default base id, so
+			// only the guest is an extra.
+			expect_eq(need, 1, "default player needs one extra");
+			expect_eq(extras[0], 14, "default player extra is the guest");
+		}
+		else if (p == 14)
+		{
+			// Player IS the guest: no guest seat, and Pura (7) is outside the
+			// nondefault pack's 0..6 stock.
+			expect_eq(need, 1, "player=14 needs one extra");
+			expect_eq(extras[0], 7, "player=14 extra is Pura");
+		}
+		else
+		{
+			// Nondefault player: the guest plus Pura from the base fill.
+			expect_eq(need, 2, "nondefault player needs two extras");
+			expect(field_has(extras, need, 14), "nondefault extras include the guest");
+			expect(field_has(extras, need, 7), "nondefault extras include Pura");
+		}
+		expect(need <= 3, "extras fit the three slots");
+	}
+}
+
+// Every pinned ordinary destination (including the trial Trophy tracks) seats
+// its approved guest, and the loader needs exactly one extra model for it under
+// a default player.
+static void test_all_guest_extras(void)
+{
+	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+	expect(h != NULL, "extras: encounters parsed");
+	if (!h)
+		return;
+
+	for (int level = 0; level <= 17; level++)
+	{
+		const ctr_hit_candidates *c = &h->tracks[level];
+		if (c->pinned.count != 1)
+			continue;
+		int guest = c->pinned.ids[0];
+		const ctr_hit_trigger *t = &h->triggers[guest - 8];
+
+		reset_state();
+		ap_seedcfg_parse_json(g_fixture);
+		g_checked.insert(t->any_of[0]);
+		{
+			int ids[AP_HIT_FIELD_MAX];
+			int extras[3] = {-1, -1, -1};
+			int n = AP_HitEncounterBuildField(level, 0, 7, ids);
+			int need;
+			expect_eq(n, 7, "pinned level field size");
+			expect(field_has(ids, n, guest), "pinned guest seated");
+			need = AP_HitEncounterExtras(ids, n, 0, extras, 3);
+			expect_eq(need, 1, "pinned guest needs one extra (default player)");
+			expect_eq(extras[0], guest, "extra is the pinned guest");
+		}
+	}
+}
+
+static void test_generic_victim_dispatch(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+
+	// Generic dispatch maps ANY valid actual victim through the parsed sixteen
+	// locations, defaults included.
+	for (int victim = 0; victim < 16; victim++)
+	{
+		reset_state();
+		g_emitCount = 0;
+		expect_eq(AP_HitEncounterOnDamage(victim, 1, kAccepted), 1, "victim accepted");
+		expect_eq(g_emitCount, 1, "one emit per victim");
+		expect_eq(g_lastEmit, 35025000LL + victim, "victim maps to its location");
+	}
+}
+
+static void test_negative_attribution(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+
+	struct Case
+	{
+		int victim;
+		int damage;
+		unsigned flags;
+		const char *name;
+	};
+	static const Case cases[] = {
+	    {14, 0, kAccepted, "damage 0 rejected"},
+	    {14, 5, kAccepted, "damage 5 mask-grab rejected"},
+	    {14, 9, kAccepted, "unknown damage rejected"},
+	    {14, 1, kAccepted | 256u, "type 1 while already damage-active rejected"},
+	    {14, 1, 1u | 2u | 16u | 32u, "unsupported race rejected"},
+	    {14, 1, 2u | 16u | 32u | 128u, "non-AI victim rejected"},
+	    {14, 1, 1u | 16u | 32u | 128u, "nonlive victim rejected"},
+	    {14, 1, 1u | 2u | 4u | 16u | 32u | 128u, "ghost victim rejected"},
+	    {14, 1, 1u | 2u | 8u | 16u | 32u | 128u, "player victim rejected"},
+	    {14, 1, 1u | 2u | 32u | 128u, "no attacker rejected"},
+	    {14, 1, 1u | 2u | 16u | 128u, "non-P1 attacker rejected"},
+	    {14, 1, 1u | 2u | 16u | 32u | 64u | 128u, "AI attacker rejected"},
+	    {16, 1, kAccepted, "engine id 16 rejected"},
+	    {-1, 1, kAccepted, "engine id -1 rejected"},
+	};
+	for (const Case &c : cases)
+	{
+		g_emitCount = 0;
+		g_lastEmit = -1;
+		AP_HitEncounterOnDamage(c.victim, c.damage, c.flags);
+		expect_eq(g_emitCount, 0, c.name);
+	}
+
+	// A fresh type-1 spin is accepted, and type 4 keeps its burn even while the
+	// victim is already damage-active.
+	g_emitCount = 0;
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	expect_eq(g_emitCount, 1, "fresh type 1 accepted");
+	reset_state();
+	AP_HitEncounterOnDamage(14, 4, kAcceptedBurning);
+	expect_eq(g_emitCount, 1, "type 4 burn while already spinning accepted");
+}
+
+static void test_repeat_and_reconnect_dedup(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+
+	g_emitCount = 0;
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	AP_HitEncounterOnDamage(14, 3, kAccepted);
+	expect_eq(g_emitCount, 1, "repeated hits dedup to one emit");
+
+	// Reconnect with the check still unconfirmed: the session mask re-arms (the
+	// production held-check queue is the cross-connection dedup authority).
+	AP_HitEncounterConnectReset();
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	expect_eq(g_emitCount, 2, "reconnect re-arms an unconfirmed check");
+
+	// Reconnect once the server HAS confirmed it: never re-emit.
+	g_checked.insert(35025014);
+	AP_HitEncounterConnectReset();
+	g_emitCount = 0;
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	expect_eq(g_emitCount, 0, "server-checked location never re-emits");
+}
+
+// Ticket 09: eligibility for all eight guests is reconstructed from checked
+// state via each guest's parsed any-of list, with growing checked sets.
+static void test_all_guest_eligibility(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+	expect(h != NULL, "eligibility: encounters parsed");
+	if (!h)
+		return;
+
+	for (int g = 0; g < 8; g++)
+		expect_eq(AP_HitEncounterGuestEligible(g), 1, "default always eligible");
+
+	for (int g = 8; g < 16; g++)
+	{
+		const ctr_hit_trigger *t = &h->triggers[g - 8];
+		expect_eq(AP_HitEncounterGuestEligible(g), 0, "guest ineligible with no checks");
+		for (int i = 0; i < t->count; i++)
+		{
+			reset_state();
+			ap_seedcfg_parse_json(g_fixture);
+			g_checked.insert(t->any_of[i]);
+			expect_eq(AP_HitEncounterGuestEligible(g), 1,
+			          "any-of code unlocks the guest");
+		}
+	}
+
+	// Growing checked sets on one guest's any-of list: each additional code keeps
+	// it eligible, and a code from another guest does not affect it.
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	expect_eq(AP_HitEncounterGuestEligible(13), 0, "Penta ineligible initially");
+	g_checked.insert(35011000); // Fake Crash trigger only
+	expect_eq(AP_HitEncounterGuestEligible(13), 0, "unrelated code leaves Penta ineligible");
+	g_checked.insert(35011008); // first Penta trigger
+	expect_eq(AP_HitEncounterGuestEligible(13), 1, "first Penta trigger unlocks");
+	g_checked.insert(35011010); // second Penta trigger
+	expect_eq(AP_HitEncounterGuestEligible(13), 1, "second Penta trigger keeps unlocked");
+}
+
+// Ticket 09: a new seed / reconnect clears the session state, and eligibility
+// re-derives from the new checked set.
+static void test_seed_change_and_reconnect(void)
+{
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_emitCount = 0;
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	expect_eq(g_emitCount, 1, "seed A emits the check");
+
+	// A new seed arrives; the connect reset clears the session mask so the same
+	// victim can be checked again under the new seed.
+	nlohmann::json other = g_fixture;
+	other["hit_character_encounters"]["policy"]["seed"] = 12345;
+	ap_seedcfg_parse_json(other);
+	AP_HitEncounterConnectReset();
+	g_emitCount = 0;
+	AP_HitEncounterOnDamage(14, 1, kAccepted);
+	expect_eq(g_emitCount, 1, "new seed re-emits after the mask clears");
+
+	// Eligibility itself follows the checked set across the seed change.
+	expect_eq(AP_HitEncounterGuestEligible(14), 0, "new seed: FC ineligible with no checks");
+	g_checked.insert(35011000);
+	expect_eq(AP_HitEncounterGuestEligible(14), 1, "new seed: FC eligible after its win");
+}
+
+int main(int argc, char **argv)
+{
+	const char *path = argc > 1 ? argv[1] : "tools/fixtures/ctr_hit_character_seed2101.json";
+	std::ifstream in(path);
+	if (!in)
+	{
+		std::fprintf(stderr, "cannot open fixture: %s\n", path);
+		return 2;
+	}
+	try
+	{
+		in >> g_fixture;
+	}
+	catch (const std::exception &e)
+	{
+		std::fprintf(stderr, "fixture is not valid JSON: %s\n", e.what());
+		return 2;
+	}
+
+	test_activation_and_candidates();
+	test_trigger_to_next_load();
+	test_full_roster_production();
+	test_player_exclusion();
+	test_extras_for_all_players();
+	test_all_guest_extras();
+	test_generic_victim_dispatch();
+	test_negative_attribution();
+	test_repeat_and_reconnect_dedup();
+	test_all_guest_eligibility();
+	test_seed_change_and_reconnect();
+
+	std::printf("%s: %d checks, %d failures\n",
+	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);
+	return g_failures ? 1 : 0;
+}

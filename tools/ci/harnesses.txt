@@ -29,6 +29,12 @@ tools/test-goal-line.c
 tools/test-goal-presentation.c
 tools/test-graphics-options.c
 tools/test-h-useful.c
+tools/test-hit-character-seedcfg.cpp
+tools/test-hit-bots-gather.c
+tools/test-hit-chooser.c
+tools/test-hit-encounter-production.cpp
+tools/test-hit-policy.c
+tools/test-hit-roster-fixture.cpp
 tools/test-held-checks.cpp
 tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
@@ -42,6 +48,7 @@ tools/test-native-clip-scratch.c
 tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
+tools/test-net-admission.cpp
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
 tools/test-oxide-optional-result.py
