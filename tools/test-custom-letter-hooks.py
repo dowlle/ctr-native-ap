@@ -10,7 +10,7 @@ for first, following in (
     ("int AP_LetterAvailable(", "long AP_LetterLocation("),
     ("long AP_LetterLocation(", "void AP_LetterCollected("),
     ("int AP_LettersRequiredMet(", "int AP_LettersRequiredCount("),
-    ("int AP_LettersRequiredCount(", "int AP_LetterTokenEarned("),
+    ("int AP_LettersRequiredCount(", "static void AP_FeedLetterReadyUpdates(void)"),
     ("int AP_LetterTokenEarned(", "static int AP_ItemsanityActive("),
 ):
     start = source.index(first)
