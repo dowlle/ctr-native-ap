@@ -47,6 +47,7 @@ tools/test-oxide-encounter.c
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py
+tools/test-trial-pad-glow-production.py
 tools/test-oxide-garage-advert.c
 tools/test-oxide-weapon-schedule.c
 tools/test-oxide-final-venue-seedcfg.cpp
@@ -66,6 +67,7 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-trial-letters.c
+tools/test-trial-pad-glow.c
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c

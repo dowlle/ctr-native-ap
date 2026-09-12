@@ -94,6 +94,10 @@ int main(void)
 	expect_item(139, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first letter -> crystal");
 	expect_item(186, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last letter -> crystal");
 	expect_item(187, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "Gas Pedal -> crystal");
+	expect_item(194, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first trial letter (Slide Coliseum C) -> crystal");
+	expect_item(199, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last trial letter (Turbo Track R) -> crystal");
+	expect_item(35021000LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first custom-track letter -> crystal");
+	expect_item(35021395LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last custom-track letter -> crystal");
 
 	// The gaps between the crystal blocks must NOT be swept in. 106..119 sits
 	// between the weapon unlocks and the character unlocks, and 188 is the Tizi
@@ -103,6 +107,9 @@ int main(void)
 	expect_item(119, AP_CAT_NONE, -1, 0, "just below the Wumpa family -> marker material");
 	expect_item(188, AP_CAT_NONE, -1, 0, "Tizi Helper -> marker material");
 	expect_item(400, AP_CAT_NONE, -1, 0, "an id no block owns -> marker material");
+	expect_item(200, AP_CAT_NONE, -1, 0, "just above the trial letters -> marker material");
+	expect_item(35020999LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just below the custom-track letters -> marker material");
+	expect_item(35021396LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just above the custom-track letters -> marker material");
 
 	// The crystal's purple is the vanilla one (UI_Instance.c:90) and can never be
 	// 0: a model tinted to 0 renders near-black, which is the #212 defect family
