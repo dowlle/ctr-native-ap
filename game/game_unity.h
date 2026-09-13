@@ -385,6 +385,7 @@
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
+#include "../ap/ap_tracker.c"
 #endif
 
 #endif

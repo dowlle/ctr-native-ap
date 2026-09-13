@@ -414,6 +414,9 @@ void Platform_EndScene(void)
 		NativeRenderer_PresentVRAMRect(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
 	}
 	NativeRenderer_EndGpuFrame();
+#ifdef CTR_AP
+	AP_TrackerPresent();
+#endif
 	NativeRenderer_SwapWindow();
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_END_SCENE);
 }
