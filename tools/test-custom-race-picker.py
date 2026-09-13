@@ -8,8 +8,10 @@ source = (root / "game/232/AH_WarpPad.c").read_text()
 start = source.index("\t\tif (ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&")
 end = source.index("\n#endif", start)
 block = source[start:end]
-capture_start = source.index("static struct {", source.index("static int apCustomRaceChoice"))
-capture_end = source.index("static void AH_WarpPad_CustomRaceMenuProc", capture_start)
+# The pre-warp snapshot is shared with the Hit Character chooser, so it sits
+# in its own CTR_AP block ahead of the custom race menu.
+capture_start = source.index("static struct {")
+capture_end = source.index("\n#endif", capture_start)
 capture = source[capture_start:capture_end]
 fixture = r'''
 #include <assert.h>
@@ -63,7 +65,7 @@ int main(void) {
   driver.posCurr.y=123; instance.scale=(SVec3){100,200,300};
   driver.turnAngleCurr=-1234; driver.rotCurr.y=2345;
   instance.flags=16; instance.vertSplit=42; game.cameraDC[0].cameraMode=7;
-  AH_WarpPad_CustomRaceCapture(gGT);
+  AH_WarpPad_WarpCapture(gGT);
   driver.posCurr.y=999; instance.scale=(SVec3){1,2,3};
   driver.turnAngleCurr=1000; driver.rotCurr.y=-1000;
   instance.flags=32 | REFLECTIVE | HIDE_MODEL;
@@ -83,7 +85,7 @@ int main(void) {
    assert(driver.turnAngleCurr==-1234 && driver.rotCurr.y==2345);
    assert(instance.scale.x==100 && instance.scale.y==200 && instance.scale.z==300);
    assert(instance.flags==32 && instance.vertSplit==42 && game.cameraDC[0].cameraMode==7);
-   assert(apCustomWarpSnapshot.driver==NULL);
+   assert(apWarpSnapshot.driver==NULL);
    assert(game.gameMode1==(256 | RELIC_RACE));
   } else {
    assert(result==1);

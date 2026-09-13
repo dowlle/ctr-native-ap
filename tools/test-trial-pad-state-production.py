@@ -30,6 +30,9 @@ int AP_PadUncollectedBoxCount(int d){return boxes;}
 int AP_PadUncollectedLetterCount(int d){return letters;}
 int AP_PadUncollectedWumpaCount(int d){return wumpa;}
 int AP_TrialTrackUncheckedCount(int d){return 0;}
+/* Schema 16 Hit Character seam: an unchecked Hit that can appear at this pad. */
+static int hitOpp=0;
+int AP_HitPadOpportunity(int p,int d){assert(p==physical);return hitOpp;}
 /* Schema 15 Cortex Vortex seam (destination 110, direct Trophy code). */
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0 };
@@ -56,6 +59,11 @@ int main(void){
  }
  destination=0;trophyChecked=1;stage2=1;
  assert(AP_PadState(physical,destination)==4);
+ /* A Hit opportunity keeps a won pad re-raceable and never Done. */
+ stage2=0;hitOpp=1;assert(AP_PadState(physical,destination)==2);
+ assert(AP_PadPhase1ReRaceable(physical,destination));
+ stage2=1;remaining=0;assert(AP_PadState(physical,destination)==4);
+ hitOpp=0;assert(AP_PadState(physical,destination)==5);remaining=1;
 
  /* Cortex Vortex: a refused block leaves 110 unrecognised (pad untouched). */
  destination=110;cvValid=0;trophyChecked=1;
