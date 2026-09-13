@@ -593,17 +593,32 @@ static void test_bosses(void)
 		expect_reject(d, "extra boss key");
 	}
 	{
-		// Substitution: the identity table is data, not hardcoded.
+		// Fix B: the retail identity table is the contract. A mismatched entry
+		// is refused (visible incompatibility), not run with apworld logic and
+		// native dispatch disagreeing about who appears.
 		nlohmann::json d = fx();
 		d["hit_character_encounters"]["bosses"]["35011100"] = 7;
+		expect_reject(d, "altered boss identity refused");
+	}
+	{
+		nlohmann::json d = fx();
 		d["hit_character_encounters"]["bosses"]["35011105"] = 3;
-		expect_accept(d, "boss identity substitution");
+		expect_reject(d, "altered Oxide identity refused");
+	}
+	{
+		// The retail table is accepted and stored verbatim.
+		nlohmann::json d = fx();
+		expect_accept(d, "retail boss table accepted");
 		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
-		expect(h != NULL, "substituted exposes encounters");
+		expect(h != NULL, "retail table exposes encounters");
 		if (h)
 		{
-			expect_eq(h->boss_identity[0], 7, "substituted identity stored");
-			expect_eq(h->boss_identity[5], 3, "substituted identity stored (2)");
+			expect_eq(h->boss_identity[0], 10, "retail Ripper Roo identity");
+			expect_eq(h->boss_identity[1], 9, "retail Papu Papu identity");
+			expect_eq(h->boss_identity[2], 11, "retail Komodo Joe identity");
+			expect_eq(h->boss_identity[3], 8, "retail Pinstripe identity");
+			expect_eq(h->boss_identity[4], 15, "retail Oxide identity");
+			expect_eq(h->boss_identity[5], 15, "retail final Oxide identity");
 		}
 	}
 }

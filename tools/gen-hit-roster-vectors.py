@@ -126,6 +126,57 @@ def case(name, seed, level, checked, player):
         "reserve": reserve_for(seed, level),
         "expected": roster,
         "expected_guest": guest,
+        "field_size": FIELD_SIZE,
+    }
+
+
+# ── Gem Cups (ticket 11) ────────────────────────────────────────────────────
+# The cups block keys are 100..104. Cups have no pins: the first eligible
+# reserve is the guest, then non-player base ids fill to the field size (four AI
+# in the retail Purple cup 104, seven otherwise). "Cups use the corresponding
+# cup ID in place of L" for the deterministic rotation.
+
+def cup_field_size(cup_id):
+    return 4 if cup_id == 104 else FIELD_SIZE
+
+
+def cup_select(seed, cup_id, checked, player):
+    base = base_for(seed, cup_id)
+    reserve = reserve_for(seed, cup_id)
+    size = cup_field_size(cup_id)
+
+    guest = -1
+    for g in reserve:
+        if g != player and eligible(g, checked):
+            guest = g
+            break
+
+    out = []
+    if guest >= 0:
+        out.append(guest)
+    for b in base:
+        if len(out) >= size:
+            break
+        if b == player or b == guest or b in out:
+            continue
+        out.append(b)
+    return out, guest
+
+
+def cup_case(name, seed, cup_id, checked, player):
+    roster, guest = cup_select(seed, cup_id, checked, player)
+    return {
+        "name": name,
+        "seed": seed,
+        "level": cup_id,
+        "player": player,
+        "checked": sorted(checked),
+        "base": base_for(seed, cup_id),
+        "pinned": [],
+        "reserve": reserve_for(seed, cup_id),
+        "expected": roster,
+        "expected_guest": guest,
+        "field_size": cup_field_size(cup_id),
     }
 
 
@@ -183,7 +234,81 @@ def build_cases():
         cases.append(case(f"guest{guest}_on_L{level}", SEED_0, level,
                           [TRIGGERS[guest][0]], 0))
 
+    # Gem Cups: no pins, reserve guest then base fill, field size four in the
+    # retail Purple cup (104) and seven otherwise.
+    for seed in (SEED_0, SEED_MAX):
+        for cup_id in (100, 101, 102, 103, 104):
+            cases.append(cup_case(f"cup{cup_id}_seed{seed}_no_guest", seed, cup_id,
+                                  [], 0))
+        for player in range(0, 16):
+            cases.append(cup_case(f"cup104_seed{seed}_p{player}", seed, 104,
+                                  [35011000], player))
+        cases.append(cup_case(f"cup100_seed{seed}_reserve", seed, 100,
+                              [35011100], 0))
+    cases.append(cup_case("cup104_reserve_guest", SEED_0, 104, [35011103], 0))
+    cases.append(cup_case("cup100_player_is_reserve_guest", SEED_0, 100,
+                          [35011100, 35011103], 10))
+
     return cases
+
+
+def build_cup_sessions():
+    """New/same-cup lifecycle boundaries (ticket 11). Each step is an event the
+    native snapshot consumes: `begin` marks a NEW cup (pad entry), `load` is a
+    cup race load with a track index. The expected roster is what the snapshot
+    must hold after that step, derived from the contract selection for the
+    eligibility current at the cup's begin."""
+    sessions = []
+
+    # One cup, three legs, a mid-cup unlock, a retry, then a NEW cup of the same
+    # id resolves fresh.
+    seed = SEED_0
+    cup_id = 100
+    sessions.append({
+        "name": "cup100_continue_retry_new",
+        "seed": seed,
+        "cup": cup_id,
+        "player": 0,
+        "steps": [
+            {"event": "begin", "checked": []},
+            {"event": "load", "trackIndex": 0,
+             "expected": cup_select(seed, cup_id, [], 0)[0]},
+            {"event": "load", "trackIndex": 1,
+             "expected": cup_select(seed, cup_id, [], 0)[0]},
+            # Unlock mid-cup: the active cup keeps its roster.
+            {"event": "unlock", "checked": [35011000]},
+            {"event": "load", "trackIndex": 2,
+             "expected": cup_select(seed, cup_id, [], 0)[0]},
+            {"event": "load", "trackIndex": 3,
+             "expected": cup_select(seed, cup_id, [], 0)[0]},
+            # Retry the same leg: unchanged.
+            {"event": "load", "trackIndex": 3,
+             "expected": cup_select(seed, cup_id, [], 0)[0]},
+            # Exit and re-enter the same cup: a NEW cup resolves fresh, now with
+            # the unlock applied.
+            {"event": "begin", "checked": [35011000]},
+            {"event": "load", "trackIndex": 0,
+             "expected": cup_select(seed, cup_id, [35011000], 0)[0]},
+        ],
+    })
+
+    # Purple cup: four seats, fresh resolve after a new begin.
+    sessions.append({
+        "name": "cup104_four_seats",
+        "seed": SEED_0,
+        "cup": 104,
+        "player": 0,
+        "steps": [
+            {"event": "begin", "checked": []},
+            {"event": "load", "trackIndex": 0,
+             "expected": cup_select(SEED_0, 104, [], 0)[0]},
+            {"event": "begin", "checked": ALL_TRIGGER_CODES},
+            {"event": "load", "trackIndex": 0,
+             "expected": cup_select(SEED_0, 104, ALL_TRIGGER_CODES, 0)[0]},
+        ],
+    })
+
+    return sessions
 
 
 def build_invariants():
@@ -244,12 +369,14 @@ def main():
         "locations": {str(k): v for k, v in sorted(LOCATIONS.items())},
         "cases": build_cases(),
         "invariants": build_invariants(),
+        "cup_sessions": build_cup_sessions(),
     }
     with open(out_path, "w") as f:
         json.dump(fixture, f, indent=1)
         f.write("\n")
     print(f"wrote {out_path}: {len(fixture['cases'])} cases, "
-          f"{len(fixture['invariants'])} invariant cases")
+          f"{len(fixture['invariants'])} invariant cases, "
+          f"{len(fixture['cup_sessions'])} cup sessions")
 
 
 if __name__ == "__main__":

@@ -200,17 +200,79 @@ static inline int AP_HitPadDestEligiblePure(int destLevelID, int trialValid)
 }
 
 // Is this the kind of live race a Hit check may be awarded in? Adventure
-// ordinary races AND Adventure boss races. A boss Hit check is reachable at the
-// boss race whether or not the boss is cleared (the boss clear only unlocks its
-// ordinary appearances), and the apworld logic relies on that route. Cup (ticket
-// 11), time trial, arcade, battle, relic, token and crystal are rejected.
+// ordinary races, Adventure boss races AND Adventure Gem Cups (cups are extra
+// opportunities per the contract). A boss Hit check is reachable at the boss
+// race whether or not the boss is cleared; a cup Hit uses the frozen cup roster.
+// Time trial, arcade, battle, relic, token and crystal are rejected.
 static inline int AP_HitRaceSupportedPure(int isAdventure, int isBoss, int isCup,
                                           int isTimeTrial, int isArcade, int isBattle,
                                           int isRelic, int isToken, int isCrystal)
 {
 	(void)isBoss; // boss races are supported
-	return isAdventure && !isCup && !isTimeTrial && !isArcade &&
+	(void)isCup;  // Gem Cup races are supported
+	return isAdventure && !isTimeTrial && !isArcade &&
 	       !isBattle && !isRelic && !isToken && !isCrystal;
+}
+
+// ── Gem Cup roster snapshot (ticket 11) ─────────────────────────────────────
+//
+// A cup resolves its opponent roster ONCE at the pad entry and reuses it for
+// every leg and same-session retry. Exiting/abandoning and starting a new cup
+// resolves fresh, so an unlock mid-cup enters the next cup, not the active one.
+// The snapshot is keyed by cupID; `pending` is set by the pad entry (a NEW cup)
+// and cleared when the roster is resolved.
+
+typedef struct
+{
+	int valid;
+	int pending;     // a new cup start was signalled (pad entry)
+	int cupID;       // 0..4 (wire cups block keys are 100 + cupID)
+	int trackIndex;  // last leg seen, for continue/retry classification
+	int count;
+	int ids[AP_HIT_FIELD_MAX];
+} ap_hit_cup_snapshot;
+
+// How a cup load relates to the stored snapshot.
+enum
+{
+	AP_HIT_CUP_LEG_NEW = 0,  // new cup start -> resolve fresh
+	AP_HIT_CUP_LEG_CONTINUE, // a later leg -> reuse the snapshot
+	AP_HIT_CUP_LEG_RETRY     // the same leg again -> reuse the snapshot
+};
+
+static inline void AP_HitCupSnapshotResetPure(ap_hit_cup_snapshot *s)
+{
+	s->valid = 0;
+	s->pending = 0;
+	s->cupID = -1;
+	s->trackIndex = -1;
+	s->count = 0;
+}
+
+// Called at the cup pad entry: the next cup load is a NEW cup.
+static inline void AP_HitCupSnapshotBeginPure(ap_hit_cup_snapshot *s, int cupID)
+{
+	s->pending = 1;
+	s->cupID = cupID;
+	s->trackIndex = 0;
+}
+
+static inline int AP_HitCupLegKindPure(int cupID, int trackIndex, int pending,
+                                       int snapshotValid, int snapshotCupID,
+                                       int snapshotTrackIndex)
+{
+	if (pending || !snapshotValid || snapshotCupID != cupID)
+		return AP_HIT_CUP_LEG_NEW;
+	if (trackIndex == snapshotTrackIndex)
+		return AP_HIT_CUP_LEG_RETRY;
+	return AP_HIT_CUP_LEG_CONTINUE;
+}
+
+// AI seat count for a cup: four in the retail Purple cup (cupID 4), seven
+// otherwise, matching MainInit's field count.
+static inline int AP_HitCupFieldSizePure(int cupID)
+{
+	return (cupID == 4) ? 4 : 7;
 }
 
 // Did BOTS_ChangeState actually APPLY a new damage effect on this call? Type 1

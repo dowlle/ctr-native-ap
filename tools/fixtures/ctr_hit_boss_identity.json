@@ -1,0 +1,43 @@
+{
+ "description": "Shared native/apworld resolved boss identity fixture (ticket 12). The bosses table is the frozen shared appearance identity; a focused substitution proves both consumers follow the resolved identity.",
+ "locations": {
+  "0": 35025000,
+  "1": 35025001,
+  "2": 35025002,
+  "3": 35025003,
+  "4": 35025004,
+  "5": 35025005,
+  "6": 35025006,
+  "7": 35025007,
+  "8": 35025008,
+  "9": 35025009,
+  "10": 35025010,
+  "11": 35025011,
+  "12": 35025012,
+  "13": 35025013,
+  "14": 35025014,
+  "15": 35025015
+ },
+ "retail_bosses": {
+  "35011100": 10,
+  "35011101": 9,
+  "35011102": 11,
+  "35011103": 8,
+  "35011104": 15,
+  "35011105": 15
+ },
+ "expected_hit_codes": {
+  "35011100": 35025010,
+  "35011101": 35025009,
+  "35011102": 35025011,
+  "35011103": 35025008,
+  "35011104": 35025015,
+  "35011105": 35025015
+ },
+ "substituted_case": {
+  "boss_key": 35011100,
+  "engine_id": 7,
+  "hit_code": 35025007,
+  "note": "A future resolved boss seated as engine id 7 sends Hit 7's code, not retail Ripper Roo's 35025010."
+ }
+}

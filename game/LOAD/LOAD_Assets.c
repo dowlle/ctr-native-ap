@@ -191,6 +191,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		    // purple gem cup
 		    (gGT->cup.cupID == 4)
 
+#ifdef CTR_AP
+		    // Ticket 11: with the Hit feature enabled the Purple cup takes the
+		    // player arcade-pack + extra-model path (four AI seats) instead of
+		    // the stock four-boss pack/ID override. Feature off keeps retail.
+		    && !AP_HitEncounterEnabled()
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 		    // ... unless this load IS the event race. A displaced cup keeps
 		    // cupID 4 because the Gem hangs off that identity, which is the only
@@ -265,40 +272,60 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 #endif
 
 #ifdef CTR_AP
-			// Hit Character encounters (ticket 06): replace the stock default
-			// field with the seed's resolved encounter roster, but ONLY for the
-			// slice -- Fake Crash on Crash Cove, single-player ordinary Adventure
-			// Trophy. Custom-served loads are excluded (their own permute owns the
-			// field), as are boss/cup/trial/arcade/relic/token/crystal and
-			// multiplayer loads. The player's arcade pack is built around the
-			// stock set LOAD_Robots1P just wrote, so any selected opponent
-			// outside it needs a BI_RACERMODELHI extra.
+			// Hit Character encounters (ticket 06/11): replace the stock default
+			// field with the seed's resolved encounter roster. Ordinary Adventure
+			// Trophy races (0..17) use the destination's lists; an Adventure Gem
+			// Cup uses its FROZEN snapshot (resolved once at the pad entry, reused
+			// across every leg and same-session retry). Custom-served loads keep
+			// their own permute and get no roster. The player's arcade pack is
+			// built around the stock set LOAD_Robots1P just wrote, so any selected
+			// opponent outside it needs a BI_RACERMODELHI extra.
 			{
-				int hitApply = AP_HitEncounterShouldApply(
-				    (gameMode1 & ADVENTURE_MODE) != 0,
-				    (int)gGT->levelID,
-				    (gameMode1 & ADVENTURE_CUP) != 0,
-				    IS_BOSS_RACE(gameMode1),
-				    (gameMode1 & ARCADE_MODE) != 0,
-				    (gameMode1 & RELIC_RACE) != 0,
-				    (gGT->gameMode2 & TOKEN_RACE) != 0,
-				    (gameMode1 & CRYSTAL_CHALLENGE) != 0,
-				    (int)gGT->numPlyrNextGame);
+				int isCup = (gameMode1 & ADVENTURE_CUP) != 0;
+				int customServed = 0;
+				int hitApply = 0;
+				int aiSeats = 7;
+
 #ifdef CTR_CUSTOM_TRACKS
-				if (CustomTrack_ServingLoad((int)gGT->levelID,
-				                            (gameMode1 & ADVENTURE_CUP) != 0,
-				                            gGT->cup.cupID))
-					hitApply = 0;
+				customServed = CustomTrack_ServingLoad((int)gGT->levelID, isCup,
+				                                       gGT->cup.cupID);
 #endif
+				if (!customServed && isCup && AP_HitEncounterEnabled())
+				{
+					// Gem Cup: four AI in the retail Purple cup, seven otherwise,
+					// matching MainInit's field count.
+					aiSeats = AP_HitEncounterCupFieldSize((int)gGT->cup.cupID);
+					hitApply = 1;
+				}
+				else if (!customServed &&
+				         AP_HitEncounterShouldApply(
+				             (gameMode1 & ADVENTURE_MODE) != 0, (int)gGT->levelID,
+				             isCup, IS_BOSS_RACE(gameMode1),
+				             (gameMode1 & ARCADE_MODE) != 0,
+				             (gameMode1 & RELIC_RACE) != 0,
+				             (gGT->gameMode2 & TOKEN_RACE) != 0,
+				             (gameMode1 & CRYSTAL_CHALLENGE) != 0,
+				             (int)gGT->numPlyrNextGame))
+				{
+					aiSeats = 7;
+					hitApply = 1;
+				}
+
 				if (hitApply)
 				{
 					int hitRoster[AP_HIT_FIELD_MAX];
 					int hitExtras[3];
 					int hitCount, hitNeed, k;
 
-					hitCount = AP_HitEncounterBuildField((int)gGT->levelID,
-					                                     (int)data.characterIDs[0], 7,
-					                                     hitRoster);
+					if (isCup)
+						hitCount = AP_HitCupSnapshotField((int)gGT->cup.cupID,
+						                                  (int)gGT->cup.trackIndex,
+						                                  (int)data.characterIDs[0],
+						                                  aiSeats, hitRoster);
+					else
+						hitCount = AP_HitEncounterBuildField((int)gGT->levelID,
+						                                     (int)data.characterIDs[0],
+						                                     aiSeats, hitRoster);
 					for (k = 0; k < hitCount; k++)
 						data.characterIDs[1 + k] = (s16)hitRoster[k];
 

@@ -414,6 +414,21 @@ static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
 	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
 };
 
+// The retail encounter identity for each canonical boss-win key. The contract
+// (Wire fields, `bosses`) says "Current native retail encounters must match it";
+// a future randomized-boss ticket may substitute a resolved identity, but today
+// a mismatch is refused rather than run with apworld logic and native dispatch
+// disagreeing about who appears. Engine ids from namespace_Vehicle.h:
+// PINSTRIPE 8, PAPU_PAPU 9, RIPPER_ROO 10, KOMODO_JOE 11, NITROS_OXIDE 15.
+static const int kHitBossIdentity[CTR_CFG_HIT_BOSS_COUNT] = {
+	10, // RIPPER_ROO,   35011100 Ripper Roo Garage: Boss Race
+	9,  // PAPU_PAPU,    35011101 Papu Papu Garage: Boss Race
+	11, // KOMODO_JOE,   35011102 Komodo Joe Garage: Boss Race
+	8,  // PINSTRIPE,    35011103 Pinstripe Garage: Boss Race
+	15, // NITROS_OXIDE, 35011104 N. Oxide's Challenge: Boss Race
+	15, // NITROS_OXIDE, 35011105 N. Oxide's Final Challenge: Boss Race
+};
+
 // One candidate list, preserving wire order verbatim.
 //   kind 0 base    -> exactly 8 distinct engine ids, all 0..7 (a permutation)
 //   kind 1 reserve -> exactly 8 distinct engine ids, all 8..15
@@ -803,8 +818,10 @@ static int parse_hit_character(const nlohmann::json &j)
 	}
 
 	// bosses: exactly the six canonical boss-win keys -> engine identity 0..15.
-	// The identity VALUE is data (a future boss randomizer can substitute a
-	// resolved identity); only the keys and the 0..15 range are fixed here.
+	// The identity VALUE must match the retail encounter for each key today (the
+	// contract's shared appearance identity); a future boss randomizer may relax
+	// this, but a present mismatch is refused rather than run with logic and
+	// dispatch disagreeing.
 	{
 		const auto &bo = b["bosses"];
 		if (!bo.is_object() || bo.size() != CTR_CFG_HIT_BOSS_COUNT)
@@ -820,6 +837,12 @@ static int parse_hit_character(const nlohmann::json &j)
 			{
 				hit_reject("bosses[%ld] is missing or not an engine identity 0..15",
 				           kHitBossKeys[i]);
+				return 0;
+			}
+			if (id != kHitBossIdentity[i])
+			{
+				hit_reject("bosses[%ld] is engine id %d, but the retail encounter is %d",
+				           kHitBossKeys[i], id, kHitBossIdentity[i]);
 				return 0;
 			}
 			h.boss_identity[i] = id;

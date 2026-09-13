@@ -140,11 +140,22 @@ static void test_boss_race_supported(void)
 	expect((g_flags & 32u) != 0, "boss race: player attacker");
 }
 
+static void test_cup_race_supported(void)
+{
+	// Ticket 11: a Gem Cup race is a supported race; cups are extra Hit
+	// opportunities.
+	setup();
+	gGT.gameMode1 = ADVENTURE_MODE | ADVENTURE_CUP;
+	gGT.gameMode2 = 0;
+	hit(1, 1, 0, 0);
+	expect_eq(g_calls, 1, "cup race gathers");
+	expect((g_flags & 128u) != 0, "cup race is raceSupported");
+}
+
 static void test_unsupported_modes(void)
 {
 	static const int modes[] = {
 	    ADVENTURE_MODE | ARCADE_MODE,
-	    ADVENTURE_MODE | ADVENTURE_CUP,
 	    ADVENTURE_MODE | TIME_TRIAL,
 	    ADVENTURE_MODE | BATTLE_MODE,
 	    ADVENTURE_MODE | RELIC_RACE,
@@ -222,6 +233,7 @@ int main(void)
 	test_trophy_race_adventure_mode();
 	test_hub_arena_is_not_a_race();
 	test_boss_race_supported();
+	test_cup_race_supported();
 	test_unsupported_modes();
 	test_victim_validation();
 	test_attribution_flags();

@@ -31,7 +31,9 @@ tools/test-graphics-options.c
 tools/test-h-useful.c
 tools/test-hit-character-seedcfg.cpp
 tools/test-hit-bots-gather.c
+tools/test-hit-boss-identity.cpp
 tools/test-hit-chooser.c
+tools/test-hit-cup-snapshot.cpp
 tools/test-hit-encounter-production.cpp
 tools/test-hit-policy.c
 tools/test-hit-roster-fixture.cpp

@@ -57,6 +57,25 @@ int AP_HitEncounterBuildField(int destLevelID, int player, int aiSeats, int *out
 int AP_HitEncounterExtras(const int *selected, int selectedCount, int player,
                           int *outExtras, int cap);
 
+// ── Gem Cup roster snapshot (ticket 11) ─────────────────────────────────────
+// The AI seat count for a cup: four in the retail Purple cup (cupID 4), seven
+// otherwise. Matches MainInit's field count.
+int AP_HitEncounterCupFieldSize(int cupID);
+
+// Mark a NEW cup start (the adventure cup pad entry). The next cup load resolves
+// a fresh roster from current eligibility.
+void AP_HitCupSnapshotBegin(int cupID);
+
+// Clear the snapshot (fresh seed/connect).
+void AP_HitCupSnapshotReset(void);
+
+// Resolve/reuse the frozen cup roster for this load. A NEW cup resolves fresh;
+// every continuing leg and same-session retry copies the stored roster
+// unchanged, so a mid-cup unlock cannot alter the active cup. Writes the AI ids
+// into outIDs and returns the count.
+int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
+                           int *outIDs);
+
 // Dispatch decision for one accepted BOTS_ChangeState event. `flags`:
 //   bit0 victimIsAI, bit1 victimLive, bit2 victimIsGhost, bit3 victimIsPlayer,
 //   bit4 attackerPresent, bit5 attackerIsLocalP1, bit6 attackerIsAI,

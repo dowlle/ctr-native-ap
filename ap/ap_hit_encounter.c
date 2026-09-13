@@ -9,6 +9,8 @@
 #include "ap_net.h"
 #include "ap_hooks.h" // AP_EmitHitCharacterCheck (wraps AP_EmitClassCheck)
 
+#include <string.h> // strcmp (cup snapshot seed/slot identity)
+
 // One bit per engine id (0..15): a Hit check has already been requested this
 // session. Cleared on a fresh slot-connect so the held-check/reconnect path can
 // resend anything the server never confirmed. The server's own checked set is
@@ -126,6 +128,72 @@ int AP_HitEncounterExtras(const int *selected, int selectedCount, int player,
 	                            outExtras, cap);
 }
 
+// ── Gem Cup roster snapshot (ticket 11) ─────────────────────────────────────
+// The snapshot lives here so the loader and the harness share one lifecycle.
+static ap_hit_cup_snapshot s_cupSnapshot;
+
+// The seed/slot identity the snapshot was resolved under. A reconnect to the
+// SAME seed must NOT redraw the active cup (a held offline win can flush on
+// reconnect mid-cup); only a different room/slot or a different roster seed
+// clears it.
+static char s_cupSeed[128];
+static char s_cupSlot[64];
+static unsigned int s_cupPolicySeed;
+
+static void ap_hit_cup_capture_identity(void)
+{
+	if (!ap_net_seed_name(s_cupSeed, (int)sizeof s_cupSeed))
+		s_cupSeed[0] = '\0';
+	if (!ap_net_slot_name(s_cupSlot, (int)sizeof s_cupSlot))
+		s_cupSlot[0] = '\0';
+	s_cupPolicySeed = ctr_cfg.hit.seed;
+}
+
+int AP_HitEncounterCupFieldSize(int cupID)
+{
+	return AP_HitCupFieldSizePure(cupID);
+}
+
+void AP_HitCupSnapshotBegin(int cupID)
+{
+	AP_HitCupSnapshotBeginPure(&s_cupSnapshot, cupID);
+}
+
+void AP_HitCupSnapshotReset(void)
+{
+	AP_HitCupSnapshotResetPure(&s_cupSnapshot);
+}
+
+// Resolve/reuse the cup roster for this load. A NEW cup (pad entry, or an
+// invalid/mismatched snapshot) resolves fresh from current eligibility; every
+// continuing leg and same-session retry copies the stored roster unchanged, so a
+// mid-cup unlock cannot alter the active cup. Returns the AI seat count.
+int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
+                           int *outIDs)
+{
+	int kind = AP_HitCupLegKindPure(cupID, trackIndex, s_cupSnapshot.pending,
+	                                s_cupSnapshot.valid, s_cupSnapshot.cupID,
+	                                s_cupSnapshot.trackIndex);
+	int i;
+
+	if (kind == AP_HIT_CUP_LEG_NEW)
+	{
+		// Wire cup keys are 100 + cupID.
+		int n = AP_HitEncounterBuildField(100 + cupID, player, aiSeats,
+		                                  s_cupSnapshot.ids);
+		s_cupSnapshot.count = n;
+		s_cupSnapshot.valid = 1;
+		s_cupSnapshot.cupID = cupID;
+		s_cupSnapshot.pending = 0;
+		ap_hit_cup_capture_identity();
+	}
+	s_cupSnapshot.trackIndex = trackIndex;
+
+	for (i = 0; i < s_cupSnapshot.count; i++)
+		outIDs[i] = s_cupSnapshot.ids[i];
+	return s_cupSnapshot.count;
+}
+
 int AP_HitEncounterOnDamage(int victimEngineID, int damageType, unsigned flags)
 {
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
@@ -177,7 +245,25 @@ int AP_HitEncounterOnDamage(int victimEngineID, int damageType, unsigned flags)
 
 void AP_HitEncounterConnectReset(void)
 {
+	char seed[128], slot[64];
+	int haveSeed, haveSlot;
+
+	// Always re-arm the Hit-check session mask: a reconnect resends anything the
+	// server never confirmed.
 	s_hit_sent_mask = 0;
+
+	// Keep the cup snapshot across a reconnect to the SAME seed/slot. A held
+	// offline win can flush on an automatic reconnect mid-cup, which must not
+	// redraw the active cup's roster. Clear it only when the room/slot or the
+	// roster seed changes.
+	if (!s_cupSnapshot.valid)
+		return;
+	haveSeed = ap_net_seed_name(seed, (int)sizeof seed);
+	haveSlot = ap_net_slot_name(slot, (int)sizeof slot);
+	if (!haveSeed || strcmp(seed, s_cupSeed) != 0 ||
+	    !haveSlot || strcmp(slot, s_cupSlot) != 0 ||
+	    ctr_cfg.hit.seed != s_cupPolicySeed)
+		AP_HitCupSnapshotReset();
 }
 
 #endif // CTR_AP

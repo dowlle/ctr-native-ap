@@ -58,6 +58,20 @@ extern "C" void AP_LogLine(const char *msg)
 }
 
 // The real gather, compiled as C++ in this translation unit.
+// Cup snapshot seed/slot identity (the gather references these through
+// AP_HitEncounterConnectReset; these harnesses do not exercise reconnects).
+extern "C" int ap_net_seed_name(char *buf, int n)
+{
+	std::snprintf(buf, n, "%s", "seed");
+	return 1;
+}
+
+extern "C" int ap_net_slot_name(char *buf, int n)
+{
+	std::snprintf(buf, n, "%s", "slot");
+	return 1;
+}
+
 #include "../ap/ap_hit_encounter.c"
 
 // ── harness plumbing ───────────────────────────────────────────────────────
@@ -120,7 +134,9 @@ static void install(const nlohmann::json &base, const nlohmann::json &pinned,
 			out->any_of[out->count++] = code.get<long>();
 	}
 
-	ctr_hit_candidates *c = &ctr_cfg.hit.tracks[level];
+	ctr_hit_candidates *c = (level >= 100)
+	                        ? &ctr_cfg.hit.cups[level - 100]
+	                        : &ctr_cfg.hit.tracks[level];
 	c->base.count = (int)base.size();
 	for (int i = 0; i < c->base.count; i++)
 		c->base.ids[i] = base[i].get<int>();
@@ -152,8 +168,21 @@ static void test_cases(void)
 		set_checked(c["checked"]);
 		install(c["base"], c["pinned"], c["reserve"], level, locations, triggers);
 
-		int n = AP_HitEncounterBuildField(level, player, 7, ids);
+		int n;
+		int fieldSize = c.contains("field_size") ? c["field_size"].get<int>() : 7;
 		const auto &want = c["expected"];
+
+		if (level >= 100)
+		{
+			// Gem Cup: resolve a fresh snapshot for this case.
+			AP_HitCupSnapshotReset();
+			AP_HitCupSnapshotBegin(level - 100);
+			n = AP_HitCupSnapshotField(level - 100, 0, player, fieldSize, ids);
+		}
+		else
+		{
+			n = AP_HitEncounterBuildField(level, player, 7, ids);
+		}
 
 		expect_eq(n, (long long)want.size(), c["name"].get<std::string>().c_str());
 		for (int i = 0; i < n && i < (int)want.size(); i++)
@@ -168,15 +197,77 @@ static void test_cases(void)
 		}
 
 		// Correction A: the opportunity is the FIRST seated non-player target
-		// whose Hit location is present and unchecked. The fixture cases check no
-		// Hit locations, so every seated id qualifies and the opportunity is the
-		// first seat (guest when present, else the first base id).
+		// whose Hit location is present and unchecked. Ordinary destinations
+		// only: cups are not pad Hit opportunities (ticket 11).
+		if (level < 100)
 		{
 			int opp = AP_HitEncounterOpportunity(level, player);
 			if (n > 0)
 				expect_eq(opp, want[0].get<int>(), "opportunity is the first seated target");
 			else
 				expect_eq(opp, -1, "empty field -> no opportunity");
+		}
+	}
+}
+
+// Ticket 11: the cup snapshot lifecycle. Each session drives the REAL gather
+// snapshot through begin/load/unlock steps and checks the frozen roster.
+static void test_cup_sessions(void)
+{
+	const auto &locations = g_fixture["locations"];
+	const auto &triggers = g_fixture["triggers"];
+
+	for (const auto &s : g_fixture["cup_sessions"])
+	{
+		const int cup = s["cup"].get<int>();       // wire key 100..104
+		const int cupIdx = cup - 100;              // engine cup id 0..4
+		const int player = s["player"].get<int>();
+		const int fieldSize = (cup == 104) ? 4 : 7;
+		const long long seed = s["seed"].get<long long>();
+
+		// The candidate lists for this cup/seed come from the matching no_guest
+		// case the generator emitted (same contract algorithm).
+		const nlohmann::json *src = nullptr;
+		for (const auto &c : g_fixture["cases"])
+			if (c["level"].get<int>() == cup &&
+			    c["seed"].get<long long>() == seed &&
+			    c["name"].get<std::string>().find("no_guest") != std::string::npos)
+			{
+				src = &c;
+				break;
+			}
+		if (src == nullptr)
+		{
+			expect(false, "cup session has candidate lists");
+			continue;
+		}
+
+		AP_HitCupSnapshotReset();
+		for (const auto &step : s["steps"])
+		{
+			const std::string event = step["event"].get<std::string>();
+			if (event == "begin")
+			{
+				set_checked(step["checked"]);
+				install((*src)["base"], (*src)["pinned"], (*src)["reserve"],
+				        cup, locations, triggers);
+				AP_HitCupSnapshotBegin(cupIdx);
+			}
+			else if (event == "unlock")
+			{
+				for (const auto &code : step["checked"])
+					g_checked.insert(code.get<long long>());
+			}
+			else if (event == "load")
+			{
+				int ids[AP_HIT_FIELD_MAX];
+				const auto &want = step["expected"];
+				int n = AP_HitCupSnapshotField(cupIdx, step["trackIndex"].get<int>(),
+				                               player, fieldSize, ids);
+				expect_eq(n, (long long)want.size(), "cup session roster size");
+				for (int i = 0; i < n && i < (int)want.size(); i++)
+					expect_eq(ids[i], want[i].get<int>(), "cup session roster");
+			}
 		}
 	}
 }
@@ -233,6 +324,7 @@ int main(int argc, char **argv)
 
 	test_cases();
 	test_invariants();
+	test_cup_sessions();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);

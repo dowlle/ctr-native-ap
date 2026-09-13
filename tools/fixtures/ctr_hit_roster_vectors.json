@@ -129,7 +129,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L1",
@@ -169,7 +170,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L2",
@@ -209,7 +211,8 @@
     7,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L3",
@@ -249,7 +252,8 @@
     1,
     2
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L4",
@@ -287,7 +291,8 @@
     2,
     3
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L5",
@@ -327,7 +332,8 @@
     3,
     4
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L6",
@@ -367,7 +373,8 @@
     4,
     5
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L7",
@@ -407,7 +414,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L8",
@@ -447,7 +455,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L9",
@@ -485,7 +494,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L10",
@@ -523,7 +533,8 @@
     7,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L11",
@@ -561,7 +572,8 @@
     1,
     2
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L12",
@@ -601,7 +613,8 @@
     2,
     3
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L13",
@@ -641,7 +654,8 @@
     3,
     4
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L14",
@@ -679,7 +693,8 @@
     4,
     5
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L15",
@@ -717,7 +732,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L16",
@@ -757,7 +773,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "no_guest_seed0_L17",
@@ -797,7 +814,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L0",
@@ -835,7 +853,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L3",
@@ -875,7 +894,8 @@
     1,
     2
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L7",
@@ -915,7 +935,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L8",
@@ -955,7 +976,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L16",
@@ -995,7 +1017,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed0_no_guest_L17",
@@ -1035,7 +1058,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L0",
@@ -1073,7 +1097,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L3",
@@ -1113,7 +1138,8 @@
     7,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L7",
@@ -1153,7 +1179,8 @@
     4,
     5
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L8",
@@ -1193,7 +1220,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L16",
@@ -1233,7 +1261,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "seed4294967295_no_guest_L17",
@@ -1273,7 +1302,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player0",
@@ -1315,7 +1345,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player1",
@@ -1357,7 +1388,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player2",
@@ -1399,7 +1431,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player3",
@@ -1441,7 +1474,8 @@
     0,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player4",
@@ -1483,7 +1517,8 @@
     0,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player5",
@@ -1525,7 +1560,8 @@
     0,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player6",
@@ -1567,7 +1603,8 @@
     0,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player7",
@@ -1609,7 +1646,8 @@
     0,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player8",
@@ -1651,7 +1689,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player9",
@@ -1693,7 +1732,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player10",
@@ -1735,7 +1775,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player11",
@@ -1777,7 +1818,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player12",
@@ -1819,7 +1861,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player13",
@@ -1861,7 +1904,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player14",
@@ -1903,7 +1947,8 @@
     0,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "all_players_seed0_L3_player15",
@@ -1945,7 +1990,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player0",
@@ -1987,7 +2033,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player1",
@@ -2029,7 +2076,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player2",
@@ -2071,7 +2119,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player3",
@@ -2113,7 +2162,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player4",
@@ -2155,7 +2205,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player5",
@@ -2197,7 +2248,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player6",
@@ -2239,7 +2291,8 @@
     7,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player7",
@@ -2281,7 +2334,8 @@
     6,
     0
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player8",
@@ -2323,7 +2377,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player9",
@@ -2365,7 +2420,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player10",
@@ -2407,7 +2463,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player11",
@@ -2449,7 +2506,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player12",
@@ -2491,7 +2549,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player13",
@@ -2533,7 +2592,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player14",
@@ -2575,7 +2635,8 @@
     7,
     0
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "all_players_seed4294967295_L3_player15",
@@ -2617,7 +2678,8 @@
     6,
     7
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "pin_priority_L3",
@@ -2660,7 +2722,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "reserve_guest_L0",
@@ -2700,7 +2763,8 @@
     5,
     6
    ],
-   "expected_guest": 10
+   "expected_guest": 10,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L0",
@@ -2751,7 +2815,8 @@
     5,
     6
    ],
-   "expected_guest": 8
+   "expected_guest": 8,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L1",
@@ -2804,7 +2869,8 @@
     5,
     6
    ],
-   "expected_guest": 11
+   "expected_guest": 11,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L4",
@@ -2855,7 +2921,8 @@
     1,
     2
    ],
-   "expected_guest": 12
+   "expected_guest": 12,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L7",
@@ -2908,7 +2975,8 @@
     4,
     5
    ],
-   "expected_guest": 8
+   "expected_guest": 8,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L9",
@@ -2959,7 +3027,8 @@
     5,
     6
    ],
-   "expected_guest": 9
+   "expected_guest": 9,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L10",
@@ -3010,7 +3079,8 @@
     6,
     7
    ],
-   "expected_guest": 10
+   "expected_guest": 10,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L11",
@@ -3061,7 +3131,8 @@
     7,
     1
    ],
-   "expected_guest": 11
+   "expected_guest": 11,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L14",
@@ -3112,7 +3183,8 @@
     3,
     4
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "reserve_rotation_L15",
@@ -3163,7 +3235,8 @@
     4,
     5
    ],
-   "expected_guest": 15
+   "expected_guest": 15,
+   "field_size": 7
   },
   {
    "name": "player_is_pinned_guest_L3_p14",
@@ -3205,7 +3278,8 @@
     0,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "player_is_reserve_guest_L0_p10",
@@ -3246,7 +3320,8 @@
     4,
     5
    ],
-   "expected_guest": 8
+   "expected_guest": 8,
+   "field_size": 7
   },
   {
    "name": "required_pin_L3",
@@ -3288,7 +3363,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "required_pin_L3_p14",
@@ -3330,7 +3406,8 @@
     0,
     1
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "required_pin_L8",
@@ -3372,7 +3449,8 @@
     5,
     6
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "required_pin_L8_p14",
@@ -3414,7 +3492,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "required_pin_L2",
@@ -3456,7 +3535,8 @@
     6,
     7
    ],
-   "expected_guest": 13
+   "expected_guest": 13,
+   "field_size": 7
   },
   {
    "name": "required_pin_L2_p13",
@@ -3498,7 +3578,8 @@
     7,
     0
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "required_pin_L12",
@@ -3540,7 +3621,8 @@
     1,
     2
    ],
-   "expected_guest": 13
+   "expected_guest": 13,
+   "field_size": 7
   },
   {
    "name": "required_pin_L12_p13",
@@ -3582,7 +3664,8 @@
     1,
     2
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "required_pin_L16",
@@ -3624,7 +3707,8 @@
     5,
     6
    ],
-   "expected_guest": 12
+   "expected_guest": 12,
+   "field_size": 7
   },
   {
    "name": "required_pin_L16_p12",
@@ -3666,7 +3750,8 @@
     5,
     6
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "required_pin_L17",
@@ -3708,7 +3793,8 @@
     5,
     6
    ],
-   "expected_guest": 12
+   "expected_guest": 12,
+   "field_size": 7
   },
   {
    "name": "required_pin_L17_p12",
@@ -3750,7 +3836,8 @@
     6,
     7
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "growing_L3_step0",
@@ -3790,7 +3877,8 @@
     1,
     2
    ],
-   "expected_guest": -1
+   "expected_guest": -1,
+   "field_size": 7
   },
   {
    "name": "growing_L3_step1",
@@ -3832,7 +3920,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "growing_L3_step2",
@@ -3875,7 +3964,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "growing_L3_step3",
@@ -3919,7 +4009,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "growing_L3_step4",
@@ -3972,7 +4063,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "guest8_on_L7",
@@ -4014,7 +4106,8 @@
     4,
     5
    ],
-   "expected_guest": 8
+   "expected_guest": 8,
+   "field_size": 7
   },
   {
    "name": "guest9_on_L5",
@@ -4056,7 +4149,8 @@
     2,
     3
    ],
-   "expected_guest": 9
+   "expected_guest": 9,
+   "field_size": 7
   },
   {
    "name": "guest10_on_L6",
@@ -4098,7 +4192,8 @@
     3,
     4
    ],
-   "expected_guest": 10
+   "expected_guest": 10,
+   "field_size": 7
   },
   {
    "name": "guest11_on_L1",
@@ -4140,7 +4235,8 @@
     5,
     6
    ],
-   "expected_guest": 11
+   "expected_guest": 11,
+   "field_size": 7
   },
   {
    "name": "guest12_on_L16",
@@ -4182,7 +4278,8 @@
     5,
     6
    ],
-   "expected_guest": 12
+   "expected_guest": 12,
+   "field_size": 7
   },
   {
    "name": "guest13_on_L2",
@@ -4224,7 +4321,8 @@
     6,
     7
    ],
-   "expected_guest": 13
+   "expected_guest": 13,
+   "field_size": 7
   },
   {
    "name": "guest14_on_L3",
@@ -4266,7 +4364,8 @@
     7,
     1
    ],
-   "expected_guest": 14
+   "expected_guest": 14,
+   "field_size": 7
   },
   {
    "name": "guest15_on_L13",
@@ -4308,7 +4407,1770 @@
     2,
     3
    ],
-   "expected_guest": 15
+   "expected_guest": 15,
+   "field_size": 7
+  },
+  {
+   "name": "cup100_seed0_no_guest",
+   "seed": 0,
+   "level": 100,
+   "player": 0,
+   "checked": [],
+   "base": [
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3
+   ],
+   "pinned": [],
+   "reserve": [
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11
+   ],
+   "expected": [
+    4,
+    5,
+    6,
+    7,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup101_seed0_no_guest",
+   "seed": 0,
+   "level": 101,
+   "player": 0,
+   "checked": [],
+   "base": [
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "pinned": [],
+   "reserve": [
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "expected": [
+    5,
+    6,
+    7,
+    1,
+    2,
+    3,
+    4
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup102_seed0_no_guest",
+   "seed": 0,
+   "level": 102,
+   "player": 0,
+   "checked": [],
+   "base": [
+    6,
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "pinned": [],
+   "reserve": [
+    14,
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "expected": [
+    6,
+    7,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup103_seed0_no_guest",
+   "seed": 0,
+   "level": 103,
+   "player": 0,
+   "checked": [],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    7,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup104_seed0_no_guest",
+   "seed": 0,
+   "level": 104,
+   "player": 0,
+   "checked": [],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "expected_guest": -1,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p0",
+   "seed": 0,
+   "level": 104,
+   "player": 0,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p1",
+   "seed": 0,
+   "level": 104,
+   "player": 1,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    2,
+    3
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p2",
+   "seed": 0,
+   "level": 104,
+   "player": 2,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    3
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p3",
+   "seed": 0,
+   "level": 104,
+   "player": 3,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p4",
+   "seed": 0,
+   "level": 104,
+   "player": 4,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p5",
+   "seed": 0,
+   "level": 104,
+   "player": 5,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p6",
+   "seed": 0,
+   "level": 104,
+   "player": 6,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p7",
+   "seed": 0,
+   "level": 104,
+   "player": 7,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p8",
+   "seed": 0,
+   "level": 104,
+   "player": 8,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p9",
+   "seed": 0,
+   "level": 104,
+   "player": 9,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p10",
+   "seed": 0,
+   "level": 104,
+   "player": 10,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p11",
+   "seed": 0,
+   "level": 104,
+   "player": 11,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p12",
+   "seed": 0,
+   "level": 104,
+   "player": 12,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p13",
+   "seed": 0,
+   "level": 104,
+   "player": 13,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p14",
+   "seed": 0,
+   "level": 104,
+   "player": 14,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": -1,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed0_p15",
+   "seed": 0,
+   "level": 104,
+   "player": 15,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup100_seed0_reserve",
+   "seed": 0,
+   "level": 100,
+   "player": 0,
+   "checked": [
+    35011100
+   ],
+   "base": [
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3
+   ],
+   "pinned": [],
+   "reserve": [
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11
+   ],
+   "expected": [
+    10,
+    4,
+    5,
+    6,
+    7,
+    1,
+    2
+   ],
+   "expected_guest": 10,
+   "field_size": 7
+  },
+  {
+   "name": "cup100_seed4294967295_no_guest",
+   "seed": 4294967295,
+   "level": 100,
+   "player": 0,
+   "checked": [],
+   "base": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2
+   ],
+   "pinned": [],
+   "reserve": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10
+   ],
+   "expected": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    1,
+    2
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup101_seed4294967295_no_guest",
+   "seed": 4294967295,
+   "level": 101,
+   "player": 0,
+   "checked": [],
+   "base": [
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3
+   ],
+   "pinned": [],
+   "reserve": [
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11
+   ],
+   "expected": [
+    4,
+    5,
+    6,
+    7,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup102_seed4294967295_no_guest",
+   "seed": 4294967295,
+   "level": 102,
+   "player": 0,
+   "checked": [],
+   "base": [
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "pinned": [],
+   "reserve": [
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "expected": [
+    5,
+    6,
+    7,
+    1,
+    2,
+    3,
+    4
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup103_seed4294967295_no_guest",
+   "seed": 4294967295,
+   "level": 103,
+   "player": 0,
+   "checked": [],
+   "base": [
+    6,
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "pinned": [],
+   "reserve": [
+    14,
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "expected": [
+    6,
+    7,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "expected_guest": -1,
+   "field_size": 7
+  },
+  {
+   "name": "cup104_seed4294967295_no_guest",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 0,
+   "checked": [],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    7,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": -1,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p0",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 0,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p1",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 1,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p2",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 2,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p3",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 3,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p4",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 4,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p5",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 5,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p6",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 6,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p7",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 7,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p8",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 8,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p9",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 9,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p10",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 10,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p11",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 11,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p12",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 12,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p13",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 13,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p14",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 14,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    7,
+    0,
+    1,
+    2
+   ],
+   "expected_guest": -1,
+   "field_size": 4
+  },
+  {
+   "name": "cup104_seed4294967295_p15",
+   "seed": 4294967295,
+   "level": 104,
+   "player": 15,
+   "checked": [
+    35011000
+   ],
+   "base": [
+    7,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "pinned": [],
+   "reserve": [
+    15,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "expected": [
+    14,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 14,
+   "field_size": 4
+  },
+  {
+   "name": "cup100_seed4294967295_reserve",
+   "seed": 4294967295,
+   "level": 100,
+   "player": 0,
+   "checked": [
+    35011100
+   ],
+   "base": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2
+   ],
+   "pinned": [],
+   "reserve": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10
+   ],
+   "expected": [
+    10,
+    3,
+    4,
+    5,
+    6,
+    7,
+    1
+   ],
+   "expected_guest": 10,
+   "field_size": 7
+  },
+  {
+   "name": "cup104_reserve_guest",
+   "seed": 0,
+   "level": 104,
+   "player": 0,
+   "checked": [
+    35011103
+   ],
+   "base": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "pinned": [],
+   "reserve": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "expected": [
+    8,
+    1,
+    2,
+    3
+   ],
+   "expected_guest": 8,
+   "field_size": 4
+  },
+  {
+   "name": "cup100_player_is_reserve_guest",
+   "seed": 0,
+   "level": 100,
+   "player": 10,
+   "checked": [
+    35011100,
+    35011103
+   ],
+   "base": [
+    4,
+    5,
+    6,
+    7,
+    0,
+    1,
+    2,
+    3
+   ],
+   "pinned": [],
+   "reserve": [
+    12,
+    13,
+    14,
+    15,
+    8,
+    9,
+    10,
+    11
+   ],
+   "expected": [
+    8,
+    4,
+    5,
+    6,
+    7,
+    0,
+    1
+   ],
+   "expected_guest": 8,
+   "field_size": 7
   }
  ],
  "invariants": [
@@ -7098,6 +8960,159 @@
      ]
     }
    }
+  }
+ ],
+ "cup_sessions": [
+  {
+   "name": "cup100_continue_retry_new",
+   "seed": 0,
+   "cup": 100,
+   "player": 0,
+   "steps": [
+    {
+     "event": "begin",
+     "checked": []
+    },
+    {
+     "event": "load",
+     "trackIndex": 0,
+     "expected": [
+      4,
+      5,
+      6,
+      7,
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 1,
+     "expected": [
+      4,
+      5,
+      6,
+      7,
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "event": "unlock",
+     "checked": [
+      35011000
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 2,
+     "expected": [
+      4,
+      5,
+      6,
+      7,
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 3,
+     "expected": [
+      4,
+      5,
+      6,
+      7,
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 3,
+     "expected": [
+      4,
+      5,
+      6,
+      7,
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "event": "begin",
+     "checked": [
+      35011000
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 0,
+     "expected": [
+      14,
+      4,
+      5,
+      6,
+      7,
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cup104_four_seats",
+   "seed": 0,
+   "cup": 104,
+   "player": 0,
+   "steps": [
+    {
+     "event": "begin",
+     "checked": []
+    },
+    {
+     "event": "load",
+     "trackIndex": 0,
+     "expected": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "event": "begin",
+     "checked": [
+      35011000,
+      35011003,
+      35011008,
+      35011010,
+      35011100,
+      35011101,
+      35011102,
+      35011103,
+      35011104,
+      35011105,
+      35016200,
+      35016201
+     ]
+    },
+    {
+     "event": "load",
+     "trackIndex": 0,
+     "expected": [
+      8,
+      1,
+      2,
+      3
+     ]
+    }
+   ]
   }
  ]
 }

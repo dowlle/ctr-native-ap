@@ -58,6 +58,20 @@ extern "C" void AP_LogLine(const char *msg)
 }
 
 // The real gather, compiled as C++ in this translation unit.
+// Cup snapshot seed/slot identity (the gather references these through
+// AP_HitEncounterConnectReset; these harnesses do not exercise reconnects).
+extern "C" int ap_net_seed_name(char *buf, int n)
+{
+	std::snprintf(buf, n, "%s", "seed");
+	return 1;
+}
+
+extern "C" int ap_net_slot_name(char *buf, int n)
+{
+	std::snprintf(buf, n, "%s", "slot");
+	return 1;
+}
+
 #include "../ap/ap_hit_encounter.c"
 
 // ── harness plumbing ───────────────────────────────────────────────────────

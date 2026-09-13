@@ -368,13 +368,42 @@ static void test_race_supported(void)
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 0, 0), 1, "adventure ordinary supported");
 	expect_eq(AP_HitRaceSupportedPure(0, 0, 0, 0, 0, 0, 0, 0, 0), 0, "not adventure refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 1, 0, 0, 0, 0, 0, 0, 0), 1, "boss race supported (correction C)");
-	expect_eq(AP_HitRaceSupportedPure(1, 0, 1, 0, 0, 0, 0, 0, 0), 0, "cup refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 1, 0, 0, 0, 0, 0, 0), 1, "cup race supported (ticket 11)");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 1, 0, 0, 0, 0, 0), 0, "time trial refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 1, 0, 0, 0, 0), 0, "arcade refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 1, 0, 0, 0), 0, "battle refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 1, 0, 0), 0, "relic refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 1, 0), 0, "token refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 0, 1), 0, "crystal refused");
+}
+
+// Ticket 11: the cup snapshot lifecycle classification and field size.
+static void test_cup_lifecycle(void)
+{
+	ap_hit_cup_snapshot s;
+
+	expect_eq(AP_HitCupFieldSizePure(4), 4, "purple cup four seats");
+	expect_eq(AP_HitCupFieldSizePure(0), 7, "red cup seven seats");
+	expect_eq(AP_HitCupFieldSizePure(3), 7, "yellow cup seven seats");
+
+	AP_HitCupSnapshotResetPure(&s);
+	expect_eq(AP_HitCupLegKindPure(0, 0, s.pending, s.valid, s.cupID, s.trackIndex),
+	          AP_HIT_CUP_LEG_NEW, "no snapshot -> new");
+
+	AP_HitCupSnapshotBeginPure(&s, 0);
+	expect_eq(AP_HitCupLegKindPure(0, 0, s.pending, s.valid, s.cupID, s.trackIndex),
+	          AP_HIT_CUP_LEG_NEW, "pad entry (pending) -> new");
+
+	// Simulate the resolved snapshot for leg 0.
+	s.valid = 1;
+	s.pending = 0;
+	s.trackIndex = 0;
+	expect_eq(AP_HitCupLegKindPure(0, 0, s.pending, s.valid, s.cupID, s.trackIndex),
+	          AP_HIT_CUP_LEG_RETRY, "same leg -> retry");
+	expect_eq(AP_HitCupLegKindPure(0, 1, s.pending, s.valid, s.cupID, s.trackIndex),
+	          AP_HIT_CUP_LEG_CONTINUE, "later leg -> continue");
+	expect_eq(AP_HitCupLegKindPure(1, 0, s.pending, s.valid, s.cupID, s.trackIndex),
+	          AP_HIT_CUP_LEG_NEW, "different cup -> new");
 }
 
 static void test_ordinary_route(void)
@@ -472,6 +501,7 @@ int main(void)
 	test_ordinary_scope();
 	test_effect_applied();
 	test_race_supported();
+	test_cup_lifecycle();
 	test_ordinary_route();
 	test_chooser_bits();
 

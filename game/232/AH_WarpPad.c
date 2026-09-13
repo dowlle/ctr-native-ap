@@ -1168,6 +1168,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 
 #ifdef CTR_AP
+		// Ticket 11: a pad entry is a NEW Gem Cup. Mark the roster snapshot so
+		// the first leg resolves it once; every later leg and same-session retry
+		// reuses it, and an unlock mid-cup waits for the next cup.
+		AP_HitCupSnapshotBegin(gGT->cup.cupID);
+#endif
+
+#ifdef CTR_AP
 		// Remember the physical hub this cup is entered FROM, before the cup's
 		// four track loads clobber gGT->prevLEV. The two ADVENTURE_CUP exit-to-map
 		// sites (UI_RaceFlow.c, MainFreeze.c) return here instead of the hard-coded
