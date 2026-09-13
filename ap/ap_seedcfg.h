@@ -69,7 +69,12 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 13
+// v15 (schema 14 is claimed by the Hit Character candidate; integration order
+// settles the final number) adds ctr_options.cortex_vortex_track and the
+// conditional cortex_vortex_track block: Cortex Vortex as a full pad track on
+// virtual destination 110. An older native would drop 110 from warp_pad_map and
+// load the dropped destination, whose checks the seed removed, so this is a gate.
+#define CTR_CFG_SCHEMA_KNOWN 15
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2
@@ -149,6 +154,12 @@ typedef struct
 	char vrm_sha256[65];
 } ctr_oxide_final_venue;
 
+// The exact Lockheart Cortex Vortex pair. One definition for the Oxide 2 venue
+// and the pad track, which serve the same bundled bytes.
+#define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
+#define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+
+
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
 // the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
 // from the placement listener, never through AP_NotifyAdvReward's bit lookup). A
@@ -166,6 +177,41 @@ typedef struct
 	long finish_podium; // final "finished on podium"   location code, or -1 = absent
 	long finish_any;    // final "finished (any place)" location code, or -1 = absent
 } ctr_podium_rungs;
+
+// ── cortex_vortex_track (schema 15) ────────────────────────────────────────
+//
+// Cortex Vortex as a full pad track. It has no physical pad of its own: it is
+// the virtual destination 110, which warp_pad_map (and gem_cup_legs) may name.
+// Loading it loads host LevelID 13 with the pinned pair, under a native serving
+// state that is independent of bossID and of the Oxide 2 venue. All of its
+// checks are direct wire codes; none is ever derived from LevelID 13, because
+// every LevelID-13 reward bit, podium rung, box and letter belongs to Oxide
+// Station.
+#define CTR_CFG_CORTEX_DEST        110
+#define CTR_CFG_CORTEX_HOST_LEVEL  13
+#define CTR_CFG_CORTEX_BLOCK_VERSION_KNOWN 1
+#define CTR_CFG_CORTEX_TROPHY      35026000L
+#define CTR_CFG_CORTEX_RELIC_FIRST 35026001L // + tier 0..2 (Sapphire/Gold/Platinum)
+#define CTR_CFG_CORTEX_CTR_TOKEN   35026004L
+#define CTR_CFG_CORTEX_LETTER_FIRST 35026006L // + C/T/R 0..2
+#define CTR_CFG_CORTEX_PODIUM_FIRST 35026010L // + rung 0..4
+#define CTR_CFG_CORTEX_WUMPA       35016121L
+#define CTR_CFG_CORTEX_LETTER_ITEM_FIRST 35010200L // + C/T/R 0..2
+
+typedef struct
+{
+	int  option;              // ctr_options.cortex_vortex_track, 0/1 (schema >= 15)
+	int  seen;                // the block was on the wire
+	int  valid;               // block AND its map/leg constraints accepted
+	int  dropped_destination; // the destination this seed left without a pad, or -1
+	long trophy;              // 35026000
+	long relic[3];            // Sapphire/Gold/Platinum, -1 = tier not created
+	long ctr_token;           // -1 = absent
+	ctr_podium_rungs podium;  // -1 per rung not created
+	long letters[3];          // lettersanity locations, -1 = not selected
+	long letter_items[3];     // letter items, -1 = none
+	long wumpa;               // 35016121 under per-track Wumpa, else -1
+} ctr_cortex_track;
 
 // Two-stage warp-pad unlock (open-rando). stage1 opens the trophy race; stage2
 // opens the relic Time Trials + CTR Token Challenge menu. Each stage is an
@@ -582,6 +628,9 @@ typedef struct
 	// frozen to Nitros Oxide and the location to 35011105; malformed or changed
 	// identities fail closed rather than falling back to Oxide Station.
 	ctr_oxide_final_venue oxide_final_venue;
+
+	// schema 15: Cortex Vortex as a full pad track (virtual destination 110).
+	ctr_cortex_track cortex_track;
 
 	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
 	// the wire" and "the block said off", which are the same thing to every

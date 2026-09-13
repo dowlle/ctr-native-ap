@@ -95,6 +95,18 @@ static int ctr_valid_dest(int v)
 	return (v >= 0 && v < CTR_CFG_PAD_COUNT) || (v >= 100 && v <= 104);
 }
 
+// Schema 15: the Cortex Vortex pad track is the virtual destination 110. It is
+// a legal map/leg value only while ctr_options.cortex_vortex_track is on. When
+// the option is on but the block is refused, 110 is still stored: the pad that
+// hosts it then refuses entry, which is the fail-closed answer. Dropping 110
+// back to identity would load the dropped destination, whose checks this seed
+// removed.
+static int ctr_valid_dest_or_cortex(int v)
+{
+	return ctr_valid_dest(v) ||
+	       (v == CTR_CFG_CORTEX_DEST && ctr_cfg.cortex_track.option);
+}
+
 // A SHA-256 digest as it travels: exactly 64 hex digits. The apworld case-folds
 // to lowercase before emitting, but accept either case here -- native's own
 // comparison is case-insensitive and a stricter wire check would only turn a
@@ -375,6 +387,17 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
 	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
+	std::memset(&ctr_cfg.cortex_track, 0, sizeof ctr_cfg.cortex_track);
+	ctr_cfg.cortex_track.dropped_destination = -1;
+	ctr_cfg.cortex_track.trophy = -1;
+	ctr_cfg.cortex_track.ctr_token = -1;
+	ctr_cfg.cortex_track.wumpa = -1;
+	ctr_cfg.cortex_track.podium.held_1st = ctr_cfg.cortex_track.podium.held_3rd = -1;
+	ctr_cfg.cortex_track.podium.held_5th = ctr_cfg.cortex_track.podium.finish_podium = -1;
+	ctr_cfg.cortex_track.podium.finish_any = -1;
+	for (int k = 0; k < 3; k++)
+		ctr_cfg.cortex_track.relic[k] = ctr_cfg.cortex_track.letters[k] =
+			ctr_cfg.cortex_track.letter_items[k] = -1;
 	ctr_cfg.oxide_final_venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
 	ctr_cfg.oxide_final_venue.host_level_id = -1;
 	ctr_cfg.oxide_final_venue.location = -1;
@@ -548,6 +571,17 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
 		if (ctr_cfg.trial_track_mode[t] < 0 || ctr_cfg.trial_track_mode[t] > 2)
 			ctr_cfg.trial_track_mode[t] = 0;
+	// Schema 15: Cortex Vortex pad track option. Any value other than 0/1 is a
+	// seed this build cannot read; it is treated as ON so that a map carrying
+	// 110 stays fail-closed, and the block itself is then refused below.
+	if (schema >= 15)
+	{
+		const int cv = json_int(opt, "cortex_vortex_track", 0);
+		ctr_cfg.cortex_track.option = cv != 0 ? 1 : 0;
+		if (cv != 0 && cv != 1)
+			ap_cfg_log("[AP CFG] cortex_vortex_track=%d is not 0/1; the Cortex Vortex pad "
+			           "track is refused and any pad hosting it stays closed\n", cv);
+	}
 	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
 		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
@@ -657,7 +691,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			try { pad = std::stoi(it.key()); } catch (...) { continue; }
 			int dest;
 			try { dest = it.value().get<int>(); } catch (...) { continue; }
-			if (!ctr_valid_dest(dest))
+			if (!ctr_valid_dest_or_cortex(dest))
 				continue; // out-of-range destination -> keep identity
 			if (pad >= 100 && pad <= 104)
 			{
@@ -695,7 +729,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 					continue; // null / non-int element -> keep vanilla for this leg
 				int track;
 				try { track = legs[leg].get<int>(); } catch (...) { continue; }
-				if (track < 0 || track > 15)
+				if ((track < 0 || track > 15) &&
+				    !(track == CTR_CFG_CORTEX_DEST && ctr_cfg.cortex_track.option))
 					continue; // outside the trophy-track range -> keep vanilla
 				ctr_cfg.gem_cup_legs[cup - 100][leg] = track;
 			}
@@ -938,9 +973,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		char track[32] = "";
 		char opponent[32] = "";
 		const int selected = json_int(opt, "oxide_final_track", -1);
+		// 35016121 exists under per-track Wumpa when the Cortex Vortex pad track
+		// is on, or when Cortex Vortex is the Oxide 2 venue with Oxide content
+		// present (goal_oxide != 3). The venue block carries it in both cases.
 		const int expectedWumpa =
-		    selected == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
-		    json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK
+		    json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK &&
+		    (ctr_cfg.cortex_track.option ||
+		     (selected == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX && ctr_cfg.goal_oxide != 3))
 		        ? 35016121 : -1;
 
 		if (!oxideVenueIt->is_object()) reject = "block is not an object";
@@ -1397,6 +1436,183 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// ── cortex_vortex_track (schema 15) ────────────────────────────────────
+	//
+	// Cortex Vortex as a full pad track on virtual destination 110. Refusal is
+	// TOTAL: cortex_track.valid stays 0, every code stays -1, and a pad or cup
+	// leg that names 110 refuses entry (see AP_CortexTrackEntryReady). Nothing
+	// here ever falls back to Oxide Station's LevelID-13 identities.
+	//   * unknown block version -> also raise schema_newer ("update the client"
+	//     is the right advice), the custom_tracks convention;
+	//   * known version, malformed content -> loud log, no banner.
+	if (ctr_cfg.cortex_track.option || j.find("cortex_vortex_track") != j.end())
+	{
+		ctr_cortex_track &cv = ctr_cfg.cortex_track;
+		auto cvIt = j.find("cortex_vortex_track");
+		const char *reject = NULL;
+		const int lettersItems = ctr_cfg.lettersanity_mode >= 2;
+		const int perTrackWumpa = json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK;
+		auto exactOrAbsent = [](const nlohmann::json &v, long expected, long *out) -> bool {
+			if (!v.is_number_integer()) return false;
+			long got;
+			try { got = v.get<long>(); } catch (...) { return false; }
+			if (got != -1 && got != expected) return false;
+			*out = got;
+			return true;
+		};
+
+		cv.seen = cvIt != j.end();
+		if (schema < 15)
+			reject = "cortex_vortex_track needs schema_version >= 15";
+		else if (!cv.option)
+			reject = "block present while ctr_options.cortex_vortex_track is off";
+		else if (json_int(opt, "cortex_vortex_track", 0) != 1)
+			reject = "ctr_options.cortex_vortex_track is not 0/1";
+		else if (!cv.seen || !cvIt->is_object())
+			reject = "option on but the block is missing or not an object";
+		else if (json_int(*cvIt, "version", 0) != CTR_CFG_CORTEX_BLOCK_VERSION_KNOWN)
+		{
+			ctr_cfg.schema_newer = 1;
+			reject = "unknown block version (UPDATE THE CTR CLIENT)";
+		}
+		else
+		{
+			const nlohmann::json &b = *cvIt;
+			char lev[CTR_CFG_CT_HEX_CAP] = "", vrm[CTR_CFG_CT_HEX_CAP] = "";
+			json_str(b, "lev_sha256", lev, sizeof lev);
+			json_str(b, "vrm_sha256", vrm, sizeof vrm);
+			const int dropped = json_int(b, "dropped_destination", -1);
+			auto locIt = b.find("locations");
+			if (json_int(b, "destination_id", -1) != CTR_CFG_CORTEX_DEST)
+				reject = "destination_id is not 110";
+			else if (json_int(b, "host_level_id", -1) != CTR_CFG_CORTEX_HOST_LEVEL)
+				reject = "host_level_id is not 13";
+			else if (std::strcmp(lev, CTR_CFG_CORTEX_LEV_SHA256) ||
+			         std::strcmp(vrm, CTR_CFG_CORTEX_VRM_SHA256))
+				reject = "hashes are not the approved Lockheart pair";
+			else if (!ctr_valid_dest(dropped))
+				reject = "dropped_destination is not a destination in {0..27, 100..104}";
+			else if (locIt == b.end() || !locIt->is_object())
+				reject = "locations object missing";
+			else
+			{
+				const nlohmann::json &l = *locIt;
+				cv.dropped_destination = dropped;
+				auto relIt = l.find("relic");
+				auto podIt2 = l.find("podium");
+				auto letIt = l.find("letters");
+				auto itemIt = b.find("letter_items");
+				if (!l.contains("trophy") || !l["trophy"].is_number_integer() ||
+				    l["trophy"].get<long>() != CTR_CFG_CORTEX_TROPHY)
+					reject = "locations.trophy is not 35026000";
+				else
+					cv.trophy = CTR_CFG_CORTEX_TROPHY;
+				if (!reject && (relIt == l.end() || !relIt->is_array() || relIt->size() != 3))
+					reject = "locations.relic must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+					if (!exactOrAbsent((*relIt)[t], CTR_CFG_CORTEX_RELIC_FIRST + t, &cv.relic[t]))
+						reject = "locations.relic carries a foreign code";
+				if (!reject && (!l.contains("ctr_token") ||
+				                !exactOrAbsent(l["ctr_token"], CTR_CFG_CORTEX_CTR_TOKEN, &cv.ctr_token)))
+					reject = "locations.ctr_token is not 35026004 or -1";
+				if (!reject && (podIt2 == l.end() || !podIt2->is_object()))
+					reject = "locations.podium object missing";
+				if (!reject)
+				{
+					static const char *rungKeys[CTR_CFG_PODIUM_RUNG_COUNT] = {
+						"held_1st", "held_3rd", "held_5th", "finish_podium", "finish_any"};
+					long *rungs[CTR_CFG_PODIUM_RUNG_COUNT] = {
+						&cv.podium.held_1st, &cv.podium.held_3rd, &cv.podium.held_5th,
+						&cv.podium.finish_podium, &cv.podium.finish_any};
+					for (int r = 0; !reject && r < CTR_CFG_PODIUM_RUNG_COUNT; r++)
+						if (!podIt2->contains(rungKeys[r]) ||
+						    !exactOrAbsent((*podIt2)[rungKeys[r]], CTR_CFG_CORTEX_PODIUM_FIRST + r, rungs[r]))
+							reject = "locations.podium carries a foreign code";
+				}
+				if (!reject && (letIt == l.end() || !letIt->is_array() || letIt->size() != 3))
+					reject = "locations.letters must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+					if (!exactOrAbsent((*letIt)[t], CTR_CFG_CORTEX_LETTER_FIRST + t, &cv.letters[t]))
+						reject = "locations.letters carries a foreign code";
+				if (!reject && (!l.contains("wumpa") ||
+				                !exactOrAbsent(l["wumpa"], CTR_CFG_CORTEX_WUMPA, &cv.wumpa) ||
+				                (cv.wumpa > 0) != perTrackWumpa))
+					reject = "locations.wumpa disagrees with per-track Wumpa";
+				if (!reject && (itemIt == b.end() || !itemIt->is_array() || itemIt->size() != 3))
+					reject = "letter_items must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+				{
+					long item = -1;
+					// Shape only: receipt is keyed by the frozen item ids 35010200..202
+					// themselves, so an item this seed did not create simply never
+					// arrives.
+					if (!exactOrAbsent((*itemIt)[t], CTR_CFG_CORTEX_LETTER_ITEM_FIRST + t, &item))
+						reject = "letter_items carries a foreign item";
+					else
+						cv.letter_items[t] = lettersItems ? item : -1;
+				}
+				// Lettersanity selection shape: without lettersanity every letter
+				// location is -1; mode 3 (items only) carries no locations either.
+				if (!reject && (ctr_cfg.lettersanity_mode == 0 || ctr_cfg.lettersanity_mode == 3) &&
+				    (cv.letters[0] > 0 || cv.letters[1] > 0 || cv.letters[2] > 0))
+					reject = "letter locations present without location lettersanity";
+			}
+
+			// Map constraints: 110 is hosted by exactly one physical pad, and the
+			// dropped destination is hosted by none. A dropped race track is never
+			// a Gem Cup leg.
+			if (!reject)
+			{
+				int hosts = 0, droppedHosted = 0;
+				for (int p = 0; p < CTR_CFG_PAD_COUNT; p++)
+				{
+					hosts += ctr_cfg.warp_pad_map[p] == CTR_CFG_CORTEX_DEST;
+					droppedHosted |= ctr_cfg.warp_pad_map[p] == cv.dropped_destination;
+				}
+				for (int c = 0; c < 5; c++)
+				{
+					hosts += ctr_cfg.gem_cup_map[c] == CTR_CFG_CORTEX_DEST;
+					droppedHosted |= ctr_cfg.gem_cup_map[c] == cv.dropped_destination;
+				}
+				if (hosts != 1)
+					reject = "warp_pad_map must host destination 110 on exactly one pad";
+				else if (droppedHosted)
+					reject = "warp_pad_map still hosts the dropped destination";
+				else if (cv.dropped_destination >= 0 && cv.dropped_destination <= 15)
+					for (int c = 0; !reject && c < 5; c++)
+						for (int leg = 0; leg < 4; leg++)
+							if (ctr_cfg.gem_cup_legs[c][leg] == cv.dropped_destination)
+								reject = "a Gem Cup legs the dropped race track";
+			}
+		}
+
+		if (reject)
+		{
+			const int option = cv.option;
+			const int seen = cv.seen;
+			std::memset(&cv, 0, sizeof cv);
+			cv.option = option;
+			cv.seen = seen;
+			cv.dropped_destination = -1;
+			cv.trophy = cv.ctr_token = cv.wumpa = -1;
+			cv.podium.held_1st = cv.podium.held_3rd = cv.podium.held_5th = -1;
+			cv.podium.finish_podium = cv.podium.finish_any = -1;
+			for (int k = 0; k < 3; k++)
+				cv.relic[k] = cv.letters[k] = cv.letter_items[k] = -1;
+			ap_cfg_log("[AP CFG] *** cortex_vortex_track REFUSED: %s; the Cortex Vortex pad "
+			           "track is unavailable and no Cortex Vortex or Oxide Station check is "
+			           "sent in its place ***\n", reject);
+		}
+		else
+		{
+			cv.valid = 1;
+			ap_cfg_log("[AP CFG] cortex_vortex_track: destination 110 on host 13, dropped "
+			           "destination %d, trophy %ld relic %ld/%ld/%ld token %ld wumpa %ld\n",
+			           cv.dropped_destination, cv.trophy, cv.relic[0], cv.relic[1],
+			           cv.relic[2], cv.ctr_token, cv.wumpa);
+		}
+	}
+
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{
@@ -1624,7 +1840,7 @@ extern "C" int ctr_cfg_warp_dest(int physPadLevelID)
 
 extern "C" int ctr_cfg_warp_phys(int destTrackLevelID)
 {
-	if (ctr_cfg.schema_version < 1 || !ctr_valid_dest(destTrackLevelID))
+	if (ctr_cfg.schema_version < 1 || !ctr_valid_dest_or_cortex(destTrackLevelID))
 		return destTrackLevelID;
 	// Linear scan for the physical pad whose destination is destTrackLevelID, over
 	// BOTH maps. The union of warp_pad_map (0..27) and gem_cup_map (100..104) is a
