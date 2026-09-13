@@ -6,8 +6,9 @@
 //      tools/test-cortex-track-seedcfg.cpp ap/ap_seedcfg.cpp -o /tmp/test-cortex-track-seedcfg
 //      && /tmp/test-cortex-track-seedcfg
 //
-// An optional real seed: CTR_CORTEX_SLOT_DATA=<slot_data.json> also parses that
-// file and requires an accepted block.
+// Also parses the generated slot_data fixtures in tools/fixtures/cortex-vortex/
+// (apworld feat/cortex-vortex-track @ 8fac02df2, convert_to_base_types output),
+// and optionally CTR_CORTEX_SLOT_DATA=<slot_data.json>.
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -62,8 +63,64 @@ static void refused(nlohmann::json d, const char *name)
 	EXPECT(ctr_cfg.cortex_track.wumpa, -1, "refused block carries no Wumpa");
 }
 
+// Retail data.advCupTrackIDs (game/zGlobal_DATA.c), as ap_hooks.c pushes it.
+static const int kVanillaLegs[20] = {3, 9, 2, 5, 6, 14, 12, 10, 4, 8, 1, 11, 0, 15, 7, 13, 6, 5, 1, 7};
+
+static bool load(const char *path, nlohmann::json &out)
+{
+	std::ifstream in(path);
+	if (!in) return false;
+	out = nlohmann::json::parse(in);
+	if (out.contains("slot_data")) out = out["slot_data"];
+	return true;
+}
+
+static void fixture(const char *name, int expectOn, int dropped, int pad)
+{
+	char path[256];
+	nlohmann::json real;
+	std::snprintf(path, sizeof path, "tools/fixtures/cortex-vortex/%s.slot_data.json", name);
+	checks++;
+	if (!load(path, real)) { failures++; std::printf("FAIL fixture missing: %s\n", path); return; }
+	ap_seedcfg_parse_json(real);
+	EXPECT(ctr_cfg.schema_newer, 0, "fixture schema is known");
+	EXPECT(ctr_cfg.cortex_track.option, expectOn, "fixture option");
+	EXPECT(ctr_cfg.cortex_track.valid, expectOn, "fixture block accepted");
+	EXPECT(ctr_cfg.oxide_final_venue.valid, 1, "fixture venue still valid");
+	if (!expectOn)
+	{
+		EXPECT(ctr_cfg_warp_phys(110), 110, "option off: 110 hosted nowhere");
+		return;
+	}
+	EXPECT(ctr_cfg.cortex_track.dropped_destination, dropped, "fixture dropped destination");
+	EXPECT(ctr_cfg_warp_phys(110), pad, "fixture pad hosting 110");
+	EXPECT(ctr_cfg_warp_phys(dropped) == dropped && ctr_cfg_warp_dest(dropped) != dropped, 1,
+	       "dropped destination is hosted by no pad");
+	EXPECT(ctr_cfg.cortex_track.trophy, 35026000, "fixture trophy");
+	EXPECT(ctr_cfg.cortex_track.ctr_token, 35026004, "fixture token");
+	for (int t = 0; t < 3; t++)
+		EXPECT(ctr_cfg.cortex_track.relic[t] == -1 || ctr_cfg.cortex_track.relic[t] == 35026001 + t, 1,
+		       "fixture relic tier is exact or absent");
+}
+
 int main()
 {
+	ctr_cfg_set_vanilla_cup_legs(kVanillaLegs);
+
+	fixture("on_default_merged_shuffle_seed5", 1, 18, 15);
+	fixture("on_no_shuffle_letters_seed8", 1, 9, 9);
+	EXPECT(ctr_cfg.lettersanity_mode, 2, "seed8 lettersanity mode 2");
+	EXPECT(ctr_cfg_cup_leg(0, 1), 9, "vanilla Red cup still legs the dropped Mystery Caves");
+	fixture("on_cup_legs_boost_seed12", 1, 21, 3);
+	{
+		int legs110 = 0;
+		for (int c = 0; c < 5; c++)
+			for (int l = 0; l < 4; l++)
+				legs110 += ctr_cfg_cup_leg(c, l) == 110;
+		EXPECT(legs110 > 0, 1, "seed12 randomized legs include 110");
+	}
+	fixture("off_default_seed5", 0, -1, -1);
+
 	nlohmann::json d = seed();
 	ap_seedcfg_parse_json(d);
 	EXPECT(ctr_cfg_active(), 1, "schema 15 active");
@@ -136,7 +193,11 @@ int main()
 	d = seed(); d["cortex_vortex_track"]["dropped_destination"] = 3; refused(d, "dropped destination still hosted");
 	d = seed(); d["warp_pad_map"]["3"] = 110; refused(d, "110 on two pads");
 	d = seed(); d["warp_pad_map"]["7"] = 7; refused(d, "110 hosted by no pad");
-	d = seed(); d["gem_cup_legs"] = {{"101", {7, 1, 2, 3}}}; refused(d, "dropped race track legs a cup");
+	d = seed(); d["gem_cup_legs"] = {{"101", {7, 1, 2, 3}}}; refused(d, "dropped race track as a randomized leg");
+	d = seed(); d["warp_pad_map"]["7"] = 7; d["warp_pad_map"]["9"] = 110;
+	d["cortex_vortex_track"]["dropped_destination"] = 9;
+	ap_seedcfg_parse_json(d);
+	EXPECT(ctr_cfg.cortex_track.valid, 1, "vanilla legs may still include the dropped track");
 	d = seed(); d["cortex_vortex_track"]["locations"]["trophy"] = 35011015; refused(d, "Oxide Station trophy code refused");
 	d = seed(); d["cortex_vortex_track"]["locations"]["trophy"] = -1; refused(d, "trophy is required");
 	d = seed(); d["cortex_vortex_track"]["locations"]["relic"][1] = 35012115; refused(d, "foreign relic code");
@@ -218,9 +279,8 @@ int main()
 
 	if (const char *path = std::getenv("CTR_CORTEX_SLOT_DATA"))
 	{
-		std::ifstream in(path);
-		nlohmann::json real = nlohmann::json::parse(in);
-		if (real.contains("slot_data")) real = real["slot_data"];
+		nlohmann::json real;
+		if (!load(path, real)) { std::printf("cannot read %s\n", path); return 1; }
 		ap_seedcfg_parse_json(real);
 		EXPECT(ctr_cfg.cortex_track.valid, 1, "generated seed block accepted");
 		EXPECT(ctr_cfg_warp_phys(110) != 110, 1, "generated seed hosts 110");

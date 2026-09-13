@@ -1578,11 +1578,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 					reject = "warp_pad_map must host destination 110 on exactly one pad";
 				else if (droppedHosted)
 					reject = "warp_pad_map still hosts the dropped destination";
-				else if (cv.dropped_destination >= 0 && cv.dropped_destination <= 15)
-					for (int c = 0; !reject && c < 5; c++)
-						for (int leg = 0; leg < 4; leg++)
-							if (ctr_cfg.gem_cup_legs[c][leg] == cv.dropped_destination)
-								reject = "a Gem Cup legs the dropped race track";
+				else if (cv.dropped_destination >= 0 && cv.dropped_destination <= 15 &&
+				         legsIt != j.end() && legsIt->is_object())
+					// Only a RANDOMIZED leg draw is constrained. With vanilla legs a
+					// cup still races the dropped track natively; that track's
+					// podium and Wumpa rows are simply absent from this seed.
+					for (auto it = legsIt->begin(); !reject && it != legsIt->end(); ++it)
+						if (it.value().is_array())
+							for (const auto &leg : it.value())
+								if (leg.is_number_integer() && leg.get<long>() == cv.dropped_destination)
+									reject = "a randomized Gem Cup leg is the dropped race track";
 			}
 		}
 
