@@ -1,6 +1,6 @@
 #ifdef CTR_AP
 
-// Hit Character encounters (schema 14, ticket 06): the gather half. See
+// Hit Character encounters (schema 16, ticket 06): the gather half. See
 // ap/ap_hit_encounter.h for the contract and ap/ap_hit_policy.h for the
 // freestanding decisions this module feeds.
 

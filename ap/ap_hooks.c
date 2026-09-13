@@ -5610,7 +5610,7 @@ static int AP_EmitClassCheck(long code,
 	return 1;
 }
 
-// Hit Character encounter check (schema 14, ticket 06). Routed through the
+// Hit Character encounter check (schema 16, ticket 06). Routed through the
 // shared class-check path so per-seed membership, server-checked dedup and the
 // sent-item feed are the same ones every other optional class uses.
 int AP_EmitHitCharacterCheck(long code)

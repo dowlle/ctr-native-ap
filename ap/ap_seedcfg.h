@@ -69,20 +69,21 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-//   14 = Hit Character encounters (ticket 05). The enabled scalar
-//        ctr_options.hit_character is emitted on EVERY 14 seed, on or off, and
+// v15 adds ctr_options.cortex_vortex_track and the conditional
+// cortex_vortex_track block: Cortex Vortex as a full pad track on virtual
+// destination 110. An older native would drop 110 from warp_pad_map and load
+// the dropped destination, whose checks the seed removed, so this is a gate.
+// (Schema 14 was reserved for Hit Character while both were in flight; Hit
+// Character integrated second and took 16, so no seed ever declares 14.)
+//   16 = Hit Character encounters (ticket 05). The enabled scalar
+//        ctr_options.hit_character is emitted on EVERY 16 seed, on or off, and
 //        the conditional top-level hit_character_encounters block is emitted
-//        only when enabled. This is a GATE, not additive: a pre-14 client must
+//        only when enabled. This is a GATE, not additive: a pre-16 client must
 //        not silently ignore the block (a seed whose 16 new Hit locations are
 //        live but whose native has no roster would strand those checks), so a
-//        pre-14 client shows the #8 banner on every 14 seed. See the strict
+//        pre-16 client shows the #8 banner on every 16 seed. See the strict
 //        admission parser and the rejection flag below.
-// v15 (schema 14 is claimed by the Hit Character candidate; integration order
-// settles the final number) adds ctr_options.cortex_vortex_track and the
-// conditional cortex_vortex_track block: Cortex Vortex as a full pad track on
-// virtual destination 110. An older native would drop 110 from warp_pad_map and
-// load the dropped destination, whose checks the seed removed, so this is a gate.
-#define CTR_CFG_SCHEMA_KNOWN 15
+#define CTR_CFG_SCHEMA_KNOWN 16
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2
@@ -369,12 +370,12 @@ typedef struct
 	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
 } ctr_wumpa_checks;
 
-// ── hit_character_encounters (schema 14, ticket 05) ─────────────────────────
+// ── hit_character_encounters (schema 16, ticket 05) ─────────────────────────
 //
 // Native-owned, fully-resolved encounter tables. The apworld's fill_slot_data
 // does ALL of the mode/rotation/pin logic and emits ordered, resolved candidate
 // lists; native NEVER uses its gameplay RNG to reconstruct them. The block is
-// conditional on ctr_options.hit_character (a boolean emitted on every 14 seed,
+// conditional on ctr_options.hit_character (a boolean emitted on every 16 seed,
 // on or off). The strict parser either reads the whole block into these
 // structures or refuses the seed outright -- there is no partial activation.
 //
@@ -717,7 +718,7 @@ typedef struct
 	// caller: nothing is emitted.
 	ctr_wumpa_checks wumpa;
 
-	// hit_character_encounters (schema 14, ticket 05). valid=1 only for a
+	// hit_character_encounters (schema 16, ticket 05). valid=1 only for a
 	// fully-readable enabled block; disabled / legacy absence leaves it 0 and
 	// inert. Every parse re-clears it, so valid-to-invalid and valid-to-absent
 	// can never leave stale encounter data behind.

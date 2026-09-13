@@ -1,4 +1,4 @@
-// Native parser acceptance for the schema-14 `hit_character_encounters` block
+// Native parser acceptance for the schema-16 `hit_character_encounters` block
 // (ticket 05). Compiles the REAL parser -- ap/ap_seedcfg.cpp is linked in, so
 // there is no reimplementation to drift -- and drives it against the committed
 // fixture copied verbatim from the apworld's actual fill_slot_data output for
@@ -647,16 +647,16 @@ static void test_seed_transitions(void)
 }
 
 // The global-schema boundary (frozen 2026-09-12 23:18 ruling): an ENABLED
-// feature requires an actual integer global schema >= 14; a present block must
-// be validated even with no ctr_options / schema 0. A future global schema >= 14
+// feature requires an actual integer global schema >= 16; a present block must
+// be validated even with no ctr_options / schema 0. A future global schema >= 16
 // is admitted when the block schema is known.
 static void test_global_schema_boundary(void)
 {
-	for (int s : {0, 13})
+	for (int s : {0, 13, 14, 15})
 	{
 		nlohmann::json d = fx();
 		d["ctr_options"]["schema_version"] = s;
-		expect_reject(d, "enabled feature under pre-14 global schema");
+		expect_reject(d, "enabled feature under pre-16 global schema");
 	}
 	{
 		nlohmann::json d = fx();
@@ -681,8 +681,8 @@ static void test_global_schema_boundary(void)
 	}
 	{
 		nlohmann::json d = fx();
-		d["ctr_options"]["schema_version"] = 15; // future global, known block 1
-		expect_accept(d, "future global schema >=14 with known block admitted");
+		d["ctr_options"]["schema_version"] = 17; // future global, known block 1
+		expect_accept(d, "future global schema >=16 with known block admitted");
 		expect_eq(ctr_cfg.schema_newer, 1, "future global schema raises the banner");
 		expect(ap_seedcfg_hit_encounters() != NULL, "future global block stays active");
 	}

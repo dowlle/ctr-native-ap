@@ -1,7 +1,7 @@
 #ifndef AP_HIT_ENCOUNTER_H
 #define AP_HIT_ENCOUNTER_H
 
-// Hit Character encounters (schema 14, ticket 06): the gather half.
+// Hit Character encounters (schema 16, ticket 06): the gather half.
 //
 // ap/ap_hit_policy.h holds the freestanding decisions; this module reads the
 // parsed slot_data block, the server's checked-location state and the engine's

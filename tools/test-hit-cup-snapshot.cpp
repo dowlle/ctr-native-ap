@@ -102,7 +102,7 @@ static void same_roster(const int *a, int an, const int *b, int bn)
 static void install(void)
 {
 	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
-	ctr_cfg.schema_version = 14;
+	ctr_cfg.schema_version = 16;
 	ctr_cfg.hit.valid = 1;
 	ctr_cfg.hit.enabled = 1;
 	ctr_cfg.hit.seen = 1;

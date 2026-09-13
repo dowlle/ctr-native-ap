@@ -2,9 +2,9 @@
   "Seed": "2101",
   "Slot": "Tester1",
   "TotalLocations": 174,
-  "schema_version": 14,
+  "schema_version": 16,
   "ctr_options": {
-    "schema_version": 14,
+    "schema_version": 16,
     "goal": 0,
     "goal_oxide": 1,
     "oxide_1_optional": 0,
@@ -25,6 +25,7 @@
     "warppad_unlock_mode": 1,
     "slide_coliseum_races": 1,
     "turbo_track_races": 1,
+    "cortex_vortex_track": 0,
     "bossgarage_mode": 2,
     "warp_pad_item_display": 0,
     "ap_item_type_colors": true,
@@ -80,7 +81,7 @@
       "Platinum Relic": []
     },
     "world_version": "0.2.1",
-    "build_version": "0.2.1-alpha1",
+    "build_version": "0.2.1-hit1",
     "boost_mode": 0,
     "boost_blue_fire": false,
     "stats_mode": 0,
@@ -148,9 +149,9 @@
         "colour": -1
       },
       "stage2": {
-        "type": 1,
-        "count": 2,
-        "colour": -1
+        "type": 3,
+        "count": 1,
+        "colour": 4
       }
     },
     "6": {
@@ -304,8 +305,8 @@
         "colour": -1
       },
       "stage2": {
-        "type": 6,
-        "count": 3,
+        "type": 2,
+        "count": 1,
         "colour": -1
       }
     },

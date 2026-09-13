@@ -279,7 +279,7 @@ static ctr_warp_unlock parse_warp_unlock(const nlohmann::json &o)
 	return u;
 }
 
-// ── hit_character_encounters strict admission (schema 14, ticket 05) ────────
+// ── hit_character_encounters strict admission (schema 16, ticket 05) ────────
 //
 // Unlike the tolerant additive blocks above, this block is REQUIRED when
 // ctr_options.hit_character is true: a client that cannot fully honour it must
@@ -559,10 +559,10 @@ static int parse_hit_character(const nlohmann::json &j)
 		return 0;
 	}
 
-	// An ENABLED feature requires an actual integer global schema >= 14 (the
-	// emitter's global boundary). Absent / bool / non-integer / pre-14 global
+	// An ENABLED feature requires an actual integer global schema >= 16 (the
+	// emitter's global boundary). Absent / bool / non-integer / pre-16 global
 	// schema refuses, so a valid block can never stay active under schema 0. A
-	// future global schema >= 14 is allowed when the block schema is known.
+	// future global schema >= 16 is allowed when the block schema is known.
 	{
 		int globalSchema = 0;
 		int haveSchema = 0;
@@ -579,9 +579,9 @@ static int parse_hit_character(const nlohmann::json &j)
 				}
 			}
 		}
-		if (!haveSchema || globalSchema < 14)
+		if (!haveSchema || globalSchema < 16)
 		{
-			hit_reject("hit_character is enabled but the global schema is not an integer >= 14");
+			hit_reject("hit_character is enabled but the global schema is not an integer >= 16");
 			return 0;
 		}
 	}
@@ -1036,7 +1036,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// legacy" means the feature data is ABSENT, never that a present required
 	// block is bypassed by the legacy early returns below. On refusal the whole
 	// config stays inactive (schema_version remains 0) and every other block is
-	// skipped; an enabled feature under a pre-14 global schema also refuses.
+	// skipped; an enabled feature under a pre-16 global schema also refuses.
 	if (!parse_hit_character(j))
 		return;
 

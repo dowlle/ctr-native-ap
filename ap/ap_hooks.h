@@ -442,7 +442,7 @@ int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
 
-// Hit Character encounters (schema 14, ticket 06): send one parsed Hit location
+// Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
 // through the shared class-check path (per-seed membership + server-checked
 // dedup + sent-item feed). A thin wrapper because AP_EmitClassCheck is static to
 // the unity translation unit; ap/ap_hit_encounter.c calls this.
@@ -635,7 +635,7 @@ int AP_PadStage1Met(int physLevelID);
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 
 // Is there an eligible, unchecked Hit Character guest opportunity behind this
-// pad (schema 14, ticket 06)? True only for ordinary retail destinations 0..15
+// pad (schema 16, ticket 06)? True only for ordinary retail destinations 0..15
 // with an eligible guest (its authoritative trigger win checked) whose Hit
 // location this seed carries and the server has not checked. Feeds both
 // AP_PadState and the ordinary tier-2 chooser in AH_WarpPad.c.
