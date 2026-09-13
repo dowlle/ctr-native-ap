@@ -51,6 +51,7 @@ tools/test-trial-pad-glow-production.py
 tools/test-oxide-garage-advert.c
 tools/test-oxide-weapon-schedule.c
 tools/test-oxide-final-venue-seedcfg.cpp
+tools/test-cortex-track.c
 tools/test-cortex-track-seedcfg.cpp
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp

@@ -73,6 +73,17 @@ void RR_EndEvent_UnlockAward(void)
 		raceTime -= RR_RACE_TIME_TEN_SECONDS;
 	}
 
+#ifdef CTR_AP
+	// Cortex Vortex pad track (schema 15): package-owned targets and direct
+	// relic codes. The loop below would compare against Oxide Station's retail
+	// times and award Oxide Station's relic bits for LevelID 13.
+	if (AP_CortexTrackActive())
+	{
+		AP_CortexTrackRelicAward(raceTime);
+		return;
+	}
+#endif
+
 	for (s32 relicIndex = 0; relicIndex < RR_RELIC_TIERS; relicIndex++)
 	{
 		s32 relicTime = data.RelicTime[levelID * RR_RELIC_TIERS + relicIndex];

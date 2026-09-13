@@ -170,6 +170,10 @@ static AP_ItemCat AP_ItemCategory(long long id)
 	// lands.
 	if (idx >= 0 && idx < 0x10000 && AP_LetterItemIndexIsLetterPure((int)idx))
 		return AP_CAT_CRYSTAL;
+	// Cortex Vortex letters (schema 15, idx 200..202). Same presentation as
+	// every other letter family.
+	if (idx >= 200 && idx <= 202)
+		return AP_CAT_CRYSTAL;
 	{
 		int letterSlot, letterIndex;
 		if (AP_CustomLetterItemToIdentityPure(id, &letterSlot, &letterIndex))
