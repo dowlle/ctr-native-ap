@@ -5673,6 +5673,14 @@ int AP_CustomTrackCtrChecked(void)
 	       ctr_cfg.custom_ctr_location > 0 && ap_net_location_checked(ctr_cfg.custom_ctr_location);
 }
 
+// Schema 15: while the Cortex Vortex pad track is on screen, the letter hooks'
+// LevelID 13 means the LEV's own C/T/R (instances 77..79), never Oxide
+// Station's lettersanity row.
+static int AP_CortexLetterTrack(int track)
+{
+	return track == CTR_CFG_CORTEX_HOST_LEVEL && AP_CortexTrackActive();
+}
+
 void AP_NotifyCustomTrackCtr(int didWin, int collected)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -5689,14 +5697,6 @@ void AP_NotifyCustomTrackCtr(int didWin, int collected)
 		ap_custom_ceremony_bit = AP_CUSTOM_CTR_PSEUDO_BIT;
 		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 	}
-}
-
-// Schema 15: while the Cortex Vortex pad track is on screen, the letter hooks'
-// LevelID 13 means the LEV's own C/T/R (instances 77..79), never Oxide
-// Station's lettersanity row.
-static int AP_CortexLetterTrack(int track)
-{
-	return track == CTR_CFG_CORTEX_HOST_LEVEL && AP_CortexTrackActive();
 }
 
 int AP_LetterAvailable(int track, int letter)
