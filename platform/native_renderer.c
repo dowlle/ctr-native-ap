@@ -2373,6 +2373,48 @@ void NativeRenderer_SwapWindow(void)
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_SWAP_WINDOW);
 }
 
+void NativeRenderer_PresentOverlayRGBA(const unsigned char *pixels, int width, int height)
+{
+	static GLuint shader, texture;
+	static int textureWidth, textureHeight;
+	static const char *source =
+		"#ifdef VERTEX\n"
+		"attribute vec2 a_position; varying vec2 v_uv;\n"
+		"void main(){ v_uv=vec2(a_position.x*.5+.5,.5-a_position.y*.5); gl_Position=vec4(a_position,0.,1.); }\n"
+		"#endif\n#ifdef FRAGMENT\n"
+		"varying vec2 v_uv; uniform sampler2D s_texture;\n"
+		"void main(){ fragColor=texture2D(s_texture,v_uv); }\n#endif\n";
+	if (!pixels || width <= 0 || height <= 0 || !s_glInitialised || s_presentViewport.w <= 0) return;
+	if (!shader) shader = NativeRenderer_Shader_Compile(source, false);
+	if (!shader) return;
+	if (!texture) glGenTextures(1, &texture);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	NativeRenderer_SetViewPort(s_presentViewport.x,s_presentViewport.y,s_presentViewport.w,s_presentViewport.h);
+	NativeRenderer_SetScissorState(0);
+	glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
+	glEnable(GL_BLEND); glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram(shader); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,texture);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH,0); glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+	if (textureWidth != width || textureHeight != height) {
+		glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+		textureWidth=width; textureHeight=height;
+	} else glTexSubImage2D(GL_TEXTURE_2D,0,0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+	glUniform1i(glGetUniformLocation(shader,"s_texture"),0);
+	glBindVertexArray(s_vramQuadVAO); glDrawArrays(GL_TRIANGLES,0,6); glBindVertexArray(0);
+	glDisable(GL_BLEND);
+	// Invalidate every cached state touched by the overlay before the next
+	// game scene, including stencil (used by warpball and heat feedback).
+	s_previousShader=(ShaderID)-1; s_lastBoundTexture=(TextureID)-1;
+	s_previousBlendMode=(BlendMode)-1; s_previousDepthMode=-1; s_previousStencilMode=-1;
+	s_previousScissorState=-1; s_boundVertexBuffer=-1;
+	glEnable(GL_STENCIL_TEST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+}
+
 internal void NativeRenderer_EnableDepth(int enable)
 {
 	if (s_previousDepthMode == enable)

@@ -13,6 +13,8 @@ void NativeRenderer_EndGpuFrame(void);
 void NativeRenderer_FinishGpuMeasurements(void);
 void NativeRenderer_UpdateSwapIntervalState(int swapInterval);
 void NativeRenderer_SwapWindow(void);
+// Native UI canvas, composited after the PS1 framebuffer presentation.
+void NativeRenderer_PresentOverlayRGBA(const unsigned char *pixels, int width, int height);
 void NativeRenderer_StoreFrameBuffer(int x, int y, int w, int h);
 void NativeRenderer_PresentVRAMDisplay(void);
 void NativeRenderer_PresentVRAMRect(int x, int y, int w, int h);

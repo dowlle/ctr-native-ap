@@ -910,6 +910,11 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004680c-0x80046990.
 void RECTMENU_ProcessState()
 {
+#ifdef CTR_AP
+	// The map owns input while open, preventing focus/inspect/back from
+	// also selecting Resume, Quit or another underlying pause-menu row.
+	if (AP_TrackerMenuFrame()) return;
+#endif
 	struct RectMenu *currMenu;
 	s16 width;
 	int state;
