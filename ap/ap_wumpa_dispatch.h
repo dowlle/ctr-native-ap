@@ -60,7 +60,8 @@ enum AP_WumpaRefusal
 	AP_WUMPA_REFUSE_NOT_COLLECTIBLE,// the measured capability says no route to 10
 	AP_WUMPA_REFUSE_CAPABILITY_DISAGREE, // wire and descriptor disagree
 	AP_WUMPA_REFUSE_CUSTOM_FAULTED, // serving package faulted during this load
-	AP_WUMPA_REFUSE_NO_OXIDE_FINAL_CODE
+	AP_WUMPA_REFUSE_NO_OXIDE_FINAL_CODE,
+	AP_WUMPA_REFUSE_NO_CORTEX_TRACK_CODE
 };
 
 // Everything the decision reads, gathered by the caller. Kept as one struct so
@@ -80,6 +81,11 @@ struct AP_WumpaDispatchFacts
 	int servingCupLevelID; // the Gem Cup LevelID that load is running under
 	int servingOxideFinal;
 	long oxideFinalCode;
+	// Schema 15: a race on the Cortex Vortex pad track (a pad or a Gem Cup leg
+	// resolved to destination 110). Its host LevelID 13 is Oxide Station, so
+	// the retail step below must never run for it.
+	int servingCortexTrack;
+	long cortexTrackCode;
 	// The seed's own custom_tracks descriptor, for the cross-check. `ok` is
 	// ctr_cfg.custom_tracks_ok: 0 means there is no usable descriptor at all.
 	int         seedCustomOk;
@@ -162,6 +168,15 @@ static inline long AP_WumpaResolveCode(const struct AP_WumpaDispatchFacts *f,
 				reason = AP_WUMPA_REFUSE_NO_OXIDE_FINAL_CODE;
 			break;
 		}
+		if (f->servingCortexTrack)
+		{
+			// Cortex Vortex pad track or cup leg: its own 35016121 identity,
+			// never Oxide Station's retail code for LevelID 13.
+			code = f->cortexTrackCode;
+			if (code < 0)
+				reason = AP_WUMPA_REFUSE_NO_CORTEX_TRACK_CODE;
+			break;
+		}
 		if (f->servingCustom)
 		{
 			// Step 5. The custom destination, resolved through the same cup
@@ -230,6 +245,7 @@ static inline const char *AP_WumpaRefusalText(int reason)
 	case AP_WUMPA_REFUSE_CAPABILITY_DISAGREE: return "wire and descriptor disagree on wumpa_collectible";
 	case AP_WUMPA_REFUSE_CUSTOM_FAULTED: return "custom package faulted during this load";
 	case AP_WUMPA_REFUSE_NO_OXIDE_FINAL_CODE: return "no Cortex Vortex Wumpa identity in this seed";
+	case AP_WUMPA_REFUSE_NO_CORTEX_TRACK_CODE: return "no Cortex Vortex pad-track Wumpa identity in this seed";
 	default: return "unknown reason";
 	}
 }

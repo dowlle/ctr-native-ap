@@ -607,6 +607,12 @@ void UI_CupStandings_InputAndDraw(void)
 					index = data.ArcadeCups[cupID].CupTrack[cupTrack].trackID;
 				}
 
+#ifdef CTR_AP
+				// Schema 15: a leg of 110 loads Cortex Vortex on host level 13;
+				// every other leg is selected as retail, so a Cortex Vortex leg
+				// followed by an Oxide Station leg serves Oxide Station bytes.
+				index = AP_CortexTrackPrepareLoad(index);
+#endif
 				MainRaceTrack_RequestLoad(index);
 			}
 

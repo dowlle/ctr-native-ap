@@ -185,7 +185,9 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	{
 		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		              CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
-	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
+	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) ||
+		              CustomTrack_CortexTrackServing((int)gGT->levelID,
+		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
 
 		if (chosen != (unsigned long)size)
@@ -338,7 +340,9 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		int customServing = CustomTrack_ServingLoad((int)gGT->levelID,
 		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
-		                                (gameMode & ADVENTURE_BOSS) != 0);
+		                                (gameMode & ADVENTURE_BOSS) != 0) ||
+		    CustomTrack_CortexTrackServing((int)gGT->levelID,
+		                                   (gameMode & ADVENTURE_BOSS) != 0);
 		if (gGT->level1 != NULL)
 			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, customServing,
 			                                           gGT->level1->numInstances);

@@ -283,6 +283,10 @@ LAB_80055930:
 		    // 8d878 + 110*4 -> Dingo Canyon
 
 		    // Level ID
+#ifdef CTR_AP
+		    // Schema 15: the Cortex Vortex pad track is not Oxide Station.
+		    AP_CortexTrackDisplayName() ? (char *)AP_CortexTrackDisplayName() :
+#endif
 		    sdata->lngStrings[data.metaDataLEV[gGT->levelID].name_LNG],
 
 		    gGT->pushBuffer[0].rect.x + ((gGT->pushBuffer[0].rect.w << 0x10) >> 0x11),

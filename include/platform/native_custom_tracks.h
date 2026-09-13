@@ -7,6 +7,7 @@
 #include <platform/native_custom_tracks_policy.h>
 #include <platform/native_custom_track_manager.h>
 #include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
+#include <platform/native_cortex_track_latch.h>
 
 // Custom-track loader, engine-facing half, for the Baby T Park event spike.
 // Each decision's own heading in native_custom_tracks_policy.h carries its rung,
@@ -76,9 +77,15 @@ struct CustomTrackSeedDescriptor
 	int flagCheckpoints;
 };
 
+// The bundled Cortex Vortex pair. `enabled` arms it for N. Oxide's Final
+// Challenge (the Oxide 2 venue); `padTrackEnabled` arms the same bytes for the
+// schema-15 pad track (virtual destination 110). Either one hashes the pair;
+// each keeps its own serving predicate, so the two never borrow each other's
+// state.
 struct OxideFinalTrackDescriptor
 {
 	int enabled;
+	int padTrackEnabled;
 	int hostLevelID;
 	char levSha256[NATIVE_SHA256_HEX_BYTES];
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
@@ -90,6 +97,21 @@ void CustomTrack_ClearOxideFinalDescriptor(void);
 int CustomTrack_ReverifyOxideFinalContent(void);
 int CustomTrack_OxideFinalReady(void);
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive);
+
+// ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
+// See platform/native_cortex_track_latch.h for the state machine. The entry
+// sites call CustomTrack_CortexTrackSelectNextLoad right before requesting the
+// load; MainRaceTrack_RequestLoad calls CustomTrack_CortexTrackOnRequestLoad.
+void CustomTrack_CortexTrackSelectNextLoad(int cortex);
+void CustomTrack_CortexTrackOnRequestLoad(int levelID);
+// Identity: the level on screen was admitted as Cortex Vortex. Independent of
+// verification, so it can never fall back to Oxide Station's identities.
+int CustomTrack_CortexTrackIntent(int levelID, int adventureBossActive);
+// Bytes: identity AND the pad track is armed AND the pair verified.
+int CustomTrack_CortexTrackServing(int levelID, int adventureBossActive);
+// The level being left (e.g. on a hub return) was Cortex Vortex.
+int CustomTrack_CortexTrackPrevServed(void);
+int CustomTrack_CortexTrackReady(void);
 
 // Read the [CustomTracks] section of config.ini, once, at startup. It carries
 // ONLY the two file paths now; the loader stays disarmed until a seed hands over

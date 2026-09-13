@@ -17,6 +17,7 @@ fixture = r'''
 #define CTR_CUSTOM_TRACKS 1
 #include "ap_seedcfg.h"
 #include "ap_custom_pad_logic.h"
+#include "ap_cortex_track.h" /* schema 15: logical podium track 50 */
 #define CTR_CUSTOM_TRACKS 1
 ctr_seed_config ctr_cfg;
 int ctr_cfg_active(void) { return 1; }
@@ -50,6 +51,34 @@ int main(void) {
   for(int rung=0;rung<5;rung++)
    assert(AP_PodiumPseudoLocationCode(&ctr_cfg,256+(48+t)*5+rung)==base+rung);
  }
+ /* Cortex Vortex (logical track 50): a refused block sends nothing ... */
+ base=35026010;
+ ctr_cfg.cortex_track.podium=(ctr_podium_rungs){base,base+1,base+2,base+3,base+4};
+ ctr_cfg.cortex_track.valid=0;
+ for(int i=0;i<5;i++) seen[i]=0;
+ AP_SendHeldChecks(AP_CV_PODIUM_LOGICAL_TRACK,1);
+ AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK,1);
+ for(int i=0;i<5;i++) assert(!seen[i]);
+ /* ... and an accepted one fans out its own 35026010..014 ladder. */
+ ctr_cfg.cortex_track.valid=1;
+ for(int pos=1;pos<=8;pos++) {
+  for(int i=0;i<5;i++) seen[i]=0;
+  AP_SendHeldChecks(AP_CV_PODIUM_LOGICAL_TRACK,pos);
+  assert(seen[0]==(pos==1) && seen[1]==(pos<=3) && seen[2]==(pos<=5) && !seen[3] && !seen[4]);
+  for(int i=0;i<5;i++) seen[i]=0;
+  AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK,pos);
+  assert(seen[3]==(pos<=3) && seen[4]==1);
+ }
+ /* Oxide Station (13) and the trials keep their own banks with the block on. */
+ base=35015065;
+ ctr_cfg.podium[13]=(ctr_podium_rungs){base,base+1,base+2,base+3,base+4};
+ for(int i=0;i<5;i++) seen[i]=0;
+ AP_SendPodiumChecks(13,1);
+ for(int i=0;i<5;i++) assert(seen[i]==1);
+ base=35015200;
+ for(int i=0;i<5;i++) seen[i]=0;
+ AP_SendPodiumChecks(48,1);
+ for(int i=0;i<5;i++) assert(seen[i]==1);
  ctr_cfg.custom_tracks_ok=1;
  for(int slot=1;slot<=32;slot++) {
   ctr_cfg.custom_track.slot=slot;
@@ -63,4 +92,4 @@ with tempfile.TemporaryDirectory() as tmp:
                    extract("static void AP_SendHeldChecks(int track, int position)")+tests)
     subprocess.run(["cc", "-std=c11", "-fsanitize=undefined", "-I", str(root/"ap"), str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("16 production placement ladders, ten trial identities and 32 frozen custom banks passed")
+print("16 production placement ladders, ten trial identities, the Cortex Vortex bank (refused and accepted) and 32 frozen custom banks passed")

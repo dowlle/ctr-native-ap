@@ -120,6 +120,12 @@ void AA_EndEvent_DrawMenu(void)
 
 			// If you have not unlocked this CTR Token
 			rewardBit = gGT->levelID + ADV_REWARD_FIRST_CTR_TOKEN;
+#ifdef CTR_AP
+			// Schema 15: the Cortex Vortex pad track's own CTR token identity,
+			// never Oxide Station's token bit for LevelID 13.
+			if (AP_CortexTrackActive())
+				rewardBit = AP_CortexTrackBit(AP_CV_SLOT_TOKEN);
+#endif
 			letterPos.x = hudCTR->x;
 			letterPos.y = hudCTR->y;
 			s32 letterScaleOffset;
@@ -128,7 +134,9 @@ void AA_EndEvent_DrawMenu(void)
 			s32 tokenAwardTextFrame = -1;
 			if (
 #ifdef CTR_AP
-			    (AP_TrialTrackConfigured(gGT->levelID)
+			    (AP_CortexTrackActive()
+			         ? !AP_CortexTrackChecked(AP_CV_SLOT_TOKEN)
+			         : AP_TrialTrackConfigured(gGT->levelID)
 			         ? !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_CTR)
 			         : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
 #else
@@ -466,7 +474,9 @@ void AA_EndEvent_DrawMenu(void)
 	// as the primary bit; podium rungs come from the ledger.
 	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1) &&
 	    !AP_TrialTrackConfigured(gGT->levelID))
-		AP_CeremonyDraw(0x100, 0x40, gGT->levelID + ADV_REWARD_FIRST_TROPHY, 1);
+		AP_CeremonyDraw(0x100, 0x40,
+		                AP_CortexTrackActive() ? AP_CortexTrackBit(AP_CV_SLOT_TROPHY)
+		                                       : gGT->levelID + ADV_REWARD_FIRST_TROPHY, 1);
 #endif
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_PRESS_TO_CONTINUE], 0x100, 0xbe, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
@@ -577,6 +587,21 @@ void AA_EndEvent_DrawMenu(void)
 	}
 
 #ifdef CTR_AP
+	// Cortex Vortex pad track (schema 15): host LevelID 13 is Oxide Station, so
+	// return with the track's direct codes before anything below can award
+	// Oxide Station's Trophy bit 19 or CTR token bit 89. Same shape as the
+	// trial-track branch that follows.
+	if (AP_CortexTrackActive())
+	{
+		int token = (gGT->gameMode2 & TOKEN_RACE) != 0;
+		if (!token && !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
+			gGT->podiumRewardID = STATIC_TROPHY;
+		AP_NotifyCortexTrackRace(token);
+		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+		MainRaceTrack_RequestLoad(levSpawn);
+		return;
+	}
+
 	// Trial-track Trophy and CTR Challenge locations are direct schema-10 codes.
 	// Return before the retail levelID-derived reward path can alias them into
 	// Trophy bits 22/23 or Token bits 92/93.

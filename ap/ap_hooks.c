@@ -26,6 +26,8 @@
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_glow_slots_logic.h"
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
+#include "ap_cortex_track.h" // Cortex Vortex pad track: direct codes + pseudo-bits (schema 15)
+#include <platform/native_cortex_track_latch.h> // destination 110 -> host level 13 (freestanding)
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
 #include "ap_transition_diag.h" // ap-state.json transition.diag formatter (diagnostics only)
 #include "ap_checkdiag_once.h" // once-per-connect gate for [AP CHECK DIAG] lines (log-spam guard)
@@ -95,6 +97,13 @@ static unsigned int ap_custom_content_gate_timer = 0;
 static int ap_custom_content_gate_cached = 0;
 static int ap_oxide_final_content_required = 0;
 #endif
+// Schema 15: the seed turns the Cortex Vortex pad track on but its block was
+// refused or the bundled pair is unavailable. Every pad and cup that leads to
+// destination 110 then refuses entry; nothing falls back to Oxide Station.
+static int ap_cortex_track_content_required = 0;
+// Cortex Vortex letter items (35010200..202), rebuilt from ReceivedItems on
+// every fresh connect like the retail letter rows.
+static unsigned char ap_cortex_letter_received[CTR_CFG_LETTER_COUNT] = {0};
 
 // ==============================================================
 // Archipelago integration. Parts:
@@ -282,6 +291,10 @@ static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
 	int trialPseudo, trialChallenge;
+	// Schema 15: Cortex Vortex pad-track identities. Checked first because the
+	// generic podium range below would otherwise claim these bits.
+	if (AP_CortexPseudoDecode(globalBit, 0))
+		return ctr_cfg_active() ? AP_CortexPseudoCode(&ctr_cfg.cortex_track, globalBit) : -1;
 #ifdef CTR_CUSTOM_TRACKS
 	if (globalBit == AP_CUSTOM_CTR_PSEUDO_BIT)
 		return ctr_cfg_active() && ctr_cfg.custom_tracks_ok && ctr_cfg.custom_ctr_enabled
@@ -885,6 +898,89 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge)
 	return code > 0 && ap_net_location_checked(code);
 }
 
+// ── Cortex Vortex pad track (schema 15) ─────────────────────────────────────
+// The identity half is the loader's latch (platform/native_cortex_track_latch.h);
+// the code half is ctr_cfg.cortex_track. A build without the custom-track
+// loader can never serve the track, so the identity is constantly 0 there and
+// every pad hosting 110 refuses entry (AP_CortexTrackEntryReady).
+int AP_CortexTrackActive(void)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	struct GameTracker *gGT = sdata ? sdata->gGT : 0;
+	if (gGT == 0)
+		return 0;
+	return CustomTrack_CortexTrackIntent((int)gGT->levelID,
+	                                     (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
+#else
+	return 0;
+#endif
+}
+
+int AP_CortexTrackBit(int slot)
+{
+	return AP_CortexPseudoBit(slot);
+}
+
+static long AP_CortexTrackCode(int slot)
+{
+	return ctr_cfg_active() ? AP_CortexSlotCode(&ctr_cfg.cortex_track, slot) : -1;
+}
+
+int AP_CortexTrackChecked(int slot)
+{
+	long code = AP_CortexTrackCode(slot);
+	return code > 0 && ap_net_location_checked(code);
+}
+
+static int AP_CortexDestValid(void)
+{
+	return ctr_cfg_active() && ctr_cfg.cortex_track.valid;
+}
+
+int AP_CupLegsCortexTrack(int cup)
+{
+	int leg;
+	if (!ctr_cfg_active() || cup < 0 || cup >= 5 || ctr_cfg_cup_displaced(cup))
+		return 0;
+	for (leg = 0; leg < 4; leg++)
+		if (ctr_cfg_cup_leg(cup, leg) == AP_CORTEX_DEST)
+			return 1;
+	return 0;
+}
+
+int AP_CortexTrackPrepareLoad(int destLevelID)
+{
+	int cortex = 0;
+	int level = CortexTrackLatch_ResolveDest(destLevelID, &cortex);
+#ifdef CTR_CUSTOM_TRACKS
+	CustomTrack_CortexTrackSelectNextLoad(cortex);
+#endif
+	if (cortex)
+	{
+		char msg[96];
+		snprintf(msg, sizeof msg,
+		         "[AP CORTEX] loading destination 110 on host level %d\n", level);
+		AP_AppendLog(msg);
+	}
+	return level;
+}
+
+int AP_RelicTimeFor(int levelID, int tier)
+{
+	if (tier < 0 || tier > 2)
+		tier = 0;
+	if (AP_CortexTrackActive())
+		return AP_CortexRelicTime(tier);
+	if (levelID < 0 || levelID >= 18)
+		return data.RelicTime[tier];
+	return data.RelicTime[levelID * 3 + tier];
+}
+
+const char *AP_CortexTrackDisplayName(void)
+{
+	return AP_CortexTrackActive() ? "CORTEX VORTEX" : 0;
+}
+
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 {
 	static const int kRaceTierBit[5] = {
@@ -940,6 +1036,15 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap)
 		int bit = R232.battleTrackArr[destLevelID - 18] + ADV_REWARD_FIRST_PURPLE_TOKEN;
 		if (AP_LocationExistsByBit(bit) && !AP_LocationCheckedByBit(bit) && count < cap)
 			outBits[count++] = bit;
+	}
+	else if (destLevelID == AP_CORTEX_DEST)
+	{
+		// Schema 15: Trophy, relic tiers and CTR token as direct codes. Never
+		// LevelID-13 arithmetic, which would name Oxide Station's locations.
+		if (AP_CortexDestValid())
+			count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track, AP_CV_APPEND_TIERS,
+			                               outBits, cap, count,
+			                               AP_PadBoxLive, AP_PadBoxChecked, 0);
 	}
 	else if (destLevelID >= 100 && destLevelID < 105)
 	{
@@ -1017,6 +1122,14 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
 
+	// Schema 15: the Cortex Vortex pad also advertises its own podium rungs.
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexDestValid()
+		           ? AP_CortexPadAppendOpen(&ctr_cfg.cortex_track, AP_CV_APPEND_RUNGS,
+		                                    outBits, cap, count,
+		                                    AP_PadBoxLive, AP_PadBoxChecked, 0)
+		           : count;
+
 	// #343: a trial pad also offers its Trophy and CTR Challenge. They have no
 	// AdvProgress bit, so they ride as pseudo-bits. Glow only: the tier-2
 	// picker reads AP_PadUncollectedBits as its "relics left" test.
@@ -1050,8 +1163,19 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 		if (!AP_GlowSlots_CupLegRungsEligible(ctr_cfg_cup_displaced(cup)))
 			return count;
 		for (leg = 0; leg < 4 && count < cap; leg++)
-			AP_AppendTrackRungGlow(ctr_cfg_cup_leg(cup, leg), outBits, cap,
-			                       &count);
+		{
+			int legTrack = ctr_cfg_cup_leg(cup, leg);
+			// A Cortex Vortex leg exposes its own rungs, never Oxide Station's.
+			if (legTrack == AP_CORTEX_DEST)
+			{
+				if (AP_CortexDestValid())
+					count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track,
+					                               AP_CV_APPEND_RUNGS, outBits, cap, count,
+					                               AP_PadBoxLive, AP_PadBoxChecked, 0);
+				continue;
+			}
+			AP_AppendTrackRungGlow(legTrack, outBits, cap, &count);
+		}
 	}
 	return count;
 }
@@ -1198,6 +1322,9 @@ int AP_PadUncollectedWumpaCount(int destLevelID)
 		return 0;
 	if (destLevelID >= 0 && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
 		return AP_PadTrackWumpaLeft(destLevelID);
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexOpenCount(&ctr_cfg.cortex_track, AP_CV_SLOT_WUMPA, 1,
+		                          AP_PadBoxLive, AP_PadBoxChecked, 0);
 	if (destLevelID < 100 || destLevelID >= 105)
 		return 0;
 
@@ -1211,15 +1338,29 @@ int AP_PadUncollectedWumpaCount(int destLevelID)
 	for (leg = 0; leg < 4; leg++)
 	{
 		tracks[leg] = ctr_cfg_cup_leg(destLevelID - 100, leg);
+		// A Cortex Vortex leg counts its own 35016121, keyed one past the
+		// retail rows so it never dedups against Oxide Station's row 13.
+		if (tracks[leg] == AP_CORTEX_DEST)
+		{
+			tracks[leg] = CTR_CFG_WUMPA_TRACK_COUNT;
+			trackLeft[leg] = AP_CortexOpenCount(&ctr_cfg.cortex_track, AP_CV_SLOT_WUMPA, 1,
+			                                    AP_PadBoxLive, AP_PadBoxChecked, 0);
+			continue;
+		}
 		trackLeft[leg] = AP_PadTrackWumpaLeft(tracks[leg]);
 	}
-	return AP_PadCupWumpaCount(tracks, trackLeft, CTR_CFG_WUMPA_TRACK_COUNT);
+	return AP_PadCupWumpaCount(tracks, trackLeft, CTR_CFG_WUMPA_TRACK_COUNT + 1);
 }
 
 int AP_PadUncollectedLetterCount(int destLevelID)
 {
 	int letter, n = 0;
 
+	if (destLevelID == AP_CORTEX_DEST)
+		return ctr_cfg_active()
+		           ? AP_CortexOpenCount(&ctr_cfg.cortex_track, AP_CV_SLOT_LETTER0, 3,
+		                                AP_PadBoxLive, AP_PadBoxChecked, 0)
+		           : 0;
 	if (!ctr_cfg_active() || destLevelID < 0 || destLevelID >= CTR_CFG_LETTER_TRACK_COUNT)
 		return 0;
 
@@ -1249,7 +1390,10 @@ int AP_PadUncollectedLetterCount(int destLevelID)
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
+	if (cortexGroup >= 0)
+		return cortexGroup; // schema 15: Cortex Vortex pseudo-bits
 	if (trialGroup >= 0)
 		return trialGroup; // #343: trial Trophy -> race slot, CTR Challenge -> token slot
 	if (globalBit >= AP_PODIUM_PSEUDO_BASE)
@@ -1291,6 +1435,8 @@ void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3)
 // Relic-only/legacy trials remain in the reduced non-race category.
 static int AP_DestIsRace(int destLevelID)
 {
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexDestValid() && AP_CortexTrackCode(AP_CV_SLOT_TROPHY) > 0;
 	return (destLevelID >= 0 && destLevelID < 16) ||
 	       (AP_TrialTrackConfigured(destLevelID) &&
 	        AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_TROPHY) > 0);
@@ -1298,6 +1444,8 @@ static int AP_DestIsRace(int destLevelID)
 
 static int AP_DestTrophyChecked(int destLevelID)
 {
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexTrackChecked(AP_CV_SLOT_TROPHY);
 	if (AP_TrialTrackConfigured(destLevelID))
 		return AP_TrialTrackLocationChecked(destLevelID, CTR_CFG_TRIAL_TROPHY);
 	return AP_LocationCheckedByBit(destLevelID + ADV_REWARD_FIRST_TROPHY);
@@ -1549,6 +1697,14 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	for (k = 0; k < uncN; k++)
 	{
 		int off = uncBits[k] - destLevelID;
+		if (destLevelID == AP_CORTEX_DEST)
+		{
+			if (uncBits[k] == AP_CortexPseudoBit(AP_CV_SLOT_TOKEN))
+				tokenLeft = 1;
+			else if (AP_CortexPseudoRelicTier(uncBits[k]) >= 0)
+				relicLeft = 1;
+			continue;
+		}
 		if (off == ADV_REWARD_FIRST_CTR_TOKEN)
 			tokenLeft = 1;
 		else if (off == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
@@ -1816,8 +1972,10 @@ int AP_CeremonyRelicTier(void)
 	for (int i = 0; i < ap_ceremony_count; i++)
 	{
 		int bit = ap_ceremony_ledger[i].bit;
-		int tier = -1;
-		if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
+		int tier = AP_CortexPseudoRelicTier(bit); // schema 15, -1 otherwise
+		if (tier >= 0)
+			;
+		else if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
 			tier = 2;
 		else if (bit >= ADV_REWARD_FIRST_GOLD_RELIC && bit < ADV_REWARD_FIRST_PLATINUM_RELIC)
 			tier = 1;
@@ -1861,6 +2019,13 @@ int AP_RelicTargetTier(void)
 static int AP_RelicTierEarnable(int levelID, int tier)
 {
 	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
+	// Schema 15: a Cortex Vortex relic race asks its own tier codes, never
+	// Oxide Station's relic bits. An absent tier is not earnable.
+	if (AP_CortexTrackActive())
+	{
+		long code = AP_CortexTrackCode(AP_CV_SLOT_RELIC0 + tier);
+		return code > 0 && ap_net_location_exists(code) && !ap_net_location_checked(code);
+	}
 	return !AP_RelicRewardOwnedByBit(bit);
 }
 
@@ -1868,7 +2033,7 @@ static int AP_RelicTierEarnable(int levelID, int tier)
 // vanilla fill in UI_Instance.c, which the AP path replaces).
 static void AP_RelicTargetFill(int levelID, int tier)
 {
-	int relicTime = data.RelicTime[levelID * 3 + tier];
+	int relicTime = AP_RelicTimeFor(levelID, tier);
 	sdata->relicTime_1min = relicTime / 0xe100;
 	sdata->relicTime_10sec = (relicTime / 0x2580) % 6;
 	sdata->relicTime_1sec = (relicTime / 0x3c0) % 10;
@@ -1923,7 +2088,7 @@ static void AP_RelicTargetTick(struct GameTracker *gGT)
 	if (d == 0)
 		return;
 	levelID = (int)gGT->levelID;
-	if (d->timeElapsedInRace <= data.RelicTime[levelID * 3 + ap_relic_target_tier])
+	if (d->timeElapsedInRace <= AP_RelicTimeFor(levelID, ap_relic_target_tier))
 		return; // shown target still beatable
 
 	// Shown time passed: step down to the next earnable tier, else hold here.
@@ -1950,6 +2115,17 @@ static const char *AP_CeremonyPrefix(int bit, int rung)
 	if (bit == AP_CUSTOM_CTR_PSEUDO_BIT)
 		return "CUSTOM CTR";
 #endif
+	{
+		int cvSlot;
+		if (AP_CortexPseudoDecode(bit, &cvSlot))
+		{
+			static const char *const cvRelic[3] = {"SAPPHIRE RELIC", "GOLD RELIC", "PLATINUM RELIC"};
+			if (cvSlot == AP_CV_SLOT_TROPHY)
+				return "TROPHY WON";
+			if (cvSlot >= AP_CV_SLOT_RELIC0 && cvSlot < AP_CV_SLOT_RELIC0 + 3)
+				return cvRelic[cvSlot - AP_CV_SLOT_RELIC0];
+		}
+	}
 	if (rung == 0)
 		return "HELD 1ST";
 	if (rung == 1)
@@ -3561,6 +3737,42 @@ int AP_OxideFinalVenueEntryReady(void)
 	return 1;
 }
 
+// Schema 15: may the player enter a pad (or a Gem Cup) that leads to the
+// Cortex Vortex pad track? Needs a valid block, no refusal latched, and the
+// armed pair. forceVerify re-hashes both files, as the Oxide 2 entry does, so
+// a same-size swap after connect is refused before the load begins.
+int AP_CortexTrackEntryReady(int forceVerify)
+{
+	if (!ctr_cfg_active() || !ctr_cfg.cortex_track.valid ||
+	    ap_cortex_track_content_required)
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// The full re-hash costs a few MB of SHA-256, so a player standing on the
+	// pad (or re-entering within two seconds) reuses the last good answer.
+	static unsigned int s_cvVerifiedAt = 0;
+	static int s_cvVerifiedOnce = 0;
+	unsigned int now = (sdata && sdata->gGT) ? (unsigned int)sdata->gGT->timer : 0;
+	if (forceVerify && s_cvVerifiedOnce && now - s_cvVerifiedAt < 120)
+		forceVerify = 0;
+	if (forceVerify && CustomTrack_ReverifyOxideFinalContent())
+	{
+		s_cvVerifiedAt = now;
+		s_cvVerifiedOnce = 1;
+	}
+	else if (forceVerify)
+	{
+		ap_cortex_track_content_required = 1;
+		AP_AppendLog("[AP CORTEX] bundled Cortex Vortex pair failed its entry re-hash; "
+		             "the pad track stays closed\n");
+		return 0;
+	}
+	return CustomTrack_CortexTrackReady();
+#else
+	(void)forceVerify;
+	return 0; // this build cannot serve custom track bytes
+#endif
+}
+
 // Which encounter the garage is offering. THE selector: an uncleared first
 // challenge takes priority even when the relic requirement for the Final
 // Challenge is already satisfied, so a relic-rich player cannot skip the first
@@ -4143,28 +4355,48 @@ static const char *const AP_LOG_ITEMSANITY_WEAPON_NAME[AP_ITEMSANITY_WEAPON_COUN
 };
 
 #ifdef CTR_CUSTOM_TRACKS
+// Arms the bundled Cortex Vortex pair for whichever of its two roles this seed
+// uses: the Oxide 2 venue (schema 11) and the pad track (schema 15). The two
+// refusals stay separate: a refused venue closes the Oxide garage exactly as
+// before, and a refused pad track closes only the pads and cups leading to 110.
 static void AP_OxideFinalContentPreflight(void)
 {
 	struct OxideFinalTrackDescriptor d;
+	int venueOk, venueCortex, padOn, padOk;
+
 	ap_oxide_final_content_required = 0;
+	ap_cortex_track_content_required = 0;
 	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
 		return;
 	}
-	if (!ctr_cfg.oxide_final_venue.valid)
+	venueOk = ctr_cfg.oxide_final_venue.valid;
+	venueCortex = venueOk && ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+	padOn = ctr_cfg.cortex_track.option;
+	padOk = padOn && ctr_cfg.cortex_track.valid;
+	if (!venueOk)
+		ap_oxide_final_content_required = 1;
+	if (padOn && !padOk)
+		ap_cortex_track_content_required = 1;
+	if (!venueCortex && !padOk)
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
-		ap_oxide_final_content_required = 1;
 		return;
 	}
 	memset(&d, 0, sizeof d);
-	d.enabled = ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
-	d.hostLevelID = ctr_cfg.oxide_final_venue.host_level_id;
-	snprintf(d.levSha256, sizeof d.levSha256, "%s", ctr_cfg.oxide_final_venue.lev_sha256);
-	snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", ctr_cfg.oxide_final_venue.vrm_sha256);
+	d.enabled = venueCortex;
+	d.padTrackEnabled = padOk;
+	d.hostLevelID = CTR_CFG_CORTEX_HOST_LEVEL;
+	snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+	snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
 	if (!CustomTrack_ApplyOxideFinalDescriptor(&d, NativeAssets_GetAssetDir()))
-		ap_oxide_final_content_required = 1;
+	{
+		if (venueCortex)
+			ap_oxide_final_content_required = 1;
+		if (padOk)
+			ap_cortex_track_content_required = 1;
+	}
 }
 
 static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
@@ -4378,6 +4610,13 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 
 void AP_DrawCustomContentWarning(void)
 {
+	if (ap_cortex_track_content_required)
+	{
+		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+		DecalFont_DrawLine("Cortex Vortex pad track unavailable. Its pad refuses entry.",
+		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		return;
+	}
 	if (ap_oxide_final_content_required)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
@@ -4476,6 +4715,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_verify_recv_foreign[k] = 0;
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		memset(ap_custom_letter_received, 0, sizeof ap_custom_letter_received);
+		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
 		memset(ap_verify_custom_letter_foreign, 0, sizeof ap_verify_custom_letter_foreign);
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
@@ -4625,6 +4865,16 @@ static void AP_NetTick(struct GameTracker *gGT)
 			if (ap_net_recv_batch_player(i) != ap_net_self_slot() || ap_net_recv_batch_location(i) <= 0)
 				ap_verify_custom_letter_foreign[(customLetterSlot - 1) * 3 + customLetter] = 1;
 			ap_state_gen++;
+		}
+		// Schema 15: Cortex Vortex letter items (idx 200..202). Booleans rebuilt
+		// by the authoritative replay after the connect reset.
+		{
+			int cvLetter = AP_CortexLetterItemIndexPure(idx);
+			if (cvLetter >= 0)
+			{
+				ap_cortex_letter_received[cvLetter] = 1;
+				ap_state_gen++;
+			}
 		}
 		// Full verifier inventory uses the same own-vs-foreign classifier as the
 		// legacy gate split. Own-world location rewards are reconstructed from
@@ -4868,6 +5118,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 			         "[AP ITEM] received letter item (id %lld) (letter %d of %d, track %s) | %s\n",
 			         items[i], letterInTrack + 1, CTR_CFG_LETTER_COUNT,
 			         level >= 0 ? AP_AuthorLevelName(level) : "?", st);
+		}
+		else if (AP_CortexLetterItemIndexPure(idx) >= 0)
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP ITEM] received letter item (id %lld) (letter %d of %d, track Cortex Vortex) | %s\n",
+			         items[i], AP_CortexLetterItemIndexPure(idx) + 1, CTR_CFG_LETTER_COUNT, st);
 		}
 		else if (idx == AP_TIZI_ITEM_INDEX)
 		{
@@ -5164,6 +5420,10 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 // are served, return the frozen generic custom-slot identity carried by v4.
 static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 {
+	// Schema 15: a Cortex Vortex race (pad or cup leg) owns its own rungs.
+	// Checked first: its host LevelID 13 is Oxide Station's podium track.
+	if (AP_CortexTrackActive())
+		return AP_CV_PODIUM_LOGICAL_TRACK;
 #ifdef CTR_CUSTOM_TRACKS
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
 	    CustomTrack_ServingLoad((int)gGT->levelID,
@@ -5295,6 +5555,74 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge)
 		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, 1);
 }
 
+// Schema 15: the Cortex Vortex pad track's race result. Called from the win
+// branch of AA_EndEvent_DrawMenu (game/222.c) BEFORE the LevelID-derived reward
+// path, which would otherwise award Oxide Station's Trophy (bit 19) or CTR
+// token (bit 89). Direct codes only; the ceremony ledger gets the pseudo-bit so
+// the award block shows the scouted item.
+void AP_NotifyCortexTrackRace(int token)
+{
+	int bits[2];
+	int n, i;
+
+	if (!AP_CortexTrackActive())
+		return;
+	n = AP_CortexResultBits(&ctr_cfg.cortex_track,
+	                        token ? AP_CV_RACE_TOKEN : AP_CV_RACE_TROPHY, 1, 0,
+	                        bits, 2);
+	for (i = 0; i < n; i++)
+	{
+		long code = AP_LookupLocationCode(bits[i]);
+		AP_EmitClassCheck(code, 1, bits[i], -1, 1,
+		                  "[AP CHECK] Cortex Vortex %s location %ld\n",
+		                  token ? "CTR Token Challenge" : "Trophy Race", code);
+	}
+	// A trophy win is a 1st-place finish: every configured rung is earned.
+	if (!token && AP_CortexTrackCode(AP_CV_SLOT_TROPHY) > 0)
+		AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK, 1);
+	ap_state_gen++;
+}
+
+// Schema 15: relic award for a Cortex Vortex relic race, replacing
+// RR_EndEvent_UnlockAward's LevelID-13 loop (Oxide Station's relic times and
+// relic bits 35/53/71). raceTime already carries the all-crates bonus.
+void AP_CortexTrackRelicAward(int raceTime)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int bits[3];
+	int mask = AP_CortexRelicTiersBeaten(raceTime);
+	int n = AP_CortexResultBits(&ctr_cfg.cortex_track, AP_CV_RACE_RELIC, 1, mask, bits, 3);
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		int tier = AP_CortexPseudoRelicTier(bits[i]);
+		long code = AP_LookupLocationCode(bits[i]);
+		int relicTime = AP_CortexRelicTime(tier);
+
+		// Same "already owned, check next tier" rule as the retail loop, read
+		// from the server's checked set.
+		if (code <= 0 || !ap_net_location_exists(code) || ap_net_location_checked(code))
+			continue;
+		AP_EmitClassCheck(code, 1, bits[i], -1, 1,
+		                  "[AP CHECK] Cortex Vortex relic tier %d location %ld "
+		                  "(race time %d, target %d%s)\n",
+		                  tier, code, raceTime, relicTime,
+		                  AP_CORTEX_RELIC_TARGETS.placeholder ? ", PLACEHOLDER target" : "");
+		gGT->podiumRewardID = STATIC_RELIC;
+		gGT->gameModeEnd |= NEW_RELIC;
+		if (tier > 0)
+		{
+			sdata->relicTime_1min = relicTime / 0xe100;
+			sdata->relicTime_10sec = (relicTime / 0x2580) % 6;
+			sdata->relicTime_1sec = (relicTime / 0x3c0) % 10;
+			sdata->relicTime_10ms = (relicTime / (0x3c0 / 10)) % 10;
+			sdata->relicTime_1ms = ((relicTime * 100) / 0x3c0) % 10;
+		}
+	}
+	ap_state_gen++;
+}
+
 #ifdef CTR_CUSTOM_TRACKS
 int AP_CustomTrackTrophyChecked(void)
 {
@@ -5345,6 +5673,14 @@ int AP_CustomTrackCtrChecked(void)
 	       ctr_cfg.custom_ctr_location > 0 && ap_net_location_checked(ctr_cfg.custom_ctr_location);
 }
 
+// Schema 15: while the Cortex Vortex pad track is on screen, the letter hooks'
+// LevelID 13 means the LEV's own C/T/R (instances 77..79), never Oxide
+// Station's lettersanity row.
+static int AP_CortexLetterTrack(int track)
+{
+	return track == CTR_CFG_CORTEX_HOST_LEVEL && AP_CortexTrackActive();
+}
+
 void AP_NotifyCustomTrackCtr(int didWin, int collected)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -5367,6 +5703,11 @@ int AP_LetterAvailable(int track, int letter)
 {
 	int slot = AP_CustomLetterSlot(track);
 	if (letter < 0 || letter >= 3) return 1;
+	if (AP_CortexLetterTrack(track))
+		return !ctr_cfg_active() ||
+		       AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
+		                              AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + letter),
+		                              ap_cortex_letter_received[letter]);
 	if (slot > 0 && slot <= AP_CUSTOM_LETTER_SLOT_COUNT)
 		return AP_LetterAvailablePure(1, ctr_cfg.custom_lettersanity_mode,
 		                              ctr_cfg.custom_letter_locations[letter],
@@ -5380,6 +5721,8 @@ int AP_LetterAvailable(int track, int letter)
 
 long AP_LetterLocation(int track, int letter)
 {
+	if (AP_CortexLetterTrack(track))
+		return letter >= 0 && letter < 3 ? AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + letter) : -1;
 	if (AP_CustomLetterSlot(track))
 		return letter >= 0 && letter < 3 ? ctr_cfg.custom_letter_locations[letter] : -1;
 	if (!ctr_cfg_active() || track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT || letter < 0 || letter >= 3) return -1;
@@ -5394,7 +5737,8 @@ void AP_LetterCollected(int track, int letter)
 	// AP_FeedOnLocationSent still suppresses the toast for a local recipient
 	// (that case is already shown once through the received-item path).
 	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, AP_LETTER_TOAST_SENT_ITEM,
-	                  "[AP LETTER] track=%d letter=%d\n", track, letter);
+	                  "[AP LETTER] track=%d%s letter=%d\n", track,
+	                  AP_CortexLetterTrack(track) ? " (Cortex Vortex)" : "", letter);
 }
 
 void AP_LetterUnavailableTouched(int track, int letter)
@@ -5407,8 +5751,8 @@ void AP_LetterUnavailableTouched(int track, int letter)
 	    letter < 0 || letter >= CTR_CFG_LETTER_COUNT)
 		return;
 	snprintf(msg, sizeof msg,
-	         "[AP LETTER] pickup refused: track=%d letter=%c location=%ld; Lettersanity item not received\n",
-	         track, names[letter], code);
+	         "[AP LETTER] pickup refused: track=%d%s letter=%c location=%ld; Lettersanity item not received\n",
+	         track, AP_CortexLetterTrack(track) ? " (Cortex Vortex)" : "", names[letter], code);
 	AP_AppendLog(msg);
 }
 
@@ -5446,6 +5790,12 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
 	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 	if (facts->servingOxideFinal)
+		return;
+	// Schema 15: the Cortex Vortex pad track, from a pad or as a Gem Cup leg.
+	// Its host LevelID 13 must never resolve to Oxide Station's retail code.
+	facts->servingCortexTrack = AP_CortexTrackActive();
+	facts->cortexTrackCode = AP_CortexTrackCode(AP_CV_SLOT_WUMPA);
+	if (facts->servingCortexTrack)
 		return;
 	// The SAME predicate that owns the custom bytes answers whether this load is
 	// the event race. Asking anything else here is how a recording's identity
@@ -5510,9 +5860,24 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	                  "[AP WUMPA] reached 10 fruit (location %ld)\n", code);
 }
 
+static void AP_CortexLetterCodes(long codes[3])
+{
+	int l;
+	for (l = 0; l < 3; l++)
+		codes[l] = AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + l);
+}
+
 int AP_LettersRequiredMet(int track)
 {
 	int slot = AP_CustomLetterSlot(track);
+	if (AP_CortexLetterTrack(track))
+	{
+		long codes[3];
+		AP_CortexLetterCodes(codes);
+		return !ctr_cfg_active() ||
+		       AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode, codes,
+		                                 ap_cortex_letter_received);
+	}
 	if (slot > 0 && slot <= AP_CUSTOM_LETTER_SLOT_COUNT)
 		return AP_LettersRequiredMetPure(1, ctr_cfg.custom_lettersanity_mode,
 		                                 ctr_cfg.custom_letter_locations,
@@ -5526,6 +5891,12 @@ int AP_LettersRequiredMet(int track)
 
 int AP_LettersRequiredCount(int track)
 {
+	if (AP_CortexLetterTrack(track))
+	{
+		long codes[3];
+		AP_CortexLetterCodes(codes);
+		return ctr_cfg_active() ? AP_LettersRequiredCountPure(1, ctr_cfg.lettersanity_mode, codes) : 3;
+	}
 	if (AP_CustomLetterSlot(track))
 		return AP_LettersRequiredCountPure(1, ctr_cfg.custom_lettersanity_mode,
 		                                   ctr_cfg.custom_letter_locations);
@@ -5569,6 +5940,15 @@ static void AP_FeedLetterReadyUpdates(void)
 int AP_LetterTokenEarned(int track, int didWin, int collected)
 {
 	int slot = AP_CustomLetterSlot(track);
+	if (AP_CortexLetterTrack(track))
+	{
+		long codes[3];
+		if (!ctr_cfg_active() || ctr_cfg.lettersanity_mode < 2)
+			return didWin && collected == 3;
+		AP_CortexLetterCodes(codes);
+		return AP_LetterTokenEarnedPure(didWin, collected, 1, ctr_cfg.lettersanity_mode,
+		                                codes, ap_cortex_letter_received);
+	}
 	if (slot > 0 && slot <= AP_CUSTOM_LETTER_SLOT_COUNT)
 		return AP_LetterTokenEarnedPure(didWin, collected, 1,
 		                                ctr_cfg.custom_lettersanity_mode,
@@ -5930,6 +6310,8 @@ static void AP_SendPodiumChecks(int track, int placement)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
 		pr = &ctr_cfg.podium[16+track-AP_TRIAL_PODIUM_LOGICAL_BASE];
+	else if (track == AP_CV_PODIUM_LOGICAL_TRACK && ctr_cfg.cortex_track.valid)
+		pr = &ctr_cfg.cortex_track.podium;
 #ifdef CTR_CUSTOM_TRACKS
 	else if (ctr_cfg.custom_tracks_ok &&
 	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
@@ -5965,6 +6347,8 @@ static void AP_SendHeldChecks(int track, int position)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
 		pr = &ctr_cfg.podium[16+track-AP_TRIAL_PODIUM_LOGICAL_BASE];
+	else if (track == AP_CV_PODIUM_LOGICAL_TRACK && ctr_cfg.cortex_track.valid)
+		pr = &ctr_cfg.cortex_track.podium;
 #ifdef CTR_CUSTOM_TRACKS
 	else if (ctr_cfg.custom_tracks_ok &&
 	         track == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
@@ -5997,6 +6381,10 @@ static void AP_ReconcilePodiumFromTrophies(void)
 	for (int trial = 0; trial < CTR_CFG_TRIAL_TRACK_COUNT; trial++)
 		if (AP_TrialTrackLocationChecked(16+trial, CTR_CFG_TRIAL_TROPHY))
 			AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+trial, 1);
+	// Schema 15: the Cortex Vortex Trophy is a direct code, restored from the
+	// server's checked set on every connect like every other trophy.
+	if (AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
+		AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK, 1);
 #ifdef CTR_CUSTOM_TRACKS
 	if (ctr_cfg.custom_tracks_ok && AP_CustomTrackTrophyChecked())
 		AP_SendPodiumChecks(CTR_CFG_PODIUM_TRACK_COUNT +
@@ -6394,7 +6782,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		int trophyChecked =
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
-		        : -1;
+		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
 		fprintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
@@ -6425,7 +6813,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		int trophyChecked =
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
-		        : -1;
+		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
 		fprintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
@@ -6579,6 +6967,14 @@ static void ap_onframe_body(struct GameTracker *gGT)
 				AP_AppendLog("[AP CFG] *** this seed binds a custom track to a Gem Cup, and "
 				             "this build cannot load custom tracks. That cup is not "
 				             "completable here. ***\n");
+			}
+			static int apCvWarned = 0;
+			if (!apCvWarned && ctr_cfg_active() && ctr_cfg.cortex_track.option)
+			{
+				apCvWarned = 1;
+				AP_AppendLog("[AP CFG] *** this seed puts Cortex Vortex on a warp pad, and "
+				             "this build cannot load custom tracks. That pad stays "
+				             "closed here. ***\n");
 			}
 		}
 #endif

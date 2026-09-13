@@ -243,6 +243,9 @@ static void AP_TrackerBuildNodes(void)
 #endif
 			n->kind = 2; n->bit = dest - 100 + ADV_REWARD_FIRST_GEM;
 			snprintf(n->title, sizeof n->title, "%s", custom ? custom : sdata->lngStrings[data.AdvCups[dest - 100].lngIndex_CupName]);
+		} else if (dest == AP_CORTEX_DEST) {
+			/* Schema 15: Cortex Vortex pad track, a race node with its own codes. */
+			snprintf(n->title, sizeof n->title, "%s", "CORTEX VORTEX");
 		} else if (dest >= 0 && dest < 65) {
 			snprintf(n->title, sizeof n->title, "%s", sdata->lngStrings[data.metaDataLEV[dest].name_LNG]);
 			if (dest >= 18 && dest < 25) { n->kind = 1; n->bit = R232.battleTrackArr[dest - 18] + ADV_REWARD_FIRST_PURPLE_TOKEN; }
@@ -287,6 +290,12 @@ static void AP_TrackerRaceStates(int dest, int states[5])
 	static const int bases[] = {ADV_REWARD_FIRST_TROPHY, ADV_REWARD_FIRST_CTR_TOKEN,
 		ADV_REWARD_FIRST_SAPPHIRE_RELIC, ADV_REWARD_FIRST_GOLD_RELIC, ADV_REWARD_FIRST_PLATINUM_RELIC}; int i;
 	for (i = 0; i < 5; i++) states[i] = dest >= 0 && dest < 18 ? AP_TrackerBitState(dest + bases[i]) : 0;
+	if (dest == AP_CORTEX_DEST) {
+		/* Same prize order as bases[]: Trophy, CTR token, Sapphire, Gold, Platinum. */
+		static const int slots[5] = {AP_CV_SLOT_TROPHY, AP_CV_SLOT_TOKEN, AP_CV_SLOT_RELIC0,
+			AP_CV_SLOT_RELIC0 + 1, AP_CV_SLOT_RELIC0 + 2};
+		for (i = 0; i < 5; i++) states[i] = AP_TrackerBitState(AP_CortexTrackBit(slots[i]));
+	}
 	if (dest == 16 || dest == 17) {
 		states[0] = AP_TrackerCodeState(ctr_cfg.trial_track_locations[dest - 16][0]);
 		states[1] = AP_TrackerCodeState(ctr_cfg.trial_track_locations[dest - 16][1]);
@@ -316,11 +325,20 @@ static void AP_TrackerDrawNode(int index)
 		AP_TrackerTick(x+315,y+65,state);
 	}
 	if (n->kind != 3) {
-		long wumpa = n->destination>=0 && n->destination<18 ? ctr_cfg.wumpa.tracks[n->destination] : -1;
+		long wumpa = n->destination>=0 && n->destination<18 ? ctr_cfg.wumpa.tracks[n->destination] :
+			n->destination == AP_CORTEX_DEST && ctr_cfg.cortex_track.valid ? ctr_cfg.cortex_track.wumpa : -1;
 		int mode=ctr_cfg.lettersanity_mode;
 		if (ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL && n->kind == 0) wumpa = ctr_cfg.wumpa.global_code;
 		snprintf(text,sizeof text,"BOX %d",boxes); AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
 		AP_TrackerText(ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa));
+		if (n->kind==0 && n->destination==AP_CORTEX_DEST && ctr_cfg.cortex_track.valid) for(i=0;i<3;i++) {
+			/* Cortex Vortex letters: the tracker is drawn from the hub, so ask the
+			 * codes directly rather than through the in-race letter hooks. */
+			long code=ctr_cfg.cortex_track.letters[i]; int state=AP_TrackerCodeState(code), bx=x+216+i*49;
+			int enabled=mode==3 || state>0; char letter[2] = {"CTR"[i],0};
+			AP_TrackerText(enabled?letter:"-",bx,y+95,20,enabled?TRACKER_GOLD:TRACKER_GRAY,22);
+			if(state==2) AP_TrackerTick(bx+17,y+103,2);
+		}
 		if (n->kind==0 && n->destination>=0 && n->destination<18) for(i=0;i<3;i++) {
 			long code=AP_LetterLocation(n->destination,i); int state=AP_TrackerCodeState(code), bx=x+216+i*49;
 			int enabled=mode==3 || state>0; char letter[2] = {"CTR"[i],0};

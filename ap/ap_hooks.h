@@ -12,6 +12,7 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
+#include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
@@ -526,6 +527,35 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 int AP_TrialTrackConfigured(int levelID);
 int AP_TrialTrackLocationChecked(int levelID, int challenge);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
+
+// ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
+// AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
+// before reading an Oxide Station identity: 1 while the level on screen is the
+// Cortex Vortex pad track or a Cortex Vortex Gem Cup leg (never Oxide 1/2,
+// never the Oxide Station pad). Slots are the AP_CV_SLOT_* values in
+// ap_cortex_track.h; AP_CortexTrackBit is the process-local pseudo-bit the
+// bit-keyed glow/ceremony helpers resolve to that slot's wire code.
+#define AP_CORTEX_DEST 110
+int AP_CortexTrackActive(void);
+int AP_CortexTrackBit(int slot);
+int AP_CortexTrackChecked(int slot);
+// Warp pad / cup leg load resolution: maps destination 110 to host level 13 and
+// selects the serving state for that request; every other destination is
+// returned unchanged and explicitly selected as retail.
+int AP_CortexTrackPrepareLoad(int destLevelID);
+// Entry gate for a pad or cup that leads to 110. forceVerify re-hashes the pair.
+int AP_CortexTrackEntryReady(int forceVerify);
+// Does cup 0..4 leg destination 110?
+int AP_CupLegsCortexTrack(int cup);
+// Results: trophy (token=0) or CTR token (token=1) race on the pad track, and
+// the relic award from a bonus-adjusted race time. Direct codes only.
+void AP_NotifyCortexTrackRace(int token);
+void AP_CortexTrackRelicAward(int raceTime);
+// Relic target for levelID/tier, the package-owned table while Cortex Vortex
+// is active and data.RelicTime otherwise.
+int AP_RelicTimeFor(int levelID, int tier);
+// "CORTEX VORTEX" while active, else NULL (use the level's own name).
+const char *AP_CortexTrackDisplayName(void);
 
 // ── Podium rungs in the reward glow ──
 // Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),

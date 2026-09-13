@@ -211,6 +211,12 @@ static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
 {
 	int phys;
 
+	// Schema 15: no AP boxes on the Cortex Vortex pad track, from a pad or as
+	// a cup leg. Its host LevelID 13 would otherwise stand Oxide Station's
+	// authored boxes and send Oxide Station's box checks.
+	if (AP_CortexTrackActive())
+		return 0;
+
 	if ((gGT->gameMode1 & ADVENTURE_CUP) == 0)
 		return AP_BoxPolicyAllows(0, -1, 0, 0, 0); // non-cup: unchanged
 
@@ -404,6 +410,12 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 		return; // hub, arena, menu: not a box track
 	if (!AP_BoxesRaceCarriesBoxes(gGT))
 		return; // arcade / VS / battle: outside the boxes' own logic
+	if (AP_CortexTrackActive())
+	{
+		AP_LogLine("[AP BOX] Cortex Vortex pad track: no AP boxes (host level 13 is "
+		           "Oxide Station's box identity)\n");
+		return;
+	}
 
 	// WO-A3, and BEFORE the set builder on purpose. Standing the set down is the
 	// whole implementation: nothing is spawned, so AP_BoxesTick walks nothing, so

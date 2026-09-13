@@ -107,7 +107,9 @@ int main(void)
 	expect_item(119, AP_CAT_NONE, -1, 0, "just below the Wumpa family -> marker material");
 	expect_item(188, AP_CAT_NONE, -1, 0, "Tizi Helper -> marker material");
 	expect_item(400, AP_CAT_NONE, -1, 0, "an id no block owns -> marker material");
-	expect_item(200, AP_CAT_NONE, -1, 0, "just above the trial letters -> marker material");
+	expect_item(200, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first Cortex Vortex letter (schema 15, C) -> crystal");
+	expect_item(202, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last Cortex Vortex letter (R) -> crystal");
+	expect_item(203, AP_CAT_NONE, -1, 0, "just above the Cortex Vortex letters -> marker material");
 	expect_item(35020999LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just below the custom-track letters -> marker material");
 	expect_item(35021396LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just above the custom-track letters -> marker material");
 

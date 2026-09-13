@@ -246,7 +246,7 @@ void CustomTrack_ClearOxideFinalDescriptor(void)
 int CustomTrack_ApplyOxideFinalDescriptor(const struct OxideFinalTrackDescriptor *d,
 	                                       const char *assetDir)
 {
-	if (d == NULL || !d->enabled)
+	if (d == NULL || (!d->enabled && !d->padTrackEnabled))
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
 		return d != NULL;
@@ -272,15 +272,22 @@ int CustomTrack_ApplyOxideFinalDescriptor(const struct OxideFinalTrackDescriptor
 	s_oxideFinalVerified = s_oxideFinalLev.verdict == CTR_CT_VERDICT_OK &&
 	                       s_oxideFinalVrm.verdict == CTR_CT_VERDICT_OK;
 	if (!s_oxideFinalVerified)
-		CustomTrack_Log("[CortexVortex] REFUSED: exact bundled pair is missing or mismatched; Final Challenge will not load\n");
+		CustomTrack_Log("[CortexVortex] REFUSED: exact bundled pair is missing or mismatched; %s%s%s will not load\n",
+		                d->enabled ? "the Final Challenge" : "",
+		                (d->enabled && d->padTrackEnabled) ? " and " : "",
+		                d->padTrackEnabled ? "the Cortex Vortex pad track" : "");
 	else
-		CustomTrack_Log("[CortexVortex] armed for N. Oxide's Final Challenge only\n");
+		CustomTrack_Log("[CortexVortex] armed for %s%s%s\n",
+		                d->enabled ? "N. Oxide's Final Challenge" : "",
+		                (d->enabled && d->padTrackEnabled) ? " and " : "",
+		                d->padTrackEnabled ? "the pad track (destination 110)" : "");
 	return s_oxideFinalVerified;
 }
 
 int CustomTrack_ReverifyOxideFinalContent(void)
 {
-	if (!s_haveOxideFinalDescriptor || !s_oxideFinalDescriptor.enabled)
+	if (!s_haveOxideFinalDescriptor ||
+	    (!s_oxideFinalDescriptor.enabled && !s_oxideFinalDescriptor.padTrackEnabled))
 		return 1;
 	CustomTrack_VerifySource(&s_oxideFinalLev, "Cortex Vortex lev preflight");
 	CustomTrack_VerifySource(&s_oxideFinalVrm, "Cortex Vortex vrm preflight");
@@ -295,6 +302,45 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 {
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
+}
+
+static struct CortexTrackLatch s_cortexTrackLatch = {-1, 0, 0, -1};
+
+void CustomTrack_CortexTrackSelectNextLoad(int cortex)
+{
+	CortexTrackLatch_Select(&s_cortexTrackLatch, cortex);
+}
+
+void CustomTrack_CortexTrackOnRequestLoad(int levelID)
+{
+	int was = s_cortexTrackLatch.current;
+	CortexTrackLatch_OnRequest(&s_cortexTrackLatch, levelID);
+	if (was != s_cortexTrackLatch.current)
+		CustomTrack_Log("[CortexVortex] pad-track serving %s (level request %d)\n",
+		                s_cortexTrackLatch.current ? "ON" : "off", levelID);
+}
+
+int CustomTrack_CortexTrackIntent(int levelID, int adventureBossActive)
+{
+	return CortexTrackLatch_Identity(&s_cortexTrackLatch, levelID, adventureBossActive);
+}
+
+int CustomTrack_CortexTrackServing(int levelID, int adventureBossActive)
+{
+	return CustomTrack_CortexTrackIntent(levelID, adventureBossActive) &&
+	       s_haveOxideFinalDescriptor && s_oxideFinalDescriptor.padTrackEnabled &&
+	       s_oxideFinalVerified;
+}
+
+int CustomTrack_CortexTrackPrevServed(void)
+{
+	return s_cortexTrackLatch.prevServed;
+}
+
+int CustomTrack_CortexTrackReady(void)
+{
+	return s_haveOxideFinalDescriptor && s_oxideFinalDescriptor.padTrackEnabled &&
+	       s_oxideFinalVerified;
 }
 
 void CustomTrack_Load(void)
@@ -678,8 +724,9 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
 
-	if (ctx != NULL && CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID,
-	                                                ctx->adventureBossActive))
+	if (ctx != NULL && (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID,
+	                                                 ctx->adventureBossActive) ||
+	                    CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive)))
 	{
 		role = CustomTrackPolicy_SubfileRole(subfileIndex, s_oxideFinalDescriptor.hostLevelID);
 		if (role == CTR_CT_ROLE_NONE) return 0;

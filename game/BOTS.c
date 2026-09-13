@@ -348,7 +348,10 @@ void BOTS_Adv_AdjustDifficulty(void)
 		if (CustomTrack_NavIdentityForLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID, ctNavUuid,
 		                                   &ctNavRevision))
 			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
-		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
+		         CustomTrack_CortexTrackIntent((int)gGT->levelID, (gameMode1 & ADVENTURE_BOSS) != 0))
+			// Cortex Vortex pad track: host LevelID 13 is Oxide Station's
+			// recording identity, so its recorded lanes must never replay here.
 			AP_NavRec_BlockRecordedLanes();
 		else
 			AP_NavRec_ClearActiveCustomTrack();
