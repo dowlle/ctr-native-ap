@@ -1,5 +1,11 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Defined in LOAD_Assets.c (same unity translation unit). Refuses a required
+// Hit-encounter driver model that did not load, before any birth dereferences it.
+void LOAD_HitEncounterValidateExtras(void);
+#endif
+
 void (*mainMenuInit[])() = {MM_JumpTo_Title_FirstTime, MM_JumpTo_Characters, MM_JumpTo_TrackSelect, MM_JumpTo_BattleSetup, CS_Garage_Init, MM_JumpTo_Scrapbook};
 
 #ifdef CTR_NATIVE
@@ -317,10 +323,19 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		// will break the character animations
 		sdata->ptrMPK = 0;
 
-		// Clear driver extras
+		// Clear driver extras. Clearing fileBase alone leaves the PREVIOUS load's
+		// model pointer live: stage 5 registers extras.model before stage 6
+		// converts fileBase+4, so a stale model would be registered and a new
+		// extra would never be. Clear both here (ticket 06). The model clear is
+		// gated on the Hit feature being enabled, so a feature-off AP build keeps
+		// base behaviour exactly.
 		for (int i = 0; i < 3; i++)
 		{
 			data.driverModelExtras[i].fileBase = NULL;
+#ifdef CTR_AP
+			if (AP_HitEncounterEnabled())
+				data.driverModelExtras[i].model = NULL;
+#endif
 		}
 
 		// NOTE(aalhendi): Retail gates stage advancement until the driver MPK callback sets ptrMPK.
@@ -338,6 +353,23 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		{
 			sdata->PLYROBJECTLIST = 0;
 		}
+
+#ifdef CTR_AP
+		// Convert the freshly loaded extras before registering them. Retail does
+		// this in stage 6, AFTER this registration, so a new extra's model was
+		// never in gGT->modelPtr (ticket 06). Idempotent with stage 6's convert,
+		// and gated on the feature so a feature-off AP build is base-identical.
+		if (AP_HitEncounterEnabled())
+		{
+			for (int i = 0; i < 3; i++)
+			{
+				if (data.driverModelExtras[i].fileBase != NULL)
+				{
+					data.driverModelExtras[i].model = (struct Model *)((u8 *)data.driverModelExtras[i].fileBase + 4);
+				}
+			}
+		}
+#endif
 
 		LOAD_GlobalModelPtrs_MPK();
 		DecalGlobal_Clear(gGT);
@@ -387,6 +419,14 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 				data.driverModelExtras[i].model = (struct Model *)((u8 *)data.driverModelExtras[i].fileBase + 4);
 			}
 		}
+
+#ifdef CTR_AP
+		// A Hit-encounter extra whose file never loaded has a NULL model. Refuse
+		// it explicitly now, before VehBirth resolves an AI by name and
+		// dereferences the result (ticket 06). Inert when the feature is off.
+		if (AP_HitEncounterEnabled())
+			LOAD_HitEncounterValidateExtras();
+#endif
 
 		// == banks are done parsing ===
 

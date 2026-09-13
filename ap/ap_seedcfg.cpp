@@ -279,6 +279,581 @@ static ctr_warp_unlock parse_warp_unlock(const nlohmann::json &o)
 	return u;
 }
 
+// ── hit_character_encounters strict admission (schema 16, ticket 05) ────────
+//
+// Unlike the tolerant additive blocks above, this block is REQUIRED when
+// ctr_options.hit_character is true: a client that cannot fully honour it must
+// refuse the seed rather than run 16 live checks it cannot dispatch. Every
+// field is type-exact (a JSON boolean is never an integer, and vice versa),
+// every list is bounded and duplicate-free, and every identity is canonical.
+//
+// Refusal is reported through ctr_cfg.seed_rejected + the bounded reason; the
+// caller leaves schema_version at 0 (whole config inactive) and the network
+// layer refuses admission. A disabled scalar or a legacy seed with neither the
+// scalar nor the block is inert, never a rejection.
+static void hit_reject(const char *fmt, ...)
+{
+	ctr_cfg.seed_rejected = 1;
+	va_list ap;
+	va_start(ap, fmt);
+	std::vsnprintf(ctr_cfg.seed_reject_reason, sizeof ctr_cfg.seed_reject_reason, fmt, ap);
+	va_end(ap);
+	ap_cfg_log("[AP CFG] *** seed rejected: %s ***\n", ctr_cfg.seed_reject_reason);
+}
+
+// Exact integer. nlohmann's is_number_integer() is false for a boolean, so a
+// bool is rejected here without a special case (the brief's "bool invalid").
+static int hit_int(const nlohmann::json &v, long long *out)
+{
+	if (!v.is_number_integer())
+		return 0;
+	if (v.is_number_unsigned())
+	{
+		const unsigned long long u = v.get<unsigned long long>();
+		if (u > 0x7FFFFFFFull)
+			return 0;
+		*out = (long long)u;
+		return 1;
+	}
+	*out = v.get<long long>();
+	return 1;
+}
+
+static int hit_int_eq(const nlohmann::json &v, long long want)
+{
+	long long got;
+	return hit_int(v, &got) && got == want;
+}
+
+static int hit_u32(const nlohmann::json &v, unsigned int *out)
+{
+	if (!v.is_number_integer())
+		return 0;
+	if (v.is_number_unsigned())
+	{
+		const unsigned long long u = v.get<unsigned long long>();
+		if (u > 0xFFFFFFFFull)
+			return 0;
+		*out = (unsigned int)u;
+		return 1;
+	}
+	const long long s = v.get<long long>();
+	if (s < 0 || s > 0xFFFFFFFFll)
+		return 0;
+	*out = (unsigned int)s;
+	return 1;
+}
+
+static int hit_engine_id(const nlohmann::json &v, int *out)
+{
+	long long got;
+	if (!hit_int(v, &got) || got < 0 || got > 15)
+		return 0;
+	*out = (int)got;
+	return 1;
+}
+
+static int hit_positive_code(const nlohmann::json &v, long *out)
+{
+	long long got;
+	if (!hit_int(v, &got) || got <= 0 || got > 0x7FFFFFFFll)
+		return 0;
+	*out = (long)got;
+	return 1;
+}
+
+// Canonical decimal object key: no sign, no leading zero, value in [lo,hi].
+static int hit_key(const std::string &key, int lo, int hi, int *out)
+{
+	if (key.empty() || (key.size() > 1 && key[0] == '0'))
+		return 0;
+	long long v = 0;
+	for (char c : key)
+	{
+		if (c < '0' || c > '9')
+			return 0;
+		v = v * 10 + (c - '0');
+		if (v > hi)
+			return 0;
+	}
+	if (v < lo)
+		return 0;
+	*out = (int)v;
+	return 1;
+}
+
+// The approved ordinary pin for each destination 0..17 (-1 = no pin). This is
+// the contract's pin table: a pinned list may name ONLY the approved guest for
+// that destination, so an unapproved (or cup) pin is refused rather than raced.
+static const int kHitPinForTrack[CTR_CFG_HIT_TRACK_COUNT] = {
+	-1, 11, 13, 14, -1, 9, 10, 8, 14, -1, -1, -1, 13, 15, -1, -1, 12, 12,
+};
+
+// Approved unlock triggers, keyed by guest engine id 8..15: kind + exact win
+// set. A trigger for any other guest, a different kind, a missing/duplicate win
+// code, or an empty list is refused.
+typedef struct
+{
+	int  kind;
+	int  count;
+	long wins[2];
+} hit_approved_trigger;
+static const hit_approved_trigger kHitTriggers[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011103, 0}},        // guest 8  Pinstripe
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011101, 0}},        // guest 9  Papu Papu
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011100, 0}},        // guest 10 Ripper Roo
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011102, 0}},        // guest 11 Komodo Joe
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35016200, 35016201}}, // guest 12 N. Tropy
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35011008, 35011010}}, // guest 13 Penta Penguin
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35011000, 35011003}}, // guest 14 Fake Crash
+	{CTR_CFG_HIT_KIND_BOSS,  2, {35011104, 35011105}}, // guest 15 Nitros Oxide
+};
+
+// Canonical boss-win keys, in the order boss_identity[] stores them.
+static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
+	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
+};
+
+// The retail encounter identity for each canonical boss-win key. The contract
+// (Wire fields, `bosses`) says "Current native retail encounters must match it";
+// a future randomized-boss ticket may substitute a resolved identity, but today
+// a mismatch is refused rather than run with apworld logic and native dispatch
+// disagreeing about who appears. Engine ids from namespace_Vehicle.h:
+// PINSTRIPE 8, PAPU_PAPU 9, RIPPER_ROO 10, KOMODO_JOE 11, NITROS_OXIDE 15.
+static const int kHitBossIdentity[CTR_CFG_HIT_BOSS_COUNT] = {
+	10, // RIPPER_ROO,   35011100 Ripper Roo Garage: Boss Race
+	9,  // PAPU_PAPU,    35011101 Papu Papu Garage: Boss Race
+	11, // KOMODO_JOE,   35011102 Komodo Joe Garage: Boss Race
+	8,  // PINSTRIPE,    35011103 Pinstripe Garage: Boss Race
+	15, // NITROS_OXIDE, 35011104 N. Oxide's Challenge: Boss Race
+	15, // NITROS_OXIDE, 35011105 N. Oxide's Final Challenge: Boss Race
+};
+
+// One candidate list, preserving wire order verbatim.
+//   kind 0 base    -> exactly 8 distinct engine ids, all 0..7 (a permutation)
+//   kind 1 reserve -> exactly 8 distinct engine ids, all 8..15
+//   kind 2 pinned  -> each entry equals the approved pin `pin`; may be empty
+static int hit_parse_list(const nlohmann::json &v, ctr_hit_list *out, int kind, int pin)
+{
+	if (!v.is_array() || v.size() > CTR_CFG_HIT_LIST_MAX)
+		return 0;
+	out->count = 0;
+	int seen[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+	for (const auto &e : v)
+	{
+		int id;
+		if (!hit_engine_id(e, &id) || seen[id])
+			return 0;
+		seen[id] = 1;
+		if (kind == 0 && id > 7)
+			return 0;
+		if (kind == 1 && id < 8)
+			return 0;
+		if (kind == 2 && (pin < 0 || id != pin))
+			return 0;
+		out->ids[out->count++] = id;
+	}
+	if ((kind == 0 || kind == 1) && out->count != 8)
+		return 0;
+	return 1;
+}
+
+// {base, pinned, reserve} for one destination. `pin` is the approved ordinary
+// pin (-1 = none); `allow_pin` 0 forbids any pin at all (cups). The approved pin
+// is REQUIRED where the contract pins one: the emitter always emits it, so a
+// removed/missing pin is a malformed seed, not an optional omission.
+static int hit_parse_candidates(const nlohmann::json &v, ctr_hit_candidates *out,
+                                int pin, int allow_pin)
+{
+	if (!v.is_object() || v.size() != 3)
+		return 0;
+	auto b = v.find("base"), p = v.find("pinned"), r = v.find("reserve");
+	if (b == v.end() || p == v.end() || r == v.end())
+		return 0;
+	if (!hit_parse_list(*b, &out->base, 0, -1))
+		return 0;
+	if (!hit_parse_list(*r, &out->reserve, 1, -1))
+		return 0;
+	if (!hit_parse_list(*p, &out->pinned, 2, pin))
+		return 0;
+	if (pin >= 0)
+	{
+		if (out->pinned.count != 1 || out->pinned.ids[0] != pin)
+			return 0; // the approved pin is required
+	}
+	else if (out->pinned.count != 0)
+	{
+		return 0; // no pin approved here (includes cups)
+	}
+	if (!allow_pin && out->pinned.count != 0)
+		return 0;
+	return 1;
+}
+
+// Returns 1 when the seed is admissible (feature on under a valid global schema
+// with a valid block; or feature data absent/disabled = legacy). Returns 0 with
+// ctr_cfg.seed_rejected set when a present REQUIRED feature cannot be honoured.
+// Never writes schema_version.
+//
+// Runs BEFORE any legacy early return: a present top-level block is feature data
+// and must be validated even when ctr_options is absent or carries
+// schema_version 0. "Compatible legacy" means the feature data is ABSENT, never
+// that a present required block is bypassed by the legacy path.
+static int parse_hit_character(const nlohmann::json &j)
+{
+	// The scalar only exists inside a real ctr_options object, so an absent
+	// ctr_options means an absent scalar (legacy), not a malformed one.
+	const nlohmann::json *opt = NULL;
+	if (j.is_object())
+	{
+		auto optIt = j.find("ctr_options");
+		if (optIt != j.end() && optIt->is_object())
+			opt = &(*optIt);
+	}
+
+	int enabled = 0;
+	if (opt != NULL)
+	{
+		auto sc = opt->find("hit_character");
+		if (sc != opt->end())
+		{
+			if (!sc->is_boolean())
+			{
+				hit_reject("ctr_options.hit_character is present but not a boolean");
+				return 0;
+			}
+			enabled = sc->get<bool>() ? 1 : 0;
+		}
+	}
+	ctr_cfg.hit.enabled = enabled;
+
+	int seen = 0;
+	const nlohmann::json *blk = NULL;
+	if (j.is_object())
+	{
+		auto blkIt = j.find("hit_character_encounters");
+		if (blkIt != j.end())
+		{
+			seen = 1;
+			blk = &(*blkIt);
+		}
+	}
+	ctr_cfg.hit.seen = seen;
+
+	if (!seen)
+	{
+		if (enabled)
+		{
+			hit_reject("hit_character is enabled but hit_character_encounters is absent");
+			return 0;
+		}
+		return 1; // disabled or legacy absence -> feature inert
+	}
+
+	// The block is present. The scalar must have enabled it -- a present block
+	// with the scalar false/absent is contradictory, and a present null block is
+	// malformed rather than absent.
+	if (!enabled)
+	{
+		hit_reject("hit_character_encounters is present but hit_character is not true");
+		return 0;
+	}
+
+	// An ENABLED feature requires an actual integer global schema >= 16 (the
+	// emitter's global boundary). Absent / bool / non-integer / pre-16 global
+	// schema refuses, so a valid block can never stay active under schema 0. A
+	// future global schema >= 16 is allowed when the block schema is known.
+	{
+		int globalSchema = 0;
+		int haveSchema = 0;
+		if (opt != NULL)
+		{
+			auto sc = opt->find("schema_version");
+			if (sc != opt->end() && sc->is_number_integer())
+			{
+				long long v = 0;
+				if (hit_int(*sc, &v) && v >= 0 && v <= 0x7FFFFFFFll)
+				{
+					globalSchema = (int)v;
+					haveSchema = 1;
+				}
+			}
+		}
+		if (!haveSchema || globalSchema < 16)
+		{
+			hit_reject("hit_character is enabled but the global schema is not an integer >= 16");
+			return 0;
+		}
+	}
+
+	if (blk->is_null())
+	{
+		hit_reject("hit_character_encounters is null");
+		return 0;
+	}
+	if (!blk->is_object())
+	{
+		hit_reject("hit_character_encounters is not an object");
+		return 0;
+	}
+	const nlohmann::json &b = *blk;
+	if (b.size() != 7)
+	{
+		hit_reject("hit_character_encounters has %d keys, expected 7", (int)b.size());
+		return 0;
+	}
+	static const char *kTopKeys[7] = {"schema",     "locations", "policy", "tracks",
+	                                  "cups",       "unlock_triggers", "bosses"};
+	for (int i = 0; i < 7; i++)
+		if (b.find(kTopKeys[i]) == b.end())
+		{
+			hit_reject("hit_character_encounters is missing '%s'", kTopKeys[i]);
+			return 0;
+		}
+
+	ctr_hit_encounters h;
+	std::memset(&h, 0, sizeof h);
+	h.enabled = enabled;
+	h.seen = 1;
+
+	if (!hit_int_eq(b["schema"], CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN))
+	{
+		hit_reject("hit_character_encounters.schema is not the known block schema %d",
+		           CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN);
+		return 0;
+	}
+	h.schema = CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN;
+
+	// locations: exactly 16 canonical engine-id keys -> 35025000+id
+	{
+		const auto &locs = b["locations"];
+		if (!locs.is_object() || locs.size() != CTR_CFG_HIT_CHARACTER_COUNT)
+		{
+			hit_reject("locations must map exactly %d engine ids",
+			           CTR_CFG_HIT_CHARACTER_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+		for (auto it = locs.begin(); it != locs.end(); ++it)
+		{
+			int id;
+			long code;
+			if (!hit_key(it.key(), 0, CTR_CFG_HIT_CHARACTER_COUNT - 1, &id) || got[id])
+			{
+				hit_reject("locations key '%s' is not a distinct canonical engine id",
+				           it.key().c_str());
+				return 0;
+			}
+			if (!hit_positive_code(it.value(), &code) || code != 35025000L + id)
+			{
+				hit_reject("locations[%d] is not the canonical code %ld", id, 35025000L + id);
+				return 0;
+			}
+			got[id] = 1;
+			h.locations[id] = code;
+		}
+	}
+
+	// policy
+	{
+		const auto &pol = b["policy"];
+		if (!pol.is_object() || pol.size() != 4)
+		{
+			hit_reject("policy must have exactly seed, self_character, "
+			           "boss_eligible_after_clear and guest_slots");
+			return 0;
+		}
+		auto seedIt = pol.find("seed");
+		if (seedIt == pol.end() || !seedIt->is_number_integer() || !hit_u32(*seedIt, &h.seed))
+		{
+			hit_reject("policy.seed is not a uint32 integer");
+			return 0;
+		}
+		auto selfIt = pol.find("self_character");
+		if (selfIt == pol.end() || !selfIt->is_string() ||
+		    selfIt->get<std::string>() != "never_seat_player")
+		{
+			hit_reject("policy.self_character is not never_seat_player");
+			return 0;
+		}
+		auto bossIt = pol.find("boss_eligible_after_clear");
+		if (bossIt == pol.end() || !bossIt->is_boolean() || !bossIt->get<bool>())
+		{
+			hit_reject("policy.boss_eligible_after_clear is not true");
+			return 0;
+		}
+		h.boss_eligible_after_clear = 1;
+		auto gsIt = pol.find("guest_slots");
+		if (gsIt == pol.end() || !hit_int_eq(*gsIt, 1))
+		{
+			hit_reject("policy.guest_slots is not 1");
+			return 0;
+		}
+		h.guest_slots = 1;
+	}
+
+	// tracks: exactly the 18 ordinary destinations 0..17
+	{
+		const auto &tr = b["tracks"];
+		if (!tr.is_object() || tr.size() != CTR_CFG_HIT_TRACK_COUNT)
+		{
+			hit_reject("tracks must have exactly %d keys", CTR_CFG_HIT_TRACK_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_TRACK_COUNT] = {0};
+		for (auto it = tr.begin(); it != tr.end(); ++it)
+		{
+			int lid;
+			if (!hit_key(it.key(), 0, CTR_CFG_HIT_TRACK_COUNT - 1, &lid) || got[lid])
+			{
+				hit_reject("tracks key '%s' is not a distinct canonical destination id",
+				           it.key().c_str());
+				return 0;
+			}
+			if (!hit_parse_candidates(it.value(), &h.tracks[lid], kHitPinForTrack[lid], 1))
+			{
+				hit_reject("tracks[%d] is malformed or carries an unapproved pin", lid);
+				return 0;
+			}
+			got[lid] = 1;
+		}
+	}
+
+	// cups: exactly the 5 cup destinations 100..104, and NO pins
+	{
+		const auto &cu = b["cups"];
+		if (!cu.is_object() || cu.size() != CTR_CFG_HIT_CUP_COUNT)
+		{
+			hit_reject("cups must have exactly %d keys", CTR_CFG_HIT_CUP_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_CUP_COUNT] = {0};
+		for (auto it = cu.begin(); it != cu.end(); ++it)
+		{
+			int lid;
+			if (!hit_key(it.key(), 100, 100 + CTR_CFG_HIT_CUP_COUNT - 1, &lid) || got[lid - 100])
+			{
+				hit_reject("cups key '%s' is not a distinct canonical cup id", it.key().c_str());
+				return 0;
+			}
+			if (!hit_parse_candidates(it.value(), &h.cups[lid - 100], -1, 0))
+			{
+				hit_reject("cups[%d] is malformed or carries a pin", lid);
+				return 0;
+			}
+			got[lid - 100] = 1;
+		}
+	}
+
+	// unlock_triggers: exactly guests 8..15, approved kind + exact win set
+	{
+		const auto &ug = b["unlock_triggers"];
+		if (!ug.is_object() || ug.size() != CTR_CFG_HIT_TRIGGER_COUNT)
+		{
+			hit_reject("unlock_triggers must have exactly %d guest keys",
+			           CTR_CFG_HIT_TRIGGER_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_TRIGGER_COUNT] = {0};
+		for (auto it = ug.begin(); it != ug.end(); ++it)
+		{
+			int guest;
+			if (!hit_key(it.key(), 8, 15, &guest) || got[guest - 8])
+			{
+				hit_reject("unlock_triggers key '%s' is not a distinct guest engine id 8..15",
+				           it.key().c_str());
+				return 0;
+			}
+			const nlohmann::json &t = it.value();
+			if (!t.is_object() || t.size() != 2 || !t.contains("kind") || !t.contains("any_of"))
+			{
+				hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
+				return 0;
+			}
+			const hit_approved_trigger &ap = kHitTriggers[guest - 8];
+			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";
+			if (!t["kind"].is_string() || t["kind"].get<std::string>() != wantKind)
+			{
+				hit_reject("unlock_triggers[%d].kind is not '%s'", guest, wantKind);
+				return 0;
+			}
+			const auto &any = t["any_of"];
+			if (!any.is_array() || (int)any.size() != ap.count)
+			{
+				hit_reject("unlock_triggers[%d].any_of is not the approved win set", guest);
+				return 0;
+			}
+			ctr_hit_trigger trig;
+			std::memset(&trig, 0, sizeof trig);
+			trig.kind = ap.kind;
+			int used[2] = {0, 0};
+			int n = 0;
+			for (const auto &w : any)
+			{
+				long code;
+				if (!hit_positive_code(w, &code))
+				{
+					hit_reject("unlock_triggers[%d].any_of carries a non-code", guest);
+					return 0;
+				}
+				int found = -1;
+				for (int k = 0; k < ap.count; k++)
+					if (ap.wins[k] == code)
+					{
+						found = k;
+						break;
+					}
+				if (found < 0 || used[found])
+				{
+					hit_reject("unlock_triggers[%d].any_of is not the approved win set", guest);
+					return 0;
+				}
+				used[found] = 1;
+				trig.any_of[n++] = code; // preserve wire order verbatim
+			}
+			trig.count = n;
+			h.triggers[guest - 8] = trig;
+			got[guest - 8] = 1;
+		}
+	}
+
+	// bosses: exactly the six canonical boss-win keys -> engine identity 0..15.
+	// The identity VALUE must match the retail encounter for each key today (the
+	// contract's shared appearance identity); a future boss randomizer may relax
+	// this, but a present mismatch is refused rather than run with logic and
+	// dispatch disagreeing.
+	{
+		const auto &bo = b["bosses"];
+		if (!bo.is_object() || bo.size() != CTR_CFG_HIT_BOSS_COUNT)
+		{
+			hit_reject("bosses must have exactly %d keys", CTR_CFG_HIT_BOSS_COUNT);
+			return 0;
+		}
+		for (int i = 0; i < CTR_CFG_HIT_BOSS_COUNT; i++)
+		{
+			auto it = bo.find(std::to_string(kHitBossKeys[i]));
+			int id;
+			if (it == bo.end() || !hit_engine_id(it.value(), &id))
+			{
+				hit_reject("bosses[%ld] is missing or not an engine identity 0..15",
+				           kHitBossKeys[i]);
+				return 0;
+			}
+			if (id != kHitBossIdentity[i])
+			{
+				hit_reject("bosses[%ld] is engine id %d, but the retail encounter is %d",
+				           kHitBossKeys[i], id, kHitBossIdentity[i]);
+				return 0;
+			}
+			h.boss_identity[i] = id;
+		}
+	}
+
+	h.valid = 1;
+	ctr_cfg.hit = h;
+	return 1;
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
@@ -416,6 +991,18 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.wumpa.custom[c].cup_level_id = -1;
 		ctr_cfg.wumpa.custom[c].code = -1;
 	}
+	// Seed admission (ticket 05): every parse starts admissible and clears the
+	// previous reason. A malformed REQUIRED block re-raises it below; a later
+	// valid or absent block therefore clears a prior rejection (valid-to-invalid
+	// AND valid-to-absent both wipe old state, never merge with it).
+	ctr_cfg.seed_rejected = 0;
+	ctr_cfg.seed_reject_reason[0] = '\0';
+	// hit_character_encounters: absent/disabled is the common case and means the
+	// whole feature is off. Zero the owned tables so no stale encounter survives
+	// a parse that omits or refuses the block.
+	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
+	for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+		ctr_cfg.hit.locations[i] = -1;
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
@@ -442,6 +1029,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.podium[i].finish_podium = -1;
 		ctr_cfg.podium[i].finish_any = -1;
 	}
+
+	// Required-feature admission FIRST (ticket 05 review). A present
+	// hit_character_encounters block is feature data and must be validated even
+	// when ctr_options is absent or declares schema_version 0: "compatible
+	// legacy" means the feature data is ABSENT, never that a present required
+	// block is bypassed by the legacy early returns below. On refusal the whole
+	// config stays inactive (schema_version remains 0) and every other block is
+	// skipped; an enabled feature under a pre-16 global schema also refuses.
+	if (!parse_hit_character(j))
+		return;
 
 	if (!j.is_object())
 	{
@@ -1879,4 +2476,21 @@ extern "C" int ctr_cfg_cup_leg(int cup, int leg)
 	// table rather than the zero-initialized ctr_cfg.gem_cup_legs, which a parse
 	// may never have touched this session.
 	return s_vanilla_cup_legs_ready ? s_vanilla_cup_legs[cup][leg] : -1;
+}
+
+extern "C" int ap_seedcfg_rejected(void)
+{
+	return ctr_cfg.seed_rejected ? 1 : 0;
+}
+
+extern "C" const char *ap_seedcfg_reject_reason(void)
+{
+	return ctr_cfg.seed_reject_reason;
+}
+
+extern "C" const ctr_hit_encounters *ap_seedcfg_hit_encounters(void)
+{
+	if (ctr_cfg.schema_version < 1 || !ctr_cfg.hit.valid)
+		return NULL;
+	return &ctr_cfg.hit;
 }

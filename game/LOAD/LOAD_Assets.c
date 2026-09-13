@@ -85,6 +85,45 @@ void LOAD_Robots1P(int characterID)
 
 static void (*const LOAD_DriverMPK_SetPointer)(struct LoadQueueSlot *) = (void (*)(struct LoadQueueSlot *))-2;
 
+#ifdef CTR_AP
+// Hit Character encounters (ticket 06). The engine ids whose HI models were
+// sideloaded for this ordinary load, so stage 6 can refuse a required model that
+// did not actually load before VehBirth ever dereferences it. Reset per load.
+// The production roster array is sized by AP_HIT_FIELD_MAX; the field is P1 plus
+// at most seven AI, so this pins the loader to the corrected bound.
+CTR_STATIC_ASSERT(AP_HIT_FIELD_MAX == 7);
+static ap_hit_extras_state s_hitExtras;
+
+void LOAD_HitEncounterResetExtras(void)
+{
+	AP_HitExtrasResetPure(&s_hitExtras);
+}
+
+// Called from LOAD_TenStages stage 6, after fileBase->model conversion and
+// before any birth. A required extra whose model is still NULL is an
+// unrecoverable load failure: name it and terminate cleanly rather than let
+// VehBirth_GetModelByName return NULL into a blind dereference.
+void LOAD_HitEncounterValidateExtras(void)
+{
+	const void *models[3];
+	int missing;
+	int i;
+
+	for (i = 0; i < 3; i++)
+		models[i] = data.driverModelExtras[i].model;
+
+	missing = AP_HitExtrasFirstMissingPure(&s_hitExtras, models);
+	if (missing >= 0)
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "Required driver model for character %d failed to load.",
+		         s_hitExtras.ids[missing]);
+		Platform_Fatal("CTR Native - Hit Character", msg);
+	}
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003282c-0x80032b50.
 int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(struct LoadQueueSlot *))
 {
@@ -95,6 +134,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 	gameMode1 = gGT->gameMode1;
 
 	int lastFileIndexMPK;
+
+#ifdef CTR_AP
+	// Every load entry clears the previous load's Hit-encounter extras, not just
+	// the ordinary branch. A hub/menu/boss load that skips the branch below must
+	// not leave stale required-model ids for stage 6 to validate (ticket 06).
+	LOAD_HitEncounterResetExtras();
+#endif
 
 	// 3P/4P
 	if (levelLOD - 3U < 2)
@@ -144,6 +190,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 
 		    // purple gem cup
 		    (gGT->cup.cupID == 4)
+
+#ifdef CTR_AP
+		    // Ticket 11: with the Hit feature enabled the Purple cup takes the
+		    // player arcade-pack + extra-model path (four AI seats) instead of
+		    // the stock four-boss pack/ID override. Feature off keeps retail.
+		    && !AP_HitEncounterEnabled()
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 		    // ... unless this load IS the event race. A displaced cup keeps
@@ -215,6 +268,88 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 				CustomTrack_Log("[CustomTracks] event race field: %d %d %d %d (of %d candidates)\n",
 				                (int)data.characterIDs[1], (int)data.characterIDs[2], (int)data.characterIDs[3],
 				                (int)data.characterIDs[4], CTR_CT_ROBOT_SLOTS);
+			}
+#endif
+
+#ifdef CTR_AP
+			// Hit Character encounters (ticket 06/11): replace the stock default
+			// field with the seed's resolved encounter roster. Ordinary Adventure
+			// Trophy races (0..17) use the destination's lists; an Adventure Gem
+			// Cup uses its FROZEN snapshot (resolved once at the pad entry, reused
+			// across every leg and same-session retry). Custom-served loads keep
+			// their own permute and get no roster. The player's arcade pack is
+			// built around the stock set LOAD_Robots1P just wrote, so any selected
+			// opponent outside it needs a BI_RACERMODELHI extra.
+			{
+				int isCup = (gameMode1 & ADVENTURE_CUP) != 0;
+				int customServed = 0;
+				int hitApply = 0;
+				int aiSeats = 7;
+
+#ifdef CTR_CUSTOM_TRACKS
+				customServed = CustomTrack_ServingLoad((int)gGT->levelID, isCup,
+				                                       gGT->cup.cupID);
+#endif
+				if (!customServed && isCup && AP_HitEncounterEnabled())
+				{
+					// Gem Cup: four AI in the retail Purple cup, seven otherwise,
+					// matching MainInit's field count.
+					aiSeats = AP_HitEncounterCupFieldSize((int)gGT->cup.cupID);
+					hitApply = 1;
+				}
+				else if (!customServed &&
+				         AP_HitEncounterShouldApply(
+				             (gameMode1 & ADVENTURE_MODE) != 0, (int)gGT->levelID,
+				             isCup, IS_BOSS_RACE(gameMode1),
+				             (gameMode1 & ARCADE_MODE) != 0,
+				             (gameMode1 & RELIC_RACE) != 0,
+				             (gGT->gameMode2 & TOKEN_RACE) != 0,
+				             (gameMode1 & CRYSTAL_CHALLENGE) != 0,
+				             (int)gGT->numPlyrNextGame))
+				{
+					aiSeats = 7;
+					hitApply = 1;
+				}
+
+				if (hitApply)
+				{
+					int hitRoster[AP_HIT_FIELD_MAX];
+					int hitExtras[3];
+					int hitCount, hitNeed, k;
+
+					if (isCup)
+						hitCount = AP_HitCupSnapshotField((int)gGT->cup.cupID,
+						                                  (int)gGT->cup.trackIndex,
+						                                  (int)data.characterIDs[0],
+						                                  aiSeats, hitRoster);
+					else
+						hitCount = AP_HitEncounterBuildField((int)gGT->levelID,
+						                                     (int)data.characterIDs[0],
+						                                     aiSeats, hitRoster);
+					for (k = 0; k < hitCount; k++)
+						data.characterIDs[1 + k] = (s16)hitRoster[k];
+
+					hitNeed = AP_HitEncounterExtras(hitRoster, hitCount,
+					                                (int)data.characterIDs[0],
+					                                hitExtras, 3);
+					if (hitNeed > 3)
+						Platform_Fatal("CTR Native - Hit Character",
+						               "Hit encounter needs more driver models than the loader can sideload.");
+					// The pack is queued after the extras; LOAD_AppendQueue drops
+					// silently past its eight slots, so refuse up front rather
+					// than race with a missing opponent model.
+					if (!AP_HitQueueFitsPure((int)sdata->queueLength, hitNeed + 1, 8))
+						Platform_Fatal("CTR Native - Hit Character",
+						               "Hit encounter driver models do not fit the load queue.");
+					for (k = 0; k < hitNeed; k++)
+					{
+						LOAD_AppendQueue(bigfile, LT_GETADDR,
+						                 BI_RACERMODELHI + hitExtras[k],
+						                 &data.driverModelExtras[k].fileBase,
+						                 LOAD_DriverMPK_SetPointer);
+					}
+					AP_HitExtrasRecordPure(&s_hitExtras, hitExtras, hitNeed);
+				}
 			}
 #endif
 		}

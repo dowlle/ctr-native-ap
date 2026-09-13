@@ -442,6 +442,12 @@ int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
 
+// Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
+// through the shared class-check path (per-seed membership + server-checked
+// dedup + sent-item feed). A thin wrapper because AP_EmitClassCheck is static to
+// the unity translation unit; ap/ap_hit_encounter.c calls this.
+int AP_EmitHitCharacterCheck(long code);
+
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).
 // AP_LookupLocationCode alone is NOT enough to answer this: it resolves against the
@@ -627,6 +633,13 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
+
+// Is there an eligible, unchecked Hit Character guest opportunity behind this
+// pad (schema 16, ticket 06)? True only for ordinary retail destinations 0..15
+// with an eligible guest (its authoritative trigger win checked) whose Hit
+// location this seed carries and the server has not checked. Feeds both
+// AP_PadState and the ordinary tier-2 chooser in AH_WarpPad.c.
+int AP_HitPadOpportunity(int physLevelID, int destLevelID);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

@@ -108,6 +108,16 @@ static bool                  g_stop_pending = false; // deferred retry-stop tear
 static std::string           g_host;
 static std::string           g_room_endpoint;
 
+// Seed admission (ticket 05). A slot_data the parser refuses (a REQUIRED block
+// absent/contradictory/malformed/unknown) must never activate: no door storage,
+// no held-check send, no scout, no item application. g_rejected latches the
+// refusal until a manual reconnect (ap_net_shutdown/init clear it) so a stale
+// APClient state cannot read as connected. g_reject_stop_pending defers the
+// teardown to after g_ap->poll() returns -- deleting g_ap from inside its own
+// slot-connected callback is unsafe.
+static bool                  g_rejected = false;
+static bool                  g_reject_stop_pending = false;
+
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
 // the full address, and the status row it shares only has room for a short host,
 // so scheme, port and path are dropped here. Carries apclientpp's own uri caveat:
@@ -565,6 +575,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	}
 
 	g_ap->set_socket_connected_handler([]() {
+		if (g_rejected)
+			return; // a refused seed's incompatibility reason/status must survive
 		// The room answered a websocket handshake, so it is reachable: any
 		// unreachable verdict is stale and the failure run starts over (#146).
 		g_retry.onSocketUp();
@@ -576,6 +588,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_ap->set_socket_disconnected_handler([]() {
 		if (g_stop_pending)
 			return; // deliberate retry-stop teardown: no "(auto-retrying)" line
+		if (g_rejected)
+			return; // a refused seed's incompatibility reason/status must survive
 		g_connected = false;
 		// Not an error unless the slot was refused; apclientpp will auto-retry.
 		if (g_status != AP_NET_STATUS_ERROR)
@@ -597,6 +611,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// its own callback is unsafe). Post-connect recovery is untouched: it keeps
 	// retrying and only renames the status, exactly as before.
 	g_ap->set_socket_error_handler([](const std::string &msg) {
+		if (g_rejected)
+			return; // a refused seed's incompatibility reason/status must survive
 		const bool wasStopped = g_retry.stopped();
 		const bool budgetExhausted = g_retry.onSocketError();
 		if (wasStopped)
@@ -659,6 +675,47 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"});
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
+		// ADMISSION FIRST (ticket 05). Clear the accepted latch BEFORE parsing so
+		// the client is never observable as connected while the seed is still
+		// being judged, then parse and decide before ANY success side effect: a
+		// refused seed must send no door storage, no held checks and no scout.
+		// The parser is pure -- it either activates a fully readable schema or
+		// leaves schema_version at 0 with the rejection flag set.
+		g_connected = false;
+		ap_seedcfg_parse_json(slotData);
+		if (ap_seedcfg_rejected())
+		{
+			g_rejected = true;
+			g_recv_reset = false; // a refused seed resets no game-side tallies
+			// Drop stale packet-tail state from a previous connection. The held
+			// checks are deliberately KEPT: a later reconnect to the same
+			// seed/slot may still flush them, and the held-check identity check
+			// discards them for a different seed.
+			g_items.clear();
+			g_items_player.clear();
+			g_items_index.clear();
+			g_items_location.clear();
+			g_items_flags.clear();
+			g_recv_batch_n = 0;
+			g_scouts.clear();
+			g_scouts_done = false;
+			g_pending_checks.clear();
+			g_doors.disconnected();
+			g_doors_sent = 0;
+			g_status = AP_NET_STATUS_ERROR;
+			g_last_error = ap_seedcfg_reject_reason();
+			char line[256];
+			std::snprintf(line, sizeof line,
+			              "[AP NET] seed REFUSED (%s); no door storage, held checks or "
+			              "scouts sent; session will not be admitted\n",
+			              g_last_error.c_str());
+			std::fprintf(stderr, "%s", line);
+			AP_LogLine(line);
+			// Deferred teardown: never delete g_ap from inside its own callback.
+			g_reject_stop_pending = true;
+			return;
+		}
+		g_rejected = false;
 		g_connected = true;
 		g_status = AP_NET_STATUS_CONNECTED;
 		g_last_error.clear();
@@ -721,7 +778,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			              heldFlush.sent, heldFlush.rearmed, heldFlush.settled);
 			AP_LogLine(line);
 		}
-		ap_seedcfg_parse_json(slotData); // Phase 2: per-seed reqs -> ctr_cfg
+		// (slot_data was parsed and admitted at the top of this handler.)
 		// Scout the server-declared location union, not a second hand-maintained
 		// list of native location classes. checked + missing is the complete fixed
 		// location set for this slot; checking a location only moves it between the
@@ -740,6 +797,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		             (int)locs.size());
 	});
 	g_ap->set_location_info_handler([](const std::list<APClient::NetworkItem> &items) {
+		if (g_rejected)
+			return; // a refused seed's packet tail must not populate the scout cache
 		for (const auto &it : items)
 			g_scouts[it.location] = it;
 		g_scouts_done = true; // #85: single LocationInfo reply completes the scout cache
@@ -747,6 +806,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		             (int)items.size());
 	});
 	g_ap->set_slot_refused_handler([](const std::list<std::string> &errors) {
+		if (g_rejected)
+			return; // a refused seed's incompatibility reason/status must survive
 		g_connected = false;
 		std::string e;
 		for (const auto &s : errors)
@@ -762,6 +823,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// key->value map); SetNotify + Set(want_reply) -> SetReply (key, new value).
 	// Both fire inline on the poll thread, same as every other handler.
 	g_ap->set_retrieved_handler([](const std::map<std::string, nlohmann::json> &keys) {
+		if (g_rejected)
+			return; // no rejected-seed state may activate
 		auto doors = keys.find(g_doors.key);
 		if (g_connected && doors != keys.end()) {
 			g_doors.retrieved(doors->second);
@@ -796,6 +859,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
+		if (g_rejected)
+			return; // no rejected-seed state may activate
 		if (g_connected && key == g_doors.key) {
 			g_doors.reply(value);
 			char line[128];
@@ -822,6 +887,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
+		if (g_rejected)
+			return; // a refused seed's items must never enter the queue
 		AP_ReceivedBatchAppend(items, g_items, g_items_player, g_items_index,
 		                       g_items_location, g_items_flags, g_pending_checks);
 		// #147: a reconnect catch-up can contain hundreds or thousands of items.
@@ -837,6 +904,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// DeathLink tag, ignores our own death echoed back by the server (we carry the
 	// tag too), and latches the most recent death (depth 1) for the game thread.
 	g_ap->set_bounced_handler([](const nlohmann::json &packet) {
+		if (g_rejected)
+			return; // a refused seed's DeathLink bounce must not latch
 		if (!packet.contains("tags") || !packet["tags"].is_array())
 			return;
 		bool isDeath = false;
@@ -869,6 +938,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_room_endpoint = ap_net_endpoint_of(uri ? uri : "localhost");
 	g_retry.start(false); // fresh bounded startup budget for this client run
 	g_stop_pending = false;
+	g_rejected = false;            // a fresh client run starts admissible
+	g_reject_stop_pending = false;
 	g_status = AP_NET_STATUS_CONNECTING; // dialing; handlers advance this
 	g_last_error.clear();
 	return 0;
@@ -935,6 +1006,7 @@ static void ap_net_note_net_exception(const char *where, const char *what)
 	} while (0)
 
 static void ap_net_apply_retry_stop(void);
+static void ap_net_apply_seed_reject(void);
 
 extern "C" void ap_net_poll(void)
 {
@@ -947,6 +1019,10 @@ extern "C" void ap_net_poll(void)
 	// host and the terminal RETRY_STOPPED status are preserved for the menu.
 	if (g_stop_pending)
 		ap_net_apply_retry_stop();
+	// Deferred seed-rejection teardown, same rule: never delete g_ap from the
+	// slot-connected callback that raised the refusal.
+	if (g_reject_stop_pending)
+		ap_net_apply_seed_reject();
 	ap_doors_flush();
 }
 
@@ -982,9 +1058,61 @@ static void ap_net_apply_retry_stop(void)
 	// the single terminal summary required by the lifecycle contract.
 }
 
+// Seed-rejection teardown (ticket 05). Reached from ap_net_poll AFTER
+// g_ap->poll() returns, never from inside the slot-connected callback. Unlike
+// the retry-stop path above it PRESERVES the visible AP_NET_STATUS_ERROR and
+// the parser's explanation, and it deliberately does NOT clear g_held_checks:
+// a held check earned under the same seed/slot can still flush on a later
+// reconnect (the held-check identity check discards it for a different seed).
+// Deleting g_ap stops apclientpp's own retry machinery, so no automatic
+// reconnect happens until the player dials again (ap_net_shutdown/init reset
+// the latch).
+static void ap_net_apply_seed_reject(void)
+{
+	g_reject_stop_pending = false;
+	if (!g_ap)
+		return;
+	// Capture the refusal, then latch g_rejected BEFORE delete: the deletion may
+	// fire socket/disconnect handlers, and every one of them is guarded on
+	// g_rejected so they cannot overwrite the reason.
+	const std::string reason = g_last_error;
+	g_rejected = true; // latched until a manual reconnect clears it
+	delete g_ap;
+	g_ap = nullptr;
+	g_connected = false;
+	g_items.clear();
+	g_items_player.clear();
+	g_items_index.clear();
+	g_items_location.clear();
+	g_items_flags.clear();
+	g_recv_batch_n = 0;
+	g_scouts.clear();
+	g_scouts_done = false;
+	g_pending_checks.clear();
+	g_dl_incoming = false;
+	g_diff_known = false;
+	g_char_known = false;
+	g_edit_known = false;
+	g_doors.disconnected();
+	g_doors_sent = 0;
+	// Restore the visible refusal defensively, LAST (a handler fired by delete
+	// may have touched either field). The menu keeps showing why the seed was
+	// refused.
+	g_status = AP_NET_STATUS_ERROR;
+	g_last_error = reason;
+	g_retry.start(false);
+	g_stop_pending = false;
+}
+
 extern "C" int ap_net_is_connected(void)
 {
-	return (g_ap && g_ap->get_state() == APClient::State::SLOT_CONNECTED) ? 1 : 0;
+	// Admission requires BOTH the explicit accepted-seed latch (g_connected) AND
+	// the raw transport state. Raw socket state alone is not admission, and a
+	// refused seed is never connected even while its APClient still reports
+	// SLOT_CONNECTED in the frames before the deferred teardown.
+	if (g_rejected || !g_ap || !g_connected)
+		return 0;
+	return (g_ap->get_state() == APClient::State::SLOT_CONNECTED) ? 1 : 0;
 }
 
 static bool ap_net_try_send_location(int64_t code)
@@ -1004,6 +1132,13 @@ static bool ap_net_try_send_location(int64_t code)
 extern "C" void ap_net_send_location(long long location_code)
 {
 	const int64_t code = (int64_t)location_code;
+	// While a seed is explicitly rejected, the session is not admitted: do not
+	// mutate the held-check queue (which still belongs to the last ACCEPTED
+	// seed/slot). Existing held checks are preserved untouched; normal offline
+	// retention resumes as soon as the refusal latch is cleared by a manual
+	// reconnect.
+	if (g_rejected)
+		return;
 	if (ap_net_try_send_location(code))
 		return;
 	if (g_ap && g_connected)
@@ -1078,7 +1213,9 @@ extern "C" int ap_net_scout_text(long long location_code, char *item_buf,
 
 extern "C" int ap_net_location_checked(long long location_code)
 {
-	if (!g_ap)
+	// Admission guard: a refused seed's raw server state must never read as
+	// authoritative checked-location state to the game side.
+	if (g_rejected || !g_ap)
 		return 0;
 	const std::set<int64_t> &chk = g_ap->get_checked_locations();
 	return chk.count((int64_t)location_code) ? 1 : 0;
@@ -1086,7 +1223,7 @@ extern "C" int ap_net_location_checked(long long location_code)
 
 extern "C" int ap_net_location_exists(long long location_code)
 {
-	if (!g_ap)
+	if (g_rejected || !g_ap)
 		return 0;
 	int64_t code = (int64_t)location_code;
 	const std::set<int64_t> &chk = g_ap->get_checked_locations();
@@ -1098,7 +1235,7 @@ extern "C" int ap_net_location_exists(long long location_code)
 
 extern "C" int ap_net_location_count(void)
 {
-	if (!g_ap)
+	if (g_rejected || !g_ap)
 		return 0;
 	const std::set<int64_t> &chk = g_ap->get_checked_locations();
 	const std::set<int64_t> &miss = g_ap->get_missing_locations();
@@ -1644,6 +1781,8 @@ extern "C" void ap_net_shutdown(void)
 	g_host.clear();     // #146: no host to name once the client is gone
 	g_retry.start(false); // fresh bounded budget for the next client run
 	g_stop_pending = false;
+	g_rejected = false;            // a manual reconnect clears the refusal latch
+	g_reject_stop_pending = false;
 	g_uri_secure = false;
 	g_room_endpoint.clear();
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on

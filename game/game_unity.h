@@ -7,6 +7,9 @@
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
+#include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
+#include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
+#include "../ap/ap_hit_encounter.h" // Hit Character gather: roster + dispatch (ticket 06)
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
 #include "../ap/ap_surface.h"  // natural-surface comfort items (#14/#15)
@@ -358,6 +361,8 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_hit_encounter.c" // ticket 06 gather: eligibility + roster + dispatch
+#include "../ap/ap_hit_bots.c"      // ticket 06 BOTS-side gather (host-linkable)
 #include "../ap/ap_perf.c"
 #include "../ap/ap_crash.c"
 #include "../ap/ap_verify.c"

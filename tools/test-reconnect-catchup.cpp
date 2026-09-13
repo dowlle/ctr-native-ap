@@ -5,7 +5,8 @@
 //     -D_WEBSOCKETPP_CPP11_THREAD_=1 -D_WEBSOCKETPP_CPP11_STL_=1 \
 //     -Iap/vendor/apclientpp -Iap/vendor/wswrap/include -Iap/vendor/websocketpp \
 //     -Iap/vendor/asio/include -Iap/vendor/json/include -Iap \
-//     tools/test-reconnect-catchup.cpp ap/ap_net.cpp -lssl -lcrypto -lz -pthread \
+//     tools/test-reconnect-catchup.cpp ap/ap_net.cpp ap/ap_seedcfg.cpp \
+//     -lssl -lcrypto -lz -pthread \
 //     -o /tmp/test-reconnect-catchup
 // Run a server first, then: /tmp/test-reconnect-catchup ws://127.0.0.1:PORT COUNT
 
@@ -17,8 +18,10 @@
 #include "../ap/ap_net.h"
 #include "../ap/ap_seedcfg.h"
 
+// The REAL parser is linked in (ap/ap_seedcfg.cpp): this harness must exercise
+// the production admission path, not a stub. The fake server sends an empty
+// slot_data, which is the supported legacy fallback and must NOT be refused.
 extern "C" void AP_LogLine(const char *) {}
-void ap_seedcfg_parse_json(const nlohmann::json &) {}
 
 int main(int argc, char **argv)
 {

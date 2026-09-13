@@ -4,8 +4,11 @@
 #include <platform/native_custom_tracks.h>
 #endif
 
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-static int apCustomRaceChoice = -2;
+#ifdef CTR_AP
+// Pre-warp kart/camera snapshot. Captured the frame a warp begins and restored
+// when an AP menu is cancelled, so the player is left exactly where they were
+// before the pad grabbed them. Shared by the custom-track race menu and the Hit
+// Character chooser (ticket 06).
 static struct {
 	struct Driver *driver;
 	int positionY;
@@ -13,33 +16,39 @@ static struct {
 	int flags;
 	s16 split, camera;
 	s16 turnAngle, rotationY;
-} apCustomWarpSnapshot;
-static void AH_WarpPad_CustomRaceCapture(struct GameTracker *gGT)
+} apWarpSnapshot;
+
+static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
 {
 	struct Driver *driver = gGT->drivers[0];
-	apCustomWarpSnapshot.driver = driver;
-	apCustomWarpSnapshot.positionY = driver->posCurr.y;
-	apCustomWarpSnapshot.turnAngle = driver->turnAngleCurr;
-	apCustomWarpSnapshot.rotationY = driver->rotCurr.y;
-	apCustomWarpSnapshot.scale = driver->instSelf->scale;
-	apCustomWarpSnapshot.flags = driver->instSelf->flags & (REFLECTIVE | HIDE_MODEL);
-	apCustomWarpSnapshot.split = driver->instSelf->vertSplit;
-	apCustomWarpSnapshot.camera = gGT->cameraDC[driver->driverID].cameraMode;
+	apWarpSnapshot.driver = driver;
+	apWarpSnapshot.positionY = driver->posCurr.y;
+	apWarpSnapshot.turnAngle = driver->turnAngleCurr;
+	apWarpSnapshot.rotationY = driver->rotCurr.y;
+	apWarpSnapshot.scale = driver->instSelf->scale;
+	apWarpSnapshot.flags = driver->instSelf->flags & (REFLECTIVE | HIDE_MODEL);
+	apWarpSnapshot.split = driver->instSelf->vertSplit;
+	apWarpSnapshot.camera = gGT->cameraDC[driver->driverID].cameraMode;
 }
-static void AH_WarpPad_CustomRaceRestore(struct GameTracker *gGT)
+
+static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 {
 	struct Driver *driver = gGT->drivers[0];
-	if (apCustomWarpSnapshot.driver != driver) return;
-	driver->posCurr.y = apCustomWarpSnapshot.positionY;
-	driver->turnAngleCurr = apCustomWarpSnapshot.turnAngle;
-	driver->rotCurr.y = apCustomWarpSnapshot.rotationY;
-	driver->instSelf->scale = apCustomWarpSnapshot.scale;
+	if (apWarpSnapshot.driver != driver) return;
+	driver->posCurr.y = apWarpSnapshot.positionY;
+	driver->turnAngleCurr = apWarpSnapshot.turnAngle;
+	driver->rotCurr.y = apWarpSnapshot.rotationY;
+	driver->instSelf->scale = apWarpSnapshot.scale;
 	driver->instSelf->flags = (driver->instSelf->flags & ~(REFLECTIVE | HIDE_MODEL)) |
-	                         apCustomWarpSnapshot.flags;
-	driver->instSelf->vertSplit = apCustomWarpSnapshot.split;
-	gGT->cameraDC[driver->driverID].cameraMode = apCustomWarpSnapshot.camera;
-	apCustomWarpSnapshot.driver = NULL;
+	                         apWarpSnapshot.flags;
+	driver->instSelf->vertSplit = apWarpSnapshot.split;
+	gGT->cameraDC[driver->driverID].cameraMode = apWarpSnapshot.camera;
+	apWarpSnapshot.driver = NULL;
 }
+#endif
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+static int apCustomRaceChoice = -2;
 static void AH_WarpPad_CustomRaceMenuProc(struct RectMenu *menu)
 {
 	apCustomRaceChoice = menu->rowSelected;
@@ -56,6 +65,75 @@ static struct RectMenu apCustomRaceMenu = {
 	.state = 0x100803, .rows = apCustomRaceRows,
 	.funcPtr = AH_WarpPad_CustomRaceMenuProc, .drawStyle = 4
 };
+#endif
+
+#ifdef CTR_AP
+// ── Hit Character ordinary-race chooser (ticket 06) ──
+//
+// When an eligible unchecked Hit guest can appear at an ordinary pad AND a
+// CTR/Relic route still has an unchecked location, the normal tier-2 routing
+// would enter/offer only that route and hide the plain rerace that earns the
+// Hit. This AP-only menu offers Trophy (plain adventure rerace) first, then
+// whichever of CTR/Relic is still available. Rows are rebuilt on every entry,
+// so a checked or absent route is never offered.
+//
+// The frame-to-frame decisions (open/wait/apply/cancel/vanish, the no-reopen
+// latch and the pre-chooser snapshot) live in ap/ap_hit_chooser.h as pure C so
+// they can be host-tested; this file is only the menu/bit glue.
+static ap_hit_chooser apHitChooser;
+static int apHitRowChoice[4];
+static struct MenuRow apHitRaceRows[4];
+
+static void AH_WarpPad_HitRaceMenuProc(struct RectMenu *menu)
+{
+	int row = menu->rowSelected;
+	// -1 = cancel; else the row's route (0 Trophy, 1 CTR, 2 Relic).
+	AP_HitChooserSetChoice(&apHitChooser, (row < 0) ? -1 : apHitRowChoice[row]);
+	RECTMENU_Hide(menu);
+}
+
+static struct RectMenu apHitRaceMenu = {
+	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
+	.posX_curr = 0x100, .posY_curr = 0x6c,
+	.state = 0x100803, .rows = apHitRaceRows,
+	.funcPtr = AH_WarpPad_HitRaceMenuProc, .drawStyle = 4
+};
+
+static void AH_WarpPad_HitRaceRows(int tokenLeft, int relicLeft)
+{
+	int n = 0;
+	int i;
+
+	apHitRaceRows[n].stringIndex = LNG_TROPHY_RACE;
+	apHitRowChoice[n] = 0;
+	n++;
+	if (tokenLeft)
+	{
+		apHitRaceRows[n].stringIndex = LNG_CTR_CHALLENGE_TITLE;
+		apHitRowChoice[n] = 1;
+		n++;
+	}
+	if (relicLeft)
+	{
+		apHitRaceRows[n].stringIndex = LNG_RELIC_RACE;
+		apHitRowChoice[n] = 2;
+		n++;
+	}
+
+	for (i = 0; i < n; i++)
+	{
+		apHitRaceRows[i].rowOnPressUp = 0;
+		apHitRaceRows[i].rowOnPressDown = (i + 1 < n) ? (char)(i + 1) : (char)i;
+		apHitRaceRows[i].rowOnPressLeft = 0;
+		apHitRaceRows[i].rowOnPressRight = 0;
+	}
+
+	apHitRaceRows[n].stringIndex = -1;
+	apHitRaceRows[n].rowOnPressUp = 0;
+	apHitRaceRows[n].rowOnPressDown = 0;
+	apHitRaceRows[n].rowOnPressLeft = 0;
+	apHitRaceRows[n].rowOnPressRight = 0;
+}
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
@@ -1036,7 +1114,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 		if (warppadObj->framesWarping == 0 && ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&
 		    levelID == ctr_cfg.custom_track.replaces_cup_level_id)
-			AH_WarpPad_CustomRaceCapture(gGT);
+			AH_WarpPad_WarpCapture(gGT);
 #endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
@@ -1062,7 +1140,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			{
 				warppadObj->boolEnteredWarppad = 0;
 				warppadObj->framesWarping = 0;
-				AH_WarpPad_CustomRaceRestore(gGT);
+				AH_WarpPad_WarpRestore(gGT);
 				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
 				goto WarpPad_AnimateOpen;
 			}
@@ -1088,6 +1166,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			gGT->cup.points[i] = 0;
 		}
+
+#ifdef CTR_AP
+		// Ticket 11: a pad entry is a NEW Gem Cup. Mark the roster snapshot so
+		// the first leg resolves it once; every later leg and same-session retry
+		// reuses it, and an unlock mid-cup waits for the next cup.
+		AP_HitCupSnapshotBegin(gGT->cup.cupID);
+#endif
 
 #ifdef CTR_AP
 		// Remember the physical hub this cup is entered FROM, before the cup's
@@ -1155,6 +1240,15 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Slide Col or Turbo Track
 	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
 	{
+#ifdef CTR_AP
+		// Capture the pre-warp kart/camera state the frame this warp begins, so a
+		// cancelled AP menu can put the player back (ticket 06/10).
+		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
+		{
+			AH_WarpPad_WarpCapture(gGT);
+			AP_HitChooserWarpStart(&apHitChooser);
+		}
+#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1183,6 +1277,91 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			// Trial Wumpa checks can be earned in a plain rerace. Do not invent a
 			// CTR challenge when its location is absent or its retail assets failed.
 			boxLeft += wumpaLeft;
+
+			// Hit Character chooser (ticket 10): the same state machine as the
+			// ordinary pads. The Trophy route here is a plain trial rerace, so an
+			// APPLY just loads (Trophy clears the mode bits; CTR/Relic set one).
+			{
+				int apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
+				int apHitRoute = 0;
+				int apHitAction = AP_HitChooserFrame(
+				    &apHitChooser, apHitOpp, tokenLeft, relicLeft,
+				    (int)gGT->gameMode1, (int)gGT->gameMode2,
+				    sdata->Loading.OnBegin.AddBitsConfig0,
+				    sdata->Loading.OnBegin.RemBitsConfig0,
+				    sdata->Loading.OnBegin.AddBitsConfig8,
+				    sdata->Loading.OnBegin.RemBitsConfig8,
+				    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+				if (apHitAction == AP_HIT_CHOOSER_OPEN)
+				{
+					AH_WarpPad_HitRaceRows(tokenLeft, relicLeft);
+					apHitRaceMenu.rowSelected = 0;
+					RECTMENU_Show(&apHitRaceMenu);
+					AP_PadLogRoute(levelID, levelID,
+					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
+					goto WarpPad_TrophyAnimateOnly;
+				}
+				if (apHitAction == AP_HIT_CHOOSER_WAIT)
+				{
+					goto WarpPad_TrophyAnimateOnly;
+				}
+				if (apHitAction == AP_HIT_CHOOSER_PLAIN)
+				{
+					AP_PadLogRoute(levelID, levelID,
+					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
+					goto WarpPad_RequestLoad;
+				}
+				if (apHitAction == AP_HIT_CHOOSER_VANISH)
+				{
+					RECTMENU_Hide(&apHitRaceMenu);
+					// fall through to the normal tier-2 routing
+				}
+				else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
+				{
+					// Restore only the route bits the chooser owns, so unrelated
+					// bits the engine changed while the menu was open survive.
+					AP_HitChooserRestoreBitsPure(
+					    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+					    apHitChooser.savedGm1, apHitChooser.savedGm2,
+					    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+					    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+					    &gGT->gameMode1, &gGT->gameMode2,
+					    &sdata->Loading.OnBegin.AddBitsConfig0,
+					    &sdata->Loading.OnBegin.RemBitsConfig0,
+					    &sdata->Loading.OnBegin.AddBitsConfig8,
+					    &sdata->Loading.OnBegin.RemBitsConfig8);
+					sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
+					warppadObj->boolEnteredWarppad = 0;
+					warppadObj->framesWarping = 0;
+					AH_WarpPad_WarpRestore(gGT);
+					gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+					goto WarpPad_AnimateOpen;
+				}
+				else if (apHitAction == AP_HIT_CHOOSER_APPLY)
+				{
+					unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
+					RECTMENU_Hide(&D232.menuTokenRelic);
+					AP_HitChooserApplyPure(apHitRoute,
+					                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+					                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
+					                       sdata->Loading.OnBegin.AddBitsConfig0,
+					                       sdata->Loading.OnBegin.RemBitsConfig0,
+					                       sdata->Loading.OnBegin.AddBitsConfig8,
+					                       sdata->Loading.OnBegin.RemBitsConfig8,
+					                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
+					gGT->gameMode1 = (int)apGm1;
+					gGT->gameMode2 = (int)apGm2;
+					sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
+					sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
+					sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
+					sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
+					sdata->boolOpenTokenRelicMenu = 0;
+					warppadObj->boolEnteredWarppad = 0;
+					goto WarpPad_RequestLoad;
+				}
+				// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
+			}
+
 			route = AP_PadTier2RouteDecide(tokenLeft, relicLeft, boxLeft);
 			AP_PadLogRoute(levelID, levelID, AP_PAD_ROUTE_TIER2_BASE + route);
 			if (route == AP_PAD_TIER2_TOKEN)
@@ -1255,6 +1434,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
+#ifdef CTR_AP
+		// Capture the pre-warp kart/camera state the frame this warp begins, so a
+		// cancelled AP menu can put the player back exactly where they were
+		// (ticket 06).
+		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
+		{
+			AH_WarpPad_WarpCapture(gGT);
+			AP_HitChooserWarpStart(&apHitChooser);
+		}
+#endif
 #ifdef CTR_AP
 		// "Trophy race beaten?" decides first-pass (load the trophy race) vs
 		// already-won (open the relic-race / CTR-token-challenge menu). This MUST
@@ -1339,8 +1528,122 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					goto WarpPad_TrophyAnimateOnly;
 				}
 
+				int apHitHandled = 0;
+#ifdef CTR_AP
+				// Hit Character ordinary chooser (ticket 06). The frame-to-frame
+				// decisions live in ap/ap_hit_chooser.h; this is menu/bit glue.
+				int apHitOpp = 0;
+				int apHitTokenLeft = 0, apHitRelicLeft = 0;
+				if (ctr_cfg_active() && (gGT->gameMode1 & ADVENTURE_ARENA) != 0)
+					apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
+				if (apHitOpp)
+				{
+					int apHitUnc[5];
+					int apHitUncN = AP_PadUncollectedBits(levelID, apHitUnc, 5);
+					int apHitK;
+					for (apHitK = 0; apHitK < apHitUncN; apHitK++)
+					{
+						int apHitOff = apHitUnc[apHitK] - levelID;
+						if (apHitOff == ADV_REWARD_FIRST_CTR_TOKEN)
+							apHitTokenLeft = 1;
+						else if (apHitOff == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
+						         apHitOff == ADV_REWARD_FIRST_GOLD_RELIC ||
+						         apHitOff == ADV_REWARD_FIRST_PLATINUM_RELIC)
+							apHitRelicLeft = 1;
+					}
+					apHitTokenLeft = AP_PadTokenSideLeft(
+					    apHitTokenLeft, AP_PadUncollectedLetterCount(levelID),
+					    AP_PadUncollectedWumpaCount(levelID));
+				}
+				{
+					int apHitRoute = 0;
+					int apHitAction = AP_HitChooserFrame(
+					    &apHitChooser, apHitOpp, apHitTokenLeft, apHitRelicLeft,
+					    (int)gGT->gameMode1, (int)gGT->gameMode2,
+					    sdata->Loading.OnBegin.AddBitsConfig0,
+					    sdata->Loading.OnBegin.RemBitsConfig0,
+					    sdata->Loading.OnBegin.AddBitsConfig8,
+					    sdata->Loading.OnBegin.RemBitsConfig8,
+					    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+
+					if (apHitAction == AP_HIT_CHOOSER_OPEN)
+					{
+						AH_WarpPad_HitRaceRows(apHitTokenLeft, apHitRelicLeft);
+						apHitRaceMenu.rowSelected = 0;
+						RECTMENU_Show(&apHitRaceMenu);
+						AP_PadLogRoute(physLevelID, levelID,
+						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
+						goto WarpPad_TrophyAnimateOnly;
+					}
+					if (apHitAction == AP_HIT_CHOOSER_WAIT)
+					{
+						goto WarpPad_TrophyAnimateOnly; // waiting for a choice
+					}
+					if (apHitAction == AP_HIT_CHOOSER_PLAIN)
+					{
+						// Only the Hit opportunity is left: plain adventure rerace.
+						AP_PadLogRoute(physLevelID, levelID,
+						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
+						goto WarpPad_BoxReRace;
+					}
+					if (apHitAction == AP_HIT_CHOOSER_VANISH)
+					{
+						// The opportunity went away while the menu was open.
+						RECTMENU_Hide(&apHitRaceMenu);
+						// fall through to the normal tier-2 routing
+					}
+					else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
+					{
+						// Restore only the route bits the chooser owns, so flags
+						// the engine changed while the menu was open survive.
+						AP_HitChooserRestoreBitsPure(
+						    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+						    apHitChooser.savedGm1, apHitChooser.savedGm2,
+						    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+						    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+						    &gGT->gameMode1, &gGT->gameMode2,
+						    &sdata->Loading.OnBegin.AddBitsConfig0,
+						    &sdata->Loading.OnBegin.RemBitsConfig0,
+						    &sdata->Loading.OnBegin.AddBitsConfig8,
+						    &sdata->Loading.OnBegin.RemBitsConfig8);
+						sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
+						warppadObj->boolEnteredWarppad = 0;
+						warppadObj->framesWarping = 0;
+						AH_WarpPad_WarpRestore(gGT);
+						gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+						goto WarpPad_AnimateOpen;
+					}
+					else if (apHitAction == AP_HIT_CHOOSER_APPLY)
+					{
+						unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
+						// Hide the token/relic menu so the post-chooser
+						// BoolHidden check below cannot stall the load.
+						RECTMENU_Hide(&D232.menuTokenRelic);
+						AP_HitChooserApplyPure(apHitRoute,
+						                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+						                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
+						                       sdata->Loading.OnBegin.AddBitsConfig0,
+						                       sdata->Loading.OnBegin.RemBitsConfig0,
+						                       sdata->Loading.OnBegin.AddBitsConfig8,
+						                       sdata->Loading.OnBegin.RemBitsConfig8,
+						                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
+						gGT->gameMode1 = (int)apGm1;
+						gGT->gameMode2 = (int)apGm2;
+						sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
+						sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
+						sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
+						sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
+						if (apHitRoute == 0)
+							goto WarpPad_BoxReRace; // Trophy: plain adventure rerace
+						apHitHandled = 1; // fall through to the ordinary load
+						sdata->boolOpenTokenRelicMenu = 1;
+					}
+					// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
+				}
+#endif
+
 				// if never opened
-				if (sdata->boolOpenTokenRelicMenu == 0)
+				if (!apHitHandled && sdata->boolOpenTokenRelicMenu == 0)
 				{
 					if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
 					{
