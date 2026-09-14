@@ -98,6 +98,11 @@ int  ap_net_location_exists(long long location_code);
 // is incomplete and must not claim that the seed is blocked.
 int  ap_net_location_count(void);
 
+// Size of the server's checked-location set for this slot (0 if not connected
+// or refused). Diagnostics only: the [AP HIT] roster line reports it so a log
+// shows which checked state a race's opponent draw saw.
+int  ap_net_checked_count(void);
+
 // Count of own location checks sent whose ReceivedItems echo has not yet drained
 // (issue #85). In solo every own check echoes, so this drains to 0. The seed-verify
 // sweep records whether its log verdict was computed from settled state.

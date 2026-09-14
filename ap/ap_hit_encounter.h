@@ -1,7 +1,7 @@
 #ifndef AP_HIT_ENCOUNTER_H
 #define AP_HIT_ENCOUNTER_H
 
-// Hit Character encounters (schema 16, ticket 06): the gather half.
+// Hit Character encounters (global schema 16, block schema 2): the gather half.
 //
 // ap/ap_hit_policy.h holds the freestanding decisions; this module reads the
 // parsed slot_data block, the server's checked-location state and the engine's
@@ -14,7 +14,7 @@
 
 #ifdef CTR_AP
 
-#include "ap_seedcfg.h" // ctr_hit_candidates
+#include "ap_seedcfg.h" // ctr_hit_order
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,9 +24,10 @@ extern "C" {
 // was absent/disabled/refused, or the feature scalar was off.
 int AP_HitEncounterEnabled(void);
 
-// The parsed candidate lists for a destination: ordinary tracks 0..17 and cups
-// 100..104. NULL when the feature is off or the destination is unsupported.
-const ctr_hit_candidates *AP_HitEncounterCandidates(int destLevelID);
+// The parsed draw order (16 engine ids) for a destination: ordinary tracks
+// 0..17 and cups 100..104. NULL when the feature is off or the destination is
+// unsupported.
+const int *AP_HitEncounterOrder(int destLevelID);
 
 // Should the ordinary roster be replaced by the encounter field for this load?
 // Single-player ordinary Adventure Trophy races only: the sixteen retail tracks
@@ -43,14 +44,40 @@ int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
 // after a reconnect/reload) sees the new eligibility.
 int AP_HitEncounterGuestEligible(int guest);
 
-// The eligible unchecked guest opportunity for a destination, or -1. `player`
-// is the EFFECTIVE player engine id (after any racer lock).
+// Fill eligible[16] (defaults always, guests once an unlock win is checked) and
+// unchecked[16] (Hit location in the seed and not checked on the server) from
+// the parsed block and the server's checked set. Returns 0 (all zero) when the
+// feature is off.
+int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked);
+
+// The Hit opportunity for a destination, or -1: the lowest eligible engine id
+// other than `player` with an unchecked Hit (AP_HitOpportunityPure). `player`
+// is the EFFECTIVE player engine id (after any racer lock). -1 for a
+// destination without an order.
 int AP_HitEncounterOpportunity(int destLevelID, int player);
 
-// Select the AI field for an ordinary race at `destLevelID`. `player` is the
-// effective player; `aiSeats` is 7 (ordinary) or 4 (retail Purple cup). Writes
-// engine ids into `outIDs` and returns the count. Never seats the player.
-int AP_HitEncounterBuildField(int destLevelID, int player, int aiSeats, int *outIDs);
+// Draw one FRESH field at `destLevelID` with that destination's cursors and
+// advance them (AP_HitDrawFieldPure). `player` is the effective player;
+// `aiSeats` is 7 (ordinary) or 4 (retail Purple cup). Writes engine ids into
+// `outIDs` and returns the count. Never seats the player.
+int AP_HitEncounterDrawFresh(int destLevelID, int player, int aiSeats, int *outIDs);
+
+// Diagnostics: the destination's three cursors and its fresh-draw count.
+int AP_HitEncounterDrawState(int destLevelID, int *outCursors3, unsigned *outDraws);
+
+// Clear every cursor, draw count and snapshot (new seed identity; harnesses).
+void AP_HitEncounterResetDrawState(void);
+
+// Called at the top of LOAD_DriverMPK for EVERY driver load. Latches whether
+// the previous load was an ordinary apply load, which is what lets a restart
+// or retry reuse its field.
+void AP_HitLoadBegin(void);
+
+// The field for an ordinary apply load at `destLevelID`: reuses the stored
+// field when the immediately previous driver load was an ordinary apply for
+// the same level, player and seat count (a restart/retry), else draws fresh.
+// *outFresh (may be NULL) reports which. Returns the count.
+int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *outFresh);
 
 // Plan BI_RACERMODELHI extras for a selected field. Returns the number needed
 // (may exceed `cap`, so the caller can refuse a required load it cannot fit).
@@ -62,8 +89,8 @@ int AP_HitEncounterExtras(const int *selected, int selectedCount, int player,
 // otherwise. Matches MainInit's field count.
 int AP_HitEncounterCupFieldSize(int cupID);
 
-// Mark a NEW cup start (the adventure cup pad entry). The next cup load resolves
-// a fresh roster from current eligibility.
+// Mark a NEW cup start (the adventure cup pad entry). The next cup load draws a
+// fresh roster from current eligibility with the cup's cursors.
 void AP_HitCupSnapshotBegin(int cupID);
 
 // Clear the snapshot (fresh seed/connect).

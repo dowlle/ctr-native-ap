@@ -634,12 +634,18 @@ int AP_PadStage1Met(int physLevelID);
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 
-// Is there an eligible, unchecked Hit Character guest opportunity behind this
-// pad (schema 16, ticket 06)? True only for ordinary retail destinations 0..15
-// with an eligible guest (its authoritative trigger win checked) whose Hit
+// Is there a Hit Character opportunity behind this pad (block schema 2, the
+// pool draw)? True for a Hit-supported ordinary destination (0..17, trials only
+// with a valid trial row) while any eligible racer other than the effective
+// player (defaults always; guests once an unlock win is checked) has a Hit
 // location this seed carries and the server has not checked. Feeds both
-// AP_PadState and the ordinary tier-2 chooser in AH_WarpPad.c.
+// AP_PadState and the tier-2 choosers in AH_WarpPad.c.
 int AP_HitPadOpportunity(int physLevelID, int destLevelID);
+
+// One [AP HIT] chooser line per chooser decision (OPEN, PLAIN, APPLY, CANCEL,
+// VANISH); NONE and WAIT are per-frame and never logged.
+void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
+                      int tokenLeft, int relicLeft);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

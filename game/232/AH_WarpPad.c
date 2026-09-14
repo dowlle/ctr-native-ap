@@ -1292,6 +1292,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				    sdata->Loading.OnBegin.AddBitsConfig8,
 				    sdata->Loading.OnBegin.RemBitsConfig8,
 				    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+				AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
+				                 tokenLeft, relicLeft);
 				if (apHitAction == AP_HIT_CHOOSER_OPEN)
 				{
 					AH_WarpPad_HitRaceRows(tokenLeft, relicLeft);
@@ -1565,6 +1567,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					    sdata->Loading.OnBegin.AddBitsConfig8,
 					    sdata->Loading.OnBegin.RemBitsConfig8,
 					    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+					AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
+					                 apHitTokenLeft, apHitRelicLeft);
 
 					if (apHitAction == AP_HIT_CHOOSER_OPEN)
 					{

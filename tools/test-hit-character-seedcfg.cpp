@@ -142,21 +142,15 @@ static void expect_inert(const nlohmann::json &d, const char *what)
 
 // ---------------------------------------------------------------------------
 
-// The three candidate lists of one destination, compared element-for-element
-// and in order against the emitted fixture.
-static void compare_candidates(const nlohmann::json &want, const ctr_hit_candidates &got,
-                               const char *key)
+// One destination's order, compared element-for-element and in order against
+// the emitted fixture.
+static void compare_order(const nlohmann::json &want, const ctr_hit_order &got,
+                          const char *key)
 {
-	static const char *kLists[3] = {"base", "pinned", "reserve"};
-	const ctr_hit_list *gotLists[3] = {&got.base, &got.pinned, &got.reserve};
-	for (int l = 0; l < 3; l++)
-	{
-		const nlohmann::json &w = want[kLists[l]];
-		expect_eq(gotLists[l]->count, (long long)w.size(), "candidate list count");
-		for (int i = 0; i < (int)w.size(); i++)
-			expect_eq_at(gotLists[l]->ids[i], (long long)w[i].get<long long>(),
-			             kLists[l], key, i);
-	}
+	const nlohmann::json &w = want["order"];
+	expect_eq((long long)w.size(), CTR_CFG_HIT_CHARACTER_COUNT, "order has sixteen ids");
+	for (int i = 0; i < (int)w.size() && i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+		expect_eq_at(got.ids[i], (long long)w[i].get<long long>(), "order", key, i);
 }
 
 static void test_valid_roundtrip(void)
@@ -170,7 +164,8 @@ static void test_valid_roundtrip(void)
 
 	const nlohmann::json &b = g_fixture["hit_character_encounters"];
 
-	expect_eq(h->schema, CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, "block schema 1");
+	expect_eq(h->schema, CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, "block schema 2");
+	expect_eq(CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, 2, "this build knows block schema 2");
 	expect_eq(h->enabled, 1, "scalar enabled");
 	expect_eq(h->seen, 1, "block seen");
 	expect_eq(h->valid, 1, "block valid");
@@ -178,10 +173,9 @@ static void test_valid_roundtrip(void)
 	// policy, every field against the fixture.
 	expect_eq((long long)h->seed, (long long)b["policy"]["seed"].get<unsigned long long>(),
 	          "policy.seed verbatim");
-	expect_eq(h->guest_slots, b["policy"]["guest_slots"].get<int>(), "policy.guest_slots");
-	expect_eq(h->boss_eligible_after_clear,
-	          b["policy"]["boss_eligible_after_clear"].get<bool>() ? 1 : 0,
-	          "policy.boss_eligible_after_clear");
+	expect_eq(h->max_guests, b["policy"]["max_guests"].get<int>(), "policy.max_guests");
+	expect(b["policy"]["draw"].get<std::string>() == "unhit_first_rotation",
+	       "fixture policy.draw");
 
 	// locations: every engine id -> the emitted code, in canonical order.
 	for (int id = 0; id < CTR_CFG_HIT_CHARACTER_COUNT; id++)
@@ -195,14 +189,14 @@ static void test_valid_roundtrip(void)
 	for (int lid = 0; lid < CTR_CFG_HIT_TRACK_COUNT; lid++)
 	{
 		const std::string key = std::to_string(lid);
-		compare_candidates(b["tracks"][key], h->tracks[lid], key.c_str());
+		compare_order(b["tracks"][key], h->tracks[lid], key.c_str());
 	}
 
 	// cups: every cup id, every list element, in emitted order.
 	for (int c = 0; c < CTR_CFG_HIT_CUP_COUNT; c++)
 	{
 		const std::string key = std::to_string(100 + c);
-		compare_candidates(b["cups"][key], h->cups[c], key.c_str());
+		compare_order(b["cups"][key], h->cups[c], key.c_str());
 	}
 
 	// unlock_triggers: every guest, kind + every win code in emitted order.
@@ -232,22 +226,16 @@ static void test_valid_roundtrip(void)
 static void test_reordered_lists_survive(void)
 {
 	nlohmann::json d = fx();
-	auto &t0 = d["hit_character_encounters"]["tracks"]["0"];
-	std::reverse(t0["base"].begin(), t0["base"].end());
-	std::reverse(t0["reserve"].begin(), t0["reserve"].end());
-	expect_accept(d, "reordered lists");
+	auto &t0 = d["hit_character_encounters"]["tracks"]["0"]["order"];
+	t0 = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+	expect_accept(d, "reordered order");
 
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
 	expect(h != NULL, "reordered exposes encounters");
 	if (!h)
 		return;
-	static const int wantBase[8] = {3, 2, 1, 0, 7, 6, 5, 4};
-	static const int wantRes[8] = {11, 10, 9, 8, 15, 14, 13, 12};
-	for (int i = 0; i < 8; i++)
-	{
-		expect_eq(h->tracks[0].base.ids[i], wantBase[i], "reordered base verbatim");
-		expect_eq(h->tracks[0].reserve.ids[i], wantRes[i], "reordered reserve verbatim");
-	}
+	for (int i = 0; i < 16; i++)
+		expect_eq(h->tracks[0].ids[i], 15 - i, "reordered order verbatim");
 }
 
 static void test_scalar_and_block_presence(void)
@@ -313,8 +301,26 @@ static void test_block_schema_and_shape(void)
 {
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["schema"] = 2;
-		expect_reject(d, "unknown block schema");
+		d["hit_character_encounters"]["schema"] = 3;
+		expect_reject(d, "unknown block schema 3");
+	}
+	{
+		// A superseded schema-1 (pinned) block is refused visibly, with the
+		// reason naming the known block schema.
+		nlohmann::json d = fx();
+		auto &blk = d["hit_character_encounters"];
+		blk["schema"] = 1;
+		blk["policy"] = {{"seed", 1}, {"self_character", "never_seat_player"},
+		                 {"boss_eligible_after_clear", true}, {"guest_slots", 1}};
+		for (auto grp : {"tracks", "cups"})
+			for (auto it = blk[grp].begin(); it != blk[grp].end(); ++it)
+				it.value() = {{"base", {0, 1, 2, 3, 4, 5, 6, 7}},
+				              {"pinned", nlohmann::json::array()},
+				              {"reserve", {8, 9, 10, 11, 12, 13, 14, 15}}};
+		expect_reject(d, "superseded block schema 1");
+		expect(std::string(ap_seedcfg_reject_reason()).find("known block schema 2") !=
+		           std::string::npos,
+		       "schema-1 refusal names the known block schema");
 	}
 	{
 		nlohmann::json d = fx();
@@ -420,23 +426,28 @@ static void test_policy(void)
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["policy"]["boss_eligible_after_clear"] = false;
-		expect_reject(d, "false boss_eligible_after_clear");
+		d["hit_character_encounters"]["policy"]["draw"] = "pins";
+		expect_reject(d, "wrong draw");
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["policy"]["boss_eligible_after_clear"] = 1;
-		expect_reject(d, "non-bool boss_eligible_after_clear");
+		d["hit_character_encounters"]["policy"].erase("draw");
+		expect_reject(d, "missing draw");
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["policy"]["guest_slots"] = 2;
-		expect_reject(d, "guest_slots 2");
+		d["hit_character_encounters"]["policy"]["max_guests"] = 2;
+		expect_reject(d, "max_guests 2");
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["policy"]["guest_slots"] = true;
-		expect_reject(d, "bool guest_slots");
+		d["hit_character_encounters"]["policy"]["max_guests"] = true;
+		expect_reject(d, "bool max_guests");
+	}
+	{
+		nlohmann::json d = fx();
+		d["hit_character_encounters"]["policy"]["guest_slots"] = 1;
+		expect_reject(d, "schema-1 policy key on a schema-2 block");
 	}
 	{
 		nlohmann::json d = fx();
@@ -445,78 +456,46 @@ static void test_policy(void)
 	}
 }
 
-static void test_candidates(void)
+static void test_orders(void)
 {
+	auto bad = [](const char *grp, const char *key, nlohmann::json v, const char *what) {
+		nlohmann::json d = fx();
+		d["hit_character_encounters"][grp][key] = v;
+		expect_reject(d, what);
+	};
+	nlohmann::json ok = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+	bad("tracks", "0", {{"order", {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}}},
+	    "duplicate id in order");
+	bad("tracks", "0", {{"order", {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}}},
+	    "short order");
+	bad("tracks", "0", {{"order", {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1}}},
+	    "long order");
+	bad("tracks", "0", {{"order", {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16}}},
+	    "id out of range in order");
+	bad("tracks", "0", {{"order", {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, true}}},
+	    "bool in order");
+	bad("tracks", "0", {{"order", ok}, {"pinned", nlohmann::json::array()}},
+	    "extra key beside order");
+	bad("tracks", "0", ok, "bare list instead of an order object");
+	bad("tracks", "0", {{"base", {0, 1, 2, 3, 4, 5, 6, 7}},
+	                    {"pinned", nlohmann::json::array()},
+	                    {"reserve", {8, 9, 10, 11, 12, 13, 14, 15}}},
+	    "schema-1 candidate shape");
+	bad("cups", "100", {{"order", {0, 1, 2, 3}}}, "short cup order");
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["base"] = {4, 4, 6, 7, 0, 1, 2, 3};
-		expect_reject(d, "duplicate in base");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["base"] = {4, 5, 6, 7, 0, 1, 2};
-		expect_reject(d, "short base");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["base"] = {4, 5, 6, 7, 0, 1, 2, 8};
-		expect_reject(d, "base carries a non-default id");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["reserve"] = {12, 13, 14, 15, 8, 9, 10, 7};
-		expect_reject(d, "reserve carries a default id");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["pinned"] = {14};
-		expect_reject(d, "unapproved pin on track 0");
-	}
-	{
-		// The approved pin is REQUIRED where the contract pins one.
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["3"]["pinned"] = nlohmann::json::array();
-		expect_reject(d, "required Fake Crash pin on track 3 cannot be removed");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["8"]["pinned"] = nlohmann::json::array();
-		expect_reject(d, "required Fake Crash pin on track 8 cannot be removed");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["1"]["pinned"] = {12};
-		expect_reject(d, "wrong approved pin on track 1");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["cups"]["100"]["pinned"] = {14};
-		expect_reject(d, "cup pin forbidden");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"].erase("0");
+		d["hit_character_encounters"]["tracks"].erase("17");
 		expect_reject(d, "missing track key");
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["18"] = d["hit_character_encounters"]["tracks"]["0"];
+		d["hit_character_encounters"]["tracks"]["18"] = {{"order", ok}};
 		expect_reject(d, "extra track key");
 	}
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"].erase("reserve");
-		expect_reject(d, "candidate missing reserve");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["extra"] = 1;
-		expect_reject(d, "candidate extra key");
-	}
-	{
-		nlohmann::json d = fx();
-		d["hit_character_encounters"]["tracks"]["0"]["base"] = {4, 5, 6, 7, 0, 1, 2, true};
-		expect_reject(d, "bool in base list");
+		d["hit_character_encounters"]["cups"].erase("104");
+		expect_reject(d, "missing cup key");
 	}
 }
 
@@ -630,7 +609,7 @@ static void test_seed_transitions(void)
 	expect(ap_seedcfg_hit_encounters() != NULL, "transition valid accessible");
 
 	nlohmann::json bad = fx();
-	bad["hit_character_encounters"]["schema"] = 2;
+	bad["hit_character_encounters"]["schema"] = 1;
 	expect_reject(bad, "transition invalid");
 	expect_eq(ctr_cfg.hit.locations[0], -1, "invalid parse cleared old location");
 	expect_eq(ctr_cfg.hit.valid, 0, "invalid parse cleared valid flag");
@@ -741,7 +720,7 @@ int main(int argc, char **argv)
 	test_block_schema_and_shape();
 	test_locations();
 	test_policy();
-	test_candidates();
+	test_orders();
 	test_triggers();
 	test_bosses();
 	test_seed_transitions();
