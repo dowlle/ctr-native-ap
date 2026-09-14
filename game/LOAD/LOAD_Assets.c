@@ -8,6 +8,10 @@
 #include <platform/native_custom_tracks.h>
 #endif
 
+#ifdef CTR_AP
+#include "../../ap/ap_net.h" // ap_net_checked_count for the [AP HIT] roster line
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800326b4-0x80032700.
 void LOAD_RunPtrMap(char *origin, int *patchArr, int numPtrs)
 {
@@ -124,6 +128,54 @@ void LOAD_HitEncounterValidateExtras(void)
 }
 #endif
 
+#ifdef CTR_AP
+// "[a,b,c]" into buf, bounded.
+static void LOAD_HitFormatIds(char *buf, int cap, const int *ids, int n)
+{
+	int used = 0;
+	int k;
+	used += snprintf(buf + used, cap - used, "[");
+	for (k = 0; k < n && used < cap - 1; k++)
+		used += snprintf(buf + used, cap - used, k ? ",%d" : "%d", ids[k]);
+	if (used < cap - 1)
+		snprintf(buf + used, cap - used, "]");
+}
+
+// One [AP HIT] roster line per Hit race load (ruling 6, 2026-09-14): what was
+// seated, whether it was a fresh draw or a retry, and the inputs the draw saw.
+static void LOAD_HitLogRoster(int level, int isCup, int player, int fresh,
+                              const int *seated, int n, const int *extras, int nExtras)
+{
+	unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
+	unsigned char unchecked[CTR_CFG_HIT_CHARACTER_COUNT];
+	int elig[CTR_CFG_HIT_CHARACTER_COUNT], unhit[CTR_CFG_HIT_CHARACTER_COUNT];
+	int nElig = 0, nUnhit = 0, k;
+	int cur[3] = {-1, -1, -1};
+	unsigned draws = 0;
+	char sElig[64], sUnhit[80], sSeat[48], sExtra[24], line[400];
+
+	AP_HitEncounterGather(eligible, unchecked);
+	for (k = 0; k < CTR_CFG_HIT_CHARACTER_COUNT; k++)
+	{
+		if (k >= 8 && eligible[k])
+			elig[nElig++] = k;
+		if (k != player && eligible[k] && unchecked[k])
+			unhit[nUnhit++] = k;
+	}
+	AP_HitEncounterDrawState(isCup ? 100 + level : level, cur, &draws);
+	LOAD_HitFormatIds(sElig, sizeof sElig, elig, nElig);
+	LOAD_HitFormatIds(sUnhit, sizeof sUnhit, unhit, nUnhit);
+	LOAD_HitFormatIds(sSeat, sizeof sSeat, seated, n);
+	LOAD_HitFormatIds(sExtra, sizeof sExtra, extras, nExtras);
+	snprintf(line, sizeof line,
+	         "[AP HIT] roster lvl=%d cup=%d player=%d apply=1 draw=%s n=%u checked=%d "
+	         "eligible=%s unhit=%s seated=%s extras=%s cur=%d,%d,%d\n",
+	         isCup ? 100 + level : level, isCup, player, fresh ? "fresh" : "reuse", draws,
+	         ap_net_checked_count(), sElig, sUnhit, sSeat, sExtra, cur[0], cur[1], cur[2]);
+	AP_LogLine(line);
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003282c-0x80032b50.
 int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(struct LoadQueueSlot *))
 {
@@ -140,6 +192,10 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 	// the ordinary branch. A hub/menu/boss load that skips the branch below must
 	// not leave stale required-model ids for stage 6 to validate (ticket 06).
 	LOAD_HitEncounterResetExtras();
+	// Pool draw: latch whether the previous driver load was an ordinary Hit
+	// race, so a restart/retry reuses its field and any other load in between
+	// makes the next race draw fresh.
+	AP_HitLoadBegin();
 #endif
 
 	// 3P/4P
@@ -272,11 +328,12 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 #endif
 
 #ifdef CTR_AP
-			// Hit Character encounters (ticket 06/11): replace the stock default
-			// field with the seed's resolved encounter roster. Ordinary Adventure
-			// Trophy races (0..17) use the destination's lists; an Adventure Gem
-			// Cup uses its FROZEN snapshot (resolved once at the pad entry, reused
-			// across every leg and same-session retry). Custom-served loads keep
+			// Hit Character encounters (pool draw, block schema 2): replace the
+			// stock default field with a draw from the defaults plus unlocked
+			// guests. Ordinary Adventure Trophy races (0..17) draw fresh per race
+			// (a restart/retry reuses the field); an Adventure Gem Cup uses its
+			// FROZEN snapshot (drawn once at the pad entry, reused across every
+			// leg and same-session retry). Custom-served loads keep
 			// their own permute and get no roster. The player's arcade pack is
 			// built around the stock set LOAD_Robots1P just wrote, so any selected
 			// opponent outside it needs a BI_RACERMODELHI extra.
@@ -316,6 +373,7 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 					int hitRoster[AP_HIT_FIELD_MAX];
 					int hitExtras[3];
 					int hitCount, hitNeed, k;
+					int hitFresh = 1;
 
 					if (isCup)
 						hitCount = AP_HitCupSnapshotField((int)gGT->cup.cupID,
@@ -323,15 +381,18 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 						                                  (int)data.characterIDs[0],
 						                                  aiSeats, hitRoster);
 					else
-						hitCount = AP_HitEncounterBuildField((int)gGT->levelID,
-						                                     (int)data.characterIDs[0],
-						                                     aiSeats, hitRoster);
+						hitCount = AP_HitRaceField((int)gGT->levelID,
+						                           (int)data.characterIDs[0],
+						                           aiSeats, hitRoster, &hitFresh);
 					for (k = 0; k < hitCount; k++)
 						data.characterIDs[1 + k] = (s16)hitRoster[k];
 
 					hitNeed = AP_HitEncounterExtras(hitRoster, hitCount,
 					                                (int)data.characterIDs[0],
 					                                hitExtras, 3);
+					LOAD_HitLogRoster(isCup ? (int)gGT->cup.cupID : (int)gGT->levelID, isCup,
+					                  (int)data.characterIDs[0], hitFresh, hitRoster,
+					                  hitCount, hitExtras, hitNeed > 3 ? 3 : hitNeed);
 					if (hitNeed > 3)
 						Platform_Fatal("CTR Native - Hit Character",
 						               "Hit encounter needs more driver models than the loader can sideload.");
@@ -349,6 +410,20 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 						                 LOAD_DriverMPK_SetPointer);
 					}
 					AP_HitExtrasRecordPure(&s_hitExtras, hitExtras, hitNeed);
+				}
+				else if (AP_HitEncounterEnabled())
+				{
+					char hitLine[200];
+					snprintf(hitLine, sizeof hitLine,
+					         "[AP HIT] roster lvl=%d apply=0 adv=%d cup=%d boss=%d arcade=%d "
+					         "relic=%d token=%d crystal=%d players=%d custom=%d\n",
+					         (int)gGT->levelID, (gameMode1 & ADVENTURE_MODE) != 0, isCup,
+					         IS_BOSS_RACE(gameMode1) != 0, (gameMode1 & ARCADE_MODE) != 0,
+					         (gameMode1 & RELIC_RACE) != 0,
+					         (gGT->gameMode2 & TOKEN_RACE) != 0,
+					         (gameMode1 & CRYSTAL_CHALLENGE) != 0,
+					         (int)gGT->numPlyrNextGame, customServed);
+					AP_LogLine(hitLine);
 				}
 			}
 #endif

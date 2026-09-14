@@ -82,7 +82,9 @@ extern "C" {
 //        not silently ignore the block (a seed whose 16 new Hit locations are
 //        live but whose native has no roster would strand those checks), so a
 //        pre-16 client shows the #8 banner on every 16 seed. See the strict
-//        admission parser and the rejection flag below.
+//        admission parser and the rejection flag below. The block carries
+//        its own version: block schema 2 (the pool draw, 2026-09-14) rides
+//        global 16 because a block-schema-1 client refuses it at admission.
 #define CTR_CFG_SCHEMA_KNOWN 16
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
@@ -370,49 +372,41 @@ typedef struct
 	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
 } ctr_wumpa_checks;
 
-// ── hit_character_encounters (schema 16, ticket 05) ─────────────────────────
+// ── hit_character_encounters (schema 16, block schema 2) ────────────────────
 //
-// Native-owned, fully-resolved encounter tables. The apworld's fill_slot_data
-// does ALL of the mode/rotation/pin logic and emits ordered, resolved candidate
-// lists; native NEVER uses its gameplay RNG to reconstruct them. The block is
-// conditional on ctr_options.hit_character (a boolean emitted on every 16 seed,
-// on or off). The strict parser either reads the whole block into these
+// Native-owned encounter tables. The apworld's fill_slot_data resolves every
+// seeded order; native walks those orders per race (the pool draw in
+// ap/ap_hit_policy.h) and NEVER shuffles with its gameplay RNG. The block is
+// conditional on ctr_options.hit_character (a boolean emitted on every 16
+// seed, on or off). The strict parser either reads the whole block into these
 // structures or refuses the seed outright -- there is no partial activation.
 //
-// Ordering is load-bearing (a candidate list is an ordered preference list), so
-// every list here preserves the wire order verbatim.
-#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 1
+// Block schema 2 (2026-09-14) replaced schema 1's base/pinned/reserve lists,
+// guest_slots and boss_eligible_after_clear with one `order` per destination
+// and policy {seed, self_character, draw "unhit_first_rotation", max_guests 3}.
+// A schema-1 block is refused like any other unknown block schema.
+//
+// Ordering is load-bearing (an order is the draw's walk order), so every list
+// here preserves the wire order verbatim.
+#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 2
 #define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
 #define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
 #define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
 #define CTR_CFG_HIT_BOSS_COUNT         6  // canonical boss-win codes, see below
 #define CTR_CFG_HIT_TRIGGER_COUNT      8  // guest engine ids 8..15
-#define CTR_CFG_HIT_LIST_MAX           16 // hard bound on any candidate list
 #define CTR_CFG_HIT_TRIGGER_MAX        8  // max win codes in one any_of list
+#define CTR_CFG_HIT_MAX_GUESTS         3  // policy.max_guests (extra-model slots)
 #define CTR_CFG_HIT_REJECT_CAP         160 // bounded rejection diagnostic buffer
 
 // kind values for ctr_hit_trigger.kind.
 #define CTR_CFG_HIT_KIND_BOSS  0
 #define CTR_CFG_HIT_KIND_TRACK 1
 
-// One ordered candidate list. count <= CTR_CFG_HIT_LIST_MAX.
+// One destination's seeded draw order: a permutation of engine ids 0..15.
 typedef struct
 {
-	int count;
-	int ids[CTR_CFG_HIT_LIST_MAX];
-} ctr_hit_list;
-
-// The three candidate lists for one destination (ordinary track or cup):
-//   base    -- a permutation of the eight default engine ids 0..7
-//   pinned  -- the approved guest pin where the contract pins one (required),
-//              empty otherwise; cups always empty
-//   reserve -- a permutation of the eight non-default engine ids 8..15
-typedef struct
-{
-	ctr_hit_list base;
-	ctr_hit_list pinned;
-	ctr_hit_list reserve;
-} ctr_hit_candidates;
+	int ids[CTR_CFG_HIT_CHARACTER_COUNT];
+} ctr_hit_order;
 
 // One guest's unlock trigger. kind is CTR_CFG_HIT_KIND_BOSS or _TRACK; any_of
 // holds the approved authoritative win codes (positive AP codes, no duplicates).
@@ -433,12 +427,11 @@ typedef struct
 	int          valid;    // fully parsed, admissible encounter data
 	int          schema;   // block schema (== CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN)
 	unsigned int seed;     // policy.seed, uint32
-	int          guest_slots;               // policy.guest_slots (== 1)
-	int          boss_eligible_after_clear; // policy flag (== true)
+	int          max_guests; // policy.max_guests (== CTR_CFG_HIT_MAX_GUESTS)
 	long         locations[CTR_CFG_HIT_CHARACTER_COUNT]; // engine id -> AP code
-	ctr_hit_candidates tracks[CTR_CFG_HIT_TRACK_COUNT];
-	ctr_hit_candidates cups[CTR_CFG_HIT_CUP_COUNT];
-	ctr_hit_trigger    triggers[CTR_CFG_HIT_TRIGGER_COUNT]; // index guest - 8
+	ctr_hit_order tracks[CTR_CFG_HIT_TRACK_COUNT];
+	ctr_hit_order cups[CTR_CFG_HIT_CUP_COUNT];
+	ctr_hit_trigger triggers[CTR_CFG_HIT_TRIGGER_COUNT]; // index guest - 8
 	int          boss_identity[CTR_CFG_HIT_BOSS_COUNT]; // canonical key order
 } ctr_hit_encounters;
 

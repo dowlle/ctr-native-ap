@@ -515,6 +515,41 @@ void MainInit_Drivers(struct GameTracker *gGT)
 			// spawn an AI at this character index
 			BOTS_Driver_Init(i);
 		}
+
+#ifdef CTR_AP
+		// [AP HIT] birth line (ruling 6, 2026-09-14): the model each AI was
+		// actually born with, and the sideloaded extras, so a log can tell a
+		// seated-but-invisible guest from one that was never seated.
+		if (AP_HitEncounterEnabled() && numPlyrCurrGame == 1 &&
+		    (gameMode & ADVENTURE_MODE) != 0)
+		{
+			char line[400];
+			int used = snprintf(line, sizeof line, "[AP HIT] birth lvl=%d ai=[",
+			                    (int)gGT->levelID);
+			int k;
+			for (k = numPlyrCurrGame; k < numDrivers && used < (int)sizeof line - 48; k++)
+			{
+				struct Driver *d = gGT->drivers[k];
+				const char *name = "?";
+				if (d != NULL && d->instSelf != NULL && d->instSelf->model != NULL)
+					name = d->instSelf->model->name;
+				used += snprintf(line + used, sizeof line - used, "%s%d:%d %.16s",
+				                 k > numPlyrCurrGame ? "," : "", k,
+				                 (int)data.characterIDs[k], name);
+			}
+			used += snprintf(line + used, sizeof line - used, "] extras=[");
+			for (k = 0; k < 3 && used < (int)sizeof line - 24; k++)
+			{
+				struct Model *m = data.driverModelExtras[k].model;
+				if (m != NULL)
+					used += snprintf(line + used, sizeof line - used, "%s%.16s",
+					                 used > 0 && line[used - 1] != '[' ? "," : "", m->name);
+			}
+			if (used < (int)sizeof line - 2)
+				snprintf(line + used, sizeof line - used, "]\n");
+			AP_LogLine(line);
+		}
+#endif
 	}
 
 	// If number of AIs is not zero

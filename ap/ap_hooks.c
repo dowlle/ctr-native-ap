@@ -57,6 +57,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_pad_state.h"  // freestanding Warp-Pad State Model v2 decision table
 #include "ap_hit_policy.h" // freestanding Hit Character encounter decisions (ticket 06)
 #include "ap_hit_encounter.h" // Hit Character gather: eligibility + roster + dispatch (ticket 06)
+#include "ap_hit_chooser.h" // AP_HIT_CHOOSER_* action codes for the chooser log line
 #include "ap_relic_goal.h" // shared Oxide Final relic-count rule (#273)
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
@@ -1543,10 +1544,11 @@ static int AP_HitEffectivePlayer(int physLevelID)
 	return AP_HitEffectivePlayerPure(chosen, lock, ctr_cfg_racer_lock_met(physLevelID));
 }
 
-// Is there a Hit opportunity behind this pad? Any ordinary destination whose
-// ACTUAL field seats an eligible guest or default with an unchecked Hit location
-// participates: the sixteen retail tracks (0..15) and the two trial Trophy tracks
-// (16/17). A trial whose trial row is invalid has no Trophy route, so it never
+// Is there a Hit opportunity behind this pad? Under the pool draw every eligible
+// target rotates into every supported destination's field, so any eligible
+// racer other than the effective player with an unchecked Hit location is an
+// opportunity at the sixteen retail tracks (0..15) and the two trial Trophy
+// tracks (16/17). A trial whose trial row is invalid has no Trophy route, so it never
 // reports an opportunity (the pad must not stay open with nothing to earn);
 // logged once per trial. Cups are ticket 11. Counted by AP_PadState as BOTH a
 // remaining location and a plain-rerace check, so Done cannot hard-lock the pad
@@ -1582,6 +1584,24 @@ int AP_HitPadOpportunity(int physLevelID, int destLevelID)
 		return 0;
 
 	return AP_HitEncounterOpportunity(destLevelID, AP_HitEffectivePlayer(physLevelID)) >= 0;
+}
+
+void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
+                      int tokenLeft, int relicLeft)
+{
+	static const char *const kNames[] = {"none", "open", "wait", "plain",
+	                                     "apply", "cancel", "vanish"};
+	char line[160];
+	if (action == AP_HIT_CHOOSER_NONE || action == AP_HIT_CHOOSER_WAIT)
+		return;
+	if (action < 0 || action > AP_HIT_CHOOSER_VANISH)
+		return;
+	snprintf(line, sizeof line,
+	         "[AP HIT] chooser pad=%d dest=%d action=%s route=%d token=%d relic=%d\n",
+	         physLevelID, destLevelID, kNames[action],
+	         action == AP_HIT_CHOOSER_APPLY ? route : (action == AP_HIT_CHOOSER_PLAIN ? 0 : -1),
+	         tokenLeft, relicLeft);
+	AP_LogLine(line);
 }
 
 // The unified pad state (Warp-Pad State Model v2). Returns:
@@ -1645,9 +1665,9 @@ int AP_PadState(int physLevelID, int destLevelID)
 	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
 	// The trial Trophy and CTR Challenge are already in uncBits (#343).
 
-	// Hit Character encounter (ticket 06): an eligible guest with an unchecked
-	// Hit location is a remaining check AND needs a plain race, so it joins both
-	// counters. Without the reRaceChecksStanding half a stage-2-locked pad would
+	// Hit Character encounter (pool draw): an eligible racer other than the
+	// player with an unchecked Hit location is a remaining check AND needs a
+	// plain race, so it joins both counters. Without the reRaceChecksStanding half a stage-2-locked pad would
 	// Re-lock and strand the guest; without the uncCount half the pad would go
 	// Done and hard-lock it.
 	hitOpp = AP_HitPadOpportunity(physLevelID, destLevelID);

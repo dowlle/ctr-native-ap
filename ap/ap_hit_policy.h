@@ -1,8 +1,8 @@
 #ifndef AP_HIT_POLICY_H
 #define AP_HIT_POLICY_H
 
-// Freestanding decision logic for the Hit Character encounter feature (schema
-// 14, ticket 06). Pulled out of the engine glue (ap/ap_hit_encounter.c) so a
+// Freestanding decision logic for the Hit Character encounter feature (global
+// schema 16, block schema 2: the pool draw). Pulled out of the engine glue (ap/ap_hit_encounter.c) so a
 // host harness can pin every ordering / exclusion / attribution rule without
 // linking the engine, exactly the way ap_pad_state.h splits the pad decision
 // from its gather.
@@ -12,7 +12,7 @@
 // the decision. Both sides compile the same header, so the harness and the game
 // cannot drift.
 
-#include "ap_seedcfg.h" // ctr_hit_candidates / CTR_CFG_HIT_* (guarded by CTR_AP)
+#include "ap_seedcfg.h" // ctr_hit_order / CTR_CFG_HIT_* (guarded by CTR_AP)
 
 #ifdef CTR_AP
 
@@ -30,85 +30,161 @@ extern "C" {
 // Turbo Track (17). Cups are ticket 11.
 #define AP_HIT_ORDINARY_TRACK_MAX 17
 
-// A selected ordinary field: the AI engine ids in seat order (seat 0 first),
-// plus the guest chosen for the single guest slot (-1 = no guest).
+// A drawn field: the AI engine ids in seat order (seat 0 first). `unhit` is how
+// many leading seats are unlocked guests with an unchecked Hit, `other` how many
+// seats follow them from the other non-stock ids; the rest are stock ids.
 typedef struct
 {
 	int ids[AP_HIT_FIELD_MAX];
 	int count;
-	int guest;
+	int unhit;
+	int other;
 } ap_hit_field;
 
-// Fill one ordinary race's AI field.
-//
-//   cand      the DESTINATION's parsed {base, pinned, reserve} lists. NULL
-//             (feature off / unsupported destination) leaves an empty field.
-//   eligible  eligible[16]: may this engine id be seated? Defaults (0..7) are
-//             always eligible; a guest (8..15) is eligible only when one of its
-//             authoritative unlock wins is checked (see AP_HitGuestEligiblePure).
-//   player    the EFFECTIVE player engine id (after any racer lock), excluded
-//             from every seat.
-//   aiSeats   opponents to seat: 7 ordinary, 4 retail Purple cup.
-//
-// Contract order (frozen): at most ONE eligible non-player guest, taking the
-// first eligible entry of `pinned` then of `reserve`; then append non-player
-// unique base ids in wire order until the field is full. If no guest is
-// eligible, fill entirely from base. Never exceeds `aiSeats`, never duplicates,
-// never seats the player. Returns the number of AI seats written.
-static inline int AP_HitSelectFieldPure(const ctr_hit_candidates *cand,
-                                        const unsigned char *eligible,
-                                        int player, int aiSeats,
-                                        ap_hit_field *out)
+// The three draw cursors of one destination: positions (0..15) in its order of
+// the last id taken from each pool. AP_HIT_CURSOR_INIT makes the first walk
+// start at position 0.
+#define AP_HIT_CURSOR_INIT 15
+typedef struct
+{
+	int unhit; // unlocked guests with an unchecked Hit
+	int other; // other non-stock ids (checked guests; Pura for a guest player)
+	int stock; // the seven ids the player's arcade pack carries
+} ap_hit_cursors;
+
+static inline void AP_HitCursorsResetPure(ap_hit_cursors *c)
+{
+	c->unhit = AP_HIT_CURSOR_INIT;
+	c->other = AP_HIT_CURSOR_INIT;
+	c->stock = AP_HIT_CURSOR_INIT;
+}
+
+// The seven ids the player's arcade pack guarantees: exactly what LOAD_Robots1P
+// writes, counting up from 0 and skipping the player. A default player gets the
+// seven other defaults; a guest player gets 0..6 (Pura, 7, then needs an extra).
+static inline void AP_HitStockPure(int player, int *out7)
 {
 	int i;
-	int n = 0;
+	int next = 0;
+	for (i = 0; i < 7; i++)
+	{
+		if (next == player)
+			next++;
+		out7[i] = next++;
+	}
+}
+
+static inline int AP_HitInStockPure(int id, int player)
+{
+	// 0..7 minus the player, truncated to seven ids: for a default player that
+	// is every other default, for a guest player it is 0..6.
+	if (id < 0 || id > 7 || id == player)
+		return 0;
+	if (player < 0 || player > 7)
+		return id <= 6;
+	return 1;
+}
+
+// Pool membership for one walk. Kept as a small enum instead of a callback so
+// the header stays plain C and the harness can pin each pool.
+enum
+{
+	AP_HIT_POOL_UNHIT = 0, // eligible guest, not the player, Hit unchecked
+	AP_HIT_POOL_OTHER,     // eligible non-stock id, not the player, not taken
+	AP_HIT_POOL_STOCK      // stock id, not taken
+};
+
+static inline int AP_HitPoolMemberPure(int pool, int id, int player,
+                                       const unsigned char *eligible,
+                                       const unsigned char *unchecked,
+                                       const unsigned char *taken)
+{
+	if (id < 0 || id >= CTR_CFG_HIT_CHARACTER_COUNT || id == player || taken[id])
+		return 0;
+	if (pool == AP_HIT_POOL_UNHIT)
+		return id >= 8 && eligible[id] && unchecked[id];
+	if (pool == AP_HIT_POOL_OTHER)
+		return !AP_HitInStockPure(id, player) && eligible[id];
+	return AP_HitInStockPure(id, player);
+}
+
+// Walk `order` cyclically from position *cursor + 1 (sixteen steps at most) and
+// append up to `want` pool members to out->ids, marking them taken. *cursor
+// becomes the position of the last id taken (unchanged when none was). Returns
+// the number taken.
+static inline int AP_HitTakePure(const int *order, int pool, int player,
+                                 const unsigned char *eligible,
+                                 const unsigned char *unchecked,
+                                 unsigned char *taken, int *cursor, int want,
+                                 ap_hit_field *out)
+{
+	int step;
+	int got = 0;
+	int start = *cursor;
+
+	if (start < 0 || start > 15)
+		start = AP_HIT_CURSOR_INIT;
+	for (step = 1; step <= 16 && got < want; step++)
+	{
+		int pos = (start + step) % 16;
+		int id = order[pos];
+		if (!AP_HitPoolMemberPure(pool, id, player, eligible, unchecked, taken))
+			continue;
+		taken[id] = 1;
+		out->ids[out->count++] = id;
+		*cursor = pos;
+		got++;
+	}
+	return got;
+}
+
+// Draw one fresh ordinary or cup field ("unhit_first_rotation", block schema 2).
+//
+//   order     the destination's seeded permutation of 0..15 (wire, verbatim)
+//   eligible  eligible[16]: defaults always 1, guests once an unlock win is
+//             checked (AP_HitGuestEligiblePure)
+//   unchecked unchecked[16]: the Hit location is in the seed and not checked
+//   player    the EFFECTIVE player engine id, never seated
+//   aiSeats   7 ordinary, 4 retail Purple cup
+//   cur       in/out: the destination's cursors
+//
+// Seats, in order: up to three unlocked guests with an unchecked Hit; then, in
+// the extra-model slots those leave free, other unlocked non-stock ids (checked
+// guests, and Pura when the player is a guest); then stock ids until the field
+// is full. Every pool rotates through the order, so each member is seated
+// within a bounded number of fresh draws (guarantees G1 to G5, see the
+// apworld's hit_character module). Never the player, never a duplicate, at most
+// three non-stock ids, always exactly aiSeats opponents. Returns the count.
+static inline int AP_HitDrawFieldPure(const int *order,
+                                      const unsigned char *eligible,
+                                      const unsigned char *unchecked,
+                                      int player, int aiSeats,
+                                      ap_hit_cursors *cur, ap_hit_field *out)
+{
+	unsigned char taken[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+	int want;
 
 	out->count = 0;
-	out->guest = -1;
-
-	if (cand == NULL || aiSeats <= 0)
+	out->unhit = 0;
+	out->other = 0;
+	if (order == NULL || aiSeats <= 0)
 		return 0;
 	if (aiSeats > AP_HIT_FIELD_MAX)
 		aiSeats = AP_HIT_FIELD_MAX;
 
-	// One guest slot: first eligible pinned id, else first eligible reserve id.
-	// The pinned list is exactly the approved pin (parser-enforced), so a
-	// non-empty pinned list has one entry; the loop keeps the rule general.
-	for (i = 0; i < cand->pinned.count && out->guest < 0; i++)
-	{
-		int id = cand->pinned.ids[i];
-		if (id != player && eligible[id])
-			out->guest = id;
-	}
-	for (i = 0; i < cand->reserve.count && out->guest < 0; i++)
-	{
-		int id = cand->reserve.ids[i];
-		if (id != player && eligible[id])
-			out->guest = id;
-	}
+	want = aiSeats < CTR_CFG_HIT_MAX_GUESTS ? aiSeats : CTR_CFG_HIT_MAX_GUESTS;
+	out->unhit = AP_HitTakePure(order, AP_HIT_POOL_UNHIT, player, eligible, unchecked,
+	                            taken, &cur->unhit, want, out);
 
-	if (out->guest >= 0 && n < aiSeats)
-		out->ids[n++] = out->guest;
+	want = CTR_CFG_HIT_MAX_GUESTS - out->unhit;
+	if (want > aiSeats - out->count)
+		want = aiSeats - out->count;
+	out->other = AP_HitTakePure(order, AP_HIT_POOL_OTHER, player, eligible, unchecked,
+	                            taken, &cur->other, want, out);
 
-	// Fill the remaining seats from base, in wire order, excluding the player,
-	// the guest and any duplicate.
-	for (i = 0; i < cand->base.count && n < aiSeats; i++)
-	{
-		int id = cand->base.ids[i];
-		int k;
-		int seen = 0;
-		if (id == player || id == out->guest)
-			continue;
-		for (k = 0; k < n; k++)
-			if (out->ids[k] == id)
-				seen = 1;
-		if (seen)
-			continue;
-		out->ids[n++] = id;
-	}
-
-	out->count = n;
-	return n;
+	AP_HitTakePure(order, AP_HIT_POOL_STOCK, player, eligible, unchecked, taken,
+	               &cur->stock, aiSeats - out->count, out);
+	return out->count;
 }
 
 // Is `guest` (engine id 0..15) allowed to appear as an encounter? Defaults
@@ -123,31 +199,22 @@ static inline int AP_HitGuestEligiblePure(int guest, const unsigned char *trigge
 	return triggerMet[guest] ? 1 : 0;
 }
 
-// Is there a Hit opportunity behind this destination for `player`? Computed
-// from the ACTUAL field AP_HitSelectFieldPure would seat, so pad routing and the
-// loaded field can never diverge: the opportunity is the first seated
-// non-player target whose Hit location is present and unchecked. Defaults (0..7)
-// AND guests (8..15) both count -- the apworld logic relies on default targets
-// appearing on ordinary Trophy races, and the pad must keep offering the plain
-// rerace while any of them is still unchecked. Returns that target id, or -1.
-//
-// `unchecked` is 0/1 per engine id: the seed carries the location AND the server
-// has not checked it. A checked/absent location is no opportunity.
-static inline int AP_HitOpportunityPure(const ctr_hit_candidates *cand,
-                                        const unsigned char *eligible,
+// Is there a Hit opportunity for `player`? Under the pool draw every eligible
+// target can be seated at every supported destination (it rotates in within a
+// bounded number of races), so the opportunity is the lowest engine id other
+// than the player that is eligible and whose Hit is present and unchecked.
+// Defaults (always eligible) AND unlocked guests count: the apworld logic relies
+// on both appearing on ordinary Trophy races, and a won pad must keep offering
+// the plain rerace while any of them is still unchecked (ruling 4, 2026-09-14).
+// Returns that target id, or -1.
+static inline int AP_HitOpportunityPure(const unsigned char *eligible,
                                         const unsigned char *unchecked,
                                         int player)
 {
-	ap_hit_field field;
 	int i;
-
-	if (cand == NULL)
-		return -1;
-
-	AP_HitSelectFieldPure(cand, eligible, player, AP_HIT_FIELD_MAX, &field);
-	for (i = 0; i < field.count; i++)
-		if (field.ids[i] != player && unchecked[field.ids[i]])
-			return field.ids[i];
+	for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+		if (i != player && eligible[i] && unchecked[i])
+			return i;
 	return -1;
 }
 

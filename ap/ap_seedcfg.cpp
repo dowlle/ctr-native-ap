@@ -382,13 +382,6 @@ static int hit_key(const std::string &key, int lo, int hi, int *out)
 	return 1;
 }
 
-// The approved ordinary pin for each destination 0..17 (-1 = no pin). This is
-// the contract's pin table: a pinned list may name ONLY the approved guest for
-// that destination, so an unapproved (or cup) pin is refused rather than raced.
-static const int kHitPinForTrack[CTR_CFG_HIT_TRACK_COUNT] = {
-	-1, 11, 13, 14, -1, 9, 10, 8, 14, -1, -1, -1, 13, 15, -1, -1, 12, 12,
-};
-
 // Approved unlock triggers, keyed by guest engine id 8..15: kind + exact win
 // set. A trigger for any other guest, a different kind, a missing/duplicate win
 // code, or an empty list is refused.
@@ -429,65 +422,26 @@ static const int kHitBossIdentity[CTR_CFG_HIT_BOSS_COUNT] = {
 	15, // NITROS_OXIDE, 35011105 N. Oxide's Final Challenge: Boss Race
 };
 
-// One candidate list, preserving wire order verbatim.
-//   kind 0 base    -> exactly 8 distinct engine ids, all 0..7 (a permutation)
-//   kind 1 reserve -> exactly 8 distinct engine ids, all 8..15
-//   kind 2 pinned  -> each entry equals the approved pin `pin`; may be empty
-static int hit_parse_list(const nlohmann::json &v, ctr_hit_list *out, int kind, int pin)
+// One destination's {"order": [16 ids]} object: exactly the one key, and the
+// order a permutation of all sixteen engine ids, kept in wire order verbatim.
+static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
 {
-	if (!v.is_array() || v.size() > CTR_CFG_HIT_LIST_MAX)
+	if (!v.is_object() || v.size() != 1)
 		return 0;
-	out->count = 0;
+	auto o = v.find("order");
+	if (o == v.end() || !o->is_array() || o->size() != CTR_CFG_HIT_CHARACTER_COUNT)
+		return 0;
 	int seen[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
-	for (const auto &e : v)
+	int n = 0;
+	for (const auto &e : *o)
 	{
 		int id;
 		if (!hit_engine_id(e, &id) || seen[id])
 			return 0;
 		seen[id] = 1;
-		if (kind == 0 && id > 7)
-			return 0;
-		if (kind == 1 && id < 8)
-			return 0;
-		if (kind == 2 && (pin < 0 || id != pin))
-			return 0;
-		out->ids[out->count++] = id;
+		out->ids[n++] = id;
 	}
-	if ((kind == 0 || kind == 1) && out->count != 8)
-		return 0;
-	return 1;
-}
-
-// {base, pinned, reserve} for one destination. `pin` is the approved ordinary
-// pin (-1 = none); `allow_pin` 0 forbids any pin at all (cups). The approved pin
-// is REQUIRED where the contract pins one: the emitter always emits it, so a
-// removed/missing pin is a malformed seed, not an optional omission.
-static int hit_parse_candidates(const nlohmann::json &v, ctr_hit_candidates *out,
-                                int pin, int allow_pin)
-{
-	if (!v.is_object() || v.size() != 3)
-		return 0;
-	auto b = v.find("base"), p = v.find("pinned"), r = v.find("reserve");
-	if (b == v.end() || p == v.end() || r == v.end())
-		return 0;
-	if (!hit_parse_list(*b, &out->base, 0, -1))
-		return 0;
-	if (!hit_parse_list(*r, &out->reserve, 1, -1))
-		return 0;
-	if (!hit_parse_list(*p, &out->pinned, 2, pin))
-		return 0;
-	if (pin >= 0)
-	{
-		if (out->pinned.count != 1 || out->pinned.ids[0] != pin)
-			return 0; // the approved pin is required
-	}
-	else if (out->pinned.count != 0)
-	{
-		return 0; // no pin approved here (includes cups)
-	}
-	if (!allow_pin && out->pinned.count != 0)
-		return 0;
-	return 1;
+	return n == CTR_CFG_HIT_CHARACTER_COUNT;
 }
 
 // Returns 1 when the seed is admissible (feature on under a valid global schema
@@ -654,13 +608,12 @@ static int parse_hit_character(const nlohmann::json &j)
 		}
 	}
 
-	// policy
+	// policy (block schema 2): seed, self_character, draw, max_guests
 	{
 		const auto &pol = b["policy"];
 		if (!pol.is_object() || pol.size() != 4)
 		{
-			hit_reject("policy must have exactly seed, self_character, "
-			           "boss_eligible_after_clear and guest_slots");
+			hit_reject("policy must have exactly seed, self_character, draw and max_guests");
 			return 0;
 		}
 		auto seedIt = pol.find("seed");
@@ -676,20 +629,20 @@ static int parse_hit_character(const nlohmann::json &j)
 			hit_reject("policy.self_character is not never_seat_player");
 			return 0;
 		}
-		auto bossIt = pol.find("boss_eligible_after_clear");
-		if (bossIt == pol.end() || !bossIt->is_boolean() || !bossIt->get<bool>())
+		auto drawIt = pol.find("draw");
+		if (drawIt == pol.end() || !drawIt->is_string() ||
+		    drawIt->get<std::string>() != "unhit_first_rotation")
 		{
-			hit_reject("policy.boss_eligible_after_clear is not true");
+			hit_reject("policy.draw is not unhit_first_rotation");
 			return 0;
 		}
-		h.boss_eligible_after_clear = 1;
-		auto gsIt = pol.find("guest_slots");
-		if (gsIt == pol.end() || !hit_int_eq(*gsIt, 1))
+		auto mgIt = pol.find("max_guests");
+		if (mgIt == pol.end() || !hit_int_eq(*mgIt, CTR_CFG_HIT_MAX_GUESTS))
 		{
-			hit_reject("policy.guest_slots is not 1");
+			hit_reject("policy.max_guests is not %d", CTR_CFG_HIT_MAX_GUESTS);
 			return 0;
 		}
-		h.guest_slots = 1;
+		h.max_guests = CTR_CFG_HIT_MAX_GUESTS;
 	}
 
 	// tracks: exactly the 18 ordinary destinations 0..17
@@ -710,16 +663,16 @@ static int parse_hit_character(const nlohmann::json &j)
 				           it.key().c_str());
 				return 0;
 			}
-			if (!hit_parse_candidates(it.value(), &h.tracks[lid], kHitPinForTrack[lid], 1))
+			if (!hit_parse_order(it.value(), &h.tracks[lid]))
 			{
-				hit_reject("tracks[%d] is malformed or carries an unapproved pin", lid);
+				hit_reject("tracks[%d] is not {order: a permutation of 0..15}", lid);
 				return 0;
 			}
 			got[lid] = 1;
 		}
 	}
 
-	// cups: exactly the 5 cup destinations 100..104, and NO pins
+	// cups: exactly the 5 cup destinations 100..104
 	{
 		const auto &cu = b["cups"];
 		if (!cu.is_object() || cu.size() != CTR_CFG_HIT_CUP_COUNT)
@@ -736,9 +689,9 @@ static int parse_hit_character(const nlohmann::json &j)
 				hit_reject("cups key '%s' is not a distinct canonical cup id", it.key().c_str());
 				return 0;
 			}
-			if (!hit_parse_candidates(it.value(), &h.cups[lid - 100], -1, 0))
+			if (!hit_parse_order(it.value(), &h.cups[lid - 100]))
 			{
-				hit_reject("cups[%d] is malformed or carries a pin", lid);
+				hit_reject("cups[%d] is not {order: a permutation of 0..15}", lid);
 				return 0;
 			}
 			got[lid - 100] = 1;

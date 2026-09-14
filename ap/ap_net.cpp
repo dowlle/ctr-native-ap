@@ -1242,6 +1242,13 @@ extern "C" int ap_net_location_count(void)
 	return (int)(chk.size() + miss.size());
 }
 
+extern "C" int ap_net_checked_count(void)
+{
+	if (g_rejected || !g_ap)
+		return 0;
+	return (int)g_ap->get_checked_locations().size();
+}
+
 extern "C" int ap_net_self_slot(void)
 {
 	return g_ap ? g_ap->get_player_number() : -1;
