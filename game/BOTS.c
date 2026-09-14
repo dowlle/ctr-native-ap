@@ -333,28 +333,45 @@ void BOTS_Adv_AdjustDifficulty(void)
 	// path with a missing or malformed UUID) must BLOCK rather than clear:
 	// cleared, the borrowed host LevelID would match retail recordings onto
 	// custom geometry, and laps recorded here would be stamped as retail lines
-	// of the host slot. The same ServingLoad predicate that decides the bytes
-	// decides this, so geometry and recording policy cannot disagree.
+	// of the host slot. The same predicates that decide the bytes decide this,
+	// so geometry and recording policy cannot disagree.
 	//
 	// There is deliberately no CTR_CUSTOM_TRACKS-off arm. Nothing else in the
 	// tree calls AP_NavRec_SetActiveCustomTrack, so a build without the loader
 	// leaves the navrec identity statics at their zero-initialised value, which
 	// IS AP_NAVREC_IDENTITY_RETAIL. Clearing it there would be a no-op that cost
 	// this file its guard-off object identity for nothing.
+	//
+	// All THREE serving predicates are gathered, not just the event race's.
+	// Asking only some of them leaves the loads it skipped resolving to the
+	// borrowed host slot's retail identity, which is issue #356: N. Oxide's
+	// Final Challenge and the Cortex Vortex pad track both borrow LevelID 13,
+	// and Oxide Station's recordings must never replay on either.
 	{
-		unsigned char ctNavUuid[CTR_CT_NAV_UUID_BYTES];
-		unsigned int  ctNavRevision;
+		unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
+		unsigned int              ctNavRevision = 0;
+		struct AP_NavRecLoadFacts facts;
+		int                       advCup = (gameMode1 & ADVENTURE_CUP) != 0;
+		int                       advBoss = (gameMode1 & ADVENTURE_BOSS) != 0;
 
-		if (CustomTrack_NavIdentityForLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID, ctNavUuid,
-		                                   &ctNavRevision))
+		facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
+		facts.eventRaceNavIdentity =
+		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
+		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss);
+		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
+
+		switch (AP_NavRecIdentity_ForLoad(&facts))
+		{
+		case AP_NAVREC_LOAD_CUSTOM:
 			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
-		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
-		         CustomTrack_CortexTrackIntent((int)gGT->levelID, (gameMode1 & ADVENTURE_BOSS) != 0))
-			// Cortex Vortex pad track: host LevelID 13 is Oxide Station's
-			// recording identity, so its recorded lanes must never replay here.
+			break;
+		case AP_NAVREC_LOAD_BLOCKED:
 			AP_NavRec_BlockRecordedLanes();
-		else
+			break;
+		default:
 			AP_NavRec_ClearActiveCustomTrack();
+			break;
+		}
 	}
 #endif
 
