@@ -139,14 +139,16 @@ static void ap_hit_state_init(void)
 	s_stateInit = 1;
 }
 
+// Captured only when the room seed and slot names are both known, so a draw
+// that ever ran without a connected client cannot store an empty identity that
+// the next same-seed reconnect would then mistake for a different room.
 static void ap_hit_capture_identity(void)
 {
 	if (s_identValid)
 		return;
-	if (!ap_net_seed_name(s_identSeed, (int)sizeof s_identSeed))
-		s_identSeed[0] = '\0';
-	if (!ap_net_slot_name(s_identSlot, (int)sizeof s_identSlot))
-		s_identSlot[0] = '\0';
+	if (!ap_net_seed_name(s_identSeed, (int)sizeof s_identSeed) ||
+	    !ap_net_slot_name(s_identSlot, (int)sizeof s_identSlot))
+		return;
 	s_identPolicySeed = ctr_cfg.hit.seed;
 	s_identValid = 1;
 }

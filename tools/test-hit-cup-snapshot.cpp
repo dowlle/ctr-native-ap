@@ -312,6 +312,27 @@ static void test_reconnect_preserves_snapshot(void)
 	expect_eq(leg1[0], 14, "different policy seed resolves fresh");
 }
 
+// A draw that runs before the room identity is known must not store an empty
+// identity: the first reconnect to the real room would otherwise look like a
+// room change and reset an active cup.
+static void test_identity_not_captured_while_unknown(void)
+{
+	int leg0[AP_HIT_FIELD_MAX], leg1[AP_HIT_FIELD_MAX];
+	install();
+	g_checked.clear();
+	AP_HitEncounterResetDrawState();
+	g_seedName = "";
+	g_slotName = "";
+	AP_HitCupSnapshotBegin(0);
+	int n0 = AP_HitCupSnapshotField(0, 0, 0, 7, leg0);
+	g_seedName = "seedA";
+	g_slotName = "slotA";
+	g_checked.insert(35011000); // a held win flushes on the reconnect
+	AP_HitEncounterConnectReset();
+	int n1 = AP_HitCupSnapshotField(0, 1, 0, 7, leg1);
+	same_roster(leg0, n0, leg1, n1);
+}
+
 int main(void)
 {
 	test_field_sizes();
@@ -323,6 +344,7 @@ int main(void)
 	test_dispatch_in_cups();
 	test_cups_not_pad_opportunities();
 	test_reconnect_preserves_snapshot();
+	test_identity_not_captured_while_unknown();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);

@@ -521,7 +521,7 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		// actually born with, and the sideloaded extras, so a log can tell a
 		// seated-but-invisible guest from one that was never seated.
 		if (AP_HitEncounterEnabled() && numPlyrCurrGame == 1 &&
-		    (gameMode & ADVENTURE_MODE) != 0)
+		    numDrivers > numPlyrCurrGame && (gameMode & ADVENTURE_MODE) != 0)
 		{
 			char line[400];
 			int used = snprintf(line, sizeof line, "[AP HIT] birth lvl=%d ai=[",
