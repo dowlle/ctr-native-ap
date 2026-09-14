@@ -21,9 +21,18 @@ missing or tampered sidecars, unsafe or unexpected archive members, an
 apworld/template identity mismatch, and an existing output asset. It repeats
 the platform/debuglink checks from `tools/ci/package-client.py` and emits the
 eleven names required by `RELEASING.md`. The archives contain the stripped
-client, apworld, versions file, setup/license/notices, extraction helper, and
-platform support helpers. Debug sidecars are standalone assets and game assets
-are never read or included.
+client, apworld, versions file, setup/license/notices, extraction helper,
+platform support helpers, and the `assets/` tree that `package-client.py`
+placed in the build archive. Debug sidecars are standalone assets and
+extracted retail game assets are never read or included.
+
+Build archive members may be nested. Anything directly under the archive root
+must be one of the known package-client outputs, and the only permitted
+subtree is `assets/`, which is copied into both bundles with its relative
+paths intact. The build-only `BUILD-NOTICE.txt` is dropped and never ships.
+The two platform archives must agree on the asset tree byte for byte. In the
+tarball the Linux client and `support-bundle.sh` keep mode 755 and every other
+regular file is 644.
 
 `.github/workflows/release-prepare.yml` is a manual, read-only preparation
 workflow. It requires exact successful native and companion run IDs plus their
