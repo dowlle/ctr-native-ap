@@ -31,6 +31,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <fstream>
 
 extern "C" void AP_LogLine(const char *line)
@@ -106,6 +107,7 @@ static void test_rejected_zero_side_effects(void)
 	expect(ap_net_location_checked(35025000) == 0, "reject: location_checked guarded");
 	expect(ap_net_location_exists(35025000) == 0, "reject: location_exists guarded");
 	expect(ap_net_location_count() == 0, "reject: location_count guarded");
+	expect(ap_net_checked_count() == 0, "reject: checked_count guarded");
 
 	// Same-batch ReceivedItems must not enter the queue.
 	std::list<APClient::NetworkItem> items;
@@ -238,11 +240,13 @@ static void test_malformed_block_refused(void)
 	if (!m)
 		return;
 	nlohmann::json d = g_fixture;
-	d["hit_character_encounters"]["schema"] = 2; // unknown block schema
+	d["hit_character_encounters"]["schema"] = 1; // superseded block schema 1
 	m->calls.reset();
 	m->emit_slot_connected(d);
 	expect(ap_net_is_connected() == 0, "malformed: not admitted");
 	expect(ap_net_status() == AP_NET_STATUS_ERROR, "malformed: ERROR");
+	expect(std::string(ap_net_last_error()).find("block schema") != std::string::npos,
+	       "malformed: the visible error names the block schema");
 	expect(m->calls.location_scouts == 0, "malformed: no scout");
 	ap_net_poll();
 	expect(g_ap == nullptr, "malformed: torn down");

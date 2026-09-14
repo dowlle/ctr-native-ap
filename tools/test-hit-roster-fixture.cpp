@@ -2,17 +2,20 @@
 //     tools/test-hit-roster-fixture.cpp ap/ap_seedcfg.cpp
 //     -o /tmp/test-hit-roster-fixture && /tmp/test-hit-roster-fixture
 //
-// Shared deterministic roster vectors (ticket 10) driven through the REAL gather
-// (ap/ap_hit_encounter.c). The fixture tools/fixtures/ctr_hit_roster_vectors.json
-// is contract-derived (tools/gen-hit-roster-vectors.py) and is the same file the
-// manager runs against the apworld.
+// Shared pool-draw vectors (block schema 2) driven through the REAL gather
+// (ap/ap_hit_encounter.c) and the pure draw (ap/ap_hit_policy.h). The fixture
+// tools/fixtures/ctr_hit_roster_vectors.json is spec-derived
+// (tools/gen-hit-roster-vectors.py) and the apworld replays a byte-identical
+// copy through its own independent reference (test_hit_pool_draw.py).
 //
 // Coverage:
-//   - selection exactly per the frozen contract (pin priority, reserve fill,
-//     player exclusion, seed 0 / 4294967295, all sixteen player choices)
-//   - all six required pinned opportunities, including trials 16/17
-//   - the encounter-availability invariant: over all eighteen destinations, the
-//     union of selected rosters contains every eligible non-player target.
+//   - every draw_case through the pure draw AND through the gather (eligibility
+//     rebuilt from the checked set, cursors set per case)
+//   - every sequence_case through the ordinary race snapshot: each step is a
+//     fresh race after a hub load; a retry between steps must reuse the field
+//   - cup sessions: a seven- and four-seat cup snapshot drawn once, reused
+//     across legs and retries
+//   - every opportunity_case through AP_HitEncounterOpportunity
 //
 // Build + run (from the repo root):
 //   g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include \
@@ -99,206 +102,185 @@ static void expect_eq(long long got, long long want, const char *what)
 	}
 }
 
-static bool field_has(const int *ids, int n, int id)
-{
-	for (int i = 0; i < n; i++)
-		if (ids[i] == id)
-			return true;
-	return false;
-}
+// The first authoritative win code of each guest's trigger (index guest - 8).
+static const long kTrigger[8] = {35011103, 35011101, 35011100, 35011102,
+                                 35016200, 35011008, 35011000, 35011104};
 
-// Install one case's candidate lists and canonical identities into ctr_cfg.hit.
-static void install(const nlohmann::json &base, const nlohmann::json &pinned,
-                    const nlohmann::json &reserve, int level,
-                    const nlohmann::json &locations, const nlohmann::json &triggers)
+// Install a canonical block with `order` on track 3 and every cup, and set the
+// checked set so exactly `guests` are unlocked and exactly `unchecked` Hits are
+// still open.
+static void install(const nlohmann::json &order, const nlohmann::json &guests,
+                    const nlohmann::json &unchecked)
 {
 	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
 	ctr_cfg.schema_version = 16;
 	ctr_cfg.hit.valid = 1;
 	ctr_cfg.hit.enabled = 1;
 	ctr_cfg.hit.seen = 1;
-
-	for (auto it = locations.begin(); it != locations.end(); ++it)
-		ctr_cfg.hit.locations[std::stoi(it.key())] = it.value().get<long>();
-
-	for (auto it = triggers.begin(); it != triggers.end(); ++it)
+	ctr_cfg.hit.schema = CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN;
+	ctr_cfg.hit.max_guests = CTR_CFG_HIT_MAX_GUESTS;
+	for (int i = 0; i < 16; i++)
+		ctr_cfg.hit.locations[i] = 35025000L + i;
+	for (int g = 0; g < 8; g++)
 	{
-		int guest = std::stoi(it.key());
-		const auto &t = it.value();
-		ctr_hit_trigger *out = &ctr_cfg.hit.triggers[guest - 8];
-		out->kind = t["kind"].get<std::string>() == "boss"
-		                ? CTR_CFG_HIT_KIND_BOSS
-		                : CTR_CFG_HIT_KIND_TRACK;
-		out->count = 0;
-		for (const auto &code : t["any_of"])
-			out->any_of[out->count++] = code.get<long>();
+		ctr_cfg.hit.triggers[g].kind = CTR_CFG_HIT_KIND_BOSS;
+		ctr_cfg.hit.triggers[g].count = 1;
+		ctr_cfg.hit.triggers[g].any_of[0] = kTrigger[g];
 	}
-
-	ctr_hit_candidates *c = (level >= 100)
-	                        ? &ctr_cfg.hit.cups[level - 100]
-	                        : &ctr_cfg.hit.tracks[level];
-	c->base.count = (int)base.size();
-	for (int i = 0; i < c->base.count; i++)
-		c->base.ids[i] = base[i].get<int>();
-	c->pinned.count = (int)pinned.size();
-	for (int i = 0; i < c->pinned.count; i++)
-		c->pinned.ids[i] = pinned[i].get<int>();
-	c->reserve.count = (int)reserve.size();
-	for (int i = 0; i < c->reserve.count; i++)
-		c->reserve.ids[i] = reserve[i].get<int>();
-}
-
-static void set_checked(const nlohmann::json &checked)
-{
+	for (int i = 0; i < 16; i++)
+	{
+		ctr_cfg.hit.tracks[3].ids[i] = order[i].get<int>();
+		for (int c = 0; c < CTR_CFG_HIT_CUP_COUNT; c++)
+			ctr_cfg.hit.cups[c].ids[i] = order[i].get<int>();
+	}
 	g_checked.clear();
-	for (const auto &code : checked)
-		g_checked.insert(code.get<long long>());
+	for (const auto &g : guests)
+		g_checked.insert(kTrigger[g.get<int>() - 8]);
+	std::set<int> open;
+	for (const auto &u : unchecked)
+		open.insert(u.get<int>());
+	for (int i = 0; i < 16; i++)
+		if (!open.count(i))
+			g_checked.insert(35025000LL + i);
 }
 
-static void test_cases(void)
+static void expect_ids(const int *got, int n, const nlohmann::json &want, const std::string &what)
 {
-	const auto &locations = g_fixture["locations"];
-	const auto &triggers = g_fixture["triggers"];
+	expect_eq(n, (long long)want.size(), what.c_str());
+	for (int i = 0; i < n && i < (int)want.size(); i++)
+		expect_eq(got[i], want[i].get<int>(), what.c_str());
+}
 
-	for (const auto &c : g_fixture["cases"])
+static void test_draw_cases(void)
+{
+	for (const auto &c : g_fixture["draw_cases"])
 	{
-		int ids[AP_HIT_FIELD_MAX];
-		const int level = c["level"].get<int>();
+		const std::string name = c["name"].get<std::string>();
 		const int player = c["player"].get<int>();
-		set_checked(c["checked"]);
-		install(c["base"], c["pinned"], c["reserve"], level, locations, triggers);
+		const int seats = c["ai_seats"].get<int>();
+		install(c["order"], c["eligible_guests"], c["unchecked"]);
 
-		int n;
-		int fieldSize = c.contains("field_size") ? c["field_size"].get<int>() : 7;
-		const auto &want = c["expected"];
-
-		if (level >= 100)
+		// Pure draw with explicit inputs.
 		{
-			// Gem Cup: resolve a fresh snapshot for this case.
-			AP_HitCupSnapshotReset();
-			AP_HitCupSnapshotBegin(level - 100);
-			n = AP_HitCupSnapshotField(level - 100, 0, player, fieldSize, ids);
-		}
-		else
-		{
-			n = AP_HitEncounterBuildField(level, player, 7, ids);
-		}
-
-		expect_eq(n, (long long)want.size(), c["name"].get<std::string>().c_str());
-		for (int i = 0; i < n && i < (int)want.size(); i++)
-			expect_eq(ids[i], want[i].get<int>(), c["name"].get<std::string>().c_str());
-
-		// Never seat the player, never duplicate.
-		for (int i = 0; i < n; i++)
-		{
-			expect(ids[i] != player, "case never seats the player");
-			for (int j = i + 1; j < n; j++)
-				expect(ids[i] != ids[j], "case never duplicates an opponent");
+			unsigned char elig[16], unc[16];
+			AP_HitEncounterGather(elig, unc);
+			ap_hit_cursors cur;
+			cur.unhit = c["cursors_in"][0].get<int>();
+			cur.other = c["cursors_in"][1].get<int>();
+			cur.stock = c["cursors_in"][2].get<int>();
+			int order[16];
+			for (int i = 0; i < 16; i++)
+				order[i] = c["order"][i].get<int>();
+			ap_hit_field f;
+			AP_HitDrawFieldPure(order, elig, unc, player, seats, &cur, &f);
+			expect_ids(f.ids, f.count, c["field"], "pure: " + name);
+			expect_eq(cur.unhit, c["cursors_out"][0].get<int>(), ("pure cursor: " + name).c_str());
+			expect_eq(cur.other, c["cursors_out"][1].get<int>(), ("pure cursor: " + name).c_str());
+			expect_eq(cur.stock, c["cursors_out"][2].get<int>(), ("pure cursor: " + name).c_str());
 		}
 
-		// Correction A: the opportunity is the FIRST seated non-player target
-		// whose Hit location is present and unchecked. Ordinary destinations
-		// only: cups are not pad Hit opportunities (ticket 11).
-		if (level < 100)
+		// Production gather: a fresh draw at track 3 (or cup 104 for four seats)
+		// with the case's cursors installed.
 		{
-			int opp = AP_HitEncounterOpportunity(level, player);
-			if (n > 0)
-				expect_eq(opp, want[0].get<int>(), "opportunity is the first seated target");
-			else
-				expect_eq(opp, -1, "empty field -> no opportunity");
-		}
-	}
-}
-
-// Ticket 11: the cup snapshot lifecycle. Each session drives the REAL gather
-// snapshot through begin/load/unlock steps and checks the frozen roster.
-static void test_cup_sessions(void)
-{
-	const auto &locations = g_fixture["locations"];
-	const auto &triggers = g_fixture["triggers"];
-
-	for (const auto &s : g_fixture["cup_sessions"])
-	{
-		const int cup = s["cup"].get<int>();       // wire key 100..104
-		const int cupIdx = cup - 100;              // engine cup id 0..4
-		const int player = s["player"].get<int>();
-		const int fieldSize = (cup == 104) ? 4 : 7;
-		const long long seed = s["seed"].get<long long>();
-
-		// The candidate lists for this cup/seed come from the matching no_guest
-		// case the generator emitted (same contract algorithm).
-		const nlohmann::json *src = nullptr;
-		for (const auto &c : g_fixture["cases"])
-			if (c["level"].get<int>() == cup &&
-			    c["seed"].get<long long>() == seed &&
-			    c["name"].get<std::string>().find("no_guest") != std::string::npos)
-			{
-				src = &c;
-				break;
-			}
-		if (src == nullptr)
-		{
-			expect(false, "cup session has candidate lists");
-			continue;
-		}
-
-		AP_HitCupSnapshotReset();
-		for (const auto &step : s["steps"])
-		{
-			const std::string event = step["event"].get<std::string>();
-			if (event == "begin")
-			{
-				set_checked(step["checked"]);
-				install((*src)["base"], (*src)["pinned"], (*src)["reserve"],
-				        cup, locations, triggers);
-				AP_HitCupSnapshotBegin(cupIdx);
-			}
-			else if (event == "unlock")
-			{
-				for (const auto &code : step["checked"])
-					g_checked.insert(code.get<long long>());
-			}
-			else if (event == "load")
-			{
-				int ids[AP_HIT_FIELD_MAX];
-				const auto &want = step["expected"];
-				int n = AP_HitCupSnapshotField(cupIdx, step["trackIndex"].get<int>(),
-				                               player, fieldSize, ids);
-				expect_eq(n, (long long)want.size(), "cup session roster size");
-				for (int i = 0; i < n && i < (int)want.size(); i++)
-					expect_eq(ids[i], want[i].get<int>(), "cup session roster");
-			}
-		}
-	}
-}
-
-// The encounter-availability invariant: over all eighteen destinations, the
-// union of selected rosters contains every eligible non-player id, so an unlock
-// never permanently removes the last route to an unchecked target.
-static void test_invariants(void)
-{
-	const auto &locations = g_fixture["locations"];
-	const auto &triggers = g_fixture["triggers"];
-
-	for (const auto &inv : g_fixture["invariants"])
-	{
-		std::set<int> seen;
-		const int player = inv["player"].get<int>();
-		set_checked(inv["checked"]);
-
-		for (int level = 0; level <= 17; level++)
-		{
+			const int dest = seats == 7 ? 3 : 104;
+			const int key = ap_hit_dest_key(dest);
+			AP_HitEncounterResetDrawState();
+			s_cursors[key].unhit = c["cursors_in"][0].get<int>();
+			s_cursors[key].other = c["cursors_in"][1].get<int>();
+			s_cursors[key].stock = c["cursors_in"][2].get<int>();
 			int ids[AP_HIT_FIELD_MAX];
-			const auto &lv = inv["levels"][std::to_string(level)];
-			install(lv["base"], lv["pinned"], lv["reserve"], level, locations, triggers);
-			int n = AP_HitEncounterBuildField(level, player, 7, ids);
-			for (int i = 0; i < n; i++)
-				seen.insert(ids[i]);
-		}
+			int n = AP_HitEncounterDrawFresh(dest, player, seats, ids);
+			expect_ids(ids, n, c["field"], "gather: " + name);
+			int cur[3];
+			unsigned draws = 0;
+			AP_HitEncounterDrawState(dest, cur, &draws);
+			for (int k = 0; k < 3; k++)
+				expect_eq(cur[k], c["cursors_out"][k].get<int>(), ("gather cursor: " + name).c_str());
+			expect_eq(draws, 1, "one fresh draw counted");
 
-		for (const auto &id : inv["eligible"])
-			expect(seen.count(id.get<int>()) != 0,
-			       "invariant: every eligible target appears on some level");
+			int extras[3];
+			int need = AP_HitEncounterExtras(ids, n, player, extras, 3);
+			expect_ids(extras, need, c["extras"], "extras: " + name);
+		}
+	}
+}
+
+// Each step is a fresh race (a hub load in between); a retry after each step
+// must reload the same field without advancing the cursors.
+static void test_sequence_cases(void)
+{
+	for (const auto &c : g_fixture["sequence_cases"])
+	{
+		const std::string name = c["name"].get<std::string>();
+		const int player = c["player"].get<int>();
+		const int seats = c["ai_seats"].get<int>();
+		AP_HitEncounterResetDrawState();
+		int step = 0;
+		for (const auto &st : c["steps"])
+		{
+			install(c["order"], st["eligible_guests"], st["unchecked"]);
+			int ids[AP_HIT_FIELD_MAX], fresh = -1;
+			int n;
+			if (seats == 7)
+			{
+				AP_HitLoadBegin(); // hub load
+				AP_HitLoadBegin(); // race load
+				n = AP_HitRaceField(3, player, seats, ids, &fresh);
+				expect_eq(fresh, 1, ("fresh after a hub load: " + name).c_str());
+			}
+			else
+			{
+				AP_HitCupSnapshotBegin(4); // purple cup pad entry
+				n = AP_HitCupSnapshotField(4, 0, player, seats, ids);
+			}
+			expect_ids(ids, n, st["field"], name + " step " + std::to_string(step));
+			int cur[3];
+			unsigned draws = 0;
+			AP_HitEncounterDrawState(seats == 7 ? 3 : 104, cur, &draws);
+			for (int k = 0; k < 3; k++)
+				expect_eq(cur[k], st["cursors_out"][k].get<int>(), (name + " cursor").c_str());
+
+			// A retry (race load right after the race load) reuses the field even
+			// if a Hit was checked meanwhile.
+			if (seats == 7)
+			{
+				g_checked.insert(35025000LL + ids[0]);
+				int again[AP_HIT_FIELD_MAX];
+				AP_HitLoadBegin();
+				int m = AP_HitRaceField(3, player, seats, again, &fresh);
+				expect_eq(fresh, 0, ("retry reuses: " + name).c_str());
+				expect_eq(m, n, "retry same count");
+				for (int i = 0; i < n; i++)
+					expect_eq(again[i], ids[i], "retry same field");
+				unsigned d2 = 0;
+				AP_HitEncounterDrawState(3, cur, &d2);
+				expect_eq(d2, draws, "retry does not advance the draw count");
+			}
+			else
+			{
+				int leg[AP_HIT_FIELD_MAX];
+				int m = AP_HitCupSnapshotField(4, 1, player, seats, leg);
+				expect_eq(m, n, "cup next leg same count");
+				for (int i = 0; i < n; i++)
+					expect_eq(leg[i], ids[i], "cup next leg same field");
+			}
+			step++;
+		}
+	}
+}
+
+static void test_opportunity_cases(void)
+{
+	nlohmann::json identity = nlohmann::json::array();
+	for (int i = 0; i < 16; i++)
+		identity.push_back(i);
+	for (const auto &c : g_fixture["opportunity_cases"])
+	{
+		install(identity, c["eligible_guests"], c["unchecked"]);
+		expect_eq(AP_HitEncounterOpportunity(3, c["player"].get<int>()),
+		          c["target"].get<int>(), c["name"].get<std::string>().c_str());
+		expect_eq(AP_HitEncounterOpportunity(40, c["player"].get<int>()), -1,
+		          "unsupported destination -> none");
 	}
 }
 
@@ -322,9 +304,17 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
-	test_cases();
-	test_invariants();
-	test_cup_sessions();
+	if (g_fixture["schema"].get<int>() != 2 ||
+	    g_fixture["algorithm"].get<std::string>() != "unhit_first_rotation" ||
+	    g_fixture["cursor_init"].get<int>() != AP_HIT_CURSOR_INIT ||
+	    g_fixture["max_guests"].get<int>() != CTR_CFG_HIT_MAX_GUESTS)
+	{
+		std::fprintf(stderr, "fixture header does not match this build\n");
+		return 2;
+	}
+	test_draw_cases();
+	test_sequence_cases();
+	test_opportunity_cases();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);

@@ -1,13 +1,16 @@
 // cc -std=c99 -Wall -Wextra -DCTR_AP -I ap -I . -I include -o /tmp/test-hit-policy tools/test-hit-policy.c -lm
 //
 // Freestanding coverage for the Hit Character encounter decisions
-// (ap/ap_hit_policy.h, ticket 06). Every ordering / exclusion / attribution rule
-// the engine gather relies on is pinned here without the engine:
+// (ap/ap_hit_policy.h, block schema 2). Every ordering / exclusion /
+// attribution rule the engine gather relies on is pinned here without the engine:
 //
-//   1. candidate ordering: one guest slot, pinned before reserve, then base fill
+//   1. the pool draw: unhit guests first (at most 3), other non-stock ids in the
+//      free extra slots, stock fill; rotation through the destination order
 //   2. player exclusion (the effective player after a racer lock)
 //   3. field sizes 7 (ordinary) and 4 (retail Purple cup)
-//   4. the eligible unchecked opportunity, matching the field selection exactly
+//   4. guarantees G1 to G4 by exhaustive simulation (every player, every
+//      unlocked-guest subset, sampled unchecked sets, every start cursor)
+//   5. the pad opportunity (lowest eligible non-player unchecked id)
 //   5. BOTS_ChangeState damage acceptance and negative attribution
 //   6. extra-model planning for every one of the sixteen player choices
 //   7. load-queue capacity
@@ -40,115 +43,169 @@ static void expect_eq(int got, int want, const char *what)
 	}
 }
 
-// The fixture's Crash Cove candidate lists (tracks["3"]).
-static const int kBase3[8] = {7, 0, 1, 2, 3, 4, 5, 6};
-static const int kRes3[8] = {15, 8, 9, 10, 11, 12, 13, 14};
+static const int kIdentity[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+static const int kShuffled[16] = {7, 4, 11, 14, 8, 1, 10, 0, 12, 2, 3, 6, 9, 5, 13, 15};
 
-static void make_cand(ctr_hit_candidates *c, int pin)
+static void elig_of(unsigned char *e, unsigned guestMask)
 {
 	int i;
-	memset(c, 0, sizeof *c);
-	c->base.count = 8;
-	for (i = 0; i < 8; i++)
-		c->base.ids[i] = kBase3[i];
-	c->reserve.count = 8;
-	for (i = 0; i < 8; i++)
-		c->reserve.ids[i] = kRes3[i];
-	if (pin >= 0)
-	{
-		c->pinned.count = 1;
-		c->pinned.ids[0] = pin;
-	}
+	for (i = 0; i < 16; i++)
+		e[i] = (unsigned char)(i < 8 ? 1 : ((guestMask >> (i - 8)) & 1u));
 }
 
-static void zero_elig(unsigned char *e)
+static void all_unchecked(unsigned char *u)
 {
-	memset(e, 0, CTR_CFG_HIT_CHARACTER_COUNT);
-	e[0] = e[1] = e[2] = e[3] = e[4] = e[5] = e[6] = e[7] = 1; // defaults
+	memset(u, 1, CTR_CFG_HIT_CHARACTER_COUNT);
 }
 
-static void test_select_ordering(void)
+static int in_field(const ap_hit_field *f, int id)
 {
-	ctr_hit_candidates cand;
-	unsigned char elig[CTR_CFG_HIT_CHARACTER_COUNT];
+	int i;
+	for (i = 0; i < f->count; i++)
+		if (f->ids[i] == id)
+			return 1;
+	return 0;
+}
+
+static void expect_field(const ap_hit_field *f, const int *want, int n, const char *what)
+{
+	int i;
+	expect_eq(f->count, n, what);
+	for (i = 0; i < n && i < f->count; i++)
+		expect_eq(f->ids[i], want[i], what);
+}
+
+static void test_draw_basics(void)
+{
+	unsigned char elig[16], unc[16];
+	ap_hit_cursors cur;
 	ap_hit_field f;
-	int i;
 
-	make_cand(&cand, 14);
-	zero_elig(elig);
+	all_unchecked(unc);
 
-	// No eligible guest -> base fill, player excluded, order preserved.
-	AP_HitSelectFieldPure(&cand, elig, 0, 7, &f);
-	expect_eq(f.count, 7, "no guest count");
-	expect_eq(f.guest, -1, "no guest selected");
+	// No guest: stock only, player excluded, walk order from position 0.
+	elig_of(elig, 0);
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
 	{
-		static const int want[7] = {7, 1, 2, 3, 4, 5, 6};
+		static const int want[7] = {1, 2, 3, 4, 5, 6, 7};
+		expect_field(&f, want, 7, "no guest: the seven other defaults");
+	}
+	expect_eq(f.unhit, 0, "no guest: no unhit seat");
+	expect_eq(f.other, 0, "no guest: no other seat");
+
+	// One unlocked unhit guest (Fake Crash) is seated first (G1).
+	elig_of(elig, 1u << (14 - 8));
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	{
+		static const int want[7] = {14, 1, 2, 3, 4, 5, 6};
+		expect_field(&f, want, 7, "one unhit guest first");
+	}
+	expect_eq(f.unhit, 1, "one unhit seat");
+
+	// Three unhit guests: all seated, four stock seats (G1).
+	elig_of(elig, (1u << 4) | (1u << 5) | (1u << 6));
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	{
+		static const int want[7] = {12, 13, 14, 1, 2, 3, 4};
+		expect_field(&f, want, 7, "three unhit guests first");
+	}
+	// Next fresh draw: the same three guests, stock rotates on (G3).
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	{
+		static const int want[7] = {12, 13, 14, 5, 6, 7, 1};
+		expect_field(&f, want, 7, "stock rotates on the next draw");
+	}
+
+	// Eight unlocked unhit guests: windows of three rotate (G2).
+	elig_of(elig, 0xFFu);
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	expect_eq(f.ids[0], 8, "window 1 starts at 8");
+	expect_eq(f.ids[2], 10, "window 1 ends at 10");
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	expect_eq(f.ids[0], 11, "window 2 starts at 11");
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	{
+		static const int want[3] = {14, 15, 8};
+		int i;
+		for (i = 0; i < 3; i++)
+			expect_eq(f.ids[i], want[i], "window 3 wraps");
+	}
+
+	// The player is an unhit guest: never seated.
+	elig_of(elig, (1u << 4) | (1u << 5) | (1u << 6));
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 14, 7, &cur, &f);
+	expect(!in_field(&f, 14), "player guest never seated");
+	expect_eq(f.unhit, 2, "the other two unhit guests seated");
+	// A guest player's pack lacks Pura: she takes an extra slot (other pool).
+	expect(in_field(&f, 7), "Pura seated through the free extra slot");
+	expect_eq(f.other, 1, "Pura counted as other");
+
+	// Guest player with three unhit guests: Pura is crowded out.
+	elig_of(elig, (1u << 4) | (1u << 5) | (1u << 6));
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 15, 7, &cur, &f);
+	expect(!in_field(&f, 7), "Pura crowded out by three unhit guests");
+	expect_eq(f.unhit, 3, "three unhit seats");
+
+	// Checked guests fill the free extra slots.
+	elig_of(elig, 0x0Fu | (1u << 6));
+	all_unchecked(unc);
+	unc[8] = unc[9] = unc[10] = unc[11] = 0;
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 7, &cur, &f);
+	{
+		static const int want[7] = {14, 8, 9, 1, 2, 3, 4};
+		expect_field(&f, want, 7, "checked guests fill the two free extra slots");
+	}
+	expect_eq(f.other, 2, "two other seats");
+
+	// Purple cup: four seats.
+	all_unchecked(unc);
+	elig_of(elig, (1u << 4) | (1u << 5) | (1u << 6));
+	AP_HitCursorsResetPure(&cur);
+	AP_HitDrawFieldPure(kIdentity, elig, unc, 0, 4, &cur, &f);
+	{
+		static const int want[4] = {12, 13, 14, 1};
+		expect_field(&f, want, 4, "purple cup four seats");
+	}
+
+	// NULL order -> empty field.
+	AP_HitCursorsResetPure(&cur);
+	expect_eq(AP_HitDrawFieldPure(NULL, elig, unc, 0, 7, &cur, &f), 0, "null order -> empty");
+
+	// Stock set matches LOAD_Robots1P.
+	{
+		int st[7];
+		int i;
+		AP_HitStockPure(3, st);
+		{
+			static const int want[7] = {0, 1, 2, 4, 5, 6, 7};
+			for (i = 0; i < 7; i++)
+				expect_eq(st[i], want[i], "stock for a default player");
+		}
+		AP_HitStockPure(12, st);
 		for (i = 0; i < 7; i++)
-			expect_eq(f.ids[i], want[i], "no guest base order");
+			expect_eq(st[i], i, "stock for a guest player is 0..6");
+		for (i = 0; i < 16; i++)
+		{
+			int k, want = 0;
+			AP_HitStockPure(5, st);
+			for (k = 0; k < 7; k++)
+				if (st[k] == i)
+					want = 1;
+			expect_eq(AP_HitInStockPure(i, 5), want, "in-stock agrees with the stock set");
+		}
 	}
-
-	// Eligible pinned guest is seated first, then base fills the rest.
-	elig[14] = 1;
-	AP_HitSelectFieldPure(&cand, elig, 0, 7, &f);
-	expect_eq(f.count, 7, "pinned guest count");
-	expect_eq(f.guest, 14, "pinned guest selected");
-	{
-		static const int want[7] = {14, 7, 1, 2, 3, 4, 5};
-		for (i = 0; i < 7; i++)
-			expect_eq(f.ids[i], want[i], "pinned guest field");
-	}
-
-	// Reserve guest when the pin is not eligible.
-	zero_elig(elig);
-	elig[15] = 1;
-	AP_HitSelectFieldPure(&cand, elig, 0, 7, &f);
-	expect_eq(f.guest, 15, "reserve guest selected");
-	{
-		static const int want[7] = {15, 7, 1, 2, 3, 4, 5};
-		for (i = 0; i < 7; i++)
-			expect_eq(f.ids[i], want[i], "reserve guest field");
-	}
-
-	// Pin priority: both eligible -> the pinned guest wins.
-	elig[14] = 1;
-	elig[15] = 1;
-	AP_HitSelectFieldPure(&cand, elig, 0, 7, &f);
-	expect_eq(f.guest, 14, "pinned priority over reserve");
-
-	// Player exclusion: a player who IS the pinned guest cannot be seated.
-	zero_elig(elig);
-	elig[14] = 1;
-	AP_HitSelectFieldPure(&cand, elig, 14, 7, &f);
-	expect_eq(f.guest, -1, "player never seats self as guest");
-	for (i = 0; i < f.count; i++)
-		expect(f.ids[i] != 14, "player never appears in the field");
-
-	// Field size 4 (retail Purple cup).
-	zero_elig(elig);
-	AP_HitSelectFieldPure(&cand, elig, 0, 4, &f);
-	expect_eq(f.count, 4, "purple cup count");
-	{
-		static const int want[4] = {7, 1, 2, 3};
-		for (i = 0; i < 4; i++)
-			expect_eq(f.ids[i], want[i], "purple cup base order");
-	}
-	elig[14] = 1;
-	AP_HitSelectFieldPure(&cand, elig, 0, 4, &f);
-	expect_eq(f.count, 4, "purple cup with guest count");
-	expect_eq(f.guest, 14, "purple cup with guest selected");
-	{
-		static const int want[4] = {14, 7, 1, 2};
-		for (i = 0; i < 4; i++)
-			expect_eq(f.ids[i], want[i], "purple cup with guest field");
-	}
-
-	// NULL candidates -> empty field.
-	AP_HitSelectFieldPure(NULL, elig, 0, 7, &f);
-	expect_eq(f.count, 0, "null candidates -> empty");
 
 	// Defaults are always eligible; guests need their trigger.
 	{
 		unsigned char none[CTR_CFG_HIT_CHARACTER_COUNT];
+		int i;
 		memset(none, 0, sizeof none);
 		for (i = 0; i < 8; i++)
 			expect_eq(AP_HitGuestEligiblePure(i, none), 1, "default always eligible");
@@ -159,75 +216,144 @@ static void test_select_ordering(void)
 	}
 }
 
+// G1 to G4 by exhaustive simulation. For every order, player, unlocked-guest
+// subset, unchecked set (all, plus a deterministic sample) and start cursor,
+// hold the pools fixed and draw six fresh fields.
+static unsigned s_lcg = 20260914u;
+static unsigned lcg(void)
+{
+	s_lcg = s_lcg * 1103515245u + 12345u;
+	return (s_lcg >> 16) & 0x7FFFu;
+}
+
+static void test_guarantees(void)
+{
+	const int *orders[2] = {kIdentity, kShuffled};
+	int o, player, start, variant;
+	unsigned mask;
+	long draws = 0;
+	int bad = 0;
+
+	for (o = 0; o < 2; o++)
+		for (player = 0; player < 16; player++)
+			for (mask = 0; mask < 256; mask++)
+				for (variant = 0; variant < 3; variant++)
+				{
+					unsigned char elig[16], unc[16];
+					unsigned char stock[16] = {0};
+					int st[7], i, k, nUnhit = 0, nOther = 0, free;
+					int unhit[16], other[16];
+
+					elig_of(elig, mask);
+					for (i = 0; i < 16; i++)
+						unc[i] = (unsigned char)(variant == 0 ? 1 : (lcg() % 10) < 6);
+					AP_HitStockPure(player, st);
+					for (i = 0; i < 7; i++)
+						stock[st[i]] = 1;
+					for (i = 8; i < 16; i++)
+						if (i != player && elig[i] && unc[i])
+							unhit[nUnhit++] = i;
+					for (i = 0; i < 16; i++)
+					{
+						int isUnhit = 0;
+						for (k = 0; k < nUnhit; k++)
+							if (unhit[k] == i)
+								isUnhit = 1;
+						if (i != player && !stock[i] && elig[i] && !isUnhit)
+							other[nOther++] = i;
+					}
+					free = CTR_CFG_HIT_MAX_GUESTS - (nUnhit < 3 ? nUnhit : 3);
+
+					for (start = 0; start < 16; start++)
+					{
+						ap_hit_cursors cur;
+						ap_hit_field seen[6];
+						int d, w;
+						cur.unhit = cur.other = cur.stock = start;
+						for (d = 0; d < 6; d++)
+						{
+							AP_HitDrawFieldPure(orders[o], elig, unc, player, 7, &cur, &seen[d]);
+							draws++;
+							// Invariants: full, distinct, never the player, <= 3 extras.
+							if (seen[d].count != 7 || in_field(&seen[d], player))
+								bad++;
+							{
+								int extras = 0, a, b;
+								for (a = 0; a < 7; a++)
+								{
+									if (!stock[seen[d].ids[a]])
+										extras++;
+									if (!elig[seen[d].ids[a]])
+										bad++;
+									for (b = a + 1; b < 7; b++)
+										if (seen[d].ids[a] == seen[d].ids[b])
+											bad++;
+								}
+								if (extras > 3)
+									bad++;
+							}
+							// G1: at most three unhit -> all seated every draw.
+							if (nUnhit <= 3)
+								for (k = 0; k < nUnhit; k++)
+									if (!in_field(&seen[d], unhit[k]))
+										bad++;
+						}
+						// G2: any ceil(n/3) consecutive draws cover the unhit set.
+						w = nUnhit ? (nUnhit + 2) / 3 : 1;
+						for (d = 0; d + w <= 6; d++)
+							for (k = 0; k < nUnhit; k++)
+							{
+								int hit = 0, e;
+								for (e = d; e < d + w; e++)
+									hit |= in_field(&seen[e], unhit[k]);
+								if (!hit)
+									bad++;
+							}
+						// G3: any two consecutive draws cover the stock set.
+						for (d = 0; d + 2 <= 6; d++)
+							for (k = 0; k < 7; k++)
+								if (!in_field(&seen[d], st[k]) && !in_field(&seen[d + 1], st[k]))
+									bad++;
+						// G4: with a free extra slot, the other pool rotates.
+						if (free > 0 && nOther > 0)
+						{
+							int span = (nOther + free - 1) / free;
+							for (d = 0; d + span <= 6; d++)
+								for (k = 0; k < nOther; k++)
+								{
+									int hit = 0, e;
+									for (e = d; e < d + span; e++)
+										hit |= in_field(&seen[e], other[k]);
+									if (!hit)
+										bad++;
+								}
+						}
+					}
+				}
+	printf("guarantees: %ld draws simulated\n", draws);
+	expect_eq(bad, 0, "G1 to G4 and draw invariants hold in every simulated state");
+}
+
 static void test_opportunity(void)
 {
-	ctr_hit_candidates cand;
-	unsigned char elig[CTR_CFG_HIT_CHARACTER_COUNT];
-	unsigned char unc[CTR_CFG_HIT_CHARACTER_COUNT];
+	unsigned char elig[16], unc[16];
 
-	make_cand(&cand, 14);
-	zero_elig(elig);
+	elig_of(elig, 0);
 	memset(unc, 0, sizeof unc);
-	elig[14] = 1;
-
-	expect_eq(AP_HitOpportunityPure(&cand, elig, unc, 0), -1,
-	          "eligible but checked -> no opportunity");
+	expect_eq(AP_HitOpportunityPure(elig, unc, 0), -1, "everything checked -> none");
 	unc[14] = 1;
-	expect_eq(AP_HitOpportunityPure(&cand, elig, unc, 0), 14,
-	          "eligible + unchecked -> opportunity");
-
-	// Player exclusion applies to the opportunity too.
-	expect_eq(AP_HitOpportunityPure(&cand, elig, unc, 14), -1,
-	          "player is the pinned guest -> no opportunity");
-
-	// The opportunity must match the SEATED guest: pinned eligible but checked,
-	// reserve eligible + unchecked -> the pin is still seated, so no opportunity.
-	{
-		unsigned char e2[CTR_CFG_HIT_CHARACTER_COUNT];
-		unsigned char u2[CTR_CFG_HIT_CHARACTER_COUNT];
-		zero_elig(e2);
-		memset(u2, 0, sizeof u2);
-		e2[14] = 1;
-		e2[15] = 1;
-		u2[15] = 1;
-		expect_eq(AP_HitOpportunityPure(&cand, e2, u2, 0), -1,
-		          "checked pinned guest shadows an unchecked reserve");
-	}
-
-	// No pin at all (a cup-shaped candidate): reserve guest is the opportunity.
-	{
-		ctr_hit_candidates cup;
-		make_cand(&cup, -1);
-		memset(unc, 0, sizeof unc);
-		unc[15] = 1;
-		expect_eq(AP_HitOpportunityPure(&cup, elig, unc, 0), -1,
-		          "no pin and no eligible reserve -> none");
-		elig[15] = 1;
-		expect_eq(AP_HitOpportunityPure(&cup, elig, unc, 0), 15,
-		          "reserve opportunity without a pin");
-	}
-
-	// Correction A: DEFAULT targets count too. With no guest eligible, the base
-	// field still offers an opportunity for an unchecked default racer.
-	{
-		unsigned char e3[CTR_CFG_HIT_CHARACTER_COUNT];
-		unsigned char u3[CTR_CFG_HIT_CHARACTER_COUNT];
-		zero_elig(e3); // defaults only, no guest eligible
-		memset(u3, 0, sizeof u3);
-		u3[7] = 1; // first base id, unchecked
-		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 0), 7,
-		          "default target seated and unchecked -> opportunity");
-		// Player is that default: it is skipped, so it is no opportunity.
-		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 7), -1,
-		          "player default target excluded");
-		u3[0] = 1;
-		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 7), 0,
-		          "next unchecked default is the opportunity");
-		// Every seated target checked -> none.
-		memset(u3, 0, sizeof u3);
-		expect_eq(AP_HitOpportunityPure(&cand, e3, u3, 0), -1,
-		          "all seated targets checked -> no opportunity");
-	}
+	expect_eq(AP_HitOpportunityPure(elig, unc, 0), -1, "locked guest is no opportunity");
+	elig[14] = 1;
+	expect_eq(AP_HitOpportunityPure(elig, unc, 0), 14, "unlocked unhit guest");
+	expect_eq(AP_HitOpportunityPure(elig, unc, 14), -1, "player guest excluded");
+	// Defaults count (correction A still holds under the pool draw).
+	unc[3] = 1;
+	expect_eq(AP_HitOpportunityPure(elig, unc, 0), 3, "unchecked default counts, lowest id");
+	expect_eq(AP_HitOpportunityPure(elig, unc, 3), 14, "player default excluded");
+	memset(unc, 0, sizeof unc);
+	unc[7] = 1;
+	expect_eq(AP_HitOpportunityPure(elig, unc, 15), 7, "Pura for a guest player");
+	expect_eq(AP_HitOpportunityPure(elig, unc, 7), -1, "only the player's own Hit left -> none");
 }
 
 static void test_pad_dest_eligible(void)
@@ -490,7 +616,8 @@ static void test_extras_state(void)
 
 int main(void)
 {
-	test_select_ordering();
+	test_draw_basics();
+	test_guarantees();
 	test_opportunity();
 	test_pad_dest_eligible();
 	test_damage_acceptance();

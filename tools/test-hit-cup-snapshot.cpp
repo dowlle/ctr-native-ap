@@ -7,8 +7,8 @@
 // entry and reuses it for every leg and same-session retry; exiting/abandoning
 // and starting a new cup resolves fresh, so an unlock mid-cup enters the next
 // cup. Cups are not pad Hit opportunities, and player-attributed cup hits award
-// checks. Uses a synthetic cup (base [0..7], reserve [8..15]) so it pins the
-// lifecycle, not the contract rotation (the shared fixture covers that).
+// checks. Uses a synthetic cup (order 0..15) so it pins the lifecycle, not the
+// draw rotation (the shared fixture covers that).
 //
 // Build + run (from the repo root):
 //   g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include \
@@ -97,8 +97,8 @@ static void same_roster(const int *a, int an, const int *b, int bn)
 		expect_eq(a[i], b[i], "roster element unchanged");
 }
 
-// Install a synthetic enabled block: cup 0 (and cup 4) with base [0..7] and
-// reserve [8..15], canonical locations and triggers.
+// Install a synthetic enabled block: every cup with the identity order 0..15,
+// canonical locations and triggers.
 static void install(void)
 {
 	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
@@ -110,13 +110,8 @@ static void install(void)
 		ctr_cfg.hit.locations[i] = 35025000 + i;
 	for (int c = 0; c < 5; c++)
 	{
-		ctr_hit_candidates *cup = &ctr_cfg.hit.cups[c];
-		cup->base.count = 8;
-		for (int i = 0; i < 8; i++)
-			cup->base.ids[i] = i;
-		cup->reserve.count = 8;
-		for (int i = 0; i < 8; i++)
-			cup->reserve.ids[i] = 8 + i;
+		for (int i = 0; i < 16; i++)
+			ctr_cfg.hit.cups[c].ids[i] = i;
 	}
 	for (int g = 8; g < 16; g++)
 	{
@@ -142,7 +137,7 @@ static void test_resolve_once_and_preserve(void)
 
 	install();
 	g_checked.clear();
-	AP_HitCupSnapshotReset();
+	AP_HitEncounterResetDrawState();
 	AP_HitCupSnapshotBegin(0); // pad entry
 
 	n0 = AP_HitCupSnapshotField(0, 0, 0, 7, leg0);
@@ -180,6 +175,38 @@ static void test_midcup_unlock_waits(void)
 	nn = AP_HitCupSnapshotField(0, 0, 0, 7, next);
 	expect_eq(nn, 7, "next cup seven");
 	expect_eq(next[0], 14, "next cup seats the newly unlocked guest");
+}
+
+// A new cup of the same id draws fresh with the cup's own cursors, so the stock
+// seats rotate from one cup run to the next; an ordinary race in between does
+// not touch the cup cursors.
+static void test_new_cup_rotates(void)
+{
+	int a[AP_HIT_FIELD_MAX], b[AP_HIT_FIELD_MAX];
+	install();
+	g_checked.clear();
+	AP_HitEncounterResetDrawState();
+	AP_HitCupSnapshotBegin(0);
+	int na = AP_HitCupSnapshotField(0, 0, 0, 7, a);
+	int race[AP_HIT_FIELD_MAX];
+	AP_HitLoadBegin();
+	AP_HitLoadBegin();
+	AP_HitRaceField(3, 0, 7, race, NULL); // no order on track 3 here -> empty
+	AP_HitCupSnapshotBegin(0);
+	int nb = AP_HitCupSnapshotField(0, 0, 0, 7, b);
+	expect_eq(na, 7, "first cup seven");
+	expect_eq(nb, 7, "second cup seven");
+	static const int wantA[7] = {1, 2, 3, 4, 5, 6, 7};
+	static const int wantB[7] = {1, 2, 3, 4, 5, 6, 7};
+	for (int i = 0; i < 7; i++)
+	{
+		expect_eq(a[i], wantA[i], "first cup field");
+		expect_eq(b[i], wantB[i], "second cup field (stock pool of 7 fills all 7 seats)");
+	}
+	int cur[3];
+	unsigned draws = 0;
+	AP_HitEncounterDrawState(100, cur, &draws);
+	expect_eq(draws, 2, "two fresh cup draws counted on cup 100");
 }
 
 static void test_player_change_preserves_snapshot(void)
@@ -230,7 +257,7 @@ static void test_cups_not_pad_opportunities(void)
 {
 	// The cups block exists, but a cup destination is never a pad opportunity.
 	install();
-	expect(AP_HitEncounterCandidates(100) != NULL, "cup candidates exist");
+	expect(AP_HitEncounterOrder(100) != NULL, "cup order exists");
 	expect_eq(AP_HitPadDestEligiblePure(100, 1), 0, "cup is not a pad opportunity");
 	expect_eq(AP_HitPadDestEligiblePure(0, 1), 1, "track 0 is a pad opportunity");
 }
@@ -248,7 +275,9 @@ static void test_reconnect_preserves_snapshot(void)
 	g_seedName = "seedA";
 	g_slotName = "slotA";
 	g_checked.clear();
-	AP_HitCupSnapshotReset();
+	// Fresh session: the draw state captures its seed identity on the first
+	// draw after this connect.
+	AP_HitEncounterResetDrawState();
 	AP_HitCupSnapshotBegin(0);
 	n0 = AP_HitCupSnapshotField(0, 0, 0, 7, leg0);
 
@@ -288,6 +317,7 @@ int main(void)
 	test_field_sizes();
 	test_resolve_once_and_preserve();
 	test_midcup_unlock_waits();
+	test_new_cup_rotates();
 	test_player_change_preserves_snapshot();
 	test_purple_cup_four_seats();
 	test_dispatch_in_cups();
