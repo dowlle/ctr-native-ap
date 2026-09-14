@@ -345,6 +345,12 @@ static const struct guard_row rows[] = {
 	{"game/MAIN/MainRaceTrack.c", "void MainRaceTrack_RequestLoad(", "CustomTrack_CortexTrackOnRequestLoad(levelID)", "return;"},
 	{"platform/native_custom_tracks.c", "int CustomTrack_GetOverride(", "CustomTrack_CortexTrackServing(ctx->levelID",
 	 "if (!s_customTrackConfig.contentVerified)"},
+	// Issue #356: the recorded-lane arm must ask every serving predicate before
+	// it can fall through to the retail identity of the borrowed host slot.
+	{"game/BOTS.c", "// Which track's recordings may replay on this load.", "CustomTrack_CortexTrackIntent((int)gGT->levelID",
+	 "AP_NavRec_ClearActiveCustomTrack()"},
+	{"game/BOTS.c", "// Which track's recordings may replay on this load.", "CustomTrack_OxideFinalServing((int)gGT->levelID",
+	 "AP_NavRec_ClearActiveCustomTrack()"},
 };
 
 static char *slurp(const char *path)

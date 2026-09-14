@@ -32,6 +32,10 @@
 // lane table, the pace controller and the 1 to 7 field are later work.
 // ============================================================================
 
+// The load-identity rule game/BOTS.c arms this module with, freestanding and
+// harness-tested (tools/test-navrec.c).
+#include "ap_navrec_identity_logic.h"
+
 // Per-frame sampling, the option state machine and the end-of-race write. Called
 // from the AP frame hook.
 void AP_NavRec_Tick(struct GameTracker *gGT);
