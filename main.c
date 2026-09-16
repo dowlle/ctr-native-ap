@@ -414,6 +414,12 @@ int main(int argc, char *argv[])
 	// startup-time toggles (e.g. skip_intro) are honoured on the first frame.
 	NativeConfig_Load();
 
+#ifdef CTR_EDITOR
+	// Headless dump runs apply --editor-dump-mute / --editor-dump-skip-intro
+	// after the config load, so config.ini cannot override them.
+	Editor_ApplyDumpRuntimeOverrides();
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 	// Parse [CustomTracks] and hash-verify the configured track once, before the
 	// game boots, so the first level load already knows whether the loader is

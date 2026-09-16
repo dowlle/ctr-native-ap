@@ -253,7 +253,9 @@ int Editor_CaptureBackBufferToBMP(const char *path)
 		memcpy(flipped + ((size_t)row * stride), pixels + ((size_t)(height - 1 - row) * stride), stride);
 	}
 
-	surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_BGRA8888, flipped, (int)stride);
+	// glReadPixels(GL_BGRA) yields B,G,R,A in memory, which is
+	// SDL_PIXELFORMAT_ARGB8888 (== SDL_PIXELFORMAT_BGRA32) on little-endian.
+	surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_ARGB8888, flipped, (int)stride);
 	if (surface == NULL)
 	{
 		free(flipped);

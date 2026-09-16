@@ -25,6 +25,10 @@ void Platform_PollHostEvents(void);
 extern int g_cfg_bilinearFiltering;
 extern int g_dbg_emulatorPaused;
 extern int g_dbg_polygonSelected;
+#ifdef CTR_EDITOR
+// Defined in editor/editor.c; 0 = shipped two-pass, 1 = single blended pass.
+extern int g_editorTextureSemiTransMode;
+#endif
 
 #define NATIVE_GPU_LOG(fmt, ...)   Platform_Log("[CTR GPU] " fmt, ##__VA_ARGS__)
 #define NATIVE_GPU_ERROR(fmt, ...) Platform_LogError("[CTR GPU] [%s] - " fmt, __func__, ##__VA_ARGS__)
@@ -993,13 +997,26 @@ void DrawSplit(const GPUDrawSplit *split)
 		// PS1 textured ABE only blends texels whose sampled 16-bit color has STP
 		// set; non-STP texels remain opaque. Native split state is per draw,
 		// so draw this primitive-sized split twice with shader-side STP masks.
-		NativeRenderer_SetBlendMode(BM_NONE);
-		NativeRenderer_SetPSXTextureSemiTransPass(1);
-		NativeRenderer_DrawTriangles(split->startVertex, split->numVerts / 3);
+#ifdef CTR_EDITOR
+		if (g_editorTextureSemiTransMode == 1)
+		{
+			// A/B (dump runs only): collapse the two-pass path to a single
+			// blended pass to isolate the STP masking from the sampling path.
+			NativeRenderer_SetBlendMode(split->blendMode);
+			NativeRenderer_SetPSXTextureSemiTransPass(0);
+			NativeRenderer_DrawTriangles(split->startVertex, split->numVerts / 3);
+		}
+		else
+#endif
+		{
+			NativeRenderer_SetBlendMode(BM_NONE);
+			NativeRenderer_SetPSXTextureSemiTransPass(1);
+			NativeRenderer_DrawTriangles(split->startVertex, split->numVerts / 3);
 
-		NativeRenderer_SetBlendMode(split->blendMode);
-		NativeRenderer_SetPSXTextureSemiTransPass(2);
-		NativeRenderer_DrawTriangles(split->startVertex, split->numVerts / 3);
+			NativeRenderer_SetBlendMode(split->blendMode);
+			NativeRenderer_SetPSXTextureSemiTransPass(2);
+			NativeRenderer_DrawTriangles(split->startVertex, split->numVerts / 3);
+		}
 
 		NativeRenderer_SetPSXTextureSemiTransPass(0);
 	}

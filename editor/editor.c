@@ -107,6 +107,13 @@ static int s_dumpEvery = 30;
 static int s_dumpLimit;
 static int s_dumpStart = 90;
 static int s_dumpNoHud;
+static int s_dumpMute;
+static int s_dumpSkipIntro;
+// Renderer A/B for the native-only two-pass textured semi-transparent draw
+// path (DrawSplit, platform/native_gpu.c). 0 = shipped two-pass; 1 = collapse
+// to a single blended pass so a dump run can tell whether the glass artifacts
+// come from the STP two-pass masking. Editor-only.
+int g_editorTextureSemiTransMode;
 static int s_dumpActiveFrames;
 static int s_dumpWritten;
 static int s_dumpQuitRequested;
@@ -352,6 +359,18 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		{
 			s_dumpNoHud = 1;
 		}
+		else if (strcmp(argv[i], "--editor-dump-mute") == 0)
+		{
+			s_dumpMute = 1;
+		}
+		else if (strcmp(argv[i], "--editor-dump-skip-intro") == 0)
+		{
+			s_dumpSkipIntro = 1;
+		}
+		else if (strcmp(argv[i], "--editor-render-semitrans-single") == 0)
+		{
+			g_editorTextureSemiTransMode = 1;
+		}
 	}
 
 	if (s_sourceLevPath[0] == 0)
@@ -381,6 +400,27 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 	else
 	{
 		printf("[CTR Editor] No project configured. Use --editor-lev FILE --editor-vrm FILE --editor-host-slot 0..17 [--editor-sidecar FILE]\n");
+	}
+}
+
+// Called from main.c immediately after NativeConfig_Load so a dump run can
+// silence audio and skip the boot intro regardless of config.ini. The volume
+// fields are reapplied authoritatively by RaceConfig_LoadGameOptions at race
+// load, so zeroing them here silences the track itself, not only the boot
+// sequence.
+void Editor_ApplyDumpRuntimeOverrides(void)
+{
+	if (s_dumpMute)
+	{
+		g_config.volFx = 0;
+		g_config.volMusic = 0;
+		g_config.volVoice = 0;
+		Editor_Log("DUMP_RUNTIME mute=1");
+	}
+	if (s_dumpSkipIntro)
+	{
+		g_config.skipIntro = 1;
+		Editor_Log("DUMP_RUNTIME skip_intro=1");
 	}
 }
 
