@@ -462,7 +462,7 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 #ifdef CTR_EDITOR
 		if (editorOverride)
 		{
-			int bufferBytes = sectorCount << LOAD_CD_DATA_SECTOR_SHIFT;
+			int bufferBytes = sectorCount << 0xb; // 2 KiB CD data sector
 			int ok = Editor_ReadLoadOverride(editorOverridePath, ptrDst, (u32)bufferBytes, editorOverrideSize);
 			if (callback != NULL)
 				LOAD_ReadFileASyncCallback((u8)(ok ? CdlComplete : CdlDiskError), NULL);

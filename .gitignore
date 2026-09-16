@@ -26,3 +26,6 @@ compile_commands.json
 *.log
 memcards/
 __pycache__/
+build-editor/
+build-vanilla/
+build-ap/

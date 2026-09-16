@@ -5,6 +5,20 @@
 
 #include <common.h>
 
+// Named engine constants the editor relies on. The client engine spells these
+// as literals, so they are defined here rather than in the engine headers to
+// keep the CTR_EDITOR=OFF build byte-identical to main.
+enum EditorEngineConstants
+{
+	// Subfiles per arcade-track LOD group in the BIGFILE layout.
+	LOAD_TRACK_FILES_PER_LOD_GROUP = 8,
+	// Attract-mode idle countdown the editor re-arms so a parked session never
+	// falls into the title demo.
+	TITLE_DEMO_IDLE_FRAMES = CTR_SECONDS_TO_FRAMES(30),
+	// Camera.cameraMode value for the free-look camera.
+	CAMERA_MODE_FREECAM = 3,
+};
+
 void Editor_ConfigureFromArgs(int argc, char **argv);
 int Editor_RunSelfTests(void);
 int Editor_IsConfigured(void);
