@@ -323,19 +323,12 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		// will break the character animations
 		sdata->ptrMPK = 0;
 
-		// Clear driver extras. Clearing fileBase alone leaves the PREVIOUS load's
-		// model pointer live: stage 5 registers extras.model before stage 6
-		// converts fileBase+4, so a stale model would be registered and a new
-		// extra would never be. Clear both here (ticket 06). The model clear is
-		// gated on the Hit feature being enabled, so a feature-off AP build keeps
-		// base behaviour exactly.
+		// Clear driver extras for the next load. fileBase and model share one
+		// word (DriverModelExtraSlot is a union), so this single clear also
+		// drops the previous load's model pointer.
 		for (int i = 0; i < 3; i++)
 		{
 			data.driverModelExtras[i].fileBase = NULL;
-#ifdef CTR_AP
-			if (AP_HitEncounterEnabled())
-				data.driverModelExtras[i].model = NULL;
-#endif
 		}
 
 		// NOTE(aalhendi): Retail gates stage advancement until the driver MPK callback sets ptrMPK.
@@ -354,22 +347,15 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			sdata->PLYROBJECTLIST = 0;
 		}
 
-#ifdef CTR_AP
-		// Convert the freshly loaded extras before registering them. Retail does
-		// this in stage 6, AFTER this registration, so a new extra's model was
-		// never in gGT->modelPtr (ticket 06). Idempotent with stage 6's convert,
-		// and gated on the feature so a feature-off AP build is base-identical.
-		if (AP_HitEncounterEnabled())
-		{
-			for (int i = 0; i < 3; i++)
-			{
-				if (data.driverModelExtras[i].fileBase != NULL)
-				{
-					data.driverModelExtras[i].model = (struct Model *)((u8 *)data.driverModelExtras[i].fileBase + 4);
-				}
-			}
-		}
-#endif
+		// Do NOT convert driverModelExtras here. DriverModelExtraSlot is a union:
+		// fileBase and model are the same word, so the retail stage-6 convert
+		// (fileBase + 4) is an in-place, one-shot step. An early convert here made
+		// stage 6 add 4 again, pointing every sideloaded standalone model 4 bytes
+		// past its header ("ntropy" read as "py"), so VehBirth_GetModelByName
+		// found nothing and the Hit guest, or the player's own hi model in
+		// boss/relic races, was born without an instance: invisible and
+		// non-solid. Registering standalone extras early was a no-op anyway,
+		// since their Model.id is -1 and LOAD_GlobalModelPtrs_MPK skips them.
 
 		LOAD_GlobalModelPtrs_MPK();
 		DecalGlobal_Clear(gGT);
