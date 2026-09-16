@@ -37,5 +37,12 @@ void Editor_DrawHUD(struct GameTracker *gGT);
 void Editor_AfterPresent(void);
 int Editor_CaptureBackBufferToBMP(const char *path);
 
+// Atomic sidecar replace. Also implemented in platform/native_platform.c: the
+// Windows path needs windows.h, and pulling that in this early in the unity
+// translation unit would expose every engine file after it to the Win32 macro
+// namespace. Returns non-zero on success; on failure it writes a short reason
+// into errorText.
+int Editor_ReplaceFileAtomically(const char *temporary, const char *destination, char *errorText, size_t errorTextSize);
+
 #endif
 #endif

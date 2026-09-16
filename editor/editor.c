@@ -619,24 +619,16 @@ static int Editor_SaveSidecar(void)
 		Editor_Log("SAVE_REFUSAL close_temp=%s errno=%d", temporary, errno);
 		return 0;
 	}
-#if defined(_WIN32)
-	if (!MoveFileExA(temporary, s_sidecarPath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 	{
-		DWORD error = GetLastError();
-		DeleteFileA(temporary);
-		snprintf(s_status, sizeof(s_status), "Save failed: Windows error %lu", (unsigned long)error);
-		Editor_Log("SAVE_REFUSAL replace project=%s windows_error=%lu", s_sidecarPath, (unsigned long)error);
-		return 0;
+		char replaceError[128];
+		replaceError[0] = 0;
+		if (!Editor_ReplaceFileAtomically(temporary, s_sidecarPath, replaceError, sizeof(replaceError)))
+		{
+			snprintf(s_status, sizeof(s_status), "Save failed: %s", replaceError);
+			Editor_Log("SAVE_REFUSAL replace project=%s reason=%s", s_sidecarPath, replaceError);
+			return 0;
+		}
 	}
-#else
-	if (rename(temporary, s_sidecarPath) != 0)
-	{
-		remove(temporary);
-		snprintf(s_status, sizeof(s_status), "Save failed: cannot replace project");
-		Editor_Log("SAVE_REFUSAL replace project=%s errno=%d", s_sidecarPath, errno);
-		return 0;
-	}
-#endif
 	snprintf(s_status, sizeof(s_status), "Saved %d objects", s_objectCount);
 	Editor_Log("SAVE project=%s generation=%d objects=%d", s_sidecarPath, s_generation, s_objectCount);
 	return 1;

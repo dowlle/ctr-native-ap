@@ -176,6 +176,44 @@ internal void Platform_TakeScreenshot(void)
 // Declared in editor/editor.h and called from Editor_AfterPresent; it lives
 // here because the GL loader symbols are only in scope this late in the unity
 // translation unit.
+int Editor_ReplaceFileAtomically(const char *temporary, const char *destination, char *errorText, size_t errorTextSize)
+{
+	if ((temporary == NULL) || (destination == NULL))
+	{
+		if ((errorText != NULL) && (errorTextSize > 0))
+		{
+			snprintf(errorText, errorTextSize, "no path");
+		}
+		return 0;
+	}
+
+#if defined(_WIN32)
+	if (!MoveFileExA(temporary, destination, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+	{
+		DWORD error = GetLastError();
+		DeleteFileA(temporary);
+		if ((errorText != NULL) && (errorTextSize > 0))
+		{
+			snprintf(errorText, errorTextSize, "Windows error %lu", (unsigned long)error);
+		}
+		return 0;
+	}
+#else
+	if (rename(temporary, destination) != 0)
+	{
+		int error = errno;
+		remove(temporary);
+		if ((errorText != NULL) && (errorTextSize > 0))
+		{
+			snprintf(errorText, errorTextSize, "cannot replace project, errno %d", error);
+		}
+		return 0;
+	}
+#endif
+
+	return 1;
+}
+
 int Editor_CaptureBackBufferToBMP(const char *path)
 {
 	int width = g_windowWidth;
