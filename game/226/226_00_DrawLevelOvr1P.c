@@ -525,7 +525,6 @@ static u32 DrawLevelOvr1P_GetProjectedOtSlotWord(const struct DrawLevelOvr1PScra
 static int DrawLevelOvr1P_TryConvertNativeMempackPointerToPsxWord(u32 hostWord, u32 *psxWord)
 {
 	const u32 psxRamBase = 0x80000000u;
-	const uintptr_t psxRamSize = 0x200000u;
 	uintptr_t hostPtr = (uintptr_t)hostWord;
 	const struct Mempack *pack = DrawLevelOvr1P_FindMempackContaining(hostPtr);
 	if (pack == NULL || pack->endOfMemory == NULL)
@@ -533,18 +532,21 @@ static int DrawLevelOvr1P_TryConvertNativeMempackPointerToPsxWord(u32 hostWord, 
 		return 0;
 	}
 
+	uintptr_t hostBase = (uintptr_t)pack->start;
 	uintptr_t hostEnd = (uintptr_t)pack->endOfMemory;
-	if (hostEnd < psxRamSize)
-	{
-		return 0;
-	}
-
-	uintptr_t hostBase = hostEnd - psxRamSize;
 	if (hostPtr < hostBase || hostPtr >= hostEnd)
 	{
 		return 0;
 	}
 
+	// NOTE(aalhendi): Retail reads order/depth sub-face bytes out of the raw
+	// post-ptrmap PSX pointer words: byte 3 of a RAM pointer is always 0x80, and
+	// that is what puts the sub-face on top. Native rebases those words to host
+	// addresses, so a PSX-shaped word has to be rebuilt for any mempack-resident
+	// pointer, not only for the top 2 MiB window. The old top-2-MiB gate failed
+	// for every level pointer (their host addresses sit below the window), so the
+	// order byte came back as a host-base byte and one start-line half was drawn
+	// in the wrong depth order.
 	*psxWord = psxRamBase + (u32)(hostPtr - hostBase);
 	return 1;
 }
@@ -608,6 +610,49 @@ static s8 DrawLevelOvr1P_ReadRetailQuadBlockByte(const struct QuadBlock *block, 
 	return *(const s8 *)((const u8 *)block + byteOffset);
 }
 
+#ifdef CTR_EDITOR
+// OpenCode diagnostic: report the runtime quadblock index for the two
+// start-line halves (5983 missing, 6070 drawn) at the texture-resolution seam.
+static int DrawLevelOvr1P_DiagEnabled(void)
+{
+	static int s_enabled = -1;
+	if (s_enabled < 0)
+	{
+		s_enabled = (getenv("CTR_EDITOR_BLOCK_DIAG") != NULL) ? 1 : 0;
+	}
+	return s_enabled;
+}
+
+static int DrawLevelOvr1P_DiagBlockIndex(const struct QuadBlock *block)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (gGT == NULL || gGT->level1 == NULL || gGT->level1->ptr_mesh_info == NULL)
+	{
+		return -1;
+	}
+	const struct QuadBlock *base = gGT->level1->ptr_mesh_info->ptrQuadBlockArray;
+	if (base == NULL || block < base || block >= base + 20000)
+	{
+		return -1;
+	}
+	return (int)(block - base);
+}
+
+static void DrawLevelOvr1P_DiagScanLeaf(const struct QuadBlock *base, int count, int where)
+{
+	static int s_diagLeaf = 0;
+	for (int i = 0; (i < count) && (s_diagLeaf < 60); i++)
+	{
+		int idx = DrawLevelOvr1P_DiagBlockIndex(base + i);
+		if (DrawLevelOvr1P_DiagEnabled() && (idx == 5983 || idx == 6070))
+		{
+			s_diagLeaf++;
+			Platform_Log("[CTR DIAG] leaf where=%d idx=%d base=%08x count=%d\n", where, idx, (unsigned)(uintptr_t)base, count);
+		}
+	}
+}
+#endif
+
 static struct TextureLayout *DrawLevelOvr1P_ResolveProjectedMidTexture(const struct QuadBlock *block, const struct DrawLevelOvr1PScratchVertex *projected)
 {
 	if (projected == NULL)
@@ -620,6 +665,23 @@ static struct TextureLayout *DrawLevelOvr1P_ResolveProjectedMidTexture(const str
 	{
 		return NULL;
 	}
+
+#ifdef CTR_EDITOR
+	int diagIndex = DrawLevelOvr1P_DiagBlockIndex(block);
+	if (DrawLevelOvr1P_DiagEnabled() && (diagIndex == 5983 || diagIndex == 6070))
+	{
+		static int s_diagResolve = 0;
+		if (s_diagResolve < 40)
+		{
+			u32 rawWord = *(const u32 *)((const u8 *)block + 0x1c + slotWord);
+			struct TextureLayout *diagTex = DrawLevelOvr1P_ResolveTexturePointerChecked((uintptr_t)rawWord);
+			s_diagResolve++;
+			Platform_Log("[CTR DIAG] resolve block=%d slot=%u raw=%08x tex=%08x tpage=%04x\n", diagIndex, slotWord, rawWord,
+			            (unsigned)(uintptr_t)diagTex, diagTex != NULL ? (unsigned)diagTex->tpage : 0u);
+			return diagTex;
+		}
+	}
+#endif
 
 	// NOTE(aalhendi): Retail selector bodies load raw `quad+0x1c+slot`.
 	// Native validates the host-rebased word before following it.
@@ -8035,11 +8097,34 @@ static int Ovr226_800a0f78_EmitFullDynamicQuadBlock(struct PushBuffer *pb, struc
 static void Ovr226_800a0f0c_SeedFullDynamicVisibilityScratch(const int *visFaceList, const struct QuadBlock *block)
 {
 	u32 blockID = (u16)block->blockID;
-	const u32 *word = (const u32 *)((const u8 *)visFaceList + ((blockID >> 3) & 0x1fc));
+	// NOTE(aalhendi): The visibility list is numQuadBlock/32 bytes and is
+	// indexed by the full block id. The previous "(blockID >> 3) & 0x1fc"
+	// wrapped the byte offset at 512 bytes, so on a level with more than 4096
+	// quadblocks (Cortex Vortex has 8494) every block id >= 4096 read another
+	// block's visibility word. That silently culled e.g. the right half of the
+	// start/finish line (blockID 5952 read the wrong word and came back
+	// invisible while the correct word was 0xffffffff).
+	const u32 *word = (const u32 *)((const u8 *)visFaceList + ((blockID >> 5) << 2));
 
 	DrawLevelOvr1P_Scratch()->visibilityWordPtr32 = (u32)(uintptr_t)word;
 	DrawLevelOvr1P_Scratch()->visibilityBitIndex = blockID & 0x1f;
 	DrawLevelOvr1P_Scratch()->visibilityWord = *word;
+
+#ifdef CTR_EDITOR
+	{
+		int diagIndex = DrawLevelOvr1P_DiagBlockIndex(block);
+		if (DrawLevelOvr1P_DiagEnabled() && (diagIndex == 5983 || diagIndex == 6070))
+		{
+			static int s_diagSeed = 0;
+			if (s_diagSeed < 40)
+			{
+				s_diagSeed++;
+				Platform_Log("[CTR DIAG] seed block=%d blockID=%u visWord=%08x visList=%08x\n", diagIndex, blockID, *word,
+				            (unsigned)(uintptr_t)visFaceList);
+			}
+		}
+	}
+#endif
 }
 
 static int Ovr226_800a0f34_ConsumeFullDynamicVisibilityBit(void)
@@ -8074,6 +8159,9 @@ static int Ovr226_800a0ef4_DrawFullDynamicBspList(struct VisMemBspListNode *slot
 		struct BSP *bsp = slot->bsp;
 		struct QuadBlock *block = bsp->data.leaf.ptrQuadBlockArray;
 		s32 quadCount = bsp->data.leaf.numQuads;
+#ifdef CTR_EDITOR
+		DrawLevelOvr1P_DiagScanLeaf(block, (int)quadCount, 0);
+#endif
 
 		DrawLevelOvr1P_Scratch()->quadCount = quadCount;
 		if (quadCount > 0)
@@ -8184,6 +8272,9 @@ static int DrawLevelOvr1P_DrawSplitGroundListABspList(struct VisMemBspListNode *
 		struct BSP *bsp = slot->bsp;
 		struct QuadBlock *block = bsp->data.leaf.ptrQuadBlockArray;
 		s32 quadCount = bsp->data.leaf.numQuads;
+#ifdef CTR_EDITOR
+		DrawLevelOvr1P_DiagScanLeaf(block, (int)quadCount, 0);
+#endif
 
 		DrawLevelOvr1P_Scratch()->quadCount = quadCount;
 		Ovr226_800a0f0c_SeedFullDynamicVisibilityScratch(visFaceList, block);
@@ -8198,6 +8289,28 @@ static int DrawLevelOvr1P_DrawSplitGroundListABspList(struct VisMemBspListNode *
 				return 0;
 			}
 
+#ifdef CTR_EDITOR
+			{
+				int diagDi = DrawLevelOvr1P_DiagBlockIndex(block);
+				int diagVis = Ovr226_800a0f34_ConsumeFullDynamicVisibilityBit();
+				if (DrawLevelOvr1P_DiagEnabled() && (diagDi == 5983 || diagDi == 6070))
+				{
+					static int s_diagVis = 0;
+					if (s_diagVis < 40)
+					{
+						s_diagVis++;
+						Platform_Log("[CTR DIAG] visA block=%d blockID=%u vis=%d\n", diagDi, (unsigned)(u16)block->blockID, diagVis);
+					}
+				}
+				if (diagVis)
+				{
+					if (!DrawLevelOvr1P_EmitSplitGroundListAQuadBlock(pb, primMem, mesh, block))
+					{
+						return 0;
+					}
+				}
+			}
+#else
 			if (Ovr226_800a0f34_ConsumeFullDynamicVisibilityBit())
 			{
 				if (!DrawLevelOvr1P_EmitSplitGroundListAQuadBlock(pb, primMem, mesh, block))
@@ -8205,6 +8318,7 @@ static int DrawLevelOvr1P_DrawSplitGroundListABspList(struct VisMemBspListNode *
 					return 0;
 				}
 			}
+#endif
 
 			block++;
 			quadCount--;
@@ -8446,6 +8560,9 @@ static int DrawLevelOvr1P_DrawBspListQuadBlocks(struct VisMemBspListNode *slot, 
 		struct BSP *bsp = slot->bsp;
 		struct QuadBlock *block = bsp->data.leaf.ptrQuadBlockArray;
 		s32 quadCount = bsp->data.leaf.numQuads;
+#ifdef CTR_EDITOR
+		DrawLevelOvr1P_DiagScanLeaf(block, (int)quadCount, 0);
+#endif
 
 		DrawLevelOvr1P_Scratch()->quadCount = quadCount;
 		Ovr226_800a0f0c_SeedFullDynamicVisibilityScratch(visFaceList, block);
@@ -8459,6 +8576,25 @@ static int DrawLevelOvr1P_DrawBspListQuadBlocks(struct VisMemBspListNode *slot, 
 #endif
 				return 0;
 			}
+
+#ifdef CTR_EDITOR
+			int diagDi = DrawLevelOvr1P_DiagBlockIndex(block);
+			if (DrawLevelOvr1P_DiagEnabled() && (diagDi == 5983 || diagDi == 6070))
+			{
+				static int s_diagVisB = 0;
+				if (s_diagVisB < 60)
+				{
+					u32 bid = (u16)block->blockID;
+					u32 off = (bid >> 5) << 2;
+					u32 proper = (bid >> 5) * 4;
+					const u32 *vw = (const u32 *)((const u8 *)visFaceList + off);
+					const u32 *pw = (const u32 *)((const u8 *)visFaceList + proper);
+					s_diagVisB++;
+					Platform_Log("[CTR DIAG] visB block=%d blockID=%u role=%d off=%u rWord=%08x properOff=%u pWord=%08x bit=%u nq=%d\n",
+					            diagDi, bid, role, off, vw[0], proper, pw[0], bid & 0x1f, mesh->numQuadBlock);
+				}
+			}
+#endif
 
 			if (Ovr226_800a0f34_ConsumeFullDynamicVisibilityBit())
 			{
@@ -9130,6 +9266,9 @@ static int Ovr226_800a1e30_DrawWaterBspList(struct VisMemBspListNode *slot, stru
 		struct BSP *bsp = slot->bsp;
 		struct QuadBlock *block = bsp->data.leaf.ptrQuadBlockArray;
 		s32 quadCount = bsp->data.leaf.numQuads;
+#ifdef CTR_EDITOR
+		DrawLevelOvr1P_DiagScanLeaf(block, (int)quadCount, 0);
+#endif
 
 		DrawLevelOvr1P_Scratch()->quadCount = quadCount;
 		Ovr226_800a1e74_SeedWaterVisibilityScratch(visFaceList, block);
