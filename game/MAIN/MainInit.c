@@ -200,6 +200,12 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	}
 #endif
 
+#ifdef CTR_EDITOR
+	// The editor HUD is drawn after the track and can emit several long text
+	// lines. Keep its primitives out of the retail track budget.
+	size += 0x10000;
+#endif
+
 	MainDB_PrimMem(&gGT->db[0].primMem, size);
 	MainDB_PrimMem(&gGT->db[1].primMem, size);
 }
@@ -354,6 +360,9 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 #else
 	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 	             rdata.s_InstancePool);
+#endif
+#ifdef CTR_EDITOR
+	Editor_OnPoolReset();
 #endif
 	JitPool_Init(&gGT->JitPools.smallStack, (poolScale * 0x19) >> 10, 0x48, rdata.s_SmallStackPool);
 	JitPool_Init(&gGT->JitPools.mediumStack, poolScale >> 7, 0x88, rdata.s_MediumStackPool);

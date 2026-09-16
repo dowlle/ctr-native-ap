@@ -515,7 +515,11 @@ void StateZero()
 	SetVideoMode(0);
 	ResetCallback();
 
-#define MEMPACK_SIZE 0x200000 // 2mb
+#ifdef CTR_EDITOR
+#define MEMPACK_SIZE 0x1000000
+#else
+#define MEMPACK_SIZE 0x200000
+#endif
 
 	MEMPACK_Init(MEMPACK_SIZE);
 	LOAD_InitCD();

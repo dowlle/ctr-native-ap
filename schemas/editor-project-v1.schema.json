@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/editor-project-v1.schema.json",
+  "title": "CTR Native Editor project",
+  "type": "object",
+  "required": ["schema", "version", "metadata", "sources", "host_slot", "units", "camera", "vanilla_objects", "ap_candidates", "history"],
+  "properties": {
+    "schema": {"const": "ctr-native-editor-project"},
+    "version": {"const": 1},
+    "metadata": {
+      "type": "object",
+      "required": ["content_id", "title", "creator", "content_version", "minimum_editor_version"],
+      "properties": {
+        "content_id": {"type": "string"},
+        "title": {"type": "string"},
+        "creator": {"type": "string"},
+        "content_version": {"type": "string"},
+        "minimum_editor_version": {"type": "string"}
+      }
+    },
+    "host_slot": {"type": "integer", "minimum": 0, "maximum": 17},
+    "units": {"const": "ctr-world-s16"},
+    "vanilla_objects": {"type": "array"},
+    "ap_candidates": {"type": "array"},
+    "last_clean_export_sha256": {"type": ["string", "null"]},
+    "last_clean_export_path": {"type": ["string", "null"]}
+  }
+}

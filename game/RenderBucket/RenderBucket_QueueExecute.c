@@ -2591,6 +2591,125 @@ static uint32_t *RenderBucket_GetClampedOTEntry(struct RenderBucketDrawContext *
 	return (uint32_t *)activeRange + depthBin;
 }
 
+// Editor-only OT-entry validation. The two retail lookups above stay untouched;
+// the macros below redirect the call sites to checked wrappers when CTR_EDITOR
+// is on and expand back to the retail functions when it is off, so a non-editor
+// build generates identical code.
+#ifdef CTR_EDITOR
+static void RenderBucket_LogRejectedOTEntry(struct RenderBucketDrawContext *ctx, const char *reason, int activeRange, int depthBin)
+{
+	static int rejectCount;
+	FILE *logFile;
+
+	if (rejectCount >= 16)
+	{
+		return;
+	}
+	rejectCount++;
+
+	logFile = fopen("CTR Native RenderBucket.log", "ab");
+	if (logFile == 0)
+	{
+		return;
+	}
+
+	fprintf(logFile,
+	        "reject=%d reason=%s instance=%p instanceName=%.*s modelHeader=%p modelName=%.*s activeRange=%p depthBin=%d validDepth=[%d,%d]\n",
+	        rejectCount,
+	        reason,
+	        (void *)ctx->inst,
+	        ctx->inst != 0 ? 16 : 0,
+	        ctx->inst != 0 ? ctx->inst->name : "",
+	        (void *)ctx->mh,
+	        ctx->mh != 0 ? 16 : 0,
+	        ctx->mh != 0 ? ctx->mh->name : "",
+	        (void *)(uintptr_t)(u32)activeRange,
+	        depthBin,
+	        ctx->idpp->depthOffset[0],
+	        ctx->idpp->depthOffset[1]);
+	fclose(logFile);
+}
+
+static uint32_t *RenderBucket_GetNormalOTEntryChecked(struct RenderBucketDrawContext *ctx, int activeRange, int depthMac0)
+{
+	int depthBin = (int)((u32)depthMac0 >> 17);
+	uint32_t *otEntry;
+
+	if (activeRange == 0)
+	{
+		return 0;
+	}
+
+	// A freshly born editor preview can expose a reversed retail depth interval
+	// while its per-instance draw state settles. In that case the registered GPU
+	// range below remains the authoritative host-safety boundary. Enforce the
+	// finer per-instance interval only when the producer supplied a valid one.
+	if ((ctx->idpp->depthOffset[0] <= ctx->idpp->depthOffset[1]) &&
+	    ((depthBin < ctx->idpp->depthOffset[0]) || (depthBin > ctx->idpp->depthOffset[1])))
+	{
+		RenderBucket_LogRejectedOTEntry(ctx, "outside-instance-depth-range", activeRange, depthBin);
+		return 0;
+	}
+
+	otEntry = (uint32_t *)activeRange + depthBin;
+
+	if (!NativeGpuLinks_IsRegisteredHostRange(otEntry, sizeof(*otEntry)))
+	{
+		RenderBucket_LogRejectedOTEntry(ctx, "unregistered-host-range", activeRange, depthBin);
+		return 0;
+	}
+
+	return otEntry;
+}
+
+static uint32_t *RenderBucket_GetClampedOTEntryChecked(struct RenderBucketDrawContext *ctx, int activeRange, int depthMac0)
+{
+	int depthBin = (int)((u32)depthMac0 >> 17);
+	uint32_t *otEntry;
+
+	if (activeRange == 0)
+	{
+		return 0;
+	}
+
+	if (ctx->idpp->depthOffset[0] > ctx->idpp->depthOffset[1])
+	{
+		otEntry = (uint32_t *)activeRange + depthBin;
+		if (!NativeGpuLinks_IsRegisteredHostRange(otEntry, sizeof(*otEntry)))
+		{
+			RenderBucket_LogRejectedOTEntry(ctx, "reversed-depth-unregistered-host-range", activeRange, depthBin);
+			return 0;
+		}
+		return otEntry;
+	}
+
+	if (depthBin < ctx->idpp->depthOffset[0])
+	{
+		depthBin = ctx->idpp->depthOffset[0];
+	}
+	else if (depthBin > ctx->idpp->depthOffset[1])
+	{
+		depthBin = ctx->idpp->depthOffset[1];
+	}
+
+	otEntry = (uint32_t *)activeRange + depthBin;
+
+	if (!NativeGpuLinks_IsRegisteredHostRange(otEntry, sizeof(*otEntry)))
+	{
+		RenderBucket_LogRejectedOTEntry(ctx, "clamped-unregistered-host-range", activeRange, depthBin);
+		return 0;
+	}
+
+	return otEntry;
+}
+
+#define RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0) RenderBucket_GetNormalOTEntryChecked((ctx), (activeRange), (depthMac0))
+#define RenderBucket_GetClampedOTEntry(ctx, activeRange, depthMac0) RenderBucket_GetClampedOTEntryChecked((ctx), (activeRange), (depthMac0))
+#else
+#define RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0) RenderBucket_GetNormalOTEntry((activeRange), (depthMac0))
+#define RenderBucket_GetClampedOTEntry(ctx, activeRange, depthMac0) RenderBucket_GetClampedOTEntry((ctx), (activeRange), (depthMac0))
+#endif
+
 static int RenderBucket_TriangleInScreenWindow(struct RenderBucketDrawContext *ctx)
 {
 	u32 screen = RenderBucket_PackXY(ctx->pb->rect.w, ctx->pb->rect.h);
@@ -2897,7 +3016,7 @@ static int RenderBucket_DrawInstPrim_NormalAtRange(struct RenderBucketDrawContex
 {
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006ad88-0x8006ae74 body; native passes
 	// the retail scratch/register inputs as explicit context and depth state.
-	return RenderBucket_DrawInstPrim_NormalAtOTEntry(ctx, command, tex, RenderBucket_GetNormalOTEntry(activeRange, depthMac0));
+	return RenderBucket_DrawInstPrim_NormalAtOTEntry(ctx, command, tex, RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0));
 }
 
 static int RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, int activeRange,
@@ -2926,7 +3045,7 @@ static int RenderBucket_DrawInstPrim_KeyRelicTokenAtRange(struct RenderBucketDra
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3065,7 +3184,7 @@ static int RenderBucket_DrawInstPrim_DepthFadeAtRange(struct RenderBucketDrawCon
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3148,7 +3267,7 @@ static int RenderBucket_DrawInstPrim_LitTextureAtRange(struct RenderBucketDrawCo
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3258,7 +3377,7 @@ static int RenderBucket_DrawInstPrim_GhostAtRange(struct RenderBucketDrawContext
 	int alpha = ctx->idpp->alphaScale;
 	struct RenderBucketGhostMaskPacket *mask;
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3607,7 +3726,7 @@ static int RenderBucket_DrawSplitPrimitiveDepthFadeAtRange(struct RenderBucketDr
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3659,7 +3778,7 @@ static int RenderBucket_DrawSplitPrimitiveGhostAtRange(struct RenderBucketDrawCo
 	int alpha = ctx->idpp->alphaScale;
 	struct RenderBucketGhostMaskPacket *mask;
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3756,7 +3875,7 @@ static int RenderBucket_DrawSplitPrimitiveKeyRelicTokenAtRange(struct RenderBuck
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3816,7 +3935,7 @@ static int RenderBucket_DrawSplitPrimitiveLitTextureAtRange(struct RenderBucketD
 		return 0;
 	}
 
-	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	otEntry = RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0);
 	if (otEntry == 0)
 	{
 		return 0;
@@ -3906,7 +4025,7 @@ static int RenderBucket_DrawSplitPrimitiveAtRange(struct RenderBucketDrawContext
 		return RenderBucket_DrawSplitPrimitiveGhostAtRange(ctx, command, tex, activeRange, depthMac0, v0, v1, v2);
 	}
 
-	return RenderBucket_DrawSplitPrimitiveNormalAtOTEntry(ctx, command, tex, RenderBucket_GetNormalOTEntry(activeRange, depthMac0), v0, v1, v2);
+	return RenderBucket_DrawSplitPrimitiveNormalAtOTEntry(ctx, command, tex, RenderBucket_GetNormalOTEntry(ctx, activeRange, depthMac0), v0, v1, v2);
 }
 
 static void RenderBucket_ProjectSplitVertex(struct RenderBucketDrawContext *ctx, struct RenderBucketSplitVertex *v)

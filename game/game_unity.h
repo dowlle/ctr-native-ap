@@ -35,6 +35,10 @@
 #include "../ap/ap_navrec.h"    // AI lap recorder, and recorded-lap playback for the bots
 #endif
 
+#ifdef CTR_EDITOR
+#include "../editor/editor.c"
+#endif
+
 #include "226/R226.c"
 #include "227/R227.c"
 #include "228/R228.c"

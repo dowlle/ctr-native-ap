@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/geometry-query-v1.schema.json",
+  "title": "CTR Native Editor geometry query",
+  "type": "object",
+  "required": ["schema", "version", "source_sha256", "valid", "point", "quadblocks", "visibility", "collision", "nearest_checkpoint", "nearest_instance"],
+  "properties": {
+    "schema": {"const": "ctr-native-geometry-query"},
+    "version": {"const": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "valid": {"type": "boolean"},
+    "point": {"type": "array", "minItems": 3, "maxItems": 3},
+    "quadblocks": {"type": "object"},
+    "visibility": {"type": "object"},
+    "collision": {"type": "object"},
+    "nearest_checkpoint": {"type": ["object", "null"]},
+    "nearest_instance": {"type": ["object", "null"]}
+  }
+}

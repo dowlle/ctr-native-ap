@@ -360,6 +360,10 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 		}
 	}
 
+#ifdef CTR_EDITOR
+	Editor_Frame(gGT);
+#endif
+
 	uVar5 = LOAD_IsOpen_RacingOrBattle();
 	if (uVar5 != 0)
 	{

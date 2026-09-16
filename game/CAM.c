@@ -1648,6 +1648,17 @@ LAB_8001ab04:
 			u8 *cameraPath = pointers[ST1_CAMERA_PATH];
 			s32 flyInDone = 0;
 
+			// The editor takes over the camera after game logic. Skip the
+			// retail start-line path first because authored tracks are not
+			// required to provide compatible fly-in camera data.
+#ifdef CTR_EDITOR
+			if (Editor_IsConfigured())
+			{
+				flyInDone = 1;
+				x = 0x1000;
+			}
+			else
+#endif
 			// No camera + No ghosts (battle maps)
 #ifdef CTR_CUSTOM_TRACKS
 			// Retail encodes "no intro camera path" by making the ST1 table

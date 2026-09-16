@@ -331,6 +331,11 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	int sectorSize;
 	int sectorCount;
 	int readComplete;
+#ifdef CTR_EDITOR
+	const char *editorOverridePath = NULL;
+	u32 editorOverrideSize = 0;
+	int editorOverride = 0;
+#endif
 
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 PS1 path 0x800321b4-0x80032344.
 	(void)loadType;
@@ -376,10 +381,18 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	ctOverride = CustomTrack_GetOverride(subfileIndex, &ctCtx, &ctOverridePath, &ctOverrideSize);
 #endif
 
+#ifdef CTR_EDITOR
+	editorOverride = Editor_GetLoadOverride(subfileIndex, &editorOverridePath, &editorOverrideSize);
+#endif
+
 	// get size and offset of subfile
 	struct BigEntry *entry = BIG_GETENTRY(bigfile);
 	int eSize = entry[subfileIndex].size;
 	int eOffs = entry[subfileIndex].offset;
+#ifdef CTR_EDITOR
+	if (editorOverride)
+		eSize = (int)editorOverrideSize;
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 	if (ctOverride)
@@ -445,6 +458,19 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 			sdata->callbackCdReadSuccess = NULL;
 			CdReadCallback(NULL);
 		}
+
+#ifdef CTR_EDITOR
+		if (editorOverride)
+		{
+			int bufferBytes = sectorCount << LOAD_CD_DATA_SECTOR_SHIFT;
+			int ok = Editor_ReadLoadOverride(editorOverridePath, ptrDst, (u32)bufferBytes, editorOverrideSize);
+			if (callback != NULL)
+				LOAD_ReadFileASyncCallback((u8)(ok ? CdlComplete : CdlDiskError), NULL);
+			else
+				readComplete = ok;
+			break;
+		}
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 		if (ctOverride)

@@ -21,6 +21,15 @@ option(CTR_AP_AUTHORING "Expose Archipelago authoring tools (developer builds on
 #   cmake -S . -B build-ct -DCTR_AP=ON -DCTR_CUSTOM_TRACKS=ON
 option(CTR_CUSTOM_TRACKS "Load a hash-verified custom track from disk" OFF)
 
+# Standalone box-placement editor (ctr_native_editor). OFF = the client builds
+# exactly as it does on main; every source change it needs is inside
+# #ifdef CTR_EDITOR, so with this OFF the generated code is unchanged.
+#   cmake -S . -B build-editor -DCTR_EDITOR=ON -DCTR_AP=OFF -DCTR_CUSTOM_TRACKS=OFF
+option(CTR_EDITOR "Build the standalone CTR box-placement editor" OFF)
+if(CTR_EDITOR AND CTR_AP)
+    message(FATAL_ERROR "CTR_EDITOR and CTR_AP cannot be combined; the editor is a vanilla-engine authoring build.")
+endif()
+
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
     # The AP mod enables CXX (apclientpp/asio); it must be -m32 too or its
@@ -42,6 +51,13 @@ execute_process(
 )
 if(NOT CTR_NATIVE_GIT_HASH)
     set(CTR_NATIVE_GIT_HASH "unknown")
+endif()
+
+# An editor archive shipped to a build host carries no .git, so allow the
+# caller to state the revision it was cut from.
+set(CTR_EDITOR_SOURCE_REVISION "" CACHE STRING "Verified source revision for an editor archive without Git metadata")
+if(CTR_NATIVE_GIT_HASH STREQUAL "unknown" AND CTR_EDITOR_SOURCE_REVISION)
+    set(CTR_NATIVE_GIT_HASH "${CTR_EDITOR_SOURCE_REVISION}")
 endif()
 
 execute_process(
@@ -125,6 +141,23 @@ if(CTR_CUSTOM_TRACKS)
     target_compile_definitions(ctr_native PRIVATE
         CTR_CUSTOM_TRACKS
         CTR_NATIVE_MEMPACK_RETAIL_PRESSURE=0
+    )
+endif()
+
+# Editor build: enable the editor code path and emit a distinct binary.
+# editor/editor.c is pulled into the main.c unity build by game/game_unity.h
+# under #ifdef CTR_EDITOR, so the option only has to add definitions.
+if(CTR_EDITOR)
+    target_compile_definitions(ctr_native PRIVATE CTR_EDITOR)
+    set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_editor")
+    # Named target so `cmake --build . --target ctr_native_editor` works.
+    add_custom_target(ctr_native_editor DEPENDS ctr_native)
+    # The editor is driven by its Python project supervisor; ship it beside the
+    # binary so a build directory is a runnable editor.
+    add_custom_command(TARGET ctr_native POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/levtool $<TARGET_FILE_DIR:ctr_native>/levtool
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ctr_native>/tools
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/tools/run_editor_project.py $<TARGET_FILE_DIR:ctr_native>/tools/run_editor_project.py
     )
 endif()
 
@@ -233,5 +266,37 @@ if(UNIX)
             COMMAND ${CMAKE_OBJCOPY} ${CTR_STRIP_FLAG} "$<TARGET_FILE:ctr_native>"
             COMMAND ${CMAKE_OBJCOPY} --add-gnu-debuglink="$<TARGET_FILE:ctr_native>.debug" "$<TARGET_FILE:ctr_native>"
             COMMENT "Split debug info -> $<TARGET_FILE_NAME:ctr_native>.debug")
+    endif()
+endif()
+
+# Editor test wiring. main has no CTest section, so this stays entirely inside
+# the editor option.
+if(CTR_EDITOR)
+    include(CTest)
+    if(BUILD_TESTING)
+        add_test(NAME ctr_editor_version COMMAND $<TARGET_FILE:ctr_native> --version)
+        set_tests_properties(ctr_editor_version PROPERTIES PASS_REGULAR_EXPRESSION "^CTR Native Editor ")
+
+        add_test(NAME ctr_editor_self_test COMMAND $<TARGET_FILE:ctr_native> --editor-self-test)
+        set_tests_properties(ctr_editor_self_test PROPERTIES PASS_REGULAR_EXPRESSION "CTR Editor self-test: PASS")
+
+        add_test(
+            NAME ctr_editor_bootstraps_project_launcher
+            COMMAND $<TARGET_FILE:ctr_native> ${CMAKE_SOURCE_DIR}/tools/run_editor_project.py --help
+        )
+        set_tests_properties(
+            ctr_editor_bootstraps_project_launcher
+            PROPERTIES PASS_REGULAR_EXPRESSION "Validate and launch a CTR Native Editor project"
+        )
+
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_test(
+            NAME levtool_unit
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests -p "test_*.py"
+        )
+        set_tests_properties(levtool_unit PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+        add_test(NAME editor_default_bootstrap
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_default_bootstrap.py $<TARGET_FILE:ctr_native>)
     endif()
 endif()

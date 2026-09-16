@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/project-inspection-v1.schema.json",
+  "title": "CTR Native Editor project inspection report",
+  "type": "object",
+  "required": ["schema", "version", "project", "sources", "state", "authored_objects", "source_lev", "clean_export"],
+  "properties": {
+    "schema": {"const": "ctr-native-project-inspection"},
+    "version": {"const": 1},
+    "project": {"type": "object"},
+    "sources": {
+      "type": "object",
+      "required": ["lev", "vrm"]
+    },
+    "state": {"type": "object"},
+    "authored_objects": {"type": "object"},
+    "clean_export": {"type": "object"},
+    "source_lev": {
+      "anyOf": [
+        {"type": "null"},
+        {"$ref": "lev-inspection-v1.schema.json"}
+      ]
+    }
+  }
+}

@@ -658,6 +658,9 @@ void RenderAllHUD(struct GameTracker *gGT)
 			}
 		}
 	}
+#ifdef CTR_EDITOR
+	Editor_DrawHUD(gGT);
+#endif
 }
 
 void RenderAllBeakerRain(struct GameTracker *gGT)

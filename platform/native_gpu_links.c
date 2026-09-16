@@ -25,6 +25,7 @@ global_variable uint32_t s_nativeGpuLinkNextToken = NATIVE_GPU_LINK_FIRST_DYNAMI
 // in the common case. Pure hint - falls back to the full scan, so behaviour is
 // unchanged. Index (not pointer) so it stays valid if the range array is reset.
 global_variable int s_lastHostRangeHit = 0;
+global_variable uint32_t s_unregisteredHostPointerCount;
 
 static int NativeGpuLinks_AlignTokenSize(size_t size, uint32_t *tokenSizeOut)
 {
@@ -162,8 +163,38 @@ uint32_t NativeGpuLinks_FromHostPointer(const void *hostPtr)
 		return range->tokenStart + (uint32_t)(host - range->hostStart);
 	}
 
-	fprintf(stderr, "[CTR Native] GPU link bridge has no token for host pointer %p\n", hostPtr);
+	const void *caller = NULL;
+#if defined(__GNUC__) || defined(__clang__)
+	caller = __builtin_return_address(0);
+#endif
+
+	s_unregisteredHostPointerCount++;
+	if (s_unregisteredHostPointerCount <= 16)
+	{
+		FILE *stream = fopen("CTR Native GPU Links.log", "ab");
+		if (stream != NULL)
+		{
+			fprintf(stream, "unregistered host pointer=%p caller=%p occurrence=%u ranges=%d\n", hostPtr, caller,
+			        s_unregisteredHostPointerCount, s_nativeGpuLinkRangeCount);
+			for (int i = 0; i < s_nativeGpuLinkRangeCount; i++)
+			{
+				const struct NativeGpuLinkRange *registered = &s_nativeGpuLinkRanges[i];
+				fprintf(stream, "range[%d] host=%p..%p token=%06x..%06x\n", i, (void *)registered->hostStart,
+				        (void *)registered->hostEnd, registered->tokenStart, registered->tokenEnd);
+			}
+			fclose(stream);
+		}
+		fprintf(stderr, "[CTR Native] GPU link bridge has no token for host pointer %p (caller %p)\n", hostPtr, caller);
+	}
+
+#ifdef CTR_EDITOR
+	// A malformed retail render packet must not take down an authoring session.
+	// Ending that packet's chain drops only the affected draw while the bounded
+	// diagnostic above preserves enough evidence to locate its producer.
+	return NATIVE_GPU_LINK_TERMINATOR;
+#else
 	abort();
+#endif
 }
 
 void *NativeGpuLinks_ToHostPointer(uint32_t token)

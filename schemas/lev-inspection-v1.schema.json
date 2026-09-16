@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/lev-inspection-v1.schema.json",
+  "title": "CTR Native Editor LEV inspection report",
+  "type": "object",
+  "required": ["schema", "version", "source", "validation", "layout", "graph", "geometry", "checkpoints", "spawns", "instances"],
+  "properties": {
+    "schema": {"const": "ctr-native-lev-inspection"},
+    "version": {"const": 1},
+    "source": {
+      "type": "object",
+      "required": ["sha256", "file_bytes", "payload_bytes"],
+      "properties": {
+        "path": {"type": ["string", "null"]},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "file_bytes": {"type": "integer", "minimum": 0},
+        "payload_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["valid", "error_count", "warning_count", "diagnostics"]
+    },
+    "layout": {"type": "object"},
+    "graph": {"type": "object"},
+    "geometry": {"type": "object"},
+    "checkpoints": {"type": "array"},
+    "spawns": {"type": "object"},
+    "instances": {"type": "array"}
+  }
+}

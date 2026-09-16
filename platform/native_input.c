@@ -835,6 +835,12 @@ void Platform_InputUpdate(void)
 	for (slot = 0; slot < NATIVE_INPUT_MAX_CONTROLLERS; slot++)
 	{
 		NativeInput_ResetSnapshot(slot);
+#ifdef CTR_EDITOR
+		if (Editor_IsInputCaptured())
+		{
+			continue;
+		}
+#endif
 		NativeInput_ApplyController(slot);
 		NativeInput_ApplyKeyboard(slot, keyboardButtons);
 	}

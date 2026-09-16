@@ -187,8 +187,10 @@ internal void Platform_HandleKey(int key, char down)
 		switch (key)
 		{
 		case SDL_SCANCODE_F1:
+#ifndef CTR_EDITOR
 			g_dbg_wireframeMode ^= 1;
 			Platform_LogWarn("[CTR Native] wireframe mode: %d\n", g_dbg_wireframeMode);
+#endif
 			break;
 
 		case SDL_SCANCODE_F2:

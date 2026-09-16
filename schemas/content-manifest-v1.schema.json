@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/content-manifest-v1.schema.json",
+  "title": "CTR content manifest",
+  "type": "object",
+  "required": ["schema", "version", "content", "track", "derived_lev_sha256", "derived_lev_path", "capabilities", "measured_counts", "ap_candidates"],
+  "properties": {
+    "schema": {"const": "ctr-native-content-manifest"},
+    "version": {"const": 1},
+    "content": {"type": "object"},
+    "track": {"type": "object"},
+    "derived_lev_sha256": {"type": ["string", "null"]},
+    "derived_lev_path": {"type": ["string", "null"]},
+    "capabilities": {"type": "object"},
+    "measured_counts": {"type": "object"},
+    "ap_candidates": {"type": "array"}
+  }
+}

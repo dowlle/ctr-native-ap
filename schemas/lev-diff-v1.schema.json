@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ctr-native-editor.invalid/schemas/lev-diff-v1.schema.json",
+  "title": "CTR Native Editor LEV semantic diff",
+  "type": "object",
+  "required": ["schema", "version", "identical", "left", "right", "summary", "changed_ranges", "instance_changes", "quadblock_changes", "checkpoint_changes", "spawn_group_changes", "pvs_membership_changes", "bsp_membership_changes"],
+  "properties": {
+    "schema": {"const": "ctr-native-lev-diff"},
+    "version": {"const": 1},
+    "identical": {"type": "boolean"},
+    "left": {"type": "object"},
+    "right": {"type": "object"},
+    "summary": {"type": "object"},
+    "changed_ranges": {"type": "array"},
+    "instance_changes": {"type": "array"},
+    "quadblock_changes": {"type": "array"},
+    "checkpoint_changes": {"type": "array"},
+    "spawn_group_changes": {"type": "array"},
+    "pvs_membership_changes": {"type": "array"},
+    "bsp_membership_changes": {"type": "array"}
+  }
+}

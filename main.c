@@ -1,3 +1,6 @@
+#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE
+#endif
 #define _CRT_SECURE_NO_WARNINGS
 #define SDL_MAIN_HANDLED
 
@@ -7,7 +10,14 @@
 
 #if defined(_WIN32)
 #include <io.h>
+#ifdef CTR_EDITOR
+#include <process.h>
+#endif
 #else
+#ifdef CTR_EDITOR
+#include <sys/types.h>
+#include <sys/wait.h>
+#endif
 #include <unistd.h>
 #endif
 
@@ -152,19 +162,183 @@ static int NativeArg_IsVersion(const char *arg)
 	return (arg != NULL) && ((strcmp(arg, "--version") == 0) || (strcmp(arg, "-v") == 0));
 }
 
+static int NativeArg_HasSuffix(const char *arg, const char *suffix)
+{
+	size_t argLength;
+	size_t suffixLength;
+
+	if ((arg == NULL) || (suffix == NULL))
+		return 0;
+
+	argLength = strlen(arg);
+	suffixLength = strlen(suffix);
+	return (argLength >= suffixLength) && (strcmp(arg + argLength - suffixLength, suffix) == 0);
+}
+
+#ifdef CTR_EDITOR
+#if defined(_WIN32)
+static int EditorArgs_FindPython(char *destination, size_t destinationSize)
+{
+	char localAppData[MAX_PATH];
+	DWORD length;
+	const char *suffixes[] = {
+	    "\\Python\\bin\\python.exe",
+	    "\\Python\\pythoncore-3.14-64\\python.exe",
+	    "\\Programs\\Python\\Python310\\python.exe",
+	};
+
+	length = GetEnvironmentVariableA("CTR_EDITOR_PYTHON", destination, (DWORD)destinationSize);
+	if ((length > 0) && (length < destinationSize) && (GetFileAttributesA(destination) != INVALID_FILE_ATTRIBUTES))
+		return 1;
+
+	length = SearchPathA(NULL, "python.exe", NULL, (DWORD)destinationSize, destination, NULL);
+	if ((length > 0) && (length < destinationSize))
+		return 1;
+
+	length = GetEnvironmentVariableA("LOCALAPPDATA", localAppData, (DWORD)sizeof(localAppData));
+	if ((length == 0) || (length >= sizeof(localAppData)))
+		return 0;
+
+	for (size_t index = 0; index < sizeof(suffixes) / sizeof(suffixes[0]); index++)
+	{
+		if (snprintf(destination, destinationSize, "%s%s", localAppData, suffixes[index]) < 0)
+			continue;
+		if (GetFileAttributesA(destination) != INVALID_FILE_ATTRIBUTES)
+			return 1;
+	}
+
+	return 0;
+}
+#endif
+
+static int EditorArgs_RunProjectSupervisor(int argc, char *argv[])
+{
+	char **supervisorArgv;
+	int result;
+	char executable[4096];
+	char script[4096];
+	char *defaultArgv[5];
+#if defined(_WIN32)
+	char pythonPath[MAX_PATH];
+#endif
+
+	if (argc == 1)
+	{
+#if defined(_WIN32)
+		DWORD length = GetModuleFileNameA(NULL, executable, sizeof(executable));
+		if (length == 0 || length >= sizeof(executable)) return 70;
+#else
+		ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+		if (length <= 0) return 70;
+		executable[length] = 0;
+#endif
+		strcpy(script, executable);
+		char *slash = strrchr(script, '/');
+		char *backslash = strrchr(script, '\\');
+		if (backslash && (!slash || backslash > slash)) slash = backslash;
+		if (!slash || (size_t)(slash - script) + 30 >= sizeof(script)) return 70;
+		strcpy(slash + 1, "tools/run_editor_project.py");
+		defaultArgv[0] = executable;
+		defaultArgv[1] = script;
+		defaultArgv[2] = "--binary";
+		defaultArgv[3] = executable;
+		defaultArgv[4] = NULL;
+		argv = defaultArgv;
+		argc = 4;
+	}
+	if (!NativeArg_HasSuffix(argv[1], "run_editor_project.py"))
+		return -1;
+
+	supervisorArgv = calloc((size_t)argc + 1, sizeof(*supervisorArgv));
+	if (supervisorArgv == NULL)
+	{
+		fprintf(stderr, "[CTR Editor] Could not allocate project-supervisor arguments.\n");
+		return 70;
+	}
+
+	supervisorArgv[0] = "python";
+	for (int argIndex = 1; argIndex < argc; argIndex++)
+		supervisorArgv[argIndex] = argv[argIndex];
+
+	fprintf(stdout, "[CTR Editor] Starting validated project supervisor: %s\n", argv[1]);
+	fflush(stdout);
+
+#if defined(_WIN32)
+	if (!EditorArgs_FindPython(pythonPath, sizeof(pythonPath)))
+		result = -1;
+	else
+	{
+		supervisorArgv[0] = pythonPath;
+		result = (int)_spawnv(_P_WAIT, pythonPath, (const char *const *)supervisorArgv);
+	}
+#else
+	{
+		pid_t child = fork();
+		if (child == 0)
+		{
+			execvp("python3", supervisorArgv);
+			_exit(127);
+		}
+		if (child < 0)
+			result = -1;
+		else if (waitpid(child, &result, 0) < 0)
+			result = -1;
+		else if (WIFEXITED(result))
+			result = WEXITSTATUS(result);
+		else
+			result = 128;
+	}
+#endif
+
+	free(supervisorArgv);
+	if (result == -1)
+	{
+		fprintf(stderr,
+		        "[CTR Editor] Could not start Python. Set CTR_EDITOR_PYTHON to python.exe, then retry.\n");
+		return 69;
+	}
+
+	return result;
+}
+#endif
+
 
 int main(int argc, char *argv[])
 {
+#ifdef CTR_EDITOR
+	{
+		int supervisorResult = EditorArgs_RunProjectSupervisor(argc, argv);
+		if (supervisorResult >= 0)
+			return NativeConsole_Return((u32)supervisorResult);
+	}
+#endif
+
 	for (int argIndex = 1; argIndex < argc; argIndex++)
 	{
+#ifdef CTR_EDITOR
+		if (strcmp(argv[argIndex], "--editor-self-test") == 0)
+			return Editor_RunSelfTests();
+#endif
 		if (NativeArg_IsVersion(argv[argIndex]))
 		{
+#ifdef CTR_EDITOR
+			printf("CTR Native Editor %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
+#else
 			printf("CTR Native %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
+#endif
 			return 0;
 		}
 	}
 
+#ifdef CTR_EDITOR
+	Editor_ConfigureFromArgs(argc, argv);
+#endif
+
+#ifdef CTR_EDITOR
+	printf("[CTR Editor] Starting...\n");
+#else
 	printf("[CTR Native] Starting...\n");
+#endif
 	fflush(stdout);
 
 	const char *sdlBasePath = SDL_GetBasePath();
@@ -177,7 +351,11 @@ int main(int argc, char *argv[])
 		return NativeConsole_Return(1);
 	}
 
+#ifdef CTR_EDITOR
+	printf("[CTR Editor] Version: %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
+#else
 	printf("[CTR Native] Version: %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
+#endif
 #ifdef CTR_AP
 	// The CTR-AP RELEASE identifier (client + companion apworld pair), distinct
 	// from the engine version above -- this is the line a bug report should quote.
@@ -250,7 +428,9 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-#ifdef CTR_AP
+#if defined(CTR_EDITOR)
+#define CTR_WINDOW_TITLE "CTR Native Editor"
+#elif defined(CTR_AP)
 	// Window title carries the CTR-AP release so a screenshot alone names the
 	// build (release-management plan, proposal 1).
 #define CTR_WINDOW_TITLE "Crash Team Racing - CTR-AP " CTR_AP_VERSION
