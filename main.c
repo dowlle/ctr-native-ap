@@ -162,6 +162,7 @@ static int NativeArg_IsVersion(const char *arg)
 	return (arg != NULL) && ((strcmp(arg, "--version") == 0) || (strcmp(arg, "-v") == 0));
 }
 
+#ifdef CTR_EDITOR
 static int NativeArg_HasSuffix(const char *arg, const char *suffix)
 {
 	size_t argLength;
@@ -174,6 +175,7 @@ static int NativeArg_HasSuffix(const char *arg, const char *suffix)
 	suffixLength = strlen(suffix);
 	return (argLength >= suffixLength) && (strcmp(arg + argLength - suffixLength, suffix) == 0);
 }
+#endif
 
 #ifdef CTR_EDITOR
 #if defined(_WIN32)

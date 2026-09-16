@@ -27,7 +27,12 @@
 #define CTR_NATIVE_MEMPACK_BUFFER_SIZE  0x200000u
 #endif
 #define CTR_NATIVE_MEMPACK_START_OFFSET 0xba9f0u
+#ifdef CTR_EDITOR
+// Derived so the editor's larger backing store keeps retail's 2 KiB tail guard.
 #define CTR_NATIVE_MEMPACK_SIZE         (CTR_NATIVE_MEMPACK_BUFFER_SIZE - CTR_NATIVE_MEMPACK_START_OFFSET - 0x800u)
+#else
+#define CTR_NATIVE_MEMPACK_SIZE         0x144e10u
+#endif
 #else
 // The expanded arena keeps retail's 2 KiB tail guard. Retail computes its pack
 // size as ramSize - startOffset - 0x800 (game/MEMPACK.c), and every read path
