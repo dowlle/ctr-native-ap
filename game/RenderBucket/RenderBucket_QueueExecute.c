@@ -2635,23 +2635,23 @@ static uint32_t *RenderBucket_GetNormalOTEntryChecked(struct RenderBucketDrawCon
 	int depthBin = (int)((u32)depthMac0 >> 17);
 	uint32_t *otEntry;
 
-	if (activeRange == 0)
-	{
-		return 0;
-	}
-
 	// A freshly born editor preview can expose a reversed retail depth interval
 	// while its per-instance draw state settles. In that case the registered GPU
 	// range below remains the authoritative host-safety boundary. Enforce the
 	// finer per-instance interval only when the producer supplied a valid one.
-	if ((ctx->idpp->depthOffset[0] <= ctx->idpp->depthOffset[1]) &&
+	if ((activeRange != 0) && (ctx->idpp->depthOffset[0] <= ctx->idpp->depthOffset[1]) &&
 	    ((depthBin < ctx->idpp->depthOffset[0]) || (depthBin > ctx->idpp->depthOffset[1])))
 	{
 		RenderBucket_LogRejectedOTEntry(ctx, "outside-instance-depth-range", activeRange, depthBin);
 		return 0;
 	}
 
-	otEntry = (uint32_t *)activeRange + depthBin;
+	// The retail lookup stays the single producer of the address.
+	otEntry = RenderBucket_GetNormalOTEntry(activeRange, depthMac0);
+	if (otEntry == 0)
+	{
+		return 0;
+	}
 
 	if (!NativeGpuLinks_IsRegisteredHostRange(otEntry, sizeof(*otEntry)))
 	{
@@ -2672,6 +2672,8 @@ static uint32_t *RenderBucket_GetClampedOTEntryChecked(struct RenderBucketDrawCo
 		return 0;
 	}
 
+	// A reversed interval makes retail's clamp meaningless, so use the raw bin
+	// and let the registered-range test be the only safety boundary.
 	if (ctx->idpp->depthOffset[0] > ctx->idpp->depthOffset[1])
 	{
 		otEntry = (uint32_t *)activeRange + depthBin;
@@ -2683,16 +2685,11 @@ static uint32_t *RenderBucket_GetClampedOTEntryChecked(struct RenderBucketDrawCo
 		return otEntry;
 	}
 
-	if (depthBin < ctx->idpp->depthOffset[0])
+	otEntry = RenderBucket_GetClampedOTEntry(ctx, activeRange, depthMac0);
+	if (otEntry == 0)
 	{
-		depthBin = ctx->idpp->depthOffset[0];
+		return 0;
 	}
-	else if (depthBin > ctx->idpp->depthOffset[1])
-	{
-		depthBin = ctx->idpp->depthOffset[1];
-	}
-
-	otEntry = (uint32_t *)activeRange + depthBin;
 
 	if (!NativeGpuLinks_IsRegisteredHostRange(otEntry, sizeof(*otEntry)))
 	{

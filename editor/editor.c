@@ -101,6 +101,15 @@ static Vec3 s_cameraPos;
 static SVec3 s_cameraRot;
 static int s_cameraSpeed = 32;
 static int s_cameraConfigured;
+// Headless frame dump state (--editor-dump-*).
+static char s_dumpDir[1024];
+static int s_dumpEvery = 30;
+static int s_dumpLimit;
+static int s_dumpStart = 90;
+static int s_dumpNoHud;
+static int s_dumpActiveFrames;
+static int s_dumpWritten;
+static int s_dumpQuitRequested;
 static int s_palette;
 static int s_selected = -1;
 static int s_nextID = 1;
@@ -317,6 +326,32 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		{
 			strncpy(s_minimumEditorVersion, argv[++i], sizeof(s_minimumEditorVersion) - 1); s_minimumEditorVersion[sizeof(s_minimumEditorVersion) - 1] = 0;
 		}
+		else if (strcmp(argv[i], "--editor-dump-dir") == 0 && i + 1 < argc)
+		{
+			strncpy(s_dumpDir, argv[++i], sizeof(s_dumpDir) - 1); s_dumpDir[sizeof(s_dumpDir) - 1] = 0;
+		}
+		else if (strcmp(argv[i], "--editor-dump-every") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value > 0)
+				s_dumpEvery = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-count") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value >= 0)
+				s_dumpLimit = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-start") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value >= 0)
+				s_dumpStart = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-nohud") == 0)
+		{
+			s_dumpNoHud = 1;
+		}
 	}
 
 	if (s_sourceLevPath[0] == 0)
@@ -334,6 +369,14 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		printf("[CTR Editor] host slot confirmed: %d\n", s_hostSlot);
 		printf("[CTR Editor] sidecar: %s\n", s_sidecarPath);
 		Editor_Log("LOAD project=%s active_lev=%s source_lev=%s vrm=%s host_slot=%d", s_sidecarPath, s_levHash, s_sourceLevHash, s_vrmHash, s_hostSlot);
+		if (s_dumpDir[0] != 0)
+		{
+			SDL_CreateDirectory(s_dumpDir);
+			printf("[CTR Editor] frame dump: dir=%s every=%d count=%d start=%d nohud=%d\n", s_dumpDir, s_dumpEvery, s_dumpLimit,
+			       s_dumpStart, s_dumpNoHud);
+			Editor_Log("DUMP_CONFIG dir=%s every=%d count=%d start=%d nohud=%d", s_dumpDir, s_dumpEvery, s_dumpLimit, s_dumpStart,
+			           s_dumpNoHud);
+		}
 	}
 	else
 	{
@@ -1537,6 +1580,10 @@ void Editor_DrawHUD(struct GameTracker *gGT)
 	int candidateCount = 0;
 	if (!s_active || gGT == NULL)
 		return;
+	// --editor-dump-nohud: the HUD is drawn into the same frame that is about to
+	// be captured, so suppressing it has to happen here rather than at capture.
+	if (s_dumpNoHud && s_dumpDir[0] != 0)
+		return;
 	snprintf(line, sizeof(line), "CTR EDITOR  %s  page:%d/3  I pages  O overlay:%s", s_capture ? "EDIT" : "TEST DRIVE", s_inspectorPage + 1,
 	        s_overlayMode == 0 ? "off" : (s_overlayMode == 1 ? "diagnostics" : "wireframe"));
 	if (!Editor_DrawHUDNext(gGT, line, &y, WHITE)) return;
@@ -1622,6 +1669,58 @@ void Editor_DrawHUD(struct GameTracker *gGT)
 		if (!Editor_DrawHUDNext(gGT, line, &y, LIGHT_GREEN)) return;
 	}
 	Editor_DrawHUDLine(gGT, s_status, 8, y, FONT_SMALL, LIGHT_GREEN);
+}
+
+// Called from Platform_EndScene right after the present and before the window
+// swap, so the back buffer still holds exactly the image that is about to be
+// shown. Counting starts when the editor becomes active on its host track, not
+// at process start, so --editor-dump-start is measured from a loaded scene.
+void Editor_AfterPresent(void)
+{
+	char path[1200];
+	int elapsed;
+
+	if (!s_configured || s_dumpDir[0] == 0 || !s_active || s_dumpQuitRequested)
+		return;
+
+	s_dumpActiveFrames++;
+	elapsed = s_dumpActiveFrames - s_dumpStart;
+	if (elapsed < 0)
+		return;
+	if ((elapsed % s_dumpEvery) != 0)
+		return;
+
+	if (snprintf(path, sizeof(path), "%s/frame-%05d.bmp", s_dumpDir, s_dumpWritten) >= (int)sizeof(path))
+	{
+		Editor_Log("DUMP_REFUSAL path_too_long dir=%s index=%d", s_dumpDir, s_dumpWritten);
+		return;
+	}
+
+	if (!Editor_CaptureBackBufferToBMP(path))
+	{
+		Editor_Log("DUMP_REFUSAL capture_failed path=%s index=%d", path, s_dumpWritten);
+		return;
+	}
+
+	Editor_Log("DUMP index=%d file=%s active_frame=%d camera_pos=%d,%d,%d camera_rot=%d,%d,%d speed=%d", s_dumpWritten, path,
+	           s_dumpActiveFrames, s_cameraPos.x, s_cameraPos.y, s_cameraPos.z, s_cameraRot.x, s_cameraRot.y, s_cameraRot.z,
+	           s_cameraSpeed);
+	printf("[CTR Editor] dump %d -> %s pos=%d,%d,%d rot=%d,%d,%d\n", s_dumpWritten, path, s_cameraPos.x, s_cameraPos.y,
+	       s_cameraPos.z, s_cameraRot.x, s_cameraRot.y, s_cameraRot.z);
+	fflush(stdout);
+	s_dumpWritten++;
+
+	if (s_dumpLimit > 0 && s_dumpWritten >= s_dumpLimit)
+	{
+		SDL_Event quit;
+		s_dumpQuitRequested = 1;
+		memset(&quit, 0, sizeof(quit));
+		quit.type = SDL_EVENT_QUIT;
+		SDL_PushEvent(&quit);
+		Editor_Log("DUMP_COMPLETE count=%d dir=%s", s_dumpWritten, s_dumpDir);
+		printf("[CTR Editor] dump complete: %d frames in %s\n", s_dumpWritten, s_dumpDir);
+		fflush(stdout);
+	}
 }
 
 #endif

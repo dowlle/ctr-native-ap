@@ -170,6 +170,68 @@ internal void Platform_TakeScreenshot(void)
 }
 #endif
 
+#ifdef CTR_EDITOR
+// Reads the final presented back buffer. glReadPixels returns rows bottom-up,
+// so the rows are flipped into a top-down copy before SDL_SaveBMP writes it.
+// Declared in editor/editor.h and called from Editor_AfterPresent; it lives
+// here because the GL loader symbols are only in scope this late in the unity
+// translation unit.
+int Editor_CaptureBackBufferToBMP(const char *path)
+{
+	int width = g_windowWidth;
+	int height = g_windowHeight;
+	size_t stride;
+	size_t bytes;
+	u8 *pixels;
+	u8 *flipped;
+	SDL_Surface *surface;
+	bool saved;
+
+	if ((path == NULL) || (width <= 0) || (height <= 0))
+	{
+		return 0;
+	}
+
+	stride = (size_t)width * 4u;
+	bytes = stride * (size_t)height;
+
+	pixels = (u8 *)malloc(bytes);
+	if (pixels == NULL)
+	{
+		return 0;
+	}
+
+	flipped = (u8 *)malloc(bytes);
+	if (flipped == NULL)
+	{
+		free(pixels);
+		return 0;
+	}
+
+	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+
+	for (int row = 0; row < height; row++)
+	{
+		memcpy(flipped + ((size_t)row * stride), pixels + ((size_t)(height - 1 - row) * stride), stride);
+	}
+
+	surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_BGRA8888, flipped, (int)stride);
+	if (surface == NULL)
+	{
+		free(flipped);
+		free(pixels);
+		return 0;
+	}
+
+	saved = SDL_SaveBMP(surface, path);
+	SDL_DestroySurface(surface);
+	free(flipped);
+	free(pixels);
+
+	return saved ? 1 : 0;
+}
+#endif
+
 internal void Platform_HandleKey(int key, char down)
 {
 	if (down == 0)
@@ -403,6 +465,9 @@ void Platform_EndScene(void)
 			NativeRenderer_PresentVRAMDisplay();
 		}
 		NativeRenderer_EndGpuFrame();
+#ifdef CTR_EDITOR
+		Editor_AfterPresent();
+#endif
 		NativeRenderer_SwapWindow();
 		s_pinnedVramDisplayFrames--;
 		if (s_pinnedVramDisplayFrames <= 0)
@@ -432,6 +497,9 @@ void Platform_EndScene(void)
 	NativeRenderer_EndGpuFrame();
 #ifdef CTR_AP
 	AP_TrackerPresent();
+#endif
+#ifdef CTR_EDITOR
+	Editor_AfterPresent();
 #endif
 	NativeRenderer_SwapWindow();
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_END_SCENE);

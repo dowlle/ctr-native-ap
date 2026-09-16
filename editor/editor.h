@@ -29,5 +29,13 @@ void Editor_OnPoolReset(void);
 void Editor_Frame(struct GameTracker *gGT);
 void Editor_DrawHUD(struct GameTracker *gGT);
 
+// Headless frame dump. Editor_AfterPresent is called from Platform_EndScene
+// immediately after the present and before the window swap, so it reads the
+// final presented back buffer. Editor_CaptureBackBufferToBMP is implemented in
+// platform/native_platform.c, where the GL loader symbols are in scope;
+// it returns non-zero on success.
+void Editor_AfterPresent(void);
+int Editor_CaptureBackBufferToBMP(const char *path);
+
 #endif
 #endif
