@@ -487,6 +487,14 @@ static int DrawLevelOvr1P_IsNativeLevelTexturePointer(u32 value)
 	// the data boundary; renderer control flow still follows retail sign tests.
 	uintptr_t ptr = (uintptr_t)value;
 
+	// NOTE: Rebased level pointers are word-aligned. Inline texture words such
+	// as 0x01010101 are not, but can land inside the mempack span depending on
+	// where the binary places it, and were then dereferenced as a TextureLayout.
+	if ((ptr & 3) != 0)
+	{
+		return 0;
+	}
+
 	if (!DrawLevelOvr1P_IsNativeLevelSpan(ptr, sizeof(struct TextureLayout)))
 	{
 		return 0;
