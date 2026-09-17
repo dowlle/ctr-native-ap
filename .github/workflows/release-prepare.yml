@@ -47,14 +47,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out the exact native source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.native_source_commit }}
           fetch-depth: 1
           persist-credentials: false
 
       - name: Check out the exact apworld source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.apworld_repo }}
           ref: ${{ inputs.apworld_source_commit }}
@@ -145,7 +145,7 @@ jobs:
           PY
 
       - name: Install Archipelago for the release template
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ArchipelagoMW/Archipelago
           ref: debe4cf035c7c15efe6fb95f72343af0d420c68c # 0.6.7
