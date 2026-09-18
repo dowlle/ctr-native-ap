@@ -15,6 +15,7 @@
 #include "platform/native_renderer.h"
 #include "platform/native_render_scale.h"
 #include "platform/native_config.h"
+#include "platform/native_window_geometry.h"
 
 #include <assert.h>
 #include <string.h>
@@ -180,6 +181,38 @@ global_variable GLuint s_glVramFramebuffer;
 global_variable int s_glInitialised = 0;
 
 
+// Snapshot the currently connected displays' desktop bounds, for the saved-
+// position validity check in NativeWindowGeometry_PlanStartupPure. Returns the
+// number of rects written (0 on query failure -- the planner then treats every
+// saved position as "no live display", the same as a disconnected monitor).
+static int NativeRenderer_QueryDisplayRects(NativeWindowRect *out, int cap)
+{
+	int sdlCount = 0;
+	SDL_DisplayID *ids = SDL_GetDisplays(&sdlCount);
+	int n = 0;
+
+	if (ids == NULL)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < sdlCount && n < cap; i++)
+	{
+		SDL_Rect bounds;
+		if (SDL_GetDisplayBounds(ids[i], &bounds))
+		{
+			out[n].x = bounds.x;
+			out[n].y = bounds.y;
+			out[n].w = bounds.w;
+			out[n].h = bounds.h;
+			n++;
+		}
+	}
+
+	SDL_free(ids);
+	return n;
+}
+
 internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen)
 {
 	SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
@@ -189,12 +222,42 @@ internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen
 		windowFlags |= SDL_WINDOW_FULLSCREEN;
 	}
 
+	// Apply remembered window geometry (issue: remember position/size between
+	// sessions -- streaming setups want the same window every launch). With
+	// nothing saved (a fresh config.ini, or one from before this feature) the
+	// plan keeps g_windowWidth/g_windowHeight untouched and usePosition is 0,
+	// so behaviour is byte-for-byte what it was: SDL picks the window's default
+	// placement. A saved position whose display has since been disconnected
+	// (or a host, like gamescope, that never reports one) falls back the same
+	// way, keeping a valid saved size.
+	NativeWindowRect displays[16];
+	int displayCount = NativeRenderer_QueryDisplayRects(displays, (int)(sizeof(displays) / sizeof(displays[0])));
+	NativeWindowGeometryPlan plan = NativeWindowGeometry_PlanStartupPure(
+		g_config.windowX, g_config.windowY, g_config.windowWidth, g_config.windowHeight,
+		g_windowWidth, g_windowHeight, displays, displayCount);
+
+	g_windowWidth = plan.w;
+	g_windowHeight = plan.h;
+
 	g_window = SDL_CreateWindow(windowName, g_windowWidth, g_windowHeight, windowFlags);
 
 	if (g_window == NULL)
 	{
 		NATIVE_RENDERER_ERROR("Failed to initialise SDL window!\n");
 		return 0;
+	}
+
+	if (plan.usePosition)
+	{
+		// Best effort: some window managers (gamescope on the Steam Deck, some
+		// tiling setups) ignore this silently. SDL_SetWindowPosition returning
+		// false there is expected, not an error worth logging every launch.
+		SDL_SetWindowPosition(g_window, plan.x, plan.y);
+	}
+
+	if (g_config.windowMaximized && !fullscreen)
+	{
+		SDL_MaximizeWindow(g_window);
 	}
 
 	int major_version = 3;
@@ -224,6 +287,63 @@ internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen
 	}
 
 	return 1;
+}
+
+// Update the remembered window geometry (g_config.windowX/Y/Width/Height/
+// Maximized) from the window's live SDL state, following
+// NativeWindowGeometry_CaptureDecisionPure: a plain windowed rect is stored
+// and the maximized flag cleared; a maximized window leaves the stored rect
+// alone (it is still the windowed rect underneath) and only updates the
+// maximized flag; fullscreen or minimized touches neither, so a fullscreen or
+// minimized clean exit never overwrites the last good windowed geometry.
+// Called at every point that already calls NativeConfig_Save for a windowed-
+// related reason (Platform_HandleFullscreenToggle, the options menu, the
+// connection fields) and right before a clean exit, so a plain resize or move
+// -- with the menu never reopened afterwards -- still gets captured on quit.
+void NativeRenderer_CaptureWindowGeometry(void)
+{
+	SDL_WindowFlags flags;
+	int isFullscreen, isMaximized, isMinimized;
+	int decision;
+
+	if (g_window == NULL)
+	{
+		return;
+	}
+
+	flags = SDL_GetWindowFlags(g_window);
+	isFullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+	isMaximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+	isMinimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
+
+	decision = NativeWindowGeometry_CaptureDecisionPure(isFullscreen, isMaximized, isMinimized);
+
+	if (decision == NATIVE_WINDOW_GEOMETRY_CAPTURE_MAXIMIZED_ONLY)
+	{
+		g_config.windowMaximized = true;
+		return;
+	}
+
+	if (decision != NATIVE_WINDOW_GEOMETRY_CAPTURE_RECT)
+	{
+		return; // fullscreen or minimized: leave the remembered geometry alone
+	}
+
+	int x, y, w, h;
+	SDL_GetWindowPosition(g_window, &x, &y);
+	SDL_GetWindowSize(g_window, &w, &h);
+
+	// A host that ignores geometry queries (gamescope, some tiling window
+	// managers) can report a bogus size here; guard with the same bounds the
+	// startup planner applies rather than persisting garbage.
+	if (NativeWindowGeometry_SizeValidPure(w, h))
+	{
+		g_config.windowX = x;
+		g_config.windowY = y;
+		g_config.windowWidth = w;
+		g_config.windowHeight = h;
+	}
+	g_config.windowMaximized = false;
 }
 
 internal int NativeRenderer_InitialiseGLExt(void)
