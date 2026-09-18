@@ -158,7 +158,8 @@ static void test_activation_and_candidates(void)
 
 	// Feature-off and unsupported-destination loads must not apply the roster.
 	// Ticket 10: all ordinary tracks 0..15 AND the two trial Trophy tracks 16/17,
-	// single-player ordinary Adventure Trophy only.
+	// single-player ordinary Adventure races -- the Trophy Race and that track's
+	// CTR Challenge (ruling 2026-09-18).
 	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), 1, "track 3 applies");
 	expect_eq(AP_HitEncounterShouldApply(1, 0, 0, 0, 0, 0, 0, 0, 1), 1, "track 0 applies");
 	expect_eq(AP_HitEncounterShouldApply(1, 16, 0, 0, 0, 0, 0, 0, 1), 1, "trial 16 applies");
@@ -169,8 +170,19 @@ static void test_activation_and_candidates(void)
 	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 0, 0, 1), 0, "boss does not apply");
 	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 1, 0, 0, 0, 1), 0, "arcade mode does not apply");
 	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 1, 0, 0, 1), 0, "relic does not apply");
-	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 1, 0, 1), 0, "token does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 1, 1), 0, "crystal does not apply");
 	expect_eq(AP_HitEncounterShouldApply(1, 18, 0, 0, 0, 0, 0, 0, 1), 0, "arena 18 does not apply");
+
+	// The CTR Challenge seats the same field as its track's Trophy Race.
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 1, 0, 1), 1, "token applies");
+	expect_eq(AP_HitEncounterShouldApply(1, 16, 0, 0, 0, 0, 1, 0, 1), 1, "trial 16 token applies");
+	expect_eq(AP_HitEncounterShouldApply(1, 17, 0, 0, 0, 0, 1, 0, 1), 1, "trial 17 token applies");
+	expect_eq(AP_HitEncounterShouldApply(0, 3, 0, 0, 0, 0, 1, 0, 1), 0, "token outside adventure does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 1, 0, 2), 0, "token multiplayer does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 1, 0, 0, 0, 1, 0, 1), 0, "token cup does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 1, 0, 1), 0, "token boss does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 1, 1, 0, 1), 0, "token relic does not apply");
+	expect_eq(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 1, 1, 1), 0, "token crystal does not apply");
 
 	// The corrected AI field bound.
 	expect_eq(AP_HIT_FIELD_MAX, 7, "field max is seven AI seats");

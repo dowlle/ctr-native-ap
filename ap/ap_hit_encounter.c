@@ -213,8 +213,11 @@ int AP_HitEncounterExtras(const int *selected, int selectedCount, int player,
 // A restart or retry reloads the same field: an ordinary apply load reuses the
 // stored field only when the IMMEDIATELY previous driver load was an ordinary
 // apply for the same level, player and seat count. Any other load in between
-// (hub, menu, boss, relic, token, cup...) makes the next ordinary load draw
-// fresh, which is what advances the rotation from one race to the next.
+// (hub, menu, boss, relic, cup...) makes the next ordinary load draw fresh,
+// which is what advances the rotation from one race to the next. A CTR
+// Challenge is an ordinary apply load on that track, so it is keyed and rotated
+// exactly like the Trophy Race, and switching between the two routes always
+// passes through the hub load that clears the latch.
 typedef struct
 {
 	int valid;

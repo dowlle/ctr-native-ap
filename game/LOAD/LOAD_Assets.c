@@ -330,8 +330,11 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 #ifdef CTR_AP
 			// Hit Character encounters (pool draw, block schema 2): replace the
 			// stock default field with a draw from the defaults plus unlocked
-			// guests. Ordinary Adventure Trophy races (0..17) draw fresh per race
-			// (a restart/retry reuses the field); an Adventure Gem Cup uses its
+			// guests. Ordinary Adventure races (0..17) draw fresh per race (a
+			// restart/retry reuses the field), and a track's CTR Challenge is one
+			// of them: it is the same driver load as its Trophy Race, only with
+			// the gameMode2 TOKEN_RACE bit set, so it seats the same field from
+			// the same destination key; an Adventure Gem Cup uses its
 			// FROZEN snapshot (drawn once at the pad entry, reused across every
 			// leg and same-session retry). Custom-served loads keep
 			// their own permute and get no roster. The player's arcade pack is

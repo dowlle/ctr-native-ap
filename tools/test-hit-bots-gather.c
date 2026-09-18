@@ -168,12 +168,36 @@ static void test_unsupported_modes(void)
 		hit(1, 1, 0, 0);
 		expect((g_flags & 128u) == 0, "unsupported mode is not raceSupported");
 	}
-	// Token race lives in gameMode2.
+	// The CTR Challenge route does not rescue a mode that is refused anyway:
+	// the token bit lives in gameMode2, so it can be set alongside any of them.
+	for (unsigned i = 0; i < sizeof modes / sizeof modes[0]; i++)
+	{
+		setup();
+		gGT.gameMode1 = modes[i];
+		gGT.gameMode2 = TOKEN_RACE;
+		hit(1, 1, 0, 0);
+		expect((g_flags & 128u) == 0, "unsupported mode + token is not raceSupported");
+	}
+}
+
+static void test_token_race_supported(void)
+{
+	// ruling 2026-09-18: a CTR Challenge awards Hit checks exactly like
+	// the Trophy Race on that track. The token bit lives in gameMode2.
 	setup();
 	gGT.gameMode1 = ADVENTURE_MODE;
 	gGT.gameMode2 = TOKEN_RACE;
 	hit(1, 1, 0, 0);
-	expect((g_flags & 128u) == 0, "token race is not raceSupported");
+	expect_eq(g_calls, 1, "token race gathers");
+	expect((g_flags & 128u) != 0, "token race is raceSupported");
+	expect((g_flags & 32u) != 0, "token race: player attacker");
+
+	// Outside Adventure it is an arcade CTR challenge and stays refused.
+	setup();
+	gGT.gameMode1 = ARCADE_MODE;
+	gGT.gameMode2 = TOKEN_RACE;
+	hit(1, 1, 0, 0);
+	expect((g_flags & 128u) == 0, "arcade token race is not raceSupported");
 }
 
 static void test_victim_validation(void)
@@ -234,6 +258,7 @@ int main(void)
 	test_hub_arena_is_not_a_race();
 	test_boss_race_supported();
 	test_cup_race_supported();
+	test_token_race_supported();
 	test_unsupported_modes();
 	test_victim_validation();
 	test_attribution_flags();

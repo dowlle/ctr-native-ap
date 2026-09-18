@@ -59,8 +59,10 @@ void AP_HitBotsVictim(struct Driver *victim, int damageType,
 	if (attacker != NULL && (attacker->actionsFlagSet & ACTION_BOT) != 0)
 		flags |= 64u;
 
-	// Supported race: Adventure ordinary race, no boss/cup/time-trial/arcade/
-	// battle/relic/token/crystal. A live instance is also required.
+	// Supported race: an Adventure race that seats a roster -- an ordinary
+	// Trophy race, a CTR Challenge (TOKEN_RACE), a boss race or a Gem Cup leg.
+	// Time trial, arcade, battle, relic and crystal are rejected. A live
+	// instance is also required.
 	if (liveInstance &&
 	    AP_HitRaceSupportedPure((gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	                            IS_BOSS_RACE(gGT->gameMode1),
