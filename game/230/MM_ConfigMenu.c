@@ -1,6 +1,7 @@
 #include <common.h>
 #include <stdio.h>
 #include <ctr_menu_ux.h>
+#include <platform/native_renderer.h> // NativeRenderer_CaptureWindowGeometry, ahead of the NativeConfig_Save calls below
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
@@ -505,6 +506,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 		else // Enter -> persist the edited value
 		{
+			NativeRenderer_CaptureWindowGeometry();
 			NativeConfig_Save();
 		}
 		NativeText_End();
@@ -847,6 +849,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		}
 		else
 		{
+			NativeRenderer_CaptureWindowGeometry();
 			NativeConfig_Save();
 #ifdef CTR_AP
 			// Persist the AI-difficulty value to the per-slot data-storage override

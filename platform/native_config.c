@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <platform/native_config.h>
 #include <platform/native_render_scale.h>
+#include <platform/native_window_geometry.h>
 
 // Options live in "config.ini" in the working directory -- the same place the AP
 // layer reads "ap-config.txt" from (see ap/ap_hooks.c AP_ReadConfig). Ported from
@@ -22,6 +23,11 @@ NativeConfig g_config = {
 	1,     // renderScale (1 = original PSX raster, the shipped default)
 	true,  // smoothScaling (default on: linear presentation at scaled modes)
 	false, // textureFiltering (default off: PSX-authentic point sampling)
+	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowX  (unset = never saved)
+	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowY
+	0,     // windowWidth  (0 = never saved)
+	0,     // windowHeight
+	false, // windowMaximized
 	-1,    // volFx    (-1 = audio not captured; card / boot defaults stand)
 	-1,    // volMusic
 	-1,    // volVoice
@@ -65,6 +71,15 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "render_scale",             "Render Scale",                 CFG_ENUM, &g_config.renderScale},
 	{"Video & QoL", "smooth_scaling",           "Smooth Scaling",               CFG_BOOL, &g_config.smoothScaling},
 	{"Video & QoL", "texture_filtering",        "Texture Filtering",            CFG_BOOL, &g_config.textureFiltering},
+	// Remembered window geometry: config-file-only, exactly like update_last_seen
+	// below (State section, gated out of the in-game menu in BuildSectionMap,
+	// game/230/MM_ConfigMenu.c). Gathered/applied in platform/native_renderer.c;
+	// decision rules in include/platform/native_window_geometry.h.
+	{"State",       "window_x",                 "Window X",                     CFG_INT,  &g_config.windowX},
+	{"State",       "window_y",                 "Window Y",                     CFG_INT,  &g_config.windowY},
+	{"State",       "window_w",                 "Window Width",                 CFG_INT,  &g_config.windowWidth},
+	{"State",       "window_h",                 "Window Height",                CFG_INT,  &g_config.windowHeight},
+	{"State",       "window_maximized",         "Window Maximized",             CFG_BOOL, &g_config.windowMaximized},
 	// Audio section: config-file-only. Hidden from the in-game options menu (gated
 	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
 	// through the vanilla audio screen and a CFG_INT would render there as a bare

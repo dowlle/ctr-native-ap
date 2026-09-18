@@ -27,6 +27,23 @@ typedef struct
 	bool textureFiltering;      // Video & QoL: bilinear PSX texture sampling in the
 	                            // GTE shaders (default off: PSX-authentic point
 	                            // sampling). Also flipped by the F3 debug key.
+	// Remembered window position/size (issue: "remember window position and size
+	// between sessions" -- streaming setups want the same window every launch).
+	// Config-file-only, [State] section, the update_last_seen precedent: this is
+	// remembered state, not a user option, so it is hidden from the in-game menu
+	// (gated out of BuildSectionMap in game/230/MM_ConfigMenu.c). See
+	// include/platform/native_window_geometry.h for the freestanding validation/
+	// decision rules and NativeRenderer_CaptureWindowGeometry /
+	// NativeRenderer_InitialiseGLContext (platform/native_renderer.c) for where
+	// they are gathered and applied. windowX/windowY default to
+	// NATIVE_WINDOW_GEOMETRY_POS_UNSET (never saved); windowWidth/windowHeight
+	// default to 0 (never saved); both defaults make a fresh config.ini behave
+	// byte-for-byte like today.
+	int  windowX;
+	int  windowY;
+	int  windowWidth;
+	int  windowHeight;
+	bool windowMaximized;
 	// Audio: the vanilla audio screen's volumes (0-255) and stereo/mono mode.
 	// Config-file-only -- persisted to config.ini [Audio] and edited through that
 	// screen (game/MAIN/MainFreeze.c), NOT the in-game options menu (the [Audio]

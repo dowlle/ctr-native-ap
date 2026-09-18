@@ -118,12 +118,30 @@ internal void Platform_HandleFullscreenToggle(void)
 {
 	bool fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
 
+	// Capture BEFORE the switch: entering fullscreen, this is the last moment the
+	// windowed rect is readable; leaving fullscreen, it is a no-op and the rect
+	// remembered from before stays. Capturing after the switch would skip the
+	// first case and could read a transitional size in the second.
+	NativeRenderer_CaptureWindowGeometry();
 	g_config.fullscreen = NativeConfig_FullscreenToggledFromWindow(fullscreen);
 	SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
 	SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 	Platform_UpdateCursorVisibility();
 	NativeRenderer_ResetDevice();
 	NativeConfig_Save();
+}
+
+// Clean-exit path for SDL_EVENT_QUIT / SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+// capture the window's current geometry (issue: remember window position/size
+// between sessions) and flush config.ini before the process ends, exactly
+// like every other point that already saves it (Platform_HandleFullscreenToggle,
+// the options menu, the connection fields). Falling straight through to exit(0)
+// as before would drop a resize/move that never revisited the menu.
+internal void Platform_ExitClean(void)
+{
+	NativeRenderer_CaptureWindowGeometry();
+	NativeConfig_Save();
+	exit(0);
 }
 
 internal void Platform_UpdateHostAltKeyState(const s32 key, const s8 down)
@@ -683,7 +701,7 @@ void Platform_PollHostEvents(void)
 			Platform_InputControllerRemoved(event.gdevice.which);
 			break;
 		case SDL_EVENT_QUIT:
-			exit(0);
+			Platform_ExitClean();
 			break;
 		case SDL_EVENT_WINDOW_RESIZED:
 			Platform_HandleWindowResize(event.window.data1, event.window.data2);
@@ -693,7 +711,7 @@ void Platform_PollHostEvents(void)
 			Platform_UpdateCursorVisibility();
 			break;
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-			exit(0);
+			Platform_ExitClean();
 			break;
 		case SDL_EVENT_TEXT_INPUT:
 			Platform_HandleTextInput(event.text.text);
