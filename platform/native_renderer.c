@@ -16,6 +16,7 @@
 #include "platform/native_render_scale.h"
 #include "platform/native_config.h"
 #include "platform/native_window_geometry.h"
+#include "platform/native_vsync.h"
 
 #include <assert.h>
 #include <string.h>
@@ -450,9 +451,34 @@ internal void NativeRenderer_ResolveGpuMeasurements(b32 waitForResults)
 }
 #endif
 
-void NativeRenderer_UpdateSwapIntervalState(int swapInterval)
+// The swap interval is requested every frame, exactly as before this option
+// existed (the call used to be a constant 0), so the Off default keeps its
+// behaviour and a driver or overlay that drops the interval gets corrected on
+// the next frame. What is cached is only the RESOLVED interval, so an
+// unsupported Adaptive request falls back to On once instead of failing every
+// frame. It is resolved again when the option changes or after
+// NativeRenderer_ResetDevice (fullscreen toggle, resize).
+static int s_vsyncResolvedOption = -1;
+static int s_vsyncResolvedInterval = 0;
+static bool s_vsyncNeedsResolve = true;
+
+void NativeRenderer_UpdateSwapIntervalState(int vsyncOption)
 {
-	SDL_GL_SetSwapInterval(swapInterval);
+	if (s_vsyncNeedsResolve || vsyncOption != s_vsyncResolvedOption)
+	{
+		int interval = NativeVsync_RequestedIntervalPure(vsyncOption);
+		if (!SDL_GL_SetSwapInterval(interval))
+		{
+			// Adaptive (-1) is the only request with a fallback (plain On).
+			interval = NativeVsync_FallbackIntervalPure(interval);
+		}
+
+		s_vsyncResolvedOption = vsyncOption;
+		s_vsyncResolvedInterval = interval;
+		s_vsyncNeedsResolve = false;
+	}
+
+	SDL_GL_SetSwapInterval(s_vsyncResolvedInterval);
 }
 
 void NativeRenderer_BeginScene(void)
@@ -849,7 +875,10 @@ internal void NativeRenderer_ClearPresentationBars(void)
 void NativeRenderer_ResetDevice(void)
 {
 	NativeRenderer_UpdatePresentationViewport();
-	NativeRenderer_UpdateSwapIntervalState(0);
+	// A fullscreen toggle or resize can recreate the swap chain on some drivers.
+	// Resolve g_config.vsync again on the next Platform_BeginScene instead of
+	// trusting the cached Adaptive decision.
+	s_vsyncNeedsResolve = true;
 }
 
 typedef struct

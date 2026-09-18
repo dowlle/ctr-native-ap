@@ -27,6 +27,16 @@ typedef struct
 	bool textureFiltering;      // Video & QoL: bilinear PSX texture sampling in the
 	                            // GTE shaders (default off: PSX-authentic point
 	                            // sampling). Also flipped by the F3 debug key.
+	int  vsync;                 // Video & QoL: 0 = Off (default), 1 = On,
+	                            // 2 = Adaptive. See include/platform/native_vsync.h
+	                            // for the option -> SDL swap-interval mapping and
+	                            // NativeRenderer_UpdateSwapIntervalState
+	                            // (platform/native_renderer.c) for where it is
+	                            // applied and cached. Off by default: CTR already
+	                            // throttles through the retail VSync/draw-sync
+	                            // path, so a second SDL swap wait is double
+	                            // throttling some drivers charge to the wrong
+	                            // frame's timing.
 	// Remembered window position/size (issue: "remember window position and size
 	// between sessions" -- streaming setups want the same window every launch).
 	// Config-file-only, [State] section, the update_last_seen precedent: this is

@@ -374,7 +374,13 @@ int Platform_BeginScene(void)
 	// NOTE(aalhendi): CTR already throttles through the retail VSync/draw-sync
 	// path. Do not add a second SDL swap wait; some GL drivers charge that wait
 	// to the next frame's first clear instead of SDL_GL_SwapWindow.
-	NativeRenderer_UpdateSwapIntervalState(0);
+	//
+	// That is why the VSync option (g_config.vsync) defaults to Off, which
+	// requests interval 0 every frame as this call always did. On and Adaptive
+	// are opt-in: the game clock never follows the display, so a display rate
+	// close to but not equal to the game's frame rate can show as a periodic
+	// hitch, and a display slower than the game clock would slow the game.
+	NativeRenderer_UpdateSwapIntervalState(g_config.vsync);
 
 	NativeRenderer_BeginScene();
 
