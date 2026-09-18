@@ -30,10 +30,11 @@ int AP_HitEncounterEnabled(void);
 const int *AP_HitEncounterOrder(int destLevelID);
 
 // Should the ordinary roster be replaced by the encounter field for this load?
-// Single-player ordinary Adventure Trophy races only: the sixteen retail tracks
-// (0..15) and the two trial Trophy tracks (16/17). Boss/cup/arcade/relic/token/
-// crystal and multiplayer loads return 0. `isAdventure` is ADVENTURE_MODE.
-// Custom-served loads are excluded at the call site.
+// Single-player ordinary Adventure races on the sixteen retail tracks (0..15)
+// and the two trial Trophy tracks (16/17): the Trophy Race AND that track's CTR
+// Challenge (TOKEN_RACE), which is the same driver load with one extra mode bit.
+// Boss/cup/arcade/relic/crystal and multiplayer loads return 0. `isAdventure` is
+// ADVENTURE_MODE. Custom-served loads are excluded at the call site.
 int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers);

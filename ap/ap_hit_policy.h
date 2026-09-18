@@ -270,21 +270,30 @@ static inline int AP_HitEffectivePlayerPure(int chosen, int lock, int lockMet)
 }
 
 // Does the seeded encounter roster apply to this load? Single-player ordinary
-// Adventure Trophy races only: the sixteen retail tracks (0..15) and the two
-// trial Trophy tracks (16/17). `isAdventure` is ADVENTURE_MODE (the persistent
-// adventure flag, NOT the hub-only ADVENTURE_ARENA); `numPlayers` is the pending
-// player count (1 = single-player). Cups (ticket 11), boss, arcade,
-// relic/token/crystal and multiplayer loads return 0.
+// Adventure races on the sixteen retail tracks (0..15) and the two trial Trophy
+// tracks (16/17): BOTH the Trophy Race and the CTR Challenge (TOKEN_RACE) on
+// that track. `isAdventure` is ADVENTURE_MODE (the persistent adventure flag,
+// NOT the hub-only ADVENTURE_ARENA); `numPlayers` is the pending player count
+// (1 = single-player). Cups (ticket 11), boss, arcade, relic/crystal and
+// multiplayer loads return 0.
+//
+// A CTR Challenge is the SAME driver load as that track's Trophy Race: retail
+// only adds the gameMode2 TOKEN_RACE bit, while LOAD_DriverMPK's branch and
+// MainInit_Drivers' field size read gameMode1 alone (verified against the clean
+// native reference), so it already seats seven AI from the player's 1P arcade
+// pack and takes the same extra-model sideload. `isToken` stays in the signature
+// because the loader's apply=0 line reports it (ruling 2026-09-18).
 static inline int AP_HitOrdinaryAppliesPure(int isAdventure, int destLevelID,
                                             int isCup, int isBoss, int isArcade,
                                             int isRelic, int isToken, int isCrystal,
                                             int numPlayers)
 {
+	(void)isToken; // CTR Challenges are supported
 	if (!isAdventure)
 		return 0;
 	if (destLevelID < 0 || destLevelID > AP_HIT_ORDINARY_TRACK_MAX)
 		return 0;
-	if (isCup || isBoss || isArcade || isRelic || isToken || isCrystal)
+	if (isCup || isBoss || isArcade || isRelic || isCrystal)
 		return 0;
 	if (numPlayers != 1)
 		return 0;
@@ -306,18 +315,22 @@ static inline int AP_HitPadDestEligiblePure(int destLevelID, int trialValid)
 }
 
 // Is this the kind of live race a Hit check may be awarded in? Adventure
-// ordinary races, Adventure boss races AND Adventure Gem Cups (cups are extra
-// opportunities per the contract). A boss Hit check is reachable at the boss
-// race whether or not the boss is cleared; a cup Hit uses the frozen cup roster.
-// Time trial, arcade, battle, relic, token and crystal are rejected.
+// ordinary races, Adventure CTR Challenges (TOKEN_RACE), Adventure boss races
+// AND Adventure Gem Cups (challenges and cups are extra opportunities per the
+// contract, never a logic route). A boss Hit check is reachable at the boss race
+// whether or not the boss is cleared; a cup Hit uses the frozen cup roster; a
+// CTR Challenge uses that track's ordinary field, which it now seats exactly as
+// the Trophy Race does (ruling 2026-09-18). Time trial, arcade, battle,
+// relic and crystal are rejected.
 static inline int AP_HitRaceSupportedPure(int isAdventure, int isBoss, int isCup,
                                           int isTimeTrial, int isArcade, int isBattle,
                                           int isRelic, int isToken, int isCrystal)
 {
-	(void)isBoss; // boss races are supported
-	(void)isCup;  // Gem Cup races are supported
+	(void)isBoss;  // boss races are supported
+	(void)isCup;   // Gem Cup races are supported
+	(void)isToken; // CTR Challenges are supported
 	return isAdventure && !isTimeTrial && !isArcade &&
-	       !isBattle && !isRelic && !isToken && !isCrystal;
+	       !isBattle && !isRelic && !isCrystal;
 }
 
 // ── Gem Cup roster snapshot (ticket 11) ─────────────────────────────────────

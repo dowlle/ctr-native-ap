@@ -518,9 +518,10 @@ static void test_queue_capacity(void)
 
 static void test_ordinary_scope(void)
 {
-	// Single-player ordinary Adventure Trophy: retail tracks 0..15 AND the two
-	// trial Trophy tracks 16/17. Everything else is refused. The first argument
-	// is ADVENTURE_MODE.
+	// Single-player ordinary Adventure races: retail tracks 0..15 AND the two
+	// trial Trophy tracks 16/17, on BOTH the Trophy Race and that track's CTR
+	// Challenge (ruling 2026-09-18). Everything else is refused. The
+	// first argument is ADVENTURE_MODE.
 	expect_eq(AP_HIT_FIELD_MAX, 7, "field max is seven AI seats");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 0, 0, 1), 1, "track 3 applies");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 0, 0, 0, 0, 0, 0, 0, 1), 1, "track 0 applies");
@@ -533,10 +534,26 @@ static void test_ordinary_scope(void)
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 1, 0, 0, 0, 0, 1), 0, "boss refused");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 1, 0, 0, 0, 1), 0, "arcade mode refused");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 1, 0, 0, 1), 0, "relic refused");
-	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 1, 0, 1), 0, "token refused");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 0, 1, 1), 0, "crystal refused");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 18, 0, 0, 0, 0, 0, 0, 1), 0, "arena 18 refused");
 	expect_eq(AP_HitOrdinaryAppliesPure(1, 100, 0, 0, 0, 0, 0, 0, 1), 0, "cup id refused");
+
+	// A CTR Challenge seats the same field as its track's Trophy Race.
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 1, 0, 1), 1, "token race applies");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 0, 0, 0, 0, 0, 1, 0, 1), 1, "token race track 0 applies");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 15, 0, 0, 0, 0, 1, 0, 1), 1, "token race track 15 applies");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 16, 0, 0, 0, 0, 1, 0, 1), 1, "trial 16 token race applies");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 17, 0, 0, 0, 0, 1, 0, 1), 1, "trial 17 token race applies");
+	// The token bit never rescues a destination or mode that is refused anyway.
+	expect_eq(AP_HitOrdinaryAppliesPure(0, 3, 0, 0, 0, 0, 1, 0, 1), 0, "token outside adventure refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 1, 0, 2), 0, "token multiplayer refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 1, 0, 0, 0, 1, 0, 1), 0, "token cup refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 1, 0, 0, 1, 0, 1), 0, "token boss refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 1, 0, 1, 0, 1), 0, "token arcade refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 1, 1, 0, 1), 0, "token relic refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 3, 0, 0, 0, 0, 1, 1, 1), 0, "token crystal refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 18, 0, 0, 0, 0, 1, 0, 1), 0, "token arena 18 refused");
+	expect_eq(AP_HitOrdinaryAppliesPure(1, 100, 0, 0, 0, 0, 1, 0, 1), 0, "token cup id refused");
 }
 
 static void test_effect_applied(void)
@@ -555,7 +572,7 @@ static void test_effect_applied(void)
 
 static void test_race_supported(void)
 {
-	// Adventure ordinary race only.
+	// Adventure races that seat a roster: ordinary, CTR Challenge, boss, cup.
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 0, 0), 1, "adventure ordinary supported");
 	expect_eq(AP_HitRaceSupportedPure(0, 0, 0, 0, 0, 0, 0, 0, 0), 0, "not adventure refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 1, 0, 0, 0, 0, 0, 0, 0), 1, "boss race supported (correction C)");
@@ -564,8 +581,16 @@ static void test_race_supported(void)
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 1, 0, 0, 0, 0), 0, "arcade refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 1, 0, 0, 0), 0, "battle refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 1, 0, 0), 0, "relic refused");
-	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 1, 0), 0, "token refused");
 	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 0, 1), 0, "crystal refused");
+
+	// CTR Challenge: awarded like the Trophy Race (ruling 2026-09-18).
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 1, 0), 1, "token race supported");
+	expect_eq(AP_HitRaceSupportedPure(0, 0, 0, 0, 0, 0, 0, 1, 0), 0, "token outside adventure refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 1, 0, 0, 0, 1, 0), 0, "token time trial refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 1, 0, 0, 1, 0), 0, "token arcade refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 1, 0, 1, 0), 0, "token battle refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 1, 1, 0), 0, "token relic refused");
+	expect_eq(AP_HitRaceSupportedPure(1, 0, 0, 0, 0, 0, 0, 1, 1), 0, "token crystal refused");
 }
 
 // Ticket 11: the cup snapshot lifecycle classification and field size.
