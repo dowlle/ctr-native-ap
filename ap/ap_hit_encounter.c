@@ -1,13 +1,13 @@
 #ifdef CTR_AP
 
-// Hit Character encounters (global schema 16, block schema 2): the gather half. See
+// Hit Character encounters (global schema 16, block schema 2/3): the gather half. See
 // ap/ap_hit_encounter.h for the contract and ap/ap_hit_policy.h for the
 // freestanding decisions this module feeds.
 
 #include "ap_hit_encounter.h"
 #include "ap_hit_policy.h"
 #include "ap_net.h"
-#include "ap_hooks.h" // AP_EmitHitCharacterCheck (wraps AP_EmitClassCheck)
+#include "ap_hooks.h" // AP_EmitHitCharacterCheck (wraps AP_EmitClassCheck), AP_GateCount
 
 #include <string.h> // strcmp (draw-state seed/slot identity)
 
@@ -61,6 +61,7 @@ int AP_HitEncounterGuestEligible(int guest)
 {
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
 	int i;
+	int triggerMet = 0;
 	if (h == NULL)
 		return 0;
 	if (guest < 0 || guest >= CTR_CFG_HIT_CHARACTER_COUNT)
@@ -71,9 +72,17 @@ int AP_HitEncounterGuestEligible(int guest)
 		const ctr_hit_trigger *t = &h->triggers[guest - 8];
 		for (i = 0; i < t->count; i++)
 			if (ap_net_location_checked(t->any_of[i]))
-				return 1;
+			{
+				triggerMet = 1;
+				break;
+			}
+		// Held Keys are the RECEIVED item count (AP_GateCount), not the cosmetic
+		// currAdvProfile.numKeys rebuilt from reward bits: with shuffle_keys off a
+		// Key is still delivered as an item, and the apworld's fallback term is
+		// state.has("Key", n) over the same receipts.
+		return AP_HitGuestFallbackEligiblePure(triggerMet, t->fallback_keys,
+		                                       AP_GateCount(AP_IDX_KEY));
 	}
-	return 0;
 }
 
 int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked)

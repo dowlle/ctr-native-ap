@@ -25,7 +25,10 @@
 //   3. an ACCEPTED seed performs the normal side effects and activates items,
 //   4. a legitimate held check still flushes on a later SAME-seed reconnect,
 //      and is discarded on a DIFFERENT seed,
-//   5. a successful reconnect after a refusal is not poisoned by the latch.
+//   5. a successful reconnect after a refusal is not poisoned by the latch,
+//   6. the block schema 3 Key-fallback consistency check: a fallback next to an
+//      unlock win that EXISTS in the connected room is refused, a consistent
+//      fallback is admitted, and a block schema 2 room still loads.
 
 #include "../ap/ap_net.cpp"
 
@@ -293,6 +296,92 @@ static void test_rejected_trailing_events(void)
 	expect(ap_net_last_error() == reason, "trailing: reason survives teardown");
 }
 
+// Block schema 3 Key fallback, admission consistency (2026-09-18). The parser
+// only sees slot_data; whether a guest's unlock wins EXIST is a property of the
+// connected room, so the claim `fallback_keys` makes ("this guest has no unlock
+// win in this seed") is checked here, against the same checked+missing union the
+// scout walks. Consistent seeds are admitted; a fallback standing next to an
+// existing unlock win is refused like any other malformed block.
+static nlohmann::json fallback_seed(void)
+{
+	nlohmann::json d = g_fixture;
+	d["hit_character_encounters"]["schema"] = 3;
+	// Guest 12 (N. Tropy) at its fixed count of 3 Keys.
+	d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 3;
+	return d;
+}
+
+static void test_fallback_consistency(void)
+{
+	// Consistent: neither of N. Tropy's trial wins exists in the room.
+	{
+		APClient *m = start("2101");
+		expect(m != nullptr, "fallback: client up");
+		if (!m)
+			return;
+		m->test_set_checked({35025000});
+		m->test_set_missing({35025001});
+		m->calls.reset();
+		m->emit_slot_connected(fallback_seed());
+		expect(ap_net_is_connected() == 1, "fallback: consistent seed admitted");
+		expect(ap_net_status() == AP_NET_STATUS_CONNECTED, "fallback: status CONNECTED");
+		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+		expect(h != nullptr && h->triggers[12 - 8].fallback_keys == 3,
+		       "fallback: count reached the gather");
+		ap_net_shutdown();
+	}
+	// Inconsistent: one of the same guest's unlock wins is in the room.
+	{
+		APClient *m = start("2101");
+		expect(m != nullptr, "conflict: client up");
+		if (!m)
+			return;
+		m->test_set_checked({35025000});
+		m->test_set_missing({35016200}); // N. Tropy's Slide Coliseum trial win
+		m->calls.reset();
+		m->emit_slot_connected(fallback_seed());
+		expect(ap_net_is_connected() == 0, "conflict: not admitted");
+		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict: ERROR");
+		expect(std::string(ap_net_last_error()).find("fallback_keys") != std::string::npos,
+		       "conflict: the visible error names fallback_keys");
+		expect(ap_seedcfg_hit_encounters() == nullptr,
+		       "conflict: no encounter data reachable");
+		expect(m->calls.location_scouts == 0, "conflict: no scout");
+		expect(m->calls.data_set == 0, "conflict: no door storage Set");
+		ap_net_poll();
+		expect(g_ap == nullptr, "conflict: torn down");
+	}
+	// A CHECKED unlock win is an existing win too.
+	{
+		APClient *m = start("2101");
+		expect(m != nullptr, "conflict2: client up");
+		if (!m)
+			return;
+		m->test_set_checked({35016201}); // the Turbo Track trial win, already won
+		m->test_set_missing({35025001});
+		m->calls.reset();
+		m->emit_slot_connected(fallback_seed());
+		expect(ap_net_is_connected() == 0, "conflict2: not admitted");
+		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict2: ERROR");
+		ap_net_poll();
+	}
+	// A block schema 2 room (alpha2) keeps loading on this client unchanged.
+	{
+		APClient *m = start("2101");
+		expect(m != nullptr, "block2: client up");
+		if (!m)
+			return;
+		m->test_set_checked({35016200, 35025000});
+		m->test_set_missing({35025001});
+		m->calls.reset();
+		m->emit_slot_connected(g_fixture);
+		expect(ap_net_is_connected() == 1, "block2: schema 2 seed still admitted");
+		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+		expect(h != nullptr && h->schema == 2, "block2: schema 2 parsed");
+		ap_net_shutdown();
+	}
+}
+
 // A refused room must not accept NEW held-check mutations (the queue still
 // belongs to the last accepted seed/slot); existing held checks are preserved,
 // and normal offline retention resumes once the latch clears.
@@ -341,6 +430,7 @@ int main(int argc, char **argv)
 	test_malformed_block_refused();
 	test_raw_socket_not_admission();
 	test_rejected_trailing_events();
+	test_fallback_consistency();
 	test_rejected_held_guard();
 
 	std::printf("%s: %d checks, %d failures\n",

@@ -20,6 +20,7 @@
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
 #include "ap_door_history.h"
+#include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
@@ -544,6 +545,47 @@ static bool ap_net_error_is_tls(const std::string &m)
 static bool g_uri_secure = false;      // this client dials a TLS target
 static bool g_tls_diag_logged = false; // the TLS verdict below is logged once per client
 
+// Refuse the seed at admission (ticket 05). Drops the accepted latch, clears the
+// packet-tail state a refused seed must never carry (the held checks are
+// deliberately kept, see the caller), makes the reason visible and defers the
+// teardown past the callback. Shared by the parser's own refusal and the block
+// schema 3 fallback consistency check that follows it.
+static void ap_net_refuse_seed(const std::string &reason)
+{
+	g_connected = false;
+	g_rejected = true;
+	g_recv_reset = false; // a refused seed resets no game-side tallies
+	g_items.clear();
+	g_items_player.clear();
+	g_items_index.clear();
+	g_items_location.clear();
+	g_items_flags.clear();
+	g_recv_batch_n = 0;
+	g_scouts.clear();
+	g_scouts_done = false;
+	g_pending_checks.clear();
+	g_doors.disconnected();
+	g_doors_sent = 0;
+	g_status = AP_NET_STATUS_ERROR;
+	g_last_error = reason;
+	char line[256];
+	std::snprintf(line, sizeof line,
+	              "[AP NET] seed REFUSED (%s); no door storage, held checks or "
+	              "scouts sent; session will not be admitted\n",
+	              g_last_error.c_str());
+	std::fprintf(stderr, "%s", line);
+	AP_LogLine(line);
+	// Deferred teardown: never delete g_ap from inside its own callback.
+	g_reject_stop_pending = true;
+}
+
+// The four guests that can carry a Key fallback, for the one connect log line
+// per fallback guest. Index is guest - 8; the boss guests never carry one.
+static const char *kHitGuestNames[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	"Pinstripe", "Papu Papu", "Ripper Roo",  "Komodo Joe",
+	"N. Tropy",  "Penta Penguin", "Fake Crash", "Nitros Oxide",
+};
+
 extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
 	if (g_ap)
@@ -685,40 +727,78 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		ap_seedcfg_parse_json(slotData);
 		if (ap_seedcfg_rejected())
 		{
-			g_rejected = true;
-			g_recv_reset = false; // a refused seed resets no game-side tallies
 			// Drop stale packet-tail state from a previous connection. The held
 			// checks are deliberately KEPT: a later reconnect to the same
 			// seed/slot may still flush them, and the held-check identity check
 			// discards them for a different seed.
-			g_items.clear();
-			g_items_player.clear();
-			g_items_index.clear();
-			g_items_location.clear();
-			g_items_flags.clear();
-			g_recv_batch_n = 0;
-			g_scouts.clear();
-			g_scouts_done = false;
-			g_pending_checks.clear();
-			g_doors.disconnected();
-			g_doors_sent = 0;
-			g_status = AP_NET_STATUS_ERROR;
-			g_last_error = ap_seedcfg_reject_reason();
-			char line[256];
-			std::snprintf(line, sizeof line,
-			              "[AP NET] seed REFUSED (%s); no door storage, held checks or "
-			              "scouts sent; session will not be admitted\n",
-			              g_last_error.c_str());
-			std::fprintf(stderr, "%s", line);
-			AP_LogLine(line);
-			// Deferred teardown: never delete g_ap from inside its own callback.
-			g_reject_stop_pending = true;
+			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;
+		}
+		// Block schema 3 consistency (2026-09-18): `fallback_keys` asserts the
+		// guest has NO unlock win in this seed. The parser only sees slot_data, so
+		// the claim is checked here, where the room's location union is already
+		// known (the same checked+missing sets the scout below walks). A fallback
+		// standing next to an existing unlock win means the two halves disagree
+		// about the seed, which is refused exactly like a malformed block.
+		{
+			const ctr_hit_encounters *hit = ap_seedcfg_hit_encounters();
+			if (hit != NULL)
+			{
+				int fallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT];
+				unsigned char anyExists[CTR_CFG_HIT_TRIGGER_COUNT];
+				const std::set<int64_t> &chk = g_ap->get_checked_locations();
+				const std::set<int64_t> &miss = g_ap->get_missing_locations();
+				for (int gi = 0; gi < CTR_CFG_HIT_TRIGGER_COUNT; gi++)
+				{
+					const ctr_hit_trigger &t = hit->triggers[gi];
+					fallbackKeys[gi] = t.fallback_keys;
+					anyExists[gi] = 0;
+					for (int k = 0; k < t.count; k++)
+					{
+						const int64_t code = (int64_t)t.any_of[k];
+						if (chk.count(code) || miss.count(code))
+						{
+							anyExists[gi] = 1;
+							break;
+						}
+					}
+				}
+				const int bad = AP_HitFallbackConflictPure(fallbackKeys, anyExists);
+				if (bad >= 0)
+				{
+					char why[192];
+					std::snprintf(why, sizeof why,
+					              "unlock_triggers[%d].fallback_keys is set, but one of "
+					              "that guest's unlock wins exists in this room",
+					              bad);
+					ap_seedcfg_reject_late(why);
+					ap_net_refuse_seed(why);
+					return;
+				}
+			}
 		}
 		g_rejected = false;
 		g_connected = true;
 		g_status = AP_NET_STATUS_CONNECTED;
 		g_last_error.clear();
+		// One line per Key-fallback guest, once at connect. Eligibility itself is
+		// already visible in the per-race [AP HIT] roster line, so nothing is
+		// logged per frame when a fallback guest later becomes eligible.
+		{
+			const ctr_hit_encounters *hit = ap_seedcfg_hit_encounters();
+			for (int gi = 0; hit != NULL && gi < CTR_CFG_HIT_TRIGGER_COUNT; gi++)
+			{
+				if (hit->triggers[gi].fallback_keys <= 0)
+					continue;
+				char line[160];
+				std::snprintf(line, sizeof line,
+				              "[AP HIT] fallback: %s joins races at %d Key%s (no unlock "
+				              "race in this seed)\n",
+				              kHitGuestNames[gi], hit->triggers[gi].fallback_keys,
+				              hit->triggers[gi].fallback_keys == 1 ? "" : "s");
+				AP_LogLine(line);
+			}
+		}
 		g_retry.onSlotConnected(); // #146: run of failures ended; later drops recover
 		// Fresh connect: signal ap_hooks to zero its received-item tallies, and
 		// drop any stale queue/scout state from a previous connection (server

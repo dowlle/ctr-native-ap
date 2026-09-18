@@ -11,6 +11,8 @@
 //   4. guarantees G1 to G4 by exhaustive simulation (every player, every
 //      unlocked-guest subset, sampled unchecked sets, every start cursor)
 //   5. the pad opportunity (lowest eligible non-player unchecked id)
+//   5. the block schema 3 Key fallback: eligibility over every (trigger, count,
+//      held Keys) combination, and the admission consistency check
 //   5. BOTS_ChangeState damage acceptance and negative attribution
 //   6. extra-model planning for every one of the sixteen player choices
 //   7. load-queue capacity
@@ -205,14 +207,77 @@ static void test_draw_basics(void)
 	// Defaults are always eligible; guests need their trigger.
 	{
 		unsigned char none[CTR_CFG_HIT_CHARACTER_COUNT];
+		int nofb[CTR_CFG_HIT_CHARACTER_COUNT];
 		int i;
 		memset(none, 0, sizeof none);
+		memset(nofb, 0, sizeof nofb);
 		for (i = 0; i < 8; i++)
-			expect_eq(AP_HitGuestEligiblePure(i, none), 1, "default always eligible");
+			expect_eq(AP_HitGuestEligiblePure(i, none, nofb, 0), 1,
+			          "default always eligible");
 		for (i = 8; i < 16; i++)
-			expect_eq(AP_HitGuestEligiblePure(i, none), 0, "guest needs trigger");
+			expect_eq(AP_HitGuestEligiblePure(i, none, nofb, 0), 0,
+			          "guest needs trigger");
+		for (i = 8; i < 16; i++)
+			expect_eq(AP_HitGuestEligiblePure(i, none, nofb, 4), 0,
+			          "Keys alone do not unlock a guest without a fallback");
 		none[14] = 1;
-		expect_eq(AP_HitGuestEligiblePure(14, none), 1, "guest trigger met");
+		expect_eq(AP_HitGuestEligiblePure(14, none, nofb, 0), 1, "guest trigger met");
+		expect_eq(AP_HitGuestEligiblePure(14, none, NULL, 0), 1,
+		          "a NULL fallback table is no fallback");
+		// A fallback guest (12, N. Tropy at 3 Keys) unlocks on Keys alone.
+		{
+			int fb[CTR_CFG_HIT_CHARACTER_COUNT];
+			memset(fb, 0, sizeof fb);
+			fb[12] = 3;
+			memset(none, 0, sizeof none);
+			expect_eq(AP_HitGuestEligiblePure(12, none, fb, 2), 0, "below the fallback");
+			expect_eq(AP_HitGuestEligiblePure(12, none, fb, 3), 1, "at the fallback");
+			expect_eq(AP_HitGuestEligiblePure(12, none, fb, 4), 1, "above the fallback");
+			expect_eq(AP_HitGuestEligiblePure(13, none, fb, 4), 0,
+			          "another guest's fallback does not leak");
+		}
+	}
+}
+
+// The eligibility decision itself, over every combination of its three inputs:
+// trigger met, fallback count 0..4 and held Keys 0..4. A trigger win unlocks at
+// any Key count; without one, only a set fallback the held Keys reach does.
+static void test_fallback_eligibility(void)
+{
+	int met, fb, keys;
+
+	for (met = 0; met <= 1; met++)
+		for (fb = 0; fb <= 4; fb++)
+			for (keys = 0; keys <= 4; keys++)
+			{
+				int want = met ? 1 : (fb > 0 && keys >= fb);
+				expect_eq(AP_HitGuestFallbackEligiblePure(met, fb, keys), want,
+				          "fallback eligibility");
+			}
+
+	// Out-of-range counts are inert rather than always-on; the parser never
+	// produces them, and nothing may unlock on a negative count.
+	expect_eq(AP_HitGuestFallbackEligiblePure(0, -1, 4), 0, "negative fallback is inert");
+	expect_eq(AP_HitGuestFallbackEligiblePure(0, 0, 99), 0, "no fallback stays locked");
+
+	// The admission consistency check: a fallback next to an existing unlock win.
+	{
+		int fbk[CTR_CFG_HIT_TRIGGER_COUNT];
+		unsigned char exists[CTR_CFG_HIT_TRIGGER_COUNT];
+		int i;
+		memset(fbk, 0, sizeof fbk);
+		memset(exists, 0, sizeof exists);
+		expect_eq(AP_HitFallbackConflictPure(fbk, exists), -1, "no fallback, no conflict");
+		for (i = 0; i < CTR_CFG_HIT_TRIGGER_COUNT; i++)
+			exists[i] = 1;
+		expect_eq(AP_HitFallbackConflictPure(fbk, exists), -1,
+		          "wins exist but no fallback claims otherwise");
+		fbk[4] = 3; // guest 12
+		expect_eq(AP_HitFallbackConflictPure(fbk, exists), 12, "conflict names the guest");
+		exists[4] = 0;
+		expect_eq(AP_HitFallbackConflictPure(fbk, exists), -1,
+		          "fallback with no existing win is consistent");
+		expect_eq(AP_HitFallbackConflictPure(NULL, exists), -1, "NULL inputs are inert");
 	}
 }
 
@@ -617,6 +682,7 @@ static void test_extras_state(void)
 int main(void)
 {
 	test_draw_basics();
+	test_fallback_eligibility();
 	test_guarantees();
 	test_opportunity();
 	test_pad_dest_eligible();

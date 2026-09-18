@@ -402,6 +402,23 @@ static const hit_approved_trigger kHitTriggers[CTR_CFG_HIT_TRIGGER_COUNT] = {
 	{CTR_CFG_HIT_KIND_BOSS,  2, {35011104, 35011105}}, // guest 15 Nitros Oxide
 };
 
+// The fixed Key fallback count per guest (block schema 3, index guest - 8). The
+// counts are a frozen table, not a per-seed roll: an entry that disagrees means
+// the apworld and this client do not share one ruling, which is refused rather
+// than silently seated at the wrong Key count. The four boss guests (8..11)
+// always have their own boss race and must never carry a fallback, so their
+// entry is 0 and any `fallback_keys` on them is refused.
+static const int kHitFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	0, // guest 8  Pinstripe     (boss race)
+	0, // guest 9  Papu Papu     (boss race)
+	0, // guest 10 Ripper Roo    (boss race)
+	0, // guest 11 Komodo Joe    (boss race)
+	3, // guest 12 N. Tropy
+	2, // guest 13 Penta Penguin
+	1, // guest 14 Fake Crash
+	4, // guest 15 Nitros Oxide
+};
+
 // Canonical boss-win keys, in the order boss_identity[] stores them.
 static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
 	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
@@ -570,13 +587,20 @@ static int parse_hit_character(const nlohmann::json &j)
 	h.enabled = enabled;
 	h.seen = 1;
 
-	if (!hit_int_eq(b["schema"], CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN))
+	// Two block schemas are admissible: 2 (alpha2 rooms, no Key fallback) and 3
+	// (the fallback shape). Anything else, schema 1 included, refuses the seed.
 	{
-		hit_reject("hit_character_encounters.schema is not the known block schema %d",
-		           CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN);
-		return 0;
+		long long bs = 0;
+		if (!hit_int(b["schema"], &bs) || bs < CTR_CFG_HIT_BLOCK_SCHEMA_MIN ||
+		    bs > CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN)
+		{
+			hit_reject("hit_character_encounters.schema is not a known block schema "
+			           "(%d or %d)",
+			           CTR_CFG_HIT_BLOCK_SCHEMA_MIN, CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN);
+			return 0;
+		}
+		h.schema = (int)bs;
 	}
-	h.schema = CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN;
 
 	// locations: exactly 16 canonical engine-id keys -> 35025000+id
 	{
@@ -698,7 +722,8 @@ static int parse_hit_character(const nlohmann::json &j)
 		}
 	}
 
-	// unlock_triggers: exactly guests 8..15, approved kind + exact win set
+	// unlock_triggers: exactly guests 8..15, approved kind + exact win set, and
+	// in a block schema 3 entry the optional fixed-table `fallback_keys`
 	{
 		const auto &ug = b["unlock_triggers"];
 		if (!ug.is_object() || ug.size() != CTR_CFG_HIT_TRIGGER_COUNT)
@@ -718,9 +743,23 @@ static int parse_hit_character(const nlohmann::json &j)
 				return 0;
 			}
 			const nlohmann::json &t = it.value();
-			if (!t.is_object() || t.size() != 2 || !t.contains("kind") || !t.contains("any_of"))
+			// Block schema 2: exactly kind and any_of, so `fallback_keys` is an
+			// unknown key and refuses the seed. Block schema 3: the same pair, or
+			// that pair plus `fallback_keys` and nothing else.
+			const int hasFallback = (h.schema >= 3 && t.is_object() && t.size() == 3 &&
+			                         t.contains("fallback_keys"))
+			                            ? 1
+			                            : 0;
+			const int wantKeys = hasFallback ? 3 : 2;
+			if (!t.is_object() || (int)t.size() != wantKeys || !t.contains("kind") ||
+			    !t.contains("any_of"))
 			{
-				hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
+				if (h.schema >= 3)
+					hit_reject("unlock_triggers[%d] must have exactly kind and any_of, "
+					           "optionally with fallback_keys",
+					           guest);
+				else
+					hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
 				return 0;
 			}
 			const hit_approved_trigger &ap = kHitTriggers[guest - 8];
@@ -765,6 +804,31 @@ static int parse_hit_character(const nlohmann::json &j)
 				trig.any_of[n++] = code; // preserve wire order verbatim
 			}
 			trig.count = n;
+			if (hasFallback)
+			{
+				long long fb = 0;
+				if (kHitFallbackKeys[guest - 8] == 0)
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is set, but this guest "
+					           "always has its own boss race",
+					           guest);
+					return 0;
+				}
+				if (!hit_int(t["fallback_keys"], &fb) || fb < 1 || fb > 4)
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is not an integer 1..4",
+					           guest);
+					return 0;
+				}
+				if ((int)fb != kHitFallbackKeys[guest - 8])
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is %d, but this guest's "
+					           "fixed fallback is %d",
+					           guest, (int)fb, kHitFallbackKeys[guest - 8]);
+					return 0;
+				}
+				trig.fallback_keys = (int)fb;
+			}
 			h.triggers[guest - 8] = trig;
 			got[guest - 8] = 1;
 		}
@@ -2429,6 +2493,20 @@ extern "C" int ctr_cfg_cup_leg(int cup, int leg)
 	// table rather than the zero-initialized ctr_cfg.gem_cup_legs, which a parse
 	// may never have touched this session.
 	return s_vanilla_cup_legs_ready ? s_vanilla_cup_legs[cup][leg] : -1;
+}
+
+extern "C" void ap_seedcfg_reject_late(const char *reason)
+{
+	// A later admission stage refuses an already-parsed seed (the block schema 3
+	// fallback consistency check in ap/ap_net.cpp needs the room's location
+	// union, which slot_data alone does not carry). Leave exactly what a parse
+	// rejection leaves: the whole config inactive, no encounter data reachable,
+	// the flag raised and the reason visible.
+	ctr_cfg.schema_version = 0;
+	ctr_cfg.hit.valid = 0;
+	hit_reject("%s", (reason != NULL && reason[0] != '\0')
+	                     ? reason
+	                     : "seed refused at admission");
 }
 
 extern "C" int ap_seedcfg_rejected(void)
