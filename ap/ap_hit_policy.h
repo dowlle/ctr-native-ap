@@ -187,16 +187,55 @@ static inline int AP_HitDrawFieldPure(const int *order,
 	return out->count;
 }
 
+// Is a guest eligible from its two facts alone? `triggerMet` is the parsed
+// any_of list reduced to a 0/1 fact by the gather; `fallbackKeys` is the parsed
+// block schema 3 fallback (0 = none, else 1..4) and `heldKeys` the received Key
+// count. A trigger win still unlocks a guest at zero Keys, and a fallback guest
+// unlocks at its count without any win. Both being live at once is a malformed
+// seed the parser/admission refuses, so this only has to be monotone in Keys.
+static inline int AP_HitGuestFallbackEligiblePure(int triggerMet, int fallbackKeys,
+                                                  int heldKeys)
+{
+	if (triggerMet)
+		return 1;
+	if (fallbackKeys <= 0)
+		return 0;
+	return heldKeys >= fallbackKeys ? 1 : 0;
+}
+
 // Is `guest` (engine id 0..15) allowed to appear as an encounter? Defaults
 // (0..7) always are. A guest (8..15) needs one authoritative trigger win checked
-// (`triggerMet` is the parsed any_of list reduced to a 0/1 fact by the gather).
-static inline int AP_HitGuestEligiblePure(int guest, const unsigned char *triggerMet)
+// (`triggerMet` is the parsed any_of list reduced to a 0/1 fact by the gather),
+// or its Key fallback met (`fallbackKeys` is indexed the same way, 0 where the
+// guest has no fallback).
+static inline int AP_HitGuestEligiblePure(int guest, const unsigned char *triggerMet,
+                                          const int *fallbackKeys, int heldKeys)
 {
 	if (guest < 0 || guest >= CTR_CFG_HIT_CHARACTER_COUNT)
 		return 0;
 	if (guest < 8)
 		return 1;
-	return triggerMet[guest] ? 1 : 0;
+	return AP_HitGuestFallbackEligiblePure(triggerMet[guest] ? 1 : 0,
+	                                       fallbackKeys != NULL ? fallbackKeys[guest] : 0,
+	                                       heldKeys);
+}
+
+// Admission consistency (block schema 3): `fallback_keys` means "this guest has
+// no unlock win in this seed", so a fallback set while ANY of that guest's
+// any_of locations exists in the connected room is a malformed block -- the two
+// halves disagree about the seed and the apworld is the single authority.
+// `fallbackKeys` and `anyExists` are indexed by guest - 8 over the eight guest
+// entries. Returns the offending guest engine id (8..15), or -1.
+static inline int AP_HitFallbackConflictPure(const int *fallbackKeys,
+                                             const unsigned char *anyExists)
+{
+	int i;
+	if (fallbackKeys == NULL || anyExists == NULL)
+		return -1;
+	for (i = 0; i < CTR_CFG_HIT_TRIGGER_COUNT; i++)
+		if (fallbackKeys[i] > 0 && anyExists[i])
+			return 8 + i;
+	return -1;
 }
 
 // Is there a Hit opportunity for `player`? Under the pool draw every eligible

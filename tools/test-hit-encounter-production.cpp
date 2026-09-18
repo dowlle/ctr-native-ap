@@ -47,6 +47,15 @@ extern "C" int ap_net_location_exists(long long code)
 	return g_checked.count(code) ? 1 : 0;
 }
 
+// Held Keys as the gather reads them: the RECEIVED Key item count
+// (AP_GateCount(AP_IDX_KEY)), which drives the block schema 3 Key fallback.
+static int g_heldKeys;
+
+extern "C" int AP_GateCount(int itemType)
+{
+	return itemType == 14 /* AP_IDX_KEY */ ? g_heldKeys : 0;
+}
+
 extern "C" int AP_EmitHitCharacterCheck(long code)
 {
 	g_emitCount++;
@@ -111,6 +120,7 @@ static void reset_state(void)
 	g_checked.clear();
 	g_emitCount = 0;
 	g_lastEmit = -1;
+	g_heldKeys = 0;
 	AP_HitEncounterConnectReset();
 	AP_HitEncounterResetDrawState();
 }
@@ -525,6 +535,105 @@ static void test_all_guest_eligibility(void)
 	expect_eq(AP_HitEncounterGuestEligible(13), 1, "second Penta trigger keeps unlocked");
 }
 
+// Block schema 3 (2026-09-18): a guest whose unlock wins do not exist in the
+// seed joins the pool on held Keys alone, and once eligible it is drawn, seated
+// and given an extra model exactly like a trigger-unlocked guest.
+static nlohmann::json fallback_fixture(int guest, int keys)
+{
+	nlohmann::json d = g_fixture;
+	d["hit_character_encounters"]["schema"] = 3;
+	d["hit_character_encounters"]["unlock_triggers"][std::to_string(guest)]
+	 ["fallback_keys"] = keys;
+	return d;
+}
+
+static void test_key_fallback_eligibility(void)
+{
+	const int guests[4] = {14, 13, 12, 15};
+	const int counts[4] = {1, 2, 3, 4};
+
+	for (int i = 0; i < 4; i++)
+	{
+		const nlohmann::json d = fallback_fixture(guests[i], counts[i]);
+		reset_state();
+		ap_seedcfg_parse_json(d);
+		expect(ap_seedcfg_hit_encounters() != NULL, "fallback: seed parsed");
+
+		for (int k = 0; k < counts[i]; k++)
+		{
+			g_heldKeys = k;
+			expect_eq(AP_HitEncounterGuestEligible(guests[i]), 0,
+			          "fallback guest locked below its count");
+		}
+		for (int k = counts[i]; k <= 4; k++)
+		{
+			g_heldKeys = k;
+			expect_eq(AP_HitEncounterGuestEligible(guests[i]), 1,
+			          "fallback guest unlocked at its count");
+		}
+		// No other guest is affected by the Keys.
+		g_heldKeys = 4;
+		for (int g = 8; g <= 15; g++)
+			if (g != guests[i])
+				expect_eq(AP_HitEncounterGuestEligible(g), 0,
+				          "Keys unlock only the fallback guest");
+		// A trigger win still unlocks the fallback guest at zero Keys.
+		reset_state();
+		ap_seedcfg_parse_json(d);
+		g_heldKeys = 0;
+		g_checked.insert(ap_seedcfg_hit_encounters()->triggers[guests[i] - 8].any_of[0]);
+		expect_eq(AP_HitEncounterGuestEligible(guests[i]), 1,
+		          "a trigger win still unlocks a fallback guest");
+	}
+
+	// Without a fallback, Keys change nothing (block schema 2 behaviour).
+	reset_state();
+	ap_seedcfg_parse_json(g_fixture);
+	g_heldKeys = 4;
+	for (int g = 8; g <= 15; g++)
+		expect_eq(AP_HitEncounterGuestEligible(g), 0,
+		          "no fallback: Keys leave every guest locked");
+
+	// Seated and extra-loaded like any other unlocked guest: the gather reports
+	// it eligible, the draw seats it first (its Hit is unchecked) and the extras
+	// plan carries its model.
+	{
+		reset_state();
+		ap_seedcfg_parse_json(fallback_fixture(12, 3));
+		unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
+		unsigned char unchecked[CTR_CFG_HIT_CHARACTER_COUNT];
+		g_heldKeys = 3;
+		AP_HitEncounterGather(eligible, unchecked);
+		expect_eq(eligible[12], 1, "fallback guest is gathered eligible");
+		expect_eq(unchecked[12], 1, "fallback guest's Hit is unchecked");
+
+		int ids[AP_HIT_FIELD_MAX];
+		const int n = race_after_hub(0, 0, ids);
+		int seated = 0;
+		for (int i = 0; i < n; i++)
+			if (ids[i] == 12)
+				seated = 1;
+		expect(seated, "fallback guest is seated in the first fresh race");
+
+		int extras[AP_HIT_FIELD_MAX];
+		const int nx = AP_HitEncounterExtras(ids, n, 0, extras, AP_HIT_FIELD_MAX);
+		int extraLoaded = 0;
+		for (int i = 0; i < nx; i++)
+			if (extras[i] == 12)
+				extraLoaded = 1;
+		expect(extraLoaded, "fallback guest gets an extra model slot");
+
+		// The pad keeps its Trophy re-race offer while that Hit is unchecked.
+		for (int g = 0; g < 8; g++)
+			g_checked.insert(35025000 + g);
+		expect_eq(AP_HitEncounterOpportunity(0, 0), 12,
+		          "a fallback guest is a live pad opportunity");
+		g_heldKeys = 2;
+		expect_eq(AP_HitEncounterOpportunity(0, 0), -1,
+		          "below its count it is no opportunity");
+	}
+}
+
 // Ticket 09: a new seed / reconnect clears the session state, and eligibility
 // re-derives from the new checked set.
 static void test_seed_change_and_reconnect(void)
@@ -616,6 +725,7 @@ int main(int argc, char **argv)
 	test_negative_attribution();
 	test_repeat_and_reconnect_dedup();
 	test_all_guest_eligibility();
+	test_key_fallback_eligibility();
 	test_seed_change_and_reconnect();
 	test_default_target_opportunity();
 	test_boss_race_feature_off();

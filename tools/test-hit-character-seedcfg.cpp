@@ -20,7 +20,9 @@
 //   3. malformed shapes / wrong types / out-of-range bounds, per field,
 //   4. absent / contradictory / unknown-schema / present-null handling,
 //   5. seed transitions (valid -> invalid -> valid -> absent clear old state),
-//   6. boss identity substitution round-trips (the identity table is data).
+//   6. boss identity substitution round-trips (the identity table is data),
+//   7. block schema 3's optional per-guest `fallback_keys` (accepted shapes, the
+//      fixed count table, boss guests, and block schema 2 staying admissible).
 
 #include <algorithm>
 #include <cstdio>
@@ -164,8 +166,9 @@ static void test_valid_roundtrip(void)
 
 	const nlohmann::json &b = g_fixture["hit_character_encounters"];
 
-	expect_eq(h->schema, CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, "block schema 2");
-	expect_eq(CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, 2, "this build knows block schema 2");
+	expect_eq(h->schema, b["schema"].get<int>(), "block schema verbatim");
+	expect_eq(CTR_CFG_HIT_BLOCK_SCHEMA_MIN, 2, "this build still admits block schema 2");
+	expect_eq(CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN, 3, "this build knows block schema 3");
 	expect_eq(h->enabled, 1, "scalar enabled");
 	expect_eq(h->seen, 1, "block seen");
 	expect_eq(h->valid, 1, "block valid");
@@ -301,8 +304,11 @@ static void test_block_schema_and_shape(void)
 {
 	{
 		nlohmann::json d = fx();
-		d["hit_character_encounters"]["schema"] = 3;
-		expect_reject(d, "unknown block schema 3");
+		d["hit_character_encounters"]["schema"] = 4;
+		expect_reject(d, "unknown block schema 4");
+		expect(std::string(ap_seedcfg_reject_reason()).find("known block schema (2 or 3)") !=
+		           std::string::npos,
+		       "the refusal names both accepted block schemas");
 	}
 	{
 		// A superseded schema-1 (pinned) block is refused visibly, with the
@@ -318,9 +324,9 @@ static void test_block_schema_and_shape(void)
 				              {"pinned", nlohmann::json::array()},
 				              {"reserve", {8, 9, 10, 11, 12, 13, 14, 15}}};
 		expect_reject(d, "superseded block schema 1");
-		expect(std::string(ap_seedcfg_reject_reason()).find("known block schema 2") !=
+		expect(std::string(ap_seedcfg_reject_reason()).find("known block schema (2 or 3)") !=
 		           std::string::npos,
-		       "schema-1 refusal names the known block schema");
+		       "schema-1 refusal names the accepted block schemas");
 	}
 	{
 		nlohmann::json d = fx();
@@ -544,6 +550,177 @@ static void test_triggers(void)
 	}
 }
 
+// The committed fixture is a block schema 2 seed (alpha2). This is the same
+// seed re-labelled as block schema 3: the shape is identical until a trigger
+// entry carries `fallback_keys`.
+static nlohmann::json fx3(void)
+{
+	nlohmann::json d = fx();
+	d["hit_character_encounters"]["schema"] = 3;
+	return d;
+}
+
+// Block schema 3: the optional per-guest Key fallback. The counts are a frozen
+// table (14 -> 1, 13 -> 2, 12 -> 3, 15 -> 4), never a per-seed roll, so a value
+// that disagrees means a mismatched apworld and refuses the seed.
+static void test_fallback_keys(void)
+{
+	// A block 3 seed with no fallback anywhere is the ordinary case.
+	{
+		nlohmann::json d = fx3();
+		expect_accept(d, "block schema 3 without any fallback");
+		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+		expect(h != NULL, "block 3 exposes encounters");
+		if (h)
+		{
+			expect_eq(h->schema, 3, "block schema 3 stored");
+			for (int g = 8; g <= 15; g++)
+				expect_eq(h->triggers[g - 8].fallback_keys, 0, "no fallback parsed");
+		}
+	}
+
+	// Each of the four fallback guests, at its own fixed count.
+	{
+		const int guests[4] = {14, 13, 12, 15};
+		const int keys[4] = {1, 2, 3, 4};
+		for (int i = 0; i < 4; i++)
+		{
+			nlohmann::json d = fx3();
+			const std::string key = std::to_string(guests[i]);
+			d["hit_character_encounters"]["unlock_triggers"][key]["fallback_keys"] = keys[i];
+			expect_accept(d, "fallback guest accepted");
+			const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+			expect(h != NULL, "fallback seed exposes encounters");
+			if (!h)
+				continue;
+			expect_eq(h->triggers[guests[i] - 8].fallback_keys, keys[i],
+			          "fallback count parsed");
+			// kind and any_of keep today's strict validation, verbatim.
+			expect_eq(h->triggers[guests[i] - 8].count,
+			          (long long)d["hit_character_encounters"]["unlock_triggers"][key]
+			              ["any_of"].size(),
+			          "fallback entry keeps its win set");
+			for (int g = 8; g <= 15; g++)
+				if (g != guests[i])
+					expect_eq(h->triggers[g - 8].fallback_keys, 0,
+					          "other guests keep no fallback");
+		}
+	}
+
+	// All four at once, which is what a maximally displaced seed emits.
+	{
+		nlohmann::json d = fx3();
+		auto &ug = d["hit_character_encounters"]["unlock_triggers"];
+		ug["12"]["fallback_keys"] = 3;
+		ug["13"]["fallback_keys"] = 2;
+		ug["14"]["fallback_keys"] = 1;
+		ug["15"]["fallback_keys"] = 4;
+		expect_accept(d, "all four fallback guests");
+		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+		if (h)
+		{
+			expect_eq(h->triggers[12 - 8].fallback_keys, 3, "N. Tropy at 3");
+			expect_eq(h->triggers[13 - 8].fallback_keys, 2, "Penta Penguin at 2");
+			expect_eq(h->triggers[14 - 8].fallback_keys, 1, "Fake Crash at 1");
+			expect_eq(h->triggers[15 - 8].fallback_keys, 4, "Nitros Oxide at 4");
+		}
+	}
+
+	// The four boss guests never carry a fallback: they always have a boss race.
+	for (int g = 8; g <= 11; g++)
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"][std::to_string(g)]
+		 ["fallback_keys"] = 1;
+		expect_reject(d, "fallback on a boss guest");
+	}
+
+	// Type-exact integer, range 1..4, and the fixed table value.
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 0;
+		expect_reject(d, "fallback_keys 0");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 5;
+		expect_reject(d, "fallback_keys 5");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = -1;
+		expect_reject(d, "fallback_keys -1");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 3.0;
+		expect_reject(d, "fallback_keys 3.0 (float)");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = "3";
+		expect_reject(d, "fallback_keys \"3\" (string)");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = true;
+		expect_reject(d, "fallback_keys true (bool)");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = nullptr;
+		expect_reject(d, "fallback_keys null");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 2;
+		expect_reject(d, "N. Tropy at the wrong fixed count");
+	}
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["15"]["fallback_keys"] = 1;
+		expect_reject(d, "Nitros Oxide at the wrong fixed count");
+	}
+
+	// Any OTHER extra key in a trigger entry is still unknown, in both schemas.
+	{
+		nlohmann::json d = fx3();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback"] = 3;
+		expect_reject(d, "unknown extra trigger key in block 3");
+	}
+	{
+		nlohmann::json d = fx3();
+		auto &t = d["hit_character_encounters"]["unlock_triggers"]["12"];
+		t["fallback_keys"] = 3;
+		t["extra"] = 1;
+		expect_reject(d, "fallback plus another unknown key");
+	}
+
+	// Block schema 2 keeps today's shape exactly: the fixture is still accepted,
+	// and fallback_keys in a block 2 entry is an unknown key.
+	{
+		nlohmann::json d = fx();
+		expect_accept(d, "block schema 2 seed still accepted");
+		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+		expect(h != NULL, "block 2 exposes encounters");
+		if (h)
+		{
+			expect_eq(h->schema, 2, "block schema 2 stored");
+			for (int g = 8; g <= 15; g++)
+				expect_eq(h->triggers[g - 8].fallback_keys, 0,
+				          "block 2 can never carry a fallback");
+		}
+	}
+	{
+		nlohmann::json d = fx();
+		d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 3;
+		expect_reject(d, "fallback_keys in a block schema 2 seed");
+		expect(std::string(ap_seedcfg_reject_reason())
+		           .find("must have exactly kind and any_of") != std::string::npos,
+		       "block 2 refuses fallback_keys as an unknown key");
+	}
+}
+
 static void test_bosses(void)
 {
 	{
@@ -722,6 +899,7 @@ int main(int argc, char **argv)
 	test_policy();
 	test_orders();
 	test_triggers();
+	test_fallback_keys();
 	test_bosses();
 	test_seed_transitions();
 	test_global_schema_boundary();

@@ -49,6 +49,15 @@ extern "C" int ap_net_location_exists(long long code)
 	return g_checked.count(code) ? 1 : 0;
 }
 
+// Held Keys as the gather reads them: the RECEIVED Key item count
+// (AP_GateCount(AP_IDX_KEY)), which drives the block schema 3 Key fallback.
+static int g_heldKeys;
+
+extern "C" int AP_GateCount(int itemType)
+{
+	return itemType == 14 /* AP_IDX_KEY */ ? g_heldKeys : 0;
+}
+
 extern "C" int AP_EmitHitCharacterCheck(long code)
 {
 	(void)code;

@@ -372,7 +372,7 @@ typedef struct
 	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
 } ctr_wumpa_checks;
 
-// ── hit_character_encounters (schema 16, block schema 2) ────────────────────
+// ── hit_character_encounters (schema 16, block schema 2 or 3) ───────────────
 //
 // Native-owned encounter tables. The apworld's fill_slot_data resolves every
 // seeded order; native walks those orders per race (the pool draw in
@@ -386,9 +386,17 @@ typedef struct
 // and policy {seed, self_character, draw "unhit_first_rotation", max_guests 3}.
 // A schema-1 block is refused like any other unknown block schema.
 //
+// Block schema 3 (2026-09-18) adds the optional per-guest `fallback_keys`: a
+// guest whose unlock wins do not exist in the seed joins the pool once the
+// player holds that many Keys. Only the four non-boss guests carry it, always
+// with their fixed table count (14 -> 1, 13 -> 2, 12 -> 3, 15 -> 4). Schema 2
+// blocks stay admissible so alpha2 rooms keep loading on this client; in a
+// schema 2 block `fallback_keys` is an unknown key and refuses the seed.
+//
 // Ordering is load-bearing (an order is the draw's walk order), so every list
 // here preserves the wire order verbatim.
-#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 2
+#define CTR_CFG_HIT_BLOCK_SCHEMA_MIN   2 // oldest block schema still admitted
+#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 3 // newest block schema this build reads
 #define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
 #define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
 #define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
@@ -410,11 +418,15 @@ typedef struct
 
 // One guest's unlock trigger. kind is CTR_CFG_HIT_KIND_BOSS or _TRACK; any_of
 // holds the approved authoritative win codes (positive AP codes, no duplicates).
+// fallback_keys is the block schema 3 Key fallback: 0 = no fallback (the only
+// value a schema 2 block can produce), otherwise 1..4 held Keys after which the
+// guest joins the pool without any unlock win.
 typedef struct
 {
 	int  kind;
 	int  count;
 	long any_of[CTR_CFG_HIT_TRIGGER_MAX];
+	int  fallback_keys;
 } ctr_hit_trigger;
 
 // The whole parsed block. valid is 1 only when every required field was present,
@@ -425,7 +437,7 @@ typedef struct
 	int          enabled;  // ctr_options.hit_character scalar was true
 	int          seen;     // block key was on the wire (even if null/malformed)
 	int          valid;    // fully parsed, admissible encounter data
-	int          schema;   // block schema (== CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN)
+	int          schema;   // block schema, as emitted (MIN..KNOWN)
 	unsigned int seed;     // policy.seed, uint32
 	int          max_guests; // policy.max_guests (== CTR_CFG_HIT_MAX_GUESTS)
 	long         locations[CTR_CFG_HIT_CHARACTER_COUNT]; // engine id -> AP code
@@ -747,6 +759,12 @@ int ap_seedcfg_rejected(void);
 // Bounded human-readable reason for the most recent rejection ("" if none).
 // Never NULL; stable until the next parse.
 const char *ap_seedcfg_reject_reason(void);
+
+// Refuse an already-parsed seed from a later admission stage, for a fact
+// slot_data alone cannot carry (the block schema 3 Key-fallback consistency
+// check, which needs the connected room's location union). Deactivates the
+// config and raises the same flag + reason a parse rejection leaves.
+void ap_seedcfg_reject_late(const char *reason);
 
 // The parsed encounter tables, or NULL when slot_data is inactive or the block
 // was not fully readable. Callers must treat NULL as "feature off".
