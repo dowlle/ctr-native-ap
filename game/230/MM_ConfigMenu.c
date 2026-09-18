@@ -150,6 +150,22 @@ static const int   s_renderScaleValues[] = {1, 2, 3, 4, 0};
 static const char *s_renderScaleNames[]  = {"ORIGINAL", "2X", "3X", "4X", "NATIVE"};
 #define RENDER_SCALE_COUNT ((int)(sizeof(s_renderScaleValues) / sizeof(s_renderScaleValues[0])))
 
+// VSync ladder (CFG_ENUM), see include/platform/native_vsync.h for the raw
+// values (NATIVE_VSYNC_OFF/ON/ADAPTIVE) and how they map to the SDL swap
+// interval. Stored as the raw option value; an out-of-ladder hand edit
+// renders and steps as Off, the safe default.
+static const int   s_vsyncValues[] = {0, 1, 2};
+static const char *s_vsyncNames[]  = {"OFF", "ON", "ADAPTIVE"};
+#define VSYNC_COUNT ((int)(sizeof(s_vsyncValues) / sizeof(s_vsyncValues[0])))
+
+static int Vsync_Index(int value)
+{
+	for (int i = 0; i < VSYNC_COUNT; i++)
+		if (s_vsyncValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as OFF
+}
+
 static int RenderScale_Index(int value)
 {
 	for (int i = 0; i < RENDER_SCALE_COUNT; i++)
@@ -244,6 +260,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.renderScale)
 		return s_renderScaleNames[RenderScale_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.vsync)
+		return s_vsyncNames[Vsync_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
@@ -273,6 +291,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > RENDER_SCALE_COUNT - 1)
 			i = RENDER_SCALE_COUNT - 1;
 		*(int *)e->valuePtr = s_renderScaleValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.vsync)
+	{
+		int i = Vsync_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > VSYNC_COUNT - 1)
+			i = VSYNC_COUNT - 1;
+		*(int *)e->valuePtr = s_vsyncValues[i];
 		return;
 	}
 #ifdef CTR_AP

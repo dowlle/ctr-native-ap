@@ -16,7 +16,11 @@ void NativeRenderer_BeginScene(void);
 void NativeRenderer_EndScene(void);
 void NativeRenderer_EndGpuFrame(void);
 void NativeRenderer_FinishGpuMeasurements(void);
-void NativeRenderer_UpdateSwapIntervalState(int swapInterval);
+// Applies g_config.vsync (see include/platform/native_vsync.h) to the GL
+// context's swap interval. Requests the interval every frame, as the constant
+// 0 call always did; only the resolved interval is cached, so an unsupported
+// Adaptive request falls back to On once instead of failing every frame.
+void NativeRenderer_UpdateSwapIntervalState(int vsyncOption);
 void NativeRenderer_SwapWindow(void);
 // Native UI canvas, composited after the PS1 framebuffer presentation.
 void NativeRenderer_PresentOverlayRGBA(const unsigned char *pixels, int width, int height);

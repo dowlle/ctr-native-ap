@@ -23,6 +23,7 @@ NativeConfig g_config = {
 	1,     // renderScale (1 = original PSX raster, the shipped default)
 	true,  // smoothScaling (default on: linear presentation at scaled modes)
 	false, // textureFiltering (default off: PSX-authentic point sampling)
+	0,     // vsync (0 = Off, default: avoid double-throttling the retail draw-sync path)
 	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowX  (unset = never saved)
 	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowY
 	0,     // windowWidth  (0 = never saved)
@@ -71,6 +72,11 @@ const ConfigEntry g_configEntries[] = {
 	{"Video & QoL", "render_scale",             "Render Scale",                 CFG_ENUM, &g_config.renderScale},
 	{"Video & QoL", "smooth_scaling",           "Smooth Scaling",               CFG_BOOL, &g_config.smoothScaling},
 	{"Video & QoL", "texture_filtering",        "Texture Filtering",            CFG_BOOL, &g_config.textureFiltering},
+	// VSync ladder (CFG_ENUM): 0 = Off (default), 1 = On, 2 = Adaptive. See
+	// include/platform/native_vsync.h for the option -> SDL swap-interval
+	// mapping and NativeRenderer_UpdateSwapIntervalState (platform/
+	// native_renderer.c) for where it is applied, cached, and re-applied.
+	{"Video & QoL", "vsync",                    "VSync",                        CFG_ENUM, &g_config.vsync},
 	// Remembered window geometry: config-file-only, exactly like update_last_seen
 	// below (State section, gated out of the in-game menu in BuildSectionMap,
 	// game/230/MM_ConfigMenu.c). Gathered/applied in platform/native_renderer.c;
