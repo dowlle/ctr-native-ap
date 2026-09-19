@@ -87,7 +87,9 @@ int main(void) {
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "fixture.c", Path(tmp) / "fixture"
     src.write_text(fixture + function + tests)
-    subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror",
+    # The ceremony arm in AP_NotifyCustomTrackCtr sits inside CTR_CUSTOM_TRACKS,
+    # so the fixture builds the production function the way a release does.
+    subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-DCTR_CUSTOM_TRACKS",
                     "-fsanitize=undefined", str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print("PASS: 128 production custom CTR result cases, absent tracker and duplicate-arm isolation, UBSan")

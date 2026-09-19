@@ -5788,8 +5788,10 @@ void AP_NotifyCustomTrackCtr(int didWin, int collected)
 	                  ctr_cfg.custom_track.slot, ctr_cfg.custom_ctr_location);
 	if (sent)
 	{
+#ifdef CTR_CUSTOM_TRACKS
 		ap_custom_ceremony_bit = AP_CUSTOM_CTR_PSEUDO_BIT;
 		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
+#endif
 	}
 }
 
