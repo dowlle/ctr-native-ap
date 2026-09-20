@@ -1,16 +1,27 @@
 #ifndef AP_CUP_BOX_POLICY_H
 #define AP_CUP_BOX_POLICY_H
 
-// Gem Cup AP-box access policy (WO-A3, ruled 2026-08-24 10:51 CEST), and the
-// hub-spine Key table it needs. Deliberately freestanding, exactly like
+// Alternate-route AP-box access policy (WO-A3, ruled 2026-08-24 10:51 CEST for
+// Gem Cup legs; extended to boss races by the 2026-09-12 Discord ruling), and
+// the hub-spine Key table it needs. Deliberately freestanding, exactly like
 // ap_pad_state.h: the gather lives in engine (ap_boxes.c), the DECISION lives
 // here so tools/test-cup-box-policy.c can pin the whole truth table out of
 // engine, with no disc, no display and no seed.
 //
-// THE RULING, in one sentence: access to a Gem Cup grants no AP-box logic. A
-// leg shows, collides with and dispatches its authored AP boxes only while the
-// corresponding INDIVIDUAL race is accessible through its randomized physical
-// pad. One cup may therefore mix legs with boxes and legs without them.
+// THE RULING, in one sentence: reaching a track by a route other than its own
+// warp pad grants no AP-box logic. A Gem Cup leg or a boss race shows, collides
+// with and dispatches its track's authored AP boxes only while the corresponding
+// INDIVIDUAL race is accessible through that track's randomized physical pad.
+// One cup may therefore mix legs with boxes and legs without them, and a boss
+// race on a track whose own pad is shut stands no boxes at all.
+//
+// WHY BOSS RACES ARE THE SAME CASE. A boss race is entered from its hub garage,
+// never from the track's warp pad, but it loads that track (Komodo Joe loads
+// Dragon Mines) and through Alpha 4 it stood and dispatched that track's boxes
+// on garage access alone. The apworld never put them in reach that way: a
+// boss-derived entrance targets only the separate `<track>: Wumpa` region, and
+// every item-box location stays parented to the track region reached through the
+// physical pad. So the same four terms, and the same predicate, apply.
 //
 // WHY A SEPARATE PREDICATE AND NOT ctr_cfg_warp_unlocked. That helper is the
 // pad's ITEM gate: racer lock ANDed onto the pad's stage-1 requirement
@@ -97,6 +108,9 @@ static inline int AP_HubKeysForPad(int physPad)
 //
 // Stage 2 is deliberately absent. Boxes are stage-1 locations on the track's
 // own region; the relic / token tier-2 menu gates nothing about them.
+//
+// Nothing here is cup-specific: a boss race asks the identical question about
+// the track it loaded.
 static inline int AP_BoxPadAccessible(int physPad, int keysOwned,
                                       int stage1Met, int racerMet)
 {
@@ -113,18 +127,42 @@ static inline int AP_BoxPadAccessible(int physPad, int keysOwned,
 	return 1;
 }
 
+// How the current race reached the track whose boxes are being decided. Only the
+// two ALTERNATE routes consult the pad terms; everything else is the track's own
+// pad already, or a route this policy deliberately does not own.
+//
+// The two gated values are numerically 1 and 2 and OTHER is 0, so the older
+// two-state isCupLeg calls (0 / 1) keep their exact meaning.
+enum AP_BoxRaceRoute
+{
+	// The track's own warp pad, or a route outside this policy: ordinary
+	// Adventure races, Relic Races, and the custom-track encounter overrides
+	// (the event race, the custom Oxide final venue), whose host LevelID
+	// resolves to a physical pad that has nothing to do with the race.
+	AP_BOX_ROUTE_OWN_PAD = 0,
+	AP_BOX_ROUTE_CUP_LEG = 1, // a Gem Cup leg (WO-A3)
+	AP_BOX_ROUTE_BOSS    = 2, // a boss race entered from its hub garage
+};
+
+// Does this route have to prove the track's individual pad is open right now?
+static inline int AP_BoxRouteIsAlternate(int route)
+{
+	return route == AP_BOX_ROUTE_CUP_LEG || route == AP_BOX_ROUTE_BOSS;
+}
+
 // THE policy. One call decides whether the AP boxes authored on the track being
 // raced may stand, collide and dispatch, so the visuals, the collision walk and
 // the check emission cannot disagree with each other -- hiding a model while
 // its check stays earnable is exactly the divergence this replaces.
 //
-// isCupLeg = 0 keeps every non-cup race byte-for-byte on the Alpha 4 rule:
-// ordinary Adventure races, boss races and Relic Races are unaffected by this
-// policy and never consult the pad terms at all.
-static inline int AP_BoxPolicyAllows(int isCupLeg, int physPad, int keysOwned,
+// AP_BOX_ROUTE_OWN_PAD keeps ordinary Adventure races, Relic Races and the
+// custom encounter overrides byte-for-byte on the Alpha 4 rule: they never
+// consult the pad terms at all. A boss race no longer takes that branch; the
+// route argument, not the absence of ADVENTURE_CUP, is what decides.
+static inline int AP_BoxPolicyAllows(int route, int physPad, int keysOwned,
                                      int stage1Met, int racerMet)
 {
-	if (!isCupLeg)
+	if (!AP_BoxRouteIsAlternate(route))
 		return 1;
 	return AP_BoxPadAccessible(physPad, keysOwned, stage1Met, racerMet);
 }

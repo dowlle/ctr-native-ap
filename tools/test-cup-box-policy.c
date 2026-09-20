@@ -1,5 +1,6 @@
-// Out-of-engine assertions for the Gem Cup AP-box access policy (WO-A3, ruled
-// 2026-08-24 10:51 CEST). Compiles the REAL decision: ap/ap_cup_box_policy.h is
+// Out-of-engine assertions for the alternate-route AP-box access policy (WO-A3,
+// ruled 2026-08-24 10:51 CEST for Gem Cup legs; extended to boss races by the
+// 2026-09-12 ruling). Compiles the REAL decision: ap/ap_cup_box_policy.h is
 // freestanding by design and includes nothing, so this harness links nothing
 // from the game and runs on any host, with no disc, no display and no seed.
 //
@@ -8,10 +9,10 @@
 //
 // Exit 0 = every assertion held; the failing case is printed otherwise.
 //
-// The binding behaviour under test, in one sentence: a Gem Cup leg shows,
-// collides with and dispatches its authored AP boxes only while the
-// corresponding individual race is currently accessible through its randomized
-// physical pad, and cup entry alone grants nothing.
+// The binding behaviour under test, in one sentence: a Gem Cup leg or a boss
+// race shows, collides with and dispatches its track's authored AP boxes only
+// while the corresponding individual race is currently accessible through its
+// randomized physical pad, and cup entry or garage access alone grants nothing.
 //
 // What this pins:
 //   1. the hub-spine Key table: the exact per-pad values, that battle maps are
@@ -25,8 +26,12 @@
 //      lock that becomes met, each flipping exactly one leg,
 //   5. structural hub reachability as its own failure mode: a leg whose pad has
 //      stage 1 met and no racer lock, refused purely on Keys,
-//   6. the non-cup controls: ordinary Adventure races, boss races and Relic
-//      Races are never touched by the policy, whatever the pad terms say,
+//   6. the own-pad controls: ordinary Adventure races, Relic Races and the
+//      custom encounter overrides are never touched by the policy, whatever the
+//      pad terms say,
+//   6b. the BOSS ARM (2026-09-12 ruling): a boss race asks exactly the same
+//      question about the track it loaded, with Komodo Joe / Dragon Mines as the
+//      named case, and boss garage access alone opens nothing,
 //   7. that cup access alone never opens the box policy -- no combination of
 //      cup-side facts reaches an allow without the individual pad's own terms,
 //   8. permanent datapackage membership is not an input at all: the policy has
@@ -37,8 +42,9 @@
 // MUTATION SENSITIVITY. Each of the three terms is asserted in a pair of rows
 // that differ in that term alone, so dropping any one of them from
 // AP_BoxPadAccessible turns a row red rather than merely losing coverage. The
-// non-cup control rows fail if the isCupLeg short-circuit is removed, and the
-// mixed-cup rows fail if the policy is hoisted to a per-cup answer.
+// own-pad control rows fail if the route short-circuit is removed, the boss rows
+// fail if AP_BOX_ROUTE_BOSS stops being an alternate route, and the mixed-cup
+// rows fail if the policy is hoisted to a per-cup answer.
 
 #include <stdio.h>
 
@@ -68,7 +74,17 @@ typedef struct
 
 static int leg_allows(const PadFacts *p, int keysOwned)
 {
-	return AP_BoxPolicyAllows(1, p->physPad, keysOwned, p->stage1Met, p->racerMet);
+	return AP_BoxPolicyAllows(AP_BOX_ROUTE_CUP_LEG, p->physPad, keysOwned,
+	                          p->stage1Met, p->racerMet);
+}
+
+// The same gather, reached from a boss garage instead of a cup. physPad is
+// ctr_cfg_warp_phys(boss venue track), i.e. the pad that individually loads the
+// track the boss race is being run on.
+static int boss_allows(const PadFacts *p, int keysOwned)
+{
+	return AP_BoxPolicyAllows(AP_BOX_ROUTE_BOSS, p->physPad, keysOwned,
+	                          p->stage1Met, p->racerMet);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,24 +261,155 @@ static void test_mixed_cup(void)
 }
 
 // ---------------------------------------------------------------------------
-// 6. Non-cup controls
+// 6. Own-pad controls
 // ---------------------------------------------------------------------------
-static void test_non_cup_controls(void)
+static void test_own_pad_controls(void)
 {
-	// An ordinary Adventure trophy race, a boss race and a Relic Race all reach
-	// the policy with isCupLeg = 0. They keep the Alpha 4 rule: the race type
-	// gate upstream has already said yes, and this policy adds nothing. The pad
+	// An ordinary Adventure trophy race, a Relic Race, and the custom-track
+	// encounter overrides (the event race and the custom Oxide final venue, whose
+	// host LevelID resolves to an unrelated pad) all reach the policy with
+	// AP_BOX_ROUTE_OWN_PAD. They keep the Alpha 4 rule: the race-type gate
+	// upstream has already said yes, and this policy adds nothing. The pad
 	// arguments are deliberately hostile -- a refused pad, zero Keys, unmet
 	// stage 1, unmet racer lock -- because none of them may be consulted.
-	expect_int(AP_BoxPolicyAllows(0, 10, 0, 0, 0), 1, "non-cup race: policy does not gate it");
-	expect_int(AP_BoxPolicyAllows(0, -1, 0, 0, 0), 1, "non-cup race: no pad resolved, still allowed");
-	expect_int(AP_BoxPolicyAllows(0, 20, 0, 0, 0), 1, "non-cup race: battle-map pad id is irrelevant");
-	expect_int(AP_BoxPolicyAllows(0, 104, 9, 1, 1), 1, "non-cup race: cup pad id is irrelevant");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_OWN_PAD, 10, 0, 0, 0), 1,
+	           "own-pad race: policy does not gate it");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0), 1,
+	           "own-pad race: no pad resolved, still allowed");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_OWN_PAD, 20, 0, 0, 0), 1,
+	           "own-pad race: battle-map pad id is irrelevant");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_OWN_PAD, 104, 9, 1, 1), 1,
+	           "own-pad race: cup pad id is irrelevant");
 
-	// And the same arguments as a cup leg are refused, so the two branches are
-	// genuinely different code paths and not an accident of the inputs.
-	expect_int(AP_BoxPolicyAllows(1, 10, 0, 0, 0), 0, "cup leg with the same facts is refused");
-	expect_int(AP_BoxPolicyAllows(1, -1, 0, 0, 0), 0, "cup leg with no pad resolved is refused");
+	// The route predicate itself, so the three-way split is pinned rather than
+	// inferred from the allow answers.
+	expect_int(AP_BoxRouteIsAlternate(AP_BOX_ROUTE_OWN_PAD), 0, "own pad is not an alternate route");
+	expect_int(AP_BoxRouteIsAlternate(AP_BOX_ROUTE_CUP_LEG), 1, "a cup leg is an alternate route");
+	expect_int(AP_BoxRouteIsAlternate(AP_BOX_ROUTE_BOSS), 1, "a boss race is an alternate route");
+
+	// The numeric values the older two-state calls relied on.
+	expect_int(AP_BOX_ROUTE_OWN_PAD, 0, "own-pad route keeps value 0");
+	expect_int(AP_BOX_ROUTE_CUP_LEG, 1, "cup-leg route keeps value 1");
+
+	// And the same arguments on either alternate route are refused, so the
+	// branches are genuinely different code paths and not an accident of inputs.
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_CUP_LEG, 10, 0, 0, 0), 0,
+	           "cup leg with the same facts is refused");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_CUP_LEG, -1, 0, 0, 0), 0,
+	           "cup leg with no pad resolved is refused");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_BOSS, 10, 0, 0, 0), 0,
+	           "boss race with the same facts is refused");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_BOSS, -1, 0, 0, 0), 0,
+	           "boss race with no pad resolved is refused");
+}
+
+// ---------------------------------------------------------------------------
+// 6b. The boss arm (the 2026-09-12 ruling)
+// ---------------------------------------------------------------------------
+//
+// Physical pads of the five retail boss venues, from the hub table above:
+//   Roo's Tubes      pad 6  N. Sanity    0 Keys  (Ripper Roo)
+//   Papu's Pyramid   pad 5  Lost Ruins   1 Key   (Papu Papu)
+//   Dragon Mines     pad 1  Glacier Park 2 Keys  (Komodo Joe)
+//   Hot Air Skyway   pad 7  Citadel City 3 Keys  (Pinstripe)
+//   Oxide Station    pad 13 Citadel City 3 Keys  (N. Oxide)
+static void test_boss_arm(void)
+{
+	// ---- THE NAMED CASE: Komodo Joe on Dragon Mines ----
+	// The reported bug: the Komodo Joe race let Dragon Mines' AP boxes be
+	// collected while the Dragon Mines pad was still shut. Each of the three
+	// terms is shown to shut it on its own, and then to open it.
+	{
+		PadFacts dragon = { 1, 1, 1 }; // Dragon Mines pad, stage 1 met, no racer lock
+
+		// Hub term. Glacier Park costs 2 Keys; the Komodo Joe garage can be open
+		// on fewer, which is exactly the reported state.
+		expect_int(boss_allows(&dragon, 0), 0, "Komodo Joe: zero Keys -> no Dragon Mines boxes");
+		expect_int(boss_allows(&dragon, 1), 0, "Komodo Joe: one Key short of Glacier Park -> no boxes");
+		expect_int(boss_allows(&dragon, 2), 1, "Komodo Joe: second Key -> Dragon Mines boxes appear");
+
+		// Stage-1 term alone.
+		dragon.stage1Met = 0;
+		expect_int(boss_allows(&dragon, 9), 0, "Komodo Joe: Dragon Mines pad stage 1 unmet -> no boxes");
+		dragon.stage1Met = 1;
+		expect_int(boss_allows(&dragon, 9), 1, "Komodo Joe: stage 1 met -> boxes");
+
+		// Racer-lock term alone.
+		dragon.racerMet = 0;
+		expect_int(boss_allows(&dragon, 9), 0, "Komodo Joe: Dragon Mines pad racer lock unmet -> no boxes");
+		dragon.racerMet = 1;
+		expect_int(boss_allows(&dragon, 9), 1, "Komodo Joe: racer received -> boxes");
+	}
+
+	// ---- RECEIVED-ITEM TRANSITION, the primary in-game acceptance row ----
+	// Nothing about the venue changes; the Key lands mid-session. The boss race's
+	// answer flips, which is what the per-frame rebuild trigger reacts to.
+	{
+		PadFacts dragon = { 1, 1, 1 };
+		expect_int(boss_allows(&dragon, 1), 0, "received-item transition: before the Key, no boxes");
+		expect_int(boss_allows(&dragon, 2), 1, "received-item transition: after the Key, boxes");
+	}
+
+	// ---- EVERY BOSS VENUE, pad locked then open ----
+	// One row per boss at exactly one Key short of its own hub, and one row at
+	// exactly enough. Ripper Roo's N. Sanity venue costs nothing, so its "locked"
+	// form has to come from a pad term rather than the spine.
+	{
+		PadFacts papu      = { 5, 1, 1 };  // 1 Key
+		PadFacts komodo    = { 1, 1, 1 };  // 2 Keys
+		PadFacts pinstripe = { 7, 1, 1 };  // 3 Keys
+		PadFacts oxide     = { 13, 1, 1 }; // 3 Keys
+		PadFacts roo       = { 6, 0, 1 };  // 0 Keys; shut on stage 1 instead
+
+		expect_int(boss_allows(&papu, 0), 0, "Papu Papu: Lost Ruins shut -> no Papu's Pyramid boxes");
+		expect_int(boss_allows(&papu, 1), 1, "Papu Papu: Lost Ruins open -> boxes");
+		expect_int(boss_allows(&komodo, 1), 0, "Komodo Joe: Glacier Park shut -> no boxes");
+		expect_int(boss_allows(&komodo, 2), 1, "Komodo Joe: Glacier Park open -> boxes");
+		expect_int(boss_allows(&pinstripe, 2), 0, "Pinstripe: Citadel City shut -> no Hot Air Skyway boxes");
+		expect_int(boss_allows(&pinstripe, 3), 1, "Pinstripe: Citadel City open -> boxes");
+		expect_int(boss_allows(&oxide, 2), 0, "N. Oxide: Citadel City shut -> no Oxide Station boxes");
+		expect_int(boss_allows(&oxide, 3), 1, "N. Oxide: Citadel City open -> boxes");
+		expect_int(boss_allows(&roo, 0), 0, "Ripper Roo: Roo's Tubes stage 1 unmet -> no boxes");
+		roo.stage1Met = 1;
+		expect_int(boss_allows(&roo, 0), 1, "Ripper Roo: zero-Key venue with stage 1 met -> boxes");
+	}
+
+	// ---- SHUFFLED DESTINATION PADS ----
+	// The boss race still loads Dragon Mines, but under destination shuffle the
+	// pad that individually loads Dragon Mines is now Crash Cove's (pad 3, zero
+	// Keys), and Hot Air Skyway is now behind Glacier Park's Polar Pass pad (12).
+	// The policy keys off the resolved PAD, never the track, so both answers move.
+	{
+		PadFacts dragon_shuf    = { 3, 1, 1 };
+		PadFacts pinstripe_shuf = { 12, 1, 1 };
+
+		expect_int(boss_allows(&dragon_shuf, 0), 1,
+		           "shuffled: Dragon Mines now loads from a zero-Key pad -> boss race HAS boxes");
+		expect_int(boss_allows(&pinstripe_shuf, 2), 1,
+		           "shuffled: Hot Air Skyway now loads from a Glacier pad -> boxes on 2 Keys");
+		expect_int(boss_allows(&pinstripe_shuf, 1), 0,
+		           "shuffled: the new pad's own hub still gates it");
+	}
+
+	// ---- GARAGE ACCESS ALONE GRANTS NOTHING ----
+	// The strongest form: the player is standing in the boss race, having met
+	// every garage requirement there is, and the track's own pad is shut. The
+	// policy takes no garage-side argument at all, so no boss-side fact can reach
+	// an allow.
+	{
+		PadFacts shut = { 13, 1, 1 };
+		expect_int(boss_allows(&shut, 2), 0, "boss garage access alone never opens the box policy");
+		expect_int(boss_allows(&shut, 2), leg_allows(&shut, 2),
+		           "boss and cup routes give the same answer for the same pad facts");
+	}
+
+	// ---- A BOSS VENUE THAT IS NOT AN ADVENTURE PAD AT ALL ----
+	// If a destination ever resolves to a battle map or out of range, there is no
+	// individual route to it and the boxes stand down rather than defaulting open.
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_BOSS, 20, 99, 1, 1), 0,
+	           "boss race resolving to a battle map: no individual route, no boxes");
+	expect_int(AP_BoxPolicyAllows(AP_BOX_ROUTE_BOSS, 105, 99, 1, 1), 0,
+	           "boss race resolving out of range: no boxes");
 }
 
 // ---------------------------------------------------------------------------
@@ -279,8 +426,8 @@ static void test_membership_is_not_an_input(void)
 	//
 	// Stated as an assertion the compiler can hold us to: the decision is a pure
 	// function of exactly four values, so it is deterministic across repeats.
-	int a = AP_BoxPolicyAllows(1, 10, 2, 1, 1);
-	int b = AP_BoxPolicyAllows(1, 10, 2, 1, 1);
+	int a = AP_BoxPolicyAllows(AP_BOX_ROUTE_CUP_LEG, 10, 2, 1, 1);
+	int b = AP_BoxPolicyAllows(AP_BOX_ROUTE_CUP_LEG, 10, 2, 1, 1);
 	expect_int(a, b, "the policy is a pure function of its four arguments");
 	expect_int(a, 0, "a permanently-in-datapackage box on a shut leg is still refused");
 }
@@ -290,7 +437,8 @@ int main(void)
 	test_hub_table();
 	test_terms_are_independent();
 	test_mixed_cup();
-	test_non_cup_controls();
+	test_own_pad_controls();
+	test_boss_arm();
 	test_membership_is_not_an_input();
 
 	if (g_failures != 0)
