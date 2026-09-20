@@ -101,6 +101,18 @@ int AP_RaceAttemptIsForcedLoss(void)
 	return AP_RaceAttempt_IsForcedLoss(&g_dl_race_attempt);
 }
 
+// #286: the one production decision every result-derived guard calls. Naming the
+// producer class here (rather than testing the predicate ad hoc) keeps the
+// guards and tools/test-race-attempt-lifecycle.c on the same code path: the
+// harness drives AP_RaceAttempt_SuppressResultProducer through the same classes
+// production passes. The cup-aggregate class is the deliberate exception that
+// lets the overall Gem Cup reward through while the latch is set.
+int AP_RaceAttempt_ProducerBlocked(int producerClass)
+{
+	return AP_RaceAttempt_SuppressResultProducer(
+	    producerClass, AP_RaceAttempt_IsForcedLoss(&g_dl_race_attempt));
+}
+
 // #286 attempt boundary, called from MainInit_FinalizeInit right after
 // MainGameStart_Initialize. LOAD_IsOpen_RacingOrBattle() is the race/battle
 // thread overlay (1); the hub is 2, the main menu 0 and the podium 3, so those

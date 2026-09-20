@@ -64,8 +64,8 @@ void RR_EndEvent_UnlockAward(void)
 #ifdef CTR_AP
 	// #286: a forced-loss relic attempt grants no local relic flag, no relic
 	// presentation and no AP relic check. The #49 relic-perfect producer, when it
-	// lands, must observe the same AP_RaceAttemptIsForcedLoss() predicate.
-	if (AP_RaceAttemptIsForcedLoss())
+	// lands, must observe the same AP_RaceAttempt_ProducerBlocked() helper.
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_UNLOCK))
 		return;
 #endif
 	struct GameTracker *gGT = sdata->gGT;

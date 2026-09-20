@@ -3153,15 +3153,13 @@ int AP_ConnUpdateNoticeActive(void)
 	return AP_UpdateNoticeRefresh();
 }
 
-void AP_NotifyAdvReward(int rewardBit)
+// Shared body for the two advance-reward entry points below: the per-race
+// producer and the final-standings cup aggregate. The guard lives in the
+// wrappers so the cup aggregate can deliberately pass while the latch is set.
+static void AP_NotifyAdvRewardImpl(int rewardBit)
 {
 	char msg[192];
 	int newEarn = 0;
-
-	// #286: a forced-loss attempt emits no advance reward (Trophy, token, relic,
-	// boss, goal, cup). Checks earned live during the race never reach this path.
-	if (AP_RaceAttemptIsForcedLoss())
-		return;
 
 	if (rewardBit < 0 || rewardBit >= 192)
 		return;
@@ -3255,10 +3253,30 @@ void AP_NotifyAdvReward(int rewardBit)
 	}
 }
 
+// #286: the per-race advance-reward producer (Trophy, token, relic, boss).
+// Blocked for the whole forced-loss attempt.
+void AP_NotifyAdvReward(int rewardBit)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_ADV_REWARD))
+		return;
+	AP_NotifyAdvRewardImpl(rewardBit);
+}
+
+// #286: the final Gem Cup standings aggregate. The cup reward is decided on
+// accumulated points, so a cup won even after a forced loss on the final leg
+// grants its check in full. Used only by the UI_CupStandings final cup-win
+// block; every per-race caller stays on AP_NotifyAdvReward above.
+void AP_NotifyCupAggregateReward(int rewardBit)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUP_AGGREGATE))
+		return;
+	AP_NotifyAdvRewardImpl(rewardBit);
+}
+
 void AP_NotifyGoal(int oxideSecond)
 {
 	// #286: a forced-loss attempt must not arm or complete the goal.
-	if (AP_RaceAttemptIsForcedLoss())
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_GOAL))
 		return;
 
 	// Record the Oxide beat as a game EVENT. Whether it completes the seed
@@ -5704,7 +5722,7 @@ int AP_EmitHitCharacterCheck(long code)
 void AP_NotifyTrialTrackRace(int levelID, int challenge)
 {
 	// #286: a forced-loss trial attempt emits no direct trial check or podium rung.
-	if (AP_RaceAttemptIsForcedLoss())
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_TRIAL_TRACK))
 		return;
 
 	long code = AP_TrialTrackLocation(levelID, challenge);
@@ -5726,7 +5744,7 @@ void AP_NotifyCortexTrackRace(int token)
 	int n, i;
 
 	// #286: a forced-loss Cortex Vortex attempt emits no Cortex check or rung.
-	if (AP_RaceAttemptIsForcedLoss())
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CORTEX_RACE))
 		return;
 	if (!AP_CortexTrackActive())
 		return;
@@ -5752,7 +5770,7 @@ void AP_NotifyCortexTrackRace(int token)
 void AP_CortexTrackRelicAward(int raceTime)
 {
 	// #286: a forced-loss Cortex relic attempt emits no relic check or presentation.
-	if (AP_RaceAttemptIsForcedLoss())
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CORTEX_RELIC))
 		return;
 
 	struct GameTracker *gGT = sdata->gGT;
@@ -5798,13 +5816,10 @@ int AP_CustomTrackTrophyChecked(void)
 	       ap_net_location_checked(ctr_cfg.custom_track.trophy_location);
 }
 
-void AP_NotifyCustomTrackTrophy(void)
+static void AP_NotifyCustomTrackTrophyImpl(void)
 {
 	int podiumTrack;
 	int sent;
-	// #286: a forced-loss custom attempt emits no custom Trophy check or rung.
-	if (AP_RaceAttemptIsForcedLoss())
-		return;
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok ||
 	    (sdata->gGT && (sdata->gGT->gameMode2 & TOKEN_RACE)))
 		return;
@@ -5818,9 +5833,28 @@ void AP_NotifyCustomTrackTrophy(void)
 	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
 	AP_SendPodiumChecks(podiumTrack, 1);
 }
+
+// #286: the per-race custom-Trophy producer. Blocked for the forced-loss attempt.
+void AP_NotifyCustomTrackTrophy(void)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY))
+		return;
+	AP_NotifyCustomTrackTrophyImpl();
+}
+
+// #286: the final Gem Cup standings aggregate for a custom cup. The cup reward
+// (custom Trophy location) is granted in full while the latch is set; the finish
+// rung send inside the impl observes AP_RESULT_PRODUCER_PODIUM and stays blocked.
+void AP_NotifyCupAggregateCustomTrackTrophy(void)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUP_AGGREGATE))
+		return;
+	AP_NotifyCustomTrackTrophyImpl();
+}
 #else
 int AP_CustomTrackTrophyChecked(void) { return 0; }
 void AP_NotifyCustomTrackTrophy(void) {}
+void AP_NotifyCupAggregateCustomTrackTrophy(void) {}
 #endif
 
 static int AP_CustomLetterSlot(int track)
@@ -5851,12 +5885,9 @@ static int AP_CortexLetterTrack(int track)
 	return track == CTR_CFG_CORTEX_HOST_LEVEL && AP_CortexTrackActive();
 }
 
-void AP_NotifyCustomTrackCtr(int didWin, int collected)
+static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	// #286: a forced-loss custom attempt emits no custom CTR check.
-	if (AP_RaceAttemptIsForcedLoss())
-		return;
 	if (!gGT || !(gGT->gameMode2 & TOKEN_RACE) || !ctr_cfg.custom_ctr_enabled ||
 	    !ap_net_location_exists(ctr_cfg.custom_ctr_location) ||
 	    !AP_CustomLetterSlot(ctr_cfg.custom_track.host_level_id) ||
@@ -5872,6 +5903,23 @@ void AP_NotifyCustomTrackCtr(int didWin, int collected)
 		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 #endif
 	}
+}
+
+// #286: the per-race custom-CTR producer. Blocked for the forced-loss attempt.
+void AP_NotifyCustomTrackCtr(int didWin, int collected)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_CTR))
+		return;
+	AP_NotifyCustomTrackCtrImpl(didWin, collected);
+}
+
+// #286: the final Gem Cup standings aggregate for a custom cup's CTR challenge.
+// The cup reward is granted in full while the latch is set.
+void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected)
+{
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUP_AGGREGATE))
+		return;
+	AP_NotifyCustomTrackCtrImpl(didWin, collected);
 }
 
 int AP_LetterAvailable(int track, int letter)
@@ -6490,7 +6538,7 @@ static void AP_SendPodiumChecks(int track, int placement)
 {
 	// #286: the forced-loss attempt owns no finish rung, including the trophy
 	// backstop and the connect-time reconnect reconciliation.
-	if (AP_RaceAttemptIsForcedLoss())
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_PODIUM))
 		return;
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;

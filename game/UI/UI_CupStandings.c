@@ -719,14 +719,21 @@ void UI_CupStandings_InputAndDraw(void)
 							if (!customTrackTrophy)
 								UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
+							// #286 product ruling (2026-09-20): the cup is won on
+							// accumulated points, so its reward goes out in full even
+							// when DeathLink forced a loss on the final leg. The
+							// cup-aggregate entry points pass the forced-loss latch
+							// deliberately; the forced leg's own finish and per-race
+							// checks stay blocked. A cup NOT won on points never
+							// reaches this block, as in retail.
 							if (customTrackTrophy)
 							{
 								if (gGT->gameMode2 & TOKEN_RACE)
-									AP_NotifyCustomTrackCtr(1, gGT->drivers[0]->PickupLetterHUD.numCollected);
-								else AP_NotifyCustomTrackTrophy();
+									AP_NotifyCupAggregateCustomTrackCtr(1, gGT->drivers[0]->PickupLetterHUD.numCollected);
+								else AP_NotifyCupAggregateCustomTrackTrophy();
 							}
 							else
-								AP_NotifyAdvReward(bitIndex); // AP: retail gem cup location check
+								AP_NotifyCupAggregateReward(bitIndex); // AP: retail gem cup location check
 #endif
 
 							// The boss character belongs to the displaced retail Cup too.

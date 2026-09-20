@@ -92,10 +92,20 @@ static inline int AP_RaceAttempt_LevelStartStep(APRaceAttemptState *s,
 }
 
 // --- Result-derived producer classes ----------------------------------------
-// Every guarded producer names its class here. The harness asserts the one
-// attempt latch suppresses all of them while mid-race classes (held rungs,
-// item boxes, letters, itemsanity) are untouched because they are emitted
-// before the latch is ever armed.
+// Every guarded producer names its class here, and production reaches this
+// decision through AP_RaceAttempt_ProducerBlocked (ap_deathlink.h) with the live
+// latch, so the harness exercises the same call the guards use. The attempt latch
+// suppresses every finish-class producer; mid-race classes (held rungs, item
+// boxes, letters, itemsanity) never name a class because they are emitted before
+// the latch is armed.
+//
+// AP_RESULT_PRODUCER_CUP_AGGREGATE is the one deliberate exception (product
+// ruling, 2026-09-20 23:26 CEST): the overall Gem Cup reward is an
+// aggregate of accumulated points awarded from the final standings, not a
+// finish of the forced leg. A cup won on points grants its reward in full while
+// the latch is still set; every per-race and finish producer of that leg stays
+// blocked. The class exists so the cup path is guarded through the same tested
+// helper as everything else, without clearing the latch early.
 enum
 {
 	AP_RESULT_PRODUCER_PODIUM = 0,
@@ -108,14 +118,21 @@ enum
 	AP_RESULT_PRODUCER_CUSTOM_CTR,
 	AP_RESULT_PRODUCER_RELIC_UNLOCK,
 	AP_RESULT_PRODUCER_RELIC_PERFECT, // #49 follow-up: same predicate
+	AP_RESULT_PRODUCER_CUP_AGGREGATE, // overall cup reward: allowed while latched
 	AP_RESULT_PRODUCER_COUNT
 };
 
 static inline int AP_RaceAttempt_SuppressResultProducer(int producerClass,
                                                         int forcedLoss)
 {
-	(void)producerClass; // one attempt latch owns every finish-class producer
-	return forcedLoss != 0;
+	if (!forcedLoss)
+		return 0;
+	// The cup aggregate is the only producer the latch deliberately lets
+	// through: the cup was won on accumulated points, so its reward is granted
+	// as in retail even though the final leg was a forced loss.
+	if (producerClass == AP_RESULT_PRODUCER_CUP_AGGREGATE)
+		return 0;
+	return 1;
 }
 
 // --- Last-place rank permutation --------------------------------------------

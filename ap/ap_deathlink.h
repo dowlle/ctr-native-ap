@@ -41,6 +41,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_race_attempt_logic.h" // #286 freestanding producer classes + decision
+
 struct GameTracker;
 struct Driver;
 
@@ -84,12 +86,21 @@ int AP_DeathLinkForceReset(struct Driver *d);
 // used to build a short, name-free cause string.
 void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason);
 
-// Authoritative #286 attempt predicate. True from the instant a race_loss
+// #286 authoritative attempt predicate. True from the instant a race_loss
 // receive ends an attempt until the next eligible racing level starts. Every
 // result-derived check producer (podium finish rungs, advance reward, goal,
 // trial, Cortex, custom, relic unlock and the #49 relic-perfect follow-up) must
 // observe this one predicate. Network state never resets it.
 int AP_RaceAttemptIsForcedLoss(void);
+
+// #286 single production guard for every result-derived producer. Wraps the
+// freestanding AP_RaceAttempt_SuppressResultProducer with the live attempt latch,
+// so each call site names its producer class and the host harness exercises the
+// exact decision production runs. Returns 1 when the producer must be blocked.
+// Every finish-class producer is blocked while latched EXCEPT the cup-aggregate
+// class (AP_RESULT_PRODUCER_CUP_AGGREGATE), which the final Gem Cup standings use
+// so a cup won on points still grants its reward. See ap_race_attempt_logic.h.
+int AP_RaceAttempt_ProducerBlocked(int producerClass);
 
 // #286 attempt boundary, called from game/MAIN/MainInit.c immediately after
 // MainGameStart_Initialize(gGT, 1) under CTR_AP. Clears the forced-loss latch

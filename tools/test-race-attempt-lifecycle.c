@@ -146,11 +146,15 @@ static void producer_wiring(void)
 {
 	int c;
 
-	/* Every result-derived producer observes the one attempt latch. */
+	/* Every result-derived producer observes the one attempt latch through the
+	 * same helper production calls (AP_RaceAttempt_ProducerBlocked wraps this).
+	 * The cup aggregate is the single deliberate exception: a cup won on
+	 * accumulated points still grants its reward while the latch is set. */
 	for (c = 0; c < AP_RESULT_PRODUCER_COUNT; c++)
 	{
-		expect(AP_RaceAttempt_SuppressResultProducer(c, 1), 1,
-		       "latched attempt suppresses every result producer");
+		int wantBlocked = (c == AP_RESULT_PRODUCER_CUP_AGGREGATE) ? 0 : 1;
+		expect(AP_RaceAttempt_SuppressResultProducer(c, 1), wantBlocked,
+		       "latched attempt blocks every finish producer except the cup aggregate");
 		expect(AP_RaceAttempt_SuppressResultProducer(c, 0), 0,
 		       "cleared latch allows every result producer");
 	}
@@ -167,12 +171,55 @@ static void producer_wiring(void)
 	}
 }
 
+/* Final-leg forced loss. The forced leg's own result flow already ran (its
+ * per-race reward and finish rung both blocked), then the final cup standings
+ * decides the overall cup on accumulated points. Count the producer grants the
+ * final-standings entry can reach and assert the exact outcome the ruling
+ * names. */
+static void cup_final_leg(const char *label, int cupWonOnPoints)
+{
+	APRaceAttemptState s;
+	char name[160];
+	int grants = 0;
+
+	AP_RaceAttempt_Init(&s);
+	AP_RaceAttempt_ArmForcedLoss(&s); /* the final leg was a forced loss */
+
+	/* The forced leg's per-race reward and finish rung stay blocked in BOTH
+	 * outcomes: they are emitted regardless of the cup decision. */
+	snprintf(name, sizeof name, "%s: per-race reward stays blocked", label);
+	expect(AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_ADV_REWARD,
+	                                             AP_RaceAttempt_IsForcedLoss(&s)),
+	       1, name);
+	snprintf(name, sizeof name, "%s: finish rung stays blocked", label);
+	expect(AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_PODIUM,
+	                                             AP_RaceAttempt_IsForcedLoss(&s)),
+	       1, name);
+	grants += !AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_ADV_REWARD,
+	                                                 AP_RaceAttempt_IsForcedLoss(&s));
+	grants += !AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_PODIUM,
+	                                                 AP_RaceAttempt_IsForcedLoss(&s));
+
+	/* The aggregate is only reached when the cup was won on points. When it is
+	 * reached it is allowed while latched, so the final-standings entry yields
+	 * exactly one grant (the cup check). When the cup was lost, the retail
+	 * standings branch grants nothing. */
+	if (cupWonOnPoints)
+		grants += !AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_CUP_AGGREGATE,
+		                                                 AP_RaceAttempt_IsForcedLoss(&s));
+
+	snprintf(name, sizeof name, "%s: total grants", label);
+	expect(grants, cupWonOnPoints ? 1 : 0, name);
+}
+
 int main(void)
 {
 	attempt_lifecycle();
 	cup_lifecycle();
 	rank_permutation();
 	producer_wiring();
+	cup_final_leg("final-leg forced loss, cup won on points: exactly the cup check", 1);
+	cup_final_leg("final-leg forced loss, cup lost on points: nothing is granted", 0);
 	printf("%s: %d failure(s)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;
 }
