@@ -101,15 +101,55 @@ static int AP_TrapEffectVisible(int effectActive, int paused)
 	return effectActive && !paused;
 }
 
-static int AP_TrapHazardDistance(int speedApprox, int travelMs)
+// Hazard projection (#317). The hazard is placed ahead of the kart from its
+// current speed and heading, with no fixed distance cap; the only upper bound is
+// the drivable-ground probe at the call site. The horizon is tuning, not a
+// measured Nitro or Red Potion activation time, so it stays a named constant for
+// the call site to pass.
+#define AP_TRAP_HAZARD_LOOKAHEAD_MS 1750
+#define AP_TRAP_HAZARD_MIN_LEAD     160
+
+// speedApprox is the engine's signed s16 ground speed (namespace_Vehicle.h:1146),
+// positive along the kart's forward heading and negative when motion opposes it
+// (VehPhysCrash.c assigns the negation). The sign is kept: a negative distance
+// means the hazard belongs behind the current heading. The minimum lead is
+// applied to the magnitude, so it is signed with the speed and a standstill still
+// gets a visible positive lead. The old 420-unit maximum is removed because it
+// reintroduced the bug; the 32-bit product is widened to 64 bits so a larger
+// horizon cannot overflow before the 16.16 fixed-point shift. For non-negative
+// distances the result is bit-identical to the previous `>> 16`; reverse speeds
+// now keep their sign instead of being folded to positive magnitude.
+static int AP_TrapHazardDistance(short speedApprox, int travelMs)
 {
-	int distance;
-	if (speedApprox < 0)
-		speedApprox = -speedApprox;
-	distance = (speedApprox * travelMs) >> 16;
-	if (distance < 160) distance = 160;
-	if (distance > 420) distance = 420;
-	return distance;
+	long long scaled = (long long)speedApprox * travelMs;
+	unsigned long long magnitude;
+	int direction = 1;
+
+	if (scaled < 0)
+	{
+		direction = -1;
+		magnitude = (unsigned long long)(-scaled);
+	}
+	else
+		magnitude = (unsigned long long)scaled;
+
+	magnitude >>= 16;
+	if (magnitude < AP_TRAP_HAZARD_MIN_LEAD)
+		magnitude = AP_TRAP_HAZARD_MIN_LEAD;
+	return direction * (int)magnitude;
+}
+
+// Apply a 12-bit fixed-point heading axis (4096 = 1.0) to the signed distance.
+// The product is divided by 4096 with truncation toward zero rather than an
+// arithmetic right shift: a negative product would round toward negative
+// infinity and break the mirror between forward and reverse. Non-negative
+// products match the old shift; negative products can differ by one unit even
+// at forward speed when the heading axis is negative. At this horizon the
+// distance magnitude is at most 875, so the product is far inside int32.
+static int AP_TrapHazardOffset(int heading, short speedApprox, int travelMs)
+{
+	long long distance = AP_TrapHazardDistance(speedApprox, travelMs);
+	return (int)(((long long)heading * distance) / 4096);
 }
 
 // ── Engine-natural completion ──
