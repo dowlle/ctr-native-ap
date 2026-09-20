@@ -24,6 +24,7 @@ NativeConfig g_config = {
 	true,  // smoothScaling (default on: linear presentation at scaled modes)
 	false, // textureFiltering (default off: PSX-authentic point sampling)
 	0,     // vsync (0 = Off, default: avoid double-throttling the retail draw-sync path)
+	false, // muteWhenUnfocused (default off: a single-game setup keeps today's behaviour)
 	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowX  (unset = never saved)
 	NATIVE_WINDOW_GEOMETRY_POS_UNSET, // windowY
 	0,     // windowWidth  (0 = never saved)
@@ -77,6 +78,14 @@ const ConfigEntry g_configEntries[] = {
 	// mapping and NativeRenderer_UpdateSwapIntervalState (platform/
 	// native_renderer.c) for where it is applied, cached, and re-applied.
 	{"Video & QoL", "vsync",                    "VSync",                        CFG_ENUM, &g_config.vsync},
+	// Mute-when-unfocused (CFG_BOOL): off by default. On, the audio output is
+	// silenced whenever the game window does not have input focus, for players
+	// running several randomizer clients side by side. Decided in
+	// include/platform/native_focus_mute.h, applied as an SDL output-stream gain
+	// by NativeAudio_UpdateFocusMuteState (platform/native_audio.c) from
+	// Platform_BeginScene, so it is picked up on the next frame and needs no
+	// menu-exit hook.
+	{"Video & QoL", "mute_when_unfocused",      "Mute When Unfocused",          CFG_BOOL, &g_config.muteWhenUnfocused},
 	// Remembered window geometry: config-file-only, exactly like update_last_seen
 	// below (State section, gated out of the in-game menu in BuildSectionMap,
 	// game/230/MM_ConfigMenu.c). Gathered/applied in platform/native_renderer.c;

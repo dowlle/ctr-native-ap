@@ -2,6 +2,7 @@
 #include <platform/native_audio.h>
 #include <platform/native_assets.h>
 #include <platform/native_disc_image.h>
+#include <platform/native_focus_mute.h>
 #include <platform/native_perf.h>
 
 #include <SDL3/SDL.h>
@@ -2429,6 +2430,50 @@ void NativeAudio_ClearOutputQueue(void)
 	NativeAudio_UnlockOutput();
 }
 
+// Last gain handed to SDL, and the stream it was handed to. Remembering the
+// stream pointer is what makes a reopened audio device (NativeAudio_OpenDevice
+// after a shutdown) re-apply instead of silently running at the new stream's
+// default gain of 1.0 while the option says "muted".
+global_variable SDL_AudioStream *s_focusMuteAppliedStream = NULL;
+global_variable float s_focusMuteAppliedGain = NATIVE_FOCUS_MUTE_GAIN_FULL;
+
+void NativeAudio_UpdateFocusMuteState(int muteWhenUnfocused, int windowFocused)
+{
+	// The gain lives on the OUTPUT stream, downstream of the SPU mix in
+	// NativeAudio_RenderFrames. Nothing that the game can observe changes: no
+	// voice is keyed off, no master volume register is written, the XA player
+	// keeps its position, savestates and the deterministic replay path render
+	// the exact same samples. Unmuting therefore resumes mid-note.
+	float wantedGain = NativeFocusMute_GainPure(muteWhenUnfocused, windowFocused);
+
+	NativeAudio_LockOutput();
+
+	if (s_audio.output.stream == NULL)
+	{
+		// No device (audio failed to open, or shut down): remember nothing, so
+		// the gain is applied again from scratch once a stream exists.
+		s_focusMuteAppliedStream = NULL;
+		s_focusMuteAppliedGain = NATIVE_FOCUS_MUTE_GAIN_FULL;
+	}
+	else
+	{
+		int streamUnchanged = (s_focusMuteAppliedStream == s_audio.output.stream);
+
+		if (NativeFocusMute_NeedsApplyPure(wantedGain, s_focusMuteAppliedGain, streamUnchanged))
+		{
+			// Only remember a gain SDL accepted, so a rejected call is retried
+			// on the next frame instead of leaving the option silently unapplied.
+			if (SDL_SetAudioStreamGain(s_audio.output.stream, wantedGain))
+			{
+				s_focusMuteAppliedStream = s_audio.output.stream;
+				s_focusMuteAppliedGain = wantedGain;
+			}
+		}
+	}
+
+	NativeAudio_UnlockOutput();
+}
+
 void NativeAudio_SetDeterministicRenderMode(int enabled)
 {
 	NativeAudio_LockOutput();
@@ -2979,6 +3024,11 @@ void NativeAudio_Shutdown(void)
 		s_audio.output.stream = NULL;
 		s_audio.output.device = 0;
 	}
+
+	// The focus-mute gain belonged to that stream; a reopened device starts at
+	// SDL's default gain and has to be told again.
+	s_focusMuteAppliedStream = NULL;
+	s_focusMuteAppliedGain = NATIVE_FOCUS_MUTE_GAIN_FULL;
 
 	NativeAudio_CloseXANoLock();
 	SDL_QuitSubSystem(SDL_INIT_AUDIO);
