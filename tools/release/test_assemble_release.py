@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import io
+import os
 import subprocess
 import tarfile
 import tempfile
@@ -50,6 +51,46 @@ class AssemblerFixtureTests(unittest.TestCase):
         path.with_name(path.name + ".sha256").write_text(
             f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
         )
+
+    def prepare_assemble_inputs(self, version: str = "0.2.0-rc-prep1") -> tuple[Path, Path]:
+        """Make the source, apworld and template pass everything before the output preflight."""
+        for relative in ASSEMBLER.NATIVE_COMPANIONS:
+            companion = self.source / relative
+            if companion.exists():
+                continue
+            companion.parent.mkdir(parents=True, exist_ok=True)
+            companion.write_text(f"tracked companion {relative}\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.source), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.source), "commit", "-qm", "companions"], check=True)
+
+        apworld = self.root / "ctr.apworld"
+        with zipfile.ZipFile(apworld, "w") as bundle:
+            bundle.writestr(
+                "ctr/archipelago.json",
+                json.dumps({"game": "Crash Team Racing", "world_version": "0.2.0"}),
+            )
+            bundle.writestr(
+                "ctr/version.py",
+                'COMPAT_VERSION = "0.2.0"\n' f'BUILD_VERSION = "{version}"\n',
+            )
+        template = self.root / "Crash.Team.Racing.yaml"
+        template.write_text(
+            "game: Crash Team Racing\nCrash Team Racing:\n"
+            "  description: Crash Team Racing: 0.2.0\n",
+            encoding="utf-8",
+        )
+        return apworld, template
+
+    def assemble_args(self, output: Path, apworld: Path, template: Path):
+        return type("Args", (), {
+            "version": "0.2.0-rc-prep1",
+            "native_source": self.source,
+            "windows_artifacts": self.root / "windows",
+            "linux_artifacts": self.root / "linux",
+            "apworld": apworld,
+            "template": template,
+            "output_dir": output,
+        })()
 
     ASSET_MEMBERS = (
         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
@@ -232,6 +273,85 @@ class AssemblerFixtureTests(unittest.TestCase):
         ASSEMBLER.write_manifest(output, "1.2.3")
         with self.assertRaises(ASSEMBLER.AssemblyError):
             ASSEMBLER.write_manifest(output, "1.2.3")
+
+    def test_manifest_refuses_dangling_symlink_without_following_it(self) -> None:
+        # Path.exists() follows a dangling symlink and reports it absent, so the
+        # old writer followed the link and created the file outside the release.
+        output = self.root / "release"
+        output.mkdir()
+        (output / "ctr-archipelago-v1.2.3-windows-x86.zip").write_bytes(b"w")
+        (output / "ctr-archipelago-v1.2.3-linux-x86.tar.gz").write_bytes(b"l")
+        outside = self.root / "outside" / "escaped.json"
+        outside.parent.mkdir()
+        os.symlink(outside, output / "manifest.json")
+
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.write_manifest(output, "1.2.3")
+
+        self.assertFalse(os.path.lexists(outside))
+        self.assertTrue((output / "manifest.json").is_symlink())
+
+    def test_preflight_refuses_dangling_symlink_without_following_it(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        outside = self.root / "outside" / "escaped.json"
+        outside.parent.mkdir()
+        os.symlink(outside, output / "manifest.json")
+
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.refuse_existing_entries(
+                output,
+                [*ASSEMBLER.standard_asset_names("1.2.3"), "manifest.json"],
+            )
+
+        self.assertFalse(os.path.lexists(outside))
+        self.assertTrue((output / "manifest.json").is_symlink())
+
+    def test_manifest_refuses_existing_directory(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        (output / "ctr-archipelago-v1.2.3-windows-x86.zip").write_bytes(b"w")
+        (output / "ctr-archipelago-v1.2.3-linux-x86.tar.gz").write_bytes(b"l")
+        (output / "manifest.json").mkdir()
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.write_manifest(output, "1.2.3")
+        self.assertTrue((output / "manifest.json").is_dir())
+
+    def test_preflight_refuses_existing_regular_file(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        (output / "ctr-archipelago-v1.2.3-windows-x86.zip").write_bytes(b"w")
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.refuse_existing_entries(
+                output, [*ASSEMBLER.standard_asset_names("1.2.3"), "manifest.json"]
+            )
+
+    def test_preflight_refuses_existing_directory(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        (output / "manifest.json").mkdir()
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.refuse_existing_entries(
+                output, [*ASSEMBLER.standard_asset_names("1.2.3"), "manifest.json"]
+            )
+
+    def test_preflight_accepts_a_clean_output_directory(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        ASSEMBLER.refuse_existing_entries(
+            output, [*ASSEMBLER.standard_asset_names("1.2.3"), "manifest.json"]
+        )
+
+    def test_assemble_preflight_refuses_dangling_symlink_before_writing(self) -> None:
+        apworld, template = self.prepare_assemble_inputs()
+        output = self.root / "release"
+        output.mkdir()
+        outside = self.root / "outside" / "escaped.json"
+        outside.parent.mkdir()
+        os.symlink(outside, output / "manifest.json")
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.assemble(self.assemble_args(output, apworld, template))
+        self.assertFalse(os.path.lexists(outside))
 
     def test_standard_asset_policy_is_shared(self) -> None:
         self.assertEqual(list(ASSEMBLER.ASSET_NAMES), list(release_policy.STANDARD_ASSET_NAMES))

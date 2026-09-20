@@ -182,7 +182,9 @@ exact shape, with sorted keys and a single trailing newline:
 
 It covers **only the two client archives**. `ctr.apworld`, the player YAML,
 debug files and checksum sidecars stay outside it: the manifest is the client
-download contract, while the standard asset gate below still requires them.
+download contract, while the standard asset gate below still requires them. A
+Windows-only prerelease ships the seven-asset set with no manifest; the signing
+and upload steps are scoped to a complete two-platform release in section 7.
 
 - [ ] Confirm the assembly output contains `manifest.json` with a trailing
       newline and exactly the two client archive names above.
@@ -240,12 +242,24 @@ the previous release's published notes. House style:
 - [ ] `gh release create vX.Y.Z` with the Windows assets: the zip, its
       `.sha256`, the `ctr_native_ap.exe.debug` sidecar and its `.sha256`, the
       standalone `ctr.apworld` and its `.sha256` (multiworld hosts often want
-      just the world file), the regenerated `Crash.Team.Racing.yaml` player
-      template (see §4), and `manifest.json`.
+      just the world file), and the regenerated `Crash.Team.Racing.yaml` player
+      template (see §4). That is the seven-asset Windows-only set; a
+      Windows-only prerelease stops here, uploads no `manifest.json` and needs
+      no signing key.
+
+### Complete two-platform release: Linux assets and signed manifest
+
+Run this section only when the release carries all eleven standard assets, Linux
+included. The signed manifest covers exactly the two client archives, so only a
+complete two-platform release can produce one. Do not generate, commit or upload
+a manifest, and do not require a signing key, for an ordinary Windows-only
+prerelease.
+
 - [ ] Add the Linux assets to the same release: the `.tar.gz` and its
       `.sha256`, plus the `ctr_native_ap.debug` sidecar and its
       `ctr_native_ap.debug.sha256` (see §4; both `.debug` files are public
-      assets so players can symbolize their own crashes).
+      assets so players can symbolize their own crashes). Both client archives
+      must be final before the manifest is generated.
 - [ ] Generate the signing key ONCE on the owner's own machine, outside CI and
       outside this repository:
       `minisign -G -p ctr-release-minisign.pub -s ctr-release-minisign.key`.
@@ -271,10 +285,15 @@ the previous release's published notes. House style:
       minisign, verifies the signature over the exact manifest bytes, checks the
       two archive hashes and validates every standard checksum sidecar. It must
       report "verified signed release vX.Y.Z".
-- [ ] Verify with `gh release view`: title, tag, and every asset present (the
-      Windows zip + sha256, `ctr_native_ap.exe.debug` + sha256, `ctr.apworld` +
-      sha256, `Crash.Team.Racing.yaml`, the Linux tarball + sha256,
-      `ctr_native_ap.debug` + sha256, `manifest.json`, and
+
+### Asset completeness
+
+- [ ] Verify with `gh release view`: title, tag, and the asset set for the
+      release type. A Windows-only prerelease must show its seven standard
+      assets and no manifest; a complete signed two-platform release must show
+      every asset (the Windows zip + sha256, `ctr_native_ap.exe.debug` + sha256,
+      `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the Linux tarball +
+      sha256, `ctr_native_ap.debug` + sha256, `manifest.json`, and
       `manifest.json.minisig`).
 - [ ] **Asset-completeness gate: all assets or pre-release.** Seven standard
       assets are permitted for a Windows-only prerelease. A complete

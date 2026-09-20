@@ -62,28 +62,48 @@ def fail(message: str) -> None:
     raise AssemblyError(message)
 
 
+def refuse_existing_entries(output: Path, names: list[str]) -> None:
+    """Reject any existing directory entry, including a dangling symlink.
+
+    ``Path.exists()`` follows a symlink and reports a dangling one as absent, so
+    a planted symlink would slip past a preflight and the writer would follow it
+    and create a file outside the release directory.  ``os.path.lexists`` tests
+    the directory entry itself without following it.
+    """
+    existing = [name for name in names if os.path.lexists(output / name)]
+    if existing:
+        fail(f"refusing to overwrite existing release asset(s): {', '.join(existing)}")
+
+
 def write_manifest(output: Path, version: str) -> Path:
     """Write the signed client manifest from the final archive bytes.
 
     Called only after both client archives are final.  Sorted keys, UTF-8 and a
     single trailing LF keep the bytes deterministic for the out-of-CI signature.
+    ``O_CREAT | O_EXCL`` refuses any existing directory entry, including a
+    dangling symlink, and never follows one, so a check-then-write race cannot
+    redirect the manifest outside the release directory.
     """
     tag = version if version.startswith("v") else f"v{version}"
     artifacts = {name: sha256(output / name) for name in signed_asset_names(tag)}
     destination = output / MANIFEST_NAME
-    if destination.exists():
-        fail(f"refusing to overwrite existing {MANIFEST_NAME}")
-    destination.write_text(
+    payload = (
         json.dumps(
             {"version": tag, "artifacts": artifacts},
             indent=2,
             ensure_ascii=True,
             sort_keys=True,
         )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+        + "\n"
+    ).encode("utf-8")
+    try:
+        handle = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        fail(f"refusing to overwrite existing {MANIFEST_NAME}")
+    except OSError as error:
+        fail(f"cannot create {MANIFEST_NAME}: {error}")
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(payload)
     return destination
 
 
@@ -397,9 +417,7 @@ def assemble(args: argparse.Namespace) -> list[Path]:
     validate_template(args.template.resolve(), version, source_compat)
     output.mkdir(parents=True, exist_ok=True)
     expected_assets = standard_asset_names(version)
-    existing = [name for name in [*expected_assets, MANIFEST_NAME] if (output / name).exists()]
-    if existing:
-        fail(f"refusing to overwrite existing release asset(s): {', '.join(existing)}")
+    refuse_existing_entries(output, [*expected_assets, MANIFEST_NAME])
     with tempfile.TemporaryDirectory(prefix="ctr-release-") as temporary:
         temp = Path(temporary)
         staged: dict[str, tuple[Path, dict, list[tuple[Path, str]]]] = {}
