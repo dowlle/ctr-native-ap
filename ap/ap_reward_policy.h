@@ -22,6 +22,14 @@
 //                                        ap_item_type_colors option or greyish
 //                                        white when that option is off.
 //
+// Amendment, ruled 2026-09-20:
+//
+//   Wumpa Fruit packages use the retail Wumpa Fruit model (PU_WUMPA_FRUIT,
+//   0x02). Local packages are solid and packages for another CTR player use the
+//   rule-2 ghost treatment. The model is not resident on every surface, so the
+//   display resolver only names it once the client owns a harvested copy or the
+//   current level carries its own (see ap_retail_wumpa.c and ap_hooks.c).
+//
 // Two consequences the ruling states explicitly, both encoded here:
 //
 //   - base-game PROGRESSION (trophies, relics, gems, keys, tokens) renders as
@@ -46,6 +54,7 @@
 #define AP_MODEL_CRYSTAL 0x60 // STATIC_CRYSTAL
 #define AP_MODEL_GEM     0x5f // STATIC_GEM
 #define AP_MODEL_RELIC   0x61 // STATIC_RELIC
+#define AP_MODEL_WUMPA   0x02 // PU_WUMPA_FRUIT
 #define AP_MODEL_TROPHY  0x62 // STATIC_TROPHY
 #define AP_MODEL_KEY     0x63 // STATIC_KEY
 #define AP_MODEL_TOKEN   0x7d // STATIC_TOKEN
@@ -56,10 +65,11 @@
 // categories the local/peer VANILLA/GHOST split applies to. 0 = Archipelago-logo
 // material, matrix rule 4.
 //
-// AP_CAT_WUMPA IS RULE 4. A Wumpa Fruit package is a quantity bundle the
-// multiworld invented, not one of the five rewards a vanilla warp pad can hold,
-// so it is not base-game under rules 1-2; and it is filler, so it is not rule 3
-// either. Rule 4 is what is left.
+// AP_CAT_WUMPA is the 2026-09-20 exception to the 2026-08-13 matrix: every
+// Wumpa package keeps the retail Wumpa Fruit model. Ownership changes opacity,
+// not the selected model. It is the one category whose model is not resident on
+// every surface, so the display resolver gates it on the harvest (see
+// AP_PadDisplayKind in ap_hooks.c).
 //
 // Every enumerator is spelled out rather than folded into `default` so
 // -Wswitch-enum keeps flagging these switches if the category set ever grows.
@@ -75,8 +85,8 @@ static int AP_RewardKeepsModel(AP_ItemCat cat)
 	case AP_CAT_GEM:
 	case AP_CAT_KEY:
 	case AP_CAT_CRYSTAL:
-		return 1;
 	case AP_CAT_WUMPA:
+		return 1;
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
 	default:
@@ -99,7 +109,7 @@ static int AP_RewardModelForCat(AP_ItemCat cat)
 	case AP_CAT_GEM:      return AP_MODEL_GEM;
 	case AP_CAT_KEY:      return AP_MODEL_KEY;
 	case AP_CAT_CRYSTAL:  return AP_MODEL_CRYSTAL;
-	case AP_CAT_WUMPA:
+	case AP_CAT_WUMPA:    return AP_MODEL_WUMPA;
 	case AP_CAT_COUNT:
 	case AP_CAT_NONE:
 	default:              return -1;

@@ -47,6 +47,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
 #include "ap_podium_presentation_logic.h" // AP Trophy prize policy (#235)
 #include "ap_retail_crystal.h" // the harvested retail crystal for CTR progression (#219)
+#include "ap_retail_wumpa.h"   // the harvested retail Wumpa Fruit model for Wumpa packages (#222)
+#include "ap_wumpa_residency_logic.h" // freestanding Wumpa residency transition (#222)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
 #include "ap_tizi.h"       // Papu's Pyramid mask helper (#223)
@@ -76,6 +78,7 @@ CTR_STATIC_ASSERT(AP_TRAP_ITEM_ID_BASE == AP_ITEM_BASE);
 CTR_STATIC_ASSERT(AP_MODEL_CRYSTAL == STATIC_CRYSTAL);
 CTR_STATIC_ASSERT(AP_MODEL_GEM == STATIC_GEM);
 CTR_STATIC_ASSERT(AP_MODEL_RELIC == STATIC_RELIC);
+CTR_STATIC_ASSERT(AP_MODEL_WUMPA == PU_WUMPA_FRUIT);
 #ifdef CTR_CUSTOM_TRACKS
 // manager-light measures wumpa_collectible by walking a LEV's instance table for
 // these two model ids, and mirrors them because platform code compiles without
@@ -601,9 +604,10 @@ static int AP_PadDisplayKind(long long item, int player, AP_ItemCat *outCat)
 		cat = AP_ItemCategory(item);
 
 		// The one category decision, in one place (ap_reward_policy.h): base-game
-		// rewards keep their vanilla model (matrix rules 1-2) and CTR progression
-		// keeps the crystal (rule 3). Wumpa packages, traps, comfort items and
-		// anything an apworld invents are marker material whoever owns them.
+		// rewards keep their vanilla model (matrix rules 1-2), CTR progression
+		// keeps the crystal (rule 3), and every Wumpa package keeps the retail
+		// fruit (the 2026-09-20 amendment). Traps, comfort items and anything an
+		// apworld invents are marker material whoever owns them.
 		if (!AP_RewardKeepsModel(cat))
 			cat = AP_CAT_NONE;
 
@@ -615,12 +619,22 @@ static int AP_PadDisplayKind(long long item, int player, AP_ItemCat *outCat)
 		// than a slot left showing whichever placeholder it was born with while the
 		// tint is resolved for a crystal.
 		//
-		// Only the crystal is gated here. The base-game categories keep the
+		// The fruit is the same shape of problem: model 0x02 ships only in
+		// loose-fruit level files, never in an MPK pack, so on the hub it is not
+		// resident until ap_retail_wumpa.c harvests its own copy. Gate it on that
+		// harvest OR a level that carries the model itself; otherwise a Wumpa
+		// package resolves to the marker rather than the §24 stale-placeholder bug.
+		//
+		// Only these two are gated here. The base-game categories keep the
 		// arrangement they already had: AH_WarpPad_ThTick reassigns the model only
 		// when it is resident, and resolves the colour from the model the slot
 		// ENDS UP with, so those two can never disagree.
 		if (cat == AP_CAT_CRYSTAL && !AP_RetailCrystal_IsRegistered())
 			cat = AP_CAT_NONE;
+
+		// The fruit's own one-line version of the same question, kept in the
+		// freestanding header so the host harness pins it.
+		cat = AP_WumpaEffectiveCategory(cat, AP_RetailWumpa_IsDrawable(sdata ? sdata->gGT : 0));
 	}
 
 	if (outCat)
@@ -743,6 +757,7 @@ int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
 	int model;
 	int ghost;
 	int tint;
+	int oldModelID;
 
 	if (prop == 0 || !ctr_cfg_active())
 		return 0;
@@ -756,6 +771,9 @@ int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
 
 	ghost = AP_WarpPadRewardGhost(globalBit);
 	tint = AP_WarpPadRewardTint(globalBit);
+	// Captured before the swap so the animation transition below can tell an
+	// entry into the fruit (reset) from a swap away from it (clear).
+	oldModelID = (prop->model != 0) ? prop->model->id : -1;
 	prop->model = gGT->modelPtr[model];
 	prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT | GHOST_DRAW_TRANSPARENT);
 	prop->alphaScale = 0;
@@ -813,6 +831,16 @@ int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
 		prop->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 		prop->flags |= GHOST_DRAW_TRANSPARENT;
 	}
+
+	// #222: reset the fruit animation only on the transition INTO the fruit, and
+	// clear the fruit animation bits on the way out so a later placeholder does
+	// not inherit a half-driven spin. A per-tick reset would freeze the fruit on
+	// frame zero.
+	if (AP_WumpaShouldResetAnim(oldModelID, prop->model->id))
+		AP_WumpaApplyFruitAnim(&prop->animIndex, &prop->animFrame, &prop->vertSplit, &prop->flags);
+	else if (AP_WumpaShouldClearAnim(oldModelID, prop->model->id))
+		AP_WumpaClearFruitAnim(&prop->flags);
+
 	return 1;
 }
 
@@ -7139,6 +7167,13 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// well-timed call would not survive a hub swap or a savestate restore. The
 	// harvest itself runs at most once, on the first frame with no load in flight.
 	AP_RetailCrystal_Register(gGT);
+	// Park the #222 Wumpa Fruit model in PU_WUMPA_FRUIT wherever the level left
+	// that slot empty. Same idempotent every-frame contract as the crystal above,
+	// for the same reason: modelPtr[] is refilled per level and LibraryOfModels_Clear
+	// wipes slot 0x02, so a single well-timed call would not survive a hub swap or
+	// a savestate restore. The compact harvest itself runs at most once, on the
+	// first idle frame, and is sticky on failure.
+	AP_RetailWumpa_Register(gGT);
 	// Box placement author mode (#182) and the additive model loader it draws
 	// through (#109 / #124 groundwork). Author first, loader second, so a
 	// placement dropped this frame gets its marker in the same frame instead of
