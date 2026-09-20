@@ -61,6 +61,13 @@ global_variable char s_countdownFormat223[4] = "-%d";
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8009f71c-0x8009fcd0.
 void RR_EndEvent_UnlockAward(void)
 {
+#ifdef CTR_AP
+	// #286: a forced-loss relic attempt grants no local relic flag, no relic
+	// presentation and no AP relic check. The #49 relic-perfect producer, when it
+	// lands, must observe the same AP_RaceAttempt_ProducerBlocked() helper.
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_UNLOCK))
+		return;
+#endif
 	struct GameTracker *gGT = sdata->gGT;
 	struct Driver *driver = gGT->drivers[0];
 	struct AdvProgress *adv = &sdata->advProgress;

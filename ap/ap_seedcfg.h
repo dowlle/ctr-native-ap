@@ -538,8 +538,10 @@ typedef struct
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
 	// feature stays dark on old seeds (the one_lap_cups additive-key precedent).
-	//   death_link:        0 off / 1 mask_reset / 2 any_hit
+	//   death_link:        0 off / 1 mask_reset / 2 any_hit / 3 race_loss
 	//   deathlink_amnesty: send one death per N eligible deaths (>= 1; 1 = every)
+	// Native parses value 3 but the apworld emitter is a separate slice: until it
+	// ships, only a hand-built room can carry race_loss.
 	int death_link;
 	int deathlink_amnesty;
 

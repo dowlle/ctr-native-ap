@@ -18,6 +18,7 @@ fixture = r'''
 #include "ap_seedcfg.h"
 #include "ap_custom_pad_logic.h"
 #include "ap_cortex_track.h" /* schema 15: logical podium track 50 */
+#include "ap_race_attempt_logic.h" /* #286: producer classes the finish guards name */
 #define CTR_CUSTOM_TRACKS 1
 ctr_seed_config ctr_cfg;
 int ctr_cfg_active(void) { return 1; }
@@ -30,6 +31,13 @@ static int seen[5];
 static long base;
 static void AP_EmitRung(int track,long code,int tag,int pos,const char *phase) {
  assert(code==base+tag); seen[tag]++;
+}
+// #286: production reaches the freestanding decision through
+// AP_RaceAttempt_ProducerBlocked with the live attempt latch; this fixture keeps
+// the latch clear so the finish fan-out under test behaves as before.
+static int race_attempt_latched;
+int AP_RaceAttempt_ProducerBlocked(int producerClass) {
+ return AP_RaceAttempt_SuppressResultProducer(producerClass, race_attempt_latched);
 }
 '''
 tests = r'''

@@ -19,6 +19,7 @@ tools/test-custom-track-manager.c
 tools/test-custom-track-policy.c
 tools/test-custom-tracks-seedcfg.cpp
 tools/test-custom-trophy-ceremony.c
+tools/test-deathlink-race-loss.c
 tools/test-democam.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
@@ -69,6 +70,7 @@ tools/test-cv-tracker-letters.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-podium-trophy-presentation.c
+tools/test-race-attempt-lifecycle.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c

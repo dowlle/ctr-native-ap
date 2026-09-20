@@ -14,6 +14,7 @@ end = reward_source.index("\n#ifdef CTR_AP\n\t\t\tif (AP_GoalClaimOxideEnding())
 reward = reward_source[start:end]
 fixture = r'''
 #include <assert.h>
+#include "ap_race_attempt_logic.h"
 #define AP_GOAL_BIT_OXIDE_FIRST 115
 #define AP_GOAL_BIT_OXIDE_SECOND 116
 static struct { int goal_oxide, oxide_1_optional; } ctr_cfg;
@@ -30,6 +31,13 @@ void AP_NotifyAdvReward(int bit) {
  if (bit == 115) first++; else { assert(bit == 116); final++; }
 }
 void AP_EvaluateGoal(void) { evaluate++; }
+// #286: production reaches the freestanding decision through
+// AP_RaceAttempt_ProducerBlocked with the live attempt latch; this fixture keeps
+// the latch clear so the goal path under test behaves as before.
+static int race_attempt_latched;
+int AP_RaceAttempt_ProducerBlocked(int producerClass) {
+ return AP_RaceAttempt_SuppressResultProducer(producerClass, race_attempt_latched);
+}
 '''
 tests = r'''
 int main(void) {
@@ -59,6 +67,7 @@ with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "fixture.c", Path(tmp) / "fixture"
     src.write_text(fixture + function + "\nvoid RewardOxide(void) {\n" + reward + "\n}\n" + tests)
     subprocess.run(["cc", "-std=c99", "-DCTR_AP", "-Wall", "-Wextra", "-Werror",
-                    "-fsanitize=undefined", str(src), "-o", str(exe)], check=True)
+                    "-fsanitize=undefined", "-I" + str(root / "ap"),
+                    str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print("PASS: 48 isolated win notifications plus 48 actual reward-path sequences, UBSan; no opt-in duplicate dispatch")

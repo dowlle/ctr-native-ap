@@ -48,6 +48,20 @@ void AP_NotifyCustomTrackTrophy(void);
 int AP_CustomTrackCtrChecked(void);
 void AP_NotifyCustomTrackCtr(int didWin, int collected);
 
+// ── #286 final Gem Cup aggregate ──
+// The overall cup reward is decided on accumulated points in the final
+// standings. A cup won on points grants its reward in full, including the AP
+// cup check, even when DeathLink forced a loss on the final leg: these three
+// entry points route the cup reward through AP_RESULT_PRODUCER_CUP_AGGREGATE,
+// which deliberately stays allowed while the forced-loss latch is set. The
+// forced leg's own per-race/finish producers remain blocked. Used ONLY by the
+// UI_CupStandings final cup-win block; every per-race caller uses the
+// AP_NotifyAdvReward / AP_NotifyCustomTrackTrophy / AP_NotifyCustomTrackCtr
+// entry points above. See ap_race_attempt_logic.h for the ruling.
+void AP_NotifyCupAggregateReward(int rewardBit);
+void AP_NotifyCupAggregateCustomTrackTrophy(void);
+void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected);
+
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).

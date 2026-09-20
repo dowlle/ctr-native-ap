@@ -741,6 +741,12 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	if (gGT->Debug_ToggleNormalSpawn != 0)
 	{
 		MainGameStart_Initialize(gGT, 1);
+#ifdef CTR_AP
+		// #286 attempt boundary: clear the forced-loss latch only when this newly
+		// loaded level is an eligible racing level. Hub, menu, cutscene and battle
+		// loads reach this call too but leave the latch set.
+		AP_RaceAttempt_OnLevelStart(gGT);
+#endif
 
 		if (gGT->boolDemoMode != 0)
 		{
