@@ -1,5 +1,11 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Issue #330: AP_RewardSubtitleForBit. Included here (not only through the
+// unity build) so this call site carries its own CTR_AP-gated declaration.
+#include "../../ap/ap_hooks.h"
+#endif
+
 struct CSThreadParentFrameScratch
 {
 	SVec3Slot parentPos;
@@ -1513,10 +1519,22 @@ thTick_subtitles:
 	if (cs->Subtitles.lngIndex > 0)
 	{
 		struct GameTracker *gGT = sdata->gGT;
+		char *subtitleText = sdata->lngStrings[cs->Subtitles.lngIndex];
 		int textWidth;
 		RECT textRect;
 
-		textWidth = DecalFont_DrawMultiLine(sdata->lngStrings[cs->Subtitles.lngIndex], cs->Subtitles.textPos.x, cs->Subtitles.textPos.y, 460,
+#ifdef CTR_AP
+		// Issue #330: only the Ripper Roo defeat script sets LNG_HAVE_A_KEY, and
+		// its reward is the first boss Key. Name the scouted item in place; the
+		// font, position, wrap width, background and animation range are
+		// unchanged. On every other line, and in the clean build, this is the
+		// retail string pointer.
+		if (cs->Subtitles.lngIndex == LNG_HAVE_A_KEY)
+			subtitleText = AP_RewardSubtitleForBit(
+			    ADV_REWARD_FIRST_BOSS_KEY, subtitleText);
+#endif
+
+		textWidth = DecalFont_DrawMultiLine(subtitleText, cs->Subtitles.textPos.x, cs->Subtitles.textPos.y, 460,
 		                                    cs->Subtitles.font, cs->Subtitles.colors);
 
 		textRect.x = (s16)((u16)cs->Subtitles.textPos.x - 236);

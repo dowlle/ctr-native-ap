@@ -30,6 +30,17 @@ void AP_OnFrame(struct GameTracker *gGT);
 // AdvProgress bit index (= word*32 + bit); resolved to an AP location code.
 void AP_NotifyAdvReward(int rewardBit);
 
+// ── Boss reward subtitle (issue #330, display-only, English only) ──
+// Return a bounded English subtitle naming the item scouted at rewardBit,
+// replacing the retail fixed "Have a Key" line. Returns `retail` unchanged when
+// AP is inactive, the scout for that location is missing (no scout data or a
+// disconnected client), the scouted reward text cannot build a supported
+// sentence, or the placement is the own-world vanilla CTR Key. The returned
+// generated string is a static buffer valid until the next call, so the caller
+// must not hold it across frames. Only the Ripper Roo first-boss Key subtitle
+// substitutes this; every other cutscene line and all timing are unchanged.
+char *AP_RewardSubtitleForBit(int rewardBit, char *retail);
+
 // Generic custom-slot Trophy identity. A displaced cup's retail Gem bit remains
 // presentation state only; the AP check is the custom Trophy code from slot data.
 int AP_CustomTrackTrophyChecked(void);
