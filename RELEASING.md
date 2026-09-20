@@ -260,6 +260,9 @@ prerelease.
       `ctr_native_ap.debug.sha256` (see §4; both `.debug` files are public
       assets so players can symbolize their own crashes). Both client archives
       must be final before the manifest is generated.
+- [ ] Upload the prepared `manifest.json` from section 4 to the same release
+      after confirming that its two hashes match the final uploaded client
+      archives. The following signing steps use those exact manifest bytes.
 - [ ] Generate the signing key ONCE on the owner's own machine, outside CI and
       outside this repository:
       `minisign -G -p ctr-release-minisign.pub -s ctr-release-minisign.key`.
