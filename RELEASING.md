@@ -164,6 +164,36 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
       debuglink CRC rejects any rebuild, the `.debug` archived here must be the
       one from the exact published release, not a later rebuild.
 
+### Signed client manifest
+
+The `Prepare release assets` workflow assembles the eleven standard assets and
+then writes `manifest.json` from the final archive bytes. The manifest has this
+exact shape, with sorted keys and a single trailing newline:
+
+```json
+{
+  "artifacts": {
+    "ctr-archipelago-vX.Y.Z-linux-x86.tar.gz": "<sha256 hex>",
+    "ctr-archipelago-vX.Y.Z-windows-x86.zip": "<sha256 hex>"
+  },
+  "version": "vX.Y.Z"
+}
+```
+
+It covers **only the two client archives**. `ctr.apworld`, the player YAML,
+debug files and checksum sidecars stay outside it: the manifest is the client
+download contract, while the standard asset gate below still requires them. A
+Windows-only prerelease ships the seven-asset set with no manifest; the signing
+and upload steps are scoped to a complete two-platform release in section 7.
+
+- [ ] Confirm the assembly output contains `manifest.json` with a trailing
+      newline and exactly the two client archive names above.
+- [ ] The preparation workflow already ran
+      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign` on
+      the twelve-file unsigned assembly. Run it again yourself if you assembled
+      by hand. `--pre-sign` verifies the archive hashes and the standard
+      sidecars without a signature and prints that it is not a signed release.
+
 ## 5. Tag
 
 - [ ] Same tag `vX.Y.Z` on BOTH repos at the exact release commits, pushed.
@@ -213,24 +243,106 @@ the previous release's published notes. House style:
       `.sha256`, the `ctr_native_ap.exe.debug` sidecar and its `.sha256`, the
       standalone `ctr.apworld` and its `.sha256` (multiworld hosts often want
       just the world file), and the regenerated `Crash.Team.Racing.yaml` player
-      template (see §4).
+      template (see §4). That is the seven-asset Windows-only set; a
+      Windows-only prerelease stops here, uploads no `manifest.json` and needs
+      no signing key.
+
+### Complete two-platform release: Linux assets and signed manifest
+
+Run this section only when the release carries all eleven standard assets, Linux
+included. The signed manifest covers exactly the two client archives, so only a
+complete two-platform release can produce one. Do not generate, commit or upload
+a manifest, and do not require a signing key, for an ordinary Windows-only
+prerelease.
+
 - [ ] Add the Linux assets to the same release: the `.tar.gz` and its
       `.sha256`, plus the `ctr_native_ap.debug` sidecar and its
       `ctr_native_ap.debug.sha256` (see §4; both `.debug` files are public
-      assets so players can symbolize their own crashes).
-- [ ] Verify with `gh release view`: title, tag, and every asset present (the
-      Windows zip + sha256, `ctr_native_ap.exe.debug` + sha256, `ctr.apworld` +
-      sha256, `Crash.Team.Racing.yaml`, the Linux tarball + sha256, and
-      `ctr_native_ap.debug` + sha256).
-- [ ] **Asset-completeness gate: all assets or pre-release.** The release may
-      only be published (or have its pre-release flag removed) once the
-      `gh release view` check above shows the COMPLETE eleven-asset set (nine
-      through v0.1.4, plus the two Windows `.debug` assets added in v0.1.5). If
-      anything is missing, the release stays flagged pre-release until the
-      missing assets are attached, no exceptions and no "add it later while
-      Latest". This is the rule v0.1.4.1 taught: it shipped Windows-only,
-      which stranded Linux and Steam Deck players and removed the apworld and
-      template from the default download path, so it could never be promoted.
+      assets so players can symbolize their own crashes). Both client archives
+      must be final before the manifest is generated.
+- [ ] Upload the prepared `manifest.json` from section 4 to the same release
+      after confirming that its two hashes match the final uploaded client
+      archives. The following signing steps use those exact manifest bytes.
+- [ ] Generate the signing key ONCE on the owner's own machine, outside CI and
+      outside this repository:
+      `minisign -G -p ctr-release-minisign.pub -s ctr-release-minisign.key`.
+      Use a strong password when minisign asks.
+- [ ] Store `ctr-release-minisign.key` in encrypted offline storage with an
+      encrypted backup in a separate location. Never place it in this
+      repository, a GitHub secret, an Actions artifact, a release asset, or a
+      cloud shell.
+- [ ] Commit only the generated public key: replace the committed placeholder in
+      `ctr-release-minisign.pub` with the generated public-key file in a normal
+      reviewed change.
+- [ ] Download the release's exact `manifest.json` to the owner's machine and
+      sign it WITHOUT editing it:
+      `minisign -S -s ctr-release-minisign.key -m manifest.json`.
+- [ ] Verify the local signature before uploading:
+      `minisign -Vm manifest.json -p ctr-release-minisign.pub`.
+- [ ] Upload `manifest.json.minisig` only after the two covered archives and
+      `manifest.json` are final. If either archive changes, regenerate and
+      re-sign the manifest.
+- [ ] Download the complete release into a clean directory and run
+      `python3 tools/verify-release.py <download-directory> --version vX.Y.Z`.
+      Default mode requires the signature, the committed public key and
+      minisign, verifies the signature over the exact manifest bytes, checks the
+      two archive hashes and validates every standard checksum sidecar. It must
+      report "verified signed release vX.Y.Z".
+
+### Asset completeness
+
+- [ ] Verify with `gh release view`: title, tag, and the asset set for the
+      release type. A Windows-only prerelease must show its seven standard
+      assets and no manifest; a complete signed two-platform release must show
+      every asset (the Windows zip + sha256, `ctr_native_ap.exe.debug` + sha256,
+      `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the Linux tarball +
+      sha256, `ctr_native_ap.debug` + sha256, `manifest.json`, and
+      `manifest.json.minisig`).
+- [ ] **Asset-completeness gate: all assets or pre-release.** Seven standard
+      assets are permitted for a Windows-only prerelease. A complete
+      cross-platform release requires all ELEVEN standard assets (nine through
+      v0.1.4, plus the two Windows `.debug` assets added in v0.1.5). A signed
+      complete release additionally requires `manifest.json` and
+      `manifest.json.minisig`, for THIRTEEN uploaded assets total. The manifest
+      covers exactly the Windows client ZIP and Linux client tarball; a
+      Windows-only prerelease cannot satisfy this signed two-platform manifest
+      and is not eligible for updater visibility. A release without
+      `manifest.json.minisig` is not a signed release. If anything is missing,
+      the release stays flagged pre-release until the missing assets are
+      attached, no exceptions and no "add it later while Latest". This is the
+      rule v0.1.4.1 taught: it shipped Windows-only, which stranded Linux and
+      Steam Deck players and removed the apworld and template from the default
+      download path, so it could never be promoted.
+
+### Key rotation and loss
+
+- [ ] Rotate the key by generating a new pair on the owner's machine, replacing
+      the committed public key in a normal reviewed change, and using the new
+      private key only for releases created after that change.
+- [ ] Keep old public keys and the release tags needed to verify historical
+      releases. Do not rewrite an old release signature with a new key.
+- [ ] If the private key is lost, stop signing releases, generate and commit a
+      new public key, and document which release first uses it. Do not recreate
+      or guess the lost key.
+- [ ] If the private key may be compromised, remove affected releases from
+      updater visibility, rotate the key, audit repository and workflow access,
+      rebuild from reviewed source, and publish a new version. Do not silently
+      replace assets under an existing signed version.
+
+### Threat boundary
+
+The signature lets clients detect archive replacement by an attacker who can
+modify GitHub release assets through a compromised repository account or
+workflow but does not possess the offline private key. Hashes alone do not
+provide that protection, because the same attacker could replace both an
+archive and its hash.
+
+The signature does not protect against a compromised signing machine or stolen
+private key, malicious source or dependencies present before signing, a
+malicious binary intentionally signed by the owner, denial of service, or an old
+correctly signed release being served instead of a newer one. Version selection
+and rollback protection remain the responsibility of the updater tracked by
+issue 301, which must require the signature before presenting a release.
 
 ## 8. After publishing
 

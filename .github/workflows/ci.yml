@@ -67,3 +67,24 @@ jobs:
         run: bash tools/security/run.sh
       - name: Release assembly boundary checks
         run: python3 -m unittest discover -s tools/release -p 'test_*.py'
+
+  release-trust:
+    name: release trust tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Read-only: installs minisign, generates disposable keys in the job's own
+    # temporary directory, and never uploads a key or writes to the repository.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install minisign
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q minisign
+      - name: Signed release manifest trust tests
+        env:
+          CTR_REQUIRE_MINISIGN: "1"
+        run: python3 -m unittest discover -s tools/release -p 'test_*.py' -v
