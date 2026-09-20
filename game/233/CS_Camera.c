@@ -243,8 +243,9 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 
 	// Issue #235: an AP retail-Trophy podium bypasses the retail prize/count-up
 	// (CS_Podium_FullScene_Init), so present the AP-owned received count and the
-	// #330 item text here instead. Self-gates on AP-active + STATIC_TROPHY, so it
-	// is a no-op beside the custom-Trophy block above and on every other podium.
+	// #330 item text here instead. Self-gates on AP-active + an ordinary retail
+	// Trophy, so it is a no-op beside the custom-Trophy block above and on every
+	// other podium.
 	if (sdata->ptrActiveMenu == NULL)
 		AP_TrophyPodiumCeremonyDraw(0x100, 0x38);
 #endif
