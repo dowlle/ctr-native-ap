@@ -47,14 +47,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out the exact native source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.native_source_commit }}
           fetch-depth: 1
           persist-credentials: false
 
       - name: Check out the exact apworld source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.apworld_repo }}
           ref: ${{ inputs.apworld_source_commit }}
@@ -145,7 +145,7 @@ jobs:
           PY
 
       - name: Install Archipelago for the release template
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ArchipelagoMW/Archipelago
           ref: debe4cf035c7c15efe6fb95f72343af0d420c68c # 0.6.7
@@ -154,7 +154,7 @@ jobs:
           persist-credentials: false
 
       - name: Generate template from the exact apworld
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
         with:
           python-version: "3.11"
 
@@ -194,7 +194,7 @@ jobs:
             --pre-sign
 
       - name: Upload prepared release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ctr-release-${{ inputs.version }}
           path: release/*
