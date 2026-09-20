@@ -2,7 +2,11 @@
 // drives a synthetic registered package through every Alpha6 foundation state;
 // no third-party track asset is needed or copied.
 //
-//   cc -Wall -Wextra -Werror -DCTR_CUSTOM_TRACKS -I include -I . tools/test-custom-track-manager.c -o /tmp/test-custom-track-manager
+// Built with -DCTR_AP too, so it also exercises CustomTrackManager_SaveYaml's
+// AP log line: AP_LogLine is stubbed below to capture into s_apLogCaptured
+// instead of linking the real ap_hooks.c.
+//
+//   cc -Wall -Wextra -Werror -DCTR_CUSTOM_TRACKS -DCTR_AP -I include -I . tools/test-custom-track-manager.c -o /tmp/test-custom-track-manager
 //   /tmp/test-custom-track-manager
 
 #include <stdio.h>
@@ -11,6 +15,16 @@
 #include <unistd.h>
 
 #define CTR_CUSTOM_TRACKS 1
+
+#ifdef CTR_AP
+static char s_apLogCaptured[4096];
+void AP_LogLine(const char *msg)
+{
+	size_t used = strlen(s_apLogCaptured);
+	strncat(s_apLogCaptured, msg, sizeof(s_apLogCaptured) - used - 1);
+}
+#endif
+
 #include "platform/native_custom_track_manager.c"
 
 static int checks;
@@ -286,6 +300,46 @@ int main(void)
 	           "Ready package saves YAML");
 	read_file(exported.yamlPath, saved, sizeof saved);
 	expect_int(strcmp(yaml, saved), 0, "clipboard-ready and file YAML are byte-identical");
+#ifdef CTR_AP
+	expect_contains(s_apLogCaptured, exported.yamlPath,
+	                 "saved YAML path is logged in full, untruncated");
+#endif
+
+	// The on-screen message area is tiny; a short path passes through as-is,
+	// and a very long Windows-style path is left-truncated with a leading
+	// "..." so the file name and nearest folders stay visible instead of
+	// overflowing the buffer or the display.
+	{
+		char shortDisplay[96];
+		char longDisplay[96];
+		char tinyDisplay[8];
+		const char *shortPath = "C:\\Users\\Player\\Documents\\custom_tracks.generated.yaml";
+		const char *longPath =
+			"C:\\Users\\SomePlayerWithAVeryLongWindowsUserName\\Documents\\My Games\\"
+			"CTR Archipelago\\assets\\tracks\\baby-t-park-1.0.2\\custom_tracks.generated.yaml";
+
+		CustomTrackManager_FormatSavedPathForDisplay(shortPath, shortDisplay, sizeof shortDisplay);
+		expect_int(strcmp(shortDisplay, "Saved to: C:\\Users\\Player\\Documents\\custom_tracks.generated.yaml"), 0,
+		           "short path displays in full");
+
+		CustomTrackManager_FormatSavedPathForDisplay(longPath, longDisplay, sizeof longDisplay);
+		expect_int((int)strlen(longDisplay) <= CTR_CT_SAVED_PATH_DISPLAY_MAX, 1,
+		           "long path display stays within the message-area budget");
+		expect_contains(longDisplay, "...", "long path display is left-truncated with an ellipsis");
+		expect_contains(longDisplay, "custom_tracks.generated.yaml",
+		                 "long path display keeps the file name visible");
+		expect_contains(longDisplay, "baby-t-park-1.0.2",
+		                 "long path display keeps the nearest folder visible");
+		expect_int(strstr(longDisplay, "SomePlayerWithAVeryLongWindowsUserName") == NULL, 1,
+		           "long path display drops the far (left) end of the path, not the near end");
+
+		// A destination buffer smaller than the display budget must still come
+		// back NUL-terminated and never overrun -- the whole point of bounding
+		// every snprintf here.
+		CustomTrackManager_FormatSavedPathForDisplay(longPath, tinyDisplay, sizeof tinyDisplay);
+		expect_int((int)strlen(tinyDisplay) < (int)sizeof tinyDisplay, 1,
+		           "tiny destination buffer is not overrun");
+	}
 
 	write_file(status.manifestPath, "{}\n");
 	expect_int(CustomTrackManager_ScanPackage(assets, &package, &status),
