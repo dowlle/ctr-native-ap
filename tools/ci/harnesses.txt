@@ -70,6 +70,7 @@ tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c
+tools/test-reward-text.c
 tools/test-tracker-assets.c
 tools/test-tracker-progress.c
 tools/test-retro-fueled.c

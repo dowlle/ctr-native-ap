@@ -22,6 +22,7 @@
 #include "ap_items.h"     // item-id -> AdvProgress category bit pools
 #include "ap_item_flags.h" // AP classification flags + shared precedence (#195)
 #include "ap_item_aliases.h" // native display aliases for long item names (#324)
+#include "ap_reward_text.h" // pure bounded boss/pad reward sentence builder (#330)
 #include "ap_rung_feed_reason_logic.h" // freestanding held-position reason text (#324)
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_glow_slots_logic.h"
@@ -388,6 +389,57 @@ int AP_RelicRewardOwnedByBit(int globalBit)
 	if (ap_net_location_exists(code))
 		return ap_net_location_checked(code);
 	return CHECK_ADV_BIT(sdata->advProgress.rewards, globalBit) != 0;
+}
+
+// See ap_hooks.h. Issue #330: name the item the boss check actually scouted
+// instead of the fixed retail "Have a Key" line. Display-only and English-only;
+// the Ripper Roo defeat cutscene is the only script that sets LNG_HAVE_A_KEY
+// (game/233/R233.c), so CS_Thread.c substitutes only that localization index with
+// the first-boss reward bit. The checked-state path and all cutscene timing are
+// untouched: only the string handed to DecalFont_DrawMultiLine changes. Every
+// missing or untrustworthy input (inactive AP, absent scout, unscouted location,
+// unknown or unsupported text, and the own-world vanilla Key, which keeps the
+// retail wording) returns `retail` unchanged. AP_LookupLocationCode stays private
+// to this file; callers only see this accessor.
+char *AP_RewardSubtitleForBit(int globalBit, char *retail)
+{
+	static char line[AP_REWARD_TEXT_MAX + 1];
+	char itemRaw[128];
+	char playerRaw[128];
+	char alias[64];
+	long code;
+	long long itemId = 0;
+	int player = -1;
+	int own;
+
+	if (!retail || !ctr_cfg_active())
+		return retail;
+
+	code = AP_LookupLocationCode(globalBit);
+	if (code < 0 ||
+	    !ap_net_scout_known(code, &itemId, &player, NULL) ||
+	    !ap_net_scout_text(code, itemRaw, (int)sizeof itemRaw,
+	                       playerRaw, (int)sizeof playerRaw))
+		return retail;
+
+	own = (player == ap_net_self_slot());
+
+	// A local vanilla Key keeps the retail "Have a Key" wording. A Key sent to
+	// another player is not the local reward, so it is named as theirs instead.
+	if (own && itemId == AP_ITEM_BASE + AP_IDX_KEY)
+		return retail;
+
+	if (AP_ItemDisplayAlias(itemId, alias, (int)sizeof alias))
+	{
+		if (!AP_RewardTextBuild(line, (int)sizeof line, alias, playerRaw, own))
+			return retail;
+	}
+	else if (!AP_RewardTextBuild(line, (int)sizeof line, itemRaw, playerRaw, own))
+	{
+		return retail;
+	}
+
+	return line;
 }
 
 // ---------------------------------------------------------------------------
