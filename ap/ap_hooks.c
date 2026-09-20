@@ -5815,6 +5815,19 @@ int AP_LetterAvailable(int track, int letter)
 	                              ap_letter_received[track][letter]);
 }
 
+// The adventure-map tracker is drawn from the hub, where AP_CortexLetterTrack is
+// false because LevelID 13 is not loaded, so the Cortex Vortex row cannot ask
+// AP_LetterAvailable (#379). Same rule, same mode field and same received state
+// as the AP_CortexLetterTrack branch above, minus the loaded-level question.
+int AP_CortexLetterAvailableForTracker(int letter)
+{
+	if (letter < 0 || letter >= 3) return 1;
+	return !ctr_cfg_active() ||
+	       AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
+	                              AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + letter),
+	                              ap_cortex_letter_received[letter]);
+}
+
 long AP_LetterLocation(int track, int letter)
 {
 	if (AP_CortexLetterTrack(track))
