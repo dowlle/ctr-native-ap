@@ -12,6 +12,11 @@ struct PlatformMempackArena
 
 void Platform_Init(const char *title, int width, int height);
 void Platform_Shutdown(void);
+// Log + visible diagnostic + clean teardown + nonzero exit. For an unrecoverable
+// load failure detected mid-stage (e.g. a required driver model that will not
+// load). Platform_Shutdown is idempotent and also registered with atexit, so a
+// double teardown is safe.
+void Platform_Fatal(const char *title, const char *message);
 void Platform_InitScratchpad(void);
 const struct PlatformMempackArena *Platform_InitMempackArena(void);
 const struct PlatformMempackArena *Platform_GetMempackArena(void);

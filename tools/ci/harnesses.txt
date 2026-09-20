@@ -1,8 +1,11 @@
 # Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.
+tools/test-instance-pool.c
 # Regenerate with: tools/ci/run-harnesses.py --write-list
 tools/test-author-ready.c
+tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
+tools/test-box-ghost-visual.py
 tools/test-box-map.c
 tools/test-box-offset.c
 tools/test-ceremony-banner.c
@@ -20,6 +23,7 @@ tools/test-democam.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
 tools/test-firstkey-freeze.c
+tools/test-focus-mute.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
@@ -27,6 +31,14 @@ tools/test-goal-line.c
 tools/test-goal-presentation.c
 tools/test-graphics-options.c
 tools/test-h-useful.c
+tools/test-hit-character-seedcfg.cpp
+tools/test-hit-bots-gather.c
+tools/test-hit-boss-identity.cpp
+tools/test-hit-chooser.c
+tools/test-hit-cup-snapshot.cpp
+tools/test-hit-encounter-production.cpp
+tools/test-hit-policy.c
+tools/test-hit-roster-fixture.cpp
 tools/test-held-checks.cpp
 tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
@@ -40,14 +52,25 @@ tools/test-native-clip-scratch.c
 tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
+tools/test-net-admission.cpp
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
+tools/test-oxide-optional-result.py
+tools/test-trial-letter-visual.py
+tools/test-trial-podium-result.py
+tools/test-trial-pad-glow-production.py
 tools/test-oxide-garage-advert.c
+tools/test-oxide-weapon-schedule.c
+tools/test-oxide-final-venue-seedcfg.cpp
+tools/test-cortex-track.c
+tools/test-cortex-track-seedcfg.cpp
+tools/test-cv-tracker-letters.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c
+tools/test-tracker-assets.c
 tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c
@@ -55,10 +78,17 @@ tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
+tools/test-tunnel-charswap-production.py
+tools/test-door-history-production.py
+tools/test-trial-track-seedcfg.cpp
+tools/test-trial-letters.c
+tools/test-trial-pad-glow.c
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c
 tools/test-version-compare.c
+tools/test-vsync.c
+tools/test-window-geometry.c
 tools/test-wumpa-dispatch.c
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-wumpa-seedcfg.cpp

@@ -5,7 +5,7 @@
 // harness share this file so character/capability/weapon gates are not tested
 // through a second implementation.
 
-#define AP_VF_ITEM_COUNT 190
+#define AP_VF_ITEM_COUNT 200
 #define AP_VF_BOOST_SHARED 27
 #define AP_VF_PC_FIRST 31
 #define AP_VF_WEAPON_FIRST 95

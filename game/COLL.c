@@ -574,7 +574,8 @@ void COLL_FIXED_BSPLEAF_TestInstance(struct BSP *node, struct ScratchpadStruct *
 		        // if data is valid
 
 		        // allows drawing flag is enabled
-		        ((bspArray->data.hitbox.instDef->ptrInstance->flags & DRAW_COLLISION_MASK) != 0)) &&
+		        (bspArray->data.hitbox.instDef->ptrInstance != NULL &&
+		         (bspArray->data.hitbox.instDef->ptrInstance->flags & DRAW_COLLISION_MASK) != 0)) &&
 
 		    // compare bsp boundingbox to scratchpad boundingbox
 		    ((sps->bbox.min.x <= bbox->max.x) &&

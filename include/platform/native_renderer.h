@@ -7,12 +7,23 @@ int NativeRenderer_InitialiseRender(char *windowName, int width, int height, int
 int NativeRenderer_InitialisePSX(void);
 void NativeRenderer_Shutdown(void);
 void NativeRenderer_ResetDevice(void);
+// Persist the window's current position/size/maximized state into g_config
+// (see include/platform/native_window_geometry.h for the capture rule). Call
+// right before any NativeConfig_Save that happens while the window is live,
+// and right before a clean process exit.
+void NativeRenderer_CaptureWindowGeometry(void);
 void NativeRenderer_BeginScene(void);
 void NativeRenderer_EndScene(void);
 void NativeRenderer_EndGpuFrame(void);
 void NativeRenderer_FinishGpuMeasurements(void);
-void NativeRenderer_UpdateSwapIntervalState(int swapInterval);
+// Applies g_config.vsync (see include/platform/native_vsync.h) to the GL
+// context's swap interval. Requests the interval every frame, as the constant
+// 0 call always did; only the resolved interval is cached, so an unsupported
+// Adaptive request falls back to On once instead of failing every frame.
+void NativeRenderer_UpdateSwapIntervalState(int vsyncOption);
 void NativeRenderer_SwapWindow(void);
+// Native UI canvas, composited after the PS1 framebuffer presentation.
+void NativeRenderer_PresentOverlayRGBA(const unsigned char *pixels, int width, int height);
 void NativeRenderer_StoreFrameBuffer(int x, int y, int w, int h);
 void NativeRenderer_PresentVRAMDisplay(void);
 void NativeRenderer_PresentVRAMRect(int x, int y, int w, int h);

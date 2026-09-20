@@ -13,6 +13,62 @@ static inline int AP_LetterItemRowToLevelIDPure(int row)
 	return (row >= 0 && row < 16) ? (int)levelID[row] : -1;
 }
 
+// The trial letters append at indexes 194..199, NOT immediately after the
+// frozen retail letters 139..186. Indexes 187..193 belong to other shipped
+// items and must never be reinterpreted as letters when track capacity grows.
+// Returns an engine level ID and C/T/R index only for an actual letter item.
+static inline int AP_LetterItemIndexToIdentityPure(int index, int *level, int *letter)
+{
+	int row, within;
+	if (index >= 139 && index <= 186)
+	{
+		row = (index - 139) / 3;
+		within = (index - 139) % 3;
+		*level = AP_LetterItemRowToLevelIDPure(row);
+	}
+	else if (index >= 194 && index <= 199)
+	{
+		*level = 16 + (index - 194) / 3;
+		within = (index - 194) % 3;
+	}
+	else return 0;
+	*letter = within;
+	return 1;
+}
+
+static inline int AP_LetterItemIndexIsLetterPure(int index)
+{
+	return (index >= 139 && index <= 186) || (index >= 194 && index <= 199);
+}
+
+#define AP_CUSTOM_LETTER_SLOT_COUNT 132
+#define AP_CUSTOM_LETTER_VERIFY_FIRST 200
+#define AP_CUSTOM_LETTER_VERIFY_COUNT (AP_CUSTOM_LETTER_SLOT_COUNT * 3)
+static inline int AP_CustomLetterItemToIdentityPure(long long code, int *slot, int *letter)
+{
+	if (code < 35021000LL || code > 35021395LL) return 0;
+	*slot = 1 + (int)((code - 35021000LL) / 3);
+	*letter = (int)((code - 35021000LL) % 3);
+	return 1;
+}
+
+static inline int AP_CustomLetterVerifyIndexPure(long long code)
+{
+	int slot, letter;
+	if (!AP_CustomLetterItemToIdentityPure(code, &slot, &letter)) return -1;
+	return AP_CUSTOM_LETTER_VERIFY_FIRST + (slot - 1) * 3 + letter;
+}
+
+// Freestanding Lettersanity decisions shared by the engine hooks and the
+static inline int AP_LetterLocationToItemIndexPure(long code)
+{
+	if (code >= 35012500L && code <= 35012547L)
+		return 139 + (int)(code - 35012500L);
+	if (code >= 35012548L && code <= 35012553L)
+		return 194 + (int)(code - 35012548L);
+	return -1;
+}
+
 // Freestanding Lettersanity decisions shared by the engine hooks and the
 // out-of-engine harness. Modes: 0 off, 1 locations only, 2 locations and
 // items, 3 items only. A nonnegative location code marks a selected letter.
@@ -28,6 +84,32 @@ static inline int AP_LetterAvailablePure(int active, int mode, long code, int re
 	if (!active || mode < 2) return 1;
 	if (mode == 2 && code < 0) return 0;
 	return received != 0;
+}
+
+// What one letter cell of the adventure-map tracker draws. Every track row goes
+// through this, including Cortex Vortex: that row is drawn from the hub and so
+// cannot reach the in-race letter hooks, and drawing it from its own rule is
+// what made it claim unreceived letters were available (#379).
+//
+// state: 0 the letter has no location in this seed, 1 the location exists,
+// 2 the location is checked. available is AP_LetterAvailablePure for the same
+// letter, fed from whichever received-state table owns that track.
+typedef struct
+{
+	int letter; // draw the C/T/R glyph, otherwise the "-" placeholder
+	int gold;   // glyph drawn gold, otherwise grey
+	int tick;   // draw the collected tick
+	int locked; // draw the grey "item still needed" marker
+} AP_TrackerLetterCell;
+
+static inline AP_TrackerLetterCell AP_TrackerLetterCellPure(int mode, int state, int available)
+{
+	AP_TrackerLetterCell cell;
+	cell.letter = mode == 3 || state > 0;
+	cell.gold = cell.letter && available != 0;
+	cell.tick = state == 2;
+	cell.locked = cell.letter && !cell.tick && available == 0;
+	return cell;
 }
 
 static inline int AP_LettersRequiredCountPure(int active, int mode, const long codes[3])

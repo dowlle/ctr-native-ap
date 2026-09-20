@@ -16,7 +16,7 @@
 // slot N uses logical track CTR_CFG_PODIUM_TRACK_COUNT + N - 1, matching the
 // race listener and reconciliation paths.
 #define AP_PODIUM_LOGICAL_TRACK_COUNT \
-	(CTR_CFG_PODIUM_TRACK_COUNT + CTR_CFG_CT_SLOT_COUNT)
+	(CTR_CFG_PODIUM_TRACK_COUNT + CTR_CFG_CT_SLOT_COUNT + CTR_CFG_TRIAL_TRACK_COUNT)
 
 // Pseudo identities live above the real 192-bit AdvProgress space.  Podium
 // rungs occupy [0x100, 0x1ef]; the two direct custom checks sit after that
@@ -24,6 +24,7 @@
 #define AP_PODIUM_PSEUDO_BASE          0x100
 #define AP_CUSTOM_TROPHY_PSEUDO_BIT    0x200
 #define AP_CUSTOM_WUMPA_PSEUDO_BIT     0x201
+#define AP_CUSTOM_CTR_PSEUDO_BIT       0x202
 
 // A selected custom destination can be entered only while the manager is
 // Ready and no serve-time fault remains latched. Rescan clears the latter only
@@ -58,6 +59,9 @@ static inline const ctr_podium_rungs *AP_PodiumRungsForLogicalTrack(
 		return 0;
 	if (track < CTR_CFG_PODIUM_TRACK_COUNT)
 		return &cfg->podium[track];
+	if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE &&
+	    track < AP_TRIAL_PODIUM_LOGICAL_BASE + CTR_CFG_TRIAL_TRACK_COUNT)
+		return &cfg->podium[16 + track - AP_TRIAL_PODIUM_LOGICAL_BASE];
 	if (cfg->custom_tracks_ok && cfg->custom_track.slot >= 1 &&
 	    cfg->custom_track.slot <= CTR_CFG_CT_SLOT_COUNT &&
 	    track == CTR_CFG_PODIUM_TRACK_COUNT + cfg->custom_track.slot - 1)

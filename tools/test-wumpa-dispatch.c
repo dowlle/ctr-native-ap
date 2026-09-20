@@ -51,6 +51,7 @@ static void expect_int(int got, int want, const char *name)
 #define CRASH_COVE_CODE 35016101L // retail LevelID 3
 #define ROOS_TUBES_CODE 35016102L // retail LevelID 6
 #define CUSTOM_CODE     35016120L // the purple_gem_cup destination slot
+#define CORTEX_CODE     35016121L // the fixed Final Challenge venue
 
 #define PACKAGE_UUID "60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e"
 #define OTHER_UUID   "11111111-2222-4333-8444-555555555555"
@@ -263,6 +264,30 @@ static void test_gem_cup_route(void)
 	f.isCupLeg = 0;
 	expect_long(resolve(&f, &reason), CRASH_COVE_CODE,
 	            "the standalone race is the alternative route to the same code");
+}
+
+static void test_oxide_final_identity(void)
+{
+	ctr_wumpa_checks w = per_track_block();
+	struct AP_WumpaDispatchFacts f = retail_facts(&w, 13);
+	int reason;
+
+	f.servingOxideFinal = 1;
+	f.oxideFinalCode = CORTEX_CODE;
+	expect_long(resolve(&f, &reason), CORTEX_CODE,
+	            "Cortex Vortex sends its independent Wumpa code");
+	expect_int(reason, AP_WUMPA_SENT, "Cortex Vortex reports a send");
+
+	f.oxideFinalCode = -1;
+	expect_long(resolve(&f, &reason), -1,
+	            "Cortex Vortex never falls back to Oxide Station");
+	expect_int(reason, AP_WUMPA_REFUSE_NO_OXIDE_FINAL_CODE,
+	           "missing Cortex Vortex identity is named");
+
+	w = global_block();
+	f.wumpa = &w;
+	expect_long(resolve(&f, &reason), GLOBAL_CODE,
+	            "global Wumpa remains valid on Cortex Vortex");
 }
 
 // ── step 5: per-track custom destination ────────────────────────────────────
@@ -576,6 +601,7 @@ int main(void)
 	test_global();
 	test_per_track_retail();
 	test_gem_cup_route();
+	test_oxide_final_identity();
 	test_per_track_custom();
 	test_custom_refusals();
 	test_custom_faulted();

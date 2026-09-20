@@ -45,6 +45,7 @@ struct ApBoxLive
 	long           code;
 	short          x, y, z, rotY; // kept so a spawn can be retried once the model is up
 	AP_SpawnHandle spawn;
+	int            ghostTouched; // #354: drove through this ghost box, logged once
 };
 
 static struct ApBoxLive s_live[AP_BOX_SLOTS_PER_TRACK];
@@ -58,7 +59,9 @@ static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
 // read the counter against itself and the placement-change rebuild never fired.
 static int s_boxesPlaceGen = -1;
 static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
-static int s_cupPolicy = -1; // WO-A3 cup-leg access decision the set was built under
+// The alternate-route (cup leg / boss) decision the set was built under, as an
+// AP_BoxPresentation value: NONE, SOLID or GHOST (#354). -1 is "never asked".
+static int s_boxPresent = -1;
 static int s_modelWarned;   // "no crate model here" logged once per level
 static int s_spawnFull;     // the loader refused a box on this level: stop asking
 static int s_standDown;     // author mode / no seed: logged once per transition
@@ -168,7 +171,7 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 	return (gGT->gameMode1 & (ADVENTURE_MODE | RELIC_RACE)) != 0;
 }
 
-// ── the Gem Cup leg gate (WO-A3, ruled 2026-08-24 10:51 CEST) ───────────────
+// ── the alternate-route gate (WO-A3 cup legs; boss races ruled 2026-09-12) ──
 //
 // The gate above answers "does this RACE TYPE carry boxes". It admits every
 // Adventure-mode race, and a Gem Cup leg is an Adventure-mode race, so through
@@ -203,16 +206,57 @@ static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 //     carries -- see ap_cup_box_policy.h for why ctr_cfg_warp_unlocked alone is
 //     not sufficient.
 //
-// Computed per frame rather than latched at cup entry: the terms can be
-// satisfied mid-cup by a received Key, racer or requirement item, and the
-// rebuild below reacts to the change, so the next leg load (and a live leg)
-// agree with the pad's current state instead of a stale entry snapshot.
-static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
+// THE BOSS RACE IS THE SAME SHAPE (the 2026-09-12 Discord ruling, from the
+// live report that the Komodo Joe race let Dragon Mines' boxes be collected
+// while the Dragon Mines pad was still shut). A boss race is entered from its
+// hub garage rather than from a warp pad, but gGT->levelID during it is the boss
+// venue TRACK, so ctr_cfg_warp_phys recovers the physical pad that individually
+// loads that same track -- identically to a cup leg, and identity-safe on a seed
+// with no destination shuffle. ADVENTURE_BOSS is the sign bit of gameMode1, so
+// IS_BOSS_RACE is the test, never a bitmask.
+//
+// What the boss arm deliberately does NOT touch: the boss Wumpa location and the
+// boss encounter reward are not box locations and are dispatched elsewhere
+// (ap_wumpa.c / the encounter fan-out in ap_hooks.c). Standing the box set down
+// leaves both reachable, which is exactly what the apworld's separate
+// `<track>: Wumpa` region expects.
+//
+// WHAT IT RETURNS SINCE #354: an AP_BoxPresentation, not a yes/no. A refused
+// alternate route no longer stands its boxes down; it stands them TRANSLUCENT
+// and uncollectable, the Lettersanity treatment, so a locked leg stops looking
+// like a leg with no boxes authored. NONE is kept for the two routes that own no
+// boxes on the track being raced at all (the Cortex Vortex pad track and a
+// custom-track DENY verdict), where a ghost would advertise another track's set.
+//
+// Computed per frame rather than latched at entry: the terms can be satisfied
+// mid-cup or mid-session by a received Key, racer or requirement item, and the
+// rebuild below reacts to the change, so the next load (and a live race) agree
+// with the pad's current state instead of a stale entry snapshot.
+static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 {
 	int phys;
+	int isCupLeg = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	int isBoss   = IS_BOSS_RACE(gGT->gameMode1);
+	int route;
 
-	if ((gGT->gameMode1 & ADVENTURE_CUP) == 0)
-		return AP_BoxPolicyAllows(0, -1, 0, 0, 0); // non-cup: unchanged
+	// Schema 15: no AP boxes on the Cortex Vortex pad track, from a pad or as
+	// a cup leg. Its host LevelID 13 would otherwise stand Oxide Station's
+	// authored boxes and send Oxide Station's box checks.
+	if (AP_CortexTrackActive())
+		return AP_BOX_PRESENT_NONE;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The custom Oxide final venue is a boss race whose gGT->levelID is a HOST
+	// slot, so its retail identity (and therefore ctr_cfg_warp_phys) points at a
+	// pad with nothing to do with this encounter -- the same unrelated-pad
+	// problem the event race has below. A custom encounter override keeps the
+	// ungated route; gating it is a separate decision with its own descriptor.
+	if (CustomTrack_OxideFinalServing(level, gGT->bossID, isBoss))
+		return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0);
+#endif
+
+	if (!isCupLeg && !isBoss)
+		return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0); // ordinary / relic: unchanged
 
 #ifdef CTR_CUSTOM_TRACKS
 	// The custom-track event race sets ADVENTURE_CUP for reward routing (see
@@ -222,29 +266,35 @@ static int AP_BoxesCupLegAllows(struct GameTracker *gGT, int level)
 	// host the mapped arcade slot -- a pad with nothing to do with this event.
 	// Make that a deliberate answer instead of a fall-through.
 	//
-	// ALLOW takes the non-cup path, so the event race's boxes are not gated on
+	// ALLOW takes the own-pad path, so the event race's boxes are not gated on
 	// that unrelated pad. DENY stands the set down entirely. Note what ALLOW
 	// does not yet buy: placement still resolves through the host slot's retail
 	// identity, so until the apworld descriptor supplies this track's own
 	// placements it spawns retail boxes at retail coordinates. That is why the
 	// verdict is configurable rather than hard-coded.
-	switch (CustomTrack_BoxVerdict(level, 1, gGT->cup.cupID))
+	if (isCupLeg)
 	{
-	case CTR_CT_BOX_ALLOW:
-		return AP_BoxPolicyAllows(0, -1, 0, 0, 0);
-	case CTR_CT_BOX_DENY:
-		return 0;
-	default:
-		break;
+		switch (CustomTrack_BoxVerdict(level, 1, gGT->cup.cupID))
+		{
+		case CTR_CT_BOX_ALLOW:
+			return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0);
+		case CTR_CT_BOX_DENY:
+			return AP_BOX_PRESENT_NONE;
+		default:
+			break;
+		}
 	}
 #endif
 
-	phys = ctr_cfg_warp_phys(level);
+	// A cup leg that is somehow also flagged as a boss race would be a mode bug;
+	// the cup arm wins because ADVENTURE_CUP is the one that routes rewards.
+	route = isCupLeg ? AP_BOX_ROUTE_CUP_LEG : AP_BOX_ROUTE_BOSS;
+	phys  = ctr_cfg_warp_phys(level);
 
-	return AP_BoxPolicyAllows(1, phys,
-	                          AP_GateCount(AP_IDX_KEY),
-	                          AP_PadStage1Met(phys),
-	                          ctr_cfg_racer_lock_met(phys));
+	return AP_BoxPresentationFor(route, phys,
+	                             AP_GateCount(AP_IDX_KEY),
+	                             AP_PadStage1Met(phys),
+	                             ctr_cfg_racer_lock_met(phys));
 }
 
 // ── the live set ────────────────────────────────────────────────────────────
@@ -271,6 +321,7 @@ static void AP_BoxesForget(void)
 	{
 		s_live[i].used = 0;
 		s_live[i].spawn = AP_SPAWN_INVALID;
+		s_live[i].ghostTouched = 0;
 	}
 	s_liveCount = 0;
 	s_spawnGen = AP_Spawn_Generation();
@@ -288,6 +339,7 @@ static void AP_BoxesClear(void)
 			AP_Spawn_Remove(s_live[i].spawn);
 		s_live[i].used = 0;
 		s_live[i].spawn = AP_SPAWN_INVALID;
+		s_live[i].ghostTouched = 0;
 	}
 	s_liveCount = 0;
 	s_modelWarned = 0;
@@ -398,23 +450,30 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	s_level = level;
 	s_boxesPlaceGen = AP_Author_PlacementGeneration();
 	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
-	s_cupPolicy = AP_BoxesCupLegAllows(gGT, level);
+	s_boxPresent = AP_BoxesPadRoutePolicy(gGT, level);
 
 	if (AP_BoxMap_ApTrack(level) < 0)
 		return; // hub, arena, menu: not a box track
 	if (!AP_BoxesRaceCarriesBoxes(gGT))
 		return; // arcade / VS / battle: outside the boxes' own logic
-
-	// WO-A3, and BEFORE the set builder on purpose. Standing the set down is the
-	// whole implementation: nothing is spawned, so AP_BoxesTick walks nothing, so
-	// no collision can fire and no check can be dispatched. Hiding the models and
-	// leaving the checks earnable would be the same divergence in a new place.
-	if (!s_cupPolicy)
+	if (AP_CortexTrackActive())
 	{
+		AP_LogLine("[AP BOX] Cortex Vortex pad track: no AP boxes (host level 13 is "
+		           "Oxide Station's box identity)\n");
+		return;
+	}
+
+	// NONE, and BEFORE the set builder on purpose: the routes that own no boxes on
+	// the track being raced (a custom-track DENY verdict; the Cortex Vortex arm
+	// above already returned). Nothing is spawned, so AP_BoxesTick walks nothing,
+	// so no collision can fire and no check can be dispatched.
+	if (!AP_BoxPresentationStands(s_boxPresent))
+	{
+		const char *route = IS_BOSS_RACE(gGT->gameMode1) ? "boss race" : "Gem Cup leg";
 		snprintf(msg, sizeof msg,
-		         "[AP BOX] level %d (ap track %d): Gem Cup leg, but its individual race pad %d is "
-		         "not accessible now -- no AP boxes on this leg (cup access grants no box logic)\n",
-		         level, AP_BoxMap_ApTrack(level), ctr_cfg_warp_phys(level));
+		         "[AP BOX] level %d (ap track %d): %s, but this race owns no AP boxes at "
+		         "all -- nothing spawned (pad %d)\n",
+		         level, AP_BoxMap_ApTrack(level), route, ctr_cfg_warp_phys(level));
 		AP_LogLine(msg);
 		return;
 	}
@@ -437,6 +496,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 		s_live[i].y = slots[i].y;
 		s_live[i].z = slots[i].z;
 		s_live[i].rotY = slots[i].rotY;
+		s_live[i].ghostTouched = 0;
 		s_liveCount++;
 	}
 
@@ -456,6 +516,20 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_LogLine(msg);
 	if ((gGT->gameMode1 & RELIC_RACE) != 0 && s_liveCount > 0)
 		AP_LogLine("[AP BOX] relic race uses the AP-owned crate model\n");
+
+	// #354. The set that just stood is the LOCKED set: it is shown so the player
+	// can see the boxes exist, and every break path refuses it. Say so once per
+	// rebuild, with the same three-term diagnosis the old stand-down line carried,
+	// because "I can see them and nothing happens" is now a support question.
+	if (s_boxPresent == AP_BOX_PRESENT_GHOST)
+	{
+		const char *route = IS_BOSS_RACE(gGT->gameMode1) ? "boss race" : "Gem Cup leg";
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] level %d (ap track %d): %s, its own race pad %d is not accessible "
+		         "now -- %d box(es) stand TRANSLUCENT, not collectable\n",
+		         level, AP_BoxMap_ApTrack(level), route, ctr_cfg_warp_phys(level), s_liveCount);
+		AP_LogLine(msg);
+	}
 
 	// THE ZERO CASE, LOUD (packaging item 3). With the dev fallback retired a
 	// track can legitimately stand nothing, and the three reasons look identical
@@ -587,6 +661,27 @@ static int AP_BoxHitByLocalPlayer(struct GameTracker *gGT, struct Instance *hitI
 
 // ── per-frame ───────────────────────────────────────────────────────────────
 
+// #354: the UNAVAILABLE look, written every frame onto a standing ghost box.
+//
+// Byte-for-byte the treatment two other AP surfaces already use for "this exists
+// but is not yours to take": the unavailable Lettersanity letter
+// (RB_CtrLetter.c, AP_CtrLetter_UpdateVisual) and the ghosted peer reward on a
+// warp pad (ap_hooks.c, the ghost block of AP_CeremonyRewardProp). Same flag
+// clear, same GHOST_DRAW_TRANSPARENT, same 0xa00 alpha, and colorRGBA zeroed --
+// which the ghost writer requires, see AP_PAD_GHOST_ALPHA in ap_hooks.h.
+//
+// Per frame rather than once at spawn, exactly like the letter does it: the
+// crate instance is re-created by the spawn loader whenever its model comes up
+// or a pool reset intervenes, and a one-shot write would lose the look there
+// without losing the refusal, i.e. a solid-looking box that pays nothing.
+static void AP_BoxGhostVisual(struct Instance *inst)
+{
+	inst->colorRGBA = 0;
+	inst->alphaScale = AP_PAD_GHOST_ALPHA;
+	inst->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+	inst->flags |= GHOST_DRAW_TRANSPARENT;
+}
+
 static void AP_BoxesTick(struct GameTracker *gGT)
 {
 	int i;
@@ -622,6 +717,9 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 		if (inst == 0)
 			continue; // waiting for its model, or between a pool reset and a birth
 
+		if (!AP_BoxPresentationCollectable(s_boxPresent))
+			AP_BoxGhostVisual(inst);
+
 		// The proximity walk the engine uses for its own non-BSP objects. PLAYER
 		// bucket only, which is the whole of the AI pass-through rule.
 		hit = LinkedCollide_Radius(inst, 0, gGT->threadBuckets[PLAYER].thread,
@@ -631,6 +729,26 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 
 		if (!AP_BoxHitByLocalPlayer(gGT, hit))
 			continue;
+
+		// #354: a ghost box is driven THROUGH. The refusal is logged once per box
+		// per race, the way RB_CtrLetter_ThCollide logs an unavailable letter once
+		// rather than every frame the kart overlaps it -- every AP_LogLine is an
+		// fopen (ap_hooks.c), so an unlatched line here would be file IO in the
+		// frame loop for as long as the player sits on the crate.
+		if (!AP_BoxPresentationCollectable(s_boxPresent))
+		{
+			if (!s_live[i].ghostTouched)
+			{
+				char msg[176];
+				s_live[i].ghostTouched = 1;
+				snprintf(msg, sizeof msg,
+				         "[AP BOX] level %d: drove through translucent Item Box %d -- its "
+				         "track's own race pad is not accessible now, so no check was sent\n",
+				         s_level, s_live[i].slot + 1);
+				AP_LogLine(msg);
+			}
+			continue;
+		}
 
 		AP_BoxBreak(gGT, i, inst);
 	}
@@ -668,6 +786,8 @@ int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
 		return 0;
 	if (!ctr_cfg_active() || s_liveCount == 0)
 		return 0;
+	if (!AP_BoxPresentationCollectable(s_boxPresent))
+		return 0; // #354: a translucent box is scenery, to a weapon as to a kart
 	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
 		return 0;
 
@@ -719,6 +839,8 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 		return;
 	if (!ctr_cfg_active() || s_liveCount == 0)
 		return;
+	if (!AP_BoxPresentationCollectable(s_boxPresent))
+		return; // #354: a translucent box is scenery, to an explosion as to a kart
 	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
 		return;
 
@@ -814,15 +936,16 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	AP_Author_EnsureLoaded();
 
 	level = (int)gGT->levelID;
-	// The cup-leg decision joins the rebuild triggers (WO-A3): its terms are
-	// received Keys, a received racer and received requirement items, every one
-	// of which can arrive mid-cup. Without it a leg entered while its individual
-	// pad was shut would stay boxless for the rest of the session even after the
-	// pad opened, and the acceptance row is precisely that the next cup load
-	// changes.
+	// The alternate-route decision joins the rebuild triggers (WO-A3, and the
+	// boss arm with it): its terms are received Keys, a received racer and
+	// received requirement items, every one of which can arrive mid-cup or
+	// mid-boss-race. Without it a leg or boss race entered while the track's
+	// individual pad was shut would stay boxless for the rest of the session even
+	// after the pad opened, and the acceptance row is precisely that the boxes
+	// appear on the running race once the item lands.
 	if (level != s_level || AP_Author_PlacementGeneration() != s_boxesPlaceGen ||
 	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode ||
-	    AP_BoxesCupLegAllows(gGT, level) != s_cupPolicy)
+	    AP_BoxesPadRoutePolicy(gGT, level) != s_boxPresent)
 		AP_BoxesRebuild(gGT, level);
 
 	if (s_liveCount > 0)

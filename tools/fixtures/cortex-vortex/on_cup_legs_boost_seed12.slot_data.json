@@ -1,0 +1,714 @@
+{
+ "Seed": "12",
+ "Slot": "Tester1",
+ "TotalLocations": 170,
+ "boss_garage_req": {
+  "komodo_joe": {
+   "count": 12,
+   "type": 1
+  },
+  "oxide": {
+   "count": 4,
+   "type": 2
+  },
+  "papu_papu": {
+   "count": 8,
+   "type": 1
+  },
+  "pinstripe": {
+   "count": 16,
+   "type": 1
+  },
+  "ripper_roo": {
+   "count": 4,
+   "type": 1
+  }
+ },
+ "cortex_vortex_track": {
+  "destination_id": 110,
+  "dropped_destination": 21,
+  "host_level_id": 13,
+  "letter_items": [
+   35010200,
+   35010201,
+   35010202
+  ],
+  "lev_sha256": "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13",
+  "locations": {
+   "ctr_token": 35026004,
+   "letters": [
+    -1,
+    -1,
+    -1
+   ],
+   "podium": {
+    "finish_any": 35026014,
+    "finish_podium": 35026013,
+    "held_1st": 35026010,
+    "held_3rd": 35026011,
+    "held_5th": -1
+   },
+   "relic": [
+    35026001,
+    -1,
+    -1
+   ],
+   "trophy": 35026000,
+   "wumpa": 35016121
+  },
+  "version": 1,
+  "vrm_sha256": "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+ },
+ "ctr_options": {
+  "ap_item_type_colors": true,
+  "boost_blue_fire": false,
+  "boost_mode": 1,
+  "bossgarage_mode": 2,
+  "box_locations": false,
+  "build_version": "0.2.1-alpha1",
+  "character_unlocks": true,
+  "cortex_vortex_track": 1,
+  "death_link": 0,
+  "deathlink_amnesty": 1,
+  "editable_stats": 0,
+  "goal": 0,
+  "goal_bosses": 0,
+  "goal_gems": 0,
+  "goal_oxide": 1,
+  "itemsanity": false,
+  "lettersanity": 0,
+  "logic_difficulty": 1,
+  "one_lap_cups": true,
+  "oxide_1_optional": 0,
+  "oxide_final_count": 18,
+  "oxide_final_track": 0,
+  "oxide_final_unlock": 0,
+  "penta_stats": 0,
+  "progressive_starting_wumpa": 0,
+  "racer_locked_pads": 0,
+  "relic_progression": {
+   "Gold Relic": true,
+   "Platinum Relic": true,
+   "Sapphire Relic": true
+  },
+  "relic_tier_locations": {
+   "Gold Relic": [
+    35012100,
+    35012101,
+    35012102,
+    35012103,
+    35012104,
+    35012105,
+    35012106,
+    35012107,
+    35012108,
+    35012109,
+    35012110,
+    35012111,
+    35012112,
+    35012113,
+    35012114,
+    35012115,
+    35012116,
+    35012117
+   ],
+   "Platinum Relic": [],
+   "Sapphire Relic": [
+    35012000,
+    35012001,
+    35012002,
+    35012004,
+    35012005,
+    35012006,
+    35012007,
+    35012008,
+    35012009,
+    35012010,
+    35012011,
+    35012012,
+    35012013,
+    35012014,
+    35012015,
+    35012016,
+    35012017,
+    35026001
+   ]
+  },
+  "schema_version": 15,
+  "shortcut_knowledge": 0,
+  "shuffle_gems": true,
+  "shuffle_keys": true,
+  "shuffle_warp_pads": true,
+  "slide_coliseum_races": 0,
+  "starting_character": 2,
+  "starting_stat_class": 0,
+  "stat_editing_allowed": false,
+  "stat_owner": 0,
+  "stat_source": 0,
+  "stats_mode": 0,
+  "tizi_helper": false,
+  "turbo_grant": false,
+  "turbo_track_races": 0,
+  "warp_pad_item_display": 0,
+  "warp_pad_shuffle_categories": [
+   "crystals",
+   "cups",
+   "tracks"
+  ],
+  "warp_pad_shuffle_grouping": "merged",
+  "warppad_unlock_mode": 1,
+  "world_version": "0.2.1",
+  "wumpa_bundles": false,
+  "wumpa_check": 2
+ },
+ "gem_cup_legs": {
+  "100": [
+   14,
+   8,
+   6,
+   8
+  ],
+  "101": [
+   10,
+   110,
+   8,
+   7
+  ],
+  "102": [
+   9,
+   0,
+   2,
+   14
+  ],
+  "103": [
+   14,
+   3,
+   5,
+   110
+  ],
+  "104": [
+   110,
+   13,
+   1,
+   9
+  ]
+ },
+ "oxide_final_venue": {
+  "host_level_id": 13,
+  "lev_sha256": "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13",
+  "location": 35011105,
+  "opponent": "nitros_oxide",
+  "track": "cortex_vortex",
+  "version": 1,
+  "vrm_sha256": "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d",
+  "wumpa_location": 35016121
+ },
+ "podium_checks": {
+  "enabled": true,
+  "locations": {
+   "0": [
+    35015128,
+    35015129,
+    -1,
+    35015131,
+    35015023
+   ],
+   "1": [
+    35015136,
+    35015137,
+    -1,
+    35015139,
+    35015029
+   ],
+   "10": [
+    35015152,
+    35015153,
+    -1,
+    35015155,
+    35015041
+   ],
+   "11": [
+    35015156,
+    35015157,
+    -1,
+    35015159,
+    35015044
+   ],
+   "12": [
+    35015140,
+    35015141,
+    -1,
+    35015143,
+    35015032
+   ],
+   "13": [
+    35015160,
+    35015161,
+    -1,
+    35015163,
+    35015047
+   ],
+   "14": [
+    35015116,
+    35015117,
+    -1,
+    35015119,
+    35015014
+   ],
+   "15": [
+    35015144,
+    35015145,
+    -1,
+    35015147,
+    35015035
+   ],
+   "2": [
+    35015132,
+    35015133,
+    -1,
+    35015135,
+    35015026
+   ],
+   "3": [
+    35015100,
+    35015101,
+    -1,
+    35015103,
+    35015002
+   ],
+   "4": [
+    35015120,
+    35015121,
+    -1,
+    35015123,
+    35015017
+   ],
+   "5": [
+    35015124,
+    35015125,
+    -1,
+    35015127,
+    35015020
+   ],
+   "6": [
+    35015104,
+    35015105,
+    -1,
+    35015107,
+    35015005
+   ],
+   "7": [
+    35015148,
+    35015149,
+    -1,
+    35015151,
+    35015038
+   ],
+   "8": [
+    35015112,
+    35015113,
+    -1,
+    35015115,
+    35015011
+   ],
+   "9": [
+    35015108,
+    35015109,
+    -1,
+    35015111,
+    35015008
+   ]
+  }
+ },
+ "racer_locks": {
+  "eligible_count": 23,
+  "enabled": false,
+  "pads": {},
+  "requested_count": 0
+ },
+ "schema_version": 15,
+ "warp_pad_map": {
+  "0": 9,
+  "1": 104,
+  "10": 0,
+  "100": 6,
+  "101": 100,
+  "102": 103,
+  "103": 8,
+  "104": 101,
+  "11": 15,
+  "12": 16,
+  "13": 102,
+  "14": 10,
+  "15": 12,
+  "16": 23,
+  "17": 5,
+  "18": 4,
+  "19": 17,
+  "2": 7,
+  "20": 20,
+  "21": 19,
+  "22": 22,
+  "23": 11,
+  "24": 24,
+  "25": 25,
+  "26": 26,
+  "27": 27,
+  "3": 110,
+  "4": 2,
+  "5": 18,
+  "6": 13,
+  "7": 1,
+  "8": 14,
+  "9": 3
+ },
+ "warp_pad_unlock": {
+  "0": {
+   "stage1": {
+    "colour": -1,
+    "count": 1,
+    "type": 2
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 2,
+    "type": 1
+   }
+  },
+  "1": {
+   "stage1": {
+    "colour": -1,
+    "count": 3,
+    "type": 8
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "10": {
+   "stage1": {
+    "colour": -1,
+    "count": 8,
+    "type": 1
+   },
+   "stage2": {
+    "colour": 1,
+    "count": 3,
+    "type": 4
+   }
+  },
+  "100": {
+   "stage1": {
+    "colour": 1,
+    "count": 5,
+    "type": 4
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 2,
+    "type": 1
+   }
+  },
+  "101": {
+   "stage1": {
+    "colour": -1,
+    "count": 5,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "102": {
+   "stage1": {
+    "colour": 4,
+    "count": 2,
+    "type": 3
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "103": {
+   "stage1": {
+    "colour": 1,
+    "count": 1,
+    "type": 3
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 2,
+    "type": 1
+   }
+  },
+  "104": {
+   "stage1": {
+    "colour": -1,
+    "count": 8,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "11": {
+   "stage1": {
+    "colour": -1,
+    "count": 4,
+    "type": 8
+   },
+   "stage2": {
+    "colour": 1,
+    "count": 4,
+    "type": 4
+   }
+  },
+  "12": {
+   "stage1": {
+    "colour": -1,
+    "count": 5,
+    "type": 6
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "13": {
+   "stage1": {
+    "colour": 3,
+    "count": 4,
+    "type": 3
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "14": {
+   "stage1": {
+    "colour": -1,
+    "count": 4,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 3,
+    "type": 8
+   }
+  },
+  "15": {
+   "stage1": {
+    "colour": 3,
+    "count": 1,
+    "type": 3
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 4,
+    "type": 1
+   }
+  },
+  "16": {
+   "stage1": {
+    "colour": -1,
+    "count": 3,
+    "type": 6
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "17": {
+   "stage1": {
+    "colour": 1,
+    "count": 1,
+    "type": 4
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 3,
+    "type": 1
+   }
+  },
+  "18": {
+   "stage1": {
+    "colour": -1,
+    "count": 8,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 1,
+    "type": 2
+   }
+  },
+  "19": {
+   "stage1": {
+    "colour": -1,
+    "count": 1,
+    "type": 2
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "2": {
+   "stage1": {
+    "colour": 1,
+    "count": 1,
+    "type": 3
+   },
+   "stage2": {
+    "colour": 1,
+    "count": 1,
+    "type": 3
+   }
+  },
+  "21": {
+   "stage1": {
+    "colour": -1,
+    "count": 2,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "23": {
+   "stage1": {
+    "colour": -1,
+    "count": 2,
+    "type": 2
+   },
+   "stage2": {
+    "colour": 1,
+    "count": 4,
+    "type": 4
+   }
+  },
+  "3": {
+   "stage1": {
+    "colour": -1,
+    "count": 3,
+    "type": 1
+   },
+   "stage2": {
+    "colour": 2,
+    "count": 1,
+    "type": 3
+   }
+  },
+  "4": {
+   "stage1": {
+    "colour": -1,
+    "count": 3,
+    "type": 6
+   },
+   "stage2": {
+    "colour": 0,
+    "count": 4,
+    "type": 4
+   }
+  },
+  "5": {
+   "stage1": {
+    "colour": -1,
+    "count": 1,
+    "type": 2
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 0,
+    "type": 0
+   }
+  },
+  "6": {
+   "stage1": {
+    "colour": -1,
+    "count": 0,
+    "type": 1
+   },
+   "stage2": {
+    "colour": 0,
+    "count": 4,
+    "type": 4
+   }
+  },
+  "7": {
+   "stage1": {
+    "colour": -1,
+    "count": 8,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 3,
+    "type": 8
+   }
+  },
+  "8": {
+   "stage1": {
+    "colour": -1,
+    "count": 0,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 4,
+    "type": 8
+   }
+  },
+  "9": {
+   "stage1": {
+    "colour": -1,
+    "count": 0,
+    "type": 1
+   },
+   "stage2": {
+    "colour": -1,
+    "count": 2,
+    "type": 2
+   }
+  }
+ },
+ "wumpa_checks": {
+  "custom_destinations": {},
+  "global": -1,
+  "mode": 2,
+  "retail_tracks": {
+   "0": 35016108,
+   "1": 35016110,
+   "10": 35016114,
+   "11": 35016115,
+   "12": 35016111,
+   "13": 35016116,
+   "14": 35016105,
+   "15": 35016112,
+   "2": 35016109,
+   "3": 35016101,
+   "4": 35016106,
+   "5": 35016107,
+   "6": 35016102,
+   "7": 35016113,
+   "8": 35016104,
+   "9": 35016103
+  }
+ }
+}

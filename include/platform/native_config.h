@@ -27,6 +27,44 @@ typedef struct
 	bool textureFiltering;      // Video & QoL: bilinear PSX texture sampling in the
 	                            // GTE shaders (default off: PSX-authentic point
 	                            // sampling). Also flipped by the F3 debug key.
+	int  vsync;                 // Video & QoL: 0 = Off (default), 1 = On,
+	                            // 2 = Adaptive. See include/platform/native_vsync.h
+	                            // for the option -> SDL swap-interval mapping and
+	                            // NativeRenderer_UpdateSwapIntervalState
+	                            // (platform/native_renderer.c) for where it is
+	                            // applied and cached. Off by default: CTR already
+	                            // throttles through the retail VSync/draw-sync
+	                            // path, so a second SDL swap wait is double
+	                            // throttling some drivers charge to the wrong
+	                            // frame's timing.
+	bool muteWhenUnfocused;     // Video & QoL: silence the audio output while the
+	                            // game window does not have input focus (default
+	                            // off, so a single-game setup is unaffected). For
+	                            // running several randomizer clients side by side:
+	                            // only the one on screen makes noise. Applied as an
+	                            // SDL output-stream gain after the SPU mix, see
+	                            // include/platform/native_focus_mute.h and
+	                            // NativeAudio_UpdateFocusMuteState
+	                            // (platform/native_audio.c) -- no voice is stopped,
+	                            // so game state, timing and determinism are
+	                            // untouched and music resumes mid-note.
+	// Remembered window position/size (issue: "remember window position and size
+	// between sessions" -- streaming setups want the same window every launch).
+	// Config-file-only, [State] section, the update_last_seen precedent: this is
+	// remembered state, not a user option, so it is hidden from the in-game menu
+	// (gated out of BuildSectionMap in game/230/MM_ConfigMenu.c). See
+	// include/platform/native_window_geometry.h for the freestanding validation/
+	// decision rules and NativeRenderer_CaptureWindowGeometry /
+	// NativeRenderer_InitialiseGLContext (platform/native_renderer.c) for where
+	// they are gathered and applied. windowX/windowY default to
+	// NATIVE_WINDOW_GEOMETRY_POS_UNSET (never saved); windowWidth/windowHeight
+	// default to 0 (never saved); both defaults make a fresh config.ini behave
+	// byte-for-byte like today.
+	int  windowX;
+	int  windowY;
+	int  windowWidth;
+	int  windowHeight;
+	bool windowMaximized;
 	// Audio: the vanilla audio screen's volumes (0-255) and stereo/mono mode.
 	// Config-file-only -- persisted to config.ini [Audio] and edited through that
 	// screen (game/MAIN/MainFreeze.c), NOT the in-game options menu (the [Audio]

@@ -15,6 +15,8 @@
 #include "platform/native_renderer.h"
 #include "platform/native_render_scale.h"
 #include "platform/native_config.h"
+#include "platform/native_window_geometry.h"
+#include "platform/native_vsync.h"
 
 #include <assert.h>
 #include <string.h>
@@ -180,6 +182,38 @@ global_variable GLuint s_glVramFramebuffer;
 global_variable int s_glInitialised = 0;
 
 
+// Snapshot the currently connected displays' desktop bounds, for the saved-
+// position validity check in NativeWindowGeometry_PlanStartupPure. Returns the
+// number of rects written (0 on query failure -- the planner then treats every
+// saved position as "no live display", the same as a disconnected monitor).
+static int NativeRenderer_QueryDisplayRects(NativeWindowRect *out, int cap)
+{
+	int sdlCount = 0;
+	SDL_DisplayID *ids = SDL_GetDisplays(&sdlCount);
+	int n = 0;
+
+	if (ids == NULL)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < sdlCount && n < cap; i++)
+	{
+		SDL_Rect bounds;
+		if (SDL_GetDisplayBounds(ids[i], &bounds))
+		{
+			out[n].x = bounds.x;
+			out[n].y = bounds.y;
+			out[n].w = bounds.w;
+			out[n].h = bounds.h;
+			n++;
+		}
+	}
+
+	SDL_free(ids);
+	return n;
+}
+
 internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen)
 {
 	SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
@@ -189,12 +223,42 @@ internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen
 		windowFlags |= SDL_WINDOW_FULLSCREEN;
 	}
 
+	// Apply remembered window geometry (issue: remember position/size between
+	// sessions -- streaming setups want the same window every launch). With
+	// nothing saved (a fresh config.ini, or one from before this feature) the
+	// plan keeps g_windowWidth/g_windowHeight untouched and usePosition is 0,
+	// so behaviour is byte-for-byte what it was: SDL picks the window's default
+	// placement. A saved position whose display has since been disconnected
+	// (or a host, like gamescope, that never reports one) falls back the same
+	// way, keeping a valid saved size.
+	NativeWindowRect displays[16];
+	int displayCount = NativeRenderer_QueryDisplayRects(displays, (int)(sizeof(displays) / sizeof(displays[0])));
+	NativeWindowGeometryPlan plan = NativeWindowGeometry_PlanStartupPure(
+		g_config.windowX, g_config.windowY, g_config.windowWidth, g_config.windowHeight,
+		g_windowWidth, g_windowHeight, displays, displayCount);
+
+	g_windowWidth = plan.w;
+	g_windowHeight = plan.h;
+
 	g_window = SDL_CreateWindow(windowName, g_windowWidth, g_windowHeight, windowFlags);
 
 	if (g_window == NULL)
 	{
 		NATIVE_RENDERER_ERROR("Failed to initialise SDL window!\n");
 		return 0;
+	}
+
+	if (plan.usePosition)
+	{
+		// Best effort: some window managers (gamescope on the Steam Deck, some
+		// tiling setups) ignore this silently. SDL_SetWindowPosition returning
+		// false there is expected, not an error worth logging every launch.
+		SDL_SetWindowPosition(g_window, plan.x, plan.y);
+	}
+
+	if (g_config.windowMaximized && !fullscreen)
+	{
+		SDL_MaximizeWindow(g_window);
 	}
 
 	int major_version = 3;
@@ -224,6 +288,63 @@ internal int NativeRenderer_InitialiseGLContext(char *windowName, int fullscreen
 	}
 
 	return 1;
+}
+
+// Update the remembered window geometry (g_config.windowX/Y/Width/Height/
+// Maximized) from the window's live SDL state, following
+// NativeWindowGeometry_CaptureDecisionPure: a plain windowed rect is stored
+// and the maximized flag cleared; a maximized window leaves the stored rect
+// alone (it is still the windowed rect underneath) and only updates the
+// maximized flag; fullscreen or minimized touches neither, so a fullscreen or
+// minimized clean exit never overwrites the last good windowed geometry.
+// Called at every point that already calls NativeConfig_Save for a windowed-
+// related reason (Platform_HandleFullscreenToggle, the options menu, the
+// connection fields) and right before a clean exit, so a plain resize or move
+// -- with the menu never reopened afterwards -- still gets captured on quit.
+void NativeRenderer_CaptureWindowGeometry(void)
+{
+	SDL_WindowFlags flags;
+	int isFullscreen, isMaximized, isMinimized;
+	int decision;
+
+	if (g_window == NULL)
+	{
+		return;
+	}
+
+	flags = SDL_GetWindowFlags(g_window);
+	isFullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+	isMaximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+	isMinimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
+
+	decision = NativeWindowGeometry_CaptureDecisionPure(isFullscreen, isMaximized, isMinimized);
+
+	if (decision == NATIVE_WINDOW_GEOMETRY_CAPTURE_MAXIMIZED_ONLY)
+	{
+		g_config.windowMaximized = true;
+		return;
+	}
+
+	if (decision != NATIVE_WINDOW_GEOMETRY_CAPTURE_RECT)
+	{
+		return; // fullscreen or minimized: leave the remembered geometry alone
+	}
+
+	int x, y, w, h;
+	SDL_GetWindowPosition(g_window, &x, &y);
+	SDL_GetWindowSize(g_window, &w, &h);
+
+	// A host that ignores geometry queries (gamescope, some tiling window
+	// managers) can report a bogus size here; guard with the same bounds the
+	// startup planner applies rather than persisting garbage.
+	if (NativeWindowGeometry_SizeValidPure(w, h))
+	{
+		g_config.windowX = x;
+		g_config.windowY = y;
+		g_config.windowWidth = w;
+		g_config.windowHeight = h;
+	}
+	g_config.windowMaximized = false;
 }
 
 internal int NativeRenderer_InitialiseGLExt(void)
@@ -330,9 +451,34 @@ internal void NativeRenderer_ResolveGpuMeasurements(b32 waitForResults)
 }
 #endif
 
-void NativeRenderer_UpdateSwapIntervalState(int swapInterval)
+// The swap interval is requested every frame, exactly as before this option
+// existed (the call used to be a constant 0), so the Off default keeps its
+// behaviour and a driver or overlay that drops the interval gets corrected on
+// the next frame. What is cached is only the RESOLVED interval, so an
+// unsupported Adaptive request falls back to On once instead of failing every
+// frame. It is resolved again when the option changes or after
+// NativeRenderer_ResetDevice (fullscreen toggle, resize).
+static int s_vsyncResolvedOption = -1;
+static int s_vsyncResolvedInterval = 0;
+static bool s_vsyncNeedsResolve = true;
+
+void NativeRenderer_UpdateSwapIntervalState(int vsyncOption)
 {
-	SDL_GL_SetSwapInterval(swapInterval);
+	if (s_vsyncNeedsResolve || vsyncOption != s_vsyncResolvedOption)
+	{
+		int interval = NativeVsync_RequestedIntervalPure(vsyncOption);
+		if (!SDL_GL_SetSwapInterval(interval))
+		{
+			// Adaptive (-1) is the only request with a fallback (plain On).
+			interval = NativeVsync_FallbackIntervalPure(interval);
+		}
+
+		s_vsyncResolvedOption = vsyncOption;
+		s_vsyncResolvedInterval = interval;
+		s_vsyncNeedsResolve = false;
+	}
+
+	SDL_GL_SetSwapInterval(s_vsyncResolvedInterval);
 }
 
 void NativeRenderer_BeginScene(void)
@@ -729,7 +875,10 @@ internal void NativeRenderer_ClearPresentationBars(void)
 void NativeRenderer_ResetDevice(void)
 {
 	NativeRenderer_UpdatePresentationViewport();
-	NativeRenderer_UpdateSwapIntervalState(0);
+	// A fullscreen toggle or resize can recreate the swap chain on some drivers.
+	// Resolve g_config.vsync again on the next Platform_BeginScene instead of
+	// trusting the cached Adaptive decision.
+	s_vsyncNeedsResolve = true;
 }
 
 typedef struct
@@ -2371,6 +2520,48 @@ void NativeRenderer_SwapWindow(void)
 	NativePerf_BeginScope(NATIVE_PERF_BUCKET_SWAP_WINDOW);
 	SDL_GL_SwapWindow(g_window);
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_SWAP_WINDOW);
+}
+
+void NativeRenderer_PresentOverlayRGBA(const unsigned char *pixels, int width, int height)
+{
+	static GLuint shader, texture;
+	static int textureWidth, textureHeight;
+	static const char *source =
+		"#ifdef VERTEX\n"
+		"attribute vec2 a_position; varying vec2 v_uv;\n"
+		"void main(){ v_uv=vec2(a_position.x*.5+.5,.5-a_position.y*.5); gl_Position=vec4(a_position,0.,1.); }\n"
+		"#endif\n#ifdef FRAGMENT\n"
+		"varying vec2 v_uv; uniform sampler2D s_texture;\n"
+		"void main(){ fragColor=texture2D(s_texture,v_uv); }\n#endif\n";
+	if (!pixels || width <= 0 || height <= 0 || !s_glInitialised || s_presentViewport.w <= 0) return;
+	if (!shader) shader = NativeRenderer_Shader_Compile(source, false);
+	if (!shader) return;
+	if (!texture) glGenTextures(1, &texture);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	NativeRenderer_SetViewPort(s_presentViewport.x,s_presentViewport.y,s_presentViewport.w,s_presentViewport.h);
+	NativeRenderer_SetScissorState(0);
+	glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
+	glEnable(GL_BLEND); glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram(shader); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,texture);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH,0); glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+	if (textureWidth != width || textureHeight != height) {
+		glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+		textureWidth=width; textureHeight=height;
+	} else glTexSubImage2D(GL_TEXTURE_2D,0,0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+	glUniform1i(glGetUniformLocation(shader,"s_texture"),0);
+	glBindVertexArray(s_vramQuadVAO); glDrawArrays(GL_TRIANGLES,0,6); glBindVertexArray(0);
+	glDisable(GL_BLEND);
+	// Invalidate every cached state touched by the overlay before the next
+	// game scene, including stencil (used by warpball and heat feedback).
+	s_previousShader=(ShaderID)-1; s_lastBoundTexture=(TextureID)-1;
+	s_previousBlendMode=(BlendMode)-1; s_previousDepthMode=-1; s_previousStencilMode=-1;
+	s_previousScissorState=-1; s_boundVertexBuffer=-1;
+	glEnable(GL_STENCIL_TEST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 }
 
 internal void NativeRenderer_EnableDepth(int enable)

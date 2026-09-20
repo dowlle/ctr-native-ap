@@ -14,9 +14,9 @@
 // verification only, never for authentication, so a compact reference-shaped
 // implementation is the right amount of code.
 //
-// Compiled ONLY when CTR_CUSTOM_TRACKS is defined, like the rest of the loader.
+// Shared by custom-track verification and AP retail-asset imports.
 
-#ifdef CTR_CUSTOM_TRACKS
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_AP)
 
 #include <stddef.h>
 

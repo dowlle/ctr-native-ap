@@ -342,7 +342,11 @@ void UI_INSTANCE_InitAll(void)
 		}
 
 		// get relic time on this track, for this relic type (sapphire, gold, platinum)
+#ifdef CTR_AP
+		relicTime = AP_RelicTimeFor(gGT->levelID, relicType);
+#else
 		relicTime = data.RelicTime[gGT->levelID * 3 + relicType];
+#endif
 
 		// store globally for HUD to access later
 		sdata->relicTime_1min = relicTime / 0xe100;

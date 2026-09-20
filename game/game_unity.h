@@ -7,12 +7,16 @@
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
+#include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
+#include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
+#include "../ap/ap_hit_encounter.h" // Hit Character gather: roster + dispatch (ticket 06)
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
 #include "../ap/ap_surface.h"  // natural-surface comfort items (#14/#15)
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
 #include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "../ap/ap_item_aliases.h" // native display aliases (#324); racer short name for AH_WarpPad.c (#362)
 #include "../ap/ap_blue_fire.h" // Retro-Fueled Blue Fire palette state (#12)
 #include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
@@ -22,9 +26,11 @@
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER row wiring (#238)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
+#include "../ap/ap_oxide_weapon_schedule.h"
 #include "../ap/ap_statbar.h"    // Garage stat bar, shared with the hub picker (#220)
 #include "../ap/ap_charstatrow.h" // picker stat rows vs package slots (#54/#209)
 #include "../ap/ap_spawn.h"     // additive model loader (#109 / #124 groundwork)
+#include "../ap/ap_trial_letters.h"
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
 #include "../ap/ap_navrec.h"    // AI lap recorder, and recorded-lap playback for the bots
@@ -356,6 +362,8 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_hit_encounter.c" // ticket 06 gather: eligibility + roster + dispatch
+#include "../ap/ap_hit_bots.c"      // ticket 06 BOTS-side gather (host-linkable)
 #include "../ap/ap_perf.c"
 #include "../ap/ap_crash.c"
 #include "../ap/ap_verify.c"
@@ -379,9 +387,11 @@
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
+#include "../ap/ap_trial_letters.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
+#include "../ap/ap_tracker.c"
 #endif
 
 #endif

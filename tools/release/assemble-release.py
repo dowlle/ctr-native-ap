@@ -36,6 +36,7 @@ ASSET_NAMES = (
     "ctr_native_ap.debug.sha256",
 )
 
+ASSET_DIR = "assets"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 ARTIFACT_ARCHIVE = {
@@ -105,8 +106,12 @@ def find_one(root: Path, predicate, label: str) -> Path:
     return candidates[0]
 
 
-def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Path, dict]:
-    """Extract a package-client archive after checking its complete shape."""
+def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Path, dict, list[tuple[Path, str]]]:
+    """Extract a package-client archive after checking its complete shape.
+
+    Returns the extracted native binary, its BUILD.json metadata, and the
+    bundled ``assets/`` tree as ``(path, relative posix name)`` pairs.
+    """
     binary_name = "ctr_native_ap.exe" if platform == "windows" else "ctr_native_ap"
     helper_names = {"support-bundle.bat", "support-bundle.ps1"} if platform == "windows" else {"support-bundle.sh"}
     allowed = {
@@ -121,40 +126,51 @@ def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Pa
         "BUILD-NOTICE.txt",
         *helper_names,
     }
+    # Build archives carry a build-only notice that never ships in a release.
+    dropped = {"BUILD-NOTICE.txt"}
     members: list[tuple[str, bytes]] = []
     root_name: str | None = None
+
+    def classify(name: str) -> str | None:
+        """Validate one member and return its path relative to the archive root."""
+        nonlocal root_name
+        path = safe_member(name)
+        if len(path.parts) < 2:
+            fail(f"build archive member must live under a single root: {name!r}")
+        root_name = root_name or path.parts[0]
+        if root_name != path.parts[0]:
+            fail(f"build archive has more than one root directory: {name!r}")
+        relative = PurePosixPath(*path.parts[1:])
+        if len(relative.parts) == 1:
+            if relative.parts[0] not in allowed:
+                fail(f"unexpected build archive member: {name!r}")
+        elif relative.parts[0] != ASSET_DIR:
+            fail(f"unexpected build archive directory: {name!r}")
+        return str(relative)
+
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as bundle:
-            infos = bundle.infolist()
-            for info in infos:
-                path = safe_member(info.filename)
+            for info in bundle.infolist():
                 if info.is_dir():
+                    safe_member(info.filename.rstrip("/"))
                     continue
                 if (info.external_attr >> 16) & 0o170000 == 0o120000:
                     fail(f"symlink in build archive: {info.filename!r}")
-                if len(path.parts) != 2:
-                    fail(f"build archive member must be directly under its root: {info.filename!r}")
-                root_name = root_name or path.parts[0]
-                if root_name != path.parts[0] or path.parts[1] not in allowed:
-                    fail(f"unexpected build archive member: {info.filename!r}")
-                members.append((path.parts[1], bundle.read(info)))
+                relative = classify(info.filename)
+                members.append((relative, bundle.read(info)))
     else:
         with tarfile.open(archive, "r:gz") as bundle:
             for info in bundle.getmembers():
-                path = safe_member(info.name)
                 if info.isdir():
+                    safe_member(info.name.rstrip("/"))
                     continue
                 if not info.isfile() or info.issym() or info.islnk():
                     fail(f"non-regular build archive member: {info.name!r}")
-                if len(path.parts) != 2:
-                    fail(f"build archive member must be directly under its root: {info.name!r}")
-                root_name = root_name or path.parts[0]
-                if root_name != path.parts[0] or path.parts[1] not in allowed:
-                    fail(f"unexpected build archive member: {info.name!r}")
+                relative = classify(info.name)
                 stream = bundle.extractfile(info)
                 if stream is None:
                     fail(f"cannot read build archive member: {info.name!r}")
-                members.append((path.parts[1], stream.read()))
+                members.append((relative, stream.read()))
     if root_name is None:
         fail(f"empty build archive: {archive}")
     names = [name for name, _ in members]
@@ -165,8 +181,16 @@ def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Pa
     if missing:
         fail(f"build archive lacks required member(s): {', '.join(missing)}")
     destination.mkdir(parents=True)
+    assets: list[tuple[Path, str]] = []
     for name, data in members:
-        (destination / name).write_bytes(data)
+        if name in dropped:
+            continue
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        os.chmod(target, 0o644)
+        if PurePosixPath(name).parts[0] == ASSET_DIR:
+            assets.append((target, name))
     if platform == "linux":
         os.chmod(destination / binary_name, 0o755)
     try:
@@ -175,7 +199,8 @@ def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Pa
         fail(f"invalid BUILD.json in {archive.name}: {error}")
     if not isinstance(metadata, dict):
         fail(f"BUILD.json must contain an object: {archive.name}")
-    return destination / binary_name, metadata
+    assets.sort(key=lambda item: item[1])
+    return destination / binary_name, metadata, assets
 
 
 def load_package_client(source: Path):
@@ -295,23 +320,41 @@ def write_checksum(path: Path) -> None:
     path.with_name(path.name + ".sha256").write_text(f"{sha256(path)}  {path.name}\n", encoding="utf-8")
 
 
-def create_archive(destination: Path, root_name: str, files: list[Path], linux: bool) -> None:
+def create_archive(destination: Path, root_name: str, entries: list[tuple[Path, str]], linux: bool) -> None:
+    """Write one release bundle from ``(source path, relative posix name)`` pairs."""
+    ordered = sorted(entries, key=lambda item: item[1])
+    seen = [name for _, name in ordered]
+    if len(seen) != len(set(seen)):
+        fail("duplicate member in release bundle")
     if linux:
+        executables = {"ctr_native_ap", "support-bundle.sh"}
         with tarfile.open(destination, "w:gz") as bundle:
-            directory = tarfile.TarInfo(root_name)
-            directory.type = tarfile.DIRTYPE
-            directory.mode = 0o755
-            bundle.addfile(directory)
-            for path in sorted(files, key=lambda item: item.name):
-                info = bundle.gettarinfo(str(path), arcname=f"{root_name}/{path.name}")
+            written: set[str] = set()
+
+            def add_directory(name: str) -> None:
+                if name in written:
+                    return
+                written.add(name)
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                bundle.addfile(info)
+
+            add_directory(root_name)
+            for path, relative in ordered:
+                parts = PurePosixPath(relative).parts
+                for depth in range(1, len(parts)):
+                    add_directory(f"{root_name}/" + "/".join(parts[:depth]))
+                info = bundle.gettarinfo(str(path), arcname=f"{root_name}/{relative}")
                 if not info.isfile():
                     fail(f"release input is not a regular file: {path}")
+                info.mode = 0o755 if relative in executables else 0o644
                 with path.open("rb") as stream:
                     bundle.addfile(info, stream)
     else:
         with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as bundle:
-            for path in sorted(files, key=lambda item: item.name):
-                bundle.write(path, f"{root_name}/{path.name}")
+            for path, relative in ordered:
+                bundle.write(path, f"{root_name}/{relative}")
 
 
 def assemble(args: argparse.Namespace) -> list[Path]:
@@ -346,7 +389,7 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         fail(f"refusing to overwrite existing release asset(s): {', '.join(existing)}")
     with tempfile.TemporaryDirectory(prefix="ctr-release-") as temporary:
         temp = Path(temporary)
-        staged: dict[str, tuple[Path, dict]] = {}
+        staged: dict[str, tuple[Path, dict, list[tuple[Path, str]]]] = {}
         artifact_inputs = (
             ("windows", args.windows_artifacts.resolve()),
             ("linux", args.linux_artifacts.resolve()),
@@ -365,8 +408,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
                 f"{platform} debug sidecar",
             )
             check_checksum(debug)
-            unpacked, metadata = unpack_artifact(archive, platform, temp / platform)
-            staged[platform] = (unpacked, metadata)
+            unpacked, metadata, assets = unpack_artifact(archive, platform, temp / platform)
+            staged[platform] = (unpacked, metadata, assets)
             # package-client.verify resolves the sidecar as <binary>.debug.
             shutil.copy2(debug, temp / platform / debug_name)
             validate_build(source, platform, archive, debug, unpacked, metadata)
@@ -390,10 +433,26 @@ def assemble(args: argparse.Namespace) -> list[Path]:
             fail("versions.txt does not carry the requested build identity")
         (temp / "versions.txt").write_text(versions, encoding="utf-8")
         bundle_common = [*common, temp / "versions.txt"]
-        windows_files = [staged["windows"][0], *bundle_common, *helper]
-        linux_files = [staged["linux"][0], *bundle_common, source / "support-bundle.sh"]
         if not (source / "support-bundle.sh").is_file():
             fail("missing release companion file: support-bundle.sh")
+        windows_assets = staged["windows"][2]
+        linux_assets = staged["linux"][2]
+        if [name for _, name in windows_assets] != [name for _, name in linux_assets]:
+            fail("windows and linux build archives carry different asset trees")
+        for (windows_path, name), (linux_path, _) in zip(windows_assets, linux_assets):
+            if sha256(windows_path) != sha256(linux_path):
+                fail(f"windows and linux build archives disagree on asset bytes: {name}")
+        windows_files = [
+            (staged["windows"][0], "ctr_native_ap.exe"),
+            *((path, path.name) for path in [*bundle_common, *helper]),
+            *windows_assets,
+        ]
+        linux_files = [
+            (staged["linux"][0], "ctr_native_ap"),
+            *((path, path.name) for path in bundle_common),
+            (source / "support-bundle.sh", "support-bundle.sh"),
+            *linux_assets,
+        ]
         windows_archive = output / f"ctr-archipelago-v{version}-windows-x86.zip"
         linux_archive = output / f"ctr-archipelago-v{version}-linux-x86.tar.gz"
         create_archive(windows_archive, root_name, windows_files, linux=False)

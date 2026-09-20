@@ -19,7 +19,7 @@
 #ifndef AP_CHECKDIAG_ONCE_H
 #define AP_CHECKDIAG_ONCE_H
 
-#define AP_CHECKDIAG_TRACKS 48 // 16 retail trophy tracks + 32 frozen custom slots
+#define AP_CHECKDIAG_TRACKS 51 // 16 retail + 32 frozen custom slots + 2 trials + Cortex Vortex (50)
 #define AP_CHECKDIAG_RUNGS  5  // AP_RUNG_HELD_1ST .. AP_RUNG_FINISH_ANY
 
 // Diagnostic branches inside AP_EmitRung.
