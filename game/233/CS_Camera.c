@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_hooks.h" // AP_PodiumExitTerminalWork (#235)
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aed48-0x800aedf8
 u8 CS_Camera_BoolGotoBoss(void)
 {
@@ -365,6 +369,14 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				th->flags |= THREAD_FLAG_DEAD;
 
 				CS_DestroyPodium_StartDriving();
+
+#ifdef CTR_AP
+				// Issue #235: the AP ordinary-Trophy presentation births no
+				// prize thread, so reproduce the terminal work that thread
+				// would have performed when the ceremony ended. No-op on every
+				// podium whose prize thread still exists.
+				AP_PodiumExitTerminalWork();
+#endif
 
 				switch (rewardId)
 				{

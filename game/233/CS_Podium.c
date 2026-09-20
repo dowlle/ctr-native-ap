@@ -1,6 +1,7 @@
 #include <common.h>
 
 #ifdef CTR_AP
+#include "../../ap/ap_hooks.h"                // AP_PodiumExitReset (#235)
 #include "../../ap/ap_podium_presentation_logic.h" // #235 AP Trophy prize policy
 #endif
 
@@ -696,6 +697,10 @@ void CS_Podium_FullScene_Init(void)
 	                                    AP_PodiumSpecialTrack()))
 	{
 		gGT->gameMode2 &= ~INC_TROPHY;
+
+		// Re-arm the one-shot terminal work the missing prize thread would have
+		// performed at ceremony end (AP_PodiumExitTerminalWork).
+		AP_PodiumExitReset();
 	}
 	else
 #endif

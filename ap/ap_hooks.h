@@ -111,6 +111,17 @@ void AP_TrophyPodiumCeremonyDraw(int x, int y);
 // vanilla prize path. Reads the level we came from (gGT->prevLEV).
 int AP_PodiumSpecialTrack(void);
 
+// Issue #235 terminal work. CS_Podium_Prize_ThTick3 raises overlayTransition to
+// 2, clears VEH_FREEZE_PODIUM and plays the completion FX when the ceremony
+// ends. The AP ordinary-Trophy presentation births no prize thread, so the
+// continue press calls AP_PodiumExitTerminalWork() after
+// CS_DestroyPodium_StartDriving() to reproduce exactly that work once per
+// podium. Every other podium still relies on its own prize thread, so the
+// self-gating wrapper is a no-op there. AP_PodiumExitReset re-arms the one-shot
+// latch when a podium is born (CS_Podium_FullScene_Init).
+void AP_PodiumExitReset(void);
+void AP_PodiumExitTerminalWork(void);
+
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
 // the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum

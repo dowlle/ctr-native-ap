@@ -2548,6 +2548,43 @@ void AP_TrophyPodiumCeremonyDraw(int x, int y)
 	                        JUSTIFY_CENTER | WHITE);
 }
 
+// Issue #235. One-shot latch for the terminal work the missing retail prize
+// thread would have performed at ceremony end. Reset when a podium scene is
+// born (CS_Podium_FullScene_Init) and consumed by the exit below.
+static ap_podium_exit_state ap_podium_exit;
+
+void AP_PodiumExitReset(void)
+{
+	AP_PodiumExitStateReset(&ap_podium_exit);
+}
+
+// Issue #235. CS_Podium_Prize_ThTick3 is the code that raises overlayTransition
+// to 2, clears VEH_FREEZE_PODIUM and plays the completion FX (0x67) when the
+// ceremony ends. The AP ordinary-Trophy presentation skips that prize thread,
+// so nothing performs the terminal work and the player can be left frozen after
+// pressing continue. CS_Camera_ThTick_Podium calls this right after
+// CS_DestroyPodium_StartDriving() to reproduce exactly that work at the
+// equivalent moment. Self-gating on the same production policy means every
+// podium whose prize thread still exists is untouched, and the latch means the
+// work cannot run twice.
+void AP_PodiumExitTerminalWork(void)
+{
+	ap_podium_exit_work work;
+
+	if (sdata == NULL || sdata->gGT == NULL)
+		return;
+
+	work = AP_PodiumExitWork(ctr_cfg_active(), (int)sdata->gGT->podiumRewardID,
+	                         AP_PodiumSpecialTrack(), &ap_podium_exit);
+
+	if (work.overlayTransition != 0)
+		sdata->gGT->overlayTransition = (u8)work.overlayTransition;
+	if (work.releaseFreeze)
+		sdata->gGT->gameMode2 &= ~VEH_FREEZE_PODIUM;
+	if (work.completionSound)
+		OtherFX_Play(0x67, 1);
+}
+
 int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth)
 {
 	return AP_CeremonyOffscreenCenterX(logicalWidth, wrapWidth);

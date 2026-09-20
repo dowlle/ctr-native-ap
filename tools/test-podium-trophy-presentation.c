@@ -13,6 +13,11 @@
  *     Trophy presentation and keeps it for a non-AP Trophy and every other
  *     reward, so an AP Trophy creates no prize Instance/thread and never runs
  *     the INC_TROPHY count-up while a non-AP Trophy still does both.
+ *   - The same policy's exit teardown (AP_PodiumExitWork) reproduces exactly
+ *     the work the missing prize thread performed in CS_Podium_Prize_ThTick3:
+ *     request overlay transition 2, clear VEH_FREEZE_PODIUM, play the completion
+ *     FX, once per AP Trophy podium, and none of it for a non-AP Trophy, an AP
+ *     relic, or an AP trial/Cortex Trophy that keeps its prize.
  *   - The shared #330 formatter (ap/ap_reward_text.h) that the podium caller
  *     uses still builds the own, foreign, unknown-fallback and long-recipient
  *     "HOOKSHOT" cases.
@@ -64,6 +69,25 @@ static void expect_sentence(const char *item, const char *player, int own,
 	printf("ok   %s: \"%s\"\n", what, out);
 }
 
+// Minimal model of the engine state the podium exit work touches, so the
+// production decision can be driven and observed host-side.
+typedef struct
+{
+	int overlayTransition;
+	int freezePodium;
+	int completionSounds;
+} exit_effects;
+
+static void apply_exit_work(const ap_podium_exit_work *work, exit_effects *fx)
+{
+	if (work->overlayTransition != 0)
+		fx->overlayTransition = work->overlayTransition;
+	if (work->releaseFreeze)
+		fx->freezePodium = 0;
+	if (work->completionSound)
+		fx->completionSounds++;
+}
+
 int main(void)
 {
 	// ── The AP Trophy presentation owns the podium ──────────────────────────
@@ -100,6 +124,63 @@ int main(void)
 	       "NOFUNC keeps the prize");
 	expect(AP_PodiumShouldBirthPrize(0, TEST_STATIC_RELIC, 0), 1,
 	       "non-AP Relic keeps the prize");
+
+	// ── Podium exit teardown the skipped prize thread would have performed ───
+	// CS_Podium_Prize_ThTick3 raises overlayTransition to 2, clears
+	// VEH_FREEZE_PODIUM and plays the completion FX (0x67) when the ceremony
+	// ends. The AP ordinary-Trophy presentation births no prize thread, so the
+	// exit must reproduce that work exactly once and only on that path.
+	{
+		ap_podium_exit_state state;
+		ap_podium_exit_work work;
+		exit_effects fx;
+
+		AP_PodiumExitStateReset(&state);
+		fx.overlayTransition = 0;
+		fx.freezePodium = 1; // as CS_Podium_FullScene_Init sets VEH_FREEZE_PODIUM
+		fx.completionSounds = 0;
+
+		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		expect(work.overlayTransition, 2, "AP Trophy exit requests overlay 2");
+		expect(work.releaseFreeze, 1, "AP Trophy exit releases the freeze");
+		expect(work.completionSound, 1, "AP Trophy exit plays the completion FX");
+		apply_exit_work(&work, &fx);
+		expect(fx.freezePodium, 0, "AP Trophy exit cannot strand the player");
+		expect(fx.overlayTransition, 2, "AP Trophy exit ends at transition 2");
+
+		// The camera thread dies on the continue press, so a defensive second
+		// drive must be a no-op: the work is one-shot per podium.
+		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		expect(work.overlayTransition, 0, "AP Trophy exit is one-shot (overlay)");
+		expect(work.releaseFreeze, 0, "AP Trophy exit is one-shot (freeze)");
+		expect(work.completionSound, 0, "AP Trophy exit is one-shot (sound)");
+		apply_exit_work(&work, &fx);
+		expect(fx.completionSounds, 1, "completion FX plays exactly once");
+		expect(fx.overlayTransition, 2, "second drive does not re-transition");
+		expect(fx.freezePodium, 0, "second drive keeps the player released");
+
+		// A newly born podium re-arms the one-shot.
+		AP_PodiumExitStateReset(&state);
+		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		expect(work.overlayTransition, 2, "next AP Trophy podium re-arms");
+
+		// A non-AP Trophy, an AP relic, and an AP trial/Cortex Trophy (which
+		// reuses the Trophy model but keeps its prize thread) perform none of
+		// the new exit work; their own prize thread still owns the teardown.
+		AP_PodiumExitStateReset(&state);
+		work = AP_PodiumExitWork(0, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		expect(work.overlayTransition, 0, "non-AP Trophy does no exit work");
+		expect(work.releaseFreeze, 0, "non-AP Trophy keeps its prize thread work");
+
+		work = AP_PodiumExitWork(1, TEST_STATIC_RELIC, 0, &state);
+		expect(work.overlayTransition, 0, "AP relic does no exit work");
+		expect(work.releaseFreeze, 0, "AP relic keeps its prize thread work");
+		expect(work.completionSound, 0, "AP relic plays no extra FX");
+
+		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 1, &state);
+		expect(work.overlayTransition, 0, "AP special-track Trophy does no exit work");
+		expect(work.releaseFreeze, 0, "AP special-track Trophy keeps its prize");
+	}
 
 	// ── Shared #330 formatter integration on the podium caller path ──────────
 	expect_sentence("Moon Pearl", "Local", 1, "HAVE A MOON PEARL.",
