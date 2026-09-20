@@ -33,6 +33,15 @@ void NativeAudio_SetDeterministicRenderMode(int enabled);
 int NativeAudio_IsDeterministicRenderMode(void);
 int NativeAudio_QueueRenderedFrames(const s16 *frames, int frameCount);
 void NativeAudio_ClearOutputQueue(void);
+// Applies the "mute when the window is not focused" option
+// (g_config.muteWhenUnfocused) to the SDL output stream's gain, after the SPU
+// mix, so no voice is stopped and nothing about game state or determinism
+// changes. Called every frame from Platform_BeginScene with the live option
+// value and the window's focus state; windowFocused may be negative for "not
+// read from SDL yet", which counts as focused. The SDL call only happens when
+// the wanted gain changed or the audio device was reopened. Decision rules:
+// include/platform/native_focus_mute.h.
+void NativeAudio_UpdateFocusMuteState(int muteWhenUnfocused, int windowFocused);
 void NativeAudio_Shutdown(void);
 #ifdef CTR_INTERNAL
 void NativeAudio_GetOutputStats(int *underrunFrames, int *overflowFrames, int *queuedFrames);

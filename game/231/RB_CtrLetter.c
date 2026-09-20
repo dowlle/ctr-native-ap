@@ -106,6 +106,29 @@ int RB_CtrLetter_LInC(struct Instance *letterInst, struct Thread *driverTh, stru
 
 SVec3 letterLightDir = {{0x94F, 0x94F, -0x94F}};
 
+#ifdef CTR_AP
+static void AP_CtrLetter_UpdateVisual(struct Instance *inst)
+{
+	int letter = AP_CtrLetterIndex(inst->model->id);
+	if (letter < 0 || inst->scale.x == 0 ||
+	    (inst->thread && (inst->thread->flags & THREAD_FLAG_DEAD))) return;
+	if (AP_LetterAvailable(sdata->gGT->levelID, letter))
+	{
+		inst->flags &= ~(DRAW_TRANSPARENT | GHOST_DRAW_TRANSPARENT);
+		inst->flags |= USE_SPECULAR_LIGHT;
+		inst->alphaScale = 0;
+		inst->colorRGBA = 0xffc8000;
+	}
+	else
+	{
+		inst->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
+		inst->flags |= GHOST_DRAW_TRANSPARENT;
+		inst->alphaScale = 0xa00;
+		inst->colorRGBA = 0;
+	}
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b52dc-0x800b5334.
 
 void RB_CtrLetter_ThTick(struct Thread *t)
@@ -121,6 +144,9 @@ void RB_CtrLetter_ThTick(struct Thread *t)
 	ConvertRotToMatrix(&letterInst->matrix, &letterObj->rot);
 
 	Vector_SpecLightSpin3D(letterInst, &letterObj->rot, &letterLightDir);
+#ifdef CTR_AP
+	AP_CtrLetter_UpdateVisual(letterInst);
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b5334-0x800b53e0.
@@ -167,31 +193,6 @@ void RB_CtrLetter_LInB(struct Instance *inst)
 
 	RB_Default_LInB(inst);
 #ifdef CTR_AP
-	{
-		int apLetter = AP_CtrLetterIndex(inst->model->id);
-		if (apLetter >= 0 && sdata->gGT->levelID >= 0 && sdata->gGT->levelID < 16)
-		{
-			if (AP_LetterAvailable(sdata->gGT->levelID, apLetter))
-			{
-				inst->flags &= ~(DRAW_TRANSPARENT | GHOST_DRAW_TRANSPARENT);
-				inst->flags |= USE_SPECULAR_LIGHT;
-				inst->alphaScale = 0;
-				inst->colorRGBA = 0xffc8000;
-			}
-			else
-			{
-				// The retail DRAW_TRANSPARENT path is the normal CTR-letter
-				// treatment and is not a strong unavailable-state cue. Use the
-				// renderer's ghost fade instead, matching the proven peer-reward
-				// treatment on adventure warp pads. This remains seek-safe: the
-				// flags are rebuilt every frame, so a mid-race receipt immediately
-				// restores the ordinary solid letter without a level reload.
-				inst->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
-				inst->flags |= GHOST_DRAW_TRANSPARENT;
-				inst->alphaScale = 0xa00;
-				inst->colorRGBA = 0;
-			}
-		}
-	}
+	AP_CtrLetter_UpdateVisual(inst);
 #endif
 }

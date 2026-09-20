@@ -103,6 +103,16 @@ def main():
         for file in ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'SETUP.md', 'ap-config.example.txt'):
             shutil.copy2(file, root / file)
         shutil.copy2('tools/extract-assets/extract_assets.py', root / 'extract_assets.py')
+        if variant == 'ap':
+            cortex = root / 'assets' / 'tracks' / 'cortex-vortex'
+            cortex.mkdir(parents=True)
+            for file in ('CVortex Arcade All.lev', 'CVortex Arcade All.vrm'):
+                source = Path('assets/tracks/cortex-vortex') / file
+                shutil.copy2(source, cortex / file)
+            if digest(cortex / 'CVortex Arcade All.lev') != '4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13':
+                raise ValueError('Bundled Cortex Vortex LEV hash mismatch')
+            if digest(cortex / 'CVortex Arcade All.vrm') != '4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d':
+                raise ValueError('Bundled Cortex Vortex VRM hash mismatch')
         for file in (('support-bundle.bat', 'support-bundle.ps1') if platform == 'windows' else ('support-bundle.sh',)):
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))
@@ -118,14 +128,15 @@ def main():
         evidence['installed_packages'] = output('pacman', '-Q') if platform == 'windows' else output('dpkg-query', '-W')
         (root / 'BUILD.json').write_text(json.dumps(evidence, indent=2) + '\n')
         (root / 'BUILD-NOTICE.txt').write_text(
-            'CI build artifact, not a complete tested release. No game assets included.\n'
+            'CI build artifact, not a complete tested release. The AP variant includes only the credited Cortex Vortex track pair.\n'
+            'No extracted retail game assets are included.\n'
             'Use the matching ctr.apworld from the reviewed release pair.\n'
             'No gameplay acceptance or antivirus clearance is implied.\n')
         archive = out / (name + ('.zip' if platform == 'windows' else '.tar.gz'))
         if platform == 'windows':
             with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
-                for file in sorted(root.iterdir()):
-                    bundle.write(file, f'{name}/{file.name}')
+                for file in sorted(path for path in root.rglob('*') if path.is_file()):
+                    bundle.write(file, f'{name}/{file.relative_to(root).as_posix()}')
         else:
             with tarfile.open(archive, 'w:gz') as bundle:
                 bundle.add(root, arcname=name)

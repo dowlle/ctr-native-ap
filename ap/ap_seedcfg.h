@@ -69,7 +69,29 @@ extern "C" {
 // entry predicate only ever special-cased value 0. It would also still expect
 // two location checks the seed does not contain. That is a behaviour mismatch
 // the player would never see explained, so v9 is a GATE, not an additive key.
-#define CTR_CFG_SCHEMA_KNOWN 9
+// v15 adds ctr_options.cortex_vortex_track and the conditional
+// cortex_vortex_track block: Cortex Vortex as a full pad track on virtual
+// destination 110. An older native would drop 110 from warp_pad_map and load
+// the dropped destination, whose checks the seed removed, so this is a gate.
+// (Schema 14 was reserved for Hit Character while both were in flight; Hit
+// Character integrated second and took 16, so no seed ever declares 14.)
+//   16 = Hit Character encounters (ticket 05). The enabled scalar
+//        ctr_options.hit_character is emitted on EVERY 16 seed, on or off, and
+//        the conditional top-level hit_character_encounters block is emitted
+//        only when enabled. This is a GATE, not additive: a pre-16 client must
+//        not silently ignore the block (a seed whose 16 new Hit locations are
+//        live but whose native has no roster would strand those checks), so a
+//        pre-16 client shows the #8 banner on every 16 seed. See the strict
+//        admission parser and the rejection flag below. The block carries
+//        its own version: block schema 2 (the pool draw, 2026-09-14) rides
+//        global 16 because a block-schema-1 client refuses it at admission.
+#define CTR_CFG_SCHEMA_KNOWN 16
+#define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
+#define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
+#define CTR_CFG_TRIAL_TRACK_COUNT 2
+#define CTR_CFG_TRIAL_CHECK_COUNT 2
+#define CTR_CFG_TRIAL_TROPHY 0
+#define CTR_CFG_TRIAL_CTR 1
 
 // oxide_final_unlock relic-goal MODE (slot_data schema >= 5). Value 0 stays
 // frozen = the pre-v0.1.1 "18 Sapphire" default. The shared count is in
@@ -95,7 +117,9 @@ extern "C" {
 // LevelIDs and classify as trophy races, so they earn the destination track's
 // rungs too (the held listener + finish fan-out run during cup legs).
 #define CTR_CFG_PODIUM_TRACK_COUNT 16
-#define CTR_CFG_LETTER_TRACK_COUNT 16
+#define CTR_CFG_PODIUM_STORAGE_COUNT 18
+#define AP_TRIAL_PODIUM_LOGICAL_BASE 48
+#define CTR_CFG_LETTER_TRACK_COUNT 18
 #define CTR_CFG_LETTER_COUNT 3
 #define CTR_LETTER_ITEM_FIRST_INDEX 139
 
@@ -129,6 +153,24 @@ typedef struct
 	int colour;
 } ctr_req;
 
+typedef struct
+{
+	int seen;
+	int valid;
+	int track;
+	int host_level_id;
+	long location;
+	long wumpa_location;
+	char lev_sha256[65];
+	char vrm_sha256[65];
+} ctr_oxide_final_venue;
+
+// The exact Lockheart Cortex Vortex pair. One definition for the Oxide 2 venue
+// and the pad track, which serve the same bundled bytes.
+#define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
+#define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+
+
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
 // the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
 // from the placement listener, never through AP_NotifyAdvReward's bit lookup). A
@@ -146,6 +188,41 @@ typedef struct
 	long finish_podium; // final "finished on podium"   location code, or -1 = absent
 	long finish_any;    // final "finished (any place)" location code, or -1 = absent
 } ctr_podium_rungs;
+
+// ── cortex_vortex_track (schema 15) ────────────────────────────────────────
+//
+// Cortex Vortex as a full pad track. It has no physical pad of its own: it is
+// the virtual destination 110, which warp_pad_map (and gem_cup_legs) may name.
+// Loading it loads host LevelID 13 with the pinned pair, under a native serving
+// state that is independent of bossID and of the Oxide 2 venue. All of its
+// checks are direct wire codes; none is ever derived from LevelID 13, because
+// every LevelID-13 reward bit, podium rung, box and letter belongs to Oxide
+// Station.
+#define CTR_CFG_CORTEX_DEST        110
+#define CTR_CFG_CORTEX_HOST_LEVEL  13
+#define CTR_CFG_CORTEX_BLOCK_VERSION_KNOWN 1
+#define CTR_CFG_CORTEX_TROPHY      35026000L
+#define CTR_CFG_CORTEX_RELIC_FIRST 35026001L // + tier 0..2 (Sapphire/Gold/Platinum)
+#define CTR_CFG_CORTEX_CTR_TOKEN   35026004L
+#define CTR_CFG_CORTEX_LETTER_FIRST 35026006L // + C/T/R 0..2
+#define CTR_CFG_CORTEX_PODIUM_FIRST 35026010L // + rung 0..4
+#define CTR_CFG_CORTEX_WUMPA       35016121L
+#define CTR_CFG_CORTEX_LETTER_ITEM_FIRST 35010200L // + C/T/R 0..2
+
+typedef struct
+{
+	int  option;              // ctr_options.cortex_vortex_track, 0/1 (schema >= 15)
+	int  seen;                // the block was on the wire
+	int  valid;               // block AND its map/leg constraints accepted
+	int  dropped_destination; // the destination this seed left without a pad, or -1
+	long trophy;              // 35026000
+	long relic[3];            // Sapphire/Gold/Platinum, -1 = tier not created
+	long ctr_token;           // -1 = absent
+	ctr_podium_rungs podium;  // -1 per rung not created
+	long letters[3];          // lettersanity locations, -1 = not selected
+	long letter_items[3];     // letter items, -1 = none
+	long wumpa;               // 35016121 under per-track Wumpa, else -1
+} ctr_cortex_track;
 
 // Two-stage warp-pad unlock (open-rando). stage1 opens the trophy race; stage2
 // opens the relic Time Trials + CTR Token Challenge menu. Each stage is an
@@ -295,6 +372,81 @@ typedef struct
 	ctr_wumpa_custom_destination custom[CTR_CFG_WUMPA_CUSTOM_MAX];
 } ctr_wumpa_checks;
 
+// ── hit_character_encounters (schema 16, block schema 2 or 3) ───────────────
+//
+// Native-owned encounter tables. The apworld's fill_slot_data resolves every
+// seeded order; native walks those orders per race (the pool draw in
+// ap/ap_hit_policy.h) and NEVER shuffles with its gameplay RNG. The block is
+// conditional on ctr_options.hit_character (a boolean emitted on every 16
+// seed, on or off). The strict parser either reads the whole block into these
+// structures or refuses the seed outright -- there is no partial activation.
+//
+// Block schema 2 (2026-09-14) replaced schema 1's base/pinned/reserve lists,
+// guest_slots and boss_eligible_after_clear with one `order` per destination
+// and policy {seed, self_character, draw "unhit_first_rotation", max_guests 3}.
+// A schema-1 block is refused like any other unknown block schema.
+//
+// Block schema 3 (2026-09-18) adds the optional per-guest `fallback_keys`: a
+// guest whose unlock wins do not exist in the seed joins the pool once the
+// player holds that many Keys. Only the four non-boss guests carry it, always
+// with their fixed table count (14 -> 1, 13 -> 2, 12 -> 3, 15 -> 4). Schema 2
+// blocks stay admissible so alpha2 rooms keep loading on this client; in a
+// schema 2 block `fallback_keys` is an unknown key and refuses the seed.
+//
+// Ordering is load-bearing (an order is the draw's walk order), so every list
+// here preserves the wire order verbatim.
+#define CTR_CFG_HIT_BLOCK_SCHEMA_MIN   2 // oldest block schema still admitted
+#define CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN 3 // newest block schema this build reads
+#define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
+#define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
+#define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
+#define CTR_CFG_HIT_BOSS_COUNT         6  // canonical boss-win codes, see below
+#define CTR_CFG_HIT_TRIGGER_COUNT      8  // guest engine ids 8..15
+#define CTR_CFG_HIT_TRIGGER_MAX        8  // max win codes in one any_of list
+#define CTR_CFG_HIT_MAX_GUESTS         3  // policy.max_guests (extra-model slots)
+#define CTR_CFG_HIT_REJECT_CAP         160 // bounded rejection diagnostic buffer
+
+// kind values for ctr_hit_trigger.kind.
+#define CTR_CFG_HIT_KIND_BOSS  0
+#define CTR_CFG_HIT_KIND_TRACK 1
+
+// One destination's seeded draw order: a permutation of engine ids 0..15.
+typedef struct
+{
+	int ids[CTR_CFG_HIT_CHARACTER_COUNT];
+} ctr_hit_order;
+
+// One guest's unlock trigger. kind is CTR_CFG_HIT_KIND_BOSS or _TRACK; any_of
+// holds the approved authoritative win codes (positive AP codes, no duplicates).
+// fallback_keys is the block schema 3 Key fallback: 0 = no fallback (the only
+// value a schema 2 block can produce), otherwise 1..4 held Keys after which the
+// guest joins the pool without any unlock win.
+typedef struct
+{
+	int  kind;
+	int  count;
+	long any_of[CTR_CFG_HIT_TRIGGER_MAX];
+	int  fallback_keys;
+} ctr_hit_trigger;
+
+// The whole parsed block. valid is 1 only when every required field was present,
+// exactly typed, in range and internally consistent; a refused seed leaves it 0
+// AND raises ctr_cfg.seed_rejected (see ap_seedcfg_rejected).
+typedef struct
+{
+	int          enabled;  // ctr_options.hit_character scalar was true
+	int          seen;     // block key was on the wire (even if null/malformed)
+	int          valid;    // fully parsed, admissible encounter data
+	int          schema;   // block schema, as emitted (MIN..KNOWN)
+	unsigned int seed;     // policy.seed, uint32
+	int          max_guests; // policy.max_guests (== CTR_CFG_HIT_MAX_GUESTS)
+	long         locations[CTR_CFG_HIT_CHARACTER_COUNT]; // engine id -> AP code
+	ctr_hit_order tracks[CTR_CFG_HIT_TRACK_COUNT];
+	ctr_hit_order cups[CTR_CFG_HIT_CUP_COUNT];
+	ctr_hit_trigger triggers[CTR_CFG_HIT_TRIGGER_COUNT]; // index guest - 8
+	int          boss_identity[CTR_CFG_HIT_BOSS_COUNT]; // canonical key order
+} ctr_hit_encounters;
+
 typedef struct
 {
 	int schema_version; // 0 = not parsed -> Phase-1 fallback everywhere
@@ -310,6 +462,7 @@ typedef struct
 	// always active (the apworld's generate_early rejects the all-off
 	// combination). 0 means "this condition is off" for all three, uniformly.
 	int goal_oxide;  // 0 none / 1 first (Oxide's Challenge) / 2 final (Oxide's Final Challenge)
+	int oxide_1_optional; // schema 13, goal2 only: 0 mandatory, 1 optional, 2 true filler
 	int goal_bosses; // 0-4: how many of the 4 boss races must be personally won
 	int goal_gems;   // 0-5: how many of the 5 Gems must be held
 	int relic_min_time;
@@ -328,6 +481,9 @@ typedef struct
 	int logic_difficulty;    // 0 easy / 1 medium / 2 hard
 	int itemsanity;          // 0 off / 1 weapon items + use checks active
 	int shortcut_knowledge;  // 0 easy / 1 medium / 2 hard
+	int trial_track_mode[CTR_CFG_TRIAL_TRACK_COUNT]; // level 16/17: 0 off, 1 Trophy, 2 Trophy+CTR
+	long trial_track_locations[CTR_CFG_TRIAL_TRACK_COUNT][CTR_CFG_TRIAL_CHECK_COUNT];
+	int trial_track_valid[CTR_CFG_TRIAL_TRACK_COUNT];
 	// item #5 placement toggles (forward-looking; MVP native ignores them because
 	// locked gems/keys never enter the multiworld pool -> native never receives an
 	// item it must place). A future native build can branch on these to tell
@@ -532,9 +688,14 @@ typedef struct
 	// pre-podium seeds, in which case podium_enabled stays 0 and no rung fires.
 	int              podium_enabled;      // podium_checks.enabled
 	int              podium_any_position; // podium_checks.any_position
-	ctr_podium_rungs podium[CTR_CFG_PODIUM_TRACK_COUNT]; // by trophy-race LevelID 0..15
+	ctr_podium_rungs podium[CTR_CFG_PODIUM_STORAGE_COUNT]; // real LevelID; custom logical bank stays 16..47
 	int lettersanity_mode; /* 0 off, 1 locations, 2 both, 3 items */
 	long lettersanity_locations[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT];
+	int custom_ctr_enabled;
+	long custom_ctr_location;
+	int custom_lettersanity_mode;
+	long custom_letter_locations[CTR_CFG_LETTER_COUNT];
+	long custom_letter_items[CTR_CFG_LETTER_COUNT];
 
 	// custom_tracks (schema 8). custom_tracks_ok is 1 only when the block was
 	// present AND fully readable; a present-but-unreadable block leaves it 0 and
@@ -549,10 +710,36 @@ typedef struct
 	int              custom_tracks_ok;
 	ctr_custom_track custom_track; // exactly one entry in this build
 
+	// schema 11: independent N. Oxide Final Challenge venue. The opponent is
+	// frozen to Nitros Oxide and the location to 35011105; malformed or changed
+	// identities fail closed rather than falling back to Oxide Station.
+	ctr_oxide_final_venue oxide_final_venue;
+
+	// schema 15: Cortex Vortex as a full pad track (virtual destination 110).
+	ctr_cortex_track cortex_track;
+
 	// wumpa_checks (2026-08-29). mode 0 with every code -1 is both "no block on
 	// the wire" and "the block said off", which are the same thing to every
 	// caller: nothing is emitted.
 	ctr_wumpa_checks wumpa;
+
+	// hit_character_encounters (schema 16, ticket 05). valid=1 only for a
+	// fully-readable enabled block; disabled / legacy absence leaves it 0 and
+	// inert. Every parse re-clears it, so valid-to-invalid and valid-to-absent
+	// can never leave stale encounter data behind.
+	ctr_hit_encounters hit;
+
+	// Seed admission (ticket 05). Set when a schema>=1 seed carries a REQUIRED
+	// block this build cannot honour (today: an enabled hit_character_encounters
+	// that is absent, contradictory, malformed or an unknown block schema). It is
+	// deliberately separate from schema_newer: the #8 global banner is best
+	// effort and must never be the thing that blocks a session, while a required
+	// block mismatch MUST refuse admission. A refused seed leaves schema_version
+	// at 0 (whole config inactive) and carries a bounded diagnostic. Rejection is
+	// NOT raised for schema_version==0 / absent ctr_options -- that is the
+	// supported legacy fallback.
+	int  seed_rejected;
+	char seed_reject_reason[CTR_CFG_HIT_REJECT_CAP];
 } ctr_seed_config;
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
@@ -560,6 +747,28 @@ extern ctr_seed_config ctr_cfg;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
+
+// ── seed admission (ticket 05) ─────────────────────────────────────────────
+// 1 when the most recent ap_seedcfg_parse_json() refused the seed because a
+// REQUIRED block was absent/contradictory/malformed/unknown. The whole config is
+// left inactive (schema_version 0) and the network layer must not admit the
+// session. A schema_version==0 / absent-ctr_options seed is the supported legacy
+// fallback and is NEVER a rejection.
+int ap_seedcfg_rejected(void);
+
+// Bounded human-readable reason for the most recent rejection ("" if none).
+// Never NULL; stable until the next parse.
+const char *ap_seedcfg_reject_reason(void);
+
+// Refuse an already-parsed seed from a later admission stage, for a fact
+// slot_data alone cannot carry (the block schema 3 Key-fallback consistency
+// check, which needs the connected room's location union). Deactivates the
+// config and raises the same flag + reason a parse rejection leaves.
+void ap_seedcfg_reject_late(const char *reason);
+
+// The parsed encounter tables, or NULL when slot_data is inactive or the block
+// was not fully readable. Callers must treat NULL as "feature off".
+const ctr_hit_encounters *ap_seedcfg_hit_encounters(void);
 
 // Remapped destination trackID for a physical pad LevelID. Accepts the full
 // shuffle ID space: physical pads 0..27 (warp_pad_map) and cup pads 100..104

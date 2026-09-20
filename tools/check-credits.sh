@@ -93,6 +93,7 @@ Asio	ASIO;CHRIS KOHLHOFF
 Archipelago Logo Marker (AP build only)	MMRECOMPRANDO;KRISTA CORKOS;CHRISTOPHER WILSON
 CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)	THEREDHOTBR;AVERY
 AP Box Texture (AP build only)	JURNTHREINAL;KRISTA CORKOS;CHRISTOPHER WILSON
+Cortex Vortex track (AP build only)	LOCKHEART
 SDL3	SDL3;SAM LANTINGA
 EOF
 )"

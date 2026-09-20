@@ -95,6 +95,18 @@ static int ctr_valid_dest(int v)
 	return (v >= 0 && v < CTR_CFG_PAD_COUNT) || (v >= 100 && v <= 104);
 }
 
+// Schema 15: the Cortex Vortex pad track is the virtual destination 110. It is
+// a legal map/leg value only while ctr_options.cortex_vortex_track is on. When
+// the option is on but the block is refused, 110 is still stored: the pad that
+// hosts it then refuses entry, which is the fail-closed answer. Dropping 110
+// back to identity would load the dropped destination, whose checks this seed
+// removed.
+static int ctr_valid_dest_or_cortex(int v)
+{
+	return ctr_valid_dest(v) ||
+	       (v == CTR_CFG_CORTEX_DEST && ctr_cfg.cortex_track.option);
+}
+
 // A SHA-256 digest as it travels: exactly 64 hex digits. The apworld case-folds
 // to lowercase before emitting, but accept either case here -- native's own
 // comparison is case-insensitive and a stricter wire check would only turn a
@@ -267,6 +279,598 @@ static ctr_warp_unlock parse_warp_unlock(const nlohmann::json &o)
 	return u;
 }
 
+// ── hit_character_encounters strict admission (schema 16, ticket 05) ────────
+//
+// Unlike the tolerant additive blocks above, this block is REQUIRED when
+// ctr_options.hit_character is true: a client that cannot fully honour it must
+// refuse the seed rather than run 16 live checks it cannot dispatch. Every
+// field is type-exact (a JSON boolean is never an integer, and vice versa),
+// every list is bounded and duplicate-free, and every identity is canonical.
+//
+// Refusal is reported through ctr_cfg.seed_rejected + the bounded reason; the
+// caller leaves schema_version at 0 (whole config inactive) and the network
+// layer refuses admission. A disabled scalar or a legacy seed with neither the
+// scalar nor the block is inert, never a rejection.
+static void hit_reject(const char *fmt, ...)
+{
+	ctr_cfg.seed_rejected = 1;
+	va_list ap;
+	va_start(ap, fmt);
+	std::vsnprintf(ctr_cfg.seed_reject_reason, sizeof ctr_cfg.seed_reject_reason, fmt, ap);
+	va_end(ap);
+	ap_cfg_log("[AP CFG] *** seed rejected: %s ***\n", ctr_cfg.seed_reject_reason);
+}
+
+// Exact integer. nlohmann's is_number_integer() is false for a boolean, so a
+// bool is rejected here without a special case (the brief's "bool invalid").
+static int hit_int(const nlohmann::json &v, long long *out)
+{
+	if (!v.is_number_integer())
+		return 0;
+	if (v.is_number_unsigned())
+	{
+		const unsigned long long u = v.get<unsigned long long>();
+		if (u > 0x7FFFFFFFull)
+			return 0;
+		*out = (long long)u;
+		return 1;
+	}
+	*out = v.get<long long>();
+	return 1;
+}
+
+static int hit_int_eq(const nlohmann::json &v, long long want)
+{
+	long long got;
+	return hit_int(v, &got) && got == want;
+}
+
+static int hit_u32(const nlohmann::json &v, unsigned int *out)
+{
+	if (!v.is_number_integer())
+		return 0;
+	if (v.is_number_unsigned())
+	{
+		const unsigned long long u = v.get<unsigned long long>();
+		if (u > 0xFFFFFFFFull)
+			return 0;
+		*out = (unsigned int)u;
+		return 1;
+	}
+	const long long s = v.get<long long>();
+	if (s < 0 || s > 0xFFFFFFFFll)
+		return 0;
+	*out = (unsigned int)s;
+	return 1;
+}
+
+static int hit_engine_id(const nlohmann::json &v, int *out)
+{
+	long long got;
+	if (!hit_int(v, &got) || got < 0 || got > 15)
+		return 0;
+	*out = (int)got;
+	return 1;
+}
+
+static int hit_positive_code(const nlohmann::json &v, long *out)
+{
+	long long got;
+	if (!hit_int(v, &got) || got <= 0 || got > 0x7FFFFFFFll)
+		return 0;
+	*out = (long)got;
+	return 1;
+}
+
+// Canonical decimal object key: no sign, no leading zero, value in [lo,hi].
+static int hit_key(const std::string &key, int lo, int hi, int *out)
+{
+	if (key.empty() || (key.size() > 1 && key[0] == '0'))
+		return 0;
+	long long v = 0;
+	for (char c : key)
+	{
+		if (c < '0' || c > '9')
+			return 0;
+		v = v * 10 + (c - '0');
+		if (v > hi)
+			return 0;
+	}
+	if (v < lo)
+		return 0;
+	*out = (int)v;
+	return 1;
+}
+
+// Approved unlock triggers, keyed by guest engine id 8..15: kind + exact win
+// set. A trigger for any other guest, a different kind, a missing/duplicate win
+// code, or an empty list is refused.
+typedef struct
+{
+	int  kind;
+	int  count;
+	long wins[2];
+} hit_approved_trigger;
+static const hit_approved_trigger kHitTriggers[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011103, 0}},        // guest 8  Pinstripe
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011101, 0}},        // guest 9  Papu Papu
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011100, 0}},        // guest 10 Ripper Roo
+	{CTR_CFG_HIT_KIND_BOSS,  1, {35011102, 0}},        // guest 11 Komodo Joe
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35016200, 35016201}}, // guest 12 N. Tropy
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35011008, 35011010}}, // guest 13 Penta Penguin
+	{CTR_CFG_HIT_KIND_TRACK, 2, {35011000, 35011003}}, // guest 14 Fake Crash
+	{CTR_CFG_HIT_KIND_BOSS,  2, {35011104, 35011105}}, // guest 15 Nitros Oxide
+};
+
+// The fixed Key fallback count per guest (block schema 3, index guest - 8). The
+// counts are a frozen table, not a per-seed roll: an entry that disagrees means
+// the apworld and this client do not share one ruling, which is refused rather
+// than silently seated at the wrong Key count. The four boss guests (8..11)
+// always have their own boss race and must never carry a fallback, so their
+// entry is 0 and any `fallback_keys` on them is refused.
+static const int kHitFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	0, // guest 8  Pinstripe     (boss race)
+	0, // guest 9  Papu Papu     (boss race)
+	0, // guest 10 Ripper Roo    (boss race)
+	0, // guest 11 Komodo Joe    (boss race)
+	3, // guest 12 N. Tropy
+	2, // guest 13 Penta Penguin
+	1, // guest 14 Fake Crash
+	4, // guest 15 Nitros Oxide
+};
+
+// Canonical boss-win keys, in the order boss_identity[] stores them.
+static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
+	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
+};
+
+// The retail encounter identity for each canonical boss-win key. The contract
+// (Wire fields, `bosses`) says "Current native retail encounters must match it";
+// a future randomized-boss ticket may substitute a resolved identity, but today
+// a mismatch is refused rather than run with apworld logic and native dispatch
+// disagreeing about who appears. Engine ids from namespace_Vehicle.h:
+// PINSTRIPE 8, PAPU_PAPU 9, RIPPER_ROO 10, KOMODO_JOE 11, NITROS_OXIDE 15.
+static const int kHitBossIdentity[CTR_CFG_HIT_BOSS_COUNT] = {
+	10, // RIPPER_ROO,   35011100 Ripper Roo Garage: Boss Race
+	9,  // PAPU_PAPU,    35011101 Papu Papu Garage: Boss Race
+	11, // KOMODO_JOE,   35011102 Komodo Joe Garage: Boss Race
+	8,  // PINSTRIPE,    35011103 Pinstripe Garage: Boss Race
+	15, // NITROS_OXIDE, 35011104 N. Oxide's Challenge: Boss Race
+	15, // NITROS_OXIDE, 35011105 N. Oxide's Final Challenge: Boss Race
+};
+
+// One destination's {"order": [16 ids]} object: exactly the one key, and the
+// order a permutation of all sixteen engine ids, kept in wire order verbatim.
+static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
+{
+	if (!v.is_object() || v.size() != 1)
+		return 0;
+	auto o = v.find("order");
+	if (o == v.end() || !o->is_array() || o->size() != CTR_CFG_HIT_CHARACTER_COUNT)
+		return 0;
+	int seen[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+	int n = 0;
+	for (const auto &e : *o)
+	{
+		int id;
+		if (!hit_engine_id(e, &id) || seen[id])
+			return 0;
+		seen[id] = 1;
+		out->ids[n++] = id;
+	}
+	return n == CTR_CFG_HIT_CHARACTER_COUNT;
+}
+
+// Returns 1 when the seed is admissible (feature on under a valid global schema
+// with a valid block; or feature data absent/disabled = legacy). Returns 0 with
+// ctr_cfg.seed_rejected set when a present REQUIRED feature cannot be honoured.
+// Never writes schema_version.
+//
+// Runs BEFORE any legacy early return: a present top-level block is feature data
+// and must be validated even when ctr_options is absent or carries
+// schema_version 0. "Compatible legacy" means the feature data is ABSENT, never
+// that a present required block is bypassed by the legacy path.
+static int parse_hit_character(const nlohmann::json &j)
+{
+	// The scalar only exists inside a real ctr_options object, so an absent
+	// ctr_options means an absent scalar (legacy), not a malformed one.
+	const nlohmann::json *opt = NULL;
+	if (j.is_object())
+	{
+		auto optIt = j.find("ctr_options");
+		if (optIt != j.end() && optIt->is_object())
+			opt = &(*optIt);
+	}
+
+	int enabled = 0;
+	if (opt != NULL)
+	{
+		auto sc = opt->find("hit_character");
+		if (sc != opt->end())
+		{
+			if (!sc->is_boolean())
+			{
+				hit_reject("ctr_options.hit_character is present but not a boolean");
+				return 0;
+			}
+			enabled = sc->get<bool>() ? 1 : 0;
+		}
+	}
+	ctr_cfg.hit.enabled = enabled;
+
+	int seen = 0;
+	const nlohmann::json *blk = NULL;
+	if (j.is_object())
+	{
+		auto blkIt = j.find("hit_character_encounters");
+		if (blkIt != j.end())
+		{
+			seen = 1;
+			blk = &(*blkIt);
+		}
+	}
+	ctr_cfg.hit.seen = seen;
+
+	if (!seen)
+	{
+		if (enabled)
+		{
+			hit_reject("hit_character is enabled but hit_character_encounters is absent");
+			return 0;
+		}
+		return 1; // disabled or legacy absence -> feature inert
+	}
+
+	// The block is present. The scalar must have enabled it -- a present block
+	// with the scalar false/absent is contradictory, and a present null block is
+	// malformed rather than absent.
+	if (!enabled)
+	{
+		hit_reject("hit_character_encounters is present but hit_character is not true");
+		return 0;
+	}
+
+	// An ENABLED feature requires an actual integer global schema >= 16 (the
+	// emitter's global boundary). Absent / bool / non-integer / pre-16 global
+	// schema refuses, so a valid block can never stay active under schema 0. A
+	// future global schema >= 16 is allowed when the block schema is known.
+	{
+		int globalSchema = 0;
+		int haveSchema = 0;
+		if (opt != NULL)
+		{
+			auto sc = opt->find("schema_version");
+			if (sc != opt->end() && sc->is_number_integer())
+			{
+				long long v = 0;
+				if (hit_int(*sc, &v) && v >= 0 && v <= 0x7FFFFFFFll)
+				{
+					globalSchema = (int)v;
+					haveSchema = 1;
+				}
+			}
+		}
+		if (!haveSchema || globalSchema < 16)
+		{
+			hit_reject("hit_character is enabled but the global schema is not an integer >= 16");
+			return 0;
+		}
+	}
+
+	if (blk->is_null())
+	{
+		hit_reject("hit_character_encounters is null");
+		return 0;
+	}
+	if (!blk->is_object())
+	{
+		hit_reject("hit_character_encounters is not an object");
+		return 0;
+	}
+	const nlohmann::json &b = *blk;
+	if (b.size() != 7)
+	{
+		hit_reject("hit_character_encounters has %d keys, expected 7", (int)b.size());
+		return 0;
+	}
+	static const char *kTopKeys[7] = {"schema",     "locations", "policy", "tracks",
+	                                  "cups",       "unlock_triggers", "bosses"};
+	for (int i = 0; i < 7; i++)
+		if (b.find(kTopKeys[i]) == b.end())
+		{
+			hit_reject("hit_character_encounters is missing '%s'", kTopKeys[i]);
+			return 0;
+		}
+
+	ctr_hit_encounters h;
+	std::memset(&h, 0, sizeof h);
+	h.enabled = enabled;
+	h.seen = 1;
+
+	// Two block schemas are admissible: 2 (alpha2 rooms, no Key fallback) and 3
+	// (the fallback shape). Anything else, schema 1 included, refuses the seed.
+	{
+		long long bs = 0;
+		if (!hit_int(b["schema"], &bs) || bs < CTR_CFG_HIT_BLOCK_SCHEMA_MIN ||
+		    bs > CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN)
+		{
+			hit_reject("hit_character_encounters.schema is not a known block schema "
+			           "(%d or %d)",
+			           CTR_CFG_HIT_BLOCK_SCHEMA_MIN, CTR_CFG_HIT_BLOCK_SCHEMA_KNOWN);
+			return 0;
+		}
+		h.schema = (int)bs;
+	}
+
+	// locations: exactly 16 canonical engine-id keys -> 35025000+id
+	{
+		const auto &locs = b["locations"];
+		if (!locs.is_object() || locs.size() != CTR_CFG_HIT_CHARACTER_COUNT)
+		{
+			hit_reject("locations must map exactly %d engine ids",
+			           CTR_CFG_HIT_CHARACTER_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+		for (auto it = locs.begin(); it != locs.end(); ++it)
+		{
+			int id;
+			long code;
+			if (!hit_key(it.key(), 0, CTR_CFG_HIT_CHARACTER_COUNT - 1, &id) || got[id])
+			{
+				hit_reject("locations key '%s' is not a distinct canonical engine id",
+				           it.key().c_str());
+				return 0;
+			}
+			if (!hit_positive_code(it.value(), &code) || code != 35025000L + id)
+			{
+				hit_reject("locations[%d] is not the canonical code %ld", id, 35025000L + id);
+				return 0;
+			}
+			got[id] = 1;
+			h.locations[id] = code;
+		}
+	}
+
+	// policy (block schema 2): seed, self_character, draw, max_guests
+	{
+		const auto &pol = b["policy"];
+		if (!pol.is_object() || pol.size() != 4)
+		{
+			hit_reject("policy must have exactly seed, self_character, draw and max_guests");
+			return 0;
+		}
+		auto seedIt = pol.find("seed");
+		if (seedIt == pol.end() || !seedIt->is_number_integer() || !hit_u32(*seedIt, &h.seed))
+		{
+			hit_reject("policy.seed is not a uint32 integer");
+			return 0;
+		}
+		auto selfIt = pol.find("self_character");
+		if (selfIt == pol.end() || !selfIt->is_string() ||
+		    selfIt->get<std::string>() != "never_seat_player")
+		{
+			hit_reject("policy.self_character is not never_seat_player");
+			return 0;
+		}
+		auto drawIt = pol.find("draw");
+		if (drawIt == pol.end() || !drawIt->is_string() ||
+		    drawIt->get<std::string>() != "unhit_first_rotation")
+		{
+			hit_reject("policy.draw is not unhit_first_rotation");
+			return 0;
+		}
+		auto mgIt = pol.find("max_guests");
+		if (mgIt == pol.end() || !hit_int_eq(*mgIt, CTR_CFG_HIT_MAX_GUESTS))
+		{
+			hit_reject("policy.max_guests is not %d", CTR_CFG_HIT_MAX_GUESTS);
+			return 0;
+		}
+		h.max_guests = CTR_CFG_HIT_MAX_GUESTS;
+	}
+
+	// tracks: exactly the 18 ordinary destinations 0..17
+	{
+		const auto &tr = b["tracks"];
+		if (!tr.is_object() || tr.size() != CTR_CFG_HIT_TRACK_COUNT)
+		{
+			hit_reject("tracks must have exactly %d keys", CTR_CFG_HIT_TRACK_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_TRACK_COUNT] = {0};
+		for (auto it = tr.begin(); it != tr.end(); ++it)
+		{
+			int lid;
+			if (!hit_key(it.key(), 0, CTR_CFG_HIT_TRACK_COUNT - 1, &lid) || got[lid])
+			{
+				hit_reject("tracks key '%s' is not a distinct canonical destination id",
+				           it.key().c_str());
+				return 0;
+			}
+			if (!hit_parse_order(it.value(), &h.tracks[lid]))
+			{
+				hit_reject("tracks[%d] is not {order: a permutation of 0..15}", lid);
+				return 0;
+			}
+			got[lid] = 1;
+		}
+	}
+
+	// cups: exactly the 5 cup destinations 100..104
+	{
+		const auto &cu = b["cups"];
+		if (!cu.is_object() || cu.size() != CTR_CFG_HIT_CUP_COUNT)
+		{
+			hit_reject("cups must have exactly %d keys", CTR_CFG_HIT_CUP_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_CUP_COUNT] = {0};
+		for (auto it = cu.begin(); it != cu.end(); ++it)
+		{
+			int lid;
+			if (!hit_key(it.key(), 100, 100 + CTR_CFG_HIT_CUP_COUNT - 1, &lid) || got[lid - 100])
+			{
+				hit_reject("cups key '%s' is not a distinct canonical cup id", it.key().c_str());
+				return 0;
+			}
+			if (!hit_parse_order(it.value(), &h.cups[lid - 100]))
+			{
+				hit_reject("cups[%d] is not {order: a permutation of 0..15}", lid);
+				return 0;
+			}
+			got[lid - 100] = 1;
+		}
+	}
+
+	// unlock_triggers: exactly guests 8..15, approved kind + exact win set, and
+	// in a block schema 3 entry the optional fixed-table `fallback_keys`
+	{
+		const auto &ug = b["unlock_triggers"];
+		if (!ug.is_object() || ug.size() != CTR_CFG_HIT_TRIGGER_COUNT)
+		{
+			hit_reject("unlock_triggers must have exactly %d guest keys",
+			           CTR_CFG_HIT_TRIGGER_COUNT);
+			return 0;
+		}
+		int got[CTR_CFG_HIT_TRIGGER_COUNT] = {0};
+		for (auto it = ug.begin(); it != ug.end(); ++it)
+		{
+			int guest;
+			if (!hit_key(it.key(), 8, 15, &guest) || got[guest - 8])
+			{
+				hit_reject("unlock_triggers key '%s' is not a distinct guest engine id 8..15",
+				           it.key().c_str());
+				return 0;
+			}
+			const nlohmann::json &t = it.value();
+			// Block schema 2: exactly kind and any_of, so `fallback_keys` is an
+			// unknown key and refuses the seed. Block schema 3: the same pair, or
+			// that pair plus `fallback_keys` and nothing else.
+			const int hasFallback = (h.schema >= 3 && t.is_object() && t.size() == 3 &&
+			                         t.contains("fallback_keys"))
+			                            ? 1
+			                            : 0;
+			const int wantKeys = hasFallback ? 3 : 2;
+			if (!t.is_object() || (int)t.size() != wantKeys || !t.contains("kind") ||
+			    !t.contains("any_of"))
+			{
+				if (h.schema >= 3)
+					hit_reject("unlock_triggers[%d] must have exactly kind and any_of, "
+					           "optionally with fallback_keys",
+					           guest);
+				else
+					hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
+				return 0;
+			}
+			const hit_approved_trigger &ap = kHitTriggers[guest - 8];
+			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";
+			if (!t["kind"].is_string() || t["kind"].get<std::string>() != wantKind)
+			{
+				hit_reject("unlock_triggers[%d].kind is not '%s'", guest, wantKind);
+				return 0;
+			}
+			const auto &any = t["any_of"];
+			if (!any.is_array() || (int)any.size() != ap.count)
+			{
+				hit_reject("unlock_triggers[%d].any_of is not the approved win set", guest);
+				return 0;
+			}
+			ctr_hit_trigger trig;
+			std::memset(&trig, 0, sizeof trig);
+			trig.kind = ap.kind;
+			int used[2] = {0, 0};
+			int n = 0;
+			for (const auto &w : any)
+			{
+				long code;
+				if (!hit_positive_code(w, &code))
+				{
+					hit_reject("unlock_triggers[%d].any_of carries a non-code", guest);
+					return 0;
+				}
+				int found = -1;
+				for (int k = 0; k < ap.count; k++)
+					if (ap.wins[k] == code)
+					{
+						found = k;
+						break;
+					}
+				if (found < 0 || used[found])
+				{
+					hit_reject("unlock_triggers[%d].any_of is not the approved win set", guest);
+					return 0;
+				}
+				used[found] = 1;
+				trig.any_of[n++] = code; // preserve wire order verbatim
+			}
+			trig.count = n;
+			if (hasFallback)
+			{
+				long long fb = 0;
+				if (kHitFallbackKeys[guest - 8] == 0)
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is set, but this guest "
+					           "always has its own boss race",
+					           guest);
+					return 0;
+				}
+				if (!hit_int(t["fallback_keys"], &fb) || fb < 1 || fb > 4)
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is not an integer 1..4",
+					           guest);
+					return 0;
+				}
+				if ((int)fb != kHitFallbackKeys[guest - 8])
+				{
+					hit_reject("unlock_triggers[%d].fallback_keys is %d, but this guest's "
+					           "fixed fallback is %d",
+					           guest, (int)fb, kHitFallbackKeys[guest - 8]);
+					return 0;
+				}
+				trig.fallback_keys = (int)fb;
+			}
+			h.triggers[guest - 8] = trig;
+			got[guest - 8] = 1;
+		}
+	}
+
+	// bosses: exactly the six canonical boss-win keys -> engine identity 0..15.
+	// The identity VALUE must match the retail encounter for each key today (the
+	// contract's shared appearance identity); a future boss randomizer may relax
+	// this, but a present mismatch is refused rather than run with logic and
+	// dispatch disagreeing.
+	{
+		const auto &bo = b["bosses"];
+		if (!bo.is_object() || bo.size() != CTR_CFG_HIT_BOSS_COUNT)
+		{
+			hit_reject("bosses must have exactly %d keys", CTR_CFG_HIT_BOSS_COUNT);
+			return 0;
+		}
+		for (int i = 0; i < CTR_CFG_HIT_BOSS_COUNT; i++)
+		{
+			auto it = bo.find(std::to_string(kHitBossKeys[i]));
+			int id;
+			if (it == bo.end() || !hit_engine_id(it.value(), &id))
+			{
+				hit_reject("bosses[%ld] is missing or not an engine identity 0..15",
+				           kHitBossKeys[i]);
+				return 0;
+			}
+			if (id != kHitBossIdentity[i])
+			{
+				hit_reject("bosses[%ld] is engine id %d, but the retail encounter is %d",
+				           kHitBossKeys[i], id, kHitBossIdentity[i]);
+				return 0;
+			}
+			h.boss_identity[i] = id;
+		}
+	}
+
+	h.valid = 1;
+	ctr_cfg.hit = h;
+	return 1;
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
@@ -341,6 +945,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.logic_difficulty = 1;
 	ctr_cfg.itemsanity = 0;
 	ctr_cfg.shortcut_knowledge = 0;
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+	{
+		ctr_cfg.trial_track_mode[t] = 0;
+		ctr_cfg.trial_track_valid[t] = 0;
+		for (int c = 0; c < CTR_CFG_TRIAL_CHECK_COUNT; c++)
+			ctr_cfg.trial_track_locations[t][c] = -1;
+	}
 	// Character phase (#54/#209). These defaults ARE the pre-character-phase
 	// behaviour: you drive Crash in his own class, no racer is an item, no pad
 	// demands one, and the stat table is the engine's. A seed that predates the
@@ -367,6 +978,22 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
+	std::memset(&ctr_cfg.cortex_track, 0, sizeof ctr_cfg.cortex_track);
+	ctr_cfg.cortex_track.dropped_destination = -1;
+	ctr_cfg.cortex_track.trophy = -1;
+	ctr_cfg.cortex_track.ctr_token = -1;
+	ctr_cfg.cortex_track.wumpa = -1;
+	ctr_cfg.cortex_track.podium.held_1st = ctr_cfg.cortex_track.podium.held_3rd = -1;
+	ctr_cfg.cortex_track.podium.held_5th = ctr_cfg.cortex_track.podium.finish_podium = -1;
+	ctr_cfg.cortex_track.podium.finish_any = -1;
+	for (int k = 0; k < 3; k++)
+		ctr_cfg.cortex_track.relic[k] = ctr_cfg.cortex_track.letters[k] =
+			ctr_cfg.cortex_track.letter_items[k] = -1;
+	ctr_cfg.oxide_final_venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+	ctr_cfg.oxide_final_venue.host_level_id = -1;
+	ctr_cfg.oxide_final_venue.location = -1;
+	ctr_cfg.oxide_final_venue.wumpa_location = -1;
 	// wumpa_checks: an absent block is the option being off, so the cleared state
 	// IS the default -- except that every CODE clears to -1 rather than 0, because
 	// 0 is a plausible-looking location code while -1 is the absent sentinel every
@@ -381,6 +1008,18 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.wumpa.custom[c].cup_level_id = -1;
 		ctr_cfg.wumpa.custom[c].code = -1;
 	}
+	// Seed admission (ticket 05): every parse starts admissible and clears the
+	// previous reason. A malformed REQUIRED block re-raises it below; a later
+	// valid or absent block therefore clears a prior rejection (valid-to-invalid
+	// AND valid-to-absent both wipe old state, never merge with it).
+	ctr_cfg.seed_rejected = 0;
+	ctr_cfg.seed_reject_reason[0] = '\0';
+	// hit_character_encounters: absent/disabled is the common case and means the
+	// whole feature is off. Zero the owned tables so no stale encounter survives
+	// a parse that omits or refuses the block.
+	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
+	for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+		ctr_cfg.hit.locations[i] = -1;
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
@@ -390,11 +1029,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
+	ctr_cfg.custom_ctr_enabled = 0;
+	ctr_cfg.custom_ctr_location = -1;
+	ctr_cfg.custom_lettersanity_mode = 0;
+	for (int l = 0; l < CTR_CFG_LETTER_COUNT; ++l)
+		ctr_cfg.custom_letter_locations[l] = ctr_cfg.custom_letter_items[l] = -1;
 	for (int t = 0; t < CTR_CFG_LETTER_TRACK_COUNT; t++)
 		for (int l = 0; l < CTR_CFG_LETTER_COUNT; l++)
 			ctr_cfg.lettersanity_locations[t][l] = -1;
 	ctr_cfg.podium_any_position = 0;
-	for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+	for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 	{
 		ctr_cfg.podium[i].held_1st = -1;
 		ctr_cfg.podium[i].held_3rd = -1;
@@ -402,6 +1046,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.podium[i].finish_podium = -1;
 		ctr_cfg.podium[i].finish_any = -1;
 	}
+
+	// Required-feature admission FIRST (ticket 05 review). A present
+	// hit_character_encounters block is feature data and must be validated even
+	// when ctr_options is absent or declares schema_version 0: "compatible
+	// legacy" means the feature data is ABSENT, never that a present required
+	// block is bypassed by the legacy early returns below. On refusal the whole
+	// config stays inactive (schema_version remains 0) and every other block is
+	// skipped; an enabled feature under a pre-16 global schema also refuses.
+	if (!parse_hit_character(j))
+		return;
 
 	if (!j.is_object())
 	{
@@ -467,6 +1121,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.goal_bosses = json_int(opt, "goal_bosses", legacy_bosses);
 		ctr_cfg.goal_gems = json_int(opt, "goal_gems", legacy_gems);
 	}
+	const auto oxideFirstMode = opt.find("oxide_1_optional");
+	ctr_cfg.oxide_1_optional = schema >= 13 && ctr_cfg.goal_oxide == 2 &&
+	                         oxideFirstMode != opt.end() && oxideFirstMode->is_number_integer() &&
+	                         (*oxideFirstMode == 1 || *oxideFirstMode == 2)
+	                         ? oxideFirstMode->get<int>() : 0;
 	ctr_cfg.relic_min_time = json_int(opt, "relic_min_time", 0);
 	ctr_cfg.relics_require_perfect = json_int(opt, "relics_require_perfect", 0);
 	// schema >= 5: oxide_final_unlock is a relic-goal MODE and oxide_final_count
@@ -521,6 +1180,22 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.shortcut_knowledge = json_int(opt, "shortcut_knowledge", 0);
 	if (ctr_cfg.shortcut_knowledge < 0 || ctr_cfg.shortcut_knowledge > 2)
 		ctr_cfg.shortcut_knowledge = 0;
+	ctr_cfg.trial_track_mode[0] = json_int(opt, "slide_coliseum_races", 0);
+	ctr_cfg.trial_track_mode[1] = json_int(opt, "turbo_track_races", 0);
+	for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+		if (ctr_cfg.trial_track_mode[t] < 0 || ctr_cfg.trial_track_mode[t] > 2)
+			ctr_cfg.trial_track_mode[t] = 0;
+	// Schema 15: Cortex Vortex pad track option. Any value other than 0/1 is a
+	// seed this build cannot read; it is treated as ON so that a map carrying
+	// 110 stays fail-closed, and the block itself is then refused below.
+	if (schema >= 15)
+	{
+		const int cv = json_int(opt, "cortex_vortex_track", 0);
+		ctr_cfg.cortex_track.option = cv != 0 ? 1 : 0;
+		if (cv != 0 && cv != 1)
+			ap_cfg_log("[AP CFG] cortex_vortex_track=%d is not 0/1; the Cortex Vortex pad "
+			           "track is refused and any pad hosting it stays closed\n", cv);
+	}
 	if (ctr_cfg.boost_mode != 0 || ctr_cfg.stats_mode != 0)
 		ap_cfg_log("[AP CFG] capability packs: boost_mode=%d blue_fire=%d stats_mode=%d\n",
 		           ctr_cfg.boost_mode, ctr_cfg.boost_blue_fire, ctr_cfg.stats_mode);
@@ -630,7 +1305,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			try { pad = std::stoi(it.key()); } catch (...) { continue; }
 			int dest;
 			try { dest = it.value().get<int>(); } catch (...) { continue; }
-			if (!ctr_valid_dest(dest))
+			if (!ctr_valid_dest_or_cortex(dest))
 				continue; // out-of-range destination -> keep identity
 			if (pad >= 100 && pad <= 104)
 			{
@@ -668,7 +1343,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 					continue; // null / non-int element -> keep vanilla for this leg
 				int track;
 				try { track = legs[leg].get<int>(); } catch (...) { continue; }
-				if (track < 0 || track > 15)
+				if ((track < 0 || track > 15) &&
+				    !(track == CTR_CFG_CORTEX_DEST && ctr_cfg.cortex_track.option))
 					continue; // outside the trophy-track range -> keep vanilla
 				ctr_cfg.gem_cup_legs[cup - 100][leg] = track;
 			}
@@ -893,6 +1569,118 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				ctr_cfg.custom_track = ct;
 				ctr_cfg.custom_tracks_ok = 1;
 			}
+		}
+	}
+
+	// schema 11: the Final Challenge venue is independent from ordinary boss
+	// shuffle and from the Gem Cup custom-track descriptor above.
+	auto oxideVenueIt = j.find("oxide_final_venue");
+	if (oxideVenueIt != j.end())
+	{
+		ctr_oxide_final_venue venue;
+		std::memset(&venue, 0, sizeof venue);
+		venue.seen = 1;
+		venue.host_level_id = -1;
+		venue.location = -1;
+		venue.wumpa_location = -1;
+		const char *reject = NULL;
+		char track[32] = "";
+		char opponent[32] = "";
+		const int selected = json_int(opt, "oxide_final_track", -1);
+		// 35016121 exists under per-track Wumpa when the Cortex Vortex pad track
+		// is on, or when Cortex Vortex is the Oxide 2 venue with Oxide content
+		// present (goal_oxide != 3). The venue block carries it in both cases.
+		const int expectedWumpa =
+		    json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK &&
+		    (ctr_cfg.cortex_track.option ||
+		     (selected == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX && ctr_cfg.goal_oxide != 3))
+		        ? 35016121 : -1;
+
+		if (!oxideVenueIt->is_object()) reject = "block is not an object";
+		else
+		{
+			const nlohmann::json &v = *oxideVenueIt;
+			json_str(v, "track", track, sizeof track);
+			json_str(v, "opponent", opponent, sizeof opponent);
+			json_str(v, "lev_sha256", venue.lev_sha256, sizeof venue.lev_sha256);
+			json_str(v, "vrm_sha256", venue.vrm_sha256, sizeof venue.vrm_sha256);
+			venue.host_level_id = json_int(v, "host_level_id", -1);
+			venue.location = json_long(v, "location", -1);
+			venue.wumpa_location = json_long(v, "wumpa_location", -1);
+			if (json_int(v, "version", 0) != 1) reject = "unsupported version";
+			else if (!std::strcmp(track, "cortex_vortex")) venue.track = CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX;
+			else if (!std::strcmp(track, "oxide_station")) venue.track = CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+			else reject = "unknown track";
+			if (!reject && selected != venue.track) reject = "option and descriptor track disagree";
+			if (!reject && std::strcmp(opponent, "nitros_oxide")) reject = "opponent is not Nitros Oxide";
+			if (!reject && venue.location != 35011105) reject = "Final Challenge location is not 35011105";
+			if (!reject && venue.host_level_id != 13) reject = "host level is not Oxide Station";
+			if (!reject && venue.wumpa_location != expectedWumpa)
+				reject = "Cortex Vortex Wumpa identity disagrees with options";
+			if (!reject && venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+			    (std::strcmp(venue.lev_sha256,
+			                 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13") ||
+			     std::strcmp(venue.vrm_sha256,
+			                 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d")))
+				reject = "Cortex Vortex hashes are not the approved Lockheart pair";
+		}
+		if (reject)
+			ap_cfg_log("[AP CFG] *** oxide_final_venue REFUSED: %s; Final Challenge admission disabled ***\n", reject);
+		else venue.valid = 1;
+		ctr_cfg.oxide_final_venue = venue;
+	}
+
+	// ── trial_track_checks (schema 10, issue #203) ──────────────────────────
+	auto trialIt = j.find("trial_track_checks");
+	if (trialIt != j.end() && trialIt->is_object() &&
+	    json_int(*trialIt, "enabled", 0))
+	{
+		auto locationsIt = trialIt->find("locations");
+		if (locationsIt != trialIt->end() && locationsIt->is_object())
+		{
+			for (int t = 0; t < CTR_CFG_TRIAL_TRACK_COUNT; t++)
+			{
+				const char *key = t == 0 ? "16" : "17";
+				auto rowIt = locationsIt->find(key);
+				if (rowIt == locationsIt->end() || !rowIt->is_array() || rowIt->size() != 2)
+					continue;
+				long trophy = -1, ctr = -1;
+				try
+				{
+					trophy = (*rowIt)[CTR_CFG_TRIAL_TROPHY].get<long>();
+					ctr = (*rowIt)[CTR_CFG_TRIAL_CTR].get<long>();
+				}
+				catch (...) { continue; }
+				int valid = trophy > 0 && (ctr == -1 || ctr > 0) && trophy != ctr;
+				if (ctr > 0 && ctr_cfg.trial_track_mode[t] < 2) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] >= 2 && ctr <= 0) valid = 0;
+				if (ctr_cfg.trial_track_mode[t] < 1) valid = 0;
+				if (!valid)
+				{
+					ap_cfg_log("[AP CFG] trial track %s check row refused (mode=%d trophy=%ld ctr=%ld)\n",
+					           key, ctr_cfg.trial_track_mode[t], trophy, ctr);
+					continue;
+				}
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_TROPHY] = trophy;
+				ctr_cfg.trial_track_locations[t][CTR_CFG_TRIAL_CTR] = ctr;
+				ctr_cfg.trial_track_valid[t] = 1;
+			}
+		}
+	}
+
+	// A code may identify only one trial event, even across the two tracks.
+	for (int a = 0; a < CTR_CFG_TRIAL_TRACK_COUNT; a++)
+	for (int b = a + 1; b < CTR_CFG_TRIAL_TRACK_COUNT; b++)
+	for (int ca = 0; ca < CTR_CFG_TRIAL_CHECK_COUNT; ca++)
+	for (int cb = 0; cb < CTR_CFG_TRIAL_CHECK_COUNT; cb++)
+	{
+		long lhs = ctr_cfg.trial_track_locations[a][ca];
+		long rhs = ctr_cfg.trial_track_locations[b][cb];
+		if (lhs > 0 && lhs == rhs)
+		{
+			ap_cfg_log("[AP CFG] duplicate trial-track location code %ld; disabling both tracks\n", lhs);
+			ctr_cfg.trial_track_valid[a] = 0;
+			ctr_cfg.trial_track_valid[b] = 0;
 		}
 	}
 
@@ -1162,6 +1950,288 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		}
 	}
 
+	// Custom mode ownership is explicit in the pinned parent descriptor. Asset
+	// presence alone never admits CTR, and sparse addresses never become hosts.
+	auto exactInteger = [](const nlohmann::json &value, long long expected) {
+		if (!value.is_number_integer()) return false;
+		if (value.is_number_unsigned())
+			return expected >= 0 && value.get<unsigned long long>() == (unsigned long long)expected;
+		return value.get<long long>() == expected;
+	};
+	if (ctr_cfg.custom_tracks_ok && schema >= 12)
+	{
+		const auto &parent = (*ctIt)["tracks"][0];
+		auto modes = parent.find("modes");
+		bool modesValid = modes == parent.end() || modes->is_object();
+		if (modes != parent.end() && modes->is_object())
+			for (auto it = modes->begin(); it != modes->end(); ++it)
+				if (it.key() != "ctr_challenge" || !it.value().is_boolean()) modesValid = false;
+		if (!modesValid)
+		{
+			ctr_cfg.custom_tracks_ok = 0;
+			ap_cfg_log("[AP CFG] malformed custom mode declaration; custom load disarmed\n");
+		}
+		if (modesValid && modes != parent.end() && modes->is_object() &&
+		    modes->contains("ctr_challenge") && (*modes)["ctr_challenge"].is_boolean() &&
+		    (*modes)["ctr_challenge"].get<bool>())
+		{
+			const auto &locations = parent["locations"];
+			long expected = 35023000L + ctr_cfg.custom_track.slot - 1;
+			if (ctr_cfg.custom_track.flags.ctr_letters && locations.is_object() &&
+			    locations.contains("ctr") && exactInteger(locations["ctr"], expected))
+			{
+				ctr_cfg.custom_ctr_enabled = 1;
+				ctr_cfg.custom_ctr_location = expected;
+			}
+			else ctr_cfg.custom_tracks_ok = 0;
+		}
+	}
+	auto customLetters = j.find("custom_lettersanity_checks");
+	if (customLetters == j.end() && ctr_cfg.custom_ctr_enabled && ctr_cfg.lettersanity_mode != 0)
+	{
+		ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+		ctr_cfg.custom_ctr_location = -1;
+		ap_cfg_log("[AP CFG] custom CTR letter block missing; custom load disarmed\n");
+	}
+	if (customLetters != j.end())
+	{
+		bool valid = customLetters->is_object() && ctr_cfg.custom_tracks_ok && ctr_cfg.custom_ctr_enabled;
+		int mode = 0, count = 0;
+		if (valid)
+		{
+			valid = customLetters->contains("version") && exactInteger((*customLetters)["version"], 1);
+			for (int n = 1; n <= 3; ++n)
+			{
+				if (customLetters->contains("mode") && exactInteger((*customLetters)["mode"], n)) mode = n;
+				if (customLetters->contains("letters_per_track") && exactInteger((*customLetters)["letters_per_track"], n)) count = n;
+			}
+			valid = valid && mode != 0 && count != 0 && mode == ctr_cfg.lettersanity_mode &&
+			        lettersIt != j.end() && lettersIt->is_object() &&
+			        lettersIt->contains("letters_per_track") &&
+			        exactInteger((*lettersIt)["letters_per_track"], count) &&
+			        customLetters->contains("tracks") && (*customLetters)["tracks"].is_array() &&
+			        (*customLetters)["tracks"].size() == 1;
+		}
+		long locations[3] = {-1, -1, -1}, items[3] = {-1, -1, -1};
+		if (valid)
+		{
+			const auto &track = (*customLetters)["tracks"][0];
+			valid = track.is_object() && track.contains("slot") &&
+			        exactInteger(track["slot"], ctr_cfg.custom_track.slot) &&
+			        track.contains("locations") && track["locations"].is_array() && track["locations"].size() == 3 &&
+			        track.contains("items") && track["items"].is_array() && track["items"].size() == 3;
+			int selected = 0;
+			for (int l = 0; valid && l < 3; ++l)
+			{
+				long loc = 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				long item = 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				bool chosen = mode == 3 || exactInteger(track["locations"][l], loc);
+				locations[l] = chosen && mode != 3 ? loc : -1;
+				items[l] = chosen && mode != 1 ? item : -1;
+				valid = exactInteger(track["locations"][l], locations[l]) && exactInteger(track["items"][l], items[l]);
+				selected += chosen;
+			}
+			valid = valid && selected == (mode == 3 ? 3 : count);
+		}
+		if (valid)
+		{
+			ctr_cfg.custom_lettersanity_mode = mode;
+			for (int l = 0; l < 3; ++l)
+			{
+				ctr_cfg.custom_letter_locations[l] = locations[l];
+				ctr_cfg.custom_letter_items[l] = items[l];
+			}
+		}
+		else
+		{
+			ctr_cfg.custom_tracks_ok = ctr_cfg.custom_ctr_enabled = 0;
+			ctr_cfg.custom_ctr_location = -1;
+			ap_cfg_log("[AP CFG] custom letter mode/identity REFUSED; custom load disarmed\n");
+		}
+	}
+
+	// ── cortex_vortex_track (schema 15) ────────────────────────────────────
+	//
+	// Cortex Vortex as a full pad track on virtual destination 110. Refusal is
+	// TOTAL: cortex_track.valid stays 0, every code stays -1, and a pad or cup
+	// leg that names 110 refuses entry (see AP_CortexTrackEntryReady). Nothing
+	// here ever falls back to Oxide Station's LevelID-13 identities.
+	//   * unknown block version -> also raise schema_newer ("update the client"
+	//     is the right advice), the custom_tracks convention;
+	//   * known version, malformed content -> loud log, no banner.
+	if (ctr_cfg.cortex_track.option || j.find("cortex_vortex_track") != j.end())
+	{
+		ctr_cortex_track &cv = ctr_cfg.cortex_track;
+		auto cvIt = j.find("cortex_vortex_track");
+		const char *reject = NULL;
+		const int lettersItems = ctr_cfg.lettersanity_mode >= 2;
+		const int perTrackWumpa = json_int(opt, "wumpa_check", CTR_CFG_WUMPA_OFF) == CTR_CFG_WUMPA_PER_TRACK;
+		auto exactOrAbsent = [](const nlohmann::json &v, long expected, long *out) -> bool {
+			if (!v.is_number_integer()) return false;
+			long got;
+			try { got = v.get<long>(); } catch (...) { return false; }
+			if (got != -1 && got != expected) return false;
+			*out = got;
+			return true;
+		};
+
+		cv.seen = cvIt != j.end();
+		if (schema < 15)
+			reject = "cortex_vortex_track needs schema_version >= 15";
+		else if (!cv.option)
+			reject = "block present while ctr_options.cortex_vortex_track is off";
+		else if (json_int(opt, "cortex_vortex_track", 0) != 1)
+			reject = "ctr_options.cortex_vortex_track is not 0/1";
+		else if (!cv.seen || !cvIt->is_object())
+			reject = "option on but the block is missing or not an object";
+		else if (json_int(*cvIt, "version", 0) != CTR_CFG_CORTEX_BLOCK_VERSION_KNOWN)
+		{
+			ctr_cfg.schema_newer = 1;
+			reject = "unknown block version (UPDATE THE CTR CLIENT)";
+		}
+		else
+		{
+			const nlohmann::json &b = *cvIt;
+			char lev[CTR_CFG_CT_HEX_CAP] = "", vrm[CTR_CFG_CT_HEX_CAP] = "";
+			json_str(b, "lev_sha256", lev, sizeof lev);
+			json_str(b, "vrm_sha256", vrm, sizeof vrm);
+			const int dropped = json_int(b, "dropped_destination", -1);
+			auto locIt = b.find("locations");
+			if (json_int(b, "destination_id", -1) != CTR_CFG_CORTEX_DEST)
+				reject = "destination_id is not 110";
+			else if (json_int(b, "host_level_id", -1) != CTR_CFG_CORTEX_HOST_LEVEL)
+				reject = "host_level_id is not 13";
+			else if (std::strcmp(lev, CTR_CFG_CORTEX_LEV_SHA256) ||
+			         std::strcmp(vrm, CTR_CFG_CORTEX_VRM_SHA256))
+				reject = "hashes are not the approved Lockheart pair";
+			else if (!ctr_valid_dest(dropped))
+				reject = "dropped_destination is not a destination in {0..27, 100..104}";
+			else if (locIt == b.end() || !locIt->is_object())
+				reject = "locations object missing";
+			else
+			{
+				const nlohmann::json &l = *locIt;
+				cv.dropped_destination = dropped;
+				auto relIt = l.find("relic");
+				auto podIt2 = l.find("podium");
+				auto letIt = l.find("letters");
+				auto itemIt = b.find("letter_items");
+				if (!l.contains("trophy") || !l["trophy"].is_number_integer() ||
+				    l["trophy"].get<long>() != CTR_CFG_CORTEX_TROPHY)
+					reject = "locations.trophy is not 35026000";
+				else
+					cv.trophy = CTR_CFG_CORTEX_TROPHY;
+				if (!reject && (relIt == l.end() || !relIt->is_array() || relIt->size() != 3))
+					reject = "locations.relic must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+					if (!exactOrAbsent((*relIt)[t], CTR_CFG_CORTEX_RELIC_FIRST + t, &cv.relic[t]))
+						reject = "locations.relic carries a foreign code";
+				if (!reject && (!l.contains("ctr_token") ||
+				                !exactOrAbsent(l["ctr_token"], CTR_CFG_CORTEX_CTR_TOKEN, &cv.ctr_token)))
+					reject = "locations.ctr_token is not 35026004 or -1";
+				if (!reject && (podIt2 == l.end() || !podIt2->is_object()))
+					reject = "locations.podium object missing";
+				if (!reject)
+				{
+					static const char *rungKeys[CTR_CFG_PODIUM_RUNG_COUNT] = {
+						"held_1st", "held_3rd", "held_5th", "finish_podium", "finish_any"};
+					long *rungs[CTR_CFG_PODIUM_RUNG_COUNT] = {
+						&cv.podium.held_1st, &cv.podium.held_3rd, &cv.podium.held_5th,
+						&cv.podium.finish_podium, &cv.podium.finish_any};
+					for (int r = 0; !reject && r < CTR_CFG_PODIUM_RUNG_COUNT; r++)
+						if (!podIt2->contains(rungKeys[r]) ||
+						    !exactOrAbsent((*podIt2)[rungKeys[r]], CTR_CFG_CORTEX_PODIUM_FIRST + r, rungs[r]))
+							reject = "locations.podium carries a foreign code";
+				}
+				if (!reject && (letIt == l.end() || !letIt->is_array() || letIt->size() != 3))
+					reject = "locations.letters must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+					if (!exactOrAbsent((*letIt)[t], CTR_CFG_CORTEX_LETTER_FIRST + t, &cv.letters[t]))
+						reject = "locations.letters carries a foreign code";
+				if (!reject && (!l.contains("wumpa") ||
+				                !exactOrAbsent(l["wumpa"], CTR_CFG_CORTEX_WUMPA, &cv.wumpa) ||
+				                (cv.wumpa > 0) != perTrackWumpa))
+					reject = "locations.wumpa disagrees with per-track Wumpa";
+				if (!reject && (itemIt == b.end() || !itemIt->is_array() || itemIt->size() != 3))
+					reject = "letter_items must be three codes";
+				for (int t = 0; !reject && t < 3; t++)
+				{
+					long item = -1;
+					// Shape only: receipt is keyed by the frozen item ids 35010200..202
+					// themselves, so an item this seed did not create simply never
+					// arrives.
+					if (!exactOrAbsent((*itemIt)[t], CTR_CFG_CORTEX_LETTER_ITEM_FIRST + t, &item))
+						reject = "letter_items carries a foreign item";
+					else
+						cv.letter_items[t] = lettersItems ? item : -1;
+				}
+				// Lettersanity selection shape: without lettersanity every letter
+				// location is -1; mode 3 (items only) carries no locations either.
+				if (!reject && (ctr_cfg.lettersanity_mode == 0 || ctr_cfg.lettersanity_mode == 3) &&
+				    (cv.letters[0] > 0 || cv.letters[1] > 0 || cv.letters[2] > 0))
+					reject = "letter locations present without location lettersanity";
+			}
+
+			// Map constraints: 110 is hosted by exactly one physical pad, and the
+			// dropped destination is hosted by none. A dropped race track is never
+			// a Gem Cup leg.
+			if (!reject)
+			{
+				int hosts = 0, droppedHosted = 0;
+				for (int p = 0; p < CTR_CFG_PAD_COUNT; p++)
+				{
+					hosts += ctr_cfg.warp_pad_map[p] == CTR_CFG_CORTEX_DEST;
+					droppedHosted |= ctr_cfg.warp_pad_map[p] == cv.dropped_destination;
+				}
+				for (int c = 0; c < 5; c++)
+				{
+					hosts += ctr_cfg.gem_cup_map[c] == CTR_CFG_CORTEX_DEST;
+					droppedHosted |= ctr_cfg.gem_cup_map[c] == cv.dropped_destination;
+				}
+				if (hosts != 1)
+					reject = "warp_pad_map must host destination 110 on exactly one pad";
+				else if (droppedHosted)
+					reject = "warp_pad_map still hosts the dropped destination";
+				else if (cv.dropped_destination >= 0 && cv.dropped_destination <= 15 &&
+				         legsIt != j.end() && legsIt->is_object())
+					// Only a RANDOMIZED leg draw is constrained. With vanilla legs a
+					// cup still races the dropped track natively; that track's
+					// podium and Wumpa rows are simply absent from this seed.
+					for (auto it = legsIt->begin(); !reject && it != legsIt->end(); ++it)
+						if (it.value().is_array())
+							for (const auto &leg : it.value())
+								if (leg.is_number_integer() && leg.get<long>() == cv.dropped_destination)
+									reject = "a randomized Gem Cup leg is the dropped race track";
+			}
+		}
+
+		if (reject)
+		{
+			const int option = cv.option;
+			const int seen = cv.seen;
+			std::memset(&cv, 0, sizeof cv);
+			cv.option = option;
+			cv.seen = seen;
+			cv.dropped_destination = -1;
+			cv.trophy = cv.ctr_token = cv.wumpa = -1;
+			cv.podium.held_1st = cv.podium.held_3rd = cv.podium.held_5th = -1;
+			cv.podium.finish_podium = cv.podium.finish_any = -1;
+			for (int k = 0; k < 3; k++)
+				cv.relic[k] = cv.letters[k] = cv.letter_items[k] = -1;
+			ap_cfg_log("[AP CFG] *** cortex_vortex_track REFUSED: %s; the Cortex Vortex pad "
+			           "track is unavailable and no Cortex Vortex or Oxide Station check is "
+			           "sent in its place ***\n", reject);
+		}
+		else
+		{
+			cv.valid = 1;
+			ap_cfg_log("[AP CFG] cortex_vortex_track: destination 110 on host 13, dropped "
+			           "destination %d, trophy %ld relic %ld/%ld/%ld token %ld wumpa %ld\n",
+			           cv.dropped_destination, cv.trophy, cv.relic[0], cv.relic[1],
+			           cv.relic[2], cv.ctr_token, cv.wumpa);
+		}
+	}
+
 	auto podIt = j.find("podium_checks");
 	if (podIt != j.end() && podIt->is_object())
 	{
@@ -1183,9 +2253,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			{
 				int lid;
 				try { lid = std::stoi(it.key()); } catch (...) { continue; }
-				if (lid < 0 || lid >= CTR_CFG_PODIUM_TRACK_COUNT)
+				if (lid < 0 || lid >= CTR_CFG_PODIUM_STORAGE_COUNT ||
+				    (lid >= 16 && (schema < 13 || !ctr_cfg.trial_track_valid[lid-16] ||
+				                   ctr_cfg.trial_track_mode[lid-16] < 1 ||
+				                   it.key() != std::to_string(lid))))
 					continue; // only the 16 trophy races carry rungs
 				const nlohmann::json &r = it.value();
+				if (lid >= 16)
+				{
+					if (!r.is_array() || r.size() != CTR_CFG_PODIUM_RUNG_COUNT) continue;
+					bool owned = true;
+					for (int k=0; k<CTR_CFG_PODIUM_RUNG_COUNT; k++)
+						if (!r[k].is_number_integer() ||
+						    (r[k] != -1 && r[k] != 35015200+(lid-16)*5+k)) owned=false;
+					if (!owned) continue;
+				}
 				ctr_podium_rungs &pr = ctr_cfg.podium[lid];
 				if (schema >= 6)
 				{
@@ -1297,6 +2379,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ap_cfg_log("[AP CFG] custom_tracks was on the wire but is not usable; every cup "
 		           "runs its vanilla legs\n");
 	}
+	if (ctr_cfg.oxide_final_venue.valid)
+		ap_cfg_log("[AP CFG] oxide_final_venue: %s, opponent Nitros Oxide, location %ld\n",
+		           ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX
+		               ? "Cortex Vortex" : "Oxide Station",
+		           ctr_cfg.oxide_final_venue.location);
+	else if (ctr_cfg.oxide_final_venue.seen)
+		ap_cfg_log("[AP CFG] oxide_final_venue is unusable; Final Challenge admission disabled\n");
 
 	// Wumpa checks: one line for the mode, then the resolved mapping, so a
 	// support bundle answers "why did my per-track check not fire" without a
@@ -1337,7 +2426,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ap_cfg_log( "[AP CFG] podium_checks: enabled=%d any_position=%d\n",
 	             ctr_cfg.podium_enabled, ctr_cfg.podium_any_position);
 	if (ctr_cfg.podium_enabled)
-		for (int i = 0; i < CTR_CFG_PODIUM_TRACK_COUNT; i++)
+		for (int i = 0; i < CTR_CFG_PODIUM_STORAGE_COUNT; i++)
 		{
 			const ctr_podium_rungs &pr = ctr_cfg.podium[i];
 			if (pr.held_1st >= 0 || pr.held_3rd >= 0 || pr.held_5th >= 0 ||
@@ -1370,7 +2459,7 @@ extern "C" int ctr_cfg_warp_dest(int physPadLevelID)
 
 extern "C" int ctr_cfg_warp_phys(int destTrackLevelID)
 {
-	if (ctr_cfg.schema_version < 1 || !ctr_valid_dest(destTrackLevelID))
+	if (ctr_cfg.schema_version < 1 || !ctr_valid_dest_or_cortex(destTrackLevelID))
 		return destTrackLevelID;
 	// Linear scan for the physical pad whose destination is destTrackLevelID, over
 	// BOTH maps. The union of warp_pad_map (0..27) and gem_cup_map (100..104) is a
@@ -1404,4 +2493,35 @@ extern "C" int ctr_cfg_cup_leg(int cup, int leg)
 	// table rather than the zero-initialized ctr_cfg.gem_cup_legs, which a parse
 	// may never have touched this session.
 	return s_vanilla_cup_legs_ready ? s_vanilla_cup_legs[cup][leg] : -1;
+}
+
+extern "C" void ap_seedcfg_reject_late(const char *reason)
+{
+	// A later admission stage refuses an already-parsed seed (the block schema 3
+	// fallback consistency check in ap/ap_net.cpp needs the room's location
+	// union, which slot_data alone does not carry). Leave exactly what a parse
+	// rejection leaves: the whole config inactive, no encounter data reachable,
+	// the flag raised and the reason visible.
+	ctr_cfg.schema_version = 0;
+	ctr_cfg.hit.valid = 0;
+	hit_reject("%s", (reason != NULL && reason[0] != '\0')
+	                     ? reason
+	                     : "seed refused at admission");
+}
+
+extern "C" int ap_seedcfg_rejected(void)
+{
+	return ctr_cfg.seed_rejected ? 1 : 0;
+}
+
+extern "C" const char *ap_seedcfg_reject_reason(void)
+{
+	return ctr_cfg.seed_reject_reason;
+}
+
+extern "C" const ctr_hit_encounters *ap_seedcfg_hit_encounters(void)
+{
+	if (ctr_cfg.schema_version < 1 || !ctr_cfg.hit.valid)
+		return NULL;
+	return &ctr_cfg.hit;
 }

@@ -9,6 +9,7 @@
 #include "ap_box_map.h"
 #include "ap_verify_logic.h"
 #include "ap_verify_wumpa.h"
+#include "ap_lettersanity.h"
 #include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
 #include "ap_oxide_encounter.h" // the ONE Oxide encounter + gate decision (#320/#321)
@@ -40,9 +41,10 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 // + 19 Wumpa + 6 custom Trophy/podium = 546 today. Keep a small margin for a
 // future family addition, while deriving every variable block from its owner.
 // ---------------------------------------------------------------------------
-#define AP_VF_CUSTOM_LOCATION_COUNT (1 + CTR_CFG_PODIUM_RUNG_COUNT)
+#define AP_VF_CUSTOM_LOCATION_COUNT (2 + CTR_CFG_PODIUM_RUNG_COUNT + CTR_CFG_LETTER_COUNT)
+#define AP_VF_SIM_ITEM_COUNT (AP_CUSTOM_LETTER_VERIFY_FIRST + AP_CUSTOM_LETTER_VERIFY_COUNT)
 #define AP_VF_MAX_WIRE_LOCS (AP_LOCATION_TABLE_LEN + \
-	CTR_CFG_PODIUM_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
+	CTR_CFG_PODIUM_STORAGE_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
 	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + \
 	AP_ITEMSANITY_WEAPON_COUNT * 2 + CTR_CFG_WUMPA_TRACK_COUNT + \
 	CTR_CFG_WUMPA_CUSTOM_MAX + AP_VF_CUSTOM_LOCATION_COUNT)
@@ -68,6 +70,8 @@ typedef enum
 	AP_VF_ITEMSANITY, // global weapon-use check (plain/juiced share access)
 	AP_VF_WUMPA,      // global reach-10-Wumpa check
 	AP_VF_CUSTOM,     // generic custom Trophy or podium rung -> assigned surface
+	AP_VF_CUSTOM_LETTER,
+	AP_VF_CUSTOM_CTR,
 } ap_vf_kind;
 
 typedef struct
@@ -177,6 +181,7 @@ static int ap_vf_oxide_open(int wantFinal, int firstCleared, int bossesWon,
 	in.goalBosses = ctr_cfg.goal_bosses;
 	in.bossesWon = bossesWon;
 	in.goalGems = ctr_cfg.goal_gems;
+	in.firstOptional = ctr_cfg.oxide_1_optional;
 	in.gemsHeld = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
 	              (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
 	              (counts[AP_IDX_GEM_RED + 4] > 0);
@@ -202,6 +207,11 @@ static void ap_vf_bank_own(long code, int *counts)
 		long long idx = item - AP_ITEM_BASE;
 		if (idx >= 0 && idx < AP_VF_ITEM_COUNT)
 			counts[(int)idx]++;
+		else
+		{
+			int sparse = AP_CustomLetterVerifyIndexPure(item);
+			if (sparse >= 0) counts[sparse] = 1;
+		}
 	}
 }
 
@@ -266,7 +276,9 @@ static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest
 	for (leg = 0; leg < 4; leg++)
 	{
 		int track = ctr_cfg_cup_leg(cup, leg);
-		int pad = track >= 0 && track < 105 ? pad_for_dest[track] : -1;
+		// The cup pad seats one racer for all legs; standalone track locks
+		// must not lend another racer's capabilities to this cup.
+		int pad = cup >= 0 && cup < 5 ? pad_for_dest[100 + cup] : -1;
 		if (!AP_VerifyCupLegCapability(&o, counts, track,
 				ap_vf_required_character(pad)))
 			return 0;
@@ -281,7 +293,7 @@ static void ap_vf_recompute(void)
 {
 	ap_vf_loc  locs[AP_VF_MAX_LOCS];
 	char       state[AP_VF_MAX_LOCS]; // 0 open, 1 collected
-	int        counts[AP_VF_ITEM_COUNT];
+	int        counts[AP_VF_SIM_ITEM_COUNT];
 	int        n = 0, i, t;
 	AP_VerifyWumpaLocation wumpa_locs[CTR_CFG_WUMPA_TRACK_COUNT +
 		CTR_CFG_WUMPA_CUSTOM_MAX];
@@ -310,7 +322,7 @@ static void ap_vf_recompute(void)
 	}
 	// ...plus the per-seed podium rungs (scouted on connect like everything else).
 	if (ctr_cfg.podium_enabled)
-		for (t = 0; t < CTR_CFG_PODIUM_TRACK_COUNT; t++)
+		for (t = 0; t < CTR_CFG_PODIUM_STORAGE_COUNT; t++)
 		{
 			long rung[5] = { ctr_cfg.podium[t].held_1st, ctr_cfg.podium[t].held_3rd,
 			                 ctr_cfg.podium[t].held_5th, ctr_cfg.podium[t].finish_podium,
@@ -357,6 +369,23 @@ static void ap_vf_recompute(void)
 				locs[n].detail = i - 1;
 				n++;
 			}
+		if (ctr_cfg.custom_ctr_enabled)
+		{
+			locs[n].code = ctr_cfg.custom_ctr_location;
+			locs[n].kind = AP_VF_CUSTOM_CTR;
+			locs[n].track = ctr_cfg.custom_track.replaces_cup_level_id;
+			locs[n].detail = -1;
+			n++;
+			for (i = 0; i < CTR_CFG_LETTER_COUNT; ++i)
+				if (ctr_cfg.custom_letter_locations[i] >= 0)
+				{
+					locs[n].code = ctr_cfg.custom_letter_locations[i];
+					locs[n].kind = AP_VF_CUSTOM_LETTER;
+					locs[n].track = ctr_cfg.custom_track.replaces_cup_level_id;
+					locs[n].detail = i;
+					n++;
+				}
+		}
 	}
 #endif
 
@@ -411,6 +440,8 @@ static void ap_vf_recompute(void)
 	// the seed verdict on a fresh connect and a stuck-detector mid-run.
 	for (i = 0; i < AP_VF_ITEM_COUNT; i++)
 		counts[i] = AP_VerifyForeignItemCount(i);
+	for (i = 0; i < AP_CUSTOM_LETTER_VERIFY_COUNT; ++i)
+		counts[AP_CUSTOM_LETTER_VERIFY_FIRST + i] = ap_verify_custom_letter_foreign[i];
 
 	// A location is IN this seed iff the connect-time scout knows it (options
 	// prune arenas/cups/rungs; the server only answers for locations that
@@ -543,6 +574,27 @@ static void ap_vf_recompute(void)
 				ok = ap_vf_pad_open(pad, counts) &&
 				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
 				break;
+			case AP_VF_CUSTOM_LETTER:
+			case AP_VF_CUSTOM_CTR:
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts) &&
+				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
+				if (ok && ctr_cfg.custom_lettersanity_mode >= 2)
+				{
+					int letter;
+					for (letter = 0; letter < CTR_CFG_LETTER_COUNT; ++letter)
+					{
+						long item = ctr_cfg.custom_letter_items[letter];
+						if (locs[i].kind == AP_VF_CUSTOM_LETTER && letter != locs[i].detail) continue;
+						if (item >= 0)
+						{
+							int sparse = AP_CustomLetterVerifyIndexPure(item);
+							if (sparse < 0 || counts[sparse] <= 0) ok = 0;
+						}
+					}
+				}
+				break;
 			case AP_VF_PODIUM:
 			{
 				AP_VerifyOptions opts = ap_vf_options();
@@ -602,7 +654,10 @@ static void ap_vf_recompute(void)
 					ap_vf_trophy_capable(lid, pad, counts) &&
 					ap_vf_stage2_met(pad, counts);
 				if (ok && ctr_cfg.lettersanity_mode == 2)
-					ok = counts[139 + (int)(locs[i].code - 35012500L)] > 0;
+				{
+					int itemIndex = AP_LetterLocationToItemIndexPure(locs[i].code);
+					ok = itemIndex >= 0 && counts[itemIndex] > 0;
+				}
 				break;
 			case AP_VF_ITEMSANITY:
 			{
@@ -653,6 +708,9 @@ static void ap_vf_recompute(void)
 				// any_percent seed: the first challenge is that seed's finale
 				// and also takes the Boss and Gem arms (#321).
 				ok = ap_vf_oxide_open(0, 0, oxide_bosses_won, counts);
+				// With optional-first, a final win supplies the first reward.
+				if (!ok && ctr_cfg.oxide_1_optional && ctr_cfg.goal_oxide == 2)
+					ok = ap_vf_oxide_open(1, 0, oxide_bosses_won, counts);
 				break;
 			case AP_VF_OXIDE_FIN:
 				// The Final Challenge is only offered after the first challenge
@@ -662,7 +720,8 @@ static void ap_vf_recompute(void)
 				// "boss_req[4] + relics" rule was missing. `oxide_first_open`
 				// is the sweep's own verdict on the first challenge, so the two
 				// rows cannot disagree.
-				ok = oxide_first_open &&
+				ok = (oxide_first_open ||
+				      (ctr_cfg.oxide_1_optional && ctr_cfg.goal_oxide == 2)) &&
 				     ap_vf_oxide_open(1, 1, oxide_bosses_won, counts);
 				break;
 			}

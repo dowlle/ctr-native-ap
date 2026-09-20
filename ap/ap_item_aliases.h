@@ -59,6 +59,31 @@ static const char *const AP_ALIAS_TRACK[16] = {
 // `names[CTR_CFG_LETTER_COUNT] = {'C', 'T', 'R'}` table exactly.
 static const char AP_ALIAS_LETTER_CHAR[CTR_CFG_LETTER_COUNT] = {'C', 'T', 'R'};
 
+// Racer short name for a HUD line, keyed by ENGINE character id (issue #362).
+//
+// DISPLAY ONLY, same discipline as AP_ItemDisplayAlias above -- this never
+// touches the engine's own name_LNG_short table, which other, non-AP screens
+// still read as-is. It only gives an AP-aware caller the same spelling the
+// transient feed and ceremony already use (AP_ALIAS_RACER), instead of the
+// engine's short name, which mismatches it for several racers (PENGUIN vs
+// PENTA, KOMODO.J vs JOE, N. OXIDE vs OXIDE, DINGO vs DINGODILE, P.STRIPE vs
+// PINSTRIPE, N.CORTEX vs CORTEX, F. CRASH vs FAKE CRASH).
+//
+// Returns NULL for an id AP_CapabilityRosterCharacter's inverse cannot find
+// (a modded character or an out-of-range id); the caller keeps its existing
+// engine-name fallback in that case.
+static inline const char *AP_ItemAliasRacerShortName(int characterID)
+{
+	int slot;
+
+	for (slot = 0; slot < AP_CAP_ROSTER_COUNT; slot++)
+	{
+		if (AP_CapabilityRosterCharacter(slot) == characterID)
+			return AP_ALIAS_RACER[slot];
+	}
+	return NULL;
+}
+
 // Resolve a raw AP item id to its native display alias (issue #324).
 //
 // Returns 1 and fills `out` (NUL-terminated, truncated to `cap`) when `item_id`

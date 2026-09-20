@@ -40,6 +40,15 @@ global_variable int s_pinnedVramDisplayX = 0;
 global_variable int s_pinnedVramDisplayY = 0;
 global_variable int s_pinnedVramDisplayW = 0;
 global_variable int s_pinnedVramDisplayH = 0;
+// Whether the game window currently has input focus, for the "mute when
+// unfocused" option (g_config.muteWhenUnfocused). -1 = not read from SDL yet;
+// NativeFocusMute_GainPure treats that as focused, so a start-up frame before
+// the window exists can never silence the game. It is seeded once from the
+// window's SDL_WINDOW_INPUT_FOCUS flag -- covering a window that starts
+// unfocused, e.g. launched behind another client -- and kept up to date by the
+// SDL focus events in Platform_PollHostEvents.
+global_variable int s_windowFocused = -1;
+
 #define NATIVE_FPS_REPORT_FRAME_WINDOW 2000
 global_variable int s_fpsFrameCount = 0;
 global_variable u64 s_fpsLastCounter = 0;
@@ -118,12 +127,30 @@ internal void Platform_HandleFullscreenToggle(void)
 {
 	bool fullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
 
+	// Capture BEFORE the switch: entering fullscreen, this is the last moment the
+	// windowed rect is readable; leaving fullscreen, it is a no-op and the rect
+	// remembered from before stays. Capturing after the switch would skip the
+	// first case and could read a transitional size in the second.
+	NativeRenderer_CaptureWindowGeometry();
 	g_config.fullscreen = NativeConfig_FullscreenToggledFromWindow(fullscreen);
 	SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
 	SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 	Platform_UpdateCursorVisibility();
 	NativeRenderer_ResetDevice();
 	NativeConfig_Save();
+}
+
+// Clean-exit path for SDL_EVENT_QUIT / SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+// capture the window's current geometry (issue: remember window position/size
+// between sessions) and flush config.ini before the process ends, exactly
+// like every other point that already saves it (Platform_HandleFullscreenToggle,
+// the options menu, the connection fields). Falling straight through to exit(0)
+// as before would drop a resize/move that never revisited the menu.
+internal void Platform_ExitClean(void)
+{
+	NativeRenderer_CaptureWindowGeometry();
+	NativeConfig_Save();
+	exit(0);
 }
 
 internal void Platform_UpdateHostAltKeyState(const s32 key, const s8 down)
@@ -281,6 +308,20 @@ void Platform_Init(const char *title, int width, int height)
 	Platform_InputInit();
 }
 
+// Unrecoverable mid-load failure: leave a log line, a visible diagnostic, then
+// tear down cleanly and exit nonzero. Platform_Shutdown is idempotent and also
+// registered with atexit, so the later automatic call is a no-op.
+void Platform_Fatal(const char *title, const char *message)
+{
+	Platform_LogError("[CTR Native] FATAL: %s\n", message ? message : "(no message)");
+	Platform_LogFlush();
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+	                         title ? title : "CTR Native",
+	                         message ? message : "", NULL);
+	Platform_Shutdown();
+	exit(EXIT_FAILURE);
+}
+
 void Platform_Shutdown(void)
 {
 	if (s_platformInitialized == 0)
@@ -342,7 +383,24 @@ int Platform_BeginScene(void)
 	// NOTE(aalhendi): CTR already throttles through the retail VSync/draw-sync
 	// path. Do not add a second SDL swap wait; some GL drivers charge that wait
 	// to the next frame's first clear instead of SDL_GL_SwapWindow.
-	NativeRenderer_UpdateSwapIntervalState(0);
+	//
+	// That is why the VSync option (g_config.vsync) defaults to Off, which
+	// requests interval 0 every frame as this call always did. On and Adaptive
+	// are opt-in: the game clock never follows the display, so a display rate
+	// close to but not equal to the game's frame rate can show as a periodic
+	// hitch, and a display slower than the game clock would slow the game.
+	NativeRenderer_UpdateSwapIntervalState(g_config.vsync);
+
+	// "Mute When Unfocused" (issue 348): read the live option and the live
+	// focus state every frame and let the audio layer decide whether the SDL
+	// output gain has to change. Doing it here rather than only from the focus
+	// events is what makes toggling the option take effect immediately, in
+	// either direction, without waiting for the next alt-tab.
+	if ((s_windowFocused < 0) && (g_window != NULL))
+	{
+		s_windowFocused = ((SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0) ? 1 : 0;
+	}
+	NativeAudio_UpdateFocusMuteState(g_config.muteWhenUnfocused ? 1 : 0, s_windowFocused);
 
 	NativeRenderer_BeginScene();
 
@@ -414,6 +472,9 @@ void Platform_EndScene(void)
 		NativeRenderer_PresentVRAMRect(activeDispEnv.disp.x, activeDispEnv.disp.y, activeDispEnv.disp.w, activeDispEnv.disp.h);
 	}
 	NativeRenderer_EndGpuFrame();
+#ifdef CTR_AP
+	AP_TrackerPresent();
+#endif
 	NativeRenderer_SwapWindow();
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_END_SCENE);
 }
@@ -666,7 +727,7 @@ void Platform_PollHostEvents(void)
 			Platform_InputControllerRemoved(event.gdevice.which);
 			break;
 		case SDL_EVENT_QUIT:
-			exit(0);
+			Platform_ExitClean();
 			break;
 		case SDL_EVENT_WINDOW_RESIZED:
 			Platform_HandleWindowResize(event.window.data1, event.window.data2);
@@ -675,8 +736,17 @@ void Platform_PollHostEvents(void)
 		case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
 			Platform_UpdateCursorVisibility();
 			break;
+		// Focus drives the "Mute When Unfocused" option only; the gain itself is
+		// applied from Platform_BeginScene, so the game never changes behaviour
+		// here and a build with the option off does exactly what it did before.
+		case SDL_EVENT_WINDOW_FOCUS_GAINED:
+			s_windowFocused = 1;
+			break;
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			s_windowFocused = 0;
+			break;
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-			exit(0);
+			Platform_ExitClean();
 			break;
 		case SDL_EVENT_TEXT_INPUT:
 			Platform_HandleTextInput(event.text.text);

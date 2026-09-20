@@ -491,6 +491,31 @@ int main(void)
 		           "a seed cannot redefine the measured wumpa capability");
 	}
 
+	{
+		struct CustomTrackManagerRequirement current = requirement_for(&s_babyTParkCurrent);
+		struct CustomTrackManagerRequirement legacy = requirement_for(baby);
+		struct CustomTrackManagerStatus currentStatus, legacyStatus;
+		expect_int(CustomTrackManager_MatchingPackage(&current) == &s_babyTParkCurrent, 1,
+		           "current exact profile selected");
+		expect_int(CustomTrackManager_MatchingPackage(&legacy) == baby, 1,
+		           "legacy exact profile still selected");
+		Manager_BuildPaths(assets, &s_babyTParkCurrent, &currentStatus);
+		Manager_BuildPaths(assets, baby, &legacyStatus);
+		expect_contains(currentStatus.packageRoot, "baby-t-park-1.0.2", "current isolated folder");
+		expect_int(strcmp(currentStatus.packageRoot, legacyStatus.packageRoot) != 0, 1,
+		           "current and legacy roots differ");
+		current.levSha256 = legacy.levSha256;
+		expect_int(CustomTrackManager_MatchingPackage(&current) == NULL, 1,
+		           "cross-version digest mix refused");
+		current = requirement_for(&s_babyTParkCurrent);
+		current.navigationUuid = legacy.navigationUuid;
+		expect_int(CustomTrackManager_MatchingPackage(&current) == NULL, 1,
+		           "old navigation identity refused for current pair");
+		current = requirement_for(&s_babyTParkCurrent);
+		current.minimumClientVersion = legacy.minimumClientVersion;
+		expect_int(CustomTrackManager_MatchingPackage(&current) == NULL, 1,
+		           "old feature floor refused for current profile");
+	}
 	printf("test-custom-track-manager: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

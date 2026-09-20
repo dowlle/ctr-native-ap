@@ -104,6 +104,9 @@ typedef struct
 	TextureID apSideloadTexture;
 	int apSideloadWidth;
 	int apSideloadHeight;
+	TextureID trialLetterTexture;
+	int trialLetterWidth;
+	int trialLetterHeight;
 
 	int drawPrimMode;
 	bool psxDrawMaskSet;
@@ -142,6 +145,13 @@ void NativeGpu_SetSideloadTexture(unsigned int texture, int width, int height)
 	s_gpu.apSideloadTexture = (TextureID)texture;
 	s_gpu.apSideloadWidth = width;
 	s_gpu.apSideloadHeight = height;
+}
+
+void NativeGpu_SetTrialLetterTexture(unsigned int texture, int width, int height)
+{
+	s_gpu.trialLetterTexture = (TextureID)texture;
+	s_gpu.trialLetterWidth = width;
+	s_gpu.trialLetterHeight = height;
 }
 
 void ClearSplits(void)
@@ -422,7 +432,7 @@ void MakeTexcoordQuad(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, u8 *uv3, s16 
 	// shader also adds tcx/tcy * 0.5; those auxiliary fields are otherwise left
 	// as stale vertex-buffer contents here, which magnifies/crops the AP art in
 	// a run-dependent way. Retail texture paths retain their existing behavior.
-	if (((u16)page & AP_TPAGE_SIDELOAD_BIT) != 0)
+	if (((u16)page & AP_TPAGE_SIDELOAD_MASK) != 0)
 	{
 		int i;
 		for (i = 0; i < 4; i++)
@@ -480,7 +490,7 @@ void MakeTexcoordTriangle(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, s16 page,
 
 	// See MakeTexcoordQuad: sideload UVs must not inherit auxiliary offsets from
 	// an earlier primitive that occupied these vertex-buffer slots.
-	if (((u16)page & AP_TPAGE_SIDELOAD_BIT) != 0)
+	if (((u16)page & AP_TPAGE_SIDELOAD_MASK) != 0)
 	{
 		int i;
 		for (i = 0; i < 3; i++)
@@ -866,7 +876,9 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	// This scopes per PRIMITIVE rather than per display-list position, which
 	// matters: a model's prims are spread across depth-sorted OT buckets, so
 	// bracketing packets around a draw could not have scoped reliably.
-	bool apSideload = textured && (tpage & AP_TPAGE_SIDELOAD_BIT) != 0 && s_gpu.apSideloadTexture != 0;
+	bool trialLetter = (tpage & AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TRIAL_LETTER_BIT;
+	TextureID sideloadTexture = trialLetter ? s_gpu.trialLetterTexture : s_gpu.apSideloadTexture;
+	bool apSideload = textured && (tpage & AP_TPAGE_SIDELOAD_MASK) != 0 && sideloadTexture != 0;
 
 	BlendMode blendMode = semiTrans ? GET_TPAGE_BLEND(tpage) : BM_NONE;
 	TexFormat texFormat = GetTPageFormat(tpage);
@@ -887,7 +899,7 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	else if (apSideload)
 	{
 		texFormat = TF_32_BIT_RGBA;
-		textureId = s_gpu.apSideloadTexture;
+		textureId = sideloadTexture;
 		psxTexturedSemiTrans = false;
 	}
 
@@ -924,8 +936,8 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 
 	if (apSideload)
 	{
-		split->drawenv.tw.w = s_gpu.apSideloadWidth;
-		split->drawenv.tw.h = s_gpu.apSideloadHeight;
+		split->drawenv.tw.w = trialLetter ? s_gpu.trialLetterWidth : s_gpu.apSideloadWidth;
+		split->drawenv.tw.h = trialLetter ? s_gpu.trialLetterHeight : s_gpu.apSideloadHeight;
 	}
 	else
 	{
@@ -1631,7 +1643,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 		// verbatim, and only DR_TPAGE masks it back to 0x1FF). Nothing
 		// sideloaded is ever drawn as a sprite, so strip it here rather than
 		// let a sprite sample the AP atlas.
-		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_MASK;
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
@@ -1684,7 +1696,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT_8 *poly = (SPRT_8 *)polyTag;
 
-		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;  // see case 0x64
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_MASK;  // see case 0x64
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
@@ -1720,7 +1732,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT_16 *poly = (SPRT_16 *)polyTag;
 
-		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_BIT;  // see case 0x64
+		activeDrawEnv.tpage &= (u16)~AP_TPAGE_SIDELOAD_MASK;  // see case 0x64
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 

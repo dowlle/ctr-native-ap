@@ -8,6 +8,7 @@
 
 #include "ap_navrec.h"
 #include "ap_navrec_format.h"
+#include "ap_navrec_identity_logic.h"
 #include "ap_navrec_label_logic.h"
 #include "ap_navrec_lane_logic.h"
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
@@ -227,6 +228,19 @@ void AP_NavRec_BlockRecordedLanes(void)
 	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
 	s_navrecActiveNavRevision = 0;
 	s_navrecIdentityBlocked = 1;
+}
+
+// The three-way answer of ap_navrec_identity_logic.h, recovered from the
+// statics the arm in game/BOTS.c wrote. Every gate below asks it rather than
+// reading the flag, so "no lanes", "no recording" and "no corridor" cannot
+// drift apart.
+static int AP_NavRec_LoadIdentityOutcome(void)
+{
+	if (s_navrecIdentityBlocked)
+		return AP_NAVREC_LOAD_BLOCKED;
+	if (s_navrecActiveIdentityKind == AP_NAVREC_IDENTITY_CUSTOM)
+		return AP_NAVREC_LOAD_CUSTOM;
+	return AP_NAVREC_LOAD_RETAIL;
 }
 
 // The active identity, in the form the log lines use.
@@ -468,23 +482,40 @@ static void AP_NavRec_SyncArmed(void)
 }
 
 // ============================================================================
-// Retail corridor snapshot, for the shortcut flag
+// Corridor snapshot, for the shortcut flag
 // ============================================================================
 
 // level1->LevNavTable is the LEV's own data and is never written by the
 // injection path, which only replaces pointers in sdata. So this snapshot is the
-// retail line even in a session that is also playing recorded laps back.
+// line the level itself ships even in a session that is also playing recorded
+// laps back: the retail track's on a retail load, the custom track's on a load
+// serving custom bytes with an identity of its own. A served load with no
+// identity takes no snapshot at all.
 static void AP_NavRec_SnapshotCorridor(struct GameTracker *gGT, int levelID)
 {
 	struct NavHeader **table;
 	unsigned int       points = 0;
 	char               msg[192];
+	char               ident[80];
 	int                lane;
 
 	s_navrecCorridorLevel = levelID;
 	s_navrecCorridorPoints = 0;
 	s_navrecGridReady = 0;
 	s_navrecTrackKind = AP_NAVREC_TRACK_NONAV;
+
+	// A served custom track with no navigation identity takes no corridor. The
+	// snapshot exists to classify a recorded lap's shortcut flags, that load
+	// writes no lap (see the write gate), and the borrowed slot's number is the
+	// only name this build could file the result under. Leaving it out keeps the
+	// host slot's number off a corridor that is not the host slot's track.
+	if (!AP_NavRecIdentity_CorridorApplies(AP_NavRec_LoadIdentityOutcome()))
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP NAVREC] no corridor for level %d: a custom track is served on this slot with no navigation identity\n", levelID);
+		AP_LogLine(msg);
+		return;
+	}
 
 	if ((s_navrecScratch == NULL) || (gGT->level1 == NULL))
 		return;
@@ -527,7 +558,8 @@ static void AP_NavRec_SnapshotCorridor(struct GameTracker *gGT, int levelID)
 		s_navrecGridReady = AP_NavRecFormat_GridBuild(&s_navrecScratch->grid, s_navrecScratch->corridorXZ, points);
 	}
 
-	snprintf(msg, sizeof msg, "[AP NAVREC] retail corridor for level %d: %u node(s), grid %dx%d cell %d\n", levelID, points,
+	AP_NavRec_DescribeIdentity(s_navrecActiveIdentityKind, s_navrecActiveTrackUuid, s_navrecActiveNavRevision, ident, sizeof ident);
+	snprintf(msg, sizeof msg, "[AP NAVREC] corridor for level %d (identity %s): %u node(s), grid %dx%d cell %d\n", levelID, ident, points,
 	         s_navrecGridReady ? s_navrecScratch->grid.nx : 0, s_navrecGridReady ? s_navrecScratch->grid.nz : 0,
 	         s_navrecGridReady ? s_navrecScratch->grid.cell : 0);
 	AP_LogLine(msg);
@@ -678,7 +710,7 @@ static void AP_NavRec_Write(int levelID)
 	// A served custom load without a navigation identity cannot stamp a lap
 	// truthfully: written as retail it would later inject onto the host slot's
 	// real retail races. Nothing is saved, and the reason is on record.
-	if (s_navrecIdentityBlocked)
+	if (!AP_NavRecIdentity_MayRecord(AP_NavRec_LoadIdentityOutcome()))
 	{
 		AP_LogLine("[AP NAVREC] recording disabled for this load: the served custom track supplies no navigation identity\n");
 		return;
@@ -1072,7 +1104,7 @@ static int AP_NavRec_LoadForLevel(int levelID)
 	// retail interpretation would match on the borrowed host LevelID and put
 	// retail lines under bots on custom geometry; the level's own lanes are the
 	// only source proven to belong to what is on screen.
-	if (s_navrecIdentityBlocked)
+	if (!AP_NavRecIdentity_LanesMayLoad(AP_NavRec_LoadIdentityOutcome()))
 	{
 		AP_LogLine("[AP NAVREC] recorded lanes disabled for this load: the served custom track supplies no navigation identity; "
 		           "the level's own lanes stay\n");

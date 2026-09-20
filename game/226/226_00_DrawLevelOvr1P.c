@@ -487,6 +487,14 @@ static int DrawLevelOvr1P_IsNativeLevelTexturePointer(u32 value)
 	// the data boundary; renderer control flow still follows retail sign tests.
 	uintptr_t ptr = (uintptr_t)value;
 
+	// NOTE: Rebased level pointers are word-aligned. Inline texture words such
+	// as 0x01010101 are not, but can land inside the mempack span depending on
+	// where the binary places it, and were then dereferenced as a TextureLayout.
+	if ((ptr & 3) != 0)
+	{
+		return 0;
+	}
+
 	if (!DrawLevelOvr1P_IsNativeLevelSpan(ptr, sizeof(struct TextureLayout)))
 	{
 		return 0;
@@ -8035,7 +8043,14 @@ static int Ovr226_800a0f78_EmitFullDynamicQuadBlock(struct PushBuffer *pb, struc
 static void Ovr226_800a0f0c_SeedFullDynamicVisibilityScratch(const int *visFaceList, const struct QuadBlock *block)
 {
 	u32 blockID = (u16)block->blockID;
-	const u32 *word = (const u32 *)((const u8 *)visFaceList + ((blockID >> 3) & 0x1fc));
+	// NOTE: The face-visibility list is numQuadBlock/32 bytes and is indexed
+	// by the full block id (MainFrame_VisMemHasQuad indexes the same buffer by
+	// the full quad index). Masking the byte offset with 0x1fc wrapped it at
+	// 512 bytes (4096 faces), so any level with more than 4096 quadblocks read
+	// another block's bit; Cortex Vortex (8494 quadblocks) lost the right half
+	// of its start/finish line (blockID 5952 read 0x0fffffff and was culled,
+	// while the correct word was 0xffffffff). Use the word-aligned full offset.
+	const u32 *word = (const u32 *)((const u8 *)visFaceList + ((blockID >> 5) << 2));
 
 	DrawLevelOvr1P_Scratch()->visibilityWordPtr32 = (u32)(uintptr_t)word;
 	DrawLevelOvr1P_Scratch()->visibilityBitIndex = blockID & 0x1f;

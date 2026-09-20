@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "../ap/ap_navrec_format.h"
+#include "../ap/ap_navrec_identity_logic.h"
 #include "../ap/ap_navrec_lane_logic.h"
 
 static int g_failures = 0;
@@ -1685,6 +1686,121 @@ int main(void)
 		check(chosen[0] == 1u, "the older good file races instead");
 		check(strcmp(author[0], "BEXUS") == 0, "the older file's contributor is the one on the grid");
 		check(opened == 2u, "the no-closed-lap file still cost one open");
+	}
+
+	// ---------------------------------------------------------------
+	// Issue #356: a custom track served through a BORROWED retail slot.
+	//
+	// Cortex Vortex and N. Oxide's Final Challenge both load host LevelID
+	// 13, which is Oxide Station's recording identity, and the gem-cup event
+	// race borrows an arcade slot the same way. Recordings are filed and
+	// matched by that host ID, so a served load that resolves to the retail
+	// identity replays the host track's lines on custom geometry.
+	//
+	// AP_NavRecIdentity_ForLoad is the rule game/BOTS.c arms the recorder
+	// with. The cases below pair its answer with the selection pass, on the
+	// same slot 13 folder, so "retail slot still races its recordings" and
+	// "served custom slot races none of them" are asserted against the
+	// shipped code rather than described.
+	// ---------------------------------------------------------------
+	{
+		static const unsigned char packUuid[AP_NAVREC_TRACK_UUID_BYTES] = {
+			0x2f, 0x1c, 0x44, 0x90, 0xa7, 0x0b, 0x4d, 0x12,
+			0x8e, 0x63, 0x55, 0xcd, 0x01, 0x7a, 0x9f, 0x30};
+		struct AP_NavRecLoadFacts facts;
+		unsigned int              chosen[AP_NAVREC_LANES];
+		char                      author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
+		unsigned int              opened;
+		unsigned int              n;
+
+		// The decision table, one row per load the client can be in.
+		memset(&facts, 0, sizeof facts);
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_RETAIL,
+		      "an ordinary retail load keeps the retail identity");
+
+		memset(&facts, 0, sizeof facts);
+		facts.eventRaceServing = 1;
+		facts.eventRaceNavIdentity = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_CUSTOM,
+		      "the event race with a NAV3 UUID races under the custom identity");
+
+		memset(&facts, 0, sizeof facts);
+		facts.eventRaceServing = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "the event race without a UUID is blocked, not retail");
+
+		memset(&facts, 0, sizeof facts);
+		facts.cortexTrackIntent = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "the Cortex Vortex pad track is blocked on its borrowed slot");
+
+		memset(&facts, 0, sizeof facts);
+		facts.oxideFinalServing = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "N. Oxide's Final Challenge is blocked on its borrowed slot");
+
+		// The package UUID belongs to the seed's custom track, not to the
+		// bundled pair, so it can never answer for the pair's two loads.
+		memset(&facts, 0, sizeof facts);
+		facts.eventRaceNavIdentity = 1;
+		facts.oxideFinalServing = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "a configured UUID does not make the bundled pair a custom identity");
+
+		check(AP_NavRecIdentity_LanesMayLoad(AP_NAVREC_LOAD_RETAIL) &&
+		          AP_NavRecIdentity_LanesMayLoad(AP_NAVREC_LOAD_CUSTOM) &&
+		          !AP_NavRecIdentity_LanesMayLoad(AP_NAVREC_LOAD_BLOCKED),
+		      "only a blocked load refuses recorded lanes");
+		check(!AP_NavRecIdentity_MayRecord(AP_NAVREC_LOAD_BLOCKED) &&
+		          !AP_NavRecIdentity_CorridorApplies(AP_NAVREC_LOAD_BLOCKED),
+		      "a blocked load writes no lap and takes no corridor");
+		check(AP_NavRecIdentity_CorridorApplies(AP_NAVREC_LOAD_RETAIL),
+		      "a retail load still takes its corridor");
+
+		// Slot 13 with no custom track: Oxide Station's own recordings race,
+		// exactly as they did before this fix.
+		FakeReset(13);
+		FakeAdd(1, "Dex", 1, 0);
+		FakeAdd(7, "Appie", 1, 0);
+		FakeAdd(8, "BEXUS", 1, 0);
+
+		memset(&facts, 0, sizeof facts);
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_RETAIL,
+		      "slot 13 with nothing served is a retail Oxide Station load");
+
+		memset(author, 0, sizeof author);
+		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		check(n == 3u, "retail slot 13 still fills all three lanes from its recordings");
+		check((chosen[0] == 8u) && (chosen[1] == 7u) && (chosen[2] == 1u),
+		      "and still newest index first, one file per contributor");
+
+		// Same folder, same slot, with the pad track served: the arm blocks,
+		// so the loader never scans and none of those files reaches a lane.
+		memset(&facts, 0, sizeof facts);
+		facts.cortexTrackIntent = 1;
+		check(!AP_NavRecIdentity_LanesMayLoad(AP_NavRecIdentity_ForLoad(&facts)),
+		      "slot 13 serving Cortex Vortex loads no recording at all");
+
+		// The same files under a custom identity: rejected one by one, which
+		// is what keeps a retail line off custom geometry even if a future
+		// caller does scan.
+		g_folder.identityKind = AP_NAVREC_IDENTITY_CUSTOM;
+		memcpy(g_folder.uuid, packUuid, sizeof packUuid);
+		g_folder.navRevision = 4;
+
+		memset(author, 0, sizeof author);
+		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		check(n == 0u, "a custom load fills no lane from the host slot's retail recordings");
+
+		// A lap recorded ON the custom track carries the UUID, so it is the
+		// one file in that folder the custom load will take.
+		FakeAddCustom(9, "Appie", packUuid, 4);
+
+		memset(author, 0, sizeof author);
+		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		check(n == 1u, "a recording made on the custom track does race there");
+		check((chosen[0] == 9u) && (strcmp(author[0], "Appie") == 0),
+		      "and it is the custom-identity file, not a host-slot retail one");
 	}
 
 	printf("\n%d failure(s)\n", g_failures);

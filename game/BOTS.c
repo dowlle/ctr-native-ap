@@ -333,25 +333,45 @@ void BOTS_Adv_AdjustDifficulty(void)
 	// path with a missing or malformed UUID) must BLOCK rather than clear:
 	// cleared, the borrowed host LevelID would match retail recordings onto
 	// custom geometry, and laps recorded here would be stamped as retail lines
-	// of the host slot. The same ServingLoad predicate that decides the bytes
-	// decides this, so geometry and recording policy cannot disagree.
+	// of the host slot. The same predicates that decide the bytes decide this,
+	// so geometry and recording policy cannot disagree.
 	//
 	// There is deliberately no CTR_CUSTOM_TRACKS-off arm. Nothing else in the
 	// tree calls AP_NavRec_SetActiveCustomTrack, so a build without the loader
 	// leaves the navrec identity statics at their zero-initialised value, which
 	// IS AP_NAVREC_IDENTITY_RETAIL. Clearing it there would be a no-op that cost
 	// this file its guard-off object identity for nothing.
+	//
+	// All THREE serving predicates are gathered, not just the event race's.
+	// Asking only some of them leaves the loads it skipped resolving to the
+	// borrowed host slot's retail identity, which is issue #356: N. Oxide's
+	// Final Challenge and the Cortex Vortex pad track both borrow LevelID 13,
+	// and Oxide Station's recordings must never replay on either.
 	{
-		unsigned char ctNavUuid[CTR_CT_NAV_UUID_BYTES];
-		unsigned int  ctNavRevision;
+		unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
+		unsigned int              ctNavRevision = 0;
+		struct AP_NavRecLoadFacts facts;
+		int                       advCup = (gameMode1 & ADVENTURE_CUP) != 0;
+		int                       advBoss = (gameMode1 & ADVENTURE_BOSS) != 0;
 
-		if (CustomTrack_NavIdentityForLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID, ctNavUuid,
-		                                   &ctNavRevision))
+		facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
+		facts.eventRaceNavIdentity =
+		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
+		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss);
+		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
+
+		switch (AP_NavRecIdentity_ForLoad(&facts))
+		{
+		case AP_NAVREC_LOAD_CUSTOM:
 			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
-		else if (CustomTrack_ServingLoad((int)gGT->levelID, (gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+			break;
+		case AP_NAVREC_LOAD_BLOCKED:
 			AP_NavRec_BlockRecordedLanes();
-		else
+			break;
+		default:
 			AP_NavRec_ClearActiveCustomTrack();
+			break;
+		}
 	}
 #endif
 
@@ -2820,6 +2840,10 @@ FinishHazardTimerUpdate:
 	}
 }
 
+// The Hit Character gather lives in ap/ap_hit_bots.c (AP_HitBotsVictim) so the
+// real production function can be host-tested off-engine. BOTS_ChangeState calls
+// it just before its final return, after the accepted-damage switch.
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80016b00-0x80016ec8
 u32 BOTS_ChangeState(struct Driver *driverVictim, int damageType, struct Driver *driverAttacker, int reason)
 {
@@ -2831,6 +2855,13 @@ u32 BOTS_ChangeState(struct Driver *driverVictim, int damageType, struct Driver 
 	}
 
 	driverVictim->kartState = KS_NORMAL;
+
+#ifdef CTR_AP
+	// Pre-call damage state, captured before the switch so the Hit gather can
+	// tell a fresh type-1 spin (an effect) from type 1 while already damage-active
+	// (no effect), and keep type 4's burn while already spinning.
+	int apWasDamageActive = (driverVictim->botData.botFlags & BOT_FLAG_DAMAGE_ACTIVE) != 0;
+#endif
 
 	switch (damageType)
 	{
@@ -2964,6 +2995,15 @@ u32 BOTS_ChangeState(struct Driver *driverVictim, int damageType, struct Driver 
 			break;
 		}
 	}
+#ifdef CTR_AP
+	// Hit Character encounters (ticket 06): the AI victim path. BOTS_ChangeState
+	// is where a bot actually takes accepted damage (RB_Hazard_HurtDriver routes
+	// bot victims here; VehPickState_NewState is the human path). Placed after the
+	// accepted-damage switch so type 1/4 events that were already damage-active --
+	// which still reset squish/burn state -- are observed, not just fresh
+	// transitions. The gather rejects everything the contract excludes.
+	AP_HitBotsVictim(driverVictim, damageType, driverAttacker, apWasDamageActive);
+#endif
 	return 1;
 }
 
