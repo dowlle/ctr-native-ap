@@ -95,6 +95,19 @@ int main(void)
 	EXPECT(rows[4].juiced == AP_TRACKER_PROGRESS_ABSENT,
 		"a missing juiced check is absent even if checked input is true");
 
+	weaponExists[2][0] = 0;
+	weaponChecked[2][0] = 1;
+	weaponExists[2][1] = 1;
+	weaponChecked[2][1] = 0;
+	count = AP_TrackerProgressRowsPure(1, 0, owned, weaponExists, weaponChecked,
+		hitExists, hitChecked, rows);
+	EXPECT(count == AP_TRACKER_PROGRESS_WEAPONS,
+		"a missing plain check does not remove its weapon");
+	EXPECT(rows[2].plain == AP_TRACKER_PROGRESS_ABSENT,
+		"a missing plain check is absent even if checked input is true");
+	EXPECT(rows[2].juiced == AP_TRACKER_PROGRESS_PENDING,
+		"the existing juiced check remains pending");
+
 	// Hit only: the full canonical roster, none checked.
 	memset(hitExists, 1, sizeof hitExists);
 	memset(hitChecked, 0, sizeof hitChecked);

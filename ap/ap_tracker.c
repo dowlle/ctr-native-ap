@@ -571,6 +571,10 @@ int AP_TrackerMenuFrame(void)
 	} else {
 		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
 		if((tap&BTN_SELECT) && AP_TrackerProgressAvailable()) ap_tracker.view=!ap_tracker.view;
+		/* A seed swap while the panel is open can turn both features off; fall
+		 * back to the map rather than leaving the map hidden behind an empty
+		 * panel. */
+		if(ap_tracker.view && !AP_TrackerProgressAvailable()) ap_tracker.view=0;
 		if(ap_tracker.view) {
 			/* Progress view: an explicit alternate branch. No map navigation,
 			 * pinning or mouse hit-testing runs, so a frame that shows the panel
