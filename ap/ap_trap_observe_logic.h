@@ -141,11 +141,11 @@ static int AP_TrapHazardDistance(short speedApprox, int travelMs)
 
 // Apply a 12-bit fixed-point heading axis (4096 = 1.0) to the signed distance.
 // The product is divided by 4096 with truncation toward zero rather than an
-// arithmetic right shift: for a reverse (negative) distance the shift would round
-// toward negative infinity and break the mirror between forward and reverse. For
-// the non-negative distances the old code could produce, division and `>> 12` are
-// identical. At this horizon the magnitude is at most 875, so the product is far
-// inside int32.
+// arithmetic right shift: a negative product would round toward negative
+// infinity and break the mirror between forward and reverse. Non-negative
+// products match the old shift; negative products can differ by one unit even
+// at forward speed when the heading axis is negative. At this horizon the
+// distance magnitude is at most 875, so the product is far inside int32.
 static int AP_TrapHazardOffset(int heading, short speedApprox, int travelMs)
 {
 	long long distance = AP_TrapHazardDistance(speedApprox, travelMs);
