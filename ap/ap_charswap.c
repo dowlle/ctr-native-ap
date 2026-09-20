@@ -1848,13 +1848,24 @@ static void ap_cs_noteMissingPortrait(int characterID, int iconID)
 static const char *ap_cs_shortName(int characterID)
 {
 	const char *localised = NULL;
+	const char *apAlias;
 
 	if ((unsigned)characterID < AP_CS_TILES)
 	{
-		int lng = data.MetaDataCharacters[characterID].name_LNG_short;
-		if (lng >= 0)
-			localised = sdata->lngStrings[lng];
-		return AP_CharName_Pick(localised, data.MetaDataCharacters[characterID].name_Debug);
+		// Prefer the AP alias (#362): the engine's own short name mismatches it
+		// for several racers (PENGUIN vs PENTA, KOMODO.J vs JOE, ...), and this
+		// text fallback is drawn by the same picker grid / pad-portrait surfaces
+		// the mismatched pad HUD line was.
+		apAlias = AP_ItemAliasRacerShortName(characterID);
+		if (apAlias != NULL)
+			return apAlias;
+
+		{
+			int lng = data.MetaDataCharacters[characterID].name_LNG_short;
+			if (lng >= 0)
+				localised = sdata->lngStrings[lng];
+			return AP_CharName_Pick(localised, data.MetaDataCharacters[characterID].name_Debug);
+		}
 	}
 
 	return AP_CharName_Pick(NULL, NULL);

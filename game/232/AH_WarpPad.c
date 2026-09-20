@@ -651,8 +651,15 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 						if (!apHave)
 						{
-							snprintf(apRacerLine, sizeof apRacerLine, "REQUIRES %s",
-							         sdata->lngStrings[data.MetaDataCharacters[apLockRacer].name_LNG_short]);
+							// The engine's own short name (name_LNG_short) mismatches
+							// the AP log/feed spelling for several racers -- e.g.
+							// PENGUIN vs PENTA, KOMODO.J vs JOE (#362). Prefer the
+							// same alias the rest of the AP UI already uses; fall back
+							// to the engine name only for a racer id it cannot place.
+							const char *apRacerName = AP_ItemAliasRacerShortName(apLockRacer);
+							if (apRacerName == NULL)
+								apRacerName = sdata->lngStrings[data.MetaDataCharacters[apLockRacer].name_LNG_short];
+							snprintf(apRacerLine, sizeof apRacerLine, "REQUIRES %s", apRacerName);
 						}
 
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,

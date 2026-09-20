@@ -16,6 +16,7 @@
 #include "../ap/ap_deathlink.h" // DeathLink (issue #6): send/receive semantics
 #include "../ap/ap_marker_model.h" // STATIC_AP marker model id + tint strength (#124)
 #include "../ap/ap_capability.h" // progressive boost + progressive stats (#12/#13)
+#include "../ap/ap_item_aliases.h" // native display aliases (#324); racer short name for AH_WarpPad.c (#362)
 #include "../ap/ap_blue_fire.h" // Retro-Fueled Blue Fire palette state (#12)
 #include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
