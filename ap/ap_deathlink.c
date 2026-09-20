@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ap_deathlink.h"
+#include "ap_race_attempt_logic.h" // #286 freestanding attempt latch / permutation
 #include "ap_hooks.h"   // AP_LogLine
 #include "ap_net.h"     // ap_net_deathlink_enable / _send / _take, ap_net_is_connected
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
@@ -24,6 +25,13 @@ static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnest
 // ── Receive state ──
 static int  g_dl_pending_recv = 0;         // depth-1 inbound queue (extras dropped)
 static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour only)
+
+// #286 attempt-owned forced-loss latch. Deliberately separate from the network
+// receive state above: it belongs to the race attempt, so AP_DeathLinkConnectReset
+// and the feature-off early return below never touch it. It is armed by
+// AP_DeathLinkApplyRaceLoss and cleared only by AP_RaceAttempt_OnLevelStart when
+// the next eligible racing level loads.
+static APRaceAttemptState g_dl_race_attempt;
 
 // No-loop guard: armed the frame a RECEIVED death forces the mask grab; consumed
 // by the next mask-grab rising edge so that forced reset never sends. No timeout:
@@ -67,13 +75,15 @@ static int g_dl_send_cooldown = 0;
 static int g_dl_tag_on = 0; // tag state last declared to the server
 
 // Effective mode: the config preference wins over the seed option. The forced
-// values ARE the tier enum (1 = mask_reset, 2 = any_hit), so both in-game
-// DeathLink layers stay selectable when forcing on.
+// values ARE the tier enum (1 = mask_reset, 2 = any_hit, 3 = race_loss), so all
+// in-game DeathLink layers stay selectable when forcing on.
 static int AP_DeathLinkEffMode(void)
 {
 	if (g_config.deathLink == 0)
 		return CTR_DL_OFF;
-	if (g_config.deathLink == CTR_DL_MASK_RESET || g_config.deathLink == CTR_DL_ANY_HIT)
+	if (g_config.deathLink == CTR_DL_MASK_RESET ||
+	    g_config.deathLink == CTR_DL_ANY_HIT ||
+	    g_config.deathLink == CTR_DL_RACE_LOSS)
 		return g_config.deathLink;
 	return ctr_cfg_active() ? ctr_cfg.death_link : CTR_DL_OFF; // -1: follow the seed
 }
@@ -81,6 +91,35 @@ static int AP_DeathLinkEffMode(void)
 int AP_DeathLinkActive(void)
 {
 	return AP_DeathLinkEffMode() != CTR_DL_OFF;
+}
+
+// #286 authoritative attempt predicate. Every result-derived producer reads this,
+// so the failed attempt's finish checks and the genuine later attempt's checks
+// can never disagree about which attempt owns them.
+int AP_RaceAttemptIsForcedLoss(void)
+{
+	return AP_RaceAttempt_IsForcedLoss(&g_dl_race_attempt);
+}
+
+// #286 attempt boundary, called from MainInit_FinalizeInit right after
+// MainGameStart_Initialize. LOAD_IsOpen_RacingOrBattle() is the race/battle
+// thread overlay (1); the hub is 2, the main menu 0 and the podium 3, so those
+// loads cannot clear the latch. A battle arena is not an eligible attempt either.
+void AP_RaceAttempt_OnLevelStart(struct GameTracker *gGT)
+{
+	int cleared;
+
+	if (gGT == 0)
+		return;
+
+	cleared = AP_RaceAttempt_LevelStartStep(
+	    &g_dl_race_attempt,
+	    LOAD_IsOpen_RacingOrBattle() != 0,
+	    (sdata != 0 && sdata->Loading.stage == LOAD_IDLE),
+	    (gGT->gameMode1 & (ADVENTURE_ARENA | BATTLE_MODE)) != 0);
+
+	if (cleared)
+		AP_LogLine("[AP DEATH] new race attempt -> forced-loss latch cleared\n");
 }
 
 // Declare/withdraw the DeathLink tag whenever the effective state and the
@@ -210,12 +249,95 @@ void AP_DeathLinkConnectReset(void)
 	// AP_NetTick's reset block runs.
 	g_dl_tag_on = 0; // fresh connection: no tag declared yet
 	AP_DeathLinkSyncTag();
+
+	// g_dl_race_attempt is deliberately NOT reset here. The #286 forced-loss latch
+	// belongs to the race attempt, so a disconnect or reconnect during the result
+	// sequence must not re-enable the failed attempt's finish checks. It clears
+	// only in AP_RaceAttempt_OnLevelStart.
+	AP_RaceAttempt_OnConnectReset(&g_dl_race_attempt);
+}
+
+// Build the rank -> driver-slot ordering from the live race order. Returns 0 if
+// any participating rank is unpopulated, which defers the forced loss.
+static int AP_DeathLinkBuildOrder(struct GameTracker *gGT, int racers, int *order)
+{
+	int r;
+
+	for (r = 0; r < racers; r++)
+	{
+		struct Driver *d = gGT->driversInRaceOrder[r];
+		if (d == 0)
+			return 0;
+		order[r] = (int)d->driverID;
+	}
+	return 1;
+}
+
+// #286: end the current adventure race attempt as a retail last-place loss.
+// The rank permutation is validated BEFORE anything mutates, so an invalid or
+// duplicate ordering logs and defers without consuming the queued death. On
+// success the latch is armed before MainGameEnd_Initialize, so every result
+// callback in the retail end sequence observes the forced loss.
+static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *local)
+{
+	int order[8];
+	int racers = (int)(u8)gGT->numPlyrCurrGame + (int)(u8)gGT->numBotsNextGame;
+	int oldRank = local->driverRank;
+	char cause[128];
+	char msg[192];
+	int r;
+
+	if (racers < 1)
+		racers = 1;
+	if (racers > 8)
+		racers = 8;
+
+	if (oldRank < 0 || oldRank >= racers ||
+	    !AP_DeathLinkBuildOrder(gGT, racers, order) ||
+	    order[oldRank] != (int)local->driverID ||
+	    !AP_RaceAttempt_ApplyLastPlaceSwap(racers, oldRank, order))
+	{
+		AP_LogLine("[AP DEATH] race loss deferred: invalid rank ordering\n");
+		return; // do not consume the death, do not arm the latch
+	}
+
+	// Write the bijective permutation back: every participating driver occurs
+	// exactly once and ranks are exactly 0..N-1.
+	for (r = 0; r < racers; r++)
+	{
+		struct Driver *d = gGT->drivers[order[r]];
+		d->driverRank = r;
+		gGT->driversInRaceOrder[r] = d;
+	}
+
+	snprintf(cause, sizeof cause, "%s",
+	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+
+	// Consume the queued death and arm the attempt latch BEFORE the retail end
+	// sequence.
+	g_dl_pending_recv = 0;
+	g_dl_pending_cause[0] = '\0';
+	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV;
+	AP_RaceAttempt_ArmForcedLoss(&g_dl_race_attempt);
+
+	// Retail circuit finish: mark finished, drop the held item, hand the kart to
+	// the AI, then enter the common end-of-event initializer (PlayLevel.c:156-204,
+	// MainGameEnd.c:522).
+	local->actionsFlagSet |= ACTION_RACE_FINISHED;
+	local->heldItemID = 0xf;
+	if (local->noItemTimer != 0)
+		local->noItemTimer = 0;
+	BOTS_Driver_Convert(local);
+	MainGameEnd_Initialize();
+
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> race loss (%s)\n", cause);
+	AP_LogLine(msg);
 }
 
 void AP_DeathLinkTick(struct GameTracker *gGT)
 {
 	struct Driver *local;
-	int raceActive, maskGrabNow;
+	int raceActive, maskGrabNow, action;
 	char cause[128];
 
 	if (gGT == 0)
@@ -231,6 +353,8 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
 	{
 		// Feature off: keep edge/queue state clean so a later opt-in starts fresh.
+		// g_dl_race_attempt is NOT cleared: DeathLink config becoming inactive must
+		// not re-enable the failed attempt's finish checks.
 		g_dl_prev_maskgrab = 0;
 		g_dl_pending_recv = 0;
 		g_dl_swallow_edge = 0;
@@ -253,6 +377,19 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	raceActive = (gGT->gameMode1 &
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 	             gGT->trafficLightsTimer < 1;
+
+	// #286 receive decision. Mode 3 (race_loss) ends the attempt here; modes 1/2
+	// keep the existing mask-reset path (applied later from the physics pipeline).
+	// Anything else, or any out-of-window state, leaves the death queued.
+	action = AP_DeathLinkReceiveDecision(
+	    AP_DeathLinkEffMode(), g_dl_pending_recv,
+	    (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    raceActive && LOAD_IsOpen_RacingOrBattle());
+	if (action == AP_DL_RECV_RACE_LOSS && local != 0)
+	{
+		AP_DeathLinkApplyRaceLoss(gGT, local);
+		return;
+	}
 
 	// A queued received death is APPLIED by AP_DeathLinkForceReset from inside the
 	// physics pipeline (COLL_FIXED_PlayerSearch), NOT here: the request bit set from
@@ -294,6 +431,10 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	char msg[192];
 
 	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
+		return 0;
+	// #286: race_loss is applied in AP_DeathLinkTick (rank reorder + retail end),
+	// never as a mask reset. Leave the pending death for that path.
+	if (AP_DeathLinkEffMode() == CTR_DL_RACE_LOSS)
 		return 0;
 	if (!g_dl_pending_recv || d == 0)
 		return 0;

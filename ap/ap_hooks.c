@@ -6,6 +6,7 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
 #include <platform/native_assets.h>
@@ -3157,6 +3158,11 @@ void AP_NotifyAdvReward(int rewardBit)
 	char msg[192];
 	int newEarn = 0;
 
+	// #286: a forced-loss attempt emits no advance reward (Trophy, token, relic,
+	// boss, goal, cup). Checks earned live during the race never reach this path.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
+
 	if (rewardBit < 0 || rewardBit >= 192)
 		return;
 	int w = rewardBit >> 5, b = rewardBit & 31;
@@ -3251,6 +3257,10 @@ void AP_NotifyAdvReward(int rewardBit)
 
 void AP_NotifyGoal(int oxideSecond)
 {
+	// #286: a forced-loss attempt must not arm or complete the goal.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
+
 	// Record the Oxide beat as a game EVENT. Whether it completes the seed
 	// depends on ctr_cfg.goal_oxide (issue #152) -- with goal_oxide off (0)
 	// or set to the OTHER Oxide race, beating this one is NOT the win by
@@ -5693,6 +5703,10 @@ int AP_EmitHitCharacterCheck(long code)
 
 void AP_NotifyTrialTrackRace(int levelID, int challenge)
 {
+	// #286: a forced-loss trial attempt emits no direct trial check or podium rung.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
+
 	long code = AP_TrialTrackLocation(levelID, challenge);
 	AP_EmitClassCheck(code, 0, -1, -1, 1,
 	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
@@ -5711,6 +5725,9 @@ void AP_NotifyCortexTrackRace(int token)
 	int bits[2];
 	int n, i;
 
+	// #286: a forced-loss Cortex Vortex attempt emits no Cortex check or rung.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
 	if (!AP_CortexTrackActive())
 		return;
 	n = AP_CortexResultBits(&ctr_cfg.cortex_track,
@@ -5734,6 +5751,10 @@ void AP_NotifyCortexTrackRace(int token)
 // relic bits 35/53/71). raceTime already carries the all-crates bonus.
 void AP_CortexTrackRelicAward(int raceTime)
 {
+	// #286: a forced-loss Cortex relic attempt emits no relic check or presentation.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
+
 	struct GameTracker *gGT = sdata->gGT;
 	int bits[3];
 	int mask = AP_CortexRelicTiersBeaten(raceTime);
@@ -5781,6 +5802,9 @@ void AP_NotifyCustomTrackTrophy(void)
 {
 	int podiumTrack;
 	int sent;
+	// #286: a forced-loss custom attempt emits no custom Trophy check or rung.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok ||
 	    (sdata->gGT && (sdata->gGT->gameMode2 & TOKEN_RACE)))
 		return;
@@ -5830,6 +5854,9 @@ static int AP_CortexLetterTrack(int track)
 void AP_NotifyCustomTrackCtr(int didWin, int collected)
 {
 	struct GameTracker *gGT = sdata->gGT;
+	// #286: a forced-loss custom attempt emits no custom CTR check.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
 	if (!gGT || !(gGT->gameMode2 & TOKEN_RACE) || !ctr_cfg.custom_ctr_enabled ||
 	    !ap_net_location_exists(ctr_cfg.custom_ctr_location) ||
 	    !AP_CustomLetterSlot(ctr_cfg.custom_track.host_level_id) ||
@@ -6461,6 +6488,10 @@ void AP_EmitBoxCheck(int levelID, int slot, long code)
 // word differs), so gating on the levelID range alone would misfire.
 static void AP_SendPodiumChecks(int track, int placement)
 {
+	// #286: the forced-loss attempt owns no finish rung, including the trophy
+	// backstop and the connect-time reconnect reconciliation.
+	if (AP_RaceAttemptIsForcedLoss())
+		return;
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
 	if (placement < 1)

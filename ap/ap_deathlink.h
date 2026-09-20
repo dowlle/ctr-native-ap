@@ -18,15 +18,22 @@
 //       edge detector so it is never counted twice.
 //
 //   RECEIVE:
-//     * force the full mask-grab reset via DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (the
-//       proven Shortcutless precedent, COLL.c:1488). The request bit MUST be OR'd
-//       from INSIDE the physics pipeline (AP_DeathLinkForceReset, hooked into
-//       COLL_FIXED_PlayerSearch), not from AP_OnFrame: VehPhysForce_OnApplyForces
-//       zeroes collisionFlags every frame before the mask-grab gate reads it, so a
-//       pre-pipeline OR would be wiped. A death that arrives outside a race window
-//       is queued ONE deep (extras dropped) and fires at the next race window; a
-//       death that arrives mid-race fires as soon as the window is active. Receive,
-//       like send, is gated to adventure mode.
+//     * modes 1/2: force the full mask-grab reset via
+//       DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (the proven Shortcutless precedent,
+//       COLL.c:1488). The request bit MUST be OR'd from INSIDE the physics
+//       pipeline (AP_DeathLinkForceReset, hooked into COLL_FIXED_PlayerSearch),
+//       not from AP_OnFrame: VehPhysForce_OnApplyForces zeroes collisionFlags
+//       every frame before the mask-grab gate reads it, so a pre-pipeline OR
+//       would be wiped. A death that arrives outside a race window is queued ONE
+//       deep (extras dropped) and fires at the next race window; a death that
+//       arrives mid-race fires as soon as the window is active. Receive, like
+//       send, is gated to adventure mode.
+//     * mode 3 (race_loss): end the current attempt as a retail loss instead of
+//       resetting the mask. The local driver is moved to the last place rank
+//       (bijectively), marked finished and handed to the AI, then the common
+//       MainGameEnd_Initialize runs. The attempt latch (AP_RaceAttemptIsForcedLoss)
+//       is armed before that call and suppresses every result-derived check until
+//       the next eligible racing level starts.
 //
 //   NO-LOOP GUARD (hard requirement): the forced mask-grab is itself a send
 //   trigger, so the resulting rising edge is swallowed exactly once and never
@@ -43,7 +50,8 @@ enum
 {
 	CTR_DL_OFF        = 0,
 	CTR_DL_MASK_RESET = 1,
-	CTR_DL_ANY_HIT    = 2
+	CTR_DL_ANY_HIT    = 2,
+	CTR_DL_RACE_LOSS  = 3
 };
 
 // Per-connect reset: clears the edge/queue/amnesty state and, when this seed opted
@@ -75,6 +83,19 @@ int AP_DeathLinkForceReset(struct Driver *d);
 // detector). reason is the VehPickState reason code (VehPickState.c:141-198),
 // used to build a short, name-free cause string.
 void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason);
+
+// Authoritative #286 attempt predicate. True from the instant a race_loss
+// receive ends an attempt until the next eligible racing level starts. Every
+// result-derived check producer (podium finish rungs, advance reward, goal,
+// trial, Cortex, custom, relic unlock and the #49 relic-perfect follow-up) must
+// observe this one predicate. Network state never resets it.
+int AP_RaceAttemptIsForcedLoss(void);
+
+// #286 attempt boundary, called from game/MAIN/MainInit.c immediately after
+// MainGameStart_Initialize(gGT, 1) under CTR_AP. Clears the forced-loss latch
+// only when the newly loaded level is an eligible racing level: hub, menu,
+// cutscene and battle loads leave the latch set.
+void AP_RaceAttempt_OnLevelStart(struct GameTracker *gGT);
 
 // Bracket damage the AP layer inflicts on the local player on purpose, so the
 // any_hit hook above does not read it as a death worth broadcasting. The Flatten
