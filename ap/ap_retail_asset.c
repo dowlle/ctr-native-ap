@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "ap_retail_asset.h"
+#include "ap_dram_ptr_map_logic.h" // AP_DramPtrMap_Validate (pure, harness-pinned)
 
 #include <platform/native_assets.h>     // NativeAssets_OpenHostBigfile
 #include <platform/native_disc_image.h> // NativeDiscImage_* (disc-image players)
@@ -114,10 +115,28 @@ u8 *AP_RetailAsset_ReadSubfile(int subfileIndex, int isDramFile, u8 *dst, int ds
 	ptrMapOffset = *(const int *)dst;
 	body = dst + 4;
 
-	if (ptrMapOffset >= 0 && ptrMapOffset + 4 <= size - 4)
+	// Validate the COMPLETE map before LOAD_RunPtrMap is allowed to mutate
+	// anything. The retail loader bounds only the header word and then trusts
+	// numBytes and every patch offset; a malformed file would have the fixup
+	// write the buffer base into arbitrary offsets until it walked off the end.
+	// AP_DramPtrMap_Validate is the pure, harness-pinned rule (see its header).
+	// A rejected map means the body cannot be relocated at all, so this read
+	// FAILS rather than handing back an unfixed body as success: the reader's
+	// callers all treat the returned body as walkable, and a future caller could
+	// dereference its unrelocated offsets as pointers. An accepted map runs the
+	// engine fixup exactly as before (the pre-change code skipped the fixup
+	// silently when the map was rejected, not only when the header did not fit).
+	// A texture (non-DRAM) read returned above and never reaches this point.
 	{
-		struct DramPointerMap *dpm = (struct DramPointerMap *)(body + ptrMapOffset);
-		LOAD_RunPtrMap((char *)body, (int *)DRAM_GETOFFSETS(dpm), dpm->numBytes >> 2);
+		int numPtrs = 0;
+
+		if (!AP_DramPtrMap_Validate(body, (unsigned int)(size - 4), ptrMapOffset, &numPtrs))
+			return 0;
+
+		{
+			struct DramPointerMap *dpm = (struct DramPointerMap *)(body + ptrMapOffset);
+			LOAD_RunPtrMap((char *)body, (int *)DRAM_GETOFFSETS(dpm), numPtrs);
+		}
 	}
 
 	if (outSize != 0)

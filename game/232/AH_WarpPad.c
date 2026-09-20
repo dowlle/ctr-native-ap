@@ -2051,6 +2051,10 @@ WarpPad_AnimateOpen:
 					// model above, so model and treatment cannot disagree about a slot.
 					int apGhost = AP_WarpPadRewardGhost(apSlotBit[i]);
 					int apTint;
+					// #222: captured before the swap so the animation transition at the
+					// end of this block can tell an entry into the fruit (reset) from a
+					// swap away from it (clear).
+					int apOldModelID = (apPrize->model != 0) ? apPrize->model->id : -1;
 					if (apModel >= 0 && gGT->modelPtr[apModel] != 0)
 						apPrize->model = gGT->modelPtr[apModel];
 
@@ -2233,6 +2237,17 @@ WarpPad_AnimateOpen:
 						apPrize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT);
 						apPrize->flags |= GHOST_DRAW_TRANSPARENT;
 					}
+
+					// #222: reset the fruit animation only on the transition INTO the
+					// fruit, and clear the fruit animation bits on the way out so a
+					// later placeholder does not inherit a half-driven spin. This runs
+					// on the transition only; a per-tick reset would freeze the fruit
+					// on frame zero.
+					if (AP_WumpaShouldResetAnim(apOldModelID, apPrize->model->id))
+						AP_WumpaApplyFruitAnim(&apPrize->animIndex, &apPrize->animFrame, &apPrize->vertSplit,
+						                       &apPrize->flags);
+					else if (AP_WumpaShouldClearAnim(apOldModelID, apPrize->model->id))
+						AP_WumpaClearFruitAnim(&apPrize->flags);
 				}
 			}
 #endif
