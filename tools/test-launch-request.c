@@ -10,8 +10,11 @@
 // keys (including the removed `password` key), fragments, authority confusion
 // (userinfo, '@', path segments other than `connect`), IPv4, bracketed IPv6,
 // DNS names, control characters, invalid UTF-8, overlong encodings, empty /
-// zero / overflowing port, every length limit at limit and limit+1, output
-// unchanged on failure, and diagnostics free of the URI and field values.
+// zero / overflowing port, every length limit at limit and limit+1, slot
+// characters that Archipelago allows (percent-encoded '@', '/', '\', space,
+// '%', '&', '=', '#' and '?', and multibyte UTF-8), slot edge whitespace,
+// output unchanged on failure, and diagnostics free of the URI and field
+// values.
 
 #include <stdio.h>
 #include <string.h>
@@ -301,18 +304,65 @@ static void TestControlsAndUtf8(void)
 
 static void TestFieldDelimiters(void)
 {
-	expectStatus("ctr-ap://connect?host=a&port=1&slot=a%2Fb&room=c",
-	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "slash in slot rejected");
-	expectStatus("ctr-ap://connect?host=a&port=1&slot=a%5Cb&room=c",
-	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "backslash in slot rejected");
-	expectStatus("ctr-ap://connect?host=a&port=1&slot=a%40b&room=c",
-	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "at-sign in slot rejected");
+	// Archipelago slot names may contain these characters once percent-decoded:
+	// the decoded slot is a value and is never reparsed as a URI. Only the raw
+	// URI structure (authority and path) is checked for delimiters.
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%40b&room=c",
+	         "a", 1, "a@b", "c", "percent-encoded at-sign in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%2Fb&room=c",
+	         "a", 1, "a/b", "c", "percent-encoded slash in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%5Cb&room=c",
+	         "a", 1, "a\\b", "c", "percent-encoded backslash in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%20b&room=c",
+	         "a", 1, "a b", "c", "percent-encoded space in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%25b&room=c",
+	         "a", 1, "a%b", "c", "percent-encoded percent in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%26b&room=c",
+	         "a", 1, "a&b", "c", "percent-encoded ampersand in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%3Db&room=c",
+	         "a", 1, "a=b", "c", "percent-encoded equals in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%23b&room=c",
+	         "a", 1, "a#b", "c", "percent-encoded hash in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%3Fb&room=c",
+	         "a", 1, "a?b", "c", "percent-encoded question mark in slot accepted");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=a%40b%2Fc%5Cd%20e%25f%26g%3Dh%23i%3Fj&room=c",
+	         "a", 1, "a@b/c\\d e%f&g=h#i?j", "c", "every allowed slot character decodes exactly");
+
 	expectStatus("ctr-ap://connect?host=a&port=1&slot=b&room=a%2Fb",
 	             NATIVE_LAUNCH_REQUEST_ERR_ROOM, "slash in room rejected");
 	expectStatus("ctr-ap://connect?host=a&port=1&slot=b&room=a%5Cb",
 	             NATIVE_LAUNCH_REQUEST_ERR_ROOM, "backslash in room rejected");
 	expectStatus("ctr-ap://connect?host=a&port=1&slot=b&room=a%40b",
 	             NATIVE_LAUNCH_REQUEST_ERR_ROOM, "at-sign in room rejected");
+}
+
+static void TestSlotWhitespaceAndMultibyte(void)
+{
+	char slot[64];
+	char encoded[128];
+	char uri[512];
+	size_t i;
+
+	expectStatus("ctr-ap://connect?host=a&port=1&slot=%20Player&room=c",
+	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "leading space in slot rejected");
+	expectStatus("ctr-ap://connect?host=a&port=1&slot=Player%20&room=c",
+	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "trailing space in slot rejected");
+	expectStatus("ctr-ap://connect?host=a&port=1&slot=%20&room=c",
+	             NATIVE_LAUNCH_REQUEST_ERR_SLOT, "all-space slot rejected");
+	expectOk("ctr-ap://connect?host=a&port=1&slot=Play%20er&room=c",
+	         "a", 1, "Play er", "c", "interior space in slot accepted");
+
+	// 16 multibyte characters: 32 bytes, under the 63-byte ceiling and exactly
+	// the character count Archipelago keeps after its own truncation.
+	for (i = 0; i < 16; i++)
+	{
+		memcpy(slot + (i * 2), "\xC3\xA9", 2);
+		memcpy(encoded + (i * 6), "%C3%A9", 6);
+	}
+	slot[32] = '\0';
+	encoded[96] = '\0';
+	snprintf(uri, sizeof(uri), "ctr-ap://connect?host=a&port=1&slot=%s&room=c", encoded);
+	expectOk(uri, "a", 1, slot, "c", "16-character multibyte UTF-8 slot accepted");
 }
 
 static void TestLengthBoundaries(void)
@@ -380,6 +430,12 @@ static void TestOutputUnchangedOnFailure(void)
 	           NATIVE_LAUNCH_REQUEST_OK &&
 	           memcmp(&out, &before, sizeof(out)) == 0,
 	       "output unchanged after an unknown-key failure");
+
+	memset(&out, 0xAB, sizeof(out));
+	expect(NativeLaunchRequest_Parse("ctr-ap://connect?host=a&port=1&slot=%20Player&room=c", &out) !=
+	           NATIVE_LAUNCH_REQUEST_OK &&
+	           memcmp(&out, &before, sizeof(out)) == 0,
+	       "output unchanged after an edged-whitespace slot failure");
 }
 
 static void TestDiagnosticsAreRedacted(void)
@@ -437,6 +493,7 @@ int main(void)
 	TestHosts();
 	TestControlsAndUtf8();
 	TestFieldDelimiters();
+	TestSlotWhitespaceAndMultibyte();
 	TestLengthBoundaries();
 	TestOutputUnchangedOnFailure();
 	TestDiagnosticsAreRedacted();

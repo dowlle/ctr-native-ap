@@ -81,7 +81,7 @@ typedef enum
 	NATIVE_LAUNCH_REQUEST_ERR_UTF8,          // invalid, overlong or surrogate UTF-8
 	NATIVE_LAUNCH_REQUEST_ERR_HOST,          // host is not a DNS name, IPv4 or bracketed IPv6
 	NATIVE_LAUNCH_REQUEST_ERR_PORT,          // port is not strict decimal in range
-	NATIVE_LAUNCH_REQUEST_ERR_SLOT,          // slot empty or carries a forbidden delimiter
+	NATIVE_LAUNCH_REQUEST_ERR_SLOT,          // slot empty, over its byte limit or edged with whitespace
 	NATIVE_LAUNCH_REQUEST_ERR_ROOM           // room empty or carries a forbidden delimiter
 } NativeLaunchRequestStatus;
 

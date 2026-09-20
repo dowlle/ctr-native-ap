@@ -284,6 +284,30 @@ static int hasForbiddenDelimiter(const char *s)
 	return 0;
 }
 
+// Archipelago's handle_name strips leading and trailing whitespace before it
+// fixes the slot name, so a slot that differs only by edge whitespace could
+// never match the player's actual name. Interior spaces are allowed. The
+// decoder already refuses every C0 control and DEL, so in practice only
+// U+0020 can reach this check, but the full ASCII set is spelled out so the
+// rule survives a decoder change.
+static int hasEdgeWhitespace(const char *s, size_t n)
+{
+	unsigned char first;
+	unsigned char last;
+
+	if (n == 0)
+		return 0;
+	first = (unsigned char)s[0];
+	last = (unsigned char)s[n - 1];
+	if (first == ' ' || first == '\t' || first == '\n' || first == '\v' || first == '\f' ||
+	    first == '\r')
+		return 1;
+	if (last == ' ' || last == '\t' || last == '\n' || last == '\v' || last == '\f' ||
+	    last == '\r')
+		return 1;
+	return 0;
+}
+
 static int authorityMatches(const char *rest, size_t headLen)
 {
 	const size_t authorityLen = sizeof(NATIVE_LAUNCH_REQUEST_AUTHORITY) - 1;
@@ -387,7 +411,7 @@ NativeLaunchRequestStatus NativeLaunchRequest_Parse(const char *uri, NativeLaunc
 				return NATIVE_LAUNCH_REQUEST_ERR_EMPTY;
 			if (valLen > NATIVE_LAUNCH_REQUEST_SLOT_MAX)
 				return NATIVE_LAUNCH_REQUEST_ERR_TOO_LONG;
-			if (hasForbiddenDelimiter(value))
+			if (hasEdgeWhitespace(value, valLen))
 				return NATIVE_LAUNCH_REQUEST_ERR_SLOT;
 			memcpy(slot, value, valLen + 1);
 			haveSlot = 1;
