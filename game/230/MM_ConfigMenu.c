@@ -814,7 +814,12 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 		case 5:
 			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status,
 			                                &exported))
-				CustomContent_SetMessage("Saved custom_tracks.generated.yaml.");
+			{
+				char savedMessage[96];
+				CustomTrackManager_FormatSavedPathForDisplay(exported.yamlPath, savedMessage,
+				                                              sizeof savedMessage);
+				CustomContent_SetMessage(savedMessage);
+			}
 			else
 				CustomContent_SetMessage("Save YAML requires a Ready package.");
 			break;

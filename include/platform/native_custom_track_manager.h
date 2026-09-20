@@ -208,11 +208,28 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 
 // Save that exact fragment at assets/tracks/custom_tracks.generated.yaml.
 // Clipboard integration belongs to the Options-menu layer; the file export is
-// the durable fallback and is available from the foundation onward.
+// the durable fallback and is available from the foundation onward. On
+// success the full path is also written to the AP client log (CTR_AP builds
+// only); it is never truncated there.
 int CustomTrackManager_SaveYaml(const char *assetsRoot,
 	                             const struct CustomTrackManagerPackage *package,
 	                             const struct CustomTrackManagerStatus *status,
 	                             struct CustomTrackManagerStatus *outStatus);
+
+// Longest rendering of "Saved to: <path>" the Custom Content message area can
+// show across its two lines (game/230/MM_ConfigMenu.c
+// CustomContent_DrawMessage, two lines of up to 34 characters each) without
+// spilling into that widget's own right-side "..." truncation. Kept well
+// under the raw 2 x 34 = 68 capacity so word-wrap slack at a space never
+// pushes content past line two.
+#define CTR_CT_SAVED_PATH_DISPLAY_MAX 64
+
+// Render a saved YAML path for that single small message area: the full
+// "Saved to: <path>" when it fits, otherwise left-truncated with a leading
+// "..." so the file name and nearest folders -- the part a player actually
+// needs -- stay visible. dst is always NUL-terminated and never overruns
+// dstSize.
+void CustomTrackManager_FormatSavedPathForDisplay(const char *path, char *dst, size_t dstSize);
 
 #endif // CTR_CUSTOM_TRACKS
 

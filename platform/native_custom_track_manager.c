@@ -18,6 +18,13 @@
 #define CTR_CT_MANAGER_HASH_CHUNK 65536
 #define CTR_CT_MANAGER_TEXT_MAX 4096
 
+#ifdef CTR_AP
+// This file has to keep compiling without CTR_AP (CTR_CUSTOM_TRACKS is a
+// separate, independent option), so AP symbols are bound by prototype like
+// every other AP call site in game/ rather than by including ap/ap_hooks.h.
+void AP_LogLine(const char *msg);
+#endif
+
 static const struct CustomTrackManagerPackage s_babyTParkPackage = {
 	"baby-t-park",
 	"60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e",
@@ -1013,7 +1020,49 @@ int CustomTrackManager_SaveYaml(const char *assetsRoot,
 		return 0;
 	}
 	Manager_SetDetail(outStatus, CTR_CT_MANAGER_READY, "Saved the verified custom_tracks YAML fragment.");
+#ifdef CTR_AP
+	{
+		// The on-screen status line only has room for a short, possibly
+		// left-truncated rendering (see CustomTrackManager_FormatSavedPathForDisplay);
+		// the log always gets the full, untruncated path.
+		char logLine[CTR_CT_MANAGER_PATH_MAX + 64];
+		snprintf(logLine, sizeof logLine, "[AP CUSTOM CONTENT] Saved custom_tracks YAML to %s\n",
+		         outStatus->yamlPath);
+		AP_LogLine(logLine);
+	}
+#endif
 	return 1;
+}
+
+// See the header comment: this exists so a Windows path many times longer
+// than the message area can still be shown without overflowing a buffer or
+// running the message off screen.
+void CustomTrackManager_FormatSavedPathForDisplay(const char *path, char *dst, size_t dstSize)
+{
+	static const char prefix[] = "Saved to: ";
+	static const char ellipsis[] = "...";
+	size_t prefixLen = sizeof prefix - 1;
+	size_t ellipsisLen = sizeof ellipsis - 1;
+	size_t pathLen;
+	size_t budget = CTR_CT_SAVED_PATH_DISPLAY_MAX;
+
+	if (dst == NULL || dstSize == 0)
+		return;
+	if (budget >= dstSize)
+		budget = dstSize - 1;
+
+	pathLen = strlen(path);
+	if (prefixLen + pathLen <= budget)
+	{
+		snprintf(dst, dstSize, "%s%s", prefix, path);
+		return;
+	}
+
+	{
+		size_t pathBudget = (budget > prefixLen + ellipsisLen) ? budget - prefixLen - ellipsisLen : 0;
+		const char *suffix = path + (pathLen > pathBudget ? pathLen - pathBudget : 0);
+		snprintf(dst, dstSize, "%s%s%s", prefix, ellipsis, suffix);
+	}
 }
 
 #endif // CTR_CUSTOM_TRACKS
