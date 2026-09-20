@@ -576,6 +576,10 @@ void AH_Pause_Draw(int pageID, int posX)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b3144-0x800b344c.
 void AH_Pause_Update()
 {
+#ifdef CTR_AP
+	if (ctr_cfg_active())
+		DecalFont_DrawLine("[ MAP TRACKER", 18, 220, FONT_SMALL, WHITE);
+#endif
 	struct GameTracker *gGT;
 	gGT = sdata->gGT;
 

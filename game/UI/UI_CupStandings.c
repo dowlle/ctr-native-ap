@@ -607,6 +607,12 @@ void UI_CupStandings_InputAndDraw(void)
 					index = data.ArcadeCups[cupID].CupTrack[cupTrack].trackID;
 				}
 
+#ifdef CTR_AP
+				// Schema 15: a leg of 110 loads Cortex Vortex on host level 13;
+				// every other leg is selected as retail, so a Cortex Vortex leg
+				// followed by an Oxide Station leg serves Oxide Station bytes.
+				index = AP_CortexTrackPrepareLoad(index);
+#endif
 				MainRaceTrack_RequestLoad(index);
 			}
 
@@ -669,7 +675,14 @@ void UI_CupStandings_InputAndDraw(void)
 					sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
 
 					// If player 1 won the cup
-					if (data.cupPositionPerPlayer[0] == gGT->drivers[0]->driverID)
+					if (data.cupPositionPerPlayer[0] == gGT->drivers[0]->driverID
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+					    && (!(ctr_cfg_active() && CustomTrack_CupRaceRedirectActive(i, 1) &&
+					           (gGT->gameMode2 & TOKEN_RACE)) ||
+					        AP_LetterTokenEarned(ctr_cfg.custom_track.host_level_id, 1,
+					                            gGT->drivers[0]->PickupLetterHUD.numCollected))
+#endif
+					   )
 					{
 						int bitIndex = ADV_REWARD_FIRST_GEM + i;
 						u32 *rewardsSet = sdata->advProgress.rewards;
@@ -691,7 +704,8 @@ void UI_CupStandings_InputAndDraw(void)
 						// the trophy gate in 222.c and ThTick:601 f9fbfa7a0).
 						// AP_NotifyAdvReward dedupes, so a re-win is safe.
 						if (ctr_cfg_active() ? (customTrackTrophy
-							? !AP_CustomTrackTrophyChecked()
+							? ((gGT->gameMode2 & TOKEN_RACE)
+							       ? !AP_CustomTrackCtrChecked() : !AP_CustomTrackTrophyChecked())
 							: !AP_LocationCheckedByBit(bitIndex))
 						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
 #else
@@ -706,7 +720,11 @@ void UI_CupStandings_InputAndDraw(void)
 								UNLOCK_ADV_BIT(rewardsSet, bitIndex);
 #ifdef CTR_AP
 							if (customTrackTrophy)
-								AP_NotifyCustomTrackTrophy();
+							{
+								if (gGT->gameMode2 & TOKEN_RACE)
+									AP_NotifyCustomTrackCtr(1, gGT->drivers[0]->PickupLetterHUD.numCollected);
+								else AP_NotifyCustomTrackTrophy();
+							}
 							else
 								AP_NotifyAdvReward(bitIndex); // AP: retail gem cup location check
 #endif

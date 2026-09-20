@@ -75,6 +75,22 @@ static void test_wrong_track_key_cannot_poison_roo(void)
 
 int main(void)
 {
+	for (int mode=0; mode<2; mode++)
+	{
+		nlohmann::json doc = {{"ctr_options", {{"schema_version",13}, {"slide_coliseum_races",mode}, {"turbo_track_races",mode}}}};
+		doc["trial_track_checks"] = {{"enabled",true}, {"locations", {{"16",{35016200,-1}}, {"17",{35016201,-1}}}}};
+		doc["podium_checks"] = {{"enabled",true}, {"locations", {{"16",{35015200,35015201,35015202,35015203,35015204}}, {"17",{35015205,35015206,35015207,35015208,35015209}}}}};
+		ap_seedcfg_parse_json(doc);
+		expect(ctr_cfg.podium[16].held_1st, mode ? 35015200 : -1, "Slide rung requires Trophy mode");
+		expect(ctr_cfg.podium[17].finish_any, mode ? 35015209 : -1, "Turbo finish requires Trophy mode");
+		doc["podium_checks"]["locations"]["16"][0]=35016400;
+		ap_seedcfg_parse_json(doc);
+		expect(ctr_cfg.podium[16].held_1st,-1,"trial cannot borrow custom check code");
+		doc["podium_checks"]["locations"]["16"][0]=35015200;
+		doc["ctr_options"]["schema_version"]=12;
+		ap_seedcfg_parse_json(doc);
+		expect(ctr_cfg.podium[16].held_1st,-1,"old schema cannot admit trial rungs");
+	}
 	test_roos_tubes_alpha3_array();
 	test_absent_and_reduced_rungs_reset();
 	test_wrong_track_key_cannot_poison_roo();

@@ -167,6 +167,8 @@ struct CustomTrackManagerRequirement
 // deliberately distinct from navigationUuid: changing navigation compatibility
 // must never change content provenance, and vice versa.
 const struct CustomTrackManagerPackage *CustomTrackManager_BabyTPark(void);
+const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
+	const struct CustomTrackManagerRequirement *requirement);
 
 const char *CustomTrackManager_StateText(int state);
 

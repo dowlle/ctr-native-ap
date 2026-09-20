@@ -1,5 +1,10 @@
 build/
-assets/
+assets/*
+!assets/tracks/
+assets/tracks/*
+!assets/tracks/cortex-vortex/
+!assets/tracks/cortex-vortex/CVortex Arcade All.lev
+!assets/tracks/cortex-vortex/CVortex Arcade All.vrm
 debug/
 *.exe
 *.o

@@ -12,6 +12,7 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
+#include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
@@ -33,6 +34,8 @@ void AP_NotifyAdvReward(int rewardBit);
 // presentation state only; the AP check is the custom Trophy code from slot data.
 int AP_CustomTrackTrophyChecked(void);
 void AP_NotifyCustomTrackTrophy(void);
+int AP_CustomTrackCtrChecked(void);
+void AP_NotifyCustomTrackCtr(int didWin, int collected);
 
 // Called when the player beats Oxide. oxideSecond != 0 = final win. Records the
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
@@ -178,6 +181,8 @@ int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 // completion condition exactly. When slot_data is absent, falls back to the
 // Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
 int AP_OxideFinalOpen(void);
+int AP_OxideFinalVenueReady(void);
+int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected
 // seed's slot_data schema is NEWER than this build understands (issue #8;
@@ -424,13 +429,27 @@ int AP_WarpPadRewardTokenColour(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 int AP_LetterAvailable(int track, int letter);
+// Cortex Vortex letter availability for a caller outside the race, such as the
+// hub tracker: AP_LetterAvailable only reads that track while it is loaded.
+int AP_CortexLetterAvailableForTracker(int letter);
 long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
 void AP_LetterUnavailableTouched(int track, int letter);
 int AP_LettersRequiredMet(int track);
+int AP_DoorHistoryOpen(int level, int door);
+int AP_DoorHistoryReady(void);
+int AP_DoorHistoryEnabled(void);
+void AP_DoorHistoryRecord(int level, int door);
+void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
+
+// Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
+// through the shared class-check path (per-seed membership + server-checked
+// dedup + sent-item feed). A thin wrapper because AP_EmitClassCheck is static to
+// the unity translation unit; ap/ap_hit_encounter.c calls this.
+int AP_EmitHitCharacterCheck(long code);
 
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).
@@ -512,6 +531,41 @@ int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 // count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
 int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 
+// Schema-10 standalone race identities for Slide Coliseum and Turbo Track.
+// These locations have no AdvProgress bit and must never use levelID arithmetic.
+int AP_TrialTrackConfigured(int levelID);
+int AP_TrialTrackLocationChecked(int levelID, int challenge);
+void AP_NotifyTrialTrackRace(int levelID, int challenge);
+
+// ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
+// AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
+// before reading an Oxide Station identity: 1 while the level on screen is the
+// Cortex Vortex pad track or a Cortex Vortex Gem Cup leg (never Oxide 1/2,
+// never the Oxide Station pad). Slots are the AP_CV_SLOT_* values in
+// ap_cortex_track.h; AP_CortexTrackBit is the process-local pseudo-bit the
+// bit-keyed glow/ceremony helpers resolve to that slot's wire code.
+#define AP_CORTEX_DEST 110
+int AP_CortexTrackActive(void);
+int AP_CortexTrackBit(int slot);
+int AP_CortexTrackChecked(int slot);
+// Warp pad / cup leg load resolution: maps destination 110 to host level 13 and
+// selects the serving state for that request; every other destination is
+// returned unchanged and explicitly selected as retail.
+int AP_CortexTrackPrepareLoad(int destLevelID);
+// Entry gate for a pad or cup that leads to 110. forceVerify re-hashes the pair.
+int AP_CortexTrackEntryReady(int forceVerify);
+// Does cup 0..4 leg destination 110?
+int AP_CupLegsCortexTrack(int cup);
+// Results: trophy (token=0) or CTR token (token=1) race on the pad track, and
+// the relic award from a bonus-adjusted race time. Direct codes only.
+void AP_NotifyCortexTrackRace(int token);
+void AP_CortexTrackRelicAward(int raceTime);
+// Relic target for levelID/tier, the package-owned table while Cortex Vortex
+// is active and data.RelicTime otherwise.
+int AP_RelicTimeFor(int levelID, int tier);
+// "CORTEX VORTEX" while active, else NULL (use the level's own name).
+const char *AP_CortexTrackDisplayName(void);
+
 // ── Podium rungs in the reward glow ──
 // Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),
 // so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
@@ -527,7 +581,9 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
 // the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
 // its generic Trophy, podium and per-destination Wumpa identities instead of the
-// absent retail Gem and leg identities. AP_PadState consumes this enumeration
+// absent retail Gem and leg identities. A configured trial (16/17) adds its
+// Trophy and CTR Challenge pseudo-bits (ap_trial_pad_glow.h, #343), which have
+// no AdvProgress bit. AP_PadState consumes this enumeration
 // together with the separate box, letter and retail Wumpa counts so Done can
 // never strand an attached check.
 #ifndef CTR_CUSTOM_TRACKS
@@ -580,6 +636,19 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
+
+// Is there a Hit Character opportunity behind this pad (block schema 2, the
+// pool draw)? True for a Hit-supported ordinary destination (0..17, trials only
+// with a valid trial row) while any eligible racer other than the effective
+// player (defaults always; guests once an unlock win is checked) has a Hit
+// location this seed carries and the server has not checked. Feeds both
+// AP_PadState and the tier-2 choosers in AH_WarpPad.c.
+int AP_HitPadOpportunity(int physLevelID, int destLevelID);
+
+// One [AP HIT] chooser line per chooser decision (OPEN, PLAIN, APPLY, CANCEL,
+// VANISH); NONE and WAIT are per-frame and never logged.
+void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
+                      int tokenLeft, int relicLeft);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

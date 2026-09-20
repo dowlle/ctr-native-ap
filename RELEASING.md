@@ -41,6 +41,13 @@ The release cycle's development order, settled during the 0.1.4 cycle:
   build: fresh-dir release builds from the merged result, the in-game matrix
   on those builds, and the full fuzz on the exact apworld content that will
   ship.
+- All work branches from `main` and merges into `main`, in both repos. A
+  `release/<version>` branch is only a record of one published tag: nothing
+  is committed to it, branched from it or merged into it. If a candidate is
+  frozen and tagged on a release branch, open a PR merging it into `main` in
+  both repos right after tagging, so the next fix starts from what players
+  have. The 0.2.1-alpha1 tags were cut this way without that PR, which
+  left the first alpha1 bug fix with no correct base (#346 catches up).
 
 ## 1. Gates (nothing ships red)
 
@@ -162,6 +169,10 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
 - [ ] Same tag `vX.Y.Z` on BOTH repos at the exact release commits, pushed.
       The player-facing GitHub release lives on this repo only; the apworld
       tag exists for traceability.
+- [ ] The tag is on `main` in BOTH repos:
+      `git merge-base --is-ancestor vX.Y.Z origin/main`. If it was cut on a
+      release branch, the merge-back PR is open now and merged before any
+      follow-up fix lands (see section 0).
 
 ## 6. Release notes
 

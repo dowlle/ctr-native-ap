@@ -695,6 +695,8 @@ struct CustomTrackLoadContext
 	int levelID;            // gGT->levelID: the level being loaded
 	int adventureCupActive; // (gGT->gameMode1 & ADVENTURE_CUP) != 0
 	int cupID;              // gGT->cup.cupID -- MEANINGLESS without the flag above
+	int bossID;             // 5 only for N. Oxide's Final Challenge
+	int adventureBossActive; // (gGT->gameMode1 & ADVENTURE_BOSS) != 0
 };
 
 // What the AP-box layer should do about the level being loaded.

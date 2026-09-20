@@ -1,5 +1,11 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// Defined in LOAD_Assets.c (same unity translation unit). Refuses a required
+// Hit-encounter driver model that did not load, before any birth dereferences it.
+void LOAD_HitEncounterValidateExtras(void);
+#endif
+
 void (*mainMenuInit[])() = {MM_JumpTo_Title_FirstTime, MM_JumpTo_Characters, MM_JumpTo_TrackSelect, MM_JumpTo_BattleSetup, CS_Garage_Init, MM_JumpTo_Scrapbook};
 
 #ifdef CTR_NATIVE
@@ -317,7 +323,9 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		// will break the character animations
 		sdata->ptrMPK = 0;
 
-		// Clear driver extras
+		// Clear driver extras for the next load. fileBase and model share one
+		// word (DriverModelExtraSlot is a union), so this single clear also
+		// drops the previous load's model pointer.
 		for (int i = 0; i < 3; i++)
 		{
 			data.driverModelExtras[i].fileBase = NULL;
@@ -338,6 +346,16 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		{
 			sdata->PLYROBJECTLIST = 0;
 		}
+
+		// Do NOT convert driverModelExtras here. DriverModelExtraSlot is a union:
+		// fileBase and model are the same word, so the retail stage-6 convert
+		// (fileBase + 4) is an in-place, one-shot step. An early convert here made
+		// stage 6 add 4 again, pointing every sideloaded standalone model 4 bytes
+		// past its header ("ntropy" read as "py"), so VehBirth_GetModelByName
+		// found nothing and the Hit guest, or the player's own hi model in
+		// boss/relic races, was born without an instance: invisible and
+		// non-solid. Registering standalone extras early was a no-op anyway,
+		// since their Model.id is -1 and LOAD_GlobalModelPtrs_MPK skips them.
 
 		LOAD_GlobalModelPtrs_MPK();
 		DecalGlobal_Clear(gGT);
@@ -387,6 +405,14 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 				data.driverModelExtras[i].model = (struct Model *)((u8 *)data.driverModelExtras[i].fileBase + 4);
 			}
 		}
+
+#ifdef CTR_AP
+		// A Hit-encounter extra whose file never loaded has a NULL model. Refuse
+		// it explicitly now, before VehBirth resolves an AI by name and
+		// dereferences the result (ticket 06). Inert when the feature is off.
+		if (AP_HitEncounterEnabled())
+			LOAD_HitEncounterValidateExtras();
+#endif
 
 		// == banks are done parsing ===
 
