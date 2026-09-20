@@ -34,6 +34,10 @@
 //      named case, and boss garage access alone opens nothing,
 //   7. that cup access alone never opens the box policy -- no combination of
 //      cup-side facts reaches an allow without the individual pad's own terms,
+//   7b. the PRESENTATION split (#354): a refused alternate route now stands its
+//      boxes TRANSLUCENT instead of standing them down, so every refused row
+//      above is asserted a second time as "stands, but is not collectable", and
+//      the two older truthiness values (0 = nothing, 1 = collectable) are pinned,
 //   8. permanent datapackage membership is not an input at all: the policy has
 //      no location-liveness parameter, so a box being in the seed forever
 //      cannot open a shut leg (the liveness gate stays where it was, in
@@ -432,6 +436,126 @@ static void test_membership_is_not_an_input(void)
 	expect_int(a, 0, "a permanently-in-datapackage box on a shut leg is still refused");
 }
 
+// ---------------------------------------------------------------------------
+// 7b. Presentation (#354)
+// ---------------------------------------------------------------------------
+//
+// The access answer did not move: AP_BoxPolicyAllows is still the ONLY thing
+// that decides whether a check can be sent. What changed is what a refusal looks
+// like -- nothing at all, until #354; a translucent, uncollectable crate after
+// it. These rows pin that the two questions cannot drift apart.
+static void test_presentation(void)
+{
+	// The enum's numeric contract. SOLID is 1 and NONE is 0 so that every older
+	// truthiness test of the allow answer keeps its meaning; GHOST is the new
+	// state and has to be asked for by name.
+	expect_int(AP_BOX_PRESENT_NONE, 0, "NONE keeps value 0");
+	expect_int(AP_BOX_PRESENT_SOLID, 1, "SOLID keeps value 1");
+	expect_int(AP_BOX_PRESENT_GHOST, 2, "GHOST is the third value");
+
+	// The two predicates every engine caller uses, over the whole enum.
+	expect_int(AP_BoxPresentationStands(AP_BOX_PRESENT_NONE), 0, "NONE spawns nothing");
+	expect_int(AP_BoxPresentationStands(AP_BOX_PRESENT_SOLID), 1, "SOLID spawns");
+	expect_int(AP_BoxPresentationStands(AP_BOX_PRESENT_GHOST), 1, "GHOST spawns too");
+	expect_int(AP_BoxPresentationCollectable(AP_BOX_PRESENT_NONE), 0, "NONE is not collectable");
+	expect_int(AP_BoxPresentationCollectable(AP_BOX_PRESENT_SOLID), 1, "SOLID is collectable");
+	expect_int(AP_BoxPresentationCollectable(AP_BOX_PRESENT_GHOST), 0,
+	           "GHOST is NOT collectable -- the whole safety of #354");
+
+	// An OPEN leg is unchanged: solid and collectable.
+	{
+		PadFacts roos = { 6, 1, 1 };
+		expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_CUP_LEG, roos.physPad, 2,
+		                                 roos.stage1Met, roos.racerMet),
+		           AP_BOX_PRESENT_SOLID, "open cup leg: solid boxes");
+	}
+
+	// A SHUT leg, in each of the three independent failure modes, now GHOSTS
+	// rather than disappearing -- and stays uncollectable in all three.
+	{
+		PadFacts hub    = { 10, 1, 1 }; // Citadel City pad, refused on Keys
+		PadFacts stage1 = { 12, 0, 1 };
+		PadFacts racer  = { 10, 1, 0 };
+		int leg;
+		PadFacts *rows[3];
+		int keys[3] = { 2, 3, 3 };
+		const char *names[3] = { "hub-shut leg", "stage-1-shut leg", "racer-locked leg" };
+
+		rows[0] = &hub; rows[1] = &stage1; rows[2] = &racer;
+		for (leg = 0; leg < 3; leg++)
+		{
+			char what[96];
+			int present = AP_BoxPresentationFor(AP_BOX_ROUTE_CUP_LEG, rows[leg]->physPad,
+			                                    keys[leg], rows[leg]->stage1Met,
+			                                    rows[leg]->racerMet);
+			snprintf(what, sizeof what, "%s: boxes stand translucent", names[leg]);
+			expect_int(present, AP_BOX_PRESENT_GHOST, what);
+			snprintf(what, sizeof what, "%s: still not collectable", names[leg]);
+			expect_int(AP_BoxPresentationCollectable(present), 0, what);
+			snprintf(what, sizeof what, "%s: presentation agrees with the access answer", names[leg]);
+			expect_int(AP_BoxPresentationCollectable(present),
+			           leg_allows(rows[leg], keys[leg]), what);
+		}
+	}
+
+	// The BOSS route gets the identical treatment: the Komodo Joe case shows
+	// Dragon Mines' boxes as ghosts while the Dragon Mines pad is shut, and turns
+	// them solid on the Key that opens it.
+	{
+		PadFacts dragon = { 1, 1, 1 };
+		expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_BOSS, dragon.physPad, 1,
+		                                 dragon.stage1Met, dragon.racerMet),
+		           AP_BOX_PRESENT_GHOST, "Komodo Joe with Glacier Park shut: translucent boxes");
+		expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_BOSS, dragon.physPad, 2,
+		                                 dragon.stage1Met, dragon.racerMet),
+		           AP_BOX_PRESENT_SOLID, "Komodo Joe after the second Key: solid boxes");
+	}
+
+	// An OWN-PAD race can never ghost: it does not consult the pad terms at all,
+	// so the hostile arguments that refuse an alternate route still come back
+	// solid. This row fails if the presentation layer is ever applied ahead of
+	// the route short-circuit instead of behind it.
+	expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, 10, 0, 0, 0),
+	           AP_BOX_PRESENT_SOLID, "own-pad race is never ghosted");
+	expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0),
+	           AP_BOX_PRESENT_SOLID, "own-pad race with no pad resolved is still solid");
+
+	// A route that resolves to no adventure pad at all still ghosts rather than
+	// opening: presentation is cosmetic and may never rescue a refused access
+	// answer.
+	expect_int(AP_BoxPresentationFor(AP_BOX_ROUTE_BOSS, 20, 99, 1, 1),
+	           AP_BOX_PRESENT_GHOST, "battle-map venue: translucent, never collectable");
+	expect_int(AP_BoxPresentationCollectable(
+	               AP_BoxPresentationFor(AP_BOX_ROUTE_BOSS, 20, 99, 1, 1)), 0,
+	           "battle-map venue sends nothing");
+
+	// THE INVARIANT, swept: over every route, a wide pad range and every
+	// combination of the two boolean terms at every plausible Key count,
+	// collectability is EXACTLY the old allow answer. Presentation added a state;
+	// it moved no check.
+	{
+		int route, pad, keys, st, rc;
+		int mismatches = 0;
+
+		for (route = 0; route <= 2; route++)
+			for (pad = -2; pad <= 106; pad++)
+				for (keys = 0; keys <= 5; keys++)
+					for (st = 0; st <= 1; st++)
+						for (rc = 0; rc <= 1; rc++)
+						{
+							int allow = AP_BoxPolicyAllows(route, pad, keys, st, rc);
+							int present = AP_BoxPresentationFor(route, pad, keys, st, rc);
+							if (AP_BoxPresentationCollectable(present) != allow)
+								mismatches++;
+							if (!AP_BoxPresentationStands(present))
+								mismatches++; // the policy itself never returns NONE
+						}
+		expect_int(mismatches, 0,
+		           "over the full sweep: collectable == the access answer, and every "
+		           "policy answer stands something");
+	}
+}
+
 int main(void)
 {
 	test_hub_table();
@@ -439,6 +563,7 @@ int main(void)
 	test_mixed_cup();
 	test_own_pad_controls();
 	test_boss_arm();
+	test_presentation();
 	test_membership_is_not_an_input();
 
 	if (g_failures != 0)
