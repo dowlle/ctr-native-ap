@@ -68,6 +68,7 @@ tools/test-cortex-track-seedcfg.cpp
 tools/test-cv-tracker-letters.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
+tools/test-podium-trophy-presentation.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c

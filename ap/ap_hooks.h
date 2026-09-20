@@ -96,6 +96,32 @@ int  AP_CustomTrackTrophyCeremonyDraw(int x, int y);
 int  AP_CustomTrackTrophyCeremonyProp(struct Instance *prop);
 void AP_CustomTrackTrophyCeremonyEnd(void);
 
+// ── AP Trophy podium presentation (issue #235, display-only) ──
+// An AP retail-Trophy podium bypasses the vanilla prize Instance and its
+// INC_TROPHY count-up (game/233/CS_Podium.c). Draw the AP-owned received Trophy
+// count (AP_GateCount(AP_IDX_TROPHY)) and the shared #330 item sentence in its
+// place. Self-gates on ctr_cfg_active() + podiumRewardID == STATIC_TROPHY, so a
+// non-AP podium, a custom Trophy (STATIC_AP) and every other reward are no-ops.
+// Call from the podium camera tick only while no menu obscures the scene.
+void AP_TrophyPodiumCeremonyDraw(int x, int y);
+
+// 1 when the podium's STATIC_TROPHY model belongs to a trial track or Cortex
+// Vortex rather than an ordinary retail trophy. Those reuse the model but have
+// no prevLEV + ADV_REWARD_FIRST_TROPHY location, so #235 leaves them on the
+// vanilla prize path. Reads the level we came from (gGT->prevLEV).
+int AP_PodiumSpecialTrack(void);
+
+// Issue #235 terminal work. CS_Podium_Prize_ThTick3 raises overlayTransition to
+// 2, clears VEH_FREEZE_PODIUM and plays the completion FX when the ceremony
+// ends. The AP ordinary-Trophy presentation births no prize thread, so the
+// continue press calls AP_PodiumExitTerminalWork() after
+// CS_DestroyPodium_StartDriving() to reproduce exactly that work once per
+// podium. Every other podium still relies on its own prize thread, so the
+// self-gating wrapper is a no-op there. AP_PodiumExitReset re-arms the one-shot
+// latch when a podium is born (CS_Podium_FullScene_Init).
+void AP_PodiumExitReset(void);
+void AP_PodiumExitTerminalWork(void);
+
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
 // the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum

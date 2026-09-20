@@ -45,6 +45,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
+#include "ap_podium_presentation_logic.h" // AP Trophy prize policy (#235)
 #include "ap_retail_crystal.h" // the harvested retail crystal for CTR progression (#219)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
@@ -83,6 +84,7 @@ CTR_STATIC_ASSERT(CTR_CT_MODEL_FRUIT_CRATE == PU_FRUIT_CRATE);
 CTR_STATIC_ASSERT(CTR_CT_MODEL_WUMPA_FRUIT == PU_WUMPA_FRUIT);
 #endif
 CTR_STATIC_ASSERT(AP_MODEL_TROPHY == STATIC_TROPHY);
+CTR_STATIC_ASSERT(AP_PODIUM_TROPHY_MODEL == STATIC_TROPHY);
 CTR_STATIC_ASSERT(AP_MODEL_KEY == STATIC_KEY);
 CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
 
@@ -2486,6 +2488,101 @@ void AP_CustomTrackTrophyCeremonyEnd(void)
 	AP_CustomTrophyCeremonyEnd(&ap_custom_trophy_ceremony);
 	ap_custom_ceremony_bit = AP_CUSTOM_TROPHY_PSEUDO_BIT;
 #endif
+}
+
+// Issue #235. A trial-track or Cortex Vortex podium reuses STATIC_TROPHY but has
+// no ordinary retail trophy bit, so it must not be treated as the retail-Trophy
+// presentation: prevLEV + ADV_REWARD_FIRST_TROPHY would resolve another track's
+// location (Cortex Vortex hosts Oxide Station's LevelID 13). Detect it from the
+// level we came from and the Cortex latch's previous-serving state.
+int AP_PodiumSpecialTrack(void)
+{
+	int lev;
+
+	if (sdata == NULL || sdata->gGT == NULL)
+		return 1; // no track context -> not an ordinary retail Trophy podium
+
+	lev = (int)sdata->gGT->prevLEV;
+	if (lev < 0 || lev > 15)
+		return 1; // outside the 16 retail track trophies (trial tracks are 16/17)
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (lev == CTR_CFG_CORTEX_HOST_LEVEL && CustomTrack_CortexTrackPrevServed())
+		return 1;
+#endif
+	return 0;
+}
+
+// Issue #235. game/233/CS_Podium.c bypasses the retail Trophy prize (and its
+// INC_TROPHY count-up) for an AP Trophy presentation, so this draws what the
+// ceremony should say instead: the AP-owned received Trophy count, then the
+// #330 item sentence naming what the check actually sent. Self-gating matches
+// the CS_Podium branch exactly (AP active + ordinary retail Trophy), so every
+// non-AP, custom-Trophy, trial/Cortex and other-reward podium draws nothing
+// here. Display-only: the check itself was already sent by the award path. The
+// retail "win a trophy" string is the fallback when the scout is missing,
+// exactly as #330 requires.
+void AP_TrophyPodiumCeremonyDraw(int x, int y)
+{
+	char count[24];
+	char *retail;
+	char *text;
+
+	if (sdata->gGT == NULL ||
+	    !AP_PodiumIsApTrophyPresentation(ctr_cfg_active(),
+	                                     (int)sdata->gGT->podiumRewardID,
+	                                     AP_PodiumSpecialTrack()))
+		return;
+
+	// The vanilla counter reads the cosmetic AdvProgress mirror that the
+	// count-up would have bumped; draw the received count from AP truth.
+	snprintf(count, sizeof count, "TROPHIES: %d", AP_GateCount(AP_IDX_TROPHY));
+	DecalFont_DrawLine(count, x, y, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+
+	// The trophy location is the track we just came from (prevLEV, set by the
+	// hub load), matching the relic podium's prevLEV + ADV_REWARD_FIRST_* rule.
+	retail = sdata->lngStrings[LNG_CONGRATULATIONS_YOU_WIN_A_TROPHY];
+	text = AP_RewardSubtitleForBit((int)sdata->gGT->prevLEV + ADV_REWARD_FIRST_TROPHY,
+	                               retail);
+	DecalFont_DrawMultiLine(text, x, y + 0x10, 0x1b0, FONT_SMALL,
+	                        JUSTIFY_CENTER | WHITE);
+}
+
+// Issue #235. One-shot latch for the terminal work the missing retail prize
+// thread would have performed at ceremony end. Reset when a podium scene is
+// born (CS_Podium_FullScene_Init) and consumed by the exit below.
+static ap_podium_exit_state ap_podium_exit;
+
+void AP_PodiumExitReset(void)
+{
+	AP_PodiumExitStateReset(&ap_podium_exit);
+}
+
+// Issue #235. CS_Podium_Prize_ThTick3 is the code that raises overlayTransition
+// to 2, clears VEH_FREEZE_PODIUM and plays the completion FX (0x67) when the
+// ceremony ends. The AP ordinary-Trophy presentation skips that prize thread,
+// so nothing performs the terminal work and the player can be left frozen after
+// pressing continue. CS_Camera_ThTick_Podium calls this right after
+// CS_DestroyPodium_StartDriving() to reproduce exactly that work at the
+// equivalent moment. Self-gating on the same production policy means every
+// podium whose prize thread still exists is untouched, and the latch means the
+// work cannot run twice.
+void AP_PodiumExitTerminalWork(void)
+{
+	ap_podium_exit_work work;
+
+	if (sdata == NULL || sdata->gGT == NULL)
+		return;
+
+	work = AP_PodiumExitWork(ctr_cfg_active(), (int)sdata->gGT->podiumRewardID,
+	                         AP_PodiumSpecialTrack(), &ap_podium_exit);
+
+	if (work.overlayTransition != 0)
+		sdata->gGT->overlayTransition = (u8)work.overlayTransition;
+	if (work.releaseFreeze)
+		sdata->gGT->gameMode2 &= ~VEH_FREEZE_PODIUM;
+	if (work.completionSound)
+		OtherFX_Play(0x67, 1);
 }
 
 int AP_CeremonyOffscreenX(int logicalWidth, int wrapWidth)

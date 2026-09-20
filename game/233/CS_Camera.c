@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_hooks.h" // AP_PodiumExitTerminalWork (#235)
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aed48-0x800aedf8
 u8 CS_Camera_BoolGotoBoss(void)
 {
@@ -240,6 +244,14 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 	// podium-rung ledger) on the hub podium where the player can actually see it.
 	if (sdata->ptrActiveMenu == NULL)
 		AP_CustomTrackTrophyCeremonyDraw(0x100, 0x38);
+
+	// Issue #235: an AP retail-Trophy podium bypasses the retail prize/count-up
+	// (CS_Podium_FullScene_Init), so present the AP-owned received count and the
+	// #330 item text here instead. Self-gates on AP-active + an ordinary retail
+	// Trophy, so it is a no-op beside the custom-Trophy block above and on every
+	// other podium.
+	if (sdata->ptrActiveMenu == NULL)
+		AP_TrophyPodiumCeremonyDraw(0x100, 0x38);
 #endif
 
 	if (podium[0] == 0)
@@ -357,6 +369,14 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				th->flags |= THREAD_FLAG_DEAD;
 
 				CS_DestroyPodium_StartDriving();
+
+#ifdef CTR_AP
+				// Issue #235: the AP ordinary-Trophy presentation births no
+				// prize thread, so reproduce the terminal work that thread
+				// would have performed when the ceremony ended. No-op on every
+				// podium whose prize thread still exists.
+				AP_PodiumExitTerminalWork();
+#endif
 
 				switch (rewardId)
 				{
