@@ -170,7 +170,7 @@ jobs:
           test -n "$template_path" -a -s "$template_path"
           cp "$template_path" generated-template/Crash.Team.Racing.yaml
 
-      - name: Assemble the complete eleven-asset set
+      - name: Assemble the eleven standard assets and unsigned manifest
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
@@ -183,6 +183,15 @@ jobs:
             --template generated-template/Crash.Team.Racing.yaml \
             --version "$RELEASE_VERSION" \
             --output-dir release
+
+      - name: Verify the unsigned assembly before upload
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 tools/verify-release.py release \
+            --version "v${RELEASE_VERSION#v}" \
+            --pre-sign
 
       - name: Upload prepared release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

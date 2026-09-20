@@ -26,6 +26,44 @@ platform support helpers, and the `assets/` tree that `package-client.py`
 placed in the build archive. Debug sidecars are standalone assets and
 extracted retail game assets are never read or included.
 
+After the eleven standard assets pass their completeness check, the assembler
+writes `manifest.json` from the final archive bytes. It covers exactly the two
+client archives and refuses to overwrite an existing manifest. The shared
+policy in `release_policy.py` owns the standard asset list, the signed manifest
+contract, strict duplicate-rejecting JSON loading and the checksum-sidecar
+checks, and both the assembler and `tools/verify-release.py` import it.
+
+`tools/verify-release.py` verifies a release against the signed manifest.
+Default mode fails closed: it requires the exact published file set (eleven
+standard assets plus `manifest.json` and `manifest.json.minisig`), a
+non-placeholder committed public key and minisign, verifies the signature over
+the exact manifest bytes before parsing, binds the manifest version to a
+required `--version`, checks the two archive hashes and validates every
+standard `.sha256` sidecar:
+
+```sh
+python3 tools/verify-release.py /path/to/downloaded-release --version vX.Y.Z
+```
+
+`--pre-sign` is a distinct mode for a complete twelve-file pre-sign assembly
+(the eleven standard assets plus `manifest.json`). It omits signature
+verification and states unmistakably that the result is not a signed release:
+
+```sh
+python3 tools/verify-release.py /path/to/assembly --version vX.Y.Z --pre-sign
+```
+
+`.github/workflows/release-prepare.yml` is a manual, read-only preparation
+workflow. It requires exact successful native and companion run IDs plus their
+full source commits, downloads both hosted build outputs with `GH_TOKEN`,
+generates the template from Archipelago 0.6.7 and the downloaded apworld,
+assembles the eleven standard assets and the unsigned manifest, verifies that
+assembly with `--pre-sign`, and uploads the twelve files as one workflow
+artifact. It deliberately stops before signing, tagging or creating a GitHub
+release. The owner signs the exact downloaded `manifest.json` outside CI, then
+a clean download of the published release must pass default-mode verification
+with the committed public key.
+
 Build archive members may be nested. Anything directly under the archive root
 must be one of the known package-client outputs, and the only permitted
 subtree is `assets/`, which is copied into both bundles with its relative
@@ -33,11 +71,3 @@ paths intact. The build-only `BUILD-NOTICE.txt` is dropped and never ships.
 The two platform archives must agree on the asset tree byte for byte. In the
 tarball the Linux client and `support-bundle.sh` keep mode 755 and every other
 regular file is 644.
-
-`.github/workflows/release-prepare.yml` is a manual, read-only preparation
-workflow. It requires exact successful native and companion run IDs plus their
-full source commits, downloads both hosted build outputs with `GH_TOKEN`,
-generates the template from Archipelago 0.6.7 and the downloaded apworld, and
-uploads the eleven files as one workflow artifact. It deliberately stops
-before tagging or creating a GitHub release; a human can review that artifact
-and attach it to the player-facing native release.

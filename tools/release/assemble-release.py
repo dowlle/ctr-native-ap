@@ -8,7 +8,6 @@ tag, sign, or include game assets.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -21,24 +20,21 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-ASSET_NAMES = (
-    "ctr-archipelago-{version}-windows-x86.zip",
-    "ctr-archipelago-{version}-windows-x86.zip.sha256",
-    "ctr_native_ap.exe.debug",
-    "ctr_native_ap.exe.debug.sha256",
-    "ctr.apworld",
-    "ctr.apworld.sha256",
-    "Crash.Team.Racing.yaml",
-    "ctr-archipelago-{version}-linux-x86.tar.gz",
-    "ctr-archipelago-{version}-linux-x86.tar.gz.sha256",
-    "ctr_native_ap.debug",
-    "ctr_native_ap.debug.sha256",
+import release_policy
+from release_policy import (
+    MANIFEST_NAME,
+    VERSION,
+    sha256,
+    signed_asset_names,
+    standard_asset_names,
 )
 
+
+ASSET_NAMES = release_policy.STANDARD_ASSET_NAMES
 ASSET_DIR = "assets"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
-VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 ARTIFACT_ARCHIVE = {
     "windows": re.compile(r"^ctr-ap-windows-x86-([0-9a-f]{12,40})\.zip$"),
     "linux": re.compile(r"^ctr-ap-linux-x86-([0-9a-f]{12,40})\.tar\.gz$"),
@@ -62,16 +58,33 @@ class AssemblyError(ValueError):
     """An input failed a release assembly gate."""
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def fail(message: str) -> None:
     raise AssemblyError(message)
+
+
+def write_manifest(output: Path, version: str) -> Path:
+    """Write the signed client manifest from the final archive bytes.
+
+    Called only after both client archives are final.  Sorted keys, UTF-8 and a
+    single trailing LF keep the bytes deterministic for the out-of-CI signature.
+    """
+    tag = version if version.startswith("v") else f"v{version}"
+    artifacts = {name: sha256(output / name) for name in signed_asset_names(tag)}
+    destination = output / MANIFEST_NAME
+    if destination.exists():
+        fail(f"refusing to overwrite existing {MANIFEST_NAME}")
+    destination.write_text(
+        json.dumps(
+            {"version": tag, "artifacts": artifacts},
+            indent=2,
+            ensure_ascii=True,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return destination
 
 
 def safe_member(name: str) -> PurePosixPath:
@@ -383,8 +396,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
     validate_apworld(args.apworld.resolve(), version, source_compat)
     validate_template(args.template.resolve(), version, source_compat)
     output.mkdir(parents=True, exist_ok=True)
-    expected_assets = [name.format(version=f"v{version}") for name in ASSET_NAMES]
-    existing = [name for name in expected_assets if (output / name).exists()]
+    expected_assets = standard_asset_names(version)
+    existing = [name for name in [*expected_assets, MANIFEST_NAME] if (output / name).exists()]
     if existing:
         fail(f"refusing to overwrite existing release asset(s): {', '.join(existing)}")
     with tempfile.TemporaryDirectory(prefix="ctr-release-") as temporary:
@@ -472,7 +485,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
     assets = [output / name for name in expected_assets]
     if any(not path.is_file() for path in assets):
         fail("assembly did not produce the complete eleven-asset set")
-    return assets
+    manifest = write_manifest(output, version)
+    return [*assets, manifest]
 
 
 def parser() -> argparse.ArgumentParser:

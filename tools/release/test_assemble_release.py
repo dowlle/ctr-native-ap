@@ -21,6 +21,8 @@ assert SPEC and SPEC.loader
 ASSEMBLER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ASSEMBLER)
 
+import release_policy  # noqa: E402
+
 
 class AssemblerFixtureTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -180,6 +182,63 @@ class AssemblerFixtureTests(unittest.TestCase):
             for member in self.ASSET_MEMBERS:
                 self.assertIn(f"{root_name}/{member}", names)
                 self.assertEqual(bundle.read(f"{root_name}/{member}"), member.encode())
+
+    def test_manifest_uses_final_archive_bytes_and_stable_format(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        windows = output / "ctr-archipelago-v1.2.3-windows-x86.zip"
+        linux = output / "ctr-archipelago-v1.2.3-linux-x86.tar.gz"
+        windows.write_bytes(b"windows-final")
+        linux.write_bytes(b"linux-final")
+
+        manifest = ASSEMBLER.write_manifest(output, "1.2.3")
+
+        self.assertEqual(
+            manifest.read_text(encoding="utf-8"),
+            "{\n"
+            '  "artifacts": {\n'
+            f'    "{linux.name}": "{hashlib.sha256(linux.read_bytes()).hexdigest()}",\n'
+            f'    "{windows.name}": "{hashlib.sha256(windows.read_bytes()).hexdigest()}"\n'
+            "  },\n"
+            '  "version": "v1.2.3"\n'
+            "}\n",
+        )
+        self.assertTrue(manifest.read_bytes().endswith(b"\n"))
+        self.assertFalse(manifest.read_bytes().endswith(b"\n\n"))
+
+    def test_manifest_tracks_replaced_archive_bytes(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        windows = output / "ctr-archipelago-v1.2.3-windows-x86.zip"
+        linux = output / "ctr-archipelago-v1.2.3-linux-x86.tar.gz"
+        windows.write_bytes(b"windows-final")
+        linux.write_bytes(b"linux-final")
+        manifest = ASSEMBLER.write_manifest(output, "1.2.3")
+        original = manifest.read_text(encoding="utf-8")
+
+        windows.write_bytes(b"windows-replaced")
+        manifest.unlink()
+        changed = ASSEMBLER.write_manifest(output, "1.2.3").read_text(encoding="utf-8")
+
+        self.assertNotEqual(original, changed)
+        self.assertIn(hashlib.sha256(b"windows-replaced").hexdigest(), changed)
+        self.assertNotIn(hashlib.sha256(b"windows-final").hexdigest(), changed)
+
+    def test_manifest_refuses_to_overwrite(self) -> None:
+        output = self.root / "release"
+        output.mkdir()
+        (output / "ctr-archipelago-v1.2.3-windows-x86.zip").write_bytes(b"w")
+        (output / "ctr-archipelago-v1.2.3-linux-x86.tar.gz").write_bytes(b"l")
+        ASSEMBLER.write_manifest(output, "1.2.3")
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.write_manifest(output, "1.2.3")
+
+    def test_standard_asset_policy_is_shared(self) -> None:
+        self.assertEqual(list(ASSEMBLER.ASSET_NAMES), list(release_policy.STANDARD_ASSET_NAMES))
+        self.assertEqual(
+            ASSEMBLER.standard_asset_names("1.2.3"),
+            release_policy.standard_asset_names("1.2.3"),
+        )
 
     def test_tampered_artifact_sidecar_is_rejected(self) -> None:
         artifact, _ = self.write_build_archive("windows")
