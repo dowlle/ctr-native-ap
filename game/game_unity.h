@@ -34,6 +34,7 @@
 #include "../ap/ap_author.h"    // in-game box placement author mode (#182)
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
 #include "../ap/ap_navrec.h"    // AI lap recorder, and recorded-lap playback for the bots
+#include "../ap/ap_wumpa_residency_logic.h" // freestanding Wumpa animation transition (#222)
 #endif
 
 #include "226/R226.c"
@@ -378,6 +379,7 @@
 #include "../ap/ap_box_texture.c"
 #include "../ap/ap_retail_asset.c"
 #include "../ap/ap_retail_crystal.c"
+#include "../ap/ap_retail_wumpa.c"
 #include "../ap/ap_capability.c"
 #include "../ap/ap_blue_fire.c"
 #include "../ap/ap_charseat.c"

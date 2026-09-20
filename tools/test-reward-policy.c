@@ -66,17 +66,19 @@ int main(void)
 	expect_item(AP_IDX_GEM_RED, AP_CAT_GEM, AP_MODEL_GEM, 0, "Gem -> gem, natural colour");
 	expect_item(AP_IDX_KEY, AP_CAT_KEY, AP_MODEL_KEY, 0, "Key -> key, natural colour");
 
-	// ── Matrix rule 4: filler, traps and comfort items are marker material ──
-	// A Wumpa PACKAGE is a quantity bundle the multiworld invented, not one of the
-	// five rewards a vanilla pad can hold, so it is rule 4 despite being CTR's.
-	expect_item(15, AP_CAT_WUMPA, -1, 0, "Wumpa Fruit -> marker material");
+	// ── 2026-09-20 amendment: every Wumpa package keeps the fruit model ──
+	// The model is gated at the display resolver on the harvest (ap_hooks.c);
+	// this pins the category decision itself.
+	expect_item(15, AP_CAT_WUMPA, AP_MODEL_WUMPA, 0, "Wumpa Fruit -> fruit, natural colour");
+	expect_item(120, AP_CAT_WUMPA, AP_MODEL_WUMPA, 0, "Small Wumpa Bundle -> fruit, natural colour");
+	expect_item(121, AP_CAT_WUMPA, AP_MODEL_WUMPA, 0, "Big Wumpa Bundle -> fruit, natural colour");
+
+	// ── Matrix rule 4: remaining filler, traps and comfort items are markers ──
 	expect_item(16, AP_CAT_NONE, -1, 0, "first trap -> marker material");
 	expect_item(20, AP_CAT_NONE, -1, 0, "last trap -> marker material");
 	expect_item(21, AP_CAT_NONE, -1, 0, "first comfort item -> marker material");
 	expect_item(25, AP_CAT_NONE, -1, 0, "last comfort item -> marker material");
 	expect_item(26, AP_CAT_NONE, -1, 0, "the gap below the ladder -> marker material");
-	expect_item(120, AP_CAT_WUMPA, -1, 0, "Small Wumpa Bundle -> marker material");
-	expect_item(121, AP_CAT_WUMPA, -1, 0, "Big Wumpa Bundle -> marker material");
 
 	// ── Matrix rule 3: every CTR progression family is the purple crystal ──
 	// Both edges of every block, so a range that silently loses or gains an item
