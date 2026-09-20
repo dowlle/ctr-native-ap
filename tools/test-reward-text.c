@@ -5,10 +5,16 @@
  *      tools/test-reward-text.c && /tmp/test-reward-text
  *
  * Asserts the wording, the single display bound (AP_REWARD_TEXT_MAX), exact
- * fit vs truncation, uppercase normalization, whitespace collapse/trim, UTF-8
- * and control-byte rejection, the "Unknown" placeholder, unsupported glyphs
- * that must not pass through, and the production fallback wiring that keeps the
- * retail string when no scout is known.
+ * fit vs per-component truncation, uppercase normalization, whitespace
+ * collapse/trim, UTF-8 and control-byte rejection, the "Unknown" placeholder,
+ * unsupported glyphs that must not pass through, and the production fallback
+ * wiring that keeps the retail string when no scout is known.
+ *
+ * Issue #330 correction: the foreign line must always keep a recognizable
+ * recipient AND item joined by the possessive separator. A long recipient may
+ * no longer cut the item away, so the regression below (100-character player,
+ * "HOOKSHOT") is the difference between the rejected sentence-level cut and
+ * the component-wise formatter.
  */
 
 #include <stdio.h>
@@ -113,6 +119,13 @@ static void test_production_wiring(void)
 		fprintf(stderr, "note: source wiring guard skipped (repo root not the cwd)\n");
 }
 
+// Build "HAVE <n copies of c>..." style expectations without hand-counting.
+static void repeat_char(char *dst, char c, int n)
+{
+	memset(dst, c, (size_t)n);
+	dst[n] = '\0';
+}
+
 int main(void)
 {
 	char out[64];
@@ -121,6 +134,7 @@ int main(void)
 	char exact27[28];
 	char exact21[22];
 	char long28[29];
+	char want[128];
 	int i;
 
 	// ── own item ────────────────────────────────────────────────────────────
@@ -133,42 +147,7 @@ int main(void)
 	expect_build("own whitespace trim/collapse", "  MOON   PEARL  ", "Local", 1,
 	             "HAVE A MOON PEARL.");
 
-	// ── foreign item ────────────────────────────────────────────────────────
-	expect_build("foreign item", "Moon Pearl", "Alice", 0,
-	             "HAVE ALICE'S MOON PEARL.");
-	expect_build("foreign uppercase", "dragon mines", "bob", 0,
-	             "HAVE BOB'S DRAGON MINES.");
-
-	// ── 100-character names stay inside the single display bound ────────────
-	memset(longItem, 'x', sizeof longItem - 1);
-	longItem[sizeof longItem - 1] = '\0';
-	memset(longPlayer, 'p', sizeof longPlayer - 1);
-	longPlayer[sizeof longPlayer - 1] = '\0';
-
-	check(AP_RewardTextBuild(out, (int)sizeof out, longItem, longPlayer, 1),
-	      "100-character own item builds");
-	check(strlen(out) == AP_REWARD_TEXT_MAX, "own long line hits the bound");
-	check(out[AP_REWARD_TEXT_MAX - 1] == '.' &&
-	      out[AP_REWARD_TEXT_MAX - 2] == '.' &&
-	      out[AP_REWARD_TEXT_MAX - 3] == '.',
-	      "own long line ends in a readable three-period cut");
-
-	check(AP_RewardTextBuild(out, (int)sizeof out, longItem, longPlayer, 0),
-	      "100-character foreign names build");
-	check(strlen(out) == AP_REWARD_TEXT_MAX, "foreign long line hits the bound");
-	{
-		char wantForeignLong[AP_REWARD_TEXT_MAX + 1];
-		memset(wantForeignLong, 'P', sizeof wantForeignLong);
-		memcpy(wantForeignLong, "HAVE ", 5);
-		wantForeignLong[5 + 27] = '.';
-		wantForeignLong[5 + 28] = '.';
-		wantForeignLong[5 + 29] = '.';
-		wantForeignLong[AP_REWARD_TEXT_MAX] = '\0';
-		check(strcmp(out, wantForeignLong) == 0,
-		      "foreign long line truncates inside the player name");
-	}
-
-	// ── exact fit is untouched; one over truncates ──────────────────────────
+	// ── own item exact fit is untouched; one over cuts the item only ─────────
 	// Own: "HAVE A " (7) + item + "." (1) == 35, so item is exactly 27.
 	for (i = 0; i < 26; i++)
 		exact27[i] = (char)('A' + i); // A..Z
@@ -186,15 +165,81 @@ int main(void)
 	check(AP_RewardTextBuild(out, (int)sizeof out, long28, "Local", 1) &&
 	      strlen(out) == AP_REWARD_TEXT_MAX &&
 	      strcmp(out + (AP_REWARD_TEXT_MAX - 3), "...") == 0,
-	      "own one-over truncates at the bound");
+	      "own one-over truncates with an explicit ellipsis at the bound");
+
+	// ── short foreign item keeps the plain retail-shaped wording ────────────
+	expect_build("foreign item", "Moon Pearl", "Alice", 0,
+	             "HAVE ALICE'S MOON PEARL.");
+	expect_build("foreign uppercase", "dragon mines", "bob", 0,
+	             "HAVE BOB'S DRAGON MINES.");
 
 	// Foreign: "HAVE " (5) + player + "'S " (3) + item + "." (1) == 35, so
-	// player + item == 26. Five-character player + 21-character item.
+	// player + item == 26.
 	for (i = 0; i < 21; i++)
 		exact21[i] = (char)('A' + (i % 26));
 	exact21[21] = '\0';
 	expect_build("foreign exact fit", exact21, "ALICE", 0,
 	             "HAVE ALICE'S ABCDEFGHIJKLMNOPQRSTU.");
+
+	// ── regression: a 100-character recipient must not remove the item ──────
+	// This is the rejected 2522bc0f behavior: the assembled sentence was cut
+	// from the left, yielding only "HAVE <PLAYER>..." and dropping the reward.
+	memset(longPlayer, 'p', sizeof longPlayer - 1);
+	longPlayer[sizeof longPlayer - 1] = '\0';
+
+	check(AP_RewardTextBuild(out, (int)sizeof out, "HOOKSHOT", longPlayer, 0),
+	      "long recipient with a short item builds");
+	check(strstr(out, "HOOKSHOT") != NULL,
+	      "long recipient keeps the complete short item");
+	check(strstr(out, "'S ") != NULL,
+	      "long recipient keeps the possessive separator");
+	{
+		char wantHook[128];
+		char p15[16];
+		repeat_char(p15, 'P', 15);
+		snprintf(wantHook, sizeof wantHook, "HAVE %s...'S HOOKSHOT.", p15);
+		check(strcmp(out, wantHook) == 0,
+		      "long recipient is shortened to a recognizable prefix");
+	}
+
+	// ── long item / short recipient: keep the recipient, cut the item ───────
+	memset(longItem, 'x', sizeof longItem - 1);
+	longItem[sizeof longItem - 1] = '\0';
+	check(AP_RewardTextBuild(out, (int)sizeof out, longItem, "ALICE", 0),
+	      "short recipient with a long item builds");
+	{
+		char x19[20];
+		repeat_char(x19, 'X', 19);
+		snprintf(want, sizeof want, "HAVE ALICE'S %s...", x19);
+		check(strcmp(out, want) == 0,
+		      "long item keeps the short recipient and a marked prefix");
+	}
+
+	// ── both long: each side keeps an identifiable prefix and an ellipsis ────
+	check(AP_RewardTextBuild(out, (int)sizeof out, longItem, longPlayer, 0),
+	      "two long names build");
+	{
+		char p10[11];
+		char x11[12];
+		repeat_char(p10, 'P', 10);
+		repeat_char(x11, 'X', 11);
+		snprintf(want, sizeof want, "HAVE %s...'S %s...", p10, x11);
+		check(strcmp(out, want) == 0,
+		      "two long names split the bound and keep both prefixes");
+	}
+	check(strlen(out) <= AP_REWARD_TEXT_MAX,
+	      "both-long line stays inside the display bound");
+	check(strncmp(out, "HAVE ", 5) == 0,
+	      "both-long line never collapses to a bare player prefix");
+
+	// ── own 100-character item stays inside the single display bound ────────
+	check(AP_RewardTextBuild(out, (int)sizeof out, longItem, longPlayer, 1),
+	      "100-character own item builds");
+	check(strlen(out) == AP_REWARD_TEXT_MAX, "own long line hits the bound");
+	check(out[AP_REWARD_TEXT_MAX - 1] == '.' &&
+	      out[AP_REWARD_TEXT_MAX - 2] == '.' &&
+	      out[AP_REWARD_TEXT_MAX - 3] == '.',
+	      "own long line ends in a readable three-period cut");
 
 	// ── fallbacks: empty, Unknown, unsupported, control-only ─────────────────
 	expect_fallback("empty item", "", "Local", 1);
