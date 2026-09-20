@@ -37,6 +37,17 @@ typedef struct
 	                            // path, so a second SDL swap wait is double
 	                            // throttling some drivers charge to the wrong
 	                            // frame's timing.
+	bool muteWhenUnfocused;     // Video & QoL: silence the audio output while the
+	                            // game window does not have input focus (default
+	                            // off, so a single-game setup is unaffected). For
+	                            // running several randomizer clients side by side:
+	                            // only the one on screen makes noise. Applied as an
+	                            // SDL output-stream gain after the SPU mix, see
+	                            // include/platform/native_focus_mute.h and
+	                            // NativeAudio_UpdateFocusMuteState
+	                            // (platform/native_audio.c) -- no voice is stopped,
+	                            // so game state, timing and determinism are
+	                            // untouched and music resumes mid-note.
 	// Remembered window position/size (issue: "remember window position and size
 	// between sessions" -- streaming setups want the same window every launch).
 	// Config-file-only, [State] section, the update_last_seen precedent: this is

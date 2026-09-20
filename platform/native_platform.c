@@ -40,6 +40,15 @@ global_variable int s_pinnedVramDisplayX = 0;
 global_variable int s_pinnedVramDisplayY = 0;
 global_variable int s_pinnedVramDisplayW = 0;
 global_variable int s_pinnedVramDisplayH = 0;
+// Whether the game window currently has input focus, for the "mute when
+// unfocused" option (g_config.muteWhenUnfocused). -1 = not read from SDL yet;
+// NativeFocusMute_GainPure treats that as focused, so a start-up frame before
+// the window exists can never silence the game. It is seeded once from the
+// window's SDL_WINDOW_INPUT_FOCUS flag -- covering a window that starts
+// unfocused, e.g. launched behind another client -- and kept up to date by the
+// SDL focus events in Platform_PollHostEvents.
+global_variable int s_windowFocused = -1;
+
 #define NATIVE_FPS_REPORT_FRAME_WINDOW 2000
 global_variable int s_fpsFrameCount = 0;
 global_variable u64 s_fpsLastCounter = 0;
@@ -382,6 +391,17 @@ int Platform_BeginScene(void)
 	// hitch, and a display slower than the game clock would slow the game.
 	NativeRenderer_UpdateSwapIntervalState(g_config.vsync);
 
+	// "Mute When Unfocused" (issue 348): read the live option and the live
+	// focus state every frame and let the audio layer decide whether the SDL
+	// output gain has to change. Doing it here rather than only from the focus
+	// events is what makes toggling the option take effect immediately, in
+	// either direction, without waiting for the next alt-tab.
+	if ((s_windowFocused < 0) && (g_window != NULL))
+	{
+		s_windowFocused = ((SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0) ? 1 : 0;
+	}
+	NativeAudio_UpdateFocusMuteState(g_config.muteWhenUnfocused ? 1 : 0, s_windowFocused);
+
 	NativeRenderer_BeginScene();
 
 	if (activeDrawEnv.isbg)
@@ -715,6 +735,15 @@ void Platform_PollHostEvents(void)
 		case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
 		case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
 			Platform_UpdateCursorVisibility();
+			break;
+		// Focus drives the "Mute When Unfocused" option only; the gain itself is
+		// applied from Platform_BeginScene, so the game never changes behaviour
+		// here and a build with the option off does exactly what it did before.
+		case SDL_EVENT_WINDOW_FOCUS_GAINED:
+			s_windowFocused = 1;
+			break;
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			s_windowFocused = 0;
 			break;
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
 			Platform_ExitClean();

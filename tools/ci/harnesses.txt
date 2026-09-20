@@ -22,6 +22,7 @@ tools/test-democam.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
 tools/test-firstkey-freeze.c
+tools/test-focus-mute.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
