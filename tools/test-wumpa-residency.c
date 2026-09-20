@@ -122,8 +122,9 @@ static unsigned int build_valid_body(unsigned char *body, unsigned int base)
 	put32(body + 0x18, base + FIX_MODEL_ARRAY_OFF);
 	put32(body + FIX_MODEL_ARRAY_OFF, spanBase); // model[0] -> span start
 
-	// struct Model at span offset 0.
-	putname(span + 0x00, "wumpa");
+	// struct Model at span offset 0. The retail model id 0x02 is named `fruit`
+	// (measured from entry 117; "wumpa" is NOT the stored name).
+	putname(span + 0x00, "fruit");
 	put16(span + 0x10, 0x0002u); // PU_WUMPA_FRUIT
 	put16(span + 0x12, 4u);
 	put32(span + 0x14, spanBase + 0x18u); // headers
@@ -344,6 +345,7 @@ static void test_shape_validation(void)
 {
 	static unsigned char body[FIX_BODY_SIZE];
 	unsigned int lo, hi, fruit;
+	int i;
 
 	// The valid fixture is accepted and has exactly the measured span.
 	fruit = build_valid_body(body, 0u);
@@ -356,6 +358,21 @@ static void test_shape_validation(void)
 	expect(AP_WumpaValidateShape(body, FIX_BODY_SIZE, 0u, fruit, &lo, &hi), AP_WUMPA_FAIL_SHAPE,
 	       "wrong model id rejected");
 	put16(body + fruit + 0x10, 0x02u);
+
+	// Wrong model name: the same id under a name that is not the measured
+	// `fruit` is refused. "wumpa" is the deliberate wrong case here.
+	putname(body + fruit + 0x00, "wumpa");
+	expect(AP_WumpaValidateShape(body, FIX_BODY_SIZE, 0u, fruit, &lo, &hi), AP_WUMPA_FAIL_SHAPE,
+	       "wrong model name rejected");
+	putname(body + fruit + 0x00, "fruit");
+
+	// A name field with no terminator inside its 16 bytes is refused even when
+	// the leading bytes match.
+	for (i = 0; i < 0x10; i++)
+		body[fruit + (unsigned int)i] = 'f';
+	expect(AP_WumpaValidateShape(body, FIX_BODY_SIZE, 0u, fruit, &lo, &hi), AP_WUMPA_FAIL_SHAPE,
+	       "unterminated model name rejected");
+	putname(body + fruit + 0x00, "fruit");
 
 	// Wrong header count.
 	put16(body + fruit + 0x12, 3u);

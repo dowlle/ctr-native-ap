@@ -99,6 +99,13 @@ static const unsigned int AP_WUMPA_SLOT_TARGETS[AP_WUMPA_SLOT_COUNT] = {
 static const char AP_WUMPA_HEADER_NAMES[AP_WUMPA_HEADER_COUNT][0x10] = {"fruit_hi", "fruit_med", "fruit_low",
                                                                        "fruit_box"};
 
+// The model's own 0x10-byte name field, measured from the retail entry-117 span
+// (and byte-identical across all 24 fruit-bearing entries): model id 0x02 is
+// named `fruit`, stored as "fruit" + NUL and zero-padded to the field. Validating
+// it as well as the id refuses a same-id but wrong-shape source. The 16-byte
+// field must hold this name with its terminator INSIDE the field.
+#define AP_WUMPA_MODEL_NAME "fruit"
+
 // Failure reason codes for the one redacted log line per failed harvest. Stable
 // strings, deliberately the only detail reported: no path, host, pointer or
 // player data may reach the log.
@@ -233,6 +240,32 @@ static inline int AP_WumpaPtrToOffset(unsigned int value, unsigned int base, uns
 	return 1;
 }
 
+// 1 when a 0x10-byte name field holds exactly `want` and is NUL-terminated
+// inside the field. A field that matches but fills all 0x10 bytes with no
+// terminator is refused, as is a field whose terminator comes later than the
+// wanted name (for example "wumpa" for the measured "fruit"), so a corrupt or
+// wrong-shape source cannot masquerade as the retail name.
+static inline int AP_WumpaNameMatches(const unsigned char *field, const char *want)
+{
+	unsigned int i;
+
+	if (field == 0 || want == 0)
+		return 0;
+
+	for (i = 0; i < 0x10u; i++)
+	{
+		char c = (char)field[i];
+		char w = want[i];
+
+		if (c != w)
+			return 0;
+		if (w == '\0')
+			return 1;
+	}
+
+	return 0; // the wanted name filled the field without a terminator
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape validation.
 //
@@ -242,10 +275,10 @@ static inline int AP_WumpaPtrToOffset(unsigned int value, unsigned int base, uns
 // `struct Model` inside the body. On success writes the span bounds (lo/hi
 // relative to body) to *outLo/*outHi and returns AP_WUMPA_FAIL_NONE.
 //
-// The rules are exactly the ones the review fixed: model id 0x02, four headers
-// named fruit_hi/med/low/box, one 32-frame `spin` animation each, 11,520 total
-// animation bytes, no texture reference above zero, a 12,760-byte span, and
-// every pointer inside the body.
+// The rules are exactly the ones the review fixed: model name `fruit`, model id
+// 0x02, four headers named fruit_hi/med/low/box, one 32-frame `spin` animation
+// each, 11,520 total animation bytes, no texture reference above zero, a
+// 12,760-byte span, and every pointer inside the body.
 static inline AP_WumpaFailReason AP_WumpaValidateShape(const unsigned char *body, unsigned int bodySize, unsigned int bodyBase,
                                                 unsigned int fruitOffset, unsigned int *outLo, unsigned int *outHi)
 {
@@ -258,6 +291,11 @@ static inline AP_WumpaFailReason AP_WumpaValidateShape(const unsigned char *body
 		return AP_WUMPA_FAIL_BOUNDS;
 
 	// struct Model: name[0x10], s16 id, s16 numHeaders, struct ModelHeader *headers
+	// The name is checked as well as the id: a file with the right id but the
+	// wrong name is not the measured fruit model and must not be copied.
+	if (!AP_WumpaNameMatches(body + fruitOffset, AP_WUMPA_MODEL_NAME))
+		return AP_WUMPA_FAIL_SHAPE;
+
 	if (AP_WumpaReadS16(body + fruitOffset + 0x10) != (int)AP_MODEL_WUMPA)
 		return AP_WUMPA_FAIL_SHAPE;
 
