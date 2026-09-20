@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_podium_presentation_logic.h" // #235 AP Trophy prize policy
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ac714-0x800ac840
 void CS_DestroyPodium_StartDriving(void)
 {
@@ -680,7 +684,23 @@ void CS_Podium_FullScene_Init(void)
 	// create thread for trophy girl (internally called "tawna")
 	CS_Thread_Init(gGT->podium_modelIndex_tawna, &R233.s_tawna[0], &InitData, -0x2aa, 0);
 
-	CS_Podium_Prize_Init(gGT->podiumRewardID, &R233.s_prize[0], (void *)&InitData);
+#ifdef CTR_AP
+	// Issue #235: the AP Trophy presentation draws the received count and the
+	// #330 item text itself (CS_Camera_ThTick_Podium). It must not birth the
+	// retail prize Instance/thread or run the INC_TROPHY count-up, which the
+	// seed-owned count would only overwrite. Clear a stale bit defensively and
+	// keep the rest of the podium, camera, characters and continue flow intact.
+	// Every other reward (including a non-AP Trophy and the Oxide relic) keeps
+	// the vanilla prize path unchanged.
+	if (AP_PodiumIsApTrophyPresentation(ctr_cfg_active(), (int)gGT->podiumRewardID))
+	{
+		gGT->gameMode2 &= ~INC_TROPHY;
+	}
+	else
+#endif
+	{
+		CS_Podium_Prize_Init(gGT->podiumRewardID, &R233.s_prize[0], (void *)&InitData);
+	}
 
 	CS_Podium_Stand_Init((void *)&InitData);
 
