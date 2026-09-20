@@ -429,6 +429,9 @@ int AP_WarpPadRewardTokenColour(int globalBit);
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
 int AP_LetterAvailable(int track, int letter);
+// Cortex Vortex letter availability for a caller outside the race, such as the
+// hub tracker: AP_LetterAvailable only reads that track while it is loaded.
+int AP_CortexLetterAvailableForTracker(int letter);
 long AP_LetterLocation(int track, int letter);
 void AP_LetterCollected(int track, int letter);
 void AP_LetterUnavailableTouched(int track, int letter);

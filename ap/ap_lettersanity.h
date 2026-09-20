@@ -86,6 +86,32 @@ static inline int AP_LetterAvailablePure(int active, int mode, long code, int re
 	return received != 0;
 }
 
+// What one letter cell of the adventure-map tracker draws. Every track row goes
+// through this, including Cortex Vortex: that row is drawn from the hub and so
+// cannot reach the in-race letter hooks, and drawing it from its own rule is
+// what made it claim unreceived letters were available (#379).
+//
+// state: 0 the letter has no location in this seed, 1 the location exists,
+// 2 the location is checked. available is AP_LetterAvailablePure for the same
+// letter, fed from whichever received-state table owns that track.
+typedef struct
+{
+	int letter; // draw the C/T/R glyph, otherwise the "-" placeholder
+	int gold;   // glyph drawn gold, otherwise grey
+	int tick;   // draw the collected tick
+	int locked; // draw the grey "item still needed" marker
+} AP_TrackerLetterCell;
+
+static inline AP_TrackerLetterCell AP_TrackerLetterCellPure(int mode, int state, int available)
+{
+	AP_TrackerLetterCell cell;
+	cell.letter = mode == 3 || state > 0;
+	cell.gold = cell.letter && available != 0;
+	cell.tick = state == 2;
+	cell.locked = cell.letter && !cell.tick && available == 0;
+	return cell;
+}
+
 static inline int AP_LettersRequiredCountPure(int active, int mode, const long codes[3])
 {
 	int letter, count = 0;
