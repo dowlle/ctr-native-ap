@@ -597,6 +597,10 @@ void AA_EndEvent_DrawMenu(void)
 		if (!token && !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
 			gGT->podiumRewardID = STATIC_TROPHY;
 		AP_NotifyCortexTrackRace(token);
+		// #285: the Cortex check is sent above; only then may the ceremony be
+		// skipped. The Cortex trophy has no retail trophy bit, so it classifies
+		// as an ordinary Trophy here, which is skippable when the option is on.
+		AP_SkipPodium(gGT->podiumRewardID);
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
 		MainRaceTrack_RequestLoad(levSpawn);
 		return;
@@ -614,6 +618,9 @@ void AA_EndEvent_DrawMenu(void)
 			gGT->podiumRewardID = STATIC_TROPHY;
 		AP_NotifyTrialTrackRace(gGT->levelID,
 		    challenge);
+		// #285: the trial check is sent above; only then may the ceremony be
+		// skipped (an ordinary Trophy classification when the option is on).
+		AP_SkipPodium(gGT->podiumRewardID);
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
 		MainRaceTrack_RequestLoad(levSpawn);
 		return;
@@ -665,6 +672,12 @@ void AA_EndEvent_DrawMenu(void)
 		gGT->podiumRewardID = STATIC_TROPHY;
 	}
 
+#ifdef CTR_AP
+	// #285: the trophy and token checks were sent above (AP_NotifyAdvReward,
+	// including the podium-rung backstop), so only now may the ceremony be
+	// skipped. A CTR Challenge classifies from the still-set TOKEN_RACE flag.
+	AP_SkipPodium(gGT->podiumRewardID);
+#endif
 	sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
 	MainRaceTrack_RequestLoad(levSpawn);
 }

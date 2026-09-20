@@ -69,6 +69,7 @@ tools/test-cortex-track-seedcfg.cpp
 tools/test-cv-tracker-letters.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
+tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
 tools/test-received-backlog.cpp

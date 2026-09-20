@@ -79,6 +79,14 @@ typedef struct
 	int stereo;
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
+	bool skipPodium;            // Archipelago: local "Skip Podium Ceremonies"
+	                            // (issue #285, default off). On, an ordinary
+	                            // Trophy, CTR Challenge or ordinary Relic hub
+	                            // podium is skipped. Boss, Gem Cup and the
+	                            // Oxide relic transition are preserved. Not a
+	                            // seed option and not slot_data: this is a local
+	                            // presentation preference. Consumed by
+	                            // AP_SkipPodium (ap/ap_hooks.c).
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
 	int  aiDifficulty;          // Archipelago: AI-difficulty preset, stored as the raw
 	                            // engine difficulty VALUE (0=vanilla, 0x50, 0xa0, 0xf0,

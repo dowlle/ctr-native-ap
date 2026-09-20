@@ -488,6 +488,15 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	// Exit To Map
 	case 0xd:
 	{
+#ifdef CTR_AP
+		// #285: relic reward bookkeeping and the AP relic notification already
+		// ran at race end (RR_EndEvent_UnlockAward). Decide the relic podium
+		// here, before the hub load, while RELIC_RACE and the original prevLEV
+		// hub return are still available. A qualifying Oxide relic keeps
+		// STATIC_RELIC for CS_Camera_BoolGotoBoss; cup and boss exits share this
+		// case and are never classified as skippable.
+		AP_SkipPodium(gGT->podiumRewardID);
+#endif
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
 

@@ -136,6 +136,18 @@ int AP_PodiumSpecialTrack(void);
 void AP_PodiumExitReset(void);
 void AP_PodiumExitTerminalWork(void);
 
+// ── Local podium-skip option (issue #285) ──
+// The "Skip Podium Ceremonies" client preference (config.ini + the in-game
+// options menu), default OFF. AP_ShouldSkipPodium classifies the pending hub
+// podium from the live mode words and reward id and applies the option; boss
+// and cup podiums are never skippable, and a relic that would open Oxide's
+// Final Challenge keeps STATIC_RELIC. AP_SkipPodium applies the decision:
+// it clears gGT->podiumRewardID (NOFUNC) plus any stale count-up/freeze bits,
+// so the hub returns exactly as after a watched ceremony. Call it AFTER the
+// race's reward notification, before the hub load request.
+int  AP_ShouldSkipPodium(int rewardId);
+void AP_SkipPodium(int rewardId);
+
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
 // the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum
