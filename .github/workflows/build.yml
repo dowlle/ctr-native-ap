@@ -34,7 +34,7 @@ jobs:
             libgl1-mesa-dev:i386 libasound2-dev:i386 libudev-dev:i386 \
             libdbus-1-dev:i386 libpulse-dev:i386 libwayland-dev:i386 \
             libxkbcommon-dev:i386
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build and verify both configurations
@@ -44,7 +44,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bash tools/ci/build-clients.sh linux
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clients-linux-x86-${{ github.sha }}
           path: client-artifacts/*
@@ -62,7 +62,7 @@ jobs:
       - name: Keep checkout line endings consistent with MSYS2 Git
         shell: bash
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
@@ -77,7 +77,7 @@ jobs:
             mingw-w64-i686-zlib
       - name: Build and verify both configurations
         run: bash tools/ci/build-clients.sh windows
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clients-windows-x86-${{ github.sha }}
           path: client-artifacts/*
