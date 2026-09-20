@@ -9,11 +9,15 @@
 // engine, with no disc, no display and no seed.
 //
 // THE RULING, in one sentence: reaching a track by a route other than its own
-// warp pad grants no AP-box logic. A Gem Cup leg or a boss race shows, collides
-// with and dispatches its track's authored AP boxes only while the corresponding
+// warp pad grants no AP-box logic. A Gem Cup leg or a boss race collides with
+// and dispatches its track's authored AP boxes only while the corresponding
 // INDIVIDUAL race is accessible through that track's randomized physical pad.
-// One cup may therefore mix legs with boxes and legs without them, and a boss
-// race on a track whose own pad is shut stands no boxes at all.
+// One cup may therefore mix legs with collectable boxes and legs without them.
+//
+// Since issue #354 the refused case is still SHOWN: the boxes stand translucent
+// and uncollectable, exactly as an unavailable Lettersanity letter does, so an
+// empty-looking leg is no longer indistinguishable from a locked one. See the
+// presentation enum at the bottom of this header. Collectability is unchanged.
 //
 // WHY BOSS RACES ARE THE SAME CASE. A boss race is entered from its hub garage,
 // never from the track's warp pad, but it loads that track (Komodo Joe loads
@@ -165,6 +169,66 @@ static inline int AP_BoxPolicyAllows(int route, int physPad, int keysOwned,
 	if (!AP_BoxRouteIsAlternate(route))
 		return 1;
 	return AP_BoxPadAccessible(physPad, keysOwned, stage1Met, racerMet);
+}
+
+// WHAT THE ANSWER LOOKS LIKE ON SCREEN (issue #354). The policy above decides
+// whether a box may be COLLECTED. Until #354 that decision also decided whether
+// anything stood at all, so a refused Gem Cup leg was simply an empty track and
+// players read it as a missing box rather than as a locked one -- the Discord
+// confusion the issue reports.
+//
+// The fix is the Lettersanity treatment, and nothing more: an unavailable letter
+// still STANDS and is drawn translucent while its collide callback refuses the
+// pickup (game/231/RB_CtrLetter.c, AP_CtrLetter_UpdateVisual and the refusal at
+// the top of RB_CtrLetter_ThCollide). An unavailable cup-leg or boss-race box now
+// stands the same way: visible, translucent, and not collectable by contact, by a
+// weapon or by an explosion.
+//
+// THREE VALUES, NOT TWO, because "stands" and "collectable" stopped being the
+// same question:
+//   * NONE   nothing is spawned. Reserved for the routes that must not show this
+//            track's boxes AT ALL: the Cortex Vortex pad track (whose host
+//            LevelID carries another track's box identity) and a custom-track
+//            DENY verdict. Showing a translucent box there would advertise a box
+//            that does not belong to the track being raced.
+//   * SOLID  the Alpha 4 behaviour: stands, collides, dispatches.
+//   * GHOST  stands translucent, collides with nothing, dispatches nothing.
+//
+// SOLID is deliberately 1 and NONE is 0, so every older truthiness test of
+// AP_BoxPolicyAllows keeps its meaning; GHOST is the only new state and callers
+// have to ask for it by name. Collectability is a separate predicate from
+// standing for exactly that reason: an engine caller that forgets the difference
+// fails to compile rather than quietly paying a check for a ghost.
+enum AP_BoxPresentation
+{
+	AP_BOX_PRESENT_NONE  = 0,
+	AP_BOX_PRESENT_SOLID = 1,
+	AP_BOX_PRESENT_GHOST = 2,
+};
+
+// The policy, expressed as presentation. An allowed route is SOLID; a refused
+// one stands its boxes as ghosts instead of standing them down. NONE is never
+// produced here: it is the caller's own answer for the two routes that own no
+// boxes on this track at all.
+static inline int AP_BoxPresentationFor(int route, int physPad, int keysOwned,
+                                        int stage1Met, int racerMet)
+{
+	if (AP_BoxPolicyAllows(route, physPad, keysOwned, stage1Met, racerMet))
+		return AP_BOX_PRESENT_SOLID;
+	return AP_BOX_PRESENT_GHOST;
+}
+
+// Does anything spawn for this presentation?
+static inline int AP_BoxPresentationStands(int present)
+{
+	return present != AP_BOX_PRESENT_NONE;
+}
+
+// May a standing box be broken and its check sent? THE gate every break path
+// asks, so the visual and the wire cannot disagree.
+static inline int AP_BoxPresentationCollectable(int present)
+{
+	return present == AP_BOX_PRESENT_SOLID;
 }
 
 #endif // CTR_AP
