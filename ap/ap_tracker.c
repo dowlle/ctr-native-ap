@@ -2,6 +2,7 @@
  * so its text and pins are not reduced through the PS1 framebuffer. */
 #include "ap_tracker.h"
 #include "ap_tracker_assets.h"
+#include "ap_tracker_progress.h"
 #include <platform/native_assets.h>
 #include <platform/native_disc_image.h>
 #include <platform/native_renderer.h>
@@ -24,7 +25,7 @@ typedef struct {
 } AP_TrackerNode;
 
 static struct {
-	int open, hub, focus, pinned, count, loaded;
+	int open, hub, focus, pinned, count, loaded, view;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
 	AP_TrackerHubAsset hubs[AP_TRACKER_HUBS];
@@ -142,6 +143,144 @@ static int AP_TrackerCodeState(long code)
 }
 static int AP_TrackerBitState(int bit)
 { return AP_LocationExistsByBit(bit) ? (AP_LocationCheckedByBit(bit) ? 2 : 1) : 0; }
+
+/* Itemsanity / Hit progress panel (#349 sibling). The row model lives in
+ * ap_tracker_progress.h so the engine draw and the host harness share it. These
+ * asserts keep the UI counts pinned to the canonical engine counts. */
+CTR_STATIC_ASSERT(AP_TRACKER_PROGRESS_WEAPONS == AP_ITEMSANITY_WEAPON_COUNT);
+CTR_STATIC_ASSERT(AP_TRACKER_PROGRESS_RACERS == CTR_CFG_HIT_CHARACTER_COUNT);
+
+static const int AP_TRACKER_WEAPON_ID[AP_TRACKER_PROGRESS_WEAPONS] = {
+	0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11
+};
+
+static const char *const AP_TRACKER_WEAPON_NAME[AP_TRACKER_PROGRESS_WEAPONS] = {
+	"TURBO", "BOMB", "MISSILE", "TNT/NITRO", "BEAKER",
+	"SHIELD BUBBLE", "MASK", "CLOCK", "WARPBALL", "BOMB X3", "MISSILE X3"
+};
+
+/* Engine character order (include/namespace_Vehicle.h enum Characters). */
+static const char *const AP_TRACKER_RACER_NAME[AP_TRACKER_PROGRESS_RACERS] = {
+	"CRASH", "CORTEX", "TINY", "COCO",
+	"N. GIN", "DINGODILE", "POLAR", "PURA",
+	"PINSTRIPE", "PAPU PAPU", "RIPPER ROO", "KOMODO JOE",
+	"N. TROPY", "PENTA PENGUIN", "FAKE CRASH", "NITROS OXIDE"
+};
+
+CTR_STATIC_ASSERT(sizeof(AP_TRACKER_WEAPON_NAME) / sizeof(AP_TRACKER_WEAPON_NAME[0]) ==
+	AP_TRACKER_PROGRESS_WEAPONS);
+CTR_STATIC_ASSERT(sizeof(AP_TRACKER_RACER_NAME) / sizeof(AP_TRACKER_RACER_NAME[0]) ==
+	AP_TRACKER_PROGRESS_RACERS);
+
+static int AP_TrackerProgressAvailable(void)
+{
+	return ctr_cfg.itemsanity || AP_HitEncounterEnabled();
+}
+
+/* Gather live state and classify. Reads only existing server-truth queries, so
+ * opening the panel emits no network traffic. */
+static int AP_TrackerProgressRows(AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS_MAX_ROWS])
+{
+	unsigned char owned[AP_TRACKER_PROGRESS_WEAPONS] = {0};
+	unsigned char weaponExists[AP_TRACKER_PROGRESS_WEAPONS][2] = {{0}};
+	unsigned char weaponChecked[AP_TRACKER_PROGRESS_WEAPONS][2] = {{0}};
+	unsigned char hitExists[AP_TRACKER_PROGRESS_RACERS] = {0};
+	unsigned char hitChecked[AP_TRACKER_PROGRESS_RACERS] = {0};
+	const ctr_hit_encounters *hit = ap_seedcfg_hit_encounters();
+	int itemsanityOn = ctr_cfg.itemsanity ? 1 : 0;
+	int hitOn = AP_HitEncounterEnabled();
+	int i, side;
+
+	if (itemsanityOn)
+	{
+		for (i = 0; i < AP_TRACKER_PROGRESS_WEAPONS; i++)
+		{
+			owned[i] = AP_ItemsanityWeaponAvailable(AP_TRACKER_WEAPON_ID[i]) ? 1 : 0;
+			for (side = 0; side < 2; side++)
+			{
+				long code = AP_ItemsanityLocationCode(AP_TRACKER_WEAPON_ID[i], side);
+				weaponExists[i][side] = ap_net_location_exists(code) ? 1 : 0;
+				weaponChecked[i][side] = weaponExists[i][side] &&
+					ap_net_location_checked(code) ? 1 : 0;
+			}
+		}
+	}
+
+	if (hitOn)
+	{
+		for (i = 0; i < AP_TRACKER_PROGRESS_RACERS; i++)
+		{
+			/* Canonical code. ap_seedcfg.cpp validates locations[id] as
+			 * 35025000+id, so a parsed block always carries the full roster. */
+			long code = hit != NULL ? hit->locations[i] : (35025000L + i);
+			hitExists[i] = ap_net_location_exists(code) ? 1 : 0;
+			hitChecked[i] = hitExists[i] && ap_net_location_checked(code) ? 1 : 0;
+		}
+	}
+
+	return AP_TrackerProgressRowsPure(itemsanityOn, hitOn, owned,
+		weaponExists, weaponChecked, hitExists, hitChecked, rows);
+}
+
+/* Second tracker view. The 1280x800 canvas is split into an Itemsanity column
+ * and a Hit column; both full rosters fit without scrolling. A row that has no
+ * location in this seed draws the grey "not in seed" marker, never a tick. */
+static void AP_TrackerDrawProgress(void)
+{
+	AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS_MAX_ROWS];
+	int count = AP_TrackerProgressRows(rows);
+	int itemRow = 0, hitRow = 0, i;
+
+	memset(ap_tracker.canvas, 0, TRACKER_W * TRACKER_H * 4);
+	AP_TrackerRect(16, 24, 1248, 744, AP_TrackerRGBA(0, 5, 10, 172));
+	AP_TrackerBorder(16, 24, 1248, 744, TRACKER_MINT, 3);
+	AP_TrackerLine(16, 96, 1264, 96, TRACKER_MINT, 2);
+	AP_TrackerText("ITEMS AND HIT PROGRESS", 310, 45, 36, TRACKER_GOLD, 660);
+
+	if (ctr_cfg.itemsanity)
+	{
+		AP_TrackerRect(36, 116, 574, 556, AP_TrackerRGBA(10, 15, 18, 226));
+		AP_TrackerBorder(36, 116, 574, 556, TRACKER_MINT, 2);
+		AP_TrackerText("ITEMSANITY", 54, 130, 25, TRACKER_GOLD, 220);
+		AP_TrackerText("OWN", 330, 136, 16, TRACKER_WHITE, 55);
+		AP_TrackerText("PLAIN", 410, 136, 16, TRACKER_WHITE, 75);
+		AP_TrackerText("JUICED", 506, 136, 16, TRACKER_WHITE, 85);
+	}
+
+	if (AP_HitEncounterEnabled())
+	{
+		AP_TrackerRect(634, 116, 610, 556, AP_TrackerRGBA(10, 15, 18, 226));
+		AP_TrackerBorder(634, 116, 610, 556, TRACKER_MINT, 2);
+		AP_TrackerText("HIT CHARACTER", 652, 130, 25, TRACKER_GOLD, 300);
+		AP_TrackerText("HIT", 1160, 136, 16, TRACKER_WHITE, 50);
+	}
+
+	for (i = 0; i < count; i++)
+	{
+		AP_TrackerProgressRow *row = &rows[i];
+		if (row->kind == AP_TRACKER_PROGRESS_WEAPON)
+		{
+			int y = 169 + itemRow++ * 43;
+			AP_TrackerText(AP_TRACKER_WEAPON_NAME[row->index], 54, y, 19, TRACKER_WHITE, 250);
+			AP_TrackerText(row->owned ? "YES" : "NO", 330, y, 17,
+				row->owned ? TRACKER_GREEN : TRACKER_GRAY, 54);
+			AP_TrackerTick(426, y + 5, row->plain);
+			AP_TrackerTick(527, y + 5, row->juiced);
+		}
+		else
+		{
+			int y = 169 + hitRow++ * 31;
+			AP_TrackerText(AP_TRACKER_RACER_NAME[row->index], 652, y, 18, TRACKER_WHITE, 450);
+			AP_TrackerTick(1170, y + 4, row->plain);
+		}
+	}
+
+	AP_TrackerLine(16, 708, 1264, 708, TRACKER_MINT, 2);
+	AP_TrackerText("CHECK: O PENDING / TICK DONE / - NOT IN SEED",
+		32, 718, 14, TRACKER_WHITE, 1210);
+	AP_TrackerText("SELECT MAP   TRIANGLE/CIRCLE/SQUARE/START BACK",
+		32, 744, 16, TRACKER_WHITE, 1210);
+}
 
 static unsigned char *AP_TrackerReadSubfile(int index, size_t *size)
 {
@@ -360,6 +499,7 @@ static void AP_TrackerDrawNode(int index)
 static void AP_TrackerDraw(void)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int i; char line[256];
+	if (ap_tracker.view) { AP_TrackerDrawProgress(); return; }
 	memset(ap_tracker.canvas,0,TRACKER_W*TRACKER_H*4);
 	AP_TrackerRect(16,24,1248,744,AP_TrackerRGBA(0,5,10,172));
 	AP_TrackerBorder(16,24,1248,744,TRACKER_MINT,3);
@@ -399,13 +539,17 @@ static void AP_TrackerDraw(void)
 			AP_PadUncollectedBoxCount(n->destination),AP_PadUncollectedLetterCount(n->destination));
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
-	AP_TrackerText("L1/R1 HUB   D-PAD FOCUS   * INSPECT   MOUSE HOVER/CLICK   ^ BACK",32,744,16,TRACKER_WHITE,1210);
+	AP_TrackerText(
+		AP_TrackerProgressAvailable()
+			? "L1/R1 HUB   D-PAD FOCUS   * INSPECT   SELECT PROGRESS   ^ BACK"
+			: "L1/R1 HUB   D-PAD FOCUS   * INSPECT   MOUSE HOVER/CLICK   ^ BACK",
+		32,744,16,TRACKER_WHITE,1210);
 }
 
 int AP_TrackerOpen(void) { return ap_tracker.open; }
 static void AP_TrackerClose(void)
 {
-	ap_tracker.open=0; ap_tracker.pinned=0;
+	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.view=0;
 	if(g_window && (SDL_GetWindowFlags(g_window)&SDL_WINDOW_FULLSCREEN)) SDL_HideCursor();
 }
 int AP_TrackerMenuFrame(void)
@@ -416,42 +560,52 @@ int AP_TrackerMenuFrame(void)
 		sdata->ptrActiveMenu->funcPtr==MainFreeze_MenuPtrDefault && !sdata->ptrDesiredMenu;
 	float mx,my; unsigned buttons;
 	if(!context) { if(ap_tracker.open) AP_TrackerClose(); return 0; }
+	buttons=SDL_GetMouseState(&mx,&my);
 	if(!ap_tracker.open) {
 		if(!(tap&BTN_SQUARE)) return 0;
 		if(!AP_TrackerLoadAssets()) { AP_TrackerShutdown(); return 0; }
-		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
+		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.view=0; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
-		ap_tracker.mouse_buttons=SDL_GetMouseState(&ap_tracker.mouse_x,&ap_tracker.mouse_y);
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
 	} else {
 		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
-		if(tap&(BTN_L1|BTN_R1)) {
-			ap_tracker.hub=(ap_tracker.hub+((tap&BTN_L1)?4:1))%5;
-			ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
-		}
-		if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
-			ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
-		}
-		if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
-	}
-	buttons=SDL_GetMouseState(&mx,&my);
-	if(mx!=ap_tracker.mouse_x || my!=ap_tracker.mouse_y || (buttons&SDL_BUTTON_LMASK)) {
-		int vx,vy,vw,vh;
-		if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {
-			int x=(int)((mx-vx)*TRACKER_W/vw), y=(int)((my-vy)*TRACKER_H/vh);
-			for(i=0;i<ap_tracker.count;i++) {
-				AP_TrackerNode *n=&ap_tracker.nodes[i]; int dx=x-n->x,dy=y-n->y;
-				if(dx*dx+dy*dy<=28*28 || (x>=n->cx && x<n->cx+n->cw && y>=n->cy && y<n->cy+n->ch)) {
-					ap_tracker.focus=i;
-					if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK)) ap_tracker.pinned=!ap_tracker.pinned;
-					break;
-				}
+		if((tap&BTN_SELECT) && AP_TrackerProgressAvailable()) ap_tracker.view=!ap_tracker.view;
+		/* A seed swap while the panel is open can turn both features off; fall
+		 * back to the map rather than leaving the map hidden behind an empty
+		 * panel. */
+		if(ap_tracker.view && !AP_TrackerProgressAvailable()) ap_tracker.view=0;
+		if(ap_tracker.view) {
+			/* Progress view: an explicit alternate branch. No map navigation,
+			 * pinning or mouse hit-testing runs, so a frame that shows the panel
+			 * cannot alter the hidden map's hub, focus or pinned node. */
+		} else {
+			if(tap&(BTN_L1|BTN_R1)) {
+				ap_tracker.hub=(ap_tracker.hub+((tap&BTN_L1)?4:1))%5;
+				ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
 			}
-			if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK) && y>=30 && y<96) {
-				if(x>=180 && x<280) ap_tracker.hub=(ap_tracker.hub+4)%5;
-				else if(x>=1020 && x<1120) ap_tracker.hub=(ap_tracker.hub+1)%5;
-				AP_TrackerBuildNodes();
+			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
+				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
+			}
+			if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
+			if(mx!=ap_tracker.mouse_x || my!=ap_tracker.mouse_y || (buttons&SDL_BUTTON_LMASK)) {
+				int vx,vy,vw,vh;
+				if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {
+					int x=(int)((mx-vx)*TRACKER_W/vw), y=(int)((my-vy)*TRACKER_H/vh);
+					for(i=0;i<ap_tracker.count;i++) {
+						AP_TrackerNode *n=&ap_tracker.nodes[i]; int dx=x-n->x,dy=y-n->y;
+						if(dx*dx+dy*dy<=28*28 || (x>=n->cx && x<n->cx+n->cw && y>=n->cy && y<n->cy+n->ch)) {
+							ap_tracker.focus=i;
+							if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK)) ap_tracker.pinned=!ap_tracker.pinned;
+							break;
+						}
+					}
+					if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK) && y>=30 && y<96) {
+						if(x>=180 && x<280) ap_tracker.hub=(ap_tracker.hub+4)%5;
+						else if(x>=1020 && x<1120) ap_tracker.hub=(ap_tracker.hub+1)%5;
+						AP_TrackerBuildNodes();
+					}
+				}
 			}
 		}
 	}
