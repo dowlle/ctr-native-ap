@@ -1880,15 +1880,38 @@ static void case_weakened_boost_policy(void)
 
 static void case_hazard_projection_distance(void)
 {
+	expect("source lookahead remains 1750 ms",
+	       AP_TRAP_HAZARD_LOOKAHEAD_MS, 1750);
+	expect("scheduler warning remains a distinct 1000 ms interval",
+	       AP_TRAP_WARNING_MS, 1000);
 	expect("a stopped kart still gets a visible minimum hazard lead",
-	       AP_TrapHazardDistance(0, 1750), 160);
-	expect("reverse speed projects by magnitude",
-	       AP_TrapHazardDistance(-0x3000, 1750),
-	       AP_TrapHazardDistance(0x3000, 1750));
-	expect("ordinary race speed projects between the safety clamps",
-	       AP_TrapHazardDistance(0x3000, 1750), 328);
-	expect("extreme speed cannot project beyond the terrain probe budget",
-	       AP_TrapHazardDistance(0x7ffff, 1750), 420);
+	       AP_TrapHazardDistance(0, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
+	expect("near-zero forward speed keeps a positive minimum lead",
+	       AP_TrapHazardDistance(1, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
+	expect("near-zero reverse speed keeps a negative minimum lead",
+	       AP_TrapHazardDistance(-1, AP_TRAP_HAZARD_LOOKAHEAD_MS), -160);
+	expect("ordinary race speed preserves the existing projection",
+	       AP_TrapHazardDistance(0x3000, AP_TRAP_HAZARD_LOOKAHEAD_MS), 328);
+	expect("reverse race speed mirrors the forward distance",
+	       AP_TrapHazardDistance(-0x3000, AP_TRAP_HAZARD_LOOKAHEAD_MS), -328);
+	expect("speed beyond the old cap is no longer clamped",
+	       AP_TrapHazardDistance(0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 874);
+	expect("signed minimum speed is handled without negation overflow",
+	       AP_TrapHazardDistance(-32768, AP_TRAP_HAZARD_LOOKAHEAD_MS), -875);
+	expect("forward speed follows the heading x axis",
+	       AP_TrapHazardOffset(4096, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 874);
+	expect("reverse speed projects opposite the heading x axis",
+	       AP_TrapHazardOffset(4096, -0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), -874);
+	expect("the heading z axis scales the signed offset",
+	       AP_TrapHazardOffset(2048, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 437);
+	expect("a perpendicular axis projects no offset",
+	       AP_TrapHazardOffset(0, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 0);
+	expect("a reversed heading axis mirrors the offset",
+	       AP_TrapHazardOffset(-4096, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), -874);
+	expect("a stationary kart projects the positive minimum lead",
+	       AP_TrapHazardOffset(4096, 0, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
+	expect("a stationary reversed heading projects the negative minimum lead",
+	       AP_TrapHazardOffset(-4096, 0, AP_TRAP_HAZARD_LOOKAHEAD_MS), -160);
 }
 
 static void case_remaining_roster_contracts(void)

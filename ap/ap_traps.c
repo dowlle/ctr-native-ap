@@ -380,7 +380,6 @@ static int AP_TrapProjectHazardTarget(struct GameTracker *gGT, struct Driver *lo
 {
 	struct ScratchpadStruct *sps;
 	SVec3 top, bottom;
-	int speed, distance;
 
 	if (gGT == 0 || local == 0 || local->instSelf == 0 || gGT->level1 == 0 ||
 	    gGT->level1->ptr_mesh_info == 0)
@@ -389,14 +388,13 @@ static int AP_TrapProjectHazardTarget(struct GameTracker *gGT, struct Driver *lo
 	    local->kartState != KS_ANTIVSHIFT)
 		return 0;
 
-	speed = local->speedApprox;
-	distance = AP_TrapHazardDistance(speed, 1750);
-
 	top.x = local->instSelf->matrix.t[0] +
-	        ((local->instSelf->matrix.m[0][2] * distance) >> 12);
+	        AP_TrapHazardOffset(local->instSelf->matrix.m[0][2],
+	            local->speedApprox, AP_TRAP_HAZARD_LOOKAHEAD_MS);
 	top.y = local->instSelf->matrix.t[1] - 1000;
 	top.z = local->instSelf->matrix.t[2] +
-	        ((local->instSelf->matrix.m[2][2] * distance) >> 12);
+	        AP_TrapHazardOffset(local->instSelf->matrix.m[2][2],
+	            local->speedApprox, AP_TRAP_HAZARD_LOOKAHEAD_MS);
 	bottom = top;
 	bottom.y += 2000;
 
