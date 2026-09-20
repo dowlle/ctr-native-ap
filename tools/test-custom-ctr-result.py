@@ -5,14 +5,22 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / "ap/ap_hooks.c").read_text()
-start = source.index("void AP_NotifyCustomTrackCtr(int didWin, int collected)")
+start = source.index("static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)")
 end = source.index("\nint AP_LetterAvailable(", start)
 function = source[start:end]
 fixture = r'''
 #include <assert.h>
 #include <stddef.h>
+#include "ap_race_attempt_logic.h"
 #define TOKEN_RACE 8
 #define AP_CUSTOM_CTR_PSEUDO_BIT 514
+// #286: production reaches the freestanding decision through
+// AP_RaceAttempt_ProducerBlocked (ap_deathlink.c) with the live attempt latch.
+// The fixture drives that exact decision with a controllable latch.
+static int race_attempt_latched;
+int AP_RaceAttempt_ProducerBlocked(int producerClass) {
+ return AP_RaceAttempt_SuppressResultProducer(producerClass, race_attempt_latched);
+}
 static int ap_custom_ceremony_bit;
 static struct { int active; } ap_custom_trophy_ceremony;
 void AP_CustomTrophyCeremonyArm(void *state, int sent) {
@@ -81,18 +89,44 @@ int main(void) {
  location_exists=1;
  data.gGT = NULL; sends=0;
  AP_NotifyCustomTrackCtr(1,2); assert(sends==0);
+ /* #286: while the attempt latch is set, the per-race entry point stays
+  * blocked and the cup-aggregate entry point still grants the reward. */
+ data.gGT = &game; game.gameMode2 = TOKEN_RACE;
+ ctr_cfg.custom_ctr_enabled = 1; serving = earned = 1;
+ location_exists = 1; emitted_new = 1; race_attempt_latched = 1;
+ sends=0; sent_code=-1;
+ ap_custom_trophy_ceremony.active=0; ap_custom_ceremony_bit=-1;
+ AP_NotifyCustomTrackCtr(1,2);
+ assert(sends==0 && sent_code==-1);
+ assert(ap_custom_trophy_ceremony.active==0 && ap_custom_ceremony_bit==-1);
+ sends=0; sent_code=-1;
+ ap_custom_trophy_ceremony.active=0; ap_custom_ceremony_bit=-1;
+ AP_NotifyCupAggregateCustomTrackCtr(1,2);
+ assert(sends==1 && sent_code==35023006);
+ assert(ap_custom_trophy_ceremony.active==1 && ap_custom_ceremony_bit==514);
+ /* The aggregate bypasses only the latch, not the underlying conditions. */
+ earned=0; sends=0;
+ ap_custom_trophy_ceremony.active=0; ap_custom_ceremony_bit=-1;
+ AP_NotifyCupAggregateCustomTrackCtr(1,2);
+ assert(sends==0 && ap_custom_trophy_ceremony.active==0 && ap_custom_ceremony_bit==-1);
+ race_attempt_latched=0;
  return 0;
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "fixture.c", Path(tmp) / "fixture"
     src.write_text(fixture + function + tests)
-    # The ceremony arm in AP_NotifyCustomTrackCtr sits inside CTR_CUSTOM_TRACKS,
-    # so the fixture builds the production function the way a release does.
+    # The Impl and both entry points are extracted; the ceremony arm sits inside
+    # CTR_CUSTOM_TRACKS, so the fixture builds the production function the way a
+    # release does. -I ap lets the fixture include the freestanding attempt logic
+    # header the producer guard's enum lives in.
     subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-DCTR_CUSTOM_TRACKS",
-                    "-fsanitize=undefined", str(src), "-o", str(exe)], check=True)
+                    "-fsanitize=undefined", "-I" + str(root / "ap"),
+                    str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS: 128 production custom CTR result cases, absent tracker and duplicate-arm isolation, UBSan")
+print("PASS: 128 production custom CTR result cases, forced-loss latch blocks the per-race "
+      "entry point and the cup aggregate passes through, absent tracker and duplicate-arm "
+      "isolation, UBSan")
 
 cup_source = (root / "game/UI/UI_CupStandings.c").read_text()
 start = cup_source.index("if (data.cupPositionPerPlayer[0] == gGT->drivers[0]->driverID")
