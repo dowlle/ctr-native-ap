@@ -692,7 +692,8 @@ void CS_Podium_FullScene_Init(void)
 	// keep the rest of the podium, camera, characters and continue flow intact.
 	// Every other reward (including a non-AP Trophy and the Oxide relic) keeps
 	// the vanilla prize path unchanged.
-	if (AP_PodiumIsApTrophyPresentation(ctr_cfg_active(), (int)gGT->podiumRewardID))
+	if (AP_PodiumIsApTrophyPresentation(ctr_cfg_active(), (int)gGT->podiumRewardID,
+	                                    AP_PodiumSpecialTrack()))
 	{
 		gGT->gameMode2 &= ~INC_TROPHY;
 	}

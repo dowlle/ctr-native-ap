@@ -105,6 +105,12 @@ void AP_CustomTrackTrophyCeremonyEnd(void);
 // Call from the podium camera tick only while no menu obscures the scene.
 void AP_TrophyPodiumCeremonyDraw(int x, int y);
 
+// 1 when the podium's STATIC_TROPHY model belongs to a trial track or Cortex
+// Vortex rather than an ordinary retail trophy. Those reuse the model but have
+// no prevLEV + ADV_REWARD_FIRST_TROPHY location, so #235 leaves them on the
+// vanilla prize path. Reads the level we came from (gGT->prevLEV).
+int AP_PodiumSpecialTrack(void);
+
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
 // the AP_ApplyItems-clobbered advProgress bits, so received Gold/Platinum

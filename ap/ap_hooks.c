@@ -2490,22 +2490,48 @@ void AP_CustomTrackTrophyCeremonyEnd(void)
 #endif
 }
 
+// Issue #235. A trial-track or Cortex Vortex podium reuses STATIC_TROPHY but has
+// no ordinary retail trophy bit, so it must not be treated as the retail-Trophy
+// presentation: prevLEV + ADV_REWARD_FIRST_TROPHY would resolve another track's
+// location (Cortex Vortex hosts Oxide Station's LevelID 13). Detect it from the
+// level we came from and the Cortex latch's previous-serving state.
+int AP_PodiumSpecialTrack(void)
+{
+	int lev;
+
+	if (sdata == NULL || sdata->gGT == NULL)
+		return 1; // no track context -> not an ordinary retail Trophy podium
+
+	lev = (int)sdata->gGT->prevLEV;
+	if (lev < 0 || lev > 15)
+		return 1; // outside the 16 retail track trophies (trial tracks are 16/17)
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (lev == CTR_CFG_CORTEX_HOST_LEVEL && CustomTrack_CortexTrackPrevServed())
+		return 1;
+#endif
+	return 0;
+}
+
 // Issue #235. game/233/CS_Podium.c bypasses the retail Trophy prize (and its
 // INC_TROPHY count-up) for an AP Trophy presentation, so this draws what the
 // ceremony should say instead: the AP-owned received Trophy count, then the
 // #330 item sentence naming what the check actually sent. Self-gating matches
-// the CS_Podium branch exactly (AP active + STATIC_TROPHY), so every non-AP,
-// custom-Trophy and other-reward podium draws nothing here. Display-only: the
-// check itself was already sent by the award path. The retail "win a trophy"
-// string is the fallback when the scout is missing, exactly as #330 requires.
+// the CS_Podium branch exactly (AP active + ordinary retail Trophy), so every
+// non-AP, custom-Trophy, trial/Cortex and other-reward podium draws nothing
+// here. Display-only: the check itself was already sent by the award path. The
+// retail "win a trophy" string is the fallback when the scout is missing,
+// exactly as #330 requires.
 void AP_TrophyPodiumCeremonyDraw(int x, int y)
 {
 	char count[24];
 	char *retail;
 	char *text;
 
-	if (!ctr_cfg_active() || sdata->gGT == NULL ||
-	    sdata->gGT->podiumRewardID != STATIC_TROPHY)
+	if (sdata->gGT == NULL ||
+	    !AP_PodiumIsApTrophyPresentation(ctr_cfg_active(),
+	                                     (int)sdata->gGT->podiumRewardID,
+	                                     AP_PodiumSpecialTrack()))
 		return;
 
 	// The vanilla counter reads the cosmetic AdvProgress mirror that the

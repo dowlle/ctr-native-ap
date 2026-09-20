@@ -67,32 +67,38 @@ static void expect_sentence(const char *item, const char *player, int own,
 int main(void)
 {
 	// ── The AP Trophy presentation owns the podium ──────────────────────────
-	// AP active + retail Trophy -> no retail prize, so no INC_TROPHY count-up.
-	expect(AP_PodiumIsApTrophyPresentation(1, AP_PODIUM_TROPHY_MODEL), 1,
+	// AP active + ordinary retail Trophy -> no retail prize, so no INC_TROPHY
+	// count-up.
+	expect(AP_PodiumIsApTrophyPresentation(1, AP_PODIUM_TROPHY_MODEL, 0), 1,
 	       "AP Trophy is an AP presentation");
-	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL), 0,
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0), 0,
 	       "AP Trophy creates no prize object");
 
 	// A non-AP Trophy keeps the retail prize and its count-up.
-	expect(AP_PodiumIsApTrophyPresentation(0, AP_PODIUM_TROPHY_MODEL), 0,
+	expect(AP_PodiumIsApTrophyPresentation(0, AP_PODIUM_TROPHY_MODEL, 0), 0,
 	       "non-AP Trophy is not an AP presentation");
-	expect(AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL), 1,
+	expect(AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0), 1,
 	       "non-AP Trophy still creates the prize object");
 
+	// A trial-track or Cortex Vortex podium reuses STATIC_TROPHY without a
+	// retail trophy bit, so it keeps the vanilla prize path.
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1), 1,
+	       "AP special-track Trophy keeps the prize");
+
 	// Every other reward, AP or not, keeps its vanilla prize path.
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC, 0), 1,
 	       "AP Relic keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_KEY), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_KEY, 0), 1,
 	       "AP Key keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_GEM), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_GEM, 0), 1,
 	       "AP Gem keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_TOKEN), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_TOKEN, 0), 1,
 	       "AP Token keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_BIG1), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_BIG1, 0), 1,
 	       "Oxide BIG1 keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_NOFUNC), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_NOFUNC, 0), 1,
 	       "NOFUNC keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(0, TEST_STATIC_RELIC), 1,
+	expect(AP_PodiumShouldBirthPrize(0, TEST_STATIC_RELIC, 0), 1,
 	       "non-AP Relic keeps the prize");
 
 	// ── Shared #330 formatter integration on the podium caller path ──────────
