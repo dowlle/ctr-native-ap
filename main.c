@@ -50,6 +50,8 @@
 
 #undef RECT
 
+#include "platform/native_fs_utf8.c"
+#include "platform/native_disc_copy.c"
 #include "platform/native_disc_image.c"
 #include "platform/native_assets.c"
 #include "platform/native_audio.c"
@@ -182,11 +184,23 @@ int main(int argc, char *argv[])
 	// exits, which is the validation-only mode.
 	const char *explicitDiscPath = NULL;
 	int validateDiscOnly = 0;
+	int discArgumentSeen = 0;
 	for (int argIndex = 1; argIndex < argc; argIndex++)
 	{
-		if ((strcmp(argv[argIndex], "--disc") == 0) && ((argIndex + 1) < argc))
+		if (strcmp(argv[argIndex], "--disc") == 0)
 		{
+			if (discArgumentSeen)
+			{
+				fprintf(stderr, "[CTR Native] --disc was given more than once; give it a single disc image path\n");
+				return NativeConsole_Return(1);
+			}
+			if ((argIndex + 1) >= argc)
+			{
+				fprintf(stderr, "[CTR Native] --disc needs a disc image path, for example --disc \"C:\\Games\\ctr-u.bin\"\n");
+				return NativeConsole_Return(1);
+			}
 			explicitDiscPath = argv[++argIndex];
+			discArgumentSeen = 1;
 		}
 		else if (strcmp(argv[argIndex], "--validate-disc") == 0)
 		{

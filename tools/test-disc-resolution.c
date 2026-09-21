@@ -11,7 +11,7 @@
 //                                    operations exactly as production drives it
 //                                    with the real ones.
 //
-//   cc -Wall -Wextra -DCTR_AP -I . -I include -o /tmp/test-disc-resolution tools/test-disc-resolution.c
+//   cc -Wall -Wextra -DCTR_AP -D_FILE_OFFSET_BITS=64 -I . -I include -o /tmp/test-disc-resolution tools/test-disc-resolution.c
 //
 // Exit 0 = every assertion held; failures are printed otherwise.
 
@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "platform/native_config.c"
+#include "platform/native_fs_utf8.c"
 #include "platform/native_disc_image.c"
 #include "platform/native_disc_resolution.h"
 
@@ -685,6 +686,38 @@ static void writeTextFile(const char *path, const char *text)
 	}
 }
 
+static char *readTextFile(const char *path, size_t *sizeOut)
+{
+	FILE *file = fopen(path, "rb");
+	long len;
+	char *data;
+
+	*sizeOut = 0;
+	if (file == NULL)
+		return NULL;
+
+	fseek(file, 0, SEEK_END);
+	len = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	if (len < 0)
+	{
+		fclose(file);
+		return NULL;
+	}
+
+	data = (char *)malloc((size_t)len + 1u);
+	if (data == NULL)
+	{
+		fclose(file);
+		return NULL;
+	}
+
+	*sizeOut = fread(data, 1, (size_t)len, file);
+	data[*sizeOut] = '\0';
+	fclose(file);
+	return data;
+}
+
 static void TestConfigLoad(void)
 {
 	char dir[] = "/tmp/ctr-disc-config";
@@ -740,7 +773,9 @@ static void TestConfigLoad(void)
 	expect(strcmp(g_config.discPath, "/discs/after-long-line.bin") == 0, "config: line after an overlong line still parses");
 	chdir(cwd);
 
-	// An overlong CFG_STRING is rejected rather than truncated.
+	// An over-capacity CFG_STRING keeps the pre-issue-334 behavior: it is
+	// truncated to the buffer, not rejected, so a long saved uri, slot or
+	// password can never be erased to empty by the next save.
 	memset(longValue, 'w', sizeof(longValue));
 	longValue[200] = '\0';
 	snprintf(text, sizeof(text), "[Connection]\nuri = %s\n", longValue);
@@ -748,8 +783,72 @@ static void TestConfigLoad(void)
 	expect(chdir(dir) == 0, "config: re-enter fixture dir");
 	g_config.uri[0] = '\0';
 	NativeConfig_Load();
-	expect(g_config.uri[0] == '\0', "config: overlong string rejected, not truncated");
+	expect(strlen(g_config.uri) == (size_t)(sizeof(g_config.uri) - 1), "config: overlong string truncated to the buffer");
 	chdir(cwd);
+
+	// BOM, CRLF and no final newline together: the first section and its keys
+	// must still be seen.
+	writeTextFile(path, "\xEF\xBB\xBF[State]\r\ndisc_path = /discs/bom-crlf.bin");
+	expect(chdir(dir) == 0, "config: re-enter fixture dir");
+	g_config.discPath[0] = '\0';
+	NativeConfig_Load();
+	expect(strcmp(g_config.discPath, "/discs/bom-crlf.bin") == 0, "config: BOM + CRLF + no final newline still parse");
+	chdir(cwd);
+
+	// A long unrelated line survives a subsequent save byte-for-byte, and the
+	// disc path saved alongside it round-trips.
+	{
+		char longUnknown[5000];
+		char saved[8192];
+		size_t used = 0;
+		size_t fileLen;
+		char *fileBytes;
+
+		memset(longUnknown, 'u', sizeof(longUnknown) - 1);
+		longUnknown[sizeof(longUnknown) - 1] = '\0';
+		used += (size_t)snprintf(saved + used, sizeof(saved) - used, "[State]\nunknown_key = %s\n", longUnknown);
+		used += (size_t)snprintf(saved + used, sizeof(saved) - used, "window_x = 3\n");
+		writeTextFile(path, saved);
+		expect(chdir(dir) == 0, "config: re-enter fixture dir");
+		NativeConfig_Load();
+		NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), "/discs/save-long.bin");
+		NativeConfig_Save();
+		chdir(cwd);
+
+		fileBytes = readTextFile(path, &fileLen);
+		expect(fileBytes != NULL, "config: saved file readable");
+		if (fileBytes != NULL)
+		{
+			expect(strstr(fileBytes, longUnknown) != NULL, "config: long unrelated line preserved byte-for-byte");
+			expect(strstr(fileBytes, "disc_path = /discs/save-long.bin") != NULL, "config: disc path saved");
+			free(fileBytes);
+		}
+	}
+
+	// An existing config with uri, slot and password survives load plus save
+	// unchanged (the data-loss regression the review rejected).
+	writeTextFile(path, "[Connection]\nuri = ws://127.0.0.1:38281\nslot = Player1\npassword = hunter2\n");
+	expect(chdir(dir) == 0, "config: re-enter fixture dir");
+	NativeConfig_Load();
+	expect(strcmp(g_config.uri, "ws://127.0.0.1:38281") == 0, "config: uri loaded");
+	expect(strcmp(g_config.slot, "Player1") == 0, "config: slot loaded");
+	expect(strcmp(g_config.password, "hunter2") == 0, "config: password loaded");
+	NativeConfig_Save();
+	chdir(cwd);
+
+	{
+		size_t afterLen;
+		char *after = readTextFile(path, &afterLen);
+
+		expect(after != NULL, "config: credentials file readable");
+		if (after != NULL)
+		{
+			expect(strstr(after, "uri = ws://127.0.0.1:38281") != NULL, "config: uri survives save");
+			expect(strstr(after, "slot = Player1") != NULL, "config: slot survives save");
+			expect(strstr(after, "password = hunter2") != NULL, "config: password survives save");
+			free(after);
+		}
+	}
 
 	// A saved disc path survives a save/load round trip verbatim.
 	writeTextFile(path, "[State]\nwindow_x = 10\n");

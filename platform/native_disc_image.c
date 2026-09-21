@@ -1,17 +1,28 @@
-#include "platform/native_disc_image.h"
-
-#include <platform/native_path.h>
-
-#if defined(_WIN32)
-#include <platform/native_win32.h>
-#else
-#include <dirent.h>
+// Large-file positioning must be requested before any system header is pulled
+// in (issue #334, slice 2). On 32-bit POSIX builds this makes off_t 64-bit so
+// fseeko can address an image beyond 2 GiB. The CMake build sets the same flag
+// globally; this guard covers a standalone translation unit (the host harness).
+#if !defined(_WIN32) && !defined(_FILE_OFFSET_BITS)
+#define _FILE_OFFSET_BITS 64
 #endif
 
-#include <limits.h>
+#include "platform/native_disc_image.h"
+
+#include <platform/native_fs_utf8.h>
+#include <platform/native_path.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// The raw-sector seek uses a 64-bit offset on both platforms. Assert the offset
+// type is wide enough at compile time; a 32-bit build without large-file
+// support must fail here rather than silently keep the 2 GiB limit.
+#if defined(_WIN32)
+CTR_STATIC_ASSERT(sizeof(long long) >= 8);
+#else
+CTR_STATIC_ASSERT(sizeof(off_t) >= 8);
+#endif
 
 #define NATIVE_DISC_IMAGE_PATH_MAX          1024
 #define NATIVE_DISC_IMAGE_BIN_PATH          "ctr-u.bin"
@@ -109,7 +120,15 @@ internal int NativeDiscImage_ReadRawSector(u32 lba, u8 *sector)
 	}
 
 	offset = (u64)lba * NATIVE_DISC_IMAGE_RAW_SECTOR_SIZE;
-	if ((offset > (u64)LONG_MAX) || (fseek(s_nativeDiscImageFile, (long)offset, SEEK_SET) != 0))
+
+	// 64-bit positioning: the whole raw image must be addressable, so a 32-bit
+	// build is not capped at 2 GiB (issue #334, slice 2). Behavior for an
+	// in-range mounted-disc read is unchanged.
+#if defined(_WIN32)
+	if (_fseeki64(s_nativeDiscImageFile, (long long)offset, SEEK_SET) != 0)
+#else
+	if (fseeko(s_nativeDiscImageFile, (off_t)offset, SEEK_SET) != 0)
+#endif
 	{
 		return 0;
 	}
@@ -539,7 +558,7 @@ enum NativeDiscImageValidation NativeDiscImage_ValidateCandidate(const char *pat
 		return NATIVE_DISC_IMAGE_OPEN_FAILED;
 	}
 
-	candidate = fopen(normalizedPath, "rb");
+	candidate = NativeFs_OpenRead(normalizedPath);
 	if (candidate == NULL)
 	{
 		snprintf(s_nativeDiscImageDetail, sizeof(s_nativeDiscImageDetail), "cannot open file");
@@ -657,86 +676,39 @@ const char *NativeDiscImage_GetPath(void)
 
 internal int NativeDiscImage_ScanHostDir(const char *dirPath, int canonicalPass)
 {
-#if defined(_WIN32)
-	char searchPath[NATIVE_DISC_IMAGE_PATH_MAX];
-	WIN32_FIND_DATAA findData;
-	HANDLE findHandle;
+	// Directory enumeration goes through the UTF-8 filesystem layer, so a
+	// non-ASCII assets folder works on Windows (issue #334, slice 2).
+	NativeFsDir *dir = NativeFs_OpenDir(dirPath);
+	char entryName[NATIVE_DISC_IMAGE_PATH_MAX];
 
-	if (!NativePath_Join(searchPath, sizeof(searchPath), NativeStr8_FromCString(dirPath), NATIVE_STR8_LIT("*")))
-	{
-		return 0;
-	}
-
-	findHandle = FindFirstFileA(searchPath, &findData);
-	if (findHandle == INVALID_HANDLE_VALUE)
-	{
-		return 0;
-	}
-
-	do
-	{
-		NativeStr8 entryName = NativeStr8_FromCString(findData.cFileName);
-		char path[NATIVE_DISC_IMAGE_PATH_MAX];
-
-		if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
-		{
-			continue;
-		}
-
-		if (!NativeDiscImage_ShouldTryEntry(entryName, canonicalPass))
-		{
-			continue;
-		}
-
-		if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(dirPath), entryName))
-		{
-			continue;
-		}
-
-		if (NativeDiscImage_TryMountImage(path))
-		{
-			FindClose(findHandle);
-			return 1;
-		}
-	} while (FindNextFileA(findHandle, &findData) != 0);
-
-	FindClose(findHandle);
-	return 0;
-#else
-	DIR *dir;
-	struct dirent *entry;
-
-	dir = opendir(dirPath);
 	if (dir == NULL)
 	{
 		return 0;
 	}
 
-	while ((entry = readdir(dir)) != NULL)
+	while (NativeFs_ReadDir(dir, entryName, sizeof(entryName)))
 	{
-		NativeStr8 entryName = NativeStr8_FromCString(entry->d_name);
 		char path[NATIVE_DISC_IMAGE_PATH_MAX];
 
-		if (!NativeDiscImage_ShouldTryEntry(entryName, canonicalPass))
+		if (!NativeDiscImage_ShouldTryEntry(NativeStr8_FromCString(entryName), canonicalPass))
 		{
 			continue;
 		}
 
-		if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(dirPath), entryName))
+		if (!NativePath_Join(path, sizeof(path), NativeStr8_FromCString(dirPath), NativeStr8_FromCString(entryName)))
 		{
 			continue;
 		}
 
 		if (NativeDiscImage_TryMountImage(path))
 		{
-			closedir(dir);
+			NativeFs_CloseDir(dir);
 			return 1;
 		}
 	}
 
-	closedir(dir);
+	NativeFs_CloseDir(dir);
 	return 0;
-#endif
 }
 
 int NativeDiscImage_Init(const char *assetsDir)

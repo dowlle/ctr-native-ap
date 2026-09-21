@@ -108,6 +108,13 @@ target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE_BUILD_ID=\"${CTR_NATIVE_BUILD_ID}\"
 )
 
+# 64-bit file offsets on POSIX (issue #334, slice 2): off_t must be wide enough
+# for fseeko to address a raw disc image beyond 2 GiB on the 32-bit builds. On
+# Windows the disc reader uses _fseeki64 directly.
+if(NOT WIN32)
+    target_compile_definitions(ctr_native PRIVATE _FILE_OFFSET_BITS=64)
+endif()
+
 # Custom-track loader. platform/native_custom_tracks.c is part of the main.c
 # unity build and its whole body is #ifdef CTR_CUSTOM_TRACKS, so the option only
 # has to add compile definitions; with it OFF the file expands to nothing.

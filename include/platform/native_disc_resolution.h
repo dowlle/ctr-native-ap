@@ -243,6 +243,15 @@ typedef struct NativeDiscResolutionResult
 	char destinationPath[NATIVE_DISC_PATH_MAX];
 } NativeDiscResolutionResult;
 
+// Whether a resolution result should be persisted as the external disc path.
+// Freestanding so production and the host harness agree on the rule: only a
+// result that asked for external persistence with a non-empty chosen path is
+// ever written (the assets source never is).
+static inline int NativeDiscResolution_ShouldPersist(const NativeDiscResolutionResult *result)
+{
+	return (result != NULL) && result->persistExternal && (result->chosenPath[0] != '\0');
+}
+
 static inline void NativeDiscResolution_CopyString(char *dst, size_t dstSize, const char *src)
 {
 	if ((dst == NULL) || (dstSize == 0))

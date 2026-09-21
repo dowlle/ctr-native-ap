@@ -23,24 +23,15 @@
 
 #include "platform/native_assets.h"
 #include "platform/native_config.h"
+#include "platform/native_disc_copy.h"
 #include "platform/native_disc_image.h"
 #include "platform/native_disc_resolution.h"
+#include "platform/native_fs_utf8.h"
 
 static int NativeDisc_RealFileExists(void *ctx, const char *path)
 {
-	FILE *file;
-
 	(void)ctx;
-
-	if (path == NULL)
-		return 0;
-
-	file = fopen(path, "rb");
-	if (file == NULL)
-		return 0;
-
-	fclose(file);
-	return 1;
+	return NativeFs_FileExists(path);
 }
 
 static enum NativeDiscImageValidation NativeDisc_RealValidate(void *ctx, const char *path, char *chosenPath, size_t chosenPathSize)
@@ -68,17 +59,17 @@ static int NativeDisc_RealScanAssets(void *ctx, char *chosenPath, size_t chosenP
 	return 1;
 }
 
-// The dialog callback can run on another thread, so completion and the chosen
-// path are published through a file-scope state rather than a stack frame. A
-// late callback after a bounded wait therefore writes to live memory.
+// The picker callback can run on another thread, so completion and the chosen
+// path are published through a per-invocation heap state rather than a stack
+// frame or a shared static. Each request owns its state until its own callback
+// has run, so an abandoned request can never write into state a later request
+// reads.
 struct NativeDiscPickState
 {
 	SDL_AtomicInt done;
 	SDL_AtomicInt cancelled;
 	char path[NATIVE_DISC_PATH_MAX];
 };
-
-static struct NativeDiscPickState s_nativeDiscPickState;
 
 static void SDLCALL NativeDisc_PickCallback(void *userdata, const char *const *filelist, int filter)
 {
@@ -102,17 +93,15 @@ static int NativeDisc_RealPick(void *ctx, char *outPath, size_t outPathSize)
 	static const SDL_DialogFileFilter filters[] = {
 	    {"PlayStation disc images", "bin"},
 	};
+	struct NativeDiscPickState *state;
 	int ownVideo = 0;
-	Uint64 deadline;
+	int answered;
 
 	(void)ctx;
 
-	SDL_SetAtomicInt(&s_nativeDiscPickState.done, 0);
-	SDL_SetAtomicInt(&s_nativeDiscPickState.cancelled, 0);
-	s_nativeDiscPickState.path[0] = '\0';
-
 	// The picker needs the video subsystem, which the game has not started yet.
-	// Bring it up just for the dialog and hand it back afterwards.
+	// Bring it up just for the dialog and hand it back afterwards. A headless
+	// host fails here, which is the immediate no-display fallback.
 	if (!SDL_WasInit(SDL_INIT_VIDEO))
 	{
 		if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
@@ -123,31 +112,37 @@ static int NativeDisc_RealPick(void *ctx, char *outPath, size_t outPathSize)
 		ownVideo = 1;
 	}
 
-	SDL_ShowOpenFileDialog(NativeDisc_PickCallback, &s_nativeDiscPickState, NULL, filters, 1, NULL, false);
+	state = (struct NativeDiscPickState *)calloc(1, sizeof(*state));
+	if (state == NULL)
+	{
+		if (ownVideo)
+			SDL_QuitSubSystem(SDL_INIT_VIDEO);
+		return 0;
+	}
 
-	// Bounded wait: a real player gets minutes, a broken or headless dialog
-	// backend never blocks startup forever.
-	deadline = SDL_GetTicks() + 300000u;
-	while (!SDL_GetAtomicInt(&s_nativeDiscPickState.done) && (SDL_GetTicks() < deadline))
+	SDL_ShowOpenFileDialog(NativeDisc_PickCallback, state, NULL, filters, 1, NULL, false);
+
+	// SDL invokes the callback exactly once per dialog, including when no dialog
+	// backend is available (it gets a NULL filelist), so the state is safe to
+	// free once done is set. There is deliberately no local timeout: SDL offers
+	// no safe cancellation, and returning while the dialog is still live could
+	// let a late callback touch freed state.
+	while (!SDL_GetAtomicInt(&state->done))
 	{
 		SDL_PumpEvents();
 		SDL_Delay(10);
 	}
 
+	answered = !SDL_GetAtomicInt(&state->cancelled);
+	if (answered)
+		NativeDiscResolution_CopyString(outPath, outPathSize, state->path);
+
+	free(state);
+
 	if (ownVideo)
 		SDL_QuitSubSystem(SDL_INIT_VIDEO);
 
-	if (!SDL_GetAtomicInt(&s_nativeDiscPickState.done))
-	{
-		fprintf(stderr, "[CTR Native] disc picker did not answer in time\n");
-		return 0;
-	}
-
-	if (SDL_GetAtomicInt(&s_nativeDiscPickState.cancelled))
-		return 0;
-
-	NativeDiscResolution_CopyString(outPath, outPathSize, s_nativeDiscPickState.path);
-	return 1;
+	return answered;
 }
 
 static int NativeDisc_RealConfirm(void *ctx, const char *question)
@@ -179,97 +174,32 @@ static int NativeDisc_RealConfirm(void *ctx, const char *question)
 	return buttonID == 1;
 }
 
-static int NativeDisc_FlushFile(FILE *file)
-{
-	if (fflush(file) != 0)
-		return 0;
-
-#if defined(_WIN32)
-	(void)_commit(_fileno(file));
-#else
-	(void)fsync(fileno(file));
-#endif
-
-	return 1;
-}
-
-static int NativeDisc_ReplaceFile(const char *tempPath, const char *destinationPath)
-{
-#if defined(_WIN32)
-	return MoveFileExA(tempPath, destinationPath, MOVEFILE_REPLACE_EXISTING) != 0;
-#else
-	return rename(tempPath, destinationPath) == 0;
-#endif
-}
-
 static int NativeDisc_RealCopyAndMount(void *ctx, const char *source, const char *destination)
 {
-	char tempPath[NATIVE_DISC_PATH_MAX + 8];
-	FILE *in = NULL;
-	FILE *out = NULL;
-	char buffer[65536];
-	size_t count;
-	int ok = 0;
+	// The state machine and its real operations live in the separately testable
+	// copy unit (platform/native_disc_copy.c). It creates a unique temporary
+	// sibling exclusively, flushes it to disk, validates the completed copy and
+	// replaces the destination atomically; any failure leaves the destination
+	// untouched and removes only the temporary file this run owns.
+	char tempPath[NATIVE_DISC_PATH_MAX + 32];
+	NativeDiscCopyResult copyResult;
 
-	(void)ctx;
-
-	if ((source == NULL) || (destination == NULL) || (destination[0] == '\0'))
-		return 0;
-
-	if (snprintf(tempPath, sizeof(tempPath), "%s.tmp", destination) >= (int)sizeof(tempPath))
-		return 0;
-
-	in = fopen(source, "rb");
-	if (in == NULL)
-		return 0;
-
-	out = fopen(tempPath, "wb");
-	if (out == NULL)
+	copyResult = NativeDiscCopy_Run(&g_nativeDiscCopyRealOps, ctx, source, destination, tempPath, sizeof(tempPath));
+	if (copyResult != NATIVE_DISC_COPY_OK)
 	{
-		fclose(in);
+		fprintf(stderr, "[CTR Native] disc copy failed: %s\n", NativeDiscCopy_ResultText(copyResult));
 		return 0;
 	}
 
-	while ((count = fread(buffer, 1, sizeof(buffer), in)) > 0)
-	{
-		if (fwrite(buffer, 1, count, out) != count)
-			goto done;
-	}
-
-	if (ferror(in))
-		goto done;
-
-	if (!NativeDisc_FlushFile(out))
-		goto done;
-
-	if (fclose(out) != 0)
-	{
-		out = NULL;
-		goto done;
-	}
-	out = NULL;
-
-	// Validate the completed copy before it can replace anything.
-	if (NativeDiscImage_ValidateCandidate(tempPath, 0) != NATIVE_DISC_IMAGE_VALID)
-		goto done;
-
-	if (!NativeDisc_ReplaceFile(tempPath, destination))
-		goto done;
-
-	// Mount the destination so this run uses it.
+	// Mount the destination so this run uses it. Only reached after the copy
+	// validated and replaced the destination.
 	if (NativeDiscImage_ValidateCandidate(destination, 1) != NATIVE_DISC_IMAGE_VALID)
-		goto done;
+	{
+		fprintf(stderr, "[CTR Native] copied disc did not validate: %s\n", NativeDiscImage_LastDetail());
+		return 0;
+	}
 
-	ok = 1;
-
-done:
-	if (in != NULL)
-		fclose(in);
-	if (out != NULL)
-		fclose(out);
-	if (!ok)
-		remove(tempPath);
-	return ok;
+	return 1;
 }
 
 static void NativeDisc_RealReport(void *ctx, const char *line)
@@ -307,7 +237,7 @@ void NativeDiscResolution_Commit(const NativeDiscResolutionResult *result)
 {
 	NativeDiscPathStatus pathStatus;
 
-	if ((result == NULL) || !result->persistExternal || (result->chosenPath[0] == '\0'))
+	if (!NativeDiscResolution_ShouldPersist(result))
 		return;
 
 	// Only a path the ini format can keep verbatim is persisted; anything else

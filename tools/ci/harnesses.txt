@@ -22,6 +22,8 @@ tools/test-custom-trophy-ceremony.c
 tools/test-deathlink-race-loss.c
 tools/test-democam.c
 tools/test-disc-resolution.c
+tools/test-disc-copy.c
+tools/test-unchanged-startup.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
 tools/test-firstkey-freeze.c

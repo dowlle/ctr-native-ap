@@ -254,16 +254,27 @@ void NativeConfig_Load(void)
 	char line[NATIVE_CONFIG_LINE_MAX];
 	char section[64] = "";
 	int lineStatus;
+	int firstLine = 1;
 
 	while ((lineStatus = NativeConfig_ReadLine(f, line, sizeof(line))) != 0)
 	{
+		char *p;
+
 		if (lineStatus < 0)
 		{
 			fprintf(stderr, "[Config] line longer than %d bytes ignored\n", (int)(sizeof(line) - 1));
+			firstLine = 0;
 			continue;
 		}
 
-		char *p = trimWhitespace(line);
+		// A UTF-8 BOM before the first section header must not hide that header
+		// from the parser, or every key in the first section would be skipped.
+		p = line;
+		if (firstLine && ((unsigned char)p[0] == 0xEF) && ((unsigned char)p[1] == 0xBB) && ((unsigned char)p[2] == 0xBF))
+			p += 3;
+		firstLine = 0;
+
+		p = trimWhitespace(p);
 
 		if (*p == '\0' || *p == ';' || *p == '#')
 			continue;
@@ -298,14 +309,13 @@ void NativeConfig_Load(void)
 					*(bool *)e->valuePtr = ParseBool(value);
 				else if (e->type == CFG_STRING)
 				{
-					// value is already trimmed; plain key=value, no quoting. A
-					// value that does not fit is rejected whole rather than
-					// silently truncated (issue #334, slice 2).
-					size_t valueLen = strlen(value);
-					if (valueLen >= (size_t)e->max)
-						fprintf(stderr, "[Config] %s.%s value longer than %d bytes ignored\n", section, key, e->max - 1);
-					else
-						memcpy((char *)e->valuePtr, value, valueLen + 1);
+					// Existing keys keep exactly the pre-issue-334 behavior: an
+					// over-capacity value is truncated to the buffer. The
+					// stricter, reject-as-absent handling is deliberately limited
+					// to CFG_DISC_PATH below so it cannot change how uri, slot,
+					// password, update_last_seen or nav_driver_name load.
+					strncpy((char *)e->valuePtr, value, e->max - 1);
+					((char *)e->valuePtr)[e->max - 1] = '\0';
 				}
 				else if (e->type == CFG_DISC_PATH)
 				{
@@ -434,22 +444,38 @@ void NativeConfig_Save(void)
 
 	char section[64] = "";
 	char *cursor = existing;
+	int firstLine = 1;
 	while (*cursor)
 	{
 		char *nl = strchr(cursor, '\n');
 		size_t lineLen = nl ? (size_t)(nl - cursor) : strlen(cursor);
+		size_t writeLen = nl ? lineLen + 1u : lineLen; // include the terminator, or none at EOF
+		char *lineCopy = (char *)malloc(lineLen + 1u);
+		int owned = 0;
+		char *p;
 
-		char raw[256];
-		size_t copyLen = lineLen < sizeof(raw) - 1 ? lineLen : sizeof(raw) - 1;
-		memcpy(raw, cursor, copyLen);
-		raw[copyLen] = '\0';
-		if (copyLen > 0 && raw[copyLen - 1] == '\r') // tolerate CRLF
-			raw[copyLen - 1] = '\0';
+		if (lineCopy == NULL)
+		{
+			// Out of memory: keep the line byte-for-byte rather than truncating
+			// or dropping it.
+			fwrite(cursor, 1, writeLen, f);
+			if (!nl)
+				break;
+			cursor = nl + 1;
+			continue;
+		}
 
-		char parse[256];
-		strncpy(parse, raw, sizeof(parse) - 1);
-		parse[sizeof(parse) - 1] = '\0';
-		char *p = trimWhitespace(parse);
+		memcpy(lineCopy, cursor, lineLen);
+		lineCopy[lineLen] = '\0';
+
+		// A UTF-8 BOM on the first line is part of the file's bytes (it is
+		// written back verbatim) but must not hide the first section header.
+		p = lineCopy;
+		if (firstLine && ((unsigned char)p[0] == 0xEF) && ((unsigned char)p[1] == 0xBB) && ((unsigned char)p[2] == 0xBF))
+			p += 3;
+		firstLine = 0;
+
+		p = trimWhitespace(p);
 
 		if (*p == '[')
 		{
@@ -460,36 +486,33 @@ void NativeConfig_Save(void)
 				strncpy(section, p + 1, sizeof(section) - 1);
 				section[sizeof(section) - 1] = '\0';
 			}
-			fprintf(f, "%s\n", raw); // section header, preserved verbatim
 		}
-		else if (*p == '\0' || *p == ';' || *p == '#')
-		{
-			fprintf(f, "%s\n", raw); // blank line or comment, preserved
-		}
-		else
+		else if ((*p != '\0') && (*p != ';') && (*p != '#'))
 		{
 			char *eq = strchr(p, '=');
+			int idx = -1;
+
 			if (eq)
 			{
 				*eq = '\0';
-				char *key = trimWhitespace(p);
-				int idx = -1;
-				if (FindConfigEntry(section, key, &idx))
+				if (FindConfigEntry(section, trimWhitespace(p), &idx))
 				{
 					WriteEntryLine(f, &g_configEntries[idx]); // owned: current value
 					if (idx < (int)(sizeof(written) / sizeof(written[0])))
 						written[idx] = true;
+					owned = 1;
 				}
-				else
-				{
-					fprintf(f, "%s\n", raw); // unknown key, preserved
-				}
-			}
-			else
-			{
-				fprintf(f, "%s\n", raw); // not a key=value line, preserved
 			}
 		}
+
+		// Section headers, comments, blank lines, unknown keys and lines that are
+		// not key=value are all written back byte-for-byte, including a line
+		// longer than the old 255-byte scratch buffer and a missing final
+		// newline. Only owned keys are normalized in place.
+		if (!owned)
+			fwrite(cursor, 1, writeLen, f);
+
+		free(lineCopy);
 
 		if (!nl)
 			break;
