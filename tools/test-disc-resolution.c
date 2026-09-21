@@ -347,7 +347,7 @@ static int stubCopy(void *ctx, const char *source, const char *destination)
 	c->copyCalls++;
 	NativeDiscResolution_CopyString(c->copiedSource, sizeof(c->copiedSource), source);
 	NativeDiscResolution_CopyString(c->copiedDestination, sizeof(c->copiedDestination), destination);
-	return c->copyResult;
+	return c->copyResult == 1;
 }
 
 static void stubReport(void *ctx, const char *line)
@@ -558,7 +558,7 @@ static void TestWizardAndCopy(void)
 		ctx.pickCount = 1;
 		ctx.confirmAnswers[0] = 1;
 		ctx.confirmCount = 1;
-		ctx.copyResult = 0;
+		ctx.copyResult = -1; // interrupted partway through
 
 		expect(runStub(&ctx, NULL, "", "/game/assets/ctr-u.bin", 1, &result) == 1, "interrupted copy: found");
 		expect(result.copyAccepted == 1, "interrupted copy: accepted");
