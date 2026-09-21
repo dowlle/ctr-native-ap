@@ -74,8 +74,10 @@ int NativeDiscPathStore_Load(char *out, size_t outSize)
 		return 0;
 	}
 
+	// A read error is a refusal even when some bytes arrived: a partial read
+	// could otherwise pass for a shorter, valid-looking path.
 	got = fread(buffer, 1, sizeof(buffer), file);
-	if ((got == 0) && (ferror(file) != 0))
+	if (ferror(file) != 0)
 	{
 		fclose(file);
 		fprintf(stderr, "[CTR Native] remembered disc path ignored: the file could not be read\n");
