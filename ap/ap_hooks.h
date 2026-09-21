@@ -13,6 +13,7 @@
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
+#include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
@@ -135,6 +136,18 @@ int AP_PodiumSpecialTrack(void);
 // latch when a podium is born (CS_Podium_FullScene_Init).
 void AP_PodiumExitReset(void);
 void AP_PodiumExitTerminalWork(void);
+
+// ── Local podium-skip option (issue #285) ──
+// The "Skip Podium Ceremonies" client preference (config.ini + the in-game
+// options menu), default OFF. AP_ShouldSkipPodium classifies the pending hub
+// podium from the live mode words and reward id and applies the option; boss
+// and cup podiums are never skippable, and a relic that would open Oxide's
+// Final Challenge keeps STATIC_RELIC. AP_SkipPodium applies the decision:
+// it clears gGT->podiumRewardID (NOFUNC) plus any stale count-up/freeze bits,
+// so the hub returns exactly as after a watched ceremony. Call it AFTER the
+// race's reward notification, before the hub load request.
+int  AP_ShouldSkipPodium(int rewardId);
+void AP_SkipPodium(int rewardId);
 
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads

@@ -36,6 +36,7 @@ NativeConfig g_config = {
 	-1,    // stereo
 #ifdef CTR_AP
 	false, // skipHints
+	false, // skipPodium (default off: ceremonies play unless the player opts out)
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
@@ -86,6 +87,16 @@ const ConfigEntry g_configEntries[] = {
 	// Platform_BeginScene, so it is picked up on the next frame and needs no
 	// menu-exit hook.
 	{"Video & QoL", "mute_when_unfocused",      "Mute When Unfocused",          CFG_BOOL, &g_config.muteWhenUnfocused},
+#ifdef CTR_AP
+	// Skip Podium Ceremonies (issue #285, CFG_BOOL): a LOCAL client option, off
+	// by default, that drops the hub podium for an ordinary Trophy, CTR
+	// Challenge or ordinary Relic. Boss, Gem Cup and the Oxide relic transition
+	// are preserved. Not slot_data: the seed owner must not control each
+	// player's presentation preference. Consumed by AP_SkipPodium
+	// (ap/ap_hooks.c) after the race's reward notification. Rendered and toggled
+	// by the generic section menu with no menu-specific code.
+	{"Video & QoL", "skip_podium",              "Skip Podium Ceremonies",       CFG_BOOL, &g_config.skipPodium},
+#endif
 	// Remembered window geometry: config-file-only, exactly like update_last_seen
 	// below (State section, gated out of the in-game menu in BuildSectionMap,
 	// game/230/MM_ConfigMenu.c). Gathered/applied in platform/native_renderer.c;

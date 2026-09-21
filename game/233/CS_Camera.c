@@ -15,21 +15,25 @@ u8 CS_Camera_BoolGotoBoss(void)
 	// Under AP `numRelics` counts RECEIVED Sapphire Relic items, so the retail
 	// rule fires on the 18th item to arrive from anywhere in the multiworld,
 	// which is not this seed's Oxide gate. Vanilla answer is unchanged.
+	//
+	// The beat-Oxide suppression is the SAME term AP_ShouldSkipPodium consults
+	// (issue #285): one helper answers "this relic podium will go to Oxide" for
+	// both, so a skipped relic can never be one whose transition still plays.
 #ifdef CTR_AP
-	if ((gGT->podiumRewardID == STATIC_RELIC) &&
-	    AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
+	if (AP_PodiumRelicWillGotoOxide(
+	        gGT->podiumRewardID == STATIC_RELIC,
+	        AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
 	                                   gGT->currAdvProfile.numRelics,
 	                                   AP_OxideOffersFinalChallenge(),
-	                                   AP_OxideFinalOpen()))
+	                                   AP_OxideFinalOpen()),
+	        CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0))
 #else
-	if ((gGT->podiumRewardID == STATIC_RELIC) && (gGT->currAdvProfile.numRelics >= 18))
+	if ((gGT->podiumRewardID == STATIC_RELIC) &&
+	    (gGT->currAdvProfile.numRelics >= 18) &&
+	    (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) == 0))
 #endif
 	{
-		// If Oxide was not beaten twice yet
-		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) == 0)
-		{
-			return 1;
-		}
+		return 1;
 	}
 
 	// If just unlocked Key

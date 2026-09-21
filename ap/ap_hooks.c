@@ -47,6 +47,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
 #include "ap_podium_presentation_logic.h" // AP Trophy prize policy (#235)
+#include "ap_podium_skip_logic.h" // local podium-skip policy (#285)
 #include "ap_retail_crystal.h" // the harvested retail crystal for CTR progression (#219)
 #include "ap_retail_wumpa.h"   // the harvested retail Wumpa Fruit model for Wumpa packages (#222)
 #include "ap_wumpa_residency_logic.h" // freestanding Wumpa residency transition (#222)
@@ -67,6 +68,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_goal_presentation.h" // composed-goal credits edge (#244)
 #include "ap_goal_logic.h" // pure composed-goal predicate (#152/#244)
 #include "ap_oxide_encounter.h" // pure Oxide garage encounter + gate decision (#320/#321)
+#include "ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
 #include "ap_goal_line.h"       // pure compact pause-menu goal checklist (#322)
 #include "ap_oxide_garage_advert.h" // pure multi-line garage panel (#322 repair, 2026-09-03)
 
@@ -89,6 +91,17 @@ CTR_STATIC_ASSERT(CTR_CT_MODEL_WUMPA_FRUIT == PU_WUMPA_FRUIT);
 #endif
 CTR_STATIC_ASSERT(AP_MODEL_TROPHY == STATIC_TROPHY);
 CTR_STATIC_ASSERT(AP_PODIUM_TROPHY_MODEL == STATIC_TROPHY);
+// #285 podium-skip policy mirrors (ap_podium_skip_logic.h). Pin every mirrored
+// model id and gameMode2 bit against the engine definition here, where both
+// sides are visible, so a copy can never drift.
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_TROPHY_MODEL == STATIC_TROPHY);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_RELIC_MODEL == STATIC_RELIC);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_ADVENTURE_MODE == ADVENTURE_MODE);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_RELIC_RACE == RELIC_RACE);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_INC_RELIC == INC_RELIC);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_INC_KEY == INC_KEY);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_INC_TROPHY == INC_TROPHY);
+CTR_STATIC_ASSERT(AP_PODIUM_SKIP_FREEZE_PODIUM == VEH_FREEZE_PODIUM);
 CTR_STATIC_ASSERT(AP_MODEL_KEY == STATIC_KEY);
 CTR_STATIC_ASSERT(AP_MODEL_TOKEN == STATIC_TOKEN);
 
