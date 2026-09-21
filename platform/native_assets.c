@@ -636,10 +636,23 @@ internal int NativeAssets_SetBaseDir(NativeStr8 baseDir)
 		return 0;
 	}
 
-	NativeDiscImage_Init(s_nativeAssetsDir);
+	// Base/asset discovery deliberately does NOT mount a disc any more (issue
+	// #334, slice 2): config.ini has to be read first so a saved external disc
+	// path can win over the assets folder. The disc is mounted later by
+	// NativeAssets_MountDiscFromAssetsDir, after config load.
 	NativeAssets_ClearIndex();
 	s_nativeAssetsInitialized = 1;
 	return 1;
+}
+
+int NativeAssets_MountDiscFromAssetsDir(void)
+{
+	if (!s_nativeAssetsInitialized && !NativeAssets_Init("."))
+	{
+		return 0;
+	}
+
+	return NativeDiscImage_Init(s_nativeAssetsDir);
 }
 
 int NativeAssets_Init(const char *executableBasePath)
