@@ -25,6 +25,13 @@
 #define AP_PODIUM_SKIP_TROPHY_MODEL 0x62 // STATIC_TROPHY
 #define AP_PODIUM_SKIP_RELIC_MODEL  0x61 // STATIC_RELIC
 
+// Mirror of the gameMode1 words the 0xd call site requires (namespace_Main.h).
+// The skip is an Adventure-relic action only: the UI_RaceEnd_MenuProc case 0xd
+// exit is shared by unrelated modes, so the caller enforces BOTH flags rather
+// than trusting the classification. Pinned against the engine in ap_hooks.c.
+#define AP_PODIUM_SKIP_ADVENTURE_MODE 0x80000  // ADVENTURE_MODE
+#define AP_PODIUM_SKIP_RELIC_RACE     0x4000000 // RELIC_RACE
+
 // Mirror of the gameMode2 count-up / freeze bits a watched ceremony clears by
 // the time it ends (namespace_Main.h): CS_Podium_Prize_ThDestroy clears the
 // three INC_* bits and CS_DestroyPodium_StartDriving clears VEH_FREEZE_PODIUM.
@@ -77,6 +84,18 @@ static inline int AP_PodiumSkipKindIsSkippable(AP_PodiumSkipKind kind)
 	       kind == AP_PODIUM_SKIP_CTR_CHALLENGE;
 }
 
+// The UI_RaceEnd_MenuProc case 0xd call-site gate: the skip may run ONLY for an
+// Adventure relic exit, so both flags must be set. case 0xd is shared by
+// unrelated modes (cup, boss, Time Trial, arcade), and although the
+// classification normally rejects those reward/mode combinations, this is the
+// invariant the caller must hold on its own rather than infer. Pure, so the
+// host harness drives it directly.
+static inline int AP_PodiumSkipCallAllowed(int gameMode1)
+{
+	return ((gameMode1 & AP_PODIUM_SKIP_ADVENTURE_MODE) != 0) &&
+	       ((gameMode1 & AP_PODIUM_SKIP_RELIC_RACE) != 0);
+}
+
 // The production decision. `oxideRelicQualifying` is consulted only for a
 // relic, and is 1 when this relic podium would open the Oxide Final Challenge.
 static inline int AP_PodiumSkipDecision(
@@ -102,6 +121,36 @@ static inline int AP_PodiumSkipDecision(
 static inline int AP_PodiumSkipCleanGameMode2(int gameMode2)
 {
 	return gameMode2 & ~AP_PODIUM_SKIP_CLEAN_MASK;
+}
+
+// ---------------------------------------------------------------------------
+// "This relic podium will go to Oxide" -- ONE predicate, TWO consumers.
+//
+// CS_Camera_BoolGotoBoss (game/233/CS_Camera.c) selects the relic ceremony that
+// opens N. Oxide's Final Challenge; the skip decision must preserve exactly that
+// ceremony or the player loses the transition while the mode word still claims
+// it happened. They were written as two spellings of the same condition and
+// drifted: AP_ShouldSkipPodium asked only the relic threshold, while
+// BoolGotoBoss ALSO requires ADV_REWARD_BEAT_OXIDE_SECOND == 0. After Oxide's
+// second defeat the skip would fire on a relic whose transition can no longer
+// play. This helper is that one condition.
+//
+// `apPresentationReady` is the relic threshold half of the predicate: for a
+// relic this is AP_OxideFinalEncounterPresentationReady(cfgActive,
+// vanillaRelics, offersFinal, finalRelicMet), the shipped gate, which already
+// folds in ctr_cfg_active() and falls back to the retail 18-Sapphire rule when
+// no slot_data is active. Both call sites keep their own threshold inputs,
+// because CS_Camera_BoolGotoBoss reads the live currAdvProfile.numRelics channel
+// while AP_ShouldSkipPodium reads the raw Sapphire bits at the race-end skip
+// point. Only the composition with the beat-Oxide bit is shared.
+//
+// `hasRelicPodium` is 1 only when the pending reward is STATIC_RELIC; every
+// other reward keeps its own ceremony regardless of the beat-Oxide bit.
+static inline int AP_PodiumRelicWillGotoOxide(int hasRelicPodium,
+                                              int apPresentationReady,
+                                              int beatOxideSecond)
+{
+	return hasRelicPodium && apPresentationReady && beatOxideSecond == 0;
 }
 
 #endif // CTR_AP

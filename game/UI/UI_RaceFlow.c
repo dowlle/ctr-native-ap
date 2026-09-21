@@ -495,7 +495,15 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 		// hub return are still available. A qualifying Oxide relic keeps
 		// STATIC_RELIC for CS_Camera_BoolGotoBoss; cup and boss exits share this
 		// case and are never classified as skippable.
-		AP_SkipPodium(gGT->podiumRewardID);
+		//
+		// The skip is an Adventure-relic-only action, so the invariant is
+		// enforced HERE at the call site rather than left to the classification:
+		// case 0xd is shared by unrelated modes, and a non-Adventure or
+		// non-relic exit must not be able to reach the mutation at all.
+		if (AP_PodiumSkipCallAllowed(gGT->gameMode1))
+		{
+			AP_SkipPodium(gGT->podiumRewardID);
+		}
 #endif
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;

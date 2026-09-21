@@ -1,32 +1,76 @@
 /*
- * Host harness for the local podium-skip policy (issue #285).
+ * Host harness for the local podium-skip runtime (issue #285).
  *
- *   cc -Wall -Wextra -DCTR_AP -I ap -I . -I include \
- *      -o /tmp/test-podium-skip tools/test-podium-skip.c && \
- *      /tmp/test-podium-skip
+ * Behavioral assertions on PRODUCTION code, no source-string checks:
  *
- * Behavioral assertions on production code, no source-string checks:
+ *   - ap/ap_podium_skip.c is compiled in and driven directly with stubbed engine
+ *     state (the ap/ap_hit_bots.c gather pattern). That means the harness runs
+ *     the real wrapper AP_ShouldSkipPodium and the real mutation AP_SkipPodium,
+ *     not a copy of their policy: a defect in the gather, in the shared Oxide
+ *     predicate, or in the mutation is a failure here.
+ *   - ap/ap_podium_skip_logic.h supplies the freestanding decision and the
+ *     0xd call-site gate; ap/ap_oxide_cutscene.h supplies the production Oxide
+ *     presentation predicate. Both are the same units the game build consumes.
+ *   - platform/native_config.c is compiled in for the skip_podium round trip.
  *
- *   - ap/ap_podium_skip_logic.h is the policy game/222.c and
- *     game/UI/UI_RaceFlow.c consume through AP_SkipPodium: an ordinary Trophy,
- *     a CTR Challenge and an ordinary Relic skip when the option is on; a boss,
- *     a Gem Cup and a qualifying Oxide relic never skip; option off skips
- *     nothing. The decision is pure, so the caller can place it after the
- *     race's reward notification without it suppressing anything.
- *   - AP_PodiumSkipCleanGameMode2 clears the INC_* count-up bits and
- *     VEH_FREEZE_PODIUM a watched ceremony clears by its end, and leaves every
- *     other gameMode2 bit alone, so a skipped ceremony ends as a watched one.
- *   - platform/native_config.c persists skip_podium as a Video & QoL CFG_BOOL
- *     (round trip), and the built-in default is off, so a config.ini missing the
- *     key leaves the option off.
+ * The one thing that cannot be linked off-engine is game/233/CS_Camera.c
+ * itself, so the BoolGotoBoss truth table below composes the SAME production
+ * helpers the real site uses in one column, and transcribes the kept-verbatim
+ * non-AP expression in the other, then asserts the two agree with the retail
+ * rule for every input. The transcription is line-referenced to the source it
+ * mirrors (the tools/test-oxide-cutscene.c precedent) and exists only to pin the
+ * "sharing must not change a non-AP result" requirement.
+ *
+ * Build line (parsed by tools/ci/run-harnesses.py):
  */
+
+// cc -m32 -Wall -Wextra -DCTR_AP -DCTR_NATIVE -DBUILD=926 -I ap -I . -I include \
+//    -o /tmp/test-podium-skip tools/test-podium-skip.c -lm && \
+//    /tmp/test-podium-skip
+
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "../ap/ap_podium_skip_logic.h"
+#include <common.h>
+#include <platform/native_config.h>
+
+// ── stubbed engine / network state ──────────────────────────────────────────
+
+struct sData sdata_static;
+
+static struct GameTracker gGT;
+
+// The three AP inputs AP_ShouldSkipPodium reads through ctr_cfg_active() and the
+// Oxide selectors. Each case sets them directly so the test drives the SHIPPED
+// composition rather than re-deriving it.
+static int g_cfgActive;
+static int g_oxideOffersFinal;
+static int g_oxideFinalOpen;
+
+int ctr_cfg_active(void)
+{
+	return g_cfgActive;
+}
+
+int AP_OxideOffersFinalChallenge(void)
+{
+	return g_oxideOffersFinal;
+}
+
+int AP_OxideFinalOpen(void)
+{
+	return g_oxideFinalOpen;
+}
+
+// The production runtime under test. This is the same translation unit
+// game/game_unity.h compiles into the game.
+#include "../ap/ap_relic_goal.h" // AP_RelicGoalMet: what AP_OxideFinalOpen resolves
+#include "../ap/ap_podium_skip.c"
+
+// The config table and persistence store (the same unit the game links).
 #include "../platform/native_config.c"
 
 // Engine model ids the podium can carry (namespace_Instance.h). The trophy and
@@ -37,6 +81,12 @@
 #define TEST_GEM    0x5f
 #define TEST_BIG1   0x38
 #define TEST_NOFUNC 0x00
+
+// gameMode1 words (namespace_Main.h).
+#define TEST_ADVENTURE_MODE 0x80000
+#define TEST_RELIC_RACE     0x4000000
+#define TEST_TOKEN_RACE     0x2000000 // gameMode2
+#define TEST_ADVENTURE_CUP  0x10000000
 
 // gameMode2 bits a watched ceremony clears by its end (namespace_Main.h).
 #define TEST_INC_RELIC      0x1000000
@@ -55,6 +105,34 @@ static void expect(const char *what, int got, int want)
 	       got, want);
 	if (got != want)
 		g_failures++;
+}
+
+// Set an AdvProgress reward bit the way the game does (namespace_Memcard.h).
+static void SetRewardBit(int bit)
+{
+	sdata->advProgress.rewards[bit / 32] |= (u32)1 << (bit & 31);
+}
+
+// The exact engine state a case starts from: nothing set, all AP gates shut,
+// option off. Each test turns on only what it is about.
+static void ResetState(void)
+{
+	memset(&gGT, 0, sizeof gGT);
+	memset(&sdata_static, 0, sizeof sdata_static);
+	sdata->gGT = &gGT;
+	g_config.skipPodium = false;
+	g_cfgActive = 0;
+	g_oxideOffersFinal = 0;
+	g_oxideFinalOpen = 0;
+}
+
+// Grant the 18 sapphire relic bits AP_VanillaRelicCountNow counts, so a
+// no-slot_data session reads the retail threshold as met.
+static void SetSapphireRelics(int n)
+{
+	int i;
+	for (i = 0; i < n; i++)
+		SetRewardBit(ADV_REWARD_FIRST_SAPPHIRE_RELIC + i);
 }
 
 static const ConfigEntry *FindEntry(const char *section, const char *key)
@@ -84,117 +162,341 @@ static void SetEntry(const char *section, const char *key, int value)
 		*(int *)e->valuePtr = value;
 }
 
-// ── Classification and decision ─────────────────────────────────────────────
+// ── The production wrapper: the Oxide relic predicate (correction 1) ─────────
 
-static void TestDecision(void)
+static void TestOxideRelicPredicate(void)
 {
-	// Option off: nothing is skipped, whatever the ceremony is.
-	expect("off keeps Trophy",
-	       AP_PodiumSkipDecision(0, TEST_TROPHY, 0, 0, 0, 0, 0), 0);
-	expect("off keeps CTR Challenge",
-	       AP_PodiumSkipDecision(0, TEST_TROPHY, 0, 0, 0, 1, 0), 0);
-	expect("off keeps Relic",
-	       AP_PodiumSkipDecision(0, TEST_RELIC, 0, 0, 1, 0, 0), 0);
-	expect("off keeps Oxide relic",
-	       AP_PodiumSkipDecision(0, TEST_RELIC, 0, 0, 1, 0, 1), 0);
-	expect("off keeps boss",
-	       AP_PodiumSkipDecision(0, TEST_KEY, 1, 0, 0, 0, 0), 0);
-	expect("off keeps cup",
-	       AP_PodiumSkipDecision(0, TEST_GEM, 0, 1, 0, 0, 0), 0);
+	// ── A qualifying relic BEFORE Oxide's second defeat is preserved ─────────
+	// AP active, the per-seed Final gate open (offersFinal + finalOpen), a relic
+	// race, option on, second Oxide not yet beaten. The wrapper must NOT skip:
+	// CS_Camera_BoolGotoBoss is about to select the Oxide transition.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.gameMode2 = TEST_INC_RELIC;
+	gGT.podiumRewardID = TEST_RELIC;
+	g_cfgActive = 1;
+	g_oxideOffersFinal = 1;
+	g_oxideFinalOpen = 1;
+	expect("qualifying relic before Oxide 2 is preserved",
+	       AP_ShouldSkipPodium(TEST_RELIC), 0);
 
-	// Option on: ordinary Trophy, CTR Challenge and ordinary Relic skip.
-	expect("on skips Trophy",
-	       AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 0, 0, 0, 0), 1);
-	expect("on skips CTR Challenge",
-	       AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 0, 0, 1, 0), 1);
-	expect("on skips ordinary Relic",
-	       AP_PodiumSkipDecision(1, TEST_RELIC, 0, 0, 1, 0, 0), 1);
+	// ── The SAME relic AFTER the second defeat is skipped ────────────────────
+	// The beat-Oxide bit suppresses the transition, so nothing can play and the
+	// ceremony is an ordinary relic. Before correction 1 this returned 0.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.gameMode2 = TEST_INC_RELIC;
+	gGT.podiumRewardID = TEST_RELIC;
+	g_cfgActive = 1;
+	g_oxideOffersFinal = 1;
+	g_oxideFinalOpen = 1;
+	SetRewardBit(ADV_REWARD_BEAT_OXIDE_SECOND);
+	expect("relic after Oxide 2 is skipped", AP_ShouldSkipPodium(TEST_RELIC), 1);
 
-	// A qualifying Oxide relic keeps STATIC_RELIC and its ceremony.
-	expect("on keeps qualifying Oxide relic",
-	       AP_PodiumSkipDecision(1, TEST_RELIC, 0, 0, 1, 0, 1), 0);
+	// The same holds without slot_data: 18 sapphire bits met, second Oxide
+	// beaten -> the retail transition is suppressed and the relic is skippable.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.podiumRewardID = TEST_RELIC;
+	SetSapphireRelics(18);
+	SetRewardBit(ADV_REWARD_BEAT_OXIDE_SECOND);
+	expect("no-slot_data relic after Oxide 2 is skipped",
+	       AP_ShouldSkipPodium(TEST_RELIC), 1);
 
-	// Boss and cup never skip, even when an ordinary race flag overlaps.
-	expect("on keeps boss",
-	       AP_PodiumSkipDecision(1, TEST_KEY, 1, 0, 0, 0, 0), 0);
-	expect("on keeps boss carrying a Trophy model",
-	       AP_PodiumSkipDecision(1, TEST_TROPHY, 1, 0, 0, 0, 0), 0);
-	expect("on keeps cup",
-	       AP_PodiumSkipDecision(1, TEST_GEM, 0, 1, 0, 0, 0), 0);
-	expect("on keeps cup carrying a Trophy model",
-	       AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 1, 0, 0, 0), 0);
-	expect("on keeps cup carrying the token flag",
-	       AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 1, 0, 1, 0), 0);
+	// ... and the identical no-slot_data relic BEFORE the second defeat is the
+	// retail ceremony, so it must be preserved.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.podiumRewardID = TEST_RELIC;
+	SetSapphireRelics(18);
+	expect("no-slot_data relic before Oxide 2 is preserved",
+	       AP_ShouldSkipPodium(TEST_RELIC), 0);
 
-	// Non-ceremony and other-reward podiums are untouched.
-	expect("on keeps no-podium",
-	       AP_PodiumSkipDecision(1, TEST_NOFUNC, 0, 0, 0, 0, 0), 0);
-	expect("on keeps a bare Key",
-	       AP_PodiumSkipDecision(1, TEST_KEY, 0, 0, 0, 0, 0), 0);
-	expect("on keeps an Oxide BIG1",
-	       AP_PodiumSkipDecision(1, TEST_BIG1, 0, 0, 0, 0, 0), 0);
+	// A relic below the retail threshold is an ORDINARY relic (no Oxide
+	// transition can fire), so with the option on it IS skippable.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.podiumRewardID = TEST_RELIC;
+	SetSapphireRelics(16);
+	expect("relic below the retail threshold is an ordinary skip",
+	       AP_ShouldSkipPodium(TEST_RELIC), 1);
 
-	// The classification labels the ceremony the production wrapper logs and
-	// tests against, in priority order.
-	expect("classify boss first",
-	       AP_PodiumSkipClassify(TEST_TROPHY, 1, 1, 1, 1),
-	       AP_PODIUM_SKIP_BOSS);
-	expect("classify cup next",
-	       AP_PodiumSkipClassify(TEST_TROPHY, 0, 1, 1, 1), AP_PODIUM_SKIP_CUP);
-	expect("classify relic",
-	       AP_PodiumSkipClassify(TEST_RELIC, 0, 0, 1, 0), AP_PODIUM_SKIP_RELIC);
-	expect("classify CTR Challenge",
-	       AP_PodiumSkipClassify(TEST_TROPHY, 0, 0, 0, 1),
-	       AP_PODIUM_SKIP_CTR_CHALLENGE);
-	expect("classify Trophy",
-	       AP_PodiumSkipClassify(TEST_TROPHY, 0, 0, 0, 0), AP_PODIUM_SKIP_TROPHY);
-	expect("classify nothing",
-	       AP_PodiumSkipClassify(TEST_NOFUNC, 0, 0, 0, 0), AP_PODIUM_SKIP_NONE);
-
-	// The decision is a pure predicate: calling it twice returns the same
-	// answer, so placing it after the reward notification cannot suppress a
-	// check the notification already sent.
-	{
-		int first = AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 0, 0, 0, 0);
-		int second = AP_PodiumSkipDecision(1, TEST_TROPHY, 0, 0, 0, 0, 0);
-		expect("decision is idempotent (first)", first, 1);
-		expect("decision is idempotent (second)", second, first);
-	}
+	// ── Option off skips nothing, whatever the state ─────────────────────────
+	ResetState();
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.podiumRewardID = TEST_RELIC;
+	SetSapphireRelics(18);
+	SetRewardBit(ADV_REWARD_BEAT_OXIDE_SECOND);
+	expect("option off preserves the relic", AP_ShouldSkipPodium(TEST_RELIC), 0);
 }
 
-// ── End-state cleanup ───────────────────────────────────────────────────────
+// ── The production wrapper: classification without the relic predicate ───────
 
-static void TestCleanGameMode2(void)
+static void TestWrapperClassification(void)
 {
-	int gm2 = TEST_INC_RELIC | TEST_INC_KEY | TEST_INC_TROPHY |
-	          TEST_FREEZE_PODIUM | TEST_FREEZE_DOOR | TEST_CUP_NEW_WIN |
-	          TEST_SPAWN_RETAINED;
-	int cleaned = AP_PodiumSkipCleanGameMode2(gm2);
+	// An ordinary Adventure Trophy skips when the option is on.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE;
+	gGT.podiumRewardID = TEST_TROPHY;
+	expect("on skips an Adventure Trophy", AP_ShouldSkipPodium(TEST_TROPHY), 1);
 
-	expect("clean clears INC_RELIC", (cleaned & TEST_INC_RELIC), 0);
-	expect("clean clears INC_KEY", (cleaned & TEST_INC_KEY), 0);
-	expect("clean clears INC_TROPHY", (cleaned & TEST_INC_TROPHY), 0);
-	expect("clean clears VEH_FREEZE_PODIUM", (cleaned & TEST_FREEZE_PODIUM), 0);
-	expect("clean keeps VEH_FREEZE_DOOR", (cleaned & TEST_FREEZE_DOOR),
-	       TEST_FREEZE_DOOR);
-	expect("clean keeps CUP_NEW_WIN", (cleaned & TEST_CUP_NEW_WIN),
-	       TEST_CUP_NEW_WIN);
-	expect("clean keeps the retained spawn bit", (cleaned & TEST_SPAWN_RETAINED),
-	       TEST_SPAWN_RETAINED);
+	// A CTR Challenge (Trophy model + the token-race flag) skips too.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE;
+	gGT.gameMode2 = TEST_TOKEN_RACE;
+	gGT.podiumRewardID = TEST_TROPHY;
+	expect("on skips a CTR Challenge", AP_ShouldSkipPodium(TEST_TROPHY), 1);
 
-	// An already-clean value is unchanged (a skipped ceremony never sets the
-	// bits, so this is the common case).
-	expect("clean is a no-op on a clean value",
-	       AP_PodiumSkipCleanGameMode2(TEST_FREEZE_DOOR), TEST_FREEZE_DOOR);
+	// A Gem Cup leg and a boss race never skip, even carrying a Trophy model.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_ADVENTURE_CUP;
+	gGT.podiumRewardID = TEST_GEM;
+	expect("on keeps a Gem Cup", AP_ShouldSkipPodium(TEST_GEM), 0);
+
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | (int)0x80000000u; // IS_BOSS_RACE: gm < 0
+	gGT.podiumRewardID = TEST_KEY;
+	expect("on keeps a boss race", AP_ShouldSkipPodium(TEST_KEY), 0);
+
+	// A Key, a BIG1 and a no-podium are never skippable.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE;
+	gGT.podiumRewardID = TEST_KEY;
+	expect("on keeps a Key", AP_ShouldSkipPodium(TEST_KEY), 0);
+	gGT.podiumRewardID = TEST_BIG1;
+	expect("on keeps an Oxide BIG1", AP_ShouldSkipPodium(TEST_BIG1), 0);
+	gGT.podiumRewardID = TEST_NOFUNC;
+	expect("on keeps a no-podium", AP_ShouldSkipPodium(TEST_NOFUNC), 0);
+
+	// A null engine state is never a skip.
+	ResetState();
+	g_config.skipPodium = true;
+	sdata->gGT = NULL;
+	expect("null gGT is never a skip", AP_ShouldSkipPodium(TEST_TROPHY), 0);
+}
+
+// ── The 0xd call-site gate (correction 2) ───────────────────────────────────
+
+static void TestCallSiteGate(void)
+{
+	// The gate is the production predicate the call site now uses.
+	expect("gate allows Adventure relic",
+	       AP_PodiumSkipCallAllowed(TEST_ADVENTURE_MODE | TEST_RELIC_RACE), 1);
+	expect("gate rejects non-Adventure relic",
+	       AP_PodiumSkipCallAllowed(TEST_RELIC_RACE), 0);
+	expect("gate rejects Adventure non-relic",
+	       AP_PodiumSkipCallAllowed(TEST_ADVENTURE_MODE), 0);
+	expect("gate rejects cup exit sharing 0xd",
+	       AP_PodiumSkipCallAllowed(TEST_ADVENTURE_MODE | TEST_ADVENTURE_CUP), 0);
+	expect("gate rejects empty mode", AP_PodiumSkipCallAllowed(0), 0);
+
+	// The classification alone WOULD skip a relic whenever RELIC_RACE is set,
+	// even with ADVENTURE_MODE absent. That is exactly why the call site must
+	// hold the invariant itself: this documents the hole the gate closes.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_RELIC_RACE; // no ADVENTURE_MODE
+	gGT.podiumRewardID = TEST_RELIC;
+	expect("classification alone would skip a non-Adventure relic",
+	       AP_ShouldSkipPodium(TEST_RELIC), 1);
+	expect("...and the production gate refuses it",
+	       AP_PodiumSkipCallAllowed(gGT.gameMode1), 0);
+}
+
+// ── The mutation AP_SkipPodium ──────────────────────────────────────────────
+
+static void TestMutation(void)
+{
+	int before;
+
+	// A real skip sets podiumRewardID to NOFUNC and clears ONLY the three INC_*
+	// count-up bits and VEH_FREEZE_PODIUM, leaving every other gameMode2 bit
+	// alone.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE;
+	gGT.podiumRewardID = TEST_TROPHY;
+	gGT.gameMode2 = TEST_INC_RELIC | TEST_INC_KEY | TEST_INC_TROPHY |
+	                TEST_FREEZE_PODIUM | TEST_FREEZE_DOOR | TEST_CUP_NEW_WIN |
+	                TEST_SPAWN_RETAINED;
+	before = gGT.gameMode2;
+
+	AP_SkipPodium(TEST_TROPHY);
+
+	expect("skip sets podiumRewardID to NOFUNC", gGT.podiumRewardID, TEST_NOFUNC);
+	expect("skip clears INC_RELIC", (gGT.gameMode2 & TEST_INC_RELIC), 0);
+	expect("skip clears INC_KEY", (gGT.gameMode2 & TEST_INC_KEY), 0);
+	expect("skip clears INC_TROPHY", (gGT.gameMode2 & TEST_INC_TROPHY), 0);
+	expect("skip clears VEH_FREEZE_PODIUM",
+	       (gGT.gameMode2 & TEST_FREEZE_PODIUM), 0);
+	expect("skip keeps VEH_FREEZE_DOOR",
+	       (gGT.gameMode2 & TEST_FREEZE_DOOR), TEST_FREEZE_DOOR);
+	expect("skip keeps CUP_NEW_WIN",
+	       (gGT.gameMode2 & TEST_CUP_NEW_WIN), TEST_CUP_NEW_WIN);
+	expect("skip keeps the retained spawn bit",
+	       (gGT.gameMode2 & TEST_SPAWN_RETAINED), TEST_SPAWN_RETAINED);
+	expect("skip removes exactly the four intended bits",
+	       before & ~gGT.gameMode2,
+	       TEST_INC_RELIC | TEST_INC_KEY | TEST_INC_TROPHY | TEST_FREEZE_PODIUM);
+
+	// Option off mutates nothing: the reward id and every gameMode2 bit survive.
+	ResetState();
+	g_config.skipPodium = false;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE;
+	gGT.podiumRewardID = TEST_TROPHY;
+	gGT.gameMode2 = TEST_INC_TROPHY | TEST_FREEZE_PODIUM | TEST_FREEZE_DOOR;
+	before = gGT.gameMode2;
+
+	AP_SkipPodium(TEST_TROPHY);
+
+	expect("option off keeps the reward id", gGT.podiumRewardID, TEST_TROPHY);
+	expect("option off mutates no gameMode2 bit", gGT.gameMode2, before);
+
+	// A preserved Oxide relic must also be left untouched by the mutation, so a
+	// caller that skipped the call-site gate cannot damage the transition.
+	ResetState();
+	g_config.skipPodium = true;
+	gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+	gGT.podiumRewardID = TEST_RELIC;
+	gGT.gameMode2 = TEST_INC_RELIC | TEST_FREEZE_PODIUM;
+	before = gGT.gameMode2;
+	g_cfgActive = 1;
+	g_oxideOffersFinal = 1;
+	g_oxideFinalOpen = 1;
+
+	AP_SkipPodium(TEST_RELIC);
+
+	expect("preserved Oxide relic keeps its reward id",
+	       gGT.podiumRewardID, TEST_RELIC);
+	expect("preserved Oxide relic keeps its gameMode2 bits",
+	       gGT.gameMode2, before);
+
+	// A null engine state is a safe no-op.
+	ResetState();
+	g_config.skipPodium = true;
+	sdata->gGT = NULL;
+	AP_SkipPodium(TEST_TROPHY); // must not crash
+	expect("null gGT mutation is a safe no-op", 1, 1);
+}
+
+// ── BoolGotoBoss truth table: AP and non-AP (correction 1, no-drift proof) ──
+//
+// game/233/CS_Camera.c cannot be linked off-engine, so the two branches are
+// reproduced here from the SAME production helpers the real site calls:
+//
+//   AP branch (CS_Camera.c:22-29):  AP_PodiumRelicWillGotoOxide(
+//                                      rewardId == STATIC_RELIC,
+//                                      AP_OxideFinalEncounterPresentationReady(...),
+//                                      beatOxideSecond != 0)
+//   non-AP branch (CS_Camera.c:31-33, kept verbatim):
+//       (rewardId == STATIC_RELIC) && (numRelics >= 18) && (beatOxideSecond == 0)
+//
+// The assertion is that the two agree with the retail rule
+// (relic && numRelics >= 18 && !beatOxideSecond) whenever cfgActive is 0, so
+// sharing the helper under CTR_AP left every non-AP answer exactly as today,
+// and that the AP branch follows AP_OxideFinalEncounterPresentationReady.
+
+static int BoolGotoBossAp(int cfgActive, int rewardId, int vanillaRelics,
+                          int offersFinal, int finalOpen, int beatOxideSecond)
+{
+	return AP_PodiumRelicWillGotoOxide(
+	    rewardId == TEST_RELIC,
+	    AP_OxideFinalEncounterPresentationReady(cfgActive, vanillaRelics,
+	                                            offersFinal, finalOpen),
+	    beatOxideSecond != 0);
+}
+
+static int BoolGotoBossNonAp(int rewardId, int vanillaRelics,
+                             int beatOxideSecond)
+{
+	// Verbatim transcription of the kept-verbatim non-AP expression.
+	return (rewardId == TEST_RELIC) && (vanillaRelics >= 18) &&
+	       (beatOxideSecond == 0);
+}
+
+static void TestBoolGotoBossTruthTable(void)
+{
+	int rows = 0;
+
+	for (int relics = 0; relics <= 20; relics++)
+	for (int beat = 0; beat <= 1; beat++)
+	for (int mode = 0; mode <= 4; mode++)
+	for (int count = 0; count <= 20; count += 5)
+	{
+		// AP_RelicGoalMet(modes): 0 sapphire, 1 gold, 2 platinum, 3 any,
+		// 4 total. Sweep the same relic/goal inputs the production predicate
+		// consumes. offersFinal mirrors a representative open/closed pair.
+		int finalOpen = AP_RelicGoalMet(mode, count, relics, relics, relics);
+		int offersFinal = finalOpen;
+		int rewardId = (rows % 3 == 0) ? TEST_RELIC : TEST_TROPHY;
+
+		int ap = BoolGotoBossAp(1, rewardId, relics, offersFinal, finalOpen, beat);
+		int nonAp = BoolGotoBossNonAp(rewardId, relics, beat);
+		int retail = (rewardId == TEST_RELIC) && (relics >= 18) && (beat == 0);
+
+		// The non-AP branch must still be EXACTLY the retail rule. If sharing
+		// had changed any non-AP answer this fails.
+		if (nonAp != retail)
+		{
+			printf("FAIL non-AP drifted: relic=%d beat=%d got=%d retail=%d\n",
+			       rewardId == TEST_RELIC, beat, nonAp, retail);
+			g_failures++;
+		}
+
+		// The AP branch must follow the shipped gate: relic + ready + !beat.
+		{
+			int ready = AP_OxideFinalEncounterPresentationReady(
+			    1, relics, offersFinal, finalOpen);
+			int want = (rewardId == TEST_RELIC) && ready && (beat == 0);
+			if (ap != want)
+			{
+				printf("FAIL AP branch: relics=%d mode=%d count=%d beat=%d "
+				       "got=%d want=%d\n", relics, mode, count, beat, ap, want);
+				g_failures++;
+			}
+		}
+		rows++;
+	}
+
+	// The two branches must also be identical to each other WITHOUT slot_data,
+	// which is the guarantee "sharing changes no non-AP result" ultimately means.
+	for (int relics = 0; relics <= 20; relics++)
+	for (int beat = 0; beat <= 1; beat++)
+	for (int rewardId = 0; rewardId <= 1; rewardId++)
+	{
+		int rid = rewardId ? TEST_RELIC : TEST_TROPHY;
+		// cfgActive == 0 falls back to the retail 18 rule inside the production
+		// predicate, so the AP branch with no slot_data is the non-AP answer.
+		// (Both branches read currAdvProfile.numRelics exactly the same way.)
+		int apNoSlot = BoolGotoBossAp(0, rid, relics, 0, 0, beat);
+		int nonAp = BoolGotoBossNonAp(rid, relics, beat);
+		if (apNoSlot != nonAp)
+		{
+			printf("FAIL AP(no slot_data) != non-AP: relic=%d relics=%d beat=%d\n",
+			       rewardId, relics, beat);
+			g_failures++;
+		}
+	}
+
+	expect("BoolGotoBoss truth table rows executed", rows > 1000, 1);
+	printf("ok   BoolGotoBoss truth table over %d mode/count/relic/beat rows\n",
+	       rows);
 }
 
 // ── Config persistence ──────────────────────────────────────────────────────
 
 static void TestConfig(void)
 {
-	// Built-in default: off, so an unset option never changes behavior.
-	expect("default skipPodium is off", g_config.skipPodium ? 1 : 0, 0);
-
 	const ConfigEntry *e = FindEntry("Video & QoL", "skip_podium");
 	expect("skip_podium entry present", e != NULL, 1);
 	if (e != NULL)
@@ -220,14 +522,12 @@ static void TestConfig(void)
 		return;
 	}
 
-	// Round trip: save true, reset in memory, reload, observe true.
 	SetEntry("Video & QoL", "skip_podium", 1);
 	NativeConfig_Save();
 	g_config.skipPodium = false;
 	NativeConfig_Load();
 	expect("persisted skipPodium survives a load", g_config.skipPodium ? 1 : 0, 1);
 
-	// Save writes the key as a plain bool under its section.
 	{
 		FILE *f = fopen("config.ini", "r");
 		char buf[256];
@@ -252,7 +552,6 @@ static void TestConfig(void)
 		expect("config.ini has skip_podium = true", sawSkip, 1);
 	}
 
-	// Missing key: a config.ini without skip_podium leaves the default off.
 	{
 		FILE *f = fopen("config.ini", "w");
 		if (f == NULL)
@@ -265,7 +564,7 @@ static void TestConfig(void)
 			fputs("[Video & QoL]\nskip_intro = false\n", f);
 			fclose(f);
 		}
-		g_config.skipPodium = false; // the built-in default
+		g_config.skipPodium = false;
 		NativeConfig_Load();
 		expect("missing key leaves skipPodium off",
 		       g_config.skipPodium ? 1 : 0, 0);
@@ -274,8 +573,15 @@ static void TestConfig(void)
 
 int main(void)
 {
-	TestDecision();
-	TestCleanGameMode2();
+	// The built-in default must be off, so an unset option never changes
+	// behavior. Asserted before any test touches g_config.
+	expect("default skipPodium is off", g_config.skipPodium ? 1 : 0, 0);
+
+	TestOxideRelicPredicate();
+	TestWrapperClassification();
+	TestCallSiteGate();
+	TestMutation();
+	TestBoolGotoBossTruthTable();
 	TestConfig();
 
 	if (g_failures)

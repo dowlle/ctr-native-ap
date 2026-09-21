@@ -13,6 +13,7 @@
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
+#include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
