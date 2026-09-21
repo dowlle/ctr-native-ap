@@ -10,9 +10,10 @@
 // atomic copy, the real disc validator).
 //
 // Startup sequence this implements (contract correction 5): base and assets
-// discovery happen without mounting, config.ini is read, then the disc is
-// resolved explicit argument -> saved path -> assets folder, and only after the
-// chosen disc validated is anything persisted.
+// discovery happen without mounting, config.ini and the remembered disc path
+// (disc-path.txt) are read, then the disc is resolved explicit argument ->
+// saved path -> assets folder, and only after the chosen disc validated is
+// anything persisted.
 //
 // Nothing here includes SDL or touches a real file: every fact arrives through
 // NativeDiscResolutionOps.
@@ -69,7 +70,7 @@ static inline const char *NativeDiscPath_StatusText(NativeDiscPathStatus status)
 	case NATIVE_DISC_PATH_INVALID_UTF8:
 		return "is not valid UTF-8";
 	case NATIVE_DISC_PATH_NOT_LOSSLESS:
-		return "has leading or trailing whitespace the ini format cannot keep";
+		return "has leading or trailing whitespace the store file cannot keep";
 	}
 
 	return "is not a usable path";
@@ -141,8 +142,9 @@ static inline int NativeDisc_Utf8Valid(const unsigned char *s, size_t len)
 // Validate a value that is about to be persisted as the external disc path.
 // Empty is fine (it means "no external disc"). A value is stored verbatim only
 // when it fits, is valid UTF-8, carries no control characters and survives the
-// ini round trip unchanged (no leading or trailing whitespace, which the loader
-// trims). Anything else is rejected whole.
+// disc-path.txt round trip unchanged (no leading or trailing whitespace, which
+// the loader strips along with the line ending). Anything else is rejected
+// whole.
 static inline NativeDiscPathStatus NativeDiscPath_Validate(const char *value, size_t len)
 {
 	size_t i;
@@ -219,7 +221,7 @@ typedef struct NativeDiscResolutionOps
 typedef struct NativeDiscResolutionRequest
 {
 	const char *explicitPath;    // --disc value, or NULL/empty
-	const char *savedPath;       // g_config.discPath, or NULL/empty
+	const char *savedPath;       // remembered path from disc-path.txt, or NULL/empty
 	const char *destinationPath; // assets/ctr-u.bin
 	int allowWizard;             // 0 for validation-only mode
 } NativeDiscResolutionRequest;

@@ -6,6 +6,8 @@
 //
 //   * no picker and no confirmation are shown (the decision never prompts);
 //   * config.ini is not written (bytes identical before and after);
+//   * disc-path.txt is not created (a disc found in the assets folder is never
+//     remembered as an external path);
 //   * the mounted file is the one main would pick, with the case-insensitive
 //     ctr-u.bin-first then other .bin precedence.
 //
@@ -29,6 +31,7 @@
 #include "platform/native_disc_image.c"
 #include "platform/native_assets.c"
 #include "platform/native_disc_copy.c"
+#include "platform/native_disc_path_store.c"
 #include "platform/native_startup.c"
 
 static int g_checks;
@@ -239,6 +242,7 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 {
 	char cwd[1024];
 	char configPath[600];
+	char storePath[600];
 	size_t beforeLen;
 	size_t afterLen;
 	char *before;
@@ -250,6 +254,8 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 	char *argv[1];
 
 	snprintf(configPath, sizeof(configPath), "%s/config.ini", base);
+	snprintf(storePath, sizeof(storePath), "%s/%s", base, NATIVE_DISC_PATH_STORE_FILE);
+	unlink(storePath);
 	writeTextFile(configPath, "[State]\nwindow_x = 10\n[Video & QoL]\nskip_intro = true\n");
 	before = readTextFile(configPath, &beforeLen);
 	expect(before != NULL, label);
@@ -280,11 +286,12 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 	expect(ctx.confirmCalls == 0, label);
 	expect(ctx.validateCalls == 1, label);
 
-	// The assets source must never reach NativeConfig_Save, so config.ini is
-	// byte-for-byte identical.
+	// The assets source persists nothing: config.ini is byte-for-byte identical
+	// and no disc-path.txt is written.
 	after = readTextFile(configPath, &afterLen);
 	expect(after != NULL, label);
 	expect((before != NULL) && (after != NULL) && (beforeLen == afterLen) && (memcmp(before, after, beforeLen) == 0), label);
+	expect(access(storePath, F_OK) != 0, label);
 
 	free(before);
 	free(after);

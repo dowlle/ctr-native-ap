@@ -53,6 +53,7 @@
 
 #include "platform/native_fs_utf8.c"
 #include "platform/native_disc_copy.c"
+#include "platform/native_disc_path_store.c"
 #include "platform/native_disc_image.c"
 #include "platform/native_assets.c"
 #include "platform/native_audio.c"

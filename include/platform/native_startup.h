@@ -7,16 +7,17 @@
 
 // Production startup resolution for the game disc (issue #334, slice 6). The
 // whole sequence main.c used to open-code -- parse the disc arguments, load
-// config.ini, resolve the disc through the wizard, run the final asset
-// validation and persist a remembered external path -- lives in one production
+// config.ini and the remembered disc path (disc-path.txt), resolve the disc
+// through the wizard, run the final asset validation and persist a remembered
+// external path -- lives in one production
 // function here. main.c calls it; tools/test-unchanged-startup.c calls the same
 // function with only the final retail asset validation stubbed, so the sequence
 // cannot drift from production.
 //
 // The three injectable operations are the picker, the yes/no confirmations and
 // the final full asset validation. Everything else (argument parsing, config
-// load, filesystem scan, candidate validation, copy and mount) is the real
-// production code and is not injectable.
+// load, disc-path store load and save, filesystem scan, candidate validation,
+// copy and mount) is the real production code and is not injectable.
 
 typedef struct NativeStartupArgs
 {

@@ -13,6 +13,7 @@
 #include "platform/native_config.h"
 #include "platform/native_disc_copy.h"
 #include "platform/native_disc_image.h"
+#include "platform/native_disc_path_store.h"
 #include "platform/native_fs_utf8.h"
 
 // ── real (non-injectable) resolution operations ──────────────────────────────
@@ -123,22 +124,15 @@ NativeStartupArgStatus NativeStartup_ParseArgs(int argc, char *const *argv, Nati
 
 void NativeDiscResolution_Commit(const NativeDiscResolutionResult *result)
 {
-	NativeDiscPathStatus pathStatus;
-
 	if (!NativeDiscResolution_ShouldPersist(result))
 		return;
 
-	// Only a path the ini format can keep verbatim is persisted; anything else
-	// is reported and left unsaved rather than stored lossily.
-	pathStatus = NativeDiscPath_Validate(result->chosenPath, strlen(result->chosenPath));
-	if (pathStatus != NATIVE_DISC_PATH_OK)
-	{
-		fprintf(stderr, "[CTR Native] disc path not saved: %s\n", NativeDiscPath_StatusText(pathStatus));
-		return;
-	}
-
-	NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), result->chosenPath);
-	NativeConfig_Save();
+	// The remembered path goes into its own file (disc-path.txt), not config.ini:
+	// an options save and a remembered disc path have nothing to do with each
+	// other, and a store that cannot be written must not put the settings file
+	// at risk. The store validates the path and reports its own refusals, and a
+	// failure here is a warning: the next launch simply asks for the disc again.
+	(void)NativeDiscPathStore_Save(result->chosenPath);
 }
 
 // ── the sequence ────────────────────────────────────────────────────────────
@@ -155,12 +149,20 @@ NativeStartupStatus NativeStartup_ResolveDisc(const NativeStartupArgs *args, con
 	NativeDiscResolutionRequest request;
 	NativeDiscResolutionResult result;
 	char destination[NATIVE_DISC_PATH_MAX];
+	char savedPath[NATIVE_DISC_PATH_MAX];
 	int discFound;
 
 	// Contract correction 5 order: base and assets discovery already happened
-	// without mounting, config.ini is read here, then the disc is resolved, and
-	// only after the chosen disc validated is anything persisted.
+	// without mounting, config.ini and the remembered disc path are read here,
+	// then the disc is resolved, and only after the chosen disc validated is
+	// anything persisted.
 	NativeConfig_Load();
+
+	// The remembered disc path lives in its own file next to config.ini. A
+	// missing, empty or unusable store just means "no remembered disc" and the
+	// resolution falls through to the assets folder exactly as before.
+	if (!NativeDiscPathStore_Load(savedPath, sizeof(savedPath)))
+		savedPath[0] = '\0';
 
 	if (!NativeAssets_BuildPath(NATIVE_DISC_DESTINATION_NAME, destination, sizeof(destination)))
 		destination[0] = '\0';
@@ -174,7 +176,7 @@ NativeStartupStatus NativeStartup_ResolveDisc(const NativeStartupArgs *args, con
 	resolutionOps.reportStatus = NativeStartup_Report;
 
 	request.explicitPath = args->explicitDiscPath;
-	request.savedPath = g_config.discPath;
+	request.savedPath = savedPath;
 	request.destinationPath = destination;
 	request.allowWizard = !args->validateDiscOnly;
 

@@ -3,8 +3,11 @@
 // against the code main.c compiles:
 //
 //   * platform/native_disc_image.c   the real single-candidate validator
-//   * platform/native_config.c       the bounded config line reader and the
-//                                    CFG_DISC_PATH rejection rules
+//   * platform/native_disc_path_store.c  the remembered-disc-path file
+//                                    (disc-path.txt): its bounded, binary-mode
+//                                    load, its BOM/CRLF tolerance, its
+//                                    reject-never-truncate rules and its
+//                                    temp-then-rename save
 //   * include/platform/native_disc_resolution.h   the precedence, fallthrough
 //                                    and copy-decision state machine, driven
 //                                    here with stubbed filesystem and dialog
@@ -21,9 +24,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "platform/native_config.c"
 #include "platform/native_fs_utf8.c"
 #include "platform/native_disc_image.c"
+#include "platform/native_disc_path_store.c"
 #include "platform/native_disc_resolution.h"
 
 static int g_checks;
@@ -718,229 +721,205 @@ static char *readTextFile(const char *path, size_t *sizeOut)
 	return data;
 }
 
-static void TestConfigLoad(void)
+
+static void writeBytesFile(const char *path, const void *bytes, size_t size)
 {
-	char dir[] = "/tmp/ctr-disc-config";
-	char path[256];
-	char text[8192];
-	char longLine[6000];
-	char longValue[NATIVE_DISC_PATH_MAX + 64];
-	char cwd[1024];
-	size_t offset;
+	FILE *file = fopen(path, "wb");
 
-	mkdir(dir, 0700);
-	snprintf(path, sizeof(path), "%s/config.ini", dir);
-	getcwd(cwd, sizeof(cwd));
-
-	// A valid remembered path loads verbatim.
-	writeTextFile(path, "[State]\ndisc_path = /discs/ctr-u.bin\n");
-	expect(chdir(dir) == 0, "config: enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(strcmp(g_config.discPath, "/discs/ctr-u.bin") == 0, "config: valid path loads verbatim");
-	chdir(cwd);
-
-	// An overlong path is treated as absent, never truncated.
-	memset(longValue, 'b', sizeof(longValue));
-	longValue[NATIVE_DISC_PATH_CONTENT_MAX + 1] = '\0';
-	snprintf(text, sizeof(text), "[State]\ndisc_path = %s\n", longValue);
-	writeTextFile(path, text);
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(g_config.discPath[0] == '\0', "config: overlong path treated as absent");
-	chdir(cwd);
-
-	// A path with a control character is treated as absent.
-	writeTextFile(path, "[State]\ndisc_path = /discs/a\tb.bin\n");
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(g_config.discPath[0] == '\0', "config: control character path treated as absent");
-	chdir(cwd);
-
-	// A line longer than the reader bound is rejected whole, and the next line
-	// still parses (the old fgets buffer silently split it).
-	memset(longLine, 'c', sizeof(longLine) - 1);
-	longLine[sizeof(longLine) - 1] = '\0';
-	offset = 0;
-	offset += (size_t)snprintf(text + offset, sizeof(text) - offset, "[State]\nlong_key = %s\n", longLine);
-	offset += (size_t)snprintf(text + offset, sizeof(text) - offset, "disc_path = /discs/after-long-line.bin\n");
-	writeTextFile(path, text);
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(strcmp(g_config.discPath, "/discs/after-long-line.bin") == 0, "config: line after an overlong line still parses");
-	chdir(cwd);
-
-	// An over-capacity CFG_STRING keeps the pre-issue-334 behavior: it is
-	// truncated to the buffer, not rejected, so a long saved uri, slot or
-	// password can never be erased to empty by the next save.
-	memset(longValue, 'w', sizeof(longValue));
-	longValue[200] = '\0';
-	snprintf(text, sizeof(text), "[Connection]\nuri = %s\n", longValue);
-	writeTextFile(path, text);
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	g_config.uri[0] = '\0';
-	NativeConfig_Load();
-	expect(strlen(g_config.uri) == (size_t)(sizeof(g_config.uri) - 1), "config: overlong string truncated to the buffer");
-	chdir(cwd);
-
-	// BOM, CRLF and no final newline together: the first section and its keys
-	// must still be seen.
-	writeTextFile(path, "\xEF\xBB\xBF[State]\r\ndisc_path = /discs/bom-crlf.bin");
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(strcmp(g_config.discPath, "/discs/bom-crlf.bin") == 0, "config: BOM + CRLF + no final newline still parse");
-	chdir(cwd);
-
-	// A long unrelated line survives a subsequent save byte-for-byte, and the
-	// disc path saved alongside it round-trips.
+	if (file != NULL)
 	{
-		char longUnknown[5000];
-		char saved[8192];
-		size_t used = 0;
-		size_t fileLen;
-		char *fileBytes;
-
-		memset(longUnknown, 'u', sizeof(longUnknown) - 1);
-		longUnknown[sizeof(longUnknown) - 1] = '\0';
-		used += (size_t)snprintf(saved + used, sizeof(saved) - used, "[State]\nunknown_key = %s\n", longUnknown);
-		used += (size_t)snprintf(saved + used, sizeof(saved) - used, "window_x = 3\n");
-		writeTextFile(path, saved);
-		expect(chdir(dir) == 0, "config: re-enter fixture dir");
-		NativeConfig_Load();
-		NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), "/discs/save-long.bin");
-		NativeConfig_Save();
-		chdir(cwd);
-
-		fileBytes = readTextFile(path, &fileLen);
-		expect(fileBytes != NULL, "config: saved file readable");
-		if (fileBytes != NULL)
-		{
-			expect(strstr(fileBytes, longUnknown) != NULL, "config: long unrelated line preserved byte-for-byte");
-			expect(strstr(fileBytes, "disc_path = /discs/save-long.bin") != NULL, "config: disc path saved");
-			free(fileBytes);
-		}
+		fwrite(bytes, 1, size, file);
+		fclose(file);
 	}
-
-	// An existing config with uri, slot and password survives load plus save
-	// unchanged (the data-loss regression the review rejected).
-	writeTextFile(path, "[Connection]\nuri = ws://127.0.0.1:38281\nslot = Player1\npassword = hunter2\n");
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	NativeConfig_Load();
-	expect(strcmp(g_config.uri, "ws://127.0.0.1:38281") == 0, "config: uri loaded");
-	expect(strcmp(g_config.slot, "Player1") == 0, "config: slot loaded");
-	expect(strcmp(g_config.password, "hunter2") == 0, "config: password loaded");
-	NativeConfig_Save();
-	chdir(cwd);
-
-	{
-		size_t afterLen;
-		char *after = readTextFile(path, &afterLen);
-
-		expect(after != NULL, "config: credentials file readable");
-		if (after != NULL)
-		{
-			expect(strstr(after, "uri = ws://127.0.0.1:38281") != NULL, "config: uri survives save");
-			expect(strstr(after, "slot = Player1") != NULL, "config: slot survives save");
-			expect(strstr(after, "password = hunter2") != NULL, "config: password survives save");
-			free(after);
-		}
-	}
-
-	// A saved disc path survives a save/load round trip verbatim.
-	writeTextFile(path, "[State]\nwindow_x = 10\n");
-	expect(chdir(dir) == 0, "config: re-enter fixture dir");
-	NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), "/discs/round trip/ctr-u.bin");
-	NativeConfig_Save();
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(strcmp(g_config.discPath, "/discs/round trip/ctr-u.bin") == 0, "config: saved disc path reloads verbatim");
-	chdir(cwd);
 }
 
-// Conservative save (issue #334, slice 2, item 3): a config written by main,
-// loaded and saved with nothing changed, must come out byte-for-byte identical,
-// with no added key and no added [State] block; and a save that cannot preserve
-// the existing file must refuse before opening it for writing.
-static void TestConfigSaveConservative(void)
+// Count the leftover temporary files the store may have created, so an aborted
+// save cannot quietly litter the game folder.
+static int countStoreTempFiles(const char *dir)
 {
-	char dir[] = "/tmp/ctr-disc-config-save";
-	char path[256];
-	char cwd[1024];
-	char *fixture;
-	size_t fixtureLen;
-	char *after;
-	size_t afterLen;
+	NativeFsDir *handle = NativeFs_OpenDir(dir);
+	char name[512];
+	int count = 0;
 
-	mkdir(dir, 0700);
-	snprintf(path, sizeof(path), "%s/config.ini", dir);
-	getcwd(cwd, sizeof(cwd));
+	if (handle == NULL)
+		return -1;
 
-	// What main writes: generate it once with no prior file (the entry table
-	// straight out), which by construction contains no disc_path key.
-	unlink(path);
-	expect(chdir(dir) == 0, "save: enter fixture dir");
-	g_config.discPath[0] = '\0';
-	NativeConfig_Save();
-	chdir(cwd);
-	fixture = readTextFile(path, &fixtureLen);
-	expect(fixture != NULL, "save: main-format fixture readable");
-	expect(strstr(fixture, "disc_path") == NULL, "save: main-format fixture has no disc_path key");
-
-	// Load and save with nothing changed: byte-for-byte identical.
-	expect(chdir(dir) == 0, "save: re-enter fixture dir");
-	NativeConfig_Load();
-	expect(g_config.discPath[0] == '\0', "save: no disc path loaded");
-	NativeConfig_Save();
-	chdir(cwd);
-	after = readTextFile(path, &afterLen);
-	expect(after != NULL, "save: output readable");
-	expect((fixtureLen == afterLen) && (memcmp(fixture, after, fixtureLen) == 0), "save: unchanged config is byte-for-byte identical");
-	expect(strstr(after, "disc_path") == NULL, "save: no disc_path key added");
-	free(fixture);
-	free(after);
-
-	// A non-empty disc path is written, and only then.
-	expect(chdir(dir) == 0, "save: re-enter fixture dir");
-	NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), "/discs/kept.bin");
-	NativeConfig_Save();
-	g_config.discPath[0] = '\0';
-	NativeConfig_Load();
-	expect(strcmp(g_config.discPath, "/discs/kept.bin") == 0, "save: a valued disc path is written and reloads");
-	chdir(cwd);
-
-	// An embedded NUL in the existing file refuses the save and leaves the file
-	// untouched.
+	while (NativeFs_ReadDir(handle, name, sizeof(name)))
 	{
-		FILE *f;
-		char original[] = "[State]\nwindow_x = 10\n";
-
-		unlink(path);
-		f = fopen(path, "wb");
-		expect(f != NULL, "save: create NUL fixture");
-		if (f != NULL)
-		{
-			fwrite("[State]\nw", 1, 10, f);
-			fputc('\0', f);
-			fwrite("x = 1\n", 1, 6, f);
-			fclose(f);
-		}
-		expect(chdir(dir) == 0, "save: re-enter fixture dir");
-		expect(NativeConfig_Save() == 0, "save: embedded NUL refuses the save");
-		chdir(cwd);
-
-		after = readTextFile(path, &afterLen);
-		expect(after != NULL, "save: NUL fixture still readable");
-		expect((afterLen == 10u + 1u + 6u) && (after != NULL) && (memcmp(after, "[State]\nw", 10) == 0) && (after[10] == '\0'),
-		       "save: NUL fixture left untouched");
-		free(after);
-		(void)original;
+		if (strncmp(name, NATIVE_DISC_PATH_STORE_FILE ".tmp", strlen(NATIVE_DISC_PATH_STORE_FILE ".tmp")) == 0)
+			count++;
 	}
 
+	NativeFs_CloseDir(handle);
+	return count;
+}
+
+// ── the remembered disc path store ──────────────────────────────────────────
+//
+// Every case below drives the production NativeDiscPathStore_Load and
+// NativeDiscPathStore_Save in a scratch working directory; nothing here
+// re-implements the format.
+static void TestDiscPathStore(void)
+{
+	char dir[256];
+	char storePath[512];
+	char cwd[1024];
+	char loaded[NATIVE_DISC_PATH_MAX];
+	char overlong[NATIVE_DISC_PATH_MAX + 64];
+	char *bytes;
+	size_t bytesLen;
+
+	snprintf(dir, sizeof(dir), "/tmp/ctr-disc-store-%ld", (long)getpid());
+	mkdir(dir, 0700);
+	snprintf(storePath, sizeof(storePath), "%s/%s", dir, NATIVE_DISC_PATH_STORE_FILE);
+	expect(getcwd(cwd, sizeof(cwd)) != NULL, "store: remember the working directory");
+
+	// A missing store is the ordinary first run: no remembered path, no error.
+	unlink(storePath);
+	expect(chdir(dir) == 0, "store: enter fixture dir");
+	strcpy(loaded, "unchanged");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: a missing file has no remembered path");
+	expect(loaded[0] == '\0', "store: a missing file clears the output");
+
+	// Round trip through the production save and load.
+	expect(NativeDiscPathStore_Save("/discs/ctr-u.bin") == 1, "store: save succeeds");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 1, "store: saved path loads");
+	expect(strcmp(loaded, "/discs/ctr-u.bin") == 0, "store: saved path round-trips verbatim");
+	expect(countStoreTempFiles(".") == 0, "store: a finished save leaves no temporary file");
 	chdir(cwd);
+
+	// The file on disk is the path plus exactly one newline.
+	bytes = readTextFile(storePath, &bytesLen);
+	expect(bytes != NULL, "store: saved file readable");
+	if (bytes != NULL)
+	{
+		expect((bytesLen == strlen("/discs/ctr-u.bin\n")) && (memcmp(bytes, "/discs/ctr-u.bin\n", bytesLen) == 0),
+		       "store: the file holds the path and one newline");
+		free(bytes);
+	}
+
+	// A saved path replaces the previous one.
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Save("/discs/second.bin") == 1, "store: a second save succeeds");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 1, "store: the second path loads");
+	expect(strcmp(loaded, "/discs/second.bin") == 0, "store: the second save replaced the first");
+	chdir(cwd);
+
+	// A file written by a Windows text editor: CRLF line ending.
+	writeTextFile(storePath, "/discs/crlf.bin\r\n");
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 1, "store: a CRLF file loads");
+	expect(strcmp(loaded, "/discs/crlf.bin") == 0, "store: CRLF is stripped, the path is verbatim");
+	chdir(cwd);
+
+	// ... and one that also carries a UTF-8 BOM, with no final newline at all.
+	writeTextFile(storePath, "\xEF\xBB\xBF/discs/bom.bin");
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 1, "store: a BOM file loads");
+	expect(strcmp(loaded, "/discs/bom.bin") == 0, "store: the BOM is stripped, the path is verbatim");
+	chdir(cwd);
+
+	// A non-ASCII path survives the round trip byte-for-byte (the Windows build
+	// reaches the same bytes through the UTF-8 filesystem helpers).
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Save("/discs/crème brûlée/ctr-u.bin") == 1, "store: a non-ASCII path saves");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 1, "store: a non-ASCII path loads");
+	expect(strcmp(loaded, "/discs/crème brûlée/ctr-u.bin") == 0, "store: a non-ASCII path round-trips verbatim");
+	chdir(cwd);
+
+	// Longer than the path limit: absent, never truncated.
+	memset(overlong, 'b', sizeof(overlong));
+	overlong[NATIVE_DISC_PATH_CONTENT_MAX + 1] = '\n';
+	writeBytesFile(storePath, overlong, (size_t)NATIVE_DISC_PATH_CONTENT_MAX + 2u);
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: an overlong path is absent");
+	expect(loaded[0] == '\0', "store: an overlong path is not truncated into the output");
+
+	// Far longer than the bounded read: still absent, and still bounded.
+	memset(overlong, 'b', sizeof(overlong));
+	writeBytesFile(storePath, overlong, sizeof(overlong));
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: a file past the read bound is absent");
+	expect(loaded[0] == '\0', "store: a file past the read bound leaves the output empty");
+	chdir(cwd);
+
+	// A control character inside the path: absent.
+	writeTextFile(storePath, "/discs/a\tb.bin\n");
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: a control character is absent");
+	chdir(cwd);
+
+	// An embedded NUL: absent (and not silently cut at the NUL).
+	writeBytesFile(storePath, "/discs/a\0b.bin\n", 15u);
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: an embedded NUL is absent");
+	expect(loaded[0] == '\0', "store: an embedded NUL leaves the output empty");
+	chdir(cwd);
+
+	// An empty file is absent too.
+	writeTextFile(storePath, "");
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Load(loaded, sizeof(loaded)) == 0, "store: an empty file is absent");
+	chdir(cwd);
+
+	// A path the store cannot keep verbatim is refused, and the file already on
+	// disk is left exactly as it was.
+	writeTextFile(storePath, "/discs/keepme.bin\n");
+	expect(chdir(dir) == 0, "store: re-enter fixture dir");
+	expect(NativeDiscPathStore_Save("/discs/bad\nline.bin") == 0, "store: a path with a newline is refused");
+	expect(NativeDiscPathStore_Save(" /discs/lead.bin") == 0, "store: a path with leading whitespace is refused");
+	expect(countStoreTempFiles(".") == 0, "store: a refused save leaves no temporary file");
+	chdir(cwd);
+	bytes = readTextFile(storePath, &bytesLen);
+	expect(bytes != NULL, "store: the previous file is still readable");
+	if (bytes != NULL)
+	{
+		expect((bytesLen == strlen("/discs/keepme.bin\n")) && (memcmp(bytes, "/discs/keepme.bin\n", bytesLen) == 0),
+		       "store: a refused save leaves the previous file untouched");
+		free(bytes);
+	}
+}
+
+// The whole point of the separate file: saving the remembered disc path must
+// not create config.ini and must not touch an existing one (issue #334, slice
+// 2). A settings save and a remembered disc path are independent from here on.
+static void TestDiscPathStoreLeavesConfigAlone(void)
+{
+	char dir[256];
+	char storePath[512];
+	char configPath[512];
+	char cwd[1024];
+	char *before;
+	char *after;
+	size_t beforeLen;
+	size_t afterLen;
+
+	snprintf(dir, sizeof(dir), "/tmp/ctr-disc-store-config-%ld", (long)getpid());
+	mkdir(dir, 0700);
+	snprintf(storePath, sizeof(storePath), "%s/%s", dir, NATIVE_DISC_PATH_STORE_FILE);
+	snprintf(configPath, sizeof(configPath), "%s/config.ini", dir);
+	expect(getcwd(cwd, sizeof(cwd)) != NULL, "config: remember the working directory");
+
+	// No config.ini at all: a save must not invent one.
+	unlink(configPath);
+	unlink(storePath);
+	expect(chdir(dir) == 0, "config: enter fixture dir");
+	expect(NativeDiscPathStore_Save("/discs/ctr-u.bin") == 1, "config: save succeeds without a config.ini");
+	chdir(cwd);
+	expect(access(configPath, F_OK) != 0, "config: no config.ini is created");
+
+	// An existing config.ini: byte-for-byte identical after a save.
+	writeTextFile(configPath, "[State]\nwindow_x = 10\n[Video & QoL]\nskip_intro = true\n");
+	before = readTextFile(configPath, &beforeLen);
+	expect(before != NULL, "config: fixture readable");
+	expect(chdir(dir) == 0, "config: re-enter fixture dir");
+	expect(NativeDiscPathStore_Save("/discs/other.bin") == 1, "config: save succeeds next to a config.ini");
+	chdir(cwd);
+	after = readTextFile(configPath, &afterLen);
+	expect(after != NULL, "config: file still readable after the save");
+	expect((before != NULL) && (after != NULL) && (beforeLen == afterLen) && (memcmp(before, after, beforeLen) == 0),
+	       "config: config.ini is byte-for-byte unchanged");
+	free(before);
+	free(after);
 }
 
 int main(void)
@@ -950,8 +929,8 @@ int main(void)
 	TestWizardAndCopy();
 	TestPathValidation();
 	TestCopyPlan();
-	TestConfigLoad();
-	TestConfigSaveConservative();
+	TestDiscPathStore();
+	TestDiscPathStoreLeavesConfigAlone();
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

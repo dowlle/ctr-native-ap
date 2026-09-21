@@ -51,6 +51,11 @@ struct FakeCtx
 	unsigned long long now;
 	NativeDiscPickerState *started; // the state handed to start
 	int releases;
+	// Whether the state was abandoned, sampled inside the release just before
+	// the memory is freed. The tests read this instead of the state itself: a
+	// released state is gone, so reading it after the wait returned would be a
+	// use-after-free in the harness.
+	int releasedAbandoned;
 	unsigned long long releaseTick;
 	const char *completionPath;   // path the callback will report
 	const char *lateCompletionPath;
@@ -103,6 +108,7 @@ static void fakeRelease(void *ctx, NativeDiscPickerState *state)
 
 	c->releases++;
 	c->releaseTick = c->now;
+	c->releasedAbandoned = (state != NULL) ? state->abandoned : 0;
 	free(state);
 }
 
@@ -145,7 +151,7 @@ static void TestCallbackBeforeTimeout(void)
 	expect(answered == 1, "before: a completing callback yields an answer");
 	expect(strcmp(out, "/discs/chosen.bin") == 0, "before: the chosen path is returned");
 	expect(ctx.releases == 1, "before: the waiter releases the state exactly once");
-	expect(state->abandoned == 0, "before: the state was not abandoned");
+	expect(ctx.releasedAbandoned == 0, "before: the state was not abandoned");
 }
 
 static void TestCallbackAfterTimeout(void)
@@ -234,7 +240,7 @@ static void TestNoBackendCompletes(void)
 
 	expect(answered == 0, "nobackend: a failed start yields no answer");
 	expect(ctx.releases == 1, "nobackend: the state is released exactly once");
-	expect(state->abandoned == 0, "nobackend: a failed start is not abandoned");
+	expect(ctx.releasedAbandoned == 0, "nobackend: a failed start is not abandoned");
 }
 
 int main(void)
