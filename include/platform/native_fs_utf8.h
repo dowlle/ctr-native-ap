@@ -18,7 +18,10 @@
 // Durability boundary: NativeFs_FlushToDisk does not return success until the
 // written bytes have reached stable storage (fsync on POSIX, _commit on
 // Windows). NativeFs_Replace is atomic on POSIX (rename) and is issued with
-// MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH on Windows.
+// MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH on Windows. On POSIX the
+// caller then calls NativeFs_FlushDirectory on the destination directory so the
+// renamed entry itself is durable; that step has no equivalent here on Windows
+// and returns success without doing anything there.
 
 int NativeFs_FileExists(const char *utf8Path);
 FILE *NativeFs_OpenRead(const char *utf8Path);
@@ -35,6 +38,12 @@ int NativeFs_Delete(const char *utf8Path);
 
 // Atomically move src over dst. Returns 0 on failure.
 int NativeFs_Replace(const char *utf8Source, const char *utf8Destination);
+
+// Flush the directory that holds utf8DirectoryPath so a rename into it survives
+// a crash. Returns 0 on failure (or on Windows, where this durability step has
+// no portable equivalent here and is a no-op). This is a best-effort follow-up
+// after NativeFs_Replace; a failure does not undo the rename.
+int NativeFs_FlushDirectory(const char *utf8DirectoryPath);
 
 // Directory enumeration. NativeFs_ReadDir returns 1 and a UTF-8 name, or 0 at
 // the end of the directory. "." and ".." are skipped.

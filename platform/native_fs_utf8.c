@@ -13,57 +13,46 @@
 #include <sys/stat.h>
 #include <wchar.h>
 
+#include "platform/native_fs_winpath.h"
+
 #define NATIVE_FS_WIDE_MAX 4096
 
-// Convert a UTF-8 path to UTF-16, replacing forward slashes and adding the
-// \\?\ long-path prefix for absolute paths (including the \\?\UNC\ form for a
-// UNC path). Relative paths are used unchanged: the \\?\ prefix disables the
-// relative-path resolution and dot-segment handling we still want there.
+// Convert a UTF-8 path to the UTF-16 extended-length form. The classification
+// and prefixing are pure and freestanding (platform/native_fs_winpath.h), so the
+// host harness tests them without Windows; this function only does the UTF-8
+// conversion and hands the code unit array over. The converted length is known
+// before any indexing, so short paths are never read out of bounds.
 static int NativeFs_Utf8ToWidePath(const char *utf8Path, wchar_t *out, size_t outCount)
 {
-	wchar_t wide[NATIVE_FS_WIDE_MAX];
-	wchar_t *p;
+	NativeWinPathUnit wide[NATIVE_FS_WIDE_MAX];
+	NativeWinPathUnit prefixed[NATIVE_FS_WIDE_MAX + 16]; // prefix adds at most 6 units
 	int need;
+	size_t length;
+	size_t i;
 
 	if ((utf8Path == NULL) || (out == NULL) || (outCount == 0))
 		return 0;
 
-	need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8Path, -1, wide, (int)(sizeof(wide) / sizeof(wide[0])));
-	if ((need <= 0) || ((size_t)need > (int)(sizeof(wide)/sizeof(wide[0]))))
+	need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8Path, -1, (wchar_t *)wide, (int)(sizeof(wide) / sizeof(wide[0])));
+	if ((need <= 0) || (need > (int)(sizeof(wide) / sizeof(wide[0]))))
 		return 0;
 
-	for (p = wide; *p != L'\0'; p++)
-	{
-		if (*p == L'/')
-			*p = L'\\';
-	}
+	length = (size_t)need - 1u; // drop the terminator MultiByteToWideChar counted
 
-	if ((wide[0] == L'\\') && (wide[1] == L'\\') && ((wide[2] == L'?') || (wide[2] == L'.')) && (wide[3] == L'\\'))
-	{
-		if (wcslen(wide) + 1u > outCount)
-			return 0;
-		wcscpy(out, wide);
-		return 1;
-	}
-
-	if ((wide[0] == L'\\') && (wide[1] == L'\\'))
-	{
-		// UNC: \\server\share -> \\?\UNC\server\share
-		if (swprintf(out, outCount, L"\\\\?\\UNC\\%s", wide + 2) < 0)
-			return 0;
-		return 1;
-	}
-
-	if ((wide[1] == L':') && ((wide[2] == L'\\') || (wide[2] == L'\0')))
-	{
-		if (swprintf(out, outCount, L"\\\\?\\%s", wide) < 0)
-			return 0;
-		return 1;
-	}
-
-	if (wcslen(wide) + 1u > outCount)
+	if (!NativeWinPath_Prefix(wide, length, prefixed, sizeof(prefixed) / sizeof(prefixed[0])))
 		return 0;
-	wcscpy(out, wide);
+
+	{
+		size_t prefixedLength = NativeWinPath_PrefixedLength(wide, length);
+
+		if (prefixedLength + 1u > outCount)
+			return 0;
+
+		for (i = 0; i < prefixedLength; i++)
+			out[i] = (wchar_t)prefixed[i];
+		out[prefixedLength] = L'\0';
+	}
+
 	return 1;
 }
 
@@ -167,6 +156,15 @@ int NativeFs_Replace(const char *utf8Source, const char *utf8Destination)
 	return MoveFileExW(source, destination, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 }
 
+int NativeFs_FlushDirectory(const char *utf8DirectoryPath)
+{
+	// MOVEFILE_WRITE_THROUGH already flushes the destination volume on Windows,
+	// and there is no portable way to open and flush a directory handle here.
+	// Nothing to do.
+	(void)utf8DirectoryPath;
+	return 1;
+}
+
 struct NativeFsDir
 {
 	HANDLE handle;
@@ -176,20 +174,33 @@ struct NativeFsDir
 
 NativeFsDir *NativeFs_OpenDir(const char *utf8Path)
 {
-	char pattern[NATIVE_FS_WIDE_MAX];
+	char *pattern;
 	wchar_t wide[NATIVE_FS_WIDE_MAX];
 	NativeFsDir *dir;
-	int written;
+	size_t length;
 
 	if (utf8Path == NULL)
 		return NULL;
 
-	written = snprintf(pattern, sizeof(pattern), "%s/*", utf8Path);
-	if ((written <= 0) || ((size_t)written >= sizeof(pattern)))
+	// Size the "<dir>/*" staging buffer from the actual input length rather than
+	// a fixed maximum, so a long UTF-8 path is not rejected before conversion.
+	length = strlen(utf8Path);
+	pattern = (char *)malloc(length + 3u); // "/*" + NUL
+	if (pattern == NULL)
 		return NULL;
 
-	if (!NativeFs_Utf8ToWidePath(pattern, wide, (int)(sizeof(wide)/sizeof(wide[0]))))
+	memcpy(pattern, utf8Path, length);
+	pattern[length] = '/';
+	pattern[length + 1u] = '*';
+	pattern[length + 2u] = '\0';
+
+	if (!NativeFs_Utf8ToWidePath(pattern, wide, (int)(sizeof(wide) / sizeof(wide[0]))))
+	{
+		free(pattern);
 		return NULL;
+	}
+
+	free(pattern);
 
 	dir = (NativeFsDir *)calloc(1, sizeof(*dir));
 	if (dir == NULL)
@@ -306,6 +317,30 @@ int NativeFs_Replace(const char *utf8Source, const char *utf8Destination)
 		return 0;
 
 	return rename(utf8Source, utf8Destination) == 0;
+}
+
+int NativeFs_FlushDirectory(const char *utf8DirectoryPath)
+{
+	int fd;
+
+	if (utf8DirectoryPath == NULL)
+		return 0;
+
+	// Open with O_RDONLY (O_DIRECTORY is not POSIX; a plain open of a directory
+	// is enough to fsync it) and fsync so the rename into this directory is
+	// durable. Closing is best-effort.
+	fd = open(utf8DirectoryPath, O_RDONLY);
+	if (fd == -1)
+		return 0;
+
+	if (fsync(fd) != 0)
+	{
+		close(fd);
+		return 0;
+	}
+
+	close(fd);
+	return 1;
 }
 
 struct NativeFsDir

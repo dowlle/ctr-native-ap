@@ -3,6 +3,13 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <platform/native_config.h>
 #include <platform/native_disc_resolution.h>
 #include <platform/native_render_scale.h>
@@ -371,17 +378,39 @@ static bool FindConfigEntry(const char *section, const char *key, int *outIndex)
 	return false;
 }
 
+// Whether config.ini exists in the working directory. Used to tell a missing
+// file (safe to create) from an existing file that could not be read, which
+// must never be overwritten with defaults (issue #334, slice 2).
+static int configFileExists(void)
+{
+#if defined(_WIN32)
+	return _access("config.ini", 0) == 0;
+#else
+	return access("config.ini", F_OK) == 0;
+#endif
+}
+
 static void WriteEntryLine(FILE *f, const ConfigEntry *e)
 {
 	if (e->type == CFG_BOOL)
 		fprintf(f, "%s = %s\n", e->key, *(bool *)e->valuePtr ? "true" : "false");
-	else if (e->type == CFG_STRING || e->type == CFG_DISC_PATH)
+	else if (e->type == CFG_DISC_PATH)
+	{
+		// Written only when it has a value (issue #334, slice 2). An empty disc
+		// path means "no remembered external disc" and must not add a key to a
+		// config that did not have one, so a config written by main comes out
+		// byte-for-byte identical through a load-and-save with nothing changed.
+		const char *value = (const char *)e->valuePtr;
+		if (value[0] != '\0')
+			fprintf(f, "%s = %s\n", e->key, value);
+	}
+	else if (e->type == CFG_STRING)
 		fprintf(f, "%s = %s\n", e->key, (const char *)e->valuePtr);
 	else
 		fprintf(f, "%s = %d\n", e->key, *(int *)e->valuePtr);
 }
 
-void NativeConfig_Save(void)
+int NativeConfig_Save(void)
 {
 	// Read the existing file first (before truncating it): NativeConfig_Save must
 	// carry through any section or key this build's entry table does not own.
@@ -389,30 +418,97 @@ void NativeConfig_Save(void)
 	// which has no [Connection]/[Archipelago] rows -- would silently drop the AP
 	// build's sections. Owned keys are rewritten in place with their current value;
 	// everything else (unknown sections/keys, comments, blank lines) is preserved.
+	//
+	// This save is deliberately not atomic in this slice: main truncates the file
+	// in place, and this keeps that behavior. A crash during the write can leave a
+	// partial file. Making the save atomic (write a temporary sibling, flush it,
+	// then rename it over config.ini) is left for its own change.
 	char *existing = NULL;
+	char *scratch = NULL;
+	const char *refusal = NULL;
 	FILE *rf = fopen("config.ini", "r");
-	if (rf)
+	if (rf == NULL)
 	{
-		fseek(rf, 0, SEEK_END);
-		long len = ftell(rf);
-		fseek(rf, 0, SEEK_SET);
-		if (len > 0)
+		// A missing config.ini is the normal first run: writing the entry table
+		// straight out is correct. A file that exists but cannot be opened is
+		// different: never fall back to writing defaults over it.
+		if (configFileExists())
+			refusal = "the existing file could not be opened for reading";
+	}
+	else
+	{
+		long len = 0;
+		int readFailed = 0;
+
+		if (fseek(rf, 0, SEEK_END) != 0)
+			readFailed = 1;
+		else
+		{
+			len = ftell(rf);
+			if (len < 0)
+				readFailed = 1;
+			else if (fseek(rf, 0, SEEK_SET) != 0)
+				readFailed = 1;
+		}
+
+		if (!readFailed && (len > 0))
 		{
 			existing = (char *)malloc((size_t)len + 1);
-			if (existing)
+			if (existing == NULL)
+				refusal = "not enough memory to preserve the existing file";
+			else
 			{
 				size_t got = fread(existing, 1, (size_t)len, rf);
-				existing[got] = '\0';
+
+				if (got != (size_t)len)
+					refusal = "the existing file could not be read";
+				else
+				{
+					existing[got] = '\0';
+					// An embedded NUL would terminate the line traversal below
+					// and silently lose everything after it. Refuse instead.
+					if (memchr(existing, '\0', got) != NULL)
+						refusal = "the existing file contains an embedded NUL byte";
+				}
 			}
 		}
+		else if (readFailed)
+			refusal = "the existing file could not be read";
+
 		fclose(rf);
+	}
+
+	// Every allocation the save needs is made BEFORE config.ini is opened for
+	// writing (issue #334, slice 2). The existing content is parsed from a
+	// scratch copy, so the untouched original can be written back byte-for-byte
+	// for anything this build does not own. If any allocation fails the save
+	// aborts with the file untouched instead of falling back to defaults.
+	if ((refusal == NULL) && (existing != NULL))
+	{
+		size_t existingLen = strlen(existing);
+
+		scratch = (char *)malloc(existingLen + 1u);
+		if (scratch == NULL)
+			refusal = "not enough memory to preserve the existing file";
+		else
+			memcpy(scratch, existing, existingLen + 1u);
+	}
+
+	if (refusal != NULL)
+	{
+		free(existing);
+		free(scratch);
+		fprintf(stderr, "[Config] config.ini not saved: %s\n", refusal);
+		return 0;
 	}
 
 	FILE *f = fopen("config.ini", "w");
 	if (!f)
 	{
 		free(existing);
-		return;
+		free(scratch);
+		fprintf(stderr, "[Config] config.ini not saved: cannot open for writing\n");
+		return 0;
 	}
 
 	// Writing the file marks config.ini as authoritative from here on, so the AP
@@ -436,41 +532,36 @@ void NativeConfig_Save(void)
 			WriteEntryLine(f, e);
 		}
 		fclose(f);
-		return;
+		free(scratch);
+		return 1;
 	}
 
 	// Generously sized flag per owned entry; the entry table is small.
 	bool written[64] = {false};
 
 	char section[64] = "";
-	char *cursor = existing;
+	size_t total = strlen(existing);
+	size_t offset = 0;
 	int firstLine = 1;
-	while (*cursor)
+	while (offset < total)
 	{
+		const char *cursor = existing + offset;
+		char *parse = scratch + offset;
 		char *nl = strchr(cursor, '\n');
 		size_t lineLen = nl ? (size_t)(nl - cursor) : strlen(cursor);
 		size_t writeLen = nl ? lineLen + 1u : lineLen; // include the terminator, or none at EOF
-		char *lineCopy = (char *)malloc(lineLen + 1u);
 		int owned = 0;
 		char *p;
 
-		if (lineCopy == NULL)
-		{
-			// Out of memory: keep the line byte-for-byte rather than truncating
-			// or dropping it.
-			fwrite(cursor, 1, writeLen, f);
-			if (!nl)
-				break;
-			cursor = nl + 1;
-			continue;
-		}
-
-		memcpy(lineCopy, cursor, lineLen);
-		lineCopy[lineLen] = '\0';
+		// Parse the line from the scratch copy; the original stays untouched so
+		// unknown lines can be written back byte-for-byte. No per-line
+		// allocation happens here, so a full write cannot fail partway on
+		// memory (issue #334, slice 2).
+		parse[lineLen] = '\0';
 
 		// A UTF-8 BOM on the first line is part of the file's bytes (it is
 		// written back verbatim) but must not hide the first section header.
-		p = lineCopy;
+		p = parse;
 		if (firstLine && ((unsigned char)p[0] == 0xEF) && ((unsigned char)p[1] == 0xBB) && ((unsigned char)p[2] == 0xBF))
 			p += 3;
 		firstLine = 0;
@@ -512,14 +603,11 @@ void NativeConfig_Save(void)
 		if (!owned)
 			fwrite(cursor, 1, writeLen, f);
 
-		free(lineCopy);
-
-		if (!nl)
-			break;
-		cursor = nl + 1;
+		offset += writeLen;
 	}
 
 	free(existing);
+	free(scratch);
 
 	// Append any owned entries that were not already present in the file (e.g. an
 	// option added to the table since the config was last written). A section that
@@ -531,6 +619,12 @@ void NativeConfig_Save(void)
 		if (i < (int)(sizeof(written) / sizeof(written[0])) && written[i])
 			continue;
 		const ConfigEntry *e = &g_configEntries[i];
+
+		// An empty disc path writes no line, so it must not cause an empty
+		// section header to be appended either.
+		if ((e->type == CFG_DISC_PATH) && (((const char *)e->valuePtr)[0] == '\0'))
+			continue;
+
 		if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
 		{
 			fprintf(f, "\n[%s]\n", e->section);
@@ -540,4 +634,5 @@ void NativeConfig_Save(void)
 	}
 
 	fclose(f);
+	return 1;
 }

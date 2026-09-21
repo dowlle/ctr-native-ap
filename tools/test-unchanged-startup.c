@@ -1,20 +1,20 @@
 // Behavioral harness proving the disc-resolution slice leaves today's startup
-// untouched (issue #334, slice 2). It runs the real production sequence in
-// main.c order: NativeAssets_Init (base and assets discovery, no mount),
-// chdir to base, NativeConfig_Load, then the disc resolution decision with the
-// real assets scan, against a real-layout fixture (assets/ctr-u.bin and no new
-// config keys), and asserts:
+// untouched (issue #334, slice 2, corrected for slice 6). It calls the same
+// production startup function main.c calls, NativeStartup_ResolveDisc, with the
+// arguments parsed by the production NativeStartup_ParseArgs, against a
+// real-layout fixture (assets/ctr-u.bin and no new config keys), and asserts:
 //
 //   * no picker and no confirmation are shown (the decision never prompts);
 //   * config.ini is not written (bytes identical before and after);
 //   * the mounted file is the one main would pick, with the case-insensitive
 //     ctr-u.bin-first then other .bin precedence.
 //
-// Full asset validation (BIGFILE/XA) needs the retail layout this host fixture
-// does not carry, so only that final step is stubbed, exactly as the work order
-// allows. The disc resolution, assets scan and config load are the real units.
+// The assets scan, config loader, candidate validator and the whole startup
+// sequence are the real production code. Only the final full asset validation
+// (BIGFILE/XA, which this host fixture does not carry) is stubbed through the
+// NativeStartupOps, exactly as the work order allows.
 //
-//   cc -Wall -Wextra -DCTR_AP -D_FILE_OFFSET_BITS=64 -I . -I include -o /tmp/test-unchanged-startup tools/test-unchanged-startup.c
+//   cc -Wall -Wextra -DCTR_AP -I . -I include -o /tmp/test-unchanged-startup tools/test-unchanged-startup.c
 //
 // Exit 0 = every assertion held; failures are printed otherwise.
 
@@ -28,7 +28,8 @@
 #include "platform/native_fs_utf8.c"
 #include "platform/native_disc_image.c"
 #include "platform/native_assets.c"
-#include "platform/native_disc_resolution.h"
+#include "platform/native_disc_copy.c"
+#include "platform/native_startup.c"
 
 static int g_checks;
 static int g_failures;
@@ -192,45 +193,14 @@ static int endsWith(const char *text, const char *suffix)
 	return (textLen >= suffixLen) && (strcmp(text + textLen - suffixLen, suffix) == 0);
 }
 
-// ── real operations and prompt-counting stubs ───────────────────────────────
+// ── prompt-counting stubs and the asset-validation stub ─────────────────────
 
 struct StartupCtx
 {
 	int pickCalls;
 	int confirmCalls;
-	int copyCalls;
+	int validateCalls;
 };
-
-static int ctxFileExists(void *ctx, const char *path)
-{
-	(void)ctx;
-	return NativeFs_FileExists(path);
-}
-
-static enum NativeDiscImageValidation ctxValidate(void *ctx, const char *path, char *chosenPath, size_t chosenPathSize)
-{
-	enum NativeDiscImageValidation result = NativeDiscImage_ValidateCandidate(path, 1);
-
-	(void)ctx;
-
-	if (result == NATIVE_DISC_IMAGE_VALID)
-		NativeDiscResolution_CopyString(chosenPath, chosenPathSize, NativeDiscImage_GetPath());
-
-	return result;
-}
-
-// The real assets scan production uses: mount the first valid .bin in the
-// assets folder (canonical ctr-u.bin first, case-insensitively).
-static int ctxScanAssets(void *ctx, char *chosenPath, size_t chosenPathSize)
-{
-	(void)ctx;
-
-	if (!NativeAssets_MountDiscFromAssetsDir())
-		return 0;
-
-	NativeDiscResolution_CopyString(chosenPath, chosenPathSize, NativeDiscImage_GetPath());
-	return 1;
-}
 
 static int ctxPick(void *ctx, char *outPath, size_t outPathSize)
 {
@@ -251,24 +221,20 @@ static int ctxConfirm(void *ctx, const char *question)
 	return 0;
 }
 
-static int ctxCopy(void *ctx, const char *source, const char *destination)
+// The ONLY stubbed step in the whole sequence: the final full asset validation
+// needs the retail BIGFILE/XA layout, absent from this host fixture. Everything
+// else, including the argument parsing, config load, assets scan, candidate
+// validation and the disc-resolution decision, is real production code.
+static int ctxValidateAssets(void *ctx)
 {
 	struct StartupCtx *c = (struct StartupCtx *)ctx;
 
-	(void)source;
-	(void)destination;
-	c->copyCalls++;
-	return 0;
+	c->validateCalls++;
+	return 1;
 }
 
-static void ctxReport(void *ctx, const char *line)
-{
-	(void)ctx;
-	(void)line;
-}
-
-// Run the main.c sequence for one fixture and assert the unchanged-startup
-// contract.
+// Run the production startup sequence for one fixture and assert the
+// unchanged-startup contract.
 static void runStartupCase(const char *base, const char *expectSuffix, const char *label)
 {
 	char cwd[1024];
@@ -278,9 +244,10 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 	char *before;
 	char *after;
 	struct StartupCtx ctx;
-	NativeDiscResolutionOps ops;
-	NativeDiscResolutionRequest request;
+	NativeStartupArgs startupArgs;
+	NativeStartupOps startupOps;
 	NativeDiscResolutionResult result;
+	char *argv[1];
 
 	snprintf(configPath, sizeof(configPath), "%s/config.ini", base);
 	writeTextFile(configPath, "[State]\nwindow_x = 10\n[Video & QoL]\nskip_intro = true\n");
@@ -288,47 +255,33 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 	expect(before != NULL, label);
 	expect(getcwd(cwd, sizeof(cwd)) != NULL, label);
 
-	// main.c order: discover base/assets without mounting, chdir, load config.
+	// main.c order: discover base/assets without mounting, then chdir. The
+	// production startup function does the config load and everything after.
 	expect(NativeAssets_Init(base) == 1, label);
 	expect(chdir(base) == 0, label);
-	NativeConfig_Load();
-	g_config.discPath[0] = '\0';
 
 	memset(&ctx, 0, sizeof(ctx));
-	memset(&ops, 0, sizeof(ops));
-	ops.fileExists = ctxFileExists;
-	ops.validateCandidate = ctxValidate;
-	ops.scanAssets = ctxScanAssets;
-	ops.pickDisc = ctxPick;
-	ops.confirm = ctxConfirm;
-	ops.copyAndMount = ctxCopy;
-	ops.reportStatus = ctxReport;
 
-	request.explicitPath = NULL;
-	request.savedPath = g_config.discPath;
-	request.destinationPath = NULL;
-	request.allowWizard = 1;
+	// Parse through the production argument parser (no --disc, no validation).
+	expect(NativeStartup_ParseArgs(1, argv, &startupArgs) == NATIVE_STARTUP_ARG_OK, label);
+	expect(startupArgs.explicitDiscPath == NULL, label);
+	expect(startupArgs.validateDiscOnly == 0, label);
 
-	expect(NativeDiscResolution_Run(&ops, &ctx, &request, &result) == 1, label);
+	startupOps.pickDisc = ctxPick;
+	startupOps.confirm = ctxConfirm;
+	startupOps.validateAssets = ctxValidateAssets;
+
+	expect(NativeStartup_ResolveDisc(&startupArgs, &startupOps, &ctx, &result) == NATIVE_STARTUP_OK, label);
 	expect(result.source == NATIVE_DISC_SOURCE_ASSETS, label);
 	expect(result.wizardRan == 0, label);
 	expect(result.persistExternal == 0, label);
 	expect(endsWith(result.chosenPath, expectSuffix), label);
 	expect(ctx.pickCalls == 0, label);
 	expect(ctx.confirmCalls == 0, label);
-	expect(ctx.copyCalls == 0, label);
+	expect(ctx.validateCalls == 1, label);
 
-	// The only stubbed step: full asset validation needs the retail BIGFILE/XA
-	// layout, absent here. Everything up to and including disc resolution is
-	// real, and the chosen disc is mounted. Persistence then uses the real
-	// freestanding NativeDiscResolution_ShouldPersist rule production uses: the
-	// assets source must never reach NativeConfig_Save.
-	{
-		int assetsValid = 1;
-		if (assetsValid && NativeDiscResolution_ShouldPersist(&result))
-			NativeConfig_Save();
-	}
-
+	// The assets source must never reach NativeConfig_Save, so config.ini is
+	// byte-for-byte identical.
 	after = readTextFile(configPath, &afterLen);
 	expect(after != NULL, label);
 	expect((before != NULL) && (after != NULL) && (beforeLen == afterLen) && (memcmp(before, after, beforeLen) == 0), label);
@@ -337,6 +290,32 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 	free(after);
 	chdir(cwd);
 }
+
+// The production argument parser is itself under test here: the unchanged
+// startup contract depends on it accepting exactly the documented flags.
+static void TestArgumentParsing(void)
+{
+	NativeStartupArgs args;
+	char *ok[] = {"ctr_native_ap", "--disc", "/discs/ctr-u.bin", NULL};
+	char *dup[] = {"ctr_native_ap", "--disc", "/a.bin", "--disc", "/b.bin", NULL};
+	char *missing[] = {"ctr_native_ap", "--disc", NULL};
+	char *validate[] = {"ctr_native_ap", "--validate-disc", NULL};
+	char *none[] = {"ctr_native_ap", NULL};
+
+	expect(NativeStartup_ParseArgs(3, ok, &args) == NATIVE_STARTUP_ARG_OK, "args: --disc value accepted");
+	expect((args.explicitDiscPath != NULL) && (strcmp(args.explicitDiscPath, "/discs/ctr-u.bin") == 0), "args: explicit path stored");
+	expect(args.validateDiscOnly == 0, "args: --disc alone is not validation-only");
+
+	expect(NativeStartup_ParseArgs(5, dup, &args) == NATIVE_STARTUP_ARG_DUPLICATE_DISC, "args: duplicate --disc rejected");
+	expect(NativeStartup_ParseArgs(2, missing, &args) == NATIVE_STARTUP_ARG_MISSING_DISC_VALUE, "args: missing --disc value rejected");
+
+	expect(NativeStartup_ParseArgs(2, validate, &args) == NATIVE_STARTUP_ARG_OK, "args: --validate-disc accepted");
+	expect(args.validateDiscOnly == 1, "args: validation-only flag set");
+
+	expect(NativeStartup_ParseArgs(1, none, &args) == NATIVE_STARTUP_ARG_OK, "args: no disc flags accepted");
+	expect((args.explicitDiscPath == NULL) && (args.validateDiscOnly == 0), "args: no disc flags leave defaults");
+}
+
 
 int main(void)
 {
@@ -386,6 +365,7 @@ int main(void)
 	expect(buildRawDisc(discC), "fixture C: build canonical disc");
 	expect(buildRawDisc(discC2), "fixture C: build other disc");
 
+	TestArgumentParsing();
 	runStartupCase(baseA, "CTR-U.BIN", "case A: canonical (any case) wins over another .bin");
 	runStartupCase(baseB, "another.bin", "case B: other .bin used when no canonical");
 	runStartupCase(baseC, "ctr-u.bin", "case C: lowercase canonical wins");

@@ -28,6 +28,7 @@
 #include "platform/native_assets.h"
 #include "platform/native_clip_scratch.h"
 #include "platform/native_disc_resolution.h"
+#include "platform/native_startup.h"
 #include "platform/native_log.h"
 #include "platform/native_memory.h"
 #include "platform/native_perf.h"
@@ -94,7 +95,10 @@
 #endif
 
 // Startup disc resolution and first-run wizard (issue #334, slice 2). Both
-// builds get it: locating the game disc is not Archipelago-specific.
+// builds get it: locating the game disc is not Archipelago-specific. The
+// sequence itself is in native_startup.c (SDL-free) so the host harness drives
+// the same code; the SDL picker and confirmation are in native_disc_resolution.c.
+#include "platform/native_startup.c"
 #include "platform/native_disc_resolution.c"
 
 #ifndef CC
@@ -181,31 +185,12 @@ int main(int argc, char *argv[])
 	// Startup disc arguments (issue #334, slice 2), available to both builds.
 	// --disc <path> is an explicit disc image for this launch; --validate-disc
 	// resolves and validates the disc the game would use, writes nothing and
-	// exits, which is the validation-only mode.
-	const char *explicitDiscPath = NULL;
-	int validateDiscOnly = 0;
-	int discArgumentSeen = 0;
-	for (int argIndex = 1; argIndex < argc; argIndex++)
+	// exits, which is the validation-only mode. Parsing is a production
+	// function the unchanged-startup harness also calls.
+	NativeStartupArgs startupArgs;
+	if (NativeStartup_ParseArgs(argc, argv, &startupArgs) != NATIVE_STARTUP_ARG_OK)
 	{
-		if (strcmp(argv[argIndex], "--disc") == 0)
-		{
-			if (discArgumentSeen)
-			{
-				fprintf(stderr, "[CTR Native] --disc was given more than once; give it a single disc image path\n");
-				return NativeConsole_Return(1);
-			}
-			if ((argIndex + 1) >= argc)
-			{
-				fprintf(stderr, "[CTR Native] --disc needs a disc image path, for example --disc \"C:\\Games\\ctr-u.bin\"\n");
-				return NativeConsole_Return(1);
-			}
-			explicitDiscPath = argv[++argIndex];
-			discArgumentSeen = 1;
-		}
-		else if (strcmp(argv[argIndex], "--validate-disc") == 0)
-		{
-			validateDiscOnly = 1;
-		}
+		return NativeConsole_Return(1);
 	}
 
 #ifdef CTR_AP
@@ -293,40 +278,30 @@ int main(int argc, char *argv[])
 	AP_CrashInstall();
 #endif
 
-	// Load user options (config.ini in the working dir) before resolving the
-	// disc, so a remembered external disc path can win over the assets folder.
-	// Contract correction 5 order: base and assets discovery without mounting,
-	// then config.ini, then disc resolution, then full validation.
-	NativeConfig_Load();
-
-	// Resolve the disc: explicit argument, then remembered external path, then
-	// the assets folder. The wizard runs only when none of those yielded a valid
-	// disc. Nothing is persisted here.
+	// Startup disc sequence (issue #334, slice 6): load config.ini, resolve the
+	// disc (explicit argument, then remembered path, then the assets folder,
+	// then the wizard), run the final asset validation and persist a remembered
+	// external path. All of it is one production function, so the
+	// unchanged-startup harness drives the same code with only the final retail
+	// asset validation stubbed.
 	{
+		NativeStartupOps startupOps;
 		NativeDiscResolutionResult discResult;
-		int discFound = NativeDiscResolution_Resolve(explicitDiscPath, !validateDiscOnly, &discResult);
+		NativeStartupStatus startupStatus;
 
-		// Validation-only mode: report the disc the game would use, write
-		// neither config nor connection state, and exit.
-		if (validateDiscOnly)
-		{
-			if (discFound)
-			{
-				const char *discSource =
-				    discResult.source == NATIVE_DISC_SOURCE_EXPLICIT ? "explicit" :
-				    discResult.source == NATIVE_DISC_SOURCE_SAVED    ? "saved" :
-				    discResult.source == NATIVE_DISC_SOURCE_ASSETS   ? "assets" : "picked";
-				printf("[CTR Native] disc validation passed (%s): %s\n", discSource, discResult.chosenPath);
-				fflush(stdout);
-				return NativeConsole_Return(0);
-			}
+		startupOps.pickDisc = NativeDiscResolution_RealPick;
+		startupOps.confirm = NativeDiscResolution_RealConfirm;
+		startupOps.validateAssets = NativeStartup_ValidateRetailAssets;
 
-			printf("[CTR Native] disc validation failed\n");
-			fflush(stdout);
+		startupStatus = NativeStartup_ResolveDisc(&startupArgs, &startupOps, NULL, &discResult);
+
+		// Validation-only mode already printed its result.
+		if (startupStatus == NATIVE_STARTUP_DISC_VALIDATE_OK)
+			return NativeConsole_Return(0);
+		if (startupStatus == NATIVE_STARTUP_DISC_VALIDATE_FAILED)
 			return NativeConsole_Return(1);
-		}
 
-		if (!NativeAssets_Validate())
+		if (startupStatus == NATIVE_STARTUP_ASSETS_INVALID)
 		{
 #if !defined(_WIN32)
 			// On-screen guidance for players who launched with no terminal in sight
@@ -350,10 +325,6 @@ int main(int argc, char *argv[])
 
 			return NativeConsole_Return(1);
 		}
-
-		// Persist a remembered external disc path only after the chosen disc has
-		// passed full asset validation.
-		NativeDiscResolution_Commit(&discResult);
 	}
 
 #ifdef CTR_CUSTOM_TRACKS

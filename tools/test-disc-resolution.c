@@ -11,7 +11,7 @@
 //                                    operations exactly as production drives it
 //                                    with the real ones.
 //
-//   cc -Wall -Wextra -DCTR_AP -D_FILE_OFFSET_BITS=64 -I . -I include -o /tmp/test-disc-resolution tools/test-disc-resolution.c
+//   cc -Wall -Wextra -DCTR_AP -I . -I include -o /tmp/test-disc-resolution tools/test-disc-resolution.c
 //
 // Exit 0 = every assertion held; failures are printed otherwise.
 
@@ -861,6 +861,88 @@ static void TestConfigLoad(void)
 	chdir(cwd);
 }
 
+// Conservative save (issue #334, slice 2, item 3): a config written by main,
+// loaded and saved with nothing changed, must come out byte-for-byte identical,
+// with no added key and no added [State] block; and a save that cannot preserve
+// the existing file must refuse before opening it for writing.
+static void TestConfigSaveConservative(void)
+{
+	char dir[] = "/tmp/ctr-disc-config-save";
+	char path[256];
+	char cwd[1024];
+	char *fixture;
+	size_t fixtureLen;
+	char *after;
+	size_t afterLen;
+
+	mkdir(dir, 0700);
+	snprintf(path, sizeof(path), "%s/config.ini", dir);
+	getcwd(cwd, sizeof(cwd));
+
+	// What main writes: generate it once with no prior file (the entry table
+	// straight out), which by construction contains no disc_path key.
+	unlink(path);
+	expect(chdir(dir) == 0, "save: enter fixture dir");
+	g_config.discPath[0] = '\0';
+	NativeConfig_Save();
+	chdir(cwd);
+	fixture = readTextFile(path, &fixtureLen);
+	expect(fixture != NULL, "save: main-format fixture readable");
+	expect(strstr(fixture, "disc_path") == NULL, "save: main-format fixture has no disc_path key");
+
+	// Load and save with nothing changed: byte-for-byte identical.
+	expect(chdir(dir) == 0, "save: re-enter fixture dir");
+	NativeConfig_Load();
+	expect(g_config.discPath[0] == '\0', "save: no disc path loaded");
+	NativeConfig_Save();
+	chdir(cwd);
+	after = readTextFile(path, &afterLen);
+	expect(after != NULL, "save: output readable");
+	expect((fixtureLen == afterLen) && (memcmp(fixture, after, fixtureLen) == 0), "save: unchanged config is byte-for-byte identical");
+	expect(strstr(after, "disc_path") == NULL, "save: no disc_path key added");
+	free(fixture);
+	free(after);
+
+	// A non-empty disc path is written, and only then.
+	expect(chdir(dir) == 0, "save: re-enter fixture dir");
+	NativeDiscResolution_CopyString(g_config.discPath, sizeof(g_config.discPath), "/discs/kept.bin");
+	NativeConfig_Save();
+	g_config.discPath[0] = '\0';
+	NativeConfig_Load();
+	expect(strcmp(g_config.discPath, "/discs/kept.bin") == 0, "save: a valued disc path is written and reloads");
+	chdir(cwd);
+
+	// An embedded NUL in the existing file refuses the save and leaves the file
+	// untouched.
+	{
+		FILE *f;
+		char original[] = "[State]\nwindow_x = 10\n";
+
+		unlink(path);
+		f = fopen(path, "wb");
+		expect(f != NULL, "save: create NUL fixture");
+		if (f != NULL)
+		{
+			fwrite("[State]\nw", 1, 10, f);
+			fputc('\0', f);
+			fwrite("x = 1\n", 1, 6, f);
+			fclose(f);
+		}
+		expect(chdir(dir) == 0, "save: re-enter fixture dir");
+		expect(NativeConfig_Save() == 0, "save: embedded NUL refuses the save");
+		chdir(cwd);
+
+		after = readTextFile(path, &afterLen);
+		expect(after != NULL, "save: NUL fixture still readable");
+		expect((afterLen == 10u + 1u + 6u) && (after != NULL) && (memcmp(after, "[State]\nw", 10) == 0) && (after[10] == '\0'),
+		       "save: NUL fixture left untouched");
+		free(after);
+		(void)original;
+	}
+
+	chdir(cwd);
+}
+
 int main(void)
 {
 	TestRealValidator();
@@ -869,6 +951,7 @@ int main(void)
 	TestPathValidation();
 	TestCopyPlan();
 	TestConfigLoad();
+	TestConfigSaveConservative();
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

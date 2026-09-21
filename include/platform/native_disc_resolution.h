@@ -414,10 +414,15 @@ static inline int NativeDiscResolution_Run(const NativeDiscResolutionOps *ops, v
 	}
 }
 
-// Production entry points (platform/native_disc_resolution.c). Declared here so
-// production and the harness share the request/result contract; the harness
-// never calls them, it drives NativeDiscResolution_Run with stubs instead.
-int NativeDiscResolution_Resolve(const char *explicitPath, int allowWizard, NativeDiscResolutionResult *result);
+// Persist a resolution result as the external disc path (implemented in
+// platform/native_startup.c). Called by the startup sequence only after the
+// chosen disc has also passed full asset validation.
 void NativeDiscResolution_Commit(const NativeDiscResolutionResult *result);
+
+// The SDL-backed picker and confirmation (platform/native_disc_resolution.c).
+// main.c passes them into the startup sequence; the host harness substitutes
+// its own, so these are never referenced in a host build.
+int NativeDiscResolution_RealPick(void *ctx, char *outPath, size_t outPathSize);
+int NativeDiscResolution_RealConfirm(void *ctx, const char *question);
 
 #endif // NATIVE_DISC_RESOLUTION_H

@@ -11,6 +11,9 @@
 
 #include "platform/native_disc_image.h"
 #include "platform/native_fs_utf8.h"
+#include "platform/native_disc_limits.h"
+
+#define NATIVE_DISC_COPY_PATH_MAX NATIVE_DISC_PATH_MAX
 
 // How many candidate temporary names to try before giving up. Every candidate
 // carries the process id and an attempt counter, so no two runs share a name;
@@ -126,6 +129,44 @@ static int NativeDiscCopyReal_Replace(void *ctx, const char *tempPath, const cha
 	return NativeFs_Replace(tempPath, destination);
 }
 
+static int NativeDiscCopyReal_FlushDirectory(void *ctx, const char *destination)
+{
+	char directory[NATIVE_DISC_COPY_PATH_MAX];
+	size_t length;
+
+	(void)ctx;
+
+	// The rename just landed the destination in its own directory. Flush that
+	// directory so the entry survives a crash. A failure is a warning only: the
+	// rename already happened.
+	if (destination == NULL)
+		return 0;
+
+	strncpy(directory, destination, sizeof(directory) - 1);
+	directory[sizeof(directory) - 1] = '\0';
+
+	length = strlen(directory);
+	while ((length > 0) && ((directory[length - 1] == '/') || (directory[length - 1] == '\\')))
+	{
+		directory[length - 1] = '\0';
+		length--;
+	}
+
+	while ((length > 0) && (directory[length - 1] != '/') && (directory[length - 1] != '\\'))
+	{
+		directory[length - 1] = '\0';
+		length--;
+	}
+
+	if (length == 0)
+		return NativeFs_FlushDirectory(".");
+	if (length == 1)
+		return NativeFs_FlushDirectory(directory);
+
+	directory[length - 1] = '\0'; // drop the trailing separator
+	return NativeFs_FlushDirectory(directory);
+}
+
 const NativeDiscCopyOps g_nativeDiscCopyRealOps = {
     NativeDiscCopyReal_OpenRead,
     NativeDiscCopyReal_CreateTempExclusive,
@@ -136,4 +177,5 @@ const NativeDiscCopyOps g_nativeDiscCopyRealOps = {
     NativeDiscCopyReal_RemoveOwned,
     NativeDiscCopyReal_Validate,
     NativeDiscCopyReal_Replace,
+    NativeDiscCopyReal_FlushDirectory,
 };

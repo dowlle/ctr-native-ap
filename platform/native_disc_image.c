@@ -1,28 +1,12 @@
-// Large-file positioning must be requested before any system header is pulled
-// in (issue #334, slice 2). On 32-bit POSIX builds this makes off_t 64-bit so
-// fseeko can address an image beyond 2 GiB. The CMake build sets the same flag
-// globally; this guard covers a standalone translation unit (the host harness).
-#if !defined(_WIN32) && !defined(_FILE_OFFSET_BITS)
-#define _FILE_OFFSET_BITS 64
-#endif
-
 #include "platform/native_disc_image.h"
 
 #include <platform/native_fs_utf8.h>
 #include <platform/native_path.h>
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// The raw-sector seek uses a 64-bit offset on both platforms. Assert the offset
-// type is wide enough at compile time; a 32-bit build without large-file
-// support must fail here rather than silently keep the 2 GiB limit.
-#if defined(_WIN32)
-CTR_STATIC_ASSERT(sizeof(long long) >= 8);
-#else
-CTR_STATIC_ASSERT(sizeof(off_t) >= 8);
-#endif
 
 #define NATIVE_DISC_IMAGE_PATH_MAX          1024
 #define NATIVE_DISC_IMAGE_BIN_PATH          "ctr-u.bin"
@@ -121,14 +105,11 @@ internal int NativeDiscImage_ReadRawSector(u32 lba, u8 *sector)
 
 	offset = (u64)lba * NATIVE_DISC_IMAGE_RAW_SECTOR_SIZE;
 
-	// 64-bit positioning: the whole raw image must be addressable, so a 32-bit
-	// build is not capped at 2 GiB (issue #334, slice 2). Behavior for an
-	// in-range mounted-disc read is unchanged.
-#if defined(_WIN32)
-	if (_fseeki64(s_nativeDiscImageFile, (long long)offset, SEEK_SET) != 0)
-#else
-	if (fseeko(s_nativeDiscImageFile, (off_t)offset, SEEK_SET) != 0)
-#endif
+	// Positioning exactly as main does. A raw sector offset beyond LONG_MAX is
+	// refused here, so a disc image above 2 GiB is unsupported on a 32-bit
+	// build. That matches main and is fine for this port: a CTR image is about
+	// 0.7 GiB. No large-file feature-test macro is set for this branch.
+	if ((offset > (u64)LONG_MAX) || (fseek(s_nativeDiscImageFile, (long)offset, SEEK_SET) != 0))
 	{
 		return 0;
 	}

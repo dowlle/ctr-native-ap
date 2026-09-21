@@ -13,7 +13,7 @@
 // replace failure, cleanup of only the owned temp, and a valid destination that
 // is a hard link never opened for writing.
 //
-//   cc -Wall -Wextra -D_FILE_OFFSET_BITS=64 -I . -I include -o /tmp/test-disc-copy tools/test-disc-copy.c
+//   cc -Wall -Wextra -I . -I include -o /tmp/test-disc-copy tools/test-disc-copy.c
 //
 // Exit 0 = every assertion held; failures are printed otherwise.
 
@@ -218,6 +218,7 @@ struct FailCtx
 	int failFlush;
 	int failValidate;
 	int failReplace;
+	int failDirectoryFlush;
 };
 
 static void *wrapOpenRead(void *ctx, const char *path)
@@ -288,6 +289,16 @@ static int wrapReplace(void *ctx, const char *tempPath, const char *destination)
 	return NativeDiscCopyReal_Replace(NULL, tempPath, destination);
 }
 
+static int wrapFlushDirectory(void *ctx, const char *destination)
+{
+	struct FailCtx *c = (struct FailCtx *)ctx;
+
+	if (c->failDirectoryFlush)
+		return 0;
+
+	return NativeDiscCopyReal_FlushDirectory(NULL, destination);
+}
+
 static NativeDiscCopyResult runInjected(struct FailCtx *ctx, const char *source, const char *destination, char *tempPath, size_t tempPathSize)
 {
 	NativeDiscCopyOps ops = {
@@ -300,6 +311,7 @@ static NativeDiscCopyResult runInjected(struct FailCtx *ctx, const char *source,
 	    wrapRemove,
 	    wrapValidate,
 	    wrapReplace,
+	    wrapFlushDirectory,
 	};
 
 	return NativeDiscCopy_Run(&ops, ctx, source, destination, tempPath, tempPathSize);
@@ -619,6 +631,30 @@ static void TestOnlyOwnedTempRemoved(void)
 	expect(countTempSiblings(dir, "ctr-u.bin") == 2, "owned: only the owned temp was removed");
 }
 
+static void TestDirectoryFlushWarning(void)
+{
+	char dir[512];
+	char dest[512];
+	char tempPath[600];
+	struct FailCtx ctx;
+	NativeDiscCopyResult result;
+
+	joinPath(dir, sizeof(dir), "dirflush");
+	mkdir(dir, 0700);
+	snprintf(dest, sizeof(dest), "%s/ctr-u.bin", dir);
+
+	// A directory flush failure happens after the rename already landed, so it
+	// is reported as a warning and the copy is still considered done.
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.failWriteAfter = -1;
+	ctx.failDirectoryFlush = 1;
+
+	result = runInjected(&ctx, g_source, dest, tempPath, sizeof(tempPath));
+	expect(result == NATIVE_DISC_COPY_DIRECTORY_FLUSH_WARNING, "dirflush: directory flush failure is a warning");
+	expect(NativeDiscImage_ValidateCandidate(dest, 0) == NATIVE_DISC_IMAGE_VALID, "dirflush: destination is still a valid disc");
+	expect(countTempSiblings(dir, "ctr-u.bin") == 0, "dirflush: no temporary sibling left behind");
+}
+
 int main(void)
 {
 	// A per-run root keeps the hard-link and pre-existing-temp fixtures from
@@ -646,6 +682,7 @@ int main(void)
 	TestReplaceFailure();
 	TestDestinationHardlinkNeverWritten();
 	TestOnlyOwnedTempRemoved();
+	TestDirectoryFlushWarning();
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

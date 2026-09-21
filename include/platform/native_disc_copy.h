@@ -28,7 +28,8 @@ typedef enum
 	NATIVE_DISC_COPY_FLUSH_FAILED,
 	NATIVE_DISC_COPY_CLOSE_FAILED,
 	NATIVE_DISC_COPY_VALIDATE_FAILED,
-	NATIVE_DISC_COPY_REPLACE_FAILED
+	NATIVE_DISC_COPY_REPLACE_FAILED,
+	NATIVE_DISC_COPY_DIRECTORY_FLUSH_WARNING
 } NativeDiscCopyResult;
 
 static inline const char *NativeDiscCopy_ResultText(NativeDiscCopyResult result)
@@ -55,6 +56,8 @@ static inline const char *NativeDiscCopy_ResultText(NativeDiscCopyResult result)
 		return "the copied file is not a valid disc image";
 	case NATIVE_DISC_COPY_REPLACE_FAILED:
 		return "cannot replace the file in the game folder";
+	case NATIVE_DISC_COPY_DIRECTORY_FLUSH_WARNING:
+		return "the disc image was copied but the game folder could not be flushed to disk";
 	}
 
 	return "the disc could not be copied";
@@ -84,6 +87,11 @@ typedef struct NativeDiscCopyOps
 	int (*validate)(void *ctx, const char *path);
 	// Move temp over destination atomically. 1 on success.
 	int (*replace)(void *ctx, const char *tempPath, const char *destination);
+	// Optional: flush the destination directory so the rename is durable. May
+	// be NULL. Called only after a successful replace; a failure is reported as
+	// the WARNING result below, which does not undo the already-completed
+	// replace.
+	int (*flushDirectory)(void *ctx, const char *destination);
 } NativeDiscCopyOps;
 
 #define NATIVE_DISC_COPY_BUFFER_SIZE 65536u
@@ -145,9 +153,16 @@ static inline NativeDiscCopyResult NativeDiscCopy_Run(const NativeDiscCopyOps *o
 	if ((result == NATIVE_DISC_COPY_OK) && !ops->replace(ctx, tempPathOut, destination))
 		result = NATIVE_DISC_COPY_REPLACE_FAILED;
 
+	// The rename already happened, so the copy has succeeded. Flushing the
+	// destination directory only adds durability for a crash right after; a
+	// failure here is a warning result, never a failed copy, and the temporary
+	// file must not be removed (it is already the destination).
+	if ((result == NATIVE_DISC_COPY_OK) && (ops->flushDirectory != NULL) && !ops->flushDirectory(ctx, destination))
+		result = NATIVE_DISC_COPY_DIRECTORY_FLUSH_WARNING;
+
 	ops->close(ctx, in);
 
-	if (result != NATIVE_DISC_COPY_OK)
+	if ((result != NATIVE_DISC_COPY_OK) && (result != NATIVE_DISC_COPY_DIRECTORY_FLUSH_WARNING))
 		ops->removeOwned(ctx, tempPathOut);
 
 	return result;

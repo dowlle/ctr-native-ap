@@ -177,7 +177,12 @@ extern const ConfigEntry g_configEntries[];
 extern const int g_numConfigEntries;
 
 void NativeConfig_Load(void);
-void NativeConfig_Save(void);
+// Persist the current options. Returns 1 on success and 0 when the save was
+// refused: the existing config.ini could not be read, an allocation failed, the
+// existing content contains an embedded NUL byte, or the file could not be
+// opened for writing. A refusal leaves config.ini untouched. Callers that do
+// not care about the result may keep ignoring it.
+int NativeConfig_Save(void);
 
 // Fullscreen state-machine decisions, kept freestanding so the platform layer's
 // sync logic is testable out-of-engine (tools/test-graphics-options.c).
