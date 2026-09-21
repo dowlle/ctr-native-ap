@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <platform/native_config.h>
+#include <platform/native_disc_resolution.h>
 #include <platform/native_render_scale.h>
 #include <platform/native_window_geometry.h>
 
@@ -34,6 +35,7 @@ NativeConfig g_config = {
 	-1,    // volMusic
 	-1,    // volVoice
 	-1,    // stereo
+	"",    // discPath (empty = no remembered external disc image)
 #ifdef CTR_AP
 	false, // skipHints
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
@@ -95,6 +97,10 @@ const ConfigEntry g_configEntries[] = {
 	{"State",       "window_w",                 "Window Width",                 CFG_INT,  &g_config.windowWidth},
 	{"State",       "window_h",                 "Window Height",                CFG_INT,  &g_config.windowHeight},
 	{"State",       "window_maximized",         "Window Maximized",             CFG_BOOL, &g_config.windowMaximized},
+	// Remembered external disc image (issue #334, slice 2). CFG_DISC_PATH:
+	// validated on load, written back verbatim. Hidden from the in-game menu
+	// with the rest of [State].
+	{"State",       "disc_path",                "Disc Image",                   CFG_DISC_PATH, g_config.discPath, 0, (int)sizeof(g_config.discPath), 0},
 	// Audio section: config-file-only. Hidden from the in-game options menu (gated
 	// out of BuildSectionMap in game/230/MM_ConfigMenu.c) because it is edited
 	// through the vanilla audio screen and a CFG_INT would render there as a bare
@@ -196,6 +202,42 @@ static char *trimWhitespace(char *s)
 	return s;
 }
 
+// Longest config.ini line accepted. A longer line is rejected whole instead of
+// being split by the old fixed fgets buffer, which silently turned one long
+// value (e.g. a disc path) into several bogus keys (issue #334, slice 2).
+#define NATIVE_CONFIG_LINE_MAX 4096
+
+// Bounded full-line read. Returns 1 for a line that fits, 0 at end of file, and
+// -1 for a line longer than dstSize-1. The excess is always consumed so the
+// next read starts on the next line, and dst then holds an unusable prefix the
+// caller must ignore.
+static int NativeConfig_ReadLine(FILE *f, char *dst, size_t dstSize)
+{
+	size_t len = 0;
+	int c;
+	int overlong = 0;
+	int any = 0;
+
+	if (dstSize == 0)
+		return 0;
+
+	while ((c = fgetc(f)) != EOF)
+	{
+		any = 1;
+		if (c == '\n')
+			break;
+		if (len + 1 < dstSize)
+			dst[len++] = (char)c;
+		else
+			overlong = 1;
+	}
+
+	dst[len] = '\0';
+	if (!any)
+		return 0;
+	return overlong ? -1 : 1;
+}
+
 void NativeConfig_Load(void)
 {
 	FILE *f = fopen("config.ini", "r");
@@ -209,11 +251,18 @@ void NativeConfig_Load(void)
 	g_configIniPresent = true;
 	printf("[Config] loading config.ini\n");
 
-	char line[256];
+	char line[NATIVE_CONFIG_LINE_MAX];
 	char section[64] = "";
+	int lineStatus;
 
-	while (fgets(line, sizeof(line), f))
+	while ((lineStatus = NativeConfig_ReadLine(f, line, sizeof(line))) != 0)
 	{
+		if (lineStatus < 0)
+		{
+			fprintf(stderr, "[Config] line longer than %d bytes ignored\n", (int)(sizeof(line) - 1));
+			continue;
+		}
+
 		char *p = trimWhitespace(line);
 
 		if (*p == '\0' || *p == ';' || *p == '#')
@@ -249,9 +298,27 @@ void NativeConfig_Load(void)
 					*(bool *)e->valuePtr = ParseBool(value);
 				else if (e->type == CFG_STRING)
 				{
-					// value is already trimmed; plain key=value, no quoting.
-					strncpy((char *)e->valuePtr, value, e->max - 1);
-					((char *)e->valuePtr)[e->max - 1] = '\0';
+					// value is already trimmed; plain key=value, no quoting. A
+					// value that does not fit is rejected whole rather than
+					// silently truncated (issue #334, slice 2).
+					size_t valueLen = strlen(value);
+					if (valueLen >= (size_t)e->max)
+						fprintf(stderr, "[Config] %s.%s value longer than %d bytes ignored\n", section, key, e->max - 1);
+					else
+						memcpy((char *)e->valuePtr, value, valueLen + 1);
+				}
+				else if (e->type == CFG_DISC_PATH)
+				{
+					// Stored verbatim or treated as absent, never truncated. A
+					// bad value gets one status line and leaves the field empty.
+					NativeDiscPathStatus pathStatus = NativeDiscPath_Validate(value, strlen(value));
+					if (pathStatus == NATIVE_DISC_PATH_OK)
+						memcpy((char *)e->valuePtr, value, strlen(value) + 1);
+					else
+					{
+						((char *)e->valuePtr)[0] = '\0';
+						fprintf(stderr, "[Config] %s.%s ignored: %s\n", section, key, NativeDiscPath_StatusText(pathStatus));
+					}
 				}
 				else
 					*(int *)e->valuePtr = atoi(value);
@@ -298,7 +365,7 @@ static void WriteEntryLine(FILE *f, const ConfigEntry *e)
 {
 	if (e->type == CFG_BOOL)
 		fprintf(f, "%s = %s\n", e->key, *(bool *)e->valuePtr ? "true" : "false");
-	else if (e->type == CFG_STRING)
+	else if (e->type == CFG_STRING || e->type == CFG_DISC_PATH)
 		fprintf(f, "%s = %s\n", e->key, (const char *)e->valuePtr);
 	else
 		fprintf(f, "%s = %d\n", e->key, *(int *)e->valuePtr);

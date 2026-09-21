@@ -21,6 +21,7 @@ tools/test-custom-tracks-seedcfg.cpp
 tools/test-custom-trophy-ceremony.c
 tools/test-deathlink-race-loss.c
 tools/test-democam.c
+tools/test-disc-resolution.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
 tools/test-firstkey-freeze.c

@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+#include "platform/native_disc_limits.h"
+
 // User-facing options persisted to "config.ini" (next to the executable) and
 // edited through the in-game options menu (see game/230/MM_ConfigMenu.c). Ported
 // from thecodingbob/ctr-native (branch modularize-improve-config), trimmed to the
@@ -77,6 +79,14 @@ typedef struct
 	int volMusic;
 	int volVoice;
 	int stereo;
+	// External disc image remembered by the disc wizard (issue #334, slice 2).
+	// Config-file-only, [State] section (the window-geometry precedent: this is
+	// remembered state, not a menu option, so it is hidden from the in-game
+	// menu). Empty means "no external disc": startup resolves the assets folder
+	// exactly as before. Up to NATIVE_DISC_PATH_CONTENT_MAX bytes, stored
+	// verbatim; an overlong or non-lossless value is rejected as absent rather
+	// than truncated (see NativeDiscPath_Validate).
+	char discPath[NATIVE_DISC_PATH_MAX];
 #ifdef CTR_AP
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
@@ -143,9 +153,13 @@ typedef enum
 	CFG_BOOL,
 	CFG_INT,
 	CFG_STRING,
-	CFG_ENUM   // int value chosen from a fixed ladder; rendered as a name, stepped
+	CFG_ENUM,  // int value chosen from a fixed ladder; rendered as a name, stepped
 	           // left/right (see the AI-difficulty ladder in game/230/MM_ConfigMenu.c).
 	           // Persists as its raw int value, same as CFG_INT.
+	CFG_DISC_PATH // like CFG_STRING, but the loader validates the value as a
+	              // persisted disc path (NativeDiscPath_Validate) and rejects an
+	              // overlong or non-lossless value as absent instead of
+	              // truncating it. Lives in the hidden [State] section.
 } ConfigType;
 
 typedef struct

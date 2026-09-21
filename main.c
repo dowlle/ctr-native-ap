@@ -27,6 +27,7 @@
 #endif
 #include "platform/native_assets.h"
 #include "platform/native_clip_scratch.h"
+#include "platform/native_disc_resolution.h"
 #include "platform/native_log.h"
 #include "platform/native_memory.h"
 #include "platform/native_perf.h"
@@ -89,6 +90,10 @@
 // non-AP argument surface stays exactly as it is today.
 #include "platform/native_launch_request.c"
 #endif
+
+// Startup disc resolution and first-run wizard (issue #334, slice 2). Both
+// builds get it: locating the game disc is not Archipelago-specific.
+#include "platform/native_disc_resolution.c"
 
 #ifndef CC
 #if __GNUC__
@@ -168,6 +173,24 @@ int main(int argc, char *argv[])
 		{
 			printf("CTR Native %s (%s)\n", CTR_NATIVE_VERSION, CTR_NATIVE_BUILD_ID);
 			return 0;
+		}
+	}
+
+	// Startup disc arguments (issue #334, slice 2), available to both builds.
+	// --disc <path> is an explicit disc image for this launch; --validate-disc
+	// resolves and validates the disc the game would use, writes nothing and
+	// exits, which is the validation-only mode.
+	const char *explicitDiscPath = NULL;
+	int validateDiscOnly = 0;
+	for (int argIndex = 1; argIndex < argc; argIndex++)
+	{
+		if ((strcmp(argv[argIndex], "--disc") == 0) && ((argIndex + 1) < argc))
+		{
+			explicitDiscPath = argv[++argIndex];
+		}
+		else if (strcmp(argv[argIndex], "--validate-disc") == 0)
+		{
+			validateDiscOnly = 1;
 		}
 	}
 
@@ -256,34 +279,68 @@ int main(int argc, char *argv[])
 	AP_CrashInstall();
 #endif
 
-	if (!NativeAssets_Validate())
+	// Load user options (config.ini in the working dir) before resolving the
+	// disc, so a remembered external disc path can win over the assets folder.
+	// Contract correction 5 order: base and assets discovery without mounting,
+	// then config.ini, then disc resolution, then full validation.
+	NativeConfig_Load();
+
+	// Resolve the disc: explicit argument, then remembered external path, then
+	// the assets folder. The wizard runs only when none of those yielded a valid
+	// disc. Nothing is persisted here.
 	{
-#if !defined(_WIN32)
-		// On-screen guidance for players who launched with no terminal in sight
-		// (e.g. a Steam Deck in Gaming Mode) and never see the stderr report.
-		// Windows is excluded: a double-clicked console build already opens a
-		// console that the pause below keeps readable, and a modal box would
-		// hang unattended runs. SDL message boxes work before SDL_Init and fail
-		// gracefully on headless hosts.
-		if (!isatty(STDERR_FILENO))
+		NativeDiscResolutionResult discResult;
+		int discFound = NativeDiscResolution_Resolve(explicitDiscPath, !validateDiscOnly, &discResult);
+
+		// Validation-only mode: report the disc the game would use, write
+		// neither config nor connection state, and exit.
+		if (validateDiscOnly)
 		{
-			char assetsMessage[1280];
-			snprintf(assetsMessage, sizeof(assetsMessage),
-			         "Game assets are missing or incomplete.\n\n"
-			         "Place a raw .bin disc image of your own NTSC-U Crash Team Racing disc in the assets folder next to the game:\n\n"
-			         "%s\n\n"
-			         "Any filename ending in .bin works. See the setup guide for details.",
-			         NativeAssets_GetAssetDir());
-			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CTR Native", assetsMessage, NULL);
+			if (discFound)
+			{
+				const char *discSource =
+				    discResult.source == NATIVE_DISC_SOURCE_EXPLICIT ? "explicit" :
+				    discResult.source == NATIVE_DISC_SOURCE_SAVED    ? "saved" :
+				    discResult.source == NATIVE_DISC_SOURCE_ASSETS   ? "assets" : "picked";
+				printf("[CTR Native] disc validation passed (%s): %s\n", discSource, discResult.chosenPath);
+				fflush(stdout);
+				return NativeConsole_Return(0);
+			}
+
+			printf("[CTR Native] disc validation failed\n");
+			fflush(stdout);
+			return NativeConsole_Return(1);
 		}
+
+		if (!NativeAssets_Validate())
+		{
+#if !defined(_WIN32)
+			// On-screen guidance for players who launched with no terminal in sight
+			// (e.g. a Steam Deck in Gaming Mode) and never see the stderr report.
+			// Windows is excluded: a double-clicked console build already opens a
+			// console that the pause below keeps readable, and a modal box would
+			// hang unattended runs. SDL message boxes work before SDL_Init and fail
+			// gracefully on headless hosts.
+			if (!isatty(STDERR_FILENO))
+			{
+				char assetsMessage[1280];
+				snprintf(assetsMessage, sizeof(assetsMessage),
+				         "Game assets are missing or incomplete.\n\n"
+				         "Place a raw .bin disc image of your own NTSC-U Crash Team Racing disc in the assets folder next to the game:\n\n"
+				         "%s\n\n"
+				         "Any filename ending in .bin works. See the setup guide for details.",
+				         NativeAssets_GetAssetDir());
+				SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CTR Native", assetsMessage, NULL);
+			}
 #endif
 
-		return NativeConsole_Return(1);
-	}
+			return NativeConsole_Return(1);
+		}
 
-	// Load user options (config.ini in the working dir) before the game boots so
-	// startup-time toggles (e.g. skip_intro) are honoured on the first frame.
-	NativeConfig_Load();
+		// Persist a remembered external disc path only after the chosen disc has
+		// passed full asset validation.
+		NativeDiscResolution_Commit(&discResult);
+	}
 
 #ifdef CTR_CUSTOM_TRACKS
 	// Parse [CustomTracks] and hash-verify the configured track once, before the

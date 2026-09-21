@@ -46,6 +46,7 @@ global_variable char s_nativeDiscImagePath[NATIVE_DISC_IMAGE_PATH_MAX];
 global_variable FILE *s_nativeDiscImageFile;
 global_variable struct NativeDiscImageFile s_nativeDiscImageRoot;
 global_variable int s_nativeDiscImageAvailable;
+global_variable char s_nativeDiscImageDetail[256];
 
 internal int NativeDiscImage_HasBinExtension(NativeStr8 name)
 {
@@ -514,55 +515,144 @@ internal const char *NativeDiscImage_DescribeForeignSerial(const char *normalize
 	return "not the Crash Team Racing NTSC-U disc";
 }
 
-// Mounts a candidate .bin and keeps it only when it really is the NTSC-U
-// Crash Team Racing disc: raw MODE2/2352 sectors, a valid ISO9660 volume, and
-// boot id SCUS_944.26. Anything else is rejected with the reason on stderr so
-// an almost-right setup tells the user what is wrong.
-internal int NativeDiscImage_TryMountImage(const char *path)
+// The single-candidate validator (issue #334, slice 2). Opens one candidate,
+// validates it against the raw MODE2/2352 + ISO9660 + boot id contract and, on
+// success, makes it the active disc when keepMounted is set. A failure always
+// restores whatever disc was active, so a bad candidate never clobbers a good
+// mount; the reason is left in s_nativeDiscImageDetail.
+enum NativeDiscImageValidation NativeDiscImage_ValidateCandidate(const char *path, int keepMounted)
 {
+	char normalizedPath[NATIVE_DISC_IMAGE_PATH_MAX];
 	char serial[NATIVE_DISC_IMAGE_SERIAL_MAX];
 	char normalized[NATIVE_DISC_IMAGE_SERIAL_MAX];
+	FILE *candidate;
+	FILE *previousFile;
+	char previousPath[NATIVE_DISC_IMAGE_PATH_MAX];
+	struct NativeDiscImageFile previousRoot;
+	int previousAvailable;
+	enum NativeDiscImageValidation result;
 
-	s_nativeDiscImageFile = fopen(path, "rb");
-	if (s_nativeDiscImageFile == NULL)
+	s_nativeDiscImageDetail[0] = '\0';
+
+	if ((path == NULL) || !NativePath_NormalizeSlashes(normalizedPath, sizeof(normalizedPath), NativeStr8_FromCString(path)))
 	{
-		fprintf(stderr, "[CTR Native] ignoring %s: cannot open file\n", path);
-		return 0;
+		return NATIVE_DISC_IMAGE_OPEN_FAILED;
 	}
+
+	candidate = fopen(normalizedPath, "rb");
+	if (candidate == NULL)
+	{
+		snprintf(s_nativeDiscImageDetail, sizeof(s_nativeDiscImageDetail), "cannot open file");
+		return NATIVE_DISC_IMAGE_OPEN_FAILED;
+	}
+
+	previousFile = s_nativeDiscImageFile;
+	memcpy(previousPath, s_nativeDiscImagePath, sizeof(previousPath));
+	previousRoot = s_nativeDiscImageRoot;
+	previousAvailable = s_nativeDiscImageAvailable;
+
+	s_nativeDiscImageFile = candidate;
+	s_nativeDiscImagePath[0] = '\0';
+	s_nativeDiscImageRoot.lba = 0;
+	s_nativeDiscImageRoot.size = 0;
+	s_nativeDiscImageAvailable = 0;
 
 	if (!NativeDiscImage_LoadRoot())
 	{
-		fprintf(stderr, "[CTR Native] ignoring %s: not a raw MODE2/2352 PlayStation disc image (a cooked 2048-byte .iso does not work)\n", path);
-		NativeDiscImage_Unmount();
-		return 0;
-	}
-
-	if (!NativePath_NormalizeSlashes(s_nativeDiscImagePath, sizeof(s_nativeDiscImagePath), NativeStr8_FromCString(path)))
-	{
-		NativeDiscImage_Unmount();
-		return 0;
+		snprintf(s_nativeDiscImageDetail, sizeof(s_nativeDiscImageDetail),
+		         "not a raw MODE2/2352 PlayStation disc image (a cooked 2048-byte .iso does not work)");
+		result = NATIVE_DISC_IMAGE_NOT_MODE2;
+		goto restorePrevious;
 	}
 
 	s_nativeDiscImageAvailable = 1;
 
 	if (!NativeDiscImage_ReadBootSerial(serial, sizeof(serial)))
 	{
-		fprintf(stderr, "[CTR Native] ignoring %s: no PlayStation boot id (SYSTEM.CNF) found on the disc\n", path);
-		NativeDiscImage_Unmount();
-		return 0;
+		snprintf(s_nativeDiscImageDetail, sizeof(s_nativeDiscImageDetail), "no PlayStation boot id (SYSTEM.CNF) found on the disc");
+		result = NATIVE_DISC_IMAGE_NO_BOOT_ID;
+		goto restorePrevious;
 	}
 
 	NativeDiscImage_NormalizeSerial(serial, normalized, sizeof(normalized));
 	if (strcmp(normalized, NATIVE_DISC_IMAGE_NTSC_U_SERIAL) != 0)
 	{
-		fprintf(stderr, "[CTR Native] ignoring %s: boot id %s is %s; this port needs the North American (NTSC-U) release, boot id %s\n", path, serial,
-		        NativeDiscImage_DescribeForeignSerial(normalized), NATIVE_DISC_IMAGE_NTSC_U_BOOT_ID);
-		NativeDiscImage_Unmount();
-		return 0;
+		snprintf(s_nativeDiscImageDetail, sizeof(s_nativeDiscImageDetail), "boot id %s is %s; this port needs the North American (NTSC-U) release, boot id %s",
+		         serial, NativeDiscImage_DescribeForeignSerial(normalized), NATIVE_DISC_IMAGE_NTSC_U_BOOT_ID);
+		result = NATIVE_DISC_IMAGE_WRONG_REGION;
+		goto restorePrevious;
 	}
 
-	printf("[CTR Native] Disc image: %s (boot id %s)\n", s_nativeDiscImagePath, serial);
-	return 1;
+	if (keepMounted)
+	{
+		if (previousFile != NULL)
+		{
+			fclose(previousFile);
+		}
+		memcpy(s_nativeDiscImagePath, normalizedPath, sizeof(s_nativeDiscImagePath));
+		return NATIVE_DISC_IMAGE_VALID;
+	}
+
+	fclose(candidate);
+	s_nativeDiscImageFile = previousFile;
+	memcpy(s_nativeDiscImagePath, previousPath, sizeof(previousPath));
+	s_nativeDiscImageRoot = previousRoot;
+	s_nativeDiscImageAvailable = previousAvailable;
+	return NATIVE_DISC_IMAGE_VALID;
+
+restorePrevious:
+	fclose(candidate);
+	s_nativeDiscImageFile = previousFile;
+	memcpy(s_nativeDiscImagePath, previousPath, sizeof(previousPath));
+	s_nativeDiscImageRoot = previousRoot;
+	s_nativeDiscImageAvailable = previousAvailable;
+	return result;
+}
+
+// Wrapper the assets scan uses: validates and keeps a valid candidate mounted,
+// printing the same one-line reason on stderr as before so an almost-right
+// setup still tells the user what is wrong.
+internal int NativeDiscImage_TryMountImage(const char *path)
+{
+	enum NativeDiscImageValidation result = NativeDiscImage_ValidateCandidate(path, 1);
+
+	if (result == NATIVE_DISC_IMAGE_VALID)
+	{
+		printf("[CTR Native] Disc image: %s\n", s_nativeDiscImagePath);
+		return 1;
+	}
+
+	fprintf(stderr, "[CTR Native] ignoring %s: %s\n", path, NativeDiscImage_LastDetail());
+	return 0;
+}
+
+const char *NativeDiscImage_ValidationText(enum NativeDiscImageValidation result)
+{
+	switch (result)
+	{
+	case NATIVE_DISC_IMAGE_VALID:
+		return "valid";
+	case NATIVE_DISC_IMAGE_OPEN_FAILED:
+		return "cannot open file";
+	case NATIVE_DISC_IMAGE_NOT_MODE2:
+		return "not a raw MODE2/2352 PlayStation disc image";
+	case NATIVE_DISC_IMAGE_NO_BOOT_ID:
+		return "no PlayStation boot id (SYSTEM.CNF) found";
+	case NATIVE_DISC_IMAGE_WRONG_REGION:
+		return "not the NTSC-U Crash Team Racing release";
+	}
+
+	return "invalid disc image";
+}
+
+const char *NativeDiscImage_LastDetail(void)
+{
+	return s_nativeDiscImageDetail;
+}
+
+const char *NativeDiscImage_GetPath(void)
+{
+	return s_nativeDiscImagePath;
 }
 
 internal int NativeDiscImage_ScanHostDir(const char *dirPath, int canonicalPass)

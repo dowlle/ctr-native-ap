@@ -19,6 +19,10 @@ struct NativeAssetsByteBuffer
 };
 
 int NativeAssets_Init(const char *executableBasePath);
+// Mount the first valid .bin in the assets folder. Separate from Init so
+// startup can read config.ini first (issue #334, slice 2). Returns 1 when a
+// valid disc is mounted.
+int NativeAssets_MountDiscFromAssetsDir(void);
 const char *NativeAssets_GetBaseDir(void);
 const char *NativeAssets_GetAssetDir(void);
 int NativeAssets_BuildPathStr8(NativeStr8 relativePath, char *dst, size_t dstSize);
