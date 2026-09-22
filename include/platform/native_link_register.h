@@ -19,14 +19,20 @@
 //   * A handler owned by another program is never replaced silently. Only the
 //     explicit "Use this client for room links" action on the Connection page
 //     replaces it.
-//   * Unregister removes the handler only when it is this client's own.
-//   * A write that fails or does not read back as this client's handler is
-//     rolled back to exactly what was there before.
+//   * Unregister removes only what this client writes, and only while all of
+//     it is still exactly as this client wrote it. Values and subkeys another
+//     program added stay; a key is removed only once it is empty.
+//   * Before any change the whole handler tree is snapshotted (every key, and
+//     every value with its type and data). A change that fails or does not
+//     read back exactly as intended is undone to that snapshot, and the undo is
+//     verified against the full snapshot.
 //   * Registration failure never blocks startup.
 //
 // The decisions are pure and run against NativeLinkRegOps, so the host harness
 // drives them against a simulated registry; platform/native_link_register_win.c
-// provides the real registry operations.
+// provides the real registry operations and nothing else: a recursive read,
+// create key, set value, delete value and delete an empty key. There is no
+// recursive delete.
 
 #include <stddef.h>
 
@@ -37,27 +43,83 @@ extern "C" {
 #define NATIVE_LINK_REG_DESCRIPTION "URL:Crash Team Racing Archipelago room link"
 #define NATIVE_LINK_REG_TEXT_MAX 2048
 
-// What the handler key holds. Strings are UTF-8; "" means the value is absent.
+// Key paths are relative to HKCU\Software\Classes\ctr-ap and use a
+// backslash separator; "" is the ctr-ap key itself. Names are UTF-8; the value
+// name "" is the key's default value.
+#define NATIVE_LINK_REG_COMMAND_KEY "shell\\open\\command"
+#define NATIVE_LINK_REG_URL_PROTOCOL "URL Protocol"
+#define NATIVE_LINK_REG_OWNER "CtrApClient"
+
+// Registry value types used by this unit (the Win32 numbers).
+#define NATIVE_LINK_REG_TYPE_SZ 1u
+#define NATIVE_LINK_REG_TYPE_EXPAND_SZ 2u
+
+// Snapshot limits. A handler tree beyond them cannot be snapshotted, so it is
+// never changed.
+#define NATIVE_LINK_REG_MAX_KEYS 32
+#define NATIVE_LINK_REG_MAX_VALUES 96
+#define NATIVE_LINK_REG_NAME_MAX 512
+#define NATIVE_LINK_REG_PATH_MAX 512
+#define NATIVE_LINK_REG_DATA_MAX 65536
+#define NATIVE_LINK_REG_DEPTH_MAX 8
+
 typedef struct
 {
-	int present;      // the ctr-ap key exists
-	int urlProtocol;  // the "URL Protocol" value exists
-	int owned;        // the CtrApClient ownership value exists
-	char description[256];
-	char command[NATIVE_LINK_REG_TEXT_MAX];
-} NativeLinkRegState;
+	int key;              // index into keys
+	char name[NATIVE_LINK_REG_NAME_MAX];
+	unsigned long type;
+	size_t offset;        // into data
+	size_t size;
+} NativeLinkRegValue;
+
+// The complete handler tree. keyCount == 0 means the ctr-ap key is absent.
+// keys[0] is then the ctr-ap key itself (path "") and every key's parent comes
+// before it. Key and value names compare case-insensitively (ASCII), as in the
+// registry.
+typedef struct
+{
+	int keyCount;
+	char keys[NATIVE_LINK_REG_MAX_KEYS][NATIVE_LINK_REG_PATH_MAX];
+	int valueCount;
+	NativeLinkRegValue values[NATIVE_LINK_REG_MAX_VALUES];
+	size_t dataUsed;
+	unsigned char data[NATIVE_LINK_REG_DATA_MAX];
+} NativeLinkRegTree;
+
+// Tree helpers, shared by the decisions, the real snapshot and the harness.
+void NativeLinkRegTree_Clear(NativeLinkRegTree *t);
+int NativeLinkRegTree_FindKey(const NativeLinkRegTree *t, const char *path);
+// Adds the key and any missing parents (like RegCreateKeyEx). Returns its
+// index, or -1 when a limit is hit.
+int NativeLinkRegTree_AddKey(NativeLinkRegTree *t, const char *path);
+int NativeLinkRegTree_FindValue(const NativeLinkRegTree *t, const char *path, const char *name);
+// The key must exist. Returns 1 on success.
+int NativeLinkRegTree_SetValue(NativeLinkRegTree *t, const char *path, const char *name, unsigned long type,
+                               const void *data, size_t size);
+// A missing value counts as success.
+int NativeLinkRegTree_DeleteValue(NativeLinkRegTree *t, const char *path, const char *name);
+// Refuses (returns 0) a key that still has values or subkeys. A missing key
+// counts as success.
+int NativeLinkRegTree_DeleteEmptyKey(NativeLinkRegTree *t, const char *path);
+// Same keys and, per key, the same values with the same type and data bytes.
+int NativeLinkRegTree_Equal(const NativeLinkRegTree *a, const NativeLinkRegTree *b);
 
 typedef struct
 {
 	void *ctx;
-	// Read the key. 1 on success (present may be 0), 0 when it cannot be read.
-	int (*read)(void *ctx, NativeLinkRegState *out);
-	// Make the key hold exactly these values: create it when missing, set every
-	// value given, delete the flags that are 0 and the strings that are "".
-	// Other values and subkeys already there are left alone.
-	int (*write)(void *ctx, const NativeLinkRegState *state);
-	// Delete the key and everything under it. A missing key counts as success.
-	int (*remove)(void *ctx);
+	// Read the whole tree. 1 on success (an absent key gives an empty tree), 0
+	// when it cannot be read completely or exceeds the snapshot limits.
+	int (*snapshot)(void *ctx, NativeLinkRegTree *out);
+	// Create the key and any missing parents. Existing keys are left as they are.
+	int (*createKey)(void *ctx, const char *path);
+	// Set one value on an existing key.
+	int (*setValue)(void *ctx, const char *path, const char *name, unsigned long type, const void *data,
+	                size_t size);
+	// Delete one value. A missing value or key counts as success.
+	int (*deleteValue)(void *ctx, const char *path, const char *name);
+	// Delete a key only when it has no values and no subkeys. A missing key
+	// counts as success.
+	int (*deleteEmptyKey)(void *ctx, const char *path);
 } NativeLinkRegOps;
 
 typedef enum
@@ -76,6 +138,7 @@ typedef enum
 	NATIVE_LINK_REG_NOT_OURS,         // unregister refused: not this client's handler
 	NATIVE_LINK_REG_BAD_PATH,         // this client's path cannot be put in a command
 	NATIVE_LINK_REG_ROLLED_BACK,      // the change failed and was undone
+	NATIVE_LINK_REG_CHANGED,          // unregister refused: this client's handler was changed elsewhere
 	NATIVE_LINK_REG_FAILED            // the change failed and could not be undone
 } NativeLinkRegResult;
 
@@ -84,7 +147,7 @@ typedef enum
 // like inside the path). Returns 1 when it fits.
 int NativeLinkReg_BuildCommand(const char *exe, char *out, size_t cap);
 
-NativeLinkRegStatus NativeLinkReg_Classify(const NativeLinkRegState *state, const char *ourCommand);
+NativeLinkRegStatus NativeLinkReg_Classify(const NativeLinkRegTree *tree, const char *ourCommand);
 NativeLinkRegStatus NativeLinkReg_Status(const NativeLinkRegOps *ops, const char *exe);
 
 // Register this client. replaceOtherProgram = 0 is the automatic launch path;

@@ -6,17 +6,21 @@
 //                                      URL and the recorded-route file
 //   * platform/native_link_route.c     the Steam branch of startup routing
 //   * platform/native_link_register.c  registration decisions, driven against a
-//                                      simulated per-user registry: clean
+//                                      simulated per-user registry tree: clean
 //                                      install, another CTR-AP client, another
-//                                      program, explicit replacement,
-//                                      ownership-safe unregister, command
-//                                      quoting and rollback on failure
+//                                      program with foreign values, types and
+//                                      subkeys, explicit replacement, owned-only
+//                                      unregister with foreign additions,
+//                                      command quoting, and a failure injected
+//                                      at every write step with the full tree
+//                                      compared after the rollback
 //
 //   cc -Wall -Wextra -I . -I include -o /tmp/test-link-windows tools/test-link-windows.c
 //
 // Exit 0 = every assertion held; failures are printed otherwise.
 //
-// The real registry operations (platform/native_link_register_win.c), the
+// The real registry operations (platform/native_link_register_win.c: a
+// recursive read and single create, set and delete calls, no decisions), the
 // Explorer and browser dispatch of ctr-ap:// and the steam:// hand-off are
 // Windows acceptance checks and are not exercised here.
 
@@ -177,89 +181,165 @@ static void TestSteamRouting(void)
 }
 
 // ---------------------------------------------------------------------------
-// Simulated per-user registry.
+// Simulated per-user registry: the handler tree held in a NativeLinkRegTree,
+// with the same single-change operations as the real layer (setting a value
+// on a missing key fails; deleting a key that still holds anything fails).
 
 typedef struct
 {
-	NativeLinkRegState key;
-	int extraSubkey;     // a subkey another program added (DefaultIcon and so on)
-	int failRead;
-	int failWrite;       // write fails after setting some values
-	int corruptWrite;    // write reports success but stores a different command
-	int failRemove;
-	int failWritesAfter; // fail every write after this many (-1 = never)
-	int writes;
-	int removes;
+	NativeLinkRegTree *tree;
+	int failSnapshot;
+	int failAt;         // the mutation with this index fails (-1 = none)
+	int failFrom;       // every mutation from this index on fails (-1 = none)
+	int corruptCommand; // the next set of the open command stores other text, reports success
+	int wrongType;      // the next value set is stored as REG_EXPAND_SZ, reports success
+	int mutations;
 } SimReg;
 
-static int SimRegRead(void *ctx, NativeLinkRegState *out)
+static int SimMutation(SimReg *r)
+{
+	const int n = r->mutations++;
+	return !(n == r->failAt || (r->failFrom >= 0 && n >= r->failFrom));
+}
+
+static int SimSnapshot(void *ctx, NativeLinkRegTree *out)
 {
 	SimReg *r = (SimReg *)ctx;
-	if (r->failRead)
+	if (r->failSnapshot)
 		return 0;
-	*out = r->key;
+	*out = *r->tree;
 	return 1;
 }
 
-static int SimRegWrite(void *ctx, const NativeLinkRegState *s)
+static int SimCreateKey(void *ctx, const char *path)
 {
 	SimReg *r = (SimReg *)ctx;
-	r->writes++;
-	if (r->failWritesAfter >= 0 && r->writes > r->failWritesAfter)
+	return SimMutation(r) && NativeLinkRegTree_AddKey(r->tree, path) >= 0;
+}
+
+static int SimSetValue(void *ctx, const char *path, const char *name, unsigned long type, const void *data,
+                       size_t size)
+{
+	SimReg *r = (SimReg *)ctx;
+	unsigned char other[64];
+	size_t otherSize;
+
+	if (!SimMutation(r))
 		return 0;
-	if (r->failWrite)
+	if (r->wrongType)
 	{
-		// Partial: the key and marker land, the command does not.
-		r->key.present = 1;
-		r->key.owned = s->owned;
-		return 0;
+		r->wrongType = 0;
+		type = NATIVE_LINK_REG_TYPE_EXPAND_SZ;
 	}
-	r->key = *s;
-	r->key.present = 1;
-	if (r->corruptWrite)
-		snprintf(r->key.command, sizeof r->key.command, "\"C:\\\\elsewhere.exe\" \"%%1\"");
-	return 1;
+	if (r->corruptCommand && strcmp(path, NATIVE_LINK_REG_COMMAND_KEY) == 0 && name[0] == '\0')
+	{
+		r->corruptCommand = 0;
+		otherSize = linkRegUtf16("\"C:\\elsewhere.exe\" \"%1\"", other, sizeof other);
+		return NativeLinkRegTree_SetValue(r->tree, path, name, type, other, otherSize);
+	}
+	return NativeLinkRegTree_SetValue(r->tree, path, name, type, data, size);
 }
 
-static int SimRegRemove(void *ctx)
+static int SimDeleteValue(void *ctx, const char *path, const char *name)
 {
 	SimReg *r = (SimReg *)ctx;
-	r->removes++;
-	if (r->failRemove)
-		return 0;
-	memset(&r->key, 0, sizeof r->key);
-	r->extraSubkey = 0;
-	return 1;
+	return SimMutation(r) && NativeLinkRegTree_DeleteValue(r->tree, path, name);
+}
+
+static int SimDeleteEmptyKey(void *ctx, const char *path)
+{
+	SimReg *r = (SimReg *)ctx;
+	return SimMutation(r) && NativeLinkRegTree_DeleteEmptyKey(r->tree, path);
 }
 
 static NativeLinkRegOps SimRegOps(SimReg *r)
 {
 	NativeLinkRegOps ops;
 	ops.ctx = r;
-	ops.read = SimRegRead;
-	ops.write = SimRegWrite;
-	ops.remove = SimRegRemove;
+	ops.snapshot = SimSnapshot;
+	ops.createKey = SimCreateKey;
+	ops.setValue = SimSetValue;
+	ops.deleteValue = SimDeleteValue;
+	ops.deleteEmptyKey = SimDeleteEmptyKey;
 	return ops;
 }
+
+// Trees are large; the harness keeps them static.
+static NativeLinkRegTree g_simTree;
+static NativeLinkRegTree g_saved;
+static NativeLinkRegTree g_want;
 
 static void SimRegInit(SimReg *r)
 {
 	memset(r, 0, sizeof *r);
-	r->failWritesAfter = -1;
+	r->tree = &g_simTree;
+	NativeLinkRegTree_Clear(r->tree);
+	r->failAt = -1;
+	r->failFrom = -1;
 }
 
+// Clear the fault switches and the mutation count, keep the tree.
+static void SimRegArm(SimReg *r)
+{
+	r->failSnapshot = 0;
+	r->failAt = -1;
+	r->failFrom = -1;
+	r->corruptCommand = 0;
+	r->wrongType = 0;
+	r->mutations = 0;
+}
+
+static void PutText(NativeLinkRegTree *t, const char *path, const char *name, unsigned long type, const char *text)
+{
+	unsigned char buf[NATIVE_LINK_REG_TEXT_MAX * 2 + 2];
+	const size_t n = linkRegUtf16(text, buf, sizeof buf);
+	NativeLinkRegTree_AddKey(t, path);
+	NativeLinkRegTree_SetValue(t, path, name, type, buf, n);
+}
+
+static void PutBytes(NativeLinkRegTree *t, const char *path, const char *name, unsigned long type, const void *data,
+                     size_t size)
+{
+	NativeLinkRegTree_AddKey(t, path);
+	NativeLinkRegTree_SetValue(t, path, name, type, data, size);
+}
+
+#define REG_BINARY_T 3u
+#define REG_DWORD_T 4u
+
+// Another program's handler with everything a real one might carry: a
+// description stored as REG_EXPAND_SZ, an empty REG_BINARY "URL Protocol", a
+// DWORD, an icon subkey, a value next to the open command and a binary value
+// on shell\open.
 static void SimRegForeign(SimReg *r)
 {
-	r->key.present = 1;
-	r->key.urlProtocol = 1;
-	r->key.owned = 0;
-	snprintf(r->key.description, sizeof r->key.description, "URL:Some Other Tool");
-	snprintf(r->key.command, sizeof r->key.command, "\"C:\\Tools\\other.exe\" --open \"%%1\"");
-	r->extraSubkey = 1;
+	static const unsigned char flags[4] = {0x00, 0x00, 0x21, 0x00};
+	static const unsigned char blob[5] = {1, 2, 3, 0, 255};
+
+	PutText(r->tree, "", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "URL:Some Other Tool");
+	PutBytes(r->tree, "", NATIVE_LINK_REG_URL_PROTOCOL, REG_BINARY_T, NULL, 0);
+	PutBytes(r->tree, "", "EditFlags", REG_DWORD_T, flags, sizeof flags);
+	PutText(r->tree, "DefaultIcon", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "%SystemRoot%\\other.ico,0");
+	PutBytes(r->tree, "shell\\open", "FriendlyAppName", REG_BINARY_T, blob, sizeof blob);
+	PutText(r->tree, NATIVE_LINK_REG_COMMAND_KEY, "", NATIVE_LINK_REG_TYPE_SZ,
+	        "\"C:\\Tools\\other.exe\" --open \"%1\"");
+	PutText(r->tree, NATIVE_LINK_REG_COMMAND_KEY, "DelegateExecute", NATIVE_LINK_REG_TYPE_SZ,
+	        "{00000000-0000-0000-0000-000000000000}");
 }
 
 #define EXE_STABLE "C:\\Games\\CTR-AP Stable\\ctr_native_ap.exe"
 #define EXE_TESTING "C:\\Games\\CTR-AP Testing\\ctr_native_ap.exe"
+#define CMD_STABLE "\"" EXE_STABLE "\" \"%1\""
+
+// This client's registration applied on top of a tree, the way the unit
+// writes it.
+static void ApplyOwned(NativeLinkRegTree *t, const char *command)
+{
+	PutText(t, "", "", NATIVE_LINK_REG_TYPE_SZ, NATIVE_LINK_REG_DESCRIPTION);
+	PutText(t, "", NATIVE_LINK_REG_URL_PROTOCOL, NATIVE_LINK_REG_TYPE_SZ, "");
+	PutText(t, "", NATIVE_LINK_REG_OWNER, NATIVE_LINK_REG_TYPE_SZ, "1");
+	PutText(t, NATIVE_LINK_REG_COMMAND_KEY, "", NATIVE_LINK_REG_TYPE_SZ, command);
+}
 
 static void TestQuoting(void)
 {
@@ -286,21 +366,20 @@ static void TestRegistration(void)
 	SimReg reg;
 	NativeLinkRegOps ops;
 	NativeLinkRegStatus status;
-	NativeLinkRegState saved;
 
-	// Clean machine: the launch registers.
+	// Clean machine: the launch registers exactly the four values, all REG_SZ.
 	SimRegInit(&reg);
 	ops = SimRegOps(&reg);
 	expect(NativeLinkReg_Status(&ops, EXE_STABLE) == NATIVE_LINK_REG_NONE, "clean machine: not set up");
 	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK &&
 	           status == NATIVE_LINK_REG_THIS_CLIENT,
 	       "clean machine: launch registers");
-	expect(reg.key.urlProtocol && reg.key.owned &&
-	           strcmp(reg.key.description, NATIVE_LINK_REG_DESCRIPTION) == 0 &&
-	           strcmp(reg.key.command, "\"" EXE_STABLE "\" \"%1\"") == 0,
-	       "handler key holds the protocol marker, ownership and command");
-	reg.writes = 0;
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK && reg.writes == 0,
+	NativeLinkRegTree_Clear(&g_want);
+	ApplyOwned(&g_want, CMD_STABLE);
+	expect(NativeLinkRegTree_Equal(reg.tree, &g_want) && reg.tree->keyCount == 4 && reg.tree->valueCount == 4,
+	       "handler tree holds exactly the protocol marker, ownership, description and command");
+	SimRegArm(&reg);
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK && reg.mutations == 0,
 	       "already this client's: nothing rewritten");
 	expect(NativeLinkReg_Status(&ops, "c:\\games\\ctr-ap stable\\CTR_NATIVE_AP.EXE") == NATIVE_LINK_REG_THIS_CLIENT,
 	       "path compares case-insensitively");
@@ -311,55 +390,205 @@ static void TestRegistration(void)
 	           status == NATIVE_LINK_REG_THIS_CLIENT,
 	       "Testing launch takes over from Stable");
 	expect(NativeLinkReg_Status(&ops, EXE_STABLE) == NATIVE_LINK_REG_OTHER_CLIENT, "Stable now sees Testing's");
-	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_NOT_OURS && reg.key.present &&
-	           reg.removes == 0,
+	SimRegArm(&reg);
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_NOT_OURS &&
+	           reg.tree->keyCount == 4 && reg.mutations == 0,
 	       "Stable cannot unregister Testing's handler");
 	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK, "Stable launch takes it back");
 
-	// Unregister removes only this client's handler.
+	// Unregister removes this client's registration completely when nothing
+	// else is there.
 	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_OK && status == NATIVE_LINK_REG_NONE &&
-	           !reg.key.present,
-	       "unregister removes this client's handler");
+	           reg.tree->keyCount == 0,
+	       "unregister removes this client's handler and its empty keys");
 	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_NOT_OURS,
 	       "unregister with nothing registered does nothing");
 
 	// Another program: never replaced silently.
 	SimRegInit(&reg);
 	SimRegForeign(&reg);
-	saved = reg.key;
+	g_saved = *reg.tree;
 	expect(NativeLinkReg_Status(&ops, EXE_STABLE) == NATIVE_LINK_REG_OTHER_PROGRAM, "foreign handler detected");
 	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_KEPT_OTHER &&
-	           status == NATIVE_LINK_REG_OTHER_PROGRAM && reg.writes == 0,
+	           status == NATIVE_LINK_REG_OTHER_PROGRAM && reg.mutations == 0,
 	       "launch leaves another program's handler alone");
-	expect(memcmp(&reg.key, &saved, sizeof saved) == 0, "foreign handler untouched");
-	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_NOT_OURS && reg.removes == 0,
-	       "unregister never removes another program's handler");
+	expect(NativeLinkRegTree_Equal(reg.tree, &g_saved), "foreign handler untouched");
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_NOT_OURS && reg.mutations == 0,
+	       "unregister never touches another program's handler");
 
-	// The explicit action replaces it.
+	// The explicit action replaces it: this client's four values, everything
+	// else exactly as it was (types included).
 	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_OK &&
 	           status == NATIVE_LINK_REG_THIS_CLIENT,
 	       "explicit action replaces another program's handler");
-	expect(reg.extraSubkey, "replacement leaves the other program's extra subkeys alone");
-	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_OK && !reg.key.present,
-	       "unregister after an explicit replacement removes the handler");
+	g_want = g_saved;
+	ApplyOwned(&g_want, CMD_STABLE);
+	expect(NativeLinkRegTree_Equal(reg.tree, &g_want),
+	       "replacement changes only this client's values; foreign values, types and subkeys stay");
+
+	// Unregister after the replacement: only this client's values go; keys
+	// still holding the other program's values stay.
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_OK && status == NATIVE_LINK_REG_NONE,
+	       "unregister after an explicit replacement");
+	g_want = g_saved;
+	NativeLinkRegTree_DeleteValue(&g_want, "", "");
+	NativeLinkRegTree_DeleteValue(&g_want, "", NATIVE_LINK_REG_URL_PROTOCOL);
+	NativeLinkRegTree_DeleteValue(&g_want, NATIVE_LINK_REG_COMMAND_KEY, "");
+	expect(NativeLinkRegTree_Equal(reg.tree, &g_want),
+	       "unregister removed only this client's values; EditFlags, DefaultIcon, DelegateExecute and "
+	       "FriendlyAppName kept");
+
+	// Foreign additions to this client's own registration survive unregister.
+	SimRegInit(&reg);
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK, "registered for additions");
+	{
+		static const unsigned char dword[4] = {7, 0, 0, 0};
+		PutBytes(reg.tree, "", "AddedByOther", REG_DWORD_T, dword, sizeof dword);
+		PutText(reg.tree, "DefaultIcon", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "%SystemRoot%\\icon.ico");
+		PutText(reg.tree, "shell\\edit\\command", "", NATIVE_LINK_REG_TYPE_SZ, "notepad.exe");
+	}
+	g_want = *reg.tree;
+	NativeLinkRegTree_DeleteValue(&g_want, "", "");
+	NativeLinkRegTree_DeleteValue(&g_want, "", NATIVE_LINK_REG_URL_PROTOCOL);
+	NativeLinkRegTree_DeleteValue(&g_want, "", NATIVE_LINK_REG_OWNER);
+	NativeLinkRegTree_DeleteValue(&g_want, NATIVE_LINK_REG_COMMAND_KEY, "");
+	NativeLinkRegTree_DeleteEmptyKey(&g_want, NATIVE_LINK_REG_COMMAND_KEY);
+	NativeLinkRegTree_DeleteEmptyKey(&g_want, "shell\\open");
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_OK &&
+	           NativeLinkRegTree_Equal(reg.tree, &g_want),
+	       "unregister with foreign additions: this client's values and emptied keys go, the rest stays");
+	expect(NativeLinkRegTree_FindKey(reg.tree, "shell") >= 0 && NativeLinkRegTree_FindKey(reg.tree, "shell\\open") < 0 &&
+	           NativeLinkRegTree_FindValue(reg.tree, "", "AddedByOther") >= 0,
+	       "a key that still holds a foreign subkey is kept");
+
+	// This client's registration changed by something else: stop, touch nothing.
+	SimRegInit(&reg);
+	NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status);
+	PutText(reg.tree, "", "", NATIVE_LINK_REG_TYPE_SZ, "URL:Edited by someone");
+	g_saved = *reg.tree;
+	SimRegArm(&reg);
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_CHANGED && reg.mutations == 0 &&
+	           NativeLinkRegTree_Equal(reg.tree, &g_saved),
+	       "unregister stops when the description was changed");
+	SimRegInit(&reg);
+	NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status);
+	PutText(reg.tree, "", NATIVE_LINK_REG_URL_PROTOCOL, NATIVE_LINK_REG_TYPE_EXPAND_SZ, "");
+	g_saved = *reg.tree;
+	SimRegArm(&reg);
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_CHANGED && reg.mutations == 0 &&
+	           NativeLinkRegTree_Equal(reg.tree, &g_saved),
+	       "unregister stops when a value's type was changed");
+	// A launch repairs its own registration with a wrong type.
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK &&
+	           linkRegOwnedIntact(reg.tree, CMD_STABLE),
+	       "launch rewrites its own value that has the wrong type");
 
 	// A bare key without a command or marker opens nothing.
 	SimRegInit(&reg);
-	reg.key.present = 1;
+	NativeLinkRegTree_AddKey(reg.tree, "");
 	expect(NativeLinkReg_Status(&ops, EXE_STABLE) == NATIVE_LINK_REG_NONE, "empty key counts as not set up");
 
-	// Unreadable registry.
+	// Unreadable (or too large to snapshot) registry: nothing is written.
 	SimRegInit(&reg);
-	reg.failRead = 1;
+	reg.failSnapshot = 1;
 	expect(NativeLinkReg_Status(&ops, EXE_STABLE) == NATIVE_LINK_REG_UNKNOWN, "unreadable: unknown");
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_FAILED && reg.writes == 0,
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_FAILED && reg.mutations == 0,
 	       "unreadable: nothing written");
+	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_FAILED && reg.mutations == 0,
+	       "unreadable: nothing removed");
 
-	// A path that cannot be quoted safely is never written.
+	// A path that cannot be quoted or encoded safely is never written.
 	SimRegInit(&reg);
 	expect(NativeLinkReg_Register(&ops, "C:\\100%1\\ctr_native_ap.exe", 0, &status) == NATIVE_LINK_REG_BAD_PATH &&
-	           reg.writes == 0 && !reg.key.present,
+	           reg.mutations == 0 && reg.tree->keyCount == 0,
 	       "unsafe path refused before any write");
+	expect(NativeLinkReg_Register(&ops, "C:\\bad\xFF\\ctr_native_ap.exe", 0, &status) == NATIVE_LINK_REG_BAD_PATH &&
+	           reg.mutations == 0,
+	       "invalid UTF-8 path refused before any write");
+}
+
+static void TestTree(void)
+{
+	static NativeLinkRegTree t;
+	static const unsigned char one[1] = {1};
+
+	NativeLinkRegTree_Clear(&t);
+	expect(NativeLinkRegTree_AddKey(&t, "a\\b\\c") >= 0 && t.keyCount == 4, "adding a key adds its parents");
+	expect(NativeLinkRegTree_FindKey(&t, "A\\B") >= 0, "key names compare case-insensitively");
+	expect(NativeLinkRegTree_SetValue(&t, "a", "X", REG_BINARY_T, one, 1) &&
+	           NativeLinkRegTree_FindValue(&t, "a", "x") >= 0,
+	       "value names compare case-insensitively");
+	expect(!NativeLinkRegTree_SetValue(&t, "missing", "x", REG_BINARY_T, one, 1), "value on a missing key refused");
+	expect(!NativeLinkRegTree_DeleteEmptyKey(&t, "a\\b"), "key with a subkey is not deleted");
+	expect(!NativeLinkRegTree_DeleteEmptyKey(&t, "a"), "key with a value is not deleted");
+	expect(NativeLinkRegTree_DeleteEmptyKey(&t, "a\\b\\c") && NativeLinkRegTree_DeleteEmptyKey(&t, "a\\b") &&
+	           t.keyCount == 2 && NativeLinkRegTree_FindValue(&t, "a", "x") >= 0,
+	       "empty keys delete and values keep their key");
+	{
+		static NativeLinkRegTree u;
+		static const unsigned char two[1] = {2};
+		u = t;
+		expect(NativeLinkRegTree_Equal(&t, &u), "copy is equal");
+		NativeLinkRegTree_SetValue(&u, "a", "x", REG_DWORD_T, one, 1);
+		expect(!NativeLinkRegTree_Equal(&t, &u), "type difference detected");
+		NativeLinkRegTree_SetValue(&u, "a", "x", REG_BINARY_T, two, 1);
+		expect(!NativeLinkRegTree_Equal(&t, &u), "data difference detected");
+		NativeLinkRegTree_SetValue(&u, "a", "x", REG_BINARY_T, one, 1);
+		NativeLinkRegTree_AddKey(&u, "a\\extra");
+		expect(!NativeLinkRegTree_Equal(&t, &u), "extra subkey detected");
+	}
+	expect(NativeLinkRegTree_AddKey(&t, "\\bad") < 0 && NativeLinkRegTree_AddKey(&t, "bad\\") < 0,
+	       "malformed paths refused");
+}
+
+// Fail the registration at every single step in turn: the tree must come back
+// exactly (keys, values, types and data) each time.
+static void RegisterFailEachStep(void (*setup)(SimReg *), int explicitAction, const char *what)
+{
+	SimReg reg;
+	NativeLinkRegOps ops;
+	NativeLinkRegStatus status;
+	NativeLinkRegStatus statusBefore;
+	int step;
+	int allRestored = 1;
+	int allReported = 1;
+
+	SimRegInit(&reg);
+	ops = SimRegOps(&reg);
+	setup(&reg);
+	NativeLinkReg_Register(&ops, EXE_STABLE, explicitAction, &status);
+	expect(reg.mutations == 5, "registration takes one key create and four value sets");
+	for (step = 0; step < 5; step++)
+	{
+		SimRegInit(&reg);
+		ops = SimRegOps(&reg);
+		setup(&reg);
+		g_saved = *reg.tree;
+		statusBefore = NativeLinkReg_Status(&ops, EXE_STABLE);
+		SimRegArm(&reg);
+		reg.failAt = step;
+		if (NativeLinkReg_Register(&ops, EXE_STABLE, explicitAction, &status) != NATIVE_LINK_REG_ROLLED_BACK ||
+		    status != statusBefore)
+			allReported = 0;
+		if (!NativeLinkRegTree_Equal(reg.tree, &g_saved))
+			allRestored = 0;
+	}
+	printf("  register, fail each of 5 steps: %s\n", what);
+	expect(allReported, "each failed step is reported as rolled back with the earlier status");
+	expect(allRestored, "each failed step leaves the tree exactly as it was");
+}
+
+static void SetupClean(SimReg *r)
+{
+	(void)r;
+}
+
+static void SetupOtherClient(SimReg *r)
+{
+	static const unsigned char dword[4] = {9, 0, 0, 0};
+	ApplyOwned(r->tree, "\"" EXE_TESTING "\" \"%1\"");
+	PutBytes(r->tree, "", "AddedByOther", REG_DWORD_T, dword, sizeof dword);
+	PutText(r->tree, "DefaultIcon", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "%SystemRoot%\\icon.ico");
 }
 
 static void TestRollback(void)
@@ -367,101 +596,79 @@ static void TestRollback(void)
 	SimReg reg;
 	NativeLinkRegOps ops;
 	NativeLinkRegStatus status;
-	NativeLinkRegState saved;
 
-	// Clean machine, partial write: rolled back to no key at all.
+	RegisterFailEachStep(SetupClean, 0, "clean machine");
+	RegisterFailEachStep(SimRegForeign, 1, "explicit replacement of another program");
+	RegisterFailEachStep(SetupOtherClient, 0, "another CTR-AP client with foreign additions");
+
+	// Writes that report success but read back wrong are undone exactly.
 	SimRegInit(&reg);
 	ops = SimRegOps(&reg);
-	reg.failWrite = 1;
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_ROLLED_BACK &&
-	           status == NATIVE_LINK_REG_NONE,
-	       "partial write on a clean machine rolled back");
-	expect(!reg.key.present, "no half-written key left");
-
-	// Write that reads back wrong: rolled back.
-	SimRegInit(&reg);
-	reg.corruptWrite = 1;
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_ROLLED_BACK && !reg.key.present,
-	       "write that does not read back as this client is rolled back");
-
-	// Explicit replacement of another program where no write lands and the
-	// restore cannot be written either: reported as failed, and the foreign
-	// handler is still exactly as it was.
+	SimRegForeign(&reg);
+	g_saved = *reg.tree;
+	reg.corruptCommand = 1;
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_ROLLED_BACK &&
+	           status == NATIVE_LINK_REG_OTHER_PROGRAM && NativeLinkRegTree_Equal(reg.tree, &g_saved),
+	       "command that reads back as another path: foreign handler exactly restored");
 	SimRegInit(&reg);
 	SimRegForeign(&reg);
-	saved = reg.key;
-	reg.failWritesAfter = 0;
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_FAILED,
-	       "failed replacement with a failed restore is reported as failed");
-	expect(memcmp(&reg.key, &saved, sizeof saved) == 0, "foreign handler as it was");
-
-	// Unregister whose delete fails: this client's handler stays whole.
-	SimRegInit(&reg);
-	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 0, &status) == NATIVE_LINK_REG_OK, "registered for delete failure");
-	saved = reg.key;
-	reg.failRemove = 1;
-	expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_ROLLED_BACK &&
-	           status == NATIVE_LINK_REG_THIS_CLIENT,
-	       "failed unregister reported and handler restored");
-	expect(memcmp(&reg.key, &saved, sizeof saved) == 0, "handler unchanged after failed unregister");
-}
-
-// A registry whose first write only half-lands and whose later writes work:
-// the explicit replacement of another program's handler is undone exactly.
-typedef struct
-{
-	SimReg base;
-	int calls;
-} FlakyReg;
-
-static int FlakyWrite(void *ctx, const NativeLinkRegState *s)
-{
-	FlakyReg *r = (FlakyReg *)ctx;
-	if (r->calls++ == 0)
-	{
-		r->base.key.owned = s->owned; // partial: marker only
-		snprintf(r->base.key.command, sizeof r->base.key.command, "%s", s->command);
-		r->base.key.command[5] = '\0'; // truncated command
-		return 0;
-	}
-	r->base.key = *s;
-	r->base.key.present = 1;
-	return 1;
-}
-
-static int FlakyRead(void *ctx, NativeLinkRegState *out)
-{
-	*out = ((FlakyReg *)ctx)->base.key;
-	return 1;
-}
-
-static int FlakyRemove(void *ctx)
-{
-	memset(&((FlakyReg *)ctx)->base.key, 0, sizeof(NativeLinkRegState));
-	return 1;
-}
-
-static void TestExactRollback(void)
-{
-	FlakyReg reg;
-	NativeLinkRegOps ops;
-	NativeLinkRegStatus status;
-	NativeLinkRegState saved;
-
-	memset(&reg, 0, sizeof reg);
-	SimRegForeign(&reg.base);
-	saved = reg.base.key;
-	ops.ctx = &reg;
-	ops.read = FlakyRead;
-	ops.write = FlakyWrite;
-	ops.remove = FlakyRemove;
-
+	g_saved = *reg.tree;
+	reg.wrongType = 1;
 	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_ROLLED_BACK &&
-	           status == NATIVE_LINK_REG_OTHER_PROGRAM,
-	       "half-landed replacement of another program is rolled back");
-	expect(memcmp(&reg.base.key, &saved, sizeof saved) == 0,
-	       "the other program's description, protocol marker and command are exactly restored");
-	expect(!reg.base.key.owned, "no ownership marker left on another program's handler");
+	           NativeLinkRegTree_Equal(reg.tree, &g_saved),
+	       "a value that reads back with another type: foreign handler exactly restored");
+
+	// A restore that cannot complete is reported as failed, never as undone.
+	SimRegInit(&reg);
+	SimRegForeign(&reg);
+	g_saved = *reg.tree;
+	reg.failFrom = 2;
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_FAILED,
+	       "partial replacement with a failing restore is reported as failed");
+	SimRegArm(&reg);
+	expect(!NativeLinkRegTree_Equal(reg.tree, &g_saved), "(the partial change is still there, as reported)");
+
+	// Nothing landed at all: restoring is trivially exact.
+	SimRegInit(&reg);
+	SimRegForeign(&reg);
+	g_saved = *reg.tree;
+	reg.failFrom = 0;
+	expect(NativeLinkReg_Register(&ops, EXE_STABLE, 1, &status) == NATIVE_LINK_REG_ROLLED_BACK &&
+	           NativeLinkRegTree_Equal(reg.tree, &g_saved),
+	       "no write landed: the tree is unchanged and reported as undone");
+
+	// Unregister failing at each step, with foreign additions present.
+	{
+		int step;
+		int steps;
+		int allRestored = 1;
+		int allReported = 1;
+
+		SimRegInit(&reg);
+		ops = SimRegOps(&reg);
+		ApplyOwned(reg.tree, CMD_STABLE);
+		PutText(reg.tree, "DefaultIcon", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "%SystemRoot%\\icon.ico");
+		expect(NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) == NATIVE_LINK_REG_OK, "unregister step count");
+		steps = reg.mutations;
+		expect(steps == 7, "unregister takes 4 value deletes and 3 key deletes (the ctr-ap key keeps DefaultIcon)");
+		for (step = 0; step < steps; step++)
+		{
+			SimRegInit(&reg);
+			ops = SimRegOps(&reg);
+			ApplyOwned(reg.tree, CMD_STABLE);
+			PutText(reg.tree, "DefaultIcon", "", NATIVE_LINK_REG_TYPE_EXPAND_SZ, "%SystemRoot%\\icon.ico");
+			g_saved = *reg.tree;
+			SimRegArm(&reg);
+			reg.failAt = step;
+			if (NativeLinkReg_Unregister(&ops, EXE_STABLE, &status) != NATIVE_LINK_REG_ROLLED_BACK ||
+			    status != NATIVE_LINK_REG_THIS_CLIENT)
+				allReported = 0;
+			if (!NativeLinkRegTree_Equal(reg.tree, &g_saved))
+				allRestored = 0;
+		}
+		expect(allReported, "unregister failing at each step is reported as rolled back");
+		expect(allRestored, "unregister failing at each step leaves the registration exactly as it was");
+	}
 }
 
 static void TestTexts(void)
@@ -486,8 +693,8 @@ int main(void)
 	TestSteamRouting();
 	TestQuoting();
 	TestRegistration();
+	TestTree();
 	TestRollback();
-	TestExactRollback();
 	TestTexts();
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);

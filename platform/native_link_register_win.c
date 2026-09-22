@@ -4,6 +4,9 @@
 // #334, slice 4). Windows only; the decisions that use them are in
 // platform/native_link_register.c. Everything is under HKEY_CURRENT_USER, so no
 // administrator rights are involved and no other user's settings are touched.
+// This layer only reads the tree and makes single changes; there is no
+// recursive delete, and every decision (what to write, what to remove, how to
+// undo) is in the portable unit the host harness covers.
 
 #if defined(_WIN32)
 
@@ -13,12 +16,14 @@
 #include <string.h>
 #include <wchar.h>
 
+#include <stdlib.h>
+
 #define LINK_REG_CLASS_KEY L"Software\\Classes\\ctr-ap"
-#define LINK_REG_COMMAND_KEY L"shell\\open\\command"
-#define LINK_REG_URL_PROTOCOL L"URL Protocol"
-#define LINK_REG_OWNER L"CtrApClient"
-#define LINK_REG_WIDE_MAX NATIVE_LINK_REG_TEXT_MAX
-#define LINK_REG_TREE_DEPTH_MAX 8
+// Registry key paths are at most 255 characters per name; the full path is
+// bounded by NATIVE_LINK_REG_PATH_MAX UTF-8 bytes under the class key.
+#define LINK_REG_WIDE_PATH_MAX (NATIVE_LINK_REG_PATH_MAX + 64)
+// Longest value name the registry allows, plus the terminator.
+#define LINK_REG_WIDE_NAME_MAX 16384
 
 static int linkRegUtf8ToWide(const char *in, wchar_t *out, int outCount)
 {
@@ -27,185 +32,187 @@ static int linkRegUtf8ToWide(const char *in, wchar_t *out, int outCount)
 
 static int linkRegWideToUtf8(const wchar_t *in, char *out, int outCount)
 {
-	return WideCharToMultiByte(CP_UTF8, 0, in, -1, out, outCount, NULL, NULL) > 0;
+	return WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, in, -1, out, outCount, NULL, NULL) > 0;
 }
 
-// A string value as UTF-8. Missing gives "". A value that is not a string or
-// does not fit reads as "?": present, and never equal to this client's text.
-static void linkRegReadString(HKEY key, const wchar_t *name, char *out, size_t cap)
+// HKCU-relative path of a key given relative to the ctr-ap key.
+static int linkRegFullPath(const char *path, wchar_t *out, int outCount)
 {
-	wchar_t wide[LINK_REG_WIDE_MAX];
-	DWORD type = 0;
-	DWORD bytes = sizeof(wide) - sizeof(wchar_t);
-	LONG rc = RegQueryValueExW(key, name, NULL, &type, (LPBYTE)wide, &bytes);
+	const size_t base = wcslen(LINK_REG_CLASS_KEY);
 
-	out[0] = '\0';
-	if (rc == ERROR_FILE_NOT_FOUND)
-		return;
-	if (rc != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ))
+	if ((size_t)outCount < base + 2)
+		return 0;
+	memcpy(out, LINK_REG_CLASS_KEY, (base + 1) * sizeof(wchar_t));
+	if (path[0] == '\0')
+		return 1;
+	out[base] = L'\\';
+	return linkRegUtf8ToWide(path, out + base + 1, outCount - (int)base - 1);
+}
+
+// Buffers for the recursive read, on the heap (a value name alone may be 32 KiB).
+typedef struct
+{
+	wchar_t name[LINK_REG_WIDE_NAME_MAX];
+	unsigned char data[NATIVE_LINK_REG_DATA_MAX];
+	char utf8[NATIVE_LINK_REG_NAME_MAX];
+} LinkRegSnapBuffers;
+
+static int linkRegSnapKey(HKEY key, const char *path, int depth, NativeLinkRegTree *t, LinkRegSnapBuffers *b)
+{
+	DWORD i;
+
+	if (depth > NATIVE_LINK_REG_DEPTH_MAX || NativeLinkRegTree_AddKey(t, path) < 0)
+		return 0;
+	for (i = 0;; i++)
 	{
-		snprintf(out, cap, "?");
-		return;
+		DWORD nameLen = LINK_REG_WIDE_NAME_MAX;
+		DWORD type = 0;
+		DWORD size = (DWORD)sizeof b->data;
+		const LONG rc = RegEnumValueW(key, i, b->name, &nameLen, NULL, &type, b->data, &size);
+
+		if (rc == ERROR_NO_MORE_ITEMS)
+			break;
+		// ERROR_MORE_DATA included: a value beyond the limits is never guessed at.
+		if (rc != ERROR_SUCCESS || !linkRegWideToUtf8(b->name, b->utf8, (int)sizeof b->utf8) ||
+		    !NativeLinkRegTree_SetValue(t, path, b->utf8, (unsigned long)type, b->data, (size_t)size))
+			return 0;
 	}
-	wide[bytes / sizeof(wchar_t)] = L'\0';
-	if (!linkRegWideToUtf8(wide, out, (int)cap))
-		snprintf(out, cap, "?");
+	for (i = 0;; i++)
+	{
+		wchar_t child[256];
+		char childUtf8[NATIVE_LINK_REG_NAME_MAX];
+		char childPath[NATIVE_LINK_REG_PATH_MAX];
+		DWORD childLen = (DWORD)(sizeof child / sizeof child[0]);
+		HKEY sub;
+		LONG rc = RegEnumKeyExW(key, i, child, &childLen, NULL, NULL, NULL, NULL);
+		int ok;
+
+		if (rc == ERROR_NO_MORE_ITEMS)
+			break;
+		if (rc != ERROR_SUCCESS || !linkRegWideToUtf8(child, childUtf8, (int)sizeof childUtf8))
+			return 0;
+		if (snprintf(childPath, sizeof childPath, path[0] != '\0' ? "%s\\%s" : "%s%s", path, childUtf8) >=
+		    (int)sizeof childPath)
+			return 0;
+		rc = RegOpenKeyExW(key, child, 0, KEY_READ, &sub);
+		if (rc != ERROR_SUCCESS)
+			return 0;
+		ok = linkRegSnapKey(sub, childPath, depth + 1, t, b);
+		RegCloseKey(sub);
+		if (!ok)
+			return 0;
+	}
+	return 1;
 }
 
-static int linkRegValueExists(HKEY key, const wchar_t *name)
+static int linkRegWinSnapshot(void *ctx, NativeLinkRegTree *out)
 {
-	return RegQueryValueExW(key, name, NULL, NULL, NULL, NULL) == ERROR_SUCCESS;
-}
-
-static int linkRegWinRead(void *ctx, NativeLinkRegState *out)
-{
+	LinkRegSnapBuffers *b;
 	HKEY key;
-	HKEY command;
 	LONG rc;
+	int ok;
 
 	(void)ctx;
-	memset(out, 0, sizeof *out);
+	NativeLinkRegTree_Clear(out);
 	rc = RegOpenKeyExW(HKEY_CURRENT_USER, LINK_REG_CLASS_KEY, 0, KEY_READ, &key);
 	if (rc == ERROR_FILE_NOT_FOUND)
 		return 1;
 	if (rc != ERROR_SUCCESS)
 		return 0;
-
-	out->present = 1;
-	out->urlProtocol = linkRegValueExists(key, LINK_REG_URL_PROTOCOL);
-	out->owned = linkRegValueExists(key, LINK_REG_OWNER);
-	linkRegReadString(key, NULL, out->description, sizeof out->description);
-
-	rc = RegOpenKeyExW(key, LINK_REG_COMMAND_KEY, 0, KEY_READ, &command);
-	if (rc == ERROR_SUCCESS)
-	{
-		linkRegReadString(command, NULL, out->command, sizeof out->command);
-		RegCloseKey(command);
-	}
-	else if (rc != ERROR_FILE_NOT_FOUND)
-	{
-		snprintf(out->command, sizeof out->command, "?");
-	}
-	RegCloseKey(key);
-	return 1;
-}
-
-static int linkRegSetString(HKEY key, const wchar_t *name, const char *utf8)
-{
-	wchar_t wide[LINK_REG_WIDE_MAX];
-	LONG rc;
-
-	if (utf8[0] == '\0')
-	{
-		rc = RegDeleteValueW(key, name);
-		return rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND;
-	}
-	if (!linkRegUtf8ToWide(utf8, wide, LINK_REG_WIDE_MAX))
-		return 0;
-	return RegSetValueExW(key, name, 0, REG_SZ, (const BYTE *)wide,
-	                      (DWORD)((wcslen(wide) + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;
-}
-
-static int linkRegSetFlag(HKEY key, const wchar_t *name, int on, const char *value)
-{
-	if (on)
-	{
-		wchar_t wide[8];
-		if (!linkRegUtf8ToWide(value, wide, 8))
-			return 0;
-		return RegSetValueExW(key, name, 0, REG_SZ, (const BYTE *)wide,
-		                      (DWORD)((wcslen(wide) + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;
-	}
-	{
-		const LONG rc = RegDeleteValueW(key, name);
-		return rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND;
-	}
-}
-
-static int linkRegWinWrite(void *ctx, const NativeLinkRegState *s)
-{
-	HKEY key;
-	HKEY command;
-	int ok = 1;
-
-	(void)ctx;
-	if (RegCreateKeyExW(HKEY_CURRENT_USER, LINK_REG_CLASS_KEY, 0, NULL, 0, KEY_READ | KEY_WRITE, NULL, &key, NULL) !=
-	    ERROR_SUCCESS)
-		return 0;
-
-	ok = linkRegSetString(key, NULL, s->description) && ok;
-	ok = linkRegSetFlag(key, LINK_REG_URL_PROTOCOL, s->urlProtocol, "") && ok;
-	ok = linkRegSetFlag(key, LINK_REG_OWNER, s->owned, "1") && ok;
-
-	if (s->command[0] != '\0')
-	{
-		if (RegCreateKeyExW(key, LINK_REG_COMMAND_KEY, 0, NULL, 0, KEY_READ | KEY_WRITE, NULL, &command, NULL) ==
-		    ERROR_SUCCESS)
-		{
-			ok = linkRegSetString(command, NULL, s->command) && ok;
-			RegCloseKey(command);
-		}
-		else
-		{
-			ok = 0;
-		}
-	}
-	else if (RegOpenKeyExW(key, LINK_REG_COMMAND_KEY, 0, KEY_READ | KEY_WRITE, &command) == ERROR_SUCCESS)
-	{
-		ok = linkRegSetString(command, NULL, "") && ok;
-		RegCloseKey(command);
-	}
-
+	b = (LinkRegSnapBuffers *)malloc(sizeof *b);
+	ok = b != NULL && linkRegSnapKey(key, "", 0, out, b);
+	free(b);
 	RegCloseKey(key);
 	return ok;
 }
 
-// RegDeleteKeyW refuses a key with subkeys, so delete depth-first.
-static LONG linkRegDeleteTree(HKEY parent, const wchar_t *name, int depth)
+static int linkRegWinCreateKey(void *ctx, const char *path)
 {
+	wchar_t full[LINK_REG_WIDE_PATH_MAX];
 	HKEY key;
-	wchar_t child[256];
-	DWORD length;
-	LONG rc;
 
-	if (depth > LINK_REG_TREE_DEPTH_MAX)
-		return ERROR_ACCESS_DENIED;
-	rc = RegOpenKeyExW(parent, name, 0, KEY_READ | KEY_WRITE, &key);
-	if (rc == ERROR_FILE_NOT_FOUND)
-		return ERROR_SUCCESS;
-	if (rc != ERROR_SUCCESS)
-		return rc;
-	for (;;)
-	{
-		length = (DWORD)(sizeof(child) / sizeof(child[0]));
-		rc = RegEnumKeyExW(key, 0, child, &length, NULL, NULL, NULL, NULL);
-		if (rc == ERROR_NO_MORE_ITEMS)
-			break;
-		if (rc == ERROR_SUCCESS)
-			rc = linkRegDeleteTree(key, child, depth + 1);
-		if (rc != ERROR_SUCCESS)
-		{
-			RegCloseKey(key);
-			return rc;
-		}
-	}
+	(void)ctx;
+	if (!linkRegFullPath(path, full, LINK_REG_WIDE_PATH_MAX) ||
+	    RegCreateKeyExW(HKEY_CURRENT_USER, full, 0, NULL, 0, KEY_READ, NULL, &key, NULL) != ERROR_SUCCESS)
+		return 0;
 	RegCloseKey(key);
-	return RegDeleteKeyW(parent, name);
+	return 1;
 }
 
-static int linkRegWinRemove(void *ctx)
+static int linkRegWinSetValue(void *ctx, const char *path, const char *name, unsigned long type, const void *data,
+                              size_t size)
 {
-	const LONG rc = linkRegDeleteTree(HKEY_CURRENT_USER, LINK_REG_CLASS_KEY, 0);
+	wchar_t full[LINK_REG_WIDE_PATH_MAX];
+	wchar_t wideName[LINK_REG_WIDE_PATH_MAX];
+	HKEY key;
+	LONG rc;
+
 	(void)ctx;
+	if (size > NATIVE_LINK_REG_DATA_MAX || !linkRegFullPath(path, full, LINK_REG_WIDE_PATH_MAX) ||
+	    !linkRegUtf8ToWide(name, wideName, LINK_REG_WIDE_PATH_MAX) ||
+	    RegOpenKeyExW(HKEY_CURRENT_USER, full, 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS)
+		return 0;
+	rc = RegSetValueExW(key, wideName[0] != L'\0' ? wideName : NULL, 0, (DWORD)type, (const BYTE *)data,
+	                    (DWORD)size);
+	RegCloseKey(key);
+	return rc == ERROR_SUCCESS;
+}
+
+static int linkRegWinDeleteValue(void *ctx, const char *path, const char *name)
+{
+	wchar_t full[LINK_REG_WIDE_PATH_MAX];
+	wchar_t wideName[LINK_REG_WIDE_PATH_MAX];
+	HKEY key;
+	LONG rc;
+
+	(void)ctx;
+	if (!linkRegFullPath(path, full, LINK_REG_WIDE_PATH_MAX) ||
+	    !linkRegUtf8ToWide(name, wideName, LINK_REG_WIDE_PATH_MAX))
+		return 0;
+	rc = RegOpenKeyExW(HKEY_CURRENT_USER, full, 0, KEY_SET_VALUE, &key);
+	if (rc == ERROR_FILE_NOT_FOUND)
+		return 1;
+	if (rc != ERROR_SUCCESS)
+		return 0;
+	rc = RegDeleteValueW(key, wideName[0] != L'\0' ? wideName : NULL);
+	RegCloseKey(key);
+	return rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND;
+}
+
+// RegDeleteKeyW would delete a key's values along with it; check that there
+// are none (and no subkeys) first.
+static int linkRegWinDeleteEmptyKey(void *ctx, const char *path)
+{
+	wchar_t full[LINK_REG_WIDE_PATH_MAX];
+	DWORD subkeys = 0;
+	DWORD values = 0;
+	HKEY key;
+	LONG rc;
+
+	(void)ctx;
+	if (!linkRegFullPath(path, full, LINK_REG_WIDE_PATH_MAX))
+		return 0;
+	rc = RegOpenKeyExW(HKEY_CURRENT_USER, full, 0, KEY_READ, &key);
+	if (rc == ERROR_FILE_NOT_FOUND)
+		return 1;
+	if (rc != ERROR_SUCCESS)
+		return 0;
+	rc = RegQueryInfoKeyW(key, NULL, NULL, NULL, &subkeys, NULL, NULL, &values, NULL, NULL, NULL, NULL);
+	RegCloseKey(key);
+	if (rc != ERROR_SUCCESS || subkeys != 0 || values != 0)
+		return 0;
+	rc = RegDeleteKeyW(HKEY_CURRENT_USER, full);
 	return rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND;
 }
 
 void NativeLinkReg_WinOps(NativeLinkRegOps *ops)
 {
 	ops->ctx = NULL;
-	ops->read = linkRegWinRead;
-	ops->write = linkRegWinWrite;
-	ops->remove = linkRegWinRemove;
+	ops->snapshot = linkRegWinSnapshot;
+	ops->createKey = linkRegWinCreateKey;
+	ops->setValue = linkRegWinSetValue;
+	ops->deleteValue = linkRegWinDeleteValue;
+	ops->deleteEmptyKey = linkRegWinDeleteEmptyKey;
 }
 
 int NativeLinkReg_WinExePath(char *out, size_t cap)
