@@ -52,6 +52,7 @@ tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-launch-request.c
 tools/test-link-handoff.c
+tools/test-link-windows.c
 tools/test-lettersanity-remote-feed.c
 tools/test-lettersanity-seedcfg.cpp
 tools/test-lettersanity.c
