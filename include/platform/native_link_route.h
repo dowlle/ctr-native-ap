@@ -7,8 +7,10 @@
 // process launched with (or without) a ctr-ap request does. Pure, so the host
 // harness checks every combination; main.c carries the decision out.
 //
-// A process that hands its request to a running client exits before it loads
-// config.ini, validates or mounts a disc, opens a window or starts networking.
+// A process that hands its request to a running client, or that finds a
+// running client without carrying a request, exits before it loads config.ini,
+// validates or mounts a disc, opens a window or starts networking. Only one
+// game process runs per install.
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,7 +32,10 @@ typedef enum
 	// Start as the primary and take the request at boot, before the first dial.
 	NATIVE_LINK_ROUTE_RUN_WITH_REQUEST,
 	// Another client owns this install: publish the request and exit.
-	NATIVE_LINK_ROUTE_HAND_OFF
+	NATIVE_LINK_ROUTE_HAND_OFF,
+	// Another client owns this install and there is no request to hand over:
+	// exit successfully without starting a second game process.
+	NATIVE_LINK_ROUTE_ALREADY_RUNNING
 } NativeLinkRoute;
 
 NativeLinkRoute NativeLinkRoute_Decide(const NativeLinkRouteInput *in);

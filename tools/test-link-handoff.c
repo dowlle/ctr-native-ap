@@ -717,7 +717,8 @@ static void TestRoute(void)
 	in.isPrimary = 1;
 	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_RUN, "no request: normal start");
 	in.isPrimary = 0;
-	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_RUN, "no request, second client: unchanged behaviour");
+	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_ALREADY_RUNNING,
+	       "no request, second client: exit, no second game process");
 	in.haveRequest = 1;
 	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_HAND_OFF,
 	       "request with a running client: hand off, no second game process");
@@ -726,6 +727,8 @@ static void TestRoute(void)
 	in.storeUsable = 0;
 	in.isPrimary = 0;
 	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_RUN, "unusable store: start with the request in memory");
+	in.haveRequest = 0;
+	expect(NativeLinkRoute_Decide(&in) == NATIVE_LINK_ROUTE_RUN, "unusable store, no request: normal start");
 	expect(NativeLinkRoute_Decide(NULL) == NATIVE_LINK_ROUTE_RUN, "NULL input");
 }
 

@@ -308,11 +308,15 @@ int main(int argc, char *argv[])
 		}
 		if (!routeIn.storeUsable)
 			printf("[CTR-AP] room links: state directory unavailable\n");
-		else if (!routeIn.isPrimary && !haveLaunchRequest)
-			printf("[CTR-AP] room links: another client owns this install; this one will not receive them\n");
 
 		switch (NativeLinkRoute_Decide(&routeIn))
 		{
+		case NATIVE_LINK_ROUTE_ALREADY_RUNNING:
+			// One game process per install: a second plain launch would share
+			// config.ini and saves with the running client.
+			printf("[CTR-AP] CTR-AP is already running from this folder; exiting\n");
+			fflush(stdout);
+			return NativeConsole_Return(0);
 		case NATIVE_LINK_ROUTE_HAND_OFF:
 		{
 			NativeLinkFsOps linkOps;
