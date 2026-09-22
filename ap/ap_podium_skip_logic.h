@@ -31,6 +31,7 @@
 // than trusting the classification. Pinned against the engine in ap_hooks.c.
 #define AP_PODIUM_SKIP_ADVENTURE_MODE 0x80000  // ADVENTURE_MODE
 #define AP_PODIUM_SKIP_RELIC_RACE     0x4000000 // RELIC_RACE
+#define AP_PODIUM_SKIP_NEW_RELIC      0x2000000 // NEW_RELIC (gameModeEnd)
 
 // Mirror of the gameMode2 count-up / freeze bits a watched ceremony clears by
 // the time it ends (namespace_Main.h): CS_Podium_Prize_ThDestroy clears the
@@ -94,6 +95,21 @@ static inline int AP_PodiumSkipCallAllowed(int gameMode1)
 {
 	return ((gameMode1 & AP_PODIUM_SKIP_ADVENTURE_MODE) != 0) &&
 	       ((gameMode1 & AP_PODIUM_SKIP_RELIC_RACE) != 0);
+}
+
+// Relic results skip (0.2.1 rc1 Steam testing, 2026-09-22). With Skip Podium
+// Ceremonies on, an Adventure relic race that earned a new relic leaves its
+// results (crate countdown, relic banner, high score and name entry, Best
+// Times, Retry / Exit to Map) for the hub at once, through the same exit Exit to
+// Map takes, so the podium skip and the Oxide transition rules still apply. A
+// run without a new relic keeps the full results and Retry. The relic flag and
+// its AP check were already sent at the finish (RR_EndEvent_UnlockAward), so
+// only presentation is skipped.
+static inline int AP_RelicResultsSkipDecision(
+    int optionEnabled, int gameMode1, int gameModeEnd)
+{
+	return optionEnabled && AP_PodiumSkipCallAllowed(gameMode1) &&
+	       ((gameModeEnd & AP_PODIUM_SKIP_NEW_RELIC) != 0);
 }
 
 // The production decision. `oxideRelicQualifying` is consulted only for a

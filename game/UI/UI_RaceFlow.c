@@ -334,6 +334,70 @@ LAB_80055930:
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80055c90-0x8005607c.
+// Exit To Map, shared by the race-end menu row and the AP relic results skip
+// (RR_EndEvent_DrawMenu), which leaves the results for the hub the same way.
+void UI_RaceEnd_ExitToMap(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+#ifdef CTR_AP
+	// #285: relic reward bookkeeping and the AP relic notification already
+	// ran at race end (RR_EndEvent_UnlockAward). Decide the relic podium
+	// here, before the hub load, while RELIC_RACE and the original prevLEV
+	// hub return are still available. A qualifying Oxide relic keeps
+	// STATIC_RELIC for CS_Camera_BoolGotoBoss; cup and boss exits share this
+	// case and are never classified as skippable.
+	//
+	// The skip is an Adventure-relic-only action, so the invariant is
+	// enforced HERE at the call site rather than left to the classification:
+	// case 0xd is shared by unrelated modes, and a non-Adventure or
+	// non-relic exit must not be able to reach the mutation at all.
+	if (AP_PodiumSkipCallAllowed(gGT->gameMode1))
+	{
+		AP_SkipPodium(gGT->podiumRewardID);
+	}
+#endif
+	sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
+	sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+
+	sdata->Loading.OnBegin.RemBitsConfig0 |= (CRYSTAL_CHALLENGE | RELIC_RACE);
+
+	if ((gGT->gameMode1 & ADVENTURE_CUP) != 0)
+	{
+#ifdef CTR_CUSTOM_TRACKS
+		// Undo the event destination's lap override on the abandon path too.
+		// The cup-end restore in UI_CupStandings.c only runs when the cup is
+		// played out; a player who quits the 7-lap race would otherwise carry 7
+		// laps into the next adventure race.
+		if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
+		{
+			gGT->numLaps = 3;
+		}
+#endif
+
+		sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
+		s16 cupReturn = GEM_STONE_VALLEY;
+#ifdef CTR_AP
+		// Under destination shuffle a gem cup can be entered from any hub, so
+		// return to the recorded entry hub instead of always Gemstone Valley
+		// (else exiting a cup with GV still locked spawns outside the map).
+		int apCupReturn = AP_CupReturnHub();
+		if (apCupReturn >= 0)
+			cupReturn = (s16)apCupReturn;
+#endif
+		MainRaceTrack_RequestLoad(cupReturn);
+		return;
+	}
+
+	if (IS_BOSS_RACE(gGT->gameMode1))
+	{
+		sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_BOSS;
+		sdata->Loading.OnBegin.AddBitsConfig8 |= SPAWN_AT_BOSS;
+	}
+
+	MainRaceTrack_RequestLoad(gGT->prevLEV);
+}
+
 void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 {
 	s16 option;
@@ -487,64 +551,7 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 
 	// Exit To Map
 	case 0xd:
-	{
-#ifdef CTR_AP
-		// #285: relic reward bookkeeping and the AP relic notification already
-		// ran at race end (RR_EndEvent_UnlockAward). Decide the relic podium
-		// here, before the hub load, while RELIC_RACE and the original prevLEV
-		// hub return are still available. A qualifying Oxide relic keeps
-		// STATIC_RELIC for CS_Camera_BoolGotoBoss; cup and boss exits share this
-		// case and are never classified as skippable.
-		//
-		// The skip is an Adventure-relic-only action, so the invariant is
-		// enforced HERE at the call site rather than left to the classification:
-		// case 0xd is shared by unrelated modes, and a non-Adventure or
-		// non-relic exit must not be able to reach the mutation at all.
-		if (AP_PodiumSkipCallAllowed(gGT->gameMode1))
-		{
-			AP_SkipPodium(gGT->podiumRewardID);
-		}
-#endif
-		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
-		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
-
-		sdata->Loading.OnBegin.RemBitsConfig0 |= (CRYSTAL_CHALLENGE | RELIC_RACE);
-
-		if ((gGT->gameMode1 & ADVENTURE_CUP) != 0)
-		{
-#ifdef CTR_CUSTOM_TRACKS
-			// Undo the event destination's lap override on the abandon path too.
-			// The cup-end restore in UI_CupStandings.c only runs when the cup is
-			// played out; a player who quits the 7-lap race would otherwise carry 7
-			// laps into the next adventure race.
-			if (CustomTrack_RaceFeatureEnabled() && gGT->numLaps != 3)
-			{
-				gGT->numLaps = 3;
-			}
-#endif
-
-			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
-			s16 cupReturn = GEM_STONE_VALLEY;
-#ifdef CTR_AP
-			// Under destination shuffle a gem cup can be entered from any hub, so
-			// return to the recorded entry hub instead of always Gemstone Valley
-			// (else exiting a cup with GV still locked spawns outside the map).
-			int apCupReturn = AP_CupReturnHub();
-			if (apCupReturn >= 0)
-				cupReturn = (s16)apCupReturn;
-#endif
-			MainRaceTrack_RequestLoad(cupReturn);
-			break;
-		}
-
-		if (IS_BOSS_RACE(gGT->gameMode1))
-		{
-			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_BOSS;
-			sdata->Loading.OnBegin.AddBitsConfig8 |= SPAWN_AT_BOSS;
-		}
-
-		MainRaceTrack_RequestLoad(gGT->prevLEV);
+		UI_RaceEnd_ExitToMap();
 		break;
-	}
 	}
 }

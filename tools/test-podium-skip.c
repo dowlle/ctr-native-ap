@@ -313,6 +313,39 @@ static void TestCallSiteGate(void)
 	       AP_PodiumSkipCallAllowed(gGT.gameMode1), 0);
 }
 
+// ── Relic results skip (0.2.1 rc1 Steam testing) ────────────────────────────
+
+static void TestRelicResultsSkip(void)
+{
+	const int advRelic = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+
+	// Pure decision: option on, Adventure relic race, new relic earned.
+	expect("results skip: option on, new relic",
+	       AP_RelicResultsSkipDecision(1, advRelic, NEW_RELIC), 1);
+	expect("results skip: option off keeps the results",
+	       AP_RelicResultsSkipDecision(0, advRelic, NEW_RELIC), 0);
+	expect("results skip: no new relic keeps the results and Retry",
+	       AP_RelicResultsSkipDecision(1, advRelic, 0), 0);
+	expect("results skip: a new high score alone keeps the results",
+	       AP_RelicResultsSkipDecision(1, advRelic, NEW_HIGH_SCORE), 0);
+	expect("results skip: non-Adventure relic race (Time Trial style) refused",
+	       AP_RelicResultsSkipDecision(1, TEST_RELIC_RACE, NEW_RELIC), 0);
+	expect("results skip: Adventure non-relic race refused",
+	       AP_RelicResultsSkipDecision(1, TEST_ADVENTURE_MODE, NEW_RELIC), 0);
+	expect("results skip: NEW_RELIC mirror matches the engine flag",
+	       AP_PODIUM_SKIP_NEW_RELIC, NEW_RELIC);
+
+	// Production gather reads the live option and mode words.
+	ResetState();
+	gGT.gameMode1 = advRelic;
+	gGT.gameModeEnd = NEW_RELIC | NEW_HIGH_SCORE;
+	expect("results skip wrapper: option off", AP_RelicResultsSkipWanted(), 0);
+	g_config.skipPodium = true;
+	expect("results skip wrapper: option on, new relic", AP_RelicResultsSkipWanted(), 1);
+	gGT.gameModeEnd = NEW_HIGH_SCORE;
+	expect("results skip wrapper: no new relic", AP_RelicResultsSkipWanted(), 0);
+}
+
 // ── The mutation AP_SkipPodium ──────────────────────────────────────────────
 
 static void TestMutation(void)
@@ -580,6 +613,7 @@ int main(void)
 	TestOxideRelicPredicate();
 	TestWrapperClassification();
 	TestCallSiteGate();
+	TestRelicResultsSkip();
 	TestMutation();
 	TestBoolGotoBossTruthTable();
 	TestConfig();

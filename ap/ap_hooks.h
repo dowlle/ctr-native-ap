@@ -148,6 +148,9 @@ void AP_PodiumExitTerminalWork(void);
 // race's reward notification, before the hub load request.
 int  AP_ShouldSkipPodium(int rewardId);
 void AP_SkipPodium(int rewardId);
+// With the same option on, an Adventure relic race that earned a new relic skips
+// its results screen straight to the hub (ap_podium_skip_logic.h).
+int  AP_RelicResultsSkipWanted(void);
 
 // ── Relic-race live target ladder (issue #21) ──
 // AP-active seeds replace the vanilla race-start tier selector (which reads
