@@ -658,6 +658,7 @@ struct CustomTrackFeatureConfig
 	// driver count, the standings layout, the harnesses -- reads one number
 	// rather than re-clamping the raw spawn count and risking a disagreement.
 	int raceFieldSize;
+	int standalone; // Explicit context owns this race; never redirect a Gem Cup.
 
 	// --- decision 11: the package's recording identity ---
 	//
@@ -774,6 +775,8 @@ static int CustomTrackPolicy_LevelIDIsMappable(int levelID)
 static int CustomTrackPolicy_ShouldRedirectCup(const struct CustomTrackFeatureConfig *cfg, int cupID, int isAdventureCup)
 {
 	if (cfg == NULL)
+		return 0;
+	if (cfg->standalone)
 		return 0;
 
 	if (!cfg->raceEnabled)

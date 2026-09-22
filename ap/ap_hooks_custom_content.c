@@ -21,6 +21,11 @@ static void AP_OxideFinalContentPreflight(void)
 
 	ap_oxide_final_content_required = 0;
 	ap_cortex_track_content_required = 0;
+	if (ap_content_plan_active())
+	{
+		CustomTrack_ClearOxideFinalDescriptor();
+		return;
+	}
 	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
@@ -54,6 +59,70 @@ static void AP_OxideFinalContentPreflight(void)
 	}
 }
 
+static int ap_content_package_index;
+static int ap_content_package_ready[2];
+
+static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)
+{
+	const ctr_content_package *p = ap_content_plan_package(index);
+	return p ? CustomTrackManager_FindPackage(p->content_id, p->uuid, p->revision,
+	                                         p->lev_sha256, p->vrm_sha256) : NULL;
+}
+
+int AP_ContentPadReady(int physicalPad)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
+	return pad && pad->occupied && (pad->retail_id >= 0 ||
+	       (pad->package_index >= 0 && pad->package_index < 2 && ap_content_package_ready[pad->package_index]));
+}
+
+int AP_ContentPreparePad(int physicalPad)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
+	struct CustomTrackRaceContext race;
+	if (!pad || !pad->occupied || CustomTrack_StandaloneBusy() || !AP_ContentPadReady(physicalPad) ||
+	    AP_GateCount(AP_IDX_KEY) < pad->keys) return -1;
+	memset(&race, 0, sizeof race);
+	race.physicalPad = physicalPad; race.returnHub = pad->hub;
+	race.laps = pad->laps; race.trophyLocation = pad->trophy_location;
+	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;
+	race.hostLevelID = race.retail ? pad->retail_id : 6;
+	race.slot = pad->custom_slot;
+	snprintf(race.entryID, sizeof race.entryID, "%s", pad->entry_id);
+	snprintf(race.trackID, sizeof race.trackID, "%s", pad->track_id);
+	if (!race.retail)
+	{
+		const struct CustomTrackManagerPackage *p = AP_ContentPackage(pad->package_index);
+		struct CustomTrackSeedDescriptor d;
+		if (!p) return -1;
+		ap_content_package_index = pad->package_index;
+		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &ap_custom_content_status);
+		if (ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+		    !CustomTrack_UseManagedPackage(p, &ap_custom_content_status))
+		{
+			ap_content_package_ready[pad->package_index] = 0;
+			ap_state_gen++;
+			return -1;
+		}
+		memset(&d, 0, sizeof d);
+		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
+		d.replacesCupLevelID = -1; d.boxes = 0;
+		d.flagCrates = p->flagCrates; d.flagCtrLetters = p->flagCtrLetters;
+		d.flagRelicCrates = p->flagRelicCrates; d.flagAiNav = p->flagAiNav;
+		d.flagMinimap = p->flagMinimap; d.flagGhosts = p->flagGhosts;
+		d.flagWumpaCollectible = p->flagWumpaCollectible;
+		d.flagSpawns = p->flagSpawns; d.flagCheckpoints = p->flagCheckpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", p->levSha256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", p->vrmSha256);
+		snprintf(race.levSha256, sizeof race.levSha256, "%s", p->levSha256);
+		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", p->vrmSha256);
+		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
+	}
+	if (!CustomTrack_StageStandaloneRace(&race)) return -1;
+	CustomTrack_CortexTrackSelectNextLoad(0);
+	return race.hostLevelID;
+}
+
 static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
 {
 	const ctr_custom_track *track = &ctr_cfg.custom_track;
@@ -82,6 +151,8 @@ static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequiremen
 
 static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)
 {
+	if (ap_content_plan_active() && ap_content_plan_package(0))
+		return AP_ContentPackage(ap_content_package_index);
 	struct CustomTrackManagerRequirement requirement;
 	// No seed asks for a profile: offer the current Saphi release. A connected
 	// seed still selects its exact profile below, so 1.0.0 seeds keep using
@@ -148,6 +219,37 @@ static void AP_CustomContentLogStatus(const char *action)
 
 static void AP_CustomContentPreflightSeed(int autoFinalize)
 {
+	if (ap_content_plan_active())
+	{
+		int i, firstMissing = -1;
+		struct CustomTrackManagerStatus status;
+		ap_custom_content_seed_selected = ap_content_plan_package(0) != NULL;
+		ap_custom_content_required = 0;
+		ap_content_package_index = 0;
+		for (i = 0; i < 2; ++i)
+		{
+			const struct CustomTrackManagerPackage *p = AP_ContentPackage(i);
+			ap_content_package_ready[i] = 0;
+			if (!p) continue;
+			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &status);
+			if (autoFinalize && (status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
+			                    status.state == CTR_CT_MANAGER_MANIFEST_INVALID))
+				CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(), p, &status);
+			ap_content_package_ready[i] = status.state == CTR_CT_MANAGER_READY;
+			if (i == 0) ap_custom_content_status = status;
+			if (!ap_content_package_ready[i])
+			{
+				ap_custom_content_required = 1;
+				if (firstMissing < 0) { firstMissing = i; ap_content_package_index = i; ap_custom_content_status = status; }
+			}
+		}
+		ap_custom_content_scanned = 1;
+		ap_state_gen++;
+		// A reconnect cannot replace the buffers of a race already in flight.
+		if (!CustomTrack_StandaloneBusy())
+			CustomTrack_ClearSeedDescriptor();
+		return;
+	}
 	struct CustomTrackManagerRequirement requirement;
 	ap_custom_content_seed_selected = ctr_cfg_active() && ctr_cfg.custom_tracks_ok;
 	ap_custom_content_gate_cached = 0;
@@ -215,7 +317,7 @@ int AP_CustomOfflineLaunchAllowed(void)
 
 void AP_CustomContentRescan(void)
 {
-	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
+	if (ap_content_plan_active() || (ctr_cfg_active() && ctr_cfg.custom_tracks_seen))
 	{
 		AP_CustomContentPreflightSeed(1);
 		AP_CustomContentLogStatus("Rescan");

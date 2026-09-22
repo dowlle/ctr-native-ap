@@ -909,6 +909,14 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
 
+	if (package == NULL)
+	{
+		DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+		DecalFont_DrawLineOT("This seed's package is unsupported.", 0x100, 0x48,
+		                   FONT_SMALL, JUSTIFY_CENTER | RED, ot);
+		return;
+	}
+
 	if (s_customContentDownloadActive)
 	{
 		CustomContent_SetMessage(downloadMessage);

@@ -312,6 +312,14 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 // the glow-complete enumeration because a Done lock may not strand a rung.
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
+		if (!pad || !pad->occupied || !outBits || cap <= 0 ||
+		    ap_net_location_checked((long)pad->trophy_location)) return 0;
+		outBits[0] = 50000 + pad->physical;
+		return 1;
+	}
 	int count;
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -839,6 +847,11 @@ static int AP_DestKnown(int destLevelID)
 // policy exists to remove. Declared in ap_hooks.h.
 int AP_PadStage1Met(int physLevelID)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		return pad && pad->occupied && AP_GateCount(AP_IDX_KEY) >= pad->keys;
+	}
 	int i, owned;
 
 	// Race tracks (0..15): the canonical helper (shared with ThTick + LInB).
@@ -987,6 +1000,16 @@ void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
 // are equal; the callers pass both so it is correct under destination shuffle.
 int AP_PadState(int physLevelID, int destLevelID)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		if (!pad || !pad->occupied) return 5;
+#ifdef CTR_CUSTOM_TRACKS
+		if (!AP_ContentPadReady(physLevelID)) return 5;
+#endif
+		if (AP_GateCount(AP_IDX_KEY) < pad->keys) return 1;
+		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
+	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
 	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.
 	int uncBits[24];

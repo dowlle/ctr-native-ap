@@ -488,7 +488,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			         sizeof ap_custom_content_status.detail, "%s", ctServeFault);
 			ap_custom_content_scanned = 1;
 		}
-		if (!AP_CustomPadContentReady(ap_custom_content_seed_selected,
+		if (!ap_content_plan_active() && !AP_CustomPadContentReady(ap_custom_content_seed_selected,
 		                              ap_custom_content_required, ctServeFault))
 		{
 			CustomTrack_ClearSeedDescriptor();
@@ -553,7 +553,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// on the levelID 26 -> 6 leg transition and the leg raced 3 laps).
 			// A transition's destination levelID cannot lie. Gated on the
 			// option so the write never fires on seeds without it.
-			if (ctr_cfg_active() && ctr_cfg.one_lap_cups &&
+			if (ctr_cfg_active() && (ctr_cfg.one_lap_cups || ap_content_plan_active()) &&
 			    (int)gGT->levelID >= GEM_STONE_VALLEY &&
 			    (int)gGT->levelID <= CITADEL_CITY && gGT->numLaps != 3)
 			{

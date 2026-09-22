@@ -453,6 +453,43 @@ void AP_CortexTrackRelicAward(int raceTime)
 }
 
 #ifdef CTR_CUSTOM_TRACKS
+int AP_StandaloneRaceActive(void)
+{
+	return sdata->gGT && CustomTrack_StandaloneContext(sdata->gGT->levelID) != NULL;
+}
+
+int AP_NotifyStandaloneRace(void)
+{
+	const struct CustomTrackRaceContext *context;
+	struct GameTracker *gGT = sdata->gGT;
+	if (!gGT || !ctr_cfg_active() ||
+	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) ||
+	    !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE) || !gGT->drivers[0] ||
+	    gGT->drivers[0]->driverRank != 0)
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->trophyLocation > 2147483647 ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !ap_net_location_exists((long)context->trophyLocation))
+		return 0;
+	if (context->seedEpoch || ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
+		if (!pad || !pad->occupied || !context->seedEpoch || context->seedEpoch != ap_content_plan_epoch() ||
+		    pad->trophy_location != context->trophyLocation || pad->hub != context->returnHub ||
+		    pad->laps != context->laps || pad->custom_slot != context->slot ||
+		    context->retail != (pad->retail_id >= 0) ||
+		    context->hostLevelID != (context->retail ? pad->retail_id : 6) ||
+		    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return 0;
+	}
+	return AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
+	                        "[AP CHECK] standalone entry=%s track=%s slot=%d location=%ld\n",
+	                        context->entryID, context->trackID, context->slot,
+	                        (long)context->trophyLocation);
+}
+
 int AP_CustomTrackTrophyChecked(void)
 {
 	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
@@ -667,6 +704,13 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 		facts->destLevelID = level;
 
 #ifdef CTR_CUSTOM_TRACKS
+	// Standalone routes never inherit the engine host's Wumpa identity or a
+	// legacy Gem Cup's Wumpa route. A content-plan Wumpa route is separate.
+	if (CustomTrack_StandaloneContext(level))
+	{
+		facts->destLevelID = -1;
+		return;
+	}
 	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
 	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 	if (facts->servingOxideFinal)

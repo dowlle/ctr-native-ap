@@ -120,7 +120,13 @@ void AP_EvaluateGoal(void)
 		return;
 	}
 
-	if (!ctr_cfg_active())
+	if (ap_content_plan_active())
+	{
+		int gems[5], i;
+		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
+		done = ap_content_plan_goal(gems);
+	}
+	else if (!ctr_cfg_active())
 	{
 		done = ap_oxide_first_beaten;
 	}

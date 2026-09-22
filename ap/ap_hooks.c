@@ -7,6 +7,7 @@
 
 #include <stdlib.h> // realloc: the #299 held-effect list
 #include "ap_hooks.h"
+#include "ap_content_plan.h"
 #include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
 #include "ap_win_logic.h" // #449 received-items-by-id tally for the race stakes
 #ifdef CTR_CUSTOM_TRACKS
@@ -344,6 +345,11 @@ static long AP_TrialTrackLocation(int levelID, int challenge);
 
 static long AP_LookupLocationCode(int globalBit)
 {
+	if (globalBit >= 50000 && globalBit <= 50104)
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(globalBit - 50000);
+		return pad && pad->occupied ? (long)pad->trophy_location : -1;
+	}
 	int i;
 	int trialPseudo, trialChallenge;
 	int perfectLevel;

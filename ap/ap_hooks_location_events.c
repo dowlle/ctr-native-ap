@@ -137,6 +137,9 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 // Blocked for the whole forced-loss attempt.
 void AP_NotifyAdvReward(int rewardBit)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_StandaloneRaceActive()) return;
+#endif
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_ADV_REWARD))
 		return;
 	AP_NotifyAdvRewardImpl(rewardBit);

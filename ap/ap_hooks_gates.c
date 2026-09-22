@@ -368,6 +368,7 @@ int AP_BossReqMet(const ctr_req *r)
 // is never routed through this function.
 int AP_BossGarageOpen(int bossIdx)
 {
+	if (ap_content_plan_active()) return 0; // First profile has five empty garages.
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
 
@@ -813,6 +814,16 @@ int AP_GoalAdvert(char *out, int cap)
 		return 0;
 	if (!ctr_cfg_active())
 		return 0;
+	if (ap_content_plan_active())
+	{
+		int owned = 0, i;
+		for (i = 0; i < 5; ++i)
+		{
+			const ctr_content_item *row = ap_content_plan_item(AP_ITEM_BASE + AP_IDX_GEM_RED + i);
+			if (row && row->base && AP_GateCountGemColour(i) > 0) ++owned;
+		}
+		return snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
+	}
 
 	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and
 	// `disabled` (3) both omit it: neither is a completion condition. Whether

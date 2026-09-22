@@ -297,7 +297,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
-			ap_recv_count[idx]++;
+			const ctr_content_item *row = ap_content_plan_item(items[i]);
+			const int cap = row ? row->receipt_cap : 2147483647;
+			if (ap_recv_count[idx] < cap) ap_recv_count[idx]++;
 			// Split tally for the seed verifier (issue #85): count this receipt as
 			// FOREIGN unless it is an own-world location check (which the verifier
 			// banks from the scout cache synchronously with checked-state instead).
@@ -307,7 +309,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// how the server reports the sender slot.
 			int       pl  = ap_net_recv_batch_player(i);
 			long long loc = ap_net_recv_batch_location(i);
-			if (pl != ap_net_self_slot() || loc <= 0)
+			if ((pl != ap_net_self_slot() || loc <= 0) && ap_recv_count_foreign[idx] < cap)
 				ap_recv_count_foreign[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
 			if (liveItemBatch && idx >= AP_IDX_GEM_RED &&
