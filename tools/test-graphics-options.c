@@ -326,6 +326,42 @@ static void TestPersistenceRoundTrip(void)
 	}
 }
 
+// Weapon Roulette shine (juiced glow): four mirrored quarters drawn by
+// UI_WeaponBG_DrawShine. Compressing each quarter about its own centre opened a
+// gap between the left and right halves in widescreen (0.2.1 rc1 Steam
+// screenshot); compressing about the whole sprite's centre keeps them touching.
+static void TestShineHalvesMeet(void)
+{
+	const int posX = 200, w = 40, a = 1; // a quarter's width and the 1 px overlap
+	const int centerX = posX + w - (a / 2);
+
+	for (int ratio = 0; ratio <= 3; ratio++)
+	{
+		char name[96];
+		g_config.aspectRatio = ratio;
+
+		const int leftInner = Widescreen_CompressXAbout(posX + w, centerX);
+		const int rightInner = Widescreen_CompressXAbout(posX + w - a, centerX);
+		snprintf(name, sizeof name, "shine halves meet, aspect %d", ratio);
+		EXPECT_TRUE(name, rightInner <= leftInner);
+
+		const int outer = Widescreen_CompressXAbout(posX + 2 * w - a, centerX) -
+		                  Widescreen_CompressXAbout(posX, centerX);
+		const int want = ((2 * w - a) * Widescreen_GetFactor()) / 1000;
+		snprintf(name, sizeof name, "shine total width scales, aspect %d", ratio);
+		EXPECT_TRUE(name, outer >= want - 1 && outer <= want + 1);
+
+		// The old per-quarter compression, for contrast: the left quarter's
+		// inner edge moves left by XShift(w) and the right quarter's moves right.
+		const int oldGap = 2 * Widescreen_XShift(w) - a;
+		snprintf(name, sizeof name, "per-quarter compression left a gap, aspect %d", ratio);
+		EXPECT_TRUE(name, ratio == 0 ? oldGap <= 0 : oldGap > 0);
+	}
+
+	g_config.aspectRatio = 0;
+	EXPECT_INT("4:3 leaves x unchanged", Widescreen_CompressXAbout(123, 50), 123);
+}
+
 int main(void)
 {
 	TestConfigDefaults();
@@ -335,6 +371,7 @@ int main(void)
 	TestDitherUniform();
 	TestFullscreenSync();
 	TestPersistenceRoundTrip();
+	TestShineHalvesMeet();
 
 	printf("\n%s\n", g_failures ? "FAILURES PRESENT" : "all assertions passed");
 	return g_failures != 0;

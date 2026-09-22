@@ -147,7 +147,11 @@ void UI_WeaponBG_DrawShine(struct Icon *icon, s16 posX, s16 posY, struct PrimMem
 			break;
 		}
 
-		Widescreen_CompressGT4(p);
+		// The four quarters form one sprite spanning posX to
+		// posX + 2 * sVar3 - angleX; compress about its centre so the left and
+		// right halves still meet in widescreen (per-quad compression left a
+		// gap between them).
+		Widescreen_CompressGT4About(p, posX + sVar3 - (angleX / 2));
 
 		// color RGB
 		CtrGpu_WriteColorCode(&p->r0, CTR_ReadU32LE(&wumpaShine[2 * sizeof(u32)]));
