@@ -642,7 +642,7 @@ static void test_schema_gate(void)
 	expect_eq(ctr_cfg.schema_newer, 0,
 	          "this build's own ceiling does not raise the banner");
 
-	expect_eq(CTR_CFG_SCHEMA_KNOWN, 16, "this build understands schema 16 (Hit Character)");
+	expect_eq(CTR_CFG_SCHEMA_KNOWN, 17, "this build understands schema 17 (content plan)");
 }
 
 static void test_custom_letter_ownership(void)

@@ -473,6 +473,9 @@ void AA_EndEvent_DrawMenu(void)
 	// block above). The trophy check sends on the continue-press, so it is passed
 	// as the primary bit; podium rungs come from the ledger.
 	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1) &&
+#if defined(CTR_CUSTOM_TRACKS)
+	    !AP_StandaloneRaceActive() &&
+#endif
 	    !AP_TrialTrackConfigured(gGT->levelID))
 		AP_CeremonyDraw(0x100, 0x40,
 		                AP_CortexTrackActive() ? AP_CortexTrackBit(AP_CV_SLOT_TROPHY)
@@ -506,6 +509,22 @@ void AA_EndEvent_DrawMenu(void)
 
 	// Load the levelID for Adventure Hub that you came from
 	s16 levSpawn = gGT->prevLEV;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_StandaloneRaceActive())
+	{
+		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(gGT->levelID);
+		// Report the logical route before any retail reward-bit computation.
+		// The source hub stays stable through same-track restart loads.
+		levSpawn = context->returnHub;
+		AP_NotifyStandaloneRace();
+		gGT->podiumRewardID = STATIC_TROPHY;
+		AP_SkipPodium(gGT->podiumRewardID);
+		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+		MainRaceTrack_RequestLoad(levSpawn);
+		return;
+	}
+#endif
 
 	if (IS_BOSS_RACE(gGT->gameMode1))
 	{

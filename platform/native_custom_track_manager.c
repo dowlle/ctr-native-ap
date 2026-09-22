@@ -695,6 +695,22 @@ const struct CustomTrackManagerPackage *CustomTrackManager_BabyTParkCurrent(void
 	return &s_babyTParkCurrent;
 }
 
+const struct CustomTrackManagerPackage *CustomTrackManager_FindPackage(
+	const char *id, const char *uuid, const char *version,
+	const char *levSha256, const char *vrmSha256)
+{
+	const struct CustomTrackManagerPackage *profiles[] = {&s_babyTParkPackage, &s_babyTParkCurrent};
+	int i;
+	if (!id || !uuid || !version || !levSha256 || !vrmSha256) return NULL;
+	for (i = 0; i < 2; ++i)
+	{
+		const struct CustomTrackManagerPackage *p = profiles[i];
+		if (!strcmp(id, p->id) && !strcmp(uuid, p->packageUuid) && !strcmp(version, p->version) &&
+		    !strcmp(levSha256, p->levSha256) && !strcmp(vrmSha256, p->vrmSha256)) return p;
+	}
+	return NULL;
+}
+
 const char *CustomTrackManager_StateText(int state)
 {
 	switch (state)
@@ -758,6 +774,26 @@ int CustomTrackManager_PrepareFolder(const char *assetsRoot,
 	}
 
 	return CustomTrackManager_ScanPackage(assetsRoot, package, outStatus) != CTR_CT_MANAGER_IO_ERROR;
+}
+
+static int Manager_PackageReceipt(const struct CustomTrackManagerPackage *package,
+	                             const struct CustomTrackManagerStatus *status,
+	                             char out[NATIVE_SHA256_HEX_BYTES])
+{
+	char manifest[CTR_CT_MANAGER_TEXT_MAX];
+	char laps[32];
+	struct NativeSha256Ctx ctx;
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	if (!Manager_RenderManifest(package, status, manifest, sizeof manifest))
+		return 0;
+	// Laps are part of exported identity but not the legacy manifest shape.
+	snprintf(laps, sizeof laps, "\nlaps:%d", package->laps);
+	NativeSha256_Init(&ctx);
+	NativeSha256_Update(&ctx, manifest, strlen(manifest));
+	NativeSha256_Update(&ctx, laps, strlen(laps));
+	NativeSha256_Final(&ctx, digest);
+	NativeSha256_ToHex(digest, out);
+	return 1;
 }
 
 int CustomTrackManager_ScanPackage(const char *assetsRoot,
@@ -885,6 +921,11 @@ int CustomTrackManager_ScanPackage(const char *assetsRoot,
 		return outStatus->state;
 	}
 
+	if (!Manager_PackageReceipt(package, outStatus, outStatus->verifiedPackageSha256))
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED, "Could not bind verified package identity.");
+		return outStatus->state;
+	}
 	Manager_SetDetail(outStatus, CTR_CT_MANAGER_READY, "%s %s is verified and ready.", package->title, package->version);
 	return outStatus->state;
 }
@@ -989,6 +1030,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	                               char *dst, size_t dstSize)
 {
 	int wrote;
+	char receipt[NATIVE_SHA256_HEX_BYTES];
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
 	    dst == NULL || dstSize == 0)
@@ -997,6 +1039,9 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	// same bytes, so a Ready 1.0.2 status can never be written out as 1.0.0.
 	if (!NativeSha256_HexEquals(status->actualLevSha256, package->levSha256) ||
 	    !NativeSha256_HexEquals(status->actualVrmSha256, package->vrmSha256))
+		return 0;
+	if (!Manager_PackageReceipt(package, status, receipt) ||
+	    !NativeSha256_HexEquals(status->verifiedPackageSha256, receipt))
 		return 0;
 
 	wrote = snprintf(dst, dstSize,
