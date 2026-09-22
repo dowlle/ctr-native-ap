@@ -231,6 +231,26 @@ void RR_EndEvent_DrawMenu(void)
 		sdata->framesSinceRaceEnded++;
 	}
 
+#ifdef CTR_AP
+	// Skip Podium Ceremonies also skips the results of a relic race that earned
+	// a new relic (AP_RelicResultsSkipWanted). No name is entered, so no best
+	// time is written: clear the pending entry exactly as the name-entry Cancel
+	// does (MainFrame.c), then leave through Exit to Map once. The results stay
+	// undrawn until the hub load takes over.
+	if (AP_RelicResultsSkipWanted())
+	{
+		if (sdata->Loading.stage == LOAD_IDLE)
+		{
+			gGT->newHighScoreIndex = -1;
+			gGT->gameModeEnd &= ~(NEW_BEST_LAP | NEW_HIGH_SCORE);
+			sdata->framesSinceRaceEnded = 0;
+			sdata->numIconsEOR = 1;
+			UI_RaceEnd_ExitToMap();
+		}
+		return;
+	}
+#endif
+
 	if (sdata->framesSinceRaceEnded >= RR_HIGH_SCORE_REVEAL_FRAME)
 	{
 		gGT->gameModeEnd |= DRAW_HIGH_SCORES;

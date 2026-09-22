@@ -103,4 +103,21 @@ void AP_SkipPodium(int rewardId)
 	gGT->gameMode2 = AP_PodiumSkipCleanGameMode2(gGT->gameMode2);
 }
 
+// Relic results skip: gather the live facts for AP_RelicResultsSkipDecision.
+// Called every frame of the relic results (RR_EndEvent_DrawMenu).
+int AP_RelicResultsSkipWanted(void)
+{
+	struct GameTracker *gGT;
+
+	if (sdata == NULL || sdata->gGT == NULL)
+		return 0;
+
+	gGT = sdata->gGT;
+
+	return AP_RelicResultsSkipDecision(
+	    g_config.skipPodium,
+	    (int)gGT->gameMode1,
+	    (int)gGT->gameModeEnd);
+}
+
 #endif // CTR_AP
