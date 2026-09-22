@@ -1,6 +1,7 @@
 #include <common.h>
 #include <stdio.h>
 #include <ctr_menu_ux.h>
+#include <ctr_menu_pages.h>
 #include <platform/native_renderer.h> // NativeRenderer_CaptureWindowGeometry, ahead of the NativeConfig_Save calls below
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
@@ -50,10 +51,13 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 
 static void MM_MenuProc_Config(struct RectMenu *menu);
 
-// Section lookup built from g_configEntries at first use
-static int s_sectionToEntry[20];
-static int s_sectionCount[20];
-static const char *s_sectionName[20];
+// Page lookup built from g_configEntries at first use. A "section" in this menu
+// is a page from include/ctr_menu_pages.h, not a config.ini [section]: the page
+// table decides where a row is shown, the entry's section where it is saved.
+// Audio and State stay config-file-only (see CTR_MenuSectionHidden).
+static int s_sectionRows[CTR_MENU_PAGE_CAP][CTR_MENU_PAGE_ROW_CAP];
+static int s_sectionCount[CTR_MENU_PAGE_CAP];
+static const char *s_sectionName[CTR_MENU_PAGE_CAP];
 static int s_numSections = 0;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 static int s_customContentSection = -1;
@@ -61,40 +65,20 @@ static int s_customContentSection = -1;
 
 static void BuildSectionMap(void)
 {
-	s_numSections = 0;
-	const char *curSection = NULL;
-	for (int i = 0; i < g_numConfigEntries; i++)
-	{
-		// The Audio section is config-file-only: its values live in config.ini and
-		// are edited through the vanilla audio screen (game/MAIN/MainFreeze.c), not
-		// this menu. Skip it so it never appears as a section here (its CFG_INT rows
-		// would also render as a bare "%d%%", duplicating that screen). The rows are
-		// contiguous, so skipping them leaves curSection on the prior section.
-		// The State section is config-file-only for a related reason: it holds
-		// remembered state (the pair-version notice's last-seen version, issue
-		// #150), not a user option. The generic section draw below DOES render
-		// CFG_STRING rows read-only now, so hiding this one is a decision about
-		// what it is, not a missing renderer. Written by the code that owns it.
-		if (strcmp(g_configEntries[i].section, "Audio") == 0 ||
-		    strcmp(g_configEntries[i].section, "State") == 0)
-			continue;
-		if (curSection == NULL || strcmp(g_configEntries[i].section, curSection) != 0)
-		{
-			curSection = g_configEntries[i].section;
-			s_sectionToEntry[s_numSections] = i;
-			s_sectionCount[s_numSections] = 0;
-			s_sectionName[s_numSections] = curSection;
-			s_numSections++;
-		}
-		s_sectionCount[s_numSections - 1]++;
-	}
+	s_numSections = CTR_MenuBuildPages(g_configEntries, g_numConfigEntries,
+		s_sectionName, s_sectionRows, s_sectionCount);
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	s_customContentSection = s_numSections;
-	s_sectionToEntry[s_numSections] = -1;
 	s_sectionCount[s_numSections] = 0;
 	s_sectionName[s_numSections] = "Custom Content";
 	s_numSections++;
 #endif
+}
+
+// Row `row` of page `sec`.
+static const ConfigEntry *Section_Entry(int sec, int row)
+{
+	return &g_configEntries[s_sectionRows[sec][row]];
 }
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
@@ -328,6 +312,17 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 	AiDiff_Step((int *)e->valuePtr, dir);
 }
 
+// Cross/Circle on an enum row: the next value, wrapping from the last back to
+// the first, so every row on a page answers the confirm button (rc1 testing:
+// A did nothing on VSync). Left/right keep their clamped stepping.
+static void Enum_Advance(const ConfigEntry *e)
+{
+	const int before = *(int *)e->valuePtr;
+	Enum_Step(e, +1);
+	if (*(int *)e->valuePtr == before)
+		Enum_Step(e, -64); // already at the end: every ladder clamps to its first value
+}
+
 // Characters of a CFG_STRING value that fit between a row label and the right
 // edge of the value column at FONT_SMALL (13 px per character). The label column
 // starts at 0x38 and values are right-justified at 0x1DC, which leaves 420 px;
@@ -335,7 +330,7 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 // clear of the longest label this menu has.
 #define CFG_STRING_INLINE_MAX 20
 
-static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf)
+static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf, int editing)
 {
 	if (e->type == CFG_BOOL)
 	{
@@ -349,20 +344,26 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	}
 	else if (e->type == CFG_STRING)
 	{
-		// READ-ONLY, and it costs no new input handling: none of the edit paths
-		// in this menu can reach a string row. Cross toggles only CFG_BOOL,
-		// left/right steps only CFG_ENUM, and the slider loop touches only
-		// CFG_INT. So the row shows its value and config.ini is where it is
-		// edited. Empty renders as "-", matching the connection manager.
+		// Cross opens the row in the shared text editor (TextEdit_Begin, AP
+		// builds); outside an edit the value is shown up to the inline limit.
+		// While editing, the tail is shown instead so the typed end stays in
+		// view, with the same blinking cursor as the Connection page. Empty
+		// renders as "-", matching the connection manager.
 		const char *src = (const char *)e->valuePtr;
+		const int len = (int)strlen(src);
+		int start = 0;
 		int n = 0;
 
-		while ((src[n] != '\0') && (n < CFG_STRING_INLINE_MAX))
+		if (editing && len > CFG_STRING_INLINE_MAX)
+			start = len - CFG_STRING_INLINE_MAX;
+		while ((src[start + n] != '\0') && (n < CFG_STRING_INLINE_MAX))
 		{
-			buf[n] = src[n];
+			buf[n] = src[start + n];
 			n++;
 		}
-		if (n == 0)
+		if (editing && (sdata->frameCounter & 0x10)) // ~2 Hz blink
+			buf[n++] = '_';
+		if (n == 0 && !editing)
 			buf[n++] = '-';
 		buf[n] = '\0';
 
@@ -404,7 +405,8 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 // therefore blind to typing; edges are taken here against the previous frame.
 
 static int  s_connEditing = 0;   // 1 while a text row is being edited
-static int  s_connEditRow = 0;   // which string row (0..2) is being edited
+static int  s_connEditRow = 0;   // which row of the current page is being edited
+static const ConfigEntry *s_connEditEntry = NULL; // the entry being edited
 static char s_connBackup[128];   // pre-edit value, restored on cancel
 static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edges
 
@@ -494,13 +496,13 @@ static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, uint32_t
 	}
 }
 
-static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+// Shared text-row editing, used by the Connection page and by a CFG_STRING row
+// on any other page (Driver Name on Authoring; before this it was read-only).
+// Call once every frame the page is shown: it tracks the physical-pad edges
+// and resolves a finished edit. Returns 1 on the frame an edit resolved; the
+// caller suppresses all navigation on that frame and while s_connEditing.
+static int TextEdit_Update(void)
 {
-	char buf[160];
-	const int firstEntry = s_sectionToEntry[s_currentSection];
-	const int numStrings = s_sectionCount[s_currentSection]; // uri / slot / password
-	const int numRows = numStrings + 1;                      // + Connect action row
-
 	// Pad-driven commit / cancel, folded into the same result codes the keyboard
 	// produces so the resolve block below stays the single exit path. Tracked
 	// every frame, editing or not, so the press that opened the row is already
@@ -523,10 +525,9 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// (NativeText_Active == 1) until we call NativeText_End here, so the commit /
 	// cancel frame still reads as "editing" to the parent proc's back handler --
 	// avoiding a one-frame nav race (pad state is polled from the live keyboard).
-	int justResolved = 0;
 	if (s_connEditing && NativeText_Result() != 0)
 	{
-		const ConfigEntry *e = &g_configEntries[firstEntry + s_connEditRow];
+		const ConfigEntry *e = s_connEditEntry;
 		if (NativeText_Result() == 2) // Escape -> restore the pre-edit value
 		{
 			strncpy((char *)e->valuePtr, s_connBackup, e->max - 1);
@@ -539,8 +540,44 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 		NativeText_End();
 		s_connEditing = 0;
-		justResolved = 1;
+		return 1;
 	}
+	return 0;
+}
+
+// Enter edit mode on a text row: back up the current value, hand the buffer to
+// the platform keyboard capture (editing continues from the current text). The
+// row's own rectangle goes with it, so a host on-screen keyboard (Steam Deck)
+// can place itself clear of the field.
+static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
+{
+	s_connEditEntry = e;
+	s_connEditRow = row;
+	strncpy(s_connBackup, (char *)e->valuePtr, sizeof s_connBackup - 1);
+	s_connBackup[sizeof s_connBackup - 1] = '\0';
+	const int rowMasked = (strcmp(e->key, "password") == 0);
+	NativeText_Begin((char *)e->valuePtr, e->max,
+		CONN_ROW_X, rowY, CONN_ROW_W, CONN_ROW_H, rowMasked);
+	s_connEditing = 1;
+}
+
+// Pad hint while a row is being edited, so the controller exits are
+// discoverable. '*' and '^' are the font's own PSX face button glyphs (see
+// game/DecalFont.c).
+static void TextEdit_DrawHint(int y, uint32_t *ot)
+{
+	DecalFont_DrawLineOT("* OR START: SAVE   ^: CANCEL",
+		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
+static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+{
+	char buf[160];
+	const int sec = s_currentSection;
+	const int numStrings = s_sectionCount[sec]; // uri / slot / password
+	const int numRows = numStrings + 1;         // + Connect action row
+
+	const int justResolved = TextEdit_Update();
 
 	// While editing (or on the frame we just resolved) all menu navigation is
 	// suppressed: text mode owns input.
@@ -561,19 +598,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			OtherFX_Play(1, 1);
 			if (menu->rowSelected < numStrings)
 			{
-				// Enter edit mode: back up the current value, hand the buffer to the
-				// platform keyboard capture (editing continues from the current text).
-				const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
-				s_connEditRow = menu->rowSelected;
-				strncpy(s_connBackup, (char *)e->valuePtr, sizeof s_connBackup - 1);
-				s_connBackup[sizeof s_connBackup - 1] = '\0';
-				// The row's own rectangle goes with it, so a host on-screen
-				// keyboard (Steam Deck) can place itself clear of the field.
-				const int rowY = CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2;
-				const int rowMasked = (strcmp(e->key, "password") == 0);
-				NativeText_Begin((char *)e->valuePtr, e->max,
-					CONN_ROW_X, rowY, CONN_ROW_W, CONN_ROW_H, rowMasked);
-				s_connEditing = 1;
+				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
+					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
 			}
 			else
 			{
@@ -583,7 +609,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
-	DecalFont_DrawLineOT((char *)g_configEntries[firstEntry].section,
+	DecalFont_DrawLineOT((char *)s_sectionName[sec],
 		0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 
 	int labelX = 0x38;
@@ -593,7 +619,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	for (int j = 0; j < numStrings; j++)
 	{
-		const ConfigEntry *e = &g_configEntries[firstEntry + j];
+		const ConfigEntry *e = Section_Entry(sec, j);
 		int y = startY + j * rowSpacing;
 		int masked = (strcmp(e->key, "password") == 0);
 		int editing = (s_connEditing && s_connEditRow == j);
@@ -651,17 +677,11 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
 			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 
-	// Pad hint while a row is being edited, so the controller exits are
-	// discoverable. Drawn as a footer rather than on the row itself: the text
-	// value is left-justified and grows rightward as it is typed, so there is no
-	// space left on the row to put it. '*' and '^' are the font's own PSX face
-	// button glyphs (see game/DecalFont.c).
+	// Drawn as a footer rather than on the row itself: the text value is
+	// left-justified and grows rightward as it is typed, so there is no space
+	// left on the row to put it.
 	if (s_connEditing)
-	{
-		int y = startY + (numStrings + 4) * rowSpacing;
-		DecalFont_DrawLineOT("* OR START: SAVE   ^: CANCEL",
-			0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	}
+		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
 }
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -897,7 +917,6 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	{
 		const int sec = s_currentSection;
 		const int numRows = s_sectionCount[sec];
-		const int firstEntry = s_sectionToEntry[sec];
 
 #ifdef CTR_AP
 		// Connection and Custom Content have bespoke action/state surfaces.
@@ -908,14 +927,22 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		}
 		else
 #endif
-		if (strcmp(g_configEntries[firstEntry].section, "Connection") == 0)
+		if (strcmp(s_sectionName[sec], "Connection") == 0)
 		{
 			MM_ConfigProc_Connection(menu, ot, pad);
 		}
 		else
 		{
+		// A text row on this page (Driver Name) uses the shared editor. While it
+		// owns input, and on the frame it resolves, the page ignores the pad: the
+		// host keyboard is mapped onto a pad slot, so typing would navigate.
+		const int textBusy = TextEdit_Update() || s_connEditing;
+#else
+		const int textBusy = 0;
 #endif
 
+		if (!textBusy)
+		{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
 			menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : numRows - 1;
@@ -927,18 +954,27 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(0, 1);
 		}
 
+		// Cross/Circle acts on every row type: a boolean toggles, an enum moves to
+		// its next value (wrapping), a text row opens the editor.
 		if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
-			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
 			if (e->type == CFG_BOOL)
 				*(bool *)e->valuePtr ^= 1;
+			else if (e->type == CFG_ENUM)
+				Enum_Advance(e);
+#ifdef CTR_AP
+			else if (e->type == CFG_STRING)
+				TextEdit_Begin(e, menu->rowSelected,
+					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
+#endif
 		}
 
 		// Boolean rows now follow the same left/right value-editing convention as
 		// enums and sliders: left is OFF, right is ON. Cross/Circle still toggles.
 		{
-			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
 			if (e->type == CFG_BOOL)
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
@@ -956,7 +992,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		// enum entries: tap left/right to step through the preset ladder
 		{
-			const ConfigEntry *e = &g_configEntries[firstEntry + menu->rowSelected];
+			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
 			if (e->type == CFG_ENUM)
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
@@ -975,12 +1011,13 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// slider update for int entries
 		for (int j = 0; j < numRows; j++)
 		{
-			const ConfigEntry *e = &g_configEntries[firstEntry + j];
+			const ConfigEntry *e = Section_Entry(sec, j);
 			if (e->type == CFG_INT)
 				Config_UpdateSlider(pad, menu->rowSelected, j, (int *)e->valuePtr, e->min, e->max, e->step);
 		}
+		} // !textBusy
 
-		DecalFont_DrawLineOT((char *)g_configEntries[firstEntry].section,
+		DecalFont_DrawLineOT((char *)s_sectionName[sec],
 			0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 
 		int labelX = 0x38;
@@ -990,11 +1027,16 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		for (int j = 0; j < numRows; j++)
 		{
-			const ConfigEntry *e = &g_configEntries[firstEntry + j];
+			const ConfigEntry *e = Section_Entry(sec, j);
 			int y = startY + j * rowSpacing;
+#ifdef CTR_AP
+			const int editing = s_connEditing && s_connEditEntry == e;
+#else
+			const int editing = 0;
+#endif
 
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
-			Config_DrawValue(e, valueX, y, ot, buf);
+			Config_DrawValue(e, valueX, y, ot, buf, editing);
 
 			if (j == menu->rowSelected)
 			{
@@ -1003,6 +1045,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 #ifdef CTR_AP
+		if (s_connEditing)
+			TextEdit_DrawHint(0xC0, ot);
 		} // end generic (non-Connection) section
 #endif
 	}

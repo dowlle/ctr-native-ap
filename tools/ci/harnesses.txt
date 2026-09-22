@@ -60,6 +60,7 @@ tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-net-admission.cpp
+tools/test-options-pages.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
 tools/test-oxide-optional-result.py
