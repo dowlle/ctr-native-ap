@@ -51,6 +51,13 @@ int Widescreen_DitherUniform(bool dithering);
 
 void Widescreen_CompressFT4(POLY_FT4 *p);
 void Widescreen_CompressGT4(POLY_GT4 *p);
+
+// Compress a sprite built from several quads (the Weapon Roulette shine is
+// four mirrored quarters) about the centre of the whole sprite instead of each
+// quad's own centre, so adjoining pieces stay adjoining. Compressing each
+// quarter on its own opens a gap between the left and right halves.
+int Widescreen_CompressXAbout(int x, int centerX);
+void Widescreen_CompressGT4About(POLY_GT4 *p, int centerX);
 void Widescreen_CompressNative(PolyFT4 *p);
 
 #endif

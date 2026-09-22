@@ -110,6 +110,24 @@ void Widescreen_CompressGT4(POLY_GT4 *p)
 	p->x3 -= len;
 }
 
+int Widescreen_CompressXAbout(int x, int centerX)
+{
+	const int factor = Widescreen_GetFactor();
+
+	if (factor == 1000)
+		return x;
+
+	return centerX + ((x - centerX) * factor) / 1000;
+}
+
+void Widescreen_CompressGT4About(POLY_GT4 *p, int centerX)
+{
+	p->x0 = Widescreen_CompressXAbout(p->x0, centerX);
+	p->x1 = Widescreen_CompressXAbout(p->x1, centerX);
+	p->x2 = Widescreen_CompressXAbout(p->x2, centerX);
+	p->x3 = Widescreen_CompressXAbout(p->x3, centerX);
+}
+
 void Widescreen_CompressNative(PolyFT4 *p)
 {
 	int w = p->v[1].pos.x - p->v[0].pos.x;
