@@ -1125,6 +1125,12 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 
 			// set levID to level you were in previously
 			levID = gGT->prevLEV;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			{
+				const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+				if (race) levID = (s16)race->returnHub;
+			}
+#endif
 		}
 
 		// If you're in Adventure Cup

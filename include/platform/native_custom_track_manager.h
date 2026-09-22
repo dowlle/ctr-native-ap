@@ -126,6 +126,8 @@ struct CustomTrackManagerStatus
 	char yamlPath[CTR_CT_MANAGER_PATH_MAX];
 	char actualLevSha256[NATIVE_SHA256_HEX_BYTES];
 	char actualVrmSha256[NATIVE_SHA256_HEX_BYTES];
+	// Binds a successful scan to the complete package identity used for export.
+	char verifiedPackageSha256[NATIVE_SHA256_HEX_BYTES];
 	unsigned long levBytes;
 	unsigned long vrmBytes;
 	// What the installed LEV actually measured. Valid once the scan has reached
@@ -167,6 +169,10 @@ struct CustomTrackManagerRequirement
 // deliberately distinct from navigationUuid: changing navigation compatibility
 // must never change content provenance, and vice versa.
 const struct CustomTrackManagerPackage *CustomTrackManager_BabyTPark(void);
+// Exact content-plan identity, resolved only against release-owned profiles.
+const struct CustomTrackManagerPackage *CustomTrackManager_FindPackage(
+	const char *id, const char *uuid, const char *version,
+	const char *levSha256, const char *vrmSha256);
 const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
 	const struct CustomTrackManagerRequirement *requirement);
 

@@ -12,6 +12,12 @@ fixture=r'''
 #include <stdio.h>
 #define CTR_AP 1
 #include "ap_pad_state.h"
+#include "ap_content_plan.h"
+#define AP_IDX_KEY 14
+int ap_content_plan_active(void){return 0;}
+const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
+int AP_GateCount(int i){(void)i;return 0;}
+int ap_net_location_checked(long c){(void)c;return 0;}
 #define CTR_CFG_TRIAL_TROPHY 0
 #define ADV_REWARD_FIRST_TROPHY 0
 static int active=1,configured=1,trophyOwned=1,trophyChecked=0;

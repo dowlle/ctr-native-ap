@@ -29,6 +29,8 @@ fixture = r'''
 #define CTR_CUSTOM_TRACKS 1
 #include "platform/native_custom_track_manager.c"
 #include <platform/native_custom_tracks_policy.h>
+#include <platform/native_custom_race_context.h>
+static struct CustomTrackRaceLatch s_standaloneRace;
 #define CTR_CT_NAV_UUID_BYTES 16
 struct CustomTrackSeedDescriptor { int value; } s_descriptor;
 static struct { char path[1024]; } s_customTrackLev, s_customTrackVrm;
@@ -39,6 +41,10 @@ static int active=1, ap_custom_content_seed_selected=1;
 static struct { int custom_tracks_seen, custom_tracks_ok; } ctr_cfg={1,1};
 static struct CustomTrackManagerStatus ap_custom_content_status;
 static const struct CustomTrackManagerPackage *chosen;
+static int ap_content_package_index;
+int ap_content_plan_active(void) { return 0; }
+const void *ap_content_plan_package(int i) { (void)i; return NULL; }
+const struct CustomTrackManagerPackage *AP_ContentPackage(int i) { (void)i; return NULL; }
 int ctr_cfg_active(void) { return active; }
 void CustomTrack_Load(void) { s_customTracksLoaded=1; }
 #define CustomTrack_Log(...) ((void)0)
@@ -57,18 +63,29 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) {
  assert(d->value==7); applied++; return 1;
 }
 '''
-fixture += function("ap/ap_hooks.c", "static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
+fixture += function("ap/ap_hooks.c", "const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
 fixture += function("platform/native_custom_tracks.c", "int CustomTrack_UseManagedPackage(")
 fixture += function("ap/ap_hooks.c", "static int AP_CustomContentActivateReady(void)")
 fixture += r'''
 int main(void) {
  const struct CustomTrackManagerPackage *profiles[]={CustomTrackManager_BabyTPark(),&s_babyTParkCurrent};
  for(int i=0;i<2;i++) {
+  char yaml[4096];
   unsigned char expected[16]; chosen=profiles[i];
+  assert(AP_CustomContentSelectedPackage()==chosen);
   assert(CustomTrackPolicy_ParseNavUuid(chosen->navigationUuid,expected));
   ap_custom_content_status.state=CTR_CT_MANAGER_READY;
   snprintf(ap_custom_content_status.levPath,sizeof ap_custom_content_status.levPath,"profile%d.lev",i);
   snprintf(ap_custom_content_status.vrmPath,sizeof ap_custom_content_status.vrmPath,"profile%d.vrm",i);
+  // Model a completed scan, then exercise the same selected handle that the
+  // menu passes to its details/export actions. Actual file scans are covered
+  // by test-custom-track-manager.c.
+  assert(Manager_PackageReceipt(chosen,&ap_custom_content_status,
+         ap_custom_content_status.verifiedPackageSha256));
+  assert(CustomTrackManager_RenderYaml(AP_CustomContentSelectedPackage(),
+         &ap_custom_content_status,yaml,sizeof yaml));
+  assert(strstr(yaml,chosen->levSha256));
+  assert(!CustomTrackManager_RenderYaml(profiles[1-i],&ap_custom_content_status,yaml,sizeof yaml));
   s_haveDescriptor=1; resets=applied=0;
   assert(AP_CustomContentActivateReady());
   assert(memcmp(s_customTrackConfig.navTrackUuid,expected,16)==0);
@@ -78,6 +95,7 @@ int main(void) {
   assert(s_haveDescriptor==0 && resets==1 && applied==1);
  }
  ctr_cfg.custom_tracks_ok=0; resets=applied=0;
+ assert(AP_CustomContentSelectedPackage()==NULL);
  assert(!AP_CustomContentActivateReady() && resets==0 && applied==0);
  ctr_cfg.custom_tracks_ok=1; ap_custom_content_status.state=CTR_CT_MANAGER_HASH_MISMATCH;
  assert(!AP_CustomContentActivateReady() && resets==0 && applied==0);

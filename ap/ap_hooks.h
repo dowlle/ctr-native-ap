@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+#include "ap_content_plan.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
@@ -291,6 +292,12 @@ void AP_DrawVerifyWarning(void);
 // Alpha6 manager-light state shared by OPTIONS > Custom Content, connect-time
 // seed preflight, and the Gem Cup entry gate.
 const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
+// Same exact registry selection used by download, verification and activation.
+const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void);
+int AP_StandaloneRaceActive(void);
+int AP_NotifyStandaloneRace(void);
+int AP_ContentPreparePad(int physicalPad);
+int AP_ContentPadReady(int physicalPad);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);

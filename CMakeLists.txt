@@ -161,6 +161,7 @@ if(CTR_AP)
     add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp ap/ap_crash_terminate.cpp)
     if(CTR_CUSTOM_TRACKS)
         target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
+        target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_TRACKS)
     endif()
     set_target_properties(ap_net PROPERTIES
         LINKER_LANGUAGE CXX CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)

@@ -38,6 +38,7 @@ void MainRaceTrack_RequestLoad(s16 levelID)
 	// explicit selection, or ends when anything other than LevelID 13 loads.
 	// See include/platform/native_cortex_track_latch.h.
 	CustomTrack_CortexTrackOnRequestLoad(levelID);
+	CustomTrack_OnRaceLoadRequested(levelID);
 #endif
 	return;
 }

@@ -18,6 +18,10 @@ fixture=r'''
 #include "ap_seedcfg.h"
 #include "ap_glow_slots_logic.h"
 #include "ap_trial_pad_glow.h"
+#include "ap_content_plan.h"
+int ap_content_plan_active(void){return 0;}
+const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
+int ap_net_location_checked(long c){(void)c;return 0;}
 #define ADV_REWARD_FIRST_SAPPHIRE_RELIC 0x16
 #define ADV_REWARD_FIRST_CTR_TOKEN 0x4c
 #define AP_PODIUM_PSEUDO_BASE 0x100

@@ -149,6 +149,10 @@ s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 
 	int exitedLevel = gGT->prevLEV;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	const struct CustomTrackRaceContext *returned = CustomTrack_PreviousStandaloneContext();
+	char returnedPad[32] = {0};
+	if (returned && returned->returnHub == gGT->levelID && returned->hostLevelID == exitedLevel)
+		snprintf(returnedPad, sizeof returnedPad, "warppad#%d", returned->physicalPad);
 	// Schema 15: returning from the Cortex Vortex pad track (host level 13)
 	// puts the kart back at the pad hosting destination 110, not at the pad
 	// hosting Oxide Station.
@@ -167,7 +171,11 @@ s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 		}
 
 		// if warppad found that matches level exited
-		if (((struct WarpPad *)t->object)->levelID == exitedLevel)
+		if (
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		    returnedPad[0] ? (strcmp(t->inst->name, returnedPad) == 0) :
+#endif
+		    ((struct WarpPad *)t->object)->levelID == exitedLevel)
 		{
 			// end loop
 			break;
@@ -552,6 +560,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (sdata->AkuAkuHintState == 0)
 			{
 				// default
+#ifdef CTR_AP
+				if (ap_content_plan_active())
+				{
+					const ctr_content_pad *pad = ap_content_plan_pad(levelID);
+					warppadLNG = (char *)(pad && pad->occupied ? pad->display_name : "No entry selected");
+				}
+				else
+#endif
 				if (levelID < AH_WP_ADV_CUP)
 				{
 					warppadLNG = sdata->lngStrings[data.metaDataLEV[levelID].name_LNG];
@@ -591,6 +607,24 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 #ifdef CTR_AP
 				int apBoxesLeft = 0;
+				if (ap_content_plan_active())
+				{
+					const ctr_content_pad *pad = ap_content_plan_pad(levelID);
+					char line[160];
+					const char *physicalName = levelID < AH_WP_ADV_CUP ?
+						sdata->lngStrings[data.metaDataLEV[levelID].name_LNG] :
+						sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
+					if (pad && pad->occupied)
+						snprintf(line, sizeof line, "%s pad | Trophy: %d Keys | %s", physicalName, pad->keys,
+#ifdef CTR_CUSTOM_TRACKS
+						         !AP_ContentPadReady(levelID) ? "Install content in Options" :
+#endif
+						         ap_net_location_checked((long)pad->trophy_location) ? "Complete (replay)" : "Incomplete");
+					else snprintf(line, sizeof line, "%s pad", physicalName);
+					DecalFont_DrawLine(line, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
+					                   FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+				}
 
 				// A trophy-complete pad can deliberately stay raceable while this
 				// destination still owns unchecked AP boxes (#232). Without an
@@ -598,7 +632,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// exact server-truth count below the title only in that transitional
 				// state; before the trophy it is ordinary race content, and at zero
 				// the line disappears as the pad advances normally.
-				if (levelID < AH_WP_SLIDE_COLISEUM &&
+				if (!ap_content_plan_active() && levelID < AH_WP_SLIDE_COLISEUM &&
 				    AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
 					apBoxesLeft = AP_PadUncollectedBoxCount(levelID);
 
@@ -898,7 +932,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// variable reuse, get track speed champion
 #ifdef CTR_AP
 	// Destination 110 races on host level 13; there is no row 110.
-	champID = data.metaDataLEV[levelID == AP_CORTEX_DEST ? 13 : levelID].characterID_Champion;
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(levelID);
+		champID = pad && pad->retail_id >= 0 ? data.metaDataLEV[pad->retail_id].characterID_Champion : -1;
+	}
+	else champID = data.metaDataLEV[levelID == AP_CORTEX_DEST ? 13 : levelID].characterID_Champion;
 #else
 	champID = data.metaDataLEV[levelID].characterID_Champion;
 #endif
@@ -908,7 +947,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// If Speed Champion is on the track (Crash-Pura)
 	// and is not the same characterID as this driver
-	if ((champID < 8) && (champID != data.characterIDs[driver->driverID]))
+	if ((champID >= 0 && champID < 8) && (champID != data.characterIDs[driver->driverID]))
 	{
 		// set everyone to spawn in order
 		for (i = 1; i < 8; i++)
@@ -978,6 +1017,38 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// load. ctr_cfg_warp_phys is identity-safe: returns its input unchanged when
 	// slot_data is inactive or the map is identity, so this is a no-op pre-shuffle.
 	int physLevelID = ctr_cfg_warp_phys(levelID);
+
+#ifdef CTR_CUSTOM_TRACKS
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		int host;
+		if (!pad || !pad->occupied || !AP_ContentPadReady(physLevelID) ||
+		    AP_GateCount(AP_IDX_KEY) < pad->keys) goto WarpPad_AnimateOpen;
+		if (!warppadObj->boolEnteredWarppad) AH_WarpPad_WarpCapture(gGT);
+		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->framesWarping++;
+		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+		if (warppadObj->framesWarping < 61) goto WarpPad_AnimateOpen;
+		host = AP_ContentPreparePad(physLevelID);
+		if (host < 0)
+		{
+			warppadObj->boolEnteredWarppad = 0; warppadObj->framesWarping = 0;
+			AH_WarpPad_WarpRestore(gGT);
+			gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+			goto WarpPad_AnimateOpen;
+		}
+		gGT->gameMode1 &= ~(ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE | ARCADE_MODE);
+		gGT->gameMode2 &= ~(TOKEN_RACE | CUP_ANY_KIND);
+		sdata->Loading.OnBegin.AddBitsConfig0 &= ~(ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE | ARCADE_MODE);
+		sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE | ARCADE_MODE;
+		sdata->Loading.OnBegin.AddBitsConfig8 &= ~(TOKEN_RACE | CUP_ANY_KIND | SPAWN_AT_BOSS);
+		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE | CUP_ANY_KIND | SPAWN_AT_BOSS;
+		gGT->numLaps = (char)pad->laps;
+		levelID = host;
+		goto WarpPad_RequestLoad;
+	}
+#endif
 
 	// Racer lock: refuse entry outright while the demanded racer is not owned
 	// (ruled 2026-08-17: a lock means you cannot drive in without the racer).
@@ -1840,7 +1911,7 @@ WarpPad_RequestLoad:
 	// Schema 15: destination 110 (a pad, or a cup's first leg) loads host
 	// level 13 as the Cortex Vortex pad track; everything else is selected as
 	// retail explicitly.
-	levelID = AP_CortexTrackPrepareLoad(levelID);
+	if (!ap_content_plan_active()) levelID = AP_CortexTrackPrepareLoad(levelID);
 #endif
 
 #ifdef CTR_AP
@@ -2665,6 +2736,17 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	}
 #endif
 
+#ifdef CTR_AP
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(levelID);
+		unlockItem_modelID = STATIC_KEY;
+		unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
+		unlockItem_numNeeded = pad ? pad->keys : 2147483647;
+		goto ContentPad_BuildGate;
+	}
+#endif
+
 	// Trophy Track
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
@@ -3123,6 +3205,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 #endif
 	}
 
+#ifdef CTR_AP
+ContentPad_BuildGate:
+#endif
 	// if unlocked
 	if (unlockItem_numOwned >= unlockItem_numNeeded)
 	{

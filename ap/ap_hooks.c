@@ -6,6 +6,7 @@
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
 #include "ap_hooks.h"
+#include "ap_content_plan.h"
 #include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
@@ -312,6 +313,11 @@ static long AP_TrialTrackLocation(int levelID, int challenge);
 
 static long AP_LookupLocationCode(int globalBit)
 {
+	if (globalBit >= 50000 && globalBit <= 50104)
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(globalBit - 50000);
+		return pad && pad->occupied ? (long)pad->trophy_location : -1;
+	}
 	int i;
 	int trialPseudo, trialChallenge;
 	// Schema 15: Cortex Vortex pad-track identities. Checked first because the
@@ -1210,6 +1216,14 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 // the glow-complete enumeration because a Done lock may not strand a rung.
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
+		if (!pad || !pad->occupied || !outBits || cap <= 0 ||
+		    ap_net_location_checked((long)pad->trophy_location)) return 0;
+		outBits[0] = 50000 + pad->physical;
+		return 1;
+	}
 	int count;
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -1575,6 +1589,11 @@ static int AP_DestKnown(int destLevelID)
 // policy exists to remove. Declared in ap_hooks.h.
 int AP_PadStage1Met(int physLevelID)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		return pad && pad->occupied && AP_GateCount(AP_IDX_KEY) >= pad->keys;
+	}
 	int i, owned;
 
 	// Race tracks (0..15): the canonical helper (shared with ThTick + LInB).
@@ -1716,6 +1735,16 @@ void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
 // are equal; the callers pass both so it is correct under destination shuffle.
 int AP_PadState(int physLevelID, int destLevelID)
 {
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		if (!pad || !pad->occupied) return 5;
+#ifdef CTR_CUSTOM_TRACKS
+		if (!AP_ContentPadReady(physLevelID)) return 5;
+#endif
+		if (AP_GateCount(AP_IDX_KEY) < pad->keys) return 1;
+		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
+	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
 	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.
 	int uncBits[24];
@@ -2026,7 +2055,13 @@ void AP_EvaluateGoal(void)
 		return;
 	}
 
-	if (!ctr_cfg_active())
+	if (ap_content_plan_active())
+	{
+		int gems[5], i;
+		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
+		done = ap_content_plan_goal(gems);
+	}
+	else if (!ctr_cfg_active())
 	{
 		done = ap_oxide_first_beaten;
 	}
@@ -3395,6 +3430,9 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 // Blocked for the whole forced-loss attempt.
 void AP_NotifyAdvReward(int rewardBit)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_StandaloneRaceActive()) return;
+#endif
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_ADV_REWARD))
 		return;
 	AP_NotifyAdvRewardImpl(rewardBit);
@@ -3925,6 +3963,7 @@ int AP_BossReqMet(const ctr_req *r)
 // is never routed through this function.
 int AP_BossGarageOpen(int bossIdx)
 {
+	if (ap_content_plan_active()) return 0; // First profile has five empty garages.
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
 
@@ -4327,6 +4366,16 @@ int AP_GoalAdvert(char *out, int cap)
 		return 0;
 	if (!ctr_cfg_active())
 		return 0;
+	if (ap_content_plan_active())
+	{
+		int owned = 0, i;
+		for (i = 0; i < 5; ++i)
+		{
+			const ctr_content_item *row = ap_content_plan_item(AP_ITEM_BASE + AP_IDX_GEM_RED + i);
+			if (row && row->base && AP_GateCountGemColour(i) > 0) ++owned;
+		}
+		return snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
+	}
 
 	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and
 	// `disabled` (3) both omit it: neither is a completion condition. Whether
@@ -4668,6 +4717,11 @@ static void AP_OxideFinalContentPreflight(void)
 
 	ap_oxide_final_content_required = 0;
 	ap_cortex_track_content_required = 0;
+	if (ap_content_plan_active())
+	{
+		CustomTrack_ClearOxideFinalDescriptor();
+		return;
+	}
 	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
@@ -4701,6 +4755,70 @@ static void AP_OxideFinalContentPreflight(void)
 	}
 }
 
+static int ap_content_package_index;
+static int ap_content_package_ready[2];
+
+static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)
+{
+	const ctr_content_package *p = ap_content_plan_package(index);
+	return p ? CustomTrackManager_FindPackage(p->content_id, p->uuid, p->revision,
+	                                         p->lev_sha256, p->vrm_sha256) : NULL;
+}
+
+int AP_ContentPadReady(int physicalPad)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
+	return pad && pad->occupied && (pad->retail_id >= 0 ||
+	       (pad->package_index >= 0 && pad->package_index < 2 && ap_content_package_ready[pad->package_index]));
+}
+
+int AP_ContentPreparePad(int physicalPad)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
+	struct CustomTrackRaceContext race;
+	if (!pad || !pad->occupied || CustomTrack_StandaloneBusy() || !AP_ContentPadReady(physicalPad) ||
+	    AP_GateCount(AP_IDX_KEY) < pad->keys) return -1;
+	memset(&race, 0, sizeof race);
+	race.physicalPad = physicalPad; race.returnHub = pad->hub;
+	race.laps = pad->laps; race.trophyLocation = pad->trophy_location;
+	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;
+	race.hostLevelID = race.retail ? pad->retail_id : 6;
+	race.slot = pad->custom_slot;
+	snprintf(race.entryID, sizeof race.entryID, "%s", pad->entry_id);
+	snprintf(race.trackID, sizeof race.trackID, "%s", pad->track_id);
+	if (!race.retail)
+	{
+		const struct CustomTrackManagerPackage *p = AP_ContentPackage(pad->package_index);
+		struct CustomTrackSeedDescriptor d;
+		if (!p) return -1;
+		ap_content_package_index = pad->package_index;
+		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &ap_custom_content_status);
+		if (ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
+		    !CustomTrack_UseManagedPackage(p, &ap_custom_content_status))
+		{
+			ap_content_package_ready[pad->package_index] = 0;
+			ap_state_gen++;
+			return -1;
+		}
+		memset(&d, 0, sizeof d);
+		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
+		d.replacesCupLevelID = -1; d.boxes = 0;
+		d.flagCrates = p->flagCrates; d.flagCtrLetters = p->flagCtrLetters;
+		d.flagRelicCrates = p->flagRelicCrates; d.flagAiNav = p->flagAiNav;
+		d.flagMinimap = p->flagMinimap; d.flagGhosts = p->flagGhosts;
+		d.flagWumpaCollectible = p->flagWumpaCollectible;
+		d.flagSpawns = p->flagSpawns; d.flagCheckpoints = p->flagCheckpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", p->levSha256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", p->vrmSha256);
+		snprintf(race.levSha256, sizeof race.levSha256, "%s", p->levSha256);
+		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", p->vrmSha256);
+		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
+	}
+	if (!CustomTrack_StageStandaloneRace(&race)) return -1;
+	CustomTrack_CortexTrackSelectNextLoad(0);
+	return race.hostLevelID;
+}
+
 static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *requirement)
 {
 	const ctr_custom_track *track = &ctr_cfg.custom_track;
@@ -4727,8 +4845,10 @@ static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequiremen
 	requirement->flagCheckpoints = track->flags.checkpoints;
 }
 
-static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)
+const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)
 {
+	if (ap_content_plan_active() && ap_content_plan_package(0))
+		return AP_ContentPackage(ap_content_package_index);
 	struct CustomTrackManagerRequirement requirement;
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_seen)
 		return CustomTrackManager_BabyTPark();
@@ -4784,6 +4904,37 @@ static void AP_CustomContentLogStatus(const char *action)
 
 static void AP_CustomContentPreflightSeed(int autoFinalize)
 {
+	if (ap_content_plan_active())
+	{
+		int i, firstMissing = -1;
+		struct CustomTrackManagerStatus status;
+		ap_custom_content_seed_selected = ap_content_plan_package(0) != NULL;
+		ap_custom_content_required = 0;
+		ap_content_package_index = 0;
+		for (i = 0; i < 2; ++i)
+		{
+			const struct CustomTrackManagerPackage *p = AP_ContentPackage(i);
+			ap_content_package_ready[i] = 0;
+			if (!p) continue;
+			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &status);
+			if (autoFinalize && (status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
+			                    status.state == CTR_CT_MANAGER_MANIFEST_INVALID))
+				CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(), p, &status);
+			ap_content_package_ready[i] = status.state == CTR_CT_MANAGER_READY;
+			if (i == 0) ap_custom_content_status = status;
+			if (!ap_content_package_ready[i])
+			{
+				ap_custom_content_required = 1;
+				if (firstMissing < 0) { firstMissing = i; ap_content_package_index = i; ap_custom_content_status = status; }
+			}
+		}
+		ap_custom_content_scanned = 1;
+		ap_state_gen++;
+		// A reconnect cannot replace the buffers of a race already in flight.
+		if (!CustomTrack_StandaloneBusy())
+			CustomTrack_ClearSeedDescriptor();
+		return;
+	}
 	struct CustomTrackManagerRequirement requirement;
 	ap_custom_content_seed_selected = ctr_cfg_active() && ctr_cfg.custom_tracks_ok;
 	ap_custom_content_gate_cached = 0;
@@ -4844,7 +4995,7 @@ int AP_CustomContentRequired(void)
 
 void AP_CustomContentRescan(void)
 {
-	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
+	if (ap_content_plan_active() || (ctr_cfg_active() && ctr_cfg.custom_tracks_seen))
 	{
 		AP_CustomContentPreflightSeed(1);
 		AP_CustomContentLogStatus("Rescan");
@@ -5200,7 +5351,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
-			ap_recv_count[idx]++;
+			const ctr_content_item *row = ap_content_plan_item(items[i]);
+			const int cap = row ? row->receipt_cap : 2147483647;
+			if (ap_recv_count[idx] < cap) ap_recv_count[idx]++;
 			// Split tally for the seed verifier (issue #85): count this receipt as
 			// FOREIGN unless it is an own-world location check (which the verifier
 			// banks from the scout cache synchronously with checked-state instead).
@@ -5210,7 +5363,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// how the server reports the sender slot.
 			int       pl  = ap_net_recv_batch_player(i);
 			long long loc = ap_net_recv_batch_location(i);
-			if (pl != ap_net_self_slot() || loc <= 0)
+			if ((pl != ap_net_self_slot() || loc <= 0) && ap_recv_count_foreign[idx] < cap)
 				ap_recv_count_foreign[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
 			if (liveItemBatch && idx >= AP_IDX_GEM_RED &&
@@ -5947,6 +6100,43 @@ void AP_CortexTrackRelicAward(int raceTime)
 }
 
 #ifdef CTR_CUSTOM_TRACKS
+int AP_StandaloneRaceActive(void)
+{
+	return sdata->gGT && CustomTrack_StandaloneContext(sdata->gGT->levelID) != NULL;
+}
+
+int AP_NotifyStandaloneRace(void)
+{
+	const struct CustomTrackRaceContext *context;
+	struct GameTracker *gGT = sdata->gGT;
+	if (!gGT || !ctr_cfg_active() ||
+	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) ||
+	    !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE) || !gGT->drivers[0] ||
+	    gGT->drivers[0]->driverRank != 0)
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->trophyLocation > 2147483647 ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !ap_net_location_exists((long)context->trophyLocation))
+		return 0;
+	if (context->seedEpoch || ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
+		if (!pad || !pad->occupied || !context->seedEpoch || context->seedEpoch != ap_content_plan_epoch() ||
+		    pad->trophy_location != context->trophyLocation || pad->hub != context->returnHub ||
+		    pad->laps != context->laps || pad->custom_slot != context->slot ||
+		    context->retail != (pad->retail_id >= 0) ||
+		    context->hostLevelID != (context->retail ? pad->retail_id : 6) ||
+		    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return 0;
+	}
+	return AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
+	                        "[AP CHECK] standalone entry=%s track=%s slot=%d location=%ld\n",
+	                        context->entryID, context->trackID, context->slot,
+	                        (long)context->trophyLocation);
+}
+
 int AP_CustomTrackTrophyChecked(void)
 {
 	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
@@ -6161,6 +6351,13 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 		facts->destLevelID = level;
 
 #ifdef CTR_CUSTOM_TRACKS
+	// Standalone routes never inherit the engine host's Wumpa identity or a
+	// legacy Gem Cup's Wumpa route. A content-plan Wumpa route is separate.
+	if (CustomTrack_StandaloneContext(level))
+	{
+		facts->destLevelID = -1;
+		return;
+	}
 	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
 	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 	if (facts->servingOxideFinal)
@@ -7333,7 +7530,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			         sizeof ap_custom_content_status.detail, "%s", ctServeFault);
 			ap_custom_content_scanned = 1;
 		}
-		if (!AP_CustomPadContentReady(ap_custom_content_seed_selected,
+		if (!ap_content_plan_active() && !AP_CustomPadContentReady(ap_custom_content_seed_selected,
 		                              ap_custom_content_required, ctServeFault))
 		{
 			CustomTrack_ClearSeedDescriptor();
@@ -7387,7 +7584,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// on the levelID 26 -> 6 leg transition and the leg raced 3 laps).
 			// A transition's destination levelID cannot lie. Gated on the
 			// option so the write never fires on seeds without it.
-			if (ctr_cfg_active() && ctr_cfg.one_lap_cups &&
+			if (ctr_cfg_active() && (ctr_cfg.one_lap_cups || ap_content_plan_active()) &&
 			    (int)gGT->levelID >= GEM_STONE_VALLEY &&
 			    (int)gGT->levelID <= CITADEL_CITY && gGT->numLaps != 3)
 			{

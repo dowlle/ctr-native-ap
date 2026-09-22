@@ -870,7 +870,7 @@ void AP_VerifyOnFrame(void)
 	// slot_data absent (vanilla-rules seed) or from a NEWER apworld than this
 	// build parses: the sweep would reason over wrong/partial gates -- skip.
 	// The schema-newer case already has its own loud banner.
-	if (!ctr_cfg_active() || ctr_cfg.schema_newer)
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || ap_content_plan_active())
 	{
 		ap_vf_have = 0; // never let a previous seed's verdict survive here
 		return;

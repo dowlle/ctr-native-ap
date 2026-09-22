@@ -837,7 +837,7 @@ static void test_global_schema_boundary(void)
 	}
 	{
 		nlohmann::json d = fx();
-		d["ctr_options"]["schema_version"] = 17; // future global, known block 1
+		d["ctr_options"]["schema_version"] = CTR_CFG_SCHEMA_KNOWN + 1; // future global, known block 1
 		expect_accept(d, "future global schema >=16 with known block admitted");
 		expect_eq(ctr_cfg.schema_newer, 1, "future global schema raises the banner");
 		expect(ap_seedcfg_hit_encounters() != NULL, "future global block stays active");

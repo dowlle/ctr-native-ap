@@ -47,6 +47,10 @@ jobs:
         run: python3 tools/test-custom-letter-hooks.py
       - name: Custom package profile activation
         run: python3 tools/test-custom-profile-activation.py
+      - name: Standalone custom race result routing
+        run: python3 tools/test-standalone-race-result.py
+      - name: Standalone custom race hub return
+        run: python3 tools/test-standalone-hub-return.py
       - name: Oxide optional-first production win notifications
         run: python3 tools/test-oxide-optional-result.py
       - name: Trial and retail letter availability visuals

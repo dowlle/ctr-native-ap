@@ -93,6 +93,7 @@ tools/test-transition-diag.c
 tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
+tools/test-content-plan.cpp
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c
 tools/test-trap-scheduler.c

@@ -731,7 +731,7 @@ static void CustomContent_DrawMessage(uint32_t *ot)
 
 static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
-	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	const struct CustomTrackManagerPackage *package = AP_CustomContentSelectedPackage();
 	const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
 	struct CustomTrackManagerStatus exported;
 	char line[160];
@@ -739,6 +739,14 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	char downloadMessage[128];
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	if (package == NULL)
+	{
+		DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+		DecalFont_DrawLineOT("This seed's package is unsupported.", 0x100, 0x48,
+		                   FONT_SMALL, JUSTIFY_CENTER | RED, ot);
+		return;
+	}
 
 	if (s_customContentDownloadActive)
 	{

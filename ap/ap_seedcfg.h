@@ -85,7 +85,8 @@ extern "C" {
 //        admission parser and the rejection flag below. The block carries
 //        its own version: block schema 2 (the pool draw, 2026-09-14) rides
 //        global 16 because a block-schema-1 client refuses it at admission.
-#define CTR_CFG_SCHEMA_KNOWN 16
+// Candidate schema 17 has a separately admitted content_plan v1 profile.
+#define CTR_CFG_SCHEMA_KNOWN 17
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2

@@ -16,6 +16,7 @@
 #include "ap_retry_budget.h" // bounded pre-connect reconnect budget (pure logic)
 #include "ap_received_batch_logic.h"
 #include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
+#include "ap_content_plan.h"
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
@@ -714,7 +715,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	g_ap->set_room_info_handler([]() {
 		std::fprintf(stderr, "[AP NET] RoomInfo; connecting slot '%s'\n", g_slot.c_str());
 		// items_handling 0b111 = remote items + own world + starting inventory.
-		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"});
+		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"}, APClient::Version{0, 6, 7});
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		// ADMISSION FIRST (ticket 05). Clear the accepted latch BEFORE parsing so
@@ -733,6 +734,24 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			// discards them for a different seed.
 			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;
+		}
+		if (ap_content_plan_present())
+		{
+			std::set<int64_t> locations = g_ap->get_checked_locations();
+			const std::set<int64_t> missing = g_ap->get_missing_locations();
+			locations.insert(missing.begin(), missing.end());
+			const std::vector<int64_t> ids(locations.begin(), locations.end());
+			if (!ap_content_plan_bind(g_ap->get_seed().c_str(), g_ap->get_team_number(),
+			                          g_ap->get_player_number(), ids.data(), ids.size()))
+			{
+				ap_net_refuse_seed(ap_seedcfg_reject_reason());
+				return;
+			}
+#ifndef CTR_CUSTOM_TRACKS
+			ap_seedcfg_reject_late("content_plan needs a client built with custom-track support");
+			ap_net_refuse_seed(ap_seedcfg_reject_reason());
+			return;
+#endif
 		}
 		// Block schema 3 consistency (2026-09-18): `fallback_keys` asserts the
 		// guest has NO unlock win in this seed. The parser only sees slot_data, so

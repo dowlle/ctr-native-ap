@@ -871,6 +871,8 @@ static int parse_hit_character(const nlohmann::json &j)
 	return 1;
 }
 
+#include "ap_content_plan_impl.hpp"
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
@@ -1054,6 +1056,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// block is bypassed by the legacy early returns below. On refusal the whole
 	// config stays inactive (schema_version remains 0) and every other block is
 	// skipped; an enabled feature under a pre-16 global schema also refuses.
+	// The new plan owns its complete profile. Never interpret its physical
+	// identities or item ledger through the legacy pad/cup fallback parser.
+	const int content_result = parse_content_plan(j);
+	if (content_result != 1)
+		return;
 	if (!parse_hit_character(j))
 		return;
 
@@ -2497,6 +2504,7 @@ extern "C" int ctr_cfg_cup_leg(int cup, int leg)
 
 extern "C" void ap_seedcfg_reject_late(const char *reason)
 {
+	content_plan::forget();
 	// A later admission stage refuses an already-parsed seed (the block schema 3
 	// fallback consistency check in ap/ap_net.cpp needs the room's location
 	// union, which slot_data alone does not carry). Leave exactly what a parse

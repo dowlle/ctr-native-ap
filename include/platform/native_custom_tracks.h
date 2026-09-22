@@ -8,6 +8,7 @@
 #include <platform/native_custom_track_manager.h>
 #include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
 #include <platform/native_cortex_track_latch.h>
+#include <platform/native_custom_race_context.h>
 
 // Custom-track loader, engine-facing half, for the Baby T Park event spike.
 // Each decision's own heading in native_custom_tracks_policy.h carries its rung,
@@ -75,7 +76,17 @@ struct CustomTrackSeedDescriptor
 	int flagWumpaCollectible;
 	int flagSpawns;
 	int flagCheckpoints;
+	int standalone; // 1: content-plan race context, 0: legacy Gem Cup placement
 };
+
+// Stage only after applying a verified standalone descriptor. Entry sites
+// select retail explicitly; a same-host request without selection is restart.
+int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context);
+int CustomTrack_StandaloneBusy(void);
+void CustomTrack_SelectRetailRace(void);
+void CustomTrack_OnRaceLoadRequested(int levelID);
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID);
+const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void);
 
 // The bundled Cortex Vortex pair. `enabled` arms it for N. Oxide's Final
 // Challenge (the Oxide 2 venue); `padTrackEnabled` arms the same bytes for the

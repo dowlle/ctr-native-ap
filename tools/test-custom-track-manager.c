@@ -277,6 +277,25 @@ int main(void)
 	expect_contains(yaml, "navigation:\n      uuid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
 	                "YAML carries navigation identity separately");
 	expect_contains(yaml, package.levSha256, "YAML carries verified LEV identity");
+	{
+		struct CustomTrackManagerPackage other = package;
+		struct CustomTrackManagerStatus exported;
+		other.version = "2.0.0";
+		expect_int(CustomTrackManager_RenderYaml(&other, &status, yaml, sizeof yaml), 0,
+		           "Ready receipt cannot export another revision even with identical bytes");
+		expect_int(CustomTrackManager_SaveYaml(assets, &other, &status, &exported), 0,
+		           "mismatched revision cannot be saved either");
+		other = package;
+		other.navigationRevision++;
+		expect_int(CustomTrackManager_RenderYaml(&other, &status, yaml, sizeof yaml), 0,
+		           "Ready receipt binds navigation identity");
+		other = package;
+		other.laps++;
+		expect_int(CustomTrackManager_RenderYaml(&other, &status, yaml, sizeof yaml), 0,
+		           "Ready receipt binds authored laps");
+		expect_int(CustomTrackManager_RenderYaml(&package, &status, yaml, sizeof yaml), 1,
+		           "rejected exports leave the verified revision usable");
+	}
 
 	// Preflight only recognizes release-owned registry entries. The fixture is
 	// useful for scanner tests, but it must not become selectable by a seed.

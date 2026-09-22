@@ -4,6 +4,7 @@
 #include <platform/native_sha256.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
@@ -67,7 +68,58 @@ static struct CustomTrackSource s_oxideFinalLev;
 static int s_haveOxideFinalDescriptor;
 static int s_oxideFinalVerified;
 static int s_customTracksLoaded = 0;
+static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
 static char s_customTrackServeFault[128];
+
+// Entry owns the verified bytes through asynchronous load and every restart.
+// Path changes cannot swap geometry underneath an accepted race identity.
+#define CUSTOM_TRACK_RETAINED_FILE_MAX (64u * 1024u * 1024u)
+#define CUSTOM_TRACK_RETAINED_LEV "@ctr/standalone/lev"
+#define CUSTOM_TRACK_RETAINED_VRM "@ctr/standalone/vrm"
+struct CustomTrackRetainedFile { unsigned char *bytes; u32 size; };
+static struct CustomTrackRetainedFile s_standaloneLev, s_standaloneVrm;
+
+static void CustomTrack_ReleaseStandaloneBytes(void)
+{
+	free(s_standaloneLev.bytes);
+	free(s_standaloneVrm.bytes);
+	memset(&s_standaloneLev, 0, sizeof s_standaloneLev);
+	memset(&s_standaloneVrm, 0, sizeof s_standaloneVrm);
+}
+
+static int CustomTrack_RetainFile(const struct CustomTrackSource *source,
+	                             struct CustomTrackRetainedFile *out)
+{
+	struct NativeSha256Ctx hash;
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	char hex[NATIVE_SHA256_HEX_BYTES];
+	FILE *file;
+	unsigned char *bytes;
+	size_t got;
+	int exact;
+	if (!source->verifiedSize || source->verifiedSize > CUSTOM_TRACK_RETAINED_FILE_MAX)
+		return 0;
+	file = fopen(source->path, "rb");
+	if (!file) return 0;
+	bytes = malloc(source->verifiedSize);
+	if (!bytes) { fclose(file); return 0; }
+	got = fread(bytes, 1, source->verifiedSize, file);
+	exact = got == source->verifiedSize && fgetc(file) == EOF && !ferror(file);
+	fclose(file);
+	if (!exact) { free(bytes); return 0; }
+	NativeSha256_Init(&hash);
+	NativeSha256_Update(&hash, bytes, got);
+	NativeSha256_Final(&hash, digest);
+	NativeSha256_ToHex(digest, hex);
+	if (!NativeSha256_HexEquals(hex, source->expectedHash))
+	{
+		free(bytes);
+		return 0;
+	}
+	out->bytes = bytes;
+	out->size = source->verifiedSize;
+	return 1;
+}
 
 // Scratch used to hand a resolved path back to the caller. The game reads track
 // subfiles one at a time on a single thread, so a single buffer is fine.
@@ -104,6 +156,7 @@ static const char *CustomTrack_VerdictText(int verdict)
 // this function just turned off.
 static void CustomTrack_ResetArmedState(void)
 {
+	CustomTrack_ReleaseStandaloneBytes();
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.contentVerified = 0;
 	s_customTrackConfig.raceEnabled = 0;
@@ -111,6 +164,7 @@ static void CustomTrack_ResetArmedState(void)
 	s_customTrackConfig.raceLaps = 0;
 	s_customTrackConfig.raceBoxes = 0;
 	s_customTrackConfig.raceFieldSize = 0;
+	s_customTrackConfig.standalone = 0;
 
 	s_customTrackVrm.expectedHash[0] = '\0';
 	s_customTrackLev.expectedHash[0] = '\0';
@@ -526,6 +580,8 @@ void CustomTrack_ClearSeedDescriptor(void)
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status)
 {
+	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+		return 0; // A prepared/active race retains its exact package until exit.
 	unsigned char uuid[CTR_CT_NAV_UUID_BYTES];
 
 	if (!s_customTracksLoaded)
@@ -565,6 +621,8 @@ int CustomTrack_ReverifyArmedContent(void)
 		CustomTrack_Load();
 	if (!s_haveDescriptor || !s_customTrackConfig.contentVerified)
 		return 0;
+	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+		return s_standaloneLev.bytes != NULL && s_standaloneVrm.bytes != NULL;
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm preflight");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev preflight");
@@ -605,6 +663,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// unchanged descriptor must cost a memcmp and nothing else.
 	if (s_haveDescriptor && memcmp(&s_descriptor, d, sizeof(s_descriptor)) == 0)
 		return s_customTrackConfig.contentVerified;
+	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+		return 0;
 
 	s_descriptor = *d;
 	s_haveDescriptor = 1;
@@ -628,7 +688,10 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (cupID < 0 || cupID > 4)
+	if ((d->standalone != 0 && d->standalone != 1) ||
+	    (d->standalone && d->replacesCupLevelID != -1))
+		return 0;
+	if (!d->standalone && (cupID < 0 || cupID > 4))
 	{
 		CustomTrack_Log("[CustomTracks] REFUSED: cup LevelID %d is not a Gem Cup 100..104\n",
                                 d->replacesCupLevelID);
@@ -641,7 +704,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns, cupID, &why))
+	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
+	                                      d->standalone ? 0 : cupID, &why))
 	{
 		CustomTrack_Log("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
                                 why, d->flagAiNav, d->flagSpawns, CustomTrackPolicy_RequiredSpawns(cupID));
@@ -667,6 +731,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.mappedLevelID = d->hostLevelID;
 	s_customTrackConfig.raceCupID = cupID;
+	s_customTrackConfig.standalone = d->standalone;
 	s_customTrackConfig.raceLaps = d->laps;
 	s_customTrackConfig.raceBoxes = d->boxes ? 1 : 0;
 
@@ -699,8 +764,12 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackServeFault[0] = '\0';
-	CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
-                        cupID, d->laps, d->hostLevelID);
+	if (d->standalone)
+		CustomTrack_Log("[CustomTracks] standalone package verified: %d laps on host slot %d; awaiting entry context\n",
+		                d->laps, d->hostLevelID);
+	else
+		CustomTrack_Log("[CustomTracks] armed: cup %d becomes a single %d-lap race on host slot %d\n",
+		                cupID, d->laps, d->hostLevelID);
 	CustomTrack_Log("[CustomTracks] host slot %d serves custom bytes ONLY for that race; its retail "
                         "race pad still loads retail bytes\n",
                         d->hostLevelID);
@@ -713,6 +782,69 @@ const struct CustomTrackFeatureConfig *CustomTrack_Config(void)
 		CustomTrack_Load();
 
 	return &s_customTrackConfig;
+}
+
+int CustomTrack_StandaloneBusy(void)
+{
+	return s_standaloneRace.active || s_standaloneRace.pendingKind;
+}
+
+int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context)
+{
+	if (CustomRaceContext_Valid(context) && context->retail)
+	{
+		if (s_standaloneRace.active || s_standaloneRace.pendingKind) return 0;
+		CustomTrack_ReleaseStandaloneBytes();
+		return CustomRaceLatch_Stage(&s_standaloneRace, context);
+	}
+	if (!CustomRaceContext_Valid(context) || !s_haveDescriptor ||
+	    !s_customTrackConfig.standalone || !s_customTrackConfig.contentVerified ||
+	    context->hostLevelID != s_descriptor.hostLevelID || context->laps != s_descriptor.laps ||
+	    !NativeSha256_HexEquals(s_descriptor.levSha256, context->levSha256) ||
+	    !NativeSha256_HexEquals(s_descriptor.vrmSha256, context->vrmSha256))
+		return 0;
+	if (s_standaloneRace.active || s_standaloneRace.pendingKind) return 0;
+	CustomTrack_ReleaseStandaloneBytes();
+	if (!CustomTrack_RetainFile(&s_customTrackLev, &s_standaloneLev) ||
+	    !CustomTrack_RetainFile(&s_customTrackVrm, &s_standaloneVrm))
+	{
+		CustomTrack_ReleaseStandaloneBytes();
+		CustomTrack_Log("[CustomTracks] standalone entry refused: unable to retain the exact verified package bytes\n");
+		return 0;
+	}
+	return CustomRaceLatch_Stage(&s_standaloneRace, context);
+}
+
+void CustomTrack_SelectRetailRace(void) { CustomRaceLatch_Retail(&s_standaloneRace); }
+void CustomTrack_OnRaceLoadRequested(int levelID)
+{
+	CustomRaceLatch_OnRequest(&s_standaloneRace, levelID);
+	if (!s_standaloneRace.active) CustomTrack_ReleaseStandaloneBytes();
+}
+
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
+{
+	return CustomRaceLatch_Intent(&s_standaloneRace, levelID) ? &s_standaloneRace.current : NULL;
+}
+
+const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void)
+{
+	return s_standaloneRace.previousValid ? &s_standaloneRace.previous : NULL;
+}
+
+static int CustomTrack_LoadServes(const struct CustomTrackLoadContext *ctx)
+{
+	const struct CustomTrackRaceContext *race;
+	if (!ctx) return 0;
+	race = CustomTrack_StandaloneContext(ctx->levelID);
+	if (race && race->retail) return 0;
+	if (race)
+		return s_customTrackConfig.standalone && s_customTrackConfig.contentVerified &&
+		       s_standaloneLev.bytes && s_standaloneVrm.bytes &&
+		       s_customTrackConfig.raceEnabled && s_customTrackConfig.mappedLevelID == race->hostLevelID &&
+		       NativeSha256_HexEquals(s_descriptor.levSha256, race->levSha256) &&
+		       NativeSha256_HexEquals(s_descriptor.vrmSha256, race->vrmSha256);
+	return CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx);
 }
 
 int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContext *ctx, const char **outPath, u32 *outSize)
@@ -756,10 +888,20 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 	// the event race's -- the host slot's own retail race reads the same eight
 	// indices. Only the load context can tell them apart, and it is what keeps
 	// that retail race retail.
-	if (!CustomTrackPolicy_ShouldServe(&s_customTrackConfig, ctx))
+	if (!CustomTrack_LoadServes(ctx))
 		return 0;
 
 	source = (role == CTR_CT_ROLE_LEV) ? &s_customTrackLev : &s_customTrackVrm;
+	if (s_standaloneRace.active)
+	{
+		const struct CustomTrackRetainedFile *owned =
+			(role == CTR_CT_ROLE_LEV) ? &s_standaloneLev : &s_standaloneVrm;
+		if (!owned->bytes) return 0;
+		if (outPath) *outPath = (role == CTR_CT_ROLE_LEV) ?
+			CUSTOM_TRACK_RETAINED_LEV : CUSTOM_TRACK_RETAINED_VRM;
+		if (outSize) *outSize = owned->size;
+		return 1;
+	}
 
 	// The content was hashed at startup. Re-hashing on every subfile read would
 	// cost a multi-MiB digest inside the load path, so the serve-time check is
@@ -799,6 +941,16 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 
 	if (path == NULL || dst == NULL)
 		return 0;
+	if (!strcmp(path, CUSTOM_TRACK_RETAINED_LEV) || !strcmp(path, CUSTOM_TRACK_RETAINED_VRM))
+	{
+		const struct CustomTrackRetainedFile *owned = !strcmp(path, CUSTOM_TRACK_RETAINED_LEV) ?
+			&s_standaloneLev : &s_standaloneVrm;
+		if (!s_standaloneRace.active || !s_customTrackConfig.contentVerified ||
+		    !owned->bytes || owned->size != fileBytes || bufBytes < fileBytes) return 0;
+		memcpy(dst, owned->bytes, fileBytes);
+		if (bufBytes > fileBytes) memset((char *)dst + fileBytes, 0, bufBytes - fileBytes);
+		return 1;
+	}
 
 	if (fileBytes > bufBytes)
 		fileBytes = bufBytes; // defensive: never write past the caller's buffer
@@ -861,6 +1013,7 @@ const char *CustomTrack_CupDisplayName(int cupID, int isAdventureCup)
 int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
 {
 	struct CustomTrackLoadContext ctx;
+	if (CustomTrack_StandaloneContext(levelID)) return CTR_CT_BOX_DENY;
 
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
@@ -872,6 +1025,10 @@ int CustomTrack_BoxVerdict(int levelID, int adventureCupActive, int cupID)
 int CustomTrack_EventFieldSize(int levelID, int adventureCupActive, int cupID)
 {
 	struct CustomTrackLoadContext ctx;
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	if (race && race->retail) return 8;
+	if (CustomTrack_StandaloneContext(levelID))
+		return s_customTrackConfig.contentVerified ? s_customTrackConfig.raceFieldSize : 0;
 
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
@@ -888,12 +1045,14 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 	ctx.adventureCupActive = adventureCupActive;
 	ctx.cupID = cupID;
 
-	return CustomTrackPolicy_ShouldServe(CustomTrack_Config(), &ctx);
+	CustomTrack_Config();
+	return CustomTrack_LoadServes(&ctx);
 }
 
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID)
 {
 	struct CustomTrackLoadContext ctx;
+	if (CustomTrack_StandaloneContext(levelID)) return -1;
 
 	ctx.levelID = levelID;
 	ctx.adventureCupActive = adventureCupActive;
