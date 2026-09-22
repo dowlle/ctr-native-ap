@@ -6,6 +6,7 @@
 // Archipelago hook declarations (CTR_AP build only; see ap/ap_hooks.h)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
+#include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
 #include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
@@ -395,6 +396,7 @@
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
+#include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
 #endif
 
 #endif
