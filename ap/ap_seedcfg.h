@@ -535,6 +535,14 @@ typedef struct
 	// docstring must then describe what the game actually does (Lessons §12).
 	int ap_item_type_colors;
 
+	// AP item box colours (ruling R11, 2026-07-23; slot_data ctr_options.
+	// color_boxes_by_item). 0 = every AP item box is pink. 1 = each box wears
+	// the Archipelago colour of the item it holds (ap_box_colour_logic.h). A YAML
+	// choice because the colour tells the player which boxes matter. ADDITIVE
+	// key, no schema bump: absent (every older seed) -> 0 -> pink, which is what
+	// every earlier client draws. Display only: no gate, location or item.
+	int color_boxes_by_item;
+
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
 	// feature stays dark on old seeds (the one_lap_cups additive-key precedent).

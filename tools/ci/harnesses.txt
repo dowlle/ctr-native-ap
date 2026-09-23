@@ -5,6 +5,9 @@ tools/test-author-ready.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
+tools/test-box-colour-seedcfg.cpp
+tools/test-box-colour.c
+tools/test-box-edge.c
 tools/test-box-ghost-visual.py
 tools/test-box-map.c
 tools/test-box-offset.c

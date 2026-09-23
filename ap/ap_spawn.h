@@ -89,6 +89,11 @@ void AP_Spawn_SetRot(AP_SpawnHandle h, const SVec3 *rot);
 void AP_Spawn_SetScale(AP_SpawnHandle h, s16 scale);
 void AP_Spawn_SetColour(AP_SpawnHandle h, u32 colorRGBA);
 void AP_Spawn_SetVisible(AP_SpawnHandle h, int visible);
+// Swap an AP-owned direct model (AP_Spawn_AddModel) for another with the same
+// geometry, e.g. the AP box in another colour. Takes effect on the live
+// instance at once, or at its birth if it is still waiting. Ignored for a
+// modelID spawn and for a NULL model.
+void AP_Spawn_SetModel(AP_SpawnHandle h, struct Model *model);
 
 // Drop one entry / every entry. Safe on a stale handle and safe after a pool
 // reset (the instance pointer is dropped, never freed twice).

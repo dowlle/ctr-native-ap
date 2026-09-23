@@ -149,6 +149,16 @@ void AP_Spawn_SetVisible(AP_SpawnHandle h, int visible)
 	e->dirty = 1;
 }
 
+void AP_Spawn_SetModel(AP_SpawnHandle h, struct Model *model)
+{
+	struct ApSpawnEntry *e = AP_SpawnEntry(h);
+	if (e == 0 || model == 0 || e->model == 0 || e->model == model)
+		return;
+	e->model = model;
+	if (e->inst != 0)
+		e->inst->model = model;
+}
+
 static void AP_SpawnDropEntry(struct ApSpawnEntry *e)
 {
 	if (e->inst != 0)

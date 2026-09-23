@@ -3,23 +3,19 @@
 
 #ifdef CTR_AP
 
-// Supply the AP box's face texture from art compiled into this build.
-//
-// The AP build ships its own box art rather than harvesting the retail weapon
-// crate out of the player's game data. The harvest existed because the relic
-// variant of every track's level file omits `crate_question` (PU_RANDOM_CRATE)
-// and its texels, so AP boxes could not be drawn in a relic race at all; a
-// static atlas answers that for every race mode without reading a single byte
-// of level data, and without a PNG decoder in the engine.
-//
-// Returns non-zero when outFace holds an AP-owned layout addressing the face
-// rect of the sideload atlas and the atlas is uploaded. Returns zero while
-// unavailable or after failure. A failure here must never mean "no box": the
-// caller keeps the untextured fallback cube.
-//
-// Safe to call every frame: the upload runs at most once, and afterwards this
-// only copies twelve bytes into the caller's AP-owned layout.
-int AP_BoxTexture_EnsureFace(struct TextureLayout *outFace);
+// The AP box's texture atlas: wood border and crate face built from the
+// player's own disc, recoloured, with the Archipelago logo on the face, in the
+// default pink and the four Archipelago item colours. Falls back to
+// JurnthReinal's compiled art when the disc read fails. See ap_box_texture.c.
+
+// Upload the atlas as the AP sideload texture. Returns non-zero once it is
+// uploaded; zero after a failed upload, in which case the caller keeps the
+// untextured fallback cube. Safe to call every frame: the upload runs once.
+int AP_BoxTexture_Ensure(void);
+
+// Read the wood tile and crate face from the player's disc. Runs once, on the
+// first frame with no load in flight; call it every frame. Sticky on failure.
+void AP_BoxTexture_Prepare(void);
 
 #endif // CTR_AP
 #endif // AP_BOX_TEXTURE_H

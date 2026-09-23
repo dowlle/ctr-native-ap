@@ -12,6 +12,7 @@
 #include "ap_cup_box_policy.h" // WO-A3: the freestanding cup-leg access decision
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
+#include "ap_box_colour_logic.h" // AP_BoxColour_Pick: which colour one box wears
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the event race's own box verdict
 #endif
@@ -46,6 +47,7 @@ struct ApBoxLive
 	short          x, y, z, rotY; // kept so a spawn can be retried once the model is up
 	AP_SpawnHandle spawn;
 	int            ghostTouched; // #354: drove through this ghost box, logged once
+	int            colour;       // AP_BOX_COLOUR_*: what the spawned model wears
 };
 
 static struct ApBoxLive s_live[AP_BOX_SLOTS_PER_TRACK];
@@ -374,6 +376,31 @@ static int AP_BoxesSnapshotPlacements(void)
 	return kept;
 }
 
+// The colour this box should wear now. Pink unless the seed turns on
+// color_boxes_by_item and the connect-time scout already holds this location;
+// the scout reply can land after the box stands, so AP_BoxesTick asks again
+// every frame and recolours the box in place (AP_BoxesApplyColour).
+static int AP_BoxesColourFor(long code)
+{
+	unsigned flags = 0;
+	int scouted;
+
+	if (!ctr_cfg.color_boxes_by_item)
+		return AP_BOX_COLOUR_PINK;
+	scouted = ap_net_scout_known((long long)code, 0, 0, &flags);
+	return AP_BoxColour_Pick(1, scouted, flags);
+}
+
+static void AP_BoxesApplyColour(struct GameTracker *gGT, int i)
+{
+	int colour = AP_BoxesColourFor(s_live[i].code);
+
+	if (colour == s_live[i].colour || s_live[i].spawn == AP_SPAWN_INVALID)
+		return;
+	AP_Spawn_SetModel(s_live[i].spawn, AP_BoxModel_ForColour(AP_BoxModel_GetOwned(gGT), colour));
+	s_live[i].colour = colour;
+}
+
 static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 {
 	Vec3  pos;
@@ -416,7 +443,9 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	rot.y = s_live[i].rotY;
 	rot.z = 0;
 
-	s_live[i].spawn = AP_Spawn_AddModel(model, &pos, &rot, AP_SPAWN_LIFE_LEVEL, s_boxName);
+	s_live[i].colour = AP_BoxesColourFor(s_live[i].code);
+	s_live[i].spawn = AP_Spawn_AddModel(AP_BoxModel_ForColour(model, s_live[i].colour), &pos, &rot,
+	                                    AP_SPAWN_LIFE_LEVEL, s_boxName);
 	if (s_live[i].spawn == AP_SPAWN_INVALID)
 		s_spawnFull = 1;
 }
@@ -712,6 +741,8 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 			AP_BoxesSpawnOne(gGT, i); // model was not up yet when we asked
 			continue;
 		}
+
+		AP_BoxesApplyColour(gGT, i);
 
 		inst = AP_Spawn_Instance(s_live[i].spawn);
 		if (inst == 0)

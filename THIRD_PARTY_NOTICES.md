@@ -245,13 +245,18 @@ License (logo design): CC BY-NC 4.0.
 
 Paths: `tools/apbox-texture/box_pink_*.png` (source art),
 `tools/apbox-texture/LICENSE-archipelago-icon.txt` (the license as supplied with
-the art), `ap/ap_box_texture_data.h` (generated)
+the art), `ap/ap_box_texture_data.h` and `ap/ap_box_logo_mask_data.h`
+(generated)
 
 The face texture on an AP box is original art contributed by **JurnthReinal**,
 who derived it from the Archipelago icon. `tools/apbox-texture/convert.py` bakes
 the three supplied PNGs into the static 128x64 RGBA atlas the AP build compiles
-in and uploads as its sideload texture, so the AP box no longer takes its
-appearance from pixels harvested out of the player's own retail game data.
+in; `tools/apbox-texture/gen_logo_mask.py` marks which face pixels are the
+Archipelago logo in that art. At runtime the client reads the retail crate's
+wood tile and the Wumpa crate's face from the player's own disc, recolours
+them and puts the logo from this art on top. No retail pixels are compiled
+into the build. If that read fails, the box uses JurnthReinal's art as
+supplied.
 
 The Archipelago icon the art derives from is copyright (c) 2022 Krista Corkos
 and Christopher Wilson, used under Creative Commons Attribution-NonCommercial
