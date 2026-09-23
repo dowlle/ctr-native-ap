@@ -575,7 +575,13 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	const int numRows = numStrings + 1;         // + Connect action row
+	// + Connect action row, + Room links row where ctr-ap:// registration
+	// exists (issue #334; Windows only for 0.2.1).
+	const int linkRow = AP_LinkRegRowAvailable() ? numStrings + 1 : -1;
+	const int numRows = numStrings + 1 + (linkRow >= 0 ? 1 : 0);
+
+	if (linkRow >= 0)
+		AP_LinkRegPageFrame();
 
 	const int justResolved = TextEdit_Update();
 
@@ -600,6 +606,11 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			{
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
+			}
+			else if (menu->rowSelected == linkRow)
+			{
+				// Room links: use this client for ctr-ap:// links, or stop.
+				AP_LinkRegAction();
 			}
 			else
 			{
@@ -648,6 +659,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
+	// Room links row, in the line between Connect and Status.
+	if (linkRow >= 0)
+	{
+		int y = startY + linkRow * rowSpacing;
+		DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, ORANGE, ot);
+		DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, WHITE, ot);
+		if (menu->rowSelected == linkRow)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
@@ -674,8 +698,28 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// case markers at their point of use. A newer-version notice owns this area
 	// when armed and takes priority over the static hint.
 	if (!AP_ConnUpdateNoticeActive())
-		DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
-			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	{
+		const char *noticeFirst;
+		const char *noticeSecond;
+
+		// The Room links row explains its action in the footer while selected.
+		if (linkRow >= 0 && menu->rowSelected == linkRow && !s_connEditing)
+			DecalFont_DrawLineOT((char *)AP_LinkRegActionHint(),
+				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		else
+			DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
+				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+
+		// One-time notice when another program owns ctr-ap:// links: they are
+		// never taken over silently. Same rows the update notice would use.
+		if (!s_connEditing && AP_LinkRegNotice(&noticeFirst, &noticeSecond))
+		{
+			DecalFont_DrawLineOT((char *)noticeFirst, 0x100, startY + (numStrings + 5) * rowSpacing,
+				FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+			DecalFont_DrawLineOT((char *)noticeSecond, 0x100, startY + (numStrings + 6) * rowSpacing,
+				FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+		}
+	}
 
 	// Drawn as a footer rather than on the row itself: the text value is
 	// left-justified and grows rightward as it is typed, so there is no space

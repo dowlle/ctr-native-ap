@@ -1,7 +1,7 @@
 #ifndef NATIVE_LINK_ROUTE_H
 #define NATIVE_LINK_ROUTE_H
 
-// Startup routing for a one-click-connect launch (issue #334, slice 3).
+// Startup routing for a one-click-connect launch (issue #334, slices 3 and 4).
 //
 // Decides, from facts main.c gathers before anything else starts, what a
 // process launched with (or without) a ctr-ap request does. Pure, so the host
@@ -21,6 +21,11 @@ typedef struct
 	int haveRequest;  // a valid ctr-ap request was on the command line
 	int storeUsable;  // the per-install state directory is usable
 	int isPrimary;    // this process holds the primary lock
+	// Slice 4, Windows only for now (steamRoutingEnabled is 0 elsewhere until
+	// the Linux and Steam Deck routes are measured).
+	int steamRoutingEnabled;
+	int steamRouteKnown;  // a Steam shortcut id was recorded by an earlier Steam launch
+	int launchedBySteam;  // this process has a valid SteamGameId
 } NativeLinkRouteInput;
 
 typedef enum
@@ -31,11 +36,17 @@ typedef enum
 	NATIVE_LINK_ROUTE_RUN = 0,
 	// Start as the primary and take the request at boot, before the first dial.
 	NATIVE_LINK_ROUTE_RUN_WITH_REQUEST,
-	// Another client owns this install: publish the request and exit.
+	// Another client owns this install: publish the request and exit. Steam is
+	// not invoked again.
 	NATIVE_LINK_ROUTE_HAND_OFF,
 	// Another client owns this install and there is no request to hand over:
 	// exit successfully without starting a second game process.
-	NATIVE_LINK_ROUTE_ALREADY_RUNNING
+	NATIVE_LINK_ROUTE_ALREADY_RUNNING,
+	// No client runs and this launch did not come from Steam, but Steam has
+	// started this install before: publish the request, release the primary
+	// lock, open steam://rungameid/<id> and exit. The Steam-started client
+	// claims the request at boot.
+	NATIVE_LINK_ROUTE_VIA_STEAM
 } NativeLinkRoute;
 
 NativeLinkRoute NativeLinkRoute_Decide(const NativeLinkRouteInput *in);

@@ -391,3 +391,167 @@ void AP_LinkDrawTitleHint(uint32_t *ot)
 	DecalFont_DrawLineOT("Password needed: OPTIONS > Connection", 0x100, 0xC4, FONT_SMALL,
 	                     JUSTIFY_CENTER | ORANGE, ot);
 }
+
+// ---------------------------------------------------------------------------
+// ctr-ap:// link registration (issue #334, slice 4). Windows only for 0.2.1;
+// elsewhere the Connection page shows no Room links row.
+
+#if defined(_WIN32)
+static NativeLinkRegOps ap_link_reg_ops;
+static char ap_link_reg_exe[NATIVE_LINK_REG_TEXT_MAX];
+static int ap_link_reg_ready;
+static NativeLinkRegStatus ap_link_reg_status = NATIVE_LINK_REG_UNKNOWN;
+static const char *ap_link_reg_message;     // result of the last action, this visit
+static int ap_link_reg_page_frame = -1000;  // last frame the Connection page drew
+static int ap_link_reg_notice;              // show the one-time notice this visit
+
+#define AP_LINK_REG_NOTICE_FILE "room-link-notice.txt"
+
+static int AP_LinkRegInit(void)
+{
+	if (!ap_link_reg_ready)
+	{
+		NativeLinkReg_WinOps(&ap_link_reg_ops);
+		ap_link_reg_ready = NativeLinkReg_WinExePath(ap_link_reg_exe, sizeof ap_link_reg_exe) ? 1 : -1;
+	}
+	return ap_link_reg_ready == 1;
+}
+
+void AP_LinkRegisterAtLaunch(void)
+{
+	NativeLinkRegResult result;
+	char msg[160];
+
+	if (!AP_LinkRegInit())
+	{
+		AP_AppendLog("[AP LINK] room links: this client's path is unavailable; not registered\n");
+		return;
+	}
+	result = NativeLinkReg_Register(&ap_link_reg_ops, ap_link_reg_exe, 0, &ap_link_reg_status);
+	snprintf(msg, sizeof msg, "[AP LINK] room links at launch: %s (%s)\n", NativeLinkReg_ResultText(result),
+	         NativeLinkReg_StatusText(ap_link_reg_status));
+	AP_AppendLog(msg);
+}
+
+int AP_LinkRegRowAvailable(void)
+{
+	return 1;
+}
+
+static int AP_LinkRegNoticeSeen(void)
+{
+	char path[NATIVE_LINK_HOST_PATH_MAX + 32];
+	snprintf(path, sizeof path, "%s/%s", ap_link_host.dir, AP_LINK_REG_NOTICE_FILE);
+	return ap_link_host.dir[0] == '\0' || NativeFs_FileExists(path);
+}
+
+static void AP_LinkRegMarkNoticeSeen(void)
+{
+	char path[NATIVE_LINK_HOST_PATH_MAX + 32];
+	FILE *f;
+	if (ap_link_host.dir[0] == '\0')
+		return;
+	snprintf(path, sizeof path, "%s/%s", ap_link_host.dir, AP_LINK_REG_NOTICE_FILE);
+	f = NativeFs_CreateExclusive(path);
+	if (f != NULL)
+		fclose(f);
+}
+
+void AP_LinkRegPageFrame(void)
+{
+	// A new visit re-reads the registry (another client may have taken room
+	// links since) and decides once whether the one-time notice shows.
+	if (sdata->frameCounter - ap_link_reg_page_frame > 1)
+	{
+		ap_link_reg_message = NULL;
+		ap_link_reg_notice = 0;
+		ap_link_reg_status = AP_LinkRegInit() ? NativeLinkReg_Status(&ap_link_reg_ops, ap_link_reg_exe)
+		                                      : NATIVE_LINK_REG_UNKNOWN;
+		if (ap_link_reg_status == NATIVE_LINK_REG_OTHER_PROGRAM && !AP_LinkRegNoticeSeen())
+		{
+			ap_link_reg_notice = 1;
+			AP_LinkRegMarkNoticeSeen();
+		}
+	}
+	ap_link_reg_page_frame = sdata->frameCounter;
+}
+
+const char *AP_LinkRegStatusText(void)
+{
+	return NativeLinkReg_StatusText(ap_link_reg_status);
+}
+
+const char *AP_LinkRegActionHint(void)
+{
+	if (ap_link_reg_message != NULL)
+		return ap_link_reg_message;
+	return (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT) ? "*: STOP USING THIS CLIENT FOR LINKS"
+	                                                           : "*: USE THIS CLIENT FOR ROOM LINKS";
+}
+
+int AP_LinkRegNotice(const char **first, const char **second)
+{
+	if (!ap_link_reg_notice || ap_link_reg_status != NATIVE_LINK_REG_OTHER_PROGRAM)
+		return 0;
+	*first = "Another program opens room links.";
+	*second = "Pick Room links to use this client.";
+	return 1;
+}
+
+void AP_LinkRegAction(void)
+{
+	NativeLinkRegResult result;
+	char msg[160];
+
+	if (!AP_LinkRegInit())
+	{
+		ap_link_reg_message = "Room links unavailable here";
+		return;
+	}
+	// The explicit action: the only path that replaces another program's
+	// handler, and the only unregister.
+	if (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT)
+		result = NativeLinkReg_Unregister(&ap_link_reg_ops, ap_link_reg_exe, &ap_link_reg_status);
+	else
+		result = NativeLinkReg_Register(&ap_link_reg_ops, ap_link_reg_exe, 1, &ap_link_reg_status);
+	ap_link_reg_notice = 0;
+	ap_link_reg_message = (result == NATIVE_LINK_REG_OK) ? NULL : "Room links could not be changed";
+	snprintf(msg, sizeof msg, "[AP LINK] room links action: %s (%s)\n", NativeLinkReg_ResultText(result),
+	         NativeLinkReg_StatusText(ap_link_reg_status));
+	AP_AppendLog(msg);
+}
+#else
+void AP_LinkRegisterAtLaunch(void)
+{
+}
+
+int AP_LinkRegRowAvailable(void)
+{
+	return 0;
+}
+
+void AP_LinkRegPageFrame(void)
+{
+}
+
+const char *AP_LinkRegStatusText(void)
+{
+	return "";
+}
+
+const char *AP_LinkRegActionHint(void)
+{
+	return "";
+}
+
+int AP_LinkRegNotice(const char **first, const char **second)
+{
+	(void)first;
+	(void)second;
+	return 0;
+}
+
+void AP_LinkRegAction(void)
+{
+}
+#endif

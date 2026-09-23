@@ -14,6 +14,7 @@
 
 #include "platform/native_link_handoff.h"
 #include "platform/native_link_host.h"
+#include "platform/native_link_register.h"
 
 struct RectMenu;
 struct GameTracker;
@@ -47,5 +48,21 @@ void AP_LinkNoteDial(const char *uri, const char *slot);
 
 // Title-screen hint after a linked room refused the (empty) password.
 void AP_LinkDrawTitleHint(uint32_t *ot);
+
+// ── ctr-ap:// registration (slice 4; Windows only for 0.2.1) ──
+// main.c, primary client: register automatically unless another program owns
+// room links. Failure is logged and never blocks startup.
+void AP_LinkRegisterAtLaunch(void);
+// Connection page: 1 when the Room links row exists on this platform.
+int AP_LinkRegRowAvailable(void);
+// Each frame the Connection page draws (re-reads the registry per visit).
+void AP_LinkRegPageFrame(void);
+const char *AP_LinkRegStatusText(void);
+// Footer text while the Room links row is selected.
+const char *AP_LinkRegActionHint(void);
+// The one-time "another program" notice, two lines; 1 while it shows.
+int AP_LinkRegNotice(const char **first, const char **second);
+// The row's explicit action: use this client for room links, or stop.
+void AP_LinkRegAction(void);
 
 #endif // AP_LINK_H
