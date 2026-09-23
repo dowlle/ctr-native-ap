@@ -222,6 +222,18 @@ static void Editor_ApBoxLogLine(const char *m)
 	Editor_Log("APBOX %s", line);
 }
 #define AP_LogLine Editor_ApBoxLogLine
+// --editor-apbox-tint RRGGBB: recolour border and crate face to that colour
+// instead of the pink (editor-only trial of the item classification colours).
+static int s_edApBoxTint = -1;
+static void Editor_ApBoxRecolour(unsigned char *rgba, int w, int h, int stride)
+{
+	if (s_edApBoxTint < 0)
+		AP_BoxEdge_Recolour(rgba, w, h, stride);
+	else
+		AP_BoxEdge_RecolourTo(rgba, w, h, stride, (s_edApBoxTint >> 16) & 255, (s_edApBoxTint >> 8) & 255,
+		                      s_edApBoxTint & 255);
+}
+#define AP_BoxEdge_Recolour Editor_ApBoxRecolour
 
 // ---- BEGIN verbatim from ap/ap_box_texture.c ----
 #define AP_BOX_EDGE_SRC_VRM (BI_ARCADETRACKS + 0 * 8 + 0)
@@ -467,6 +479,7 @@ static void AP_BoxEdge_Harvest(void)
 
 // ---- END verbatim from ap/ap_box_texture.c ----
 #undef s_apBoxTextureAtlas
+#undef AP_BoxEdge_Recolour
 
 // Returns the atlas to upload: `base` with the disc wood (and, for the Wumpa or
 // plain face variants, the recoloured crate face behind the logo) written in.

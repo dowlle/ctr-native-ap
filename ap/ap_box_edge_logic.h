@@ -210,6 +210,49 @@ static void AP_BoxEdge_Recolour(unsigned char *rgba, int w, int h, int stride)
 	}
 }
 
+// Same recolour, onto a ramp derived from one target colour instead of the
+// fixed pink: shadow 40%, dark grain 66%, wood 84% of the colour, highlights
+// the colour lifted 15% toward white. For trying the Archipelago item
+// classification colours (progression AF99EF, useful 6D8BE8, filler 00EEEE,
+// trap FA8072, from the Archipelago client's NetUtils.py / data/client.kv).
+static inline void AP_BoxEdge_RecolourTo(unsigned char *rgba, int w, int h, int stride, int cr, int cg, int cb)
+{
+	int c[3] = {cr, cg, cb}, stops[4][3], x, y, k;
+	static const int pos[4] = {0, 96, 176, 256};
+
+	if (rgba == 0 || w <= 0 || h <= 0 || stride < w)
+		return;
+	for (k = 0; k < 3; k++)
+	{
+		stops[0][k] = c[k] * 40 / 100;
+		stops[1][k] = c[k] * 66 / 100;
+		stops[2][k] = c[k] * 84 / 100;
+		stops[3][k] = c[k] + (255 - c[k]) * 15 / 100;
+	}
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++)
+		{
+			unsigned char *p = rgba + (y * stride + x) * 4;
+			int r = p[0], g = p[1], b = p[2];
+			int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+			int mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+			int t, s, span, f;
+
+			if (p[3] == 0 || mx - mn < 24)
+				continue;
+			t = (((77 * r + 150 * g + 29 * b) >> 8) - AP_BOX_EDGE_LUMA_LO) * 256 /
+			    (AP_BOX_EDGE_LUMA_HI - AP_BOX_EDGE_LUMA_LO);
+			if (t < 0) t = 0;
+			if (t > 256) t = 256;
+			for (s = 0; s < 2 && t > pos[s + 1]; s++)
+				;
+			span = pos[s + 1] - pos[s];
+			f = t - pos[s];
+			for (k = 0; k < 3; k++)
+				p[k] = (unsigned char)(stops[s][k] + (stops[s + 1][k] - stops[s][k]) * f / span);
+		}
+}
+
 // ── the crate face behind the logo ──────────────────────────────────────────
 // AP box face variants (AP_BOX_FACE_BASE, chosen at build time):
 //   0  JurnthReinal's face as drawn (the framed box without a crate face)

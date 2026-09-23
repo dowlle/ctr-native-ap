@@ -435,6 +435,12 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 			s_edApBoxFace = strcmp(v, "wumpa") == 0 ? AP_BOX_FACE_WUMPA
 			                : strcmp(v, "plain") == 0 ? AP_BOX_FACE_PLAIN : AP_BOX_FACE_JURNTH;
 		}
+		else if (strcmp(argv[i], "--editor-apbox-tint") == 0 && i + 1 < argc)
+		{
+			unsigned tint = 0;
+			if (sscanf(argv[++i], "%x", &tint) == 1)
+				s_edApBoxTint = (int)(tint & 0xFFFFFF);
+		}
 		else if (strcmp(argv[i], "--editor-apbox-edge") == 0 && i + 1 < argc)
 		{
 			s_edApBoxEdgeBuiltin = strcmp(argv[++i], "builtin") == 0;
