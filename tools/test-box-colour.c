@@ -46,6 +46,28 @@ static void test_pick(void)
 	expect(AP_BoxColour_Pick(1, 1, 0x10), AP_BOX_COLOUR_FILLER, "unknown bits alone -> filler");
 }
 
+static void test_override(void)
+{
+	// seed off + player on => off; seed on + player off => off; both on => colours
+	expect(AP_BoxColour_Enabled(0, 1), 0, "seed off, player on -> off");
+	expect(AP_BoxColour_Enabled(1, 0), 0, "seed on, player off -> off");
+	expect(AP_BoxColour_Enabled(0, 0), 0, "both off -> off");
+	expect(AP_BoxColour_Enabled(1, 1), 1, "both on -> colours");
+	// and what the box then wears
+	expect(AP_BoxColour_Pick(AP_BoxColour_Enabled(0, 1), 1, AP_ITEM_FLAG_TRAP), AP_BOX_COLOUR_PINK,
+	       "seed off: a trap box stays pink even with the player row on");
+	expect(AP_BoxColour_Pick(AP_BoxColour_Enabled(1, 0), 1, AP_ITEM_FLAG_TRAP), AP_BOX_COLOUR_PINK,
+	       "player off: a trap box is pink");
+	expect(AP_BoxColour_Pick(AP_BoxColour_Enabled(1, 1), 1, AP_ITEM_FLAG_TRAP), AP_BOX_COLOUR_TRAP,
+	       "both on: a trap box is salmon");
+	expect(AP_BoxColour_Pick(AP_BoxColour_Enabled(1, 1), 0, AP_ITEM_FLAG_TRAP), AP_BOX_COLOUR_PINK,
+	       "both on, not scouted yet: pink");
+	// the Options row
+	expect(AP_BoxColour_RowState(1, 0), AP_BOX_COLOUR_ROW_SEED_OFF, "loaded seed with colours off locks the row");
+	expect(AP_BoxColour_RowState(1, 1), AP_BOX_COLOUR_ROW_PLAYER, "loaded seed with colours on: player's row");
+	expect(AP_BoxColour_RowState(0, 0), AP_BOX_COLOUR_ROW_PLAYER, "no seed loaded: player's row");
+}
+
 static void test_colours(void)
 {
 	// the Archipelago client colours (NetUtils.py)
@@ -193,6 +215,7 @@ static void test_build_slot(void)
 int main(void)
 {
 	test_pick();
+	test_override();
 	test_colours();
 	test_slots();
 	test_recolour_to();

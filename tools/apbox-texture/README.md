@@ -87,8 +87,9 @@ box five times, in 80x64 slots (wood at the slot's (0,0), face at (16,0)),
 three per row. Slot 0 is the default pink, at the compiled atlas's own
 positions; the others are the Archipelago item colours, progression `AF99EF`,
 useful `6D8BE8`, filler `00EEEE` and trap `FA8072`, recoloured with
-`AP_BoxEdge_RecolourTo`. The seed option `color_boxes_by_item` decides whether
-a box wears its item's colour; logic and the atlas layout are in
+`AP_BoxEdge_RecolourTo`. A box wears its item's colour only when the seed
+option `color_boxes_by_item` (default on) and the player's Options row
+**Item Box Colours** (`config.ini` `item_box_colours`, default on) both allow it; logic and the atlas layout are in
 `ap/ap_box_colour_logic.h`, pinned by `tools/test-box-colour.c`. Without the
 disc read, the coloured slots recolour JurnthReinal's border and face instead.
 

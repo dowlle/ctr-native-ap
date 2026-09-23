@@ -9,8 +9,12 @@
 // THE OPTION
 // ----------
 // ctr_options.color_boxes_by_item (apworld option "Item Box Colours", default
-// off; ruling R11 of 2026-07-23 asked for a YAML toggle because colouring by
-// importance tells the player which checks matter). Off: every AP box is pink.
+// on since a 2026-09-23 ruling; ruling R11 of 2026-07-23 made it a YAML
+// toggle because colouring by importance tells the player which checks matter,
+// so a seed can switch it off for everyone, e.g. for races). Each player can
+// also switch it off for themselves in Options, Archipelago page, "Item Box
+// Colours"; never on when the seed has it off (AP_BoxColour_Enabled).
+// Off: every AP box is pink.
 // On: a box takes the Archipelago colour of the item it holds, from the item
 // flags the client scouts silently for every location at connect
 // (ap/ap_net.cpp). Until that scout reply has arrived, or for a location it
@@ -77,6 +81,26 @@ static inline int AP_BoxColour_Pick(int colourByItem, int scouted, unsigned flag
 	case AP_ITEM_CLASS_FILLER:      return AP_BOX_COLOUR_FILLER;
 	}
 	return AP_BOX_COLOUR_FILLER;
+}
+
+// Whether this player sees item colours at all. Both must say yes: the seed
+// (ctr_options.color_boxes_by_item, default on) and the player's own Options
+// row "Item Box Colours" (config.ini item_box_colours, default on). The player
+// can only turn colours off; a seed that turned them off cannot be overruled.
+static inline int AP_BoxColour_Enabled(int seedOn, int playerOn)
+{
+	return seedOn && playerOn;
+}
+
+// What the Options row shows. seedLoaded: a seed's slot_data is active.
+enum
+{
+	AP_BOX_COLOUR_ROW_PLAYER = 0, // the player's own ON/OFF, editable
+	AP_BOX_COLOUR_ROW_SEED_OFF    // "OFF (SEED)", greyed, not editable
+};
+static inline int AP_BoxColour_RowState(int seedLoaded, int seedOn)
+{
+	return (seedLoaded && !seedOn) ? AP_BOX_COLOUR_ROW_SEED_OFF : AP_BOX_COLOUR_ROW_PLAYER;
 }
 
 // Top-left of a colour's slot in the atlas.

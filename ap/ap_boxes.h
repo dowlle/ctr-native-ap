@@ -122,5 +122,11 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
                           struct Driver *attacker, int oldX, int oldY, int oldZ);
 
+// How the Options row "Item Box Colours" is shown right now:
+// AP_BOX_COLOUR_ROW_SEED_OFF (ap_box_colour_logic.h) when a loaded seed has
+// color_boxes_by_item off, so the row reads "OFF (SEED)" and cannot be changed;
+// AP_BOX_COLOUR_ROW_PLAYER otherwise.
+int AP_Boxes_ColourRowState(void);
+
 #endif // CTR_AP
 #endif // AP_BOXES_H

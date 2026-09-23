@@ -7,6 +7,8 @@
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
 #include <platform/native_input.h>
+#include "../../ap/ap_boxes.h"             // AP_Boxes_ColourRowState: the Item Box Colours row
+#include "../../ap/ap_box_colour_logic.h"  // AP_BOX_COLOUR_ROW_SEED_OFF
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
@@ -330,8 +332,52 @@ static void Enum_Advance(const ConfigEntry *e)
 // clear of the longest label this menu has.
 #define CFG_STRING_INLINE_MAX 20
 
+#ifdef CTR_AP
+// The Item Box Colours row is the player's opt-out of the seed's item box
+// colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
+// takes no input: a player can turn colours off, never on.
+static int Config_RowLockedBySeed(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+// Two help lines under the page for the selected row, in the footer style the
+// Connection page uses. Only rows that need explaining have one. Each line fits
+// the panel (33 characters at FONT_SMALL).
+static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
+{
+	const char *first = 0;
+	const char *second = 0;
+
+	if (e->valuePtr == &g_config.itemBoxColours)
+	{
+		if (Config_RowLockedBySeed(e))
+		{
+			first = "This seed turned box colours off.";
+			second = "All AP item boxes stay pink.";
+		}
+		else
+		{
+			first = "Purple progression, blue useful,";
+			second = "cyan filler, salmon trap.";
+		}
+	}
+	if (first == 0)
+		return;
+	DecalFont_DrawLineOT((char *)first, 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	DecalFont_DrawLineOT((char *)second, 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+#endif
+
 static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf, int editing)
 {
+#ifdef CTR_AP
+	if (Config_RowLockedBySeed(e))
+	{
+		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+#endif
 	if (e->type == CFG_BOOL)
 	{
 		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON" : "OFF",
@@ -1004,6 +1050,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		{
 			OtherFX_Play(1, 1);
 			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
+#ifdef CTR_AP
+			if (Config_RowLockedBySeed(e))
+				; // the seed has item box colours off: nothing to toggle
+			else
+#endif
 			if (e->type == CFG_BOOL)
 				*(bool *)e->valuePtr ^= 1;
 			else if (e->type == CFG_ENUM)
@@ -1019,7 +1070,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// enums and sliders: left is OFF, right is ON. Cross/Circle still toggles.
 		{
 			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
+#ifdef CTR_AP
+			if (e->type == CFG_BOOL && !Config_RowLockedBySeed(e))
+#else
 			if (e->type == CFG_BOOL)
+#endif
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
 				{
@@ -1091,6 +1146,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 		if (s_connEditing)
 			TextEdit_DrawHint(0xC0, ot);
+		else if (numRows > 0 && menu->rowSelected < numRows)
+			Config_DrawRowHelp(Section_Entry(sec, menu->rowSelected), ot);
 		} // end generic (non-Connection) section
 #endif
 	}

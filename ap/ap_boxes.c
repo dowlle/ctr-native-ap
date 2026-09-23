@@ -13,6 +13,7 @@
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
 #include "ap_box_colour_logic.h" // AP_BoxColour_Pick: which colour one box wears
+#include <platform/native_config.h> // g_config.itemBoxColours: the player's opt-out
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the event race's own box verdict
 #endif
@@ -376,8 +377,9 @@ static int AP_BoxesSnapshotPlacements(void)
 	return kept;
 }
 
-// The colour this box should wear now. Pink unless the seed turns on
-// color_boxes_by_item and the connect-time scout already holds this location;
+// The colour this box should wear now. Pink unless the seed has
+// color_boxes_by_item on, the player has not switched Item Box Colours off in
+// Options, and the connect-time scout already holds this location;
 // the scout reply can land after the box stands, so AP_BoxesTick asks again
 // every frame and recolours the box in place (AP_BoxesApplyColour).
 static int AP_BoxesColourFor(long code)
@@ -385,10 +387,15 @@ static int AP_BoxesColourFor(long code)
 	unsigned flags = 0;
 	int scouted;
 
-	if (!ctr_cfg.color_boxes_by_item)
+	if (!AP_BoxColour_Enabled(ctr_cfg.color_boxes_by_item, g_config.itemBoxColours))
 		return AP_BOX_COLOUR_PINK;
 	scouted = ap_net_scout_known((long long)code, 0, 0, &flags);
 	return AP_BoxColour_Pick(1, scouted, flags);
+}
+
+int AP_Boxes_ColourRowState(void)
+{
+	return AP_BoxColour_RowState(ctr_cfg_active(), ctr_cfg.color_boxes_by_item);
 }
 
 static void AP_BoxesApplyColour(struct GameTracker *gGT, int i)

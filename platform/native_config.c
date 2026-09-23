@@ -38,6 +38,7 @@ NativeConfig g_config = {
 	false, // skipHints
 	false, // skipPodium (default off: ceremonies play unless the player opts out)
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
+	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
 	15,    // trapDuration (recommended default, seconds; 0 = full race)
@@ -123,6 +124,10 @@ const ConfigEntry g_configEntries[] = {
 	{"Connection",  "password",                 "Password",                     CFG_STRING, g_config.password, 0, (int)sizeof(g_config.password), 0},
 	{"Archipelago", "skip_hints",               "Skip Mask Hints",              CFG_BOOL, &g_config.skipHints},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
+	// Item Box Colours: this player's opt-out of the seed's AP item box colours
+	// (color_boxes_by_item). Off = pink boxes for this player only. The menu
+	// shows "OFF (SEED)" and ignores input while a loaded seed has colours off.
+	{"Archipelago", "item_box_colours",         "Item Box Colours",             CFG_BOOL, &g_config.itemBoxColours},
 	// CFG_ENUM: AI-difficulty preset, stepped through a fixed value ladder and
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
