@@ -164,6 +164,31 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
       debuglink CRC rejects any rebuild, the `.debug` archived here must be the
       one from the exact published release, not a later rebuild.
 
+### Box authoring download (separate, optional)
+
+The box authoring client is a separate download for players who help place item
+boxes (`docs/HELP_PLACE_BOXES.md`). It is never part of the player client
+archive, and its contents never change the player client.
+
+- [ ] The `Build clients` workflow builds it next to the player client on both
+      platforms (`-DCTR_AP=ON -DCTR_CUSTOM_TRACKS=ON -DCTR_AP_AUTHORING=ON`) as
+      its own artifact archive, `ctr-ap-authoring-<platform>-x86-<commit>`,
+      with its own `ctr_native_ap_authoring(.exe).debug` sidecar.
+- [ ] `tools/release/assemble-release.py --authoring` (the `Prepare release
+      assets` workflow passes it) repackages it under the release name:
+      `ctr-archipelago-vX.Y.Z-box-authoring-windows-x86.zip` and
+      `ctr-archipelago-vX.Y.Z-box-authoring-linux-x86.tar.gz`, each with a
+      `.sha256`. The folder inside is `ctr-archipelago-vX.Y.Z-box-authoring/`.
+      It holds `ctr_native_ap_authoring(.exe)`, `HELP-PLACE-BOXES.md`,
+      `AUTHORING-BUILD.txt`, `SETUP.md`, `extract_assets.py`, `versions.txt`,
+      `LICENSE`, `THIRD_PARTY_NOTICES.md`, the support helpers and the same
+      `assets/` tree as the client. It has no `ctr.apworld` and no
+      `ap-config.example.txt`, because it never connects to a room.
+- [ ] Archive its `.debug` sidecar with the release evidence under
+      `ctr-artifacts/<version>/`. It is not a public release asset.
+- [ ] Before attaching it, confirm the window title of the built exe says
+      `BOX AUTHORING BUILD` and that it refuses to connect.
+
 ### Signed client manifest
 
 The `Prepare release assets` workflow assembles the eleven standard assets and
@@ -246,6 +271,11 @@ the previous release's published notes. House style:
       template (see §4). That is the seven-asset Windows-only set; a
       Windows-only prerelease stops here, uploads no `manifest.json` and needs
       no signing key.
+- [ ] If this release offers the box authoring download (§4), upload
+      `ctr-archipelago-vX.Y.Z-box-authoring-windows-x86.zip` and its `.sha256`
+      as two more assets, plus the Linux `.tar.gz` pair on a two-platform
+      release. Name it in the release notes as a separate download for helping
+      place boxes, not for playing.
 
 ### Complete two-platform release: Linux assets and signed manifest
 
@@ -298,6 +328,11 @@ prerelease.
       `ctr.apworld` + sha256, `Crash.Team.Racing.yaml`, the Linux tarball +
       sha256, `ctr_native_ap.debug` + sha256, `manifest.json`, and
       `manifest.json.minisig`).
+- [ ] The box authoring download is optional and outside the standard set: it
+      does not count toward the seven or eleven, and `manifest.json` never
+      covers it. When present, each authoring archive must have its `.sha256`;
+      `tools/verify-release.py` checks that pair and accepts a release without
+      it.
 - [ ] **Asset-completeness gate: all assets or pre-release.** Seven standard
       assets are permitted for a Windows-only prerelease. A complete
       cross-platform release requires all ELEVEN standard assets (nine through

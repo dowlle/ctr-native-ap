@@ -394,9 +394,11 @@ void AP_LinkDrawTitleHint(uint32_t *ot)
 
 // ---------------------------------------------------------------------------
 // ctr-ap:// link registration (issue #334, slice 4). Windows only for 0.2.1;
-// elsewhere the Connection page shows no Room links row.
+// elsewhere the Connection page shows no Room links row. The box authoring
+// download never registers: it does not connect to rooms (ap_net_init), so it
+// must not become the program a player's room link opens.
 
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(CTR_AP_AUTHORING)
 static NativeLinkRegOps ap_link_reg_ops;
 static char ap_link_reg_exe[NATIVE_LINK_REG_TEXT_MAX];
 static int ap_link_reg_ready;

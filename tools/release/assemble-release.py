@@ -39,6 +39,14 @@ ARTIFACT_ARCHIVE = {
     "windows": re.compile(r"^ctr-ap-windows-x86-([0-9a-f]{12,40})\.zip$"),
     "linux": re.compile(r"^ctr-ap-linux-x86-([0-9a-f]{12,40})\.tar\.gz$"),
 }
+# The separate box authoring download (CTR_AP_AUTHORING). Its own CI archive,
+# its own release asset; it never enters the player client archive or the
+# signed manifest.
+AUTHORING_ARCHIVE = {
+    "windows": re.compile(r"^ctr-ap-authoring-windows-x86-([0-9a-f]{12,40})\.zip$"),
+    "linux": re.compile(r"^ctr-ap-authoring-linux-x86-([0-9a-f]{12,40})\.tar\.gz$"),
+}
+AUTHORING_BINARY = {"windows": "ctr_native_ap_authoring.exe", "linux": "ctr_native_ap_authoring"}
 NATIVE_COMPANIONS = (
     "ap/ap_version.h",
     "tools/release-versions.sh",
@@ -139,24 +147,30 @@ def find_one(root: Path, predicate, label: str) -> Path:
     return candidates[0]
 
 
-def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Path, dict, list[tuple[Path, str]]]:
+def unpack_artifact(
+    archive: Path, platform: str, destination: Path, authoring: bool = False
+) -> tuple[Path, dict, list[tuple[Path, str]]]:
     """Extract a package-client archive after checking its complete shape.
 
     Returns the extracted native binary, its BUILD.json metadata, and the
     bundled ``assets/`` tree as ``(path, relative posix name)`` pairs.
     """
-    binary_name = "ctr_native_ap.exe" if platform == "windows" else "ctr_native_ap"
+    if authoring:
+        binary_name = AUTHORING_BINARY[platform]
+    else:
+        binary_name = "ctr_native_ap.exe" if platform == "windows" else "ctr_native_ap"
     helper_names = {"support-bundle.bat", "support-bundle.ps1"} if platform == "windows" else {"support-bundle.sh"}
+    variant_names = {"HELP-PLACE-BOXES.md", "AUTHORING-BUILD.txt"} if authoring else {"ap-config.example.txt"}
     allowed = {
         binary_name,
         "versions.txt",
         "extract_assets.py",
         "SETUP.md",
-        "ap-config.example.txt",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
         "BUILD.json",
         "BUILD-NOTICE.txt",
+        *variant_names,
         *helper_names,
     }
     # Build archives carry a build-only notice that never ships in a release.
@@ -210,6 +224,8 @@ def unpack_artifact(archive: Path, platform: str, destination: Path) -> tuple[Pa
     if len(names) != len(set(names)):
         fail(f"duplicate build archive member in {archive.name}")
     required = {binary_name, "BUILD.json"}
+    if authoring:
+        required |= {"HELP-PLACE-BOXES.md", "AUTHORING-BUILD.txt"}
     missing = sorted(required - set(names))
     if missing:
         fail(f"build archive lacks required member(s): {', '.join(missing)}")
@@ -248,7 +264,10 @@ def load_package_client(source: Path):
     return module
 
 
-def validate_build(source: Path, platform: str, archive: Path, debug: Path, binary: Path, metadata: dict) -> None:
+def validate_build(
+    source: Path, platform: str, archive: Path, debug: Path, binary: Path, metadata: dict,
+    authoring: bool = False,
+) -> None:
     expected_commit = subprocess.check_output(
         ["git", "-C", str(source), "rev-parse", "HEAD"], text=True
     ).strip()
@@ -256,13 +275,16 @@ def validate_build(source: Path, platform: str, archive: Path, debug: Path, bina
         fail(f"native source HEAD is not a full commit id: {expected_commit!r}")
     if metadata.get("source_commit") != expected_commit:
         fail(f"{platform} artifact source_commit does not match native source HEAD")
-    if metadata.get("platform") != platform or metadata.get("variant") != "ap":
-        fail(f"{platform} artifact is not an AP {platform} build")
+    variant = "authoring" if authoring else "ap"
+    if metadata.get("platform") != platform or metadata.get("variant") != variant:
+        fail(f"{platform} artifact is not an {variant} {platform} build")
+    if bool(metadata.get("authoring")) != authoring:
+        fail(f"{platform} artifact authoring flag does not match its variant")
     if metadata.get("executable_sha256") != sha256(binary):
         fail(f"{platform} BUILD.json executable hash does not match archive bytes")
     if metadata.get("debug_sha256") != sha256(debug):
         fail(f"{platform} BUILD.json debug hash does not match sidecar bytes")
-    match = ARTIFACT_ARCHIVE[platform].match(archive.name)
+    match = (AUTHORING_ARCHIVE if authoring else ARTIFACT_ARCHIVE)[platform].match(archive.name)
     if match is None or not expected_commit.startswith(match.group(1)):
         fail(f"{platform} archive name does not identify native source commit")
     # package-client performed the platform ABI, split-debug and debuglink gates
@@ -360,7 +382,7 @@ def create_archive(destination: Path, root_name: str, entries: list[tuple[Path, 
     if len(seen) != len(set(seen)):
         fail("duplicate member in release bundle")
     if linux:
-        executables = {"ctr_native_ap", "support-bundle.sh"}
+        executables = {"ctr_native_ap", AUTHORING_BINARY["linux"], "support-bundle.sh"}
         with tarfile.open(destination, "w:gz") as bundle:
             written: set[str] = set()
 
@@ -390,6 +412,41 @@ def create_archive(destination: Path, root_name: str, entries: list[tuple[Path, 
                 bundle.write(path, f"{root_name}/{relative}")
 
 
+def assemble_authoring(source: Path, version: str, platform: str, artifact_dir: Path,
+                       output: Path, temp: Path) -> Path:
+    """Repackage the box authoring CI archive as its own release download.
+
+    Same gates as the player client (checksums, BUILD.json provenance, exact
+    member set, platform checks), then the archive is rewritten under a
+    release-named root without the build-only files. Returns the archive path.
+    """
+    archive = find_one(
+        artifact_dir,
+        lambda p: AUTHORING_ARCHIVE[platform].fullmatch(p.name) is not None,
+        f"{platform} box authoring archive",
+    )
+    check_checksum(archive)
+    debug_name = AUTHORING_BINARY[platform] + ".debug"
+    debug = find_one(artifact_dir, lambda p: p.name == debug_name, f"{platform} box authoring debug sidecar")
+    check_checksum(debug)
+    staging = temp / f"authoring-{platform}"
+    binary, metadata, _ = unpack_artifact(archive, platform, staging, authoring=True)
+    shutil.copy2(debug, staging / debug_name)
+    validate_build(source, platform, archive, debug, binary, metadata, authoring=True)
+    entries = []
+    for path in sorted(p for p in staging.rglob("*") if p.is_file()):
+        relative = path.relative_to(staging).as_posix()
+        if relative in ("BUILD.json", debug_name):
+            continue
+        entries.append((path, relative))
+    tag = f"v{version}"
+    name = release_policy.authoring_asset_name(tag, platform)
+    destination = output / name
+    create_archive(destination, f"ctr-archipelago-{tag}-box-authoring", entries, linux=platform == "linux")
+    write_checksum(destination)
+    return destination
+
+
 def assemble(args: argparse.Namespace) -> list[Path]:
     version = args.version.removeprefix("v")
     if not VERSION.fullmatch(version):
@@ -417,7 +474,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
     validate_template(args.template.resolve(), version, source_compat)
     output.mkdir(parents=True, exist_ok=True)
     expected_assets = standard_asset_names(version)
-    refuse_existing_entries(output, [*expected_assets, MANIFEST_NAME])
+    authoring_assets = release_policy.authoring_asset_names(version) if getattr(args, "authoring", False) else []
+    refuse_existing_entries(output, [*expected_assets, *authoring_assets, MANIFEST_NAME])
     with tempfile.TemporaryDirectory(prefix="ctr-release-") as temporary:
         temp = Path(temporary)
         staged: dict[str, tuple[Path, dict, list[tuple[Path, str]]]] = {}
@@ -490,6 +548,12 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         create_archive(linux_archive, root_name, linux_files, linux=True)
         shutil.copy2(temp / "windows" / "ctr_native_ap.exe.debug", output / "ctr_native_ap.exe.debug")
         shutil.copy2(temp / "linux" / "ctr_native_ap.debug", output / "ctr_native_ap.debug")
+        authoring_outputs = []
+        if authoring_assets:
+            for platform, artifact_dir in artifact_inputs:
+                authoring_outputs.append(
+                    assemble_authoring(source, version, platform, artifact_dir, output, temp)
+                )
     shutil.copy2(args.apworld, output / "ctr.apworld")
     shutil.copy2(args.template, output / "Crash.Team.Racing.yaml")
     for name in (
@@ -504,7 +568,10 @@ def assemble(args: argparse.Namespace) -> list[Path]:
     if any(not path.is_file() for path in assets):
         fail("assembly did not produce the complete eleven-asset set")
     manifest = write_manifest(output, version)
-    return [*assets, manifest]
+    extras = [output / name for name in authoring_assets]
+    if any(not path.is_file() for path in extras):
+        fail("assembly did not produce the box authoring download")
+    return [*assets, *extras, manifest]
 
 
 def parser() -> argparse.ArgumentParser:
@@ -520,6 +587,11 @@ def parser() -> argparse.ArgumentParser:
         help="numeric semver, with optional prerelease and optional leading v",
     )
     result.add_argument("--output-dir", type=Path, required=True)
+    result.add_argument(
+        "--authoring",
+        action="store_true",
+        help="also emit the separate box authoring download (both platforms)",
+    )
     return result
 
 

@@ -397,5 +397,80 @@ class AssemblerFixtureTests(unittest.TestCase):
             ASSEMBLER.assemble(args)
 
 
+class AuthoringDownloadTests(unittest.TestCase):
+    """The separate box authoring download: its own archive, never the client's."""
+
+    # Reuse the fixture repository without re-running the fixture's own tests.
+    setUp = AssemblerFixtureTests.setUp
+    tearDown = AssemblerFixtureTests.tearDown
+    write_sidecar = AssemblerFixtureTests.write_sidecar
+
+    def write_authoring_archive(self, variant: str = "authoring", authoring: bool = True) -> Path:
+        artifact = self.root / "windows-authoring"
+        artifact.mkdir()
+        binary = b"authoring binary"
+        debug = b"authoring debug"
+        metadata = {
+            "source_commit": self.commit,
+            "platform": "windows",
+            "variant": variant,
+            "authoring": authoring,
+            "executable_sha256": hashlib.sha256(binary).hexdigest(),
+            "debug_sha256": hashlib.sha256(debug).hexdigest(),
+        }
+        root = f"ctr-ap-authoring-windows-x86-{self.commit[:12]}"
+        archive = artifact / f"{root}.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr(f"{root}/ctr_native_ap_authoring.exe", binary)
+            bundle.writestr(f"{root}/BUILD.json", json.dumps(metadata))
+            bundle.writestr(f"{root}/BUILD-NOTICE.txt", b"internal build\n")
+            bundle.writestr(f"{root}/HELP-PLACE-BOXES.md", b"guide\n")
+            bundle.writestr(f"{root}/AUTHORING-BUILD.txt", b"notice\n")
+            bundle.writestr(f"{root}/LICENSE", b"license\n")
+        self.write_sidecar(archive)
+        debug_path = artifact / "ctr_native_ap_authoring.exe.debug"
+        debug_path.write_bytes(debug)
+        self.write_sidecar(debug_path)
+        return artifact
+
+    def test_authoring_download_is_repackaged_under_the_release_name(self) -> None:
+        artifact = self.write_authoring_archive()
+        output = self.root / "release"
+        output.mkdir()
+        staging = self.root / "staging"
+        staging.mkdir()
+        archive = ASSEMBLER.assemble_authoring(
+            self.source, "0.2.0-rc-prep1", "windows", artifact, output, staging
+        )
+        self.assertEqual(archive.name, "ctr-archipelago-v0.2.0-rc-prep1-box-authoring-windows-x86.zip")
+        self.assertTrue(Path(str(archive) + ".sha256").is_file())
+        with zipfile.ZipFile(archive) as bundle:
+            names = sorted(bundle.namelist())
+        root = "ctr-archipelago-v0.2.0-rc-prep1-box-authoring"
+        self.assertEqual(names, [
+            f"{root}/AUTHORING-BUILD.txt",
+            f"{root}/HELP-PLACE-BOXES.md",
+            f"{root}/LICENSE",
+            f"{root}/ctr_native_ap_authoring.exe",
+        ])
+
+    def test_player_client_archive_is_not_accepted_as_authoring(self) -> None:
+        artifact = self.write_authoring_archive(variant="ap", authoring=False)
+        output = self.root / "release"
+        output.mkdir()
+        staging = self.root / "staging"
+        staging.mkdir()
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.assemble_authoring(
+                self.source, "0.2.0-rc-prep1", "windows", artifact, output, staging
+            )
+
+    def test_authoring_names_are_outside_the_standard_set_and_manifest(self) -> None:
+        names = release_policy.authoring_asset_names("0.2.0")
+        self.assertEqual(len(names), 4)
+        self.assertFalse(set(names) & set(release_policy.standard_asset_names("0.2.0")))
+        self.assertFalse(set(names) & set(release_policy.signed_asset_names("0.2.0")))
+
+
 if __name__ == "__main__":
     unittest.main()

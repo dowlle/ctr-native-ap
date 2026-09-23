@@ -135,8 +135,12 @@ if(CTR_AP)
     target_compile_definitions(ctr_native PRIVATE CTR_AP)
     if(CTR_AP_AUTHORING)
         target_compile_definitions(ctr_native PRIVATE CTR_AP_AUTHORING)
+        # The separate box authoring download gets its own exe name, so it can
+        # never replace a player's ctr_native_ap(.exe) by accident.
+        set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap_authoring")
+    else()
+        set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
     endif()
-    set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
 
     # Archipelago networking (apclientpp). Compiled as an isolated C++17 static
     # library so the unity C build stays C; the only scope where exceptions /
@@ -181,6 +185,10 @@ if(CTR_AP)
     # requirement); the Windows networking headers only apply to the mingw target.
     if(WIN32)
         target_compile_definitions(ap_net PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
+    endif()
+    # The box authoring download refuses to dial a room (ap_net_init).
+    if(CTR_AP_AUTHORING)
+        target_compile_definitions(ap_net PRIVATE CTR_AP_AUTHORING)
     endif()
     target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
     # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.

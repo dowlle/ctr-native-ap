@@ -170,7 +170,7 @@ jobs:
           test -n "$template_path" -a -s "$template_path"
           cp "$template_path" generated-template/Crash.Team.Racing.yaml
 
-      - name: Assemble the eleven standard assets and unsigned manifest
+      - name: Assemble the eleven standard assets, the box authoring download and unsigned manifest
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
@@ -182,7 +182,8 @@ jobs:
             --apworld "$(find apworld-artifact -type f -name ctr.apworld -print -quit)" \
             --template generated-template/Crash.Team.Racing.yaml \
             --version "$RELEASE_VERSION" \
-            --output-dir release
+            --output-dir release \
+            --authoring
 
       - name: Verify the unsigned assembly before upload
         env:

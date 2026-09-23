@@ -26,6 +26,13 @@ platform support helpers, and the `assets/` tree that `package-client.py`
 placed in the build archive. Debug sidecars are standalone assets and
 extracted retail game assets are never read or included.
 
+With `--authoring`, the assembler also repackages the separate box authoring
+archives (`ctr-ap-authoring-<platform>-x86-<commit>`) as
+`ctr-archipelago-vX.Y.Z-box-authoring-<platform>-x86` downloads with their
+`.sha256` sidecars. They are optional release assets: not one of the eleven, not
+in the manifest, and the verifier accepts a release with or without them but
+checks each archive against its sidecar when present.
+
 After the eleven standard assets pass their completeness check, the assembler
 writes `manifest.json` from the final archive bytes. It covers exactly the two
 client archives and refuses to overwrite an existing manifest. The shared

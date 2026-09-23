@@ -12,12 +12,54 @@ is untouched.
 
 ## Turning it on
 
-`OPTIONS -> Authoring -> Box Author Mode`. Off by default, and that toggle is the
-gate: the keys below do nothing while it is off, so a release player who never
-opens the menu can never reach them. The setting persists to `config.ini` under
-`[Authoring] box_author`.
+Author mode exists only in builds configured with `-DCTR_AP_AUTHORING=ON`. The
+normal player client compiles it out, and a stale `box_author=true` in its
+`config.ini` does nothing.
+
+In an authoring build: `OPTIONS -> Authoring -> Box Author Mode`. Off by
+default, and that toggle is the gate: the keys below do nothing while it is off.
+The setting persists to `config.ini` under `[Authoring] box_author`.
 
 No Archipelago connection is needed. The mode is entirely local.
+
+## The box authoring download
+
+CI builds the authoring client as its own archive
+(`ctr-ap-authoring-<platform>-x86-<commit>`), and a release can attach it as a
+separate download next to the player client. The player guide is
+[HELP_PLACE_BOXES.md](HELP_PLACE_BOXES.md), shipped in the archive as
+`HELP-PLACE-BOXES.md`. The authoring build differs from the player client in
+exactly these ways:
+
+| | Player client | Box authoring download |
+|---|---|---|
+| Executable | `ctr_native_ap(.exe)` | `ctr_native_ap_authoring(.exe)` |
+| Window title | `... CTR-AP ...` | adds `BOX AUTHORING BUILD (no Archipelago)` |
+| Box Author Mode | compiled out | on the Options menu |
+| Placement file | reads `ap-box-placements.json` if present | reads and writes `ap-box-placements-authoring.json` |
+| Archipelago | connects | refuses every dial; the connection status says why |
+| `ctr-ap://` room links | registers on Windows | never registers |
+
+The separate file name is the safety rule. The authoring file holds a whole
+edited table, and any file the player client finds under its own name replaces
+its compiled-in table wholesale (see below). An authoring archive unpacked into a
+player folder by mistake therefore changes nothing for that player. Refusing to
+connect keeps an authoring install from ever playing a seed with a table that
+does not match the seed's locations.
+
+To test a submitted file in a normal client, rename it to
+`ap-box-placements.json` and put it next to that client's executable.
+
+## Boss races (#194)
+
+Author mode pauses in boss races: no markers, no keys, and the HUD says
+`PAUSED IN BOSS RACES`. Both #194 crashes happened with author mode on in a boss
+race (Ripper Roo, Papu Papu). A boss race loads the same `levelID` as the normal
+race on its track, so author mode rebuilt that track's markers and took input
+there. Boss races add nothing to authoring, since a placement is a spot on the
+track, so standing down removes that path. The normal race on the same track
+stays authorable. The gate is `AP_AuthorRaceAllowsAuthoring` in
+`ap/ap_author_ready.h`, tested by `tools/test-author-ready.c`.
 
 ## Keys
 
@@ -70,8 +112,8 @@ shipped rule are the same code.
 
 ## The file
 
-`ap-box-placements.json`, written next to the executable, alongside `ctr-ap.log`
-and `ap-state.json`.
+`ap-box-placements.json` (the authoring download: `ap-box-placements-authoring.json`),
+written next to the executable, alongside `ctr-ap.log` and `ap-state.json`.
 
 ```json
 {

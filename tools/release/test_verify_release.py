@@ -464,5 +464,48 @@ class MalformedManifestTests(unittest.TestCase):
             self.parse(json.dumps(data))
 
 
+class AuthoringDownloadVerifierTests(unittest.TestCase):
+    """The optional box authoring download next to the standard assets."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fixture = ReleaseFixture(Path(self.tmp.name))
+        self.fixture.write_manifest()
+        self.archive = self.fixture.assembly / release_policy.authoring_asset_name(
+            self.fixture.VERSION, "windows"
+        )
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def add_authoring(self, sidecar: bool = True, digest: str | None = None) -> None:
+        self.archive.write_bytes(b"authoring-bytes")
+        if sidecar:
+            Path(str(self.archive) + ".sha256").write_text(
+                f"{digest or sha256(self.archive)}  {self.archive.name}\n", encoding="utf-8"
+            )
+
+    def test_release_without_authoring_download_still_passes(self) -> None:
+        result = self.fixture.run_verifier("--pre-sign")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_authoring_download_with_sidecar_is_accepted(self) -> None:
+        self.add_authoring()
+        result = self.fixture.run_verifier("--pre-sign")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_authoring_download_without_sidecar_fails(self) -> None:
+        self.add_authoring(sidecar=False)
+        result = self.fixture.run_verifier("--pre-sign")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("box authoring download needs both", result.stderr)
+
+    def test_authoring_download_with_wrong_hash_fails(self) -> None:
+        self.add_authoring(digest="0" * 64)
+        result = self.fixture.run_verifier("--pre-sign")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checksum mismatch", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

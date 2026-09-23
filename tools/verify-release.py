@@ -39,11 +39,14 @@ from release_policy import (
 )
 
 
-def require_exact_files(release: Path, permitted: set[str]) -> None:
-    """Reject unknown files, symlinks and non-regular entries in the release dir."""
+def require_exact_files(release: Path, permitted: set[str], optional: set[str] = frozenset()) -> None:
+    """Reject unknown files, symlinks and non-regular entries in the release dir.
+
+    ``optional`` names may be absent; they are never counted as missing.
+    """
     actual = {path.name for path in release.iterdir()}
     missing = sorted(permitted - actual)
-    extra = sorted(actual - permitted)
+    extra = sorted(actual - permitted - optional)
     if missing or extra:
         details = []
         if missing:
@@ -110,7 +113,7 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool) -> Non
         fail(f"invalid expected release version: {version!r}")
 
     permitted = prepared_release_files(tag) if pre_sign else published_release_files(tag)
-    require_exact_files(release, permitted)
+    require_exact_files(release, permitted, set(release_policy.authoring_asset_names(tag)))
 
     manifest = release / MANIFEST_NAME
     if pre_sign:
@@ -130,6 +133,7 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool) -> Non
 
     verify_archive_hashes(release, artifacts)
     verify_standard_sidecars(release, tag)
+    release_policy.verify_authoring_sidecars(release, tag)
 
     if pre_sign:
         print(
