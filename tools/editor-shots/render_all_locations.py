@@ -42,6 +42,7 @@ Examples
   render_all_locations.py --search                          # (re)run the camera search, keep hand cameras
   render_all_locations.py --track 9 --box 13 --search --candidate side     # try one candidate
   render_all_locations.py --track 9 --box 13 --eye -8500,600,5000 --look -7750,444,6233   # hand camera
+  render_all_locations.py --track polar-pass --box 12 --start 140   # later capture frame for one box (kart moved on)
 
 A run with --box updates that box's rows in the output manifest and rebuilds
 the track's contact sheet from the pictures on disk.
@@ -69,6 +70,7 @@ DIFF_LEVEL = 24        # summed RGB difference that counts as a changed pixel
 MIN_VISIBLE = 400      # default visible-pixel threshold for "pass"
 LOW_VISIBLE = 120      # below this the box is effectively not findable
 PINK = (255, 64, 190)
+YELLOW = (255, 235, 0)
 FONT_PATHS = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
               "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf")
 
@@ -213,14 +215,14 @@ def project(eye, look, p):
     return W / 2 + FOCAL * float(d @ r) / z, H / 2 - FOCAL * float(d @ u) / z, z
 
 
-def render_arr(ctx, eye, look, markers):
+def render_arr(ctx, eye, look, markers, start=None):
     fd, png = tempfile.mkstemp(prefix="apref-", suffix=".png")
     os.close(fd)
     try:
         rot = shot.look_rotation(eye, look)
         try:
             shot.render(ctx["project_path"], ctx["project"], eye, rot, markers, png, video=ctx["video"],
-                        face=ctx["face"], start=ctx["start"])
+                        face=ctx["face"], start=ctx["start"] if start is None else start)
         except SystemExit as e:
             raise RuntimeError(f"render failed: {e}")
         return np.asarray(Image.open(png).convert("RGB"))
@@ -276,14 +278,15 @@ def status_for(ctx, visible):
     return "flag-small" if visible >= ctx["low_visible"] else "flag-hidden"
 
 
-def render_box(ctx, number, eye, look):
+def render_box(ctx, number, eye, look, start=None):
     """Render box `number` from a fixed camera: the picture, its visible-pixel
-    mask, and the other AP boxes visible in the frame."""
+    mask, and the other AP boxes visible in the frame. `start` overrides the
+    settle frames (a box whose stored camera catches an AI kart on it)."""
     boxes = ctx["boxes"]
     box = dict(boxes)[number]
     lift = shot.AP_BOX_LIFT
-    img = render_arr(ctx, eye, look, markers_for(boxes))
-    without = render_arr(ctx, eye, look, markers_for(boxes, number))
+    img = render_arr(ctx, eye, look, markers_for(boxes), start)
+    without = render_arr(ctx, eye, look, markers_for(boxes, number), start)
     mask = target_mask(img, without, eye, look, box)
     info = dict(img=img, mask=mask, visible=int(mask.sum()), others=[],
                 target_proj=project(eye, look, (box[0], box[1] + lift, box[2])))
@@ -297,7 +300,7 @@ def render_box(ctx, number, eye, look):
         if pr and -40 < pr[0] < W + 40 and -40 < pr[1] < H + 40:
             in_view.append((n, pr))
     if in_view:
-        omask = diff_mask(without, render_arr(ctx, eye, look, []))
+        omask = diff_mask(without, render_arr(ctx, eye, look, [], start))
         for n, (px, py, depth) in in_view:
             rad = max(12, int(FOCAL * BOX_HALF * 1.6 / depth))
             x0, x1 = max(0, int(px) - rad), min(W, int(px) + rad)
@@ -334,7 +337,7 @@ def annotate(ctx, number, shot_info):
     else:
         cx, cy, rad = W / 2, H / 2, 40
     rad = max(rad, 28)
-    for w, col in ((9, (0, 0, 0, 170)), (5, (255, 235, 0, 255))):
+    for w, col in ((9, (0, 0, 0, 170)), (5, YELLOW + (255,))):
         draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=col, width=w)
     # number badge with an arrow to the ring; above the box unless too close to the top
     f_big = font(44)
@@ -348,12 +351,12 @@ def annotate(ctx, number, shot_info):
     ax, ay = bx + bw / 2, (by + bh) if above else by
     ang = math.atan2(cy - ay, cx - ax)
     tip = (cx - math.cos(ang) * (rad + 4), cy - math.sin(ang) * (rad + 4))
-    for w, col in ((9, (0, 0, 0, 170)), (5, (255, 235, 0, 255))):
+    for w, col in ((9, (0, 0, 0, 170)), (5, YELLOW + (255,))):
         draw.line([ax, ay, tip[0], tip[1]], fill=col, width=w)
     head = [tip, (tip[0] - 22 * math.cos(ang - 0.45), tip[1] - 22 * math.sin(ang - 0.45)),
             (tip[0] - 22 * math.cos(ang + 0.45), tip[1] - 22 * math.sin(ang + 0.45))]
-    draw.polygon(head, fill=(255, 235, 0, 255), outline=(0, 0, 0, 200))
-    draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=10, fill=PINK + (240,), outline=(255, 255, 255, 255),
+    draw.polygon(head, fill=YELLOW + (255,), outline=(0, 0, 0, 200))
+    draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=10, fill=PINK + (255,), outline=(255, 255, 255, 255),
                            width=3)
     draw.text((bx + 15, by + 4), text, font=f_big, fill=(255, 255, 255))
     # caption strip
@@ -365,9 +368,62 @@ def annotate(ctx, number, shot_info):
     return img
 
 
-def save_png(img, path):
-    """256-colour PNG: about a third of the size of a full-colour one, visually the same here."""
-    img.quantize(256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG).save(path, optimize=True)
+def _label_palette():
+    """Colours reserved in every saved palette, so the labels never change
+    colour. A plain median cut of a picture with little yellow in the scene
+    has no bucket near the ring's yellow and turned it pale pink or orange.
+    Besides the pure label colours this holds the blends that appear at
+    anti-aliased edges (white text on pink, yellow with its black outline)
+    and a grey ramp for the caption strip and tags."""
+    cols = [YELLOW, PINK, (255, 255, 255), (0, 0, 0), (20, 20, 20), (200, 200, 200)]
+    mix = lambda a, b, t: tuple(round(x + (y - x) * t) for x, y in zip(a, b))  # noqa: E731
+    for t in (0.25, 0.5, 0.75):
+        cols += [mix(PINK, (255, 255, 255), t), mix(YELLOW, (0, 0, 0), t), mix(PINK, (0, 0, 0), t)]
+    cols += [(g, g, g) for g in range(40, 256, 24)]
+    out = []
+    for c in cols:
+        if c not in out:
+            out.append(c)
+    return out
+
+
+LABEL_COLOURS = _label_palette()
+
+
+def save_png(img, path, label_mask=None, reserve_in_scene=False):
+    """256-colour PNG (about a third of the size of a full-colour one) with
+    exact label colours. The label colours are reserved at the end of every
+    palette.
+
+    The scene gets a median-cut, dithered palette of 256 minus the reserved
+    colours (reserve_in_scene: the whole picture is dithered to the scene
+    palette plus the reserved colours, for contact sheets whose shrunken
+    pictures carry label colours). Then the pixels under the labels
+    (label_mask, the pixels the labels changed) are mapped to their nearest
+    colour in the full palette without dithering, so a pure label colour
+    stays exactly that colour."""
+    img = img.convert("RGB")
+    scene_n = 256 - len(LABEL_COLOURS)
+    labels = [v for c in LABEL_COLOURS for v in c]
+    dither = Image.Dither.NONE if reserve_in_scene else Image.Dither.FLOYDSTEINBERG
+    scene = img.quantize(scene_n, method=Image.Quantize.MEDIANCUT, dither=dither)
+    flat = (scene.getpalette()[:3 * scene_n] + [0] * (3 * scene_n))[:3 * scene_n] + labels
+    if reserve_in_scene:
+        pal_img = Image.new("P", (1, 1))
+        pal_img.putpalette(flat)
+        scene = img.quantize(palette=pal_img, dither=Image.Dither.FLOYDSTEINBERG)
+    idx = np.asarray(scene).copy()
+    if label_mask is not None and label_mask.any():
+        pal = np.array(flat, np.int32).reshape(-1, 3)
+        px = np.asarray(img, np.int32)[label_mask]
+        near = np.empty(len(px), np.uint8)
+        for i in range(0, len(px), 20000):
+            d = ((px[i:i + 20000, None, :] - pal[None, :, :]) ** 2).sum(axis=2)
+            near[i:i + 20000] = d.argmin(axis=1)
+        idx[label_mask] = near
+    out = Image.fromarray(idx, "P")
+    out.putpalette(flat)
+    out.save(path, optimize=True)
 
 
 def contact_sheet(track_name, tslug, outdir, numbers):
@@ -376,19 +432,23 @@ def contact_sheet(track_name, tslug, outdir, numbers):
     rows = math.ceil(len(numbers) / cols)
     head = 56
     sheet = Image.new("RGB", (cols * tw, head + rows * (th + 4)), (24, 24, 24))
+    for i, n in enumerate(numbers):
+        p = outdir / f"{tslug}-box-{n:02d}.png"
+        if p.exists():
+            sheet.paste(Image.open(p).convert("RGB").resize((tw, th), Image.LANCZOS),
+                        ((i % cols) * tw, head + (i // cols) * (th + 4)))
+    base = np.asarray(sheet).copy()
     d = ImageDraw.Draw(sheet)
     d.text((14, 10), f"{track_name}: AP item boxes 1 to {max(numbers)}", font=font(30), fill=(255, 255, 255))
     f = font(30)
     for i, n in enumerate(numbers):
-        p = outdir / f"{tslug}-box-{n:02d}.png"
         x, y = (i % cols) * tw, head + (i // cols) * (th + 4)
-        if p.exists():
-            sheet.paste(Image.open(p).convert("RGB").resize((tw, th), Image.LANCZOS), (x, y))
         tag = str(n)
         wtag = d.textlength(tag, font=f) + 18
         d.rectangle([x, y, x + wtag, y + 40], fill=PINK)
         d.text((x + 9, y + 3), tag, font=f, fill=(255, 255, 255))
-    save_png(sheet, outdir / f"{tslug}-overview.png")
+    save_png(sheet, outdir / f"{tslug}-overview.png", label_mask=np.any(np.asarray(sheet) != base, axis=2),
+             reserve_in_scene=True)
 
 
 FIELDS = ["track", "box", "location_name", "level_id", "anchor_x", "anchor_y", "anchor_z", "camera", "camera_source",
@@ -405,7 +465,7 @@ def default_settings():
                 draw_distance=shot.VIDEO["draw_distance"], start_frames=60, box_face="wumpa", box_tint=None,
                 focal=FOCAL, diff_level=DIFF_LEVEL, min_visible=MIN_VISIBLE, low_visible=LOW_VISIBLE,
                 caption="{track}: Item Box {box}", file_name="{slug}-box-{box:02d}.png",
-                png="256-colour palette (median cut, Floyd-Steinberg)")
+                png="256-colour palette (median cut, Floyd-Steinberg, label colours reserved)")
 
 
 def load_cameras(path):
@@ -469,6 +529,8 @@ def run_track(level, args, cams):
         if args.eye:
             rec = dict(camera="hand", source="hand", eye=args.eye, look=args.look, anchor=list(box[:3]),
                        cameras_tried="")
+            if args.start is not None:
+                rec["start"] = args.start
         elif rec is None or (args.search and (rec["source"] != "hand" or args.replace_hand)):
             if not args.search:
                 raise SystemExit(f"{name} box {n} has no stored camera; run with --search")
@@ -476,7 +538,9 @@ def run_track(level, args, cams):
         if rec["anchor"] != list(box[:3]):
             print(f"WARNING {name} box {n}: placement moved since this camera was stored "
                   f"({rec['anchor']} -> {list(box[:3])}); re-run with --search", flush=True)
-        s = render_box(ctx, n, rec["eye"], rec["look"])
+        if args.start is not None and args.box:
+            rec["start"] = args.start
+        s = render_box(ctx, n, rec["eye"], rec["look"], rec.get("start"))
         if args.search_failing and s["status"] != "pass" and rec["source"] != "hand" and not args.eye:
             print(f"{name} box {n}: stored camera measures {s['visible']}, searching again", flush=True)
             rec = search_camera(ctx, n, force=args.candidate)
@@ -484,7 +548,8 @@ def run_track(level, args, cams):
         rec.update(visible_pixels=s["visible"], auto_check=s["status"],
                    other_boxes=[o[0] for o in sorted(s["others"])])
         fn = st["file_name"].format(slug=tslug, box=n)
-        save_png(annotate(ctx, n, s), outdir / fn)
+        labelled = annotate(ctx, n, s)
+        save_png(labelled, outdir / fn, label_mask=np.any(np.asarray(labelled) != s["img"], axis=2))
         print(f"{name} box {n}: {rec['camera']} ({rec['source']}) visible={s['visible']} {s['status']}"
               f" [{rec['cameras_tried']}]", flush=True)
         return n, rec, dict(track=name, box=n, location_name=ctx["location"](n), level_id=level, anchor_x=box[0],
@@ -517,6 +582,9 @@ def main():
     ap.add_argument("--candidate", choices=[c[0] for c in CANDIDATES], help="with --search, try only this candidate")
     ap.add_argument("--eye", type=shot.triple, help="hand-set camera position x,y,z for --box (stored as source=hand)")
     ap.add_argument("--look", type=shot.triple, help="point the hand-set camera aims at, x,y,z")
+    ap.add_argument("--start", type=int,
+                    help="with --box: settle frames before the capture for this box only, stored with its camera "
+                         "(default: the stored start_frames setting)")
     ap.add_argument("--jobs", type=int, default=3, help="parallel boxes (default 3)")
     ap.add_argument("--box-face", choices=("wumpa", "jurnth", "plain", "none"),
                     help="override the stored AP box art for this run (none = plain AP cube); not written back")
@@ -530,6 +598,8 @@ def main():
     levels = [shot.track_id(t) for t in args.track] if args.track else list(range(len(shot.TRACKS)))
     if (args.box or args.eye) and len(levels) != 1:
         sys.exit("--box and --eye need exactly one --track")
+    if args.start is not None and not args.box:
+        sys.exit("--start needs --box")
     if args.eye and not (args.box and args.look):
         sys.exit("--eye needs --box and --look")
     cams = load_cameras(args.cameras)
