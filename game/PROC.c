@@ -1,4 +1,5 @@
 #include <common.h>
+#include "PROC_HitboxDistance.h"
 
 #if defined(CTR_NATIVE)
 #include <setjmp.h>
@@ -398,9 +399,12 @@ struct Thread *PROC_SearchForModel(struct Thread *th, s16 modelID)
 }
 
 
+// Axis squares go through PROC_HitboxAxisSquare (game/PROC_HitboxDistance.h):
+// the native build rejects a far axis instead of letting the square wrap
+// negative on tracks wider than about 46000 units (Cortex Vortex).
 static s32 PROC_PerBspLeaf_MipsSquare(s32 value)
 {
-	return (s32)(u32)((s64)value * (s64)value);
+	return PROC_HitboxAxisSquare(value);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800423fc-0x80042544
@@ -499,7 +503,7 @@ void PROC_StartSearch_Self(struct ScratchpadStruct *sps)
 
 static s32 PROC_CollideHitbox_MipsSquare(s32 value)
 {
-	return (s32)(u32)((s64)value * (s64)value);
+	return PROC_HitboxAxisSquare(value);
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800425d4-0x800426f8
