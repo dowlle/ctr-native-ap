@@ -80,3 +80,43 @@ Run `shot.py --help` for the full flag reference. See the vault reference
 note "CTR Archipelago — Headless Editor Guide (reference)" (if you have
 access to the project vault) for prerequisites, recipes, how to read the
 pictures, and known limits.
+
+## AP box location pictures (`render_all_locations.py`)
+
+`render_all_locations.py` makes one labelled "where is this box" picture per
+AP item box on all 18 box tracks (1280x720, box ringed and numbered, other
+visible AP boxes tagged, caption strip with the player-facing location name
+`<Track>: Item Box N`), a contact sheet per track and a `manifest.csv`.
+
+The chosen camera of every box is stored in
+`ap-box-locations/cameras.json` together with the render and label settings
+(window, video options, box art, caption format, thresholds). A plain run
+re-renders every picture from that file without any camera search, so the
+whole set can be regenerated after a box art change:
+
+```
+render_all_locations.py --out DIR                          # everything, from the stored cameras
+render_all_locations.py --out DIR --track mystery-caves --box 13
+render_all_locations.py --out DIR --box-face plain         # other art for this run only
+```
+
+Each run also measures how much of the box is visible (a render with and
+without the box, diffed) and writes `visible_pixels` and `auto_check`
+(`pass`, `flag-small`, `flag-hidden`) to the manifest and the cameras file.
+
+Camera search and hand corrections, both written back into `cameras.json`:
+
+```
+render_all_locations.py --search                           # search all boxes; hand cameras are kept
+render_all_locations.py --track 9 --box 13 --search --candidate side
+render_all_locations.py --track 9 --box 13 --eye -8500,600,5000 --look -7750,444,6233
+```
+
+A hand camera is stored with `"source": "hand"` and a later `--search` does
+not replace it unless `--replace-hand` is given. Commit `cameras.json` after
+a correction. If a placement in `ap_placements_data.h` moves, the run warns
+that the stored camera no longer matches the anchor.
+
+`FOCAL` (screen projection used for the ring and the other-box tags) was
+measured for 1280x720 Native 16:9; the script refuses a cameras file with a
+different window until it is re-measured.
