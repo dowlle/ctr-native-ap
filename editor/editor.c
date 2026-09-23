@@ -23,7 +23,10 @@ extern int g_dbg_wireframeMode;
 #define EDITOR_SPAWN_COUNT (EDITOR_MAX_OBJECTS + 1 + EDITOR_DIAGNOSTIC_SPAWNS)
 #define EDITOR_RELOAD_EXIT 75
 #define EDITOR_ROLLBACK_EXIT 76
-#define EDITOR_SPAWN_FLAGS (DRAW_COLLISION_MASK | VISIBLE_DURING_GAMEPLAY)
+// Same flags the AP client gives its runtime spawns (ap/ap_spawn.c). 0x2000000
+// (VISIBLE_DURING_GAMEPLAY) is RB_INSTANCE_SKIP_OT_RANGE to RenderBucket: with it
+// the marker never gets an OT depth range and every draw was rejected.
+#define EDITOR_SPAWN_FLAGS DRAW_COLLISION_MASK
 
 enum EditorObjectKind
 {
@@ -1189,7 +1192,8 @@ static void Editor_SelectNearest(int additive)
 static void Editor_UpdatePreview(void)
 {
 	struct EditorSpawn *preview = &s_spawns[EDITOR_MAX_OBJECTS];
-	if (!s_capture || !s_hasSurfaceHit)
+	// A HUD-less dump is a clean picture: no placement preview at the aim point.
+	if (!s_capture || !s_hasSurfaceHit || (s_dumpNoHud && s_dumpDir[0] != 0))
 	{
 		if (preview->instance != NULL)
 			INSTANCE_Death(preview->instance);
