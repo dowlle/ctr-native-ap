@@ -247,10 +247,66 @@ void NativeFs_CloseDir(NativeFsDir *dir)
 	free(dir);
 }
 
+int NativeFs_MakeDirectory(const char *utf8Path)
+{
+	wchar_t wide[NATIVE_FS_WIDE_MAX];
+	DWORD attributes;
+
+	if (!NativeFs_Utf8ToWidePath(utf8Path, wide, (int)(sizeof(wide)/sizeof(wide[0]))))
+		return 0;
+
+	if (CreateDirectoryW(wide, NULL))
+		return 1;
+
+	attributes = GetFileAttributesW(wide);
+	return (attributes != INVALID_FILE_ATTRIBUTES) && ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+}
+
+struct NativeFsLock
+{
+	HANDLE handle;
+};
+
+NativeFsLock *NativeFs_TryLockFile(const char *utf8Path)
+{
+	wchar_t wide[NATIVE_FS_WIDE_MAX];
+	NativeFsLock *lock;
+	HANDLE handle;
+
+	if (!NativeFs_Utf8ToWidePath(utf8Path, wide, (int)(sizeof(wide)/sizeof(wide[0]))))
+		return NULL;
+
+	// Share mode 0: while this handle is open no other process can open the
+	// file, and Windows closes the handle when the process ends however it ends.
+	handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (handle == INVALID_HANDLE_VALUE)
+		return NULL;
+
+	lock = (NativeFsLock *)malloc(sizeof(*lock));
+	if (lock == NULL)
+	{
+		CloseHandle(handle);
+		return NULL;
+	}
+
+	lock->handle = handle;
+	return lock;
+}
+
+void NativeFs_UnlockFile(NativeFsLock *lock)
+{
+	if (lock == NULL)
+		return;
+
+	CloseHandle(lock->handle);
+	free(lock);
+}
+
 #else // POSIX
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -404,6 +460,65 @@ void NativeFs_CloseDir(NativeFsDir *dir)
 		closedir(dir->dir);
 
 	free(dir);
+}
+
+int NativeFs_MakeDirectory(const char *utf8Path)
+{
+	struct stat info;
+
+	if (utf8Path == NULL)
+		return 0;
+
+	if (mkdir(utf8Path, 0755) == 0)
+		return 1;
+
+	return (stat(utf8Path, &info) == 0) && S_ISDIR(info.st_mode);
+}
+
+struct NativeFsLock
+{
+	int fd;
+};
+
+NativeFsLock *NativeFs_TryLockFile(const char *utf8Path)
+{
+	NativeFsLock *lock;
+	int fd;
+
+	if (utf8Path == NULL)
+		return NULL;
+
+	// flock locks belong to the open file description: another open of the same
+	// file, in this process or any other, is refused until this one is closed,
+	// and the kernel drops it when the process ends however it ends.
+	fd = open(utf8Path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+	if (fd == -1)
+		return NULL;
+
+	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+	{
+		close(fd);
+		return NULL;
+	}
+
+	lock = (NativeFsLock *)malloc(sizeof(*lock));
+	if (lock == NULL)
+	{
+		close(fd);
+		return NULL;
+	}
+
+	lock->fd = fd;
+	return lock;
+}
+
+void NativeFs_UnlockFile(NativeFsLock *lock)
+{
+	if (lock == NULL)
+		return;
+
+	close(lock->fd);
+	free(lock);
 }
 
 #endif

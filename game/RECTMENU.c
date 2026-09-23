@@ -914,6 +914,9 @@ void RECTMENU_ProcessState()
 	// The map owns input while open, preventing focus/inspect/back from
 	// also selecting Resume, Quit or another underlying pause-menu row.
 	if (AP_TrackerMenuFrame()) return;
+	// A room-link prompt on the settled main menu owns input the same way
+	// (issue #334): the menu underneath neither runs nor sees the answer press.
+	if (AP_LinkMenuFrame()) return;
 #endif
 	struct RectMenu *currMenu;
 	s16 width;

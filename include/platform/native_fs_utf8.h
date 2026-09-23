@@ -12,8 +12,9 @@
 // beyond MAX_PATH still works; on POSIX the bytes pass through to the ordinary
 // calls.
 // This module is deliberately small and is used by the new disc
-// open/exists/scan/temp/delete/replace sites only. It does not change how the
-// rest of the engine opens its files.
+// open/exists/scan/temp/delete/replace sites and the one-click-connect store
+// (platform/native_link_host.c) only. It does not change how the rest of the
+// engine opens its files.
 //
 // Durability boundary: NativeFs_FlushToDisk does not return success until the
 // written bytes have reached stable storage (fsync on POSIX, _commit on
@@ -51,5 +52,18 @@ typedef struct NativeFsDir NativeFsDir;
 NativeFsDir *NativeFs_OpenDir(const char *utf8Path);
 int NativeFs_ReadDir(NativeFsDir *dir, char *nameOut, size_t nameOutSize);
 void NativeFs_CloseDir(NativeFsDir *dir);
+
+// Create a directory. Returns 1 when it was created or already exists as a
+// directory, 0 otherwise. The parent must exist.
+int NativeFs_MakeDirectory(const char *utf8Path);
+
+// Exclusive advisory lock on a file, created when missing (issue #334, slice 3:
+// the one-click-connect store and primary-client locks). Returns NULL when the
+// lock is held elsewhere or the file cannot be opened. The lock lasts until
+// NativeFs_UnlockFile or the end of the process, including a crash, so a dead
+// holder never leaves it stuck. The file itself is never deleted.
+typedef struct NativeFsLock NativeFsLock;
+NativeFsLock *NativeFs_TryLockFile(const char *utf8Path);
+void NativeFs_UnlockFile(NativeFsLock *lock);
 
 #endif // NATIVE_FS_UTF8_H

@@ -4974,12 +4974,21 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// and surface a hint (log + the menu's status line show "not connected"); the
 		// player sets up the room in OPTIONS > Connection and hits Connect. With any
 		// config present, startup auto-connect behaves exactly as before.
-		if (haveIni || haveLegacy)
+		// A room link from this launch, or one another launch handed over,
+		// is admitted before the first dial (issue #334): with no session yet
+		// there is nothing to confirm a switch away from, and dialing the saved
+		// room first would only be torn down again.
+		if (AP_LinkBootAdmit())
+		{
+			// dialed by the link glue
+		}
+		else if (haveIni || haveLegacy)
 		{
 			snprintf(msg, sizeof msg, "[AP NET] init uri=%s slot=%s\n", uri, slot);
 			AP_AppendLog(msg);
 			if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 				ap_net_connect_slot(slot, pass);
+			AP_LinkNoteDial(uri, slot);
 		}
 		else
 		{
@@ -5492,6 +5501,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);
 	ap_net_started = 1; // suppress the boot-time auto-dial from re-running
+	AP_LinkNoteDial(uri, slot); // a later room link for this session is not a switch
 }
 
 // Quit-from-main-menu (#211): close the live socket before the process exits,
@@ -7428,6 +7438,8 @@ static void ap_onframe_body(struct GameTracker *gGT)
 
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
+	// Room links (issue #334): claim handed-over requests, expire, notices.
+	AP_LinkTick(gGT);
 
 	// Trap framework: advance prime->fire->clear lifecycle + apply the FP camera,
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
