@@ -21,6 +21,7 @@ enum EditorEngineConstants
 
 void Editor_ConfigureFromArgs(int argc, char **argv);
 void Editor_ApplyDumpRuntimeOverrides(void);
+int Editor_DumpWindowSize(int *width, int *height);
 int Editor_RunSelfTests(void);
 int Editor_IsConfigured(void);
 int Editor_IsInputCaptured(void);

@@ -67,6 +67,7 @@ struct EditorSpawn
 	Vec3 pos;
 	SVec3 rot;
 	u32 colour;
+	int apBox; // draw with the AP client's own box model (editor_apbox.c), not modelPtr[modelID]
 	struct Instance *instance;
 	char name[16];
 };
@@ -112,6 +113,15 @@ static int s_dumpStart = 90;
 static int s_dumpNoHud;
 static int s_dumpMute;
 static int s_dumpSkipIntro;
+// Video overrides for dump runs (-1 = leave config.ini's value). The Steam
+// client's settings are render_scale 0 (Native), aspect_ratio 1 (16:9) and
+// increase_draw_distance on; a dump run passes them explicitly so the picture
+// does not depend on whatever config.ini sits next to the binary.
+static int s_dumpRenderScale = -1;
+static int s_dumpAspect = -1;
+static int s_dumpDrawDistance = -1;
+static int s_dumpWindowW;
+static int s_dumpWindowH;
 // Renderer A/B for the native-only two-pass textured semi-transparent draw
 // path (DrawSplit, platform/native_gpu.c). 0 = shipped two-pass; 1 = collapse
 // to a single blended pass so a dump run can tell whether the glass artifacts
@@ -178,6 +188,8 @@ static void Editor_Log(const char *format, ...)
 	fputc('\n', stream);
 	fclose(stream);
 }
+
+#include "editor_apbox.c"
 
 static int Editor_ParseInt(const char *text, int *out)
 {
@@ -374,6 +386,38 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		{
 			g_editorTextureSemiTransMode = 1;
 		}
+		else if (strcmp(argv[i], "--editor-dump-render-scale") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value >= 0 && value <= 4)
+				s_dumpRenderScale = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-aspect") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value >= 0 && value <= 3)
+				s_dumpAspect = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-draw-distance") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && (value == 0 || value == 1))
+				s_dumpDrawDistance = value;
+		}
+		else if (strcmp(argv[i], "--editor-dump-window") == 0 && i + 1 < argc)
+		{
+			int w = 0, h = 0;
+			if (sscanf(argv[++i], "%dx%d", &w, &h) == 2 && w >= 320 && h >= 240 && w <= 7680 && h <= 4320)
+			{
+				s_dumpWindowW = w;
+				s_dumpWindowH = h;
+			}
+		}
+		else if (strcmp(argv[i], "--editor-apbox-atlas") == 0 && i + 1 < argc)
+		{
+			strncpy(s_edApBoxAtlasPath, argv[++i], sizeof(s_edApBoxAtlasPath) - 1);
+			s_edApBoxAtlasPath[sizeof(s_edApBoxAtlasPath) - 1] = 0;
+		}
 	}
 
 	if (s_sourceLevPath[0] == 0)
@@ -425,6 +469,32 @@ void Editor_ApplyDumpRuntimeOverrides(void)
 		g_config.skipIntro = 1;
 		Editor_Log("DUMP_RUNTIME skip_intro=1");
 	}
+	if (s_dumpRenderScale >= 0)
+	{
+		g_config.renderScale = s_dumpRenderScale;
+		Editor_Log("DUMP_RUNTIME render_scale=%d", s_dumpRenderScale);
+	}
+	if (s_dumpAspect >= 0)
+	{
+		g_config.aspectRatio = s_dumpAspect;
+		Editor_Log("DUMP_RUNTIME aspect_ratio=%d", s_dumpAspect);
+	}
+	if (s_dumpDrawDistance >= 0)
+	{
+		g_config.increaseDrawDistance = s_dumpDrawDistance != 0;
+		Editor_Log("DUMP_RUNTIME increase_draw_distance=%d", s_dumpDrawDistance);
+	}
+}
+
+// Window size for main.c's Platform_Init. Returns non-zero when a dump run
+// asked for one with --editor-dump-window WxH.
+int Editor_DumpWindowSize(int *width, int *height)
+{
+	if (s_dumpWindowW <= 0 || s_dumpWindowH <= 0)
+		return 0;
+	*width = s_dumpWindowW;
+	*height = s_dumpWindowH;
+	return 1;
 }
 
 int Editor_IsConfigured(void)
@@ -522,10 +592,10 @@ static void Editor_RebuildSpawns(void)
 		struct EditorSpawn *spawn = &s_spawns[i];
 		spawn->used = 1;
 		spawn->modelID = s_kindModels[s_objects[i].kind];
+		spawn->apBox = s_objects[i].kind == EDITOR_OBJECT_AP_CANDIDATE;
 		spawn->pos = s_objects[i].pos;
 		spawn->rot = s_objects[i].rot;
-		spawn->colour = s_selectedSet[i] ? 0x0000ffff :
-		                (s_objects[i].kind == EDITOR_OBJECT_AP_CANDIDATE ? 0x00ff80ff : 0);
+		spawn->colour = s_selectedSet[i] ? 0x0000ffff : 0;
 		snprintf(spawn->name, sizeof(spawn->name), "edit%04d", s_objects[i].id);
 	}
 }
@@ -1202,6 +1272,12 @@ static void Editor_UpdatePreview(void)
 	}
 	preview->used = 1;
 	preview->modelID = s_kindModels[s_palette];
+	if (preview->instance != NULL && preview->apBox != (s_palette == EDITOR_OBJECT_AP_CANDIDATE))
+	{
+		INSTANCE_Death(preview->instance);
+		preview->instance = NULL;
+	}
+	preview->apBox = s_palette == EDITOR_OBJECT_AP_CANDIDATE;
 	preview->pos.x = s_surfaceHit.x;
 	preview->pos.y = s_surfaceHit.y;
 	preview->pos.z = s_surfaceHit.z;
@@ -1263,6 +1339,12 @@ static void Editor_UpdateSpawns(struct GameTracker *gGT)
 		struct EditorSpawn *spawn = &s_spawns[i];
 		if (!spawn->used)
 			continue;
+		if (spawn->instance == NULL && spawn->apBox)
+		{
+			spawn->instance = INSTANCE_Birth3D(Editor_ApBoxModel(gGT), spawn->name, NULL);
+			if (spawn->instance != NULL)
+				spawn->instance->flags = EDITOR_SPAWN_FLAGS;
+		}
 		if (spawn->instance == NULL && spawn->modelID >= 0 && spawn->modelID < (int)(sizeof(gGT->modelPtr) / sizeof(gGT->modelPtr[0])) &&
 		    gGT->modelPtr[spawn->modelID] != NULL)
 		{
@@ -1273,8 +1355,7 @@ static void Editor_UpdateSpawns(struct GameTracker *gGT)
 		if (spawn->instance != NULL)
 		{
 			if (i < s_objectCount)
-				spawn->colour = s_selectedSet[i] ? 0x0000ffff : (i == s_hovered ? 0x00ff8000 :
-				                (s_objects[i].kind == EDITOR_OBJECT_AP_CANDIDATE ? 0x00ff80ff : 0));
+				spawn->colour = s_selectedSet[i] ? 0x0000ffff : (i == s_hovered ? 0x00ff8000 : 0);
 			ConvertRotToMatrix(&spawn->instance->matrix, &spawn->rot);
 			spawn->instance->matrix.t[0] = spawn->pos.x;
 			spawn->instance->matrix.t[1] = spawn->pos.y;

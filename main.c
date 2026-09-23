@@ -446,7 +446,22 @@ int main(int argc, char *argv[])
 #define CTR_WINDOW_TITLE "Crash Team Racing"
 #endif
 
+#if defined(CTR_EDITOR)
+	{
+		int editorW = 0, editorH = 0;
+		if (Editor_DumpWindowSize(&editorW, &editorH))
+		{
+			printf("[CTR Native] editor dump window %dx%d\n", editorW, editorH);
+			Platform_Init(CTR_WINDOW_TITLE, editorW, editorH);
+		}
+		else
 #ifdef USE_16BY9
+			Platform_Init(CTR_WINDOW_TITLE, 1280, 720);
+#else
+			Platform_Init(CTR_WINDOW_TITLE, 800, 600);
+#endif
+	}
+#elif defined(USE_16BY9)
 	printf("[CTR Native] Widescreen\n");
 	Platform_Init(CTR_WINDOW_TITLE, 1280, 720);
 #else
