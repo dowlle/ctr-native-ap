@@ -1,0 +1,55 @@
+name: Box placement submission
+description: Send item box spots you placed with the box authoring download.
+title: "[Boxes] "
+labels: ["help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for placing boxes. The steps are in [Help place item boxes](https://github.com/dowlle/ctr-native-ap/blob/main/docs/HELP_PLACE_BOXES.md).
+
+        Every spot is checked for reachability before it goes in, so some may be left out. Not knowing an answer is fine. Leave it blank.
+
+  - type: textarea
+    id: file
+    attributes:
+      label: Your placement file
+      description: |
+        Drag `ap-box-placements-authoring.json` from the authoring folder into this box. If GitHub refuses the file, put it in a zip first.
+    validations:
+      required: true
+
+  - type: input
+    id: tracks
+    attributes:
+      label: Which tracks did you add boxes to?
+      placeholder: Crash Cove, Roo's Tubes
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything we should know about your spots?
+      description: For example a jump you need to make, or a box your spot should replace on a full track.
+      placeholder: |
+        The second new box on Roo's Tubes is on the landing of the big pipe jump.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Authoring download version
+      description: The version in the zip name or in versions.txt.
+      placeholder: v0.2.1
+    validations:
+      required: false
+
+  - type: input
+    id: credit
+    attributes:
+      label: How should we credit you?
+      description: A name for the release notes, or leave blank for no credit.
+    validations:
+      required: false

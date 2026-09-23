@@ -27,7 +27,16 @@ struct GameTracker;
 // Where placements are written, next to the executable / working directory,
 // alongside ap-state.json and ctr-ap.log. Read once at first use, rewritten on
 // every change.
+//
+// The separate box authoring download (CTR_AP_AUTHORING) uses its own file
+// name. Its file holds a whole edited table, and a normal client that found it
+// next to its exe would use it as a wholesale override. With a distinct name, an
+// authoring zip unpacked into a player folder by mistake changes nothing there.
+#ifdef CTR_AP_AUTHORING
+#define AP_AUTHOR_FILE "ap-box-placements-authoring.json"
+#else
 #define AP_AUTHOR_FILE "ap-box-placements.json"
+#endif
 
 // Total placements held across ALL tracks. The file is the durable store; this
 // is the in-memory mirror. 512 is roughly 20 per authorable level with room to

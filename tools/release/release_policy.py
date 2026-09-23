@@ -29,6 +29,15 @@ STANDARD_ASSET_NAMES = (
     "ctr_native_ap.debug.sha256",
 )
 
+# The separate box authoring download (a CTR_AP_AUTHORING client that never
+# connects to a room). Optional: a release may carry it or not, it is not one of
+# the eleven standard assets and the signed manifest never covers it. When an
+# archive is present its .sha256 sidecar must be present and correct.
+AUTHORING_ASSET_NAMES = {
+    "windows": "ctr-archipelago-{version}-box-authoring-windows-x86.zip",
+    "linux": "ctr-archipelago-{version}-box-authoring-linux-x86.tar.gz",
+}
+
 WINDOWS_CLIENT_ASSET = "ctr-archipelago-{version}-windows-x86.zip"
 LINUX_CLIENT_ASSET = "ctr-archipelago-{version}-linux-x86.tar.gz"
 SIGNED_ASSET_NAMES = (WINDOWS_CLIENT_ASSET, LINUX_CLIENT_ASSET)
@@ -64,6 +73,42 @@ def standard_asset_names(version: str) -> list[str]:
     """The eleven standard release assets, with the tag-style version filled in."""
     tag = version if version.startswith("v") else f"v{version}"
     return [name.format(version=tag) for name in STANDARD_ASSET_NAMES]
+
+
+def authoring_asset_name(version: str, platform: str) -> str:
+    tag = version if version.startswith("v") else f"v{version}"
+    return AUTHORING_ASSET_NAMES[platform].format(version=tag)
+
+
+def authoring_asset_names(version: str) -> list[str]:
+    """The optional box authoring archives and their checksum sidecars."""
+    names = []
+    for platform in ("windows", "linux"):
+        archive = authoring_asset_name(version, platform)
+        names += [archive, archive + ".sha256"]
+    return names
+
+
+def verify_authoring_sidecars(release: Path, version: str) -> None:
+    """An optional authoring archive, if present, needs its own valid sidecar."""
+    for platform in ("windows", "linux"):
+        archive = authoring_asset_name(version, platform)
+        sidecar = archive + ".sha256"
+        has_archive = (release / archive).exists()
+        has_sidecar = (release / sidecar).exists()
+        if has_archive != has_sidecar:
+            fail(f"box authoring download needs both {archive} and {sidecar}")
+        if not has_archive:
+            continue
+        require_regular_file(release / archive, "box authoring archive")
+        require_regular_file(release / sidecar, "box authoring checksum sidecar")
+        lines = (release / sidecar).read_text(encoding="utf-8").splitlines()
+        fields = lines[0].split() if len(lines) == 1 else []
+        if len(fields) != 2 or fields[1] != archive or not SHA256.fullmatch(fields[0]):
+            fail(f"malformed checksum sidecar: {sidecar}")
+        actual = sha256(release / archive)
+        if fields[0] != actual:
+            fail(f"checksum mismatch for {archive}: sidecar has {fields[0]}, actual is {actual}")
 
 
 def signed_asset_names(version: str) -> list[str]:

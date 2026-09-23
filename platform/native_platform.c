@@ -92,7 +92,10 @@ internal void Platform_CalcFPS(void)
 
 internal void Platform_GetWindowName(const char *appName, char *buffer, size_t bufferSize)
 {
-#ifdef CTR_INTERNAL
+#if defined(CTR_AP_AUTHORING)
+	// The separate box authoring download must never pass for a player client.
+	snprintf(buffer, bufferSize, "%s | BOX AUTHORING BUILD (no Archipelago)", appName);
+#elif defined(CTR_INTERNAL)
 	snprintf(buffer, bufferSize, "%s | Internal", appName);
 #else
 	snprintf(buffer, bufferSize, "%s", appName);

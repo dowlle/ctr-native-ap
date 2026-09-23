@@ -15,6 +15,13 @@ import zipfile
 import zlib
 
 
+AUTHORING_NOTICE = (
+    'BOX AUTHORING BUILD. For placing extra item boxes only.\n'
+    'It does not connect to Archipelago. Do not play seeds with it.\n'
+    'Unzip it into its own folder, never into your normal CTR Archipelago folder.\n'
+    'Read HELP-PLACE-BOXES.md for the steps.\n')
+
+
 def output(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT)
 
@@ -88,22 +95,29 @@ def verify(platform, exe):
 
 def main():
     platform, variant, executable, destination = sys.argv[1:]
-    if platform not in ('windows', 'linux') or variant not in ('ap', 'vanilla'):
+    if platform not in ('windows', 'linux') or variant not in ('ap', 'vanilla', 'authoring'):
         raise ValueError('Invalid platform/configuration')
     exe, out = Path(executable), Path(destination)
     checks = verify(platform, exe)
     commit = output('git', 'rev-parse', 'HEAD').strip()
     if output('git', 'diff', '--name-only', 'HEAD').strip():
         raise ValueError('Tracked source differs from the recorded commit')
-    name = f'ctr-{variant}-{platform}-x86-{commit[:12]}'
+    label = 'ap-authoring' if variant == 'authoring' else variant
+    name = f'ctr-{label}-{platform}-x86-{commit[:12]}'
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary) / name
         root.mkdir()
         shutil.copy2(exe, root / exe.name)
-        for file in ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'SETUP.md', 'ap-config.example.txt'):
+        # The box authoring download never connects to a room, so it carries the
+        # placement guide instead of the connection example.
+        companions = ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'SETUP.md')
+        companions += ('ap-config.example.txt',) if variant != 'authoring' else ()
+        for file in companions:
             shutil.copy2(file, root / file)
+        if variant == 'authoring':
+            shutil.copy2('docs/HELP_PLACE_BOXES.md', root / 'HELP-PLACE-BOXES.md')
         shutil.copy2('tools/extract-assets/extract_assets.py', root / 'extract_assets.py')
-        if variant == 'ap':
+        if variant in ('ap', 'authoring'):
             cortex = root / 'assets' / 'tracks' / 'cortex-vortex'
             cortex.mkdir(parents=True)
             for file in ('CVortex Arcade All.lev', 'CVortex Arcade All.vrm'):
@@ -117,7 +131,8 @@ def main():
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))
         evidence = {'source_commit': commit, 'platform': platform, 'variant': variant,
-                    'custom_tracks': variant == 'ap', 'authoring': False,
+                    'custom_tracks': variant in ('ap', 'authoring'),
+                    'authoring': variant == 'authoring',
                     'executable_sha256': digest(exe), 'debug_sha256': digest(Path(str(exe) + '.debug')),
                     'vendor_lock_sha256': digest(Path('ap/vendor/versions.lock')),
                     'checks': checks, 'compiler': output('gcc', '--version').splitlines()[0],
@@ -132,6 +147,8 @@ def main():
             'No extracted retail game assets are included.\n'
             'Use the matching ctr.apworld from the reviewed release pair.\n'
             'No gameplay acceptance or antivirus clearance is implied.\n')
+        if variant == 'authoring':
+            (root / 'AUTHORING-BUILD.txt').write_text(AUTHORING_NOTICE)
         archive = out / (name + ('.zip' if platform == 'windows' else '.tar.gz'))
         if platform == 'windows':
             with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:

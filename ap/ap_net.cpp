@@ -590,6 +590,19 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 {
 	if (g_ap)
 		return 0;
+#ifdef CTR_AP_AUTHORING
+	// The box authoring download never joins a room. Its placement file replaces
+	// the whole box table, so a seed played on it could show boxes that do not
+	// match the seed's locations. Every dial path (boot, Connect, room link)
+	// comes through here, and the reason shows as the connection status.
+	(void)uuid;
+	(void)game;
+	(void)uri;
+	g_status = AP_NET_STATUS_ERROR;
+	g_last_error = "box authoring build: Archipelago is off";
+	AP_LogLine("[AP NET] box authoring build: not connecting to Archipelago\n");
+	return -1;
+#endif
 	// Resolve the trust store before the client exists: apclientpp takes it as a
 	// constructor argument and hands it to every socket it later builds (#170).
 	ap_tls_resolve_cert_store();
