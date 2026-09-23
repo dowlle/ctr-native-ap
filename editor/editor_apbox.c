@@ -23,6 +23,7 @@
 
 #include "../ap/ap_box_model_data.h"
 #include "../ap/ap_box_texture_data.h"
+#include "../ap/ap_box_model_framed_data.h"
 
 #include <platform/native_gpu.h>
 #include <platform/native_renderer.h>
@@ -54,6 +55,16 @@ static struct TextureLayout *s_edApBoxLayouts[6] = {
 static int s_edApBoxBuilt;
 static int s_edApBoxTextured; // 0 untried, 1 textured, 2 upload failed (plain cube)
 static char s_edApBoxAtlasPath[1024];
+// --editor-apbox-framed: draw the retail-crate-style box (face square plus a
+// border ring carrying the 16x16 wood rect) from ap_box_model_framed_data.h.
+static int s_edApBoxFramed;
+struct EditorApBoxFramedFrame
+{
+	struct ModelFrame frame;
+	u8 verts[AP_BOX_FRAMED_NUM_VERTS * 3];
+};
+static struct EditorApBoxFramedFrame s_edApBoxFramedFrame;
+static struct TextureLayout *s_edApBoxFramedLayoutPtrs[AP_BOX_FRAMED_NUM_TRIS];
 static unsigned char s_edApBoxAtlasOverride[EDITOR_APBOX_ATLAS_BYTES];
 
 void Editor_Log(const char *format, ...);
@@ -176,8 +187,21 @@ static void Editor_ApBoxApplyTexture(void)
 	s_edApBoxHeader.ptrTexLayout = s_edApBoxLayouts;
 	s_edApBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommandsTex;
 	s_edApBoxHeader.ptrColors = (u32 *)(uintptr_t)s_apBoxModelColorsTex;
+	if (s_edApBoxFramed)
+	{
+		s_edApBoxFramedFrame.frame = s_edApBoxFrame.frame;
+		for (i = 0; i < AP_BOX_FRAMED_NUM_VERTS * 3; i++)
+			s_edApBoxFramedFrame.verts[i] = s_apBoxFramedVerts[i];
+		for (i = 0; i < AP_BOX_FRAMED_NUM_TRIS; i++)
+			s_edApBoxFramedLayoutPtrs[i] = &s_apBoxFramedLayouts[i];
+		s_edApBoxHeader.ptrFrameData = &s_edApBoxFramedFrame.frame;
+		s_edApBoxHeader.ptrTexLayout = s_edApBoxFramedLayoutPtrs;
+		s_edApBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxFramedCommands;
+		s_edApBoxHeader.ptrColors = (u32 *)(uintptr_t)s_apBoxFramedColors;
+	}
 	s_edApBoxTextured = 1;
-	Editor_Log("APBOX textured atlas=%s", s_edApBoxAtlasPath[0] ? s_edApBoxAtlasPath : "compiled");
+	Editor_Log("APBOX textured atlas=%s model=%s", s_edApBoxAtlasPath[0] ? s_edApBoxAtlasPath : "compiled",
+	           s_edApBoxFramed ? "framed" : "cube");
 }
 
 // ap/ap_box_model.c AP_BoxModel_Build.

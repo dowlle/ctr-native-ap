@@ -122,6 +122,8 @@ static int s_dumpAspect = -1;
 static int s_dumpDrawDistance = -1;
 static int s_dumpWindowW;
 static int s_dumpWindowH;
+static int s_modelDumpID = -1;
+static char s_modelDumpPath[EDITOR_PATH_MAX];
 // Renderer A/B for the native-only two-pass textured semi-transparent draw
 // path (DrawSplit, platform/native_gpu.c). 0 = shipped two-pass; 1 = collapse
 // to a single blended pass so a dump run can tell whether the glass artifacts
@@ -412,6 +414,20 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 				s_dumpWindowW = w;
 				s_dumpWindowH = h;
 			}
+		}
+		else if (strcmp(argv[i], "--editor-dump-model") == 0 && i + 1 < argc)
+		{
+			const char *arg = argv[++i];
+			const char *colon = strchr(arg, ':');
+			if (colon != NULL && sscanf(arg, "%d", &s_modelDumpID) == 1)
+			{
+				strncpy(s_modelDumpPath, colon + 1, sizeof(s_modelDumpPath) - 1);
+				s_modelDumpPath[sizeof(s_modelDumpPath) - 1] = 0;
+			}
+		}
+		else if (strcmp(argv[i], "--editor-apbox-framed") == 0)
+		{
+			s_edApBoxFramed = 1;
 		}
 		else if (strcmp(argv[i], "--editor-apbox-atlas") == 0 && i + 1 < argc)
 		{
@@ -1469,8 +1485,92 @@ static void Editor_RequestDirectLoad(struct GameTracker *gGT)
 	snprintf(s_status, sizeof(s_status), "Loading editor host slot %d", s_hostSlot);
 }
 
+// --editor-dump-model ID:FILE writes one resident model's LOD headers,
+// command lists, vertex bytes and referenced texture layouts as JSON, once,
+// for model research (the retail item crate is ID 6, PU_RANDOM_CRATE).
+
+static void Editor_DumpModel(struct GameTracker *gGT)
+{
+	struct Model *m;
+	FILE *f;
+	int h;
+
+	if (s_modelDumpID < 0 || s_modelDumpPath[0] == 0 || gGT == NULL)
+		return;
+	if (s_modelDumpID >= (int)(sizeof(gGT->modelPtr) / sizeof(gGT->modelPtr[0])))
+		return;
+	m = gGT->modelPtr[s_modelDumpID];
+	if (m == NULL)
+		return;
+	f = fopen(s_modelDumpPath, "w");
+	s_modelDumpID = -1;
+	if (f == NULL)
+		return;
+	fprintf(f, "{\"name\":\"%.16s\",\"id\":%d,\"numHeaders\":%d,\"headers\":[", m->name, m->id, m->numHeaders);
+	for (h = 0; h < m->numHeaders; h++)
+	{
+		struct ModelHeader *mh = &m->headers[h];
+		const u32 *cmd = (const u32 *)(uintptr_t)mh->ptrCommandList;
+		int n = 0, i, maxTex = 0, numVerts = 0;
+		fprintf(f, "%s{\"name\":\"%.16s\",\"maxDistanceLOD\":%d,\"flags\":%u,\"scale\":[%d,%d,%d],\"animtex\":%u,"
+		        "\"numAnimations\":%u,\"unk3\":%u,", h ? "," : "", mh->name, mh->maxDistanceLOD, mh->flags, mh->scale.x, mh->scale.y,
+		        mh->scale.z, (unsigned)(uintptr_t)mh->animtex, (unsigned)mh->numAnimations, (unsigned)mh->unk3);
+		if (mh->ptrFrameData != NULL)
+			fprintf(f, "\"framePos\":[%d,%d,%d],\"vertexOffset\":%d,", mh->ptrFrameData->pos.x, mh->ptrFrameData->pos.y,
+			        mh->ptrFrameData->pos.z, mh->ptrFrameData->vertexOffset);
+		fprintf(f, "\"commands\":[");
+		if (cmd != NULL)
+		{
+			for (n = 0; cmd[n] != 0xffffffffu && n < 8192; n++)
+			{
+				fprintf(f, "%s%u", n ? "," : "", (unsigned)cmd[n]);
+				if (n > 0 && (cmd[n] >> 16) != 0)
+				{
+					if (((cmd[n] >> 24) & 4) == 0)
+						numVerts++;
+					if ((int)(cmd[n] & 0x1ff) > maxTex)
+						maxTex = cmd[n] & 0x1ff;
+				}
+			}
+		}
+		fprintf(f, "],\"verts\":[");
+		if (mh->ptrFrameData != NULL)
+		{
+			const u8 *v = (const u8 *)mh->ptrFrameData + mh->ptrFrameData->vertexOffset;
+			for (i = 0; i < numVerts * 3; i++)
+				fprintf(f, "%s%u", i ? "," : "", v[i]);
+		}
+		fprintf(f, "],\"colors\":[");
+		if (mh->ptrColors != NULL && cmd != NULL)
+			for (i = 0; i < (int)cmd[0] && i < 256; i++)
+				fprintf(f, "%s%u", i ? "," : "", (unsigned)mh->ptrColors[i]);
+		fprintf(f, "],\"layouts\":[");
+		for (i = 0; i < maxTex && mh->ptrTexLayout != NULL; i++)
+		{
+			struct TextureLayout *t = mh->ptrTexLayout[i];
+			if (t == NULL)
+				fprintf(f, "%snull", i ? "," : "");
+			else
+				fprintf(f, "%s{\"ptr\":%u,\"uv\":[%u,%u,%u,%u,%u,%u,%u,%u],\"clut\":%u,\"tpage\":%u}", i ? "," : "",
+				        (unsigned)(uintptr_t)t, t->u0, t->v0, t->u1, t->v1, t->u2, t->v2, t->u3, t->v3, t->clut, t->tpage);
+		}
+		fprintf(f, "]");
+		if (mh->animtex != NULL)
+		{
+			struct AnimTex *a = mh->animtex;
+			fprintf(f, ",\"animtexFields\":{\"ptrActiveTex\":%u,\"numFrames\":%d,\"frameOffset\":%d,\"frameSkip\":%d}",
+			        (unsigned)(uintptr_t)a->ptrActiveTex, a->numFrames, a->frameOffset, a->frameSkip);
+		}
+		fprintf(f, "}");
+	}
+	fprintf(f, "]}\n");
+	fclose(f);
+	Editor_Log("MODEL_DUMP written %s", s_modelDumpPath);
+}
+
 void Editor_Frame(struct GameTracker *gGT)
 {
+	Editor_DumpModel(gGT);
 	const bool *keys;
 	SDL_MouseButtonFlags mouse;
 	float mouseX = 0.0f;
