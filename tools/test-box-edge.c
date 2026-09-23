@@ -213,11 +213,47 @@ static void test_recolour(void)
 	expect(memcmp(px[1], in[1], 4), 0, "only w pixels per row");
 }
 
+static void test_compose(void)
+{
+	static unsigned char face[64 * 64 * 4], crate[64 * 64 * 4], mask[64 * 8];
+	AP_BoxEdgeRect a, b, u;
+	unsigned char uvA[8] = {0, 192, 0, 223, 63, 192, 63, 192};
+	unsigned char uvB[8] = {64, 224, 64, 255, 127, 224, 127, 224};
+
+	memset(face, 0x11, sizeof face);
+	memset(crate, 0x22, sizeof crate);
+	crate[(5 * 64 + 6) * 4 + 3] = 0; // one transparent crate texel
+	memset(mask, 0, sizeof mask);
+	mask[3 * 8 + 1] = 1 << 2; // logo pixel (x 10, y 3)
+	AP_BoxEdge_ComposeLogo(face, 64, crate, 64, mask);
+	expect(face[(3 * 64 + 10) * 4], 0x11, "logo pixel keeps the face art");
+	expect(face[(3 * 64 + 11) * 4], 0x22, "background takes the crate");
+	expect(face[(3 * 64 + 11) * 4 + 3], 0xFF, "composed face is opaque");
+	expect(face[(5 * 64 + 6) * 4], 0, "transparent crate texel shows black");
+	expect(face[(5 * 64 + 6) * 4 + 3], 0xFF, "and stays opaque");
+
+	AP_BoxEdge_RectFromLayout(uvA, 0x007C, 27390, &a);
+	AP_BoxEdge_RectFromLayout(uvB, 0x007C, 27390, &b);
+	expect(AP_BoxEdge_RectUnion(&u, &a, 1), 1, "union start");
+	expect(AP_BoxEdge_RectUnion(&u, &b, 0), 1, "union grow");
+	expect(u.minU == 0 && u.minV == 192 && u.w == 128 && u.h == 64, 1, "union covers both pieces");
+	AP_BoxEdge_RectFromLayout(uvB, 0x007D, 27390, &b);
+	expect(AP_BoxEdge_RectUnion(&u, &b, 0), 0, "union refuses another page");
+
+	{
+		unsigned char f64[8] = {192, 0, 192, 63, 255, 0, 255, 0};
+		AP_BoxEdge_RectFromLayout(f64, 0x0069, 16171, &a);
+		expect(AP_BoxEdge_IsFaceRect(&a), 1, "64x64 4bpp is a crate face");
+		expect(AP_BoxEdge_IsWoodRect(&a), 0, "and not the wood");
+	}
+}
+
 int main(void)
 {
 	test_rect();
 	test_decode();
 	test_recolour();
+	test_compose();
 	if (g_fail)
 		return 1;
 	printf("test-box-edge: all assertions held\n");

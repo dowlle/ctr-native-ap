@@ -57,6 +57,17 @@
 // normally completes at the title screen, long before any box spawns. If it
 // fails, or has not run by the time the atlas is uploaded, the compiled atlas
 // keeps JurnthReinal's own 16x16 border tile, and the box is still framed.
+//
+// THE CRATE FACE (AP_BOX_FACE_BASE, see ap_box_edge_logic.h)
+// ----------------------------------------------------------
+// By default the same read also takes the retail Wumpa crate's 64x64 face (the
+// slatted crate, model PU_FRUIT_CRATE in the same level), recolours it the
+// same way, and puts JurnthReinal's six Archipelago circles on top of it
+// (ap_box_logo_mask_data.h marks which face pixels are the logo). Built with
+// AP_BOX_FACE_BASE=2 it uses the plain side panel of the Naughty Dog intro
+// crate instead; with 0 it keeps JurnthReinal's face unchanged. If the face
+// cannot be read, the face stays JurnthReinal's. Retail crates in the game
+// are untouched: only the AP box's own atlas changes.
 
 #ifdef CTR_AP
 
@@ -67,7 +78,8 @@
 #include "ap_box_texture_data.h"
 #include "ap_hooks.h" // AP_LogLine
 #include "ap_retail_asset.h" // AP_RetailAsset_ReadSubfile
-#include "ap_box_edge_logic.h" // decode + recolour of the wood tile (harness-pinned)
+#include "ap_box_edge_logic.h" // decode, recolour and logo compose (harness-pinned)
+#include "ap_box_logo_mask_data.h" // which face pixels are the Archipelago logo (JurnthReinal art)
 
 #include <stdlib.h>
 #include <string.h>
@@ -85,30 +97,50 @@
 static int                  s_apBoxTextureState; // 0 = untried, 1 = ready, 2 = failed
 static struct TextureLayout s_apBoxTextureFace;
 
-// ── the wood border from the player's disc ──────────────────────────────────
+// ── the wood border (and crate face) from the player's disc ─────────────────
 
 // Source: the 1p level of track 0 and its texture file. BIGFILE groups each
-// track as (vrm, lev) pairs per mode, 1p first. The crate's wood tile is the
-// same on every track; only its VRAM position differs, and the level's own
-// crate_question names that position, so the pair must be read together.
+// track as (vrm, lev) pairs per mode, 1p first. The crate's wood tile and the
+// Wumpa crate's face are the same on every track; only their VRAM position
+// differs, and the level's own models name that position, so the pair must be
+// read together.
 #define AP_BOX_EDGE_SRC_VRM (BI_ARCADETRACKS + 0 * 8 + 0)
 #define AP_BOX_EDGE_SRC_LEV (BI_ARCADETRACKS + 0 * 8 + 1)
-// Sector-aligned maxima across all 18 tracks: 1p LEV at most 780008 bytes,
-// every 1p VRM 458808. Temporary: freed as soon as the tile is decoded.
+// The Naughty Dog intro crate (variant AP_BOX_FACE_PLAIN): its texture file
+// and level file, and the model whose four 64x32 pieces make a plain 128x64
+// side panel. Retail NTSC-U: entries 513/514, model ndi_box_box_03, id 187.
+#define AP_BOX_PLAIN_SRC_VRM (BI_NDBOX + 0)
+#define AP_BOX_PLAIN_SRC_LEV (BI_NDBOX + 1)
+#define AP_BOX_PLAIN_MODEL_ID 187
+// Sector-aligned maxima: 1p LEV at most 780008 bytes across all 18 tracks,
+// every 1p VRM 458808, the intro level 671140. Temporary: freed right away.
 #define AP_BOX_EDGE_LEV_BUF 780288
 #define AP_BOX_EDGE_VRM_BUF 460800
 #define AP_BOX_EDGE_HEADER_STRIDE 0x40 // sizeof(struct ModelHeader), asserted in RenderBucket
 #define AP_BOX_EDGE_MAX_MODELS 512
 #define AP_BOX_EDGE_MAX_CMDS 4096
 
+#ifndef AP_BOX_FACE_BASE
+#define AP_BOX_FACE_BASE AP_BOX_FACE_WUMPA
+#endif
+
+enum
+{
+	AP_BOX_RECT_WOOD,  // the only 16x16 rect
+	AP_BOX_RECT_FACE,  // the only 64x64 rect
+	AP_BOX_RECT_PANEL, // the union of the 64x32 pieces
+};
+
 static int s_apBoxEdgeState; // 0 = untried, 1 = disc tile in the atlas, 2 = built-in border
+static int s_apBoxFaceState; // 1 = disc crate face behind the logo, 2 = JurnthReinal's face as drawn
 static u8  s_apBoxAtlasLive[AP_BOX_TEXTURE_ATLAS_W * AP_BOX_TEXTURE_ATLAS_H * 4];
 
-// Find the wood rect crate_question samples in a fixed-up level body. Every
-// pointer is checked against the buffer before it is followed.
-static int AP_BoxEdge_FindWood(const u8 *body, int size, AP_BoxEdgeRect *out)
+// Find a rect one model samples, in a fixed-up level body. Every pointer is
+// checked against the buffer before it is followed.
+static int AP_BoxEdge_FindRect(const u8 *body, int size, int modelId, int kind, AP_BoxEdgeRect *out)
 {
 	const struct Level *lev = (const struct Level *)body;
+	int found = 0;
 	u32 i;
 
 	if (size < (int)sizeof(struct Level) || lev->numModels == 0 || lev->numModels > AP_BOX_EDGE_MAX_MODELS ||
@@ -125,7 +157,7 @@ static int AP_BoxEdge_FindWood(const u8 *body, int size, AP_BoxEdgeRect *out)
 			break;
 		if ((const u8 *)m < body || (const u8 *)m + sizeof(struct Model) > body + size)
 			return 0;
-		if (m->id != PU_RANDOM_CRATE)
+		if (m->id != modelId)
 			continue;
 		if (m->numHeaders <= 0 || (const u8 *)m->headers < body ||
 		    (const u8 *)m->headers + (u32)m->numHeaders * AP_BOX_EDGE_HEADER_STRIDE > body + size)
@@ -152,6 +184,7 @@ static int AP_BoxEdge_FindWood(const u8 *body, int size, AP_BoxEdgeRect *out)
 				int ti = (int)(cmd[n] & 0x1FF);
 				const struct TextureLayout *tl;
 				unsigned char uv[8];
+				AP_BoxEdgeRect r;
 
 				if ((cmd[n] >> 16) == 0 || ti == 0)
 					continue;
@@ -162,71 +195,154 @@ static int AP_BoxEdge_FindWood(const u8 *body, int size, AP_BoxEdgeRect *out)
 					continue;
 				uv[0] = tl->u0; uv[1] = tl->v0; uv[2] = tl->u1; uv[3] = tl->v1;
 				uv[4] = tl->u2; uv[5] = tl->v2; uv[6] = tl->u3; uv[7] = tl->v3;
-				if (AP_BoxEdge_RectFromLayout(uv, tl->tpage, tl->clut, out) && AP_BoxEdge_IsWoodRect(out))
+				if (!AP_BoxEdge_RectFromLayout(uv, tl->tpage, tl->clut, &r))
+					continue;
+				if (kind == AP_BOX_RECT_WOOD && AP_BoxEdge_IsWoodRect(&r))
+				{
+					*out = r;
 					return 1;
+				}
+				if (kind == AP_BOX_RECT_FACE && AP_BoxEdge_IsFaceRect(&r))
+				{
+					*out = r;
+					return 1;
+				}
+				if (kind == AP_BOX_RECT_PANEL && r.w >= 64 && r.w <= 65 && r.h >= 32 && r.h <= 33 &&
+				    AP_BoxEdge_RectUnion(out, &r, !found))
+					found = 1;
 			}
 		}
-		return 0;
+		break;
+	}
+	if (kind == AP_BOX_RECT_PANEL && found && out->w >= 128 && out->h >= 64)
+	{
+		// The panel is 128x64; its middle 64x64 is planks and the cross plank.
+		out->minU += (out->w - 64) / 2;
+		out->minV += (out->h - 64) / 2;
+		out->w = out->h = 64;
+		return 1;
 	}
 	return 0;
 }
 
+// Read one level/texture pair and decode up to two rects from it. Returns the
+// number decoded (all or nothing per rect, in order); *why names the step that
+// stopped it.
+static int AP_BoxEdge_ReadPair(int levEntry, int vrmEntry, int levBuf, int nRects, const int *modelIds,
+                               const int *kinds, u8 *const *dst, const int *dstW, const char **why)
+{
+	AP_BoxEdgeRect rect[2];
+	u8 *buf, *body;
+	int size = 0, found = 0, done = 0, i;
+
+	*why = "level read";
+	buf = (u8 *)malloc((size_t)levBuf);
+	if (buf == 0)
+		return 0;
+	body = AP_RetailAsset_ReadSubfile(levEntry, 1, buf, levBuf, &size);
+	if (body != 0)
+	{
+		*why = "crate layout";
+		for (found = 0; found < nRects; found++)
+			if (!AP_BoxEdge_FindRect(body, size, modelIds[found], kinds[found], &rect[found]))
+				break;
+	}
+	free(buf);
+	if (found == 0)
+		return 0;
+
+	*why = "texture read";
+	buf = (u8 *)malloc(AP_BOX_EDGE_VRM_BUF);
+	if (buf == 0)
+		return 0;
+	body = AP_RetailAsset_ReadSubfile(vrmEntry, 0, buf, AP_BOX_EDGE_VRM_BUF, &size);
+	if (body != 0)
+	{
+		*why = "texel decode";
+		for (i = 0; i < found; i++, done++)
+			if (!AP_BoxEdge_Decode4bpp(body, size, &rect[i], dst[i], dstW[i]))
+				break;
+	}
+	free(buf);
+	return done;
+}
+
 // The one-time read. Leaves s_apBoxAtlasLive holding the compiled atlas with,
-// on success, the recoloured disc tile in its wood rect. Sticky either way.
+// on success, the recoloured disc wood in its wood rect and (variants 1, 2) the
+// recoloured crate face behind the logo in its face rect. Sticky either way.
 static void AP_BoxEdge_Harvest(void)
 {
-	u8 *buf;
-	u8 *body;
-	int size = 0, ok = 0;
-	AP_BoxEdgeRect rect;
-	u8 tile[16 * 16 * 4];
-	const char *why = "level read";
+	static u8 wood[16 * 16 * 4];
+	static u8 crate[64 * 64 * 4];
+	const char *why = "";
+	char msg[160];
+	int got, y;
 
 	memcpy(s_apBoxAtlasLive, s_apBoxTextureAtlas, sizeof s_apBoxAtlasLive);
 	s_apBoxEdgeState = 2;
+	s_apBoxFaceState = 2;
 
-	buf = (u8 *)malloc(AP_BOX_EDGE_LEV_BUF);
-	if (buf != 0)
 	{
-		body = AP_RetailAsset_ReadSubfile(AP_BOX_EDGE_SRC_LEV, 1, buf, AP_BOX_EDGE_LEV_BUF, &size);
-		why = body == 0 ? "level read" : "crate wood layout";
-		ok = body != 0 && AP_BoxEdge_FindWood(body, size, &rect);
-		free(buf);
-	}
-	if (ok)
-	{
-		ok = 0;
-		why = "texture read";
-		buf = (u8 *)malloc(AP_BOX_EDGE_VRM_BUF);
-		if (buf != 0)
+		int ids[2] = {PU_RANDOM_CRATE, PU_FRUIT_CRATE};
+		int kinds[2] = {AP_BOX_RECT_WOOD, AP_BOX_RECT_FACE};
+		u8 *dst[2] = {wood, crate};
+		int w[2] = {16, 64};
+		int want = AP_BOX_FACE_BASE == AP_BOX_FACE_WUMPA ? 2 : 1;
+
+		got = AP_BoxEdge_ReadPair(AP_BOX_EDGE_SRC_LEV, AP_BOX_EDGE_SRC_VRM, AP_BOX_EDGE_LEV_BUF, want, ids, kinds,
+		                          dst, w, &why);
+		if (got >= 1)
 		{
-			body = AP_RetailAsset_ReadSubfile(AP_BOX_EDGE_SRC_VRM, 0, buf, AP_BOX_EDGE_VRM_BUF, &size);
-			if (body != 0)
-			{
-				why = "texel decode";
-				ok = AP_BoxEdge_Decode4bpp(body, size, &rect, tile, 16);
-			}
-			free(buf);
+			AP_BoxEdge_Recolour(wood, 16, 16, 16);
+			for (y = 0; y < AP_BOX_TEXTURE_WOOD_H; y++)
+				memcpy(&s_apBoxAtlasLive[((AP_BOX_TEXTURE_WOOD_Y + y) * AP_BOX_TEXTURE_ATLAS_W +
+				                          AP_BOX_TEXTURE_WOOD_X) * 4],
+				       &wood[y * 16 * 4], AP_BOX_TEXTURE_WOOD_W * 4);
+			s_apBoxEdgeState = 1;
+			AP_LogLine("[AP BOX] wood border read from the disc and recoloured\n");
+		}
+		else
+		{
+			snprintf(msg, sizeof msg, "[AP BOX] wood border from the disc unavailable (%s); using the built-in border\n",
+			         why);
+			AP_LogLine(msg);
+		}
+		if (AP_BOX_FACE_BASE == AP_BOX_FACE_WUMPA && got == 2)
+			s_apBoxFaceState = 1;
+	}
+
+	if (AP_BOX_FACE_BASE == AP_BOX_FACE_PLAIN)
+	{
+		int ids[1] = {AP_BOX_PLAIN_MODEL_ID};
+		int kinds[1] = {AP_BOX_RECT_PANEL};
+		u8 *dst[1] = {crate};
+		int w[1] = {64};
+
+		// The intro level is smaller than the 1p level buffer.
+		if (AP_BoxEdge_ReadPair(AP_BOX_PLAIN_SRC_LEV, AP_BOX_PLAIN_SRC_VRM, AP_BOX_EDGE_LEV_BUF, 1, ids, kinds, dst,
+		                        w, &why) == 1)
+			s_apBoxFaceState = 1;
+	}
+
+	if (AP_BOX_FACE_BASE != AP_BOX_FACE_JURNTH)
+	{
+		if (s_apBoxFaceState == 1)
+		{
+			AP_BoxEdge_Recolour(crate, 64, 64, 64);
+			AP_BoxEdge_ComposeLogo(&s_apBoxAtlasLive[(AP_BOX_TEXTURE_FACE_Y * AP_BOX_TEXTURE_ATLAS_W +
+			                                          AP_BOX_TEXTURE_FACE_X) * 4],
+			                       AP_BOX_TEXTURE_ATLAS_W, crate, 64, s_apBoxLogoMask);
+			AP_LogLine(AP_BOX_FACE_BASE == AP_BOX_FACE_WUMPA
+			               ? "[AP BOX] face: Wumpa crate from the disc, recoloured, Archipelago logo on top\n"
+			               : "[AP BOX] face: plain crate panel from the disc, recoloured, Archipelago logo on top\n");
+		}
+		else
+		{
+			snprintf(msg, sizeof msg, "[AP BOX] crate face from the disc unavailable (%s); using the built-in face\n",
+			         why);
+			AP_LogLine(msg);
 		}
 	}
-	if (!ok)
-	{
-		char msg[128];
-		snprintf(msg, sizeof msg, "[AP BOX] wood border from the disc unavailable (%s); using the built-in border\n",
-		         why);
-		AP_LogLine(msg);
-		return;
-	}
-
-	AP_BoxEdge_Recolour(tile, 16, 16, 16);
-	{
-		int y;
-		for (y = 0; y < AP_BOX_TEXTURE_WOOD_H; y++)
-			memcpy(&s_apBoxAtlasLive[((AP_BOX_TEXTURE_WOOD_Y + y) * AP_BOX_TEXTURE_ATLAS_W + AP_BOX_TEXTURE_WOOD_X) * 4],
-			       &tile[y * 16 * 4], AP_BOX_TEXTURE_WOOD_W * 4);
-	}
-	s_apBoxEdgeState = 1;
-	AP_LogLine("[AP BOX] wood border read from the disc and recoloured\n");
 }
 
 void AP_BoxTexture_PrepareEdge(void)

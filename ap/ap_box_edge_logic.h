@@ -210,4 +210,74 @@ static void AP_BoxEdge_Recolour(unsigned char *rgba, int w, int h, int stride)
 	}
 }
 
+// ── the crate face behind the logo ──────────────────────────────────────────
+// AP box face variants (AP_BOX_FACE_BASE, chosen at build time):
+//   0  JurnthReinal's face as drawn (the framed box without a crate face)
+//   1  the retail Wumpa crate face (slats), recoloured, logo on top
+//   2  the plain side panel of the Naughty Dog intro crate (planks and a
+//      cross plank, no text), recoloured, logo on top
+// For 1 and 2 the crate face is read from the player's disc like the wood
+// border; if that read fails the face stays JurnthReinal's (variant 0).
+#define AP_BOX_FACE_JURNTH 0
+#define AP_BOX_FACE_WUMPA  1
+#define AP_BOX_FACE_PLAIN  2
+
+// The retail Wumpa crate's face is its only 64x64 4bpp rect.
+static int AP_BoxEdge_IsFaceRect(const AP_BoxEdgeRect *r)
+{
+	return r != 0 && r->w == 64 && r->h == 64 && r->depth == 0;
+}
+
+// Grow `acc` to also cover `r` (same page and palette required; 0 if not).
+// `first` non-zero starts a new union.
+static int AP_BoxEdge_RectUnion(AP_BoxEdgeRect *acc, const AP_BoxEdgeRect *r, int first)
+{
+	int x0, y0, x1, y1;
+
+	if (acc == 0 || r == 0)
+		return 0;
+	if (first)
+	{
+		*acc = *r;
+		return 1;
+	}
+	if (acc->pageX != r->pageX || acc->pageY != r->pageY || acc->clutX != r->clutX || acc->clutY != r->clutY ||
+	    acc->depth != r->depth)
+		return 0;
+	x0 = acc->minU < r->minU ? acc->minU : r->minU;
+	y0 = acc->minV < r->minV ? acc->minV : r->minV;
+	x1 = acc->minU + acc->w > r->minU + r->w ? acc->minU + acc->w : r->minU + r->w;
+	y1 = acc->minV + acc->h > r->minV + r->h ? acc->minV + acc->h : r->minV + r->h;
+	acc->minU = x0;
+	acc->minV = y0;
+	acc->w = x1 - x0;
+	acc->h = y1 - y0;
+	return 1;
+}
+
+// Put the logo on a crate face: where the mask bit is set (the six circles and
+// their outline, from JurnthReinal's face) the face keeps its art, elsewhere it
+// takes the crate pixel. mask is 64 rows of 8 bytes, bit x&7 of byte x>>3.
+static void AP_BoxEdge_ComposeLogo(unsigned char *face, int faceStride, const unsigned char *crate, int crateStride,
+                                   const unsigned char *mask)
+{
+	int x, y;
+
+	if (face == 0 || crate == 0 || mask == 0)
+		return;
+	for (y = 0; y < 64; y++)
+		for (x = 0; x < 64; x++)
+			if (!(mask[y * 8 + (x >> 3)] & (1 << (x & 7))))
+			{
+				const unsigned char *c = crate + (y * crateStride + x) * 4;
+				unsigned char *f = face + (y * faceStride + x) * 4;
+				f[0] = c[0];
+				f[1] = c[1];
+				f[2] = c[2];
+				f[3] = 0xFF; // the face is opaque; a transparent crate texel shows as black
+				if (c[3] == 0)
+					f[0] = f[1] = f[2] = 0;
+			}
+}
+
 #endif // AP_BOX_EDGE_LOGIC_H

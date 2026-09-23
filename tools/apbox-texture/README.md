@@ -70,6 +70,24 @@ into the atlas before the one-time upload. This happens once, on the first idle
 frame, so relic races, which carry no crate, get it too. If the read fails, the
 compiled `box_pink_highres_outer.png` border stays.
 
+## The crate face behind the logo
+
+Build option `AP_BOX_FACE_BASE` (default 1) picks what sits behind the six
+Archipelago circles on the face:
+
+| Value | Face |
+|---|---|
+| 0 | JurnthReinal's face as drawn |
+| 1 | the retail Wumpa crate face (slats), read from the player's disc and recoloured, with the circles on top |
+| 2 | the plain side panel of the Naughty Dog intro crate (planks, no text), read from the disc and recoloured, with the circles on top |
+
+The crate face is read in the same one-time disc read as the wood border and
+recoloured with the same function. `gen_logo_mask.py` generates
+`ap/ap_box_logo_mask_data.h` from `box_pink_highres_inner.png`: which face pixels
+are the circles and their outline (a flood fill from the border that stops at
+the outline). Only those pixels keep JurnthReinal's art. If the face cannot be
+read, the face stays JurnthReinal's. No retail pixels are compiled in.
+
 ## A note on the source art's edge pixels
 
 Every file in the contributed set carries a magenta (`#FF00FF`) one-pixel band
