@@ -55,6 +55,7 @@ static int s_markerLevel = -1; // level the current marker set was built for
 static int s_markerGen;        // AP_Spawn_Generation() the handles were taken at
 static int s_markerTableFull;  // the loader refused a marker for this level
 static int s_lastDropIndex = -1;
+static int s_bossPauseLogged;  // one log line per boss race, not per frame (#194)
 
 // Instance name. A char[16] rather than a string literal because INSTANCE_Birth
 // copies a fixed 15 characters out of whatever it is handed (INSTANCE.c:24-27).
@@ -661,6 +662,26 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	        gGT->drivers[0] != 0 && gGT->drivers[0]->instSelf != 0))
 		return;
 
+	// #194: author mode stands down in boss races (ap_author_ready.h). Checked
+	// after the readiness gate, so any handle still held here belongs to the
+	// current pool generation and is safe to remove.
+	if (!AP_AuthorRaceAllowsAuthoring(IS_BOSS_RACE(gGT->gameMode1)))
+	{
+		if (s_markerLevel >= 0)
+		{
+			AP_AuthorClearMarkers();
+			s_markerLevel = -1;
+		}
+		if (!s_bossPauseLogged)
+		{
+			s_bossPauseLogged = 1;
+			AP_LogLine("[AP AUTHOR] boss race: author mode is paused here (#194); "
+			           "markers and keys return in the normal race on this track\n");
+		}
+		return;
+	}
+	s_bossPauseLogged = 0;
+
 	AP_Author_EnsureLoaded();
 
 	if (!s_enabledPrev)
@@ -725,6 +746,14 @@ void AP_Author_DrawHud(void)
 
 	gGT = sdata->gGT;
 	level = (int)gGT->levelID;
+
+	// #194: say why nothing happens instead of showing a count the keys cannot edit.
+	if (!AP_AuthorRaceAllowsAuthoring(IS_BOSS_RACE(gGT->gameMode1)))
+	{
+		DecalFont_DrawLine("BOX AUTHOR  PAUSED IN BOSS RACES", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y,
+		                   FONT_SMALL, WHITE);
+		return;
+	}
 
 	for (i = 0; i < s_placeCount; i++)
 	{
