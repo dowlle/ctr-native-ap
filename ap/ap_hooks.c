@@ -50,6 +50,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_podium_skip_logic.h" // local podium-skip policy (#285)
 #include "ap_retail_crystal.h" // the harvested retail crystal for CTR progression (#219)
 #include "ap_retail_wumpa.h"   // the harvested retail Wumpa Fruit model for Wumpa packages (#222)
+#include "ap_box_texture.h"   // AP_BoxTexture_Prepare: the AP box wood and crate face from the disc
 #include "ap_wumpa_residency_logic.h" // freestanding Wumpa residency transition (#222)
 #include "ap_surface.h"    // permanent natural-surface comfort items (#14/#15)
 #include "ap_capability.h" // progressive boost + progressive stats (#12/#13)
@@ -7276,6 +7277,9 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// a savestate restore. The compact harvest itself runs at most once, on the
 	// first idle frame, and is sticky on failure.
 	AP_RetailWumpa_Register(gGT);
+	// The AP box's wood border and crate face: one read from the player's
+	// disc on the first idle frame. Sticky either way.
+	AP_BoxTexture_Prepare();
 	// Box placement author mode (#182) and the additive model loader it draws
 	// through (#109 / #124 groundwork). Author first, loader second, so a
 	// placement dropped this frame gets its marker in the same frame instead of

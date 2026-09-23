@@ -1026,6 +1026,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// for EVERY parse, including one that finds no ctr_options at all, so a seed
 	// that predates the apworld half glows exactly the way it does today.
 	ctr_cfg.ap_item_type_colors = 1;
+	// AP item box colours (R11): pink until a seed asks for item colours.
+	ctr_cfg.color_boxes_by_item = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
@@ -1156,6 +1158,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.ap_item_type_colors = json_int(opt, "ap_item_type_colors", 1);
 	if (!ctr_cfg.ap_item_type_colors)
 		ap_cfg_log("[AP CFG] ap_item_type_colors=0 -> AP markers render in one uniform colour\n");
+	// AP item box colours (R11). "color_boxes_by_item", int or bool, additive,
+	// no schema bump. Absent -> 0 -> every box pink, the shipped look.
+	ctr_cfg.color_boxes_by_item = json_int(opt, "color_boxes_by_item", 0) != 0;
+	if (ctr_cfg.color_boxes_by_item)
+		ap_cfg_log("[AP CFG] color_boxes_by_item=1 -> AP item boxes wear their item's Archipelago colour\n");
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not
 	// change schema_version -- generation never depends on it.
 	ctr_cfg.ai_difficulty_default = json_int(opt, "ai_difficulty", -1);

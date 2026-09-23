@@ -88,6 +88,11 @@ typedef struct
 	                            // presentation preference. Consumed by
 	                            // AP_SkipPodium (ap/ap_hooks.c).
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
+	bool itemBoxColours;        // Archipelago: "Item Box Colours" (default on). Off
+	                            // shows every AP item box pink for this player even
+	                            // when the seed colours them; it can never turn
+	                            // colours on when the seed has them off
+	                            // (AP_BoxColour_Enabled, ap/ap_box_colour_logic.h).
 	int  aiDifficulty;          // Archipelago: AI-difficulty preset, stored as the raw
 	                            // engine difficulty VALUE (0=vanilla, 0x50, 0xa0, 0xf0,
 	                            // 0x140, 0x280). Local value; synced to the per-slot

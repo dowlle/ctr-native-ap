@@ -126,7 +126,7 @@ int main(void)
 			"mute_when_unfocused", NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
-			"map_flash", "death_link", "trap_duration", "update_check", NULL};
+			"map_flash", "item_box_colours", "death_link", "trap_duration", "update_check", NULL};
 		static const char *const authoring[] = {
 			"nav_record", "nav_use_recorded", "nav_driver_name", NULL};
 

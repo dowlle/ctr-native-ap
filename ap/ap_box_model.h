@@ -24,6 +24,12 @@ int AP_BoxModel_EnsureRelic(struct GameTracker *gGT);
 // keep their own model while AP locations remain visually distinct.
 struct Model *AP_BoxModel_GetOwned(struct GameTracker *gGT);
 
+// The same box in one of the colours of ap_box_colour_logic.h. `owned` is what
+// AP_BoxModel_GetOwned returned; it comes back unchanged for pink, for an
+// unknown colour, and while the box is still the untextured fallback cube.
+// Same geometry and size in every colour; only the atlas slot differs.
+struct Model *AP_BoxModel_ForColour(struct Model *owned, int colour);
+
 // How far this model's own origin sits above its lowest face, in world units, at
 // the header scale it is currently carrying. 0 when the model cannot be measured
 // (which reproduces the pre-correction behaviour: the spawn lands on the authored

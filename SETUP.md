@@ -155,6 +155,14 @@ load writes one line saying how many boxes are standing out of how many
 placements the track holds and which placement set is live, plus, when nothing
 stands, which reason applies.
 
+By default an AP box shows the Archipelago colour of the item inside it:
+purple for progression, blue for useful, cyan for filler and salmon for a trap.
+A box is pink until the client has looked up what is inside, a moment after
+connecting. To see every box pink instead, turn off **OPTIONS → Archipelago →
+Item Box Colours**; the setting is saved in `config.ini`. The seed can also
+turn colours off for everyone with the YAML option `color_boxes_by_item`, for
+example for a race. Then the row shows **OFF (SEED)** and cannot be turned on.
+
 AP boxes break when your kart touches their collection area, when your moving
 bomb, missile or thrown shield hits them, or when your weapon explodes close
 enough. Direct projectile hits check the movement between frames. Opponent

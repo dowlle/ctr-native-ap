@@ -30,8 +30,8 @@ box drawn in the wrong colours or not drawn at all.
 
 | Rect in the atlas | Source file | Used by |
 |---|---|---|
-| 16x16 at (0,0) | `box_pink_highres_outer.png` | nothing yet (wood frame) |
-| 64x64 at (16,0) | `box_pink_highres_inner.png` | the box model's only layout |
+| 16x16 at (0,0) | `box_pink_highres_outer.png` | the border ring of the framed box; replaced at runtime by the recoloured disc wood (below), kept as the fallback |
+| 64x64 at (16,0) | `box_pink_highres_inner.png` | the face square of the framed box |
 | 32x32 at (80,0) | `box_pink_lowres.png` | nothing yet (far-LOD face) |
 
 All three source PNGs already match their rect exactly, so nothing is resampled.
@@ -53,6 +53,45 @@ triangles the same layout, whose corners are the face rect's top-left,
 bottom-left and top-right. The other two rects are packed anyway so the atlas
 keeps the shape the renderer was verified against, and so a later per-LOD or
 wood-framed variant has its pixels already in place.
+
+## The framed box and its wood border
+
+The box is built like the retail "?" crate: `gen_framed_model.py` generates
+`ap/ap_box_model_framed_data.h`, where every side is the face in a centre square
+and a border ring of four strips sampling the 16x16 rect at (0,0). No retail
+data is copied into the model.
+
+The border's pixels do not ship either. At runtime `ap/ap_box_texture.c` reads
+the retail crate's 16x16 wood tile from the player's own disc (BIGFILE, track 0
+1p level and texture file, located through that level's `crate_question`),
+recolours it to the box's pink with `AP_BoxEdge_Recolour`
+(`ap/ap_box_edge_logic.h`, pinned by `tools/test-box-edge.c`), and writes it
+into the atlas before the one-time upload. This happens once, on the first idle
+frame, so relic races, which carry no crate, get it too. If the read fails, the
+compiled `box_pink_highres_outer.png` border stays.
+
+## The crate face behind the logo
+
+The same one-time disc read takes the retail Wumpa crate's 64x64 face (slats,
+no picture), recolours it with the same function as the wood, and puts the six
+Archipelago circles on top. `gen_logo_mask.py` generates
+`ap/ap_box_logo_mask_data.h` from `box_pink_highres_inner.png`: which face pixels
+are the circles and their outline (a flood fill from the border that stops at
+the outline). Only those pixels keep JurnthReinal's art. If the face cannot be
+read, the face stays JurnthReinal's. No retail pixels are compiled in.
+
+## Colours
+
+The atlas uploaded at runtime is 256x128, not the compiled 128x64: it holds the
+box five times, in 80x64 slots (wood at the slot's (0,0), face at (16,0)),
+three per row. Slot 0 is the default pink, at the compiled atlas's own
+positions; the others are the Archipelago item colours, progression `AF99EF`,
+useful `6D8BE8`, filler `00EEEE` and trap `FA8072`, recoloured with
+`AP_BoxEdge_RecolourTo`. A box wears its item's colour only when the seed
+option `color_boxes_by_item` (default on) and the player's Options row
+**Item Box Colours** (`config.ini` `item_box_colours`, default on) both allow it; logic and the atlas layout are in
+`ap/ap_box_colour_logic.h`, pinned by `tools/test-box-colour.c`. Without the
+disc read, the coloured slots recolour JurnthReinal's border and face instead.
 
 ## A note on the source art's edge pixels
 
