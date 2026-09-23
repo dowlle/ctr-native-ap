@@ -2,7 +2,7 @@
 //
 // The AP box built like the retail "?" item crate: every side is a centre
 // square carrying the 64x64 face and a flat border ring of four strips carrying
-// the 16x16 wood rect, shaded per side like the retail crate. Same 32..224
+// the 16x16 wood rect, with a gentle per-side shade (see the generator). Same 32..224
 // extent as the plain cube in ap_box_model_data.h, so size and spawn lift do not
 // change. De-indexed: every triangle restarts the strip and has its own layout.
 
@@ -11,7 +11,7 @@
 #define AP_BOX_FRAMED_NUM_COLORS 6
 
 static const u32 s_apBoxFramedColors[AP_BOX_FRAMED_NUM_COLORS] = {
-	0x00404040, 0x00c0c0c0, 0x00a0a0a0, 0x00606060, 0x00808080, 0x00808080,
+	0x00707070, 0x00909090, 0x00888888, 0x00787878, 0x00989898, 0x00686868,
 };
 
 // byte0 = horizontal, byte1 = depth, byte2 = vertical; the vertical byte is

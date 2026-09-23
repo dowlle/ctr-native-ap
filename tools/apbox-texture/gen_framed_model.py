@@ -40,9 +40,13 @@ SIDES = [
     ("top",    2, HI, (0, -1), (1, -1), 4),
     ("bottom", 2, LO, (0, +1), (1, -1), 5),
 ]
-# Retail crate shades for the same planes (b1 low 0x40, b1 high 0xC0, b0 low
-# 0xA0, b0 high 0x60, top and bottom 0x80).
-COLOURS = [0x00404040, 0x00C0C0C0, 0x00A0A0A0, 0x00606060, 0x00808080, 0x00808080]
+# Per-side shade (vertex colour, 0x80 = the art unchanged). The retail crate
+# shades its sides 0x40 to 0xC0, which leaves one side at half brightness: in a
+# dark track (Mystery Caves) that side reads as a dull blob. AP boxes have to
+# stay easy to spot, so the shading here is kept gentle, 0x68 to 0x98: enough
+# for neighbouring sides to differ and the box to look solid, never darker than
+# 82% of the art. Order: b1 low, b1 high, b0 low, b0 high, top, bottom.
+COLOURS = [0x00707070, 0x00909090, 0x00888888, 0x00787878, 0x00989898, 0x00686868]
 
 
 def point(side, s, t):
@@ -111,7 +115,7 @@ def main(out):
     w("//")
     w("// The AP box built like the retail \"?\" item crate: every side is a centre")
     w("// square carrying the 64x64 face and a flat border ring of four strips carrying")
-    w("// the 16x16 wood rect, shaded per side like the retail crate. Same 32..224")
+    w("// the 16x16 wood rect, with a gentle per-side shade (see the generator). Same 32..224")
     w("// extent as the plain cube in ap_box_model_data.h, so size and spawn lift do not")
     w("// change. De-indexed: every triangle restarts the strip and has its own layout.")
     w("")

@@ -429,6 +429,10 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		{
 			s_edApBoxFramed = 1;
 		}
+		else if (strcmp(argv[i], "--editor-apbox-edge") == 0 && i + 1 < argc)
+		{
+			s_edApBoxEdgeBuiltin = strcmp(argv[++i], "builtin") == 0;
+		}
 		else if (strcmp(argv[i], "--editor-apbox-atlas") == 0 && i + 1 < argc)
 		{
 			strncpy(s_edApBoxAtlasPath, argv[++i], sizeof(s_edApBoxAtlasPath) - 1);
