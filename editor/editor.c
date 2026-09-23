@@ -429,6 +429,12 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		{
 			s_edApBoxFramed = 1;
 		}
+		else if (strcmp(argv[i], "--editor-apbox-face") == 0 && i + 1 < argc)
+		{
+			const char *v = argv[++i];
+			s_edApBoxFace = strcmp(v, "wumpa") == 0 ? AP_BOX_FACE_WUMPA
+			                : strcmp(v, "plain") == 0 ? AP_BOX_FACE_PLAIN : AP_BOX_FACE_JURNTH;
+		}
 		else if (strcmp(argv[i], "--editor-apbox-edge") == 0 && i + 1 < argc)
 		{
 			s_edApBoxEdgeBuiltin = strcmp(argv[++i], "builtin") == 0;
