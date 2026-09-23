@@ -9,6 +9,7 @@
 #include "ap_box_offset_logic.h" // the freestanding mesh measurement + the lift
 #include "ap_hooks.h"
 #include "ap_box_texture.h"
+#include "ap_box_model_framed_data.h" // the retail-crate-style box (face square + wood border ring)
 
 struct ApBoxModelFrame
 {
@@ -22,11 +23,19 @@ CTR_STATIC_ASSERT(offsetof(struct ApBoxModelFrame, verts) == 0x1c);
 static struct ApBoxModelFrame s_apBoxFrame;
 static struct ModelHeader s_apBoxHeader;
 static struct Model s_apBoxModel;
-static struct TextureLayout s_apBoxLayoutSet[6];
-static struct TextureLayout *s_apBoxLayouts[6] = {
-	&s_apBoxLayoutSet[0], &s_apBoxLayoutSet[1], &s_apBoxLayoutSet[2],
-	&s_apBoxLayoutSet[3], &s_apBoxLayoutSet[4], &s_apBoxLayoutSet[5],
+// The textured box is built like the retail "?" crate: every side a face
+// square plus a border ring carrying the 16x16 wood rect, from generated
+// AP-owned data (tools/apbox-texture/gen_framed_model.py). Same 32..224 extent
+// as the plain cube, so size and spawn lift are unchanged. The wood rect is
+// filled at runtime from the player's disc (ap/ap_box_texture.c).
+struct ApBoxFramedFrame
+{
+	struct ModelFrame frame;
+	u8 verts[AP_BOX_FRAMED_NUM_VERTS * 3];
 };
+static struct ApBoxFramedFrame s_apBoxFramedFrame;
+static struct TextureLayout *s_apBoxFramedLayoutPtrs[AP_BOX_FRAMED_NUM_TRIS];
+
 static int s_apBoxBuilt;
 static int s_apBoxTextured;
 
@@ -172,53 +181,24 @@ static s16 AP_BoxModel_DeriveScale(struct GameTracker *gGT)
 	return (s16)AP_BoxOffset_DeriveScale(scale, extent, AP_BOX_MODEL_EXTENT);
 }
 
-// The corner-role layouts the textured command list references (see the table
-// in ap_box_model_data.h). Corner k of a layout is consumed by strip vertex k
-// of its triangle, so each entry spells out which rect corner that vertex holds
-// AS SEEN FROM OUTSIDE the cube: texture top toward world +Y (up) on the four
-// side faces, and visual left/right per the engine's proper-rotation camera
-// (screen right = up x outwardNormal). The incoming face layout carries the
-// retail corner semantics u0/v0 = top-left, u1/v1 = bottom-left, u2/v2 =
-// top-right; the rect's four corners are derived from those.
-static void AP_BoxModel_SetTextureLayouts(const struct TextureLayout *face)
-{
-	u8 lu = face->u0, tv = face->v0; // left u, top v
-	u8 ru = face->u2, bv = face->v1; // right u, bottom v
-	// corner role per layout, per vertex: {u,v} triplets
-	static const int roles[6][3][2] = {
-		{{1,1},{0,1},{0,0}}, // 1: BR,BL,TL  A of front/back/left/right/top
-		{{1,1},{0,0},{1,0}}, // 2: BR,TL,TR  B of front/back/left/right/top
-		{{0,0},{1,0},{1,1}}, // 3: TL,TR,BR  A of bottom
-		{{0,0},{1,1},{0,1}}, // 4: TL,BR,BL  B of bottom
-		{{1,1},{0,1},{0,0}}, // 5: unused, kept = 1 so the table stays full
-		{{1,1},{0,0},{1,0}}, // 6: unused, kept = 2
-	};
-	int i;
-
-	for (i = 0; i < 6; i++)
-	{
-		struct TextureLayout *l = &s_apBoxLayoutSet[i];
-		*l = *face; // tpage (with the sideload bit) and clut carry over
-		l->u0 = roles[i][0][0] ? ru : lu;
-		l->v0 = roles[i][0][1] ? bv : tv;
-		l->u1 = roles[i][1][0] ? ru : lu;
-		l->v1 = roles[i][1][1] ? bv : tv;
-		l->u2 = roles[i][2][0] ? ru : lu;
-		l->v2 = roles[i][2][1] ? bv : tv;
-		l->u3 = l->u2;
-		l->v3 = l->v2;
-	}
-}
-
-// Switch the built model to the contributed face art: the six corner-role
-// layouts, the textured command list, and the neutral colour table (the
-// fallback's orange palette must not tint the art; see ap_box_model_data.h).
+// Switch the built model to the framed, textured box: its own frame data, one
+// layout per triangle addressing the face or the wood rect of the atlas, its
+// command list and its per-side shade table. Until this runs (or if the atlas
+// upload fails) the untextured fallback cube stays.
 static void AP_BoxModel_ApplyTexture(const struct TextureLayout *face)
 {
-	AP_BoxModel_SetTextureLayouts(face);
-	s_apBoxHeader.ptrTexLayout = s_apBoxLayouts;
-	s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxModelCommandsTex;
-	s_apBoxHeader.ptrColors = (u32 *)(uintptr_t)s_apBoxModelColorsTex;
+	int i;
+
+	(void)face; // the framed layouts carry their own atlas UVs, tpage and clut
+	s_apBoxFramedFrame.frame = s_apBoxFrame.frame;
+	for (i = 0; i < AP_BOX_FRAMED_NUM_VERTS * 3; i++)
+		s_apBoxFramedFrame.verts[i] = s_apBoxFramedVerts[i];
+	for (i = 0; i < AP_BOX_FRAMED_NUM_TRIS; i++)
+		s_apBoxFramedLayoutPtrs[i] = &s_apBoxFramedLayouts[i];
+	s_apBoxHeader.ptrFrameData = &s_apBoxFramedFrame.frame;
+	s_apBoxHeader.ptrTexLayout = s_apBoxFramedLayoutPtrs;
+	s_apBoxHeader.ptrCommandList = (u32)(uintptr_t)s_apBoxFramedCommands;
+	s_apBoxHeader.ptrColors = (u32 *)(uintptr_t)s_apBoxFramedColors;
 	s_apBoxTextured = 1;
 }
 

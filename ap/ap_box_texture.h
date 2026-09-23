@@ -21,5 +21,11 @@
 // only copies twelve bytes into the caller's AP-owned layout.
 int AP_BoxTexture_EnsureFace(struct TextureLayout *outFace);
 
+// Fill the atlas's 16x16 wood rect from the player's own disc: the retail
+// crate's wood tile, recoloured to the box's pink (ap/ap_box_edge_logic.h).
+// Runs once, on the first frame with no load in flight; call it every frame.
+// On any failure the compiled border tile stays. See ap_box_texture.c.
+void AP_BoxTexture_PrepareEdge(void);
+
 #endif // CTR_AP
 #endif // AP_BOX_TEXTURE_H
