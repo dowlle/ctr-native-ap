@@ -53,13 +53,17 @@ void AP_LinkDrawTitleHint(uint32_t *ot);
 // main.c, primary client: register automatically unless another program owns
 // room links. Failure is logged and never blocks startup.
 void AP_LinkRegisterAtLaunch(void);
-// Connection page: 1 when the Room links row exists on this platform.
+// Options > Archipelago: 1 when the Room links row exists on this platform.
 int AP_LinkRegRowAvailable(void);
-// Each frame the Connection page draws (re-reads the registry per visit).
+// Each frame Options > Archipelago draws the Room links row (re-reads the
+// registry per visit).
 void AP_LinkRegPageFrame(void);
 const char *AP_LinkRegStatusText(void);
 // Footer text while the Room links row is selected.
 const char *AP_LinkRegActionHint(void);
+// Each frame the Connection page draws: a new visit re-reads the registry and
+// decides once whether the one-time "another program" notice shows there.
+void AP_LinkRegNoticeFrame(void);
 // The one-time "another program" notice, two lines; 1 while it shows.
 int AP_LinkRegNotice(const char **first, const char **second);
 // The row's explicit action: use this client for room links, or stop.
