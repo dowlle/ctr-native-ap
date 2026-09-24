@@ -190,6 +190,38 @@ if(CTR_AP)
     if(CTR_AP_AUTHORING)
         target_compile_definitions(ap_net PRIVATE CTR_AP_AUTHORING)
     endif()
+
+    # Custom-track packages (library, Track Manager, Arcade custom pages, the
+    # offline package loader and Saphi install). Box authoring build only: the
+    # player client keeps the single-package Custom Content page it was tested
+    # with, and none of these sources, utf8proc or their defines reach it.
+    # CTR_CUSTOM_PACKAGES is the one switch every guarded call site checks, and
+    # it exists only when CTR_AP_AUTHORING and CTR_CUSTOM_TRACKS are both on.
+    if(CTR_AP_AUTHORING AND CTR_CUSTOM_TRACKS)
+        include(${CMAKE_SOURCE_DIR}/cmake/CustomPackageDeps.cmake)
+        add_library(custom_package STATIC
+            platform/native_custom_package.cpp
+            platform/native_custom_package_files.cpp
+            platform/native_custom_package_job.cpp
+            platform/native_custom_package_owned.c
+            platform/native_custom_content_verify.c
+            platform/native_custom_offline.c
+            platform/native_custom_track_library.c
+            platform/native_custom_unicode.c
+            vendor/utf8proc/utf8proc.c)
+        set_target_properties(custom_package PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+        target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
+            ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
+        target_compile_definitions(custom_package PRIVATE
+            CTR_CUSTOM_TRACKS CTR_AP_AUTHORING CTR_CUSTOM_PACKAGES UTF8PROC_STATIC)
+        target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
+        target_link_libraries(custom_package PUBLIC Threads::Threads)
+        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
+        target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_PACKAGES)
+        target_include_directories(ap_net PRIVATE ${CMAKE_SOURCE_DIR}/include)
+        target_link_libraries(ap_net PUBLIC custom_package)
+        target_link_libraries(ctr_native custom_package)
+    endif()
     target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
     # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.
     if(WIN32)
