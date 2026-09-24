@@ -204,6 +204,16 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	// The editor HUD is drawn after the track and can emit several long text
 	// lines. Keep its primitives out of the retail track budget.
 	size += 0x10000;
+	{
+		// Editor pictures that draw the whole track (--editor-full-vis) need
+		// more than the per-track retail budget; see editor.c.
+		extern int g_editorPrimMemExtra;
+		extern int Editor_FullVisEnabled(void);
+		if (g_editorPrimMemExtra > 0)
+			size += g_editorPrimMemExtra;
+		else if (g_editorPrimMemExtra < 0 && Editor_FullVisEnabled())
+			size += 0x200000;
+	}
 #endif
 
 	MainDB_PrimMem(&gGT->db[0].primMem, size);

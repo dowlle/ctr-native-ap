@@ -126,6 +126,11 @@ static int s_dumpWindowW;
 // under the camera. The retail PVS is only valid for cameras near the driving
 // line; a free camera above or beside the track otherwise loses geometry.
 static int s_fullVis;
+// Extra primitive memory per frame buffer (MainInit_PrimMem). The retail
+// budget per track is sized for the PVS; drawing the whole track overflows it
+// and the level renderer then silently stops emitting quadblocks.
+// --editor-full-vis raises it by 2 MiB unless --editor-prim-mem-extra is given.
+int g_editorPrimMemExtra = -1;
 static int *s_fullVisBits;
 static int s_fullVisWords;
 static int s_dumpWindowH;
@@ -394,6 +399,12 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		else if (strcmp(argv[i], "--editor-full-vis") == 0)
 		{
 			s_fullVis = 1;
+		}
+		else if (strcmp(argv[i], "--editor-prim-mem-extra") == 0 && i + 1 < argc)
+		{
+			int value = 0;
+			if (Editor_ParseInt(argv[++i], &value) && value >= 0 && value <= 0x800000)
+				g_editorPrimMemExtra = value;
 		}
 		else if (strcmp(argv[i], "--editor-render-semitrans-single") == 0)
 		{
@@ -940,6 +951,11 @@ static void Editor_MeasureSourceGraph(struct GameTracker *gGT)
 				s_sourceBSPReferences++;
 	}
 	s_sourceGraphMeasured = 1;
+}
+
+int Editor_FullVisEnabled(void)
+{
+	return s_fullVis;
 }
 
 static void Editor_ApplyFullVis(struct GameTracker *gGT, struct CameraDC *camera)
