@@ -83,7 +83,8 @@ else (hub, garage, menus) the drop is refused with a log line.
 ## Two tables, and which one wins
 
 The shipped client carries the FINAL authored placement set compiled in, as
-`ap/ap_placements_data.h`. That table is generated, never hand-edited, and it is
+`ap/ap_placements_data.h`. That table is generated, not hand-authored (any
+value-only corrections since are listed in its provenance block), and it is
 what a player gets with no extra files: install one executable and the boxes are
 there.
 
