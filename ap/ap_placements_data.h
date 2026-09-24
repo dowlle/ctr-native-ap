@@ -17,6 +17,12 @@
 //   generated   : 2026-08-11, for PR #214 (issue #109 packaging round)
 //   units       : pos is LEV InstDef world units (signed 16-bit); rot_y is an engine angle, 0x1000 = one full turn
 //
+// CORRECTIONS (value-only: no row added, removed or reordered, so no slot moves)
+//   Polar Pass Item Box 4 (level 12, 4th POLAR_PASS row): y 1813 -> 1680. The
+//   authored point was recorded mid-air, 133 units above the ground; 1680 is
+//   the drivable ground height under the same x/z. The on-ground rows on this
+//   track sit within about 1 unit of the ground, so this matches those.
+//
 // ROW ORDER IS LOAD-BEARING. The Nth row listed for a level is that level's box
 // slot N, so this table is emitted in the source file's own order, NOT sorted by
 // level. The FINAL file appends four late placements after TURBO_TRACK; they keep
@@ -178,7 +184,7 @@ static const AP_EmbeddedPlacement AP_EMBEDDED_PLACEMENTS[] = {
 	{12,  10431,    610,    411,  2086}, // POLAR_PASS
 	{12,   4284,    474,  -4254,  2213}, // POLAR_PASS
 	{12,   6715,    354, -17333,  1352}, // POLAR_PASS
-	{12,  -3740,   1813, -20684,  3471}, // POLAR_PASS
+	{12,  -3740,   1680, -20684,  3471}, // POLAR_PASS (box 4: y was 1813, see CORRECTIONS)
 	{12,  -6796,   1247, -12344,  3044}, // POLAR_PASS
 	{12,  -3763,   1701, -10195,   852}, // POLAR_PASS
 	{12,  -6577,   1872,  -2267,  4399}, // POLAR_PASS

@@ -196,7 +196,7 @@
    "10": {"camera": "behind", "source": "auto-search", "eye": [10583, -368, 9606], "look": [9229, -667, 9153], "anchor": [9229, -721, 9153], "cameras_tried": "behind:1852", "visible_pixels": 1852, "auto_check": "pass", "other_boxes": []},
    "11": {"camera": "behind-near", "source": "auto-search", "eye": [8710, 315, 4666], "look": [9608, 224, 4406], "anchor": [9608, 170, 4406], "cameras_tried": "behind:86 behind-near:4939", "visible_pixels": 4785, "auto_check": "pass", "other_boxes": []},
    "12": {"camera": "hand", "source": "hand", "eye": [19571, 1612, 6704], "look": [17776, 512, 6829], "anchor": [17776, 458, 6829], "cameras_tried": "", "visible_pixels": 948, "auto_check": "pass", "other_boxes": []},
-   "13": {"camera": "hand", "source": "hand", "eye": [12557, 1265, 21292], "look": [12854, 474, 19694], "anchor": [12854, 420, 19694], "cameras_tried": "", "visible_pixels": 1042, "auto_check": "pass", "other_boxes": []},
+   "13": {"camera": "hand", "source": "hand", "eye": [14600, 420, 19600], "look": [12854, 474, 19694], "anchor": [12854, 420, 19694], "cameras_tried": "", "visible_pixels": 1045, "auto_check": "pass", "other_boxes": []},
    "14": {"camera": "behind", "source": "auto-search", "eye": [-2661, -368, 21049], "look": [-2682, -714, 19444], "anchor": [-2682, -768, 19444], "cameras_tried": "behind:1567", "visible_pixels": 1567, "auto_check": "pass", "other_boxes": []},
    "15": {"camera": "behind", "source": "auto-search", "eye": [2467, -368, 18312], "look": [2363, -714, 20378], "anchor": [2363, -768, 20378], "cameras_tried": "behind:879", "visible_pixels": 879, "auto_check": "pass", "other_boxes": []}
   },
@@ -204,7 +204,7 @@
    "1": {"camera": "behind", "source": "auto-search", "eye": [10209, 804, 1815], "look": [10431, 664, 411], "anchor": [10431, 610, 411], "cameras_tried": "behind:1637", "visible_pixels": 1637, "auto_check": "pass", "other_boxes": [11]},
    "2": {"camera": "behind", "source": "auto-search", "eye": [5320, 668, -6104], "look": [4284, 528, -4254], "anchor": [4284, 474, -4254], "cameras_tried": "behind:862", "visible_pixels": 862, "auto_check": "pass", "other_boxes": []},
    "3": {"camera": "behind", "source": "auto-search", "eye": [5787, 548, -16018], "look": [6715, 408, -17333], "anchor": [6715, 354, -17333], "cameras_tried": "behind:1488", "visible_pixels": 1488, "auto_check": "pass", "other_boxes": []},
-   "4": {"camera": "behind", "source": "auto-search", "eye": [-1637, 2007, -20289], "look": [-3740, 1867, -20684], "anchor": [-3740, 1813, -20684], "cameras_tried": "behind:813", "visible_pixels": 813, "auto_check": "pass", "other_boxes": []},
+   "4": {"camera": "hand", "source": "hand", "eye": [-1637, 2007, -20289], "look": [-3740, 1734, -20684], "anchor": [-3740, 1680, -20684], "cameras_tried": "", "visible_pixels": 878, "auto_check": "pass", "other_boxes": []},
    "5": {"camera": "behind", "source": "auto-search", "eye": [-5454, 1648, -13942], "look": [-6796, 1301, -12344], "anchor": [-6796, 1247, -12344], "cameras_tried": "behind:877", "visible_pixels": 877, "auto_check": "pass", "other_boxes": []},
    "6": {"camera": "behind", "source": "auto-search", "eye": [-5397, 1895, -11416], "look": [-3763, 1755, -10195], "anchor": [-3763, 1701, -10195], "cameras_tried": "behind:919", "visible_pixels": 883, "auto_check": "pass", "other_boxes": []},
    "7": {"camera": "hand", "source": "hand", "eye": [-6042, 2219, -3331], "look": [-6577, 1926, -2267], "anchor": [-6577, 1872, -2267], "cameras_tried": "", "visible_pixels": 2823, "auto_check": "pass", "other_boxes": [8]},
