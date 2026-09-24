@@ -13,6 +13,11 @@
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
+#ifdef CTR_CUSTOM_PACKAGES
+#include "ap_author_custom.h"  // custom-track placements: package key, own file
+#include <platform/native_custom_offline.h>
+#include <platform/native_custom_package.h>
+#endif
 
 // HUD placement: top-left, under the schema/verify warning banners (those start
 // at y 0x14, ap_hooks.c) so an authoring session never hides a real warning.
@@ -60,6 +65,10 @@ static int s_bossPauseLogged;  // one log line per boss race, not per frame (#19
 // Instance name. A char[16] rather than a string literal because INSTANCE_Birth
 // copies a fixed 15 characters out of whatever it is handed (INSTANCE.c:24-27).
 static char s_markerName[16] = "apbox";
+
+#ifdef CTR_CUSTOM_PACKAGES
+static void AP_AuthorCustomForgetMarkers(void); // custom-track markers, further down
+#endif
 
 // Levels a placement may be authored on: the 18 race tracks plus the 7 battle
 // arenas (enum LevelID, namespace_Level.h:4-28). Beyond LAB_BASEMENT the ids are
@@ -198,6 +207,9 @@ static void AP_AuthorForgetMarkers(void)
 	int i;
 	for (i = 0; i < AP_AUTHOR_MAX_PLACEMENTS; i++)
 		s_marker[i] = AP_SPAWN_INVALID;
+#ifdef CTR_CUSTOM_PACKAGES
+	AP_AuthorCustomForgetMarkers();
+#endif
 	s_markerGen = AP_Spawn_Generation();
 	s_markerTableFull = 0;
 }
@@ -610,6 +622,349 @@ static void AP_AuthorList(struct GameTracker *gGT)
 	AP_AuthorSave();
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+// ============================================================================
+// CUSTOM TRACKS (box authoring build only). A package raced from the Arcade
+// custom pages borrows host slot 6, so its placements are keyed by the served
+// package (UUID + LEV and VRM digests, ap_author_custom.h) and live in their
+// own file, AP_CUSTOM_BOX_FILE. The retail table above, s_place and the retail
+// file are never read or written from here, and the host slot's retail markers
+// are never shown on custom geometry.
+// ============================================================================
+
+// s_markerLevel while the custom marker set is up: outside every LevelID.
+#define AP_AUTHOR_CUSTOM_MARKER_LEVEL 1000
+
+static AP_CustomBoxRow s_cplace[AP_AUTHOR_MAX_PLACEMENTS];
+static AP_SpawnHandle  s_cmarker[AP_AUTHOR_MAX_PLACEMENTS];
+static int             s_cplaceCount;
+static int             s_cloaded;
+static int             s_clastDropIndex = -1;
+static AP_CustomBoxKey s_cmarkerKey;    // the track the custom marker set was built for
+static int             s_cpauseLogged;  // one line per "custom track did not load"
+
+static void AP_AuthorCustomForgetMarkers(void)
+{
+	int i;
+	for (i = 0; i < AP_AUTHOR_MAX_PLACEMENTS; i++)
+		s_cmarker[i] = AP_SPAWN_INVALID;
+}
+
+static void AP_AuthorCustomClearMarkers(void)
+{
+	int i;
+	for (i = 0; i < s_cplaceCount; i++)
+	{
+		if (s_cmarker[i] != AP_SPAWN_INVALID)
+		{
+			AP_Spawn_Remove(s_cmarker[i]);
+			s_cmarker[i] = AP_SPAWN_INVALID;
+		}
+	}
+}
+
+// What is on screen: 0 = not a custom-page race (retail authoring applies),
+// 1 = the package's bytes are loaded (key/title/version filled), 2 = a custom
+// race whose package did not finish loading (author mode pauses rather than
+// guess which geometry this is).
+static int AP_AuthorCustomMode(AP_CustomBoxKey *key, char *title, size_t titleCap, char *version, size_t versionCap)
+{
+	struct CustomPackageManifest manifest;
+	const char *lev = NULL, *vrm = NULL;
+	unsigned int i;
+
+	if (!MainRaceTrack_OfflineCustomLoad())
+		return 0;
+	if (!CustomOffline_RuntimeLoaded() || !CustomOffline_RuntimeManifest(&manifest))
+		return 2;
+	for (i = 0; i < manifest.count && i < CTR_PACKAGE_FILE_MAX; i++)
+	{
+		if (strcmp(manifest.files[i].role, "lev") == 0)
+			lev = manifest.files[i].sha256;
+		else if (strcmp(manifest.files[i].role, "vrm") == 0)
+			vrm = manifest.files[i].sha256;
+	}
+	if (!AP_CustomBoxKey_Make(key, manifest.uuid, lev, vrm))
+		return 2;
+	if (title != NULL)
+		AP_CustomBox_CopyText(title, titleCap, manifest.title);
+	if (version != NULL)
+		AP_CustomBox_CopyText(version, versionCap, manifest.version);
+	return 1;
+}
+
+static void AP_AuthorCustomSave(void)
+{
+	FILE *f = fopen(AP_CUSTOM_BOX_FILE, "w");
+	int   ok;
+
+	if (f == 0)
+	{
+		AP_LogLine("[AP AUTHOR] could not write " AP_CUSTOM_BOX_FILE "\n");
+		return;
+	}
+	ok = AP_CustomBoxFile_Write(f, s_cplace, s_cplaceCount, CTR_AP_VERSION);
+	if (fclose(f) != 0)
+		ok = 0;
+	if (!ok)
+		AP_LogLine("[AP AUTHOR] WARNING: " AP_CUSTOM_BOX_FILE " was not written completely\n");
+}
+
+static void AP_AuthorCustomEnsureLoaded(void)
+{
+	FILE *f;
+	int   rejected = 0, overflow = 0, i;
+	char  msg[192];
+
+	if (s_cloaded)
+		return;
+	s_cloaded = 1;
+	s_cplaceCount = 0;
+	AP_AuthorCustomForgetMarkers();
+	f = fopen(AP_CUSTOM_BOX_FILE, "r");
+	if (f == 0)
+	{
+		AP_LogLine("[AP AUTHOR] custom tracks: no " AP_CUSTOM_BOX_FILE " yet, starting empty\n");
+		return;
+	}
+	s_cplaceCount = AP_CustomBoxFile_Read(f, s_cplace, AP_AUTHOR_MAX_PLACEMENTS, &rejected, &overflow);
+	fclose(f);
+	for (i = 0; i < s_cplaceCount; i++)
+		s_cmarker[i] = AP_SPAWN_INVALID;
+	snprintf(msg, sizeof msg, "[AP AUTHOR] custom tracks: %d placement(s) from %s\n",
+	         s_cplaceCount, AP_CUSTOM_BOX_FILE);
+	AP_LogLine(msg);
+	if (rejected > 0 || overflow)
+	{
+		// The next save rewrites the file from what was read, so say loudly
+		// what that would drop before the helper places anything.
+		snprintf(msg, sizeof msg,
+		         "[AP AUTHOR] WARNING: %d unreadable line(s)%s in %s; they are dropped on the next save\n",
+		         rejected, overflow ? " and rows past the table limit" : "", AP_CUSTOM_BOX_FILE);
+		AP_LogLine(msg);
+	}
+}
+
+static void AP_AuthorCustomSpawnMarker(struct GameTracker *gGT, int i)
+{
+	Vec3  pos;
+	SVec3 rot;
+	int   modelID;
+
+	if (s_cmarker[i] != AP_SPAWN_INVALID || s_markerTableFull)
+		return;
+	modelID = AP_AuthorMarkerModel(gGT);
+	if (modelID < 0)
+		return;
+	AP_BoxModel_SpawnPos(gGT->modelPtr[modelID], s_cplace[i].x, s_cplace[i].y, s_cplace[i].z, &pos);
+	rot.x = 0;
+	rot.y = s_cplace[i].rotY;
+	rot.z = 0;
+	s_cmarker[i] = AP_Spawn_Add(modelID, &pos, &rot, AP_SPAWN_LIFE_LEVEL, s_markerName);
+	if (s_cmarker[i] == AP_SPAWN_INVALID)
+		s_markerTableFull = 1;
+}
+
+static void AP_AuthorCustomDrop(struct GameTracker *gGT, const AP_CustomBoxKey *key,
+                                const char *title, const char *version)
+{
+	struct Driver *d = gGT->drivers[0];
+	int            clamped = 0;
+	char           msg[256];
+	char           name[48];
+
+	if (d == 0)
+		return;
+	if (s_cplaceCount >= AP_AUTHOR_MAX_PLACEMENTS)
+	{
+		AP_LogLine("[AP AUTHOR] custom placement table full, drop refused\n");
+		return;
+	}
+	memset(&s_cplace[s_cplaceCount], 0, sizeof s_cplace[s_cplaceCount]);
+	s_cplace[s_cplaceCount].key = *key;
+	AP_CustomBox_CopyText(s_cplace[s_cplaceCount].title, sizeof s_cplace[s_cplaceCount].title, title);
+	AP_CustomBox_CopyText(s_cplace[s_cplaceCount].version, sizeof s_cplace[s_cplaceCount].version, version);
+	s_cplace[s_cplaceCount].x = AP_AuthorNarrow(d->posCurr.x, &clamped);
+	s_cplace[s_cplaceCount].y = AP_AuthorNarrow(d->posCurr.y, &clamped);
+	s_cplace[s_cplaceCount].z = AP_AuthorNarrow(d->posCurr.z, &clamped);
+	s_cplace[s_cplaceCount].rotY = d->rotCurr.y;
+	s_cmarker[s_cplaceCount] = AP_SPAWN_INVALID;
+	s_clastDropIndex = s_cplaceCount;
+	s_cplaceCount++;
+
+	s_markerTableFull = 0;
+	AP_AuthorCustomSpawnMarker(gGT, s_clastDropIndex);
+
+	AP_CustomBox_HudName(name, sizeof name, title);
+	snprintf(msg, sizeof msg, "[AP AUTHOR] %s (custom %s): placement at %d %d %d rot_y %d\n",
+	         name, key->uuid, (int)s_cplace[s_clastDropIndex].x, (int)s_cplace[s_clastDropIndex].y,
+	         (int)s_cplace[s_clastDropIndex].z, (int)s_cplace[s_clastDropIndex].rotY);
+	AP_LogLine(msg);
+	if (clamped)
+		AP_LogLine("[AP AUTHOR] WARNING: kart position did not fit 16 bits and was clamped\n");
+	AP_AuthorCustomSave();
+}
+
+static void AP_AuthorCustomUndo(const AP_CustomBoxKey *key, const char *title)
+{
+	int  last = AP_CustomBox_LastIndexFor(s_cplace, s_cplaceCount, key);
+	int  i;
+	char msg[192];
+	char name[48];
+
+	AP_CustomBox_HudName(name, sizeof name, title);
+	if (last < 0)
+	{
+		snprintf(msg, sizeof msg, "[AP AUTHOR] %s has no custom placements to delete\n", name);
+		AP_LogLine(msg);
+		return;
+	}
+	snprintf(msg, sizeof msg, "[AP AUTHOR] %s: deleted custom placement at %d %d %d\n", name,
+	         (int)s_cplace[last].x, (int)s_cplace[last].y, (int)s_cplace[last].z);
+	AP_LogLine(msg);
+	if (s_cmarker[last] != AP_SPAWN_INVALID)
+		AP_Spawn_Remove(s_cmarker[last]);
+	for (i = last; i + 1 < s_cplaceCount; i++)
+		s_cmarker[i] = s_cmarker[i + 1];
+	s_cplaceCount = AP_CustomBox_Remove(s_cplace, s_cplaceCount, last);
+	s_cmarker[s_cplaceCount] = AP_SPAWN_INVALID;
+	s_clastDropIndex = -1;
+	AP_AuthorCustomSave();
+}
+
+static void AP_AuthorCustomList(const AP_CustomBoxKey *key, const char *title)
+{
+	int  i, n = 0;
+	char msg[256];
+	char name[48];
+
+	AP_CustomBox_HudName(name, sizeof name, title);
+	snprintf(msg, sizeof msg, "[AP AUTHOR] --- %s (custom %s, lev %.12s, vrm %.12s) ---\n", name,
+	         key->uuid, key->levSha256, key->vrmSha256);
+	AP_LogLine(msg);
+	for (i = 0; i < s_cplaceCount; i++)
+	{
+		if (!AP_CustomBoxKey_Equal(&s_cplace[i].key, key))
+			continue;
+		n++;
+		snprintf(msg, sizeof msg, "[AP AUTHOR]   %2d: %d %d %d rot_y %d\n", n, (int)s_cplace[i].x,
+		         (int)s_cplace[i].y, (int)s_cplace[i].z, (int)s_cplace[i].rotY);
+		AP_LogLine(msg);
+	}
+	snprintf(msg, sizeof msg, "[AP AUTHOR] --- %d here, %d on all custom tracks, written to %s ---\n", n,
+	         s_cplaceCount, AP_CUSTOM_BOX_FILE);
+	AP_LogLine(msg);
+	AP_AuthorCustomSave();
+}
+
+// The custom-track half of AP_Author_OnFrame. Returns 1 when it owned the
+// frame (a custom-page race, loaded or not), 0 to fall through to retail.
+static int AP_AuthorCustomOnFrame(struct GameTracker *gGT)
+{
+	static int      prevDrop = 0, prevUndo = 0, prevList = 0;
+	AP_CustomBoxKey key;
+	char            title[AP_CUSTOM_BOX_TEXT_MAX];
+	char            version[AP_CUSTOM_BOX_TEXT_MAX];
+	int             mode = AP_AuthorCustomMode(&key, title, sizeof title, version, sizeof version);
+	int             drop, undo, list, i;
+
+	if (mode == 0)
+	{
+		if (s_markerLevel == AP_AUTHOR_CUSTOM_MARKER_LEVEL)
+		{
+			AP_AuthorCustomClearMarkers();
+			s_markerLevel = -1;
+		}
+		s_cpauseLogged = 0;
+		return 0;
+	}
+
+	// Never show the host slot's retail markers on custom geometry.
+	if (s_markerLevel >= 0 && s_markerLevel != AP_AUTHOR_CUSTOM_MARKER_LEVEL)
+	{
+		AP_AuthorClearMarkers();
+		s_markerLevel = -1;
+	}
+
+	if (mode == 2)
+	{
+		if (s_markerLevel == AP_AUTHOR_CUSTOM_MARKER_LEVEL)
+		{
+			AP_AuthorCustomClearMarkers();
+			s_markerLevel = -1;
+		}
+		if (!s_cpauseLogged)
+		{
+			s_cpauseLogged = 1;
+			AP_LogLine("[AP AUTHOR] custom track did not finish loading: author mode is paused on it\n");
+		}
+		return 1;
+	}
+	s_cpauseLogged = 0;
+
+	AP_AuthorCustomEnsureLoaded();
+	if (s_markerLevel != AP_AUTHOR_CUSTOM_MARKER_LEVEL || !AP_CustomBoxKey_Equal(&key, &s_cmarkerKey))
+	{
+		AP_AuthorCustomClearMarkers();
+		s_markerLevel = AP_AUTHOR_CUSTOM_MARKER_LEVEL;
+		s_cmarkerKey = key;
+		s_markerTableFull = 0;
+		s_clastDropIndex = -1;
+	}
+	for (i = 0; i < s_cplaceCount; i++)
+	{
+		if (s_cmarker[i] == AP_SPAWN_INVALID && AP_CustomBoxKey_Equal(&s_cplace[i].key, &key))
+			AP_AuthorCustomSpawnMarker(gGT, i);
+	}
+
+	drop = Platform_InputRawKeyDown(AP_AUTHOR_KEY_DROP);
+	undo = Platform_InputRawKeyDown(AP_AUTHOR_KEY_UNDO);
+	list = Platform_InputRawKeyDown(AP_AUTHOR_KEY_LIST);
+	if (drop && !prevDrop)
+		AP_AuthorCustomDrop(gGT, &key, title, version);
+	if (undo && !prevUndo)
+		AP_AuthorCustomUndo(&key, title);
+	if (list && !prevList)
+		AP_AuthorCustomList(&key, title);
+	prevDrop = drop;
+	prevUndo = undo;
+	prevList = list;
+	return 1;
+}
+
+// HUD for the custom half. Returns 1 when it drew.
+static int AP_AuthorCustomDrawHud(void)
+{
+	static char     line1[64];
+	static char     line2[64];
+	AP_CustomBoxKey key;
+	char            title[AP_CUSTOM_BOX_TEXT_MAX];
+	char            name[32];
+	int             mode = AP_AuthorCustomMode(&key, title, sizeof title, NULL, 0);
+
+	if (mode == 0)
+		return 0;
+	if (mode == 2)
+	{
+		DecalFont_DrawLine("BOX AUTHOR  CUSTOM TRACK NOT LOADED", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y,
+		                   FONT_SMALL, WHITE);
+		return 1;
+	}
+	AP_CustomBox_HudName(name, sizeof name, title);
+	snprintf(line1, sizeof line1, "BOX AUTHOR  %s  %d HERE", name,
+	         AP_CustomBox_CountFor(s_cplace, s_cplaceCount, &key));
+	DecalFont_DrawLine(line1, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y, FONT_SMALL, WHITE);
+	if (s_clastDropIndex >= 0 && s_clastDropIndex < s_cplaceCount &&
+	    AP_CustomBoxKey_Equal(&s_cplace[s_clastDropIndex].key, &key))
+	{
+		snprintf(line2, sizeof line2, "LAST %d %d %d", (int)s_cplace[s_clastDropIndex].x,
+		         (int)s_cplace[s_clastDropIndex].y, (int)s_cplace[s_clastDropIndex].z);
+		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H, FONT_SMALL, WHITE);
+	}
+	return 1;
+}
+#endif // CTR_CUSTOM_PACKAGES
+
 // ── per-frame ───────────────────────────────────────────────────────────────
 
 void AP_Author_OnFrame(struct GameTracker *gGT)
@@ -642,6 +997,9 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 			// behaves like a switch rather than like something that needs a
 			// restart to undo.
 			AP_AuthorClearMarkers();
+#ifdef CTR_CUSTOM_PACKAGES
+			AP_AuthorCustomClearMarkers();
+#endif
 			s_markerLevel = -1;
 			s_enabledPrev = 0;
 			AP_LogLine("[AP AUTHOR] mode off\n");
@@ -700,6 +1058,12 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 		AP_AuthorSeedFileFromEmbedded();
 	}
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom-page race owns the frame: its own key, file and markers.
+	if (AP_AuthorCustomOnFrame(gGT))
+		return;
+#endif
+
 	level = (int)gGT->levelID;
 	if (level != s_markerLevel)
 		AP_AuthorRebuildMarkers(gGT, level);
@@ -754,6 +1118,11 @@ void AP_Author_DrawHud(void)
 		                   FONT_SMALL, WHITE);
 		return;
 	}
+
+#ifdef CTR_CUSTOM_PACKAGES
+	if (AP_AuthorCustomDrawHud())
+		return;
+#endif
 
 	for (i = 0; i < s_placeCount; i++)
 	{

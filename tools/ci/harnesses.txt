@@ -2,6 +2,7 @@
 tools/test-instance-pool.c
 # Regenerate with: tools/ci/run-harnesses.py --write-list
 tools/test-author-ready.c
+tools/test-author-custom.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
