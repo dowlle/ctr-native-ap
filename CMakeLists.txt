@@ -208,6 +208,7 @@ if(CTR_AP)
             platform/native_custom_offline.c
             platform/native_custom_track_library.c
             platform/native_custom_unicode.c
+            platform/native_saphi_catalogue.cpp
             vendor/utf8proc/utf8proc.c)
         set_target_properties(custom_package PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
