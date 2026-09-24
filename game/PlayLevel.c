@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_offline.h>
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800414f4-0x80041c84
 void PlayLevel_UpdateLapStats(void)
@@ -156,6 +159,10 @@ void PlayLevel_UpdateLapStats(void)
 			if ((currDriver->actionsFlagSet & ACTION_RACE_FINISHED) == 0)
 			{
 				currDriver->actionsFlagSet |= ACTION_RACE_FINISHED;
+#ifdef CTR_CUSTOM_PACKAGES
+				CustomOffline_OnRaceFinished(gGT->levelID, MainRaceTrack_OfflineCustomLoad(),
+				                             iVar10 == 0 && !(currDriver->actionsFlagSet & ACTION_BOT));
+#endif
 
 				// === Run on first frame that race ends ===
 

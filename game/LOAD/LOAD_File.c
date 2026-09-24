@@ -20,6 +20,9 @@ void LOAD_StringToUpper(char *path)
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_offline.h>
+#endif
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8007c118-0x8007c208.
@@ -373,6 +376,19 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	ctCtx.bossID = sdata->gGT->bossID;
 	ctCtx.adventureBossActive = (sdata->gGT->gameMode1 & ADVENTURE_BOSS) != 0;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// Box authoring build: an Arcade custom-page race serves its package's
+	// owned bytes for the host slot's subfiles (native_custom_offline.h).
+	size_t offlineSize = 0;
+	int offlineRole = CustomOffline_RuntimeFile(subfileIndex, sdata->gGT->levelID,
+	                                            MainRaceTrack_OfflineCustomLoad(), &offlineSize);
+	if (offlineRole)
+	{
+		ctOverride = 1;
+		ctOverrideSize = (u32)offlineSize;
+	}
+	else
+#endif
 	ctOverride = CustomTrack_GetOverride(subfileIndex, &ctCtx, &ctOverridePath, &ctOverrideSize);
 #endif
 
@@ -457,7 +473,13 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 			// retrying a missing or short local file cannot succeed, and the
 			// CdlDiskError callback drives the queue's existing retry path.
 			int ctSectorBytes = sectorCount << 0xb;
+#ifdef CTR_CUSTOM_PACKAGES
+			int ctOk = offlineRole
+			    ? CustomOffline_ReadRuntimeFile(offlineRole, ptrDst, (size_t)ctSectorBytes, ctOverrideSize)
+			    : CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
+#else
 			int ctOk = CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
+#endif
 			if (callback != NULL)
 			{
 				LOAD_ReadFileASyncCallback((u8)(ctOk ? CdlComplete : CdlDiskError), NULL);

@@ -20,6 +20,7 @@ tools/test-cup-box-policy.c
 tools/test-custom-content-verify.c
 tools/test-custom-manager.c
 tools/test-custom-pad-lifecycle.c
+tools/test-custom-selector.c
 tools/test-custom-track-load.c
 tools/test-custom-track-manager.c
 tools/test-custom-track-policy.c

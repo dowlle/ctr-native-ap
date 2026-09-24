@@ -448,6 +448,9 @@ void MainInit_VRAMDisplay(void);
 
 void MainRaceTrack_StartLoad(s16 levelID);
 void MainRaceTrack_RequestLoad(s16 levelID);
+#ifdef CTR_CUSTOM_PACKAGES
+int MainRaceTrack_OfflineCustomLoad(void);
+#endif
 
 int MATH_Sin(u32 angle);
 int MATH_Cos(u32 angle);

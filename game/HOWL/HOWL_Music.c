@@ -209,6 +209,9 @@ u32 Music_AsyncParseBanks(void)
 		         // and past five karts the per-cup path is a hole, because it
 		         // loads one bank per kart up to five and nothing after that.
 		         || CustomTrack_ServingLoad(level, (uVar4 & ADVENTURE_CUP) != 0, gGT->cup.cupID)
+#ifdef CTR_CUSTOM_PACKAGES
+		         || MainRaceTrack_OfflineCustomLoad()
+#endif
 #endif
 		             )
 
@@ -249,7 +252,11 @@ u32 Music_AsyncParseBanks(void)
 			    // only for a player character bank 54 does not carry. Its AI are
 			    // all base characters, so bank 54 covers every one of them.
 			    (gGT->cup.cupID != 4 ||
-			     CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)))
+			     CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)
+#ifdef CTR_CUSTOM_PACKAGES
+			     || MainRaceTrack_OfflineCustomLoad()
+#endif
+			     ))
 #else
 			    (gGT->cup.cupID != 4))
 #endif

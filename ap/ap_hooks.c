@@ -4843,6 +4843,13 @@ int AP_CustomContentRequired(void)
 	return ap_custom_content_required;
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+int AP_CustomOfflineLaunchAllowed(void)
+{
+	return !ctr_cfg_active();
+}
+#endif
+
 void AP_CustomContentRescan(void)
 {
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)

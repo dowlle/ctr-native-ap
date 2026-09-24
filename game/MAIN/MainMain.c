@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_offline.h>
+#endif
 
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
@@ -218,6 +221,9 @@ u32 main(void)
 
 						// Turn off the "Loading..." flag
 						gGT->gameMode1 &= ~LOADING;
+#ifdef CTR_CUSTOM_PACKAGES
+						CustomOffline_OnResidentRestart(gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+#endif
 						break;
 					}
 
@@ -287,6 +293,9 @@ u32 main(void)
 						sdata->Loading.stage = LOAD_IDLE;
 						sdata->mainGameState = 1;
 						gGT->gameMode1 &= ~LOADING;
+#ifdef CTR_CUSTOM_PACKAGES
+						CustomOffline_OnLoadFinished(gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+#endif
 						break;
 					}
 

@@ -303,6 +303,11 @@ int AP_CustomContentDownloadStatus(char *detail, int detailBytes);
 int AP_CustomContentGateEventEntry(int forceVerify);
 void AP_DrawCustomContentWarning(void);
 #endif
+#ifdef CTR_CUSTOM_PACKAGES
+// Box authoring build: may the Arcade custom pages start a package race? The
+// authoring build never joins a room (ap_net_init), so this is "no seed".
+int AP_CustomOfflineLaunchAllowed(void);
+#endif
 
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
 // Exposed so the game-side gate files (game/232/AH_*.c) can emit confirmation

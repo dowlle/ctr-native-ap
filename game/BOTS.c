@@ -359,6 +359,15 @@ void BOTS_Adv_AdjustDifficulty(void)
 		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
 		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss);
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
+#ifdef CTR_CUSTOM_PACKAGES
+		// An Arcade custom-page race has no recording identity: block the host
+		// slot's retail lanes rather than replay them on custom geometry.
+		if (MainRaceTrack_OfflineCustomLoad())
+		{
+			facts.eventRaceServing = 1;
+			facts.eventRaceNavIdentity = 0;
+		}
+#endif
 
 		switch (AP_NavRecIdentity_ForLoad(&facts))
 		{
