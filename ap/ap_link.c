@@ -394,7 +394,7 @@ void AP_LinkDrawTitleHint(uint32_t *ot)
 
 // ---------------------------------------------------------------------------
 // ctr-ap:// link registration (issue #334, slice 4). Windows only for 0.2.1;
-// elsewhere the Connection page shows no Room links row. The box authoring
+// elsewhere Options > Archipelago shows no Room links row. The box authoring
 // download never registers: it does not connect to rooms (ap_net_init), so it
 // must not become the program a player's room link opens.
 
@@ -404,7 +404,8 @@ static char ap_link_reg_exe[NATIVE_LINK_REG_TEXT_MAX];
 static int ap_link_reg_ready;
 static NativeLinkRegStatus ap_link_reg_status = NATIVE_LINK_REG_UNKNOWN;
 static const char *ap_link_reg_message;     // result of the last action, this visit
-static int ap_link_reg_page_frame = -1000;  // last frame the Connection page drew
+static int ap_link_reg_page_frame = -1000;  // last frame the Room links row drew
+static int ap_link_reg_notice_frame = -1000; // last frame the Connection page drew
 static int ap_link_reg_notice;              // show the one-time notice this visit
 
 #define AP_LINK_REG_NOTICE_FILE "room-link-notice.txt"
@@ -459,23 +460,42 @@ static void AP_LinkRegMarkNoticeSeen(void)
 		fclose(f);
 }
 
+static void AP_LinkRegReadStatus(void)
+{
+	ap_link_reg_status = AP_LinkRegInit() ? NativeLinkReg_Status(&ap_link_reg_ops, ap_link_reg_exe)
+	                                      : NATIVE_LINK_REG_UNKNOWN;
+}
+
 void AP_LinkRegPageFrame(void)
 {
-	// A new visit re-reads the registry (another client may have taken room
-	// links since) and decides once whether the one-time notice shows.
+	// A new visit to Options > Archipelago re-reads the registry (another
+	// client may have taken room links since) and drops the last action's
+	// message.
 	if (sdata->frameCounter - ap_link_reg_page_frame > 1)
 	{
 		ap_link_reg_message = NULL;
+		AP_LinkRegReadStatus();
+	}
+	ap_link_reg_page_frame = sdata->frameCounter;
+}
+
+void AP_LinkRegNoticeFrame(void)
+{
+	// The notice belongs to the Connection page, where every player goes to
+	// connect, so it cannot be missed by someone who never opens the
+	// Archipelago page. A new visit re-reads the registry and decides once
+	// whether it shows; it is marked seen as soon as it does.
+	if (sdata->frameCounter - ap_link_reg_notice_frame > 1)
+	{
 		ap_link_reg_notice = 0;
-		ap_link_reg_status = AP_LinkRegInit() ? NativeLinkReg_Status(&ap_link_reg_ops, ap_link_reg_exe)
-		                                      : NATIVE_LINK_REG_UNKNOWN;
+		AP_LinkRegReadStatus();
 		if (ap_link_reg_status == NATIVE_LINK_REG_OTHER_PROGRAM && !AP_LinkRegNoticeSeen())
 		{
 			ap_link_reg_notice = 1;
 			AP_LinkRegMarkNoticeSeen();
 		}
 	}
-	ap_link_reg_page_frame = sdata->frameCounter;
+	ap_link_reg_notice_frame = sdata->frameCounter;
 }
 
 const char *AP_LinkRegStatusText(void)
@@ -496,7 +516,7 @@ int AP_LinkRegNotice(const char **first, const char **second)
 	if (!ap_link_reg_notice || ap_link_reg_status != NATIVE_LINK_REG_OTHER_PROGRAM)
 		return 0;
 	*first = "Another program opens room links.";
-	*second = "Pick Room links to use this client.";
+	*second = "Change it on the Archipelago page.";
 	return 1;
 }
 
@@ -533,6 +553,10 @@ int AP_LinkRegRowAvailable(void)
 }
 
 void AP_LinkRegPageFrame(void)
+{
+}
+
+void AP_LinkRegNoticeFrame(void)
 {
 }
 

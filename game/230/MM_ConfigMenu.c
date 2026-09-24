@@ -341,6 +341,12 @@ static int Config_RowLockedBySeed(const ConfigEntry *e)
 	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
 }
 
+static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
+{
+	DecalFont_DrawLineOT((char *)first, 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	DecalFont_DrawLineOT((char *)second, 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
 // Two help lines under the page for the selected row, in the footer style the
 // Connection page uses. Only rows that need explaining have one. Each line fits
 // the panel (33 characters at FONT_SMALL).
@@ -364,8 +370,24 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	}
 	if (first == 0)
 		return;
-	DecalFont_DrawLineOT((char *)first, 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	DecalFont_DrawLineOT((char *)second, 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	Config_DrawHelpLines(first, second, ot);
+}
+
+// Room links (issue #334): which program opens ctr-ap:// links from a room
+// page. An action row after the Archipelago page's config rows, where
+// registration exists (Windows only for 0.2.1; never in the box authoring
+// build). It is not a config entry: the state lives in the registry.
+static int Config_LinkRow(int sec, int numRows)
+{
+	if (strcmp(s_sectionName[sec], "Archipelago") != 0 || !AP_LinkRegRowAvailable())
+		return -1;
+	return numRows;
+}
+
+static void Config_DrawLinkRow(int y, int labelX, int valueX, uint32_t *ot)
+{
+	DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 }
 #endif
 
@@ -621,13 +643,11 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	// + Connect action row, + Room links row where ctr-ap:// registration
-	// exists (issue #334; Windows only for 0.2.1).
-	const int linkRow = AP_LinkRegRowAvailable() ? numStrings + 1 : -1;
-	const int numRows = numStrings + 1 + (linkRow >= 0 ? 1 : 0);
+	const int numRows = numStrings + 1;         // + Connect action row
 
-	if (linkRow >= 0)
-		AP_LinkRegPageFrame();
+	// The Room links row lives on Options > Archipelago; this page only keeps
+	// the one-time notice for when another program owns room links (#334).
+	AP_LinkRegNoticeFrame();
 
 	const int justResolved = TextEdit_Update();
 
@@ -652,11 +672,6 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			{
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
-			}
-			else if (menu->rowSelected == linkRow)
-			{
-				// Room links: use this client for ctr-ap:// links, or stop.
-				AP_LinkRegAction();
 			}
 			else
 			{
@@ -705,19 +720,6 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
-	// Room links row, in the line between Connect and Status.
-	if (linkRow >= 0)
-	{
-		int y = startY + linkRow * rowSpacing;
-		DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, ORANGE, ot);
-		DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, WHITE, ot);
-		if (menu->rowSelected == linkRow)
-		{
-			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
-			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-		}
-	}
-
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
@@ -748,16 +750,10 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *noticeFirst;
 		const char *noticeSecond;
 
-		// The Room links row explains its action in the footer while selected.
-		if (linkRow >= 0 && menu->rowSelected == linkRow && !s_connEditing)
-			DecalFont_DrawLineOT((char *)AP_LinkRegActionHint(),
-				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-		else
-			DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
-				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-
 		// One-time notice when another program owns ctr-ap:// links: they are
-		// never taken over silently. Same rows the update notice would use.
+		// never taken over silently, and the notice points at the Room links row
+		// on the Archipelago page. Same rows the update notice would use, and
+		// like it, it owns the footer while shown.
 		if (!s_connEditing && AP_LinkRegNotice(&noticeFirst, &noticeSecond))
 		{
 			DecalFont_DrawLineOT((char *)noticeFirst, 0x100, startY + (numStrings + 5) * rowSpacing,
@@ -765,6 +761,9 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			DecalFont_DrawLineOT((char *)noticeSecond, 0x100, startY + (numStrings + 6) * rowSpacing,
 				FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 		}
+		else
+			DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
+				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
 
 	// Drawn as a footer rather than on the row itself: the text value is
@@ -1027,31 +1026,41 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// owns input, and on the frame it resolves, the page ignores the pad: the
 		// host keyboard is mapped onto a pad slot, so typing would navigate.
 		const int textBusy = TextEdit_Update() || s_connEditing;
+		const int linkRow = Config_LinkRow(sec, numRows);
+		if (linkRow >= 0)
+			AP_LinkRegPageFrame();
 #else
 		const int textBusy = 0;
+		const int linkRow = -1;
 #endif
+		const int pageRows = numRows + (linkRow >= 0 ? 1 : 0);
 
 		if (!textBusy)
 		{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
-			menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : numRows - 1;
+			menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : pageRows - 1;
 			OtherFX_Play(0, 1);
 		}
 		if ((pad->buttonsTapped & BTN_DOWN) != 0)
 		{
-			menu->rowSelected = (menu->rowSelected < numRows - 1) ? menu->rowSelected + 1 : 0;
+			menu->rowSelected = (menu->rowSelected < pageRows - 1) ? menu->rowSelected + 1 : 0;
 			OtherFX_Play(0, 1);
 		}
+
+		// The selected config entry; NULL on the Room links action row.
+		const ConfigEntry *selEntry = (menu->rowSelected < numRows) ? Section_Entry(sec, menu->rowSelected) : NULL;
 
 		// Cross/Circle acts on every row type: a boolean toggles, an enum moves to
 		// its next value (wrapping), a text row opens the editor.
 		if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
-			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
+			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
-			if (Config_RowLockedBySeed(e))
+			if (e == NULL)
+				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
+			else if (Config_RowLockedBySeed(e))
 				; // the seed has item box colours off: nothing to toggle
 			else
 #endif
@@ -1069,11 +1078,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// Boolean rows now follow the same left/right value-editing convention as
 		// enums and sliders: left is OFF, right is ON. Cross/Circle still toggles.
 		{
-			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
+			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
-			if (e->type == CFG_BOOL && !Config_RowLockedBySeed(e))
+			if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e))
 #else
-			if (e->type == CFG_BOOL)
+			if (e != NULL && e->type == CFG_BOOL)
 #endif
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
@@ -1091,8 +1100,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		// enum entries: tap left/right to step through the preset ladder
 		{
-			const ConfigEntry *e = Section_Entry(sec, menu->rowSelected);
-			if (e->type == CFG_ENUM)
+			const ConfigEntry *e = selEntry;
+			if (e != NULL && e->type == CFG_ENUM)
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
 				{
@@ -1144,8 +1153,21 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 #ifdef CTR_AP
+		if (linkRow >= 0)
+		{
+			int y = startY + linkRow * rowSpacing;
+			Config_DrawLinkRow(y, labelX, valueX, ot);
+			if (menu->rowSelected == linkRow)
+			{
+				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+			}
+		}
+
 		if (s_connEditing)
 			TextEdit_DrawHint(0xC0, ot);
+		else if (menu->rowSelected == linkRow)
+			Config_DrawHelpLines("Which program opens room links.", AP_LinkRegActionHint(), ot);
 		else if (numRows > 0 && menu->rowSelected < numRows)
 			Config_DrawRowHelp(Section_Entry(sec, menu->rowSelected), ot);
 		} // end generic (non-Connection) section
