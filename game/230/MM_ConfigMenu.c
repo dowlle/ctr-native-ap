@@ -12,6 +12,16 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
+#ifdef CTR_CUSTOM_PACKAGES
+// Box authoring build: the package library and Saphi Track Manager replace the
+// single-package Custom Content page (CMakeLists.txt, CTR_CUSTOM_PACKAGES).
+#include <stdlib.h>
+#include <platform/native_custom_track_library.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_custom_offline.h>
+#include <platform/native_saphi_catalogue.h>
+#include "MM_CustomText.c"
+#endif
 #endif
 #endif
 
@@ -773,7 +783,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
 }
 
-#ifdef CTR_CUSTOM_TRACKS
+#if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_CUSTOM_PACKAGES)
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Download Saphi",
@@ -966,6 +976,80 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	CustomContent_DrawMessage(ot);
 }
 #endif
+
+#ifdef CTR_CUSTOM_PACKAGES
+static struct CustomTrackLibrary s_contentLibrary;
+static int s_contentLibraryLoaded;
+static int s_contentLibraryTab;
+static int s_contentSearchEditing;
+static int s_contentSearchPadPrev;
+static char s_contentSearchBackup[CTR_LIBRARY_QUERY_MAX + 1];
+static int s_contentInstallBusy;
+static char s_contentInstallPin[65];
+static char s_contentInstallMessage[512];
+static int s_contentStoreBusy, s_contentStoreWanted;
+static char s_contentStoreMessage[512];
+static struct CustomSaphiCatalogue *s_saphiCatalogue;
+static int s_saphiRefreshBusy, s_saphiLoaded, s_saphiDownloading;
+static char s_saphiMessage[512], s_saphiQuery[CTR_LIBRARY_QUERY_MAX + 1];
+static size_t s_saphiSelection[2];
+
+/* Shared metadata/store projection for Options and Arcade. The UI that starts
+   a worker drains it before leaving; neither screen takes ownership of the
+   other screen's search or selection. */
+static void MM_CustomLibrary_Tick(int reload)
+{
+    char path[CTR_CT_MANAGER_PATH_MAX];
+    if (reload) s_contentLibraryLoaded = 0;
+    if (!s_contentLibraryLoaded)
+    {
+        int length = snprintf(path, sizeof path, "%s/tracks/library.catalog", NativeAssets_GetAssetDir());
+        if (length > 0 && (size_t)length < sizeof path)
+            CustomTrackLibrary_ReadCatalogue(&s_contentLibrary, path);
+        s_contentLibraryLoaded = 1;
+        s_contentStoreWanted = 1;
+    }
+    if (s_contentInstallBusy)
+    {
+        int result;
+        if (CustomPackage_PollInboxInstall(&result, s_contentInstallPin,
+            s_contentInstallMessage, sizeof s_contentInstallMessage) == 1)
+        {
+            s_contentInstallBusy = 0;
+            if (result)
+            {
+                CustomTrackLibrary_MarkInstalled(&s_contentLibrary, s_contentInstallPin);
+                s_contentStoreWanted = 1;
+                snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
+                         "Installed. Choose custom tracks from Arcade.");
+            }
+        }
+    }
+    if (s_contentStoreBusy)
+    {
+        int result = CustomPackage_PollStoreScan(&s_contentLibrary, s_contentStoreMessage, sizeof s_contentStoreMessage);
+        if (result == 1 || result == -2) s_contentStoreBusy = 0;
+        if (result == 1) s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
+    }
+    if (s_contentStoreWanted && !s_contentStoreBusy && !s_contentInstallBusy)
+    {
+        int length = snprintf(path, sizeof path, "%s/tracks/packages", NativeAssets_GetAssetDir());
+        s_contentStoreMessage[0] = 0;
+        if (length > 0 && (size_t)length < sizeof path)
+            s_contentStoreBusy = CustomPackage_StartStoreScan(path);
+        s_contentStoreWanted = 0;
+        if (!s_contentStoreBusy)
+            snprintf(s_contentStoreMessage, sizeof s_contentStoreMessage, "Could not start package store scan");
+    }
+}
+
+static int MM_CustomLibrary_Busy(void)
+{
+    return s_contentInstallBusy || s_contentStoreBusy || s_contentStoreWanted || s_saphiDownloading;
+}
+
+#include "MM_CustomManager.c"
+#endif // CTR_CUSTOM_PACKAGES
 #endif // CTR_AP
 
 static void MM_MenuProc_Config(struct RectMenu *menu)
@@ -981,7 +1065,13 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	// Back / exit -- but not while a text-entry session owns the keyboard (there
 	// Escape is the cancel key, handled in the platform layer). NativeText_Active
 	// is always 0 outside an edit, so this is a no-op change for the toggle sections.
-	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active())
+	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active()
+#ifdef CTR_CUSTOM_PACKAGES
+	    // Drain a package or Saphi worker before leaving; Back first leaves
+	    // the Versions list of one track.
+	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+#endif
+	)
 	{
 		OtherFX_Play(2, 1);
 		if (s_currentSection >= 0)
