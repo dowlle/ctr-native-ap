@@ -121,6 +121,13 @@ static int s_dumpRenderScale = -1;
 static int s_dumpAspect = -1;
 static int s_dumpDrawDistance = -1;
 static int s_dumpWindowW;
+// --editor-full-vis: draw every quadblock, BSP leaf, water vertex and level
+// instance instead of the precomputed visibility list (PVS) of the quadblock
+// under the camera. The retail PVS is only valid for cameras near the driving
+// line; a free camera above or beside the track otherwise loses geometry.
+static int s_fullVis;
+static int *s_fullVisBits;
+static int s_fullVisWords;
 static int s_dumpWindowH;
 static int s_modelDumpID = -1;
 static char s_modelDumpPath[EDITOR_PATH_MAX];
@@ -383,6 +390,10 @@ void Editor_ConfigureFromArgs(int argc, char **argv)
 		else if (strcmp(argv[i], "--editor-dump-skip-intro") == 0)
 		{
 			s_dumpSkipIntro = 1;
+		}
+		else if (strcmp(argv[i], "--editor-full-vis") == 0)
+		{
+			s_fullVis = 1;
 		}
 		else if (strcmp(argv[i], "--editor-render-semitrans-single") == 0)
 		{
@@ -931,6 +942,46 @@ static void Editor_MeasureSourceGraph(struct GameTracker *gGT)
 	s_sourceGraphMeasured = 1;
 }
 
+static void Editor_ApplyFullVis(struct GameTracker *gGT, struct CameraDC *camera)
+{
+	struct Level *level = gGT->level1;
+	struct mesh_info *mesh = level->ptr_mesh_info;
+	int bits = mesh->numBspNodes;
+	int words;
+	if (mesh->numQuadBlock > bits)
+		bits = mesh->numQuadBlock;
+	if (level->numWaterVertices > bits)
+		bits = level->numWaterVertices;
+	if (level->numSCVert > bits)
+		bits = level->numSCVert;
+	words = (bits + 0x1f) >> 5;
+	if (s_fullVisBits == NULL || s_fullVisWords < words)
+	{
+		// Even address: MainFrame copies an unpacked list straight through.
+		free(s_fullVisBits);
+		s_fullVisBits = malloc((size_t)words * sizeof(int));
+		if (s_fullVisBits == NULL)
+		{
+			s_fullVisWords = 0;
+			return;
+		}
+		memset(s_fullVisBits, 0xff, (size_t)words * sizeof(int));
+		s_fullVisWords = words;
+		Editor_Log("FULL_VIS bsp=%d quads=%d water=%d scvert=%d", mesh->numBspNodes, mesh->numQuadBlock, level->numWaterVertices,
+		           level->numSCVert);
+	}
+	camera->visLeafSrc = s_fullVisBits;
+	camera->visFaceSrc = s_fullVisBits;
+	if ((level->configFlags & 4) == 0)
+		camera->visOVertSrc = s_fullVisBits;
+	else
+		camera->visSCVertSrc = s_fullVisBits;
+	// During play the LEV's instance-definition array holds live Instance
+	// pointers (LevInstDef_UnPack), NULL-terminated: every level instance.
+	if (level->ptrInstDefPtrArray != NULL)
+		camera->visInstSrc = (struct Instance **)level->ptrInstDefPtrArray;
+}
+
 static void Editor_UpdatePVS(struct GameTracker *gGT, struct CameraDC *camera)
 {
 	struct ScratchpadStruct *scratch = &sdata->scratchpadStruct;
@@ -958,6 +1009,8 @@ static void Editor_UpdatePVS(struct GameTracker *gGT, struct CameraDC *camera)
 		else
 			camera->visSCVertSrc = pvs->visExtraSrc;
 	}
+	if (s_fullVis)
+		Editor_ApplyFullVis(gGT, camera);
 }
 
 static void Editor_PlaceObject(void)

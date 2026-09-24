@@ -148,8 +148,12 @@ def box_views(info, anchor):
 # rendered at window resolution and presented directly, not through the
 # 512x216 PSX raster), aspect_ratio 1 (16:9) and increase_draw_distance on.
 # --retail-raster reproduces the old 800x600 PSX look.
-VIDEO = {"render_scale": 0, "aspect": 1, "draw_distance": 1, "window": "1600x900"}
-RETAIL_RASTER = {"render_scale": 1, "aspect": 0, "draw_distance": 0, "window": "800x600"}
+# full_vis: draw the whole track instead of the retail visibility list (PVS) of
+# the quadblock under the camera. That list only holds what a player can see
+# from near the driving line; from a camera above or beside the track whole
+# road sections go missing (editor flag --editor-full-vis).
+VIDEO = {"render_scale": 0, "aspect": 1, "draw_distance": 1, "window": "1600x900", "full_vis": True}
+RETAIL_RASTER = {"render_scale": 1, "aspect": 0, "draw_distance": 0, "window": "800x600", "full_vis": True}
 
 
 def atlas_from_art(face_png, edge_png=None, far_png=None):
@@ -189,6 +193,8 @@ def render(project_path, project, eye, rot, markers, out_png, speed=32, start=60
                "--editor-dump-mute", "--editor-dump-skip-intro",
                "--editor-dump-render-scale", str(video["render_scale"]), "--editor-dump-aspect", str(video["aspect"]),
                "--editor-dump-draw-distance", str(video["draw_distance"]), "--editor-dump-window", video["window"]]
+        if video.get("full_vis"):
+            cmd += ["--editor-full-vis"]
         if atlas:
             cmd += ["--editor-apbox-atlas", atlas]
         if framed:
@@ -228,6 +234,9 @@ def main():
     ap.add_argument("--retail-raster", action="store_true",
                     help="old look: 800x600 window, 4:3, PSX raster (render_scale 1), normal draw distance")
     ap.add_argument("--window", help="window size WxH (default 1600x900)")
+    ap.add_argument("--camera-vis", action="store_true",
+                    help="use the retail visibility list of the quadblock under the camera instead of drawing the "
+                         "whole track (only complete for cameras near the driving line)")
     ap.add_argument("--box-art", type=Path,
                     help="64x64 face PNG to put on the AP box instead of the art compiled into the client")
     ap.add_argument("--box-framed", action="store_true",
@@ -271,6 +280,8 @@ def main():
     video = dict(RETAIL_RASTER if args.retail_raster else VIDEO)
     if args.window:
         video["window"] = args.window
+    if args.camera_vis:
+        video["full_vis"] = False
     atlas = atlas_from_art(args.box_art, args.box_edge) if args.box_art else None
     args.out.mkdir(parents=True, exist_ok=True)
     try:

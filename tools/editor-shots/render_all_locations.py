@@ -462,7 +462,7 @@ def default_settings():
     """Render and label settings stored in the cameras file, so a re-render
     reproduces the same pictures."""
     return dict(window=f"{W}x{H}", render_scale=shot.VIDEO["render_scale"], aspect=shot.VIDEO["aspect"],
-                draw_distance=shot.VIDEO["draw_distance"], start_frames=60, box_face="wumpa", box_tint=None,
+                draw_distance=shot.VIDEO["draw_distance"], full_vis=True, start_frames=60, box_face="wumpa", box_tint=None,
                 focal=FOCAL, diff_level=DIFF_LEVEL, min_visible=MIN_VISIBLE, low_visible=LOW_VISIBLE,
                 caption="{track}: Item Box {box}", file_name="{slug}-box-{box:02d}.png",
                 png="256-colour palette (median cut, Floyd-Steinberg, label colours reserved)")
@@ -507,7 +507,7 @@ def run_track(level, args, cams):
     project_path, project = shot.project_for(level)
     info = shot.lev_info(project["sources"]["lev"]["path"])
     video = dict(render_scale=st["render_scale"], aspect=st["aspect"], draw_distance=st["draw_distance"],
-                 window=st["window"])
+                 window=st["window"], full_vis=st["full_vis"])
     face = args.box_face if args.box_face is not None else st["box_face"]
     if st["box_tint"] and "--editor-apbox-tint" not in os.environ.get("CTR_EDITOR_EXTRA_ARGS", ""):
         os.environ["CTR_EDITOR_EXTRA_ARGS"] = (os.environ.get("CTR_EDITOR_EXTRA_ARGS", "")
