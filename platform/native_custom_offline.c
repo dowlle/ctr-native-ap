@@ -1,5 +1,6 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_identity.h>
 #include <platform/native_custom_content_verify.h>
 #include <stdlib.h>
 #include <string.h>
@@ -90,13 +91,35 @@ int CustomOffline_RetainPackage(const struct CustomOfflineRequest *request, stru
     return request && CustomPackage_Retain(request->package, out);
 }
 
+int CustomOffline_PackageLaps(const struct CustomPackageOwned *package, unsigned int *laps,
+                              char *error, size_t errorSize)
+{
+    struct CustomPackageManifest manifest;
+    unsigned int i;
+    int hasSettings = 0;
+    if (laps) *laps = 0;
+    if (!laps || !CustomPackage_GetManifest(package, &manifest))
+        return offline_error(error, errorSize, "Expected owned package and lap output");
+    for (i = 0; i < manifest.count && i < CTR_PACKAGE_FILE_MAX; i++)
+        if (!strcmp(manifest.files[i].role, "race_settings")) hasSettings = 1;
+    {
+        unsigned int pinned = 0;
+        int pinnedOk = hasSettings && CustomPackage_GetRaceLaps(package, &pinned, error, errorSize);
+        if (!CustomIdentity_RaceLaps(hasSettings, pinnedOk, pinned, laps))
+            return hasSettings && !pinnedOk ? 0 :
+                offline_error(error, errorSize, "Authored laps exceed the engine's seven-lap timing storage");
+    }
+    offline_error(error, errorSize, "");
+    return 1;
+}
+
 int CustomOffline_PackageArcade(const struct CustomPackageOwned *package)
 {
     struct CustomContentVerification report;
     unsigned int laps=0;
     return CustomPackage_GetPairReport(package,&report) && report.loadable &&
         report.fileAnalysis[CTR_CCV_ARCADE].result == CTR_CCV_DETECTED && report.measured.spawns >= 8 &&
-        CustomPackage_GetRaceLaps(package,&laps,NULL,0) && laps <= CTR_OFFLINE_MAX_LAPS;
+        CustomOffline_PackageLaps(package,&laps,NULL,0);
 }
 
 int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request,
@@ -125,7 +148,7 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
     unsigned int laps;
     if (!request || !*request || activeRequest || runtimeGeneration == UINT64_MAX || apSeedPresent != 0 ||
         hostLevelID < 0 || hostLevelID >= 18 || !CustomOffline_CheckStructure(*request, NULL, 0) ||
-        !CustomPackage_GetRaceLaps((*request)->package, &laps, NULL, 0) || laps > CTR_OFFLINE_MAX_LAPS) return 0;
+        !CustomOffline_PackageLaps((*request)->package, &laps, NULL, 0)) return 0;
     activeRequest = *request;
     *request = NULL;
     activeHost = hostLevelID;

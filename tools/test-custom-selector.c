@@ -65,6 +65,8 @@ int CustomOffline_RetainPackage(const struct CustomOfflineRequest *r, struct Cus
 { (void)r; *out = (struct CustomPackageOwned *)1; return 1; }
 int CustomPackage_GetRaceLaps(const struct CustomPackageOwned *p, unsigned int *laps, char *e, size_t n)
 { (void)p; (void)e; (void)n; *laps = 7; return 1; }
+int CustomOffline_PackageLaps(const struct CustomPackageOwned *p, unsigned int *laps, char *e, size_t n)
+{ return CustomPackage_GetRaceLaps(p, laps, e, n); }
 void CustomPackage_Free(struct CustomPackageOwned **p) { *p = NULL; }
 int CustomOffline_RuntimeLaps(void) { return 7; }
 static int beganHost = -1;

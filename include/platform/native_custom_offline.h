@@ -14,6 +14,12 @@ struct CustomOfflineRequest;
 int CustomOffline_PackageArcade(const struct CustomPackageOwned *package);
 /* GameTracker.lapTime has seven entries; PlayLevel indexes it per lap. */
 #define CTR_OFFLINE_MAX_LAPS 7
+/* The lap count an offline race uses: the pinned race_settings value, or
+   CTR_CUSTOM_DEFAULT_LAPS (3, native_custom_identity.h) when the package has no
+   race_settings file (Saphi lists no lap count, or an older revision).
+   Returns 0 (laps 0) for an invalid sidecar or a value above the engine limit. */
+int CustomOffline_PackageLaps(const struct CustomPackageOwned *package, unsigned int *laps,
+                              char *error, size_t errorSize);
 /* Main-thread asynchronous acquisition of the selected installed revision.
    Shares the single package worker lane with installation/store scans. No game
    launch or certification is performed. Poll: 0 pending/unreportable, 1 success

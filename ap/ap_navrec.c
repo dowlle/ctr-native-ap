@@ -1341,6 +1341,14 @@ void AP_NavRec_AfterCheckpointRestore(void)
 
 	levelID = (int)sdata->gGT->levelID;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// A savestate restore does not restore the load's identity verdict. A
+	// custom-page race has no recording identity: block again before any lane
+	// file for the host slot could be read onto custom geometry.
+	if (MainRaceTrack_OfflineCustomLoad())
+		AP_NavRec_BlockRecordedLanes();
+#endif
+
 	// Same folder, same rule, same field: the selection is deterministic, so a
 	// restore reassembles the lane set the race started with unless the files
 	// themselves changed underneath it.

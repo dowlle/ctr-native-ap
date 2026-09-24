@@ -5,6 +5,8 @@
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_custom_identity.h>
 CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CTR_OFFLINE_MAX_LAPS);
 
 // Box authoring build: a package chosen on the Arcade custom pages races only
@@ -21,6 +23,26 @@ static int MainRaceTrack_OfflineSingleRaceMode(void)
 int MainRaceTrack_OfflineCustomLoad(void)
 {
 	return CustomOffline_RuntimeServing(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+}
+
+// The level id identity-keyed code should see: CTR_CUSTOM_LEVEL_ID during a
+// custom-page race, the engine's level id otherwise. The host slot stays the
+// BIGFILE loading vehicle in gGT->levelID; this is what everything else uses.
+int MainRaceTrack_IdentityLevelID(void)
+{
+	return CustomIdentity_LevelID(sdata->gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+}
+
+// The running package's title in banner form, or NULL outside a custom race.
+const char *MainRaceTrack_OfflineCustomTitle(void)
+{
+	static char s_title[32];
+	struct CustomPackageManifest manifest;
+
+	if (!MainRaceTrack_OfflineCustomLoad() || !CustomOffline_RuntimeManifest(&manifest))
+		return NULL;
+	CustomIdentity_BannerName(s_title, sizeof s_title, manifest.title);
+	return s_title;
 }
 #endif
 

@@ -125,13 +125,8 @@ extern "C" int CustomOffline_StartPrepare(const char *assets, const char *pin)
             if (!CustomPackage_AcquireDirectory(path.c_str(), revision.c_str(), &raw,
                 result.error, sizeof result.error)) return result;
             std::unique_ptr<CustomPackageOwned, PackageDeleter> package(raw);
-            unsigned int authoredLaps;
-            if (!CustomPackage_GetRaceLaps(raw, &authoredLaps, result.error, sizeof result.error)) return result;
-            if (authoredLaps > CTR_OFFLINE_MAX_LAPS)
-            {
-                std::snprintf(result.error, sizeof result.error, "Authored laps exceed the engine's seven-lap timing storage");
-                return result;
-            }
+            unsigned int raceLaps;
+            if (!CustomOffline_PackageLaps(raw, &raceLaps, result.error, sizeof result.error)) return result;
             CustomOfflineRequest *request = nullptr;
             if (!CustomOffline_Prepare(&raw, revision.c_str(), &request, result.error, sizeof result.error))
                 return result;

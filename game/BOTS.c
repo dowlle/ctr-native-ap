@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_identity.h>
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the load's recording identity
@@ -198,8 +201,22 @@ void BOTS_Adv_AdjustDifficulty(void)
 	}
 	else
 	{
+#ifdef CTR_CUSTOM_PACKAGES
+		// A custom-page race has its own explicit AI tuning, never the host
+		// slot's row (native_custom_identity.h).
+		static s16 s_customDifficulty1[14] = CTR_CUSTOM_DIFFICULTY_PARAMS1;
+		static s16 s_customDifficulty2[14] = CTR_CUSTOM_DIFFICULTY_PARAMS2;
+		if (MainRaceTrack_OfflineCustomLoad())
+		{
+			sdata->difficultyParams[1] = s_customDifficulty1;
+			sdata->difficultyParams[0] = s_customDifficulty2;
+		}
+		else
+#endif
+		{
 		sdata->difficultyParams[1] = data.ArcadeDifficulty[gGT->levelID].params1;
 		sdata->difficultyParams[0] = data.ArcadeDifficulty[gGT->levelID].params2;
+		}
 	}
 
 	if ((gameMode1 & ARCADE_MODE) != 0)

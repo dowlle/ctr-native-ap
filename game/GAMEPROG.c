@@ -344,5 +344,16 @@ void GAMEPROG_GetPtrHighScoreTrack(void)
 	gGT = sdata->gGT;
 	gameMode1 = gGT->gameMode1;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom-page race never points at a retail track's high scores. Arcade
+	// races do not read or write this table, but the pointer must not name the
+	// host slot's rows either; it names a private, never-saved table instead.
+	if (MainRaceTrack_OfflineCustomLoad())
+	{
+		static struct HighScoreEntry s_customHighScores[12];
+		sdata->ptrActiveHighScoreEntry = &s_customHighScores[6 * ((gameMode1 & RELIC_RACE) != 0)];
+		return;
+	}
+#endif
 	sdata->ptrActiveHighScoreEntry = &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[6 * ((gameMode1 & RELIC_RACE) != 0)];
 }

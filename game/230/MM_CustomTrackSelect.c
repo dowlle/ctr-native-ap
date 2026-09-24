@@ -4,15 +4,22 @@
 
    One custom track at a time: Cross prepares the chosen installed package,
    the second Cross hands it to the offline loader (native_custom_offline.h)
-   on the fixed host slot below and starts a one-player Arcade single race.
-   Leaving that host slot ends the custom race. */
+   and starts a one-player Arcade single race under the track's own identity,
+   CTR_CUSTOM_LEVEL_ID (native_custom_identity.h). The engine reads the
+   package's LEV and VRM through one arcade BIGFILE subfile group; which group
+   that is, is a loading detail below and never the track's identity.
+   Leaving the race ends the custom runtime; Retry keeps it. */
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_offline.h>
 #include <platform/native_assets.h>
 #include <platform/native_custom_revision.h>
 
-/* Roo's Tubes. The same default host slot the apworld gives a custom track;
-   the host is only a loading vehicle and never a placement key. */
+#include <platform/native_custom_identity.h>
+
+/* The BIGFILE subfile group the package's bytes are served through (arcade
+   group 6). A loading mechanism only: difficulty, music, sound, banner, high
+   scores, AI recordings, logs and box keys all use the custom identity, see
+   the audit in native_custom_identity.h and tools/test-custom-identity.c. */
 #define MM_CUSTOM_ARCADE_HOST_LEVEL 6
 
 static struct CustomTrackLibrary s_arcadeLibrary;
@@ -152,8 +159,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                 gGT->numLaps = CustomOffline_RuntimeLaps();
                 D230.trackSel_StartRaceAfterFadeOut = 1;
                 D230.trackSel_transitionState = EXITING_MENU;
-                fprintf(stderr, "[CustomSelector] custom race host=%d players=%d difficulty=%d laps=%d\n",
-                    host, gGT->numPlyrNextGame, gGT->arcadeDifficulty, gGT->numLaps);
+                fprintf(stderr, "[CustomSelector] custom track %d (bytes via group %d) players=%d difficulty=%d laps=%d\n",
+                    CTR_CUSTOM_LEVEL_ID, host, gGT->numPlyrNextGame, gGT->arcadeDifficulty, gGT->numLaps);
                 OtherFX_Play(1, 1);
             }
             else
@@ -248,7 +255,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             unsigned int laps = 0;
             if (CustomOffline_RetainPackage(s_arcadeRequest, &package))
             {
-                CustomPackage_GetRaceLaps(package, &laps, NULL, 0);
+                CustomOffline_PackageLaps(package, &laps, NULL, 0);
                 CustomPackage_Free(&package);
             }
             snprintf(line, sizeof line, "%u laps", laps);

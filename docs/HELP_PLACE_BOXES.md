@@ -82,12 +82,12 @@ a time.
    difficulty, and at the track list press Right to go past the normal tracks
    to the **Custom** pages.
 3. Pick the track, press Cross, then Cross again to start. The race uses the
-   track's own lap count.
+   lap count Saphi lists for the track, or 3 laps when it lists none.
 4. With Box Author Mode on, the top left shows `BOX AUTHOR  <TRACK NAME>  <N>
    HERE`. The keys are the same as in step 3.
 
-Only tracks that have Arcade start positions for eight karts and a lap count
-show up on the Custom pages. If the top left says `CUSTOM TRACK NOT LOADED`, the
+Only tracks that have Arcade start positions for eight karts show up on the
+Custom pages. If the top left says `CUSTOM TRACK NOT LOADED`, the
 track did not load. Go back to the menu and start it again.
 
 Boxes on custom tracks go to their own file,
