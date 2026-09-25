@@ -666,15 +666,25 @@ static void AP_AuthorCustomClearMarkers(void)
 // What is on screen: 0 = not a custom-page race (retail authoring applies),
 // 1 = the package's bytes are loaded (key/title/version filled), 2 = a custom
 // race whose package did not finish loading (author mode pauses rather than
-// guess which geometry this is).
+// guess which geometry this is), 3 = the resident geometry and the load's
+// identity disagree (author mode pauses; only a savestate restore could do
+// this, and the checkpoint refuses those, so this is the last line).
+#define AP_AUTHOR_CUSTOM_MISMATCH 3
 static int AP_AuthorCustomMode(AP_CustomBoxKey *key, char *title, size_t titleCap, char *version, size_t versionCap)
 {
 	struct CustomPackageManifest manifest;
 	const char *lev = NULL, *vrm = NULL;
 	unsigned int i;
+	// LOAD_TenStages names the level "custom" exactly when it loads a package,
+	// and gGT (with this name) is what a savestate brings back. Every key choice
+	// below checks it against the live identity, so neither author path can
+	// file a drop for geometry it does not own.
+	int customGeometry = sdata != 0 && sdata->gGT != 0 && strcmp(sdata->gGT->levelName, "custom") == 0;
 
 	if (!MainRaceTrack_OfflineCustomLoad())
-		return 0;
+		return customGeometry ? AP_AUTHOR_CUSTOM_MISMATCH : 0;
+	if (!customGeometry)
+		return AP_AUTHOR_CUSTOM_MISMATCH;
 	if (!CustomOffline_RuntimeLoaded() || !CustomOffline_RuntimeManifest(&manifest))
 		return 2;
 	for (i = 0; i < manifest.count && i < CTR_PACKAGE_FILE_MAX; i++)
@@ -886,7 +896,7 @@ static int AP_AuthorCustomOnFrame(struct GameTracker *gGT)
 		s_markerLevel = -1;
 	}
 
-	if (mode == 2)
+	if (mode == 2 || mode == AP_AUTHOR_CUSTOM_MISMATCH)
 	{
 		if (s_markerLevel == AP_AUTHOR_CUSTOM_MARKER_LEVEL)
 		{
@@ -896,7 +906,9 @@ static int AP_AuthorCustomOnFrame(struct GameTracker *gGT)
 		if (!s_cpauseLogged)
 		{
 			s_cpauseLogged = 1;
-			AP_LogLine("[AP AUTHOR] custom track did not finish loading: author mode is paused on it\n");
+			AP_LogLine(mode == 2 ? "[AP AUTHOR] custom track did not finish loading: author mode is paused on it\n"
+			                     : "[AP AUTHOR] the loaded track and its identity disagree: author mode is paused "
+			                       "until a level loads\n");
 		}
 		return 1;
 	}
@@ -947,6 +959,12 @@ static int AP_AuthorCustomDrawHud(void)
 	if (mode == 2)
 	{
 		DecalFont_DrawLine("BOX AUTHOR  CUSTOM TRACK NOT LOADED", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y,
+		                   FONT_SMALL, WHITE);
+		return 1;
+	}
+	if (mode == AP_AUTHOR_CUSTOM_MISMATCH)
+	{
+		DecalFont_DrawLine("BOX AUTHOR  TRACK UNCLEAR, LOAD IT AGAIN", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y,
 		                   FONT_SMALL, WHITE);
 		return 1;
 	}

@@ -35,7 +35,18 @@ int CustomOffline_RuntimeActive(void);
 int CustomOffline_RuntimeLaps(void); /* Authored standalone laps, zero when inactive. */
 /* Monotonic run identity; survives teardown, increments only on BeginRuntime. */
 uint64_t CustomOffline_RuntimeGeneration(void);
+/* A load request keeps the runtime: the host slot's geometry stays resident,
+   and the frames still run on it, until the checkered flag covers the screen.
+   A request for the host slot (retry) clears the attempt's observations. */
 void CustomOffline_OnLoadRequested(int levelID);
+/* The level actually starts loading (MainRaceTrack_StartLoad, right before
+   LOAD_LevelFile replaces the resident level): leaving the host slot ends the
+   custom race here, so its identity lasts exactly as long as its geometry. */
+void CustomOffline_OnLoadStarting(int levelID);
+/* The loaded package's identity for a savestate (native_custom_state_identity.h):
+   "none" without an active runtime. */
+struct CustomStateIdentity;
+void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out);
 int CustomOffline_RuntimeServing(int levelID, int singleRace);
 /* Main-thread engine observations for the current attempt, not certification.
    Load completion requires both retained geometry files to have been served.

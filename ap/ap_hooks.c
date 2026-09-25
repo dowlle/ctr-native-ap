@@ -6996,6 +6996,40 @@ static const char *AP_ReqTypeNameColour(int t, int colour)
 	return AP_ReqTypeName(t);
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+// The identity-facing level id of the level being played, and of the one before
+// it, for diagnostics. gGT->prevLEV is the raw engine id, so after a custom race
+// it names the host slot (the files it borrowed) rather than the custom track.
+// Sampled every frame, so the last sample before a level change is the level
+// just left, custom or not.
+static int s_apIdentityRaw = -1;
+static int s_apIdentityLevel = -1;
+static int s_apPrevIdentityRaw = -1;
+static int s_apPrevIdentityLevel = -1;
+
+static void AP_TrackIdentityLevel(struct GameTracker *gGT)
+{
+	int raw = (int)gGT->levelID;
+
+	if (raw != s_apIdentityRaw)
+	{
+		s_apPrevIdentityRaw = s_apIdentityRaw;
+		s_apPrevIdentityLevel = s_apIdentityLevel;
+		s_apIdentityRaw = raw;
+	}
+	s_apIdentityLevel = MainRaceTrack_IdentityLevelID();
+}
+
+// gGT->prevLEV as an identity, when the level change it records is the one
+// sampled above; the raw value otherwise.
+static int AP_PrevIdentityLevel(struct GameTracker *gGT)
+{
+	if (s_apPrevIdentityRaw >= 0 && s_apPrevIdentityRaw == (int)gGT->prevLEV)
+		return s_apPrevIdentityLevel;
+	return (int)gGT->prevLEV;
+}
+#endif
+
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
@@ -7031,7 +7065,11 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// network-send defect in the Roo's Tubes Held 3rd/5th report. Keep it generic
 	// so the same diagnostic covers every randomized cup leg and trophy track.
 	{
+#ifdef CTR_CUSTOM_PACKAGES
+		int track = MainRaceTrack_IdentityLevelID();
+#else
 		int track = (int)gGT->levelID;
+#endif
 		long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {-1, -1, -1, -1, -1};
 		if (track >= 0 && track < CTR_CFG_PODIUM_STORAGE_COUNT)
 		{
@@ -7112,7 +7150,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"driver_present\": %d, \"driver_actions\": %u, "
 		        "\"diag\": %s},\n",
 #ifdef CTR_CUSTOM_PACKAGES
-		        MainRaceTrack_IdentityLevelID(), (int)gGT->prevLEV,
+		        MainRaceTrack_IdentityLevelID(), AP_PrevIdentityLevel(gGT),
 #else
 		        (int)gGT->levelID, (int)gGT->prevLEV,
 #endif
@@ -7276,6 +7314,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// allowed to read (walking game structures in a dying process is not).
 #ifdef CTR_CUSTOM_PACKAGES
 	AP_CrashNoteFrame(MainRaceTrack_IdentityLevelID(), ap_net_is_connected());
+	AP_TrackIdentityLevel(gGT);
 #else
 	AP_CrashNoteFrame((int)gGT->levelID, ap_net_is_connected());
 #endif
