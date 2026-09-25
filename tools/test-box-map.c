@@ -934,6 +934,35 @@ static void test_swept_weapon_contact(void)
 	           "stationary weapon falls back to point radius");
 }
 
+// Author mode's capture (ap_author.c, retail and custom drops): the kart's
+// Driver.posCurr is 24.8 fixed point, a placement is world units. Before this
+// shift a drop stored the fixed-point value and every point more than 127
+// units from the origin clamped to +-32767/32768 (custom track drops on
+// Arabian Heights Night, 2026-09-25).
+static void test_kart_axis(void)
+{
+	int clamped = 0, v, bad = 0;
+
+	expect_int(AP_Placement_FromKartAxis(-7792 * 256, &clamped), -7792, "Mystery Caves box 13 x from posCurr");
+	expect_int(AP_Placement_FromKartAxis(390 * 256 + 255, &clamped), 390, "fraction dropped");
+	expect_int(AP_Placement_FromKartAxis(-1, &clamped), -1, "sra rounds toward minus infinity");
+	expect_int(AP_Placement_FromKartAxis(-256, &clamped), -1, "-1.0 stays -1");
+	expect_int(AP_Placement_FromKartAxis(-257, &clamped), -2, "-1.004 floors to -2");
+	expect_int(clamped, 0, "in-range points never clamp");
+	for (v = -32768; v <= 32767; v++)
+	{
+		int c = 0;
+		if (AP_Placement_FromKartAxis(v * 256 + 128, &c) != v || c)
+			bad++;
+	}
+	expect_int(bad, 0, "every s16 world point round-trips from posCurr");
+	expect_int(AP_Placement_FromKartAxis(32768 * 256, &clamped), 32767, "above s16 clamps high");
+	expect_int(clamped, 1, "clamp is reported");
+	clamped = 0;
+	expect_int(AP_Placement_FromKartAxis(-32769 * 256, &clamped), -32768, "below s16 clamps low");
+	expect_int(clamped, 1, "low clamp is reported");
+}
+
 int main(void)
 {
 	printf("AP item box map + spawn-set bookkeeping (#109)\n");
@@ -956,6 +985,7 @@ int main(void)
 	test_combined_232_265_sequence();
 	test_within_radius();
 	test_swept_weapon_contact();
+	test_kart_axis();
 
 	printf("\n%s (%d failure%s)\n",
 	       g_failures == 0 ? "PASS" : "FAIL", g_failures, g_failures == 1 ? "" : "s");

@@ -61,6 +61,13 @@ void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out);
 /* singleRace is the engine's current race mode (CTR_OFFLINE_MODE_*, 0 for any
    other): the host slot serves the package only in the mode it started for. */
 int CustomOffline_RuntimeServing(int levelID, int singleRace);
+/* Why the host slot would NOT serve the package for a load of levelID in the
+   engine's race mode singleRace: returns 1 and writes a one-line reason when a
+   runtime is active for that slot but the mode differs from the one it started
+   for, or the package lacks a LEV or VRM. Returns 0 otherwise (no runtime,
+   another level, or it serves). A refused load must not race the host slot's
+   retail geometry under the custom identity. */
+int CustomOffline_RuntimeRefusal(int levelID, int singleRace, char *reason, size_t reasonSize);
 /* Main-thread engine observations for the current attempt, not certification.
    Load completion requires both retained geometry files to have been served.
    Restart clears observations. Box authoring keys placements on a loaded

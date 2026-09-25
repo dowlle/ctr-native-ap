@@ -143,8 +143,9 @@ written next to the executable, alongside `ctr-ap.log` and `ap-state.json`.
 `pos` is three signed 16-bit world coordinates -- exactly what a track's LEV
 holds for a pickup, at offset 0x30 of a `struct InstDef`, and exactly what
 `INSTANCE_LevInitAll` copies into an instance matrix. The kart's live position is
-wider than that (`Driver.posCurr` is three s32), so the value is narrowed at the
-moment of capture and the marker is spawned at the narrowed value. What is on
+in a different unit (`Driver.posCurr` is three s32 in 24.8 fixed point, world
+units times 256), so at the moment of capture it is shifted right by 8 to world
+units, narrowed to 16 bits, and the marker is spawned at that value. What is on
 screen is what is in the file; there is no second number that changes when it is
 saved.
 

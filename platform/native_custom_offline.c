@@ -256,6 +256,40 @@ int CustomOffline_RuntimeServing(int levelID, int singleRace)
     return activeRequest && singleRace != 0 && singleRace == activeMode && levelID == activeHost;
 }
 
+static const char *offline_mode_name(int mode)
+{
+    return mode == CTR_OFFLINE_MODE_ARCADE ? "Arcade" : mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial" : "another mode";
+}
+
+int CustomOffline_RuntimeRefusal(int levelID, int singleRace, char *reason, size_t reasonSize)
+{
+    struct CustomPackageManifest manifest;
+    int lev = 0, vrm = 0;
+    unsigned int i;
+    if (reason && reasonSize) reason[0] = 0;
+    if (!activeRequest || levelID != activeHost) return 0;
+    if (singleRace != activeMode)
+    {
+        if (reason && reasonSize)
+            snprintf(reason, reasonSize, "the track was started for %s but the race is %s",
+                     offline_mode_name(activeMode), offline_mode_name(singleRace));
+        return 1;
+    }
+    if (!CustomOffline_GetManifest(activeRequest, &manifest))
+    {
+        offline_error(reason, reasonSize, "the package manifest is unreadable");
+        return 1;
+    }
+    for (i = 0; i < manifest.count && i < CTR_PACKAGE_FILE_MAX; i++)
+    {
+        if (!strcmp(manifest.files[i].role, "lev") && manifest.files[i].bytes) lev = 1;
+        else if (!strcmp(manifest.files[i].role, "vrm") && manifest.files[i].bytes) vrm = 1;
+    }
+    if (lev && vrm) return 0;
+    offline_error(reason, reasonSize, !lev ? "the package has no LEV file" : "the package has no VRM file");
+    return 1;
+}
+
 int CustomOffline_RuntimeMode(void)
 {
     return activeRequest ? activeMode : 0;

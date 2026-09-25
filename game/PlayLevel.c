@@ -160,8 +160,7 @@ void PlayLevel_UpdateLapStats(void)
 			{
 				currDriver->actionsFlagSet |= ACTION_RACE_FINISHED;
 #ifdef CTR_CUSTOM_PACKAGES
-				CustomOffline_OnRaceFinished(gGT->levelID, MainRaceTrack_OfflineCustomLoad(),
-				                             iVar10 == 0 && !(currDriver->actionsFlagSet & ACTION_BOT));
+				MainRaceTrack_OfflineRaceFinished(iVar10 == 0 && !(currDriver->actionsFlagSet & ACTION_BOT));
 #endif
 
 				// === Run on first frame that race ends ===

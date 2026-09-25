@@ -105,5 +105,32 @@ static inline int AP_PlacementTable_Get(const AP_PlacementTable *t, int index,
 	return 1;
 }
 
+// ── from the kart to a row ─────────────────────────────────────────────────
+//
+// Driver.posCurr is 24.8 fixed point: world units times 256, the value every
+// engine user shifts right by 8 before comparing it with an instance matrix or
+// an InstDef position (VehPickupItem.c, BOTS.c: CTR_MipsSra(posCurr, 8)). A
+// placement stores world units, so one axis is shifted down first (arithmetic
+// shift, rounding toward minus infinity like the MIPS sra) and only then
+// narrowed to 16 bits. Real track geometry fits after the shift; a clamp means
+// the capture happened somewhere a placement cannot describe, and *clamped is
+// set so the caller can say so.
+static inline short AP_Placement_FromKartAxis(int posCurrAxis, int *clamped)
+{
+	int v = (int)(((unsigned int)posCurrAxis >> 8) | (posCurrAxis < 0 ? ~(0xffffffffu >> 8) : 0u));
+
+	if (v > 32767)
+	{
+		*clamped = 1;
+		return 32767;
+	}
+	if (v < -32768)
+	{
+		*clamped = 1;
+		return -32768;
+	}
+	return (short)v;
+}
+
 #endif // CTR_AP
 #endif // AP_PLACEMENT_TABLE_H

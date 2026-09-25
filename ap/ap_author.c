@@ -43,10 +43,11 @@ int Platform_InputRawKeyDown(int scancode);
 // into the instance matrix (INSTANCE.c:315). rotY is an engine angle in the same
 // space as InstDef.rot (0x1000 = one full turn).
 //
-// The kart's live position is WIDER than this: Driver.posCurr is a Vec3 of
-// three s32 (namespace_Vehicle.h:1042, ctr_math.h:73-81). Narrowing happens at
-// the moment of capture and the marker is spawned at the narrowed value, so
-// what is on screen is what is in the file (#182 open question 3).
+// The kart's live position is in a different unit: Driver.posCurr is a Vec3 of
+// three s32 in 24.8 fixed point (namespace_Vehicle.h:1042), world units times
+// 256. AP_Placement_FromKartAxis shifts it down to world units and narrows it
+// at the moment of capture, and the marker is spawned at that value, so what
+// is on screen is what is in the file (#182 open question 3).
 // The row SHAPE itself lives in ap_placement_table.h, shared with the read-only
 // view over whichever table is live. s16 and short are the same 16-bit type on
 // both targets, so every field access below is unaffected by reading it there.
@@ -478,25 +479,6 @@ static void AP_AuthorSeedFileFromEmbedded(void)
 
 // ── the actions ─────────────────────────────────────────────────────────────
 
-// Narrow one live world coordinate to the 16 bits a placement stores. Real
-// track geometry fits (every LEV InstDef position is already s16), so a clamp
-// here means the capture happened somewhere a placement cannot describe, which
-// is worth saying out loud rather than silently wrapping.
-static s16 AP_AuthorNarrow(int v, int *clamped)
-{
-	if (v > 32767)
-	{
-		*clamped = 1;
-		return 32767;
-	}
-	if (v < -32768)
-	{
-		*clamped = 1;
-		return -32768;
-	}
-	return (s16)v;
-}
-
 static void AP_AuthorDrop(struct GameTracker *gGT)
 {
 	struct Driver *d = gGT->drivers[0];
@@ -526,9 +508,9 @@ static void AP_AuthorDrop(struct GameTracker *gGT)
 	}
 
 	s_place[s_placeCount].level = (s16)level;
-	s_place[s_placeCount].x = AP_AuthorNarrow(d->posCurr.x, &clamped);
-	s_place[s_placeCount].y = AP_AuthorNarrow(d->posCurr.y, &clamped);
-	s_place[s_placeCount].z = AP_AuthorNarrow(d->posCurr.z, &clamped);
+	s_place[s_placeCount].x = AP_Placement_FromKartAxis(d->posCurr.x, &clamped);
+	s_place[s_placeCount].y = AP_Placement_FromKartAxis(d->posCurr.y, &clamped);
+	s_place[s_placeCount].z = AP_Placement_FromKartAxis(d->posCurr.z, &clamped);
 	s_place[s_placeCount].rotY = d->rotCurr.y;
 	s_marker[s_placeCount] = AP_SPAWN_INVALID;
 	s_lastDropIndex = s_placeCount;
@@ -806,9 +788,9 @@ static void AP_AuthorCustomDrop(struct GameTracker *gGT, const AP_CustomBoxKey *
 	s_cplace[s_cplaceCount].key = *key;
 	AP_CustomBox_CopyText(s_cplace[s_cplaceCount].title, sizeof s_cplace[s_cplaceCount].title, title);
 	AP_CustomBox_CopyText(s_cplace[s_cplaceCount].version, sizeof s_cplace[s_cplaceCount].version, version);
-	s_cplace[s_cplaceCount].x = AP_AuthorNarrow(d->posCurr.x, &clamped);
-	s_cplace[s_cplaceCount].y = AP_AuthorNarrow(d->posCurr.y, &clamped);
-	s_cplace[s_cplaceCount].z = AP_AuthorNarrow(d->posCurr.z, &clamped);
+	s_cplace[s_cplaceCount].x = AP_Placement_FromKartAxis(d->posCurr.x, &clamped);
+	s_cplace[s_cplaceCount].y = AP_Placement_FromKartAxis(d->posCurr.y, &clamped);
+	s_cplace[s_cplaceCount].z = AP_Placement_FromKartAxis(d->posCurr.z, &clamped);
 	s_cplace[s_cplaceCount].rotY = d->rotCurr.y;
 	s_cmarker[s_cplaceCount] = AP_SPAWN_INVALID;
 	s_clastDropIndex = s_cplaceCount;
