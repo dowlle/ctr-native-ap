@@ -97,6 +97,21 @@ int CustomContentVerify_ReadPair(const char *levPath, const char *vrmPath,
 	                              char *error, size_t errorBytes);
 void CustomContentVerify_FreePair(struct CustomContentOwnedPair *pair);
 
+/* Why this pair cannot run an eight-kart Arcade Single Race, as short plain
+   text for the menus (at most two 13-character lines: "No AI paths",
+   "Grid: 3 of 8", "No lap checkpoints", "Files failed checks"), or "" when the file
+   analysis allows it: Arcade structures detected and eight start positions.
+   Returns 1 when allowed. Same rule the offline race checks before loading. */
+#define CTR_CCV_ARCADE_REASON_MAX 48
+int CustomContentVerify_ArcadeRaceReason(const struct CustomContentVerification *report,
+	                                      char *reason, size_t reasonBytes);
+/* The same for a one-kart Time Trial: a loadable LEV with a lap checkpoint
+   graph. A start position is not required to be non-zero: Saphi Time Trial
+   tracks start the kart at the world origin facing angle 0, which is eight
+   all-zero start slots (measured as no start positions). */
+int CustomContentVerify_TimeTrialReason(const struct CustomContentVerification *report,
+	                                     char *reason, size_t reasonBytes);
+
 const char *CustomContentVerify_ModeSlug(int mode);
 const char *CustomContentVerify_EvidenceText(int evidence);
 

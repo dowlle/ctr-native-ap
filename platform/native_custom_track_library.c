@@ -136,7 +136,12 @@ static int library_valid(const struct CustomTrackLibraryEntry *entry)
         !memchr(entry->disabledReason, 0, sizeof entry->disabledReason) ||
         !memchr(entry->local.uuid, 0, sizeof entry->local.uuid) ||
         !memchr(entry->local.author, 0, sizeof entry->local.author) ||
-        (entry->local.arcade != 0 && entry->local.arcade != 1)) return 0;
+        (entry->local.arcade != 0 && entry->local.arcade != 1) ||
+        (entry->local.timeTrial != 0 && entry->local.timeTrial != 1) ||
+        !memchr(entry->local.arcadeReason, 0, sizeof entry->local.arcadeReason) ||
+        !memchr(entry->local.timeTrialReason, 0, sizeof entry->local.timeTrialReason) ||
+        !memchr(entry->local.levSha256, 0, sizeof entry->local.levSha256) ||
+        !memchr(entry->local.vrmSha256, 0, sizeof entry->local.vrmSha256)) return 0;
     for (i = 0; i < 64; i++)
         if (!((entry->manifestSha256[i] >= '0' && entry->manifestSha256[i] <= '9') ||
               (entry->manifestSha256[i] >= 'a' && entry->manifestSha256[i] <= 'f'))) return 0;

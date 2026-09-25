@@ -111,6 +111,10 @@ struct CustomPackageLocalInfo
     int trackID, levID, vrmID;
     int scaID; /* Saphi media id of the pinned .sca, zero when the package has none. */
     int arcade; /* Owned structural prerequisites and supported lap storage. */
+    int timeTrial; /* Lap checkpoint graph and supported lap storage (one kart). */
+    unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */
+    char arcadeReason[48], timeTrialReason[48]; /* Short menu text; "" when allowed. */
+    char levSha256[65], vrmSha256[65]; /* With uuid and laps: the Time Trial records key. */
 };
 struct CustomPackageStoreEntry
 {

@@ -530,6 +530,13 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 	// Save Ghost
 	case 9:
 	{
+#ifdef CTR_CUSTOM_PACKAGES
+		// Never offered on a custom track (224.c); never opens the memory card there.
+		if (MainRaceTrack_OfflineCustomLoad())
+		{
+			break;
+		}
+#endif
 		sdata->framesSinceRaceEnded = 0x3f9;
 
 		// Set Load/Save to Ghost mode

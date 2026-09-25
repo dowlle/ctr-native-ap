@@ -212,14 +212,20 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
         MM_CustomText_Draw(source ? source->title : installed->title,305,70,176,2,ORANGE,ot);
         snprintf(line,sizeof line,"v%.32s",source ? source->version : installed->version);
         MM_CustomText_Draw(line,305,98,176,1,WHITE,ot);
+        /* Installed: which custom pages list the track as raceable. */
         MM_CustomText_Draw(source ? ((source->modeTags&1) ? "Arcade tagged" : (source->modeTags&2) ? "Time Trial" : "Other modes") :
-            installed->local.arcade ? "Arcade" : "No Arcade",305,112,176,1,WHITE,ot);
+            installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
         MM_CustomText_Draw(s_saphiDownloading ? "Downloading..." : source ?
             sourceInstalled ? "* Recheck" : source->disabledReason[0] ? "Unavailable" : hasOlder ? "* Update" : "* Download" : "* Recheck",305,130,176,1,ORANGE,ot);
+        /* An installed track that is not on the Arcade pages says why, in up
+           to two lines (native_custom_content_verify.h). */
+        const char *why = installed && !installed->local.arcade ?
+            (installed->local.timeTrial ? installed->local.arcadeReason : installed->local.timeTrialReason) : "";
         const char *status = source && source->disabledReason[0] ? source->disabledReason :
             sourceInstalled ? "Installed" : hasOlder && !s_saphiVersionTrack ? "Update available" : s_saphiMessage[0] ? s_saphiMessage : source ?
-            (source->modeTags & 1) ? "Arcade tagged" : (source->modeTags & 2) ? "Time Trial tagged" : "Other modes" : "Files verified";
-        MM_CustomText_Draw(status,305,144,176,1,WHITE,ot);
+            (source->modeTags & 1) ? "Arcade tagged" : (source->modeTags & 2) ? "Time Trial tagged" : "Other modes" :
+            why[0] ? why : "Files verified";
+        MM_CustomText_Draw(status,305,144,176,source ? 1 : 2,WHITE,ot);
         if(source) MM_CustomText_Draw(s_saphiVersionTrack ? "Back: Tracks" : "[ Versions",305,159,176,1,ORANGE,ot);
     }
     snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");

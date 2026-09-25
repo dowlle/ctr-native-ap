@@ -14,7 +14,12 @@ void GhostTape_Start(void)
 
 	gh = sdata->GhostRecording.ptrGhost;
 	gh->version = -4;
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom track's ghost carries the custom identity, not the host slot's.
+	gh->levelID = MainRaceTrack_IdentityLevelID();
+#else
 	gh->levelID = gGT->levelID;
+#endif
 	gh->characterID = data.characterIDs[d->driverID];
 
 	sdata->GhostRecording.VelX = 0;

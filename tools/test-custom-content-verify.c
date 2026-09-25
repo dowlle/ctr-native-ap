@@ -93,6 +93,74 @@ static size_t build_lev(unsigned char *b, int full)
 	return full ? IMAGE_BYTES : (4 + BODY_PTRMAP + 4);
 }
 
+/* The Arcade and Time Trial verdicts and their menu reasons. The measured
+   counts are the five Saphi tracks of 2026-09-25 (Arabian Heights Night
+   1.1.0, Choco Island 2 1.0.0, Bowser Castle 1 1.0.0, Country Speedway 1.2.1,
+   Coco Park 2025 1.0.0) as the verifier reads their LEVs. */
+static struct CustomContentVerification measured_report(unsigned long checkpoints, unsigned long spawns,
+                                                        unsigned long navPaths)
+{
+	struct CustomContentVerification r;
+	memset(&r, 0, sizeof r);
+	r.loadable = 1;
+	r.measured.checkpoints = checkpoints;
+	r.measured.spawns = spawns;
+	r.measured.navPaths = navPaths;
+	derive(&r);
+	return r;
+}
+
+static void arcade_reason_checks(void)
+{
+	struct CustomContentVerification r;
+	char why[CTR_CCV_ARCADE_REASON_MAX];
+	unsigned long cp, sp, nav;
+
+	r = measured_report(90, 8, 3); /* Arabian Heights Night */
+	expect(CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !why[0], "Arabian Heights Night races Arcade");
+	r = measured_report(119, 8, 0); /* Choco Island 2, Bowser Castle 1: grid, no AI paths */
+	expect(!CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !strcmp(why, "No AI paths"),
+	       "eight starts without AI paths: no Arcade, says no AI paths");
+	expect(CustomContentVerify_TimeTrialReason(&r, why, sizeof why) && !why[0], "and runs Time Trial");
+	r = measured_report(130, 0, 0); /* Country Speedway, Coco Park 2025: start at the origin */
+	expect(!CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !strcmp(why, "No AI paths"),
+	       "origin start without AI paths: no Arcade, says no AI paths");
+	expect(CustomContentVerify_TimeTrialReason(&r, why, sizeof why) && !why[0],
+	       "an all-zero start grid (the origin) still runs Time Trial");
+	r = measured_report(40, 3, 2);
+	expect(!CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !strcmp(why, "Grid: 3 of 8"),
+	       "AI paths but three starts: the grid count");
+	r = measured_report(0, 8, 3);
+	expect(!CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !strcmp(why, "No lap checkpoints"),
+	       "no checkpoints: no Arcade");
+	expect(!CustomContentVerify_TimeTrialReason(&r, why, sizeof why) && !strcmp(why, "No lap checkpoints"),
+	       "no checkpoints: no Time Trial");
+	r.loadable = 0;
+	expect(!CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why) && !strcmp(why, "Files failed checks"),
+	       "unloadable pair: files failed");
+	expect(!CustomContentVerify_TimeTrialReason(&r, why, sizeof why) && !strcmp(why, "Files failed checks"),
+	       "unloadable pair: files failed (Time Trial)");
+	expect(!CustomContentVerify_ArcadeRaceReason(NULL, why, sizeof why), "no report refuses");
+
+	/* The verdict is exactly the old offline rule: Arcade detected and eight
+	   starts; Time Trial detected. Every text fits two 13-character lines. */
+	for (cp = 0; cp <= 2; cp++)
+		for (sp = 0; sp <= 8; sp++)
+			for (nav = 0; nav <= 3; nav++)
+			{
+				int arcade, trial;
+				r = measured_report(cp, sp, nav);
+				arcade = CustomContentVerify_ArcadeRaceReason(&r, why, sizeof why);
+				expect(arcade == (r.fileAnalysis[CTR_CCV_ARCADE].result == CTR_CCV_DETECTED && sp >= 8),
+				       "Arcade verdict equals the eight-start rule");
+				expect(arcade == !why[0] && strlen(why) <= 26, "Arcade reason present iff refused, short");
+				trial = CustomContentVerify_TimeTrialReason(&r, why, sizeof why);
+				expect(trial == (r.fileAnalysis[CTR_CCV_TIME_TRIAL].result == CTR_CCV_DETECTED),
+				       "Time Trial verdict equals the detected lap graph");
+				expect(trial == !why[0], "Time Trial reason present iff refused");
+			}
+}
+
 int main(void)
 {
 	char root[] = "/tmp/ctr-ccv-XXXXXX";
@@ -136,6 +204,12 @@ int main(void)
 	expect(v.measured.crystals == 1, "crystal count");
 	for (int i = 0; i < CTR_CCV_MODE_COUNT; i++)
 		expect(v.fileAnalysis[i].result == CTR_CCV_DETECTED, "full fixture mode detected");
+	{
+		char why[CTR_CCV_ARCADE_REASON_MAX];
+		expect(CustomContentVerify_ArcadeRaceReason(&v, why, sizeof why) && !why[0], "full fixture races Arcade");
+		expect(CustomContentVerify_TimeTrialReason(&v, why, sizeof why) && !why[0], "full fixture runs Time Trial");
+	}
+	arcade_reason_checks();
 
 	build_lev(image, 1); put32(image, 4 + INST_N, 0); put32(image, 4 + INST_P, 0); put32(image, 4 + CHECK_N, 255);
 	for (int i = 0; i < 255; i++)

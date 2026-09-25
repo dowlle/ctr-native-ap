@@ -454,6 +454,12 @@ int MainRaceTrack_OfflineCustomLoad(void);
 // CTR_CUSTOM_LEVEL_ID instead of the host slot, and the package title.
 int MainRaceTrack_IdentityLevelID(void);
 const char *MainRaceTrack_OfflineCustomTitle(void);
+// Custom-track Time Trial records (custom-records/, native_custom_records.h).
+int MainRaceTrack_OfflineCustomTimeTrial(void);
+struct HighScoreEntry *MainRaceTrack_CustomHighScores(void);
+void MainRaceTrack_CustomSaveHighScores(void);
+int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst);
+void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh);
 // Custom-race music from the package's .sca (game/HOWL/HOWL_CustomMusic.c).
 void HOWL_CustomMusic_Reset(void);
 int HOWL_CustomMusic_LoadBank(struct Bank *thisBank);

@@ -10,8 +10,17 @@ extern "C" {
    AP slot data, a retail level identity, a Ready verdict or an active load.
    Admission and engine handoff must precede gameplay, separately. */
 struct CustomOfflineRequest;
-/* UI eligibility from owned bytes; not gameplay certification. */
+/* UI eligibility from owned bytes; not gameplay certification. The Reason
+   forms also write why a mode is refused, as short menu text ("" when allowed,
+   CTR_CCV_ARCADE_REASON_MAX bytes are enough). */
 int CustomOffline_PackageArcade(const struct CustomPackageOwned *package);
+int CustomOffline_PackageArcadeReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize);
+int CustomOffline_PackageTimeTrialReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize);
+/* Which race a custom runtime serves: an Arcade single race (eight karts) or
+   a one-kart Time Trial. The engine's race-mode test must name the same mode
+   for the host slot to serve the package. */
+#define CTR_OFFLINE_MODE_ARCADE 1
+#define CTR_OFFLINE_MODE_TIME_TRIAL 2
 /* GameTracker.lapTime has seven entries; PlayLevel indexes it per lap. */
 #define CTR_OFFLINE_MAX_LAPS 7
 /* The lap count an offline race uses: the pinned race_settings value, or
@@ -29,7 +38,9 @@ int CustomOffline_PollPrepare(struct CustomOfflineRequest **out, char *error, si
 /* Engine handoff after admission: transfers the request, never AP seed state.
    Refuses an existing active request or any AP seed. This structural guard is
    not Ready certification; the caller must enforce admission before calling. */
-int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLevelID, int apSeedPresent);
+int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLevelID, int apSeedPresent,
+                               int mode);
+int CustomOffline_RuntimeMode(void); /* CTR_OFFLINE_MODE_*, zero when inactive. */
 void CustomOffline_EndRuntime(void);
 int CustomOffline_RuntimeActive(void);
 int CustomOffline_RuntimeLaps(void); /* Authored standalone laps, zero when inactive. */
@@ -47,6 +58,8 @@ void CustomOffline_OnLoadStarting(int levelID);
    "none" without an active runtime. */
 struct CustomStateIdentity;
 void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out);
+/* singleRace is the engine's current race mode (CTR_OFFLINE_MODE_*, 0 for any
+   other): the host slot serves the package only in the mode it started for. */
 int CustomOffline_RuntimeServing(int levelID, int singleRace);
 /* Main-thread engine observations for the current attempt, not certification.
    Load completion requires both retained geometry files to have been served.
@@ -87,8 +100,9 @@ int CustomOffline_GetManifest(const struct CustomOfflineRequest *request,
                               struct CustomPackageManifest *out);
 int CustomOffline_RetainPackage(const struct CustomOfflineRequest *request, struct CustomPackageOwned **out);
 /* Structural prerequisite only: an eight-kart Single Race requires detected
-   Arcade structures and eight measured spawns. Success is NOT certification. */
-int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request,
+   Arcade structures and eight measured spawns; a Time Trial a lap checkpoint
+   graph. Success is NOT certification. */
+int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request, int mode,
                                  char *error, size_t errorSize);
 /* Copy from the retained snapshot, never reopen paths or consult an AP seed. */
 int CustomOffline_CopyFile(const struct CustomOfflineRequest *request, const char *role,

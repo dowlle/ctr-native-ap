@@ -1,20 +1,27 @@
-/* Arcade custom pages at the normal track selector, box authoring build only.
-   Included by MM_TrackSelect.c inside CTR_CUSTOM_PACKAGES. Custom pages use
-   owned library metadata, never indices into retail track/ghost tables.
+/* Custom pages at the normal track selector in Arcade and Time Trial, box
+   authoring build only. Included by MM_TrackSelect.c inside
+   CTR_CUSTOM_PACKAGES. Custom pages use owned library metadata, never indices
+   into retail track/ghost tables.
 
    One custom track at a time: Cross prepares the chosen installed package,
    the second Cross hands it to the offline loader (native_custom_offline.h)
-   and starts a one-player Arcade single race under the track's own identity,
-   CTR_CUSTOM_LEVEL_ID (native_custom_identity.h). The engine reads the
-   package's LEV and VRM through one arcade BIGFILE subfile group; which group
-   that is, is a loading detail below and never the track's identity.
-   Leaving the race ends the custom runtime; Retry keeps it. */
+   and starts a one-player Arcade single race or a Time Trial under the track's
+   own identity, CTR_CUSTOM_LEVEL_ID (native_custom_identity.h). The engine
+   reads the package's LEV and VRM through one arcade BIGFILE subfile group;
+   which group that is, is a loading detail below and never the track's
+   identity. Leaving the race ends the custom runtime; Retry keeps it.
+
+   Every installed track is listed. One that cannot run in this mode is drawn
+   dimmed and says why (native_custom_content_verify.h). A Time Trial reads
+   and writes its best times and ghost in custom-records/
+   (native_custom_records.h), never the memory card. */
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_offline.h>
 #include <platform/native_assets.h>
 #include <platform/native_custom_revision.h>
 
 #include <platform/native_custom_identity.h>
+#include <platform/native_custom_records.h>
 
 /* The BIGFILE subfile group the package's bytes are served through (arcade
    group 6). A loading mechanism only: difficulty, music, sound, banner, high
@@ -31,12 +38,80 @@ static int s_arcadeConfirm;
 static int s_arcadeMotion, s_arcadeMotionDirection;
 static struct CustomOfflineRequest *s_arcadeRequest;
 static char s_arcadeMessage[512];
+static int s_customTimeTrialPending;
+/* Best race time of the highlighted track (Time Trial), cached per row. */
+static char s_recordsPin[65];
+static char s_recordsLine[32];
+
+/* CTR_OFFLINE_MODE_ARCADE or _TIME_TRIAL, 0 where custom pages do not show. */
+static int MM_CustomTrackSelect_Mode(void)
+{
+    u32 mode1 = sdata->gGT->gameMode1;
+    if ((mode1 & (BATTLE_MODE | ADVENTURE_MODE | ADVENTURE_CUP)) || (sdata->gGT->gameMode2 & CUP_ANY_KIND)) return 0;
+    if ((mode1 & (ARCADE_MODE | TIME_TRIAL)) == ARCADE_MODE) return CTR_OFFLINE_MODE_ARCADE;
+    if ((mode1 & (ARCADE_MODE | TIME_TRIAL)) == TIME_TRIAL) return CTR_OFFLINE_MODE_TIME_TRIAL;
+    return 0;
+}
 
 static int MM_CustomTrackSelect_Enabled(void)
 {
-    return (sdata->gGT->gameMode1 & ARCADE_MODE) &&
-        !(sdata->gGT->gameMode1 & (BATTLE_MODE | TIME_TRIAL | ADVENTURE_MODE | ADVENTURE_CUP)) &&
-        !(sdata->gGT->gameMode2 & CUP_ANY_KIND);
+    return MM_CustomTrackSelect_Mode() != 0;
+}
+
+/* Whether an installed track can run in this page's mode, and if not, a
+   sentence for the detail panel (three 13-character lines at most). */
+static int MM_CustomTrackSelect_Eligible(const struct CustomTrackLibraryEntry *entry, char *why, size_t whySize)
+{
+    int timeTrial = MM_CustomTrackSelect_Mode() == CTR_OFFLINE_MODE_TIME_TRIAL;
+    if (why && whySize) why[0] = 0;
+    if (!entry || !entry->installed) return 0;
+    if (timeTrial ? entry->local.timeTrial : entry->local.arcade) return 1;
+    if (why && whySize)
+    {
+        if (!timeTrial && entry->local.timeTrial)
+            snprintf(why, whySize, "%s. Use Time Trial.", entry->local.arcadeReason);
+        else
+            snprintf(why, whySize, "%s", timeTrial ? entry->local.timeTrialReason : entry->local.arcadeReason);
+    }
+    return 0;
+}
+
+/* "Best 1:23.45" for the highlighted track in Time Trial, read from
+   custom-records/ once per highlighted revision. */
+static const char *MM_CustomTrackSelect_BestTime(const struct CustomTrackLibraryEntry *entry)
+{
+    struct CustomRecordKey key;
+    struct CustomRecordTimes times;
+    if (!entry || MM_CustomTrackSelect_Mode() != CTR_OFFLINE_MODE_TIME_TRIAL) return "";
+    if (strcmp(s_recordsPin, entry->manifestSha256))
+    {
+        memcpy(s_recordsPin, entry->manifestSha256, sizeof s_recordsPin);
+        s_recordsLine[0] = 0;
+        if (CustomRecords_MakeKey(&key, entry->local.uuid, entry->local.levSha256, entry->local.vrmSha256,
+                                  entry->local.laps) &&
+            CustomRecords_LoadTimes(CTR_RECORDS_DIR, &key, &times) && times.entry[1].time < 0x8c640)
+            snprintf(s_recordsLine, sizeof s_recordsLine, "Best %s", RECTMENU_DrawTime(times.entry[1].time));
+    }
+    return s_recordsLine;
+}
+
+/* MM_TrackSelect.c, leaving the menu with a Time Trial chosen: a custom
+   track loads its saved ghost from custom-records/ into the retail playing
+   buffer and goes straight to the load, skipping the memory card's ghost
+   selection. Returns 0 for retail tracks. */
+static int MM_CustomTrackSelect_TimeTrialStart(void)
+{
+    if (!s_customTimeTrialPending) return 0;
+    s_customTimeTrialPending = 0;
+    if (CustomOffline_RuntimeMode() != CTR_OFFLINE_MODE_TIME_TRIAL) return 0;
+    sdata->ptrGhostTapePlaying = MEMPACK_AllocHighMem(0x3e00);
+    memset(sdata->ptrGhostTapePlaying, 0, 0x28);
+    sdata->boolReplayHumanGhost = MainRaceTrack_CustomLoadGhost(sdata->ptrGhostTapePlaying);
+    /* The ghost's character is P2 (the Time Trial pack loads its model). */
+    data.characterIDs[1] = sdata->ptrGhostTapePlaying->characterID;
+    sdata->ptrDesiredMenu = &data.menuQueueLoadTrack;
+    sdata->errorMessagePosIndex = 0;
+    return 1;
 }
 
 static void MM_CustomTrackSelect_Init(void)
@@ -47,6 +122,8 @@ static void MM_CustomTrackSelect_Init(void)
     s_arcadeMotion = 0;
     s_arcadeConfirm = 0;
     s_arcadeMessage[0] = 0;
+    s_recordsPin[0] = 0;
+    s_customTimeTrialPending = 0;
     CustomOffline_Free(&s_arcadeRequest);
     MM_CustomLibrary_Tick(1);
     s_arcadeScanWasBusy = 1;
@@ -73,7 +150,9 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     if (!s_arcadePrepareBusy) MM_CustomLibrary_Tick(0);
     if (s_arcadeScanWasBusy && !MM_CustomLibrary_Busy())
     {
-        /* Copy entries, not the manager's query/Current Seed filter. */
+        /* Copy entries, not the manager's query/Current Seed filter. Every
+           installed track shows, one row per track: the newest revision that
+           can run in this mode, else the newest revision. */
         struct CustomTrackLibraryEntry *eligible = calloc(s_contentLibrary.count ? s_contentLibrary.count : 1, sizeof *eligible);
         size_t count = 0;
         if (eligible)
@@ -81,12 +160,18 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             for (size_t i=0;i<s_contentLibrary.count;i++)
             {
                 const struct CustomTrackLibraryEntry *item=&s_contentLibrary.entries[i];
-                if (!item->installed || !item->local.arcade) continue;
+                if (!item->installed) continue;
                 size_t at=0;
                 for (;at<count;at++)
                     if (item->local.uuid[0] && !strcmp(item->local.uuid,eligible[at].local.uuid)) break;
                 if (at==count) eligible[count++]=*item;
-                else if (CustomRevision_Compare(item->version,eligible[at].version)>0) eligible[at]=*item;
+                else
+                {
+                    int itemOk = MM_CustomTrackSelect_Eligible(item, NULL, 0);
+                    int heldOk = MM_CustomTrackSelect_Eligible(&eligible[at], NULL, 0);
+                    if (itemOk != heldOk ? itemOk : CustomRevision_Compare(item->version,eligible[at].version)>0)
+                        eligible[at]=*item;
+                }
             }
             CustomTrackLibrary_Replace(&s_arcadeLibrary, eligible, count);
             free(eligible);
@@ -105,7 +190,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         {
             s_arcadePrepareBusy = 0;
             s_arcadeConfirm = result == 1;
-            if (result == 1 && !CustomOffline_CheckStructure(s_arcadeRequest, s_arcadeMessage, sizeof s_arcadeMessage))
+            if (result == 1 && !CustomOffline_CheckStructure(s_arcadeRequest, MM_CustomTrackSelect_Mode(),
+                                                             s_arcadeMessage, sizeof s_arcadeMessage))
             {
                 s_arcadeConfirm = 0;
                 CustomOffline_Free(&s_arcadeRequest);
@@ -150,8 +236,9 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         else if (tapped & (BTN_CROSS_one | BTN_CIRCLE))
         {
             const int host = MM_CUSTOM_ARCADE_HOST_LEVEL;
+            const int mode = MM_CustomTrackSelect_Mode();
             if (AP_CustomOfflineLaunchAllowed() && gGT->numPlyrNextGame == 1 &&
-                CustomOffline_BeginRuntime(&s_arcadeRequest, host, 0))
+                CustomOffline_BeginRuntime(&s_arcadeRequest, host, 0, mode))
             {
                 /* Preserve the players, difficulty and characters chosen in
                    Arcade. Only the selected content and authored laps change. */
@@ -159,8 +246,10 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                 gGT->numLaps = CustomOffline_RuntimeLaps();
                 D230.trackSel_StartRaceAfterFadeOut = 1;
                 D230.trackSel_transitionState = EXITING_MENU;
-                fprintf(stderr, "[CustomSelector] custom track %d (bytes via group %d) players=%d difficulty=%d laps=%d\n",
-                    CTR_CUSTOM_LEVEL_ID, host, gGT->numPlyrNextGame, gGT->arcadeDifficulty, gGT->numLaps);
+                s_customTimeTrialPending = mode == CTR_OFFLINE_MODE_TIME_TRIAL;
+                fprintf(stderr, "[CustomSelector] custom track %d (bytes via group %d) mode=%s players=%d difficulty=%d laps=%d\n",
+                    CTR_CUSTOM_LEVEL_ID, host, mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "time trial" : "arcade",
+                    gGT->numPlyrNextGame, gGT->arcadeDifficulty, gGT->numLaps);
                 OtherFX_Play(1, 1);
             }
             else
@@ -190,8 +279,11 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         entry = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
         if (entry && !MM_CustomLibrary_Busy() && (tapped & (BTN_CROSS_one | BTN_CIRCLE)))
         {
+            char why[80];
             if (!entry->installed)
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "Install this track in Options / Custom Content.");
+            else if (!MM_CustomTrackSelect_Eligible(entry, why, sizeof why))
+                snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "%s", why);
             else if (!AP_CustomOfflineLaunchAllowed())
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "Custom tracks need a client with no Archipelago seed.");
             else if (gGT->numPlyrNextGame != 1)
@@ -232,7 +324,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         };
         /* Keep the retail curve, but do not draw a row through the footer. */
         if (box.y + box.h > 176) continue;
-        MM_CustomText_DrawFont(item->title, box.x + 8, box.y + 5, 240, 1, FONT_BIG, ORANGE, ot);
+        MM_CustomText_DrawFont(item->title, box.x + 8, box.y + 5, 240, 1, FONT_BIG,
+                               MM_CustomTrackSelect_Eligible(item, NULL, 0) ? ORANGE : ORANGE_DARKENED, ot);
         if (i == row && !s_arcadeMotion)
         {
             RECT highlight = {box.x + 6, box.y + 4, box.w - 12, box.h - 8};
@@ -262,8 +355,14 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             MM_CustomTrackSelect_Text(line, 309 + dx, 124 + dy, 174, 1, WHITE, ot);
             MM_CustomTrackSelect_Text("Start race", 309 + dx, 143 + dy, 174, 1, ORANGE, ot);
         }
-        else MM_CustomTrackSelect_Text(s_arcadeMessage[0] ? s_arcadeMessage :
-            entry->installed ? "Installed" : "Not installed", 309 + dx, 129 + dy, 174, 3, WHITE, ot);
+        else
+        {
+            char why[80];
+            const char *best = MM_CustomTrackSelect_BestTime(entry);
+            int ok = MM_CustomTrackSelect_Eligible(entry, why, sizeof why);
+            MM_CustomTrackSelect_Text(s_arcadeMessage[0] ? s_arcadeMessage : !entry->installed ? "Not installed" :
+                !ok ? why : best[0] ? best : "Installed", 309 + dx, 129 + dy, 174, 3, WHITE, ot);
+        }
     }
     else MM_CustomTrackSelect_Text(MM_CustomLibrary_Busy() ? "Loading tracks..." :
         "No tracks. Manage content in Options.", 309 + dx, 88 + dy, 174, 5, WHITE, ot);

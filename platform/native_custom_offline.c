@@ -11,6 +11,7 @@
 struct CustomOfflineRequest { struct CustomPackageOwned *package; };
 static struct CustomOfflineRequest *activeRequest;
 static int activeHost = -1;
+static int activeMode;
 static int activeLaps;
 static uint64_t runtimeGeneration;
 static unsigned int servedRoles;
@@ -117,25 +118,51 @@ int CustomOffline_PackageLaps(const struct CustomPackageOwned *package, unsigned
     return 1;
 }
 
-int CustomOffline_PackageArcade(const struct CustomPackageOwned *package)
+/* A lap count the engine cannot store refuses both modes. */
+static int package_mode_reason(const struct CustomPackageOwned *package, int mode, char *reason, size_t reasonSize)
 {
     struct CustomContentVerification report;
-    unsigned int laps=0;
-    return CustomPackage_GetPairReport(package,&report) && report.loadable &&
-        report.fileAnalysis[CTR_CCV_ARCADE].result == CTR_CCV_DETECTED && report.measured.spawns >= 8 &&
-        CustomOffline_PackageLaps(package,&laps,NULL,0);
+    char text[CTR_CCV_ARCADE_REASON_MAX];
+    unsigned int laps = 0;
+    int ok;
+    if (!package || !CustomPackage_GetPairReport(package, &report))
+        ok = 0, snprintf(text, sizeof text, "Files failed checks");
+    else ok = mode == CTR_OFFLINE_MODE_ARCADE ? CustomContentVerify_ArcadeRaceReason(&report, text, sizeof text)
+                                            : CustomContentVerify_TimeTrialReason(&report, text, sizeof text);
+    if (ok && !CustomOffline_PackageLaps(package, &laps, NULL, 0))
+        ok = 0, snprintf(text, sizeof text, "Lap count not supported");
+    if (reason && reasonSize) snprintf(reason, reasonSize, "%s", text);
+    return ok;
 }
 
-int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request,
+int CustomOffline_PackageArcadeReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize)
+{
+    return package_mode_reason(package, CTR_OFFLINE_MODE_ARCADE, reason, reasonSize);
+}
+
+int CustomOffline_PackageTimeTrialReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize)
+{
+    return package_mode_reason(package, CTR_OFFLINE_MODE_TIME_TRIAL, reason, reasonSize);
+}
+
+int CustomOffline_PackageArcade(const struct CustomPackageOwned *package)
+{
+    return package_mode_reason(package, CTR_OFFLINE_MODE_ARCADE, NULL, 0);
+}
+
+/* Mode 0 (the prepare worker, before the menu knows the mode): the weaker Time
+   Trial prerequisite, so neither mode's page refuses a track the other allows. */
+int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request, int mode,
                                  char *error, size_t errorSize)
 {
     struct CustomContentVerification report;
+    char reason[CTR_CCV_ARCADE_REASON_MAX];
+    int ok;
     if (!request || !CustomPackage_GetPairReport(request->package, &report) || !report.loadable)
         return offline_error(error, errorSize, "No structurally verified offline package");
-    if (report.fileAnalysis[CTR_CCV_ARCADE].result != CTR_CCV_DETECTED)
-        return offline_error(error, errorSize, report.fileAnalysis[CTR_CCV_ARCADE].reason);
-    if (report.measured.spawns < 8)
-        return offline_error(error, errorSize, "Single Race needs eight measured kart spawns");
+    ok = mode == CTR_OFFLINE_MODE_ARCADE ? CustomContentVerify_ArcadeRaceReason(&report, reason, sizeof reason)
+                                         : CustomContentVerify_TimeTrialReason(&report, reason, sizeof reason);
+    if (!ok) return offline_error(error, errorSize, reason);
     offline_error(error, errorSize, "");
     return 1;
 }
@@ -147,15 +174,18 @@ int CustomOffline_CopyFile(const struct CustomOfflineRequest *request, const cha
     return request && CustomPackage_CopyFile(request->package, role, destination, capacity, written);
 }
 
-int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLevelID, int apSeedPresent)
+int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLevelID, int apSeedPresent,
+                               int mode)
 {
     unsigned int laps;
     if (!request || !*request || activeRequest || runtimeGeneration == UINT64_MAX || apSeedPresent != 0 ||
-        hostLevelID < 0 || hostLevelID >= 18 || !CustomOffline_CheckStructure(*request, NULL, 0) ||
+        (mode != CTR_OFFLINE_MODE_ARCADE && mode != CTR_OFFLINE_MODE_TIME_TRIAL) ||
+        hostLevelID < 0 || hostLevelID >= 18 || !CustomOffline_CheckStructure(*request, mode, NULL, 0) ||
         !CustomOffline_PackageLaps((*request)->package, &laps, NULL, 0)) return 0;
     activeRequest = *request;
     *request = NULL;
     activeHost = hostLevelID;
+    activeMode = mode;
     activeLaps = (int)laps;
     ++runtimeGeneration;
     clear_observations();
@@ -175,6 +205,7 @@ void CustomOffline_EndRuntime(void)
     release_runtime_audio();
     CustomOffline_Free(&activeRequest);
     activeHost = -1;
+    activeMode = 0;
     activeLaps = 0;
     clear_observations();
 }
@@ -214,12 +245,20 @@ void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out)
         if (!strcmp(manifest.files[i].role, "lev")) lev = manifest.files[i].sha256;
         else if (!strcmp(manifest.files[i].role, "vrm")) vrm = manifest.files[i].sha256;
     }
-    CustomStateIdentity_Package(out, manifest.uuid, lev, vrm);
+    if (CustomStateIdentity_Package(out, manifest.uuid, lev, vrm)) out->mode = (unsigned int)activeMode;
 }
 
+/* singleRace is the engine's current race mode (CTR_OFFLINE_MODE_*, 0 for
+   any other mode): the host slot serves the package only in the mode the
+   runtime was started for. */
 int CustomOffline_RuntimeServing(int levelID, int singleRace)
 {
-    return activeRequest && singleRace == 1 && levelID == activeHost;
+    return activeRequest && singleRace != 0 && singleRace == activeMode && levelID == activeHost;
+}
+
+int CustomOffline_RuntimeMode(void)
+{
+    return activeRequest ? activeMode : 0;
 }
 
 void CustomOffline_OnLoadFinished(int levelID, int singleRace)

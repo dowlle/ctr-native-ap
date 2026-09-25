@@ -439,6 +439,14 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 				// if you are in time trial mode
 				if ((gGT->gameMode1 & TIME_TRIAL) != 0)
 				{
+#ifdef CTR_CUSTOM_PACKAGES
+					// A custom track's ghost comes from custom-records/, not
+					// from the memory card's ghost selection.
+					if (MM_CustomTrackSelect_TimeTrialStart())
+					{
+						return;
+					}
+#endif
 					// allocate room at the end of RAM for ghosts
 					sdata->ptrGhostTapePlaying = MEMPACK_AllocHighMem(0x3e00 /*, R230.s_loaded_ghost_data*/);
 

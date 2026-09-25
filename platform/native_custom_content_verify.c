@@ -109,6 +109,32 @@ int CustomContentVerify_ValidateLoadablePair(struct CustomContentOwnedPair*p,cha
 int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AcquirePair(a,b,p,e,en))return 0;if(!CustomContentVerify_ValidateLoadablePair(p,e,en)){CustomContentVerify_FreePair(p);return 0;}return 1;}
 void CustomContentVerify_FreePair(struct CustomContentOwnedPair*p){if(!p)return;free(p->lev);free(p->vrm);memset(p,0,sizeof(*p));}
 int CustomContentVerify_Files(const char*a,const char*b,struct CustomContentVerification*o,char*e,size_t en){struct CustomContentOwnedPair p;if(!o){seterr(e,en,"output required");return 0;}if(!CustomContentVerify_ReadPair(a,b,&p,e,en)){memset(o,0,sizeof(*o));return 0;}*o=p.report;CustomContentVerify_FreePair(&p);return 1;}
+/* Most basic missing structure first; every text fits two 13-character menu
+   lines, and the two usual ones fit one. Time Trial content often has a lap
+   graph but no AI paths; its kart starts at the origin (all eight start slots
+   zero, measured as none). */
+int CustomContentVerify_ArcadeRaceReason(const struct CustomContentVerification*r,char*why,size_t n)
+{
+	const struct CustomContentMeasurements*m;
+	char text[CTR_CCV_ARCADE_REASON_MAX];
+	int ok=0;
+	if(!r||!r->loadable||r->fileAnalysis[CTR_CCV_ARCADE].result==CTR_CCV_ERROR)snprintf(text,sizeof text,"Files failed checks");
+	else if(m=&r->measured,r->fileAnalysis[CTR_CCV_ARCADE].result==CTR_CCV_DETECTED&&m->spawns>=8){text[0]=0;ok=1;}
+	else if(!m->checkpoints)snprintf(text,sizeof text,"No lap checkpoints");
+	else if(!m->navPaths)snprintf(text,sizeof text,"No AI paths");
+	else if(m->spawns<8)snprintf(text,sizeof text,"Grid: %lu of 8",m->spawns);
+	else snprintf(text,sizeof text,"No Arcade structures");
+	seterr(why,n,text);
+	return ok;
+}
+int CustomContentVerify_TimeTrialReason(const struct CustomContentVerification*r,char*why,size_t n)
+{
+	const char*text="";
+	if(!r||!r->loadable||r->fileAnalysis[CTR_CCV_TIME_TRIAL].result==CTR_CCV_ERROR)text="Files failed checks";
+	else if(r->fileAnalysis[CTR_CCV_TIME_TRIAL].result!=CTR_CCV_DETECTED)text="No lap checkpoints";
+	seterr(why,n,text);
+	return !text[0];
+}
 const char*CustomContentVerify_ModeSlug(int m){static const char*s[]={"time_trial","relic_race","ctr_challenge","arcade","crystal_challenge"};return m>=0&&m<5?s[m]:"unknown";}
 const char*CustomContentVerify_EvidenceText(int r){if(r==CTR_CCV_DETECTED)return"Detected";if(r==CTR_CCV_NOT_DETECTED)return"Not detected";if(r==CTR_CCV_ERROR)return"Error";return"Indeterminate";}
 #endif

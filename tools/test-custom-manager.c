@@ -46,14 +46,16 @@ int CustomSaphi_StartInstall(const struct CustomSaphiRevision *r,const char *a)
 { (void)r;(void)a;starts++;return 1; }
 int CustomSaphi_PollInstall(char pin[65],char *e,size_t n)
 { (void)e;(void)n;if(installResult==1)strcpy(pin,"fixture");return installResult; }
+static char drawn[4096];
 void DecalFont_DrawLineOT(char *s,int x,int y,s16 f,int flags,uint32_t *ot)
-{ (void)ot; int w=DecalFont_GetLineWidth(s,f);if(flags&JUSTIFY_CENTER)x-=w/2;CHECK(x>=0&&x+w<=512&&y>=0&&y+8<=216); }
+{ (void)ot; int w=DecalFont_GetLineWidth(s,f);if(flags&JUSTIFY_CENTER)x-=w/2;CHECK(x>=0&&x+w<=512&&y>=0&&y+8<=216);
+  if(strlen(drawn)+strlen(s)+2<sizeof drawn){strcat(drawn,s);strcat(drawn,"\n");} }
 void RECTMENU_DrawInnerRect(RECT *r,int x,uint32_t *ot)
 { (void)x;(void)ot;CHECK(r->x>=0&&r->x+r->w<=512&&r->y+r->h<=216); }
 void CTR_Box_DrawClearBox(const RECT *r,const Color *c,int t,uint32_t *ot)
 { (void)c;(void)t;(void)ot;CHECK(r->x+r->w<=512); }
 #include "../game/230/MM_CustomManager.c"
-static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
+static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
 int main(void)
 {
  data.font_charPixWidth[FONT_SMALL]=13;data.font_charPixWidth[FONT_BIG]=17;
@@ -90,6 +92,17 @@ int main(void)
  rows[1].sca.id=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==NULL && older==1);
  installed.local.scaID=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
  rows[1].sca.id=0;installed.local.scaID=0;
+ /* Installed tab: which pages list the track, and why not Arcade (two lines). */
+ tick(BTN_R1);CHECK(s_contentLibraryTab==1);s_saphiMessage[0]=0;
+ installed.local.arcade=1;installed.local.timeTrial=1;tick(0);
+ CHECK(strstr(drawn,"\nArcade\n")&&strstr(drawn,"\nFiles\nverified\n"));
+ installed.local.arcade=0;strcpy(installed.local.arcadeReason,"No AI paths");tick(0);
+ CHECK(strstr(drawn,"\nTime Trial\n")&&strstr(drawn,"\nNo AI paths\n")&&!strstr(drawn,"verified"));
+ strcpy(installed.local.arcadeReason,"Grid: 3 of 8");tick(0);CHECK(strstr(drawn,"\nGrid: 3 of 8\n"));
+ installed.local.timeTrial=0;strcpy(installed.local.timeTrialReason,"No lap checkpoints");tick(0);
+ CHECK(strstr(drawn,"\nNo races\n")&&strstr(drawn,"\nNo lap\ncheckpoints\n")&&!strstr(drawn,"..."));
+ strcpy(installed.local.timeTrialReason,"Files failed checks");tick(0);
+ CHECK(strstr(drawn,"\nFiles failed\nchecks\n"));
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;

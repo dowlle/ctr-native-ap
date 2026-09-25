@@ -132,7 +132,7 @@ extern "C" int CustomOffline_StartPrepare(const char *assets, const char *pin)
                 return result;
             package.release(); // The request now owns that reference.
             result.request.reset(request);
-            if (!CustomOffline_CheckStructure(request, result.error, sizeof result.error)) result.request.reset();
+            if (!CustomOffline_CheckStructure(request, 0, result.error, sizeof result.error)) result.request.reset();
             return result;
         });
         return 1;

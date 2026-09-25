@@ -264,7 +264,13 @@ void TT_EndEvent_DrawMenu(void)
 
 		sdata->flags_timeTrialEndOfRace = 0;
 
+#ifdef CTR_CUSTOM_PACKAGES
+		// No Save Ghost row on a custom track: its ghost is saved to
+		// custom-records/ automatically, and the row would open the memory card.
+		RECTMENU_Show((sdata->boolGhostTooBigToSave || MainRaceTrack_OfflineCustomLoad()) ? &menu224NoSave : &menu224);
+#else
 		RECTMENU_Show(sdata->boolGhostTooBigToSave ? &menu224NoSave : &menu224);
+#endif
 	}
 
 	return;
@@ -319,7 +325,14 @@ void TT_EndEvent_DrawHighScore(s16 startX, int startY, s16 scoreMode)
 	u16 rowOffsetY = 0;
 
 	// 12 entries per track, 6 for Time Trial and 6 for Relic Race
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom track shows its own table (custom-records/), never the host slot's.
+	struct HighScoreEntry *scoreEntries = MainRaceTrack_OfflineCustomLoad()
+	                                          ? &MainRaceTrack_CustomHighScores()[TT_HIGH_SCORE_ENTRIES_PER_MODE * scoreMode]
+	                                          : &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[TT_HIGH_SCORE_ENTRIES_PER_MODE * scoreMode];
+#else
 	struct HighScoreEntry *scoreEntries = &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[TT_HIGH_SCORE_ENTRIES_PER_MODE * scoreMode];
+#endif
 
 	// === Naughty Dog Bug ===
 	// Start and End is the same

@@ -53,6 +53,15 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 
 	gGT->gameModeEnd |= 4;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom track has no N. Tropy or Oxide ghost and no retail Time Trial
+	// flags: nothing below may touch the host slot's save data.
+	if (MainRaceTrack_OfflineCustomLoad())
+	{
+		return;
+	}
+#endif
+
 	struct HighScoreTrack *track = &sdata->gameProgress.highScoreTracks[gGT->levelID];
 	int playerTime = player->timeElapsedInRace;
 
@@ -517,6 +526,15 @@ static void MainGameEnd_CheckTimeTrialGhost(struct GameTracker *gGT, struct Driv
 
 	GhostTape_End();
 	gGT->gameModeEnd |= PLAYER_GHOST_BEAT;
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom track keeps its best ghost in custom-records/, never on the
+	// memory card: the run that beat the loaded ghost (or ran without one)
+	// replaces the file, provided the whole run fit the ghost buffer.
+	if (MainRaceTrack_OfflineCustomTimeTrial() && sdata->boolGhostTooBigToSave == 0)
+	{
+		MainRaceTrack_CustomSaveGhost(sdata->GhostRecording.ptrGhost);
+	}
+#endif
 }
 
 void MainGameEnd_Initialize(void)
