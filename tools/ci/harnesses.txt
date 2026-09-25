@@ -101,6 +101,7 @@ tools/test-reward-text.c
 tools/test-tracker-assets.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
+tools/test-tracker-tabs.c
 tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c

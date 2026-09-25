@@ -136,7 +136,7 @@ static int AP_TrackerParseHub(AP_TrackerHubAsset *hub, const unsigned char *file
 }
 
 /* Original minimap coordinate mapping, including its bottom-right anchor. */
-static void AP_TrackerMapPoint(const AP_TrackerHubAsset *h, int wx, int wz, int *x, int *y)
+static inline void AP_TrackerMapPoint(const AP_TrackerHubAsset *h, int wx, int wz, int *x, int *y)
 {
 	const int16_t *m = h->map; int ax, ay, rx = m[0] - m[2], ry = m[1] - m[3];
 	if (m[8] == 0) { ax = wx * m[4] / rx; ay = wz * m[5] * 2 / ry; }
