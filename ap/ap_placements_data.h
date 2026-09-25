@@ -22,11 +22,12 @@
 //   authored point was recorded mid-air, 133 units above the ground; 1680 is
 //   the drivable ground height under the same x/z. The on-ground rows on this
 //   track sit within about 1 unit of the ground, so this matches those.
-//   Mystery Caves Item Box 13 (level 9, the late-appended row): x -7750 -> -7771,
-//   z 6233 -> 6182, y unchanged at 390. Half a box (about 55 units) earlier
-//   along the racing line, measured from the track's own checkpoint graph
-//   (checkpoints 100-102 near the box), not from the row's rot_y. Issue #335
-//   part 1: the box was just out of reach off a turtle bounce without boost.
+//   Mystery Caves Item Box 13 (level 9, the late-appended row): x -7750 -> -7792,
+//   z 6233 -> 6131, y unchanged at 390. One box length (about 110 units)
+//   earlier along the racing line, in two half-box steps after playtests,
+//   measured from the track's own checkpoint graph (checkpoints 100-102 near
+//   the box), not from the row's rot_y. Issue #335 part 1: the box was just
+//   out of reach off a turtle bounce without boost.
 //
 // ROW ORDER IS LOAD-BEARING. The Nth row listed for a level is that level's box
 // slot N, so this table is emitted in the source file's own order, NOT sorted by
@@ -307,7 +308,7 @@ static const AP_EmbeddedPlacement AP_EMBEDDED_PLACEMENTS[] = {
 	{ 3,  -3542,    599,   3423,  1963}, // CRASH_COVE
 	{ 3,  -5503,    575,   5515,  1431}, // CRASH_COVE
 	{ 6,  -5683,   1094,    620,  4077}, // ROO_TUBES
-	{ 9,  -7771,    390,   6182,   148}, // MYSTERY_CAVES (box 13: x/z moved, see CORRECTIONS)
+	{ 9,  -7792,    390,   6131,   148}, // MYSTERY_CAVES (box 13: x/z moved, see CORRECTIONS)
 };
 
 #define AP_EMBEDDED_PLACEMENT_COUNT \
