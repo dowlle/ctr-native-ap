@@ -10,6 +10,11 @@
 
 #include <string.h>
 
+#ifdef CTR_CUSTOM_PACKAGES
+#include "platform/native_custom_offline.h"
+#include "platform/native_custom_state_identity.h"
+#endif
+
 #define NATIVE_CHECKPOINT_FOURCC(a, b, c, d) ((u32)(a) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 
 // NOTE(aalhendi): Whole-machine checkpoints are included after native memory
@@ -42,6 +47,9 @@ enum NativeCheckpointRegionKind
 	NATIVE_CHECKPOINT_REGION_SCRP = NATIVE_CHECKPOINT_FOURCC('S', 'C', 'R', 'P'),  // PS1 scratchpad RAM
 	NATIVE_CHECKPOINT_REGION_PMAP = NATIVE_CHECKPOINT_FOURCC('P', 'M', 'A', 'P'),  // native pointer-map relocation slots
 	NATIVE_CHECKPOINT_REGION_NATS = NATIVE_CHECKPOINT_FOURCC('N', 'A', 'T', 'S'),  // native subsystem state bundle
+#ifdef CTR_CUSTOM_PACKAGES
+	NATIVE_CHECKPOINT_REGION_CUST = NATIVE_CHECKPOINT_FOURCC('C', 'U', 'S', 'T'),  // loaded custom package identity
+#endif
 };
 
 struct NativeCheckpointRegion
@@ -100,7 +108,11 @@ struct NativeCheckpointHeader
 	u32 addressRangeCount;
 	u32 codeAnchor;
 	struct NativeCheckpointAddressRange addressRanges[NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP];
+#ifdef CTR_CUSTOM_PACKAGES
+	struct NativeCheckpointRegion regions[15];
+#else
 	struct NativeCheckpointRegion regions[14];
+#endif
 };
 
 global_variable void *s_nativeCheckpointPointerSlots[NATIVE_CHECKPOINT_POINTER_SLOT_CAP];
@@ -231,6 +243,10 @@ internal int NativeCheckpoint_GetRegionSize(u32 kind)
 		return (int)sizeof(struct NativeCheckpointPointerSlotState);
 	case NATIVE_CHECKPOINT_REGION_NATS:
 		return NativeState_GetSize();
+#ifdef CTR_CUSTOM_PACKAGES
+	case NATIVE_CHECKPOINT_REGION_CUST:
+		return (int)sizeof(struct CustomStateIdentity);
+#endif
 	}
 
 	return 0;
@@ -2047,6 +2063,17 @@ internal int NativeCheckpoint_CaptureRegion(u32 kind, void *dst, int dstSize)
 	{
 		return NativeState_Capture(dst, dstSize);
 	}
+#ifdef CTR_CUSTOM_PACKAGES
+	if (kind == NATIVE_CHECKPOINT_REGION_CUST)
+	{
+		if (dstSize != (int)sizeof(struct CustomStateIdentity))
+		{
+			return 0;
+		}
+		CustomOffline_RuntimeStateIdentity((struct CustomStateIdentity *)dst);
+		return 1;
+	}
+#endif
 
 	src = NativeCheckpoint_GetRegionPtr(kind);
 	if (src == NULL)
@@ -2086,6 +2113,9 @@ internal int NativeCheckpoint_InitHeader(struct NativeCheckpointHeader *header)
 	    NATIVE_CHECKPOINT_REGION_V230,  NATIVE_CHECKPOINT_REGION_D231, NATIVE_CHECKPOINT_REGION_D232,  NATIVE_CHECKPOINT_REGION_D233,
 	    NATIVE_CHECKPOINT_REGION_GAR3,  NATIVE_CHECKPOINT_REGION_CRD3, NATIVE_CHECKPOINT_REGION_MPAK,  NATIVE_CHECKPOINT_REGION_SCRP,
 	    NATIVE_CHECKPOINT_REGION_PMAP,  NATIVE_CHECKPOINT_REGION_NATS,
+#ifdef CTR_CUSTOM_PACKAGES
+	    NATIVE_CHECKPOINT_REGION_CUST,
+#endif
 	};
 
 	memset(header, 0, sizeof(*header));
@@ -2236,6 +2266,67 @@ int NativeCheckpoint_Capture(void *dst, int dstSize)
 	return 1;
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+// Box authoring build. A checkpoint holds the level's geometry but not the
+// offline custom-race runtime that says whether the host slot serves a
+// package, so a state may only be restored into the same load context: no
+// custom track on both sides, or the same package (UUID, LEV and VRM SHA-256).
+// Anything else would race custom geometry under the host slot's retail
+// identity, or the reverse, and file box placements and AI recordings under the
+// wrong track (issue #356). Checked before a single byte is restored.
+global_variable char s_nativeCheckpointCustomRefusal[] = "STATE NOT LOADED: OTHER TRACK";
+global_variable int s_nativeCheckpointCustomRefusalFrames;
+
+internal int NativeCheckpoint_CustomIdentityAllows(const struct NativeCheckpointHeader *header, const u8 *bytes)
+{
+	struct CustomStateIdentity saved;
+	struct CustomStateIdentity live;
+	char savedText[128];
+	char liveText[128];
+	u32 i;
+
+	for (i = 0; i < header->regionCount; i++)
+	{
+		const struct NativeCheckpointRegion *region = &header->regions[i];
+
+		if (region->kind != NATIVE_CHECKPOINT_REGION_CUST)
+		{
+			continue;
+		}
+		if (region->size != sizeof(saved))
+		{
+			break;
+		}
+		memcpy(&saved, &bytes[region->offset], sizeof(saved));
+		CustomOffline_RuntimeStateIdentity(&live);
+		if (CustomStateIdentity_RestoreAllowed(&saved, &live))
+		{
+			return 1;
+		}
+		CustomStateIdentity_Describe(&saved, savedText, sizeof(savedText));
+		CustomStateIdentity_Describe(&live, liveText, sizeof(liveText));
+		Platform_Log("[CTR State] restore refused: the state was saved with custom track %s, the game now has %s\n",
+		             savedText, liveText);
+		s_nativeCheckpointCustomRefusalFrames = 180;
+		return 0;
+	}
+
+	Platform_Log("[CTR State] restore refused: the state carries no custom track identity\n");
+	return 0;
+}
+
+// The refusal, on screen for a few seconds of race HUD (UI_RenderFrame_Racing).
+void NativeCheckpoint_DrawCustomRefusal(void)
+{
+	if (s_nativeCheckpointCustomRefusalFrames <= 0)
+	{
+		return;
+	}
+	s_nativeCheckpointCustomRefusalFrames--;
+	DecalFont_DrawLine(s_nativeCheckpointCustomRefusal, 0x100, 0x60, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+}
+#endif
+
 int NativeCheckpoint_Restore(const void *src, int srcSize)
 {
 	const struct NativeCheckpointHeader *header = (const struct NativeCheckpointHeader *)src;
@@ -2253,6 +2344,12 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+#ifdef CTR_CUSTOM_PACKAGES
+	if (!NativeCheckpoint_CustomIdentityAllows(header, bytes))
+	{
+		return 0;
+	}
+#endif
 
 	// NOTE(aalhendi): 233 checkpoints store only mutable overlay state. Restore
 	// the source-owned static image first, then overlay the captured runtime
@@ -2271,6 +2368,12 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 		{
 			pointerMapRegion = region;
 		}
+#ifdef CTR_CUSTOM_PACKAGES
+		else if (region->kind == NATIVE_CHECKPOINT_REGION_CUST)
+		{
+			// Checked above; it restores nothing.
+		}
+#endif
 		else
 		{
 			if (!NativeCheckpoint_RestoreRegion(region->kind, &bytes[region->offset], (int)region->size))

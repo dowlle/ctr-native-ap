@@ -1,6 +1,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_identity.h>
+#include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_content_verify.h>
 #include <stdlib.h>
 #include <string.h>
@@ -172,8 +173,36 @@ int CustomOffline_RuntimeLaps(void) { return activeLaps; }
 
 void CustomOffline_OnLoadRequested(int levelID)
 {
+    if (!activeRequest || levelID == activeHost) clear_observations();
+}
+
+void CustomOffline_OnLoadStarting(int levelID)
+{
     if (activeRequest && levelID != activeHost) CustomOffline_EndRuntime();
-    else clear_observations();
+}
+
+void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out)
+{
+    struct CustomPackageManifest manifest;
+    const char *lev = NULL, *vrm = NULL;
+    unsigned int i;
+    if (!out) return;
+    if (!activeRequest)
+    {
+        CustomStateIdentity_None(out);
+        return;
+    }
+    if (!CustomOffline_GetManifest(activeRequest, &manifest))
+    {
+        CustomStateIdentity_Unknown(out);
+        return;
+    }
+    for (i = 0; i < manifest.count && i < CTR_PACKAGE_FILE_MAX; i++)
+    {
+        if (!strcmp(manifest.files[i].role, "lev")) lev = manifest.files[i].sha256;
+        else if (!strcmp(manifest.files[i].role, "vrm")) vrm = manifest.files[i].sha256;
+    }
+    CustomStateIdentity_Package(out, manifest.uuid, lev, vrm);
 }
 
 int CustomOffline_RuntimeServing(int levelID, int singleRace)
