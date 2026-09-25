@@ -354,12 +354,17 @@ static int AP_TrackerLoadAssets(void)
 	ap_tracker.loaded = 1; return 1;
 }
 
-static void AP_TrackerProject(int wx, int wz, int *x, int *y)
+static int AP_TrackerScale8(int v8, int size, int src)
+{ /* Round eighths of a map pixel to the canvas, floor-safe for negatives. */
+	long n = (long)v8 * size * 2 + (long)src * 8, d = (long)src * 16;
+	return (int)(n >= 0 ? n / d : -((-n + d - 1) / d));
+}
+static void AP_TrackerProject(int kind, int wx, int wz, int *x, int *y)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int mx, my;
-	AP_TrackerMapPoint(h, wx, wz, &mx, &my);
-	*x = ap_tracker.map_x + mx * ap_tracker.map_w / h->width;
-	*y = ap_tracker.map_y + my * ap_tracker.map_h / h->height;
+	AP_TrackerMarkerPoint(h, ap_tracker.hub, kind, wx, wz, &mx, &my);
+	*x = ap_tracker.map_x + AP_TrackerScale8(mx, ap_tracker.map_w, h->width);
+	*y = ap_tracker.map_y + AP_TrackerScale8(my, ap_tracker.map_h, h->height);
 }
 static void AP_TrackerBuildNodes(void)
 {
@@ -374,7 +379,7 @@ static void AP_TrackerBuildNodes(void)
 	for (i = 0; i < h->pad_count; i++) {
 		AP_TrackerNode *n = &ap_tracker.nodes[i]; int physical = h->pads[i].physical, dest = ctr_cfg_warp_dest(physical);
 		memset(n, 0, sizeof *n); n->physical = physical; n->destination = dest; n->kind = 0; n->bit = -1;
-		AP_TrackerProject(h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
+		AP_TrackerProject(AP_TRACKER_MARK_WORLD, h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
 		if (dest >= 100 && dest < 105) {
 			const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
@@ -403,7 +408,7 @@ static void AP_TrackerBuildNodes(void)
 			memset(n, 0, sizeof *n); n->physical = -1; n->destination = -1; n->kind = 3;
 			n->bit = ap_tracker.hub ? ADV_REWARD_FIRST_BOSS_KEY + ap_tracker.hub - 1 : AP_GOAL_BIT_OXIDE_FIRST;
 			snprintf(n->title, sizeof n->title, "%s", ap_tracker.hub ? names[ap_tracker.hub - 1] : "N. OXIDE");
-			AP_TrackerProject(item[0], item[1], &n->x, &n->y);
+			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}
 	}
@@ -522,13 +527,13 @@ static void AP_TrackerDraw(void)
 	{
 		s16 *item=D232.hubItemsXY_ptrArray[ap_tracker.hub];
 		for(;item[0]!=-1;item+=4) if(item[3]<0) {
-			int x,y; AP_TrackerProject(item[0]-0x200,item[1]-0x100,&x,&y);
+			int x,y; AP_TrackerProject(AP_TRACKER_MARK_EXIT,item[0],item[1],&x,&y);
 			AP_TrackerArrow(x,y,0x1000-item[2],9,TRACKER_WHITE);
 		}
 	}
 	if(sdata->gGT->levelID==GEM_STONE_VALLEY+ap_tracker.hub && sdata->gGT->drivers[0] && sdata->gGT->drivers[0]->instSelf) {
 		int x,y; MATRIX *m=&sdata->gGT->drivers[0]->instSelf->matrix;
-		AP_TrackerProject(m->t[0],m->t[2],&x,&y);
+		AP_TrackerProject(AP_TRACKER_MARK_WORLD,m->t[0],m->t[2],&x,&y);
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);

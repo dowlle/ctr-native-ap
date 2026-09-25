@@ -99,6 +99,7 @@ tools/test-relic-goal.c
 tools/test-render-scale.c
 tools/test-reward-text.c
 tools/test-tracker-assets.c
+tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
