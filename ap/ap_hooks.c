@@ -4731,11 +4731,22 @@ static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequiremen
 static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)
 {
 	struct CustomTrackManagerRequirement requirement;
+	// No seed asks for a profile: offer the current Saphi release. A connected
+	// seed still selects its exact profile below, so 1.0.0 seeds keep using
+	// installed 1.0.0 files.
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_seen)
-		return CustomTrackManager_BabyTPark();
+		return CustomTrackManager_BabyTParkCurrent();
 	if (!ctr_cfg.custom_tracks_ok) return NULL;
 	AP_CustomContentBuildRequirement(&requirement);
 	return CustomTrackManager_MatchingPackage(&requirement);
+}
+
+const struct CustomTrackManagerPackage *AP_CustomContentPackage(void)
+{
+	const struct CustomTrackManagerPackage *package = AP_CustomContentSelectedPackage();
+	// An unusable seed descriptor has no profile. Its status already says
+	// Incompatible, and export is refused because that status is not Ready.
+	return package != NULL ? package : CustomTrackManager_BabyTParkCurrent();
 }
 
 static void AP_CustomContentBuildDescriptor(struct CustomTrackSeedDescriptor *descriptor)
@@ -4804,7 +4815,7 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 		else
 		{
 			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
-			                               CustomTrackManager_BabyTPark(),
+			                               CustomTrackManager_BabyTParkCurrent(),
 			                               &ap_custom_content_status);
 			ap_custom_content_scanned = 1;
 		}
@@ -4826,7 +4837,7 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void)
 	if (!ap_custom_content_scanned)
 	{
 		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
-		                               CustomTrackManager_BabyTPark(),
+		                               CustomTrackManager_BabyTParkCurrent(),
 		                               &ap_custom_content_status);
 		ap_custom_content_scanned = 1;
 	}
@@ -4859,12 +4870,12 @@ void AP_CustomContentRescan(void)
 		return;
 	}
 	CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(),
-	                               CustomTrackManager_BabyTPark(),
+	                               CustomTrackManager_BabyTParkCurrent(),
 	                               &ap_custom_content_status);
 	if (ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
 	    ap_custom_content_status.state == CTR_CT_MANAGER_MANIFEST_INVALID)
 		CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(),
-		                                   CustomTrackManager_BabyTPark(),
+		                                   CustomTrackManager_BabyTParkCurrent(),
 		                                   &ap_custom_content_status);
 	ap_custom_content_scanned = 1;
 	AP_CustomContentLogStatus("Rescan");

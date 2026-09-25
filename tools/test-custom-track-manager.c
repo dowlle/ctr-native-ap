@@ -277,6 +277,24 @@ int main(void)
 	expect_contains(yaml, "navigation:\n      uuid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
 	                "YAML carries navigation identity separately");
 	expect_contains(yaml, package.levSha256, "YAML carries verified LEV identity");
+	{
+		// Ready describes the bytes that were scanned. Exporting it under a
+		// package with other digests (the old menu paired a Ready 1.0.2 scan
+		// with the 1.0.0 handle) must be refused, not written.
+		struct CustomTrackManagerPackage other = package;
+		struct CustomTrackManagerStatus crossed = status;
+		other.levSha256 = CustomTrackManager_BabyTPark()->levSha256;
+		expect_int(CustomTrackManager_RenderYaml(&other, &status, yaml, sizeof yaml), 0,
+		           "Ready status cannot export another package's LEV identity");
+		expect_int(CustomTrackManager_SaveYaml(assets, &other, &status, &crossed), 0,
+		           "Ready status cannot save another package's LEV identity");
+		other = package;
+		other.vrmSha256 = CustomTrackManager_BabyTPark()->vrmSha256;
+		expect_int(CustomTrackManager_RenderYaml(&other, &status, yaml, sizeof yaml), 0,
+		           "Ready status cannot export another package's VRM identity");
+		expect_int(CustomTrackManager_RenderYaml(&package, &status, yaml, sizeof yaml), 1,
+		           "refused cross export leaves the scanned package exportable");
+	}
 
 	// Preflight only recognizes release-owned registry entries. The fixture is
 	// useful for scanner tests, but it must not become selectable by a seed.
@@ -545,6 +563,31 @@ int main(void)
 		           "a seed cannot redefine the measured wumpa capability");
 	}
 
+	{
+		// The page's default is the current Saphi release; 1.0.0 stays a
+		// separate, still matchable profile with its own folder.
+		const struct CustomTrackManagerPackage *cur = CustomTrackManager_BabyTParkCurrent();
+		struct CustomTrackManagerStatus ready;
+		expect_int(cur == &s_babyTParkCurrent, 1, "current getter returns the 1.0.2 profile");
+		expect_contains(cur->version, "1.0.2", "current profile is 1.0.2");
+		expect_contains(baby->version, "1.0.0", "legacy getter stays 1.0.0");
+		memset(&ready, 0, sizeof ready);
+		ready.state = CTR_CT_MANAGER_READY;
+		snprintf(ready.actualLevSha256, sizeof ready.actualLevSha256, "%s", cur->levSha256);
+		snprintf(ready.actualVrmSha256, sizeof ready.actualVrmSha256, "%s", cur->vrmSha256);
+		expect_int(CustomTrackManager_RenderYaml(cur, &ready, yaml, sizeof yaml), 1,
+		           "Ready 1.0.2 scan exports under the 1.0.2 handle");
+		expect_contains(yaml, "package_version: 1.0.2", "1.0.2 export names 1.0.2");
+		expect_contains(yaml, cur->levSha256, "1.0.2 export carries the 1.0.2 LEV digest");
+		expect_int(CustomTrackManager_RenderYaml(baby, &ready, yaml, sizeof yaml), 0,
+		           "Ready 1.0.2 scan cannot be exported as 1.0.0");
+		snprintf(ready.actualLevSha256, sizeof ready.actualLevSha256, "%s", baby->levSha256);
+		snprintf(ready.actualVrmSha256, sizeof ready.actualVrmSha256, "%s", baby->vrmSha256);
+		expect_int(CustomTrackManager_RenderYaml(baby, &ready, yaml, sizeof yaml), 1,
+		           "Ready 1.0.0 scan still exports as 1.0.0");
+		expect_int(CustomTrackManager_RenderYaml(cur, &ready, yaml, sizeof yaml), 0,
+		           "Ready 1.0.0 scan cannot be exported as 1.0.2");
+	}
 	{
 		struct CustomTrackManagerRequirement current = requirement_for(&s_babyTParkCurrent);
 		struct CustomTrackManagerRequirement legacy = requirement_for(baby);

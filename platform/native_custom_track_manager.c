@@ -658,6 +658,11 @@ const struct CustomTrackManagerPackage *CustomTrackManager_BabyTPark(void)
 	return &s_babyTParkPackage;
 }
 
+const struct CustomTrackManagerPackage *CustomTrackManager_BabyTParkCurrent(void)
+{
+	return &s_babyTParkCurrent;
+}
+
 const char *CustomTrackManager_StateText(int state)
 {
 	switch (state)
@@ -955,6 +960,11 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
 	    dst == NULL || dstSize == 0)
+		return 0;
+	// Ready only describes the package that was scanned. Export must name the
+	// same bytes, so a Ready 1.0.2 status can never be written out as 1.0.0.
+	if (!NativeSha256_HexEquals(status->actualLevSha256, package->levSha256) ||
+	    !NativeSha256_HexEquals(status->actualVrmSha256, package->vrmSha256))
 		return 0;
 
 	wrote = snprintf(dst, dstSize,

@@ -850,7 +850,7 @@ static void CustomContent_DrawMessage(uint32_t *ot)
 
 static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
-	const struct CustomTrackManagerPackage *package = CustomTrackManager_BabyTPark();
+	const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
 	const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
 	struct CustomTrackManagerStatus exported;
 	char line[160];

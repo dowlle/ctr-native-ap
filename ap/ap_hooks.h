@@ -294,6 +294,9 @@ void AP_DrawVerifyWarning(void);
 // Alpha6 manager-light state shared by OPTIONS > Custom Content, connect-time
 // seed preflight, and the Gem Cup entry gate.
 const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
+// The package the Custom Content page shows, downloads and exports: the
+// connected seed's exact profile, otherwise the current Baby T Park release.
+const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);

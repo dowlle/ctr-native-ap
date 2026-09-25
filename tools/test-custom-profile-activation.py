@@ -58,6 +58,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) {
 }
 '''
 fixture += function("ap/ap_hooks.c", "static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
+fixture += function("ap/ap_hooks.c", "const struct CustomTrackManagerPackage *AP_CustomContentPackage(void)")
 fixture += function("platform/native_custom_tracks.c", "int CustomTrack_UseManagedPackage(")
 fixture += function("ap/ap_hooks.c", "static int AP_CustomContentActivateReady(void)")
 fixture += r'''
@@ -83,6 +84,22 @@ int main(void) {
  assert(!AP_CustomContentActivateReady() && resets==0 && applied==0);
  ap_custom_content_status.state=CTR_CT_MANAGER_READY; ap_custom_content_seed_selected=0;
  assert(!AP_CustomContentActivateReady() && resets==0 && applied==0);
+ /* Custom Content page selection: a seed's exact profile wins, otherwise the
+    current 1.0.2 release; an unusable seed descriptor selects nothing. */
+ ap_custom_content_seed_selected=1; ctr_cfg.custom_tracks_ok=1;
+ for(int i=0;i<2;i++) {
+  chosen=profiles[i];
+  assert(AP_CustomContentSelectedPackage()==profiles[i]);
+  assert(AP_CustomContentPackage()==profiles[i]);
+ }
+ active=0;
+ assert(AP_CustomContentSelectedPackage()==&s_babyTParkCurrent);
+ assert(AP_CustomContentPackage()==&s_babyTParkCurrent);
+ active=1; ctr_cfg.custom_tracks_seen=0;
+ assert(AP_CustomContentSelectedPackage()==&s_babyTParkCurrent);
+ ctr_cfg.custom_tracks_seen=1; ctr_cfg.custom_tracks_ok=0;
+ assert(AP_CustomContentSelectedPackage()==NULL);
+ assert(AP_CustomContentPackage()==&s_babyTParkCurrent);
  return 0;
 }
 '''
@@ -93,4 +110,4 @@ with tempfile.TemporaryDirectory() as temporary:
     subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-fsanitize=undefined",
                     "-I", str(root / "include"), "-I", str(root), str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS: production legacy/current activation navigation identity and refusal isolation, UBSan")
+print("PASS: production legacy/current activation navigation identity, 1.0.2 page default and refusal isolation, UBSan")
