@@ -73,6 +73,18 @@ The numpad continues where the trap keys (Numpad 1-6) and the Shortcutless dev
 keys (Numpad 7-8) stop. None of these are in the gameplay input map, so pressing
 one cannot disturb driving.
 
+The box authoring download also maps the three actions to player 1's
+controller (`ap/ap_author_pad.h`, tested by `tools/test-author-pad.c`): Select
+drops (on release), hold Select + L1 deletes the last placement, hold Select +
+R1 writes and lists. Retail racing gives Select no job; the only Select use in
+the port is the paused adventure-hub tracker map. L1 and R1 hop and powerslide,
+so `AP_Author_FilterPad` (called in `MainMain.c` right after the pads are
+processed) takes Select, and L1/R1 from the moment Select is held until each
+is released, out of player 1's pad while author input is live. Live means the
+numpad keys' gates (mode on, level idle, kart born, not a boss race, a custom
+track loaded and identified) plus not paused and an authorable track. The HUD
+shows `SELECT DROP  +L1 UNDO  +R1 SAVE` on its third line.
+
 The file is rewritten on **every** change, not only on Numpad `.`, so an
 authoring session that ends in a crash or an alt-F4 keeps its work. Numpad `.` is
 there for the listing and for a deliberate flush.

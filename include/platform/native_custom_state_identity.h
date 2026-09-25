@@ -16,7 +16,9 @@
 // restore is refused unless it equals the live one:
 //
 //   no custom track active     "none"
-//   a package is active        its UUID plus the SHA-256 of its LEV and VRM
+//   a package is active        its UUID plus the SHA-256 of its LEV and VRM,
+//                              and the race mode it serves (Arcade or Time
+//                              Trial: the restored game mode must match it)
 //   a package is active but    "unknown": never restorable in either direction
 //   its manifest is unusable
 //
@@ -25,7 +27,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define CTR_CUSTOM_STATE_MAGIC 0x31445343u // "CSD1", little-endian
+#define CTR_CUSTOM_STATE_MAGIC 0x32445343u // "CSD2", little-endian (CSD1 had no mode)
 #define CTR_CUSTOM_STATE_UUID_CHARS 36
 #define CTR_CUSTOM_STATE_SHA_CHARS 64
 
@@ -40,6 +42,7 @@ struct CustomStateIdentity
 {
 	unsigned int magic;
 	unsigned int kind; // enum CustomStateKind
+	unsigned int mode; // CTR_OFFLINE_MODE_* of the runtime, 0 for none or unknown
 	char uuid[40];      // lowercase 8-4-4-4-12, NUL-padded
 	char levSha256[68]; // lowercase hex, NUL-padded
 	char vrmSha256[68]; // lowercase hex, NUL-padded
@@ -116,7 +119,7 @@ static inline int CustomStateIdentity_Valid(const struct CustomStateIdentity *id
 }
 
 // A saved state may be restored only into the same load context: both "none",
-// or both the same package (UUID, LEV and VRM). "unknown" or a damaged record
+// or both the same package (UUID, LEV and VRM) in the same race mode. "unknown" or a damaged record
 // on either side refuses.
 static inline int CustomStateIdentity_RestoreAllowed(const struct CustomStateIdentity *saved,
                                                      const struct CustomStateIdentity *live)
@@ -127,13 +130,14 @@ static inline int CustomStateIdentity_RestoreAllowed(const struct CustomStateIde
 		return 0;
 	if (saved->kind == CTR_CUSTOM_STATE_NONE)
 		return 1;
-	return memcmp(saved->uuid, live->uuid, sizeof saved->uuid) == 0 &&
+	return saved->mode == live->mode &&
+	       memcmp(saved->uuid, live->uuid, sizeof saved->uuid) == 0 &&
 	       memcmp(saved->levSha256, live->levSha256, sizeof saved->levSha256) == 0 &&
 	       memcmp(saved->vrmSha256, live->vrmSha256, sizeof saved->vrmSha256) == 0;
 }
 
 // One log-friendly line: "none", "unknown", "damaged" or
-// "custom <uuid> lev <12 hex> vrm <12 hex>". Reads a possibly damaged record
+// "custom <uuid> lev <12 hex> vrm <12 hex> <arcade|time trial>". Reads a possibly damaged record
 // safely: every field is bounded.
 static inline void CustomStateIdentity_Describe(const struct CustomStateIdentity *id, char *out, size_t cap)
 {
@@ -168,10 +172,11 @@ static inline void CustomStateIdentity_Describe(const struct CustomStateIdentity
 	vrm[12] = '\0';
 	// Assembled by hand to stay freestanding (no stdio).
 	{
-		const char *parts[6] = {"custom ", uuid, " lev ", lev, " vrm ", vrm};
+		const char *parts[7] = {"custom ", uuid, " lev ", lev, " vrm ", vrm,
+		                        id->mode == 2 ? " time trial" : id->mode == 1 ? " arcade" : ""};
 		size_t pos = 0;
 		int p;
-		for (p = 0; p < 6; p++)
+		for (p = 0; p < 7; p++)
 		{
 			const char *s = parts[p];
 			while (*s != '\0' && pos + 1 < cap)

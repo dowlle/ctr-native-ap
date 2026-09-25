@@ -13,6 +13,9 @@
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
+#ifdef CTR_AP_AUTHORING
+#include "ap_author_pad.h"     // controller keys: Select, Select+L1, Select+R1
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include "ap_author_custom.h"  // custom-track placements: package key, own file
 #include <platform/native_custom_offline.h>
@@ -622,10 +625,19 @@ static void AP_AuthorList(struct GameTracker *gGT)
 	AP_AuthorSave();
 }
 
+#ifdef CTR_AP_AUTHORING
+// The controller keys, on the HUD line under the count and the last drop.
+static void AP_AuthorDrawPadHint(void)
+{
+	DecalFont_DrawLine("SELECT DROP  +L1 UNDO  +R1 SAVE", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + 2 * AP_AUTHOR_HUD_LINE_H,
+	                   FONT_SMALL, WHITE);
+}
+#endif
+
 #ifdef CTR_CUSTOM_PACKAGES
 // ============================================================================
-// CUSTOM TRACKS (box authoring build only). A package raced from the Arcade
-// custom pages borrows host slot 6, so its placements are keyed by the served
+// CUSTOM TRACKS (box authoring build only). A package raced from the Arcade or
+// Time Trial custom pages borrows host slot 6, so its placements are keyed by the served
 // package (UUID + LEV and VRM digests, ap_author_custom.h) and live in their
 // own file, AP_CUSTOM_BOX_FILE. The retail table above, s_place and the retail
 // file are never read or written from here, and the host slot's retail markers
@@ -869,7 +881,7 @@ static void AP_AuthorCustomList(const AP_CustomBoxKey *key, const char *title)
 
 // The custom-track half of AP_Author_OnFrame. Returns 1 when it owned the
 // frame (a custom-page race, loaded or not), 0 to fall through to retail.
-static int AP_AuthorCustomOnFrame(struct GameTracker *gGT)
+static int AP_AuthorCustomOnFrame(struct GameTracker *gGT, int padAction)
 {
 	static int      prevDrop = 0, prevUndo = 0, prevList = 0;
 	AP_CustomBoxKey key;
@@ -932,11 +944,11 @@ static int AP_AuthorCustomOnFrame(struct GameTracker *gGT)
 	drop = Platform_InputRawKeyDown(AP_AUTHOR_KEY_DROP);
 	undo = Platform_InputRawKeyDown(AP_AUTHOR_KEY_UNDO);
 	list = Platform_InputRawKeyDown(AP_AUTHOR_KEY_LIST);
-	if (drop && !prevDrop)
+	if ((drop && !prevDrop) || padAction == AP_AUTHOR_PAD_DROP)
 		AP_AuthorCustomDrop(gGT, &key, title, version);
-	if (undo && !prevUndo)
+	if ((undo && !prevUndo) || padAction == AP_AUTHOR_PAD_UNDO)
 		AP_AuthorCustomUndo(&key, title);
-	if (list && !prevList)
+	if ((list && !prevList) || padAction == AP_AUTHOR_PAD_LIST)
 		AP_AuthorCustomList(&key, title);
 	prevDrop = drop;
 	prevUndo = undo;
@@ -979,9 +991,71 @@ static int AP_AuthorCustomDrawHud(void)
 		         (int)s_cplace[s_clastDropIndex].y, (int)s_cplace[s_clastDropIndex].z);
 		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H, FONT_SMALL, WHITE);
 	}
+	AP_AuthorDrawPadHint();
 	return 1;
 }
 #endif // CTR_CUSTOM_PACKAGES
+
+#ifdef CTR_AP_AUTHORING
+// ── controller keys (ap_author_pad.h) ──────────────────────────────────────
+
+static AP_AuthorPadState s_pad;
+static int               s_padAction; // for the next AP_Author_OnFrame
+
+// The numpad keys' gates (AP_Author_OnFrame: mode on, level loaded and the
+// kart born, not a boss race, a custom track loaded and identified), plus two
+// of the controller's own: not paused, and a track author mode can file a box
+// for. Outside those Select, L1 and R1 are left alone for the game.
+static int AP_AuthorPadLive(struct GameTracker *gGT)
+{
+	if (!AP_Author_Enabled() || sdata == 0 || gGT == 0)
+		return 0;
+	if (!AP_AuthorRuntimeReady(1, sdata->Loading.stage == LOAD_IDLE, gGT->drivers[0] != 0,
+	                           gGT->drivers[0] != 0 && gGT->drivers[0]->instSelf != 0))
+		return 0;
+	if (!AP_AuthorRaceAllowsAuthoring(IS_BOSS_RACE(gGT->gameMode1)) || (gGT->gameMode1 & PAUSE_ALL) != 0)
+		return 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	{
+		AP_CustomBoxKey key;
+		int mode = AP_AuthorCustomMode(&key, NULL, 0, NULL, 0);
+		if (mode != 0)
+			return mode == 1;
+	}
+#endif
+	return AP_AuthorLevelIsAuthorable((int)gGT->levelID);
+}
+
+void AP_Author_FilterPad(struct GamepadSystem *gGS)
+{
+	static const AP_AuthorPadButtons buttons = {BTN_SELECT, BTN_L1, BTN_R1};
+	struct GamepadBuffer *pad;
+	unsigned int strip = 0;
+	int action, i;
+
+	if (gGS == 0 || sdata == 0)
+		return;
+	pad = &gGS->gamepad[0];
+	action = AP_AuthorPad_Step(&s_pad, &buttons, gGS->numGamepadsConnected > 0 && AP_AuthorPadLive(sdata->gGT),
+	                           pad->buttonsHeldCurrFrame, &strip);
+	if (action != AP_AUTHOR_PAD_NONE)
+		s_padAction = action;
+	if (strip == 0)
+		return;
+	pad->buttonsHeldCurrFrame &= ~strip;
+	pad->buttonsTapped &= ~strip;
+	pad->buttonsReleased &= ~strip;
+	// The "anyone" masks are ORs over the pads (GAMEPAD_ProcessAnyoneVars).
+	gGS->anyoneHeldCurr = gGS->anyoneTapped = gGS->anyoneReleased = gGS->anyoneHeldPrev = 0;
+	for (i = 0; i < gGS->numGamepadsConnected; i++)
+	{
+		gGS->anyoneHeldCurr |= gGS->gamepad[i].buttonsHeldCurrFrame;
+		gGS->anyoneTapped |= gGS->gamepad[i].buttonsTapped;
+		gGS->anyoneReleased |= gGS->gamepad[i].buttonsReleased;
+		gGS->anyoneHeldPrev |= gGS->gamepad[i].buttonsHeldPrevFrame;
+	}
+}
+#endif // CTR_AP_AUTHORING
 
 // ── per-frame ───────────────────────────────────────────────────────────────
 
@@ -991,6 +1065,11 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	int        drop, undo, list;
 	int        enabled;
 	int        level;
+#ifdef CTR_AP_AUTHORING
+	// Taken once: an action that meets a closed gate below is dropped, not kept.
+	int        padAction = s_padAction;
+	s_padAction = AP_AUTHOR_PAD_NONE;
+#endif
 
 	if (gGT == 0)
 		return;
@@ -1064,8 +1143,13 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	{
 		s_enabledPrev = 1;
 		s_markerLevel = -1; // force a rebuild for whatever level is loaded
+#ifdef CTR_AP_AUTHORING
+		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 or Select drop, Numpad 0 or Select+L1 delete last, "
+		           "Numpad . or Select+R1 list + save\n");
+#else
 		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 drop, Numpad 0 delete last, "
 		           "Numpad . list + save\n");
+#endif
 
 		// Author mode reads and writes the EXTERNAL FILE ONLY (packaging item 5),
 		// so switching it on with no file present would otherwise show an empty
@@ -1078,7 +1162,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 
 #ifdef CTR_CUSTOM_PACKAGES
 	// A custom-page race owns the frame: its own key, file and markers.
-	if (AP_AuthorCustomOnFrame(gGT))
+	if (AP_AuthorCustomOnFrame(gGT, padAction))
 		return;
 #endif
 
@@ -1102,12 +1186,21 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	undo = Platform_InputRawKeyDown(AP_AUTHOR_KEY_UNDO);
 	list = Platform_InputRawKeyDown(AP_AUTHOR_KEY_LIST);
 
+#ifdef CTR_AP_AUTHORING
+	if ((drop && !prevDrop) || padAction == AP_AUTHOR_PAD_DROP)
+		AP_AuthorDrop(gGT);
+	if ((undo && !prevUndo) || padAction == AP_AUTHOR_PAD_UNDO)
+		AP_AuthorUndo(gGT);
+	if ((list && !prevList) || padAction == AP_AUTHOR_PAD_LIST)
+		AP_AuthorList(gGT);
+#else
 	if (drop && !prevDrop)
 		AP_AuthorDrop(gGT);
 	if (undo && !prevUndo)
 		AP_AuthorUndo(gGT);
 	if (list && !prevList)
 		AP_AuthorList(gGT);
+#endif
 
 	prevDrop = drop;
 	prevUndo = undo;
@@ -1161,6 +1254,9 @@ void AP_Author_DrawHud(void)
 		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H,
 		                   FONT_SMALL, WHITE);
 	}
+#ifdef CTR_AP_AUTHORING
+	AP_AuthorDrawPadHint();
+#endif
 }
 
 // ── the shared placement table ──────────────────────────────────────────────

@@ -5,7 +5,7 @@ Archipelago item boxes. You drive to a spot, press a key, and the game saves tha
 spot to a file. You send us the file, we check every spot, and the good ones go
 into a later release.
 
-You need a keyboard with a number pad. The keys are on the number pad only.
+You need a controller, or a keyboard with a number pad.
 
 ## 1. Install the box authoring download
 
@@ -41,11 +41,19 @@ the same track instead.
 
 ## 3. Keys
 
-| Key | What it does |
-|---|---|
-| Numpad 9 | Put a box where your kart is right now |
-| Numpad 0 | Remove the newest box on this track |
-| Numpad . | Save now and write this track's list to the log |
+| Controller | Keyboard | What it does |
+|---|---|---|
+| Select | Numpad 9 | Put a box where your kart is right now |
+| Hold Select, press L1 | Numpad 0 | Remove the newest box on this track |
+| Hold Select, press R1 | Numpad . | Save now and write this track's list to the log |
+
+The top left shows the controller keys as `SELECT DROP  +L1 UNDO  +R1 SAVE`.
+
+On the controller, the box is dropped when you let go of Select, so holding
+Select for L1 or R1 never drops one as well. While you hold Select, L1 and R1
+do not make the kart hop. The controller keys work in a race only, not in the
+pause menu. With the default keyboard layout the space bar is Select, so it
+drops a box too.
 
 The box goes on the ground under your kart, facing the way you face. The file is
 saved after every change, so a crash or closing the game does not lose your
@@ -78,9 +86,9 @@ a time.
      download it. Square shows its other versions. R2 searches, L2 refreshes.
    - **Installed** lists what you have. L1 and R1 switch between the two.
    - Downloaded tracks are checked and stored under `assets/tracks/packages`.
-2. Start an Arcade single race for **one player**, pick your racer and
-   difficulty, and at the track list press Right to go past the normal tracks
-   to the **Custom** pages.
+2. Start an Arcade single race for **one player**, or a Time Trial. Pick your
+   racer (and in Arcade the difficulty), and at the track list press Right to go
+   past the normal tracks to the **Custom** pages.
 3. Pick the track, press Cross, then Cross again to start. The race uses the
    lap count Saphi lists for the track, or 3 laps when it lists none. It plays
    the track's own music when Saphi has it for the track. Otherwise, or when the
@@ -90,8 +98,23 @@ a time.
 4. With Box Author Mode on, the top left shows `BOX AUTHOR  <TRACK NAME>  <N>
    HERE`. The keys are the same as in step 3.
 
-Only tracks that have Arcade start positions for eight karts show up on the
-Custom pages. If the top left says `CUSTOM TRACK NOT LOADED`, the
+Every installed track shows on the Custom pages. A track that cannot race in
+the mode you picked is dimmed and says why when you highlight it. Most Saphi
+tracks are made for Time Trial only: they have no paths for the computer
+racers, so they cannot run an Arcade race with seven opponents. The Arcade page
+then says `No AI paths. Use Time Trial.` Other reasons are `Grid: 3 of 8` (fewer
+than eight start positions), `No lap checkpoints` and `Files failed checks`. In
+the Track Manager, the Installed tab shows `Arcade`, `Time Trial` (Time Trial
+only) or `No races` for each track, with the reason under it.
+
+In Time Trial on a custom track, your best times and your best ghost are saved
+in the `custom-records` folder next to the authoring exe, never on the memory
+card. The next Time Trial on that track shows the best times and races your
+saved ghost. A new version of the track's files, or a different lap count,
+starts fresh. The track has no N. Tropy or Oxide ghost, and there is no Save
+Ghost option: the ghost of a run that beats your saved one is saved by itself.
+
+If the top left says `CUSTOM TRACK NOT LOADED`, the
 track did not load. Go back to the menu and start it again.
 
 Boxes on custom tracks go to their own file,

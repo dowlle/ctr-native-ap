@@ -352,6 +352,11 @@ u32 main(void)
 			}
 #endif
 			GAMEPAD_ProcessAnyoneVars(gGS);
+#if defined(CTR_AP) && defined(CTR_AP_AUTHORING)
+			// Box Author Mode's controller keys (ap/ap_author_pad.h): read, and
+			// taken out of player 1's pad, before anything reads it this frame.
+			AP_Author_FilterPad(gGS);
+#endif
 
 			// Start new frame (ClearOTagR)
 			MainFrame_ResetDB(gGT);

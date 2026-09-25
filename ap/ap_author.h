@@ -67,6 +67,17 @@ void AP_Author_DrawHud(void);
 // 1 while the mode is on. For call sites that want to skip work entirely.
 int AP_Author_Enabled(void);
 
+#ifdef CTR_AP_AUTHORING
+// Controller keys for the same three actions (ap_author_pad.h): Select drops,
+// hold Select + L1 removes the newest box, hold Select + R1 saves and lists.
+// Called from MainMain.c right after the pads are processed, so it can take
+// Select, and L1/R1 during the chord, out of player 1's pad before anything
+// else reads it this frame. Live under the numpad keys' gates, not paused, on
+// an authorable track; the action runs in the next AP_Author_OnFrame.
+struct GamepadSystem;
+void AP_Author_FilterPad(struct GamepadSystem *gGS);
+#endif
+
 // ── the placement table, shared with the runtime box module ─────────────────
 //
 // ap_boxes.c (#109) spawns real, breakable boxes from the SAME table this mode

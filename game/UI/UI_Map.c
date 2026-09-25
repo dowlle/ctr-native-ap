@@ -341,7 +341,11 @@ void UI_Map_DrawGhosts(int ptrMap, struct Thread *bucket)
 			color = TROPY_LIGHT_BLUE;
 
 			// if timeTrialFlags for this track show [ n tropy beaten, oxide open ]
+#ifdef CTR_CUSTOM_PACKAGES
+			if (!MainRaceTrack_OfflineCustomLoad() && (sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags & 2) != 0)
+#else
 			if ((sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags & 2) != 0)
+#endif
 			{
 				// oxide flickers
 

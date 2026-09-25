@@ -1,5 +1,5 @@
 // cc -m32 -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-exit-window.c
-// platform/native_custom_offline.c -lm -o /tmp/test-custom-exit-window
+// platform/native_custom_offline.c platform/native_custom_records.c platform/native_custom_content_verify.c -lm -o /tmp/test-custom-exit-window
 //
 // The custom race's identity lasts exactly as long as its geometry (box
 // authoring build). The real MainRaceTrack.c and native_custom_offline.c run
@@ -21,7 +21,9 @@
 #include <platform/native_custom_state_identity.h>
 
 struct sData sdata_static; // common.h binds sdata to it
+struct Data data;          // MainRaceTrack.c's record defaults read character names
 static struct GameTracker s_gt;
+void CustomTrack_Log(const char *fmt, ...) { (void)fmt; }
 
 // The real file, in this unit: common.h defines sdata per translation unit.
 #include "../game/MAIN/MainRaceTrack.c"
@@ -145,7 +147,7 @@ static void start_custom_race(void)
 	char error[128];
 
 	CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
-	CHECK(CustomOffline_BeginRuntime(&request, HOST, 0) == 1);
+	CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_ARCADE) == 1);
 	MainRaceTrack_RequestLoad(HOST);
 	MainRaceTrack_StartLoad(HOST);
 	sdata->Loading.stage = LOAD_IDLE;
@@ -184,7 +186,10 @@ int main(void)
 		struct CustomStateIdentity live, expected;
 		CustomOffline_RuntimeStateIdentity(&live);
 		CustomStateIdentity_Package(&expected, UUID, LEV_SHA, VRM_SHA);
+		expected.mode = CTR_OFFLINE_MODE_ARCADE;
 		CHECK(CustomStateIdentity_RestoreAllowed(&expected, &live));
+		expected.mode = CTR_OFFLINE_MODE_TIME_TRIAL; // same track, other race mode
+		CHECK(!CustomStateIdentity_RestoreAllowed(&expected, &live));
 	}
 
 	// Quit on the Arcade results menu: the request alone keeps the identity.

@@ -7,17 +7,27 @@
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_identity.h>
+#include <platform/native_custom_state_identity.h>
+#include <platform/native_custom_records.h>
 CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CTR_OFFLINE_MAX_LAPS);
 
-// Box authoring build: a package chosen on the Arcade custom pages races only
-// as a one-player Arcade single race on its host slot. Every other mode on that
+// Box authoring build: a package chosen on the Arcade or Time Trial custom
+// pages races only as a one-player Arcade single race or a Time Trial on its
+// host slot, and only in the mode it was started for. Every other mode on that
 // slot loads retail bytes.
 static int MainRaceTrack_OfflineSingleRaceMode(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	return gGT->numPlyrCurrGame == 1 && (gGT->gameMode1 & ARCADE_MODE) &&
-	       !(gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | BATTLE_MODE)) &&
-	       !(gGT->gameMode2 & CUP_ANY_KIND);
+	if (gGT->numPlyrCurrGame != 1 || (gGT->gameMode2 & CUP_ANY_KIND))
+		return 0;
+	if ((gGT->gameMode1 & ARCADE_MODE) &&
+	    !(gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | BATTLE_MODE)))
+		return CTR_OFFLINE_MODE_ARCADE;
+	if ((gGT->gameMode1 & TIME_TRIAL) &&
+	    !(gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE |
+	                        RELIC_RACE | CRYSTAL_CHALLENGE)))
+		return CTR_OFFLINE_MODE_TIME_TRIAL;
+	return 0;
 }
 
 int MainRaceTrack_OfflineCustomLoad(void)
@@ -31,6 +41,120 @@ int MainRaceTrack_OfflineCustomLoad(void)
 int MainRaceTrack_IdentityLevelID(void)
 {
 	return CustomIdentity_LevelID(sdata->gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+}
+
+// A Time Trial on a custom track: its best times and ghost go to
+// custom-records/ (native_custom_records.h), never to the memory card or the
+// retail high-score table.
+int MainRaceTrack_OfflineCustomTimeTrial(void)
+{
+	return MainRaceTrack_OfflineCustomLoad() && MainRaceTrack_OfflineSingleRaceMode() == CTR_OFFLINE_MODE_TIME_TRIAL;
+}
+
+// The records key of the active package: UUID, LEV and VRM digests, laps.
+// Valid from the moment the custom page starts the runtime, so the ghost can
+// be read in the menu before the level loads.
+static int MainRaceTrack_CustomRecordKey(struct CustomRecordKey *key)
+{
+	struct CustomStateIdentity id;
+	CustomOffline_RuntimeStateIdentity(&id);
+	return CustomOffline_RuntimeMode() == CTR_OFFLINE_MODE_TIME_TRIAL && id.kind == CTR_CUSTOM_STATE_PACKAGE &&
+	       CustomRecords_MakeKey(key, id.uuid, id.levSha256, id.vrmSha256, (unsigned int)CustomOffline_RuntimeLaps());
+}
+
+// The Time Trial half of the table (best lap, five best races) for the running
+// package, loaded once per custom run. Tracks without a file start from the
+// retail defaults (9:59.99, six characters). The Relic half stays default and
+// is never saved: a custom track has no relic race.
+static struct HighScoreEntry s_customHighScores[12];
+static uint64_t s_customHighScoresRun;
+
+struct HighScoreEntry *MainRaceTrack_CustomHighScores(void)
+{
+	struct CustomRecordKey key;
+	struct CustomRecordTimes times;
+	uint64_t run = CustomOffline_RuntimeGeneration();
+	int i;
+
+	if (run != s_customHighScoresRun)
+	{
+		s_customHighScoresRun = run;
+		for (i = 0; i < 12; i++)
+		{
+			int characterID = i % 6;
+			s_customHighScores[i].time = 0x8c640;
+			s_customHighScores[i].characterID = characterID;
+			snprintf(s_customHighScores[i].name, sizeof s_customHighScores[i].name, "%s",
+			         sdata->lngStrings ? sdata->lngStrings[data.MetaDataCharacters[characterID].name_LNG_short] : "");
+		}
+		if (MainRaceTrack_CustomRecordKey(&key) && CustomRecords_LoadTimes(CTR_RECORDS_DIR, &key, &times))
+		{
+			for (i = 0; i < CTR_RECORDS_ENTRIES; i++)
+			{
+				if (times.entry[i].characterID > NITROS_OXIDE)
+					continue;
+				s_customHighScores[i].time = times.entry[i].time;
+				s_customHighScores[i].characterID = (u16)times.entry[i].characterID;
+				memcpy(s_customHighScores[i].name, times.entry[i].name, sizeof s_customHighScores[i].name);
+			}
+			CustomTrack_Log("[CustomRecords] best times loaded for this track\n");
+		}
+	}
+	return s_customHighScores;
+}
+
+void MainRaceTrack_CustomSaveHighScores(void)
+{
+	struct CustomRecordKey key;
+	struct CustomRecordTimes times;
+	int i;
+
+	if (!MainRaceTrack_CustomRecordKey(&key))
+		return;
+	memset(&times, 0, sizeof times);
+	for (i = 0; i < CTR_RECORDS_ENTRIES; i++)
+	{
+		times.entry[i].time = s_customHighScores[i].time;
+		times.entry[i].characterID = s_customHighScores[i].characterID;
+		memcpy(times.entry[i].name, s_customHighScores[i].name, sizeof times.entry[i].name);
+		times.entry[i].name[CTR_RECORDS_NAME - 1] = 0;
+	}
+	CustomTrack_Log(CustomRecords_SaveTimes(CTR_RECORDS_DIR, &key, &times)
+	                    ? "[CustomRecords] best times saved to " CTR_RECORDS_DIR "\n"
+	                    : "[CustomRecords] could not save best times to " CTR_RECORDS_DIR "\n");
+}
+
+// The saved ghost of the running package, read into the engine's playing
+// buffer (0x3e00 bytes). Refused unless it is a complete retail-format ghost.
+int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst)
+{
+	struct CustomRecordKey key;
+	size_t bytes = 0;
+
+	if (dst == NULL || !MainRaceTrack_CustomRecordKey(&key) ||
+	    !CustomRecords_LoadGhost(CTR_RECORDS_DIR, &key, dst, 0x3e00, &bytes))
+		return 0;
+	if (bytes < sizeof(struct GhostHeader) || dst->version != -4 || dst->size < 0 ||
+	    bytes != sizeof(struct GhostHeader) + (size_t)dst->size || dst->size > 0x3dd4 || dst->characterID < 0 ||
+	    dst->characterID > NITROS_OXIDE || dst->timeElapsedInRace <= 0)
+	{
+		memset(dst, 0, sizeof(struct GhostHeader));
+		CustomTrack_Log("[CustomRecords] saved ghost refused: not a complete ghost\n");
+		return 0;
+	}
+	CustomTrack_Log("[CustomRecords] saved ghost loaded (%d bytes)\n", (int)bytes);
+	return 1;
+}
+
+void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh)
+{
+	struct CustomRecordKey key;
+
+	if (gh == NULL || gh->version != -4 || gh->size <= 0 || gh->size > 0x3dd4 || !MainRaceTrack_CustomRecordKey(&key))
+		return;
+	CustomTrack_Log(CustomRecords_SaveGhost(CTR_RECORDS_DIR, &key, gh, sizeof(struct GhostHeader) + (size_t)gh->size)
+	                    ? "[CustomRecords] ghost saved to " CTR_RECORDS_DIR "\n"
+	                    : "[CustomRecords] could not save the ghost to " CTR_RECORDS_DIR "\n");
 }
 
 // The running package's title in banner form, or NULL outside a custom race.

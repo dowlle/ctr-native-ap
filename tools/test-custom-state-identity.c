@@ -39,8 +39,10 @@ int main(void)
 	CustomStateIdentity_Unknown(&unk1);
 	CustomStateIdentity_Unknown(&unk2);
 
-	// The record is a fixed-size checkpoint region.
-	CHECK(sizeof(struct CustomStateIdentity) == 184);
+	// The record is a fixed-size checkpoint region; CSD2 added the race mode.
+	CHECK(sizeof(struct CustomStateIdentity) == 188);
+	CHECK(CTR_CUSTOM_STATE_MAGIC == 0x32445343u);
+	CHECK(a.mode == 0 && none1.mode == 0);
 
 	// Same context restores.
 	CHECK(allowed(&none1, &none2));
@@ -59,6 +61,24 @@ int main(void)
 	CHECK(!allowed(&aLev, &a));
 	CHECK(!allowed(&a, &aVrm));
 	CHECK(!allowed(&aVrm, &a));
+
+	// Same package, other race mode (CustomOffline_RuntimeStateIdentity sets the mode):
+	// a Time Trial state never restores into an Arcade race of the same track,
+	// or the other way round, because the restored game mode would disagree
+	// with the runtime and the host slot would lose the custom identity.
+	{
+		struct CustomStateIdentity arcade = a, arcade2 = a2, trial = a, trial2 = a2;
+		arcade.mode = arcade2.mode = 1;
+		trial.mode = trial2.mode = 2;
+		CHECK(allowed(&arcade, &arcade2));
+		CHECK(allowed(&trial, &trial2));
+		CHECK(!allowed(&arcade, &trial));
+		CHECK(!allowed(&trial, &arcade));
+		CustomStateIdentity_Describe(&trial, text, sizeof text);
+		CHECK(strcmp(text, "custom " UUID_A " lev 111111111111 vrm 222222222222 time trial") == 0);
+		CustomStateIdentity_Describe(&arcade, text, sizeof text);
+		CHECK(strcmp(text, "custom " UUID_A " lev 111111111111 vrm 222222222222 arcade") == 0);
+	}
 
 	// Case does not split one package into two.
 	CHECK(CustomStateIdentity_Package(&aUpper, "0F8FAD5B-D9CB-469F-A165-70867728950E", SHA_1, SHA_2) == 1);

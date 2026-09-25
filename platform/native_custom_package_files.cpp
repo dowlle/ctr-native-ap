@@ -526,7 +526,17 @@ extern "C" int CustomPackage_ScanStore(const char *path, CustomPackageStoreVisit
             {
                 CustomPackage_GetManifest(package, &entry.manifest);
                 std::memcpy(entry.local.uuid, entry.manifest.uuid, sizeof entry.local.uuid);
-                entry.local.arcade = CustomOffline_PackageArcade(package);
+                entry.local.arcade = CustomOffline_PackageArcadeReason(package, entry.local.arcadeReason,
+                    sizeof entry.local.arcadeReason);
+                entry.local.timeTrial = CustomOffline_PackageTimeTrialReason(package, entry.local.timeTrialReason,
+                    sizeof entry.local.timeTrialReason);
+                if (!CustomOffline_PackageLaps(package, &entry.local.laps, nullptr, 0)) entry.local.laps = 0;
+                for (unsigned int i=0;i<entry.manifest.count && i<CTR_PACKAGE_FILE_MAX;i++)
+                {
+                    const auto &file=entry.manifest.files[i];
+                    if (!std::strcmp(file.role,"lev")) std::memcpy(entry.local.levSha256,file.sha256,sizeof entry.local.levSha256);
+                    else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
+                }
                 for (unsigned int i=0;i<entry.manifest.count;i++)
                 {
                     const auto &file=entry.manifest.files[i];

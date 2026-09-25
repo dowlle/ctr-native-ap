@@ -378,6 +378,16 @@ void GhostReplay_Init1(void)
 		{
 			gh = sdata->ptrGhostTapePlaying;
 		}
+#ifdef CTR_CUSTOM_PACKAGES
+		// A custom track has no N. Tropy or Oxide ghost: its LEV carries none,
+		// and the host slot's flags are not its own. An empty tape is skipped
+		// by GhostReplay_Init2, like a retail ghost that is not open yet.
+		else if (MainRaceTrack_OfflineCustomLoad())
+		{
+			static struct GhostHeader s_customNoGhost;
+			gh = &s_customNoGhost;
+		}
+#endif
 		else
 		{
 			s32 timeTrialFlags = sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
@@ -479,7 +489,11 @@ void GhostReplay_Init2(void)
 				continue;
 			}
 
+#ifdef CTR_CUSTOM_PACKAGES
+			s32 timeTrialFlags = MainRaceTrack_OfflineCustomLoad() ? 0 : sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
+#else
 			s32 timeTrialFlags = sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
+#endif
 			if ((timeTrialFlags & TT_NTROPY_OPEN) == 0)
 			{
 				continue;
@@ -500,7 +514,11 @@ void GhostReplay_Init2(void)
 		s32 characterIndex = ghostID + 1;
 		if (ghostID != 0)
 		{
+#ifdef CTR_CUSTOM_PACKAGES
+			s32 timeTrialFlags = MainRaceTrack_OfflineCustomLoad() ? 0 : sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
+#else
 			s32 timeTrialFlags = sdata->gameProgress.highScoreTracks[gGT->levelID].timeTrialFlags;
+#endif
 			if ((timeTrialFlags & TT_NTROPY_BEATEN) != 0)
 			{
 				characterIndex = ghostID + 2;

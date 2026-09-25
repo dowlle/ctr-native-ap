@@ -3,6 +3,7 @@ tools/test-instance-pool.c
 # Regenerate with: tools/ci/run-harnesses.py --write-list
 tools/test-author-ready.c
 tools/test-author-custom.c
+tools/test-author-pad.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
@@ -24,8 +25,10 @@ tools/test-custom-exit-window.c
 tools/test-custom-manager.c
 tools/test-custom-music.c
 tools/test-custom-pad-lifecycle.c
+tools/test-custom-records.c
 tools/test-custom-selector.c
 tools/test-custom-state-identity.c
+tools/test-custom-time-trial.c
 tools/test-custom-track-load.c
 tools/test-custom-track-manager.c
 tools/test-custom-track-policy.c
