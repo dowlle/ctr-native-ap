@@ -678,13 +678,19 @@ void saphi_install_worker(CustomSaphiRevision revision, std::string assets)
                 throw std::runtime_error("Saphi file differs from the selected source revision; refresh and retry");
         };
         fetch(revision.lev, lev); fetch(revision.vrm, vrm);
+        /* The track's own music, when Saphi lists one current .sca. It is
+           pinned like LEV and VRM; the race decides whether it can play it. */
+        std::vector<unsigned char> sca;
+        if (revision.sca.id) fetch(revision.sca, sca);
         auto levHash = saphi_digest(lev.data(), lev.size(), EVP_sha256());
         auto vrmHash = saphi_digest(vrm.data(), vrm.size(), EVP_sha256());
         nlohmann::json files = nlohmann::json::array();
         files.push_back({{"role","lev"},{"path","original/lev-" + std::to_string(revision.lev.id) + ".lev"},{"sha256",levHash},{"bytes",lev.size()}});
-        std::string presentation = nlohmann::json({{"schema_version",1},{"provider","projectsaphi"},
+        nlohmann::json source = {{"schema_version",1},{"provider","projectsaphi"},
             {"track_id",revision.trackID},{"lev_media_id",revision.lev.id},{"vrm_media_id",revision.vrm.id},
-            {"version",revision.version},{"author",revision.author}}).dump();
+            {"version",revision.version},{"author",revision.author}};
+        if (!sca.empty()) source["sca_media_id"] = revision.sca.id;
+        std::string presentation = source.dump();
         files.push_back({{"role","presentation"},{"path","metadata/saphi-source.json"},
             {"sha256",saphi_digest(presentation.data(),presentation.size(),EVP_sha256())},{"bytes",presentation.size()}});
         std::string settings;
@@ -696,6 +702,10 @@ void saphi_install_worker(CustomSaphiRevision revision, std::string assets)
             files.push_back({{"role","race_settings"},{"path","metadata/race-settings.json"},
                 {"sha256",saphi_digest(settings.data(),settings.size(),EVP_sha256())},{"bytes",settings.size()}});
         }
+        /* Files stay in role order (the manifest pin is over the sorted list). */
+        if (!sca.empty())
+            files.push_back({{"role","sca"},{"path","original/sca-" + std::to_string(revision.sca.id) + ".sca"},
+                {"sha256",saphi_digest(sca.data(),sca.size(),EVP_sha256())},{"bytes",sca.size()}});
         files.push_back({{"role","vrm"},{"path","original/vrm-" + std::to_string(revision.vrm.id) + ".vrm"},{"sha256",vrmHash},{"bytes",vrm.size()}});
         std::string manifest = nlohmann::json({{"schema_version",1},{"package_uuid",saphi_import_uuid(revision.trackID)},
             {"version",revision.version},{"title",revision.title},
@@ -704,6 +714,7 @@ void saphi_install_worker(CustomSaphiRevision revision, std::string assets)
         std::vector<CustomPackageInput> inputs = {{"lev",lev.data(),lev.size()},{"vrm",vrm.data(),vrm.size()}};
         inputs.push_back({"presentation",presentation.data(),presentation.size()});
         if (!settings.empty()) inputs.push_back({"race_settings",settings.data(),settings.size()});
+        if (!sca.empty()) inputs.push_back({"sca",sca.data(),sca.size()});
         char detail[512];
         if (!CustomPackage_AcquireBuffers(manifest.data(),manifest.size(),pin.c_str(),inputs.data(),inputs.size(),&owned,detail,sizeof detail))
             throw std::runtime_error(detail);
@@ -722,7 +733,8 @@ extern "C" int CustomSaphi_StartInstall(const CustomSaphiRevision *revision, con
 {
     if (!revision || !assets || !*assets || std::strlen(assets) > 31000 || revision->disabledReason[0] ||
         !std::memchr(revision->title,0,sizeof revision->title) || !std::memchr(revision->version,0,sizeof revision->version) ||
-        !std::memchr(revision->lev.path,0,sizeof revision->lev.path) || !std::memchr(revision->vrm.path,0,sizeof revision->vrm.path)) return 0;
+        !std::memchr(revision->lev.path,0,sizeof revision->lev.path) || !std::memchr(revision->vrm.path,0,sizeof revision->vrm.path) ||
+        !std::memchr(revision->sca.path,0,sizeof revision->sca.path)) return 0;
     auto &state = saphi_install_state();
     std::lock_guard<std::mutex> guard(state.mutex);
     if (state.state != -1) return 0;

@@ -22,6 +22,7 @@ tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
+tools/test-custom-music.c
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-selector.c
 tools/test-custom-state-identity.c

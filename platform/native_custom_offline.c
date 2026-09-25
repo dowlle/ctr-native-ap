@@ -18,6 +18,9 @@ static int targetLoaded;
 static int runCompleted;
 static struct CustomOfflineObservation observation;
 static int clockValid;
+static unsigned char *runtimeAudio;
+static size_t runtimeAudioSize;
+static uint64_t runtimeAudioGeneration;
 #ifdef CTR_PACKAGE_TESTING
 static int testClockEnabled;
 static int64_t testClock;
@@ -159,8 +162,17 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
     return 1;
 }
 
+static void release_runtime_audio(void)
+{
+    free(runtimeAudio);
+    runtimeAudio = NULL;
+    runtimeAudioSize = 0;
+    runtimeAudioGeneration = 0;
+}
+
 void CustomOffline_EndRuntime(void)
 {
+    release_runtime_audio();
     CustomOffline_Free(&activeRequest);
     activeHost = -1;
     activeLaps = 0;
@@ -255,6 +267,36 @@ int CustomOffline_RuntimeCompleted(void) { return runCompleted; }
 int CustomOffline_RuntimeManifest(struct CustomPackageManifest *out)
 {
     return CustomOffline_GetManifest(activeRequest, out);
+}
+
+int CustomOffline_RuntimeAudio(const void **data, size_t *size)
+{
+    struct CustomPackageManifest manifest;
+    unsigned char *bytes;
+    unsigned int i;
+    if (data) *data = NULL;
+    if (size) *size = 0;
+    if (!data || !size || !activeRequest || !CustomOffline_GetManifest(activeRequest, &manifest)) return 0;
+    for (i = 0; i < manifest.count; i++)
+        if (!strcmp(manifest.files[i].role, "sca")) break;
+    if (i == manifest.count || manifest.files[i].bytes == 0) return 0;
+    if (!runtimeAudio || runtimeAudioGeneration != runtimeGeneration || runtimeAudioSize != manifest.files[i].bytes)
+    {
+        release_runtime_audio();
+        bytes = malloc(manifest.files[i].bytes);
+        if (!bytes) return 0;
+        if (!CustomOffline_CopyFile(activeRequest, "sca", bytes, manifest.files[i].bytes, NULL))
+        {
+            free(bytes);
+            return 0;
+        }
+        runtimeAudio = bytes;
+        runtimeAudioSize = manifest.files[i].bytes;
+        runtimeAudioGeneration = runtimeGeneration;
+    }
+    *data = runtimeAudio;
+    *size = runtimeAudioSize;
+    return 1;
 }
 
 int CustomOffline_RuntimeFile(int subfile, int levelID, int singleRace, size_t *size)

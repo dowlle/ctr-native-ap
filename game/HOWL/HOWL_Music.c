@@ -1,6 +1,7 @@
 #include <common.h>
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_identity.h>
+#include "HOWL_CustomMusic.c"
 #endif
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -35,6 +36,11 @@ void Music_LoadBanks(void)
 	struct GameTracker *gGT = sdata->gGT;
 	int level = gGT->levelID;
 	u8 *arr = (u8 *)&sdata->audioDefaults[7];
+
+#ifdef CTR_CUSTOM_PACKAGES
+	// Retail slot sizes back before any bank of this load (HOWL_CustomMusic.c).
+	HOWL_CustomMusic_Reset();
+#endif
 
 	Audio_SetReverbMode(
 	    // Level ID
@@ -138,8 +144,14 @@ u32 Music_AsyncParseBanks(void)
 		else if (level < INTRO_RACE_TODAY)
 		{
 #ifdef CTR_CUSTOM_PACKAGES
+			// A custom-page race: the package's own .sca bank when it has one
+			// that fits, the fixed default otherwise (HOWL_CustomMusic.c).
 			if (MainRaceTrack_OfflineCustomLoad())
+			{
+				if (HOWL_CustomMusic_LoadBank(&thisBank))
+					break;
 				index = CTR_CUSTOM_FX_BANK;
+			}
 			else
 #endif
 			index = data.levBank_FX[level];
@@ -186,6 +198,9 @@ u32 Music_AsyncParseBanks(void)
 		{
 			goto PARSE_FINISH;
 		}
+#ifdef CTR_CUSTOM_PACKAGES
+		HOWL_CustomMusic_BankDone();
+#endif
 
 		sdata->bankCount = 0;
 		sdata->bankPodiumStage = 0;
@@ -403,8 +418,13 @@ u32 Music_AsyncParseBanks(void)
 		{
 			// Set Song ID depending on track
 #ifdef CTR_CUSTOM_PACKAGES
+			// The .sca's song goes with the .sca's bank (HOWL_CustomMusic.c).
 			if (MainRaceTrack_OfflineCustomLoad())
+			{
+				if (HOWL_CustomMusic_SetSong())
+					break;
 				index = CTR_CUSTOM_SONG_BANK;
+			}
 			else
 #endif
 			index = data.levBank_Song[level];

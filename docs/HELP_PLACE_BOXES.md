@@ -82,7 +82,11 @@ a time.
    difficulty, and at the track list press Right to go past the normal tracks
    to the **Custom** pages.
 3. Pick the track, press Cross, then Cross again to start. The race uses the
-   lap count Saphi lists for the track, or 3 laps when it lists none.
+   lap count Saphi lists for the track, or 3 laps when it lists none. It plays
+   the track's own music when Saphi has it for the track. Otherwise, or when the
+   music is too large to fit next to the eight racers' sounds, you hear Crash
+   Cove's music. A track downloaded before Saphi added its music shows
+   `* Update` in the Track Manager.
 4. With Box Author Mode on, the top left shows `BOX AUTHOR  <TRACK NAME>  <N>
    HERE`. The keys are the same as in step 3.
 

@@ -38,8 +38,10 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
     {
         const struct CustomTrackLibraryEntry *r=&s_contentLibrary.entries[i];
         if(!r->installed || r->local.trackID!=source->trackID) continue;
-        if(r->local.levID==source->lev.id && r->local.vrmID==source->vrm.id && !strcmp(r->version,source->version)) exact=r;
-        else if(CustomRevision_Compare(source->version,r->version)>0) *older=1;
+        int sameTrackFiles=r->local.levID==source->lev.id && r->local.vrmID==source->vrm.id && !strcmp(r->version,source->version);
+        /* The same track files without the track's current music is an update. */
+        if(sameTrackFiles && r->local.scaID==source->sca.id) exact=r;
+        else if(sameTrackFiles || CustomRevision_Compare(source->version,r->version)>0) *older=1;
     }
     return exact;
 }
