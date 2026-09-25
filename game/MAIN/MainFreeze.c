@@ -955,6 +955,17 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	}
 
 #ifdef CTR_AP
+	// TRACKER row: opens the enlarged tracker on the next frame, inside this
+	// same pause, exactly as Square does. The pause menu stays up underneath,
+	// so backing out of the tracker lands here again.
+	if (stringID == AP_LNG_TRACKER)
+	{
+		AP_TrackerRequestOpen();
+		return;
+	}
+#endif
+
+#ifdef CTR_AP
 	// #238: SELECT CHARACTER, only present on the AP row set built in
 	// MainFreeze_GetMenuPtr.
 	//
@@ -1199,50 +1210,55 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 		// stays well inside the 216-line draw environment. Checked rather than
 		// assumed, because an off-screen panel is exactly what the picker's own
 		// stat block got wrong.
-		if (AP_CharSwap_PauseRowLive())
+		//
+		// A TRACKER row (2026-09-25) follows the same pattern directly below
+		// SELECT CHARACTER, or below RESUME when that row is absent, whenever the
+		// enlarged tracker is available. It opens the same tracker as Square.
 		{
-			// RESUME / SELECT CHARACTER / hints / QUIT / OPTIONS. The vertical
-			// wiring comes from AP_PAUSEROW_NAV rather than being written out
-			// here, so the harness sweeps the same table the menu is built from.
-			// Left and right point at self, as they do in the retail table.
-			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_COUNT + 1] = {
-			    {LNG_RESUME, 0, 0, AP_PAUSEROW_RESUME, AP_PAUSEROW_RESUME},
-			    {LNG_SELECT_CHARACTER, 0, 0, AP_PAUSEROW_CHARACTER, AP_PAUSEROW_CHARACTER},
-			    {LNG_AKU_AKU_HINTS, 0, 0, AP_PAUSEROW_HINTS, AP_PAUSEROW_HINTS},
-			    {LNG_QUIT, 0, 0, AP_PAUSEROW_QUIT, AP_PAUSEROW_QUIT},
-			    {LNG_OPTIONS, 0, 0, AP_PAUSEROW_OPTIONS, AP_PAUSEROW_OPTIONS},
-			    {-1, 0, 0, 0, 0},
-			};
-			int r;
+			static signed char retailKinds[AP_PAUSEROW_KINDS], apKinds[AP_PAUSEROW_KINDS];
+			static int apCount;
+			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_KINDS + 1];
+			signed char kinds[AP_PAUSEROW_KINDS];
+			int character = AP_CharSwap_PauseRowLive(), tracker = AP_TrackerAvailable();
+			int retailCount = AP_PauseRow_Build(0, 0, retailKinds);
+			int count = AP_PauseRow_Build(character, tracker, kinds);
+			int onAp = data.menuAdvHub.rows == &apRowsAdvHub[0];
 
-			for (r = 0; r < AP_PAUSEROW_COUNT; r++)
+			if (count != retailCount)
 			{
-				apRowsAdvHub[r].rowOnPressUp = AP_PAUSEROW_NAV[r][0];
-				apRowsAdvHub[r].rowOnPressDown = AP_PAUSEROW_NAV[r][1];
+				int r;
+				s16 row = data.menuAdvHub.rowSelected;
+				row = (s16)(onAp ? AP_PauseRow_Carry(apKinds, apCount, row, kinds, count)
+				                 : AP_PauseRow_Carry(retailKinds, retailCount, row, kinds, count));
+				for (r = 0; r < count; r++)
+				{
+					s16 string = kinds[r] == AP_PAUSEROW_RESUME      ? LNG_RESUME
+					             : kinds[r] == AP_PAUSEROW_CHARACTER ? LNG_SELECT_CHARACTER
+					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
+					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
+					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
+					                                                 : LNG_OPTIONS;
+					apRowsAdvHub[r].stringIndex = string;
+					apRowsAdvHub[r].rowOnPressUp = (char)AP_PauseRow_Up(r, count);
+					apRowsAdvHub[r].rowOnPressDown = (char)AP_PauseRow_Down(r, count);
+					apRowsAdvHub[r].rowOnPressLeft = (char)r;
+					apRowsAdvHub[r].rowOnPressRight = (char)r;
+					apKinds[r] = kinds[r];
+				}
+				apRowsAdvHub[count].stringIndex = -1;
+				apCount = count;
+				data.menuAdvHub.rowSelected = row;
+				data.menuAdvHub.rows = &apRowsAdvHub[0];
+				return &data.menuAdvHub;
 			}
 
-			apRowsAdvHub[AP_PAUSEROW_HINTS].stringIndex = (s16)hintString;
-
-			// rowSelected persists across pause opens, so swapping row sets
-			// mid-session has to carry the highlight across. Without this a player
-			// sitting on OPTIONS would land on the terminator when a disconnect
-			// takes the row away; MainFreeze_MenuPtrDefault's switch returns
-			// harmlessly on an unknown stringIndex, but "the menu closed and did
-			// nothing" is still a bug worth not shipping.
-			if (data.menuAdvHub.rows != &apRowsAdvHub[0])
+			if (onAp)
 			{
-				data.menuAdvHub.rowSelected = (s16)AP_PauseRow_ToApIndex(data.menuAdvHub.rowSelected);
+				// Back to the retail row set: no seed, or no AP row to show.
+				data.menuAdvHub.rowSelected =
+				    (s16)AP_PauseRow_Carry(apKinds, apCount, data.menuAdvHub.rowSelected, retailKinds, retailCount);
+				data.menuAdvHub.rows = &data.rowsAdvHub[0];
 			}
-
-			data.menuAdvHub.rows = &apRowsAdvHub[0];
-			return &data.menuAdvHub;
-		}
-
-		if (data.menuAdvHub.rows != &data.rowsAdvHub[0])
-		{
-			// Back to the retail row set: no seed, or a seed without the phase.
-			data.menuAdvHub.rowSelected = (s16)AP_PauseRow_ToVanillaIndex(data.menuAdvHub.rowSelected);
-			data.menuAdvHub.rows = &data.rowsAdvHub[0];
 		}
 #endif
 

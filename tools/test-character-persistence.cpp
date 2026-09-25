@@ -905,98 +905,128 @@ static void test_the_fallback_always_returns_something_drawable()
 // real MenuRow array from, so this sweeps the shipped wiring rather than a copy.
 // ---------------------------------------------------------------------------
 
+// Every AP row set: SELECT CHARACTER alone, with TRACKER, and TRACKER alone.
+static const int kPauseSets[3][2] = {{1, 0}, {1, 1}, {0, 1}};
+
 static void test_every_pause_row_is_reachable_both_ways()
 {
-	bool reachedByDown[AP_PAUSEROW_COUNT] = {false};
-	bool reachedByUp[AP_PAUSEROW_COUNT] = {false};
-
-	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
+	for (int set = 0; set < 3; set++)
 	{
-		int up = AP_PAUSEROW_NAV[r][0];
-		int down = AP_PAUSEROW_NAV[r][1];
+		signed char kinds[AP_PAUSEROW_KINDS];
+		int count = AP_PauseRow_Build(kPauseSets[set][0], kPauseSets[set][1], kinds);
+		bool reachedByDown[AP_PAUSEROW_KINDS] = {false};
+		bool reachedByUp[AP_PAUSEROW_KINDS] = {false};
 
-		check(up >= 0 && up < AP_PAUSEROW_COUNT, "every up target is a real row");
-		check(down >= 0 && down < AP_PAUSEROW_COUNT, "every down target is a real row");
-		check(up != r, "no row traps the cursor by pointing up at itself");
-		check(down != r, "no row traps the cursor by pointing down at itself");
+		for (int r = 0; r < count; r++)
+		{
+			int up = AP_PauseRow_Up(r, count);
+			int down = AP_PauseRow_Down(r, count);
 
-		reachedByUp[up] = true;
-		reachedByDown[down] = true;
-	}
+			check(up >= 0 && up < count, "every up target is a real row");
+			check(down >= 0 && down < count, "every down target is a real row");
+			check(up != r, "no row traps the cursor by pointing up at itself");
+			check(down != r, "no row traps the cursor by pointing down at itself");
 
-	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
-	{
-		check(reachedByUp[r], "every row is reachable by pressing up from somewhere");
-		check(reachedByDown[r], "every row is reachable by pressing down from somewhere");
+			reachedByUp[up] = true;
+			reachedByDown[down] = true;
+		}
+
+		for (int r = 0; r < count; r++)
+		{
+			check(reachedByUp[r], "every row is reachable by pressing up from somewhere");
+			check(reachedByDown[r], "every row is reachable by pressing down from somewhere");
+		}
 	}
 }
 
 static void test_pause_row_navigation_is_a_single_cycle()
 {
-	// Walking down from RESUME must visit all five rows and come back, which is
-	// what makes the wiring one wrapping list rather than two disjoint loops.
-	int at = AP_PAUSEROW_RESUME;
-	for (int step = 0; step < AP_PAUSEROW_COUNT; step++)
+	for (int set = 0; set < 3; set++)
 	{
-		check_eq(at, step, "walking down from RESUME visits the rows in order");
-		at = AP_PAUSEROW_NAV[at][1];
-	}
-	check_eq(at, AP_PAUSEROW_RESUME, "and wraps back to RESUME");
+		signed char kinds[AP_PAUSEROW_KINDS];
+		int count = AP_PauseRow_Build(kPauseSets[set][0], kPauseSets[set][1], kinds);
+		// Walking down from RESUME must visit every row and come back, which is
+		// what makes the wiring one wrapping list rather than two disjoint loops.
+		int at = 0;
+		for (int step = 0; step < count; step++)
+		{
+			check_eq(at, step, "walking down from RESUME visits the rows in order");
+			at = AP_PauseRow_Down(at, count);
+		}
+		check_eq(at, 0, "and wraps back to RESUME");
 
-	// Up is the exact reverse of down, everywhere.
-	for (int r = 0; r < AP_PAUSEROW_COUNT; r++)
-	{
-		check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_NAV[r][1]][0], r, "up undoes down");
-		check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_NAV[r][0]][1], r, "down undoes up");
+		// Up is the exact reverse of down, everywhere.
+		for (int r = 0; r < count; r++)
+		{
+			check_eq(AP_PauseRow_Up(AP_PauseRow_Down(r, count), count), r, "up undoes down");
+			check_eq(AP_PauseRow_Down(AP_PauseRow_Up(r, count), count), r, "down undoes up");
+		}
 	}
 }
 
 static void test_select_character_sits_directly_below_resume()
 {
-	check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_RESUME][1], AP_PAUSEROW_CHARACTER,
-	         "down from RESUME reaches SELECT CHARACTER");
-	check_eq(AP_PAUSEROW_NAV[AP_PAUSEROW_CHARACTER][0], AP_PAUSEROW_RESUME,
-	         "and up from it returns to RESUME");
+	signed char kinds[AP_PAUSEROW_KINDS];
+	AP_PauseRow_Build(1, 1, kinds);
+	check_eq(kinds[0], AP_PAUSEROW_RESUME, "RESUME stays the first row");
+	check_eq(kinds[1], AP_PAUSEROW_CHARACTER, "SELECT CHARACTER sits directly below RESUME");
+	check_eq(kinds[2], AP_PAUSEROW_TRACKER, "and TRACKER directly below SELECT CHARACTER");
 }
 
 static void test_the_selection_shift_round_trips()
 {
-	// The retail set has four rows (0..3). Every one of them must survive a trip
-	// into the AP set and back unchanged, or the highlight walks on every
-	// connect and disconnect.
-	for (int vanillaRow = 0; vanillaRow <= 3; vanillaRow++)
+	// The retail set has four rows. Every one of them must survive a trip into
+	// each AP set and back unchanged, or the highlight walks on every connect
+	// and disconnect.
+	signed char retail[AP_PAUSEROW_KINDS];
+	int retailCount = AP_PauseRow_Build(0, 0, retail);
+	check_eq(retailCount, 4, "the retail set has four rows");
+	for (int set = 0; set < 3; set++)
 	{
-		int there = AP_PauseRow_ToApIndex(vanillaRow);
-		check(there >= 0 && there < AP_PAUSEROW_COUNT, "the shifted row is in range");
-		check(there != AP_PAUSEROW_CHARACTER, "and never lands on the new row itself");
-		check_eq(AP_PauseRow_ToVanillaIndex(there), vanillaRow, "and it round-trips back");
+		signed char kinds[AP_PAUSEROW_KINDS];
+		int count = AP_PauseRow_Build(kPauseSets[set][0], kPauseSets[set][1], kinds);
+		for (int vanillaRow = 0; vanillaRow < retailCount; vanillaRow++)
+		{
+			int there = AP_PauseRow_Carry(retail, retailCount, vanillaRow, kinds, count);
+			check(there >= 0 && there < count, "the shifted row is in range");
+			check(kinds[there] == retail[vanillaRow], "and it is the same row");
+			check_eq(AP_PauseRow_Carry(kinds, count, there, retail, retailCount), vanillaRow,
+			         "and it round-trips back");
+		}
 	}
 }
 
 static void test_losing_the_row_lands_somewhere_harmless()
 {
-	// SELECT CHARACTER has no retail counterpart. A player highlighting it when
-	// the seed disconnects must land on RESUME, not on the row that happens to
-	// take its index, and never on the terminator.
-	check_eq(AP_PauseRow_ToVanillaIndex(AP_PAUSEROW_CHARACTER), 0,
-	         "highlighting the row when it disappears falls back to RESUME");
-
-	for (int apRow = 0; apRow < AP_PAUSEROW_COUNT; apRow++)
+	// SELECT CHARACTER and TRACKER have no retail counterpart. A player
+	// highlighting either when the seed disconnects must land on RESUME, not on
+	// the row that happens to take its index, and never on the terminator.
+	signed char retail[AP_PAUSEROW_KINDS], six[AP_PAUSEROW_KINDS];
+	int retailCount = AP_PauseRow_Build(0, 0, retail);
+	int count = AP_PauseRow_Build(1, 1, six);
+	check_eq(AP_PauseRow_Carry(six, count, 1, retail, retailCount), 0,
+	         "highlighting SELECT CHARACTER when it disappears falls back to RESUME");
+	check_eq(AP_PauseRow_Carry(six, count, 2, retail, retailCount), 0,
+	         "and the same for TRACKER");
+	for (int apRow = 0; apRow < count; apRow++)
 	{
-		int back = AP_PauseRow_ToVanillaIndex(apRow);
-		check(back >= 0 && back <= 3, "no AP row maps onto the retail terminator or past it");
+		int back = AP_PauseRow_Carry(six, count, apRow, retail, retailCount);
+		check(back >= 0 && back < retailCount, "no AP row maps onto the retail terminator or past it");
 	}
 }
 
 static void test_the_shift_is_saturating_not_wrapping()
 {
 	// Defensive: rowSelected is an s16 read back out of a struct a savestate can
-	// restore, so out-of-range input must clamp rather than wrap into a valid
-	// looking row.
-	check_eq(AP_PauseRow_ToApIndex(-5), AP_PAUSEROW_RESUME, "a negative row clamps to RESUME");
-	check_eq(AP_PauseRow_ToApIndex(99), AP_PAUSEROW_COUNT - 1, "a huge row clamps to the last row");
-	check_eq(AP_PauseRow_ToVanillaIndex(-5), 0, "and the same both ways, low");
-	check_eq(AP_PauseRow_ToVanillaIndex(99), AP_PAUSEROW_COUNT - 2, "and high");
+	// restore, so out-of-range input must land on RESUME rather than wrap into a
+	// valid looking row.
+	signed char retail[AP_PAUSEROW_KINDS], six[AP_PAUSEROW_KINDS];
+	int retailCount = AP_PauseRow_Build(0, 0, retail);
+	int count = AP_PauseRow_Build(1, 1, six);
+	check_eq(AP_PauseRow_Carry(retail, retailCount, -5, six, count), 0, "a negative row lands on RESUME");
+	check_eq(AP_PauseRow_Carry(retail, retailCount, 99, six, count), 0, "a huge row lands on RESUME");
+	check_eq(AP_PauseRow_Carry(six, count, -5, retail, retailCount), 0, "and the same both ways, low");
+	check_eq(AP_PauseRow_Carry(six, count, 99, retail, retailCount), 0, "and high");
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 #include "ap_tracker.h"
 #include "ap_tracker_assets.h"
 #include "ap_tracker_progress.h"
+#include "ap_tracker_tabs.h"
 #include <platform/native_assets.h>
 #include <platform/native_disc_image.h>
 #include <platform/native_renderer.h>
@@ -25,7 +26,7 @@ typedef struct {
 } AP_TrackerNode;
 
 static struct {
-	int open, hub, focus, pinned, count, loaded, view;
+	int open, hub, tab, focus, pinned, count, loaded;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
 	AP_TrackerHubAsset hubs[AP_TRACKER_HUBS];
@@ -172,11 +173,6 @@ CTR_STATIC_ASSERT(sizeof(AP_TRACKER_WEAPON_NAME) / sizeof(AP_TRACKER_WEAPON_NAME
 CTR_STATIC_ASSERT(sizeof(AP_TRACKER_RACER_NAME) / sizeof(AP_TRACKER_RACER_NAME[0]) ==
 	AP_TRACKER_PROGRESS_RACERS);
 
-static int AP_TrackerProgressAvailable(void)
-{
-	return ctr_cfg.itemsanity || AP_HitEncounterEnabled();
-}
-
 /* Gather live state and classify. Reads only existing server-truth queries, so
  * opening the panel emits no network traffic. */
 static int AP_TrackerProgressRows(AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS_MAX_ROWS])
@@ -222,64 +218,172 @@ static int AP_TrackerProgressRows(AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS
 		weaponExists, weaponChecked, hitExists, hitChecked, rows);
 }
 
-/* Second tracker view. The 1280x800 canvas is split into an Itemsanity column
- * and a Hit column; both full rosters fit without scrolling. A row that has no
- * location in this seed draws the grey "not in seed" marker, never a tick. */
-static void AP_TrackerDrawProgress(void)
-{
-	AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS_MAX_ROWS];
-	int count = AP_TrackerProgressRows(rows);
-	int itemRow = 0, hitRow = 0, i;
+static const char *const AP_TRACKER_BOOST_NAME[AP_CAP_BOOST_COUNT] = {
+	"NONE", "BOOST", "ULTIMATE SPEED", "BLUE FIRE"
+};
+static const char *const AP_TRACKER_RANK_NAME[AP_CAP_STAT_RANK_COUNT] = {
+	"VERY LOW", "LOW", "MEDIUM", "HIGH", "VERY HIGH"
+};
 
+static int AP_TrackerRacersOn(void)
+{
+	return AP_TrackerRacersTabPure(ctr_cfg.character_phase_present, ctr_cfg.character_unlocks,
+		ctr_cfg.racer_locked_pads, AP_HitEncounterEnabled());
+}
+static int AP_TrackerTabShown(int tab) { return AP_TrackerTabShownPure(tab, AP_TrackerRacersOn(), 1); }
+
+/* Shared frame for every tab: panel, border, title between the tab arrows. */
+static void AP_TrackerFrame(const char *title)
+{
 	memset(ap_tracker.canvas, 0, TRACKER_W * TRACKER_H * 4);
 	AP_TrackerRect(16, 24, 1248, 744, AP_TrackerRGBA(0, 5, 10, 172));
 	AP_TrackerBorder(16, 24, 1248, 744, TRACKER_MINT, 3);
 	AP_TrackerLine(16, 96, 1264, 96, TRACKER_MINT, 2);
-	AP_TrackerText("ITEMS AND HIT PROGRESS", 310, 45, 36, TRACKER_GOLD, 660);
-
-	if (ctr_cfg.itemsanity)
-	{
-		AP_TrackerRect(36, 116, 574, 556, AP_TrackerRGBA(10, 15, 18, 226));
-		AP_TrackerBorder(36, 116, 574, 556, TRACKER_MINT, 2);
-		AP_TrackerText("ITEMSANITY", 54, 130, 25, TRACKER_GOLD, 220);
-		AP_TrackerText("OWN", 330, 136, 16, TRACKER_WHITE, 55);
-		AP_TrackerText("PLAIN", 410, 136, 16, TRACKER_WHITE, 75);
-		AP_TrackerText("JUICED", 506, 136, 16, TRACKER_WHITE, 85);
-	}
-
-	if (AP_HitEncounterEnabled())
-	{
-		AP_TrackerRect(634, 116, 610, 556, AP_TrackerRGBA(10, 15, 18, 226));
-		AP_TrackerBorder(634, 116, 610, 556, TRACKER_MINT, 2);
-		AP_TrackerText("HIT CHARACTER", 652, 130, 25, TRACKER_GOLD, 300);
-		AP_TrackerText("HIT", 1160, 136, 16, TRACKER_WHITE, 50);
-	}
-
-	for (i = 0; i < count; i++)
-	{
-		AP_TrackerProgressRow *row = &rows[i];
-		if (row->kind == AP_TRACKER_PROGRESS_WEAPON)
-		{
-			int y = 169 + itemRow++ * 43;
-			AP_TrackerText(AP_TRACKER_WEAPON_NAME[row->index], 54, y, 19, TRACKER_WHITE, 250);
-			AP_TrackerText(row->owned ? "YES" : "NO", 330, y, 17,
-				row->owned ? TRACKER_GREEN : TRACKER_GRAY, 54);
-			AP_TrackerTick(426, y + 5, row->plain);
-			AP_TrackerTick(527, y + 5, row->juiced);
-		}
-		else
-		{
-			int y = 169 + hitRow++ * 31;
-			AP_TrackerText(AP_TRACKER_RACER_NAME[row->index], 652, y, 18, TRACKER_WHITE, 450);
-			AP_TrackerTick(1170, y + 4, row->plain);
-		}
-	}
-
+	AP_TrackerText(title, 280, 45, 36, TRACKER_GOLD, 750);
+	AP_TrackerText("<", 220, 47, 32, AP_TrackerRGBA(255, 52, 30, 255), 50);
+	AP_TrackerText(">", 1050, 47, 32, AP_TrackerRGBA(255, 52, 30, 255), 50);
 	AP_TrackerLine(16, 708, 1264, 708, TRACKER_MINT, 2);
-	AP_TrackerText("CHECK: O PENDING / TICK DONE / - NOT IN SEED",
+}
+static void AP_TrackerLockIcon(int x, int y)
+{
+	AP_TrackerBorder(x + 2, y + 8, 11, 10, TRACKER_GRAY, 2); AP_TrackerCircle(x + 7, y + 8, 4, TRACKER_GRAY, 2);
+}
+/* Physical pad name for the racer list and pad panels, without the "PAD". */
+static const char *AP_TrackerPadName(int physical)
+{
+	if (physical >= 100 && physical < 105) return sdata->lngStrings[data.AdvCups[physical - 100].lngIndex_CupName];
+	if (physical >= 0 && physical < 65) return sdata->lngStrings[data.metaDataLEV[physical].name_LNG];
+	return "?";
+}
+
+/* RACERS tab: one row per racer, in engine order. UNLOCKED reads the same gate
+ * the picker and the pad locks use; the pad list is the per-pad racer lock
+ * from slot_data; HIT is the Hit Character check when that option is on. */
+static void AP_TrackerDrawRacers(void)
+{
+	AP_TrackerRacerRow rows[AP_TRACKER_TAB_RACERS_COUNT];
+	AP_TrackerProgressRow hitRows[AP_TRACKER_PROGRESS_MAX_ROWS];
+	unsigned char unlocked[AP_TRACKER_TAB_RACERS_COUNT], hit[AP_TRACKER_TAB_RACERS_COUNT] = {0};
+	int dense[AP_TRACKER_TAB_DENSE_PADS], cups[AP_TRACKER_TAB_CUP_PADS], i, k, count;
+	int hitOn = AP_HitEncounterEnabled(), locksOn = ctr_cfg.racer_locked_pads;
+	int boostPc = ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER && AP_CapabilityBoostTierForCharacter(0) >= 0;
+	int padX = 330 + (boostPc ? 200 : 0), hitX = 1170;
+	for (i = 0; i < AP_TRACKER_TAB_RACERS_COUNT; i++) unlocked[i] = AP_CharacterUnlocked(i) ? 1 : 0;
+	for (i = 0; i < AP_TRACKER_TAB_DENSE_PADS; i++) dense[i] = locksOn ? ctr_cfg_racer_lock(i) : -1;
+	for (i = 0; i < AP_TRACKER_TAB_CUP_PADS; i++) cups[i] = locksOn ? ctr_cfg_racer_lock(100 + i) : -1;
+	count = AP_TrackerProgressRows(hitRows);
+	for (i = 0; i < count; i++)
+		if (hitRows[i].kind == AP_TRACKER_PROGRESS_HIT && hitRows[i].index < AP_TRACKER_TAB_RACERS_COUNT)
+			hit[hitRows[i].index] = (unsigned char)hitRows[i].plain;
+	AP_TrackerRacerRowsPure(dense, cups, unlocked, hit, rows);
+
+	AP_TrackerFrame("RACERS");
+	AP_TrackerRect(36, 112, 1208, 584, AP_TrackerRGBA(10, 15, 18, 226));
+	AP_TrackerBorder(36, 112, 1208, 584, TRACKER_MINT, 2);
+	AP_TrackerText("RACER", 54, 124, 16, TRACKER_WHITE, 200);
+	AP_TrackerText("UNLOCKED", 226, 124, 16, TRACKER_WHITE, 100);
+	if (boostPc) AP_TrackerText("BOOST", 330, 124, 16, TRACKER_WHITE, 180);
+	if (locksOn) AP_TrackerText("REQUIRED AT PADS", padX, 124, 16, TRACKER_WHITE, 400);
+	if (hitOn) AP_TrackerText("HIT", hitX - 6, 124, 16, TRACKER_WHITE, 60);
+	for (i = 0; i < AP_TRACKER_TAB_RACERS_COUNT; i++) {
+		int y = 152 + i * 34; char pads[320]; size_t used = 0;
+		AP_TrackerText(AP_TRACKER_RACER_NAME[i], 54, y, 18, rows[i].unlocked ? TRACKER_WHITE : TRACKER_GRAY, 165);
+		AP_TrackerText(rows[i].unlocked ? "YES" : "NO", 226, y + 1, 17, rows[i].unlocked ? TRACKER_GREEN : TRACKER_GRAY, 60);
+		if (boostPc) {
+			int tier = AP_CapabilityBoostTierForCharacter(i);
+			AP_TrackerText(tier >= 0 && tier < AP_CAP_BOOST_COUNT ? AP_TRACKER_BOOST_NAME[tier] : "-", 330, y + 1, 16,
+				tier > 0 ? TRACKER_GOLD : TRACKER_GRAY, 185);
+		}
+		pads[0] = 0;
+		for (k = 0; k < AP_TRACKER_TAB_DENSE_PADS + AP_TRACKER_TAB_CUP_PADS; k++) {
+			int on = k < AP_TRACKER_TAB_DENSE_PADS ? (rows[i].densePads >> k) & 1 : (rows[i].cupPads >> (k - AP_TRACKER_TAB_DENSE_PADS)) & 1;
+			int physical = k < AP_TRACKER_TAB_DENSE_PADS ? k : 100 + k - AP_TRACKER_TAB_DENSE_PADS;
+			if (!on || used >= sizeof pads - 1) continue;
+			used += (size_t)snprintf(pads + used, sizeof pads - used, "%s%s", used ? ", " : "", AP_TrackerPadName(physical));
+		}
+		if (locksOn) AP_TrackerText(pads[0] ? pads : "-", padX, y + 2, 15,
+			pads[0] ? (rows[i].unlocked ? TRACKER_GOLD : AP_TrackerRGBA(255, 57, 43, 255)) : TRACKER_GRAY, hitX - padX - 24);
+		if (hitOn) AP_TrackerTick(hitX, y + 4, rows[i].hit);
+	}
+	{
+		char legend[160];
+		snprintf(legend, sizeof legend, "UNLOCKED: RACER RECEIVED%s%s",
+			locksOn ? "   RED PADS: RACER STILL NEEDED" : "", hitOn ? "   HIT: O PENDING / TICK DONE" : "");
+		AP_TrackerText(legend, 32, 718, 14, TRACKER_WHITE, 1210);
+	}
+}
+
+/* ITEMS tab: received progression the client counts, plus the Itemsanity
+ * weapon checks when that option is on. */
+static void AP_TrackerDrawItems(void)
+{
+	AP_TrackerProgressRow rows[AP_TRACKER_PROGRESS_MAX_ROWS];
+	static const char *const colours[5] = {"RED", "GREEN", "BLUE", "YELLOW", "PURPLE"};
+	static const int shades[5][3] = {{255, 70, 60}, {80, 230, 100}, {90, 150, 255}, {255, 220, 60}, {200, 110, 255}};
+	static const char *const stats[3] = {"TOP SPEED", "ACCELERATION", "TURNING"};
+	int count = AP_TrackerProgressRows(rows), weapons = ctr_cfg.itemsanity ? 1 : 0;
+	int px = weapons ? 36 : 346, y = 170, i, current = data.characterIDs[0];
+	int boost = AP_CapabilityBoostTierForCharacter(current);
+	char line[96];
+
+	AP_TrackerFrame("ITEMS");
+	AP_TrackerRect(px, 112, 588, 584, AP_TrackerRGBA(10, 15, 18, 226));
+	AP_TrackerBorder(px, 112, 588, 584, TRACKER_MINT, 2);
+	AP_TrackerText("RECEIVED", px + 18, 124, 25, TRACKER_GOLD, 260);
+	snprintf(line, sizeof line, "%d", AP_GateCount(AP_IDX_KEY));
+	AP_TrackerText("KEYS", px + 18, y, 19, TRACKER_WHITE, 220); AP_TrackerText(line, px + 250, y, 19, TRACKER_GOLD, 80); y += 40;
+	snprintf(line, sizeof line, "%d", AP_GateCount(AP_IDX_TROPHY));
+	AP_TrackerText("TROPHIES", px + 18, y, 19, TRACKER_WHITE, 220); AP_TrackerText(line, px + 250, y, 19, TRACKER_GOLD, 80); y += 40;
+	AP_TrackerText("RELICS", px + 18, y, 19, TRACKER_WHITE, 220);
+	for (i = 0; i < 3; i++) {
+		snprintf(line, sizeof line, "%c %d", "SGP"[i], AP_GateCount(AP_IDX_SAPPHIRE + i));
+		AP_TrackerText(line, px + 250 + i * 100, y, 19, i == 0 ? AP_TrackerRGBA(97, 202, 255, 255) : i == 1 ? TRACKER_GOLD : AP_TrackerRGBA(202, 211, 255, 255), 90);
+	}
+	y += 40;
+	for (i = 0; i < 2; i++) {
+		int c;
+		AP_TrackerText(i ? "GEMS" : "CTR TOKENS", px + 18, y, 19, TRACKER_WHITE, 220);
+		for (c = 0; c < 5; c++) {
+			snprintf(line, sizeof line, "%c %d", colours[c][0], i ? AP_GateCountGemColour(c) : AP_GateCountTokenColour(c));
+			AP_TrackerText(line, px + 250 + c * 64, y, 19, AP_TrackerRGBA(shades[c][0], shades[c][1], shades[c][2], 255), 60);
+		}
+		y += 40;
+	}
+	if (boost >= 0) {
+		AP_TrackerText(ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER ? "BOOST (THIS RACER)" : "BOOST", px + 18, y, 19, TRACKER_WHITE, 225);
+		AP_TrackerText(boost < AP_CAP_BOOST_COUNT ? AP_TRACKER_BOOST_NAME[boost] : "?", px + 250, y, 19, boost ? TRACKER_GOLD : TRACKER_GRAY, 320);
+		y += 40;
+	}
+	for (i = 0; i < 3; i++) {
+		int rank = AP_CapabilityStatRankForCharacter(AP_CAP_CHAIN_TOP_SPEED + i, current);
+		if (rank < 0) continue;
+		AP_TrackerText(stats[i], px + 18, y, 19, TRACKER_WHITE, 225);
+		AP_TrackerText(rank < AP_CAP_STAT_RANK_COUNT ? AP_TRACKER_RANK_NAME[rank] : "?", px + 250, y, 19, rank ? TRACKER_GOLD : TRACKER_GRAY, 320);
+		y += 40;
+	}
+	if (ctr_cfg.stats_mode == AP_CAP_MODE_PER_CHARACTER && AP_CapabilityStatRankForCharacter(AP_CAP_CHAIN_TOP_SPEED, current) >= 0)
+		AP_TrackerText("STATS ARE FOR THE RACER YOU ARE DRIVING", px + 18, y, 14, TRACKER_GRAY, 550);
+
+	if (weapons) {
+		int itemRow = 0;
+		AP_TrackerRect(648, 112, 596, 584, AP_TrackerRGBA(10, 15, 18, 226));
+		AP_TrackerBorder(648, 112, 596, 584, TRACKER_MINT, 2);
+		AP_TrackerText("ITEMSANITY", 666, 124, 25, TRACKER_GOLD, 220);
+		AP_TrackerText("OWN", 950, 130, 16, TRACKER_WHITE, 55);
+		AP_TrackerText("PLAIN", 1030, 130, 16, TRACKER_WHITE, 75);
+		AP_TrackerText("JUICED", 1126, 130, 16, TRACKER_WHITE, 85);
+		for (i = 0; i < count; i++) {
+			AP_TrackerProgressRow *row = &rows[i]; int ry;
+			if (row->kind != AP_TRACKER_PROGRESS_WEAPON) continue;
+			ry = 166 + itemRow++ * 46;
+			AP_TrackerText(AP_TRACKER_WEAPON_NAME[row->index], 666, ry, 19, TRACKER_WHITE, 270);
+			AP_TrackerText(row->owned ? "YES" : "NO", 950, ry, 17, row->owned ? TRACKER_GREEN : TRACKER_GRAY, 54);
+			AP_TrackerTick(1046, ry + 5, row->plain);
+			AP_TrackerTick(1147, ry + 5, row->juiced);
+		}
+	}
+	AP_TrackerText(weapons ? "COUNTS ARE RECEIVED ITEMS   CHECK: O PENDING / TICK DONE / - NOT IN SEED" : "COUNTS ARE RECEIVED ITEMS",
 		32, 718, 14, TRACKER_WHITE, 1210);
-	AP_TrackerText("SELECT MAP   TRIANGLE/CIRCLE/SQUARE/START BACK",
-		32, 744, 16, TRACKER_WHITE, 1210);
 }
 
 static unsigned char *AP_TrackerReadSubfile(int index, size_t *size)
@@ -354,12 +458,17 @@ static int AP_TrackerLoadAssets(void)
 	ap_tracker.loaded = 1; return 1;
 }
 
-static void AP_TrackerProject(int wx, int wz, int *x, int *y)
+static int AP_TrackerScale8(int v8, int size, int src)
+{ /* Round eighths of a map pixel to the canvas, floor-safe for negatives. */
+	long n = (long)v8 * size * 2 + (long)src * 8, d = (long)src * 16;
+	return (int)(n >= 0 ? n / d : -((-n + d - 1) / d));
+}
+static void AP_TrackerProject(int kind, int wx, int wz, int *x, int *y)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int mx, my;
-	AP_TrackerMapPoint(h, wx, wz, &mx, &my);
-	*x = ap_tracker.map_x + mx * ap_tracker.map_w / h->width;
-	*y = ap_tracker.map_y + my * ap_tracker.map_h / h->height;
+	AP_TrackerMarkerPoint(h, ap_tracker.hub, kind, wx, wz, &mx, &my);
+	*x = ap_tracker.map_x + AP_TrackerScale8(mx, ap_tracker.map_w, h->width);
+	*y = ap_tracker.map_y + AP_TrackerScale8(my, ap_tracker.map_h, h->height);
 }
 static void AP_TrackerBuildNodes(void)
 {
@@ -374,7 +483,7 @@ static void AP_TrackerBuildNodes(void)
 	for (i = 0; i < h->pad_count; i++) {
 		AP_TrackerNode *n = &ap_tracker.nodes[i]; int physical = h->pads[i].physical, dest = ctr_cfg_warp_dest(physical);
 		memset(n, 0, sizeof *n); n->physical = physical; n->destination = dest; n->kind = 0; n->bit = -1;
-		AP_TrackerProject(h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
+		AP_TrackerProject(AP_TRACKER_MARK_WORLD, h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
 		if (dest >= 100 && dest < 105) {
 			const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
@@ -403,7 +512,7 @@ static void AP_TrackerBuildNodes(void)
 			memset(n, 0, sizeof *n); n->physical = -1; n->destination = -1; n->kind = 3;
 			n->bit = ap_tracker.hub ? ADV_REWARD_FIRST_BOSS_KEY + ap_tracker.hub - 1 : AP_GOAL_BIT_OXIDE_FIRST;
 			snprintf(n->title, sizeof n->title, "%s", ap_tracker.hub ? names[ap_tracker.hub - 1] : "N. OXIDE");
-			AP_TrackerProject(item[0], item[1], &n->x, &n->y);
+			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}
 	}
@@ -459,7 +568,17 @@ static void AP_TrackerDrawNode(int index)
 	AP_TrackerRect(x, y, n->cw, n->ch, body); AP_TrackerBorder(x,y,n->cw,n->ch,TRACKER_MINT,selected ? 3 : 2);
 	if (selected) AP_TrackerRect(x+5,y+5,n->cw-10,29,AP_TrackerRGBA(200,65,4,255));
 	AP_TrackerText(n->title,x+12,y+9,23,TRACKER_GOLD,n->cw-24);
-	AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,n->cw-24);
+	{
+		/* Racer lock (slot_data racer_locks): who the pad needs, and whether
+		 * that racer has been received. */
+		int lock = n->physical >= 0 ? ctr_cfg_racer_lock(n->physical) : -1;
+		if (lock >= 0 && lock < AP_TRACKER_PROGRESS_RACERS) {
+			int met = AP_CharacterUnlocked(lock);
+			AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,178);
+			AP_TrackerText(AP_TRACKER_RACER_NAME[lock],x+200,y+39,14,met?TRACKER_GOLD:AP_TrackerRGBA(255,57,43,255),140);
+			if (met) AP_TrackerTick(x+344,y+36,2); else AP_TrackerLockIcon(x+342,y+36);
+		} else AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,n->cw-24);
+	}
 	if (n->kind == 0) {
 		AP_TrackerRaceStates(n->destination,states);
 		for (i=0;i<5;i++) {
@@ -499,14 +618,14 @@ static void AP_TrackerDrawNode(int index)
 static void AP_TrackerDraw(void)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int i; char line[256];
-	if (ap_tracker.view) { AP_TrackerDrawProgress(); return; }
-	memset(ap_tracker.canvas,0,TRACKER_W*TRACKER_H*4);
-	AP_TrackerRect(16,24,1248,744,AP_TrackerRGBA(0,5,10,172));
-	AP_TrackerBorder(16,24,1248,744,TRACKER_MINT,3);
-	AP_TrackerLine(16,96,1264,96,TRACKER_MINT,2);
-	AP_TrackerText(sdata->lngStrings[data.metaDataLEV[GEM_STONE_VALLEY+ap_tracker.hub].name_LNG],280,45,36,TRACKER_GOLD,750);
-	AP_TrackerText("<",220,47,32,AP_TrackerRGBA(255,52,30,255),50);
-	AP_TrackerText(">",1050,47,32,AP_TrackerRGBA(255,52,30,255),50);
+	if (ap_tracker.tab == AP_TRACKER_TAB_RACERS) AP_TrackerDrawRacers();
+	else if (ap_tracker.tab == AP_TRACKER_TAB_ITEMS) AP_TrackerDrawItems();
+	if (ap_tracker.tab >= AP_TRACKER_TAB_HUBS) {
+		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? "L1/R1 HUBS, RACERS, ITEMS   MOUSE < > TABS   ^ BACK"
+			: "L1/R1 HUBS, ITEMS   MOUSE < > TABS   ^ BACK", 32, 744, 16, TRACKER_WHITE, 1210);
+		return;
+	}
+	AP_TrackerFrame(sdata->lngStrings[data.metaDataLEV[GEM_STONE_VALLEY+ap_tracker.hub].name_LNG]);
 	AP_TrackerBlit(h->pixels,h->width,h->height,ap_tracker.map_x+4,ap_tracker.map_y+6,ap_tracker.map_w,ap_tracker.map_h,AP_TrackerRGBA(0,0,0,255));
 	AP_TrackerBlit(h->pixels,h->width,h->height,ap_tracker.map_x,ap_tracker.map_y,ap_tracker.map_w,ap_tracker.map_h,TRACKER_WHITE);
 	for(i=0;i<ap_tracker.count;i++) {
@@ -522,34 +641,40 @@ static void AP_TrackerDraw(void)
 	{
 		s16 *item=D232.hubItemsXY_ptrArray[ap_tracker.hub];
 		for(;item[0]!=-1;item+=4) if(item[3]<0) {
-			int x,y; AP_TrackerProject(item[0]-0x200,item[1]-0x100,&x,&y);
+			int x,y; AP_TrackerProject(AP_TRACKER_MARK_EXIT,item[0],item[1],&x,&y);
 			AP_TrackerArrow(x,y,0x1000-item[2],9,TRACKER_WHITE);
 		}
 	}
 	if(sdata->gGT->levelID==GEM_STONE_VALLEY+ap_tracker.hub && sdata->gGT->drivers[0] && sdata->gGT->drivers[0]->instSelf) {
 		int x,y; MATRIX *m=&sdata->gGT->drivers[0]->instSelf->matrix;
-		AP_TrackerProject(m->t[0],m->t[2],&x,&y);
+		AP_TrackerProject(AP_TRACKER_MARK_WORLD,m->t[0],m->t[2],&x,&y);
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);
-	AP_TrackerLine(16,708,1264,708,TRACKER_MINT,2);
 	if(ap_tracker.pinned && ap_tracker.count) {
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
 		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,
 			AP_PadUncollectedBoxCount(n->destination),AP_PadUncollectedLetterCount(n->destination));
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
-	AP_TrackerText(
-		AP_TrackerProgressAvailable()
-			? "L1/R1 HUB   D-PAD FOCUS   * INSPECT   SELECT PROGRESS   ^ BACK"
-			: "L1/R1 HUB   D-PAD FOCUS   * INSPECT   MOUSE HOVER/CLICK   ^ BACK",
-		32,744,16,TRACKER_WHITE,1210);
+	AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"
+		: "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK", 32,744,16,TRACKER_WHITE,1210);
 }
 
 int AP_TrackerOpen(void) { return ap_tracker.open; }
+/* The hub pause menu's TRACKER row. The request is consumed by the next
+ * AP_TrackerMenuFrame, which opens the tracker only in the same pause context
+ * the Square shortcut uses. */
+static int ap_tracker_request;
+void AP_TrackerRequestOpen(void) { ap_tracker_request=1; }
+int AP_TrackerAvailable(void)
+{
+	struct GameTracker *gt=sdata->gGT;
+	return gt && ctr_cfg_active() && (gt->gameMode1&ADVENTURE_ARENA) && LOAD_IsOpen_AdvHub();
+}
 static void AP_TrackerClose(void)
 {
-	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.view=0;
+	ap_tracker.open=0; ap_tracker.pinned=0;
 	if(g_window && (SDL_GetWindowFlags(g_window)&SDL_WINDOW_FULLSCREEN)) SDL_HideCursor();
 }
 int AP_TrackerMenuFrame(void)
@@ -559,31 +684,41 @@ int AP_TrackerMenuFrame(void)
 		(gt->gameMode1&PAUSE_1) && LOAD_IsOpen_AdvHub() && sdata->ptrActiveMenu &&
 		sdata->ptrActiveMenu->funcPtr==MainFreeze_MenuPtrDefault && !sdata->ptrDesiredMenu;
 	float mx,my; unsigned buttons;
-	if(!context) { if(ap_tracker.open) AP_TrackerClose(); return 0; }
+	if(!context) { ap_tracker_request=0; if(ap_tracker.open) AP_TrackerClose(); return 0; }
 	buttons=SDL_GetMouseState(&mx,&my);
 	if(!ap_tracker.open) {
-		if(!(tap&BTN_SQUARE)) return 0;
+		/* Square in the hub pause menu, or its TRACKER row. */
+		int requested=ap_tracker_request; ap_tracker_request=0;
+		if(!(tap&BTN_SQUARE) && !requested) return 0;
 		if(!AP_TrackerLoadAssets()) { AP_TrackerShutdown(); return 0; }
-		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.view=0; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
+		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
+		ap_tracker.tab=ap_tracker.hub;
 		ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
 	} else {
 		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
-		if((tap&BTN_SELECT) && AP_TrackerProgressAvailable()) ap_tracker.view=!ap_tracker.view;
-		/* A seed swap while the panel is open can turn both features off; fall
-		 * back to the map rather than leaving the map hidden behind an empty
-		 * panel. */
-		if(ap_tracker.view && !AP_TrackerProgressAvailable()) ap_tracker.view=0;
-		if(ap_tracker.view) {
-			/* Progress view: an explicit alternate branch. No map navigation,
-			 * pinning or mouse hit-testing runs, so a frame that shows the panel
-			 * cannot alter the hidden map's hub, focus or pinned node. */
-		} else {
-			if(tap&(BTN_L1|BTN_R1)) {
-				ap_tracker.hub=(ap_tracker.hub+((tap&BTN_L1)?4:1))%5;
-				ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+		int racersOn=AP_TrackerRacersOn(), step=0;
+		/* A seed swap while open can take the RACERS tab away; land on the map. */
+		ap_tracker.tab=AP_TrackerTabSettlePure(ap_tracker.tab,ap_tracker.hub,racersOn,1);
+		if(tap&(BTN_L1|BTN_R1)) step=(tap&BTN_L1)?-1:1;
+		if(!step && (buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK)) {
+			int vx,vy,vw,vh;
+			if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {
+				int x=(int)((mx-vx)*TRACKER_W/vw), y=(int)((my-vy)*TRACKER_H/vh);
+				if(y>=30 && y<96 && x>=180 && x<280) step=-1;
+				else if(y>=30 && y<96 && x>=1020 && x<1120) step=1;
 			}
+		}
+		if(step) {
+			ap_tracker.tab=AP_TrackerTabStepPure(ap_tracker.tab,step,racersOn,1);
+			if(ap_tracker.tab<AP_TRACKER_TAB_HUBS) ap_tracker.hub=ap_tracker.tab;
+			ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+		}
+		if(ap_tracker.tab>=AP_TRACKER_TAB_HUBS) {
+			/* RACERS and ITEMS are read-only lists: no focus, pinning or map
+			 * hit-testing, so the hidden map keeps its hub, focus and pin. */
+		} else {
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
 			}
@@ -599,11 +734,6 @@ int AP_TrackerMenuFrame(void)
 							if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK)) ap_tracker.pinned=!ap_tracker.pinned;
 							break;
 						}
-					}
-					if((buttons&SDL_BUTTON_LMASK) && !(ap_tracker.mouse_buttons&SDL_BUTTON_LMASK) && y>=30 && y<96) {
-						if(x>=180 && x<280) ap_tracker.hub=(ap_tracker.hub+4)%5;
-						else if(x>=1020 && x<1120) ap_tracker.hub=(ap_tracker.hub+1)%5;
-						AP_TrackerBuildNodes();
 					}
 				}
 			}

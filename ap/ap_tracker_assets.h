@@ -136,7 +136,7 @@ static int AP_TrackerParseHub(AP_TrackerHubAsset *hub, const unsigned char *file
 }
 
 /* Original minimap coordinate mapping, including its bottom-right anchor. */
-static void AP_TrackerMapPoint(const AP_TrackerHubAsset *h, int wx, int wz, int *x, int *y)
+static inline void AP_TrackerMapPoint(const AP_TrackerHubAsset *h, int wx, int wz, int *x, int *y)
 {
 	const int16_t *m = h->map; int ax, ay, rx = m[0] - m[2], ry = m[1] - m[3];
 	if (m[8] == 0) { ax = wx * m[4] / rx; ay = wz * m[5] * 2 / ry; }
@@ -145,5 +145,40 @@ static void AP_TrackerMapPoint(const AP_TrackerHubAsset *h, int wx, int wz, int 
 	else { ax = wz * m[4] / ry; ay = -wx * m[5] * 2 / rx; }
 	*x = m[6] + ax - (500 - h->width);
 	*y = m[7] + ay - 16 - (195 - h->height);
+}
+
+/* Marker placement on the hub map, in eighths of a map pixel (#349 follow-up).
+ * AP_TrackerMapPoint is the retail icon anchor: retail draws every map icon
+ * with its TOP-LEFT corner there, so the raw point sits up and left of what
+ * the player sees. Three sources, per marker kind:
+ *  - WORLD (warp pads, the player): LEV positions are true geometry, so they
+ *    take the offset that registers the hub's ground quadblocks onto its map
+ *    texture. Measured per hub from the retail LEV (translation fit of the
+ *    GROUND quads' footprint against the lit map pixels, IoU 0.69 to 0.87);
+ *    tools/test-tracker-markers.c re-checks it against the disc when given one.
+ *  - GARAGE: the hub item point is hand-placed for the retail star icon
+ *    (11x9, drawn from its top-left), so use that icon's centre.
+ *  - EXIT: retail subtracts 0x200/0x100 from the item and draws the arrow
+ *    6/4 pixels right/down of the result (AH_Map_HubArrow). */
+enum { AP_TRACKER_MARK_WORLD = 0, AP_TRACKER_MARK_GARAGE = 1, AP_TRACKER_MARK_EXIT = 2 };
+/* Hub order is levelID - GEM_STONE_VALLEY: Gem Stone Valley, N. Sanity Beach,
+ * The Lost Ruins, Glacier Park, Citadel City. */
+static const signed char AP_TRACKER_MAP_FIT[AP_TRACKER_HUBS][2] = {
+	{43, 28}, {59, 32}, {25, 16}, {59, 16}, {22, 25}
+};
+static void AP_TrackerMarkerPoint(const AP_TrackerHubAsset *h, int hub, int kind, int wx, int wz, int *x8, int *y8)
+{
+	const int16_t *m = h->map; int rx = m[0] - m[2], ry = m[1] - m[3], ax, ay, ox, oy;
+	if (kind == AP_TRACKER_MARK_EXIT) { wx -= 0x200; wz -= 0x100; ox = 48; oy = 32; }
+	else if (kind == AP_TRACKER_MARK_GARAGE) { ox = 44; oy = 36; }
+	else { ox = hub >= 0 && hub < AP_TRACKER_HUBS ? AP_TRACKER_MAP_FIT[hub][0] : 0;
+	       oy = hub >= 0 && hub < AP_TRACKER_HUBS ? AP_TRACKER_MAP_FIT[hub][1] : 0; }
+	/* Same rotation table as AP_TrackerMapPoint, kept in eighths. */
+	if (m[8] == 0) { ax = wx * m[4] * 8 / rx; ay = wz * m[5] * 16 / ry; }
+	else if (m[8] == 1) { ax = -wz * m[4] * 8 / ry; ay = wx * m[5] * 16 / rx; }
+	else if (m[8] == 2) { ax = -wx * m[4] * 8 / rx; ay = -wz * m[5] * 16 / ry; }
+	else { ax = wz * m[4] * 8 / ry; ay = -wx * m[5] * 16 / rx; }
+	*x8 = (m[6] - (500 - h->width)) * 8 + ax + ox;
+	*y8 = (m[7] - 16 - (195 - h->height)) * 8 + ay + oy;
 }
 #endif

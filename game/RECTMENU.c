@@ -419,6 +419,18 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu)
 }
 
 
+
+// Row label lookup. Retail reads sdata->lngStrings directly; AP rows that have
+// no retail string (the hub pause TRACKER row, AP_LNG_TRACKER) resolve here.
+static char *RECTMENU_RowString(int index)
+{
+#ifdef CTR_AP
+	if (index == AP_LNG_TRACKER)
+		return (char *)"TRACKER";
+#endif
+	return sdata->lngStrings[index];
+}
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80045c50-0x80045db0.
 void RECTMENU_GetWidth(struct RectMenu *m, s16 *width, b32 boolCheckSubmenu)
 {
@@ -438,7 +450,7 @@ void RECTMENU_GetWidth(struct RectMenu *m, s16 *width, b32 boolCheckSubmenu)
 	for (row = m->rows; row->stringIndex != -1; row++)
 	{
 		// width of string in each row
-		lineWidth = DecalFont_GetLineWidth(sdata->lngStrings[row->stringIndex & 0x7fff], fontType);
+		lineWidth = DecalFont_GetLineWidth(RECTMENU_RowString(row->stringIndex & 0x7fff), fontType);
 
 		// set new width if new max is found
 		if (*width < (lineWidth + 1))
@@ -621,13 +633,13 @@ LAB_80045e94:
 						{
 							textFlags |= 0x8000;
 						}
-						titleString = sdata->lngStrings[uVar5 & 0x7fff];
+						titleString = RECTMENU_RowString(uVar5 & 0x7fff);
 						index = local_2c;
 					}
 					else
 					{
 						textFlags |= 0x8000;
-						titleString = sdata->lngStrings[uVar5 & 0x7fff];
+						titleString = RECTMENU_RowString(uVar5 & 0x7fff);
 						sVar4 = (s16)(posX + menu->posX_prev + local_30);
 						index = posX_prev;
 					}
