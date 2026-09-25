@@ -597,6 +597,14 @@ static struct TextureLayout *DrawLevelOvr1P_ResolveTexturePointerChecked(uintptr
 
 static s8 DrawLevelOvr1P_ReadRetailQuadBlockByte(const struct QuadBlock *block, u32 byteOffset)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	/* Box authoring build, Arcade custom-page race only. A custom level larger
+	   than 2 MiB has no PS1 address to reconstruct, so the derived sort slots
+	   past the four authored mid-face bytes would read rebased pointer bytes as
+	   depth bias and sort by ASLR. Use the block's authored whole-block bias. */
+	if (byteOffset >= 0x1c && byteOffset < 0x2c && MainRaceTrack_OfflineCustomLoad())
+		return (s8)(block->draw_order_low & 0xff);
+#endif
 #ifdef CTR_NATIVE
 	if (byteOffset >= 0x1c && byteOffset < 0x2c)
 	{

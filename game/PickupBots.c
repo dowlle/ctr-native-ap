@@ -42,6 +42,13 @@ void PickupBots_Init(void)
 	int hub;
 	int lev = sdata->gGT->levelID;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom-page race has no hub and no boss: never read the host slot's
+	// level metadata. bossWeaponMeta is only read by boss AI.
+	if (MainRaceTrack_OfflineCustomLoad())
+		return;
+#endif
+
 	// get hubID of level
 	hub = data.metaDataLEV[lev].hubID;
 

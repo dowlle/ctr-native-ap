@@ -27,6 +27,13 @@ void RB_Bubbles_RoosTubes()
 	{
 		return;
 	}
+#ifdef CTR_CUSTOM_PACKAGES
+	// Roo's Tubes' bubbles never run on a custom track borrowing slot 6.
+	if (MainRaceTrack_IdentityLevelID() != ROO_TUBES)
+	{
+		return;
+	}
+#endif
 
 	level1 = gGT->level1;
 	if (level1->numSpawnType2 < 2)

@@ -183,7 +183,11 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	// ten-stage loader is armed (see tools/CUSTOM-TRACK-SPIKE.md), and this
 	// runs inside that machine, so asking here is safe.
 	{
-		int serving = CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
+		int serving =
+#ifdef CTR_CUSTOM_PACKAGES
+		              MainRaceTrack_OfflineCustomLoad() ||
+#endif
+		              CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		              CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) ||
 		              CustomTrack_CortexTrackServing((int)gGT->levelID,
@@ -192,7 +196,12 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 
 		if (chosen != (unsigned long)size)
 		{
+#ifdef CTR_CUSTOM_PACKAGES
+			// The identity id: a custom-page race logs as the custom track.
+			CustomTrack_Log("[CustomTracks] level %d primitive arena %d -> %lu bytes (%s)\n", MainRaceTrack_IdentityLevelID(), size, chosen,
+#else
 			CustomTrack_Log("[CustomTracks] level %d primitive arena %d -> %lu bytes (%s)\n", (int)gGT->levelID, size, chosen,
+#endif
 			                serving ? "the borrowed slot's retail budget cannot hold this track"
 			                        : "measured 1P headroom: the retail budget leaves too little for the frame's last writers");
 			size = (int)chosen;
@@ -337,7 +346,11 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 			apInstExtra = 6;
 		int instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
 #ifdef CTR_CUSTOM_TRACKS
-		int customServing = CustomTrack_ServingLoad((int)gGT->levelID,
+		int customServing =
+#ifdef CTR_CUSTOM_PACKAGES
+		    MainRaceTrack_OfflineCustomLoad() ||
+#endif
+		    CustomTrack_ServingLoad((int)gGT->levelID,
 		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 		                                (gameMode & ADVENTURE_BOSS) != 0) ||
@@ -413,7 +426,11 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		// t= as on the sibling [AP POOL] / [AP PERF] lines: same frame timer.
 		char apmsg[128];
 		snprintf(apmsg, sizeof apmsg, "[AP POOL] jitpools lvl=%d inst=%d free=%d t=%u\n",
+#ifdef CTR_CUSTOM_PACKAGES
+		         MainRaceTrack_IdentityLevelID(), gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes(),
+#else
 		         gGT->levelID, gGT->JitPools.instance.maxItems, MEMPACK_GetFreeBytes(),
+#endif
 		         (unsigned)gGT->timer);
 		AP_LogLine(apmsg);
 	}

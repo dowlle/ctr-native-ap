@@ -970,7 +970,11 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		// Opened before the BSP walk, not before the terrain, because
 		// RenderLists_Init1P2P is where records get dropped and those drops
 		// belong to this frame's accounting too.
+#ifdef CTR_CUSTOM_PACKAGES
+		CustomTrackDiag_BeginFrame(MainRaceTrack_IdentityLevelID(), gGT->backBuffer->primMem.capacityBytes);
+#else
 		CustomTrackDiag_BeginFrame((int)gGT->levelID, gGT->backBuffer->primMem.capacityBytes);
+#endif
 #endif
 
 		gGT->bspLeafsDrawn += RenderLists_Init1P2P(ptr_mesh_info->bspRoot, gGT->visMem1->visLeafList[0], pushBuffer, (u32)&gGT->LevRenderLists[0],

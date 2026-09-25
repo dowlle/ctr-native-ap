@@ -15,7 +15,7 @@ body:
     attributes:
       label: Your placement file
       description: |
-        Drag `ap-box-placements-authoring.json` from the authoring folder into this box. If GitHub refuses the file, put it in a zip first.
+        Drag `ap-box-placements-authoring.json` from the authoring folder into this box. If you placed boxes on custom tracks, also drag in `ap-box-placements-custom-authoring.json`. If GitHub refuses a file, put it in a zip first.
     validations:
       required: true
 
@@ -23,7 +23,8 @@ body:
     id: tracks
     attributes:
       label: Which tracks did you add boxes to?
-      placeholder: Crash Cove, Roo's Tubes
+      description: For a custom track, give its name and version as the Track Manager shows it.
+      placeholder: Crash Cove, Roo's Tubes, Baby T Park v1.0.2
     validations:
       required: true
 

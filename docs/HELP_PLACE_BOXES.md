@@ -28,7 +28,8 @@ touched.
 
 Main menu: `OPTIONS -> Authoring -> Box Author Mode`, set it to on.
 
-Start an Arcade single race on one of the 18 race tracks. Skip Time Trial and
+Start an Arcade single race on one of the 18 race tracks (custom tracks:
+see section 5). Skip Time Trial and
 relic races: their version of the track has no crate model, so the boxes do not
 show as crates there. The top left of the screen shows
 `BOX AUTHOR  <TRACK>  <N> HERE`: the track name and how many boxes it has now.
@@ -66,15 +67,46 @@ with the release. Use it only right after a drop you want to take back.
 We test every spot for reachability before it goes in, so a spot that turns out
 to be too hard is simply left out. Suggest freely.
 
-## 5. Send us the file
+## 5. Custom tracks
+
+The authoring download can also race community tracks from Project Saphi, so
+you can place boxes on them before they are in a release. One custom track at
+a time.
+
+1. Main menu: `OPTIONS -> Custom Content`. This is the Track Manager.
+   - **Browse** lists the Saphi catalogue. Pick a track and press Cross to
+     download it. Square shows its other versions. R2 searches, L2 refreshes.
+   - **Installed** lists what you have. L1 and R1 switch between the two.
+   - Downloaded tracks are checked and stored under `assets/tracks/packages`.
+2. Start an Arcade single race for **one player**, pick your racer and
+   difficulty, and at the track list press Right to go past the normal tracks
+   to the **Custom** pages.
+3. Pick the track, press Cross, then Cross again to start. The race uses the
+   lap count Saphi lists for the track, or 3 laps when it lists none.
+4. With Box Author Mode on, the top left shows `BOX AUTHOR  <TRACK NAME>  <N>
+   HERE`. The keys are the same as in step 3.
+
+Only tracks that have Arcade start positions for eight karts show up on the
+Custom pages. If the top left says `CUSTOM TRACK NOT LOADED`, the
+track did not load. Go back to the menu and start it again.
+
+Boxes on custom tracks go to their own file,
+`ap-box-placements-custom-authoring.json`, next to the authoring exe. Each box
+records which track and which version of its files it belongs to, so boxes
+never mix between tracks or between versions of a track. The file for the
+normal tracks is not changed by this.
+
+## 6. Send us the file
 
 The file is `ap-box-placements-authoring.json`, in the same folder as the
 authoring exe. It holds every box, the planned ones plus yours, which is what we
-need.
+need. If you placed boxes on custom tracks, also send
+`ap-box-placements-custom-authoring.json` from the same folder.
 
 Open a
 [Box placement submission](https://github.com/dowlle/ctr-native-ap/issues/new?template=box_placement.yaml)
-issue, drag the file into the form, and say which tracks you worked on. If
+issue, drag the file (or both files) into the form, and say which tracks you
+worked on. If
 GitHub refuses the file, put it in a zip first. You need a free GitHub account
 for this.
 

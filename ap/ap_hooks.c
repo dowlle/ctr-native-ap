@@ -4843,6 +4843,13 @@ int AP_CustomContentRequired(void)
 	return ap_custom_content_required;
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+int AP_CustomOfflineLaunchAllowed(void)
+{
+	return !ctr_cfg_active();
+}
+#endif
+
 void AP_CustomContentRescan(void)
 {
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_seen)
@@ -5734,6 +5741,11 @@ static int AP_ClassifyRace(struct GameTracker *gGT)
 // are served, return the frozen generic custom-slot identity carried by v4.
 static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom-page race has no retail podium identity.
+	if (MainRaceTrack_OfflineCustomLoad())
+		return -1;
+#endif
 	// Schema 15: a Cortex Vortex race (pad or cup leg) owns its own rungs.
 	// Checked first: its host LevelID 13 is Oxide Station's podium track.
 	if (AP_CortexTrackActive())
@@ -6984,6 +6996,40 @@ static const char *AP_ReqTypeNameColour(int t, int colour)
 	return AP_ReqTypeName(t);
 }
 
+#ifdef CTR_CUSTOM_PACKAGES
+// The identity-facing level id of the level being played, and of the one before
+// it, for diagnostics. gGT->prevLEV is the raw engine id, so after a custom race
+// it names the host slot (the files it borrowed) rather than the custom track.
+// Sampled every frame, so the last sample before a level change is the level
+// just left, custom or not.
+static int s_apIdentityRaw = -1;
+static int s_apIdentityLevel = -1;
+static int s_apPrevIdentityRaw = -1;
+static int s_apPrevIdentityLevel = -1;
+
+static void AP_TrackIdentityLevel(struct GameTracker *gGT)
+{
+	int raw = (int)gGT->levelID;
+
+	if (raw != s_apIdentityRaw)
+	{
+		s_apPrevIdentityRaw = s_apIdentityRaw;
+		s_apPrevIdentityLevel = s_apIdentityLevel;
+		s_apIdentityRaw = raw;
+	}
+	s_apIdentityLevel = MainRaceTrack_IdentityLevelID();
+}
+
+// gGT->prevLEV as an identity, when the level change it records is the one
+// sampled above; the raw value otherwise.
+static int AP_PrevIdentityLevel(struct GameTracker *gGT)
+{
+	if (s_apPrevIdentityRaw >= 0 && s_apPrevIdentityRaw == (int)gGT->prevLEV)
+		return s_apPrevIdentityLevel;
+	return (int)gGT->prevLEV;
+}
+#endif
+
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
@@ -7019,7 +7065,11 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// network-send defect in the Roo's Tubes Held 3rd/5th report. Keep it generic
 	// so the same diagnostic covers every randomized cup leg and trophy track.
 	{
+#ifdef CTR_CUSTOM_PACKAGES
+		int track = MainRaceTrack_IdentityLevelID();
+#else
 		int track = (int)gGT->levelID;
+#endif
 		long rung[CTR_CFG_PODIUM_RUNG_COUNT] = {-1, -1, -1, -1, -1};
 		if (track >= 0 && track < CTR_CFG_PODIUM_STORAGE_COUNT)
 		{
@@ -7099,7 +7149,11 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        "\"freeze_podium\": %d, \"spawn_at_boss\": %d, "
 		        "\"driver_present\": %d, \"driver_actions\": %u, "
 		        "\"diag\": %s},\n",
+#ifdef CTR_CUSTOM_PACKAGES
+		        MainRaceTrack_IdentityLevelID(), AP_PrevIdentityLevel(gGT),
+#else
 		        (int)gGT->levelID, (int)gGT->prevLEV,
+#endif
 		        (int)gGT->podiumRewardID, (unsigned)gGT->gameMode1,
 		        (unsigned)gGT->gameMode2,
 		        (gGT->gameMode2 & VEH_FREEZE_DOOR) != 0,
@@ -7258,7 +7312,12 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// tail shows exactly where. Logging only -- no gameplay effect.
 	// Crash-reporter context: cache the plain ints the signal/SEH handlers are
 	// allowed to read (walking game structures in a dying process is not).
+#ifdef CTR_CUSTOM_PACKAGES
+	AP_CrashNoteFrame(MainRaceTrack_IdentityLevelID(), ap_net_is_connected());
+	AP_TrackIdentityLevel(gGT);
+#else
 	AP_CrashNoteFrame((int)gGT->levelID, ap_net_is_connected());
+#endif
 	// Park the #124 AP-logo marker in its model slot. Idempotent, and re-running
 	// it every frame is what keeps the slot correct across hub/level loads and
 	// savestate restores rather than depending on a single well-timed call.
@@ -7386,6 +7445,17 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			         ap_prev_level, (int)gGT->levelID, (unsigned)gGT->timer,
 			         (int)sdata->Loading.stage, MEMPACK_GetFreeBytes());
 			AP_AppendLog(m);
+#ifdef CTR_CUSTOM_PACKAGES
+			if (MainRaceTrack_OfflineCustomLoad())
+			{
+				char c[160];
+				snprintf(c, sizeof c, "[AP HUB] level %d is custom track %d \"%.32s\" (slot %d loads its files only)\n",
+				         (int)gGT->levelID, MainRaceTrack_IdentityLevelID(),
+				         MainRaceTrack_OfflineCustomTitle() ? MainRaceTrack_OfflineCustomTitle() : "?",
+				         (int)gGT->levelID);
+				AP_AppendLog(c);
+			}
+#endif
 			ap_prev_level = (int)gGT->levelID;
 
 			// AP QoL one-lap cups (#7): restore the vanilla lap count when a
@@ -7536,8 +7606,13 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// the watchdog must know when we are loading and not report it as a stall.
 	// gGT->timer feeds the t= stamp, the same clock the [AP ITEM] / [AP HUB] /
 	// [AP RACE] lines stamp, so a stall line can be placed against them in the log.
+#ifdef CTR_CUSTOM_PACKAGES
+	AP_PerfFrameBegin(MainRaceTrack_IdentityLevelID(), (int)sdata->Loading.stage,
+	                  (unsigned)gGT->timer);
+#else
 	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage,
 	                  (unsigned)gGT->timer);
+#endif
 	ap_onframe_body(gGT);
 	AP_PerfFrameEnd();
 }

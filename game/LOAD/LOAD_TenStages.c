@@ -117,6 +117,12 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		gGT->level2 = 0;
 		gGT->numPlyrCurrGame = gGT->numPlyrNextGame;
 		strcpy(gGT->levelName, data.metaDataLEV[levelID].name_Debug);
+#ifdef CTR_CUSTOM_PACKAGES
+		// Not the host slot's debug name. Matches none of the ndi/ending/
+		// intro/screen/garage/hub/credit prefixes tested below, like a track.
+		if (MainRaceTrack_OfflineCustomLoad())
+			strcpy(gGT->levelName, "custom");
+#endif
 
 		// pop back here for every load, after first load,
 		// this permanently reserves LNG, bigfile header, etc

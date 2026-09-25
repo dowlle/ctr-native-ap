@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include "MM_CustomTrackSelect.c"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800afa44-0x800afa94.
 void MM_TrackSelect_Video_SetDefaults(void)
@@ -291,6 +294,9 @@ void MM_TrackSelect_Init()
 {
 	struct MainMenu_LevelRow *selectMenu;
 	s16 numTracks;
+#ifdef CTR_CUSTOM_PACKAGES
+	MM_CustomTrackSelect_Init();
+#endif
 
 	// lap selection menu is closed by default
 	D230.trackSel_boolOpenLapBox = false;
@@ -461,6 +467,11 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 		}
 	}
 	D230.trackSel_transitionFrames = elapsedFrames;
+
+#ifdef CTR_CUSTOM_PACKAGES
+	// Custom pages own the frame; the Vanilla page returns to the retail proc.
+	if (MM_CustomTrackSelect_Tick(menu)) return;
+#endif
 
 	// default arcade tracks
 	selectMenu = &D230.arcadeTracks[0];

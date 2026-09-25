@@ -175,6 +175,11 @@ void Level_AmbientSound(void)
 	struct Level *level = gGT->level1;
 	u32 levelID = gGT->levelID;
 	int closestDistance[2];
+#ifdef CTR_CUSTOM_PACKAGES
+	// A custom-page race has no hardcoded track ambience: its own id is past
+	// every per-track branch below and the levAmbientSound table.
+	levelID = (u32)MainRaceTrack_IdentityLevelID();
+#endif
 
 	if ((levelID >= 0x19) || ((u8)gGT->numPlyrCurrGame >= 3))
 	{

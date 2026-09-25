@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_identity.h>
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -35,7 +38,13 @@ void Music_LoadBanks(void)
 
 	Audio_SetReverbMode(
 	    // Level ID
+#ifdef CTR_CUSTOM_PACKAGES
+	    // A custom-page race passes its own id, which has no reverb row, so the
+	    // engine's default for such a level applies (native_custom_identity.h).
+	    MainRaceTrack_IdentityLevelID(),
+#else
 	    level,
+#endif
 
 	    (IS_BOSS_RACE(gGT->gameMode1)),
 
@@ -128,6 +137,11 @@ u32 Music_AsyncParseBanks(void)
 		// any driving track
 		else if (level < INTRO_RACE_TODAY)
 		{
+#ifdef CTR_CUSTOM_PACKAGES
+			if (MainRaceTrack_OfflineCustomLoad())
+				index = CTR_CUSTOM_FX_BANK;
+			else
+#endif
 			index = data.levBank_FX[level];
 		}
 
@@ -209,6 +223,9 @@ u32 Music_AsyncParseBanks(void)
 		         // and past five karts the per-cup path is a hole, because it
 		         // loads one bank per kart up to five and nothing after that.
 		         || CustomTrack_ServingLoad(level, (uVar4 & ADVENTURE_CUP) != 0, gGT->cup.cupID)
+#ifdef CTR_CUSTOM_PACKAGES
+		         || MainRaceTrack_OfflineCustomLoad()
+#endif
 #endif
 		             )
 
@@ -249,7 +266,11 @@ u32 Music_AsyncParseBanks(void)
 			    // only for a player character bank 54 does not carry. Its AI are
 			    // all base characters, so bank 54 covers every one of them.
 			    (gGT->cup.cupID != 4 ||
-			     CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)))
+			     CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)
+#ifdef CTR_CUSTOM_PACKAGES
+			     || MainRaceTrack_OfflineCustomLoad()
+#endif
+			     ))
 #else
 			    (gGT->cup.cupID != 4))
 #endif
@@ -381,6 +402,11 @@ u32 Music_AsyncParseBanks(void)
 		else if (level < INTRO_RACE_TODAY)
 		{
 			// Set Song ID depending on track
+#ifdef CTR_CUSTOM_PACKAGES
+			if (MainRaceTrack_OfflineCustomLoad())
+				index = CTR_CUSTOM_SONG_BANK;
+			else
+#endif
 			index = data.levBank_Song[level];
 		}
 

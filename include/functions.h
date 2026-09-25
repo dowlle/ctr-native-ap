@@ -448,6 +448,13 @@ void MainInit_VRAMDisplay(void);
 
 void MainRaceTrack_StartLoad(s16 levelID);
 void MainRaceTrack_RequestLoad(s16 levelID);
+#ifdef CTR_CUSTOM_PACKAGES
+int MainRaceTrack_OfflineCustomLoad(void);
+// Custom identity during an Arcade custom-page race (native_custom_identity.h):
+// CTR_CUSTOM_LEVEL_ID instead of the host slot, and the package title.
+int MainRaceTrack_IdentityLevelID(void);
+const char *MainRaceTrack_OfflineCustomTitle(void);
+#endif
 
 int MATH_Sin(u32 angle);
 int MATH_Cos(u32 angle);
