@@ -31,12 +31,12 @@ static size_t chunk(size_t at, const char *tag, const unsigned char *data, size_
 	return at;
 }
 
-// Three samples (ids 5, 9, 12; 2, 3 and 4 units = 72 bytes of data), a CSEQ
+// Three samples (ids 5, 9, 12; 2, 4 and 6 units = 96 bytes of data), a CSEQ
 // with one instrument, one drum and three songs, and a META with an odd length.
-static const unsigned int kIDs[3] = {5, 9, 12}, kSizes[3] = {2, 3, 4};
+static const unsigned int kIDs[3] = {5, 9, 12}, kSizes[3] = {2, 4, 6};
 static void build(void)
 {
-	unsigned char bank[CTR_SCA_SECTOR + 72], cseq[64], sizes[6];
+	unsigned char bank[CTR_SCA_SECTOR + 96], cseq[64], sizes[6];
 	const char *meta = "{\"name\":\"Fixture\",\"author\":\"Test\"}";
 	size_t at = 4;
 	unsigned int i;
@@ -50,7 +50,7 @@ static void build(void)
 		put16(bank + 2 + 2 * i, kIDs[i]);
 		put16(sizes + 2 * i, kSizes[i]);
 	}
-	for (i = 0; i < 72; i++) bank[CTR_SCA_SECTOR + i] = (unsigned char)(i + 1);
+	for (i = 0; i < 96; i++) bank[CTR_SCA_SECTOR + i] = (unsigned char)(i + 1);
 	memset(cseq, 0xee, sizeof cseq); // padding past songSize, as in real files
 	put32(cseq, 48);
 	cseq[4] = 1;
@@ -125,8 +125,8 @@ int main(int argc, char **argv)
 	// The fixture parses and points at the right bytes.
 	build();
 	CHECK(parse(&sca));
-	CHECK(sca.numSamples == 3 && sca.sampleUnits == 9);
-	CHECK(sca.bankSize == CTR_SCA_SECTOR + 72 && sca.bank == fx + find("BANK") + 8);
+	CHECK(sca.numSamples == 3 && sca.sampleUnits == 12);
+	CHECK(sca.bankSize == CTR_SCA_SECTOR + 96 && sca.bank == fx + find("BANK") + 8);
 	CHECK(sca.cseq == fx + find("CSEQ") + 8 && sca.cseqSize == 48);
 	for (i = 0; i < 3; i++)
 		CHECK(CustomMusic_SampleID(&sca, i) == kIDs[i] && CustomMusic_SampleSize(&sca, i) == kSizes[i]);
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
 	CHECK(sectors[0] == 3 && sectors[1] == 0 && sectors[2] == 5 && sectors[CTR_SCA_SECTOR - 1] == 0);
 	memset(sectors, 0xaa, sizeof sectors);
 	CHECK(CustomMusic_ReadBankSectors(&sca, 1, 2, sectors));
-	CHECK(sectors[0] == 1 && sectors[71] == 72 && sectors[72] == 0 && sectors[2 * CTR_SCA_SECTOR - 1] == 0);
+	CHECK(sectors[0] == 1 && sectors[95] == 96 && sectors[96] == 0 && sectors[2 * CTR_SCA_SECTOR - 1] == 0);
 	CHECK(!CustomMusic_ReadBankSectors(&sca, 2, 1, sectors));
 	CHECK(!CustomMusic_ReadBankSectors(&sca, 0, 0, sectors));
 	CHECK(!CustomMusic_ReadBankSectors(NULL, 0, 1, sectors));
@@ -167,7 +167,8 @@ int main(int argc, char **argv)
 	build(); put16(fx + find("BANK") + 8 + 4, 5); CHECK(refused_with("repeats a sample id"));
 	build(); put16(fx + find("BANK") + 8, 2); CHECK(refused_with("SIZE does not match"));
 	build(); put16(fx + find("SIZE") + 8 + 2, 0); CHECK(refused_with("zero size"));
-	build(); put16(fx + find("SIZE") + 8 + 4, 5); CHECK(refused_with("shorter than SIZE"));
+	build(); put16(fx + find("SIZE") + 8 + 4, 8); CHECK(refused_with("shorter than SIZE"));
+	build(); put16(fx + find("SIZE") + 8 + 2, 3); CHECK(refused_with("not whole ADPCM blocks"));
 	build(); put32(fx + find("CSEQ") + 8, 65); CHECK(refused_with("CSEQ size out of range"));
 	build(); put32(fx + find("CSEQ") + 8, 4); CHECK(refused_with("CSEQ size out of range"));
 	build(); put16(fx + find("CSEQ") + 8 + 6, 0); CHECK(refused_with("has no song"));
@@ -176,7 +177,7 @@ int main(int argc, char **argv)
 		// A bank chunk with only the header sector has no samples.
 		static const unsigned char head[CTR_SCA_SECTOR] = {1, 0, 5, 0};
 		unsigned char cseq[16] = {16, 0, 0, 0, 0, 0, 1, 0};
-		unsigned char sizes[2] = {1, 0};
+		unsigned char sizes[2] = {2, 0};
 		memset(fx, 0, sizeof fx);
 		memcpy(fx, "SCA\x01", 4);
 		at = chunk(4, "BANK", head, sizeof head);
@@ -187,7 +188,9 @@ int main(int argc, char **argv)
 	build(); CHECK(!CustomMusic_Parse(fx, fxSize, SLOTS, NULL, error, sizeof error));
 	CHECK(!CustomMusic_Parse(NULL, 16, SLOTS, &sca, error, sizeof error) && sca.bank == NULL);
 
-	// SPU ceiling: the engine refuses a bank ending at or past 0x7e000.
+	// SPU ceiling: the authoring engine refuses a bank ending at or past 0xfe000
+	// (1 MiB SPU memory less the retail 8 KB top reserve).
+	CHECK(CTR_SCA_SPU_LIMIT == 0xfe000);
 	CHECK(CustomMusic_SpuFits(0x202, (CTR_SCA_SPU_LIMIT / 8) - 0x202 - 1));
 	CHECK(!CustomMusic_SpuFits(0x202, (CTR_SCA_SPU_LIMIT / 8) - 0x202));
 	CHECK(!CustomMusic_SpuFits(0xffffffffu, 0xffffffffu));
@@ -202,8 +205,8 @@ int main(int argc, char **argv)
 	driver[0] = 2; driver[1] = 100; driver[2] = 101; // 20 units, no shared slot
 	later[0] = driver;
 	CHECK(CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error));
-	CHECK(needed == 0x1000 + 9 + 20 && error[0] == 0);
-	CHECK(CustomMusic_Admit(&sca, table, SLOTS, 0x1000, NULL, 0, &needed, error, sizeof error) && needed == 0x1000 + 9);
+	CHECK(needed == 0x1000 + 12 + 20 && error[0] == 0);
+	CHECK(CustomMusic_Admit(&sca, table, SLOTS, 0x1000, NULL, 0, &needed, error, sizeof error) && needed == 0x1000 + 12);
 	// A loaded slot the .sca would resize.
 	table[2 * 5 + 1] = 3;
 	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error));
@@ -211,19 +214,19 @@ int main(int argc, char **argv)
 	table[2 * 5 + 1] = 2;
 	// A driver bank sharing a slot: fine with the same size, refused otherwise.
 	driver[0] = 3; driver[3] = 9;
-	table[2 * 9 + 1] = 3;
-	CHECK(CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error) && needed == 0x1000 + 9 + 23);
+	table[2 * 9 + 1] = 4;
+	CHECK(CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error) && needed == 0x1000 + 12 + 24);
 	table[2 * 9 + 1] = 10;
 	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error));
 	CHECK(strstr(error, "driver bank uses") != NULL);
 	driver[0] = 2;
 	// Too big for the SPU once the driver bank is counted (the Arcade case).
-	CHECK(CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 9 - 20 - 1, later, 1, &needed, error, sizeof error));
-	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 9 - 20, later, 1, &needed, error, sizeof error));
+	CHECK(CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 12 - 20 - 1, later, 1, &needed, error, sizeof error));
+	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 12 - 20, later, 1, &needed, error, sizeof error));
 	CHECK(strstr(error, "do not fit in SPU memory") != NULL && needed == (CTR_SCA_SPU_LIMIT / 8));
 	// A second later bank (a character bank) is counted too.
 	later[1] = driver;
-	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 9 - 40, later, 2, &needed, error, sizeof error));
+	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, (CTR_SCA_SPU_LIMIT / 8) - 12 - 40, later, 2, &needed, error, sizeof error));
 	// Malformed driver headers and inputs.
 	driver[0] = -1;
 	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error));

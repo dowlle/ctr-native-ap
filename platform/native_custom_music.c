@@ -73,6 +73,9 @@ int CustomMusic_Parse(const void *data, size_t size, unsigned int spuSlots,
 	{
 		unsigned int units1 = read_u16(sizes + 2 * i);
 		if (units1 == 0) return refuse(out, error, errorSize, "SCA sample has zero size");
+		// Whole 16-byte ADPCM blocks: the authoring build's SPU addresses are
+		// in 16-byte units (native_spu_memory.h).
+		if (units1 & 1) return refuse(out, error, errorSize, "SCA sample size is not whole ADPCM blocks");
 		units += units1;
 	}
 	if ((size_t)units * 8 > bankSize - CTR_SCA_SECTOR) return refuse(out, error, errorSize, "SCA sample data shorter than SIZE");

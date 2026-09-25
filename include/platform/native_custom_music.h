@@ -30,8 +30,10 @@ extern "C" {
 #define CTR_SCA_MAX_BYTES (1024 * 1024)
 #define CTR_SCA_MAX_SAMPLES ((CTR_SCA_SECTOR - 2) / 2)
 #define CTR_SCA_MAX_SONG_BYTES 0x10000
-// SPU transfer ceiling the engine checks in Bank_AssignSpuAddrs (bytes).
-#define CTR_SCA_SPU_LIMIT 0x7e000
+// SPU transfer ceiling the engine checks in Bank_AssignSpuAddrs (bytes). This
+// code exists only in the authoring build, which has the 1 MiB SPU memory.
+#include <platform/native_spu_memory.h>
+#define CTR_SCA_SPU_LIMIT CTR_SPU_WIDE_CEILING
 
 struct CustomMusicSca
 {
@@ -47,7 +49,8 @@ struct CustomMusicSca
 // Validate an .sca held in memory and point out into it (no copy). spuSlots
 // is the HOWL header's numSpuAddrs; every sample id must be below it. Checks:
 // magic and version, chunk bounds, one each of BANK, CSEQ and SIZE, bank
-// header, SIZE length, sample data covering the SIZE total, and a CSEQ whose
+// header, SIZE length with every size a whole number of 16-byte blocks,
+// sample data covering the SIZE total, and a CSEQ whose
 // header, instruments, drums and song offset table fit its songSize.
 // Returns 1 on success; on refusal *out is zeroed and error names the reason.
 int CustomMusic_Parse(const void *data, size_t size, unsigned int spuSlots,
@@ -69,8 +72,9 @@ int CustomMusic_SpuFits(unsigned int startUnits, unsigned int totalUnits);
 
 // Decide whether a parsed .sca may replace the level bank of this race.
 // spuTable is the engine's howl_spuAddrs (u16 spuAddr, u16 spuSize per slot,
-// spuSlots entries) before any patch. startUnits is sdata->audioAllocPtr when
-// the level bank starts loading. laterBanks are the header sectors (s16
+// spuSlots entries) before any patch. startUnits is where the level bank
+// starts, in 8-byte units (sdata->audioAllocPtr converted from the engine's
+// address units, native_spu_memory.h). laterBanks are the header sectors (s16
 // numSamples, s16 ids) of the banks this race loads after it: bank 54 and any
 // character bank. Refuses when:
 //   - a slot already on the SPU (bank 0) would get a different size,
