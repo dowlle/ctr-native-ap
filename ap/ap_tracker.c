@@ -256,9 +256,27 @@ static const char *AP_TrackerPadName(int physical)
 	return "?";
 }
 
+/* What a pad leads to this seed (its shuffled destination), for the RACERS
+ * list: players know a pad by the race it opens, not by its retail owner.
+ * Same naming as the map nodes; falls back to the physical pad name. */
+static const char *AP_TrackerPadDestinationName(int physical)
+{
+	int dest = ctr_cfg_warp_dest(physical);
+	if (dest >= 100 && dest < 105) {
+		const char *custom = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+		custom = CustomTrack_CupDisplayName(dest - 100, 1);
+#endif
+		return custom ? custom : sdata->lngStrings[data.AdvCups[dest - 100].lngIndex_CupName];
+	}
+	if (dest == AP_CORTEX_DEST) return "CORTEX VORTEX";
+	if (dest >= 0 && dest < 65) return sdata->lngStrings[data.metaDataLEV[dest].name_LNG];
+	return AP_TrackerPadName(physical);
+}
+
 /* RACERS tab: one row per racer, in engine order. UNLOCKED reads the same gate
  * the picker and the pad locks use; the pad list is the per-pad racer lock
- * from slot_data; HIT is the Hit Character check when that option is on. */
+ * from slot_data, named by what each pad leads to this seed; HIT is the Hit Character check when that option is on. */
 static void AP_TrackerDrawRacers(void)
 {
 	AP_TrackerRacerRow rows[AP_TRACKER_TAB_RACERS_COUNT];
@@ -299,7 +317,7 @@ static void AP_TrackerDrawRacers(void)
 			int on = k < AP_TRACKER_TAB_DENSE_PADS ? (rows[i].densePads >> k) & 1 : (rows[i].cupPads >> (k - AP_TRACKER_TAB_DENSE_PADS)) & 1;
 			int physical = k < AP_TRACKER_TAB_DENSE_PADS ? k : 100 + k - AP_TRACKER_TAB_DENSE_PADS;
 			if (!on || used >= sizeof pads - 1) continue;
-			used += (size_t)snprintf(pads + used, sizeof pads - used, "%s%s", used ? ", " : "", AP_TrackerPadName(physical));
+			used += (size_t)snprintf(pads + used, sizeof pads - used, "%s%s", used ? ", " : "", AP_TrackerPadDestinationName(physical));
 		}
 		if (locksOn) AP_TrackerText(pads[0] ? pads : "-", padX, y + 2, 15,
 			pads[0] ? (rows[i].unlocked ? TRACKER_GOLD : AP_TrackerRGBA(255, 57, 43, 255)) : TRACKER_GRAY, hitX - padX - 24);
