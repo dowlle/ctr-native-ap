@@ -20,8 +20,14 @@
 //   (2026-09-25: the hooks passed the serving yes/no as the race mode, which
 //   matched Arcade only, so a custom Time Trial raced Roo's Tubes);
 // - a load the slot would not serve is refused with a log line and goes back
-//   to the track list instead of racing retail geometry.
+//   to the track list instead of racing retail geometry;
+// - Time Trial and Arcade starts from the track list, a retry, a reload and
+//   the way back to the menu go through the engine's own load order
+//   (engine_begin_load below), including the menu's player count of 4
+//   (2026-09-25: the refusal read that count at MainRaceTrack_StartLoad and
+//   sent every custom start back to the track list).
 #define _XOPEN_SOURCE 700
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,8 +44,14 @@
 struct sData sdata_static; // common.h binds sdata to it
 struct Data data;
 static struct GameTracker s_gt;
-static char s_lastLog[256];
-void CustomTrack_Log(const char *fmt, ...) { snprintf(s_lastLog, sizeof s_lastLog, "%s", fmt); }
+static char s_lastLog[512];
+void CustomTrack_Log(const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(s_lastLog, sizeof s_lastLog, fmt, args);
+	va_end(args);
+}
 
 #include "../game/MAIN/MainRaceTrack.c"
 #include "../game/GAMEPROG.c"
@@ -57,7 +69,9 @@ static int checks, failures;
 #define MENU 0x27
 
 // ── package stubs: a Time Trial-only track (no AI paths) ───────────────────
+// s_arcadeCapable turns it into a track with AI paths and a full grid.
 struct CustomPackageOwned { int live; };
+static int s_arcadeCapable;
 
 int CustomPackage_GetManifest(const struct CustomPackageOwned *package, struct CustomPackageManifest *out)
 {
@@ -85,7 +99,9 @@ int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct
 	out->loadable = 1;
 	out->measured.checkpoints = 130;
 	out->fileAnalysis[CTR_CCV_TIME_TRIAL].result = CTR_CCV_DETECTED;
-	out->fileAnalysis[CTR_CCV_ARCADE].result = CTR_CCV_NOT_DETECTED;
+	out->fileAnalysis[CTR_CCV_ARCADE].result = s_arcadeCapable ? CTR_CCV_DETECTED : CTR_CCV_NOT_DETECTED;
+	out->measured.navPaths = s_arcadeCapable ? 3 : 0;
+	out->measured.spawns = s_arcadeCapable ? 8 : 0;
 	return 1;
 }
 
@@ -147,23 +163,95 @@ static struct Thread s_playerThread;
 static unsigned char s_ghostRecord[0x3e00];
 static unsigned char s_ghostPlaying[0x3e00];
 
+// ── the engine's load order ────────────────────────────────────────────────
+// What the real engine does between a choice on the track list and the race.
+// The harness used to start from numPlyrCurrGame 1, but on the menu the
+// engine keeps 4 there and the chosen count in numPlyrNextGame:
+// - LOAD_TenStages.c:163-166, loading the menu: MAIN_MENU on, the race's
+//   player count kept in numPlyrNextGame, numPlyrCurrGame 4;
+// - QueueLoadTrack.c:31 (MM_CustomTrackSelect.c through MM_TrackSelect.c):
+//   MainRaceTrack_RequestLoad, with gameMode1 already holding TIME_TRIAL or
+//   ARCADE_MODE (MM_MenuFlow.c:212, 228);
+// - MainMain.c:238-259: once the flag covers the screen, Loading.OnBegin
+//   goes into gameMode1/gameMode2, then MainRaceTrack_StartLoad;
+// - LOAD_Level.c:40-52: levelID set, stage 0 queued;
+// - LOAD_TenStages.c:118, 150: stage 0 copies numPlyrNextGame into
+//   numPlyrCurrGame and clears MAIN_MENU; the BIGFILE reads come after it;
+// - MainMain.c:292-297: load finished.
+static int s_servedRoles;
+
+static void engine_menu(u32 mode1)
+{
+	s_gt.levelID = MAIN_MENU_LEVEL;
+	s_gt.gameMode1 = mode1 | MAIN_MENU;
+	s_gt.gameMode2 = 0;
+	s_gt.numPlyrNextGame = 1;
+	s_gt.numPlyrCurrGame = 4;
+}
+
+static void engine_begin_load(int levelID)
+{
+	MainRaceTrack_RequestLoad((s16)levelID);
+	s_gt.gameMode1 = (s_gt.gameMode1 | sdata->Loading.OnBegin.AddBitsConfig0) & ~sdata->Loading.OnBegin.RemBitsConfig0;
+	s_gt.gameMode2 = (s_gt.gameMode2 | sdata->Loading.OnBegin.AddBitsConfig8) & ~sdata->Loading.OnBegin.RemBitsConfig8;
+	sdata->Loading.OnBegin.AddBitsConfig0 = sdata->Loading.OnBegin.RemBitsConfig0 = 0;
+	sdata->Loading.OnBegin.AddBitsConfig8 = sdata->Loading.OnBegin.RemBitsConfig8 = 0;
+	MainRaceTrack_StartLoad((s16)levelID);
+	// stage 0, on the level StartLoad chose (a refusal loads the menu)
+	s_gt.numPlyrCurrGame = s_gt.numPlyrNextGame;
+	s_gt.gameMode1 &= ~(GAME_CUTSCENE | END_OF_RACE | ADVENTURE_ARENA | MAIN_MENU);
+	if (s_gt.levelID == MAIN_MENU_LEVEL)
+	{
+		s_gt.gameMode1 |= MAIN_MENU;
+		s_gt.numPlyrNextGame = s_gt.numPlyrCurrGame;
+		s_gt.numPlyrCurrGame = 4;
+	}
+}
+
+static void engine_finish_load(void)
+{
+	unsigned char buffer[4096];
+	int k;
+	s_servedRoles = 0;
+	for (k = 0; k < 8; k++)
+	{
+		size_t size = 0;
+		int role = MainRaceTrack_OfflineRuntimeFile(s_gt.levelID * 8 + k, &size);
+		if (role && CustomOffline_ReadRuntimeFile(role, buffer, sizeof buffer, size))
+			s_servedRoles |= role;
+	}
+	MainRaceTrack_OfflineLoadFinished();
+}
+
+static void engine_load(int levelID)
+{
+	engine_begin_load(levelID);
+	engine_finish_load();
+}
+
+// "Change Level" after a race (UI_RaceFlow.c:552-556).
+static void engine_back_to_menu(void)
+{
+	sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU;
+	engine_load(MAIN_MENU_LEVEL);
+}
+
 static void start_time_trial(void)
 {
 	struct CustomPackageOwned *package = calloc(1, sizeof *package);
 	struct CustomOfflineRequest *request = NULL;
 	char error[128];
 
-	s_gt.levelID = MENU;
-	s_gt.numPlyrCurrGame = 1;
-	s_gt.gameMode1 = TIME_TRIAL;
-	s_gt.gameMode2 = 0;
+	engine_menu(TIME_TRIAL);
 	CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
 	// An Arcade start is refused: no AI paths.
 	CHECK(CustomOffline_CheckStructure(request, CTR_OFFLINE_MODE_ARCADE, error, sizeof error) == 0);
 	CHECK(strcmp(error, "No AI paths") == 0);
 	CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
-	MainRaceTrack_RequestLoad(HOST);
-	MainRaceTrack_StartLoad(HOST);
+	s_lastLog[0] = 0;
+	engine_begin_load(HOST);
+	CHECK(s_gt.levelID == HOST && CustomOffline_RuntimeActive());
+	CHECK(strstr(s_lastLog, "refused") == NULL);
 	GAMEPROG_GetPtrHighScoreTrack(); // what MainMain.c does when the load finishes
 }
 
@@ -183,6 +271,7 @@ int main(void)
 	struct GameProgress before;
 	int i;
 
+	setvbuf(stdout, NULL, _IONBF, 0); // FAIL lines survive a crash
 	CHECK(mkdtemp(dir) != NULL);
 	CHECK(chdir(dir) == 0); // custom-records/ is relative, next to the exe
 
@@ -350,8 +439,7 @@ int main(void)
 	}
 
 	// Leave to the menu: the next attempt reads the saved table fresh.
-	MainRaceTrack_RequestLoad(MENU);
-	MainRaceTrack_StartLoad(MENU);
+	engine_back_to_menu();
 	CHECK(!CustomOffline_RuntimeActive());
 	start_time_trial();
 	CHECK(sdata->ptrActiveHighScoreEntry[1].time == 60000);
@@ -359,8 +447,7 @@ int main(void)
 	end_race(70000); // slower: second place
 	CHECK((s8)s_gt.newHighScoreIndex == 1);
 	CHECK(memcmp(&before, &sdata->gameProgress, sizeof before) == 0);
-	MainRaceTrack_RequestLoad(MENU);
-	MainRaceTrack_StartLoad(MENU);
+	engine_back_to_menu();
 
 	// An Arcade race of the same package does not serve in Time Trial and the
 	// other way round (the runtime keeps the mode it was started for).
@@ -370,7 +457,8 @@ int main(void)
 		char error[128];
 		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
 		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
-		s_gt.levelID = HOST;
+		s_gt.levelID = HOST; // in the race: stage 0 has committed the player count
+		s_gt.numPlyrCurrGame = 1;
 		s_gt.gameMode1 = ARCADE_MODE;
 		CHECK(!MainRaceTrack_OfflineCustomLoad());
 		CHECK(MainRaceTrack_IdentityLevelID() == HOST);
@@ -392,8 +480,7 @@ int main(void)
 		char error[128];
 		size_t size = 0;
 		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
-		s_gt.levelID = MENU;
-		s_gt.gameMode1 = ARCADE_MODE;
+		engine_menu(ARCADE_MODE);
 		sdata->mainMenuState = 0;
 		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
 		CHECK(CustomOffline_RuntimeRefusal(HOST, CTR_OFFLINE_MODE_ARCADE, error, sizeof error) == 1);
@@ -401,28 +488,107 @@ int main(void)
 		CHECK(CustomOffline_RuntimeRefusal(HOST, CTR_OFFLINE_MODE_TIME_TRIAL, error, sizeof error) == 0);
 		CHECK(CustomOffline_RuntimeRefusal(MENU, CTR_OFFLINE_MODE_ARCADE, error, sizeof error) == 0);
 		s_lastLog[0] = 0;
-		MainRaceTrack_RequestLoad(HOST);
-		MainRaceTrack_StartLoad(HOST);
+		engine_load(HOST);
 		CHECK(s_gt.levelID == MAIN_MENU_LEVEL);
 		CHECK(!CustomOffline_RuntimeActive());
 		CHECK(sdata->mainMenuState == MAIN_MENU_TRACK_SELECT);
 		CHECK((s_gt.gameMode1 & MAIN_MENU) != 0);
 		CHECK(strstr(s_lastLog, "custom Time Trial refused: the track was started for Time Trial but the race is Arcade") != NULL);
 		CHECK(MainRaceTrack_OfflineRuntimeFile(HOST * 8 + 1, &size) == 0);
-		// The same start in Time Trial loads the host slot and logs nothing.
+		CHECK(s_servedRoles == 0 && s_gt.numPlyrCurrGame == 4 && s_gt.numPlyrNextGame == 1);
+		// The same start in Time Trial loads the host slot and is not refused.
 		package = calloc(1, sizeof *package);
 		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
-		s_gt.gameMode1 = TIME_TRIAL;
+		engine_menu(TIME_TRIAL);
 		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
 		s_lastLog[0] = 0;
-		MainRaceTrack_RequestLoad(HOST);
-		MainRaceTrack_StartLoad(HOST);
-		CHECK(s_gt.levelID == HOST && CustomOffline_RuntimeActive() && s_lastLog[0] == 0);
+		engine_load(HOST);
+		CHECK(s_gt.levelID == HOST && CustomOffline_RuntimeActive() && strstr(s_lastLog, "refused") == NULL);
+		CHECK(s_servedRoles == 3 && CustomOffline_RuntimeLoaded());
 		CustomOffline_EndRuntime();
+		// A custom start with two players next is not a single race: refused.
+		package = calloc(1, sizeof *package);
+		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
+		engine_menu(TIME_TRIAL);
+		s_gt.numPlyrNextGame = 2;
+		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
+		s_lastLog[0] = 0;
+		engine_load(HOST);
+		CHECK(s_gt.levelID == MAIN_MENU_LEVEL && !CustomOffline_RuntimeActive());
+		CHECK(strstr(s_lastLog, "the race is another mode") != NULL);
+		CHECK(strstr(s_lastLog, "players 4 next 2") != NULL);
+	}
+
+	// ── Time Trial and Arcade in the engine's load order ──────────────────
+	// Start from the track list, finish, retry (resident restart), reload the
+	// same track, go back to the menu and start again. Each custom load logs
+	// one line with the mode it was started for and the raw bits it saw.
+	{
+		static const struct { int mode; u32 bit; const char *name; } races[] = {
+			{CTR_OFFLINE_MODE_TIME_TRIAL, TIME_TRIAL, "Time Trial"},
+			{CTR_OFFLINE_MODE_ARCADE, ARCADE_MODE, "Arcade"},
+		};
+		unsigned r;
+		s_arcadeCapable = 1;
+		for (r = 0; r < sizeof races / sizeof races[0]; r++)
+		{
+			int attempt;
+			for (attempt = 0; attempt < 2; attempt++)
+			{
+				struct CustomPackageOwned *package = calloc(1, sizeof *package);
+				struct CustomOfflineRequest *request = NULL;
+				char error[128], expect[128];
+				engine_menu(races[r].bit);
+				CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
+				CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, races[r].mode) == 1);
+				s_lastLog[0] = 0;
+				engine_load(HOST);
+				CHECK(s_gt.levelID == HOST && CustomOffline_RuntimeActive());
+				CHECK(strstr(s_lastLog, "refused") == NULL);
+				CHECK(s_servedRoles == 3 && CustomOffline_RuntimeLoaded());
+				CHECK(MainRaceTrack_OfflineCustomLoad());
+				CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
+				CHECK(MainRaceTrack_OfflineCustomTimeTrial() == (races[r].mode == CTR_OFFLINE_MODE_TIME_TRIAL));
+				CHECK(s_gt.numLaps == CustomOffline_RuntimeLaps());
+				snprintf(expect, sizeof expect, "[CustomTracks] custom load for %s:", races[r].name);
+				CHECK(strstr(s_lastLog, expect) == s_lastLog);
+				snprintf(expect, sizeof expect, "players 4 next 1 -> %s;", races[r].name);
+				CHECK(strstr(s_lastLog, expect) != NULL);
+				snprintf(expect, sizeof expect, "players 1 -> %s; package served", races[r].name);
+				CHECK(strstr(s_lastLog, expect) != NULL);
+				// Finish, then Retry: UI_RaceFlow.c:479 LOAD_RESTART, MainMain.c:225.
+				MainRaceTrack_OfflineRaceFinished(1);
+				CHECK(CustomOffline_RuntimeCompleted());
+				MainRaceTrack_OfflineResidentRestart();
+				CHECK(CustomOffline_RuntimeLoaded() && !CustomOffline_RuntimeCompleted());
+				// A full reload of the same track keeps the custom race.
+				engine_load(HOST);
+				CHECK(s_gt.levelID == HOST && s_servedRoles == 3 && CustomOffline_RuntimeLoaded());
+				// Back to the menu: the runtime ends, the menu owns the counts again.
+				engine_back_to_menu();
+				CHECK(!CustomOffline_RuntimeActive() && s_gt.levelID == MAIN_MENU_LEVEL);
+				CHECK(s_gt.numPlyrCurrGame == 4 && s_gt.numPlyrNextGame == 1 && (s_gt.gameMode1 & MAIN_MENU));
+				CHECK(!MainRaceTrack_OfflineCustomLoad());
+			}
+		}
+		// Started for Time Trial, the race is Arcade: refused, with the bits.
+		{
+			struct CustomPackageOwned *package = calloc(1, sizeof *package);
+			struct CustomOfflineRequest *request = NULL;
+			char error[128];
+			engine_menu(ARCADE_MODE);
+			CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
+			CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
+			engine_load(HOST);
+			CHECK(s_gt.levelID == MAIN_MENU_LEVEL && !CustomOffline_RuntimeActive() && s_servedRoles == 0);
+			CHECK(strstr(s_lastLog, "but the race is Arcade") != NULL);
+		}
+		s_arcadeCapable = 0;
 	}
 
 	// ── control: a retail Time Trial on the same slot writes retail data ──
 	s_gt.levelID = HOST;
+	s_gt.numPlyrCurrGame = 1;
 	s_gt.gameMode1 = TIME_TRIAL;
 	CHECK(!MainRaceTrack_OfflineCustomLoad());
 	GAMEPROG_GetPtrHighScoreTrack();

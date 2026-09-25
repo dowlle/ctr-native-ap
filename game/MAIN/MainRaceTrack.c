@@ -15,19 +15,66 @@ CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CT
 // pages races only as a one-player Arcade single race or a Time Trial on its
 // host slot, and only in the mode it was started for. Every other mode on that
 // slot loads retail bytes.
+static int MainRaceTrack_OfflineModeOf(u32 gameMode1, u32 gameMode2, int numPlayers)
+{
+	if (numPlayers != 1 || (gameMode2 & CUP_ANY_KIND))
+		return 0;
+	if ((gameMode1 & ARCADE_MODE) &&
+	    !(gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | BATTLE_MODE)))
+		return CTR_OFFLINE_MODE_ARCADE;
+	if ((gameMode1 & TIME_TRIAL) &&
+	    !(gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE |
+	                   RELIC_RACE | CRYSTAL_CHALLENGE)))
+		return CTR_OFFLINE_MODE_TIME_TRIAL;
+	return 0;
+}
+
+// The race mode of the level that is loaded (or loading past stage 0). The
+// player count is live only from LOAD_TenStages stage 0 on, which copies
+// numPlyrNextGame into numPlyrCurrGame (LOAD_TenStages.c:118); every hook
+// below that uses this runs after it (BIGFILE reads, load finished, restart,
+// race finished, author mode).
 static int MainRaceTrack_OfflineSingleRaceMode(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	if (gGT->numPlyrCurrGame != 1 || (gGT->gameMode2 & CUP_ANY_KIND))
-		return 0;
-	if ((gGT->gameMode1 & ARCADE_MODE) &&
-	    !(gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | BATTLE_MODE)))
-		return CTR_OFFLINE_MODE_ARCADE;
-	if ((gGT->gameMode1 & TIME_TRIAL) &&
-	    !(gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE |
-	                        RELIC_RACE | CRYSTAL_CHALLENGE)))
-		return CTR_OFFLINE_MODE_TIME_TRIAL;
-	return 0;
+	return MainRaceTrack_OfflineModeOf(gGT->gameMode1, gGT->gameMode2, gGT->numPlyrCurrGame);
+}
+
+// The race mode of the level MainRaceTrack_StartLoad is about to load. The
+// mode bits are final there (MainMain.c:252-259 applies Loading.OnBegin just
+// before the call), but the player count is not: on the menu the engine keeps
+// numPlyrCurrGame at 4 and the chosen count in numPlyrNextGame
+// (LOAD_TenStages.c:163-166), until stage 0 of this load copies it over.
+static int MainRaceTrack_OfflinePendingRaceMode(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	return MainRaceTrack_OfflineModeOf(gGT->gameMode1, gGT->gameMode2, gGT->numPlyrNextGame);
+}
+
+static const char *MainRaceTrack_OfflineModeName(int mode)
+{
+	return mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial"
+	       : mode == CTR_OFFLINE_MODE_ARCADE   ? "Arcade"
+	                                           : "another mode";
+}
+
+// One log line per custom load: the mode the custom page started the race
+// for, and the raw engine state at StartLoad and at load finished, so a run
+// shows what the mode check saw. Filled at StartLoad, written at load finished
+// (or into the refusal line).
+static struct
+{
+	int pending;
+	u32 gameMode1, gameMode2;
+	int numPlyrCurrGame, numPlyrNextGame, mode;
+} s_offlineLoadTrace;
+
+static void MainRaceTrack_OfflineTraceText(char *out, size_t size)
+{
+	snprintf(out, size, "load start gameMode1=%08x gameMode2=%08x players %d next %d -> %s",
+	         (unsigned)s_offlineLoadTrace.gameMode1, (unsigned)s_offlineLoadTrace.gameMode2,
+	         s_offlineLoadTrace.numPlyrCurrGame, s_offlineLoadTrace.numPlyrNextGame,
+	         MainRaceTrack_OfflineModeName(s_offlineLoadTrace.mode));
 }
 
 int MainRaceTrack_OfflineCustomLoad(void)
@@ -47,7 +94,22 @@ int MainRaceTrack_OfflineRuntimeFile(int subfileIndex, size_t *size)
 
 void MainRaceTrack_OfflineLoadFinished(void)
 {
-	CustomOffline_OnLoadFinished(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+	struct GameTracker *gGT = sdata->gGT;
+	char start[160], line[384];
+	int mode = MainRaceTrack_OfflineSingleRaceMode();
+
+	CustomOffline_OnLoadFinished(gGT->levelID, mode);
+	if (!s_offlineLoadTrace.pending)
+		return;
+	s_offlineLoadTrace.pending = 0;
+	MainRaceTrack_OfflineTraceText(start, sizeof start);
+	snprintf(line, sizeof line,
+	         "[CustomTracks] custom load for %s: %s; load finished gameMode1=%08x gameMode2=%08x players %d -> %s; "
+	         "package served: %s\n",
+	         MainRaceTrack_OfflineModeName(CustomOffline_RuntimeMode()), start, (unsigned)gGT->gameMode1,
+	         (unsigned)gGT->gameMode2, gGT->numPlyrCurrGame, MainRaceTrack_OfflineModeName(mode),
+	         CustomOffline_RuntimeLoaded() ? "yes" : "no");
+	CustomTrack_Log(line);
 }
 
 void MainRaceTrack_OfflineResidentRestart(void)
@@ -63,16 +125,30 @@ void MainRaceTrack_OfflineRaceFinished(int humanDriver)
 // A custom race whose package the host slot would not serve is refused before
 // anything loads: racing the slot's retail geometry (Roo's Tubes) under the
 // custom identity must never happen. One log line says why, the runtime ends,
-// and the menu comes back on the track list. Returns 1 when refused.
+// and the menu comes back on the track list. Returns 1 when refused. It also
+// records the load's starting state for the load-finished log line.
 static int MainRaceTrack_OfflineRefuseLoad(int levelID)
 {
-	char reason[128], line[256];
+	struct GameTracker *gGT = sdata->gGT;
+	char reason[128], start[160], line[384];
 	int mode = CustomOffline_RuntimeMode();
+	int pending = MainRaceTrack_OfflinePendingRaceMode();
 
-	if (!CustomOffline_RuntimeRefusal(levelID, MainRaceTrack_OfflineSingleRaceMode(), reason, sizeof reason))
+	// A custom load is one of the host slot while the runtime is active: the
+	// runtime's own mode always matches itself, so this is "levelID is the host".
+	s_offlineLoadTrace.pending = CustomOffline_RuntimeServing(levelID, mode);
+	s_offlineLoadTrace.gameMode1 = gGT->gameMode1;
+	s_offlineLoadTrace.gameMode2 = gGT->gameMode2;
+	s_offlineLoadTrace.numPlyrCurrGame = gGT->numPlyrCurrGame;
+	s_offlineLoadTrace.numPlyrNextGame = gGT->numPlyrNextGame;
+	s_offlineLoadTrace.mode = pending;
+
+	if (!CustomOffline_RuntimeRefusal(levelID, pending, reason, sizeof reason))
 		return 0;
-	snprintf(line, sizeof line, "[CustomTracks] custom %s refused: %s; back to the track list\n",
-	         mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial" : "Arcade race", reason);
+	s_offlineLoadTrace.pending = 0;
+	MainRaceTrack_OfflineTraceText(start, sizeof start);
+	snprintf(line, sizeof line, "[CustomTracks] custom %s refused: %s; back to the track list (%s)\n",
+	         mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial" : "Arcade race", reason, start);
 	CustomTrack_Log(line);
 	CustomOffline_EndRuntime();
 	sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
@@ -229,7 +305,7 @@ void MainRaceTrack_StartLoad(s16 levelID)
 	if (MainRaceTrack_OfflineRefuseLoad(levelID))
 		levelID = MAIN_MENU_LEVEL;
 	// The package's own lap count, from its pinned race settings.
-	if (CustomOffline_RuntimeServing(levelID, MainRaceTrack_OfflineSingleRaceMode()))
+	if (CustomOffline_RuntimeServing(levelID, MainRaceTrack_OfflinePendingRaceMode()))
 		sdata->gGT->numLaps = CustomOffline_RuntimeLaps();
 	// Leaving the host slot ends the custom race here, not at the request: the
 	// custom geometry stays resident and the race frames keep running on it
