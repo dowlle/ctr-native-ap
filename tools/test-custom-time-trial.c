@@ -14,7 +14,13 @@
 // - the ghost is stamped with the custom level id and saved to custom-records/
 //   after a run that beat the loaded ghost, and reads back on the next attempt;
 // - the same calls without a custom runtime still write the retail table, so
-//   the harness would notice if the redirection were always on.
+//   the harness would notice if the redirection were always on;
+// - the engine's BIGFILE read of the host slot's group serves the package's
+//   LEV and VRM in Time Trial, and the load and the finish are observed
+//   (2026-09-25: the hooks passed the serving yes/no as the race mode, which
+//   matched Arcade only, so a custom Time Trial raced Roo's Tubes);
+// - a load the slot would not serve is refused with a log line and goes back
+//   to the track list instead of racing retail geometry.
 #define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +38,8 @@
 struct sData sdata_static; // common.h binds sdata to it
 struct Data data;
 static struct GameTracker s_gt;
-void CustomTrack_Log(const char *fmt, ...) { (void)fmt; }
+static char s_lastLog[256];
+void CustomTrack_Log(const char *fmt, ...) { snprintf(s_lastLog, sizeof s_lastLog, "%s", fmt); }
 
 #include "../game/MAIN/MainRaceTrack.c"
 #include "../game/GAMEPROG.c"
@@ -207,6 +214,32 @@ int main(void)
 	CHECK(MainRaceTrack_OfflineCustomTimeTrial());
 	CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
 	CHECK(s_gt.numLaps == CTR_CUSTOM_DEFAULT_LAPS);
+	// The engine's level load reads the package, not Roo's Tubes, for every
+	// subfile of the host slot's group (four LODs, VRM even, LEV odd).
+	{
+		size_t size = 0;
+		unsigned char buffer[4096];
+		int k;
+		for (k = 0; k < 8; k++)
+		{
+			CHECK(MainRaceTrack_OfflineRuntimeFile(HOST * 8 + k, &size) == ((k & 1) ? 2 : 1));
+			CHECK(size == ((k & 1) ? 1024u : 2048u));
+		}
+		CHECK(MainRaceTrack_OfflineRuntimeFile(HOST * 8 + 8, &size) == 0);
+		// The mistake this guards against: the serving yes/no (1) passed as the mode.
+		CHECK(CustomOffline_RuntimeFile(HOST * 8 + 1, HOST, MainRaceTrack_OfflineCustomLoad(), &size) == 0);
+		CHECK(!CustomOffline_RuntimeLoaded());
+		CHECK(CustomOffline_ReadRuntimeFile(1, buffer, sizeof buffer, 2048));
+		CHECK(CustomOffline_ReadRuntimeFile(2, buffer, sizeof buffer, 1024));
+		MainRaceTrack_OfflineLoadFinished();
+		CHECK(CustomOffline_RuntimeLoaded()); // author mode's "finished loading"
+		MainRaceTrack_OfflineResidentRestart();
+		CHECK(CustomOffline_RuntimeLoaded()); // a restart keeps the resident load
+		MainRaceTrack_OfflineRaceFinished(1);
+		CHECK(CustomOffline_RuntimeCompleted());
+		MainRaceTrack_OfflineResidentRestart();
+		CHECK(!CustomOffline_RuntimeCompleted());
+	}
 	// The table is the package's, not inside the retail save data.
 	CHECK((char *)sdata->ptrActiveHighScoreEntry < (char *)&sdata->gameProgress ||
 	      (char *)sdata->ptrActiveHighScoreEntry >= (char *)(&sdata->gameProgress + 1));
@@ -348,6 +381,43 @@ int main(void)
 		s_gt.numPlyrCurrGame = 2;
 		CHECK(!MainRaceTrack_OfflineCustomLoad());
 		s_gt.numPlyrCurrGame = 1;
+		CustomOffline_EndRuntime();
+	}
+
+	// A load the host slot would not serve is refused: it goes back to the
+	// track list with one log line, and nothing is read for the host slot.
+	{
+		struct CustomPackageOwned *package = calloc(1, sizeof *package);
+		struct CustomOfflineRequest *request = NULL;
+		char error[128];
+		size_t size = 0;
+		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
+		s_gt.levelID = MENU;
+		s_gt.gameMode1 = ARCADE_MODE;
+		sdata->mainMenuState = 0;
+		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
+		CHECK(CustomOffline_RuntimeRefusal(HOST, CTR_OFFLINE_MODE_ARCADE, error, sizeof error) == 1);
+		CHECK(strcmp(error, "the track was started for Time Trial but the race is Arcade") == 0);
+		CHECK(CustomOffline_RuntimeRefusal(HOST, CTR_OFFLINE_MODE_TIME_TRIAL, error, sizeof error) == 0);
+		CHECK(CustomOffline_RuntimeRefusal(MENU, CTR_OFFLINE_MODE_ARCADE, error, sizeof error) == 0);
+		s_lastLog[0] = 0;
+		MainRaceTrack_RequestLoad(HOST);
+		MainRaceTrack_StartLoad(HOST);
+		CHECK(s_gt.levelID == MAIN_MENU_LEVEL);
+		CHECK(!CustomOffline_RuntimeActive());
+		CHECK(sdata->mainMenuState == MAIN_MENU_TRACK_SELECT);
+		CHECK((s_gt.gameMode1 & MAIN_MENU) != 0);
+		CHECK(strstr(s_lastLog, "custom Time Trial refused: the track was started for Time Trial but the race is Arcade") != NULL);
+		CHECK(MainRaceTrack_OfflineRuntimeFile(HOST * 8 + 1, &size) == 0);
+		// The same start in Time Trial loads the host slot and logs nothing.
+		package = calloc(1, sizeof *package);
+		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error) == 1);
+		s_gt.gameMode1 = TIME_TRIAL;
+		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL) == 1);
+		s_lastLog[0] = 0;
+		MainRaceTrack_RequestLoad(HOST);
+		MainRaceTrack_StartLoad(HOST);
+		CHECK(s_gt.levelID == HOST && CustomOffline_RuntimeActive() && s_lastLog[0] == 0);
 		CustomOffline_EndRuntime();
 	}
 

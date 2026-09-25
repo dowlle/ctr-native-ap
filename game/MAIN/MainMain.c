@@ -222,7 +222,7 @@ u32 main(void)
 						// Turn off the "Loading..." flag
 						gGT->gameMode1 &= ~LOADING;
 #ifdef CTR_CUSTOM_PACKAGES
-						CustomOffline_OnResidentRestart(gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+						MainRaceTrack_OfflineResidentRestart();
 #endif
 						break;
 					}
@@ -294,7 +294,7 @@ u32 main(void)
 						sdata->mainGameState = 1;
 						gGT->gameMode1 &= ~LOADING;
 #ifdef CTR_CUSTOM_PACKAGES
-						CustomOffline_OnLoadFinished(gGT->levelID, MainRaceTrack_OfflineCustomLoad());
+						MainRaceTrack_OfflineLoadFinished();
 #endif
 						break;
 					}

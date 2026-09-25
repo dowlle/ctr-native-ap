@@ -377,11 +377,10 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 	ctCtx.adventureBossActive = (sdata->gGT->gameMode1 & ADVENTURE_BOSS) != 0;
 
 #ifdef CTR_CUSTOM_PACKAGES
-	// Box authoring build: an Arcade custom-page race serves its package's
+	// Box authoring build: an Arcade or Time Trial custom-page race serves its package's
 	// owned bytes for the host slot's subfiles (native_custom_offline.h).
 	size_t offlineSize = 0;
-	int offlineRole = CustomOffline_RuntimeFile(subfileIndex, sdata->gGT->levelID,
-	                                            MainRaceTrack_OfflineCustomLoad(), &offlineSize);
+	int offlineRole = MainRaceTrack_OfflineRuntimeFile(subfileIndex, &offlineSize);
 	if (offlineRole)
 	{
 		ctOverride = 1;

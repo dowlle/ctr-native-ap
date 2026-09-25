@@ -35,6 +35,51 @@ int MainRaceTrack_OfflineCustomLoad(void)
 	return CustomOffline_RuntimeServing(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
 }
 
+// Engine hooks for the custom runtime. They hand it the engine's race mode
+// (CTR_OFFLINE_MODE_*), which is what CustomOffline_RuntimeServing compares
+// with the mode the runtime started for. Passing the serving yes/no instead
+// (1) matched Arcade by accident and never Time Trial (2), so a custom Time
+// Trial read Roo's Tubes from the disc under the custom identity.
+int MainRaceTrack_OfflineRuntimeFile(int subfileIndex, size_t *size)
+{
+	return CustomOffline_RuntimeFile(subfileIndex, sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode(), size);
+}
+
+void MainRaceTrack_OfflineLoadFinished(void)
+{
+	CustomOffline_OnLoadFinished(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+}
+
+void MainRaceTrack_OfflineResidentRestart(void)
+{
+	CustomOffline_OnResidentRestart(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+}
+
+void MainRaceTrack_OfflineRaceFinished(int humanDriver)
+{
+	CustomOffline_OnRaceFinished(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode(), humanDriver);
+}
+
+// A custom race whose package the host slot would not serve is refused before
+// anything loads: racing the slot's retail geometry (Roo's Tubes) under the
+// custom identity must never happen. One log line says why, the runtime ends,
+// and the menu comes back on the track list. Returns 1 when refused.
+static int MainRaceTrack_OfflineRefuseLoad(int levelID)
+{
+	char reason[128], line[256];
+	int mode = CustomOffline_RuntimeMode();
+
+	if (!CustomOffline_RuntimeRefusal(levelID, MainRaceTrack_OfflineSingleRaceMode(), reason, sizeof reason))
+		return 0;
+	snprintf(line, sizeof line, "[CustomTracks] custom %s refused: %s; back to the track list\n",
+	         mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial" : "Arcade race", reason);
+	CustomTrack_Log(line);
+	CustomOffline_EndRuntime();
+	sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
+	sdata->gGT->gameMode1 |= MAIN_MENU;
+	return 1;
+}
+
 // The level id identity-keyed code should see: CTR_CUSTOM_LEVEL_ID during a
 // custom-page race, the engine's level id otherwise. The host slot stays the
 // BIGFILE loading vehicle in gGT->levelID; this is what everything else uses.
@@ -181,6 +226,8 @@ void MainRaceTrack_StartLoad(s16 levelID)
 	ElimBG_Deactivate(sdata->gGT);
 
 #ifdef CTR_CUSTOM_PACKAGES
+	if (MainRaceTrack_OfflineRefuseLoad(levelID))
+		levelID = MAIN_MENU_LEVEL;
 	// The package's own lap count, from its pinned race settings.
 	if (CustomOffline_RuntimeServing(levelID, MainRaceTrack_OfflineSingleRaceMode()))
 		sdata->gGT->numLaps = CustomOffline_RuntimeLaps();

@@ -60,9 +60,10 @@ enum
 };
 
 // Add a spawn request. pos is in world units -- the same space as
-// Instance.matrix.t and Driver.posCurr (INSTANCE.c:315 copies a LEV InstDef's
-// s16 position straight into the instance matrix, so LEV coordinates, driver
-// coordinates and these are one space). rot may be NULL for no rotation; its
+// Instance.matrix.t (INSTANCE.c:315 copies a LEV InstDef's s16 position
+// straight into the instance matrix, so LEV coordinates and these are one
+// space). Driver.posCurr is the same space times 256 (24.8 fixed point): shift
+// it right by 8 first (AP_Placement_FromKartAxis). rot may be NULL for no rotation; its
 // components are engine angles (0x1000 = a full turn, RB_Crate.c:124).
 //
 // The model does not have to be loaded yet: the request is held and the

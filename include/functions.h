@@ -450,6 +450,12 @@ void MainRaceTrack_StartLoad(s16 levelID);
 void MainRaceTrack_RequestLoad(s16 levelID);
 #ifdef CTR_CUSTOM_PACKAGES
 int MainRaceTrack_OfflineCustomLoad(void);
+// Custom runtime engine hooks: they pass the engine's race mode, never the
+// serving yes/no (MainRaceTrack.c).
+int MainRaceTrack_OfflineRuntimeFile(int subfileIndex, size_t *size);
+void MainRaceTrack_OfflineLoadFinished(void);
+void MainRaceTrack_OfflineResidentRestart(void);
+void MainRaceTrack_OfflineRaceFinished(int humanDriver);
 // Custom identity during an Arcade custom-page race (native_custom_identity.h):
 // CTR_CUSTOM_LEVEL_ID instead of the host slot, and the package title.
 int MainRaceTrack_IdentityLevelID(void);
