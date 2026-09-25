@@ -20,6 +20,10 @@ struct CustomSaphiRevision
     int trackID;
     char title[641], author[81], version[65];
     struct CustomSaphiMedia lev, vrm;
+    /* The track's audio (.sca), versioned apart from LEV and VRM. Set only on
+       current revisions, and only when Saphi lists exactly one current .sca
+       with a download; id zero otherwise. Optional: never disables a row. */
+    struct CustomSaphiMedia sca;
     unsigned int modeTags;
     int current;
     int sourceLaps; /* Track-level source metadata, zero if unspecified. */

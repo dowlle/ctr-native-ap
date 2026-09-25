@@ -206,6 +206,7 @@ if(CTR_AP)
             platform/native_custom_package_owned.c
             platform/native_custom_content_verify.c
             platform/native_custom_offline.c
+            platform/native_custom_music.c
             platform/native_custom_track_library.c
             platform/native_custom_unicode.c
             platform/native_saphi_catalogue.cpp

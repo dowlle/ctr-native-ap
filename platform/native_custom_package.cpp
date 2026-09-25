@@ -264,7 +264,8 @@ extern "C" int CustomPackage_ParseManifest(const char *input, size_t size, const
         if (!files.is_array() || files.size() < 2 || files.size() > CTR_PACKAGE_FILE_MAX) throw std::runtime_error("Invalid file count");
         const std::map<std::string, unsigned int> limits = {{"lev", 16*1024*1024}, {"vrm", 4*1024*1024},
             {"navigation", 16*1024*1024}, {"ap_boxes", 4*1024*1024}, {"ctr_letters", 1024*1024},
-            {"relic_targets", 1024*1024}, {"presentation", 4*1024*1024}, {"race_settings", 4096}};
+            {"relic_targets", 1024*1024}, {"presentation", 4*1024*1024}, {"race_settings", 4096},
+            {"sca", 1024*1024}};
         std::set<std::string> roles, paths;
         for (const auto &file : files)
         {

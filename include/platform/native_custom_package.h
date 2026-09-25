@@ -109,6 +109,7 @@ struct CustomPackageLocalInfo
 {
     char uuid[37], author[81];
     int trackID, levID, vrmID;
+    int scaID; /* Saphi media id of the pinned .sca, zero when the package has none. */
     int arcade; /* Owned structural prerequisites and supported lap storage. */
 };
 struct CustomPackageStoreEntry

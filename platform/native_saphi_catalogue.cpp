@@ -1,4 +1,5 @@
 #include <platform/native_saphi_catalogue.h>
+#include <platform/native_custom_music.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstdio>
@@ -95,6 +96,23 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
             if (!downloads.is_array() || downloads.size() > 512) throw std::runtime_error("Too many Saphi media rows");
             struct Pair { CustomSaphiRevision revision{}; int levCount = 0, vrmCount = 0; bool levCurrent = false, vrmCurrent = false; };
             std::map<std::pair<std::string, unsigned int>, Pair> pairs;
+            /* Audio is optional: a malformed or ambiguous .sca row leaves the
+               track without its own music instead of failing the catalogue. */
+            CustomSaphiMedia sca{};
+            int currentSca = 0;
+            for (const auto &media : downloads)
+            {
+                try
+                {
+                    if (!media.is_object() || media.at("type") != "sca" || media.at("is_current") != true) continue;
+                    auto file = source_media(media, id);
+                    if (!file.bytes || file.bytes > CTR_SCA_MAX_BYTES) continue;
+                    sca = file;
+                    currentSca++;
+                }
+                catch (const std::exception &) {}
+            }
+            if (currentSca != 1) sca = CustomSaphiMedia{};
             for (const auto &media : downloads)
             {
                 const auto &type = media.at("type");
@@ -121,6 +139,7 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                     std::snprintf(pair.revision.disabledReason, sizeof pair.revision.disabledReason,
                         "Files not hosted");
                 pair.revision.current = pair.levCurrent && pair.vrmCurrent;
+                if (pair.revision.current) pair.revision.sca = sca;
                 result->rows.push_back(pair.revision);
                 if (result->rows.size() > 1024) throw std::runtime_error("Too many Saphi revisions");
             }

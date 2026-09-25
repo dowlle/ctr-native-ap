@@ -541,6 +541,8 @@ extern "C" int CustomPackage_ScanStore(const char *path, CustomPackageStoreVisit
                         if (track<=0 || lev<=0 || vrm<=0 || author.size()>=sizeof entry.local.author ||
                             std::any_of(author.begin(),author.end(),[](unsigned char c){return c<32 || c==127;})) continue;
                         entry.local.trackID=track;entry.local.levID=lev;entry.local.vrmID=vrm;
+                        if (source.contains("sca_media_id") && source["sca_media_id"].is_number_integer() && source["sca_media_id"]>0)
+                            entry.local.scaID=source["sca_media_id"].get<int>();
                         std::memcpy(entry.local.author,author.c_str(),author.size()+1);
                     } catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
                 }

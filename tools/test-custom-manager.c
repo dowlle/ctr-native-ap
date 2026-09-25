@@ -86,6 +86,10 @@ int main(void)
  installed.local.trackID=rows[1].trackID;installed.local.levID=42;installed.local.vrmID=43;strcpy(installed.version,"1.10.0");
  int older;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed);
  int before=starts;tick(BTN_CROSS);CHECK(starts==before);
+ /* Same track files, but Saphi now lists the track's music: an update, not installed. */
+ rows[1].sca.id=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==NULL && older==1);
+ installed.local.scaID=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
+ rows[1].sca.id=0;installed.local.scaID=0;
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;

@@ -64,6 +64,16 @@ int LOAD_HowlSectorChainStart(CdlFILE *cdlFileHWL, void *ptrDestination, int fir
 	sdata->howlChainParams[2] = (int)firstSector;
 	sdata->howlChainParams[3] = (int)numSector;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// Box authoring build: a custom race's .sca level bank is read from the
+	// package, not KART.HWL (game/HOWL/HOWL_CustomMusic.c).
+	if (HOWL_CustomMusic_ServeSectors(ptrDestination, firstSector, numSector))
+	{
+		sdata->howlChainState = 0;
+		return 1;
+	}
+#endif
+
 	CDSYS_SetMode_StreamData();
 
 	// Return error, if reading out-of-bounds after the end of KART HWL

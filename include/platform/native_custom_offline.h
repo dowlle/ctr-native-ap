@@ -58,6 +58,11 @@ struct CustomOfflineObservation
 /* Exact first-event Unix times for a completed attempt. Invalid clock ordering
    refuses and zeroes output; repeated events never rewrite timestamps. */
 int CustomOffline_RuntimeObservation(struct CustomOfflineObservation *out);
+/* The active request's pinned .sca bytes (role "sca"), copied once per run
+   into a buffer this module owns. Returns 0 when there is no active request
+   or the package has no .sca. The pointer stays valid until the next run
+   begins or EndRuntime; callers must not keep it across a level load. */
+int CustomOffline_RuntimeAudio(const void **data, size_t *size);
 /* BIGFILE group mapping: returns 1 VRM / 2 LEV / 0 unrelated. */
 int CustomOffline_RuntimeFile(int subfile, int levelID, int singleRace, size_t *size);
 int CustomOffline_ReadRuntimeFile(int role, void *destination, size_t capacity, size_t expectedSize);
