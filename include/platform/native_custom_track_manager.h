@@ -163,10 +163,15 @@ struct CustomTrackManagerRequirement
 	int flagCheckpoints;
 };
 
-// The only package public Alpha6 recognizes. Its package UUID is permanent and
-// deliberately distinct from navigationUuid: changing navigation compatibility
-// must never change content provenance, and vice versa.
+// Baby T Park 1.0.0, the package Alpha6 shipped. Its package UUID is permanent
+// and deliberately distinct from navigationUuid: changing navigation
+// compatibility must never change content provenance, and vice versa. Seeds
+// generated for 1.0.0 keep matching it through CustomTrackManager_MatchingPackage.
 const struct CustomTrackManagerPackage *CustomTrackManager_BabyTPark(void);
+// Baby T Park 1.0.2, the current Project Saphi release. Without a seed that
+// names another profile, the Custom Content page downloads, verifies and
+// exports this one.
+const struct CustomTrackManagerPackage *CustomTrackManager_BabyTParkCurrent(void);
 const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
 	const struct CustomTrackManagerRequirement *requirement);
 
