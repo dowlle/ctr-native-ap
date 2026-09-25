@@ -1,10 +1,11 @@
 #include <common.h>
+#include <platform/native_spu_memory.h>
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800292e0-0x800292fc
 void Bank_ResetAllocator()
 {
 	sdata->numAudioBanks = 0;
-	sdata->audioAllocPtr = 0x202;
+	sdata->audioAllocPtr = CTR_SPU_UNITS(0x1010);
 	sdata->bankLoadStage = 4; // Stage 4: Finished
 }
 
@@ -102,7 +103,7 @@ int Bank_AssignSpuAddrs()
 		// not last bank needed for level
 		if (sdata->bankFlags == 0)
 		{
-			sdata->ptrLastBank->max = sdata->audioAllocSize >> 3;
+			sdata->ptrLastBank->max = sdata->audioAllocSize >> CTR_SPU_ADDR_SHIFT;
 		}
 
 		// last bank needed for level
@@ -165,7 +166,7 @@ int Bank_AssignSpuAddrs()
 			{
 				sae->spuAddr = audioAllocPtr;
 			}
-			audioAllocPtr += sae->spuSize;
+			audioAllocPtr += CTR_SPU_SIZE_UNITS(sae->spuSize);
 
 #if 0
 			printf("%08x\n", audioAllocPtr);
@@ -185,10 +186,11 @@ int Bank_AssignSpuAddrs()
 			return 0;
 		}
 
-		int spuAddrStart = (u32)sdata->ptrLastBank->min * 8;
+		int spuAddrStart = CTR_SPU_BYTES_AT((u32)sdata->ptrLastBank->min);
 
-		// 0x7e000 = 512kb SPU memory
-		if (spuAddrStart + sdata->audioAllocSize < 0x7e000)
+		// 0x7e000 = 512kb SPU memory (retail); 1 MiB in the authoring build,
+		// include/platform/native_spu_memory.h
+		if (spuAddrStart + sdata->audioAllocSize < CTR_SPU_CEILING)
 		{
 			// start transfer
 			SpuSetTransferStartAddr(spuAddrStart);
@@ -211,7 +213,7 @@ int Bank_AssignSpuAddrs()
 
 		if (sdata->bankFlags == 0)
 		{
-			sdata->audioAllocPtr += sdata->audioAllocSize >> 3;
+			sdata->audioAllocPtr += sdata->audioAllocSize >> CTR_SPU_ADDR_SHIFT;
 		}
 
 		sdata->ptrLastBank->flags |= 2;

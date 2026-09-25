@@ -104,6 +104,7 @@ tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-saphi-catalogue.cpp
+tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-tizi-helper.c

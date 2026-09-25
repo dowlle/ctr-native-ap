@@ -121,7 +121,7 @@ int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
 	}
 
 	if (!CustomMusic_Admit(&sca, (const uint16_t *)sdata->howl_spuAddrs, (unsigned int)sdata->ptrHowlHeader->numSpuAddrs,
-	                       (unsigned int)sdata->audioAllocPtr, later, laterCount, &needed, error, sizeof error))
+	                       (unsigned int)sdata->audioAllocPtr << (CTR_SPU_ADDR_SHIFT - 3), later, laterCount, &needed, error, sizeof error))
 	{
 		HOWL_CustomMusic_Log("track music refused, default music", error);
 		return 0;

@@ -4,6 +4,7 @@
 #include <platform/native_disc_image.h>
 #include <platform/native_focus_mute.h>
 #include <platform/native_perf.h>
+#include <platform/native_spu_memory.h>
 
 #include <SDL3/SDL.h>
 #include <limits.h>
@@ -14,7 +15,8 @@
 #define NATIVE_AUDIO_SAMPLE_RATE            44100
 #define NATIVE_AUDIO_CHANNELS               2
 #define NATIVE_AUDIO_SPU_VOICE_COUNT        24
-#define NATIVE_AUDIO_SPU_MEMSIZE            (512 * 1024)
+// 512 KB retail, 1 MiB in the box authoring build (native_spu_memory.h)
+#define NATIVE_AUDIO_SPU_MEMSIZE            CTR_SPU_BYTES
 // streaming ADPCM decode like the real SPU: 16-byte blocks decoded on the fly
 // per voice, reading SPU RAM live (psx-spx "SPU ADPCM Samples/Pitch") -penta3
 #define NATIVE_AUDIO_ADPCM_BLOCK_BYTES        16
@@ -1409,7 +1411,7 @@ internal int NativeAudio_DecodeAdpcmNibble(u8 soundParameter, int nibble, int *o
 
 internal u32 NativeAudio_WrapSpuAddr(u32 addr)
 {
-	// SPU addresses wrap within the 512KB like hardware -penta3
+	// SPU addresses wrap within the SPU memory like hardware -penta3
 	return addr & (u32)(NATIVE_AUDIO_SPU_MEMSIZE - 1);
 }
 
