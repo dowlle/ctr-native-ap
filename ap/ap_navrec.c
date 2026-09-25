@@ -14,6 +14,9 @@
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
 #include "ap_version.h"             // CTR_AP_VERSION
 #include "platform/native_config.h" // g_config.navRecord / navUseRecorded / navDriverName
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_tracks.h> // serving predicates, re-read after a restore
+#endif
 
 #if defined(_WIN32)
 #include "platform/native_win32.h"
@@ -511,6 +514,13 @@ static void AP_NavRec_SnapshotCorridor(struct GameTracker *gGT, int levelID)
 	// host slot's number off a corridor that is not the host slot's track.
 	if (!AP_NavRecIdentity_CorridorApplies(AP_NavRec_LoadIdentityOutcome()))
 	{
+#ifdef CTR_CUSTOM_PACKAGES
+		if (MainRaceTrack_OfflineCustomLoad())
+			snprintf(msg, sizeof msg,
+			         "[AP NAVREC] no corridor for custom level %d (loaded through slot %d): a custom track has no navigation identity\n",
+			         MainRaceTrack_IdentityLevelID(), levelID);
+		else
+#endif
 		snprintf(msg, sizeof msg,
 		         "[AP NAVREC] no corridor for level %d: a custom track is served on this slot with no navigation identity\n", levelID);
 		AP_LogLine(msg);
@@ -1331,6 +1341,49 @@ void AP_NavRec_AfterBotsInit(void)
 // arithmetically correct and the data behind them is blank (magicNumber 0,
 // numPoints 0). The only sound repair is to load the file again and republish,
 // and to fall back to the level's own nav data when that is not possible.
+#ifdef CTR_CUSTOM_PACKAGES
+// The load's recording identity, settled again from the live serving
+// predicates: the same four facts, the same override for an Arcade custom-page
+// race, and the same three-way answer as the arm in game/BOTS.c (BOTS_InitData)
+// that settles it for every race load. Keep the two in step.
+//
+// Used where that arm does not run: after a savestate restore, which brings
+// back the level but not the verdict, and on entering a level BOTS does not
+// initialise (menus), so a custom race's blocked verdict does not outlive it.
+static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
+{
+	unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int              ctNavRevision = 0;
+	struct AP_NavRecLoadFacts facts;
+	int                       advCup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	int                       advBoss = (gGT->gameMode1 & ADVENTURE_BOSS) != 0;
+
+	facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
+	facts.eventRaceNavIdentity =
+	    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
+	facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss);
+	facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
+	if (MainRaceTrack_OfflineCustomLoad())
+	{
+		facts.eventRaceServing = 1;
+		facts.eventRaceNavIdentity = 0;
+	}
+
+	switch (AP_NavRecIdentity_ForLoad(&facts))
+	{
+	case AP_NAVREC_LOAD_CUSTOM:
+		AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
+		break;
+	case AP_NAVREC_LOAD_BLOCKED:
+		AP_NavRec_BlockRecordedLanes();
+		break;
+	default:
+		AP_NavRec_ClearActiveCustomTrack();
+		break;
+	}
+}
+#endif
+
 void AP_NavRec_AfterCheckpointRestore(void)
 {
 	int levelID;
@@ -1342,11 +1395,10 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	levelID = (int)sdata->gGT->levelID;
 
 #ifdef CTR_CUSTOM_PACKAGES
-	// A savestate restore does not restore the load's identity verdict. A
-	// custom-page race has no recording identity: block again before any lane
-	// file for the host slot could be read onto custom geometry.
-	if (MainRaceTrack_OfflineCustomLoad())
-		AP_NavRec_BlockRecordedLanes();
+	// A savestate restore does not restore the load's identity verdict. Settle
+	// it again, in full, before any lane file for the host slot could be read
+	// onto custom geometry or a custom track's lanes onto retail geometry.
+	AP_NavRec_RederiveLoadIdentity(sdata->gGT);
 #endif
 
 	// Same folder, same rule, same field: the selection is deterministic, so a
@@ -1567,6 +1619,11 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		AP_NavRec_DropBank();
 		s_navrecCorridorLevel = -1;
 		s_navrecGridReady = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+		// Menus get no BOTS init, so without this a custom race's blocked
+		// verdict would still stand there and label the menu a custom track.
+		AP_NavRec_RederiveLoadIdentity(gGT);
+#endif
 		return;
 	}
 

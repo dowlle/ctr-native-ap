@@ -60,6 +60,11 @@ void MainRaceTrack_StartLoad(s16 levelID)
 	// The package's own lap count, from its pinned race settings.
 	if (CustomOffline_RuntimeServing(levelID, MainRaceTrack_OfflineSingleRaceMode()))
 		sdata->gGT->numLaps = CustomOffline_RuntimeLaps();
+	// Leaving the host slot ends the custom race here, not at the request: the
+	// custom geometry stays resident and the race frames keep running on it
+	// until the checkered flag covers the screen, and they must keep the custom
+	// identity (no Roo's Tubes ambience or bubbles) until it is replaced.
+	CustomOffline_OnLoadStarting(levelID);
 #endif
 	LOAD_LevelFile(levelID);
 	return;
@@ -69,7 +74,8 @@ void MainRaceTrack_StartLoad(s16 levelID)
 void MainRaceTrack_RequestLoad(s16 levelID)
 {
 #ifdef CTR_CUSTOM_PACKAGES
-	// Leaving the host slot ends the custom race; a retry keeps it.
+	// A retry keeps the custom race. Leaving the host slot ends it only when
+	// the load starts (MainRaceTrack_StartLoad).
 	CustomOffline_OnLoadRequested(levelID);
 #endif
 	// Turn off HUD
