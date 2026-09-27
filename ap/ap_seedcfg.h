@@ -258,6 +258,11 @@ typedef struct
 // 4 (2026-08-30) adds the frozen generic slot and exact Trophy/podium location
 // codes. These identities cannot be inferred from a mutable package title or
 // its position in the wire array, so older block versions are refused.
+// Retail relic races that can carry a perfect check (issue #49): LevelIDs 0..17.
+// Equal to AP_RELIC_PERFECT_TRACK_COUNT (ap_relic_perfect.h); ap_seedcfg.cpp
+// asserts that.
+#define CTR_CFG_RELIC_PERFECT_COUNT 18
+
 #define CTR_CFG_CT_BLOCK_VERSION_KNOWN 4
 #define CTR_CFG_CT_SLOT_COUNT          32
 #define CTR_CFG_CT_HEX_CAP             65 // 64 hex digits + NUL; json_str needs size > 64
@@ -738,6 +743,14 @@ typedef struct
 	// inert. Every parse re-clears it, so valid-to-invalid and valid-to-absent
 	// can never leave stale encounter data behind.
 	ctr_hit_encounters hit;
+
+	// relic_perfect_checks (issue #49, additive, no schema bump). Indexed by
+	// retail engine LevelID 0..17; -1 = no perfect check for that relic race
+	// this seed. relic_perfect_enabled is 1 only for a present and fully valid
+	// block. Every parse clears both first, and any malformed row refuses the
+	// whole block, so a later seed can never inherit an earlier seed's rows.
+	int  relic_perfect_enabled;
+	long relic_perfect[CTR_CFG_RELIC_PERFECT_COUNT];
 
 	// Seed admission (ticket 05). Set when a schema>=1 seed carries a REQUIRED
 	// block this build cannot honour (today: an enabled hit_character_encounters

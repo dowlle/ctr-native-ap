@@ -99,6 +99,8 @@ tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
+tools/test-relic-perfect.c
+tools/test-relic-perfect-seedcfg.cpp
 tools/test-render-scale.c
 tools/test-reward-text.c
 tools/test-tracker-assets.c
