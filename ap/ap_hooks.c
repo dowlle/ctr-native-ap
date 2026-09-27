@@ -3364,7 +3364,10 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 		// every genuine first-time earn, so gating the send on it cannot drop
 		// a real check -- only a resend of one already server-confirmed.
 		if (!wasChecked)
+		{
 			ap_net_send_location(code); // LocationChecks([code])
+			AP_PerfNoteCheckSent();
+		}
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
 		if (!wasChecked)
@@ -5173,6 +5176,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
+	AP_PerfNoteItemsReceived(n, n > 0 ? items[n - 1] : 0); // frame stall line context
 	int liveItemBatch = ap_feed_primed;
 	int i;
 	char st[64];
@@ -5875,6 +5879,7 @@ static int AP_EmitClassCheck(long code,
 	AP_AppendLog(msg);
 
 	ap_net_send_location(code); // LocationChecks([code])
+	AP_PerfNoteCheckSent();
 	if (addToCeremonyLedger)
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
@@ -7397,6 +7402,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			AP_AppendLog("[AP BOOT] vendor: " CTR_AP_VENDOR_VERSIONS "\n");
 			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
 			             ".sh on Linux/Deck) next to the game and share the archive\n");
+			AP_PerfAnnounce(); // watchdog threshold + video adapter, once per run
 			// #166: prime the gem-cup-leg identity/vanilla table from the live
 			// data.advCupTrackIDs before any slot_data can possibly parse -- the
 			// isolated ap_net/ap_seedcfg C++ lib has no access to `data`, so this

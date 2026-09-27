@@ -627,6 +627,11 @@ void NativePerf_EndFrame(const struct NativePerfFrameInfo *info)
 
 void NativePerf_BeginScope(enum NativePerfBucket bucket)
 {
+#if defined(CTR_AP)
+	// The always-on frame stall watchdog (ap/ap_perf.c) reads a handful of these
+	// buckets whether or not --perf is on.
+	AP_FrameWatchNativeBegin((int)bucket);
+#endif
 	if (!s_enabled || !s_frameOpen || (bucket < 0) || (bucket >= NATIVE_PERF_BUCKET_COUNT))
 	{
 		return;
@@ -640,6 +645,9 @@ void NativePerf_BeginScope(enum NativePerfBucket bucket)
 
 void NativePerf_EndScope(enum NativePerfBucket bucket)
 {
+#if defined(CTR_AP)
+	AP_FrameWatchNativeEnd((int)bucket);
+#endif
 	if (!s_enabled || !s_frameOpen || (bucket < 0) || (bucket >= NATIVE_PERF_BUCKET_COUNT))
 	{
 		return;

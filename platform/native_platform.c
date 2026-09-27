@@ -419,7 +419,13 @@ int Platform_BeginScene(void)
 
 	s_platformBeginScene = 1;
 
+#ifdef CTR_AP
+	AP_FrameWatchLogFlushBegin(); // a synchronous fflush on the render thread
+#endif
 	Platform_LogFlush();
+#ifdef CTR_AP
+	AP_FrameWatchLogFlushEnd();
+#endif
 
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_BEGIN_SCENE);
 	return 1;
