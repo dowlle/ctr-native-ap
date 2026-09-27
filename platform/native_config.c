@@ -189,9 +189,9 @@ bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen)
 	return !windowFullscreen;
 }
 
-bool NativeConfig_FullscreenNeedsReapply(bool want, bool have)
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have, int lastRequested)
 {
-	return want != have;
+	return want != have && lastRequested != (want ? 1 : 0);
 }
 
 static bool ParseBool(const char *s)

@@ -48,6 +48,7 @@ global_variable int s_pinnedVramDisplayH = 0;
 // unfocused, e.g. launched behind another client -- and kept up to date by the
 // SDL focus events in Platform_PollHostEvents.
 global_variable int s_windowFocused = -1;
+global_variable int s_fullscreenRequested = -1;
 
 #define NATIVE_FPS_REPORT_FRAME_WINDOW 2000
 global_variable int s_fpsFrameCount = 0;
@@ -137,6 +138,7 @@ internal void Platform_HandleFullscreenToggle(void)
 	NativeRenderer_CaptureWindowGeometry();
 	g_config.fullscreen = NativeConfig_FullscreenToggledFromWindow(fullscreen);
 	SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
+	s_fullscreenRequested = g_config.fullscreen ? 1 : 0;
 	SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 	Platform_UpdateCursorVisibility();
 	NativeRenderer_ResetDevice();
@@ -366,9 +368,10 @@ void Platform_BeginFrame(void)
 	// config value and the real SDL window state agreeing every frame, and
 	// re-lays the presentation viewport out when the window size changes.
 	bool isFullscreen = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0;
-	if (NativeConfig_FullscreenNeedsReapply(g_config.fullscreen, isFullscreen))
+	if (NativeConfig_FullscreenNeedsReapply(g_config.fullscreen, isFullscreen, s_fullscreenRequested))
 	{
 		SDL_SetWindowFullscreen(g_window, g_config.fullscreen);
+		s_fullscreenRequested = g_config.fullscreen ? 1 : 0;
 		SDL_GetWindowSize(g_window, &g_windowWidth, &g_windowHeight);
 		Platform_UpdateCursorVisibility();
 		NativeRenderer_ResetDevice();
