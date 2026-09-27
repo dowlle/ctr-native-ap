@@ -352,8 +352,8 @@ const char *AP_Net_StatusLine(void);
 // call even if never connected (ap_net_shutdown() no-ops on a null client).
 void AP_Net_Shutdown(void);
 
-// Clean exit: flush the background file writer (bounded wait). Called from
-// Platform_Shutdown.
+// Clean exit: flush the background file writer (bounded wait) and close the
+// ctr-ap.log handle. Called from Platform_Shutdown.
 void AP_ShutdownFiles(void);
 
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire

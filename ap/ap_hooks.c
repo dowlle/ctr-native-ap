@@ -171,13 +171,20 @@ int Platform_InputRawKeyDown(int scancode);
 #define AP_READ_LOG_OLD "ctr-ap.log.old"
 #define AP_READ_LOG_MAX (4 * 1024 * 1024) // rotate at 4 MB, keep one generation
 
+// One handle for the whole run. Each line used to be its own fopen/fputs/
+// fclose on the game thread, and field logs show that open/close pair costing
+// up to about a second on some Windows hosts (logio= on the PERF lines). The
+// handle is opened once, in append mode like before, and every line is flushed
+// straight away: that is one write call instead of an open and a close, and a
+// line is in the file the moment AP_AppendLog returns, so a crash or a killed
+// process loses nothing and the crash reporter (ap_crash.c), which appends
+// through its own handle, still lands after the last line.
+static FILE *ap_log_file = NULL;
+
 static void AP_AppendLog(const char *msg)
 {
-	// [AP PERF] LOG_IO section: every line is its own fopen/fputs/fclose on the
-	// game thread, so a chatty frame (an item burst, a datapackage sync) pays for
-	// that here. Summed across all lines the frame writes; the two timer reads are
-	// the same cheap Platform_PerfNowMs the other sections use, which is noise next
-	// to the file open this brackets.
+	// [AP PERF] LOG_IO section: the line write on the game thread, summed across
+	// all lines the frame writes.
 	AP_PerfSectionBegin(AP_PERF_SEC_LOG_IO);
 
 	// One-time size check: an append-forever log grows unbounded across weeks
@@ -201,21 +208,29 @@ static void AP_AppendLog(const char *msg)
 		}
 	}
 	fputs(msg, stderr);
-	FILE *f = fopen(AP_READ_LOG, "a");
-	if (f)
+	if (ap_log_file == NULL) // first line, or the open failed before: retry
+		ap_log_file = fopen(AP_READ_LOG, "a");
+	if (ap_log_file)
 	{
-		fputs(msg, f);
-		fclose(f);
+		fputs(msg, ap_log_file);
+		fflush(ap_log_file);
 	}
 
 	AP_PerfSectionEnd(AP_PERF_SEC_LOG_IO);
 }
 
 // Clean exit (Platform_Shutdown): let the background writer finish the last
-// queued ap-state.json snapshot, bounded so a stuck disk cannot hang the exit.
+// queued ap-state.json snapshot, bounded so a stuck disk cannot hang the exit,
+// then close the log. Every line is already flushed; a line written after this
+// reopens the handle.
 void AP_ShutdownFiles(void)
 {
 	ap_file_writer_flush(2000);
+	if (ap_log_file != NULL)
+	{
+		fclose(ap_log_file);
+		ap_log_file = NULL;
+	}
 }
 
 // Non-static shim so game-side gate files can emit AP log lines (AP_AppendLog is
