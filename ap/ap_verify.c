@@ -9,6 +9,7 @@
 #include "ap_box_map.h"
 #include "ap_verify_logic.h"
 #include "ap_verify_wumpa.h"
+#include "ap_verify_families.h"
 #include "ap_lettersanity.h"
 #include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
@@ -38,8 +39,9 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 // ---------------------------------------------------------------------------
 // Location worklist: every location family the seed can carry. The maximum
 // wire set is 101 static + 80 podium + 270 boxes + 48 letters + 22 itemsanity
-// + 19 Wumpa + 6 custom Trophy/podium = 546 today. Keep a small margin for a
-// future family addition, while deriving every variable block from its owner.
+// + 19 Wumpa + 6 custom Trophy/podium + 18 Relic Race Perfect + 4 trial-track
+// races + 16 Hit Character = 584 today. Keep a small margin for a future family
+// addition, while deriving every variable block from its owner.
 // ---------------------------------------------------------------------------
 #define AP_VF_CUSTOM_LOCATION_COUNT (2 + CTR_CFG_PODIUM_RUNG_COUNT + CTR_CFG_LETTER_COUNT)
 #define AP_VF_SIM_ITEM_COUNT (AP_CUSTOM_LETTER_VERIFY_FIRST + AP_CUSTOM_LETTER_VERIFY_COUNT)
@@ -47,7 +49,7 @@ static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
 	CTR_CFG_PODIUM_STORAGE_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
 	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + \
 	AP_ITEMSANITY_WEAPON_COUNT * 2 + CTR_CFG_WUMPA_TRACK_COUNT + \
-	CTR_CFG_WUMPA_CUSTOM_MAX + AP_VF_CUSTOM_LOCATION_COUNT)
+	CTR_CFG_WUMPA_CUSTOM_MAX + AP_VF_CUSTOM_LOCATION_COUNT + AP_VF_FAMILY_MAX)
 #define AP_VF_LOCATION_SAFETY_MARGIN 8
 #define AP_VF_MAX_LOCS (AP_VF_MAX_WIRE_LOCS + AP_VF_LOCATION_SAFETY_MARGIN)
 
@@ -72,6 +74,10 @@ typedef enum
 	AP_VF_CUSTOM,     // generic custom Trophy or podium rung -> assigned surface
 	AP_VF_CUSTOM_LETTER,
 	AP_VF_CUSTOM_CTR,
+	AP_VF_RELIC_PERFECT, // Relic Race Perfect (dest 0..17) -> that track's Sapphire rule
+	AP_VF_TRIAL_TROPHY,  // Slide/Turbo Trophy Race (dest 16/17) -> pad stage 1
+	AP_VF_TRIAL_CTR,     // Slide/Turbo CTR Token Challenge -> pad stage 1 + stage 2
+	AP_VF_HIT,           // Hit <Character> (detail = target engine id)
 } ap_vf_kind;
 
 typedef struct
@@ -316,6 +322,59 @@ static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest
 	return 1;
 }
 
+// 1 when `code` is a location of this seed the sweep has collected. Absent
+// locations carry code -1 in the worklist, so they never match: this is the
+// apworld's "a code with no created location is dropped".
+static int ap_vf_code_collected(const ap_vf_loc *locs, const char *state, int n,
+                                long code)
+{
+	int j;
+	if (code <= 0)
+		return 0;
+	for (j = 0; j < n; j++)
+		if (locs[j].code == code)
+			return state[j] != 0;
+	return 0;
+}
+
+// Gather the Hit <target> rule inputs (apworld hit_character._install_target)
+// from the sweep's current state.
+static AP_VerifyHitInputs ap_vf_hit_inputs(int target, const ap_vf_loc *locs,
+	const char *state, int n, const int *pad_for_dest, const int *counts)
+{
+	AP_VerifyHitInputs in;
+	int level, k;
+	memset(&in, 0, sizeof in);
+	in.keys_held = counts[AP_IDX_KEY];
+	// Ordinary routes: every destination 0..17 whose pad loads it. A trial
+	// hosts an AI race only when its race option is on. A destination with no
+	// loading pad (the Cortex Vortex pad track's dropped track) has no route.
+	for (level = 0; level < AP_VF_HIT_LEVEL_COUNT; level++)
+	{
+		int pad = pad_for_dest[level];
+		in.pad_lock[level] = -1;
+		if (pad < 0)
+			continue;
+		if (level >= 16 && ctr_cfg.trial_track_mode[level - 16] < 1)
+			continue;
+		in.route_open[level] = (unsigned char)ap_vf_pad_open(pad, counts);
+		in.pad_lock[level] = (signed char)ap_vf_required_character(pad);
+	}
+	if (target >= AP_VF_HIT_FIRST_GUEST && target < 16)
+	{
+		const ctr_hit_trigger *trig = &ctr_cfg.hit.triggers[target - AP_VF_HIT_FIRST_GUEST];
+		for (k = 0; k < CTR_CFG_HIT_BOSS_COUNT; k++)
+			if (ctr_cfg.hit.boss_identity[k] == target &&
+			    ap_vf_code_collected(locs, state, n, AP_VF_HIT_BOSS_CODES[k]))
+				in.boss_reached = 1;
+		for (k = 0; k < trig->count && k < CTR_CFG_HIT_TRIGGER_MAX; k++)
+			if (ap_vf_code_collected(locs, state, n, trig->any_of[k]))
+				in.trigger_reached = 1;
+		in.fallback_keys = trig->fallback_keys;
+	}
+	return in;
+}
+
 // ---------------------------------------------------------------------------
 // The sweep.
 // ---------------------------------------------------------------------------
@@ -327,6 +386,7 @@ static void ap_vf_recompute(void)
 	int        n = 0, i, t;
 	AP_VerifyWumpaLocation wumpa_locs[CTR_CFG_WUMPA_TRACK_COUNT +
 		CTR_CFG_WUMPA_CUSTOM_MAX];
+	AP_VerifyFamilyLocation family_locs[AP_VF_FAMILY_MAX];
 
 	ap_vf_truncated = 0; // per-sweep state: a stale flag must not poison later verdicts
 
@@ -461,6 +521,25 @@ static void ap_vf_recompute(void)
 		locs[n].detail = -1;
 		n++;
 	}
+	// Relic Race Perfect, trial-track races and Hit Character: each carried in
+	// its own slot_data block (ap_verify_families.h).
+	for (i = 0, t = AP_VerifyFamilyWorklist(&ctr_cfg, family_locs,
+	     AP_VF_FAMILY_MAX, &ap_vf_truncated); i < t; i++)
+	{
+		static const int kind_for_family[] = {
+			AP_VF_RELIC_PERFECT, AP_VF_TRIAL_TROPHY, AP_VF_TRIAL_CTR, AP_VF_HIT,
+		};
+		if (n >= AP_VF_MAX_LOCS)
+		{
+			ap_vf_truncated = 1; // same refusal as the podium block above
+			break;
+		}
+		locs[n].code = family_locs[i].code;
+		locs[n].kind = kind_for_family[family_locs[i].family];
+		locs[n].track = family_locs[i].track;
+		locs[n].detail = family_locs[i].detail;
+		n++;
+	}
 
 	// Seed the simulated tally from the FOREIGN receipts only (multiworld items +
 	// starting inventory). OWN items are banked from the scout cache below -- when a
@@ -565,6 +644,10 @@ static void ap_vf_recompute(void)
 			switch (locs[i].kind)
 			{
 			case AP_VF_TROPHY:
+			case AP_VF_TRIAL_TROPHY:
+				// A trial Trophy Race (#203) is a plain Trophy Race in the
+				// trial region: pad access plus the difficulty term, since
+				// Slide Coliseum and Turbo Track are in the ruled group.
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
 				ok = ap_vf_pad_open(pad, counts) &&
@@ -608,6 +691,45 @@ static void ap_vf_recompute(void)
 						ap_vf_stage2_met(pad, counts) &&
 						AP_VerifyLocationCapabilityGate(&opts, counts,
 							locs[i].code, ap_vf_required_character(pad));
+				break;
+			}
+			case AP_VF_TRIAL_CTR:
+			{
+				// A trial CTR Token Challenge takes the retail token rule
+				// (apworld add_time_trial_and_ctr_requirements): its Trophy
+				// Race, any stage 2, the first-boost floor and, in lettersanity
+				// modes 2 and 3, the track's letter items.
+				AP_VerifyOptions opts = ap_vf_options();
+				AP_VerifyLetterSet ls;
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ls = ap_vf_letter_set(lid);
+				ok = AP_VerifyTrialTokenChallenge(&opts, counts, lid,
+					ap_vf_required_character(pad), ap_vf_pad_open(pad, counts),
+					ap_vf_stage2_met(pad, counts), &ls);
+				break;
+			}
+			case AP_VF_RELIC_PERFECT:
+			{
+				// Same entry rule as the track's Sapphire Time Trial (the
+				// Trophy Race plus any stage 2; on a trial track only when
+				// its Trophy Race exists), no Gold/Platinum tier term, plus
+				// the per-track crate term (N. Gin Labs: USF).
+				AP_VerifyOptions opts = ap_vf_options();
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = AP_VerifyRelicPerfect(&opts, counts, lid,
+					ap_vf_required_character(pad), ap_vf_pad_open(pad, counts),
+					lid < 16 || ctr_cfg.trial_track_mode[lid - 16] >= 1,
+					ap_vf_stage2_met(pad, counts));
+				break;
+			}
+			case AP_VF_HIT:
+			{
+				AP_VerifyOptions opts = ap_vf_options();
+				AP_VerifyHitInputs in = ap_vf_hit_inputs(locs[i].detail,
+					locs, state, n, pad_for_dest, counts);
+				ok = AP_VerifyHitTarget(&opts, counts, locs[i].detail, &in);
 				break;
 			}
 			case AP_VF_CRYSTAL:

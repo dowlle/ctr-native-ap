@@ -366,6 +366,118 @@ static int AP_VerifyLocationCapabilityGate(const AP_VerifyOptions *o,
 		AP_VerifyLocationBoostMin(o, code));
 }
 
+// Relic Race Perfect crate term (#49, apworld usf_finish.relic_perfect_boost_
+// min). A perfect check takes its track's Relic Race entry rule, which is what
+// the Sapphire Time Trial gets, and no relic-time tier term. The only per-track
+// crate term is N. Gin Labs (level 11): two of its time crates need USF.
+#define AP_VF_LEVEL_N_GIN_LABS 11
+
+static int AP_VerifyRelicPerfectBoostMin(int level)
+{
+	return level == AP_VF_LEVEL_N_GIN_LABS ? 2 : 0;
+}
+
+// `<track>: Relic Race Perfect` (apworld add_time_trial_and_ctr_requirements).
+// With the track's Trophy Race in the seed: that Trophy Race (its finish and
+// difficulty terms), any stage 2 and the crate term. Without one (a trial
+// track whose race option is off) the apworld installs no rule, so pad access
+// alone. `padOpen` and `stage2Met` are the caller's route inputs.
+static int AP_VerifyRelicPerfect(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int level, int requiredCharacter,
+	int padOpen, int trophyExists, int stage2Met)
+{
+	if (!padOpen)
+		return 0;
+	if (!trophyExists)
+		return 1;
+	return AP_VerifyTrophyCapabilityGate(o, items, level, requiredCharacter) &&
+		stage2Met &&
+		AP_VerifyBoostTerm(o, items, requiredCharacter,
+			AP_VerifyRelicPerfectBoostMin(level));
+}
+
+// Hit Character (apworld hit_character._install_target). HIT_METHOD_ITEMS are
+// Bomb, Missile, Bomb x3 and Missile x3 (weapon indices 1, 2, 9, 10); with
+// Itemsanity on the player needs one of them to land a hit at all.
+#define AP_VF_HIT_LEVEL_COUNT 18
+#define AP_VF_HIT_FIRST_GUEST 8
+
+static int AP_VerifyHitMethodOwned(const int items[AP_VF_ITEM_COUNT])
+{
+	return AP_VerifyWeaponOwned(items, 1) || AP_VerifyWeaponOwned(items, 2) ||
+		AP_VerifyWeaponOwned(items, 9) || AP_VerifyWeaponOwned(items, 10);
+}
+
+// What the sweep knows about one Hit target, gathered by the caller.
+//   route_open[L]   ordinary destination L (0..17) can host a Hit race (a
+//                   trial only when its race option is on), a pad loads it,
+//                   and that pad is open (hub, pad requirement, racer lock).
+//   pad_lock[L]     that pad's locked racer, -1 when the pad is not locked.
+//   boss_reached    an enabled boss encounter whose identity is the target is
+//                   reachable. Guests only: the apworld builds no boss route
+//                   for a default racer.
+//   trigger_reached one of the guest's CREATED unlock wins is reachable.
+//   fallback_keys   the guest's Key fallback (0 = none). It replaces the
+//                   trigger when none of the guest's unlock wins exists.
+//   keys_held       Keys in the simulated inventory.
+typedef struct
+{
+	unsigned char route_open[AP_VF_HIT_LEVEL_COUNT];
+	signed char pad_lock[AP_VF_HIT_LEVEL_COUNT];
+	int boss_reached;
+	int trigger_reached;
+	int fallback_keys;
+	int keys_held;
+} AP_VerifyHitInputs;
+
+// One ordinary route (apworld _appearance_players and _ordinary_predicate): a
+// pad locked to the target proves nothing, a locked pad seats its own racer,
+// and an unlocked pad needs any selectable racer other than the target.
+static int AP_VerifyHitOrdinaryRoute(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int target, int lock)
+{
+	int character;
+	if (lock == target)
+		return 0;
+	if (lock >= 0)
+		return AP_VerifyCharacterUnlocked(o, items, lock);
+	for (character = 0; character < 16; character++)
+		if (character != target && AP_VerifyCharacterUnlocked(o, items, character))
+			return 1;
+	return 0;
+}
+
+// The Hit <target> rule. Itemsanity needs a hit method item. A guest (engine
+// id 8..15) is hit in its own boss encounter, or in an ordinary race once it is
+// seated: by a reachable unlock win, or by the Key fallback when no unlock win
+// exists in the seed. A default racer (0..7) needs only an ordinary route.
+static int AP_VerifyHitTarget(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int target, const AP_VerifyHitInputs *in)
+{
+	int level;
+	if (target < 0 || target >= 16)
+		return 0;
+	if (o->itemsanity && !AP_VerifyHitMethodOwned(items))
+		return 0;
+	if (target >= AP_VF_HIT_FIRST_GUEST)
+	{
+		if (in->boss_reached)
+			return 1;
+		if (in->fallback_keys > 0)
+		{
+			if (in->keys_held < in->fallback_keys)
+				return 0;
+		}
+		else if (!in->trigger_reached)
+			return 0;
+	}
+	for (level = 0; level < AP_VF_HIT_LEVEL_COUNT; level++)
+		if (in->route_open[level] &&
+			AP_VerifyHitOrdinaryRoute(o, items, target, in->pad_lock[level]))
+			return 1;
+	return 0;
+}
+
 // One cup LEG's finish term. The apworld's usf_term is unconditionally True
 // when the boost chain is not randomized and never evaluates a racer, while
 // AP_VerifyCapabilityGate always checks the pinned racer's unlock. Guarding
@@ -417,6 +529,20 @@ static int AP_VerifyTokenTerm(const AP_VerifyOptions *o,
 				(letters->item[letter] < 0 || items[letters->item[letter]] <= 0))
 				return 0;
 	return 1;
+}
+
+// A trial CTR Token Challenge (#203, Slide Coliseum or Turbo Track). It exists
+// only with its trial Trophy Race and takes the retail token rule: that Trophy
+// Race (the ruled-group difficulty term), any stage 2, then the token term
+// (first-boost floor and, in lettersanity modes 2 and 3, the letter items).
+static int AP_VerifyTrialTokenChallenge(const AP_VerifyOptions *o,
+	const int items[AP_VF_ITEM_COUNT], int level, int requiredCharacter,
+	int padOpen, int stage2Met, const AP_VerifyLetterSet *letters)
+{
+	return padOpen &&
+		AP_VerifyTrophyCapabilityGate(o, items, level, requiredCharacter) &&
+		stage2Met &&
+		AP_VerifyTokenTerm(o, items, level, requiredCharacter, letters);
 }
 
 // Per-letter capability terms on top of the shared token-challenge entry rule
