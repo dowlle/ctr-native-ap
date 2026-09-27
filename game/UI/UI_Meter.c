@@ -325,9 +325,10 @@ void UI_DrawSlideMeter(s16 posX, s16 posY, struct Driver *driver)
 // filling leftward. driver->reserves is milliseconds-of-fire in the game's
 // 960ms "second"; the bar caps (pegs) at 8400 units (~8.75s) and turns blue as
 // the overflow tell ("saffi fire"), while the value itself has no real cap.
-// Past 0x7fff the signed field wraps negative; the display math in
-// ap_reserves_meter_logic.h reads it unsigned so that still shows as the full
-// blue bar (#387). Written in the UI_DrawSlideMeter idiom above.
+// Past 0x7fff the signed field wraps negative and the engine stops counting it
+// down; the display math in ap_reserves_meter_logic.h reads it unsigned so it
+// still shows as a full bar, drawn purple for that "Saffi fire" state as CTR
+// Unlimited does (#387). Written in the UI_DrawSlideMeter idiom above.
 void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver)
 {
 	const struct GameTracker *gGT = sdata->gGT;
@@ -353,6 +354,11 @@ void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver)
 	ColorCode colorCode;
 	switch (AP_ReservesMeterTier(driver->reserves))
 	{
+	case AP_RESERVES_TIER_SAFFI:
+		// Wrapped past 0x7fff, no longer draining. N. Gin's purple from the game's
+		// own driver palette (data.colors N_GIN_PURPLE, 0xFF00A9 as BGR).
+		colorCode = MakeColorCode(0xA9, 0, 0xFF, primCode);
+		break;
 	case AP_RESERVES_TIER_BLUE:
 		colorCode = MakeColorCode(0, 0, 0xFF, primCode); // blue, pegged
 		break;
