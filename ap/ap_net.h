@@ -249,6 +249,14 @@ unsigned ap_net_doors_session(void);
 void ap_net_doors_mark_session(unsigned bit);
 void ap_net_doors_record(unsigned bit);
 
+// #377: once-per-seed Oxide Final Challenge scene flag, stored in server data
+// storage per seed, team and slot (ap/ap_oxide_scene_seen.h). `known` is 0
+// until this connection's Get reply has arrived; callers must not auto-play
+// the scene while it is 0. `record` marks the scene played and sends it.
+int ap_net_oxide_scene_known(void);
+int ap_net_oxide_scene_seen(void);
+void ap_net_oxide_scene_record(void);
+
 #ifdef __cplusplus
 }
 #endif

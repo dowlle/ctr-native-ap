@@ -1,19 +1,26 @@
 // cc -std=c99 -Wall -Wextra -Werror -o /tmp/test-oxide-cutscene tools/test-oxide-cutscene.c
 //
-// WO-A4: Oxide cutscene trigger characterization.
+// WO-A4 / issue #377: Oxide cutscene trigger characterization.
 //
 // WHAT IS ACTUALLY EXECUTED HERE. Pure production predicates:
-//   ap/ap_oxide_cutscene.h  AP_OxideFinalPresentationReady -- the shared gate
-//                           the three relic-cutscene sites now ask
+//   ap/ap_oxide_cutscene.h  AP_OxideFinalPresentationReady -- retail/AP split
+//                           AP_OxideFinalBoostMin, AP_OxideFinalGoModePure --
+//                           go mode for the Final Challenge (#377)
+//                           AP_OxideFinalSceneWanted -- the once-per-seed
+//                           decision the three scene sites and the podium-skip
+//                           keep rule share (via ap/ap_oxide_scene.c)
 //   ap/ap_relic_goal.h      AP_RelicGoalMet -- what AP_OxideFinalOpen() resolves
 //                           the per-seed mode + count to
-//   ap/ap_oxide_encounter.h AP_OxideGarageOffersFinal, composed with
-//                           AP_OxideFinalEncounterPresentationReady
+//   ap/ap_oxide_encounter.h AP_OxideGarageEvaluate -- the offered encounter and
+//                           whether its door is open
 // plus a MODEL of the surrounding engine flow (BossCutsceneModel below). The
 // model is a transcription of the real control flow, line-referenced against
 // the source it mirrors; it is NOT the engine. It exists so the trigger map is
 // checkable and so a later change to those functions has something to fail
 // against. Rows that the model can only assert by construction are labelled.
+//
+// The linked composition (ap/ap_oxide_scene.c) is exercised in
+// tools/test-podium-skip.c; the server flag in tools/test-oxide-scene-seen.cpp.
 //
 // WHAT IS NOT COVERED HEADLESSLY, and is therefore left as runtime debt:
 //   * that the engine really reaches these predicates in the frame order the
@@ -52,27 +59,33 @@ struct PodiumState
 	int rewardID;        // gGT->podiumRewardID
 	int cfgActive;       // ctr_cfg_active()
 	int vanillaRelics;   // gGT->currAdvProfile.numRelics
-	int apFinalOpen;     // AP_OxideFinalOpen()
+	int goMode;          // AP_OxideFinalGoMode()
+	int seenKnown;       // ap_net_oxide_scene_known()
+	int seen;            // ap_net_oxide_scene_seen(); set when the scene plays
 	int beatOxideSecond; // CHECK_ADV_BIT(rewards, ADV_REWARD_BEAT_OXIDE_SECOND)
 	int spawnedOnPodium; // driver matrix == ptrSpawnType2_PosRot[1] pos
 	int hub;             // gGT->levelID - GEM_STONE_VALLEY (0 = Gemstone)
 };
 
-// Transcription of CS_Camera_BoolGotoBoss (game/233/CS_Camera.c:4-28) followed
-// by the CS_Camera_ThTick_Podium tail (game/233/CS_Camera.c:~374-395) and the
-// cutsceneID selection in CS_Camera_ThTick_Boss (game/233/CS_Camera.c:49-62).
-static int BossCutsceneModel(const struct PodiumState *s)
+// AP_OxideFinalSceneReady (ap/ap_oxide_scene.c) over the modelled inputs.
+static int SceneReady(const struct PodiumState *s)
+{
+	return AP_OxideFinalSceneWanted(s->cfgActive, s->vanillaRelics, s->goMode,
+	                                s->seenKnown, s->seen);
+}
+
+// Transcription of CS_Camera_BoolGotoBoss (game/233/CS_Camera.c:8-35) followed
+// by the CS_Camera_ThTick_Podium tail (game/233/CS_Camera.c:~414-445) and the
+// cutsceneID selection in CS_Camera_ThTick_Boss (game/233/CS_Camera.c:~66-80).
+// Records the play (AP_OxideFinalSceneMarkPlayed) where the tail selects the
+// Oxide index, so calling it twice models two consecutive podiums.
+static int BossCutsceneModel(struct PodiumState *s)
 {
 	int gotoBoss = 0;
 
 	// CS_Camera_BoolGotoBoss, relic term. The `!beatOxideSecond` guard is the
-	// repeat suppression: once the Final Challenge is beaten this never fires
-	// again. That bit is NOT in any AP item pool, so AP_ApplyItems does not
-	// rewrite it and the suppression survives reconnect and profile load.
-	if (s->rewardID == RW_RELIC &&
-	    AP_OxideFinalPresentationReady(s->cfgActive, s->vanillaRelics,
-	                                   s->apFinalOpen) &&
-	    !s->beatOxideSecond)
+	// retail repeat suppression after the Final Challenge is beaten.
+	if (s->rewardID == RW_RELIC && SceneReady(s) && !s->beatOxideSecond)
 		gotoBoss = 1;
 
 	// CS_Camera_BoolGotoBoss, Key term: you just won a boss race.
@@ -88,16 +101,32 @@ static int BossCutsceneModel(const struct PodiumState *s)
 		return CS_NONE;
 
 	// CS_Camera_ThTick_Podium tail: the OXIDE_RELICS_<hub> index is chosen only
-	// on a relic reward whose Final-Challenge gate is met. Both conditions must
-	// use the SAME predicate as BoolGotoBoss above or a relic win enters the
-	// boss path and then falls through to the ordinary hub intro.
-	if (s->rewardID == RW_RELIC &&
-	    AP_OxideFinalPresentationReady(s->cfgActive, s->vanillaRelics,
-	                                   s->apFinalOpen))
+	// on a relic reward whose scene decision holds. Same frame, same inputs as
+	// BoolGotoBoss above, and the play is recorded only after both have asked.
+	if (s->rewardID == RW_RELIC && SceneReady(s))
+	{
+		if (s->cfgActive)
+			s->seen = 1; // AP_OxideFinalSceneMarkPlayed
 		return CS_OXIDE_RELICS;
+	}
 
 	// bossCutsceneIndex stays -1 -> cutsceneID = hub*2 (+1 on a Key reward).
 	return (s->rewardID == RW_KEY) ? CS_BOSS_HUB_OUTRO : CS_BOSS_HUB_INTRO;
+}
+
+// Transcription of CS_Thread.c opcode 0x21 (~729-752): the PINSTRIPE_BEAT key
+// scene asks for OXIDE_TROPHIES (0); redirect to OXIDE_RELICS_GEMSTONE (9)
+// only on the same decision, and record the play when redirecting.
+static int Opcode21Model(struct PodiumState *s)
+{
+	int index = 0;
+	if (SceneReady(s))
+	{
+		index = 9;
+		if (s->cfgActive)
+			s->seen = 1;
+	}
+	return index;
 }
 
 static struct PodiumState Base(void)
@@ -105,6 +134,17 @@ static struct PodiumState Base(void)
 	struct PodiumState s;
 	memset(&s, 0, sizeof s);
 	s.spawnedOnPodium = 1; // the ordinary case: resume driving
+	return s;
+}
+
+// A seed-configured state that has the flag read and unseen.
+static struct PodiumState ApRelic(int goMode)
+{
+	struct PodiumState s = Base();
+	s.rewardID = RW_RELIC;
+	s.cfgActive = 1;
+	s.goMode = goMode;
+	s.seenKnown = 1;
 	return s;
 }
 
@@ -116,34 +156,104 @@ static int FinalOpen(int mode, int count, int sapph, int gold, int plat)
 	return AP_RelicGoalMet(mode, count, sapph, gold, plat);
 }
 
+// Go mode for a seed without the boost pack, from the relic gate alone
+// (Oxide 1 cleared, four Keys held, no companion arms).
+static int GoModeFromRelics(int finalOpen)
+{
+	AP_OxideGarageInputs in;
+	AP_OxideGarageState st;
+	memset(&in, 0, sizeof in);
+	in.garageReqMet = 1;
+	in.firstCleared = 1;
+	in.finalRelicMet = finalOpen;
+	st = AP_OxideGarageEvaluate(&in);
+	return AP_OxideFinalGoModePure(st.encounter == AP_OXIDE_ENCOUNTER_FINAL,
+	                               st.open, AP_OxideFinalBoostMin(0, 1, 0), -1);
+}
+
+static void TestGoMode(void)
+{
+	// =====================================================================
+	// GO MODE. The apworld's rule for "N. Oxide's Final Challenge" in logic
+	// (Rules.add_oxide_access_contract final_win_rule), term by term.
+	// =====================================================================
+
+	// Boost requirement: boost_term(boost_min=1) AND the venue's finish term.
+	// usf_finish.track_finish_term: Cortex Vortex always USF (2); Oxide
+	// Station USF unless shortcut_knowledge is hard, where the floor (1) stays.
+	CHECK("no boost pack: no boost term (vacuous)",
+	      AP_OxideFinalBoostMin(0, 0, 0) == 0 && AP_OxideFinalBoostMin(0, 1, 2) == 0);
+	CHECK("Cortex Vortex venue: USF at every shortcut knowledge",
+	      AP_OxideFinalBoostMin(1, 0, 0) == 2 && AP_OxideFinalBoostMin(1, 0, 1) == 2 &&
+	      AP_OxideFinalBoostMin(1, 0, 2) == 2);
+	CHECK("Oxide Station venue, easy/medium: USF",
+	      AP_OxideFinalBoostMin(1, 1, 0) == 2 && AP_OxideFinalBoostMin(1, 1, 1) == 2);
+	CHECK("Oxide Station venue, hard: first boost rank only",
+	      AP_OxideFinalBoostMin(1, 1, 2) == 1);
+
+	// Capability: one driveable racer at the needed tier.
+	CHECK("USF needed, best racer at USF: go",
+	      AP_OxideFinalGoModePure(1, 1, 2, 2));
+	CHECK("USF needed, best racer at blue fire: go",
+	      AP_OxideFinalGoModePure(1, 1, 2, 3));
+	CHECK("USF needed, best racer at boost: not go",
+	      !AP_OxideFinalGoModePure(1, 1, 2, 1));
+	CHECK("floor needed, bare kart: not go",
+	      !AP_OxideFinalGoModePure(1, 1, 1, 0));
+	CHECK("pack live but no racer tier readable: not go",
+	      !AP_OxideFinalGoModePure(1, 1, 1, -1));
+	CHECK("no boost term: tier ignored",
+	      AP_OxideFinalGoModePure(1, 1, 0, -1));
+
+	// Encounter and door: the garage must be OFFERING the Final Challenge and
+	// its door must be open. Sweep every goal, clear state and companion arm.
+	for (int goal = 0; goal <= 3; goal++)
+	for (int first = 0; first <= 1; first++)
+	for (int optional = 0; optional <= 1; optional++)
+	for (int keys = 0; keys <= 1; keys++)
+	for (int relic = 0; relic <= 1; relic++)
+	for (int comp = 0; comp <= 1; comp++)
+	{
+		AP_OxideGarageInputs in;
+		AP_OxideGarageState st;
+		int go, want;
+		memset(&in, 0, sizeof in);
+		in.goalOxide = goal;
+		in.firstCleared = first;
+		in.firstOptional = optional;
+		in.garageReqMet = keys;
+		in.finalRelicMet = relic;
+		in.goalBosses = 2;
+		in.bossesWon = comp ? 2 : 1;
+		st = AP_OxideGarageEvaluate(&in);
+		go = AP_OxideFinalGoModePure(st.encounter == AP_OXIDE_ENCOUNTER_FINAL,
+		                             st.open, 0, -1);
+		// apworld final_rule: Key 4 AND relics AND (companions on 101%), and
+		// Oxide 1's rule; native also needs Oxide 1 CLEARED before it offers
+		// the Final, unless 101% with oxide_1_optional lets it skip ahead.
+		want = goal != AP_OXIDE_GOAL_DISABLED && keys && relic &&
+		       (goal != AP_OXIDE_GOAL_FINAL || comp) &&
+		       (first || (optional && goal == AP_OXIDE_GOAL_FINAL));
+		if (go != want)
+		{
+			printf("FAIL  go mode: goal=%d first=%d opt=%d keys=%d relic=%d "
+			       "comp=%d got=%d want=%d\n",
+			       goal, first, optional, keys, relic, comp, go, want);
+			failures++;
+		}
+	}
+	printf("ok    go-mode encounter/door matrix\n");
+}
+
 int main(void)
 {
 	struct PodiumState s;
-	// Compose the production encounter decision with the production cutscene
-	// predicate. The encounter selector alone must not announce an unmet relic
-	// milestone, and relic-rich players must still clear the first challenge.
-	for (int goal = 0; goal <= 3; goal++)
-	for (int first = 0; first <= 1; first++)
-	for (int relic = 0; relic <= 1; relic++)
-	{
-		AP_OxideGarageInputs in = {0};
-		in.goalOxide = goal;
-		in.firstCleared = first;
-		in.finalRelicMet = relic;
-		in.garageReqMet = 1;
-		int offered = AP_OxideGarageOffersFinal(&in);
-		CHECK("encounter/relic presentation matrix",
-		      AP_OxideFinalEncounterPresentationReady(1, 18, offered, relic) ==
-		          (goal != AP_OXIDE_GOAL_DISABLED && first && relic));
-		CHECK("encounter inputs cannot override retail below threshold",
-		      !AP_OxideFinalEncounterPresentationReady(0, 17, offered, relic));
-		CHECK("retail threshold independent of encounter inputs",
-		      AP_OxideFinalEncounterPresentationReady(0, 18, offered, relic));
-	}
+
+	TestGoMode();
 
 	// =====================================================================
 	// 1. RETAIL PARITY. Without slot_data every answer must be the vanilla
-	//    18-Sapphire rule, unchanged.
+	//    18-Sapphire rule, unchanged, including the retail repeat.
 	// =====================================================================
 	CHECK("no slot_data: 17 relics is not ready",
 	      !AP_OxideFinalPresentationReady(0, 17, 0));
@@ -153,19 +263,25 @@ int main(void)
 	      AP_OxideFinalPresentationReady(0, 19, 0));
 	CHECK("no slot_data ignores the AP gate entirely (0 relics, gate open)",
 	      !AP_OxideFinalPresentationReady(0, 0, 1));
+	CHECK("no slot_data ignores go mode and the seen flag",
+	      AP_OxideFinalSceneWanted(0, 18, 0, 0, 1) &&
+	      !AP_OxideFinalSceneWanted(0, 17, 1, 1, 0));
 
 	s = Base();
 	s.rewardID = RW_RELIC;
 	s.vanillaRelics = 18;
 	CHECK("no slot_data: 18th relic win plays OXIDE_RELICS",
 	      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
+	CHECK("no slot_data: records nothing", s.seen == 0);
+	CHECK("no slot_data: next relic win repeats, as retail",
+	      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
 	s.vanillaRelics = 17;
 	CHECK("no slot_data: 17th relic win resumes driving",
 	      BossCutsceneModel(&s) == CS_NONE);
 
 	// =====================================================================
-	// 2. THE DEFECT. With slot_data the presentation must follow the SHIPPED
-	//    gate (AP_OxideFinalOpen), not the received-Sapphire count.
+	// 2. WO-A4. With slot_data the presentation follows the SHIPPED relic
+	//    gate (inside go mode), not the received-Sapphire count.
 	// =====================================================================
 
 	// Platinum 5: the garage loads the Final Challenge with zero Sapphires,
@@ -173,14 +289,8 @@ int main(void)
 	{
 		int open = FinalOpen(2 /* platinum */, 5, 0, 0, 5);
 		CHECK("platinum-5 seed: gate is open with 0 Sapphires", open);
-		CHECK("platinum-5 seed: presentation is ready despite 0 Sapphires",
-		      AP_OxideFinalPresentationReady(1, 0, open));
-
-		s = Base();
-		s.rewardID = RW_RELIC;
-		s.cfgActive = 1;
+		s = ApRelic(GoModeFromRelics(open));
 		s.vanillaRelics = 0;
-		s.apFinalOpen = open;
 		CHECK("platinum-5 seed: relic win plays OXIDE_RELICS",
 		      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
 	}
@@ -190,92 +300,125 @@ int main(void)
 	{
 		int open = FinalOpen(4 /* total */, 40, 18, 0, 0);
 		CHECK("total-40 seed: gate is shut on 18 Sapphires alone", !open);
-		CHECK("total-40 seed: presentation is NOT ready on 18 Sapphires",
-		      !AP_OxideFinalPresentationReady(1, 18, open));
-
-		s = Base();
-		s.rewardID = RW_RELIC;
-		s.cfgActive = 1;
+		s = ApRelic(GoModeFromRelics(open));
 		s.vanillaRelics = 18;
-		s.apFinalOpen = open;
 		CHECK("total-40 seed: 18th Sapphire resumes driving, no Oxide scene",
 		      BossCutsceneModel(&s) == CS_NONE);
 
 		open = FinalOpen(4, 40, 18, 18, 4);
 		CHECK("total-40 seed: gate opens at 40 summed relics", open);
-		CHECK("total-40 seed: presentation ready at 40 summed relics",
-		      AP_OxideFinalPresentationReady(1, 18, open));
-	}
-
-	// Default sapphire-18 seed still behaves exactly like retail.
-	{
-		CHECK("sapphire-18 seed: shut at 17",
-		      !AP_OxideFinalPresentationReady(1, 17, FinalOpen(0, 18, 17, 0, 0)));
-		CHECK("sapphire-18 seed: open at 18",
-		      AP_OxideFinalPresentationReady(1, 18, FinalOpen(0, 18, 18, 0, 0)));
+		CHECK("total-40 seed: go mode at 40 summed relics",
+		      GoModeFromRelics(open));
 	}
 
 	// =====================================================================
-	// 3. THE TWO SITES CANNOT DISAGREE. BoolGotoBoss and the index selection
-	//    ask one predicate, so a relic win never enters the boss path and
+	// 3. ISSUE #377: ONCE PER SEED, ON REACHING GO MODE.
+	// =====================================================================
+	s = ApRelic(0);
+	CHECK("relic gate open but not in go mode: no scene",
+	      BossCutsceneModel(&s) == CS_NONE);
+	s.goMode = 1;
+	CHECK("first relic podium in go mode plays OXIDE_RELICS",
+	      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
+	CHECK("the play is recorded", s.seen == 1);
+	CHECK("second relic podium in go mode resumes driving",
+	      BossCutsceneModel(&s) == CS_NONE);
+	CHECK("third relic podium still resumes driving",
+	      BossCutsceneModel(&s) == CS_NONE);
+
+	// The recorded flag comes back from the server after a client restart:
+	// same answer as never having left.
+	s = ApRelic(1);
+	s.seen = 1;
+	CHECK("seen flag from the server: no scene after a restart",
+	      BossCutsceneModel(&s) == CS_NONE);
+
+	// Fail safe: before the Get reply the flag is unknown, so no auto-play,
+	// and nothing is recorded.
+	s = ApRelic(1);
+	s.seenKnown = 0;
+	CHECK("flag not read yet: no scene", BossCutsceneModel(&s) == CS_NONE);
+	CHECK("flag not read yet: nothing recorded", s.seen == 0);
+	s.seenKnown = 1;
+	CHECK("flag read: the next go-mode relic podium plays it",
+	      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
+
+	// A fresh room starts without the key: plays again once, for that room.
+	s = ApRelic(1);
+	CHECK("fresh room: plays once", BossCutsceneModel(&s) == CS_OXIDE_RELICS &&
+	                                BossCutsceneModel(&s) == CS_NONE);
+
+	// The key-scene chain (opcode 0x21) is the same once-per-seed scene.
+	s = ApRelic(1);
+	s.rewardID = RW_KEY;
+	CHECK("key-scene chain in go mode redirects to OXIDE_RELICS_GEMSTONE",
+	      Opcode21Model(&s) == 9 && s.seen == 1);
+	CHECK("key-scene chain after the play keeps OXIDE_TROPHIES",
+	      Opcode21Model(&s) == 0);
+	s.rewardID = RW_RELIC;
+	CHECK("relic podium after the key-scene play resumes driving",
+	      BossCutsceneModel(&s) == CS_NONE);
+	s = ApRelic(0);
+	CHECK("key-scene chain outside go mode keeps OXIDE_TROPHIES",
+	      Opcode21Model(&s) == 0 && s.seen == 0);
+	s = Base();
+	s.vanillaRelics = 18;
+	CHECK("no slot_data: key-scene chain redirects at 18, as retail",
+	      Opcode21Model(&s) == 9 && Opcode21Model(&s) == 9);
+
+	// =====================================================================
+	// 4. THE TWO SITES CANNOT DISAGREE. BoolGotoBoss and the index selection
+	//    ask one decision, so a relic win never enters the boss path and
 	//    then lands on the ordinary hub intro.
 	// =====================================================================
 	{
-		int relics, open, mode;
 		int rows = 0;
-
-		for (mode = 0; mode <= 4; mode++)
-		for (relics = 0; relics <= 18; relics++)
+		for (int cfg = 0; cfg <= 1; cfg++)
+		for (int relics = 0; relics <= 18; relics++)
+		for (int bits = 0; bits < 8; bits++)
 		{
-			open = FinalOpen(mode, 18, relics, 0, 0);
+			int cls;
 			s = Base();
 			s.rewardID = RW_RELIC;
-			s.cfgActive = 1;
+			s.cfgActive = cfg;
 			s.vanillaRelics = relics;
-			s.apFinalOpen = open;
-
-			// A relic win either plays OXIDE_RELICS or resumes driving. It must
-			// never resolve to the ordinary hub intro/outro.
-			if (BossCutsceneModel(&s) == CS_BOSS_HUB_INTRO ||
-			    BossCutsceneModel(&s) == CS_BOSS_HUB_OUTRO)
+			s.goMode = bits & 1;
+			s.seenKnown = (bits >> 1) & 1;
+			s.seen = (bits >> 2) & 1;
+			cls = BossCutsceneModel(&s);
+			if (cls == CS_BOSS_HUB_INTRO || cls == CS_BOSS_HUB_OUTRO)
 			{
-				printf("FAIL  relic win fell through to a hub scene: mode=%d relics=%d\n",
-				       mode, relics);
+				printf("FAIL  relic win fell through to a hub scene: cfg=%d "
+				       "relics=%d bits=%d\n", cfg, relics, bits);
 				failures++;
 			}
 			rows++;
 		}
-		printf("ok    relic-win consistency over %d mode/count rows\n", rows);
+		printf("ok    relic-win consistency over %d rows\n", rows);
 	}
 
 	// =====================================================================
-	// 4. REPEAT SUPPRESSION. Once the Final Challenge is beaten, the relic
-	//    cutscene never fires again -- and that bit is not an AP item mirror,
-	//    so the suppression survives reconnect and profile load.
+	// 5. REPEAT SUPPRESSION after the Final Challenge is beaten still holds.
 	// =====================================================================
-	s = Base();
-	s.rewardID = RW_RELIC;
-	s.cfgActive = 1;
-	s.apFinalOpen = 1;
+	s = ApRelic(1);
 	s.beatOxideSecond = 1;
 	CHECK("Final Challenge already beaten: relic win resumes driving",
 	      BossCutsceneModel(&s) == CS_NONE);
+	CHECK("Final Challenge already beaten: nothing recorded", s.seen == 0);
 	s.beatOxideSecond = 0;
 	CHECK("Final Challenge not yet beaten: relic win plays OXIDE_RELICS",
 	      BossCutsceneModel(&s) == CS_OXIDE_RELICS);
 
 	// =====================================================================
-	// 5. UNRELATED CLASSES stay unrelated. A Key win is the ordinary post-boss
+	// 6. UNRELATED CLASSES stay unrelated. A Key win is the ordinary post-boss
 	//    presentation and must not be diverted by any Oxide relic state.
 	// =====================================================================
-	s = Base();
+	s = ApRelic(1);
 	s.rewardID = RW_KEY;
-	s.cfgActive = 1;
-	s.apFinalOpen = 1;
-	CHECK("Key win is the ordinary outro even with the Oxide gate open",
-	      BossCutsceneModel(&s) == CS_BOSS_HUB_OUTRO);
-	s.apFinalOpen = 0;
-	CHECK("Key win is the ordinary outro with the Oxide gate shut",
+	CHECK("Key win is the ordinary outro even in go mode",
+	      BossCutsceneModel(&s) == CS_BOSS_HUB_OUTRO && s.seen == 0);
+	s.goMode = 0;
+	CHECK("Key win is the ordinary outro outside go mode",
 	      BossCutsceneModel(&s) == CS_BOSS_HUB_OUTRO);
 
 	s = Base();
@@ -288,33 +431,10 @@ int main(void)
 	CHECK("ordinary trophy win on the podium resumes driving",
 	      BossCutsceneModel(&s) == CS_NONE);
 
-	// =====================================================================
-	// 6. STATELESSNESS -> reconnect, profile load and hub re-entry. The
-	//    predicate holds no latch of its own, so the same inputs give the
-	//    same answer no matter how much churn happened in between. This is
-	//    what makes the three sites truthful across those three events: they
-	//    recompute from server-derived state every time they are asked.
-	// =====================================================================
-	{
-		int i, stable = 1;
-		int first = AP_OxideFinalPresentationReady(1, 4, FinalOpen(1, 6, 0, 6, 0));
-		for (i = 0; i < 64; i++)
-		{
-			// Interleave the opposite answer, mimicking a session that
-			// disconnects (counts drop to zero) and reconnects.
-			(void)AP_OxideFinalPresentationReady(1, 0, 0);
-			(void)AP_OxideFinalPresentationReady(0, 18, 0);
-			if (AP_OxideFinalPresentationReady(1, 4, FinalOpen(1, 6, 0, 6, 0)) != first)
-				stable = 0;
-		}
-		CHECK("stateless across 64 interleaved disconnect/reconnect answers",
-		      stable && first == 1);
-	}
-
 	// A reconnect that has not yet replayed the received items reads as zero
-	// counts. The gate must then be SHUT, never optimistically open.
-	CHECK("mid-reconnect (no items replayed yet) is shut",
-	      !AP_OxideFinalPresentationReady(1, 0, FinalOpen(0, 18, 0, 0, 0)));
+	// counts. Go mode must then be SHUT, never optimistically open.
+	CHECK("mid-reconnect (no items replayed yet) is not go mode",
+	      !GoModeFromRelics(FinalOpen(0, 18, 0, 0, 0)));
 
 	printf("\n%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures ? 1 : 0;

@@ -10,7 +10,9 @@
  *     predicate, or in the mutation is a failure here.
  *   - ap/ap_podium_skip_logic.h supplies the freestanding decision and the
  *     0xd call-site gate; ap/ap_oxide_cutscene.h supplies the production Oxide
- *     presentation predicate. Both are the same units the game build consumes.
+ *     presentation predicate, and ap/ap_oxide_scene.c (linked here) the
+ *     once-per-seed scene decision (issue #377). All are the same units the
+ *     game build consumes.
  *   - platform/native_config.c is compiled in for the skip_podium round trip.
  *
  * The one thing that cannot be linked off-engine is game/233/CS_Camera.c
@@ -43,32 +45,47 @@ struct sData sdata_static;
 
 static struct GameTracker gGT;
 
-// The three AP inputs AP_ShouldSkipPodium reads through ctr_cfg_active() and the
-// Oxide selectors. Each case sets them directly so the test drives the SHIPPED
-// composition rather than re-deriving it.
+// The AP inputs AP_ShouldSkipPodium reads through ctr_cfg_active() and the
+// linked once-per-seed scene decision (ap/ap_oxide_scene.c, issue #377): go
+// mode for the Final Challenge and the server-stored seen flag. Each case sets
+// them directly so the test drives the SHIPPED composition rather than
+// re-deriving it.
 static int g_cfgActive;
-static int g_oxideOffersFinal;
-static int g_oxideFinalOpen;
+static int g_goMode;      // AP_OxideFinalGoMode()
+static int g_sceneKnown;  // ap_net_oxide_scene_known(): Get reply arrived
+static int g_sceneSeen;   // ap_net_oxide_scene_seen()
+static int g_sceneRecords;
 
 int ctr_cfg_active(void)
 {
 	return g_cfgActive;
 }
 
-int AP_OxideOffersFinalChallenge(void)
+int AP_OxideFinalGoMode(void)
 {
-	return g_oxideOffersFinal;
+	return g_goMode;
 }
 
-int AP_OxideFinalOpen(void)
+int ap_net_oxide_scene_known(void)
 {
-	return g_oxideFinalOpen;
+	return g_sceneKnown;
+}
+
+int ap_net_oxide_scene_seen(void)
+{
+	return g_sceneSeen;
+}
+
+void ap_net_oxide_scene_record(void)
+{
+	g_sceneSeen = 1;
+	g_sceneRecords++;
 }
 
 // The production runtime under test. This is the same translation unit
 // game/game_unity.h compiles into the game.
-#include "../ap/ap_relic_goal.h" // AP_RelicGoalMet: what AP_OxideFinalOpen resolves
 #include "../ap/ap_podium_skip.c"
+#include "../ap/ap_oxide_scene.c"
 
 // The config table and persistence store (the same unit the game links).
 #include "../platform/native_config.c"
@@ -122,8 +139,10 @@ static void ResetState(void)
 	sdata->gGT = &gGT;
 	g_config.skipPodium = false;
 	g_cfgActive = 0;
-	g_oxideOffersFinal = 0;
-	g_oxideFinalOpen = 0;
+	g_goMode = 0;
+	g_sceneKnown = 0;
+	g_sceneSeen = 0;
+	g_sceneRecords = 0;
 }
 
 // Grant the 18 sapphire relic bits AP_VanillaRelicCountNow counts, so a
@@ -167,8 +186,8 @@ static void SetEntry(const char *section, const char *key, int value)
 static void TestOxideRelicPredicate(void)
 {
 	// ── A qualifying relic BEFORE Oxide's second defeat is preserved ─────────
-	// AP active, the per-seed Final gate open (offersFinal + finalOpen), a relic
-	// race, option on, second Oxide not yet beaten. The wrapper must NOT skip:
+	// AP active, go mode for the Final Challenge, the seen flag read and unset,
+	// a relic race, option on, second Oxide not yet beaten. The wrapper must NOT skip:
 	// CS_Camera_BoolGotoBoss is about to select the Oxide transition.
 	ResetState();
 	g_config.skipPodium = true;
@@ -176,8 +195,8 @@ static void TestOxideRelicPredicate(void)
 	gGT.gameMode2 = TEST_INC_RELIC;
 	gGT.podiumRewardID = TEST_RELIC;
 	g_cfgActive = 1;
-	g_oxideOffersFinal = 1;
-	g_oxideFinalOpen = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
 	expect("qualifying relic before Oxide 2 is preserved",
 	       AP_ShouldSkipPodium(TEST_RELIC), 0);
 
@@ -190,8 +209,8 @@ static void TestOxideRelicPredicate(void)
 	gGT.gameMode2 = TEST_INC_RELIC;
 	gGT.podiumRewardID = TEST_RELIC;
 	g_cfgActive = 1;
-	g_oxideOffersFinal = 1;
-	g_oxideFinalOpen = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
 	SetRewardBit(ADV_REWARD_BEAT_OXIDE_SECOND);
 	expect("relic after Oxide 2 is skipped", AP_ShouldSkipPodium(TEST_RELIC), 1);
 
@@ -404,8 +423,8 @@ static void TestMutation(void)
 	gGT.gameMode2 = TEST_INC_RELIC | TEST_FREEZE_PODIUM;
 	before = gGT.gameMode2;
 	g_cfgActive = 1;
-	g_oxideOffersFinal = 1;
-	g_oxideFinalOpen = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
 
 	AP_SkipPodium(TEST_RELIC);
 
@@ -413,6 +432,58 @@ static void TestMutation(void)
 	       gGT.podiumRewardID, TEST_RELIC);
 	expect("preserved Oxide relic keeps its gameMode2 bits",
 	       gGT.gameMode2, before);
+
+	// ── Issue #377: once per seed ────────────────────────────────────────────
+	// The same qualifying relic is an ordinary, skippable relic once this slot
+	// has seen the scene, before the seen flag has been read, or outside go
+	// mode. The play itself is recorded through the linked production path.
+	{
+		static const struct { int go, known, seen, skip; const char *what; } rows[] = {
+			{1, 1, 0, 0, "go mode, flag read, unseen: preserved"},
+			{1, 1, 1, 1, "go mode, already seen: skipped"},
+			{1, 0, 0, 1, "go mode, flag not read yet: skipped (fail safe)"},
+			{1, 0, 1, 1, "go mode, flag not read, seen locally: skipped"},
+			{0, 1, 0, 1, "not in go mode: skipped"},
+		};
+		for (unsigned i = 0; i < sizeof rows / sizeof rows[0]; i++)
+		{
+			ResetState();
+			g_config.skipPodium = true;
+			gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+			gGT.podiumRewardID = TEST_RELIC;
+			g_cfgActive = 1;
+			SetSapphireRelics(18); // retail count must not matter with slot_data
+			g_goMode = rows[i].go;
+			g_sceneKnown = rows[i].known;
+			g_sceneSeen = rows[i].seen;
+			expect(rows[i].what, AP_ShouldSkipPodium(TEST_RELIC), rows[i].skip);
+		}
+
+		ResetState();
+		g_config.skipPodium = true;
+		gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+		gGT.podiumRewardID = TEST_RELIC;
+		g_cfgActive = 1;
+		g_goMode = 1;
+		g_sceneKnown = 1;
+		expect("first go-mode relic keeps its podium",
+		       AP_ShouldSkipPodium(TEST_RELIC), 0);
+		AP_OxideFinalSceneMarkPlayed();
+		expect("the play is recorded once", g_sceneRecords, 1);
+		expect("the next go-mode relic is skippable",
+		       AP_ShouldSkipPodium(TEST_RELIC), 1);
+
+		// Retail sessions keep the retail repeat and record nothing.
+		ResetState();
+		g_config.skipPodium = true;
+		gGT.gameMode1 = TEST_ADVENTURE_MODE | TEST_RELIC_RACE;
+		gGT.podiumRewardID = TEST_RELIC;
+		SetSapphireRelics(18);
+		AP_OxideFinalSceneMarkPlayed();
+		expect("no slot_data: nothing recorded", g_sceneRecords, 0);
+		expect("no slot_data: retail relic still preserved",
+		       AP_ShouldSkipPodium(TEST_RELIC), 0);
+	}
 
 	// A null engine state is a safe no-op.
 	ResetState();
@@ -427,25 +498,30 @@ static void TestMutation(void)
 // game/233/CS_Camera.c cannot be linked off-engine, so the two branches are
 // reproduced here from the SAME production helpers the real site calls:
 //
-//   AP branch (CS_Camera.c:22-29):  AP_PodiumRelicWillGotoOxide(
+//   AP branch (CS_Camera.c:22-28):  AP_PodiumRelicWillGotoOxide(
 //                                      rewardId == STATIC_RELIC,
-//                                      AP_OxideFinalEncounterPresentationReady(...),
+//                                      AP_OxideFinalSceneReady(numRelics),
 //                                      beatOxideSecond != 0)
-//   non-AP branch (CS_Camera.c:31-33, kept verbatim):
+//   non-AP branch (CS_Camera.c, kept verbatim):
 //       (rewardId == STATIC_RELIC) && (numRelics >= 18) && (beatOxideSecond == 0)
 //
 // The assertion is that the two agree with the retail rule
 // (relic && numRelics >= 18 && !beatOxideSecond) whenever cfgActive is 0, so
 // sharing the helper under CTR_AP left every non-AP answer exactly as today,
-// and that the AP branch follows AP_OxideFinalEncounterPresentationReady.
+// and that the AP branch follows go mode AND the once-per-seed flag (#377).
+// The AP column calls the LINKED AP_OxideFinalSceneReady with the stubbed
+// inputs set, not a transcription of it.
 
 static int BoolGotoBossAp(int cfgActive, int rewardId, int vanillaRelics,
-                          int offersFinal, int finalOpen, int beatOxideSecond)
+                          int goMode, int known, int seen, int beatOxideSecond)
 {
+	g_cfgActive = cfgActive;
+	g_goMode = goMode;
+	g_sceneKnown = known;
+	g_sceneSeen = seen;
 	return AP_PodiumRelicWillGotoOxide(
 	    rewardId == TEST_RELIC,
-	    AP_OxideFinalEncounterPresentationReady(cfgActive, vanillaRelics,
-	                                            offersFinal, finalOpen),
+	    AP_OxideFinalSceneReady(vanillaRelics),
 	    beatOxideSecond != 0);
 }
 
@@ -461,19 +537,18 @@ static void TestBoolGotoBossTruthTable(void)
 {
 	int rows = 0;
 
+	ResetState();
 	for (int relics = 0; relics <= 20; relics++)
 	for (int beat = 0; beat <= 1; beat++)
-	for (int mode = 0; mode <= 4; mode++)
-	for (int count = 0; count <= 20; count += 5)
+	for (int go = 0; go <= 1; go++)
+	for (int known = 0; known <= 1; known++)
+	for (int seen = 0; seen <= 1; seen++)
+	for (int reward = 0; reward < 3; reward++)
 	{
-		// AP_RelicGoalMet(modes): 0 sapphire, 1 gold, 2 platinum, 3 any,
-		// 4 total. Sweep the same relic/goal inputs the production predicate
-		// consumes. offersFinal mirrors a representative open/closed pair.
-		int finalOpen = AP_RelicGoalMet(mode, count, relics, relics, relics);
-		int offersFinal = finalOpen;
-		int rewardId = (rows % 3 == 0) ? TEST_RELIC : TEST_TROPHY;
+		int rewardId = (reward == 0) ? TEST_RELIC
+		             : (reward == 1) ? TEST_TROPHY : TEST_KEY;
 
-		int ap = BoolGotoBossAp(1, rewardId, relics, offersFinal, finalOpen, beat);
+		int ap = BoolGotoBossAp(1, rewardId, relics, go, known, seen, beat);
 		int nonAp = BoolGotoBossNonAp(rewardId, relics, beat);
 		int retail = (rewardId == TEST_RELIC) && (relics >= 18) && (beat == 0);
 
@@ -486,15 +561,16 @@ static void TestBoolGotoBossTruthTable(void)
 			g_failures++;
 		}
 
-		// The AP branch must follow the shipped gate: relic + ready + !beat.
+		// The AP branch: relic + go mode + flag read + unseen + !beat. The
+		// retail relic count plays no part once slot_data is active.
 		{
-			int ready = AP_OxideFinalEncounterPresentationReady(
-			    1, relics, offersFinal, finalOpen);
-			int want = (rewardId == TEST_RELIC) && ready && (beat == 0);
+			int want = (rewardId == TEST_RELIC) && go && known && !seen &&
+			           (beat == 0);
 			if (ap != want)
 			{
-				printf("FAIL AP branch: relics=%d mode=%d count=%d beat=%d "
-				       "got=%d want=%d\n", relics, mode, count, beat, ap, want);
+				printf("FAIL AP branch: relics=%d go=%d known=%d seen=%d "
+				       "beat=%d got=%d want=%d\n",
+				       relics, go, known, seen, beat, ap, want);
 				g_failures++;
 			}
 		}
@@ -503,15 +579,16 @@ static void TestBoolGotoBossTruthTable(void)
 
 	// The two branches must also be identical to each other WITHOUT slot_data,
 	// which is the guarantee "sharing changes no non-AP result" ultimately means.
+	// The go-mode and seen inputs are swept too: none of them may leak into a
+	// session without slot_data.
 	for (int relics = 0; relics <= 20; relics++)
 	for (int beat = 0; beat <= 1; beat++)
 	for (int rewardId = 0; rewardId <= 1; rewardId++)
+	for (int junk = 0; junk < 8; junk++)
 	{
 		int rid = rewardId ? TEST_RELIC : TEST_TROPHY;
-		// cfgActive == 0 falls back to the retail 18 rule inside the production
-		// predicate, so the AP branch with no slot_data is the non-AP answer.
-		// (Both branches read currAdvProfile.numRelics exactly the same way.)
-		int apNoSlot = BoolGotoBossAp(0, rid, relics, 0, 0, beat);
+		int apNoSlot = BoolGotoBossAp(0, rid, relics, junk & 1, (junk >> 1) & 1,
+		                              (junk >> 2) & 1, beat);
 		int nonAp = BoolGotoBossNonAp(rid, relics, beat);
 		if (apNoSlot != nonAp)
 		{
@@ -522,7 +599,7 @@ static void TestBoolGotoBossTruthTable(void)
 	}
 
 	expect("BoolGotoBoss truth table rows executed", rows > 1000, 1);
-	printf("ok   BoolGotoBoss truth table over %d mode/count/relic/beat rows\n",
+	printf("ok   BoolGotoBoss truth table over %d go/flag/relic/beat rows\n",
 	       rows);
 }
 

@@ -82,6 +82,8 @@ tools/test-net-admission.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
+tools/test-oxide-scene-seen.cpp
+tools/test-oxide-scene-seen-production.py
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py

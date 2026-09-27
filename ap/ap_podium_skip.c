@@ -19,7 +19,7 @@
 
 #include "ap_hooks.h"
 #include "ap_podium_skip_logic.h"
-#include "ap_oxide_cutscene.h" // AP_OxideFinalEncounterPresentationReady (WO-A4)
+#include "ap_oxide_cutscene.h"
 
 // Issue #285. The vanilla Oxide relic threshold counts the 18 sapphire relic
 // bits. GAMEPROG_AdvPercent folds them into currAdvProfile.numRelics only on
@@ -64,11 +64,11 @@ int AP_ShouldSkipPodium(int rewardId)
 	// including the ADV_REWARD_BEAT_OXIDE_SECOND suppression, so the skip
 	// decision and the cutscene selector can never disagree: after Oxide's
 	// second defeat no transition can play and the relic podium is skippable.
+	// Issue #377: likewise once this slot has seen the scene, or before its
+	// seen flag has been read from the server.
 	oxideRelicQualifying = AP_PodiumRelicWillGotoOxide(
 	    rewardId == STATIC_RELIC,
-	    AP_OxideFinalEncounterPresentationReady(
-	        ctr_cfg_active(), AP_VanillaRelicCountNow(),
-	        AP_OxideOffersFinalChallenge(), AP_OxideFinalOpen()),
+	    AP_OxideFinalSceneReady(AP_VanillaRelicCountNow()),
 	    CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0);
 
 	return AP_PodiumSkipDecision(

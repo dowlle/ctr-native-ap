@@ -20,11 +20,14 @@
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
 #include "ap_door_history.h"
+#include "ap_oxide_scene_seen.h" // #377 once-per-seed Final Challenge scene flag
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
 static void ap_doors_flush();
+static APOxideSceneSeen g_oxide_scene;
+static void ap_oxide_scene_flush();
 
 #include <deque>
 #include <algorithm>
@@ -566,6 +569,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_pending_checks.clear();
 	g_doors.disconnected();
 	g_doors_sent = 0;
+	g_oxide_scene.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
 	g_last_error = reason;
 	char line[256];
@@ -849,6 +853,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		AP_LogLine("[AP DOOR] connected: session reset, inventory/storage barrier pending\n");
 		g_ap->SetNotify({g_doors.key});
 		g_ap->Get({g_doors.key});
+		// #377: the once-per-seed Oxide Final Challenge scene flag. Same
+		// seed+team+slot scoping and the same Get barrier as the doors above.
+		g_oxide_scene.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		g_ap->SetNotify({g_oxide_scene.key});
+		g_ap->Get({g_oxide_scene.key});
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -926,6 +935,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_doors_flush();
 		}
+		auto scene = keys.find(g_oxide_scene.key);
+		if (g_connected && scene != keys.end()) {
+			g_oxide_scene.retrieved(scene->second);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] retrieved valid=%d seen=%d pending=%d\n",
+			              g_oxide_scene.valid, g_oxide_scene.seen, g_oxide_scene.pending);
+			AP_LogLine(line);
+			ap_oxide_scene_flush();
+		}
 		auto it = keys.find(ap_diff_key());
 		if (it != keys.end() && it->second.is_number_integer())
 		{
@@ -961,6 +979,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			g_doors_sent &= g_doors.pending;
 			ap_doors_flush();
+		}
+		if (g_connected && key == g_oxide_scene.key) {
+			g_oxide_scene.reply(value);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] reply valid=%d seen=%d pending=%d\n",
+			              g_oxide_scene.valid, g_oxide_scene.seen, g_oxide_scene.pending);
+			AP_LogLine(line);
+			ap_oxide_scene_flush();
 		}
 		if (key == ap_diff_key() && value.is_number_integer())
 		{
@@ -1117,6 +1143,7 @@ extern "C" void ap_net_poll(void)
 	if (g_reject_stop_pending)
 		ap_net_apply_seed_reject();
 	ap_doors_flush();
+	ap_oxide_scene_flush();
 }
 
 // Bounded-retry teardown (2026-08-30).
@@ -1188,6 +1215,7 @@ static void ap_net_apply_seed_reject(void)
 	g_edit_known = false;
 	g_doors.disconnected();
 	g_doors_sent = 0;
+	g_oxide_scene.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
 	// may have touched either field). The menu keeps showing why the seed was
 	// refused.
@@ -1510,6 +1538,35 @@ extern "C" void ap_net_doors_record(unsigned bit)
 		std::snprintf(line, sizeof line, "[AP DOOR] completed bit=%x session=%x pending=%x ready=%d\n", bit, g_doors.session, g_doors.pending, ap_net_doors_ready());
 		AP_LogLine(line);
 	}
+}
+
+// #377: send a locally recorded scene play once the Get barrier has passed.
+// Kept pending across a disconnect and flushed after the next Get reply for the
+// same room, seed, team and slot; a different room discards it in connect().
+static void ap_oxide_scene_flush()
+{
+	if (!g_ap || !g_connected || g_rejected || !g_oxide_scene.wantsSend()) return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
+	AP_NET_GUARD("oxide_scene_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "or"; op.value = 1;
+		if (g_ap->Set(g_oxide_scene.key, 0, true, {op})) g_oxide_scene.sent = true;
+	});
+}
+
+extern "C" int ap_net_oxide_scene_known(void)
+{
+	return g_connected && !g_rejected && g_oxide_scene.known();
+}
+extern "C" int ap_net_oxide_scene_seen(void) { return g_oxide_scene.seen; }
+extern "C" void ap_net_oxide_scene_record(void)
+{
+	if (g_rejected || !g_oxide_scene.record()) return;
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP OXIDE SCENE] played; recording seen (known=%d)\n",
+	              (int)g_oxide_scene.known());
+	AP_LogLine(line);
+	ap_oxide_scene_flush();
 }
 
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
@@ -1864,6 +1921,7 @@ extern "C" void ap_net_shutdown(void)
 	g_items.clear();
 	g_doors.disconnected();
 	g_doors_sent = 0;
+	g_oxide_scene.disconnected();
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

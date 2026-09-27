@@ -152,8 +152,8 @@ static inline int AP_PodiumSkipCleanGameMode2(int gameMode2)
 // play. This helper is that one condition.
 //
 // `apPresentationReady` is the relic threshold half of the predicate: for a
-// relic this is AP_OxideFinalEncounterPresentationReady(cfgActive,
-// vanillaRelics, offersFinal, finalRelicMet), the shipped gate, which already
+// relic this is AP_OxideFinalSceneReady(vanillaRelics) (issue #377: go mode for
+// the Final Challenge, and the scene not yet seen by this slot), which already
 // folds in ctr_cfg_active() and falls back to the retail 18-Sapphire rule when
 // no slot_data is active. Both call sites keep their own threshold inputs,
 // because CS_Camera_BoolGotoBoss reads the live currAdvProfile.numRelics channel

@@ -4092,6 +4092,45 @@ int AP_OxideOffersFinalChallenge(void)
 	return AP_OxideGarageOffersFinal(&in);
 }
 
+// Issue #377: is the player in go mode for Oxide's Final Challenge, i.e. would
+// the apworld (and so Universal Tracker) put "N. Oxide's Final Challenge" in
+// logic from what this slot holds right now? The term-by-term mapping lives in
+// ap/ap_oxide_cutscene.h next to AP_OxideFinalGoModePure. 0 without slot_data;
+// the retail rule is applied by AP_OxideFinalSceneWanted instead.
+int AP_OxideFinalGoMode(void)
+{
+	int boostLive, venueStation, boostMin, best, c;
+
+	if (!ctr_cfg_active())
+		return 0;
+
+	boostLive = ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+	            ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER;
+	// Seeds before schema 11 always race the Final on Oxide Station. A newer
+	// seed with an unreadable venue block keeps the garage shut anyway
+	// (AP_OxideFinalVenueReady), so the venue default here cannot open it.
+	venueStation = ctr_cfg.schema_version < 11 ||
+	               !ctr_cfg.oxide_final_venue.valid ||
+	               ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+	boostMin = AP_OxideFinalBoostMin(boostLive, venueStation,
+	                                 ctr_cfg.shortcut_knowledge);
+
+	best = -1;
+	if (boostMin > 0)
+		for (c = 0; c < AP_CAP_ROSTER_COUNT; c++)
+		{
+			int tier;
+			if (!AP_CharacterUnlocked(c))
+				continue;
+			tier = AP_CapabilityBoostTierForCharacter(c);
+			if (tier > best)
+				best = tier;
+		}
+
+	return AP_OxideFinalGoModePure(AP_OxideOffersFinalChallenge(),
+	                               AP_OxideGarageOpen(), boostMin, best);
+}
+
 // ── #24: plain-text requirement advert for the boss-class gates ──
 // Warp pads advertise their configured requirement with an icon + count, but the
 // four boss garages and Oxide's garage door only ever spoke through the vanilla

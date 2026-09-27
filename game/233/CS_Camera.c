@@ -19,13 +19,12 @@ u8 CS_Camera_BoolGotoBoss(void)
 	// The beat-Oxide suppression is the SAME term AP_ShouldSkipPodium consults
 	// (issue #285): one helper answers "this relic podium will go to Oxide" for
 	// both, so a skipped relic can never be one whose transition still plays.
+	// Issue #377: under AP the scene plays once per seed, on reaching go mode
+	// for the Final Challenge (AP_OxideFinalSceneReady, ap/ap_oxide_scene.c).
 #ifdef CTR_AP
 	if (AP_PodiumRelicWillGotoOxide(
 	        gGT->podiumRewardID == STATIC_RELIC,
-	        AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
-	                                   gGT->currAdvProfile.numRelics,
-	                                   AP_OxideOffersFinalChallenge(),
-	                                   AP_OxideFinalOpen()),
+	        AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics),
 	        CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0))
 #else
 	if ((gGT->podiumRewardID == STATIC_RELIC) &&
@@ -426,11 +425,10 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			// happens at all, and this decides it is the OXIDE_RELICS_<hub> one.
 			// If they disagreed, a relic win would enter the boss path and then
 			// fall through to the ordinary hub intro (bossCutsceneIndex -1).
+			// Issue #377: both run in this frame, before the play is recorded
+			// below, so they read the same once-per-seed answer.
 #ifdef CTR_AP
-			if (!AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
-			                                    gGT->currAdvProfile.numRelics,
-			                                    AP_OxideOffersFinalChallenge(),
-			                                    AP_OxideFinalOpen()))
+			if (!AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics))
 #else
 			if (gGT->currAdvProfile.numRelics < 18)
 #endif
@@ -440,6 +438,9 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			}
 
 			D233.bossCutsceneIndex = gGT->levelID - GEM_STONE_VALLEY + OXIDE_RELICS_GEMSTONE;
+#ifdef CTR_AP
+			AP_OxideFinalSceneMarkPlayed(); // #377: this slot has now seen it
+#endif
 			return;
 		}
 
