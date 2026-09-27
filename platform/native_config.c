@@ -37,6 +37,7 @@ NativeConfig g_config = {
 #ifdef CTR_AP
 	false, // skipHints
 	false, // skipPodium (default off: ceremonies play unless the player opts out)
+	false, // skipCutscenes (default off: boss and Oxide scenes play unless the player opts out)
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	0,     // aiDifficulty (0 = vanilla)
@@ -97,6 +98,14 @@ const ConfigEntry g_configEntries[] = {
 	// (ap/ap_hooks.c) after the race's reward notification. Rendered and toggled
 	// by the generic section menu with no menu-specific code.
 	{"Video & QoL", "skip_podium",              "Skip Podium Ceremonies",       CFG_BOOL, &g_config.skipPodium},
+	// Skip Cutscenes (issue #377, CFG_BOOL): a LOCAL client option, off by
+	// default, that skips the adventure-hub boss and Oxide scenes a podium
+	// leads into: a boss intro after a hub's last Trophy, a boss outro after
+	// its Key, and the Oxide Final Challenge scene (which still counts as seen
+	// for the once-per-seed flag). The skip takes the ordinary podium exit, the
+	// same teardown every other podium uses. Not slot_data. Consumed by
+	// AP_SkipCutscenes (ap/ap_podium_skip.c) from CS_Camera_ThTick_Podium.
+	{"Video & QoL", "skip_cutscenes",           "Skip Cutscenes",               CFG_BOOL, &g_config.skipCutscenes},
 #endif
 	// Remembered window geometry: config-file-only, exactly like update_last_seen
 	// below (State section, gated out of the in-game menu in BuildSectionMap,
@@ -189,9 +198,9 @@ bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen)
 	return !windowFullscreen;
 }
 
-bool NativeConfig_FullscreenNeedsReapply(bool want, bool have)
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have, int lastRequested)
 {
-	return want != have;
+	return want != have && lastRequested != (want ? 1 : 0);
 }
 
 static bool ParseBool(const char *s)

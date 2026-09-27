@@ -87,6 +87,14 @@ typedef struct
 	                            // seed option and not slot_data: this is a local
 	                            // presentation preference. Consumed by
 	                            // AP_SkipPodium (ap/ap_hooks.c).
+	bool skipCutscenes;         // Archipelago: local "Skip Cutscenes" (issue
+	                            // #377, default off). On, the adventure-hub boss
+	                            // and Oxide scenes that follow a podium (boss
+	                            // intro and outro, the Oxide Final Challenge
+	                            // scene) are skipped through the ordinary podium
+	                            // exit. Local presentation preference, not
+	                            // slot_data. Consumed by AP_SkipCutscenes
+	                            // (ap/ap_podium_skip.c) from CS_Camera.c.
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
 	bool itemBoxColours;        // Archipelago: "Item Box Colours" (default on). Off
 	                            // shows every AP item box pink for this player even
@@ -185,8 +193,11 @@ void NativeConfig_Save(void);
 bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen);
 
 // Per-frame sync (Platform_BeginFrame): whether the window must be re-applied
-// to match g_config.fullscreen.
-bool NativeConfig_FullscreenNeedsReapply(bool want, bool have);
+// to match g_config.fullscreen. lastRequested is the state last passed to
+// SDL_SetWindowFullscreen (-1 for none). A state is requested once: some
+// compositors (Steam Deck Game Mode's gamescope) never report the window as
+// fullscreen, and re-requesting every frame blocked each frame for ~100 ms.
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have, int lastRequested);
 
 // true if a config.ini was present at load time. Consumers (e.g. the AP layer)
 // use this to decide config.ini precedence over legacy flat config files.

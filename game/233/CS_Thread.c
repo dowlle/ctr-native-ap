@@ -733,18 +733,20 @@ processOpcode:
 		// 18 relics that open the Final Challenge -- Oxide taunts about relics
 		// rather than trophies. AP (WO-A4): follow the shipped Final-Challenge
 		// gate, exactly as the two CS_Camera.c sites now do. `0x11 <` is
-		// `>= 18`; the vanilla answer is unchanged.
+		// `>= 18`; the vanilla answer is unchanged. Issue #377: the redirect
+		// is the same once-per-seed scene, so it asks the same decision and
+		// records the play; once seen, the script keeps OXIDE_TROPHIES.
 #ifdef CTR_AP
 		if ((D233.bossCutsceneIndex == 0) &&
-		    AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
-		                                   gGT->currAdvProfile.numRelics,
-		                                   AP_OxideOffersFinalChallenge(),
-		                                   AP_OxideFinalOpen()))
+		    AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics))
 #else
 		if ((D233.bossCutsceneIndex == 0) && (0x11 < gGT->currAdvProfile.numRelics))
 #endif
 		{
 			D233.bossCutsceneIndex = 9;
+#ifdef CTR_AP
+			AP_OxideFinalSceneMarkPlayed();
+#endif
 		}
 		D233.cutsceneState = CS_WAIT_INPUT;
 		break;

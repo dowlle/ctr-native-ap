@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <namespace_Decal.h> // FONT_*, colour + JUSTIFY_* enums for the ceremony draw
 
+#include <stdlib.h> // realloc: the #299 held-effect list
 #include "ap_hooks.h"
 #include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
 #ifdef CTR_CUSTOM_TRACKS
@@ -37,7 +38,8 @@
 
 static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-connect gate; reset at fresh connect
 #include "ap_trap_items.h" // apworld item id -> trap effect, the 19 scattered ids
-#include "ap_fxseen_logic.h" // room-aware one-shot replay ledger rows (#299)
+#include "ap_fxseen_logic.h" // 0.2.1 local ledger rows, read for migration only (#299)
+#include "ap_fxmarker_logic.h" // room-scoped one-shot effect markers (#299)
 #include "ap_democam.h"   // Demo Camera trap and direct live-test trigger
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
@@ -45,6 +47,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_cup_box_policy.h" // AP_BoxPadAccessible: the shared individual-pad rule
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
+#include "ap_file_writer.h"    // background writer for whole-file rewrites
+#include "ap_text_buf_logic.h" // in-memory text for those rewrites
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
 #include "ap_podium_presentation_logic.h" // AP Trophy prize policy (#235)
@@ -170,13 +174,20 @@ int Platform_InputRawKeyDown(int scancode);
 #define AP_READ_LOG_OLD "ctr-ap.log.old"
 #define AP_READ_LOG_MAX (4 * 1024 * 1024) // rotate at 4 MB, keep one generation
 
+// One handle for the whole run. Each line used to be its own fopen/fputs/
+// fclose on the game thread, and field logs show that open/close pair costing
+// up to about a second on some Windows hosts (logio= on the PERF lines). The
+// handle is opened once, in append mode like before, and every line is flushed
+// straight away: that is one write call instead of an open and a close, and a
+// line is in the file the moment AP_AppendLog returns, so a crash or a killed
+// process loses nothing and the crash reporter (ap_crash.c), which appends
+// through its own handle, still lands after the last line.
+static FILE *ap_log_file = NULL;
+
 static void AP_AppendLog(const char *msg)
 {
-	// [AP PERF] LOG_IO section: every line is its own fopen/fputs/fclose on the
-	// game thread, so a chatty frame (an item burst, a datapackage sync) pays for
-	// that here. Summed across all lines the frame writes; the two timer reads are
-	// the same cheap Platform_PerfNowMs the other sections use, which is noise next
-	// to the file open this brackets.
+	// [AP PERF] LOG_IO section: the line write on the game thread, summed across
+	// all lines the frame writes.
 	AP_PerfSectionBegin(AP_PERF_SEC_LOG_IO);
 
 	// One-time size check: an append-forever log grows unbounded across weeks
@@ -200,14 +211,29 @@ static void AP_AppendLog(const char *msg)
 		}
 	}
 	fputs(msg, stderr);
-	FILE *f = fopen(AP_READ_LOG, "a");
-	if (f)
+	if (ap_log_file == NULL) // first line, or the open failed before: retry
+		ap_log_file = fopen(AP_READ_LOG, "a");
+	if (ap_log_file)
 	{
-		fputs(msg, f);
-		fclose(f);
+		fputs(msg, ap_log_file);
+		fflush(ap_log_file);
 	}
 
 	AP_PerfSectionEnd(AP_PERF_SEC_LOG_IO);
+}
+
+// Clean exit (Platform_Shutdown): let the background writer finish the last
+// queued ap-state.json snapshot, bounded so a stuck disk cannot hang the exit,
+// then close the log. Every line is already flushed; a line written after this
+// reopens the handle.
+void AP_ShutdownFiles(void)
+{
+	ap_file_writer_flush(2000);
+	if (ap_log_file != NULL)
+	{
+		fclose(ap_log_file);
+		ap_log_file = NULL;
+	}
 }
 
 // Non-static shim so game-side gate files can emit AP log lines (AP_AppendLog is
@@ -2843,6 +2869,7 @@ static int AP_FeedConsumeSelfRung(long long item)
 // initial-inventory absorb window. Called from the connect-reset block.
 static unsigned char ap_feed_letters_ready[CTR_CFG_LETTER_TRACK_COUNT];
 static void AP_FeedLetterReadyUpdates(void);
+static void AP_FeedOxideFinalOpenUpdate(void);
 
 void AP_FeedConnectReset(void)
 {
@@ -2994,6 +3021,7 @@ static void AP_FeedOnLocationSent(long code)
 void AP_FeedEndDrain(int drainedThisFrame)
 {
 	AP_FeedLetterReadyUpdates();
+	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
 	if (drainedThisFrame > 0 || !ap_net_is_connected())
@@ -3365,7 +3393,10 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 		// every genuine first-time earn, so gating the send on it cannot drop
 		// a real check -- only a resend of one already server-confirmed.
 		if (!wasChecked)
+		{
 			ap_net_send_location(code); // LocationChecks([code])
+			AP_PerfNoteCheckSent();
+		}
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
 		if (!wasChecked)
@@ -3492,82 +3523,367 @@ static unsigned char ap_verify_custom_letter_foreign[AP_CUSTOM_LETTER_VERIFY_COU
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 static unsigned char ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 
-// ── One-shot effect replay dedup (traps + wumpa; board 2026-07-19) ──
+// ── One-shot effect replay dedup (traps + Wumpa; #299 room-scoped) ──
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate
 // COUNTS rebuild idempotently from it, but one-shot EFFECTS must not re-fire
-// (live hits: therawkhawk64's crash-restore first-person trap re-trigger and
-// a Deck 3-player replayed trap). Dedup: persist the highest server item index
-// whose batch was effect-applied, per room endpoint+seed+slot, in
-// ctr-ap-fxseen.txt next to the exe (tab-separated:
-// endpoint<TAB>seed<TAB>slot<TAB>max). Replayed items at or below
-// the stored index still count for gates but skip their effect. Unknown index
-// (-1) applies -- never swallow a live trap. Legacy three-column rows are
-// deliberately ignored: they cannot distinguish a reconnect from a fresh room,
-// so trusting them could suppress a legitimate effect in the new room.
+// (live hits: a crash-restore first-person trap re-trigger and a replayed trap
+// on a 3-player seed). The marker is the highest server item index whose
+// effect has been handled. Since #299 it lives in the ROOM's DataStorage
+// (ap_net.h AP_NET_FX_EFFECT, key ctr_fx_<team>_<slot>), so a fresh room made
+// from the same seed starts empty and a reconnect to the same room reads it
+// back. The rules (hold until the Get reply, max-only writes, one-time
+// migration, no timeout) are in ap_fxmarker_logic.h. The Turbo Grant fired
+// count uses the same machinery under AP_NET_FX_TURBO_FIRED.
+//
+// ctr-ap-fxseen.txt (endpoint<TAB>seed<TAB>slot<TAB>max) and
+// ctr-ap-turbogrant.txt (seed<TAB>slot<TAB>fired) are the 0.2.1 local ledgers.
+// They are only READ, once, when this room has no key yet, to migrate an
+// ongoing run; the migrated row is then deleted on the background writer so a
+// later fresh room cannot inherit it. Nothing writes a marker to them anymore.
 #define AP_FXSEEN_FILE "ctr-ap-fxseen.txt"
-static long long ap_fx_seen_max = -1; // highest server index whose effect ran
+#define AP_TURBOGRANT_FILE "ctr-ap-turbogrant.txt"
+// Log once when the Get reply is this many ticks late (about 10 s at 60 Hz).
+#define AP_FX_OVERDUE_TICKS 600
+
+static AP_FxMarker ap_fx_marker;    // effect marker (empty = -1)
+static AP_FxMarker ap_tg_marker;    // Turbo Grant fired count (empty = 0)
+static unsigned    ap_fx_rev[AP_NET_FX_COUNT];
+static int         ap_fx_wait_ticks = 0;
 static char ap_fx_seed[128] = "";
 static char ap_fx_slot[64] = "";
 static char ap_fx_endpoint[192] = "";
 
-static void AP_FxSeenLoad(void)
+// Effect items drained while the marker is pending: the raw item id and its
+// server index, released in arrival order once the marker is known.
+typedef struct AP_FxHeld
+{
+	long long item;
+	long long srvIdx;
+} AP_FxHeld;
+static AP_FxHeld *ap_fx_held = NULL;
+static int        ap_fx_held_n = 0;
+static int        ap_fx_held_cap = 0;
+
+// Legacy 0.2.1 row for this room (endpoint+seed+slot). Game thread, read only,
+// and only reached when the room has no key. A removal still queued on the
+// writer must land first or a fresh room could read a row that is being
+// deleted.
+static int AP_FxLegacyEffectRow(long long *max)
 {
 	FILE *f;
 	char line[320];
+	int found = 0;
 
-	ap_fx_seen_max = -1;
-	if (!ap_net_seed_name(ap_fx_seed, sizeof ap_fx_seed))
-		ap_fx_seed[0] = '\0';
-	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
-		ap_fx_slot[0] = '\0';
-	if (!ap_net_room_endpoint(ap_fx_endpoint, sizeof ap_fx_endpoint))
-		ap_fx_endpoint[0] = '\0';
+	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
+		return 0;
+	ap_file_writer_flush(2000);
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f == NULL)
-		return;
+		return 0;
 	while (fgets(line, sizeof line, f))
 	{
 		AP_FxSeenRow row;
 		if (AP_FxSeenParseRow(line, &row) &&
 		    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
 		{
-			ap_fx_seen_max = row.max;
+			*max = row.max;
+			found = 1;
 			break;
 		}
 	}
 	fclose(f);
+	return found;
 }
 
-static void AP_FxSeenStore(void)
+// Legacy 0.2.1 Turbo Grant row. That file never had an endpoint column, so
+// seed+slot is the whole identity (the wider migration ambiguity is noted in
+// ap_fxmarker_logic.h).
+static int AP_FxLegacyTurboRow(long long *fired)
 {
-	// Read-modify-write the tiny file, preserving other seed/slot rows.
 	FILE *f;
-	char rows[32][512];
-	int nrows = 0, i;
+	char line[320];
+	int found = 0;
 
-	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
-		return;
-	f = fopen(AP_FXSEEN_FILE, "r");
-	if (f != NULL)
+	if (ap_fx_seed[0] == '\0')
+		return 0;
+	ap_file_writer_flush(2000);
+	f = fopen(AP_TURBOGRANT_FILE, "r");
+	if (f == NULL)
+		return 0;
+	while (fgets(line, sizeof line, f))
 	{
-		while (nrows < 32 && fgets(rows[nrows], sizeof rows[0], f))
+		char seed[128], slot[64];
+		int n;
+		if (sscanf(line, "%127[^\t]\t%63[^\t]\t%d", seed, slot, &n) == 3 &&
+		    !strcmp(seed, ap_fx_seed) && !strcmp(slot, ap_fx_slot))
+		{
+			*fired = n < 0 ? 0 : n;
+			found = 1;
+			break;
+		}
+	}
+	fclose(f);
+	return found;
+}
+
+// Background-writer job: drop one migrated row from a legacy ledger, keeping
+// every other row as it is. The payload is a snapshot of the identity.
+typedef struct AP_FxLegacyRemoveJob
+{
+	int  turbo; // 0 = ctr-ap-fxseen.txt, 1 = ctr-ap-turbogrant.txt
+	char endpoint[sizeof ap_fx_endpoint];
+	char seed[sizeof ap_fx_seed];
+	char slot[sizeof ap_fx_slot];
+} AP_FxLegacyRemoveJob;
+
+static int AP_FxLegacyRemoveWriteJob(const void *payload, size_t len)
+{
+	const AP_FxLegacyRemoveJob *j = (const AP_FxLegacyRemoveJob *)payload;
+	static char line[512];            // writer thread only
+	static char out[64 * 512];        // writer thread only
+	const char *path;
+	size_t used = 0;
+	int dropped = 0;
+	FILE *f;
+
+	if (len != sizeof *j)
+		return 0;
+	path = j->turbo ? AP_TURBOGRANT_FILE : AP_FXSEEN_FILE;
+	f = fopen(path, "r");
+	if (f == NULL)
+		return 1; // nothing to remove
+	while (fgets(line, sizeof line, f))
+	{
+		size_t rl;
+		int match;
+		if (j->turbo)
+		{
+			char seed[128], slot[64];
+			int n;
+			match = sscanf(line, "%127[^\t]\t%63[^\t]\t%d", seed, slot, &n) == 3 &&
+			        !strcmp(seed, j->seed) && !strcmp(slot, j->slot);
+		}
+		else
 		{
 			AP_FxSeenRow row;
-			if (AP_FxSeenParseRow(rows[nrows], &row) &&
-			    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
-				continue; // our old row: superseded below
-			nrows++;
+			match = AP_FxSeenParseRow(line, &row) &&
+			        AP_FxSeenRowMatches(&row, j->endpoint, j->seed, j->slot);
 		}
-		fclose(f);
+		if (match)
+		{
+			dropped = 1;
+			continue;
+		}
+		rl = strlen(line);
+		if (used + rl > sizeof out)
+			break; // keep what fits; the file was always small and bounded
+		memcpy(out + used, line, rl);
+		used += rl;
 	}
-	f = fopen(AP_FXSEEN_FILE, "w");
-	if (f == NULL)
-		return;
-	for (i = 0; i < nrows; i++)
-		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%s\t%lld\n", ap_fx_endpoint, ap_fx_seed, ap_fx_slot,
-	        ap_fx_seen_max);
 	fclose(f);
+	if (!dropped)
+		return 1;
+	return ap_file_writer_replace_file(path, out, used);
+}
+
+static void AP_FxLegacyRemove(int turbo)
+{
+	AP_FxLegacyRemoveJob j;
+
+	memset(&j, 0, sizeof j);
+	j.turbo = turbo;
+	snprintf(j.endpoint, sizeof j.endpoint, "%s", ap_fx_endpoint);
+	snprintf(j.seed, sizeof j.seed, "%s", ap_fx_seed);
+	snprintf(j.slot, sizeof j.slot, "%s", ap_fx_slot);
+	ap_file_writer_submit(turbo ? AP_FILE_WRITER_SLOT_TURBOGRANT : AP_FILE_WRITER_SLOT_FXSEEN,
+	                      AP_FxLegacyRemoveWriteJob, &j, sizeof j);
+}
+
+// Run the one-shot effect of one received item. `item` is the raw AP item id.
+static void AP_FxApply(long long item)
+{
+	long long idx = item - AP_ITEM_BASE;
+
+	if (AP_TrapItemIndexIsTrap(idx))
+		AP_TrapReceive(AP_TrapEffectForItemIndex(idx));
+	else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX)
+		AP_WumpaReceive(3);
+	else if (idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
+		AP_WumpaReceive(10);
+	else if (AP_ItemCategory(item) == AP_CAT_WUMPA)
+		AP_WumpaReceive(1);
+}
+
+// The drain's single entry for a one-shot effect item: apply it, skip it as
+// already handled in this room, or hold it until the marker is known.
+static void AP_FxOffer(long long item, long long srvIdx)
+{
+	int decision = AP_FxMarkerDecide(&ap_fx_marker, srvIdx);
+
+	if (decision == AP_FXM_DECIDE_APPLY)
+	{
+		AP_FxApply(item);
+		return;
+	}
+	if (decision == AP_FXM_DECIDE_SKIP)
+	{
+		if (AP_TrapItemIndexIsTrap(item - AP_ITEM_BASE))
+		{
+			char skipmsg[96];
+			snprintf(skipmsg, sizeof skipmsg,
+			         "[AP TRAP] replay dedup: trap at index %lld skipped\n", srvIdx);
+			AP_LogLine(skipmsg);
+		}
+		return;
+	}
+	if (ap_fx_held_n == ap_fx_held_cap)
+	{
+		int cap = ap_fx_held_cap ? ap_fx_held_cap * 2 : 64;
+		AP_FxHeld *grown = (AP_FxHeld *)realloc(ap_fx_held, (size_t)cap * sizeof *grown);
+		if (grown == NULL)
+		{
+			// Out of memory: drop the hold, not the effect. The next connect
+			// replays the full item list and offers it again.
+			AP_LogLine("[AP FX] could not hold an effect item (out of memory)\n");
+			return;
+		}
+		ap_fx_held = grown;
+		ap_fx_held_cap = cap;
+	}
+	ap_fx_held[ap_fx_held_n].item = item;
+	ap_fx_held[ap_fx_held_n].srvIdx = srvIdx;
+	ap_fx_held_n++;
+}
+
+// Fresh connect: both markers go back to pending, the held list empties (the
+// server is about to resend everything anyway), and the identity used for the
+// one-time legacy migration is captured.
+static void AP_FxConnectReset(void)
+{
+	int k;
+
+	AP_FxMarkerReset(&ap_fx_marker, -1);
+	AP_FxMarkerReset(&ap_tg_marker, 0);
+	ap_fx_held_n = 0;
+	ap_fx_wait_ticks = 0;
+	for (k = 0; k < AP_NET_FX_COUNT; k++)
+		ap_fx_rev[k] = 0;
+	if (!ap_net_seed_name(ap_fx_seed, sizeof ap_fx_seed))
+		ap_fx_seed[0] = '\0';
+	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
+		ap_fx_slot[0] = '\0';
+	if (!ap_net_room_endpoint(ap_fx_endpoint, sizeof ap_fx_endpoint))
+		ap_fx_endpoint[0] = '\0';
+}
+
+static void AP_FxWrite(int which, const AP_FxMarker *m)
+{
+	int storeState = ap_net_fx_store(which, NULL, NULL);
+	ap_net_fx_store_write(which, m->value, AP_FxMarkerWriteOp(m, storeState));
+}
+
+// Resolve one marker from its Get reply. Returns 1 on the tick it resolved.
+static int AP_FxResolveOne(int which, AP_FxMarker *m)
+{
+	long long v = 0, local = 0;
+	unsigned rev = 0;
+	int state = ap_net_fx_store(which, &v, &rev);
+	int haveLocal = 0;
+
+	if (m->known || state == AP_FXM_STORE_PENDING)
+		return 0;
+	if (state != AP_FXM_STORE_VALID)
+		haveLocal = which == AP_NET_FX_EFFECT ? AP_FxLegacyEffectRow(&local)
+		                                      : AP_FxLegacyTurboRow(&local);
+	AP_FxMarkerResolve(m, state, v, haveLocal, local);
+	ap_fx_rev[which] = rev;
+	if (which == AP_NET_FX_EFFECT)
+	{
+		// Release what was held, in arrival order, against the resolved marker.
+		int k;
+		for (k = 0; k < ap_fx_held_n; k++)
+			if (AP_FxMarkerDecide(m, ap_fx_held[k].srvIdx) == AP_FXM_DECIDE_APPLY)
+				AP_FxApply(ap_fx_held[k].item);
+		ap_fx_held_n = 0;
+	}
+	if (AP_FxMarkerFinishResolve(m))
+		AP_FxWrite(which, m);
+	if (m->source == AP_FXM_SRC_MIGRATED && !m->migrate_row)
+		AP_FxLegacyRemove(which == AP_NET_FX_TURBO_FIRED);
+	return 1;
+}
+
+// A later server value for a resolved marker (our own max write coming back, or
+// another client of this slot). Only ever raises it.
+static void AP_FxSyncOne(int which, AP_FxMarker *m)
+{
+	long long v = 0;
+	unsigned rev = 0;
+	int state = ap_net_fx_store(which, &v, &rev);
+
+	if (!m->known || rev == ap_fx_rev[which])
+		return;
+	ap_fx_rev[which] = rev;
+	if (state == AP_FXM_STORE_VALID && AP_FxMarkerServerValue(m, v))
+		AP_FxLegacyRemove(which == AP_NET_FX_TURBO_FIRED);
+}
+
+// Per tick, after the connect reset and before the item drain.
+static void AP_FxStorageTick(void)
+{
+	int fxNow, tgNow;
+
+	if (!ap_net_is_connected())
+		return;
+	fxNow = AP_FxResolveOne(AP_NET_FX_EFFECT, &ap_fx_marker);
+	tgNow = AP_FxResolveOne(AP_NET_FX_TURBO_FIRED, &ap_tg_marker);
+	if (fxNow || tgNow)
+	{
+		// The one line per connect that says where the markers came from. Both
+		// keys ride one Get, so they normally resolve on the same tick.
+		char msg[200];
+		snprintf(msg, sizeof msg,
+		         "[AP FX] one-shot effect marker: %s (index %lld); "
+		         "Turbo Grants fired: %s (%lld)\n",
+		         AP_FxMarkerSourceName(ap_fx_marker.source), ap_fx_marker.value,
+		         AP_FxMarkerSourceName(ap_tg_marker.source), ap_tg_marker.value);
+		AP_LogLine(msg);
+	}
+	AP_FxSyncOne(AP_NET_FX_EFFECT, &ap_fx_marker);
+	AP_FxSyncOne(AP_NET_FX_TURBO_FIRED, &ap_tg_marker);
+	if (!ap_fx_marker.known || !ap_tg_marker.known)
+	{
+		if (++ap_fx_wait_ticks == AP_FX_OVERDUE_TICKS)
+			AP_LogLine("[AP FX] server has not answered the effect marker request; "
+			           "traps, Wumpa and Turbo Grants stay held until it does "
+			           "(nothing is lost: a reconnect offers them again)\n");
+	}
+}
+
+// End of a drained batch: raise the effect marker past everything drained and
+// write the rise to the room with `max`.
+static void AP_FxBatchEnd(long long batchMax)
+{
+	if (AP_FxMarkerNoteDrained(&ap_fx_marker, batchMax))
+		AP_FxWrite(AP_NET_FX_EFFECT, &ap_fx_marker);
+}
+
+// Turbo Grant accounting seam (ap_turbogrant.c, same unity build).
+int AP_FxTurboFiredKnown(void)
+{
+	return ap_tg_marker.known;
+}
+
+int AP_FxTurboFired(void)
+{
+	long long v = ap_tg_marker.value;
+	return v < 0 ? 0 : v > 0x7fffffff ? 0x7fffffff : (int)v;
+}
+
+void AP_FxTurboFiredIncrement(void)
+{
+	if (AP_FxMarkerIncrement(&ap_tg_marker))
+		AP_FxWrite(AP_NET_FX_TURBO_FIRED, &ap_tg_marker);
 }
 
 int AP_GateCount(int itemType)
@@ -4091,6 +4407,45 @@ int AP_OxideOffersFinalChallenge(void)
 
 	in = AP_OxideInputs();
 	return AP_OxideGarageOffersFinal(&in);
+}
+
+// Issue #377: is the player in go mode for Oxide's Final Challenge, i.e. would
+// the apworld (and so Universal Tracker) put "N. Oxide's Final Challenge" in
+// logic from what this slot holds right now? The term-by-term mapping lives in
+// ap/ap_oxide_cutscene.h next to AP_OxideFinalGoModePure. 0 without slot_data;
+// the retail rule is applied by AP_OxideFinalSceneWanted instead.
+int AP_OxideFinalGoMode(void)
+{
+	int boostLive, venueStation, boostMin, best, c;
+
+	if (!ctr_cfg_active())
+		return 0;
+
+	boostLive = ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+	            ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER;
+	// Seeds before schema 11 always race the Final on Oxide Station. A newer
+	// seed with an unreadable venue block keeps the garage shut anyway
+	// (AP_OxideFinalVenueReady), so the venue default here cannot open it.
+	venueStation = ctr_cfg.schema_version < 11 ||
+	               !ctr_cfg.oxide_final_venue.valid ||
+	               ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+	boostMin = AP_OxideFinalBoostMin(boostLive, venueStation,
+	                                 ctr_cfg.shortcut_knowledge);
+
+	best = -1;
+	if (boostMin > 0)
+		for (c = 0; c < AP_CAP_ROSTER_COUNT; c++)
+		{
+			int tier;
+			if (!AP_CharacterUnlocked(c))
+				continue;
+			tier = AP_CapabilityBoostTierForCharacter(c);
+			if (tier > best)
+				best = tier;
+		}
+
+	return AP_OxideFinalGoModePure(AP_OxideOffersFinalChallenge(),
+	                               AP_OxideGarageOpen(), boostMin, best);
 }
 
 // ── #24: plain-text requirement advert for the boss-class gates ──
@@ -5036,7 +5391,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	if (ap_net_take_recv_reset())
 	{
 		int k;
-		AP_FxSeenLoad(); // replay dedup: restore highest effect-applied index
+		AP_FxConnectReset(); // #299: effect markers pending until the room answers
 		for (k = 0; k < AP_ITEM_INDEX_COUNT; k++)
 		{
 			ap_recv_count[k] = 0;
@@ -5063,7 +5418,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// one slot's helper into another's session.
 		AP_TiziReset();
 		// Turbo Grant (#224): zero the session counters and reload this seed and
-		// slot's persisted FIRED count. Deliberately not the ap_fx_seen_max
+		// slot's FIRED count (the room's AP_NET_FX_TURBO_FIRED key, #299).
+		// Deliberately not the effect-marker
 		// mechanism above -- that marks an item consumed when its batch drains,
 		// which would swallow a grant the player could not receive yet. See
 		// ap_turbogrant_logic.h.
@@ -5172,8 +5528,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// Received items: tally by category. Applied to AdvProgress bits in
 	// AP_ApplyItems() (adventure + save-safe only). The tally is zeroed on each
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
+	// #299: resolve the room's effect markers (releasing held effects) before
+	// this frame's items are offered against them.
+	AP_FxStorageTick();
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
+	AP_PerfNoteItemsReceived(n, n > 0 ? items[n - 1] : 0); // frame stall line context
 	int liveItemBatch = ap_feed_primed;
 	int i;
 	char st[64];
@@ -5259,16 +5619,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// filler/unmapped, below).
 		else if (AP_TrapItemIndexIsTrap(idx))
 		{
-			long long srvIdx = ap_net_recv_batch_index(i);
-			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
-				AP_TrapReceive(AP_TrapEffectForItemIndex(idx));
-			else
-			{
-				char skipmsg[96];
-				snprintf(skipmsg, sizeof skipmsg,
-				         "[AP TRAP] replay dedup: trap at index %lld skipped\n", srvIdx);
-				AP_LogLine(skipmsg);
-			}
+			AP_FxOffer(items[i], ap_net_recv_batch_index(i));
 		}
 
 		// Permanent comfort items (idx 21..25): remember presence for the natural
@@ -5356,7 +5707,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// one more Turbo the player is owed, and duplicates are legitimate. It is
 		// rebuilt from zero on each fresh connect (AP_TurboGrantReset above), so
 		// the server's full replay reconstructs exactly the same total -- which
-		// is why this must NOT be filtered through ap_fx_seen_max the way the
+		// is why this must NOT be filtered through the effect marker the way the
 		// trap and Wumpa arms are. A grant that has not been delivered yet is
 		// still owed, whatever index it arrived at.
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
@@ -5366,9 +5717,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
 		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
 		{
-			long long srvIdx = ap_net_recv_batch_index(i);
-			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
-				AP_WumpaReceive(idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ? 3 : 10);
+			AP_FxOffer(items[i], ap_net_recv_batch_index(i));
 		}
 		else if (idx == AP_WUMPA_PROGRESSIVE_ITEM_INDEX)
 		{
@@ -5379,9 +5728,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// ap_recv_count. Cosmetic/QoL only; still logged as filler/unmapped below.
 		else if (AP_ItemCategory(items[i]) == AP_CAT_WUMPA)
 		{
-			long long srvIdx = ap_net_recv_batch_index(i);
-			if (srvIdx < 0 || srvIdx > ap_fx_seen_max)
-				AP_WumpaReceive(1);
+			AP_FxOffer(items[i], ap_net_recv_batch_index(i));
 		}
 
 		// Coarse category tally: kept only to drive the cosmetic AdvProgress
@@ -5483,22 +5830,20 @@ static void AP_NetTick(struct GameTracker *gGT)
 	}
 	// Replay dedup high-water: after the batch, remember the highest server index
 	// drained (effects for anything at or below it must never run again) and
-	// persist it when it moved. Uses the OVERALL max, not just effect items: any
-	// future live item always has a higher index than everything already seen.
+	// write it to the room when it moved. Uses the OVERALL max, not just effect
+	// items: any future live item always has a higher index than everything
+	// already seen. While the marker is pending this only records the high
+	// water; the held effects are released against the room's value (#299).
 	if (n > 0)
 	{
-		long long batchMax = ap_fx_seen_max;
+		long long batchMax = -1;
 		for (i = 0; i < n; i++)
 		{
 			long long srvIdx = ap_net_recv_batch_index(i);
 			if (srvIdx > batchMax)
 				batchMax = srvIdx;
 		}
-		if (batchMax > ap_fx_seen_max)
-		{
-			ap_fx_seen_max = batchMax;
-			AP_FxSeenStore();
-		}
+		AP_FxBatchEnd(batchMax);
 	}
 
 	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
@@ -5876,6 +6221,7 @@ static int AP_EmitClassCheck(long code,
 	AP_AppendLog(msg);
 
 	ap_net_send_location(code); // LocationChecks([code])
+	AP_PerfNoteCheckSent();
 	if (addToCeremonyLedger)
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
@@ -6417,6 +6763,31 @@ static void AP_FeedLetterReadyUpdates(void)
 		}
 		ap_feed_letters_ready[track] = (unsigned char)ready;
 	}
+}
+
+// Issue #377: "Oxide Final Challenge is open", once per seed, on reaching go
+// mode for the Final Challenge, independent of whether the Oxide scene plays.
+// "Shown" is bit 1 of the same server data storage key as the scene flag
+// (ap/ap_oxide_scene_seen.h), so it survives a restart and a fresh room starts
+// clean. Nothing is shown or recorded until that key has been read, and while
+// the item feed is hidden the message waits rather than being spent unseen.
+static void AP_FeedOxideFinalOpenUpdate(void)
+{
+	int beatSecond;
+
+	if (!ctr_cfg_active() || !ap_feed_primed || !ap_hub_feed_on)
+		return;
+	if (!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown())
+		return;
+	if (sdata == NULL || sdata->gGT == NULL)
+		return;
+
+	beatSecond = CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0;
+	if (!AP_OxideFinalOpenMsgWanted(1, 1, 1, 0, AP_OxideFinalGoMode(), beatSecond))
+		return;
+
+	AP_FeedEnqueue("Oxide Final Challenge is open", OXIDE_LIGHT_GREEN, 1);
+	ap_net_oxide_open_msg_record();
 }
 
 int AP_LetterTokenEarned(int track, int didWin, int collected)
@@ -7045,6 +7416,20 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 // ---------------------------------------------------------------------------
 #define AP_STATE_FILE "ap-state.json"
 
+// The dump is built in memory on the game thread and written by the background
+// writer (ap_file_writer.h): field logs showed the old in-place fopen("w") +
+// fprintf run stalling the game for up to 1.7 s on some Windows hosts. The file
+// content is unchanged. A dump identical to the last one queued is not written
+// again (most of the menu and hub time), unless that write failed.
+static AP_TextBuf ap_state_text;        // built by AP_DumpState, reused
+static AP_TextBuf ap_state_text_queued; // the last text handed to the writer
+
+// Writer-thread job: only its payload and the file system.
+static int AP_StateWriteJob(const void *data, size_t len)
+{
+	return ap_file_writer_replace_file(AP_STATE_FILE, data, len);
+}
+
 static const char *AP_ITEM_NAMES[AP_ITEM_INDEX_COUNT] = {
     "Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic",
     "Red CTR Token", "Green CTR Token", "Blue CTR Token", "Yellow CTR Token",
@@ -7118,29 +7503,29 @@ static int AP_PrevIdentityLevel(struct GameTracker *gGT)
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
-	FILE *f = fopen(AP_STATE_FILE, "w");
-	if (!f)
-		return;
+	AP_TextBuf *f = &ap_state_text;
+
+	AP_TextBufReset(f);
 
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 		if (ap_net_location_checked(AP_LOCATION_TABLE[i].location_code))
 			checked++;
 
-	fputs("{\n", f);
-	fprintf(f, "  \"schema_active\": %d,\n", ctr_cfg_active());
-	fprintf(f, "  \"doors\": {\"ready\": %d, \"history_and_pending\": %u, \"session\": %u, \"keys\": %d},\n",
+	AP_TextBufPuts(f, "{\n");
+	AP_TextBufPrintf(f, "  \"schema_active\": %d,\n", ctr_cfg_active());
+	AP_TextBufPrintf(f, "  \"doors\": {\"ready\": %d, \"history_and_pending\": %u, \"session\": %u, \"keys\": %d},\n",
 	        AP_DoorHistoryReady(), ap_net_doors_history(), ap_net_doors_session(), AP_GateCount(AP_IDX_KEY));
-	fprintf(f, "  \"in_adventure\": %d,\n",
+	AP_TextBufPrintf(f, "  \"in_adventure\": %d,\n",
 	        (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0);
-	fprintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
-	fprintf(f, "  \"locations_checked\": %d,\n", checked);
-	fprintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
+	AP_TextBufPrintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
+	AP_TextBufPrintf(f, "  \"locations_checked\": %d,\n", checked);
+	AP_TextBufPrintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
 	// Live race placement + the held-position listener's debounce state (the #9
 	// live rung listener). held.cand_pos/cand_ms = the position currently being
 	// debounced and how long it has held; held.best_pos = best position already
 	// fanned out this race (99 = none yet); held.countdown_seen = the load-gap latch.
-	fprintf(f, "  \"live_position\": %d,\n", ap_live_position);
-	fprintf(f,
+	AP_TextBufPrintf(f, "  \"live_position\": %d,\n", ap_live_position);
+	AP_TextBufPrintf(f,
 	        "  \"held\": {\"cand_pos\": %d, \"cand_ms\": %d, \"best_pos\": %d, "
 	        "\"countdown_seen\": %d, \"debounce_ms\": %d},\n",
 	        ap_held_cand_pos, ap_held_cand_ms, ap_held_best_pos,
@@ -7165,7 +7550,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 			rung[3] = pr->finish_podium;
 			rung[4] = pr->finish_any;
 		}
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "  \"podium_current_track\": {\"enabled\": %d, \"track\": %d, "
 		        "\"codes\": [%ld,%ld,%ld,%ld,%ld], "
 		        "\"exists\": [%d,%d,%d,%d,%d], "
@@ -7183,7 +7568,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        rung[3] >= 0 && ap_net_location_checked(rung[3]),
 		        rung[4] >= 0 && ap_net_location_checked(rung[4]));
 	}
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
 	        "\"type\": \"%s\"},\n",
 	        ap_last_race_track, ap_last_race_place,
@@ -7227,7 +7612,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		diag.profileKeys = (int)gGT->currAdvProfile.numKeys;
 		AP_TransitionDiagFormat(diagText, (int)sizeof diagText, &diag);
 
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "  \"transition\": {\"level_id\": %d, \"prev_level_id\": %d, "
 		        "\"podium_reward_id\": %d, \"game_mode1\": %u, "
 		        "\"game_mode2\": %u, \"freeze_door\": %d, "
@@ -7248,7 +7633,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u,
 		        diagText);
 	}
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "
 	        "\"goal_bosses\": %d, \"goal_gems\": %d, "
 	        "\"oxide_final_unlock\": %d, "
@@ -7273,7 +7658,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// yellow, tokens == tokens_regular + tokens_purple.
 	const int gameTokensRegular = gGT->currAdvProfile.numCtrTokens.total;
 	const int gameTokensPurple = gGT->currAdvProfile.numCtrTokens.purple;
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"game_counters\": {\"trophies\": %d, \"relics\": %d, "
 	        "\"keys\": %d, \"tokens\": %d, \"tokens_regular\": %d, "
 	        "\"tokens_red\": %d, \"tokens_green\": %d, \"tokens_blue\": %d, "
@@ -7290,14 +7675,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        gGT->currAdvProfile.completionPercent);
 
 	// AP-side truth: received-item counts by type.
-	fputs("  \"received_items\": {", f);
+	AP_TextBufPuts(f, "  \"received_items\": {");
 	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
-		fprintf(f, "%s\"%s\": %d", i ? ", " : "", AP_ITEM_NAMES[i],
+		AP_TextBufPrintf(f, "%s\"%s\": %d", i ? ", " : "", AP_ITEM_NAMES[i],
 		        AP_GateCount(i));
-	fputs("},\n", f);
+	AP_TextBufPuts(f, "},\n");
 
 	// Per-pad: destination, resolved requirement, met?, trophy-race checked?
-	fputs("  \"pads\": [\n", f);
+	AP_TextBufPuts(f, "  \"pads\": [\n");
 	for (i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
 		const ctr_warp_unlock *u = &ctr_cfg.warp_pad_unlock[i];
@@ -7311,7 +7696,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
 		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
@@ -7324,14 +7709,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
 	}
-	fputs("  ],\n", f);
+	AP_TextBufPuts(f, "  ],\n");
 
 	// Cup PHYSICAL pads (100..104): map + two-stage req + met, so contract §6.3
 	// offline diffing (ap-state.json vs slot_data) covers destination-shuffled cups
 	// the same way the dense "pads" array covers 0..27. dest = gem_cup_map (a race
 	// destination here means the cup pad hosts a trophy race); trophy_checked follows
 	// the DESTINATION when that destination is a race track, else -1 (n/a).
-	fputs("  \"cup_pads\": [\n", f);
+	AP_TextBufPuts(f, "  \"cup_pads\": [\n");
 	for (i = 0; i < 5; i++)
 	{
 		const ctr_warp_unlock *u = &ctr_cfg.gem_cup_unlock[i];
@@ -7342,7 +7727,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
 		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
@@ -7355,23 +7740,31 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        ctr_cfg_warp_stage2_unlocked(phys), trophyChecked,
 		        (i + 1 < 5) ? "," : "");
 	}
-	fputs("  ],\n", f);
+	AP_TextBufPuts(f, "  ],\n");
 
 	// Boss garages: resolved requirement + met?
-	fputs("  \"bosses\": [\n", f);
+	AP_TextBufPuts(f, "  \"bosses\": [\n");
 	for (i = 0; i < CTR_CFG_BOSS_COUNT; i++)
 	{
 		const ctr_req *r = &ctr_cfg.boss_req[i];
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"boss\": \"%s\", \"req_type\": \"%s\", \"count\": %d, "
 		        "\"met\": %d}%s\n",
 		        AP_BOSS_NAMES[i], AP_ReqTypeNameColour(r->type, r->colour), r->count,
 		        AP_BossReqMet(r), (i + 1 < CTR_CFG_BOSS_COUNT) ? "," : "");
 	}
-	fputs("  ]\n", f);
+	AP_TextBufPuts(f, "  ]\n");
 
-	fputs("}\n", f);
-	fclose(f);
+	AP_TextBufPuts(f, "}\n");
+
+	// Hand the text to the background writer only when it differs from the last
+	// one queued (or that write failed). The open/write/close then happens off
+	// the game thread; see ap_file_writer.h.
+	if (!AP_TextBufShouldWrite(f, &ap_state_text_queued,
+	                           ap_file_writer_last_ok(AP_FILE_WRITER_SLOT_STATE)))
+		return;
+	ap_file_writer_submit(AP_FILE_WRITER_SLOT_STATE, AP_StateWriteJob, f->data, f->len);
+	AP_TextBufCopy(&ap_state_text_queued, f);
 }
 
 // Real per-frame body. Wrapped by AP_OnFrame below so the always-on frame-stall
@@ -7471,6 +7864,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			AP_AppendLog("[AP BOOT] vendor: " CTR_AP_VENDOR_VERSIONS "\n");
 			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
 			             ".sh on Linux/Deck) next to the game and share the archive\n");
+			AP_PerfAnnounce(); // watchdog threshold + video adapter, once per run
 			// #166: prime the gem-cup-leg identity/vanilla table from the live
 			// data.advCupTrackIDs before any slot_data can possibly parse -- the
 			// isolated ap_net/ap_seedcfg C++ lib has no access to `data`, so this
@@ -7630,9 +8024,10 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// at the title screen right after connect. AP-side fields (options, received
 	// items, checked locations, per-pad reqs) are valid once slot_data is parsed;
 	// game_counters read live only in adventure mode (see "in_adventure" in JSON).
-	// [AP PERF] STATE_DUMP section: the dump rewrites the entire state file from
-	// scratch (fopen "w" + a long fprintf run), on the game thread, on the frame it
-	// lands. One frame in 60 pays for it, and that frame used to charge it to "rest".
+	// [AP PERF] STATE_DUMP section: the game-thread part of the dump -- building
+	// the JSON in memory, comparing it with the last one and queueing it. The file
+	// write itself runs on the background writer (ap_file_writer.h), so a slow disk
+	// no longer shows up here. One frame in 60 pays for it.
 	static int dumpTick = 0;
 	if ((++dumpTick % 60) == 0)
 	{

@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_reserves_meter_logic.h" // #387 reserves meter display math
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80051c64-0x80051e24.
 
@@ -322,7 +325,10 @@ void UI_DrawSlideMeter(s16 posX, s16 posY, struct Driver *driver)
 // filling leftward. driver->reserves is milliseconds-of-fire in the game's
 // 960ms "second"; the bar caps (pegs) at 8400 units (~8.75s) and turns blue as
 // the overflow tell ("saffi fire"), while the value itself has no real cap.
-// Written in the UI_DrawSlideMeter idiom above.
+// Past 0x7fff the signed field wraps negative and the engine stops counting it
+// down; the display math in ap_reserves_meter_logic.h reads it unsigned so it
+// still shows as a full bar, drawn purple for that "Saffi fire" state as CTR
+// Unlimited does (#387). Written in the UI_DrawSlideMeter idiom above.
 void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver)
 {
 	const struct GameTracker *gGT = sdata->gGT;
@@ -343,22 +349,30 @@ void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver)
 	const PrimCode primCode = {.poly = {.quad = 1, .renderCode = RenderCode_Polygon}};
 
 	// Fill colour by reserves tier (thresholds verbatim from ReservesMeter).
-	ColorCode colorCode = MakeColorCode(0xFF, 0, 0, primCode); // red, low reserves
-	if (driver->reserves > 1600)
-	{
-		colorCode = (driver->reserves < 3840)
-		                ? MakeColorCode(0xFF, 0xFF, 0, primCode)  // yellow, mid
-		                : MakeColorCode(0, 0xFF, 0, primCode);    // green, high
-	}
-
 	// Fill grows leftward from the right edge; when it would exceed the bar it
 	// pegs at full width and turns blue (the reserves overflow / "saffi fire").
-	int meterLength = (driver->reserves * 14) / 2400;
-	if (meterLength > barWidth)
+	ColorCode colorCode;
+	switch (AP_ReservesMeterTier(driver->reserves))
 	{
-		meterLength = barWidth;
+	case AP_RESERVES_TIER_SAFFI:
+		// Wrapped past 0x7fff, no longer draining. N. Gin's purple from the game's
+		// own driver palette (data.colors N_GIN_PURPLE, 0xFF00A9 as BGR).
+		colorCode = MakeColorCode(0xA9, 0, 0xFF, primCode);
+		break;
+	case AP_RESERVES_TIER_BLUE:
 		colorCode = MakeColorCode(0, 0, 0xFF, primCode); // blue, pegged
+		break;
+	case AP_RESERVES_TIER_GREEN:
+		colorCode = MakeColorCode(0, 0xFF, 0, primCode); // green, high
+		break;
+	case AP_RESERVES_TIER_YELLOW:
+		colorCode = MakeColorCode(0xFF, 0xFF, 0, primCode); // yellow, mid
+		break;
+	default:
+		colorCode = MakeColorCode(0xFF, 0, 0, primCode); // red, low reserves
+		break;
 	}
+	int meterLength = AP_ReservesMeterLength(driver->reserves);
 
 	for (int i = 0; i < 2; i++)
 	{

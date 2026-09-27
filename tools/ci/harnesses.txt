@@ -45,8 +45,11 @@ tools/test-fs-winpath.c
 tools/test-unchanged-startup.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
+tools/test-file-writer.cpp
 tools/test-firstkey-freeze.c
 tools/test-focus-mute.c
+tools/test-frame-watch.c
+tools/test-fxmarker.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
@@ -82,6 +85,8 @@ tools/test-net-admission.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
+tools/test-oxide-scene-seen.cpp
+tools/test-oxide-scene-seen-production.py
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py
@@ -102,6 +107,7 @@ tools/test-relic-goal.c
 tools/test-relic-perfect.c
 tools/test-relic-perfect-seedcfg.cpp
 tools/test-render-scale.c
+tools/test-reserves-meter.c
 tools/test-reward-text.c
 tools/test-tracker-assets.c
 tools/test-tracker-markers.c
@@ -114,6 +120,7 @@ tools/test-saphi-catalogue.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-text-buf.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
 tools/test-tunnel-charswap-production.py

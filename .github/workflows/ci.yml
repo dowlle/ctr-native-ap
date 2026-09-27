@@ -63,6 +63,8 @@ jobs:
         run: python3 tools/test-letter-ready-feed-production.py
       - name: Persisted hub door production regressions
         run: python3 tools/test-door-history-production.py
+      - name: Once-per-seed Oxide scene flag production regressions
+        run: python3 tools/test-oxide-scene-seen-production.py
       - name: TLS and cache boundary regressions
         run: bash tools/security/run.sh
       - name: Release assembly boundary checks

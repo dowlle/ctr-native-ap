@@ -19,13 +19,12 @@ u8 CS_Camera_BoolGotoBoss(void)
 	// The beat-Oxide suppression is the SAME term AP_ShouldSkipPodium consults
 	// (issue #285): one helper answers "this relic podium will go to Oxide" for
 	// both, so a skipped relic can never be one whose transition still plays.
+	// Issue #377: under AP the scene plays once per seed, on reaching go mode
+	// for the Final Challenge (AP_OxideFinalSceneReady, ap/ap_oxide_scene.c).
 #ifdef CTR_AP
 	if (AP_PodiumRelicWillGotoOxide(
 	        gGT->podiumRewardID == STATIC_RELIC,
-	        AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
-	                                   gGT->currAdvProfile.numRelics,
-	                                   AP_OxideOffersFinalChallenge(),
-	                                   AP_OxideFinalOpen()),
+	        AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics),
 	        CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0))
 #else
 	if ((gGT->podiumRewardID == STATIC_RELIC) &&
@@ -365,7 +364,26 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 
 		if (rewardId != STATIC_BIG1)
 		{
+#ifdef CTR_AP
+			// Issue #377, local Skip Cutscenes option: a podium that would hand
+			// over to a boss or Oxide scene takes the ordinary exit below
+			// instead (see AP_CutsceneSkipDecision, ap/ap_podium_skip_logic.h).
+			// A skipped Oxide Final Challenge scene, or the Gemstone key outro
+			// that chains into it, still counts as seen for this slot.
+			int apSkipScene = AP_CutsceneSkipDecision(AP_SkipCutscenes(),
+			                                          CS_Camera_BoolGotoBoss() != 0);
+			if (apSkipScene &&
+			    AP_CutsceneSkipCoversOxideScene(
+			        rewardId == STATIC_RELIC, rewardId == STATIC_KEY,
+			        gGT->levelID == GEM_STONE_VALLEY,
+			        AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics)))
+			{
+				AP_OxideFinalSceneMarkPlayed(); // #377: skipped counts as seen
+			}
+			if (apSkipScene || CS_Camera_BoolGotoBoss() == 0)
+#else
 			if (CS_Camera_BoolGotoBoss() == 0)
+#endif
 			{
 				s16 hintID;
 
@@ -426,11 +444,10 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			// happens at all, and this decides it is the OXIDE_RELICS_<hub> one.
 			// If they disagreed, a relic win would enter the boss path and then
 			// fall through to the ordinary hub intro (bossCutsceneIndex -1).
+			// Issue #377: both run in this frame, before the play is recorded
+			// below, so they read the same once-per-seed answer.
 #ifdef CTR_AP
-			if (!AP_OxideFinalEncounterPresentationReady(ctr_cfg_active(),
-			                                    gGT->currAdvProfile.numRelics,
-			                                    AP_OxideOffersFinalChallenge(),
-			                                    AP_OxideFinalOpen()))
+			if (!AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics))
 #else
 			if (gGT->currAdvProfile.numRelics < 18)
 #endif
@@ -440,6 +457,9 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			}
 
 			D233.bossCutsceneIndex = gGT->levelID - GEM_STONE_VALLEY + OXIDE_RELICS_GEMSTONE;
+#ifdef CTR_AP
+			AP_OxideFinalSceneMarkPlayed(); // #377: this slot has now seen it
+#endif
 			return;
 		}
 

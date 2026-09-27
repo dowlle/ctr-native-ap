@@ -249,6 +249,16 @@ int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 // Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
 int AP_OxideFinalOpen(void);
 int AP_OxideFinalVenueReady(void);
+// Issue #377: go mode for Oxide's Final Challenge (see ap/ap_oxide_cutscene.h),
+// and the once-per-seed scene decision the three scene sites and the podium-skip
+// keep rule share (ap/ap_oxide_scene.c). `vanillaRelics` is the caller's retail
+// relic count, used only without slot_data.
+int AP_OxideFinalGoMode(void);
+int AP_OxideFinalSceneReady(int vanillaRelics);
+// Call where the Oxide relic scene index is actually selected.
+void AP_OxideFinalSceneMarkPlayed(void);
+// Issue #377: local "Skip Cutscenes" option (ap/ap_podium_skip.c).
+int AP_SkipCutscenes(void);
 int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected
@@ -317,6 +327,13 @@ int AP_CustomOfflineLaunchAllowed(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// #299 Turbo Grant fired count, kept in the room's DataStorage by ap_hooks.c
+// (AP_NET_FX_TURBO_FIRED). Unknown until the room answers the connect-time Get;
+// ap_turbogrant.c delivers nothing while it is unknown.
+int  AP_FxTurboFiredKnown(void);
+int  AP_FxTurboFired(void);
+void AP_FxTurboFiredIncrement(void);
+
 // Emit one AP item-box location check (#109). Lives here rather than in
 // ap_boxes.c so every optional location class routes through the one #176
 // emitter, with its absent-code guard, checked-state guard and diagnostic line.
@@ -351,6 +368,10 @@ const char *AP_Net_StatusLine(void);
 // same close-and-forget half of AP_Net_Reconnect, without the re-dial. Safe to
 // call even if never connected (ap_net_shutdown() no-ops on a null client).
 void AP_Net_Shutdown(void);
+
+// Clean exit: flush the background file writer (bounded wait) and close the
+// ctr-ap.log handle. Called from Platform_Shutdown.
+void AP_ShutdownFiles(void);
 
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
 // visible while holding reserves). Default 0; set by ap-config.txt
