@@ -62,9 +62,13 @@ global_variable char s_countdownFormat223[4] = "-%d";
 void RR_EndEvent_UnlockAward(void)
 {
 #ifdef CTR_AP
+	// #49: the Relic Race perfect check reads the same crate counters as the
+	// ten-second bonus below, before any tier or Cortex Vortex handling, so it
+	// pays whatever relic (or none) the time reaches. It applies the #286
+	// forced-loss guard itself (AP_RESULT_PRODUCER_RELIC_PERFECT).
+	AP_NotifyRelicPerfect();
 	// #286: a forced-loss relic attempt grants no local relic flag, no relic
-	// presentation and no AP relic check. The #49 relic-perfect producer, when it
-	// lands, must observe the same AP_RaceAttempt_ProducerBlocked() helper.
+	// presentation and no AP relic check.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_UNLOCK))
 		return;
 #endif

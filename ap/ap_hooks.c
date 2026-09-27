@@ -27,6 +27,7 @@
 #include "ap_reward_text.h" // pure bounded boss/pad reward sentence builder (#330)
 #include "ap_rung_feed_reason_logic.h" // freestanding held-position reason text (#324)
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
+#include "ap_relic_perfect.h" // freestanding Relic Race perfect decision (#49)
 #include "ap_glow_slots_logic.h"
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
 #include "ap_cortex_track.h" // Cortex Vortex pad track: direct codes + pseudo-bits (schema 15)
@@ -6194,6 +6195,79 @@ int AP_EmitHitCharacterCheck(long code)
 {
 	return AP_EmitClassCheck(code, 0, -1, -1, 1,
 	                         "[AP CHECK] hit character location %ld\n", code);
+}
+
+// Relic Race perfect (issue #49) for a custom package, keyed by the package's
+// own seed slot, never its borrowed host LevelID. The reserved identity family
+// (`Custom Track N: Relic Race Perfect`, 35024000 + N - 1) is not minted and no
+// wire carries it yet, so this is always -1 today.
+// TODO(#49, custom tracks): read the slot's code from the wire once the family
+// is minted and a custom Relic Race mode is admitted; keep it slot-keyed.
+static long AP_RelicPerfectCustomCode(int slot)
+{
+	(void)slot;
+	return -1;
+}
+
+// Is this load serving custom bytes under a borrowed LevelID? Same question the
+// podium identity asks (AP_RetailPodiumTrack), answered conservatively: a
+// latched serve fault also counts, because it leaves which bytes loaded in
+// doubt and a retail code must never be sent for a track that may not be it.
+static int AP_RelicPerfectServingCustom(struct GameTracker *gGT)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	if (MainRaceTrack_OfflineCustomLoad())
+		return 1;
+#endif
+#ifdef CTR_CUSTOM_TRACKS
+	if (CustomTrack_ServeFaultReason() != NULL)
+		return 1;
+	if (CustomTrack_ServingLoad((int)gGT->levelID,
+	                            (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                            gGT->cup.cupID))
+		return 1;
+#endif
+	(void)gGT;
+	return 0;
+}
+
+void AP_NotifyRelicPerfect(void)
+{
+	struct GameTracker *gGT;
+	struct Driver *driver;
+	AP_RelicPerfectFacts facts;
+	long code;
+
+	if (!ctr_cfg_active() || !ctr_cfg.relic_perfect_enabled)
+		return;
+	// #286: a forced-loss relic attempt pays no finish-class check.
+	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_PERFECT))
+		return;
+	gGT = sdata ? sdata->gGT : 0;
+	driver = gGT ? gGT->drivers[0] : 0;
+	if (gGT == 0 || driver == 0 || (gGT->gameMode1 & RELIC_RACE) == 0)
+		return;
+
+	facts.retail = ctr_cfg.relic_perfect;
+	facts.levelID = (int)gGT->levelID;
+	facts.broken = (int)driver->numTimeCrates;
+	facts.total = (int)gGT->timeCratesInLEV;
+	facts.cortexActive = AP_CortexTrackActive();
+	facts.customServing = AP_RelicPerfectServingCustom(gGT);
+	facts.customCode = facts.customServing && ctr_cfg.custom_tracks_ok
+	                   ? AP_RelicPerfectCustomCode(ctr_cfg.custom_track.slot)
+	                   : -1;
+	code = AP_RelicPerfectResolvePure(&facts);
+	if (code < 0)
+		return;
+	// Not in the ceremony ledger: the relic award block is the relic's. The
+	// sent-item feed line tells the player the perfect paid. The emitter drops
+	// a code the room does not have or has already checked (replays, a relic
+	// already owned, reconnects) and the network layer holds it while offline.
+	AP_EmitClassCheck(code, 0, -1, -1, 1,
+	                  "[AP CHECK] Relic Race perfect level=%d crates=%d/%d "
+	                  "location %ld\n",
+	                  facts.levelID, facts.broken, facts.total, code);
 }
 
 void AP_NotifyTrialTrackRace(int levelID, int challenge)
