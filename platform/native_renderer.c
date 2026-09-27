@@ -347,6 +347,27 @@ void NativeRenderer_CaptureWindowGeometry(void)
 	g_config.windowMaximized = false;
 }
 
+// GL adapter strings, cached at init so the AP frame watchdog can name the GPU
+// and driver in ctr-ap.log without touching GL itself.
+global_variable char s_adapterRenderer[160];
+global_variable char s_adapterVendor[96];
+global_variable char s_adapterVersion[160];
+
+internal void NativeRenderer_CacheAdapterString(char *dst, size_t cap, const char *src)
+{
+	snprintf(dst, cap, "%s", src != NULL ? src : "?");
+}
+
+void NativeRenderer_GetAdapterInfo(const char **renderer, const char **vendor, const char **version)
+{
+	if (renderer != NULL)
+		*renderer = s_adapterRenderer[0] ? s_adapterRenderer : "?";
+	if (vendor != NULL)
+		*vendor = s_adapterVendor[0] ? s_adapterVendor : "?";
+	if (version != NULL)
+		*version = s_adapterVersion[0] ? s_adapterVersion : "?";
+}
+
 internal int NativeRenderer_InitialiseGLExt(void)
 {
 	GLenum err = gladLoadGL();
@@ -362,6 +383,10 @@ internal int NativeRenderer_InitialiseGLExt(void)
 
 	const char *versionStr = (const char *)glGetString(GL_VERSION);
 	NATIVE_RENDERER_LOG("*OpenGL version: %s\n", versionStr);
+
+	NativeRenderer_CacheAdapterString(s_adapterRenderer, sizeof s_adapterRenderer, rend);
+	NativeRenderer_CacheAdapterString(s_adapterVendor, sizeof s_adapterVendor, vendor);
+	NativeRenderer_CacheAdapterString(s_adapterVersion, sizeof s_adapterVersion, versionStr);
 
 	const char *glslVersionStr = (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
 	NATIVE_RENDERER_LOG("*GLSL version: %s\n", glslVersionStr);

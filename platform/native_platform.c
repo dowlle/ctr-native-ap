@@ -335,6 +335,9 @@ void Platform_Shutdown(void)
 	}
 
 	s_platformInitialized = 0;
+#ifdef CTR_AP
+	AP_ShutdownFiles(); // last queued ap-state.json snapshot reaches the disk
+#endif
 #if defined(CTR_INTERNAL)
 	NativeRenderer_FinishGpuMeasurements();
 	NativePerf_Shutdown();
@@ -422,7 +425,13 @@ int Platform_BeginScene(void)
 
 	s_platformBeginScene = 1;
 
+#ifdef CTR_AP
+	AP_FrameWatchLogFlushBegin(); // a synchronous fflush on the render thread
+#endif
 	Platform_LogFlush();
+#ifdef CTR_AP
+	AP_FrameWatchLogFlushEnd();
+#endif
 
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_PLATFORM_BEGIN_SCENE);
 	return 1;

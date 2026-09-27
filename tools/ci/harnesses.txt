@@ -45,8 +45,10 @@ tools/test-fs-winpath.c
 tools/test-unchanged-startup.c
 tools/test-feed-class-cpp.cpp
 tools/test-feed-class.c
+tools/test-file-writer.cpp
 tools/test-firstkey-freeze.c
 tools/test-focus-mute.c
+tools/test-frame-watch.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
@@ -112,6 +114,7 @@ tools/test-saphi-catalogue.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
+tools/test-text-buf.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
 tools/test-tunnel-charswap-production.py

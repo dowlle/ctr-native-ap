@@ -84,6 +84,13 @@ u32 main(void)
 
 	do
 	{
+#ifdef CTR_AP
+		// Whole-frame stall watchdog (ap/ap_perf.c): one bracket around the entire
+		// loop body, so the load queue, input, game logic, the AP slice, render
+		// submit, present, swap and the vsync wait all fall inside it. A frame
+		// over the threshold is written to ctr-ap.log with a per-bucket split.
+		AP_FrameWatchBegin();
+#endif
 #ifndef CTR_NATIVE
 		// wont happen under normal conditions
 		if (sdata->mainGameState == 5)
@@ -506,6 +513,9 @@ u32 main(void)
 			sdata->mainGameState = 0;
 #endif
 		}
+#ifdef CTR_AP
+		AP_FrameWatchEnd();
+#endif
 	} while (true);
 }
 

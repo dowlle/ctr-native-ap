@@ -44,6 +44,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_cup_box_policy.h" // AP_BoxPadAccessible: the shared individual-pad rule
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
+#include "ap_file_writer.h"    // background writer for whole-file rewrites
+#include "ap_text_buf_logic.h" // in-memory text for those rewrites
 #include "ap_marker_model.h" // STATIC_AP + the compiled-in AP-logo marker model (#124)
 #include "ap_reward_policy.h"  // category -> model / tint, the one display decision (#219)
 #include "ap_podium_presentation_logic.h" // AP Trophy prize policy (#235)
@@ -169,13 +171,20 @@ int Platform_InputRawKeyDown(int scancode);
 #define AP_READ_LOG_OLD "ctr-ap.log.old"
 #define AP_READ_LOG_MAX (4 * 1024 * 1024) // rotate at 4 MB, keep one generation
 
+// One handle for the whole run. Each line used to be its own fopen/fputs/
+// fclose on the game thread, and field logs show that open/close pair costing
+// up to about a second on some Windows hosts (logio= on the PERF lines). The
+// handle is opened once, in append mode like before, and every line is flushed
+// straight away: that is one write call instead of an open and a close, and a
+// line is in the file the moment AP_AppendLog returns, so a crash or a killed
+// process loses nothing and the crash reporter (ap_crash.c), which appends
+// through its own handle, still lands after the last line.
+static FILE *ap_log_file = NULL;
+
 static void AP_AppendLog(const char *msg)
 {
-	// [AP PERF] LOG_IO section: every line is its own fopen/fputs/fclose on the
-	// game thread, so a chatty frame (an item burst, a datapackage sync) pays for
-	// that here. Summed across all lines the frame writes; the two timer reads are
-	// the same cheap Platform_PerfNowMs the other sections use, which is noise next
-	// to the file open this brackets.
+	// [AP PERF] LOG_IO section: the line write on the game thread, summed across
+	// all lines the frame writes.
 	AP_PerfSectionBegin(AP_PERF_SEC_LOG_IO);
 
 	// One-time size check: an append-forever log grows unbounded across weeks
@@ -199,14 +208,29 @@ static void AP_AppendLog(const char *msg)
 		}
 	}
 	fputs(msg, stderr);
-	FILE *f = fopen(AP_READ_LOG, "a");
-	if (f)
+	if (ap_log_file == NULL) // first line, or the open failed before: retry
+		ap_log_file = fopen(AP_READ_LOG, "a");
+	if (ap_log_file)
 	{
-		fputs(msg, f);
-		fclose(f);
+		fputs(msg, ap_log_file);
+		fflush(ap_log_file);
 	}
 
 	AP_PerfSectionEnd(AP_PERF_SEC_LOG_IO);
+}
+
+// Clean exit (Platform_Shutdown): let the background writer finish the last
+// queued ap-state.json snapshot, bounded so a stuck disk cannot hang the exit,
+// then close the log. Every line is already flushed; a line written after this
+// reopens the handle.
+void AP_ShutdownFiles(void)
+{
+	ap_file_writer_flush(2000);
+	if (ap_log_file != NULL)
+	{
+		fclose(ap_log_file);
+		ap_log_file = NULL;
+	}
 }
 
 // Non-static shim so game-side gate files can emit AP log lines (AP_AppendLog is
@@ -3364,7 +3388,10 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 		// every genuine first-time earn, so gating the send on it cannot drop
 		// a real check -- only a resend of one already server-confirmed.
 		if (!wasChecked)
+		{
 			ap_net_send_location(code); // LocationChecks([code])
+			AP_PerfNoteCheckSent();
+		}
 		ap_state_gen++; // a location was checked -> the owning pad's state may shift
 		AP_CeremonyLedgerAdd(code, rewardBit, -1); // feed the race-end award block
 		if (!wasChecked)
@@ -3515,6 +3542,9 @@ static void AP_FxSeenLoad(void)
 	char line[320];
 
 	ap_fx_seen_max = -1;
+	// A store queued on the background writer (AP_FxSeenStore) must land before
+	// the file is read back, or a reconnect could read the previous index.
+	ap_file_writer_flush(2000);
 	if (!ap_net_seed_name(ap_fx_seed, sizeof ap_fx_seed))
 		ap_fx_seed[0] = '\0';
 	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
@@ -3537,15 +3567,30 @@ static void AP_FxSeenLoad(void)
 	fclose(f);
 }
 
-static void AP_FxSeenStore(void)
+// One store request, copied into the background writer's queue. The job only
+// reads this snapshot, never the live ap_fx_* globals.
+typedef struct AP_FxSeenStoreJob
 {
-	// Read-modify-write the tiny file, preserving other seed/slot rows.
-	FILE *f;
-	char rows[32][512];
-	int nrows = 0, i;
+	char      endpoint[sizeof ap_fx_endpoint];
+	char      seed[sizeof ap_fx_seed];
+	char      slot[sizeof ap_fx_slot];
+	long long max;
+} AP_FxSeenStoreJob;
 
-	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
-		return;
+// Writer-thread job: read-modify-write the tiny file, preserving other
+// seed/slot rows. Same rows and same row format as the synchronous version it
+// replaces; the new content replaces the file in one move.
+static int AP_FxSeenWriteJob(const void *payload, size_t len)
+{
+	const AP_FxSeenStoreJob *j = (const AP_FxSeenStoreJob *)payload;
+	static char rows[32][512]; // writer thread only
+	char out[32 * 512 + 512];
+	size_t used = 0;
+	FILE *f;
+	int nrows = 0, i, n;
+
+	if (len != sizeof *j)
+		return 0;
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f != NULL)
 	{
@@ -3553,20 +3598,43 @@ static void AP_FxSeenStore(void)
 		{
 			AP_FxSeenRow row;
 			if (AP_FxSeenParseRow(rows[nrows], &row) &&
-			    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
+			    AP_FxSeenRowMatches(&row, j->endpoint, j->seed, j->slot))
 				continue; // our old row: superseded below
 			nrows++;
 		}
 		fclose(f);
 	}
-	f = fopen(AP_FXSEEN_FILE, "w");
-	if (f == NULL)
-		return;
 	for (i = 0; i < nrows; i++)
-		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%s\t%lld\n", ap_fx_endpoint, ap_fx_seed, ap_fx_slot,
-	        ap_fx_seen_max);
-	fclose(f);
+	{
+		size_t rl = strlen(rows[i]);
+		memcpy(out + used, rows[i], rl);
+		used += rl;
+	}
+	n = snprintf(out + used, sizeof out - used, "%s\t%s\t%s\t%lld\n",
+	             j->endpoint, j->seed, j->slot, j->max);
+	if (n < 0 || (size_t)n >= sizeof out - used)
+		return 0;
+	used += (size_t)n;
+	return ap_file_writer_replace_file(AP_FXSEEN_FILE, out, used);
+}
+
+// Called from the item drain whenever the high-water index moves, i.e. on
+// every new live item. The file used to be read and rewritten right here on
+// the game thread; a 0.2.1 field log has a 2084 ms item= section on a single
+// live item receipt with no other file I/O in that section. The write now
+// runs on the background writer (ap_file_writer.h).
+static void AP_FxSeenStore(void)
+{
+	AP_FxSeenStoreJob j;
+
+	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
+		return;
+	memset(&j, 0, sizeof j);
+	snprintf(j.endpoint, sizeof j.endpoint, "%s", ap_fx_endpoint);
+	snprintf(j.seed, sizeof j.seed, "%s", ap_fx_seed);
+	snprintf(j.slot, sizeof j.slot, "%s", ap_fx_slot);
+	j.max = ap_fx_seen_max;
+	ap_file_writer_submit(AP_FILE_WRITER_SLOT_FXSEEN, AP_FxSeenWriteJob, &j, sizeof j);
 }
 
 int AP_GateCount(int itemType)
@@ -5173,6 +5241,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
+	AP_PerfNoteItemsReceived(n, n > 0 ? items[n - 1] : 0); // frame stall line context
 	int liveItemBatch = ap_feed_primed;
 	int i;
 	char st[64];
@@ -5875,6 +5944,7 @@ static int AP_EmitClassCheck(long code,
 	AP_AppendLog(msg);
 
 	ap_net_send_location(code); // LocationChecks([code])
+	AP_PerfNoteCheckSent();
 	if (addToCeremonyLedger)
 		AP_CeremonyLedgerAdd(code, ledgerBit, ledgerTag);
 	if (toastSentItem)
@@ -6971,6 +7041,20 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 // ---------------------------------------------------------------------------
 #define AP_STATE_FILE "ap-state.json"
 
+// The dump is built in memory on the game thread and written by the background
+// writer (ap_file_writer.h): field logs showed the old in-place fopen("w") +
+// fprintf run stalling the game for up to 1.7 s on some Windows hosts. The file
+// content is unchanged. A dump identical to the last one queued is not written
+// again (most of the menu and hub time), unless that write failed.
+static AP_TextBuf ap_state_text;        // built by AP_DumpState, reused
+static AP_TextBuf ap_state_text_queued; // the last text handed to the writer
+
+// Writer-thread job: only its payload and the file system.
+static int AP_StateWriteJob(const void *data, size_t len)
+{
+	return ap_file_writer_replace_file(AP_STATE_FILE, data, len);
+}
+
 static const char *AP_ITEM_NAMES[AP_ITEM_INDEX_COUNT] = {
     "Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic",
     "Red CTR Token", "Green CTR Token", "Blue CTR Token", "Yellow CTR Token",
@@ -7044,29 +7128,29 @@ static int AP_PrevIdentityLevel(struct GameTracker *gGT)
 static void AP_DumpState(struct GameTracker *gGT)
 {
 	int i, checked = 0;
-	FILE *f = fopen(AP_STATE_FILE, "w");
-	if (!f)
-		return;
+	AP_TextBuf *f = &ap_state_text;
+
+	AP_TextBufReset(f);
 
 	for (i = 0; i < AP_LOCATION_TABLE_LEN; i++)
 		if (ap_net_location_checked(AP_LOCATION_TABLE[i].location_code))
 			checked++;
 
-	fputs("{\n", f);
-	fprintf(f, "  \"schema_active\": %d,\n", ctr_cfg_active());
-	fprintf(f, "  \"doors\": {\"ready\": %d, \"history_and_pending\": %u, \"session\": %u, \"keys\": %d},\n",
+	AP_TextBufPuts(f, "{\n");
+	AP_TextBufPrintf(f, "  \"schema_active\": %d,\n", ctr_cfg_active());
+	AP_TextBufPrintf(f, "  \"doors\": {\"ready\": %d, \"history_and_pending\": %u, \"session\": %u, \"keys\": %d},\n",
 	        AP_DoorHistoryReady(), ap_net_doors_history(), ap_net_doors_session(), AP_GateCount(AP_IDX_KEY));
-	fprintf(f, "  \"in_adventure\": %d,\n",
+	AP_TextBufPrintf(f, "  \"in_adventure\": %d,\n",
 	        (gGT->gameMode1 & ADVENTURE_MODE) != 0 ? 1 : 0);
-	fprintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
-	fprintf(f, "  \"locations_checked\": %d,\n", checked);
-	fprintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
+	AP_TextBufPrintf(f, "  \"connected_slot\": %d,\n", ap_net_self_slot());
+	AP_TextBufPrintf(f, "  \"locations_checked\": %d,\n", checked);
+	AP_TextBufPrintf(f, "  \"locations_total\": %d,\n", AP_LOCATION_TABLE_LEN);
 	// Live race placement + the held-position listener's debounce state (the #9
 	// live rung listener). held.cand_pos/cand_ms = the position currently being
 	// debounced and how long it has held; held.best_pos = best position already
 	// fanned out this race (99 = none yet); held.countdown_seen = the load-gap latch.
-	fprintf(f, "  \"live_position\": %d,\n", ap_live_position);
-	fprintf(f,
+	AP_TextBufPrintf(f, "  \"live_position\": %d,\n", ap_live_position);
+	AP_TextBufPrintf(f,
 	        "  \"held\": {\"cand_pos\": %d, \"cand_ms\": %d, \"best_pos\": %d, "
 	        "\"countdown_seen\": %d, \"debounce_ms\": %d},\n",
 	        ap_held_cand_pos, ap_held_cand_ms, ap_held_best_pos,
@@ -7091,7 +7175,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 			rung[3] = pr->finish_podium;
 			rung[4] = pr->finish_any;
 		}
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "  \"podium_current_track\": {\"enabled\": %d, \"track\": %d, "
 		        "\"codes\": [%ld,%ld,%ld,%ld,%ld], "
 		        "\"exists\": [%d,%d,%d,%d,%d], "
@@ -7109,7 +7193,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        rung[3] >= 0 && ap_net_location_checked(rung[3]),
 		        rung[4] >= 0 && ap_net_location_checked(rung[4]));
 	}
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"last_race\": {\"track\": %d, \"placement\": %d, "
 	        "\"type\": \"%s\"},\n",
 	        ap_last_race_track, ap_last_race_place,
@@ -7153,7 +7237,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		diag.profileKeys = (int)gGT->currAdvProfile.numKeys;
 		AP_TransitionDiagFormat(diagText, (int)sizeof diagText, &diag);
 
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "  \"transition\": {\"level_id\": %d, \"prev_level_id\": %d, "
 		        "\"podium_reward_id\": %d, \"game_mode1\": %u, "
 		        "\"game_mode2\": %u, \"freeze_door\": %d, "
@@ -7174,7 +7258,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        driver != NULL ? (unsigned)driver->actionsFlagSet : 0u,
 		        diagText);
 	}
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"options\": {\"goal\": %d, \"goal_oxide\": %d, "
 	        "\"goal_bosses\": %d, \"goal_gems\": %d, "
 	        "\"oxide_final_unlock\": %d, "
@@ -7199,7 +7283,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 	// yellow, tokens == tokens_regular + tokens_purple.
 	const int gameTokensRegular = gGT->currAdvProfile.numCtrTokens.total;
 	const int gameTokensPurple = gGT->currAdvProfile.numCtrTokens.purple;
-	fprintf(f,
+	AP_TextBufPrintf(f,
 	        "  \"game_counters\": {\"trophies\": %d, \"relics\": %d, "
 	        "\"keys\": %d, \"tokens\": %d, \"tokens_regular\": %d, "
 	        "\"tokens_red\": %d, \"tokens_green\": %d, \"tokens_blue\": %d, "
@@ -7216,14 +7300,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 	        gGT->currAdvProfile.completionPercent);
 
 	// AP-side truth: received-item counts by type.
-	fputs("  \"received_items\": {", f);
+	AP_TextBufPuts(f, "  \"received_items\": {");
 	for (i = 0; i < AP_ITEM_INDEX_COUNT; i++)
-		fprintf(f, "%s\"%s\": %d", i ? ", " : "", AP_ITEM_NAMES[i],
+		AP_TextBufPrintf(f, "%s\"%s\": %d", i ? ", " : "", AP_ITEM_NAMES[i],
 		        AP_GateCount(i));
-	fputs("},\n", f);
+	AP_TextBufPuts(f, "},\n");
 
 	// Per-pad: destination, resolved requirement, met?, trophy-race checked?
-	fputs("  \"pads\": [\n", f);
+	AP_TextBufPuts(f, "  \"pads\": [\n");
 	for (i = 0; i < CTR_CFG_PAD_COUNT; i++)
 	{
 		const ctr_warp_unlock *u = &ctr_cfg.warp_pad_unlock[i];
@@ -7237,7 +7321,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
 		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
@@ -7250,14 +7334,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        ctr_cfg_warp_stage2_unlocked(i), trophyChecked,
 		        (i + 1 < CTR_CFG_PAD_COUNT) ? "," : "");
 	}
-	fputs("  ],\n", f);
+	AP_TextBufPuts(f, "  ],\n");
 
 	// Cup PHYSICAL pads (100..104): map + two-stage req + met, so contract §6.3
 	// offline diffing (ap-state.json vs slot_data) covers destination-shuffled cups
 	// the same way the dense "pads" array covers 0..27. dest = gem_cup_map (a race
 	// destination here means the cup pad hosts a trophy race); trophy_checked follows
 	// the DESTINATION when that destination is a race track, else -1 (n/a).
-	fputs("  \"cup_pads\": [\n", f);
+	AP_TextBufPuts(f, "  \"cup_pads\": [\n");
 	for (i = 0; i < 5; i++)
 	{
 		const ctr_warp_unlock *u = &ctr_cfg.gem_cup_unlock[i];
@@ -7268,7 +7352,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 		    (dest >= 0 && dest < 16)
 		        ? AP_LocationCheckedByBit(dest + ADV_REWARD_FIRST_TROPHY)
 		        : (dest == AP_CORTEX_DEST ? AP_CortexTrackChecked(AP_CV_SLOT_TROPHY) : -1);
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"pad\": %d, \"dest\": %d, \"req_type\": \"%s\", "
 		        "\"count\": %d, \"colour\": %d, \"unlocked\": %d, "
 		        "\"stage2_req_type\": \"%s\", \"stage2_count\": %d, "
@@ -7281,23 +7365,31 @@ static void AP_DumpState(struct GameTracker *gGT)
 		        ctr_cfg_warp_stage2_unlocked(phys), trophyChecked,
 		        (i + 1 < 5) ? "," : "");
 	}
-	fputs("  ],\n", f);
+	AP_TextBufPuts(f, "  ],\n");
 
 	// Boss garages: resolved requirement + met?
-	fputs("  \"bosses\": [\n", f);
+	AP_TextBufPuts(f, "  \"bosses\": [\n");
 	for (i = 0; i < CTR_CFG_BOSS_COUNT; i++)
 	{
 		const ctr_req *r = &ctr_cfg.boss_req[i];
-		fprintf(f,
+		AP_TextBufPrintf(f,
 		        "    {\"boss\": \"%s\", \"req_type\": \"%s\", \"count\": %d, "
 		        "\"met\": %d}%s\n",
 		        AP_BOSS_NAMES[i], AP_ReqTypeNameColour(r->type, r->colour), r->count,
 		        AP_BossReqMet(r), (i + 1 < CTR_CFG_BOSS_COUNT) ? "," : "");
 	}
-	fputs("  ]\n", f);
+	AP_TextBufPuts(f, "  ]\n");
 
-	fputs("}\n", f);
-	fclose(f);
+	AP_TextBufPuts(f, "}\n");
+
+	// Hand the text to the background writer only when it differs from the last
+	// one queued (or that write failed). The open/write/close then happens off
+	// the game thread; see ap_file_writer.h.
+	if (!AP_TextBufShouldWrite(f, &ap_state_text_queued,
+	                           ap_file_writer_last_ok(AP_FILE_WRITER_SLOT_STATE)))
+		return;
+	ap_file_writer_submit(AP_FILE_WRITER_SLOT_STATE, AP_StateWriteJob, f->data, f->len);
+	AP_TextBufCopy(&ap_state_text_queued, f);
 }
 
 // Real per-frame body. Wrapped by AP_OnFrame below so the always-on frame-stall
@@ -7397,6 +7489,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			AP_AppendLog("[AP BOOT] vendor: " CTR_AP_VENDOR_VERSIONS "\n");
 			AP_AppendLog("[AP BOOT] problems? run support-bundle (.bat on Windows, "
 			             ".sh on Linux/Deck) next to the game and share the archive\n");
+			AP_PerfAnnounce(); // watchdog threshold + video adapter, once per run
 			// #166: prime the gem-cup-leg identity/vanilla table from the live
 			// data.advCupTrackIDs before any slot_data can possibly parse -- the
 			// isolated ap_net/ap_seedcfg C++ lib has no access to `data`, so this
@@ -7556,9 +7649,10 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// at the title screen right after connect. AP-side fields (options, received
 	// items, checked locations, per-pad reqs) are valid once slot_data is parsed;
 	// game_counters read live only in adventure mode (see "in_adventure" in JSON).
-	// [AP PERF] STATE_DUMP section: the dump rewrites the entire state file from
-	// scratch (fopen "w" + a long fprintf run), on the game thread, on the frame it
-	// lands. One frame in 60 pays for it, and that frame used to charge it to "rest".
+	// [AP PERF] STATE_DUMP section: the game-thread part of the dump -- building
+	// the JSON in memory, comparing it with the last one and queueing it. The file
+	// write itself runs on the background writer (ap_file_writer.h), so a slow disk
+	// no longer shows up here. One frame in 60 pays for it.
 	static int dumpTick = 0;
 	if ((++dumpTick % 60) == 0)
 	{
