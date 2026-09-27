@@ -333,6 +333,9 @@ void Platform_Shutdown(void)
 	}
 
 	s_platformInitialized = 0;
+#ifdef CTR_AP
+	AP_ShutdownFiles(); // last queued ap-state.json snapshot reaches the disk
+#endif
 #if defined(CTR_INTERNAL)
 	NativeRenderer_FinishGpuMeasurements();
 	NativePerf_Shutdown();
