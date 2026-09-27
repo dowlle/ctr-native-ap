@@ -260,6 +260,17 @@ int  ap_net_fx_store(int which, long long *value, unsigned *rev);
 // Write `value` with the DataStorage operation `op` ("max", or "replace" for a
 // key that holds a non-integer). No-op while not connected.
 void ap_net_fx_store_write(int which, long long value, const char *op);
+// #377: once-per-seed Oxide Final Challenge scene flag, stored in server data
+// storage per seed, team and slot (ap/ap_oxide_scene_seen.h). `known` is 0
+// until this connection's Get reply has arrived; callers must not auto-play
+// the scene while it is 0. `record` marks the scene played and sends it.
+int ap_net_oxide_scene_known(void);
+int ap_net_oxide_scene_seen(void);
+void ap_net_oxide_scene_record(void);
+// #377: "Oxide Final Challenge is open" message, shown once per seed. Bit 1 of
+// the same key; gate on ap_net_oxide_scene_known() before showing.
+int ap_net_oxide_open_msg_shown(void);
+void ap_net_oxide_open_msg_record(void);
 
 #ifdef __cplusplus
 }

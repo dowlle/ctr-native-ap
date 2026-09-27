@@ -87,6 +87,14 @@ typedef struct
 	                            // seed option and not slot_data: this is a local
 	                            // presentation preference. Consumed by
 	                            // AP_SkipPodium (ap/ap_hooks.c).
+	bool skipCutscenes;         // Archipelago: local "Skip Cutscenes" (issue
+	                            // #377, default off). On, the adventure-hub boss
+	                            // and Oxide scenes that follow a podium (boss
+	                            // intro and outro, the Oxide Final Challenge
+	                            // scene) are skipped through the ordinary podium
+	                            // exit. Local presentation preference, not
+	                            // slot_data. Consumed by AP_SkipCutscenes
+	                            // (ap/ap_podium_skip.c) from CS_Camera.c.
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
 	bool itemBoxColours;        // Archipelago: "Item Box Colours" (default on). Off
 	                            // shows every AP item box pink for this player even

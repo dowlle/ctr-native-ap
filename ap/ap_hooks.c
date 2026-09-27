@@ -2869,6 +2869,7 @@ static int AP_FeedConsumeSelfRung(long long item)
 // initial-inventory absorb window. Called from the connect-reset block.
 static unsigned char ap_feed_letters_ready[CTR_CFG_LETTER_TRACK_COUNT];
 static void AP_FeedLetterReadyUpdates(void);
+static void AP_FeedOxideFinalOpenUpdate(void);
 
 void AP_FeedConnectReset(void)
 {
@@ -3020,6 +3021,7 @@ static void AP_FeedOnLocationSent(long code)
 void AP_FeedEndDrain(int drainedThisFrame)
 {
 	AP_FeedLetterReadyUpdates();
+	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
 	if (drainedThisFrame > 0 || !ap_net_is_connected())
@@ -4405,6 +4407,45 @@ int AP_OxideOffersFinalChallenge(void)
 
 	in = AP_OxideInputs();
 	return AP_OxideGarageOffersFinal(&in);
+}
+
+// Issue #377: is the player in go mode for Oxide's Final Challenge, i.e. would
+// the apworld (and so Universal Tracker) put "N. Oxide's Final Challenge" in
+// logic from what this slot holds right now? The term-by-term mapping lives in
+// ap/ap_oxide_cutscene.h next to AP_OxideFinalGoModePure. 0 without slot_data;
+// the retail rule is applied by AP_OxideFinalSceneWanted instead.
+int AP_OxideFinalGoMode(void)
+{
+	int boostLive, venueStation, boostMin, best, c;
+
+	if (!ctr_cfg_active())
+		return 0;
+
+	boostLive = ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+	            ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER;
+	// Seeds before schema 11 always race the Final on Oxide Station. A newer
+	// seed with an unreadable venue block keeps the garage shut anyway
+	// (AP_OxideFinalVenueReady), so the venue default here cannot open it.
+	venueStation = ctr_cfg.schema_version < 11 ||
+	               !ctr_cfg.oxide_final_venue.valid ||
+	               ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION;
+	boostMin = AP_OxideFinalBoostMin(boostLive, venueStation,
+	                                 ctr_cfg.shortcut_knowledge);
+
+	best = -1;
+	if (boostMin > 0)
+		for (c = 0; c < AP_CAP_ROSTER_COUNT; c++)
+		{
+			int tier;
+			if (!AP_CharacterUnlocked(c))
+				continue;
+			tier = AP_CapabilityBoostTierForCharacter(c);
+			if (tier > best)
+				best = tier;
+		}
+
+	return AP_OxideFinalGoModePure(AP_OxideOffersFinalChallenge(),
+	                               AP_OxideGarageOpen(), boostMin, best);
 }
 
 // ── #24: plain-text requirement advert for the boss-class gates ──
@@ -6722,6 +6763,31 @@ static void AP_FeedLetterReadyUpdates(void)
 		}
 		ap_feed_letters_ready[track] = (unsigned char)ready;
 	}
+}
+
+// Issue #377: "Oxide Final Challenge is open", once per seed, on reaching go
+// mode for the Final Challenge, independent of whether the Oxide scene plays.
+// "Shown" is bit 1 of the same server data storage key as the scene flag
+// (ap/ap_oxide_scene_seen.h), so it survives a restart and a fresh room starts
+// clean. Nothing is shown or recorded until that key has been read, and while
+// the item feed is hidden the message waits rather than being spent unseen.
+static void AP_FeedOxideFinalOpenUpdate(void)
+{
+	int beatSecond;
+
+	if (!ctr_cfg_active() || !ap_feed_primed || !ap_hub_feed_on)
+		return;
+	if (!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown())
+		return;
+	if (sdata == NULL || sdata->gGT == NULL)
+		return;
+
+	beatSecond = CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0;
+	if (!AP_OxideFinalOpenMsgWanted(1, 1, 1, 0, AP_OxideFinalGoMode(), beatSecond))
+		return;
+
+	AP_FeedEnqueue("Oxide Final Challenge is open", OXIDE_LIGHT_GREEN, 1);
+	ap_net_oxide_open_msg_record();
 }
 
 int AP_LetterTokenEarned(int track, int didWin, int collected)

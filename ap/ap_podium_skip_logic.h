@@ -152,8 +152,8 @@ static inline int AP_PodiumSkipCleanGameMode2(int gameMode2)
 // play. This helper is that one condition.
 //
 // `apPresentationReady` is the relic threshold half of the predicate: for a
-// relic this is AP_OxideFinalEncounterPresentationReady(cfgActive,
-// vanillaRelics, offersFinal, finalRelicMet), the shipped gate, which already
+// relic this is AP_OxideFinalSceneReady(vanillaRelics) (issue #377: go mode for
+// the Final Challenge, and the scene not yet seen by this slot), which already
 // folds in ctr_cfg_active() and falls back to the retail 18-Sapphire rule when
 // no slot_data is active. Both call sites keep their own threshold inputs,
 // because CS_Camera_BoolGotoBoss reads the live currAdvProfile.numRelics channel
@@ -167,6 +167,49 @@ static inline int AP_PodiumRelicWillGotoOxide(int hasRelicPodium,
                                               int beatOxideSecond)
 {
 	return hasRelicPodium && apPresentationReady && beatOxideSecond == 0;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #377: local "Skip Cutscenes" option.
+//
+// The adventure-hub story scenes all start from the podium camera
+// (CS_Camera_ThTick_Podium): when CS_Camera_BoolGotoBoss() is true the podium
+// hands over to CS_Camera_ThTick_Boss, which loads a boss head into the other
+// hub's mempack and plays one of the BOSS_CUTSCENE_ORDER scripts. With the
+// option on, that hand-over is replaced by the podium's ordinary exit, the one
+// every other podium already takes (isCutsceneOver, podium thread dead,
+// CS_DestroyPodium_StartDriving, the AP terminal work, podiumRewardID cleared).
+// Every boss script is presentation only and ends in opcode 0x20, whose state
+// work (isCutsceneOver, CS_DestroyPodium_StartDriving, VEH_FREEZE_PODIUM) that
+// exit already covers; its overlayTransition reload is only needed after a
+// boss head was loaded, which a skip never does.
+//
+// The skipped set is therefore: a boss intro after a hub's last Trophy
+// (ROO/PAPU/KJOE/PINSTRIPE_START), a boss outro after its Key (the *_BEAT
+// scenes, and the Oxide scene the Gemstone outro chains into), and the Oxide
+// Final Challenge scene after a relic podium (OXIDE_RELICS_<hub>).
+//
+// When the skipped scene is, or chains into, the Oxide Final Challenge scene,
+// the once-per-seed flag is still recorded so the scene does not play later.
+// The watched path records it in two places: CS_Camera_ThTick_Podium for a
+// relic podium once the scene is ready, and CS_Thread.c opcode 0x21 when the
+// Gemstone key outro (PINSTRIPE_BEAT, index (GEM - GEM) * 2 + 1) redirects to
+// it. This is the same pair of conditions.
+static inline int AP_CutsceneSkipCoversOxideScene(int isRelicPodium,
+                                                  int isKeyPodium,
+                                                  int atGemstone,
+                                                  int oxideSceneReady)
+{
+	if (!oxideSceneReady)
+		return 0;
+	return isRelicPodium || (isKeyPodium && atGemstone);
+}
+
+// The skip applies only where the podium would otherwise hand over to a boss
+// scene; every other podium exit is already the ordinary one.
+static inline int AP_CutsceneSkipDecision(int optionEnabled, int wouldGotoBoss)
+{
+	return optionEnabled && wouldGotoBoss;
 }
 
 #endif // CTR_AP

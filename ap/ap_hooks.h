@@ -249,6 +249,16 @@ int AP_GateCountGemSum(void);   // all 5 gem colours  (idx 9..13)
 // Phase-1 vanilla rule (18 Sapphire). Returns non-zero when the door should open.
 int AP_OxideFinalOpen(void);
 int AP_OxideFinalVenueReady(void);
+// Issue #377: go mode for Oxide's Final Challenge (see ap/ap_oxide_cutscene.h),
+// and the once-per-seed scene decision the three scene sites and the podium-skip
+// keep rule share (ap/ap_oxide_scene.c). `vanillaRelics` is the caller's retail
+// relic count, used only without slot_data.
+int AP_OxideFinalGoMode(void);
+int AP_OxideFinalSceneReady(int vanillaRelics);
+// Call where the Oxide relic scene index is actually selected.
+void AP_OxideFinalSceneMarkPlayed(void);
+// Issue #377: local "Skip Cutscenes" option (ap/ap_podium_skip.c).
+int AP_SkipCutscenes(void);
 int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected
