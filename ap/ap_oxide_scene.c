@@ -13,6 +13,9 @@
 //   game/233/CS_Camera.c CS_Camera_ThTick_Podium  -- that scene is OXIDE_RELICS
 //   game/233/CS_Thread.c opcode 0x21              -- key-scene chain redirect
 //   ap/ap_podium_skip.c  AP_ShouldSkipPodium      -- keep that relic podium
+//   game/233/CS_Camera.c Skip Cutscenes exit      -- a skipped scene that is, or
+//                                                    chains into, this one still
+//                                                    records it as seen
 
 #include <common.h>
 

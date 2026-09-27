@@ -256,6 +256,10 @@ void ap_net_doors_record(unsigned bit);
 int ap_net_oxide_scene_known(void);
 int ap_net_oxide_scene_seen(void);
 void ap_net_oxide_scene_record(void);
+// #377: "Oxide Final Challenge is open" message, shown once per seed. Bit 1 of
+// the same key; gate on ap_net_oxide_scene_known() before showing.
+int ap_net_oxide_open_msg_shown(void);
+void ap_net_oxide_open_msg_record(void);
 
 #ifdef __cplusplus
 }

@@ -128,4 +128,17 @@ static inline int AP_OxideFinalSceneWanted(int cfgActive, int vanillaRelics,
 	                                      goMode && seenKnown && !seen);
 }
 
+// Issue #377: show "Oxide Final Challenge is open" once per seed, on reaching
+// go mode, whether or not the scene plays (the player may skip cutscenes, or
+// run no further relic race). Needs slot_data, the item feed primed (initial
+// inventory absorbed) and visible, and the server flag read; not once already
+// shown, and not after Oxide's second defeat.
+static inline int AP_OxideFinalOpenMsgWanted(int cfgActive, int feedReady,
+                                             int flagKnown, int shown,
+                                             int goMode, int beatOxideSecond)
+{
+	return cfgActive && feedReady && flagKnown && !shown && !beatOxideSecond &&
+	       goMode;
+}
+
 #endif // AP_OXIDE_CUTSCENE_H

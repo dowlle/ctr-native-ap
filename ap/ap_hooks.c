@@ -2842,6 +2842,7 @@ static int AP_FeedConsumeSelfRung(long long item)
 // initial-inventory absorb window. Called from the connect-reset block.
 static unsigned char ap_feed_letters_ready[CTR_CFG_LETTER_TRACK_COUNT];
 static void AP_FeedLetterReadyUpdates(void);
+static void AP_FeedOxideFinalOpenUpdate(void);
 
 void AP_FeedConnectReset(void)
 {
@@ -2993,6 +2994,7 @@ static void AP_FeedOnLocationSent(long code)
 void AP_FeedEndDrain(int drainedThisFrame)
 {
 	AP_FeedLetterReadyUpdates();
+	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
 	if (drainedThisFrame > 0 || !ap_net_is_connected())
@@ -6382,6 +6384,31 @@ static void AP_FeedLetterReadyUpdates(void)
 		}
 		ap_feed_letters_ready[track] = (unsigned char)ready;
 	}
+}
+
+// Issue #377: "Oxide Final Challenge is open", once per seed, on reaching go
+// mode for the Final Challenge, independent of whether the Oxide scene plays.
+// "Shown" is bit 1 of the same server data storage key as the scene flag
+// (ap/ap_oxide_scene_seen.h), so it survives a restart and a fresh room starts
+// clean. Nothing is shown or recorded until that key has been read, and while
+// the item feed is hidden the message waits rather than being spent unseen.
+static void AP_FeedOxideFinalOpenUpdate(void)
+{
+	int beatSecond;
+
+	if (!ctr_cfg_active() || !ap_feed_primed || !ap_hub_feed_on)
+		return;
+	if (!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown())
+		return;
+	if (sdata == NULL || sdata->gGT == NULL)
+		return;
+
+	beatSecond = CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_BEAT_OXIDE_SECOND) != 0;
+	if (!AP_OxideFinalOpenMsgWanted(1, 1, 1, 0, AP_OxideFinalGoMode(), beatSecond))
+		return;
+
+	AP_FeedEnqueue("Oxide Final Challenge is open", OXIDE_LIGHT_GREEN, 1);
+	ap_net_oxide_open_msg_record();
 }
 
 int AP_LetterTokenEarned(int track, int didWin, int collected)

@@ -364,7 +364,26 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 
 		if (rewardId != STATIC_BIG1)
 		{
+#ifdef CTR_AP
+			// Issue #377, local Skip Cutscenes option: a podium that would hand
+			// over to a boss or Oxide scene takes the ordinary exit below
+			// instead (see AP_CutsceneSkipDecision, ap/ap_podium_skip_logic.h).
+			// A skipped Oxide Final Challenge scene, or the Gemstone key outro
+			// that chains into it, still counts as seen for this slot.
+			int apSkipScene = AP_CutsceneSkipDecision(AP_SkipCutscenes(),
+			                                          CS_Camera_BoolGotoBoss() != 0);
+			if (apSkipScene &&
+			    AP_CutsceneSkipCoversOxideScene(
+			        rewardId == STATIC_RELIC, rewardId == STATIC_KEY,
+			        gGT->levelID == GEM_STONE_VALLEY,
+			        AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics)))
+			{
+				AP_OxideFinalSceneMarkPlayed(); // #377: skipped counts as seen
+			}
+			if (apSkipScene || CS_Camera_BoolGotoBoss() == 0)
+#else
 			if (CS_Camera_BoolGotoBoss() == 0)
+#endif
 			{
 				s16 hintID;
 

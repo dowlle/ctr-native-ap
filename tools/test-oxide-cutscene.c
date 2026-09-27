@@ -245,11 +245,44 @@ static void TestGoMode(void)
 	printf("ok    go-mode encounter/door matrix\n");
 }
 
+// Issue #377: "Oxide Final Challenge is open", once per seed on reaching go
+// mode, independent of the scene. Every input must be required.
+static void TestOpenMessage(void)
+{
+	int rows = 0;
+	CHECK("go mode, everything ready: shown",
+	      AP_OxideFinalOpenMsgWanted(1, 1, 1, 0, 1, 0));
+	for (int cfg = 0; cfg <= 1; cfg++)
+	for (int feed = 0; feed <= 1; feed++)
+	for (int known = 0; known <= 1; known++)
+	for (int shown = 0; shown <= 1; shown++)
+	for (int go = 0; go <= 1; go++)
+	for (int beat = 0; beat <= 1; beat++)
+	{
+		int want = cfg && feed && known && !shown && go && !beat;
+		rows++;
+		if (AP_OxideFinalOpenMsgWanted(cfg, feed, known, shown, go, beat) != want)
+		{
+			printf("FAIL  open message: cfg=%d feed=%d known=%d shown=%d go=%d beat=%d\n",
+			       cfg, feed, known, shown, go, beat);
+			failures++;
+		}
+	}
+	CHECK("open message matrix covers every input", rows == 64);
+	CHECK("already shown for this slot: never again",
+	      !AP_OxideFinalOpenMsgWanted(1, 1, 1, 1, 1, 0));
+	CHECK("flag not read yet: wait, do not spend the message",
+	      !AP_OxideFinalOpenMsgWanted(1, 1, 0, 0, 1, 0));
+	CHECK("independent of whether the scene played: the scene bit is not an input",
+	      AP_OxideFinalOpenMsgWanted(1, 1, 1, 0, 1, 0));
+}
+
 int main(void)
 {
 	struct PodiumState s;
 
 	TestGoMode();
+	TestOpenMessage();
 
 	// =====================================================================
 	// 1. RETAIL PARITY. Without slot_data every answer must be the vanilla

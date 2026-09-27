@@ -103,6 +103,13 @@ void AP_SkipPodium(int rewardId)
 	gGT->gameMode2 = AP_PodiumSkipCleanGameMode2(gGT->gameMode2);
 }
 
+// Issue #377: the local Skip Cutscenes preference, read by
+// CS_Camera_ThTick_Podium through AP_CutsceneSkipDecision.
+int AP_SkipCutscenes(void)
+{
+	return g_config.skipCutscenes ? 1 : 0;
+}
+
 // Relic results skip: gather the live facts for AP_RelicResultsSkipDecision.
 // Called every frame of the relic results (RR_EndEvent_DrawMenu).
 int AP_RelicResultsSkipWanted(void)

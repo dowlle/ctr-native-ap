@@ -138,6 +138,7 @@ static void ResetState(void)
 	memset(&sdata_static, 0, sizeof sdata_static);
 	sdata->gGT = &gGT;
 	g_config.skipPodium = false;
+	g_config.skipCutscenes = false;
 	g_cfgActive = 0;
 	g_goMode = 0;
 	g_sceneKnown = 0;
@@ -603,6 +604,116 @@ static void TestBoolGotoBossTruthTable(void)
 	       rows);
 }
 
+// ── Skip Cutscenes (issue #377) ─────────────────────────────────────────────
+//
+// game/233/CS_Camera.c CS_Camera_ThTick_Podium cannot be linked off-engine, so
+// its Skip Cutscenes block is composed here from the SAME production helpers,
+// in the same order: the decision, then the Oxide-coverage predicate fed by the
+// LINKED AP_OxideFinalSceneReady, then the LINKED AP_OxideFinalSceneMarkPlayed.
+// Returns 1 when the podium takes the ordinary exit instead of a scene.
+static int CameraSkipSite(int rewardId, int atGemstone, int wouldGotoBoss,
+                          int vanillaRelics)
+{
+	int skip = AP_CutsceneSkipDecision(AP_SkipCutscenes(), wouldGotoBoss);
+	if (skip && AP_CutsceneSkipCoversOxideScene(
+	                rewardId == TEST_RELIC, rewardId == TEST_KEY, atGemstone,
+	                AP_OxideFinalSceneReady(vanillaRelics)))
+		AP_OxideFinalSceneMarkPlayed();
+	return skip;
+}
+
+static void TestCutsceneSkip(void)
+{
+	ResetState();
+	expect("Skip Cutscenes follows the option (off)", AP_SkipCutscenes(), 0);
+	g_config.skipCutscenes = true;
+	expect("Skip Cutscenes follows the option (on)", AP_SkipCutscenes(), 1);
+
+	// The decision: only a podium that would hand over to a scene.
+	expect("option off, scene pending: plays", AP_CutsceneSkipDecision(0, 1), 0);
+	expect("option on, scene pending: skipped", AP_CutsceneSkipDecision(1, 1), 1);
+	expect("option on, ordinary podium: untouched", AP_CutsceneSkipDecision(1, 0), 0);
+	expect("option off, ordinary podium: untouched", AP_CutsceneSkipDecision(0, 0), 0);
+
+	// Which skipped scenes are, or chain into, the Final Challenge scene.
+	for (int relic = 0; relic <= 1; relic++)
+	for (int key = 0; key <= 1; key++)
+	for (int gem = 0; gem <= 1; gem++)
+	for (int ready = 0; ready <= 1; ready++)
+	{
+		int want = ready && (relic || (key && gem));
+		if (AP_CutsceneSkipCoversOxideScene(relic, key, gem, ready) != want)
+		{
+			printf("FAIL covers-Oxide: relic=%d key=%d gem=%d ready=%d\n",
+			       relic, key, gem, ready);
+			g_failures++;
+		}
+	}
+	printf("ok   covers-Oxide truth table\n");
+
+	// Go-mode relic podium with the scene unseen: skipped, and recorded, so the
+	// next relic podium does not go to the scene either.
+	ResetState();
+	g_config.skipCutscenes = true;
+	g_cfgActive = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
+	expect("go-mode relic: the podium would go to the scene",
+	       BoolGotoBossAp(1, TEST_RELIC, 0, 1, 1, 0, 0), 1);
+	expect("go-mode relic: skipped", CameraSkipSite(TEST_RELIC, 0, 1, 0), 1);
+	expect("skipped Final Challenge scene is recorded as seen", g_sceneRecords, 1);
+	expect("and does not play on a later relic podium",
+	       BoolGotoBossAp(1, TEST_RELIC, 0, 1, 1, g_sceneSeen, 0), 0);
+
+	// The Gemstone key outro chains into the scene (opcode 0x21): recorded too.
+	ResetState();
+	g_config.skipCutscenes = true;
+	g_cfgActive = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
+	expect("Gemstone key outro skipped", CameraSkipSite(TEST_KEY, 1, 1, 0), 1);
+	expect("Gemstone key outro chain is recorded", g_sceneRecords, 1);
+
+	// Other hubs' key outros and the boss intros never reach the scene.
+	ResetState();
+	g_config.skipCutscenes = true;
+	g_cfgActive = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
+	expect("other hub key outro skipped", CameraSkipSite(TEST_KEY, 0, 1, 0), 1);
+	expect("boss intro after the last Trophy skipped",
+	       CameraSkipSite(TEST_TROPHY, 0, 1, 0), 1);
+	expect("neither records the Final Challenge scene", g_sceneRecords, 0);
+
+	// Not in go mode, or the flag not read yet: skipped, nothing recorded.
+	ResetState();
+	g_config.skipCutscenes = true;
+	g_cfgActive = 1;
+	g_goMode = 0;
+	g_sceneKnown = 1;
+	CameraSkipSite(TEST_KEY, 1, 1, 0);
+	g_goMode = 1;
+	g_sceneKnown = 0;
+	CameraSkipSite(TEST_KEY, 1, 1, 0);
+	expect("no go mode or unknown flag: nothing recorded", g_sceneRecords, 0);
+
+	// Option off: the scene path is untouched and nothing is recorded here
+	// (the watched path records at its own selection site).
+	ResetState();
+	g_cfgActive = 1;
+	g_goMode = 1;
+	g_sceneKnown = 1;
+	expect("option off: podium goes to the scene", CameraSkipSite(TEST_RELIC, 0, 1, 0), 0);
+	expect("option off: nothing recorded by the skip", g_sceneRecords, 0);
+
+	// Retail session (no slot_data): the skip still works, records nothing.
+	ResetState();
+	g_config.skipCutscenes = true;
+	expect("no slot_data: retail relic scene skipped",
+	       CameraSkipSite(TEST_RELIC, 0, 1, 18), 1);
+	expect("no slot_data: nothing recorded", g_sceneRecords, 0);
+}
+
 // ── Config persistence ──────────────────────────────────────────────────────
 
 static void TestConfig(void)
@@ -675,9 +786,38 @@ static void TestConfig(void)
 			fclose(f);
 		}
 		g_config.skipPodium = false;
+		g_config.skipCutscenes = false;
 		NativeConfig_Load();
 		expect("missing key leaves skipPodium off",
 		       g_config.skipPodium ? 1 : 0, 0);
+		expect("missing key leaves skipCutscenes off",
+		       g_config.skipCutscenes ? 1 : 0, 0);
+	}
+
+	// Skip Cutscenes (issue #377): same section, same round trip.
+	{
+		const ConfigEntry *c = FindEntry("Video & QoL", "skip_cutscenes");
+		expect("skip_cutscenes entry present", c != NULL, 1);
+		if (c != NULL)
+		{
+			expect("skip_cutscenes is CFG_BOOL", c->type == CFG_BOOL, 1);
+			expect("skip_cutscenes points at g_config.skipCutscenes",
+			       c->valuePtr == &g_config.skipCutscenes, 1);
+			expect("skip_cutscenes is labelled Skip Cutscenes",
+			       strcmp(c->label, "Skip Cutscenes") == 0, 1);
+		}
+		SetEntry("Video & QoL", "skip_cutscenes", 1);
+		NativeConfig_Save();
+		g_config.skipCutscenes = false;
+		NativeConfig_Load();
+		expect("persisted skipCutscenes survives a load",
+		       g_config.skipCutscenes ? 1 : 0, 1);
+		SetEntry("Video & QoL", "skip_cutscenes", 0);
+		NativeConfig_Save();
+		g_config.skipCutscenes = true;
+		NativeConfig_Load();
+		expect("persisted skipCutscenes off survives a load",
+		       g_config.skipCutscenes ? 1 : 0, 0);
 	}
 }
 
@@ -686,6 +826,7 @@ int main(void)
 	// The built-in default must be off, so an unset option never changes
 	// behavior. Asserted before any test touches g_config.
 	expect("default skipPodium is off", g_config.skipPodium ? 1 : 0, 0);
+	expect("default skipCutscenes is off", g_config.skipCutscenes ? 1 : 0, 0);
 
 	TestOxideRelicPredicate();
 	TestWrapperClassification();
@@ -693,6 +834,7 @@ int main(void)
 	TestRelicResultsSkip();
 	TestMutation();
 	TestBoolGotoBossTruthTable();
+	TestCutsceneSkip();
 	TestConfig();
 
 	if (g_failures)

@@ -24,6 +24,8 @@ net += extract(net_source, 'extern "C" int ap_net_oxide_scene_known(void)')
 net += next(line for line in net_source.splitlines(True)
             if line.startswith('extern "C" int ap_net_oxide_scene_seen('))
 net += extract(net_source, 'extern "C" void ap_net_oxide_scene_record(void)')
+net += extract(net_source, 'extern "C" int ap_net_oxide_open_msg_shown(void)')
+net += extract(net_source, 'extern "C" void ap_net_oxide_open_msg_record(void)')
 
 fixture = r'''
 #include <cassert>
@@ -33,10 +35,11 @@ void AP_LogLine(const char*) {}
 #define AP_NET_GUARD(label, ...) __VA_ARGS__
 struct APClient {
  struct DataStorageOperation {std::string operation; nlohmann::json value;};
- int calls=0; bool success=true; std::string key;
+ int calls=0, lastValue=0; bool success=true; std::string key;
  bool Set(const std::string &k,int d,bool reply,std::initializer_list<DataStorageOperation> ops) {
   assert(d==0 && reply); assert(ops.begin()->operation=="or");
-  assert(ops.begin()->value.get<int>()==1);
+  lastValue=ops.begin()->value.get<int>();
+  assert(lastValue>=1 && lastValue<=3);
   calls++; key=k; return success;
  }
 };
@@ -59,6 +62,7 @@ int main() {
  /* The play is recorded and sent once. */
  ap_net_oxide_scene_record();
  assert(ap_net_oxide_scene_seen() && client.calls==1 && client.key==g_oxide_scene.key);
+ assert(client.lastValue==1);
  ap_net_oxide_scene_record(); ap_oxide_scene_flush(); assert(client.calls==1);
  g_oxide_scene.reply(1); assert(!g_oxide_scene.pending);
  /* A failed Set stays pending and goes out on the next poll flush. */
@@ -75,6 +79,23 @@ int main() {
  /* A refused seed records nothing. */
  g_oxide_scene.connect("host","seed:d",0,1); g_oxide_scene.retrieved(nullptr);
  g_rejected=true; ap_net_oxide_scene_record(); assert(!ap_net_oxide_scene_seen());
+ ap_net_oxide_open_msg_record(); assert(!ap_net_oxide_open_msg_shown());
+ g_rejected=false;
+ /* The open message is bit 1 of the same key, recorded and sent once, and
+    independent of the scene bit. */
+ g_oxide_scene.connect("host","seed:e",0,1); g_oxide_scene.retrieved(nullptr);
+ int before=client.calls;
+ ap_net_oxide_open_msg_record();
+ assert(ap_net_oxide_open_msg_shown() && !ap_net_oxide_scene_seen());
+ assert(client.calls==before+1 && client.lastValue==2 && client.key==g_oxide_scene.key);
+ ap_net_oxide_open_msg_record(); assert(client.calls==before+1);
+ g_oxide_scene.reply(2);
+ ap_net_oxide_scene_record(); assert(client.calls==before+2 && client.lastValue==1);
+ g_oxide_scene.reply(3);
+ assert(ap_net_oxide_scene_seen() && ap_net_oxide_open_msg_shown() && !g_oxide_scene.pending);
+ /* Shown on the server before this session: never shown again. */
+ g_oxide_scene.connect("host","seed:f",0,1); g_oxide_scene.retrieved(2);
+ assert(ap_net_oxide_open_msg_shown() && !ap_net_oxide_scene_seen());
  std::puts("ok");
 }
 '''
@@ -92,19 +113,38 @@ assert re.search(r'ap_doors_flush\(\);\n\tap_oxide_scene_flush\(\);\n\}', net_so
 camera = (root / 'game/233/CS_Camera.c').read_text()
 thread = (root / 'game/233/CS_Thread.c').read_text()
 skip = (root / 'ap/ap_podium_skip.c').read_text()
-for name, text, n in (('CS_Camera.c', camera, 2), ('CS_Thread.c', thread, 1),
+for name, text, n in (('CS_Camera.c', camera, 3), ('CS_Thread.c', thread, 1),
                       ('ap_podium_skip.c', skip, 1)):
     assert text.count('AP_OxideFinalSceneReady(') == n, name
     assert 'AP_OxideFinalEncounterPresentationReady' not in text, name
 # The play is recorded only where the Oxide relic index is committed, after
 # both CS_Camera.c sites have asked.
-mark = camera.index('AP_OxideFinalSceneMarkPlayed();')
-assert camera.count('AP_OxideFinalSceneMarkPlayed();') == 1
+# Two recording sites in CS_Camera.c: the Skip Cutscenes exit (the skipped
+# scene is, or chains into, the Final Challenge scene) and the watched relic
+# scene selection.
+assert camera.count('AP_OxideFinalSceneMarkPlayed();') == 2
+skip_mark = camera.index('AP_OxideFinalSceneMarkPlayed();')
+assert camera.rindex('AP_CutsceneSkipCoversOxideScene(', 0, skip_mark) > \
+    camera.rindex('AP_CutsceneSkipDecision(AP_SkipCutscenes()', 0, skip_mark)
+assert camera.rindex('AP_OxideFinalSceneReady(', 0, skip_mark) > \
+    camera.rindex('AP_CutsceneSkipCoversOxideScene(', 0, skip_mark)
+assert camera.index('if (apSkipScene || CS_Camera_BoolGotoBoss() == 0)') > skip_mark
+mark = camera.index('AP_OxideFinalSceneMarkPlayed();', skip_mark + 1)
 assert camera.rindex('OXIDE_RELICS_GEMSTONE;', 0, mark) > camera.rindex('AP_OxideFinalSceneReady(', 0, mark)
 tmark = thread.index('AP_OxideFinalSceneMarkPlayed();')
 assert thread.count('AP_OxideFinalSceneMarkPlayed();') == 1
 assert thread.rindex('D233.bossCutsceneIndex = 9;', 0, tmark) > thread.rindex('AP_OxideFinalSceneReady(', 0, tmark)
 assert 'AP_OxideFinalSceneMarkPlayed' not in skip
+
+# The open message: one feed site, gated on the flag barrier and the shown bit,
+# recording only after it enqueued the line.
+hooks = (root / 'ap/ap_hooks.c').read_text()
+msg = extract(hooks, 'static void AP_FeedOxideFinalOpenUpdate(void)\n{')
+assert hooks.count('AP_FeedOxideFinalOpenUpdate();') == 1
+assert '!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown()' in msg
+assert 'AP_OxideFinalOpenMsgWanted(' in msg and 'AP_OxideFinalGoMode()' in msg
+assert msg.index('AP_FeedEnqueue("Oxide Final Challenge is open"') < msg.index('ap_net_oxide_open_msg_record();')
+assert hooks.count('ap_net_oxide_open_msg_record();') == 1
 
 with tempfile.TemporaryDirectory() as tmp:
     src = Path(tmp) / 'net.cpp'

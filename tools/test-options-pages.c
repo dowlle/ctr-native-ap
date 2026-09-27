@@ -122,7 +122,7 @@ int main(void)
 			"texture_filtering", "dithering", "increase_draw_distance",
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
-			"skip_intro", "skip_hints", "skip_podium", "ai_difficulty",
+			"skip_intro", "skip_hints", "skip_podium", "skip_cutscenes", "ai_difficulty",
 			"mute_when_unfocused", NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
@@ -140,6 +140,7 @@ int main(void)
 	ExpectSection("skip_intro", "Video & QoL");
 	ExpectSection("mute_when_unfocused", "Video & QoL");
 	ExpectSection("skip_podium", "Video & QoL");
+	ExpectSection("skip_cutscenes", "Video & QoL");
 	ExpectSection("skip_hints", "Archipelago");
 	ExpectSection("ai_difficulty", "Archipelago");
 

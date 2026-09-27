@@ -257,6 +257,8 @@ int AP_OxideFinalGoMode(void);
 int AP_OxideFinalSceneReady(int vanillaRelics);
 // Call where the Oxide relic scene index is actually selected.
 void AP_OxideFinalSceneMarkPlayed(void);
+// Issue #377: local "Skip Cutscenes" option (ap/ap_podium_skip.c).
+int AP_SkipCutscenes(void);
 int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected

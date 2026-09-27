@@ -939,8 +939,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		if (g_connected && scene != keys.end()) {
 			g_oxide_scene.retrieved(scene->second);
 			char line[128];
-			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] retrieved valid=%d seen=%d pending=%d\n",
-			              g_oxide_scene.valid, g_oxide_scene.seen, g_oxide_scene.pending);
+			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] retrieved valid=%d bits=%u pending=%u\n",
+			              g_oxide_scene.valid, g_oxide_scene.bits, g_oxide_scene.pending);
 			AP_LogLine(line);
 			ap_oxide_scene_flush();
 		}
@@ -983,8 +983,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		if (g_connected && key == g_oxide_scene.key) {
 			g_oxide_scene.reply(value);
 			char line[128];
-			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] reply valid=%d seen=%d pending=%d\n",
-			              g_oxide_scene.valid, g_oxide_scene.seen, g_oxide_scene.pending);
+			std::snprintf(line, sizeof line, "[AP OXIDE SCENE] reply valid=%d bits=%u pending=%u\n",
+			              g_oxide_scene.valid, g_oxide_scene.bits, g_oxide_scene.pending);
 			AP_LogLine(line);
 			ap_oxide_scene_flush();
 		}
@@ -1549,7 +1549,7 @@ static void ap_oxide_scene_flush()
 	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
 	AP_NET_GUARD("oxide_scene_set", {
 		APClient::DataStorageOperation op;
-		op.operation = "or"; op.value = 1;
+		op.operation = "or"; op.value = g_oxide_scene.pending;
 		if (g_ap->Set(g_oxide_scene.key, 0, true, {op})) g_oxide_scene.sent = true;
 	});
 }
@@ -1558,12 +1558,25 @@ extern "C" int ap_net_oxide_scene_known(void)
 {
 	return g_connected && !g_rejected && g_oxide_scene.known();
 }
-extern "C" int ap_net_oxide_scene_seen(void) { return g_oxide_scene.seen; }
+extern "C" int ap_net_oxide_scene_seen(void) { return g_oxide_scene.seen(); }
 extern "C" void ap_net_oxide_scene_record(void)
 {
-	if (g_rejected || !g_oxide_scene.record()) return;
+	if (g_rejected || !g_oxide_scene.record(AP_OXIDE_FLAG_SCENE)) return;
 	char line[128];
 	std::snprintf(line, sizeof line, "[AP OXIDE SCENE] played; recording seen (known=%d)\n",
+	              (int)g_oxide_scene.known());
+	AP_LogLine(line);
+	ap_oxide_scene_flush();
+}
+extern "C" int ap_net_oxide_open_msg_shown(void)
+{
+	return g_oxide_scene.has(AP_OXIDE_FLAG_OPEN_MSG);
+}
+extern "C" void ap_net_oxide_open_msg_record(void)
+{
+	if (g_rejected || !g_oxide_scene.record(AP_OXIDE_FLAG_OPEN_MSG)) return;
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP OXIDE SCENE] open message shown; recording (known=%d)\n",
 	              (int)g_oxide_scene.known());
 	AP_LogLine(line);
 	ap_oxide_scene_flush();
