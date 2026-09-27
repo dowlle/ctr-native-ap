@@ -1141,8 +1141,8 @@ static void case_wave2_batch1_families(void)
 	       AP_TRAP_DESC[AP_TRAP_FLATTEN].duplicate, AP_TRAP_DUP_SERIALIZE);
 	expect("Flatten takes the engine's recovery, not a timer",
 	       AP_TRAP_DESC[AP_TRAP_FLATTEN].duration, AP_TRAP_DURATION_ENGINE_NATURAL);
-	expect("Flatten is eligible everywhere, hubs included",
-	       AP_TRAP_DESC[AP_TRAP_FLATTEN].contexts, AP_TRAP_CTX_ALL);
+	expect("Flatten is eligible everywhere except the hub (#416 ruling)",
+	       AP_TRAP_DESC[AP_TRAP_FLATTEN].contexts, AP_TRAP_CTX_ALL_NO_HUB);
 }
 
 // Wumpa Wipeout: hub-ineligible, gated on the juiced threshold, one second of
@@ -1658,29 +1658,42 @@ static void case_flatten_recovery_gate(void)
 	       AP_TrapFlattenRecovered(AP_TRAP_KS_DRIFTING, 0), 1);
 }
 
-// Scheduler-side lifecycle: one second of warning, hub eligible, engine-natural
-// completion, and duplicates that serialize instead of stacking.
+// Scheduler-side lifecycle: a hub receipt waits for a race (#416 ruling), then
+// one second of warning, engine-natural completion, and duplicates that
+// serialize instead of stacking.
 static void case_flatten_lifecycle(void)
 {
 	AP_TrapSched s;
 	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
 
 	AP_TrapSchedReset(&s);
 	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
 
 	AP_TrapSchedStep(&s, &hub);
 	drain(&s);
-	expect("an eligible receipt goes straight to its warning",
+	run_ms(&s, &hub, 5000);
+	drain(&s);
+	expect("a hub receipt does not warn", count_ev(AP_TRAP_EV_WARN, AP_TRAP_FLATTEN), 0);
+	expect("a hub receipt does not fire", count_ev(AP_TRAP_EV_FIRE, AP_TRAP_FLATTEN), 0);
+	expect("Flatten never activates in a hub", AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 0);
+	expect("the hub copy is retained for the next race",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_FLATTEN), 1);
+
+	race.mapEpoch = 2;
+	AP_TrapSchedStep(&s, &race);
+	drain(&s);
+	expect("entering a race goes straight to its warning",
 	       count_ev(AP_TRAP_EV_WARN, AP_TRAP_FLATTEN), 1);
-	run_ms(&s, &hub, 900);
+	run_ms(&s, &race, 900);
 	expect("the warning holds the squish for its full second",
 	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 0);
-	run_ms(&s, &hub, 100);
-	expect("Flatten activates in a hub", AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
+	run_ms(&s, &race, 100);
+	expect("Flatten activates in the race", AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
 
 	// Engine-natural: the runtime holds the slot through the squish, the spin and
 	// the grace interval, and only then reports done.
-	run_ms(&s, &hub, 60000);
+	run_ms(&s, &race, 60000);
 	expect("it holds the slot until the runtime reports recovery",
 	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
 	AP_TrapSchedEffectDone(&s, AP_TRAP_FLATTEN);

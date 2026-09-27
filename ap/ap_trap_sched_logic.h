@@ -221,7 +221,11 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	// inflict, and what a turbo-landing driver inflicts (VehPhysCrash.c:192),
 	// so Flatten keeps its frozen name and its ruling: drive the engine's own
 	// dispatch and take its natural recovery rather than timing anything here.
-	{"Flatten", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_INSTANT,
+	// Context ruling revised 2026-09-27 (#416): Flatten waits for a race like
+	// every other trap and never fires in an Adventure hub. The hub hold-back in
+	// AP_TrapSchedEligible only covers fixed-length traps, so the row itself
+	// has to exclude the hub.
+	{"Flatten", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 	{"Item Reroll", AP_TRAP_CTX_WEAPONS, AP_TRAP_TIMING_INSTANT,
