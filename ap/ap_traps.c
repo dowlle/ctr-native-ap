@@ -508,12 +508,9 @@ static int g_trap_use_item = -1;
 static int g_trap_use_count = 0;
 
 // Flatten walks two stages, because the squish it asks for can be refused and
-// then has an aftermath. PENDING means the copy has fired but the engine has not
-// accepted the damage yet; APPLIED means it did, and the copy is waiting out the
-// engine's own recovery plus the ruled grace interval.
-static int g_trap_flatten_pending = 0;
-static int g_trap_flatten_applied = 0;
-static int g_trap_flatten_grace_ms = 0;
+// then has an aftermath. The machine itself is AP_TrapFlattenStage in
+// ap_trap_sched_logic.h.
+static AP_TrapFlattenStage g_trap_flatten;
 static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
 
 // The kart-state values ap_trap_observe_logic.h repeats as plain integers really
@@ -580,15 +577,21 @@ static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
 // 90 frames later, and only then has the trap delivered what it promised.
 static void AP_TrapPollReroll(struct Driver *local)
 {
+	int gate;
 	if (g_trap_reroll_excluded < 0)
 		return;
-	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_ITEM_REROLL))
+	gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL);
+	if (gate == AP_TRAP_POLL_GONE)
 	{
 		// The slot went away underneath us (map change, connect reset). Drop the
 		// exclusion so it cannot leak onto an unrelated later roll.
 		g_trap_reroll_excluded = -1;
 		return;
 	}
+	// Suspended by a mask rescue or a mask weapon (#416): the slot is still ours,
+	// so keep the exclusion and judge the roll once the sequence ends.
+	if (gate == AP_TRAP_POLL_HOLD)
+		return;
 	if (local == 0)
 		return;
 	// A roll still in flight is the only reason to keep waiting. Anything else,
@@ -623,7 +626,10 @@ static void AP_TrapArmForcedUse(struct Driver *local)
 // two can never disagree about whether the copy was spent.
 static int AP_TrapForcedUseOwed(struct Driver *local)
 {
-	if (!g_trap_use_pending || !AP_TrapSchedActive(&g_sched, AP_TRAP_FORCED_USE))
+	// A suspended copy is still owed (#416): a mask rescue pauses it, it does
+	// not spend it.
+	if (!g_trap_use_pending ||
+	    AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE) == AP_TRAP_POLL_GONE)
 		return 0;
 	// No driver to read means no evidence the use landed, and the ruling is to
 	// wait rather than be consumed unsuccessfully, so the trap is still owed.
@@ -641,13 +647,17 @@ static int AP_TrapForcedUseOwed(struct Driver *local)
 // slot on its own does not.
 static void AP_TrapPollForcedUse(struct Driver *local)
 {
+	int gate;
 	if (!g_trap_use_pending)
 		return;
-	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_FORCED_USE))
+	gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE);
+	if (gate == AP_TRAP_POLL_GONE)
 	{
 		g_trap_use_pending = 0;
 		return;
 	}
+	if (gate == AP_TRAP_POLL_HOLD)
+		return;
 	if (AP_TrapForcedUseOwed(local))
 		return;
 	g_trap_use_pending = 0;
@@ -765,13 +775,20 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 	for (effect = 0; effect < AP_TRAP_EFFECT_COUNT; effect++)
 	{
 		int done = 0;
+		int gate;
 		if (!g_trap_spawn_pending[effect])
 			continue;
-		if (!AP_TrapSchedActive(&g_sched, effect))
+		gate = AP_TrapSchedPollGate(&g_sched, effect);
+		if (gate == AP_TRAP_POLL_GONE)
 		{
 			g_trap_spawn_pending[effect] = 0;
 			continue;
 		}
+		// The scripted check above is this frame's; the slot's suspension is
+		// last step's. On the first frame after a mask sequence the slot is
+		// still suspended and must wait one tick, not lose its spawn (#416).
+		if (gate == AP_TRAP_POLL_HOLD)
+			continue;
 		if (effect == AP_TRAP_WARPBALL_AMBUSH)
 			done = AP_TrapFireWarpball(gGT, local);
 		else if ((effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION) &&
@@ -790,49 +807,29 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 // polls, before the map boundary, for the same reason they do.
 static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
 {
-	if (!g_trap_flatten_pending && !g_trap_flatten_applied)
-		return;
-	if (!AP_TrapSchedActive(&g_sched, AP_TRAP_FLATTEN))
-	{
-		// Map change or connect reset took the slot; drop the stage machine.
-		g_trap_flatten_pending = 0;
-		g_trap_flatten_applied = 0;
-		g_trap_flatten_grace_ms = 0;
-		return;
-	}
+	int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN);
+	int recovered = local != 0 &&
+	    AP_TrapFlattenRecovered((int)local->kartState, (int)local->squishTimer);
 
-	if (g_trap_flatten_pending)
+	switch (AP_TrapFlattenStagePoll(&g_trap_flatten, gate, local != 0, recovered,
+	                                AP_TRAP_FLATTEN_GRACE_MS, elapsedMs))
 	{
+	case AP_TRAP_FLATTEN_TRY:
 		// Retry until the driver state becomes valid. A mask, a shield, a running
 		// invincibility window or another damage animation all mean "not yet",
 		// and the ruling is to wait for a valid state rather than consume the
 		// copy on a squish that never happened.
-		if (!AP_TrapApplyFlatten(local))
-			return;
-		g_trap_flatten_pending = 0;
-		g_trap_flatten_applied = 1;
-		g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
-		return;
+		if (AP_TrapApplyFlatten(local))
+			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
+		break;
+	case AP_TRAP_FLATTEN_DONE:
+		// Recovery and the grace interval are over: release the slot to a
+		// serialized duplicate.
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
+		break;
+	default:
+		break;
 	}
-
-	// Applied: wait out the engine's own squish and spin, then the grace interval,
-	// before releasing the slot to a serialized duplicate.
-	if (local == 0)
-		return;
-	if (!AP_TrapFlattenRecovered((int)local->kartState, (int)local->squishTimer))
-	{
-		g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
-		return;
-	}
-	if (g_trap_flatten_grace_ms > 0)
-	{
-		g_trap_flatten_grace_ms -= elapsedMs;
-		if (g_trap_flatten_grace_ms > 0)
-			return;
-	}
-	g_trap_flatten_applied = 0;
-	g_trap_flatten_grace_ms = 0;
-	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
 }
 
 // Apply one instant effect at the moment the scheduler fires it. Called from the
@@ -861,15 +858,9 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
 		// ends. If the driver is mid-animation or protected, the poll retries.
-		g_trap_flatten_pending = 1;
-		g_trap_flatten_applied = 0;
-		g_trap_flatten_grace_ms = 0;
+		AP_TrapFlattenStageFired(&g_trap_flatten);
 		if (AP_TrapApplyFlatten(local))
-		{
-			g_trap_flatten_pending = 0;
-			g_trap_flatten_applied = 1;
-			g_trap_flatten_grace_ms = AP_TRAP_FLATTEN_GRACE_MS;
-		}
+			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
 		break;
 	case AP_TRAP_WARPBALL_AMBUSH:
 	case AP_TRAP_NITRO:
@@ -993,9 +984,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
-	g_trap_flatten_pending = 0;
-	g_trap_flatten_applied = 0;
-	g_trap_flatten_grace_ms = 0;
+	AP_TrapFlattenStageClear(&g_trap_flatten);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_trap_spawn_pending[e] = 0;
 
@@ -1255,8 +1244,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// so the two cannot disagree about whether the copy was spent.
 		int refireForcedUse = AP_TrapForcedUseOwed(local);
 		// Same rule for Flatten: only a copy still owed its squish comes back.
-		int refireFlatten =
-		    g_trap_flatten_pending && AP_TrapSchedActive(&g_sched, AP_TRAP_FLATTEN);
+		int refireFlatten = AP_TrapFlattenOwedAtBoundary(
+		    &g_trap_flatten, AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN));
 		int refireNitro = g_trap_spawn_pending[AP_TRAP_NITRO];
 		int refirePotion = g_trap_spawn_pending[AP_TRAP_RED_POTION];
 		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
@@ -1276,9 +1265,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// fired but never got its squish away is re-armed below for the same
 		// reason Forced Use is; one that already landed has delivered its harm,
 		// and its leftover recovery wait belongs to a map that is going away.
-		g_trap_flatten_pending = 0;
-		g_trap_flatten_applied = 0;
-		g_trap_flatten_grace_ms = 0;
+		AP_TrapFlattenStageClear(&g_trap_flatten);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_trap_spawn_pending[e] = 0;
 
