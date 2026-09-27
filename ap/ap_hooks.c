@@ -3542,6 +3542,9 @@ static void AP_FxSeenLoad(void)
 	char line[320];
 
 	ap_fx_seen_max = -1;
+	// A store queued on the background writer (AP_FxSeenStore) must land before
+	// the file is read back, or a reconnect could read the previous index.
+	ap_file_writer_flush(2000);
 	if (!ap_net_seed_name(ap_fx_seed, sizeof ap_fx_seed))
 		ap_fx_seed[0] = '\0';
 	if (!ap_net_slot_name(ap_fx_slot, sizeof ap_fx_slot))
@@ -3564,15 +3567,30 @@ static void AP_FxSeenLoad(void)
 	fclose(f);
 }
 
-static void AP_FxSeenStore(void)
+// One store request, copied into the background writer's queue. The job only
+// reads this snapshot, never the live ap_fx_* globals.
+typedef struct AP_FxSeenStoreJob
 {
-	// Read-modify-write the tiny file, preserving other seed/slot rows.
-	FILE *f;
-	char rows[32][512];
-	int nrows = 0, i;
+	char      endpoint[sizeof ap_fx_endpoint];
+	char      seed[sizeof ap_fx_seed];
+	char      slot[sizeof ap_fx_slot];
+	long long max;
+} AP_FxSeenStoreJob;
 
-	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
-		return;
+// Writer-thread job: read-modify-write the tiny file, preserving other
+// seed/slot rows. Same rows and same row format as the synchronous version it
+// replaces; the new content replaces the file in one move.
+static int AP_FxSeenWriteJob(const void *payload, size_t len)
+{
+	const AP_FxSeenStoreJob *j = (const AP_FxSeenStoreJob *)payload;
+	static char rows[32][512]; // writer thread only
+	char out[32 * 512 + 512];
+	size_t used = 0;
+	FILE *f;
+	int nrows = 0, i, n;
+
+	if (len != sizeof *j)
+		return 0;
 	f = fopen(AP_FXSEEN_FILE, "r");
 	if (f != NULL)
 	{
@@ -3580,20 +3598,43 @@ static void AP_FxSeenStore(void)
 		{
 			AP_FxSeenRow row;
 			if (AP_FxSeenParseRow(rows[nrows], &row) &&
-			    AP_FxSeenRowMatches(&row, ap_fx_endpoint, ap_fx_seed, ap_fx_slot))
+			    AP_FxSeenRowMatches(&row, j->endpoint, j->seed, j->slot))
 				continue; // our old row: superseded below
 			nrows++;
 		}
 		fclose(f);
 	}
-	f = fopen(AP_FXSEEN_FILE, "w");
-	if (f == NULL)
-		return;
 	for (i = 0; i < nrows; i++)
-		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%s\t%lld\n", ap_fx_endpoint, ap_fx_seed, ap_fx_slot,
-	        ap_fx_seen_max);
-	fclose(f);
+	{
+		size_t rl = strlen(rows[i]);
+		memcpy(out + used, rows[i], rl);
+		used += rl;
+	}
+	n = snprintf(out + used, sizeof out - used, "%s\t%s\t%s\t%lld\n",
+	             j->endpoint, j->seed, j->slot, j->max);
+	if (n < 0 || (size_t)n >= sizeof out - used)
+		return 0;
+	used += (size_t)n;
+	return ap_file_writer_replace_file(AP_FXSEEN_FILE, out, used);
+}
+
+// Called from the item drain whenever the high-water index moves, i.e. on
+// every new live item. The file used to be read and rewritten right here on
+// the game thread; a 0.2.1 field log has a 2084 ms item= section on a single
+// live item receipt with no other file I/O in that section. The write now
+// runs on the background writer (ap_file_writer.h).
+static void AP_FxSeenStore(void)
+{
+	AP_FxSeenStoreJob j;
+
+	if (ap_fx_endpoint[0] == '\0' || ap_fx_seed[0] == '\0')
+		return;
+	memset(&j, 0, sizeof j);
+	snprintf(j.endpoint, sizeof j.endpoint, "%s", ap_fx_endpoint);
+	snprintf(j.seed, sizeof j.seed, "%s", ap_fx_seed);
+	snprintf(j.slot, sizeof j.slot, "%s", ap_fx_slot);
+	j.max = ap_fx_seen_max;
+	ap_file_writer_submit(AP_FILE_WRITER_SLOT_FXSEEN, AP_FxSeenWriteJob, &j, sizeof j);
 }
 
 int AP_GateCount(int itemType)
