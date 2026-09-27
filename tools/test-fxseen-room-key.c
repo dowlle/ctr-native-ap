@@ -1,3 +1,7 @@
+// The 0.2.1 local effect ledger rows. Since #299 the marker lives in the room's
+// DataStorage (tools/test-fxmarker.c); these rows are only read to migrate a
+// room that has no key yet, so the row identity still decides which room a
+// legacy row may seed.
 #include <stdio.h>
 
 #include "../ap/ap_fxseen_logic.h"
@@ -21,11 +25,11 @@ int main(void)
 
 	expect("four-column room row parses",
 	       AP_FxSeenParseRow("archipelago.gg:59513\tseed\tslot\t25\n", &row), 1);
-	expect("same room reconnect matches",
+	expect("migration: same room row matches",
 	       AP_FxSeenRowMatches(&row, "archipelago.gg:59513", "seed", "slot"), 1);
-	expect("fresh public room does not inherit",
+	expect("migration: other public room port does not match",
 	       AP_FxSeenRowMatches(&row, "archipelago.gg:53935", "seed", "slot"), 0);
-	expect("fresh local room does not inherit public room",
+	expect("migration: local room does not match public row",
 	       AP_FxSeenRowMatches(&row, "localhost:38281", "seed", "slot"), 0);
 	expect("different slot stays isolated",
 	       AP_FxSeenRowMatches(&row, "archipelago.gg:59513", "seed", "other"), 0);

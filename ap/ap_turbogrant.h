@@ -21,10 +21,10 @@
 // WHAT THIS MODULE OWNS, and why each piece is here rather than in ap_hooks.c:
 //
 //   * THE ACCOUNTING. Three numbers -- received (rebuilt from the authoritative
-//     ReceivedItems replay), fired (persisted per seed and slot) and one
+//     ReceivedItems replay), fired (kept in the room per team and slot, #299) and one
 //     in-flight bit -- with pending derived from them. ap_turbogrant_logic.h
 //     holds the arithmetic and the reasoning, including why the generic
-//     ap_fx_seen_max replay dedup every other one-shot effect uses would LOSE
+//     effect-marker replay dedup every other one-shot effect uses would LOSE
 //     grants here. The host harness drives that header directly.
 //   * THE DELIVERY WINDOW. The same observed-countdown race window the Wumpa
 //     filler uses (ap_wumpa.c documents why the raw flag/timer test is not

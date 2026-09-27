@@ -317,6 +317,13 @@ int AP_CustomOfflineLaunchAllowed(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// #299 Turbo Grant fired count, kept in the room's DataStorage by ap_hooks.c
+// (AP_NET_FX_TURBO_FIRED). Unknown until the room answers the connect-time Get;
+// ap_turbogrant.c delivers nothing while it is unknown.
+int  AP_FxTurboFiredKnown(void);
+int  AP_FxTurboFired(void);
+void AP_FxTurboFiredIncrement(void);
+
 // Emit one AP item-box location check (#109). Lives here rather than in
 // ap_boxes.c so every optional location class routes through the one #176
 // emitter, with its absent-code guard, checked-state guard and diagnostic line.

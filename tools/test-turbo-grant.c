@@ -10,7 +10,7 @@
 //   1. THE PENDING ARITHMETIC, including every lifecycle case the issue's rule 7
 //      names: a reconnect replaying the same list, a duplicate grant, a delivery
 //      that is fired, a delivery lost before firing (death, race restart), and a
-//      seed or slot change reading a different persisted count.
+//      seed or slot change reading a different fired count.
 //   2. HOSTILE PERSISTED COUNTS. Negative, absurdly large, and larger than the
 //      number of receipts the server has actually sent.
 //   3. THE RULED ITEMSANITY GATE, exhaustively -- both itemsanity states crossed
@@ -85,7 +85,7 @@ static void test_duplicate_grants_are_counted_not_deduped(void)
 static void test_a_reconnect_replaying_the_same_list_changes_nothing(void)
 {
 	// received rebuilds to the same number out of the server's full replay while
-	// fired is read back off disk, so the pair -- and therefore pending -- is
+	// fired is read back from the room's DataStorage (#299), so the pair -- and therefore pending -- is
 	// exactly what it was before the disconnect.
 	const int received = 4, fired = 2;
 	check_eq(AP_TurboGrantPending(received, fired, 0), 2, "pending before reconnect");
@@ -104,8 +104,10 @@ static void test_a_process_restart_does_not_credit_an_undelivered_grant(void)
 static void test_a_slot_change_reads_its_own_count(void)
 {
 	// Same seed, two slots. Slot A has fired both of its grants; slot B has
-	// received one and fired none. Reading B's row must not let A's count
-	// suppress it, which is what per-identity rows buy.
+	// received one and fired none. Reading B's key must not let A's count
+	// suppress it, which is what the per-team+slot room keys buy (#299). A fresh
+	// room of the same seed starts with no key, i.e. fired 0; that case is
+	// driven through the marker rules in tools/test-fxmarker.c.
 	check_eq(AP_TurboGrantPending(2, 2, 0), 0, "slot A settled");
 	check_eq(AP_TurboGrantPending(1, 0, 0), 1, "slot B still owed its grant");
 }

@@ -31,8 +31,9 @@ extern "C" {
 enum
 {
 	AP_FILE_WRITER_SLOT_STATE  = 0, // ap-state.json
-	AP_FILE_WRITER_SLOT_FXSEEN = 1, // ctr-ap-fxseen.txt (replay dedup)
-	AP_FILE_WRITER_SLOT__COUNT = 2
+	AP_FILE_WRITER_SLOT_FXSEEN = 1, // ctr-ap-fxseen.txt (0.2.1 ledger; #299 migration row removal)
+	AP_FILE_WRITER_SLOT_TURBOGRANT = 2, // ctr-ap-turbogrant.txt (same, for the Turbo Grant ledger)
+	AP_FILE_WRITER_SLOT__COUNT = 3
 };
 
 // A job runs on the writer thread. It must only use its payload (and the file
