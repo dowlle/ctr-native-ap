@@ -1744,6 +1744,262 @@ static void case_flatten_and_timed_effects_coexist(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 1);
 }
 
+// ── #416: a mask sequence pauses engine-natural traps, it does not reset them ──
+//
+// Both reported triggers reach the scheduler as scripted control: the mask weapon
+// sets AKU_SONG or UKA_SONG and falling off the track puts the kart in
+// KS_MASK_GRABBED (AP_TrapScripted in ap_traps.c). Either one suspends the
+// running slot. The poll used to read that as "slot gone", clear its stage and
+// never report done, so the slot stayed ACTIVE and queued Flattens waited for the
+// next map.
+
+#define SIM_GRACE_MS 1000
+
+// The kart as the Flatten poll sees it. canApply stands for AP_TrapApplyFlatten
+// succeeding; recovered for AP_TrapFlattenRecovered.
+typedef struct
+{
+	int canApply;
+	int recovered;
+	int squishes;
+} SimKart;
+
+// Try the squish the way the runtime does, counting the ones that land.
+static void sim_try(AP_TrapFlattenStage *st, SimKart *k)
+{
+	if (!k->canApply)
+		return;
+	AP_TrapFlattenStageLanded(st, SIM_GRACE_MS);
+	k->squishes++;
+	k->recovered = 0;
+}
+
+// One AP_TrapTick in the order the runtime uses: poll, map boundary, step, then
+// the event drain applies a Flatten on its FIRE edge.
+static void sim_tick(AP_TrapSched *s, AP_TrapFlattenStage *st, const AP_TrapWorld *w,
+                     SimKart *k)
+{
+	int i;
+	switch (AP_TrapFlattenStagePoll(st, AP_TrapSchedPollGate(s, AP_TRAP_FLATTEN), 1,
+	                                k->recovered, SIM_GRACE_MS, w->elapsedMs))
+	{
+	case AP_TRAP_FLATTEN_TRY:
+		sim_try(st, k);
+		break;
+	case AP_TRAP_FLATTEN_DONE:
+		AP_TrapSchedEffectDone(s, AP_TRAP_FLATTEN);
+		break;
+	default:
+		break;
+	}
+	AP_TrapSchedStep(s, w);
+	drain(s);
+	for (i = 0; i < evn; i++)
+		if (evbuf[i].kind == AP_TRAP_EV_FIRE && evbuf[i].effect == AP_TRAP_FLATTEN)
+		{
+			AP_TrapFlattenStageFired(st);
+			sim_try(st, k);
+		}
+}
+
+static void sim_run_ms(AP_TrapSched *s, AP_TrapFlattenStage *st, const AP_TrapWorld *w,
+                       SimKart *k, int ms)
+{
+	int i;
+	for (i = 0; i < ms / FRAME_MS; i++)
+		sim_tick(s, st, w, k);
+}
+
+// The map boundary as AP_TrapTick runs it: decide what is owed, clear, re-arm.
+static void sim_boundary(AP_TrapSched *s, AP_TrapFlattenStage *st, AP_TrapWorld *w)
+{
+	int refire = AP_TrapFlattenOwedAtBoundary(st, AP_TrapSchedPollGate(s, AP_TRAP_FLATTEN));
+	w->mapEpoch++;
+	AP_TrapSchedMapChange(s);
+	AP_TrapFlattenStageClear(st);
+	if (refire)
+		AP_TrapSchedReceive(s, AP_TRAP_FLATTEN);
+}
+
+static void case_poll_gate_follows_suspension(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld mask = race;
+	int e;
+
+	mask.scripted = 1;
+	AP_TrapSchedReset(&s);
+	expect("no copy running reads as gone",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_GONE);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	run_ms(&s, &race, 1100);
+	expect("a running copy reads as run",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_RUN);
+	AP_TrapSchedStep(&s, &mask);
+	expect("a suspended copy reads as hold, not gone",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_HOLD);
+	expect("while the effect call sites still see it as inactive",
+	       AP_TrapSchedActive(&s, AP_TRAP_FLATTEN), 0);
+	AP_TrapSchedStep(&s, &race);
+	expect("resuming reads as run again",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_RUN);
+
+	// The polls run before the step, so on the first frame after the mask
+	// sequence the world is unscripted but the slot is still suspended. That
+	// frame must hold, which is why the spawned-instant poll needs the gate too.
+	AP_TrapSchedStep(&s, &mask);
+	expect("first frame after the sequence still holds before the step",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_HOLD);
+
+	race.mapEpoch = 2;
+	AP_TrapSchedStep(&s, &race);
+	expect("a map change while suspended reads as gone",
+	       AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN), AP_TRAP_POLL_GONE);
+
+	// Every engine-natural effect with a completion poll behaves the same way.
+	race.mapEpoch = mask.mapEpoch;
+	{
+		static const int polled[] = {AP_TRAP_ITEM_REROLL, AP_TRAP_FORCED_USE,
+		                             AP_TRAP_NITRO, AP_TRAP_RED_POTION,
+		                             AP_TRAP_WARPBALL_AMBUSH};
+		for (e = 0; e < (int)(sizeof polled / sizeof polled[0]); e++)
+		{
+			AP_TrapSchedReset(&s);
+			AP_TrapSchedReceive(&s, polled[e]);
+			AP_TrapSchedFire(&s, 0);
+			AP_TrapSchedStep(&s, &mask);
+			expect("each polled effect holds through a mask sequence",
+			       AP_TrapSchedPollGate(&s, polled[e]), AP_TRAP_POLL_HOLD);
+			AP_TrapSchedStep(&s, &race);
+			expect("and runs again after it",
+			       AP_TrapSchedPollGate(&s, polled[e]), AP_TRAP_POLL_RUN);
+		}
+	}
+}
+
+// The mask weapon during the squish recovery: the reported "queued Flattens stop".
+static void case_flatten_queue_survives_mask_weapon(void)
+{
+	AP_TrapSched s;
+	AP_TrapFlattenStage st = {0, 0, 0};
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld mask = race;
+	SimKart k = {1, 1, 0};
+
+	mask.scripted = 1; // AKU_SONG / UKA_SONG
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+
+	sim_run_ms(&s, &st, &race, &k, 1100);
+	expect("the first copy squishes", k.squishes, 1);
+	sim_run_ms(&s, &st, &race, &k, 500);
+	sim_run_ms(&s, &st, &mask, &k, 3000);
+	expect("the mask sequence keeps the stage", st.applied, 1);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 5000);
+	expect("recovery after the mask releases the next copy", k.squishes, 2);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 5000);
+	expect("and the one after it", k.squishes, 3);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 2000);
+	expect("all three are spent on the same map", slots_used(&s), 0);
+}
+
+// Falling off the track while the squish is still refused (kart spinning): the
+// mask rescue suspends the slot with the copy pending, and it lands afterwards.
+static void case_flatten_pending_survives_fall_off(void)
+{
+	AP_TrapSched s;
+	AP_TrapFlattenStage st = {0, 0, 0};
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld rescue = race;
+	SimKart k = {0, 1, 0};
+
+	rescue.scripted = 1; // KS_MASK_GRABBED
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+
+	sim_run_ms(&s, &st, &race, &k, 1500);
+	expect("a refused squish keeps the copy pending", st.pending, 1);
+	sim_run_ms(&s, &st, &rescue, &k, 2500);
+	expect("the rescue does not drop the pending copy", st.pending, 1);
+	k.canApply = 1;
+	sim_run_ms(&s, &st, &race, &k, 200);
+	expect("it lands once the kart is back on the track", k.squishes, 1);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 3000);
+	expect("the queued copy follows", k.squishes, 2);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 2000);
+	expect("nothing is stranded", slots_used(&s), 0);
+}
+
+// Pause freezes, it does not suspend: the slot stays running and the queue moves
+// on afterwards.
+static void case_flatten_queue_survives_pause(void)
+{
+	AP_TrapSched s;
+	AP_TrapFlattenStage st = {0, 0, 0};
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld paused = race;
+	SimKart k = {1, 1, 0};
+
+	paused.paused = 1;
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	sim_run_ms(&s, &st, &race, &k, 1100);
+	sim_run_ms(&s, &st, &paused, &k, 4000);
+	expect("pause keeps the running copy", AP_TrapSchedPollGate(&s, AP_TRAP_FLATTEN),
+	       AP_TRAP_POLL_RUN);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 3000);
+	expect("the queued copy fires after the pause", k.squishes, 2);
+}
+
+// A load that begins during the mask sequence: an unlanded copy comes back on the
+// next map with the queued one behind it, so no copy is lost.
+static void case_flatten_boundary_during_mask_keeps_copies(void)
+{
+	AP_TrapSched s;
+	AP_TrapFlattenStage st = {0, 0, 0};
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld rescue = race;
+	SimKart k = {0, 1, 0};
+
+	rescue.scripted = 1;
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	sim_run_ms(&s, &st, &race, &k, 1500);
+	sim_run_ms(&s, &st, &rescue, &k, 500);
+	sim_boundary(&s, &st, &rescue);
+	expect("both copies are armed for the next map",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_FLATTEN), 2);
+
+	race.mapEpoch = rescue.mapEpoch;
+	k.canApply = 1;
+	sim_run_ms(&s, &st, &race, &k, 1100);
+	k.recovered = 1;
+	sim_run_ms(&s, &st, &race, &k, 3000);
+	expect("both squish on the next map", k.squishes, 2);
+
+	// A copy that already landed has delivered its harm and is not re-armed.
+	AP_TrapSchedReset(&s);
+	AP_TrapFlattenStageClear(&st);
+	k.squishes = 0;
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	sim_run_ms(&s, &st, &race, &k, 1100);
+	sim_run_ms(&s, &st, &rescue, &k, 500);
+	sim_boundary(&s, &st, &rescue);
+	expect("a landed copy is not re-armed by the load", slots_used(&s), 0);
+}
+
 static void case_client_trap_duration_policy(void)
 {
 	AP_TrapSched s;
@@ -2331,6 +2587,11 @@ int main(void)
 	case_flatten_lifecycle();
 	case_flatten_duplicates_serialize();
 	case_flatten_and_timed_effects_coexist();
+	case_poll_gate_follows_suspension();
+	case_flatten_queue_survives_mask_weapon();
+	case_flatten_pending_survives_fall_off();
+	case_flatten_queue_survives_pause();
+	case_flatten_boundary_during_mask_keeps_copies();
 	case_client_trap_duration_policy();
 	case_empty_crates_reward_policy();
 	case_empty_crates_lifecycle();

@@ -498,6 +498,122 @@ static inline int AP_TrapSchedActive(const AP_TrapSched *s, int effect)
 	return 0;
 }
 
+// What an engine-natural effect's completion poll should do this tick (#416).
+// AP_TrapSchedActive reads a suspended copy as not active, which is right for the
+// effect call sites but wrong for a poll: a mask rescue or the mask weapon
+// suspends the slot without clearing it. A poll that mistook that for "the slot
+// went away" dropped its own progress, never reported done, and left the slot
+// ACTIVE until the next map, which held every queued duplicate behind it.
+//   RUN   an unsuspended copy is running; drive the effect
+//   HOLD  the copy is running but suspended; keep all progress and wait
+//   GONE  no copy is running (map change or connect reset); drop progress
+enum
+{
+	AP_TRAP_POLL_GONE = 0,
+	AP_TRAP_POLL_RUN,
+	AP_TRAP_POLL_HOLD
+};
+
+static inline int AP_TrapSchedPollGate(const AP_TrapSched *s, int effect)
+{
+	int i, held = 0;
+	for (i = 0; i < AP_TRAP_SCHED_CAP; i++)
+	{
+		if (s->slots[i].state != AP_TRAP_SLOT_ACTIVE || s->slots[i].effect != effect)
+			continue;
+		if (!s->slots[i].suspended)
+			return AP_TRAP_POLL_RUN;
+		held = 1;
+	}
+	return held ? AP_TRAP_POLL_HOLD : AP_TRAP_POLL_GONE;
+}
+
+// Flatten's two stages, kept pure so the host harness drives the same machine
+// the runtime does. PENDING means the copy has fired but the engine has not
+// accepted the squish yet; APPLIED means it did, and the copy is waiting out the
+// engine's own recovery plus the grace interval before it reports done.
+typedef struct
+{
+	int pending;
+	int applied;
+	int graceMs;
+} AP_TrapFlattenStage;
+
+enum
+{
+	AP_TRAP_FLATTEN_WAIT = 0, // nothing to do this tick
+	AP_TRAP_FLATTEN_TRY,      // ask the engine for the squish, then report it
+	AP_TRAP_FLATTEN_DONE      // recovery and grace are over: report done
+};
+
+static inline void AP_TrapFlattenStageClear(AP_TrapFlattenStage *st)
+{
+	st->pending = 0;
+	st->applied = 0;
+	st->graceMs = 0;
+}
+
+static inline void AP_TrapFlattenStageFired(AP_TrapFlattenStage *st)
+{
+	st->pending = 1;
+	st->applied = 0;
+	st->graceMs = 0;
+}
+
+// The engine accepted the squish.
+static inline void AP_TrapFlattenStageLanded(AP_TrapFlattenStage *st, int graceMs)
+{
+	st->pending = 0;
+	st->applied = 1;
+	st->graceMs = graceMs;
+}
+
+// One tick. gate is AP_TrapSchedPollGate for Flatten; recovered is
+// AP_TrapFlattenRecovered for the local driver (ignored without one).
+static inline int AP_TrapFlattenStagePoll(AP_TrapFlattenStage *st, int gate, int haveDriver,
+                                          int recovered, int graceMs, int elapsedMs)
+{
+	if (!st->pending && !st->applied)
+		return AP_TRAP_FLATTEN_WAIT;
+	if (gate == AP_TRAP_POLL_GONE)
+	{
+		// Map change or connect reset took the slot; drop the stage machine.
+		AP_TrapFlattenStageClear(st);
+		return AP_TRAP_FLATTEN_WAIT;
+	}
+	// A mask rescue (falling off the track) or the mask weapon suspends the
+	// slot. That is a pause, not a reset: keep the stage and carry on once the
+	// sequence ends (#416). Clearing here used to strand the slot ACTIVE with no
+	// stage left to report done, so every queued Flatten waited for the next map.
+	if (gate == AP_TRAP_POLL_HOLD)
+		return AP_TRAP_FLATTEN_WAIT;
+	if (st->pending)
+		return AP_TRAP_FLATTEN_TRY;
+	if (!haveDriver)
+		return AP_TRAP_FLATTEN_WAIT;
+	if (!recovered)
+	{
+		st->graceMs = graceMs;
+		return AP_TRAP_FLATTEN_WAIT;
+	}
+	if (st->graceMs > 0)
+	{
+		st->graceMs -= elapsedMs;
+		if (st->graceMs > 0)
+			return AP_TRAP_FLATTEN_WAIT;
+	}
+	AP_TrapFlattenStageClear(st);
+	return AP_TRAP_FLATTEN_DONE;
+}
+
+// At a map boundary, is this Flatten still owed its squish? A suspended copy
+// counts: a load that begins mid mask sequence must not swallow a squish that
+// never landed (#416). The runtime re-arms an owed copy after the boundary.
+static inline int AP_TrapFlattenOwedAtBoundary(const AP_TrapFlattenStage *st, int gate)
+{
+	return st->pending && gate != AP_TRAP_POLL_GONE;
+}
+
 static inline int AP_TrapSchedArmedCount(const AP_TrapSched *s, int effect)
 {
 	int i, n = 0;
