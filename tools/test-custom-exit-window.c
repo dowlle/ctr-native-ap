@@ -126,14 +126,27 @@ void LOAD_LevelFile(int levelID)
 	sdata->gGT->prevLEV = sdata->gGT->levelID;
 	sdata->gGT->levelID = (s16)levelID;
 	sdata->Loading.stage = LOAD_TEN_STAGES_0;
+	// Stage 0 (LOAD_TenStages.c:118, 150, 163-166): the upcoming player
+	// count goes live; the menu keeps it aside and runs with 4.
+	sdata->gGT->numPlyrCurrGame = sdata->gGT->numPlyrNextGame;
+	sdata->gGT->gameMode1 &= ~MAIN_MENU;
+	if (levelID == MAIN_MENU_LEVEL)
+	{
+		sdata->gGT->gameMode1 |= MAIN_MENU;
+		sdata->gGT->numPlyrNextGame = sdata->gGT->numPlyrCurrGame;
+		sdata->gGT->numPlyrCurrGame = 4;
+	}
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+// On the menu the engine runs with 4 players and keeps the race's count in
+// numPlyrNextGame (LOAD_TenStages.c:163-166).
 static void enter_arcade_menu(void)
 {
 	s_gt.levelID = MENU;
-	s_gt.numPlyrCurrGame = 1;
-	s_gt.gameMode1 = ARCADE_MODE;
+	s_gt.numPlyrCurrGame = 4;
+	s_gt.numPlyrNextGame = 1;
+	s_gt.gameMode1 = ARCADE_MODE | MAIN_MENU;
 	s_gt.gameMode2 = 0;
 	sdata->Loading.stage = LOAD_IDLE;
 }
