@@ -1,5 +1,6 @@
 # Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.
 tools/test-instance-pool.c
+tools/test-138-camera-flyin.c
 # Regenerate with: tools/ci/run-harnesses.py --write-list
 tools/test-author-ready.c
 tools/test-author-custom.c
