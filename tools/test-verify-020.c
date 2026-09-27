@@ -119,11 +119,16 @@ int main(void)
 	o.logic_difficulty = 1;
 	o.shortcut_knowledge = 0;
 	items[AP_VF_WEAPON_FIRST + 6] = 1; // Mask family
+	o.itemsanity = 1;
 	OK("difficulty gate rejects only one weapon family", !AP_VerifyTrophyCapabilityGate(&o, items, 3, -1));
 	items[AP_VF_WEAPON_FIRST + 2] = 1; // Missile family
-	OK("difficulty gate accepts two distinct families", AP_VerifyTrophyCapabilityGate(&o, items, 3, -1));
+	OK("difficulty gate rejects two families (minimum is three since 2026-09-20)",
+		!AP_VerifyTrophyCapabilityGate(&o, items, 3, -1));
+	items[AP_VF_WEAPON_FIRST + 7] = 1; // Clock family
+	OK("difficulty gate accepts three distinct families", AP_VerifyTrophyCapabilityGate(&o, items, 3, -1));
 
-	// The composed goal's Oxide condition carries Oxide Station's finish term.
+	// Oxide's first challenge carries the first boost rank and Oxide Station's
+	// finish term, unbound from any pad racer (apworld first_win_rule).
 	memset(items, 0, sizeof items);
 	memset(&o, 0, sizeof o);
 	o.character_unlocks = 1;
@@ -131,27 +136,30 @@ int main(void)
 	o.logic_difficulty = 2;
 	o.boost_mode = 1;
 	o.shortcut_knowledge = 1;
-	OK("Oxide goal blocked with no boost", !AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("Oxide win blocked with no boost", !AP_VerifyOxideWinTerm(&o, items, 0));
 	items[AP_VF_BOOST_SHARED] = 1;
-	OK("Oxide goal blocked one rank below USF", !AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("Oxide win blocked one rank below USF", !AP_VerifyOxideWinTerm(&o, items, 0));
 	items[AP_VF_BOOST_SHARED] = 2;
-	OK("Oxide goal opens at USF", AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("Oxide win opens at USF", AP_VerifyOxideWinTerm(&o, items, 0));
 	items[AP_VF_BOOST_SHARED] = 0;
 	o.shortcut_knowledge = 2;
-	OK("hard knowledge clears the Oxide goal bare", AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("hard knowledge does not clear the Oxide first-rank floor",
+		!AP_VerifyOxideWinTerm(&o, items, 0));
+	items[AP_VF_BOOST_SHARED] = 1;
+	OK("hard knowledge clears the Oxide Station finish at the first rank",
+		AP_VerifyOxideWinTerm(&o, items, 0));
+	items[AP_VF_BOOST_SHARED] = 0;
 	o.shortcut_knowledge = 1;
 	o.boost_mode = 0;
-	OK("Oxide goal term vacuous on an unrandomized boost chain",
-		AP_VerifyOxideGoalFinish(&o, items, -1));
+	OK("Oxide win term vacuous on an unrandomized boost chain",
+		AP_VerifyOxideWinTerm(&o, items, 0));
 
 	memset(items, 0, sizeof items);
 	o.boost_mode = 2;
 	items[AP_VF_PC_FIRST + 0 * 4] = 2;    // Crash boost
 	items[AP_VF_CHARACTER_FIRST + 4] = 1; // Cortex unlocked, chain still empty
-	OK("Oxide goal takes any driveable racer on a free pad",
-		AP_VerifyOxideGoalFinish(&o, items, -1));
-	OK("Cortex-locked Oxide goal does not borrow Crash ranks",
-		!AP_VerifyOxideGoalFinish(&o, items, 1));
+	OK("Oxide win takes any driveable racer (race starts in the garage)",
+		AP_VerifyOxideWinTerm(&o, items, 0));
 
 	// Relic tier boost gates (2026-08-21 ruling): first-boost floor on every
 	// Gold and Platinum, USF on Hot Air Skyway (row 12) and Oxide Station

@@ -122,6 +122,7 @@ tools/test-trial-pad-glow.c
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c
+tools/test-verify-parity-329.c
 tools/test-version-compare.c
 tools/test-vsync.c
 tools/test-window-geometry.c
