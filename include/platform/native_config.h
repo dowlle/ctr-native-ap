@@ -185,8 +185,11 @@ void NativeConfig_Save(void);
 bool NativeConfig_FullscreenToggledFromWindow(bool windowFullscreen);
 
 // Per-frame sync (Platform_BeginFrame): whether the window must be re-applied
-// to match g_config.fullscreen.
-bool NativeConfig_FullscreenNeedsReapply(bool want, bool have);
+// to match g_config.fullscreen. lastRequested is the state last passed to
+// SDL_SetWindowFullscreen (-1 for none). A state is requested once: some
+// compositors (Steam Deck Game Mode's gamescope) never report the window as
+// fullscreen, and re-requesting every frame blocked each frame for ~100 ms.
+bool NativeConfig_FullscreenNeedsReapply(bool want, bool have, int lastRequested);
 
 // true if a config.ini was present at load time. Consumers (e.g. the AP layer)
 // use this to decide config.ini precedence over legacy flat config files.

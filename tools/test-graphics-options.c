@@ -206,10 +206,16 @@ static void TestFullscreenSync(void)
 	EXPECT_INT("toggle from fullscreen -> windowed", NativeConfig_FullscreenToggledFromWindow(true), 0);
 
 	// Per-frame sync: reapply only when config and window disagree.
-	EXPECT_INT("sync no-op when already fullscreen", NativeConfig_FullscreenNeedsReapply(true, true), 0);
-	EXPECT_INT("sync no-op when already windowed", NativeConfig_FullscreenNeedsReapply(false, false), 0);
-	EXPECT_INT("sync apply when config wants fullscreen", NativeConfig_FullscreenNeedsReapply(true, false), 1);
-	EXPECT_INT("sync apply when config wants windowed", NativeConfig_FullscreenNeedsReapply(false, true), 1);
+	EXPECT_INT("sync no-op when already fullscreen", NativeConfig_FullscreenNeedsReapply(true, true, -1), 0);
+	EXPECT_INT("sync no-op when already windowed", NativeConfig_FullscreenNeedsReapply(false, false, -1), 0);
+	EXPECT_INT("sync apply when config wants fullscreen", NativeConfig_FullscreenNeedsReapply(true, false, -1), 1);
+	EXPECT_INT("sync apply when config wants windowed", NativeConfig_FullscreenNeedsReapply(false, true, -1), 1);
+
+	// A compositor that never reports fullscreen (gamescope): request it once,
+	// then stop, instead of re-requesting (and blocking) every frame.
+	EXPECT_INT("sync no retry after fullscreen was requested", NativeConfig_FullscreenNeedsReapply(true, false, 1), 0);
+	EXPECT_INT("sync no retry after windowed was requested", NativeConfig_FullscreenNeedsReapply(false, true, 0), 0);
+	EXPECT_INT("sync apply when config changed since last request", NativeConfig_FullscreenNeedsReapply(true, false, 0), 1);
 }
 
 static void TestPersistenceRoundTrip(void)
