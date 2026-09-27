@@ -7,6 +7,8 @@ int NativeRenderer_InitialiseRender(char *windowName, int width, int height, int
 int NativeRenderer_InitialisePSX(void);
 void NativeRenderer_Shutdown(void);
 void NativeRenderer_ResetDevice(void);
+// GL_RENDERER / GL_VENDOR / GL_VERSION as read at init ("?" before that).
+void NativeRenderer_GetAdapterInfo(const char **renderer, const char **vendor, const char **version);
 // Persist the window's current position/size/maximized state into g_config
 // (see include/platform/native_window_geometry.h for the capture rule). Call
 // right before any NativeConfig_Save that happens while the window is live,

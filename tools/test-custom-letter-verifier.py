@@ -22,7 +22,16 @@ fixture = r'''
 #define AP_VF_ITEM_COUNT 200
 struct Loc { int kind,track,detail; } locs[1];
 struct { int custom_lettersanity_mode; long custom_letter_items[3]; } ctr_cfg;
-static int opened, capable;
+static int opened, capable, difficulty_ok, floor_ok;
+typedef struct { int unused; } AP_VerifyOptions;
+static AP_VerifyOptions ap_vf_options(void) { AP_VerifyOptions o = {0}; return o; }
+static int ap_vf_required_character(int pad) { assert(pad==5); return 7; }
+/* The custom Trophy Race's difficulty term (rung -1) and the CTR challenge's
+   first-boost floor, both with the displaced cup pad's racer. */
+static int AP_VerifyDifficultyRungTerm(const AP_VerifyOptions *o, const int *counts,
+ int rung, int racer) { (void)o; (void)counts; assert(rung==-1 && racer==7); return difficulty_ok; }
+static int AP_VerifyBoostTerm(const AP_VerifyOptions *o, const int *counts,
+ int racer, int boost) { (void)o; (void)counts; assert(racer==7 && boost==1); return floor_ok; }
 static long long scout_item;
 static int scout_player=1, scout_known=1;
 int ap_net_self_slot(void) { return 1; }
@@ -52,6 +61,8 @@ int main(void) {
  for(int receipt=0;receipt<8;receipt++)
  for(opened=0;opened<2;opened++)
  for(capable=0;capable<2;capable++)
+ for(difficulty_ok=0;difficulty_ok<2;difficulty_ok++)
+ for(floor_ok=0;floor_ok<2;floor_ok++)
  for(int detail=-1;detail<3;detail++) {
   if(detail>=0 && (mode==0 || mode==3 || detail==1)) continue;
   int counts[596]={0};
@@ -65,7 +76,8 @@ int main(void) {
    counts[200+(slot-1)*3+l]=(receipt>>l)&1;
    if(required && (detail<0 || detail==l) && !((receipt>>l)&1)) met=0;
   }
-  assert(evaluate(counts)==(opened && capable && met)); tested++;
+  assert(evaluate(counts)==(opened && capable && difficulty_ok &&
+   (detail>=0 || floor_ok) && met)); tested++;
  }
  printf("PASS: %d production custom verifier gate cases\n",tested);
  for(int slot=1;slot<=132;slot++)
@@ -94,7 +106,7 @@ int main(void) {
  ctr_cfg.custom_letter_items[0]=35021000L;
  ctr_cfg.custom_letter_items[1]=-1; ctr_cfg.custom_letter_items[2]=-1;
  locs[0].kind=AP_VF_CUSTOM_LETTER; locs[0].detail=0;
- opened=capable=1;
+ opened=capable=difficulty_ok=floor_ok=1;
  assert(!evaluate(counts));
  scout_item=35021000LL;
  /* A different reachable location banks the needed item and opens the letter. */

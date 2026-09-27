@@ -327,6 +327,13 @@ int AP_CustomOfflineLaunchAllowed(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
+// #299 Turbo Grant fired count, kept in the room's DataStorage by ap_hooks.c
+// (AP_NET_FX_TURBO_FIRED). Unknown until the room answers the connect-time Get;
+// ap_turbogrant.c delivers nothing while it is unknown.
+int  AP_FxTurboFiredKnown(void);
+int  AP_FxTurboFired(void);
+void AP_FxTurboFiredIncrement(void);
+
 // Emit one AP item-box location check (#109). Lives here rather than in
 // ap_boxes.c so every optional location class routes through the one #176
 // emitter, with its absent-code guard, checked-state guard and diagnostic line.
@@ -361,6 +368,10 @@ const char *AP_Net_StatusLine(void);
 // same close-and-forget half of AP_Net_Reconnect, without the re-dial. Safe to
 // call even if never connected (ap_net_shutdown() no-ops on a null client).
 void AP_Net_Shutdown(void);
+
+// Clean exit: flush the background file writer (bounded wait) and close the
+// ctr-ap.log handle. Called from Platform_Shutdown.
+void AP_ShutdownFiles(void);
 
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
 // visible while holding reserves). Default 0; set by ap-config.txt
@@ -535,6 +546,13 @@ void AP_WumpaReachedTen(struct Driver *driver);
 // dedup + sent-item feed). A thin wrapper because AP_EmitClassCheck is static to
 // the unity translation unit; ap/ap_hit_encounter.c calls this.
 int AP_EmitHitCharacterCheck(long code);
+
+// Relic Race perfect check (issue #49). Called from RR_EndEvent_UnlockAward
+// (game/223.c) at every relic race end, before the retail relic loop and the
+// Cortex Vortex early return. Sends the seed's perfect code for the raced track
+// when every time crate was broken; observes the #286 forced-loss latch through
+// AP_RESULT_PRODUCER_RELIC_PERFECT. Never changes relic presentation or award.
+void AP_NotifyRelicPerfect(void);
 
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).

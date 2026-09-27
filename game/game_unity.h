@@ -6,6 +6,7 @@
 // Archipelago hook declarations (CTR_AP build only; see ap/ap_hooks.h)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
+#include "../ap/ap_perf.h"      // whole-frame stall watchdog, bracketed in MainMain.c
 #include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)

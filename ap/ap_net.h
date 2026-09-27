@@ -249,6 +249,17 @@ unsigned ap_net_doors_session(void);
 void ap_net_doors_mark_session(unsigned bit);
 void ap_net_doors_record(unsigned bit);
 
+// Room-scoped one-shot effect markers (#299), kept in the room's DataStorage
+// under team+slot keys so a fresh room starts empty. Rules: ap_fxmarker_logic.h.
+#define AP_NET_FX_EFFECT      0 // highest server item index whose effect was handled
+#define AP_NET_FX_TURBO_FIRED 1 // Turbo Grants fired by this slot
+#define AP_NET_FX_COUNT       2
+// State of the connect-time Get reply for `which` (AP_FXM_STORE_*). Fills the
+// latest known integer value and a revision that moves on every reply.
+int  ap_net_fx_store(int which, long long *value, unsigned *rev);
+// Write `value` with the DataStorage operation `op` ("max", or "replace" for a
+// key that holds a non-integer). No-op while not connected.
+void ap_net_fx_store_write(int which, long long value, const char *op);
 // #377: once-per-seed Oxide Final Challenge scene flag, stored in server data
 // storage per seed, team and slot (ap/ap_oxide_scene_seen.h). `known` is 0
 // until this connection's Get reply has arrived; callers must not auto-play

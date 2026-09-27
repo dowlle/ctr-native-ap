@@ -236,6 +236,13 @@ static AP_VerifyOptions ap_vf_options(void)
 	o.itemsanity = ctr_cfg.itemsanity;
 	o.logic_difficulty = ctr_cfg.logic_difficulty;
 	o.shortcut_knowledge = ctr_cfg.shortcut_knowledge;
+	o.boost_blue_fire = ctr_cfg.boost_blue_fire;
+	// The Final Challenge is raced on Oxide Station only on a pre-venue seed or
+	// when the venue block names it. An unparsed venue on a newer seed takes the
+	// Cortex Vortex term, the stricter of the two.
+	o.oxide_final_cortex = !(ctr_cfg.schema_version < 11 ||
+		(ctr_cfg.oxide_final_venue.valid &&
+		 ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION));
 	return o;
 }
 
@@ -257,6 +264,29 @@ static int ap_vf_trophy_capable(int track, int pad, const int *counts)
 	AP_VerifyOptions o = ap_vf_options();
 	return AP_VerifyTrophyCapabilityGate(&o, counts, track,
 		ap_vf_required_character(pad));
+}
+
+// The seed's letters on one retail or trial track, for the token-challenge
+// term: which letter locations exist and which item index each letter item has.
+static AP_VerifyLetterSet ap_vf_letter_set(int lid)
+{
+	AP_VerifyLetterSet ls;
+	int letter, idx;
+	memset(&ls, 0, sizeof ls);
+	ls.mode = ctr_cfg.lettersanity_mode;
+	for (letter = 0; letter < 3; letter++)
+	{
+		ls.present[letter] = lid >= 0 && lid < CTR_CFG_LETTER_TRACK_COUNT &&
+			ctr_cfg.lettersanity_locations[lid][letter] >= 0;
+		ls.item[letter] = -1;
+	}
+	for (idx = 139; idx < AP_VF_ITEM_COUNT; idx++)
+	{
+		int level, which;
+		if (AP_LetterItemIndexToIdentityPure(idx, &level, &which) && level == lid)
+			ls.item[which] = idx;
+	}
+	return ls;
 }
 
 static int ap_vf_cup_capable(int cup, const int *counts, const int *pad_for_dest)
@@ -554,9 +584,32 @@ static void ap_vf_recompute(void)
 					ap_vf_stage2_met(pad, counts) &&
 					AP_VerifyLocationCapabilityGate(&opts, counts,
 						locs[i].code, ap_vf_required_character(pad));
+				// CTR Token Challenges (static bits 76..91, codes 35012300+).
+				if (ok && locs[i].code >= 35012300L && locs[i].code <= 35012315L)
+				{
+					AP_VerifyLetterSet ls = ap_vf_letter_set(lid);
+					ok = AP_VerifyTokenTerm(&opts, counts, lid,
+						ap_vf_required_character(pad), &ls);
+				}
 				break;
 			}
 			case AP_VF_TRIAL_TT:
+			{
+				// With the trial Trophy Race created, the relic Time Trials
+				// hang off it and take any stage-2 and tier terms, as on a
+				// retail track. Without it the apworld leaves them ungated.
+				AP_VerifyOptions opts = ap_vf_options();
+				lid = locs[i].track;
+				pad = pad_for_dest[lid];
+				ok = ap_vf_pad_open(pad, counts);
+				if (ok && lid >= 16 && lid < 16 + CTR_CFG_TRIAL_TRACK_COUNT &&
+				    ctr_cfg.trial_track_mode[lid - 16] >= 1)
+					ok = ap_vf_trophy_capable(lid, pad, counts) &&
+						ap_vf_stage2_met(pad, counts) &&
+						AP_VerifyLocationCapabilityGate(&opts, counts,
+							locs[i].code, ap_vf_required_character(pad));
+				break;
+			}
 			case AP_VF_CRYSTAL:
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
@@ -569,17 +622,35 @@ static void ap_vf_recompute(void)
 					ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
 				break;
 			case AP_VF_CUSTOM:
+			{
+				// Custom slots are difficulty-gated (CUSTOM_TRACK_SLOTS_RULED):
+				// the Trophy Race (detail -1) on easy and medium, Finish on
+				// Podium and Held 1st on easy, with the displaced cup pad's racer.
+				AP_VerifyOptions opts = ap_vf_options();
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
 				ok = ap_vf_pad_open(pad, counts) &&
-				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
+				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest) &&
+				     AP_VerifyDifficultyRungTerm(&opts, counts, locs[i].detail,
+					     ap_vf_required_character(pad));
 				break;
+			}
 			case AP_VF_CUSTOM_LETTER:
 			case AP_VF_CUSTOM_CTR:
+			{
+				// Custom letters share the slot's CTR Token Challenge entry
+				// rule, which is the custom Trophy Race's; the challenge also
+				// takes the first-boost floor.
+				AP_VerifyOptions opts = ap_vf_options();
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
 				ok = ap_vf_pad_open(pad, counts) &&
-				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest);
+				     ap_vf_cup_capable(lid - 100, counts, pad_for_dest) &&
+				     AP_VerifyDifficultyRungTerm(&opts, counts, -1,
+					     ap_vf_required_character(pad));
+				if (ok && locs[i].kind == AP_VF_CUSTOM_CTR)
+					ok = AP_VerifyBoostTerm(&opts, counts,
+						ap_vf_required_character(pad), 1);
 				if (ok && ctr_cfg.custom_lettersanity_mode >= 2)
 				{
 					int letter;
@@ -595,24 +666,17 @@ static void ap_vf_recompute(void)
 					}
 				}
 				break;
+			}
 			case AP_VF_PODIUM:
 			{
+				// The rung composition is AP_VerifyPodiumRung (ap_verify_logic.h);
+				// this gathers its two route inputs.
 				AP_VerifyOptions opts = ap_vf_options();
-				int own, cup, finishRung, heldFirst;
+				int cup, ownOpen, cupOpen = 0;
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
-				finishRung = locs[i].detail >= 3;
-				heldFirst = locs[i].detail == 0;
-				own = ap_vf_pad_open(pad, counts);
-				if (own && (finishRung || (heldFirst && lid == 13)))
-					own = ap_vf_trophy_capable(lid, pad, counts);
-				if (own && opts.logic_difficulty == 0 &&
-					(heldFirst || locs[i].detail == 3) &&
-					AP_VerifyDifficultyTrack(lid))
-					own = AP_VerifyTrophyCapabilityGate(&opts, counts, lid,
-						ap_vf_required_character(pad));
-				ok = own;
-				for (cup = 0; cup < 5 && !ok; cup++)
+				ownOpen = ap_vf_pad_open(pad, counts);
+				for (cup = 0; cup < 5 && !cupOpen; cup++)
 				{
 					int leg, hasLeg = 0, cupPad = pad_for_dest[100 + cup];
 					// Same displacement rule as ap_vf_cup_capable, and it matters
@@ -624,17 +688,15 @@ static void ap_vf_recompute(void)
 						continue;
 					for (leg = 0; leg < 4; leg++)
 						if (ctr_cfg_cup_leg(cup, leg) == lid) hasLeg = 1;
-					// The held-1st half of the Oxide term is vacuous when the
-					// boost chain is not randomized, exactly like the cup-leg
-					// term above: no pad gate precedes this call to absorb the
-					// capability gate's racer-unlock check, and the apworld's
-					// usf_term never evaluates a racer in that case.
+					// A cup that legs a USF track takes the cup's finish term
+					// for every rung it credits, held rungs included
+					// (apworld _rung_rule gated_cups).
 					if (hasLeg && ap_vf_pad_open(cupPad, counts) &&
-						(!finishRung || ap_vf_cup_capable(cup, counts, pad_for_dest)) &&
-						(!heldFirst || lid != 13 || opts.boost_mode == 0 ||
-						 ap_vf_trophy_capable(lid, pad, counts)))
-						ok = 1;
+						ap_vf_cup_capable(cup, counts, pad_for_dest))
+						cupOpen = 1;
 				}
+				ok = AP_VerifyPodiumRung(&opts, counts, lid, locs[i].detail,
+					ap_vf_required_character(pad), ownOpen, cupOpen);
 				break;
 			}
 			case AP_VF_BOX:
@@ -648,17 +710,22 @@ static void ap_vf_recompute(void)
 				break;
 			}
 			case AP_VF_LETTER:
+			{
+				AP_VerifyOptions opts = ap_vf_options();
 				lid = locs[i].track;
 				pad = pad_for_dest[lid];
 				ok = ap_vf_pad_open(pad, counts) &&
 					ap_vf_trophy_capable(lid, pad, counts) &&
-					ap_vf_stage2_met(pad, counts);
+					ap_vf_stage2_met(pad, counts) &&
+					AP_VerifyLetterTerm(&opts, counts, lid, locs[i].detail,
+						ap_vf_required_character(pad));
 				if (ok && ctr_cfg.lettersanity_mode == 2)
 				{
 					int itemIndex = AP_LetterLocationToItemIndexPure(locs[i].code);
 					ok = itemIndex >= 0 && counts[itemIndex] > 0;
 				}
 				break;
+			}
 			case AP_VF_ITEMSANITY:
 			{
 				AP_VerifyOptions opts = ap_vf_options();
@@ -701,6 +768,11 @@ static void ap_vf_recompute(void)
 					else
 						ok = AP_ReqMetCounts(&ctr_cfg.boss_req[b], counts);
 				}
+				if (ok)
+				{
+					AP_VerifyOptions opts = ap_vf_options();
+					ok = AP_VerifyBossWinTerm(&opts, counts, b);
+				}
 				break;
 			}
 			case AP_VF_OXIDE:
@@ -711,6 +783,11 @@ static void ap_vf_recompute(void)
 				// With optional-first, a final win supplies the first reward.
 				if (!ok && ctr_cfg.oxide_1_optional && ctr_cfg.goal_oxide == 2)
 					ok = ap_vf_oxide_open(1, 0, oxide_bosses_won, counts);
+				if (ok)
+				{
+					AP_VerifyOptions opts = ap_vf_options();
+					ok = AP_VerifyOxideWinTerm(&opts, counts, 0);
+				}
 				break;
 			case AP_VF_OXIDE_FIN:
 				// The Final Challenge is only offered after the first challenge
@@ -723,6 +800,11 @@ static void ap_vf_recompute(void)
 				ok = (oxide_first_open ||
 				      (ctr_cfg.oxide_1_optional && ctr_cfg.goal_oxide == 2)) &&
 				     ap_vf_oxide_open(1, 1, oxide_bosses_won, counts);
+				if (ok)
+				{
+					AP_VerifyOptions opts = ap_vf_options();
+					ok = AP_VerifyOxideWinTerm(&opts, counts, 1);
+				}
 				break;
 			}
 			if (!ok)
@@ -756,19 +838,17 @@ static void ap_vf_recompute(void)
 		int gems_held = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
 		                (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
 		                (counts[AP_IDX_GEM_RED + 4] > 0);
-		// The Oxide condition also carries Oxide Station's finish capability:
-		// the challenge is raced on that track, so the goal must not resolve
-		// from boss_req[4] alone while the track's ordinary finish logic still
-		// demands the term. This gates the GOAL, not the two Oxide LOCATIONS,
-		// which keep their own boss_req reachability above.
-		AP_VerifyOptions goal_opts = ap_vf_options();
-		int oxide_finish = AP_VerifyOxideGoalFinish(&goal_opts, counts,
-			ap_vf_required_character(pad_for_dest[13]));
+		// The Oxide condition carries the encounter's win term (first boost
+		// rank plus the venue's finish term) through the two Oxide LOCATIONS,
+		// which take it in the sweep above exactly as the apworld's
+		// first_win_rule / final_win_rule sit on both the locations and the
+		// goal events. The goal reads those locations, so it needs no second
+		// copy of the term here.
 		ap_vf_goal_ok = 1;
 		if (ctr_cfg.goal_oxide == 1)
-			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok && oxide_finish;
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_ok;
 		else if (ctr_cfg.goal_oxide == 2)
-			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok && oxide_finish;
+			ap_vf_goal_ok = ap_vf_goal_ok && oxide_fin_ok;
 		// goal_oxide 0 (`optional`) and 3 (`disabled`, issue #320): Oxide is not
 		// a completion condition, so it contributes nothing here -- the same
 		// else-if fall-through AP_ComposedGoalMet uses, kept in lockstep with

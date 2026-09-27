@@ -6,7 +6,7 @@
 // host harness (tools/test-turbo-grant.c) exercise the exact same arithmetic.
 //
 // WHY THE ACCOUNTING IS SHAPED LIKE THIS. Every other one-shot AP effect on this
-// client (traps, the Wumpa filler) dedups replays against ap_fx_seen_max, the
+// client (traps, the Wumpa filler) dedups replays against the effect marker, the
 // highest server item index whose BATCH was drained. That mechanism is wrong for
 // this item and using it would lose grants: it advances when the batch drains,
 // so a grant that arrived while the player was in the hub -- and therefore could
@@ -20,7 +20,8 @@
 //                 authoritative full ReceivedItems replay. Idempotent by
 //                 construction: replaying the same list twice yields the same
 //                 number, and a slot switch replays a different list.
-//   fired      -- persisted per seed AND slot. Incremented ONLY when a delivered
+//   fired      -- kept in the room's DataStorage per team and slot (#299), so a
+//                 fresh room starts at zero. Incremented ONLY when a delivered
 //                 grant is actually fired at the weapon choke point, which is the
 //                 only moment the player has provably had the thing.
 //   inFlight   -- session-only, 0 or 1: a delivered Turbo sitting in the weapon
@@ -32,7 +33,7 @@
 // is what makes every case in the issue's rule 7 fall out:
 //
 //   * RECONNECT / duplicate replay: received rebuilds to the same value, fired is
-//     read back from disk, pending is unchanged.
+//     read back from the room, pending is unchanged.
 //   * SLOT or SEED CHANGE: a different persistence row is read, so one identity's
 //     fired count can never suppress another's grants.
 //   * DEATH, RACE RESTART, or anything else that removes the Turbo from the slot

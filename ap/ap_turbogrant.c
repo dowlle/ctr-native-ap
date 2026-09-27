@@ -14,7 +14,7 @@
 // ============================================================================
 // Turbo Grant (#224) -- implementation. ap_turbogrant.h holds the design
 // contract and ap_turbogrant_logic.h the pure rules; this file is engine glue
-// plus the per-identity persistence of the fired count.
+// plus the delivery gate; the fired count itself is kept by ap_hooks.c (#299).
 // ============================================================================
 
 // The itemsanity location block's first code. Membership in the slot's location
@@ -22,26 +22,16 @@
 // probe #223 and the #145 native half use.
 #define AP_TURBOGRANT_ITEMSANITY_PROBE_CODE 35016000L
 
-// Per-identity fired counts, next to the exe (tab-separated:
-// seed<TAB>slot<TAB>fired). A separate file and schema from ctr-ap-fxseen.txt on
-// purpose: that file holds a highest-server-index high-water mark and this one
-// holds a COUNT OF FIRED GRANTS, and conflating the two is exactly the mistake
-// that would lose queued grants (see ap_turbogrant_logic.h).
-#define AP_TURBOGRANT_FILE "ctr-ap-turbogrant.txt"
-
-// How many other identities the file keeps when this one is rewritten. Larger
-// than the fxseen writer's 8 because the failure modes differ in cost: dropping
-// an fxseen row lets an old seed's one-shot effect replay once, while dropping a
-// row here lets every grant that seed ever received be delivered a second time.
-// Bounded regardless, so the file cannot grow without limit.
-#define AP_TURBOGRANT_MAX_ROWS 32
+// The fired count lives in the room's DataStorage since #299 (ap_hooks.c,
+// AP_FxTurbo*), so a fresh room of the same seed starts at zero and a reconnect
+// to the same room reads back what was fired. The 0.2.1 local file
+// (ctr-ap-turbogrant.txt, seed<TAB>slot<TAB>fired) is only read once, to migrate
+// a room that has no key yet. See ap_fxmarker_logic.h.
 
 // Receipts, rebuilt from zero by every fresh connect's authoritative replay.
 static int g_tg_received = 0;
 // The itemsanity `Turbo` weapon receipt. Same lifecycle.
 static int g_tg_turbo_weapon = 0;
-// Grants provably fired by this identity. Persisted; survives the process.
-static int g_tg_fired = 0;
 // A delivered Turbo sitting in the weapon slot, not yet fired. Session only.
 static int g_tg_inflight = 0;
 
@@ -52,75 +42,6 @@ static int g_tg_inflight = 0;
 // kart is then wiped by VehBirth. See ap_wumpa.c for the full account.
 static int g_tg_countdown_seen = 0;
 
-// The identity the persisted count belongs to. Empty seed = no identity known
-// yet, which suppresses writing entirely.
-static char g_tg_seed[128] = "";
-static char g_tg_slot[64] = "";
-
-// ── Persistence ──
-static void AP_TurboGrantLoad(void)
-{
-	FILE *f;
-	char line[320];
-
-	g_tg_fired = 0;
-	if (!ap_net_seed_name(g_tg_seed, sizeof g_tg_seed))
-		g_tg_seed[0] = '\0';
-	if (!ap_net_slot_name(g_tg_slot, sizeof g_tg_slot))
-		g_tg_slot[0] = '\0';
-	f = fopen(AP_TURBOGRANT_FILE, "r");
-	if (f == NULL)
-		return;
-	while (fgets(line, sizeof line, f))
-	{
-		char seed[128], slot[64];
-		int fired;
-		if (sscanf(line, "%127[^\t]\t%63[^\t]\t%d", seed, slot, &fired) == 3 &&
-		    !strcmp(seed, g_tg_seed) && !strcmp(slot, g_tg_slot))
-		{
-			// Not clamped against `received` here: the replay that rebuilds the
-			// received count has not run yet. AP_TurboGrantPending clamps at
-			// every read instead, so a hostile row is inert rather than trusted.
-			g_tg_fired = fired < 0 ? 0 : fired;
-			break;
-		}
-	}
-	fclose(f);
-}
-
-static void AP_TurboGrantStore(void)
-{
-	// Read-modify-write the tiny file, preserving other seed/slot rows. Same
-	// shape as the fxseen writer.
-	FILE *f;
-	static char rows[AP_TURBOGRANT_MAX_ROWS][320];
-	int nrows = 0, i;
-
-	if (g_tg_seed[0] == '\0')
-		return;
-	f = fopen(AP_TURBOGRANT_FILE, "r");
-	if (f != NULL)
-	{
-		while (nrows < AP_TURBOGRANT_MAX_ROWS && fgets(rows[nrows], sizeof rows[0], f))
-		{
-			char seed[128], slot[64];
-			int fired;
-			if (sscanf(rows[nrows], "%127[^\t]\t%63[^\t]\t%d", seed, slot, &fired) == 3 &&
-			    !strcmp(seed, g_tg_seed) && !strcmp(slot, g_tg_slot))
-				continue; // our old row: superseded below
-			nrows++;
-		}
-		fclose(f);
-	}
-	f = fopen(AP_TURBOGRANT_FILE, "w");
-	if (f == NULL)
-		return;
-	for (i = 0; i < nrows; i++)
-		fputs(rows[i], f);
-	fprintf(f, "%s\t%s\t%d\n", g_tg_seed, g_tg_slot, g_tg_fired);
-	fclose(f);
-}
-
 // ── AP item pipeline seam ──
 void AP_TurboGrantReset(void)
 {
@@ -128,7 +49,6 @@ void AP_TurboGrantReset(void)
 	g_tg_turbo_weapon = 0;
 	g_tg_inflight = 0;
 	g_tg_countdown_seen = 0;
-	AP_TurboGrantLoad();
 }
 
 void AP_TurboGrantReceive(void)
@@ -138,8 +58,8 @@ void AP_TurboGrantReceive(void)
 	g_tg_received++;
 	snprintf(msg, sizeof msg,
 	         "[AP TURBO] grant received (received %d, fired %d, pending %d)\n",
-	         g_tg_received, g_tg_fired,
-	         AP_TurboGrantPending(g_tg_received, g_tg_fired, g_tg_inflight));
+	         g_tg_received, AP_FxTurboFired(),
+	         AP_TurboGrantPending(g_tg_received, AP_FxTurboFired(), g_tg_inflight));
 	AP_LogLine(msg);
 }
 
@@ -232,7 +152,13 @@ void AP_TurboGrantTick(struct GameTracker *gGT)
 		AP_LogLine("[AP TURBO] in-flight grant left the slot unfired -> requeued\n");
 	}
 
-	pending = AP_TurboGrantPending(g_tg_received, g_tg_fired, g_tg_inflight);
+	// #299: until the room has said how many grants this slot already fired,
+	// nothing is owed yet. Delivering now could hand out a grant a previous
+	// session already fired.
+	if (!AP_FxTurboFiredKnown())
+		return;
+
+	pending = AP_TurboGrantPending(g_tg_received, AP_FxTurboFired(), g_tg_inflight);
 	if (pending <= 0)
 		return;
 
@@ -273,8 +199,8 @@ void AP_TurboGrantTick(struct GameTracker *gGT)
 	snprintf(msg, sizeof msg,
 	         "[AP TURBO] grant delivered to the weapon slot "
 	         "(received %d, fired %d, pending %d)\n",
-	         g_tg_received, g_tg_fired,
-	         AP_TurboGrantPending(g_tg_received, g_tg_fired, g_tg_inflight));
+	         g_tg_received, AP_FxTurboFired(),
+	         AP_TurboGrantPending(g_tg_received, AP_FxTurboFired(), g_tg_inflight));
 	AP_LogLine(msg);
 }
 
@@ -297,14 +223,13 @@ void AP_TurboGrantOnFire(struct Driver *driver, int heldItemID)
 	// clears it immediately, so this runs exactly once per use. Persisting here
 	// rather than at delivery is what makes a crash or a quit between delivery
 	// and firing hand the grant back instead of eating it.
-	g_tg_fired++;
+	AP_FxTurboFiredIncrement(); // written to the room with `max` (#299)
 	g_tg_inflight = 0;
-	AP_TurboGrantStore();
 
 	snprintf(msg, sizeof msg,
 	         "[AP TURBO] grant fired (received %d, fired %d, pending %d)\n",
-	         g_tg_received, g_tg_fired,
-	         AP_TurboGrantPending(g_tg_received, g_tg_fired, g_tg_inflight));
+	         g_tg_received, AP_FxTurboFired(),
+	         AP_TurboGrantPending(g_tg_received, AP_FxTurboFired(), g_tg_inflight));
 	AP_LogLine(msg);
 }
 

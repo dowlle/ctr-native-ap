@@ -20,6 +20,7 @@
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
 #include "ap_door_history.h"
+#include "ap_fxmarker_logic.h" // AP_FXM_STORE_* states for the #299 effect markers
 #include "ap_oxide_scene_seen.h" // #377 once-per-seed Final Challenge scene flag
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 
@@ -28,6 +29,32 @@ static unsigned g_doors_sent = 0;
 static void ap_doors_flush();
 static APOxideSceneSeen g_oxide_scene;
 static void ap_oxide_scene_flush();
+
+// #299: room-scoped one-shot effect markers. Keys are per team+slot inside the
+// room's own DataStorage, so a fresh room of the same seed starts with them
+// absent. The game side (ap_hooks.c, ap_turbogrant.c) owns the rules.
+struct APFxStore
+{
+	const char *prefix;
+	std::string key;
+	int         state; // AP_FXM_STORE_*
+	long long   value;
+	unsigned    rev;
+};
+static APFxStore g_fx_store[AP_NET_FX_COUNT] = {
+	{"ctr_fx_", "", AP_FXM_STORE_PENDING, 0, 0},
+	{"ctr_turbo_fired_", "", AP_FXM_STORE_PENDING, 0, 0},
+};
+static void ap_fx_store_clear()
+{
+	for (auto &s : g_fx_store)
+	{
+		s.key.clear();
+		s.state = AP_FXM_STORE_PENDING;
+		s.value = 0;
+		s.rev++;
+	}
+}
 
 #include <deque>
 #include <algorithm>
@@ -568,6 +595,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_scouts_done = false;
 	g_pending_checks.clear();
 	g_doors.disconnected();
+	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
@@ -853,6 +881,21 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		AP_LogLine("[AP DOOR] connected: session reset, inventory/storage barrier pending\n");
 		g_ap->SetNotify({g_doors.key});
 		g_ap->Get({g_doors.key});
+		// #299: fetch the room's effect markers. Until the reply lands the game
+		// holds one-shot effects rather than guess (ap_fxmarker_logic.h).
+		ap_fx_store_clear();
+		{
+			const std::string suffix = std::to_string(g_ap->get_team_number()) + "_" +
+			                           std::to_string(g_ap->get_player_number());
+			std::list<std::string> fxKeys;
+			for (auto &s : g_fx_store)
+			{
+				s.key = s.prefix + suffix;
+				fxKeys.push_back(s.key);
+			}
+			g_ap->SetNotify(fxKeys);
+			g_ap->Get(fxKeys);
+		}
 		// #377: the once-per-seed Oxide Final Challenge scene flag. Same
 		// seed+team+slot scoping and the same Get barrier as the doors above.
 		g_oxide_scene.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
@@ -935,6 +978,25 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_doors_flush();
 		}
+		if (g_connected)
+		{
+			for (auto &s : g_fx_store)
+			{
+				auto fx = s.key.empty() ? keys.end() : keys.find(s.key);
+				if (fx == keys.end())
+					continue;
+				if (fx->second.is_null())
+					s.state = AP_FXM_STORE_ABSENT;
+				else if (fx->second.is_number_integer())
+				{
+					s.state = AP_FXM_STORE_VALID;
+					s.value = fx->second.get<long long>();
+				}
+				else
+					s.state = AP_FXM_STORE_INVALID;
+				s.rev++;
+			}
+		}
 		auto scene = keys.find(g_oxide_scene.key);
 		if (g_connected && scene != keys.end()) {
 			g_oxide_scene.retrieved(scene->second);
@@ -979,6 +1041,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			g_doors_sent &= g_doors.pending;
 			ap_doors_flush();
+		}
+		for (auto &s : g_fx_store)
+		{
+			if (g_connected && !s.key.empty() && key == s.key && value.is_number_integer())
+			{
+				s.value = value.get<long long>();
+				s.state = AP_FXM_STORE_VALID;
+				s.rev++;
+			}
 		}
 		if (g_connected && key == g_oxide_scene.key) {
 			g_oxide_scene.reply(value);
@@ -1214,6 +1285,7 @@ static void ap_net_apply_seed_reject(void)
 	g_char_known = false;
 	g_edit_known = false;
 	g_doors.disconnected();
+	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
@@ -1518,6 +1590,34 @@ static void ap_doors_flush()
 		APClient::DataStorageOperation op;
 		op.operation = "or"; op.value = bits;
 		if (g_ap->Set(g_doors.key, 0, true, {op})) g_doors_sent |= bits;
+	});
+}
+
+extern "C" int ap_net_fx_store(int which, long long *value, unsigned *rev)
+{
+	if (which < 0 || which >= AP_NET_FX_COUNT)
+		return AP_FXM_STORE_PENDING;
+	const APFxStore &s = g_fx_store[which];
+	if (value)
+		*value = s.value;
+	if (rev)
+		*rev = s.rev;
+	return s.state;
+}
+
+extern "C" void ap_net_fx_store_write(int which, long long value, const char *op)
+{
+	if (!g_ap || !g_connected || which < 0 || which >= AP_NET_FX_COUNT ||
+	    g_fx_store[which].key.empty() || op == nullptr)
+		return;
+	// The default is the marker's "nothing" value, so `max` on an absent key
+	// lands on `value`. want_reply: the SetReply confirms a migrated value.
+	const long long empty = which == AP_NET_FX_EFFECT ? -1 : 0;
+	AP_NET_GUARD("fx_store_set", {
+		APClient::DataStorageOperation o;
+		o.operation = op;
+		o.value = value;
+		g_ap->Set(g_fx_store[which].key, empty, true, {o});
 	});
 }
 
@@ -1933,6 +2033,7 @@ extern "C" void ap_net_shutdown(void)
 	g_connected = false;
 	g_items.clear();
 	g_doors.disconnected();
+	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	g_items_player.clear();
