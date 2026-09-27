@@ -526,6 +526,13 @@ void AP_WumpaReachedTen(struct Driver *driver);
 // the unity translation unit; ap/ap_hit_encounter.c calls this.
 int AP_EmitHitCharacterCheck(long code);
 
+// Relic Race perfect check (issue #49). Called from RR_EndEvent_UnlockAward
+// (game/223.c) at every relic race end, before the retail relic loop and the
+// Cortex Vortex early return. Sends the seed's perfect code for the raced track
+// when every time crate was broken; observes the #286 forced-loss latch through
+// AP_RESULT_PRODUCER_RELIC_PERFECT. Never changes relic presentation or award.
+void AP_NotifyRelicPerfect(void);
+
 // 1 if the AP location at `globalBit` is a REAL location this SEED (present in
 // AP's own missing/checked location set for our slot -- see ap_net_location_exists).
 // AP_LookupLocationCode alone is NOT enough to answer this: it resolves against the

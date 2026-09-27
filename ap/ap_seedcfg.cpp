@@ -12,6 +12,7 @@
 // written LAST so a partial parse never flips ctr_cfg_active() true.
 
 #include "ap_seedcfg.h"
+#include "ap_relic_perfect.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -871,6 +872,86 @@ static int parse_hit_character(const nlohmann::json &j)
 	return 1;
 }
 
+// ── relic_perfect_checks (issue #49) ─────────────────────────────────────
+//
+//   "relic_perfect_checks": {"enabled": true,
+//                            "locations": {"<LevelID 0..17>": [code], ...}}
+//
+// The shared location-class family shape (Contract 7a): one partition per
+// retail relic race, keyed by canonical decimal LevelID, each a one-slot code
+// array. The block is present only when the seed has the option on. Every row
+// must be exact: canonical key, a one-element array, an integer (never a
+// Boolean) equal to the frozen code for that LevelID. ANY bad row refuses the
+// whole block with one log line: a malformed room must not produce a subset the
+// tracker cannot reproduce. Missing rows are allowed and simply mean that relic
+// race has no perfect check this seed (the Cortex Vortex dropped destination).
+static_assert(CTR_CFG_RELIC_PERFECT_COUNT == AP_RELIC_PERFECT_TRACK_COUNT,
+              "relic perfect table sizes must agree");
+
+static void ap_seedcfg_parse_relic_perfect(const nlohmann::json &j)
+{
+	long rows[CTR_CFG_RELIC_PERFECT_COUNT];
+	int count = 0;
+	const char *why = 0;
+	std::string whyKey;
+
+	auto it = j.find("relic_perfect_checks");
+	if (it == j.end())
+		return; // option off, or a seed from before #49
+	for (int i = 0; i < CTR_CFG_RELIC_PERFECT_COUNT; i++)
+		rows[i] = -1;
+
+	const nlohmann::json &b = *it;
+	if (!b.is_object())
+		why = "block is not an object";
+	else
+	{
+		auto en = b.find("enabled");
+		auto loc = b.find("locations");
+		if (en == b.end() || !en->is_boolean())
+			why = "enabled is not a boolean";
+		else if (loc == b.end() || !loc->is_object())
+			why = "locations is not an object";
+		else
+		{
+			for (auto row = loc->begin(); row != loc->end() && !why; ++row)
+			{
+				int lid = AP_RelicPerfectKeyLevel(row.key().c_str());
+				if (lid < 0)
+					why = "key is not a canonical LevelID 0..17";
+				else if (!row.value().is_array() || row.value().size() != 1 ||
+				         !row.value()[0].is_number_integer())
+					why = "row is not a one-element integer array";
+				else if (row.value()[0].get<long long>() !=
+				         (long long)AP_RelicPerfectExpectedCode(lid))
+					why = "code is not the frozen code for this LevelID";
+				else
+				{
+					rows[lid] = AP_RelicPerfectExpectedCode(lid);
+					count++;
+				}
+				if (why)
+					whyKey = row.key();
+			}
+			if (!why && en->get<bool>() != (count > 0))
+				why = "enabled disagrees with the row count";
+		}
+	}
+
+	if (why)
+	{
+		ap_cfg_log("[AP CFG] relic_perfect_checks refused (%s%s%s); no Relic "
+		           "Race perfect check will be sent\n", why,
+		           whyKey.empty() ? "" : ", key ", whyKey.c_str());
+		return;
+	}
+	for (int i = 0; i < CTR_CFG_RELIC_PERFECT_COUNT; i++)
+		ctr_cfg.relic_perfect[i] = rows[i];
+	ctr_cfg.relic_perfect_enabled = count > 0;
+	ap_cfg_log("[AP CFG] relic_perfect_checks: %d Relic Race perfect check(s)\n",
+	           count);
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
@@ -1020,6 +1101,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	std::memset(&ctr_cfg.hit, 0, sizeof ctr_cfg.hit);
 	for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
 		ctr_cfg.hit.locations[i] = -1;
+	// relic_perfect_checks (#49): absent is off. Codes clear to -1, the
+	// absent sentinel, never 0.
+	ctr_cfg.relic_perfect_enabled = 0;
+	for (int i = 0; i < CTR_CFG_RELIC_PERFECT_COUNT; i++)
+		ctr_cfg.relic_perfect[i] = -1;
 	// Warp-pad glow layout: the pile, i.e. the shipped behaviour, until parsed.
 	ctr_cfg.warp_pad_item_display = WARP_PAD_DISPLAY_ONE_PILE;
 	// AP-item type colours (#212): ON until a seed says otherwise. This reset runs
@@ -1690,6 +1776,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			ctr_cfg.trial_track_valid[b] = 0;
 		}
 	}
+
+	ap_seedcfg_parse_relic_perfect(j);
 
 	// ── wumpa_checks (2026-08-29 specification, Lane A) ────────────────────
 	//
