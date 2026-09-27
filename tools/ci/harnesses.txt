@@ -49,6 +49,7 @@ tools/test-file-writer.cpp
 tools/test-firstkey-freeze.c
 tools/test-focus-mute.c
 tools/test-frame-watch.c
+tools/test-fxmarker.c
 tools/test-fxseen-room-key.c
 tools/test-gem-cup-seedcfg.cpp
 tools/test-glow-slots.c
