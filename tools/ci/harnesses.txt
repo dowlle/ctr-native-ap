@@ -100,6 +100,7 @@ tools/test-race-attempt-lifecycle.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-render-scale.c
+tools/test-reserves-meter.c
 tools/test-reward-text.c
 tools/test-tracker-assets.c
 tools/test-tracker-markers.c
