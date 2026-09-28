@@ -171,6 +171,18 @@ static void AnimateWater_Common(int timer, int numWaterVertices, struct WaterVer
 	for (int i = 0; i < numLists; i++)
 	{
 		visList[i] = (u32 *)visLists[i];
+#if defined(CTR_CUSTOM_TRACKS)
+		// NOTE: CTR_NATIVE divergence, not retail ASM: a custom LEV can have
+		// water vertices but no water visibility list (Saphi's Dracula's
+		// Castle: 135 water vertices, level header list pointer 0, so
+		// MainInit_FinalizeInit passes NULL). The PS1 reads address 0 without
+		// faulting; native faults. With no list every water vertex is visible.
+		if (visList[i] == NULL)
+		{
+			visBits = 0xffffffff;
+			continue;
+		}
+#endif
 		visBits |= *visList[i]++;
 	}
 
@@ -193,6 +205,13 @@ static void AnimateWater_Common(int timer, int numWaterVertices, struct WaterVer
 
 			for (int i = 0; i < numLists; i++)
 			{
+#if defined(CTR_CUSTOM_TRACKS)
+				if (visList[i] == NULL)
+				{
+					visBits = 0xffffffff;
+					continue;
+				}
+#endif
 				visBits |= *visList[i]++;
 			}
 
