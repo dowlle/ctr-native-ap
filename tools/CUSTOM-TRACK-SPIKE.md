@@ -159,7 +159,9 @@ with no route to ten fruit at all.
 
 Manager-light MEASURES it rather than trusting the registry constant. It walks
 the hash-verified LEV's own instance table and counts `PU_FRUIT_CRATE` (modelID
-7) and loose `PU_WUMPA_FRUIT` (modelID 2), then takes the guaranteed floor: five
+7) and loose `PU_WUMPA_FRUIT` (modelID 2), reading each ID through the instance's
+model pointer (`Model::id`, the ID the engine gives behaviour from; custom LEVs
+often leave the InstDef's own +0x3C ID disagreeing), then takes the guaranteed floor: five
 fruit per fruit crate, because `RB_Crate.c` pays `MixRNG % 4 + 5`, plus one per
 loose fruit. Ten or more is true. Every scan re-derives it, and a package whose
 bytes disagree with the registry is refused — the digests already prove these are

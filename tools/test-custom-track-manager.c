@@ -70,6 +70,13 @@ static void write_bytes(const char *path, const unsigned char *bytes, size_t len
 //
 // Built here rather than checked in as a binary so a reader can see exactly which
 // bytes produce which measurement, and so a case can be varied by argument.
+//
+// Each InstDef points (+0x10) at a small `struct Model` record ahead of the
+// table, whose s16 id at +0x10 is what the engine and the measurement read. The
+// InstDef's own +0x3C id is written equal by default, as retail does, and the
+// disagreement cases overwrite it.
+#define FIXTURE_LEV_MODELS 0x100
+#define FIXTURE_LEV_MODEL_STRIDE 0x20
 #define FIXTURE_LEV_INSTDEFS 0x200
 #define FIXTURE_LEV_MAX (FIXTURE_LEV_INSTDEFS + 64 * 0x40 + 4)
 
@@ -84,6 +91,35 @@ static void put_u32(unsigned char *buf, size_t offset, unsigned long value)
 // `fruitCrates` PU_FRUIT_CRATE instances, `looseFruit` PU_WUMPA_FRUIT, and
 // `others` instances of an unrelated model so the walk is shown to be selecting
 // rather than counting everything it sees.
+// Model records, one per id the fixtures use, at FIXTURE_LEV_MODELS.
+enum
+{
+	FIXTURE_MODEL_FRUIT_CRATE = 0,
+	FIXTURE_MODEL_WUMPA_FRUIT,
+	FIXTURE_MODEL_RANDOM_CRATE,
+	FIXTURE_MODEL_CRYSTAL,
+	FIXTURE_MODEL_COUNT
+};
+static const int s_fixtureModelIds[FIXTURE_MODEL_COUNT] = {
+	CTR_CT_MODEL_FRUIT_CRATE, CTR_CT_MODEL_WUMPA_FRUIT,
+	0x08 /* PU_RANDOM_CRATE: a weapon box pays no fruit */,
+	0x60 /* STATIC_CRYSTAL */
+};
+
+static unsigned long fixture_model_offset(int model)
+{
+	return FIXTURE_LEV_MODELS + (unsigned long)model * FIXTURE_LEV_MODEL_STRIDE;
+}
+
+// Point instance `index` at fixture model `model` and give its +0x3C field
+// `legacyId`, which may disagree with the model's own id.
+static void set_instdef(unsigned char *buf, int index, int model, unsigned long legacyId)
+{
+	const size_t def = 4 + FIXTURE_LEV_INSTDEFS + (size_t)index * 0x40;
+	put_u32(buf, def + 0x10, fixture_model_offset(model));
+	put_u32(buf, def + 0x3C, legacyId);
+}
+
 static size_t build_lev(unsigned char *buf, int fruitCrates, int looseFruit,
 	                     int others)
 {
@@ -98,15 +134,19 @@ static size_t build_lev(unsigned char *buf, int fruitCrates, int looseFruit,
 	put_u32(buf, 0, (unsigned long)ptrMapOffset);
 	put_u32(buf, 4 + 0x0C, (unsigned long)total);
 	put_u32(buf, 4 + 0x10, FIXTURE_LEV_INSTDEFS);
+	for (i = 0; i < FIXTURE_MODEL_COUNT; i++)
+	{
+		const size_t model = 4 + fixture_model_offset(i);
+		buf[model + 0x10] = (unsigned char)(s_fixtureModelIds[i] & 0xFF);
+		buf[model + 0x11] = (unsigned char)((s_fixtureModelIds[i] >> 8) & 0xFF);
+	}
 	for (i = 0; i < fruitCrates; i++, written++)
-		put_u32(buf, 4 + FIXTURE_LEV_INSTDEFS + (size_t)written * 0x40 + 0x3C,
-		        CTR_CT_MODEL_FRUIT_CRATE);
+		set_instdef(buf, written, FIXTURE_MODEL_FRUIT_CRATE, CTR_CT_MODEL_FRUIT_CRATE);
 	for (i = 0; i < looseFruit; i++, written++)
-		put_u32(buf, 4 + FIXTURE_LEV_INSTDEFS + (size_t)written * 0x40 + 0x3C,
-		        CTR_CT_MODEL_WUMPA_FRUIT);
+		set_instdef(buf, written, FIXTURE_MODEL_WUMPA_FRUIT, CTR_CT_MODEL_WUMPA_FRUIT);
 	for (i = 0; i < others; i++, written++)
-		put_u32(buf, 4 + FIXTURE_LEV_INSTDEFS + (size_t)written * 0x40 + 0x3C,
-		        0x08 /* PU_RANDOM_CRATE: a weapon box pays no fruit */);
+		set_instdef(buf, written, FIXTURE_MODEL_RANDOM_CRATE,
+		            (unsigned long)s_fixtureModelIds[FIXTURE_MODEL_RANDOM_CRATE]);
 	return payload + 4;
 }
 
@@ -454,6 +494,37 @@ int main(void)
 		expect_int(measured.collectible, 0,
 		           "crate instances alone are not a route to ten fruit");
 
+		// The model ID is what counts, not the InstDef's +0x3C field. Custom
+		// LEVs often let the two disagree (retail never does), and the engine
+		// gives behaviour from the model, so the measurement must too.
+		//
+		// Crystal-arena shape: 20 crystals whose +0x3C claims fruit crate. The
+		// old +0x3C walk measured these as 100 guaranteed fruit.
+		len = build_lev(lev, 0, 0, 20);
+		for (int k = 0; k < 20; k++)
+			set_instdef(lev, k, FIXTURE_MODEL_CRYSTAL, CTR_CT_MODEL_FRUIT_CRATE);
+		write_bytes(path, lev, len);
+		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 1,
+		           "a LEV whose +0x3C ids disagree is measurable");
+		expect_int(measured.fruitCrates, 0,
+		           "crystals labelled fruit crate at +0x3C are not fruit crates");
+		expect_int(measured.collectible, 0,
+		           "crystals cannot pay the ten fruit the +0x3C field implies");
+
+		// Space Labs shape: Wumpa fruit models whose +0x3C says weapon crate,
+		// plus one real fruit crate whose +0x3C says weapon crate.
+		len = build_lev(lev, 0, 6, 0);
+		for (int k = 0; k < 5; k++)
+			set_instdef(lev, k, FIXTURE_MODEL_WUMPA_FRUIT, 0x08);
+		set_instdef(lev, 5, FIXTURE_MODEL_FRUIT_CRATE, 0x08);
+		write_bytes(path, lev, len);
+		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 1,
+		           "a LEV with fruit labelled weapon crate is measurable");
+		expect_int(measured.looseFruit, 5, "fruit models are counted whatever +0x3C says");
+		expect_int(measured.fruitCrates, 1, "a fruit crate model is counted whatever +0x3C says");
+		expect_int(measured.guaranteedFruit, 10, "the model-ID count reaches ten");
+		expect_int(measured.collectible, 1, "the model-ID count is collectible");
+
 		// A level with no instances at all measures zero, which is an ANSWER.
 		len = build_lev(lev, 0, 0, 0);
 		write_bytes(path, lev, len);
@@ -491,6 +562,27 @@ int main(void)
 		write_bytes(path, lev, len);
 		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 0,
 		           "an absurd instance count is refused rather than walked");
+
+		// A model pointer the engine could not follow is not measurable: null,
+		// past the pointer map, or so close to it that the id would straddle it.
+		len = build_lev(lev, 2, 0, 0);
+		put_u32(lev, 4 + FIXTURE_LEV_INSTDEFS + 0x40 + 0x10, 0);
+		write_bytes(path, lev, len);
+		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 0,
+		           "a null model pointer is not measurable");
+
+		len = build_lev(lev, 2, 0, 0);
+		put_u32(lev, 4 + FIXTURE_LEV_INSTDEFS + 0x10, 0xFFFFFFF0ul);
+		write_bytes(path, lev, len);
+		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 0,
+		           "a model pointer past the pointer map is not measurable");
+
+		len = build_lev(lev, 2, 0, 0);
+		put_u32(lev, 4 + FIXTURE_LEV_INSTDEFS + 0x10,
+		        (unsigned long)(FIXTURE_LEV_INSTDEFS + 2 * 0x40 - 0x11));
+		write_bytes(path, lev, len);
+		expect_int(CustomTrackManager_MeasureWumpa(path, &measured), 0,
+		           "a model whose id straddles the pointer map is not measurable");
 
 		// ptrInstDefs pointing into the pointer map is out of bounds too.
 		len = build_lev(lev, 2, 0, 0);
