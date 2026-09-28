@@ -88,6 +88,9 @@ tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
 tools/test-oxide-scene-seen.cpp
 tools/test-oxide-scene-seen-production.py
+tools/test-boss-door-scene.c
+tools/test-boss-door-scene-seen.cpp
+tools/test-boss-door-scene-production.py
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py

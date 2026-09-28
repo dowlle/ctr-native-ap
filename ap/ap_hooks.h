@@ -259,6 +259,12 @@ int AP_OxideFinalSceneReady(int vanillaRelics);
 void AP_OxideFinalSceneMarkPlayed(void);
 // Issue #377: local "Skip Cutscenes" option (ap/ap_podium_skip.c).
 int AP_SkipCutscenes(void);
+// Issue #377: the boss-door scene after a Trophy podium plays once per hub per
+// seed (ap/ap_boss_door_scene.c). `hub` is levelID - N_SANITY_BEACH (0..3).
+// Ready is consulted with slot_data active only; MarkPlayed records the hub
+// once the podium hands over to the scene, watched or skipped.
+int AP_BossDoorSceneReady(int hub);
+void AP_BossDoorSceneMarkPlayed(int hub);
 int AP_OxideFinalVenueEntryReady(void);
 
 // Persistent on-screen warning drawn on the adventure hub when the connected

@@ -22,6 +22,7 @@
 #include "ap_door_history.h"
 #include "ap_fxmarker_logic.h" // AP_FXM_STORE_* states for the #299 effect markers
 #include "ap_oxide_scene_seen.h" // #377 once-per-seed Final Challenge scene flag
+#include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 
 static APDoorHistory g_doors;
@@ -29,6 +30,8 @@ static unsigned g_doors_sent = 0;
 static void ap_doors_flush();
 static APOxideSceneSeen g_oxide_scene;
 static void ap_oxide_scene_flush();
+static APBossDoorSceneSeen g_boss_door_scene;
+static void ap_boss_door_scene_flush();
 
 // #299: room-scoped one-shot effect markers. Keys are per team+slot inside the
 // room's own DataStorage, so a fresh room of the same seed starts with them
@@ -598,6 +601,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
+	g_boss_door_scene.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
 	g_last_error = reason;
 	char line[256];
@@ -901,6 +905,10 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_oxide_scene.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_ap->SetNotify({g_oxide_scene.key});
 		g_ap->Get({g_oxide_scene.key});
+		// #377: the once-per-hub boss-door scene flag, same scoping and barrier.
+		g_boss_door_scene.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		g_ap->SetNotify({g_boss_door_scene.key});
+		g_ap->Get({g_boss_door_scene.key});
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -1006,6 +1014,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_oxide_scene_flush();
 		}
+		auto bossDoor = keys.find(g_boss_door_scene.key);
+		if (g_connected && bossDoor != keys.end()) {
+			g_boss_door_scene.retrieved(bossDoor->second);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP BOSS DOOR SCENE] retrieved valid=%d bits=%u pending=%u\n",
+			              g_boss_door_scene.valid, g_boss_door_scene.bits, g_boss_door_scene.pending);
+			AP_LogLine(line);
+			ap_boss_door_scene_flush();
+		}
 		auto it = keys.find(ap_diff_key());
 		if (it != keys.end() && it->second.is_number_integer())
 		{
@@ -1058,6 +1075,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			              g_oxide_scene.valid, g_oxide_scene.bits, g_oxide_scene.pending);
 			AP_LogLine(line);
 			ap_oxide_scene_flush();
+		}
+		if (g_connected && key == g_boss_door_scene.key) {
+			g_boss_door_scene.reply(value);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP BOSS DOOR SCENE] reply valid=%d bits=%u pending=%u\n",
+			              g_boss_door_scene.valid, g_boss_door_scene.bits, g_boss_door_scene.pending);
+			AP_LogLine(line);
+			ap_boss_door_scene_flush();
 		}
 		if (key == ap_diff_key() && value.is_number_integer())
 		{
@@ -1213,6 +1238,7 @@ extern "C" void ap_net_poll(void)
 	// slot-connected callback that raised the refusal.
 	if (g_reject_stop_pending)
 		ap_net_apply_seed_reject();
+	ap_boss_door_scene_flush();
 	ap_doors_flush();
 	ap_oxide_scene_flush();
 }
@@ -1288,6 +1314,7 @@ static void ap_net_apply_seed_reject(void)
 	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
+	g_boss_door_scene.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
 	// may have touched either field). The menu keeps showing why the seed was
 	// refused.
@@ -1682,6 +1709,33 @@ extern "C" void ap_net_oxide_open_msg_record(void)
 	ap_oxide_scene_flush();
 }
 
+// #377: the boss-door scene flag, sent exactly like the Oxide scene flag above.
+static void ap_boss_door_scene_flush()
+{
+	if (!g_ap || !g_connected || g_rejected || !g_boss_door_scene.wantsSend()) return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
+	AP_NET_GUARD("boss_door_scene_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "or"; op.value = g_boss_door_scene.pending;
+		if (g_ap->Set(g_boss_door_scene.key, 0, true, {op})) g_boss_door_scene.sent = true;
+	});
+}
+
+extern "C" int ap_net_boss_door_scene_known(void)
+{
+	return g_connected && !g_rejected && g_boss_door_scene.known();
+}
+extern "C" int ap_net_boss_door_scene_seen(int hub) { return g_boss_door_scene.seenHub(hub); }
+extern "C" void ap_net_boss_door_scene_record(int hub)
+{
+	if (g_rejected || !g_boss_door_scene.recordHub(hub)) return;
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP BOSS DOOR SCENE] hub %d played; recording seen (known=%d)\n",
+	              hub, (int)g_boss_door_scene.known());
+	AP_LogLine(line);
+	ap_boss_door_scene_flush();
+}
+
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
 {
 	if (!g_ap || !g_connected)
@@ -2036,6 +2090,7 @@ extern "C" void ap_net_shutdown(void)
 	ap_fx_store_clear();
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
+	g_boss_door_scene.disconnected();
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

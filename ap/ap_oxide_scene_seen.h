@@ -26,67 +26,15 @@
 #define AP_OXIDE_FLAG_OPEN_MSG 2u
 #define AP_OXIDE_FLAG_ALL      (AP_OXIDE_FLAG_SCENE | AP_OXIDE_FLAG_OPEN_MSG)
 #ifdef __cplusplus
-#include <string>
-#include <nlohmann/json.hpp>
+#include "ap_scene_seen_flags.h"
 
-struct APOxideSceneSeen {
-    std::string identity, key;
-    bool barrier = false;  // the Get reply for this connection has arrived
-    bool valid = false;    // the stored value was readable
-    unsigned bits = 0;     // set, from the server or recorded locally
-    unsigned pending = 0;  // recorded locally, server has not confirmed yet
-    bool sent = false;     // a Set is in flight for this connection
-
-    static std::string part(const std::string &s) {
-        return std::to_string(s.size()) + ":" + s;
-    }
-    void connect(const std::string &endpoint, const std::string &seed, int team, int slot) {
-        std::string k = "ctr_oxide_final_scene_v1:" + part(seed) + ":" +
-                        std::to_string(team) + ":" + std::to_string(slot);
-        std::string id = part(endpoint) + part(k);
-        if (id != identity) { bits = pending = 0; }
-        identity = id; key = k; barrier = valid = sent = false;
-    }
-    void disconnected() { barrier = valid = sent = false; }
-    static bool accept(const nlohmann::json &v, unsigned &out) {
-        if (!v.is_number_integer()) return false;
-        if (v.is_number_unsigned()) {
-            auto n = v.get<unsigned long long>();
-            if (n > AP_OXIDE_FLAG_ALL) return false;
-            out = (unsigned)n;
-        } else {
-            auto n = v.get<long long>();
-            if (n < 0 || n > (long long)AP_OXIDE_FLAG_ALL) return false;
-            out = (unsigned)n;
-        }
-        return true;
-    }
-    void merge(unsigned b) { bits |= b; pending &= ~b; }
-    void retrieved(const nlohmann::json &v) {
-        barrier = true;
-        unsigned b = 0;
-        if (v.is_null()) { valid = true; return; }
-        if (!accept(v, b)) { valid = false; return; }
-        valid = true;
-        merge(b);
-    }
-    void reply(const nlohmann::json &v) {
-        unsigned b = 0;
-        if (!accept(v, b)) { valid = false; return; }
-        valid = true; sent = false;
-        merge(b);
-    }
-    bool known() const { return barrier && valid; }
-    bool has(unsigned bit) const { return (bits & bit) != 0; }
+// The storage, barrier and merge rules are shared with the boss-door scene
+// flag (ap_scene_seen_flags.h).
+struct APOxideSceneSeen : APSceneSeenFlags {
+    APOxideSceneSeen() : APSceneSeenFlags("ctr_oxide_final_scene_v1", AP_OXIDE_FLAG_ALL) {}
+    using APSceneSeenFlags::record;
     bool seen() const { return has(AP_OXIDE_FLAG_SCENE); }
-    // Returns true when this call is the one that recorded the bit.
-    bool record(unsigned bit) {
-        if (identity.empty() || has(bit)) return false;
-        bits |= bit; pending |= bit;
-        return true;
-    }
     bool record() { return record(AP_OXIDE_FLAG_SCENE); }
-    bool wantsSend() const { return pending != 0 && !sent && known(); }
 };
 #endif
 #endif
