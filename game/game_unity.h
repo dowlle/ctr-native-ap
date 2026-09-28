@@ -372,6 +372,7 @@
 #include "../ap/ap_hit_encounter.c" // ticket 06 gather: eligibility + roster + dispatch
 #include "../ap/ap_hit_bots.c"      // ticket 06 BOTS-side gather (host-linkable)
 #include "../ap/ap_perf.c"
+#include "../ap/ap_discord.c"      // #366 Discord Rich Presence glue (I/O lives in ap_net)
 #include "../ap/ap_crash.c"
 #include "../ap/ap_verify.c"
 #include "../ap/ap_traps.c"

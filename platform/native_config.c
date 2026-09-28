@@ -52,6 +52,8 @@ NativeConfig g_config = {
 	false, // navRecord (off: this one writes files to the player's disk)
 	false, // navUseRecorded (off: changes how the AI drives)
 	"",    // navDriverName (empty = fall back to the Archipelago slot name)
+	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
+	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
 #endif
 };
 
@@ -145,6 +147,15 @@ const ConfigEntry g_configEntries[] = {
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
 	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
+	// Discord Status (issue #366, CFG_BOOL): a LOCAL option, off by default.
+	// On, the Discord client on this machine shows the track, mode and check
+	// count (ap/ap_discord.c). No room, slot or seed details are sent. Not
+	// slot_data.
+	{"Archipelago", "discord_status",           "Discord Status",               CFG_BOOL, &g_config.discordStatus},
+	// Discord section: config-file-only (CTR_MenuSectionHidden). An override
+	// for the Discord application ID, for testing before the built-in one is
+	// set; empty means the built-in AP_DISCORD_APPLICATION_ID.
+	{"Discord",     "application_id",           "Discord Application ID",       CFG_STRING, g_config.discordAppId, 0, (int)sizeof(g_config.discordAppId), 0},
 	// State section: config-file-only, exactly like [Audio] above -- gated out of
 	// BuildSectionMap (game/230/MM_ConfigMenu.c) so it is never a menu section.
 	// This is remembered state, not an option, which is the reason it is hidden.
