@@ -34,7 +34,7 @@
 // "Playing CTR Archipelago"), copy its Application ID from General
 // Information into the constant below, and under Rich Presence > Art Assets
 // upload the logo with the key AP_DISCORD_LARGE_IMAGE_KEY.
-#define AP_DISCORD_APPLICATION_ID ""
+#define AP_DISCORD_APPLICATION_ID "1554175711055446086"
 
 // Art asset key of the large image, as uploaded under the application's Rich
 // Presence art assets in the Discord Developer Portal.
