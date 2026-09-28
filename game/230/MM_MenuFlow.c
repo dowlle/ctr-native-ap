@@ -92,6 +92,9 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 			// a session with no slot_data -- and the whole vanilla build -- draws
 			// nothing.
 			AP_DrawTitleUpdateNotice(&gGT->backBuffer->otMem.uiOT[3]);
+			// "ARCHIPELAGO" under the banner, only while no submenu is open.
+			if ((D230.menuMainMenu.state & DRAW_NEXT_MENU_IN_HIERARCHY) == 0)
+				AP_DrawTitleArchipelagoLine(&gGT->backBuffer->otMem.uiOT[3]);
 			// One-click connect (issue #334): these same settled frames, with no
 			// submenu open, are where a waiting room link may be offered.
 			if ((D230.menuMainMenu.state & DRAW_NEXT_MENU_IN_HIERARCHY) == 0)

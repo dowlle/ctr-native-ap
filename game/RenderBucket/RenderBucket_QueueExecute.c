@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_title_ring_logic.h"
+#endif
 
 
 struct RenderBucketEntry
@@ -381,6 +384,10 @@ struct RenderBucketDrawContext
 	int vertexIndex;
 	int splitPlane;
 	int waterSplitSide;
+#ifdef CTR_AP
+	// Nonzero while drawing the title screen ring (ap/ap_title_ring_logic.h).
+	int apTitleRing;
+#endif
 };
 
 enum
@@ -2536,7 +2543,34 @@ static struct RenderBucketUncompressResult RenderBucket_UncompressAnimationFrame
 	return RenderBucket_TransformSplitDecodedVertex(ctx, command, stackIndex, RenderBucket_UncompressAnimationFrame_NextFrame(ctx, command, stackIndex));
 }
 
+#ifdef CTR_AP
+// CTR-AP: the title screen ring in the Archipelago colours. Only the two ring
+// models set ctx->apTitleRing (RenderBucket_PrepareDrawContext), so every other
+// model takes the untouched retail path below. The packed vertex of the normal
+// and next-frame decoders is model space (VXY: X low, up high), which is what
+// the sixth-of-the-ring lookup needs; the split decoders return a transformed
+// vertex, so they keep the retail colour (the title ring never uses them).
+static struct RenderBucketUncompressResult RenderBucket_DispatchUncompressAnimationFrame_Retail(struct RenderBucketDrawContext *ctx, u32 command, u16 stackIndex);
+
 static struct RenderBucketUncompressResult RenderBucket_DispatchUncompressAnimationFrame(struct RenderBucketDrawContext *ctx, u32 command, u16 stackIndex)
+{
+	struct RenderBucketUncompressResult result = RenderBucket_DispatchUncompressAnimationFrame_Retail(ctx, command, stackIndex);
+
+	if ((ctx->apTitleRing != 0) &&
+	    ((ctx->idpp->unkF0 == RB_RETAIL_UNCOMPRESS_NORMAL) || (ctx->idpp->unkF0 == RB_RETAIL_UNCOMPRESS_NEXTFRAME)))
+	{
+		int segment = AP_TitleRing_SegmentForVertex((s16)(result.packed.xy & 0xffff), (s16)(result.packed.xy >> 16),
+		                                            ctx->mh->scale.x, ctx->mh->scale.y);
+
+		result.color = (int)AP_TitleRing_Recolour((u32)result.color, segment);
+	}
+	return result;
+}
+
+static struct RenderBucketUncompressResult RenderBucket_DispatchUncompressAnimationFrame_Retail(struct RenderBucketDrawContext *ctx, u32 command, u16 stackIndex)
+#else
+static struct RenderBucketUncompressResult RenderBucket_DispatchUncompressAnimationFrame(struct RenderBucketDrawContext *ctx, u32 command, u16 stackIndex)
+#endif
 {
 	switch (ctx->idpp->unkF0)
 	{
@@ -5282,6 +5316,11 @@ static int RenderBucket_PrepareDrawContext(struct RenderBucketDrawContext *ctx, 
 	ctx->anim = anim;
 	ctx->vertData = MODELFRAME_GETVERT(mf);
 	ctx->waterSplitSide = -1;
+#ifdef CTR_AP
+	// Title screen ring only: the two ring models, in the main menu.
+	ctx->apTitleRing = ((sdata->gGT->gameMode1 & MAIN_MENU) != 0) &&
+	                   ((inst->model->id == STATIC_RINGTOP) || (inst->model->id == STATIC_RINGBOTTOM));
+#endif
 	if (nextFrame != 0)
 	{
 		ctx->nextVertData = (char *)nextFrame + mf->vertexOffset;

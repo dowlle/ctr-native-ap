@@ -3304,6 +3304,39 @@ void AP_DrawTitleUpdateNotice(uint32_t *ot)
 	                     FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 
+// "ARCHIPELAGO" under the red CRASH TEAM RACING banner on the title screen.
+//
+// Drawn under the same gates as the trademark line (MM_MenuProc_Main: main menu,
+// title object alive, fly-in finished), so it appears with the settled logo and
+// never over the intro, and only while no submenu is open, so it cannot sit
+// under or over another menu box.
+//
+// Placement, in the 512 x 216 UI space of the 1P viewport (see the
+// AP_UPD_TITLE_Y comment above for the menu arithmetic):
+//   * centred on x 0x94, the middle of the banner's lettering. FONT_BIG bills
+//     17 px per character, so the 11 letters span about x 0x3A..0xEE and end
+//     well left of the main-menu box, whose left edge is x 0x126 at any row
+//     count.
+//   * top at y 0xB1, just under the banner's lower edge (measured in a 4:3
+//     render: the ribbon's lettering band ends near y 0xAC). The line is 17 px
+//     tall and ends near y 0xC2, above the room-link hint line (y 0xC4) and the
+//     update notice (y 0xD3).
+// Wider aspect ratios widen the 3D view's field of view, which pulls the logo
+// toward the screen centre, while text keeps its UI x. So the line's centre is
+// pulled toward x 0x100 by the same factor (Widescreen_CompressXAbout) to stay
+// under the banner. At 21:9, the widest, it then ends near x 0x120, still left
+// of the menu box. The y placement does not change with the aspect ratio.
+#define AP_TITLE_AP_LINE_CENTRE_X 0x94
+#define AP_TITLE_AP_LINE_Y        0xB1
+
+static char ap_title_ap_line[] = "ARCHIPELAGO";
+
+void AP_DrawTitleArchipelagoLine(uint32_t *ot)
+{
+	DecalFont_DrawLineOT(ap_title_ap_line, Widescreen_CompressXAbout(AP_TITLE_AP_LINE_CENTRE_X, 0x100), AP_TITLE_AP_LINE_Y,
+	                     FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+}
+
 void AP_DrawConnUpdateNotice(uint32_t *ot, int centreX, int y, int spacing)
 {
 	// No last-seen check here on purpose: this is the surface a player goes LOOKING

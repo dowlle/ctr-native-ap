@@ -127,6 +127,7 @@ tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
+tools/test-title-ring.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
 tools/test-tunnel-charswap-production.py

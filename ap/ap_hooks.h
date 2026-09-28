@@ -286,6 +286,8 @@ void AP_DrawSchemaWarning(void);
 // announces that an update exists. Shown once per pair version, remembered across
 // sessions in [State] update_last_seen so the same version never nags twice.
 void AP_DrawTitleUpdateNotice(uint32_t *ot);
+// "ARCHIPELAGO" under the title banner; caller gates on the settled title.
+void AP_DrawTitleArchipelagoLine(uint32_t *ot);
 // OPTIONS > Connection status area (game/230/MM_ConfigMenu.c): the PERSISTENT and
 // DETAILED surface -- it carries the seed's version and this client's, and it
 // ignores update_last_seen, so a player who saw the title line can always come
