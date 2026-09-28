@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "platform/native_gpu_vertex_budget_logic.h"
 #include "platform/native_log.h"
 #include "platform/native_perf.h"
 #include "platform/native_renderer.h"
@@ -112,10 +113,13 @@ typedef struct
 	bool psxDrawMaskSet;
 	bool framebufferFeedbackRunActive;
 
-	GrVertex vertexBuffer[MAX_VERTEX_BUFFER_SIZE];
+	// Slack past the uploaded capacity takes the writes of a primitive that
+	// does not fit; ParsePrimitive then drops it (see the budget header).
+	GrVertex vertexBuffer[MAX_VERTEX_BUFFER_SIZE + NATIVE_GPU_MAX_PRIMITIVE_VERTICES];
 	GPUDrawSplit splits[MAX_DRAW_SPLITS];
 	int vertexIndex;
 	int splitIndex;
+	NativeGpuVertexOverflow vertexOverflow;
 } NativeGpuState;
 
 global_variable NativeGpuState s_gpu;
@@ -1053,6 +1057,15 @@ void DrawAllSplits()
 	}
 #endif
 
+	if (s_gpu.vertexOverflow.skippedPrimitives > 0)
+	{
+		NATIVE_GPU_ERROR("vertex buffer full (%u vertices): dropped %d primitives (%d vertices); this batch needed %d\n", MAX_VERTEX_BUFFER_SIZE,
+		                 s_gpu.vertexOverflow.skippedPrimitives, s_gpu.vertexOverflow.skippedVertices,
+		                 s_gpu.vertexIndex + s_gpu.vertexOverflow.skippedVertices);
+		s_gpu.vertexOverflow.skippedPrimitives = 0;
+		s_gpu.vertexOverflow.skippedVertices = 0;
+	}
+
 	// next code ideally should be called before EndScene
 	NativeRenderer_UpdateVertexBuffer(s_gpu.vertexBuffer, s_gpu.vertexIndex);
 
@@ -1911,6 +1924,7 @@ internal int ProcessPsyXPrims(P_TAG *polyTag)
 int ParsePrimitive(P_TAG *polyTag)
 {
 	const int primType = polyTag->code & 0xF0;
+	const int primFirstVertex = s_gpu.vertexIndex;
 
 	int primLength = 0;
 	bool handledZeroLength = false;
@@ -2036,6 +2050,10 @@ int ParsePrimitive(P_TAG *polyTag)
 		// default:
 		//	NATIVE_GPU_ERROR("got %0x primitive\n", primType);
 	}
+
+	// Keep the primitive's vertices only if all of them fit the uploaded
+	// buffer; otherwise drop it whole (DrawAllSplits reports the drops).
+	s_gpu.vertexIndex = NativeGpuVertexBudget_Commit(&s_gpu.vertexOverflow, primFirstVertex, s_gpu.vertexIndex, (int)MAX_VERTEX_BUFFER_SIZE);
 
 	if (primLength == 0 && !handledZeroLength)
 	{

@@ -20,7 +20,12 @@
 #define TPAGE_WIDTH            (256)
 #define TPAGE_HEIGHT           (256)
 
-#define MAX_VERTEX_BUFFER_SIZE (1u << 16)
+// Vertices per frame batch. 1 << 16 overflowed on Saphi's Papu Cave (a custom
+// track, 1 MiB primitive arena per frame). 1 << 18 is what a full 1 MiB arena
+// of POLY_F4, the densest polygon (24 bytes, 6 vertices), produces. Cost: 5 MiB
+// for the CPU array plus 5 MiB for each of the two GL vertex buffers. Frames
+// that still do not fit drop whole primitives (native_gpu_vertex_budget_logic.h).
+#define MAX_VERTEX_BUFFER_SIZE (1u << 18)
 
 #pragma pack(push, 1)
 typedef struct
