@@ -280,7 +280,14 @@ static int Manager_HashFile(const char *path, char outHex[NATIVE_SHA256_HEX_BYTE
 // offsets namespace_Level.h documents: `numInstances` (+0x0C) and `ptrInstDefs`
 // (+0x10), plus the pointer-map offset that bounds the payload. The instance
 // table is `numInstances` records of `sizeof(struct InstDef)` == 0x40, each
-// carrying its `modelID` as an int at +0x3C.
+// carrying a pointer to its `struct Model` at +0x10.
+//
+// The model ID is read through that pointer (`Model::id`, an s16 at +0x10),
+// because that is the field INSTANCE_LevInitAll gives behaviour from
+// (`levInstDef->model->id`). The InstDef's own `modelID` int at +0x3C is not
+// read by the engine. Retail LEVs keep the two equal, but custom LEVs often do
+// not: the crystal-arena hubs carry 20 crystals whose +0x3C says fruit crate,
+// and Space Labs 1.2.4 carries 25 Wumpa fruit whose +0x3C says weapon crate.
 //
 // Every read is bounds-checked against the payload BEFORE it happens, and the
 // table is streamed a record at a time rather than slurped: this walks a file
@@ -290,13 +297,28 @@ static int Manager_HashFile(const char *path, char outHex[NATIVE_SHA256_HEX_BYTE
 #define CTR_CT_LEV_HEADER_NUM_INSTANCES 0x0C
 #define CTR_CT_LEV_HEADER_PTR_INSTDEFS  0x10
 #define CTR_CT_LEV_INSTDEF_STRIDE       0x40
-#define CTR_CT_LEV_INSTDEF_MODEL_ID     0x3C
+#define CTR_CT_LEV_INSTDEF_PTR_MODEL    0x10
+#define CTR_CT_LEV_MODEL_ID             0x10
 
 // `struct Level::numInstances` is a u32 with no engine-side range check, so a
 // corrupt or hostile value would otherwise size an unbounded walk. Retail levels
 // run to a few hundred instances; 65,536 is far above anything authored and
 // still bounds the loop to a fraction of a second.
 #define CTR_CT_LEV_MAX_INSTANCES 65536
+
+static int Manager_ReadS16LE(FILE *file, long offset, int *out)
+{
+	unsigned char raw[2];
+	unsigned int value;
+
+	if (offset < 0 || fseek(file, offset, SEEK_SET) != 0)
+		return 0;
+	if (fread(raw, 1, sizeof raw, file) != sizeof raw)
+		return 0;
+	value = (unsigned int)raw[0] | ((unsigned int)raw[1] << 8);
+	*out = value >= 0x8000u ? (int)value - 0x10000 : (int)value;
+	return 1;
+}
 
 static int Manager_ReadU32LE(FILE *file, long offset, unsigned long *out)
 {
@@ -369,11 +391,21 @@ int CustomTrackManager_MeasureWumpa(const char *levPath,
 
 	for (i = 0; i < numInstances; i++)
 	{
-		unsigned long modelID;
+		unsigned long ptrModel;
+		int modelID;
 		const long offset = (long)(4 + ptrInstDefs +
 		                           i * (unsigned long)CTR_CT_LEV_INSTDEF_STRIDE +
-		                           CTR_CT_LEV_INSTDEF_MODEL_ID);
-		if (!Manager_ReadU32LE(file, offset, &modelID))
+		                           CTR_CT_LEV_INSTDEF_PTR_MODEL);
+		if (!Manager_ReadU32LE(file, offset, &ptrModel))
+			goto done;
+		// The engine dereferences this pointer for every instance, so one that
+		// is null or leaves the payload is a LEV the engine cannot load either.
+		// Bounded the same way as the table: the id's two bytes must sit ahead
+		// of the pointer map, written as a subtraction so it cannot wrap.
+		if (ptrModel == 0 || ptrModel >= ptrMapOffset ||
+		    ptrMapOffset - ptrModel < CTR_CT_LEV_MODEL_ID + 2)
+			goto done;
+		if (!Manager_ReadS16LE(file, (long)(4 + ptrModel + CTR_CT_LEV_MODEL_ID), &modelID))
 			goto done;
 		if (modelID == CTR_CT_MODEL_FRUIT_CRATE)
 			fruitCrates++;
