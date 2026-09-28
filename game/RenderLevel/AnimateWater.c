@@ -75,7 +75,16 @@ void AnimateQuad(int timer, int numSCVert, void *ptrSCVert, int *visSCVertList)
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80069e70-0x80069f0c.
 	struct SCVert *scVert = (struct SCVert *)ptrSCVert;
 	u32 *visList = (u32 *)visSCVertList;
+#if defined(CTR_CUSTOM_TRACKS)
+	// NOTE: CTR_NATIVE divergence, not retail ASM: a custom LEV can set the
+	// animated-vertex config flag (4) without an animated-vertex visibility
+	// list (LEGO Racers Adventure slot 9: numSCVert 0, visSCVertList[0] 0 in
+	// the LEV's VisMem). The PS1 reads address 0 without faulting; native
+	// faults. With no list every animated vertex is visible.
+	u32 visBits = (visList != NULL) ? *visList++ : 0xffffffff;
+#else
 	u32 visBits = *visList++;
+#endif
 	int bitCount = 32;
 
 	CTC2(0, 21);
@@ -90,7 +99,11 @@ void AnimateQuad(int timer, int numSCVert, void *ptrSCVert, int *visSCVertList)
 
 		if (bitCount == 0)
 		{
+#if defined(CTR_CUSTOM_TRACKS)
+			visBits = (visList != NULL) ? *visList++ : 0xffffffff;
+#else
 			visBits = *visList++;
+#endif
 			bitCount = 31;
 		}
 		else
