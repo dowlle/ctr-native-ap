@@ -41,6 +41,18 @@ int main(int argc,char **argv)
     j["data"][0]["downloads"][1]["modes"]={"time_trial"};
     CHECK(parse(j,&c));CHECK(CustomSaphi_Count(c)==2);
     CHECK(CustomSaphi_Row(c,0)->disabledReason[0] && CustomSaphi_Row(c,1)->disabledReason[0]);CustomSaphi_Free(&c);
+    /* A mode tag this client does not know (Saphi added ring_rally) is left
+       out of the bits and never fails the catalogue; it still keeps pairs apart. */
+    j=fixture();for(int i=0;i<2;i++) j["data"][0]["downloads"][i]["modes"]={"arcade","ring_rally"};
+    CHECK(parse(j,&c));CHECK(CustomSaphi_Count(c)==1);
+    CHECK(CustomSaphi_Row(c,0)->modeTags==1 && !CustomSaphi_Row(c,0)->disabledReason[0] && CustomSaphi_Row(c,0)->current);CustomSaphi_Free(&c);
+    j["data"][0]["downloads"][1]["modes"]={"arcade"};
+    CHECK(parse(j,&c));CHECK(CustomSaphi_Count(c)==2);
+    CHECK(CustomSaphi_Row(c,0)->disabledReason[0] && CustomSaphi_Row(c,1)->disabledReason[0]);CustomSaphi_Free(&c);
+    j=fixture();for(int i=0;i<2;i++) j["data"][0]["downloads"][i]["modes"]={"time_trial","relic_race","ctr_challenge","arcade","ring_rally","crystal_challenge","battle"};
+    CHECK(parse(j,&c));CHECK(CustomSaphi_Count(c)==1 && CustomSaphi_Row(c,0)->modeTags==63);CustomSaphi_Free(&c);
+    j=fixture();j["data"][0]["downloads"][0]["modes"]={"ring_rally","ring_rally"};CHECK(!parse(j,&c));
+    j=fixture();j["data"][0]["downloads"][0]["modes"]={"arcade","arcade"};CHECK(!parse(j,&c));
     j=fixture();j["data"][0]["downloads"].push_back(j["data"][0]["downloads"][0]);CHECK(!parse(j,&c));CHECK(!c);
     j=fixture();j["data"].push_back(j["data"][0]);CHECK(!parse(j,&c));
     for(const char *url:{"https://evil.test/api/v3/tracks/7/downloads/11","/api/v3/tracks/8/downloads/11", "//www.projectsaphi.com/x"})
