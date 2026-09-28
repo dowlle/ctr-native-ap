@@ -271,6 +271,13 @@ void ap_net_oxide_scene_record(void);
 // the same key; gate on ap_net_oxide_scene_known() before showing.
 int ap_net_oxide_open_msg_shown(void);
 void ap_net_oxide_open_msg_record(void);
+// #377: once-per-hub boss-door scene flag, a separate key in server data
+// storage with the same scoping and barrier (ap/ap_boss_door_scene_seen.h).
+// `known` is 0 until this connection's Get reply has arrived; callers must not
+// auto-play the scene while it is 0. `hub` is 0..3.
+int ap_net_boss_door_scene_known(void);
+int ap_net_boss_door_scene_seen(int hub);
+void ap_net_boss_door_scene_record(int hub);
 
 #ifdef __cplusplus
 }

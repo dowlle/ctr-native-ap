@@ -49,6 +49,22 @@ static int VehBirth_ShouldSpawnOutsideBoss(struct GameTracker *gGT)
 		return 0;
 	}
 
+#ifdef CTR_AP
+	// Issue #377. The retail test below reads the hub's Trophy bits and its
+	// boss Key bit, which under AP mirror RECEIVED items (AP_ApplyItems), not
+	// races won. Once enough Trophies arrive it stays true after every Trophy
+	// win in the hub until a Key for it arrives, so the boss intro replayed
+	// each time (the #111 class). Under AP: garage open under this seed's
+	// rules, boss race not won, and once per hub per seed. Everything after
+	// this (CS_Camera_BoolGotoBoss, CS_Podium.c) reads the spawn position, so
+	// this is the one place the decision is made. Without slot_data the
+	// retail rule stays, as for the Oxide scene (ap/ap_oxide_scene.c).
+	if (ctr_cfg_active())
+	{
+		return AP_BossDoorSceneReady(gGT->levelID - N_SANITY_BEACH);
+	}
+#endif
+
 	for (int i = 0, base = (gGT->levelID - N_SANITY_BEACH) * 4; i < 4; i++)
 	{
 		int trackID = data.advHubTrackIDs[base + i];

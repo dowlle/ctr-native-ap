@@ -2,6 +2,7 @@
 
 #ifdef CTR_AP
 #include "../../ap/ap_hooks.h" // AP_PodiumExitTerminalWork (#235)
+#include "../../ap/ap_boss_door_scene_logic.h" // AP_BossDoorSceneTaken (#377)
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800aed48-0x800aedf8
@@ -379,6 +380,16 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 			        AP_OxideFinalSceneReady(gGT->currAdvProfile.numRelics)))
 			{
 				AP_OxideFinalSceneMarkPlayed(); // #377: skipped counts as seen
+			}
+			// Issue #377: a Trophy podium only hands over to a scene when
+			// VehBirth spawned the driver at the boss door, which under AP
+			// happens once per hub (AP_BossDoorSceneReady). Record the hub
+			// here, watched or skipped, so the next Trophy win stays on the
+			// podium.
+			if (AP_BossDoorSceneTaken(rewardId == STATIC_TROPHY,
+			                          CS_Camera_BoolGotoBoss() != 0))
+			{
+				AP_BossDoorSceneMarkPlayed(gGT->levelID - N_SANITY_BEACH);
 			}
 			if (apSkipScene || CS_Camera_BoolGotoBoss() == 0)
 #else
