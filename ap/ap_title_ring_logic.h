@@ -18,7 +18,7 @@
 //
 // Each vertex takes the Archipelago colour of the sixth of the ring it sits
 // in, clockwise from the top: red, green, pink, orange, blue, yellow, the six
-// circles of the Archipelago logo, deepened. The red sixth is centred on the top of the
+// circles of the Archipelago logo. The red sixth is centred on the top of the
 // ring. The brightness of the original blue (its brightest channel) scales
 // the new colour (see AP_TitleRing_Recolour), and the whiteness of the original (its dimmest channel,
 // above the ramp's normal tint) blends it toward white, so the shading and the
@@ -45,34 +45,27 @@
 
 #define AP_TITLE_RING_CENTRE_X  0
 #define AP_TITLE_RING_CENTRE_UP 120
-#define AP_TITLE_RING_LIGHT_GAMMA 0.65
-// Share of the retail highlight's whiteness that is kept (1 / N).
-#define AP_TITLE_RING_WHITE_DIV 4
+#define AP_TITLE_RING_LIGHT_GAMMA 0.6
 
 enum
 {
 	AP_TITLE_RING_RED = 0,
 	AP_TITLE_RING_GREEN,
-	AP_TITLE_RING_LILAC,
+	AP_TITLE_RING_PINK,
 	AP_TITLE_RING_ORANGE,
 	AP_TITLE_RING_BLUE,
 	AP_TITLE_RING_YELLOW,
 	AP_TITLE_RING_SEGMENTS
 };
 
-// 0x00BBGGRR, the model colour table's own layout. The hues are those of the
-// Archipelago logo's six circles (red 201,118,130, green 117,194,117, lilac
-// 202,148,194, orange 217,160,125, blue 119,124,189, yellow 238,227,145), but
-// deepened to about the saturation of the retail blue ring: the logo's own
-// pastels, shaded down the ring's dark ramp, read as washed out next to the
-// CTR letters (the bottom orange looked tan).
+// 0x00BBGGRR, the model colour table's own layout.
 static const unsigned int AP_TITLE_RING_COLOURS[AP_TITLE_RING_SEGMENTS] = {
-	0x004C30F2u, // red    242, 48, 76
-	0x0033CC33u, // green   51,204, 51
-	0x00D15CE6u, // lilac  230, 92,209
-	0x002679FFu, // orange 255,121, 38
-	0x00FF4D40u, // blue    64, 77,255
-	0x0033E7FFu, // yellow 255,231, 51
+	0x008276C9u, // red    201,118,130
+	0x0075C275u, // green  117,194,117
+	0x00C294CAu, // pink   202,148,194
+	0x007DA0D9u, // orange 217,160,125
+	0x00BD7C77u, // blue   119,124,189
+	0x0091E3EEu, // yellow 238,227,145
 };
 
 // Which sixth a point lies in, from the ring centre: right and up are already
@@ -123,13 +116,13 @@ static inline unsigned int AP_TitleRing_Clamp8(int v)
 //   value     brightest channel / 255: how lit the vertex is, and
 //   whiteness how far dim sits from value / 6 toward value, 0 for the plain
 //             steps, about 0.1 and 0.4 for the highlights,
-// and the recolour is light * lerp(target, white, whiteness / 4): the same
-// light and a softened highlight stripe, in the new colour. Only a quarter of
-// the whiteness is kept so the highlight does not wash the colours to pastel.
-// light is value raised to AP_TITLE_RING_LIGHT_GAMMA, which lifts the dark end
-// of the ramp a little (0x60 -> 53 %, 0xC0 -> 83 %, 0xFF unchanged) so the
-// shaded bottom of the ring keeps its hue, while the order of the steps, and
-// so the 3D look, stays.
+// and the recolour is light * lerp(target, white, whiteness): the same light
+// and the same highlight stripe, in the new colour. light is value raised to
+// AP_TITLE_RING_LIGHT_GAMMA: the retail ramp's darkest step (0x60, 38 %) still
+// reads as blue because the blue is saturated, but the paler Archipelago
+// colours at 38 % turn to mud (orange reads as brown), so the dark end is
+// lifted (0x60 -> 56 %, 0xC0 -> 84 %, 0xFF unchanged) while the order of the
+// steps, and so the 3D look, stays.
 static inline unsigned int AP_TitleRing_Recolour(unsigned int original, int segment)
 {
 	int r = (int)(original & 0xFF);
@@ -157,7 +150,7 @@ static inline unsigned int AP_TitleRing_Recolour(unsigned int original, int segm
 	for (shift = 0; shift <= 16; shift += 8)
 	{
 		int t = (int)((target >> shift) & 0xFF);
-		int lit = t + ((255 - t) * wNum) / (wDen * AP_TITLE_RING_WHITE_DIV);
+		int lit = t + ((255 - t) * wNum) / wDen;
 
 		out |= AP_TitleRing_Clamp8((int)(lit * light + 0.5)) << shift;
 	}

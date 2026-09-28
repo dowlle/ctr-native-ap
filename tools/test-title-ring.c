@@ -32,9 +32,9 @@ static void test_segments(void)
 {
 	// Sixths are centred on the top and count clockwise on screen.
 	expect(AP_TitleRing_Segment(0, 1), AP_TITLE_RING_RED, "top -> red");
-	expect(AP_TitleRing_Segment(1, 0), AP_TITLE_RING_LILAC, "right (90 deg) is the green/pink boundary -> lilac");
+	expect(AP_TitleRing_Segment(1, 0), AP_TITLE_RING_PINK, "right (90 deg) is the green/pink boundary -> pink");
 	expect(AP_TitleRing_Segment(0.866, 0.5), AP_TITLE_RING_GREEN, "60 deg -> green");
-	expect(AP_TitleRing_Segment(0.866, -0.5), AP_TITLE_RING_LILAC, "120 deg -> lilac");
+	expect(AP_TitleRing_Segment(0.866, -0.5), AP_TITLE_RING_PINK, "120 deg -> pink");
 	expect(AP_TitleRing_Segment(0, -1), AP_TITLE_RING_ORANGE, "bottom -> orange");
 	expect(AP_TitleRing_Segment(-0.866, -0.5), AP_TITLE_RING_BLUE, "240 deg -> blue");
 	expect(AP_TitleRing_Segment(-0.866, 0.5), AP_TITLE_RING_YELLOW, "300 deg -> yellow");
@@ -81,7 +81,7 @@ static void test_vertex_space(void)
 	// right, bottom and left.
 	expect(AP_TitleRing_SegmentForVertex(4, 264, 5814, 7251), AP_TITLE_RING_RED, "top of ring");
 	expect(AP_TitleRing_SegmentForVertex(180, 170, 5814, 7251), AP_TITLE_RING_GREEN, "upper right");
-	expect(AP_TitleRing_SegmentForVertex(168, 64, 5814, 7251), AP_TITLE_RING_LILAC, "lower right");
+	expect(AP_TitleRing_SegmentForVertex(168, 64, 5814, 7251), AP_TITLE_RING_PINK, "lower right");
 	expect(AP_TitleRing_SegmentForVertex(4, -24, 5814, 7251), AP_TITLE_RING_ORANGE, "bottom of ring");
 	expect(AP_TitleRing_SegmentForVertex(-164, 64, 5814, 7251), AP_TITLE_RING_BLUE, "lower left");
 	expect(AP_TitleRing_SegmentForVertex(-164, 176, 5814, 7251), AP_TITLE_RING_YELLOW, "upper left");
@@ -131,38 +131,14 @@ static void test_recolour(void)
 		}
 	}
 
-	// The retail highlight, 0x80 on a 0xFF blue, is about 40 % white; a quarter
-	// of that is kept, so red's green channel (48) moves about 10 % of the way
-	// to 255, not to pastel.
+	// The retail highlight, 0x80 on a 0xFF blue, is about 40 % white: red's
+	// target channel 201 goes about 40 % of the way to 255.
 	{
 		unsigned int shine = AP_TitleRing_Recolour(0x008080FFu, AP_TITLE_RING_RED);
-		int g = channel(shine, 8);
+		int r = channel(shine, 0);
 
-		if (g < 48 + 12 || g > 48 + 30)
-			expect(g, 68, "highlight about 10 % toward white");
-	}
-
-	// Saturation: every fully lit colour has a channel spread of at least
-	// 60 % of its brightest channel, like the retail blue ring (0x2A/0xFF).
-	for (s = 0; s < AP_TITLE_RING_SEGMENTS; s++)
-	{
-		unsigned int c = AP_TitleRing_Recolour(0x002A2AFFu, s);
-		int r = channel(c, 0), g = channel(c, 8), b = channel(c, 16);
-		int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
-		int mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
-
-		if ((mx - mn) * 10 < mx * 6)
-			expect(mx - mn, mx * 6 / 10, "saturated like the retail ring");
-	}
-
-	// The shaded bottom (darkest step) of the orange sixth is still orange:
-	// red well above green, green well above blue.
-	{
-		unsigned int c = AP_TitleRing_Recolour(0x00101060u, AP_TITLE_RING_ORANGE);
-		int r = channel(c, 0), g = channel(c, 8), b = channel(c, 16);
-
-		if (!(r > g * 3 / 2 && g > b * 2))
-			expect(r * 1000000 + g * 1000 + b, -1, "dark orange stays orange");
+		if (r < 201 + 18 || r > 201 + 26)
+			expect(r, 223, "highlight about 40 % toward white");
 	}
 
 	// The top byte (unused by the table, kept as is) passes through.
