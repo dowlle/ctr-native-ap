@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "platform/native_gpu_split_budget_logic.h"
 #include "platform/native_gpu_vertex_budget_logic.h"
 #include "platform/native_log.h"
 #include "platform/native_perf.h"
@@ -120,6 +121,7 @@ typedef struct
 	int vertexIndex;
 	int splitIndex;
 	NativeGpuVertexOverflow vertexOverflow;
+	NativeGpuSplitOverflow splitOverflow;
 } NativeGpuState;
 
 global_variable NativeGpuState s_gpu;
@@ -852,6 +854,29 @@ internal void NativeGpu_PrepareFramebufferFeedback(int tpage)
 	s_gpu.framebufferFeedbackRunActive = true;
 }
 
+internal void DrawPendingSplits(bool earlyFlush);
+
+// The split table is full in the middle of a batch: draw what is pending and
+// continue in an empty table, the same flush DR_MOVE and fill packets do. GL
+// runs the draws in submission order, so the result matches drawing the whole
+// batch at its end, except that CPU VRAM writes parsed after this point are
+// uploaded after the splits before it (which is the PS1 order). Parser state
+// that ClearSplits resets but that belongs to the primitive stream, not the
+// table, is carried over: the debug label and the framebuffer-feedback run.
+// The run's stored framebuffer copy stays in the VRAM texture, so the next
+// feedback primitive keeps sampling it instead of storing a new one.
+internal void FlushFullSplitTable(void)
+{
+	const char *debugText = s_gpu.currentSplitDebugText;
+	const bool feedbackRunActive = s_gpu.framebufferFeedbackRunActive;
+
+	NativeGpuSplitBudget_NoteEarlyFlush(&s_gpu.splitOverflow, s_gpu.splitIndex);
+	DrawPendingSplits(true);
+
+	s_gpu.currentSplitDebugText = debugText;
+	s_gpu.framebufferFeedbackRunActive = feedbackRunActive;
+}
+
 internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 {
 	int tpage = activeDrawEnv.tpage;
@@ -920,10 +945,9 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 
 	curSplit->numVerts = s_gpu.vertexIndex - curSplit->startVertex;
 
-	if (s_gpu.splitIndex + 1 >= MAX_DRAW_SPLITS)
+	if (NativeGpuSplitBudget_IsFull(s_gpu.splitIndex, MAX_DRAW_SPLITS))
 	{
-		NATIVE_GPU_ERROR("MAX_DRAW_SPLITS reached (too many blend modes, texture formats, drawEnv clip rects, dfe switches), expect rendering errors\n");
-		return;
+		FlushFullSplitTable();
 	}
 
 	GPUDrawSplit *split = &s_gpu.splits[++s_gpu.splitIndex];
@@ -1026,9 +1050,10 @@ internal void SetPSXMaskState(u32 code)
 }
 
 //
-// Draws all polygons after AggregatePTAG
+// Draws all polygons after AggregatePTAG. An early flush is one forced by a
+// full split table in the middle of a batch (see FlushFullSplitTable).
 //
-void DrawAllSplits()
+internal void DrawPendingSplits(bool earlyFlush)
 {
 	NativePerf_BeginScope(NATIVE_PERF_BUCKET_DRAW_ALL_SPLITS);
 	// CPU-originated LoadImage, MoveImage, and fill commands are GPU-visible
@@ -1066,6 +1091,13 @@ void DrawAllSplits()
 		s_gpu.vertexOverflow.skippedVertices = 0;
 	}
 
+	NativeGpuSplitReport splitReport;
+	if (!earlyFlush && NativeGpuSplitBudget_EndBatch(&s_gpu.splitOverflow, s_gpu.splitIndex, &splitReport))
+	{
+		NATIVE_GPU_ERROR("draw split table full (%d splits): %d batches drawn in parts since the last report, largest needed %d splits in %d parts\n",
+		                 MAX_DRAW_SPLITS - 1, splitReport.batches, splitReport.peakSplits, splitReport.peakParts);
+	}
+
 	// next code ideally should be called before EndScene
 	NativeRenderer_UpdateVertexBuffer(s_gpu.vertexBuffer, s_gpu.vertexIndex);
 
@@ -1076,6 +1108,11 @@ void DrawAllSplits()
 
 	ClearSplits();
 	NativePerf_EndScope(NATIVE_PERF_BUCKET_DRAW_ALL_SPLITS);
+}
+
+void DrawAllSplits()
+{
+	DrawPendingSplits(false);
 }
 
 // forward declarations
