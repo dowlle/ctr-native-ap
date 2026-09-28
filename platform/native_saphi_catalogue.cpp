@@ -9,6 +9,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 struct CustomSaphiCatalogue { std::vector<CustomSaphiRevision> rows; };
@@ -29,18 +30,33 @@ template<size_t N> void source_text(const json &value, char (&out)[N], bool empt
         throw std::runtime_error("Saphi display text exceeds supported bounds");
     std::memcpy(out, text.c_str(), text.size() + 1);
 }
-unsigned int source_modes(const json &modes)
+/* Known tags become bits. Saphi adds modes over time (ring_rally, 2026-09):
+   a tag this client does not know is left out of the bits instead of failing
+   the whole catalogue, and goes into *other so revisions that differ only in
+   such a tag still pair apart. */
+unsigned int source_modes(const json &modes, std::string *other)
 {
     static const char *names[] = {"arcade", "time_trial", "relic_race", "ctr_challenge", "crystal_challenge", "battle"};
-    if (!modes.is_array() || modes.size() > 6) throw std::runtime_error("Invalid Saphi mode tags");
+    if (!modes.is_array() || modes.size() > 16) throw std::runtime_error("Invalid Saphi mode tags");
     unsigned int result = 0;
+    std::set<std::string> unknown;
     for (const auto &mode : modes)
     {
         if (!mode.is_string()) throw std::runtime_error("Invalid Saphi mode name");
         unsigned int bit = 0;
         for (unsigned int i = 0; i < 6; i++) if (mode == names[i]) bit = 1u << i;
-        if (!bit || (result & bit)) throw std::runtime_error("Unknown or duplicate Saphi mode tag");
+        if (!bit)
+        {
+            if (!unknown.insert(mode.get<std::string>()).second) throw std::runtime_error("Duplicate Saphi mode tag");
+            continue;
+        }
+        if (result & bit) throw std::runtime_error("Unknown or duplicate Saphi mode tag");
         result |= bit;
+    }
+    if (other)
+    {
+        other->clear();
+        for (const auto &name : unknown) { *other += name; *other += '\n'; }
     }
     return result;
 }
@@ -95,7 +111,7 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
             const auto &downloads = track.at("downloads");
             if (!downloads.is_array() || downloads.size() > 512) throw std::runtime_error("Too many Saphi media rows");
             struct Pair { CustomSaphiRevision revision{}; int levCount = 0, vrmCount = 0; bool levCurrent = false, vrmCurrent = false; };
-            std::map<std::pair<std::string, unsigned int>, Pair> pairs;
+            std::map<std::tuple<std::string, unsigned int, std::string>, Pair> pairs;
             /* Audio is optional: a malformed or ambiguous .sca row leaves the
                track without its own music instead of failing the catalogue. */
             CustomSaphiMedia sca{};
@@ -119,11 +135,12 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                 if (type != "lev" && type != "vrm") continue;
                 CustomSaphiRevision row = base;
                 source_text(media.at("version"), row.version);
-                row.modeTags = source_modes(media.at("modes"));
+                std::string otherModes;
+                row.modeTags = source_modes(media.at("modes"), &otherModes);
                 auto file = source_media(media, id);
                 if (!mediaIDs.insert(file.id).second) throw std::runtime_error("Duplicate Saphi media identity");
                 if (!media.at("is_current").is_boolean()) throw std::runtime_error("Invalid Saphi current flag");
-                auto &pair = pairs[{row.version, row.modeTags}];
+                auto &pair = pairs[std::make_tuple(std::string(row.version), row.modeTags, otherModes)];
                 if (!pair.levCount && !pair.vrmCount) pair.revision = row;
                 if (type == "lev") { pair.revision.lev = file; pair.levCount++; pair.levCurrent = media["is_current"]; }
                 else { pair.revision.vrm = file; pair.vrmCount++; pair.vrmCurrent = media["is_current"]; }
