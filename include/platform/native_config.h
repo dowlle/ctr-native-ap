@@ -156,6 +156,16 @@ typedef struct
 	bool navRecord;
 	bool navUseRecorded;
 	char navDriverName[32];
+	// Discord Rich Presence (issue #366). discordStatus is the local "Discord
+	// Status" option (Archipelago page, default off): on, the game shows what
+	// you are playing on your Discord profile through the Discord client on
+	// this machine. Never slot_data, never sent to the room. discordAppId is a
+	// config-file-only override ([Discord] application_id, hidden from the
+	// menu) for the Discord application ID; empty or invalid = use
+	// AP_DISCORD_APPLICATION_ID (ap/ap_discord_logic.h). With neither set the
+	// feature does nothing. Consumed by AP_Discord_OnFrame (ap/ap_discord.c).
+	bool discordStatus;
+	char discordAppId[32];
 #endif
 } NativeConfig;
 

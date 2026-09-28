@@ -373,6 +373,13 @@ void AP_Net_Shutdown(void);
 // ctr-ap.log handle. Called from Platform_Shutdown.
 void AP_ShutdownFiles(void);
 
+// Discord Rich Presence (#366, ap/ap_discord.c). OnFrame is called from
+// AP_OnFrame and does nothing until the "Discord Status" option is switched on;
+// Shutdown clears the activity on a clean exit (bounded wait, no-op if the
+// option was never on). Called from Platform_Shutdown.
+void AP_Discord_OnFrame(struct GameTracker *gGT);
+void AP_Discord_Shutdown(void);
+
 // 1 if the exhaust-fire retention tweak is enabled (keep power-slide fire
 // visible while holding reserves). Default 0; set by ap-config.txt
 // "hud_reserves_fx=1". Read by VehFire_Increment (#ifdef CTR_AP). Visual only;

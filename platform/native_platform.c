@@ -337,6 +337,7 @@ void Platform_Shutdown(void)
 	s_platformInitialized = 0;
 #ifdef CTR_AP
 	AP_ShutdownFiles(); // last queued ap-state.json snapshot reaches the disk
+	AP_Discord_Shutdown(); // clear the Discord activity (no-op if never enabled)
 #endif
 #if defined(CTR_INTERNAL)
 	NativeRenderer_FinishGpuMeasurements();

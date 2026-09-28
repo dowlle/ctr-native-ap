@@ -40,7 +40,8 @@ static const char *const s_ctrMenuPageConnection[] = {
 	"uri", "slot", "password", NULL,
 };
 static const char *const s_ctrMenuPageArchipelago[] = {
-	"map_flash", "item_box_colours", "death_link", "trap_duration", "update_check", NULL,
+	"map_flash", "item_box_colours", "death_link", "trap_duration", "update_check",
+	"discord_status", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {
 	"box_author", "nav_record", "nav_use_recorded", "nav_driver_name", NULL,
@@ -56,10 +57,12 @@ static const CtrMenuPage s_ctrMenuPages[] = {
 #define CTR_MENU_PAGE_COUNT ((int)(sizeof(s_ctrMenuPages) / sizeof(s_ctrMenuPages[0])))
 
 // Sections that are config-file-only and never get a page: Audio is edited on
-// the vanilla audio screen, State is remembered state rather than an option.
+// the vanilla audio screen, State is remembered state rather than an option,
+// Discord holds only a testing override for the Discord application ID.
 static inline int CTR_MenuSectionHidden(const char *section)
 {
-	return strcmp(section, "Audio") == 0 || strcmp(section, "State") == 0;
+	return strcmp(section, "Audio") == 0 || strcmp(section, "State") == 0 ||
+	       strcmp(section, "Discord") == 0;
 }
 
 static inline int CTR_MenuFindEntry(const ConfigEntry *entries, int numEntries, const char *key)

@@ -8094,6 +8094,9 @@ void AP_OnFrame(struct GameTracker *gGT)
 	                  (unsigned)gGT->timer);
 #endif
 	ap_onframe_body(gGT);
+	// Discord Rich Presence (#366): outside the body so its early returns do
+	// not skip it. Returns at once unless the option was ever switched on.
+	AP_Discord_OnFrame(gGT);
 	AP_PerfFrameEnd();
 }
 

@@ -163,7 +163,7 @@ if(CTR_AP)
     find_package(ZLIB REQUIRED)
 
     add_library(ap_net STATIC ap/ap_net.cpp ap/ap_seedcfg.cpp ap/ap_crash_terminate.cpp
-        ap/ap_file_writer.cpp)
+        ap/ap_file_writer.cpp ap/ap_discord_ipc.cpp)
     if(CTR_CUSTOM_TRACKS)
         target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
     endif()
