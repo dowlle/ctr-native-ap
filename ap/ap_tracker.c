@@ -2,6 +2,7 @@
  * so its text and pins are not reduced through the PS1 framebuffer. */
 #include "ap_tracker.h"
 #include "ap_tracker_assets.h"
+#include "ap_tracker_boss_node_logic.h"
 #include "ap_tracker_progress.h"
 #include "ap_tracker_tabs.h"
 #include <platform/native_assets.h>
@@ -649,6 +650,8 @@ static void AP_TrackerDraw(void)
 	for(i=0;i<ap_tracker.count;i++) {
 		AP_TrackerNode *n=&ap_tracker.nodes[i]; int edge=n->cx<640?n->cx+n->cw:n->cx;
 		int st=n->physical>=0?AP_PadState(n->physical,n->destination):0;
+		if(n->kind==3) st=AP_TrackerBossNodeState(AP_TrackerBitState(n->bit),
+			ap_tracker.hub?AP_BossGarageOpen(ap_tracker.hub-1):AP_OxideGarageOpen());
 		uint32_t color=st==5?TRACKER_GRAY:st==1?AP_TrackerRGBA(255,57,43,255):st==3?TRACKER_GOLD:st==4?AP_TrackerRGBA(140,160,255,255):TRACKER_GREEN;
 		AP_TrackerLine(n->x,n->y,edge,n->cy+24,TRACKER_MINT,2);
 		AP_TrackerCircle(n->x,n->y,12,AP_TrackerRGBA(0,0,0,255),0);
