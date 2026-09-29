@@ -118,6 +118,7 @@ tools/test-render-scale.c
 tools/test-reserves-meter.c
 tools/test-reward-text.c
 tools/test-tracker-assets.c
+tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-tabs.c
