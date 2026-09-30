@@ -150,6 +150,35 @@ static void test_letters(void)
 		long long id = AP_ITEM_BASE + CTR_LETTER_ITEM_FIRST_INDEX + 5 * 3 + 2; // R
 		expect_alias("issue example: Letter R (Tiger Temple)", id, "R: TIGER TEMPLE");
 	}
+
+	// Trial-track letters (194..199): Slide Coliseum then Turbo Track, C/T/R each.
+	for (letter = 0; letter < 3; letter++)
+	{
+		char want[40], name[64];
+		snprintf(want, sizeof want, "%c: SLIDE COLISEUM", letterChar[letter]);
+		snprintf(name, sizeof name, "slide letter %c", letterChar[letter]);
+		expect_alias(name, AP_ITEM_BASE + 194 + letter, want);
+		snprintf(want, sizeof want, "%c: TURBO TRACK", letterChar[letter]);
+		snprintf(name, sizeof name, "turbo letter %c", letterChar[letter]);
+		expect_alias(name, AP_ITEM_BASE + 197 + letter, want);
+	}
+
+	// Cortex Vortex letters (schema 15, 200..202).
+	for (letter = 0; letter < 3; letter++)
+	{
+		char want[40], name[64];
+		snprintf(want, sizeof want, "%c: CORTEX VORTEX", letterChar[letter]);
+		snprintf(name, sizeof name, "cortex vortex letter %c", letterChar[letter]);
+		expect_alias(name, AP_ITEM_BASE + 200 + letter, want);
+	}
+
+	// Neighbours stay unaliased: 187 Gas Pedal, 188..193, 203 one past Cortex.
+	expect_no_alias("idx 193 below the trial letters", AP_ITEM_BASE + 193);
+	expect_no_alias("idx 203 past the Cortex Vortex letters", AP_ITEM_BASE + 203);
+
+	// Custom-track letters keep their canonical name (no display title in the seed).
+	expect_no_alias("custom letter first",  35021000LL);
+	expect_no_alias("custom letter last",   35021395LL);
 }
 
 // ── Untouched identities: character unlocks, ordinary items, traps, unknown ─

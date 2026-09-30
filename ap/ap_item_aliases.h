@@ -19,13 +19,15 @@
 // Computed, not tabulated: the alias families are systematic (a racer
 // qualifier plus a capability suffix, or a letter plus a track name), so the
 // same two small lookup tables serve all 64 per-character capability items and
-// all 48 letter items instead of hand-writing over a hundred literal rows,
+// all letter items instead of hand-writing over a hundred literal rows,
 // which is where a copy/paste slip would hide.
 
+#include "ap_cortex_track.h" // AP_CortexLetterItemIndexPure (before ap_items.h: it pulls ap_seedcfg.h, whose
+                             // CTR_CFG_LETTER_TRACK_COUNT ap_items.h then defers to)
 #include "ap_capability.h" // AP_CAPABILITY_*, AP_CAP_CHAIN_*, AP_CAP_ROSTER_COUNT
 #include "ap_items.h"      // AP_ITEM_BASE, AP_WUMPA_PROGRESSIVE_ITEM_INDEX,
                             // CTR_LETTER_ITEM_FIRST_INDEX, CTR_CFG_LETTER_*
-#include "ap_lettersanity.h" // AP_LetterItemRowToLevelIDPure
+#include "ap_lettersanity.h" // AP_LetterItemIndexToIdentityPure
 
 #include <stdio.h> // snprintf
 
@@ -89,7 +91,7 @@ static inline const char *AP_ItemAliasRacerShortName(int characterID)
 // Returns 1 and fills `out` (NUL-terminated, truncated to `cap`) when `item_id`
 // is a known aliased CTR identity: a shared-global or per-character
 // Progressive capability item, Progressive Starting Wumpa, or a Lettersanity
-// letter. Returns 0 for everything else -- character unlocks, ordinary CTR
+// letter (retail, Slide Coliseum, Turbo Track, Cortex Vortex). Returns 0 for everything else -- character unlocks, ordinary CTR
 // items, traps, an id this build does not recognise, or a cross-game item --
 // in which case the caller must keep its existing name-based display path.
 static inline int AP_ItemDisplayAlias(long long item_id, char *out, int cap)
@@ -127,18 +129,41 @@ static inline int AP_ItemDisplayAlias(long long item_id, char *out, int cap)
 		return 1;
 	}
 
-	if (idx >= CTR_LETTER_ITEM_FIRST_INDEX &&
-	    idx < CTR_LETTER_ITEM_FIRST_INDEX + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
+	// Retail (139..186) and trial (194..199) letters share one identity helper, the
+	// same one the receive path uses, so a letter family cannot get a short name in
+	// one place and a long canonical name in another.
+	if (idx >= 0 && idx < 0x10000)
 	{
-		int li     = (int)(idx - CTR_LETTER_ITEM_FIRST_INDEX);
-		int row    = li / CTR_CFG_LETTER_COUNT;
-		int letter = li % CTR_CFG_LETTER_COUNT;
-		int level  = AP_LetterItemRowToLevelIDPure(row);
-		if (level < 0 || level >= 16)
-			return 0; // unreachable with the frozen 16-track table; fail closed
-		snprintf(out, (size_t)cap, "%c: %s", AP_ALIAS_LETTER_CHAR[letter], AP_ALIAS_TRACK[level]);
-		return 1;
+		int level, letter;
+		if (AP_LetterItemIndexToIdentityPure((int)idx, &level, &letter))
+		{
+			const char *track;
+			if (level >= 0 && level < 16)
+				track = AP_ALIAS_TRACK[level];
+			else if (level == 16)
+				track = "SLIDE COLISEUM";
+			else if (level == 17)
+				track = "TURBO TRACK";
+			else
+				return 0; // fail closed on an unknown track
+			snprintf(out, (size_t)cap, "%c: %s", AP_ALIAS_LETTER_CHAR[letter], track);
+			return 1;
+		}
 	}
+
+	// Cortex Vortex letters (schema 15, idx 200..202), spelled as the tracker and
+	// pause surfaces spell the track.
+	{
+		int cvLetter = AP_CortexLetterItemIndexPure(idx);
+		if (cvLetter >= 0)
+		{
+			snprintf(out, (size_t)cap, "%c: CORTEX VORTEX", AP_ALIAS_LETTER_CHAR[cvLetter]);
+			return 1;
+		}
+	}
+
+	// Custom-track letters (35021000..395) are deliberately NOT aliased: the seed
+	// carries no display title for a custom slot, so the canonical name is kept.
 
 	return 0; // character unlocks (123..138), ordinary items, traps, unknown ids
 }
