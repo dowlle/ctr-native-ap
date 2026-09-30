@@ -79,6 +79,15 @@ static inline int AP_RelicPerfectKeyLevel(const char *key)
 	return value < AP_RELIC_PERFECT_TRACK_COUNT ? value : -1;
 }
 
+// Is this destination's Relic Race Perfect check still open? `code` is the seed
+// row for the destination (-1 = none), `exists` and `checked` are server truth.
+// The warp pad reads this to keep the relic race on offer (#439).
+static inline int AP_RelicPerfectPadLeftPure(int enabled, long code, int exists,
+                                             int checked)
+{
+	return enabled && code > 0 && exists && !checked;
+}
+
 // Everything the race-end producer knows. Filled by AP_NotifyRelicPerfect from
 // the live GameTracker; the harness fills it by hand.
 typedef struct

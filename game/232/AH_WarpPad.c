@@ -1278,7 +1278,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				ctr_cfg.trial_track_locations[track][CTR_CFG_TRIAL_CTR] > 0 &&
 				!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_CTR) &&
 				AP_TrialLetters_Prepare();
-			relicLeft = AP_PadUncollectedBits(levelID, relicBits, 3) > 0;
+			relicLeft = AP_PadRelicSideLeft(
+			    AP_PadUncollectedBits(levelID, relicBits, 3) > 0,
+			    AP_PadUncollectedRelicPerfectCount(levelID));
 			boxLeft = AP_PadUncollectedBoxCount(levelID);
 			wumpaLeft = AP_PadUncollectedWumpaCount(levelID);
 			// Trial Wumpa checks can be earned in a plain rerace. Do not invent a
@@ -1563,6 +1565,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					apHitTokenLeft = AP_PadTokenSideLeft(
 					    apHitTokenLeft, AP_PadUncollectedLetterCount(levelID),
 					    AP_PadUncollectedWumpaCount(levelID));
+					apHitRelicLeft = AP_PadRelicSideLeft(
+					    apHitRelicLeft, AP_PadUncollectedRelicPerfectCount(levelID));
 				}
 				{
 					int apHitRoute = 0;
@@ -1690,6 +1694,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 							    apTokenLeft,
 							    AP_PadUncollectedLetterCount(levelID),
 							    AP_PadUncollectedWumpaCount(levelID));
+							// #439: an unchecked Relic Race Perfect keeps the relic
+							// race on offer after every relic tier is checked.
+							apRelicLeft = AP_PadRelicSideLeft(
+							    apRelicLeft, AP_PadUncollectedRelicPerfectCount(levelID));
 
 							apTier2Route = AP_PadTier2RouteDecide(
 							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));
