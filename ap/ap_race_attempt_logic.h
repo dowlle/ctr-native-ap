@@ -179,4 +179,48 @@ static inline int AP_RaceAttempt_ApplyLastPlaceSwap(int racers, int localRank,
 	return 1;
 }
 
+// --- Forced-loss kind and the retail "local finished last" state ------------
+// A received race_loss ends the attempt in one of three ways, chosen from the
+// same precedence AP_ClassifyRace uses (boss, then relic, then crystal):
+//   RANKED  : trophy / boss / token / cup-leg race with other racers. The local
+//             driver finishes last, exactly like a retail last-place finish.
+//   CRYSTAL : Crystal Challenge. It ends the way the retail clock does when the
+//             time runs out (UI_DrawLimitClock): finished flag plus the common
+//             end-of-event initializer, with too few crystals so it reads TRY AGAIN.
+//   RELIC   : solo Relic Race. There is no failed state in the result screen,
+//             so the attempt leaves through the pause menu's EXIT TO MAP route.
+enum
+{
+	AP_LOSS_RANKED = 0,
+	AP_LOSS_CRYSTAL,
+	AP_LOSS_RELIC
+};
+
+static inline int AP_RaceAttempt_LossKind(int boss, int relic, int crystal)
+{
+	if (boss)
+		return AP_LOSS_RANKED;
+	if (relic)
+		return AP_LOSS_RELIC;
+	if (crystal)
+		return AP_LOSS_CRYSTAL;
+	return AP_LOSS_RANKED;
+}
+
+// PlayLevel_UpdateLapStats rebuilds the rank order every frame on the rule that
+// finished drivers hold ranks 0..numPlayersFinishedRace-1 (retail finishes
+// drivers in order). The forced loss therefore has to reach the state a retail
+// last-place finish leaves behind: every driver ranked ahead of the local driver
+// is finished, and numPlayersFinishedRace counts all racers. Marking only the
+// local driver leaves the bots unranked and NULL slots in driversInRaceOrder.
+static inline int AP_RaceAttempt_RankIsFinishedAfterLoss(int racers, int rank)
+{
+	return rank >= 0 && rank < racers - 1;
+}
+
+static inline int AP_RaceAttempt_FinishedCountAfterLoss(int racers)
+{
+	return racers;
+}
+
 #endif // AP_RACE_ATTEMPT_LOGIC_H
