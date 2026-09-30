@@ -105,6 +105,7 @@ tools/test-oxide-final-venue-seedcfg.cpp
 tools/test-cortex-track.c
 tools/test-cortex-track-seedcfg.cpp
 tools/test-cv-tracker-letters.c
+tools/test-pad-glow-items.c
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-podium-skip.c

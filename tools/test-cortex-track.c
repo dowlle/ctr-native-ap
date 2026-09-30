@@ -159,6 +159,8 @@ static void test_codes(void)
 	EXPECT_EQ(AP_CortexPseudoRewardGroup(AP_CortexPseudoBit(AP_CV_SLOT_RELIC0 + 2)), 1, "relic group");
 	EXPECT_EQ(AP_CortexPseudoRewardGroup(AP_CortexPseudoBit(AP_CV_SLOT_TOKEN)), 2, "token group");
 	EXPECT_EQ(AP_CortexPseudoRewardGroup(AP_CortexPseudoBit(AP_CV_SLOT_RUNG0 + 4)), 0, "rung group");
+	EXPECT_EQ(AP_CortexPseudoRewardGroup(AP_CortexPseudoBit(AP_CV_SLOT_WUMPA)), 0, "wumpa group is the race slot");
+	EXPECT_EQ(AP_CortexPseudoRewardGroup(AP_CortexPseudoBit(AP_CV_SLOT_LETTER0 + 2)), 2, "letter group is the token slot");
 	EXPECT_EQ(AP_CortexPseudoRelicTier(AP_CortexPseudoBit(AP_CV_SLOT_RELIC0 + 1)), 1, "gold tier");
 
 	cfg.cortex_track.relic[1] = -1;
@@ -184,6 +186,19 @@ static void test_pad_lists(void)
 	EXPECT_EQ(n, 4, "checked trophy drops out");
 	n = AP_CortexPadAppendOpen(&cfg.cortex_track, AP_CV_APPEND_TIERS, bits, 24, 0, q_false, q_false, 0);
 	EXPECT_EQ(n, 0, "server-absent codes are not advertised");
+	/* Display-only families: letters and Wumpa are listed only when asked for, and
+	   the tier/rung requests never carry them (the pad-state enumeration is unchanged). */
+	n = AP_CortexPadAppendOpen(&cfg.cortex_track, AP_CV_APPEND_TIERS | AP_CV_APPEND_RUNGS, bits, 24, 0, q_true, q_false, 0);
+	for (i = 0; i < n; i++)
+		EXPECT(bits[i] != AP_CortexPseudoBit(AP_CV_SLOT_WUMPA) &&
+		       (bits[i] < AP_CortexPseudoBit(AP_CV_SLOT_LETTER0) ||
+		        bits[i] > AP_CortexPseudoBit(AP_CV_SLOT_LETTER0 + 2)), "state request lists no letter or wumpa");
+	n = AP_CortexPadAppendOpen(&cfg.cortex_track, AP_CV_APPEND_LETTERS | AP_CV_APPEND_WUMPA, bits, 24, 0, q_true, q_false, 0);
+	EXPECT_EQ(n, 4, "display request lists three letters and the wumpa");
+	n = AP_CortexPadAppendOpen(&cfg.cortex_track, AP_CV_APPEND_WUMPA, bits, 24, 0, q_true, q_false, 0);
+	EXPECT(n == 1 && bits[0] == AP_CortexPseudoBit(AP_CV_SLOT_WUMPA), "cup leg asks for the wumpa only");
+	n = AP_CortexPadAppendOpen(&cfg.cortex_track, AP_CV_APPEND_LETTERS | AP_CV_APPEND_WUMPA, bits, 24, 0, q_false, q_false, 0);
+	EXPECT_EQ(n, 0, "no live letter or wumpa lists nothing");
 	EXPECT_EQ(AP_CortexOpenCount(&cfg.cortex_track, AP_CV_SLOT_LETTER0, 3, q_true, q_false, 0), 3, "three letters open");
 	EXPECT_EQ(AP_CortexOpenCount(&cfg.cortex_track, AP_CV_SLOT_WUMPA, 1, q_true, q_false, 0), 1, "wumpa open");
 }

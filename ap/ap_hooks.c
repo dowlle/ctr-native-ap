@@ -29,6 +29,7 @@
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_relic_perfect.h" // freestanding Relic Race perfect decision (#49)
 #include "ap_glow_slots_logic.h"
+#include "ap_pad_glow_items.h" // box / letter / Wumpa pad display identities
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
 #include "ap_cortex_track.h" // Cortex Vortex pad track: direct codes + pseudo-bits (schema 15)
 #include <platform/native_cortex_track_latch.h> // destination 110 -> host level 13 (freestanding)
@@ -355,6 +356,9 @@ static long AP_LookupLocationCode(int globalBit)
 	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
 		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
 #endif
+	// Pad display identities of item boxes, CTR letters and per-track Wumpa.
+	if (AP_PadGlowIsItemBit(globalBit))
+		return ctr_cfg_active() ? AP_PadGlowItemCode(&ctr_cfg, globalBit) : -1;
 	// #439: the Relic Race Perfect has no AdvProgress bit either.
 	perfectLevel = AP_RelicPerfectPseudoLevel(globalBit);
 	if (perfectLevel >= 0)
@@ -1532,6 +1536,93 @@ int AP_PadUncollectedRelicPerfectCount(int destLevelID)
 	    code > 0 && ap_net_location_checked(code));
 }
 
+// Display-only pad enumeration (see ap_hooks.h): AP_PadUncollectedGlowBits plus
+// the open item boxes, CTR letters and per-track Wumpa. Each family uses the
+// predicate of its pad-state count (AP_PadUncollectedBoxCount, ...LetterCount,
+// ...WumpaCount), so the glow lists exactly what the state counts, and a cup pad
+// aggregates its four legs the same way (boxes and Wumpa; letters are per track
+// and a cup has none). A leg track repeated inside one cup is listed once. A
+// custom cup carries its Trophy and Wumpa in the base enumeration already and no
+// boxes or letters, so it returns unchanged. Cortex Vortex lists its letters and
+// Wumpa; as a cup leg only its Wumpa, like the count.
+int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
+{
+	int count = AP_PadUncollectedGlowBits(destLevelID, outBits, cap);
+	int wumpaOn;
+
+	if (!ctr_cfg_active())
+		return count;
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return count;
+#endif
+	wumpaOn = ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_PER_TRACK;
+
+	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
+	{
+		count = AP_PadGlowAppendBoxes(destLevelID, AP_PadTrackBoxSlots(destLevelID),
+		                              outBits, cap, count,
+		                              AP_PadBoxLive, AP_PadBoxChecked, 0);
+		count = AP_PadGlowAppendLetters(ctr_cfg.lettersanity_locations[destLevelID],
+		                                destLevelID, outBits, cap, count,
+		                                AP_PadBoxLive, AP_PadBoxChecked, 0);
+		if (wumpaOn && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
+			count = AP_PadGlowAppendWumpa(ctr_cfg.wumpa.tracks[destLevelID], destLevelID,
+			                              outBits, cap, count,
+			                              AP_PadBoxLive, AP_PadBoxChecked, 0);
+	}
+	else if (destLevelID == AP_CORTEX_DEST)
+	{
+		if (AP_CortexDestValid())
+			count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track,
+			                               AP_CV_APPEND_LETTERS |
+			                                   (wumpaOn ? AP_CV_APPEND_WUMPA : 0),
+			                               outBits, cap, count,
+			                               AP_PadBoxLive, AP_PadBoxChecked, 0);
+	}
+	else if (destLevelID >= 100 && destLevelID < 105)
+	{
+		int cup = destLevelID - 100;
+		int leg, prev;
+		int seen[4];
+
+		for (leg = 0; leg < 4; leg++)
+		{
+			int track = ctr_cfg_cup_leg(cup, leg);
+			int dup = 0;
+
+			seen[leg] = track;
+			for (prev = 0; prev < leg; prev++)
+				if (seen[prev] == track)
+					dup = 1;
+			if (dup)
+				continue; // repeated leg: one location, listed once
+			if (track == AP_CORTEX_DEST)
+			{
+				if (wumpaOn && AP_CortexDestValid())
+					count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track,
+					                               AP_CV_APPEND_WUMPA, outBits, cap, count,
+					                               AP_PadBoxLive, AP_PadBoxChecked, 0);
+				continue;
+			}
+			count = AP_PadGlowAppendBoxes(track, AP_PadTrackBoxSlots(track),
+			                              outBits, cap, count,
+			                              AP_PadBoxLive, AP_PadBoxChecked, 0);
+			if (wumpaOn && track >= 0 && track < CTR_CFG_WUMPA_TRACK_COUNT)
+				count = AP_PadGlowAppendWumpa(ctr_cfg.wumpa.tracks[track], track,
+				                              outBits, cap, count,
+				                              AP_PadBoxLive, AP_PadBoxChecked, 0);
+		}
+	}
+	return count;
+}
+
+// The display buffer must hold a Gem Cup's four legs and the busiest single pad.
+CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >= AP_PADGLOW_WORST_CASE_BITS);
+CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
+                  5 + 1 + 2 + CTR_CFG_PODIUM_RUNG_COUNT + AP_BOX_SLOTS_PER_TRACK +
+                  CTR_CFG_LETTER_COUNT + 1);
+
 // Reward-type group of a glow bit -> the prize slot that owns it under
 // by_reward_type (issue #59). The three groups are exactly the three slots the
 // pad already births as trophy / relic / token placeholders
@@ -1545,6 +1636,8 @@ int AP_PadUncollectedRelicPerfectCount(int destLevelID)
 //   2 TOKEN  everything else the glow enumerators can produce: the CTR Token
 //            challenge, a gem-cup gem and an arena crystal (purple token).
 // A trial pad's Trophy and CTR Challenge pseudo-bits (#343) join groups 0 and 2.
+// Item boxes and per-track Wumpa join group 0, CTR letters group 2 (ruling,
+// 2026-09-30); Cortex Vortex Wumpa follows its retail sibling into group 0.
 // Bit ranges follow the enumerators above, which build every bit as
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
@@ -1552,6 +1645,9 @@ static int AP_GlowBitRewardGroup(int globalBit)
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
 	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
+	int itemGroup = AP_PadGlowItemRewardGroup(globalBit);
+	if (itemGroup >= 0)
+		return itemGroup; // boxes + Wumpa -> race slot, CTR letters -> token slot
 	if (perfectGroup >= 0)
 		return perfectGroup; // #439: Relic Race Perfect rides in the relic slot
 	if (cortexGroup >= 0)

@@ -2004,13 +2004,14 @@ WarpPad_AnimateOpen:
 	// same thing -- one bit per slot, or -1 -- so everything below is untouched.
 	// A slot turned off here is force-hidden (HIDE_MODEL) AND skipped by the spin
 	// loop below, so a hidden slot neither renders nor mis-scales.
-	// Glow-only enumerator buffer. Worst case is a CUP destination: 1 gem + the
-	// podium rungs of all four leg tracks (4 * 5 rungs = 20) = 21; a race
-	// destination is at most 5 tiers + 5 own rungs = 10. Size 24 covers both with
-	// slack. Rungs joined the glow cycle 2026-07-15 so a pad advertises the items on
-	// its position checks too, not just the tier rewards; cup-pad leg aggregation
-	// landed with the #9 5-rung rework (a cup pad's checks live on its legs).
-	int apUncBits[24];
+	// Display enumerator buffer (AP_PAD_DISPLAY_BITS_MAX, ap_hooks.h). Worst case
+	// is a CUP destination: 1 gem + per leg track 5 podium rungs, 15 item boxes
+	// and 1 Wumpa (4 * 21) = 85; a race or trial destination is at most 32. Since
+	// 2026-09-30 the pad lists EVERY open location behind it, boxes, letters and
+	// Wumpa included, so the buffer is sized by a static assert in ap_hooks.c
+	// rather than by hand. Rungs joined the glow cycle 2026-07-15; cup-pad leg
+	// aggregation landed with the #9 5-rung rework.
+	int apUncBits[AP_PAD_DISPLAY_BITS_MAX];
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
 	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
@@ -2019,7 +2020,7 @@ WarpPad_AnimateOpen:
 	    (((u16)(levelID - AH_WP_ADV_CUP)) < 5) ||                 // cup 100..104
 	    (levelID == AP_CORTEX_DEST))                              // Cortex Vortex 110
 	{
-		apUncN = AP_PadUncollectedGlowBits(warppadObj->levelID, apUncBits,
+		apUncN = AP_PadUncollectedDisplayBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
 		if (apUncN > 0)
 			AP_PadGlowSlots(apUncBits, apUncN, (int)(gGT->timer / 0x3C), apSlotBit);
