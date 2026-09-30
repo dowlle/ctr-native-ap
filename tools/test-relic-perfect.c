@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include "ap_relic_perfect.h"
+#include "ap_pad_state.h"
 #include "ap_race_attempt_logic.h"
 
 static int checks;
@@ -148,12 +149,66 @@ static void test_forced_loss_guard(void)
 	       "same predicate as the relic unlock");
 }
 
+static void test_pad_keeps_relic_race_open(void)
+{
+	// #439: every relic tier checked, Relic Race Perfect still open. The pad
+	// must offer the relic race and must not go Done.
+	long code = AP_RelicPerfectExpectedCode(3);
+	expect(AP_RelicPerfectPadLeftPure(1, code, 1, 0), 1, "open perfect is left");
+	expect(AP_RelicPerfectPadLeftPure(1, code, 1, 1), 0, "checked perfect is not left");
+	expect(AP_RelicPerfectPadLeftPure(0, code, 1, 0), 0, "option off: nothing left");
+	expect(AP_RelicPerfectPadLeftPure(1, -1, 1, 0), 0, "no row for this track");
+	expect(AP_RelicPerfectPadLeftPure(1, code, 0, 0), 0, "not a live location");
+
+	expect(AP_PadRelicSideLeft(0, 1), 1, "perfect alone keeps the relic side");
+	expect(AP_PadRelicSideLeft(1, 0), 1, "a relic tier alone keeps it");
+	expect(AP_PadRelicSideLeft(0, 0), 0, "nothing left closes it");
+
+	// Trophy and token checked, all relics checked: without the perfect the
+	// route is Done (vanilla-shaped); with it the route is the relic race.
+	expect(AP_PadTier2RouteDecide(0, AP_PadRelicSideLeft(0, 0), 0),
+	       AP_PAD_TIER2_DONE, "no perfect left: Done as before");
+	expect(AP_PadTier2RouteDecide(0, AP_PadRelicSideLeft(0, 1), 0),
+	       AP_PAD_TIER2_RELIC, "perfect left: relic race, not Done");
+	expect(AP_PadTier2RouteDecide(1, AP_PadRelicSideLeft(0, 1), 0),
+	       AP_PAD_TIER2_MENU, "token and perfect left: menu");
+
+	// Pad lifecycle: AP_PadState adds the perfect to the unchecked count.
+	expect(AP_PadStateDecide(1, 1, 1, 1, 1, 0 + 0, 0), 5, "nothing left: Done");
+	expect(AP_PadStateDecide(1, 1, 1, 1, 1, 0 + 1, 0), 4, "perfect left: tier 2 open");
+	// Stage 2 not yet met: relic race is not entered from this pad state.
+	expect(AP_PadStateDecide(1, 1, 1, 1, 0, 0 + 1, 0), 3, "perfect left, stage 2 unmet: re-locked");
+}
+
+static void test_pad_display_identity(void)
+{
+	int level;
+
+	// #439 follow-up: the pad shows the item on the perfect through a
+	// process-local pseudo-bit per LevelID; it must round-trip, stay clear of
+	// the other pseudo-bit ranges and ride the relic slot.
+	for (level = 0; level < AP_RELIC_PERFECT_TRACK_COUNT; level++)
+	{
+		int bit = AP_RelicPerfectPseudoBit(level);
+		expect(AP_RelicPerfectPseudoLevel(bit), level, "pseudo-bit round trip");
+		expect(AP_RelicPerfectPseudoRewardGroup(bit), 1, "perfect rides the relic slot");
+	}
+	expect(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE - 1), -1, "below range");
+	expect(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE + AP_RELIC_PERFECT_TRACK_COUNT),
+	       -1, "above range");
+	expect(AP_RelicPerfectPseudoRewardGroup(0x211), -1, "trial pseudo-bit is not a perfect");
+	expect(AP_RelicPerfectPseudoRewardGroup(3), -1, "plain bit is not a perfect");
+	expect(AP_RELIC_PERFECT_PSEUDO_BASE >= 0x220 + 14, 1, "clear of the Cortex Vortex range");
+}
+
 int main(void)
 {
 	test_frozen_codes();
+	test_pad_display_identity();
 	test_canonical_keys();
 	test_resolve();
 	test_forced_loss_guard();
+	test_pad_keeps_relic_race_open();
 	printf("%s relic perfect (%d checks, %d failures)\n",
 	       failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;

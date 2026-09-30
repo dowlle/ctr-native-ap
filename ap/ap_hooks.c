@@ -342,6 +342,7 @@ static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
 	int trialPseudo, trialChallenge;
+	int perfectLevel;
 	// Schema 15: Cortex Vortex pad-track identities. Checked first because the
 	// generic podium range below would otherwise claim these bits.
 	if (AP_CortexPseudoDecode(globalBit, 0))
@@ -354,6 +355,12 @@ static long AP_LookupLocationCode(int globalBit)
 	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
 		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
 #endif
+	// #439: the Relic Race Perfect has no AdvProgress bit either.
+	perfectLevel = AP_RelicPerfectPseudoLevel(globalBit);
+	if (perfectLevel >= 0)
+		return (ctr_cfg_active() && ctr_cfg.relic_perfect_enabled &&
+		        ctr_cfg.relic_perfect[perfectLevel] > 0)
+		           ? ctr_cfg.relic_perfect[perfectLevel] : -1;
 	// #343: the trial Trophy and CTR Challenge have no AdvProgress bit.
 	if (AP_TrialPseudoDecode(globalBit, &trialPseudo, &trialChallenge))
 	{
@@ -1249,6 +1256,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
 
+	// #439 follow-up: an open Relic Race Perfect is advertised like the other
+	// relic-side checks, right after the tier bits. Retail race pads and the two
+	// trial pads only; Cortex Vortex and custom pads return around it.
+	if (AP_PadUncollectedRelicPerfectCount(destLevelID) > 0 && count < cap)
+		outBits[count++] = AP_RelicPerfectPseudoBit(destLevelID);
+
 	// Schema 15: the Cortex Vortex pad also advertises its own podium rungs.
 	if (destLevelID == AP_CORTEX_DEST)
 		return AP_CortexDestValid()
@@ -1500,6 +1513,25 @@ int AP_PadUncollectedLetterCount(int destLevelID)
 	return n;
 }
 
+// Relic Race Perfect (#49) has no AdvProgress bit, so like Lettersanity it is a
+// count-only pad lifecycle input. 1 while this destination's perfect check is a
+// live location that the server has not checked; the pad must not go Done or
+// hide the relic race while it is (#439). Retail race pads and the two trial
+// pads only: the Cortex Vortex perfect identity is not minted.
+int AP_PadUncollectedRelicPerfectCount(int destLevelID)
+{
+	long code;
+
+	if (!ctr_cfg_active() || !ctr_cfg.relic_perfect_enabled)
+		return 0;
+	if (destLevelID < 0 || destLevelID >= CTR_CFG_RELIC_PERFECT_COUNT)
+		return 0;
+	code = ctr_cfg.relic_perfect[destLevelID];
+	return AP_RelicPerfectPadLeftPure(
+	    1, code, code > 0 && ap_net_location_exists(code),
+	    code > 0 && ap_net_location_checked(code));
+}
+
 // Reward-type group of a glow bit -> the prize slot that owns it under
 // by_reward_type (issue #59). The three groups are exactly the three slots the
 // pad already births as trophy / relic / token placeholders
@@ -1519,6 +1551,9 @@ static int AP_GlowBitRewardGroup(int globalBit)
 {
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
+	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
+	if (perfectGroup >= 0)
+		return perfectGroup; // #439: Relic Race Perfect rides in the relic slot
 	if (cortexGroup >= 0)
 		return cortexGroup; // schema 15: Cortex Vortex pseudo-bits
 	if (trialGroup >= 0)
@@ -1751,6 +1786,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int boxesLeft;
 	int lettersLeft;
 	int wumpaLeft;
+	int perfectLeft;
 	int hitOpp;
 
 	if (!ctr_cfg_active())
@@ -1787,6 +1823,10 @@ int AP_PadState(int physLevelID, int destLevelID)
 	// it. Before stage 2 it needs the plain Trophy-race route; after stage 2 the
 	// entry chooser treats it as a CTR Challenge-side reason to remain open.
 	wumpaLeft = AP_PadUncollectedWumpaCount(destLevelID);
+	// The Relic Race Perfect check has no AdvProgress bit either. Without this
+	// the pad went Done (hard-locked) once all three relics were checked, even
+	// with the perfect still open (#439).
+	perfectLeft = AP_PadUncollectedRelicPerfectCount(destLevelID);
 	// The trial Trophy and CTR Challenge are already in uncBits (#343).
 
 	// Hit Character encounter (pool draw): an eligible racer other than the
@@ -1806,7 +1846,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         ctr_cfg_racer_lock_met(physLevelID),
 	                         AP_DestTrophyChecked(destLevelID),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
-	                         uncN + lettersLeft + wumpaLeft,
+	                         uncN + lettersLeft + wumpaLeft + perfectLeft,
 	                         boxesLeft + wumpaLeft + hitOpp);
 }
 
@@ -1922,6 +1962,8 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route)
 	}
 	tokenLeft = AP_PadTokenSideLeft(
 	    tokenLeft, AP_PadUncollectedLetterCount(destLevelID), wumpaLeft);
+	relicLeft = AP_PadRelicSideLeft(relicLeft,
+	                                AP_PadUncollectedRelicPerfectCount(destLevelID));
 
 	if (physLevelID == s_phys && destLevelID == s_dest && route == s_route &&
 	    state == s_state && trophyChecked == s_trophy && tokenLeft == s_token &&

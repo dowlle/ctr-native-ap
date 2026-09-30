@@ -785,6 +785,10 @@ int AP_PadUncollectedWumpaCount(int destLevelID);
 // its side of the tier-2 route available even after the Token check itself.
 int AP_PadUncollectedLetterCount(int destLevelID);
 
+// 1 while this destination's Relic Race Perfect check exists in this seed and is
+// unchecked, else 0. Keeps the Relic Race side of the pad open (#439).
+int AP_PadUncollectedRelicPerfectCount(int destLevelID);
+
 // ── Pad entry-route diagnostic (issues #232 / #265) ──
 // Emit ONE "[AP PAD]" line describing the entry route this pad just took, and
 // the state it was read out of. Deduplicated on the whole reported tuple, so an

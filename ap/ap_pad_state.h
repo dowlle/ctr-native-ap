@@ -93,6 +93,16 @@ static inline int AP_PadTokenSideLeft(int tokenLeft, int lettersLeft, int wumpaL
 	return tokenLeft || lettersLeft || wumpaLeft;
 }
 
+// The Relic Race side stays useful while any relic tier location OR the
+// destination's Relic Race Perfect check is unchecked (#439). The perfect has
+// no AdvProgress bit, so it cannot ride in the tier bits the chooser reads; a
+// track whose three relics are all checked must still offer the relic race for
+// a perfect that is not done yet, or the pad goes Done and locks it away.
+static inline int AP_PadRelicSideLeft(int relicLeft, int perfectLeft)
+{
+	return relicLeft || perfectLeft;
+}
+
 // Count unchecked track-owned Wumpa locations across a Cup's four legs.
 // `trackLeft` is parallel to `tracks`; repeated track ids are alternative
 // occurrences of one location and therefore count once. The mask is sufficient

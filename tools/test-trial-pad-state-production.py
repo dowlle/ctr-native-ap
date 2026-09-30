@@ -28,6 +28,7 @@ int ctr_cfg_warp_stage2_unlocked(int p){assert(p==physical);return stage2;}
 int AP_PadUncollectedGlowBits(int d,int *out,int n){assert(d==destination);return remaining;}
 int AP_PadUncollectedBoxCount(int d){return boxes;}
 int AP_PadUncollectedLetterCount(int d){return letters;}
+int AP_PadUncollectedRelicPerfectCount(int d){return 0;}
 int AP_PadUncollectedWumpaCount(int d){return wumpa;}
 int AP_TrialTrackUncheckedCount(int d){return 0;}
 /* Schema 16 Hit Character seam: an unchecked Hit that can appear at this pad. */
