@@ -166,7 +166,7 @@ static void producer_wiring(void)
 		int order[3] = {0, 1, 2};
 		expect(AP_RaceAttempt_ApplyLastPlaceSwap(3, 1, order), 1,
 		       "permutation is independent of the result latch");
-		expect(AP_DeathLinkReceiveDecision(3, 1, 1, 1), AP_DL_RECV_RACE_LOSS,
+		expect(AP_DeathLinkReceiveDecision(3, 1, 1, AP_DL_WIN_LIVE), AP_DL_RECV_RACE_LOSS,
 		       "receive decision is independent of the result latch");
 	}
 }
@@ -239,6 +239,35 @@ static void non_ranked_loss_kinds(void)
 	}
 }
 
+/* A DeathLink received in the hub (or any non-race state) is dropped: it is not
+ * held for the next race, so the next race starts with no latch and no pending
+ * loss. This reverses the old "queued in the hub applies in the next valid race"
+ * behaviour. */
+static void hub_death_is_dropped(void)
+{
+	APRaceAttemptState s;
+	int mode;
+
+	AP_RaceAttempt_Init(&s);
+	for (mode = 1; mode <= 3; mode++)
+	{
+		expect(AP_DeathLinkReceiveDecision(mode, 1, 1, 0), AP_DL_RECV_DROP,
+		       "a death received in the hub is dropped in every mode");
+		/* The next race has nothing pending: without a new death there is no
+		 * action, and dropping never arms the attempt latch. */
+		expect(AP_DeathLinkReceiveDecision(mode, 0, 1, AP_DL_WIN_LIVE), AP_DL_RECV_WAIT,
+		       "the next live race has no held death to apply");
+	}
+	/* Pause hold: held only while the same race is paused, dropped once left. */
+	expect(AP_DeathLinkReceiveDecision(3, 1, 1, AP_DL_WIN_PAUSED), AP_DL_RECV_HOLD,
+	       "a death pending during a pause is held");
+	expect(AP_DeathLinkReceiveDecision(3, 1, 1, AP_DL_WIN_OUTSIDE), AP_DL_RECV_DROP,
+	       "the held death is dropped when the race is quit from the pause menu");
+	expect(AP_RaceAttempt_IsForcedLoss(&s), 0, "a dropped hub death never arms the latch");
+	expect(AP_RaceAttempt_LevelStartStep(&s, 1, 1, 0), 0, "next race starts clean");
+	expect(AP_RaceAttempt_IsForcedLoss(&s), 0, "next race is not a forced loss");
+}
+
 int main(void)
 {
 	non_ranked_loss_kinds();
@@ -246,6 +275,7 @@ int main(void)
 	cup_lifecycle();
 	rank_permutation();
 	producer_wiring();
+	hub_death_is_dropped();
 	cup_final_leg("final-leg forced loss, cup won on points: exactly the cup check", 1);
 	cup_final_leg("final-leg forced loss, cup lost on points: nothing is granted", 0);
 	printf("%s: %d failure(s)\n", failures ? "FAIL" : "PASS", failures);

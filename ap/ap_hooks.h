@@ -195,11 +195,18 @@ void AP_FeedConnectReset(void);
 void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
 void AP_FeedDrawRace(void);
+// The same feed on the end-of-race screens (results, cup standings), drawn a little
+// higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
+void AP_FeedDrawResults(void);
 int  AP_HubFeedOn(void);
 // One trap-state line (armed, incoming, active) on the same two surfaces, in the
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
 // so trap presentation cannot drift from the item feed's look.
 void AP_FeedTrapLine(const char *text);
+// One DeathLink line (a received death applied, or ignored) on the same surfaces.
+// ignored picks the softer colour. The DeathLink module owns the wording. Lines are
+// cut at 28 characters so they stay clear of the minimap.
+void AP_FeedDeathLinkLine(const char *text, int ignored);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress

@@ -563,6 +563,11 @@ void MainGameEnd_Initialize(void)
 		}
 
 		MainGameEnd_UpdateAdventureLosses(gGT, player);
+#ifdef CTR_AP
+		// race_loss DeathLink: send the game's own loss result (never a received
+		// death's forced loss: the latch is already armed then).
+		AP_DeathLinkOnRaceEnd(gGT, player);
+#endif
 
 		gGT->gameMode1 |= END_OF_RACE;
 		gGT->gameModeEnd = gGT->gameMode1 & GAME_MODE_END_RETAINED_MODE_MASK;

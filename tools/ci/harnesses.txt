@@ -152,5 +152,6 @@ tools/test-wumpa-production.c skip build-fail under the generic recipe; give it 
 tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c
 tools/test-wumpa-seedcfg.cpp
+tools/test-deathlink-send-seedcfg.cpp
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c

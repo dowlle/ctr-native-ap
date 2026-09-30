@@ -504,6 +504,11 @@ void RenderAllHUD(struct GameTracker *gGT)
 	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & 8) != 0) && ((gameMode1 & START_OF_RACE) != 0))
 	{
 		UI_RaceStart_IntroText1P();
+#ifdef CTR_AP
+		// AP feed: a DeathLink received during the intro / countdown is shown as
+		// ignored right away instead of surfacing after the lights.
+		AP_FeedDrawRace();
+#endif
 	}
 
 	// if not drawing intro-race title bars
@@ -516,6 +521,11 @@ void RenderAllHUD(struct GameTracker *gGT)
 			if ((hudFlags & 4) != 0)
 			{
 				UI_CupStandings_InputAndDraw();
+#ifdef CTR_AP
+				// AP feed: a race_loss DeathLink popup must survive the leg ending
+				// straight into the standings.
+				AP_FeedDrawResults();
+#endif
 			}
 		}
 
@@ -593,6 +603,12 @@ void RenderAllHUD(struct GameTracker *gGT)
 						}
 					}
 
+#ifdef CTR_AP
+					// AP feed: the end-of-race screens return before the race HUD
+					// pass, so a race_loss DeathLink popup (queued the frame the race
+					// ended) would never show. Same 1P / unpaused gates as the HUD.
+					AP_FeedDrawResults();
+#endif
 					return;
 				}
 			}

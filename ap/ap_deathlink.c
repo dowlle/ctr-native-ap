@@ -14,8 +14,8 @@
 
 // ============================================================================
 // AP DEATHLINK -- game-side semantics. See ap_deathlink.h for the design
-// contract (send tiers, receive = forced mask reset, out-of-race depth-1 queue,
-// and the hard no-loop guard). The tagged-Bounce transport is in ap_net.cpp.
+// contract (send triggers, receive = forced mask reset or race loss, no queue, and
+// the hard no-loop guard). The tagged-Bounce transport is in ap_net.cpp.
 // ============================================================================
 
 // ── Send-edge state ──
@@ -23,9 +23,16 @@ static int g_dl_prev_maskgrab = 0; // rising-edge latch on the local KS_MASK_GRA
 static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnesty N
 
 // ── Receive state ──
-static int  g_dl_pending_recv = 0;         // depth-1 inbound queue (extras dropped)
-static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour only)
-static int  g_dl_defer_logged = 0;         // the deferral of THIS queued death is logged
+// DeathLink is never queued. A received death is either applied inside a live race
+// or dropped. g_dl_pending_recv is only the short grace window (AP_DL_GRACE_FRAMES)
+// for a death that arrived in a live race but whose landing preconditions are not
+// met yet; outside a live race it is dropped at once.
+static int  g_dl_pending_recv = 0;         // in-window death still trying to land
+static int  g_dl_grace_left = 0;           // frames of grace left for it
+static char g_dl_pending_cause[128] = {0}; // its cause (log and popup)
+static char g_dl_pending_source[64] = {0}; // its source slot (popup)
+static int  g_dl_defer_logged = 0;         // the deferral of THIS death is logged
+static int  g_dl_hold_logged = 0;          // the pause hold of THIS death is logged
 
 // #286 attempt-owned forced-loss latch. Deliberately separate from the network
 // receive state above: it belongs to the race attempt, so AP_DeathLinkConnectReset
@@ -75,23 +82,41 @@ static int g_dl_send_cooldown = 0;
 // live without a menu-exit hook.
 static int g_dl_tag_on = 0; // tag state last declared to the server
 
-// Effective mode: the config preference wins over the seed option. The forced
-// values ARE the tier enum (1 = mask_reset, 2 = any_hit, 3 = race_loss), so all
-// in-game DeathLink layers stay selectable when forcing on.
-static int AP_DeathLinkEffMode(void)
+// The resolved state (AP_DeathLinkResolve): the OPTIONS rows over the seed, with the
+// rule that anything that sends also receives. Nothing without slot_data.
+static APDeathLinkState AP_DeathLinkStateNow(void)
 {
-	if (g_config.deathLink == 0)
-		return CTR_DL_OFF;
-	if (g_config.deathLink == CTR_DL_MASK_RESET ||
-	    g_config.deathLink == CTR_DL_ANY_HIT ||
-	    g_config.deathLink == CTR_DL_RACE_LOSS)
-		return g_config.deathLink;
-	return ctr_cfg_active() ? ctr_cfg.death_link : CTR_DL_OFF; // -1: follow the seed
+	APDeathLinkState off = {0, 0};
+	int row = g_config.deathLink;
+
+	if (!ctr_cfg_active())
+		return off;
+	if (row < 0 || row > CTR_DL_RACE_LOSS)
+		row = -1; // a hand-edited out-of-range value follows the seed
+	return AP_DeathLinkResolve(ctr_cfg.death_link, ctr_cfg.death_link_send,
+	                           row, g_config.dlSendFall,
+	                           g_config.dlSendHit, g_config.dlSendLoss);
 }
 
+// Effective receive mode. The forced values ARE the tier enum (1 = mask_reset,
+// 2 = any_hit, 3 = race_loss), so all in-game DeathLink layers stay selectable.
+static int AP_DeathLinkEffMode(void)
+{
+	return AP_DeathLinkStateNow().recv;
+}
+
+// The effective send mask (AP_DL_TRIG_*): which events send, separate from the
+// receive effect. 0 when DeathLink is off.
+static int AP_DeathLinkSendMaskNow(void)
+{
+	return AP_DeathLinkStateNow().send;
+}
+
+// 1 when DeathLink does anything: it receives, or any send trigger is on.
 int AP_DeathLinkActive(void)
 {
-	return AP_DeathLinkEffMode() != CTR_DL_OFF;
+	APDeathLinkState st = AP_DeathLinkStateNow();
+	return AP_DeathLinkTagWanted(st.recv, st.send);
 }
 
 // #286 authoritative attempt predicate. Every result-derived producer reads this,
@@ -190,7 +215,7 @@ static void AP_DeathLinkFireLocal(struct GameTracker *gGT, const char *cause)
 {
 	char msg[160];
 
-	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
+	if (!ctr_cfg_active() || AP_DeathLinkSendMaskNow() == 0)
 		return;
 	if (gGT == 0 || (gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		return; // sends only from adventure mode
@@ -221,13 +246,15 @@ static void AP_DeathLinkFireLocal(struct GameTracker *gGT, const char *cause)
 	AP_LogLine(msg);
 }
 
-// any_hit send hook (VehPickState_NewState). Only the any_hit tier sends on hits;
+// weapon_hit send hook (VehPickState_NewState). Only the weapon_hit trigger sends on hits;
 // mask-grab (damageType 5) is owned by the edge detector so it is never doubled.
 void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 {
 	struct GameTracker *gGT;
 
-	if (!ctr_cfg_active() || AP_DeathLinkEffMode() != CTR_DL_ANY_HIT)
+	if (!ctr_cfg_active() ||
+	    !AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_HIT,
+	                              AP_RaceAttemptIsForcedLoss()))
 		return;
 	if (damageType < 1 || damageType > 4)
 		return;
@@ -249,8 +276,11 @@ void AP_DeathLinkConnectReset(void)
 	g_dl_prev_maskgrab = 0;
 	g_dl_amnesty_count = 0;
 	g_dl_pending_recv = 0;
+	g_dl_grace_left = 0;
 	g_dl_pending_cause[0] = '\0';
+	g_dl_pending_source[0] = '\0';
 	g_dl_defer_logged = 0;
+	g_dl_hold_logged = 0;
 	g_dl_swallow_edge = 0;
 	// Defence in depth. The bracket around the trap's dispatch is set and cleared
 	// across one synchronous call, so this should already be 0; clearing it with
@@ -287,8 +317,8 @@ static int AP_DeathLinkBuildOrder(struct GameTracker *gGT, int racers, int *orde
 	return 1;
 }
 
-// A deferred forced loss stays queued and is retried every frame, so its log
-// line is written once per queued death instead of once per frame.
+// A forced loss that cannot land yet is retried every frame for the grace window,
+// so its log line is written once per death instead of once per frame.
 static void AP_DeathLinkDeferOnce(const char *msg)
 {
 	if (g_dl_defer_logged)
@@ -297,16 +327,72 @@ static void AP_DeathLinkDeferOnce(const char *msg)
 	AP_LogLine(msg);
 }
 
+// Popup for the death being handled: two short feed lines (source, then cause; or
+// "ignored" and the reason). Each line is cut at 28 characters by
+// AP_FeedDeathLinkLine so it stays clear of the minimap.
+static void AP_DeathLinkPopup(int applied, const char *why)
+{
+	char src[17]; // up to 16 characters of the source slot name
+	char line[96];
+	const char *cause = g_dl_pending_cause;
+	size_t n = strlen(g_dl_pending_source);
+
+	snprintf(src, sizeof src, "%s", g_dl_pending_source[0] ? g_dl_pending_source : "A PLAYER");
+	if (!applied)
+	{
+		// "DEATHLINK IGNORED" / "<SOURCE>: <WHY>" (the source cut to 10 characters).
+		snprintf(line, sizeof line, "DEATHLINK IGNORED");
+		AP_FeedDeathLinkLine(line, 1);
+		snprintf(line, sizeof line, "%.10s: %s", src, why);
+		AP_FeedDeathLinkLine(line, 1);
+		return;
+	}
+	// "DEATHLINK: <SOURCE>" then the cause on its own line. The standard cause
+	// already begins with the source slot ("<slot> <cause>"), so that prefix is
+	// dropped from the second line.
+	snprintf(line, sizeof line, "DEATHLINK: %s", src);
+	AP_FeedDeathLinkLine(line, 0);
+	if (n > 0 && strncmp(cause, g_dl_pending_source, n) == 0)
+	{
+		cause += n;
+		while (*cause == ' ')
+			cause++;
+	}
+	snprintf(line, sizeof line, "%s", cause[0] ? cause : "DIED");
+	AP_FeedDeathLinkLine(line, 0);
+}
+
+// The pending death ends here without landing: log it, show the ignored popup.
+static void AP_DeathLinkDrop(const char *why)
+{
+	char msg[224];
+
+	snprintf(msg, sizeof msg, "[AP DEATH] dropped: %s (%s)\n", why,
+	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+	AP_LogLine(msg);
+	AP_DeathLinkPopup(0, why);
+	g_dl_pending_recv = 0;
+	g_dl_grace_left = 0;
+	g_dl_pending_cause[0] = '\0';
+	g_dl_pending_source[0] = '\0';
+	g_dl_defer_logged = 0;
+	g_dl_hold_logged = 0;
+}
+
 // Common bookkeeping once a forced loss is going to be applied: consume the
-// queued death and arm the attempt latch BEFORE the retail end sequence, so every
-// result callback in that sequence observes the forced loss.
+// death, show its popup, and arm the attempt latch BEFORE the retail end sequence,
+// so every result callback in that sequence observes the forced loss.
 static void AP_DeathLinkConsumeForLoss(char *cause, size_t causeSize)
 {
 	snprintf(cause, causeSize, "%s",
 	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+	AP_DeathLinkPopup(1, 0);
 	g_dl_pending_recv = 0;
+	g_dl_grace_left = 0;
 	g_dl_pending_cause[0] = '\0';
+	g_dl_pending_source[0] = '\0';
 	g_dl_defer_logged = 0;
+	g_dl_hold_logged = 0;
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV;
 	AP_RaceAttempt_ArmForcedLoss(&g_dl_race_attempt);
 }
@@ -334,29 +420,41 @@ static void AP_DeathLinkApplyCrystalLoss(struct GameTracker *gGT)
 	AP_LogLine(msg);
 }
 
-// Relic Race: the result screen has no failed state (any time enters the high
-// score list), so the attempt is abandoned instead of finished. This is the pause
-// menu's EXIT TO MAP route (MainFreeze.c stringID 13, non-cup non-boss case):
-// no result callbacks run, so no relic, high score or ghost is written.
-static void AP_DeathLinkApplyRelicLoss(struct GameTracker *gGT)
+// Relic Race: end the run as failed but leave the player the retail end-of-race
+// menu (RETRY / EXIT TO MAP). The local driver finishes the way a solo race finish
+// does (finished flag, held item dropped, AI takes the kart), then the common
+// end-of-event initializer runs. The attempt latch is armed first, so
+// RR_EndEvent_UnlockAward grants no relic and AP_NotifyRelicPerfect sends nothing.
+// A relic race has no ghost save. The retail result would open the high-score name
+// entry for the time reached, so the pending high score and best lap are cleared
+// (the same two lines the name-entry Cancel and the relic results skip use): no
+// score is written and no name entry appears. RETRY then reloads the level and
+// AP_RaceAttempt_OnLevelStart clears the latch for the fresh run.
+static void AP_DeathLinkApplyRelicLoss(struct GameTracker *gGT, struct Driver *local)
 {
 	char cause[128];
 	char msg[192];
 
 	AP_DeathLinkConsumeForLoss(cause, sizeof cause);
 
-	sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
-	sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
-	sdata->Loading.OnBegin.RemBitsConfig0 |= (CRYSTAL_CHALLENGE | RELIC_RACE);
-	MainRaceTrack_RequestLoad(gGT->prevLEV);
+	local->actionsFlagSet |= ACTION_RACE_FINISHED;
+	local->heldItemID = 0xf;
+	if (local->noItemTimer != 0)
+		local->noItemTimer = 0;
+	BOTS_Driver_Convert(local);
+	MainGameEnd_Initialize();
 
-	snprintf(msg, sizeof msg, "[AP DEATH] received -> relic race abandoned (%s)\n", cause);
+	gGT->newHighScoreIndex = -1;
+	gGT->gameModeEnd &= ~(NEW_BEST_LAP | NEW_HIGH_SCORE);
+
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> relic race failed, retry offered (%s)\n", cause);
 	AP_LogLine(msg);
 }
 
 // #286: end the current adventure race attempt as a retail last-place loss.
 // The rank permutation is validated BEFORE anything mutates, so an invalid or
-// duplicate ordering logs and defers without consuming the queued death. On
+// duplicate ordering logs and retries within the grace window without consuming
+// the death. On
 // success the latch is armed before MainGameEnd_Initialize, so every result
 // callback in the retail end sequence observes the forced loss. Crystal
 // Challenges and Relic Races have no ranking to force and end through their own
@@ -380,13 +478,7 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	}
 	if (kind == AP_LOSS_RELIC)
 	{
-		// RequestLoad must not stack on a load already in flight.
-		if (sdata->Loading.stage != LOAD_IDLE)
-		{
-			AP_DeathLinkDeferOnce("[AP DEATH] race loss deferred: level load in progress\n");
-			return;
-		}
-		AP_DeathLinkApplyRelicLoss(gGT);
+		AP_DeathLinkApplyRelicLoss(gGT, local);
 		return;
 	}
 
@@ -401,7 +493,7 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	    !AP_RaceAttempt_ApplyLastPlaceSwap(racers, oldRank, order))
 	{
 		AP_DeathLinkDeferOnce("[AP DEATH] race loss deferred: invalid rank ordering\n");
-		return; // do not consume the death, do not arm the latch
+		return; // do not consume the death, do not arm the latch (grace, then drop)
 	}
 
 	// Write the bijective permutation back: every participating driver occurs
@@ -437,11 +529,32 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	AP_LogLine(msg);
 }
 
+// The live-race window a received death must land in (the trap-window idiom,
+// ap_traps.c:313-318): mid-race, lights out, not menu / cutscene / end-of-race, not
+// loading, on a real track. Returns AP_DL_WIN_PAUSED for the same race while
+// paused (the one state a death is held in), AP_DL_WIN_LIVE while it runs, and
+// AP_DL_WIN_OUTSIDE for everything else. The adventure hub passes the gameMode1 /
+// trafficLightsTimer test a few seconds after spawn (START_OF_RACE is cleared when
+// the fly-in ends while ADVENTURE_MODE stays set), so the track guard matters:
+// LOAD_IsOpen_RacingOrBattle() (overlayIndex_Threads == 1) is false in the hub
+// (overlay 2), and is the predicate the stock mask-grab subsystem uses to know it
+// is on a track (VehStuckProc.c:451). A pause-menu quit or restart requests a load
+// (Loading.stage leaves LOAD_IDLE), which makes the window OUTSIDE at once.
+static int AP_DeathLinkWindow(struct GameTracker *gGT)
+{
+	if ((gGT->gameMode1 & (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE)) != 0 ||
+	    gGT->trafficLightsTimer >= 1 || sdata == 0 ||
+	    sdata->Loading.stage != LOAD_IDLE || !LOAD_IsOpen_RacingOrBattle())
+		return AP_DL_WIN_OUTSIDE;
+	return (gGT->gameMode1 & PAUSE_ALL) != 0 ? AP_DL_WIN_PAUSED : AP_DL_WIN_LIVE;
+}
+
 void AP_DeathLinkTick(struct GameTracker *gGT)
 {
 	struct Driver *local;
-	int raceActive, maskGrabNow, action;
+	int window, raceActive, maskGrabNow, action;
 	char cause[128];
+	char source[64];
 
 	if (gGT == 0)
 		return;
@@ -453,57 +566,83 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	if (g_dl_send_cooldown > 0)
 		g_dl_send_cooldown--;
 
-	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
+	if (!ctr_cfg_active() || AP_DeathLinkActive() == 0)
 	{
-		// Feature off: keep edge/queue state clean so a later opt-in starts fresh.
+		// Feature off: keep edge/receive state clean so a later opt-in starts fresh.
 		// g_dl_race_attempt is NOT cleared: DeathLink config becoming inactive must
 		// not re-enable the failed attempt's finish checks.
 		g_dl_prev_maskgrab = 0;
 		g_dl_pending_recv = 0;
+		g_dl_grace_left = 0;
 		g_dl_defer_logged = 0;
+		g_dl_hold_logged = 0;
 		g_dl_swallow_edge = 0;
+		(void)ap_net_deathlink_take(cause, sizeof cause, source, sizeof source);
 		return;
 	}
 
 	local = gGT->drivers[0];
 
-	// Drain the network depth-1 inbound latch into the game-side queue. Depth 1 on
-	// both sides => multiple deaths arriving before we can apply one collapse to a
-	// single reset (extras dropped, per the ruling).
-	if (ap_net_deathlink_take(cause, sizeof cause))
+	// Drain the network inbound latch. A death is handled the frame it arrives: it
+	// applies inside a live race, is held while that race is paused, or is dropped. Two deaths in one grace window
+	// collapse to the newer one (the older is dropped without its own popup).
+	if (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source) &&
+	    AP_DeathLinkEffMode() != CTR_DL_OFF)
 	{
 		g_dl_pending_recv = 1;
+		g_dl_grace_left = AP_DL_GRACE_FRAMES;
 		g_dl_defer_logged = 0; // a new death gets its own deferral line
+		g_dl_hold_logged = 0;
 		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
+		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
 	}
 
-	// Race window (the trap-window idiom, ap_traps.c:313-318): mid-race, lights
-	// out, not paused / menu / cutscene / end-of-race.
-	raceActive = (gGT->gameMode1 &
-	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1;
+	window = AP_DeathLinkWindow(gGT);
+	raceActive = window == AP_DL_WIN_LIVE;
 
 	// #286 receive decision. Mode 3 (race_loss) ends the attempt here; modes 1/2
-	// keep the existing mask-reset path (applied later from the physics pipeline).
-	// Anything else, or any out-of-window state, leaves the death queued.
+	// keep the mask-reset path (applied from the physics pipeline). Outside a live
+	// adventure race the death is dropped.
 	action = AP_DeathLinkReceiveDecision(
 	    AP_DeathLinkEffMode(), g_dl_pending_recv,
-	    (gGT->gameMode1 & ADVENTURE_MODE) != 0,
-	    raceActive && LOAD_IsOpen_RacingOrBattle());
-	if (action == AP_DL_RECV_RACE_LOSS && local != 0)
+	    (gGT->gameMode1 & ADVENTURE_MODE) != 0, window);
+	if (action == AP_DL_RECV_DROP)
+	{
+		AP_DeathLinkDrop("not in a race");
+	}
+	else if (action == AP_DL_RECV_HOLD)
+	{
+		// Paused mid-race: hold this one death for the pause only. The grace
+		// countdown does not run; the next live frame applies it, and leaving
+		// the race (quit, restart, exit) drops it through the OUTSIDE branch.
+		if (!g_dl_hold_logged)
+		{
+			g_dl_hold_logged = 1;
+			AP_LogLine("[AP DEATH] received while paused -> held until the race resumes\n");
+		}
+	}
+	else if (action == AP_DL_RECV_RACE_LOSS && local != 0)
 	{
 		AP_DeathLinkApplyRaceLoss(gGT, local);
+		// Consumed (pending cleared) when it landed; otherwise grace, then drop.
+		if (g_dl_pending_recv && AP_DeathLinkGraceStep(&g_dl_grace_left))
+			AP_DeathLinkDrop("could not apply");
 		return;
 	}
+	else if (action != AP_DL_RECV_WAIT && g_dl_pending_recv &&
+	         AP_DeathLinkGraceStep(&g_dl_grace_left))
+	{
+		AP_DeathLinkDrop("could not apply");
+	}
 
-	// A queued received death is APPLIED by AP_DeathLinkForceReset from inside the
+	// A received mask-reset death is APPLIED by AP_DeathLinkForceReset from inside the
 	// physics pipeline (COLL_FIXED_PlayerSearch), NOT here: the request bit set from
 	// AP_OnFrame is zeroed by VehPhysForce_OnApplyForces before the mask-grab gate
 	// reads it. That path clears g_dl_pending_recv and arms g_dl_swallow_edge; the
 	// send edge below then swallows the resulting mask-grab.
 
-	// Send trigger: rising edge into KS_MASK_GRABBED (fell off / eaten). This fires
-	// in BOTH tiers (mask_reset and any_hit). A forced-reset edge is swallowed once.
+	// Send trigger: rising edge into KS_MASK_GRABBED (fell off / eaten), the
+	// mask_grab trigger. A forced-reset edge is swallowed once.
 	// A genuine mask-grab only happens mid-race, so the send is gated on raceActive
 	// too -- belt-and-suspenders against a spurious edge outside a live race.
 	maskGrabNow = (local != 0 && local->kartState == KS_MASK_GRABBED) ? 1 : 0;
@@ -511,13 +650,15 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	{
 		if (g_dl_swallow_edge)
 			g_dl_swallow_edge = 0; // received death caused this edge: never send
-		else if (raceActive)
+		else if (raceActive &&
+		         AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_FALL,
+		                                  AP_RaceAttemptIsForcedLoss()))
 			AP_DeathLinkFireLocal(gGT, "wiped out");
 	}
 	g_dl_prev_maskgrab = maskGrabNow;
 }
 
-// Apply a queued received death. Called from INSIDE COLL_FIXED_PlayerSearch, right
+// Apply a received mask-reset death that is inside the grace window. Called from INSIDE COLL_FIXED_PlayerSearch, right
 // before the stock mask-grab gate (game/COLL.c), so the request bit we OR survives
 // to that gate: VehPhysForce_OnApplyForces zeroes collisionFlags every frame before
 // this function runs, so setting the bit from AP_OnFrame (as the first cut did) is
@@ -527,12 +668,11 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 // Returns 1 (caller then OR's DRIVER_COLL_FLAG_MASK_GRAB_REQUEST) only when EVERY
 // stock-gate precondition (COLL.c:1706) is already satisfied, so the grab is
 // guaranteed to reach VehStuckProc_MaskGrab_Init this frame. That is what lets us
-// clear the depth-1 queue and arm the no-loop guard here: we never arm the guard
+// consume the death and arm the no-loop guard here: we never arm the guard
 // (which would swallow a later genuine send) for a grab that fails to land.
 int AP_DeathLinkForceReset(struct Driver *d)
 {
 	struct GameTracker *gGT;
-	int raceActive;
 	char msg[192];
 
 	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
@@ -551,40 +691,104 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		return 0; // receive, like send, only in adventure mode
 
-	// Race window, plus a real-track guard the send window does not need. The
-	// gameMode1 / trafficLightsTimer test alone is not enough on the receive side. The
-	// adventure hub itself passes it a few seconds after spawn: MainGameStart sets
-	// START_OF_RACE and trafficLightsTimer=0xf00 on hub entry, CAM.c:1675 clears
-	// START_OF_RACE when the fly-in ends, and MainMain.c counts the timer below 1 in
-	// ~4s, while ADVENTURE_MODE stays set all session. A queued death would otherwise
-	// fire while free-roaming the hub. LOAD_IsOpen_RacingOrBattle() (overlayIndex_Threads
-	// == 1) is false in the hub (overlay 2); it is the same predicate the stock mask-grab
-	// subsystem uses to decide it is on a track (VehStuckProc.c:451), the subsystem this
-	// forced reset drives. It fires the death at the next race start (lap 1, lights out)
-	// per the ruling. The trap lapWindow (ap_traps.c:311, lapIndex >= 1) also excludes the
-	// hub but would wrongly delay the death to lap 2. Out-of-race deaths stay queued.
-	raceActive = (gGT->gameMode1 &
-	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1 && LOAD_IsOpen_RacingOrBattle();
-	if (!raceActive)
+	// Same live-race window as the tick's decision (hub, menus, loading, countdown,
+	// pause and results are all outside it). A death outside it was already dropped
+	// by AP_DeathLinkTick; this is the same test on the physics frame.
+	if (AP_DeathLinkWindow(gGT) != AP_DL_WIN_LIVE)
 		return 0;
 
 	// Mirror the stock gate's OWN preconditions so OR'ing the bit is guaranteed to
 	// fire VehStuckProc_MaskGrab_Init this frame (checked here, one line before the
 	// gate, so the values match what the gate sees). Only then is it safe to consume
-	// the queue and arm the guard.
+	// the death (else the tick drops it after the grace window) and arm the guard.
 	if (d->kartState == KS_MASK_GRABBED || d->lastValid == 0 ||
 	    (sdata->HudAndDebugFlags & 0x1000) != 0 ||
 	    (d->stepFlagSet & COLL_STEP_TRIGGER_SUPPRESS_MASK_GRAB) != 0)
 		return 0;
 
+	AP_DeathLinkPopup(1, 0);
 	g_dl_pending_recv = 0;
+	g_dl_grace_left = 0;
 	g_dl_swallow_edge = 1; // no-loop guard: the resulting mask-grab edge must not send
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // forced grab multi-edges: mute them all
 	snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
 	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
 	AP_LogLine(msg);
+	g_dl_pending_cause[0] = '\0';
+	g_dl_pending_source[0] = '\0';
 	return 1;
+}
+
+// ── race_loss sends ──
+// The cause phrase for a loss send ("<slot> <phrase>" on the wire).
+static const char *AP_DeathLinkLossCause(int cause)
+{
+	switch (cause)
+	{
+	case AP_DL_CAUSE_LOST_RACE:    return "lost the race";
+	case AP_DL_CAUSE_LOST_CRYSTAL: return "failed the crystal challenge";
+	case AP_DL_CAUSE_LOST_CUP:     return "lost the gem cup";
+	case AP_DL_CAUSE_RESTART:      return "restarted the race";
+	case AP_DL_CAUSE_QUIT:         return "quit the race";
+	}
+	return "wiped out";
+}
+
+static void AP_DeathLinkSendLoss(struct GameTracker *gGT, int event, int lost, int inLiveRace)
+{
+	int cause = AP_DeathLinkLossSendDecision(
+	    AP_DeathLinkSendMaskNow(), gGT != 0 && (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_RaceAttemptIsForcedLoss(), event, lost, inLiveRace);
+
+	if (cause == AP_DL_CAUSE_NONE)
+		return;
+	AP_DeathLinkFireLocal(gGT, AP_DeathLinkLossCause(cause));
+}
+
+// The local race ended (called from MainGameEnd_Initialize once per race, before
+// the forced-loss path's own latch could matter: a received death arms the latch
+// first, so its result never sends). Uses the game's own loss result: rank for a
+// trophy / boss / CTR Challenge race (MainGameEnd_UpdateAdventureLosses), crystals
+// collected for a Crystal Challenge (CC_EndEvent_DrawMenu didLose). A Gem Cup leg
+// and a Relic Race are not a loss here.
+void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
+{
+	int crystal, lost;
+
+	if (gGT == 0 || player == 0)
+		return;
+	crystal = (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0;
+	lost = AP_DeathLinkRaceEndLost((gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	                               (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                               (gGT->gameMode1 & RELIC_RACE) != 0, crystal,
+	                               (int)player->driverRank, (int)player->numCrystals,
+	                               (int)gGT->numCrystalsInLEV);
+	AP_DeathLinkSendLoss(gGT, AP_DL_EV_RACE_END, lost, 0);
+}
+
+// The Gem Cup standings closed with the cup lost (UI_CupStandings). Never called
+// for a single lost leg.
+void AP_DeathLinkOnCupLost(void)
+{
+	if (sdata == 0 || sdata->gGT == 0)
+		return;
+	AP_DeathLinkSendLoss(sdata->gGT, AP_DL_EV_CUP_END, 1, 0);
+}
+
+// RESTART (quit == 0) or EXIT TO MAP (quit == 1) chosen in the pause menu. Counts
+// only while a race is on: not on the results screen, and never right after a
+// received death (the latch is set).
+void AP_DeathLinkOnPauseLeave(int quit)
+{
+	struct GameTracker *gGT;
+	int inRace;
+
+	if (sdata == 0 || sdata->gGT == 0)
+		return;
+	gGT = sdata->gGT;
+	inRace = (gGT->gameMode1 & (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE)) == 0 &&
+	         LOAD_IsOpen_RacingOrBattle() != 0;
+	AP_DeathLinkSendLoss(gGT, quit ? AP_DL_EV_PAUSE_QUIT : AP_DL_EV_PAUSE_RESTART, 1, inRace);
 }
 
 #endif // CTR_AP

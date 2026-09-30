@@ -223,6 +223,11 @@ static const int   s_dlinkValues[] = {-1, 0, 1, 2, 3};
 static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT", "RACE LOSS"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
+// DeathLink send trigger rows (CFG_ENUM): follow the seed / force off / force on.
+static const int   s_dlSendValues[] = {-1, 0, 1};
+static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
+#define DLSEND_COUNT ((int)(sizeof(s_dlSendValues) / sizeof(s_dlSendValues[0])))
+
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
 // remains readable and the scheduler does not need a magic large duration.
 static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
@@ -236,6 +241,19 @@ static int Dlink_Index(int value)
 		if (s_dlinkValues[i] == value)
 			return i;
 	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
+static int DlSend_Index(int value)
+{
+	for (int i = 0; i < DLSEND_COUNT; i++)
+		if (s_dlSendValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
+static int IsDlSendField(const int *p)
+{
+	return p == &g_config.dlSendFall || p == &g_config.dlSendHit || p == &g_config.dlSendLoss;
 }
 
 static int TrapDuration_Index(int value)
@@ -261,6 +279,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+	if (IsDlSendField((const int *)e->valuePtr))
+		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
 #endif
@@ -308,6 +328,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > DLINK_COUNT - 1)
 			i = DLINK_COUNT - 1;
 		*(int *)e->valuePtr = s_dlinkValues[i];
+		return;
+	}
+	if (IsDlSendField((const int *)e->valuePtr))
+	{
+		int i = DlSend_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > DLSEND_COUNT - 1)
+			i = DLSEND_COUNT - 1;
+		*(int *)e->valuePtr = s_dlSendValues[i];
 		return;
 	}
 	if (e->valuePtr == &g_config.trapDuration)

@@ -2907,6 +2907,8 @@ char *AP_Credits_PrependScroll(char *origScroll)
 #define AP_FEED_LINE_H             0xC // vertical spacing between lines
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
+#define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
+#define AP_FEED_MAX_CHARS          28   // DeathLink lines stay clear of the minimap (small font: ~13 px a character)
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -3096,6 +3098,21 @@ void AP_FeedTrapLine(const char *text)
 	AP_FeedEnqueue(line, CORTEX_RED, 1);
 }
 
+// One received-DeathLink line: a death applied (red) or ignored because it did not
+// arrive in a live race (orange). Like the trap line it is live gameplay state, not
+// a replayed receipt, so it bypasses the initial-inventory absorb window.
+void AP_FeedDeathLinkLine(const char *text, int ignored)
+{
+	char line[AP_FEED_TEXT_CAP];
+	if (!ctr_cfg_active() || text == 0)
+		return;
+	AP_CeremonySanitize(text, line, (int)sizeof line);
+	line[AP_FEED_MAX_CHARS] = '\0';
+	if (line[0] == '\0')
+		return;
+	AP_FeedEnqueue(line, ignored ? ORANGE : CORTEX_RED, 0);
+}
+
 // A location WE just checked that feeds SOMEONE ELSE. The received feed only ever
 // shows items we RECEIVE, so a nonlocal send (gem cups, cup-leg podium rungs, any
 // ceremony a player skips past) would otherwise surface nothing (issue #63).
@@ -3268,6 +3285,22 @@ void AP_FeedDrawRace(void)
 		return;
 
 	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);
+}
+
+// End-of-race screens: the race HUD pass returns before AP_FeedDrawRace, so the
+// results and cup standings call this instead. Same gates, higher anchor.
+void AP_FeedDrawResults(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (!ctr_cfg_active() || !ap_hub_feed_on)
+		return;
+	if (gGT->numPlyrCurrGame != 1)
+		return;
+	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
+		return;
+
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_RESULTS_BASE_Y, 1);
 }
 
 // Persistent "this seed is from a newer apworld -- update the client" banner

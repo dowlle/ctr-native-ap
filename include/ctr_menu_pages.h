@@ -40,7 +40,7 @@ static const char *const s_ctrMenuPageConnection[] = {
 	"uri", "slot", "password", NULL,
 };
 static const char *const s_ctrMenuPageArchipelago[] = {
-	"map_flash", "item_box_colours", "death_link", "trap_duration", "update_check",
+	"map_flash", "item_box_colours", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
 	"discord_status", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {
