@@ -212,8 +212,36 @@ static void cup_final_leg(const char *label, int cupWonOnPoints)
 	expect(grants, cupWonOnPoints ? 1 : 0, name);
 }
 
+/* Crystal Challenge and Relic Race losses take their own routes but still arm
+ * the attempt latch, so the reward producers stay blocked and the next racing
+ * level clears it like any other forced loss. */
+static void non_ranked_loss_kinds(void)
+{
+	APRaceAttemptState s;
+	int kind;
+
+	for (kind = AP_LOSS_CRYSTAL; kind <= AP_LOSS_RELIC; kind++)
+	{
+		int crystal = kind == AP_LOSS_CRYSTAL;
+		int relic = kind == AP_LOSS_RELIC;
+
+		AP_RaceAttempt_Init(&s);
+		expect(AP_RaceAttempt_LossKind(0, relic, crystal), kind, "loss kind resolves");
+		AP_RaceAttempt_ArmForcedLoss(&s);
+		expect(AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_ADV_REWARD,
+		                                             AP_RaceAttempt_IsForcedLoss(&s)),
+		       1, "non-ranked loss blocks the challenge reward");
+		expect(AP_RaceAttempt_SuppressResultProducer(AP_RESULT_PRODUCER_RELIC_UNLOCK,
+		                                             AP_RaceAttempt_IsForcedLoss(&s)),
+		       1, "non-ranked loss blocks the relic unlock");
+		expect(AP_RaceAttempt_LevelStartStep(&s, 0, 1, 0), 0, "hub after the loss keeps the latch");
+		expect(AP_RaceAttempt_LevelStartStep(&s, 1, 1, 0), 1, "next racing level clears it");
+	}
+}
+
 int main(void)
 {
+	non_ranked_loss_kinds();
 	attempt_lifecycle();
 	cup_lifecycle();
 	rank_permutation();

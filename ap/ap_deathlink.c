@@ -25,6 +25,7 @@ static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnest
 // ── Receive state ──
 static int  g_dl_pending_recv = 0;         // depth-1 inbound queue (extras dropped)
 static char g_dl_pending_cause[128] = {0}; // last inbound cause (log/flavour only)
+static int  g_dl_defer_logged = 0;         // the deferral of THIS queued death is logged
 
 // #286 attempt-owned forced-loss latch. Deliberately separate from the network
 // receive state above: it belongs to the race attempt, so AP_DeathLinkConnectReset
@@ -249,6 +250,7 @@ void AP_DeathLinkConnectReset(void)
 	g_dl_amnesty_count = 0;
 	g_dl_pending_recv = 0;
 	g_dl_pending_cause[0] = '\0';
+	g_dl_defer_logged = 0;
 	g_dl_swallow_edge = 0;
 	// Defence in depth. The bracket around the trap's dispatch is set and cleared
 	// across one synchronous call, so this should already be 0; clearing it with
@@ -285,11 +287,80 @@ static int AP_DeathLinkBuildOrder(struct GameTracker *gGT, int racers, int *orde
 	return 1;
 }
 
+// A deferred forced loss stays queued and is retried every frame, so its log
+// line is written once per queued death instead of once per frame.
+static void AP_DeathLinkDeferOnce(const char *msg)
+{
+	if (g_dl_defer_logged)
+		return;
+	g_dl_defer_logged = 1;
+	AP_LogLine(msg);
+}
+
+// Common bookkeeping once a forced loss is going to be applied: consume the
+// queued death and arm the attempt latch BEFORE the retail end sequence, so every
+// result callback in that sequence observes the forced loss.
+static void AP_DeathLinkConsumeForLoss(char *cause, size_t causeSize)
+{
+	snprintf(cause, causeSize, "%s",
+	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+	g_dl_pending_recv = 0;
+	g_dl_pending_cause[0] = '\0';
+	g_dl_defer_logged = 0;
+	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV;
+	AP_RaceAttempt_ArmForcedLoss(&g_dl_race_attempt);
+}
+
+// Crystal Challenge: end it the way the retail clock does when time runs out
+// (UI_DrawLimitClock): finished flag on the human players, then the common
+// end-of-event initializer. CC_EndEvent_DrawMenu reads the missing crystals as a
+// loss (TRY AGAIN), so no token reward or check is produced; the armed latch also
+// blocks the reward producer.
+static void AP_DeathLinkApplyCrystalLoss(struct GameTracker *gGT)
+{
+	char cause[128];
+	char msg[192];
+	int i;
+
+	AP_DeathLinkConsumeForLoss(cause, sizeof cause);
+	for (i = 0; i < (int)(u8)gGT->numPlyrCurrGame; i++)
+	{
+		if (gGT->drivers[i] != 0)
+			gGT->drivers[i]->actionsFlagSet |= ACTION_RACE_FINISHED;
+	}
+	MainGameEnd_Initialize();
+
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> crystal challenge failed (%s)\n", cause);
+	AP_LogLine(msg);
+}
+
+// Relic Race: the result screen has no failed state (any time enters the high
+// score list), so the attempt is abandoned instead of finished. This is the pause
+// menu's EXIT TO MAP route (MainFreeze.c stringID 13, non-cup non-boss case):
+// no result callbacks run, so no relic, high score or ghost is written.
+static void AP_DeathLinkApplyRelicLoss(struct GameTracker *gGT)
+{
+	char cause[128];
+	char msg[192];
+
+	AP_DeathLinkConsumeForLoss(cause, sizeof cause);
+
+	sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
+	sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+	sdata->Loading.OnBegin.RemBitsConfig0 |= (CRYSTAL_CHALLENGE | RELIC_RACE);
+	MainRaceTrack_RequestLoad(gGT->prevLEV);
+
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> relic race abandoned (%s)\n", cause);
+	AP_LogLine(msg);
+}
+
 // #286: end the current adventure race attempt as a retail last-place loss.
 // The rank permutation is validated BEFORE anything mutates, so an invalid or
 // duplicate ordering logs and defers without consuming the queued death. On
 // success the latch is armed before MainGameEnd_Initialize, so every result
-// callback in the retail end sequence observes the forced loss.
+// callback in the retail end sequence observes the forced loss. Crystal
+// Challenges and Relic Races have no ranking to force and end through their own
+// routes above.
 static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *local)
 {
 	int order[8];
@@ -298,6 +369,26 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	char cause[128];
 	char msg[192];
 	int r;
+	int kind = AP_RaceAttempt_LossKind(IS_BOSS_RACE(gGT->gameMode1) != 0,
+	                                   (gGT->gameMode1 & RELIC_RACE) != 0,
+	                                   (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0);
+
+	if (kind == AP_LOSS_CRYSTAL)
+	{
+		AP_DeathLinkApplyCrystalLoss(gGT);
+		return;
+	}
+	if (kind == AP_LOSS_RELIC)
+	{
+		// RequestLoad must not stack on a load already in flight.
+		if (sdata->Loading.stage != LOAD_IDLE)
+		{
+			AP_DeathLinkDeferOnce("[AP DEATH] race loss deferred: level load in progress\n");
+			return;
+		}
+		AP_DeathLinkApplyRelicLoss(gGT);
+		return;
+	}
 
 	if (racers < 1)
 		racers = 1;
@@ -309,28 +400,28 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	    order[oldRank] != (int)local->driverID ||
 	    !AP_RaceAttempt_ApplyLastPlaceSwap(racers, oldRank, order))
 	{
-		AP_LogLine("[AP DEATH] race loss deferred: invalid rank ordering\n");
+		AP_DeathLinkDeferOnce("[AP DEATH] race loss deferred: invalid rank ordering\n");
 		return; // do not consume the death, do not arm the latch
 	}
 
 	// Write the bijective permutation back: every participating driver occurs
-	// exactly once and ranks are exactly 0..N-1.
+	// exactly once and ranks are exactly 0..N-1. Drivers ranked ahead of the
+	// local driver are also finished, and the finished count covers every racer:
+	// the state a retail last-place finish leaves behind. Without it
+	// PlayLevel_UpdateLapStats starts ranking unfinished drivers after the
+	// local driver's rank, the bots never get a rank and driversInRaceOrder keeps
+	// NULL slots that the results HUD dereferences.
 	for (r = 0; r < racers; r++)
 	{
 		struct Driver *d = gGT->drivers[order[r]];
 		d->driverRank = r;
 		gGT->driversInRaceOrder[r] = d;
+		if (AP_RaceAttempt_RankIsFinishedAfterLoss(racers, r))
+			d->actionsFlagSet |= ACTION_RACE_FINISHED;
 	}
+	sdata->numPlayersFinishedRace = AP_RaceAttempt_FinishedCountAfterLoss(racers);
 
-	snprintf(cause, sizeof cause, "%s",
-	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
-
-	// Consume the queued death and arm the attempt latch BEFORE the retail end
-	// sequence.
-	g_dl_pending_recv = 0;
-	g_dl_pending_cause[0] = '\0';
-	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV;
-	AP_RaceAttempt_ArmForcedLoss(&g_dl_race_attempt);
+	AP_DeathLinkConsumeForLoss(cause, sizeof cause);
 
 	// Retail circuit finish: mark finished, drop the held item, hand the kart to
 	// the AI, then enter the common end-of-event initializer (PlayLevel.c:156-204,
@@ -369,6 +460,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		// not re-enable the failed attempt's finish checks.
 		g_dl_prev_maskgrab = 0;
 		g_dl_pending_recv = 0;
+		g_dl_defer_logged = 0;
 		g_dl_swallow_edge = 0;
 		return;
 	}
@@ -381,6 +473,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	if (ap_net_deathlink_take(cause, sizeof cause))
 	{
 		g_dl_pending_recv = 1;
+		g_dl_defer_logged = 0; // a new death gets its own deferral line
 		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
 	}
 

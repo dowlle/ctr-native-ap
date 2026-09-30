@@ -215,12 +215,12 @@ static void AiDiff_Step(int *value, int dir)
 
 #ifdef CTR_AP
 // DeathLink ladder (CFG_ENUM): follow the seed option / force off / force a
-// tier. 1/2 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT tier values themselves
-// (ap_deathlink.h), so both in-game layers are directly selectable. Edits apply
-// live: ap_deathlink.c re-reads the preference every frame and syncs the
-// connection tag itself, so this row needs no menu-exit hook.
-static const int   s_dlinkValues[] = {-1, 0, 1, 2};
-static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT"};
+// tier. 1/2/3 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT / CTR_DL_RACE_LOSS tier
+// values themselves (ap_deathlink.h), so every in-game layer is directly
+// selectable. Edits apply live: ap_deathlink.c re-reads the preference every
+// frame and syncs the connection tag itself, so this row needs no menu-exit hook.
+static const int   s_dlinkValues[] = {-1, 0, 1, 2, 3};
+static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT", "RACE LOSS"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
