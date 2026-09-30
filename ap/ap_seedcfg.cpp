@@ -1017,6 +1017,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// seed without them degrades to the disabled state.
 	ctr_cfg.death_link = 0;
 	ctr_cfg.deathlink_amnesty = 1;
+	ctr_cfg.death_link_send = -1; // absent: legacy coupling from death_link
 	// Capability packs (#12/#13) default to OFF, i.e. the vanilla kart. Same
 	// additive-key reasoning as death_link above: a pre-spine-1 seed carries none
 	// of these keys and must leave boost and stats exactly as the engine has them.
@@ -1255,6 +1256,14 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// DeathLink (additive keys, no schema bump). Absent -> off / amnesty 1.
 	ctr_cfg.death_link = json_int(opt, "death_link", 0);
 	ctr_cfg.deathlink_amnesty = json_int(opt, "deathlink_amnesty", 1);
+	// Send triggers (additive, bitmask 1 mask_grab / 2 weapon_hit / 4 race_loss).
+	// Absent or negative -> -1 = legacy coupling; a present value keeps its low
+	// three bits, so an unknown future bit is ignored rather than trusted.
+	ctr_cfg.death_link_send = json_int(opt, "death_link_send", -1);
+	if (ctr_cfg.death_link_send >= 0)
+		ctr_cfg.death_link_send &= 7;
+	else
+		ctr_cfg.death_link_send = -1;
 	if (ctr_cfg.deathlink_amnesty < 1)
 		ctr_cfg.deathlink_amnesty = 1; // guard: never divide the send cadence by < 1
 	// Progressive Boost / Progressive Stats (#12/#13). Additive keys, no schema

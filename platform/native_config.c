@@ -42,6 +42,9 @@ NativeConfig g_config = {
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
+	-1,    // dlSendFall (-1 = follow the seed's send triggers)
+	-1,    // dlSendHit
+	-1,    // dlSendLoss
 	15,    // trapDuration (recommended default, seconds; 0 = full race)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
@@ -143,6 +146,12 @@ const ConfigEntry g_configEntries[] = {
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
 	{"Archipelago", "death_link",               "DeathLink",                    CFG_ENUM, &g_config.deathLink},
+	// DeathLink send triggers, one row each (SEED / OFF / ON), independent of the
+	// receive row above. SEED follows slot_data death_link_send, or the legacy
+	// coupling from death_link when the seed has no such key.
+	{"Archipelago", "dl_send_fall",             "DL Send Fall",                 CFG_ENUM, &g_config.dlSendFall},
+	{"Archipelago", "dl_send_hit",              "DL Send Hit",                  CFG_ENUM, &g_config.dlSendHit},
+	{"Archipelago", "dl_send_loss",             "DL Send Loss",                 CFG_ENUM, &g_config.dlSendLoss},
 	{"Archipelago", "trap_duration",            "Trap Duration",                CFG_ENUM, &g_config.trapDuration},
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.

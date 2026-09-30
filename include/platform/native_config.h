@@ -111,6 +111,12 @@ typedef struct
 	                            // any_hit: every landed hit). The menu row and the F9
 	                            // toggle both edit this; ap_deathlink.c reads it
 	                            // every frame.
+	int  dlSendFall;            // Archipelago: DeathLink send trigger overrides (one row
+	int  dlSendHit;             // each). -1 = follow the seed / legacy coupling
+	int  dlSendLoss;            // (default), 0 = force off, 1 = force on. Fall = mask
+	                            // grab (fell off / eaten), Hit = landed weapon hit,
+	                            // Loss = race_loss sends (lost race, cup, restart,
+	                            // quit). ap_deathlink.c reads them every frame.
 	int  trapDuration;          // Archipelago: sustained trap lifetime in seconds.
 	                            // 10/15/20/25/30/45/60/90, or 0 = full race.
 	// Archipelago room, edited in the in-game connection manager (see

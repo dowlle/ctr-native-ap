@@ -1001,6 +1001,11 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	// stringID 4: "RETRY"
 	case 4:
 
+#ifdef CTR_AP
+		// race_loss DeathLink: restarting a race from the pause menu counts as a loss.
+		AP_DeathLinkOnPauseLeave(0);
+#endif
+
 		// get rid of pause flag
 		gGT->gameMode1 &= ~PAUSE_1;
 
@@ -1104,6 +1109,11 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 
 	// stringID 13: "EXIT TO MAP"
 	case 13:
+
+#ifdef CTR_AP
+		// race_loss DeathLink: leaving a race for the map counts as a loss.
+		AP_DeathLinkOnPauseLeave(1);
+#endif
 
 		// when loading is done
 		// add this bit for In Adventure Arena

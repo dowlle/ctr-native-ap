@@ -557,6 +557,12 @@ typedef struct
 	// ships, only a hand-built room can carry race_loss.
 	int death_link;
 	int deathlink_amnesty;
+	// Which events SEND a death, separate from the receive effect above. Bitmask:
+	// 1 = mask_grab (fell off / eaten), 2 = weapon_hit (a landed hit), 4 =
+	// race_loss (lost race, whole Gem Cup lost, pause RESTART, pause EXIT TO MAP).
+	// -1 = key absent: the sends follow the legacy coupling from death_link (1 ->
+	// 1, 2 -> 1|2, 3 -> 1|4). Additive key, no schema bump.
+	int death_link_send;
 
 	// Progressive Boost (issue #12) + Progressive Stats (issue #13). ADDITIVE
 	// ctr_options keys, no schema bump -- schema 7 is already unconditional on

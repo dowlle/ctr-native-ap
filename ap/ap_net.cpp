@@ -386,12 +386,13 @@ static bool ap_char_accept(const nlohmann::json &v, int *out)
 // ── DeathLink (issue #6) ──
 // Depth-1 inbound latch: the most recent DeathLink bounce not yet handed to the
 // game thread. A newer death overwrites an unhandled one, so extras are dropped
-// at the network boundary (the game side keeps its own depth-1 queue and fires
-// it at the next race window). Written in the bounced handler and drained by
+// at the network boundary. The game side does not queue: it applies the death
+// inside a live race or drops it. Written in the bounced handler and drained by
 // ap_net_deathlink_take on the SAME poll thread (apclientpp is single-threaded,
 // the same guarantee the received-item queue relies on), so no lock is needed.
 static bool        g_dl_incoming = false;
 static std::string g_dl_incoming_cause;
+static std::string g_dl_incoming_source;
 
 // ── TLS trust store (issue #170) ──
 //
@@ -1187,6 +1188,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		                        : "";
 		g_dl_incoming = true; // depth-1: overwrite any death not yet drained
 		g_dl_incoming_cause = cause;
+		g_dl_incoming_source = source;
 		std::fprintf(stderr, "[AP NET] deathlink received from '%s': %s\n",
 		             source.c_str(), cause.c_str());
 	});
@@ -2094,15 +2096,17 @@ extern "C" void ap_net_deathlink_send(const char *cause)
 	});
 }
 
-// Drain the depth-1 inbound death latch. Returns 1 (and copies the cause string,
-// truncated to fit) if a death was pending, then clears it; 0 otherwise.
-extern "C" int ap_net_deathlink_take(char *cause_buf, int cause_n)
+// Drain the inbound death latch. Returns 1 (and copies the cause and source
+// strings, truncated to fit) if a death was pending, then clears it; 0 otherwise.
+extern "C" int ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n)
 {
 	if (!g_dl_incoming)
 		return 0;
 	g_dl_incoming = false;
 	if (cause_buf && cause_n > 0)
 		std::snprintf(cause_buf, (size_t)cause_n, "%s", g_dl_incoming_cause.c_str());
+	if (source_buf && source_n > 0)
+		std::snprintf(source_buf, (size_t)source_n, "%s", g_dl_incoming_source.c_str());
 	return 1;
 }
 

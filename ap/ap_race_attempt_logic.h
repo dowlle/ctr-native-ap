@@ -17,24 +17,222 @@
 // --- Receive decision -------------------------------------------------------
 enum
 {
-	AP_DL_RECV_WAIT       = 0,
+	AP_DL_RECV_WAIT       = 0, // nothing pending, or DeathLink off: no action
 	AP_DL_RECV_MASK_RESET = 1,
-	AP_DL_RECV_RACE_LOSS  = 2
+	AP_DL_RECV_RACE_LOSS  = 2,
+	AP_DL_RECV_DROP       = 3, // pending death outside a live race: discard it
+	AP_DL_RECV_HOLD       = 4  // race paused: keep it until the race unpauses
 };
+
+// Where the local player is relative to a live adventure race.
+enum
+{
+	AP_DL_WIN_OUTSIDE = 0, // hub, menu, loading, countdown, results, cutscene, other modes
+	AP_DL_WIN_PAUSED  = 1, // the same live race, paused
+	AP_DL_WIN_LIVE    = 2  // adventure mode, on a track, lights out, running
+};
+
+// A received death that is inside a live race but cannot land yet (the mask
+// reset's stock gate is not open, or the rank order is not valid) is retried for
+// this many live frames and then dropped. It is never held for a later race.
+#define AP_DL_GRACE_FRAMES 10
 
 // mode: effective death_link (0 off / 1 mask_reset / 2 any_hit / 3 race_loss).
 // Any other nonzero value is an unknown future mode: it deliberately keeps the
-// old-client mask-reset fallback. A pending death only acts inside a live
-// adventure race window, so hub / menu / loading / countdown / result receives
-// stay queued for the next valid race.
+// old-client mask-reset fallback.
+//
+// DeathLink is never queued. A pending death acts only inside a live adventure race
+// (adventure mode, on a track, lights out, not paused / menu / cutscene / end of
+// race / loading). Outside it the death is DROPPED, in every mode, and is not saved
+// for the next race. The single hold: pausing the race must not dodge a death, so a
+// death that is pending while the same race is paused is HELD for that pause only.
+// It applies when the race unpauses; if the race ends, is quit or restarted from the
+// pause menu, or the level unloads first, the window becomes OUTSIDE and it drops.
 static inline int AP_DeathLinkReceiveDecision(int mode, int pending,
-                                              int adventure, int raceWindow)
+                                              int adventure, int window)
 {
-	if (!pending || mode == 0 || !adventure || !raceWindow)
+	if (!pending || mode == 0)
 		return AP_DL_RECV_WAIT;
+	if (!adventure || window == AP_DL_WIN_OUTSIDE)
+		return AP_DL_RECV_DROP;
+	if (window == AP_DL_WIN_PAUSED)
+		return AP_DL_RECV_HOLD;
 	if (mode == 3)
 		return AP_DL_RECV_RACE_LOSS;
 	return AP_DL_RECV_MASK_RESET;
+}
+
+// One live frame of the grace countdown for a death that is inside the window but
+// has not landed. *left is the frames still allowed; returns 1 when it has run out
+// and the death must be dropped. Not stepped while the race is paused.
+static inline int AP_DeathLinkGraceStep(int *left)
+{
+	if (*left > 0)
+		(*left)--;
+	return *left <= 0;
+}
+
+// --- Send triggers ------------------------------------------------------------
+// What SENDS a death is separate from the receive effect (death_link). Bitmask:
+enum
+{
+	AP_DL_TRIG_FALL = 1, // mask_grab: fell off / eaten by a plant
+	AP_DL_TRIG_HIT  = 2, // weapon_hit: a landed hit
+	AP_DL_TRIG_LOSS = 4  // race_loss: lost race, whole cup lost, pause RESTART / EXIT
+};
+
+// The legacy coupling, used when the seed has no death_link_send key and for a
+// mode the player forces in the OPTIONS row: mask_reset sends falls, any_hit adds
+// hits, race_loss sends falls and losses. Any other nonzero mode is an unknown
+// future value that keeps the old-client fallback (falls only).
+static inline int AP_DeathLinkLegacySendMask(int mode)
+{
+	if (mode == 0)
+		return 0;
+	if (mode == 2)
+		return AP_DL_TRIG_FALL | AP_DL_TRIG_HIT;
+	if (mode == 3)
+		return AP_DL_TRIG_FALL | AP_DL_TRIG_LOSS;
+	return AP_DL_TRIG_FALL;
+}
+
+// The effective send mask. seedSend is slot_data death_link_send (-1 = absent),
+// seedMode is slot_data death_link, cfgMode is the OPTIONS DeathLink row (-1 =
+// follow the seed, 0 = off, else a forced mode) and the three overrides are the
+// per-trigger rows (-1 = follow, 0 = force off, 1 = force on). A forced receive
+// mode brings its own legacy coupling as the default; a per-trigger row then
+// overrides that one trigger. Independent of the receive effect.
+static inline int AP_DeathLinkSendMask(int seedSend, int seedMode, int cfgMode,
+                                       int ovFall, int ovHit, int ovLoss)
+{
+	int mask;
+
+	if (cfgMode == -1)
+		mask = (seedSend >= 0) ? (seedSend & 7) : AP_DeathLinkLegacySendMask(seedMode);
+	else
+		mask = AP_DeathLinkLegacySendMask(cfgMode);
+	if (ovFall == 0) mask &= ~AP_DL_TRIG_FALL; else if (ovFall == 1) mask |= AP_DL_TRIG_FALL;
+	if (ovHit == 0)  mask &= ~AP_DL_TRIG_HIT;  else if (ovHit == 1)  mask |= AP_DL_TRIG_HIT;
+	if (ovLoss == 0) mask &= ~AP_DL_TRIG_LOSS; else if (ovLoss == 1) mask |= AP_DL_TRIG_LOSS;
+	return mask;
+}
+
+// The resolved DeathLink state: what the client receives and what it sends.
+typedef struct APDeathLinkState
+{
+	int recv; // effective receive mode: 0 off / 1 mask_reset / 2 any_hit / 3 race_loss
+	int send; // effective send mask (AP_DL_TRIG_*)
+} APDeathLinkState;
+
+// Resolves the seed and the OPTIONS rows into one state. There is no one-way
+// DeathLink: anything that sends also receives.
+//   * The DeathLink row forced OFF (cfgMode 0) is fully off: no receive, no sends,
+//     no tag, whatever the per-trigger rows say.
+//   * Otherwise a send trigger on while the receive would be off (the seed says
+//     death_link 0 but sets death_link_send bits, or a per-trigger row is forced ON)
+//     makes the effective receive mask_reset.
+//   * Receive on with every send trigger off stays allowed.
+static inline APDeathLinkState AP_DeathLinkResolve(int seedRecv, int seedSend,
+                                                   int cfgMode, int ovFall,
+                                                   int ovHit, int ovLoss)
+{
+	APDeathLinkState r;
+	int mask;
+
+	r.recv = 0;
+	r.send = 0;
+	if (cfgMode == 0)
+		return r;
+	mask = AP_DeathLinkSendMask(seedSend, seedRecv, cfgMode, ovFall, ovHit, ovLoss);
+	r.recv = (cfgMode > 0) ? cfgMode : seedRecv;
+	if (r.recv == 0 && mask != 0)
+		r.recv = 1;
+	r.send = mask;
+	return r;
+}
+
+// The connection tag is declared while anything receives or sends.
+static inline int AP_DeathLinkTagWanted(int recvMode, int sendMask)
+{
+	return recvMode != 0 || sendMask != 0;
+}
+
+// --- Loss sends (the race_loss trigger) ----------------------------------------
+// A loss the game itself computes SENDS a DeathLink when the race_loss trigger is
+// on. The events come from results the game already has, not new rules:
+//   AP_DL_EV_RACE_END    the local race ended (MainGameEnd_Initialize): a trophy,
+//                        boss or CTR Challenge race finished outside 1st, or a
+//                        Crystal Challenge ended with crystals missing. A Gem Cup
+//                        leg and a Relic Race are never a loss here (a cup leg
+//                        counts only through AP_DL_EV_CUP_END; a relic race has no
+//                        fail state in retail).
+//   AP_DL_EV_CUP_END     the Gem Cup standings closed with the cup lost.
+//   AP_DL_EV_PAUSE_*     RESTART or EXIT TO MAP from the pause menu mid-race.
+// A loss caused by a received DeathLink (forced-loss latch set) never sends.
+enum
+{
+	AP_DL_EV_RACE_END      = 0,
+	AP_DL_EV_CUP_END       = 1,
+	AP_DL_EV_PAUSE_RESTART = 2,
+	AP_DL_EV_PAUSE_QUIT    = 3
+};
+
+enum
+{
+	AP_DL_CAUSE_NONE = 0,
+	AP_DL_CAUSE_LOST_RACE,
+	AP_DL_CAUSE_LOST_CRYSTAL,
+	AP_DL_CAUSE_LOST_CUP,
+	AP_DL_CAUSE_RESTART,
+	AP_DL_CAUSE_QUIT
+};
+
+// Did the local player lose this adventure race, by the game's own result?
+// rank is driverRank (0 = 1st). Cup legs and relic races are never a loss here.
+// A Crystal Challenge is lost when fewer crystals than the level holds were
+// collected (CC_EndEvent_DrawMenu didLose); its driverRank means nothing.
+static inline int AP_DeathLinkRaceEndLost(int adventure, int cupLeg, int relic,
+                                          int crystal, int rank, int crystals,
+                                          int crystalsNeeded)
+{
+	if (!adventure || cupLeg || relic)
+		return 0;
+	if (crystal)
+		return crystals < crystalsNeeded;
+	return rank != 0;
+}
+
+// The loss send decision: returns the cause to send, or AP_DL_CAUSE_NONE. Only the
+// race_loss trigger sends losses. lost is the event's own loss result
+// (AP_DeathLinkRaceEndLost for RACE_END, cup lost for CUP_END; ignored for the
+// pause events). forcedLossLatch is the #286 latch: the race was ended by a
+// received death, so nothing about it sends, including a quit or restart right
+// after it. inLiveRace is only read for the pause events.
+static inline int AP_DeathLinkLossSendDecision(int sendMask, int adventure,
+                                               int forcedLossLatch, int event,
+                                               int lost, int inLiveRace)
+{
+	if ((sendMask & AP_DL_TRIG_LOSS) == 0 || !adventure || forcedLossLatch)
+		return AP_DL_CAUSE_NONE;
+	switch (event)
+	{
+	case AP_DL_EV_RACE_END:
+		return lost ? AP_DL_CAUSE_LOST_RACE : AP_DL_CAUSE_NONE;
+	case AP_DL_EV_CUP_END:
+		return lost ? AP_DL_CAUSE_LOST_CUP : AP_DL_CAUSE_NONE;
+	case AP_DL_EV_PAUSE_RESTART:
+		return inLiveRace ? AP_DL_CAUSE_RESTART : AP_DL_CAUSE_NONE;
+	case AP_DL_EV_PAUSE_QUIT:
+		return inLiveRace ? AP_DL_CAUSE_QUIT : AP_DL_CAUSE_NONE;
+	}
+	return AP_DL_CAUSE_NONE;
+}
+
+// Fall and hit sends: the trigger bit is on and the attempt is not a forced loss
+// (a received death's own aftermath never sends).
+static inline int AP_DeathLinkTriggerSends(int sendMask, int trigger, int forcedLossLatch)
+{
+	return (sendMask & trigger) != 0 && !forcedLossLatch;
 }
 
 // --- Attempt-owned forced-loss latch ----------------------------------------

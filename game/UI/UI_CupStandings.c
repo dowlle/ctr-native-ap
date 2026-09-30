@@ -755,6 +755,11 @@ void UI_CupStandings_InputAndDraw(void)
 					// If player 1 did not win the cup
 					else
 					{
+#ifdef CTR_AP
+						// race_loss DeathLink: the whole cup is lost (a single lost
+						// leg never sends).
+						AP_DeathLinkOnCupLost();
+#endif
 						if (sdata->advProgress.timesLostCupRace[gGT->cup.trackIndex] < 10)
 						{
 							sdata->advProgress.timesLostCupRace[gGT->cup.trackIndex]++;
