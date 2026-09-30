@@ -88,6 +88,33 @@ static inline int AP_RelicPerfectPadLeftPure(int enabled, long code, int exists,
 	return enabled && code > 0 && exists && !checked;
 }
 
+// PAD DISPLAY IDENTITY (#439 follow-up). The perfect has no AdvProgress bit, so
+// the warp pad glow, which is keyed by bit, could not show what is placed on it.
+// This is a process-local pseudo-bit above the Cortex Vortex range (0x220..),
+// never a wire value: base + engine LevelID (0..17). The reward model, tint,
+// ghost and checked-state helpers resolve it to the seed's code unchanged.
+#define AP_RELIC_PERFECT_PSEUDO_BASE 0x240
+
+static inline int AP_RelicPerfectPseudoBit(int levelID)
+{
+	return AP_RELIC_PERFECT_PSEUDO_BASE + levelID;
+}
+
+// LevelID of a perfect pseudo-bit, or -1 when `bit` is not one.
+static inline int AP_RelicPerfectPseudoLevel(int bit)
+{
+	int level = bit - AP_RELIC_PERFECT_PSEUDO_BASE;
+
+	return (level >= 0 && level < AP_RELIC_PERFECT_TRACK_COUNT) ? level : -1;
+}
+
+// Prize slot under by_reward_type: the relic slot (group 1), next to the tier
+// checks it belongs with. -1 when `bit` is not a perfect pseudo-bit.
+static inline int AP_RelicPerfectPseudoRewardGroup(int bit)
+{
+	return AP_RelicPerfectPseudoLevel(bit) >= 0 ? 1 : -1;
+}
+
 // Everything the race-end producer knows. Filled by AP_NotifyRelicPerfect from
 // the live GameTracker; the harness fills it by hand.
 typedef struct

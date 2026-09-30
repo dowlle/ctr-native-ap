@@ -342,6 +342,7 @@ static long AP_LookupLocationCode(int globalBit)
 {
 	int i;
 	int trialPseudo, trialChallenge;
+	int perfectLevel;
 	// Schema 15: Cortex Vortex pad-track identities. Checked first because the
 	// generic podium range below would otherwise claim these bits.
 	if (AP_CortexPseudoDecode(globalBit, 0))
@@ -354,6 +355,12 @@ static long AP_LookupLocationCode(int globalBit)
 	    globalBit == AP_CUSTOM_WUMPA_PSEUDO_BIT)
 		return AP_CustomPadSpecialLocationCode(&ctr_cfg, globalBit);
 #endif
+	// #439: the Relic Race Perfect has no AdvProgress bit either.
+	perfectLevel = AP_RelicPerfectPseudoLevel(globalBit);
+	if (perfectLevel >= 0)
+		return (ctr_cfg_active() && ctr_cfg.relic_perfect_enabled &&
+		        ctr_cfg.relic_perfect[perfectLevel] > 0)
+		           ? ctr_cfg.relic_perfect[perfectLevel] : -1;
 	// #343: the trial Trophy and CTR Challenge have no AdvProgress bit.
 	if (AP_TrialPseudoDecode(globalBit, &trialPseudo, &trialChallenge))
 	{
@@ -1249,6 +1256,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
 
+	// #439 follow-up: an open Relic Race Perfect is advertised like the other
+	// relic-side checks, right after the tier bits. Retail race pads and the two
+	// trial pads only; Cortex Vortex and custom pads return around it.
+	if (AP_PadUncollectedRelicPerfectCount(destLevelID) > 0 && count < cap)
+		outBits[count++] = AP_RelicPerfectPseudoBit(destLevelID);
+
 	// Schema 15: the Cortex Vortex pad also advertises its own podium rungs.
 	if (destLevelID == AP_CORTEX_DEST)
 		return AP_CortexDestValid()
@@ -1538,6 +1551,9 @@ static int AP_GlowBitRewardGroup(int globalBit)
 {
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
+	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
+	if (perfectGroup >= 0)
+		return perfectGroup; // #439: Relic Race Perfect rides in the relic slot
 	if (cortexGroup >= 0)
 		return cortexGroup; // schema 15: Cortex Vortex pseudo-bits
 	if (trialGroup >= 0)

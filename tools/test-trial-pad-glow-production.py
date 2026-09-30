@@ -18,16 +18,25 @@ fixture=r'''
 #include "ap_seedcfg.h"
 #include "ap_glow_slots_logic.h"
 #include "ap_trial_pad_glow.h"
+#include "ap_relic_perfect.h"
 #define ADV_REWARD_FIRST_SAPPHIRE_RELIC 0x16
 #define ADV_REWARD_FIRST_CTR_TOKEN 0x4c
 #define AP_PODIUM_PSEUDO_BASE 0x100
 ctr_seed_config ctr_cfg;
 static long checked[4]; static int nChecked;
-static int relics=1, rung=1;
+static int relics=1, rung=1, perfectOpen=0;
 static int AP_PadBoxChecked(long code,void *ctx){int i;(void)ctx;for(i=0;i<nChecked;i++)if(checked[i]==code)return 1;return 0;}
 int AP_TrialTrackConfigured(int d){return (d==16||d==17)&&ctr_cfg.trial_track_valid[d-16];}
 int AP_PadUncollectedBits(int d,int *out,int cap){(void)cap;if(!relics)return 0;out[0]=d+ADV_REWARD_FIRST_SAPPHIRE_RELIC;return 1;}
 static void AP_AppendTrackRungGlow(int t,int *out,int cap,int *n){(void)t;if(rung&&*n<cap)out[(*n)++]=AP_PODIUM_PSEUDO_BASE+t*CTR_CFG_PODIUM_RUNG_COUNT;}
+#define AP_CORTEX_DEST 110
+#define AP_CV_APPEND_RUNGS 1
+#define AP_CV_PSEUDO_BASE 0x220
+static int AP_PadBoxLive(long code,void *ctx){(void)code;(void)ctx;return 1;}
+static int AP_CortexDestValid(void){return 0;}
+static int AP_CortexPseudoRewardGroup(int b){(void)b;return -1;}
+static int AP_CortexPadAppendOpen(const void *t,int m,int *o,int c,int n,int (*l)(long,void*),int (*k)(long,void*),void *x){(void)t;(void)m;(void)o;(void)c;(void)l;(void)k;(void)x;return n;}
+int AP_PadUncollectedRelicPerfectCount(int d){(void)d;return perfectOpen;}
 int ctr_cfg_cup_displaced(int c){(void)c;return 0;}
 int ctr_cfg_cup_leg(int c,int l){(void)c;return l;}
 '''
@@ -59,6 +68,28 @@ int main(void){
   assert(n==2&&has(bits,n,trophy)&&has(bits,n,ctr));
   ctr_cfg.trial_track_valid[t]=0;assert(AP_PadUncollectedGlowBits(d,bits,24)==0);
  }
+ /* #439 follow-up: an open Relic Race Perfect is advertised on its pad, in the
+    relic slot, right after the tier bit; only while open. */
+ for(d=0;d<18;d+=d<3?3:(d==3?12:1)){
+  int bits[24],n,slot[3],phase,shown=0,pb=AP_RelicPerfectPseudoBit(d);
+  ctr_cfg.podium_enabled=0;ctr_cfg.trial_track_valid[0]=ctr_cfg.trial_track_valid[1]=0;
+  relics=1;rung=0;perfectOpen=1;
+  n=AP_PadUncollectedGlowBits(d,bits,24);
+  assert(n==2&&bits[0]==d+ADV_REWARD_FIRST_SAPPHIRE_RELIC&&bits[1]==pb);
+  assert(AP_RelicPerfectPseudoLevel(pb)==d&&AP_GlowBitRewardGroup(pb)==1);
+  for(phase=0;phase<8;phase++){AP_GlowSlots_Select(bits,n,phase,1,AP_GlowBitRewardGroup,slot);
+   if(slot[1]==pb)shown=1;}
+  assert(shown);
+  /* the perfect alone still shows, in the relic slot and in the one pile */
+  relics=0;n=AP_PadUncollectedGlowBits(d,bits,24);assert(n==1&&bits[0]==pb);
+  AP_GlowSlots_Select(bits,n,0,1,AP_GlowBitRewardGroup,slot);assert(slot[1]==pb&&slot[0]<0&&slot[2]<0);
+  AP_GlowSlots_Select(bits,n,0,0,AP_GlowBitRewardGroup,slot);assert(slot[0]==pb);
+  /* checked, off or not in the seed: nothing extra */
+  perfectOpen=0;assert(AP_PadUncollectedGlowBits(d,bits,24)==0);
+ }
+ assert(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE-1)==-1);
+ assert(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE+18)==-1);
+ assert(AP_RELIC_PERFECT_PSEUDO_BASE>=AP_CV_PSEUDO_BASE+14);
  puts("Trial pad glow production gather passed");
 }
 '''

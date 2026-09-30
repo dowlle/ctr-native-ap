@@ -180,9 +180,31 @@ static void test_pad_keeps_relic_race_open(void)
 	expect(AP_PadStateDecide(1, 1, 1, 1, 0, 0 + 1, 0), 3, "perfect left, stage 2 unmet: re-locked");
 }
 
+static void test_pad_display_identity(void)
+{
+	int level;
+
+	// #439 follow-up: the pad shows the item on the perfect through a
+	// process-local pseudo-bit per LevelID; it must round-trip, stay clear of
+	// the other pseudo-bit ranges and ride the relic slot.
+	for (level = 0; level < AP_RELIC_PERFECT_TRACK_COUNT; level++)
+	{
+		int bit = AP_RelicPerfectPseudoBit(level);
+		expect(AP_RelicPerfectPseudoLevel(bit), level, "pseudo-bit round trip");
+		expect(AP_RelicPerfectPseudoRewardGroup(bit), 1, "perfect rides the relic slot");
+	}
+	expect(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE - 1), -1, "below range");
+	expect(AP_RelicPerfectPseudoLevel(AP_RELIC_PERFECT_PSEUDO_BASE + AP_RELIC_PERFECT_TRACK_COUNT),
+	       -1, "above range");
+	expect(AP_RelicPerfectPseudoRewardGroup(0x211), -1, "trial pseudo-bit is not a perfect");
+	expect(AP_RelicPerfectPseudoRewardGroup(3), -1, "plain bit is not a perfect");
+	expect(AP_RELIC_PERFECT_PSEUDO_BASE >= 0x220 + 14, 1, "clear of the Cortex Vortex range");
+}
+
 int main(void)
 {
 	test_frozen_codes();
+	test_pad_display_identity();
 	test_canonical_keys();
 	test_resolve();
 	test_forced_loss_guard();
