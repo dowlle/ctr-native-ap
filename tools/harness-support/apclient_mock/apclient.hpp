@@ -114,6 +114,7 @@ public:
 	void set_retrieved_handler(std::function<void(const std::map<std::string, nlohmann::json> &)> h) { retrieved_ = std::move(h); }
 	void set_set_reply_handler(std::function<void(const std::string &, const nlohmann::json &, const nlohmann::json &)> h) { set_reply_ = std::move(h); }
 	void set_items_received_handler(std::function<void(const std::list<NetworkItem> &)> h) { items_received_ = std::move(h); }
+	void set_location_checked_handler(std::function<void(const std::list<int64_t> &)> h) { location_checked_ = std::move(h); }
 	void set_bounced_handler(std::function<void(const nlohmann::json &)> h) { bounced_ = std::move(h); }
 
 	// ── outbound (recorded) ──
@@ -127,7 +128,12 @@ public:
 	{
 		calls.location_checks++;
 		for (int64_t c : codes)
+		{
 			calls.checked_codes.push_back((long long)c);
+			// The real library marks own sends checked locally at once.
+			checked_.insert(c);
+			missing_.erase(c);
+		}
 	}
 	void LocationScouts(std::list<int64_t>, int) { calls.location_scouts++; }
 	void StatusUpdate(ClientStatus) { calls.status_update++; }
@@ -157,8 +163,13 @@ public:
 	std::string get_slot() const { return ap_mock_slot(); }
 	int get_team_number() const { return 0; }
 	int get_player_number() const { return 1; }
-	const std::set<int64_t> &get_checked_locations() const { return checked_; }
-	const std::set<int64_t> &get_missing_locations() const { return missing_; }
+	// By value, exactly like the real library (apclient.hpp get_checked_locations):
+	// a const reference bound to the result still copies. Tests that returned a
+	// reference here hid the per-call copy cost of #376. The call count lets a
+	// harness assert that a hot reader does not copy per probe.
+	std::set<int64_t> get_checked_locations() const { set_copies_++; return checked_; }
+	std::set<int64_t> get_missing_locations() const { set_copies_++; return missing_; }
+	int set_copy_count() const { return set_copies_; }
 	const std::map<int, std::string> &get_players() const { return players_; }
 	std::string get_player_game(int) const { return "Crash Team Racing"; }
 	std::string get_player_alias(int) const { return "Harness"; }
@@ -223,6 +234,20 @@ public:
 		if (bounced_)
 			bounced_(packet);
 	}
+	// Server RoomUpdate: newly checked locations move from missing to checked,
+	// then the location-checked handler runs (only for codes that were new).
+	void emit_room_update_checked(const std::list<int64_t> &codes)
+	{
+		std::list<int64_t> fresh;
+		for (int64_t c : codes)
+			if (checked_.insert(c).second)
+			{
+				missing_.erase(c);
+				fresh.push_back(c);
+			}
+		if (location_checked_ && !fresh.empty())
+			location_checked_(fresh);
+	}
 	void test_set_checked(const std::set<int64_t> &s) { checked_ = s; }
 	void test_set_missing(const std::set<int64_t> &s) { missing_ = s; }
 
@@ -231,6 +256,8 @@ private:
 	std::set<int64_t> checked_;
 	std::set<int64_t> missing_;
 	std::map<int, std::string> players_{{1, "Harness"}};
+	mutable int set_copies_ = 0;
+	std::function<void(const std::list<int64_t> &)> location_checked_;
 
 	std::function<void()> socket_connected_;
 	std::function<void()> socket_disconnected_;
