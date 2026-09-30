@@ -709,8 +709,19 @@ const char *AP_CortexTrackDisplayName(void);
 #endif
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
+// DISPLAY enumeration for the hub pad glow (ruling of 2026-09-30: the glow shows the
+// item of EVERY open location behind the pad). AP_PadUncollectedGlowBits plus the
+// still-open item boxes, CTR letters and per-track Wumpa, as the pseudo-bits of
+// ap_pad_glow_items.h. Display only: AP_PadState and the tracker keep using
+// AP_PadUncollectedGlowBits with the separate box/letter/Wumpa counts, so nothing
+// is counted twice and no lifecycle decision moves. A cup pad aggregates its four
+// legs' boxes and Wumpa exactly as the counts do. Buffers passed here must hold
+// AP_PAD_DISPLAY_BITS_MAX bits (worst case is a Gem Cup, 85).
+#define AP_PAD_DISPLAY_BITS_MAX 96
+int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
+
 // ── Prize-slot layout (issue #59) ──
-// Given the `n` bits AP_PadUncollectedGlowBits enumerated for a pad and the
+// Given the `n` bits AP_PadUncollectedDisplayBits enumerated for a pad and the
 // display tick `phase` (the caller's frame counter / 0x3C, one step per 2s),
 // decide which bit each of the pad's three prize slots advertises, writing them
 // into outSlot3 (-1 = hide that slot). Honours ctr_cfg.warp_pad_item_display:

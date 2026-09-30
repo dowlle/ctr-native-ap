@@ -82,15 +82,16 @@ static inline long AP_CortexPseudoCode(const ctr_cortex_track *cv, int bit)
 	return AP_CortexSlotCode(cv, slot);
 }
 
-// Prize slot under by_reward_type: Trophy and rungs ride the race slot, relic
-// tiers the relic slot, CTR token / letters / Wumpa the token slot. -1 when not
-// a Cortex Vortex bit.
+// Prize slot under by_reward_type: Trophy, rungs and Wumpa ride the race slot,
+// relic tiers the relic slot, CTR token and letters the token slot (Wumpa moved
+// to the race slot, ruling 2026-09-30, matching the retail Wumpa pseudo-bits).
+// -1 when not a Cortex Vortex bit.
 static inline int AP_CortexPseudoRewardGroup(int bit)
 {
 	int slot;
 	if (!AP_CortexPseudoDecode(bit, &slot))
 		return -1;
-	if (slot == AP_CV_SLOT_TROPHY || slot >= AP_CV_SLOT_RUNG0)
+	if (slot == AP_CV_SLOT_TROPHY || slot == AP_CV_SLOT_WUMPA || slot >= AP_CV_SLOT_RUNG0)
 		return 0;
 	if (slot >= AP_CV_SLOT_RELIC0 && slot < AP_CV_SLOT_RELIC0 + 3)
 		return 1;
@@ -111,12 +112,15 @@ typedef int (*ap_cortex_code_query)(long code, void *ctx);
 
 // Append the still-open Cortex Vortex identities a pad advertises: the tiers
 // (Trophy, relic tiers, CTR token) and/or the podium rungs. Letters and Wumpa
-// are counted separately, like their retail families. A Gem Cup that legs 110
-// asks for the rungs only: cup access exposes the leg's podium and Wumpa, never
-// its Trophy/relic/token family. `exists` is server location membership,
+// are counted separately for the pad state (AP_CortexOpenCount) and are listed
+// only when the display enumeration asks for AP_CV_APPEND_LETTERS / _WUMPA.
+// A Gem Cup that legs 110 asks for the rungs and Wumpa only: cup access exposes
+// the leg's podium and Wumpa, never its Trophy/relic/token family. `exists` is server location membership,
 // `checked` the server checked set.
 #define AP_CV_APPEND_TIERS 1
 #define AP_CV_APPEND_RUNGS 2
+#define AP_CV_APPEND_LETTERS 4
+#define AP_CV_APPEND_WUMPA 8
 static inline int AP_CortexPadAppendOpen(const ctr_cortex_track *cv, int flags,
                                          int *outBits, int cap, int count,
                                          ap_cortex_code_query exists,
@@ -125,6 +129,8 @@ static inline int AP_CortexPadAppendOpen(const ctr_cortex_track *cv, int flags,
 	static const int slots[] = {
 		AP_CV_SLOT_TROPHY, AP_CV_SLOT_RELIC0, AP_CV_SLOT_RELIC0 + 1,
 		AP_CV_SLOT_RELIC0 + 2, AP_CV_SLOT_TOKEN,
+		AP_CV_SLOT_LETTER0, AP_CV_SLOT_LETTER0 + 1, AP_CV_SLOT_LETTER0 + 2,
+		AP_CV_SLOT_WUMPA,
 		AP_CV_SLOT_RUNG0, AP_CV_SLOT_RUNG0 + 1, AP_CV_SLOT_RUNG0 + 2,
 		AP_CV_SLOT_RUNG0 + 3, AP_CV_SLOT_RUNG0 + 4};
 	unsigned i;
@@ -134,7 +140,11 @@ static inline int AP_CortexPadAppendOpen(const ctr_cortex_track *cv, int flags,
 	{
 		long code;
 		int bit, j, dup = 0;
-		if (!(flags & (slots[i] >= AP_CV_SLOT_RUNG0 ? AP_CV_APPEND_RUNGS : AP_CV_APPEND_TIERS)))
+		int family = slots[i] >= AP_CV_SLOT_RUNG0 ? AP_CV_APPEND_RUNGS
+		           : slots[i] == AP_CV_SLOT_WUMPA ? AP_CV_APPEND_WUMPA
+		           : slots[i] >= AP_CV_SLOT_LETTER0 ? AP_CV_APPEND_LETTERS
+		           : AP_CV_APPEND_TIERS;
+		if (!(flags & family))
 			continue;
 		code = AP_CortexSlotCode(cv, slots[i]);
 		if (code < 0 || !exists(code, ctx) || checked(code, ctx))
