@@ -28,7 +28,10 @@
 //   5. a successful reconnect after a refusal is not poisoned by the latch,
 //   6. the block schema 3 Key-fallback consistency check: a fallback next to an
 //      unlock win that EXISTS in the connected room is refused, a consistent
-//      fallback is admitted, and a block schema 2 room still loads.
+//      fallback is admitted, and a block schema 2 room still loads,
+//   7. the #376 checked/missing snapshot behind ap_net_location_checked/exists
+//      follows own sends, RoomUpdate, a second Connected, shutdown and refusal,
+//      and steady-state probes copy neither set.
 
 #include "../ap/ap_net.cpp"
 
@@ -403,6 +406,110 @@ static void test_rejected_held_guard(void)
 	ap_net_shutdown();
 }
 
+// #376: ap_net_location_checked/exists read a snapshot of the library's sets.
+// The library returns them by value (the mock does too), so a per-probe read
+// copies both sets. This pins that the snapshot follows every state change and
+// that steady-state probes do not copy.
+static void test_location_snapshot(void)
+{
+	const long long A = 35025000, B = 35025001, C = 35025002, D = 35025003;
+	APClient *m = start("2101");
+	expect(m != nullptr, "snap: client up");
+	if (!m)
+		return;
+	m->test_set_checked({A});
+	m->test_set_missing({B, C});
+	m->emit_slot_connected(g_fixture);
+	expect(ap_net_is_connected() == 1, "snap: admitted");
+	expect(ap_net_location_checked(A) == 1, "snap: A checked");
+	expect(ap_net_location_checked(B) == 0, "snap: B not checked");
+	expect(ap_net_location_exists(B) == 1, "snap: B exists (missing)");
+	expect(ap_net_location_exists(A) == 1, "snap: A exists (checked)");
+	expect(ap_net_location_exists(D) == 0, "snap: D does not exist");
+	// Held checks left over from earlier cases flush on this same-seed connect
+	// and land in the checked set, so counts are taken relative to a baseline.
+	const int baseTotal = ap_net_location_count();
+	const int baseChecked = ap_net_checked_count();
+	expect(baseTotal >= 3 && baseChecked >= 1, "snap: counts cover the seeded sets");
+
+	// Steady state: thousands of probes make no further copy of either set.
+	const int copies = m->set_copy_count();
+	for (int i = 0; i < 5000; i++)
+	{
+		(void)ap_net_location_checked(A);
+		(void)ap_net_location_exists(B);
+	}
+	expect(m->set_copy_count() == copies, "snap: probes do not copy the sets");
+
+	// Our own send: the library marks it checked locally at once.
+	ap_net_send_location(B);
+	expect(ap_net_location_checked(B) == 1, "snap: own send reads checked");
+	expect(ap_net_location_exists(B) == 1, "snap: own send still exists");
+	expect(ap_net_checked_count() == baseChecked + 1, "snap: checked_count after own send");
+	expect(ap_net_location_count() == baseTotal, "snap: location_count unchanged by a send");
+
+	// Server RoomUpdate (release or collect from another player).
+	m->emit_room_update_checked({C});
+	expect(ap_net_location_checked(C) == 1, "snap: RoomUpdate reads checked");
+	expect(ap_net_checked_count() == baseChecked + 2, "snap: checked_count after RoomUpdate");
+	m->emit_room_update_checked({C}); // a repeat carries nothing new
+	expect(ap_net_checked_count() == baseChecked + 2, "snap: repeated RoomUpdate is idempotent");
+
+	// A second Connected on the same client (slot switch or reconnect with a
+	// different world state) replaces both sets.
+	m->test_set_checked({D});
+	m->test_set_missing({A});
+	m->emit_slot_connected(g_fixture);
+	expect(ap_net_location_checked(A) == 0, "snap: reconnect drops old checked");
+	expect(ap_net_location_checked(D) == 1, "snap: reconnect reads new checked");
+	expect(ap_net_location_exists(A) == 1, "snap: reconnect reads new missing");
+	expect(ap_net_location_exists(C) == 0, "snap: reconnect drops old codes");
+	expect(ap_net_location_count() >= 2, "snap: reconnect location_count");
+
+	// Shutdown: nothing readable, and a fresh client starts clean.
+	ap_net_shutdown();
+	expect(ap_net_location_checked(D) == 0, "snap: no client reads nothing");
+	expect(ap_net_location_exists(A) == 0, "snap: no client, exists reads nothing");
+	m = start("2101");
+	expect(m != nullptr, "snap: new client up");
+	if (!m)
+		return;
+	m->test_set_checked({C});
+	m->test_set_missing({});
+	m->emit_slot_connected(g_fixture);
+	expect(ap_net_location_checked(D) == 0, "snap: new client has no stale D");
+	expect(ap_net_location_checked(C) == 1, "snap: new client reads its own C");
+	expect(ap_net_checked_count() >= 1, "snap: new client checked_count");
+	ap_net_shutdown();
+
+	// A refused seed reads as nothing even though the server state is real, and
+	// a later accepted seed on a new client reads correctly again.
+	m = start("2101");
+	expect(m != nullptr, "snap: refuse client up");
+	if (!m)
+		return;
+	m->test_set_checked({A});
+	m->test_set_missing({B});
+	m->emit_slot_connected(g_fixture);
+	expect(ap_net_location_checked(A) == 1, "snap: accepted before refusal");
+	m->emit_slot_connected(rejected_seed());
+	expect(ap_net_location_checked(A) == 0, "snap: refused reads checked as nothing");
+	expect(ap_net_location_exists(B) == 0, "snap: refused reads exists as nothing");
+	expect(ap_net_location_count() == 0, "snap: refused location_count is 0");
+	ap_net_poll();
+	expect(ap_net_location_exists(B) == 0, "snap: still nothing after refusal teardown");
+	m = start("2101");
+	if (m)
+	{
+		m->test_set_checked({D});
+		m->test_set_missing({C});
+		m->emit_slot_connected(g_fixture);
+		expect(ap_net_location_checked(D) == 1, "snap: accepted after refusal reads D");
+		expect(ap_net_location_checked(A) == 0, "snap: accepted after refusal has no A");
+	}
+	ap_net_shutdown();
+}
+
 int main(int argc, char **argv)
 {
 	const char *path = argc > 1 ? argv[1] : "tools/fixtures/ctr_hit_character_seed2101.json";
@@ -432,6 +539,7 @@ int main(int argc, char **argv)
 	test_rejected_trailing_events();
 	test_fallback_consistency();
 	test_rejected_held_guard();
+	test_location_snapshot();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);

@@ -84,6 +84,37 @@ static void ap_fx_store_clear()
 extern "C" void AP_LogLine(const char *msg);
 
 static APClient            *g_ap = nullptr;
+
+// #376: apclientpp returns get_checked_locations()/get_missing_locations() BY
+// VALUE (apclient.hpp), so binding a const reference to either one still copies
+// and frees the whole set on every call. The hub warp pads ask "does this box
+// location exist / is it checked" hundreds of times per frame, which made that
+// copy the dominant per-frame cost on long seeds. These two sets are our own
+// snapshot of the library's state. They are refreshed lazily, on the first read
+// after ap_locs_invalidate(), and never per probe. Every change to the library's
+// sets goes through a point that invalidates: a new or deleted client, the
+// slot-connected handler (Connected packet replaces both sets), our own
+// LocationChecks send, and the location-checked handler (RoomUpdate). Nothing
+// else writes them (apclient.hpp _checkedLocations/_missingLocations).
+static std::set<int64_t>     g_locs_chk;
+static std::set<int64_t>     g_locs_miss;
+static bool                  g_locs_stale = true;
+
+static void ap_locs_invalidate(void)
+{
+	g_locs_stale = true;
+}
+
+// Only called with g_ap non-null; the public readers keep their own
+// g_rejected / !g_ap admission guard in front of it.
+static void ap_locs_refresh(void)
+{
+	if (!g_locs_stale)
+		return;
+	g_locs_chk = g_ap->get_checked_locations();
+	g_locs_miss = g_ap->get_missing_locations();
+	g_locs_stale = false;
+}
 static std::deque<long long> g_items;        // received item ids, drained by the game
 static std::deque<int>       g_items_player; // parallel: sending player slot
 static std::deque<long long> g_items_index;  // parallel: server ReceivedItems index
@@ -652,6 +683,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		                    game ? game : "Crash Team Racing",
 		                    uri ? uri : "ws://localhost:38281",
 		                    g_cert_store);
+		ap_locs_invalidate(); // a new client starts with empty sets
 	}
 	catch (...)
 	{
@@ -773,6 +805,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// The parser is pure -- it either activates a fully readable schema or
 		// leaves schema_version at 0 with the rejection flag set.
 		g_connected = false;
+		ap_locs_invalidate(); // the Connected packet just replaced both sets
 		ap_seedcfg_parse_json(slotData);
 		if (ap_seedcfg_rejected())
 		{
@@ -795,8 +828,9 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			{
 				int fallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT];
 				unsigned char anyExists[CTR_CFG_HIT_TRIGGER_COUNT];
-				const std::set<int64_t> &chk = g_ap->get_checked_locations();
-				const std::set<int64_t> &miss = g_ap->get_missing_locations();
+				ap_locs_refresh();
+				const std::set<int64_t> &chk = g_locs_chk;
+				const std::set<int64_t> &miss = g_locs_miss;
 				for (int gi = 0; gi < CTR_CFG_HIT_TRIGGER_COUNT; gi++)
 				{
 					const ctr_hit_trigger &t = hit->triggers[gi];
@@ -912,7 +946,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
-			    return g_ap->get_checked_locations().count(code) != 0;
+			    ap_locs_refresh(); // an earlier flush in this pass may have sent checks
+			    return g_locs_chk.count(code) != 0;
 		    },
 		    [](int64_t code) { return ap_net_try_send_location(code); });
 		if (heldFlush.discarded != 0)
@@ -938,10 +973,9 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// two sets. Every id is therefore valid for LocationScouts, including new
 		// optional classes that a future apworld adds. This also makes verifier
 		// coverage measurable against the same authoritative union.
-		const std::set<int64_t> &scout_chk = g_ap->get_checked_locations();
-		const std::set<int64_t> &scout_miss = g_ap->get_missing_locations();
-		std::set<int64_t> scout_all = scout_chk;
-		scout_all.insert(scout_miss.begin(), scout_miss.end());
+		ap_locs_refresh();
+		std::set<int64_t> scout_all = g_locs_chk;
+		scout_all.insert(g_locs_miss.begin(), g_locs_miss.end());
 		std::list<int64_t> locs(scout_all.begin(), scout_all.end());
 		if (!locs.empty())
 			g_ap->LocationScouts(locs, 0);
@@ -957,6 +991,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_scouts_done = true; // #85: single LocationInfo reply completes the scout cache
 		std::fprintf(stderr, "[AP NET] scout info received for %d locations\n",
 		             (int)items.size());
+	});
+	// RoomUpdate: the server reports newly checked locations (another player's
+	// release or collect, or our own echo). The library has already moved them
+	// from missing to checked, so drop the snapshot. Not gated on g_rejected: the
+	// snapshot mirrors the library, and the readers apply the admission guard.
+	g_ap->set_location_checked_handler([](const std::list<int64_t> &) {
+		ap_locs_invalidate();
 	});
 	g_ap->set_slot_refused_handler([](const std::list<std::string> &errors) {
 		if (g_rejected)
@@ -1253,6 +1294,7 @@ static void ap_net_apply_retry_stop(void)
 		return;
 	delete g_ap;
 	g_ap = nullptr;
+	ap_locs_invalidate();
 	g_connected = false;
 	g_items.clear();
 	g_items_player.clear();
@@ -1296,6 +1338,7 @@ static void ap_net_apply_seed_reject(void)
 	g_rejected = true; // latched until a manual reconnect clears it
 	delete g_ap;
 	g_ap = nullptr;
+	ap_locs_invalidate();
 	g_connected = false;
 	g_items.clear();
 	g_items_player.clear();
@@ -1343,6 +1386,7 @@ static bool ap_net_try_send_location(int64_t code)
 	bool sent = false;
 	AP_NET_GUARD("send_location", {
 		g_ap->LocationChecks({code});
+		ap_locs_invalidate(); // the library marks the code checked locally
 		g_pending_checks.insert(code); // #85: in flight until its receipt drains
 		sent = true;
 	});
@@ -1437,36 +1481,35 @@ extern "C" int ap_net_location_checked(long long location_code)
 	// authoritative checked-location state to the game side.
 	if (g_rejected || !g_ap)
 		return 0;
-	const std::set<int64_t> &chk = g_ap->get_checked_locations();
-	return chk.count((int64_t)location_code) ? 1 : 0;
+	ap_locs_refresh();
+	return g_locs_chk.count((int64_t)location_code) ? 1 : 0;
 }
 
 extern "C" int ap_net_location_exists(long long location_code)
 {
 	if (g_rejected || !g_ap)
 		return 0;
+	ap_locs_refresh();
 	int64_t code = (int64_t)location_code;
-	const std::set<int64_t> &chk = g_ap->get_checked_locations();
-	if (chk.count(code))
+	if (g_locs_chk.count(code))
 		return 1;
-	const std::set<int64_t> &miss = g_ap->get_missing_locations();
-	return miss.count(code) ? 1 : 0;
+	return g_locs_miss.count(code) ? 1 : 0;
 }
 
 extern "C" int ap_net_location_count(void)
 {
 	if (g_rejected || !g_ap)
 		return 0;
-	const std::set<int64_t> &chk = g_ap->get_checked_locations();
-	const std::set<int64_t> &miss = g_ap->get_missing_locations();
-	return (int)(chk.size() + miss.size());
+	ap_locs_refresh();
+	return (int)(g_locs_chk.size() + g_locs_miss.size());
 }
 
 extern "C" int ap_net_checked_count(void)
 {
 	if (g_rejected || !g_ap)
 		return 0;
-	return (int)g_ap->get_checked_locations().size();
+	ap_locs_refresh();
+	return (int)g_locs_chk.size();
 }
 
 extern "C" int ap_net_self_slot(void)
@@ -2083,6 +2126,7 @@ extern "C" void ap_net_shutdown(void)
 		// plain delete on purpose -- do not re-derive this.
 		delete g_ap;
 		g_ap = nullptr;
+		ap_locs_invalidate();
 	}
 	g_connected = false;
 	g_items.clear();
