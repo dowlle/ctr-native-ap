@@ -48,6 +48,11 @@ The release cycle's development order, settled during the 0.1.4 cycle:
   both repos right after tagging, so the next fix starts from what players
   have. The 0.2.1-alpha1 tags were cut this way without that PR, which
   left the first alpha1 bug fix with no correct base (#346 catches up).
+- The `authoring-client` branch is generated, like a release branch is a
+  record: `tools/authoring-branch/make-branch.py vX.Y.Z --replace` makes it
+  the tag plus one commit that removes the Archipelago-only sources (see
+  `docs/CUSTOM_TRACKS.md`). Nothing is committed to it by hand, nothing is
+  branched from it, and it is never a pull request base.
 
 ## 1. Gates (nothing ships red)
 

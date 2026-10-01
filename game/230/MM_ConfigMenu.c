@@ -23,6 +23,26 @@
 #include "MM_CustomText.c"
 #endif
 #endif
+#elif defined(CTR_CUSTOM_PACKAGES)
+// The authoring client without Archipelago: the same package library and
+// Saphi Track Manager as the box authoring download, on a Custom Content page.
+#include <stdlib.h>
+#include <platform/native_input.h> // Platform_InputRawGamepadButtons
+#include <platform/native_assets.h>
+#include <platform/native_custom_track_manager.h>
+#include <platform/native_custom_track_library.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_custom_offline.h>
+#include <platform/native_saphi_catalogue.h>
+#include "MM_CustomText.c"
+#endif
+
+// Controller commit / cancel for text entry, on physical pads only: the
+// connection manager (AP) and the Track Manager search box (packages). Why the
+// pad buffer cannot be used is explained above MM_ConfigProc_Connection.
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES)
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE)
 #endif
 
 // In-game options menu. Ported from thecodingbob/ctr-native (branch
@@ -71,7 +91,7 @@ static int s_sectionRows[CTR_MENU_PAGE_CAP][CTR_MENU_PAGE_ROW_CAP];
 static int s_sectionCount[CTR_MENU_PAGE_CAP];
 static const char *s_sectionName[CTR_MENU_PAGE_CAP];
 static int s_numSections = 0;
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 static int s_customContentSection = -1;
 #endif
 
@@ -79,7 +99,7 @@ static void BuildSectionMap(void)
 {
 	s_numSections = CTR_MenuBuildPages(g_configEntries, g_numConfigEntries,
 		s_sectionName, s_sectionRows, s_sectionCount);
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 	s_customContentSection = s_numSections;
 	s_sectionCount[s_numSections] = 0;
 	s_sectionName[s_numSections] = "Custom Content";
@@ -518,8 +538,8 @@ static const ConfigEntry *s_connEditEntry = NULL; // the entry being edited
 static char s_connBackup[128];   // pre-edit value, restored on cancel
 static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edges
 
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE)
+// CONN_PAD_COMMIT / CONN_PAD_CANCEL are defined at the top of this file, shared
+// with the Track Manager.
 
 // Row geometry in display-space coordinates, shared by the draw pass below and
 // by the rectangle handed to the platform text-input layer when an edit starts
@@ -1006,7 +1026,10 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	CustomContent_DrawMessage(ot);
 }
 #endif
+#endif // CTR_AP
 
+// The package library and Track Manager: the AP box authoring download and the
+// authoring client without Archipelago.
 #ifdef CTR_CUSTOM_PACKAGES
 static struct CustomTrackLibrary s_contentLibrary;
 static int s_contentLibraryLoaded;
@@ -1080,7 +1103,6 @@ static int MM_CustomLibrary_Busy(void)
 
 #include "MM_CustomManager.c"
 #endif // CTR_CUSTOM_PACKAGES
-#endif // CTR_AP
 
 static void MM_MenuProc_Config(struct RectMenu *menu)
 {
@@ -1150,6 +1172,16 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		if (linkRow >= 0)
 			AP_LinkRegPageFrame();
 #else
+#ifdef CTR_CUSTOM_PACKAGES
+		// The authoring client without Archipelago: Custom Content is the only
+		// bespoke page.
+		if (sec == s_customContentSection)
+		{
+			MM_ConfigProc_CustomContent(menu, ot, pad);
+		}
+		else
+		{
+#endif
 		const int textBusy = 0;
 		const int linkRow = -1;
 #endif
@@ -1291,6 +1323,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		else if (numRows > 0 && menu->rowSelected < numRows)
 			Config_DrawRowHelp(Section_Entry(sec, menu->rowSelected), ot);
 		} // end generic (non-Connection) section
+#elif defined(CTR_CUSTOM_PACKAGES)
+		} // end generic (non-Custom Content) section
 #endif
 	}
 	else

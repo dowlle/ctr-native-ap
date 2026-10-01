@@ -100,7 +100,7 @@ global_variable s32 s_inputInitialized;
 global_variable s32 s_installedSnapshotsActive;
 global_variable s32 s_keyboardControllerSlot = NATIVE_INPUT_DEFAULT_KEYBOARD_SLOT;
 global_variable s32 s_lastActiveControllerSlot = -1;
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
 global_variable u16 s_rawGamepadButtons = 0;
 #endif
 
@@ -455,7 +455,7 @@ internal void NativeInput_ApplyController(s32 slot)
 		s_lastActiveControllerSlot = slot;
 	}
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
 	// Physical-pad-only button snapshot for the AP connection manager (see
 	// Platform_InputRawGamepadButtons below). Accumulated here, before the
 	// keyboard is folded in by NativeInput_ApplyKeyboard, so the mask can never
@@ -812,7 +812,7 @@ void Platform_InputUpdate(void)
 		return;
 	}
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
 	s_rawGamepadButtons = 0;
 #endif
 
@@ -893,7 +893,7 @@ int Platform_InputCycleGamepadController(void)
 	return nextSlot + 1;
 }
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
 // Raw, mapping-independent keyboard probe for AP debug/QoL hotkeys (e.g. the
 // in-game map overlay toggle). Reads the SDL host keyboard snapshot refreshed in
 // Platform_InputUpdate(); returns 1 if the physical key for `scancode`

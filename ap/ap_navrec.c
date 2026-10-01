@@ -1,4 +1,4 @@
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 
 #include <common.h>
 #include <errno.h>
@@ -385,28 +385,35 @@ static unsigned int AP_NavRec_HighestIndex(int levelID)
 	return highest;
 }
 
-// The name written into a file. The option wins; an empty option falls back to
-// the configured Archipelago slot name, which is the identity the player already
-// hands out. Both go through the same sanitizer, so nothing unprintable reaches
+// The name written into a file. The option wins; in an AP build an empty option
+// falls back to the configured Archipelago slot name, which is the identity the
+// player already hands out. Both go through the same sanitizer, so nothing unprintable reaches
 // a file whichever way it arrived.
 static void AP_NavRec_ResolveDriverName(char *out, unsigned int cap)
 {
 	AP_NavRecFormat_SanitizeName(g_config.navDriverName, out, cap);
+#ifdef CTR_AP
 	if (out[0] != '\0')
 		return;
 	AP_NavRecFormat_SanitizeName(g_config.slot, out, cap);
+#endif
 }
 
 // Declared shortcut-knowledge tier of the connected seed. schema_version 0 is
 // the engine's own "no slot data parsed" state, so it maps to unknown rather
 // than to easy.
+// Without CTR_AP there is no seed, so the tier is always unknown.
 static unsigned char AP_NavRec_ShortcutTier(void)
 {
+#ifdef CTR_AP
 	if (ctr_cfg.schema_version == 0)
 		return 0;
 	if ((ctr_cfg.shortcut_knowledge < 0) || (ctr_cfg.shortcut_knowledge > 2))
 		return 0;
 	return (unsigned char)(ctr_cfg.shortcut_knowledge + 1);
+#else
+	return 0;
+#endif
 }
 
 // ============================================================================
@@ -789,7 +796,11 @@ static void AP_NavRec_Write(int levelID)
 	meta.clientVersion = CTR_AP_VERSION;
 	meta.driverName = name;
 	meta.characterId = s_navrecCharacterId;
+#ifdef CTR_AP
 	meta.difficultyPreset = (short)g_config.aiDifficulty;
+#else
+	meta.difficultyPreset = 0; // no AI difficulty option without AP: vanilla
+#endif
 	meta.shortcutTier = AP_NavRec_ShortcutTier();
 	meta.trackKind = s_navrecTrackKind;
 	meta.identityKind = s_navrecActiveIdentityKind;

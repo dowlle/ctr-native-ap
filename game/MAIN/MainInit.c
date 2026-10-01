@@ -218,7 +218,7 @@ void MainInit_JitPoolsReset(struct GameTracker *gGT)
 {
 	JitPool_Clear(&gGT->JitPools.thread);
 	JitPool_Clear(&gGT->JitPools.instance);
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 	// AP spawn entries retain pointers into the instance pool. A same-map
 	// restart clears that pool without calling MainInit_JitPoolsNew, so those
 	// pointers must be invalidated at the clear boundary itself.
@@ -360,6 +360,19 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, customServing,
 			                                           gGT->level1->numInstances);
 #endif
+		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
+		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
+		             rdata.s_InstancePool);
+	}
+#elif defined(CTR_CUSTOM_PACKAGES)
+	// The authoring client without Archipelago: the retail budget, plus the
+	// custom-track reservation the AP build makes above. An offline package
+	// load is the only way this build serves custom bytes.
+	{
+		int instanceCapacity = renderBucketSize >> 5;
+		if (gGT->level1 != NULL)
+			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, MainRaceTrack_OfflineCustomLoad(),
+			                                           gGT->level1->numInstances);
 		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
 		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
 		             rdata.s_InstancePool);

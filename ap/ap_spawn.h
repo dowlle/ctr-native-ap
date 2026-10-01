@@ -21,9 +21,10 @@
 // (BSP hitbox injection vs the per-frame proximity-thread pattern the Crystal
 // Challenge nitros already use, RB_GenericMine.c) and is out of scope here.
 //
-// Compiled ONLY when CTR_AP is defined, like the rest of ap/.
+// Compiled with CTR_AP, and without it in the authoring client
+// (CTR_BOX_AUTHORING, see ap/ap_authoring_host.h).
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 #include <ctr_math.h>
 

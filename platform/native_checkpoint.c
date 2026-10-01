@@ -1926,7 +1926,7 @@ internal void NativeCheckpoint_RelocateRuntimePointers(const struct NativeCheckp
 	NativeCheckpoint_RelocateCreditsPointers(oldHeader, liveHeader);
 	NativeCheckpoint_RelocateGameTrackerPointers(oldHeader, liveHeader);
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 	// LAST, and specifically after RelocateGameTrackerPointers. Relocating the
 	// nav slots is necessary but not sufficient: recorded AI lanes live in
 	// AP-layer statics, which are in no checkpointed region, so a state restored

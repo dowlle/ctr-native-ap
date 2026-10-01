@@ -1,4 +1,4 @@
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 #include <common.h> // struct Driver / GameTracker / Model, sdata, LevelID, FONT_*, DecalFont_DrawLine
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 #include "ap_author_pad.h"     // controller keys: Select, Select+L1, Select+R1
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
@@ -115,7 +115,7 @@ int AP_Author_Enabled(void)
 	// boxes consume it, but the placement editor itself is a developer tool.
 	// Compile it live only in an explicit authoring build. This also neutralises
 	// a stale box_author=true from an older public config.ini.
-#ifndef CTR_AP_AUTHORING
+#ifndef CTR_BOX_AUTHORING
 	return 0;
 #else
 	// The menu toggle mutates g_config in place, so this follows it live. Without
@@ -607,7 +607,7 @@ static void AP_AuthorList(struct GameTracker *gGT)
 	AP_AuthorSave();
 }
 
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 // The controller keys, on the HUD line under the count and the last drop.
 static void AP_AuthorDrawPadHint(void)
 {
@@ -978,7 +978,7 @@ static int AP_AuthorCustomDrawHud(void)
 }
 #endif // CTR_CUSTOM_PACKAGES
 
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 // ── controller keys (ap_author_pad.h) ──────────────────────────────────────
 
 static AP_AuthorPadState s_pad;
@@ -1037,7 +1037,7 @@ void AP_Author_FilterPad(struct GamepadSystem *gGS)
 		gGS->anyoneHeldPrev |= gGS->gamepad[i].buttonsHeldPrevFrame;
 	}
 }
-#endif // CTR_AP_AUTHORING
+#endif // CTR_BOX_AUTHORING
 
 // ── per-frame ───────────────────────────────────────────────────────────────
 
@@ -1047,7 +1047,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	int        drop, undo, list;
 	int        enabled;
 	int        level;
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 	// Taken once: an action that meets a closed gate below is dropped, not kept.
 	int        padAction = s_padAction;
 	s_padAction = AP_AUTHOR_PAD_NONE;
@@ -1125,7 +1125,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	{
 		s_enabledPrev = 1;
 		s_markerLevel = -1; // force a rebuild for whatever level is loaded
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 or Select drop, Numpad 0 or Select+L1 delete last, "
 		           "Numpad . or Select+R1 list + save\n");
 #else
@@ -1168,7 +1168,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	undo = Platform_InputRawKeyDown(AP_AUTHOR_KEY_UNDO);
 	list = Platform_InputRawKeyDown(AP_AUTHOR_KEY_LIST);
 
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 	if ((drop && !prevDrop) || padAction == AP_AUTHOR_PAD_DROP)
 		AP_AuthorDrop(gGT);
 	if ((undo && !prevUndo) || padAction == AP_AUTHOR_PAD_UNDO)
@@ -1236,7 +1236,7 @@ void AP_Author_DrawHud(void)
 		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H,
 		                   FONT_SMALL, WHITE);
 	}
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 	AP_AuthorDrawPadHint();
 #endif
 }

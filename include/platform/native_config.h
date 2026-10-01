@@ -172,6 +172,17 @@ typedef struct
 	// feature does nothing. Consumed by AP_Discord_OnFrame (ap/ap_discord.c).
 	bool discordStatus;
 	char discordAppId[32];
+#else
+	// The authoring client without Archipelago keeps the authoring options it
+	// builds, with the meanings described above (AP block).
+#ifdef CTR_BOX_AUTHORING
+	bool boxAuthor;
+#endif
+#ifdef CTR_AI_LAP_RECORDER
+	bool navRecord;
+	bool navUseRecorded;
+	char navDriverName[32];
+#endif
 #endif
 } NativeConfig;
 

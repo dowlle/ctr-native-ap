@@ -336,7 +336,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 		sdata->const_0x493583fe = 0x493583fe;
 	}
 
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#if (defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)) && defined(CTR_CUSTOM_TRACKS)
 	// Which track's recordings may replay on this load. Settled BEFORE the
 	// BOTS_InitNavPath loop below, because AP_NavRec_AfterBotsInit is what opens
 	// a recording and it runs a few lines further down; by then the answer has
@@ -413,7 +413,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 
 	BOTS_SetGlobalNavData(0);
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 	// Recorded AI laps (nav_use_recorded). BOTS_InitNavPath above is the only
 	// place the engine reads level1->LevNavTable, so retargeting the AI has to
 	// happen after that loop and before BOTS_GotoStartingLine takes frame 0.

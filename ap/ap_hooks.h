@@ -838,6 +838,10 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
 void AP_CupEnterFromHub(int hubLevelID);
 int  AP_CupReturnHub(void);
 
+#else
+// Without CTR_AP the authoring client provides the few services the authoring
+// modules take from this header (ap_authoring_host.h).
+#include "ap_authoring_host.h"
 #endif // CTR_AP
 
 #endif // AP_HOOKS_H

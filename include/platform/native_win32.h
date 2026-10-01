@@ -15,7 +15,18 @@
 #define NOUSER 1
 #endif
 
+/*
+ * psx_prelude.h ends with `#define RECT RECT16`. If that alias is already
+ * active when this header is first included (the authoring client's unity
+ * build reaches it from ap_navrec.c, after the prelude), windows.h's
+ * `typedef struct tagRECT {...} RECT;` would redefine RECT16. Suspend the
+ * alias across the include, as ap/ap_crash.c does; where it is not defined
+ * yet this is a no-op.
+ */
+#pragma push_macro("RECT")
+#undef RECT
 #include <windows.h>
+#pragma pop_macro("RECT")
 
 /*
  * This project is built as one large C translation unit. Keep Win32's ANSI

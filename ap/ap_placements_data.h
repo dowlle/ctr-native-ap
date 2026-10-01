@@ -58,7 +58,7 @@
 // This is the DEFAULT, not the law: an external "ap-box-placements.json" next to the
 // executable overrides it wholesale (ap_author.c, AP_AuthorLoad). See SETUP.md.
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 typedef struct
 {

@@ -8,7 +8,8 @@ case "$platform" in
   windows) suffix=.exe ;;
   *) echo 'Expected linux or windows' >&2; exit 2 ;;
 esac
-if [ -e client-artifacts ] || [ -e build-ci-ap ] || [ -e build-ci-vanilla ] || [ -e build-ci-authoring ]; then
+if [ -e client-artifacts ] || [ -e build-ci-ap ] || [ -e build-ci-vanilla ] || [ -e build-ci-authoring ] \
+   || [ -e build-ci-authoring-client ]; then
   echo 'Use a fresh checkout/build directory; preserve prior artifacts.' >&2
   exit 1
 fi
@@ -23,10 +24,13 @@ bash ap/vendor/fetch-deps.sh
 # authoring = the separate box authoring download: the AP client plus
 # CTR_AP_AUTHORING (own exe name, own placement file, never connects to a room).
 # It is its own archive and never goes into the player client archive.
-for variant in ap vanilla authoring; do
+# authoring-client = the authoring client without Archipelago (CTR_AP=OFF,
+# CTR_AUTHORING_CLIENT): packages, Saphi, Box Author Mode, AI lap recorder.
+for variant in ap vanilla authoring authoring-client; do
   ap=OFF
   custom=OFF
   authoring=OFF
+  client=OFF
   binary=ctr_native
   if [ "$variant" = ap ]; then
     ap=ON
@@ -37,12 +41,17 @@ for variant in ap vanilla authoring; do
     custom=ON
     authoring=ON
     binary=ctr_native_ap_authoring
+  elif [ "$variant" = authoring-client ]; then
+    custom=ON
+    client=ON
+    binary=ctr_native_authoring
   fi
   build=build-ci-$variant
   cmake -S . -B "$build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_C_FLAGS='-m32 -msse' -DCMAKE_CXX_FLAGS=-m32 \
     -DCTR_AP="$ap" -DCTR_CUSTOM_TRACKS="$custom" -DCTR_AP_AUTHORING="$authoring" \
+    -DCTR_AUTHORING_CLIENT="$client" \
     -DCTR_AP_VERIFY_VENDOR=ON
   cmake --build "$build" --parallel "${CTR_BUILD_JOBS:-2}"
   exe="$build/$binary$suffix"

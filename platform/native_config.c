@@ -57,6 +57,15 @@ NativeConfig g_config = {
 	"",    // navDriverName (empty = fall back to the Archipelago slot name)
 	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
 	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
+#else
+#ifdef CTR_BOX_AUTHORING
+	false, // boxAuthor
+#endif
+#ifdef CTR_AI_LAP_RECORDER
+	false, // navRecord
+	false, // navUseRecorded
+	"",    // navDriverName (empty = recordings carry no name)
+#endif
 #endif
 };
 
@@ -172,20 +181,23 @@ const ConfigEntry g_configEntries[] = {
 	// this one is a decision about what it IS, no longer a missing renderer.)
 	// Written by the title-screen notice itself, never by a menu row.
 	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
+#endif
 	// Box placement editing is absent from ordinary public builds. Keeping the
 	// row out of g_configEntries means NativeConfig_Load cannot revive it from a
 	// stale box_author=true, while ap_author.c independently forces the runtime
-	// gate off as defence in depth. Dedicated authoring builds opt in explicitly.
-#ifdef CTR_AP_AUTHORING
+	// gate off as defence in depth. Dedicated authoring builds opt in explicitly
+	// (CTR_BOX_AUTHORING: the AP box authoring download and the authoring client).
+#ifdef CTR_BOX_AUTHORING
 	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
 #endif
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 	// "Save" is in the label deliberately. The one option in this build that
 	// writes to the player's disk should say so on the row itself, not only in a
 	// manual nobody reads.
 	{"Authoring",   "nav_record",               "Save AI Lap Recordings",       CFG_BOOL, &g_config.navRecord},
 	{"Authoring",   "nav_use_recorded",         "Use Recorded AI Laps",         CFG_BOOL, &g_config.navUseRecorded},
-	// Read-only on the menu, edited in config.ini. Empty renders as "-" and means
-	// the Archipelago slot name is used instead.
+	// Read-only on the menu, edited in config.ini. Empty renders as "-" and, in
+	// an AP build, means the Archipelago slot name is used instead.
 	{"Authoring",   "nav_driver_name",          "Driver Name",                  CFG_STRING, g_config.navDriverName, 0, (int)sizeof(g_config.navDriverName), 0},
 #endif
 };

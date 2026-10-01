@@ -337,6 +337,10 @@ u32 main(void)
 			// Archipelago per-frame hook (CTR_AP build only; see ap/ap_hooks.c)
 #ifdef CTR_AP
 			AP_OnFrame(gGT);
+#elif defined(CTR_BOX_AUTHORING) || defined(CTR_AI_LAP_RECORDER)
+			// The authoring client without Archipelago drives the same
+			// authoring modules in the same order (ap/ap_authoring_host.c).
+			Authoring_OnFrame(gGT);
 #endif
 
 			// Process all gamepad input
@@ -359,7 +363,7 @@ u32 main(void)
 			}
 #endif
 			GAMEPAD_ProcessAnyoneVars(gGS);
-#if defined(CTR_AP) && defined(CTR_AP_AUTHORING)
+#ifdef CTR_BOX_AUTHORING
 			// Box Author Mode's controller keys (ap/ap_author_pad.h): read, and
 			// taken out of player 1's pad, before anything reads it this frame.
 			AP_Author_FilterPad(gGS);
