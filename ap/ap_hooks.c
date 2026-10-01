@@ -1741,14 +1741,21 @@ int AP_PadStage1Met(int physLevelID)
 		return ctr_cfg_warp_unlocked(physLevelID);
 
 	// Trial pads: Slide Coliseum (16) = vanilla 10 Sapphire relics; Turbo Track
-	// (17) = vanilla all 5 Gem colours. Randomized single-stage req overrides.
-	if (physLevelID == 16 || physLevelID == 17)
+	// (17) = vanilla all 5 Gem colours. An emitted single-stage req overrides:
+	// randomized modes, and for Slide Coliseum also a vanilla-mode seed that
+	// lowered the pad to the Sapphires it created (ctr_cfg_slide_coliseum_req).
+	if (physLevelID == CTR_CFG_SLIDE_COLISEUM_PAD)
+	{
+		const ctr_req *slide = ctr_cfg_slide_coliseum_req();
+		if (slide)
+			return AP_BossReqMet(slide);
+		return AP_GateCount(AP_IDX_SAPPHIRE) >= CTR_CFG_SLIDE_COLISEUM_RETAIL_SAPPHIRES;
+	}
+	if (physLevelID == 17)
 	{
 		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
 			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
-		if (physLevelID == 16)
-			return AP_GateCount(AP_IDX_SAPPHIRE) >= 10;
 		owned = 0;
 		for (i = 0; i < 5; i++)
 			if (AP_GateCountGemColour(i) >= 1)

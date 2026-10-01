@@ -136,8 +136,8 @@ static int ap_vf_stage1_met(int lid, const int *counts)
 	// colours. data.metaDataLEV[16/17].numTrophiesToOpen (10 / 15) is NOT a
 	// trophy gate for these pads and reading it here both over- and
 	// under-constrained the sweep.
-	if (lid == 16)
-		return counts[AP_IDX_SAPPHIRE] >= 10;
+	if (lid == CTR_CFG_SLIDE_COLISEUM_PAD)
+		return counts[AP_IDX_SAPPHIRE] >= CTR_CFG_SLIDE_COLISEUM_RETAIL_SAPPHIRES;
 	if (lid == 17)
 	{
 		for (owned = 0, i = 0; i < 5; i++)

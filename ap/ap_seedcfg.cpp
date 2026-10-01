@@ -2548,6 +2548,15 @@ extern "C" int ctr_cfg_active(void)
 	return ctr_cfg.schema_version >= 1;
 }
 
+extern "C" const ctr_req *ctr_cfg_slide_coliseum_req(void)
+{
+	const ctr_req *r;
+	if (ctr_cfg.schema_version < 1)
+		return 0;
+	r = &ctr_cfg.warp_pad_unlock[CTR_CFG_SLIDE_COLISEUM_PAD].stage1;
+	return r->type != 0 ? r : 0;
+}
+
 extern "C" int ctr_cfg_warp_dest(int physPadLevelID)
 {
 	if (ctr_cfg.schema_version < 1)
