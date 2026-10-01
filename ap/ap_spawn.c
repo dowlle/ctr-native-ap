@@ -1,4 +1,4 @@
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 #include <common.h> // struct Instance / GameTracker / Model, sdata, InstanceFlags, functions.h
 #include <stdio.h>

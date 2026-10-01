@@ -915,6 +915,17 @@ void UI_RenderFrame_Racing()
 	// A savestate refused because it belongs to another track (F8).
 	NativeCheckpoint_DrawCustomRefusal();
 #endif
+#else
+	// The authoring client without Archipelago: the same passes, minus the feed.
+#ifdef CTR_AI_LAP_RECORDER
+	AP_NavRec_DrawBotNames();
+#endif
+#ifdef CTR_BOX_AUTHORING
+	AP_Author_DrawHud();
+#endif
+#ifdef CTR_CUSTOM_PACKAGES
+	NativeCheckpoint_DrawCustomRefusal();
+#endif
 #endif
 }
 

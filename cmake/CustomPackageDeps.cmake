@@ -1,5 +1,5 @@
-# Custom-track package dependencies, authoring build only (CTR_AP_AUTHORING +
-# CTR_CUSTOM_TRACKS). Packages need JSON and Unicode, not AP networking.
+# Custom-track package dependencies, authoring builds only (CTR_CUSTOM_PACKAGES,
+# with or without CTR_AP). Packages need JSON and Unicode, not AP networking.
 # Reuse the existing JSON pin; never invent a second version authority.
 file(STRINGS "${CMAKE_SOURCE_DIR}/ap/vendor/versions.lock" _package_lock)
 set(_package_section "")

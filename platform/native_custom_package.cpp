@@ -14,8 +14,8 @@
 #include <memory>
 
 // Package manifest parsing and the pinned sidecars (race settings, relic
-// targets). Authoring build only: CMakeLists.txt builds this file into the
-// custom_package library when CTR_AP_AUTHORING and CTR_CUSTOM_TRACKS are on.
+// targets). Authoring builds only: CMakeLists.txt builds this file into the
+// custom_package library when CTR_CUSTOM_PACKAGES is on.
 
 using json = nlohmann::json;
 

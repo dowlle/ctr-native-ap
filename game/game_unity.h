@@ -38,6 +38,17 @@
 #include "../ap/ap_boxes.h"     // AP item boxes: spawn, player-break, check (#109)
 #include "../ap/ap_navrec.h"    // AI lap recorder, and recorded-lap playback for the bots
 #include "../ap/ap_wumpa_residency_logic.h" // freestanding Wumpa animation transition (#222)
+#else
+// The authoring client without Archipelago: the same authoring modules, driven
+// by ap/ap_authoring_host.c instead of the AP layer. Each header is empty
+// unless its own option is on.
+#include "../ap/ap_authoring_host.h"
+#include "../ap/ap_marker_model.h" // CTR_BOX_AUTHORING
+#include "../ap/ap_spawn.h"
+#include "../ap/ap_author.h"
+#if defined(CTR_AI_LAP_RECORDER)
+#include "../ap/ap_navrec.h"
+#endif
 #endif
 
 #include "226/R226.c"
@@ -402,6 +413,16 @@
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
+#else
+// The authoring client without Archipelago (see the header block above). Each
+// unit compiles to nothing unless its own option is on.
+#include "../ap/ap_marker_model.c"  // CTR_BOX_AUTHORING: AP-logo fallback marker
+#include "../ap/ap_box_measure.c"   // CTR_BOX_AUTHORING: crate mesh measurement
+#include "../ap/ap_box_spawn_pos.c" // CTR_BOX_AUTHORING: marker spawn height
+#include "../ap/ap_spawn.c"         // CTR_BOX_AUTHORING: additive model loader
+#include "../ap/ap_author.c"        // CTR_BOX_AUTHORING: Box Author Mode
+#include "../ap/ap_navrec.c"        // CTR_AI_LAP_RECORDER: AI lap recorder
+#include "../ap/ap_authoring_host.c"
 #endif
 
 #endif

@@ -18,9 +18,10 @@
 // here gives a placed marker collision or fires a location check. That is the
 // unsolved half of #109 and is deliberately untouched.
 //
-// Compiled ONLY when CTR_AP is defined, like the rest of ap/.
+// Compiled with CTR_AP, and without it in the authoring client
+// (CTR_BOX_AUTHORING, see ap/ap_authoring_host.h).
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 struct GameTracker;
 
@@ -28,11 +29,12 @@ struct GameTracker;
 // alongside ap-state.json and ctr-ap.log. Read once at first use, rewritten on
 // every change.
 //
-// The separate box authoring download (CTR_AP_AUTHORING) uses its own file
-// name. Its file holds a whole edited table, and a normal client that found it
-// next to its exe would use it as a wholesale override. With a distinct name, an
+// The box authoring builds (CTR_BOX_AUTHORING: the AP box authoring download
+// and the authoring client without Archipelago) use their own file name. Their
+// file holds a whole edited table, and a normal client that found it next to
+// its exe would use it as a wholesale override. With a distinct name, an
 // authoring zip unpacked into a player folder by mistake changes nothing there.
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 #define AP_AUTHOR_FILE "ap-box-placements-authoring.json"
 #else
 #define AP_AUTHOR_FILE "ap-box-placements.json"
@@ -67,7 +69,7 @@ void AP_Author_DrawHud(void);
 // 1 while the mode is on. For call sites that want to skip work entirely.
 int AP_Author_Enabled(void);
 
-#ifdef CTR_AP_AUTHORING
+#ifdef CTR_BOX_AUTHORING
 // Controller keys for the same three actions (ap_author_pad.h): Select drops,
 // hold Select + L1 removes the newest box, hold Select + R1 saves and lists.
 // Called from MainMain.c right after the pads are processed, so it can take

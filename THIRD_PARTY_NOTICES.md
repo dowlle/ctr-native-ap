@@ -218,7 +218,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-## Archipelago Logo Marker (AP build only)
+## Archipelago Logo Marker (AP build and authoring client)
 
 Paths: `tools/aplogo/aplogo.h` (vendored source mesh), `ap/ap_marker_model_data.h` (generated)
 
@@ -231,6 +231,9 @@ compiles in; the conversion stores the mesh's six region colours as luminance so
 the per-class tint modulates a neutral base. It preserves both flat logo faces
 and their silhouette while omitting the thin extrusion rim, reducing each
 marker from 216 to 96 triangles to protect the hub's primitive-memory budget.
+Box Author Mode (the AP box authoring download and the authoring client without
+Archipelago, `CTR_BOX_AUTHORING`) uses the same mesh as its fallback placement
+marker on levels that carry no weapon crate model.
 
 The Archipelago logo itself is copyright (c) 2022 Krista Corkos and Christopher
 Wilson, used under Creative Commons Attribution-NonCommercial 4.0

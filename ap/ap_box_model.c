@@ -62,87 +62,7 @@ static int s_apBoxTextured;
 #define AP_BOX_MODEL_EXTENT   192
 #define AP_BOX_FALLBACK_SCALE 0x910
 
-// ── mesh measurement ────────────────────────────────────────────────────────
-// Walks a model exactly the way the renderer consumes it: the walk itself, the
-// per-axis byte bounds and every unit conversion live in ap_box_offset_logic.h
-// so tools/test-box-offset.c exercises the shipped arithmetic rather than a
-// copy of it (Lessons Learned §5).
-//
-// Fills *boundsOut with the mesh's per-axis byte range, *frameOut with the frame
-// origin (whose .y offsets the VERTICAL vertex byte -- see the axis-pairing note
-// in the logic header) and *headerOut with the live header. 0 on anything this
-// walk cannot make sense of, which is the "I could not measure it" answer every
-// caller below is written to survive.
-static int AP_BoxModel_MeasureMesh(struct Model *m, AP_BoxMeshBounds *boundsOut,
-                                   struct ModelFrame **frameOut, struct ModelHeader **headerOut)
-{
-	struct ModelHeader *h;
-	struct ModelFrame *frame;
-	const u32 *cmd;
-	int n;
-
-	if (m == 0 || m->headers == 0 || m->numHeaders <= 0)
-		return 0;
-	h = &m->headers[0];
-	frame = h->ptrFrameData;
-	cmd = (const u32 *)(uintptr_t)h->ptrCommandList;
-	if (frame == 0 || cmd == 0 || h->scale.x <= 0)
-		return 0;
-
-	n = AP_BoxMesh_CountVerts((const unsigned int *)cmd);
-	if (n == 0)
-		return 0;
-	if (!AP_BoxMesh_Bounds((const unsigned char *)frame + frame->vertexOffset, n, boundsOut))
-		return 0;
-
-	*frameOut = frame;
-	*headerOut = h;
-	return 1;
-}
-
-// The size-ruling measurement: max bounding extent (model units) via *extentOut
-// and header scale via *scaleOut; 0 on anything unexpected.
-static int AP_BoxModel_Measure(struct Model *m, int *scaleOut, int *extentOut)
-{
-	AP_BoxMeshBounds b;
-	struct ModelFrame *frame;
-	struct ModelHeader *h;
-	int ext;
-
-	if (!AP_BoxModel_MeasureMesh(m, &b, &frame, &h))
-		return 0;
-
-	ext = AP_BoxMesh_Extent(&b);
-	if (ext <= 0)
-		return 0;
-
-	*scaleOut = h->scale.x;
-	*extentOut = ext;
-	return 1;
-}
-
-// The vertical half of the same measurement, in world units at the model's live
-// header scale: the lift that puts its lowest face on the spawn anchor, how far
-// its highest face sits above its origin, and its rendered height.
-static int AP_BoxModel_MeasureVertical(struct Model *m, int *baseOut, int *topOut, int *heightOut)
-{
-	AP_BoxMeshBounds b;
-	struct ModelFrame *frame;
-	struct ModelHeader *h;
-	int lo, hi, scale;
-
-	if (!AP_BoxModel_MeasureMesh(m, &b, &frame, &h))
-		return 0;
-
-	scale = h->scale.y; // .y is the component the GTE applies to the vertical
-	lo = b.lo[AP_BOX_VERT_AXIS_UP];
-	hi = b.hi[AP_BOX_VERT_AXIS_UP];
-
-	*baseOut = AP_BoxOffset_BaseY(frame->pos.y, lo, scale);
-	*topOut = AP_BoxOffset_ModelToWorld(frame->pos.y + hi, scale);
-	*heightOut = AP_BoxOffset_Height(lo, hi, scale);
-	return 1;
-}
+#include "ap_box_measure.c" // mesh measurement, shared with Box Author Mode
 
 // The exact item-crate-sized header scale for the AP cube, derived from the
 // retail crate the level carries (item crate preferred; the time crate
@@ -364,42 +284,7 @@ struct Model *AP_BoxModel_ForColour(struct Model *owned, int colour)
 	return &s_apBoxTintModel[colour - 1];
 }
 
-// ── the shared spawn transform ──────────────────────────────────────────────
-
-int AP_BoxModel_BaseOffsetY(struct Model *model)
-{
-	static int warned;
-	int base = 0, top = 0, height = 0;
-
-	if (model == 0)
-		return 0;
-
-	if (AP_BoxModel_MeasureVertical(model, &base, &top, &height))
-		return base;
-
-	// FAIL CLOSED to the authored anchor: an unmeasurable model spawns exactly
-	// where it did before this correction existed, which is a known state rather
-	// than a guessed lift. Once per process, because this can only be reached
-	// from a model whose command list or frame data this walk does not
-	// understand, and that is worth exactly one line, not one per spawn.
-	if (!warned)
-	{
-		warned = 1;
-		AP_LogLine("[AP BOX] WARNING: a crate model could not be measured; its spawns fall back to "
-		           "the authored anchor with no height correction\n");
-	}
-	return 0;
-}
-
-void AP_BoxModel_SpawnPos(struct Model *model, int x, int y, int z, Vec3 *out)
-{
-	if (out == 0)
-		return;
-
-	out->x = x;
-	out->y = y + AP_BoxModel_BaseOffsetY(model);
-	out->z = z;
-}
+#include "ap_box_spawn_pos.c" // the shared spawn transform
 
 int AP_BoxModel_EnsureRelic(struct GameTracker *gGT)
 {

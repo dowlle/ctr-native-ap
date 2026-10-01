@@ -21,6 +21,55 @@ option(CTR_AP_AUTHORING "Expose Archipelago authoring tools (developer builds on
 #   cmake -S . -B build-ct -DCTR_AP=ON -DCTR_CUSTOM_TRACKS=ON
 option(CTR_CUSTOM_TRACKS "Load a hash-verified custom track from disk" OFF)
 
+# Authoring features. Each one also builds without Archipelago (CTR_AP=OFF);
+# docs/CUSTOM_TRACKS.md explains the custom track system they belong to.
+#   CTR_CUSTOM_PACKAGES  package library, Track Manager, Arcade and Time Trial
+#                        custom pages, offline package loader, Saphi catalogue
+#                        and install, custom music. Needs CTR_CUSTOM_TRACKS.
+#   CTR_BOX_AUTHORING    Box Author Mode, the in-game box placement editor.
+#   CTR_AI_LAP_RECORDER  the AI lap recorder. Always compiled into CTR_AP
+#                        builds, so this option only matters with CTR_AP=OFF.
+# With CTR_AP=ON the first two follow CTR_AP_AUTHORING: the player client never
+# gets them, the box authoring download always does.
+#
+# The authoring client is the one-switch, no-Archipelago build of all of them:
+#   cmake -S . -B build-authoring -DCTR_AUTHORING_CLIENT=ON
+# (outputs ctr_native_authoring, never connects to anything but Project Saphi).
+option(CTR_CUSTOM_PACKAGES "Custom-track package library, Track Manager and Saphi install" OFF)
+option(CTR_BOX_AUTHORING "Box Author Mode (in-game box placement editor)" OFF)
+option(CTR_AI_LAP_RECORDER "AI lap recorder without Archipelago" OFF)
+option(CTR_AUTHORING_CLIENT "Authoring client without Archipelago: all authoring features" OFF)
+
+if(CTR_AUTHORING_CLIENT)
+    if(CTR_AP)
+        message(FATAL_ERROR "CTR_AUTHORING_CLIENT is the build without Archipelago. "
+            "The Archipelago box authoring download is -DCTR_AP=ON -DCTR_AP_AUTHORING=ON.")
+    endif()
+    set(CTR_CUSTOM_TRACKS ON)
+    set(CTR_CUSTOM_PACKAGES ON)
+    set(CTR_BOX_AUTHORING ON)
+    set(CTR_AI_LAP_RECORDER ON)
+endif()
+if(CTR_AP)
+    set(_ctr_ap_packages OFF)
+    if(CTR_AP_AUTHORING AND CTR_CUSTOM_TRACKS)
+        set(_ctr_ap_packages ON)
+    endif()
+    if((CTR_CUSTOM_PACKAGES AND NOT _ctr_ap_packages) OR (CTR_BOX_AUTHORING AND NOT CTR_AP_AUTHORING))
+        message(FATAL_ERROR "With CTR_AP=ON, CTR_CUSTOM_PACKAGES and CTR_BOX_AUTHORING come only "
+            "from CTR_AP_AUTHORING (packages also need CTR_CUSTOM_TRACKS). Do not set them directly.")
+    endif()
+    set(CTR_CUSTOM_PACKAGES ${_ctr_ap_packages})
+    set(CTR_BOX_AUTHORING ${CTR_AP_AUTHORING})
+    set(CTR_AI_LAP_RECORDER OFF) # always present in an AP build; no define needed
+elseif(CTR_AP_AUTHORING)
+    message(FATAL_ERROR "CTR_AP_AUTHORING needs CTR_AP=ON. For the build without "
+        "Archipelago use -DCTR_AUTHORING_CLIENT=ON.")
+endif()
+if(CTR_CUSTOM_PACKAGES AND NOT CTR_CUSTOM_TRACKS)
+    message(FATAL_ERROR "CTR_CUSTOM_PACKAGES needs CTR_CUSTOM_TRACKS=ON")
+endif()
+
 if(NOT CMAKE_C_COMPILER_TARGET MATCHES "i.86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     set(CMAKE_C_FLAGS "-m32 ${CMAKE_C_FLAGS}")
     # The AP mod enables CXX (apclientpp/asio); it must be -m32 too or its
@@ -129,12 +178,77 @@ if(CTR_CUSTOM_TRACKS)
     )
 endif()
 
+# Custom-track packages (library, Track Manager, Arcade custom pages, the
+# offline package loader and Saphi install). CTR_CUSTOM_PACKAGES is the one
+# switch every guarded call site checks. The AP box authoring download builds
+# these sources inside the CTR_AP block below; the authoring client without
+# Archipelago builds them here, together with the Saphi downloader.
+set(CTR_CUSTOM_PACKAGE_SOURCES
+    platform/native_custom_package.cpp
+    platform/native_custom_package_files.cpp
+    platform/native_custom_package_job.cpp
+    platform/native_custom_package_owned.c
+    platform/native_custom_content_verify.c
+    platform/native_custom_offline.c
+    platform/native_custom_music.c
+    platform/native_custom_records.c
+    platform/native_custom_track_library.c
+    platform/native_custom_unicode.c
+    platform/native_saphi_catalogue.cpp
+    vendor/utf8proc/utf8proc.c)
+
+if(NOT CTR_AP)
+    if(CTR_CUSTOM_PACKAGES)
+        enable_language(CXX)
+        set(AP_VENDOR ${CMAKE_SOURCE_DIR}/ap/vendor)
+        include(${CMAKE_SOURCE_DIR}/cmake/CustomPackageDeps.cmake)
+        # The Saphi downloader needs TLS (OpenSSL on Linux, WinHTTP on Windows),
+        # SHA-1/SHA-256 (OpenSSL EVP) and zlib on both, and standalone asio on
+        # Linux. Static archives, as in the AP build.
+        set(OPENSSL_USE_STATIC_LIBS TRUE)
+        set(ZLIB_USE_STATIC_LIBS TRUE)
+        find_package(OpenSSL REQUIRED)
+        find_package(ZLIB REQUIRED)
+        find_package(Threads REQUIRED)
+        add_library(custom_package STATIC ${CTR_CUSTOM_PACKAGE_SOURCES}
+            ap/ap_custom_track_download.cpp)
+        set_target_properties(custom_package PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+        target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/ap ${AP_VENDOR}/json/include ${AP_VENDOR}/asio/include
+            ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
+        target_compile_definitions(custom_package PRIVATE
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC ASIO_STANDALONE)
+        if(WIN32)
+            target_compile_definitions(custom_package PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
+        endif()
+        target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
+        target_link_libraries(custom_package PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
+        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
+        target_link_libraries(ctr_native custom_package)
+        if(WIN32)
+            target_link_libraries(ctr_native winhttp ws2_32 crypt32)
+        endif()
+        target_link_options(ctr_native PRIVATE -static-libstdc++)
+    endif()
+    if(CTR_BOX_AUTHORING)
+        target_compile_definitions(ctr_native PRIVATE CTR_BOX_AUTHORING)
+    endif()
+    if(CTR_AI_LAP_RECORDER)
+        target_compile_definitions(ctr_native PRIVATE CTR_AI_LAP_RECORDER)
+    endif()
+    if(CTR_AUTHORING_CLIENT)
+        # Own exe name, so it can never replace a player's client by accident.
+        target_compile_definitions(ctr_native PRIVATE CTR_AUTHORING_CLIENT)
+        set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_authoring")
+    endif()
+endif()
+
 # Archipelago mod build: enable the AP code path and emit a distinct binary
 # so the clean and mod exes never clobber each other.
 if(CTR_AP)
     target_compile_definitions(ctr_native PRIVATE CTR_AP)
     if(CTR_AP_AUTHORING)
-        target_compile_definitions(ctr_native PRIVATE CTR_AP_AUTHORING)
+        target_compile_definitions(ctr_native PRIVATE CTR_AP_AUTHORING CTR_BOX_AUTHORING)
         # The separate box authoring download gets its own exe name, so it can
         # never replace a player's ctr_native_ap(.exe) by accident.
         set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap_authoring")
@@ -192,27 +306,13 @@ if(CTR_AP)
         target_compile_definitions(ap_net PRIVATE CTR_AP_AUTHORING)
     endif()
 
-    # Custom-track packages (library, Track Manager, Arcade custom pages, the
-    # offline package loader and Saphi install). Box authoring build only: the
+    # Custom-track packages in an AP build: box authoring download only
+    # (CTR_CUSTOM_PACKAGES follows CTR_AP_AUTHORING, see the options above). The
     # player client keeps the single-package Custom Content page it was tested
     # with, and none of these sources, utf8proc or their defines reach it.
-    # CTR_CUSTOM_PACKAGES is the one switch every guarded call site checks, and
-    # it exists only when CTR_AP_AUTHORING and CTR_CUSTOM_TRACKS are both on.
-    if(CTR_AP_AUTHORING AND CTR_CUSTOM_TRACKS)
+    if(CTR_CUSTOM_PACKAGES)
         include(${CMAKE_SOURCE_DIR}/cmake/CustomPackageDeps.cmake)
-        add_library(custom_package STATIC
-            platform/native_custom_package.cpp
-            platform/native_custom_package_files.cpp
-            platform/native_custom_package_job.cpp
-            platform/native_custom_package_owned.c
-            platform/native_custom_content_verify.c
-            platform/native_custom_offline.c
-            platform/native_custom_music.c
-            platform/native_custom_records.c
-            platform/native_custom_track_library.c
-            platform/native_custom_unicode.c
-            platform/native_saphi_catalogue.cpp
-            vendor/utf8proc/utf8proc.c)
+        add_library(custom_package STATIC ${CTR_CUSTOM_PACKAGE_SOURCES})
         set_target_properties(custom_package PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
             ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)

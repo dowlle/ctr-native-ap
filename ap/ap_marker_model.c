@@ -10,7 +10,7 @@
 // Corkos and Christopher Wilson, CC BY-NC 4.0. See tools/aplogo/README.md for
 // the attribution still owed in THIRD_PARTY_NOTICES.
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 #include <common.h>
 

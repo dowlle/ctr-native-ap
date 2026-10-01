@@ -23,15 +23,16 @@ void Platform_InputControllerRemoved(int instanceId);
 int Platform_InputCycleKeyboardController(void);
 int Platform_InputCycleGamepadController(void);
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
 // Raw keyboard probe (SDL_SCANCODE_*) for AP debug/QoL hotkeys. 1 if down, 0
-// otherwise. Mapping-independent; not part of the PSX pad bus. CTR_AP only.
+// otherwise. Mapping-independent; not part of the PSX pad bus. CTR_AP builds,
+// and the authoring client (Track Manager, Box Author Mode keys) without it.
 int Platform_InputRawKeyDown(int scancode);
 
 // Buttons held on physical gamepads only, active-high in the RAW_BTN_* layout.
 // Excludes the keyboard-mapped pad slot, so it stays usable while a NativeText
 // session is capturing keystrokes. Mapping-independent; not part of the PSX pad
-// bus. CTR_AP only.
+// bus. Same builds as above.
 int Platform_InputRawGamepadButtons(void);
 #endif
 

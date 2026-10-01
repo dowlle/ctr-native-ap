@@ -4,9 +4,10 @@
 // The Archipelago-logo marker model: a foreign multiworld item's stand-in on a
 // warp pad, replacing the white gem that carried no information (#124).
 //
-// Compiled ONLY when CTR_AP is defined, like the rest of ap/.
+// Compiled with CTR_AP, and without it in the authoring client
+// (CTR_BOX_AUTHORING, see ap/ap_authoring_host.h).
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 struct GameTracker;
 

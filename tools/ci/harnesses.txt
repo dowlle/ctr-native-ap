@@ -5,6 +5,7 @@ tools/test-138-camera-flyin.c
 tools/test-author-ready.c
 tools/test-author-custom.c
 tools/test-author-pad.c
+tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c

@@ -1,7 +1,7 @@
 #ifndef AP_BOX_MODEL_H
 #define AP_BOX_MODEL_H
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 
 #include <ctr_math.h> // Vec3, the spawn transform's output type
 
