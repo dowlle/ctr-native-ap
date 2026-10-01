@@ -26,7 +26,7 @@ bash ap/vendor/fetch-deps.sh
 # It is its own archive and never goes into the player client archive.
 # authoring-client = the authoring client without Archipelago (CTR_AP=OFF,
 # CTR_AUTHORING_CLIENT): packages, Saphi, Box Author Mode, AI lap recorder.
-for variant in ap vanilla authoring authoring-client; do
+for variant in vanilla authoring-client; do # authoring-client branch
   ap=OFF
   custom=OFF
   authoring=OFF

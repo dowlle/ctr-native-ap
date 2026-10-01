@@ -38,7 +38,14 @@ option(CTR_CUSTOM_TRACKS "Load a hash-verified custom track from disk" OFF)
 option(CTR_CUSTOM_PACKAGES "Custom-track package library, Track Manager and Saphi install" OFF)
 option(CTR_BOX_AUTHORING "Box Author Mode (in-game box placement editor)" OFF)
 option(CTR_AI_LAP_RECORDER "AI lap recorder without Archipelago" OFF)
-option(CTR_AUTHORING_CLIENT "Authoring client without Archipelago: all authoring features" OFF)
+option(CTR_AUTHORING_CLIENT "Authoring client without Archipelago: all authoring features" ON)
+# authoring-client branch (tools/authoring-branch/make-branch.py): the
+# Archipelago sources are not here, so the AP build cannot be configured.
+if(CTR_AP)
+    message(FATAL_ERROR "The authoring-client branch has no Archipelago code. "
+        "Build the authoring client (the default) or -DCTR_AUTHORING_CLIENT=OFF for vanilla.")
+endif()
+
 
 if(CTR_AUTHORING_CLIENT)
     if(CTR_AP)

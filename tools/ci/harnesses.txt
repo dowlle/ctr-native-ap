@@ -6,27 +6,27 @@ tools/test-author-ready.c
 tools/test-author-custom.c
 tools/test-author-pad.c
 tools/test-authoring-client-config.c
-tools/test-trial-letter-identity.cpp
-tools/test-blue-fire.c
-tools/test-boss-assist.c
+tools/test-trial-letter-identity.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-blue-fire.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-boss-assist.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-box-colour-config.c
-tools/test-box-colour-seedcfg.cpp
-tools/test-box-colour.c
-tools/test-box-edge.c
-tools/test-box-ghost-visual.py
-tools/test-box-map.c
-tools/test-box-offset.c
-tools/test-ceremony-banner.c
+tools/test-box-colour-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-box-colour.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-box-edge.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-box-ghost-visual.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-box-map.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-box-offset.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-ceremony-banner.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
-tools/test-character-phase-seedcfg.cpp
-tools/test-checkdiag-once.c
-tools/test-cup-box-policy.c
+tools/test-character-phase-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-checkdiag-once.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-cup-box-policy.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
 tools/test-custom-music.c
-tools/test-custom-pad-lifecycle.c
+tools/test-custom-pad-lifecycle.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-custom-records.c
 tools/test-custom-selector.c
 tools/test-custom-state-identity.c
@@ -36,123 +36,123 @@ tools/test-custom-track-manager.c
 tools/test-custom-track-policy.c
 tools/test-custom-track-library.c
 tools/test-custom-package-unicode.c
-tools/test-custom-tracks-seedcfg.cpp
-tools/test-custom-trophy-ceremony.c
-tools/test-deathlink-race-loss.c
-tools/test-democam.c
+tools/test-custom-tracks-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-custom-trophy-ceremony.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-deathlink-race-loss.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-democam.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-disc-resolution.c
 tools/test-disc-copy.c
 tools/test-disc-picker.c
-tools/test-discord-ipc.cpp
-tools/test-discord-presence.c
+tools/test-discord-ipc.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-discord-presence.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-fs-winpath.c
 tools/test-unchanged-startup.c
-tools/test-feed-class-cpp.cpp
-tools/test-feed-class.c
-tools/test-file-writer.cpp
-tools/test-firstkey-freeze.c
+tools/test-feed-class-cpp.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-feed-class.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-file-writer.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-firstkey-freeze.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-focus-mute.c
-tools/test-frame-watch.c
-tools/test-fxmarker.c
-tools/test-fxseen-room-key.c
-tools/test-gem-cup-seedcfg.cpp
-tools/test-glow-slots.c
-tools/test-goal-line.c
-tools/test-goal-presentation.c
+tools/test-frame-watch.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-fxmarker.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-fxseen-room-key.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-gem-cup-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-glow-slots.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-goal-line.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-goal-presentation.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-gpu-split-budget.c
 tools/test-gpu-vertex-budget.c
 tools/test-graphics-options.c
-tools/test-h-useful.c
-tools/test-hit-character-seedcfg.cpp
-tools/test-hit-bots-gather.c
-tools/test-hit-boss-identity.cpp
-tools/test-hit-chooser.c
-tools/test-hit-cup-snapshot.cpp
-tools/test-hit-encounter-production.cpp
-tools/test-hit-policy.c
-tools/test-hit-roster-fixture.cpp
-tools/test-held-checks.cpp
-tools/test-held-race-rearm.c
+tools/test-h-useful.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-character-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-bots-gather.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-boss-identity.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-chooser.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-cup-snapshot.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-encounter-production.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-policy.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-hit-roster-fixture.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-held-checks.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-held-race-rearm.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
-tools/test-item-aliases.c
-tools/test-itemsanity.c
+tools/test-item-aliases.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-itemsanity.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-launch-request.c
 tools/test-link-handoff.c
 tools/test-link-windows.c
-tools/test-lettersanity-remote-feed.c
-tools/test-lettersanity-seedcfg.cpp
-tools/test-lettersanity.c
+tools/test-lettersanity-remote-feed.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-lettersanity-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-lettersanity.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-menu-ux.c
 tools/test-native-clip-scratch.c
 tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
-tools/test-net-admission.cpp
+tools/test-net-admission.cpp skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-options-pages.c
-tools/test-oxide-cutscene.c
-tools/test-oxide-encounter.c
-tools/test-oxide-scene-seen.cpp
-tools/test-oxide-scene-seen-production.py
-tools/test-boss-door-scene.c
-tools/test-boss-door-scene-seen.cpp
-tools/test-boss-door-scene-production.py
-tools/test-oxide-optional-result.py
+tools/test-oxide-cutscene.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-encounter.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-scene-seen.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-scene-seen-production.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-boss-door-scene.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-boss-door-scene-seen.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-boss-door-scene-production.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-optional-result.py skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-trial-letter-visual.py
-tools/test-trial-podium-result.py
-tools/test-trial-pad-glow-production.py
-tools/test-oxide-garage-advert.c
-tools/test-oxide-weapon-schedule.c
-tools/test-oxide-final-venue-seedcfg.cpp
-tools/test-cortex-track.c
-tools/test-cortex-track-seedcfg.cpp
-tools/test-cv-tracker-letters.c
-tools/test-pad-glow-items.c
-tools/test-picker-infoline.c
-tools/test-podium-seedcfg.cpp
-tools/test-podium-skip.c
-tools/test-podium-trophy-presentation.c
-tools/test-race-attempt-lifecycle.c
-tools/test-received-backlog.cpp
-tools/test-relic-goal.c
-tools/test-relic-perfect.c
-tools/test-relic-perfect-seedcfg.cpp
+tools/test-trial-podium-result.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-trial-pad-glow-production.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-garage-advert.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-weapon-schedule.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-oxide-final-venue-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-cortex-track.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-cortex-track-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-cv-tracker-letters.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-pad-glow-items.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-picker-infoline.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-podium-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-podium-skip.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-podium-trophy-presentation.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-race-attempt-lifecycle.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-received-backlog.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-relic-goal.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-relic-perfect.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-relic-perfect-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-render-scale.c
-tools/test-reserves-meter.c
-tools/test-reward-text.c
-tools/test-tracker-assets.c
-tools/test-tracker-boss-node.c
-tools/test-tracker-markers.c
-tools/test-tracker-progress.c
-tools/test-tracker-tabs.c
-tools/test-retro-fueled.c
-tools/test-retry-budget.cpp
-tools/test-reward-policy.c
+tools/test-reserves-meter.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-reward-text.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tracker-assets.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tracker-boss-node.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tracker-markers.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tracker-progress.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tracker-tabs.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-retro-fueled.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-retry-budget.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-reward-policy.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-saphi-catalogue.cpp
 tools/test-spu-memory.c
-tools/test-stat-ladder.c
+tools/test-stat-ladder.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
-tools/test-text-buf.c
-tools/test-title-ring.c
-tools/test-tizi-helper.c
-tools/test-transition-diag.c
-tools/test-tunnel-charswap-production.py
-tools/test-door-history-production.py
-tools/test-trial-track-seedcfg.cpp
-tools/test-trial-letters.c
-tools/test-trial-pad-glow.c
-tools/test-trap-scheduler.c
-tools/test-turbo-grant.c
-tools/test-verify-020.c
-tools/test-verify-families.cpp
-tools/test-verify-parity-329.c
-tools/test-version-compare.c
+tools/test-text-buf.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-title-ring.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tizi-helper.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-transition-diag.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-tunnel-charswap-production.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-door-history-production.py skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-trial-track-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-trial-letters.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-trial-pad-glow.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-trap-scheduler.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-turbo-grant.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-verify-020.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-verify-families.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-verify-parity-329.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-version-compare.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-vsync.c
 tools/test-window-geometry.c
-tools/test-wumpa-dispatch.c
+tools/test-wumpa-dispatch.c skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
-tools/test-wumpa-residency.c
-tools/test-retail-asset-reader.c
-tools/test-wumpa-seedcfg.cpp
-tools/test-deathlink-send-seedcfg.cpp
+tools/test-wumpa-residency.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-retail-asset-reader.c skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-wumpa-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
+tools/test-deathlink-send-seedcfg.cpp skip needs Archipelago sources that are not on the authoring-client branch
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c
