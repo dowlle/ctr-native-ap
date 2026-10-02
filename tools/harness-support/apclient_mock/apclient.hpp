@@ -118,7 +118,13 @@ public:
 	void set_bounced_handler(std::function<void(const nlohmann::json &)> h) { bounced_ = std::move(h); }
 
 	// ── outbound (recorded) ──
-	void ConnectSlot(const std::string &, const std::string &, int, std::vector<std::string>)
+	// The real library's advertised client version (apclientpp APClient::Version).
+	struct Version
+	{
+		int ma, mi, build;
+	};
+	void ConnectSlot(const std::string &, const std::string &, int, std::vector<std::string>,
+	                 const Version & = Version{0, 6, 7})
 	{
 		calls.connect_slot++;
 		state_ = State::SLOT_CONNECTED;

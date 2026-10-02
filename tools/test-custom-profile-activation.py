@@ -78,6 +78,8 @@ int main(void) {
   ap_custom_content_status.state=CTR_CT_MANAGER_READY;
   snprintf(ap_custom_content_status.levPath,sizeof ap_custom_content_status.levPath,"profile%d.lev",i);
   snprintf(ap_custom_content_status.vrmPath,sizeof ap_custom_content_status.vrmPath,"profile%d.vrm",i);
+  snprintf(ap_custom_content_status.actualLevSha256,sizeof ap_custom_content_status.actualLevSha256,"%s",chosen->levSha256);
+  snprintf(ap_custom_content_status.actualVrmSha256,sizeof ap_custom_content_status.actualVrmSha256,"%s",chosen->vrmSha256);
   // Model a completed scan, then exercise the same selected handle that the
   // menu passes to its details/export actions. Actual file scans are covered
   // by test-custom-track-manager.c.
