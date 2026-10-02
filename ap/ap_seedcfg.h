@@ -893,6 +893,21 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
 // both resolve through it. IMPLEMENTED C-SIDE in ap_hooks.c.
 const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID);
 
+// Slide Coliseum (trial pad 16) stage-1 requirement. The retail gate is 10
+// Sapphire Relics (CTR_CFG_SLIDE_COLISEUM_RETAIL_SAPPHIRES), which native applies
+// as the type-0 fallback. A seed that emits a non-type-0 stage1 for pad 16 owns
+// the gate instead: randomized unlock modes always do, and since 2026-10-01 a
+// VANILLA-mode seed that created fewer than 10 Sapphire Relics emits
+// {type 4, count N, colour 0} (N = the Sapphires that exist) or the free
+// convention {type 1, count 0} when it created none (slot_data Contract,
+// 2026-10-01 entry). Returns that record, or NULL when the retail 10 applies
+// (no entry, type 0, or slot_data inactive), so an older seed keeps 10.
+// The pad's gate (AP_PadStage1Met, the LInB birth), the verifier sweep and the
+// retail "you must get 10 relics" hint all resolve through this one accessor.
+#define CTR_CFG_SLIDE_COLISEUM_PAD 16
+#define CTR_CFG_SLIDE_COLISEUM_RETAIL_SAPPHIRES 10
+const ctr_req *ctr_cfg_slide_coliseum_req(void);
+
 // Typed comparator for a resolved requirement (boss garages + warp-pad load
 // gate). Returns owned >= count for r->type using AP_GateCount* (colour-aware).
 // type 0 / unknown -> 1 (no requirement). IMPLEMENTED C-SIDE in ap_hooks.c.

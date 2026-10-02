@@ -711,6 +711,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			    // Slide Col
 			    (levelID == AH_WP_SLIDE_COLISEUM) &&
 
+#ifdef CTR_AP
+			    // AP: the retail hint says "10 relics". Only true while the
+			    // pad keeps its retail gate; a seed that emits its own
+			    // requirement (randomized, or a lowered vanilla gate) shows
+			    // the real count on the pad instead.
+			    (ctr_cfg_slide_coliseum_req() == 0) &&
+#endif
+
 			    // Dont have hint "you must have 10 relics"
 			    (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_MUST_GET_10_RELICS) == 0))
 			{
@@ -2932,17 +2940,19 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
 		{
 		}
-		// AP open two-stage: Slide Coliseum carries a per-seed randomized
-		// single-stage requirement (warp_pad_unlock[16], same dense array as the
-		// trophy pads). type 0 / inactive falls back to the vanilla 10-Sapphire gate.
-		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
-		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
+		// AP: Slide Coliseum carries an emitted single-stage requirement
+		// (warp_pad_unlock[16], same dense array as the trophy pads) in
+		// randomized modes, and in vanilla mode when the seed created fewer than
+		// 10 Sapphire Relics (2026-10-01: the pad opens at the Sapphires that
+		// exist). No entry / inactive falls back to the vanilla 10-Sapphire gate.
+		else if (ctr_cfg_slide_coliseum_req())
 		{
-			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
+			const ctr_req *slide = ctr_cfg_slide_coliseum_req();
+			AP_ReqToUnlock(slide,
 			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
-			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
+			reqRelicTint = AP_ReqRelicTintTier(slide);
+			reqGemColour = AP_ReqGemColour(slide);
+			reqTokenColour = AP_ReqTokenColour(slide);
 		}
 		else
 #endif
