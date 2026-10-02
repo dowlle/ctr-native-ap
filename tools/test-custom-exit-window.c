@@ -115,6 +115,7 @@ int RaceFlag_IsFullyOffScreen(void) { return 0; }
 void RaceFlag_BeginTransition(int direction) { (void)direction; }
 void RaceFlag_ResetTextAnim(void) {}
 void CustomTrack_CortexTrackOnRequestLoad(int levelID) { (void)levelID; }
+void CustomTrack_OnRaceLoadRequested(int levelID) { (void)levelID; }
 
 // What the engine sees at the instant the level is replaced: the level still
 // resident is the old one until this call.

@@ -684,8 +684,13 @@ int main(void)
 		expect_contains(baby->version, "1.0.0", "legacy getter stays 1.0.0");
 		memset(&ready, 0, sizeof ready);
 		ready.state = CTR_CT_MANAGER_READY;
+		snprintf(ready.levPath, sizeof ready.levPath, "%s", "track.lev");
+		snprintf(ready.vrmPath, sizeof ready.vrmPath, "%s", "track.vrm");
 		snprintf(ready.actualLevSha256, sizeof ready.actualLevSha256, "%s", cur->levSha256);
 		snprintf(ready.actualVrmSha256, sizeof ready.actualVrmSha256, "%s", cur->vrmSha256);
+		// A completed scan also records the package receipt (ScanPackage).
+		expect_int(Manager_PackageReceipt(cur, &ready, ready.verifiedPackageSha256), 1,
+		           "1.0.2 scan receipt recorded");
 		expect_int(CustomTrackManager_RenderYaml(cur, &ready, yaml, sizeof yaml), 1,
 		           "Ready 1.0.2 scan exports under the 1.0.2 handle");
 		expect_contains(yaml, "package_version: 1.0.2", "1.0.2 export names 1.0.2");
@@ -694,6 +699,8 @@ int main(void)
 		           "Ready 1.0.2 scan cannot be exported as 1.0.0");
 		snprintf(ready.actualLevSha256, sizeof ready.actualLevSha256, "%s", baby->levSha256);
 		snprintf(ready.actualVrmSha256, sizeof ready.actualVrmSha256, "%s", baby->vrmSha256);
+		expect_int(Manager_PackageReceipt(baby, &ready, ready.verifiedPackageSha256), 1,
+		           "1.0.0 scan receipt recorded");
 		expect_int(CustomTrackManager_RenderYaml(baby, &ready, yaml, sizeof yaml), 1,
 		           "Ready 1.0.0 scan still exports as 1.0.0");
 		expect_int(CustomTrackManager_RenderYaml(cur, &ready, yaml, sizeof yaml), 0,

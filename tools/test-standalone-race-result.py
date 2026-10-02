@@ -50,6 +50,7 @@ const ctr_content_pad *ap_content_plan_pad(int physical) {
  return planActive && pad.physical==physical ? &pad : NULL;
 }
 int ctr_cfg_active(void) { return active; }
+void AP_PerfNoteCheckSent(void) {}
 int AP_RaceAttempt_ProducerBlocked(int kind) { assert(kind==1); return blocked; }
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
