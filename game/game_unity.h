@@ -393,6 +393,7 @@
 #include "../ap/ap_surface.c"
 #include "../ap/ap_wumpa.c"
 #include "../ap/ap_deathlink.c"
+#include "../ap/ap_win_logic.c" // #449 race-loss DeathLink stakes (after ap_hooks.c: reads its statics)
 #include "../ap/ap_marker_model.c"
 #include "../ap/ap_box_model.c"
 #include "../ap/ap_box_texture.c"

@@ -148,6 +148,9 @@ tools/test-verify-families.cpp
 tools/test-verify-parity-329.c
 tools/test-version-compare.c
 tools/test-vsync.c
+tools/test-win-logic-roundtrip.cpp
+tools/test-win-logic-seedcfg.cpp
+tools/test-win-logic-stakes.cpp
 tools/test-window-geometry.c
 tools/test-wumpa-dispatch.c
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment

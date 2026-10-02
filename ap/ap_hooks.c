@@ -8,6 +8,7 @@
 #include <stdlib.h> // realloc: the #299 held-effect list
 #include "ap_hooks.h"
 #include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
+#include "ap_win_logic.h" // #449 received-items-by-id tally for the race stakes
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the seed-driven custom-track descriptor
 #include <platform/native_assets.h>
@@ -4372,6 +4373,7 @@ static int ap_cup_return_hub = -1;
 void AP_CupEnterFromHub(int hubLevelID)
 {
 	ap_cup_return_hub = hubLevelID;
+	AP_WinStakesOnCupEnter(); // #449: the cup's first leg fixes its stakes
 }
 
 int AP_CupReturnHub(void)
@@ -5618,6 +5620,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 		for (k = 0; k < AP_VERIFY_ITEM_INDEX_COUNT; k++)
 			ap_verify_recv_foreign[k] = 0;
+		AP_WinLogicTallyReset(); // #449: rebuilt from the resent ReceivedItems list
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		memset(ap_custom_letter_received, 0, sizeof ap_custom_letter_received);
 		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
@@ -5764,6 +5767,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// self-suppresses off-hub / unprimed.
 		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
 		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
+
+		// #449: received count by raw AP item id (progression-flagged copies
+		// only) for the race-loss stakes evaluator (ap_win_logic.h). Read
+		// nowhere else; the gate counters below are unchanged.
+		AP_WinLogicTallyItem(items[i], ap_net_recv_batch_flags(i));
 
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;

@@ -9,6 +9,7 @@
 #include "ap_hooks.h"   // AP_LogLine
 #include "ap_net.h"     // ap_net_deathlink_enable / _send / _take, ap_net_is_connected
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
+#include "ap_win_logic.h" // #449 race-loss stakes: decided at race start, consulted before a loss send
 
 #include "platform/native_config.h" // g_config.deathLink (the OPTIONS menu row)
 
@@ -146,18 +147,22 @@ int AP_RaceAttempt_ProducerBlocked(int producerClass)
 void AP_RaceAttempt_OnLevelStart(struct GameTracker *gGT)
 {
 	int cleared;
+	int racing, idle;
 
 	if (gGT == 0)
 		return;
 
+	racing = LOAD_IsOpen_RacingOrBattle() != 0;
+	idle = (sdata != 0 && sdata->Loading.stage == LOAD_IDLE);
 	cleared = AP_RaceAttempt_LevelStartStep(
-	    &g_dl_race_attempt,
-	    LOAD_IsOpen_RacingOrBattle() != 0,
-	    (sdata != 0 && sdata->Loading.stage == LOAD_IDLE),
+	    &g_dl_race_attempt, racing, idle,
 	    (gGT->gameMode1 & (ADVENTURE_ARENA | BATTLE_MODE)) != 0);
 
 	if (cleared)
 		AP_LogLine("[AP DEATH] new race attempt -> forced-loss latch cleared\n");
+
+	// #449: the race_loss stakes are fixed when the race starts (ticket 04).
+	AP_WinStakesOnLevelStart(gGT, racing && idle);
 }
 
 // Declare/withdraw the DeathLink tag whenever the effective state and the
@@ -741,6 +746,14 @@ static void AP_DeathLinkSendLoss(struct GameTracker *gGT, int event, int lost, i
 	    AP_RaceAttemptIsForcedLoss(), event, lost, inLiveRace);
 
 	if (cause == AP_DL_CAUSE_NONE)
+		return;
+	// #449: a loss sends only when the race has stakes (a win check that is
+	// open and in logic). Without a valid win_logic block every loss still
+	// sends, the 0.2.3 rule. A Gem Cup uses the decision made on its first leg.
+	if (!AP_WinStakesAllowLossSend(
+	        gGT, event == AP_DL_EV_CUP_END ||
+	                 (gGT != 0 && (gGT->gameMode1 & ADVENTURE_CUP) != 0),
+	        AP_DeathLinkLossCause(cause)))
 		return;
 	AP_DeathLinkFireLocal(gGT, AP_DeathLinkLossCause(cause));
 }
