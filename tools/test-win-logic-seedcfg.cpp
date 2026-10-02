@@ -71,7 +71,8 @@ static const char *kExample = R"JSON({
     "35012102": {"kind": "gold", "region": 0, "rule": ["all", ["ref", 35011002], ["cap", 1, -1]]},
     "35012302": {"kind": "ctr", "region": 0, "rule": ["all", ["ref", 35011002], ["tokens_no_purple", 4], ["cap", 1, -1]]},
     "35011012": {"kind": "trophy", "region": 2, "rule": ["any", ["cap", 1, 0], ["families", 3]]}
-  }
+  },
+  "start": {"35010014": 2, "35010123": 1}
 })JSON";
 
 static nlohmann::json example(void)
@@ -147,9 +148,53 @@ int main(void)
 		const AP_WinLogicNode &cap = wl.nodes[wl.kids[all.a + 1]];
 		expect(cap.tag == AP_WL_T_CAP && cap.a == 1 && cap.b == -1, "cap 1, -1");
 		expect_int(AP_WinLogicFindCheck(&wl, 35011003L), -1, "absent location has no entry");
+		expect_int(wl.start_count, 2, "2 start ids");
+		expect_int(AP_WinLogicStartCount(&wl, 35010014L), 2, "start: 2 Keys");
+		expect_int(AP_WinLogicStartCount(&wl, 35010123L), 1, "start: 1 Crash unlock");
+		expect_int(AP_WinLogicStartCount(&wl, 35010000L), 0, "start: no Trophy");
 	}
 	expect(g_last_log.find("[AP CFG] win_logic v1: 5 win check(s)") != std::string::npos,
 	       "valid block logs its summary");
+	expect(g_last_log.find("2 start item id(s)") != std::string::npos, "summary names start ids");
+
+	// ── start (review B1): precollected progression counts by item id ──
+	{
+		nlohmann::json b = example();
+		b["start"] = nlohmann::json::object();
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_VALID, "empty start -> VALID");
+		expect_int(ctr_win_logic.start_count, 0, "empty start has no ids");
+		b = example();
+		b.erase("start");
+		expect_invalid(b, "missing start", "start is missing");
+		b = example();
+		b["start"] = nlohmann::json::array({35010014});
+		expect_invalid(b, "start is an array", "start is missing or not an object");
+		const char *badKeys[] = {"035010014", "+35010014", "-2", "0", "3501001x", "", "99999999999"};
+		for (const char *k : badKeys)
+		{
+			b = example();
+			b["start"][k] = 1;
+			expect_invalid(b, (std::string("bad start key \"") + k + "\"").c_str(),
+			               "canonical item id");
+		}
+		b = example();
+		b["start"]["35010014"] = 0;
+		expect_invalid(b, "start count 0", "count is not a positive integer");
+		b = example();
+		b["start"]["35010014"] = -1;
+		expect_invalid(b, "start count -1", "count is not a positive integer");
+		b = example();
+		b["start"]["35010014"] = "2";
+		expect_invalid(b, "start count as string", "count is not a positive integer");
+		b = example();
+		b["start"]["35010014"] = 1.5;
+		expect_invalid(b, "start count float", "count is not a positive integer");
+		b = example();
+		for (int i = 0; i <= AP_WL_MAX_START; i++)
+			b["start"][std::to_string(36000000 + i)] = 1;
+		expect_invalid(b, "too many start ids", "too many start items");
+	}
 
 	// ── every leaf kind parses ──
 	{
@@ -276,6 +321,16 @@ int main(void)
 	expect_invalid(with_rule(nlohmann::json::array({"req", 2, -1, -1})), "req negative count", "req count");
 	expect_invalid(with_rule(nlohmann::json::array({"req", 2, 1, 5})), "req colour 5", "req colour");
 	expect_invalid(with_rule(nlohmann::json::array({"req", 2, true, -1})), "req bool count", "req count");
+	// Review minor 5: types 3 and 5 name one colour; type 4 one tier or legacy -1.
+	expect_invalid(with_rule(nlohmann::json::array({"req", 3, 1, -1})), "req 3 colour -1", "colour -1");
+	expect_invalid(with_rule(nlohmann::json::array({"req", 5, 1, -1})), "req 5 colour -1", "colour -1");
+	expect_invalid(with_rule(nlohmann::json::array({"req", 4, 1, 3})), "req 4 colour 3", "tier");
+	expect_invalid(with_rule(nlohmann::json::array({"req", 4, 1, 4})), "req 4 colour 4", "tier");
+	parse_block(with_rule(nlohmann::json::array({"all", nlohmann::json::array({"req", 3, 1, 4}),
+	                                             nlohmann::json::array({"req", 5, 1, 0}),
+	                                             nlohmann::json::array({"req", 4, 1, -1}),
+	                                             nlohmann::json::array({"req", 4, 1, 2})})));
+	expect_int(ctr_win_logic.state, AP_WL_VALID, "req 3/5 colours 0..4 and type 4 tiers -1..2 -> VALID");
 	expect_invalid(with_rule(nlohmann::json::array({"tokens_no_purple"})), "tokens arity", "wrong arity");
 	expect_invalid(with_rule(nlohmann::json::array({"tokens_no_purple", -2})), "tokens negative", "count");
 	expect_invalid(with_rule(nlohmann::json::array({"bosses", 1, 2})), "bosses arity", "wrong arity");
@@ -339,7 +394,10 @@ int main(void)
 		nlohmann::json b = example();
 		nlohmann::json big = nlohmann::json::array({"any"});
 		for (int i = 0; i < 2500; i++)
-			big.push_back(nlohmann::json::array({"req", 1 + i % 8, i, -1}));
+		{
+			int type = 1 + i % 8;
+			big.push_back(nlohmann::json::array({"req", type, i, (type == 3 || type == 5) ? i % 5 : -1}));
+		}
 		b["checks"]["35011002"]["rule"] = big;
 		size_t bytes = b.dump().size();
 		parse_block(b);

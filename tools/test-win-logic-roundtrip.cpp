@@ -7,12 +7,16 @@
 //
 // Fixture: tools/fixtures/win-logic/roundtrip-2026-10-02.json, produced by the
 // apworld's own parity setup (see its "provenance" key). Each seed carries the
-// whole slot_data exactly as the apworld's fill_slot_data emitted it,
-// and several item states with native's inputs (received counts by AP item id,
-// progression-flagged copies only; boss races won) next to Archipelago's
-// location.can_reach for every win check. Each block goes through the REAL
-// parser (ap_seedcfg_parse_json) and every row through AP_WinLogicInLogic; the
-// two must agree on every row. The win sets native resolves for each race are
+// whole slot_data exactly as the apworld's fill_slot_data emitted it, the start
+// inventory exactly as the server sends it (`start_entries`: item ids at
+// location -2 with flags 0), and several item states with native's inputs
+// (the tally: progression-flagged copies off location -2; boss races won) next
+// to Archipelago's location.can_reach for every win check. Each block goes
+// through the REAL parser (ap_seedcfg_parse_json); every state is fed through
+// the REAL tally (AP_ItemIdTallyReceive), start entries included, and every row
+// through AP_WinLogicInLogic, which adds the block's `start` table. The two
+// must agree on every row. Seeds with a start inventory (YAML, the
+// start_inventory_from_pool mechanism, the tight-fill backstop) are included. The win sets native resolves for each race are
 // also checked to have an entry in every block where the location exists.
 
 #include <cstdio>
@@ -32,16 +36,11 @@ static const char *kFixture = "tools/fixtures/win-logic/roundtrip-2026-10-02.jso
 
 struct State
 {
-	std::map<long, int> received;
+	AP_ItemIdTally tally;
 	int bosses = 0;
 };
 
-static int s_items(void *u, long id)
-{
-	const State *s = (const State *)u;
-	auto it = s->received.find(id);
-	return it == s->received.end() ? 0 : it->second;
-}
+static int s_items(void *u, long id) { return AP_ItemIdTallyCount(&((State *)u)->tally, id); }
 static int s_bosses(void *u) { return ((const State *)u)->bosses; }
 static int s_collected(void *, long) { return 0; }
 
@@ -57,7 +56,8 @@ int main(void)
 	buf << in.rdbuf();
 	nlohmann::json fx = nlohmann::json::parse(buf.str());
 
-	int seeds = 0, rows = 0, agree = 0, failures = 0, trueRows = 0;
+	int seeds = 0, rows = 0, agree = 0, failures = 0, trueRows = 0, startSeeds = 0;
+	static State s; // the tally is large: keep it off the stack
 	for (const auto &seed : fx["seeds"])
 	{
 		const std::string label = seed["label"].get<std::string>();
@@ -79,11 +79,27 @@ int main(void)
 			failures++;
 		}
 		const nlohmann::json &opt = sd["ctr_options"];
+		if (ctr_win_logic.start_count > 0)
+			startSeeds++;
+		if (ctr_win_logic.start_count != (int)sd["win_logic"]["start"].size())
+		{
+			std::printf("FAIL %s: %d start ids parsed, block has %zu\n", label.c_str(),
+			            ctr_win_logic.start_count, sd["win_logic"]["start"].size());
+			failures++;
+		}
 		for (const auto &st : seed["states"])
 		{
-			State s;
+			AP_ItemIdTallyReset(&s.tally);
+			// The server's start inventory: location -2, flags 0. Fed twice more
+			// with the progression flag to prove location -2 never counts.
+			for (const auto &id : seed["start_entries"])
+			{
+				AP_ItemIdTallyReceive(&s.tally, id.get<long long>(), AP_WL_LOCATION_START, 0u);
+				AP_ItemIdTallyReceive(&s.tally, id.get<long long>(), AP_WL_LOCATION_START, 1u);
+			}
 			for (auto it = st["received"].begin(); it != st["received"].end(); ++it)
-				s.received[std::stol(it.key())] = it.value().get<int>();
+				for (int k = 0; k < it.value().get<int>(); k++)
+					AP_ItemIdTallyReceive(&s.tally, std::stoll(it.key()), 1, 1u);
 			s.bosses = st["bosses"].get<int>();
 			AP_WinLogicEnv env;
 			env.user = &s;
@@ -122,8 +138,9 @@ int main(void)
 		}
 	}
 
-	std::printf("%d seed(s), %d row(s) (%d in logic), %d agree\n", seeds, rows, trueRows, agree);
-	if (seeds < 10 || rows < 5000 || trueRows == 0 || trueRows == rows)
+	std::printf("%d seed(s) (%d with a start table), %d row(s) (%d in logic), %d agree\n", seeds,
+	            startSeeds, rows, trueRows, agree);
+	if (seeds < 10 || rows < 5000 || trueRows == 0 || trueRows == rows || startSeeds < 8)
 	{
 		std::printf("FAIL fixture too small or one-sided to prove anything\n");
 		failures++;

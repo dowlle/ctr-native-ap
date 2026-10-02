@@ -31,12 +31,19 @@ static AP_WinStakesLatch g_wl_latch;
 
 void AP_WinLogicTallyReset(void)
 {
+	char seed[96], slot[96];
 	AP_ItemIdTallyReset(&g_wl_tally);
+	// Review minor 1: a decision made under another seed or slot never applies
+	// to a loss after this connect. A same-seed, same-slot reconnect keeps it.
+	(void)ap_net_seed_name(seed, (int)sizeof seed);
+	(void)ap_net_slot_name(slot, (int)sizeof slot);
+	if (AP_WinStakesConnect(&g_wl_latch, seed, slot))
+		AP_LogLine("[AP DEATH] race stakes forgotten: connected to another seed or slot\n");
 }
 
-void AP_WinLogicTallyItem(long long itemId, unsigned flags)
+void AP_WinLogicTallyItem(long long itemId, long long location, unsigned flags)
 {
-	AP_ItemIdTallyReceive(&g_wl_tally, itemId, flags);
+	AP_ItemIdTallyReceive(&g_wl_tally, itemId, location, flags);
 }
 
 // ── Leaf inputs ──

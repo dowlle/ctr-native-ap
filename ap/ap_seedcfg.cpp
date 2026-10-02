@@ -1099,6 +1099,12 @@ struct WlParser
 				return fail("req count is not a non-negative integer"), -1;
 			if (!exact_int(t[3], -1, 4, &z))
 				return fail("req colour is not an integer -1..4"), -1;
+			// SCHEMA.md: types 3 and 5 name one colour 0..4; type 4 one tier
+			// 0..2 or the legacy -1 (Sapphire). Anything else is ambiguous.
+			if ((x == 3 || x == 5) && z < 0)
+				return fail("req type " + std::to_string(x) + " has colour -1"), -1;
+			if (x == 4 && z > 2)
+				return fail("req type 4 tier is not -1..2"), -1;
 			return new_node(AP_WL_T_REQ, (long)x, (long)y, (long)z);
 		}
 		if (tag == "tokens_no_purple" || tag == "bosses" || tag == "families")
@@ -1272,6 +1278,25 @@ struct WlParser
 			e.rule = root;
 		}
 
+		// start: precollected copies Archipelago's logic counts, by item id.
+		auto st = b.find("start");
+		if (st == b.end() || !st->is_object())
+			return fail("start is missing or not an object");
+		if (st->size() > AP_WL_MAX_START)
+			return fail("too many start items for this client");
+		for (auto it = st->begin(); it != st->end(); ++it)
+		{
+			long id;
+			long long n;
+			if (!canonical_key(it.key(), &id))
+				return fail("start key \"" + it.key() + "\" is not a canonical item id");
+			if (!exact_int(it.value(), 1, 0x7fffffffLL, &n))
+				return fail("start " + it.key() + " count is not a positive integer");
+			wl->start_id[wl->start_count] = id;
+			wl->start_n[wl->start_count] = (int)n;
+			wl->start_count++;
+		}
+
 		// Sort by code (keys are unique: nlohmann objects cannot repeat a key,
 		// and canonical keys map one-to-one onto codes).
 		std::sort(wl->checks, wl->checks + wl->check_count,
@@ -1357,9 +1382,10 @@ static void ap_seedcfg_parse_win_logic(const nlohmann::json &j)
 	}
 	wl->version = AP_WL_VERSION_KNOWN;
 	wl->state = AP_WL_VALID;
-	ap_cfg_log("[AP CFG] win_logic v%d: %d win check(s), %d region(s), %d famil%s, %d term(s)\n",
+	ap_cfg_log("[AP CFG] win_logic v%d: %d win check(s), %d region(s), %d famil%s, %d term(s), "
+	           "%d start item id(s)\n",
 	           wl->version, wl->check_count, wl->region_count, wl->family_count,
-	           wl->family_count == 1 ? "y" : "ies", wl->node_count);
+	           wl->family_count == 1 ? "y" : "ies", wl->node_count, wl->start_count);
 }
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)

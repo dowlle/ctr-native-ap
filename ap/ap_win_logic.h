@@ -36,6 +36,7 @@ extern "C" {
 #define AP_WL_MAX_CHECKS   1024
 #define AP_WL_MAX_REGIONS  1024
 #define AP_WL_MAX_FAMILIES 256
+#define AP_WL_MAX_START    512 // distinct precollected progression ids
 // Recursion guard for one term while parsing. The apworld promises at most 16
 // levels including ref expansion; this guard is looser on purpose so a shape
 // the apworld counts differently is not refused, while still bounding the stack.
@@ -104,6 +105,7 @@ typedef struct
 	int family_count;
 	int region_count;
 	int check_count;
+	int start_count;
 	AP_WinLogicNode nodes[AP_WL_MAX_NODES];
 	int kids[AP_WL_MAX_KIDS];
 	long ids[AP_WL_MAX_IDS];
@@ -111,6 +113,11 @@ typedef struct
 	int family_len[AP_WL_MAX_FAMILIES];
 	int region_root[AP_WL_MAX_REGIONS];   // node index
 	AP_WinLogicCheck checks[AP_WL_MAX_CHECKS]; // sorted by code once VALID
+	// The block's `start` table: precollected copies Archipelago's logic counts,
+	// by AP item id (start inventory, start_inventory_from_pool, the apworld's
+	// tight-fill backstop). Added to the received tally in every leaf.
+	long start_id[AP_WL_MAX_START];
+	int start_n[AP_WL_MAX_START];
 	char problem[AP_WL_PROBLEM_CAP];      // first problem, for the one log line
 } AP_WinLogic;
 
@@ -155,14 +162,18 @@ static inline int AP_WinLogicFindCheck(const AP_WinLogic *wl, long code)
 }
 
 // ── Received-items-by-id tally ──────────────────────────────────────────────
-// "Received count of id X" in the spec (SCHEMA.md, schema change 2026-10-02
-// 20:46): ReceivedItems entries for this slot, any sender, start inventory
-// included, whose NetworkItem.flags has bit 0 (progression) set. A copy
-// generated as useful or filler never enters Archipelago's or Universal
-// Tracker's logic state, so it never counts here either, although the native
-// gate counters (AP_GateCount*) count every copy. Hence a separate count keyed by
-// raw AP item id. Open addressing; an empty slot has count 0. Rebuilt from the
-// full resent list on every fresh connect, exactly like the gate counters.
+// "Received count of id X" in the spec (SCHEMA.md, schema changes 2026-10-02
+// 20:46 and 21:41): the block's `start` count for X plus the ReceivedItems
+// entries for this slot, any sender, whose NetworkItem.flags has bit 0
+// (progression) set and whose location is not -2. A copy generated as useful or
+// filler never enters Archipelago's or Universal Tracker's logic state, so it
+// never counts here either, although the native gate counters (AP_GateCount*)
+// count every copy. The server sends start inventory as NetworkItem(id, -2, 0),
+// flags 0 whatever logic counts, so those entries are skipped here and the
+// block's `start` table supplies them instead (never both). Hence a separate
+// count keyed by raw AP item id. Open addressing; an empty slot has count 0.
+// Rebuilt from the full resent list on every fresh connect, exactly like the
+// gate counters.
 #define AP_WL_TALLY_CAP 2048 // power of two; a CTR slot has well under 1000 distinct ids
 
 typedef struct
@@ -219,10 +230,16 @@ static inline void AP_ItemIdTallyAdd(AP_ItemIdTally *t, long long id)
 	t->overflow = 1;
 }
 
-// One ReceivedItems entry: counted only when its flags carry the progression bit.
+// One ReceivedItems entry: counted only when its flags carry the progression bit
+// and it is not a start-inventory entry (location -2, counted through the
+// block's `start` table instead).
 #define AP_WL_FLAG_PROGRESSION 1u
-static inline void AP_ItemIdTallyReceive(AP_ItemIdTally *t, long long id, unsigned flags)
+#define AP_WL_LOCATION_START   (-2LL)
+static inline void AP_ItemIdTallyReceive(AP_ItemIdTally *t, long long id, long long location,
+                                         unsigned flags)
 {
+	if (location == AP_WL_LOCATION_START)
+		return;
 	if (flags & AP_WL_FLAG_PROGRESSION)
 		AP_ItemIdTallyAdd(t, id);
 }
@@ -247,7 +264,8 @@ static inline int AP_ItemIdTallyCount(const AP_ItemIdTally *t, long long id)
 typedef struct
 {
 	void *user;
-	// Received count of one AP item id (progression-flagged copies only).
+	// Received count of one AP item id: progression-flagged copies, start
+	// inventory (location -2) excluded. The evaluator adds the block's `start`.
 	int (*item_count)(void *user, long id);
 	// AP_ComposedBossesWon: boss races this player has personally won.
 	int (*bosses_won)(void *user);
@@ -264,6 +282,22 @@ typedef struct
 
 #define AP_WL_PROGRESSIVE_BOOST_ID 35010027L
 
+// The block's `start` count of one AP item id (0 when absent).
+static inline int AP_WinLogicStartCount(const AP_WinLogic *wl, long id)
+{
+	int i;
+	for (i = 0; i < wl->start_count; i++)
+		if (wl->start_id[i] == id)
+			return wl->start_n[i];
+	return 0;
+}
+
+// "Received count of id X" (SCHEMA.md): every leaf counts through this.
+static inline long AP_WinLogicCount(const AP_WinLogic *wl, const AP_WinLogicEnv *env, long id)
+{
+	return (long)env->item_count(env->user, id) + (long)AP_WinLogicStartCount(wl, id);
+}
+
 // Engine id -> character unlock item and per-character Progressive Boost item
 // (SCHEMA.md "The cap leaf" table).
 static const long AP_WL_UNLOCK_ITEM[16] = {
@@ -273,21 +307,22 @@ static const long AP_WL_BOOST_ITEM[16] = {
 	35010031L, 35010047L, 35010075L, 35010035L, 35010079L, 35010071L, 35010039L, 35010043L,
 	35010067L, 35010059L, 35010055L, 35010063L, 35010051L, 35010091L, 35010083L, 35010087L};
 
-static inline int AP_WinLogicDriveable(const AP_WinLogicEnv *env, int c)
+static inline int AP_WinLogicDriveable(const AP_WinLogic *wl, const AP_WinLogicEnv *env, int c)
 {
 	return c == env->starting_character || !env->character_unlocks ||
-	       env->item_count(env->user, AP_WL_UNLOCK_ITEM[c]) >= 1;
+	       AP_WinLogicCount(wl, env, AP_WL_UNLOCK_ITEM[c]) >= 1;
 }
 
-static inline int AP_WinLogicBoostOk(const AP_WinLogicEnv *env, int boost, int c)
+static inline int AP_WinLogicBoostOk(const AP_WinLogic *wl, const AP_WinLogicEnv *env, int boost,
+                                     int c)
 {
-	int have;
+	long have;
 	if (boost == 0 || env->boost_mode == 0)
 		return 1;
 	if (env->boost_mode == 1)
-		have = env->item_count(env->user, AP_WL_PROGRESSIVE_BOOST_ID);
+		have = AP_WinLogicCount(wl, env, AP_WL_PROGRESSIVE_BOOST_ID);
 	else
-		have = env->item_count(env->user, AP_WL_BOOST_ITEM[c]);
+		have = AP_WinLogicCount(wl, env, AP_WL_BOOST_ITEM[c]);
 	return have >= boost;
 }
 
@@ -295,50 +330,53 @@ static inline int AP_WinLogicBoostOk(const AP_WinLogicEnv *env, int boost, int c
 // AP_CharacterUnlocked / AP_CapabilityBoostTierForCharacter: the first answers
 // "the racer being driven" and pre-character-phase defaults, the second clamps
 // to the chain ceiling, and neither is the definition the apworld exports.
-static inline int AP_WinLogicCap(const AP_WinLogicEnv *env, int boost, int racer)
+static inline int AP_WinLogicCap(const AP_WinLogic *wl, const AP_WinLogicEnv *env, int boost,
+                                 int racer)
 {
 	int c;
 	if (racer >= 0)
-		return racer < 16 && AP_WinLogicDriveable(env, racer) &&
-		       AP_WinLogicBoostOk(env, boost, racer);
+		return racer < 16 && AP_WinLogicDriveable(wl, env, racer) &&
+		       AP_WinLogicBoostOk(wl, env, boost, racer);
 	if (boost == 0 || env->boost_mode == 0)
 		return 1;
 	for (c = 0; c < 16; c++)
-		if (AP_WinLogicDriveable(env, c) && AP_WinLogicBoostOk(env, boost, c))
+		if (AP_WinLogicDriveable(wl, env, c) && AP_WinLogicBoostOk(wl, env, boost, c))
 			return 1;
 	return 0;
 }
 
 // The req leaf: the Contract section 2 Req meaning (the same type and colour
-// table as AP_ReqMetCounts), counted from the progression-only received counts
-// by item id rather than the gate counters. Ids: Trophy 35010000, Relics
-// 35010001..3 (Sapphire, Gold, Platinum), CTR Tokens 35010004..8 (Red, Green,
-// Blue, Yellow, Purple), Gems 35010009..13 (same order), Key 35010014.
-static inline int AP_WinLogicReq(const AP_WinLogicEnv *env, int type, int count, int colour)
+// table as AP_ReqMetCounts), counted from the received counts by item id
+// rather than the gate counters. Ids: Trophy 35010000, Relics 35010001..3
+// (Sapphire, Gold, Platinum), CTR Tokens 35010004..8 (Red, Green, Blue, Yellow,
+// Purple), Gems 35010009..13 (same order), Key 35010014. Colour (SCHEMA.md,
+// schema change minor 5): types 3 and 5 take 0..4 only, type 4 takes 0..2 or
+// the legacy -1 = Sapphire; the parser refuses any other colour for these
+// types, so the fallbacks below are unreachable on a VALID block (fail closed).
+static inline int AP_WinLogicReq(const AP_WinLogic *wl, const AP_WinLogicEnv *env, int type,
+                                 int count, int colour)
 {
 	long i, sum = 0;
-#define AP_WL_N(id) ((long)env->item_count(env->user, (id)))
+#define AP_WL_N(id) AP_WinLogicCount(wl, env, (id))
 	switch (type)
 	{
 	case 1: // Trophies
 		return AP_WL_N(35010000L) >= count;
 	case 2: // Keys
 		return AP_WL_N(35010014L) >= count;
-	case 3: // one token colour; legacy -1 sums like type 6
-		if (colour >= 0 && colour <= 4)
-			return AP_WL_N(35010004L + colour) >= count;
-		/* fall through */
+	case 3: // one token colour
+		return colour >= 0 && colour <= 4 && AP_WL_N(35010004L + colour) >= count;
 	case 6: // any CTR Token, Purple included
 		for (i = 0; i < 5; i++)
 			sum += AP_WL_N(35010004L + i);
 		return sum >= count;
 	case 4: // one relic tier: 0 Sapphire, 1 Gold, 2 Platinum; legacy -1 = Sapphire
-		i = (colour >= 0 && colour <= 2) ? colour : 0;
+		if (colour < -1 || colour > 2)
+			return 0;
+		i = colour < 0 ? 0 : colour;
 		return AP_WL_N(35010001L + i) >= count;
-	case 5: // one gem colour; legacy -1 sums like type 8
-		if (colour >= 0 && colour <= 4)
-			return AP_WL_N(35010009L + colour) >= count;
-		/* fall through */
+	case 5: // one gem colour
+		return colour >= 0 && colour <= 4 && AP_WL_N(35010009L + colour) >= count;
 	case 8: // any Gem, Purple included
 		for (i = 0; i < 5; i++)
 			sum += AP_WL_N(35010009L + i);
@@ -379,25 +417,25 @@ static inline int AP_WinLogicEval(const AP_WinLogic *wl, const AP_WinLogicEnv *e
 				return 1;
 		return 0;
 	case AP_WL_T_REQ:
-		return AP_WinLogicReq(env, (int)n->a, (int)n->b, (int)n->c);
+		return AP_WinLogicReq(wl, env, (int)n->a, (int)n->b, (int)n->c);
 	case AP_WL_T_TOKENS_NO_PURPLE:
 		sum = 0;
 		for (i = 35010004L; i <= 35010007L; i++)
-			sum += env->item_count(env->user, i);
+			sum += AP_WinLogicCount(wl, env, i);
 		return sum >= n->a;
 	case AP_WL_T_ITEMS_SUM:
 		sum = 0;
 		for (i = 0; i < n->c; i++)
-			sum += env->item_count(env->user, wl->ids[n->b + i]);
+			sum += AP_WinLogicCount(wl, env, wl->ids[n->b + i]);
 		return sum >= n->a;
 	case AP_WL_T_ITEMS_DISTINCT:
 		sum = 0;
 		for (i = 0; i < n->c; i++)
-			if (env->item_count(env->user, wl->ids[n->b + i]) >= 1)
+			if (AP_WinLogicCount(wl, env, wl->ids[n->b + i]) >= 1)
 				sum++;
 		return sum >= n->a;
 	case AP_WL_T_CAP:
-		return AP_WinLogicCap(env, (int)n->a, (int)n->b);
+		return AP_WinLogicCap(wl, env, (int)n->a, (int)n->b);
 	case AP_WL_T_BOSSES:
 		return env->bosses_won(env->user) >= n->a;
 	case AP_WL_T_FAMILIES:
@@ -406,7 +444,7 @@ static inline int AP_WinLogicEval(const AP_WinLogic *wl, const AP_WinLogicEnv *e
 		int f, k;
 		for (f = 0; f < wl->family_count; f++)
 			for (k = 0; k < wl->family_len[f]; k++)
-				if (env->item_count(env->user, wl->ids[wl->family_first[f] + k]) >= 1)
+				if (AP_WinLogicCount(wl, env, wl->ids[wl->family_first[f] + k]) >= 1)
 				{
 					held++;
 					break;
@@ -677,6 +715,8 @@ enum
 	AP_WS_NEED_CUP  = 2
 };
 
+#define AP_WS_IDENT_CAP 192
+
 typedef struct
 {
 	int raceValid;
@@ -684,6 +724,8 @@ typedef struct
 	int cupValid;
 	AP_WinStakes cup;
 	int cupArmed; // entered a cup from the hub; its first leg decides
+	// Seed and slot the decisions above belong to (AP_WinStakesConnect).
+	char ident[AP_WS_IDENT_CAP];
 } AP_WinStakesLatch;
 
 static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
@@ -691,6 +733,43 @@ static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
 	l->raceValid = 0;
 	l->cupValid = 0;
 	l->cupArmed = 0;
+}
+
+// A fresh slot connect (the ReceivedItems reset). A reconnect to the same seed
+// and slot keeps the race-start decision, so a dropped connection mid-race does
+// not change the stakes. Any other connect (another slot, another seed, a
+// server switch to another room) or an unknown identity forgets every decision:
+// the previous seed's stakes must never apply to this seed's loss. Returns 1
+// when the decisions were forgotten.
+static inline int AP_WinStakesConnect(AP_WinStakesLatch *l, const char *seed, const char *slot)
+{
+	char now[AP_WS_IDENT_CAP];
+	int n = 0, i, same;
+	const char *p;
+
+	if (seed && seed[0] && slot && slot[0])
+	{
+		for (p = seed; *p && n < AP_WS_IDENT_CAP - 2; p++)
+			now[n++] = *p;
+		now[n++] = '\x1f'; // separator no seed or slot name contains
+		for (p = slot; *p && n < AP_WS_IDENT_CAP - 1; p++)
+			now[n++] = *p;
+	}
+	now[n] = '\0';
+	same = n > 0;
+	for (i = 0; same && i < AP_WS_IDENT_CAP; i++)
+	{
+		if (l->ident[i] != now[i])
+			same = 0;
+		if (now[i] == '\0')
+			break;
+	}
+	if (same)
+		return 0;
+	AP_WinStakesLatchReset(l);
+	for (i = 0; i <= n; i++)
+		l->ident[i] = now[i];
+	return 1;
 }
 
 static inline void AP_WinStakesCupEntered(AP_WinStakesLatch *l)
@@ -751,8 +830,10 @@ extern "C" {
 #endif
 struct GameTracker;
 // ReceivedItems drain and its per-connect reset (ap_hooks.c).
+// On a fresh connect the tally resets and the stakes latch is checked against
+// the connected seed and slot (AP_WinStakesConnect).
 void AP_WinLogicTallyReset(void);
-void AP_WinLogicTallyItem(long long itemId, unsigned flags);
+void AP_WinLogicTallyItem(long long itemId, long long location, unsigned flags);
 // Cup entry from the hub (AP_CupEnterFromHub) arms the cup decision.
 void AP_WinStakesOnCupEnter(void);
 // Every level start (AP_RaceAttempt_OnLevelStart): decide the race's stakes.

@@ -10,7 +10,8 @@
 //
 // Production wiring that this harness stands in for (ap/ap_win_logic.c):
 // item_count -> the received-items-by-id tally (progression-flagged copies
-// only, AP_ItemIdTallyReceive; req counts from it too), bosses_won ->
+// only, start inventory at location -2 skipped, AP_ItemIdTallyReceive; the
+// evaluator adds the block's `start` table), bosses_won ->
 // AP_ComposedBossesWon, collected -> ap_net_location_checked.
 
 #include <cstdio>
@@ -82,8 +83,12 @@ static AP_WinLogicEnv env_for(World &w, int boostMode = 0, int start = 0, int un
 	return e;
 }
 
-static void parse_block(const nlohmann::json &b)
+// Blocks built here carry an empty `start` table unless they set one.
+static void parse_block(const nlohmann::json &block)
 {
+	nlohmann::json b = block;
+	if (b.is_object() && !b.contains("start"))
+		b["start"] = nlohmann::json::object();
 	nlohmann::json j = {{"ctr_options", {{"schema_version", 16}}}, {"win_logic", b}};
 	ap_seedcfg_parse_json(j);
 }
@@ -226,7 +231,11 @@ int main(void)
 		expect_int(eval_rule(arr({"req", 5, 1, 0}), e), 0, "req type 5 Red gem missing");
 		expect_int(eval_rule(arr({"req", 8, 1, -1}), e), 1, "req type 8 sums Purple too");
 		w.items[35010009] = 1;
-		expect_int(eval_rule(arr({"req", 5, 2, -1}), e), 1, "req type 5 legacy -1 sums");
+		// Review minor 5: colour -1 on types 3 and 5 is ambiguous; the block is refused.
+		parse_block(one_rule(arr({"req", 5, 2, -1})));
+		expect_int(ctr_win_logic.state, AP_WL_INVALID, "req type 5 colour -1 refuses the block");
+		parse_block(one_rule(arr({"req", 3, 2, -1})));
+		expect_int(ctr_win_logic.state, AP_WL_INVALID, "req type 3 colour -1 refuses the block");
 
 		// tokens_no_purple: Purple never counts.
 		w.items[35010008] = 9;
@@ -703,15 +712,122 @@ int main(void)
 			AP_ItemIdTallyAdd(&t, id);
 		expect_int(t.overflow, 1, "overflow is flagged, not silent");
 		AP_ItemIdTallyReset(&t);
-		AP_ItemIdTallyReceive(&t, 35010001, 0u); // filler
-		AP_ItemIdTallyReceive(&t, 35010001, 2u); // useful (vanilla relic under minimal)
-		AP_ItemIdTallyReceive(&t, 35010001, 4u); // trap
+		AP_ItemIdTallyReceive(&t, 35010001, 35011000, 0u); // filler
+		AP_ItemIdTallyReceive(&t, 35010001, 35011000, 2u); // useful (vanilla relic under minimal)
+		AP_ItemIdTallyReceive(&t, 35010001, 35011000, 4u); // trap
 		expect_int(AP_ItemIdTallyCount(&t, 35010001), 0, "non-progression copies never count");
-		AP_ItemIdTallyReceive(&t, 35010001, 1u);
-		AP_ItemIdTallyReceive(&t, 35010001, 3u); // progression + useful
+		AP_ItemIdTallyReceive(&t, 35010001, 35011000, 1u);
+		AP_ItemIdTallyReceive(&t, 35010001, 35011000, 3u); // progression + useful
 		expect_int(AP_ItemIdTallyCount(&t, 35010001), 2, "progression-flagged copies count");
 		AP_ItemIdTallyReset(&t);
 		expect(t.overflow == 0 && AP_ItemIdTallyCount(&t, 35010027) == 0, "reset clears");
+	}
+
+	// ════ Start inventory (review B1) ════
+	// The server sends start inventory as NetworkItem(id, -2, 0). The tally skips
+	// location -2 whatever the flags; the block's `start` table supplies exactly
+	// the copies Archipelago's logic counts. Never both.
+	{
+		static AP_ItemIdTally t;
+		AP_ItemIdTallyReset(&t);
+		AP_ItemIdTallyReceive(&t, 35010014, -2, 0u); // start inventory as the server sends it
+		AP_ItemIdTallyReceive(&t, 35010014, -2, 1u); // even if a server ever flagged it
+		expect_int(AP_ItemIdTallyCount(&t, 35010014), 0, "tally skips location -2");
+		AP_ItemIdTallyReceive(&t, 35010014, -1, 1u); // server grant (/send), progression flag
+		AP_ItemIdTallyReceive(&t, 35010014, 35011000, 1u); // a found Key
+		AP_ItemIdTallyReceive(&t, 35010014, 35011001, 0u); // a filler-flagged copy
+		expect_int(AP_ItemIdTallyCount(&t, 35010014), 2, "other locations count by flag");
+
+		J b = one_rule(arr({"req", 2, 4, -1}));
+		b["start"] = {{"35010014", 2}};
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_VALID, "block with start -> VALID");
+		struct TallyWorld
+		{
+			static int count(void *u, long id) { return AP_ItemIdTallyCount((AP_ItemIdTally *)u, id); }
+			static int bosses(void *) { return 0; }
+			static int collected(void *, long) { return 0; }
+		};
+		AP_WinLogicEnv e;
+		e.user = &t;
+		e.item_count = TallyWorld::count;
+		e.bosses_won = TallyWorld::bosses;
+		e.collected = TallyWorld::collected;
+		e.boost_mode = 1;
+		e.starting_character = 0;
+		e.character_unlocks = 1;
+		e.unreliable = 0;
+		int idx = AP_WinLogicFindCheck(&ctr_win_logic, 35011000L);
+		expect_int(AP_WinLogicCount(&ctr_win_logic, &e, 35010014), 4, "2 received + 2 start = 4 Keys");
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 1, "req 4 Keys met with start Keys");
+		b["start"] = {{"35010014", 1}};
+		parse_block(b);
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 0,
+		           "start Keys counted once: 2 + 1 < 4");
+		b["start"] = J::object();
+		parse_block(b);
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 0, "no start table, 2 Keys < 4");
+
+		// Every leaf reads the start table: req sums, tokens_no_purple, items,
+		// families, and the unlock and boost items inside cap.
+		AP_ItemIdTallyReset(&t);
+		J rule = arr({"all", arr({"req", 6, 2, -1}), arr({"tokens_no_purple", 1}),
+		              arr({"items", "distinct", 1, {35010139}}), arr({"families", 1}),
+		              arr({"cap", 2, 3})});
+		b = one_rule(rule);
+		b["start"] = {{"35010004", 1}, {"35010008", 1}, {"35010139", 1}, {"35010097", 1},
+		              {"35010124", 1}, {"35010027", 2}};
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_VALID, "every-leaf start block -> VALID");
+		idx = AP_WinLogicFindCheck(&ctr_win_logic, 35011000L);
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 1,
+		           "every leaf satisfied from the start table alone");
+		b["start"].erase("35010124"); // Coco's unlock: cap racer 3 not driveable
+		parse_block(b);
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 0, "cap reads the start unlock item");
+		AP_ItemIdTallyReceive(&t, 35010124, 35011005, 1u);
+		expect_int(AP_WinLogicInLogic(&ctr_win_logic, &e, idx, 0), 1, "received unlock completes it");
+	}
+
+	// ════ Fresh connect forgets another seed's decision (review minor 1) ════
+	{
+		J b = {{"version", 1}, {"families", J::array()}, {"regions", arr({true})},
+		       {"checks", {{"35011009", {{"kind", "trophy"}, {"region", 0}, {"rule", true}}}}}};
+		parse_block(b);
+		World w;
+		Session ses;
+		std::memset(&ses.latch, 0, sizeof ses.latch);
+		ses.w = &w;
+		ses.race = facts();
+		ses.race.levelID = 1; // Trophy Race 35011009
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", "AppieCTR"), 1, "first connect records seed A");
+		ses.level_start(1); // open and in logic: a loss would send
+		AP_WinStakes s;
+		expect(AP_WinStakesCurrent(&ses.latch, 0, &s) && s.stakes, "seed A race decided: stakes");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", "AppieCTR"), 0, "same seed and slot reconnect");
+		expect(AP_WinStakesCurrent(&ses.latch, 0, &s) && s.stakes, "same-seed reconnect keeps the decision");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", "Other"), 1, "slot switch forgets");
+		expect(!AP_WinStakesCurrent(&ses.latch, 0, &s), "slot switch: no decision left");
+		ses.level_start(1);
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedB", "Other"), 1, "seed switch forgets");
+		expect(!AP_WinStakesCurrent(&ses.latch, 0, &s), "seed switch: no decision left");
+		// The new seed's loss decides late against its own state.
+		w.collected.insert(35011009);
+		int ex = ses.exempt;
+		ses.loss_event(AP_DL_EV_PAUSE_QUIT, 1, 1);
+		expect_int(ses.exempt, ex + 1, "after a switch the loss decides on the new seed's state");
+		// Cup decisions are forgotten too, and an unknown identity always forgets.
+		AP_WinStakesCupEntered(&ses.latch);
+		ses.race.cup = 1;
+		ses.level_start(1);
+		expect(AP_WinStakesCurrent(&ses.latch, 1, &s), "cup decided");
+		expect_int(AP_WinStakesConnect(&ses.latch, "", "Other"), 1, "unknown seed name forgets");
+		expect(!AP_WinStakesCurrent(&ses.latch, 1, &s) && !ses.latch.cupArmed, "cup decision forgotten");
+		expect_int(AP_WinStakesConnect(&ses.latch, 0, 0), 1, "unknown identity forgets every time");
+		std::string longSeed(400, 'x');
+		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 1, "long seed recorded");
+		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 0,
+		           "long seed: same identity kept (truncated consistently)");
 	}
 
 	std::printf("%s: %d checks, %d failure(s)\n", failures ? "FAIL" : "PASS", checks, failures);

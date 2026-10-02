@@ -5769,9 +5769,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
 
 		// #449: received count by raw AP item id (progression-flagged copies
-		// only) for the race-loss stakes evaluator (ap_win_logic.h). Read
-		// nowhere else; the gate counters below are unchanged.
-		AP_WinLogicTallyItem(items[i], ap_net_recv_batch_flags(i));
+		// only, start inventory at location -2 skipped: the win_logic block's
+		// `start` table counts it) for the race-loss stakes evaluator
+		// (ap_win_logic.h). Read nowhere else; the gate counters below are unchanged.
+		AP_WinLogicTallyItem(items[i], ap_net_recv_batch_location(i),
+		                     ap_net_recv_batch_flags(i));
 
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
 		long long idx = items[i] - AP_ITEM_BASE;
