@@ -5,14 +5,19 @@ uses unmodified AP prepare/preflight functions and the actual manager/loader.
 It does not claim rendering, player input or a Steam race.
 """
 import argparse
+import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
 
 args = argparse.ArgumentParser()
 args.add_argument("--assets", type=Path, required=True)
 args.add_argument("--server-uri")
 args.add_argument("--net-library", type=Path)
+args.add_argument("--timeout", type=float, default=180.0,
+                  help="seconds before the probe and its children are killed")
 args = args.parse_args()
 root = Path(__file__).resolve().parents[1]
 source = (root / "ap/ap_hooks.c").read_text()
@@ -184,4 +189,19 @@ with tempfile.TemporaryDirectory() as folder:
                     str(cpp), str(obj), *units, "-Wl,--gc-sections", "-o", str(exe)], check=True)
     command = [str(exe), str(root / "tools/fixtures/content-plan/baseline.json"), str(args.assets.resolve())]
     if args.server_uri: command.append(args.server_uri)
-    subprocess.run(command, check=True)
+    # The probe runs in its own process group so a hang (for example a server
+    # that never acknowledges the check) cannot outlive this script.
+    child = subprocess.Popen(command, start_new_session=True)
+    try:
+        code = child.wait(timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        sys.exit(f"probe timed out after {args.timeout:g}s; killed its process group")
+    finally:
+        if child.poll() is None:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+    if code != 0:
+        raise subprocess.CalledProcessError(code, command)
