@@ -1103,8 +1103,37 @@ static void test_live_location_block_and_feed_membership(void)
 	}
 }
 
+// #452: a received weapon with an unchecked use check keeps retail pads
+// raceable; a weapon that is not received, or whose checks are all done, does
+// not.
+static void test_pad_use_opportunity(void)
+{
+	unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+	unsigned char useLeft[AP_ITEMSANITY_WEAPON_COUNT] = {0};
+
+	assert(AP_ItemsanityUseLeftPure(owned, useLeft) == 0);
+
+	// Checks open but nothing received: nothing to fire, no opportunity.
+	memset(useLeft, 1, sizeof useLeft);
+	assert(AP_ItemsanityUseLeftPure(owned, useLeft) == 0);
+
+	// Bomb (index 1) received with its check open: opportunity.
+	owned[1] = 1;
+	assert(AP_ItemsanityUseLeftPure(owned, useLeft) == 1);
+
+	// Bomb's checks done, others still open but not received: none.
+	useLeft[1] = 0;
+	assert(AP_ItemsanityUseLeftPure(owned, useLeft) == 0);
+
+	// Last weapon (Missile x3, index 10) received and open: opportunity.
+	owned[10] = 1;
+	assert(AP_ItemsanityUseLeftPure(owned, useLeft) == 1);
+	assert(AP_ItemsanityUseLeftPure(apItemsanityHarnessAllOwned, useLeft) == 1);
+}
+
 int main(void)
 {
+	test_pad_use_opportunity();
 	test_frozen_classification();
 	test_use_code_fanout();
 	test_fire_id_is_not_an_identity_source();

@@ -313,4 +313,24 @@ static int AP_ItemsanityBossAssistWeapon(int rolled, int proposed,
 	return rolled;
 }
 
+// #452: does any received weapon still have an unchecked use check? Logic puts
+// every itemsanity location in the Menu region behind its weapon item alone, so
+// it assumes some race is always open to fire in. Native closes a pad once its
+// own locations are checked, which stranded a weapon received after every open
+// pad was done. A true here keeps retail race pads raceable (AP_PadState).
+// useLeft[i] is 1 while weapon index i has a plain or juiced check this seed
+// carries that the server has not checked.
+static inline int AP_ItemsanityUseLeftPure(const unsigned char *owned,
+	const unsigned char *useLeft)
+{
+	int i;
+
+	for (i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
+	{
+		if (owned[i] && useLeft[i])
+			return 1;
+	}
+	return 0;
+}
+
 #endif

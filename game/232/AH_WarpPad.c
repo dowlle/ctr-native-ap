@@ -1707,8 +1707,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 							apRelicLeft = AP_PadRelicSideLeft(
 							    apRelicLeft, AP_PadUncollectedRelicPerfectCount(levelID));
 
+							// #452: a received weapon's unchecked use check also
+							// needs a race with item crates, so it rides the box
+							// re-race route once both tiers are checked.
 							apTier2Route = AP_PadTier2RouteDecide(
-							    apTokenLeft, apRelicLeft, AP_PadUncollectedBoxCount(levelID));
+							    apTokenLeft, apRelicLeft,
+							    AP_PadUncollectedBoxCount(levelID) +
+							        AP_ItemsanityPadOpportunity(levelID));
 
 							// Log the tier-2 decision once, before the branch, so
 							// the five routes cannot drift from what is reported.
