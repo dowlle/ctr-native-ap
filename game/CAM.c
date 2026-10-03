@@ -1887,6 +1887,12 @@ void CAM_ThTick(struct Thread *t)
 	     ((d->actionsFlagSet & ACTION_BOT) == 0)) &&
 	    (((d->kartState != KS_WARP_PAD && (d->kartState != KS_FREEZE)) &&
 	      (((gGT->gameMode2 & 4) == 0 && ((sdata->gGamepads->gamepad[cDC->cameraID].buttonsTapped & BTN_L2_one) != 0))))))
+#ifdef CTR_AP
+	// AP (#454): retail only reaches the end-of-race camera with a bot driver,
+	// which this branch already excludes. The Demo Camera trap runs it against
+	// the human driver, so L2 would reset cameraMode and cancel the trap's shot.
+	if (!AP_DemoCamOwnsCamera())
+#endif
 	{
 		uVar4 = cDC->zoomToggleState + 1;
 		cDC->zoomToggleState = uVar4;

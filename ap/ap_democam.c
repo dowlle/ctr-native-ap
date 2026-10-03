@@ -290,6 +290,11 @@ int AP_DemoCamCanEngage(struct GameTracker *gGT)
 	return AP_DemoCam_CanEngage(&gate);
 }
 
+int AP_DemoCamOwnsCamera(void)
+{
+	return ap_democam.engaged != 0;
+}
+
 void AP_DemoCamSetTrapActive(int active)
 {
 	ap_democam_trap_want = active != 0;
