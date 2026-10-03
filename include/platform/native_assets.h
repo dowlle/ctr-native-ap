@@ -35,5 +35,10 @@ FILE *NativeAssets_OpenHostBigfile(const char *mode);
 int NativeAssets_ReadBytes(const char *path, int readMode, struct NativeAssetsByteBuffer *bytes);
 void NativeAssets_FreeBytes(struct NativeAssetsByteBuffer *bytes);
 int NativeAssets_Validate(void);
+// Quiet check for the four core files extract_assets.py writes (BIGFILE.BIG,
+// SOUNDS/KART.HWL, TEST.STR, XA/ENG.XNF) as loose host files. Startup uses it to
+// skip the disc picker when no .bin is needed (#444); NativeAssets_Validate
+// still runs afterwards and reports anything missing, XA tracks included.
+int NativeAssets_HasExtractedCoreFiles(void);
 
 #endif

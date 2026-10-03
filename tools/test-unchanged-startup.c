@@ -300,6 +300,43 @@ static void runStartupCase(const char *base, const char *expectSuffix, const cha
 
 // The production argument parser is itself under test here: the unchanged
 // startup contract depends on it accepting exactly the documented flags.
+// #444: no .bin in the assets folder. Extracted core files must start without
+// the picker; an empty folder must still open it. The picker stub cancels, so
+// both cases end with no disc and fall through to the asset validation.
+static void runNoDiscCase(const char *base, int expectPicker, const char *label)
+{
+	char cwd[1024];
+	char storePath[600];
+	struct StartupCtx ctx;
+	NativeStartupArgs startupArgs;
+	NativeStartupOps startupOps;
+	NativeDiscResolutionResult result;
+	char *argv[1];
+
+	snprintf(storePath, sizeof(storePath), "%s/%s", base, NATIVE_DISC_PATH_STORE_FILE);
+	unlink(storePath);
+	expect(getcwd(cwd, sizeof(cwd)) != NULL, label);
+	expect(NativeAssets_Init(base) == 1, label);
+	expect(chdir(base) == 0, label);
+
+	memset(&ctx, 0, sizeof(ctx));
+	expect(NativeStartup_ParseArgs(1, argv, &startupArgs) == NATIVE_STARTUP_ARG_OK, label);
+
+	startupOps.pickDisc = ctxPick;
+	startupOps.confirm = ctxConfirm;
+	startupOps.validateAssets = ctxValidateAssets;
+
+	expect(NativeStartup_ResolveDisc(&startupArgs, &startupOps, &ctx, &result) == NATIVE_STARTUP_OK, label);
+	expect(result.found == 0, label);
+	expect(result.wizardRan == expectPicker, label);
+	expect(ctx.pickCalls == expectPicker, label);
+	expect(ctx.confirmCalls == 0, label);
+	expect(ctx.validateCalls == 1, label);
+	expect(access(storePath, F_OK) != 0, label);
+
+	chdir(cwd);
+}
+
 static void TestArgumentParsing(void)
 {
 	NativeStartupArgs args;
@@ -338,6 +375,9 @@ int main(void)
 	char discB[500];
 	char discC[500];
 	char discC2[500];
+	char baseD[400];
+	char baseE[400];
+	char pathD[600];
 
 	snprintf(root, sizeof(root), "/tmp/ctr-startup-%ld", (long)getpid());
 	mkdir(root, 0700);
@@ -372,10 +412,35 @@ int main(void)
 	expect(buildRawDisc(discC), "fixture C: build canonical disc");
 	expect(buildRawDisc(discC2), "fixture C: build other disc");
 
+	// Case D: extract_assets.py output only, no .bin (#444). Case E: an empty
+	// assets folder.
+	snprintf(baseD, sizeof(baseD), "%s/case-d", root);
+	snprintf(baseE, sizeof(baseE), "%s/case-e", root);
+	mkdir(baseD, 0700);
+	mkdir(baseE, 0700);
+	snprintf(pathD, sizeof(pathD), "%s/assets", baseD);
+	mkdir(pathD, 0700);
+	snprintf(pathD, sizeof(pathD), "%s/assets", baseE);
+	mkdir(pathD, 0700);
+	snprintf(pathD, sizeof(pathD), "%s/assets/SOUNDS", baseD);
+	mkdir(pathD, 0700);
+	snprintf(pathD, sizeof(pathD), "%s/assets/XA", baseD);
+	mkdir(pathD, 0700);
+	snprintf(pathD, sizeof(pathD), "%s/assets/BIGFILE.BIG", baseD);
+	expect(writeFile(pathD, "x", 1), "fixture D: BIGFILE.BIG");
+	snprintf(pathD, sizeof(pathD), "%s/assets/SOUNDS/KART.HWL", baseD);
+	expect(writeFile(pathD, "x", 1), "fixture D: KART.HWL");
+	snprintf(pathD, sizeof(pathD), "%s/assets/TEST.STR", baseD);
+	expect(writeFile(pathD, "x", 1), "fixture D: TEST.STR");
+	snprintf(pathD, sizeof(pathD), "%s/assets/XA/ENG.XNF", baseD);
+	expect(writeFile(pathD, "x", 1), "fixture D: ENG.XNF");
+
 	TestArgumentParsing();
 	runStartupCase(baseA, "CTR-U.BIN", "case A: canonical (any case) wins over another .bin");
 	runStartupCase(baseB, "another.bin", "case B: other .bin used when no canonical");
 	runStartupCase(baseC, "ctr-u.bin", "case C: lowercase canonical wins");
+	runNoDiscCase(baseD, 0, "case D: extracted files skip the disc picker (#444)");
+	runNoDiscCase(baseE, 1, "case E: empty assets folder still opens the picker");
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

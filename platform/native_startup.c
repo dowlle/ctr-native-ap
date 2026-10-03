@@ -178,7 +178,10 @@ NativeStartupStatus NativeStartup_ResolveDisc(const NativeStartupArgs *args, con
 	request.explicitPath = args->explicitDiscPath;
 	request.savedPath = savedPath;
 	request.destinationPath = destination;
-	request.allowWizard = !args->validateDiscOnly;
+	// Extracted files (tools/extract-assets) need no disc image, so the picker
+	// must not open for them (#444). Without a .bin the resolution then ends
+	// with no disc and the asset validation below decides, as before.
+	request.allowWizard = !args->validateDiscOnly && !NativeAssets_HasExtractedCoreFiles();
 
 	discFound = NativeDiscResolution_Run(&resolutionOps, ctx, &request, &result);
 
