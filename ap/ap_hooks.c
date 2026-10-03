@@ -1891,6 +1891,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	int wumpaLeft;
 	int perfectLeft;
 	int hitOpp;
+	int weaponOpp;
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
@@ -1940,6 +1941,13 @@ int AP_PadState(int physLevelID, int destLevelID)
 	hitOpp = AP_HitPadOpportunity(physLevelID, destLevelID);
 	uncN += hitOpp;
 
+	// Itemsanity use check (#452): same two-counter shape as the Hit
+	// opportunity. A received weapon is fired in any retail race, and logic
+	// expects one to be available, so the pad must neither go Done nor
+	// Re-lock while a received weapon still has an unchecked use check.
+	weaponOpp = AP_ItemsanityPadOpportunity(destLevelID);
+	uncN += weaponOpp;
+
 	// The table itself lives in ap_pad_state.h so the harness can pin it out of
 	// engine; everything above is the gather. Requirements key off the PHYSICAL
 	// pad, lifecycle facts off the DESTINATION, which is the model's whole
@@ -1950,7 +1958,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         AP_DestTrophyChecked(destLevelID),
 	                         ctr_cfg_warp_stage2_unlocked(physLevelID),
 	                         uncN + lettersLeft + wumpaLeft + perfectLeft,
-	                         boxesLeft + wumpaLeft + hitOpp);
+	                         boxesLeft + wumpaLeft + hitOpp + weaponOpp);
 }
 
 // Is this pad in the phase-1 re-entry window? True exactly when the
@@ -7032,6 +7040,33 @@ static int AP_ItemsanityActive(void)
 	// Server location-set membership is the authoritative all-or-none toggle.
 	// This also makes absent/old slot_data inert without a bespoke parser path.
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
+}
+
+int AP_ItemsanityPadOpportunity(int destLevelID)
+{
+	unsigned char useLeft[AP_ITEMSANITY_WEAPON_COUNT];
+	int i;
+
+	// Retail race tracks only: each has item crates and a plain re-race route,
+	// and any of them can serve a pending use check. Cups, trials, arenas,
+	// boss garages and custom destinations keep their own lifecycle.
+	if (destLevelID < 0 || destLevelID > 15 || !AP_ItemsanityActive())
+		return 0;
+
+	for (i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
+	{
+		int heldItemID = i <= 4 ? i : i + 1; // inverse of AP_ItemsanityWeaponIndex
+		int juiced;
+
+		useLeft[i] = 0;
+		for (juiced = 0; juiced <= 1; juiced++)
+		{
+			long code = AP_ItemsanityLocationCode(heldItemID, juiced);
+			if (code > 0 && ap_net_location_exists(code) && !ap_net_location_checked(code))
+				useLeft[i] = 1;
+		}
+	}
+	return AP_ItemsanityUseLeftPure(ap_itemsanity_owned, useLeft);
 }
 
 int AP_ItemsanityWeaponAvailable(int heldItemID)

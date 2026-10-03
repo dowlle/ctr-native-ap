@@ -781,6 +781,13 @@ int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 // AP_PadState and the tier-2 choosers in AH_WarpPad.c.
 int AP_HitPadOpportunity(int physLevelID, int destLevelID);
 
+// Is there an Itemsanity use opportunity behind this pad (#452)? True for a
+// retail race destination (0..15) while Itemsanity is on and a received weapon
+// still has an unchecked plain or juiced use check. Like the Hit opportunity it
+// feeds both AP_PadState counters, so a done pad stays raceable instead of
+// stranding the check, and it counts as a re-race reason in the tier-2 chooser.
+int AP_ItemsanityPadOpportunity(int destLevelID);
+
 // One [AP HIT] chooser line per chooser decision (OPEN, PLAIN, APPLY, CANCEL,
 // VANISH); NONE and WAIT are per-frame and never logged.
 void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,

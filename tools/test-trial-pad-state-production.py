@@ -34,6 +34,9 @@ int AP_TrialTrackUncheckedCount(int d){return 0;}
 /* Schema 16 Hit Character seam: an unchecked Hit that can appear at this pad. */
 static int hitOpp=0;
 int AP_HitPadOpportunity(int p,int d){assert(p==physical);return hitOpp;}
+/* #452 Itemsanity seam: a received weapon with an unchecked use check. */
+static int weaponOpp=0;
+int AP_ItemsanityPadOpportunity(int d){assert(d==destination);return weaponOpp;}
 /* Schema 15 Cortex Vortex seam (destination 110, direct Trophy code). */
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0 };
@@ -64,7 +67,12 @@ int main(void){
  stage2=0;hitOpp=1;assert(AP_PadState(physical,destination)==2);
  assert(AP_PadPhase1ReRaceable(physical,destination));
  stage2=1;remaining=0;assert(AP_PadState(physical,destination)==4);
- hitOpp=0;assert(AP_PadState(physical,destination)==5);remaining=1;
+ hitOpp=0;assert(AP_PadState(physical,destination)==5);
+ /* A pending itemsanity use check does the same (#452). */
+ stage2=0;remaining=1;weaponOpp=1;assert(AP_PadState(physical,destination)==2);
+ assert(AP_PadPhase1ReRaceable(physical,destination));
+ stage2=1;remaining=0;assert(AP_PadState(physical,destination)==4);
+ weaponOpp=0;assert(AP_PadState(physical,destination)==5);remaining=1;
 
  /* Cortex Vortex: a refused block leaves 110 unrecognised (pad untouched). */
  destination=110;cvValid=0;trophyChecked=1;
