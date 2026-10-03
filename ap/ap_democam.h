@@ -38,6 +38,11 @@ void AP_DemoCamSetTrapActive(int active);
 // safe local-human owner on this frame. An armed item waits while false.
 int AP_DemoCamCanEngage(struct GameTracker *gGT);
 
+// True while an engagement holds the camera. CAM_ThTick skips the L2 zoom
+// toggle on these frames, which would otherwise reset cameraMode and cancel
+// the authored end-of-race shot (#454).
+int AP_DemoCamOwnsCamera(void);
+
 // Drop any engagement on a fresh connect, alongside AP_Trap_ConnectReset. A
 // snapshot cannot outlive the session that took it.
 void AP_DemoCam_ConnectReset(void);
