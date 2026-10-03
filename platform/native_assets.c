@@ -1002,6 +1002,28 @@ internal int NativeAssets_ValidateXA(void)
 	return missing == 0;
 }
 
+int NativeAssets_HasExtractedCoreFiles(void)
+{
+	local_persist const char *coreFiles[] = {
+	    NATIVE_ASSETS_BIGFILE_PATH,
+	    NATIVE_ASSETS_KART_HWL_PATH,
+	    NATIVE_ASSETS_TEST_STR_PATH,
+	    NATIVE_ASSETS_XNF_PATH,
+	};
+	char path[NATIVE_ASSETS_PATH_MAX];
+	size_t i;
+
+	for (i = 0; i < sizeof(coreFiles) / sizeof(coreFiles[0]); i++)
+	{
+		if (!NativeAssets_ResolvePath(coreFiles[i], path, sizeof(path)))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 int NativeAssets_Validate(void)
 {
 	int ok = 1;
