@@ -96,6 +96,8 @@ tools/test-oxide-scene-seen-production.py
 tools/test-boss-door-scene.c
 tools/test-boss-door-scene-seen.cpp
 tools/test-boss-door-scene-production.py
+tools/test-boss-won-flags.cpp
+tools/test-boss-won-production.py
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py

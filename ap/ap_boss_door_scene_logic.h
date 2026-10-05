@@ -18,8 +18,8 @@
 // Under AP the spawn instead requires, for the podium's hub:
 //   * the boss garage open under this seed's rules (AP_BossGarageOpen, the
 //     same helper the garage door uses),
-//   * the boss race location not checked yet (boss not beaten; never the
-//     received-Key mirror),
+//   * the boss not personally beaten yet (#458 boss-won flag, read from the
+//     server; never the checked location, never the received-Key mirror),
 //   * this slot's seen flag read from the server (fail safe, as #421), and
 //   * the scene not yet played or skipped for this hub.
 // `hub` is levelID - N_SANITY_BEACH: 0..3 for the four boss hubs. Any other

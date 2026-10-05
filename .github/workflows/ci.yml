@@ -67,6 +67,8 @@ jobs:
         run: python3 tools/test-oxide-scene-seen-production.py
       - name: Once-per-hub boss-door scene production regressions
         run: python3 tools/test-boss-door-scene-production.py
+      - name: Boss wins and Oxide's Challenge from own races production regressions
+        run: python3 tools/test-boss-won-production.py
       - name: TLS and cache boundary regressions
         run: bash tools/security/run.sh
       - name: Release assembly boundary checks
