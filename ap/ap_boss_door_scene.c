@@ -23,6 +23,7 @@
 #include "ap_hooks.h"
 #include "ap_net.h"
 #include "ap_boss_door_scene_logic.h"
+#include "ap_boss_won_flags.h" // #458 AP_BOSS_WON_BIT
 
 // Only called with slot_data active; without it VehBirth keeps the retail rule.
 int AP_BossDoorSceneReady(int hub)
@@ -30,9 +31,13 @@ int AP_BossDoorSceneReady(int hub)
 	if (!AP_BossDoorHubValid(hub))
 		return 0;
 
+	// #458: "boss beaten" is the personal win flag, not the checked boss
+	// location (a Collect checks it too). Until the flag has been read from
+	// the server the boss counts as beaten, so no scene plays on a guess.
 	return AP_BossDoorSceneWanted(
 	    hub, AP_BossGarageOpen(hub),
-	    AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + hub),
+	    !ap_net_boss_won_known() ||
+	        (ap_net_boss_won_bits() & AP_BOSS_WON_BIT(hub)) != 0,
 	    ap_net_boss_door_scene_known(), ap_net_boss_door_scene_seen(hub));
 }
 

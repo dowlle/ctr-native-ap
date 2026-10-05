@@ -42,13 +42,17 @@
 //
 // TRUTH SOURCES (the caller's job, restated here because getting it wrong is
 // the BUG-D class this area keeps relapsing into):
-//   * firstCleared MUST come from AUTHORITATIVE checked-location state
-//     (AP_LocationCheckedByBit(AP_GOAL_BIT_OXIDE_FIRST)), never from the
+//   * firstCleared MUST come from the persisted personal-win flag
+//     (#458, AP_BOSS_WON_OXIDE_FIRST in ap_boss_won_flags.h), never from the
 //     ap_oxide_first_beaten session boolean -- that is reset on every
 //     reconnect, so a reconnecting player would be offered the first
-//     challenge again instead of the Final one.
-//   * bossesWon MUST be counted from CHECKED boss-race LOCATIONS
-//     (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b)), never from
+//     challenge again instead of the Final one -- and never from the checked
+//     N. Oxide's Challenge location: another player's Collect checks it too,
+//     and under any_percent that offered the Final Challenge, whose win
+//     cannot complete any_percent.
+//   * bossesWon MUST be counted from the persisted personal boss-win flags
+//     (#458, AP_ComposedBossesWon), never from checked boss-race locations
+//     (Collect, Release and admin commands check them too), never from
 //     received Keys and never from CHECK_ADV_BIT on bits 94-97 -- those bits
 //     are the Key item pool's mirror, which AP_ApplyItems rewrites from
 //     RECEIVED items on every reconcile tick. Holding four shuffled Keys is
@@ -59,8 +63,8 @@
 //   * finalRelicMet is AP_OxideFinalOpen(), the configured relic-goal mode +
 //     count (issue #23). Kept as an input rather than recomputed here so the
 //     gate, the verifier and this decision cannot disagree about it.
-// All of those are server truth, so the answer stays correct across reconnect,
-// profile load and hub re-entry without any latch of its own.
+// All of those are kept on the server, so the answer stays correct across
+// reconnect, profile load and hub re-entry without any latch of its own.
 //
 // Kept as a pure function over plain ints so tools/test-oxide-encounter.c can
 // drive the whole truth table -- including every one-short partial state --
@@ -82,7 +86,7 @@ typedef struct AP_OxideGarageInputs
 {
 	int garageReqMet;  // the configured door requirement, boss_req[4]
 	int goalOxide;     // ctr_cfg.goal_oxide
-	int firstCleared;  // AUTHORITATIVE checked-location state, see above
+	int firstCleared;  // persisted personal-win flag, see above
 	int finalRelicMet; // AP_OxideFinalOpen()
 	int goalBosses;
 	int bossesWon;

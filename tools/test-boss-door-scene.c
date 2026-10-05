@@ -2,8 +2,8 @@
  * Host harness for the once-per-hub boss-door scene (issue #377).
  *
  * ap/ap_boss_door_scene.c is compiled in and driven with stubbed inputs: the
- * seed's garage rule (AP_BossGarageOpen), the boss race location's checked
- * state (AP_LocationCheckedByBit) and the server-stored seen flag
+ * seed's garage rule (AP_BossGarageOpen), the #458 personal boss-won flag
+ * (ap_net_boss_won_*) and the server-stored seen flag
  * (ap_net_boss_door_scene_*). The stub flag store keeps the same contract as
  * ap/ap_boss_door_scene_seen.h (tools/test-boss-door-scene-seen.cpp covers
  * that struct itself). The VehBirth and CS_Camera call sites, and the
@@ -28,7 +28,9 @@ struct sData sdata_static;
 
 static int g_cfgActive;
 static int g_garageOpen[4];
-static int g_bossChecked[4];  // boss race location checked (boss beaten)
+static int g_bossChecked[4];  // boss race location checked (Collect counts)
+static int g_bossWon[4];      // #458: boss personally won (boss beaten)
+static int g_wonKnown;        // #458: Get reply for the boss-won flags arrived
 static int g_flagKnown;       // Get reply for the flag arrived
 static unsigned g_flagBits;   // server-stored bitmask, bit h = hub h
 static int g_records;
@@ -46,6 +48,18 @@ int AP_LocationCheckedByBit(int globalBit)
 	int b = globalBit - ADV_REWARD_FIRST_BOSS_KEY;
 	g_lastCheckedBit = globalBit;
 	return (b >= 0 && b < 4) ? g_bossChecked[b] : 0;
+}
+
+int ap_net_boss_won_known(void) { return g_wonKnown; }
+
+unsigned ap_net_boss_won_bits(void)
+{
+	unsigned bits = 0;
+	int b;
+	for (b = 0; b < 4; b++)
+		if (g_bossWon[b])
+			bits |= 1u << b;
+	return bits;
 }
 
 int ap_net_boss_door_scene_known(void) { return g_flagKnown; }
@@ -86,7 +100,9 @@ static void Reset(void)
 	{
 		g_garageOpen[i] = 1;
 		g_bossChecked[i] = 0;
+		g_bossWon[i] = 0;
 	}
+	g_wonKnown = 1;
 	g_flagKnown = 1;
 	g_flagBits = 0;
 	g_records = 0;
@@ -140,13 +156,27 @@ static void TestComposition(void)
 	expect("garage closed: no scene", TrophyWin(0), 0);
 	expect("garage closed: nothing recorded", g_records, 0);
 
-	// Boss already beaten (boss race location checked): no scene, even with
-	// the hub's Trophies and no Key held.
+	// Boss already beaten (personal win flag, #458): no scene, even with the
+	// hub's Trophies and no Key held.
 	Reset();
+	g_bossWon[1] = 1;
 	g_bossChecked[1] = 1;
 	expect("boss beaten: no scene", TrophyWin(1), 0);
-	expect("boss beaten reads the boss race location",
-	       g_lastCheckedBit, ADV_REWARD_FIRST_BOSS_KEY + 1);
+
+	// #458: a boss race location checked by another player's Collect is not a
+	// beaten boss. The scene still plays, and the checked location is not
+	// read at all.
+	Reset();
+	g_bossChecked[1] = 1;
+	expect("collect-marked boss: scene plays", TrophyWin(1), 1);
+	expect("collect-marked boss: checked location not read", g_lastCheckedBit, -1);
+
+	// #458: boss-won flags not read yet: treated as beaten, no scene on a
+	// guess and nothing recorded.
+	Reset();
+	g_wonKnown = 0;
+	expect("boss-won flags unknown: no scene", TrophyWin(1), 0);
+	expect("boss-won flags unknown: nothing recorded", g_records, 0);
 
 	// First time in a hub with the garage open: the scene plays. The second
 	// Trophy win in the same hub stays on the podium.

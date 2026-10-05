@@ -279,6 +279,15 @@ void ap_net_oxide_open_msg_record(void);
 int ap_net_boss_door_scene_known(void);
 int ap_net_boss_door_scene_seen(int hub);
 void ap_net_boss_door_scene_record(int hub);
+// #458: the boss races and N. Oxide's Challenge this slot personally won,
+// stored in server data storage per seed, team and slot
+// (ap/ap_boss_won_flags.h). `bits` uses that header's layout and includes wins
+// recorded locally that the server has not confirmed yet; it is 0 for a
+// refused seed. `known` is 0 until this connection's Get reply has arrived.
+// `record` adds one AP_BOSS_WON_* bit and sends it (held while offline).
+int ap_net_boss_won_known(void);
+unsigned ap_net_boss_won_bits(void);
+void ap_net_boss_won_record(unsigned bit);
 
 #ifdef __cplusplus
 }

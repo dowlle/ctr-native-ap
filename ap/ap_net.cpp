@@ -23,6 +23,7 @@
 #include "ap_fxmarker_logic.h" // AP_FXM_STORE_* states for the #299 effect markers
 #include "ap_oxide_scene_seen.h" // #377 once-per-seed Final Challenge scene flag
 #include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
+#include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 
 static APDoorHistory g_doors;
@@ -32,6 +33,9 @@ static APOxideSceneSeen g_oxide_scene;
 static void ap_oxide_scene_flush();
 static APBossDoorSceneSeen g_boss_door_scene;
 static void ap_boss_door_scene_flush();
+static APBossWonFlags g_boss_won;
+static void ap_boss_won_flush();
+static unsigned ap_boss_won_migration_bits();
 
 // #299: room-scoped one-shot effect markers. Keys are per team+slot inside the
 // room's own DataStorage, so a fresh room of the same seed starts with them
@@ -634,6 +638,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
+	g_boss_won.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
 	g_last_error = reason;
 	char line[256];
@@ -944,6 +949,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_boss_door_scene.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_ap->SetNotify({g_boss_door_scene.key});
 		g_ap->Get({g_boss_door_scene.key});
+		// #458: the personally won boss races, same scoping and barrier. The
+		// one-time migration for a seed without the key runs on the Get reply.
+		g_boss_won.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		g_ap->SetNotify({g_boss_won.key});
+		g_ap->Get({g_boss_won.key});
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -1065,6 +1075,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_boss_door_scene_flush();
 		}
+		auto bossWon = keys.find(g_boss_won.key);
+		if (g_connected && bossWon != keys.end()) {
+			if (g_boss_won.retrievedNeedsSeed(bossWon->second))
+				g_boss_won.seed(ap_boss_won_migration_bits());
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP BOSS WON] retrieved valid=%d bits=%u pending=%u\n",
+			              g_boss_won.valid, g_boss_won.bits, g_boss_won.pending);
+			AP_LogLine(line);
+			ap_boss_won_flush();
+		}
 		auto it = keys.find(ap_diff_key());
 		if (it != keys.end() && it->second.is_number_integer())
 		{
@@ -1125,6 +1145,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			              g_boss_door_scene.valid, g_boss_door_scene.bits, g_boss_door_scene.pending);
 			AP_LogLine(line);
 			ap_boss_door_scene_flush();
+		}
+		if (g_connected && key == g_boss_won.key) {
+			g_boss_won.reply(value);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP BOSS WON] reply valid=%d bits=%u pending=%u\n",
+			              g_boss_won.valid, g_boss_won.bits, g_boss_won.pending);
+			AP_LogLine(line);
+			ap_boss_won_flush();
 		}
 		if (key == ap_diff_key() && value.is_number_integer())
 		{
@@ -1281,6 +1309,7 @@ extern "C" void ap_net_poll(void)
 	// slot-connected callback that raised the refusal.
 	if (g_reject_stop_pending)
 		ap_net_apply_seed_reject();
+	ap_boss_won_flush();
 	ap_boss_door_scene_flush();
 	ap_doors_flush();
 	ap_oxide_scene_flush();
@@ -1360,6 +1389,7 @@ static void ap_net_apply_seed_reject(void)
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
+	g_boss_won.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
 	// may have touched either field). The menu keeps showing why the seed was
 	// refused.
@@ -1781,6 +1811,59 @@ extern "C" void ap_net_boss_door_scene_record(int hub)
 	ap_boss_door_scene_flush();
 }
 
+// #458: personally won boss races and N. Oxide's Challenge, sent exactly like
+// the boss-door scene flag above (ap/ap_boss_won_flags.h).
+static void ap_boss_won_flush()
+{
+	if (!g_ap || !g_connected || g_rejected || !g_boss_won.wantsSend()) return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
+	AP_NET_GUARD("boss_won_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "or"; op.value = g_boss_won.pending;
+		if (g_ap->Set(g_boss_won.key, 0, true, {op})) g_boss_won.sent = true;
+	});
+}
+
+// The one-time migration for a seed played before this key existed: the boss
+// locations (and, outside any_percent, N. Oxide's Challenge) already checked
+// on the server. Called from the Get reply, after Connected filled the checked
+// set and slot_data was parsed.
+static unsigned ap_boss_won_migration_bits()
+{
+	unsigned checked = 0;
+	ap_locs_refresh();
+	for (int b = 0; b < AP_BOSS_WON_BOSS_COUNT; b++)
+		if (g_locs_chk.count((int64_t)AP_BOSS_WON_LOCATION_CODE(b)))
+			checked |= AP_BOSS_WON_BIT(b);
+	if (g_locs_chk.count((int64_t)AP_BOSS_WON_OXIDE_FIRST_CODE))
+		checked |= AP_BOSS_WON_OXIDE_FIRST;
+	unsigned bits = AP_BossWonMigrationBits(checked, ctr_cfg_active() ? ctr_cfg.goal_oxide : 0);
+	char line[128];
+	std::snprintf(line, sizeof line,
+	              "[AP BOSS WON] key absent: one-time copy of checked bosses, checked=%u bits=%u\n",
+	              checked, bits);
+	AP_LogLine(line);
+	return bits;
+}
+
+extern "C" int ap_net_boss_won_known(void)
+{
+	return g_connected && !g_rejected && g_boss_won.known();
+}
+extern "C" unsigned ap_net_boss_won_bits(void)
+{
+	return g_rejected ? 0u : g_boss_won.bits;
+}
+extern "C" void ap_net_boss_won_record(unsigned bit)
+{
+	if (g_rejected || !g_boss_won.record(bit)) return;
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP BOSS WON] bit %u won; recording (known=%d)\n",
+	              bit, (int)g_boss_won.known());
+	AP_LogLine(line);
+	ap_boss_won_flush();
+}
+
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
 {
 	if (!g_ap || !g_connected)
@@ -2139,6 +2222,7 @@ extern "C" void ap_net_shutdown(void)
 	g_doors_sent = 0;
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
+	g_boss_won.disconnected();
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

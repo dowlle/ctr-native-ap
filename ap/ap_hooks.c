@@ -64,6 +64,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_useful.h"     // H-dossier useful grants
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_held_race_rearm.h" // pure per-attempt boundary latch for held rungs
+#include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
@@ -2145,9 +2146,10 @@ static AP_GoalPresentationState ap_goal_presentation = {0};
 // least one condition is active, so this is never vacuous on a real seed).
 //   goal_oxide 1 (first) -> beat N. Oxide's Challenge
 //   goal_oxide 2 (final) -> beat N. Oxide's Final Challenge
-//   goal_bosses N (>0)   -> N of the 4 boss races personally won. "Won" ==
-//                           the boss-race LOCATION is CHECKED (sent only on
-//                           an actual live win, game/222.c). NOT
+//   goal_bosses N (>0)   -> N of the 4 boss races personally won, from the
+//                           #458 boss-won flags (AP_ComposedBossesWon). NOT
+//                           the checked boss-race LOCATION (Collect, Release
+//                           and admin commands check it too), NOT
 //                           AP_GateCount(Trophy)>=16, and NOT CHECK_ADV_BIT
 //                           on the boss key bits 94-97: those are the Key
 //                           item pool (AP_POOL_KEY), so AP_ApplyItems sets
@@ -2165,19 +2167,21 @@ static AP_GoalPresentationState ap_goal_presentation = {0};
 static void AP_FeedEnqueue(const char *text, int color, int playCue); // defined with the feed block below
 
 // How many of the four boss RACES the player has personally won, in the one
-// form every consumer of goal_bosses must use: the boss-race LOCATION being
-// CHECKED (server truth). Never CHECK_ADV_BIT on bits 94-97 and never received
-// Keys -- those are the Key item pool's mirror, rewritten by AP_ApplyItems from
-// RECEIVED items on every reconcile tick (the BUG-D class). Factored out of
-// AP_EvaluateGoal so the goal evaluator, the goal advert and the Oxide garage
-// gate (WO-A1) cannot drift apart about what "won a boss race" means.
+// form every consumer of goal_bosses must use: the #458 boss-won flags
+// (ap/ap_boss_won_flags.h), set on each live boss win and kept per seed, team
+// and slot in server data storage. NOT the checked boss-race LOCATION: the
+// server also checks it for another player's Collect, this player's own
+// !collect or !release, and admin commands, so a Collect could complete the
+// goal with no boss raced (#458). Never CHECK_ADV_BIT on bits 94-97 and never
+// received Keys either -- those are the Key item pool's mirror, rewritten by
+// AP_ApplyItems from RECEIVED items on every reconcile tick (the BUG-D class).
+// Factored out of AP_EvaluateGoal so the goal evaluator, the goal advert, the
+// Oxide garage gate (WO-A1) and the DeathLink win logic cannot drift apart
+// about what "won a boss race" means. Counts 0 until the flags are known or a
+// win is recorded, which only delays the goal.
 static int AP_ComposedBossesWon(void)
 {
-	int won = 0, b;
-	for (b = 0; b < 4; b++)
-		if (AP_LocationCheckedByBit(ADV_REWARD_FIRST_BOSS_KEY + b))
-			won++;
-	return won;
+	return AP_BossWonCount(ap_net_boss_won_bits());
 }
 
 void AP_EvaluateGoal(void)
@@ -3547,12 +3551,31 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 {
 	char msg[192];
 	int newEarn = 0;
+	int bossWonNew = 0;
 
 	if (rewardBit < 0 || rewardBit >= 192)
 		return;
+	// #458: a boss race won here is a personal win, recorded on every win and
+	// before the session dedup below, whether or not its location is already
+	// checked: a Collect-marked boss is still unbeaten until it is raced.
+	if (ctr_cfg_active() && rewardBit >= ADV_REWARD_FIRST_BOSS_KEY &&
+	    rewardBit < ADV_REWARD_FIRST_BOSS_KEY + AP_BOSS_WON_BOSS_COUNT)
+	{
+		unsigned bit = AP_BOSS_WON_BIT(rewardBit - ADV_REWARD_FIRST_BOSS_KEY);
+		bossWonNew = (ap_net_boss_won_bits() & bit) == 0;
+		ap_net_boss_won_record(bit);
+		bossWonNew = bossWonNew && (ap_net_boss_won_bits() & bit) != 0;
+	}
 	int w = rewardBit >> 5, b = rewardBit & 31;
 	if (ap_notified_mask[w] & (1u << b))
+	{
+		if (bossWonNew)
+		{
+			AP_GoalArmLiveEvent();
+			AP_EvaluateGoal();
+		}
 		return; // already notified this session
+	}
 	ap_notified_mask[w] |= (1u << b);
 
 	long code = AP_LookupLocationCode(rewardBit);
@@ -3632,10 +3655,12 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 	    rewardBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
 		AP_SendPodiumChecks(rewardBit - ADV_REWARD_FIRST_TROPHY, 1);
 
-	// A personally earned boss check can be the last active arm of a composed
+	// A personally won boss race can be the last active arm of a composed
 	// goal. Keep this as a live edge rather than deriving it from reconnect
 	// state, otherwise every reconnect to a completed seed would replay credits.
-	if (newEarn && rewardBit >= ADV_REWARD_FIRST_BOSS_KEY &&
+	// #458: a re-race of a Collect-marked boss is not a new location check but
+	// is a new win, so it arms the goal too.
+	if ((newEarn || bossWonNew) && rewardBit >= ADV_REWARD_FIRST_BOSS_KEY &&
 	    rewardBit < ADV_REWARD_FIRST_BOSS_KEY + 4)
 	{
 		AP_GoalArmLiveEvent();
@@ -3679,6 +3704,13 @@ void AP_NotifyGoal(int oxideSecond)
 		ap_oxide_final_beaten = 1;
 	else
 		ap_oxide_first_beaten = 1;
+
+	// #458: Oxide's Challenge personally cleared, kept across reconnects in the
+	// boss-won flags. The opt-in final race also collects the first reward
+	// (below), so it counts as clearing the first challenge too.
+	if (ctr_cfg_active() &&
+	    (!oxideSecond || (ctr_cfg.goal_oxide == 2 && ctr_cfg.oxide_1_optional)))
+		ap_net_boss_won_record(AP_BOSS_WON_OXIDE_FIRST);
 
 	// As of schema 4 the two Oxide beats are also REAL location checks
 	// (35011104 / 35011105). AP_NotifyAdvReward looks up the bit's code in
@@ -4487,16 +4519,20 @@ int AP_BossGarageOpen(int bossIdx)
 
 // Has the player personally cleared Oxide's FIRST challenge in this seed?
 //
-// Read from AUTHORITATIVE checked-location state, never from the
-// ap_oxide_first_beaten session boolean: that boolean is reset on every
-// connect (see the slot-reset block), so a reconnecting player would be
-// offered the first challenge again when the Final one is what comes next.
-// The location check itself is server truth and survives reconnect, profile
-// load and hub re-entry, which is exactly what issue #321's implementation
-// check 2 asks for.
+// Read from the #458 boss-won flags (ap/ap_boss_won_flags.h), kept per seed,
+// team and slot in server data storage, never from the ap_oxide_first_beaten
+// session boolean: that boolean is reset on every connect (see the
+// slot-reset block), so a reconnecting player would be offered the first
+// challenge again when the Final one is what comes next. The flags survive
+// reconnect, profile load and hub re-entry, which is what issue #321's
+// implementation check 2 asks for.
+//
+// Not the checked N. Oxide's Challenge location either (#458): another
+// player's Collect can check it, and under any_percent that made the garage
+// offer the Final Challenge, whose win cannot complete any_percent.
 int AP_OxideFirstChallengeCleared(void)
 {
-	return AP_LocationCheckedByBit(AP_GOAL_BIT_OXIDE_FIRST) != 0;
+	return (ap_net_boss_won_bits() & AP_BOSS_WON_OXIDE_FIRST) != 0;
 }
 
 // Gather the inputs the one Oxide decision needs. Factored out so the gate,
@@ -4881,7 +4917,7 @@ static int AP_OxideGateAdvert(char *out, int cap)
 }
 
 // #152/#322: the pause menu's composed-goal readout. Reads the SAME ctr_cfg
-// fields and AP_GateCount*/AP_LocationCheckedByBit helpers AP_EvaluateGoal
+// fields and AP_GateCount*/AP_ComposedBossesWon helpers AP_EvaluateGoal
 // reads, so the two cannot disagree about progress.
 //
 // The SHAPE changed in #322. It used to build one prose sentence -- "Goal: beat

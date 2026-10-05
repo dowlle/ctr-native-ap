@@ -15,11 +15,14 @@ reward = reward_source[start:end]
 fixture = r'''
 #include <assert.h>
 #include "ap_race_attempt_logic.h"
+#include "ap_boss_won_flags.h"
 #define AP_GOAL_BIT_OXIDE_FIRST 115
 #define AP_GOAL_BIT_OXIDE_SECOND 116
 static struct { int goal_oxide, oxide_1_optional; } ctr_cfg;
 static int active, ap_oxide_first_beaten, ap_oxide_final_beaten;
-static int first, final, arm, evaluate;
+static int first, final, arm, evaluate, wonRecords;
+// #458: the persisted "Oxide's Challenge personally cleared" bit.
+void ap_net_boss_won_record(unsigned bit) { assert(bit == AP_BOSS_WON_OXIDE_FIRST); wonRecords++; }
 #define AA_OXIDE_SECOND_WIN_BOSS_ID 7
 #define ADV_REWARD_OXIDE_FIRST_WIN_FLAGS 1
 #define ADV_REWARD_OXIDE_SECOND_WIN_FLAGS 2
@@ -46,9 +49,10 @@ int main(void) {
  for (int enabled=0; enabled<3; enabled++)
  for (int second=0; second<2; second++) {
   ctr_cfg.goal_oxide=goal; ctr_cfg.oxide_1_optional=enabled;
-  first=final=arm=evaluate=ap_oxide_first_beaten=ap_oxide_final_beaten=0;
+  first=final=arm=evaluate=ap_oxide_first_beaten=ap_oxide_final_beaten=wonRecords=0;
   AP_NotifyGoal(second);
   assert(first==(!second || (active && goal==2 && enabled)));
+  assert(wonRecords==(active && (!second || (goal==2 && enabled))));
   assert(final==second && arm==1 && evaluate==1);
   assert(ap_oxide_first_beaten==!second && ap_oxide_final_beaten==second);
   first=final=arm=evaluate=ap_oxide_first_beaten=ap_oxide_final_beaten=0;
