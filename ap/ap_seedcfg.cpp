@@ -13,11 +13,14 @@
 
 #include "ap_seedcfg.h"
 #include "ap_relic_perfect.h"
+#include "ap_win_logic.h"
 
 #include <cstdarg>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 extern "C"
@@ -952,8 +955,446 @@ static void ap_seedcfg_parse_relic_perfect(const nlohmann::json &j)
 	           count);
 }
 
+// ── win_logic (race-loss DeathLink stakes, native #449, block version 1) ─────
+//
+// SCHEMA.md (ctr-artifacts/win-logic) is the contract. The block is parsed into
+// the flat ctr_win_logic tables that ap_win_logic.h evaluates. Validation is
+// strict and all-or-nothing: the first problem refuses the whole block with one
+// log line naming it, and native keeps the 0.2.3 rule (every loss sends). A
+// newer block version is treated as absent. Native only interprets the
+// exported terms; it never re-derives logic from options.
+extern "C"
+{
+	AP_WinLogic ctr_win_logic;
+}
+
+namespace
+{
+struct WlParser
+{
+	AP_WinLogic *wl;
+	std::string why;
+
+	bool fail(const std::string &w)
+	{
+		if (why.empty())
+			why = w;
+		return false;
+	}
+
+	// Exact integer within [lo, hi]. nlohmann's is_number_integer() is false for
+	// a boolean and for a float, so neither passes as an int.
+	static bool exact_int(const nlohmann::json &v, long long lo, long long hi, long long *out)
+	{
+		if (!v.is_number_integer())
+			return false;
+		long long x;
+		if (v.is_number_unsigned())
+		{
+			unsigned long long u = v.get<unsigned long long>();
+			if (u > 0x7fffffffffffffffULL)
+				return false;
+			x = (long long)u;
+		}
+		else
+			x = v.get<long long>();
+		if (x < lo || x > hi)
+			return false;
+		*out = x;
+		return true;
+	}
+
+	// Canonical decimal location key: digits only, no sign, no leading zero,
+	// no whitespace, positive and within long range.
+	static bool canonical_key(const std::string &k, long *out)
+	{
+		if (k.empty() || k.size() > 10 || k[0] == '0')
+			return false;
+		long long v = 0;
+		for (char ch : k)
+		{
+			if (ch < '0' || ch > '9')
+				return false;
+			v = v * 10 + (ch - '0');
+		}
+		if (v <= 0 || v > 0x7fffffffLL)
+			return false;
+		*out = (long)v;
+		return true;
+	}
+
+	int new_node(int tag, long a, long b, long c)
+	{
+		if (wl->node_count >= AP_WL_MAX_NODES)
+		{
+			fail("too many terms for this client");
+			return -1;
+		}
+		AP_WinLogicNode &n = wl->nodes[wl->node_count];
+		n.tag = tag;
+		n.a = a;
+		n.b = b;
+		n.c = c;
+		return wl->node_count++;
+	}
+
+	bool count_field(const nlohmann::json &v, const char *tag, long *out)
+	{
+		long long x;
+		if (!exact_int(v, 0, 0x7fffffffLL, &x))
+			return fail(std::string(tag) + " count is not a non-negative integer");
+		*out = (long)x;
+		return true;
+	}
+
+	// Returns the node index, or -1 with `why` set.
+	int term(const nlohmann::json &t, int depth)
+	{
+		if (depth > AP_WL_MAX_DEPTH)
+		{
+			fail("term nested too deeply");
+			return -1;
+		}
+		if (t.is_boolean())
+			return new_node(t.get<bool>() ? AP_WL_T_TRUE : AP_WL_T_FALSE, 0, 0, 0);
+		if (!t.is_array() || t.empty() || !t[0].is_string())
+		{
+			fail("term is not true, false or a tagged array");
+			return -1;
+		}
+		const std::string tag = t[0].get<std::string>();
+		const size_t arity = t.size() - 1;
+		long long x, y, z;
+
+		if (tag == "all" || tag == "any")
+		{
+			// Children first, so their own kids[] runs never interleave ours.
+			std::vector<int> kids;
+			kids.reserve(arity);
+			for (size_t i = 1; i < t.size(); i++)
+			{
+				int k = term(t[i], depth + 1);
+				if (k < 0)
+					return -1;
+				kids.push_back(k);
+			}
+			if (wl->kid_count + (int)kids.size() > AP_WL_MAX_KIDS)
+			{
+				fail("too many terms for this client");
+				return -1;
+			}
+			int first = wl->kid_count;
+			for (int k : kids)
+				wl->kids[wl->kid_count++] = k;
+			return new_node(tag == "all" ? AP_WL_T_ALL : AP_WL_T_ANY, first,
+			                (long)kids.size(), 0);
+		}
+		if (tag == "req")
+		{
+			if (arity != 3)
+				return fail("req has wrong arity"), -1;
+			if (!exact_int(t[1], 1, 8, &x))
+				return fail("req type is not an integer 1..8"), -1;
+			if (!exact_int(t[2], 0, 0x7fffffffLL, &y))
+				return fail("req count is not a non-negative integer"), -1;
+			if (!exact_int(t[3], -1, 4, &z))
+				return fail("req colour is not an integer -1..4"), -1;
+			// SCHEMA.md: types 3 and 5 name one colour 0..4; type 4 one tier
+			// 0..2 or the legacy -1 (Sapphire). Anything else is ambiguous.
+			if ((x == 3 || x == 5) && z < 0)
+				return fail("req type " + std::to_string(x) + " has colour -1"), -1;
+			if (x == 4 && z > 2)
+				return fail("req type 4 tier is not -1..2"), -1;
+			return new_node(AP_WL_T_REQ, (long)x, (long)y, (long)z);
+		}
+		if (tag == "tokens_no_purple" || tag == "bosses" || tag == "families")
+		{
+			long c;
+			if (arity != 1)
+				return fail(tag + " has wrong arity"), -1;
+			if (!count_field(t[1], tag.c_str(), &c))
+				return -1;
+			int tg = tag == "tokens_no_purple" ? AP_WL_T_TOKENS_NO_PURPLE
+			       : tag == "bosses"           ? AP_WL_T_BOSSES
+			                                   : AP_WL_T_FAMILIES;
+			return new_node(tg, c, 0, 0);
+		}
+		if (tag == "items")
+		{
+			long c;
+			if (arity != 3)
+				return fail("items has wrong arity"), -1;
+			if (!t[1].is_string() ||
+			    (t[1].get<std::string>() != "sum" && t[1].get<std::string>() != "distinct"))
+				return fail("items mode is not \"sum\" or \"distinct\""), -1;
+			if (!count_field(t[2], "items", &c))
+				return -1;
+			const nlohmann::json &ids = t[3];
+			if (!ids.is_array() || ids.empty())
+				return fail("items id list is not a non-empty array"), -1;
+			if (wl->id_count + (int)ids.size() > AP_WL_MAX_IDS)
+				return fail("too many item ids for this client"), -1;
+			int first = wl->id_count;
+			for (const auto &id : ids)
+			{
+				if (!exact_int(id, 1, 0x7fffffffLL, &x))
+					return fail("items id is not a positive integer"), -1;
+				for (int k = first; k < wl->id_count; k++)
+					if (wl->ids[k] == (long)x)
+						return fail("items id list has a duplicate"), -1;
+				wl->ids[wl->id_count++] = (long)x;
+			}
+			return new_node(t[1].get<std::string>() == "sum" ? AP_WL_T_ITEMS_SUM
+			                                                 : AP_WL_T_ITEMS_DISTINCT,
+			                c, first, (long)ids.size());
+		}
+		if (tag == "cap")
+		{
+			if (arity != 2)
+				return fail("cap has wrong arity"), -1;
+			if (!exact_int(t[1], 0, 3, &x))
+				return fail("cap boost is not an integer 0..3"), -1;
+			if (!exact_int(t[2], -1, 15, &y))
+				return fail("cap racer is not an integer -1..15"), -1;
+			return new_node(AP_WL_T_CAP, (long)x, (long)y, 0);
+		}
+		if (tag == "ref")
+		{
+			if (arity != 1)
+				return fail("ref has wrong arity"), -1;
+			if (!exact_int(t[1], 1, 0x7fffffffLL, &x))
+				return fail("ref location is not a positive integer"), -1;
+			return new_node(AP_WL_T_REF, (long)x, -1, 0); // b resolved after checks
+		}
+		fail("unknown term tag \"" + tag + "\"");
+		return -1;
+	}
+
+	bool contains_ref(int node, int depth) const
+	{
+		if (depth > AP_WL_MAX_DEPTH + 1)
+			return true;
+		const AP_WinLogicNode &n = wl->nodes[node];
+		if (n.tag == AP_WL_T_REF)
+			return true;
+		if (n.tag == AP_WL_T_ALL || n.tag == AP_WL_T_ANY)
+			for (long i = 0; i < n.b; i++)
+				if (contains_ref(wl->kids[n.a + i], depth + 1))
+					return true;
+		return false;
+	}
+
+	static int kind_from(const std::string &s)
+	{
+		static const char *names[] = {"trophy", "sapphire", "gold", "platinum", "ctr",
+		                              "boss", "gem", "crystal", "oxide", "oxide_final"};
+		for (int i = 0; i < 10; i++)
+			if (s == names[i])
+				return AP_WL_KIND_TROPHY + i;
+		return 0;
+	}
+
+	bool block(const nlohmann::json &b)
+	{
+		if (!b.is_object())
+			return fail("block is not an object");
+
+		// families
+		auto fam = b.find("families");
+		if (fam == b.end() || !fam->is_array())
+			return fail("families is missing or not an array");
+		if (fam->size() > AP_WL_MAX_FAMILIES)
+			return fail("too many families for this client");
+		for (const auto &f : *fam)
+		{
+			if (!f.is_array())
+				return fail("a family is not an array");
+			if (wl->id_count + (int)f.size() > AP_WL_MAX_IDS)
+				return fail("too many item ids for this client");
+			int first = wl->id_count;
+			for (const auto &id : f)
+			{
+				long long x;
+				if (!exact_int(id, 1, 0x7fffffffLL, &x))
+					return fail("a family id is not a positive integer");
+				wl->ids[wl->id_count++] = (long)x;
+			}
+			wl->family_first[wl->family_count] = first;
+			wl->family_len[wl->family_count] = (int)f.size();
+			wl->family_count++;
+		}
+
+		// regions
+		auto reg = b.find("regions");
+		if (reg == b.end() || !reg->is_array())
+			return fail("regions is missing or not an array");
+		if (reg->size() > AP_WL_MAX_REGIONS)
+			return fail("too many regions for this client");
+		for (size_t i = 0; i < reg->size(); i++)
+		{
+			int root = term((*reg)[i], 0);
+			if (root < 0)
+			{
+				why = "region " + std::to_string(i) + ": " + why;
+				return false;
+			}
+			wl->region_root[wl->region_count++] = root;
+		}
+
+		// checks
+		auto chk = b.find("checks");
+		if (chk == b.end() || !chk->is_object())
+			return fail("checks is missing or not an object");
+		if (chk->size() > AP_WL_MAX_CHECKS)
+			return fail("too many checks for this client");
+		for (auto it = chk->begin(); it != chk->end(); ++it)
+		{
+			long code;
+			if (!canonical_key(it.key(), &code))
+				return fail("check key \"" + it.key() + "\" is not a canonical location id");
+			const nlohmann::json &c = it.value();
+			if (!c.is_object())
+				return fail("check " + it.key() + " is not an object");
+			auto kind = c.find("kind");
+			auto region = c.find("region");
+			auto rule = c.find("rule");
+			if (kind == c.end() || !kind->is_string() || kind_from(kind->get<std::string>()) == 0)
+				return fail("check " + it.key() + " kind is missing or unknown");
+			long long r;
+			if (region == c.end() || !exact_int(*region, 0, (long long)wl->region_count - 1, &r))
+				return fail("check " + it.key() + " region is missing or out of range");
+			if (rule == c.end())
+				return fail("check " + it.key() + " rule is missing");
+			int root = term(*rule, 0);
+			if (root < 0)
+			{
+				why = "check " + it.key() + ": " + why;
+				return false;
+			}
+			AP_WinLogicCheck &e = wl->checks[wl->check_count++];
+			e.code = code;
+			e.kind = kind_from(kind->get<std::string>());
+			e.region = (int)r;
+			e.rule = root;
+		}
+
+		// start: precollected copies Archipelago's logic counts, by item id.
+		auto st = b.find("start");
+		if (st == b.end() || !st->is_object())
+			return fail("start is missing or not an object");
+		if (st->size() > AP_WL_MAX_START)
+			return fail("too many start items for this client");
+		for (auto it = st->begin(); it != st->end(); ++it)
+		{
+			long id;
+			long long n;
+			if (!canonical_key(it.key(), &id))
+				return fail("start key \"" + it.key() + "\" is not a canonical item id");
+			if (!exact_int(it.value(), 1, 0x7fffffffLL, &n))
+				return fail("start " + it.key() + " count is not a positive integer");
+			wl->start_id[wl->start_count] = id;
+			wl->start_n[wl->start_count] = (int)n;
+			wl->start_count++;
+		}
+
+		// Sort by code (keys are unique: nlohmann objects cannot repeat a key,
+		// and canonical keys map one-to-one onto codes).
+		std::sort(wl->checks, wl->checks + wl->check_count,
+		          [](const AP_WinLogicCheck &x, const AP_WinLogicCheck &y) { return x.code < y.code; });
+
+		// Resolve refs and hold the spec's depth-1 promise: a ref target's own
+		// region and rule never contain a ref, so evaluation cannot cycle.
+		for (int i = 0; i < wl->node_count; i++)
+		{
+			AP_WinLogicNode &n = wl->nodes[i];
+			if (n.tag != AP_WL_T_REF)
+				continue;
+			int idx = AP_WinLogicFindCheck(wl, n.a);
+			if (idx < 0)
+				return fail("ref to location " + std::to_string(n.a) + " that is not in checks");
+			const AP_WinLogicCheck &tgt = wl->checks[idx];
+			if (contains_ref(wl->region_root[tgt.region], 0) || contains_ref(tgt.rule, 0))
+				return fail("ref target " + std::to_string(n.a) + " itself contains a ref");
+			n.b = idx;
+		}
+		return true;
+	}
+};
+} // namespace
+
+static void ap_seedcfg_parse_win_logic(const nlohmann::json &j)
+{
+	AP_WinLogic *wl = &ctr_win_logic;
+
+	auto it = j.find("win_logic");
+	if (it == j.end())
+	{
+		ap_cfg_log("[AP CFG] win_logic absent: every race loss sends (0.2.3 rule)\n");
+		return;
+	}
+
+	// The version decides first: a newer block may change any other field.
+	const nlohmann::json &b = *it;
+	if (b.is_object())
+	{
+		auto v = b.find("version");
+		long long ver;
+		if (v != b.end() && WlParser::exact_int(*v, AP_WL_VERSION_KNOWN + 1, 0x7fffffffLL, &ver))
+		{
+			wl->state = AP_WL_NEWER;
+			wl->version = (int)ver;
+			ap_cfg_log("[AP CFG] win_logic version %lld is newer than this client (%d): "
+			           "every race loss sends (0.2.3 rule)\n", ver, AP_WL_VERSION_KNOWN);
+			return;
+		}
+		if (v == b.end() || !WlParser::exact_int(*v, AP_WL_VERSION_KNOWN, AP_WL_VERSION_KNOWN, &ver))
+		{
+			wl->state = AP_WL_INVALID;
+			std::snprintf(wl->problem, sizeof wl->problem, "%s", "version is missing or not 1");
+			ap_cfg_log("[AP CFG] win_logic refused (%s): every race loss sends (0.2.3 rule)\n",
+			           wl->problem);
+			return;
+		}
+	}
+
+	WlParser p;
+	p.wl = wl;
+	bool ok = false;
+	try
+	{
+		ok = p.block(b);
+	}
+	catch (...)
+	{
+		p.fail("unexpected JSON shape");
+		ok = false;
+	}
+	if (!ok)
+	{
+		std::string problem = p.why.empty() ? std::string("unknown problem") : p.why;
+		// Never partially use a block: drop every table, keep only the reason.
+		std::memset(wl, 0, sizeof *wl);
+		wl->state = AP_WL_INVALID;
+		std::snprintf(wl->problem, sizeof wl->problem, "%s", problem.c_str());
+		ap_cfg_log("[AP CFG] win_logic refused (%s): every race loss sends (0.2.3 rule)\n",
+		           wl->problem);
+		return;
+	}
+	wl->version = AP_WL_VERSION_KNOWN;
+	wl->state = AP_WL_VALID;
+	ap_cfg_log("[AP CFG] win_logic v%d: %d win check(s), %d region(s), %d famil%s, %d term(s), "
+	           "%d start item id(s)\n",
+	           wl->version, wl->check_count, wl->region_count, wl->family_count,
+	           wl->family_count == 1 ? "y" : "ies", wl->node_count, wl->start_count);
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+	// win_logic belongs to this parse only: a seed without the block (or a
+	// refused config) must never inherit the previous connection's tables.
+	std::memset(&ctr_win_logic, 0, sizeof ctr_win_logic);
+	ctr_win_logic.state = AP_WL_ABSENT;
+
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
 	ctr_cfg.schema_version = 0;
 	ctr_cfg.schema_newer = 0;
@@ -1787,6 +2228,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	}
 
 	ap_seedcfg_parse_relic_perfect(j);
+	ap_seedcfg_parse_win_logic(j);
 
 	// ── wumpa_checks (2026-08-29 specification, Lane A) ────────────────────
 	//
