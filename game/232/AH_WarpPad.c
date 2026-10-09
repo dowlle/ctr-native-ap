@@ -45,11 +45,14 @@ static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 	gGT->cameraDC[driver->driverID].cameraMode = apWarpSnapshot.camera;
 	apWarpSnapshot.driver = NULL;
 }
+#endif
 
+#ifdef CTR_AP
 // Entry fail-safe latch (2026-10-09). Holds the destination of the pad whose
 // entry was last refused by WarpPad_RefuseEntry, so the released kart is not
 // grabbed again the next frame while it still sits on the pad. Cleared once the
-// kart leaves the pad's entry radius.
+// kart leaves the pad's entry radius. Kept out of the snapshot block above,
+// which tools/test-custom-race-picker.py compiles on its own.
 static int apEntryRefusedDest = -1;
 #endif
 
