@@ -16,6 +16,7 @@
 //   boxes   0x300 + (box code - AP_BOX_CODE_BASE)          0x300..0x40d (270)
 //   letters 0x420 + level * 3 + letter                     0x420..0x455 (54)
 //   Wumpa   0x460 + level                                  0x460..0x471 (18)
+//   custom letters 0x456 + letter (the custom CTR Challenge) 0x456..0x458 (3)
 //
 // Freestanding and header-only so tools/test-pad-glow-items.c exercises the
 // exact gather production uses.
@@ -26,6 +27,10 @@
 #define AP_PADGLOW_BOX_BASE    0x300
 #define AP_PADGLOW_LETTER_BASE 0x420
 #define AP_PADGLOW_WUMPA_BASE  0x460
+// Custom-track letters sit right after the 18 per-track letter rows, below the
+// Wumpa range (2026-10-09).
+#define AP_PADGLOW_CUSTOM_LETTER_BASE \
+	(AP_PADGLOW_LETTER_BASE + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT)
 
 // Buffer size for a pad's DISPLAY enumeration is AP_PAD_DISPLAY_BITS_MAX in
 // ap_hooks.h; AP_PADGLOW_WORST_CASE_BITS below is the worst case it must cover,
@@ -79,6 +84,19 @@ static inline int AP_PadGlowLetterDecode(int bit, int *outLevel, int *outLetter)
 	return 1;
 }
 
+// Custom-track letter pseudo-bit, and its letter (0..2) or -1.
+static inline int AP_PadGlowCustomLetterBit(int letter)
+{
+	return AP_PADGLOW_CUSTOM_LETTER_BASE + letter;
+}
+
+static inline int AP_PadGlowCustomLetter(int bit)
+{
+	int off = bit - AP_PADGLOW_CUSTOM_LETTER_BASE;
+
+	return (off >= 0 && off < CTR_CFG_LETTER_COUNT) ? off : -1;
+}
+
 // ── Wumpa ────────────────────────────────────────────────────────────────────
 static inline int AP_PadGlowWumpaBit(int level)
 {
@@ -116,6 +134,12 @@ static inline long AP_PadGlowItemCode(const ctr_seed_config *cfg, int bit)
 		code = cfg->wumpa.tracks[level];
 		return code > 0 ? code : -1;
 	}
+	letter = AP_PadGlowCustomLetter(bit);
+	if (letter >= 0)
+	{
+		code = cfg->custom_letter_locations[letter];
+		return code > 0 ? code : -1;
+	}
 	return -1;
 }
 
@@ -127,7 +151,8 @@ static inline int AP_PadGlowIsItemBit(int bit)
 
 	return AP_PadGlowBoxCode(bit) >= 0 ||
 	       AP_PadGlowLetterDecode(bit, &level, &letter) ||
-	       AP_PadGlowWumpaLevel(bit) >= 0;
+	       AP_PadGlowWumpaLevel(bit) >= 0 ||
+	       AP_PadGlowCustomLetter(bit) >= 0;
 }
 
 // Prize slot under by_reward_type (ruling of 2026-09-30): item boxes and Wumpa in
@@ -139,7 +164,7 @@ static inline int AP_PadGlowItemRewardGroup(int bit)
 
 	if (AP_PadGlowBoxCode(bit) >= 0 || AP_PadGlowWumpaLevel(bit) >= 0)
 		return 0;
-	if (AP_PadGlowLetterDecode(bit, &level, &letter))
+	if (AP_PadGlowLetterDecode(bit, &level, &letter) || AP_PadGlowCustomLetter(bit) >= 0)
 		return 2;
 	return -1;
 }

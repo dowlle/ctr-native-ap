@@ -102,6 +102,7 @@ tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py
 tools/test-trial-pad-glow-production.py
+tools/test-trial-pad-route-production.py
 tools/test-oxide-garage-advert.c
 tools/test-oxide-weapon-schedule.c
 tools/test-oxide-final-venue-seedcfg.cpp

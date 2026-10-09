@@ -53,7 +53,7 @@ static ctr_seed_config fixture(void)
 
 struct query_state
 {
-	long checked[7];
+	long checked[12];
 	int checked_count;
 };
 
@@ -176,6 +176,83 @@ static void test_pad_lifecycle(void)
 	           "custom cup still respects its physical racer lock");
 }
 
+// 2026-10-09: the custom CTR Challenge and its letters keep the custom pad
+// out of Done. Before this they were not gathered at all, so the pad went Done
+// after Trophy, rungs and Wumpa and hard-locked them.
+static void test_custom_ctr_lifecycle(void)
+{
+	ctr_seed_config cfg = fixture();
+	struct query_state state;
+	int bits[8];
+	int count, letters;
+	memset(&state, 0, sizeof state);
+	cfg.custom_ctr_enabled = 1;
+	cfg.custom_ctr_location = 35021500;
+	cfg.custom_letter_locations[0] = 35021000;
+	cfg.custom_letter_locations[1] = 35021001;
+	cfg.custom_letter_locations[2] = 35021002;
+
+	expect_long(AP_CustomPadSpecialLocationCode(&cfg, AP_CUSTOM_CTR_PSEUDO_BIT),
+	            35021500, "custom CTR pseudo-bit resolves to its location");
+	count = AP_CustomPadAppendUnchecked(&cfg, 104, 1, bits, 8, 0,
+	                                    location_exists, location_checked,
+	                                    &state);
+	expect_int(count, 7, "gather adds the custom CTR Challenge");
+	expect_int(AP_CustomPadLettersLeft(&cfg, 104, location_exists,
+	                                   location_checked, &state),
+	           3, "three custom letters open");
+
+	// Trophy, four rungs and Wumpa settled; CTR and letters open.
+	state.checked[0] = 35016300;
+	state.checked[1] = 35016400;
+	state.checked[2] = 35016401;
+	state.checked[3] = 35016403;
+	state.checked[4] = 35016404;
+	state.checked[5] = 35016120;
+	state.checked_count = 6;
+	count = AP_CustomPadAppendUnchecked(&cfg, 104, 1, bits, 8, 0,
+	                                    location_exists, location_checked,
+	                                    &state);
+	expect_int(count == 1 && bits[0] == AP_CUSTOM_CTR_PSEUDO_BIT, 1,
+	           "only the custom CTR Challenge remains in the gather");
+	expect_int(AP_PadStateDecide(0, 1, 1, 1, 1, count + 3, 0), 2,
+	           "open custom CTR keeps the pad out of Done");
+
+	// CTR collected, letters still open: still not Done.
+	state.checked[6] = 35021500;
+	state.checked_count = 7;
+	count = AP_CustomPadAppendUnchecked(&cfg, 104, 1, bits, 8, 0,
+	                                    location_exists, location_checked,
+	                                    &state);
+	letters = AP_CustomPadLettersLeft(&cfg, 104, location_exists,
+	                                  location_checked, &state);
+	expect_int(count, 0, "collected custom CTR leaves the gather");
+	expect_int(letters, 3, "letters stay open after the CTR collect");
+	expect_int(AP_PadStateDecide(0, 1, 1, 1, 1, count + letters, 0), 2,
+	           "open custom letters keep the pad out of Done");
+
+	state.checked[7] = 35021000;
+	state.checked[8] = 35021001;
+	state.checked[9] = 35021002;
+	state.checked_count = 10;
+	letters = AP_CustomPadLettersLeft(&cfg, 104, location_exists,
+	                                  location_checked, &state);
+	expect_int(AP_PadStateDecide(0, 1, 1, 1, 1, letters, 0), 5,
+	           "custom pad is Done once CTR and letters are settled");
+
+	// A seed without the custom CTR Challenge counts neither.
+	cfg.custom_ctr_enabled = 0;
+	memset(&state, 0, sizeof state);
+	expect_long(AP_CustomPadSpecialLocationCode(&cfg, AP_CUSTOM_CTR_PSEUDO_BIT),
+	            -1, "custom CTR absent when the seed did not enable it");
+	expect_int(AP_CustomPadLettersLeft(&cfg, 104, location_exists,
+	                                   location_checked, &state),
+	           0, "no custom letters counted without the custom CTR");
+	expect_int(AP_CustomPadLettersLeft(&cfg, 103, location_exists,
+	                                   location_checked, &state),
+	           0, "another destination owns no custom letters");
+}
+
 static void test_serve_fault_reentry(void)
 {
 	const char *fault = "Package file changed after verification.";
@@ -194,6 +271,7 @@ int main(void)
 	test_identity_bridge();
 	test_fail_closed_identity();
 	test_pad_lifecycle();
+	test_custom_ctr_lifecycle();
 	test_serve_fault_reentry();
 	printf("%s: custom pad identity and lifecycle regression\n",
 	       failures ? "FAIL" : "PASS");

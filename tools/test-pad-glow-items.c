@@ -58,6 +58,17 @@ static void test_ranges_and_codes(void)
 	expect(AP_PADGLOW_BOX_BASE > AP_CV_PSEUDO_BASE + AP_CV_SLOT_COUNT, 1, "boxes above cortex range");
 	expect(AP_PADGLOW_BOX_BASE > AP_TRIAL_PSEUDO_BASE + 4, 1, "boxes above trial range");
 	expect(AP_PADGLOW_BOX_BASE + AP_BOX_LOCATION_COUNT <= AP_PADGLOW_LETTER_BASE, 1, "boxes end before letters");
+	/* 2026-10-09: the three custom-track letters follow the per-track rows and
+	   end before Wumpa, resolve to the custom letter row and ride the token slot. */
+	expect(AP_PADGLOW_CUSTOM_LETTER_BASE + CTR_CFG_LETTER_COUNT <= AP_PADGLOW_WUMPA_BASE, 1,
+	       "custom letters end before Wumpa");
+	expect(AP_PadGlowLetterDecode(AP_PadGlowCustomLetterBit(0), 0, 0), 0,
+	       "a custom letter is not a per-track letter");
+	expect(AP_PadGlowCustomLetter(AP_PadGlowCustomLetterBit(2)), 2, "custom letter decodes");
+	expect(AP_PadGlowCustomLetter(AP_PADGLOW_CUSTOM_LETTER_BASE - 1), -1, "last track letter is not custom");
+	expect(AP_PadGlowCustomLetter(AP_PADGLOW_CUSTOM_LETTER_BASE + 3), -1, "custom range is three wide");
+	expect(AP_PadGlowItemRewardGroup(AP_PadGlowCustomLetterBit(1)), 2, "custom letter rides the token slot");
+	expect(AP_PadGlowIsItemBit(AP_PadGlowCustomLetterBit(1)), 1, "custom letter is an item bit");
 	expect(AP_PADGLOW_LETTER_BASE + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT <= AP_PADGLOW_WUMPA_BASE, 1,
 	       "letters end before Wumpa");
 

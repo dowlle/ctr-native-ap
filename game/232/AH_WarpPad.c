@@ -47,6 +47,15 @@ static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 }
 #endif
 
+#ifdef CTR_AP
+// Entry fail-safe latch (2026-10-09). Holds the destination of the pad whose
+// entry was last refused by WarpPad_RefuseEntry, so the released kart is not
+// grabbed again the next frame while it still sits on the pad. Cleared once the
+// kart leaves the pad's entry radius. Kept out of the snapshot block above,
+// which tools/test-custom-race-picker.py compiles on its own.
+static int apEntryRefusedDest = -1;
+#endif
+
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 static int apCustomRaceChoice = -2;
 static void AH_WarpPad_CustomRaceMenuProc(struct RectMenu *menu)
@@ -894,6 +903,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	}
 #endif
 
+#ifdef CTR_AP
+	if (apEntryRefusedDest == warppadObj->levelID && warppadObj->boolEnteredWarppad == 0)
+	{
+		if (dist > 0x8fff)
+			apEntryRefusedDest = -1; // left the pad: entry re-arms
+		else
+			goto WarpPad_AnimateOpen;
+	}
+#endif
+
 	if ((dist > 0x8fff) && (warppadObj->boolEnteredWarppad == 0))
 	{
 		goto WarpPad_AnimateOpen;
@@ -1052,6 +1071,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 		AP_CV_ENTRY_GATE();
 #undef AP_CV_ENTRY_GATE
+		// Snapshot the kart the frame this warp begins, so the entry
+		// fail-safe below can put it back like the other pad classes.
+		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
+			AH_WarpPad_WarpCapture(gGT);
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1101,7 +1124,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				goto WarpPad_TrophyAnimateOnly;
 		}
 		else
-			goto WarpPad_AnimateOpen; // defensive: Done is hard-locked upstream
+			goto WarpPad_RefuseEntry; // Done is hard-locked upstream; never trap
 		sdata->boolOpenTokenRelicMenu = 0;
 		warppadObj->boolEnteredWarppad = 0;
 		goto WarpPad_RequestLoad;
@@ -1256,6 +1279,25 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
 	{
 #ifdef CTR_AP
+		// Stage 2 for a trial destination (2026-10-09). Under destination
+		// shuffle a race pad can load a trial track; the apworld then gates
+		// the trial relics and CTR Challenge on that physical pad's stage 2
+		// (Regions.py warp_pad_unlock_stage2_concrete, keyed by destination)
+		// and AP_PadState paints the pad Re-locked. A stage-2-locked pad is
+		// born closed; this is the backstop for the stale frame before a
+		// re-birth, and like the retail one it stays inert unless a check
+		// still needs the plain rerace. Unshuffled trial pads have no stage 2
+		// (ctr_cfg_warp_stage2_unlocked returns 1), so they never stop here.
+		int apTrialStage2Locked = ctr_cfg_active() &&
+		    ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM] &&
+		    AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY) &&
+		    !ctr_cfg_warp_stage2_unlocked(physLevelID);
+		if (apTrialStage2Locked && warppadObj->boolEnteredWarppad == 0 &&
+		    !AP_PadPhase1ReRaceable(physLevelID, levelID))
+		{
+			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
+			goto WarpPad_AnimateOpen;
+		}
 		// Capture the pre-warp kart/camera state the frame this warp begins, so a
 		// cancelled AP menu can put the player back (ticket 06/10).
 		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
@@ -1275,17 +1317,34 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		#ifdef CTR_AP
 		if (ctr_cfg_active() && ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM])
 		{
-			int track = levelID - AH_WP_SLIDE_COLISEUM;
 			int tokenLeft, relicLeft, boxLeft, wumpaLeft, route;
 			int relicBits[3];
 			// Match ordinary AP pads: the unchecked Trophy is phase one and loads
 			// directly. Only phase two chooses among still-productive race types.
 			if (!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY))
 				goto WarpPad_RequestLoad;
-			tokenLeft = ctr_cfg.trial_track_mode[track] >= 2 &&
-				ctr_cfg.trial_track_locations[track][CTR_CFG_TRIAL_CTR] > 0 &&
-				!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_CTR) &&
-				AP_TrialLetters_Prepare();
+			// Stage 2 locked: only the plain trial rerace (boxes, Wumpa, Hit),
+			// never the relic race or CTR Challenge stage 2 still gates.
+			if (apTrialStage2Locked)
+			{
+				if (AP_PadPhase1ReRaceable(physLevelID, levelID))
+				{
+					AP_PadLogRoute(physLevelID, levelID,
+					               AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
+					goto WarpPad_RequestLoad;
+				}
+				goto WarpPad_RefuseEntry;
+			}
+			// The CTR Challenge stays on offer while its location OR any of
+			// its letters is open, as on a retail pad. A Collect of the CTR
+			// Challenge with letters still open left this 0 while AP_PadState
+			// kept the pad open for the letters: Done route, kart held in the
+			// beam (2026-10-09). Servable = Trophy+CTR mode, placed location,
+			// retail letter assets; the pad lifecycle uses the same gate.
+			tokenLeft = AP_TrialTokenSideLeft(
+			    AP_TrialChallengeServable(levelID),
+			    !AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_CTR),
+			    AP_PadUncollectedLetterCount(levelID));
 			relicLeft = AP_PadRelicSideLeft(
 			    AP_PadUncollectedBits(levelID, relicBits, 3) > 0,
 			    AP_PadUncollectedRelicPerfectCount(levelID));
@@ -1316,7 +1375,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					AH_WarpPad_HitRaceRows(tokenLeft, relicLeft);
 					apHitRaceMenu.rowSelected = 0;
 					RECTMENU_Show(&apHitRaceMenu);
-					AP_PadLogRoute(levelID, levelID,
+					AP_PadLogRoute(physLevelID, levelID,
 					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
 					goto WarpPad_TrophyAnimateOnly;
 				}
@@ -1326,7 +1385,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 				if (apHitAction == AP_HIT_CHOOSER_PLAIN)
 				{
-					AP_PadLogRoute(levelID, levelID,
+					AP_PadLogRoute(physLevelID, levelID,
 					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
 					goto WarpPad_RequestLoad;
 				}
@@ -1382,7 +1441,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			}
 
 			route = AP_PadTier2RouteDecide(tokenLeft, relicLeft, boxLeft);
-			AP_PadLogRoute(levelID, levelID, AP_PAD_ROUTE_TIER2_BASE + route);
+			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + route);
 			if (route == AP_PAD_TIER2_TOKEN)
 			{
 				gGT->gameMode2 |= TOKEN_RACE;
@@ -1410,7 +1469,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				goto WarpPad_RequestLoad;
 			}
 			else
-				goto WarpPad_AnimateOpen;
+				goto WarpPad_RefuseEntry; // nothing to load: release, never trap
 			sdata->boolOpenTokenRelicMenu = 0;
 			warppadObj->boolEnteredWarppad = 0;
 		}
@@ -1748,7 +1807,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 							else
 							{
 								// Defensive only: state 5 Done is hard-locked upstream.
-								goto WarpPad_AnimateOpen;
+								// Release the kart rather than hold it in the beam.
+								goto WarpPad_RefuseEntry;
 							}
 						}
 						else
@@ -1877,6 +1937,25 @@ WarpPad_RequestLoad:
 
 	MainRaceTrack_RequestLoad(levelID);
 	goto WarpPad_AnimateOpen;
+
+#ifdef CTR_AP
+	// Entry fail-safe (2026-10-09). An open pad whose entry route found nothing
+	// to load must not keep the kart in the warp: AnimateOpen alone leaves
+	// boolEnteredWarppad set and the warp init installed, so the same decision
+	// repeats every frame and the kart spins in the beam forever. Undo the warp
+	// the way the Hit chooser cancel does, then latch the pad until the kart
+	// leaves it so the release is not undone the next frame.
+WarpPad_RefuseEntry:
+	RECTMENU_Hide(&D232.menuTokenRelic);
+	sdata->boolOpenTokenRelicMenu = 0;
+	warppadObj->boolEnteredWarppad = 0;
+	warppadObj->framesWarping = 0;
+	AH_WarpPad_WarpRestore(gGT);
+	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+	apEntryRefusedDest = warppadObj->levelID;
+	AP_PadLogEntryRefused(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID);
+	goto WarpPad_AnimateOpen;
+#endif
 
 WarpPad_TrophyAnimateOnly:
 

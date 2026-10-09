@@ -93,6 +93,19 @@ static inline int AP_PadTokenSideLeft(int tokenLeft, int lettersLeft, int wumpaL
 	return tokenLeft || lettersLeft || wumpaLeft;
 }
 
+// The CTR Challenge side of a trial pad (Slide Coliseum / Turbo Track). The
+// challenge is offered only when the seed placed it and the retail letter
+// assets loaded (`servable`). When it is, an open letter keeps it useful after
+// the CTR Challenge location itself is checked, as on a retail pad. A Collect
+// that checked the CTR Challenge while letters stayed open used to leave this
+// side at 0: the pad stayed open (AP_PadState counts the letters) while the
+// entry route decided Done and held the kart in the warp beam (2026-10-09).
+// Trial Wumpa rides the plain rerace in the caller, so it is not folded here.
+static inline int AP_TrialTokenSideLeft(int servable, int ctrUnchecked, int lettersLeft)
+{
+	return servable && AP_PadTokenSideLeft(ctrUnchecked, lettersLeft, 0);
+}
+
 // The Relic Race side stays useful while any relic tier location OR the
 // destination's Relic Race Perfect check is unchecked (#439). The perfect has
 // no AdvProgress bit, so it cannot ride in the tier bits the chooser reads; a
