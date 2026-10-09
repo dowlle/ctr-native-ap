@@ -1039,6 +1039,21 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge)
 	return code > 0 && ap_net_location_checked(code);
 }
 
+// One feed popup per session when the trial CTR Challenges cannot be offered
+// because the retail letter assets were refused (ruling 2026-10-09). Waits for
+// the BIGFILE directory: before it is read, AP_TrialLetters_Prepare returns 0
+// without having tried.
+static void AP_TrialLettersRefusedNotice(void)
+{
+	static int s_shown;
+
+	if (s_shown || !sdata->ptrBigfile1)
+		return;
+	s_shown = 1;
+	AP_FeedNoticeLine("TRIAL CTR CHALLENGES OFF:");
+	AP_FeedNoticeLine("LETTER ASSETS NOT FOUND");
+}
+
 // Can this trial destination serve its CTR Challenge? It needs the seed's
 // Trophy+CTR mode, a placed CTR Challenge location and the retail letter assets
 // (AP_TrialLetters_Prepare, which latches its answer after the first read).
@@ -1054,7 +1069,10 @@ int AP_TrialChallengeServable(int destLevelID)
 	if (ctr_cfg.trial_track_mode[track] < 2 ||
 	    ctr_cfg.trial_track_locations[track][CTR_CFG_TRIAL_CTR] <= 0)
 		return 0;
-	return AP_TrialLetters_Prepare();
+	if (AP_TrialLetters_Prepare())
+		return 1;
+	AP_TrialLettersRefusedNotice();
+	return 0;
 }
 
 // ── Cortex Vortex pad track (schema 15) ─────────────────────────────────────
@@ -1535,6 +1553,15 @@ int AP_PadUncollectedLetterCount(int destLevelID)
 		           ? AP_CortexOpenCount(&ctr_cfg.cortex_track, AP_CV_SLOT_LETTER0, 3,
 		                                AP_PadBoxLive, AP_PadBoxChecked, 0)
 		           : 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// Custom CTR letters (2026-10-09): the custom pad must not go Done while one
+	// is open, the same rule every other CTR Challenge pad follows.
+	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+		return ctr_cfg_active()
+		           ? AP_CustomPadLettersLeft(&ctr_cfg, destLevelID,
+		                                     AP_PadBoxLive, AP_PadBoxChecked, 0)
+		           : 0;
+#endif
 	if (!ctr_cfg_active() || destLevelID < 0 || destLevelID >= CTR_CFG_LETTER_TRACK_COUNT)
 		return 0;
 	// Trial letters are only reachable in a servable trial CTR Challenge.
@@ -1587,7 +1614,20 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 		return count;
 #ifdef CTR_CUSTOM_TRACKS
 	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
+	{
+		// The custom CTR letters, with the predicate of their pad-state count.
+		int letter;
+		if (AP_CustomPadLettersLeft(&ctr_cfg, destLevelID, AP_PadBoxLive,
+		                            AP_PadBoxChecked, 0) > 0)
+			for (letter = 0; letter < CTR_CFG_LETTER_COUNT && count < cap; letter++)
+			{
+				long code = ctr_cfg.custom_letter_locations[letter];
+				if (code > 0 && ap_net_location_exists(code) &&
+				    !ap_net_location_checked(code))
+					outBits[count++] = AP_PadGlowCustomLetterBit(letter);
+			}
 		return count;
+	}
 #endif
 	wumpaOn = ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_PER_TRACK;
 
@@ -1683,6 +1723,10 @@ static int AP_GlowBitRewardGroup(int globalBit)
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
 	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
 	int itemGroup = AP_PadGlowItemRewardGroup(globalBit);
+#ifdef CTR_CUSTOM_TRACKS
+	if (globalBit == AP_CUSTOM_CTR_PSEUDO_BIT)
+		return 2; // custom CTR Challenge -> token slot, like every CTR Challenge
+#endif
 	if (itemGroup >= 0)
 		return itemGroup; // boxes + Wumpa -> race slot, CTR letters -> token slot
 	if (perfectGroup >= 0)
@@ -3171,6 +3215,19 @@ void AP_FeedTrapLine(const char *text)
 // One received-DeathLink line: a death applied (red) or ignored because it did not
 // arrive in a live race (orange). Like the trap line it is live gameplay state, not
 // a replayed receipt, so it bypasses the initial-inventory absorb window.
+// A one-off client notice in the same feed (orange, like an ignored DeathLink).
+void AP_FeedNoticeLine(const char *text)
+{
+	char line[AP_FEED_TEXT_CAP];
+	if (!ctr_cfg_active() || text == 0)
+		return;
+	AP_CeremonySanitize(text, line, (int)sizeof line);
+	line[AP_FEED_MAX_CHARS] = '\0';
+	if (line[0] == '\0')
+		return;
+	AP_FeedEnqueue(line, ORANGE, 1);
+}
+
 void AP_FeedDeathLinkLine(const char *text, int ignored)
 {
 	char line[AP_FEED_TEXT_CAP];

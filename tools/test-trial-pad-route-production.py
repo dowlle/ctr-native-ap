@@ -18,8 +18,9 @@ with the shared decision header, and pins:
      entry route that is not Done, unless only a Hit opportunity is left (the
      Hit chooser loads the plain rerace for it before the route is decided);
   6. the engine glue: every Done route in AH_WarpPad.c goes to the entry
-     fail-safe, which releases the kart, and the trial route uses the shared
-     token-side helper.
+     fail-safe, which releases the kart, the trial route uses the shared
+     token-side helper, and a trial destination honours the physical pad's
+     stage 2 like a retail one.
 """
 from pathlib import Path
 import itertools
@@ -54,6 +55,8 @@ int ctr_cfg_active(void){return 1;}
 int ap_net_location_exists(long long c){return c > 0;}
 int ap_net_location_checked(long long c){int i;for(i=0;i<nChecked;i++)if(checked[i]==c)return 1;return 0;}
 int AP_TrialLetters_Prepare(void){prepareCalls++;return assetsReady;}
+static int notices = 0;
+static void AP_TrialLettersRefusedNotice(void){notices++;}
 static int AP_PadBoxLive(long c,void *x){(void)x;return c>0;}
 static int AP_PadBoxChecked(long c,void *x){(void)x;return ap_net_location_checked(c);}
 static int AP_CortexOpenCount(const void *t,int s,int n,int (*l)(long,void*),int (*k)(long,void*),void *x){(void)t;(void)s;(void)n;(void)l;(void)k;(void)x;return 0;}
@@ -128,6 +131,7 @@ int main(void){
   assetsReady=0;setChecked(d,1,1,3);
   assert(AP_PadUncollectedLetterCount(d)==0);
   assert(AP_PadState(d,d)==5);
+  assert(notices>0); /* the refusal reaches the one-per-session feed notice */
   relicTiers=1;assert(AP_PadState(d,d)==4&&trialRoute(d)==AP_PAD_TIER2_RELIC);relicTiers=0;
   /* Trophy-only mode: same */
   assetsReady=1;ctr_cfg.trial_track_mode[t]=1;
@@ -185,7 +189,14 @@ assert 'AP_TrialChallengeServable(levelID)' in trial
 assert 'AP_PadUncollectedLetterCount(levelID)' in trial
 assert 'AP_TrialLetters_Prepare()' not in trial
 assert 'AP_PadLogRoute(levelID, levelID' not in trial
-assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 3
+assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 4
+# Stage 2 on a trial destination is the physical pad's, as in the apworld and
+# AP_PadState: inert before the warp unless a plain rerace is still needed,
+# and only the plain trial rerace after it.
+assert '!ctr_cfg_warp_stage2_unlocked(physLevelID);' in trial
+assert 'AP_PAD_ROUTE_S2LOCKED_INERT' in trial and 'AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE' in trial
+assert trial.index('apTrialStage2Locked =') < trial.index('warppadObj->boolEnteredWarppad = 1;')
+assert trial.index('if (apTrialStage2Locked)') < trial.index('tokenLeft = AP_TrialTokenSideLeft(')
 refuse = warp[warp.index('\nWarpPad_RefuseEntry:'):warp.index('\nWarpPad_TrophyAnimateOnly:')]
 for needed in ('warppadObj->boolEnteredWarppad = 0;', 'warppadObj->framesWarping = 0;',
                'AH_WarpPad_WarpRestore(gGT);', 'VehPhysProc_Driving_Init',

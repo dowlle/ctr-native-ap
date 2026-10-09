@@ -131,6 +131,12 @@ static inline long AP_CustomPadSpecialLocationCode(const ctr_seed_config *cfg,
 			       ? AP_CustomPadWumpaLocationCode(
 			             cfg, cfg->custom_track.replaces_cup_level_id)
 			       : -1;
+	if (globalBit == AP_CUSTOM_CTR_PSEUDO_BIT)
+		return cfg != 0 &&
+		       AP_CustomPadOwnsDestination(
+		           cfg, cfg->custom_track.replaces_cup_level_id) &&
+		       cfg->custom_ctr_enabled && cfg->custom_ctr_location > 0
+		           ? cfg->custom_ctr_location : -1;
 	return -1;
 }
 
@@ -147,7 +153,7 @@ static inline int AP_CustomPadAppendUnchecked(
 	ap_custom_pad_location_query exists,
 	ap_custom_pad_location_query checked, void *ctx)
 {
-	int bits[2 + CTR_CFG_PODIUM_RUNG_COUNT];
+	int bits[3 + CTR_CFG_PODIUM_RUNG_COUNT];
 	int n = 0;
 	int i;
 	int track;
@@ -157,6 +163,10 @@ static inline int AP_CustomPadAppendUnchecked(
 		return count;
 	bits[n++] = AP_CUSTOM_TROPHY_PSEUDO_BIT;
 	bits[n++] = AP_CUSTOM_WUMPA_PSEUDO_BIT;
+	// The custom CTR Challenge (2026-10-09). Before this the pad counted only
+	// Trophy, Wumpa and rungs, so it went Done and hard-locked an open custom
+	// CTR Challenge or custom letter. Absent unless the seed enabled it.
+	bits[n++] = AP_CUSTOM_CTR_PSEUDO_BIT;
 	track = AP_CustomPadPodiumTrack(cfg, destLevelID);
 	if (includePodium && track >= 0)
 		for (i = 0; i < CTR_CFG_PODIUM_RUNG_COUNT; i++)
@@ -173,6 +183,29 @@ static inline int AP_CustomPadAppendUnchecked(
 			outBits[count++] = bits[i];
 	}
 	return count;
+}
+
+// Open custom CTR letters behind this custom destination. Letters spawn only
+// in the custom CTR Challenge, so they count only while the seed enabled that
+// challenge; the package readiness gate (AP_CustomContentRequired) blocks every
+// custom entry alike, so it is not repeated here.
+static inline int AP_CustomPadLettersLeft(const ctr_seed_config *cfg, int destLevelID,
+                                          ap_custom_pad_location_query exists,
+                                          ap_custom_pad_location_query checked,
+                                          void *ctx)
+{
+	int letter, n = 0;
+
+	if (!AP_CustomPadOwnsDestination(cfg, destLevelID) || !cfg->custom_ctr_enabled ||
+	    cfg->custom_ctr_location <= 0 || exists == 0 || checked == 0)
+		return 0;
+	for (letter = 0; letter < CTR_CFG_LETTER_COUNT; letter++)
+	{
+		long code = cfg->custom_letter_locations[letter];
+		if (code > 0 && exists(code, ctx) && !checked(code, ctx))
+			n++;
+	}
+	return n;
 }
 
 #endif // AP_CUSTOM_PAD_LOGIC_H

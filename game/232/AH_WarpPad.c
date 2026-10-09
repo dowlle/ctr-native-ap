@@ -1279,6 +1279,25 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
 	{
 #ifdef CTR_AP
+		// Stage 2 for a trial destination (2026-10-09). Under destination
+		// shuffle a race pad can load a trial track; the apworld then gates
+		// the trial relics and CTR Challenge on that physical pad's stage 2
+		// (Regions.py warp_pad_unlock_stage2_concrete, keyed by destination)
+		// and AP_PadState paints the pad Re-locked. A stage-2-locked pad is
+		// born closed; this is the backstop for the stale frame before a
+		// re-birth, and like the retail one it stays inert unless a check
+		// still needs the plain rerace. Unshuffled trial pads have no stage 2
+		// (ctr_cfg_warp_stage2_unlocked returns 1), so they never stop here.
+		int apTrialStage2Locked = ctr_cfg_active() &&
+		    ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM] &&
+		    AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY) &&
+		    !ctr_cfg_warp_stage2_unlocked(physLevelID);
+		if (apTrialStage2Locked && warppadObj->boolEnteredWarppad == 0 &&
+		    !AP_PadPhase1ReRaceable(physLevelID, levelID))
+		{
+			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
+			goto WarpPad_AnimateOpen;
+		}
 		// Capture the pre-warp kart/camera state the frame this warp begins, so a
 		// cancelled AP menu can put the player back (ticket 06/10).
 		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
@@ -1304,6 +1323,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			// directly. Only phase two chooses among still-productive race types.
 			if (!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY))
 				goto WarpPad_RequestLoad;
+			// Stage 2 locked: only the plain trial rerace (boxes, Wumpa, Hit),
+			// never the relic race or CTR Challenge stage 2 still gates.
+			if (apTrialStage2Locked)
+			{
+				if (AP_PadPhase1ReRaceable(physLevelID, levelID))
+				{
+					AP_PadLogRoute(physLevelID, levelID,
+					               AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
+					goto WarpPad_RequestLoad;
+				}
+				goto WarpPad_RefuseEntry;
+			}
 			// The CTR Challenge stays on offer while its location OR any of
 			// its letters is open, as on a retail pad. A Collect of the CTR
 			// Challenge with letters still open left this 0 while AP_PadState

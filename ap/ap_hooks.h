@@ -203,6 +203,8 @@ int  AP_HubFeedOn(void);
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
 // so trap presentation cannot drift from the item feed's look.
 void AP_FeedTrapLine(const char *text);
+// One-off client notice line in the received-item feed (orange).
+void AP_FeedNoticeLine(const char *text);
 // One DeathLink line (a received death applied, or ignored) on the same surfaces.
 // ignored picks the softer colour. The DeathLink module owns the wording. Lines are
 // cut at 28 characters so they stay clear of the minimap.
