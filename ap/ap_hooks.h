@@ -660,6 +660,10 @@ int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
 // These locations have no AdvProgress bit and must never use levelID arithmetic.
 int AP_TrialTrackConfigured(int levelID);
 int AP_TrialTrackLocationChecked(int levelID, int challenge);
+// 1 when a trial destination (16/17) can serve its CTR Challenge: Trophy+CTR
+// mode, a placed CTR Challenge location and loaded retail letter assets.
+// Pad lifecycle, glow and the trial entry route all key off this.
+int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
@@ -813,6 +817,10 @@ int AP_PadUncollectedLetterCount(int destLevelID);
 // 1 while this destination's Relic Race Perfect check exists in this seed and is
 // unchecked, else 0. Keeps the Relic Race side of the pad open (#439).
 int AP_PadUncollectedRelicPerfectCount(int destLevelID);
+
+// Fail-safe log for a pad whose entry route found nothing to load although the
+// pad was open: the warp is cancelled and the kart released (2026-10-09).
+void AP_PadLogEntryRefused(int physLevelID, int destLevelID);
 
 // ── Pad entry-route diagnostic (issues #232 / #265) ──
 // Emit ONE "[AP PAD]" line describing the entry route this pad just took, and

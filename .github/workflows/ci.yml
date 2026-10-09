@@ -59,6 +59,10 @@ jobs:
         run: python3 tools/test-tunnel-charswap-production.py
       - name: Trial hub pad state transitions
         run: python3 tools/test-trial-pad-state-production.py
+      - name: Trial pad entry route agrees with pad state
+        run: python3 tools/test-trial-pad-route-production.py
+      - name: Trial pad glow production gather
+        run: python3 tools/test-trial-pad-glow-production.py
       - name: All-track CTR letter-ready timeline
         run: python3 tools/test-letter-ready-feed-production.py
       - name: Persisted hub door production regressions

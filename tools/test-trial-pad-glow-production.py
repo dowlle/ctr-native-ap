@@ -53,6 +53,8 @@ static int AP_CortexPadAppendOpen(const void *t,int m,int *o,int c,int n,int (*l
  if(m&AP_CV_APPEND_WUMPA&&n<c)o[n++]=AP_CV_PSEUDO_BASE+8;
  return n;}
 int AP_PadUncollectedRelicPerfectCount(int d){(void)d;return perfectOpen;}
+static int servable=1;
+int AP_TrialChallengeServable(int d){(void)d;return servable;}
 int ctr_cfg_cup_displaced(int c){(void)c;return 0;}
 int ctr_cfg_cup_leg(int c,int l){(void)c;return cupLegs[l];}
 '''
@@ -82,6 +84,10 @@ int main(void){
   /* podium off still lists the trial checks; unconfigured trial lists none */
   nChecked=0;ctr_cfg.podium_enabled=0;n=AP_PadUncollectedGlowBits(d,bits,24);
   assert(n==2&&has(bits,n,trophy)&&has(bits,n,ctr));
+  /* 2026-10-09: an unservable CTR Challenge (refused letter assets) is not
+     advertised, so the pad cannot stay open for a race it never offers. */
+  servable=0;n=AP_PadUncollectedGlowBits(d,bits,24);
+  assert(n==1&&has(bits,n,trophy)&&!has(bits,n,ctr));servable=1;
   ctr_cfg.trial_track_valid[t]=0;assert(AP_PadUncollectedGlowBits(d,bits,24)==0);
  }
  /* #439 follow-up: an open Relic Race Perfect is advertised on its pad, in the
@@ -149,6 +155,10 @@ int main(void){
   /* trial pad 16: boxes, letters and wumpa join the trial checks */
   ctr_cfg.trial_track_valid[0]=1;ctr_cfg.trial_track_locations[0][0]=35015000;ctr_cfg.trial_track_locations[0][1]=35015001;
   n=AP_PadUncollectedDisplayBits(16,bits,AP_PAD_DISPLAY_BITS_MAX);assert(n==1+2+15+3+1);
+  /* refused letter assets: no CTR Challenge and no trial letters listed */
+  servable=0;n=AP_PadUncollectedDisplayBits(16,bits,AP_PAD_DISPLAY_BITS_MAX);assert(n==1+1+15+1);
+  for(i=0;i<n;i++)assert(!AP_PadGlowLetterDecode(bits[i],0,0));
+  servable=1;
   ctr_cfg.trial_track_valid[0]=0;
   /* Gem cup: four distinct legs -> boxes and wumpa of every leg, no letters */
   cupLegs[0]=0;cupLegs[1]=1;cupLegs[2]=2;cupLegs[3]=3;

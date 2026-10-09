@@ -32,6 +32,7 @@
 #include "ap_glow_slots_logic.h"
 #include "ap_pad_glow_items.h" // box / letter / Wumpa pad display identities
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
+#include "ap_trial_letters.h" // AP_TrialLetters_Prepare: can the SC/TT CTR Challenge be served
 #include "ap_cortex_track.h" // Cortex Vortex pad track: direct codes + pseudo-bits (schema 15)
 #include <platform/native_cortex_track_latch.h> // destination 110 -> host level 13 (freestanding)
 #include "ap_traps.h"      // trap-effect framework (per-frame tick + config trigger)
@@ -1038,6 +1039,24 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge)
 	return code > 0 && ap_net_location_checked(code);
 }
 
+// Can this trial destination serve its CTR Challenge? It needs the seed's
+// Trophy+CTR mode, a placed CTR Challenge location and the retail letter assets
+// (AP_TrialLetters_Prepare, which latches its answer after the first read).
+// The pad lifecycle (letter count, glow) and the entry route both ask this, so
+// a refused asset load cannot leave the pad open for checks its entry route
+// will never offer. Same predicate the CTR Challenge spawn path gates on.
+int AP_TrialChallengeServable(int destLevelID)
+{
+	int track = destLevelID - 16;
+
+	if (!AP_TrialTrackConfigured(destLevelID))
+		return 0;
+	if (ctr_cfg.trial_track_mode[track] < 2 ||
+	    ctr_cfg.trial_track_locations[track][CTR_CFG_TRIAL_CTR] <= 0)
+		return 0;
+	return AP_TrialLetters_Prepare();
+}
+
 // ── Cortex Vortex pad track (schema 15) ─────────────────────────────────────
 // The identity half is the loader's latch (platform/native_cortex_track_latch.h);
 // the code half is ctr_cfg.cortex_track. A build without the custom-track
@@ -1279,10 +1298,19 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	// #343: a trial pad also offers its Trophy and CTR Challenge. They have no
 	// AdvProgress bit, so they ride as pseudo-bits. Glow only: the tier-2
 	// picker reads AP_PadUncollectedBits as its "relics left" test.
+	// An unservable CTR Challenge (Trophy-only mode, or refused letter assets)
+	// is left out, so the pad cannot stay open for a race it never offers.
 	if (AP_TrialTrackConfigured(destLevelID))
-		count = AP_TrialPadAppendUnchecked(
-			ctr_cfg.trial_track_locations[destLevelID - 16], destLevelID - 16,
+	{
+		long trialRow[CTR_CFG_TRIAL_CHECK_COUNT];
+		trialRow[CTR_CFG_TRIAL_TROPHY] =
+		    ctr_cfg.trial_track_locations[destLevelID - 16][CTR_CFG_TRIAL_TROPHY];
+		trialRow[CTR_CFG_TRIAL_CTR] = AP_TrialChallengeServable(destLevelID)
+		    ? ctr_cfg.trial_track_locations[destLevelID - 16][CTR_CFG_TRIAL_CTR]
+		    : -1;
+		count = AP_TrialPadAppendUnchecked(trialRow, destLevelID - 16,
 			outBits, cap, count, AP_PadBoxChecked, 0);
+	}
 
 	if (!ctr_cfg.podium_enabled)
 		return count;
@@ -1509,6 +1537,9 @@ int AP_PadUncollectedLetterCount(int destLevelID)
 		           : 0;
 	if (!ctr_cfg_active() || destLevelID < 0 || destLevelID >= CTR_CFG_LETTER_TRACK_COUNT)
 		return 0;
+	// Trial letters are only reachable in a servable trial CTR Challenge.
+	if ((destLevelID == 16 || destLevelID == 17) && !AP_TrialChallengeServable(destLevelID))
+		return 0;
 
 	for (letter = 0; letter < CTR_CFG_LETTER_COUNT; letter++)
 	{
@@ -1565,9 +1596,13 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 		count = AP_PadGlowAppendBoxes(destLevelID, AP_PadTrackBoxSlots(destLevelID),
 		                              outBits, cap, count,
 		                              AP_PadBoxLive, AP_PadBoxChecked, 0);
-		count = AP_PadGlowAppendLetters(ctr_cfg.lettersanity_locations[destLevelID],
-		                                destLevelID, outBits, cap, count,
-		                                AP_PadBoxLive, AP_PadBoxChecked, 0);
+		// Same gate as AP_PadUncollectedLetterCount: trial letters only show
+		// while the trial CTR Challenge can be served.
+		if ((destLevelID != 16 && destLevelID != 17) ||
+		    AP_TrialChallengeServable(destLevelID))
+			count = AP_PadGlowAppendLetters(ctr_cfg.lettersanity_locations[destLevelID],
+			                                destLevelID, outBits, cap, count,
+			                                AP_PadBoxLive, AP_PadBoxChecked, 0);
 		if (wumpaOn && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
 			count = AP_PadGlowAppendWumpa(ctr_cfg.wumpa.tracks[destLevelID], destLevelID,
 			                              outBits, cap, count,
@@ -1982,6 +2017,21 @@ int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID)
 	if (!AP_DestTrophyChecked(destLevelID))
 		return 0;
 	return AP_PadState(physLevelID, destLevelID) == 2;
+}
+
+// The warp-pad entry fail-safe (2026-10-09). AH_WarpPad.c calls this when a
+// pad that is not Done reached an entry route with nothing to load. The kart is
+// released instead of being held in the warp beam; this line names the pad so a
+// player log shows which counted check had no route.
+void AP_PadLogEntryRefused(int physLevelID, int destLevelID)
+{
+	char msg[160];
+
+	snprintf(msg, sizeof msg,
+	         "[AP PAD] pad %d -> dest %d: entry refused, no route can load a race "
+	         "for the open checks (state=%d); kart released\n",
+	         physLevelID, destLevelID, AP_PadState(physLevelID, destLevelID));
+	AP_LogLine(msg);
 }
 
 // Human-readable name for an AP_PadRoute code. The tier-2 half is written out
