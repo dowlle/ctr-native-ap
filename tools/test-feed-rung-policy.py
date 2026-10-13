@@ -2,9 +2,10 @@
 """Structural regression for issue #192's remaining feed behavior."""
 
 from pathlib import Path
+import ap_hooks_unit
 
 
-source = (Path(__file__).parents[1] / "ap" / "ap_hooks.c").read_text(encoding="utf-8")
+source = ap_hooks_unit.read()
 # The held-position reason wording (issue #324) lives in the freestanding
 # ap_rung_feed_reason_logic.h, which ap_hooks.c's AP_RungFeedReason now
 # delegates to (tools/test-item-aliases.c pins it directly via a runtime call).

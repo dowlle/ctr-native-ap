@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
 net_source = (root / 'ap/ap_net.cpp').read_text()
@@ -138,7 +139,7 @@ assert 'AP_OxideFinalSceneMarkPlayed' not in skip
 
 # The open message: one feed site, gated on the flag barrier and the shown bit,
 # recording only after it enqueued the line.
-hooks = (root / 'ap/ap_hooks.c').read_text()
+hooks = ap_hooks_unit.read()
 msg = extract(hooks, 'static void AP_FeedOxideFinalOpenUpdate(void)\n{')
 assert hooks.count('AP_FeedOxideFinalOpenUpdate();') == 1
 assert '!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown()' in msg

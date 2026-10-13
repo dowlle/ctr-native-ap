@@ -2,9 +2,10 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
-source = (root / "ap/ap_hooks.c").read_text()
+source = ap_hooks_unit.read()
 start = source.index("void AP_NotifyGoal(int oxideSecond)")
 end = source.index("\n// ---------------------------------------------------------------------------", start)
 function = source[start:end]

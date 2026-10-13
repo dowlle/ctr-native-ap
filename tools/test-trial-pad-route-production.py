@@ -27,9 +27,10 @@ import itertools
 import re
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'ap/ap_hooks.c').read_text()
+source = ap_hooks_unit.read()
 warp = (root / 'game/232/AH_WarpPad.c').read_text()
 
 

@@ -2,9 +2,10 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
-source = (root / "ap/ap_hooks.c").read_text()
+source = ap_hooks_unit.read()
 start = source.index("static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)")
 end = source.index("\nint AP_LetterAvailable(", start)
 function = source[start:end]

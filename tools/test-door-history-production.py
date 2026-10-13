@@ -114,7 +114,7 @@ int main() {
 }
 '''
 
-gates = ''.join(extract('ap/ap_hooks.c', signature) for signature in (
+gates = ''.join(extract('ap/ap_hooks_gates.c', signature) for signature in (
     'int AP_DoorHistoryEnabled(void)', 'int AP_DoorHistoryReady(void)', 'int AP_DoorHistoryOpen(int level, int door)',
     'void AP_DoorHistoryRecord(int level, int door)',
     'void AP_DoorHistoryReconcile(int level, int door)'))

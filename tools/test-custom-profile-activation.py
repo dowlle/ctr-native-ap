@@ -57,10 +57,10 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) {
  assert(d->value==7); applied++; return 1;
 }
 '''
-fixture += function("ap/ap_hooks.c", "static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
-fixture += function("ap/ap_hooks.c", "const struct CustomTrackManagerPackage *AP_CustomContentPackage(void)")
+fixture += function("ap/ap_hooks_custom_content.c", "static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
+fixture += function("ap/ap_hooks_custom_content.c", "const struct CustomTrackManagerPackage *AP_CustomContentPackage(void)")
 fixture += function("platform/native_custom_tracks.c", "int CustomTrack_UseManagedPackage(")
-fixture += function("ap/ap_hooks.c", "static int AP_CustomContentActivateReady(void)")
+fixture += function("ap/ap_hooks_custom_content.c", "static int AP_CustomContentActivateReady(void)")
 fixture += r'''
 int main(void) {
  const struct CustomTrackManagerPackage *profiles[]={CustomTrackManager_BabyTPark(),&s_babyTParkCurrent};
