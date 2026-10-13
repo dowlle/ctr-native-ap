@@ -25,6 +25,7 @@ static int active=1,configured=1,trophyOwned=1,trophyChecked=0;
 static int stage1=1,stage2=1,racer=1,remaining=1,boxes=0,letters=0,wumpa=0;
 static int physical=3,destination=16;
 int ctr_cfg_active(void){return active;}
+int ctr_cfg_arena_pad_disabled(int p){(void)p;return 0;}
 int AP_TrialTrackConfigured(int d){return configured&&(d==16||d==17);}
 long AP_TrialTrackLocation(int d,int c){return trophyOwned?35015000: -1;}
 int AP_TrialTrackLocationChecked(int d,int c){assert(d==destination);return trophyChecked;}
