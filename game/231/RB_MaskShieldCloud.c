@@ -736,6 +736,15 @@ void RB_ShieldDark_ThTick_Grow(struct Thread *th)
 	// create a thread, get an instance
 	struct Instance *bombInst = INSTANCE_BirthWithThread(model, 0, MEDIUM, OTHER, RB_MovingExplosive_ThTick, sizeof(struct TrackerWeapon), playerTh);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): NULL when the native instance pool is full (#205). The shield is
+	// already detached from the driver, so drop the bomb and let the shield clean up.
+	if (bombInst == NULL)
+	{
+		goto LAB_800b0d6c;
+	}
+#endif
+
 	struct Thread *bombTh = bombInst->thread;
 	bombTh->funcThDestroy = PROC_DestroyInstance;
 
@@ -963,6 +972,15 @@ void RB_RainCloud_Init(struct Driver *d)
 	if (d->thCloud == NULL)
 	{
 		cloudInst = INSTANCE_BirthWithThread(0x42, s_cloud1, SMALL, OTHER, RB_RainCloud_ThTick, sizeof(struct RainCloud), d->instSelf->thread);
+
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): NULL when the native instance pool is full (#205).
+		// d->thCloud stays NULL, so the driver simply gets no rain cloud.
+		if (cloudInst == NULL)
+		{
+			return;
+		}
+#endif
 
 		cloudInst->thread->funcThDestroy = PROC_DestroyInstance;
 

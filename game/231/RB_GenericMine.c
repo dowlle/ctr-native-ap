@@ -356,6 +356,15 @@ void RB_GenericMine_ThTick(struct Thread *t)
 				// create thread for TNT, get an Instance
 				instCrate = INSTANCE_BirthWithThread(0x27, sdata->s_tnt1, SMALL, MINE, RB_GenericMine_ThTick, sizeof(struct MineWeapon), 0);
 
+#if defined(CTR_NATIVE)
+				// NOTE(dowlle): NULL when the native instance pool is full (#205).
+				// Leave the original TNT and its thread untouched and carry on.
+				if (instCrate == NULL)
+				{
+					goto LAB_800ad17c;
+				}
+#endif
+
 				instCrate->matrix = inst->matrix;
 
 				instCrate->thread->funcThDestroy = PROC_DestroyInstance;

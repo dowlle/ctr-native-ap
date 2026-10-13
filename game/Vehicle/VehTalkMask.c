@@ -129,6 +129,16 @@ struct Instance *VehTalkMask_Init()
 
 	struct Instance *mhInst = INSTANCE_BirthWithThread(0x39, sdata->s_head, SMALL, AKUAKU, VehTalkMask_ThTick, 6, 0);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): NULL when the native instance pool is full (#205). Callers check
+	// for a NULL return and skip the hint mask.
+	if (mhInst == NULL)
+	{
+		sdata->boolIsMaskThreadAlive = 0;
+		return NULL;
+	}
+#endif
+
 	struct Thread *mhTh = mhInst->thread;
 	mhTh->funcThDestroy = PROC_DestroyInstance;
 
