@@ -146,6 +146,7 @@ tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c
+tools/test-trap-identities.cpp
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-verify-020.c
