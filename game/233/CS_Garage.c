@@ -1,12 +1,6 @@
 #include <common.h>
 
 #ifdef CTR_AP
-// Five equal visual steps across the Garage's six 13-pixel fill segments.
-// The final step stops at the existing 78-pixel fill ceiling.
-static const s16 AP_GARAGE_STAT_BAR_BY_RANK[AP_CAP_STAT_RANK_COUNT] = {
-	13, 26, 39, 52, 78,
-};
-
 // Per-SESSION latch for the adventure-start garage skip (#54/#209).
 //
 // File scope rather than a gGarage member, because gGarage mirrors a retail
@@ -262,7 +256,7 @@ void CS_Garage_MenuProc(struct RectMenu *param_1)
 		int rank = AP_CapabilityStatRankForCharacter(AP_CAP_CHAIN_TOP_SPEED + i,
 		                                                   currCharacterID);
 		if (rank >= 0)
-			stat = AP_GARAGE_STAT_BAR_BY_RANK[rank];
+			stat = AP_StatBar_LenForRank(rank);
 #endif
 
 
