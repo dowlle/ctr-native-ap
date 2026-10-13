@@ -378,6 +378,7 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_hooks_frame.c"
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
 #include "../ap/ap_oxide_scene.c"  // #377 once-per-seed Oxide scene decision (host-linkable)
 #include "../ap/ap_boss_door_scene.c" // #377 once-per-hub boss-door scene decision (host-linkable)
