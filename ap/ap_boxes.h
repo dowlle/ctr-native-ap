@@ -95,6 +95,11 @@ struct Driver;
 // and author mode has already decided whether it owns the markers.
 void AP_Boxes_OnFrame(struct GameTracker *gGT);
 
+#if defined(CTR_NATIVE)
+// Project open AP box numbers into the single-player race HUD.
+void AP_Boxes_DrawNumbers(void);
+#endif
+
 // How many AP boxes are standing on the current level. Diagnostics only.
 int AP_Boxes_LiveCount(void);
 

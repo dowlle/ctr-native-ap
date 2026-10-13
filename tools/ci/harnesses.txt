@@ -15,6 +15,7 @@ tools/test-box-colour.c
 tools/test-box-edge.c
 tools/test-box-ghost-visual.py
 tools/test-box-map.c
+tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-ceremony-banner.c
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment

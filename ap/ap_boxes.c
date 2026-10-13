@@ -13,6 +13,7 @@
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
 #include "ap_box_colour_logic.h" // AP_BoxColour_Pick: which colour one box wears
+#include "ap_box_number_logic.h"
 #include <platform/native_config.h> // g_config.itemBoxColours: the player's opt-out
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the event race's own box verdict
@@ -46,6 +47,9 @@ struct ApBoxLive
 	int            slot; // 0-based; the frozen name is "Item Box <slot+1>"
 	long           code;
 	short          x, y, z, rotY; // kept so a spawn can be retried once the model is up
+#if defined(CTR_NATIVE)
+	int            labelY; // projected anchor above the spawned model
+#endif
 	AP_SpawnHandle spawn;
 	int            ghostTouched; // #354: drove through this ghost box, logged once
 	int            colour;       // AP_BOX_COLOUR_*: what the spawned model wears
@@ -446,6 +450,9 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	// copied into the matrix. Author-mode markers call the same helper, which is
 	// what makes a dropped box preview the height it will really stand at.
 	AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
+#if defined(CTR_NATIVE)
+	s_live[i].labelY = pos.y + AP_BoxModel_BaseOffsetY(model) + 28;
+#endif
 	rot.x = 0;
 	rot.y = s_live[i].rotY;
 	rot.z = 0;
@@ -989,5 +996,70 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	if (s_liveCount > 0)
 		AP_BoxesTick(gGT);
 }
+
+#if defined(CTR_NATIVE)
+// The race HUD draws after AP_Boxes_OnFrame has reconciled server checks and
+// after AP_Spawn_OnFrame has born the instances. Only standing, spawned AP boxes
+// receive labels; the source slot also works for boxes on custom tracks that
+// use this same placement and spawn path.
+void AP_Boxes_DrawNumbers(void)
+{
+	struct GameTracker *gGT;
+	MATRIX *view;
+	int oldWidth, i;
+
+	if (!g_config.itemBoxNumbers || s_liveCount == 0 || sdata == 0 ||
+	    (gGT = sdata->gGT) == 0 || sdata->Loading.stage != LOAD_IDLE)
+		return;
+	if (gGT->numPlyrCurrGame != 1 || (gGT->gameMode1 & PAUSE_ALL) != 0)
+		return;
+
+	view = &gGT->pushBuffer[0].matrix_ViewProj;
+	oldWidth = data.font_charPixWidth[FONT_SMALL];
+	gte_SetRotMatrix(view);
+	gte_SetTransMatrix(view);
+	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	{
+		struct Instance *inst;
+		SVECTOR world;
+		s16 screen[2];
+		s32 depth;
+		u32 flag;
+		char number[3];
+		int width;
+
+		if (!s_live[i].used)
+			continue;
+		if (!AP_BoxNumber_Standing(s_live[i].used,
+		                           s_live[i].spawn != AP_SPAWN_INVALID,
+		                           ap_net_location_checked((long long)s_live[i].code)) ||
+		    !AP_BoxNumber_Text(s_live[i].slot, number))
+			continue;
+		inst = AP_Spawn_Instance(s_live[i].spawn);
+		if (inst == 0)
+			continue;
+		world.vx = (s16)inst->matrix.t[0];
+		world.vy = (s16)s_live[i].labelY;
+		world.vz = (s16)inst->matrix.t[2];
+		world.pad = 0;
+		CTR_GteLoadSV0(&world);
+		gte_rtps();
+		CTR_GteStoreSXY(screen);
+		gte_stsz(&depth);
+		gte_stflg(&flag);
+		width = AP_BoxNumber_LabelWidthForDepth((int)depth);
+		if (width == 0 || (flag & 0x40000u) != 0 ||
+		    screen[0] < 20 || screen[0] > 492 ||
+		    screen[1] < 16 || screen[1] > 200)
+			continue;
+		data.font_charPixWidth[FONT_SMALL] = (s16)width;
+		DecalFont_DrawLine(number, screen[0], screen[1],
+		                   FONT_SMALL, JUSTIFY_CENTER | WHITE);
+		DecalFont_DrawLine(number, screen[0] + 1, screen[1] + 1,
+		                   FONT_SMALL, JUSTIFY_CENTER | BLACK);
+	}
+	data.font_charPixWidth[FONT_SMALL] = (s16)oldWidth;
+}
+#endif
 
 #endif // CTR_AP
