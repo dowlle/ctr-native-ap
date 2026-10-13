@@ -859,6 +859,8 @@ int ctr_cfg_cup_displaced(int cup);
 // Schema 18 (#306 B+): the admitted custom track's room title from
 // `custom_track_titles`, or NULL when the seed carries none. Presentation only.
 const char *ctr_cfg_custom_track_title(void);
+/* The same title folded to plain ASCII, for text drawn in game. */
+const char *ctr_cfg_custom_track_title_ascii(void);
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=

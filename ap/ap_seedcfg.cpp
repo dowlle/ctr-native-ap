@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -1502,24 +1503,36 @@ static void ap_seedcfg_parse_custom_track_titles(const nlohmann::json &j, int sc
 		ap_cfg_log("[AP CFG] custom_track_titles ignored (%s); the room keeps generic names in this client's log\n", problem);
 		return;
 	}
+	// Validate the whole block before using any row (atomic, same verdict as the
+	// apworld's titles_from_wire): a malformed row, a duplicate slot or a title
+	// that is not a sanitized room title discards the block.
+	const std::string *mine = nullptr;
+	std::set<long long> seen;
 	for (const auto &row : (*it)["tracks"])
 	{
 		if (!row.is_object() || !row.contains("slot") || !row["slot"].is_number_integer() ||
 		    !row.contains("title") || !row["title"].is_string())
 		{
-			ap_cfg_log("[AP CFG] custom_track_titles: malformed row ignored\n");
-			continue;
+			ap_cfg_log("[AP CFG] custom_track_titles ignored (malformed row); the room keeps generic names in this client's log\n");
+			return;
 		}
-		if (row["slot"].get<long long>() != ctr_cfg.custom_track.slot)
-			continue;
+		const long long slot = row["slot"].get<long long>();
 		const std::string &title = row["title"].get_ref<const std::string &>();
+		if (!seen.insert(slot).second)
+		{
+			ap_cfg_log("[AP CFG] custom_track_titles ignored (duplicate slot %lld); the room keeps generic names in this client's log\n", slot);
+			return;
+		}
 		if (!ap_room_title_ok(title.c_str(), title.size()))
 		{
-			ap_cfg_log("[AP CFG] custom_track_titles: title for slot %d refused\n", ctr_cfg.custom_track.slot);
-			continue;
+			ap_cfg_log("[AP CFG] custom_track_titles ignored (title for slot %lld refused); the room keeps generic names in this client's log\n", slot);
+			return;
 		}
-		std::memcpy(ctr_cfg.custom_track.title, title.c_str(), title.size() + 1);
+		if (slot == ctr_cfg.custom_track.slot)
+			mine = &title;
 	}
+	if (mine)
+		std::memcpy(ctr_cfg.custom_track.title, mine->c_str(), mine->size() + 1);
 	if (ctr_cfg.custom_track.title[0])
 		ap_cfg_log("[AP CFG] custom_track_titles v1: slot %d is \"%s\"\n", ctr_cfg.custom_track.slot,
 		           ctr_cfg.custom_track.title);
@@ -1528,6 +1541,18 @@ static void ap_seedcfg_parse_custom_track_titles(const nlohmann::json &j, int sc
 extern "C" const char *ctr_cfg_custom_track_title(void)
 {
 	return ctr_cfg.custom_tracks_ok && ctr_cfg.custom_track.title[0] ? ctr_cfg.custom_track.title : nullptr;
+}
+
+// In-game text: the room title folded to plain ASCII (the game font has no
+// accents); the full title stays available above for logs and trackers.
+extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
+{
+	static char folded[AP_ROOM_TITLE_CAP];
+	const char *full = ctr_cfg_custom_track_title();
+	if (!full)
+		return nullptr;
+	ap_room_title_fold_ascii(full, folded, sizeof folded);
+	return folded;
 }
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)

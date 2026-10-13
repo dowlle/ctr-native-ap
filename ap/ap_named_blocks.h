@@ -78,4 +78,56 @@ static inline int ap_room_title_ok(const char *text, size_t length)
     return text[0] != ' ' && text[length - 1] != ' ';
 }
 
+/* Fold a UTF-8 room title to plain ASCII for in-game display (ruling of
+ * 2026-10-13). The game font has no accents or other scripts, so Latin
+ * letters lose their marks (Cafe for Cafe with an acute), common punctuation
+ * becomes its ASCII twin, and anything else becomes '?'. Universal Tracker
+ * and the room keep the full title; only the in-game text is folded. Writes
+ * at most cap-1 bytes plus a NUL and returns the folded length. */
+static inline size_t ap_room_title_fold_ascii(const char *utf8, char *out, size_t cap)
+{
+    static const char *const latin1[64] = {
+        "A","A","A","A","A","A","AE","C","E","E","E","E","I","I","I","I",
+        "D","N","O","O","O","O","O","x","O","U","U","U","U","Y","Th","ss",
+        "a","a","a","a","a","a","ae","c","e","e","e","e","i","i","i","i",
+        "d","n","o","o","o","o","o","/","o","u","u","u","u","y","th","y"};
+    static const char ext_a[] =
+        "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOoRrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";
+    size_t n = 0;
+    if (!out || cap == 0)
+        return 0;
+    const unsigned char *p = (const unsigned char *)(utf8 ? utf8 : "");
+    while (*p && n + 1 < cap) {
+        uint32_t cp = *p;
+        int len = 1;
+        if (cp >= 0xF0 && cp < 0xF8) { cp &= 0x07; len = 4; }
+        else if (cp >= 0xE0) { cp &= 0x0F; len = 3; }
+        else if (cp >= 0xC0) { cp &= 0x1F; len = 2; }
+        else if (cp >= 0x80) { cp = 0xFFFD; }
+        int ok = 1;
+        for (int i = 1; i < len; ++i) {
+            if ((p[i] & 0xC0) != 0x80) { ok = 0; len = i; break; }
+            cp = (cp << 6) | (p[i] & 0x3F);
+        }
+        p += len;
+        if (!ok)
+            cp = 0xFFFD;
+        const char *rep = 0;
+        char single[2] = {0, 0};
+        if (cp < 0x80) { single[0] = (char)cp; rep = single; }
+        else if (cp >= 0xC0 && cp <= 0xFF) rep = latin1[cp - 0xC0];
+        else if (cp >= 0x100 && cp <= 0x17F) { single[0] = ext_a[cp - 0x100]; rep = single; }
+        else if (cp == 0x2018 || cp == 0x2019 || cp == 0x2032) rep = "'";
+        else if (cp == 0x201C || cp == 0x201D) rep = "\"";
+        else if (cp >= 0x2010 && cp <= 0x2015) rep = "-";
+        else if (cp == 0x2026) rep = "...";
+        else if (cp == 0x00A0) rep = " ";
+        else rep = "?";
+        for (const char *r = rep; *r && n + 1 < cap; ++r)
+            out[n++] = *r;
+    }
+    out[n] = '\0';
+    return n;
+}
+
 #endif

@@ -112,6 +112,8 @@ int main() {
     const J legacy = load("legacy-titles.json");
     ap_seedcfg_parse_json(legacy);
     expect(!ap_seedcfg_rejected() && ctr_cfg.custom_tracks_ok, "legacy custom-track seed admits");
+    expect(ctr_cfg_custom_track_title_ascii() && std::string(ctr_cfg_custom_track_title_ascii()) == "Crash Cove (Custom)",
+           "ascii title equals the full title for plain text");
     expect(ctr_cfg_custom_track_title() && std::string(ctr_cfg_custom_track_title()) == "Crash Cove (Custom)",
            "legacy room title read");
     auto title_after = [](J j) {
@@ -119,6 +121,15 @@ int main() {
         expect(!ap_seedcfg_rejected() && ctr_cfg.custom_tracks_ok, "a title problem never refuses the seed");
         return ctr_cfg_custom_track_title();
     };
+    {
+        char out[32];
+        ap_room_title_fold_ascii("Caf\xC3\xA9 \xC3\x9C" "ber \xE2\x80\x98" "x\xE2\x80\x99 \xE6\x97\xA5", out, sizeof out);
+        expect(std::string(out) == "Cafe Uber 'x' ?", "non-ASCII folds to ASCII in game");
+        ap_room_title_fold_ascii("Lodz \xC5\x81\xC3\x93", out, 6);
+        expect(std::string(out) == "Lodz ", "fold truncates to the buffer");
+        ap_room_title_fold_ascii("A\xC3", out, sizeof out);
+        expect(std::string(out) == "A?", "truncated sequence folds to ?");
+    }
     J t = legacy; t.erase("custom_track_titles");
     expect(!title_after(t), "missing block leaves no title");
     t = legacy; t["custom_track_titles"]["version"] = 2;
@@ -129,6 +140,19 @@ int main() {
     expect(!title_after(t), "markup title refused");
     t = legacy; t["custom_track_titles"]["tracks"][0]["title"] = std::string(106, 'A');
     expect(!title_after(t), "overlong title refused");
+    t = legacy; t["custom_track_titles"]["version"] = true;
+    expect(!title_after(t), "boolean version is not version 1");
+    t = legacy; t["custom_track_titles"]["version"] = 1.0;
+    expect(!title_after(t), "float version is not version 1");
+    t = legacy; t["custom_track_titles"]["tracks"].push_back(t["custom_track_titles"]["tracks"][0]);
+    t["custom_track_titles"]["tracks"][1]["title"] = "Other Name";
+    expect(!title_after(t), "duplicate slot rows discard the whole block");
+    t = legacy; t["custom_track_titles"]["tracks"].push_back({{"slot", 2}, {"title", "Bad [x]"}});
+    expect(!title_after(t), "one bad row discards the whole block");
+    t = legacy; t["custom_track_titles"]["tracks"].push_back({{"slot", 2}, {"title", 5}});
+    expect(!title_after(t), "a malformed row discards the whole block");
+    t = legacy; t["custom_track_titles"]["tracks"].push_back({{"slot", 2}, {"title", "Neon Rush"}});
+    expect(title_after(t) != nullptr, "a valid block with another slot's row still names this track");
     t = legacy; t["schema_version"] = 17; t["ctr_options"]["schema_version"] = 17;
     title_after(t);
     expect(!ctr_cfg_custom_track_title(), "a schema-17 seed is not read for titles");
