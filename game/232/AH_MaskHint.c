@@ -317,6 +317,15 @@ void AH_MaskHint_Update()
 		sdata->instMaskHints3D = VehTalkMask_Init();
 		struct Instance *mhInst = sdata->instMaskHints3D;
 
+#if defined(CTR_NATIVE)
+		// NOTE(dowlle): NULL when the native instance pool is full (#205).
+		// Stay in this state and retry the next frame.
+		if (mhInst == NULL)
+		{
+			return;
+		}
+#endif
+
 		SVECTOR matrixRot;
 		CTR_MatrixToRot(&matrixRot, &dInst->matrix, 0x11);
 

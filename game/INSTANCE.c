@@ -60,6 +60,34 @@ void INSTANCE_Birth(struct Instance *inst, struct Model *model, const char *name
 }
 
 
+#ifdef CTR_AP
+// Issue #205: native sizes the spawn pools so they do not fill in practice
+// (platform/native_spawn_pools.h) and the NULL guards at the birth sites are
+// only a safety net. If a pool still runs out, say so once per session with
+// every pool's free count, so a field log shows that an effect was skipped and
+// which pool ran dry. Later misses keep their per-call [AP POOL] lines.
+static void INSTANCE_WarnSpawnPoolFullOnce(const char *name)
+{
+	static int warned;
+	struct GameTracker *gGT = sdata->gGT;
+	char apmsg[224];
+
+	if (warned)
+	{
+		return;
+	}
+	warned = 1;
+
+	snprintf(apmsg, sizeof apmsg,
+	         "[AP POOL] WARNING spawn pool full, effect skipped (first this session) name=%s free: "
+	         "inst=%d/%d thread=%d/%d small=%d/%d medium=%d/%d\n",
+	         (name != NULL) ? name : "?", gGT->JitPools.instance.free.count, gGT->JitPools.instance.maxItems,
+	         gGT->JitPools.thread.free.count, gGT->JitPools.thread.maxItems, gGT->JitPools.smallStack.free.count,
+	         gGT->JitPools.smallStack.maxItems, gGT->JitPools.mediumStack.free.count, gGT->JitPools.mediumStack.maxItems);
+	AP_LogLine(apmsg);
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003086c-0x800308e4.
 struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct Thread *th)
 {
@@ -81,6 +109,7 @@ struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct 
 		         sdata->gGT->JitPools.instance.taken.count,
 		         sdata->gGT->JitPools.instance.maxItems, (name != NULL) ? name : "?");
 		AP_LogLine(apmsg);
+		INSTANCE_WarnSpawnPoolFullOnce(name);
 	}
 #endif
 
@@ -222,6 +251,7 @@ struct Instance *INSTANCE_BirthWithThread(int modelID, const char *name, int poo
 		snprintf(apmsg, sizeof apmsg, "[AP POOL] BirthWithThread thread NULL name=%s\n",
 		         (name != NULL) ? name : "?");
 		AP_LogLine(apmsg);
+		INSTANCE_WarnSpawnPoolFullOnce(name);
 #endif
 		return NULL;
 	}

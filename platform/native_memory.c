@@ -16,6 +16,9 @@
 #define CTR_NATIVE_MEMPACK_RETAIL_PRESSURE 1
 #endif
 
+// Equal to the retail-pressure arena start offset, see the reserve note below.
+#define CTR_NATIVE_SPAWN_POOL_RESERVE 0xba9f0u
+
 // TODO(aalhendi): Re-audit LOAD_ReadFile_ex, LOAD_DramFileCallback, LEV/PTR
 // callbacks, hub swapping, MEMPACK size arithmetic + PSX shaped ptr storage before removing the expanded arena escape hatch
 #if CTR_NATIVE_MEMPACK_RETAIL_PRESSURE
@@ -34,10 +37,23 @@
 // tail of the backing array; without this subtraction endOfAllocator would sit
 // exactly at the end of s_mempackMemory and the same overrun would write past
 // the array into whatever .bss follows it.
-#define CTR_NATIVE_MEMPACK_BUFFER_SIZE  (8u * 1024u * 1024u)
-#define CTR_NATIVE_MEMPACK_START_OFFSET 0u
-#define CTR_NATIVE_MEMPACK_SIZE         (CTR_NATIVE_MEMPACK_BUFFER_SIZE - 0x800u)
+//
+// The spawn-pool reserve (below) sits in front of the arena, so the backing
+// store grows by its size and the arena keeps its full 8 MiB minus the guard.
+#define CTR_NATIVE_MEMPACK_ARENA_BYTES  (8u * 1024u * 1024u)
+#define CTR_NATIVE_MEMPACK_BUFFER_SIZE  (CTR_NATIVE_SPAWN_POOL_RESERVE + CTR_NATIVE_MEMPACK_ARENA_BYTES)
+#define CTR_NATIVE_MEMPACK_START_OFFSET CTR_NATIVE_SPAWN_POOL_RESERVE
+#define CTR_NATIVE_MEMPACK_SIZE         (CTR_NATIVE_MEMPACK_ARENA_BYTES - 0x800u)
 #endif
+
+// Issue #205: the native thread, instance and small/medium stack pools and the
+// render bucket live in this reserve at the front of the backing store, never
+// in the arena. Under retail pressure it is exactly the PS1 kernel and
+// executable span below the arena start, which native never used; in the
+// expanded arena it is added in front. Being inside s_mempackMemory keeps it in
+// the MPAK checkpoint region, so checkpoints capture and relocate pool
+// pointers as before. See platform/native_spawn_pools.h.
+CTR_STATIC_ASSERT(CTR_NATIVE_SPAWN_POOL_RESERVE <= CTR_NATIVE_MEMPACK_START_OFFSET);
 
 union NativeScratchpadStorage
 {
@@ -93,6 +109,16 @@ void *Platform_GetMempackBacking(void)
 int Platform_GetMempackBackingSize(void)
 {
 	return (int)sizeof(s_mempackMemory);
+}
+
+void *Platform_GetSpawnPoolReserve(void)
+{
+	return &s_mempackMemory[0];
+}
+
+int Platform_GetSpawnPoolReserveSize(void)
+{
+	return (int)CTR_NATIVE_SPAWN_POOL_RESERVE;
 }
 
 void Platform_RepairResidentPointers(s32 activeMempackIndex)

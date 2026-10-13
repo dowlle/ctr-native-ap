@@ -5,6 +5,61 @@
 #include "../../ap/ap_instance_pool_logic.h"
 #endif
 
+#if defined(CTR_NATIVE)
+#include "../../platform/native_spawn_pools.h"
+
+// JitPool_Init with caller-owned storage instead of MEMPACK (issue #205).
+static void MainInit_NativePoolAt(struct JitPool *AP, int maxItems, int itemSize, void *storage)
+{
+	memset(AP, 0, sizeof(struct JitPool));
+	AP->maxItems = maxItems;
+	AP->itemSize = itemSize;
+	AP->poolSize = maxItems * itemSize;
+	AP->ptrPoolData = storage;
+	JitPool_Clear(AP);
+}
+
+// Issue #205: size the four pools every INSTANCE_BirthWithThread draws from
+// (thread, instance, small and medium stack) with headroom over retail, in the
+// native spawn-pool reserve rather than MEMPACK. Returns the render bucket
+// sized for the enlarged instance pool, or NULL when the reserve cannot hold
+// even the retail counts; the caller then takes the retail path unchanged.
+static void *MainInit_NativeSpawnPools(struct GameTracker *gGT, const struct NativeSpawnPoolRequest *req)
+{
+	struct NativeSpawnPoolPlan plan;
+	u8 *reserve = (u8 *)Platform_GetSpawnPoolReserve();
+
+	if ((((uintptr_t)reserve & 3u) != 0u) || !NativeSpawnPools_Plan(req, &plan))
+	{
+#ifdef CTR_AP
+		char apmsg[128];
+		snprintf(apmsg, sizeof apmsg, "[AP POOL] native spawn pools do not fit the reserve (inst=%d size=%u); retail pools used\n",
+		         req->retailInstances, (unsigned)req->instanceItemSize);
+		AP_LogLine(apmsg);
+#endif
+		return NULL;
+	}
+
+	MainInit_NativePoolAt(&gGT->JitPools.thread, plan.threadItems, sizeof(struct Thread), reserve + plan.threadOffset);
+	MainInit_NativePoolAt(&gGT->JitPools.instance, plan.instanceItems, (int)req->instanceItemSize, reserve + plan.instanceOffset);
+	MainInit_NativePoolAt(&gGT->JitPools.smallStack, plan.smallItems, 0x48, reserve + plan.smallOffset);
+	MainInit_NativePoolAt(&gGT->JitPools.mediumStack, plan.mediumItems, 0x88, reserve + plan.mediumOffset);
+
+#ifdef CTR_AP
+	{
+		char apmsg[160];
+		snprintf(apmsg, sizeof apmsg,
+		         "[AP POOL] native spawn pools thread=%d inst=%d small=%d medium=%d (retail %d/%d/%d/%d) reserve=%u/%u\n",
+		         plan.threadItems, plan.instanceItems, plan.smallItems, plan.mediumItems, req->retailThreads, req->retailInstances,
+		         req->retailSmall, req->retailMedium, (unsigned)plan.totalBytes, (unsigned)req->reserveBytes);
+		AP_LogLine(apmsg);
+	}
+#endif
+
+	return reserve + plan.bucketOffset;
+}
+#endif
+
 #ifdef CTR_NATIVE
 static void MainInit_InitVisMemBspListNodes(struct VisMem *visMem, struct mesh_info *mesh)
 {
@@ -307,7 +362,14 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 
 	MEMPACK_PushState();
 
-	JitPool_Init(&gGT->JitPools.thread, (renderBucketSize * 3) >> 7, sizeof(struct Thread), rdata.s_ThreadPool);
+	// Issue #205: the thread, instance and small/medium stack pools are
+	// initialized together below, in retail's order, once the instance
+	// capacity is known. Native places them outside MEMPACK with headroom
+	// (platform/native_spawn_pools.h), so the MEMPACK cost notes below apply
+	// only to the retail path and to native's fallback when the reserve
+	// cannot hold a load.
+	int instanceCapacity = renderBucketSize >> 5;
+	int instanceItemSize = sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame);
 #ifdef CTR_AP
 	// #56: the AP build births standing warp-pad advert instances vanilla never
 	// had (always-3 prize slots per open pad, AH_WarpPad_BuildInstances), so a
@@ -344,7 +406,7 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		if ((gGT->levelID == SLIDE_COLISEUM || gGT->levelID == TURBO_TRACK) &&
 		    (gGT->gameMode2 & TOKEN_RACE))
 			apInstExtra = 6;
-		int instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
+		instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
 #ifdef CTR_CUSTOM_TRACKS
 		int customServing =
 #ifdef CTR_CUSTOM_PACKAGES
@@ -360,29 +422,39 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, customServing,
 			                                           gGT->level1->numInstances);
 #endif
-		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
-		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
-		             rdata.s_InstancePool);
 	}
 #elif defined(CTR_CUSTOM_PACKAGES)
 	// The authoring client without Archipelago: the retail budget, plus the
 	// custom-track reservation the AP build makes above. An offline package
 	// load is the only way this build serves custom bytes.
-	{
-		int instanceCapacity = renderBucketSize >> 5;
-		if (gGT->level1 != NULL)
-			instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, MainRaceTrack_OfflineCustomLoad(),
-			                                           gGT->level1->numInstances);
-		JitPool_Init(&gGT->JitPools.instance, instanceCapacity,
-		             sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
-		             rdata.s_InstancePool);
-	}
-#else
-	JitPool_Init(&gGT->JitPools.instance, renderBucketSize >> 5, sizeof(struct Instance) + (sizeof(struct InstDrawPerPlayer) * gGT->numPlyrCurrGame),
-	             rdata.s_InstancePool);
+	if (gGT->level1 != NULL)
+		instanceCapacity = AP_InstancePoolCapacity(instanceCapacity, MainRaceTrack_OfflineCustomLoad(),
+		                                           gGT->level1->numInstances);
 #endif
-	JitPool_Init(&gGT->JitPools.smallStack, (poolScale * 0x19) >> 10, 0x48, rdata.s_SmallStackPool);
-	JitPool_Init(&gGT->JitPools.mediumStack, poolScale >> 7, 0x88, rdata.s_MediumStackPool);
+
+#if defined(CTR_NATIVE)
+	void *nativeBucket;
+	{
+		struct NativeSpawnPoolRequest req;
+		req.reserveBytes = (uint32_t)Platform_GetSpawnPoolReserveSize();
+		req.retailThreads = (renderBucketSize * 3) >> 7;
+		req.retailInstances = instanceCapacity;
+		req.retailInstanceBudget = renderBucketSize >> 5;
+		req.retailSmall = (poolScale * 0x19) >> 10;
+		req.retailMedium = poolScale >> 7;
+		req.instanceItemSize = (uint32_t)instanceItemSize;
+		req.numPlayers = gGT->numPlyrCurrGame;
+		req.retailBucketBytes = (uint32_t)renderBucketSize;
+		nativeBucket = MainInit_NativeSpawnPools(gGT, &req);
+	}
+	if (nativeBucket == NULL)
+#endif
+	{
+		JitPool_Init(&gGT->JitPools.thread, (renderBucketSize * 3) >> 7, sizeof(struct Thread), rdata.s_ThreadPool);
+		JitPool_Init(&gGT->JitPools.instance, instanceCapacity, instanceItemSize, rdata.s_InstancePool);
+		JitPool_Init(&gGT->JitPools.smallStack, (poolScale * 0x19) >> 10, 0x48, rdata.s_SmallStackPool);
+		JitPool_Init(&gGT->JitPools.mediumStack, poolScale >> 7, 0x88, rdata.s_MediumStackPool);
+	}
 
 	int numDriver = poolScale >> 9;
 	if ((gameMode & MAIN_MENU) != 0)
@@ -401,6 +473,10 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 #else
 	// NOTE(aalhendi): Native reuses static RDATA scratch for existing PC memory headroom.
 	gGT->ptrRenderBucketInstance = (void *)((uintptr_t)&rdata.s_STATIC_GNORMALZ[0] + 148);
+	// Issue #205: that scratch holds renderBucketSize bytes, sized for the
+	// retail instance pool. The enlarged pool brings its own bucket.
+	if (nativeBucket != NULL)
+		gGT->ptrRenderBucketInstance = nativeBucket;
 #endif
 
 	for (int i = 0; i < 3; i++)

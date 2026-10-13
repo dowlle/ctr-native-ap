@@ -51,6 +51,12 @@ void RB_Explosion_InitPotion(struct Instance *inst)
 	// create thread for shatter
 	shatterInst = INSTANCE_BirthWithThread(shatterColor, 0, SMALL, OTHER, RB_Explosion_ThTick, 0, 0);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): NULL when the native instance pool is full (#205). The shatter ring
+	// is cosmetic. Skip it, keep the particles and the teeth search (gameplay).
+	if (shatterInst != NULL)
+	{
+#endif
 	shatterInst->flags |= (PIXEL_LOD | CUSTOM_MATRIX);
 
 	// set funcThDestroy to remove instance from instance pool
@@ -64,6 +70,9 @@ void RB_Explosion_InitPotion(struct Instance *inst)
 		shatterInst->scale.v[i] = 0x800;
 		shatterInst->matrix.t[i] = inst->matrix.t[i];
 	}
+#if defined(CTR_NATIVE)
+	}
+#endif
 
 	// particles for potion shatter
 	for (int i = 0; i < 5; i++)
@@ -76,9 +85,9 @@ void RB_Explosion_InitPotion(struct Instance *inst)
 			continue;
 		}
 
-		p->axis[0].startVal += shatterInst->matrix.t[0] * 0x100;
-		p->axis[1].startVal += shatterInst->matrix.t[1] * 0x100;
-		p->axis[2].startVal += shatterInst->matrix.t[2] * 0x100;
+		p->axis[0].startVal += inst->matrix.t[0] * 0x100;
+		p->axis[1].startVal += inst->matrix.t[1] * 0x100;
+		p->axis[2].startVal += inst->matrix.t[2] * 0x100;
 
 		p->modelID = shatterColor;
 
@@ -113,6 +122,14 @@ void RB_Explosion_InitGeneric(struct Instance *inst)
 
 	// create thread for explosion
 	explosion = INSTANCE_BirthWithThread(0x26, s_explosion1, SMALL, OTHER, RB_Explosion_ThTick, 0, 0);
+
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): NULL when the native instance pool is full (#205). Cosmetic only.
+	if (explosion == NULL)
+	{
+		return;
+	}
+#endif
 
 	// copy position and rotation from one instance to the other
 	CTR_MatrixCopyRot(&explosion->matrix, &inst->matrix);

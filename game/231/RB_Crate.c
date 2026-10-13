@@ -101,6 +101,16 @@ static void RB_CrateAny_ExplodeInit(struct Instance *crateInst, int color, b32 r
 	    // PushBuffer and threadRelative
 	    0, 0);
 
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): the birth returns NULL when the native instance pool is full (#205).
+	// The explosion is cosmetic and the crate is already hidden, so skip the visuals.
+	if (explosionInst == NULL)
+	{
+		PlaySound3D(0x3c, crateInst);
+		return;
+	}
+#endif
+
 	// color
 	explosionInst->colorRGBA = color;
 	explosionInst->alphaScale = 0x1000;

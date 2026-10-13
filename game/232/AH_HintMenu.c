@@ -213,6 +213,15 @@ void AH_HintMenu_MenuProc(struct RectMenu *menu)
 					{
 						sdata->instMaskHints3D = VehTalkMask_Init();
 
+#if defined(CTR_NATIVE)
+						// NOTE(dowlle): NULL when the native instance pool is full (#205).
+						// Skip the hint mask; the selection can be confirmed again.
+						if (sdata->instMaskHints3D == NULL)
+						{
+							goto LAB_800b38cc;
+						}
+#endif
+
 						D232.maskCooldown = 30;
 
 						VehTalkMask_PlayXA(sdata->instMaskHints3D, (lngIndex + -0x17b) / 2);
