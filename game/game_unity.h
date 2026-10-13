@@ -378,6 +378,7 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_hooks_itemsanity.c"
 #include "../ap/ap_hooks_race_checks.c"
 #include "../ap/ap_hooks_frame.c"
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
