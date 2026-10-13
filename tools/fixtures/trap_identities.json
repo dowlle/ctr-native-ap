@@ -1,0 +1,26 @@
+{
+  "_comment": "Shared trap identity fixture (#307). Byte-identical in dowlle/ctr-native-ap tools/fixtures/trap_identities.json and dowlle/ctr-archipelago-apworld worlds/ctr/test/fixtures/trap_identities.json. One row per trap effect in native AP_TrapEffect enum order, which is also the apworld TRAP_REGISTRY order. key is the stable identity sent in slot_data trap_identities; never rename or reorder a row, only append (#455, #248).",
+  "version": 1,
+  "traps": [
+    {"item_id": 35010016, "key": "icy_road", "name": "Icy Road", "native_effect": "AP_TRAP_ICY"},
+    {"item_id": 35010017, "key": "low_gravity", "name": "Low Gravity", "native_effect": "AP_TRAP_LOWGRAV"},
+    {"item_id": 35010018, "key": "forced_usf", "name": "Forced USF", "native_effect": "AP_TRAP_USF_NOBRAKE"},
+    {"item_id": 35010019, "key": "forced_boost", "name": "Forced Boost", "native_effect": "AP_TRAP_BOOST"},
+    {"item_id": 35010020, "key": "first_person", "name": "First Person", "native_effect": "AP_TRAP_FIRSTPERSON"},
+    {"item_id": 35010106, "key": "wumpa_wipeout", "name": "Wumpa Wipeout", "native_effect": "AP_TRAP_WUMPA_WIPEOUT"},
+    {"item_id": 35010107, "key": "flatten", "name": "Flatten", "native_effect": "AP_TRAP_FLATTEN"},
+    {"item_id": 35010108, "key": "item_reroll", "name": "Item Reroll", "native_effect": "AP_TRAP_ITEM_REROLL"},
+    {"item_id": 35010109, "key": "forced_use", "name": "Forced Use", "native_effect": "AP_TRAP_FORCED_USE"},
+    {"item_id": 35010110, "key": "empty_crates", "name": "Empty Crates", "native_effect": "AP_TRAP_EMPTY_CRATES"},
+    {"item_id": 35010111, "key": "weakened_kart", "name": "Weakened Kart", "native_effect": "AP_TRAP_WEAKENED_KART"},
+    {"item_id": 35010112, "key": "boost_blocker", "name": "Boost Blocker", "native_effect": "AP_TRAP_BOOST_BLOCKER"},
+    {"item_id": 35010113, "key": "wireframe", "name": "Wireframe", "native_effect": "AP_TRAP_WIREFRAME"},
+    {"item_id": 35010114, "key": "nitro", "name": "Nitro Drop", "native_effect": "AP_TRAP_NITRO"},
+    {"item_id": 35010115, "key": "reverse_steering", "name": "Reverse Steering", "native_effect": "AP_TRAP_REVERSE_STEERING"},
+    {"item_id": 35010116, "key": "red_potion", "name": "Red Potion", "native_effect": "AP_TRAP_RED_POTION"},
+    {"item_id": 35010190, "key": "upside_down", "name": "Upside Down", "native_effect": "AP_TRAP_UPSIDE_DOWN"},
+    {"item_id": 35010191, "key": "mirror_mode", "name": "Mirror Mode", "native_effect": "AP_TRAP_MIRROR_MODE"},
+    {"item_id": 35010192, "key": "warpball_ambush", "name": "Warpball Ambush", "native_effect": "AP_TRAP_WARPBALL_AMBUSH"},
+    {"item_id": 35010193, "key": "demo_camera", "name": "Demo Camera", "native_effect": "AP_TRAP_DEMO_CAMERA"}
+  ]
+}

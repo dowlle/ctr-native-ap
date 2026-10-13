@@ -14,8 +14,10 @@
 #include "ap_seedcfg.h"
 #include "ap_relic_perfect.h"
 #include "ap_win_logic.h"
+#include "ap_trap_items.h"
 
 #include <cstdarg>
+#include <cstdlib>
 #include <cstdio>
 #include <algorithm>
 #include <cstring>
@@ -1387,10 +1389,96 @@ static void ap_seedcfg_parse_win_logic(const nlohmann::json &j)
 	           wl->version, wl->check_count, wl->region_count, wl->family_count,
 	           wl->family_count == 1 ? "y" : "ies", wl->node_count, wl->start_count);
 }
+// ── trap_identities (#307, schema 18) ─────────────────────────────────────
+//
+// The seed names which trap effect each trap item id means, by the effect's
+// stable key (ap_trap_items.h). A seed from before schema 18 never carries the
+// block and keeps the frozen item table, which is what a 0.2.x client applied.
+// From schema 18 the block is required: missing or malformed refuses every trap
+// with one log line; an entry this build cannot honour is refused on its own,
+// also with one log line, and only that trap stays silent.
+extern "C"
+{
+	AP_TrapIdentityTable ctr_trap_identities;
+}
+
+static const char *ap_trap_entry_reason(int rc)
+{
+	switch (rc)
+	{
+	case AP_TRAP_ENTRY_NOT_A_TRAP: return "item id is not a trap in this build";
+	case AP_TRAP_ENTRY_UNKNOWN_KEY: return "effect key unknown to this build";
+	case AP_TRAP_ENTRY_CONTRADICTION: return "this build has a different effect for the item";
+	default: return "malformed entry";
+	}
+}
+
+static void ap_seedcfg_parse_trap_identities(const nlohmann::json &j, int schema)
+{
+	AP_TrapIdentityTable *t = &ctr_trap_identities;
+	std::memset(t, 0, sizeof *t);
+	for (int i = 0; i < AP_TRAP_ITEM_MAP_COUNT; i++)
+		t->effect[i] = -1;
+	if (schema < AP_TRAP_IDENTITIES_SCHEMA)
+		return; // legacy seed: the frozen item table decides
+	t->required = 1;
+
+	const char *problem = nullptr;
+	const nlohmann::json *items = nullptr;
+	auto it = j.find("trap_identities");
+	if (it == j.end())
+		problem = "block missing";
+	else if (!it->is_object())
+		problem = "block is not an object";
+	else
+	{
+		auto v = it->find("version");
+		auto m = it->find("items");
+		if (v == it->end() || !v->is_number_integer() || v->get<long long>() != AP_TRAP_IDENTITIES_VERSION)
+			problem = "version is missing or not 1";
+		else if (m == it->end() || !m->is_object())
+			problem = "items is missing or not an object";
+		else
+			items = &*m;
+	}
+	if (problem)
+	{
+		t->state = AP_TRAP_IDS_INVALID;
+		ap_cfg_log("[AP CFG] trap_identities refused (%s): no trap will fire this seed\n", problem);
+		return;
+	}
+
+	int agreed = 0, refused = 0;
+	for (auto e = items->begin(); e != items->end(); ++e)
+	{
+		const std::string &idText = e.key();
+		char *end = nullptr;
+		long long id = std::strtoll(idText.c_str(), &end, 10);
+		int rc = -1, row = -1, effect = -1;
+		if (!idText.empty() && end && *end == '\0' && e.value().is_string())
+			rc = AP_TrapCheckEntry(id, e.value().get_ref<const std::string &>().c_str(), &row, &effect);
+		if (rc != AP_TRAP_ENTRY_OK)
+		{
+			refused++;
+			ap_cfg_log("[AP CFG] trap_identities: refused item %.24s -> %.40s (%s); that trap will not fire\n",
+			           idText.c_str(), e.value().is_string() ? e.value().get_ref<const std::string &>().c_str() : "?",
+			           ap_trap_entry_reason(rc));
+			continue;
+		}
+		t->effect[row] = (signed char)effect;
+		agreed++;
+	}
+	t->state = AP_TRAP_IDS_VALID;
+	ap_cfg_log("[AP CFG] trap_identities v%d: %d trap(s) agreed, %d refused\n",
+	           AP_TRAP_IDENTITIES_VERSION, agreed, refused);
+}
+
 #include "ap_content_plan_impl.hpp"
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
+	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
 	// win_logic belongs to this parse only: a seed without the block (or a
 	// refused config) must never inherit the previous connection's tables.
 	std::memset(&ctr_win_logic, 0, sizeof ctr_win_logic);
@@ -1629,6 +1717,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             "incorrectly until you do. ***\n",
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
+	ap_seedcfg_parse_trap_identities(j, schema);
 
 	ctr_cfg.goal = json_int(opt, "goal", 0);
 	// Issue #152: composed goal conditions, additive on the existing schema

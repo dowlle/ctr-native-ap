@@ -99,6 +99,161 @@ static inline int AP_TrapEffectForItemId(long long id)
 	return AP_TrapEffectForItemIndex((int)idx);
 }
 
+// ── Trap identities on the wire (#307, slot_data schema 18) ───────────────
+//
+// The stable identity of a trap EFFECT is its key: the same lowercase string the
+// apworld uses as the `trap_weights` YAML key, never renamed. From schema 18 the
+// apworld sends `trap_identities`, a block whose `items` map each trap item id
+// to that key, and native applies a received trap only when the seed's key for
+// the item is the key this build has for it. An entry this build cannot honour
+// (unknown item id, unknown key, or a known key on the wrong item) is refused
+// with one log line at parse, and that trap never fires. The enum value of an
+// effect is a native detail that never travels, so neither side can re-point a
+// trap by reordering a list.
+//
+// One row per AP_TrapEffect, indexed by the enum. tools/test-trap-identities.cpp
+// checks this table, the item table above and AP_TRAP_DESC names against the
+// shared fixture tools/fixtures/trap_identities.json (a byte-identical copy of the
+// apworld's worlds/ctr/test/fixtures/trap_identities.json). A new trap (#455,
+// #248) appends one enum value, one key here, one item row above and one fixture
+// row in both repositories; nothing existing moves.
+static const char *const AP_TRAP_EFFECT_KEY[AP_TRAP_EFFECT_COUNT] = {
+	"icy_road",
+	"low_gravity",
+	"forced_usf",
+	"forced_boost",
+	"first_person",
+	"wumpa_wipeout",
+	"flatten",
+	"item_reroll",
+	"forced_use",
+	"empty_crates",
+	"weakened_kart",
+	"boost_blocker",
+	"wireframe",
+	"nitro",
+	"reverse_steering",
+	"red_potion",
+	"upside_down",
+	"mirror_mode",
+	"warpball_ambush",
+	"demo_camera",
+};
+
+// First slot_data schema whose seeds carry `trap_identities` and must be read
+// through it. An older seed keeps the frozen item table above, which is what a
+// 0.2.x client applied, so its traps behave exactly as before.
+#define AP_TRAP_IDENTITIES_SCHEMA 18
+// The block's own shape version.
+#define AP_TRAP_IDENTITIES_VERSION 1
+
+// The effect this build has for a key, or -1 when the key is unknown here.
+static inline int AP_TrapEffectForKey(const char *key)
+{
+	int e;
+	if (key == 0)
+		return -1;
+	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+	{
+		const char *a = AP_TRAP_EFFECT_KEY[e];
+		const char *b = key;
+		while (*a && *a == *b)
+		{
+			a++;
+			b++;
+		}
+		if (*a == 0 && *b == 0)
+			return e;
+	}
+	return -1;
+}
+
+// The item-table row for an apworld item index, or -1 when it is not a trap here.
+static inline int AP_TrapItemRowForIndex(long long idx)
+{
+	int i;
+	for (i = 0; i < AP_TRAP_ITEM_MAP_COUNT; i++)
+		if (AP_TRAP_ITEM_MAP[i].index == idx)
+			return i;
+	return -1;
+}
+
+// What a seed's trap_identities block resolved to, per item-table row.
+enum
+{
+	AP_TRAP_IDS_ABSENT = 0, // no usable block yet
+	AP_TRAP_IDS_VALID,      // block accepted; rows hold the agreed effects
+	AP_TRAP_IDS_INVALID     // block refused as a whole: no trap fires
+};
+
+typedef struct
+{
+	// 0 = the seed predates schema 18 (or no slot_data was parsed): the frozen
+	// item table above decides, exactly as a 0.2.x client did. 1 = the seed must
+	// carry trap_identities and only what it agreed fires. Zero-initialised is
+	// therefore the legacy behaviour.
+	int required;
+	int state; // AP_TRAP_IDS_*
+	// Effect agreed for AP_TRAP_ITEM_MAP[i], or -1 when the seed does not map
+	// that item to the key this build has for it (missing, unknown, contradictory).
+	signed char effect[AP_TRAP_ITEM_MAP_COUNT];
+} AP_TrapIdentityTable;
+
+// The current seed's table. Written by the slot_data parser (ap_seedcfg.cpp)
+// at connect, read by the received-item path.
+#ifdef __cplusplus
+extern "C"
+#else
+extern
+#endif
+    AP_TrapIdentityTable ctr_trap_identities;
+
+// Outcome of checking one seed entry against this build.
+enum
+{
+	AP_TRAP_ENTRY_OK = 0,
+	AP_TRAP_ENTRY_NOT_A_TRAP,    // the item id is not a trap identity in this build
+	AP_TRAP_ENTRY_UNKNOWN_KEY,   // the key names an effect this build does not have
+	AP_TRAP_ENTRY_CONTRADICTION  // known key, but not the one this build has for the item
+};
+
+// Check one (item id, key) entry. On OK, *rowOut and *effectOut are set.
+static inline int AP_TrapCheckEntry(long long itemId, const char *key, int *rowOut,
+                                    int *effectOut)
+{
+	long long idx = itemId - AP_TRAP_ITEM_ID_BASE;
+	int row = (idx < 0 || idx > AP_TRAP_ITEM_INDEX_MAX) ? -1 : AP_TrapItemRowForIndex(idx);
+	int effect = AP_TrapEffectForKey(key);
+	if (row < 0)
+		return AP_TRAP_ENTRY_NOT_A_TRAP;
+	if (effect < 0)
+		return AP_TRAP_ENTRY_UNKNOWN_KEY;
+	if (effect != (int)AP_TRAP_ITEM_MAP[row].effect)
+		return AP_TRAP_ENTRY_CONTRADICTION;
+	if (rowOut)
+		*rowOut = row;
+	if (effectOut)
+		*effectOut = effect;
+	return AP_TRAP_ENTRY_OK;
+}
+
+// The effect to apply for a received item index, or -1 to refuse it.
+//   not required (seed schema < 18, or no slot_data): the frozen item table.
+//   required: only what the seed's block agreed. An absent or refused block
+//   refuses every trap, because a schema-18 seed is required to carry it.
+static inline int AP_TrapResolveEffect(const AP_TrapIdentityTable *t, long long idx)
+{
+	int row;
+	if (t == 0 || !t->required)
+		return AP_TrapEffectForItemIndex(idx);
+	if (t->state != AP_TRAP_IDS_VALID)
+		return -1;
+	row = AP_TrapItemRowForIndex(idx);
+	if (row < 0)
+		return -1;
+	return (int)t->effect[row];
+}
+
 // Does this build have a native effect for the trap, or does it only know the
 // identity? A received identity with no effect is retained armed, never consumed.
 static inline int AP_TrapItemIsBuildable(int effect)

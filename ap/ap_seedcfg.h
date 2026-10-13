@@ -86,7 +86,12 @@ extern "C" {
 //        its own version: block schema 2 (the pool draw, 2026-09-14) rides
 //        global 16 because a block-schema-1 client refuses it at admission.
 // Candidate schema 17 has a separately admitted content_plan v1 profile.
-#define CTR_CFG_SCHEMA_KNOWN 17
+//   18 = the 0.3.0 wire step (#307 first): the required top-level
+//        trap_identities block names each trap item's effect by its stable
+//        key (ap_trap_items.h). A pre-18 seed keeps the frozen trap table; a
+//        pre-18 client shows the #8 banner on an 18 seed and applies its own
+//        frozen table, which agrees because trap item ids never move.
+#define CTR_CFG_SCHEMA_KNOWN 18
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
 #define CTR_CFG_TRIAL_TRACK_COUNT 2

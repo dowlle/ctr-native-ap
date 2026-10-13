@@ -238,7 +238,21 @@ static void AP_FxApply(long long item)
 	long long idx = item - AP_ITEM_BASE;
 
 	if (AP_TrapItemIndexIsTrap(idx))
-		AP_TrapReceive(AP_TrapEffectForItemIndex(idx));
+	{
+		// #307: from schema 18 the seed's trap_identities block decides; an item
+		// it did not agree is refused rather than fired as a guessed effect.
+		int effect = AP_TrapResolveEffect(&ctr_trap_identities, idx);
+		if (effect >= 0)
+			AP_TrapReceive(effect);
+		else
+		{
+			char msg[128];
+			snprintf(msg, sizeof msg,
+			         "[AP TRAP] refused trap item id %lld: not agreed by this seed's trap_identities\n",
+			         item);
+			AP_LogLine(msg);
+		}
+	}
 	else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX)
 		AP_WumpaReceive(3);
 	else if (idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
