@@ -535,6 +535,31 @@ static int ap_cs_effectiveValue(int statIndex, int characterID)
 	return ap_cs_clamp(statIndex, base + ap_cs_progDelta(statIndex, characterID) + ap_cs_editDelta(statIndex, characterID));
 }
 
+// The Progressive Stats rank (0..4) the picker's bar should show for this stat
+// and racer, or -1 when the value is not rank-driven (vanilla, editable or
+// dev-fallback stats). Mirrors the rank selection in ap_cs_effectiveValue so
+// the bar and the promised value read the same rank. Rank 4 is above the
+// retail class maximum, so a value-against-class-spread bar cannot tell ranks
+// 3 and 4 apart (#466); the Garage's five-step table can.
+static int ap_cs_effectiveRank(int statIndex, int characterID)
+{
+	int chain, rank;
+
+	if (!ctr_cfg_active() || ap_cs_progMode == AP_CS_MODE_OFF)
+		return -1;
+	chain = ap_cs_progChainForStat(statIndex);
+	if (chain < 0)
+		return -1;
+	rank = (ap_cs_progMode == AP_CS_MODE_PERCHAR)
+	           ? AP_CapabilityStatRankForCharacter(chain, characterID)
+	           : AP_CapabilityStatRankFor(chain);
+	if (rank < 0)
+		rank = 0;
+	if (AP_CapabilityRankValueForOffset(ap_cs_stats[statIndex].driverOffset, rank) < 0)
+		return -1;
+	return rank;
+}
+
 // Is there anything for THIS file to write at driver birth?
 //
 // Progressive stats are deliberately NOT in this list: ap_capability.c owns
@@ -2158,7 +2183,11 @@ void AP_CharPicker_Draw(void)
 		// The ladder the value is placed on, the same one the rank word reads.
 		ap_cs_statLadder(stat, &lo, &hi);
 
-		target = AP_StatBar_LenForValue(want, lo, hi);
+		{
+			int rank = ap_cs_effectiveRank(stat, selectedChar);
+			target = (rank >= 0) ? AP_StatBar_LenForRank(rank)
+			                     : AP_StatBar_LenForValue(want, lo, hi);
+		}
 		ap_cs_barLen[i] = (short)AP_StatBar_Step(ap_cs_barLen[i], target);
 
 		DecalFont_DrawLine((char *)ap_cs_stats[stat].label, AP_CS_BAR_X - 6, barY - 1,
