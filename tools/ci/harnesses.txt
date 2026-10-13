@@ -166,3 +166,17 @@ tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-se
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py
 tools/test-statbar-rank.c
+tools/test-bsp-instance.py
+tools/test-custom-ctr-result.py
+tools/test-custom-letter-hooks.py
+tools/test-custom-letter-verifier.py
+tools/test-custom-profile-activation.py
+tools/test-custom-race-picker.py
+tools/test-letter-ready-feed-production.py
+tools/test-trial-pad-state-production.py
+tools/test-feed-rung-policy.py
+tools/test-ap-spawn-pool-reset.py skip fails on main (exit 1); was never run by CI, needs a look
+tools/test-box-anchor-premise.py skip fails on main (exit 1); was never run by CI, needs a look
+# Non-file steps (run from the repo root; CI runs them through this script).
+cmd TLS and cache boundary regressions :: bash tools/security/run.sh
+cmd Release assembly boundary checks :: python3 -m unittest discover -s tools/release -p 'test_*.py'
