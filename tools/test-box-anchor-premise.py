@@ -69,7 +69,7 @@ assert (
 
 # The authoring tool records that exact field, unmodified.
 author = (ROOT / "ap" / "ap_author.c").read_text(encoding="utf-8")
-assert "AP_AuthorNarrow(d->posCurr.y, &clamped)" in author, (
+assert "AP_Placement_FromKartAxis(d->posCurr.y, &clamped)" in author, (
     "the placement row must still be the raw kart position; anything else changes "
     "what the crate lift is measured against"
 )
@@ -106,10 +106,11 @@ assert "s_spawns[i].scale = 0x1000;" in spawn, (
 # ── the correction is applied once, in one place ─────────────────────────────
 
 boxes = (ROOT / "ap" / "ap_boxes.c").read_text(encoding="utf-8")
-model = (ROOT / "ap" / "ap_box_model.c").read_text(encoding="utf-8")
+model = (ROOT / "ap" / "ap_box_spawn_pos.c").read_text(encoding="utf-8")
 assert model.count("void AP_BoxModel_SpawnPos(") == 1, "one shared spawn transform, not two"
 assert boxes.count("AP_BoxModel_SpawnPos(") == 1, "runtime boxes must go through the shared transform"
-assert author.count("AP_BoxModel_SpawnPos(") == 1, "author markers must go through the same transform"
+# The authoring tool has two marker paths (stock tracks and custom tracks), both shared.
+assert author.count("AP_BoxModel_SpawnPos(") == 2, "author markers must go through the same transform"
 
 # The collision centre follows the visible centre: both weapon proximity paths
 # read the live instance matrix, never the authored row they are lifted off.
