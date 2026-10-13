@@ -378,6 +378,7 @@
 // Archipelago module definition (CTR_AP build only)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.c"
+#include "../ap/ap_hooks_location_events.c"
 #include "../ap/ap_hooks_received.c"
 #include "../ap/ap_hooks_gates.c"
 #include "../ap/ap_hooks_apply_items.c"
