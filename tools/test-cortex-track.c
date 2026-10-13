@@ -345,7 +345,7 @@ static const struct guard_row rows[] = {
 	 "CustomTrack_RetailPodiumLevelID"},
 	{"ap/ap_hooks_race.c", "static void AP_WumpaGatherFacts(", "facts->servingCortexTrack = AP_CortexTrackActive();",
 	 "facts->isCupLeg = "},
-	{"ap/ap_hooks.c", "static int AP_RelicTierEarnable(", "AP_CortexTrackActive()",
+	{"ap/ap_hooks_ceremony.c", "static int AP_RelicTierEarnable(", "AP_CortexTrackActive()",
 	 "return !AP_RelicRewardOwnedByBit(bit);"},
 	{"ap/ap_hooks.c", "int AP_RelicTimeFor(", "AP_CortexRelicTime(tier)", "data.RelicTime[levelID * 3 + tier]"},
 	{"ap/ap_hooks_race.c", "int AP_LetterAvailable(", "AP_CortexLetterTrack(track)", "ctr_cfg.lettersanity_locations[track][letter]"},
