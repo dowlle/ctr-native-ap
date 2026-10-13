@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
 
@@ -119,7 +120,7 @@ int main() {
 '''
 
 # ── 2. readers, compiled from ap_hooks.c ────────────────────────────────────
-hooks = (root / 'ap/ap_hooks.c').read_text()
+hooks = ap_hooks_unit.read()
 bosses_fn = extract(hooks, 'static int AP_ComposedBossesWon(void)\n{')
 first_fn = extract(hooks, 'int AP_OxideFirstChallengeCleared(void)\n{')
 assert 'AP_LocationCheckedByBit' not in bosses_fn

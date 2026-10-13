@@ -2,8 +2,9 @@
 from pathlib import Path
 import tempfile
 import subprocess
+import ap_hooks_unit
 root=Path(__file__).resolve().parents[1]
-source=(root/'ap/ap_hooks.c').read_text()
+source=ap_hooks_unit.read()
 start=source.index('static void AP_FeedLetterReadyUpdates(void)\n{')
 end=source.index('\n}\n',start)+3
 fixture=r'''

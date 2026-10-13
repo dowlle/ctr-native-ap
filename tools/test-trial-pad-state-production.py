@@ -2,8 +2,9 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import ap_hooks_unit
 root=Path(__file__).resolve().parents[1]
-source=(root/'ap/ap_hooks.c').read_text()
+source=ap_hooks_unit.read()
 def extract(signature):
  start=source.index(signature+'\n{')
  return source[start:source.index('\n}\n',start)+3]
