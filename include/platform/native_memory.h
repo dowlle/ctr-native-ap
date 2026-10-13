@@ -7,5 +7,7 @@ void Platform_ConfigureMempackArena(void);
 void Platform_RepairResidentPointers(s32 activeMempackIndex);
 void *Platform_GetMempackBacking(void);
 int Platform_GetMempackBackingSize(void);
+void *Platform_GetSpawnPoolReserve(void);
+int Platform_GetSpawnPoolReserveSize(void);
 
 #endif
