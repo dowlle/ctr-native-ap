@@ -94,6 +94,26 @@ static inline int AP_StatBar_Step(int current, int target)
 	return current;
 }
 
+// Bar length for a Progressive Stats rank 0..4 (VERY LOW .. VERY HIGH, #466).
+//
+// Five equal visual steps across the six 13-pixel segments; the last step stops
+// at the 78-pixel fill ceiling. The Garage and the character picker both read
+// this one table, so a given rank draws the same length on both. Rank 4 sits
+// above the retail class maximum, which is why the picker cannot place it by
+// value: ranks 3 and 4 both landed on a full bar. Out-of-range ranks clamp.
+#define AP_STATBAR_RANK_COUNT 5
+
+static inline int AP_StatBar_LenForRank(int rank)
+{
+	static const int byRank[AP_STATBAR_RANK_COUNT] = {13, 26, 39, 52, 78};
+
+	if (rank < 0)
+		rank = 0;
+	if (rank >= AP_STATBAR_RANK_COUNT)
+		rank = AP_STATBAR_RANK_COUNT - 1;
+	return byRank[rank];
+}
+
 // Bar length for a raw stat value against the ladder it is judged on.
 //
 // The Garage has a rank 0..4 to place; the picker has the live resolver's actual
