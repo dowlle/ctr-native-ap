@@ -13,8 +13,10 @@ typedef struct ctr_content_pad {
     int physical, hub, keys, occupied;
     int retail_id; /* -1 custom, otherwise 0..17 */
     int custom_slot, package_index, laps;
+    int named_block; /* -1 generic slot ids, otherwise 0..9999 (#306) */
     int64_t trophy_location;
     char entry_id[65], track_id[65], display_name[129];
+    char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
 
 typedef struct ctr_content_package {

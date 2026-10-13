@@ -83,6 +83,7 @@ tools/test-lettersanity-remote-feed.c
 tools/test-lettersanity-seedcfg.cpp
 tools/test-lettersanity.c
 tools/test-menu-ux.c
+tools/test-named-blocks.cpp
 tools/test-native-clip-scratch.c
 tools/test-native-spawn-pools.c
 tools/test-native-ptr-scratch.c

@@ -15,6 +15,7 @@
 #include "ap_relic_perfect.h"
 #include "ap_win_logic.h"
 #include "ap_trap_items.h"
+#include "ap_named_blocks.h"
 
 #include <cstdarg>
 #include <cstdlib>
@@ -1475,6 +1476,60 @@ static void ap_seedcfg_parse_trap_identities(const nlohmann::json &j, int schema
 
 #include "ap_content_plan_impl.hpp"
 
+// ── custom_track_titles (#306 B+, schema 18) ──────────────────────────────
+//
+// The room title of each generic custom slot, as the apworld sanitized and
+// clash-suffixed it. Presentation only: a missing or malformed block never
+// refuses the seed or the track, it only leaves the title empty. A title for a
+// slot this seed's admitted custom track does not own is ignored.
+static void ap_seedcfg_parse_custom_track_titles(const nlohmann::json &j, int schema)
+{
+	static_assert(sizeof ctr_cfg.custom_track.title == AP_ROOM_TITLE_CAP, "title buffer");
+	ctr_cfg.custom_track.title[0] = '\0';
+	if (schema < 18 || !ctr_cfg.custom_tracks_ok)
+		return;
+	auto it = j.find("custom_track_titles");
+	const char *problem = nullptr;
+	if (it == j.end())
+		problem = "block missing";
+	else if (!it->is_object() || !it->contains("version") || !(*it)["version"].is_number_integer() ||
+	         (*it)["version"].get<long long>() != 1)
+		problem = "version is missing or not 1";
+	else if (!it->contains("tracks") || !(*it)["tracks"].is_array())
+		problem = "tracks is missing or not an array";
+	if (problem)
+	{
+		ap_cfg_log("[AP CFG] custom_track_titles ignored (%s); the room keeps generic names in this client's log\n", problem);
+		return;
+	}
+	for (const auto &row : (*it)["tracks"])
+	{
+		if (!row.is_object() || !row.contains("slot") || !row["slot"].is_number_integer() ||
+		    !row.contains("title") || !row["title"].is_string())
+		{
+			ap_cfg_log("[AP CFG] custom_track_titles: malformed row ignored\n");
+			continue;
+		}
+		if (row["slot"].get<long long>() != ctr_cfg.custom_track.slot)
+			continue;
+		const std::string &title = row["title"].get_ref<const std::string &>();
+		if (!ap_room_title_ok(title.c_str(), title.size()))
+		{
+			ap_cfg_log("[AP CFG] custom_track_titles: title for slot %d refused\n", ctr_cfg.custom_track.slot);
+			continue;
+		}
+		std::memcpy(ctr_cfg.custom_track.title, title.c_str(), title.size() + 1);
+	}
+	if (ctr_cfg.custom_track.title[0])
+		ap_cfg_log("[AP CFG] custom_track_titles v1: slot %d is \"%s\"\n", ctr_cfg.custom_track.slot,
+		           ctr_cfg.custom_track.title);
+}
+
+extern "C" const char *ctr_cfg_custom_track_title(void)
+{
+	return ctr_cfg.custom_tracks_ok && ctr_cfg.custom_track.title[0] ? ctr_cfg.custom_track.title : nullptr;
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
@@ -2209,6 +2264,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			}
 		}
 	}
+
+	ap_seedcfg_parse_custom_track_titles(j, schema);
 
 	// schema 11: the Final Challenge venue is independent from ordinary boss
 	// shuffle and from the Gem Cup custom-track descriptor above.
