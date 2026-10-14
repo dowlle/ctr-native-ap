@@ -2031,13 +2031,14 @@ static void TestDevRowsFollowDevKeys(void)
 
 	int list[NATIVE_SHORTCUT_COUNT];
 	const int devRows[] = {
+	    NATIVE_SHORTCUT_DEV_PROGRESSIVE_MODE, NATIVE_SHORTCUT_DEV_EDITABLE_MODE,
 	    NATIVE_SHORTCUT_DEV_TRAP_ICY,        NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY, NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES,
 	    NATIVE_SHORTCUT_DEV_TRAP_BOOST,      NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON, NATIVE_SHORTCUT_DEV_TRAP_ALL,
 	    NATIVE_SHORTCUT_DEV_SHORTCUTLESS,    NATIVE_SHORTCUT_DEV_MARK_QUAD,         NATIVE_SHORTCUT_DEV_DEMO_CAMERA,
 	};
 	const int devCount = (int)(sizeof(devRows) / sizeof(devRows[0]));
 
-	// dev_keys off: the player rows stay, every Dev trap, Shortcutless and camera row goes.
+	// dev_keys off: only the character picker stays, every Dev row goes.
 	NativeControls_SetDevShortcutsVisible(0, 0);
 	int count = NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT);
 	Check(count == NATIVE_SHORTCUT_COUNT - devCount, "dev_keys off lists only the non-dev rows");
@@ -2074,6 +2075,7 @@ static void TestDevRowsFollowDevKeys(void)
 	{
 		Check(NativeControls_ShortcutVisible(list[i]) == 1, "every listed row is visible");
 	}
+	NativeControls_SetDevShortcutsVisible(1, 1);
 	Check(NativeControls_ListVisibleShortcuts(list, 2) == 2, "the list honours max");
 	Check(NativeControls_ShortcutVisible(-1) == 0, "an invalid index is not visible");
 	Check(NativeControls_ShortcutVisible(NATIVE_SHORTCUT_COUNT) == 0, "the count is not visible");

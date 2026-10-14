@@ -260,6 +260,8 @@ internal bool NativeControls_IsDevShortcut(int shortcut)
 {
 	switch (shortcut)
 	{
+	case NATIVE_SHORTCUT_DEV_PROGRESSIVE_MODE:
+	case NATIVE_SHORTCUT_DEV_EDITABLE_MODE:
 	case NATIVE_SHORTCUT_DEV_TRAP_ICY:
 	case NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY:
 	case NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES:
