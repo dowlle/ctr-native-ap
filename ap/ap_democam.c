@@ -351,6 +351,11 @@ static void AP_DemoCamDebugKey(void)
 	prev = down;
 }
 
+int AP_DemoCamDebugEnabled(void)
+{
+	return ap_democam_enabled;
+}
+
 int AP_DemoCamConfigLine(const char *line)
 {
 	if (strncmp(line, "debug_democam=", 14) != 0)

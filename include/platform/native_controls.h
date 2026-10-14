@@ -215,6 +215,21 @@ void NativeControls_SetShortcutKey(int shortcut, s32 scancode);
 // the keyboard does the same.
 void NativeControls_RestoreShortcutDefaults(void);
 
+// Which shortcuts the AP Shortcuts screen lists. The "Dev" rows (stats test modes,
+// trap keys, Shortcutless keys, demo camera) show only with dev_keys=1, and the demo camera
+// row also needs debug_democam=1, the same two settings its key needs to fire.
+// Display only: hidden rows keep their keys, still take part in the conflict
+// check, and Restore Defaults still restores them. The menu pushes the current
+// settings in each time it builds the list.
+void NativeControls_SetDevShortcutsVisible(int devKeys, int demoCamera);
+
+// 1 when the shortcut is listed under the current settings.
+int NativeControls_ShortcutVisible(int shortcut);
+
+// Writes the listed shortcut indexes in order (at most `max`), returns how many.
+// The menu builds its rows from this, so the cursor can never land on a hidden row.
+int NativeControls_ListVisibleShortcuts(int *dst, int max);
+
 // Starts a capture for a shortcut. It listens to the keyboard and is confirmed
 // with the keyboard's Cross key, otherwise exactly like NativeControls_BeginCapture.
 void NativeControls_BeginShortcutCapture(int shortcut);

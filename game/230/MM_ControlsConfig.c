@@ -140,10 +140,19 @@ static void Controls_BuildRows(void)
 
 	if (s_shortcutScreen)
 	{
-		for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+		// Dev rows are left out unless dev_keys=1 (the demo camera also needs
+		// debug_democam=1). The rows are a packed list, so the cursor never lands
+		// on a hidden one.
+		int listed[NATIVE_SHORTCUT_COUNT];
+#ifdef CTR_AP
+		NativeControls_SetDevShortcutsVisible(AP_DevKeysEnabled(), AP_DemoCamDebugEnabled());
+#endif
+		const int listedCount = NativeControls_ListVisibleShortcuts(listed, NATIVE_SHORTCUT_COUNT);
+
+		for (int i = 0; i < listedCount; i++)
 		{
 			s_rows[s_rowCount].kind = CONTROLS_ROW_SHORTCUT;
-			s_rows[s_rowCount].binding = shortcut;
+			s_rows[s_rowCount].binding = listed[i];
 			s_rowCount++;
 		}
 
