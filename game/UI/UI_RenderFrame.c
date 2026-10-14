@@ -906,6 +906,10 @@ void UI_RenderFrame_Racing()
 	// close enough to read.
 	AP_NavRec_DrawBotNames();
 
+#if defined(CTR_NATIVE)
+	AP_Boxes_DrawNumbers();
+#endif
+
 	// Box placement author mode (#182): one status line while the mode is on.
 	// Self-gates on the "Box Author Mode" option, so this is a call and a
 	// compare for everyone else. Drawn after the feed so the authoring
