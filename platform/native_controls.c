@@ -251,6 +251,30 @@ internal bool NativeControls_IsValidShortcut(int shortcut)
 	return (shortcut >= 0) && (shortcut < NATIVE_SHORTCUT_COUNT);
 }
 
+// Dev shortcut visibility on the AP Shortcuts screen. Display only: the binding,
+// the conflict check and Restore Defaults treat every shortcut alike.
+global_variable int s_devKeysOn;
+global_variable int s_demoCamOn;
+
+internal bool NativeControls_IsDevShortcut(int shortcut)
+{
+	switch (shortcut)
+	{
+	case NATIVE_SHORTCUT_DEV_TRAP_ICY:
+	case NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY:
+	case NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES:
+	case NATIVE_SHORTCUT_DEV_TRAP_BOOST:
+	case NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON:
+	case NATIVE_SHORTCUT_DEV_TRAP_ALL:
+	case NATIVE_SHORTCUT_DEV_SHORTCUTLESS:
+	case NATIVE_SHORTCUT_DEV_MARK_QUAD:
+	case NATIVE_SHORTCUT_DEV_DEMO_CAMERA:
+		return true;
+	default:
+		return false;
+	}
+}
+
 internal void NativeControls_ResetShortcuts(void)
 {
 	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
@@ -1895,6 +1919,47 @@ void NativeControls_SetShortcutKey(int shortcut, s32 scancode)
 
 	s_shortcutKeys[shortcut] = scancode;
 	NativeControls_Save();
+}
+
+void NativeControls_SetDevShortcutsVisible(int devKeys, int demoCamera)
+{
+	s_devKeysOn = (devKeys != 0);
+	s_demoCamOn = (demoCamera != 0);
+}
+
+int NativeControls_ShortcutVisible(int shortcut)
+{
+	if (!NativeControls_IsValidShortcut(shortcut))
+	{
+		return 0;
+	}
+
+	if (!NativeControls_IsDevShortcut(shortcut))
+	{
+		return 1;
+	}
+
+	if (!s_devKeysOn)
+	{
+		return 0;
+	}
+
+	return (shortcut != NATIVE_SHORTCUT_DEV_DEMO_CAMERA) || s_demoCamOn;
+}
+
+int NativeControls_ListVisibleShortcuts(int *dst, int max)
+{
+	int count = 0;
+
+	for (int shortcut = 0; (shortcut < NATIVE_SHORTCUT_COUNT) && (count < max); shortcut++)
+	{
+		if (NativeControls_ShortcutVisible(shortcut))
+		{
+			dst[count++] = shortcut;
+		}
+	}
+
+	return count;
 }
 
 void NativeControls_RestoreShortcutDefaults(void)

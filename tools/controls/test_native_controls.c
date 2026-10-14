@@ -220,6 +220,8 @@ static void ResetModule(void)
 	s_captureInstanceId = -1;
 	NativeControls_ResetShortcuts();
 	s_testTextActive = 0;
+	s_devKeysOn = 0;
+	s_demoCamOn = 0;
 
 	for (int player = 0; player < PLATFORM_INPUT_PAD_COUNT; player++)
 	{
@@ -2006,6 +2008,117 @@ static void TestRestoreDefaultsRestoresBoth(void)
 	      "a gamepad restore keeps the shortcuts");
 }
 
+static bool ListHas(const int *list, int count, int shortcut)
+{
+	for (int i = 0; i < count; i++)
+	{
+		if (list[i] == shortcut)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static void TestDevRowsFollowDevKeys(void)
+{
+	printf("shortcuts: Dev rows are listed only with dev_keys=1, the demo camera also with debug_democam=1\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(1, pads, &keyboard);
+
+	int list[NATIVE_SHORTCUT_COUNT];
+	const int devRows[] = {
+	    NATIVE_SHORTCUT_DEV_TRAP_ICY,        NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY, NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES,
+	    NATIVE_SHORTCUT_DEV_TRAP_BOOST,      NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON, NATIVE_SHORTCUT_DEV_TRAP_ALL,
+	    NATIVE_SHORTCUT_DEV_SHORTCUTLESS,    NATIVE_SHORTCUT_DEV_MARK_QUAD,         NATIVE_SHORTCUT_DEV_DEMO_CAMERA,
+	};
+	const int devCount = (int)(sizeof(devRows) / sizeof(devRows[0]));
+
+	// dev_keys off: the player rows stay, every Dev trap, Shortcutless and camera row goes.
+	NativeControls_SetDevShortcutsVisible(0, 0);
+	int count = NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT);
+	Check(count == NATIVE_SHORTCUT_COUNT - devCount, "dev_keys off lists only the non-dev rows");
+	Check(ListHas(list, count, NATIVE_SHORTCUT_CHARACTER_PICKER), "the character picker is listed");
+	for (int i = 0; i < devCount; i++)
+	{
+		Check(!ListHas(list, count, devRows[i]), "a dev row is hidden with dev_keys off");
+	}
+
+	// debug_democam alone changes nothing without dev_keys.
+	NativeControls_SetDevShortcutsVisible(0, 1);
+	Check(NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT) == count, "democam alone shows nothing");
+
+	// dev_keys on: all but the camera.
+	NativeControls_SetDevShortcutsVisible(1, 0);
+	count = NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT);
+	Check(count == NATIVE_SHORTCUT_COUNT - 1, "dev_keys on lists everything but the camera");
+	Check(!ListHas(list, count, NATIVE_SHORTCUT_DEV_DEMO_CAMERA), "the camera row needs debug_democam");
+
+	// both on: everything, in enum order, each index once.
+	NativeControls_SetDevShortcutsVisible(1, 1);
+	count = NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT);
+	Check(count == NATIVE_SHORTCUT_COUNT, "both on lists every shortcut");
+	for (int i = 0; i < count; i++)
+	{
+		Check(list[i] == i, "rows come in enum order");
+	}
+
+	// The list is the menu's packed row list, so a cursor stepping through it never
+	// meets a hidden row. A small max truncates instead of overflowing.
+	NativeControls_SetDevShortcutsVisible(0, 0);
+	count = NativeControls_ListVisibleShortcuts(list, NATIVE_SHORTCUT_COUNT);
+	for (int i = 0; i < count; i++)
+	{
+		Check(NativeControls_ShortcutVisible(list[i]) == 1, "every listed row is visible");
+	}
+	Check(NativeControls_ListVisibleShortcuts(list, 2) == 2, "the list honours max");
+	Check(NativeControls_ShortcutVisible(-1) == 0, "an invalid index is not visible");
+	Check(NativeControls_ShortcutVisible(NATIVE_SHORTCUT_COUNT) == 0, "the count is not visible");
+}
+
+static void TestHiddenDevRowsStillTakePartInConflicts(void)
+{
+	printf("shortcuts: hidden Dev rows keep keys, are cleared by conflicts and are restored\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(1, pads, &keyboard);
+	NativeControls_SetDevShortcutsVisible(0, 0);
+
+	// Hidden, but the key is still there.
+	Check(NativeControls_ShortcutVisible(NATIVE_SHORTCUT_DEV_TRAP_ICY) == 0, "Dev Trap Icy is hidden");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == SDL_SCANCODE_KP_1, "it keeps Numpad 1");
+
+	// A game control taking the key clears the hidden shortcut.
+	NativeControls_SetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE, SDL_SCANCODE_KP_1);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == NATIVE_CONTROLS_BINDING_NONE,
+	      "a game control clears a hidden dev key");
+
+	// A visible shortcut taking a hidden one's key clears it too.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_KP_7);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == NATIVE_CONTROLS_BINDING_NONE,
+	      "a visible shortcut clears a hidden dev key");
+
+	// Restore Defaults brings hidden rows back as well, whatever the visibility.
+	NativeControls_RestoreShortcutDefaults();
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == SDL_SCANCODE_KP_1, "hidden icy key restored");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == SDL_SCANCODE_KP_7,
+	      "hidden Shortcutless key restored");
+
+	// Same outcome with dev_keys on: visibility never changes the rules.
+	NativeControls_SetDevShortcutsVisible(1, 1);
+	NativeControls_SetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE, SDL_SCANCODE_KP_2);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY) == NATIVE_CONTROLS_BINDING_NONE,
+	      "a game control clears a visible dev key too");
+	NativeControls_RestoreShortcutDefaults();
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY) == SDL_SCANCODE_KP_2,
+	      "and Restore Defaults brings it back");
+}
+
 static void TestShortcutsRoundTripAndOldFilesLoad(void)
 {
 	printf("shortcuts: controls.ini round trip, and a file without the section\n");
@@ -2177,6 +2290,8 @@ int main(void)
 	TestTheNewerBindingClearsTheOlder();
 	TestShortcutCaptureWarnsAndReplaces();
 	TestRestoreDefaultsRestoresBoth();
+	TestDevRowsFollowDevKeys();
+	TestHiddenDevRowsStillTakePartInConflicts();
 	TestShortcutsRoundTripAndOldFilesLoad();
 	TestShortcutsStayQuietWhileTypingOrRebinding();
 #endif

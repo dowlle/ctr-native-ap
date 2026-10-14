@@ -122,9 +122,13 @@ always read the keyboard, whichever player the keyboard is assigned to.
 | Dev Mark Quad | Numpad 8 | Testing: logs the track quad under the kart |
 | Dev Demo Camera | Numpad + | Testing: toggles the demo camera |
 
-The rows starting with **Dev** only do something with `dev_keys=1` in
-`ap-config.txt` (the demo camera also needs `debug_democam=1`), so in normal play
-they are inert whatever key they have.
+The rows starting with **Dev** are hidden unless `dev_keys=1` is set in
+`ap-config.txt`, and the Dev Demo Camera row also needs `debug_democam=1`, the
+same two settings its key needs to do anything. Hidden rows keep their keys in
+`controls.ini`, still count in the one-key rule below (a game control that takes
+a hidden Dev key clears it, so it cannot fire next to that control once you turn
+dev keys on), and come back with Restore Defaults. With the settings off the
+cursor skips them, because they are not in the list.
 
 **One key never does two things.** If you give a key to a game control and an AP
 shortcut already has it, or the other way round, the newest binding wins and the
