@@ -131,7 +131,8 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
 - [ ] Bundle folder named `ctr-archipelago-vX.Y.Z/` containing:
       `ctr_native_ap.exe`, `ctr.apworld`, `versions.txt`, `extract_assets.py`,
       `SETUP.md`, `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
-      `support-bundle.bat`, `support-bundle.ps1` (Linux tarball instead ships
+      `default_controls.ini`, `support-bundle.bat`, `support-bundle.ps1`
+      (Linux tarball instead ships
       `support-bundle.sh`).
 - [ ] Zip it as `ctr-archipelago-vX.Y.Z-windows-x86.zip`. The folder INSIDE
       the zip must carry the release name too (players see it when unzipping).
@@ -141,7 +142,7 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
       containing the STRIPPED `ctr_native_ap` plus the same companion files as
       the Windows bundle (`ctr.apworld`, `extract_assets.py`, `SETUP.md`,
       `ap-config.example.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
-      `support-bundle.sh`). The tarball NEVER contains the `.debug` sidecar. As
+      `default_controls.ini`, `support-bundle.sh`). The tarball NEVER contains the `.debug` sidecar. As
       with the zip, the folder inside the tarball carries the release name. Write
       the tarball's `.sha256` sidecar.
 - [ ] BOTH `.debug` sidecars ship as their OWN public release assets: the Linux
@@ -186,8 +187,8 @@ archive, and its contents never change the player client.
       `.sha256`. The folder inside is `ctr-archipelago-vX.Y.Z-box-authoring/`.
       It holds `ctr_native_ap_authoring(.exe)`, `HELP-PLACE-BOXES.md`,
       `AUTHORING-BUILD.txt`, `SETUP.md`, `extract_assets.py`, `versions.txt`,
-      `LICENSE`, `THIRD_PARTY_NOTICES.md`, the support helpers and the same
-      `assets/` tree as the client. It has no `ctr.apworld` and no
+      `LICENSE`, `THIRD_PARTY_NOTICES.md`, `default_controls.ini`, the support
+      helpers and the same `assets/` tree as the client. It has no `ctr.apworld` and no
       `ap-config.example.txt`, because it never connects to a room.
 - [ ] Archive its `.debug` sidecar with the release evidence under
       `ctr-artifacts/<version>/`. It is not a public release asset.
