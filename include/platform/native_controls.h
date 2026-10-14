@@ -9,6 +9,9 @@
 #include <macros.h>
 
 #include <platform/native_input.h>
+#include <platform/native_shortcuts.h>
+
+#include <stddef.h>
 
 // The PSX pad bus exposes PLATFORM_INPUT_PAD_COUNT player slots, and player N drives
 // slot N-1, so that is also how many players there are.
@@ -181,5 +184,45 @@ int NativeControls_PollCapture(void);
 
 // Abandons a pending capture and restores the binding it was holding.
 void NativeControls_CancelCapture(void);
+
+// ---- AP shortcuts (include/platform/native_shortcuts.h) ----
+//
+// Keyboard keys for the Archipelago shortcuts, stored in controls.ini under
+// [AP Shortcuts]. One table for the whole machine, not per device: the shortcuts
+// read the host keyboard whoever it is assigned to.
+//
+// One key never does two things. Binding a key to a shortcut clears it from any
+// keyboard game control and any other shortcut that had it, and binding a key to
+// a keyboard game control clears it from any shortcut. The most recent binding
+// wins and the older one reads as unbound.
+
+// SDL scancode bound to a shortcut, or NATIVE_CONTROLS_BINDING_NONE.
+s32 NativeControls_GetShortcutKey(int shortcut);
+
+// Row name for a shortcut, e.g. "Character Picker".
+const char *NativeControls_GetShortcutName(int shortcut);
+
+// Display name of the shortcut's key, e.g. "Keypad 9". Empty when unbound.
+void NativeControls_GetShortcutLabel(int shortcut, char *dst, size_t dstSize);
+
+// Sets a shortcut's key, clears the key from anything else that held it, and
+// persists the file.
+void NativeControls_SetShortcutKey(int shortcut, s32 scancode);
+
+// Puts every shortcut and every keyboard game control back to the shipped keys,
+// then persists. The two are restored together because the defaults are only
+// guaranteed free of each other as a set. NativeControls_RestoreDeviceDefaults on
+// the keyboard does the same.
+void NativeControls_RestoreShortcutDefaults(void);
+
+// Starts a capture for a shortcut. It listens to the keyboard and is confirmed
+// with the keyboard's Cross key, otherwise exactly like NativeControls_BeginCapture.
+void NativeControls_BeginShortcutCapture(int shortcut);
+
+// While a capture is waiting for confirmation: 1 when the proposed key is already
+// used by something confirming would clear, with that control's name written to
+// dst. 0 otherwise. Only ever reports across the game-control/shortcut divide and
+// between shortcuts; two game controls may still share a key.
+int NativeControls_GetCaptureConflict(char *dst, size_t dstSize);
 
 #endif

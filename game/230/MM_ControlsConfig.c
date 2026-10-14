@@ -14,6 +14,11 @@
 //     screen; back on the screen returns to the player list, not to Options.
 //   * A rebind never starts while a text-entry session owns the keyboard.
 //   * The Options frame is drawn by MM_MenuProc_Config, after this file's rows.
+//   * The Archipelago build adds an "AP Shortcuts" entry under the players. It
+//     opens a screen of the same shape listing the AP keyboard shortcuts
+//     (include/platform/native_shortcuts.h), rebound with the keyboard capture.
+//     Confirming a key that a game control or another shortcut already has
+//     clears the older one, and the screen says so before the confirm.
 //
 // Included by MM_ConfigMenu.c, after the row geometry and option-row helpers it
 // shares (Config_DrawRowHighlight, Config_OptionStepDue, Config_OptionStep,
@@ -36,6 +41,9 @@ enum ControlsRowKind
 	CONTROLS_ROW_BINDING,
 	CONTROLS_ROW_DEADZONE,
 	CONTROLS_ROW_RESTORE,
+
+	// One AP shortcut; `binding` holds the NATIVE_SHORTCUT_* index.
+	CONTROLS_ROW_SHORTCUT,
 };
 
 struct ControlsRow
@@ -67,8 +75,27 @@ static int s_scroll;
 
 // Rebuilt every frame from the selected player's device, because the device can
 // change under the cursor at any time via hotplug or the row above.
-static struct ControlsRow s_rows[NATIVE_CONTROLS_BIND_COUNT + 3];
+#define CONTROLS_MAX_ROWS                                                                                  \
+	((((int)NATIVE_CONTROLS_BIND_COUNT > (int)NATIVE_SHORTCUT_COUNT) ? (int)NATIVE_CONTROLS_BIND_COUNT          \
+	                                                                 : (int)NATIVE_SHORTCUT_COUNT) +           \
+	 3)
+static struct ControlsRow s_rows[CONTROLS_MAX_ROWS];
 static int s_rowCount;
+
+// True while the AP Shortcuts screen is the open screen rather than a player's.
+static bool s_shortcutScreen;
+
+// The player list: one row per player, plus AP Shortcuts in the Archipelago build.
+#if defined(CTR_AP)
+#define CONTROLS_LIST_ROWS (PLATFORM_INPUT_PAD_COUNT + 1)
+#else
+#define CONTROLS_LIST_ROWS PLATFORM_INPUT_PAD_COUNT
+#endif
+
+// Footer line under the rows, used for the replace warning during a rebind.
+#define CONTROLS_FOOTER_Y 0xC6
+
+static char s_conflictBuffer[NATIVE_CONTROLS_NAME_LENGTH];
 
 static char s_valueBuffer[80];
 static char s_titleBuffer[32];
@@ -110,6 +137,21 @@ static void Controls_BuildRows(void)
 	const bool hasAnalog = Controls_DeviceHasAnalog(device);
 
 	s_rowCount = 0;
+
+	if (s_shortcutScreen)
+	{
+		for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+		{
+			s_rows[s_rowCount].kind = CONTROLS_ROW_SHORTCUT;
+			s_rows[s_rowCount].binding = shortcut;
+			s_rowCount++;
+		}
+
+		s_rows[s_rowCount].kind = CONTROLS_ROW_RESTORE;
+		s_rows[s_rowCount].binding = -1;
+		s_rowCount++;
+		return;
+	}
 
 	s_rows[s_rowCount].kind = CONTROLS_ROW_DEVICE;
 	s_rows[s_rowCount].binding = -1;
@@ -371,7 +413,7 @@ static u32 MM_Controls_MenuTapped(void)
 {
 	u32 tapped = (u32)sdata->gGamepads->gamepad[0].buttonsTapped;
 
-	if (s_screenOpen && (s_player != 0))
+	if (s_screenOpen && !s_shortcutScreen && (s_player != 0))
 	{
 		tapped |= (u32)sdata->gGamepads->gamepad[s_player].buttonsTapped;
 	}
@@ -385,7 +427,7 @@ static u32 MM_Controls_MenuHeld(void)
 {
 	u32 held = (u32)sdata->gGamepads->gamepad[0].buttonsHeldCurrFrame;
 
-	if (s_screenOpen && (s_player != 0))
+	if (s_screenOpen && !s_shortcutScreen && (s_player != 0))
 	{
 		held |= (u32)sdata->gGamepads->gamepad[s_player].buttonsHeldCurrFrame;
 	}
@@ -503,7 +545,29 @@ static void Controls_HandleConfirm(int device, const struct ControlsRow *row)
 		OtherFX_Play(1, 1);
 		break;
 
+	case CONTROLS_ROW_SHORTCUT:
+		// Same text-entry guard as a binding row. The shortcut listens to the
+		// keyboard whoever it is assigned to, so no player device is needed.
+		if (NativeText_Active())
+		{
+			OtherFX_Play(2, 1);
+			break;
+		}
+
+		NativeControls_BeginShortcutCapture(row->binding);
+		OtherFX_Play(1, 1);
+		break;
+
 	case CONTROLS_ROW_RESTORE:
+		if (s_shortcutScreen)
+		{
+			// Restores the keyboard's game controls with the shortcuts: the two sets
+			// of defaults are only free of each other together.
+			NativeControls_RestoreShortcutDefaults();
+			OtherFX_Play(1, 1);
+			break;
+		}
+
 		if (device == NATIVE_CONTROLS_NO_DEVICE)
 		{
 			OtherFX_Play(2, 1);
@@ -561,6 +625,16 @@ static void Controls_DrawValue(int device, const struct ControlsRow *row, int y,
 	if ((row->kind == CONTROLS_ROW_DEADZONE) && (device != NATIVE_CONTROLS_NO_DEVICE))
 	{
 		Config_DrawPercent(NativeControls_GetDeadzone(device), y, ot);
+		return;
+	}
+
+	if (row->kind == CONTROLS_ROW_SHORTCUT)
+	{
+		// Grey for unbound, so a shortcut cleared by a newer binding stands out.
+		NativeControls_GetShortcutLabel(row->binding, s_valueBuffer, sizeof(s_valueBuffer));
+		const bool bound = (s_valueBuffer[0] != '\0');
+		Controls_DrawSafeText(bound ? s_valueBuffer : "None", CONFIG_VALUE_X, y, JUSTIFY_RIGHT | (bound ? WHITE : GRAY),
+		                      ot);
 		return;
 	}
 
@@ -625,6 +699,9 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 		case CONTROLS_ROW_RESTORE:
 			label = "Restore Defaults";
 			break;
+		case CONTROLS_ROW_SHORTCUT:
+			label = NativeControls_GetShortcutName(row->binding);
+			break;
 		default:
 			break;
 		}
@@ -634,12 +711,29 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 		// string that needs no cleaning.
 		DecalFont_DrawLineOT((char *)label, CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
 
-		if (capturing && (row->kind == CONTROLS_ROW_BINDING) && (i == menu->rowSelected))
+		if (capturing && ((row->kind == CONTROLS_ROW_BINDING) || (row->kind == CONTROLS_ROW_SHORTCUT)) &&
+		    (i == menu->rowSelected))
 		{
-			// Which half is pending: take a key, then confirm it with Cross.
-			snprintf(s_valueBuffer, sizeof(s_valueBuffer), "%s",
-			         NativeControls_IsConfirming() ? "* to confirm" : "...");
+			// Which half is pending: take a key, then confirm it with Cross. A key that
+			// something else already has is replaced, not shared, so the prompt says so
+			// and the footer names what loses it.
+			const bool conflict = NativeControls_GetCaptureConflict(s_conflictBuffer, sizeof(s_conflictBuffer)) != 0;
+			const char *prompt = "...";
+
+			if (NativeControls_IsConfirming())
+			{
+				prompt = conflict ? "* to replace" : "* to confirm";
+			}
+
+			snprintf(s_valueBuffer, sizeof(s_valueBuffer), "%s", prompt);
 			DecalFont_DrawLineOT(s_valueBuffer, CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | RED, ot);
+
+			if (conflict)
+			{
+				char footer[NATIVE_CONTROLS_NAME_LENGTH + 16];
+				snprintf(footer, sizeof(footer), "Used by %s", s_conflictBuffer);
+				Controls_DrawSafeText(footer, 0x100, CONTROLS_FOOTER_Y, JUSTIFY_CENTER | RED, ot);
+			}
 		}
 		else
 		{
@@ -701,6 +795,12 @@ static void Controls_ClampSelection(struct RectMenu *menu)
 static void Controls_HandlePlayerSwitch(struct RectMenu *menu, u32 playerOneTapped)
 {
 	int delta = 0;
+
+	// The shortcuts belong to no player.
+	if (s_shortcutScreen)
+	{
+		return;
+	}
 
 	if ((playerOneTapped & BTN_R1) != 0)
 	{
@@ -786,7 +886,15 @@ static void Controls_DrawTitle(uint32_t *ot)
 {
 	// Uppercase here, unlike the section name used in the options list: the retail
 	// titles this shares a font with are all caps.
-	snprintf(s_titleBuffer, sizeof(s_titleBuffer), "CONTROLS P%d", s_player + 1);
+	if (s_shortcutScreen)
+	{
+		snprintf(s_titleBuffer, sizeof(s_titleBuffer), "AP SHORTCUTS");
+	}
+	else
+	{
+		snprintf(s_titleBuffer, sizeof(s_titleBuffer), "CONTROLS P%d", s_player + 1);
+	}
+
 	DecalFont_DrawLineOT(s_titleBuffer, 0x100, CONFIG_TITLE_Y, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 }
 
@@ -811,8 +919,12 @@ static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot)
 	}
 
 	Controls_DrawTitle(ot);
-	Controls_DrawHint("L1", CONFIG_LABEL_X, false, ot);
-	Controls_DrawHint("R1", CONFIG_VALUE_X, true, ot);
+
+	if (!s_shortcutScreen)
+	{
+		Controls_DrawHint("L1", CONFIG_LABEL_X, false, ot);
+		Controls_DrawHint("R1", CONFIG_VALUE_X, true, ot);
+	}
 	Controls_DrawRows(menu, ot, NativeControls_GetPlayerDevice(s_player));
 }
 
@@ -839,10 +951,18 @@ static void Controls_DrawPlayerRow(int player, int y, uint32_t *ot)
 	Controls_DrawSafeText(NativeControls_GetDeviceName(device), CONFIG_VALUE_X, y, JUSTIFY_RIGHT | WHITE, ot);
 }
 
+// `player` is a player-list row: a player, or PLATFORM_INPUT_PAD_COUNT for the
+// AP Shortcuts entry below them.
 static void Controls_OpenScreen(struct RectMenu *menu, int player)
 {
 	s_listRow = player;
-	Controls_SelectPlayer(player);
+	s_shortcutScreen = (player >= PLATFORM_INPUT_PAD_COUNT);
+
+	if (!s_shortcutScreen)
+	{
+		Controls_SelectPlayer(player);
+	}
+
 	s_screenOpen = true;
 	s_pickerOpen = false;
 	s_scroll = 0;
@@ -856,6 +976,7 @@ static void MM_Controls_CloseScreen(struct RectMenu *menu)
 	NativeControls_CancelCapture();
 	NativeControls_Save();
 	s_screenOpen = false;
+	s_shortcutScreen = false;
 	s_pickerOpen = false;
 	menu->rowSelected = s_listRow;
 }
@@ -877,19 +998,19 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 
 	const u32 tapped = MM_Controls_MenuTapped();
 
-	if ((menu->rowSelected < 0) || (menu->rowSelected >= PLATFORM_INPUT_PAD_COUNT))
+	if ((menu->rowSelected < 0) || (menu->rowSelected >= CONTROLS_LIST_ROWS))
 	{
 		menu->rowSelected = 0;
 	}
 
 	if ((tapped & BTN_UP) != 0)
 	{
-		menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : PLATFORM_INPUT_PAD_COUNT - 1;
+		menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : CONTROLS_LIST_ROWS - 1;
 		OtherFX_Play(0, 1);
 	}
 	else if ((tapped & BTN_DOWN) != 0)
 	{
-		menu->rowSelected = (menu->rowSelected < PLATFORM_INPUT_PAD_COUNT - 1) ? menu->rowSelected + 1 : 0;
+		menu->rowSelected = (menu->rowSelected < CONTROLS_LIST_ROWS - 1) ? menu->rowSelected + 1 : 0;
 		OtherFX_Play(0, 1);
 	}
 
@@ -914,6 +1035,20 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 			Config_DrawRowHighlight(ot, y);
 		}
 	}
+
+#if defined(CTR_AP)
+	{
+		const int y = CONFIG_ROW_START_Y + PLATFORM_INPUT_PAD_COUNT * CONFIG_ROW_SPACING;
+
+		DecalFont_DrawLineOT((char *)"AP Shortcuts", CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
+		DecalFont_DrawLineOT((char *)"Keyboard", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+
+		if (menu->rowSelected == PLATFORM_INPUT_PAD_COUNT)
+		{
+			Config_DrawRowHighlight(ot, y);
+		}
+	}
+#endif
 
 	// Each line fits the panel (33 characters at FONT_SMALL).
 	DecalFont_DrawLineOT((char *)"Pick a player to choose a device,", 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
