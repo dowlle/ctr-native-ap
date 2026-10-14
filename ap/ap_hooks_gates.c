@@ -409,6 +409,19 @@ int AP_OxideFirstChallengeCleared(void)
 	return (ap_net_boss_won_bits() & AP_BOSS_WON_OXIDE_FIRST) != 0;
 }
 
+// Hub map star for boss garage bossIdx 0..3 (game/232/AH_Map.c): non-zero
+// when the boss counts as beaten there, which removes the star and its
+// "accessible" glow. Under a Bosses goal that still needs bosses this is the
+// player's own win (#458 flags), so a boss checked by another player's
+// Collect keeps its glow; otherwise the checked boss race location, as
+// before. The rule is ap/ap_boss_map_star.h.
+int AP_BossMapStarBeaten(int bossIdx)
+{
+	return AP_BossMapBeaten(
+	    bossIdx, AP_LocationCheckedByBit(bossIdx + ADV_REWARD_FIRST_BOSS_KEY),
+	    ctr_cfg.goal_bosses, ap_net_boss_won_known(), ap_net_boss_won_bits());
+}
+
 // Gather the inputs the one Oxide decision needs. Factored out so the gate,
 // the encounter selector and the locked-door advert cannot assemble different
 // answers to the same questions -- the drift this rework exists to end.

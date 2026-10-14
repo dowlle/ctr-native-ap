@@ -952,6 +952,13 @@ int AP_OxideOffersFinalChallenge(void);
 // authority the encounter selector uses. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_OxideFirstChallengeCleared(void);
 
+// Hub map boss garage star (bossIdx 0..3): non-zero when the boss counts as
+// beaten, which hides the star and its glow. Under a Bosses goal that still
+// needs bosses: the player's own win (#458 flags), so a Collect-marked boss
+// keeps its glow. Otherwise the checked boss race location. Rule in
+// ap/ap_boss_map_star.h; IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossMapStarBeaten(int bossIdx);
+
 // #24: plain-text requirement advert for a boss-class gate (bossIdx 0..3 = the
 // four boss garages, 4 = Oxide's garage door). Writes a line such as
 // "Requires: 18 Gold Relics (have 12)" into `out` and returns 1; returns 0 when
