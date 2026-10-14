@@ -1567,6 +1567,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
 	ctr_cfg.schema_version = 0;
 	ctr_cfg.schema_newer = 0;
+	ctr_cfg.include_battle_arenas = 1;
 	// Oxide-final gate defaults: mode 0 (Sapphire) + count 18 = the pre-v0.1.1
 	// behaviour, applied when a seed omits the fields (schema < 5 or Phase-1).
 	ctr_cfg.oxide_final_unlock = OXIDE_FINAL_MODE_SAPPHIRE;
@@ -1840,6 +1841,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.oxide_final_unlock = json_int(opt, "oxide_final_unlock", OXIDE_FINAL_MODE_SAPPHIRE);
 	ctr_cfg.oxide_final_count = json_int(opt, "oxide_final_count", 18);
 	ctr_cfg.shuffle_warp_pads = json_int(opt, "shuffle_warp_pads", 0);
+	if (schema >= 18)
+	{
+		auto arenas = opt.find("include_battle_arenas");
+		if (arenas != opt.end() && arenas->is_boolean())
+			ctr_cfg.include_battle_arenas = arenas->get<bool>() ? 1 : 0;
+	}
 	ctr_cfg.shuffle_gems = json_int(opt, "shuffle_gems", 0);
 	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);

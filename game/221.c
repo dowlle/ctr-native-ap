@@ -334,9 +334,16 @@ void CC_EndEvent_DrawMenu()
 
 	sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
 	sdata->Loading.OnBegin.RemBitsConfig0 |= CRYSTAL_CHALLENGE;
+	// A removed arena has no token reward even if this ceremony was reached
+	// through a stale in-progress race after the seed changed.
+#ifdef CTR_AP
+	if (!ctr_cfg_arena_pad_disabled(gGT->levelID))
+	{
+#endif
 	CC_EndEvent_UnlockRewardBit(adv, tokenRewardBit);
 #ifdef CTR_AP
 	AP_NotifyAdvReward(tokenRewardBit); // AP: CTR token challenge location check
+	}
 #endif
 	MainRaceTrack_RequestLoad(gGT->prevLEV); // NOTE(aalhendi): Adv hub.
 

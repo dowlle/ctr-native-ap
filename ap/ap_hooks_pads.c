@@ -887,11 +887,13 @@ int AP_PadStage1Met(int physLevelID)
 	// non-type-0 stage-1 for them -- a FREE arena arrives as the explicit
 	// always-true "0 trophies" ({type 1, count 0}), so it opens here with no
 	// vanilla-key AND (only its hub door still gates it physically). type 0 is
-	// reserved for vanilla unlock mode / arenas-not-included, where the vanilla
-	// gate below is the correct behaviour.
+	// reserved for vanilla unlock mode. Arena-off schema-18 seeds close the
+	// physical pads before reaching that fallback.
 	if (physLevelID == 18 || physLevelID == 19 ||
 	    physLevelID == 21 || physLevelID == 23)
 	{
+		if (ctr_cfg_arena_pad_disabled(physLevelID))
+			return 0;
 		if (ctr_cfg_active() && physLevelID < CTR_CFG_PAD_COUNT &&
 		    ctr_cfg.warp_pad_unlock[physLevelID].stage1.type != 0)
 			return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[physLevelID].stage1);
@@ -1023,6 +1025,8 @@ int AP_PadState(int physLevelID, int destLevelID)
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
+	if (ctr_cfg_arena_pad_disabled(physLevelID))
+		return 5;
 	if (!AP_DestKnown(destLevelID))
 		return 0;
 

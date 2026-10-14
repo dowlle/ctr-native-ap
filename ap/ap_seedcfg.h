@@ -91,6 +91,8 @@ extern "C" {
 //        key (ap_trap_items.h). A pre-18 seed keeps the frozen trap table; a
 //        pre-18 client shows the #8 banner on an 18 seed and applies its own
 //        frozen table, which agrees because trap item ids never move.
+//        The same schema carries ctr_options.include_battle_arenas (#364):
+//        false closes the four arena pads and removes their Purple Token checks.
 #define CTR_CFG_SCHEMA_KNOWN 18
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
@@ -489,6 +491,7 @@ typedef struct
 	int oxide_final_unlock; // relic-goal mode (0 sapphire..4 total)
 	int oxide_final_count;  // relics required (1..54 total, else 1..18); default 18
 	int shuffle_warp_pads;
+	int include_battle_arenas; // schema 18: 0 closes arena pads, 1 preserves them
 	int warppad_unlock_mode; // 0 vanilla / 1 random / 2 random_without_4_keys
 	int bossgarage_mode;     // 0 original4 / 1 same_hub / 2 trophies
 	// Logic-only 0.2.0 option scalars. These are emitted unconditionally by the
@@ -787,6 +790,13 @@ extern ctr_seed_config ctr_cfg;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
+
+static inline int ctr_cfg_arena_pad_disabled(int levelID)
+{
+	return ctr_cfg_active() && ctr_cfg.schema_version >= 18 &&
+	       !ctr_cfg.include_battle_arenas &&
+	       (levelID == 18 || levelID == 19 || levelID == 21 || levelID == 23);
+}
 
 // ── seed admission (ticket 05) ─────────────────────────────────────────────
 // 1 when the most recent ap_seedcfg_parse_json() refused the seed because a

@@ -865,6 +865,8 @@ int ctr_cfg_racer_lock_met(int physPadLevelID)
 
 int ctr_cfg_warp_unlocked(int levelID)
 {
+	if (ctr_cfg_arena_pad_disabled(levelID))
+		return 0;
 	// Racer lock (#54/#209): ANDed on top of whatever the pad already asks for,
 	// never in place of it -- the apworld's rule does exactly the same thing
 	// (Rules.add_racer_lock_rules captures the base rule and ANDs), and the two

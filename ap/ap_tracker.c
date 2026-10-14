@@ -609,8 +609,12 @@ static void AP_TrackerDrawNode(int index)
 #ifdef CTR_CUSTOM_TRACKS
 		if (AP_CustomPadOwnsDestination(&ctr_cfg, n->destination)) state = AP_TrackerCodeState(ctr_cfg.custom_track.trophy_location);
 #endif
-		AP_TrackerText(n->kind==3?"BOSS CHECK":n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
-		AP_TrackerTick(x+315,y+65,state);
+		if (n->kind == 1 && ctr_cfg_arena_pad_disabled(n->physical))
+			AP_TrackerText("ARENA CLOSED",x+12,y+64,18,TRACKER_GRAY,300);
+		else {
+			AP_TrackerText(n->kind==3?"BOSS CHECK":n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
+			AP_TrackerTick(x+315,y+65,state);
+		}
 	}
 	if (n->kind != 3) {
 		long wumpa = n->destination>=0 && n->destination<18 ? ctr_cfg.wumpa.tracks[n->destination] :
