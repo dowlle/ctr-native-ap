@@ -165,8 +165,9 @@ static unsigned char ap_cortex_letter_received[CTR_CFG_LETTER_COUNT] = {0};
 int Platform_InputRawKeyDown(int scancode);
 
 // SDL_SCANCODE_M, anchored to externals/SDL/include/SDL3/SDL_scancode.h:75
-// (SDL_SCANCODE_M = 16). Not in s_keyboardMapping defaults (native_input.c:236),
-// so toggling the overlay never disturbs gameplay input.
+// (SDL_SCANCODE_M = 16). Not bound by default on the Controls page
+// (s_defaultKeyboard in platform/native_controls.c), so toggling the overlay
+// never disturbs gameplay input unless a player binds M themselves.
 #define AP_MAP_OVERLAY_SCANCODE 16
 
 // AP debug log, next to the exe/config (the working directory) so every user
