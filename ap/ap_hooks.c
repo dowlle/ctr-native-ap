@@ -67,6 +67,7 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_itemsanity_logic.h" // #145 frozen weapon ids + pure roulette filter
 #include "ap_held_race_rearm.h" // pure per-attempt boundary latch for held rungs
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
+#include "ap_boss_map_star.h" // #458 follow-up: boss garage star on the hub map
 #include "ap_spawn.h"      // additive model loader (#109 / #124 groundwork)
 #include "ap_author.h"     // in-game box placement author mode (#182)
 #include "ap_boxes.h"      // AP item boxes: spawn, player-break, check (#109)
