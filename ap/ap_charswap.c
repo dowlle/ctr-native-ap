@@ -49,13 +49,10 @@
 // connected, so the prototype's manual test matrix is still runnable.
 // ============================================================================
 
-int Platform_InputRawKeyDown(int scancode); // native_input.c (CTR_AP only)
-
-// Numpad. 89-94 are the trap dev keys (ap_traps.c), 95/96 are Shortcutless
-// (ap_shortcut.c). 97-99 are free.
-#define AP_CS_KEY_PICKER 97 // Numpad 9 : open / close the picker
-#define AP_CS_KEY_PROG   98 // Numpad 0 : cycle progressive_stats test mode
-#define AP_CS_KEY_EDIT   99 // Numpad . : cycle editable_stats  test mode
+// Keys come from the Controls page (Options -> Controls -> AP Shortcuts). The
+// defaults are Numpad 9 (open / close the picker), Numpad 0 (cycle the
+// progressive_stats test mode) and Numpad . (cycle the editable_stats test mode).
+#include <platform/native_shortcuts.h>
 
 // ---------------------------------------------------------------------------
 // Tile layout.
@@ -1113,12 +1110,13 @@ static void ap_cs_close(struct GameTracker *gGT)
 
 static void ap_cs_devKeys(struct GameTracker *gGT)
 {
-	static const int keys[3] = {AP_CS_KEY_PICKER, AP_CS_KEY_PROG, AP_CS_KEY_EDIT};
+	static const int keys[3] = {NATIVE_SHORTCUT_CHARACTER_PICKER, NATIVE_SHORTCUT_DEV_PROGRESSIVE_MODE,
+	                            NATIVE_SHORTCUT_DEV_EDITABLE_MODE};
 	int k;
 
 	for (k = 0; k < 3; k++)
 	{
-		int down = Platform_InputRawKeyDown(keys[k]);
+		int down = Platform_InputShortcutDown(keys[k]);
 		int tapped = down && !ap_cs_keyPrev[k];
 		ap_cs_keyPrev[k] = down;
 

@@ -7,7 +7,9 @@
 //
 // Changes for CTR Archipelago: controls.ini is resolved like config.ini, in the
 // working directory, so every settings file sits together (Expanded resolves it
-// against the executable directory); the file header names this build.
+// against the executable directory); the file header names this build. The
+// Archipelago keyboard shortcuts are bindable here too ([AP Shortcuts], see
+// include/platform/native_shortcuts.h), with one key never doing two things.
 
 #include <platform/native_controls.h>
 
@@ -30,6 +32,7 @@
 
 #define NATIVE_CONTROLS_SECTION_ASSIGNMENT "Assignment"
 #define NATIVE_CONTROLS_SECTION_PREFIX    "device "
+#define NATIVE_CONTROLS_SECTION_SHORTCUTS "AP Shortcuts"
 
 #define NATIVE_CONTROLS_KEY_NAME     "name"
 #define NATIVE_CONTROLS_KEY_NONE     "none"
@@ -114,6 +117,41 @@ global_variable SDL_JoystickID s_captureInstanceId;
 global_variable int s_captureFrames;
 global_variable s32 s_capturePreviousValue;
 global_variable s32 s_capturePendingValue;
+
+// Shortcut being captured, or -1 when the capture is for a device binding. A
+// shortcut capture listens to the keyboard device (s_captureDevice) like any
+// keyboard rebind; only the slot the value lands in differs.
+global_variable int s_captureShortcut = -1;
+
+// Keyboard keys of the AP shortcuts. Machine-wide, not per device profile.
+global_variable s32 s_shortcutKeys[NATIVE_SHORTCUT_COUNT];
+
+struct NativeControlsShortcutInfo
+{
+	const char *key;
+	const char *label;
+	s32 defaultKey;
+};
+
+// Defaults are the keys these shortcuts were hardcoded to before they became
+// bindable (ap_charswap.c, ap_traps.c, ap_shortcut.c, ap_democam.c), so an
+// unconfigured install behaves as before. None of them is a default game key.
+// Labels stay within what the retail font can draw and short enough to sit next
+// to a key name on one row.
+local_persist const struct NativeControlsShortcutInfo s_shortcutInfo[NATIVE_SHORTCUT_COUNT] = {
+	[NATIVE_SHORTCUT_CHARACTER_PICKER] = {"character_picker", "Character Picker", SDL_SCANCODE_KP_9},
+	[NATIVE_SHORTCUT_DEV_PROGRESSIVE_MODE] = {"dev_progressive_mode", "Dev Progressive Mode", SDL_SCANCODE_KP_0},
+	[NATIVE_SHORTCUT_DEV_EDITABLE_MODE] = {"dev_editable_mode", "Dev Editable Mode", SDL_SCANCODE_KP_PERIOD},
+	[NATIVE_SHORTCUT_DEV_TRAP_ICY] = {"dev_trap_icy", "Dev Trap Icy", SDL_SCANCODE_KP_1},
+	[NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY] = {"dev_trap_low_gravity", "Dev Trap Low Gravity", SDL_SCANCODE_KP_2},
+	[NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES] = {"dev_trap_no_brakes", "Dev Trap No Brakes", SDL_SCANCODE_KP_3},
+	[NATIVE_SHORTCUT_DEV_TRAP_BOOST] = {"dev_trap_boost", "Dev Trap Boost", SDL_SCANCODE_KP_4},
+	[NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON] = {"dev_trap_first_person", "Dev Trap 1st Person", SDL_SCANCODE_KP_5},
+	[NATIVE_SHORTCUT_DEV_TRAP_ALL] = {"dev_trap_all", "Dev Trap All", SDL_SCANCODE_KP_6},
+	[NATIVE_SHORTCUT_DEV_SHORTCUTLESS] = {"dev_shortcutless", "Dev Shortcutless", SDL_SCANCODE_KP_7},
+	[NATIVE_SHORTCUT_DEV_MARK_QUAD] = {"dev_mark_quad", "Dev Mark Quad", SDL_SCANCODE_KP_8},
+	[NATIVE_SHORTCUT_DEV_DEMO_CAMERA] = {"dev_demo_camera", "Dev Demo Camera", SDL_SCANCODE_KP_PLUS},
+};
 
 // Defaults are carried over verbatim from the hardcoded mappings this module
 // replaces, so an unconfigured install feels exactly as it did before.
@@ -206,6 +244,19 @@ internal bool NativeControls_IsValidPlayer(int player)
 internal bool NativeControls_IsValidDevice(int device)
 {
 	return (device >= 0) && (device < s_deviceCount) && s_devices[device].used;
+}
+
+internal bool NativeControls_IsValidShortcut(int shortcut)
+{
+	return (shortcut >= 0) && (shortcut < NATIVE_SHORTCUT_COUNT);
+}
+
+internal void NativeControls_ResetShortcuts(void)
+{
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		s_shortcutKeys[shortcut] = s_shortcutInfo[shortcut].defaultKey;
+	}
 }
 
 internal bool NativeControls_IsValidBinding(int binding)
@@ -366,6 +417,12 @@ local_persist const struct NativeControlsScancodeName
 	{SDL_SCANCODE_NONUSHASH, "Hash"},
 	{SDL_SCANCODE_SEMICOLON, "Semicolon"},
 	{SDL_SCANCODE_GRAVE, "Grave"},
+	// The number pad holds the AP shortcut defaults, and SDL spells its operator keys
+	// with the bare symbol ("Keypad *" would draw a Cross icon).
+	{SDL_SCANCODE_KP_MULTIPLY, "Keypad Multiply"},
+	{SDL_SCANCODE_KP_PLUS, "Keypad Plus"},
+	{SDL_SCANCODE_KP_MINUS, "Keypad Minus"},
+	{SDL_SCANCODE_KP_DIVIDE, "Keypad Divide"},
 };
 
 internal const char *NativeControls_ScancodeName(SDL_Scancode scancode)
@@ -559,6 +616,78 @@ internal void NativeControls_ApplyDeviceKey(int profile, char *key, char *value)
 	}
 }
 
+// Applies one key from the shortcuts section. Same tolerance as a device key: an
+// unknown name or an unreadable key leaves that shortcut on its default.
+internal void NativeControls_ApplyShortcutKey(char *key, char *value)
+{
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		if (!NativeControls_StrEqual(key, s_shortcutInfo[shortcut].key))
+		{
+			continue;
+		}
+
+		if (NativeControls_StrEqual(value, NATIVE_CONTROLS_KEY_NONE))
+		{
+			s_shortcutKeys[shortcut] = NATIVE_CONTROLS_BINDING_NONE;
+			return;
+		}
+
+		SDL_Scancode scancode = SDL_GetScancodeFromName(value);
+
+		if (scancode != SDL_SCANCODE_UNKNOWN)
+		{
+			s_shortcutKeys[shortcut] = (s32)scancode;
+		}
+
+		return;
+	}
+}
+
+// A file cannot say which of two holders of a key was bound last, so a key that a
+// hand edit (or a file from before the shortcuts were bindable) puts on both a
+// keyboard game control and a shortcut keeps the game control, and the shortcut
+// is cleared. Two shortcuts on one key keep the first in list order.
+internal void NativeControls_ResolveLoadedConflicts(void)
+{
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		const s32 key = s_shortcutKeys[shortcut];
+
+		if (key < 0)
+		{
+			continue;
+		}
+
+		bool taken = false;
+
+		for (int earlier = 0; (earlier < shortcut) && !taken; earlier++)
+		{
+			taken = (s_shortcutKeys[earlier] == key);
+		}
+
+		for (int i = 0; (i < NATIVE_CONTROLS_MAX_PROFILES) && !taken; i++)
+		{
+			if (!s_profiles[i].used || (s_profiles[i].kind != NATIVE_CONTROLS_DEVICE_KEYBOARD))
+			{
+				continue;
+			}
+
+			for (int binding = 0; (binding < NATIVE_CONTROLS_BIND_COUNT) && !taken; binding++)
+			{
+				taken = (s_profiles[i].bindings[binding] == key);
+			}
+		}
+
+		if (taken)
+		{
+			Platform_LogWarn("[Controls] %s shares its key with another control in %s; the shortcut is unbound\n",
+			                 s_shortcutInfo[shortcut].label, NATIVE_CONTROLS_FILE_NAME);
+			s_shortcutKeys[shortcut] = NATIVE_CONTROLS_BINDING_NONE;
+		}
+	}
+}
+
 // Sections are either the assignment table or one device. Returns the profile
 // index a following key applies to, or -1 for the assignment table.
 internal int NativeControls_ProfileForSection(const char *section)
@@ -596,9 +725,10 @@ internal void NativeControls_Load(void)
 		return;
 	}
 
-	// -1 means the assignment table, which no profile owns.
+	// -1 means the assignment table or the shortcuts, which no profile owns.
 	int profile = -1;
 	bool inAssignment = false;
+	bool inShortcuts = false;
 	char section[96] = "";
 	char line[512];
 
@@ -622,7 +752,8 @@ internal void NativeControls_Load(void)
 			*end = '\0';
 			snprintf(section, sizeof(section), "%s", cursor + 1);
 			inAssignment = NativeControls_StrEqual(section, NATIVE_CONTROLS_SECTION_ASSIGNMENT);
-			profile = inAssignment ? -1 : NativeControls_ProfileForSection(section);
+			inShortcuts = NativeControls_StrEqual(section, NATIVE_CONTROLS_SECTION_SHORTCUTS);
+			profile = (inAssignment || inShortcuts) ? -1 : NativeControls_ProfileForSection(section);
 			continue;
 		}
 
@@ -645,6 +776,10 @@ internal void NativeControls_Load(void)
 		{
 			NativeControls_ApplyAssignmentKey(key, value);
 		}
+		else if (inShortcuts)
+		{
+			NativeControls_ApplyShortcutKey(key, value);
+		}
 		else if (profile >= 0)
 		{
 			NativeControls_ApplyDeviceKey(profile, key, value);
@@ -652,6 +787,8 @@ internal void NativeControls_Load(void)
 	}
 
 	fclose(file);
+
+	NativeControls_ResolveLoadedConflicts();
 }
 
 void NativeControls_Save(void)
@@ -714,6 +851,18 @@ void NativeControls_Save(void)
 			fprintf(file, "%s = %s\n", s_bindingInfo[binding].key, value);
 		}
 	}
+
+#if defined(CTR_AP)
+	// Only the Archipelago build has these shortcuts; the section is still read by
+	// every build so it is never mistaken for a device.
+	fprintf(file, "\n[%s]\n", NATIVE_CONTROLS_SECTION_SHORTCUTS);
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		NativeControls_BindingToText(NATIVE_CONTROLS_DEVICE_KEYBOARD, s_shortcutKeys[shortcut], value, sizeof(value),
+		                             NATIVE_CONTROLS_NAME_FILE);
+		fprintf(file, "%s = %s\n", s_shortcutInfo[shortcut].key, value);
+	}
+#endif
 
 	fclose(file);
 }
@@ -1044,7 +1193,9 @@ void NativeControls_Init(void)
 	s_captureInstanceId = -1;
 	s_captureFrames = 0;
 	s_capturePreviousValue = NATIVE_CONTROLS_BINDING_NONE;
+	s_captureShortcut = -1;
 	s_refreshed = false;
+	NativeControls_ResetShortcuts();
 
 	NativeControls_Load();
 }
@@ -1246,6 +1397,20 @@ void NativeControls_SetBinding(int device, int binding, s32 value)
 	}
 
 	bindings[binding] = value;
+
+	// The most recent binding wins: a keyboard key given to a game control is taken
+	// off any shortcut that had it.
+	if ((s_devices[device].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD) && (value >= 0))
+	{
+		for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+		{
+			if (s_shortcutKeys[shortcut] == value)
+			{
+				s_shortcutKeys[shortcut] = NATIVE_CONTROLS_BINDING_NONE;
+			}
+		}
+	}
+
 	NativeControls_Save();
 }
 
@@ -1260,6 +1425,15 @@ void NativeControls_RestoreDeviceDefaults(int device)
 
 	memcpy(bindings, NativeControls_DefaultsForKind(s_devices[device].kind), sizeof(s_profiles[0].bindings));
 	s_profiles[s_devices[device].profile].deadzone = NATIVE_CONTROLS_DEADZONE_DEFAULT;
+
+	// The keyboard defaults and the shortcut defaults are only free of each other as a
+	// set, so the keyboard never comes back on its own: a shortcut moved onto C would
+	// otherwise end up sharing C with Cross again.
+	if (s_devices[device].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD)
+	{
+		NativeControls_ResetShortcuts();
+	}
+
 	NativeControls_Save();
 }
 
@@ -1428,6 +1602,25 @@ internal bool NativeControls_IsCrossHeld(int device)
 	return NativeControls_IsValueHeld(device, NativeControls_GetBinding(device, NATIVE_CONTROLS_BIND_CROSS));
 }
 
+// Where the value being captured lives: a shortcut's key, or one binding of the device's
+// profile. NULL when the capture no longer points at anything.
+internal s32 *NativeControls_CaptureSlot(void)
+{
+	if (NativeControls_IsValidShortcut(s_captureShortcut))
+	{
+		return &s_shortcutKeys[s_captureShortcut];
+	}
+
+	if (!NativeControls_IsValidBinding(s_captureBinding))
+	{
+		return NULL;
+	}
+
+	s32 *bindings = NativeControls_BindingsOfDevice(s_captureDevice);
+
+	return (bindings != NULL) ? &bindings[s_captureBinding] : NULL;
+}
+
 void NativeControls_BeginCapture(int device, int binding)
 {
 	if (!NativeControls_IsValidDevice(device) || !NativeControls_IsValidBinding(binding))
@@ -1438,6 +1631,7 @@ void NativeControls_BeginCapture(int device, int binding)
 
 	s_captureDevice = device;
 	s_captureBinding = binding;
+	s_captureShortcut = -1;
 
 	// Remember which physical device the index pointed at. The table is rebuilt
 	// whenever devices come and go, so a bare index would silently start listening
@@ -1457,11 +1651,11 @@ void NativeControls_BeginCapture(int device, int binding)
 	// puts the previous value back.
 	s_capturePendingValue = NATIVE_CONTROLS_BINDING_NONE;
 
-	s32 *bindings = NativeControls_BindingsOfDevice(device);
+	s32 *slot = NativeControls_CaptureSlot();
 
-	if (bindings != NULL)
+	if (slot != NULL)
 	{
-		bindings[binding] = s_capturePendingValue;
+		*slot = s_capturePendingValue;
 	}
 }
 
@@ -1469,19 +1663,19 @@ void NativeControls_BeginCapture(int device, int binding)
 // that already committed has overwritten it, so this must not stomp that.
 internal void NativeControls_RestoreCaptureValue(void)
 {
-	if (!NativeControls_IsValidDevice(s_captureDevice) || !NativeControls_IsValidBinding(s_captureBinding))
+	if (!NativeControls_IsValidDevice(s_captureDevice))
 	{
 		return;
 	}
 
-	s32 *bindings = NativeControls_BindingsOfDevice(s_captureDevice);
+	s32 *slot = NativeControls_CaptureSlot();
 
-	if ((bindings == NULL) || (bindings[s_captureBinding] != s_capturePendingValue))
+	if ((slot == NULL) || (*slot != s_capturePendingValue))
 	{
 		return;
 	}
 
-	bindings[s_captureBinding] = s_capturePreviousValue;
+	*slot = s_capturePreviousValue;
 }
 
 // Clears the capture state without touching the bindings. A commit uses this, since the
@@ -1492,6 +1686,7 @@ internal void NativeControls_EndCapture(void)
 	s_capturePhase = NATIVE_CONTROLS_CAPTURE_IDLE;
 	s_captureDevice = NATIVE_CONTROLS_NO_DEVICE;
 	s_captureBinding = -1;
+	s_captureShortcut = -1;
 	s_captureInstanceId = -1;
 	s_captureFrames = 0;
 }
@@ -1502,6 +1697,7 @@ internal int NativeControls_CommitCapture(void)
 {
 	const int device = s_captureDevice;
 	const int binding = s_captureBinding;
+	const int shortcut = s_captureShortcut;
 	const s32 value = s_capturePendingValue;
 
 	// End the capture before saving. The committed value now equals the proposal, so
@@ -1509,6 +1705,12 @@ internal int NativeControls_CommitCapture(void)
 	// committed value for an unconfirmed proposal and roll the binding back in memory,
 	// desyncing the game from the file that was just written.
 	NativeControls_EndCapture();
+
+	if (NativeControls_IsValidShortcut(shortcut))
+	{
+		NativeControls_SetShortcutKey(shortcut, value);
+		return 1;
+	}
 
 	// The device table can be rebuilt by a refresh, so resolve the binding through
 	// the device again rather than trusting the index blindly.
@@ -1581,16 +1783,26 @@ int NativeControls_PollCapture(void)
 		return 0;
 	}
 
+	// A shortcut never takes the keyboard's Cross key. Cross is how the keyboard
+	// confirms this very step and picks menu rows, so clearing it under the
+	// most-recent-wins rule would leave a keyboard-only player unable to press
+	// anything. The press is ignored and the row keeps listening.
+	if (NativeControls_IsValidShortcut(s_captureShortcut) &&
+	    (value == NativeControls_GetBinding(s_captureDevice, NATIVE_CONTROLS_BIND_CROSS)))
+	{
+		return 0;
+	}
+
 	// Propose rather than commit. The value goes in now so the menu can show what is
 	// about to be bound, and RestoreCaptureValue takes it back out if the confirm step
 	// is not completed.
 	s_capturePendingValue = value;
 
-	s32 *bindings = NativeControls_BindingsOfDevice(s_captureDevice);
+	s32 *slot = NativeControls_CaptureSlot();
 
-	if (bindings != NULL)
+	if (slot != NULL)
 	{
-		bindings[s_captureBinding] = value;
+		*slot = value;
 	}
 
 	s_capturePhase = NATIVE_CONTROLS_CAPTURE_CONFIRM_WAIT_RELEASE;
@@ -1601,4 +1813,177 @@ void NativeControls_CancelCapture(void)
 {
 	NativeControls_RestoreCaptureValue();
 	NativeControls_EndCapture();
+}
+
+// ---------------------------------------------------------------------------
+// AP shortcuts
+// ---------------------------------------------------------------------------
+
+s32 NativeControls_GetShortcutKey(int shortcut)
+{
+	if (!NativeControls_IsValidShortcut(shortcut))
+	{
+		return NATIVE_CONTROLS_BINDING_NONE;
+	}
+
+	return s_shortcutKeys[shortcut];
+}
+
+const char *NativeControls_GetShortcutName(int shortcut)
+{
+	if (!NativeControls_IsValidShortcut(shortcut))
+	{
+		return "";
+	}
+
+	return s_shortcutInfo[shortcut].label;
+}
+
+void NativeControls_GetShortcutLabel(int shortcut, char *dst, size_t dstSize)
+{
+	if ((dst == NULL) || (dstSize == 0))
+	{
+		return;
+	}
+
+	dst[0] = '\0';
+
+	if (!NativeControls_IsValidShortcut(shortcut) || (s_shortcutKeys[shortcut] < 0))
+	{
+		return;
+	}
+
+	NativeControls_BindingToText(NATIVE_CONTROLS_DEVICE_KEYBOARD, s_shortcutKeys[shortcut], dst, dstSize,
+	                             NATIVE_CONTROLS_NAME_DISPLAY);
+}
+
+void NativeControls_SetShortcutKey(int shortcut, s32 scancode)
+{
+	if (!NativeControls_IsValidShortcut(shortcut))
+	{
+		return;
+	}
+
+	// The most recent binding wins: the key comes off every keyboard game control and
+	// every other shortcut before it lands here.
+	if (scancode >= 0)
+	{
+		for (int other = 0; other < NATIVE_SHORTCUT_COUNT; other++)
+		{
+			if ((other != shortcut) && (s_shortcutKeys[other] == scancode))
+			{
+				s_shortcutKeys[other] = NATIVE_CONTROLS_BINDING_NONE;
+			}
+		}
+
+		for (int i = 0; i < NATIVE_CONTROLS_MAX_PROFILES; i++)
+		{
+			if (!s_profiles[i].used || (s_profiles[i].kind != NATIVE_CONTROLS_DEVICE_KEYBOARD))
+			{
+				continue;
+			}
+
+			for (int binding = 0; binding < NATIVE_CONTROLS_BIND_COUNT; binding++)
+			{
+				if (s_profiles[i].bindings[binding] == scancode)
+				{
+					s_profiles[i].bindings[binding] = NATIVE_CONTROLS_BINDING_NONE;
+				}
+			}
+		}
+	}
+
+	s_shortcutKeys[shortcut] = scancode;
+	NativeControls_Save();
+}
+
+void NativeControls_RestoreShortcutDefaults(void)
+{
+	NativeControls_ResetShortcuts();
+
+	for (int i = 0; i < NATIVE_CONTROLS_MAX_PROFILES; i++)
+	{
+		if (s_profiles[i].used && (s_profiles[i].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD))
+		{
+			memcpy(s_profiles[i].bindings, s_defaultKeyboard, sizeof(s_profiles[i].bindings));
+		}
+	}
+
+	NativeControls_Save();
+}
+
+void NativeControls_BeginShortcutCapture(int shortcut)
+{
+	const int keyboard = NativeControls_FindKeyboardDevice();
+
+	if (!NativeControls_IsValidShortcut(shortcut) || !NativeControls_IsValidDevice(keyboard))
+	{
+		NativeControls_CancelCapture();
+		return;
+	}
+
+	// Same two-step capture as a keyboard rebind, landing in the shortcut table.
+	s_captureDevice = keyboard;
+	s_captureBinding = -1;
+	s_captureShortcut = shortcut;
+	s_captureInstanceId = s_devices[keyboard].instanceId;
+	s_capturePhase = NATIVE_CONTROLS_CAPTURE_WAIT_RELEASE;
+	s_captureFrames = 0;
+	s_capturePreviousValue = s_shortcutKeys[shortcut];
+	s_capturePendingValue = NATIVE_CONTROLS_BINDING_NONE;
+	s_shortcutKeys[shortcut] = s_capturePendingValue;
+}
+
+int NativeControls_GetCaptureConflict(char *dst, size_t dstSize)
+{
+	if ((dst != NULL) && (dstSize > 0))
+	{
+		dst[0] = '\0';
+	}
+
+	if (!NativeControls_IsConfirming() || (s_capturePendingValue < 0) ||
+	    !NativeControls_IsValidDevice(s_captureDevice) ||
+	    (s_devices[s_captureDevice].kind != NATIVE_CONTROLS_DEVICE_KEYBOARD))
+	{
+		return 0;
+	}
+
+	const s32 value = s_capturePendingValue;
+	const char *holder = NULL;
+
+	for (int shortcut = 0; (shortcut < NATIVE_SHORTCUT_COUNT) && (holder == NULL); shortcut++)
+	{
+		if ((shortcut != s_captureShortcut) && (s_shortcutKeys[shortcut] == value))
+		{
+			holder = s_shortcutInfo[shortcut].label;
+		}
+	}
+
+	// A game control only conflicts with a shortcut capture. Two game controls on one
+	// key stay allowed, as they always were.
+	if ((holder == NULL) && NativeControls_IsValidShortcut(s_captureShortcut))
+	{
+		const s32 *bindings = NativeControls_BindingsOfDevice(s_captureDevice);
+
+		for (int binding = 0; (bindings != NULL) && (binding < NATIVE_CONTROLS_BIND_COUNT) && (holder == NULL);
+		     binding++)
+		{
+			if (bindings[binding] == value)
+			{
+				holder = s_bindingInfo[binding].label;
+			}
+		}
+	}
+
+	if (holder == NULL)
+	{
+		return 0;
+	}
+
+	if ((dst != NULL) && (dstSize > 0))
+	{
+		snprintf(dst, dstSize, "%s", holder);
+	}
+
+	return 1;
 }

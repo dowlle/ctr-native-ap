@@ -11,7 +11,8 @@ by thecodingbob (PR 54 and PR 70, GPL-3.0). This page is adapted from its
 ## Opening the screen
 
 Options → **Controls**. The page lists Player 1 to Player 4 with the device each
-one has. Press `Cross` on a player to open that player's screen. Its title reads
+one has, and below them **AP Shortcuts** (see [AP shortcuts](#ap-shortcuts)).
+Press `Cross` on a player to open that player's screen. Its title reads
 `CONTROLS P1` through `CONTROLS P4`, so you always know whose controls you are
 looking at. `Triangle` or `Start` goes back to the player list, and from there
 back to Options.
@@ -68,8 +69,9 @@ layout for a controller.
 Two identical controllers share one layout, because the game identifies them the
 same way. Restoring defaults on one of them restores both.
 
-Nothing stops you putting the same key on two controls. If a press then does two
-things at once, that is the cause. Reassign one of them.
+Two game controls may share a key. If a press then does two things at once, that
+is the cause. Reassign one of them. A game control and an AP shortcut never share
+a key: see [AP shortcuts](#ap-shortcuts).
 
 ## Stick deadzone
 
@@ -97,15 +99,60 @@ handing it over. The player switch stays on player 1's shoulders on purpose.
 A player set to **Disabled** has no device, so only player 1 can reach the screen
 for them, which is enough to give them a device back.
 
-## Keys the Archipelago build keeps for itself
+## AP shortcuts
 
-A few keys are read directly by the Archipelago build, whatever the Controls page
-binds: `M` toggles the map overlay, and the number pad is used by testing tools.
-Binding one of these to a game control works, but a press then does both things,
-so leave them free unless you have a reason not to.
+The Archipelago build has a few keyboard shortcuts of its own. **AP Shortcuts**,
+under the players on the Controls page, lists them with their keys, and each one
+is rebound like any keyboard control: `Cross` on the row, press the new key, let
+go, then press the keyboard's Cross key (`C` by default) to confirm. The shortcuts
+always read the keyboard, whichever player the keyboard is assigned to.
+
+| Shortcut | Default key | What it does |
+|---|---|---|
+| Character Picker | Numpad 9 | Opens or closes the character picker in an adventure hub |
+| Dev Progressive Mode | Numpad 0 | Testing: cycles the progressive stats test mode (no seed connected) |
+| Dev Editable Mode | Numpad . | Testing: cycles the editable stats test mode (no seed connected) |
+| Dev Trap Icy | Numpad 1 | Testing: fires an Icy trap |
+| Dev Trap Low Gravity | Numpad 2 | Testing: fires a Low Gravity trap |
+| Dev Trap No Brakes | Numpad 3 | Testing: fires a No Brakes trap |
+| Dev Trap Boost | Numpad 4 | Testing: fires a Boost trap |
+| Dev Trap 1st Person | Numpad 5 | Testing: fires a First Person trap |
+| Dev Trap All | Numpad 6 | Testing: fires every trap |
+| Dev Shortcutless | Numpad 7 | Testing: toggles Shortcutless |
+| Dev Mark Quad | Numpad 8 | Testing: logs the track quad under the kart |
+| Dev Demo Camera | Numpad + | Testing: toggles the demo camera |
+
+The rows starting with **Dev** only do something with `dev_keys=1` in
+`ap-config.txt` (the demo camera also needs `debug_democam=1`), so in normal play
+they are inert whatever key they have.
+
+**One key never does two things.** If you give a key to a game control and an AP
+shortcut already has it, or the other way round, the newest binding wins and the
+older one is cleared and shows as `None`. The same goes for two shortcuts. While
+you confirm, the row shows the Cross icon with `to replace` instead of
+`to confirm`, and the line under the list names the control that will lose the
+key. Two game
+controls may still share a key, as before.
+
+The keyboard's Cross key cannot be given to a shortcut: it is how the keyboard
+confirms and picks menu rows, so the press is ignored and the row keeps listening.
+Move Cross first if you want that key for a shortcut.
+
+**Restore Defaults** on the AP Shortcuts screen puts every shortcut and every
+keyboard game control back to the shipped keys, and Restore Defaults on the
+keyboard's player screen does the same. The two sets of defaults never overlap,
+so they are restored together. Restoring a controller's defaults leaves the
+shortcuts alone.
+
+Shortcuts never fire while a text field (for example on the Connection page) is
+being edited, so typing a port on the number pad is safe, and never while a
+rebind is listening.
 
 On a pad, the Connection page takes `Cross` or `Start` to save a text field and
 `Triangle` to cancel it, read through that pad's own bindings.
+
+`M` is not a shortcut today. It was the old map overlay toggle and is kept free
+for a planned map zoom; nothing reads it in this version.
 
 ## `controls.ini`
 
@@ -130,12 +177,22 @@ name = Xbox 360 Controller
 cross = A
 l2 = Left Trigger
 deadzone = 15
+
+[AP Shortcuts]
+character_picker = Keypad 9
+dev_trap_icy = none
 ```
 
 Keyboard values are key names such as `C`, `Space` or `Left Shift`. Controller
 values are button and axis names as your driver reports them, and `none` clears a
 control. A key or value the loader does not recognize is skipped, leaving that
 one control at its default rather than breaking the rest of the file.
+
+`[AP Shortcuts]` holds the shortcut keys, one line per shortcut, with the same
+key names as the keyboard section. A file without this section, such as one
+written before the shortcuts were bindable, loads with every shortcut on its
+default key. If a hand edit puts one key on both a keyboard game control and a
+shortcut, the game control keeps it and the shortcut loads unbound.
 
 `auto` lets a player resolve itself, `disabled` takes a player out, and any other
 value pins that player to the named device for as long as it stays plugged in.

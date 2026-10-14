@@ -607,18 +607,32 @@ void Platform_InputLogAssignment(void)
 }
 
 #if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES) || defined(CTR_BOX_AUTHORING)
-// Raw, mapping-independent keyboard probe for AP debug/QoL hotkeys (e.g. the
-// in-game map overlay toggle). Reads the SDL host keyboard snapshot refreshed in
-// Platform_InputUpdate(); returns 1 if the physical key for `scancode`
-// (SDL_SCANCODE_*) is currently down, else 0. Not wired into the PSX pad bus, so
-// it has zero effect on the clean build or on gameplay input. It ignores the
-// Controls page bindings on purpose: a hotkey stays on its key whatever the
-// player rebinds, and a key bound to both does both (docs/features/CONTROLS.md).
+// Raw, mapping-independent keyboard probe. Reads the SDL host keyboard snapshot
+// refreshed in Platform_InputUpdate(); returns 1 if the physical key for
+// `scancode` (SDL_SCANCODE_*) is currently down, else 0. Not wired into the PSX
+// pad bus, so it has zero effect on the clean build or on gameplay input. It
+// ignores the Controls page bindings on purpose. The AP shortcuts read their
+// keys through Platform_InputShortcutDown below, which is where a rebind lands.
 int Platform_InputRawKeyDown(int scancode)
 {
 	if (s_keyboardState == NULL || scancode < 0 || scancode >= SDL_SCANCODE_COUNT)
 		return 0;
 	return s_keyboardState[scancode] ? 1 : 0;
+}
+
+// native_platform.c, later in the unity build.
+int NativeText_Active(void);
+
+// An AP shortcut, read through the key the Controls page gives it
+// (include/platform/native_shortcuts.h). Quiet while a rebind is listening, so
+// the key being tried out does not fire the shortcut it is meant for, and while
+// a text field has the keyboard, so typing a port or a slot name on the number
+// pad never fires one either.
+int Platform_InputShortcutDown(int shortcut)
+{
+	if (NativeControls_IsCapturing() || NativeText_Active())
+		return 0;
+	return Platform_InputRawKeyDown(NativeControls_GetShortcutKey(shortcut));
 }
 
 // Buttons currently held on *physical* gamepads only, as an active-high mask in

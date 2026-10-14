@@ -7,8 +7,9 @@
 // Changes for CTR Archipelago: controls.ini is cwd-relative here, so the scratch
 // directory is entered with chdir instead of redirecting NativeAssets_GetBaseDir;
 // the omni-controller hack and native_config.c are not part of this build; added
-// checks for the AP raw keyboard probe and physical-pad-only button mask, and
-// for refusing the pre-remap input snapshot layout.
+// checks for the AP raw keyboard probe and physical-pad-only button mask, for
+// refusing the pre-remap input snapshot layout, and for the bindable AP shortcuts
+// ([AP Shortcuts] and the one-key-one-action rule).
 //
 // The module is a .c in the unity build, so the test includes it directly and
 // drives the device table by hand. That keeps the tests focused on the logic that
@@ -75,6 +76,15 @@ void Platform_Log(const char *fmt, ...)
 void Platform_LogWarn(const char *fmt, ...)
 {
 	(void)fmt;
+}
+
+// native_platform.c owns text entry; the shortcut tests flip this to stand in for an
+// open Connection page field.
+static int s_testTextActive;
+
+int NativeText_Active(void)
+{
+	return s_testTextActive;
 }
 
 // native_controls.c comes first: the input layer reads the assignment from it.
@@ -206,7 +216,10 @@ static void ResetModule(void)
 	s_capturePhase = NATIVE_CONTROLS_CAPTURE_IDLE;
 	s_captureDevice = NATIVE_CONTROLS_NO_DEVICE;
 	s_captureBinding = -1;
+	s_captureShortcut = -1;
 	s_captureInstanceId = -1;
+	NativeControls_ResetShortcuts();
+	s_testTextActive = 0;
 
 	for (int player = 0; player < PLATFORM_INPUT_PAD_COUNT; player++)
 	{
@@ -1770,6 +1783,336 @@ static void TestRawKeyProbeIgnoresBindings(void)
 
 	s_keyboardState = NULL;
 }
+
+// === AP shortcuts ===
+
+// The keys the shortcuts were hardcoded to before they became bindable. An install that
+// never opens the page must keep every one of them.
+static void TestShortcutDefaultsAreTheOldKeys(void)
+{
+	printf("shortcuts: defaults are the keys the AP build always used\n");
+	ResetModule();
+
+	static const struct
+	{
+		int shortcut;
+		s32 scancode;
+	} expected[] = {
+	    {NATIVE_SHORTCUT_CHARACTER_PICKER, 97},     // Numpad 9
+	    {NATIVE_SHORTCUT_DEV_PROGRESSIVE_MODE, 98}, // Numpad 0
+	    {NATIVE_SHORTCUT_DEV_EDITABLE_MODE, 99},    // Numpad .
+	    {NATIVE_SHORTCUT_DEV_TRAP_ICY, 89},         // Numpad 1
+	    {NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY, 90}, // Numpad 2
+	    {NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES, 91},   // Numpad 3
+	    {NATIVE_SHORTCUT_DEV_TRAP_BOOST, 92},       // Numpad 4
+	    {NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON, 93},// Numpad 5
+	    {NATIVE_SHORTCUT_DEV_TRAP_ALL, 94},         // Numpad 6
+	    {NATIVE_SHORTCUT_DEV_SHORTCUTLESS, 95},     // Numpad 7
+	    {NATIVE_SHORTCUT_DEV_MARK_QUAD, 96},        // Numpad 8
+	    {NATIVE_SHORTCUT_DEV_DEMO_CAMERA, 87},      // Numpad +
+	};
+
+	Check(sizeof(expected) / sizeof(expected[0]) == NATIVE_SHORTCUT_COUNT, "every shortcut has an expected key");
+
+	for (unsigned int i = 0; i < sizeof(expected) / sizeof(expected[0]); i++)
+	{
+		Check(NativeControls_GetShortcutKey(expected[i].shortcut) == expected[i].scancode,
+		      NativeControls_GetShortcutName(expected[i].shortcut));
+	}
+
+	// The names the file uses (and default_controls.ini lists) read back as the same key.
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		char name[64];
+		NativeControls_BindingToText(NATIVE_CONTROLS_DEVICE_KEYBOARD, s_shortcutInfo[shortcut].defaultKey, name,
+		                             sizeof(name), NATIVE_CONTROLS_NAME_FILE);
+		Check((s32)SDL_GetScancodeFromName(name) == s_shortcutInfo[shortcut].defaultKey,
+		      "a default shortcut key survives the file round trip");
+	}
+
+	// None of them may sit on a default keyboard game control, or the defaults would
+	// break the one-key-one-action rule before anyone touched them.
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		for (int binding = 0; binding < NATIVE_CONTROLS_BIND_COUNT; binding++)
+		{
+			Check(s_defaultKeyboard[binding] != NativeControls_GetShortcutKey(shortcut),
+			      "a shortcut default is not also a keyboard game default");
+		}
+	}
+}
+
+static void TestShortcutFollowsItsRebind(void)
+{
+	printf("shortcuts: a rebound shortcut fires on its new key only\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(0, pads, &keyboard);
+
+	memset(s_testKeyboardState, 0, sizeof(s_testKeyboardState));
+	s_keyboardState = s_testKeyboardState;
+
+	s_testKeyboardState[SDL_SCANCODE_KP_9] = true;
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_CHARACTER_PICKER) == 1, "the default key fires the picker");
+
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_F);
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_CHARACTER_PICKER) == 0, "the old key no longer fires it");
+	Check(Platform_InputRawKeyDown(SDL_SCANCODE_KP_9) == 1, "the raw probe still reads the physical key");
+
+	s_testKeyboardState[SDL_SCANCODE_KP_9] = false;
+	s_testKeyboardState[SDL_SCANCODE_F] = true;
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_CHARACTER_PICKER) == 1, "the new key fires it");
+
+	NativeControls_SetShortcutKey(-2, SDL_SCANCODE_G);
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		Check(NativeControls_GetShortcutKey(shortcut) != SDL_SCANCODE_G, "an invalid shortcut index changes nothing");
+	}
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, NATIVE_CONTROLS_BINDING_NONE);
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_CHARACTER_PICKER) == 0, "an unbound shortcut never fires");
+	Check(Platform_InputShortcutDown(-1) == 0, "an out-of-range shortcut never fires");
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_COUNT) == 0, "the shortcut count never fires");
+
+	s_keyboardState = NULL;
+}
+
+// Most recent wins, in all three directions the rule covers.
+static void TestTheNewerBindingClearsTheOlder(void)
+{
+	printf("shortcuts: one key never does two things\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(1, pads, &keyboard);
+
+	// A shortcut takes a key from a keyboard game control.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_V);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_V, "the shortcut has V");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == NATIVE_CONTROLS_BINDING_NONE,
+	      "Circle lost V and reads as unbound");
+
+	// A keyboard game control takes a key from a shortcut.
+	NativeControls_SetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE, SDL_SCANCODE_KP_1);
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE) == SDL_SCANCODE_KP_1, "Square has Numpad 1");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == NATIVE_CONTROLS_BINDING_NONE,
+	      "the icy trap key lost Numpad 1");
+
+	// A shortcut takes a key from another shortcut.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_BOOST, SDL_SCANCODE_KP_7);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == NATIVE_CONTROLS_BINDING_NONE,
+	      "Shortcutless lost Numpad 7");
+
+	// A gamepad binding is a different device and never touches the keyboard keys.
+	NativeControls_SetBinding(pads[0], NATIVE_CONTROLS_BIND_CROSS, SDL_SCANCODE_KP_8);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_MARK_QUAD) == SDL_SCANCODE_KP_8,
+	      "a gamepad value that equals a scancode is not a conflict");
+
+	// Two game controls may still share a key, as they always could.
+	NativeControls_SetBinding(keyboard, NATIVE_CONTROLS_BIND_L3, SDL_SCANCODE_X);
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_L3) == SDL_SCANCODE_X, "L3 has X");
+}
+
+// The rebind screen names what a confirm would clear, and the confirm clears it.
+static void TestShortcutCaptureWarnsAndReplaces(void)
+{
+	printf("shortcuts: the capture warns about a taken key and the confirm clears it\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	DeclareDevicesForBus(1, pads, &keyboard);
+
+	char holder[64];
+
+	NativeControls_BeginShortcutCapture(NATIVE_SHORTCUT_CHARACTER_PICKER);
+	Check(NativeControls_IsCapturing(), "the shortcut capture is pending");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == NATIVE_CONTROLS_BINDING_NONE,
+	      "the shortcut reads unbound while listening");
+	Check(NativeControls_GetCaptureConflict(holder, sizeof(holder)) == 0, "no warning before a key is chosen");
+
+	// Stand in for V being pressed and released.
+	s_capturePendingValue = SDL_SCANCODE_V;
+	s_shortcutKeys[NATIVE_SHORTCUT_CHARACTER_PICKER] = SDL_SCANCODE_V;
+	s_capturePhase = NATIVE_CONTROLS_CAPTURE_CONFIRM;
+
+	Check(NativeControls_GetCaptureConflict(holder, sizeof(holder)) == 1, "a taken key is reported");
+	Check(NativeControls_StrEqual(holder, "Circle"), "the warning names Circle");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == SDL_SCANCODE_V,
+	      "nothing is cleared before the confirm");
+
+	NativeControls_CommitCapture();
+	Check(!NativeControls_IsCapturing(), "the capture ended");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_V, "the picker has V");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == NATIVE_CONTROLS_BINDING_NONE,
+	      "Circle was cleared by the newer binding");
+
+	// A keyboard game-control capture warns about a shortcut the same way.
+	NativeControls_BeginCapture(keyboard, NATIVE_CONTROLS_BIND_SQUARE);
+	s_capturePendingValue = SDL_SCANCODE_KP_2;
+	NativeControls_BindingsOfDevice(keyboard)[NATIVE_CONTROLS_BIND_SQUARE] = SDL_SCANCODE_KP_2;
+	s_capturePhase = NATIVE_CONTROLS_CAPTURE_CONFIRM;
+	Check(NativeControls_GetCaptureConflict(holder, sizeof(holder)) == 1, "a key a shortcut holds is reported");
+	Check(NativeControls_StrEqual(holder, "Dev Trap Low Gravity"), "the warning names the shortcut");
+	NativeControls_CommitCapture();
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY) == NATIVE_CONTROLS_BINDING_NONE,
+	      "the shortcut was cleared by the newer binding");
+
+	// A cancelled shortcut capture puts the old key back and clears nothing.
+	NativeControls_BeginShortcutCapture(NATIVE_SHORTCUT_DEV_TRAP_ICY);
+	s_capturePendingValue = SDL_SCANCODE_Z;
+	s_shortcutKeys[NATIVE_SHORTCUT_DEV_TRAP_ICY] = SDL_SCANCODE_Z;
+	s_capturePhase = NATIVE_CONTROLS_CAPTURE_CONFIRM;
+	NativeControls_CancelCapture();
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == SDL_SCANCODE_KP_1, "the old key came back");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_TRIANGLE) == SDL_SCANCODE_Z,
+	      "Triangle kept its key");
+}
+
+static void TestRestoreDefaultsRestoresBoth(void)
+{
+	printf("shortcuts: Restore Defaults puts shortcuts and keyboard controls back together\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(1, pads, &keyboard);
+
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_V);
+	NativeControls_SetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE, SDL_SCANCODE_KP_1);
+	NativeControls_SetBinding(pads[0], NATIVE_CONTROLS_BIND_CROSS, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+
+	NativeControls_RestoreShortcutDefaults();
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_KP_9, "the picker is back");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == SDL_SCANCODE_KP_1, "the icy key is back");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == SDL_SCANCODE_V, "Circle is back");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_SQUARE) == SDL_SCANCODE_X, "Square is back");
+	Check(NativeControls_GetBinding(pads[0], NATIVE_CONTROLS_BIND_CROSS) == SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+	      "the gamepad was left alone");
+
+	// The keyboard's own Restore Defaults brings the shortcuts back too.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_V);
+	NativeControls_RestoreDeviceDefaults(keyboard);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_KP_9,
+	      "the keyboard restore brings the picker back");
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == SDL_SCANCODE_V, "and Circle");
+
+	// A gamepad restore leaves the shortcuts alone.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_F);
+	NativeControls_RestoreDeviceDefaults(pads[0]);
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_F,
+	      "a gamepad restore keeps the shortcuts");
+}
+
+static void TestShortcutsRoundTripAndOldFilesLoad(void)
+{
+	printf("shortcuts: controls.ini round trip, and a file without the section\n");
+
+	char path[512];
+	TestFilePath(path, sizeof(path));
+
+	// A file written before the shortcuts were bindable.
+	FILE *file = fopen(path, "w");
+	fprintf(file, "[%s]\nplayer1 = auto\n", NATIVE_CONTROLS_SECTION_ASSIGNMENT);
+	fprintf(file, "[%s%s]\nname = Keyboard\ncross = C\ncircle = B\n", NATIVE_CONTROLS_SECTION_PREFIX,
+	        NATIVE_CONTROLS_KEYBOARD_KEY);
+	fclose(file);
+
+	ResetModule();
+	NativeControls_Load();
+
+	int pads[4];
+	int keyboard;
+	SetupDevices(0, pads, &keyboard);
+
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CIRCLE) == SDL_SCANCODE_B, "the old file applied");
+	for (int shortcut = 0; shortcut < NATIVE_SHORTCUT_COUNT; shortcut++)
+	{
+		Check(NativeControls_GetShortcutKey(shortcut) == s_shortcutInfo[shortcut].defaultKey,
+		      "a file without the section leaves every shortcut on its default");
+	}
+
+	// The section is never mistaken for a device.
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER, SDL_SCANCODE_F);
+	NativeControls_SetShortcutKey(NATIVE_SHORTCUT_DEV_DEMO_CAMERA, NATIVE_CONTROLS_BINDING_NONE);
+
+	ResetModule();
+	NativeControls_Load();
+	SetupDevices(0, pads, &keyboard);
+
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == SDL_SCANCODE_F, "the picker came back");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_DEMO_CAMERA) == NATIVE_CONTROLS_BINDING_NONE,
+	      "an unbound shortcut came back unbound");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ALL) == SDL_SCANCODE_KP_6,
+	      "an untouched shortcut came back on its default");
+
+	int shortcutProfiles = 0;
+	for (int i = 0; i < NATIVE_CONTROLS_MAX_PROFILES; i++)
+	{
+		if (s_profiles[i].used && (strstr(s_profiles[i].key, "Shortcuts") != NULL))
+		{
+			shortcutProfiles++;
+		}
+	}
+	Check(shortcutProfiles == 0, "the shortcuts section did not become a device profile");
+
+	// A hand edit that puts one key on a game control and a shortcut keeps the game
+	// control, and an unreadable key keeps the default.
+	file = fopen(path, "w");
+	fprintf(file, "[%s%s]\ncross = Keypad 9\n", NATIVE_CONTROLS_SECTION_PREFIX, NATIVE_CONTROLS_KEYBOARD_KEY);
+	fprintf(file, "[%s]\ncharacter_picker = Keypad 9\ndev_trap_icy = not-a-real-key\n",
+	        NATIVE_CONTROLS_SECTION_SHORTCUTS);
+	fprintf(file, "dev_trap_boost = Keypad 3\n");
+	fclose(file);
+
+	ResetModule();
+	NativeControls_Load();
+	SetupDevices(0, pads, &keyboard);
+
+	Check(NativeControls_GetBinding(keyboard, NATIVE_CONTROLS_BIND_CROSS) == SDL_SCANCODE_KP_9, "Cross kept Numpad 9");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_CHARACTER_PICKER) == NATIVE_CONTROLS_BINDING_NONE,
+	      "the picker sharing it was unbound");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_ICY) == SDL_SCANCODE_KP_1,
+	      "an unreadable key kept the default");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES) == SDL_SCANCODE_KP_3,
+	      "of two shortcuts on one key the first in list order keeps it");
+	Check(NativeControls_GetShortcutKey(NATIVE_SHORTCUT_DEV_TRAP_BOOST) == NATIVE_CONTROLS_BINDING_NONE,
+	      "and the later one is unbound");
+}
+
+// Typing on the Connection page and listening for a rebind must never fire a shortcut,
+// while the raw probe the connection manager and the Track Manager use keeps reading
+// the physical keys.
+static void TestShortcutsStayQuietWhileTypingOrRebinding(void)
+{
+	printf("shortcuts: quiet during text entry and rebinds; the raw probe is unchanged\n");
+	ResetModule();
+
+	int pads[4];
+	int keyboard;
+	DeclareDevicesForBus(0, pads, &keyboard);
+
+	memset(s_testKeyboardState, 0, sizeof(s_testKeyboardState));
+	s_keyboardState = s_testKeyboardState;
+	s_testKeyboardState[SDL_SCANCODE_KP_7] = true;
+
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == 1, "the key fires with no text field open");
+
+	s_testTextActive = 1;
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == 0, "typing in a text field fires nothing");
+	Check(Platform_InputRawKeyDown(SDL_SCANCODE_KP_7) == 1, "the raw probe still reads the key while typing");
+	Check(Platform_InputRawGamepadButtons() == 0, "the raw gamepad mask is untouched by typing");
+	s_testTextActive = 0;
+
+	NativeControls_BeginCapture(keyboard, NATIVE_CONTROLS_BIND_CIRCLE);
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == 0, "a listening rebind fires nothing");
+	NativeControls_CancelCapture();
+	Check(Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_SHORTCUTLESS) == 1, "the key works again afterwards");
+
+	s_keyboardState = NULL;
+}
 #endif
 
 int main(void)
@@ -1829,6 +2172,13 @@ int main(void)
 #if defined(CTR_AP)
 	TestKeyboardNeverReachesTheRawGamepadMask();
 	TestRawKeyProbeIgnoresBindings();
+	TestShortcutDefaultsAreTheOldKeys();
+	TestShortcutFollowsItsRebind();
+	TestTheNewerBindingClearsTheOlder();
+	TestShortcutCaptureWarnsAndReplaces();
+	TestRestoreDefaultsRestoresBoth();
+	TestShortcutsRoundTripAndOldFilesLoad();
+	TestShortcutsStayQuietWhileTypingOrRebinding();
 #endif
 
 	printf("\n%d checks, %d failures\n", s_checks, s_failures);

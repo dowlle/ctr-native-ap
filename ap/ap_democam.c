@@ -8,14 +8,9 @@
 #include "ap_democam_logic.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
 
-// Raw keyboard probe for the debug toggle (platform/native_input.c, CTR_AP
-// only). Same declaration ap_traps.c uses -- keeps this module SDL-header-free.
-int Platform_InputRawKeyDown(int scancode);
-
-// Numpad +. 89-99 are taken (traps, Shortcutless, character picker); 84-88 are
-// unclaimed and are not in the gameplay input map, so this never disturbs
-// driving.
-#define AP_DEMOCAM_KEY_TOGGLE 87
+// Debug toggle key from the Controls page (AP Shortcuts), default Numpad +
+// (platform/native_controls.c). SDL-header-free like the other AP modules.
+#include <platform/native_shortcuts.h>
 
 // The flag literals in ap_democam_logic.h have to stay the engine's values: the
 // harness compares against them without ever seeing namespace_Camera.h.
@@ -350,7 +345,7 @@ static void AP_DemoCamDebugKey(void)
 		return;
 	}
 
-	down = Platform_InputRawKeyDown(AP_DEMOCAM_KEY_TOGGLE);
+	down = Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_DEMO_CAMERA);
 	if (down && !prev)
 		ap_democam_want = !ap_democam_want;
 	prev = down;
