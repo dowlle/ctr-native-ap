@@ -3,6 +3,7 @@
 // profile; a broader schema shape is not a promise of runtime support.
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
+#include "ap_named_blocks.h"
 #include <array>
 #include <map>
 #include <set>
@@ -118,7 +119,7 @@ static void validate(const J &p, State &out) {
         target.vrm_bytes = number(pkg["files"][1]["bytes"], 1);
     }
     std::set<std::string> used_entries, used_tracks, used_packages;
-    std::set<int> retail_ids, custom_slots;
+    std::set<int> retail_ids, custom_slots, named_blocks;
     std::map<int64_t, J> expected_checks;
     bool starting_entry = false;
     for (int pi = 0; pi < 32; ++pi) {
@@ -135,7 +136,7 @@ static void validate(const J &p, State &out) {
         ctr_content_pad scratch{};
         auto &dest = garage ? scratch : out.pads[pi];
         dest.physical = physical; dest.hub = hub; dest.keys = keys;
-        dest.retail_id = -1; dest.package_index = -1;
+        dest.retail_id = -1; dest.package_index = -1; dest.named_block = -1;
         if (pad["entry_id"].is_null()) {
             need(pad["mode_gates"] == J::array(), "empty pad has mode gates");
             continue;
@@ -151,6 +152,7 @@ static void validate(const J &p, State &out) {
         const J &track = *tracks.at(track_id);
         need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) && track.at("field_size") == 8, "unsupported track capabilities");
         const auto title = text(track.at("display_name"), false);
+        std::string check_title = title;
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const int rid = number(track["retail_id"], 0, 17);
@@ -158,7 +160,14 @@ static void validate(const J &p, State &out) {
             dest.retail_id = rid;
             dest.trophy_location = registry["retail"][rid]["location"].get<int64_t>();
         } else {
-            fields(track, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
+            // #306: optional `named_block` (the track's own id block, path C)
+            // and `room_title` (the sanitized title the room shows, path B+).
+            J base = track;
+            const bool named = base.is_object() && base.contains("named_block");
+            const bool titled = base.is_object() && base.contains("room_title");
+            if (named) base.erase("named_block");
+            if (titled) base.erase("room_title");
+            fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
             const auto package_id = text(track["package_id"]);
             need(track["origin"] == "custom" && packages.count(package_id), "unsupported custom origin or package");
             const J &pkg = *packages.at(package_id);
@@ -166,12 +175,25 @@ static void validate(const J &p, State &out) {
             need(custom_slots.insert(slot).second && track_id == "custom/" + pkg["content_id"].get<std::string>() + "/" + pkg["revision"].get<std::string>() && title == pkg["display_name"] && track["laps"] == 7, "custom metadata mismatch");
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
-            dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
+            dest.named_block = -1;
+            if (named) {
+                dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                need(named_blocks.insert(dest.named_block).second, "duplicate named block");
+                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
+            } else {
+                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
+            }
+            if (titled) {
+                const auto room = text(track["room_title"], false);
+                need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
+                check_title = room;
+            }
         }
         dest.occupied = 1; dest.laps = number(track["laps"], 1, 7);
         copy(dest.entry_id, entry["id"]); copy(dest.track_id, track["id"]); copy(dest.display_name, track["display_name"]);
+        copy(dest.room_title, J(check_title));
         const J route{{"entry_id", entry_id}, {"mode", "trophy"}, {"leg_id", nullptr}, {"encounter_id", nullptr}, {"own_pad_id", id}, {"award", "win"}};
-        const J check{{"location", dest.trophy_location}, {"owner", track_id}, {"kind", "trophy"}, {"display_name", title + ": Trophy Race"}, {"routes", J::array({route})}};
+        const J check{{"location", dest.trophy_location}, {"owner", track_id}, {"kind", "trophy"}, {"display_name", check_title + ": Trophy Race"}, {"routes", J::array({route})}};
         need(expected_checks.emplace(dest.trophy_location, check).second, "duplicate check identity");
         if (!keys) starting_entry = true;
     }

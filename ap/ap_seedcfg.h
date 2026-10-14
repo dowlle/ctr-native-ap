@@ -323,6 +323,11 @@ typedef struct
 	ctr_podium_rungs podium;   // generic custom-slot rungs, -1 = absent
 
 	ctr_custom_track_flags flags;
+
+	// Schema 18 (#306 B+): the room title the apworld gave this slot in the
+	// top-level `custom_track_titles` block. Presentation only, never an
+	// identity; empty when the seed carries none or the block was unusable.
+	char title[106]; // AP_ROOM_TITLE_CAP in ap_named_blocks.h
 } ctr_custom_track;
 
 // ── wumpa_checks (2026-08-29 specification, Lane A) ─────────────────────────
@@ -850,6 +855,12 @@ int ctr_cfg_cup_leg(int cup, int leg);
 // custom_tracks block, or when the block was unreadable. Out-of-range cup
 // returns 0.
 int ctr_cfg_cup_displaced(int cup);
+
+// Schema 18 (#306 B+): the admitted custom track's room title from
+// `custom_track_titles`, or NULL when the seed carries none. Presentation only.
+const char *ctr_cfg_custom_track_title(void);
+/* The same title folded to plain ASCII, for text drawn in game. */
+const char *ctr_cfg_custom_track_title_ascii(void);
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=
