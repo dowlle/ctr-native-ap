@@ -3,6 +3,7 @@
 #include <ctr_menu_ux.h>
 #include <ctr_menu_pages.h>
 #include <platform/native_renderer.h> // NativeRenderer_CaptureWindowGeometry, ahead of the NativeConfig_Save calls below
+#include <platform/native_controls.h> // the Controls page (MM_ControlsConfig.c)
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
@@ -114,6 +115,70 @@ static const ConfigEntry *Section_Entry(int sec, int row)
 }
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
+
+// Row geometry and option-row helpers shared with the Controls page
+// (MM_ControlsConfig.c, ported from CTR Native Expanded by thecodingbob, PR 54
+// and PR 70). The values are the ones every page of this menu already uses.
+#define CONFIG_TITLE_Y     0x18
+#define CONFIG_ROW_START_Y 0x3C
+#define CONFIG_ROW_SPACING 0x0E
+#define CONFIG_LABEL_X     0x38
+#define CONFIG_VALUE_X     0x1DC
+// Visible rows on a scrolling Controls screen. One fewer than
+// CTR_MENU_PAGE_VISIBLE_ROWS, as in Expanded, so the last row clears the panel edge.
+#define CONFIG_MAX_VISIBLE_ROWS 10
+// Frames a held Left/Right waits before it steps again (Config_UpdateSlider's cadence).
+#define CONFIG_STEP_REPEAT_FRAMES 3
+
+static void Config_DrawRowHighlight(uint32_t *ot, int y)
+{
+	RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+	CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+}
+
+// True when a held direction should step this frame. Takes the button mask rather than a
+// pad, because a screen may answer for more than one player and each has its own mask.
+static bool Config_OptionStepDue(int held, int direction)
+{
+	const int button = (direction < 0) ? BTN_LEFT : BTN_RIGHT;
+
+	if ((held & button) == 0)
+		return false;
+
+	return (sdata->frameCounter % CONFIG_STEP_REPEAT_FRAMES) == 0;
+}
+
+// Applies one clamped step. Reports whether the value moved, so a caller can commit only on
+// a real change instead of once per frame while a direction is held.
+static bool Config_OptionStep(int *value, int direction, int min, int max, int step)
+{
+	const int before = *value;
+	int wanted = before + (direction * step);
+
+	if (wanted < min)
+		wanted = min;
+	else if (wanted > max)
+		wanted = max;
+
+	*value = wanted;
+	return *value != before;
+}
+
+// A numeric option's value in the shared value column, as a percentage.
+static void Config_DrawPercent(int percent, int y, uint32_t *ot)
+{
+	char text[8];
+
+	snprintf(text, sizeof(text), "%d%%", percent);
+	DecalFont_DrawLineOT(text, CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+}
+
+static int Config_IsControlsSection(int sec)
+{
+	return sec >= 0 && sec < s_numSections && strcmp(s_sectionName[sec], CTR_MENU_PAGE_CONTROLS) == 0;
+}
+
+#include "MM_ControlsConfig.c"
 
 struct RectMenu g_configMenu = {
 	.stringIndexTitle = -1,
@@ -1114,10 +1179,37 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if (s_numSections == 0)
 		BuildSectionMap();
 
+	// On the Controls page the back button also answers to the selected player's
+	// own device (MM_Controls_MenuTapped). The device picker consumes back itself,
+	// and back while a rebind is listening only cancels the rebind.
+	const int inControls = Config_IsControlsSection(s_currentSection);
+	const u32 backTapped = inControls ? MM_Controls_MenuTapped() : (u32)pad->buttonsTapped;
+	int backHandled = 0;
+
+	if (inControls && (backTapped & (BTN_TRIANGLE | BTN_START)) != 0)
+	{
+		if (MM_Controls_IsPickerOpen())
+		{
+			backHandled = 1;
+		}
+		else if (NativeControls_IsCapturing())
+		{
+			NativeControls_CancelCapture();
+			OtherFX_Play(2, 1);
+			backHandled = 1;
+		}
+		else if (MM_Controls_ScreenOpen())
+		{
+			MM_Controls_CloseScreen(menu);
+			OtherFX_Play(2, 1);
+			backHandled = 1;
+		}
+	}
+
 	// Back / exit -- but not while a text-entry session owns the keyboard (there
 	// Escape is the cancel key, handled in the platform layer). NativeText_Active
 	// is always 0 outside an edit, so this is a no-op change for the toggle sections.
-	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active()
+	if (!backHandled && (backTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active()
 #ifdef CTR_CUSTOM_PACKAGES
 	    // Drain a package or Saphi worker before leaving; Back first leaves
 	    // the Versions list of one track.
@@ -1128,6 +1220,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		OtherFX_Play(2, 1);
 		if (s_currentSection >= 0)
 		{
+			if (inControls)
+				NativeControls_Save();
 			menu->rowSelected = s_currentSection;
 			s_currentSection = -1;
 		}
@@ -1135,6 +1229,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		{
 			NativeRenderer_CaptureWindowGeometry();
 			NativeConfig_Save();
+			NativeControls_Save();
 #ifdef CTR_AP
 			// Persist the AI-difficulty value to the per-slot data-storage override
 			// (no-op if not connected), alongside the config.ini write above.
@@ -1144,7 +1239,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		}
 	}
 
-	if (s_currentSection >= 0)
+	if (Config_IsControlsSection(s_currentSection))
+	{
+		// Controls draws and edits everything itself, including its own input.
+		MM_ConfigProc_Controls(menu, ot);
+	}
+	else if (s_currentSection >= 0)
 	{
 		const int sec = s_currentSection;
 		const int numRows = s_sectionCount[sec];

@@ -179,5 +179,6 @@ tools/test-feed-rung-policy.py
 tools/test-ap-spawn-pool-reset.py
 tools/test-box-anchor-premise.py
 # Non-file steps (run from the repo root; CI runs them through this script).
+cmd Controls page module (native_controls, ported from CTR Native Expanded) :: bash tools/controls/run-tests.sh
 cmd TLS and cache boundary regressions :: bash tools/security/run.sh
 cmd Release assembly boundary checks :: python3 -m unittest discover -s tools/release -p 'test_*.py'

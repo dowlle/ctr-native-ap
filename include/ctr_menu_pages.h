@@ -12,6 +12,9 @@
 //
 // Grouping agreed 2026-09-22: Video holds rendering and display,
 // Gameplay holds skips and race feel, Archipelago holds the multiworld rows.
+// Controls (0.3.0) sits after Gameplay. It has no config rows: its screen
+// (game/230/MM_ControlsConfig.c) edits controls.ini, so it is a bespoke page
+// that is always shown even though no key lists it.
 
 // Rows that fit between the title rule and the bottom of the panel at the
 // menu's 0x0E spacing from 0x3C. A twelfth row is drawn past the panel edge.
@@ -25,7 +28,10 @@ typedef struct
 {
 	const char *name;
 	const char *const *keys; // NULL-terminated
+	int bespoke;             // drawn by its own screen; shown even with no rows
 } CtrMenuPage;
+
+#define CTR_MENU_PAGE_CONTROLS "Controls"
 
 static const char *const s_ctrMenuPageVideo[] = {
 	"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
@@ -35,6 +41,9 @@ static const char *const s_ctrMenuPageVideo[] = {
 static const char *const s_ctrMenuPageGameplay[] = {
 	"skip_intro", "skip_hints", "skip_podium", "skip_cutscenes", "ai_difficulty",
 	"mute_when_unfocused", NULL,
+};
+static const char *const s_ctrMenuPageControls[] = {
+	NULL,
 };
 static const char *const s_ctrMenuPageConnection[] = {
 	"uri", "slot", "password", NULL,
@@ -48,11 +57,12 @@ static const char *const s_ctrMenuPageAuthoring[] = {
 };
 
 static const CtrMenuPage s_ctrMenuPages[] = {
-	{"Video", s_ctrMenuPageVideo},
-	{"Gameplay", s_ctrMenuPageGameplay},
-	{"Connection", s_ctrMenuPageConnection},
-	{"Archipelago", s_ctrMenuPageArchipelago},
-	{"Authoring", s_ctrMenuPageAuthoring},
+	{"Video", s_ctrMenuPageVideo, 0},
+	{"Gameplay", s_ctrMenuPageGameplay, 0},
+	{CTR_MENU_PAGE_CONTROLS, s_ctrMenuPageControls, 1},
+	{"Connection", s_ctrMenuPageConnection, 0},
+	{"Archipelago", s_ctrMenuPageArchipelago, 0},
+	{"Authoring", s_ctrMenuPageAuthoring, 0},
 };
 #define CTR_MENU_PAGE_COUNT ((int)(sizeof(s_ctrMenuPages) / sizeof(s_ctrMenuPages[0])))
 
@@ -98,7 +108,7 @@ static inline int CTR_MenuBuildPages(const ConfigEntry *entries, int numEntries,
 			placed[i] = 1;
 			rows[numPages][n++] = i;
 		}
-		if (n == 0)
+		if (n == 0 && !s_ctrMenuPages[p].bespoke)
 			continue;
 		names[numPages] = s_ctrMenuPages[p].name;
 		counts[numPages] = n;

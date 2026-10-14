@@ -265,6 +265,11 @@ controllers, DualShock 4 / DualSense, and most others) are picked up
 automatically with a PlayStation-style layout, whether connected before or
 after launch.
 
+To change which device each player uses, rebind buttons, or set a stick
+deadzone for a drifting stick, open **Options → Controls** and pick a player.
+Your choices are saved in `controls.ini` next to `config.ini`. The full guide is
+[docs/CONTROLS.md](docs/CONTROLS.md).
+
 If you would rather run your controller through **Steam Input** (a Steam
 Controller, custom button remapping, or per-game controller configurations),
 add the game to Steam as a non-Steam game: in Steam, choose **Games → Add a
