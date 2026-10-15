@@ -1,9 +1,10 @@
 // Included by ap_seedcfg.cpp so every production-parser harness exercises the
-// same admission path. Deliberately implements only the standalone Trophy
-// profile; a broader schema shape is not a promise of runtime support.
+// same admission path. Implements standalone Trophy and Crystal Challenge
+// entries; a broader schema shape is not a promise of runtime support.
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
+#include "ap_arena_content.h"
 #include <array>
 #include <map>
 #include <set>
@@ -113,7 +114,18 @@ static void validate(const J &p, State &out) {
         need(manual_ids.emplace(std::stoi(digits), pair.first).second, "duplicate manual requirement");
     }
     need(requirements.size() == 5 + manual_ids.size(), "requirement registry mismatch");
-    need(p.at("required_features") == (manual_ids.empty() ? J::array({"content_plan_v1"}) : J::array({"content_plan_v1", "manual_pad_requirements_v1"})),
+    bool arenas=false, arcade=false, pickups=false;
+    for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
+        arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
+    }
+    need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
+    for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
+    J features=J::array({"content_plan_v1"});
+    if(!manual_ids.empty())features.push_back("manual_pad_requirements_v1");
+    if(arenas)features.push_back("crystal_entries_v1");
+    if(pickups)features.push_back("crystal_pickups_v1");
+    if(arcade)features.push_back("arcade_crystals_v1");
+    need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
         const auto id = i ? "keys:" + std::to_string(i) : "free";
@@ -135,7 +147,7 @@ static void validate(const J &p, State &out) {
         target.vrm_bytes = number(pkg["files"][1]["bytes"], 1);
     }
     std::set<std::string> used_entries, used_tracks, used_packages;
-    std::set<int> retail_ids, custom_slots, named_blocks;
+    std::set<int> retail_ids, custom_slots, named_blocks, arena_ids;
     std::map<int64_t, J> expected_checks;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     bool starting_entry = false;
@@ -160,9 +172,40 @@ static void validate(const J &p, State &out) {
         }
         const auto entry_id = text(pad["entry_id"]);
         need(!garage && entries.count(entry_id) && used_entries.insert(entry_id).second, "invalid or repeated pad entry");
-        need(pad["mode_gates"] == J::array({J{{"mode", "trophy"}, {"stage", 1}, {"requirement_id", manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free")}}}), "unsupported mode gates");
-        if (manual_ids.count(physical)) manual_pad[physical] = &dest;
         const J &entry = *entries.at(entry_id);
+        const bool crystal=entry.at("kind")=="crystal";
+        need(pad["mode_gates"] == J::array({J{{"mode", crystal?"crystal":"trophy"}, {"stage", 1}, {"requirement_id", manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free")}}}), "unsupported mode gates");
+        if (manual_ids.count(physical)) manual_pad[physical] = &dest;
+        if(crystal) {
+            fields(entry,{"id","kind","arena_id","target","time_limit_ticks"});
+            const int level=number(entry["arena_id"],18,24);
+            const std::string owner="arena:"+std::to_string(level);
+            need(arena_ids.insert(level).second && entry_id=="entry/"+owner && entry["target"]==20 &&
+                 number(entry["time_limit_ticks"])==AP_ArenaTimeLimit(level),"arena identity, target or timer mismatch");
+            dest.occupied=dest.crystal=1; dest.retail_id=level; dest.laps=1;
+            dest.target=20; dest.time_limit_ticks=AP_ArenaTimeLimit(level);
+            dest.trophy_location=AP_ArenaCompletionCode(level);
+            copy(dest.entry_id,entry["id"]); copy(dest.track_id,J(owner));
+            copy(dest.display_name,J(AP_ArenaName(level))); copy(dest.room_title,J(AP_ArenaName(level)));
+            J route{{"entry_id",entry_id},{"mode","crystal"},{"leg_id",nullptr},{"encounter_id",nullptr},{"own_pad_id",id},{"award","complete"}};
+            J check{{"location",dest.trophy_location},{"owner",owner},{"kind","crystal"},
+                    {"display_name",std::string(AP_ArenaName(level))+": Crystal Challenge"},{"routes",J::array({route})}};
+            need(expected_checks.emplace(dest.trophy_location,check).second,"duplicate completion");
+            if(pickups) {
+                dest.crystal_count=20;
+                for(int n=0;n<20;++n) {
+                    dest.crystal_locations[n]=AP_ArenaPickupCode(level,n);
+                    const std::string ordinal=(n<9?"0":"")+std::to_string(n+1);
+                    route["award"]="crystal:"+ordinal;
+                    check["location"]=dest.crystal_locations[n]; check["kind"]="crystal_pickup";
+                    check["display_name"]=std::string(AP_ArenaName(level))+": Crystal "+ordinal;
+                    check["routes"]=J::array({route});
+                    need(expected_checks.emplace(dest.crystal_locations[n],check).second,"duplicate pickup");
+                }
+            }
+            if(!keys)starting_entry=true;
+            continue;
+        }
         fields(entry, {"id", "kind", "track_id", "modes", "merged"});
         need(entry["kind"] == "track" && entry["modes"] == J::array({"trophy"}) && entry["merged"] == false, "unsupported entry kind or modes");
         const auto track_id = text(entry["track_id"]);
@@ -216,7 +259,7 @@ static void validate(const J &p, State &out) {
         if (!keys) starting_entry = true;
     }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
-    need(tracks.empty() || starting_entry, "no playable starting pad");
+    need(entries.empty() || starting_entry, "no playable starting pad");
     need(p["checks"].is_array() && p["checks"].size() == expected_checks.size(), "check registry size mismatch");
     for (const auto &check : p["checks"]) {
         const int64_t id = number(check.at("location"), 1);
@@ -297,12 +340,25 @@ static int parse_content_plan(const nlohmann::json &j) {
         fields(j, {"schema_version", "content_plan", "ctr_options"});
         need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
-        fields(co, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
+        J base=co;
+        for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
+        fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"] == false && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
         validate(j["content_plan"], candidate);
+        bool arenas=false,arcade=false,pickups=false;
+        for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {
+            arenas=true;arcade |= AP_ArcadeArenaIndex(pad.retail_id)>=0;pickups |= pad.crystal_count>0;
+        }
+        if(arenas) {
+            need(co.size()==base.size()+3 && co.at("include_battle_arenas")==true &&
+                 co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
+        } else need(co==base,"arena options without arena entries");
+        // The plan owns content availability; legacy arena-pad filtering must
+        // not close a physical arena seat holding a Trophy entry.
+        ctr_cfg.include_battle_arenas=1;
         need(number(co["goal_gems"], 1, 5) == candidate.goal_count, "goal envelope disagrees with plan");
         ctr_cfg.starting_character = number(co["starting_character"], 0, 15);
         ctr_cfg.death_link = number(co["death_link"], 0, 2);

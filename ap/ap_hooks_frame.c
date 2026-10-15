@@ -721,6 +721,7 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage,
 	                  (unsigned)gGT->timer);
 #endif
+	AP_ArcadeCrystals_OnFrame(gGT);
 	ap_onframe_body(gGT);
 	// Discord Rich Presence (#366): outside the body so its early returns do
 	// not skip it. Returns at once unless the option was ever switched on.

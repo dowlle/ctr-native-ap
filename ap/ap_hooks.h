@@ -69,6 +69,12 @@ void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected);
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
 void AP_NotifyCrystalPickup(struct Instance *inst, int driverID);
+int AP_ContentCrystalIntent(void);
+const ctr_content_pad *AP_ContentCrystalPad(void);
+void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
+void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
+void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
+int AP_NotifyContentCrystalComplete(void);
 
 // Evaluate the composed per-seed goal (issue #152: ctr_cfg.goal_oxide/
 // goal_bosses/goal_gems, ANDed) against received items + game events and send

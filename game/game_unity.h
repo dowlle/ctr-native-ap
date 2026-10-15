@@ -425,6 +425,7 @@
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_trial_letters.c"
+#include "../ap/ap_arcade_crystals.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"

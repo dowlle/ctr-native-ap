@@ -30,6 +30,7 @@ expected = dict(packages=list(cp.PACKAGES), retail=[dict(id=i, name=n, location=
                 pads=[dict(physical=p, hub=h, keys=k) for p, h, k in cp.pad_registry()],
                 custom_locations=[cp.CTR_LOCATION_IDS[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)])
 assert registry == expected, "native frozen registry differs from paired apworld"
+assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
 cases = []
 for fixture in ("baseline", "starts-extras"):
     cases.append((fixture, json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
@@ -68,6 +69,14 @@ for seed in range(40):
     cases.append((f"manual-generated-{seed}", world.fill_slot_data(), True))
 cases.append(("manual-fixture", json.loads((root / "tools/fixtures/content-plan/manual-rules.json").read_text()), True))
 
+# All arena subsets and both Crystalsanity modes exercise the real parser.
+from worlds.ctr.test.test_arcade_arenas import arena_options
+for count in range(1,8):
+    for pickups in (False,True):
+        for seed in range(5):
+            wire=make_world(arena_options(count,pickups),seed=seed).fill_slot_data()
+            cases.append((f"arena-{count}-{pickups}-{seed}",wire,True))
+
 base = cases[0][1]
 def alter(name, change, source=None):
     case = copy.deepcopy(source or base)
@@ -79,7 +88,7 @@ def alter(name, change, source=None):
         accepted = False
     cases.append((name, case, accepted))
 
-manual_base = cases[-1][1]
+manual_base = next(w for name,w,ok in cases if name=="manual-fixture")
 def manual_req(plan, rid):
     return next(r for r in plan["requirements"] if r["id"] == rid)
 def manual_alter(name, change):

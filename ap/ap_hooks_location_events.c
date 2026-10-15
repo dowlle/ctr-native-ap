@@ -11,6 +11,7 @@
 
 void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
 {
+    if(ap_content_plan_present() || AP_ContentCrystalIntent()) {AP_NotifyContentCrystalPickup(inst,driverID);return;}
     struct GameTracker *gGT = sdata->gGT;
     int index=-1, i;
     long code;

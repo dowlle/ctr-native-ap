@@ -1082,6 +1082,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE | ARCADE_MODE;
 		sdata->Loading.OnBegin.AddBitsConfig8 &= ~(TOKEN_RACE | CUP_ANY_KIND | SPAWN_AT_BOSS);
 		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE | CUP_ANY_KIND | SPAWN_AT_BOSS;
+        if(pad->crystal) {
+            gGT->gameMode1 |= CRYSTAL_CHALLENGE;
+            sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
+            sdata->Loading.OnBegin.RemBitsConfig0 &= ~CRYSTAL_CHALLENGE;
+            gGT->originalEventTime=pad->time_limit_ticks;
+        }
 		gGT->numLaps = (char)pad->laps;
 		levelID = host;
 		goto WarpPad_RequestLoad;

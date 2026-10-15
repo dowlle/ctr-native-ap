@@ -34,6 +34,7 @@ fixture = r'''
 #define ADVENTURE_CUP 4
 #define ADVENTURE_BOSS 8
 #define RELIC_RACE 16
+#define CRYSTAL_CHALLENGE 32
 #define TOKEN_RACE 1
 #define AP_RESULT_PRODUCER_CUSTOM_TROPHY 1
 struct Driver { int driverRank; } driver;

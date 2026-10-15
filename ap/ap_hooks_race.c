@@ -465,7 +465,7 @@ int AP_NotifyStandaloneRace(void)
 	if (!gGT || !ctr_cfg_active() ||
 	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) ||
 	    !(gGT->gameMode1 & ADVENTURE_MODE) ||
-	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE)) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE)) ||
 	    (gGT->gameMode2 & TOKEN_RACE) || !gGT->drivers[0] ||
 	    gGT->drivers[0]->driverRank != 0)
 		return 0;

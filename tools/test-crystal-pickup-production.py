@@ -25,6 +25,9 @@ AP_CrystalChecks ctr_crystal_checks;
 static int active=1, custom=0, exists=1, checked=0, sent, feed, perf, ap_state_gen;
 static long sentCode;
 int ctr_cfg_active(void){return active;}
+int ap_content_plan_present(void){return 0;}
+int AP_ContentCrystalIntent(void){return 0;}
+void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID){(void)inst;(void)driverID;}
 int CustomTrack_ServingLoad(int level,int cup,int id){(void)level;(void)cup;(void)id;return custom;}
 int ap_net_location_exists(long code){(void)code;return exists;}
 int ap_net_location_checked(long code){(void)code;return checked;}
