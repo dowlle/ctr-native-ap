@@ -95,6 +95,7 @@ CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)	THEREDHO
 AP Box Texture (AP build only)	JURNTHREINAL;KRISTA CORKOS;CHRISTOPHER WILSON
 Cortex Vortex track (AP build only)	LOCKHEART
 SDL3	SDL3;SAM LANTINGA
+CTR Native Expanded controls	THECODINGBOB
 EOF
 )"
 

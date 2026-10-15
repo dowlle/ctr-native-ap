@@ -96,6 +96,7 @@ int main(void)
 	EXPECT_TRUE("no Archipelago page", FindPage(numPages, "Archipelago") < 0);
 	EXPECT_TRUE("Video page present", FindPage(numPages, "Video") >= 0);
 	EXPECT_TRUE("Gameplay page present", FindPage(numPages, "Gameplay") >= 0);
+	EXPECT_TRUE("Controls page present", FindPage(numPages, "Controls") >= 0);
 
 	for (int p = 0; p < numPages; p++)
 	{

@@ -15,24 +15,16 @@
 // it decides nothing about when a trap runs.
 // ============================================================================
 
-// Raw keyboard probe for the debug keybinds (platform/native_input.c, CTR_AP
-// only). Same declaration ap_hooks.c uses, which keeps this module SDL-header-free.
-int Platform_InputRawKeyDown(int scancode);
-
-// Debug test-fire keys (SDL scancodes, externals/SDL/include/SDL3/SDL_scancode.h:
-// KP_1=89..KP_6=94). Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers
-// own F1-F12 and fire regardless of AP keys. Not in the gameplay input map, so
-// they never disturb driving.
+// Debug test-fire keys, bindable on the Controls page (AP Shortcuts). Defaults
+// Numpad 1 to Numpad 5 for the five effects and Numpad 6 for all of them
+// (platform/native_controls.c). Not F-keys: the engine's CTR_INTERNAL dev handlers
+// own F1-F12 and fire regardless of AP keys. A key bound here is taken off any
+// game control, so they never disturb driving.
 //
 // Every key now goes through the ORDINARY receive path. The old instant-fire
 // shortcut bypassed the schedule it was supposed to be testing, and with per-effect
 // scheduling there is no longer one shared lifecycle for it to skip.
-#define AP_TRAP_KEY_ICY   89 // Numpad 1
-#define AP_TRAP_KEY_GRAV  90 // Numpad 2
-#define AP_TRAP_KEY_USF   91 // Numpad 3
-#define AP_TRAP_KEY_BOOST 92 // Numpad 4
-#define AP_TRAP_KEY_FP    93 // Numpad 5
-#define AP_TRAP_KEY_ALL   94 // Numpad 6 -> arm all five
+#include <platform/native_shortcuts.h>
 
 // First-person camera mode selector. cameraMode 0x10 = "first person" with yaw
 // taken from the kart heading (d->angle), the stable hood-cam forward view
@@ -1037,15 +1029,15 @@ void AP_TrapDebugKeys(void)
 	static int prev[6] = {0};
 	struct
 	{
-		int scancode;
+		int shortcut;
 		int effect; // -1 = arm every implemented effect
 	} keys[6] = {
-	    {AP_TRAP_KEY_ICY, AP_TRAP_ICY},
-	    {AP_TRAP_KEY_GRAV, AP_TRAP_LOWGRAV},
-	    {AP_TRAP_KEY_USF, AP_TRAP_USF_NOBRAKE},
-	    {AP_TRAP_KEY_BOOST, AP_TRAP_BOOST},
-	    {AP_TRAP_KEY_FP, AP_TRAP_FIRSTPERSON},
-	    {AP_TRAP_KEY_ALL, -1},
+	    {NATIVE_SHORTCUT_DEV_TRAP_ICY, AP_TRAP_ICY},
+	    {NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY, AP_TRAP_LOWGRAV},
+	    {NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES, AP_TRAP_USF_NOBRAKE},
+	    {NATIVE_SHORTCUT_DEV_TRAP_BOOST, AP_TRAP_BOOST},
+	    {NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON, AP_TRAP_FIRSTPERSON},
+	    {NATIVE_SHORTCUT_DEV_TRAP_ALL, -1},
 	};
 	int k;
 
@@ -1057,7 +1049,7 @@ void AP_TrapDebugKeys(void)
 
 	for (k = 0; k < 6; k++)
 	{
-		int down = Platform_InputRawKeyDown(keys[k].scancode);
+		int down = Platform_InputShortcutDown(keys[k].shortcut);
 		if (down && !prev[k])
 		{
 			if (keys[k].effect < 0)

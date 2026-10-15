@@ -408,11 +408,13 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 						// a garage you personally beat must read done (live find,
 						// 2026-07-15 playtest). Override, not OR: the AdvProgress
 						// mirror is rewritten from received Keys every frame, so it
-						// must not feed sVar7 at all in AP. Same durable server-
-						// checked signal AP_EvaluateGoal's goal 3 and the door use.
+						// must not feed sVar7 at all in AP. #458 follow-up: under a
+						// Bosses goal that still needs bosses, "beaten" is the
+						// player's own win, so a boss checked by another player's
+						// Collect keeps its glow (AP_BossMapStarBeaten).
 						if (ctr_cfg_active())
 						{
-							sVar7 = (s16)AP_LocationCheckedByBit(base + ADV_REWARD_FIRST_BOSS_KEY);
+							sVar7 = (s16)AP_BossMapStarBeaten(base);
 						}
 						else
 #endif

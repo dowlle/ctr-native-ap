@@ -56,6 +56,7 @@ NATIVE_COMPANIONS = (
     "ap-config.example.txt",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
+    "default_controls.ini",
     "support-bundle.bat",
     "support-bundle.ps1",
     "support-bundle.sh",
@@ -168,6 +169,7 @@ def unpack_artifact(
         "SETUP.md",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
+        "default_controls.ini",
         "BUILD.json",
         "BUILD-NOTICE.txt",
         *variant_names,
@@ -509,6 +511,7 @@ def assemble(args: argparse.Namespace) -> list[Path]:
             source / "ap-config.example.txt",
             source / "LICENSE",
             source / "THIRD_PARTY_NOTICES.md",
+            source / "default_controls.ini",
             args.apworld.resolve(),
         ]
         helper = [source / "support-bundle.bat", source / "support-bundle.ps1"]

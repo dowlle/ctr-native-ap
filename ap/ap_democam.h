@@ -47,6 +47,10 @@ int AP_DemoCamOwnsCamera(void);
 // snapshot cannot outlive the session that took it.
 void AP_DemoCam_ConnectReset(void);
 
+// 1 when ap-config.txt has debug_democam=1 (the AP Shortcuts screen shows the
+// demo camera row only then, with dev_keys=1).
+int AP_DemoCamDebugEnabled(void);
+
 // ap-config.txt parser hook. Consumes "debug_democam=". Returns 1 if the line
 // was ours.
 int AP_DemoCamConfigLine(const char *line);
