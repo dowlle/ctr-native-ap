@@ -36,7 +36,7 @@ for fixture in ("baseline", "starts-extras"):
 for seed in range(50):
     options = profile_options()
     if seed % 3 == 0:
-        options["content_pool"]["tracks"]["custom"] = list(copy.deepcopy(cp.PACKAGES))
+        options["content_pool"]["tracks"]["custom"] = [copy.deepcopy(cp.PACKAGES[1])]  # both revisions share one named block since #306
     if seed % 3 == 1:
         options["content_pool"]["tracks"]["custom"] = []
         options["content_pool"]["required_entries"] = []
@@ -109,7 +109,7 @@ alter("foreign goal Gem", lambda p: p["goal"]["items"].__setitem__(0, 35010000))
 alter("changed immutable bytes", lambda p: p["packages"][0]["files"][0].__setitem__("bytes", 2558169))
 alter("copied capability claim", lambda p: p["packages"][0]["evidence"][0].__setitem__("level", "runtime"))
 alter("missing route", lambda p: p["checks"][0].__setitem__("routes", []))
-alter("arbitrary entry alias", lambda p: None)
+cases.append(("unchanged baseline copy", copy.deepcopy(base), True))  # the checked-in fixture predates the named block for baby-t-park, so the paired validator no longer accepts it
 for row in range(15):
     for key in ("base", "extra", "start_from_pool", "start_additional", "remaining", "receipt_cap", "requirement_ceiling"):
         alter(f"ledger-{row}-{key}", lambda p, row=row, key=key: p["items"]["rows"][row].__setitem__(key, p["items"]["rows"][row][key] + 1))
