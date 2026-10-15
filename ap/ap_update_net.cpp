@@ -57,7 +57,7 @@ struct State
 	std::string detail;
 	int progress = -1;
 	std::string exe;          // installed executable, resolved once at startup
-	std::string stagedSha256;
+	std::vector<StagedFile> staged;
 	std::atomic<unsigned> generation{0};
 };
 
@@ -547,7 +547,8 @@ void CheckWorker(unsigned gen, std::string running, std::string declined)
 
 void DownloadWorker(unsigned gen, std::string tag, std::string running, std::string exe)
 {
-	Bytes manifest, signature, archive, executable;
+	Bytes manifest, signature, archive;
+	std::vector<InstallFile> files;
 	std::string error;
 	SetStatus(gen, AP_UPD_DOWNLOADING, "", 0);
 	if (!Fetch(AssetUrl(tag, "manifest.json"), kMaxManifest, gen, nullptr, manifest, error) ||
@@ -561,7 +562,7 @@ void DownloadWorker(unsigned gen, std::string tag, std::string running, std::str
 	const std::string sigText(signature.begin(), signature.end());
 	Result r = VerifyRelease(AP_UPDATE_PUBLIC_KEY, manifest, sigText, tag, running, kPlatform, archive);
 	if (r == OK)
-		r = ExtractExecutable(archive, kPlatform, tag, executable);
+		r = ExtractInstallSet(archive, kPlatform, tag, files);
 	// Nothing downloaded was written to disk; dropping the buffers deletes it.
 	Bytes().swap(manifest);
 	Bytes().swap(archive);
@@ -572,9 +573,9 @@ void DownloadWorker(unsigned gen, std::string tag, std::string running, std::str
 	}
 	if (Cancelled(gen))
 		return;
-	std::string sha;
+	std::vector<StagedFile> staged;
 	const FsOps fs = RealFsOps();
-	r = Stage(fs, exe, executable, sha);
+	r = Stage(fs, exe, files, staged);
 	if (r != OK)
 	{
 		SetStatus(gen, AP_UPD_FAILED_INSTALL, std::string("staging failed: ") + ResultText(r));
@@ -584,14 +585,14 @@ void DownloadWorker(unsigned gen, std::string tag, std::string running, std::str
 	std::lock_guard<std::mutex> lock(s.mutex);
 	if (gen != s.generation.load())
 	{
-		// Cancelled while staging: do not leave a staged file behind.
-		fs.removeFile(fs.ctx, StagedPath(exe));
+		// Cancelled while staging: do not leave staged files behind.
+		DiscardStaged(fs, exe, staged);
 		return;
 	}
-	s.stagedSha256 = sha;
+	s.staged = staged;
 	s.status = AP_UPD_READY;
 	s.progress = 1000;
-	s.detail = "staged " + tag;
+	s.detail = "staged " + tag + " (" + std::to_string(staged.size()) + " files)";
 }
 
 } // namespace
@@ -690,8 +691,8 @@ extern "C" void ap_update_dismiss(void)
 	++s.generation;
 	if (s.status == AP_UPD_READY && !s.exe.empty())
 	{
-		const FsOps fs = RealFsOps();
-		fs.removeFile(fs.ctx, StagedPath(s.exe));
+		DiscardStaged(RealFsOps(), s.exe, s.staged);
+		s.staged.clear();
 	}
 	s.status = AP_UPD_NONE;
 	s.progress = -1;
@@ -703,7 +704,7 @@ extern "C" int ap_update_apply(void)
 	std::lock_guard<std::mutex> lock(s.mutex);
 	if (s.status != AP_UPD_READY || s.exe.empty())
 		return 0;
-	const Result r = Apply(RealFsOps(), s.exe, s.stagedSha256, s.tag);
+	const Result r = Apply(RealFsOps(), s.exe, s.staged, s.tag);
 	if (r != OK)
 	{
 		s.status = AP_UPD_FAILED_INSTALL;

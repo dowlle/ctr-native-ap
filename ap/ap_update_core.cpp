@@ -497,7 +497,49 @@ static bool Inflate(const unsigned char *data, size_t size, int windowBits, size
 	return ret == Z_STREAM_END;
 }
 
-static Result ExtractZip(const Bytes &a, const std::string &root, const std::string &exeRel, Bytes &exeOut)
+static const char kCortexDir[] = "assets/tracks/cortex-vortex/";
+
+bool IsInstallPath(const std::string &rel, Platform platform)
+{
+	if (rel == ExecutableName(platform) || rel == "ctr.apworld")
+		return true;
+	// Files directly inside the shipped custom track folder, no deeper.
+	const size_t n = sizeof kCortexDir - 1;
+	return rel.size() > n && rel.compare(0, n, kCortexDir) == 0 && rel.find('/', n) == std::string::npos;
+}
+
+struct PendingMember
+{
+	std::string rel;
+	size_t data, comp, size;
+	uint32_t crc, method;
+};
+
+// Install set order: executable first, then the rest in archive order.
+static Result FinishInstallSet(std::vector<InstallFile> &out, Platform platform)
+{
+	size_t exeCount = 0, total = 0;
+	for (const InstallFile &f : out)
+	{
+		exeCount += f.rel == ExecutableName(platform);
+		total += f.data.size();
+		if (f.data.size() > kMaxExecutable)
+			return ERR_SIZE;
+	}
+	if (exeCount != 1)
+		return ERR_ARCHIVE;
+	if (total > kMaxUnpacked)
+		return ERR_SIZE;
+	std::stable_partition(out.begin(), out.end(),
+	                      [&](const InstallFile &f) { return f.rel == ExecutableName(platform); });
+	if (out[0].data.empty())
+		return ERR_ARCHIVE;
+	for (InstallFile &f : out)
+		f.sha256 = Sha256Hex(f.data);
+	return OK;
+}
+
+static Result ExtractZip(const Bytes &a, const std::string &root, Platform platform, std::vector<InstallFile> &out)
 {
 	const size_t n = a.size();
 	if (n < 22)
@@ -524,9 +566,7 @@ static Result ExtractZip(const Bytes &a, const std::string &root, const std::str
 
 	std::set<std::string> seen;
 	size_t unpacked = 0;
-	int exeCount = 0;
-	size_t exeData = 0, exeComp = 0, exeSize = 0;
-	uint32_t exeCrc = 0, exeMethod = 0;
+	std::vector<PendingMember> pending;
 	size_t p = cdOff;
 	for (uint32_t k = 0; k < entries; k++)
 	{
@@ -580,41 +620,38 @@ static Result ExtractZip(const Bytes &a, const std::string &root, const std::str
 		    std::memcmp(&a[local + 30], name.data(), nameLen) != 0 || Le16(&a[local + 8]) != method)
 			return ERR_ARCHIVE;
 
-		if (!isDir && LowerAscii(rel) == LowerAscii(exeRel))
+		if (!isDir && IsInstallPath(rel, platform))
 		{
-			if (rel != exeRel)
-				return ERR_ARCHIVE;
-			exeCount++;
-			exeData = (size_t)data;
-			exeComp = comp;
-			exeSize = size;
-			exeCrc = crc;
-			exeMethod = method;
+			if (size > kMaxExecutable)
+				return ERR_SIZE;
+			pending.push_back(PendingMember{rel, (size_t)data, comp, size, crc, method});
 		}
 	}
 	if (p != eocd)
 		return ERR_ARCHIVE;
-	if (exeCount != 1)
-		return ERR_ARCHIVE;
-	if (exeSize == 0 || exeSize > kMaxExecutable)
-		return ERR_SIZE;
 
-	if (exeMethod == 0)
+	for (const PendingMember &m : pending)
 	{
-		if (exeComp != exeSize)
+		InstallFile f;
+		f.rel = m.rel;
+		if (m.method == 0)
+		{
+			if (m.comp != m.size)
+				return ERR_ARCHIVE;
+			f.data.assign(a.begin() + m.data, a.begin() + m.data + m.size);
+		}
+		else
+		{
+			size_t used = 0;
+			if (!Inflate(&a[m.data], m.comp, -MAX_WBITS, kMaxExecutable, f.data, &used) || used != m.comp)
+				return ERR_ARCHIVE;
+		}
+		if (f.data.size() != m.size || (m.size && crc32(0L, f.data.data(), (uInt)f.data.size()) != m.crc) ||
+		    (!m.size && m.crc != 0))
 			return ERR_ARCHIVE;
-		exeOut.assign(a.begin() + exeData, a.begin() + exeData + exeSize);
+		out.push_back(std::move(f));
 	}
-	else
-	{
-		size_t used = 0;
-		if (!Inflate(&a[exeData], exeComp, -MAX_WBITS, kMaxExecutable, exeOut, &used) || used != exeComp)
-			return ERR_ARCHIVE;
-	}
-	if (exeOut.size() != exeSize ||
-	    crc32(0L, exeOut.data(), (uInt)exeOut.size()) != exeCrc)
-		return ERR_ARCHIVE;
-	return OK;
+	return FinishInstallSet(out, platform);
 }
 
 static bool OctalField(const unsigned char *f, size_t len, uint64_t &out)
@@ -671,7 +708,7 @@ static bool ParsePax(const unsigned char *d, size_t len, std::string &path)
 	return true;
 }
 
-static Result ExtractTarGz(const Bytes &a, const std::string &root, const std::string &exeRel, Bytes &exeOut)
+static Result ExtractTarGz(const Bytes &a, const std::string &root, Platform platform, std::vector<InstallFile> &out)
 {
 	Bytes tar;
 	size_t used = 0;
@@ -685,7 +722,6 @@ static Result ExtractTarGz(const Bytes &a, const std::string &root, const std::s
 	std::set<std::string> seen;
 	std::string paxPath;
 	bool havePax = false;
-	int exeCount = 0;
 	size_t members = 0;
 	size_t p = 0;
 	bool ended = false;
@@ -755,34 +791,45 @@ static Result ExtractTarGz(const Bytes &a, const std::string &root, const std::s
 			key.pop_back();
 		if (!seen.insert(LowerAscii(key)).second)
 			return ERR_ARCHIVE;
-		if (!isDir && LowerAscii(rel) == LowerAscii(exeRel))
+		if (!isDir && IsInstallPath(rel, platform))
 		{
-			if (rel != exeRel)
-				return ERR_ARCHIVE;
-			if (size == 0 || size > kMaxExecutable)
+			if (size > kMaxExecutable)
 				return ERR_SIZE;
-			exeCount++;
-			exeOut.assign(tar.begin() + dataOff, tar.begin() + dataOff + (size_t)size);
+			InstallFile f;
+			f.rel = rel;
+			f.data.assign(tar.begin() + dataOff, tar.begin() + dataOff + (size_t)size);
+			out.push_back(std::move(f));
 		}
 		p = dataOff + padded;
 	}
-	if (!ended || havePax || exeCount != 1)
+	if (!ended || havePax)
 		return ERR_ARCHIVE;
-	return OK;
+	return FinishInstallSet(out, platform);
 }
 
-Result ExtractExecutable(const Bytes &archive, Platform platform, const std::string &tag, Bytes &exeOut)
+Result ExtractInstallSet(const Bytes &archive, Platform platform, const std::string &tag,
+                         std::vector<InstallFile> &out)
 {
-	exeOut.clear();
+	out.clear();
 	if (!IsStableTag(tag))
 		return ERR_ARCHIVE;
 	if (archive.size() > kMaxArchive)
 		return ERR_SIZE;
 	const std::string root = "ctr-archipelago-" + tag;
-	Result r = platform == PLATFORM_WINDOWS ? ExtractZip(archive, root, ExecutableName(platform), exeOut)
-	                                        : ExtractTarGz(archive, root, ExecutableName(platform), exeOut);
+	Result r = platform == PLATFORM_WINDOWS ? ExtractZip(archive, root, platform, out)
+	                                        : ExtractTarGz(archive, root, platform, out);
 	if (r != OK)
-		exeOut.clear();
+		out.clear();
+	return r;
+}
+
+Result ExtractExecutable(const Bytes &archive, Platform platform, const std::string &tag, Bytes &exeOut)
+{
+	std::vector<InstallFile> set;
+	exeOut.clear();
+	const Result r = ExtractInstallSet(archive, platform, tag, set);
+	if (r == OK)
+		exeOut.swap(set[0].data);
 	return r;
 }
 
@@ -938,10 +985,57 @@ HttpParse ParseHttpResponse(const Bytes &raw, size_t maxBody, HttpResponse &out)
 
 // ── install ──
 
-std::string StagedPath(const std::string &exe) { return exe + ".update"; }
-std::string PartPath(const std::string &exe) { return exe + ".update.part"; }
-std::string OldPath(const std::string &exe) { return exe + ".old"; }
+std::string StagedPath(const std::string &file) { return file + ".update"; }
+std::string PartPath(const std::string &file) { return file + ".update.part"; }
+std::string OldPath(const std::string &file) { return file + ".old"; }
 std::string MarkerPath(const std::string &exe) { return exe + ".update-applied"; }
+std::string JournalPath(const std::string &exe) { return exe + ".update-files"; }
+
+static bool IsExecutableRel(const std::string &rel)
+{
+	return rel == ExecutableName(PLATFORM_WINDOWS) || rel == ExecutableName(PLATFORM_LINUX);
+}
+
+static std::string InstallDir(const std::string &exe)
+{
+	const size_t slash = exe.find_last_of("/\\");
+	return slash == std::string::npos ? std::string() : exe.substr(0, slash);
+}
+
+std::string TargetPath(const std::string &exe, const std::string &rel)
+{
+	std::string native = rel;
+#ifdef _WIN32
+	std::replace(native.begin(), native.end(), '/', '\\');
+	const char sep = '\\';
+#else
+	const char sep = '/';
+#endif
+	const std::string dir = InstallDir(exe);
+	return dir.empty() ? native : dir + sep + native;
+}
+
+// The file a release path installs to. The executable always replaces the
+// running one, whatever the player named it.
+static std::string InstallTarget(const std::string &exe, const std::string &rel)
+{
+	return IsExecutableRel(rel) ? exe : TargetPath(exe, rel);
+}
+
+// A release path read back from the journal or marker. Only install-set paths
+// are ever acted on, so a damaged file cannot point the cleanup elsewhere.
+static bool SafeLocalRel(const std::string &rel)
+{
+	if (rel.empty() || rel.size() > 512 || rel[0] == '/')
+		return false;
+	for (unsigned char c : rel)
+		if (c < 0x20 || c == 0x7F || c == '\\' || c == ':')
+			return false;
+	if (rel.find("/./") != std::string::npos || rel.find("/../") != std::string::npos ||
+	    rel.find("//") != std::string::npos)
+		return false;
+	return IsInstallPath(rel, PLATFORM_WINDOWS) || IsInstallPath(rel, PLATFORM_LINUX);
+}
 
 #ifdef _WIN32
 static std::wstring Wide(const std::string &utf8)
@@ -1059,6 +1153,29 @@ static bool RealMakeExecutable(void *, const std::string &path)
 #endif
 }
 
+static bool RealMakeDir(void *ctx, const std::string &path)
+{
+#ifdef _WIN32
+	CreateDirectoryW(Wide(path).c_str(), nullptr);
+#else
+	mkdir(path.c_str(), 0755);
+#endif
+	return RealExists(ctx, path);
+}
+
+static bool RealIsLink(void *, const std::string &path)
+{
+#ifdef _WIN32
+	const DWORD attr = GetFileAttributesW(Wide(path).c_str());
+	return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+	// readlink, not lstat: a 32-bit lstat fails with EOVERFLOW on SteamOS
+	// overlayfs (see ap_net.cpp, #170), readlink fills no stat struct.
+	char buf[8];
+	return readlink(path.c_str(), buf, sizeof buf) >= 0;
+#endif
+}
+
 FsOps RealFsOps()
 {
 	FsOps ops;
@@ -1069,81 +1186,253 @@ FsOps RealFsOps()
 	ops.removeFile = RealRemove;
 	ops.exists = RealExists;
 	ops.makeExecutable = RealMakeExecutable;
+	ops.makeDir = RealMakeDir;
+	ops.isLink = RealIsLink;
 	return ops;
 }
 
-Result Stage(const FsOps &fs, const std::string &exe, const Bytes &exeBytes, std::string &stagedSha256)
+static std::vector<std::string> ReadLines(const FsOps &fs, const std::string &path)
 {
-	stagedSha256.clear();
-	if (exeBytes.empty() || exeBytes.size() > kMaxExecutable)
-		return ERR_SIZE;
-	const std::string part = PartPath(exe), staged = StagedPath(exe);
-	if (!fs.removeFile(fs.ctx, part) || !fs.removeFile(fs.ctx, staged))
-		return ERR_IO;
-	const std::string want = Sha256Hex(exeBytes);
-	Bytes back;
-	if (!fs.writeFile(fs.ctx, part, exeBytes) || !fs.readFile(fs.ctx, part, kMaxExecutable, back) ||
-	    Sha256Hex(back) != want)
+	std::vector<std::string> lines;
+	Bytes raw;
+	if (!fs.readFile(fs.ctx, path, 64 * 1024, raw))
+		return lines;
+	std::string cur;
+	for (unsigned char c : raw)
 	{
-		fs.removeFile(fs.ctx, part);
+		if (c == '\n')
+		{
+			if (!cur.empty() && cur.back() == '\r')
+				cur.pop_back();
+			lines.push_back(cur);
+			cur.clear();
+		}
+		else
+			cur.push_back((char)c);
+	}
+	if (!cur.empty())
+		lines.push_back(cur);
+	return lines;
+}
+
+static Bytes JoinLines(const std::vector<std::string> &lines)
+{
+	Bytes out;
+	for (const std::string &l : lines)
+	{
+		out.insert(out.end(), l.begin(), l.end());
+		out.push_back('\n');
+	}
+	return out;
+}
+
+// Remove the staging files of every release path, and the journal.
+static void DropStaged(const FsOps &fs, const std::string &exe, const std::vector<std::string> &rels)
+{
+	for (const std::string &rel : rels)
+	{
+		const std::string t = InstallTarget(exe, rel);
+		fs.removeFile(fs.ctx, PartPath(t));
+		fs.removeFile(fs.ctx, StagedPath(t));
+	}
+	fs.removeFile(fs.ctx, JournalPath(exe));
+}
+
+// Create the folders of `rel` under the install directory. A folder on the way
+// that is a link or junction is refused: its files would land in a shared place.
+static bool EnsureFolders(const FsOps &fs, const std::string &exe, const std::string &rel)
+{
+	size_t slash = 0;
+	while ((slash = rel.find('/', slash)) != std::string::npos)
+	{
+		const std::string dir = TargetPath(exe, rel.substr(0, slash));
+		if (fs.exists(fs.ctx, dir))
+		{
+			if (fs.isLink(fs.ctx, dir))
+				return false;
+		}
+		else if (!fs.makeDir(fs.ctx, dir) || fs.isLink(fs.ctx, dir))
+			return false;
+		slash++;
+	}
+	return true;
+}
+
+Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallFile> &files,
+             std::vector<StagedFile> &staged)
+{
+	staged.clear();
+	std::vector<std::string> rels;
+	size_t exes = 0;
+	for (const InstallFile &f : files)
+	{
+		if (!SafeLocalRel(f.rel) || f.data.size() > kMaxExecutable)
+			return ERR_ARCHIVE;
+		exes += IsExecutableRel(f.rel);
+		rels.push_back(f.rel);
+	}
+	if (exes != 1)
+		return ERR_ARCHIVE;
+	// The journal names what is being staged, so a crash in the middle is
+	// cleaned up at the next launch.
+	DropStaged(fs, exe, rels);
+	if (!fs.writeFile(fs.ctx, JournalPath(exe), JoinLines(rels)))
+	{
+		DropStaged(fs, exe, rels);
 		return ERR_IO;
 	}
-	if (!fs.renameFile(fs.ctx, part, staged))
+	for (const InstallFile &f : files)
 	{
-		fs.removeFile(fs.ctx, part);
-		return ERR_IO;
+		const std::string target = InstallTarget(exe, f.rel);
+		const std::string part = PartPath(target);
+		Bytes back;
+		if (Sha256Hex(f.data) != f.sha256 || !EnsureFolders(fs, exe, f.rel) ||
+		    !fs.writeFile(fs.ctx, part, f.data) || !fs.readFile(fs.ctx, part, kMaxExecutable, back) ||
+		    Sha256Hex(back) != f.sha256 || !fs.renameFile(fs.ctx, part, StagedPath(target)))
+		{
+			DropStaged(fs, exe, rels);
+			staged.clear();
+			return ERR_IO;
+		}
+		staged.push_back(StagedFile{f.rel, f.sha256});
 	}
-	stagedSha256 = want;
 	return OK;
 }
 
-Result Apply(const FsOps &fs, const std::string &exe, const std::string &stagedSha256, const std::string &newTag)
+void DiscardStaged(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged)
 {
-	const std::string staged = StagedPath(exe), old = OldPath(exe), marker = MarkerPath(exe);
-	Bytes check;
-	if (!IsStableTag(newTag) || !fs.readFile(fs.ctx, staged, kMaxExecutable, check) ||
-	    Sha256Hex(check) != stagedSha256)
+	std::vector<std::string> rels;
+	for (const StagedFile &f : staged)
+		if (SafeLocalRel(f.rel))
+			rels.push_back(f.rel);
+	DropStaged(fs, exe, rels);
+}
+
+namespace
+{
+struct Step
+{
+	std::string target;
+	bool hadOld;
+};
+} // namespace
+
+// Undo swap steps newest first: the new file goes, the previous one returns.
+static bool Undo(const FsOps &fs, const std::vector<Step> &steps)
+{
+	bool ok = true;
+	for (size_t i = steps.size(); i-- > 0;)
 	{
-		fs.removeFile(fs.ctx, staged);
+		const Step &st = steps[i];
+		if (!fs.removeFile(fs.ctx, st.target))
+		{
+			ok = false;
+			continue;
+		}
+		if (st.hadOld && !fs.renameFile(fs.ctx, OldPath(st.target), st.target))
+			ok = false;
+	}
+	return ok;
+}
+
+Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged,
+             const std::string &newTag)
+{
+	std::vector<std::string> rels;
+	for (const StagedFile &f : staged)
+		rels.push_back(f.rel);
+	size_t exes = 0;
+	for (const StagedFile &f : staged)
+		exes += IsExecutableRel(f.rel) && SafeLocalRel(f.rel);
+	bool good = IsStableTag(newTag) && exes == 1;
+	for (const StagedFile &f : staged)
+	{
+		Bytes check;
+		if (!good || !SafeLocalRel(f.rel) ||
+		    !fs.readFile(fs.ctx, StagedPath(InstallTarget(exe, f.rel)), kMaxExecutable, check) ||
+		    Sha256Hex(check) != f.sha256)
+		{
+			good = false;
+			break;
+		}
+	}
+	if (!good)
+	{
+		DropStaged(fs, exe, rels);
 		return ERR_STAGED_CHANGED;
 	}
-	check.clear();
 	if (!fs.exists(fs.ctx, exe))
 		return ERR_IO;
-	// An older rollback copy belongs to a finished update; this one replaces it.
-	if (!fs.removeFile(fs.ctx, old) || !fs.removeFile(fs.ctx, marker))
-		return ERR_IO;
-	if (!fs.renameFile(fs.ctx, exe, old))
-		return ERR_IO;
-	if (!fs.renameFile(fs.ctx, staged, exe))
+
+	// Everything else first, the executable last.
+	std::vector<std::string> order;
+	for (const StagedFile &f : staged)
+		if (!IsExecutableRel(f.rel))
+			order.push_back(f.rel);
+	for (const StagedFile &f : staged)
+		if (IsExecutableRel(f.rel))
+			order.push_back(f.rel);
+
+	std::vector<Step> steps;
+	std::vector<std::string> kept; // release paths that now have a .old copy
+	fs.removeFile(fs.ctx, MarkerPath(exe));
+	for (const std::string &rel : order)
 	{
-		// Put the running build back where the launcher expects it.
-		if (!fs.renameFile(fs.ctx, old, exe))
-			return ERR_IO; // both failed: .old remains as the manual rollback copy
-		return ERR_IO;
+		const std::string target = InstallTarget(exe, rel);
+		const std::string old = OldPath(target);
+		// An older rollback copy belongs to a finished update; this one replaces it.
+		bool ok = fs.removeFile(fs.ctx, old);
+		const bool hadOld = ok && fs.exists(fs.ctx, target);
+		if (ok && hadOld)
+			ok = fs.renameFile(fs.ctx, target, old);
+		if (ok && !fs.renameFile(fs.ctx, StagedPath(target), target))
+		{
+			if (hadOld && !fs.renameFile(fs.ctx, old, target))
+			{
+				// Neither name works: the previous file stays as .old, the
+				// manual rollback copy. Undo the rest and report.
+				Undo(fs, steps);
+				DropStaged(fs, exe, rels);
+				return ERR_IO;
+			}
+			ok = false;
+		}
+		if (!ok)
+		{
+			Undo(fs, steps);
+			DropStaged(fs, exe, rels);
+			return ERR_IO;
+		}
+		steps.push_back(Step{target, hadOld});
+		if (hadOld)
+			kept.push_back(rel);
 	}
 	fs.makeExecutable(fs.ctx, exe);
-	// The marker is advisory (it only decides when .old may go); a failure to
-	// write it leaves .old in place, which is the safe direction.
-	const Bytes text(newTag.begin(), newTag.end());
-	fs.writeFile(fs.ctx, marker, text);
+	fs.removeFile(fs.ctx, JournalPath(exe));
+	// The marker is advisory (it only decides when the .old copies may go); a
+	// failure to write it leaves them in place, which is the safe direction.
+	std::vector<std::string> marker(1, newTag);
+	marker.insert(marker.end(), kept.begin(), kept.end());
+	fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker));
 	return OK;
 }
 
 StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::string &runningTag)
 {
-	fs.removeFile(fs.ctx, PartPath(exe));
-	fs.removeFile(fs.ctx, StagedPath(exe));
+	std::vector<std::string> rels;
+	for (const std::string &rel : ReadLines(fs, JournalPath(exe)))
+		if (SafeLocalRel(rel))
+			rels.push_back(rel);
+	rels.push_back(ExecutableName(PLATFORM_WINDOWS)); // the executable maps to `exe` either way
+	DropStaged(fs, exe, rels);
+
 	const std::string marker = MarkerPath(exe);
 	if (!fs.exists(fs.ctx, marker))
 		return STARTUP_CLEAN;
-	Bytes text;
-	if (!fs.readFile(fs.ctx, marker, 64, text))
-		return STARTUP_CLEAN;
-	const std::string tag(text.begin(), text.end());
-	if (tag == runningTag)
+	const std::vector<std::string> lines = ReadLines(fs, marker);
+	if (!lines.empty() && lines[0] == runningTag)
 		return STARTUP_UPDATED;
-	// Another version runs: the player restored .old by hand. Keep whatever
+	// Another version runs: the player restored files by hand. Keep whatever
 	// files are there and forget the marker.
 	fs.removeFile(fs.ctx, marker);
 	return STARTUP_ROLLED_BACK;
@@ -1151,7 +1440,10 @@ StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::st
 
 void ConfirmStarted(const FsOps &fs, const std::string &exe)
 {
-	fs.removeFile(fs.ctx, OldPath(exe));
+	const std::vector<std::string> lines = ReadLines(fs, MarkerPath(exe));
+	for (size_t i = 1; i < lines.size(); i++)
+		if (SafeLocalRel(lines[i]))
+			fs.removeFile(fs.ctx, OldPath(InstallTarget(exe, lines[i])));
 	fs.removeFile(fs.ctx, MarkerPath(exe));
 }
 

@@ -26,9 +26,16 @@
 //   * archive validation: traversal, absolute, backslash and foreign-root
 //     paths, links, duplicate executables, pax size overrides, CRC damage;
 //     a valid ZIP and tar.gz yield exactly the executable bytes
-//   * rollback: staging, swap, failed swap restores the installed build,
-//     a staged file changed after verification is refused, stale staged files
-//     are removed at launch, .old is kept until the new build confirms start
+//   * install set: the executable, ctr.apworld and the files directly in
+//     assets/tracks/cortex-vortex/; never config.ini, ap-config.txt, other
+//     assets, memory cards or docs
+//   * multi-file rollback: a failure at any swap step (moving a file aside or
+//     moving its new copy in) restores every file; an undo that itself fails
+//     leaves that file's .old copy; short or corrupted staging writes, a
+//     changed or missing staged file and a hash/bytes mismatch move nothing;
+//     a linked assets folder is refused; journal and marker cleanup never
+//     reaches files outside the install list; .old copies stay until the new
+//     build confirms its start
 //   * the redirect and host allowlist
 
 #include "ap_update_core.h"
@@ -757,13 +764,65 @@ static void TestArchives()
 	}
 }
 
+// ── install set ──
+
+static void TestInstallSet()
+{
+	for (int pi = 0; pi < 2; pi++)
+	{
+		const Platform p = (Platform)pi;
+		std::vector<Member> m = GoodMembers(p);
+		m.push_back(File(kRoot + "assets/tracks/cortex-vortex/CVortex Arcade All.vrm", "vrm"));
+		m.push_back(File(kRoot + "assets/tracks/cortex-vortex/deeper/x.lev", "no"));
+		m.push_back(File(kRoot + "assets/ctr-u.bin", "disc"));
+		m.push_back(File(kRoot + "config.ini", "cfg"));
+		m.push_back(File(kRoot + "ap-config.txt", "cfg"));
+		m.push_back(File(kRoot + "memcards/card.mcd", "card"));
+		std::vector<InstallFile> set;
+		CHECK_EQ(ExtractInstallSet(Archive(p, m), p, kTag, set), OK);
+		CHECK_EQ(set.size(), 4);
+		if (set.size() == 4)
+		{
+			CHECK(set[0].rel == ExecutableName(p) && set[0].data == B(kExeBytes));
+			CHECK(set[1].rel == "ctr.apworld" && set[1].data == B("world"));
+			CHECK(set[2].rel == "assets/tracks/cortex-vortex/CVortex Arcade All.lev");
+			CHECK(set[3].rel == "assets/tracks/cortex-vortex/CVortex Arcade All.vrm");
+			for (const InstallFile &f : set)
+				CHECK(f.sha256 == Sha256Hex(f.data));
+		}
+		CHECK(IsInstallPath(ExecutableName(p), p));
+		CHECK(!IsInstallPath(ExecutableName(p == PLATFORM_WINDOWS ? PLATFORM_LINUX : PLATFORM_WINDOWS), p));
+		CHECK(!IsInstallPath("config.ini", p) && !IsInstallPath("ap-config.txt", p) &&
+		      !IsInstallPath("assets/ctr-u.bin", p) && !IsInstallPath("assets/tracks/cortex-vortex/", p) &&
+		      !IsInstallPath("assets/tracks/cortex-vortex/a/b", p) && !IsInstallPath("LICENSE", p) &&
+		      !IsInstallPath("Assets/tracks/cortex-vortex/x", p));
+		// Two install files that differ only in case are refused.
+		m = GoodMembers(p);
+		m.push_back(File(kRoot + "CTR.apworld", "world2"));
+		CHECK_EQ(ExtractInstallSet(Archive(p, m), p, kTag, set), ERR_ARCHIVE);
+		CHECK(set.empty());
+	}
+	// Real v0.2.4 layout: one root folder, the two Cortex Vortex files sit in
+	// assets/tracks/cortex-vortex/ (listing taken from the published archives).
+	const char *real024[] = {"LICENSE", "SETUP.md", "THIRD_PARTY_NOTICES.md", "ap-config.example.txt",
+	                         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
+	                         "assets/tracks/cortex-vortex/CVortex Arcade All.vrm", "ctr.apworld",
+	                         "ctr_native_ap.exe", "extract_assets.py", "support-bundle.bat",
+	                         "support-bundle.ps1", "versions.txt"};
+	int installed = 0;
+	for (const char *rel : real024)
+		installed += IsInstallPath(rel, PLATFORM_WINDOWS);
+	CHECK_EQ(installed, 4);
+}
+
 // ── install with a fault-injecting file table ──
 
 struct Faults
 {
-	std::string failRenameTo;   // rename whose target equals this fails
-	std::string failWriteOf;    // write to this path fails (after writing half)
-	int renames;
+	std::string failRenameTo;                // a rename whose target equals this fails
+	std::vector<std::string> failRenameFrom; // ... or whose source is one of these
+	std::string failWriteOf;    // a write to this path fails after writing half
+	std::string corruptWriteOf; // a write to this path stores flipped bytes
 };
 
 static Faults g_faults;
@@ -780,13 +839,19 @@ static bool FWrite(void *ctx, const std::string &path, const Bytes &d)
 		}
 		return false;
 	}
+	if (path == g_faults.corruptWriteOf && !d.empty())
+	{
+		Bytes bad = d;
+		bad[0] ^= 1;
+		return RealFsOps().writeFile(ctx, path, bad);
+	}
 	return RealFsOps().writeFile(ctx, path, d);
 }
 
 static bool FRename(void *ctx, const std::string &from, const std::string &to)
 {
-	g_faults.renames++;
-	if (to == g_faults.failRenameTo)
+	if (to == g_faults.failRenameTo ||
+	    std::find(g_faults.failRenameFrom.begin(), g_faults.failRenameFrom.end(), from) != g_faults.failRenameFrom.end())
 		return false;
 	return RealFsOps().renameFile(ctx, from, to);
 }
@@ -812,130 +877,298 @@ static void WriteText(const std::string &path, const std::string &text)
 	RealFsOps().writeFile(nullptr, path, B(text));
 }
 
+static InstallFile IF(const std::string &rel, const std::string &data)
+{
+	InstallFile f;
+	f.rel = rel;
+	f.data = B(data);
+	f.sha256 = Sha256Hex(f.data);
+	return f;
+}
+
+struct Install
+{
+	std::string dir, exe, apworld, lev, vrm, config, apconfig, card, disc;
+};
+
+static const char kLev[] = "assets/tracks/cortex-vortex/CVortex Arcade All.lev";
+static const char kVrm[] = "assets/tracks/cortex-vortex/CVortex Arcade All.vrm";
+
+// An installed v0.3.0 client: exe, apworld, one Cortex Vortex file (the .vrm
+// is new in the update), plus the files the updater must never touch.
+static Install MakeInstall(const std::string &dir)
+{
+	Install in;
+	in.dir = dir;
+	in.exe = dir + "/ctr_native_ap";
+	in.apworld = dir + "/ctr.apworld";
+	in.lev = dir + "/" + kLev;
+	in.vrm = dir + "/" + kVrm;
+	in.config = dir + "/config.ini";
+	in.apconfig = dir + "/ap-config.txt";
+	in.card = dir + "/memcards/card.mcd";
+	in.disc = dir + "/assets/ctr-u.bin";
+	mkdir((dir + "/assets").c_str(), 0755);
+	mkdir((dir + "/assets/tracks").c_str(), 0755);
+	mkdir((dir + "/assets/tracks/cortex-vortex").c_str(), 0755);
+	mkdir((dir + "/memcards").c_str(), 0755);
+	WriteText(in.exe, "OLD EXE");
+	WriteText(in.apworld, "OLD WORLD");
+	WriteText(in.lev, "OLD LEV");
+	WriteText(in.config, "CONFIG");
+	WriteText(in.apconfig, "APCONFIG");
+	WriteText(in.card, "CARD");
+	WriteText(in.disc, "DISC");
+	return in;
+}
+
+static std::vector<InstallFile> NewSet()
+{
+	return {IF("ctr_native_ap", "NEW EXE"), IF("ctr.apworld", "NEW WORLD"), IF(kLev, "NEW LEV"), IF(kVrm, "NEW VRM")};
+}
+
+static bool Untouched(const Install &in)
+{
+	return ReadText(in.config) == "CONFIG" && ReadText(in.apconfig) == "APCONFIG" && ReadText(in.card) == "CARD" &&
+	       ReadText(in.disc) == "DISC";
+}
+
+static bool OldState(const Install &in)
+{
+	return ReadText(in.exe) == "OLD EXE" && ReadText(in.apworld) == "OLD WORLD" && ReadText(in.lev) == "OLD LEV" &&
+	       !RealFsOps().exists(nullptr, in.vrm) && Untouched(in);
+}
+
+// No staging, journal or marker files left anywhere in the install.
+static bool NoLeftovers(const Install &in, bool allowOld)
+{
+	const FsOps fs = RealFsOps();
+	for (const std::string &f : {in.exe, in.apworld, in.lev, in.vrm})
+	{
+		if (fs.exists(nullptr, StagedPath(f)) || fs.exists(nullptr, PartPath(f)))
+			return false;
+		if (!allowOld && fs.exists(nullptr, OldPath(f)))
+			return false;
+	}
+	return !fs.exists(nullptr, JournalPath(in.exe));
+}
+
+static void Clean(const Install &in)
+{
+	const FsOps fs = RealFsOps();
+	for (const std::string &f : {in.exe, in.apworld, in.lev, in.vrm})
+		for (const std::string &g : {f, StagedPath(f), PartPath(f), OldPath(f)})
+			fs.removeFile(nullptr, g);
+	for (const std::string &f : {in.config, in.apconfig, in.card, in.disc, MarkerPath(in.exe), JournalPath(in.exe)})
+		fs.removeFile(nullptr, f);
+}
+
 static void TestInstall()
 {
 	char tmpl[] = "/tmp/ctr-update-XXXXXX";
-	const char *dir = mkdtemp(tmpl);
-	CHECK(dir != nullptr);
-	if (!dir)
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
 		return;
-	const std::string exe = std::string(dir) + "/ctr_native_ap";
-	const std::string config = std::string(dir) + "/config.ini";
+	const std::string dir = dirp;
 	const FsOps real = RealFsOps();
 	const FsOps faulty = FaultOps();
-	const Bytes newExe = B("NEW BUILD v0.3.1");
-	std::string sha;
+	std::vector<StagedFile> staged;
 
 	// Happy path: stage, apply, start, confirm.
-	WriteText(exe, "OLD BUILD v0.3.0");
-	WriteText(config, "[Archipelago]\nupdate_check=true\n");
+	Install in = MakeInstall(dir);
 	g_faults = Faults();
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	CHECK(ReadText(StagedPath(exe)) == "NEW BUILD v0.3.1");
-	CHECK(!real.exists(nullptr, PartPath(exe)));
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0");
-	CHECK_EQ(Apply(real, exe, sha, "v0.3.1"), OK);
-	CHECK(ReadText(exe) == "NEW BUILD v0.3.1");
-	CHECK(ReadText(OldPath(exe)) == "OLD BUILD v0.3.0");
-	CHECK(!real.exists(nullptr, StagedPath(exe)));
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(staged.size(), 4);
+	CHECK(ReadText(StagedPath(in.vrm)) == "NEW VRM" && ReadText(in.lev) == "OLD LEV");
+	CHECK(real.exists(nullptr, JournalPath(in.exe)));
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(ReadText(in.exe) == "NEW EXE" && ReadText(in.apworld) == "NEW WORLD" && ReadText(in.lev) == "NEW LEV" &&
+	      ReadText(in.vrm) == "NEW VRM");
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE" && ReadText(OldPath(in.apworld)) == "OLD WORLD" &&
+	      ReadText(OldPath(in.lev)) == "OLD LEV" && !real.exists(nullptr, OldPath(in.vrm)));
+	CHECK(Untouched(in) && NoLeftovers(in, true));
 	struct stat st;
-	CHECK(stat(exe.c_str(), &st) == 0 && (st.st_mode & 0111) != 0);
-	CHECK(ReadText(config) == "[Archipelago]\nupdate_check=true\n");
-	// The new build starts: .old is kept until it confirms.
-	CHECK_EQ(StartupCheck(real, exe, "v0.3.1"), STARTUP_UPDATED);
-	CHECK(real.exists(nullptr, OldPath(exe)));
-	ConfirmStarted(real, exe);
-	CHECK(!real.exists(nullptr, OldPath(exe)));
-	CHECK(!real.exists(nullptr, MarkerPath(exe)));
-	CHECK_EQ(StartupCheck(real, exe, "v0.3.1"), STARTUP_CLEAN);
+	CHECK(stat(in.exe.c_str(), &st) == 0 && (st.st_mode & 0111) != 0);
+	CHECK(ReadText(MarkerPath(in.exe)) == "v0.3.1\nctr.apworld\n" + std::string(kLev) + "\nctr_native_ap\n");
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_UPDATED);
+	CHECK(real.exists(nullptr, OldPath(in.lev)));
+	ConfirmStarted(real, in.exe);
+	CHECK(NoLeftovers(in, false) && !real.exists(nullptr, MarkerPath(in.exe)));
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_CLEAN);
+	Clean(in);
+
+	// The executable maps to the running file whatever its name.
+	{
+		const std::string renamed = dir + "/CTR-AP";
+		WriteText(renamed, "OLD EXE");
+		CHECK_EQ(Stage(real, renamed, {IF("ctr_native_ap", "NEW EXE")}, staged), OK);
+		CHECK_EQ(Apply(real, renamed, staged, "v0.3.1"), OK);
+		CHECK(ReadText(renamed) == "NEW EXE" && ReadText(OldPath(renamed)) == "OLD EXE");
+		CHECK(!real.exists(nullptr, dir + "/ctr_native_ap"));
+		ConfirmStarted(real, renamed);
+		CHECK(!real.exists(nullptr, OldPath(renamed)));
+		real.removeFile(nullptr, renamed);
+	}
+
+	// Partial multi-file failure at every swap step: each failure leaves all
+	// files exactly as before, and nothing staged behind.
+	{
+		Install probe = MakeInstall(dir);
+		const std::vector<std::string> targets = {probe.apworld, probe.lev, probe.vrm, probe.exe};
+		Clean(probe);
+		for (const std::string &t : targets)
+		{
+			for (int mode = 0; mode < 2; mode++)
+			{
+				if (mode == 1 && t == probe.vrm)
+					continue; // a new file has no installed copy to move aside
+				in = MakeInstall(dir);
+				CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+				g_faults = Faults();
+				if (mode == 0)
+					g_faults.failRenameFrom = {StagedPath(t)}; // staged -> target fails
+				else
+					g_faults.failRenameTo = OldPath(t);   // target -> .old fails
+				CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
+				CHECK(OldState(in));
+				CHECK(NoLeftovers(in, false));
+				CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+				Clean(in);
+			}
+		}
+	}
+
+	// Undo itself failing for one file: that file's previous copy stays as
+	// .old (the manual rollback copy) and the others are restored.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	g_faults = Faults();
+	// The last step fails, and the apworld cannot come back.
+	g_faults.failRenameFrom = {StagedPath(in.exe), OldPath(in.apworld)};
+	CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
+	CHECK(ReadText(in.exe) == "OLD EXE" && ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
+	CHECK(ReadText(OldPath(in.apworld)) == "OLD WORLD" && !real.exists(nullptr, in.apworld));
+	CHECK(Untouched(in));
+	Clean(in);
+
+	// Both names failing for the executable leaves its .old as the manual copy.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	g_faults = Faults();
+	g_faults.failRenameFrom = {StagedPath(in.exe), OldPath(in.exe)};
+	CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	CHECK(ReadText(in.apworld) == "OLD WORLD" && ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
+	Clean(in);
+
+	// One staged file changed after verification: nothing moves, all staged go.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	WriteText(StagedPath(in.lev), "TAMPERED");
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), ERR_STAGED_CHANGED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
+	// A missing staged file is the same.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	real.removeFile(nullptr, StagedPath(in.vrm));
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), ERR_STAGED_CHANGED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
+	// A non-stable tag is refused before anything moves.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "../x"), ERR_STAGED_CHANGED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
+
+	// Staging failures part way: a short write, and a write that reads back
+	// different bytes. Everything staged so far is removed.
+	g_faults = Faults();
+	g_faults.failWriteOf = PartPath(in.lev);
+	CHECK_EQ(Stage(faulty, in.exe, NewSet(), staged), ERR_IO);
+	CHECK(staged.empty() && OldState(in) && NoLeftovers(in, false));
+	g_faults = Faults();
+	g_faults.corruptWriteOf = PartPath(in.vrm);
+	CHECK_EQ(Stage(faulty, in.exe, NewSet(), staged), ERR_IO);
+	CHECK(staged.empty() && OldState(in) && NoLeftovers(in, false));
+	// A set whose hash does not match its bytes is refused.
+	{
+		std::vector<InstallFile> bad = NewSet();
+		bad[2].data = B("OTHER");
+		CHECK_EQ(Stage(real, in.exe, bad, staged), ERR_IO);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+	}
+	// Sets outside the install list, or without exactly one executable.
+	CHECK_EQ(Stage(real, in.exe, {IF("ctr_native_ap", "x"), IF("config.ini", "x")}, staged), ERR_ARCHIVE);
+	CHECK_EQ(Stage(real, in.exe, {IF("ctr_native_ap", "x"), IF("../ctr.apworld", "x")}, staged), ERR_ARCHIVE);
+	CHECK_EQ(Stage(real, in.exe, {IF("ctr.apworld", "x")}, staged), ERR_ARCHIVE);
+	CHECK(OldState(in));
+
+	// An earlier session's staged files, named in the journal, are removed at
+	// launch; the journal cannot point the cleanup outside the install list.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	WriteText(PartPath(in.apworld), "LEFT");
+	WriteText(dir + "/config.ini.update", "NOT OURS");
+	WriteText(JournalPath(in.exe), "ctr_native_ap\nctr.apworld\n" + std::string(kLev) + "\n" + kVrm + "\nconfig.ini\n");
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_CLEAN);
+	CHECK(NoLeftovers(in, false) && OldState(in));
+	CHECK(ReadText(dir + "/config.ini.update") == "NOT OURS");
+	real.removeFile(nullptr, dir + "/config.ini.update");
+
+	// Missing Cortex Vortex folder: created. A folder that is a link: refused,
+	// so a shared assets folder is never written through.
+	Clean(in);
+	in = MakeInstall(dir);
+	real.removeFile(nullptr, in.lev);
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(ReadText(in.lev) == "NEW LEV" && ReadText(in.vrm) == "NEW VRM" && Untouched(in));
+	ConfirmStarted(real, in.exe);
+	Clean(in);
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	{
+		char shared[] = "/tmp/ctr-update-shared-XXXXXX";
+		const char *sh = mkdtemp(shared);
+		CHECK(sh != nullptr);
+		in = MakeInstall(dir);
+		real.removeFile(nullptr, in.lev);
+		rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+		CHECK(symlink(sh, (dir + "/assets/tracks/cortex-vortex").c_str()) == 0);
+		CHECK_EQ(Stage(real, in.exe, NewSet(), staged), ERR_IO);
+		CHECK(ReadText(in.exe) == "OLD EXE" && ReadText(in.apworld) == "OLD WORLD" && NoLeftovers(in, false));
+		CHECK(!real.exists(nullptr, std::string(sh) + "/CVortex Arcade All.lev.update.part"));
+		unlink((dir + "/assets/tracks/cortex-vortex").c_str());
+		rmdir(sh);
+		Clean(in);
+	}
 
 	// Manual rollback: the player renamed .old back; the marker is dropped and
 	// no file is touched.
-	WriteText(exe, "OLD BUILD v0.3.0");
-	WriteText(OldPath(exe), "NEW BUILD v0.3.1");
-	WriteText(MarkerPath(exe), "v0.3.1");
-	CHECK_EQ(StartupCheck(real, exe, "v0.3.0"), STARTUP_ROLLED_BACK);
-	CHECK(!real.exists(nullptr, MarkerPath(exe)));
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0" && ReadText(OldPath(exe)) == "NEW BUILD v0.3.1");
-	real.removeFile(nullptr, OldPath(exe));
-
-	// Failed swap: the staged file cannot move into place; the installed build
-	// is renamed back and still runs.
-	WriteText(exe, "OLD BUILD v0.3.0");
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	g_faults = Faults();
-	g_faults.failRenameTo = exe; // fails both staged->exe and the restore? no: see below
-	// Only the first rename to `exe` (staged -> exe) fails; the restore uses
-	// another call that we let through by clearing the fault on the second try.
-	{
-		struct OneShot
-		{
-			static bool Rename(void *ctx, const std::string &from, const std::string &to)
-			{
-				if (to == g_faults.failRenameTo && from != OldPath(g_faults.failRenameTo))
-					return false;
-				return RealFsOps().renameFile(ctx, from, to);
-			}
-		};
-		FsOps ops = RealFsOps();
-		ops.renameFile = OneShot::Rename;
-		CHECK_EQ(Apply(ops, exe, sha, "v0.3.1"), ERR_IO);
-	}
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0");
-	CHECK(!real.exists(nullptr, OldPath(exe)));
-	CHECK(!real.exists(nullptr, MarkerPath(exe)));
-	// Both renames failing leaves .old as the manual rollback copy.
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	g_faults = Faults();
-	g_faults.failRenameTo = exe;
-	CHECK_EQ(Apply(faulty, exe, sha, "v0.3.1"), ERR_IO);
-	CHECK(!real.exists(nullptr, exe));
-	CHECK(ReadText(OldPath(exe)) == "OLD BUILD v0.3.0");
-	real.renameFile(nullptr, OldPath(exe), exe);
-	// Renaming the running build away fails: nothing moved.
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	g_faults = Faults();
-	g_faults.failRenameTo = OldPath(exe);
-	CHECK_EQ(Apply(faulty, exe, sha, "v0.3.1"), ERR_IO);
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0");
-
-	// The staged file changed after verification: refused and removed.
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	WriteText(StagedPath(exe), "TAMPERED");
-	CHECK_EQ(Apply(real, exe, sha, "v0.3.1"), ERR_STAGED_CHANGED);
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0");
-	CHECK(!real.exists(nullptr, StagedPath(exe)));
-	// Missing staged file.
-	CHECK_EQ(Apply(real, exe, sha, "v0.3.1"), ERR_STAGED_CHANGED);
-
-	// Partial staging write: nothing staged, no part left, installed untouched.
-	g_faults = Faults();
-	g_faults.failWriteOf = PartPath(exe);
-	CHECK_EQ(Stage(faulty, exe, newExe, sha), ERR_IO);
-	CHECK(sha.empty());
-	CHECK(!real.exists(nullptr, PartPath(exe)) && !real.exists(nullptr, StagedPath(exe)));
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.0");
-
-	// An earlier session's staged and partial files are never trusted.
-	WriteText(StagedPath(exe), "LEFT OVER");
-	WriteText(PartPath(exe), "LEFT");
-	CHECK_EQ(StartupCheck(real, exe, "v0.3.0"), STARTUP_CLEAN);
-	CHECK(!real.exists(nullptr, StagedPath(exe)) && !real.exists(nullptr, PartPath(exe)));
+	in = MakeInstall(dir);
+	WriteText(OldPath(in.exe), "NEW EXE");
+	WriteText(MarkerPath(in.exe), "v0.3.1\nctr_native_ap\n");
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_ROLLED_BACK);
+	CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	CHECK(ReadText(in.exe) == "OLD EXE" && ReadText(OldPath(in.exe)) == "NEW EXE");
+	// A damaged marker cannot point ConfirmStarted at other files.
+	WriteText(OldPath(in.config), "KEEP");
+	WriteText(MarkerPath(in.exe), "v0.3.0\nconfig.ini\n../x\n");
+	ConfirmStarted(real, in.exe);
+	CHECK(ReadText(OldPath(in.config)) == "KEEP");
+	real.removeFile(nullptr, OldPath(in.config));
 
 	// A second update replaces the previous rollback copy, keeping one version.
-	WriteText(OldPath(exe), "ANCIENT");
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	CHECK_EQ(Apply(real, exe, sha, "v0.3.1"), OK);
-	CHECK(ReadText(OldPath(exe)) == "OLD BUILD v0.3.0");
-	// A non-stable tag is refused before anything moves.
-	WriteText(exe, "OLD BUILD v0.3.1");
-	CHECK_EQ(Stage(real, exe, newExe, sha), OK);
-	CHECK_EQ(Apply(real, exe, sha, "../x"), ERR_STAGED_CHANGED);
-	CHECK(ReadText(exe) == "OLD BUILD v0.3.1");
+	WriteText(OldPath(in.exe), "ANCIENT");
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	Clean(in);
 
-	for (const std::string &f : {exe, config, OldPath(exe), StagedPath(exe), PartPath(exe), MarkerPath(exe)})
-		real.removeFile(nullptr, f);
-	rmdir(dir);
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
 }
 
 static void TestAllowlist()
@@ -970,6 +1203,7 @@ int main()
 	TestOfferVisibility();
 	TestManifestStrictness();
 	TestArchives();
+	TestInstallSet();
 	TestInstall();
 	TestAllowlist();
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);

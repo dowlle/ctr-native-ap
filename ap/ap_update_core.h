@@ -20,14 +20,23 @@
 //      plain vX.Y.Z strictly newer than the running build (no downgrade, no
 //      replay of an older signed release, no prerelease);
 //   4. the platform archive's SHA-256 equals the signed value.
-// The archive is then validated member by member before one file, the client
-// executable, is taken out of it. Nothing else in the archive is installed:
-// assets/, config.ini, ap-config.txt, memory cards and AP state are never
-// touched.
+// The archive is then validated member by member, and the install set is
+// taken out of it: the client executable, ctr.apworld and the files under
+// assets/tracks/cortex-vortex/ (the custom track the release ships, whose
+// hashes the client checks at load, so it must move with the executable).
+// Nothing else in the archive is installed: config.ini, ap-config.txt, the
+// rest of assets/, memory cards and AP state are never touched.
+//
+// The signed manifest covers the two archives, not single files. Each
+// installed file is therefore trusted through the archive hash: its SHA-256
+// is taken from the verified archive bytes at extraction, and every staged
+// file is read back and checked against that value before it is written into
+// place, and again just before the swap.
 //
 // The install step (Stage / Apply / StartupCheck / ConfirmStarted) goes through
 // an injectable file-operation table so the harness can fail any step and check
-// that the installed executable survives.
+// that every installed file survives. All files move as one unit: any failure
+// puts every file already moved back.
 
 #include <cstddef>
 #include <cstdint>
@@ -138,12 +147,24 @@ Result VerifyRelease(const std::string &publicKeyBase64, const Bytes &manifest,
                      const std::string &runningVersion, Platform platform, const Bytes &archive);
 
 // ── Archive ──
-// Validate every member of the platform archive and return the client
-// executable's bytes. Members must all live under "ctr-archipelago-<tag>/",
-// be regular files or directories, have no "..", absolute, drive or
-// backslash paths, no duplicates, and stay inside the size limits. ZIP:
-// stored or deflated, no encryption, CRC-32 checked. tar.gz: ustar with pax
-// path records; links, devices and sparse files are refused.
+// Members must all live under "ctr-archipelago-<tag>/", be regular files or
+// directories, have no "..", absolute, drive or backslash paths, no
+// duplicates (also by case), and stay inside the size limits. ZIP: stored or
+// deflated, no encryption, CRC-32 checked. tar.gz: ustar with pax path
+// records; links, devices and sparse files are refused.
+struct InstallFile
+{
+	std::string rel;    // path inside the release folder, '/' separated
+	Bytes data;
+	std::string sha256; // of `data`, taken from the verified archive
+};
+// 1 when a release-relative path is part of the install set.
+bool IsInstallPath(const std::string &rel, Platform platform);
+// Validate every member and return the install set, executable first. The
+// executable must be present exactly once.
+Result ExtractInstallSet(const Bytes &archive, Platform platform, const std::string &tag,
+                         std::vector<InstallFile> &out);
+// The executable alone (harness convenience).
 Result ExtractExecutable(const Bytes &archive, Platform platform, const std::string &tag,
                          Bytes &exeOut);
 
@@ -191,42 +212,63 @@ struct FsOps
 	void *ctx;
 	bool (*writeFile)(void *ctx, const std::string &path, const Bytes &data);
 	bool (*readFile)(void *ctx, const std::string &path, size_t maxBytes, Bytes &out);
-	bool (*renameFile)(void *ctx, const std::string &from, const std::string &to);
+	bool (*renameFile)(void *ctx, const std::string &from, const std::string &to); // never replaces
 	bool (*removeFile)(void *ctx, const std::string &path); // true when gone afterwards
 	bool (*exists)(void *ctx, const std::string &path);
 	bool (*makeExecutable)(void *ctx, const std::string &path);
+	bool (*makeDir)(void *ctx, const std::string &path);    // true when it exists afterwards
+	bool (*isLink)(void *ctx, const std::string &path);     // symlink, junction or other reparse point
 };
 // Real file operations (UTF-8 paths; wide APIs on Windows).
 FsOps RealFsOps();
 
-std::string StagedPath(const std::string &exe);   // <exe>.update
-std::string PartPath(const std::string &exe);     // <exe>.update.part
-std::string OldPath(const std::string &exe);      // <exe>.old
-std::string MarkerPath(const std::string &exe);   // <exe>.update-applied
+// Per installed file F: F.update.part while writing, F.update when staged,
+// F.old while the previous version is kept.
+std::string StagedPath(const std::string &file);
+std::string PartPath(const std::string &file);
+std::string OldPath(const std::string &file);
+// Beside the executable: the marker after a swap (tag, then the release paths
+// that have a .old copy) and the staging journal (release paths being staged).
+std::string MarkerPath(const std::string &exe);
+std::string JournalPath(const std::string &exe);
+// Install directory of `exe` joined with a release path.
+std::string TargetPath(const std::string &exe, const std::string &rel);
 
-// Write the executable beside the installed one as <exe>.update, through a
-// .part file that is read back and hashed before the rename. Removes the
-// part file on any failure.
-Result Stage(const FsOps &fs, const std::string &exe, const Bytes &exeBytes, std::string &stagedSha256);
+struct StagedFile
+{
+	std::string rel;
+	std::string sha256;
+};
 
-// Swap the staged executable in. Re-hashes the staged file first and refuses
-// it if it changed. Renames the installed executable to <exe>.old (replacing
-// an older rollback copy), renames the staged file into place and marks it
-// executable. If the second rename fails the old executable is renamed back.
-// Writes the marker naming the new version on success.
-Result Apply(const FsOps &fs, const std::string &exe, const std::string &stagedSha256,
+// Write every file of the set beside its installed copy as F.update, each
+// through a .part file that is read back and hashed against the archive
+// value. Missing folders inside the install set are created; a folder on the
+// way that is a link or junction is refused, so a shared folder is never
+// written. Any failure removes everything staged so far.
+Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallFile> &files,
+             std::vector<StagedFile> &staged);
+
+// Remove a staged set that will not be installed (cancel, dismiss).
+void DiscardStaged(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged);
+
+// Swap the staged set in as one unit. Re-hashes every staged file first. For
+// each file: the installed copy (if any) is renamed to F.old (replacing an
+// older rollback copy), then F.update is renamed into place. The executable
+// goes last. Any failed step undoes every step already taken, newest first,
+// so the previous files are all back. Writes the marker on success.
+Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged,
              const std::string &newTag);
 
 enum StartupState
 {
 	STARTUP_CLEAN = 0,       // nothing to do
-	STARTUP_UPDATED = 1,     // this build was just installed; .old waits for ConfirmStarted
+	STARTUP_UPDATED = 1,     // this build was just installed; .old copies wait for ConfirmStarted
 	STARTUP_ROLLED_BACK = 2  // a marker names another version: the player rolled back by hand
 };
 // At launch: delete any staged or partial file from an earlier session (an
 // unapplied download is never trusted across launches), then read the marker.
 StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::string &runningTag);
-// The new build reached the main menu: delete <exe>.old and the marker.
+// The new build reached the main menu: delete the .old copies and the marker.
 void ConfirmStarted(const FsOps &fs, const std::string &exe);
 
 } // namespace ap_update
