@@ -245,6 +245,24 @@ generated Crash Team Racing YAML locally.
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
 
+### If an in-game update is interrupted
+
+The in-game updater (a prompt on the main menu appears when a newer stable
+release exists) installs `ctr.apworld`, the Cortex Vortex files (in the assets
+folder the game reads) and the client in one step. It keeps your previous files
+next to the new ones with a `.old` ending. If the game is closed, killed or
+loses power during that step, the next start restores the `.old` files by
+itself.
+
+On Windows one moment cannot be covered: the client is renamed to
+`ctr_native_ap.exe.old` just before the new one takes its place. If that is the
+moment the install was cut off, the game does not start because no
+`ctr_native_ap.exe` exists. Rename `ctr_native_ap.exe.old` back to
+`ctr_native_ap.exe` and start the game; it then restores the other files. The
+same step by hand works for any file whose `.old` copy is still there (for
+example `ctr.apworld.old` back to `ctr.apworld`). Your `config.ini`, saves and
+the disc image are never touched by an update.
+
 ## Experimental custom content in 0.2.0
 
 The public archive contains no custom-track files. Version 0.2.0 recognizes one

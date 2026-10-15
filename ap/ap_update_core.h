@@ -74,7 +74,8 @@ enum Result
 	ERR_ARCHIVE,          // archive member validation failed
 	ERR_SIZE,             // a size limit was exceeded
 	ERR_IO,               // a file operation failed
-	ERR_STAGED_CHANGED    // the staged executable no longer matches
+	ERR_STAGED_CHANGED,   // the staged executable no longer matches
+	ERR_UNDO_FAILED       // a swap step failed and the undo failed too: .old copies hold the previous files
 };
 
 const char *ResultText(Result r);
@@ -83,7 +84,7 @@ const char *ResultText(Result r);
 const size_t kMaxReleaseJson = 1024 * 1024;
 const size_t kMaxManifest = 4096;
 const size_t kMaxSignature = 4096;
-const size_t kMaxArchive = 96u * 1024u * 1024u;
+const size_t kMaxArchive = 32u * 1024u * 1024u; // the real archive is about 7 MB
 const size_t kMaxExecutable = 64u * 1024u * 1024u;
 const size_t kMaxUnpacked = 256u * 1024u * 1024u;
 const size_t kMaxMembers = 4096;
@@ -217,7 +218,12 @@ struct FsOps
 	bool (*exists)(void *ctx, const std::string &path);
 	bool (*makeExecutable)(void *ctx, const std::string &path);
 	bool (*makeDir)(void *ctx, const std::string &path);    // true when it exists afterwards
-	bool (*isLink)(void *ctx, const std::string &path);     // symlink, junction or other reparse point
+	bool (*isLink)(void *ctx, const std::string &path);     // a symlink or junction (not every reparse point)
+	// Optional (may be null, Windows has neither): a hard link that never
+	// replaces, and a rename that atomically replaces an existing target. With
+	// both, the executable swap leaves no moment without an executable.
+	bool (*linkFile)(void *ctx, const std::string &existing, const std::string &newLink);
+	bool (*replaceFile)(void *ctx, const std::string &from, const std::string &to);
 };
 // Real file operations (UTF-8 paths; wide APIs on Windows).
 FsOps RealFsOps();
@@ -231,6 +237,14 @@ std::string OldPath(const std::string &file);
 // that have a .old copy) and the staging journal (release paths being staged).
 std::string MarkerPath(const std::string &exe);
 std::string JournalPath(const std::string &exe);
+// The swap journal: written and flushed before the first rename of Apply,
+// removed once the marker is written. A journal without a marker at launch
+// means a swap was cut short and StartupCheck puts the .old copies back.
+std::string SwapJournalPath(const std::string &exe);
+// Where the assets folder really is (the game may use the parent folder's
+// `assets` or a case variant such as `Assets`). Release paths starting with
+// "assets/" install under it. Empty (the default) means <exe folder>/assets.
+void SetAssetDir(const std::string &dir);
 // Install directory of `exe` joined with a release path.
 std::string TargetPath(const std::string &exe, const std::string &rel);
 
@@ -251,11 +265,14 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 // Remove a staged set that will not be installed (cancel, dismiss).
 void DiscardStaged(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged);
 
-// Swap the staged set in as one unit. Re-hashes every staged file first. For
-// each file: the installed copy (if any) is renamed to F.old (replacing an
-// older rollback copy), then F.update is renamed into place. The executable
-// goes last. Any failed step undoes every step already taken, newest first,
-// so the previous files are all back. Writes the marker on success.
+// Swap the staged set in as one unit. Re-hashes every staged file first,
+// writes the swap journal, then for each file: the installed copy (if any) is
+// renamed to F.old (replacing an older rollback copy), then F.update is
+// renamed into place. The executable goes last; where hard links and atomic
+// replace exist it is linked to .old and replaced in one rename. Any failed
+// step undoes every step already taken, newest first, so the previous files
+// are all back (ERR_IO). When the undo itself fails the journal stays and the
+// result is ERR_UNDO_FAILED. Writes the marker on success.
 Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged,
              const std::string &newTag);
 
@@ -263,13 +280,33 @@ enum StartupState
 {
 	STARTUP_CLEAN = 0,       // nothing to do
 	STARTUP_UPDATED = 1,     // this build was just installed; .old copies wait for ConfirmStarted
-	STARTUP_ROLLED_BACK = 2  // a marker names another version: the player rolled back by hand
+	STARTUP_ROLLED_BACK = 2, // a marker names another version: the player rolled back by hand
+	STARTUP_RECOVERED = 3,   // a cut-short swap was found and the previous files were put back
+	STARTUP_RESTORE_FAILED = 4 // ... and some file could not be put back; .old copies remain
 };
-// At launch: delete any staged or partial file from an earlier session (an
-// unapplied download is never trusted across launches), then read the marker.
+// At launch: finish or undo a cut-short swap from the swap journal, delete any
+// staged or partial file from an earlier session (an unapplied download is
+// never trusted across launches), then read the marker.
 StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::string &runningTag);
 // The new build reached the main menu: delete the .old copies and the marker.
 void ConfirmStarted(const FsOps &fs, const std::string &exe);
+
+// ── One staging worker at a time ──
+// The network worker keeps one of these under its own mutex. Staging writes
+// shared paths (F.update, the journal), so a second worker must never start
+// while one stages, and a cancel must not hand the paths to a new download.
+struct WorkSession
+{
+	unsigned generation = 0;
+	bool staging = false;
+};
+// A worker of `gen` claims staging. False when it was cancelled or superseded
+// (generation changed) or another worker is staging.
+bool ClaimStaging(WorkSession &s, unsigned gen);
+void ReleaseStaging(WorkSession &s);
+// Cancel and a new download are refused while a worker stages.
+bool CancelAllowed(const WorkSession &s);
+bool DownloadAllowed(const WorkSession &s);
 
 } // namespace ap_update
 

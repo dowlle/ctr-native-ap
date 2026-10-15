@@ -16,6 +16,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -41,6 +42,7 @@ const char *ResultText(Result r)
 	case ERR_SIZE: return "size limit exceeded";
 	case ERR_IO: return "file operation failed";
 	case ERR_STAGED_CHANGED: return "staged file changed before install";
+	case ERR_UNDO_FAILED: return "install failed and the previous files could not all be restored";
 	}
 	return "unknown";
 }
@@ -971,9 +973,11 @@ HttpParse ParseHttpResponse(const Bytes &raw, size_t maxBody, HttpResponse &out)
 		cur = (size_t)(lineEnd - raw.begin()) + 2;
 		if (chunk == 0)
 			return HTTP_COMPLETE; // trailers, if any, are ignored
-		if (out.body.size() + chunk > maxBody)
+		// Compared by subtraction: on a 32-bit client `size + chunk` wraps for
+		// a chunk near FFFFFFFF. cur <= raw.size() holds (the line end was found).
+		if (chunk > maxBody - out.body.size())
 			return HTTP_TOO_LARGE;
-		if (cur + chunk + 2 > raw.size())
+		if (chunk > raw.size() - cur || raw.size() - cur - chunk < 2)
 			return HTTP_INCOMPLETE;
 		out.body.insert(out.body.end(), raw.begin() + cur, raw.begin() + cur + chunk);
 		cur += chunk;
@@ -990,6 +994,15 @@ std::string PartPath(const std::string &file) { return file + ".update.part"; }
 std::string OldPath(const std::string &file) { return file + ".old"; }
 std::string MarkerPath(const std::string &exe) { return exe + ".update-applied"; }
 std::string JournalPath(const std::string &exe) { return exe + ".update-files"; }
+std::string SwapJournalPath(const std::string &exe) { return exe + ".update-swap"; }
+
+static std::string g_assetDir;
+void SetAssetDir(const std::string &dir)
+{
+	g_assetDir = dir;
+	while (g_assetDir.size() > 1 && (g_assetDir.back() == '/' || g_assetDir.back() == '\\'))
+		g_assetDir.pop_back();
+}
 
 static bool IsExecutableRel(const std::string &rel)
 {
@@ -1011,6 +1024,11 @@ std::string TargetPath(const std::string &exe, const std::string &rel)
 #else
 	const char sep = '/';
 #endif
+	if (!g_assetDir.empty() && (rel == "assets" || rel.compare(0, 7, "assets/") == 0))
+	{
+		const std::string rest = rel.size() > 7 ? native.substr(7) : std::string();
+		return rest.empty() ? g_assetDir : g_assetDir + sep + rest;
+	}
 	const std::string dir = InstallDir(exe);
 	return dir.empty() ? native : dir + sep + native;
 }
@@ -1051,6 +1069,21 @@ static std::wstring Wide(const std::string &utf8)
 }
 #endif
 
+#ifndef _WIN32
+// Flush the folder entry of `path` so a rename or a new file survives power loss.
+static void SyncParentDir(const std::string &path)
+{
+	const size_t slash = path.find_last_of('/');
+	const std::string dir = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
+	const int fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+	if (fd >= 0)
+	{
+		fsync(fd);
+		close(fd);
+	}
+}
+#endif
+
 static bool RealWrite(void *, const std::string &path, const Bytes &data)
 {
 #ifdef _WIN32
@@ -1078,6 +1111,8 @@ static bool RealWrite(void *, const std::string &path, const Bytes &data)
 	ok = std::fflush(f) == 0 && ok;
 	ok = fsync(fileno(f)) == 0 && ok;
 	ok = std::fclose(f) == 0 && ok;
+	if (ok)
+		SyncParentDir(path);
 	return ok;
 #endif
 }
@@ -1120,9 +1155,31 @@ static bool RealRename(void *, const std::string &from, const std::string &to)
 	// rename() replaces silently on POSIX; refuse an existing target to match.
 	if (access(to.c_str(), F_OK) == 0)
 		return false;
-	return std::rename(from.c_str(), to.c_str()) == 0;
+	if (std::rename(from.c_str(), to.c_str()) != 0)
+		return false;
+	SyncParentDir(to);
+	return true;
 #endif
 }
+
+#ifndef _WIN32
+static bool RealLink(void *, const std::string &existing, const std::string &newLink)
+{
+	if (link(existing.c_str(), newLink.c_str()) != 0)
+		return false;
+	SyncParentDir(newLink);
+	return true;
+}
+
+// rename() replaces the target atomically: the executable path never vanishes.
+static bool RealReplace(void *, const std::string &from, const std::string &to)
+{
+	if (std::rename(from.c_str(), to.c_str()) != 0)
+		return false;
+	SyncParentDir(to);
+	return true;
+}
+#endif
 
 static bool RealExists(void *, const std::string &path)
 {
@@ -1166,8 +1223,22 @@ static bool RealMakeDir(void *ctx, const std::string &path)
 static bool RealIsLink(void *, const std::string &path)
 {
 #ifdef _WIN32
-	const DWORD attr = GetFileAttributesW(Wide(path).c_str());
-	return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+	// Only symlinks and junctions redirect a write somewhere else. Other reparse
+	// points (OneDrive Files On-Demand, dedup) are ordinary folders to us.
+	const std::wstring w = Wide(path);
+	const DWORD attr = GetFileAttributesW(w.c_str());
+	if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+		return false;
+	HANDLE h = CreateFileW(w.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	                       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+	if (h == INVALID_HANDLE_VALUE)
+		return true; // cannot read the tag: refuse
+	FILE_ATTRIBUTE_TAG_INFO info;
+	const BOOL got = GetFileInformationByHandleEx(h, FileAttributeTagInfo, &info, sizeof info);
+	CloseHandle(h);
+	if (!got)
+		return true;
+	return info.ReparseTag == IO_REPARSE_TAG_SYMLINK || info.ReparseTag == IO_REPARSE_TAG_MOUNT_POINT;
 #else
 	// readlink, not lstat: a 32-bit lstat fails with EOVERFLOW on SteamOS
 	// overlayfs (see ap_net.cpp, #170), readlink fills no stat struct.
@@ -1188,6 +1259,13 @@ FsOps RealFsOps()
 	ops.makeExecutable = RealMakeExecutable;
 	ops.makeDir = RealMakeDir;
 	ops.isLink = RealIsLink;
+#ifdef _WIN32
+	ops.linkFile = nullptr;
+	ops.replaceFile = nullptr;
+#else
+	ops.linkFile = RealLink;
+	ops.replaceFile = RealReplace;
+#endif
 	return ops;
 }
 
@@ -1288,7 +1366,10 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 		Bytes back;
 		if (Sha256Hex(f.data) != f.sha256 || !EnsureFolders(fs, exe, f.rel) ||
 		    !fs.writeFile(fs.ctx, part, f.data) || !fs.readFile(fs.ctx, part, kMaxExecutable, back) ||
-		    Sha256Hex(back) != f.sha256 || !fs.renameFile(fs.ctx, part, StagedPath(target)))
+		    Sha256Hex(back) != f.sha256 ||
+		    // Executable before the swap, so a crash never leaves a non-executable game.
+		    (IsExecutableRel(f.rel) && !fs.makeExecutable(fs.ctx, part)) ||
+		    !fs.renameFile(fs.ctx, part, StagedPath(target)))
 		{
 			DropStaged(fs, exe, rels);
 			staged.clear();
@@ -1314,6 +1395,7 @@ struct Step
 {
 	std::string target;
 	bool hadOld;
+	bool atomic; // the previous file was kept as a hard link and the new one renamed over it
 };
 } // namespace
 
@@ -1324,6 +1406,12 @@ static bool Undo(const FsOps &fs, const std::vector<Step> &steps)
 	for (size_t i = steps.size(); i-- > 0;)
 	{
 		const Step &st = steps[i];
+		if (st.atomic)
+		{
+			if (!fs.replaceFile(fs.ctx, OldPath(st.target), st.target))
+				ok = false;
+			continue;
+		}
 		if (!fs.removeFile(fs.ctx, st.target))
 		{
 			ok = false;
@@ -1365,72 +1453,262 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 		return ERR_IO;
 
 	// Everything else first, the executable last.
-	std::vector<std::string> order;
+	std::vector<const StagedFile *> order;
 	for (const StagedFile &f : staged)
 		if (!IsExecutableRel(f.rel))
-			order.push_back(f.rel);
+			order.push_back(&f);
 	for (const StagedFile &f : staged)
 		if (IsExecutableRel(f.rel))
-			order.push_back(f.rel);
+			order.push_back(&f);
+
+	// The swap journal goes down, flushed, before the first rename: it names
+	// every file, the hash of the new copy and whether an installed copy exists.
+	std::vector<std::string> journal;
+	journal.push_back("applying");
+	journal.push_back(newTag);
+	for (const StagedFile *f : order)
+		journal.push_back(f->rel + "\t" + f->sha256 + "\t" +
+		                  (fs.exists(fs.ctx, InstallTarget(exe, f->rel)) ? "1" : "0"));
+	fs.removeFile(fs.ctx, MarkerPath(exe));
+	const std::string swapPath = SwapJournalPath(exe);
+	if (!fs.writeFile(fs.ctx, swapPath, JoinLines(journal)))
+	{
+		fs.removeFile(fs.ctx, swapPath);
+		DropStaged(fs, exe, rels);
+		return ERR_IO;
+	}
 
 	std::vector<Step> steps;
 	std::vector<std::string> kept; // release paths that now have a .old copy
-	fs.removeFile(fs.ctx, MarkerPath(exe));
-	for (const std::string &rel : order)
+	// A failed step: undo what was done. When the undo itself fails the swap
+	// journal stays so the next launch restores the .old copies.
+	auto fail = [&](bool thisStepUndone) -> Result {
+		const bool undone = Undo(fs, steps) && thisStepUndone;
+		DropStaged(fs, exe, rels);
+		if (undone)
+		{
+			fs.removeFile(fs.ctx, swapPath);
+			return ERR_IO;
+		}
+		return ERR_UNDO_FAILED;
+	};
+	for (const StagedFile *sf : order)
 	{
+		const std::string &rel = sf->rel;
 		const std::string target = InstallTarget(exe, rel);
 		const std::string old = OldPath(target);
 		// An older rollback copy belongs to a finished update; this one replaces it.
 		bool ok = fs.removeFile(fs.ctx, old);
-		const bool hadOld = ok && fs.exists(fs.ctx, target);
-		if (ok && hadOld)
-			ok = fs.renameFile(fs.ctx, target, old);
-		if (ok && !fs.renameFile(fs.ctx, StagedPath(target), target))
+		const bool had = ok && fs.exists(fs.ctx, target);
+		bool atomic = false;
+		bool moved = false;
+		if (ok && had)
 		{
-			if (hadOld && !fs.renameFile(fs.ctx, old, target))
+			if (IsExecutableRel(rel) && fs.linkFile && fs.replaceFile && fs.linkFile(fs.ctx, target, old))
 			{
-				// Neither name works: the previous file stays as .old, the
-				// manual rollback copy. Undo the rest and report.
-				Undo(fs, steps);
-				DropStaged(fs, exe, rels);
-				return ERR_IO;
+				atomic = true; // target stays in place until the one atomic rename
+				moved = true;
 			}
-			ok = false;
+			else
+			{
+				ok = fs.renameFile(fs.ctx, target, old);
+				moved = ok;
+			}
 		}
+		if (ok)
+			ok = atomic ? fs.replaceFile(fs.ctx, StagedPath(target), target)
+			            : fs.renameFile(fs.ctx, StagedPath(target), target);
 		if (!ok)
 		{
-			Undo(fs, steps);
-			DropStaged(fs, exe, rels);
-			return ERR_IO;
+			bool stepUndone = true;
+			if (moved)
+			{
+				if (atomic)
+					stepUndone = fs.removeFile(fs.ctx, old); // target was never replaced
+				else if (!fs.exists(fs.ctx, target))
+					stepUndone = fs.renameFile(fs.ctx, old, target);
+			}
+			return fail(stepUndone);
 		}
-		steps.push_back(Step{target, hadOld});
-		if (hadOld)
+		steps.push_back(Step{target, moved, atomic});
+		if (moved)
 			kept.push_back(rel);
 	}
-	fs.makeExecutable(fs.ctx, exe);
-	fs.removeFile(fs.ctx, JournalPath(exe));
-	// The marker is advisory (it only decides when the .old copies may go); a
-	// failure to write it leaves them in place, which is the safe direction.
+	// The marker doubles as the journal's "finished" mark: written first, so a
+	// crash before the journal is removed is not mistaken for a half swap.
 	std::vector<std::string> marker(1, newTag);
 	marker.insert(marker.end(), kept.begin(), kept.end());
-	fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker));
+	if (!fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker)))
+	{
+		fs.removeFile(fs.ctx, MarkerPath(exe));
+		return fail(true);
+	}
+	fs.removeFile(fs.ctx, swapPath);
+	fs.removeFile(fs.ctx, JournalPath(exe));
 	return OK;
+}
+
+namespace
+{
+struct SwapEntry
+{
+	std::string rel;
+	std::string sha;
+	bool had;
+};
+} // namespace
+
+static bool SameVersion(const std::string &a, const std::string &b)
+{
+	int x[4], y[4];
+	if (!AP_VersionParse(a.c_str(), x) || !AP_VersionParse(b.c_str(), y))
+		return false;
+	return std::equal(x, x + 4, y);
+}
+
+static bool FileHashIs(const FsOps &fs, const std::string &path, const std::string &sha)
+{
+	Bytes b;
+	return fs.readFile(fs.ctx, path, kMaxExecutable, b) && Sha256Hex(b) == sha;
+}
+
+// A swap journal without a marker: the swap was cut short. 0 = nothing to do,
+// 1 = previous files restored, 2 = the swap had reached the new executable, so
+// it is finished instead (marker written), 3 = some file could not be put back
+// (journal kept for the next launch).
+static int RecoverSwap(const FsOps &fs, const std::string &exe)
+{
+	const std::string swapPath = SwapJournalPath(exe);
+	const std::vector<std::string> lines = ReadLines(fs, swapPath);
+	std::string tag;
+	std::vector<SwapEntry> entries;
+	if (lines.size() >= 2 && lines[0] == "applying" && IsStableTag(lines[1]))
+	{
+		tag = lines[1];
+		for (size_t i = 2; i < lines.size(); i++)
+		{
+			const size_t t1 = lines[i].find('\t');
+			const size_t t2 = t1 == std::string::npos ? t1 : lines[i].find('\t', t1 + 1);
+			if (t2 == std::string::npos)
+				continue; // a half-written last line
+			SwapEntry e;
+			e.rel = lines[i].substr(0, t1);
+			e.sha = lines[i].substr(t1 + 1, t2 - t1 - 1);
+			const std::string had = lines[i].substr(t2 + 1);
+			e.had = had == "1";
+			if (!SafeLocalRel(e.rel) || e.sha.size() != 64 || (had != "0" && had != "1"))
+				continue;
+			entries.push_back(e);
+		}
+	}
+	if (tag.empty() || entries.empty())
+	{
+		fs.removeFile(fs.ctx, swapPath); // unreadable: nothing trustworthy to act on
+		return 0;
+	}
+	// The executable is swapped last: with the new one in place, every other
+	// file is already new. Finish the update instead of undoing it.
+	for (const SwapEntry &e : entries)
+		if (IsExecutableRel(e.rel) && FileHashIs(fs, exe, e.sha))
+		{
+			std::vector<std::string> marker(1, tag);
+			for (const SwapEntry &k : entries)
+				if (fs.exists(fs.ctx, OldPath(InstallTarget(exe, k.rel))))
+					marker.push_back(k.rel);
+			if (fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker)))
+			{
+				fs.removeFile(fs.ctx, swapPath);
+				return 2;
+			}
+			return 3;
+		}
+	bool complete = true;
+	for (const SwapEntry &e : entries)
+	{
+		const std::string target = InstallTarget(exe, e.rel);
+		const std::string old = OldPath(target);
+		const bool hasOld = fs.exists(fs.ctx, old);
+		const bool hasTarget = fs.exists(fs.ctx, target);
+		if (hasOld)
+		{
+			if (hasTarget)
+			{
+				Bytes oldBytes;
+				if (FileHashIs(fs, target, e.sha))
+				{
+					// Only the new copy may be cleared to make room for the old one.
+					if (!fs.removeFile(fs.ctx, target))
+					{
+						complete = false;
+						continue;
+					}
+				}
+				else if (fs.readFile(fs.ctx, old, kMaxExecutable, oldBytes) &&
+				         FileHashIs(fs, target, Sha256Hex(oldBytes)))
+				{
+					// Cut short between the hard link and the rename: the target
+					// is still the previous file and .old is its duplicate.
+					if (!fs.removeFile(fs.ctx, old))
+						complete = false;
+					continue;
+				}
+				else
+				{
+					complete = false;
+					continue;
+				}
+			}
+			if (!fs.renameFile(fs.ctx, old, target))
+				complete = false;
+		}
+		else if (!e.had && hasTarget && FileHashIs(fs, target, e.sha))
+		{
+			// A file this update added; it did not exist before.
+			if (!fs.removeFile(fs.ctx, target))
+				complete = false;
+		}
+	}
+	if (!complete)
+		return 3;
+	fs.removeFile(fs.ctx, swapPath);
+	return 1;
 }
 
 StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::string &runningTag)
 {
+	StartupState recovery = STARTUP_CLEAN;
+	const std::string swapPath = SwapJournalPath(exe);
+	if (fs.exists(fs.ctx, swapPath))
+	{
+		if (fs.exists(fs.ctx, MarkerPath(exe)))
+			fs.removeFile(fs.ctx, swapPath); // the swap finished; only the cleanup was cut short
+		else
+		{
+			const int r = RecoverSwap(fs, exe);
+			if (r == 1)
+				recovery = STARTUP_RECOVERED;
+			else if (r == 3)
+				recovery = STARTUP_RESTORE_FAILED;
+		}
+	}
+
 	std::vector<std::string> rels;
 	for (const std::string &rel : ReadLines(fs, JournalPath(exe)))
 		if (SafeLocalRel(rel))
 			rels.push_back(rel);
 	rels.push_back(ExecutableName(PLATFORM_WINDOWS)); // the executable maps to `exe` either way
-	DropStaged(fs, exe, rels);
+	// A failed restore keeps the staged copies too: nothing more is touched.
+	if (recovery != STARTUP_RESTORE_FAILED)
+		DropStaged(fs, exe, rels);
+	if (recovery != STARTUP_CLEAN)
+		return recovery;
 
 	const std::string marker = MarkerPath(exe);
 	if (!fs.exists(fs.ctx, marker))
 		return STARTUP_CLEAN;
 	const std::vector<std::string> lines = ReadLines(fs, marker);
-	if (!lines.empty() && lines[0] == runningTag)
+	// "v0.3.1" and "0.3.1" are the same release.
+	if (!lines.empty() && (lines[0] == runningTag || SameVersion(lines[0], runningTag)))
 		return STARTUP_UPDATED;
 	// Another version runs: the player restored files by hand. Keep whatever
 	// files are there and forget the marker.
@@ -1446,5 +1724,16 @@ void ConfirmStarted(const FsOps &fs, const std::string &exe)
 			fs.removeFile(fs.ctx, OldPath(InstallTarget(exe, lines[i])));
 	fs.removeFile(fs.ctx, MarkerPath(exe));
 }
+
+bool ClaimStaging(WorkSession &s, unsigned gen)
+{
+	if (gen != s.generation || s.staging)
+		return false;
+	s.staging = true;
+	return true;
+}
+void ReleaseStaging(WorkSession &s) { s.staging = false; }
+bool CancelAllowed(const WorkSession &s) { return !s.staging; }
+bool DownloadAllowed(const WorkSession &s) { return !s.staging; }
 
 } // namespace ap_update

@@ -856,11 +856,29 @@ static bool FRename(void *ctx, const std::string &from, const std::string &to)
 	return RealFsOps().renameFile(ctx, from, to);
 }
 
-static FsOps FaultOps()
+// The atomic executable path uses link and replace; the same faults apply.
+static bool FLink(void *ctx, const std::string &existing, const std::string &newLink)
+{
+	if (newLink == g_faults.failRenameTo)
+		return false;
+	return RealFsOps().linkFile(ctx, existing, newLink);
+}
+
+static bool FReplace(void *ctx, const std::string &from, const std::string &to)
+{
+	if (to == g_faults.failRenameTo ||
+	    std::find(g_faults.failRenameFrom.begin(), g_faults.failRenameFrom.end(), from) != g_faults.failRenameFrom.end())
+		return false;
+	return RealFsOps().replaceFile(ctx, from, to);
+}
+
+static FsOps FaultOps(bool atomicExe = true)
 {
 	FsOps ops = RealFsOps();
 	ops.writeFile = FWrite;
 	ops.renameFile = FRename;
+	ops.linkFile = atomicExe ? FLink : nullptr;
+	ops.replaceFile = atomicExe ? FReplace : nullptr;
 	return ops;
 }
 
@@ -950,7 +968,7 @@ static bool NoLeftovers(const Install &in, bool allowOld)
 		if (!allowOld && fs.exists(nullptr, OldPath(f)))
 			return false;
 	}
-	return !fs.exists(nullptr, JournalPath(in.exe));
+	return !fs.exists(nullptr, JournalPath(in.exe)) && !fs.exists(nullptr, SwapJournalPath(in.exe));
 }
 
 static void Clean(const Install &in)
@@ -959,7 +977,8 @@ static void Clean(const Install &in)
 	for (const std::string &f : {in.exe, in.apworld, in.lev, in.vrm})
 		for (const std::string &g : {f, StagedPath(f), PartPath(f), OldPath(f)})
 			fs.removeFile(nullptr, g);
-	for (const std::string &f : {in.config, in.apconfig, in.card, in.disc, MarkerPath(in.exe), JournalPath(in.exe)})
+	for (const std::string &f : {in.config, in.apconfig, in.card, in.disc, MarkerPath(in.exe), JournalPath(in.exe),
+	                             SwapJournalPath(in.exe)})
 		fs.removeFile(nullptr, f);
 }
 
@@ -1017,8 +1036,10 @@ static void TestInstall()
 		Install probe = MakeInstall(dir);
 		const std::vector<std::string> targets = {probe.apworld, probe.lev, probe.vrm, probe.exe};
 		Clean(probe);
+		for (int strategy = 0; strategy < 2; strategy++)
 		for (const std::string &t : targets)
 		{
+			const FsOps faulty = FaultOps(strategy == 0); // 1 = no link/replace (Windows-style exe swap)
 			for (int mode = 0; mode < 2; mode++)
 			{
 				if (mode == 1 && t == probe.vrm)
@@ -1046,20 +1067,39 @@ static void TestInstall()
 	g_faults = Faults();
 	// The last step fails, and the apworld cannot come back.
 	g_faults.failRenameFrom = {StagedPath(in.exe), OldPath(in.apworld)};
-	CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
+	CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_UNDO_FAILED);
 	CHECK(ReadText(in.exe) == "OLD EXE" && ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
 	CHECK(ReadText(OldPath(in.apworld)) == "OLD WORLD" && !real.exists(nullptr, in.apworld));
 	CHECK(Untouched(in));
+	// The journal stays; the next launch (no fault now) puts the apworld back.
+	CHECK(real.exists(nullptr, SwapJournalPath(in.exe)));
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_RECOVERED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
 	Clean(in);
 
 	// Both names failing for the executable leaves its .old as the manual copy.
 	in = MakeInstall(dir);
 	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
 	g_faults = Faults();
-	g_faults.failRenameFrom = {StagedPath(in.exe), OldPath(in.exe)};
+	{
+		const FsOps plain = FaultOps(false); // rename pair: exe moved aside, then replaced
+		g_faults.failRenameFrom = {StagedPath(in.exe), OldPath(in.exe)};
+		CHECK_EQ(Apply(plain, in.exe, staged, "v0.3.1"), ERR_UNDO_FAILED);
+		CHECK(ReadText(OldPath(in.exe)) == "OLD EXE" && !real.exists(nullptr, in.exe));
+		CHECK(ReadText(in.apworld) == "OLD WORLD" && ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
+		CHECK(real.exists(nullptr, SwapJournalPath(in.exe)));
+		// The next launch (when an executable exists to start) restores it.
+		CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_RECOVERED);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+	}
+	Clean(in);
+	// With atomic replace a failed replace never leaves the executable missing.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	g_faults = Faults();
+	g_faults.failRenameFrom = {StagedPath(in.exe)};
 	CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
-	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
-	CHECK(ReadText(in.apworld) == "OLD WORLD" && ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
+	CHECK(OldState(in) && NoLeftovers(in, false));
 	Clean(in);
 
 	// One staged file changed after verification: nothing moves, all staged go.
@@ -1171,6 +1211,281 @@ static void TestInstall()
 	CHECK(rmdir(dir.c_str()) == 0);
 }
 
+// ── crash consistency: power loss at every step of the swap ──
+
+struct Crash
+{
+	int limit = -1; // mutating operations allowed before the "crash"
+	int count = 0;
+	bool dead = false;
+};
+static Crash g_crash;
+
+static bool Alive()
+{
+	if (g_crash.dead)
+		return false;
+	if (++g_crash.count > g_crash.limit)
+	{
+		g_crash.dead = true; // this operation and every later one never happen
+		return false;
+	}
+	return true;
+}
+static bool CWrite(void *c, const std::string &p, const Bytes &d) { return Alive() && RealFsOps().writeFile(c, p, d); }
+static bool CRename(void *c, const std::string &a, const std::string &b) { return Alive() && RealFsOps().renameFile(c, a, b); }
+static bool CRemove(void *c, const std::string &p) { return Alive() && RealFsOps().removeFile(c, p); }
+static bool CLink(void *c, const std::string &a, const std::string &b) { return Alive() && RealFsOps().linkFile(c, a, b); }
+static bool CReplace(void *c, const std::string &a, const std::string &b) { return Alive() && RealFsOps().replaceFile(c, a, b); }
+
+static FsOps CrashOps(bool atomicExe)
+{
+	FsOps ops = RealFsOps();
+	ops.writeFile = CWrite;
+	ops.renameFile = CRename;
+	ops.removeFile = CRemove;
+	ops.linkFile = atomicExe ? CLink : nullptr;
+	ops.replaceFile = atomicExe ? CReplace : nullptr;
+	return ops;
+}
+
+static bool NewState(const Install &in)
+{
+	return ReadText(in.exe) == "NEW EXE" && ReadText(in.apworld) == "NEW WORLD" && ReadText(in.lev) == "NEW LEV" &&
+	       ReadText(in.vrm) == "NEW VRM" && Untouched(in);
+}
+
+static void TestCrashRecovery()
+{
+	char tmpl[] = "/tmp/ctr-update-crash-XXXXXX";
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
+		return;
+	const std::string dir = dirp;
+	const FsOps real = RealFsOps();
+	int crashPoints = 0;
+	for (int strategy = 0; strategy < 2; strategy++)
+	{
+		const bool atomicExe = strategy == 0;
+		for (int limit = 0; limit < 64; limit++)
+		{
+			Install in = MakeInstall(dir);
+			std::vector<StagedFile> staged;
+			CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+			g_crash = Crash();
+			g_crash.limit = limit;
+			const Result r = Apply(CrashOps(atomicExe), in.exe, staged, "v0.3.1");
+			if (!g_crash.dead)
+			{
+				CHECK_EQ(r, OK); // ran past the last operation: every point was covered
+				CHECK(NewState(in));
+				Clean(in);
+				break;
+			}
+			crashPoints++;
+			// Power is back. With an atomic executable step the game can always start.
+			if (atomicExe)
+				CHECK(real.exists(nullptr, in.exe));
+			const bool newExe = ReadText(in.exe) == "NEW EXE";
+			const StartupState st = StartupCheck(real, in.exe, newExe ? "v0.3.1" : "v0.3.0");
+			if (newExe)
+			{
+				// The swap had reached the new executable: finished, not undone.
+				CHECK(st == STARTUP_UPDATED);
+				CHECK(NewState(in));
+				CHECK(!real.exists(nullptr, SwapJournalPath(in.exe)));
+				ConfirmStarted(real, in.exe);
+				CHECK(NoLeftovers(in, false));
+			}
+			else
+			{
+				// Every other cut-off point returns to the previous install exactly.
+				CHECK(st == STARTUP_RECOVERED || st == STARTUP_CLEAN);
+				CHECK(OldState(in));
+				CHECK(NoLeftovers(in, false));
+				CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+			}
+			// A second launch finds nothing to do.
+			CHECK(StartupCheck(real, in.exe, newExe ? "v0.3.1" : "v0.3.0") == STARTUP_CLEAN);
+			Clean(in);
+		}
+	}
+	CHECK(crashPoints > 20);
+
+	// A journal cut off while being written names no completed swap: ignored.
+	{
+		Install in = MakeInstall(dir);
+		WriteText(SwapJournalPath(in.exe), "applying\nv0.3.1\nctr.apworld\t0123");
+		CHECK(StartupCheck(real, in.exe, "v0.3.0") == STARTUP_CLEAN);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+		// A journal that names a file outside the install list cannot move it.
+		WriteText(OldPath(in.config), "KEEP");
+		WriteText(SwapJournalPath(in.exe),
+		          "applying\nv0.3.1\nconfig.ini\t" + std::string(64, 'a') + "\t1\n");
+		CHECK(StartupCheck(real, in.exe, "v0.3.0") == STARTUP_CLEAN);
+		CHECK(ReadText(OldPath(in.config)) == "KEEP" && ReadText(in.config) == "CONFIG");
+		real.removeFile(nullptr, OldPath(in.config));
+		Clean(in);
+	}
+	// A journal next to a finished marker is stale cleanup only.
+	{
+		Install in = MakeInstall(dir);
+		std::vector<StagedFile> staged;
+		CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+		CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+		WriteText(SwapJournalPath(in.exe),
+		          "applying\nv0.3.1\nctr.apworld\t" + Sha256Hex(B("NEW WORLD")) + "\t1\n");
+		CHECK(StartupCheck(real, in.exe, "v0.3.1") == STARTUP_UPDATED);
+		CHECK(ReadText(in.apworld) == "NEW WORLD" && !real.exists(nullptr, SwapJournalPath(in.exe)));
+		ConfirmStarted(real, in.exe);
+		Clean(in);
+	}
+	// A kept-back file that is neither the new copy nor the old one is not touched.
+	{
+		Install in = MakeInstall(dir);
+		WriteText(OldPath(in.apworld), "OLD WORLD");
+		WriteText(in.apworld, "SOMETHING ELSE");
+		WriteText(SwapJournalPath(in.exe),
+		          "applying\nv0.3.1\nctr.apworld\t" + Sha256Hex(B("NEW WORLD")) + "\t1\n");
+		CHECK(StartupCheck(real, in.exe, "v0.3.0") == STARTUP_RESTORE_FAILED);
+		CHECK(ReadText(in.apworld) == "SOMETHING ELSE" && ReadText(OldPath(in.apworld)) == "OLD WORLD");
+		CHECK(real.exists(nullptr, SwapJournalPath(in.exe)));
+		real.removeFile(nullptr, OldPath(in.apworld));
+		Clean(in);
+	}
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
+}
+
+// ── staging: executable bit, marker version spelling, asset folder ──
+
+static bool g_failChmod;
+static bool FChmod(void *c, const std::string &p) { return !g_failChmod && RealFsOps().makeExecutable(c, p); }
+
+static void TestStagingAndMarker()
+{
+	char tmpl[] = "/tmp/ctr-update-stage-XXXXXX";
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
+		return;
+	const std::string dir = dirp;
+	const FsOps real = RealFsOps();
+	std::vector<StagedFile> staged;
+	Install in = MakeInstall(dir);
+
+	// The staged executable is executable before it is swapped in.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	struct stat st;
+	CHECK(stat(StagedPath(in.exe).c_str(), &st) == 0 && (st.st_mode & 0111) == 0111);
+	CHECK(stat(StagedPath(in.apworld).c_str(), &st) == 0 && (st.st_mode & 0111) == 0);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(stat(in.exe.c_str(), &st) == 0 && (st.st_mode & 0111) == 0111);
+	CHECK(stat(OldPath(in.exe).c_str(), &st) == 0 && ReadText(OldPath(in.exe)) == "OLD EXE");
+	ConfirmStarted(real, in.exe);
+	Clean(in);
+
+	// A failed chmod fails staging and leaves nothing behind.
+	in = MakeInstall(dir);
+	FsOps noChmod = real;
+	noChmod.makeExecutable = FChmod;
+	g_failChmod = true;
+	CHECK_EQ(Stage(noChmod, in.exe, NewSet(), staged), ERR_IO);
+	g_failChmod = false;
+	CHECK(staged.empty() && OldState(in) && NoLeftovers(in, false));
+
+	// The marker's tag and the running version compare as versions, not text.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(StartupCheck(real, in.exe, "0.3.1") == STARTUP_UPDATED);
+	CHECK(real.exists(nullptr, MarkerPath(in.exe)));
+	CHECK(StartupCheck(real, in.exe, "V0.3.1") == STARTUP_UPDATED);
+	CHECK(StartupCheck(real, in.exe, "0.3.2") == STARTUP_ROLLED_BACK);
+	CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	Clean(in);
+
+	// The assets folder the game reads (parent folder, case variant) receives
+	// the Cortex Vortex files; the apworld stays beside the executable.
+	{
+		const std::string game = dir + "/game";
+		const std::string alt = dir + "/Assets";
+		mkdir(game.c_str(), 0755);
+		mkdir(alt.c_str(), 0755);
+		const std::string exe = game + "/ctr_native_ap";
+		WriteText(exe, "OLD EXE");
+		SetAssetDir(alt + "/");
+		CHECK(TargetPath(exe, kLev) == alt + "/tracks/cortex-vortex/CVortex Arcade All.lev");
+		CHECK(TargetPath(exe, "ctr.apworld") == game + "/ctr.apworld");
+		CHECK_EQ(Stage(real, exe, NewSet(), staged), OK);
+		CHECK(ReadText(StagedPath(alt + "/tracks/cortex-vortex/CVortex Arcade All.lev")) == "NEW LEV");
+		CHECK(!real.exists(nullptr, game + "/assets"));
+		CHECK_EQ(Apply(real, exe, staged, "v0.3.1"), OK);
+		CHECK(ReadText(alt + "/tracks/cortex-vortex/CVortex Arcade All.vrm") == "NEW VRM");
+		CHECK(!real.exists(nullptr, game + "/assets"));
+		SetAssetDir("");
+		CHECK(TargetPath(exe, kLev) == game + "/" + kLev);
+		const std::string rm = "rm -rf '" + dir + "/game' '" + alt + "'";
+		CHECK(std::system(rm.c_str()) == 0);
+	}
+	Clean(in);
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
+}
+
+// ── chunked bodies that would overflow a 32-bit size ──
+
+static void TestChunkOverflow()
+{
+	HttpResponse resp;
+	const std::string ch = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+	const size_t huge = (size_t)0xFFFFFFFFu;
+	// The wrap-around cases: a chunk near FFFFFFFF after a first chunk, with a
+	// cap that admits it. Each must be refused or incomplete, never walk past the buffer.
+	for (const char *size : {"FFFFFFFF", "FFFFFFFE", "FFFFFFFD", "FFFFFFFC", "FFFFFFF0", "80000000"})
+	{
+		const HttpParse r = ParseHttpResponse(B(ch + "3\r\nabc\r\n" + size + "\r\nxx"), huge, resp);
+		CHECK(r == HTTP_TOO_LARGE || r == HTTP_INCOMPLETE);
+		const HttpParse first = ParseHttpResponse(B(ch + size + "\r\nxx"), huge, resp);
+		CHECK(first == HTTP_TOO_LARGE || first == HTTP_INCOMPLETE);
+	}
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\nFFFFFFFF\r\nxx"), huge, resp), HTTP_TOO_LARGE);
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\nFFFFFFFE\r\nxx"), huge, resp), HTTP_TOO_LARGE);
+	// A chunk that fits the cap but not the data, close to the end of the buffer.
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n5\r\nxxxxx"), 100, resp), HTTP_INCOMPLETE);
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n5\r\nxxxxx\r"), 100, resp), HTTP_INCOMPLETE);
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n5\r\nxxxxx\r\n0\r\n\r\n"), 100, resp), HTTP_COMPLETE);
+	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n98\r\n"), 100, resp), HTTP_TOO_LARGE);
+	CHECK(kMaxArchive <= 32u * 1024u * 1024u);
+}
+
+// ── one staging worker at a time ──
+
+static void TestWorkGate()
+{
+	WorkSession s;
+	s.generation = 1;
+	CHECK(CancelAllowed(s) && DownloadAllowed(s));
+	CHECK(ClaimStaging(s, 1));
+	// While worker 1 stages: no second claim, no cancel, no new download.
+	CHECK(!ClaimStaging(s, 1));
+	CHECK(!CancelAllowed(s) && !DownloadAllowed(s));
+	ReleaseStaging(s);
+	CHECK(CancelAllowed(s) && DownloadAllowed(s));
+	// A worker that was cancelled (generation moved on) cannot claim staging.
+	s.generation = 2;
+	CHECK(!ClaimStaging(s, 1));
+	CHECK(!s.staging);
+	CHECK(ClaimStaging(s, 2));
+	ReleaseStaging(s);
+}
+
 static void TestAllowlist()
 {
 	std::string host, path;
@@ -1205,6 +1520,10 @@ int main()
 	TestArchives();
 	TestInstallSet();
 	TestInstall();
+	TestCrashRecovery();
+	TestStagingAndMarker();
+	TestChunkOverflow();
+	TestWorkGate();
 	TestAllowlist();
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;
