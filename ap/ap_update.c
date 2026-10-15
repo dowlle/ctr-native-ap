@@ -18,6 +18,7 @@
 
 #include "ap_update.h"
 #include "platform/native_steam_route.h"
+#include <platform/native_assets.h>
 
 static struct RectMenu *ap_upd_menu;
 static int ap_upd_menu_frame;
@@ -45,7 +46,10 @@ void AP_UpdateTick(struct GameTracker *gGT)
 	if (!ap_upd_started)
 	{
 		unsigned long long steamId = 0;
-		const int startup = ap_update_startup(CTR_AP_COMPAT_VERSION);
+		int startup;
+
+		ap_update_set_asset_dir(NativeAssets_GetAssetDir());
+		startup = ap_update_startup(CTR_AP_COMPAT_VERSION);
 
 		ap_upd_started = 1;
 		ap_upd_steam = NativeSteamRoute_ParseGameId(getenv("SteamGameId"), &steamId);
@@ -58,6 +62,15 @@ void AP_UpdateTick(struct GameTracker *gGT)
 		{
 			AP_AppendLog("[AP UPDATE] an earlier build was restored by hand\n");
 		}
+		else if (startup == 3)
+		{
+			AP_AppendLog("[AP UPDATE] an interrupted install was found; the previous files were restored\n");
+		}
+		else if (startup == 4)
+		{
+			AP_AppendLog("[AP UPDATE] an interrupted install was found and some files could not be restored; "
+			             "see SETUP.md (files ending in .old)\n");
+		}
 		// [Archipelago] update_check = false turns the network check off.
 		if (g_config.updateCheck)
 			ap_update_check_start(CTR_AP_COMPAT_VERSION, g_config.updateDeclined);
@@ -68,7 +81,7 @@ void AP_UpdateTick(struct GameTracker *gGT)
 	{
 		static const char *const names[] = {"idle", "checking", "no update", "offer", "downloading",
 		                                    "verifying", "ready", "failed verification", "download failed",
-		                                    "install failed", "installed"};
+		                                    "install failed", "installed", "restore failed"};
 		if (status >= 0 && status < (int)(sizeof names / sizeof names[0]) && status != AP_UPD_DOWNLOADING)
 			AP_UpdateLog(names[status]);
 		ap_upd_last_status = status;
@@ -238,12 +251,18 @@ int AP_UpdateMenuFrame(void)
 	case AP_UPD_FAILED_VERIFY:
 	case AP_UPD_FAILED_DOWNLOAD:
 	case AP_UPD_FAILED_INSTALL:
+	case AP_UPD_FAILED_RESTORE:
 		ap_upd_prompting = 1;
 		gGT->demoCountdownTimer = 900;
-		AP_UpdateDraw(status == AP_UPD_FAILED_VERIFY     ? "update failed verification"
-		              : status == AP_UPD_FAILED_DOWNLOAD ? "UPDATE DOWNLOAD FAILED"
-		                                                 : "UPDATE NOT INSTALLED",
-		              "Nothing was changed.", NULL, NULL, "*: OK");
+		if (status == AP_UPD_FAILED_RESTORE)
+			AP_UpdateDraw("UPDATE FAILED HALFWAY", "Some files could not be put back.",
+			              "Copies of your old files end in .old.", "Next start tries again; see SETUP.md.",
+			              "*: OK");
+		else
+			AP_UpdateDraw(status == AP_UPD_FAILED_VERIFY     ? "update failed verification"
+			              : status == AP_UPD_FAILED_DOWNLOAD ? "UPDATE DOWNLOAD FAILED"
+			                                                 : "UPDATE NOT INSTALLED",
+			              "Nothing was changed.", NULL, NULL, "*: OK");
 		if (tap & BTN_CROSS)
 			ap_update_dismiss();
 		return 1;

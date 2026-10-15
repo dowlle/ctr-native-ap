@@ -26,12 +26,17 @@ enum
 	AP_UPD_FAILED_VERIFY,   // signature, hash or archive check failed; nothing kept
 	AP_UPD_FAILED_DOWNLOAD, // network failure after confirmation; nothing kept
 	AP_UPD_FAILED_INSTALL,  // staging or swap failed; the installed build is unchanged
-	AP_UPD_INSTALLED        // swap done; the next start runs the new build
+	AP_UPD_INSTALLED,       // swap done; the next start runs the new build
+	AP_UPD_FAILED_RESTORE   // swap failed AND the undo failed: previous files wait as .old copies
 };
 
-// Startup, once: clean stale staged files and report whether this launch is
-// the first one after an update (1), a manual rollback (2) or neither (0).
-// `running_tag` is CTR_AP_COMPAT_VERSION.
+// Before startup: the folder the game reads its assets from (the Cortex Vortex
+// files install under it). An empty or relative path keeps <exe folder>/assets.
+void ap_update_set_asset_dir(const char *dir);
+// Startup, once: finish or undo a cut-short swap, clean stale staged files and
+// report whether this launch is the first one after an update (1), a manual
+// rollback (2), a recovered cut-short swap (3), a failed recovery (4) or none
+// of these (0). `running_tag` is CTR_AP_COMPAT_VERSION.
 int ap_update_startup(const char *running_tag);
 // The new build reached the main menu: drop the rollback copy and marker.
 void ap_update_confirm_started(void);

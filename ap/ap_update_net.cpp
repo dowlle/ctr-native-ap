@@ -59,7 +59,27 @@ struct State
 	std::string exe;          // installed executable, resolved once at startup
 	std::vector<StagedFile> staged;
 	std::atomic<unsigned> generation{0};
+	bool staging = false;     // a worker is writing the staging files (guarded by mutex)
 };
+
+// The core's rules for "one staging worker at a time", on this state. Call
+// with the mutex held.
+bool ClaimStagingLocked(State &s, unsigned gen)
+{
+	WorkSession ws;
+	ws.generation = s.generation.load();
+	ws.staging = s.staging;
+	const bool ok = ClaimStaging(ws, gen);
+	s.staging = ws.staging;
+	return ok;
+}
+WorkSession SessionLocked(const State &s)
+{
+	WorkSession ws;
+	ws.generation = s.generation.load();
+	ws.staging = s.staging;
+	return ws;
+}
 
 // Process-lifetime on purpose: a detached worker may still be unwinding a
 // socket read when the game exits.
@@ -188,6 +208,8 @@ bool HttpsGet(const std::string &host, const std::string &path, size_t maxBody, 
 			error = "response too large";
 			ok = false;
 		}
+		else if (total > 0)
+			body.reserve((size_t)total); // one allocation, no doubling near the cap
 	}
 	while (ok && code == 200)
 	{
@@ -514,7 +536,7 @@ bool Fetch(const std::string &firstUrl, size_t maxBody, unsigned gen, ProgressFn
 	return false;
 }
 
-void CheckWorker(unsigned gen, std::string running, std::string declined)
+void CheckWorkerImpl(unsigned gen, std::string running, std::string declined)
 {
 	Bytes json;
 	std::string error;
@@ -545,7 +567,7 @@ void CheckWorker(unsigned gen, std::string running, std::string declined)
 	}
 }
 
-void DownloadWorker(unsigned gen, std::string tag, std::string running, std::string exe)
+void DownloadWorkerImpl(unsigned gen, std::string tag, std::string running, std::string exe)
 {
 	Bytes manifest, signature, archive;
 	std::vector<InstallFile> files;
@@ -571,18 +593,28 @@ void DownloadWorker(unsigned gen, std::string tag, std::string running, std::str
 		SetStatus(gen, AP_UPD_FAILED_VERIFY, std::string("verification failed: ") + ResultText(r));
 		return;
 	}
-	if (Cancelled(gen))
-		return;
+	State &s = S();
+	{
+		// One worker stages at a time, and a cancel cannot hand the staging
+		// paths to a new download while this one writes them.
+		std::lock_guard<std::mutex> lock(s.mutex);
+		if (!ClaimStagingLocked(s, gen))
+			return;
+	}
 	std::vector<StagedFile> staged;
 	const FsOps fs = RealFsOps();
 	r = Stage(fs, exe, files, staged);
 	if (r != OK)
 	{
+		{
+			std::lock_guard<std::mutex> lock(s.mutex);
+			s.staging = false;
+		}
 		SetStatus(gen, AP_UPD_FAILED_INSTALL, std::string("staging failed: ") + ResultText(r));
 		return;
 	}
-	State &s = S();
 	std::lock_guard<std::mutex> lock(s.mutex);
+	s.staging = false;
 	if (gen != s.generation.load())
 	{
 		// Cancelled while staging: do not leave staged files behind.
@@ -595,7 +627,60 @@ void DownloadWorker(unsigned gen, std::string tag, std::string running, std::str
 	s.detail = "staged " + tag + " (" + std::to_string(staged.size()) + " files)";
 }
 
+// A worker thread must never let an exception escape: that ends the game. An
+// allocation failure while a large body grows is the likely one.
+void CheckWorker(unsigned gen, std::string running, std::string declined)
+{
+	try
+	{
+		CheckWorkerImpl(gen, running, declined);
+	}
+	catch (...)
+	{
+		try
+		{
+			SetStatus(gen, AP_UPD_NONE, "check failed: internal error");
+		}
+		catch (...)
+		{
+		}
+	}
+}
+
+void DownloadWorker(unsigned gen, std::string tag, std::string running, std::string exe)
+{
+	try
+	{
+		DownloadWorkerImpl(gen, tag, running, exe);
+	}
+	catch (...)
+	{
+		try
+		{
+			{
+				State &s = S();
+				std::lock_guard<std::mutex> lock(s.mutex);
+				s.staging = false;
+			}
+			SetStatus(gen, AP_UPD_FAILED_DOWNLOAD, "download failed: internal error");
+		}
+		catch (...)
+		{
+		}
+	}
+}
+
 } // namespace
+
+extern "C" void ap_update_set_asset_dir(const char *dir)
+{
+	// Only an absolute path is taken; anything else keeps <exe folder>/assets.
+	if (!dir || !*dir)
+		return;
+	const bool absolute = dir[0] == '/' || dir[0] == '\\' || (dir[0] && dir[1] == ':');
+	if (absolute)
+		SetAssetDir(dir);
+}
 
 extern "C" int ap_update_startup(const char *running_tag)
 {
@@ -628,9 +713,16 @@ extern "C" void ap_update_check_start(const char *running_tag, const char *decli
 		s.status = AP_UPD_CHECKING;
 		gen = ++s.generation;
 	}
-	std::thread(CheckWorker, gen, std::string(running_tag ? running_tag : ""),
-	            std::string(declined ? declined : ""))
-	    .detach();
+	try
+	{
+		std::thread(CheckWorker, gen, std::string(running_tag ? running_tag : ""),
+		            std::string(declined ? declined : ""))
+		    .detach();
+	}
+	catch (...)
+	{
+		SetStatus(gen, AP_UPD_NONE, "check failed: no thread");
+	}
 }
 
 extern "C" int ap_update_status(char *tag, int tag_bytes, int *progress_permille)
@@ -659,7 +751,7 @@ extern "C" void ap_update_download_start(void)
 	std::string tag, running, exe;
 	{
 		std::lock_guard<std::mutex> lock(s.mutex);
-		if (s.status != AP_UPD_OFFER)
+		if (s.status != AP_UPD_OFFER || !DownloadAllowed(SessionLocked(s)))
 			return;
 		s.status = AP_UPD_DOWNLOADING;
 		s.progress = 0;
@@ -668,7 +760,14 @@ extern "C" void ap_update_download_start(void)
 		running = s.running;
 		exe = s.exe;
 	}
-	std::thread(DownloadWorker, gen, tag, running, exe).detach();
+	try
+	{
+		std::thread(DownloadWorker, gen, tag, running, exe).detach();
+	}
+	catch (...)
+	{
+		SetStatus(gen, AP_UPD_FAILED_DOWNLOAD, "download failed: no thread");
+	}
 }
 
 extern "C" void ap_update_cancel(void)
@@ -677,6 +776,8 @@ extern "C" void ap_update_cancel(void)
 	std::lock_guard<std::mutex> lock(s.mutex);
 	if (s.status != AP_UPD_DOWNLOADING && s.status != AP_UPD_VERIFYING)
 		return;
+	if (!CancelAllowed(SessionLocked(s)))
+		return; // a worker is writing the staging files; it ends in seconds
 	++s.generation;
 	// Back to the offer: the player may start again or decline.
 	s.status = AP_UPD_OFFER;
@@ -707,7 +808,7 @@ extern "C" int ap_update_apply(void)
 	const Result r = Apply(RealFsOps(), s.exe, s.staged, s.tag);
 	if (r != OK)
 	{
-		s.status = AP_UPD_FAILED_INSTALL;
+		s.status = r == ERR_UNDO_FAILED ? AP_UPD_FAILED_RESTORE : AP_UPD_FAILED_INSTALL;
 		s.detail = std::string("install failed: ") + ResultText(r);
 		return 0;
 	}
