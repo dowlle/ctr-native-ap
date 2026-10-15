@@ -331,7 +331,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 				{
 					rotY += 0x400;
 				}
+#ifdef CTR_AP
+				// #169: arriving from Pinstripe's race means his garage's
+				// venue, which boss track shuffle may have moved.
+				else if (!((gGT->levelID == GEM_STONE_VALLEY) && (gGT->bossID == 3) &&
+				           (gGT->prevLEV == AP_BossGarageVenue(3))))
+#else
 				else if (!((gGT->levelID == GEM_STONE_VALLEY) && (gGT->prevLEV == HOT_AIR_SKYWAY)))
+#endif
 				{
 					rotY += 0x800;
 				}
