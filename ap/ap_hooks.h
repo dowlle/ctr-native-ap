@@ -68,6 +68,7 @@ void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected);
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
+void AP_NotifyCrystalPickup(struct Instance *inst, int driverID);
 
 // Evaluate the composed per-seed goal (issue #152: ctr_cfg.goal_oxide/
 // goal_bosses/goal_gems, ANDed) against received items + game events and send

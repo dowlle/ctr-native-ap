@@ -19,6 +19,7 @@
 // lock needed.
 
 #include "ap_boss_venue.h"
+#include "ap_crystal_checks.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -793,6 +794,7 @@ typedef struct
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
 extern ctr_seed_config ctr_cfg;
+extern AP_CrystalChecks ctr_crystal_checks;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
@@ -800,7 +802,7 @@ int ctr_cfg_active(void);
 static inline int ctr_cfg_arena_pad_disabled(int levelID)
 {
 	return ctr_cfg_active() && ctr_cfg.schema_version >= 18 &&
-	       !ctr_cfg.include_battle_arenas &&
+	       (!ctr_cfg.include_battle_arenas || ctr_crystal_checks.state < 0) &&
 	       (levelID == 18 || levelID == 19 || levelID == 21 || levelID == 23);
 }
 

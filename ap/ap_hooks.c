@@ -347,6 +347,8 @@ static long AP_TrialTrackLocation(int levelID, int challenge);
 
 static long AP_LookupLocationCode(int globalBit)
 {
+    if (globalBit >= AP_CRYSTAL_PSEUDO_BASE && globalBit < AP_CRYSTAL_PSEUDO_BASE+80)
+        return ctr_cfg_active() ? AP_CrystalPseudoCode(&ctr_crystal_checks, globalBit) : -1;
 	if (globalBit >= 50000 && globalBit <= 50104)
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(globalBit - 50000);

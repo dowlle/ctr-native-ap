@@ -330,6 +330,17 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 #endif
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+    {
+        int arena=AP_CrystalArenaIndex(destLevelID);
+        if (ctr_cfg_active() && arena>=0 && ctr_crystal_checks.state==1 &&
+            ctr_crystal_checks.present[arena])
+            for (int n=0;n<20 && count<cap;++n)
+            {
+                int bit=AP_CRYSTAL_PSEUDO_BASE+arena*20+n;
+                long code=AP_CrystalPseudoCode(&ctr_crystal_checks,bit);
+                if (ap_net_location_exists(code) && !ap_net_location_checked(code)) outBits[count++]=bit;
+            }
+    }
 
 	// #439 follow-up: an open Relic Race Perfect is advertised like the other
 	// relic-side checks, right after the tier bits. Retail race pads and the two
@@ -751,6 +762,7 @@ CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+    if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
 	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
@@ -1025,7 +1037,8 @@ int AP_PadState(int physLevelID, int destLevelID)
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
-	if (ctr_cfg_arena_pad_disabled(physLevelID))
+	if (ctr_cfg_arena_pad_disabled(physLevelID) ||
+	    ctr_cfg_arena_pad_disabled(destLevelID))
 		return 5;
 	if (!AP_DestKnown(destLevelID))
 		return 0;
