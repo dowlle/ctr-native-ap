@@ -15,7 +15,7 @@ source='\n'.join(line for line in source.splitlines() if not line.startswith('#i
 modes=(root/'include/namespace_Main.h').read_text()
 start=modes.index('enum GameMode1\n')
 mode_enum=modes[start:modes.index('};',start)+2]
-fixture=r''' 
+fixture=r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
