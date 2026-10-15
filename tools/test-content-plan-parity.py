@@ -21,6 +21,7 @@ os.environ["SKIP_REQUIREMENTS_UPDATE"] = "1"
 sys.path.insert(0, str(args.apworld.resolve()))
 from worlds.ctr import content_plan as cp
 from worlds.ctr.test.test_content_plan import make_world, profile_options
+from worlds.ctr.test.test_warp_pad_rules import pool as manual_pool
 
 root = Path(__file__).resolve().parents[1]
 registry = json.loads(re.search(r'R"CTRREG\((.*)\)CTRREG"', (root / "ap/ap_content_registry.hpp").read_text(), re.S)[1])
@@ -48,9 +49,28 @@ for seed in range(50):
     world = make_world(options, seed=seed)
     cases.append((f"generated-{seed}", world.fill_slot_data(), True))
 
+# Manual pad requirements (#463): plans the paired generator emits for random
+# rule maps (free, every concrete family, every Any family), at many seeds.
+manual_maps = [
+    {"Crash Cove": ("free", 0), "Red Cup": ("AnyGem", 2), "Dingo Canyon": ("AnyRelic", 4)},
+    {"Roo's Tubes": ("Trophy", 5), "Skull Rock": ("Gold Relic", 2), "Turbo Track": ("Sapphire Relic", 1)},
+    {"Tiger Temple": ("Key", 4), "Green Cup": ("Red Gem", 1), "Rocky Road": ("AnyGem", 5), "Sewer Speedway": ("free", 0)},
+    {"Polar Pass": ("Trophy", 1)},
+]
+for seed in range(40):
+    options = profile_options()
+    options["item_pool"] = manual_pool()
+    options["warp_pad_rules"] = {pad: dict(item=item, count=count)
+                                 for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
+    if seed % 2:
+        options["start_inventory"] = {"Trophy": 1}
+    world = make_world(options, seed=seed)
+    cases.append((f"manual-generated-{seed}", world.fill_slot_data(), True))
+cases.append(("manual-fixture", json.loads((root / "tools/fixtures/content-plan/manual-rules.json").read_text()), True))
+
 base = cases[0][1]
-def alter(name, change):
-    case = copy.deepcopy(base)
+def alter(name, change, source=None):
+    case = copy.deepcopy(source or base)
     change(case["content_plan"])
     try:
         cp.validate(case["content_plan"])
@@ -58,6 +78,29 @@ def alter(name, change):
     except (ValueError, TypeError, KeyError, OverflowError):
         accepted = False
     cases.append((name, case, accepted))
+
+manual_base = cases[-1][1]
+def manual_req(plan, rid):
+    return next(r for r in plan["requirements"] if r["id"] == rid)
+def manual_alter(name, change):
+    alter("manual-" + name, change, manual_base)
+manual_alter("count above supply", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("count", 6))
+manual_alter("count zero", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("count", 0))
+manual_alter("item outside counted", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("item", 35010015))
+manual_alter("item without supply", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("item", 35010003))
+manual_alter("sum drops a colour", lambda p: manual_req(p, "manual:100")["predicate"]["items"].pop(4))
+manual_alter("sum reordered", lambda p: manual_req(p, "manual:100")["predicate"]["items"].reverse())
+manual_alter("sum lists unsupplied item", lambda p: manual_req(p, "manual:0")["predicate"]["items"].append(35010003))
+manual_alter("sum mixes families", lambda p: manual_req(p, "manual:0")["predicate"].__setitem__("items", [35010001, 35010009]))
+manual_alter("sum count above supply", lambda p: manual_req(p, "manual:0")["predicate"].__setitem__("count", 5))
+manual_alter("unsupported predicate", lambda p: manual_req(p, "manual:3").__setitem__("predicate", dict(op="all", terms=[dict(op="always")])))
+manual_alter("feature missing", lambda p: p.__setitem__("required_features", ["content_plan_v1"]))
+manual_alter("feature unknown", lambda p: p.__setitem__("required_features", ["content_plan_v1", "manual_pad_requirements_v2"]))
+manual_alter("gate to free", lambda p: next(x for x in p["pads"] if x["id"] == "pad:3")["mode_gates"][0].__setitem__("requirement_id", "free"))
+manual_alter("gate to another pad", lambda p: next(x for x in p["pads"] if x["id"] == "pad:3")["mode_gates"][0].__setitem__("requirement_id", "manual:17"))
+manual_alter("record without pad", lambda p: manual_req(p, "manual:3").__setitem__("id", "manual:4"))
+manual_alter("record for unknown pad", lambda p: manual_req(p, "manual:3").__setitem__("id", "manual:99"))
+manual_alter("stray record", lambda p: p["requirements"].append(dict(id="extra", predicate=dict(op="always"))))
 
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))

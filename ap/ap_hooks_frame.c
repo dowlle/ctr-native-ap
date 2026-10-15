@@ -345,6 +345,31 @@ static void AP_DumpState(struct GameTracker *gGT)
 	}
 	AP_TextBufPuts(f, "  ],\n");
 
+	// Content-plan pads (#463): the hub Key floor and the manual stage-1 rule
+	// the pad text, pad state, capture and load gate all evaluate through
+	// AP_ContentPadOpen, with the owned count and the answer. Absent for a
+	// legacy seed, so a legacy ap-state.json is unchanged.
+	if (ap_content_plan_active())
+	{
+		int first = 1, id;
+		AP_TextBufPuts(f, "  \"content_pads\": [\n");
+		for (id = 0; id <= 110; id++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(id);
+			if (!pad || !pad->occupied)
+				continue;
+			AP_TextBufPrintf(f,
+			        "%s    {\"pad\": %d, \"keys\": %d, \"rule_mask\": %u, "
+			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d}",
+			        first ? "" : ",\n", pad->physical, pad->keys,
+			        pad->has_rule ? pad->rule_mask : 0u,
+			        pad->has_rule ? pad->rule_count : 0,
+			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad));
+			first = 0;
+		}
+		AP_TextBufPuts(f, "\n  ],\n");
+	}
+
 	// Boss garages: resolved requirement + met?
 	AP_TextBufPuts(f, "  \"bosses\": [\n");
 	for (i = 0; i < CTR_CFG_BOSS_COUNT; i++)

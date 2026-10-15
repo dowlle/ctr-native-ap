@@ -5,6 +5,10 @@
 #endif
 
 #ifdef CTR_AP
+// Content-plan manual rule text (#463), defined beside the other requirement
+// display helpers below; the pad status line near the top of ThTick uses it.
+static const char *AP_ContentRuleName(const ctr_content_pad *pad);
+
 // Pre-warp kart/camera snapshot. Captured the frame a warp begins and restored
 // when an AP menu is cancelled, so the player is left exactly where they were
 // before the pad grabbed them. Shared by the custom-track race menu and the Hit
@@ -623,7 +627,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					const char *physicalName = levelID < AH_WP_ADV_CUP ?
 						sdata->lngStrings[data.metaDataLEV[levelID].name_LNG] :
 						sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
-					if (pad && pad->occupied)
+					if (pad && pad->occupied && pad->has_rule)
+						snprintf(line, sizeof line, "%s pad | Trophy: %d Keys + %d %s (have %d) | %s", physicalName, pad->keys,
+						         pad->rule_count, AP_ContentRuleName(pad), AP_ContentPadRuleOwned(pad),
+#ifdef CTR_CUSTOM_TRACKS
+						         !AP_ContentPadReady(levelID) ? "Install content in Options" :
+#endif
+						         ap_net_location_checked((long)pad->trophy_location) ? "Complete (replay)" : "Incomplete");
+					else if (pad && pad->occupied)
 						snprintf(line, sizeof line, "%s pad | Trophy: %d Keys | %s", physicalName, pad->keys,
 #ifdef CTR_CUSTOM_TRACKS
 						         !AP_ContentPadReady(levelID) ? "Install content in Options" :
@@ -1051,7 +1062,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
 		int host;
 		if (!pad || !pad->occupied || !AP_ContentPadReady(physLevelID) ||
-		    AP_GateCount(AP_IDX_KEY) < pad->keys) goto WarpPad_AnimateOpen;
+		    !AP_ContentPadOpen(pad)) goto WarpPad_AnimateOpen;
 		if (!warppadObj->boolEnteredWarppad) AH_WarpPad_WarpCapture(gGT);
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
@@ -2585,6 +2596,52 @@ static void AP_ReqToUnlock(const ctr_req *r, int *modelID, int *numOwned, int *n
 	*numNeeded = r->count;
 }
 
+// Content-plan manual stage-1 rule (#463): the pad's resolved item mask as the
+// legacy ctr_req the display helpers already understand (a single item is a
+// concrete type/colour, several are the Any family). Display only: the gate is
+// AP_ContentPadOpen, which sums exactly the masked items.
+static void AP_ContentRuleToReq(const ctr_content_pad *pad, ctr_req *r)
+{
+	int i, first = -1, bits = 0;
+	for (i = 0; i < 15; i++)
+		if (pad->rule_mask & (1u << i))
+		{
+			bits++;
+			if (first < 0) first = i;
+		}
+	r->count = pad->rule_count;
+	r->colour = -1;
+	if (first == 0) r->type = 1;
+	else if (first == 14) r->type = 2;
+	else if (first <= 3) { r->type = bits == 1 ? 4 : 7; r->colour = bits == 1 ? first - 1 : -1; }
+	else if (first <= 8) { r->type = bits == 1 ? 3 : 6; r->colour = bits == 1 ? first - 4 : -1; }
+	else { r->type = bits == 1 ? 5 : 8; r->colour = bits == 1 ? first - 9 : -1; }
+}
+
+// Name of the item(s) a content-plan rule asks for, for the pad's status line.
+static const char *AP_ContentRuleName(const ctr_content_pad *pad)
+{
+	static const char *const names[15] = {
+		"Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic",
+		"Red CTR Token", "Green CTR Token", "Blue CTR Token", "Yellow CTR Token", "Purple CTR Token",
+		"Red Gem", "Green Gem", "Blue Gem", "Yellow Gem", "Purple Gem", "Key"};
+	ctr_req r;
+	AP_ContentRuleToReq(pad, &r);
+	switch (r.type)
+	{
+	case 6: return "Any CTR Token";
+	case 7: return "Any Relic";
+	case 8: return "Any Gem";
+	default: break;
+	}
+	{
+		int i;
+		for (i = 0; i < 15; i++)
+			if (pad->rule_mask & (1u << i)) return names[i];
+	}
+	return "Item";
+}
+
 // AP stage-2 re-lock advert for NON-trophy-track physical pads (trial / arena /
 // cup) hosting a RACE destination under destination shuffle: destination trophy
 // checked + this pad's stage-2 unmet must render the pad CLOSED advertising the
@@ -2844,6 +2901,20 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		unlockItem_modelID = STATIC_KEY;
 		unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
 		unlockItem_numNeeded = pad ? pad->keys : 2147483647;
+		// Manual rule (#463): once the hub Key floor is met, the pad advertises
+		// its own rule with the owned count, the same answer AP_ContentPadOpen
+		// gives the load gate.
+		if (pad && pad->has_rule && unlockItem_numOwned >= unlockItem_numNeeded)
+		{
+			ctr_req rule;
+			AP_ContentRuleToReq(pad, &rule);
+			AP_ReqToUnlock(&rule, &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
+			unlockItem_numOwned = AP_ContentPadRuleOwned(pad);
+			unlockItem_numNeeded = pad->rule_count;
+			reqRelicTint = AP_ReqRelicTintTier(&rule);
+			reqGemColour = AP_ReqGemColour(&rule);
+			reqTokenColour = AP_ReqTokenColour(&rule);
+		}
 		goto ContentPad_BuildGate;
 	}
 #endif

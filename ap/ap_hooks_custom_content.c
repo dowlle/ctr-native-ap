@@ -81,7 +81,7 @@ int AP_ContentPreparePad(int physicalPad)
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
 	struct CustomTrackRaceContext race;
 	if (!pad || !pad->occupied || CustomTrack_StandaloneBusy() || !AP_ContentPadReady(physicalPad) ||
-	    AP_GateCount(AP_IDX_KEY) < pad->keys) return -1;
+	    !AP_ContentPadOpen(pad)) return -1;
 	memset(&race, 0, sizeof race);
 	race.physicalPad = physicalPad; race.returnHub = pad->hub;
 	race.laps = pad->laps; race.trophyLocation = pad->trophy_location;

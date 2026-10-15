@@ -349,6 +349,16 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts)
 	}
 }
 
+int AP_ContentPadOpen(const ctr_content_pad *pad)
+{
+	return ap_content_pad_open(pad, ap_recv_count);
+}
+
+int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
+{
+	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;
+}
+
 int AP_BossReqMet(const ctr_req *r)
 {
 	return AP_ReqMetCounts(r, ap_recv_count);

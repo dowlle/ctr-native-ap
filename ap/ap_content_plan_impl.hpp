@@ -90,15 +90,31 @@ static void validate(const J &p, State &out) {
     out.canonical = p.dump(); // also validates UTF-8
     need(out.canonical.size() <= 16 * 1024 * 1024, "serialized byte budget exceeded");
     fields(p, {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"});
-    need(p.at("version") == 1 && p.at("required_features") == J::array({"content_plan_v1"}), "unsupported required content-plan version or feature");
+    need(p.at("version") == 1, "unsupported required content-plan version");
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto packages = table(p.at("packages"), 2);
     const auto tracks = table(p.at("tracks"), 27);
     const auto entries = table(p.at("entries"), 27);
     const auto pads = table(p.at("pads"), 32);
-    const auto requirements = table(p.at("requirements"), 5);
-    need(pads.size() == 32 && requirements.size() == 5, "physical pad or requirement registry mismatch");
+    const auto requirements = table(p.at("requirements"), 32);
+    need(pads.size() == 32 && requirements.size() >= 5, "physical pad or requirement registry mismatch");
+    // Manual pad requirements (#463): every record beyond the five physical hub
+    // ones must be `manual:<physical>`, is checked against the item ledger
+    // below, and is the only gate its own pad may reference. The feature name is
+    // required exactly when such a record exists, so a client without this
+    // evaluator never reads a Key-only plan by mistake.
+    std::map<int, std::string> manual_ids;
+    for (const auto &pair : requirements) {
+        if (pair.first == "free" || pair.first.rfind("keys:", 0) == 0) continue;
+        need(pair.first.rfind("manual:", 0) == 0 && pair.first.size() > 7 && pair.first.size() <= 10, "unknown requirement record: " + pair.first);
+        const std::string digits = pair.first.substr(7);
+        need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) && (digits.size() == 1 || digits[0] != '0'), "malformed manual requirement id");
+        need(manual_ids.emplace(std::stoi(digits), pair.first).second, "duplicate manual requirement");
+    }
+    need(requirements.size() == 5 + manual_ids.size(), "requirement registry mismatch");
+    need(p.at("required_features") == (manual_ids.empty() ? J::array({"content_plan_v1"}) : J::array({"content_plan_v1", "manual_pad_requirements_v1"})),
+         "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
         const auto id = i ? "keys:" + std::to_string(i) : "free";
         const J pred = i ? J{{"op", "count"}, {"item", 35010014}, {"count", i}} : J{{"op", "always"}};
@@ -121,6 +137,7 @@ static void validate(const J &p, State &out) {
     std::set<std::string> used_entries, used_tracks, used_packages;
     std::set<int> retail_ids, custom_slots, named_blocks;
     std::map<int64_t, J> expected_checks;
+    std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     bool starting_entry = false;
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
@@ -143,7 +160,8 @@ static void validate(const J &p, State &out) {
         }
         const auto entry_id = text(pad["entry_id"]);
         need(!garage && entries.count(entry_id) && used_entries.insert(entry_id).second, "invalid or repeated pad entry");
-        need(pad["mode_gates"] == J::array({J{{"mode", "trophy"}, {"stage", 1}, {"requirement_id", "free"}}}), "unsupported mode gates");
+        need(pad["mode_gates"] == J::array({J{{"mode", "trophy"}, {"stage", 1}, {"requirement_id", manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free")}}}), "unsupported mode gates");
+        if (manual_ids.count(physical)) manual_pad[physical] = &dest;
         const J &entry = *entries.at(entry_id);
         fields(entry, {"id", "kind", "track_id", "modes", "merged"});
         need(entry["kind"] == "track" && entry["modes"] == J::array({"trophy"}) && entry["merged"] == false, "unsupported entry kind or modes");
@@ -223,6 +241,40 @@ static void validate(const J &p, State &out) {
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
         remaining += r.remaining;
     }
+    // Manual requirement records: item identities and counts come from the
+    // ledger, so a forged record cannot name an item the seed lacks or ask for
+    // more than the base supply (`requirement_ceiling`).
+    need(manual_pad.size() == manual_ids.size(), "manual requirement without an occupied pad");
+    for (const auto &pair : manual_ids) {
+        fields(*requirements.at(pair.second), {"id", "predicate"});
+        const J &pred = requirements.at(pair.second)->at("predicate");
+        ctr_content_pad &target = *manual_pad.at(pair.first);
+        long long supply = 0;
+        unsigned mask = 0;
+        if (pred.is_object() && pred.contains("op") && pred["op"] == "count") {
+            fields(pred, {"op", "item", "count"});
+            const int item = number(pred["item"], 35010000, 35010014) - 35010000;
+            mask = 1u << item; supply = out.items[item].base;
+        } else {
+            need(pred.is_object() && pred.contains("op") && pred["op"] == "sum", "unsupported manual predicate");
+            fields(pred, {"op", "items", "count"});
+            need(pred["items"].is_array() && !pred["items"].empty() && pred["items"].size() <= 5, "sum rule item list");
+            static const int families[3][2] = {{1, 3}, {4, 8}, {9, 13}}; // relic tiers, CTR Tokens, Gems
+            bool matched = false;
+            for (const auto &family : families) {
+                J eligible = J::array();
+                for (int i = family[0]; i <= family[1]; ++i) if (out.items[i].base) eligible.push_back(35010000 + i);
+                if (pred["items"] == eligible) {
+                    matched = true;
+                    for (int i = family[0]; i <= family[1]; ++i) if (out.items[i].base) { mask |= 1u << i; supply += out.items[i].base; }
+                }
+            }
+            need(matched, "sum rule items are not exactly one family's base items");
+        }
+        const int count = number(pred["count"], 1);
+        need(mask && count <= supply, "manual rule count outside the base supply");
+        target.has_rule = 1; target.rule_count = count; target.rule_mask = mask;
+    }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
@@ -243,10 +295,10 @@ static int parse_content_plan(const nlohmann::json &j) {
     if (!block && !flag) { forget(); return 1; }
     try {
         fields(j, {"schema_version", "content_plan", "ctr_options"});
-        need(number(j["schema_version"]) == 17, "content-plan global schema must be 17");
+        need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
         fields(co, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
-        need(number(co["schema_version"]) == 17 && co["content_plan"] == true, "inconsistent content-plan envelope");
+        need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"] == false && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
@@ -265,14 +317,14 @@ static int parse_content_plan(const nlohmann::json &j) {
         ctr_cfg.one_lap_cups = ctr_cfg.oxide_1_optional = 0;
         ctr_cfg.relic_min_time = ctr_cfg.relics_require_perfect = 0;
         state = std::move(candidate);
-        ctr_cfg.schema_version = 17; // commit after complete validation
+        ctr_cfg.schema_version = 18; // commit after complete validation
         return 2;
     } catch (const std::exception &e) {
         forget(); hit_reject("content_plan: %s", e.what()); return 0;
     }
 }
 
-extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 17 && !ctr_cfg.seed_rejected; }
+extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 18 && !ctr_cfg.seed_rejected; }
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
 extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {

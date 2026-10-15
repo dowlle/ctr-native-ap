@@ -85,7 +85,8 @@ extern "C" {
 //        admission parser and the rejection flag below. The block carries
 //        its own version: block schema 2 (the pool draw, 2026-09-14) rides
 //        global 16 because a block-schema-1 client refuses it at admission.
-// Candidate schema 17 has a separately admitted content_plan v1 profile.
+// The content_plan v1 profile is separately admitted, and rides global schema 18
+// (it was candidate schema 17 before the 0.3.0 wire step; #463).
 //   18 = the 0.3.0 wire step (#307 first): the required top-level
 //        trap_identities block names each trap item's effect by its stable
 //        key (ap_trap_items.h). A pre-18 seed keeps the frozen trap table; a
@@ -93,6 +94,9 @@ extern "C" {
 //        frozen table, which agrees because trap item ids never move.
 //        The same schema carries ctr_options.include_battle_arenas (#364):
 //        false closes the four arena pads and removes their Purple Token checks.
+//        The content-plan envelope is 18 too, and a plan with manual pad
+//        requirements (#463) lists the required feature
+//        manual_pad_requirements_v1.
 #define CTR_CFG_SCHEMA_KNOWN 18
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
