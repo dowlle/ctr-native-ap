@@ -313,6 +313,14 @@ int AP_ConnUpdateNoticeActive(void);
 // delegates here with the live tallies; the verify sweep passes simulated ones.
 int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 
+// Content-plan pad entry (#463): the one live evaluator of a pad's hub Key floor
+// plus its manual stage-1 rule (ap_content_pad_open over the received tallies).
+// Pad state, the capture and final load gates, the tracker launch and the
+// pad text all call this, so they cannot disagree.
+int AP_ContentPadOpen(const ctr_content_pad *pad);
+// Owned count for the pad's manual rule (0 when it has none).
+int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
+
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
 void AP_VerifyOnFrame(void);

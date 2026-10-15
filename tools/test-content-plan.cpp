@@ -39,8 +39,11 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
         changed[path]["unexpected_field"] = 1;
         refuse(changed, "extra field at " + path.to_string());
         for (auto it = node.begin(); it != node.end(); ++it) {
-            changed = base; changed[path].erase(it.key());
-            refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
+            // Optional custom-track fields (#306): absent is a legal plan.
+            if (it.key() != "room_title" && it.key() != "named_block") {
+                changed = base; changed[path].erase(it.key());
+                refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
+            }
             mutations(base, it.value(), path / it.key());
         }
     } else if (node.is_array()) {
@@ -138,6 +141,88 @@ int main(int argc, char **argv) {
     for (const J legacy : {J::object(), J{{"ctr_options", {{"schema_version", 16}}}}}) {
         parse(base); bind_room(base); ap_seedcfg_parse_json(legacy);
         expect(!ap_seedcfg_rejected() && !ap_content_plan_present() && !ap_content_plan_active(), "legacy parse withdraws new state");
+    }
+    // Manual pad requirements (#463): the paired apworld's own emitted plan.
+    J manual;
+    std::ifstream("tools/fixtures/content-plan/manual-rules.json") >> manual;
+    expect(parse(manual) && bind_room(manual, "seed-M") && ap_content_plan_active(), "manual-rule plan binds");
+    {
+        const auto *cove = ap_content_plan_pad(3), *skull = ap_content_plan_pad(21), *cup = ap_content_plan_pad(100);
+        const auto *turbo = ap_content_plan_pad(17), *dingo = ap_content_plan_pad(0), *plain = ap_content_plan_pad(6);
+        expect(cove && cove->occupied && cove->has_rule && cove->rule_count == 3 && cove->rule_mask == 1u && cove->keys == 0,
+               "concrete Trophy rule resolved on a free-hub pad");
+        expect(turbo && turbo->has_rule && turbo->rule_count == 2 && turbo->rule_mask == (1u << 2) && turbo->keys == 1,
+               "Gold Relic rule keeps its hub Key floor");
+        expect(cup && cup->has_rule && cup->rule_count == 2 && cup->rule_mask == 0x3E00u && cup->keys == 2,
+               "AnyGem sum rule resolved over the five base Gems");
+        expect(dingo && dingo->has_rule && dingo->rule_count == 4 && dingo->rule_mask == 0x6u,
+               "AnyRelic sum rule resolved over the base relic tiers only");
+        expect(skull && !skull->has_rule && skull->rule_mask == 0, "free pad carries no rule");
+        expect(plain && !plain->has_rule, "unlisted pad carries no rule");
+        int held[15] = {};
+        expect(!ap_content_pad_open(cove, held), "Trophy rule closed with nothing");
+        held[0] = 2; expect(!ap_content_pad_open(cove, held), "two of three Trophies is closed");
+        held[0] = 3; expect(ap_content_pad_open(cove, held), "three Trophies open the pad");
+        expect(!ap_content_pad_open(turbo, held), "Gold Relic pad closed without its hub Key");
+        held[14] = 1; held[2] = 1; expect(!ap_content_pad_open(turbo, held), "one of two Gold Relics is closed");
+        held[1] = 5; expect(!ap_content_pad_open(turbo, held), "Sapphire Relics do not count for Gold Relic");
+        held[2] = 2; expect(ap_content_pad_open(turbo, held), "Key floor plus two Gold Relics opens it");
+        int gems[15] = {}; gems[14] = 2; gems[9] = 1;
+        expect(!ap_content_pad_open(cup, gems) && ap_content_rule_owned(cup, gems) == 1, "one Gem of two is closed");
+        gems[13] = 1; expect(ap_content_pad_open(cup, gems) && ap_content_rule_owned(cup, gems) == 2, "any two Gems open the Cup pad");
+        int relics[15] = {}; relics[1] = 2; relics[3] = 9; relics[14] = 1;
+        expect(!ap_content_pad_open(dingo, relics), "Platinum Relics are not part of the sum");
+        relics[2] = 2; expect(ap_content_pad_open(dingo, relics), "Sapphire plus Gold sum to four");
+        expect(!ap_content_pad_open(nullptr, relics), "no pad is never open");
+    }
+    mutations(manual, manual, J::json_pointer(""));
+    auto manual_refuses = [&](const std::string &why, const std::function<void(J &)> &change) {
+        J bad = manual; change(bad["content_plan"]); refuse(bad, "manual rule: " + why);
+    };
+    auto requirement = [](J &plan, const std::string &id) -> J & {
+        for (auto &r : plan["requirements"]) if (r["id"] == id) return r;
+        throw std::runtime_error("missing requirement " + id);
+    };
+    manual_refuses("count above the base supply", [&](J &p) { requirement(p, "manual:3")["predicate"]["count"] = 6; });
+    manual_refuses("count zero", [&](J &p) { requirement(p, "manual:3")["predicate"]["count"] = 0; });
+    manual_refuses("item outside the counted families", [&](J &p) { requirement(p, "manual:3")["predicate"]["item"] = 35010015; });
+    manual_refuses("item with no base supply", [&](J &p) { requirement(p, "manual:3")["predicate"]["item"] = 35010003; });
+    manual_refuses("sum drops a colour", [&](J &p) { requirement(p, "manual:100")["predicate"]["items"].erase(4); });
+    manual_refuses("sum reordered", [&](J &p) { std::reverse(requirement(p, "manual:100")["predicate"]["items"].begin(), requirement(p, "manual:100")["predicate"]["items"].end()); });
+    manual_refuses("sum lists an item with no base supply", [&](J &p) { requirement(p, "manual:0")["predicate"]["items"].push_back(35010003); });
+    manual_refuses("sum mixes families", [&](J &p) { requirement(p, "manual:0")["predicate"]["items"] = J::array({35010001, 35010009}); });
+    manual_refuses("sum count above the family supply", [&](J &p) { requirement(p, "manual:0")["predicate"]["count"] = 5; });
+    manual_refuses("unsupported predicate", [&](J &p) { requirement(p, "manual:3")["predicate"] = {{"op", "all"}, {"terms", J::array({J{{"op", "always"}}})}}; });
+    manual_refuses("required feature missing", [&](J &p) { p["required_features"] = J::array({"content_plan_v1"}); });
+    manual_refuses("required feature unknown", [&](J &p) { p["required_features"] = J::array({"content_plan_v1", "manual_pad_requirements_v2"}); });
+    manual_refuses("gate points elsewhere", [&](J &p) { for (auto &pad : p["pads"]) if (pad["id"] == "pad:3") pad["mode_gates"][0]["requirement_id"] = "free"; });
+    manual_refuses("gate points at another pad's rule", [&](J &p) { for (auto &pad : p["pads"]) if (pad["id"] == "pad:3") pad["mode_gates"][0]["requirement_id"] = "manual:17"; });
+    manual_refuses("record without a pad", [&](J &p) { requirement(p, "manual:3")["id"] = "manual:4"; });
+    manual_refuses("record for an unknown pad", [&](J &p) { requirement(p, "manual:3")["id"] = "manual:99"; });
+    manual_refuses("leading zero in the pad number", [&](J &p) { requirement(p, "manual:3")["id"] = "manual:03"; });
+    manual_refuses("stray requirement record", [&](J &p) { p["requirements"].push_back({{"id", "extra"}, {"predicate", {{"op", "always"}}}}); });
+    manual_refuses("record keeps extra fields", [&](J &p) { requirement(p, "manual:3")["note"] = 1; });
+    {
+        J bad = manual;
+        auto &rows = bad["content_plan"]["requirements"];
+        rows.erase(std::remove_if(rows.begin(), rows.end(), [](const J &r) { return r["id"].get<std::string>().rfind("manual:", 0) == 0; }), rows.end());
+        refuse(bad, "manual gates without their records");
+        bad["content_plan"]["required_features"] = J::array({"content_plan_v1"});
+        refuse(bad, "gates still point at removed records");
+    }
+    {
+        // The same plan with the gates and records removed is a plain plan again.
+        J plain = manual;
+        auto &rows = plain["content_plan"]["requirements"];
+        rows.erase(std::remove_if(rows.begin(), rows.end(), [](const J &r) { return r["id"].get<std::string>().rfind("manual:", 0) == 0; }), rows.end());
+        for (auto &pad : plain["content_plan"]["pads"]) if (!pad["mode_gates"].empty()) pad["mode_gates"][0]["requirement_id"] = "free";
+        plain["content_plan"]["required_features"] = J::array({"content_plan_v1"});
+        expect(parse(plain) && bind_room(plain, "seed-P"), "a plan with no manual records and only the base feature admits");
+        expect(!ap_content_plan_pad(3)->has_rule, "no stale rule survives a re-parse");
+    }
+    {
+        J old = manual; old["schema_version"] = 17; old["ctr_options"]["schema_version"] = 17;
+        refuse(old, "a schema 17 content plan is no longer admitted");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

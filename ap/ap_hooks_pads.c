@@ -850,7 +850,7 @@ int AP_PadStage1Met(int physLevelID)
 	if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
-		return pad && pad->occupied && AP_GateCount(AP_IDX_KEY) >= pad->keys;
+		return AP_ContentPadOpen(pad);
 	}
 	int i, owned;
 
@@ -1009,7 +1009,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 #ifdef CTR_CUSTOM_TRACKS
 		if (!AP_ContentPadReady(physLevelID)) return 5;
 #endif
-		if (AP_GateCount(AP_IDX_KEY) < pad->keys) return 1;
+		if (!AP_ContentPadOpen(pad)) return 1;
 		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
 	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs

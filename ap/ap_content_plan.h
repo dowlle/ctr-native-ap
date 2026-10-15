@@ -11,6 +11,14 @@ extern "C" {
  * A physical pad is never recovered by inverting its borrowed engine level. */
 typedef struct ctr_content_pad {
     int physical, hub, keys, occupied;
+    /* Manual stage-1 rule (#463), the resolved `manual_pad_requirements_v1`
+     * record for this pad. rule_mask has bit i set for item 35010000 + i; the
+     * rule is met when the received counts of the masked items sum to at least
+     * rule_count (one bit is a concrete item, several are an Any rule over the
+     * items the seed has as base items). has_rule 0 is a free pad: only the hub
+     * Key floor (`keys`) applies. */
+    int has_rule, rule_count;
+    unsigned rule_mask;
     int retail_id; /* -1 custom, otherwise 0..17 */
     int custom_slot, package_index, laps;
     int named_block; /* -1 generic slot ids, otherwise 0..9999 (#306) */
@@ -28,6 +36,23 @@ typedef struct ctr_content_package {
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
+
+/* The single pad-entry evaluator for the content-plan profile. Display, pad
+ * state, capture, the final load gate and the tracker launch all call it, so
+ * the answers cannot diverge. `counts` is indexed by item offset (the 15
+ * AP_IDX_* tallies). */
+static inline int ap_content_rule_owned(const ctr_content_pad *pad, const int *counts)
+{
+    int i, owned = 0;
+    for (i = 0; i < 15; ++i)
+        if (pad->rule_mask & (1u << i)) owned += counts[i];
+    return owned;
+}
+static inline int ap_content_pad_open(const ctr_content_pad *pad, const int *counts)
+{
+    return pad && pad->occupied && counts[14] >= pad->keys &&
+           (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+}
 
 /* Parsed != admitted. Net admission must bind the exact room location union
  * and identity before any gameplay consumer can obtain a pad or package. */

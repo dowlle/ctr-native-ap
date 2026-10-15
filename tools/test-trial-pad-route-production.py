@@ -50,6 +50,7 @@ fixture = r'''
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 int AP_GateCount(int i){(void)i;return 0;}
+int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 0;}
 #define ADV_REWARD_FIRST_TROPHY 0
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0, AP_CV_SLOT_LETTER0 = 5 };

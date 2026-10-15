@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "content_plan": {
     "version": 1,
     "packages": [
@@ -1423,7 +1423,7 @@
     ]
   },
   "ctr_options": {
-    "schema_version": 17,
+    "schema_version": 18,
     "world_version": "0.3.0-content-dev",
     "content_plan": true,
     "goal": -1,
