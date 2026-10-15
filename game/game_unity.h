@@ -8,6 +8,7 @@
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_perf.h"      // whole-frame stall watchdog, bracketed in MainMain.c
 #include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
+#include "../ap/ap_update.h"    // signed in-game updater (#301)
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
 #include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
@@ -430,6 +431,7 @@
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
+#include "../ap/ap_update.c"   // signed in-game updater (#301)
 #else
 // The authoring client without Archipelago (see the header block above). Each
 // unit compiles to nothing unless its own option is on.

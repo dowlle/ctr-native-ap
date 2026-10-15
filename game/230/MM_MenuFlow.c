@@ -99,6 +99,10 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 			// submenu open, are where a waiting room link may be offered.
 			if ((D230.menuMainMenu.state & DRAW_NEXT_MENU_IN_HIERARCHY) == 0)
 				AP_LinkMainMenuSettled(mainMenu);
+			// Signed updater (issue #301): the offer, download and restart
+			// prompts appear only on these settled frames, never in a race.
+			if ((D230.menuMainMenu.state & DRAW_NEXT_MENU_IN_HIERARCHY) == 0)
+				AP_UpdateMainMenuSettled(mainMenu);
 			AP_LinkDrawTitleHint(&gGT->backBuffer->otMem.uiOT[3]);
 #endif
 		}

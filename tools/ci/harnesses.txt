@@ -152,6 +152,7 @@ tools/test-trap-identities.cpp
 tools/test-arena-pads-seedcfg.cpp
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
+tools/test-update-core.cpp
 tools/test-verify-020.c
 tools/test-verify-families.cpp
 tools/test-verify-parity-329.c

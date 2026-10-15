@@ -929,6 +929,8 @@ void RECTMENU_ProcessState()
 	// A room-link prompt on the settled main menu owns input the same way
 	// (issue #334): the menu underneath neither runs nor sees the answer press.
 	if (AP_LinkMenuFrame()) return;
+	// The updater prompt (issue #301) likewise, after a waiting room link.
+	if (AP_UpdateMenuFrame()) return;
 #endif
 	struct RectMenu *currMenu;
 	s16 width;
