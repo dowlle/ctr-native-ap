@@ -1339,6 +1339,9 @@ static bool EnsureFolders(const FsOps &fs, const std::string &exe, const std::st
 Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallFile> &files,
              std::vector<StagedFile> &staged)
 {
+	// Never overwrite the staging journal or backups of an unresolved swap.
+	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
+		return ERR_UNDO_FAILED;
 	staged.clear();
 	std::vector<std::string> rels;
 	size_t exes = 0;
@@ -1426,6 +1429,8 @@ static bool Undo(const FsOps &fs, const std::vector<Step> &steps)
 Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged,
              const std::string &newTag)
 {
+	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
+		return ERR_UNDO_FAILED;
 	std::vector<std::string> rels;
 	for (const StagedFile &f : staged)
 		rels.push_back(f.rel);
@@ -1573,8 +1578,8 @@ static bool FileHashIs(const FsOps &fs, const std::string &path, const std::stri
 }
 
 // A swap journal without a marker: the swap was cut short. 0 = nothing to do,
-// 1 = previous files restored, 2 = the swap had reached the new executable, so
-// it is finished instead (marker written), 3 = some file could not be put back
+// 1 = previous files restored, 2 = every installed file matches the new set,
+// so it is finished instead (marker written), 3 = some file could not be put back
 // (journal kept for the next launch).
 static int RecoverSwap(const FsOps &fs, const std::string &exe)
 {
@@ -1606,22 +1611,29 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 		fs.removeFile(fs.ctx, swapPath); // unreadable: nothing trustworthy to act on
 		return 0;
 	}
-	// The executable is swapped last: with the new one in place, every other
-	// file is already new. Finish the update instead of undoing it.
+	// Undo can fail for the executable while restoring the other files. A new
+	// executable alone therefore does not prove that the full swap finished.
+	bool allNew = true;
+	bool hasExe = false;
 	for (const SwapEntry &e : entries)
-		if (IsExecutableRel(e.rel) && FileHashIs(fs, exe, e.sha))
+	{
+		hasExe = hasExe || IsExecutableRel(e.rel);
+		if (!FileHashIs(fs, InstallTarget(exe, e.rel), e.sha))
+			allNew = false;
+	}
+	if (hasExe && allNew)
+	{
+		std::vector<std::string> marker(1, tag);
+		for (const SwapEntry &k : entries)
+			if (fs.exists(fs.ctx, OldPath(InstallTarget(exe, k.rel))))
+				marker.push_back(k.rel);
+		if (fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker)))
 		{
-			std::vector<std::string> marker(1, tag);
-			for (const SwapEntry &k : entries)
-				if (fs.exists(fs.ctx, OldPath(InstallTarget(exe, k.rel))))
-					marker.push_back(k.rel);
-			if (fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker)))
-			{
-				fs.removeFile(fs.ctx, swapPath);
-				return 2;
-			}
-			return 3;
+			fs.removeFile(fs.ctx, swapPath);
+			return 2;
 		}
+		return 3;
+	}
 	bool complete = true;
 	for (const SwapEntry &e : entries)
 	{
@@ -1636,6 +1648,13 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 				Bytes oldBytes;
 				if (FileHashIs(fs, target, e.sha))
 				{
+					// Keep a launchable executable even if restoring it fails.
+					if (IsExecutableRel(e.rel) && fs.replaceFile)
+					{
+						if (!fs.replaceFile(fs.ctx, old, target))
+							complete = false;
+						continue;
+					}
 					// Only the new copy may be cleared to make room for the old one.
 					if (!fs.removeFile(fs.ctx, target))
 					{
@@ -1718,6 +1737,8 @@ StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::st
 
 void ConfirmStarted(const FsOps &fs, const std::string &exe)
 {
+	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
+		return; // recovery still owns these rollback copies
 	const std::vector<std::string> lines = ReadLines(fs, MarkerPath(exe));
 	for (size_t i = 1; i < lines.size(); i++)
 		if (SafeLocalRel(lines[i]))

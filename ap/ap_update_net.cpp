@@ -690,7 +690,13 @@ extern "C" int ap_update_startup(const char *running_tag)
 		s.exe = ExecutablePath();
 	if (s.exe.empty())
 		return 0;
-	return (int)StartupCheck(RealFsOps(), s.exe, running_tag ? running_tag : "");
+	const StartupState startup = StartupCheck(RealFsOps(), s.exe, running_tag ? running_tag : "");
+	if (startup == STARTUP_RESTORE_FAILED)
+	{
+		s.status = AP_UPD_FAILED_RESTORE;
+		s.detail = "interrupted update could not be restored; see SETUP.md";
+	}
+	return (int)startup;
 }
 
 extern "C" void ap_update_confirm_started(void)

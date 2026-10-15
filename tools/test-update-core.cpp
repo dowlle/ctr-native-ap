@@ -1366,6 +1366,72 @@ static void TestCrashRecovery()
 static bool g_failChmod;
 static bool FChmod(void *c, const std::string &p) { return !g_failChmod && RealFsOps().makeExecutable(c, p); }
 
+static void TestPartialUndoRecovery()
+{
+	char tmpl[] = "/tmp/ctr-update-undo-XXXXXX";
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
+		return;
+	const std::string dir = dirp;
+	const FsOps real = RealFsOps();
+	Install in = MakeInstall(dir);
+	std::vector<StagedFile> staged;
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	// The marker write fails after all files were swapped. Undo then restores
+	// the world and assets, but the executable's atomic restore fails.
+	g_faults = Faults();
+	g_faults.failWriteOf = MarkerPath(in.exe);
+	g_faults.failRenameFrom = {OldPath(in.exe)};
+	CHECK_EQ(Apply(FaultOps(), in.exe, staged, "v0.3.1"), ERR_UNDO_FAILED);
+	CHECK(ReadText(in.exe) == "NEW EXE" && ReadText(in.apworld) == "OLD WORLD");
+	CHECK(ReadText(in.lev) == "OLD LEV" && !real.exists(nullptr, in.vrm));
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	const std::string journal = ReadText(SwapJournalPath(in.exe));
+	// A second update and menu confirmation cannot consume recovery's files.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), ERR_UNDO_FAILED);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.2"), ERR_UNDO_FAILED);
+	ConfirmStarted(real, in.exe);
+	CHECK(ReadText(SwapJournalPath(in.exe)) == journal);
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	// The mixed install must be undone, never marked as a successful update.
+	g_faults = Faults();
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_RECOVERED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
+	CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_CLEAN);
+	Clean(in);
+
+	// A failed startup restore keeps its journal and backup for a later retry.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	g_faults.failWriteOf = MarkerPath(in.exe);
+	g_faults.failRenameFrom = {OldPath(in.exe)};
+	CHECK_EQ(Apply(FaultOps(), in.exe, staged, "v0.3.1"), ERR_UNDO_FAILED);
+	CHECK_EQ(StartupCheck(FaultOps(), in.exe, "v0.3.1"), STARTUP_RESTORE_FAILED);
+	CHECK(ReadText(in.exe) == "NEW EXE"); // failed atomic recovery remains launchable
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	CHECK(real.exists(nullptr, SwapJournalPath(in.exe)));
+	CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), ERR_UNDO_FAILED);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.2"), ERR_UNDO_FAILED);
+	ConfirmStarted(real, in.exe);
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	g_faults = Faults();
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_RECOVERED);
+	CHECK(OldState(in) && NoLeftovers(in, false));
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_CLEAN);
+	// Once recovered, staging is available again.
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	DiscardStaged(real, in.exe, staged);
+	Clean(in);
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
+}
+
 static void TestStagingAndMarker()
 {
 	char tmpl[] = "/tmp/ctr-update-stage-XXXXXX";
@@ -1521,6 +1587,7 @@ int main()
 	TestInstallSet();
 	TestInstall();
 	TestCrashRecovery();
+	TestPartialUndoRecovery();
 	TestStagingAndMarker();
 	TestChunkOverflow();
 	TestWorkGate();
