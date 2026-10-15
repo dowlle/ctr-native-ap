@@ -1475,6 +1475,115 @@ static void ap_seedcfg_parse_trap_identities(const nlohmann::json &j, int schema
 	           AP_TRAP_IDENTITIES_VERSION, agreed, refused);
 }
 
+// ── boss_encounters (#169 tier 1, schema 18) ──────────────────────────────
+//
+// The four ordinary garages' drawn venues. ctr_options.boss_track_shuffle is
+// the switch and the block is its record: both absent (or the switch false
+// with no block) is a retail seed. Any disagreement, unknown version, missing
+// or extra garage, or a row this build cannot race (wrong check code, an
+// opponent, AI, kit or package this build does not implement, a track that
+// cannot carry the boss's inherited attack) refuses ALL four encounters: the
+// garages stay shut with the reason on their panel. Never a silent fallback
+// to the retail venue (design 2026-10-13).
+extern "C"
+{
+	AP_BossEncounters ctr_boss_encounters;
+}
+
+static void ap_boss_encounters_refuse(const char *why)
+{
+	ctr_boss_encounters.state = AP_BOSS_ENC_REFUSED;
+	std::snprintf(ctr_boss_encounters.reason, sizeof ctr_boss_encounters.reason, "%s", why);
+	ap_cfg_log("[AP CFG] boss_encounters refused (%s): boss garages stay shut\n", why);
+}
+
+static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nlohmann::json &opt, int schema)
+{
+	AP_BossEncounters *e = &ctr_boss_encounters;
+	std::memset(e, 0, sizeof *e);
+	e->state = AP_BOSS_ENC_RETAIL;
+	if (schema < AP_BOSS_ENCOUNTERS_SCHEMA)
+		return; // pre-18 seeds never draw a venue
+
+	bool on = false;
+	auto flag = opt.find("boss_track_shuffle");
+	if (flag != opt.end())
+	{
+		if (!flag->is_boolean())
+		{
+			ap_boss_encounters_refuse("boss_track_shuffle is not a boolean");
+			return;
+		}
+		on = flag->get<bool>();
+	}
+	auto it = j.find("boss_encounters");
+	bool present = it != j.end();
+	if (!on && !present)
+		return;
+	if (on != present)
+	{
+		ap_boss_encounters_refuse(on ? "switch on but block missing" : "block present but switch off");
+		return;
+	}
+	if (!it->is_object())
+	{
+		ap_boss_encounters_refuse("block is not an object");
+		return;
+	}
+	auto v = it->find("version");
+	if (v == it->end() || !v->is_number_integer() || v->get<long long>() != AP_BOSS_ENCOUNTERS_VERSION)
+	{
+		ap_boss_encounters_refuse("version is missing or not 1");
+		return;
+	}
+	auto g = it->find("garages");
+	if (g == it->end() || !g->is_object() || g->size() != AP_BOSS_VENUE_GARAGES)
+	{
+		ap_boss_encounters_refuse("garages must name exactly the four boss garages");
+		return;
+	}
+	for (int i = 0; i < AP_BOSS_VENUE_GARAGES; i++)
+	{
+		auto row = g->find(AP_BOSS_VENUE_GARAGE[i].key);
+		if (row == g->end() || !row->is_object())
+		{
+			ap_boss_encounters_refuse("a boss garage row is missing");
+			return;
+		}
+		AP_BossEncounterRow r;
+		std::memset(&r, 0, sizeof r);
+		auto num = [&](const char *k, long long fallback) -> long long {
+			auto f = row->find(k);
+			return (f != row->end() && f->is_number_integer()) ? f->get<long long>() : fallback;
+		};
+		auto str = [&](const char *k) -> const char * {
+			auto f = row->find(k);
+			return (f != row->end() && f->is_string()) ? f->get_ref<const std::string &>().c_str() : nullptr;
+		};
+		auto pk = row->find("packages");
+		r.fieldCount = (int)row->size();
+		r.location = (long)num("location", -1);
+		r.homeTrack = (int)num("home_track", -1);
+		r.track = (int)num("track", -1);
+		r.opponent = str("opponent");
+		r.aiProfile = str("ai_profile");
+		r.attack = str("attack");
+		r.packagesEmpty = pk != row->end() && pk->is_array() && pk->empty();
+		const char *problem = AP_BossEncounterRowProblem(i, &r);
+		if (problem)
+		{
+			char why[96];
+			std::snprintf(why, sizeof why, "%s: %s", AP_BOSS_VENUE_GARAGE[i].key, problem);
+			ap_boss_encounters_refuse(why);
+			return;
+		}
+		e->track[i] = (signed char)r.track;
+	}
+	e->state = AP_BOSS_ENC_VALID;
+	ap_cfg_log("[AP CFG] boss_encounters v%d: venues roo=%d papu=%d komodo=%d pinstripe=%d\n",
+	           AP_BOSS_ENCOUNTERS_VERSION, e->track[0], e->track[1], e->track[2], e->track[3]);
+}
+
 #include "ap_content_plan_impl.hpp"
 
 // ── custom_track_titles (#306 B+, schema 18) ──────────────────────────────
@@ -1559,6 +1668,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
+	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
 	// win_logic belongs to this parse only: a seed without the block (or a
 	// refused config) must never inherit the previous connection's tables.
 	std::memset(&ctr_win_logic, 0, sizeof ctr_win_logic);
@@ -1799,6 +1909,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
 	ap_seedcfg_parse_trap_identities(j, schema);
+	ap_seedcfg_parse_boss_encounters(j, opt, schema);
 
 	ctr_cfg.goal = json_int(opt, "goal", 0);
 	// Issue #152: composed goal conditions, additive on the existing schema

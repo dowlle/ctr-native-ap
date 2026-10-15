@@ -560,7 +560,13 @@ void AA_EndEvent_DrawMenu(void)
 				gGT->podiumRewardID = STATIC_KEY; // key
 
 				// hot air skyway
+#ifdef CTR_AP
+				// #169: "just beat Pinstripe" is the garage, not the track
+				// a shuffled seed raced him on.
+				if (AP_BossRetailRulesLevel(gGT->levelID) == HOT_AIR_SKYWAY)
+#else
 				if (gGT->levelID == HOT_AIR_SKYWAY)
+#endif
 				{
 					// If you just beat Pinstripe
 					// Load gemstone valley
