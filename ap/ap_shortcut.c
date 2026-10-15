@@ -16,12 +16,12 @@
 // Enforcement reuses the engine mask-grab respawn. No persistent level mutation.
 // ============================================================================
 
-int Platform_InputRawKeyDown(int scancode); // native_input.c (CTR_AP only)
-
-// Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers own F1-F12
-// (native_platform.c, F8 = savestate LOAD) and fire regardless of AP keys.
-#define AP_SC_KEY_TOGGLE 95 // Numpad 7: dev toggle Shortcutless
-#define AP_SC_KEY_MARK   96 // Numpad 8: log/mark current quad blockID
+// Keys from the Controls page (AP Shortcuts): defaults Numpad 7 (dev toggle
+// Shortcutless) and Numpad 8 (log/mark the current quad blockID),
+// platform/native_controls.c. Numpad, not F-keys: the engine's CTR_INTERNAL dev
+// handlers own F1-F12 (native_platform.c, F8 = savestate LOAD) and fire
+// regardless of AP keys.
+#include <platform/native_shortcuts.h>
 
 static int g_shortcutless = 0;   // enforcement toggle (the Shortcut Unlock item)
 static int g_mode = AP_SC_ALLOWED;
@@ -396,8 +396,8 @@ void AP_ShortcutKeys(void)
 	if (!AP_DevKeysEnabled())
 		return;
 
-	toggle = Platform_InputRawKeyDown(AP_SC_KEY_TOGGLE);
-	mark = Platform_InputRawKeyDown(AP_SC_KEY_MARK);
+	toggle = Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_SHORTCUTLESS);
+	mark = Platform_InputShortcutDown(NATIVE_SHORTCUT_DEV_MARK_QUAD);
 
 	// Numpad 7 is a DEV toggle -- once dev_keys=1 it always works so the effect can
 	// be tested regardless of mode / allow_shortcut_switching (the real player

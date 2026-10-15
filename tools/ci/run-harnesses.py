@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Build and run the host harnesses under tools/test-*.c and tools/test-*.cpp.
+"""Build and run the host harnesses under tools/test-*.c, tools/test-*.cpp and tools/test-*.py.
 
 Each harness is a single translation unit compiled against the freestanding
 _logic.h headers. Most carry their own build line in the leading comment block
 (a line starting with cc, gcc or g++, possibly continued on following comment
 lines). This runner uses that line when present and a default recipe otherwise.
+
+Python harnesses (tools/test-*.py) are run directly with python3 from the repo root.
+A line `cmd <name> :: <shell command>` in the list runs a non-file step (for example
+a unittest discover) from the repo root. CI's ci.yml runs this script for all of
+them, so the local run and CI use one list and cannot drift.
 
 Which harnesses CI enforces is decided by tools/ci/harnesses.txt: one harness
 path per line, optionally followed by `skip <reason>`. A harness file that is
@@ -83,7 +88,30 @@ def build_command(src):
     return cmd, out
 
 
+def run_py(src):
+    cmd = "python3 " + src
+    try:
+        r = subprocess.run(["python3", src], cwd=ROOT, capture_output=True, text=True, timeout=600)
+    except Exception as e:  # noqa: BLE001
+        return "run-error", cmd, str(e)
+    if r.returncode != 0:
+        return "run-fail", cmd, (r.stdout + r.stderr)[-1500:]
+    return "pass", cmd, ""
+
+
+def run_cmd(cmd):
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True, text=True, timeout=1200)
+    except Exception as e:  # noqa: BLE001
+        return "run-error", cmd, str(e)
+    if r.returncode != 0:
+        return "run-fail", cmd, (r.stdout + r.stderr)[-1500:]
+    return "pass", cmd, ""
+
+
 def run_one(src):
+    if src.endswith(".py"):
+        return run_py(src)
     cmd, out = build_command(src)
     try:
         b = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=600)
@@ -101,28 +129,33 @@ def run_one(src):
 
 
 def read_list():
-    listed, skipped = {}, {}
+    listed, skipped, cmds = {}, {}, {}
     if not os.path.exists(LIST):
-        return listed, skipped
+        return listed, skipped, cmds
     for ln in open(LIST):
         ln = ln.strip()
         if not ln or ln.startswith("#"):
+            continue
+        if ln.startswith("cmd "):
+            name, _, command = ln[4:].partition("::")
+            cmds[name.strip()] = command.strip()
             continue
         parts = ln.split(None, 2)
         if len(parts) >= 2 and parts[1] == "skip":
             skipped[parts[0]] = parts[2] if len(parts) > 2 else ""
         else:
             listed[parts[0]] = True
-    return listed, skipped
+    return listed, skipped, cmds
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "ci"
     all_src = sorted(glob.glob(os.path.join(ROOT, "tools", "test-*.c")) +
-                     glob.glob(os.path.join(ROOT, "tools", "test-*.cpp")))
+                     glob.glob(os.path.join(ROOT, "tools", "test-*.cpp")) +
+                     glob.glob(os.path.join(ROOT, "tools", "test-*.py")))
     all_rel = [os.path.relpath(p, ROOT) for p in all_src]
-    listed, skipped = read_list()
+    listed, skipped, cmds = read_list()
     results = {}
     targets = all_rel if mode in ("--all", "--write-list") else [p for p in all_rel if p in listed]
     for rel in targets:
@@ -132,10 +165,20 @@ def main():
         if status != "pass" and mode == "ci":
             print("  cmd: " + cmd)
             print("  " + detail.replace("\n", "\n  "))
+    if mode == "ci":
+        for name, command in cmds.items():
+            status, cmd, detail = run_cmd(command)
+            results[name] = (status, cmd, detail)
+            print(f"{status:11s} {name}")
+            if status != "pass":
+                print("  cmd: " + cmd)
+                print("  " + detail.replace("\n", "\n  "))
     if mode == "--write-list":
         with open(LIST, "w") as f:
             f.write("# Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.\n")
             f.write("# Regenerate with: tools/ci/run-harnesses.py --write-list\n")
+            for name, command in cmds.items():
+                f.write(f"cmd {name} :: {command}\n")
             for rel in all_rel:
                 st = results[rel][0]
                 if st == "pass":
