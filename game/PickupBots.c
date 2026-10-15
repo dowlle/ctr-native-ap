@@ -68,6 +68,20 @@ void PickupBots_Init(void)
 	}
 #endif
 
+#ifdef CTR_AP
+	// #169 boss track shuffle: a garage boss on a drawn venue keeps its own
+	// retail attack, mapped onto this track's checkpoints. The venue's own
+	// hubID would hand it another boss's table, or none on a trial track.
+	{
+		struct MetaDataBOSS *venueMeta = AP_BossVenueAttackSchedule(1);
+		if (venueMeta != NULL)
+		{
+			sdata->bossWeaponMeta = venueMeta;
+			return;
+		}
+	}
+#endif
+
 	if (hub > -1)
 	{
 		// set pointer to boss weapon meta
@@ -257,6 +271,14 @@ static struct MetaDataBOSS *PickupBots_GetInitialBossMeta(void)
 	if (CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 	                                  (gGT->gameMode1 & ADVENTURE_BOSS) != 0))
 		return s_cortexVortexOxideWeapons;
+#endif
+
+#ifdef CTR_AP
+	{
+		struct MetaDataBOSS *venueMeta = AP_BossVenueAttackSchedule(0);
+		if (venueMeta != NULL)
+			return venueMeta;
+	}
 #endif
 
 	if (gGT->levelID == OXIDE_STATION)
@@ -515,7 +537,14 @@ static void PickupBots_UpdateBoss(void)
 		{
 			VehPickupItem_ShootNow(boss, 2, (s16)weaponFlags);
 		}
+#ifdef CTR_AP
+		// #169: Oxide's double potion belongs to Oxide, not to a garage boss
+		// whose drawn venue is Oxide Station.
+		else if ((boss->heldItemID == PICKUPBOTS_ITEM_POTION) && (weaponFlags == 1) &&
+		         (AP_BossRetailRulesLevel(gGT->levelID) == OXIDE_STATION))
+#else
 		else if ((boss->heldItemID == PICKUPBOTS_ITEM_POTION) && (weaponFlags == 1) && (gGT->levelID == OXIDE_STATION))
+#endif
 		{
 			VehPickupItem_ShootNow(boss, weaponID, 1);
 			VehPickupItem_ShootNow(boss, weaponID, 1);

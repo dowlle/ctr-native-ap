@@ -18,6 +18,8 @@
 // single-threaded -- the same guarantee the received-item queue relies on). No
 // lock needed.
 
+#include "ap_boss_venue.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1014,6 +1016,35 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap);
 // the next-encounter advert: which Oxide visit is available and why the garage
 // is shut belongs to AP_BossGateAdvert. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_GoalAdvert(char *out, int cap);
+
+// #169 tier 1 boss track shuffle (schema 18, ap_boss_venue.h). The seed's
+// four garage venues, parsed from `boss_encounters` and checked against
+// ctr_options.boss_track_shuffle. RETAIL (no draw) is the default.
+extern AP_BossEncounters ctr_boss_encounters;
+
+// The LevelID garage bossIdx (0..3) loads, or -1 when the seed's encounter
+// record was refused (the garage stays shut and says why). IMPLEMENTED C-SIDE
+// in ap_hooks_gates.c.
+int AP_BossGarageVenue(int bossIdx);
+
+// During a boss race on a drawn venue other than the garage's home track,
+// the home track's LevelID; otherwise `levelID` unchanged. Retail code that
+// keys boss behaviour on the loaded level (attack table, mine pool size)
+// asks this so the boss keeps its own inherited attack on any venue.
+// IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossRetailRulesLevel(int levelID);
+
+// "Track: <name>" for the four garages when the seed drew their venues; 0
+// otherwise (retail seed, refused record). Shown on the garage panel whether
+// the door is open or shut. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
+
+// The per-race copy of the inherited attack schedule for a shuffled venue,
+// its checkpoints mapped onto the loaded track; `fill` rebuilds it (race
+// init), 0 returns it as is (lap wrap). NULL when no shuffled garage race is
+// running. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+struct MetaDataBOSS;
+struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill);
 
 #ifdef __cplusplus
 } // extern "C"

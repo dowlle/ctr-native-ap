@@ -381,6 +381,11 @@ int AP_BossGarageOpen(int bossIdx)
 	if (ap_content_plan_active()) return 0; // First profile has five empty garages.
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
+	// #169: a seed whose boss_encounters record this build refused keeps the
+	// four garages shut (map icon, door, tracker and load alike) rather than
+	// racing the retail venue in its place.
+	if (bossIdx < AP_BOSS_VENUE_GARAGES && AP_BossGarageVenue(bossIdx) < 0)
+		return 0;
 
 	int mode = ctr_cfg.bossgarage_mode;
 	int n = ctr_cfg.boss_n_tracks[bossIdx];
@@ -400,6 +405,107 @@ int AP_BossGarageOpen(int bossIdx)
 
 	// mode 2 (Trophies) or no track list -> flat trophy-count requirement.
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
+}
+
+// ── #169 tier 1: boss track shuffle ─────────────────────────────────────────
+// The decisions are ap/ap_boss_venue.h; these wrappers read the live seed and
+// GameTracker. gGT->bossID stays the physical garage on every venue, so the
+// Key, the Boss Race check, the loss counter, the driving table, music and
+// cutscenes are untouched; only the loaded level changes.
+
+int AP_BossGarageVenue(int bossIdx)
+{
+	if (bossIdx < 0 || bossIdx >= AP_BOSS_VENUE_GARAGES)
+		return -1;
+	if (!ctr_cfg_active())
+		return AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel;
+	return AP_BossEncounterVenue(&ctr_boss_encounters, bossIdx);
+}
+
+// "Track: Crash Cove" for a garage whose seed drew its venue, open or shut.
+// Returns 0 for a retail seed (the garage races its own track, as the retail
+// panel already implies) and for a refused record (AP_BossGateAdvert says why).
+int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
+{
+	int venue;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active() ||
+	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
+		return 0;
+	venue = AP_BossGarageVenue(bossIdx);
+	if (!AP_BossVenueTrackKnown(venue))
+		return 0;
+	snprintf(out, (size_t)cap, "Track: %s", sdata->lngStrings[data.metaDataLEV[venue].name_LNG]);
+	return 1;
+}
+
+static int AP_BossShuffledGarageNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (gGT == NULL || !ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterShuffledGarage(&ctr_boss_encounters,
+	                                      (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
+	                                      (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                                      gGT->bossID, gGT->levelID);
+}
+
+int AP_BossRetailRulesLevel(int levelID)
+{
+	int g = AP_BossShuffledGarageNow();
+	return g < 0 ? levelID : AP_BOSS_VENUE_GARAGE[g].homeLevel;
+}
+
+// The per-race copy of a shuffled garage's retail schedule. Retail writes a
+// preserved throw flag back into whichever table is live, so the venue gets
+// its own copy: refilled from the garage's data.BossWeapon* rows at race init
+// (`fill`, from PickupBots_Init), and returned unchanged when the schedule
+// wraps to its first segment each lap (PickupBots_GetInitialBossMeta), the
+// same object identity retail keeps. The home track never takes this path.
+static struct MetaDataBOSS s_apBossVenueAttack[8];
+
+struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int g = AP_BossShuffledGarageNow();
+	const struct MetaDataBOSS *src;
+	int venuePoints, homeLast, i;
+
+	if (g < 0 || gGT->level1 == NULL)
+		return NULL;
+	if (!fill)
+		return s_apBossVenueAttack;
+	venuePoints = gGT->level1->cnt_restart_points;
+	// The certification saw the retail LEV's restart point count. A loaded
+	// track with a different graph (modified disc) is refused loudly: the
+	// boss keeps its timers but throws nothing rather than indexing a
+	// checkpoint the certification never saw.
+	if (venuePoints != AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID] ||
+	    !AP_BossVenueScheduleFits(g, venuePoints))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
+		         (int)gGT->levelID, venuePoints, AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID]);
+		AP_AppendLog(msg);
+		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
+		s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
+		s_apBossVenueAttack[0].weaponType = BOSS_WEAPON_NONE;
+		s_apBossVenueAttack[0].weaponCooldown = 0x0f;
+		return s_apBossVenueAttack;
+	}
+	src = data.bossWeaponMetaPtr[g + 1];
+	homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel] - 1;
+	for (i = 0; i < 8; i++)
+	{
+		s_apBossVenueAttack[i] = src[i];
+		if (src[i].throwFlag == 0)
+			break;
+		s_apBossVenueAttack[i].trackCheckpoint =
+		    (u8)AP_BossVenueCheckpoint(src[i].trackCheckpoint, homeLast, venuePoints - 1);
+	}
+	return s_apBossVenueAttack;
 }
 
 // Has the player personally cleared Oxide's FIRST challenge in this seed?
@@ -677,6 +783,14 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	// single-requirement shape the four boss garages still use.
 	if (bossIdx == 4)
 		return AP_OxideGateAdvert(out, cap);
+
+	// #169: a refused boss_encounters record is why the door is shut.
+	if (AP_BossGarageVenue(bossIdx) < 0)
+	{
+		snprintf(out, (size_t)cap, "Boss track refused: %s",
+		         ctr_boss_encounters.reason[0] ? ctr_boss_encounters.reason : "update the client");
+		return 1;
+	}
 
 	// Modes 0/1 gate on RACES WON, not on items held (see AP_BossGarageOpen), so
 	// the advert has to speak in races or it would advertise a requirement that

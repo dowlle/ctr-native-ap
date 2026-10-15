@@ -289,12 +289,27 @@ LAB_800aec34:
 	// four-line Final panel ended at bottom+19 and the structural five-line
 	// maximum ended at bottom+27. Count the actual explicit lines and shift the
 	// title plus panel upward by exactly that overflow.
-	if (!bossIsOpen && sdata->AkuAkuHintState == 0)
+	if (sdata->AkuAkuHintState == 0)
 	{
 		int advertBoss = (levelID == GEM_STONE_VALLEY) ? 4 : (hubID - 1);
+		char venueLine[64];
 
-		advertVisible = AP_BossGateAdvert(advertBoss, advert,
-		                                    (int)sizeof advert);
+		if (!bossIsOpen)
+			advertVisible = AP_BossGateAdvert(advertBoss, advert,
+			                                    (int)sizeof advert);
+		// #169: a drawn boss track is named on the panel, open or shut,
+		// as the first line above any requirement.
+		if (advertBoss < 4 &&
+		    AP_BossVenueAdvert(advertBoss, venueLine, (int)sizeof venueLine))
+		{
+			char joined[128];
+			if (advertVisible)
+				snprintf(joined, sizeof joined, "%s\r%s", venueLine, advert);
+			else
+				snprintf(joined, sizeof joined, "%s", venueLine);
+			memcpy(advert, joined, sizeof advert);
+			advertVisible = 1;
+		}
 		if (advertVisible)
 		{
 			advertLines = AP_OxideGarageAdvertLineCount(advert);
@@ -316,6 +331,15 @@ LAB_800aec34:
 
 		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
 	}
+
+#ifdef CTR_AP
+	// #169: an open garage still names its drawn track under the title (the
+	// locked-door panel below carries it on its first line).
+	if (bossIsOpen && advertVisible)
+		DecalFont_DrawMultiLine(advert, (view.x + (view.w >> 1)),
+		                        challengeY + data.font_charPixHeight[FONT_BIG],
+		                        0x1e0, FONT_SMALL, 0xffff8000);
+#endif
 
 	if (bossIsOpen)
 	{
@@ -468,6 +492,31 @@ LAB_800aede8:
 
 		// Set the boss character (P2)
 		data.characterIDs[1] = data.metaDataLEV[levelID].characterID_Boss;
+
+#ifdef CTR_AP
+		// #169 boss track shuffle: the four ordinary garages race on the
+		// seed's drawn venue. The opponent above is still read from the home
+		// track and gGT->bossID stays the physical garage, so the Key, the
+		// Boss Race check, the loss counter, the driving table and the
+		// cutscenes are the garage's own. A refused record keeps the garage
+		// shut (AP_BossGarageOpen); this guard only stops a load that
+		// slipped past it, and never substitutes the retail venue.
+		if (hubID >= 1 && hubID <= 4)
+		{
+			int venue = AP_BossGarageVenue(hubID - 1);
+			if (venue < 0)
+			{
+				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
+				gGT->pushBuffer_UI.fade_step = 0x2AA;
+				return;
+			}
+			levelID = venue;
+#ifdef CTR_CUSTOM_TRACKS
+			// The venue may be a custom track's host slot; this load is retail.
+			CustomTrack_SelectRetailRace();
+#endif
+		}
+#endif
 
 		RaceFlag_SetDrawOrder(1);
 		MainRaceTrack_RequestLoad(levelID);
