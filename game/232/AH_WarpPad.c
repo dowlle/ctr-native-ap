@@ -1564,6 +1564,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Battle Tracks
 	if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
 	{
+#ifdef CTR_AP
+		// The destination may be seated on an ordinary race pad. Refused
+		// crystal mappings must also block this final event-entry path.
+		if (ctr_cfg_arena_pad_disabled(levelID))
+			goto WarpPad_RefuseEntry;
+#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;

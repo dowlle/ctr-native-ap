@@ -30,6 +30,7 @@
 extern "C"
 {
 	ctr_seed_config ctr_cfg = {0};
+	AP_CrystalChecks ctr_crystal_checks = {0};
 }
 
 // Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
@@ -1664,8 +1665,52 @@ extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
 	return folded;
 }
 
+static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
+                                      const nlohmann::json &opt, int schema)
+{
+    if (schema < 18 || !ctr_cfg.include_battle_arenas) return;
+    auto enabled = opt.find("crystalsanity");
+    if (enabled == opt.end() || !enabled->is_boolean() || !enabled->get<bool>()) return;
+    AP_CrystalChecks parsed = {0};
+    parsed.state = 1;
+    try
+    {
+        const auto &block = j.at("crystal_checks");
+        if (!block.is_object() || !block.at("version").is_number_integer() ||
+            block.at("version") != 1 || !block.at("arenas").is_object()) throw 0;
+        const auto &arenas = block.at("arenas");
+        static const int levels[4] = {21,19,23,18};
+        for (auto it=arenas.begin(); it!=arenas.end(); ++it)
+        {
+            int a=-1;
+            for (int i=0;i<4;++i) if (it.key()==std::to_string(levels[i])) a=i;
+            if (a<0 || !it.value().is_object()) throw 0;
+            const auto &row=it.value();
+            const auto &bases=row.at("instance_bases");
+            const auto &codes=row.at("locations");
+            if (!bases.is_array() || bases.size()!=4 || !codes.is_array() || codes.size()!=20) throw 0;
+            for (int p=0;p<4;++p)
+                if (!bases[p].is_number_integer() || bases[p]!=AP_CrystalInstanceBase(a,p+1)) throw 0;
+            for (int n=0;n<20;++n)
+            {
+                long expected=35028400L+20*a+n;
+                if (!codes[n].is_number_integer() || codes[n]!=expected) throw 0;
+                parsed.locations[a][n]=expected;
+            }
+            parsed.present[a]=1;
+        }
+        ctr_crystal_checks=parsed;
+    }
+    catch (...)
+    {
+        ctr_crystal_checks.state=-1;
+        ap_cfg_log("[AP CFG] crystal_checks refused: arena entry disabled; update the client/seed\n");
+    }
+}
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+    std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -1959,6 +2004,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			ctr_cfg.include_battle_arenas = arenas->get<bool>() ? 1 : 0;
 	}
 	ctr_cfg.shuffle_gems = json_int(opt, "shuffle_gems", 0);
+	ap_seedcfg_parse_crystals(j, opt, schema);
 	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);

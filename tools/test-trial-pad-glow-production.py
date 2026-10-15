@@ -26,7 +26,10 @@ fixture=r'''
 #include "ap_content_plan.h"
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
-int ap_net_location_checked(long c){(void)c;return 0;}
+static long crystalChecked;
+int ap_net_location_checked(long c){return c==crystalChecked;}
+int ap_net_location_exists(long c){return c>=35028400 && c<35028480;}
+AP_CrystalChecks ctr_crystal_checks;
 #define ADV_REWARD_FIRST_SAPPHIRE_RELIC 0x16
 #define ADV_REWARD_FIRST_CTR_TOKEN 0x4c
 #define AP_PODIUM_PSEUDO_BASE 0x100
@@ -193,6 +196,19 @@ int main(void){
   /* arena and unknown destinations list nothing extra */
   n=AP_PadUncollectedDisplayBits(18,bits,AP_PAD_DISPLAY_BITS_MAX);assert(n==1);
   assert(AP_PadGlowItemCode(&ctr_cfg,AP_PadGlowBoxBit(AP_BOX_CODE_BASE))==AP_BOX_CODE_BASE);
+ }
+ /* Crystal pickups keep a completed arena open; checked positions vanish. */
+ {
+  int bits[24],n,i;
+  relics=0;rung=0;ctr_crystal_checks.state=1;ctr_crystal_checks.present[0]=1;
+  for(i=0;i<20;i++)ctr_crystal_checks.locations[0][i]=35028400+i;
+  n=AP_PadUncollectedGlowBits(21,bits,24);assert(n==20);
+  for(i=0;i<n;i++){assert(bits[i]==52000+i);assert(AP_GlowBitRewardGroup(bits[i])==2);}
+  crystalChecked=35028407;n=AP_PadUncollectedGlowBits(21,bits,24);
+  assert(n==19&&!has(bits,n,52007));
+  assert(AP_PadUncollectedGlowBits(21,bits,3)==3);
+  assert(AP_PadUncollectedGlowBits(18,bits,24)==0);
+  ctr_crystal_checks.state=0;assert(AP_PadUncollectedGlowBits(21,bits,24)==0);
  }
  puts("Trial pad glow production gather passed");
 }
