@@ -1159,10 +1159,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				goto WarpPad_TrophyAnimateOnly;
 			mode = apContentModeChoice;
 			apContentModeChoice = -2;
+			// Cancel: release the kart and do not grab it again until it
+			// leaves the pad, so the menu does not reopen at once.
+			if (mode < 0)
+				goto WarpPad_RefuseEntry;
 		}
 		else if (!pad->crystal)
 			mode = pad->modes[0];
-		host = mode < 0 ? -1 : AP_ContentPreparePad(physLevelID, mode);
+		host = AP_ContentPreparePad(physLevelID, mode);
 		if (host < 0)
 		{
 			warppadObj->boolEnteredWarppad = 0; warppadObj->framesWarping = 0;
