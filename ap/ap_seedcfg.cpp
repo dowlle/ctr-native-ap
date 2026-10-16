@@ -1917,7 +1917,22 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// skipped; an enabled feature under a pre-16 global schema also refuses.
 	// The new plan owns its complete profile. Never interpret its physical
 	// identities or item ledger through the legacy pad/cup fallback parser.
-	const int content_result = parse_content_plan(j);
+	// #451 owns this additive envelope field. Keep the content-plan validator's
+	// closed option set intact by removing only our field from its input, then
+	// apply it only after that plan was admitted. Legacy options are read below.
+	int content_result;
+	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") &&
+	    j["ctr_options"].is_object() && j["ctr_options"].contains("reserve_top_up") &&
+	    j["ctr_options"]["reserve_top_up"].is_boolean())
+	{
+		nlohmann::json content_input = j;
+		content_input["ctr_options"].erase("reserve_top_up");
+		content_result = parse_content_plan(content_input);
+		if (content_result == 2)
+			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
+	}
+	else
+		content_result = parse_content_plan(j);
 	if (content_result != 1)
 		return;
 	if (!parse_hit_character(j))

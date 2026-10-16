@@ -95,13 +95,28 @@ int main(void){
 '''.replace("SOURCE", source)
 parser = r'''
 #include <cassert>
+#include <fstream>
 #include "ap_seedcfg.h"
 extern "C" void AP_LogLine(const char *) {}
-int main(){
+int main(int argc,char **argv){
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",true}}}});
  assert(ctr_cfg.reserve_top_up==1);
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",false}}}});
  assert(ctr_cfg.reserve_top_up==0);
+ assert(argc==2);
+ std::ifstream input(argv[1]);nlohmann::json plan;input>>plan;
+ plan["ctr_options"]["reserve_top_up"]=true;
+ ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.reserve_top_up==1);
+ plan["ctr_options"]["reserve_top_up"]=false;
+ ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
+ plan["ctr_options"].erase("reserve_top_up");
+ ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
+ plan["ctr_options"]["reserve_top_up"]=true;
+ plan["ctr_options"]["unrecognized_option"]=true;
+ ap_seedcfg_parse_json(plan);assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
+ plan["ctr_options"].erase("unrecognized_option");
+ plan["content_plan"]["version"]=99;
+ ap_seedcfg_parse_json(plan);assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",true}}}});
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18}}}});
  assert(ctr_cfg.reserve_top_up==0);
@@ -118,4 +133,4 @@ with tempfile.TemporaryDirectory(prefix="ctr-reserve-top-up-") as tmp:
     subprocess.run(["g++", "-m32", "-std=c++17", "-DCTR_AP", "-I", str(root/"ap"),
                     "-I", str(root/"ap/vendor/json/include"), str(src), str(root/"ap/ap_seedcfg.cpp"),
                     "-o", str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
+    subprocess.run([str(exe), str(root/"tools/fixtures/content-plan/baseline.json")], check=True)
