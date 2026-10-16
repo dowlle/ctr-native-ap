@@ -1,6 +1,8 @@
 #include <common.h>
 #ifdef CTR_AP
 #include "../../ap/ap_title_ring_logic.h"
+#include "../../ap/ap_traps.h"
+#include <platform/native_gte_cull.h>
 #endif
 
 
@@ -1439,6 +1441,12 @@ static void RenderBucket_BuildMvp(struct PushBuffer *pb, struct InstDrawPerPlaye
 	u32 m3;
 	u32 m4;
 
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+	// Only player 1's view-projection receives the Mirror Mode transform.
+	idpp->mirrorCullFlip = AP_TrapMirrorCullFlip() && sdata != 0 && sdata->gGT != 0 &&
+	                       pb == &sdata->gGT->pushBuffer[0];
+#endif
+
 	// NOTE(aalhendi): Source-backs QueueDraw's normal MVP rotation path through
 	// helper 0x8006c558. Split/reflection variants keep a separate projection
 	// matrix because retail projects bounds through live GTE state while storing
@@ -1458,6 +1466,11 @@ static void RenderBucket_BuildSplitViewMvp(struct PushBuffer *pb, struct InstDra
 	u32 m2;
 	u32 m3;
 	u32 m4;
+
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+	idpp->mirrorCullFlip = AP_TrapMirrorCullFlip() && sdata != 0 && sdata->gGT != 0 &&
+	                       pb == &sdata->gGT->pushBuffer[0];
+#endif
 
 	// NOTE(aalhendi): Source-backs QueueDraw 0x80070ea4-0x80070ed8. Retail
 	// composes the projection matrix, stores the PushBuffer view matrix in IDPP,
@@ -1527,6 +1540,12 @@ static void RenderBucket_BuildCustomMatrix(struct InstDrawPerPlayer *idpp, u32 i
 	RenderBucket_GteScaleMatrixColumns(&m0, &m1, &m2, &m3, &m4);
 	RenderBucket_StoreMatrixWords(&idpp->mvp, m0, m1, m2, m3, m4);
 	*projectionMvp = idpp->mvp;
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+	// The view-facing basis replaces the view-projection. Its fixed negative
+	// Y tilt is authored handedness, not a Mirror Mode reflection. A degenerate
+	// build above leaves both the old matrix and its metadata intact.
+	idpp->mirrorCullFlip = 0;
+#endif
 }
 
 static struct RenderBucketSplitState RenderBucket_BuildSplitState(struct Instance *inst, struct ModelHeader *mh, struct ModelFrame *frame,
@@ -5348,6 +5367,13 @@ void RenderBucket_Execute(void *param_1, struct PrimMem *param_2)
 			continue;
 		}
 
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+		NativeGte_ModelCullFlip = ctx.idpp->mirrorCullFlip;
+#endif
 		RenderBucket_DispatchDrawFunc(&ctx);
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+		// Terrain, wheels and other GTE users retain their existing policy.
+		NativeGte_ModelCullFlip = -1;
+#endif
 	}
 }
