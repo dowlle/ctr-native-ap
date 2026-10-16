@@ -48,7 +48,7 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // bounds check at the receive site rather than counted, so an undersized array
 // silently loses foreign receipts from the verifier's view.
 // Includes the additive trial letters at indexes 194..199, not only traps.
-#define AP_VERIFY_ITEM_INDEX_COUNT 200
+#define AP_VERIFY_ITEM_INDEX_COUNT 207 // includes Clocked Out (#455), index 206
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TRAP_ITEM_INDEX_MAX);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};

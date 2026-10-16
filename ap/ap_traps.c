@@ -262,7 +262,7 @@ static int AP_TrapFinishOrPodium(struct GameTracker *gGT, struct Driver *local)
 // is not settled until itemRollTimer reaches zero (VehPhysProc.c:320).
 static int AP_TrapHeldItemResolved(struct Driver *local)
 {
-	if (local == 0)
+	if (local == 0 || local->clockReceive != 0)
 		return 0;
 	return AP_TrapHeldItemIsResolved((int)local->heldItemID, (int)local->itemRollTimer,
 	                                 (int)local->noItemTimer);
@@ -824,6 +824,9 @@ static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
 	}
 }
 
+// #455 engine effect and its retry/recovery state.
+#include "ap_trap_clocked_out_runtime.h"
+
 // Apply one instant effect at the moment the scheduler fires it. Called from the
 // event drain, which is the only place that sees the FIRE edge exactly once.
 static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
@@ -846,6 +849,9 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		break;
 	case AP_TRAP_FORCED_USE:
 		AP_TrapArmForcedUse(local);
+		break;
+	case AP_TRAP_CLOCKED_OUT:
+		AP_TrapStartClockedOut(gGT, local);
 		break;
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
@@ -976,6 +982,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
+	AP_TrapClockedOutReset(AP_TrapLocalDriver());
 	AP_TrapFlattenStageClear(&g_trap_flatten);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_trap_spawn_pending[e] = 0;
@@ -1010,6 +1017,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "potion"))    AP_TrapReceive(AP_TRAP_RED_POTION);
 	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
+	else if (!strcmp(v, "clocked_out")) AP_TrapReceive(AP_TRAP_CLOCKED_OUT);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -1206,6 +1214,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	// ran, and the copy was re-armed as if it had never fired: one trap, two
 	// weapons. Crediting the outcome first means the boundary only ever sees
 	// genuinely unresolved copies.
+	AP_TrapPollClockedOut(gGT, local);
 	AP_TrapPollReroll(local);
 	AP_TrapPollForcedUse(local);
 	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
@@ -1238,6 +1247,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// Same rule for Flatten: only a copy still owed its squish comes back.
 		int refireFlatten = AP_TrapFlattenOwedAtBoundary(
 		    &g_trap_flatten, AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN));
+		int refireClocked = AP_TrapClockOwed(&g_trap_clocked,
+		    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT));
+		AP_TrapClockedOutReset(local);
 		int refireNitro = g_trap_spawn_pending[AP_TRAP_NITRO];
 		int refirePotion = g_trap_spawn_pending[AP_TRAP_RED_POTION];
 		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
@@ -1261,6 +1273,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_trap_spawn_pending[e] = 0;
 
+		if (refireClocked)
+			AP_TrapSchedReceive(&g_sched, AP_TRAP_CLOCKED_OUT);
 		if (refireFlatten)
 			AP_TrapSchedReceive(&g_sched, AP_TRAP_FLATTEN);
 		if (refireForcedUse)
