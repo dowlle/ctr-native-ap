@@ -320,6 +320,9 @@ void MainRaceTrack_StartLoad(s16 levelID)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003cfc0-0x8003d024.
 void MainRaceTrack_RequestLoad(s16 levelID)
 {
+#ifdef CTR_AP
+    AP_CupSweepOnLoadRequested(levelID);
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 	// A retry keeps the custom race. Leaving the host slot ends it only when
 	// the load starts (MainRaceTrack_StartLoad).
