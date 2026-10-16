@@ -360,18 +360,15 @@ void GAMEPROG_GetPtrHighScoreTrack(void)
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	// A content-plan custom track (#133 PR 3) never reads or writes its engine
-	// host's retail high scores, which live in the save. Its Relic Race uses a
-	// zeroed scratch table: no time beats a zero entry, so nothing is offered
-	// for saving and no name entry opens.
+	// host's retail high scores, which live in the save. It points at a zeroed
+	// scratch table; MainGameEnd_SoloRaceGetReward offers no record from it and
+	// RR_EndEvent_DrawHighScore does not draw it.
+	if (CustomTrack_KeepsNoScores(gGT->levelID))
 	{
-		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
-		if (race && !race->retail)
-		{
-			static struct HighScoreEntry scratch[12];
-			memset(scratch, 0, sizeof scratch);
-			sdata->ptrActiveHighScoreEntry = &scratch[6 * ((gameMode1 & RELIC_RACE) != 0)];
-			return;
-		}
+		static struct HighScoreEntry scratch[12];
+		memset(scratch, 0, sizeof scratch);
+		sdata->ptrActiveHighScoreEntry = &scratch[6 * ((gameMode1 & RELIC_RACE) != 0)];
+		return;
 	}
 #endif
 	sdata->ptrActiveHighScoreEntry = &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[6 * ((gameMode1 & RELIC_RACE) != 0)];

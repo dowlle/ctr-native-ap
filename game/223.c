@@ -1,4 +1,7 @@
 #include <common.h>
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#include <platform/native_custom_tracks.h>
+#endif
 
 enum RelicRaceEndMenuConstants
 {
@@ -633,6 +636,15 @@ void RR_EndEvent_DrawHighScore(s16 startX, int startY, s16 scoreMode)
 	struct Driver *driver = gGT->drivers[0];
 	s16 timeboxX = startX - 0x1f;
 	u16 rowOffsetY = 0;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A content-plan custom track keeps no scores, and the table below would
+	// be its engine host's saved best times.
+	if (CustomTrack_KeepsNoScores(gGT->levelID))
+	{
+		return;
+	}
+#endif
 
 	// 12 entries per track, 6 for Time Trial and 6 for Relic Race
 	struct HighScoreEntry *scoreEntries = &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[RR_HIGH_SCORE_ENTRIES_PER_MODE * scoreMode];
