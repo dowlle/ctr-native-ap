@@ -133,6 +133,8 @@ int main(void){
  int counts[AP_CUSTOM_LETTER_VERIFY_FIRST+AP_CUSTOM_LETTER_VERIFY_COUNT]={0};
  scouted=35010206LL;ap_vf_bank_own(1,counts);
  for(unsigned i=0;i<sizeof(counts)/sizeof(counts[0]);i++)assert(counts[i]==0);
+ scouted=35010207LL;ap_vf_bank_own(1,counts);
+ for(unsigned i=0;i<sizeof(counts)/sizeof(counts[0]);i++)assert(counts[i]==0);
  for(int i=0;i<9;i++){
   scouted=35021000LL+i;ap_vf_bank_own(1,counts);
   assert(counts[AP_CUSTOM_LETTER_VERIFY_FIRST+i]==1);

@@ -1018,6 +1018,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
 	else if (!strcmp(v, "clocked_out")) AP_TrapReceive(AP_TRAP_CLOCKED_OUT);
+	else if (!strcmp(v, "reverse_camera")) AP_TrapReceive(AP_TRAP_REVERSE_CAMERA);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -1331,6 +1332,12 @@ void AP_TrapTick(struct GameTracker *gGT)
 int AP_TrapOwnsCamera(void)
 {
 	return g_fp_applied || AP_TrapSchedActive(&g_sched, AP_TRAP_FIRSTPERSON);
+}
+
+int AP_TrapReverseCamera(struct Driver *driver)
+{
+	return AP_TrapIsLocal(driver) &&
+	       AP_TrapEffectVisible(g_active[AP_TRAP_REVERSE_CAMERA], g_trap_paused);
 }
 
 void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
