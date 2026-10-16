@@ -3388,6 +3388,7 @@
   "progressive_stats": 0,
   "hit_character": false,
   "death_link": 0,
-  "deathlink_amnesty": 1
+  "deathlink_amnesty": 1,
+  "reserve_top_up": true
  }
 }
