@@ -31,6 +31,7 @@ extern "C"
 {
 	ctr_seed_config ctr_cfg = {0};
 	AP_CrystalChecks ctr_crystal_checks = {0};
+    AP_CupSweepConfig ctr_cup_sweeps = {0};
 }
 
 // Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
@@ -1708,9 +1709,12 @@ static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
     }
 }
 
+#include "ap_cup_sweep_parser.hpp"
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
     std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
+    std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -3196,6 +3200,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			}
 		}
 	}
+
+    if (!parse_cup_sweeps(j,opt,schema)) return;
 
 	// Activate LAST -- a partial parse never flips ctr_cfg_active() true.
 	ctr_cfg.schema_version = schema;

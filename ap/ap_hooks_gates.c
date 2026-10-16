@@ -277,6 +277,7 @@ static int ap_cup_return_hub = -1;
 void AP_CupEnterFromHub(int hubLevelID)
 {
 	ap_cup_return_hub = hubLevelID;
+	AP_CupSweepEnterFromHub();
 	AP_WinStakesOnCupEnter(); // #449: the cup's first leg fixes its stakes
 }
 
