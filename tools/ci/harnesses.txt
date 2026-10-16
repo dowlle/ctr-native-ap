@@ -203,3 +203,4 @@ tools/test-standalone-race-result.py
 tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a built libap_net.a and optionally a live MultiServer; run by hand
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
+tools/test-reverse-camera-production.py
