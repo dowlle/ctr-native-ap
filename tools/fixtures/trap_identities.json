@@ -22,6 +22,7 @@
     {"item_id": 35010191, "key": "mirror_mode", "name": "Mirror Mode", "native_effect": "AP_TRAP_MIRROR_MODE"},
     {"item_id": 35010192, "key": "warpball_ambush", "name": "Warpball Ambush", "native_effect": "AP_TRAP_WARPBALL_AMBUSH"},
     {"item_id": 35010193, "key": "demo_camera", "name": "Demo Camera", "native_effect": "AP_TRAP_DEMO_CAMERA"},
-    {"item_id": 35010206, "key": "clocked_out", "name": "Clocked Out", "native_effect": "AP_TRAP_CLOCKED_OUT"}
+    {"item_id": 35010206, "key": "clocked_out", "name": "Clocked Out", "native_effect": "AP_TRAP_CLOCKED_OUT"},
+    {"item_id": 35010207, "key": "reverse_camera", "name": "Reverse Camera", "native_effect": "AP_TRAP_REVERSE_CAMERA"}
   ]
 }
