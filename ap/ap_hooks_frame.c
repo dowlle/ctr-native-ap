@@ -643,6 +643,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
+	AP_ReserveTopUpTick(gGT); // #451: apply one owed copy to positive live reserves
 	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
 	                        // one pending grant into an empty in-race weapon slot
 	AP_ShortcutKeys();

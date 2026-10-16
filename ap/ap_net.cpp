@@ -52,6 +52,7 @@ struct APFxStore
 static APFxStore g_fx_store[AP_NET_FX_COUNT] = {
 	{"ctr_fx_", "", AP_FXM_STORE_PENDING, 0, 0},
 	{"ctr_turbo_fired_", "", AP_FXM_STORE_PENDING, 0, 0},
+	{"ctr_reserve_spent_", "", AP_FXM_STORE_PENDING, 0, 0},
 };
 static void ap_fx_store_clear()
 {

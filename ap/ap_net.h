@@ -254,7 +254,8 @@ void ap_net_doors_record(unsigned bit);
 // under team+slot keys so a fresh room starts empty. Rules: ap_fxmarker_logic.h.
 #define AP_NET_FX_EFFECT      0 // highest server item index whose effect was handled
 #define AP_NET_FX_TURBO_FIRED 1 // Turbo Grants fired by this slot
-#define AP_NET_FX_COUNT       2
+#define AP_NET_FX_RESERVE_SPENT 2 // Reserve Top-Up copies applied by this slot (#451)
+#define AP_NET_FX_COUNT       3
 // State of the connect-time Get reply for `which` (AP_FXM_STORE_*). Fills the
 // latest known integer value and a revision that moves on every reply.
 int  ap_net_fx_store(int which, long long *value, unsigned *rev);
