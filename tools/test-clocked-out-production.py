@@ -122,6 +122,8 @@ bank_fixture=r"""
 BOUND
 #define AP_ITEM_BASE 35010000
 static long long scouted;
+static struct{struct{int slot;}custom_track;}ctr_cfg;
+static int AP_CustomLetterNamedBlock(void){return -1;} // generic slot path
 static int ap_net_self_slot(void){return 1;}
 static int ap_net_scout_known(long code,long long *item,int *player,unsigned *flags){
  (void)code;*item=scouted;*player=1;*flags=0;return 1;
