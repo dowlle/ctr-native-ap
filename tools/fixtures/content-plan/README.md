@@ -35,3 +35,12 @@ block 78, laps 5) and the made-up `fixture-loop` key (generic slot 1, path B+,
 laps 3, relic targets). Its pins name no real files. `test-content-plan.cpp`
 checks the resolved pads and refuses forged descriptors; the parity script
 compares both sides on the same forgeries.
+
+Track identity (#133 PR 2 review): native now holds the apworld's named-block
+table (`named_blocks` in `ap/ap_content_registry.hpp`) and requires a custom
+track to use exactly the block its track key owns. Baby T Park owns block 8,
+so `baseline.json`, `starts-extras.json` and `manual-rules.json` were edited by
+hand to put it there: the track record gained `named_block: 8` and
+`room_title: "Baby T Park"`, and its Trophy check moved from the generic slot
+code `35016300` to `35201600`. Nothing else in them changed. The paired
+validator accepts all three again.

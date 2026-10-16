@@ -30,8 +30,12 @@ registry = json.loads(re.search(r'R"CTRREG\((.*)\)CTRREG"', (root / "ap/ap_conte
 expected = dict(retail=[dict(id=i, name=n, location=cp.CTR_LOCATION_IDS[n + ": Trophy Race"])
                                                  for i, n in sorted(cp.RETAIL.items())],
                 pads=[dict(physical=p, hub=h, keys=k) for p, h, k in cp.pad_registry()],
-                custom_locations=[cp.CTR_LOCATION_IDS[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)])
-assert registry == expected, "native frozen registry differs from paired apworld"
+                custom_locations=[cp.CTR_LOCATION_IDS[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)],
+                # The named-block table native binds track keys to (#133 PR 2
+                # review); tools/sync-content-registry.py rewrites it.
+                named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
+                              for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
+assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
 cases = []
 for fixture in ("baseline", "starts-extras"):
@@ -199,6 +203,55 @@ for name, change in [
     open_alter(name, change)
 alter("open-track laps differ", lambda p: next(t for t in p["tracks"] if t.get("package_id") == "package/fixture-loop/2.1").__setitem__("laps", 4), open_base)
 
+# Track identity (#133 PR 2 review): both sides bind a track key to its named
+# block and recompute or check generic room titles.
+def open_track(plan, key):
+    return next(t for t in plan["tracks"] if t.get("package_id", "").startswith(f"package/{key}/"))
+def open_check(plan, track):
+    return next(c for c in plan["checks"] if c["owner"] == track["id"])
+def drop_named(p):
+    t = open_track(p, "tv-world"); t.pop("named_block")
+    open_check(p, t)["location"] = cp.CTR_LOCATION_IDS["Custom Track 2: Trophy Race"]
+    p["checks"].sort(key=lambda c: c["location"])
+def claim_north_pole(p):
+    north = cp.destinations.named_track("north-pole")
+    t = open_track(p, "fixture-loop"); t.update(named_block=north.block_index, room_title=north.ap_name)
+    open_check(p, t).update(location=cp.named_tracks.location_code(north.block_index, "trophy"),
+                            display_name=north.ap_name + ": Trophy Race")
+    p["checks"].sort(key=lambda c: c["location"])
+def retitle(title):
+    def change(p):
+        t = open_track(p, "fixture-loop"); t["room_title"] = title
+        open_check(p, t)["display_name"] = title + ": Trophy Race"
+    return change
+alter("identity: named key moved to a generic slot", drop_named, open_base)
+alter("identity: unnamed key claims North Pole's block, name and check", claim_north_pole, open_base)
+alter("identity: named key under another title", lambda p: (open_track(p, "tv-world").__setitem__("room_title", "TV World 2"),
+      open_check(p, open_track(p, "tv-world")).__setitem__("display_name", "TV World 2: Trophy Race")), open_base)
+# Clashes only: the apworld also refuses any other title that is not the one it
+# derives (for example a changed case), which native does not recompute.
+for title in ("Crash Cove", "TV World", "North Pole", "tv world", "Fixture Loop"):
+    alter(f"identity: generic room title {title}", retitle(title), open_base)
+def two_generic(title):
+    def change(p):
+        text = json.dumps(p).replace("tv-world", "tv-park")
+        p.clear(); p.update(json.loads(text))
+        t = open_track(p, "tv-park"); t.pop("named_block"); t.update(room_title=title, display_name=title)
+        next(x for x in p["packages"] if x["content_id"] == "tv-park")["display_name"] = title
+        open_check(p, t).update(location=cp.CTR_LOCATION_IDS["Custom Track 2: Trophy Race"], display_name=title + ": Trophy Race")
+        p["checks"].sort(key=lambda c: c["location"])
+    return change
+alter("identity: two generic tracks, distinct titles", two_generic("TV Park"), open_base)
+alter("identity: two generic tracks, one title", two_generic("Fixture Loop"), open_base)
+for seed in range(8):
+    # Generated clashes: a retail title and two tracks with one title.
+    twin = copy.deepcopy(UNKNOWN)
+    twin.update(id="package/fixture-twin/1", content_id="fixture-twin", revision="1", author="Other Author",
+                uuid="1f0e0d0c-0b0a-4908-8706-050403020100", display_name=["Crash Cove", "Fixture Loop", "TV World", "Baby T Park"][seed % 4])
+    twin["files"] = [dict(f, sha256=h * 32) for f, h in zip(twin["files"], ("e5", "f6"))]
+    custom = [copy.deepcopy(UNKNOWN), twin] + ([named_fixture()] if seed % 2 else [])
+    cases.append((f"identity-generated-{seed}", make_world(options_with(custom), seed=seed).fill_slot_data(), True))
+
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
 alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))
@@ -210,7 +263,7 @@ alter("changed pinned size", lambda p: p["packages"][0]["files"][0].__setitem__(
 alter("runtime evidence row", lambda p: p["packages"][0]["evidence"].append(
     dict(capability="trophy", file_hashes=[p["packages"][0]["files"][0]["sha256"]], verifier="x", revision=1, level="runtime")), open_base)
 alter("missing route", lambda p: p["checks"][0].__setitem__("routes", []))
-cases.append(("unchanged baseline copy", copy.deepcopy(base), True))  # the checked-in fixture predates the named block for baby-t-park, so the paired validator no longer accepts it
+cases.append(("unchanged baseline copy", copy.deepcopy(base), True))
 for row in range(15):
     for key in ("base", "extra", "start_from_pool", "start_additional", "remaining", "receipt_cap", "requirement_ceiling"):
         alter(f"ledger-{row}-{key}", lambda p, row=row, key=key: p["items"]["rows"][row].__setitem__(key, p["items"]["rows"][row][key] + 1))

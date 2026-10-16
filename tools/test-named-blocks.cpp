@@ -2,8 +2,9 @@
 // g++ -m32 -std=c++17 -DCTR_AP -fsanitize=undefined -fno-sanitize-recover=all -Iap -Iap/vendor/json/include tools/test-named-blocks.cpp ap/ap_seedcfg.cpp -o /tmp/test-named-blocks
 //
 // Fixtures under tools/fixtures/named-blocks are slot_data the paired apworld
-// emitted (see the README there). content-plan-named.json uses the apworld's
-// TEST-ONLY fixture registry: block 0 is "Fixture Speedway", never a shipped name.
+// emitted (see the README there), edited where the README says: Baby T Park
+// on its shipped named block 8, and the generic fixture on the unregistered
+// `fixture-park` key, because native now holds the named-block table.
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_named_blocks.h"
@@ -74,8 +75,8 @@ int main() {
     const J named = load("content-plan-named.json");
     expect(admit(named), "named-block content plan admits and binds");
     const auto *p = custom_pad();
-    expect(p && p->named_block == 0 && p->trophy_location == 35200000 && p->custom_slot == 1 &&
-           std::string(p->room_title) == "Fixture Speedway" && std::string(p->display_name) == "Baby T Park",
+    expect(p && p->named_block == 8 && p->trophy_location == 35201600 && p->custom_slot == 1 &&
+           std::string(p->room_title) == "Baby T Park" && std::string(p->display_name) == "Baby T Park",
            "named block pad: code, slot, room title and package title");
 
     // Path B+: generic slot code, room title carried.
@@ -83,12 +84,12 @@ int main() {
     expect(admit(generic), "generic content plan admits and binds");
     p = custom_pad();
     expect(p && p->named_block == -1 && p->trophy_location == 35016300 &&
-           std::string(p->room_title) == "Baby T Park", "generic pad keeps slot code and title");
+           std::string(p->room_title) == "Fixture Park", "generic pad keeps slot code and title");
 
     // A plan without room_title (the 2026-09-22 fixtures) still admits; the
     // room title is the package title.
     J old = generic; custom_track(old).erase("room_title");
-    expect(admit(old) && (p = custom_pad()) && std::string(p->room_title) == "Baby T Park", "room_title is optional");
+    expect(admit(old) && (p = custom_pad()) && std::string(p->room_title) == "Fixture Park", "room_title is optional");
 
     auto refuse = [](const J &j, const std::string &why) {
         ap_seedcfg_parse_json(j);
@@ -101,6 +102,11 @@ int main() {
     bad = named; custom_track(bad)["named_block"] = true; refuse(bad, "boolean named block");
     bad = named; custom_track(bad)["named_block"] = 0.0; refuse(bad, "float named block");
     bad = generic; custom_check(bad)["location"] = 35200000; refuse(bad, "named code without a named block");
+    bad = generic; custom_track(bad)["named_block"] = 0; custom_track(bad)["room_title"] = "Acid Lake";
+    custom_check(bad)["location"] = 35200000; custom_check(bad)["display_name"] = "Acid Lake: Trophy Race";
+    refuse(bad, "unregistered key claims Acid Lake's block");
+    bad = named; custom_track(bad).erase("named_block"); custom_check(bad)["location"] = 35016300;
+    refuse(bad, "Baby T Park moved off its named block");
     bad = generic; custom_track(bad)["room_title"] = "Other"; refuse(bad, "check label disagrees with room title");
     bad = generic; custom_track(bad)["room_title"] = "Bad [x]";
     custom_check(bad)["display_name"] = "Bad [x]: Trophy Race"; refuse(bad, "markup bracket in room title");

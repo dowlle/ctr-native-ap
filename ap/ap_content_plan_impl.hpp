@@ -181,6 +181,31 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     copy(target.display_name, pkg["display_name"]); copy(target.author, pkg["author"]);
     copy(target.lev_sha256, files[0]["sha256"]); copy(target.vrm_sha256, files[1]["sha256"]);
 }
+// Room titles compare without ASCII case, as the apworld's clash rules do.
+static std::string fold(std::string s) {
+    for (char &c : s) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    return s;
+}
+struct NamedBlock { int block; std::string name; };
+// The apworld's named-track table, from ap_content_registry.hpp: track key to
+// block and frozen room name. A malformed table refuses every plan.
+static const std::map<std::string, NamedBlock> &named_block_table(const J &registry) {
+    static const std::map<std::string, NamedBlock> table = [&registry] {
+        std::map<std::string, NamedBlock> out;
+        std::set<int> blocks;
+        std::set<std::string> names;
+        for (const auto &row : registry.at("named_blocks")) {
+            const std::string key = row.at("key"), name = row.at("name");
+            const int block = row.at("block");
+            if (!track_key(key) || block < 0 || block >= AP_NAMED_BLOCK_LIMIT || !ap_room_title_ok(name.c_str(), name.size()) ||
+                !blocks.insert(block).second || !names.insert(fold(name)).second || !out.emplace(key, NamedBlock{block, name}).second)
+                return std::map<std::string, NamedBlock>{};
+        }
+        return out;
+    }();
+    need(!table.empty(), "compiled named-block table is malformed");
+    return table;
+}
 using Table = std::map<std::string, const J *>;
 static Table table(const J &rows, size_t maximum) {
     need(rows.is_array() && rows.size() <= maximum, "record array exceeds profile bounds");
@@ -200,6 +225,12 @@ static void validate(const J &p, State &out) {
     need(p.at("version") == 1, "unsupported required content-plan version");
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
+    const auto &named_table = named_block_table(registry);
+    // Names a generic-slot (B+) room title must not take: every retail track
+    // and every named block, whether or not it is in this seed.
+    std::set<std::string> reserved_titles;
+    for (const auto &row : registry["retail"]) reserved_titles.insert(fold(row["name"].get<std::string>()));
+    for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
     const auto tracks = table(p.at("tracks"), 27);
     const auto entries = table(p.at("entries"), 27);
@@ -349,17 +380,24 @@ static void validate(const J &p, State &out) {
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
             dest.named_block = -1;
-            if (named) {
-                dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
-                need(named_blocks.insert(dest.named_block).second, "duplicate named block");
-                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
-            } else {
-                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
-            }
             if (titled) {
                 const auto room = text(track["room_title"], false);
                 need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
                 check_title = room;
+            }
+            // A key with a named block must use that block under its frozen
+            // name; any other key takes its generic slot (apworld content_plan.validate).
+            const auto owned = named_table.find(record.content_id);
+            if (named) {
+                dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                need(owned != named_table.end() && dest.named_block == owned->second.block &&
+                     titled && check_title == owned->second.name, "named block does not match this build's registry");
+                need(named_blocks.insert(dest.named_block).second, "duplicate named block");
+                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
+            } else {
+                need(owned == named_table.end(), "a track with a named block must use it");
+                need(!reserved_titles.count(fold(check_title)), "generic-slot room title takes a retail or named track's name");
+                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
             }
         }
         dest.occupied = 1; dest.laps = number(track["laps"], 1, 7);
@@ -371,6 +409,10 @@ static void validate(const J &p, State &out) {
         if (!keys) starting_entry = true;
     }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
+    // Two checks never share a name, so a room cannot show two identical rows.
+    std::set<std::string> check_names;
+    for (const auto &pair : expected_checks)
+        need(check_names.insert(fold(pair.second["display_name"].get<std::string>())).second, "two checks share a display name");
     need(entries.empty() || starting_entry, "no playable starting pad");
     need(p["checks"].is_array() && p["checks"].size() == expected_checks.size(), "check registry size mismatch");
     for (const auto &check : p["checks"]) {

@@ -4,11 +4,11 @@
     "version": 1,
     "packages": [
       {
-        "id": "package/baby-t-park/1.0.2",
-        "content_id": "baby-t-park",
+        "id": "package/fixture-park/1.0.2",
+        "content_id": "fixture-park",
         "uuid": "2c7c7846-2ead-5b8f-a218-beca5792106e",
         "revision": "1.0.2",
-        "display_name": "Baby T Park",
+        "display_name": "Fixture Park",
         "author": "Lockheart",
         "laps": 7,
         "capabilities": {
@@ -302,11 +302,11 @@
         "field_size": 8
       },
       {
-        "id": "custom/baby-t-park/1.0.2",
+        "id": "custom/fixture-park/1.0.2",
         "origin": "custom",
-        "package_id": "package/baby-t-park/1.0.2",
+        "package_id": "package/fixture-park/1.0.2",
         "custom_slot": 1,
-        "display_name": "Baby T Park",
+        "display_name": "Fixture Park",
         "laps": 7,
         "modes": [
           "trophy"
@@ -315,7 +315,7 @@
           "trophy"
         ],
         "field_size": 8,
-        "room_title": "Baby T Park"
+        "room_title": "Fixture Park"
       }
     ],
     "entries": [
@@ -482,9 +482,9 @@
         "merged": false
       },
       {
-        "id": "entry/custom/baby-t-park/1.0.2",
+        "id": "entry/custom/fixture-park/1.0.2",
         "kind": "track",
-        "track_id": "custom/baby-t-park/1.0.2",
+        "track_id": "custom/fixture-park/1.0.2",
         "modes": [
           "trophy"
         ],
@@ -766,7 +766,7 @@
         "id": "pad:2",
         "hub_id": "hub:28",
         "kind": "normal",
-        "entry_id": "entry/custom/baby-t-park/1.0.2",
+        "entry_id": "entry/custom/fixture-park/1.0.2",
         "entrance_req": "keys:2",
         "mode_gates": [
           {
@@ -1227,12 +1227,12 @@
       },
       {
         "location": 35016300,
-        "owner": "custom/baby-t-park/1.0.2",
+        "owner": "custom/fixture-park/1.0.2",
         "kind": "trophy",
-        "display_name": "Baby T Park: Trophy Race",
+        "display_name": "Fixture Park: Trophy Race",
         "routes": [
           {
-            "entry_id": "entry/custom/baby-t-park/1.0.2",
+            "entry_id": "entry/custom/fixture-park/1.0.2",
             "mode": "trophy",
             "leg_id": null,
             "encounter_id": null,

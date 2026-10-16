@@ -82,7 +82,8 @@ int main(int argc, char **argv) {
         if (p->retail_id < 0) {
             ++custom;
             const auto *pkg = ap_content_plan_package(p->package_index);
-            expect(p->laps == 7 && p->custom_slot == 1 && p->trophy_location == 35016300 && pkg &&
+            // Baby T Park owns named block 8 (#133), so its Trophy uses the block's code.
+            expect(p->laps == 7 && p->custom_slot == 1 && p->named_block == 8 && p->trophy_location == 35201600 && pkg &&
                    std::string(pkg->revision) == "1.0.2" && pkg->lev_bytes == 2558168, "exact custom revision and authored laps");
         }
     }
@@ -305,6 +306,59 @@ int main(int argc, char **argv) {
         refuse(bad, "open package: track laps differ from the descriptor");
         bad = open; bad["content_plan"]["packages"][1]["capabilities"]["arcade"] = false;
         refuse(bad, "open package: Trophy track without the arcade capability");
+    }
+    // Track identity (#133 PR 2 review): native holds the apworld's named-block
+    // table, so a key with a block must use exactly that block and name, a key
+    // without one takes its generic slot, and a generic room title never takes
+    // a retail or named track's name or repeats another check's name.
+    {
+        auto track_of = [](J &plan, const std::string &key) -> J & {
+            for (auto &t : plan["tracks"]) if (t.value("package_id", "").rfind("package/" + key + "/", 0) == 0) return t;
+            throw std::runtime_error("missing track " + key);
+        };
+        auto check_of = [](J &plan, const std::string &owner) -> J & {
+            for (auto &c : plan["checks"]) if (c["owner"] == owner) return c;
+            throw std::runtime_error("missing check " + owner);
+        };
+        auto identity_refuses = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = open; change(bad["content_plan"]); refuse(bad, "track identity: " + why);
+        };
+        identity_refuses("named key moved to a generic slot", [&](J &p) {
+            J &t = track_of(p, "tv-world"); t.erase("named_block");
+            J &c = check_of(p, t["id"]); c["location"] = 35016301; });
+        identity_refuses("unnamed key given North Pole's block, name and check", [&](J &p) {
+            J &t = track_of(p, "fixture-loop"); t["named_block"] = 53; t["room_title"] = "North Pole";
+            J &c = check_of(p, t["id"]); c["location"] = 35200000 + 200 * 53; c["display_name"] = "North Pole: Trophy Race"; });
+        identity_refuses("named key on another block", [&](J &p) {
+            J &t = track_of(p, "tv-world"); t["named_block"] = 77;
+            check_of(p, t["id"])["location"] = 35200000 + 200 * 77; });
+        identity_refuses("named key under another room title", [&](J &p) {
+            J &t = track_of(p, "tv-world"); t["room_title"] = "TV World 2";
+            check_of(p, t["id"])["display_name"] = "TV World 2: Trophy Race"; });
+        identity_refuses("named key without its room title", [&](J &p) { track_of(p, "tv-world").erase("room_title"); });
+        auto retitle = [&](J &p, const std::string &title) {
+            J &t = track_of(p, "fixture-loop"); t["room_title"] = title;
+            check_of(p, t["id"])["display_name"] = title + ": Trophy Race"; };
+        identity_refuses("generic room title equal to the named track in the seed", [&](J &p) { retitle(p, "TV World"); });
+        identity_refuses("generic room title equal to a named track outside the seed", [&](J &p) { retitle(p, "north pole"); });
+        identity_refuses("generic room title equal to a retail track", [&](J &p) { retitle(p, "Crash Cove"); });
+        J good = open; retitle(good["content_plan"], "Crash Cove (Custom)");
+        expect(parse(good), "track identity: a suffixed generic room title admits");
+        // Two generic tracks: TV World's record moved to the unregistered key
+        // tv-park on generic slot 2. Distinct titles admit; equal titles refuse.
+        auto two_generic = [&](const std::string &title) {
+            std::string text = open.dump();
+            for (size_t at; (at = text.find("tv-world")) != std::string::npos;) text.replace(at, 8, "tv-park");
+            J plan = J::parse(text);
+            J &t = track_of(plan["content_plan"], "tv-park"); t.erase("named_block"); t["room_title"] = title;
+            t["display_name"] = title;
+            for (auto &pkg : plan["content_plan"]["packages"]) if (pkg["content_id"] == "tv-park") pkg["display_name"] = title;
+            J &c = check_of(plan["content_plan"], t["id"]); c["location"] = 35016301; c["display_name"] = title + ": Trophy Race";
+            return plan;
+        };
+        expect(parse(two_generic("TV Park")), "track identity: two generic tracks with distinct titles admit");
+        refuse(two_generic("Fixture Loop"), "track identity: two generic tracks with one room title");
+        refuse(two_generic("FIXTURE LOOP"), "track identity: room titles compare without case");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
