@@ -1,5 +1,9 @@
 #include <common.h>
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800265c0-0x8002689c.
 void GAMEPROG_AdvPercent(struct AdvProgress *adv)
 {
@@ -352,6 +356,22 @@ void GAMEPROG_GetPtrHighScoreTrack(void)
 	{
 		sdata->ptrActiveHighScoreEntry = &MainRaceTrack_CustomHighScores()[6 * ((gameMode1 & RELIC_RACE) != 0)];
 		return;
+	}
+#endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A content-plan custom track (#133 PR 3) never reads or writes its engine
+	// host's retail high scores, which live in the save. Its Relic Race uses a
+	// zeroed scratch table: no time beats a zero entry, so nothing is offered
+	// for saving and no name entry opens.
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		if (race && !race->retail)
+		{
+			static struct HighScoreEntry scratch[12];
+			memset(scratch, 0, sizeof scratch);
+			sdata->ptrActiveHighScoreEntry = &scratch[6 * ((gameMode1 & RELIC_RACE) != 0)];
+			return;
+		}
 	}
 #endif
 	sdata->ptrActiveHighScoreEntry = &sdata->gameProgress.highScoreTracks[gGT->levelID].scoreEntry[6 * ((gameMode1 & RELIC_RACE) != 0)];

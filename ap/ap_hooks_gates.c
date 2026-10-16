@@ -360,6 +360,26 @@ int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
 	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;
 }
 
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode)
+{
+	return ap_content_mode_open(pad, mode, ap_recv_count);
+}
+
+int AP_ContentStage2Owned(const ctr_content_pad *pad)
+{
+	return pad && pad->has_stage2 ? ap_content_stage2_owned(pad, ap_recv_count) : 0;
+}
+
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out)
+{
+	return ap_content_selector_build(pad, ap_recv_count, AP_ContentCodeChecked, out);
+}
+
+int AP_ContentTrackPadState(const ctr_content_pad *pad)
+{
+	return ap_content_track_pad_state(pad, ap_recv_count, AP_ContentCodeChecked);
+}
+
 int AP_BossReqMet(const ctr_req *r)
 {
 	return AP_ReqMetCounts(r, ap_recv_count);

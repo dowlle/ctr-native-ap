@@ -358,13 +358,22 @@ static void AP_DumpState(struct GameTracker *gGT)
 			const ctr_content_pad *pad = ap_content_plan_pad(id);
 			if (!pad || !pad->occupied)
 				continue;
+			// Track modes (#133 PR 3): the modes in pad order (0 Trophy, 1 CTR,
+			// 2 Relic) and the second-stage rule with its owned count and answer.
 			AP_TextBufPrintf(f,
 			        "%s    {\"pad\": %d, \"keys\": %d, \"rule_mask\": %u, "
-			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d}",
+			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d, "
+			        "\"modes\": [%d, %d, %d], \"mode_count\": %d, \"stage2_mask\": %u, "
+			        "\"stage2_count\": %d, \"stage2_owned\": %d, \"stage2_open\": %d}",
 			        first ? "" : ",\n", pad->physical, pad->keys,
 			        pad->has_rule ? pad->rule_mask : 0u,
 			        pad->has_rule ? pad->rule_count : 0,
-			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad));
+			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad),
+			        pad->mode_count > 0 ? pad->modes[0] : -1, pad->mode_count > 1 ? pad->modes[1] : -1,
+			        pad->mode_count > 2 ? pad->modes[2] : -1, pad->mode_count,
+			        pad->has_stage2 ? pad->stage2_mask : 0u, pad->has_stage2 ? pad->stage2_count : 0,
+			        AP_ContentStage2Owned(pad),
+			        pad->mode_count > 1 ? AP_ContentModeOpen(pad, pad->modes[1]) : 0);
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");

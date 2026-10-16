@@ -356,11 +356,19 @@ static long AP_LookupLocationCode(int globalBit)
         return ctr_cfg_active()?AP_CupSweepCode(&ctr_cup_sweeps,globalBit-AP_CUP_SWEEP_PSEUDO_BASE):-1;
     if (globalBit >= AP_CRYSTAL_PSEUDO_BASE && globalBit < AP_CRYSTAL_PSEUDO_BASE+80)
         return ctr_cfg_active() ? AP_CrystalPseudoCode(&ctr_crystal_checks, globalBit) : -1;
-	if (globalBit >= 50000 && globalBit <= 50104)
-	{
-		const ctr_content_pad *pad = ap_content_plan_pad(globalBit - 50000);
-		return pad && pad->occupied ? (long)pad->trophy_location : -1;
-	}
+    {
+        // Content-plan pad identities (#133 PR 3): Trophy or Crystal Challenge
+        // completion, CTR Challenge and the three relic tiers of a pad.
+        int contentPad, contentMode, contentTier;
+        if (ap_content_bit_decode(globalBit, &contentPad, &contentMode, &contentTier)) {
+            const ctr_content_pad *pad = ap_content_plan_pad(contentPad);
+            int64_t codes[3] = {0, 0, 0};
+            if (!pad || !pad->occupied) return -1;
+            if (pad->crystal) return contentMode == AP_CONTENT_MODE_TROPHY ? (long)pad->trophy_location : -1;
+            return ap_content_mode_codes(pad, contentMode, codes) > contentTier && codes[contentTier] > 0
+                       ? (long)codes[contentTier] : -1;
+        }
+    }
 	int i;
 	int trialPseudo, trialChallenge;
 	int perfectLevel;

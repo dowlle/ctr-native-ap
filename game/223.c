@@ -85,6 +85,16 @@ void RR_EndEvent_UnlockAward(void)
 	}
 
 #ifdef CTR_AP
+#ifdef CTR_CUSTOM_TRACKS
+	// Content-plan Relic Race (#133 PR 3): the pad's own tier codes against
+	// the track's own targets (a custom package's, or the retail track's).
+	// The loop below would award the engine host's retail relic bits.
+	if (AP_StandaloneRaceActive())
+	{
+		AP_NotifyStandaloneRelic(raceTime);
+		return;
+	}
+#endif
 	// Cortex Vortex pad track (schema 15): package-owned targets and direct
 	// relic codes. The loop below would compare against Oxide Station's retail
 	// times and award Oxide Station's relic bits for LevelID 13.

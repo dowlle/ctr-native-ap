@@ -458,36 +458,139 @@ int AP_StandaloneRaceActive(void)
 	return sdata->gGT && CustomTrack_StandaloneContext(sdata->gGT->levelID) != NULL;
 }
 
+// The running standalone race still is its content-plan pad's route: same
+// seed epoch, pad, hub, laps, slot, host, entry, track and mode code. Shared
+// by the Trophy/CTR finish and the Relic Race result below.
+static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRaceContext *context)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
+	int64_t codes[3] = {0, 0, 0};
+	if (!pad || !pad->occupied || pad->crystal || !context->seedEpoch ||
+	    context->seedEpoch != ap_content_plan_epoch() ||
+	    ap_content_mode_codes(pad, context->mode, codes) < 1 || codes[0] != context->trophyLocation ||
+	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
+	    context->retail != (pad->retail_id >= 0) ||
+	    context->hostLevelID != (context->retail ? pad->retail_id : 6) ||
+	    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return NULL;
+	return pad;
+}
+
+// Trophy Race and CTR Challenge finish of a standalone race. The context's
+// mode decides the award (ap_content_race_award): first place for a Trophy
+// route; first place with all three letters for a CTR route, and only in the
+// CTR Challenge it was staged for. A Relic Race pays in AP_NotifyStandaloneRelic.
 int AP_NotifyStandaloneRace(void)
 {
 	const struct CustomTrackRaceContext *context;
 	struct GameTracker *gGT = sdata->gGT;
+	int token;
 	if (!gGT || !ctr_cfg_active() ||
 	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) ||
 	    !(gGT->gameMode1 & ADVENTURE_MODE) ||
 	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE)) ||
-	    (gGT->gameMode2 & TOKEN_RACE) || !gGT->drivers[0] ||
-	    gGT->drivers[0]->driverRank != 0)
+	    !gGT->drivers[0])
 		return 0;
 	context = CustomTrack_StandaloneContext(gGT->levelID);
-	if (!context || context->trophyLocation > 2147483647 ||
+	token = (gGT->gameMode2 & TOKEN_RACE) != 0;
+	if (!context || token != (context->mode == AP_CONTENT_MODE_CTR) ||
+	    !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
+	                           gGT->drivers[0]->PickupLetterHUD.numCollected))
+		return 0;
+	if (context->trophyLocation > 2147483647 ||
 	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
 	    !ap_net_location_exists((long)context->trophyLocation))
 		return 0;
-	if (context->seedEpoch || ap_content_plan_active())
-	{
-		const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
-		if (!pad || !pad->occupied || !context->seedEpoch || context->seedEpoch != ap_content_plan_epoch() ||
-		    pad->trophy_location != context->trophyLocation || pad->hub != context->returnHub ||
-		    pad->laps != context->laps || pad->custom_slot != context->slot ||
-		    context->retail != (pad->retail_id >= 0) ||
-		    context->hostLevelID != (context->retail ? pad->retail_id : 6) ||
-		    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return 0;
-	}
+	if ((context->seedEpoch || ap_content_plan_active()) && !AP_StandaloneRoutePad(context))
+		return 0;
 	return AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
-	                        "[AP CHECK] standalone entry=%s track=%s slot=%d location=%ld\n",
-	                        context->entryID, context->trackID, context->slot,
+	                        "[AP CHECK] standalone entry=%s track=%s slot=%d mode=%d location=%ld\n",
+	                        context->entryID, context->trackID, context->slot, context->mode,
 	                        (long)context->trophyLocation);
+}
+
+int AP_StandaloneCtrBit(void)
+{
+	const struct CustomTrackRaceContext *context =
+	    sdata->gGT ? CustomTrack_StandaloneContext(sdata->gGT->levelID) : NULL;
+	return context && context->mode == AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR + context->physicalPad : -1;
+}
+
+// The running content-plan Relic Race's pad, or NULL.
+static const ctr_content_pad *AP_StandaloneRelicPad(void)
+{
+	const struct CustomTrackRaceContext *context =
+	    sdata->gGT ? CustomTrack_StandaloneContext(sdata->gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	if (!context || context->mode != AP_CONTENT_MODE_RELIC) return NULL;
+	pad = ap_content_plan_pad(context->physicalPad);
+	return pad && ap_content_mode_slot(pad, AP_CONTENT_MODE_RELIC) >= 0 ? pad : NULL;
+}
+
+// Retail tracks keep their retail relic targets; a custom track uses its
+// package's targets, never the host slot's.
+int AP_StandaloneRelicTarget(int tier)
+{
+	const ctr_content_pad *pad = AP_StandaloneRelicPad();
+	const ctr_content_package *pkg;
+	if (tier < 0 || tier > 2 || !pad) return -1;
+	if (pad->retail_id >= 0)
+		return pad->retail_id < 18 ? data.RelicTime[pad->retail_id * 3 + tier] : -1;
+	pkg = ap_content_plan_package(pad->package_index);
+	return pkg && pkg->has_relic_targets ? pkg->relic_targets[tier] : -1;
+}
+
+// The running content-plan Relic Race's tier code, -2 when none is running.
+long AP_StandaloneRelicCode(int tier)
+{
+	const ctr_content_pad *pad = AP_StandaloneRelicPad();
+	if (!pad) return -2;
+	return tier >= 0 && tier < 3 ? (long)pad->relic_locations[tier] : -1;
+}
+
+int AP_NotifyStandaloneRelic(int raceTime)
+{
+	const struct CustomTrackRaceContext *context;
+	const ctr_content_pad *pad;
+	struct GameTracker *gGT = sdata->gGT;
+	int targets[3], t, sent = 0;
+	unsigned tiers;
+	if (!gGT || !ctr_cfg_active() || !(gGT->gameMode1 & ADVENTURE_MODE) || !(gGT->gameMode1 & RELIC_RACE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE))
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->mode != AP_CONTENT_MODE_RELIC ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return 0;
+	for (t = 0; t < 3; ++t) targets[t] = AP_StandaloneRelicTarget(t);
+	tiers = ap_content_relic_tiers(raceTime, targets);
+	for (t = 0; t < 3; ++t)
+	{
+		long code = (long)pad->relic_locations[t];
+		// Same "already owned, check the next tier" rule as the retail loop,
+		// read from the server's checked set.
+		if (!(tiers & (1u << t)) || code <= 0 || !ap_net_location_exists(code) || ap_net_location_checked(code))
+			continue;
+		if (!AP_EmitClassCheck(code, 1, AP_CONTENT_BIT_RELIC + pad->physical * 3 + t, -1, 1,
+		                       "[AP CHECK] standalone relic entry=%s track=%s tier=%d location=%ld "
+		                       "(race time %d, target %d)\n",
+		                       context->entryID, context->trackID, t, code, raceTime, targets[t]))
+			continue;
+		++sent;
+		gGT->podiumRewardID = STATIC_RELIC;
+		gGT->gameModeEnd |= NEW_RELIC;
+		if (t > 0)
+		{
+			sdata->relicTime_1min = targets[t] / 0xe100;
+			sdata->relicTime_10sec = (targets[t] / 0x2580) % 6;
+			sdata->relicTime_1sec = (targets[t] / 0x3c0) % 10;
+			sdata->relicTime_10ms = (targets[t] / (0x3c0 / 10)) % 10;
+			sdata->relicTime_1ms = ((targets[t] * 100) / 0x3c0) % 10;
+		}
+	}
+	ap_state_gen++;
+	return sent;
 }
 
 int AP_CustomTrackTrophyChecked(void)

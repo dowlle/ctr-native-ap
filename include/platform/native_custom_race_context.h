@@ -22,6 +22,10 @@ struct CustomTrackRaceContext
 	char levSha256[65];
 	char vrmSha256[65];
 	int crystal, timeLimitTicks;
+	// Content-plan track mode (#133 PR 3): 0 Trophy Race, 1 CTR Challenge,
+	// 2 Relic Race. trophyLocation is then the mode's first check code
+	// (Trophy, CTR, or the Sapphire tier). Crystal Challenges use 0.
+	int mode;
 };
 
 struct CustomTrackRaceLatch
@@ -63,8 +67,9 @@ static inline int CustomRaceContext_Hash(const char text[65])
 
 static inline int CustomRaceContext_Valid(const struct CustomTrackRaceContext *c)
 {
-	return c && ((c->crystal == 0 && c->timeLimitTicks == 0 && c->hostLevelID >= 0 && c->hostLevelID < 18) ||
-               (c->crystal == 1 && c->retail == 1 && c->hostLevelID >= 18 && c->hostLevelID <= 24 &&
+	return c && ((c->crystal == 0 && c->timeLimitTicks == 0 && c->hostLevelID >= 0 && c->hostLevelID < 18 &&
+	              c->mode >= 0 && c->mode <= 2) ||
+               (c->crystal == 1 && c->retail == 1 && c->hostLevelID >= 18 && c->hostLevelID <= 24 && c->mode == 0 &&
                 c->laps == 1 && c->seedEpoch && c->timeLimitTicks > 0 && c->timeLimitTicks <= 576000)) &&
 	       CustomRaceContext_IsPad(c->physicalPad) &&
 	       c->returnHub >= 25 && c->returnHub <= 29 &&

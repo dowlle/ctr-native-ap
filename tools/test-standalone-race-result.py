@@ -29,6 +29,7 @@ fixture = r'''
 #include "platform/native_custom_race_context.h"
 #include "ap/ap_class_check_policy.h"
 #include "ap/ap_content_plan.h"
+#include "ap/ap_content_modes.h"
 #define ADVENTURE_MODE 1
 #define ARCADE_MODE 2
 #define ADVENTURE_CUP 4
@@ -37,7 +38,7 @@ fixture = r'''
 #define CRYSTAL_CHALLENGE 32
 #define TOKEN_RACE 1
 #define AP_RESULT_PRODUCER_CUSTOM_TROPHY 1
-struct Driver { int driverRank; } driver;
+struct Driver { int driverRank; struct { int numCollected; } PickupLetterHUD; } driver;
 struct GameTracker { int levelID,gameMode1,gameMode2; struct Driver *drivers[1]; } game;
 static struct {struct GameTracker *gGT;} data, *sdata=&data;
 static struct CustomTrackRaceContext context;
@@ -68,6 +69,7 @@ void AP_CeremonyLedgerAdd(long code,int bit,int tag) { (void)code; (void)bit; (v
 void AP_FeedOnLocationSent(long code) { assert(code==sentCode); feed++; }
 '''
 fixture += function("static int AP_EmitClassCheck(long code,")
+fixture += function("static const ctr_content_pad *AP_StandaloneRoutePad(")
 fixture += function("int AP_NotifyStandaloneRace(void)")
 fixture += r'''
 static void reset(void) {
@@ -114,7 +116,7 @@ int main(void) {
   context.returnHub=26; context.physicalPad=3;
   pad.physical=3; pad.hub=26; pad.occupied=1; pad.laps=context.laps;
   pad.retail_id=retail?6:-1; pad.custom_slot=context.slot;
-  pad.trophy_location=context.trophyLocation;
+  pad.trophy_location=context.trophyLocation; pad.mode_count=1; pad.modes[0]=AP_CONTENT_MODE_TROPHY; pad.stages[0]=1;
   strcpy(pad.entry_id,context.entryID); strcpy(pad.track_id,context.trackID);
   if(retail) serving=0; /* retail needs a retained route, not custom bytes */
   switch(bad) {
@@ -130,6 +132,33 @@ int main(void) {
   }
   assert(AP_NotifyStandaloneRace()==(bad==0)); assert(sent==(bad==0)); cases++;
  }
+ /* Track modes (#133 PR 3): a CTR route pays only in its CTR Challenge, on
+  * first place with all three letters, with the pad's CTR code; a Trophy
+  * route never pays inside a CTR Challenge; a Relic route never pays here. */
+ for(int mode=0;mode<3;mode++) for(int token=0;token<2;token++)
+ for(int letters=0;letters<=3;letters++) for(int rank=0;rank<2;rank++) {
+  reset(); planActive=1; epoch=9; context.seedEpoch=9;
+  context.retail=1; context.slot=0; context.laps=3; context.returnHub=26; context.physicalPad=3;
+  context.mode=mode; context.trophyLocation=mode==0?35011001:mode==1?35012301:35012001;
+  pad.physical=3; pad.hub=26; pad.occupied=1; pad.laps=3; pad.retail_id=6; pad.custom_slot=0;
+  pad.mode_count=3; pad.modes[0]=0; pad.modes[1]=1; pad.modes[2]=2; pad.stages[0]=1; pad.stages[1]=pad.stages[2]=2;
+  pad.trophy_location=35011001; pad.ctr_location=35012301;
+  pad.relic_locations[0]=35012001; pad.relic_locations[1]=35012101; pad.relic_locations[2]=35012201;
+  strcpy(pad.entry_id,context.entryID); strcpy(pad.track_id,context.trackID);
+  serving=0; game.gameMode2=token; driver.driverRank=rank; driver.PickupLetterHUD.numCollected=letters;
+  int expected = rank==0 && ((mode==0 && !token) || (mode==1 && token && letters==3));
+  assert(AP_NotifyStandaloneRace()==expected); assert(sent==expected);
+  if(expected) assert(sentCode==context.trophyLocation);
+  cases++;
+ }
+ /* A context whose code is another mode's code is refused. */
+ reset(); planActive=1; epoch=9; context.seedEpoch=9; context.retail=1; context.slot=0; context.laps=3;
+ context.returnHub=26; context.physicalPad=3; context.mode=1; context.trophyLocation=35011001;
+ pad.physical=3; pad.hub=26; pad.occupied=1; pad.laps=3; pad.retail_id=6;
+ pad.mode_count=2; pad.modes[0]=0; pad.modes[1]=1; pad.trophy_location=35011001; pad.ctr_location=35012301;
+ strcpy(pad.entry_id,context.entryID); strcpy(pad.track_id,context.trackID);
+ serving=0; game.gameMode2=TOKEN_RACE; driver.PickupLetterHUD.numCollected=3;
+ assert(!AP_NotifyStandaloneRace() && !sent); cases++;
  printf("PASS: %d standalone finish/refusal cases and checked-state replay through production emitter\n",cases);
 }
 '''

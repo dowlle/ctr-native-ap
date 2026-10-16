@@ -46,11 +46,13 @@ fixture = r'''
 #include "ap_seedcfg.h"
 #include "ap_pad_state.h"
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #define AP_IDX_KEY 14
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 int AP_GateCount(int i){(void)i;return 0;}
 int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 0;}
+int AP_ContentTrackPadState(const ctr_content_pad *p){(void)p;return 0;}
 #define ADV_REWARD_FIRST_TROPHY 0
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0, AP_CV_SLOT_LETTER0 = 5 };

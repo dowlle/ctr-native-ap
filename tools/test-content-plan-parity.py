@@ -27,10 +27,16 @@ root = Path(__file__).resolve().parents[1]
 registry = json.loads(re.search(r'R"CTRREG\((.*)\)CTRREG"', (root / "ap/ap_content_registry.hpp").read_text(), re.S)[1])
 # Custom packages are not in the native registry: content plans admit any
 # complete descriptor (#133 PR 2) and native checks the bytes on load.
-expected = dict(retail=[dict(id=i, name=n, location=cp.CTR_LOCATION_IDS[n + ": Trophy Race"])
-                                                 for i, n in sorted(cp.RETAIL.items())],
+L = cp.CTR_LOCATION_IDS
+expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=L[n + ": CTR Token Challenge"],
+                             relic=[L[f"{n}: {t} Time Trial"] for t in cp.RELIC_TIERS])
+                        for i, n in sorted(cp.RETAIL.items())],
                 pads=[dict(physical=p, hub=h, keys=k) for p, h, k in cp.pad_registry()],
-                custom_locations=[cp.CTR_LOCATION_IDS[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)],
+                custom_locations=[L[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)],
+                # Track modes (#133 PR 3): generic-slot CTR and relic tier codes.
+                custom_ctr_locations=[L[f"Custom Track {i}: CTR Token Challenge"] for i in range(1, 33)],
+                custom_relic_locations=[[L[f"Custom Track {i}: {t} Time Trial"] for t in cp.RELIC_TIERS]
+                                        for i in range(1, 33)],
                 # The named-block table native binds track keys to (#133 PR 2
                 # review); tools/sync-content-registry.py rewrites it.
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
@@ -251,6 +257,104 @@ for seed in range(8):
     twin["files"] = [dict(f, sha256=h * 32) for f, h in zip(twin["files"], ("e5", "f6"))]
     custom = [copy.deepcopy(UNKNOWN), twin] + ([named_fixture()] if seed % 2 else [])
     cases.append((f"identity-generated-{seed}", make_world(options_with(custom), seed=seed).fill_slot_data(), True))
+
+# Track modes, stages and mode orders (#133 PR 3): every nonempty mode subset
+# with both stage settings and all three orders, on retail tracks and on custom
+# packages whose capabilities allow different modes (a CTR-capable named
+# track, a Trophy and Relic B+ track, a Relic-only B+ track).
+import itertools
+from worlds.ctr.test.test_track_modes import mode_options, relic_only
+from worlds.ctr.test.test_content_item_pool import small_pool
+def mode_custom():
+    tv = named_fixture()
+    tv["capabilities"].update(ctr_tokens=True, relic=True)
+    tv["relic_targets"] = dict(sapphire=90000, gold=80000, platinum=70000)
+    return [tv, copy.deepcopy(UNKNOWN), relic_only()]
+subsets = [list(c) for n in (1, 2, 3) for c in itertools.combinations(cp.MODES, n)]
+for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("single", "two"), ("fixed", "per_seed", "per_pad"))):
+    custom = mode_custom() if index % 2 == 0 else [copy.deepcopy(cp.PACKAGES[1]), copy.deepcopy(UNKNOWN)]
+    # Keep only the custom tracks that can run one of the selected modes.
+    custom = [d for d in custom if set(modes) & set(cp.supported_modes("custom", d))]
+    for seed in range(2):
+        options = mode_options(modes, stages, order, custom=custom)
+        if modes in (["trophy"], ["ctr"]):
+            options["item_pool"] = small_pool()  # about 20 checks cannot hold the larger pool
+        if seed:
+            options["warp_pad_rules"] = {"Crash Cove": dict(item="Trophy", count=2)}
+            options["warppad_unlock_requirements"] = "randomized"
+        cases.append((f"modes-{'+'.join(modes)}-{stages}-{order}-{seed}", make_world(options, seed=seed + index).fill_slot_data(), True))
+modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
+cases.append(("modes-base", modes_base, True))
+def multi_pad(p):
+    return next(x for x in p["pads"] if len(x["mode_gates"]) == 3)
+def stage2_of(p, pad):
+    return next(r for r in p["requirements"] if r["id"] == pad["mode_gates"][1]["requirement_id"])
+def custom_track(p, key):
+    return next(t for t in p["tracks"] if t["id"].startswith(f"custom/{key}/"))
+def entry_for(p, track):
+    return next(e for e in p["entries"] if e.get("track_id") == track["id"])
+def pad_for(p, entry):
+    return next(x for x in p["pads"] if x["entry_id"] == entry["id"])
+def claim_mode(key, mode, location, suffix, award):
+    def change(p):
+        t = custom_track(p, key)
+        t["modes"] = t["capabilities"] = [m for m in cp.MODES if m in t["modes"] + [mode]]
+        e = entry_for(p, t); e["modes"].append(mode); pad = pad_for(p, e)
+        stage = pad["mode_gates"][-1]
+        pad["mode_gates"].append(dict(mode=mode, stage=stage["stage"] if len(pad["mode_gates"]) > 1 else 1,
+                                      requirement_id=stage["requirement_id"]))
+        p["checks"].append(dict(location=location, owner=t["id"], kind=mode, display_name=t.get("room_title", t["display_name"]) + ": " + suffix,
+                                routes=[dict(entry_id=e["id"], mode=mode, leg_id=None, encounter_id=None, own_pad_id=pad["id"], award=award)]))
+        p["items"]["coded_checks"] += 1; p["items"]["filler_count"] += 1
+    return change
+def modes_alter(name, change):
+    alter("modes-" + name, change, modes_base)
+modes_alter("later gate as stage one", lambda p: multi_pad(p)["mode_gates"][1].__setitem__("stage", 1))
+modes_alter("later gate on the entrance record", lambda p: multi_pad(p)["mode_gates"][2].__setitem__("requirement_id", "free"))
+modes_alter("later gate on another pad's record", lambda p: multi_pad(p)["mode_gates"][2].__setitem__(
+    "requirement_id", next(r["id"] for r in p["requirements"] if r["id"].startswith("stage2:") and r["id"] != multi_pad(p)["mode_gates"][2]["requirement_id"])))
+modes_alter("first gate as stage two", lambda p: multi_pad(p)["mode_gates"][0].__setitem__("stage", 2))
+modes_alter("stage two record dropped", lambda p: p["requirements"].remove(stage2_of(p, multi_pad(p))))
+modes_alter("stage two count above supply", lambda p: stage2_of(p, multi_pad(p))["predicate"].__setitem__("count", 99))
+modes_alter("stage two count zero", lambda p: stage2_of(p, multi_pad(p))["predicate"].__setitem__("count", 0))
+modes_alter("stage two item outside counted", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="count", item=35010015, count=1)))
+modes_alter("stage two sum of mixed families", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="sum", items=[35010001, 35010004], count=1)))
+modes_alter("stage two always", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="always")))
+modes_alter("stage two record on an empty pad", lambda p: p["requirements"].append(
+    dict(id="stage2:" + next(x for x in p["pads"] if x["entry_id"] is None and x["kind"] == "normal")["id"].split(":")[1],
+         predicate=dict(op="count", item=35010000, count=1))))
+modes_alter("stage two record with a leading zero", lambda p: stage2_of(p, multi_pad(p)).__setitem__("id", "stage2:0" + multi_pad(p)["id"].split(":")[1]))
+modes_alter("entry mode missing", lambda p: next(e for e in p["entries"] if len(e["modes"]) == 3)["modes"].pop())
+def repeat_mode(p):
+    e = next(e for e in p["entries"] if len(e["modes"]) == 3)
+    e["modes"][2] = e["modes"][0]
+modes_alter("entry mode repeated", repeat_mode)
+# Allowed on both sides, as in manual rules; the generator never draws a Key.
+modes_alter("stage two Key gate within supply", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="count", item=35010014, count=2)))
+modes_alter("entry mode unknown", lambda p: next(e for e in p["entries"] if len(e["modes"]) == 3)["modes"].__setitem__(2, "merged"))
+modes_alter("gate order differs from entry order", lambda p: multi_pad(p)["mode_gates"].reverse())
+modes_alter("track modes out of order", lambda p: next(t for t in p["tracks"] if t["origin"] == "retail").__setitem__("modes", ["ctr", "trophy", "relic"]))
+modes_alter("capabilities differ from modes", lambda p: next(t for t in p["tracks"] if t["origin"] == "retail").__setitem__("capabilities", ["trophy"]))
+modes_alter("feature dropped", lambda p: p["required_features"].remove("track_modes_v1"))
+modes_alter("feature repeated", lambda p: p["required_features"].append("track_modes_v1"))
+modes_alter("relic award swapped", lambda p: next(c for c in p["checks"] if c["kind"] == "relic" and c["routes"][0]["award"] == "gold")["routes"][0].__setitem__("award", "platinum"))
+modes_alter("ctr award as win", lambda p: next(c for c in p["checks"] if c["kind"] == "ctr")["routes"][0].__setitem__("award", "win"))
+modes_alter("relic check removed", lambda p: (p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "relic")),
+                                                p["items"].__setitem__("coded_checks", p["items"]["coded_checks"] - 1),
+                                                p["items"].__setitem__("filler_count", p["items"]["filler_count"] - 1)))
+modes_alter("merged entry", lambda p: next(e for e in p["entries"] if e["kind"] == "track").__setitem__("merged", True))
+modes_alter("B+ track claims CTR without letters", claim_mode("fixture-loop", "ctr", L["Custom Track 1: CTR Token Challenge"], "CTR Token Challenge", "win_letters"))
+modes_alter("relic-only track claims Trophy without arcade", claim_mode("relic-loop", "trophy", L["Custom Track 2: Trophy Race"], "Trophy Race", "win"))
+def relic_without_lap_graph(p):
+    t = custom_track(p, "relic-loop")
+    next(x for x in p["packages"] if x["id"] == t["package_id"])["capabilities"]["time_trial"] = False
+modes_alter("relic track without a lap graph", relic_without_lap_graph)
+def relic_without_targets(p):
+    t = custom_track(p, "fixture-loop")
+    pkg = next(x for x in p["packages"] if x["id"] == t["package_id"])
+    pkg["capabilities"]["relic"] = False; pkg.pop("relic_targets")
+modes_alter("relic track whose package lost relic", relic_without_targets)
+modes_alter("unchanged modes copy", lambda p: None)
 
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))

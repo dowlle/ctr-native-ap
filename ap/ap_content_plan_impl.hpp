@@ -1,5 +1,6 @@
 // Included by ap_seedcfg.cpp so every production-parser harness exercises the
-// same admission path. Implements standalone Trophy and Crystal Challenge
+// same admission path. Implements standalone track entries with their Trophy,
+// CTR Challenge and Relic Race modes (#133 PR 3) and Crystal Challenge
 // entries; a broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
@@ -235,26 +236,30 @@ static void validate(const J &p, State &out) {
     const auto tracks = table(p.at("tracks"), 27);
     const auto entries = table(p.at("entries"), 27);
     const auto pads = table(p.at("pads"), 32);
-    const auto requirements = table(p.at("requirements"), 32);
+    const auto requirements = table(p.at("requirements"), 64); // 5 hub, up to 27 manual and 27 stage-2
     need(pads.size() == 32 && requirements.size() >= 5, "physical pad or requirement registry mismatch");
     // Manual pad requirements (#463): every record beyond the five physical hub
     // ones must be `manual:<physical>`, is checked against the item ledger
     // below, and is the only gate its own pad may reference. The feature name is
     // required exactly when such a record exists, so a client without this
     // evaluator never reads a Key-only plan by mistake.
-    std::map<int, std::string> manual_ids;
+    // Second-stage records (#133 PR 3) are `stage2:<physical>`: the shared
+    // gate of a pad's later modes, parsed and checked exactly like a manual rule.
+    std::map<int, std::string> manual_ids, stage2_ids;
     for (const auto &pair : requirements) {
         if (pair.first == "free" || pair.first.rfind("keys:", 0) == 0) continue;
-        need(pair.first.rfind("manual:", 0) == 0 && pair.first.size() > 7 && pair.first.size() <= 10, "unknown requirement record: " + pair.first);
-        const std::string digits = pair.first.substr(7);
-        need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) && (digits.size() == 1 || digits[0] != '0'), "malformed manual requirement id");
-        need(manual_ids.emplace(std::stoi(digits), pair.first).second, "duplicate manual requirement");
+        const bool later = pair.first.rfind("stage2:", 0) == 0;
+        const size_t prefix = 7; // "manual:" and "stage2:" have the same length
+        need((later || pair.first.rfind("manual:", 0) == 0) && pair.first.size() > prefix && pair.first.size() <= prefix + 3, "unknown requirement record: " + pair.first);
+        const std::string digits = pair.first.substr(prefix);
+        need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) && (digits.size() == 1 || digits[0] != '0'), "malformed pad requirement id");
+        need((later ? stage2_ids : manual_ids).emplace(std::stoi(digits), pair.first).second, "duplicate pad requirement");
     }
-    need(requirements.size() == 5 + manual_ids.size(), "requirement registry mismatch");
-    bool arenas=false, arcade=false, pickups=false;
+    need(requirements.size() == 5 + manual_ids.size() + stage2_ids.size(), "requirement registry mismatch");
+    bool arenas=false, arcade=false, pickups=false, modes=false;
     for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
         arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
-    }
+    } else modes |= pair.second->at("modes") != J::array({"trophy"});
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
     for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
     J features=J::array({"content_plan_v1"});
@@ -262,6 +267,7 @@ static void validate(const J &p, State &out) {
     if(arenas)features.push_back("crystal_entries_v1");
     if(pickups)features.push_back("crystal_pickups_v1");
     if(arcade)features.push_back("arcade_crystals_v1");
+    if(modes)features.push_back("track_modes_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -290,6 +296,7 @@ static void validate(const J &p, State &out) {
     std::set<int> retail_ids, custom_slots, named_blocks, arena_ids;
     std::map<int64_t, J> expected_checks;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
+    std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
@@ -314,7 +321,9 @@ static void validate(const J &p, State &out) {
         need(!garage && entries.count(entry_id) && used_entries.insert(entry_id).second, "invalid or repeated pad entry");
         const J &entry = *entries.at(entry_id);
         const bool crystal=entry.at("kind")=="crystal";
-        need(pad["mode_gates"] == J::array({J{{"mode", crystal?"crystal":"trophy"}, {"stage", 1}, {"requirement_id", manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free")}}}), "unsupported mode gates");
+        const std::string first_gate = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
+        if (crystal)
+            need(pad["mode_gates"] == J::array({J{{"mode", "crystal"}, {"stage", 1}, {"requirement_id", first_gate}}}), "unsupported mode gates");
         if (manual_ids.count(physical)) manual_pad[physical] = &dest;
         if(crystal) {
             fields(entry,{"id","kind","arena_id","target","time_limit_ticks"});
@@ -347,19 +356,52 @@ static void validate(const J &p, State &out) {
             continue;
         }
         fields(entry, {"id", "kind", "track_id", "modes", "merged"});
-        need(entry["kind"] == "track" && entry["modes"] == J::array({"trophy"}) && entry["merged"] == false, "unsupported entry kind or modes");
+        need(entry["kind"] == "track" && entry["merged"] == false, "unsupported entry kind or merged mode");
+        // Modes (#133 PR 3): the entry lists its modes in the pad's resolved
+        // order; the track lists the same modes in canonical order.
+        static const char *mode_names[AP_CONTENT_MODE_COUNT] = {"trophy", "ctr", "relic"};
+        const J &entry_modes = entry["modes"];
+        need(entry_modes.is_array() && !entry_modes.empty() && entry_modes.size() <= AP_CONTENT_MODE_COUNT, "entry mode list bounds");
+        unsigned mode_bits = 0;
+        dest.mode_count = 0;
+        for (const auto &m : entry_modes) {
+            int mode = -1;
+            for (int k = 0; k < AP_CONTENT_MODE_COUNT; ++k) if (m == mode_names[k]) mode = k;
+            need(mode >= 0 && !(mode_bits & (1u << mode)), "unknown or repeated entry mode");
+            mode_bits |= 1u << mode;
+            dest.modes[dest.mode_count++] = mode;
+        }
+        J canonical_modes = J::array();
+        for (int k = 0; k < AP_CONTENT_MODE_COUNT; ++k) if (mode_bits & (1u << k)) canonical_modes.push_back(mode_names[k]);
         const auto track_id = text(entry["track_id"]);
         need(tracks.count(track_id) && used_tracks.insert(track_id).second, "missing or repeated standalone track");
         const J &track = *tracks.at(track_id);
-        need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) && track.at("field_size") == 8, "unsupported track capabilities");
+        need(track.at("modes") == canonical_modes && track.at("capabilities") == canonical_modes && track.at("field_size") == 8, "unsupported track modes or capabilities");
+        // With two stages the first mode opens with the pad and the others share
+        // `stage2:<physical>`; with one stage every mode uses the entrance gate.
+        const bool later_stage = stage2_ids.count(physical) != 0;
+        J gates = J::array();
+        for (int k = 0; k < dest.mode_count; ++k) {
+            dest.stages[k] = k && later_stage ? 2 : 1;
+            gates.push_back(J{{"mode", mode_names[dest.modes[k]]}, {"stage", dest.stages[k]},
+                              {"requirement_id", k && later_stage ? stage2_ids.at(physical) : first_gate}});
+        }
+        need(pad["mode_gates"] == gates, "unsupported mode gates");
+        if (later_stage && dest.mode_count > 1) { stage2_pad[physical] = &dest; dest.has_stage2 = 1; }
         const auto title = text(track.at("display_name"), false);
         std::string check_title = title;
+        int64_t codes[AP_CONTENT_MODE_COUNT][3] = {};
+        unsigned supported = 0;
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const int rid = number(track["retail_id"], 0, 17);
             need(retail_ids.insert(rid).second && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] && track["laps"] == AP_CONTENT_RETAIL_LAPS, "retail metadata mismatch");
             dest.retail_id = rid;
-            dest.trophy_location = registry["retail"][rid]["location"].get<int64_t>();
+            const J &row = registry["retail"][rid];
+            codes[AP_CONTENT_MODE_TROPHY][0] = row["location"].get<int64_t>();
+            codes[AP_CONTENT_MODE_CTR][0] = row["ctr"].get<int64_t>();
+            for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = row["relic"][t].get<int64_t>();
+            supported = 7u; // retail tracks run all three modes
         } else {
             // #306: optional `named_block` (the track's own id block, path C)
             // and `room_title` (the sanitized title the room shows, path B+).
@@ -375,8 +417,13 @@ static void validate(const J &p, State &out) {
             const int slot = number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES);
             const ctr_content_package &record = out.packages[package_index.at(package_id)];
             need(custom_slots.insert(slot).second && track_id == "custom/" + pkg["content_id"].get<std::string>() + "/" + pkg["revision"].get<std::string>() && title == pkg["display_name"] && number(track["laps"], 1, 7) == record.laps, "custom metadata mismatch");
-            // Trophy is the only mode this profile builds; it needs the arcade capability.
-            need((record.capabilities & AP_CONTENT_CAP_ARCADE) != 0, "custom Trophy track without the arcade capability");
+            // Measured capabilities decide the modes (apworld supported_modes):
+            // Trophy needs arcade, CTR arcade and the letters, Relic time
+            // crates with targets on a timed lap graph.
+            const unsigned caps = record.capabilities;
+            if (caps & AP_CONTENT_CAP_ARCADE) supported |= 1u << AP_CONTENT_MODE_TROPHY;
+            if ((caps & AP_CONTENT_CAP_ARCADE) && (caps & AP_CONTENT_CAP_CTR_TOKENS)) supported |= 1u << AP_CONTENT_MODE_CTR;
+            if ((caps & AP_CONTENT_CAP_RELIC) && (caps & AP_CONTENT_CAP_TIME_TRIAL) && record.has_relic_targets) supported |= 1u << AP_CONTENT_MODE_RELIC;
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
             dest.named_block = -1;
@@ -393,19 +440,37 @@ static void validate(const J &p, State &out) {
                 need(owned != named_table.end() && dest.named_block == owned->second.block &&
                      titled && check_title == owned->second.name, "named block does not match this build's registry");
                 need(named_blocks.insert(dest.named_block).second, "duplicate named block");
-                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
+                codes[AP_CONTENT_MODE_TROPHY][0] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
+                codes[AP_CONTENT_MODE_CTR][0] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_CTR_TOKEN);
+                for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_RELIC_SAPPHIRE + t);
             } else {
                 need(owned == named_table.end(), "a track with a named block must use it");
                 need(!reserved_titles.count(fold(check_title)), "generic-slot room title takes a retail or named track's name");
-                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
+                codes[AP_CONTENT_MODE_TROPHY][0] = registry["custom_locations"][slot - 1].get<int64_t>();
+                codes[AP_CONTENT_MODE_CTR][0] = registry["custom_ctr_locations"][slot - 1].get<int64_t>();
+                for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = registry["custom_relic_locations"][slot - 1][t].get<int64_t>();
             }
         }
+        need((mode_bits & ~supported) == 0, "a track mode its capabilities do not allow");
         dest.occupied = 1; dest.laps = number(track["laps"], 1, 7);
         copy(dest.entry_id, entry["id"]); copy(dest.track_id, track["id"]); copy(dest.display_name, track["display_name"]);
         copy(dest.room_title, J(check_title));
-        const J route{{"entry_id", entry_id}, {"mode", "trophy"}, {"leg_id", nullptr}, {"encounter_id", nullptr}, {"own_pad_id", id}, {"award", "win"}};
-        const J check{{"location", dest.trophy_location}, {"owner", track_id}, {"kind", "trophy"}, {"display_name", check_title + ": Trophy Race"}, {"routes", J::array({route})}};
-        need(expected_checks.emplace(dest.trophy_location, check).second, "duplicate check identity");
+        dest.trophy_location = (mode_bits & (1u << AP_CONTENT_MODE_TROPHY)) ? codes[AP_CONTENT_MODE_TROPHY][0] : 0;
+        dest.ctr_location = (mode_bits & (1u << AP_CONTENT_MODE_CTR)) ? codes[AP_CONTENT_MODE_CTR][0] : 0;
+        for (int t = 0; t < 3; ++t)
+            dest.relic_locations[t] = (mode_bits & (1u << AP_CONTENT_MODE_RELIC)) ? codes[AP_CONTENT_MODE_RELIC][t] : 0;
+        static const char *awards[AP_CONTENT_MODE_COUNT][3] = {{"win"}, {"win_letters"}, {"sapphire", "gold", "platinum"}};
+        static const char *suffixes[AP_CONTENT_MODE_COUNT][3] = {{"Trophy Race"}, {"CTR Token Challenge"},
+                                                                 {"Sapphire Time Trial", "Gold Time Trial", "Platinum Time Trial"}};
+        for (int k = 0; k < dest.mode_count; ++k) {
+            const int mode = dest.modes[k];
+            for (int t = 0; t < (mode == AP_CONTENT_MODE_RELIC ? 3 : 1); ++t) {
+                const J route{{"entry_id", entry_id}, {"mode", mode_names[mode]}, {"leg_id", nullptr}, {"encounter_id", nullptr}, {"own_pad_id", id}, {"award", awards[mode][t]}};
+                const J check{{"location", codes[mode][t]}, {"owner", track_id}, {"kind", mode_names[mode]},
+                              {"display_name", check_title + ": " + suffixes[mode][t]}, {"routes", J::array({route})}};
+                need(expected_checks.emplace(codes[mode][t], check).second, "duplicate check identity");
+            }
+        }
         if (!keys) starting_entry = true;
     }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
@@ -442,10 +507,12 @@ static void validate(const J &p, State &out) {
     // ledger, so a forged record cannot name an item the seed lacks or ask for
     // more than the base supply (`requirement_ceiling`).
     need(manual_pad.size() == manual_ids.size(), "manual requirement without an occupied pad");
-    for (const auto &pair : manual_ids) {
+    need(stage2_pad.size() == stage2_ids.size(), "second-stage requirement without a pad that uses it");
+    for (int pass = 0; pass < 2; ++pass)
+    for (const auto &pair : pass ? stage2_ids : manual_ids) {
         fields(*requirements.at(pair.second), {"id", "predicate"});
         const J &pred = requirements.at(pair.second)->at("predicate");
-        ctr_content_pad &target = *manual_pad.at(pair.first);
+        ctr_content_pad &target = *(pass ? stage2_pad : manual_pad).at(pair.first);
         long long supply = 0;
         unsigned mask = 0;
         if (pred.is_object() && pred.contains("op") && pred["op"] == "count") {
@@ -469,8 +536,9 @@ static void validate(const J &p, State &out) {
             need(matched, "sum rule items are not exactly one family's base items");
         }
         const int count = number(pred["count"], 1);
-        need(mask && count <= supply, "manual rule count outside the base supply");
-        target.has_rule = 1; target.rule_count = count; target.rule_mask = mask;
+        need(mask && count <= supply, "pad rule count outside the base supply");
+        if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
+        else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);

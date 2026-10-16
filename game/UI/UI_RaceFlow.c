@@ -399,6 +399,18 @@ void UI_RaceEnd_ExitToMap(void)
 		sdata->Loading.OnBegin.AddBitsConfig8 |= SPAWN_AT_BOSS;
 	}
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A standalone content-plan race returns to the hub it was entered from,
+	// as the pause menu's exit does (MainFreeze.c), even after a restart.
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		if (race)
+		{
+			MainRaceTrack_RequestLoad((s16)race->returnHub);
+			return;
+		}
+	}
+#endif
 	MainRaceTrack_RequestLoad(gGT->prevLEV);
 }
 
