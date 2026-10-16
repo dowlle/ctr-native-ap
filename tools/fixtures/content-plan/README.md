@@ -20,3 +20,18 @@ plan fixtures are on the schema 18 envelope. `test-content-plan.cpp` checks the
 resolved per-pad rules, the evaluator answers and the refusals; the parity
 script compares the production parser with the paired generator's validator on
 generated rule maps and on forged records.
+
+Open package admission (#133 PR 2): package records now carry `laps` and
+`capabilities` (and `relic_targets` when `relic` is true). The two fields were
+added by hand to the package record of `baseline.json`, `starts-extras.json`,
+`manual-rules.json` and the two `named-blocks/content-plan-*.json` fixtures,
+with Baby T Park's measured values (laps 7; time_trial, arcade, ctr_tokens and
+wumpa true; relic false). Nothing else in them changed.
+
+`open-packages.json` is slot data the paired apworld emitted
+(`worlds/ctr/test/test_custom_packages.py` helpers, seed 20261016) for two
+packages outside any compiled registry: test data on the `tv-world` key (named
+block 78, laps 5) and the made-up `fixture-loop` key (generic slot 1, path B+,
+laps 3, relic targets). Its pins name no real files. `test-content-plan.cpp`
+checks the resolved pads and refuses forged descriptors; the parity script
+compares both sides on the same forgeries.

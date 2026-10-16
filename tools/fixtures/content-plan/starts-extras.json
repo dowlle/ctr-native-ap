@@ -10,6 +10,14 @@
         "revision": "1.0.2",
         "display_name": "Baby T Park",
         "author": "Lockheart",
+        "laps": 7,
+        "capabilities": {
+          "time_trial": true,
+          "arcade": true,
+          "relic": false,
+          "ctr_tokens": true,
+          "wumpa": true
+        },
         "files": [
           {
             "role": "lev",

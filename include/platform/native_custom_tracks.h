@@ -150,6 +150,11 @@ void CustomTrack_ClearSeedDescriptor(void);
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status);
 
+// Content-plan package outside the compiled registry (#133 PR 2): point the
+// loader at its located files. Same contract as UseManagedPackage, except the
+// load carries no navigation identity, so recorded AI lanes are blocked. The
+// next descriptor application hashes these paths against the seed's pins.
+int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const char *raceName);
 // Hash the armed LEV and VRM again immediately before an event entry. A failed
 // recheck disarms the custom race so same-size content replacement cannot slip
 // past the cheap serve-time stat check.

@@ -10,6 +10,9 @@
 #ifdef CTR_AP
 
 #ifdef CTR_CUSTOM_TRACKS
+#include "ap_content_capability.h"
+#include <platform/native_custom_content_verify.h>
+
 // Arms the bundled Cortex Vortex pair for whichever of its two roles this seed
 // uses: the Oxide 2 venue (schema 11) and the pad track (schema 15). The two
 // refusals stay separate: a refused venue closes the Oxide garage exactly as
@@ -60,7 +63,19 @@ static void AP_OxideFinalContentPreflight(void)
 }
 
 static int ap_content_package_index;
-static int ap_content_package_ready[2];
+static int ap_content_package_ready[AP_CONTENT_MAX_PACKAGES];
+
+// Open admission (#133 PR 2): a package outside the compiled registry is found
+// by digest in assets/tracks/<track key>/original. Preflight records where its
+// verified files are and what they measured; the loader hashes them again
+// when it arms (CustomTrack_ApplySeedDescriptor) and retains the exact bytes.
+struct AP_ContentFiles
+{
+	char levPath[CTR_CT_MANAGER_PATH_MAX];
+	char vrmPath[CTR_CT_MANAGER_PATH_MAX];
+	struct CustomContentMeasurements measured;
+};
+static struct AP_ContentFiles ap_content_files[AP_CONTENT_MAX_PACKAGES];
 
 static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)
 {
@@ -69,11 +84,78 @@ static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)
 	                                         p->lev_sha256, p->vrm_sha256) : NULL;
 }
 
+// A race-start name the big font can draw: printable ASCII, cut until the
+// width check passes, "CUSTOM TRACK" when nothing is left.
+static void AP_ContentRaceName(const char *title, char *out, size_t size)
+{
+	size_t n = 0;
+	const unsigned char *p = (const unsigned char *)title;
+	if (!out || size == 0) return;
+	for (; p && *p && n + 1 < size && n + 1 < CTR_CT_NAME_MAX; p++)
+	{
+		if ((*p & 0xC0) == 0x80) continue;
+		out[n++] = (*p >= 0x20 && *p < 0x7F) ? (char)*p : '?';
+	}
+	out[n] = '\0';
+	while (n > 0 && !CustomTrackPolicy_NameFits(out, NULL)) out[--n] = '\0';
+	while (n > 0 && out[n - 1] == ' ') out[--n] = '\0';
+	if (n == 0) snprintf(out, size, "CUSTOM TRACK");
+}
+
+// Locate one package's files (compiled profile folder, or the open track-key
+// folder), measure the exact bytes and refuse a claimed capability they lack.
+// Returns 1 Ready; otherwise status says why.
+static int AP_ContentScanPackage(int index, int autoFinalize, struct CustomTrackManagerStatus *status)
+{
+	const ctr_content_package *pkg = ap_content_plan_package(index);
+	const struct CustomTrackManagerPackage *compiled = AP_ContentPackage(index);
+	struct CustomContentVerification report;
+	char error[160], why[320], line[640];
+	if (!pkg) return 0;
+	memset(&ap_content_files[index], 0, sizeof ap_content_files[index]);
+	if (compiled)
+	{
+		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), compiled, status);
+		if (autoFinalize && (status->state == CTR_CT_MANAGER_MANIFEST_MISSING ||
+		                     status->state == CTR_CT_MANAGER_MANIFEST_INVALID))
+			CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(), compiled, status);
+	}
+	else
+		CustomTrackManager_LocateContentFiles(NativeAssets_GetAssetDir(), pkg->content_id, pkg->display_name,
+		                                      pkg->revision, pkg->lev_sha256, pkg->lev_bytes,
+		                                      pkg->vrm_sha256, pkg->vrm_bytes, status);
+	if (status->state != CTR_CT_MANAGER_READY) return 0;
+	error[0] = '\0';
+	if (!CustomContentVerify_Files(status->levPath, status->vrmPath, &report, error, sizeof error) ||
+	    strcmp(report.levSha256, pkg->lev_sha256) || strcmp(report.vrmSha256, pkg->vrm_sha256))
+	{
+		status->state = CTR_CT_MANAGER_UNSUPPORTED;
+		snprintf(status->detail, sizeof status->detail, "%.48s %.24s failed the file check: %.120s",
+		         pkg->display_name, pkg->revision, error[0] ? error : "the files changed while reading");
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+		AP_AppendLog(line);
+		return 0;
+	}
+	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why))
+	{
+		status->state = CTR_CT_MANAGER_UNSUPPORTED;
+		snprintf(status->detail, sizeof status->detail, "%.48s %.24s: %s", pkg->display_name, pkg->revision, why);
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, why);
+		AP_AppendLog(line);
+		return 0;
+	}
+	snprintf(ap_content_files[index].levPath, sizeof ap_content_files[index].levPath, "%s", status->levPath);
+	snprintf(ap_content_files[index].vrmPath, sizeof ap_content_files[index].vrmPath, "%s", status->vrmPath);
+	ap_content_files[index].measured = report.measured;
+	return 1;
+}
+
 int AP_ContentPadReady(int physicalPad)
 {
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
 	return pad && pad->occupied && (pad->retail_id >= 0 ||
-	       (pad->package_index >= 0 && pad->package_index < 2 && ap_content_package_ready[pad->package_index]));
+	       (pad->package_index >= 0 && pad->package_index < AP_CONTENT_MAX_PACKAGES &&
+	        ap_content_package_ready[pad->package_index]));
 }
 
 int AP_ContentPreparePad(int physicalPad)
@@ -93,13 +175,28 @@ int AP_ContentPreparePad(int physicalPad)
 	snprintf(race.trackID, sizeof race.trackID, "%s", pad->track_id);
 	if (!race.retail)
 	{
+		const ctr_content_package *pkg = ap_content_plan_package(pad->package_index);
 		const struct CustomTrackManagerPackage *p = AP_ContentPackage(pad->package_index);
+		const struct CustomContentMeasurements *m;
 		struct CustomTrackSeedDescriptor d;
-		if (!p) return -1;
+		char raceName[CTR_CT_NAME_MAX];
+		int used;
+		if (!pkg) return -1;
 		ap_content_package_index = pad->package_index;
-		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &ap_custom_content_status);
-		if (ap_custom_content_status.state != CTR_CT_MANAGER_READY ||
-		    !CustomTrack_UseManagedPackage(p, &ap_custom_content_status))
+		// Locate and measure again: a file swapped since connect is refused here.
+		if (!AP_ContentScanPackage(pad->package_index, 0, &ap_custom_content_status))
+		{
+			ap_content_package_ready[pad->package_index] = 0;
+			ap_custom_content_required = 1;
+			ap_state_gen++;
+			return -1;
+		}
+		m = &ap_content_files[pad->package_index].measured;
+		AP_ContentRaceName(pkg->display_name, raceName, sizeof raceName);
+		used = p ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
+		         : CustomTrack_UseContentFiles(ap_content_files[pad->package_index].levPath,
+		                                       ap_content_files[pad->package_index].vrmPath, raceName);
+		if (!used)
 		{
 			ap_content_package_ready[pad->package_index] = 0;
 			ap_state_gen++;
@@ -108,15 +205,18 @@ int AP_ContentPreparePad(int physicalPad)
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
 		d.replacesCupLevelID = -1; d.boxes = 0;
-		d.flagCrates = p->flagCrates; d.flagCtrLetters = p->flagCtrLetters;
-		d.flagRelicCrates = p->flagRelicCrates; d.flagAiNav = p->flagAiNav;
-		d.flagMinimap = p->flagMinimap; d.flagGhosts = p->flagGhosts;
-		d.flagWumpaCollectible = p->flagWumpaCollectible;
-		d.flagSpawns = p->flagSpawns; d.flagCheckpoints = p->flagCheckpoints;
-		snprintf(d.levSha256, sizeof d.levSha256, "%s", p->levSha256);
-		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", p->vrmSha256);
-		snprintf(race.levSha256, sizeof race.levSha256, "%s", p->levSha256);
-		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", p->vrmSha256);
+		// The flags the loader acts on are the measured ones, from the bytes it
+		// is about to hash, never the descriptor's claims.
+		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
+		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
+		d.flagMinimap = p ? p->flagMinimap : 0; d.flagGhosts = p ? p->flagGhosts : 0;
+		d.flagWumpaCollectible = (pkg->capabilities & AP_CONTENT_CAP_WUMPA) != 0;
+		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
+		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(race.levSha256, sizeof race.levSha256, "%s", pkg->lev_sha256);
+		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", pkg->vrm_sha256);
 		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
 	}
 	if (!CustomTrack_StageStandaloneRace(&race)) return -1;
@@ -227,16 +327,11 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 		ap_custom_content_seed_selected = ap_content_plan_package(0) != NULL;
 		ap_custom_content_required = 0;
 		ap_content_package_index = 0;
-		for (i = 0; i < 2; ++i)
+		for (i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
 		{
-			const struct CustomTrackManagerPackage *p = AP_ContentPackage(i);
 			ap_content_package_ready[i] = 0;
-			if (!p) continue;
-			CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), p, &status);
-			if (autoFinalize && (status.state == CTR_CT_MANAGER_MANIFEST_MISSING ||
-			                    status.state == CTR_CT_MANAGER_MANIFEST_INVALID))
-				CustomTrackManager_FinalizePackage(NativeAssets_GetAssetDir(), p, &status);
-			ap_content_package_ready[i] = status.state == CTR_CT_MANAGER_READY;
+			if (!ap_content_plan_package(i)) continue;
+			ap_content_package_ready[i] = AP_ContentScanPackage(i, autoFinalize, &status);
 			if (i == 0) ap_custom_content_status = status;
 			if (!ap_content_package_ready[i])
 			{

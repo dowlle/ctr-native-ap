@@ -1,81 +1,9 @@
 // Frozen first-profile identities copied from the paired apworld registry.
+// Custom packages are not listed: content plans admit any complete descriptor
+// (#133 PR 2) and the bytes are verified on load.
 // tools/test-content-plan-parity.py verifies these against the generator.
 static const char kContentRegistryJSON[] = R"CTRREG(
 {
-  "packages": [
-    {
-      "id": "package/baby-t-park/1.0.0",
-      "content_id": "baby-t-park",
-      "uuid": "60d5a8a8-b69a-4f6a-a0d8-9a43d91e3f2e",
-      "revision": "1.0.0",
-      "display_name": "Baby T Park",
-      "author": "Lockheart",
-      "files": [
-        {
-          "role": "lev",
-          "sha256": "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8",
-          "bytes": 2579256,
-          "format": "ctr-lev",
-          "format_version": 1
-        },
-        {
-          "role": "vrm",
-          "sha256": "2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de43508375834092e83",
-          "bytes": 458808,
-          "format": "ctr-vrm",
-          "format_version": 1
-        }
-      ],
-      "evidence": [
-        {
-          "capability": "trophy",
-          "file_hashes": [
-            "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8",
-            "2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de43508375834092e83"
-          ],
-          "verifier": "ctr-managed-profile",
-          "revision": 1,
-          "level": "structural"
-        }
-      ]
-    },
-    {
-      "id": "package/baby-t-park/1.0.2",
-      "content_id": "baby-t-park",
-      "uuid": "2c7c7846-2ead-5b8f-a218-beca5792106e",
-      "revision": "1.0.2",
-      "display_name": "Baby T Park",
-      "author": "Lockheart",
-      "files": [
-        {
-          "role": "lev",
-          "sha256": "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
-          "bytes": 2558168,
-          "format": "ctr-lev",
-          "format_version": 1
-        },
-        {
-          "role": "vrm",
-          "sha256": "1a0ff56b51562292ecc30c14e7a2e6d315f641feaa00990d4242abe46434f692",
-          "bytes": 458808,
-          "format": "ctr-vrm",
-          "format_version": 1
-        }
-      ],
-      "evidence": [
-        {
-          "capability": "trophy",
-          "file_hashes": [
-            "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
-            "1a0ff56b51562292ecc30c14e7a2e6d315f641feaa00990d4242abe46434f692"
-          ],
-          "verifier": "ctr-managed-profile",
-          "revision": 1,
-          "level": "structural"
-        }
-      ]
-    }
-  ],
   "retail": [
     {
       "id": 0,
