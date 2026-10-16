@@ -27,10 +27,10 @@
 // place both are visible, the same way ap_reward_policy.h's model ids are pinned.
 #define AP_TRAP_ITEM_ID_BASE 35010000
 
-// Highest item index in the 0.2.0 table, which is Demo Camera. The verifier's
+// Highest registered trap item index. The verifier's
 // inventory projection is sized from this, so the table growing at the top does
 // not need a second edit somewhere else.
-#define AP_TRAP_ITEM_INDEX_MAX 193
+#define AP_TRAP_ITEM_INDEX_MAX 206
 
 typedef struct
 {
@@ -38,7 +38,7 @@ typedef struct
 	unsigned char effect; // AP_TrapEffectId
 } AP_TrapItemRow;
 
-// All 20 trap identities in the 0.2.0 datapackage.
+// Append-only trap identities, including the 0.3.0 Clocked Out entry.
 static const AP_TrapItemRow AP_TRAP_ITEM_MAP[] = {
 	// Implemented (ids 35010016..35010020).
 	{16, AP_TRAP_ICY},
@@ -63,6 +63,7 @@ static const AP_TrapItemRow AP_TRAP_ITEM_MAP[] = {
 	{191, AP_TRAP_MIRROR_MODE},
 	{192, AP_TRAP_WARPBALL_AMBUSH},
 	{193, AP_TRAP_DEMO_CAMERA},
+	{206, AP_TRAP_CLOCKED_OUT}, // #455, already minted in the 0.3.0 datapackage
 };
 
 #define AP_TRAP_ITEM_MAP_COUNT \
@@ -70,10 +71,10 @@ static const AP_TrapItemRow AP_TRAP_ITEM_MAP[] = {
 
 // The roster size is a fact about the apworld, not something to rediscover by
 // counting rows. If the two ever disagree the build stops here.
-typedef char ap_trap_item_map_is_twenty[AP_TRAP_ITEM_MAP_COUNT == 20 ? 1 : -1];
+typedef char ap_trap_item_map_matches_roster[AP_TRAP_ITEM_MAP_COUNT == AP_TRAP_EFFECT_COUNT ? 1 : -1];
 
 // The effect an apworld item index maps to, or -1 when the index is not a trap.
-// Linear over 20 rows on a receive path that runs a handful of times per session;
+// Linear over the small roster on a receive path that runs a handful of times per session;
 // a binary search would buy nothing and could go stale against the table order.
 static inline int AP_TrapEffectForItemIndex(long long idx)
 {
@@ -138,6 +139,7 @@ static const char *const AP_TRAP_EFFECT_KEY[AP_TRAP_EFFECT_COUNT] = {
 	"mirror_mode",
 	"warpball_ambush",
 	"demo_camera",
+	"clocked_out",
 };
 
 // First slot_data schema whose seeds carry `trap_identities` and must be read

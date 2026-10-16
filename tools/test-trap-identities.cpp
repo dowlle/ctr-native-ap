@@ -22,6 +22,7 @@
 // Exit 0 = every assertion held.
 
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -79,7 +80,7 @@ static const struct
 	T(AP_TRAP_WEAKENED_KART), T(AP_TRAP_BOOST_BLOCKER), T(AP_TRAP_WIREFRAME),
 	T(AP_TRAP_NITRO), T(AP_TRAP_REVERSE_STEERING), T(AP_TRAP_RED_POTION),
 	T(AP_TRAP_UPSIDE_DOWN), T(AP_TRAP_MIRROR_MODE), T(AP_TRAP_WARPBALL_AMBUSH),
-	T(AP_TRAP_DEMO_CAMERA),
+	T(AP_TRAP_DEMO_CAMERA), T(AP_TRAP_CLOCKED_OUT),
 };
 #undef T
 
@@ -128,7 +129,7 @@ int main()
 		expect(AP_TrapEffectForItemId(id) == e, "item table maps the id to the effect" + where);
 		expect(rows[i]["name"] == AP_TRAP_DESC[e].name, "descriptor name matches" + where);
 	}
-	expect(AP_TrapEffectForKey("clocked_out") == -1, "a key this build lacks is unknown");
+	expect(AP_TrapEffectForKey("future_unknown_trap") == -1, "a key this build lacks is unknown");
 
 	// ── 2. round trip through a generated seed ──
 	const nlohmann::json sd = load("tools/fixtures/trap-identities/seed_slot_data.json");
@@ -151,8 +152,17 @@ int main()
 		       "placed trap " + std::to_string(id) + " resolves to its fixture effect");
 		std::printf("  %lld -> %s\n", id, want >= 0 ? AP_TRAP_EFFECT_KEY[want] : "?");
 	}
-	for (size_t i = 0; i < rows.size(); i++)
-		expect(resolve_id(rows[i]["item_id"]) == (int)i, "every fixture trap resolves via the seed");
+	for (size_t i = 0; i < rows.size(); i++) {
+        const auto id=rows[i]["item_id"].get<long long>();
+        expect(resolve_id(id)==(sd["trap_identities"]["items"].contains(std::to_string(id))?(int)i:-1),
+               "older schema-18 seed resolves only its declared traps");
+    }
+    const auto clocked=load("tools/fixtures/trap-identities/clocked_out.json");
+    ap_seedcfg_parse_json(clocked["slot_data"]);
+    for(size_t i=0;i<rows.size();++i)
+        expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves all appended trap identities");
+    expect(std::find(clocked["drawn_trap_ids"].begin(),clocked["drawn_trap_ids"].end(),35010206)!=clocked["drawn_trap_ids"].end(),
+           "real generator drew the minted Clocked Out item");
 
 	// ── 3. refusals and the legacy path ──
 	nlohmann::json legacy = sd;
