@@ -9,7 +9,9 @@
 #include <psx/libgte.h>
 
 #if defined(CTR_AP)
+#include <platform/native_gte_cull.h>
 extern int AP_TrapMirrorCullFlip(void);
+int NativeGte_ModelCullFlip = -1;
 #endif
 
 GTERegisters gteRegs;
@@ -364,7 +366,8 @@ int GTE_operator(int op)
 	case 0x06:
 		C2_MAC0 = (int)(F((s64)(C2_SX0 * C2_SY1) + (C2_SX1 * C2_SY2) + (C2_SX2 * C2_SY0) - (C2_SX0 * C2_SY2) - (C2_SX1 * C2_SY0) - (C2_SX2 * C2_SY1)));
 #if defined(CTR_AP)
-		if (AP_TrapMirrorCullFlip() && NativeGte_RotMatrixReversesWinding())
+		if (NativeGte_ModelCullFlip >= 0 ? NativeGte_ModelCullFlip :
+		    (AP_TrapMirrorCullFlip() && NativeGte_RotMatrixReversesWinding()))
 			C2_MAC0 = -C2_MAC0;
 #endif
 		C2_FLAG = 0;
