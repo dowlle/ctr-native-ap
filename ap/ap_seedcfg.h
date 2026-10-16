@@ -575,6 +575,8 @@ typedef struct
 	// key, no schema bump: absent (every older seed) -> 0 -> pink, which is what
 	// every earlier client draws. Display only: no gate, location or item.
 	int color_boxes_by_item;
+	// #451: absent is off; receipts still use their own room-backed accounting.
+	int reserve_top_up;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the

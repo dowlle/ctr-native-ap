@@ -125,6 +125,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// which would swallow a grant the player could not receive yet. See
 		// ap_turbogrant_logic.h.
 		AP_TurboGrantReset();
+		AP_ReserveTopUpReset();
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
 		AP_HitEncounterConnectReset(); // ticket 06: re-arm the Hit-check session mask
@@ -425,6 +426,10 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
+		}
+		else if (idx == AP_RESERVE_TOP_UP_ITEM_INDEX)
+		{
+			AP_ReserveTopUpReceive();
 		}
 		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
 		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
