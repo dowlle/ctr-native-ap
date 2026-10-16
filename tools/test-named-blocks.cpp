@@ -7,6 +7,7 @@
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_named_blocks.h"
+#include "ap_lettersanity.h"
 #include <nlohmann/json.hpp>
 #include <cstring>
 #include <fstream>
@@ -158,6 +159,42 @@ int main() {
     expect(!ctr_cfg_custom_track_title(), "a schema-17 seed is not read for titles");
     ap_seedcfg_parse_json(J::object());
     expect(!ctr_cfg_custom_track_title(), "next parse forgets the title");
+
+    // #133: legacy custom_tracks entry on its named block (Baby T Park, block 8),
+    // emitted by the paired apworld. Every code is the block's and is recomputed.
+    const J ln = load("legacy-named.json");
+    ap_seedcfg_parse_json(ln);
+    expect(!ap_seedcfg_rejected() && ctr_cfg.custom_tracks_ok, "legacy named seed admits");
+    expect(ctr_cfg.custom_track.named_block == 8 && ctr_cfg.custom_track.trophy_location == 35201600 &&
+           ctr_cfg.custom_track.podium.held_1st == 35201601 && ctr_cfg.custom_track.podium.finish_any == 35201605,
+           "legacy named entry: block, Trophy and podium codes");
+    expect(ctr_cfg.custom_ctr_enabled && ctr_cfg.custom_ctr_location == 35201609, "legacy named CTR challenge");
+    {
+        const auto &row = ln["custom_lettersanity_checks"]["tracks"][0];
+        bool same = ctr_cfg.custom_lettersanity_mode == ln["custom_lettersanity_checks"]["mode"].get<int>();
+        for (int l = 0; l < 3; ++l)
+            same = same && ctr_cfg.custom_letter_locations[l] == row["locations"][l].get<long>() &&
+                   ctr_cfg.custom_letter_items[l] == row["items"][l].get<long>();
+        expect(same, "legacy named letters read from the block");
+        int slot = -1, letter = -1;
+        expect(AP_CustomLetterItemToIdentityForTrackPure(35100040, AP_CustomLetterNamedBlock(),
+                                                          ctr_cfg.custom_track.slot, &slot, &letter) &&
+               slot == 1 && letter == 0, "received named Letter C maps onto the track's slot");
+    }
+    expect(ctr_cfg.wumpa.custom_count == 1 && ctr_cfg.wumpa.custom[0].code == 35201614,
+           "legacy named Wumpa check is the block's");
+    expect(ctr_cfg_custom_track_title() && std::string(ctr_cfg_custom_track_title()) == "Baby T Park",
+           "named track's room title is its frozen name");
+    J lb = ln; lb["custom_tracks"]["tracks"][0]["named_block"] = 7;
+    ap_seedcfg_parse_json(lb);
+    expect(!ctr_cfg.custom_tracks_ok, "legacy entry naming another block is refused");
+    lb = ln; lb["custom_tracks"]["tracks"][0].erase("named_block");
+    ap_seedcfg_parse_json(lb);
+    expect(!ctr_cfg.custom_tracks_ok, "named codes without named_block are refused (generic CTR check)");
+    lb = ln; lb["wumpa_checks"]["custom_destinations"]["purple_gem_cup"]["code"] = 35016120;
+    ap_seedcfg_parse_json(lb);
+    expect(ctr_cfg.custom_tracks_ok && ctr_cfg.wumpa.custom_count == 0, "generic Wumpa role code under a named track is ignored");
+    ap_seedcfg_parse_json(J::object());
 
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

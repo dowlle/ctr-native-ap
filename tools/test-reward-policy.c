@@ -100,6 +100,14 @@ int main(void)
 	expect_item(199, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last trial letter (Turbo Track R) -> crystal");
 	expect_item(35021000LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "first custom-track letter -> crystal");
 	expect_item(35021395LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last custom-track letter -> crystal");
+	// #133: a named custom track's letters are item offsets 0..2 of its block.
+	expect_item(35100000LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "named block 0 Letter C -> crystal");
+	expect_item(35100042LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "named block 8 Letter R -> crystal");
+	expect_item(35149997LL - AP_ITEM_BASE, AP_CAT_CRYSTAL, AP_MODEL_CRYSTAL, CRYSTAL_PURPLE, "last named block Letter R -> crystal");
+	expect_item(35100043LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "named block item offset 3 is not a letter -> marker material");
+	expect_item(35149999LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "named block item offset 4 is not a letter -> marker material");
+	expect_item(35099999LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just below the named item range -> marker material");
+	expect_item(35150000LL - AP_ITEM_BASE, AP_CAT_NONE, -1, 0, "just above the named item range -> marker material");
 
 	// The gaps between the crystal blocks must NOT be swept in. 106..119 sits
 	// between the weapon unlocks and the character unlocks, and 188 is the Tizi

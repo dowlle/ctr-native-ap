@@ -1826,6 +1826,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	ctr_cfg.custom_track.named_block = -1; // #133: generic until an entry names a block
 	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
 	std::memset(&ctr_cfg.cortex_track, 0, sizeof ctr_cfg.cortex_track);
 	ctr_cfg.cortex_track.dropped_destination = -1;
@@ -2313,6 +2314,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 
 				json_str(t, "lev_sha256", ct.lev_sha256, sizeof ct.lev_sha256);
 				json_str(t, "vrm_sha256", ct.vrm_sha256, sizeof ct.vrm_sha256);
+				ct.named_block = -1;
 				ct.trophy_location = -1;
 				ct.podium.held_1st = -1;
 				ct.podium.held_3rd = -1;
@@ -2437,6 +2439,33 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						reject = "boxes must be false in the current custom-track preview";
 					else if (ct.trophy_location <= 0)
 						reject = "locations.trophy must be a positive AP code";
+				}
+
+				// #133: one identity per track. `named_block` present means
+				// every code this entry carries is the block's; recompute them
+				// here rather than trusting the wire. Absent keeps the generic
+				// slot path unchanged.
+				auto nbIt = t.find("named_block");
+				if (reject == NULL && nbIt != t.end())
+				{
+					if (!nbIt->is_number_integer() || nbIt->get<long long>() < 0 ||
+					    nbIt->get<long long>() >= AP_NAMED_BLOCK_LIMIT)
+						reject = "named_block is not a block index 0..9999";
+					else
+					{
+						ct.named_block = (int)nbIt->get<long long>();
+						const long *codes[CTR_CFG_PODIUM_RUNG_COUNT] = {
+							&ct.podium.held_1st, &ct.podium.held_3rd,
+							&ct.podium.held_5th, &ct.podium.finish_podium,
+							&ct.podium.finish_any,
+						};
+						if (ct.trophy_location != (long)ap_named_location_code(ct.named_block, AP_NAMED_OFF_TROPHY))
+							reject = "locations.trophy disagrees with named_block";
+						for (int i = 0; reject == NULL && i < CTR_CFG_PODIUM_RUNG_COUNT; i++)
+							if (*codes[i] != -1 &&
+							    *codes[i] != (long)ap_named_location_code(ct.named_block, AP_NAMED_OFF_HELD_1ST + i))
+								reject = "locations.podium disagrees with named_block";
+					}
 				}
 			}
 
@@ -2678,6 +2707,15 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
 						           "'%s' carries no usable code; it is ignored\n",
 						           it.key().c_str());
+					else if (ctr_cfg.custom_tracks_ok && ctr_cfg.custom_track.named_block >= 0 &&
+					         ctr_cfg.custom_track.replaces_cup_level_id == cupLevelID &&
+					         slot.code != (long)ap_named_location_code(ctr_cfg.custom_track.named_block,
+					                                                   AP_NAMED_OFF_WUMPA))
+						// #133: the named track owns its Wumpa check in its block.
+						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
+						           "'%s' code %ld is not named block %d's Wumpa "
+						           "code; it is ignored\n", it.key().c_str(),
+						           (long)slot.code, ctr_cfg.custom_track.named_block);
 					else if (slot.wumpa_collectible < 0)
 						// A destination slot that does not state the measured
 						// capability is not self-describing, and a Wumpa check
@@ -2863,7 +2901,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		    (*modes)["ctr_challenge"].get<bool>())
 		{
 			const auto &locations = parent["locations"];
-			long expected = 35023000L + ctr_cfg.custom_track.slot - 1;
+			// #133: a named track's challenge is its block's, else the slot's.
+			long expected = ctr_cfg.custom_track.named_block >= 0
+			    ? (long)ap_named_location_code(ctr_cfg.custom_track.named_block, AP_NAMED_OFF_CTR_TOKEN)
+			    : 35023000L + ctr_cfg.custom_track.slot - 1;
 			if (ctr_cfg.custom_track.flags.ctr_letters && locations.is_object() &&
 			    locations.contains("ctr") && exactInteger(locations["ctr"], expected))
 			{
@@ -2910,8 +2951,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			int selected = 0;
 			for (int l = 0; valid && l < 3; ++l)
 			{
-				long loc = 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
-				long item = 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				// #133: a named track's letters are its block's, else the slot's.
+				const int block = ctr_cfg.custom_track.named_block;
+				long loc = block >= 0 ? (long)ap_named_location_code(block, AP_NAMED_OFF_LETTER_C + l)
+				                      : 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				long item = block >= 0 ? (long)ap_named_item_code(block, l)
+				                       : 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
 				bool chosen = mode == 3 || exactInteger(track["locations"][l], loc);
 				locations[l] = chosen && mode != 3 ? loc : -1;
 				items[l] = chosen && mode != 1 ? item : -1;

@@ -259,7 +259,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// Sparse custom item addresses cannot index the legacy retail tally.
 		// Authoritative replay rebuilds this slot-owned set after reset above.
 		int customLetterSlot, customLetter;
-		if (AP_CustomLetterItemToIdentityPure(items[i], &customLetterSlot, &customLetter))
+		if (AP_CustomLetterItemToIdentityForTrackPure(items[i], AP_CustomLetterNamedBlock(),
+		                                              ctr_cfg.custom_track.slot,
+		                                              &customLetterSlot, &customLetter))
 		{
 			ap_custom_letter_received[customLetterSlot - 1][customLetter] = 1;
 			if (ap_net_recv_batch_player(i) != ap_net_self_slot() || ap_net_recv_batch_location(i) <= 0)
