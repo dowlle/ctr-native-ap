@@ -21,6 +21,7 @@ struct CustomTrackRaceContext
 	char trackID[65];
 	char levSha256[65];
 	char vrmSha256[65];
+	int crystal, timeLimitTicks;
 };
 
 struct CustomTrackRaceLatch
@@ -62,7 +63,9 @@ static inline int CustomRaceContext_Hash(const char text[65])
 
 static inline int CustomRaceContext_Valid(const struct CustomTrackRaceContext *c)
 {
-	return c && c->hostLevelID >= 0 && c->hostLevelID < 18 &&
+	return c && ((c->crystal == 0 && c->timeLimitTicks == 0 && c->hostLevelID >= 0 && c->hostLevelID < 18) ||
+               (c->crystal == 1 && c->retail == 1 && c->hostLevelID >= 18 && c->hostLevelID <= 24 &&
+                c->laps == 1 && c->seedEpoch && c->timeLimitTicks > 0 && c->timeLimitTicks <= 576000)) &&
 	       CustomRaceContext_IsPad(c->physicalPad) &&
 	       c->returnHub >= 25 && c->returnHub <= 29 &&
 	       (c->retail == 0 || c->retail == 1) &&

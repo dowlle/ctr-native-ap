@@ -172,9 +172,23 @@ void CC_EndEvent_DrawMenu()
 	struct GameTracker *gGT = sdata->gGT;
 	struct Driver *driver = gGT->drivers[0];
 	SVec2 pos;
+#ifdef CTR_AP
+    const ctr_content_pad *contentArena=AP_ContentCrystalPad();
+    // A stale standalone arena may not fall through to retail reward-bit math.
+    if((ap_content_plan_present() || AP_ContentCrystalIntent()) && !contentArena) {
+        sdata->Loading.OnBegin.RemBitsConfig0 |= CRYSTAL_CHALLENGE;
+        MainRaceTrack_RequestLoad(26);
+        return;
+    }
+    s32 tokenRewardOffset=contentArena?0:CC_EndEvent_GetRewardOffset(gGT);
+#else
 	s32 tokenRewardOffset = CC_EndEvent_GetRewardOffset(gGT);
+#endif
 
 	s32 tokenRewardBit = tokenRewardOffset + ADV_REWARD_FIRST_PURPLE_TOKEN;
+#ifdef CTR_AP
+    if(contentArena)tokenRewardBit=50000+contentArena->physical;
+#endif
 	struct AdvProgress *adv = &sdata->advProgress;
 	b32 didLose = driver->numCrystals < gGT->numCrystalsInLEV;
 	s32 elapsedFrames = sdata->framesSinceRaceEnded;
@@ -222,7 +236,11 @@ void CC_EndEvent_DrawMenu()
 	DecalFont_DrawLine(sdata->lngStrings[resultStringIndex], pos.x + 0x33, pos.y + 8, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 	// if a token is not newly-unlocked
-	b32 tokenAlreadyWon = CC_EndEvent_HasRewardBit(adv, tokenRewardBit);
+	b32 tokenAlreadyWon =
+#ifdef CTR_AP
+        contentArena ? AP_LocationCheckedByBit(tokenRewardBit) :
+#endif
+        CC_EndEvent_HasRewardBit(adv, tokenRewardBit);
 #ifdef CTR_AP
 	// AP: as of issue #142 the crystal-arena bits are part of the AP_ApplyItems
 	// reconcile, so they mirror your RECEIVED Purple CTR Tokens rather than what
@@ -277,7 +295,11 @@ void CC_EndEvent_DrawMenu()
 	// celebrated bit is passed directly and resolved from the scout cache.
 	if (!AP_CeremonyDraw(pos.x, pos.y, tokenRewardBit, 0))
 #endif
-		DecalFont_DrawLine(sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], pos.x, pos.y, FONT_BIG, color);
+        DecalFont_DrawLine(
+#ifdef CTR_AP
+            contentArena ? "CRYSTAL CHALLENGE COMPLETE" :
+#endif
+            sdata->lngStrings[LNG_CTR_TOKEN_AWARDED], pos.x, pos.y, FONT_BIG, color);
 #if defined(CTR_NATIVE)
 	if (token != NULL)
 #endif
@@ -337,6 +359,11 @@ void CC_EndEvent_DrawMenu()
 	// A removed arena has no token reward even if this ceremony was reached
 	// through a stale in-progress race after the seed changed.
 #ifdef CTR_AP
+    if(contentArena) {
+        AP_NotifyContentCrystalComplete();
+        MainRaceTrack_RequestLoad(contentArena->hub);
+        return;
+    }
 	if (!ctr_cfg_arena_pad_disabled(gGT->levelID))
 	{
 #endif

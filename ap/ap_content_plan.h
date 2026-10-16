@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-/* First executable profile: independent standalone Trophy entries. Stored
+/* Standalone Trophy and Crystal Challenge entries. Stored
  * records own their text; callers copy a record before crossing a load boundary.
  * A physical pad is never recovered by inverting its borrowed engine level. */
 typedef struct ctr_content_pad {
@@ -19,8 +19,10 @@ typedef struct ctr_content_pad {
      * Key floor (`keys`) applies. */
     int has_rule, rule_count;
     unsigned rule_mask;
-    int retail_id; /* -1 custom, otherwise 0..17 */
+    int retail_id; /* -1 custom, otherwise engine track/arena LevelID */
     int custom_slot, package_index, laps;
+    int crystal, target, time_limit_ticks, crystal_count;
+    int64_t crystal_locations[20];
     int named_block; /* -1 generic slot ids, otherwise 0..9999 (#306) */
     int64_t trophy_location;
     char entry_id[65], track_id[65], display_name[129];

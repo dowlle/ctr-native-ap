@@ -85,6 +85,7 @@ int AP_ContentPreparePad(int physicalPad)
 	memset(&race, 0, sizeof race);
 	race.physicalPad = physicalPad; race.returnHub = pad->hub;
 	race.laps = pad->laps; race.trophyLocation = pad->trophy_location;
+	race.crystal = pad->crystal; race.timeLimitTicks = pad->time_limit_ticks;
 	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;
 	race.hostLevelID = race.retail ? pad->retail_id : 6;
 	race.slot = pad->custom_slot;

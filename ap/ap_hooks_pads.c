@@ -315,10 +315,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
-		if (!pad || !pad->occupied || !outBits || cap <= 0 ||
-		    ap_net_location_checked((long)pad->trophy_location)) return 0;
-		outBits[0] = 50000 + pad->physical;
-		return 1;
+        int count=0,n;
+        if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
+        if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=50000+pad->physical;
+        for(n=0;n<pad->crystal_count && count<cap;++n)
+            if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
+        return count;
 	}
 	int count;
 
@@ -762,6 +764,11 @@ CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+    if(globalBit>=60000 && globalBit<62100)return 2;
+    if(globalBit>=50000 && globalBit<=50104) {
+        const ctr_content_pad *p=ap_content_plan_pad(globalBit-50000);
+        if(p && p->crystal)return 2;
+    }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
@@ -1022,6 +1029,10 @@ int AP_PadState(int physLevelID, int destLevelID)
 		if (!AP_ContentPadReady(physLevelID)) return 5;
 #endif
 		if (!AP_ContentPadOpen(pad)) return 1;
+        if(pad->crystal) {
+            int bits[21];
+            return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
+        }
 		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
 	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
