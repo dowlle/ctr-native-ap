@@ -203,7 +203,8 @@ assert 'AP_TrialChallengeServable(levelID)' in trial
 assert 'AP_PadUncollectedLetterCount(levelID)' in trial
 assert 'AP_TrialLetters_Prepare()' not in trial
 assert 'AP_PadLogRoute(levelID, levelID' not in trial
-assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 5
+# Five route fail-safes plus the content-plan mode menu's cancel (#133 PR 3).
+assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 6
 battle = warp[warp.index('// Battle Tracks'):warp.index('gGT->originalEventTime = D232.timeCrystalChallenge')]
 assert 'if (ctr_cfg_arena_pad_disabled(levelID))' in battle
 assert battle.index('goto WarpPad_RefuseEntry;') < battle.index('AddBitsConfig0 |= CRYSTAL_CHALLENGE;')

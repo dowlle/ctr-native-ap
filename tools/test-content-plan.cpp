@@ -39,8 +39,9 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
         changed[path]["unexpected_field"] = 1;
         refuse(changed, "extra field at " + path.to_string());
         for (auto it = node.begin(); it != node.end(); ++it) {
-            // Optional custom-track fields (#306): absent is a legal plan.
-            if (it.key() != "room_title" && it.key() != "named_block") {
+            // Optional custom-track fields (#306) and the envelope's
+            // reserve_top_up Boolean (#451): absent is a legal plan.
+            if (it.key() != "room_title" && it.key() != "named_block" && it.key() != "reserve_top_up") {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
             }
