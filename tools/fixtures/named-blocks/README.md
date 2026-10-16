@@ -22,6 +22,13 @@ outside the repository:
   35100040 onwards). Options: lettersanity locations and items, two letters,
   per-track Wumpa, podium checks.
 
+Since the #133 PR 2 review native holds the apworld's named-block table, so
+both content-plan fixtures were edited by hand: `content-plan-named.json` now
+puts Baby T Park on its shipped block 8 ("Baby T Park", Trophy `35201600`)
+instead of the test-only block 0, and `content-plan-generic.json` uses the
+unregistered key `fixture-park` and the title "Fixture Park" (a generic track
+may not take a named track's name), still on generic slot code `35016300`.
+
 `legacy-titles.json` predates #133: it is the generic slot path (B+) and still
 admits, since an entry without `named_block` keeps generic codes.
 

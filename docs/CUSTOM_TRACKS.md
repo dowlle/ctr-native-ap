@@ -370,6 +370,18 @@ which hashes the two files named in `config.ini [CustomTracks]` and arms
 `LOAD_ReadFile_ex`. A refusal is total: no custom bytes and the cup keeps its
 four retail legs. That path is not in the authoring client.
 
+Content-plan seeds (0.3.0 development) admit any complete package descriptor:
+track key, LEV and VRM pins, authored laps and measured capability flags
+(`time_trial`, `arcade`, `relic`, `ctr_tokens`, `wumpa`). The two compiled Baby
+T Park revisions keep their manager folders. Any other package is found by
+SHA-256 and size in `assets/tracks/<track key>/original/`, whatever the file
+names, so several revisions of one track can share the folder. On connect and
+again at pad entry the client runs the structural verifier on those exact
+bytes (`ap/ap_content_capability.h`) and refuses the package when a flag the
+descriptor sets to true is not there; the loader then hashes the files once
+more before it arms. These loads carry no navigation identity, so recorded AI
+lanes are blocked for them.
+
 ## 13. The authoring-client branch
 
 `tools/authoring-branch/make-branch.py <release tag>` produces a branch that

@@ -711,6 +711,83 @@ const struct CustomTrackManagerPackage *CustomTrackManager_FindPackage(
 	return NULL;
 }
 
+int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *trackKey,
+	                                       const char *title, const char *revision,
+	                                       const char *levSha256, unsigned long levBytes,
+	                                       const char *vrmSha256, unsigned long vrmBytes,
+	                                       struct CustomTrackManagerStatus *outStatus)
+{
+	char tracks[CTR_CT_MANAGER_PATH_MAX];
+	char original[CTR_CT_MANAGER_PATH_MAX];
+	char foundLev[CTR_CT_MANAGER_PATH_MAX];
+	char foundVrm[CTR_CT_MANAGER_PATH_MAX];
+	char foundLevHash[NATIVE_SHA256_HEX_BYTES];
+	char foundVrmHash[NATIVE_SHA256_HEX_BYTES];
+	unsigned long foundLevBytes, foundVrmBytes;
+	int levCandidates, vrmCandidates, levUnreadable, vrmUnreadable;
+	const char *shownTitle = (title && Manager_IsPlainText(title)) ? title : trackKey;
+	const char *shownRevision = (revision && Manager_IsPlainText(revision)) ? revision : "";
+
+	if (outStatus == NULL)
+		return CTR_CT_MANAGER_IO_ERROR;
+	memset(outStatus, 0, sizeof *outStatus);
+	if (!Manager_IsSafeId(trackKey) || strlen(trackKey) > 64 ||
+	    !Manager_IsHex64(levSha256) || !Manager_IsHex64(vrmSha256) ||
+	    levBytes == 0 || vrmBytes == 0)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED, "The seed's package descriptor is unusable.");
+		return outStatus->state;
+	}
+	if (!Manager_Join(tracks, sizeof tracks, assetsRoot, "tracks") ||
+	    !Manager_Join(outStatus->packageRoot, sizeof outStatus->packageRoot, tracks, trackKey) ||
+	    !Manager_Join(original, sizeof original, outStatus->packageRoot, "original"))
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Installed-content path is empty or too long.");
+		return outStatus->state;
+	}
+	if (!Manager_FindVerifiedSource(original, ".lev", levSha256, foundLev, foundLevHash, &foundLevBytes,
+	                                &levCandidates, &levUnreadable) ||
+	    !Manager_FindVerifiedSource(original, ".vrm", vrmSha256, foundVrm, foundVrmHash, &foundVrmBytes,
+	                                &vrmCandidates, &vrmUnreadable))
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Could not scan the original track folder.");
+		return outStatus->state;
+	}
+	if (levUnreadable || vrmUnreadable)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "One or more candidate track files could not be read.");
+		return outStatus->state;
+	}
+	if (levCandidates == 0 && vrmCandidates == 0)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED,
+		                  "Put the LEV and VRM of %.64s %.32s in tracks/%.64s/original, then Rescan.",
+		                  shownTitle, shownRevision, trackKey);
+		return outStatus->state;
+	}
+	if (levCandidates == 0 || vrmCandidates == 0)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_MISSING_FILES,
+		                  "No %s file was found in tracks/%.64s/original.", levCandidates == 0 ? "LEV" : "VRM", trackKey);
+		return outStatus->state;
+	}
+	if (foundLev[0] == '\0' || foundVrm[0] == '\0' || foundLevBytes != levBytes || foundVrmBytes != vrmBytes)
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_HASH_MISMATCH,
+		                  "The LEV or VRM in tracks/%.64s/original is not %.64s %.32s as this seed pins it.",
+		                  trackKey, shownTitle, shownRevision);
+		return outStatus->state;
+	}
+	snprintf(outStatus->levPath, sizeof outStatus->levPath, "%s", foundLev);
+	snprintf(outStatus->vrmPath, sizeof outStatus->vrmPath, "%s", foundVrm);
+	snprintf(outStatus->actualLevSha256, sizeof outStatus->actualLevSha256, "%s", foundLevHash);
+	snprintf(outStatus->actualVrmSha256, sizeof outStatus->actualVrmSha256, "%s", foundVrmHash);
+	outStatus->levBytes = foundLevBytes;
+	outStatus->vrmBytes = foundVrmBytes;
+	Manager_SetDetail(outStatus, CTR_CT_MANAGER_READY, "%.64s %.32s files match the seed.", shownTitle, shownRevision);
+	return outStatus->state;
+}
+
 const char *CustomTrackManager_StateText(int state)
 {
 	switch (state)

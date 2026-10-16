@@ -615,6 +615,34 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 	return 1;
 }
 
+int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const char *raceName)
+{
+	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+		return 0; // A prepared/active race retains its exact package until exit.
+	if (!s_customTracksLoaded)
+		CustomTrack_Load();
+	if (levPath == NULL || vrmPath == NULL || levPath[0] == '\0' || vrmPath[0] == '\0' ||
+	    strlen(levPath) >= sizeof s_customTrackLev.path || strlen(vrmPath) >= sizeof s_customTrackVrm.path ||
+	    !CustomTrackPolicy_NameFits(raceName, NULL))
+	{
+		CustomTrack_Log("[CustomTracks] REFUSED content-plan package: paths or race name do not fit\n");
+		return 0;
+	}
+	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, levPath);
+	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, vrmPath);
+	CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, raceName);
+	// No navigation identity: recorded AI lanes are blocked for this load, so
+	// no recording of another track can replay on it (AP_NavRec_BlockRecordedLanes).
+	memset(s_customTrackConfig.navTrackUuid, 0, sizeof s_customTrackConfig.navTrackUuid);
+	s_customTrackConfig.navRevision = 0;
+	s_customTrackConfig.navIdentityValid = 0;
+	memset(&s_descriptor, 0, sizeof s_descriptor);
+	s_haveDescriptor = 0;
+	CustomTrack_ResetArmedState();
+	CustomTrack_Log("[CustomTracks] content plan selected \"%s\" from \"%s\"\n", raceName, levPath);
+	return 1;
+}
+
 int CustomTrack_ReverifyArmedContent(void)
 {
 	if (!s_customTracksLoaded)

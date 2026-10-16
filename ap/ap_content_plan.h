@@ -29,10 +29,26 @@ typedef struct ctr_content_pad {
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
 
+/* Open admission (#133 PR 2): any complete descriptor, not only compiled
+ * revisions. Bytes are located and verified on load, and a claimed capability
+ * the bytes do not have refuses the package (ap_content_capability.h). */
+#define AP_CONTENT_MAX_PACKAGES 32
+/* Descriptor capability flags (worlds/ctr/custom_packages.py CAPABILITIES). */
+#define AP_CONTENT_CAP_TIME_TRIAL 0x01u
+#define AP_CONTENT_CAP_ARCADE 0x02u
+#define AP_CONTENT_CAP_RELIC 0x04u
+#define AP_CONTENT_CAP_CTR_TOKENS 0x08u
+#define AP_CONTENT_CAP_WUMPA 0x10u
+#define AP_CONTENT_CAP_ALL 0x1fu
+#define AP_CONTENT_RETAIL_LAPS 3 /* retail tracks race their authored three laps */
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
     char display_name[129], author[129], lev_sha256[65], vrm_sha256[65];
     uint32_t lev_bytes, vrm_bytes;
+    int laps;              /* authored laps, 1..7 */
+    unsigned capabilities; /* AP_CONTENT_CAP_* bits the descriptor claims */
+    int has_relic_targets; /* relic targets in ticks (960 per second) */
+    int relic_targets[3];  /* sapphire, gold, platinum */
 } ctr_content_package;
 
 typedef struct ctr_content_item {

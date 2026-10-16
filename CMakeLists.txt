@@ -327,6 +327,14 @@ if(CTR_AP)
         target_link_libraries(ap_net PUBLIC custom_package)
         target_link_libraries(ctr_native custom_package)
     endif()
+    # Open content-plan admission (#133 PR 2): the player client measures a
+    # seed's custom track with the structural verifier the package library
+    # uses, so it can refuse a capability the bytes do not have. Only this one
+    # C file, as its own translation unit; the library, Track Manager and
+    # utf8proc stay out of the player client.
+    if(CTR_CUSTOM_TRACKS AND NOT CTR_CUSTOM_PACKAGES)
+        target_sources(ctr_native PRIVATE platform/native_custom_content_verify.c)
+    endif()
     target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
     # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.
     if(WIN32)

@@ -10,6 +10,14 @@
         "revision": "1.0.2",
         "display_name": "Baby T Park",
         "author": "Lockheart",
+        "laps": 7,
+        "capabilities": {
+          "time_trial": true,
+          "arcade": true,
+          "relic": false,
+          "ctr_tokens": true,
+          "wumpa": true
+        },
         "files": [
           {
             "role": "lev",
@@ -307,6 +315,7 @@
           "trophy"
         ],
         "field_size": 8,
+        "named_block": 8,
         "room_title": "Baby T Park"
       }
     ],
@@ -1259,7 +1268,7 @@
         ]
       },
       {
-        "location": 35016300,
+        "location": 35201600,
         "owner": "custom/baby-t-park/1.0.2",
         "kind": "trophy",
         "display_name": "Baby T Park: Trophy Race",
