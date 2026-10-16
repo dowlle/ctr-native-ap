@@ -20,6 +20,7 @@
 
 #include "ap_boss_venue.h"
 #include "ap_crystal_checks.h"
+#include "ap_cup_sweeps.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -801,6 +802,7 @@ typedef struct
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
 extern ctr_seed_config ctr_cfg;
 extern AP_CrystalChecks ctr_crystal_checks;
+extern AP_CupSweepConfig ctr_cup_sweeps;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);

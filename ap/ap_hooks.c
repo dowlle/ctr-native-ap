@@ -352,6 +352,8 @@ static long AP_LookupLocationCode(int globalBit)
         const ctr_content_pad *pad=ap_content_plan_pad(off/20);
         return pad && pad->crystal_count==20 ? (long)pad->crystal_locations[off%20] : -1;
     }
+    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)
+        return ctr_cfg_active()?AP_CupSweepCode(&ctr_cup_sweeps,globalBit-AP_CUP_SWEEP_PSEUDO_BASE):-1;
     if (globalBit >= AP_CRYSTAL_PSEUDO_BASE && globalBit < AP_CRYSTAL_PSEUDO_BASE+80)
         return ctr_cfg_active() ? AP_CrystalPseudoCode(&ctr_crystal_checks, globalBit) : -1;
 	if (globalBit >= 50000 && globalBit <= 50104)

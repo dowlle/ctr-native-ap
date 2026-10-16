@@ -332,6 +332,11 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 #endif
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+    if(ctr_cfg_active() && destLevelID>=100 && destLevelID<105 && count<cap) {
+        long sweep=AP_CupSweepCode(&ctr_cup_sweeps,destLevelID-100);
+        if(sweep>0 && ap_net_location_exists(sweep) && !ap_net_location_checked(sweep))
+            outBits[count++]=AP_CUP_SWEEP_PSEUDO_BASE+destLevelID-100;
+    }
     {
         int arena=AP_CrystalArenaIndex(destLevelID);
         if (ctr_cfg_active() && arena>=0 && ctr_crystal_checks.state==1 &&
@@ -764,6 +769,7 @@ CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)return 2;
     if(globalBit>=60000 && globalBit<62100)return 2;
     if(globalBit>=50000 && globalBit<=50104) {
         const ctr_content_pad *p=ap_content_plan_pad(globalBit-50000);

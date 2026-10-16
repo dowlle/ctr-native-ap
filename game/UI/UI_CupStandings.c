@@ -539,6 +539,9 @@ void UI_CupStandings_InputAndDraw(void)
 		// If this is the first frame of Track Standings
 		if (uVar8 == 0)
 		{
+#ifdef CTR_AP
+            AP_CupSweepRecordLeg(gGT);
+#endif
 			if (numDrivers > 4)
 			{
 				numDrivers = 4;
@@ -625,6 +628,9 @@ void UI_CupStandings_InputAndDraw(void)
 					UI_CupStandings_FinalizeCupRanks();
 				}
 
+#ifdef CTR_AP
+                AP_CupSweepComplete(gGT,cupTrack);
+#endif
 				gGT->cup.trackIndex = 0;
 
 #ifdef CTR_CUSTOM_TRACKS

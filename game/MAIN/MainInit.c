@@ -854,6 +854,7 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 		// loaded level is an eligible racing level. Hub, menu, cutscene and battle
 		// loads reach this call too but leave the latch set.
 		AP_RaceAttempt_OnLevelStart(gGT);
+		AP_CupSweepOnLevelStart(gGT);
 #endif
 
 		if (gGT->boolDemoMode != 0)

@@ -591,6 +591,7 @@ typedef struct
 	long trialTrophy, trialCtr;   // trial-track direct codes (-1 absent)
 	long cortexCodes[5];          // trophy, sapphire, gold, platinum, CTR (-1 absent)
 	long customTrophy, customCtr; // custom-slot direct codes (-1 absent)
+	long cupSweep; // #246: an independent four-first-place Cup win check
 } AP_WinRaceFacts;
 
 #define AP_WS_WINSET_MAX 3
@@ -662,7 +663,7 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 			return AP_WinSetPush(out, n, f->token ? f->customCtr : f->customTrophy);
 		if (f->cupID < 0 || f->cupID > 4)
 			return 0;
-		return AP_WinSetPush(out, n, bitCode(AP_WS_BIT_GEM + f->cupID));
+		return AP_WinSetPush(out, AP_WinSetPush(out,n,bitCode(AP_WS_BIT_GEM+f->cupID)),f->cupSweep);
 	}
 	if (f->relic)
 	{

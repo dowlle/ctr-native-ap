@@ -28,8 +28,9 @@ int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 static long crystalChecked;
 int ap_net_location_checked(long c){return c==crystalChecked;}
-int ap_net_location_exists(long c){return c>=35028400 && c<35028480;}
+int ap_net_location_exists(long c){return (c>=35028400 && c<35028480)||(c>=35028300 && c<35028305);}
 AP_CrystalChecks ctr_crystal_checks;
+AP_CupSweepConfig ctr_cup_sweeps;
 #define ADV_REWARD_FIRST_SAPPHIRE_RELIC 0x16
 #define ADV_REWARD_FIRST_CTR_TOKEN 0x4c
 #define AP_PODIUM_PSEUDO_BASE 0x100
@@ -70,6 +71,17 @@ tests=r'''
 static int has(const int *b,int n,int bit){int i;for(i=0;i<n;i++)if(b[i]==bit)return 1;return 0;}
 int main(void){
  int d;
+ // A collected Gem does not hide an unchecked sweep on the same Cup pad.
+ {
+  int bits[24],n;relics=rung=0;
+  ctr_cup_sweeps.enabled=1;ctr_cup_sweeps.present[0]=1;ctr_cup_sweeps.locations[0]=35028300;
+  n=AP_PadUncollectedGlowBits(100,bits,24);
+  assert(n==1&&bits[0]==AP_CUP_SWEEP_PSEUDO_BASE);
+  assert(AP_GlowBitRewardGroup(bits[0])==2);
+  crystalChecked=35028300;assert(AP_PadUncollectedGlowBits(100,bits,24)==0);
+  crystalChecked=0;ctr_cup_sweeps.enabled=0;
+  assert(AP_PadUncollectedGlowBits(100,bits,24)==0);relics=rung=1;
+ }
  for(d=16;d<=17;d++){
   int t=d-16,bits[24],n,slot[3],phase,ctrShown=0,trophyShown=0;
   int trophy=AP_TrialPseudoBit(t,CTR_CFG_TRIAL_TROPHY),ctr=AP_TrialPseudoBit(t,CTR_CFG_TRIAL_CTR);

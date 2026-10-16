@@ -873,6 +873,11 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
 // GEM_STONE_VALLEY literal. AP_CupReturnHub returns -1 (AP inactive or unset) ->
 // caller keeps the vanilla GEM_STONE_VALLEY return.
 void AP_CupEnterFromHub(int hubLevelID);
+void AP_CupSweepEnterFromHub(void);
+void AP_CupSweepOnLoadRequested(int level);
+void AP_CupSweepOnLevelStart(struct GameTracker *g);
+void AP_CupSweepRecordLeg(struct GameTracker *g);
+void AP_CupSweepComplete(struct GameTracker *g,int legs);
 int  AP_CupReturnHub(void);
 
 #else
