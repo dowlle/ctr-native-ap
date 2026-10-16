@@ -107,3 +107,42 @@ with tempfile.TemporaryDirectory() as tmp:
     src.write_text(fixture.replace('HELD_FUNCTION',held))
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+# The verifier's dense item range ends before its sparse custom-letter slots.
+# Exercise its actual own-item banking function: Clocked Out must not grant a
+# custom letter merely because its raw item index is 206.
+import re
+verify=(root/'ap/ap_verify.c').read_text()
+begin=verify.index('static void ap_vf_bank_own(')
+bank=verify[begin:verify.index('\n}\n',begin)+3]
+bound=re.search(r'^#define AP_VF_ITEM_COUNT +\d+', (root/'ap/ap_verify_logic.h').read_text(), re.M).group()
+bank_fixture=r"""
+#include <assert.h>
+#include "ap_lettersanity.h"
+BOUND
+#define AP_ITEM_BASE 35010000
+static long long scouted;
+static int ap_net_self_slot(void){return 1;}
+static int ap_net_scout_known(long code,long long *item,int *player,unsigned *flags){
+ (void)code;*item=scouted;*player=1;*flags=0;return 1;
+}
+BANK
+int main(void){
+ int counts[AP_CUSTOM_LETTER_VERIFY_FIRST+AP_CUSTOM_LETTER_VERIFY_COUNT]={0};
+ scouted=35010206LL;ap_vf_bank_own(1,counts);
+ for(unsigned i=0;i<sizeof(counts)/sizeof(counts[0]);i++)assert(counts[i]==0);
+ for(int i=0;i<9;i++){
+  scouted=35021000LL+i;ap_vf_bank_own(1,counts);
+  assert(counts[AP_CUSTOM_LETTER_VERIFY_FIRST+i]==1);
+ }
+ scouted=35010206LL;ap_vf_bank_own(1,counts);
+ assert(counts[206]==1); // only the actual custom letter was banked
+ return 0;
+}
+"""
+with tempfile.TemporaryDirectory() as tmp:
+    src,exe=Path(tmp)/'bank.c',Path(tmp)/'bank'
+    src.write_text(bank_fixture.replace('BOUND',bound).replace('BANK',bank))
+    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+print("Clocked Out cannot bank a custom-letter verifier item")
