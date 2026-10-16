@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../ap/ap_traps.h"
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
@@ -1135,7 +1139,11 @@ void CAM_FollowDriver_Normal(struct CameraDC *cDC, struct Driver *d, SVec3 *push
 	    ((gGT->gameMode1 & START_OF_RACE) == 0) &&
 
 	    // If you are holding R2
-	    ((pad->buttonsHeldCurrFrame & 0x200) != 0))
+	    (((pad->buttonsHeldCurrFrame & 0x200) != 0)
+#ifdef CTR_AP
+	     || AP_TrapReverseCamera(d)
+#endif
+	    ))
 	{
 		// Reverse the camera
 		cDC->flags |= CAMERA_FLAG_REVERSE;
