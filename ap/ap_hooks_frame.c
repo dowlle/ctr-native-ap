@@ -621,6 +621,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_NetTick(gGT);
 	// Room links (issue #334): claim handed-over requests, expire, notices.
 	AP_LinkTick(gGT);
+	AP_UpdateTick(gGT);
 
 	// Trap framework: advance prime->fire->clear lifecycle + apply the FP camera,
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
