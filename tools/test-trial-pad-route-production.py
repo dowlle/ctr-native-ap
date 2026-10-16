@@ -50,10 +50,12 @@ fixture = r'''
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 int AP_GateCount(int i){(void)i;return 0;}
+int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 0;}
 #define ADV_REWARD_FIRST_TROPHY 0
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0, AP_CV_SLOT_LETTER0 = 5 };
 ctr_seed_config ctr_cfg;
+AP_CrystalChecks ctr_crystal_checks;
 static long checked[16]; static int nChecked;
 static int assetsReady = 1, prepareCalls = 0;
 static int relicTiers = 0, perfect = 0, boxes = 0, wumpa = 0, hit = 0;
@@ -108,6 +110,10 @@ static void setChecked(int d,int trophy,int ctr,int lettersOpen){
  for(i=lettersOpen;i<3;i++)checked[nChecked++]=ctr_cfg.lettersanity_locations[d][i];}
 int main(void){
  int d;
+ /* A refused arena destination is closed even on a shuffled race seat. */
+ ctr_cfg.schema_version=18;ctr_cfg.include_battle_arenas=1;ctr_crystal_checks.state=-1;
+ assert(AP_PadState(3,21)==5&&AP_PadState(21,3)==5);
+ ctr_crystal_checks.state=0;ctr_cfg.schema_version=0;
  for(d=16;d<=17;d++){
   int t=d-16,i;
   ctr_cfg.trial_track_valid[t]=1;ctr_cfg.trial_track_mode[t]=2;
@@ -195,7 +201,10 @@ assert 'AP_TrialChallengeServable(levelID)' in trial
 assert 'AP_PadUncollectedLetterCount(levelID)' in trial
 assert 'AP_TrialLetters_Prepare()' not in trial
 assert 'AP_PadLogRoute(levelID, levelID' not in trial
-assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 4
+assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 5
+battle = warp[warp.index('// Battle Tracks'):warp.index('gGT->originalEventTime = D232.timeCrystalChallenge')]
+assert 'if (ctr_cfg_arena_pad_disabled(levelID))' in battle
+assert battle.index('goto WarpPad_RefuseEntry;') < battle.index('AddBitsConfig0 |= CRYSTAL_CHALLENGE;')
 # Stage 2 on a trial destination is the physical pad's, as in the apworld and
 # AP_PadState: inert before the warp unless a plain rerace is still needed,
 # and only the plain trial rerace after it.

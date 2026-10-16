@@ -315,10 +315,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
-		if (!pad || !pad->occupied || !outBits || cap <= 0 ||
-		    ap_net_location_checked((long)pad->trophy_location)) return 0;
-		outBits[0] = 50000 + pad->physical;
-		return 1;
+        int count=0,n;
+        if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
+        if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=50000+pad->physical;
+        for(n=0;n<pad->crystal_count && count<cap;++n)
+            if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
+        return count;
 	}
 	int count;
 
@@ -330,6 +332,22 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 #endif
 
 	count = AP_PadUncollectedBits(destLevelID, outBits, cap);
+    if(ctr_cfg_active() && destLevelID>=100 && destLevelID<105 && count<cap) {
+        long sweep=AP_CupSweepCode(&ctr_cup_sweeps,destLevelID-100);
+        if(sweep>0 && ap_net_location_exists(sweep) && !ap_net_location_checked(sweep))
+            outBits[count++]=AP_CUP_SWEEP_PSEUDO_BASE+destLevelID-100;
+    }
+    {
+        int arena=AP_CrystalArenaIndex(destLevelID);
+        if (ctr_cfg_active() && arena>=0 && ctr_crystal_checks.state==1 &&
+            ctr_crystal_checks.present[arena])
+            for (int n=0;n<20 && count<cap;++n)
+            {
+                int bit=AP_CRYSTAL_PSEUDO_BASE+arena*20+n;
+                long code=AP_CrystalPseudoCode(&ctr_crystal_checks,bit);
+                if (ap_net_location_exists(code) && !ap_net_location_checked(code)) outBits[count++]=bit;
+            }
+    }
 
 	// #439 follow-up: an open Relic Race Perfect is advertised like the other
 	// relic-side checks, right after the tier bits. Retail race pads and the two
@@ -751,6 +769,13 @@ CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
+    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)return 2;
+    if(globalBit>=60000 && globalBit<62100)return 2;
+    if(globalBit>=50000 && globalBit<=50104) {
+        const ctr_content_pad *p=ap_content_plan_pad(globalBit-50000);
+        if(p && p->crystal)return 2;
+    }
+    if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
 	int trialGroup = AP_TrialPseudoRewardGroup(globalBit);
 	int perfectGroup = AP_RelicPerfectPseudoRewardGroup(globalBit);
@@ -850,7 +875,7 @@ int AP_PadStage1Met(int physLevelID)
 	if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
-		return pad && pad->occupied && AP_GateCount(AP_IDX_KEY) >= pad->keys;
+		return AP_ContentPadOpen(pad);
 	}
 	int i, owned;
 
@@ -1009,7 +1034,11 @@ int AP_PadState(int physLevelID, int destLevelID)
 #ifdef CTR_CUSTOM_TRACKS
 		if (!AP_ContentPadReady(physLevelID)) return 5;
 #endif
-		if (AP_GateCount(AP_IDX_KEY) < pad->keys) return 1;
+		if (!AP_ContentPadOpen(pad)) return 1;
+        if(pad->crystal) {
+            int bits[21];
+            return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
+        }
 		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
 	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
@@ -1025,7 +1054,8 @@ int AP_PadState(int physLevelID, int destLevelID)
 
 	if (!ctr_cfg_active())
 		return 0; // vanilla mode -> caller leaves the pad untouched
-	if (ctr_cfg_arena_pad_disabled(physLevelID))
+	if (ctr_cfg_arena_pad_disabled(physLevelID) ||
+	    ctr_cfg_arena_pad_disabled(destLevelID))
 		return 5;
 	if (!AP_DestKnown(destLevelID))
 		return 0;

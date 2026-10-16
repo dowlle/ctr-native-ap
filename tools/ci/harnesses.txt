@@ -9,6 +9,8 @@ tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
+tools/test-boss-venue.cpp
+tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
 tools/test-box-colour-seedcfg.cpp
 tools/test-box-colour.c
@@ -18,10 +20,13 @@ tools/test-box-map.c
 tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-ceremony-banner.c
+tools/test-clocked-out-production.py
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-character-phase-seedcfg.cpp
 tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
+tools/test-cup-sweeps.cpp
+tools/test-cup-sweeps-production.py
 tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
@@ -101,6 +106,7 @@ tools/test-boss-door-scene-seen.cpp
 tools/test-boss-door-scene-production.py
 tools/test-boss-won-flags.cpp
 tools/test-boss-won-production.py
+tools/test-boss-map-star.py
 tools/test-oxide-optional-result.py
 tools/test-trial-letter-visual.py
 tools/test-trial-podium-result.py
@@ -146,10 +152,14 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
+tools/test-content-capability.c
+tools/test-content-hooks-admission.py
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c
 tools/test-trap-identities.cpp
 tools/test-arena-pads-seedcfg.cpp
+tools/test-crystal-checks.cpp
+tools/test-crystal-pickup-production.py
 tools/test-trap-scheduler.c
 tools/test-turbo-grant.c
 tools/test-update-core.cpp
@@ -172,3 +182,23 @@ tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-se
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py
 tools/test-statbar-rank.c
+tools/test-bsp-instance.py
+tools/test-custom-ctr-result.py
+tools/test-custom-letter-hooks.py
+tools/test-custom-letter-verifier.py
+tools/test-custom-profile-activation.py
+tools/test-custom-race-picker.py
+tools/test-letter-ready-feed-production.py
+tools/test-trial-pad-state-production.py
+tools/test-feed-rung-policy.py
+tools/test-ap-spawn-pool-reset.py
+tools/test-box-anchor-premise.py
+# Non-file steps (run from the repo root; CI runs them through this script).
+cmd Controls page module (native_controls, ported from CTR Native Expanded) :: bash tools/controls/run-tests.sh
+cmd TLS and cache boundary regressions :: bash tools/security/run.sh
+cmd Release assembly boundary checks :: python3 -m unittest discover -s tools/release -p 'test_*.py'
+tools/test-standalone-hub-return.py
+tools/test-standalone-race-result.py
+tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a built libap_net.a and optionally a live MultiServer; run by hand
+tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
+tools/test-arcade-crystals-production.py

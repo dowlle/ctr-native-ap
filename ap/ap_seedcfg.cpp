@@ -30,6 +30,8 @@
 extern "C"
 {
 	ctr_seed_config ctr_cfg = {0};
+	AP_CrystalChecks ctr_crystal_checks = {0};
+    AP_CupSweepConfig ctr_cup_sweeps = {0};
 }
 
 // Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
@@ -1475,6 +1477,115 @@ static void ap_seedcfg_parse_trap_identities(const nlohmann::json &j, int schema
 	           AP_TRAP_IDENTITIES_VERSION, agreed, refused);
 }
 
+// ── boss_encounters (#169 tier 1, schema 18) ──────────────────────────────
+//
+// The four ordinary garages' drawn venues. ctr_options.boss_track_shuffle is
+// the switch and the block is its record: both absent (or the switch false
+// with no block) is a retail seed. Any disagreement, unknown version, missing
+// or extra garage, or a row this build cannot race (wrong check code, an
+// opponent, AI, kit or package this build does not implement, a track that
+// cannot carry the boss's inherited attack) refuses ALL four encounters: the
+// garages stay shut with the reason on their panel. Never a silent fallback
+// to the retail venue (design 2026-10-13).
+extern "C"
+{
+	AP_BossEncounters ctr_boss_encounters;
+}
+
+static void ap_boss_encounters_refuse(const char *why)
+{
+	ctr_boss_encounters.state = AP_BOSS_ENC_REFUSED;
+	std::snprintf(ctr_boss_encounters.reason, sizeof ctr_boss_encounters.reason, "%s", why);
+	ap_cfg_log("[AP CFG] boss_encounters refused (%s): boss garages stay shut\n", why);
+}
+
+static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nlohmann::json &opt, int schema)
+{
+	AP_BossEncounters *e = &ctr_boss_encounters;
+	std::memset(e, 0, sizeof *e);
+	e->state = AP_BOSS_ENC_RETAIL;
+	if (schema < AP_BOSS_ENCOUNTERS_SCHEMA)
+		return; // pre-18 seeds never draw a venue
+
+	bool on = false;
+	auto flag = opt.find("boss_track_shuffle");
+	if (flag != opt.end())
+	{
+		if (!flag->is_boolean())
+		{
+			ap_boss_encounters_refuse("boss_track_shuffle is not a boolean");
+			return;
+		}
+		on = flag->get<bool>();
+	}
+	auto it = j.find("boss_encounters");
+	bool present = it != j.end();
+	if (!on && !present)
+		return;
+	if (on != present)
+	{
+		ap_boss_encounters_refuse(on ? "switch on but block missing" : "block present but switch off");
+		return;
+	}
+	if (!it->is_object())
+	{
+		ap_boss_encounters_refuse("block is not an object");
+		return;
+	}
+	auto v = it->find("version");
+	if (v == it->end() || !v->is_number_integer() || v->get<long long>() != AP_BOSS_ENCOUNTERS_VERSION)
+	{
+		ap_boss_encounters_refuse("version is missing or not 1");
+		return;
+	}
+	auto g = it->find("garages");
+	if (g == it->end() || !g->is_object() || g->size() != AP_BOSS_VENUE_GARAGES)
+	{
+		ap_boss_encounters_refuse("garages must name exactly the four boss garages");
+		return;
+	}
+	for (int i = 0; i < AP_BOSS_VENUE_GARAGES; i++)
+	{
+		auto row = g->find(AP_BOSS_VENUE_GARAGE[i].key);
+		if (row == g->end() || !row->is_object())
+		{
+			ap_boss_encounters_refuse("a boss garage row is missing");
+			return;
+		}
+		AP_BossEncounterRow r;
+		std::memset(&r, 0, sizeof r);
+		auto num = [&](const char *k, long long fallback) -> long long {
+			auto f = row->find(k);
+			return (f != row->end() && f->is_number_integer()) ? f->get<long long>() : fallback;
+		};
+		auto str = [&](const char *k) -> const char * {
+			auto f = row->find(k);
+			return (f != row->end() && f->is_string()) ? f->get_ref<const std::string &>().c_str() : nullptr;
+		};
+		auto pk = row->find("packages");
+		r.fieldCount = (int)row->size();
+		r.location = (long)num("location", -1);
+		r.homeTrack = (int)num("home_track", -1);
+		r.track = (int)num("track", -1);
+		r.opponent = str("opponent");
+		r.aiProfile = str("ai_profile");
+		r.attack = str("attack");
+		r.packagesEmpty = pk != row->end() && pk->is_array() && pk->empty();
+		const char *problem = AP_BossEncounterRowProblem(i, &r);
+		if (problem)
+		{
+			char why[96];
+			std::snprintf(why, sizeof why, "%s: %s", AP_BOSS_VENUE_GARAGE[i].key, problem);
+			ap_boss_encounters_refuse(why);
+			return;
+		}
+		e->track[i] = (signed char)r.track;
+	}
+	e->state = AP_BOSS_ENC_VALID;
+	ap_cfg_log("[AP CFG] boss_encounters v%d: venues roo=%d papu=%d komodo=%d pinstripe=%d\n",
+	           AP_BOSS_ENCOUNTERS_VERSION, e->track[0], e->track[1], e->track[2], e->track[3]);
+}
+
 #include "ap_content_plan_impl.hpp"
 
 // ── custom_track_titles (#306 B+, schema 18) ──────────────────────────────
@@ -1555,10 +1666,58 @@ extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
 	return folded;
 }
 
+static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
+                                      const nlohmann::json &opt, int schema)
+{
+    if (schema < 18 || !ctr_cfg.include_battle_arenas) return;
+    auto enabled = opt.find("crystalsanity");
+    if (enabled == opt.end() || !enabled->is_boolean() || !enabled->get<bool>()) return;
+    AP_CrystalChecks parsed = {0};
+    parsed.state = 1;
+    try
+    {
+        const auto &block = j.at("crystal_checks");
+        if (!block.is_object() || !block.at("version").is_number_integer() ||
+            block.at("version") != 1 || !block.at("arenas").is_object()) throw 0;
+        const auto &arenas = block.at("arenas");
+        static const int levels[4] = {21,19,23,18};
+        for (auto it=arenas.begin(); it!=arenas.end(); ++it)
+        {
+            int a=-1;
+            for (int i=0;i<4;++i) if (it.key()==std::to_string(levels[i])) a=i;
+            if (a<0 || !it.value().is_object()) throw 0;
+            const auto &row=it.value();
+            const auto &bases=row.at("instance_bases");
+            const auto &codes=row.at("locations");
+            if (!bases.is_array() || bases.size()!=4 || !codes.is_array() || codes.size()!=20) throw 0;
+            for (int p=0;p<4;++p)
+                if (!bases[p].is_number_integer() || bases[p]!=AP_CrystalInstanceBase(a,p+1)) throw 0;
+            for (int n=0;n<20;++n)
+            {
+                long expected=35028400L+20*a+n;
+                if (!codes[n].is_number_integer() || codes[n]!=expected) throw 0;
+                parsed.locations[a][n]=expected;
+            }
+            parsed.present[a]=1;
+        }
+        ctr_crystal_checks=parsed;
+    }
+    catch (...)
+    {
+        ctr_crystal_checks.state=-1;
+        ap_cfg_log("[AP CFG] crystal_checks refused: arena entry disabled; update the client/seed\n");
+    }
+}
+
+#include "ap_cup_sweep_parser.hpp"
+
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+    std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
+    std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
+	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
 	// win_logic belongs to this parse only: a seed without the block (or a
 	// refused config) must never inherit the previous connection's tables.
 	std::memset(&ctr_win_logic, 0, sizeof ctr_win_logic);
@@ -1671,6 +1830,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.custom_tracks_seen = 0;
 	ctr_cfg.custom_tracks_ok = 0;
 	std::memset(&ctr_cfg.custom_track, 0, sizeof ctr_cfg.custom_track);
+	ctr_cfg.custom_track.named_block = -1; // #133: generic until an entry names a block
 	std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
 	std::memset(&ctr_cfg.cortex_track, 0, sizeof ctr_cfg.cortex_track);
 	ctr_cfg.cortex_track.dropped_destination = -1;
@@ -1799,6 +1959,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
 	ap_seedcfg_parse_trap_identities(j, schema);
+	ap_seedcfg_parse_boss_encounters(j, opt, schema);
 
 	ctr_cfg.goal = json_int(opt, "goal", 0);
 	// Issue #152: composed goal conditions, additive on the existing schema
@@ -1848,6 +2009,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			ctr_cfg.include_battle_arenas = arenas->get<bool>() ? 1 : 0;
 	}
 	ctr_cfg.shuffle_gems = json_int(opt, "shuffle_gems", 0);
+	ap_seedcfg_parse_crystals(j, opt, schema);
 	ctr_cfg.shuffle_keys = json_int(opt, "shuffle_keys", 0);
 	ctr_cfg.warppad_unlock_mode = json_int(opt, "warppad_unlock_mode", 0);
 	ctr_cfg.bossgarage_mode = json_int(opt, "bossgarage_mode", 0);
@@ -2156,6 +2318,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 
 				json_str(t, "lev_sha256", ct.lev_sha256, sizeof ct.lev_sha256);
 				json_str(t, "vrm_sha256", ct.vrm_sha256, sizeof ct.vrm_sha256);
+				ct.named_block = -1;
 				ct.trophy_location = -1;
 				ct.podium.held_1st = -1;
 				ct.podium.held_3rd = -1;
@@ -2280,6 +2443,33 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						reject = "boxes must be false in the current custom-track preview";
 					else if (ct.trophy_location <= 0)
 						reject = "locations.trophy must be a positive AP code";
+				}
+
+				// #133: one identity per track. `named_block` present means
+				// every code this entry carries is the block's; recompute them
+				// here rather than trusting the wire. Absent keeps the generic
+				// slot path unchanged.
+				auto nbIt = t.find("named_block");
+				if (reject == NULL && nbIt != t.end())
+				{
+					if (!nbIt->is_number_integer() || nbIt->get<long long>() < 0 ||
+					    nbIt->get<long long>() >= AP_NAMED_BLOCK_LIMIT)
+						reject = "named_block is not a block index 0..9999";
+					else
+					{
+						ct.named_block = (int)nbIt->get<long long>();
+						const long *codes[CTR_CFG_PODIUM_RUNG_COUNT] = {
+							&ct.podium.held_1st, &ct.podium.held_3rd,
+							&ct.podium.held_5th, &ct.podium.finish_podium,
+							&ct.podium.finish_any,
+						};
+						if (ct.trophy_location != (long)ap_named_location_code(ct.named_block, AP_NAMED_OFF_TROPHY))
+							reject = "locations.trophy disagrees with named_block";
+						for (int i = 0; reject == NULL && i < CTR_CFG_PODIUM_RUNG_COUNT; i++)
+							if (*codes[i] != -1 &&
+							    *codes[i] != (long)ap_named_location_code(ct.named_block, AP_NAMED_OFF_HELD_1ST + i))
+								reject = "locations.podium disagrees with named_block";
+					}
 				}
 			}
 
@@ -2521,6 +2711,15 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
 						           "'%s' carries no usable code; it is ignored\n",
 						           it.key().c_str());
+					else if (ctr_cfg.custom_tracks_ok && ctr_cfg.custom_track.named_block >= 0 &&
+					         ctr_cfg.custom_track.replaces_cup_level_id == cupLevelID &&
+					         slot.code != (long)ap_named_location_code(ctr_cfg.custom_track.named_block,
+					                                                   AP_NAMED_OFF_WUMPA))
+						// #133: the named track owns its Wumpa check in its block.
+						ap_cfg_log("[AP CFG] wumpa_checks custom destination "
+						           "'%s' code %ld is not named block %d's Wumpa "
+						           "code; it is ignored\n", it.key().c_str(),
+						           (long)slot.code, ctr_cfg.custom_track.named_block);
 					else if (slot.wumpa_collectible < 0)
 						// A destination slot that does not state the measured
 						// capability is not self-describing, and a Wumpa check
@@ -2706,7 +2905,10 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		    (*modes)["ctr_challenge"].get<bool>())
 		{
 			const auto &locations = parent["locations"];
-			long expected = 35023000L + ctr_cfg.custom_track.slot - 1;
+			// #133: a named track's challenge is its block's, else the slot's.
+			long expected = ctr_cfg.custom_track.named_block >= 0
+			    ? (long)ap_named_location_code(ctr_cfg.custom_track.named_block, AP_NAMED_OFF_CTR_TOKEN)
+			    : 35023000L + ctr_cfg.custom_track.slot - 1;
 			if (ctr_cfg.custom_track.flags.ctr_letters && locations.is_object() &&
 			    locations.contains("ctr") && exactInteger(locations["ctr"], expected))
 			{
@@ -2753,8 +2955,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			int selected = 0;
 			for (int l = 0; valid && l < 3; ++l)
 			{
-				long loc = 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
-				long item = 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				// #133: a named track's letters are its block's, else the slot's.
+				const int block = ctr_cfg.custom_track.named_block;
+				long loc = block >= 0 ? (long)ap_named_location_code(block, AP_NAMED_OFF_LETTER_C + l)
+				                      : 35020000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
+				long item = block >= 0 ? (long)ap_named_item_code(block, l)
+				                       : 35021000L + (ctr_cfg.custom_track.slot - 1) * 3 + l;
 				bool chosen = mode == 3 || exactInteger(track["locations"][l], loc);
 				locations[l] = chosen && mode != 3 ? loc : -1;
 				items[l] = chosen && mode != 1 ? item : -1;
@@ -3039,6 +3245,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			}
 		}
 	}
+
+    if (!parse_cup_sweeps(j,opt,schema)) return;
 
 	// Activate LAST -- a partial parse never flips ctr_cfg_active() true.
 	ctr_cfg.schema_version = schema;

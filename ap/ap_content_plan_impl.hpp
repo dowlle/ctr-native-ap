@@ -1,9 +1,11 @@
 // Included by ap_seedcfg.cpp so every production-parser harness exercises the
-// same admission path. Deliberately implements only the standalone Trophy
-// profile; a broader schema shape is not a promise of runtime support.
+// same admission path. Implements standalone Trophy and Crystal Challenge
+// entries; a broader schema shape is not a promise of runtime support.
+// Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
+#include "ap_arena_content.h"
 #include <array>
 #include <map>
 #include <set>
@@ -15,7 +17,7 @@ using J = nlohmann::json;
 struct State {
     bool parsed = false, bound = false;
     std::array<ctr_content_pad, 27> pads{};
-    std::array<ctr_content_package, 2> packages{};
+    std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     std::array<ctr_content_item, 15> items{};
     int package_count = 0, goal_count = 0, goal_mask = 0;
     std::set<int64_t> checks;
@@ -74,6 +76,136 @@ static void budget(const J &j, unsigned depth, size_t &nodes, size_t &bytes) {
     }
     need(bytes <= 16 * 1024 * 1024, "content-plan byte budget exceeded");
 }
+// Open package admission (#133 PR 2). The apworld applies the same rules in
+// worlds/ctr/custom_packages.py; tools/test-content-plan-parity.py compares
+// the two on forged descriptors. A descriptor is untrusted input: every field
+// is closed and bounded, and nothing here grants a capability. The bytes are
+// located, hashed and measured later, on load (ap_hooks_custom_content.c).
+static bool track_key(const std::string &s) {
+    if (s.empty() || s.size() > 64 || s.front() == '-' || s.back() == '-') return false;
+    char previous = 0;
+    for (char c : s) {
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+        if (c == '-' && previous == '-') return false;
+        previous = c;
+    }
+    return true;
+}
+static bool revision_text(const std::string &s) {
+    if (s.empty() || s.size() > 64) return false;
+    for (size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        const bool alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+        if (!alnum && (i == 0 || !std::strchr("._+-", c))) return false;
+    }
+    return true;
+}
+static bool lower_hex(const std::string &s, size_t n) {
+    return s.size() == n && std::all_of(s.begin(), s.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+}
+static bool lower_uuid(const std::string &s) {
+    if (s.size() != 36) return false;
+    for (size_t i = 0; i < 36; ++i) {
+        const char c = s[i];
+        if (i == 8 || i == 13 || i == 18 || i == 23) { if (c != '-') return false; }
+        else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+static void package_record(const J &pkg, ctr_content_package &target) {
+    need(pkg.is_object(), "package record is not an object");
+    J base = pkg;
+    const bool targets = base.contains("relic_targets");
+    if (targets) base.erase("relic_targets");
+    fields(base, {"id", "content_id", "uuid", "revision", "display_name", "author", "laps", "capabilities", "files", "evidence"});
+    need(pkg["content_id"].is_string() && track_key(pkg["content_id"].get<std::string>()), "package track key is not lowercase hyphenated text");
+    need(pkg["revision"].is_string() && revision_text(pkg["revision"].get<std::string>()), "package revision has unsupported characters");
+    const std::string key = pkg["content_id"], revision = pkg["revision"];
+    const std::string id = "package/" + key + "/" + revision;
+    need(id.size() <= 64 && ("custom/" + key + "/" + revision).size() <= 64, "package id exceeds 64 bytes");
+    need(pkg["id"] == id, "package id is not package/<content_id>/<revision>");
+    need(pkg["uuid"].is_string() && lower_uuid(pkg["uuid"].get<std::string>()), "package uuid is not a lowercase UUID");
+    text(pkg["display_name"], false); text(pkg["author"], false);
+    target.laps = number(pkg["laps"], 1, 7);
+    const J &caps = pkg["capabilities"];
+    fields(caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
+    static const std::pair<const char *, unsigned> cap_bits[] = {
+        {"time_trial", AP_CONTENT_CAP_TIME_TRIAL}, {"arcade", AP_CONTENT_CAP_ARCADE}, {"relic", AP_CONTENT_CAP_RELIC},
+        {"ctr_tokens", AP_CONTENT_CAP_CTR_TOKENS}, {"wumpa", AP_CONTENT_CAP_WUMPA}};
+    target.capabilities = 0;
+    for (const auto &cap : cap_bits) {
+        need(caps[cap.first].is_boolean(), "package capability flag is not true or false");
+        if (caps[cap.first].get<bool>()) target.capabilities |= cap.second;
+    }
+    const bool relic = (target.capabilities & AP_CONTENT_CAP_RELIC) != 0;
+    need(relic == targets, "relic_targets must be present exactly when relic is true");
+    target.has_relic_targets = targets;
+    if (targets) {
+        const J &t = pkg["relic_targets"];
+        fields(t, {"sapphire", "gold", "platinum"});
+        const char *tiers[3] = {"sapphire", "gold", "platinum"};
+        for (int i = 0; i < 3; ++i) target.relic_targets[i] = number(t[tiers[i]], 1, 960 * 60 * 60);
+        need(target.relic_targets[0] > target.relic_targets[1] && target.relic_targets[1] > target.relic_targets[2],
+             "relic targets must get strictly faster from sapphire to platinum");
+    }
+    const J &files = pkg["files"];
+    need(files.is_array() && files.size() == 2, "package must pin exactly the LEV then the VRM");
+    static const char *roles[2] = {"lev", "vrm"};
+    static const int limits[2] = {16 * 1024 * 1024, 4 * 1024 * 1024};
+    std::set<std::string> hashes;
+    for (int i = 0; i < 2; ++i) {
+        const J &file = files[i];
+        fields(file, {"role", "sha256", "bytes", "format", "format_version"});
+        need(file["role"] == roles[i] && file["format"] == std::string("ctr-") + roles[i] &&
+             file["format_version"].is_number_integer() && file["format_version"] == 1, "package file pin role, format or version mismatch");
+        need(file["sha256"].is_string() && lower_hex(file["sha256"].get<std::string>(), 64), "package file hash is not 64 lowercase hex characters");
+        hashes.insert(file["sha256"].get<std::string>());
+        const int size = number(file["bytes"], 1, limits[i]);
+        (i ? target.vrm_bytes : target.lev_bytes) = (uint32_t)size;
+    }
+    const J &evidence = pkg["evidence"];
+    need(evidence.is_array() && evidence.size() <= 16, "package evidence array bounds");
+    for (const auto &row : evidence) {
+        fields(row, {"capability", "file_hashes", "verifier", "revision", "level"});
+        text(row["capability"]); text(row["verifier"]); number(row["revision"], 1);
+        need(row["level"] == "structural" || row["level"] == "runtime", "package evidence level");
+        const J &refs = row["file_hashes"];
+        need(refs.is_array() && !refs.empty() && refs.size() <= 2, "package evidence hash list bounds");
+        std::set<std::string> seen;
+        for (const auto &h : refs)
+            need(h.is_string() && hashes.count(h.get<std::string>()) && seen.insert(h.get<std::string>()).second,
+                 "package evidence names a hash that is not one of its pins");
+    }
+    copy(target.id, pkg["id"]); copy(target.content_id, pkg["content_id"]);
+    copy(target.uuid, pkg["uuid"]); copy(target.revision, pkg["revision"]);
+    copy(target.display_name, pkg["display_name"]); copy(target.author, pkg["author"]);
+    copy(target.lev_sha256, files[0]["sha256"]); copy(target.vrm_sha256, files[1]["sha256"]);
+}
+// Room titles compare without ASCII case, as the apworld's clash rules do.
+static std::string fold(std::string s) {
+    for (char &c : s) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    return s;
+}
+struct NamedBlock { int block; std::string name; };
+// The apworld's named-track table, from ap_content_registry.hpp: track key to
+// block and frozen room name. A malformed table refuses every plan.
+static const std::map<std::string, NamedBlock> &named_block_table(const J &registry) {
+    static const std::map<std::string, NamedBlock> table = [&registry] {
+        std::map<std::string, NamedBlock> out;
+        std::set<int> blocks;
+        std::set<std::string> names;
+        for (const auto &row : registry.at("named_blocks")) {
+            const std::string key = row.at("key"), name = row.at("name");
+            const int block = row.at("block");
+            if (!track_key(key) || block < 0 || block >= AP_NAMED_BLOCK_LIMIT || !ap_room_title_ok(name.c_str(), name.size()) ||
+                !blocks.insert(block).second || !names.insert(fold(name)).second || !out.emplace(key, NamedBlock{block, name}).second)
+                return std::map<std::string, NamedBlock>{};
+        }
+        return out;
+    }();
+    need(!table.empty(), "compiled named-block table is malformed");
+    return table;
+}
 using Table = std::map<std::string, const J *>;
 static Table table(const J &rows, size_t maximum) {
     need(rows.is_array() && rows.size() <= maximum, "record array exceeds profile bounds");
@@ -90,37 +222,74 @@ static void validate(const J &p, State &out) {
     out.canonical = p.dump(); // also validates UTF-8
     need(out.canonical.size() <= 16 * 1024 * 1024, "serialized byte budget exceeded");
     fields(p, {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"});
-    need(p.at("version") == 1 && p.at("required_features") == J::array({"content_plan_v1"}), "unsupported required content-plan version or feature");
+    need(p.at("version") == 1, "unsupported required content-plan version");
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
-    const auto packages = table(p.at("packages"), 2);
+    const auto &named_table = named_block_table(registry);
+    // Names a generic-slot (B+) room title must not take: every retail track
+    // and every named block, whether or not it is in this seed.
+    std::set<std::string> reserved_titles;
+    for (const auto &row : registry["retail"]) reserved_titles.insert(fold(row["name"].get<std::string>()));
+    for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
+    const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
     const auto tracks = table(p.at("tracks"), 27);
     const auto entries = table(p.at("entries"), 27);
     const auto pads = table(p.at("pads"), 32);
-    const auto requirements = table(p.at("requirements"), 5);
-    need(pads.size() == 32 && requirements.size() == 5, "physical pad or requirement registry mismatch");
+    const auto requirements = table(p.at("requirements"), 32);
+    need(pads.size() == 32 && requirements.size() >= 5, "physical pad or requirement registry mismatch");
+    // Manual pad requirements (#463): every record beyond the five physical hub
+    // ones must be `manual:<physical>`, is checked against the item ledger
+    // below, and is the only gate its own pad may reference. The feature name is
+    // required exactly when such a record exists, so a client without this
+    // evaluator never reads a Key-only plan by mistake.
+    std::map<int, std::string> manual_ids;
+    for (const auto &pair : requirements) {
+        if (pair.first == "free" || pair.first.rfind("keys:", 0) == 0) continue;
+        need(pair.first.rfind("manual:", 0) == 0 && pair.first.size() > 7 && pair.first.size() <= 10, "unknown requirement record: " + pair.first);
+        const std::string digits = pair.first.substr(7);
+        need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) && (digits.size() == 1 || digits[0] != '0'), "malformed manual requirement id");
+        need(manual_ids.emplace(std::stoi(digits), pair.first).second, "duplicate manual requirement");
+    }
+    need(requirements.size() == 5 + manual_ids.size(), "requirement registry mismatch");
+    bool arenas=false, arcade=false, pickups=false;
+    for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
+        arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
+    }
+    need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
+    for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
+    J features=J::array({"content_plan_v1"});
+    if(!manual_ids.empty())features.push_back("manual_pad_requirements_v1");
+    if(arenas)features.push_back("crystal_entries_v1");
+    if(pickups)features.push_back("crystal_pickups_v1");
+    if(arcade)features.push_back("arcade_crystals_v1");
+    need(p.at("required_features") == features,
+         "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
         const auto id = i ? "keys:" + std::to_string(i) : "free";
         const J pred = i ? J{{"op", "count"}, {"item", 35010014}, {"count", i}} : J{{"op", "always"}};
         need(requirements.count(id) && *requirements.at(id) == J{{"id", id}, {"predicate", pred}}, "physical hub requirement mismatch");
     }
+    // Records in id order (the apworld emits them sorted), with no repeated
+    // track key, package uuid or LEV/VRM pair: one identity per track.
     std::map<std::string, int> package_index;
-    for (const auto &pair : packages) {
-        const J &pkg = *pair.second;
-        need(std::find(registry["packages"].begin(), registry["packages"].end(), pkg) != registry["packages"].end(), "unsupported exact package revision or evidence");
+    std::set<std::string> keys, uuids, pairs;
+    std::string previous_id;
+    for (const auto &pkg : p["packages"]) {
+        const std::string id = text(pkg.at("id"));
+        need(package_index.empty() || id > previous_id, "package records are not sorted by id");
+        previous_id = id;
         const int idx = out.package_count++;
-        package_index.emplace(pair.first, idx);
+        package_index.emplace(id, idx);
         auto &target = out.packages[idx];
-        copy(target.id, pkg["id"]); copy(target.content_id, pkg["content_id"]);
-        copy(target.uuid, pkg["uuid"]); copy(target.revision, pkg["revision"]);
-        copy(target.display_name, pkg["display_name"]); copy(target.author, pkg["author"]);
-        copy(target.lev_sha256, pkg["files"][0]["sha256"]); copy(target.vrm_sha256, pkg["files"][1]["sha256"]);
-        target.lev_bytes = number(pkg["files"][0]["bytes"], 1);
-        target.vrm_bytes = number(pkg["files"][1]["bytes"], 1);
+        package_record(pkg, target);
+        need(keys.insert(target.content_id).second && uuids.insert(target.uuid).second &&
+             pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second,
+             "a track appears twice in the package list");
     }
     std::set<std::string> used_entries, used_tracks, used_packages;
-    std::set<int> retail_ids, custom_slots, named_blocks;
+    std::set<int> retail_ids, custom_slots, named_blocks, arena_ids;
     std::map<int64_t, J> expected_checks;
+    std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     bool starting_entry = false;
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
@@ -143,8 +312,40 @@ static void validate(const J &p, State &out) {
         }
         const auto entry_id = text(pad["entry_id"]);
         need(!garage && entries.count(entry_id) && used_entries.insert(entry_id).second, "invalid or repeated pad entry");
-        need(pad["mode_gates"] == J::array({J{{"mode", "trophy"}, {"stage", 1}, {"requirement_id", "free"}}}), "unsupported mode gates");
         const J &entry = *entries.at(entry_id);
+        const bool crystal=entry.at("kind")=="crystal";
+        need(pad["mode_gates"] == J::array({J{{"mode", crystal?"crystal":"trophy"}, {"stage", 1}, {"requirement_id", manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free")}}}), "unsupported mode gates");
+        if (manual_ids.count(physical)) manual_pad[physical] = &dest;
+        if(crystal) {
+            fields(entry,{"id","kind","arena_id","target","time_limit_ticks"});
+            const int level=number(entry["arena_id"],18,24);
+            const std::string owner="arena:"+std::to_string(level);
+            need(arena_ids.insert(level).second && entry_id=="entry/"+owner && entry["target"]==20 &&
+                 number(entry["time_limit_ticks"])==AP_ArenaTimeLimit(level),"arena identity, target or timer mismatch");
+            dest.occupied=dest.crystal=1; dest.retail_id=level; dest.laps=1;
+            dest.target=20; dest.time_limit_ticks=AP_ArenaTimeLimit(level);
+            dest.trophy_location=AP_ArenaCompletionCode(level);
+            copy(dest.entry_id,entry["id"]); copy(dest.track_id,J(owner));
+            copy(dest.display_name,J(AP_ArenaName(level))); copy(dest.room_title,J(AP_ArenaName(level)));
+            J route{{"entry_id",entry_id},{"mode","crystal"},{"leg_id",nullptr},{"encounter_id",nullptr},{"own_pad_id",id},{"award","complete"}};
+            J check{{"location",dest.trophy_location},{"owner",owner},{"kind","crystal"},
+                    {"display_name",std::string(AP_ArenaName(level))+": Crystal Challenge"},{"routes",J::array({route})}};
+            need(expected_checks.emplace(dest.trophy_location,check).second,"duplicate completion");
+            if(pickups) {
+                dest.crystal_count=20;
+                for(int n=0;n<20;++n) {
+                    dest.crystal_locations[n]=AP_ArenaPickupCode(level,n);
+                    const std::string ordinal=(n<9?"0":"")+std::to_string(n+1);
+                    route["award"]="crystal:"+ordinal;
+                    check["location"]=dest.crystal_locations[n]; check["kind"]="crystal_pickup";
+                    check["display_name"]=std::string(AP_ArenaName(level))+": Crystal "+ordinal;
+                    check["routes"]=J::array({route});
+                    need(expected_checks.emplace(dest.crystal_locations[n],check).second,"duplicate pickup");
+                }
+            }
+            if(!keys)starting_entry=true;
+            continue;
+        }
         fields(entry, {"id", "kind", "track_id", "modes", "merged"});
         need(entry["kind"] == "track" && entry["modes"] == J::array({"trophy"}) && entry["merged"] == false, "unsupported entry kind or modes");
         const auto track_id = text(entry["track_id"]);
@@ -156,7 +357,7 @@ static void validate(const J &p, State &out) {
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const int rid = number(track["retail_id"], 0, 17);
-            need(retail_ids.insert(rid).second && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] && track["laps"] == 3, "retail metadata mismatch");
+            need(retail_ids.insert(rid).second && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] && track["laps"] == AP_CONTENT_RETAIL_LAPS, "retail metadata mismatch");
             dest.retail_id = rid;
             dest.trophy_location = registry["retail"][rid]["location"].get<int64_t>();
         } else {
@@ -171,22 +372,32 @@ static void validate(const J &p, State &out) {
             const auto package_id = text(track["package_id"]);
             need(track["origin"] == "custom" && packages.count(package_id), "unsupported custom origin or package");
             const J &pkg = *packages.at(package_id);
-            const int slot = number(track["custom_slot"], 1, 32);
-            need(custom_slots.insert(slot).second && track_id == "custom/" + pkg["content_id"].get<std::string>() + "/" + pkg["revision"].get<std::string>() && title == pkg["display_name"] && track["laps"] == 7, "custom metadata mismatch");
+            const int slot = number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES);
+            const ctr_content_package &record = out.packages[package_index.at(package_id)];
+            need(custom_slots.insert(slot).second && track_id == "custom/" + pkg["content_id"].get<std::string>() + "/" + pkg["revision"].get<std::string>() && title == pkg["display_name"] && number(track["laps"], 1, 7) == record.laps, "custom metadata mismatch");
+            // Trophy is the only mode this profile builds; it needs the arcade capability.
+            need((record.capabilities & AP_CONTENT_CAP_ARCADE) != 0, "custom Trophy track without the arcade capability");
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
             dest.named_block = -1;
-            if (named) {
-                dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
-                need(named_blocks.insert(dest.named_block).second, "duplicate named block");
-                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
-            } else {
-                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
-            }
             if (titled) {
                 const auto room = text(track["room_title"], false);
                 need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
                 check_title = room;
+            }
+            // A key with a named block must use that block under its frozen
+            // name; any other key takes its generic slot (apworld content_plan.validate).
+            const auto owned = named_table.find(record.content_id);
+            if (named) {
+                dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                need(owned != named_table.end() && dest.named_block == owned->second.block &&
+                     titled && check_title == owned->second.name, "named block does not match this build's registry");
+                need(named_blocks.insert(dest.named_block).second, "duplicate named block");
+                dest.trophy_location = ap_named_location_code(dest.named_block, AP_NAMED_OFF_TROPHY);
+            } else {
+                need(owned == named_table.end(), "a track with a named block must use it");
+                need(!reserved_titles.count(fold(check_title)), "generic-slot room title takes a retail or named track's name");
+                dest.trophy_location = registry["custom_locations"][slot - 1].get<int64_t>();
             }
         }
         dest.occupied = 1; dest.laps = number(track["laps"], 1, 7);
@@ -198,7 +409,11 @@ static void validate(const J &p, State &out) {
         if (!keys) starting_entry = true;
     }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
-    need(tracks.empty() || starting_entry, "no playable starting pad");
+    // Two checks never share a name, so a room cannot show two identical rows.
+    std::set<std::string> check_names;
+    for (const auto &pair : expected_checks)
+        need(check_names.insert(fold(pair.second["display_name"].get<std::string>())).second, "two checks share a display name");
+    need(entries.empty() || starting_entry, "no playable starting pad");
     need(p["checks"].is_array() && p["checks"].size() == expected_checks.size(), "check registry size mismatch");
     for (const auto &check : p["checks"]) {
         const int64_t id = number(check.at("location"), 1);
@@ -223,6 +438,40 @@ static void validate(const J &p, State &out) {
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
         remaining += r.remaining;
     }
+    // Manual requirement records: item identities and counts come from the
+    // ledger, so a forged record cannot name an item the seed lacks or ask for
+    // more than the base supply (`requirement_ceiling`).
+    need(manual_pad.size() == manual_ids.size(), "manual requirement without an occupied pad");
+    for (const auto &pair : manual_ids) {
+        fields(*requirements.at(pair.second), {"id", "predicate"});
+        const J &pred = requirements.at(pair.second)->at("predicate");
+        ctr_content_pad &target = *manual_pad.at(pair.first);
+        long long supply = 0;
+        unsigned mask = 0;
+        if (pred.is_object() && pred.contains("op") && pred["op"] == "count") {
+            fields(pred, {"op", "item", "count"});
+            const int item = number(pred["item"], 35010000, 35010014) - 35010000;
+            mask = 1u << item; supply = out.items[item].base;
+        } else {
+            need(pred.is_object() && pred.contains("op") && pred["op"] == "sum", "unsupported manual predicate");
+            fields(pred, {"op", "items", "count"});
+            need(pred["items"].is_array() && !pred["items"].empty() && pred["items"].size() <= 5, "sum rule item list");
+            static const int families[3][2] = {{1, 3}, {4, 8}, {9, 13}}; // relic tiers, CTR Tokens, Gems
+            bool matched = false;
+            for (const auto &family : families) {
+                J eligible = J::array();
+                for (int i = family[0]; i <= family[1]; ++i) if (out.items[i].base) eligible.push_back(35010000 + i);
+                if (pred["items"] == eligible) {
+                    matched = true;
+                    for (int i = family[0]; i <= family[1]; ++i) if (out.items[i].base) { mask |= 1u << i; supply += out.items[i].base; }
+                }
+            }
+            need(matched, "sum rule items are not exactly one family's base items");
+        }
+        const int count = number(pred["count"], 1);
+        need(mask && count <= supply, "manual rule count outside the base supply");
+        target.has_rule = 1; target.rule_count = count; target.rule_mask = mask;
+    }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
@@ -243,14 +492,27 @@ static int parse_content_plan(const nlohmann::json &j) {
     if (!block && !flag) { forget(); return 1; }
     try {
         fields(j, {"schema_version", "content_plan", "ctr_options"});
-        need(number(j["schema_version"]) == 17, "content-plan global schema must be 17");
+        need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
-        fields(co, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
-        need(number(co["schema_version"]) == 17 && co["content_plan"] == true, "inconsistent content-plan envelope");
+        J base=co;
+        for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
+        fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
+        need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"] == false && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
         validate(j["content_plan"], candidate);
+        bool arenas=false,arcade=false,pickups=false;
+        for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {
+            arenas=true;arcade |= AP_ArcadeArenaIndex(pad.retail_id)>=0;pickups |= pad.crystal_count>0;
+        }
+        if(arenas) {
+            need(co.size()==base.size()+3 && co.at("include_battle_arenas")==true &&
+                 co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
+        } else need(co==base,"arena options without arena entries");
+        // The plan owns content availability; legacy arena-pad filtering must
+        // not close a physical arena seat holding a Trophy entry.
+        ctr_cfg.include_battle_arenas=1;
         need(number(co["goal_gems"], 1, 5) == candidate.goal_count, "goal envelope disagrees with plan");
         ctr_cfg.starting_character = number(co["starting_character"], 0, 15);
         ctr_cfg.death_link = number(co["death_link"], 0, 2);
@@ -265,14 +527,14 @@ static int parse_content_plan(const nlohmann::json &j) {
         ctr_cfg.one_lap_cups = ctr_cfg.oxide_1_optional = 0;
         ctr_cfg.relic_min_time = ctr_cfg.relics_require_perfect = 0;
         state = std::move(candidate);
-        ctr_cfg.schema_version = 17; // commit after complete validation
+        ctr_cfg.schema_version = 18; // commit after complete validation
         return 2;
     } catch (const std::exception &e) {
         forget(); hit_reject("content_plan: %s", e.what()); return 0;
     }
 }
 
-extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 17 && !ctr_cfg.seed_rejected; }
+extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 18 && !ctr_cfg.seed_rejected; }
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
 extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {

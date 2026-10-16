@@ -531,6 +531,8 @@ static void AP_TrackerBuildNodes(void)
 			memset(n, 0, sizeof *n); n->physical = -1; n->destination = -1; n->kind = 3;
 			n->bit = ap_tracker.hub ? ADV_REWARD_FIRST_BOSS_KEY + ap_tracker.hub - 1 : AP_GOAL_BIT_OXIDE_FIRST;
 			snprintf(n->title, sizeof n->title, "%s", ap_tracker.hub ? names[ap_tracker.hub - 1] : "N. OXIDE");
+			/* #169: a drawn boss track is shown under the boss name. */
+			if (ap_tracker.hub) AP_BossVenueAdvert(ap_tracker.hub - 1, n->pad, (int)sizeof n->pad);
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}

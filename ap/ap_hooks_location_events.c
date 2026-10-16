@@ -9,6 +9,32 @@
 
 #ifdef CTR_AP
 
+void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
+{
+    if(ap_content_plan_present() || AP_ContentCrystalIntent()) {AP_NotifyContentCrystalPickup(inst,driverID);return;}
+    struct GameTracker *gGT = sdata->gGT;
+    int index=-1, i;
+    long code;
+    if (!ctr_cfg_active() || ctr_crystal_checks.state != 1 || driverID != 0 ||
+        !gGT || (gGT->gameMode1 & (ADVENTURE_MODE | CRYSTAL_CHALLENGE)) !=
+                    (ADVENTURE_MODE | CRYSTAL_CHALLENGE) || !gGT->level1 || !inst ||
+        !inst->instDef || !gGT->level1->ptrInstDefs) return;
+#ifdef CTR_CUSTOM_TRACKS
+    if (CustomTrack_ServingLoad(gGT->levelID,
+            (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID)) return;
+#endif
+    for (i=0; i<(int)gGT->level1->numInstances; ++i)
+        if (&gGT->level1->ptrInstDefs[i] == inst->instDef) { index=i; break; }
+    if (index < 0) return;
+    code=AP_CrystalPickupCode(&ctr_crystal_checks, gGT->levelID,
+                             gGT->numPlyrCurrGame, index);
+    if (code<=0 || !ap_net_location_exists(code) || ap_net_location_checked(code)) return;
+    ap_net_send_location(code);
+    AP_PerfNoteCheckSent();
+    AP_FeedOnLocationSent(code);
+    ap_state_gen++;
+}
+
 // Shared body for the two advance-reward entry points below: the per-race
 // producer and the final-standings cup aggregate. The guard lives in the
 // wrappers so the cup aggregate can deliberately pass while the latch is set.

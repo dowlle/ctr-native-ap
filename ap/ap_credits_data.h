@@ -84,6 +84,9 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     // 0.2.0 ports the aspect-ratio/widescreen work, the borderless fullscreen
     // toggle and the PSX dithering toggle from the same fork (issue #231).
     {0, "GRAPHICS OPTIONS - THECODINGBOB"},
+    // THIRD_PARTY_NOTICES.md "CTR Native Expanded controls": the Options ->
+    // Controls page (0.3.0) is ported from CTR Native Expanded (GPL-3.0).
+    {0, "BUTTON MAPPING - THECODINGBOB"},
     {0, "RESERVES METER - SUPERSTARXALIEN"},
     // THIRD_PARTY_NOTICES.md "CTR ModSDK Retro-Fueled mechanics and Blue Fire
     // palette": the Progressive Boost capstone adapts Retro-Fueled (original mod

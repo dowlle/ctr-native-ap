@@ -2,6 +2,7 @@
 """Pin AP spawn-pointer invalidation to the instance-pool clear boundary."""
 
 from pathlib import Path
+import re
 
 
 SOURCE = Path(__file__).parents[1] / "game" / "MAIN" / "MainInit.c"
@@ -32,6 +33,7 @@ assert reset.count(clear) == 1, "instance pool must be cleared exactly once"
 assert reset.count(hook) == 1, "reset must invalidate AP spawn pointers exactly once"
 assert reset.index(clear) < reset.index(hook), "invalidation must follow the pool clear"
 assert hook not in new, "the hook must not be restricted to full pool initialization"
-assert "#ifdef CTR_AP" in reset[: reset.index(hook)], "vanilla must not call the AP hook"
+guard = re.search(r"^#if defined\(CTR_AP\)[^\n]*$", reset[: reset.index(hook)], re.M)
+assert guard, "vanilla must not call the AP hook (needs an #if defined(CTR_AP) guard)"
 
 print("AP spawn pool-reset lifecycle: PASS")

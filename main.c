@@ -68,6 +68,7 @@
 #include "platform/native_gpu.c"
 #include "platform/native_gte_core.c"
 #include "platform/native_glad.c"
+#include "platform/native_controls.c"
 #include "platform/native_input.c"
 #include "platform/native_inline_c.c"
 #include "platform/native_libapi.c"
@@ -479,6 +480,10 @@ int main(int argc, char *argv[])
 			return NativeConsole_Return(1);
 		}
 	}
+
+	// controls.ini sits beside config.ini and is read the same way. Devices are
+	// enumerated later, by Platform_InputInit, once the gamepad subsystem is up.
+	NativeControls_Init();
 
 #ifdef CTR_CUSTOM_TRACKS
 	// Parse [CustomTracks] and hash-verify the configured track once, before the

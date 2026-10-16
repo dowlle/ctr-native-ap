@@ -1124,7 +1124,12 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		}
 
 		// Replace 3 Missiles with 1 Missile if racing Komodo Joe
+#ifdef CTR_AP
+		// #169: the single-missile rule is Komodo Joe's, wherever he races.
+		if (AP_BossRetailRulesLevel(gGT->levelID) == DRAGON_MINES && driver->heldItemID == 0xb)
+#else
 		if (gGT->levelID == DRAGON_MINES && driver->heldItemID == 0xb)
+#endif
 		{
 			driver->heldItemID = 0x2;
 		}

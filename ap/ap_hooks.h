@@ -68,6 +68,13 @@ void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected);
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
+void AP_NotifyCrystalPickup(struct Instance *inst, int driverID);
+int AP_ContentCrystalIntent(void);
+const ctr_content_pad *AP_ContentCrystalPad(void);
+void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
+void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
+void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
+int AP_NotifyContentCrystalComplete(void);
 
 // Evaluate the composed per-seed goal (issue #152: ctr_cfg.goal_oxide/
 // goal_bosses/goal_gems, ANDed) against received items + game events and send
@@ -312,6 +319,14 @@ int AP_ConnUpdateNoticeActive(void);
 // slots). The single source of truth for requirement semantics: AP_BossReqMet
 // delegates here with the live tallies; the verify sweep passes simulated ones.
 int AP_ReqMetCounts(const ctr_req *r, const int *counts);
+
+// Content-plan pad entry (#463): the one live evaluator of a pad's hub Key floor
+// plus its manual stage-1 rule (ap_content_pad_open over the received tallies).
+// Pad state, the capture and final load gates, the tracker launch and the
+// pad text all call this, so they cannot disagree.
+int AP_ContentPadOpen(const ctr_content_pad *pad);
+// Owned count for the pad's manual rule (0 when it has none).
+int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
@@ -858,6 +873,11 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
 // GEM_STONE_VALLEY literal. AP_CupReturnHub returns -1 (AP inactive or unset) ->
 // caller keeps the vanilla GEM_STONE_VALLEY return.
 void AP_CupEnterFromHub(int hubLevelID);
+void AP_CupSweepEnterFromHub(void);
+void AP_CupSweepOnLoadRequested(int level);
+void AP_CupSweepOnLevelStart(struct GameTracker *g);
+void AP_CupSweepRecordLeg(struct GameTracker *g);
+void AP_CupSweepComplete(struct GameTracker *g,int legs);
 int  AP_CupReturnHub(void);
 
 #else

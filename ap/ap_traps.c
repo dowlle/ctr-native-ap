@@ -15,24 +15,16 @@
 // it decides nothing about when a trap runs.
 // ============================================================================
 
-// Raw keyboard probe for the debug keybinds (platform/native_input.c, CTR_AP
-// only). Same declaration ap_hooks.c uses, which keeps this module SDL-header-free.
-int Platform_InputRawKeyDown(int scancode);
-
-// Debug test-fire keys (SDL scancodes, externals/SDL/include/SDL3/SDL_scancode.h:
-// KP_1=89..KP_6=94). Numpad, not F-keys: the engine's CTR_INTERNAL dev handlers
-// own F1-F12 and fire regardless of AP keys. Not in the gameplay input map, so
-// they never disturb driving.
+// Debug test-fire keys, bindable on the Controls page (AP Shortcuts). Defaults
+// Numpad 1 to Numpad 5 for the five effects and Numpad 6 for all of them
+// (platform/native_controls.c). Not F-keys: the engine's CTR_INTERNAL dev handlers
+// own F1-F12 and fire regardless of AP keys. A key bound here is taken off any
+// game control, so they never disturb driving.
 //
 // Every key now goes through the ORDINARY receive path. The old instant-fire
 // shortcut bypassed the schedule it was supposed to be testing, and with per-effect
 // scheduling there is no longer one shared lifecycle for it to skip.
-#define AP_TRAP_KEY_ICY   89 // Numpad 1
-#define AP_TRAP_KEY_GRAV  90 // Numpad 2
-#define AP_TRAP_KEY_USF   91 // Numpad 3
-#define AP_TRAP_KEY_BOOST 92 // Numpad 4
-#define AP_TRAP_KEY_FP    93 // Numpad 5
-#define AP_TRAP_KEY_ALL   94 // Numpad 6 -> arm all five
+#include <platform/native_shortcuts.h>
 
 // First-person camera mode selector. cameraMode 0x10 = "first person" with yaw
 // taken from the kart heading (d->angle), the stable hood-cam forward view
@@ -270,7 +262,7 @@ static int AP_TrapFinishOrPodium(struct GameTracker *gGT, struct Driver *local)
 // is not settled until itemRollTimer reaches zero (VehPhysProc.c:320).
 static int AP_TrapHeldItemResolved(struct Driver *local)
 {
-	if (local == 0)
+	if (local == 0 || local->clockReceive != 0)
 		return 0;
 	return AP_TrapHeldItemIsResolved((int)local->heldItemID, (int)local->itemRollTimer,
 	                                 (int)local->noItemTimer);
@@ -832,6 +824,9 @@ static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
 	}
 }
 
+// #455 engine effect and its retry/recovery state.
+#include "ap_trap_clocked_out_runtime.h"
+
 // Apply one instant effect at the moment the scheduler fires it. Called from the
 // event drain, which is the only place that sees the FIRE edge exactly once.
 static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
@@ -854,6 +849,9 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		break;
 	case AP_TRAP_FORCED_USE:
 		AP_TrapArmForcedUse(local);
+		break;
+	case AP_TRAP_CLOCKED_OUT:
+		AP_TrapStartClockedOut(gGT, local);
 		break;
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
@@ -984,6 +982,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_excluded = -1;
 	g_trap_use_pending = 0;
 	g_trap_steer_mirrored = 0;
+	AP_TrapClockedOutReset(AP_TrapLocalDriver());
 	AP_TrapFlattenStageClear(&g_trap_flatten);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_trap_spawn_pending[e] = 0;
@@ -1018,6 +1017,7 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "potion"))    AP_TrapReceive(AP_TRAP_RED_POTION);
 	else if (!strcmp(v, "reverse"))   AP_TrapReceive(AP_TRAP_REVERSE_STEERING);
 	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
+	else if (!strcmp(v, "clocked_out")) AP_TrapReceive(AP_TRAP_CLOCKED_OUT);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -1037,15 +1037,15 @@ void AP_TrapDebugKeys(void)
 	static int prev[6] = {0};
 	struct
 	{
-		int scancode;
+		int shortcut;
 		int effect; // -1 = arm every implemented effect
 	} keys[6] = {
-	    {AP_TRAP_KEY_ICY, AP_TRAP_ICY},
-	    {AP_TRAP_KEY_GRAV, AP_TRAP_LOWGRAV},
-	    {AP_TRAP_KEY_USF, AP_TRAP_USF_NOBRAKE},
-	    {AP_TRAP_KEY_BOOST, AP_TRAP_BOOST},
-	    {AP_TRAP_KEY_FP, AP_TRAP_FIRSTPERSON},
-	    {AP_TRAP_KEY_ALL, -1},
+	    {NATIVE_SHORTCUT_DEV_TRAP_ICY, AP_TRAP_ICY},
+	    {NATIVE_SHORTCUT_DEV_TRAP_LOW_GRAVITY, AP_TRAP_LOWGRAV},
+	    {NATIVE_SHORTCUT_DEV_TRAP_NO_BRAKES, AP_TRAP_USF_NOBRAKE},
+	    {NATIVE_SHORTCUT_DEV_TRAP_BOOST, AP_TRAP_BOOST},
+	    {NATIVE_SHORTCUT_DEV_TRAP_FIRST_PERSON, AP_TRAP_FIRSTPERSON},
+	    {NATIVE_SHORTCUT_DEV_TRAP_ALL, -1},
 	};
 	int k;
 
@@ -1057,7 +1057,7 @@ void AP_TrapDebugKeys(void)
 
 	for (k = 0; k < 6; k++)
 	{
-		int down = Platform_InputRawKeyDown(keys[k].scancode);
+		int down = Platform_InputShortcutDown(keys[k].shortcut);
 		if (down && !prev[k])
 		{
 			if (keys[k].effect < 0)
@@ -1214,6 +1214,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	// ran, and the copy was re-armed as if it had never fired: one trap, two
 	// weapons. Crediting the outcome first means the boundary only ever sees
 	// genuinely unresolved copies.
+	AP_TrapPollClockedOut(gGT, local);
 	AP_TrapPollReroll(local);
 	AP_TrapPollForcedUse(local);
 	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
@@ -1246,6 +1247,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 		// Same rule for Flatten: only a copy still owed its squish comes back.
 		int refireFlatten = AP_TrapFlattenOwedAtBoundary(
 		    &g_trap_flatten, AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN));
+		int refireClocked = AP_TrapClockOwed(&g_trap_clocked,
+		    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT));
+		AP_TrapClockedOutReset(local);
 		int refireNitro = g_trap_spawn_pending[AP_TRAP_NITRO];
 		int refirePotion = g_trap_spawn_pending[AP_TRAP_RED_POTION];
 		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
@@ -1269,6 +1273,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_trap_spawn_pending[e] = 0;
 
+		if (refireClocked)
+			AP_TrapSchedReceive(&g_sched, AP_TRAP_CLOCKED_OUT);
 		if (refireFlatten)
 			AP_TrapSchedReceive(&g_sched, AP_TRAP_FLATTEN);
 		if (refireForcedUse)

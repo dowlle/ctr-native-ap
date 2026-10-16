@@ -178,6 +178,17 @@ const struct CustomTrackManagerPackage *CustomTrackManager_BabyTParkCurrent(void
 const struct CustomTrackManagerPackage *CustomTrackManager_FindPackage(
 	const char *id, const char *uuid, const char *version,
 	const char *levSha256, const char *vrmSha256);
+// Content-plan packages outside the compiled registry (#133 PR 2): find the
+// exact LEV and VRM by SHA-256 and size in assets/tracks/<trackKey>/original,
+// whatever their file names, so several revisions can share one folder. No
+// manifest is read or written and nothing is certified: the caller measures the
+// located bytes, and the loader hashes them again when it arms. READY fills
+// levPath, vrmPath, the actual hashes and sizes; any other state says why.
+int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *trackKey,
+	                                       const char *title, const char *revision,
+	                                       const char *levSha256, unsigned long levBytes,
+	                                       const char *vrmSha256, unsigned long vrmBytes,
+	                                       struct CustomTrackManagerStatus *outStatus);
 const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
 	const struct CustomTrackManagerRequirement *requirement);
 

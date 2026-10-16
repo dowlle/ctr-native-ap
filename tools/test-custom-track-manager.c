@@ -731,6 +731,54 @@ int main(void)
 		expect_int(CustomTrackManager_MatchingPackage(&current) == NULL, 1,
 		           "old feature floor refused for current profile");
 	}
+	{
+		// Open content-plan packages (#133 PR 2): files found by digest and size
+		// in tracks/<track key>/original, whatever their names, with no manifest.
+		char root[CTR_CT_MANAGER_PATH_MAX], tracks[CTR_CT_MANAGER_PATH_MAX], keyDir[CTR_CT_MANAGER_PATH_MAX];
+		char original[CTR_CT_MANAGER_PATH_MAX], levPath[CTR_CT_MANAGER_PATH_MAX], vrmPath[CTR_CT_MANAGER_PATH_MAX];
+		char otherLev[CTR_CT_MANAGER_PATH_MAX];
+		const char *vrmSha = "cb8379ac2098aa165029e3938a51da0bcecfc008fd6795f401178647f96c5b34"; /* sha256("def") */
+		unsigned char other[FIXTURE_LEV_MAX];
+		size_t otherLen = build_lev(other, 1, 0, 1);
+		struct CustomTrackManagerStatus open;
+		if (!Manager_Join(root, sizeof root, tempRoot, "open-assets") || !Manager_Join(tracks, sizeof tracks, root, "tracks") ||
+		    !Manager_Join(keyDir, sizeof keyDir, tracks, "open-key") || !Manager_Join(original, sizeof original, keyDir, "original") ||
+		    !Manager_Join(levPath, sizeof levPath, original, "lev-715.lev") ||
+		    !Manager_Join(vrmPath, sizeof vrmPath, original, "vrm-716.vrm") ||
+		    !Manager_Join(otherLev, sizeof otherLev, original, "an-older-revision.lev"))
+			return 2;
+		expect_int(CustomTrackManager_LocateContentFiles(root, "../escape", "T", "1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_UNSUPPORTED, "unsafe track key refused");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "Open-Key", "T", "1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_UNSUPPORTED, "uppercase track key refused");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "T", "1", "zz",
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_UNSUPPORTED, "malformed pin refused");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open Track", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent open package");
+		expect_contains(open.detail, "tracks/open-key/original", "absent open package names its folder");
+		expect_contains(open.detail, "Open Track 2.1", "absent open package names title and revision");
+		if (!Manager_CreateDirectory(root) || !Manager_CreateDirectory(tracks) || !Manager_CreateDirectory(keyDir) ||
+		    !Manager_CreateDirectory(original))
+			return 2;
+		write_bytes(otherLev, other, otherLen);
+		write_bytes(levPath, s_fixtureLev, s_fixtureLevLen);
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open Track", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_MISSING_FILES, "open package without VRM");
+		write_file(vrmPath, "dex");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open Track", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_HASH_MISMATCH, "wrong VRM bytes");
+		write_file(vrmPath, "def");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open Track", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_READY, "open package Ready by digest");
+		expect_contains(open.levPath, "lev-715.lev", "the matching LEV is chosen beside another revision");
+		expect_contains(open.vrmPath, "vrm-716.vrm", "the matching VRM is chosen");
+		expect_int((int)open.levBytes, (int)s_fixtureLevLen, "located LEV size");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open Track", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen + 1, vrmSha, 3, &open), CTR_CT_MANAGER_HASH_MISMATCH, "declared size must match");
+		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open\nTrack", "2.1", s_fixtureLevSha,
+		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_READY, "an unprintable title is not echoed");
+		expect_int(strchr(open.detail, '\n') == NULL, 1, "status detail stays one line");
+	}
 	printf("test-custom-track-manager: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

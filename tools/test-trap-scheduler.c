@@ -784,6 +784,7 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010191, AP_TRAP_MIRROR_MODE, 1},
 	{35010192, AP_TRAP_WARPBALL_AMBUSH, 1},
 	{35010193, AP_TRAP_DEMO_CAMERA, 1},
+	{35010206, AP_TRAP_CLOCKED_OUT, 1},
 };
 #define TRAP_ID_COUNT ((int)(sizeof TRAP_IDS / sizeof TRAP_IDS[0]))
 
@@ -820,7 +821,7 @@ static void case_item_id_map(void)
 {
 	int i, idx;
 
-	expect("the table holds all 20 trap identities", AP_TRAP_ITEM_MAP_COUNT, 20);
+	expect("the table holds all 20 trap identities", AP_TRAP_ITEM_MAP_COUNT, 21);
 
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 	{
@@ -849,7 +850,7 @@ static void case_item_id_map(void)
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("all twenty identities are buildable", buildable, 20);
+		expect("all twenty identities are buildable", buildable, 21);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -886,7 +887,7 @@ static void case_item_id_map(void)
 			traps += AP_TrapItemIndexIsTrap(idx);
 		}
 		expect("no index in 0..193 is misclassified", wrong, 0);
-		expect("exactly 20 indices are traps", traps, 20);
+		expect("exactly 20 indices are traps", traps, 21);
 	}
 }
 
@@ -907,7 +908,7 @@ static void case_shipped_identity_receipt(void)
 		expect("every identity is accepted by the registry",
 		       AP_TrapSchedReceive(&s, effect) >= 0, 1);
 	}
-	expect("all 20 fit in the registry", slots_used(&s), 20);
+	expect("all 20 fit in the registry", slots_used(&s), 21);
 
 	run_ms(&s, &w, 2000);
 	drain(&s);
@@ -937,7 +938,7 @@ static void case_shipped_identity_receipt(void)
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 8);
+	expect("buildable identities still run in the same batch", fired, 9);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1107,7 +1108,7 @@ static void case_complete_roster(void)
 		AP_TRAP_UPSIDE_DOWN, AP_TRAP_MIRROR_MODE,
 		AP_TRAP_WARPBALL_AMBUSH,
 		AP_TRAP_NITRO, AP_TRAP_RED_POTION,
-		AP_TRAP_DEMO_CAMERA,
+		AP_TRAP_DEMO_CAMERA, AP_TRAP_CLOCKED_OUT,
 	};
 	int i;
 

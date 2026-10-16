@@ -308,6 +308,27 @@ Source: <https://github.com/CTR-tools/CTR-ModSDK>
 
 License: GPL-3.0, the same license as this project.
 
+## CTR Native Expanded controls
+
+Paths: `platform/native_controls.c`, `include/platform/native_controls.h`,
+`game/230/MM_ControlsConfig.c`, `tools/controls/test_native_controls.c`,
+`docs/CONTROLS.md`, `default_controls.ini`, and the binding, device assignment,
+pad bus and deadzone code in `platform/native_input.c`
+
+The Options -> Controls page (per-player device assignment, button and stick
+rebinding, per-device stick deadzone, Restore Defaults and `controls.ini`) is
+ported from CTR Native Expanded. CTR Archipelago adapts it to its own Options
+pages, keeps controls.ini in the working directory beside config.ini, and keeps
+its Archipelago input functions alongside it.
+
+Author: thecodingbob
+
+Source: <https://github.com/thecodingbob/ctr-native>, PR 54 (commits
+`353d75ba2`, `d4d5f6355`) and PR 70 (commits `997f41ac7`, `e52b1079d`,
+`9e20205c1`, `45d74d619`)
+
+License: GPL-3.0, the same license as this project.
+
 ## SDL3
 
 Path: `externals/SDL`

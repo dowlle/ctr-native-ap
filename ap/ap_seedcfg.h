@@ -18,6 +18,10 @@
 // single-threaded -- the same guarantee the received-item queue relies on). No
 // lock needed.
 
+#include "ap_boss_venue.h"
+#include "ap_crystal_checks.h"
+#include "ap_cup_sweeps.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -85,7 +89,8 @@ extern "C" {
 //        admission parser and the rejection flag below. The block carries
 //        its own version: block schema 2 (the pool draw, 2026-09-14) rides
 //        global 16 because a block-schema-1 client refuses it at admission.
-// Candidate schema 17 has a separately admitted content_plan v1 profile.
+// The content_plan v1 profile is separately admitted, and rides global schema 18
+// (it was candidate schema 17 before the 0.3.0 wire step; #463).
 //   18 = the 0.3.0 wire step (#307 first): the required top-level
 //        trap_identities block names each trap item's effect by its stable
 //        key (ap_trap_items.h). A pre-18 seed keeps the frozen trap table; a
@@ -93,6 +98,9 @@ extern "C" {
 //        frozen table, which agrees because trap item ids never move.
 //        The same schema carries ctr_options.include_battle_arenas (#364):
 //        false closes the four arena pads and removes their Purple Token checks.
+//        The content-plan envelope is 18 too, and a plan with manual pad
+//        requirements (#463) lists the required feature
+//        manual_pad_requirements_v1.
 #define CTR_CFG_SCHEMA_KNOWN 18
 #define CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX 0
 #define CTR_CFG_OXIDE_FINAL_OXIDE_STATION 1
@@ -321,8 +329,14 @@ typedef struct
 	char lev_sha256[CTR_CFG_CT_HEX_CAP];
 	char vrm_sha256[CTR_CFG_CT_HEX_CAP];
 
-	long trophy_location;      // Custom Track N: Trophy Race
-	ctr_podium_rungs podium;   // generic custom-slot rungs, -1 = absent
+	// #133: the track's named block (0..9999), or -1 on the generic slot path.
+	// A named entry's Trophy, podium, CTR, letter and Wumpa codes are the
+	// block's; the parser recomputes each from this index and refuses the
+	// whole entry on any disagreement.
+	int named_block;
+
+	long trophy_location;      // Trophy Race: named block offset 0, else Custom Track N
+	ctr_podium_rungs podium;   // rungs of the same identity, -1 = absent
 
 	ctr_custom_track_flags flags;
 
@@ -787,6 +801,8 @@ typedef struct
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
 extern ctr_seed_config ctr_cfg;
+extern AP_CrystalChecks ctr_crystal_checks;
+extern AP_CupSweepConfig ctr_cup_sweeps;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
@@ -794,7 +810,7 @@ int ctr_cfg_active(void);
 static inline int ctr_cfg_arena_pad_disabled(int levelID)
 {
 	return ctr_cfg_active() && ctr_cfg.schema_version >= 18 &&
-	       !ctr_cfg.include_battle_arenas &&
+	       (!ctr_cfg.include_battle_arenas || ctr_crystal_checks.state < 0) &&
 	       (levelID == 18 || levelID == 19 || levelID == 21 || levelID == 23);
 }
 
@@ -871,6 +887,15 @@ int ctr_cfg_cup_displaced(int cup);
 const char *ctr_cfg_custom_track_title(void);
 /* The same title folded to plain ASCII, for text drawn in game. */
 const char *ctr_cfg_custom_track_title_ascii(void);
+
+// #133: the admitted legacy custom track's named block, or -1 when the seed has
+// no admitted custom track or the track is on the generic slot path. Received
+// letter items and the verifier read it to map the block's letter items onto
+// the track's slot (ap_lettersanity.h).
+static inline int AP_CustomLetterNamedBlock(void)
+{
+	return ctr_cfg.custom_tracks_ok ? ctr_cfg.custom_track.named_block : -1;
+}
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=
@@ -979,6 +1004,13 @@ int AP_OxideOffersFinalChallenge(void);
 // authority the encounter selector uses. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_OxideFirstChallengeCleared(void);
 
+// Hub map boss garage star (bossIdx 0..3): non-zero when the boss counts as
+// beaten, which hides the star and its glow. Under a Bosses goal that still
+// needs bosses: the player's own win (#458 flags), so a Collect-marked boss
+// keeps its glow. Otherwise the checked boss race location. Rule in
+// ap/ap_boss_map_star.h; IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossMapStarBeaten(int bossIdx);
+
 // #24: plain-text requirement advert for a boss-class gate (bossIdx 0..3 = the
 // four boss garages, 4 = Oxide's garage door). Writes a line such as
 // "Requires: 18 Gold Relics (have 12)" into `out` and returns 1; returns 0 when
@@ -1003,6 +1035,35 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap);
 // the next-encounter advert: which Oxide visit is available and why the garage
 // is shut belongs to AP_BossGateAdvert. IMPLEMENTED C-SIDE in ap_hooks.c.
 int AP_GoalAdvert(char *out, int cap);
+
+// #169 tier 1 boss track shuffle (schema 18, ap_boss_venue.h). The seed's
+// four garage venues, parsed from `boss_encounters` and checked against
+// ctr_options.boss_track_shuffle. RETAIL (no draw) is the default.
+extern AP_BossEncounters ctr_boss_encounters;
+
+// The LevelID garage bossIdx (0..3) loads, or -1 when the seed's encounter
+// record was refused (the garage stays shut and says why). IMPLEMENTED C-SIDE
+// in ap_hooks_gates.c.
+int AP_BossGarageVenue(int bossIdx);
+
+// During a boss race on a drawn venue other than the garage's home track,
+// the home track's LevelID; otherwise `levelID` unchanged. Retail code that
+// keys boss behaviour on the loaded level (attack table, mine pool size)
+// asks this so the boss keeps its own inherited attack on any venue.
+// IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossRetailRulesLevel(int levelID);
+
+// "Track: <name>" for the four garages when the seed drew their venues; 0
+// otherwise (retail seed, refused record). Shown on the garage panel whether
+// the door is open or shut. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
+
+// The per-race copy of the inherited attack schedule for a shuffled venue,
+// its checkpoints mapped onto the loaded track; `fill` rebuilds it (race
+// init), 0 returns it as is (lap wrap). NULL when no shuffled garage race is
+// running. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+struct MetaDataBOSS;
+struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -702,6 +702,118 @@ static void test_custom_letter_ownership(void)
 	}
 }
 
+// #133: a legacy entry whose track has a named block carries `named_block`,
+// and every code it carries (and its CTR and letter codes) is the block's.
+// Baby T Park is block 8: locations 35201600.., letter items 35100040..
+static nlohmann::json named_entry(void)
+{
+	nlohmann::json e = good_entry();
+	e["named_block"] = 8;
+	e["locations"] = {{"trophy", 35201600},
+	                  {"podium", {35201601, 35201602, -1, 35201604, 35201605}}};
+	return e;
+}
+
+static void test_named_block(void)
+{
+	nlohmann::json doc = base();
+	doc["custom_tracks"] = good_block();
+	doc["custom_tracks"]["tracks"][0] = named_entry();
+	ap_seedcfg_parse_json(doc);
+	expect_eq(ctr_cfg.custom_tracks_ok, 1, "named entry admitted");
+	expect_eq(ctr_cfg.custom_track.named_block, 8, "named block retained");
+	expect_eq((int)ctr_cfg.custom_track.trophy_location, 35201600, "named Trophy code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_1st, 35201601, "named Held 1st code");
+	expect_eq((int)ctr_cfg.custom_track.podium.held_5th, -1, "absent rung stays absent");
+	expect_eq((int)ctr_cfg.custom_track.podium.finish_any, 35201605, "named Finish (Any Position) code");
+	expect_eq(AP_CustomLetterNamedBlock(), 8, "letter receipt sees the named block");
+
+	ap_seedcfg_parse_json(base());
+	expect_eq(ctr_cfg.custom_track.named_block, -1, "next seed forgets the named block");
+	expect_eq(AP_CustomLetterNamedBlock(), -1, "no admitted track, no named block");
+
+	doc = base();
+	doc["custom_tracks"] = good_block();
+	ap_seedcfg_parse_json(doc);
+	expect_eq(ctr_cfg.custom_tracks_ok, 1, "generic entry still admitted");
+	expect_eq(ctr_cfg.custom_track.named_block, -1, "generic entry has no named block");
+
+	struct { const char *what; void (*mutate)(nlohmann::json &); } faults[] = {
+		{"named block with the generic Trophy code",
+		 [](nlohmann::json &e) { e["locations"]["trophy"] = 35016300; }},
+		{"named block with another block's Trophy code",
+		 [](nlohmann::json &e) { e["locations"]["trophy"] = 35201400; }},
+		{"named block with a generic podium code",
+		 [](nlohmann::json &e) { e["locations"]["podium"][0] = 35016400; }},
+		{"named block with podium rungs swapped",
+		 [](nlohmann::json &e) { e["locations"]["podium"][0] = 35201602; e["locations"]["podium"][1] = 35201601; }},
+		{"generic codes under another named block",
+		 [](nlohmann::json &e) { e = good_entry(); e["named_block"] = 0; }},
+		{"named block 10000", [](nlohmann::json &e) { e["named_block"] = 10000; }},
+		{"negative named block", [](nlohmann::json &e) { e["named_block"] = -1; }},
+		{"boolean named block", [](nlohmann::json &e) { e["named_block"] = true; }},
+		{"float named block", [](nlohmann::json &e) { e["named_block"] = 8.0; }},
+		{"text named block", [](nlohmann::json &e) { e["named_block"] = "8"; }},
+		{"null named block", [](nlohmann::json &e) { e["named_block"] = nullptr; }},
+	};
+	for (const auto &fault : faults)
+	{
+		doc = base();
+		doc["custom_tracks"] = good_block();
+		doc["custom_tracks"]["tracks"][0] = named_entry();
+		fault.mutate(doc["custom_tracks"]["tracks"][0]);
+		ap_seedcfg_parse_json(doc);
+		expect_refused(fault.what);
+	}
+
+	// CTR challenge and letters come from the block too.
+	for (int mode = 1; mode <= 3; ++mode)
+	{
+		const int count = 2;
+		doc = base();
+		doc["ctr_options"]["schema_version"] = 12;
+		doc["custom_tracks"] = good_block();
+		doc["custom_tracks"]["tracks"][0] = named_entry();
+		auto &parent = doc["custom_tracks"]["tracks"][0];
+		parent["modes"] = {{"ctr_challenge", true}};
+		parent["locations"]["ctr"] = 35201609;
+		doc["lettersanity_checks"] = {{"mode", mode}, {"letters_per_track", count}};
+		nlohmann::json locations = nlohmann::json::array();
+		nlohmann::json items = nlohmann::json::array();
+		for (int l = 0; l < 3; ++l)
+		{
+			bool chosen = mode == 3 || l < count;
+			locations.push_back(chosen && mode != 3 ? 35201611 + l : -1);
+			items.push_back(chosen && mode != 1 ? 35100040 + l : -1);
+		}
+		doc["custom_lettersanity_checks"] = {
+			{"version", 1}, {"mode", mode}, {"letters_per_track", count},
+			{"tracks", nlohmann::json::array({{{"slot", 1}, {"locations", locations}, {"items", items}}})}};
+		ap_seedcfg_parse_json(doc);
+		expect_eq(ctr_cfg.custom_tracks_ok, 1, "named letter parent admitted");
+		expect_eq(ctr_cfg.custom_ctr_enabled, 1, "named CTR admitted");
+		expect_eq((int)ctr_cfg.custom_ctr_location, 35201609, "named CTR code");
+		expect_eq(ctr_cfg.custom_lettersanity_mode, mode, "named letter mode");
+		for (int l = 0; l < 3; ++l)
+		{
+			expect_eq((int)ctr_cfg.custom_letter_locations[l], locations[l].get<int>(), "named letter location");
+			expect_eq((int)ctr_cfg.custom_letter_items[l], items[l].get<int>(), "named letter item");
+		}
+		for (int fault = 0; fault < 4; ++fault)
+		{
+			auto bad = doc;
+			auto &row = bad["custom_lettersanity_checks"]["tracks"][0];
+			if (fault == 0) bad["custom_tracks"]["tracks"][0]["locations"]["ctr"] = 35023000;
+			if (fault == 1) bad["custom_tracks"]["tracks"][0]["locations"]["ctr"] = 35201409;
+			if (fault == 2) { if (mode == 3) row["items"][0] = 35021000; else row["locations"][0] = 35020000; }
+			if (fault == 3) { if (mode == 1) row["locations"][1] = 35201411; else row["items"][1] = 35100036; }
+			ap_seedcfg_parse_json(bad);
+			expect_eq(ctr_cfg.custom_tracks_ok, 0, "generic or foreign code under a named block disarms load");
+		}
+	}
+	ap_seedcfg_parse_json(base());
+}
+
 int main(int argc, char **argv)
 {
 	ctr_cfg_set_vanilla_cup_legs(vanilla_legs);
@@ -749,6 +861,7 @@ int main(int argc, char **argv)
 	test_flags();
 	test_schema_gate();
 	test_custom_letter_ownership();
+	test_named_block();
 
 	std::printf("%s custom-tracks seedcfg (%d checks, %d failures)\n", failures ? "FAIL" : "PASS",
 	            checks, failures);

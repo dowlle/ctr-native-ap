@@ -115,7 +115,9 @@ def main():
         shutil.copy2(exe, root / exe.name)
         # The box authoring download never connects to a room, so it carries the
         # placement guide instead of the connection example.
-        companions = ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'SETUP.md')
+        # default_controls.ini is the commented controls.ini template for the
+        # Options -> Controls page, which every variant has.
+        companions = ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'SETUP.md', 'default_controls.ini')
         companions += ('ap-config.example.txt',) if variant in ('ap', 'vanilla') else ()
         for file in companions:
             shutil.copy2(file, root / file)

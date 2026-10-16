@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "content_plan": {
     "version": 1,
     "packages": [
@@ -10,6 +10,14 @@
         "revision": "1.0.2",
         "display_name": "Baby T Park",
         "author": "Lockheart",
+        "laps": 7,
+        "capabilities": {
+          "time_trial": true,
+          "arcade": true,
+          "relic": false,
+          "ctr_tokens": true,
+          "wumpa": true
+        },
         "files": [
           {
             "role": "lev",
@@ -307,8 +315,8 @@
           "trophy"
         ],
         "field_size": 8,
-        "named_block": 0,
-        "room_title": "Fixture Speedway"
+        "named_block": 8,
+        "room_title": "Baby T Park"
       }
     ],
     "entries": [
@@ -1219,10 +1227,10 @@
         ]
       },
       {
-        "location": 35200000,
+        "location": 35201600,
         "owner": "custom/baby-t-park/1.0.2",
         "kind": "trophy",
-        "display_name": "Fixture Speedway: Trophy Race",
+        "display_name": "Baby T Park: Trophy Race",
         "routes": [
           {
             "entry_id": "entry/custom/baby-t-park/1.0.2",
@@ -1424,7 +1432,7 @@
     ]
   },
   "ctr_options": {
-    "schema_version": 17,
+    "schema_version": 18,
     "world_version": "0.3.0-content-dev",
     "content_plan": true,
     "goal": -1,

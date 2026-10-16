@@ -95,6 +95,7 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	f->bossID = gGT->bossID;
 	f->cup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	f->cupID = gGT->cup.cupID;
+	f->cupSweep = ctr_cfg_active()?AP_CupSweepCode(&ctr_cup_sweeps,f->cupID):-1;
 	f->cupCustom = 0;
 #ifdef CTR_CUSTOM_TRACKS
 	if (f->cup && ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&

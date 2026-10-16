@@ -430,6 +430,57 @@ static void test_code_width(void)
 	            "the custom code survives this build's long");
 }
 
+// #133: a custom track on a named block owns its Wumpa check in that block
+// (offset 14). The parser recomputes the code from the admitted entry's block
+// and ignores a role destination that carries anything else.
+static nlohmann::json legacy_track(int namedBlock)
+{
+	nlohmann::json e = {
+	    {"id", "baby-t-park"}, {"slot", 1}, {"package_uuid", PACKAGE_UUID},
+	    {"package_version", "1.0.0"}, {"minimum_client_version", "0.2.0-alpha6"},
+	    {"minimum_apworld_version", "0.2.0-alpha6"},
+	    {"lev_sha256", "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8"},
+	    {"vrm_sha256", "2dcaa0fe93359c7ae00fb93842a581210e0dcc2db73f4de43508375834092e83"},
+	    {"navigation", {{"uuid", "898a9315-693f-4ed3-b6a0-fbe50db8bc40"}, {"revision", 1}}},
+	    {"laps", 7}, {"host_level_id", 6}, {"replaces_cup_level_id", 104}, {"boxes", false},
+	    {"flags", {{"crates", true}, {"ctr_letters", true}, {"relic_crates", true},
+	               {"ai_nav", true}, {"minimap", false}, {"ghosts", false},
+	               {"wumpa_collectible", true}, {"spawns", 8}, {"checkpoints", 35}}},
+	    {"locations", {{"trophy", 35016300}, {"podium", {-1, -1, -1, -1, -1}}}}};
+	if (namedBlock >= 0)
+	{
+		e["named_block"] = namedBlock;
+		e["locations"]["trophy"] = 35200000L + 200L * namedBlock;
+	}
+	return {{"enabled", true}, {"version", CTR_CFG_CT_BLOCK_VERSION_KNOWN},
+	        {"tracks", nlohmann::json::array({e})}};
+}
+
+static void test_named_custom_destination(void)
+{
+	struct { int block; long code; int kept; const char *what; } cases[] = {
+		{8, 35201614L, 1, "named track: its block's Wumpa code is kept"},
+		{8, CUSTOM_CODE, 0, "named track: the generic role code is ignored"},
+		{8, 35201414L, 0, "named track: another block's Wumpa code is ignored"},
+		{8, 35201600L, 0, "named track: its own Trophy code is not a Wumpa code"},
+		{-1, CUSTOM_CODE, 1, "generic track: the role code is kept"},
+	};
+	for (const auto &c : cases)
+	{
+		nlohmann::json doc = base();
+		doc["custom_tracks"] = legacy_track(c.block);
+		doc["wumpa_checks"] = per_track_block();
+		doc["wumpa_checks"]["custom_destinations"]["purple_gem_cup"] = custom_destination();
+		doc["wumpa_checks"]["custom_destinations"]["purple_gem_cup"]["code"] = c.code;
+		ap_seedcfg_parse_json(doc);
+		expect_int(ctr_cfg.custom_tracks_ok, 1, "the custom track itself is admitted");
+		expect_int(ctr_cfg.wumpa.custom_count, c.kept, c.what);
+		if (c.kept)
+			expect_long(ctr_cfg.wumpa.custom[0].code, c.code, c.what);
+	}
+	ap_seedcfg_parse_json(base());
+}
+
 int main(void)
 {
 	test_absent();
@@ -442,6 +493,7 @@ int main(void)
 	test_custom_destination_refusals();
 	test_reparse_clears();
 	test_code_width();
+	test_named_custom_destination();
 
 	std::printf("%s wumpa seedcfg (%d checks, %d failures)\n",
 	            failures ? "FAIL" : "PASS", checks, failures);

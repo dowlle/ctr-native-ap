@@ -1,0 +1,55 @@
+{
+ "slot_data": {
+  "ctr_options": {
+   "schema_version": 18
+  },
+  "trap_identities": {
+   "version": 1,
+   "items": {
+    "35010016": "icy_road",
+    "35010017": "low_gravity",
+    "35010018": "forced_usf",
+    "35010019": "forced_boost",
+    "35010020": "first_person",
+    "35010106": "wumpa_wipeout",
+    "35010107": "flatten",
+    "35010108": "item_reroll",
+    "35010109": "forced_use",
+    "35010110": "empty_crates",
+    "35010111": "weakened_kart",
+    "35010112": "boost_blocker",
+    "35010113": "wireframe",
+    "35010114": "nitro",
+    "35010115": "reverse_steering",
+    "35010116": "red_potion",
+    "35010190": "upside_down",
+    "35010191": "mirror_mode",
+    "35010192": "warpball_ambush",
+    "35010193": "demo_camera",
+    "35010206": "clocked_out"
+   }
+  }
+ },
+ "drawn_trap_ids": [
+  35010016,
+  35010017,
+  35010018,
+  35010019,
+  35010020,
+  35010106,
+  35010107,
+  35010108,
+  35010109,
+  35010110,
+  35010111,
+  35010112,
+  35010113,
+  35010114,
+  35010115,
+  35010116,
+  35010191,
+  35010192,
+  35010193,
+  35010206
+ ]
+}

@@ -394,6 +394,7 @@
 #include "../ap/ap_hooks_itemsanity.c"
 #include "../ap/ap_hooks_race_checks.c"
 #include "../ap/ap_hooks_frame.c"
+#include "../ap/ap_hooks_cup_sweeps.c"
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
 #include "../ap/ap_oxide_scene.c"  // #377 once-per-seed Oxide scene decision (host-linkable)
 #include "../ap/ap_boss_door_scene.c" // #377 once-per-hub boss-door scene decision (host-linkable)
@@ -426,6 +427,7 @@
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_trial_letters.c"
+#include "../ap/ap_arcade_crystals.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
