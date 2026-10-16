@@ -329,8 +329,14 @@ typedef struct
 	char lev_sha256[CTR_CFG_CT_HEX_CAP];
 	char vrm_sha256[CTR_CFG_CT_HEX_CAP];
 
-	long trophy_location;      // Custom Track N: Trophy Race
-	ctr_podium_rungs podium;   // generic custom-slot rungs, -1 = absent
+	// #133: the track's named block (0..9999), or -1 on the generic slot path.
+	// A named entry's Trophy, podium, CTR, letter and Wumpa codes are the
+	// block's; the parser recomputes each from this index and refuses the
+	// whole entry on any disagreement.
+	int named_block;
+
+	long trophy_location;      // Trophy Race: named block offset 0, else Custom Track N
+	ctr_podium_rungs podium;   // rungs of the same identity, -1 = absent
 
 	ctr_custom_track_flags flags;
 
@@ -881,6 +887,15 @@ int ctr_cfg_cup_displaced(int cup);
 const char *ctr_cfg_custom_track_title(void);
 /* The same title folded to plain ASCII, for text drawn in game. */
 const char *ctr_cfg_custom_track_title_ascii(void);
+
+// #133: the admitted legacy custom track's named block, or -1 when the seed has
+// no admitted custom track or the track is on the generic slot path. Received
+// letter items and the verifier read it to map the block's letter items onto
+// the track's slot (ap_lettersanity.h).
+static inline int AP_CustomLetterNamedBlock(void)
+{
+	return ctr_cfg.custom_tracks_ok ? ctr_cfg.custom_track.named_block : -1;
+}
 
 // Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
 // active and the pad has a per-seed requirement (type != 0), compares owned >=

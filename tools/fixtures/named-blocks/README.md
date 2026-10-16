@@ -14,5 +14,16 @@ outside the repository:
   option, a descriptor title "Crash Cove" and the `custom_track_titles` block
   the apworld emits for it ("Crash Cove (Custom)").
 
+- `legacy-named.json` (#133, apworld branch `feat/133-legacy-named-blocks`,
+  2026-10-16): a schema-18 seed with the legacy `custom_tracks` option for
+  Baby T Park 1.0.2, which has named block 8 in the shipped registry. The entry
+  carries `named_block: 8`; Trophy, podium, CTR Token Challenge, letters and
+  Reach 10 Wumpa all use the block's codes (35201600 onwards, letter items
+  35100040 onwards). Options: lettersanity locations and items, two letters,
+  per-track Wumpa, podium checks.
+
+`legacy-titles.json` predates #133: it is the generic slot path (B+) and still
+admits, since an entry without `named_block` keeps generic codes.
+
 `tools/test-named-blocks.cpp` reads these through the production parser.
 These fixtures do not claim Steam gameplay or live-server acceptance.

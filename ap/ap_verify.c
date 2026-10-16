@@ -215,7 +215,8 @@ static void ap_vf_bank_own(long code, int *counts)
 			counts[(int)idx]++;
 		else
 		{
-			int sparse = AP_CustomLetterVerifyIndexPure(item);
+			int sparse = AP_CustomLetterVerifyIndexForTrackPure(item, AP_CustomLetterNamedBlock(),
+			                                                    ctr_cfg.custom_track.slot);
 			if (sparse >= 0) counts[sparse] = 1;
 		}
 	}
@@ -782,7 +783,8 @@ static void ap_vf_recompute(void)
 						if (locs[i].kind == AP_VF_CUSTOM_LETTER && letter != locs[i].detail) continue;
 						if (item >= 0)
 						{
-							int sparse = AP_CustomLetterVerifyIndexPure(item);
+							int sparse = AP_CustomLetterVerifyIndexForTrackPure(
+							    item, AP_CustomLetterNamedBlock(), ctr_cfg.custom_track.slot);
 							if (sparse < 0 || counts[sparse] <= 0) ok = 0;
 						}
 					}

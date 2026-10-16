@@ -1,6 +1,8 @@
 #ifndef AP_LETTERSANITY_H
 #define AP_LETTERSANITY_H
 
+#include "ap_named_blocks.h"
+
 // Letter items are frozen in the apworld's canonical token-track order, while
 // every live pickup hook addresses a track by CTR's levelID. Keep the conversion
 // in one pure table so receipt state and pickup state cannot silently use two
@@ -56,6 +58,34 @@ static inline int AP_CustomLetterVerifyIndexPure(long long code)
 {
 	int slot, letter;
 	if (!AP_CustomLetterItemToIdentityPure(code, &slot, &letter)) return -1;
+	return AP_CUSTOM_LETTER_VERIFY_FIRST + (slot - 1) * 3 + letter;
+}
+
+// #133: the admitted custom track's letter items when it has a named block
+// (item offsets 0..2 of that block), else the generic slot family above. The
+// named letters map onto the track's logical slot, so receipt state, pickup
+// gates and the verifier keep one slot-keyed identity space. `namedBlock` is
+// -1 when the seed has no admitted named custom track.
+static inline int AP_CustomLetterItemToIdentityForTrackPure(long long code, int namedBlock,
+                                                            int trackSlot, int *slot, int *letter)
+{
+	if (namedBlock >= 0 && trackSlot >= 1 && trackSlot <= AP_CUSTOM_LETTER_SLOT_COUNT)
+	{
+		long long first = ap_named_item_code(namedBlock, 0);
+		if (first >= 0 && code >= first && code < first + 3)
+		{
+			*slot = trackSlot;
+			*letter = (int)(code - first);
+			return 1;
+		}
+	}
+	return AP_CustomLetterItemToIdentityPure(code, slot, letter);
+}
+
+static inline int AP_CustomLetterVerifyIndexForTrackPure(long long code, int namedBlock, int trackSlot)
+{
+	int slot, letter;
+	if (!AP_CustomLetterItemToIdentityForTrackPure(code, namedBlock, trackSlot, &slot, &letter)) return -1;
 	return AP_CUSTOM_LETTER_VERIFY_FIRST + (slot - 1) * 3 + letter;
 }
 

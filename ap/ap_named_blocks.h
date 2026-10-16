@@ -44,6 +44,15 @@ enum {
     AP_NAMED_OFF_WUMPA = 14
 };
 
+/* 1 when `code` is a Letter C/T/R item of any named block (item offsets 0..2).
+ * Seed independent: used to present the item, never to grant it. */
+static inline int ap_named_item_is_letter(int64_t code)
+{
+    if (code < AP_NAMED_ITEM_BASE || code >= AP_NAMED_ITEM_BASE + (int64_t)AP_NAMED_BLOCK_LIMIT * AP_NAMED_ITEM_BUDGET)
+        return 0;
+    return (code - AP_NAMED_ITEM_BASE) % AP_NAMED_ITEM_BUDGET <= 2;
+}
+
 /* Longest room title in UTF-8 bytes (apworld ROOM_TITLE_MAX_BYTES), plus NUL. */
 #define AP_ROOM_TITLE_MAX_BYTES 105
 #define AP_ROOM_TITLE_CAP       (AP_ROOM_TITLE_MAX_BYTES + 1)

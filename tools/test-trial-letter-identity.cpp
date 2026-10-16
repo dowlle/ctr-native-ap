@@ -21,6 +21,38 @@ int main()
             assert(AP_CustomLetterVerifyIndexPure(code) == -1);
         }
     }
+    // #133: the admitted track's named block maps its three letter items onto
+    // the track's slot; generic codes keep their own slot; no admitted named
+    // track (-1) leaves only the generic family.
+    {
+        const int blocks[] = {0, 8, 9999};
+        const int slots[] = {1, 7, 132};
+        for (int block : blocks)
+        for (int trackSlot : slots)
+        {
+            const long long first = 35100000LL + 5LL * block;
+            for (long long code = first - 2; code <= first + 5; ++code)
+            {
+                int slot = -99, letter = -99;
+                int found = AP_CustomLetterItemToIdentityForTrackPure(code, block, trackSlot, &slot, &letter);
+                if (code >= first && code < first + 3)
+                {
+                    assert(found == 1 && slot == trackSlot && letter == code - first);
+                    assert(AP_CustomLetterVerifyIndexForTrackPure(code, block, trackSlot) ==
+                           200 + (trackSlot - 1) * 3 + (code - first));
+                    assert(!AP_CustomLetterItemToIdentityForTrackPure(code, -1, trackSlot, &slot, &letter));
+                    assert(!AP_CustomLetterItemToIdentityForTrackPure(code, block, 0, &slot, &letter));
+                    assert(!AP_CustomLetterItemToIdentityForTrackPure(code, block, 133, &slot, &letter));
+                }
+                else
+                    assert(!found && AP_CustomLetterVerifyIndexForTrackPure(code, block, trackSlot) == -1);
+            }
+            int slot = -99, letter = -99;
+            assert(AP_CustomLetterItemToIdentityForTrackPure(35021004LL, block, trackSlot, &slot, &letter) &&
+                   slot == 2 && letter == 1);
+            ++tested;
+        }
+    }
     for (long code = 35012499L; code <= 35012554L; ++code)
     {
         int index = AP_LetterLocationToItemIndexPure(code);
@@ -53,5 +85,5 @@ int main()
         }
         ++tested;
     }
-    std::printf("PASS: %d item indexes, frozen retail mapping, six trial letters, nonletter rejection\n", tested);
+    std::printf("PASS: %d item indexes and named-block cases, frozen retail mapping, six trial letters, nonletter rejection\n", tested);
 }
