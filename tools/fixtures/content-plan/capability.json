@@ -62,7 +62,7 @@
      "relic": true,
      "ctr_tokens": false,
      "wumpa": false,
-     "super_turbo_pads": false
+     "super_turbo_pads": true
     },
     "relic_targets": {
      "sapphire": 96000,
@@ -976,7 +976,7 @@
       "award": "win"
      }
     ],
-    "boost": 2
+    "boost": 1
    },
    {
     "location": 35201601,
@@ -1025,8 +1025,7 @@
       "own_pad_id": "pad:19",
       "award": "finish_podium"
      }
-    ],
-    "boost": 2
+    ]
    },
    {
     "location": 35201605,
@@ -1042,8 +1041,7 @@
       "own_pad_id": "pad:19",
       "award": "finish_any"
      }
-    ],
-    "boost": 2
+    ]
    },
    {
     "location": 35201609,
@@ -1060,7 +1058,7 @@
       "award": "win_letters"
      }
     ],
-    "boost": 2
+    "boost": 1
    },
    {
     "location": 35201611,
@@ -1076,8 +1074,7 @@
       "own_pad_id": "pad:19",
       "award": "letter_c"
      }
-    ],
-    "boost": 2
+    ]
    },
    {
     "location": 35201613,
@@ -1093,8 +1090,7 @@
       "own_pad_id": "pad:19",
       "award": "letter_r"
      }
-    ],
-    "boost": 2
+    ]
    },
    {
     "location": 35201614,
@@ -1584,7 +1580,7 @@
       "award": "win"
      }
     ],
-    "boost": 1
+    "boost": 2
    },
    {
     "location": 35016405,
@@ -1633,7 +1629,8 @@
       "own_pad_id": "pad:15",
       "award": "finish_podium"
      }
-    ]
+    ],
+    "boost": 2
    },
    {
     "location": 35016409,
@@ -1649,7 +1646,8 @@
       "own_pad_id": "pad:15",
       "award": "finish_any"
      }
-    ]
+    ],
+    "boost": 2
    },
    {
     "location": 35022003,
@@ -1665,7 +1663,8 @@
       "own_pad_id": "pad:15",
       "award": "sapphire"
      }
-    ]
+    ],
+    "boost": 2
    },
    {
     "location": 35022004,
@@ -1682,7 +1681,7 @@
       "award": "gold"
      }
     ],
-    "boost": 1
+    "boost": 2
    },
    {
     "location": 35022005,

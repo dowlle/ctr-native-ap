@@ -890,8 +890,9 @@ int main(int argc, char **argv) {
     // Capability packs (#133 PR 4c): an apworld-emitted room with shared
     // Progressive Boost and Progressive Stats at medium on Crash Cove (pad 6),
     // Hot Air Skyway (pad 7), Oxide Station (Gem Cup seat 104) and Slide
-    // Coliseum (pad 21), Baby T Park (pad 19, super turbo pads stated true) and
-    // the B+ fixture-loop (pad 15, stated false), with Relic Race Perfect and
+    // Coliseum (pad 21), Baby T Park (pad 19, super turbo pads stated true but
+    // ruled generic terms only, 2026-10-18) and the B+ fixture-loop (pad 15,
+    // stated true, no ruling, so USF), with Relic Race Perfect and
     // Lettersanity mode 2.
     J caps;
     std::ifstream("tools/fixtures/content-plan/capability.json") >> caps;
@@ -907,9 +908,9 @@ int main(int argc, char **argv) {
             const auto *p = ap_content_plan_pad(physical);
             return p && p->trophy_boost == trophy && p->ctr_boost == ctr;
         };
-        expect(ranks(7, 2, 2) && ranks(104, 2, 2) && ranks(19, 2, 2), "USF finish tracks: Hot Air Skyway, Oxide Station, a custom track with super pads");
+        expect(ranks(7, 2, 2) && ranks(104, 2, 2) && ranks(15, 2, 0), "USF finish tracks: Hot Air Skyway, Oxide Station, an unruled custom track with super pads");
         expect(ranks(6, 1, 1) && ranks(21, 1, 1), "retail tracks: the medium win floor and the CTR Challenge's first boost");
-        expect(ranks(15, 1, 0), "a custom track without super pads takes only the generic terms");
+        expect(ranks(19, 1, 1), "a custom track ruled generic terms only (Baby T Park)");
         expect(ap_content_plan_check_boost(ap_content_plan_pad(6)->perfect_location) == 2 &&
                ap_content_plan_check_boost(ap_content_plan_pad(6)->relic_locations[0]) == 0 &&
                ap_content_plan_check_boost(ap_content_plan_pad(6)->relic_locations[2]) == 2 &&
@@ -922,7 +923,7 @@ int main(int argc, char **argv) {
             if (!std::strcmp(pkg->content_id, "baby-t-park")) stated[0] = pkg->super_turbo_pads;
             if (!std::strcmp(pkg->content_id, "fixture-loop")) stated[1] = pkg->super_turbo_pads;
         }
-        expect(stated[0] == 1 && stated[1] == 0, "super_turbo_pads read from the descriptors");
+        expect(stated[0] == 1 && stated[1] == 1, "super_turbo_pads read from the descriptors");
         // An earlier room has no record, no rank and the packs off.
         expect(parse(racers) && bind_room(racers) && ctr_cfg.boost_mode == 0 && ctr_cfg.stats_mode == 0 &&
                ap_content_plan_capability()->present == 0 && ap_content_plan_pad(19)->trophy_boost == 0 &&

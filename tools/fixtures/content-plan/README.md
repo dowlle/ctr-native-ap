@@ -127,8 +127,8 @@ Capability packs (#133 PR 4c): `capability.json` is slot data the paired
 apworld emitted (`worlds/ctr/test/test_capability_packs.py` helpers, seed
 20261018, script `emit-capability-fixture.py` in the PR 4c artifacts) on Crash
 Cove, Hot Air Skyway, Oxide Station and Slide Coliseum plus Baby T Park 1.0.2
-(`super_turbo_pads: true`) and the B+ `fixture-loop` (`super_turbo_pads:
-false`), with all three modes, rungs, per-track Wumpa, Lettersanity mode 2 and
+(`super_turbo_pads: true`, ruled generic terms only on 2026-10-18) and the
+B+ `fixture-loop` (`super_turbo_pads: true`, no ruling, so USF), with all three modes, rungs, per-track Wumpa, Lettersanity mode 2 and
 Relic Race Perfect checks. Its plan carries `capability` (shared Progressive
 Boost and Progressive Stats, medium, Shortcut Knowledge easy), the boost and
 stat chain rows, and a `boost` rank on every check whose race needs one. Its
