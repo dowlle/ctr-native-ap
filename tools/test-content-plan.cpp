@@ -3,6 +3,7 @@
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_trap_items.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -36,14 +37,21 @@ static void refuse(const J &j, const std::string &why) {
            ap_content_plan_epoch() == 0 && !ap_content_plan_pad(3) && !ap_content_plan_package(0), why);
 }
 static void mutations(const J &base, const J &node, const J::json_pointer &path) {
+    // The trap block is read like a normal room's (#133 PR 4a): a malformed
+    // entry or block silences traps, it never refuses the room. Its own cases
+    // are below.
+    if (path.to_string() == "/trap_identities") return;
     if (node.is_object()) {
         J changed = base;
         changed[path]["unexpected_field"] = 1;
         refuse(changed, "extra field at " + path.to_string());
         for (auto it = node.begin(); it != node.end(); ++it) {
-            // Optional custom-track fields (#306) and the envelope's
-            // reserve_top_up Boolean (#451): absent is a legal plan.
-            if (it.key() != "room_title" && it.key() != "named_block" && it.key() != "reserve_top_up") {
+            // Optional custom-track fields (#306), the envelope's
+            // reserve_top_up Boolean (#451) and the #133 PR 4a envelope keys
+            // and trap block: absent is a legal plan.
+            static const std::set<std::string> optional = {"room_title", "named_block", "reserve_top_up", "death_link_send",
+                                                           "warp_pad_item_display", "ap_item_type_colors", "trap_identities"};
+            if (!optional.count(it.key())) {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
             }
@@ -729,6 +737,78 @@ int main(int argc, char **argv) {
                     c["display_name"] = "Cortex Vortex" + name.substr(old.size());
                 }
             } });
+    }
+    // Pool-only packs and the content-plan envelope (#133 PR 4a): an apworld-
+    // emitted room with Progressive Starting Wumpa 3, Turbo Grant, Tizi
+    // Helper, an explicit send mask 6, by-reward-type glow, AP item type
+    // colours off and the trap_identities block.
+    J packs;
+    std::ifstream("tools/fixtures/content-plan/item-packs.json") >> packs;
+    expect(parse(packs) && bind_room(packs) && ap_content_plan_active(), "item packs room binds");
+    expect(ctr_cfg.death_link == 3 && ctr_cfg.death_link_send == 6 && ctr_cfg.warp_pad_item_display == 1 &&
+           ctr_cfg.ap_item_type_colors == 0, "envelope keys applied");
+    expect(ctr_trap_identities.required == 1 && ctr_trap_identities.state == AP_TRAP_IDS_VALID &&
+           AP_TrapResolveEffect(&ctr_trap_identities, AP_TRAP_ITEM_MAP[0].index) >= 0, "trap block read like a normal room's");
+    expect(!ap_content_plan_item(35010122) && !ap_content_plan_item(35010188) && !ap_content_plan_item(35010189),
+           "pack items are not counted families");
+    {
+        J plain = packs;
+        for (const char *key : {"death_link_send", "warp_pad_item_display", "ap_item_type_colors"}) plain["ctr_options"].erase(key);
+        plain.erase("trap_identities");
+        expect(parse(plain) && ctr_cfg.death_link_send == -1 && ctr_cfg.warp_pad_item_display == 0 &&
+               ctr_cfg.ap_item_type_colors == 1 && ctr_trap_identities.required == 0,
+               "absent keys keep the legacy coupling, one pile, colours on and the frozen trap table");
+        J bad_block = packs;
+        bad_block["trap_identities"]["version"] = 2;
+        expect(parse(bad_block) && ctr_trap_identities.state == AP_TRAP_IDS_INVALID,
+               "a malformed trap block silences traps and keeps the room, as on a normal room");
+        bad_block = packs;
+        bad_block["trap_identities"]["items"][std::to_string(AP_TRAP_ITEM_ID_BASE + AP_TRAP_ITEM_MAP[0].index)] = "no_such_effect";
+        expect(parse(bad_block) && AP_TrapResolveEffect(&ctr_trap_identities, AP_TRAP_ITEM_MAP[0].index) < 0,
+               "a refused trap entry silences only that trap");
+    }
+    mutations(packs, packs, J::json_pointer(""));
+    {
+        auto env_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = packs; change(bad); refuse(bad, "envelope: " + why);
+        };
+        env_refuse("send mask 8", [](J &j) { j["ctr_options"]["death_link_send"] = 8; });
+        env_refuse("send mask -1", [](J &j) { j["ctr_options"]["death_link_send"] = -1; });
+        env_refuse("send mask as Boolean", [](J &j) { j["ctr_options"]["death_link_send"] = true; });
+        env_refuse("display 2", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = 2; });
+        env_refuse("display as Boolean", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = true; });
+        env_refuse("colours as integer", [](J &j) { j["ctr_options"]["ap_item_type_colors"] = 1; });
+        env_refuse("an unknown envelope key", [](J &j) { j["ctr_options"]["turbo_grant"] = true; });
+        env_refuse("an unknown top-level block", [](J &j) { j["itemsanity_checks"] = J::object(); });
+        auto pack_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = packs; change(bad["content_plan"]); refuse(bad, "item packs: " + why);
+        };
+        auto row = [](J &plan, int64_t code) -> J & {
+            for (auto &r : plan["items"]["rows"]) if (r["item"] == code) return r;
+            throw std::runtime_error("no row");
+        };
+        auto drop_feature = [](J &plan) {
+            auto &f = plan["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "item_packs_v1") { f.erase(i); return; }
+        };
+        pack_refuse("count disagrees with row", [](J &p) { p["item_packs"]["progressive_starting_wumpa"] = 2; });
+        pack_refuse("row disagrees with count", [&](J &p) {
+            row(p, 35010122).update(J{{"base", 4}, {"remaining", 4}, {"receipt_cap", 4}, {"requirement_ceiling", 4}});
+            p["items"]["filler_count"] = p["items"]["filler_count"].get<int>() - 1; });
+        pack_refuse("count above ten", [](J &p) { p["item_packs"]["progressive_starting_wumpa"] = 11; });
+        pack_refuse("count zero", [](J &p) { p["item_packs"]["progressive_starting_wumpa"] = 0; });
+        pack_refuse("grant false", [](J &p) { p["item_packs"]["turbo_grant"] = false; });
+        pack_refuse("grant as integer", [](J &p) { p["item_packs"]["tizi_helper"] = 1; });
+        pack_refuse("unknown pack", [](J &p) { p["item_packs"]["itemsanity"] = true; });
+        pack_refuse("empty record", [](J &p) { p["item_packs"] = J::object(); });
+        pack_refuse("rows without record", [&](J &p) { p.erase("item_packs"); drop_feature(p); });
+        pack_refuse("record without its row", [&](J &p) {
+            auto &rows = p["items"]["rows"];
+            for (size_t i = 0; i < rows.size(); ++i) if (rows[i]["item"] == 35010189) { rows.erase(i); break; }
+            p["items"]["filler_count"] = p["items"]["filler_count"].get<int>() + 1; });
+        pack_refuse("feature dropped", drop_feature);
+        pack_refuse("extra copy", [&](J &p) { row(p, 35010188).update(J{{"extra", 1}, {"remaining", 2}, {"receipt_cap", 2}}); });
+        pack_refuse("pack item swapped for an unpooled item", [&](J &p) { row(p, 35010189)["item"] = 35010187; });
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

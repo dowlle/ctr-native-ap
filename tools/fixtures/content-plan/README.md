@@ -91,3 +91,19 @@ Cortex Vortex pools its own letter items 35010200 to 35010202.
 35026005, block offset 10, generic slot), Cortex Vortex's frozen codes and
 host, runs the field mutations and refuses forged perfects, settings and
 Cortex Vortex records. The earlier fixtures have no perfect and are unchanged.
+
+Pool-only packs and the content-plan envelope (#133 PR 4a):
+`item-packs.json` is slot data the paired apworld emitted
+(`worlds/ctr/test/test_item_packs.py` helpers, seed 20261017, script
+`emit-item-packs-fixture.py` in the PR 4a artifacts) on Crash Cove, Papu's
+Pyramid and Slide Coliseum plus Baby T Park 1.0.2 and the B+ `fixture-loop`,
+with all three modes, four rungs and per-track Wumpa. Its plan carries
+`item_packs` (Progressive Starting Wumpa 3, Turbo Grant, Tizi Helper) with one
+ledger row each, and its envelope an explicit `death_link_send` 6,
+`warp_pad_item_display` 1, `ap_item_type_colors` false, `death_link` 3
+(race_loss) and the `trap_identities` block. `test-content-plan.cpp` checks
+the applied settings, the trap block (read like a normal room's, a malformed
+block silences traps without refusing the room), the absent-key defaults, runs
+the field mutations outside the trap block and refuses forged envelope values
+and pack records and rows. The earlier fixtures have none of these and are
+unchanged.
