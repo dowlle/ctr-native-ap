@@ -766,9 +766,11 @@ void AP_NotifyCupAggregateCustomTrackTrophy(void)
 // stakes (#133 PR 4a): its pad's Trophy Race or CTR Token Challenge, or a
 // Crystal Challenge's completion; 0 for a Relic Race. *outNeedsItems is 1
 // while a CTR Challenge still waits for a pooled letter item (Lettersanity
-// modes 2 and 3), because its token cannot pay until those arrive. Returns 0
-// when no content-plan race on its pad's route is running.
-int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
+// modes 2 and 3), because its token cannot pay until those arrive.
+// *outBoost is the win check's Progressive Boost rank (#133 PR 4c, the plan
+// check's `boost`, 0 when none) and *outRacer the pad's racer lock it binds,
+// or -1. Returns 0 when no content-plan race on its pad's route is running.
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const struct CustomTrackRaceContext *context;
@@ -777,6 +779,8 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
 	int l;
 	*outCode = 0;
 	*outNeedsItems = 0;
+	*outBoost = 0;
+	*outRacer = -1;
 	if (!gGT || !ap_content_plan_active())
 		return 0;
 	if ((pad = AP_ContentCrystalPad()) != NULL)
@@ -787,11 +791,16 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
 	context = CustomTrack_StandaloneContext(gGT->levelID);
 	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
 		return 0;
+	*outRacer = pad->racer_lock;
 	if (context->mode == AP_CONTENT_MODE_TROPHY)
+	{
 		code = pad->trophy_location;
+		*outBoost = pad->trophy_boost;
+	}
 	else if (context->mode == AP_CONTENT_MODE_CTR)
 	{
 		code = pad->ctr_location;
+		*outBoost = pad->ctr_boost;
 		for (l = 0; l < 3; ++l)
 			if (pad->letter_items[l] > 0 && !AP_ContentLetterItemReceived(pad->letter_items[l]))
 				*outNeedsItems = 1;
@@ -803,10 +812,12 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
 int AP_CustomTrackTrophyChecked(void) { return 0; }
 void AP_NotifyCustomTrackTrophy(void) {}
 void AP_NotifyCupAggregateCustomTrackTrophy(void) {}
-int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)
 {
 	*outCode = 0;
 	*outNeedsItems = 0;
+	*outBoost = 0;
+	*outRacer = -1;
 	return 0;
 }
 #endif

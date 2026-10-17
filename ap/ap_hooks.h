@@ -355,8 +355,9 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 // connected seed's exact profile, otherwise the current Baby T Park release.
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_StandaloneRaceActive(void);
-// Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c).
-int AP_ContentWinFacts(long *outCode, int *outNeedsItems);
+// Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
+// the boost rank and racer from PR 4c).
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
 // Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
 int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);

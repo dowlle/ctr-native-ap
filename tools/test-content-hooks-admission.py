@@ -181,6 +181,24 @@ int main(void)
 	       staged_race.returnHub == 26 && staged_race.seedEpoch == 7 && !staged_race.retail &&
 	       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0, "race context staged for the pad");
 
+	/* Super turbo pads (#133 PR 4c): the fixture LEV has no quad blocks, so
+	   a stated true is refused at connect and at pad entry; false and
+	   unstated are admitted. */
+	plan_package.super_turbo_pads = 1;
+	reset_calls();
+	expect(!preflight() && !AP_ContentPadReady(3) && ap_custom_content_required &&
+	       strstr(ap_custom_content_status.detail, "super_turbo_pads is true") &&
+	       strstr(log_text, "content plan refused package/fixture-loop/2.1"), "super pads stated on a track without refused at connect");
+	ap_content_package_ready[0] = 1;
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_package_ready[0] && used_files == 0,
+	       "super pads stated on a track without refused at pad entry");
+	plan_package.super_turbo_pads = AP_CONTENT_SUPER_PADS_UNSTATED;
+	reset_calls();
+	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "unstated super pads admitted");
+	plan_package.super_turbo_pads = 0;
+	reset_calls();
+	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "super pads stated false and absent admitted");
+
 	/* False claim: Wumpa is not in the bytes. Refused at connect and at pad entry. */
 	plan_package.capabilities |= AP_CONTENT_CAP_WUMPA;
 	reset_calls();

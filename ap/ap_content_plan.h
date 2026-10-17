@@ -69,6 +69,10 @@ typedef struct ctr_content_pad {
      * mirrors it into ctr_cfg.racer_lock / gem_cup_racer_lock, so the pad's
      * racer line and the warp-commit seating read it like a normal room's. */
     int racer_lock;
+    /* Capability packs (#133 PR 4c): the Progressive Boost ranks this pad's
+     * Trophy Race and CTR Token Challenge need (the plan checks' `boost`), 0
+     * when none. Bound to racer_lock when it is set. */
+    int trophy_boost, ctr_boost;
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
@@ -84,6 +88,10 @@ typedef struct ctr_content_pad {
 #define AP_CONTENT_CAP_CTR_TOKENS 0x08u
 #define AP_CONTENT_CAP_WUMPA 0x10u
 #define AP_CONTENT_CAP_ALL 0x1fu
+/* Optional `super_turbo_pads` (#133 PR 4c): not one of the mode flags above.
+ * The package states whether its LEV has a super turbo pad trigger quad;
+ * native measures the bytes and refuses a stated value they disagree with. */
+#define AP_CONTENT_SUPER_PADS_UNSTATED (-1)
 #define AP_CONTENT_RETAIL_LAPS 3 /* retail tracks race their authored three laps */
 /* Engine hosts of non-retail track entries: a custom package borrows Roo's
  * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
@@ -99,7 +107,15 @@ typedef struct ctr_content_package {
     unsigned capabilities; /* AP_CONTENT_CAP_* bits the descriptor claims */
     int has_relic_targets; /* relic targets in ticks (960 per second) */
     int relic_targets[3];  /* sapphire, gold, platinum */
+    int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
 } ctr_content_package;
+
+/* Capability packs (#133 PR 4c): the plan's `capability` record. `present`
+ * is 0 when Progressive Boost and Progressive Stats are both off. Modes are
+ * 0 off, 1 shared, 2 per racer; difficulty and knowledge 0 easy to 2 hard. */
+typedef struct ctr_content_capability {
+    int present, boost_mode, boost_blue_fire, stats_mode, logic_difficulty, shortcut_knowledge;
+} ctr_content_capability;
 
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
@@ -183,6 +199,12 @@ const ctr_content_package *ap_content_plan_package(int index);
 int ap_content_plan_cortex(void);
 const ctr_content_item *ap_content_plan_item(int64_t item);
 const ctr_content_checks *ap_content_plan_checks(void);
+/* Capability packs (#133 PR 4c). The record (all zero without one); the
+ * from-pool plus additional starting copies of any ledger item; and the boost
+ * rank a check needs (0 when none or not a plan check). */
+const ctr_content_capability *ap_content_plan_capability(void);
+int ap_content_plan_start_count(int64_t item);
+int ap_content_plan_check_boost(int64_t location);
 int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_bind(const char *seed, int team, int slot,
                          const int64_t *locations, size_t count);

@@ -93,6 +93,65 @@ static size_t build_lev(unsigned char *b, int full)
 	return full ? IMAGE_BYTES : (4 + BODY_PTRMAP + 4);
 }
 
+/* Quad blocks (#133 PR 4c): a LEV whose Level.ptr_mesh_info names a
+   mesh_info with `n` quad blocks (flags, terrain byte), and whatever else is
+   zero. Returns the file size. `badQuads` starts the quad array one quad
+   late, so it runs past the retained payload. */
+#define MESH_BODY 0x200
+#define QUAD_BODY 0x240
+static size_t build_mesh_lev(unsigned char *b, size_t cap, const unsigned (*quads)[2], size_t n, int badQuads)
+{
+	const size_t map = QUAD_BODY + n * QUAD_SIZE;
+	size_t i;
+	if (4 + map + 4 + 2 * 4 > cap) exit(3);
+	memset(b, 0, cap);
+	put32(b, 0, map);
+	put32(b, 4 + MESH_P, MESH_BODY);
+	put32(b, 4 + MESH_BODY + MESH_QUAD_N, (unsigned long)n);
+	put32(b, 4 + MESH_BODY + MESH_QUAD_P, !n ? 0 : badQuads ? QUAD_BODY + QUAD_SIZE : QUAD_BODY);
+	for (i = 0; i < n; i++)
+	{
+		put16(b, 4 + QUAD_BODY + i * QUAD_SIZE + QUAD_FLAGS, quads[i][0]);
+		b[4 + QUAD_BODY + i * QUAD_SIZE + QUAD_TERRAIN] = (unsigned char)quads[i][1];
+	}
+	put32(b, 4 + map, 2 * 4);
+	put32(b, 4 + map + 4, MESH_P);
+	put32(b, 4 + map + 8, MESH_BODY + MESH_QUAD_P);
+	return 4 + map + 4 + 2 * 4;
+}
+
+static void super_turbo_pad_quads(void)
+{
+	/* Trigger quads OR their terrain byte into the step flags; bit 0x2 is
+	   the super turbo pad. Bit 0x1 is a normal turbo pad, and a non-trigger
+	   quad's terrain byte is its surface (2 is grass), so neither counts. */
+	static const unsigned quads[][2] = {
+		{QUAD_FLAG_TRIGGER, 0x02}, {QUAD_FLAG_TRIGGER | 0x1000, 0x03}, {QUAD_FLAG_TRIGGER, 0x01},
+		{0x1000, 0x02}, {0x0000, 0x06}, {QUAD_FLAG_TRIGGER, 0x0a}};
+	unsigned char image[4096];
+	struct CustomContentOwnedPair pair;
+	char error[256];
+	size_t n;
+	memset(&pair, 0, sizeof pair);
+	n = build_mesh_lev(image, sizeof image, quads, sizeof quads / sizeof quads[0], 0);
+	pair.lev = image; pair.levBytes = n;
+	expect(analyze(pair.lev, pair.levBytes, &pair.report, error, sizeof error), "mesh fixture analyzes");
+	expect(pair.report.measured.quadBlocks == 6, "quad block count");
+	expect(pair.report.measured.superTurboPads == 3, "only trigger quads with the super turbo pad bit count");
+	memset(&pair.report, 0, sizeof pair.report);
+	n = build_mesh_lev(image, sizeof image, quads, 0, 0);
+	expect(analyze(image, n, &pair.report, error, sizeof error) && pair.report.measured.superTurboPads == 0 &&
+	       pair.report.measured.quadBlocks == 0, "an empty quad table has no super turbo pads");
+	memset(&pair.report, 0, sizeof pair.report);
+	n = build_mesh_lev(image, sizeof image, quads, sizeof quads / sizeof quads[0], 1);
+	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad block table"),
+	       "a quad array outside the payload is refused");
+	memset(&pair.report, 0, sizeof pair.report);
+	n = build_mesh_lev(image, sizeof image, quads, sizeof quads / sizeof quads[0], 0);
+	put32(image, 4 + MESH_BODY + MESH_QUAD_N, QUAD_MAX + 1);
+	expect(!analyze(image, n, &pair.report, error, sizeof error), "an oversized quad count is refused");
+}
+
 /* The Arcade and Time Trial verdicts and their menu reasons. The measured
    counts are the five Saphi tracks of 2026-09-25 (Arabian Heights Night
    1.1.0, Choco Island 2 1.0.0, Bowser Castle 1 1.0.0, Country Speedway 1.2.1,
@@ -298,6 +357,8 @@ int main(void)
 		expect(!CustomContentVerify_AcquirePair(linkPath, vrm, &pair, error, sizeof error), "symlinked LEV refused before acquisition");
 	}
 
+	super_turbo_pad_quads();
+	expect(v.measured.superTurboPads == 0 && v.measured.quadBlocks == 0, "the full fixture has no mesh and no super pads");
 	printf("custom-content verifier: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

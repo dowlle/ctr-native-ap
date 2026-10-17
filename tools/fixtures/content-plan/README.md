@@ -122,3 +122,21 @@ pad 19, `fixture-loop` on pad 15, Papu's Pyramid on pad 7 and N. Gin Labs on the
 `ctr_cfg.racer_lock` and `gem_cup_racer_lock`, runs the field mutations and
 refuses forged locks, records and envelope values. The earlier fixtures have
 none of these and are unchanged.
+
+Capability packs (#133 PR 4c): `capability.json` is slot data the paired
+apworld emitted (`worlds/ctr/test/test_capability_packs.py` helpers, seed
+20261018, script `emit-capability-fixture.py` in the PR 4c artifacts) on Crash
+Cove, Hot Air Skyway, Oxide Station and Slide Coliseum plus Baby T Park 1.0.2
+(`super_turbo_pads: true`) and the B+ `fixture-loop` (`super_turbo_pads:
+false`), with all three modes, rungs, per-track Wumpa, Lettersanity mode 2 and
+Relic Race Perfect checks. Its plan carries `capability` (shared Progressive
+Boost and Progressive Stats, medium, Shortcut Knowledge easy), the boost and
+stat chain rows, and a `boost` rank on every check whose race needs one. Its
+envelope has `progressive_boost` 1, `progressive_stats` 1 and the Progressive
+Stats trio (1, 1, false). `test-content-plan.cpp` checks the applied modes,
+the Trophy Race and CTR Token Challenge ranks per pad, the per-check ranks and
+the stated super turbo pads, runs the field mutations and refuses forged
+records, ranks outside the chain, rows and envelope values. A rank inside the
+chain is the apworld's logic and is read as given. The earlier fixtures have
+none of these and are unchanged; their package records state no
+`super_turbo_pads`.

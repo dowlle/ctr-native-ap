@@ -51,6 +51,10 @@ struct CustomContentMeasurements
 	unsigned long crystals;
 	unsigned long startLines;
 	unsigned long finishLines;
+	/* #133 PR 4c: quad blocks, and trigger quads whose terrain byte carries
+	   the super turbo pad step flag (COLL_STEP_TRIGGER_SUPER_TURBO_PAD). */
+	unsigned long quadBlocks;
+	unsigned long superTurboPads;
 };
 
 struct CustomContentVerification
