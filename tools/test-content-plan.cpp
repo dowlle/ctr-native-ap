@@ -49,8 +49,11 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
             // Optional custom-track fields (#306), the envelope's
             // reserve_top_up Boolean (#451) and the #133 PR 4a envelope keys
             // and trap block: absent is a legal plan.
+            // #133 PR 4b: the starting stat class and Penta keys are optional
+            // one by one; the editable-stats trio only together.
             static const std::set<std::string> optional = {"room_title", "named_block", "reserve_top_up", "death_link_send",
-                                                           "warp_pad_item_display", "ap_item_type_colors", "trap_identities"};
+                                                           "warp_pad_item_display", "ap_item_type_colors", "trap_identities",
+                                                           "starting_stat_class", "penta_stats"};
             if (!optional.count(it.key())) {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
@@ -809,6 +812,76 @@ int main(int argc, char **argv) {
         pack_refuse("feature dropped", drop_feature);
         pack_refuse("extra copy", [&](J &p) { row(p, 35010188).update(J{{"extra", 1}, {"remaining", 2}, {"receipt_cap", 2}}); });
         pack_refuse("pack item swapped for an unpooled item", [&](J &p) { row(p, 35010189)["item"] = 35010187; });
+    }
+    // Character packs (#133 PR 4b): an apworld-emitted room with Character
+    // Unlocks, Remove Playable Oxide, four racer locks (Baby T Park on pad 19,
+    // the B+ fixture-loop on pad 15, Papu's Pyramid on pad 7, and the Gem Cup
+    // seat 104), Starting Stat Class speed, Penta's MAX table and per-racer
+    // editable stats.
+    J racers;
+    std::ifstream("tools/fixtures/content-plan/racers.json") >> racers;
+    expect(parse(racers) && bind_room(racers) && ap_content_plan_active(), "racers room binds");
+    expect(ctr_cfg.character_unlocks == 1 && ctr_cfg.character_phase_present == 1 && ctr_cfg.starting_character == 4 &&
+           ctr_cfg.racer_locked_pads == 27, "character unlocks applied");
+    expect(ctr_cfg.starting_stat_class == 3 && ctr_cfg.penta_stats == 1 && ctr_cfg.stat_source == 2 &&
+           ctr_cfg.stat_owner == 2 && ctr_cfg.stat_editing_allowed == 1, "stat settings applied");
+    {
+        int locked = 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p) continue;
+            if (p->racer_lock >= 0) ++locked;
+            const int mirror = id >= 100 ? (id <= 104 ? ctr_cfg.gem_cup_racer_lock[id - 100] : -1)
+                                         : (id < CTR_CFG_PAD_COUNT ? ctr_cfg.racer_lock[id] : -1);
+            expect(mirror == p->racer_lock, "racer lock mirrored into ctr_cfg for pad " + std::to_string(id));
+        }
+        expect(locked == 4 && ap_content_plan_pad(19)->racer_lock == 14 && ap_content_plan_pad(15)->racer_lock == 10 &&
+               ap_content_plan_pad(7)->racer_lock == 1 && ap_content_plan_pad(104)->racer_lock == 13 &&
+               ctr_cfg.gem_cup_racer_lock[4] == 13 && ctr_cfg.racer_lock[19] == 14, "four racer locks on their pads");
+        expect(!ap_content_plan_item(35010123), "racer items are not counted families");
+        // An earlier room has no lock anywhere.
+        expect(parse(packs) && bind_room(packs), "item packs room binds again");
+        bool none = ctr_cfg.character_unlocks == 0 && ctr_cfg.starting_stat_class == 0 && ctr_cfg.stat_source == 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (p && p->racer_lock >= 0) none = false;
+        }
+        for (int i = 0; i < CTR_CFG_PAD_COUNT; ++i) if (ctr_cfg.racer_lock[i] != -1) none = false;
+        for (int i = 0; i < 5; ++i) if (ctr_cfg.gem_cup_racer_lock[i] != -1) none = false;
+        expect(none, "a room without the racers record keeps every racer free and vanilla stats");
+    }
+    mutations(racers, racers, J::json_pointer(""));
+    {
+        auto racer_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = racers; change(bad); refuse(bad, "racers: " + why);
+        };
+        auto pad = [](J &j, const std::string &id) -> J & {
+            for (auto &p : j["content_plan"]["pads"]) if (p["id"] == id) return p;
+            throw std::runtime_error("no pad");
+        };
+        racer_refuse("lock on the starting racer", [&](J &j) { pad(j, "pad:19")["racer_lock"] = 4; });
+        racer_refuse("lock on removed Oxide", [&](J &j) { pad(j, "pad:19")["racer_lock"] = 15; });
+        racer_refuse("lock on a garage", [&](J &j) { pad(j, "garage:1")["racer_lock"] = 2; });
+        racer_refuse("lock 16", [&](J &j) { pad(j, "pad:19")["racer_lock"] = 16; });
+        racer_refuse("lock dropped", [&](J &j) { pad(j, "pad:19")["racer_lock"] = nullptr; });
+        racer_refuse("requested count 3", [](J &j) { j["content_plan"]["racers"]["requested_locks"] = 3; });
+        racer_refuse("Oxide flag flipped", [](J &j) { j["content_plan"]["racers"]["remove_playable_oxide"] = false; });
+        racer_refuse("start changed", [](J &j) { j["content_plan"]["racers"]["starting_character"] = 2; });
+        racer_refuse("envelope unlocks false", [](J &j) { j["ctr_options"]["character_unlocks"] = false; });
+        racer_refuse("envelope start differs", [](J &j) { j["ctr_options"]["starting_character"] = 2; });
+        racer_refuse("starting class 5", [](J &j) { j["ctr_options"]["starting_stat_class"] = 5; });
+        racer_refuse("penta 2", [](J &j) { j["ctr_options"]["penta_stats"] = 2; });
+        racer_refuse("progressive stat source", [](J &j) { j["ctr_options"]["stat_source"] = 1; });
+        racer_refuse("stat owner 3", [](J &j) { j["ctr_options"]["stat_owner"] = 3; });
+        racer_refuse("editing off with editable source", [](J &j) { j["ctr_options"]["stat_editing_allowed"] = false; });
+        racer_refuse("trio without its owner", [](J &j) { j["ctr_options"].erase("stat_owner"); });
+        J plain = packs;
+        plain["ctr_options"]["character_unlocks"] = true;
+        refuse(plain, "racers: unlocks on without the racers record");
+        J trio_gone = racers;
+        for (const char *key : {"stat_source", "stat_owner", "stat_editing_allowed"}) trio_gone["ctr_options"].erase(key);
+        expect(parse(trio_gone) && ctr_cfg.stat_source == 0 && ctr_cfg.stat_editing_allowed == 0,
+               "the stat trio absent keeps vanilla stats");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

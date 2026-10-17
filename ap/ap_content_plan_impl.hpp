@@ -25,6 +25,9 @@ struct State {
     ctr_content_checks families{};
     int package_count = 0, goal_count = 0, goal_mask = 0;
     bool cortex = false; // a Cortex Vortex track entry (#133 PR 3c)
+    // Character unlocks (#133 PR 4b): the plan's `racers` record.
+    bool racers = false, remove_oxide = false;
+    int starting_character = -1, requested_locks = 0;
     std::set<int64_t> checks;
     std::string canonical;
 };
@@ -274,6 +277,28 @@ static std::map<int64_t, int> item_packs(const J &t) {
     need(seen == t.size(), "unknown item_packs field");
     return out;
 }
+// Character unlocks (#133 PR 4b). Roster slot (the unlock item 35010123 +
+// slot, apworld progressive_capability.ROSTER) -> engine character id, the
+// mirror of characters.ROSTER_CHARACTER_ID and ap_capability.c
+// AP_CAP_ROSTER_CHARACTER; the parity tool compares it with the apworld's.
+static const int kRosterCharacter[16] = {0, 3, 6, 7, 1, 12, 10, 9, 11, 8, 5, 2, 4, 14, 15, 13};
+static const int64_t kRacerItemBase = 35010123;
+static const int kOxide = 15;          // NITROS_OXIDE
+static const int kPhysicalPads = 27;   // the racer_locked_pads ceiling
+static void racer_settings(const J &t, State &out) {
+    fields(t, {"starting_character", "remove_playable_oxide", "requested_locks"});
+    out.racers = true;
+    out.starting_character = number(t["starting_character"], 0, 15);
+    need(t["remove_playable_oxide"].is_boolean(), "racers.remove_playable_oxide must be true or false");
+    out.remove_oxide = t["remove_playable_oxide"].get<bool>();
+    need(!(out.remove_oxide && out.starting_character == kOxide), "Oxide cannot be removed and be the starting racer");
+    out.requested_locks = number(t["requested_locks"], 0, kPhysicalPads);
+}
+// A racer the plan never pools nor locks: the starting racer, and Oxide when
+// Remove Playable Oxide is on.
+static bool racer_excluded(const State &out, int character) {
+    return character == out.starting_character || (out.remove_oxide && character == kOxide);
+}
 static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
     return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
 }
@@ -299,7 +324,9 @@ static void validate(const J &p, State &out) {
     // podium rungs, Wumpa checks or Lettersanity.
     const bool has_families = p.is_object() && p.contains("track_checks");
     const bool has_packs = p.is_object() && p.contains("item_packs");
-    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u), "unsupported or incomplete record fields");
+    const bool has_racers = p.is_object() && p.contains("racers");
+    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u),
+         "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
     need(p.at("version") == 1, "unsupported required content-plan version");
@@ -307,6 +334,13 @@ static void validate(const J &p, State &out) {
     fam = ctr_content_checks{};
     if (has_families) family_settings(p["track_checks"], fam);
     const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"]) : std::map<int64_t, int>{};
+    // Character unlocks (#133 PR 4b): one ledger row per unlock racer.
+    std::map<int64_t, int> racer_rows;
+    if (has_racers) {
+        racer_settings(p["racers"], out);
+        for (int slot = 0; slot < 16; ++slot)
+            if (!racer_excluded(out, kRosterCharacter[slot])) racer_rows[kRacerItemBase + slot] = 1;
+    }
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto &named_table = named_block_table(registry);
@@ -357,6 +391,7 @@ static void validate(const J &p, State &out) {
     if(fam.lettersanity)features.push_back("lettersanity_v1");
     if(fam.relic_perfect)features.push_back("relic_perfect_v1");
     if(!packs.empty())features.push_back("item_packs_v1");
+    if(has_racers)features.push_back("character_unlocks_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -407,13 +442,23 @@ static void validate(const J &p, State &out) {
         const J &pad = *pads.at(id);
         fields(pad, {"id", "hub_id", "kind", "entry_id", "entrance_req", "mode_gates", "racer_lock"});
         need(pad["hub_id"] == "hub:" + std::to_string(hub) && pad["kind"] == (garage ? "garage" : "normal") &&
-             pad["entrance_req"] == (keys ? "keys:" + std::to_string(keys) : "free") && pad["racer_lock"].is_null(), "pad hub, gate or kind mismatch");
+             pad["entrance_req"] == (keys ? "keys:" + std::to_string(keys) : "free"), "pad hub, gate or kind mismatch");
         ctr_content_pad scratch{};
         auto &dest = garage ? scratch : out.pads[pi];
         dest.physical = physical; dest.hub = hub; dest.keys = keys;
         dest.retail_id = -1; dest.package_index = -1; dest.named_block = -1;
+        // Racer lock (#133 PR 4b): an engine character id, never the starting
+        // racer or a removed Oxide, and only with the `racers` record. Whether
+        // the pad may carry one is decided once the item ledger is read.
+        dest.racer_lock = -1;
+        if (!pad["racer_lock"].is_null()) {
+            need(has_racers && !garage, "a racer lock needs Character Unlocks (the racers record)");
+            dest.racer_lock = number(pad["racer_lock"], 0, 15);
+            need(!racer_excluded(out, dest.racer_lock), "a racer lock names the starting racer, a removed Oxide or no racer");
+        }
         if (pad["entry_id"].is_null()) {
             need(pad["mode_gates"] == J::array(), "empty pad has mode gates");
+            need(dest.racer_lock < 0, "a racer lock on a pad that opens at the start or holds no entry");
             continue;
         }
         const auto entry_id = text(pad["entry_id"]);
@@ -693,11 +738,12 @@ static void validate(const J &p, State &out) {
     }
     const J &items = p["items"];
     fields(items, {"rows", "coded_checks", "locked_checks", "filler_count", "trap_count"});
-    // The 15 counted families, plus one row per pooled letter item (#133 PR 3b)
-    // and one per pool-only pack item (#133 PR 4a).
-    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size(), "item family registry mismatch");
+    // The 15 counted families, plus one row per pooled letter item (#133 PR 3b),
+    // one per pool-only pack item (#133 PR 4a) and one per unlock racer (#133 PR 4b).
+    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size(),
+         "item family registry mismatch");
     std::set<int> item_ids;
-    std::set<int64_t> letter_rows, pack_rows;
+    std::set<int64_t> letter_rows, pack_rows, unlock_rows;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
@@ -707,9 +753,11 @@ static void validate(const J &p, State &out) {
         if (letter_items.count(code)) {
             need(letter_rows.insert(code).second && row["base"] == 1 && row["extra"] == 0, "a letter item is pooled once");
         }
-        const bool pack = packs.count(code) != 0;
+        const bool racer = racer_rows.count(code) != 0;
+        const bool pack = packs.count(code) != 0 || racer;
         if (pack)
-            need(pack_rows.insert(code).second && row["base"] == packs.at(code) && row["extra"] == 0, "a pack item row disagrees with item_packs");
+            need((racer ? unlock_rows : pack_rows).insert(code).second && row["base"] == (racer ? 1 : packs.at(code)) &&
+                 row["extra"] == 0, "a pack or racer item row disagrees with item_packs or racers");
         const int i = letter_items.count(code) || pack ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
         need(i < 0 || item_ids.insert(i).second, "duplicate item family");
         auto &r = i < 0 ? letter_row : out.items[i];
@@ -759,7 +807,28 @@ static void validate(const J &p, State &out) {
         if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
-    need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size(), "item family registry mismatch");
+    need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
+         unlock_rows.size() == racer_rows.size(), "item family registry mismatch");
+    // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
+    // occupied pad that does not open at the start, because its hub gate needs
+    // Keys or its manual rule is not met by the starting items (from-pool and
+    // additional starts), and exactly min(requested_locks, eligible) of them.
+    {
+        int eligible = 0, locks = 0;
+        for (const auto &pad : out.pads) {
+            if (!pad.occupied) { need(pad.racer_lock < 0, "a racer lock on a pad that opens at the start or holds no entry"); continue; }
+            long long held = 0;
+            for (int i = 0; i < 15; ++i)
+                if (pad.rule_mask & (1u << i)) held += (long long)out.items[i].start_from_pool + out.items[i].start_additional;
+            const bool opens = pad.keys == 0 && (!pad.has_rule || held >= pad.rule_count);
+            if (!opens) ++eligible;
+            if (pad.racer_lock >= 0) {
+                need(!opens, "a racer lock on a pad that opens at the start or holds no entry");
+                ++locks;
+            }
+        }
+        if (out.racers) need(locks == std::min(out.requested_locks, eligible), "racer lock count is not min(requested_locks, eligible pads)");
+    }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
@@ -799,9 +868,25 @@ static int parse_content_plan(const nlohmann::json &j) {
         const int display_mode = display ? number(co["warp_pad_item_display"], 0, 1) : 0;
         need(!colors || co["ap_item_type_colors"].is_boolean(), "ap_item_type_colors must be true or false");
         for(const char *key:{"death_link_send","warp_pad_item_display","ap_item_type_colors"})base.erase(key);
+        // Stat settings (#133 PR 4b), present only when set: the starting
+        // racer's class, Penta's MAX table, and the resolved editable-stats
+        // trio (apworld content_plan.STAT_ENVELOPE). Progressive Stats (source
+        // 1) is still refused here; it comes with PR 4c.
+        const bool stat_class = co.contains("starting_stat_class"), penta = co.contains("penta_stats");
+        const bool trio = co.contains("stat_source") || co.contains("stat_owner") || co.contains("stat_editing_allowed");
+        const int start_class = stat_class ? number(co["starting_stat_class"], 1, 4) : 0;
+        need(!penta || number(co["penta_stats"], 1, 1) == 1, "penta_stats must be 1 when present");
+        int stat_owner = 0;
+        if (trio) {
+            need(co.contains("stat_source") && co.contains("stat_owner") && co.contains("stat_editing_allowed") &&
+                 number(co["stat_source"], 2, 2) == 2 && co["stat_editing_allowed"] == true,
+                 "stat_source, stat_owner and stat_editing_allowed must be editable stats together");
+            stat_owner = number(co["stat_owner"], 1, 2);
+        }
+        for(const char *key:{"starting_stat_class","penta_stats","stat_source","stat_owner","stat_editing_allowed"})base.erase(key);
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
-        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"] == false && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
+        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
         validate(j["content_plan"], candidate);
@@ -809,7 +894,13 @@ static int parse_content_plan(const nlohmann::json &j) {
         for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {
             arenas=true;arcade |= AP_ArcadeArenaIndex(pad.retail_id)>=0;pickups |= pad.crystal_count>0;
         }
-        const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u);
+        // Character Unlocks (#133 PR 4b) is on exactly when the plan has its
+        // `racers` record, and the envelope's starting racer is the record's.
+        need(co["character_unlocks"].get<bool>() == candidate.racers &&
+             (!candidate.racers || number(co["starting_character"], 0, 15) == candidate.starting_character),
+             "character envelope disagrees with the plan's racers record");
+        const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
+                                (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u);
         if(arenas) {
             need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
@@ -829,8 +920,23 @@ static int parse_content_plan(const nlohmann::json &j) {
         ctr_cfg.ap_item_type_colors = colors ? (co["ap_item_type_colors"].get<bool>() ? 1 : 0) : 1;
         text(co["world_version"]); copy(ctr_cfg.world_version, co["world_version"]);
         ctr_cfg.goal = -1; ctr_cfg.goal_oxide = 3; ctr_cfg.goal_bosses = 0; ctr_cfg.goal_gems = candidate.goal_count;
-        ctr_cfg.character_unlocks = 0;
+        ctr_cfg.character_unlocks = candidate.racers ? 1 : 0;
+        ctr_cfg.racer_locked_pads = candidate.racers ? candidate.requested_locks : 0;
         ctr_cfg.character_phase_present = 1;
+        // Racer locks into the normal room's arrays (dense pads and the cup
+        // range 100..104), so the pad's racer line, the warp-commit seating and
+        // the tracker read them as on a normal room (#133 PR 4b).
+        for (const auto &pad : candidate.pads)
+            if (pad.occupied && pad.racer_lock >= 0) {
+                if (pad.physical >= 100 && pad.physical <= 104) ctr_cfg.gem_cup_racer_lock[pad.physical - 100] = pad.racer_lock;
+                else if (pad.physical >= 0 && pad.physical < CTR_CFG_PAD_COUNT) ctr_cfg.racer_lock[pad.physical] = pad.racer_lock;
+            }
+        ctr_cfg.starting_stat_class = start_class;
+        ctr_cfg.penta_stats = penta ? 1 : 0;
+        ctr_cfg.stat_source = trio ? 2 : 0;
+        ctr_cfg.stat_owner = stat_owner;
+        ctr_cfg.stat_editing_allowed = trio ? 1 : 0;
+        ctr_cfg.editable_stats = stat_owner; // the raw option, for logs only
         ctr_cfg.shuffle_gems = ctr_cfg.shuffle_keys = 1;
         ctr_cfg.shuffle_warp_pads = 0; // Hub objects keep their physical IDs.
         ctr_cfg.warppad_unlock_mode = ctr_cfg.bossgarage_mode = 0;

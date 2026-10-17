@@ -652,6 +652,140 @@ for key in ("death_link_send", "warp_pad_item_display", "ap_item_type_colors"):
     env_alter("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
 env_alter("no trap block", lambda c: c.pop("trap_identities"))
 
+# Character packs (#133 PR 4b): the roster table native maps unlock items
+# with, generated plans with Character Unlocks, Remove Playable Oxide, racer
+# locks (also with manual rules met by starting items) and the stat keys, then
+# forged records, locks, rows and envelope values.
+impl = (root / "ap/ap_content_plan_impl.hpp").read_text()
+native_roster = [int(x) for x in re.search(r"kRosterCharacter\[16\] = \{([^}]*)\}", impl)[1].split(",")]
+assert native_roster == list(cp.characters.ROSTER_CHARACTER_ID.values()), "native roster table differs from the apworld's"
+assert list(cp.characters.ROSTER_CHARACTER_ID) == list(cp.characters.ROSTER), "apworld roster orders differ"
+assert [cp.content_item_pool.ITEMS[n] for n in cp.characters.ROSTER] == list(range(35010123, 35010139)), \
+    "unlock item codes are not 35010123 + roster slot"
+from worlds.ctr.test.test_character_packs import racer_options
+for seed in range(36):
+    options = racer_options(locks=(0, 1, 5, 12, 27, True)[seed % 6], oxide=seed % 4 == 1,
+                            start=("random_starter", "random_any", "penta_penguin")[seed % 3],
+                            starting_stat_class=("vanilla", "speed", "turning")[seed % 3],
+                            penta_stats=("ntsc", "pal")[seed % 2],
+                            editable_stats=("off", "global", "per_character")[seed % 3],
+                            wumpa_check=("off", "global", "per_track")[seed % 3])
+    if seed % 9 == 8:
+        options["character_unlocks"] = False
+    cases.append((f"racers-generated-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+for seed in range(12):
+    options = racer_options(locks=27)
+    options["warp_pad_rules"] = {pad: dict(item=item, count=count)
+                                 for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
+    if seed % 2:
+        options["start_inventory"] = {"Trophy": 1}
+    cases.append((f"racers-manual-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+racer_base = make_world(racer_options(locks=6, oxide=True, starting_stat_class="speed", penta_stats="pal",
+                                      editable_stats="per_character"), seed=20261017).fill_slot_data()
+cases.append(("racers-base", racer_base, True))
+racer_plan = racer_base["content_plan"]
+racer_locks = {p["id"]: p["racer_lock"] for p in racer_plan["pads"] if p["racer_lock"] is not None}
+racer_locked = next(iter(racer_locks))
+racer_start = racer_plan["racers"]["starting_character"]
+racer_free = next(p["id"] for p in racer_plan["pads"] if p["entry_id"] and p["entrance_req"] == "free")
+racer_empty = next(p["id"] for p in racer_plan["pads"] if p["kind"] == "normal" and p["entry_id"] is None)
+racer_spare = next(p for p in cp.lock_eligible(racer_plan) if p not in racer_locks)
+racer_code = next(r["item"] for r in racer_plan["items"]["rows"] if 35010123 <= r["item"] <= 35010138)
+def rpad(p, pad_id):
+    return next(x for x in p["pads"] if x["id"] == pad_id)
+def rmove(p, target):
+    rpad(p, target)["racer_lock"] = rpad(p, racer_locked)["racer_lock"]
+    rpad(p, racer_locked)["racer_lock"] = None
+def rdrop_record(p):
+    p.pop("racers")
+    p["required_features"].remove("character_unlocks_v1")
+def rdrop_rows(p):
+    rdrop_record(p)
+    rows = [r for r in p["items"]["rows"] if not 35010123 <= r["item"] <= 35010138]
+    p["items"]["filler_count"] += len(p["items"]["rows"]) - len(rows)
+    p["items"]["rows"] = rows
+    for pad in p["pads"]:
+        pad["racer_lock"] = None
+def rdrop_row(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != racer_code]
+    p["items"]["filler_count"] += 1
+def rstart_row(p):
+    row = copy.deepcopy(next(r for r in p["items"]["rows"] if r["item"] == racer_code))
+    row["item"] = 35010123 + native_roster.index(racer_start)
+    p["items"]["rows"].append(row)
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+    p["items"]["filler_count"] -= 1
+def rstart_open(p):
+    # Four Keys started from the pool open every hub at the start, so no pad
+    # may carry a lock any more.
+    row = next(r for r in p["items"]["rows"] if r["item"] == 35010014)
+    row.update(start_from_pool=4, remaining=0)
+    p["items"]["filler_count"] += 4
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("lock without the record", rdrop_record),
+        ("lock on a free starting pad", lambda p: rmove(p, racer_free)),
+        ("lock on an empty pad", lambda p: rmove(p, racer_empty)),
+        ("lock on a garage", lambda p: rmove(p, "garage:0")),
+        ("lock moved to another eligible pad", lambda p: rmove(p, racer_spare)),
+        ("lock names the starting racer", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", racer_start)),
+        ("lock names removed Oxide", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", 15)),
+        ("lock names 16", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", 16)),
+        ("lock as Boolean", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", True)),
+        ("lock negative", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", -1)),
+        ("one lock too many", lambda p: rpad(p, racer_spare).__setitem__("racer_lock", racer_locks[racer_locked])),
+        ("one lock dropped", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", None)),
+        ("requested count 5", lambda p: p["racers"].__setitem__("requested_locks", 5)),
+        ("requested count 28", lambda p: p["racers"].__setitem__("requested_locks", 28)),
+        ("requested count as Boolean", lambda p: p["racers"].__setitem__("requested_locks", True)),
+        ("start changed", lambda p: p["racers"].__setitem__("starting_character", (racer_start + 1) % 15)),
+        ("start 16", lambda p: p["racers"].__setitem__("starting_character", 16)),
+        ("Oxide start with Oxide removed", lambda p: p["racers"].__setitem__("starting_character", 15)),
+        ("Oxide flag flipped", lambda p: p["racers"].__setitem__("remove_playable_oxide", False)),
+        ("Oxide flag as integer", lambda p: p["racers"].__setitem__("remove_playable_oxide", 1)),
+        ("unknown record field", lambda p: p["racers"].__setitem__("character_unlocks", True)),
+        ("record field missing", lambda p: p["racers"].pop("requested_locks")),
+        ("record not an object", lambda p: p.__setitem__("racers", [])),
+        ("feature dropped", lambda p: p["required_features"].remove("character_unlocks_v1")),
+        ("racer row missing", rdrop_row),
+        ("row for the starting racer", rstart_row),
+        ("racer row with an extra copy", lambda p: next(r for r in p["items"]["rows"] if r["item"] == racer_code).update(
+            extra=1, remaining=2, receipt_cap=2)),
+        ("racer row swapped for another item", lambda p: next(r for r in p["items"]["rows"] if r["item"] == racer_code).__setitem__(
+            "item", 35010187)),
+        ("Keys started from the pool open every lock", rstart_open),
+        ]:
+    alter("racers-" + name, change, racer_base)
+def racer_env(name, change):
+    case = copy.deepcopy(racer_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        cp.check_racer_envelope(case["content_plan"], case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("racer-envelope-" + name, case, accepted))
+for name, key, value in [("unlocks false", "character_unlocks", False), ("unlocks integer", "character_unlocks", 1),
+                         ("start differs", "starting_character", (racer_start + 1) % 15),
+                         ("class 0", "starting_stat_class", 0), ("class 5", "starting_stat_class", 5),
+                         ("class Boolean", "starting_stat_class", True), ("class 1", "starting_stat_class", 1),
+                         ("penta 0", "penta_stats", 0), ("penta 2", "penta_stats", 2),
+                         ("source 1", "stat_source", 1), ("source 0", "stat_source", 0), ("owner 0", "stat_owner", 0),
+                         ("owner 3", "stat_owner", 3), ("owner 1", "stat_owner", 1),
+                         ("editing false", "stat_editing_allowed", False), ("editing integer", "stat_editing_allowed", 1)]:
+    racer_env(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("starting_stat_class", "penta_stats", "stat_source", "stat_owner", "stat_editing_allowed"):
+    racer_env("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+racer_env("record, rows and locks dropped, unlocks off", lambda c: (rdrop_rows(c["content_plan"]),
+                                                                     c["ctr_options"].__setitem__("character_unlocks", False)))
+racer_env("record, rows and locks dropped, unlocks still on", lambda c: rdrop_rows(c["content_plan"]))
+racer_env("absent stat trio", lambda c: [c["ctr_options"].pop(k) for k in ("stat_source", "stat_owner", "stat_editing_allowed")])
+case = copy.deepcopy(pack_base)
+case["ctr_options"]["character_unlocks"] = True
+cases.append(("racer-envelope-unlocks true without the record", case, False))
+
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
 alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))

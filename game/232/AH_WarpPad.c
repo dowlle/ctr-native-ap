@@ -697,7 +697,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                   FONT_SMALL, JUSTIFY_CENTER | ORANGE);
 					// Second-stage modes: their shared requirement while it is
 					// missing, else whether they still hold checks. Above the
-					// pad name; content-plan pads carry no racer lock line.
+					// pad name; a racer-locked pad's racer line (#133 PR 4b)
+					// moves up one line to make room (apLockLift below).
 					if (pad && pad->occupied && pad->has_stage2)
 					{
 						char later[48], stage2[160];
@@ -757,6 +758,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					int apLockPhys = ctr_cfg_warp_phys(levelID);
 					int apLockRacer = ctr_cfg_racer_lock(apLockPhys);
+					// A content-plan pad with second-stage modes draws their line
+					// at h-45 (above), so its racer line and portrait sit 15
+					// pixels higher (#133 PR 4b). Normal rooms are unchanged.
+					short apLockLift = 0;
+					if (ap_content_plan_active())
+					{
+						const ctr_content_pad *apLockPad = ap_content_plan_pad(levelID);
+						if (apLockPad && apLockPad->occupied && apLockPad->has_stage2)
+							apLockLift = 15;
+					}
 
 					if (apLockRacer >= 0)
 					{
@@ -771,7 +782,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 82);
+						                     + gGT->pushBuffer[0].rect.h - 82 - apLockLift);
 
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
@@ -794,7 +805,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
 						                   (short)(gGT->pushBuffer[0].rect.y
-						                           + gGT->pushBuffer[0].rect.h - 45),
+						                           + gGT->pushBuffer[0].rect.h - 45 - apLockLift),
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}

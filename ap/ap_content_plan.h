@@ -8,8 +8,8 @@ extern "C" {
 
 /* Standalone track entries with their Trophy Race, CTR Challenge and Relic
  * Race modes (#133 PR 3), per-track check families (#133 PR 3b), Cortex
- * Vortex as a track and Relic Race Perfect checks (#133 PR 3c), and Crystal
- * Challenge entries. Stored records own
+ * Vortex as a track and Relic Race Perfect checks (#133 PR 3c), character
+ * unlocks and racer-locked pads (#133 PR 4b), and Crystal Challenge entries. Stored records own
  * their text; callers copy a record before crossing a load boundary. A
  * physical pad is never recovered by inverting its borrowed engine level. */
 #define AP_CONTENT_MODE_TROPHY 0
@@ -64,6 +64,11 @@ typedef struct ctr_content_pad {
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
+    /* Racer lock (#133 PR 4b): the engine character id this pad requires, or
+     * -1. ANDed onto the pad's gates by AP_ContentPadOpen; the parser also
+     * mirrors it into ctr_cfg.racer_lock / gem_cup_racer_lock, so the pad's
+     * racer line and the warp-commit seating read it like a normal room's. */
+    int racer_lock;
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
