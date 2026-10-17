@@ -761,10 +761,54 @@ void AP_NotifyCupAggregateCustomTrackTrophy(void)
 		return;
 	AP_NotifyCustomTrackTrophyImpl();
 }
+
+// The running content-plan race's win check, for the race-loss DeathLink
+// stakes (#133 PR 4a): its pad's Trophy Race or CTR Token Challenge, or a
+// Crystal Challenge's completion; 0 for a Relic Race. *outNeedsItems is 1
+// while a CTR Challenge still waits for a pooled letter item (Lettersanity
+// modes 2 and 3), because its token cannot pay until those arrive. Returns 0
+// when no content-plan race on its pad's route is running.
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context;
+	const ctr_content_pad *pad;
+	int64_t code = 0;
+	int l;
+	*outCode = 0;
+	*outNeedsItems = 0;
+	if (!gGT || !ap_content_plan_active())
+		return 0;
+	if ((pad = AP_ContentCrystalPad()) != NULL)
+	{
+		*outCode = pad->trophy_location > 0 && pad->trophy_location <= 2147483647 ? (long)pad->trophy_location : 0;
+		return 1;
+	}
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
+		return 0;
+	if (context->mode == AP_CONTENT_MODE_TROPHY)
+		code = pad->trophy_location;
+	else if (context->mode == AP_CONTENT_MODE_CTR)
+	{
+		code = pad->ctr_location;
+		for (l = 0; l < 3; ++l)
+			if (pad->letter_items[l] > 0 && !AP_ContentLetterItemReceived(pad->letter_items[l]))
+				*outNeedsItems = 1;
+	}
+	*outCode = code > 0 && code <= 2147483647 ? (long)code : 0;
+	return 1;
+}
 #else
 int AP_CustomTrackTrophyChecked(void) { return 0; }
 void AP_NotifyCustomTrackTrophy(void) {}
 void AP_NotifyCupAggregateCustomTrackTrophy(void) {}
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems)
+{
+	*outCode = 0;
+	*outNeedsItems = 0;
+	return 0;
+}
 #endif
 
 static int AP_CustomLetterSlot(int track)

@@ -255,6 +255,25 @@ static void family_settings(const J &t, ctr_content_checks &fam) {
         fam.relic_perfect = 1;
     }
 }
+// Pool-only packs (#133 PR 4a): items that add no location and no rule. The
+// plan's optional `item_packs` record sizes their ledger rows (apworld
+// content_plan.PACK_ITEMS). Returns item code -> copies.
+static std::map<int64_t, int> item_packs(const J &t) {
+    static const char *const keys[3] = {"progressive_starting_wumpa", "turbo_grant", "tizi_helper"};
+    static const int64_t codes[3] = {35010122, 35010189, 35010188};
+    need(t.is_object() && !t.empty() && t.size() <= 3, "item_packs must be a nonempty record");
+    std::map<int64_t, int> out;
+    size_t seen = 0;
+    for (int k = 0; k < 3; ++k) {
+        if (!t.contains(keys[k])) continue;
+        ++seen;
+        const J &v = t[keys[k]];
+        if (k == 0) out[codes[k]] = number(v, 1, 10);
+        else { need(v.is_boolean() && v.get<bool>(), "item_packs grants must be true when present"); out[codes[k]] = 1; }
+    }
+    need(seen == t.size(), "unknown item_packs field");
+    return out;
+}
 static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
     return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
 }
@@ -279,13 +298,15 @@ static void validate(const J &p, State &out) {
     // `track_checks` (#133 PR 3b) is optional: absent when the seed has no
     // podium rungs, Wumpa checks or Lettersanity.
     const bool has_families = p.is_object() && p.contains("track_checks");
-    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u), "unsupported or incomplete record fields");
+    const bool has_packs = p.is_object() && p.contains("item_packs");
+    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u), "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
     need(p.at("version") == 1, "unsupported required content-plan version");
     ctr_content_checks &fam = out.families;
     fam = ctr_content_checks{};
     if (has_families) family_settings(p["track_checks"], fam);
+    const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"]) : std::map<int64_t, int>{};
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto &named_table = named_block_table(registry);
@@ -335,6 +356,7 @@ static void validate(const J &p, State &out) {
     if(fam.wumpa)features.push_back("wumpa_checks_v1");
     if(fam.lettersanity)features.push_back("lettersanity_v1");
     if(fam.relic_perfect)features.push_back("relic_perfect_v1");
+    if(!packs.empty())features.push_back("item_packs_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -671,10 +693,11 @@ static void validate(const J &p, State &out) {
     }
     const J &items = p["items"];
     fields(items, {"rows", "coded_checks", "locked_checks", "filler_count", "trap_count"});
-    // The 15 counted families, plus one row per pooled letter item (#133 PR 3b).
-    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size(), "item family registry mismatch");
+    // The 15 counted families, plus one row per pooled letter item (#133 PR 3b)
+    // and one per pool-only pack item (#133 PR 4a).
+    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size(), "item family registry mismatch");
     std::set<int> item_ids;
-    std::set<int64_t> letter_rows;
+    std::set<int64_t> letter_rows, pack_rows;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
@@ -684,7 +707,10 @@ static void validate(const J &p, State &out) {
         if (letter_items.count(code)) {
             need(letter_rows.insert(code).second && row["base"] == 1 && row["extra"] == 0, "a letter item is pooled once");
         }
-        const int i = letter_items.count(code) ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
+        const bool pack = packs.count(code) != 0;
+        if (pack)
+            need(pack_rows.insert(code).second && row["base"] == packs.at(code) && row["extra"] == 0, "a pack item row disagrees with item_packs");
+        const int i = letter_items.count(code) || pack ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
         need(i < 0 || item_ids.insert(i).second, "duplicate item family");
         auto &r = i < 0 ? letter_row : out.items[i];
         r.base = number(row["base"]); r.extra = number(row["extra"]);
@@ -692,7 +718,7 @@ static void validate(const J &p, State &out) {
         r.remaining = number(row["remaining"]); r.receipt_cap = number(row["receipt_cap"]);
         need(row["locked_selected"] == 0 && r.remaining == (int64_t)r.base + r.extra - r.start_from_pool && r.receipt_cap == (int64_t)r.base + r.extra + r.start_additional && number(row["requirement_ceiling"]) == r.base, "selected item ledger mismatch");
         need(i != 14 || r.base == 4, "four base Keys are mandatory");
-        need(i >= 0 || r.base == 1, "a letter item is pooled once");
+        need(i >= 0 || pack || r.base == 1, "a letter item is pooled once");
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
         remaining += r.remaining;
     }
@@ -733,7 +759,7 @@ static void validate(const J &p, State &out) {
         if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
-    need(item_ids.size() == 15 && letter_rows.size() == letter_items.size(), "item family registry mismatch");
+    need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size(), "item family registry mismatch");
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
@@ -753,11 +779,26 @@ static int parse_content_plan(const nlohmann::json &j) {
     const bool flag = j.is_object() && j.contains("ctr_options") && j["ctr_options"].is_object() && j["ctr_options"].contains("content_plan");
     if (!block && !flag) { forget(); return 1; }
     try {
-        fields(j, {"schema_version", "content_plan", "ctr_options"});
+        // `trap_identities` (#133 PR 4a): the block every schema-18 room
+        // carries. Optional here, so an earlier content-plan room keeps the
+        // frozen trap table; when present it is read like a normal room's.
+        const bool traps = j.is_object() && j.contains("trap_identities");
+        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) && j.contains("schema_version") && j.contains("content_plan") &&
+             j.contains("ctr_options"), "unsupported or incomplete record fields");
         need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
+        // Optional envelope keys (#133 PR 4a), present when the option is set:
+        // an explicit DeathLink send mask and the two warp-pad display settings
+        // (apworld content_plan.ENVELOPE_OPTIONAL). Absent keeps the defaults.
+        need(co.is_object(), "content-plan envelope must be an object");
+        const bool send = co.contains("death_link_send"), display = co.contains("warp_pad_item_display"),
+                   colors = co.contains("ap_item_type_colors");
+        const int send_mask = send ? number(co["death_link_send"], 0, 7) : -1;
+        const int display_mode = display ? number(co["warp_pad_item_display"], 0, 1) : 0;
+        need(!colors || co["ap_item_type_colors"].is_boolean(), "ap_item_type_colors must be true or false");
+        for(const char *key:{"death_link_send","warp_pad_item_display","ap_item_type_colors"})base.erase(key);
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"] == false && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
@@ -768,17 +809,24 @@ static int parse_content_plan(const nlohmann::json &j) {
         for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {
             arenas=true;arcade |= AP_ArcadeArenaIndex(pad.retail_id)>=0;pickups |= pad.crystal_count>0;
         }
+        const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u);
         if(arenas) {
-            need(co.size()==base.size()+3 && co.at("include_battle_arenas")==true &&
+            need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
-        } else need(co==base,"arena options without arena entries");
+        } else need(co.size()==base.size()+optional && !co.contains("include_battle_arenas") &&
+                    !co.contains("include_arcade_arenas") && !co.contains("crystalsanity"),"arena options without arena entries");
         // The plan owns content availability; legacy arena-pad filtering must
         // not close a physical arena seat holding a Trophy entry.
         ctr_cfg.include_battle_arenas=1;
         need(number(co["goal_gems"], 1, 5) == candidate.goal_count, "goal envelope disagrees with plan");
         ctr_cfg.starting_character = number(co["starting_character"], 0, 15);
-        ctr_cfg.death_link = number(co["death_link"], 0, 2);
+        // 0 off, 1 mask_reset, 2 any_hit, 3 race_loss (#286). Before #133 PR 4a
+        // this refused race_loss, which the apworld emits for content plans too.
+        ctr_cfg.death_link = number(co["death_link"], 0, 3);
         ctr_cfg.deathlink_amnesty = number(co["deathlink_amnesty"], 1, 30);
+        ctr_cfg.death_link_send = send_mask; // -1 absent: the legacy coupling
+        ctr_cfg.warp_pad_item_display = display_mode;
+        ctr_cfg.ap_item_type_colors = colors ? (co["ap_item_type_colors"].get<bool>() ? 1 : 0) : 1;
         text(co["world_version"]); copy(ctr_cfg.world_version, co["world_version"]);
         ctr_cfg.goal = -1; ctr_cfg.goal_oxide = 3; ctr_cfg.goal_bosses = 0; ctr_cfg.goal_gems = candidate.goal_count;
         ctr_cfg.character_unlocks = 0;
@@ -789,6 +837,7 @@ static int parse_content_plan(const nlohmann::json &j) {
         ctr_cfg.one_lap_cups = ctr_cfg.oxide_1_optional = 0;
         ctr_cfg.relic_min_time = ctr_cfg.relics_require_perfect = 0;
         state = std::move(candidate);
+        if (traps) ap_seedcfg_parse_trap_identities(j, 18);
         ctr_cfg.schema_version = 18; // commit after complete validation
         return 2;
     } catch (const std::exception &e) {

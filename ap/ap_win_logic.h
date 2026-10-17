@@ -507,6 +507,34 @@ static inline const char *AP_WinStakesWhyText(int why)
 	return "?";
 }
 
+// Content-plan race-loss stakes (#133 PR 4a). A content-plan room has no
+// win_logic block: its pads enforce their own hub, manual and second-stage
+// gates before the race loads, so the race being played has its gates met.
+// Its win is then in logic unless it still needs items the slot lacks (a CTR
+// Challenge waiting for pooled letter items). `code` is the race's win check
+// (Trophy Race, CTR Token Challenge or Crystal Challenge completion), 0 when
+// it has none, as on a Relic Race. Same reasons as AP_WinStakesDecide.
+static inline AP_WinStakes AP_WinStakesContentDecide(long code, int collected, int needsItems)
+{
+	AP_WinStakes r;
+
+	r.stakes = 0;
+	r.code = -1;
+	if (code <= 0)
+		r.why = AP_WS_WHY_NO_ENTRY;
+	else if (collected)
+		r.why = AP_WS_WHY_COLLECTED;
+	else if (needsItems)
+		r.why = AP_WS_WHY_OUT_OF_LOGIC;
+	else
+	{
+		r.stakes = 1;
+		r.why = AP_WS_WHY_STAKES;
+		r.code = code;
+	}
+	return r;
+}
+
 static inline AP_WinStakes AP_WinStakesDecide(const AP_WinLogic *wl, const AP_WinLogicEnv *env,
                                               const long *winSet, int n)
 {

@@ -585,6 +585,73 @@ for name, change in [
         ]:
     cv_alter(name, change)
 
+# Pool-only packs and the envelope (#133 PR 4a): generated plans with every
+# pack combination and envelope setting, then forged records, rows and
+# envelope values. The envelope's apworld side is content_plan.restore's check.
+from worlds.ctr.test.test_item_packs import pack_options
+pack_cases = 0
+for seed in range(24):
+    send = [None, [], ["mask_grab"], ["weapon_hit", "race_loss"]][seed % 4]
+    extra = dict(death_link=("off", "mask_reset", "any_hit", "race_loss")[seed % 4],
+                 warp_pad_item_display=("one_pile", "by_reward_type")[seed % 2], ap_item_type_colors=seed % 3 != 0)
+    if send is not None:
+        extra["death_link_send"] = send
+    options = pack_options(psw=seed % 11, turbo=bool(seed & 1), tizi=bool(seed & 2), **extra)
+    cases.append((f"packs-generated-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    pack_cases += 1
+pack_base = make_world(pack_options(psw=3, death_link="race_loss", death_link_send=["weapon_hit"],
+                                    warp_pad_item_display="by_reward_type", ap_item_type_colors=False),
+                       seed=20261017).fill_slot_data()
+cases.append(("packs-base", pack_base, True))
+def pack_row(p, code):
+    return next(r for r in p["items"]["rows"] if r["item"] == code)
+def pack_more(p):
+    pack_row(p, 35010122).update(base=4, remaining=4, receipt_cap=4, requirement_ceiling=4)
+    p["items"]["filler_count"] -= 1
+def pack_drop_row(p):
+    p["items"]["rows"].remove(pack_row(p, 35010189))
+    p["items"]["filler_count"] += 1
+def pack_drop_record(p):
+    p.pop("item_packs")
+    p["required_features"].remove("item_packs_v1")
+for name, change in [
+        ("count disagrees with row", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 2)),
+        ("row disagrees with count", pack_more),
+        ("count as Boolean", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", True)),
+        ("count 11", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 11)),
+        ("count 0", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 0)),
+        ("grant false", lambda p: p["item_packs"].__setitem__("turbo_grant", False)),
+        ("grant as integer", lambda p: p["item_packs"].__setitem__("tizi_helper", 1)),
+        ("unknown pack", lambda p: p["item_packs"].__setitem__("itemsanity", True)),
+        ("empty record", lambda p: p.__setitem__("item_packs", {})),
+        ("rows without record", pack_drop_record),
+        ("record without its row", pack_drop_row),
+        ("feature dropped", lambda p: p["required_features"].remove("item_packs_v1")),
+        ("extra copy", lambda p: pack_row(p, 35010188).update(extra=1, remaining=2, receipt_cap=2)),
+        ("reversed key order", lambda p: p.__setitem__("item_packs", dict(reversed(list(p["item_packs"].items()))))),
+        ("unchanged copy", lambda p: None),
+        ]:
+    alter("packs-" + name, change, pack_base)
+def env_alter(name, change):
+    case = copy.deepcopy(pack_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("envelope-" + name, case, accepted))
+for name, key, value in [("send 8", "death_link_send", 8), ("send -1", "death_link_send", -1),
+                         ("send Boolean", "death_link_send", True), ("send 0", "death_link_send", 0),
+                         ("send 7", "death_link_send", 7), ("display 2", "warp_pad_item_display", 2),
+                         ("display Boolean", "warp_pad_item_display", True), ("display 0", "warp_pad_item_display", 0),
+                         ("colours integer", "ap_item_type_colors", 1), ("colours true", "ap_item_type_colors", True)]:
+    env_alter(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("death_link_send", "warp_pad_item_display", "ap_item_type_colors"):
+    env_alter("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+env_alter("no trap block", lambda c: c.pop("trap_identities"))
+
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
 alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))

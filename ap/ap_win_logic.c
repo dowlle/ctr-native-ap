@@ -125,6 +125,25 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	}
 }
 
+// A content-plan race (#133 PR 4a) decides from its own pad: the room has no
+// win_logic block, and its pads are not the legacy destinations
+// AP_WinSetResolve reads from the level ID. Returns 0 when the race is not a
+// content-plan race on its pad's route, and the legacy path decides.
+static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_WinStakes *out)
+{
+	long code;
+	int needsItems;
+	char msg[192];
+
+	if (!AP_ContentWinFacts(&code, &needsItems))
+		return 0;
+	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
+	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%ld -> %s (%s)\n",
+	         when, (int)gGT->levelID, code, out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
+	AP_LogLine(msg);
+	return 1;
+}
+
 static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 {
 	AP_WinRaceFacts f;
@@ -135,6 +154,8 @@ static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 	char wins[48];
 	char msg[256];
 
+	if (AP_WinDecideContent(gGT, when, &s))
+		return s;
 	AP_WinFactsNow(gGT, &f);
 	n = AP_WinSetResolve(&f, AP_WinBitCode, set, &mode);
 	env = AP_WinEnvNow();
