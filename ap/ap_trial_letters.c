@@ -108,11 +108,25 @@ refused:
     return 0;
 }
 
+// A content-plan CTR Challenge on Slide Coliseum or Turbo Track (#133 PR 3)
+// uses the same authored letters as the legacy trial CTR Challenge.
+static int AP_TrialLetters_ContentCtr(struct GameTracker *gGT)
+{
+#ifdef CTR_CUSTOM_TRACKS
+    const struct CustomTrackRaceContext *race=CustomTrack_StandaloneContext(gGT->levelID);
+    return race && race->retail && race->mode==AP_CONTENT_MODE_CTR && race->hostLevelID==gGT->levelID;
+#else
+    (void)gGT;
+    return 0;
+#endif
+}
+
 static int AP_TrialLetters_Active(struct GameTracker *gGT)
 {
     int track=gGT->levelID-16;
     if (track<0 || track>=2 || !ctr_cfg_active() ||
-        !ctr_cfg.trial_track_valid[track] || ctr_cfg.trial_track_mode[track]!=2 ||
+        (!AP_TrialLetters_ContentCtr(gGT) &&
+         (!ctr_cfg.trial_track_valid[track] || ctr_cfg.trial_track_mode[track]!=2)) ||
         gGT->numPlyrCurrGame!=1 || !(gGT->gameMode1 & ADVENTURE_MODE) ||
         !(gGT->gameMode2 & TOKEN_RACE) ||
         (gGT->gameMode1 & (ADVENTURE_ARENA|ADVENTURE_CUP|RELIC_RACE|MAIN_MENU|BATTLE_MODE|GAME_CUTSCENE))) return 0;

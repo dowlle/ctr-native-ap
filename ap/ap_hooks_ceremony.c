@@ -86,8 +86,12 @@ int AP_CeremonyRelicTier(void)
 	{
 		int bit = ap_ceremony_ledger[i].bit;
 		int tier = AP_CortexPseudoRelicTier(bit); // schema 15, -1 otherwise
+		int contentPad, contentMode, contentTier;
 		if (tier >= 0)
 			;
+		else if (ap_content_bit_decode(bit, &contentPad, &contentMode, &contentTier) &&
+		         contentMode == AP_CONTENT_MODE_RELIC)
+			tier = contentTier; // content-plan Relic Race (#133 PR 3)
 		else if (bit >= ADV_REWARD_FIRST_PLATINUM_RELIC && bit < ADV_REWARD_FIRST_CTR_TOKEN)
 			tier = 2;
 		else if (bit >= ADV_REWARD_FIRST_GOLD_RELIC && bit < ADV_REWARD_FIRST_PLATINUM_RELIC)
@@ -132,6 +136,14 @@ int AP_RelicTargetTier(void)
 static int AP_RelicTierEarnable(int levelID, int tier)
 {
 	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
+#ifdef CTR_CUSTOM_TRACKS
+	// A content-plan Relic Race asks its pad's own tier codes (#133 PR 3).
+	{
+		long code = AP_StandaloneRelicCode(tier);
+		if (code != -2)
+			return code > 0 && ap_net_location_exists(code) && !ap_net_location_checked(code);
+	}
+#endif
 	// Schema 15: a Cortex Vortex relic race asks its own tier codes, never
 	// Oxide Station's relic bits. An absent tier is not earnable.
 	if (AP_CortexTrackActive())

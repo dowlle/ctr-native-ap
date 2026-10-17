@@ -39,8 +39,9 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
         changed[path]["unexpected_field"] = 1;
         refuse(changed, "extra field at " + path.to_string());
         for (auto it = node.begin(); it != node.end(); ++it) {
-            // Optional custom-track fields (#306): absent is a legal plan.
-            if (it.key() != "room_title" && it.key() != "named_block") {
+            // Optional custom-track fields (#306) and the envelope's
+            // reserve_top_up Boolean (#451): absent is a legal plan.
+            if (it.key() != "room_title" && it.key() != "named_block" && it.key() != "reserve_top_up") {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
             }
@@ -359,6 +360,133 @@ int main(int argc, char **argv) {
         expect(parse(two_generic("TV Park")), "track identity: two generic tracks with distinct titles admit");
         refuse(two_generic("Fixture Loop"), "track identity: two generic tracks with one room title");
         refuse(two_generic("FIXTURE LOOP"), "track identity: room titles compare without case");
+    }
+    // Track modes (#133 PR 3): the paired apworld's plan with all three modes,
+    // two stages and a mode order drawn per pad, on the 18 retail tracks and
+    // three custom packages (tv-world on block 78 with CTR and Relic, the B+
+    // fixture-loop with Trophy and Relic, the Relic-only relic-loop).
+    J modes;
+    std::ifstream("tools/fixtures/content-plan/track-modes.json") >> modes;
+    expect(parse(modes) && bind_room(modes, "seed-M") && ap_content_plan_active(), "track-mode plan binds");
+    {
+        int retail = 0, custom = 0, later = 0, relicFirst = 0;
+        int none[15] = {}, keys[15] = {};
+        keys[14] = 4;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied || p->crystal) continue;
+            int64_t codes[3];
+            expect(p->mode_count >= 1 && p->stages[0] == 1, "first mode opens with the pad");
+            expect(ap_content_mode_open(p, p->modes[0], keys), "first mode open with the hub Keys");
+            if (p->mode_count > 1) {
+                ++later;
+                expect(p->has_stage2 && p->stage2_mask && p->stage2_count >= 1 && p->stage2_count <= 4,
+                       "multi-mode pad has its second-stage rule");
+                for (int k = 1; k < p->mode_count; ++k)
+                    expect(p->stages[k] == 2 && !ap_content_mode_open(p, p->modes[k], keys), "later mode closed without its rule");
+                int rich[15] = {};
+                for (int i = 0; i < 15; ++i) rich[i] = 99;
+                expect(ap_content_mode_open(p, p->modes[1], rich), "later mode opens on the rule");
+            }
+            if (p->modes[0] == AP_CONTENT_MODE_RELIC) ++relicFirst;
+            if (p->retail_id >= 0) {
+                ++retail;
+                expect(p->mode_count == 3 && p->trophy_location > 0 && p->ctr_location > 0 && p->relic_locations[2] > 0,
+                       "retail pad owns all three modes");
+                if (p->retail_id == 3)
+                    expect(p->trophy_location == 35011000 && p->ctr_location == 35012300 && p->relic_locations[0] == 35012000 &&
+                           p->relic_locations[1] == 35012100 && p->relic_locations[2] == 35012200, "Crash Cove keeps its frozen codes");
+                continue;
+            }
+            ++custom;
+            const auto *pkg = ap_content_plan_package(p->package_index);
+            const std::string key = pkg ? pkg->content_id : "";
+            if (key == "tv-world")
+                expect(p->mode_count == 3 && p->ctr_location == 35200000 + 200 * 78 + 9 &&
+                       p->relic_locations[0] == 35200000 + 200 * 78 + 6 && p->relic_locations[2] == 35200000 + 200 * 78 + 8,
+                       "named package modes on its block offsets");
+            else if (key == "fixture-loop")
+                expect(p->mode_count == 2 && p->ctr_location == 0 && p->custom_slot == 1 && p->trophy_location == 35016300 &&
+                       p->relic_locations[0] == 35022000 && p->relic_locations[2] == 35022002 &&
+                       ap_content_mode_codes(p, AP_CONTENT_MODE_CTR, codes) == 0, "B+ package without letters: Trophy and Relic");
+            else
+                expect(key == "relic-loop" && p->mode_count == 1 && p->modes[0] == AP_CONTENT_MODE_RELIC && !p->has_stage2 &&
+                       p->trophy_location == 0 && p->relic_locations[0] == 35022003 && p->relic_locations[2] == 35022005 &&
+                       ap_content_mode_open(p, AP_CONTENT_MODE_RELIC, none) == (p->keys == 0),
+                       "Relic-only package on generic slot 2");
+        }
+        expect(retail == 18 && custom == 3 && later == 20, "18 retail and 3 custom track pads, 20 with later modes");
+        expect(relicFirst > 0, "a per-pad order puts Relic first somewhere");
+    }
+    mutations(modes, modes, J::json_pointer(""));
+    {
+        auto modes_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = modes; change(bad["content_plan"]); refuse(bad, "track modes: " + why);
+        };
+        auto multi = [](J &plan) -> J & {
+            for (auto &p : plan["pads"]) if (p["mode_gates"].size() == 3) return p;
+            throw std::runtime_error("no three-mode pad");
+        };
+        auto record = [](J &plan, const J &id) -> J & {
+            for (auto &r : plan["requirements"]) if (r["id"] == id) return r;
+            throw std::runtime_error("missing record");
+        };
+        auto drop = [](J &plan, const J &id) {
+            auto &rows = plan["requirements"];
+            for (size_t i = 0; i < rows.size(); ++i) if (rows[i]["id"] == id) { rows.erase(i); return; }
+        };
+        modes_refuse("later gate as stage one", [&](J &p) { multi(p)["mode_gates"][1]["stage"] = 1; });
+        modes_refuse("later gate on the entrance record", [&](J &p) { multi(p)["mode_gates"][2]["requirement_id"] = "free"; });
+        modes_refuse("first gate as stage two", [&](J &p) { multi(p)["mode_gates"][0]["stage"] = 2; });
+        modes_refuse("gate order differs from entry order", [&](J &p) { auto &g = multi(p)["mode_gates"]; std::swap(g[0], g[2]); });
+        modes_refuse("stage-two record dropped", [&](J &p) { drop(p, multi(p)["mode_gates"][1]["requirement_id"]); });
+        modes_refuse("stage-two count above supply", [&](J &p) { record(p, multi(p)["mode_gates"][1]["requirement_id"])["predicate"]["count"] = 99; });
+        modes_refuse("stage-two count zero", [&](J &p) { record(p, multi(p)["mode_gates"][1]["requirement_id"])["predicate"]["count"] = 0; });
+        modes_refuse("stage-two predicate always", [&](J &p) {
+            record(p, multi(p)["mode_gates"][1]["requirement_id"])["predicate"] = J{{"op", "always"}}; });
+        modes_refuse("stage-two record for an empty pad", [&](J &p) {
+            for (auto &pad : p["pads"]) if (pad["entry_id"].is_null() && pad["kind"] == "normal") {
+                const std::string id = pad["id"];
+                p["requirements"].push_back(J{{"id", "stage2:" + id.substr(4)}, {"predicate", J{{"op", "count"}, {"item", 35010000}, {"count", 1}}}});
+                return;
+            } });
+        modes_refuse("stage-two record for a one-mode pad", [&](J &p) {
+            for (auto &pad : p["pads"]) if (pad["mode_gates"].size() == 1 && pad["mode_gates"][0]["mode"] != "crystal") {
+                const std::string id = pad["id"];
+                p["requirements"].push_back(J{{"id", "stage2:" + id.substr(4)}, {"predicate", J{{"op", "count"}, {"item", 35010000}, {"count", 1}}}});
+                return;
+            } });
+        modes_refuse("entry repeats a mode", [&](J &p) {
+            for (auto &e : p["entries"]) if (e["kind"] == "track" && e["modes"].size() == 3) { e["modes"][2] = e["modes"][0]; return; } });
+        modes_refuse("entry mode unknown", [&](J &p) {
+            for (auto &e : p["entries"]) if (e["kind"] == "track" && e["modes"].size() == 3) { e["modes"][2] = "merged"; return; } });
+        modes_refuse("track modes out of canonical order", [&](J &p) {
+            for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["modes"] = J::array({"ctr", "trophy", "relic"}); return; } });
+        modes_refuse("capabilities differ from modes", [&](J &p) {
+            for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["capabilities"] = J::array({"trophy"}); return; } });
+        modes_refuse("feature dropped", [&](J &p) { p["required_features"] = J::array({"content_plan_v1"}); });
+        modes_refuse("relic award swapped", [&](J &p) {
+            for (auto &c : p["checks"]) if (c["kind"] == "relic" && c["routes"][0]["award"] == "gold") { c["routes"][0]["award"] = "platinum"; return; } });
+        modes_refuse("CTR award as a plain win", [&](J &p) {
+            for (auto &c : p["checks"]) if (c["kind"] == "ctr") { c["routes"][0]["award"] = "win"; return; } });
+        modes_refuse("relic package loses its lap graph", [&](J &p) {
+            for (auto &pkg : p["packages"]) if (pkg["content_id"] == "relic-loop") pkg["capabilities"]["time_trial"] = false; });
+        modes_refuse("merged entry", [&](J &p) {
+            for (auto &e : p["entries"]) if (e["kind"] == "track") { e["merged"] = true; return; } });
+        J single = modes;
+        // Single stage: every later gate on the entrance record, no stage-2 records.
+        for (auto &pad : single["content_plan"]["pads"])
+            for (size_t k = 1; k < pad["mode_gates"].size(); ++k) {
+                pad["mode_gates"][k]["stage"] = 1; pad["mode_gates"][k]["requirement_id"] = pad["mode_gates"][0]["requirement_id"];
+            }
+        J kept = J::array();
+        for (const auto &r : single["content_plan"]["requirements"]) if (r["id"].get<std::string>().rfind("stage2:", 0) != 0) kept.push_back(r);
+        single["content_plan"]["requirements"] = kept;
+        expect(parse(single) && bind_room(single, "seed-S"), "the same plan with one stage admits");
+        const auto *p = ap_content_plan_pad(3);
+        int none[15] = {};
+        expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none),
+               "one stage: every mode opens with the pad");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

@@ -24,6 +24,7 @@ fixture=r'''
 #include "ap_relic_perfect.h"
 #include "ap_pad_glow_items.h"
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 static long crystalChecked;

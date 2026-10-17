@@ -6,9 +6,14 @@
 extern "C" {
 #endif
 
-/* Standalone Trophy and Crystal Challenge entries. Stored
- * records own their text; callers copy a record before crossing a load boundary.
- * A physical pad is never recovered by inverting its borrowed engine level. */
+/* Standalone track entries with their Trophy Race, CTR Challenge and Relic
+ * Race modes (#133 PR 3), and Crystal Challenge entries. Stored records own
+ * their text; callers copy a record before crossing a load boundary. A
+ * physical pad is never recovered by inverting its borrowed engine level. */
+#define AP_CONTENT_MODE_TROPHY 0
+#define AP_CONTENT_MODE_CTR 1
+#define AP_CONTENT_MODE_RELIC 2
+#define AP_CONTENT_MODE_COUNT 3
 typedef struct ctr_content_pad {
     int physical, hub, keys, occupied;
     /* Manual stage-1 rule (#463), the resolved `manual_pad_requirements_v1`
@@ -24,7 +29,18 @@ typedef struct ctr_content_pad {
     int crystal, target, time_limit_ticks, crystal_count;
     int64_t crystal_locations[20];
     int named_block; /* -1 generic slot ids, otherwise 0..9999 (#306) */
+    /* Crystal Challenge completion code, or the Trophy Race code of a track
+     * entry with a Trophy mode; 0 for a track entry without one. */
     int64_t trophy_location;
+    /* Track modes in the pad's resolved order (#133 PR 3): modes[0] opens with
+     * the pad (stage 1); a later mode is stage 2 when stages[i] == 2, and then
+     * also needs the pad's second-stage rule (stage2_mask/stage2_count, same
+     * encoding as rule_mask). mode_count is 0 for a Crystal Challenge. */
+    int mode_count, modes[AP_CONTENT_MODE_COUNT], stages[AP_CONTENT_MODE_COUNT];
+    int has_stage2, stage2_count;
+    unsigned stage2_mask;
+    int64_t ctr_location;         /* CTR Token Challenge, 0 without the mode */
+    int64_t relic_locations[3];   /* Sapphire, Gold, Platinum Time Trial */
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
@@ -70,6 +86,40 @@ static inline int ap_content_pad_open(const ctr_content_pad *pad, const int *cou
 {
     return pad && pad->occupied && counts[14] >= pad->keys &&
            (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+}
+/* Position of a mode in the pad's order, or -1 when the entry lacks it. */
+static inline int ap_content_mode_slot(const ctr_content_pad *pad, int mode)
+{
+    int i;
+    for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i)
+        if (pad->modes[i] == mode) return i;
+    return -1;
+}
+static inline int ap_content_stage2_owned(const ctr_content_pad *pad, const int *counts)
+{
+    int i, owned = 0;
+    for (i = 0; i < 15; ++i)
+        if (pad->stage2_mask & (1u << i)) owned += counts[i];
+    return owned;
+}
+/* The single mode gate: the pad is open, and a stage-2 mode's second rule is
+ * met. No mode needs a win in another one (Wayfinder ticket 16). Pad entry,
+ * the mode selector, the race-start gate and the tracker all call this. */
+static inline int ap_content_mode_open(const ctr_content_pad *pad, int mode, const int *counts)
+{
+    const int i = ap_content_mode_slot(pad, mode);
+    if (i < 0 || !ap_content_pad_open(pad, counts)) return 0;
+    return pad->stages[i] == 1 || (pad->has_stage2 && ap_content_stage2_owned(pad, counts) >= pad->stage2_count);
+}
+/* The check codes a mode owns on this pad (Trophy 1, CTR 1, Relic 3); 0 when
+ * the entry lacks the mode. */
+static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, int64_t out[3])
+{
+    if (ap_content_mode_slot(pad, mode) < 0) return 0;
+    if (mode == AP_CONTENT_MODE_TROPHY) { out[0] = pad->trophy_location; return 1; }
+    if (mode == AP_CONTENT_MODE_CTR) { out[0] = pad->ctr_location; return 1; }
+    out[0] = pad->relic_locations[0]; out[1] = pad->relic_locations[1]; out[2] = pad->relic_locations[2];
+    return 3;
 }
 
 /* Parsed != admitted. Net admission must bind the exact room location union

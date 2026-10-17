@@ -154,6 +154,9 @@ tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
 tools/test-content-capability.c
 tools/test-content-hooks-admission.py
+tools/test-content-modes.c
+tools/test-content-relic-result.py
+tools/test-content-custom-scores.c
 tools/test-reserve-top-up-production.py
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c

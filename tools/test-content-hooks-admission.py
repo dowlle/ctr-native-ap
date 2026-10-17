@@ -61,6 +61,7 @@ const ctr_content_package *ap_content_plan_package(int index) { return index == 
 const ctr_content_pad *ap_content_plan_pad(int physical) { return physical == plan_pad.physical ? &plan_pad : NULL; }
 uint64_t ap_content_plan_epoch(void) { return 7; }
 int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad != NULL; }
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode) { return pad != NULL && ap_content_mode_slot(pad, mode) >= 0; }
 static struct CustomTrackManagerStatus ap_custom_content_status;
 static int ap_custom_content_required;
 static unsigned ap_state_gen;
@@ -148,6 +149,7 @@ int main(void)
 	plan_pad.physical = 3; plan_pad.hub = 26; plan_pad.occupied = 1; plan_pad.retail_id = -1;
 	plan_pad.package_index = 0; plan_pad.custom_slot = 1; plan_pad.laps = 3; plan_pad.named_block = -1;
 	plan_pad.trophy_location = 35016300;
+	plan_pad.mode_count = 1; plan_pad.modes[0] = AP_CONTENT_MODE_TROPHY; plan_pad.stages[0] = 1;
 	snprintf(plan_pad.entry_id, sizeof plan_pad.entry_id, "entry/custom/fixture-loop/2.1");
 	snprintf(plan_pad.track_id, sizeof plan_pad.track_id, "custom/fixture-loop/2.1");
 
@@ -157,7 +159,7 @@ int main(void)
 	expect(preflight() && AP_ContentPadReady(3) && !ap_custom_content_required, "honest claim is Ready at connect");
 	expect(strcmp(ap_content_files[0].levPath, lev) == 0 && strcmp(ap_content_files[0].vrmPath, vrm) == 0,
 	       "open package located by digest under its track key");
-	expect(AP_ContentPreparePad(3) == 6, "honest claim enters on host level 6");
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "honest claim enters on host level 6");
 	expect(used_files == 1 && used_managed == 0 && strcmp(used_lev, lev) == 0 && strcmp(used_vrm, vrm) == 0 &&
 	       strcmp(used_name, "Fixture Loop") == 0, "loader gets the located files and the race name");
 	expect(applied == 1 && applied_descriptor.standalone && applied_descriptor.laps == 3 &&
@@ -177,10 +179,10 @@ int main(void)
 	expect(ap_custom_content_status.state == CTR_CT_MANAGER_UNSUPPORTED && strstr(ap_custom_content_status.detail, "wumpa") &&
 	       strstr(log_text, "content plan refused package/fixture-loop/2.1"), "refusal names the missing capability and is logged");
 	expect(ap_content_files[0].levPath[0] == 0, "a refused package keeps no located paths");
-	expect(AP_ContentPreparePad(3) == -1 && used_files == 0 && applied == 0 && staged == 0, "false claim never reaches the loader");
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && used_files == 0 && applied == 0 && staged == 0, "false claim never reaches the loader");
 	/* Ready at connect, then the claim check runs again at pad entry. */
 	ap_content_package_ready[0] = 1; ap_state_gen = 0;
-	expect(AP_ContentPreparePad(3) == -1 && !ap_content_package_ready[0] && ap_custom_content_required && ap_state_gen == 1 &&
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_package_ready[0] && ap_custom_content_required && ap_state_gen == 1 &&
 	       used_files == 0 && applied == 0, "pad entry refuses a false claim and clears the ready flag");
 
 	/* File swap after admission: same size, different bytes. */
@@ -192,26 +194,26 @@ int main(void)
 	expect(CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
 	       strcmp(report.levSha256, plan_package.lev_sha256) != 0, "swapped LEV is a valid LEV with another hash");
 	ap_custom_content_required = 0; ap_state_gen = 0;
-	expect(AP_ContentPreparePad(3) == -1 && !ap_content_package_ready[0] && ap_custom_content_required && ap_state_gen == 1,
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_package_ready[0] && ap_custom_content_required && ap_state_gen == 1,
 	       "same-size swap after admission refused at pad entry");
 	expect(ap_custom_content_status.state != CTR_CT_MANAGER_READY && used_files == 0 && applied == 0 && staged == 0,
 	       "swapped files never reach the loader");
 	write_bytes(lev, image, levSize);
-	expect(preflight() && AP_ContentPreparePad(3) == 6, "restoring the pinned bytes admits again");
+	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "restoring the pinned bytes admits again");
 
 	/* Swap between locating and measuring: the pin compare catches it. */
 	reset_calls();
 	ap_content_package_ready[0] = 1;
 	swap_after_locate = changed; swap_bytes = levSize;
 	snprintf(swap_path, sizeof swap_path, "%s", lev);
-	expect(AP_ContentPreparePad(3) == -1 && !ap_content_package_ready[0] && used_files == 0 && applied == 0,
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_package_ready[0] && used_files == 0 && applied == 0,
 	       "a swap between locate and measure is refused");
 	expect(strstr(ap_custom_content_status.detail, "failed the file check") != NULL, "the pin mismatch is the reason");
 	write_bytes(lev, image, levSize);
 
 	/* No package record: nothing to scan or enter. */
 	plan_has_package = 0;
-	expect(!AP_ContentScanPackage(0, 0, &ap_custom_content_status) && AP_ContentPreparePad(3) == -1, "missing record refused");
+	expect(!AP_ContentScanPackage(0, 0, &ap_custom_content_status) && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1, "missing record refused");
 
 	unlink(lev); unlink(vrm); rmdir(dir);
 	snprintf(dir, sizeof dir, "%s/tracks/fixture-loop", assets_root); rmdir(dir);

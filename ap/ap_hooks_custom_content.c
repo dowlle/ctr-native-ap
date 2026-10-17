@@ -158,15 +158,21 @@ int AP_ContentPadReady(int physicalPad)
 	        ap_content_package_ready[pad->package_index]));
 }
 
-int AP_ContentPreparePad(int physicalPad)
+int AP_ContentPreparePad(int physicalPad, int mode)
 {
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
 	struct CustomTrackRaceContext race;
+	int64_t codes[3] = {0, 0, 0};
 	if (!pad || !pad->occupied || CustomTrack_StandaloneBusy() || !AP_ContentPadReady(physicalPad) ||
 	    !AP_ContentPadOpen(pad)) return -1;
+	// A track entry races one of its modes, through the same gate the
+	// selector used; a Crystal Challenge has no modes and races mode 0.
+	if (pad->crystal ? mode != AP_CONTENT_MODE_TROPHY
+	                 : (!AP_ContentModeOpen(pad, mode) || ap_content_mode_codes(pad, mode, codes) < 1)) return -1;
 	memset(&race, 0, sizeof race);
 	race.physicalPad = physicalPad; race.returnHub = pad->hub;
-	race.laps = pad->laps; race.trophyLocation = pad->trophy_location;
+	race.laps = pad->laps; race.trophyLocation = pad->crystal ? pad->trophy_location : codes[0];
+	race.mode = mode;
 	race.crystal = pad->crystal; race.timeLimitTicks = pad->time_limit_ticks;
 	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;
 	race.hostLevelID = race.retail ? pad->retail_id : 6;

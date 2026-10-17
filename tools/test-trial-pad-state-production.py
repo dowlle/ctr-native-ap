@@ -14,11 +14,13 @@ fixture=r'''
 #define CTR_AP 1
 #include "ap_pad_state.h"
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #define AP_IDX_KEY 14
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 int AP_GateCount(int i){(void)i;return 0;}
 int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 0;}
+int AP_ContentTrackPadState(const ctr_content_pad *p){(void)p;return 0;}
 int ap_net_location_checked(long c){(void)c;return 0;}
 #define CTR_CFG_TRIAL_TROPHY 0
 #define ADV_REWARD_FIRST_TROPHY 0

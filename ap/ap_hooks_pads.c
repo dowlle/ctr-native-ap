@@ -166,10 +166,25 @@ int AP_CortexTrackPrepareLoad(int destLevelID)
 	return level;
 }
 
+// Server checked-state of a content-plan code, the callback the pure
+// track-mode decisions (ap_content_modes.h) take.
+int AP_ContentCodeChecked(int64_t code)
+{
+	return code > 0 && ap_net_location_checked((long)code);
+}
+
 int AP_RelicTimeFor(int levelID, int tier)
 {
 	if (tier < 0 || tier > 2)
 		tier = 0;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		// A content-plan Relic Race shows its own track's targets (#133 PR 3).
+		int target = AP_StandaloneRelicTarget(tier);
+		if (target > 0)
+			return target;
+	}
+#endif
 	if (AP_CortexTrackActive())
 		return AP_CortexRelicTime(tier);
 	if (levelID < 0 || levelID >= 18)
@@ -317,7 +332,21 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
         int count=0,n;
         if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
-        if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=50000+pad->physical;
+        if(pad->crystal) {
+            if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
+        }
+        // Track modes (#133 PR 3): every unchecked check of every mode, in the
+        // pad's mode order, as the glow ruling of 2026-09-30 asks.
+        for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
+            int64_t codes[3]={0,0,0};
+            int k,c=ap_content_mode_codes(pad,pad->modes[n],codes);
+            for(k=0;k<c && count<cap;++k) {
+                if(codes[k]<=0 || ap_net_location_checked((long)codes[k]))continue;
+                outBits[count++]=pad->modes[n]==AP_CONTENT_MODE_TROPHY ? AP_CONTENT_BIT_TROPHY+pad->physical :
+                                 pad->modes[n]==AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR+pad->physical :
+                                 AP_CONTENT_BIT_RELIC+pad->physical*3+k;
+            }
+        }
         for(n=0;n<pad->crystal_count && count<cap;++n)
             if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
         return count;
@@ -771,9 +800,15 @@ static int AP_GlowBitRewardGroup(int globalBit)
 {
     if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)return 2;
     if(globalBit>=60000 && globalBit<62100)return 2;
-    if(globalBit>=50000 && globalBit<=50104) {
-        const ctr_content_pad *p=ap_content_plan_pad(globalBit-50000);
-        if(p && p->crystal)return 2;
+    {
+        // Content-plan pads: Trophy rides the race slot, the relic tiers the
+        // relic slot, CTR and a Crystal Challenge the token slot.
+        int contentPad,contentMode,contentTier;
+        if(ap_content_bit_decode(globalBit,&contentPad,&contentMode,&contentTier)) {
+            const ctr_content_pad *p=ap_content_plan_pad(contentPad);
+            if(p && p->crystal)return 2;
+            return contentMode==AP_CONTENT_MODE_RELIC ? 1 : contentMode==AP_CONTENT_MODE_CTR ? 2 : 0;
+        }
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
@@ -1039,7 +1074,9 @@ int AP_PadState(int physLevelID, int destLevelID)
             int bits[21];
             return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
         }
-		return ap_net_location_checked((long)pad->trophy_location) ? 4 : 2;
+		// Track modes (#133 PR 3): 2 while an open mode has a check left, 3
+		// when only the second-stage modes do, 4 when everything is checked.
+		return AP_ContentTrackPadState(pad);
 	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
 	// (4 * CTR_CFG_PODIUM_RUNG_COUNT) plus its own gem bit.

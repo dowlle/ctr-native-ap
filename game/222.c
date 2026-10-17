@@ -125,6 +125,12 @@ void AA_EndEvent_DrawMenu(void)
 			// never Oxide Station's token bit for LevelID 13.
 			if (AP_CortexTrackActive())
 				rewardBit = AP_CortexTrackBit(AP_CV_SLOT_TOKEN);
+#ifdef CTR_CUSTOM_TRACKS
+			// A content-plan CTR Challenge celebrates its pad's own check
+			// (#133 PR 3), never the engine host's token bit.
+			else if (AP_StandaloneCtrBit() >= 0)
+				rewardBit = AP_StandaloneCtrBit();
+#endif
 #endif
 			letterPos.x = hudCTR->x;
 			letterPos.y = hudCTR->y;
@@ -136,6 +142,10 @@ void AA_EndEvent_DrawMenu(void)
 #ifdef CTR_AP
 			    (AP_CortexTrackActive()
 			         ? !AP_CortexTrackChecked(AP_CV_SLOT_TOKEN)
+#ifdef CTR_CUSTOM_TRACKS
+			         : AP_StandaloneCtrBit() >= 0
+			         ? !AP_LocationCheckedByBit(rewardBit)
+#endif
 			         : AP_TrialTrackConfigured(gGT->levelID)
 			         ? !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_CTR)
 			         : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))

@@ -12,6 +12,7 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
@@ -327,6 +328,19 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 int AP_ContentPadOpen(const ctr_content_pad *pad);
 // Owned count for the pad's manual rule (0 when it has none).
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
+// Track modes (#133 PR 3): the pad is open and the mode's stage is met
+// (ap_content_mode_open over the received tallies). The mode selector, the
+// race-start gate, pad state and the pad text all call this.
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode);
+// Owned count for the pad's second-stage rule (0 when it has none).
+int AP_ContentStage2Owned(const ctr_content_pad *pad);
+// Server checked-state of one content-plan code (ap_content_checked_fn).
+int AP_ContentCodeChecked(int64_t code);
+// The pad's mode selector rows over the received tallies and the server's
+// checked set (ap_content_selector_build). Returns the number of open rows.
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out);
+// AP_PadState of an open or locked content-plan track pad (ap_content_track_pad_state).
+int AP_ContentTrackPadState(const ctr_content_pad *pad);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
@@ -342,7 +356,21 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_StandaloneRaceActive(void);
 int AP_NotifyStandaloneRace(void);
-int AP_ContentPreparePad(int physicalPad);
+// Relic Race result of a content-plan standalone race (#133 PR 3): sends the
+// tiers the time reaches against the track's own targets. Returns the number
+// of tiers sent.
+int AP_NotifyStandaloneRelic(int raceTime);
+// Pad display identity of the running standalone race's CTR Challenge, or -1.
+int AP_StandaloneCtrBit(void);
+// The running standalone Relic Race's target for a tier, or -1 when no
+// content-plan Relic Race is running.
+int AP_StandaloneRelicTarget(int tier);
+// The running content-plan Relic Race's tier code; -2 when none is running.
+long AP_StandaloneRelicCode(int tier);
+// Stage the content-plan race for one of the pad's modes (AP_CONTENT_MODE_*).
+// Returns the host LevelID to load, or -1 when the mode's gate or the
+// package refuses the entry.
+int AP_ContentPreparePad(int physicalPad, int mode);
 int AP_ContentPadReady(int physicalPad);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);

@@ -44,3 +44,17 @@ hand to put it there: the track record gained `named_block: 8` and
 `room_title: "Baby T Park"`, and its Trophy check moved from the generic slot
 code `35016300` to `35201600`. Nothing else in them changed. The paired
 validator accepts all three again.
+
+Track modes (#133 PR 3): `track-modes.json` is slot data the paired apworld
+emitted (`worlds/ctr/test/test_track_modes.py` helpers, seed 20261016) with
+`modes: [trophy, ctr, relic]`, two stages and a per-pad mode order. It holds
+the 18 retail tracks (all three modes, frozen Trophy, CTR Token Challenge and
+Time Trial codes) and three test packages whose pins name no real files:
+`tv-world` on named block 78 with CTR and Relic claimed (block offsets 0, 9
+and 6 to 8), the B+ `fixture-loop` with Trophy and Relic (generic slot 1), and
+the Relic-only `relic-loop` (no arcade, generic slot 2). Every pad with two or
+more modes has a `stage2:<physical>` record, and the plan declares
+`track_modes_v1`. `test-content-plan.cpp` checks the resolved modes, stages,
+codes and gate answers, refuses forged gates, records, modes and awards, and
+admits the same plan rewritten to one stage. The earlier fixtures are Trophy
+only and unchanged.

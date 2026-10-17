@@ -86,6 +86,13 @@ int CustomTrack_StandaloneBusy(void);
 void CustomTrack_SelectRetailRace(void);
 void CustomTrack_OnRaceLoadRequested(int levelID);
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID);
+// A content-plan race on a custom package, not a retail track (#133 PR 3). It
+// keeps no high scores and never reads, writes or shows its engine host's.
+static inline int CustomTrack_KeepsNoScores(int levelID)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	return race && !race->retail;
+}
 const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void);
 
 // The bundled Cortex Vortex pair. `enabled` arms it for N. Oxide's Final
