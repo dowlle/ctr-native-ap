@@ -9,14 +9,61 @@
 
 typedef int (*ap_content_checked_fn)(int64_t code);
 
-// Unchecked codes a mode still owns on this pad.
+// Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
+// display slot: podium rungs (slots 0..4) on the Trophy Race, the track's own
+// Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
+// letter checks (slots 6..8) on the CTR Challenge. The `wumpa: global` check
+// belongs to no pad and keeps no pad open, as on the legacy path.
+#define AP_CONTENT_FAMILY_SLOTS 9
+// Content-plan podium identity of a pad's Trophy Race: logical podium track
+// AP_CONTENT_PODIUM_LOGICAL_BASE + physical pad, resolved through the pad's
+// own rung codes (ap_hooks_race.c AP_ContentPodiumRungs), never the engine
+// host's row.
+#define AP_CONTENT_PODIUM_LOGICAL_BASE 1000
+static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int mode,
+                                               int64_t out[AP_CONTENT_FAMILY_SLOTS], int slots[AP_CONTENT_FAMILY_SLOTS])
+{
+    int n = 0, k;
+    if (!pad || ap_content_mode_slot(pad, mode) < 0) return 0;
+    for (k = 0; mode == AP_CONTENT_MODE_TROPHY && k < 5; ++k)
+        if (pad->rung_locations[k] > 0) { out[n] = pad->rung_locations[k]; slots[n++] = k; }
+    if (pad->wumpa_location > 0 && (pad->wumpa_modes & (1u << mode))) { out[n] = pad->wumpa_location; slots[n++] = 5; }
+    for (k = 0; mode == AP_CONTENT_MODE_CTR && k < 3; ++k)
+        if (pad->letter_locations[k] > 0) { out[n] = pad->letter_locations[k]; slots[n++] = 6 + k; }
+    return n;
+}
+
+// Unchecked codes a mode still owns on this pad, its family checks included.
 static inline int ap_content_mode_pending(const ctr_content_pad *pad, int mode, ap_content_checked_fn checked)
 {
-    int64_t codes[3];
+    int64_t codes[3], family[AP_CONTENT_FAMILY_SLOTS];
+    int slots[AP_CONTENT_FAMILY_SLOTS];
     int n = ap_content_mode_codes(pad, mode, codes), i, left = 0;
     for (i = 0; i < n; ++i)
         if (codes[i] > 0 && !checked(codes[i])) ++left;
+    n = ap_content_mode_family_codes(pad, mode, family, slots);
+    for (i = 0; i < n; ++i)
+        if (!checked(family[i])) ++left;
     return left;
+}
+
+// The Reach 10 Wumpa check a race in `mode` on this pad sends, or -1: the
+// track's own check (`per_track`) or the one global check, only for a mode
+// with a Wumpa route. Never the engine host's retail code.
+static inline int64_t ap_content_wumpa_code(const ctr_content_checks *fam, const ctr_content_pad *pad, int mode)
+{
+    if (!fam || !pad || mode < 0 || mode >= AP_CONTENT_MODE_COUNT || !(pad->wumpa_modes & (1u << mode))) return -1;
+    if (fam->wumpa == 2) return pad->wumpa_location > 0 ? pad->wumpa_location : -1;
+    if (fam->wumpa == 1) return fam->wumpa_global > 0 ? fam->wumpa_global : -1;
+    return -1;
+}
+
+// Lettersanity on a content-plan CTR Challenge, in the legacy encoding of
+// ap_lettersanity.h: a letter's location code or -1 when it has none.
+static inline void ap_content_letter_codes(const ctr_content_pad *pad, long out[3])
+{
+    int l;
+    for (l = 0; l < 3; ++l) out[l] = pad && pad->letter_locations[l] > 0 ? (long)pad->letter_locations[l] : -1;
 }
 
 // One selector row per mode, in the pad's order. A locked row is drawn grey
@@ -94,10 +141,30 @@ static inline const char *ap_content_mode_label(int mode)
 
 // Pad display identities of content-plan checks (AP_LookupLocationCode):
 // Trophy or Crystal completion 50000 + pad, CTR 50200 + pad, relic tiers
-// 50400 + pad * 3 + tier, crystal pickups 60000 + pad * 20 + n.
+// 50400 + pad * 3 + tier, crystal pickups 60000 + pad * 20 + n, and the
+// per-track families 56000 + pad * 16 + family slot (0..4 rungs, 5 Wumpa,
+// 6..8 letters, #133 PR 3b).
 #define AP_CONTENT_BIT_TROPHY 50000
 #define AP_CONTENT_BIT_CTR 50200
 #define AP_CONTENT_BIT_RELIC 50400
+#define AP_CONTENT_BIT_FAMILY 56000
+#define AP_CONTENT_FAMILY_STRIDE 16
+
+// The family check behind a family display bit, or -1.
+static inline int64_t ap_content_family_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || slot < 0 || slot >= AP_CONTENT_FAMILY_SLOTS) return -1;
+    if (slot < 5) return pad->rung_locations[slot] > 0 ? pad->rung_locations[slot] : -1;
+    if (slot == 5) return pad->wumpa_location > 0 ? pad->wumpa_location : -1;
+    return pad->letter_locations[slot - 6] > 0 ? pad->letter_locations[slot - 6] : -1;
+}
+static inline int ap_content_family_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_FAMILY || bit >= AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_FAMILY) / AP_CONTENT_FAMILY_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE;
+    return *slot < AP_CONTENT_FAMILY_SLOTS;
+}
 static inline int ap_content_bit_decode(int bit, int *physical, int *mode, int *tier)
 {
     if (bit >= AP_CONTENT_BIT_TROPHY && bit <= AP_CONTENT_BIT_TROPHY + 104) {

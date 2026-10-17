@@ -67,6 +67,10 @@ void ap_net_send_location(long code) { sent++; sentCode=code; }
 void AP_AppendLog(const char *text) { assert(strstr(text,"standalone")); }
 void AP_CeremonyLedgerAdd(long code,int bit,int tag) { (void)code; (void)bit; (void)tag; assert(0); }
 void AP_FeedOnLocationSent(long code) { assert(code==sentCode); feed++; }
+/* The CTR letter rule with Lettersanity off (#133 PR 3b): a win with all three
+ * letters. tools/test-content-track-checks-production.py runs the production
+ * rule with Lettersanity letters. */
+int AP_LetterTokenEarned(int track,int didWin,int collected) { (void)track; return didWin && collected==3; }
 '''
 fixture += function("static int AP_EmitClassCheck(long code,")
 fixture += function("static const ctr_content_pad *AP_StandaloneRoutePad(")

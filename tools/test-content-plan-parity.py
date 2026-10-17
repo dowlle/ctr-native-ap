@@ -41,6 +41,19 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
                 # review); tools/sync-content-registry.py rewrites it.
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
                               for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
+# Per-track check families (#133 PR 3b): rung, Wumpa and letter codes per
+# retail track and generic slot, and the one global Wumpa check.
+RUNGS = [cp.RUNG_SUFFIX[k] for k in cp.podium.SLOT_ORDER]
+for row in expected["retail"]:
+    n = row["name"]
+    row.update(podium=[L[f"{n}: {s}"] for s in RUNGS], wumpa=L[f"{n}: Reach 10 Wumpa"],
+               letters=[L[f"{n}: Letter {x}"] for x in cp.LETTERS],
+               letter_items=[cp.content_item_pool.ITEMS[f"Letter {x} ({n})"] for x in cp.LETTERS])
+expected.update(custom_podium_locations=[[L[f"Custom Track {i}: {s}"] for s in RUNGS] for i in range(1, 33)],
+                custom_wumpa_locations=[L[f"Custom Track {i}: Reach 10 Wumpa"] for i in range(1, 33)],
+                custom_letter_locations=[[L[f"Custom Track {i}: Letter {x}"] for x in cp.LETTERS] for i in range(1, 33)],
+                custom_letter_items=[[cp.custom_check_code("letter_item", i, j) for j in range(3)] for i in range(1, 33)],
+                wumpa_global=L["Wumpa: Reach 10 Wumpa"])
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
 cases = []
@@ -355,6 +368,115 @@ def relic_without_targets(p):
     pkg["capabilities"]["relic"] = False; pkg.pop("relic_targets")
 modes_alter("relic track whose package lost relic", relic_without_targets)
 modes_alter("unchanged modes copy", lambda p: None)
+
+# Per-track check families (#133 PR 3b): podium rung sets, both Wumpa modes and
+# every Lettersanity shape, on retail tracks, a named block and a B+ track with
+# letters and Wumpa, across the three mode orders; then forged family records.
+from Options import OptionError
+from worlds.ctr.test.test_track_checks import check_options
+fam_bplus = copy.deepcopy(UNKNOWN)
+fam_bplus["capabilities"].update(ctr_tokens=True, wumpa=True)
+fam_custom = [copy.deepcopy(cp.PACKAGES[1]), fam_bplus]
+rung_toggles = [dict(), dict(podium_held_fifth_rung=True), dict(podium_held_rungs=False),
+                dict(podium_finish_rungs=False), dict(podium_any_position_rung=False)]
+family_cases = 0
+for index, (wumpa, letters, order) in enumerate(itertools.product(("off", "global", "per_track"), (0, 1, 2, 3),
+                                                                  ("fixed", "per_seed", "per_pad"))):
+    for seed in range(2):
+        options = check_options(wumpa=wumpa, letters=letters, per_track=1 + (index + seed) % 3, order=order,
+                                custom=copy.deepcopy(fam_custom) if (index + seed) % 2 == 0 else [fam_bplus],
+                                stages=("two", "single")[seed])
+        options.update(rung_toggles[(index + seed) % len(rung_toggles)])
+        try:
+            wire = make_world(options, seed=seed + 7 * index).fill_slot_data()
+        except OptionError:
+            continue  # a narrow start (open question for PR 3b), not a plan
+        cases.append((f"families-{wumpa}-{letters}-{order}-{seed}", wire, True))
+        family_cases += 1
+assert family_cases >= 60, family_cases
+fam_base = make_world(check_options(wumpa="per_track", letters=2, per_track=2, custom=copy.deepcopy(fam_custom)),
+                      seed=20261017).fill_slot_data()
+cases.append(("families-base", fam_base, True))
+fam_global = next(w for name, w, ok in cases if name.startswith("families-global-3-"))
+def fam_alter(name, change, source=None):
+    alter("families-" + name, change, source or fam_base)
+def first_check(p, kind, owner=None):
+    return next(c for c in p["checks"] if c["kind"] == kind and (owner is None or c["owner"] == owner))
+def letter_row(p):
+    return next(r for r in p["items"]["rows"] if r["item"] > 35010014)
+def drop_letter_row(p):
+    p["items"]["rows"].remove(letter_row(p))
+def drop_feature(name):
+    return lambda p: p["required_features"].remove(name)
+def move_letter(p):
+    have = {c["location"] for c in p["checks"] if c["owner"] == "retail:3" and c["kind"] == "letter"}
+    c = first_check(p, "letter", "retail:3")
+    i = next(i for i in range(3) if 35012500 + i not in have)
+    c.update(location=35012500 + i, display_name=f"Crash Cove: Letter {cp.LETTERS[i]}")
+    c["routes"][0]["award"] = cp.LETTER_KEYS[i]
+def move_letter_and_item(p):
+    have = sorted(c["location"] for c in p["checks"] if c["owner"] == "retail:3" and c["kind"] == "letter")
+    c = first_check(p, "letter", "retail:3")
+    old = c["location"] - 35012500
+    i = next(i for i in range(3) if 35012500 + i not in have)
+    c.update(location=35012500 + i, display_name=f"Crash Cove: Letter {cp.LETTERS[i]}")
+    c["routes"][0]["award"] = cp.LETTER_KEYS[i]
+    next(r for r in p["items"]["rows"] if r["item"] == 35010139 + old)["item"] = 35010139 + i
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+for name, change in [
+        ("letter check dropped", lambda p: p["checks"].remove(first_check(p, "letter"))),
+        ("rung dropped", lambda p: p["checks"].remove(first_check(p, "podium"))),
+        ("Wumpa dropped", lambda p: p["checks"].remove(first_check(p, "wumpa"))),
+        ("letter item row dropped", drop_letter_row),
+        ("letter item pooled twice", lambda p: letter_row(p).update(base=2, remaining=2, receipt_cap=2, requirement_ceiling=2)),
+        ("letter item with an extra copy", lambda p: letter_row(p).update(extra=1, remaining=2, receipt_cap=2)),
+        ("letter item started from the pool", lambda p: letter_row(p).update(start_from_pool=1, remaining=0)),
+        ("unknown item row", lambda p: letter_row(p).__setitem__("item", 35010187)),
+        ("rung set never created", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd"])),
+        ("rung set held 5th alone", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_5th"])),
+        ("rungs out of slot order", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd", "held_1st", "finish_podium", "finish_any"])),
+        ("rung unknown", lambda p: p["track_checks"]["podium_rungs"].__setitem__(0, "held_2nd")),
+        ("rung repeated", lambda p: p["track_checks"]["podium_rungs"].__setitem__(1, "held_1st")),
+        ("wumpa mode unknown", lambda p: p["track_checks"].__setitem__("wumpa", "per_pad")),
+        ("per-track checks under global", lambda p: p["track_checks"].__setitem__("wumpa", "global")),
+        ("letters_per_track missing", lambda p: p["track_checks"].pop("letters_per_track")),
+        ("letters_per_track above the drawn letters", lambda p: p["track_checks"].__setitem__("letters_per_track", 3)),
+        ("letters_per_track zero", lambda p: p["track_checks"].__setitem__("letters_per_track", 0)),
+        ("mode 2 read as mode 1", lambda p: p["track_checks"].__setitem__("lettersanity", 1)),
+        ("lettersanity as Boolean", lambda p: p["track_checks"].__setitem__("lettersanity", True)),
+        ("lettersanity 4", lambda p: p["track_checks"].__setitem__("lettersanity", 4)),
+        ("empty record", lambda p: p.__setitem__("track_checks", {})),
+        ("unknown setting", lambda p: p["track_checks"].__setitem__("box_locations", True)),
+        ("record removed", lambda p: p.pop("track_checks")),
+        ("podium feature dropped", drop_feature("podium_rungs_v1")),
+        ("Wumpa feature dropped", drop_feature("wumpa_checks_v1")),
+        ("Lettersanity feature dropped", drop_feature("lettersanity_v1")),
+        ("Wumpa route from a Relic Race", lambda p: first_check(p, "wumpa")["routes"][0].__setitem__("mode", "relic")),
+        ("Wumpa routes reordered", lambda p: next(c for c in p["checks"] if c["kind"] == "wumpa" and len(c["routes"]) == 2)["routes"].reverse()),
+        ("Wumpa award changed", lambda p: first_check(p, "wumpa")["routes"][0].__setitem__("award", "win")),
+        ("rung on a CTR route", lambda p: first_check(p, "podium")["routes"][0].__setitem__("mode", "ctr")),
+        ("letter award swapped", lambda p: first_check(p, "letter")["routes"][0].__setitem__(
+            "award", "letter_t" if first_check(p, "letter")["routes"][0]["award"] == "letter_c" else "letter_c")),
+        ("rung display name changed", lambda p: first_check(p, "podium").__setitem__("display_name", "Crash Cove: Held 2nd")),
+        ("letter kind changed", lambda p: first_check(p, "letter").__setitem__("kind", "ctr")),
+        ("B+ package loses Wumpa", lambda p: next(x for x in p["packages"] if x["content_id"] == "fixture-loop")["capabilities"].__setitem__("wumpa", False)),
+        ("letter moved to an undrawn letter", move_letter),
+        ("unchanged copy", lambda p: None),
+        ]:
+    fam_alter(name, change)
+# Another draw for one track: both sides accept a letter that moves with its item.
+fam_alter("letter moved with its item", move_letter_and_item)
+for name, change in [
+        ("global Wumpa dropped", lambda p: p["checks"].remove(first_check(p, "wumpa"))),
+        ("global routes reversed", lambda p: first_check(p, "wumpa")["routes"].reverse()),
+        ("global route dropped", lambda p: first_check(p, "wumpa")["routes"].pop()),
+        ("global owner changed", lambda p: first_check(p, "wumpa").__setitem__("owner", "retail:3")),
+        ("global read as per-track", lambda p: p["track_checks"].__setitem__("wumpa", "per_track")),
+        ("mode 3 with letters_per_track", lambda p: p["track_checks"].__setitem__("letters_per_track", 3)),
+        ("mode 3 read as mode 2", lambda p: p["track_checks"].update(lettersanity=2, letters_per_track=3)),
+        ("global unchanged copy", lambda p: None),
+        ]:
+    fam_alter(name, change, fam_global)
 
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))

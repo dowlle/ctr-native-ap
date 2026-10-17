@@ -368,6 +368,11 @@ static long AP_LookupLocationCode(int globalBit)
             return ap_content_mode_codes(pad, contentMode, codes) > contentTier && codes[contentTier] > 0
                        ? (long)codes[contentTier] : -1;
         }
+        // Per-track families (#133 PR 3b): rungs, Wumpa and letters.
+        if (ap_content_family_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_family_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 ? (long)code : -1;
+        }
     }
 	int i;
 	int trialPseudo, trialChallenge;

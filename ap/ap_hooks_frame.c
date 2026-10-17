@@ -364,7 +364,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        "%s    {\"pad\": %d, \"keys\": %d, \"rule_mask\": %u, "
 			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d, "
 			        "\"modes\": [%d, %d, %d], \"mode_count\": %d, \"stage2_mask\": %u, "
-			        "\"stage2_count\": %d, \"stage2_owned\": %d, \"stage2_open\": %d}",
+			        "\"stage2_count\": %d, \"stage2_owned\": %d, \"stage2_open\": %d",
 			        first ? "" : ",\n", pad->physical, pad->keys,
 			        pad->has_rule ? pad->rule_mask : 0u,
 			        pad->has_rule ? pad->rule_count : 0,
@@ -374,6 +374,21 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        pad->has_stage2 ? pad->stage2_mask : 0u, pad->has_stage2 ? pad->stage2_count : 0,
 			        AP_ContentStage2Owned(pad),
 			        pad->mode_count > 1 ? AP_ContentModeOpen(pad, pad->modes[1]) : 0);
+			// Per-track families (#133 PR 3b): rung, Wumpa and letter codes
+			// (0 absent) and which pooled letter items have arrived.
+			AP_TextBufPrintf(f,
+			        ", \"rungs\": [%lld, %lld, %lld, %lld, %lld], \"wumpa\": %lld, \"wumpa_modes\": %u, "
+			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
+			        "\"letters_received\": [%d, %d, %d]}",
+			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
+			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
+			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
+			        (long long)pad->letter_locations[0], (long long)pad->letter_locations[1],
+			        (long long)pad->letter_locations[2], (long long)pad->letter_items[0],
+			        (long long)pad->letter_items[1], (long long)pad->letter_items[2],
+			        AP_ContentLetterItemReceived(pad->letter_items[0]),
+			        AP_ContentLetterItemReceived(pad->letter_items[1]),
+			        AP_ContentLetterItemReceived(pad->letter_items[2]));
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");

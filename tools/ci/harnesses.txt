@@ -157,6 +157,8 @@ tools/test-content-hooks-admission.py
 tools/test-content-modes.c
 tools/test-content-relic-result.py
 tools/test-content-custom-scores.c
+tools/test-content-track-checks.c
+tools/test-content-track-checks-production.py
 tools/test-reserve-top-up-production.py
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c

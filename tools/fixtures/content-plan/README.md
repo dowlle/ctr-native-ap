@@ -58,3 +58,20 @@ more modes has a `stage2:<physical>` record, and the plan declares
 codes and gate answers, refuses forged gates, records, modes and awards, and
 admits the same plan rewritten to one stage. The earlier fixtures are Trophy
 only and unchanged.
+
+Per-track check families (#133 PR 3b): `track-checks.json` and
+`track-checks-global.json` are slot data the paired apworld emitted
+(`worlds/ctr/test/test_track_checks.py` helpers, seeds 20261017 and 20261018,
+script `emit-track-checks-fixtures.py` in the PR 3b artifacts) with all three
+modes, two stages and a per-pad order, on three retail tracks (Crash Cove,
+Roo's Tubes, Slide Coliseum, small enough for the field mutations), Baby T Park
+1.0.2 on named block 8 (generic slot 1) and the B+ `fixture-loop` test package
+with letters and Wumpa claimed (generic slot 2, pins name no real files). The
+first has four podium rungs, per-track Reach 10 Wumpa and Lettersanity mode 2
+with two letters per CTR Challenge; the second has all five rungs, global
+Wumpa and Lettersanity mode 3. Both carry a `track_checks` record and the
+matching `podium_rungs_v1`, `wumpa_checks_v1` and `lettersanity_v1` features.
+`test-content-plan.cpp` checks the resolved rung, Wumpa and letter codes and
+the pooled letter items per pad, runs the field mutations on the first, and
+refuses forged settings, routes, letter draws and letter item rows. The
+earlier fixtures have no `track_checks` record and are unchanged.

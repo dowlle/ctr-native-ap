@@ -355,6 +355,8 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 // connected seed's exact profile, otherwise the current Baby T Park release.
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_StandaloneRaceActive(void);
+// Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
+int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);
 // Relic Race result of a content-plan standalone race (#133 PR 3): sends the
 // tiers the time reaches against the track's own targets. Returns the number
