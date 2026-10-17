@@ -330,14 +330,22 @@ static int AP_RelicPerfectServingCustom(struct GameTracker *gGT)
 	return 0;
 }
 
+#ifdef CTR_CUSTOM_TRACKS
+static long AP_StandalonePerfectCode(int *outRoute);
+#endif
+
 void AP_NotifyRelicPerfect(void)
 {
 	struct GameTracker *gGT;
 	struct Driver *driver;
 	AP_RelicPerfectFacts facts;
 	long code;
+	int contentPlan = 0;
 
-	if (!ctr_cfg_active() || !ctr_cfg.relic_perfect_enabled)
+#ifdef CTR_CUSTOM_TRACKS
+	contentPlan = ap_content_plan_active();
+#endif
+	if (!ctr_cfg_active() || (!contentPlan && !ctr_cfg.relic_perfect_enabled))
 		return;
 	// #286: a forced-loss relic attempt pays no finish-class check.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_PERFECT))
@@ -347,6 +355,18 @@ void AP_NotifyRelicPerfect(void)
 	if (gGT == 0 || driver == 0 || (gGT->gameMode1 & RELIC_RACE) == 0)
 		return;
 
+	memset(&facts, 0, sizeof facts);
+#ifdef CTR_CUSTOM_TRACKS
+	// A content plan (#133 PR 3c): only the running Relic Race's own pad
+	// route can pay, with that pad's perfect code. Nothing else in a
+	// content-plan seed sends a perfect.
+	if (contentPlan)
+	{
+		facts.contentCode = AP_StandalonePerfectCode(&facts.contentRoute);
+		if (!facts.contentRoute)
+			return;
+	}
+#endif
 	facts.retail = ctr_cfg.relic_perfect;
 	facts.levelID = (int)gGT->levelID;
 	facts.broken = (int)driver->numTimeCrates;
@@ -475,8 +495,8 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 	    context->seedEpoch != ap_content_plan_epoch() ||
 	    ap_content_mode_codes(pad, context->mode, codes) < 1 || codes[0] != context->trophyLocation ||
 	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
-	    context->retail != (pad->retail_id >= 0) ||
-	    context->hostLevelID != (context->retail ? pad->retail_id : 6) ||
+	    context->retail != (pad->retail_id >= 0) || context->cortex != pad->cortex ||
+	    context->hostLevelID != ap_content_pad_host(pad) ||
 	    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return NULL;
 	return pad;
 }
@@ -608,7 +628,9 @@ static const ctr_content_pad *AP_StandaloneRelicPad(void)
 }
 
 // Retail tracks keep their retail relic targets; a custom track uses its
-// package's targets, never the host slot's.
+// package's targets, never the host slot's. Cortex Vortex uses the targets
+// its legacy pad track uses (AP_CortexRelicTime, placeholders until the
+// track author supplies real times).
 int AP_StandaloneRelicTarget(int tier)
 {
 	const ctr_content_pad *pad = AP_StandaloneRelicPad();
@@ -616,6 +638,8 @@ int AP_StandaloneRelicTarget(int tier)
 	if (tier < 0 || tier > 2 || !pad) return -1;
 	if (pad->retail_id >= 0)
 		return pad->retail_id < 18 ? data.RelicTime[pad->retail_id * 3 + tier] : -1;
+	if (pad->cortex)
+		return AP_CortexRelicTime(tier);
 	pkg = ap_content_plan_package(pad->package_index);
 	return pkg && pkg->has_relic_targets ? pkg->relic_targets[tier] : -1;
 }
@@ -626,6 +650,27 @@ long AP_StandaloneRelicCode(int tier)
 	const ctr_content_pad *pad = AP_StandaloneRelicPad();
 	if (!pad) return -2;
 	return tier >= 0 && tier < 3 ? (long)pad->relic_locations[tier] : -1;
+}
+
+// The running content-plan Relic Race's perfect code (#133 PR 3c). *outRoute
+// is 1 when a content-plan Relic Race is on its pad's route, serving its own
+// bytes; the code is then that pad's perfect check, or -1 when the seed has
+// none. Never the engine host's retail code.
+static long AP_StandalonePerfectCode(int *outRoute)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	*outRoute = 0;
+	if (!gGT || !context || context->mode != AP_CONTENT_MODE_RELIC || !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE) ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return -1;
+	*outRoute = 1;
+	return ap_content_plan_checks()->relic_perfect && pad->perfect_location > 0 &&
+	       pad->perfect_location <= 2147483647 ? (long)pad->perfect_location : -1;
 }
 
 int AP_NotifyStandaloneRelic(int raceTime)

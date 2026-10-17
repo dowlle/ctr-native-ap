@@ -77,12 +77,15 @@ static int AP_NamedLetterReceived(int64_t code)
 }
 // Whether a letter item a content plan pools was received (#133 PR 3b):
 // retail letters by item index, generic custom slots by slot, named blocks by
-// block. 0 for no item.
+// block, Cortex Vortex's own three items (#133 PR 3c). 0 for no item.
 static int AP_ContentLetterItemReceived(int64_t code)
 {
 	int level, letter, slot;
 	if (code <= 0)
 		return 0;
+	if (code >= AP_ITEM_BASE && code < AP_ITEM_BASE + 0x10000 &&
+	    (letter = AP_CortexLetterItemIndexPure(code - AP_ITEM_BASE)) >= 0)
+		return ap_cortex_letter_received[letter];
 	if (code >= AP_ITEM_BASE && code < AP_ITEM_BASE + 0x10000 &&
 	    AP_LetterItemIndexToIdentityPure((int)(code - AP_ITEM_BASE), &level, &letter))
 		return level >= 0 && level < CTR_CFG_LETTER_TRACK_COUNT && ap_letter_received[level][letter];

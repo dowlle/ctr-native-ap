@@ -13,6 +13,12 @@ Cases: an honest capability claim is Ready and enters with the measured flags;
 a false claim is refused at connect and at pad entry and clears the ready flag;
 a same-size file swap after admission is refused at pad entry; a swap between
 locating and measuring is caught by the pin compare.
+
+Cortex Vortex as a content-plan track (#133 PR 3c) uses the bundled pair the
+repository ships under assets/tracks/cortex-vortex (the legacy pad track's
+files, with their packaging permission): Ready only with the pinned bytes,
+measured for all five capabilities, entered on host 13 as a custom-bytes
+standalone race with no custom slot; missing or changed bytes are refused.
 """
 from pathlib import Path
 import subprocess
@@ -64,6 +70,9 @@ int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad != NULL; }
 int AP_ContentModeOpen(const ctr_content_pad *pad, int mode) { return pad != NULL && ap_content_mode_slot(pad, mode) >= 0; }
 static struct CustomTrackManagerStatus ap_custom_content_status;
 static int ap_custom_content_required;
+static int ap_cortex_track_content_required;
+#define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
+#define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
 static unsigned ap_state_gen;
 int CustomTrack_StandaloneBusy(void) { return 0; }
 static int used_managed, used_files, applied, staged;
@@ -211,6 +220,63 @@ int main(void)
 	expect(strstr(ap_custom_content_status.detail, "failed the file check") != NULL, "the pin mismatch is the reason");
 	write_bytes(lev, image, levSize);
 
+	/* Cortex Vortex (#133 PR 3c): the bundled pair, copied from the repository. */
+	{
+		char cvDir[600], cvLev[700], cvVrm[700], cmd[2048];
+		snprintf(cvDir, sizeof cvDir, "%s/tracks/cortex-vortex", assets_root); mkdir(cvDir, 0700);
+		snprintf(cvLev, sizeof cvLev, "%s/CVortex Arcade All.lev", cvDir);
+		snprintf(cvVrm, sizeof cvVrm, "%s/CVortex Arcade All.vrm", cvDir);
+		memset(&plan_pad, 0, sizeof plan_pad);
+		plan_pad.physical = 5; plan_pad.hub = 27; plan_pad.occupied = 1; plan_pad.retail_id = -1; plan_pad.cortex = 1;
+		plan_pad.package_index = -1; plan_pad.custom_slot = 0; plan_pad.laps = 3; plan_pad.named_block = -1;
+		plan_pad.mode_count = 3; plan_pad.modes[0] = AP_CONTENT_MODE_RELIC; plan_pad.modes[1] = AP_CONTENT_MODE_TROPHY;
+		plan_pad.modes[2] = AP_CONTENT_MODE_CTR; plan_pad.stages[0] = plan_pad.stages[1] = plan_pad.stages[2] = 1;
+		plan_pad.trophy_location = 35026000; plan_pad.ctr_location = 35026004;
+		plan_pad.relic_locations[0] = 35026001; plan_pad.relic_locations[1] = 35026002; plan_pad.relic_locations[2] = 35026003;
+		snprintf(plan_pad.entry_id, sizeof plan_pad.entry_id, "entry/cortex_vortex");
+		snprintf(plan_pad.track_id, sizeof plan_pad.track_id, "cortex_vortex");
+		reset_calls();
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(!ap_content_cortex_ready && !AP_ContentPadReady(5) && strstr(log_text, "refused Cortex Vortex"),
+		       "missing bundled pair: Cortex Vortex is not Ready");
+		ap_cortex_track_content_required = 0;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && used_files == 0 && staged == 0,
+		       "missing bundled pair: the pad refuses entry");
+		ap_content_cortex_ready = 1; /* stale flag from an earlier scan: entry scans again */
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && !ap_content_cortex_ready &&
+		       ap_cortex_track_content_required && used_files == 0, "entry rescans and refuses missing files");
+		snprintf(cmd, sizeof cmd, "cp '%s/assets/tracks/cortex-vortex/CVortex Arcade All.lev' '%s' && "
+		         "cp '%s/assets/tracks/cortex-vortex/CVortex Arcade All.vrm' '%s'", CTR_REPO_ROOT, cvLev, CTR_REPO_ROOT, cvVrm);
+		expect(system(cmd) == 0, "bundled pair copied");
+		reset_calls();
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(ap_content_cortex_ready && AP_ContentPadReady(5), "pinned bundled pair is Ready");
+		ap_cortex_track_content_required = 0;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == 13, "Cortex Vortex enters on host level 13");
+		expect(used_files == 1 && used_managed == 0 && strcmp(used_lev, cvLev) == 0 && strcmp(used_vrm, cvVrm) == 0 &&
+		       strcmp(used_name, "CORTEX VORTEX") == 0, "loader gets the bundled files");
+		expect(applied == 1 && applied_descriptor.standalone && applied_descriptor.hostLevelID == 13 && applied_descriptor.laps == 3 &&
+		       applied_descriptor.flagRelicCrates == 1 && applied_descriptor.flagAiNav == 1 && applied_descriptor.flagCtrLetters == 1 &&
+		       applied_descriptor.flagSpawns == 8 && applied_descriptor.flagCheckpoints == 255 &&
+		       applied_descriptor.flagWumpaCollectible == 1 && applied_descriptor.replacesCupLevelID == -1 &&
+		       strcmp(applied_descriptor.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0 &&
+		       strcmp(applied_descriptor.vrmSha256, CTR_CFG_CORTEX_VRM_SHA256) == 0,
+		       "loader descriptor carries the bundled pair's measured flags and pins");
+		expect(staged == 1 && staged_race.cortex == 1 && !staged_race.retail && staged_race.slot == 0 &&
+		       staged_race.hostLevelID == 13 && staged_race.mode == AP_CONTENT_MODE_RELIC &&
+		       staged_race.trophyLocation == 35026001 && staged_race.physicalPad == 5 && staged_race.returnHub == 27 &&
+		       CustomRaceContext_Valid(&staged_race) &&
+		       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0, "a valid Cortex Vortex race context is staged");
+		/* A changed byte after admission: same size, other hash. */
+		snprintf(cmd, sizeof cmd, "printf 'X' | dd of='%s' bs=1 seek=100 conv=notrunc status=none", cvLev);
+		expect(system(cmd) == 0, "bundled LEV changed in place");
+		reset_calls(); ap_cortex_track_content_required = 0;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_cortex_ready &&
+		       ap_cortex_track_content_required && used_files == 0 && applied == 0 && staged == 0,
+		       "a changed bundled LEV is refused at pad entry");
+		unlink(cvLev); unlink(cvVrm); rmdir(cvDir);
+	}
+
 	/* No package record: nothing to scan or enter. */
 	plan_has_package = 0;
 	expect(!AP_ContentScanPackage(0, 0, &ap_custom_content_status) && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1, "missing record refused");
@@ -227,8 +293,10 @@ with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "content_hooks.c", Path(tmp) / "content_hooks"
     src.write_text(prelude + seed_struct + "\n" + lev_helper + stubs + hooks + tests, encoding="utf-8")
     subprocess.run(["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
+                    "-DCTR_REPO_ROOT=\"" + str(root) + "\"",
                     "-fsanitize=undefined", "-fno-sanitize-recover=all",
                     "-I" + str(root), "-I" + str(root / "include"), "-I" + str(root / "ap"),
                     str(src), "-o", str(exe)], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
-print("PASS: open package hooks: honest claim, false claim at connect and pad entry, swap after admission and mid-scan")
+print("PASS: open package hooks: honest claim, false claim at connect and pad entry, swap after admission and mid-scan; "
+      "bundled Cortex Vortex pair ready, entered on host 13, refused when missing or changed")

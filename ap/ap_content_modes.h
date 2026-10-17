@@ -12,9 +12,11 @@ typedef int (*ap_content_checked_fn)(int64_t code);
 // Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
 // display slot: podium rungs (slots 0..4) on the Trophy Race, the track's own
 // Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
-// letter checks (slots 6..8) on the CTR Challenge. The `wumpa: global` check
+// letter checks (slots 6..8) on the CTR Challenge, and the Relic Race Perfect
+// check (slot 9, #133 PR 3c) on the Relic Race. The `wumpa: global` check
 // belongs to no pad and keeps no pad open, as on the legacy path.
-#define AP_CONTENT_FAMILY_SLOTS 9
+#define AP_CONTENT_FAMILY_SLOTS 10
+#define AP_CONTENT_FAMILY_PERFECT 9
 // Content-plan podium identity of a pad's Trophy Race: logical podium track
 // AP_CONTENT_PODIUM_LOGICAL_BASE + physical pad, resolved through the pad's
 // own rung codes (ap_hooks_race.c AP_ContentPodiumRungs), never the engine
@@ -30,6 +32,9 @@ static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int m
     if (pad->wumpa_location > 0 && (pad->wumpa_modes & (1u << mode))) { out[n] = pad->wumpa_location; slots[n++] = 5; }
     for (k = 0; mode == AP_CONTENT_MODE_CTR && k < 3; ++k)
         if (pad->letter_locations[k] > 0) { out[n] = pad->letter_locations[k]; slots[n++] = 6 + k; }
+    if (mode == AP_CONTENT_MODE_RELIC && pad->perfect_location > 0) {
+        out[n] = pad->perfect_location; slots[n++] = AP_CONTENT_FAMILY_PERFECT;
+    }
     return n;
 }
 
@@ -143,7 +148,7 @@ static inline const char *ap_content_mode_label(int mode)
 // Trophy or Crystal completion 50000 + pad, CTR 50200 + pad, relic tiers
 // 50400 + pad * 3 + tier, crystal pickups 60000 + pad * 20 + n, and the
 // per-track families 56000 + pad * 16 + family slot (0..4 rungs, 5 Wumpa,
-// 6..8 letters, #133 PR 3b).
+// 6..8 letters, #133 PR 3b; 9 Relic Race Perfect, #133 PR 3c).
 #define AP_CONTENT_BIT_TROPHY 50000
 #define AP_CONTENT_BIT_CTR 50200
 #define AP_CONTENT_BIT_RELIC 50400
@@ -156,7 +161,15 @@ static inline int64_t ap_content_family_bit_code(const ctr_content_pad *pad, int
     if (!pad || slot < 0 || slot >= AP_CONTENT_FAMILY_SLOTS) return -1;
     if (slot < 5) return pad->rung_locations[slot] > 0 ? pad->rung_locations[slot] : -1;
     if (slot == 5) return pad->wumpa_location > 0 ? pad->wumpa_location : -1;
+    if (slot == AP_CONTENT_FAMILY_PERFECT) return pad->perfect_location > 0 ? pad->perfect_location : -1;
     return pad->letter_locations[slot - 6] > 0 ? pad->letter_locations[slot - 6] : -1;
+}
+// Glow prize slot of a family check under by_reward_type: rungs and Wumpa
+// ride the race slot (0), letters the token slot (2), the Relic Race Perfect
+// the relic slot (1) beside the tiers, as on retail pads (#439).
+static inline int ap_content_family_reward_group(int slot)
+{
+    return slot == AP_CONTENT_FAMILY_PERFECT ? 1 : slot >= 6 ? 2 : 0;
 }
 static inline int ap_content_family_bit_decode(int bit, int *physical, int *slot)
 {

@@ -348,7 +348,8 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
             }
         }
         // Per-track families (#133 PR 3b): podium rungs, the track's Wumpa
-        // check (once, whichever modes reach it) and the letter checks.
+        // check (once, whichever modes reach it) and the letter checks; the
+        // Relic Race Perfect (#133 PR 3c).
         {
             unsigned seen=0;
             for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
@@ -825,9 +826,9 @@ static int AP_GlowBitRewardGroup(int globalBit)
             return contentMode==AP_CONTENT_MODE_RELIC ? 1 : contentMode==AP_CONTENT_MODE_CTR ? 2 : 0;
         }
         // Rungs and Wumpa ride the race slot, letters the token slot, as on
-        // retail pads (ruling 2026-09-30).
+        // retail pads (ruling 2026-09-30); the perfect rides the relic slot.
         if(ap_content_family_bit_decode(globalBit,&contentPad,&contentTier))
-            return contentTier>=6 ? 2 : 0;
+            return ap_content_family_reward_group(contentTier);
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);

@@ -75,3 +75,19 @@ matching `podium_rungs_v1`, `wumpa_checks_v1` and `lettersanity_v1` features.
 the pooled letter items per pad, runs the field mutations on the first, and
 refuses forged settings, routes, letter draws and letter item rows. The
 earlier fixtures have no `track_checks` record and are unchanged.
+
+Cortex Vortex as a track and Relic Race Perfect checks (#133 PR 3c):
+`cortex-perfect.json` is slot data the paired apworld emitted
+(`worlds/ctr/test/test_cortex_relic_perfect.py` helpers, seed 20261017,
+script `emit-cortex-perfect-fixture.py` in the PR 3c artifacts) with all three
+modes, two stages and a per-pad order on Crash Cove, Oxide Station (Cortex
+Vortex's engine host) and Slide Coliseum, Cortex Vortex (origin
+`cortex_vortex`, no package row, no custom slot), Baby T Park 1.0.2 on named
+block 8 (no Relic Race), North Pole test data on named block 53 and the B+
+`fixture-loop` (both with a Relic Race; pins name no real files). It has
+`relic_perfect: true`, four rungs, per-track Wumpa and Lettersanity mode 3, so
+Cortex Vortex pools its own letter items 35010200 to 35010202.
+`test-content-plan.cpp` checks every pad's perfect code (retail frozen,
+35026005, block offset 10, generic slot), Cortex Vortex's frozen codes and
+host, runs the field mutations and refuses forged perfects, settings and
+Cortex Vortex records. The earlier fixtures have no perfect and are unchanged.

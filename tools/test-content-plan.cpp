@@ -2,6 +2,7 @@
 // g++ -m32 -std=c++17 -DCTR_AP -fsanitize=undefined -fno-sanitize-recover=all -Iap -Iap/vendor/json/include tools/test-content-plan.cpp ap/ap_seedcfg.cpp -o /tmp/test-content-plan
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -625,6 +626,109 @@ int main(int argc, char **argv) {
                             c["display_name"] = std::string("Crash Cove: Letter ") + "CTR"[l];
                             return;
                         } });
+    }
+    // Cortex Vortex as a track and Relic Race Perfect checks (#133 PR 3c): the
+    // paired apworld's plan with Crash Cove, Oxide Station, Slide Coliseum,
+    // Cortex Vortex, Baby T Park on block 8 (no Relic Race), North Pole on
+    // block 53 and the B+ fixture-loop (both with a Relic Race), Lettersanity
+    // mode 3, per-track Wumpa and four rungs.
+    J cvp;
+    std::ifstream("tools/fixtures/content-plan/cortex-perfect.json") >> cvp;
+    expect(parse(cvp) && bind_room(cvp, "seed-C") && ap_content_plan_active() && ap_content_plan_cortex(),
+           "Cortex Vortex and perfect plan binds");
+    {
+        const auto *fam = ap_content_plan_checks();
+        expect(fam->relic_perfect == 1 && fam->lettersanity == 3 && fam->wumpa == 2, "relic_perfect setting parsed");
+        int pads = 0, perfects = 0, cortex = 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied || p->crystal) continue;
+            ++pads;
+            const bool relic = ap_content_mode_slot(p, AP_CONTENT_MODE_RELIC) >= 0;
+            expect((p->perfect_location > 0) == relic, "a perfect exactly on a Relic Race");
+            perfects += p->perfect_location > 0;
+            if (p->retail_id == 3) expect(p->perfect_location == 35012400 && ap_content_pad_host(p) == 3, "Crash Cove's frozen perfect");
+            if (p->retail_id == 13) expect(p->perfect_location == 35012415 && !p->cortex, "Oxide Station keeps its own perfect");
+            if (p->retail_id == 16) expect(p->perfect_location == 35012416, "Slide Coliseum's frozen perfect");
+            if (p->cortex) {
+                ++cortex;
+                expect(p->retail_id == -1 && p->package_index == -1 && p->custom_slot == 0 && p->named_block == -1 &&
+                       p->laps == 3 && ap_content_pad_host(p) == AP_CONTENT_CORTEX_HOST && p->mode_count == 3 &&
+                       std::string(p->track_id) == "cortex_vortex" && std::string(p->room_title) == "Cortex Vortex",
+                       "Cortex Vortex pad identity");
+                expect(p->trophy_location == 35026000 && p->ctr_location == 35026004 && p->relic_locations[0] == 35026001 &&
+                       p->relic_locations[2] == 35026003 && p->perfect_location == 35026005 && p->wumpa_location == 35016121 &&
+                       p->rung_locations[0] == 35026010 && p->rung_locations[4] == 35026014 && p->rung_locations[2] == 0,
+                       "Cortex Vortex keeps its frozen codes, never Oxide Station's");
+                for (int l = 0; l < 3; ++l)
+                    expect(p->letter_items[l] == 35010200 + l && p->letter_locations[l] == 0, "Cortex Vortex letter items");
+                int64_t fam_codes[AP_CONTENT_FAMILY_SLOTS]; int slots[AP_CONTENT_FAMILY_SLOTS];
+                const int n = ap_content_mode_family_codes(p, AP_CONTENT_MODE_RELIC, fam_codes, slots);
+                expect(n == 1 && fam_codes[0] == 35026005 && slots[0] == AP_CONTENT_FAMILY_PERFECT, "the Relic Race reaches its perfect");
+            }
+            if (p->retail_id >= 0 || p->cortex) continue;
+            const auto *pkg = ap_content_plan_package(p->package_index);
+            const std::string key = pkg ? pkg->content_id : "";
+            if (key == "north-pole") expect(p->named_block == 53 && p->perfect_location == 35210610, "named block perfect at offset 10");
+            if (key == "fixture-loop") expect(p->perfect_location == 35024000 + p->custom_slot - 1, "generic slot perfect");
+            if (key == "baby-t-park") expect(p->perfect_location == 0, "no Relic Race, no perfect");
+        }
+        expect(pads == 7 && perfects == 6 && cortex == 1, "7 track pads, 6 perfects, one Cortex Vortex");
+    }
+    mutations(cvp, cvp, J::json_pointer(""));
+    {
+        auto cv_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = cvp; change(bad["content_plan"]); refuse(bad, "cortex/perfect: " + why);
+        };
+        auto check_of = [](J &plan, const std::string &owner, const std::string &kind) -> J & {
+            for (auto &c : plan["checks"]) if (c["owner"] == owner && c["kind"] == kind) return c;
+            throw std::runtime_error("no check " + owner + " " + kind);
+        };
+        auto cv_track = [](J &plan) -> J & {
+            for (auto &t : plan["tracks"]) if (t["origin"] == "cortex_vortex") return t;
+            throw std::runtime_error("no Cortex Vortex track");
+        };
+        auto drop = [](J &plan, const std::string &owner, const std::string &kind) {
+            auto &rows = plan["checks"];
+            for (size_t i = 0; i < rows.size(); ++i)
+                if (rows[i]["owner"] == owner && rows[i]["kind"] == kind) {
+                    rows.erase(i);
+                    plan["items"]["coded_checks"] = plan["items"]["coded_checks"].get<int>() - 1;
+                    plan["items"]["filler_count"] = plan["items"]["filler_count"].get<int>() - 1;
+                    return;
+                }
+        };
+        cv_refuse("perfect dropped", [&](J &p) { drop(p, "cortex_vortex", "perfect"); });
+        cv_refuse("generic perfect dropped", [&](J &p) { drop(p, "custom/fixture-loop/2.1", "perfect"); });
+        cv_refuse("Cortex Vortex takes Oxide Station's perfect", [&](J &p) { check_of(p, "cortex_vortex", "perfect")["location"] = 35012415; });
+        cv_refuse("Cortex Vortex Trophy takes Oxide Station's", [&](J &p) { check_of(p, "cortex_vortex", "trophy")["location"] = 35011013; });
+        cv_refuse("named perfect off its block", [&](J &p) { check_of(p, "custom/north-pole/1.1.0", "perfect")["location"] = 35024005; });
+        cv_refuse("perfect award changed", [&](J &p) { check_of(p, "retail:3", "perfect")["routes"][0]["award"] = "sapphire"; });
+        cv_refuse("perfect on the Trophy route", [&](J &p) { check_of(p, "retail:3", "perfect")["routes"][0]["mode"] = "trophy"; });
+        cv_refuse("perfect setting false", [&](J &p) { p["track_checks"]["relic_perfect"] = false; });
+        cv_refuse("perfect setting as integer", [&](J &p) { p["track_checks"]["relic_perfect"] = 1; });
+        cv_refuse("perfect setting dropped", [&](J &p) { p["track_checks"].erase("relic_perfect"); });
+        cv_refuse("perfect feature dropped", [&](J &p) {
+            auto &f = p["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "relic_perfect_v1") { f.erase(i); return; } });
+        cv_refuse("Cortex Vortex laps", [&](J &p) { cv_track(p)["laps"] = 5; });
+        cv_refuse("Cortex Vortex package", [&](J &p) { cv_track(p)["package_id"] = "package/cortex-vortex/1.1.2"; });
+        cv_refuse("Cortex Vortex name", [&](J &p) { cv_track(p)["display_name"] = "Oxide Station"; });
+        cv_refuse("Cortex Vortex with a custom slot", [&](J &p) { cv_track(p)["custom_slot"] = 9; });
+        cv_refuse("Cortex Vortex as a custom origin", [&](J &p) { cv_track(p)["origin"] = "custom"; });
+        cv_refuse("Cortex Vortex letter item swapped", [&](J &p) {
+            for (auto &r : p["items"]["rows"]) if (r["item"] == 35010201) { r["item"] = 35010186; break; }
+            std::sort(p["items"]["rows"].begin(), p["items"]["rows"].end(),
+                      [](const J &a, const J &b) { return a["item"].get<int64_t>() < b["item"].get<int64_t>(); }); });
+        cv_refuse("B+ title takes Cortex Vortex", [&](J &p) {
+            for (auto &t : p["tracks"]) if (t["id"] == "custom/fixture-loop/2.1") {
+                const std::string old = t["room_title"];
+                t["room_title"] = "Cortex Vortex";
+                for (auto &c : p["checks"]) if (c["owner"] == t["id"]) {
+                    std::string name = c["display_name"];
+                    c["display_name"] = "Cortex Vortex" + name.substr(old.size());
+                }
+            } });
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

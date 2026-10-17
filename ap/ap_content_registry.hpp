@@ -6,6 +6,10 @@
 // custom_locations, custom_ctr_locations, custom_relic_locations,
 // custom_podium_locations, custom_wumpa_locations, custom_letter_locations and
 // custom_letter_items; `wumpa_global` is the one `wumpa: global` check.
+// Relic Race Perfect (#133 PR 3c): `perfect` per retail row and
+// custom_perfect_locations per generic slot. `cortex_vortex` is Cortex Vortex
+// as a track: its logical id, bundled package id, name, laps and the same
+// per-mode and per-family codes as a retail row (its letter items are its own).
 // Custom packages are not listed: content plans admit any complete descriptor
 // (#133 PR 2) and the bytes are verified on load.
 // `named_blocks` is the apworld's named-track table (data/named_tracks.json):
@@ -43,7 +47,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010160,
         35010161,
         35010162
-      ]
+      ],
+      "perfect": 35012407
     },
     {
       "id": 1,
@@ -72,7 +77,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010166,
         35010167,
         35010168
-      ]
+      ],
+      "perfect": 35012409
     },
     {
       "id": 2,
@@ -101,7 +107,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010163,
         35010164,
         35010165
-      ]
+      ],
+      "perfect": 35012408
     },
     {
       "id": 3,
@@ -130,7 +137,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010139,
         35010140,
         35010141
-      ]
+      ],
+      "perfect": 35012400
     },
     {
       "id": 4,
@@ -159,7 +167,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010154,
         35010155,
         35010156
-      ]
+      ],
+      "perfect": 35012405
     },
     {
       "id": 5,
@@ -188,7 +197,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010157,
         35010158,
         35010159
-      ]
+      ],
+      "perfect": 35012406
     },
     {
       "id": 6,
@@ -217,7 +227,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010142,
         35010143,
         35010144
-      ]
+      ],
+      "perfect": 35012401
     },
     {
       "id": 7,
@@ -246,7 +257,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010175,
         35010176,
         35010177
-      ]
+      ],
+      "perfect": 35012412
     },
     {
       "id": 8,
@@ -275,7 +287,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010148,
         35010149,
         35010150
-      ]
+      ],
+      "perfect": 35012403
     },
     {
       "id": 9,
@@ -304,7 +317,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010145,
         35010146,
         35010147
-      ]
+      ],
+      "perfect": 35012402
     },
     {
       "id": 10,
@@ -333,7 +347,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010178,
         35010179,
         35010180
-      ]
+      ],
+      "perfect": 35012413
     },
     {
       "id": 11,
@@ -362,7 +377,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010181,
         35010182,
         35010183
-      ]
+      ],
+      "perfect": 35012414
     },
     {
       "id": 12,
@@ -391,7 +407,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010169,
         35010170,
         35010171
-      ]
+      ],
+      "perfect": 35012410
     },
     {
       "id": 13,
@@ -420,7 +437,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010184,
         35010185,
         35010186
-      ]
+      ],
+      "perfect": 35012415
     },
     {
       "id": 14,
@@ -449,7 +467,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010151,
         35010152,
         35010153
-      ]
+      ],
+      "perfect": 35012404
     },
     {
       "id": 15,
@@ -478,7 +497,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010172,
         35010173,
         35010174
-      ]
+      ],
+      "perfect": 35012411
     },
     {
       "id": 16,
@@ -507,7 +527,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010194,
         35010195,
         35010196
-      ]
+      ],
+      "perfect": 35012416
     },
     {
       "id": 17,
@@ -536,7 +557,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         35010197,
         35010198,
         35010199
-      ]
+      ],
+      "perfect": 35012417
     }
   ],
   "pads": [
@@ -1490,7 +1512,73 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       35021095
     ]
   ],
+  "custom_perfect_locations": [
+    35024000,
+    35024001,
+    35024002,
+    35024003,
+    35024004,
+    35024005,
+    35024006,
+    35024007,
+    35024008,
+    35024009,
+    35024010,
+    35024011,
+    35024012,
+    35024013,
+    35024014,
+    35024015,
+    35024016,
+    35024017,
+    35024018,
+    35024019,
+    35024020,
+    35024021,
+    35024022,
+    35024023,
+    35024024,
+    35024025,
+    35024026,
+    35024027,
+    35024028,
+    35024029,
+    35024030,
+    35024031
+  ],
   "wumpa_global": 35016100,
+  "cortex_vortex": {
+    "id": "cortex_vortex",
+    "package_id": "bundled/cortex-vortex",
+    "name": "Cortex Vortex",
+    "laps": 3,
+    "location": 35026000,
+    "ctr": 35026004,
+    "relic": [
+      35026001,
+      35026002,
+      35026003
+    ],
+    "perfect": 35026005,
+    "podium": [
+      35026010,
+      35026011,
+      35026012,
+      35026013,
+      35026014
+    ],
+    "wumpa": 35016121,
+    "letters": [
+      35026006,
+      35026007,
+      35026008
+    ],
+    "letter_items": [
+      35010200,
+      35010201,
+      35010202
+    ]
+  },
   "named_blocks": [
     {
       "key": "acid-lake",

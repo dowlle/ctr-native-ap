@@ -23,12 +23,15 @@ static void AP_OxideFinalContentPreflight(void)
 	int venueOk, venueCortex, padOn, padOk;
 
 	ap_oxide_final_content_required = 0;
-	ap_cortex_track_content_required = 0;
 	if (ap_content_plan_active())
 	{
+		// A content plan arms neither legacy role. Its Cortex Vortex entry
+		// is scanned by AP_CustomContentPreflightSeed, which owns
+		// ap_cortex_track_content_required for the plan.
 		CustomTrack_ClearOxideFinalDescriptor();
 		return;
 	}
+	ap_cortex_track_content_required = 0;
 	if (!ctr_cfg_active() || ctr_cfg.schema_version < 11)
 	{
 		CustomTrack_ClearOxideFinalDescriptor();
@@ -150,9 +153,57 @@ static int AP_ContentScanPackage(int index, int autoFinalize, struct CustomTrack
 	return 1;
 }
 
+// Content-plan Cortex Vortex (#133 PR 3c): the bundled pair at the path the
+// legacy pad track and the Oxide 2 venue load it from, hashed against the
+// compiled pins and measured like a package. It must hold every capability,
+// since the plan may race all three of its modes. Nothing in the legacy
+// Cortex Vortex serving state is armed: the race is a custom-bytes standalone
+// race on host 13 (AP_ContentPreparePad), so no LevelID-13 site can read it
+// as Oxide Station or as the legacy pad track.
+static int ap_content_cortex_ready;
+static struct AP_ContentFiles ap_content_cortex_files;
+
+static int AP_ContentScanCortex(void)
+{
+	struct CustomContentVerification report;
+	char error[160], why[320], line[640];
+	const char *dir = NativeAssets_GetAssetDir();
+	struct AP_ContentFiles *f = &ap_content_cortex_files;
+	memset(f, 0, sizeof *f);
+	if (dir == NULL ||
+	    snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
+	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath)
+	{
+		memset(f, 0, sizeof *f);
+		AP_AppendLog("[CustomTracks] content plan refused Cortex Vortex: the bundled asset path is invalid\n");
+		return 0;
+	}
+	error[0] = '\0';
+	if (!CustomContentVerify_Files(f->levPath, f->vrmPath, &report, error, sizeof error) ||
+	    strcmp(report.levSha256, CTR_CFG_CORTEX_LEV_SHA256) || strcmp(report.vrmSha256, CTR_CFG_CORTEX_VRM_SHA256))
+	{
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex: the bundled files are missing "
+		         "or not the pinned pair (%.160s)\n", error[0] ? error : "hash mismatch");
+		AP_AppendLog(line);
+		memset(f, 0, sizeof *f);
+		return 0;
+	}
+	if (!AP_ContentCapabilitiesHold(AP_CONTENT_CAP_ALL, &report, why, sizeof why))
+	{
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex: %s\n", why);
+		AP_AppendLog(line);
+		memset(f, 0, sizeof *f);
+		return 0;
+	}
+	f->measured = report.measured;
+	return 1;
+}
+
 int AP_ContentPadReady(int physicalPad)
 {
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
+	if (pad && pad->occupied && pad->cortex)
+		return ap_content_cortex_ready;
 	return pad && pad->occupied && (pad->retail_id >= 0 ||
 	       (pad->package_index >= 0 && pad->package_index < AP_CONTENT_MAX_PACKAGES &&
 	        ap_content_package_ready[pad->package_index]));
@@ -175,11 +226,44 @@ int AP_ContentPreparePad(int physicalPad, int mode)
 	race.mode = mode;
 	race.crystal = pad->crystal; race.timeLimitTicks = pad->time_limit_ticks;
 	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;
-	race.hostLevelID = race.retail ? pad->retail_id : 6;
+	race.cortex = pad->cortex;
+	race.hostLevelID = ap_content_pad_host(pad);
 	race.slot = pad->custom_slot;
 	snprintf(race.entryID, sizeof race.entryID, "%s", pad->entry_id);
 	snprintf(race.trackID, sizeof race.trackID, "%s", pad->track_id);
-	if (!race.retail)
+	if (race.cortex)
+	{
+		const struct CustomContentMeasurements *m;
+		struct CustomTrackSeedDescriptor d;
+		// Hash and measure again: a file swapped since connect is refused here.
+		if (!(ap_content_cortex_ready = AP_ContentScanCortex()))
+		{
+			ap_cortex_track_content_required = 1;
+			ap_state_gen++;
+			return -1;
+		}
+		m = &ap_content_cortex_files.measured;
+		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
+		{
+			ap_content_cortex_ready = 0;
+			ap_state_gen++;
+			return -1;
+		}
+		memset(&d, 0, sizeof d);
+		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
+		d.replacesCupLevelID = -1; d.boxes = 0;
+		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
+		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
+		d.flagWumpaCollectible = 1; // measured above (AP_CONTENT_CAP_WUMPA)
+		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
+		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		snprintf(race.levSha256, sizeof race.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
+	}
+	else if (!race.retail)
 	{
 		const ctr_content_package *pkg = ap_content_plan_package(pad->package_index);
 		const struct CustomTrackManagerPackage *p = AP_ContentPackage(pad->package_index);
@@ -345,6 +429,9 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 				if (firstMissing < 0) { firstMissing = i; ap_content_package_index = i; ap_custom_content_status = status; }
 			}
 		}
+		// Cortex Vortex (#133 PR 3c): the bundled pair, when the plan races it.
+		ap_content_cortex_ready = ap_content_plan_cortex() ? AP_ContentScanCortex() : 0;
+		ap_cortex_track_content_required = ap_content_plan_cortex() && !ap_content_cortex_ready;
 		ap_custom_content_scanned = 1;
 		ap_state_gen++;
 		// A reconnect cannot replace the buffers of a race already in flight.
