@@ -107,3 +107,18 @@ block silences traps without refusing the room), the absent-key defaults, runs
 the field mutations outside the trap block and refuses forged envelope values
 and pack records and rows. The earlier fixtures have none of these and are
 unchanged.
+
+Character packs (#133 PR 4b): `racers.json` is slot data the paired apworld
+emitted (`worlds/ctr/test/test_character_packs.py` helpers, seed 20261018,
+script `emit-racers-fixture.py` in the PR 4b artifacts) on Crash Cove, Papu's
+Pyramid, Slide Coliseum and N. Gin Labs plus Baby T Park 1.0.2 and the B+
+`fixture-loop`, with all three modes, four rungs and per-track Wumpa. Its plan
+carries `racers` (starting racer N. Gin, engine id 4, Remove Playable Oxide on,
+27 locks requested) with 14 racer rows, and four racer locks: Baby T Park on
+pad 19, `fixture-loop` on pad 15, Papu's Pyramid on pad 7 and N. Gin Labs on the Gem Cup seat
+104. Its envelope has `character_unlocks` true, `starting_stat_class` 3,
+`penta_stats` 1 and the editable-stats trio (2, 2, true).
+`test-content-plan.cpp` checks the applied settings, the lock mirror into
+`ctr_cfg.racer_lock` and `gem_cup_racer_lock`, runs the field mutations and
+refuses forged locks, records and envelope values. The earlier fixtures have
+none of these and are unchanged.

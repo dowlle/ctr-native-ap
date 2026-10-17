@@ -352,7 +352,12 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts)
 
 int AP_ContentPadOpen(const ctr_content_pad *pad)
 {
-	return ap_content_pad_open(pad, ap_recv_count);
+	// Racer lock (#133 PR 4b): ANDed onto the pad's own gates, never in place
+	// of them, like ctr_cfg_warp_unlocked on a normal room. Every content-plan
+	// consumer (pad state, glow, capture, the load gate, the pad text) asks
+	// this, so a locked pad reads closed until its racer is received.
+	return ap_content_pad_open(pad, ap_recv_count) &&
+	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
 }
 
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
