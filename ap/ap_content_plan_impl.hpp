@@ -1,7 +1,8 @@
 // Included by ap_seedcfg.cpp so every production-parser harness exercises the
 // same admission path. Implements standalone track entries with their Trophy,
 // CTR Challenge and Relic Race modes (#133 PR 3), their podium rungs, Reach 10
-// Wumpa and Lettersanity checks (#133 PR 3b), and Crystal Challenge entries; a
+// Wumpa and Lettersanity checks (#133 PR 3b), Cortex Vortex as a track and the
+// Relic Race Perfect checks (#133 PR 3c), and Crystal Challenge entries; a
 // broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
@@ -23,6 +24,7 @@ struct State {
     std::array<ctr_content_item, 15> items{};
     ctr_content_checks families{};
     int package_count = 0, goal_count = 0, goal_mask = 0;
+    bool cortex = false; // a Cortex Vortex track entry (#133 PR 3c)
     std::set<int64_t> checks;
     std::string canonical;
 };
@@ -224,8 +226,8 @@ static bool rung_set_ok(int mask) {
 static void family_settings(const J &t, ctr_content_checks &fam) {
     need(t.is_object() && !t.empty(), "track_checks must be a nonempty record");
     for (auto it = t.begin(); it != t.end(); ++it)
-        need(it.key() == "podium_rungs" || it.key() == "wumpa" || it.key() == "lettersanity" || it.key() == "letters_per_track",
-             "unknown track_checks field");
+        need(it.key() == "podium_rungs" || it.key() == "wumpa" || it.key() == "lettersanity" || it.key() == "letters_per_track" ||
+             it.key() == "relic_perfect", "unknown track_checks field");
     if (t.contains("podium_rungs")) {
         const J &rungs = t["podium_rungs"];
         need(rungs.is_array() && !rungs.empty() && rungs.size() <= 5, "podium_rungs list bounds");
@@ -247,6 +249,11 @@ static void family_settings(const J &t, ctr_content_checks &fam) {
     need(t.contains("letters_per_track") == (fam.lettersanity == 1 || fam.lettersanity == 2),
          "letters_per_track belongs to Lettersanity modes 1 and 2 only");
     if (t.contains("letters_per_track")) fam.letters_per_track = number(t["letters_per_track"], 1, 3);
+    // Relic Race Perfect checks (#133 PR 3c): present only as true.
+    if (t.contains("relic_perfect")) {
+        need(t["relic_perfect"].is_boolean() && t["relic_perfect"].get<bool>(), "track_checks.relic_perfect must be true when present");
+        fam.relic_perfect = 1;
+    }
 }
 static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
     return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
@@ -287,6 +294,7 @@ static void validate(const J &p, State &out) {
     std::set<std::string> reserved_titles;
     for (const auto &row : registry["retail"]) reserved_titles.insert(fold(row["name"].get<std::string>()));
     for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
+    reserved_titles.insert(fold(registry["cortex_vortex"]["name"].get<std::string>()));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
     const auto tracks = table(p.at("tracks"), 27);
     const auto entries = table(p.at("entries"), 27);
@@ -326,6 +334,7 @@ static void validate(const J &p, State &out) {
     if(fam.podium)features.push_back("podium_rungs_v1");
     if(fam.wumpa)features.push_back("wumpa_checks_v1");
     if(fam.lettersanity)features.push_back("lettersanity_v1");
+    if(fam.relic_perfect)features.push_back("relic_perfect_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -352,6 +361,7 @@ static void validate(const J &p, State &out) {
     }
     std::set<std::string> used_entries, used_tracks, used_packages;
     std::set<int> retail_ids, custom_slots, named_blocks, arena_ids;
+    bool cortex_seen = false;
     std::map<int64_t, J> expected_checks;
     // Lettersanity modes 1 and 2 draw which letters have checks; the plan's own
     // check list says which, and each CTR Challenge must have letters_per_track.
@@ -469,6 +479,22 @@ static void validate(const J &p, State &out) {
             codes[AP_CONTENT_MODE_CTR][0] = row["ctr"].get<int64_t>();
             for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = row["relic"][t].get<int64_t>();
             supported = 7u; // retail tracks run all three modes
+        } else if (track.at("origin") == "cortex_vortex") {
+            // Cortex Vortex (#133 PR 3c): the bundled Lockheart pair under its
+            // own frozen identity, with no package row and no custom slot. Its
+            // bytes are located and hashed on load (ap_hooks_custom_content.c).
+            fields(track, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            const J &row = registry["cortex_vortex"];
+            need(!cortex_seen && track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
+                 title == row["name"].get<std::string>() && track["laps"] == row["laps"] && row["laps"] == AP_CONTENT_CORTEX_LAPS,
+                 "Cortex Vortex metadata mismatch");
+            cortex_seen = true;
+            out.cortex = true;
+            dest.cortex = 1;
+            codes[AP_CONTENT_MODE_TROPHY][0] = row["location"].get<int64_t>();
+            codes[AP_CONTENT_MODE_CTR][0] = row["ctr"].get<int64_t>();
+            for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = row["relic"][t].get<int64_t>();
+            supported = 7u; // AI paths, the three letters and time crates: all three modes
         } else {
             // #306: optional `named_block` (the track's own id block, path C)
             // and `room_title` (the sanitized title the room shows, path B+).
@@ -531,15 +557,17 @@ static void validate(const J &p, State &out) {
                                                                  {"Sapphire Time Trial", "Gold Time Trial", "Platinum Time Trial"}};
         // Per-track check families (#133 PR 3b): retail rows, the named
         // block's offsets, or the generic slot's families.
-        int64_t rung[5] = {}, wumpa = 0, letter[3] = {}, letter_item[3] = {};
-        if (dest.retail_id >= 0) {
-            const J &row = registry["retail"][dest.retail_id];
+        int64_t rung[5] = {}, wumpa = 0, letter[3] = {}, letter_item[3] = {}, perfect = 0;
+        if (dest.retail_id >= 0 || dest.cortex) {
+            const J &row = dest.cortex ? registry["cortex_vortex"] : registry["retail"][dest.retail_id];
             for (int k = 0; k < 5; ++k) rung[k] = row["podium"][k].get<int64_t>();
             wumpa = row["wumpa"].get<int64_t>();
+            perfect = row["perfect"].get<int64_t>();
             for (int l = 0; l < 3; ++l) { letter[l] = row["letters"][l].get<int64_t>(); letter_item[l] = row["letter_items"][l].get<int64_t>(); }
         } else if (dest.named_block >= 0) {
             for (int k = 0; k < 5; ++k) rung[k] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_HELD_1ST + k);
             wumpa = ap_named_location_code(dest.named_block, AP_NAMED_OFF_WUMPA);
+            perfect = ap_named_location_code(dest.named_block, AP_NAMED_OFF_RELIC_PERFECT);
             for (int l = 0; l < 3; ++l) {
                 letter[l] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_LETTER_C + l);
                 letter_item[l] = ap_named_item_code(dest.named_block, l);
@@ -548,6 +576,7 @@ static void validate(const J &p, State &out) {
             const int s = dest.custom_slot - 1;
             for (int k = 0; k < 5; ++k) rung[k] = registry["custom_podium_locations"][s][k].get<int64_t>();
             wumpa = registry["custom_wumpa_locations"][s].get<int64_t>();
+            perfect = registry["custom_perfect_locations"][s].get<int64_t>();
             for (int l = 0; l < 3; ++l) {
                 letter[l] = registry["custom_letter_locations"][s][l].get<int64_t>();
                 letter_item[l] = registry["custom_letter_items"][s][l].get<int64_t>();
@@ -565,6 +594,12 @@ static void validate(const J &p, State &out) {
                 const J check{{"location", codes[mode][t]}, {"owner", track_id}, {"kind", mode_names[mode]},
                               {"display_name", check_title + ": " + suffixes[mode][t]}, {"routes", J::array({route})}};
                 need(expected_checks.emplace(codes[mode][t], check).second, "duplicate check identity");
+            }
+            // A Relic Race carries its Relic Race Perfect check (#133 PR 3c),
+            // the track's own code, never the engine host's.
+            if (mode == AP_CONTENT_MODE_RELIC && fam.relic_perfect) {
+                dest.perfect_location = perfect;
+                family_check(perfect, "perfect", "Relic Race Perfect", J::array({route_record(entry_id, "relic", id, "perfect")}));
             }
             // A Trophy Race carries the seed's podium rungs.
             for (int r = 0; mode == AP_CONTENT_MODE_TROPHY && r < 5; ++r)
@@ -594,7 +629,7 @@ static void validate(const J &p, State &out) {
                 }
         // Reach 10 Wumpa: a Trophy Race or CTR Challenge on a track that can
         // reach ten fruit (a custom package needs its measured `wumpa` flag).
-        const bool fruit = dest.retail_id >= 0 || (record_caps(out, dest) & AP_CONTENT_CAP_WUMPA);
+        const bool fruit = dest.retail_id >= 0 || dest.cortex || (record_caps(out, dest) & AP_CONTENT_CAP_WUMPA);
         const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
@@ -768,6 +803,7 @@ extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
     if (ap_content_plan_active()) for (const auto &p : content_plan::state.pads) if (p.physical == physical) return &p;
     return nullptr;
 }
+extern "C" int ap_content_plan_cortex(void) { return ap_content_plan_active() && content_plan::state.cortex; }
 extern "C" const ctr_content_package *ap_content_plan_package(int index) {
     return ap_content_plan_active() && index >= 0 && index < content_plan::state.package_count ? &content_plan::state.packages[index] : nullptr;
 }

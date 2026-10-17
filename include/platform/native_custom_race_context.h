@@ -26,6 +26,9 @@ struct CustomTrackRaceContext
 	// 2 Relic Race. trophyLocation is then the mode's first check code
 	// (Trophy, CTR, or the Sapphire tier). Crystal Challenges use 0.
 	int mode;
+	// Content-plan Cortex Vortex (#133 PR 3c): the bundled pair raced as a
+	// custom-bytes standalone race on host 13, with no custom slot.
+	int cortex;
 };
 
 struct CustomTrackRaceLatch
@@ -73,8 +76,9 @@ static inline int CustomRaceContext_Valid(const struct CustomTrackRaceContext *c
                 c->laps == 1 && c->seedEpoch && c->timeLimitTicks > 0 && c->timeLimitTicks <= 576000)) &&
 	       CustomRaceContext_IsPad(c->physicalPad) &&
 	       c->returnHub >= 25 && c->returnHub <= 29 &&
-	       (c->retail == 0 || c->retail == 1) &&
-	       (c->retail ? c->slot == 0 : (c->slot >= 1 && c->slot <= 132)) &&
+	       (c->retail == 0 || c->retail == 1) && (c->cortex == 0 || c->cortex == 1) &&
+	       (!c->cortex || (!c->retail && !c->crystal && c->hostLevelID == 13)) &&
+	       ((c->retail || c->cortex) ? c->slot == 0 : (c->slot >= 1 && c->slot <= 132)) &&
 	       c->laps >= 1 && c->laps <= 7 &&
 	       c->trophyLocation > 0 && c->trophyLocation <= INT64_C(9007199254740991) &&
 	       CustomRaceContext_Key(c->entryID, sizeof c->entryID) &&

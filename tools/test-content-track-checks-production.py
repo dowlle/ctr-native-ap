@@ -111,6 +111,8 @@ void AP_AppendLog(const char *text) { assert(!strstr(text,"refused") && !strstr(
 void AP_CeremonyLedgerAdd(long code,int bit,int tag) { (void)code; (void)bit; (void)tag; }
 void AP_FeedOnLocationSent(long code) { (void)code; }
 void AP_FeedOnRungSent(long code,int tag) { (void)code; (void)tag; }
+/* Cortex Vortex letter items (ap_cortex_track.h), read by AP_ContentLetterItemReceived (#133 PR 3c). */
+static inline int AP_CortexLetterItemIndexPure(long long idx) { return idx >= 200 && idx < 203 ? (int)(idx - 200) : -1; }
 /* Legacy letter paths stay out of a content-plan race. */
 static int AP_CustomLetterSlot(int track) { (void)track; return 0; }
 static int AP_CortexLetterTrack(int track) { (void)track; return 0; }

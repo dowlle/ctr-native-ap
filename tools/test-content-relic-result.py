@@ -62,6 +62,7 @@ const ctr_content_package *ap_content_plan_package(int index) { return havePacka
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
 }
+int AP_CortexRelicTime(int tier) { return 200000 - tier; } /* covered in test-content-cortex-perfect-production.py */
 int CustomTrack_ServingLoad(int level,int cup,int id) { assert(level==context.hostLevelID && !cup && !id); return serving; }
 int ap_net_location_exists(long code) { return code != existsMissing; }
 int ap_net_location_checked(long code) {

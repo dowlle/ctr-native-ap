@@ -7,8 +7,9 @@ extern "C" {
 #endif
 
 /* Standalone track entries with their Trophy Race, CTR Challenge and Relic
- * Race modes (#133 PR 3) and per-track check families (#133 PR 3b), and
- * Crystal Challenge entries. Stored records own
+ * Race modes (#133 PR 3), per-track check families (#133 PR 3b), Cortex
+ * Vortex as a track and Relic Race Perfect checks (#133 PR 3c), and Crystal
+ * Challenge entries. Stored records own
  * their text; callers copy a record before crossing a load boundary. A
  * physical pad is never recovered by inverting its borrowed engine level. */
 #define AP_CONTENT_MODE_TROPHY 0
@@ -25,7 +26,11 @@ typedef struct ctr_content_pad {
      * Key floor (`keys`) applies. */
     int has_rule, rule_count;
     unsigned rule_mask;
-    int retail_id; /* -1 custom, otherwise engine track/arena LevelID */
+    int retail_id; /* -1 custom or Cortex Vortex, otherwise engine track/arena LevelID */
+    /* Cortex Vortex (#133 PR 3c): the bundled pair under its own identity,
+     * raced on AP_CONTENT_CORTEX_HOST with no package row and no custom slot
+     * (package_index -1, custom_slot 0). */
+    int cortex;
     int custom_slot, package_index, laps;
     int crystal, target, time_limit_ticks, crystal_count;
     int64_t crystal_locations[20];
@@ -56,6 +61,9 @@ typedef struct ctr_content_pad {
     unsigned wumpa_modes;
     int64_t letter_locations[3];
     int64_t letter_items[3];
+    /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
+     * crate in this pad's Relic Race; 0 when the seed or entry has none. */
+    int64_t perfect_location;
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
@@ -72,6 +80,12 @@ typedef struct ctr_content_pad {
 #define AP_CONTENT_CAP_WUMPA 0x10u
 #define AP_CONTENT_CAP_ALL 0x1fu
 #define AP_CONTENT_RETAIL_LAPS 3 /* retail tracks race their authored three laps */
+/* Engine hosts of non-retail track entries: a custom package borrows Roo's
+ * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
+ * served on by the legacy pad track and the Oxide 2 venue. */
+#define AP_CONTENT_CUSTOM_HOST 6
+#define AP_CONTENT_CORTEX_HOST 13
+#define AP_CONTENT_CORTEX_LAPS 3
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
     char display_name[129], author[129], lev_sha256[65], vrm_sha256[65];
@@ -88,11 +102,19 @@ typedef struct ctr_content_item {
 
 /* The plan's per-track check settings (#133 PR 3b): `lettersanity` 0 off,
  * 1 locations, 2 locations and items, 3 items; `wumpa` 0 off, 1 global,
- * 2 per track, with the global check's code. */
+ * 2 per track, with the global check's code. `relic_perfect` 1 when Relic
+ * Race Perfect checks are on (#133 PR 3c). */
 typedef struct ctr_content_checks {
     int podium, lettersanity, letters_per_track, wumpa;
     int64_t wumpa_global;
+    int relic_perfect;
 } ctr_content_checks;
+
+/* The engine LevelID a track entry races on. */
+static inline int ap_content_pad_host(const struct ctr_content_pad *pad)
+{
+    return pad->retail_id >= 0 ? pad->retail_id : pad->cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
+}
 
 /* The single pad-entry evaluator for the content-plan profile. Display, pad
  * state, capture, the final load gate and the tracker launch all call it, so
@@ -152,6 +174,8 @@ int ap_content_plan_active(void);
 uint64_t ap_content_plan_epoch(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
+/* 1 when the active plan has a Cortex Vortex track entry (#133 PR 3c). */
+int ap_content_plan_cortex(void);
 const ctr_content_item *ap_content_plan_item(int64_t item);
 const ctr_content_checks *ap_content_plan_checks(void);
 int ap_content_plan_goal(const int received_gems[5]);

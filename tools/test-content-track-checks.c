@@ -2,7 +2,9 @@
 // Reach 10 Wumpa and Lettersanity letters. Pins the pure decisions the hooks
 // read: which family checks a mode reaches, pad pending and state, the Wumpa
 // code a race sends, the family display bits and the Lettersanity answers on
-// the pad's own letter codes.
+// the pad's own letter codes. Relic Race Perfect (#133 PR 3c): the family
+// slot of the Relic Race, the pad staying open for it, its glow prize slot,
+// and the engine host of a Cortex Vortex pad.
 // cc -std=c99 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -I ap -I . -I include -o /tmp/test-content-track-checks tools/test-content-track-checks.c
 #include <stdio.h>
 #include <string.h>
@@ -130,12 +132,13 @@ int main(void)
     for (slot = 0; slot < AP_CONTENT_FAMILY_SLOTS; ++slot)
     {
         const int bit = AP_CONTENT_BIT_FAMILY + p.physical * AP_CONTENT_FAMILY_STRIDE + slot;
-        const int64_t want = slot < 5 ? p.rung_locations[slot] : slot == 5 ? p.wumpa_location : p.letter_locations[slot - 6];
+        const int64_t want = slot < 5 ? p.rung_locations[slot] : slot == 5 ? p.wumpa_location :
+                             slot == AP_CONTENT_FAMILY_PERFECT ? p.perfect_location : p.letter_locations[slot - 6];
         expect(ap_content_family_bit_decode(bit, &physical, &i) && physical == 3 && i == slot &&
                ap_content_family_bit_code(&p, i) == (want > 0 ? want : -1), "family bit decodes to its code");
         expect(!ap_content_bit_decode(bit, &physical, &i, &n), "family bits are outside the mode bit ranges");
     }
-    expect(!ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 9, &physical, &slot) &&
+    expect(!ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 10, &physical, &slot) &&
            !ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY - 1, &physical, &slot) &&
            !ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE, &physical, &slot),
            "unused and out-of-range family bits decode to nothing");
@@ -170,6 +173,42 @@ int main(void)
         expect(AP_LetterAvailablePure(1, 1, lc[1], 0) && AP_LetterAvailablePure(1, 0, lc[0], 0), "modes 0 and 1: letters stay vanilla");
         expect(AP_LetterTokenEarnedPure(1, 3, 1, 1, lc, none) && !AP_LetterTokenEarnedPure(1, 2, 1, 1, lc, none) &&
                AP_LetterTokenEarnedPure(1, 3, 1, 0, lc, none), "modes 0 and 1: a win with all three letters");
+    }
+
+    // Relic Race Perfect (#133 PR 3c): the Relic Race's own family check.
+    {
+        ctr_content_pad r = crash_cove();
+        r.perfect_location = 35012400;
+        n = ap_content_mode_family_codes(&r, AP_CONTENT_MODE_RELIC, codes, slots);
+        expect(n == 1 && codes[0] == 35012400 && slots[0] == AP_CONTENT_FAMILY_PERFECT, "a Relic Race reaches its perfect");
+        n = ap_content_mode_family_codes(&r, AP_CONTENT_MODE_TROPHY, codes, slots);
+        expect(n == 5, "the perfect is not a Trophy Race check");
+        {
+            ctr_content_pad noRelic = r;
+            noRelic.mode_count = 2;
+            expect(ap_content_mode_family_codes(&noRelic, AP_CONTENT_MODE_RELIC, codes, slots) == 0,
+                   "no Relic mode reaches no perfect");
+        }
+        checked_count = 0;
+        check(35011000); check(35012300); check(35012000); check(35012100); check(35012200);
+        check(35015100); check(35015101); check(35015103); check(35015002); check(35016104); check(35012500); check(35012502);
+        expect(ap_content_mode_pending(&r, AP_CONTENT_MODE_RELIC, checked) == 1 && ap_content_track_pad_state(&r, counts, checked) == 2,
+               "every relic tier checked: the unchecked perfect keeps the pad open (#453)");
+        {
+            ctr_content_pad later = r;
+            later.stages[2] = 2; later.has_stage2 = 1; later.stage2_mask = 1u; later.stage2_count = 2;
+            expect(ap_content_track_pad_state(&later, counts, checked) == 3, "a perfect behind the second stage: state 3");
+        }
+        check(35012400);
+        expect(ap_content_track_pad_state(&r, counts, checked) == 4, "the perfect checked: replayable");
+        expect(ap_content_family_bit_code(&r, AP_CONTENT_FAMILY_PERFECT) == 35012400 &&
+               ap_content_family_bit_code(&p, AP_CONTENT_FAMILY_PERFECT) == -1, "perfect display bit resolves to its code");
+        expect(ap_content_family_reward_group(AP_CONTENT_FAMILY_PERFECT) == 1 && ap_content_family_reward_group(0) == 0 &&
+               ap_content_family_reward_group(5) == 0 && ap_content_family_reward_group(6) == 2 &&
+               ap_content_family_reward_group(8) == 2, "glow prize slots: perfect relic, rungs and Wumpa race, letters token");
+        r.retail_id = 3; expect(ap_content_pad_host(&r) == 3, "a retail pad races its own LevelID");
+        r.retail_id = -1; expect(ap_content_pad_host(&r) == AP_CONTENT_CUSTOM_HOST, "a custom pad borrows host 6");
+        r.cortex = 1; expect(ap_content_pad_host(&r) == 13, "Cortex Vortex races on host 13");
     }
 
     printf("%d checks, %d failures\n", checks, failures);

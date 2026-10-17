@@ -48,12 +48,24 @@ for row in expected["retail"]:
     n = row["name"]
     row.update(podium=[L[f"{n}: {s}"] for s in RUNGS], wumpa=L[f"{n}: Reach 10 Wumpa"],
                letters=[L[f"{n}: Letter {x}"] for x in cp.LETTERS],
-               letter_items=[cp.content_item_pool.ITEMS[f"Letter {x} ({n})"] for x in cp.LETTERS])
+               letter_items=[cp.content_item_pool.ITEMS[f"Letter {x} ({n})"] for x in cp.LETTERS],
+               perfect=L[f"{n}: Relic Race Perfect"])
 expected.update(custom_podium_locations=[[L[f"Custom Track {i}: {s}"] for s in RUNGS] for i in range(1, 33)],
                 custom_wumpa_locations=[L[f"Custom Track {i}: Reach 10 Wumpa"] for i in range(1, 33)],
                 custom_letter_locations=[[L[f"Custom Track {i}: Letter {x}"] for x in cp.LETTERS] for i in range(1, 33)],
                 custom_letter_items=[[cp.custom_check_code("letter_item", i, j) for j in range(3)] for i in range(1, 33)],
+                # Relic Race Perfect per generic slot and Cortex Vortex as a
+                # track (#133 PR 3c).
+                custom_perfect_locations=[L[f"Custom Track {i}: Relic Race Perfect"] for i in range(1, 33)],
                 wumpa_global=L["Wumpa: Reach 10 Wumpa"])
+CV = cp.destinations.CORTEX_VORTEX
+expected["cortex_vortex"] = dict(
+    id=cp.CORTEX_TRACK_ID, package_id=cp.CORTEX_PACKAGE_ID, name=CV, laps=cp.CORTEX_LAPS,
+    location=L[CV + ": Trophy Race"], ctr=L[CV + ": CTR Token Challenge"],
+    relic=[L[f"{CV}: {t} Time Trial"] for t in cp.RELIC_TIERS], perfect=L[CV + ": Relic Race Perfect"],
+    podium=[L[f"{CV}: {s}"] for s in RUNGS], wumpa=L[CV + ": Reach 10 Wumpa"],
+    letters=[L[f"{CV}: Letter {x}"] for x in cp.LETTERS], letter_items=list(cp.cortex_vortex_track.LETTER_ITEM_CODES))
+expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
 cases = []
@@ -477,6 +489,101 @@ for name, change in [
         ("global unchanged copy", lambda p: None),
         ]:
     fam_alter(name, change, fam_global)
+
+# Cortex Vortex as a track and Relic Race Perfect checks (#133 PR 3c): plans
+# with and without Cortex Vortex, every mode subset it can take, the perfect on
+# retail, Cortex Vortex, a named block and a generic slot, with the 3b families
+# and the three mode orders; then forged records.
+from worlds.ctr.test.test_cortex_relic_perfect import cv_options, relic_named
+cv_cases = 0
+for index, (perfect, letters, order) in enumerate(itertools.product((False, True), (0, 2, 3), ("fixed", "per_seed", "per_pad"))):
+    for seed in range(2):
+        options = cv_options(perfect=perfect, order=order, required=(index + seed) % 3 != 2,
+                             lettersanity=letters, letters_per_track=2,
+                             wumpa_check=("off", "global", "per_track")[(index + seed) % 3],
+                             podium_placement_checks=bool(seed))
+        if index % 4 == 1:
+            options["content_pool"]["tracks"]["overrides"] = {"cortex_vortex": [["relic"], ["trophy", "relic"], ["ctr"]][seed]}
+        try:
+            wire = make_world(options, seed=seed + 5 * index).fill_slot_data()
+        except OptionError:
+            continue
+        cases.append((f"cortex-{perfect}-{letters}-{order}-{seed}", wire, True))
+        cv_cases += 1
+for seed in range(6):
+    options = cv_options(cortex=False, order=("fixed", "per_pad")[seed % 2])
+    cases.append((f"perfect-no-cortex-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    cv_cases += 1
+assert cv_cases >= 36, cv_cases
+cv_base = make_world(cv_options(lettersanity=2, letters_per_track=1, wumpa_check="per_track"), seed=20261017).fill_slot_data()
+cases.append(("cortex-base", cv_base, True))
+def cv_alter(name, change):
+    alter("cortex-" + name, change, cv_base)
+def cv_track(p):
+    return next(t for t in p["tracks"] if t["origin"] == "cortex_vortex")
+def cv_check(p, kind):
+    return next(c for c in p["checks"] if c["owner"] == "cortex_vortex" and c["kind"] == kind)
+def perfect_of(p, owner):
+    return next(c for c in p["checks"] if c["owner"] == owner and c["kind"] == "perfect")
+def drop_check(code_of):
+    def change(p):
+        p["checks"].remove(code_of(p))
+        p["items"]["coded_checks"] -= 1
+        p["items"]["filler_count"] -= 1
+    return change
+def perfect_on_btp(p):
+    entry = next(e for e in p["entries"] if e.get("track_id") == "custom/baby-t-park/1.0.2")
+    pad = next(x for x in p["pads"] if x["entry_id"] == entry["id"])
+    p["checks"].append(dict(location=35201610, owner=entry["track_id"], kind="perfect",
+                            display_name="Baby T Park: Relic Race Perfect",
+                            routes=[dict(entry_id=entry["id"], mode="relic", leg_id=None, encounter_id=None,
+                                         own_pad_id=pad["id"], award="perfect")]))
+    p["items"]["coded_checks"] += 1
+    p["items"]["filler_count"] += 1
+def cv_with_slot(p):
+    cv_track(p)["custom_slot"] = 9
+def cv_as_package(p):
+    t = cv_track(p)
+    t["origin"] = "custom"
+def cv_letter_item_swapped(p):
+    row = next(r for r in p["items"]["rows"] if r["item"] in (35010200, 35010201, 35010202))
+    row["item"] = 35010186
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+def bplus_cortex_title(p):
+    t = next(t for t in p["tracks"] if t["id"] == "custom/fixture-loop/2.1")
+    old = t["room_title"]
+    t["room_title"] = "Cortex Vortex"
+    for c in p["checks"]:
+        if c["owner"] == t["id"]:
+            c["display_name"] = c["display_name"].replace(old, "Cortex Vortex", 1)
+for name, change in [
+        ("perfect dropped", drop_check(lambda p: perfect_of(p, "custom/fixture-loop/2.1"))),
+        ("Cortex perfect dropped", drop_check(lambda p: cv_check(p, "perfect"))),
+        ("perfect on a track without a Relic Race", perfect_on_btp),
+        ("perfect takes Oxide Station's code", lambda p: cv_check(p, "perfect").__setitem__("location", 35012415)),
+        ("perfect takes the generic slot of another", lambda p: perfect_of(p, "custom/fixture-loop/2.1").__setitem__("location", 35024031)),
+        ("named perfect off its block", lambda p: perfect_of(p, "custom/north-pole/1.1.0").__setitem__("location", 35024001)),
+        ("perfect award changed", lambda p: cv_check(p, "perfect")["routes"][0].__setitem__("award", "sapphire")),
+        ("perfect on the Trophy route", lambda p: cv_check(p, "perfect")["routes"][0].__setitem__("mode", "trophy")),
+        ("perfect kind changed", lambda p: cv_check(p, "perfect").__setitem__("kind", "relic")),
+        ("perfect name changed", lambda p: cv_check(p, "perfect").__setitem__("display_name", "Cortex Vortex: Perfect")),
+        ("perfect feature dropped", drop_feature("relic_perfect_v1")),
+        ("perfect setting false", lambda p: p["track_checks"].__setitem__("relic_perfect", False)),
+        ("perfect setting as integer", lambda p: p["track_checks"].__setitem__("relic_perfect", 1)),
+        ("perfect setting dropped", lambda p: p["track_checks"].pop("relic_perfect")),
+        ("Cortex laps", lambda p: cv_track(p).__setitem__("laps", 5)),
+        ("Cortex package", lambda p: cv_track(p).__setitem__("package_id", "package/cortex-vortex/1.1.2")),
+        ("Cortex name", lambda p: cv_track(p).__setitem__("display_name", "Oxide Station")),
+        ("Cortex id", lambda p: cv_track(p).__setitem__("id", "cortex-vortex")),
+        ("Cortex with a custom slot", cv_with_slot),
+        ("Cortex as a custom origin", cv_as_package),
+        ("Cortex Trophy takes Oxide Station's code", lambda p: cv_check(p, "trophy").__setitem__("location", 35011013)),
+        ("Cortex Wumpa takes Oxide Station's code", lambda p: cv_check(p, "wumpa").__setitem__("location", 35016114)),
+        ("Cortex letter item swapped", cv_letter_item_swapped),
+        ("B+ title takes Cortex Vortex", bplus_cortex_title),
+        ("unchanged copy", lambda p: None),
+        ]:
+    cv_alter(name, change)
 
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))

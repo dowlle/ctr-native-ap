@@ -379,7 +379,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 			AP_TextBufPrintf(f,
 			        ", \"rungs\": [%lld, %lld, %lld, %lld, %lld], \"wumpa\": %lld, \"wumpa_modes\": %u, "
 			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
-			        "\"letters_received\": [%d, %d, %d]}",
+			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d}",
 			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
 			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
 			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
@@ -388,7 +388,9 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        (long long)pad->letter_items[1], (long long)pad->letter_items[2],
 			        AP_ContentLetterItemReceived(pad->letter_items[0]),
 			        AP_ContentLetterItemReceived(pad->letter_items[1]),
-			        AP_ContentLetterItemReceived(pad->letter_items[2]));
+			        AP_ContentLetterItemReceived(pad->letter_items[2]),
+			        // Relic Race Perfect and Cortex Vortex (#133 PR 3c).
+			        (long long)pad->perfect_location, pad->cortex);
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");
