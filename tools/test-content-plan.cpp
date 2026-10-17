@@ -9,6 +9,7 @@
 #include <functional>
 #include <algorithm>
 #include <cstring>
+#include <set>
 using J = nlohmann::json;
 extern "C" void AP_LogLine(const char *) {}
 static int checks, failures;
@@ -487,6 +488,143 @@ int main(int argc, char **argv) {
         int none[15] = {};
         expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none),
                "one stage: every mode opens with the pad");
+    }
+    // Per-track check families (#133 PR 3b): the paired apworld's plans with
+    // podium rungs, per-track Wumpa and Lettersanity mode 2 (two letters), and
+    // with five rungs, global Wumpa and Lettersanity mode 3, on Crash Cove,
+    // Roo's Tubes and Slide Coliseum, Baby T Park on block 8 (generic slot 1)
+    // and the B+ fixture-loop with letters and Wumpa on generic slot 2.
+    J fams, famg;
+    std::ifstream("tools/fixtures/content-plan/track-checks.json") >> fams;
+    std::ifstream("tools/fixtures/content-plan/track-checks-global.json") >> famg;
+    expect(parse(fams) && bind_room(fams, "seed-F") && ap_content_plan_active(), "track-check plan binds");
+    {
+        const auto *fam = ap_content_plan_checks();
+        expect(fam->podium == 27 && fam->wumpa == 2 && fam->lettersanity == 2 && fam->letters_per_track == 2,
+               "track_checks settings parsed");
+        int pads = 0, ctr = 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied || p->crystal) continue;
+            const bool trophy = ap_content_mode_slot(p, AP_CONTENT_MODE_TROPHY) >= 0;
+            const bool token = ap_content_mode_slot(p, AP_CONTENT_MODE_CTR) >= 0;
+            ++pads;
+            expect((p->rung_locations[0] > 0) == trophy && (p->rung_locations[4] > 0) == trophy && p->rung_locations[2] == 0,
+                   "four rungs exactly on a Trophy Race, no held 5th");
+            int letters = 0;
+            for (int l = 0; l < 3; ++l) {
+                letters += p->letter_locations[l] > 0;
+                expect((p->letter_locations[l] > 0) == (p->letter_items[l] > 0), "mode 2: a letter check has its item");
+            }
+            expect(letters == (token ? 2 : 0), "two letter checks on a CTR Challenge");
+            ctr += token;
+            expect((p->wumpa_location > 0) == (trophy || token) && p->wumpa_modes == ((trophy ? 1u : 0u) | (token ? 2u : 0u)),
+                   "per-track Wumpa from Trophy and CTR");
+            if (p->retail_id == 3)
+                expect(p->rung_locations[0] == 35015100 && p->rung_locations[4] == 35015002 && p->wumpa_location == 35016101 &&
+                       (p->letter_locations[1] == 0 || (p->letter_locations[1] == 35012501 && p->letter_items[1] == 35010140)),
+                       "Crash Cove keeps its frozen rung and Wumpa codes");
+            if (p->retail_id >= 0) continue;
+            const auto *pkg = ap_content_plan_package(p->package_index);
+            const std::string key = pkg ? pkg->content_id : "";
+            if (key == "baby-t-park")
+                expect(p->named_block == 8 && p->rung_locations[0] == 35201601 && p->rung_locations[4] == 35201605 &&
+                       p->wumpa_location == 35201614 &&
+                       (p->letter_locations[0] == 0 || (p->letter_locations[0] == 35201611 && p->letter_items[0] == 35100040)) &&
+                       (p->letter_locations[2] == 0 || (p->letter_locations[2] == 35201613 && p->letter_items[2] == 35100042)),
+                       "named block families on its offsets");
+            else
+                expect(key == "fixture-loop" && p->custom_slot == 2 && p->rung_locations[0] == 35016405 &&
+                       p->wumpa_location == 35016601 &&
+                       (p->letter_locations[1] == 0 || (p->letter_locations[1] == 35020004 && p->letter_items[1] == 35021004)),
+                       "generic slot families on the Custom Track 2 codes");
+        }
+        expect(pads == 5 && ctr == 5, "5 track pads, all with a CTR Challenge");
+    }
+    expect(parse(famg) && bind_room(famg, "seed-G") && ap_content_plan_active(), "global track-check plan binds");
+    {
+        const auto *fam = ap_content_plan_checks();
+        expect(fam->podium == 31 && fam->wumpa == 1 && fam->wumpa_global == 35016100 && fam->lettersanity == 3 &&
+               fam->letters_per_track == 0, "global settings parsed");
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied || p->crystal) continue;
+            const bool token = ap_content_mode_slot(p, AP_CONTENT_MODE_CTR) >= 0;
+            expect(p->wumpa_location == 0 && p->wumpa_modes != 0, "global: routes but no per-track check");
+            for (int l = 0; l < 3; ++l)
+                expect(p->letter_locations[l] == 0 && (p->letter_items[l] > 0) == token, "mode 3: three items, no letter checks");
+        }
+    }
+    mutations(fams, fams, J::json_pointer(""));
+    {
+        auto fam_refuse = [&](const std::string &why, const J &source, const std::function<void(J &)> &change) {
+            J bad = source; change(bad["content_plan"]); refuse(bad, "track checks: " + why);
+        };
+        auto first = [](J &plan, const std::string &kind) -> J & {
+            for (auto &c : plan["checks"]) if (c["kind"] == kind) return c;
+            throw std::runtime_error("no check of kind " + kind);
+        };
+        auto erase_first = [](J &plan, const std::string &kind) {
+            auto &rows = plan["checks"];
+            for (size_t i = 0; i < rows.size(); ++i) if (rows[i]["kind"] == kind) { rows.erase(i); return; }
+        };
+        auto letter_row = [](J &plan) -> J & {
+            for (auto &r : plan["items"]["rows"]) if (r["item"].get<int64_t>() > 35010014) return r;
+            throw std::runtime_error("no letter row");
+        };
+        fam_refuse("letter check dropped", fams, [&](J &p) { erase_first(p, "letter"); });
+        fam_refuse("rung dropped", fams, [&](J &p) { erase_first(p, "podium"); });
+        fam_refuse("Wumpa dropped", fams, [&](J &p) { erase_first(p, "wumpa"); });
+        fam_refuse("global Wumpa dropped", famg, [&](J &p) { erase_first(p, "wumpa"); });
+        fam_refuse("letter item row dropped", fams, [&](J &p) {
+            auto &rows = p["items"]["rows"];
+            for (size_t i = 0; i < rows.size(); ++i) if (rows[i]["item"].get<int64_t>() > 35010014) { rows.erase(i); return; } });
+        fam_refuse("letter item pooled twice", fams, [&](J &p) {
+            J &r = letter_row(p); r["base"] = 2; r["remaining"] = 2; r["receipt_cap"] = 2; r["requirement_ceiling"] = 2; });
+        fam_refuse("letter item with an extra copy", fams, [&](J &p) {
+            J &r = letter_row(p); r["extra"] = 1; r["remaining"] = 2; r["receipt_cap"] = 2; });
+        fam_refuse("unknown item row", fams, [&](J &p) { letter_row(p)["item"] = 35010187; });
+        fam_refuse("rung set the options never create", fams, [&](J &p) { p["track_checks"]["podium_rungs"] = J::array({"held_3rd"}); });
+        fam_refuse("rungs out of slot order", fams, [&](J &p) {
+            p["track_checks"]["podium_rungs"] = J::array({"held_3rd", "held_1st", "finish_podium", "finish_any"}); });
+        fam_refuse("unknown rung", fams, [&](J &p) { p["track_checks"]["podium_rungs"][0] = "held_2nd"; });
+        fam_refuse("wumpa mode unknown", fams, [&](J &p) { p["track_checks"]["wumpa"] = "per_pad"; });
+        fam_refuse("per-track checks under global", fams, [&](J &p) { p["track_checks"]["wumpa"] = "global"; });
+        fam_refuse("letters_per_track in mode 3", famg, [&](J &p) { p["track_checks"]["letters_per_track"] = 3; });
+        fam_refuse("letters_per_track missing in mode 2", fams, [&](J &p) { p["track_checks"].erase("letters_per_track"); });
+        fam_refuse("letter count above letters_per_track", fams, [&](J &p) { p["track_checks"]["letters_per_track"] = 3; });
+        fam_refuse("mode 2 plan read as mode 1", fams, [&](J &p) { p["track_checks"]["lettersanity"] = 1; });
+        fam_refuse("mode 3 plan read as mode 2", famg, [&](J &p) { p["track_checks"]["lettersanity"] = 2; p["track_checks"]["letters_per_track"] = 3; });
+        fam_refuse("empty record", fams, [&](J &p) { p["track_checks"] = J::object(); });
+        fam_refuse("unknown setting", fams, [&](J &p) { p["track_checks"]["box_locations"] = true; });
+        fam_refuse("record removed", fams, [&](J &p) { p.erase("track_checks"); });
+        fam_refuse("feature dropped", fams, [&](J &p) {
+            auto &f = p["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "wumpa_checks_v1") { f.erase(i); return; } });
+        fam_refuse("Wumpa route from a Relic Race", fams, [&](J &p) { first(p, "wumpa")["routes"][0]["mode"] = "relic"; });
+        fam_refuse("Wumpa routes reordered", fams, [&](J &p) {
+            for (auto &c : p["checks"]) if (c["kind"] == "wumpa" && c["routes"].size() == 2) { std::swap(c["routes"][0], c["routes"][1]); return; } });
+        fam_refuse("global routes reversed", famg, [&](J &p) {
+            auto &r = first(p, "wumpa")["routes"]; std::reverse(r.begin(), r.end()); });
+        fam_refuse("rung on a CTR route", fams, [&](J &p) { first(p, "podium")["routes"][0]["mode"] = "ctr"; });
+        fam_refuse("letter award swapped", fams, [&](J &p) {
+            J &c = first(p, "letter"); c["routes"][0]["award"] = c["routes"][0]["award"] == "letter_c" ? "letter_t" : "letter_c"; });
+        fam_refuse("rung display name changed", fams, [&](J &p) { first(p, "podium")["display_name"] = "Crash Cove: Held 2nd"; });
+        fam_refuse("package without Wumpa keeps its check", fams, [&](J &p) {
+            for (auto &pkg : p["packages"]) if (pkg["content_id"] == "fixture-loop") pkg["capabilities"]["wumpa"] = false; });
+        fam_refuse("letter moved to an undrawn letter", fams, [&](J &p) {
+            std::set<int64_t> have;
+            for (const auto &c : p["checks"])
+                if (c["owner"] == "retail:3" && c["kind"] == "letter") have.insert(c["location"].get<int64_t>());
+            for (auto &c : p["checks"])
+                if (c["owner"] == "retail:3" && c["kind"] == "letter")
+                    for (int l = 0; l < 3; ++l)
+                        if (!have.count(35012500 + l)) {
+                            c["location"] = 35012500 + l;
+                            c["routes"][0]["award"] = std::string("letter_") + "ctr"[l];
+                            c["display_name"] = std::string("Crash Cove: Letter ") + "CTR"[l];
+                            return;
+                        } });
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

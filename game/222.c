@@ -100,7 +100,13 @@ void AA_EndEvent_DrawMenu(void)
 	b32 didWin = (driver->driverRank == 0);
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
 #ifdef CTR_AP
-	if (ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2)
+	if (ctr_cfg_active() && (ctr_cfg.lettersanity_mode >= 2
+#ifdef CTR_CUSTOM_TRACKS
+	                         // A content-plan CTR Challenge reads its own
+	                         // Lettersanity letters (#133 PR 3b).
+	                         || AP_StandaloneRaceActive()
+#endif
+	                         ))
 		didEarnCtrToken = AP_LetterTokenEarned(
 			gGT->levelID, didWin, driver->PickupLetterHUD.numCollected);
 #endif

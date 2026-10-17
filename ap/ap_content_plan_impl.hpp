@@ -1,7 +1,8 @@
 // Included by ap_seedcfg.cpp so every production-parser harness exercises the
 // same admission path. Implements standalone track entries with their Trophy,
-// CTR Challenge and Relic Race modes (#133 PR 3) and Crystal Challenge
-// entries; a broader schema shape is not a promise of runtime support.
+// CTR Challenge and Relic Race modes (#133 PR 3), their podium rungs, Reach 10
+// Wumpa and Lettersanity checks (#133 PR 3b), and Crystal Challenge entries; a
+// broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
@@ -20,6 +21,7 @@ struct State {
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     std::array<ctr_content_item, 15> items{};
+    ctr_content_checks families{};
     int package_count = 0, goal_count = 0, goal_mask = 0;
     std::set<int64_t> checks;
     std::string canonical;
@@ -207,6 +209,51 @@ static const std::map<std::string, NamedBlock> &named_block_table(const J &regis
     need(!table.empty(), "compiled named-block table is malformed");
     return table;
 }
+// Per-track check families (#133 PR 3b). Rung keys in SLOT_ORDER (apworld
+// podium.SLOT_ORDER) with their location suffixes; bit k is rung k.
+static const char *const rung_keys[5] = {"held_1st", "held_3rd", "held_5th", "finish_podium", "finish_any"};
+static const char *const rung_suffixes[5] = {"Held 1st", "Held 3rd", "Held 5th", "Finish on Podium", "Finish (Any Position)"};
+static const char *const letter_keys[3] = {"letter_c", "letter_t", "letter_r"};
+static const char *const letter_suffixes[3] = {"Letter C", "Letter T", "Letter R"};
+// The rung sets the podium options can create (podium.created_rung_keys): held
+// 1st and 3rd, optionally 5th; finish on podium, optionally any position.
+static bool rung_set_ok(int mask) {
+    const int held = mask & 7, finish = mask & 24;
+    return mask && (held == 0 || held == 3 || held == 7) && (finish == 0 || finish == 8 || finish == 24);
+}
+static void family_settings(const J &t, ctr_content_checks &fam) {
+    need(t.is_object() && !t.empty(), "track_checks must be a nonempty record");
+    for (auto it = t.begin(); it != t.end(); ++it)
+        need(it.key() == "podium_rungs" || it.key() == "wumpa" || it.key() == "lettersanity" || it.key() == "letters_per_track",
+             "unknown track_checks field");
+    if (t.contains("podium_rungs")) {
+        const J &rungs = t["podium_rungs"];
+        need(rungs.is_array() && !rungs.empty() && rungs.size() <= 5, "podium_rungs list bounds");
+        int mask = 0, last = -1;
+        for (const auto &key : rungs) {
+            int k = -1;
+            for (int i = 0; i < 5; ++i) if (key == rung_keys[i]) k = i;
+            need(k > last, "podium_rungs must list known rungs in slot order");
+            last = k; mask |= 1 << k;
+        }
+        need(rung_set_ok(mask), "podium_rungs is not a rung set the podium options create");
+        fam.podium = mask;
+    }
+    if (t.contains("wumpa")) {
+        need(t["wumpa"] == "global" || t["wumpa"] == "per_track", "track_checks.wumpa must be global or per_track");
+        fam.wumpa = t["wumpa"] == "global" ? 1 : 2;
+    }
+    if (t.contains("lettersanity")) fam.lettersanity = number(t["lettersanity"], 1, 3);
+    need(t.contains("letters_per_track") == (fam.lettersanity == 1 || fam.lettersanity == 2),
+         "letters_per_track belongs to Lettersanity modes 1 and 2 only");
+    if (t.contains("letters_per_track")) fam.letters_per_track = number(t["letters_per_track"], 1, 3);
+}
+static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
+    return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
+}
+static J route_record(const std::string &entry, const char *mode, const std::string &pad, const char *award) {
+    return J{{"entry_id", entry}, {"mode", mode}, {"leg_id", nullptr}, {"encounter_id", nullptr}, {"own_pad_id", pad}, {"award", award}};
+}
 using Table = std::map<std::string, const J *>;
 static Table table(const J &rows, size_t maximum) {
     need(rows.is_array() && rows.size() <= maximum, "record array exceeds profile bounds");
@@ -222,8 +269,16 @@ static void validate(const J &p, State &out) {
     budget(p, 0, nodes, bytes);
     out.canonical = p.dump(); // also validates UTF-8
     need(out.canonical.size() <= 16 * 1024 * 1024, "serialized byte budget exceeded");
-    fields(p, {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"});
+    // `track_checks` (#133 PR 3b) is optional: absent when the seed has no
+    // podium rungs, Wumpa checks or Lettersanity.
+    const bool has_families = p.is_object() && p.contains("track_checks");
+    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u), "unsupported or incomplete record fields");
+    for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
+        need(p.contains(name), std::string("missing field: ") + name);
     need(p.at("version") == 1, "unsupported required content-plan version");
+    ctr_content_checks &fam = out.families;
+    fam = ctr_content_checks{};
+    if (has_families) family_settings(p["track_checks"], fam);
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto &named_table = named_block_table(registry);
@@ -268,6 +323,9 @@ static void validate(const J &p, State &out) {
     if(pickups)features.push_back("crystal_pickups_v1");
     if(arcade)features.push_back("arcade_crystals_v1");
     if(modes)features.push_back("track_modes_v1");
+    if(fam.podium)features.push_back("podium_rungs_v1");
+    if(fam.wumpa)features.push_back("wumpa_checks_v1");
+    if(fam.lettersanity)features.push_back("lettersanity_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -295,6 +353,15 @@ static void validate(const J &p, State &out) {
     std::set<std::string> used_entries, used_tracks, used_packages;
     std::set<int> retail_ids, custom_slots, named_blocks, arena_ids;
     std::map<int64_t, J> expected_checks;
+    // Lettersanity modes 1 and 2 draw which letters have checks; the plan's own
+    // check list says which, and each CTR Challenge must have letters_per_track.
+    std::set<int64_t> plan_codes;
+    for (const auto &check : p["checks"])
+        if (check.is_object() && check.contains("location") && check["location"].is_number_integer())
+            plan_codes.insert(check["location"].get<int64_t>());
+    std::set<int64_t> letter_items;                    // pooled letter items (modes 2 and 3)
+    struct GlobalRoute { int physical; std::string entry, pad; unsigned modes; };
+    std::vector<GlobalRoute> global_routes;           // `wumpa: global`
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
@@ -462,6 +529,35 @@ static void validate(const J &p, State &out) {
         static const char *awards[AP_CONTENT_MODE_COUNT][3] = {{"win"}, {"win_letters"}, {"sapphire", "gold", "platinum"}};
         static const char *suffixes[AP_CONTENT_MODE_COUNT][3] = {{"Trophy Race"}, {"CTR Token Challenge"},
                                                                  {"Sapphire Time Trial", "Gold Time Trial", "Platinum Time Trial"}};
+        // Per-track check families (#133 PR 3b): retail rows, the named
+        // block's offsets, or the generic slot's families.
+        int64_t rung[5] = {}, wumpa = 0, letter[3] = {}, letter_item[3] = {};
+        if (dest.retail_id >= 0) {
+            const J &row = registry["retail"][dest.retail_id];
+            for (int k = 0; k < 5; ++k) rung[k] = row["podium"][k].get<int64_t>();
+            wumpa = row["wumpa"].get<int64_t>();
+            for (int l = 0; l < 3; ++l) { letter[l] = row["letters"][l].get<int64_t>(); letter_item[l] = row["letter_items"][l].get<int64_t>(); }
+        } else if (dest.named_block >= 0) {
+            for (int k = 0; k < 5; ++k) rung[k] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_HELD_1ST + k);
+            wumpa = ap_named_location_code(dest.named_block, AP_NAMED_OFF_WUMPA);
+            for (int l = 0; l < 3; ++l) {
+                letter[l] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_LETTER_C + l);
+                letter_item[l] = ap_named_item_code(dest.named_block, l);
+            }
+        } else {
+            const int s = dest.custom_slot - 1;
+            for (int k = 0; k < 5; ++k) rung[k] = registry["custom_podium_locations"][s][k].get<int64_t>();
+            wumpa = registry["custom_wumpa_locations"][s].get<int64_t>();
+            for (int l = 0; l < 3; ++l) {
+                letter[l] = registry["custom_letter_locations"][s][l].get<int64_t>();
+                letter_item[l] = registry["custom_letter_items"][s][l].get<int64_t>();
+            }
+        }
+        auto family_check = [&](int64_t code, const char *kind, const std::string &suffix, const J &routes) {
+            const J check{{"location", code}, {"owner", track_id}, {"kind", kind},
+                          {"display_name", check_title + ": " + suffix}, {"routes", routes}};
+            need(expected_checks.emplace(code, check).second, "duplicate check identity");
+        };
         for (int k = 0; k < dest.mode_count; ++k) {
             const int mode = dest.modes[k];
             for (int t = 0; t < (mode == AP_CONTENT_MODE_RELIC ? 3 : 1); ++t) {
@@ -470,10 +566,64 @@ static void validate(const J &p, State &out) {
                               {"display_name", check_title + ": " + suffixes[mode][t]}, {"routes", J::array({route})}};
                 need(expected_checks.emplace(codes[mode][t], check).second, "duplicate check identity");
             }
+            // A Trophy Race carries the seed's podium rungs.
+            for (int r = 0; mode == AP_CONTENT_MODE_TROPHY && r < 5; ++r)
+                if (fam.podium & (1 << r)) {
+                    dest.rung_locations[r] = rung[r];
+                    family_check(rung[r], "podium", rung_suffixes[r], J::array({route_record(entry_id, "trophy", id, rung_keys[r])}));
+                }
+            // A CTR Challenge carries letters_per_track letter checks
+            // (Lettersanity modes 1 and 2); which ones is the seed's draw.
+            if (mode == AP_CONTENT_MODE_CTR && (fam.lettersanity == 1 || fam.lettersanity == 2)) {
+                int drawn = 0;
+                for (int l = 0; l < 3; ++l)
+                    if (plan_codes.count(letter[l])) {
+                        ++drawn;
+                        dest.letter_locations[l] = letter[l];
+                        family_check(letter[l], "letter", letter_suffixes[l], J::array({route_record(entry_id, "ctr", id, letter_keys[l])}));
+                    }
+                need(drawn == fam.letters_per_track, "letter checks do not match letters_per_track");
+            }
+        }
+        // Lettersanity items: mode 2 the drawn letters, mode 3 all three.
+        if ((mode_bits & (1u << AP_CONTENT_MODE_CTR)) && fam.lettersanity >= 2)
+            for (int l = 0; l < 3; ++l)
+                if (fam.lettersanity == 3 || dest.letter_locations[l]) {
+                    dest.letter_items[l] = letter_item[l];
+                    need(letter_items.insert(letter_item[l]).second, "duplicate letter item");
+                }
+        // Reach 10 Wumpa: a Trophy Race or CTR Challenge on a track that can
+        // reach ten fruit (a custom package needs its measured `wumpa` flag).
+        const bool fruit = dest.retail_id >= 0 || (record_caps(out, dest) & AP_CONTENT_CAP_WUMPA);
+        const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
+        if (fam.wumpa && fruit && reach) {
+            dest.wumpa_modes = reach;
+            if (fam.wumpa == 2) {
+                dest.wumpa_location = wumpa;
+                J routes = J::array();
+                for (int m = 0; m < 2; ++m)
+                    if (reach & (1u << m)) routes.push_back(route_record(entry_id, mode_names[m], id, "wumpa"));
+                family_check(wumpa, "wumpa", "Reach 10 Wumpa", routes);
+            } else global_routes.push_back(GlobalRoute{physical, entry_id, id, reach});
         }
         if (!keys) starting_entry = true;
     }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
+    // `wumpa: global`: one check, a route per Trophy Race and CTR Challenge
+    // that can reach ten fruit, in physical pad order, then mode order.
+    if (fam.wumpa == 1) {
+        fam.wumpa_global = registry["wumpa_global"].get<int64_t>();
+        std::sort(global_routes.begin(), global_routes.end(),
+                  [](const GlobalRoute &a, const GlobalRoute &b) { return a.physical < b.physical; });
+        J routes = J::array();
+        for (const auto &r : global_routes)
+            for (int m = 0; m < 2; ++m)
+                if (r.modes & (1u << m)) routes.push_back(route_record(r.entry, m ? "ctr" : "trophy", r.pad, "wumpa"));
+        if (!routes.empty())
+            need(expected_checks.emplace(fam.wumpa_global, J{{"location", fam.wumpa_global}, {"owner", "global"}, {"kind", "wumpa"},
+                                                             {"display_name", "Wumpa: Reach 10 Wumpa"}, {"routes", routes}}).second,
+                 "duplicate check identity");
+    }
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
     for (const auto &pair : expected_checks)
@@ -486,20 +636,28 @@ static void validate(const J &p, State &out) {
     }
     const J &items = p["items"];
     fields(items, {"rows", "coded_checks", "locked_checks", "filler_count", "trap_count"});
-    need(items["rows"].is_array() && items["rows"].size() == 15, "item family registry mismatch");
+    // The 15 counted families, plus one row per pooled letter item (#133 PR 3b).
+    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size(), "item family registry mismatch");
     std::set<int> item_ids;
+    std::set<int64_t> letter_rows;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
         fields(row, {"item", "base", "extra", "start_from_pool", "start_additional", "locked_selected", "remaining", "receipt_cap", "requirement_ceiling"});
-        const int i = number(row["item"], 35010000, 35010014) - 35010000;
-        need(item_ids.insert(i).second, "duplicate item family");
-        auto &r = out.items[i];
+        const int64_t code = number(row["item"], 1);
+        ctr_content_item letter_row{};
+        if (letter_items.count(code)) {
+            need(letter_rows.insert(code).second && row["base"] == 1 && row["extra"] == 0, "a letter item is pooled once");
+        }
+        const int i = letter_items.count(code) ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
+        need(i < 0 || item_ids.insert(i).second, "duplicate item family");
+        auto &r = i < 0 ? letter_row : out.items[i];
         r.base = number(row["base"]); r.extra = number(row["extra"]);
         r.start_from_pool = number(row["start_from_pool"], 0, 10000); r.start_additional = number(row["start_additional"], 0, 10000);
         r.remaining = number(row["remaining"]); r.receipt_cap = number(row["receipt_cap"]);
         need(row["locked_selected"] == 0 && r.remaining == (int64_t)r.base + r.extra - r.start_from_pool && r.receipt_cap == (int64_t)r.base + r.extra + r.start_additional && number(row["requirement_ceiling"]) == r.base, "selected item ledger mismatch");
         need(i != 14 || r.base == 4, "four base Keys are mandatory");
+        need(i >= 0 || r.base == 1, "a letter item is pooled once");
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
         remaining += r.remaining;
     }
@@ -540,6 +698,7 @@ static void validate(const J &p, State &out) {
         if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
+    need(item_ids.size() == 15 && letter_rows.size() == letter_items.size(), "item family registry mismatch");
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
@@ -611,6 +770,10 @@ extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
 }
 extern "C" const ctr_content_package *ap_content_plan_package(int index) {
     return ap_content_plan_active() && index >= 0 && index < content_plan::state.package_count ? &content_plan::state.packages[index] : nullptr;
+}
+extern "C" const ctr_content_checks *ap_content_plan_checks(void) {
+    static const ctr_content_checks none{};
+    return ap_content_plan_active() ? &content_plan::state.families : &none;
 }
 extern "C" const ctr_content_item *ap_content_plan_item(int64_t item) {
     return ap_content_plan_active() && item >= 35010000 && item <= 35010014 ? &content_plan::state.items[item - 35010000] : nullptr;

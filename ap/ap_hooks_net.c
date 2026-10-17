@@ -102,6 +102,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_WinLogicTallyReset(); // #449: rebuilt from the resent ReceivedItems list
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		memset(ap_custom_letter_received, 0, sizeof ap_custom_letter_received);
+		memset(ap_named_letter_received, 0, sizeof ap_named_letter_received);
 		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
 		memset(ap_verify_custom_letter_foreign, 0, sizeof ap_verify_custom_letter_foreign);
 		for (k = 0; k < AP_CAT_COUNT; k++)
@@ -267,6 +268,13 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_custom_letter_received[customLetterSlot - 1][customLetter] = 1;
 			if (ap_net_recv_batch_player(i) != ap_net_self_slot() || ap_net_recv_batch_location(i) <= 0)
 				ap_verify_custom_letter_foreign[(customLetterSlot - 1) * 3 + customLetter] = 1;
+			ap_state_gen++;
+		}
+		// Named-block letter items (#133 PR 3b): content-plan CTR Challenges
+		// read them by block (AP_ContentLetterReceived).
+		if (ap_named_item_is_letter(items[i]))
+		{
+			AP_NamedLetterReceive(items[i]);
 			ap_state_gen++;
 		}
 		// Schema 15: Cortex Vortex letter items (idx 200..202). Booleans rebuilt

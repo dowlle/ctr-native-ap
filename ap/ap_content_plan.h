@@ -7,7 +7,8 @@ extern "C" {
 #endif
 
 /* Standalone track entries with their Trophy Race, CTR Challenge and Relic
- * Race modes (#133 PR 3), and Crystal Challenge entries. Stored records own
+ * Race modes (#133 PR 3) and per-track check families (#133 PR 3b), and
+ * Crystal Challenge entries. Stored records own
  * their text; callers copy a record before crossing a load boundary. A
  * physical pad is never recovered by inverting its borrowed engine level. */
 #define AP_CONTENT_MODE_TROPHY 0
@@ -41,6 +42,20 @@ typedef struct ctr_content_pad {
     unsigned stage2_mask;
     int64_t ctr_location;         /* CTR Token Challenge, 0 without the mode */
     int64_t relic_locations[3];   /* Sapphire, Gold, Platinum Time Trial */
+    /* Per-track check families (#133 PR 3b), 0 when the seed or track has
+     * none. rung_locations: the podium rungs of the Trophy Race in SLOT_ORDER
+     * (held 1st, 3rd, 5th, finish on podium, finish any). wumpa_location: the
+     * track's own Reach 10 Wumpa check (`wumpa: per_track`). wumpa_modes: bit
+     * per mode with a Wumpa route (Trophy and CTR, on a track that can reach
+     * ten fruit), also for `wumpa: global`. letter_locations: the C/T/R
+     * letter checks of the CTR Challenge (Lettersanity modes 1 and 2).
+     * letter_items: the C/T/R letter items the seed pools for it (modes 2 and
+     * 3); the CTR Challenge then pays only with the pooled letters received. */
+    int64_t rung_locations[5];
+    int64_t wumpa_location;
+    unsigned wumpa_modes;
+    int64_t letter_locations[3];
+    int64_t letter_items[3];
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
@@ -70,6 +85,14 @@ typedef struct ctr_content_package {
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
+
+/* The plan's per-track check settings (#133 PR 3b): `lettersanity` 0 off,
+ * 1 locations, 2 locations and items, 3 items; `wumpa` 0 off, 1 global,
+ * 2 per track, with the global check's code. */
+typedef struct ctr_content_checks {
+    int podium, lettersanity, letters_per_track, wumpa;
+    int64_t wumpa_global;
+} ctr_content_checks;
 
 /* The single pad-entry evaluator for the content-plan profile. Display, pad
  * state, capture, the final load gate and the tracker launch all call it, so
@@ -130,6 +153,7 @@ uint64_t ap_content_plan_epoch(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
 const ctr_content_item *ap_content_plan_item(int64_t item);
+const ctr_content_checks *ap_content_plan_checks(void);
 int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_bind(const char *seed, int team, int slot,
                          const int64_t *locations, size_t count);

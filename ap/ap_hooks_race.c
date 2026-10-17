@@ -155,6 +155,12 @@ static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 	if (MainRaceTrack_OfflineCustomLoad())
 		return -1;
 #endif
+#ifdef CTR_CUSTOM_TRACKS
+	// A content-plan race owns its pad's rungs, and only its Trophy Race does
+	// (#133 PR 3b); the engine host's levelID never names them.
+	if (CustomTrack_StandaloneContext((int)gGT->levelID))
+		return AP_StandalonePodiumTrack();
+#endif
 	// Schema 15: a Cortex Vortex race (pad or cup leg) owns its own rungs.
 	// Checked first: its host LevelID 13 is Oxide Station's podium track.
 	if (AP_CortexTrackActive())
@@ -475,10 +481,46 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 	return pad;
 }
 
+// The running standalone race's content-plan podium identity, or -1: only a
+// Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack).
+int AP_StandalonePodiumTrack(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext((int)gGT->levelID) : NULL;
+	if (!context || context->mode != AP_CONTENT_MODE_TROPHY || !AP_StandaloneRoutePad(context) ||
+	    (!context->retail && !CustomTrack_ServingLoad((int)gGT->levelID, 0, 0)))
+		return -1;
+	return AP_CONTENT_PODIUM_LOGICAL_BASE + context->physicalPad;
+}
+
+// The content-plan pad's five rung codes as a podium row (#133 PR 3b), for
+// AP_SendPodiumChecks and AP_SendHeldChecks. 0 when the logical track is not a
+// content-plan Trophy Race pad with rungs.
+static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out)
+{
+	const ctr_content_pad *pad;
+	long codes[5];
+	int k, any = 0;
+	if (track < AP_CONTENT_PODIUM_LOGICAL_BASE || track > AP_CONTENT_PODIUM_LOGICAL_BASE + 110)
+		return 0;
+	pad = ap_content_plan_pad(track - AP_CONTENT_PODIUM_LOGICAL_BASE);
+	if (!pad || !pad->occupied || pad->crystal || ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) < 0)
+		return 0;
+	for (k = 0; k < 5; ++k)
+	{
+		codes[k] = pad->rung_locations[k] > 0 && pad->rung_locations[k] <= 2147483647 ? (long)pad->rung_locations[k] : -1;
+		any |= codes[k] > 0;
+	}
+	out->held_1st = codes[0]; out->held_3rd = codes[1]; out->held_5th = codes[2];
+	out->finish_podium = codes[3]; out->finish_any = codes[4];
+	return any;
+}
+
 // Trophy Race and CTR Challenge finish of a standalone race. The context's
 // mode decides the award (ap_content_race_award): first place for a Trophy
-// route; first place with all three letters for a CTR route, and only in the
-// CTR Challenge it was staged for. A Relic Race pays in AP_NotifyStandaloneRelic.
+// route; for a CTR route first place with the letters the CTR Challenge needs
+// (all three, or the Lettersanity letters, AP_LetterTokenEarned), and only in
+// the CTR Challenge it was staged for. A Relic Race pays in AP_NotifyStandaloneRelic.
 int AP_NotifyStandaloneRace(void)
 {
 	const struct CustomTrackRaceContext *context;
@@ -493,8 +535,11 @@ int AP_NotifyStandaloneRace(void)
 	context = CustomTrack_StandaloneContext(gGT->levelID);
 	token = (gGT->gameMode2 & TOKEN_RACE) != 0;
 	if (!context || token != (context->mode == AP_CONTENT_MODE_CTR) ||
-	    !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
-	                           gGT->drivers[0]->PickupLetterHUD.numCollected))
+	    (context->mode == AP_CONTENT_MODE_CTR
+	         ? !(gGT->drivers[0]->driverRank == 0 &&
+	             AP_LetterTokenEarned(gGT->levelID, 1, gGT->drivers[0]->PickupLetterHUD.numCollected))
+	         : !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
+	                                  gGT->drivers[0]->PickupLetterHUD.numCollected)))
 		return 0;
 	if (context->trophyLocation > 2147483647 ||
 	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
@@ -506,6 +551,42 @@ int AP_NotifyStandaloneRace(void)
 	                        "[AP CHECK] standalone entry=%s track=%s slot=%d mode=%d location=%ld\n",
 	                        context->entryID, context->trackID, context->slot, context->mode,
 	                        (long)context->trophyLocation);
+}
+
+// The Reach 10 Wumpa check the running standalone race sends (#133 PR 3b):
+// its pad's own check or the global one, only from a Trophy Race or CTR
+// Challenge that can reach ten fruit; -1 otherwise. Never the host's code.
+static long AP_StandaloneWumpaCode(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	int64_t code;
+	if (!context || !ap_content_plan_active() ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return -1;
+	code = ap_content_wumpa_code(ap_content_plan_checks(), pad, context->mode);
+	return code > 0 && code <= 2147483647 ? (long)code : -1;
+}
+
+// The running content-plan CTR Challenge's pad, for the letter hooks (#133
+// PR 3b), or NULL. `track` is the loaded levelID the hooks pass.
+static const ctr_content_pad *AP_StandaloneLetterPad(int track)
+{
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(track);
+	if (!context || context->mode != AP_CONTENT_MODE_CTR || !ap_content_plan_active())
+		return NULL;
+	return AP_StandaloneRoutePad(context);
+}
+
+// A content-plan CTR Challenge's letters in the legacy Lettersanity encoding.
+static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])
+{
+	int l;
+	ap_content_letter_codes(pad, codes);
+	for (l = 0; l < 3; ++l)
+		received[l] = (unsigned char)AP_ContentLetterItemReceived(pad->letter_items[l]);
 }
 
 int AP_StandaloneCtrBit(void)
@@ -710,6 +791,18 @@ int AP_LetterAvailable(int track, int letter)
 {
 	int slot = AP_CustomLetterSlot(track);
 	if (letter < 0 || letter >= 3) return 1;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LetterAvailablePure(1, ap_content_plan_checks()->lettersanity, codes[letter], received[letter]);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 		return !ctr_cfg_active() ||
 		       AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
@@ -741,6 +834,17 @@ int AP_CortexLetterAvailableForTracker(int letter)
 
 long AP_LetterLocation(int track, int letter)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			ap_content_letter_codes(pad, codes);
+			return letter >= 0 && letter < 3 ? codes[letter] : -1;
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 		return letter >= 0 && letter < 3 ? AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + letter) : -1;
 	if (AP_CustomLetterSlot(track))
@@ -854,6 +958,31 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	    driver != sdata->gGT->drivers[0])
 		return;
 
+#ifdef CTR_CUSTOM_TRACKS
+	// A content-plan race (#133 PR 3b) sends its pad's own Reach 10 Wumpa
+	// check or the global one, never the engine host's retail code.
+	if (CustomTrack_StandaloneContext((int)sdata->gGT->levelID))
+	{
+		code = AP_StandaloneWumpaCode();
+		if (code < 0)
+		{
+			if (ap_content_plan_checks()->wumpa)
+			{
+				snprintf(msg, sizeof msg,
+				         "[AP WUMPA] reached 10 fruit, no check sent: no Wumpa route for this "
+				         "content-plan race (level=%d)\n", (int)sdata->gGT->levelID);
+				AP_AppendLog(msg);
+			}
+			return;
+		}
+		if (!ap_net_location_exists(code))
+			return;
+		AP_EmitClassCheck(code, 0, -1, 0, 1,
+		                  "[AP WUMPA] reached 10 fruit (content plan, location %ld)\n", code);
+		return;
+	}
+#endif
+
 	AP_WumpaGatherFacts(sdata->gGT, &facts);
 	code = AP_WumpaResolveCode(&facts, &reason);
 	if (code < 0)
@@ -897,6 +1026,18 @@ static void AP_CortexLetterCodes(long codes[3])
 int AP_LettersRequiredMet(int track)
 {
 	int slot = AP_CustomLetterSlot(track);
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LettersRequiredMetPure(1, ap_content_plan_checks()->lettersanity, codes, received);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];
@@ -918,6 +1059,17 @@ int AP_LettersRequiredMet(int track)
 
 int AP_LettersRequiredCount(int track)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			ap_content_letter_codes(pad, codes);
+			return AP_LettersRequiredCountPure(1, ap_content_plan_checks()->lettersanity, codes);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];
@@ -992,6 +1144,21 @@ static void AP_FeedOxideFinalOpenUpdate(void)
 int AP_LetterTokenEarned(int track, int didWin, int collected)
 {
 	int slot = AP_CustomLetterSlot(track);
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		// A content-plan CTR Challenge (#133 PR 3b): with Lettersanity off or
+		// in mode 1 this is the retail rule (a win with three letters).
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LetterTokenEarnedPure(didWin, collected, 1, ap_content_plan_checks()->lettersanity,
+			                                codes, received);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];

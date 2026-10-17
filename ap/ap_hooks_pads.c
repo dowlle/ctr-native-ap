@@ -347,6 +347,21 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
                                  AP_CONTENT_BIT_RELIC+pad->physical*3+k;
             }
         }
+        // Per-track families (#133 PR 3b): podium rungs, the track's Wumpa
+        // check (once, whichever modes reach it) and the letter checks.
+        {
+            unsigned seen=0;
+            for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
+                int64_t codes[AP_CONTENT_FAMILY_SLOTS];
+                int slots[AP_CONTENT_FAMILY_SLOTS];
+                int k,c=ap_content_mode_family_codes(pad,pad->modes[n],codes,slots);
+                for(k=0;k<c && count<cap;++k) {
+                    if((seen & (1u<<slots[k])) || ap_net_location_checked((long)codes[k]))continue;
+                    seen|=1u<<slots[k];
+                    outBits[count++]=AP_CONTENT_BIT_FAMILY+pad->physical*AP_CONTENT_FAMILY_STRIDE+slots[k];
+                }
+            }
+        }
         for(n=0;n<pad->crystal_count && count<cap;++n)
             if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
         return count;
@@ -809,6 +824,10 @@ static int AP_GlowBitRewardGroup(int globalBit)
             if(p && p->crystal)return 2;
             return contentMode==AP_CONTENT_MODE_RELIC ? 1 : contentMode==AP_CONTENT_MODE_CTR ? 2 : 0;
         }
+        // Rungs and Wumpa ride the race slot, letters the token slot, as on
+        // retail pads (ruling 2026-09-30).
+        if(ap_content_family_bit_decode(globalBit,&contentPad,&contentTier))
+            return contentTier>=6 ? 2 : 0;
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);
