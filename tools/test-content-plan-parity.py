@@ -69,6 +69,12 @@ expected["cortex_vortex"] = dict(
 from worlds.ctr import itemsanity as cits, hit_character as chit
 expected["itemsanity"] = [dict(location=c, name=n) for n, c, _r in cits.ITEMSANITY_CLASS.all_locations()]
 expected["hit_character"] = [dict(location=c, name=n) for n, c, _r in chit.HIT_CHARACTER_CLASS.all_locations()]
+# Item Box Locations (#133 PR 4e): each retail row's placed slots as
+# [code, Shortcut Knowledge tier], in slot order.
+from worlds.ctr.item_boxes import ITEM_BOX_CLASS as CBOX, PLACED_COUNTS as CBOX_PLACED, SK_REQUIRED_TIER as CBOX_TIER
+for row in expected["retail"]:
+    row["boxes"] = [[CBOX.slot_code(row["name"], s), CBOX_TIER.get((row["name"], s), 0)]
+                    for s in range(1, CBOX_PLACED[row["name"]] + 1)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -1011,6 +1017,138 @@ glob_env("Hit block on a plan without Hit Character",
          lambda c: c.__setitem__("hit_character_encounters", copy.deepcopy(glob_base["hit_character_encounters"])),
          next(w for name, w, ok in cases if name == "global-generated-1"))
 
+# Item Box Locations (#133 PR 4e): generated rooms over every tier, boost and
+# stats, retail subsets, named tracks with several stated crate counts, a
+# generic slot with crates, Cortex Vortex, racer locks and Itemsanity; then
+# forged records, box checks, crate counts and envelopes. A box's `boost` and
+# `stats` are read as given (like the 4c rank), so forged terms are refused by
+# the generator alone (`native_trusts`).
+from worlds.ctr import content_item_boxes as cbox
+from worlds.ctr.test.test_content_item_boxes import box_options, btp, unruled, first_world as box_world
+for seed in range(30):
+    crates = (8, 1, 15, 40, 0, None)[seed % 6]
+    loop = copy.deepcopy(UNKNOWN)
+    if seed % 2:
+        loop["capabilities"]["weapon_crates"] = 12
+    custom = [[btp(crates), unruled(20 + seed), loop], [btp(crates)], [unruled(3), loop]][seed % 3]
+    options = box_options(custom=custom, tier=("easy", "medium", "hard")[seed % 3],
+                          progressive_boost=("off", "shared_global", "per_character")[(seed // 3) % 3],
+                          progressive_stats=("off", "shared_global")[(seed // 2) % 2],
+                          color_boxes_by_item=seed % 4 != 1, itemsanity=seed % 5 == 2)
+    if seed % 4 == 3:
+        options["content_pool"]["tracks"]["retail"] = [4, 5, 11, 13, 7]
+    if seed % 5 == 1:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+    if seed % 7 == 4:
+        options.update(character_unlocks=True, racer_locked_pads=5)
+    try:
+        world = box_world(options, seed=seed)
+    except OptionError as exc:
+        print(f"boxes-generated-{seed} refused by the generator: {str(exc)[:120]}")
+        continue
+    cases.append((f"boxes-generated-{seed}", world.fill_slot_data(), True))
+cases.append(("boxes-fixture", json.loads((root / "tools/fixtures/content-plan/item-boxes.json").read_text()), True))
+box_base = cases[-1][1]
+def bcheck(p, name):
+    return next(c for c in p["checks"] if c["display_name"] == name)
+def bpackage(p, key):
+    return next(d for d in p["packages"] if d["content_id"] == key)
+def bdrop_record(p):
+    p.pop("item_boxes")
+    p["required_features"].remove(cbox.FEATURE)
+def bdrop_all(p):
+    bdrop_record(p)
+    count = sum(1 for c in p["checks"] if c["kind"] == "box")
+    p["checks"] = [c for c in p["checks"] if c["kind"] != "box"]
+    p["items"]["coded_checks"] -= count
+    p["items"]["filler_count"] -= count
+def bdrop_box(p, name):
+    p["checks"].remove(bcheck(p, name))
+    p["items"]["coded_checks"] -= 1
+    p["items"]["filler_count"] -= 1
+def bgeneric_box(p):
+    extra = copy.deepcopy(bcheck(p, "Baby T Park: Item Box 1"))
+    extra.update(owner="custom/fixture-loop/2.1", location=35017000, display_name="Fixture Loop: Item Box 1")
+    extra["routes"] = [dict(r, entry_id="entry/custom/fixture-loop/2.1",
+                            own_pad_id=next(q["id"] for q in p["pads"] if q["entry_id"] == "entry/custom/fixture-loop/2.1"))
+                       for r in extra["routes"]]
+    p["checks"].append(extra)
+    p["items"]["coded_checks"] += 1
+    p["items"]["filler_count"] += 1
+for name, change, trusted in [
+        ("unchanged copy", lambda p: None, False),
+        ("record dropped, boxes kept", bdrop_record, False),
+        ("record and boxes dropped", bdrop_all, False),
+        ("feature dropped", lambda p: p["required_features"].remove(cbox.FEATURE), False),
+        ("unknown record field", lambda p: p["item_boxes"].__setitem__("color_boxes_by_item", True), False),
+        ("record not an object", lambda p: p.__setitem__("item_boxes", []), False),
+        ("tier lowered", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", 1), False),
+        ("tier 3", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", 3), False),
+        ("tier as Boolean", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", True), False),
+        ("tier disagrees with the capability record", lambda p: p["capability"].__setitem__("shortcut_knowledge", 1), False),
+        ("hard-tier box dropped", lambda p: bdrop_box(p, "Oxide Station: Item Box 6"), False),
+        ("named box dropped", lambda p: bdrop_box(p, "Baby T Park: Item Box 8"), False),
+        ("box on the generic slot", bgeneric_box, False),
+        ("box code", lambda p: bcheck(p, "N. Gin Labs: Item Box 1").__setitem__("location", 35014166), False),
+        ("box route dropped", lambda p: bcheck(p, "N. Gin Labs: Item Box 1")["routes"].pop(), False),
+        ("box routes reordered", lambda p: bcheck(p, "N. Gin Labs: Item Box 2")["routes"].reverse(), False),
+        ("box award", lambda p: bcheck(p, "Tiger Temple: Item Box 5")["routes"][0].__setitem__("award", "win"), False),
+        ("box kind", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("kind", "trophy"), False),
+        ("box owner", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("owner", "retail:5"), False),
+        ("box name", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("display_name", "Item Box 5"), False),
+        ("weapon crates raised", lambda p: bpackage(p, "baby-t-park")["capabilities"].__setitem__("weapon_crates", 9), False),
+        ("weapon crates lowered", lambda p: bpackage(p, "baby-t-park")["capabilities"].__setitem__("weapon_crates", 7), False),
+        ("weapon crates unstated", lambda p: bpackage(p, "baby-t-park")["capabilities"].pop("weapon_crates"), False),
+        ("weapon crates Boolean", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", True), False),
+        ("weapon crates text", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", "20"), False),
+        ("weapon crates past the ceiling", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", 65537), False),
+        ("weapon crates negative", lambda p: bpackage(p, "fixture-loop")["capabilities"].__setitem__("weapon_crates", -1), False),
+        ("generic slot crates changed", lambda p: bpackage(p, "fixture-loop")["capabilities"].__setitem__("weapon_crates", 30), False),
+        ("stats false", lambda p: bcheck(p, "Oxide Station: Item Box 6").__setitem__("stats", False), False),
+        ("stats as integer", lambda p: bcheck(p, "Oxide Station: Item Box 6").__setitem__("stats", 1), False),
+        ("stats on a race check", lambda p: bcheck(p, "Oxide Station: Trophy Race").__setitem__("stats", True), False),
+        ("box rank above the chain", lambda p: bcheck(p, "N. Gin Labs: Item Box 4").__setitem__("boost", 3), False),
+        ("stats dropped", lambda p: bcheck(p, "Oxide Station: Item Box 6").pop("stats"), True),
+        ("stats added", lambda p: bcheck(p, "Oxide Station: Item Box 1").__setitem__("stats", True), True),
+        ("box rank lowered", lambda p: bcheck(p, "N. Gin Labs: Item Box 4").__setitem__("boost", 1), True),
+        ("custom box rank dropped", lambda p: bcheck(p, "Acid Lake: Item Box 1").pop("boost"), True),
+        ]:
+    alter("boxes-" + name, change, box_base)
+    if trusted:
+        native_trusts.add("boxes-" + name)
+        assert cases[-1][2] is False, name + ": the apworld must refuse a forged box term"
+def box_env(name, change, source=None):
+    case = copy.deepcopy(source or box_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_box_envelope(case["content_plan"], case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("boxes-envelope-" + name, case, accepted))
+box_env("unchanged copy", lambda c: None)
+box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
+box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
+box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
+box_env("colours dropped", lambda c: c["ctr_options"].pop("color_boxes_by_item"))
+box_env("colours integer", lambda c: c["ctr_options"].__setitem__("color_boxes_by_item", 0))
+box_env("colours on", lambda c: c["ctr_options"].__setitem__("color_boxes_by_item", True))
+box_env("box keys on a plan without the record",
+        lambda c: c["ctr_options"].update(box_locations=True, color_boxes_by_item=True), cap_base)
+box_env("colours alone on a plan without the record",
+        lambda c: c["ctr_options"].update(color_boxes_by_item=False), cap_base)
+# A custom track whose package states no weapon crates is no Itemsanity or Hit
+# route (#133 PR 4e); with its routes kept the plan is refused on both sides.
+def gcrateless(p, keep_routes):
+    bpackage(p, "baby-t-park")["capabilities"]["weapon_crates"] = 0
+    if not keep_routes:
+        for c in p["checks"]:
+            if c["kind"] in ("itemsanity", "hit"):
+                c["routes"] = [r for r in c["routes"] if r["entry_id"] != "entry/custom/baby-t-park/1.0.2"]
+alter("crates-crateless track still routed", lambda p: gcrateless(p, True), glob_base)
+alter("crates-crateless track without its routes", lambda p: gcrateless(p, False), glob_base)
+
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
 alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))
@@ -1042,4 +1180,4 @@ assert not disagreements, disagreements
 trusted = [name for (name, _, _), actual in zip(cases, answers) if name in native_trusts and actual != "ACCEPT"]
 assert not trusted, trusted
 print(f"PASS registry parity and {len(cases)} native/generator admission cases ({sum(x[2] for x in cases)} accepted, "
-      f"{len(native_trusts)} forged ranks the generator alone refuses)")
+      f"{len(native_trusts)} forged ranks and box terms the generator alone refuses)")

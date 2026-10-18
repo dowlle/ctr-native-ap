@@ -373,6 +373,11 @@ static long AP_LookupLocationCode(int globalBit)
             const int64_t code = ap_content_family_bit_code(ap_content_plan_pad(contentPad), contentTier);
             return code > 0 ? (long)code : -1;
         }
+        // Item Box checks (#133 PR 4e).
+        if (ap_content_box_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_box_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 ? (long)code : -1;
+        }
     }
 	int i;
 	int trialPseudo, trialChallenge;

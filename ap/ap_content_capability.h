@@ -119,4 +119,33 @@ static inline int AP_ContentSuperTurboPadsHold(int stated, const struct CustomCo
 	return 0;
 }
 
+// Weapon crates (#133 PR 4e): the descriptor's optional `weapon_crates`
+// says how many weapon crates the LEV holds. A named custom track's Item Box
+// checks are seated on them, and a count of 0 takes the track out of the
+// Itemsanity and Hit routes, so any disagreement with the bytes refuses: a
+// higher count would create box checks with no crate to seat them, a lower
+// one would seat them on the wrong crates. Unstated
+// (AP_CONTENT_WEAPON_CRATES_UNSTATED) is never a refusal: such a track has no
+// box checks.
+static inline int AP_ContentWeaponCratesHold(int stated, const struct CustomContentVerification *report,
+                                             char *why, size_t whySize)
+{
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (stated == AP_CONTENT_WEAPON_CRATES_UNSTATED)
+		return 1;
+	if (stated >= 0 && (unsigned long)stated == report->measured.weaponCrates)
+		return 1;
+	if (why && whySize)
+		snprintf(why, whySize, "the descriptor says weapon_crates is %d, but the files have %lu weapon crates",
+		         stated, report->measured.weaponCrates);
+	return 0;
+}
+
 #endif

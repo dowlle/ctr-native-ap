@@ -38,7 +38,18 @@ static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int m
     return n;
 }
 
-// Unchecked codes a mode still owns on this pad, its family checks included.
+// Item Box checks (#133 PR 4e) still unchecked on this pad. A box sits at a
+// place, not at a race type, so every mode of the pad reaches all of them.
+static inline int ap_content_box_pending(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int b, left = 0;
+    for (b = 0; pad && b < pad->box_count && b < 15; ++b)
+        if (pad->box_locations[b] > 0 && !checked(pad->box_locations[b])) ++left;
+    return left;
+}
+
+// Unchecked codes a mode still owns on this pad, its family checks and the
+// pad's Item Box checks included.
 static inline int ap_content_mode_pending(const ctr_content_pad *pad, int mode, ap_content_checked_fn checked)
 {
     int64_t codes[3], family[AP_CONTENT_FAMILY_SLOTS];
@@ -49,6 +60,8 @@ static inline int ap_content_mode_pending(const ctr_content_pad *pad, int mode, 
     n = ap_content_mode_family_codes(pad, mode, family, slots);
     for (i = 0; i < n; ++i)
         if (!checked(family[i])) ++left;
+    if (ap_content_mode_slot(pad, mode) >= 0)
+        left += ap_content_box_pending(pad, checked);
     return left;
 }
 
@@ -177,6 +190,23 @@ static inline int ap_content_family_bit_decode(int bit, int *physical, int *slot
     *physical = (bit - AP_CONTENT_BIT_FAMILY) / AP_CONTENT_FAMILY_STRIDE;
     *slot = (bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE;
     return *slot < AP_CONTENT_FAMILY_SLOTS;
+}
+// Item Box checks (#133 PR 4e): display bit 58000 + pad * 16 + slot (0..14).
+// Under by_reward_type they ride the race slot, as on retail pads (ruling
+// 2026-09-30).
+#define AP_CONTENT_BIT_BOX 58000
+#define AP_CONTENT_BOX_STRIDE 16
+static inline int ap_content_box_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_BOX || bit >= AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_BOX) / AP_CONTENT_BOX_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_BOX) % AP_CONTENT_BOX_STRIDE;
+    return *slot < 15;
+}
+static inline int64_t ap_content_box_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || slot < 0 || slot >= 15 || slot >= pad->box_count) return -1;
+    return pad->box_locations[slot] > 0 ? pad->box_locations[slot] : -1;
 }
 static inline int ap_content_bit_decode(int bit, int *physical, int *mode, int *tier)
 {

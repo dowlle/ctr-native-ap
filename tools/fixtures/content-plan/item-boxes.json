@@ -1,0 +1,3788 @@
+{
+ "schema_version": 18,
+ "content_plan": {
+  "version": 1,
+  "packages": [
+   {
+    "id": "package/acid-lake/1.0",
+    "content_id": "acid-lake",
+    "uuid": "11111111-2222-4333-8444-555555555555",
+    "revision": "1.0",
+    "display_name": "Acid Lake",
+    "author": "Fixture Author",
+    "laps": 5,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": false,
+     "ctr_tokens": false,
+     "wumpa": false,
+     "super_turbo_pads": true,
+     "weapon_crates": 20
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/baby-t-park/1.0.2",
+    "content_id": "baby-t-park",
+    "uuid": "2c7c7846-2ead-5b8f-a218-beca5792106e",
+    "revision": "1.0.2",
+    "display_name": "Baby T Park",
+    "author": "Lockheart",
+    "laps": 7,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": false,
+     "ctr_tokens": true,
+     "wumpa": true,
+     "super_turbo_pads": true,
+     "weapon_crates": 8
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
+      "bytes": 2558168,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "1a0ff56b51562292ecc30c14e7a2e6d315f641feaa00990d4242abe46434f692",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": [
+     {
+      "capability": "trophy",
+      "file_hashes": [
+       "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
+       "1a0ff56b51562292ecc30c14e7a2e6d315f641feaa00990d4242abe46434f692"
+      ],
+      "verifier": "ctr-managed-profile",
+      "revision": 1,
+      "level": "structural"
+     }
+    ]
+   },
+   {
+    "id": "package/fixture-loop/2.1",
+    "content_id": "fixture-loop",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "revision": "2.1",
+    "display_name": "Fixture Loop",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": false,
+     "wumpa": false,
+     "weapon_crates": 12
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   }
+  ],
+  "tracks": [
+   {
+    "id": "retail:11",
+    "origin": "retail",
+    "retail_id": 11,
+    "display_name": "N. Gin Labs",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/baby-t-park/1.0.2",
+    "origin": "custom",
+    "package_id": "package/baby-t-park/1.0.2",
+    "custom_slot": 2,
+    "display_name": "Baby T Park",
+    "laps": 7,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8,
+    "named_block": 8,
+    "room_title": "Baby T Park"
+   },
+   {
+    "id": "retail:4",
+    "origin": "retail",
+    "retail_id": 4,
+    "display_name": "Tiger Temple",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:5",
+    "origin": "retail",
+    "retail_id": 5,
+    "display_name": "Papu's Pyramid",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/acid-lake/1.0",
+    "origin": "custom",
+    "package_id": "package/acid-lake/1.0",
+    "custom_slot": 1,
+    "display_name": "Acid Lake",
+    "laps": 5,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "named_block": 0,
+    "room_title": "Acid Lake"
+   },
+   {
+    "id": "retail:13",
+    "origin": "retail",
+    "retail_id": 13,
+    "display_name": "Oxide Station",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-loop/2.1",
+    "origin": "custom",
+    "package_id": "package/fixture-loop/2.1",
+    "custom_slot": 3,
+    "display_name": "Fixture Loop",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "relic"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture Loop"
+   },
+   {
+    "id": "cortex_vortex",
+    "origin": "cortex_vortex",
+    "package_id": "bundled/cortex-vortex",
+    "display_name": "Cortex Vortex",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   }
+  ],
+  "entries": [
+   {
+    "id": "entry/retail:11",
+    "kind": "track",
+    "track_id": "retail:11",
+    "modes": [
+     "relic",
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/custom/baby-t-park/1.0.2",
+    "kind": "track",
+    "track_id": "custom/baby-t-park/1.0.2",
+    "modes": [
+     "ctr",
+     "trophy"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:4",
+    "kind": "track",
+    "track_id": "retail:4",
+    "modes": [
+     "relic",
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:5",
+    "kind": "track",
+    "track_id": "retail:5",
+    "modes": [
+     "ctr",
+     "trophy",
+     "relic"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/custom/acid-lake/1.0",
+    "kind": "track",
+    "track_id": "custom/acid-lake/1.0",
+    "modes": [
+     "trophy"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:13",
+    "kind": "track",
+    "track_id": "retail:13",
+    "modes": [
+     "relic",
+     "ctr",
+     "trophy"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/custom/fixture-loop/2.1",
+    "kind": "track",
+    "track_id": "custom/fixture-loop/2.1",
+    "modes": [
+     "relic",
+     "trophy"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/cortex_vortex",
+    "kind": "track",
+    "track_id": "cortex_vortex",
+    "modes": [
+     "trophy",
+     "relic",
+     "ctr"
+    ],
+    "merged": false
+   }
+  ],
+  "pads": [
+   {
+    "id": "pad:15",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/retail:11",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "relic",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:15"
+     },
+     {
+      "mode": "ctr",
+      "stage": 2,
+      "requirement_id": "stage2:15"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:21",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/custom/baby-t-park/1.0.2",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:21"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:18",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/retail:4",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "relic",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:18"
+     },
+     {
+      "mode": "ctr",
+      "stage": 2,
+      "requirement_id": "stage2:18"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:11",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/retail:5",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:11"
+     },
+     {
+      "mode": "relic",
+      "stage": 2,
+      "requirement_id": "stage2:11"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:10",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/custom/acid-lake/1.0",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "free"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:100",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/retail:13",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "relic",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "ctr",
+      "stage": 2,
+      "requirement_id": "stage2:100"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:100"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:23",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/custom/fixture-loop/2.1",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "relic",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "trophy",
+      "stage": 2,
+      "requirement_id": "stage2:23"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:8",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cortex_vortex",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "free"
+     },
+     {
+      "mode": "relic",
+      "stage": 2,
+      "requirement_id": "stage2:8"
+     },
+     {
+      "mode": "ctr",
+      "stage": 2,
+      "requirement_id": "stage2:8"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:19",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:13",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:7",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:1",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:17",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:0",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:101",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:5",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:4",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:102",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:3",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:16",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:104",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:12",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:6",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:2",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:103",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:9",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:14",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:0",
+    "hub_id": "hub:26",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:1",
+    "hub_id": "hub:27",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:2",
+    "hub_id": "hub:28",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:3",
+    "hub_id": "hub:29",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:4",
+    "hub_id": "hub:25",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   }
+  ],
+  "encounters": [],
+  "requirements": [
+   {
+    "id": "free",
+    "predicate": {
+     "op": "always"
+    }
+   },
+   {
+    "id": "keys:1",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "keys:2",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "keys:3",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "keys:4",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 4
+    }
+   },
+   {
+    "id": "stage2:8",
+    "predicate": {
+     "op": "count",
+     "item": 35010009,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage2:11",
+    "predicate": {
+     "op": "count",
+     "item": 35010010,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage2:15",
+    "predicate": {
+     "op": "count",
+     "item": 35010011,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage2:18",
+    "predicate": {
+     "op": "count",
+     "item": 35010005,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage2:21",
+    "predicate": {
+     "op": "count",
+     "item": 35010009,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage2:23",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010004,
+      35010005,
+      35010006
+     ],
+     "count": 3
+    }
+   },
+   {
+    "id": "stage2:100",
+    "predicate": {
+     "op": "count",
+     "item": 35010012,
+     "count": 1
+    }
+   }
+  ],
+  "checks": [
+   {
+    "location": 35012014,
+    "owner": "retail:11",
+    "kind": "relic",
+    "display_name": "N. Gin Labs: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "sapphire"
+     }
+    ]
+   },
+   {
+    "location": 35012114,
+    "owner": "retail:11",
+    "kind": "relic",
+    "display_name": "N. Gin Labs: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "gold"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012214,
+    "owner": "retail:11",
+    "kind": "relic",
+    "display_name": "N. Gin Labs: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35011014,
+    "owner": "retail:11",
+    "kind": "trophy",
+    "display_name": "N. Gin Labs: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012314,
+    "owner": "retail:11",
+    "kind": "ctr",
+    "display_name": "N. Gin Labs: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35014210,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014211,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014212,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014213,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014214,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014215,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014216,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014217,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014218,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014219,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014220,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 11",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014221,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 12",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014222,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 13",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014223,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 14",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014224,
+    "owner": "retail:11",
+    "kind": "box",
+    "display_name": "N. Gin Labs: Item Box 15",
+    "routes": [
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:11",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35201609,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "ctr",
+    "display_name": "Baby T Park: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35201600,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "trophy",
+    "display_name": "Baby T Park: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35201620,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201621,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201622,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201623,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201624,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201625,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201626,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35201627,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "box",
+    "display_name": "Baby T Park: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35012005,
+    "owner": "retail:4",
+    "kind": "relic",
+    "display_name": "Tiger Temple: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "sapphire"
+     }
+    ]
+   },
+   {
+    "location": 35012105,
+    "owner": "retail:4",
+    "kind": "relic",
+    "display_name": "Tiger Temple: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "gold"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012205,
+    "owner": "retail:4",
+    "kind": "relic",
+    "display_name": "Tiger Temple: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35011005,
+    "owner": "retail:4",
+    "kind": "trophy",
+    "display_name": "Tiger Temple: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012305,
+    "owner": "retail:4",
+    "kind": "ctr",
+    "display_name": "Tiger Temple: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35014075,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014076,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014077,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014078,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014079,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014080,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014081,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014082,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014083,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014084,
+    "owner": "retail:4",
+    "kind": "box",
+    "display_name": "Tiger Temple: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:4",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35012306,
+    "owner": "retail:5",
+    "kind": "ctr",
+    "display_name": "Papu's Pyramid: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35011006,
+    "owner": "retail:5",
+    "kind": "trophy",
+    "display_name": "Papu's Pyramid: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012006,
+    "owner": "retail:5",
+    "kind": "relic",
+    "display_name": "Papu's Pyramid: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "sapphire"
+     }
+    ]
+   },
+   {
+    "location": 35012106,
+    "owner": "retail:5",
+    "kind": "relic",
+    "display_name": "Papu's Pyramid: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "gold"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35012206,
+    "owner": "retail:5",
+    "kind": "relic",
+    "display_name": "Papu's Pyramid: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014090,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014091,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014092,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014093,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014094,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014095,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35014096,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ],
+    "boost": 1,
+    "stats": true
+   },
+   {
+    "location": 35014097,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014098,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014099,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ],
+    "boost": 1,
+    "stats": true
+   },
+   {
+    "location": 35014100,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 11",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014101,
+    "owner": "retail:5",
+    "kind": "box",
+    "display_name": "Papu's Pyramid: Item Box 12",
+    "routes": [
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:5",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "box"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35200000,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "trophy",
+    "display_name": "Acid Lake: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "win"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200020,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200021,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200022,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200023,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200024,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200025,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200026,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200027,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200028,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200029,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200030,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 11",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200031,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 12",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200032,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 13",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200033,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 14",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35200034,
+    "owner": "custom/acid-lake/1.0",
+    "kind": "box",
+    "display_name": "Acid Lake: Item Box 15",
+    "routes": [
+     {
+      "entry_id": "entry/custom/acid-lake/1.0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35012015,
+    "owner": "retail:13",
+    "kind": "relic",
+    "display_name": "Oxide Station: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "sapphire"
+     }
+    ]
+   },
+   {
+    "location": 35012115,
+    "owner": "retail:13",
+    "kind": "relic",
+    "display_name": "Oxide Station: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "gold"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35012215,
+    "owner": "retail:13",
+    "kind": "relic",
+    "display_name": "Oxide Station: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35012315,
+    "owner": "retail:13",
+    "kind": "ctr",
+    "display_name": "Oxide Station: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35011015,
+    "owner": "retail:13",
+    "kind": "trophy",
+    "display_name": "Oxide Station: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35014225,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014226,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014227,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014228,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014229,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014230,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ],
+    "stats": true
+   },
+   {
+    "location": 35014231,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014232,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014233,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014234,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014235,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 11",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014236,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 12",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35014237,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 13",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35014238,
+    "owner": "retail:13",
+    "kind": "box",
+    "display_name": "Oxide Station: Item Box 14",
+    "routes": [
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/retail:13",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "box"
+     }
+    ]
+   },
+   {
+    "location": 35022006,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "relic",
+    "display_name": "Fixture Loop: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "sapphire"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35022007,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "relic",
+    "display_name": "Fixture Loop: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "gold"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35022008,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "relic",
+    "display_name": "Fixture Loop: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35016302,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "trophy",
+    "display_name": "Fixture Loop: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "win"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35026000,
+    "owner": "cortex_vortex",
+    "kind": "trophy",
+    "display_name": "Cortex Vortex: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "win"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35026001,
+    "owner": "cortex_vortex",
+    "kind": "relic",
+    "display_name": "Cortex Vortex: Sapphire Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "sapphire"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35026002,
+    "owner": "cortex_vortex",
+    "kind": "relic",
+    "display_name": "Cortex Vortex: Gold Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "gold"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35026003,
+    "owner": "cortex_vortex",
+    "kind": "relic",
+    "display_name": "Cortex Vortex: Platinum Time Trial",
+    "routes": [
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "platinum"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35026004,
+    "owner": "cortex_vortex",
+    "kind": "ctr",
+    "display_name": "Cortex Vortex: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 2
+   }
+  ],
+  "items": {
+   "rows": [
+    {
+     "item": 35010000,
+     "base": 6,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 6,
+     "receipt_cap": 6,
+     "requirement_ceiling": 6
+    },
+    {
+     "item": 35010001,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    },
+    {
+     "item": 35010002,
+     "base": 3,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 3,
+     "receipt_cap": 3,
+     "requirement_ceiling": 3
+    },
+    {
+     "item": 35010003,
+     "base": 2,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 2,
+     "receipt_cap": 2,
+     "requirement_ceiling": 2
+    },
+    {
+     "item": 35010004,
+     "base": 2,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 2,
+     "receipt_cap": 2,
+     "requirement_ceiling": 2
+    },
+    {
+     "item": 35010005,
+     "base": 2,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 2,
+     "receipt_cap": 2,
+     "requirement_ceiling": 2
+    },
+    {
+     "item": 35010006,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010007,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010008,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010009,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010010,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010011,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010012,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010013,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010014,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    },
+    {
+     "item": 35010027,
+     "base": 2,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 2,
+     "receipt_cap": 2,
+     "requirement_ceiling": 2
+    },
+    {
+     "item": 35010028,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    },
+    {
+     "item": 35010029,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    },
+    {
+     "item": 35010030,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    }
+   ],
+   "coded_checks": 106,
+   "locked_checks": 0,
+   "filler_count": 63,
+   "trap_count": 6
+  },
+  "goal": {
+   "op": "distinct",
+   "items": [
+    35010009,
+    35010010,
+    35010011,
+    35010012,
+    35010013
+   ],
+   "count": 5
+  },
+  "required_features": [
+   "content_plan_v1",
+   "track_modes_v1",
+   "capability_packs_v1",
+   "item_boxes_v1"
+  ],
+  "capability": {
+   "boost_mode": 1,
+   "boost_blue_fire": false,
+   "stats_mode": 1,
+   "logic_difficulty": 1,
+   "shortcut_knowledge": 2
+  },
+  "item_boxes": {
+   "shortcut_knowledge": 2
+  }
+ },
+ "ctr_options": {
+  "schema_version": 18,
+  "world_version": "0.3.0-content-dev",
+  "content_plan": true,
+  "goal": -1,
+  "goal_oxide": 3,
+  "goal_bosses": 0,
+  "goal_gems": 5,
+  "starting_character": 5,
+  "character_unlocks": false,
+  "progressive_boost": 1,
+  "progressive_stats": 1,
+  "hit_character": false,
+  "death_link": 0,
+  "deathlink_amnesty": 1,
+  "stat_source": 1,
+  "stat_owner": 1,
+  "stat_editing_allowed": false,
+  "box_locations": true,
+  "color_boxes_by_item": false,
+  "reserve_top_up": true
+ },
+ "trap_identities": {
+  "version": 1,
+  "items": {
+   "35010016": "icy_road",
+   "35010017": "low_gravity",
+   "35010018": "forced_usf",
+   "35010019": "forced_boost",
+   "35010020": "first_person",
+   "35010106": "wumpa_wipeout",
+   "35010107": "flatten",
+   "35010108": "item_reroll",
+   "35010109": "forced_use",
+   "35010110": "empty_crates",
+   "35010111": "weakened_kart",
+   "35010112": "boost_blocker",
+   "35010113": "wireframe",
+   "35010114": "nitro",
+   "35010115": "reverse_steering",
+   "35010116": "red_potion",
+   "35010190": "upside_down",
+   "35010191": "mirror_mode",
+   "35010192": "warpball_ambush",
+   "35010193": "demo_camera",
+   "35010206": "clocked_out",
+   "35010207": "reverse_camera"
+  }
+ }
+}
