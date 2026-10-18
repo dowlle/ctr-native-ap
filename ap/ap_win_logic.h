@@ -286,6 +286,10 @@ typedef struct
 static inline int AP_WinLogicStartCount(const AP_WinLogic *wl, long id)
 {
 	int i;
+	// No block (a content-plan room, #133 PR 4c): the caller's item_count
+	// already holds the starting copies.
+	if (wl == 0)
+		return 0;
 	for (i = 0; i < wl->start_count; i++)
 		if (wl->start_id[i] == id)
 			return wl->start_n[i];
@@ -513,7 +517,9 @@ static inline const char *AP_WinStakesWhyText(int why)
 // Its win is then in logic unless it still needs items the slot lacks (a CTR
 // Challenge waiting for pooled letter items). `code` is the race's win check
 // (Trophy Race, CTR Token Challenge or Crystal Challenge completion), 0 when
-// it has none, as on a Relic Race. Same reasons as AP_WinStakesDecide.
+// it has none, as on a Relic Race. `needsItems` is 1 while the win still needs
+// items the slot lacks: pooled letter items, or (#133 PR 4c) the Progressive
+// Boost rank its plan check carries. Same reasons as AP_WinStakesDecide.
 static inline AP_WinStakes AP_WinStakesContentDecide(long code, int collected, int needsItems)
 {
 	AP_WinStakes r;

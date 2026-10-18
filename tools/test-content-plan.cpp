@@ -53,7 +53,11 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
             // one by one; the editable-stats trio only together.
             static const std::set<std::string> optional = {"room_title", "named_block", "reserve_top_up", "death_link_send",
                                                            "warp_pad_item_display", "ap_item_type_colors", "trap_identities",
-                                                           "starting_stat_class", "penta_stats"};
+                                                           "starting_stat_class", "penta_stats",
+                                                           // #133 PR 4c: a check's boost rank is the
+                                                           // apworld's logic as data (absent is rank 0),
+                                                           // and super_turbo_pads may be unstated.
+                                                           "boost", "super_turbo_pads"};
             if (!optional.count(it.key())) {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
@@ -882,6 +886,99 @@ int main(int argc, char **argv) {
         for (const char *key : {"stat_source", "stat_owner", "stat_editing_allowed"}) trio_gone["ctr_options"].erase(key);
         expect(parse(trio_gone) && ctr_cfg.stat_source == 0 && ctr_cfg.stat_editing_allowed == 0,
                "the stat trio absent keeps vanilla stats");
+    }
+    // Capability packs (#133 PR 4c): an apworld-emitted room with shared
+    // Progressive Boost and Progressive Stats at medium on Crash Cove (pad 6),
+    // Hot Air Skyway (pad 7), Oxide Station (Gem Cup seat 104) and Slide
+    // Coliseum (pad 21), Baby T Park (pad 19, super turbo pads stated true but
+    // ruled generic terms only, 2026-10-18) and the B+ fixture-loop (pad 15,
+    // stated true, no ruling, so USF), with Relic Race Perfect and
+    // Lettersanity mode 2.
+    J caps;
+    std::ifstream("tools/fixtures/content-plan/capability.json") >> caps;
+    expect(parse(caps) && bind_room(caps) && ap_content_plan_active(), "capability room binds");
+    expect(ctr_cfg.boost_mode == 1 && ctr_cfg.boost_blue_fire == 0 && ctr_cfg.stats_mode == 1 &&
+           ctr_cfg.logic_difficulty == 1 && ctr_cfg.shortcut_knowledge == 0, "capability modes applied");
+    expect(ctr_cfg.stat_source == 1 && ctr_cfg.stat_owner == 1 && ctr_cfg.stat_editing_allowed == 0 &&
+           ctr_cfg.editable_stats == 0, "Progressive Stats owns the stat panel");
+    {
+        const auto *c = ap_content_plan_capability();
+        expect(c->present == 1 && c->boost_mode == 1 && c->stats_mode == 1 && c->logic_difficulty == 1, "capability record read");
+        auto ranks = [](int physical, int trophy, int ctr) {
+            const auto *p = ap_content_plan_pad(physical);
+            return p && p->trophy_boost == trophy && p->ctr_boost == ctr;
+        };
+        expect(ranks(7, 2, 2) && ranks(104, 2, 2) && ranks(15, 2, 0), "USF finish tracks: Hot Air Skyway, Oxide Station, an unruled custom track with super pads");
+        expect(ranks(6, 1, 1) && ranks(21, 1, 1), "retail tracks: the medium win floor and the CTR Challenge's first boost");
+        expect(ranks(19, 1, 1), "a custom track ruled generic terms only (Baby T Park)");
+        expect(ap_content_plan_check_boost(ap_content_plan_pad(6)->perfect_location) == 2 &&
+               ap_content_plan_check_boost(ap_content_plan_pad(6)->relic_locations[0]) == 0 &&
+               ap_content_plan_check_boost(ap_content_plan_pad(6)->relic_locations[2]) == 2 &&
+               ap_content_plan_check_boost(ap_content_plan_pad(7)->relic_locations[0]) == 2 &&
+               ap_content_plan_check_boost(ap_content_plan_pad(6)->wumpa_location) == 0, "per-check ranks");
+        expect(ap_content_plan_start_count(35010027) == 0 && !ap_content_plan_item(35010027), "boost row is not a counted family");
+        int stated[2] = {-2, -2};
+        for (int i = 0; ap_content_plan_package(i); ++i) {
+            const auto *pkg = ap_content_plan_package(i);
+            if (!std::strcmp(pkg->content_id, "baby-t-park")) stated[0] = pkg->super_turbo_pads;
+            if (!std::strcmp(pkg->content_id, "fixture-loop")) stated[1] = pkg->super_turbo_pads;
+        }
+        expect(stated[0] == 1 && stated[1] == 1, "super_turbo_pads read from the descriptors");
+        // An earlier room has no record, no rank and the packs off.
+        expect(parse(racers) && bind_room(racers) && ctr_cfg.boost_mode == 0 && ctr_cfg.stats_mode == 0 &&
+               ap_content_plan_capability()->present == 0 && ap_content_plan_pad(19)->trophy_boost == 0 &&
+               ap_content_plan_package(0)->super_turbo_pads == AP_CONTENT_SUPER_PADS_UNSTATED, "a room without the record keeps the packs off");
+    }
+    mutations(caps, caps, J::json_pointer(""));
+    {
+        auto check = [](J &j, const std::string &kind, const char *award, int boost) -> J & {
+            for (auto &c : j["content_plan"]["checks"])
+                if (c["kind"] == kind && c["routes"][0]["award"] == award && c.value("boost", 0) == boost) return c;
+            throw std::runtime_error("no check");
+        };
+        auto row = [](J &j, int64_t item) -> J & {
+            for (auto &r : j["content_plan"]["items"]["rows"]) if (r["item"] == item) return r;
+            throw std::runtime_error("no row");
+        };
+        auto drop_feature = [](J &j) {
+            auto &f = j["content_plan"]["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "capability_packs_v1") { f.erase(i); break; }
+        };
+        auto cap_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = caps; change(bad); refuse(bad, "capability: " + why);
+        };
+        cap_refuse("rank above the chain", [&](J &j) { check(j, "trophy", "win", 2)["boost"] = 3; });
+        cap_refuse("rank 0", [&](J &j) { check(j, "trophy", "win", 2)["boost"] = 0; });
+        cap_refuse("rank as text", [&](J &j) { check(j, "trophy", "win", 2)["boost"] = "2"; });
+        cap_refuse("record dropped, ranks kept", [&](J &j) { j["content_plan"].erase("capability"); drop_feature(j); });
+        cap_refuse("feature dropped", drop_feature);
+        cap_refuse("record field missing", [](J &j) { j["content_plan"]["capability"].erase("logic_difficulty"); });
+        cap_refuse("unknown record field", [](J &j) { j["content_plan"]["capability"]["itemsanity"] = 0; });
+        cap_refuse("boost mode 3", [](J &j) { j["content_plan"]["capability"]["boost_mode"] = 3; });
+        cap_refuse("Blue Fire on, two boost copies", [](J &j) { j["content_plan"]["capability"]["boost_blue_fire"] = true; });
+        cap_refuse("per-racer mode, shared rows", [](J &j) { j["content_plan"]["capability"]["boost_mode"] = 2; });
+        cap_refuse("both modes off", [](J &j) {
+            j["content_plan"]["capability"]["boost_mode"] = 0; j["content_plan"]["capability"]["stats_mode"] = 0; });
+        cap_refuse("boost row with an extra copy", [&](J &j) {
+            row(j, 35010027).update(J{{"base", 3}, {"remaining", 3}, {"receipt_cap", 3}, {"requirement_ceiling", 3}}); });
+        cap_refuse("super turbo pads as integer", [](J &j) {
+            for (auto &p : j["content_plan"]["packages"]) p["capabilities"]["super_turbo_pads"] = 1; });
+        cap_refuse("envelope boost off", [](J &j) { j["ctr_options"]["progressive_boost"] = 0; });
+        cap_refuse("envelope stats per racer", [](J &j) { j["ctr_options"]["progressive_stats"] = 2; });
+        cap_refuse("editable trio on a Progressive Stats room", [](J &j) {
+            j["ctr_options"]["stat_source"] = 2; j["ctr_options"]["stat_editing_allowed"] = true; });
+        cap_refuse("Progressive Stats owner differs", [](J &j) { j["ctr_options"]["stat_owner"] = 2; });
+        cap_refuse("Progressive Stats with editing on", [](J &j) { j["ctr_options"]["stat_editing_allowed"] = true; });
+        J plain = packs;
+        plain["ctr_options"]["progressive_boost"] = 1;
+        refuse(plain, "capability: envelope boost on without the record");
+        J trio = packs;
+        trio["ctr_options"].update(J{{"stat_source", 1}, {"stat_owner", 1}, {"stat_editing_allowed", false}});
+        refuse(trio, "capability: Progressive Stats trio without the record");
+        // A rank inside the chain is the apworld's logic: native reads it.
+        J lowered = caps;
+        check(lowered, "trophy", "win", 2)["boost"] = 1;
+        expect(parse(lowered), "capability: a lowered rank inside the chain is read as given");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

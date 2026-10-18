@@ -139,7 +139,8 @@ static int AP_ContentScanPackage(int index, int autoFinalize, struct CustomTrack
 		AP_AppendLog(line);
 		return 0;
 	}
-	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why))
+	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why) ||
+	    !AP_ContentSuperTurboPadsHold(pkg->super_turbo_pads, &report, why, sizeof why))
 	{
 		status->state = CTR_CT_MANAGER_UNSUPPORTED;
 		snprintf(status->detail, sizeof status->detail, "%.48s %.24s: %s", pkg->display_name, pkg->revision, why);
