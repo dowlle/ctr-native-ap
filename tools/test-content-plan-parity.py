@@ -65,6 +65,10 @@ expected["cortex_vortex"] = dict(
     relic=[L[f"{CV}: {t} Time Trial"] for t in cp.RELIC_TIERS], perfect=L[CV + ": Relic Race Perfect"],
     podium=[L[f"{CV}: {s}"] for s in RUNGS], wumpa=L[CV + ": Reach 10 Wumpa"],
     letters=[L[f"{CV}: Letter {x}"] for x in cp.LETTERS], letter_items=list(cp.cortex_vortex_track.LETTER_ITEM_CODES))
+# Global check families (#133 PR 4d): codes and frozen names in class order.
+from worlds.ctr import itemsanity as cits, hit_character as chit
+expected["itemsanity"] = [dict(location=c, name=n) for n, c, _r in cits.ITEMSANITY_CLASS.all_locations()]
+expected["hit_character"] = [dict(location=c, name=n) for n, c, _r in chit.HIT_CHARACTER_CLASS.all_locations()]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -914,6 +918,98 @@ cap_env("record, rows and ranks dropped, envelope off",
 cap_env("record, rows and ranks dropped, envelope still on", lambda c: cdrop_all(c["content_plan"]))
 cap_env("Progressive Stats trio on a plan without the record", lambda c: c["ctr_options"].update(
     stat_source=1, stat_owner=1, stat_editing_allowed=False), pack_base)
+
+# Itemsanity and Hit Character (#133 PR 4d): generated rooms over retail
+# subsets, modes, stages, racer locks and boost; then forged records, checks,
+# rows, envelopes and encounter blocks.
+from worlds.ctr import content_global_checks as cgc
+from worlds.ctr.test.test_global_checks import global_options
+for seed in range(30):
+    items, hits = ((True, True), (True, False), (False, True))[seed % 3]
+    retail = (None, [3, 16, 4], [0, 1, 2, 12], [9])[(seed // 3) % 4]
+    modes = (("trophy", "ctr", "relic"), ("trophy",), ("ctr", "relic"))[(seed // 2) % 3]
+    options = global_options(items=items, hits=hits, retail=retail, modes=modes,
+                             lettersanity=(0, 1, 2)[seed % 3], wumpa_check=("off", "global")[seed % 2],
+                             progressive_boost=("off", "shared_global", "per_character")[(seed // 5) % 3])
+    if seed % 4 == 1:
+        options.update(character_unlocks=True, racer_locked_pads=5)
+    if seed % 5 == 2:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+    try:
+        world = first_world(options, seed=seed)
+    except OptionError as exc:
+        print(f"global-generated-{seed} refused by the generator: {str(exc)[:120]}")
+        continue
+    cases.append((f"global-generated-{seed}", world.fill_slot_data(), True))
+cases.append(("global-fixture", json.loads((root / "tools/fixtures/content-plan/global-checks.json").read_text()), True))
+glob_base = first_world(global_options(retail=[3, 16, 4], character_unlocks=True, racer_locked_pads=4), seed=5).fill_slot_data()
+cases.append(("global-base", glob_base, True))
+def gcheck(p, code):
+    return next(c for c in p["checks"] if c["location"] == code)
+def grow(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+def gdrop_record(p):
+    p.pop("global_checks")
+    p["required_features"].remove(cgc.FEATURE)
+def gguest_custom(p):
+    route = next(r for r in gcheck(p, 35025000)["routes"] if r["entry_id"] == "entry/custom/baby-t-park/1.0.2")
+    gcheck(p, 35025009)["routes"].append(route)
+def gdefault_no_custom(p):
+    c = gcheck(p, 35025002)
+    c["routes"] = [r for r in c["routes"] if not r["entry_id"].startswith("entry/custom/")]
+def gweapon_dropped(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != 35010099]
+    p["items"]["filler_count"] += 1
+def gswap_order(p):
+    c = gcheck(p, 35016004)
+    c["routes"] = c["routes"][::-1]
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("record dropped", gdrop_record),
+        ("feature dropped", lambda p: p["required_features"].remove(cgc.FEATURE)),
+        ("unknown record field", lambda p: p["global_checks"].__setitem__("box_locations", True)),
+        ("itemsanity false", lambda p: p["global_checks"].__setitem__("itemsanity", False)),
+        ("itemsanity integer", lambda p: p["global_checks"].__setitem__("itemsanity", 1)),
+        ("record not an object", lambda p: p.__setitem__("global_checks", [])),
+        ("use route dropped", lambda p: gcheck(p, 35016006)["routes"].pop()),
+        ("use routes reordered", gswap_order),
+        ("use award", lambda p: gcheck(p, 35016001)["routes"][0].__setitem__("award", "use")),
+        ("use owner", lambda p: gcheck(p, 35016001).__setitem__("owner", "retail:3")),
+        ("use name", lambda p: gcheck(p, 35016001).__setitem__("display_name", "Itemsanity: Turbo")),
+        ("use check with a boost rank", lambda p: gcheck(p, 35016000).__setitem__("boost", 1)),
+        ("guest routed from a custom track", gguest_custom),
+        ("default racer without its custom routes", gdefault_no_custom),
+        ("hit kind", lambda p: gcheck(p, 35025004).__setitem__("kind", "itemsanity")),
+        ("weapon row dropped", gweapon_dropped),
+        ("weapon row with two copies", lambda p: grow(p, 35010101).update(base=2, remaining=2, receipt_cap=2,
+                                                                         requirement_ceiling=2)),
+        ]:
+    alter("global-" + name, change, glob_base)
+def glob_env(name, change, source=None):
+    case = copy.deepcopy(source or glob_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("global-envelope-" + name, case, accepted))
+def gtrigger(c, guest):
+    return c["hit_character_encounters"]["unlock_triggers"][str(guest)]
+glob_env("unchanged copy", lambda c: None)
+glob_env("Hit envelope off", lambda c: c["ctr_options"].__setitem__("hit_character", False))
+glob_env("Hit envelope integer", lambda c: c["ctr_options"].__setitem__("hit_character", 1))
+glob_env("Hit block dropped", lambda c: c.pop("hit_character_encounters"))
+glob_env("fallback on a guest with a win in the plan", lambda c: gtrigger(c, 14).__setitem__("fallback_keys", 1))
+glob_env("fallback missing on a guest without a win", lambda c: gtrigger(c, 13).pop("fallback_keys"))
+glob_env("boss guest fallback missing", lambda c: gtrigger(c, 10).pop("fallback_keys"))
+glob_env("boss guest fallback count", lambda c: gtrigger(c, 10).__setitem__("fallback_keys", 2))
+glob_env("Oxide fallback count", lambda c: gtrigger(c, 15).__setitem__("fallback_keys", 3))
+glob_env("block schema 2", lambda c: c["hit_character_encounters"].__setitem__("schema", 2))
+glob_env("Hit block on a plan without Hit Character",
+         lambda c: c.__setitem__("hit_character_encounters", copy.deepcopy(glob_base["hit_character_encounters"])),
+         next(w for name, w, ok in cases if name == "global-generated-1"))
 
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
