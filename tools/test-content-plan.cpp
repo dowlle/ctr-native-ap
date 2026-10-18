@@ -36,7 +36,11 @@ static void refuse(const J &j, const std::string &why) {
     expect(!parse(j) && !ctr_cfg_active() && !ap_content_plan_active() &&
            ap_content_plan_epoch() == 0 && !ap_content_plan_pad(3) && !ap_content_plan_package(0), why);
 }
+// Paths a fixture's mutation walk skips (the global-checks room, #133 PR 4d,
+// keeps the walk inside the CI time budget; see its call below).
+static std::function<bool(const std::string &)> skip_path;
 static void mutations(const J &base, const J &node, const J::json_pointer &path) {
+    if (skip_path && skip_path(path.to_string())) return;
     // The trap block is read like a normal room's (#133 PR 4a): a malformed
     // entry or block silences traps, it never refuses the room. Its own cases
     // are below.
@@ -979,6 +983,106 @@ int main(int argc, char **argv) {
         J lowered = caps;
         check(lowered, "trophy", "win", 2)["boost"] = 1;
         expect(parse(lowered), "capability: a lowered rank inside the chain is read as given");
+    }
+    // Global checks (#133 PR 4d): an apworld-emitted room with Itemsanity and
+    // Hit Character on Cortex Vortex (pad 21), Baby T Park (pad 19), Slide
+    // Coliseum (Gem Cup seat 104), Crash Cove (pad 6), the B+ fixture-loop
+    // (pad 15) and Tiger Temple (pad 7), all three modes. Penta Penguin's
+    // unlock wins are not in the plan (Key fallback 2), Fake Crash's and N.
+    // Tropy's are; the boss guests and Oxide take the content-plan fallback.
+    J glob;
+    std::ifstream("tools/fixtures/content-plan/global-checks.json") >> glob;
+    expect(parse(glob) && bind_room(glob) && ap_content_plan_active(), "global-checks room binds");
+    expect(ctr_cfg.itemsanity == 1, "global checks: itemsanity flag for the tracker panel");
+    {
+        const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+        expect(h && h->enabled, "global checks: Hit Character block admitted");
+        static const int want[8] = {4, 2, 1, 3, 0, 2, 0, 4};
+        bool same = h != nullptr;
+        for (int g = 0; same && g < 8; ++g) same = h->triggers[g].fallback_keys == want[g];
+        expect(same, "global checks: content-plan Key fallback per guest");
+        bool codes = h != nullptr;
+        for (int i = 0; codes && i < 16; ++i) codes = h->locations[i] == 35025000 + i;
+        expect(codes, "global checks: Hit codes");
+        expect(parse(caps) && ctr_cfg.itemsanity == 0 && !ap_seedcfg_hit_encounters(),
+               "global checks: a room without the record has both families off");
+    }
+    // The walk covers the record, the ledger rows, the envelope, the first
+    // Itemsanity and the first Hit check and the Hit block's top level. The
+    // track checks, the pads and the block's inner fields are already walked
+    // through the earlier fixtures and tools/test-hit-character-seedcfg.cpp.
+    {
+        std::set<std::string> walked;
+        const auto &cs = glob["content_plan"]["checks"];
+        int first_use = -1, first_hit = -1;
+        for (size_t i = 0; i < cs.size(); ++i) {
+            if (cs[i]["kind"] == "itemsanity" && first_use < 0) first_use = (int)i;
+            if (cs[i]["kind"] == "hit" && first_hit < 0) first_hit = (int)i;
+        }
+        walked.insert("/content_plan/checks/" + std::to_string(first_use));
+        walked.insert("/content_plan/checks/" + std::to_string(first_hit));
+        skip_path = [walked](const std::string &p) {
+            if (p.rfind("/hit_character_encounters/", 0) == 0) return true;
+            if (p.rfind("/content_plan/pads/", 0) == 0 || p.rfind("/content_plan/tracks/", 0) == 0 ||
+                p.rfind("/content_plan/packages/", 0) == 0 || p.rfind("/content_plan/entries/", 0) == 0) return true;
+            if (p.rfind("/content_plan/checks/", 0) == 0) {
+                const size_t end = p.find('/', 21);
+                return !walked.count(p.substr(0, end));
+            }
+            return false;
+        };
+        mutations(glob, glob, J::json_pointer(""));
+        skip_path = nullptr;
+    }
+    {
+        auto global = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        auto drop_feature = [](J &j) {
+            auto &f = j["content_plan"]["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "global_checks_v1") { f.erase(i); break; }
+        };
+        auto trigger = [](J &j, int guest) -> J & { return j["hit_character_encounters"]["unlock_triggers"][std::to_string(guest)]; };
+        auto g_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = glob; change(bad); refuse(bad, "global checks: " + why);
+        };
+        g_refuse("feature dropped", drop_feature);
+        g_refuse("record dropped", [&](J &j) { j["content_plan"].erase("global_checks"); drop_feature(j); });
+        g_refuse("unknown record field", [](J &j) { j["content_plan"]["global_checks"]["box_locations"] = true; });
+        g_refuse("itemsanity false", [](J &j) { j["content_plan"]["global_checks"]["itemsanity"] = false; });
+        g_refuse("use check route dropped", [&](J &j) { global(j, 35016000)["routes"].erase(0); });
+        g_refuse("use check award", [&](J &j) { global(j, 35016001)["routes"][0]["award"] = "use"; });
+        g_refuse("use check owner", [&](J &j) { global(j, 35016002)["owner"] = "retail:3"; });
+        g_refuse("guest routed from a custom track", [&](J &j) {
+            J custom;
+            for (const auto &r : global(j, 35025000)["routes"]) if (r["entry_id"] == "entry/custom/baby-t-park/1.0.2") custom = r;
+            global(j, 35025008)["routes"].push_back(custom); });
+        g_refuse("default racer not routed from a custom track", [&](J &j) {
+            auto &routes = global(j, 35025003)["routes"];
+            for (size_t i = 0; i < routes.size(); ++i) if (routes[i]["entry_id"] == "entry/custom/fixture-loop/2.1") { routes.erase(i); break; } });
+        g_refuse("weapon row dropped", [](J &j) {
+            auto &rows = j["content_plan"]["items"]["rows"];
+            for (size_t i = 0; i < rows.size(); ++i) if (rows[i]["item"] == 35010101) { rows.erase(i); break; }
+            j["content_plan"]["items"]["filler_count"] = j["content_plan"]["items"]["filler_count"].get<int>() + 1; });
+        g_refuse("Hit envelope off", [](J &j) { j["ctr_options"]["hit_character"] = false; });
+        g_refuse("Hit block dropped", [](J &j) { j.erase("hit_character_encounters"); });
+        g_refuse("Hit block without the record entry", [&](J &j) {
+            j["content_plan"]["global_checks"].erase("hit_character");
+            auto &checks = j["content_plan"]["checks"];
+            for (size_t i = checks.size(); i-- > 0;) if (checks[i]["kind"] == "hit") checks.erase(i);
+            auto &items = j["content_plan"]["items"];
+            items["coded_checks"] = items["coded_checks"].get<int>() - 16;
+            items["filler_count"] = items["filler_count"].get<int>() - 16; });
+        g_refuse("fallback on a guest whose win is in the plan", [&](J &j) { trigger(j, 14)["fallback_keys"] = 1; });
+        g_refuse("fallback missing on a guest without a win", [&](J &j) { trigger(j, 13).erase("fallback_keys"); });
+        g_refuse("boss guest fallback missing", [&](J &j) { trigger(j, 8).erase("fallback_keys"); });
+        g_refuse("boss guest fallback count", [&](J &j) { trigger(j, 8)["fallback_keys"] = 3; });
+        // A normal room still refuses a fallback on a boss guest.
+        J legacy = glob;
+        legacy.erase("content_plan"); legacy["ctr_options"].erase("content_plan");
+        ap_seedcfg_parse_json(legacy);
+        expect(ap_seedcfg_rejected(), "global checks: a normal room refuses the content-plan boss fallback");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

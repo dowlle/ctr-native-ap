@@ -10,6 +10,9 @@
 // custom_perfect_locations per generic slot. `cortex_vortex` is Cortex Vortex
 // as a track: its logical id, bundled package id, name, laps and the same
 // per-mode and per-family codes as a retail row (its letter items are its own).
+// `itemsanity` and `hit_character` (#133 PR 4d) are the global check families'
+// codes and frozen names, in the apworld's class order (itemsanity.py,
+// hit_character.py): the 22 weapon use checks and the 16 Hit checks.
 // Custom packages are not listed: content plans admit any complete descriptor
 // (#133 PR 2) and the bytes are verified on load.
 // `named_blocks` is the apworld's named-track table (data/named_tracks.json):
@@ -1579,6 +1582,162 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       35010202
     ]
   },
+  "itemsanity": [
+    {
+      "location": 35016000,
+      "name": "Itemsanity: Turbo"
+    },
+    {
+      "location": 35016001,
+      "name": "Itemsanity: Turbo (Juiced)"
+    },
+    {
+      "location": 35016002,
+      "name": "Itemsanity: Bomb"
+    },
+    {
+      "location": 35016003,
+      "name": "Itemsanity: Bomb (Juiced)"
+    },
+    {
+      "location": 35016004,
+      "name": "Itemsanity: Missile"
+    },
+    {
+      "location": 35016005,
+      "name": "Itemsanity: Missile (Juiced)"
+    },
+    {
+      "location": 35016006,
+      "name": "Itemsanity: TNT"
+    },
+    {
+      "location": 35016007,
+      "name": "Itemsanity: TNT (Juiced)"
+    },
+    {
+      "location": 35016008,
+      "name": "Itemsanity: Beaker"
+    },
+    {
+      "location": 35016009,
+      "name": "Itemsanity: Beaker (Juiced)"
+    },
+    {
+      "location": 35016010,
+      "name": "Itemsanity: Shield Bubble"
+    },
+    {
+      "location": 35016011,
+      "name": "Itemsanity: Shield Bubble (Juiced)"
+    },
+    {
+      "location": 35016012,
+      "name": "Itemsanity: Mask"
+    },
+    {
+      "location": 35016013,
+      "name": "Itemsanity: Mask (Juiced)"
+    },
+    {
+      "location": 35016014,
+      "name": "Itemsanity: N. Tropy Clock"
+    },
+    {
+      "location": 35016015,
+      "name": "Itemsanity: N. Tropy Clock (Juiced)"
+    },
+    {
+      "location": 35016016,
+      "name": "Itemsanity: Warpball"
+    },
+    {
+      "location": 35016017,
+      "name": "Itemsanity: Warpball (Juiced)"
+    },
+    {
+      "location": 35016018,
+      "name": "Itemsanity: Bomb x3"
+    },
+    {
+      "location": 35016019,
+      "name": "Itemsanity: Bomb x3 (Juiced)"
+    },
+    {
+      "location": 35016020,
+      "name": "Itemsanity: Missile x3"
+    },
+    {
+      "location": 35016021,
+      "name": "Itemsanity: Missile x3 (Juiced)"
+    }
+  ],
+  "hit_character": [
+    {
+      "location": 35025000,
+      "name": "Hit Crash Bandicoot"
+    },
+    {
+      "location": 35025001,
+      "name": "Hit Neo Cortex"
+    },
+    {
+      "location": 35025002,
+      "name": "Hit Tiny Tiger"
+    },
+    {
+      "location": 35025003,
+      "name": "Hit Coco Bandicoot"
+    },
+    {
+      "location": 35025004,
+      "name": "Hit N. Gin"
+    },
+    {
+      "location": 35025005,
+      "name": "Hit Dingodile"
+    },
+    {
+      "location": 35025006,
+      "name": "Hit Polar"
+    },
+    {
+      "location": 35025007,
+      "name": "Hit Pura"
+    },
+    {
+      "location": 35025008,
+      "name": "Hit Pinstripe"
+    },
+    {
+      "location": 35025009,
+      "name": "Hit Papu Papu"
+    },
+    {
+      "location": 35025010,
+      "name": "Hit Ripper Roo"
+    },
+    {
+      "location": 35025011,
+      "name": "Hit Komodo Joe"
+    },
+    {
+      "location": 35025012,
+      "name": "Hit N. Tropy"
+    },
+    {
+      "location": 35025013,
+      "name": "Hit Penta Penguin"
+    },
+    {
+      "location": 35025014,
+      "name": "Hit Fake Crash"
+    },
+    {
+      "location": 35025015,
+      "name": "Hit Nitros Oxide"
+    }
+  ],
   "named_blocks": [
     {
       "key": "acid-lake",

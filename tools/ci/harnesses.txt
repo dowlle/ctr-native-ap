@@ -162,6 +162,7 @@ tools/test-content-track-checks-production.py
 tools/test-content-cortex-perfect-production.py
 tools/test-content-win-stakes-production.py
 tools/test-content-racer-lock-production.py
+tools/test-content-global-checks-production.cpp
 tools/test-reserve-top-up-production.py
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c

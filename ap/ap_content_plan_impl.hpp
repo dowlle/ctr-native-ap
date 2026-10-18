@@ -3,8 +3,9 @@
 // CTR Challenge and Relic Race modes (#133 PR 3), their podium rungs, Reach 10
 // Wumpa and Lettersanity checks (#133 PR 3b), Cortex Vortex as a track and the
 // Relic Race Perfect checks (#133 PR 3c), pool-only and character packs (#133
-// PR 4a, 4b), capability packs with per-check boost ranks (#133 PR 4c), and
-// Crystal Challenge entries; a
+// PR 4a, 4b), capability packs with per-check boost ranks (#133 PR 4c),
+// Itemsanity and Hit Character as global checks (#133 PR 4d), and Crystal
+// Challenge entries; a
 // broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
@@ -35,6 +36,8 @@ struct State {
     ctr_content_capability capability{};
     std::map<int64_t, int> boosts, starts;
     std::set<int64_t> checks;
+    // Global check families (#133 PR 4d): the `global_checks` record.
+    bool itemsanity = false, hit = false;
     std::string canonical;
 };
 static State state;
@@ -346,6 +349,19 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
         }
     return rows;
 }
+// Global check families (#133 PR 4d), apworld content_global_checks:
+// `itemsanity` and `hit_character`, each present only as true.
+static void global_settings(const J &t, State &out) {
+    need(t.is_object() && !t.empty() && t.size() <= 2, "global_checks must be a nonempty record");
+    for (auto it = t.begin(); it != t.end(); ++it) {
+        need(it.key() == "itemsanity" || it.key() == "hit_character", "unknown global_checks field");
+        need(it.value().is_boolean() && it.value().get<bool>(), "global_checks entries must be true when present");
+    }
+    out.itemsanity = t.contains("itemsanity");
+    out.hit = t.contains("hit_character");
+}
+// The 11 Itemsanity weapon items (35010095..105), one ledger row each.
+static const int64_t kWeaponFirst = 35010095, kWeaponCount = 11;
 static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
     return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
 }
@@ -373,8 +389,9 @@ static void validate(const J &p, State &out) {
     const bool has_packs = p.is_object() && p.contains("item_packs");
     const bool has_racers = p.is_object() && p.contains("racers");
     const bool has_capability = p.is_object() && p.contains("capability");
+    const bool has_global = p.is_object() && p.contains("global_checks");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
-                                         (has_capability ? 1u : 0u),
+                                         (has_capability ? 1u : 0u) + (has_global ? 1u : 0u),
          "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
@@ -393,6 +410,10 @@ static void validate(const J &p, State &out) {
     // Capability packs (#133 PR 4c): the boost and stat chain rows.
     if (has_capability) capability_settings(p["capability"], out);
     const std::map<int64_t, int> cap_rows = has_capability ? capability_rows(out.capability) : std::map<int64_t, int>{};
+    // Itemsanity and Hit Character (#133 PR 4d): one row per weapon item.
+    if (has_global) global_settings(p["global_checks"], out);
+    std::map<int64_t, int> weapon_rows;
+    for (int64_t w = 0; out.itemsanity && w < kWeaponCount; ++w) weapon_rows[kWeaponFirst + w] = 1;
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto &named_table = named_block_table(registry);
@@ -445,6 +466,7 @@ static void validate(const J &p, State &out) {
     if(!packs.empty())features.push_back("item_packs_v1");
     if(has_racers)features.push_back("character_unlocks_v1");
     if(has_capability)features.push_back("capability_packs_v1");
+    if(has_global)features.push_back("global_checks_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -482,6 +504,10 @@ static void validate(const J &p, State &out) {
     std::set<int64_t> letter_items;                    // pooled letter items (modes 2 and 3)
     struct GlobalRoute { int physical; std::string entry, pad; unsigned modes; };
     std::vector<GlobalRoute> global_routes;           // `wumpa: global`
+    // Every Trophy Race and CTR Challenge (#133 PR 4d), and whether its track
+    // is retail: native seats the Hit Character draw on retail races only.
+    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; bool retail; };
+    std::vector<RaceRoute> race_routes;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
@@ -751,6 +777,7 @@ static void validate(const J &p, State &out) {
         // reach ten fruit (a custom package needs its measured `wumpa` flag).
         const bool fruit = dest.retail_id >= 0 || dest.cortex || (record_caps(out, dest) & AP_CONTENT_CAP_WUMPA);
         const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
+        if (reach) race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.retail_id >= 0});
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
             if (fam.wumpa == 2) {
@@ -779,6 +806,30 @@ static void validate(const J &p, State &out) {
                                                              {"display_name", "Wumpa: Reach 10 Wumpa"}, {"routes", routes}}).second,
                  "duplicate check identity");
     }
+    // Itemsanity and Hit Character (#133 PR 4d): global checks with a route
+    // per Trophy Race and CTR Challenge, in physical pad order, then mode
+    // order; a Hit guest (8..15) only on retail races. The codes and names are
+    // the registry's (the apworld's frozen class order).
+    std::sort(race_routes.begin(), race_routes.end(),
+              [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
+    auto global_check = [&](const J &row, const char *kind, const char *award, bool guest) {
+        J routes = J::array();
+        for (const auto &r : race_routes)
+            if (r.retail || !guest)
+                for (int m = 0; m < 2; ++m)
+                    if (r.modes & (1u << m)) routes.push_back(route_record(r.entry, m ? "ctr" : "trophy", r.pad, award));
+        need(!routes.empty(), std::string("global check without a race to earn it: ") + row["name"].get<std::string>());
+        const int64_t code = row["location"].get<int64_t>();
+        need(expected_checks.emplace(code, J{{"location", code}, {"owner", "global"}, {"kind", kind},
+                                             {"display_name", row["name"]}, {"routes", routes}}).second,
+             "duplicate check identity");
+    };
+    if (out.itemsanity)
+        for (size_t i = 0; i < registry["itemsanity"].size(); ++i)
+            global_check(registry["itemsanity"][i], "itemsanity", i % 2 ? "use_juiced" : "use", false);
+    if (out.hit)
+        for (size_t i = 0; i < registry["hit_character"].size(); ++i)
+            global_check(registry["hit_character"][i], "hit", "hit", i >= 8);
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
     for (const auto &pair : expected_checks)
@@ -809,10 +860,11 @@ static void validate(const J &p, State &out) {
     fields(items, {"rows", "coded_checks", "locked_checks", "filler_count", "trap_count"});
     // The 15 counted families, plus one row per pooled letter item (#133 PR 3b),
     // one per pool-only pack item (#133 PR 4a) and one per unlock racer (#133 PR 4b).
-    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size() + cap_rows.size(),
+    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size() + cap_rows.size() +
+                                                           weapon_rows.size(),
          "item family registry mismatch");
     std::set<int> item_ids;
-    std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows;
+    std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows, weapon_seen;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
@@ -824,11 +876,12 @@ static void validate(const J &p, State &out) {
         }
         const bool racer = racer_rows.count(code) != 0;
         const bool chain = cap_rows.count(code) != 0;
-        const bool pack = packs.count(code) != 0 || racer || chain;
+        const bool weapon = weapon_rows.count(code) != 0;
+        const bool pack = packs.count(code) != 0 || racer || chain || weapon;
         if (pack)
-            need((racer ? unlock_rows : chain ? chain_rows : pack_rows).insert(code).second &&
-                 row["base"] == (racer ? 1 : chain ? cap_rows.at(code) : packs.at(code)) &&
-                 row["extra"] == 0, "a pack, racer or capability item row disagrees with its record");
+            need((racer ? unlock_rows : chain ? chain_rows : weapon ? weapon_seen : pack_rows).insert(code).second &&
+                 row["base"] == (racer || weapon ? 1 : chain ? cap_rows.at(code) : packs.at(code)) &&
+                 row["extra"] == 0, "a pack, racer, capability or weapon item row disagrees with its record");
         const int i = letter_items.count(code) || pack ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
         need(i < 0 || item_ids.insert(i).second, "duplicate item family");
         auto &r = i < 0 ? letter_row : out.items[i];
@@ -880,7 +933,8 @@ static void validate(const J &p, State &out) {
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
     need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
-         unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size(), "item family registry mismatch");
+         unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size() &&
+         weapon_seen.size() == weapon_rows.size(), "item family registry mismatch");
     // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
     // occupied pad that does not open at the start, because its hub gate needs
     // Keys or its manual rule is not met by the starting items (from-pool and
@@ -924,8 +978,11 @@ static int parse_content_plan(const nlohmann::json &j) {
         // carries. Optional here, so an earlier content-plan room keeps the
         // frozen trap table; when present it is read like a normal room's.
         const bool traps = j.is_object() && j.contains("trap_identities");
-        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) && j.contains("schema_version") && j.contains("content_plan") &&
-             j.contains("ctr_options"), "unsupported or incomplete record fields");
+        // `hit_character_encounters` (#133 PR 4d): the normal room's block,
+        // present exactly when the plan has Hit Character on (checked below).
+        const bool hit_block = j.is_object() && j.contains("hit_character_encounters");
+        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) && j.contains("schema_version") &&
+             j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
         need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
         J base=co;
@@ -961,7 +1018,8 @@ static int parse_content_plan(const nlohmann::json &j) {
         for(const char *key:{"starting_stat_class","penta_stats","stat_source","stat_owner","stat_editing_allowed"})base.erase(key);
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
-        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() && co["hit_character"] == false, "unsupported content-plan options");
+        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() &&
+             co["hit_character"].is_boolean(), "unsupported content-plan options");
         const int boost_mode = number(co["progressive_boost"], 0, 2), stats_mode = number(co["progressive_stats"], 0, 2);
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
@@ -980,6 +1038,10 @@ static int parse_content_plan(const nlohmann::json &j) {
         // its mode as owner.
         need(boost_mode == candidate.capability.boost_mode && stats_mode == candidate.capability.stats_mode,
              "capability envelope disagrees with the plan's capability record");
+        // Hit Character (#133 PR 4d): the envelope flag and the room's block
+        // follow the plan's record.
+        need(co["hit_character"].get<bool>() == candidate.hit && hit_block == candidate.hit,
+             "Hit Character envelope or block disagrees with the plan's global_checks record");
         need((stat_source == 1) == (stats_mode != 0) && (stat_source != 1 || stat_owner == stats_mode),
              "a Progressive Stats plan must send stat_source 1 with its mode as stat_owner");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
@@ -1033,11 +1095,27 @@ static int parse_content_plan(const nlohmann::json &j) {
         ctr_cfg.warppad_unlock_mode = ctr_cfg.bossgarage_mode = 0;
         ctr_cfg.one_lap_cups = ctr_cfg.oxide_1_optional = 0;
         ctr_cfg.relic_min_time = ctr_cfg.relics_require_perfect = 0;
+        // Itemsanity (#133 PR 4d): the runtime keys on the room holding the use
+        // checks (AP_ItemsanityActive); the flag feeds the tracker panel.
+        ctr_cfg.itemsanity = candidate.itemsanity ? 1 : 0;
+        // Hit Character: the normal room's parser with the content-plan Key
+        // fallback, then the fallback must be exactly the guests whose unlock
+        // wins are not in the plan (the apworld derives it the same way).
+        if (candidate.hit) {
+            if (!parse_hit_character(j, true)) { forget(); return 0; }
+            for (int g = 0; g < CTR_CFG_HIT_TRIGGER_COUNT; ++g) {
+                const ctr_hit_trigger &t = ctr_cfg.hit.triggers[g];
+                bool present = false;
+                for (int k = 0; k < t.count; ++k) present |= candidate.checks.count(t.any_of[k]) != 0;
+                need((t.fallback_keys > 0) == !present, "hit_character_encounters fallback disagrees with the plan's unlock wins");
+            }
+        }
         state = std::move(candidate);
         if (traps) ap_seedcfg_parse_trap_identities(j, 18);
         ctr_cfg.schema_version = 18; // commit after complete validation
         return 2;
     } catch (const std::exception &e) {
+        ctr_cfg.hit.valid = 0; // a Hit block parsed before the refusal never stays active
         forget(); hit_reject("content_plan: %s", e.what()); return 0;
     }
 }

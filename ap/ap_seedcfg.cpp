@@ -429,6 +429,22 @@ static const int kHitFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
 	4, // guest 15 Nitros Oxide
 };
 
+// The Key fallback on a content-plan room (#133 PR 4d, apworld
+// hit_character.CONTENT_PLAN_FALLBACK_KEYS). A content plan has no boss
+// encounters yet (#133 PR 6), so the four boss guests have no boss race and
+// join through Keys too, in the retail boss order. The other four keep the
+// normal table.
+static const int kHitContentFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	4, // guest 8  Pinstripe
+	2, // guest 9  Papu Papu
+	1, // guest 10 Ripper Roo
+	3, // guest 11 Komodo Joe
+	3, // guest 12 N. Tropy
+	2, // guest 13 Penta Penguin
+	1, // guest 14 Fake Crash
+	4, // guest 15 Nitros Oxide
+};
+
 // Canonical boss-win keys, in the order boss_identity[] stores them.
 static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
 	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
@@ -480,8 +496,11 @@ static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
 // and must be validated even when ctr_options is absent or carries
 // schema_version 0. "Compatible legacy" means the feature data is ABSENT, never
 // that a present required block is bypassed by the legacy path.
-static int parse_hit_character(const nlohmann::json &j)
+// `contentPlan` selects the content-plan fallback table (#133 PR 4d); the
+// content-plan parser calls this after the plan itself is admitted.
+static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false)
 {
+	const int *fallbackTable = contentPlan ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
 	const nlohmann::json *opt = NULL;
@@ -817,7 +836,7 @@ static int parse_hit_character(const nlohmann::json &j)
 			if (hasFallback)
 			{
 				long long fb = 0;
-				if (kHitFallbackKeys[guest - 8] == 0)
+				if (fallbackTable[guest - 8] == 0)
 				{
 					hit_reject("unlock_triggers[%d].fallback_keys is set, but this guest "
 					           "always has its own boss race",
@@ -830,11 +849,11 @@ static int parse_hit_character(const nlohmann::json &j)
 					           guest);
 					return 0;
 				}
-				if ((int)fb != kHitFallbackKeys[guest - 8])
+				if ((int)fb != fallbackTable[guest - 8])
 				{
 					hit_reject("unlock_triggers[%d].fallback_keys is %d, but this guest's "
 					           "fixed fallback is %d",
-					           guest, (int)fb, kHitFallbackKeys[guest - 8]);
+					           guest, (int)fb, fallbackTable[guest - 8]);
 					return 0;
 				}
 				trig.fallback_keys = (int)fb;
