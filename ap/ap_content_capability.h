@@ -88,4 +88,35 @@ static inline int AP_ContentCapabilitiesHold(unsigned claimed, const struct Cust
 	return 0;
 }
 
+// Super turbo pads (#133 PR 4c, ruling 2026-10-17): a custom track whose LEV
+// has any super turbo pad trigger quad takes the Hot Air Skyway finish rule
+// in logic, so the descriptor's optional `super_turbo_pads` must say what the
+// bytes hold. Unlike the mode flags above, both wrong answers refuse: a
+// false claim on a track with super pads would put its finish in logic
+// without USF, and a true claim on one without would gate it for nothing.
+// Unstated (AP_CONTENT_SUPER_PADS_UNSTATED) is never a refusal: logic then
+// already treats the track as having super pads.
+static inline int AP_ContentSuperTurboPadsHold(int stated, const struct CustomContentVerification *report,
+                                               char *why, size_t whySize)
+{
+	int measured;
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (stated == AP_CONTENT_SUPER_PADS_UNSTATED)
+		return 1;
+	measured = report->measured.superTurboPads > 0;
+	if ((stated != 0) == measured)
+		return 1;
+	if (why && whySize)
+		snprintf(why, whySize, "the descriptor says super_turbo_pads is %s, but the files have %lu super turbo pad quads",
+		         stated ? "true" : "false", report->measured.superTurboPads);
+	return 0;
+}
+
 #endif

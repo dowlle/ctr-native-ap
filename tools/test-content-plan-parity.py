@@ -786,6 +786,135 @@ case = copy.deepcopy(pack_base)
 case["ctr_options"]["character_unlocks"] = True
 cases.append(("racer-envelope-unlocks true without the record", case, False))
 
+# Capability packs (#133 PR 4c): the ledger rows native derives from the
+# `capability` record, generated plans with Progressive Boost, Blue Fire,
+# Progressive Stats, every Logic Difficulty and Shortcut Knowledge, custom
+# tracks with and without super turbo pads, then forged records, ranks, rows
+# and envelopes. A check's `boost` is the apworld's logic as data: native
+# checks its range and that the plan has Progressive Boost on, and does not
+# re-derive it (the win_logic rule), so a forged rank inside the chain is
+# refused by the generator's validator only. Those cases are listed in
+# `native_trusts` and must be refused by the apworld and accepted by native.
+from worlds.ctr import content_capability as ccap
+from worlds.ctr.test.test_capability_packs import cap_options, first_world
+for blue in (False, True):
+    for boost_mode in (1, 2):
+        for stats_mode in (0, 1, 2):
+            want = ccap.item_counts(dict(boost_mode=boost_mode, boost_blue_fire=blue, stats_mode=stats_mode))
+            got = {}
+            for slot in range(16):
+                for chain in range(4):
+                    mode = stats_mode if chain else boost_mode
+                    if mode == 1 and slot == 0:
+                        got[35010027 + chain] = 4 if chain else (3 if blue else 2)
+                    if mode == 2:
+                        got[35010031 + 4 * slot + chain] = 4 if chain else (3 if blue else 2)
+            assert {cp.content_item_pool.ITEMS[n]: c for n, c in want.items()} == got, "capability rows differ"
+for seed in range(36):
+    pads = (None, True, False)[seed % 3]
+    options = cap_options(boost=("shared_global", "per_character", "off")[seed % 3] if seed % 3 != 2 else "off",
+                          stats=("off", "shared_global")[seed % 2] if seed % 3 != 2 else "shared_global",
+                          difficulty=("easy", "medium", "hard")[(seed // 3) % 3], blue_fire=seed % 4 == 1,
+                          knowledge=("easy", "medium", "hard")[seed % 3], loop_pads=pads,
+                          relic_perfect_checks=seed % 2 == 0, lettersanity=(0, 2, 3)[seed % 3],
+                          wumpa_check=("off", "global", "per_track")[(seed // 2) % 3])
+    if seed % 6 == 1:
+        options.update(character_unlocks=True, racer_locked_pads=6)
+    cases.append((f"capability-generated-{seed}", first_world(options, seed=seed).fill_slot_data(), True))
+# Per-racer stat chains (192 copies) fit only with every check family on.
+for seed in range(4):
+    options = cap_options(boost=("off", "shared_global")[seed % 2], stats="per_character", relic_perfect_checks=True,
+                          lettersanity=1, letters_per_track=3, wumpa_check="per_track", podium_held_rungs=True,
+                          podium_held_fifth_rung=True, podium_finish_rungs=True, podium_any_position_rung=True)
+    cases.append((f"capability-per-racer-stats-{seed}", first_world(options, seed=seed).fill_slot_data(), True))
+cap_base = first_world(cap_options(stats="shared_global", difficulty="medium", relic_perfect_checks=True,
+                                   lettersanity=2, character_unlocks=True, racer_locked_pads=4), seed=20261018).fill_slot_data()
+cases.append(("capability-base", cap_base, True))
+cap_plan = cap_base["content_plan"]
+ranked = next(i for i, c in enumerate(cap_plan["checks"]) if c.get("boost") == 2)
+unranked = next(i for i, c in enumerate(cap_plan["checks"]) if "boost" not in c)
+loop_index = next(i for i, p in enumerate(cap_plan["packages"]) if p["content_id"] == "fixture-loop")
+def crow(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+def cdrop_record(p):
+    p.pop("capability")
+    p["required_features"].remove("capability_packs_v1")
+def cdrop_all(p):
+    cdrop_record(p)
+    rows = [r for r in p["items"]["rows"] if not 35010027 <= r["item"] <= 35010094]
+    p["items"]["filler_count"] += sum(r["remaining"] for r in p["items"]["rows"]) - sum(r["remaining"] for r in rows)
+    p["items"]["rows"] = rows
+    for check in p["checks"]:
+        check.pop("boost", None)
+def cdrop_row(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != 35010028]
+    p["items"]["filler_count"] += 4
+native_trusts = set()
+for name, change, trusted in [
+        ("unchanged copy", lambda p: None, False),
+        ("record dropped, ranks kept", cdrop_record, False),
+        ("feature dropped", lambda p: p["required_features"].remove("capability_packs_v1"), False),
+        ("unknown record field", lambda p: p["capability"].__setitem__("itemsanity", 0), False),
+        ("record field missing", lambda p: p["capability"].pop("shortcut_knowledge"), False),
+        ("record not an object", lambda p: p.__setitem__("capability", []), False),
+        ("boost mode 3", lambda p: p["capability"].__setitem__("boost_mode", 3), False),
+        ("boost mode as Boolean", lambda p: p["capability"].__setitem__("boost_mode", True), False),
+        ("both modes off", lambda p: p["capability"].update(boost_mode=0, stats_mode=0), False),
+        ("boost mode per racer, shared rows", lambda p: p["capability"].__setitem__("boost_mode", 2), False),
+        ("stats off, stat rows kept", lambda p: p["capability"].__setitem__("stats_mode", 0), False),
+        ("Blue Fire on, two boost copies", lambda p: p["capability"].__setitem__("boost_blue_fire", True), False),
+        ("Blue Fire as integer", lambda p: p["capability"].__setitem__("boost_blue_fire", 0), False),
+        ("difficulty 3", lambda p: p["capability"].__setitem__("logic_difficulty", 3), False),
+        ("knowledge -1", lambda p: p["capability"].__setitem__("shortcut_knowledge", -1), False),
+        ("boost row with an extra copy", lambda p: crow(p, 35010027).update(base=3, remaining=3, receipt_cap=3,
+                                                                           requirement_ceiling=3), False),
+        ("stat row missing", cdrop_row, False),
+        ("rank above the chain", lambda p: p["checks"][ranked].__setitem__("boost", 3), False),
+        ("rank 0", lambda p: p["checks"][ranked].__setitem__("boost", 0), False),
+        ("rank as Boolean", lambda p: p["checks"][ranked].__setitem__("boost", True), False),
+        ("rank as text", lambda p: p["checks"][ranked].__setitem__("boost", "2"), False),
+        ("super turbo pads as integer", lambda p: p["packages"][loop_index]["capabilities"].__setitem__("super_turbo_pads", 1), False),
+        ("rank lowered", lambda p: p["checks"][ranked].__setitem__("boost", 1), True),
+        ("rank dropped", lambda p: p["checks"][ranked].pop("boost"), True),
+        ("rank added", lambda p: p["checks"][unranked].__setitem__("boost", 1), True),
+        ("difficulty changed, ranks kept", lambda p: p["capability"].__setitem__("logic_difficulty", 2), True),
+        ("knowledge changed, ranks kept", lambda p: p["capability"].__setitem__("shortcut_knowledge", 2), True),
+        ("super turbo pads stated false, ranks kept",
+         lambda p: p["packages"][loop_index]["capabilities"].__setitem__("super_turbo_pads", False), True),
+        ]:
+    alter("capability-" + name, change, cap_base)
+    if trusted:
+        native_trusts.add("capability-" + name)
+        assert cases[-1][2] is False, name + ": the apworld must refuse a forged rank"
+def cap_env(name, change, source=None):
+    case = copy.deepcopy(source or cap_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        cp.check_racer_envelope(case["content_plan"], case["ctr_options"])
+        ccap.check_envelope(case["content_plan"].get("capability", {}), case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("capability-envelope-" + name, case, accepted))
+for name, key, value in [("boost 0", "progressive_boost", 0), ("boost 2", "progressive_boost", 2),
+                         ("boost Boolean", "progressive_boost", True), ("stats 0", "progressive_stats", 0),
+                         ("stats 2", "progressive_stats", 2), ("source 2", "stat_source", 2),
+                         ("owner 2", "stat_owner", 2), ("editing true", "stat_editing_allowed", True),
+                         ("editing integer", "stat_editing_allowed", 0)]:
+    cap_env(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("stat_source", "stat_owner", "stat_editing_allowed"):
+    cap_env("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+cap_env("editable stats trio on a Progressive Stats plan",
+        lambda c: c["ctr_options"].update(stat_source=2, stat_owner=1, stat_editing_allowed=True))
+cap_env("record, rows and ranks dropped, envelope off",
+        lambda c: (cdrop_all(c["content_plan"]), c["ctr_options"].update(progressive_boost=0, progressive_stats=0),
+                   [c["ctr_options"].pop(k) for k in ("stat_source", "stat_owner", "stat_editing_allowed")]))
+cap_env("record, rows and ranks dropped, envelope still on", lambda c: cdrop_all(c["content_plan"]))
+cap_env("Progressive Stats trio on a plan without the record", lambda c: c["ctr_options"].update(
+    stat_source=1, stat_owner=1, stat_editing_allowed=False), pack_base)
+
 alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
 alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
 alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))
@@ -810,6 +939,11 @@ run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()
 assert len(answers) == len(cases), (len(answers), len(cases), run.stderr[-1000:])
-disagreements = [name for (name, _, expected), actual in zip(cases, answers) if (actual == "ACCEPT") != expected]
+disagreements = [name for (name, _, expected), actual in zip(cases, answers)
+                 if name not in native_trusts and (actual == "ACCEPT") != expected]
 assert not disagreements, disagreements
-print(f"PASS registry parity and {len(cases)} native/generator admission cases ({sum(x[2] for x in cases)} accepted)")
+# Forged ranks inside the chain: the generator refuses, native trusts them.
+trusted = [name for (name, _, _), actual in zip(cases, answers) if name in native_trusts and actual != "ACCEPT"]
+assert not trusted, trusted
+print(f"PASS registry parity and {len(cases)} native/generator admission cases ({sum(x[2] for x in cases)} accepted, "
+      f"{len(native_trusts)} forged ranks the generator alone refuses)")

@@ -5,8 +5,12 @@ sent a race-loss DeathLink (the 0.2.3 fallback). The production
 AP_ContentWinFacts (ap_hooks_race.c), AP_WinDecideContent (ap_win_logic.c)
 and AP_WinStakesContentDecide (ap_win_logic.h) now decide from the race's own
 pad: a loss sends while its win check is open and does not wait for letter
-items. Engine and network state are controlled seams; this does not claim a
-Steam race.
+items. PR 4c adds the boost term: a win whose plan check carries a boost rank
+is out of logic, so exempt, until the pad's racer (or any driveable racer)
+has that many Progressive Boosts, counted from progression-flagged receipts
+plus the plan's starting copies (AP_WinEnvContentCount, AP_WinContentCapMet).
+Engine and network state are controlled seams; this does not claim a Steam
+race.
 """
 from pathlib import Path
 import subprocess
@@ -63,16 +67,29 @@ int ap_net_location_checked(long long code) {
  return 0;
 }
 void AP_LogLine(const char *text) { snprintf(lastLog,sizeof lastLog,"%s",text); }
+static AP_ItemIdTally g_wl_tally;
+static int envBoostMode, envStart, envUnlocks;
+static long long startId; static int startN;
+int ap_content_plan_start_count(int64_t item) { return item==startId ? startN : 0; }
+static AP_WinLogicEnv AP_WinEnvNow(void) {
+ AP_WinLogicEnv env; memset(&env,0,sizeof env);
+ env.boost_mode=envBoostMode; env.starting_character=envStart; env.character_unlocks=envUnlocks;
+ env.unreliable=g_wl_tally.overflow; return env;
+}
+static void got(long long id, unsigned flags) { AP_ItemIdTallyReceive(&g_wl_tally,id,7,flags); }
 '''
 for signature in ("static const ctr_content_pad *AP_StandaloneRoutePad(",
-                  "int AP_ContentWinFacts(long *outCode, int *outNeedsItems)\n{"):
+                  "int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)\n{"):
     fixture += function(signature) + "\n"
+for signature in ("static int AP_WinEnvContentCount(", "static int AP_WinContentCapMet("):
+    fixture += function(signature, win_logic) + "\n"
 fixture += function("static int AP_WinDecideContent(", win_logic) + "\n"
 fixture += r'''
 #define CC 3
 static void reset(int mode, int retail) {
  memset(&game,0,sizeof game); memset(&context,0,sizeof context); memset(&pad,0,sizeof pad); memset(&crystal,0,sizeof crystal);
  planActive=haveContext=1; crystalRunning=0; epoch=4; checkedCount=receivedCount=0; lastLog[0]=0;
+ AP_ItemIdTallyReset(&g_wl_tally); envBoostMode=0; envStart=0; envUnlocks=0; startId=0; startN=0;
  sdataStore.gGT=&game;
  context.physicalPad=CC; context.returnHub=26; context.seedEpoch=4; context.mode=mode; context.retail=retail;
  context.laps=3; context.slot=retail?0:2; context.hostLevelID=retail?3:6; game.levelID=context.hostLevelID;
@@ -85,6 +102,7 @@ static void reset(int mode, int retail) {
  pad.relic_locations[0]=35012000; pad.relic_locations[1]=35012100; pad.relic_locations[2]=35012200;
  context.trophyLocation=mode==AP_CONTENT_MODE_TROPHY ? pad.trophy_location : mode==AP_CONTENT_MODE_CTR ? pad.ctr_location : pad.relic_locations[0];
  strcpy(pad.entry_id,"entry/x"); strcpy(pad.track_id,"x");
+ pad.racer_lock=-1;
 }
 static AP_WinStakes decide(int *handled) { AP_WinStakes s; memset(&s,0,sizeof s); *handled=AP_WinDecideContent(&game,"at race start",&s); return s; }
 int main(void) {
@@ -121,6 +139,33 @@ int main(void) {
  reset(AP_CONTENT_MODE_TROPHY,1); haveContext=0; decide(&handled); assert(!handled); cases++;
  reset(AP_CONTENT_MODE_TROPHY,1); epoch=5; decide(&handled); assert(!handled); cases++;   /* stale route */
  reset(AP_CONTENT_MODE_TROPHY,1); pad.hub=27; decide(&handled); assert(!handled); cases++; /* another pad */
+ /* Boost terms (#133 PR 4c). Shared chain: the Trophy Race needs USF (2). */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=1; pad.trophy_boost=2; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ got(35010027,1); s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ got(35010027,0); s=decide(&handled); assert(handled && !s.stakes); cases++;          /* not progression: not counted */
+ got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35011000); cases++;
+ /* A starting copy from the plan's ledger counts. */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=1; pad.trophy_boost=1; startId=35010027; startN=1; s=decide(&handled);
+ assert(handled && s.stakes); cases++;
+ /* Boost mode off: the rank is vacuous, as the cap leaf says. */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=0; pad.trophy_boost=2; s=decide(&handled); assert(handled && s.stakes); cases++;
+ /* CTR Challenge: its own rank, on top of the letter items. */
+ reset(AP_CONTENT_MODE_CTR,1); envBoostMode=1; pad.ctr_boost=1; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35012300); cases++;
+ /* Per racer: a locked pad reads its racer's chain (Coco, engine 3, item 35010035). */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=2; envUnlocks=1; pad.trophy_boost=1; pad.racer_lock=3;
+ got(35010031,1); s=decide(&handled); assert(handled && !s.stakes); cases++;          /* Crash's chain is not Coco's */
+ got(35010035,1); s=decide(&handled); assert(handled && !s.stakes); cases++;          /* Coco not unlocked */
+ got(35010124,1); s=decide(&handled); assert(handled && s.stakes); cases++;
+ /* Per racer, unlocked pad: any driveable racer with the rank. */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=2; envUnlocks=1; pad.trophy_boost=1;
+ got(35010035,1); s=decide(&handled); assert(handled && !s.stakes); cases++;          /* Coco has it but is locked */
+ got(35010031,1); s=decide(&handled); assert(handled && s.stakes); cases++;           /* the starting racer (Crash) has it */
+ /* A collected win is exempt whatever the rank. */
+ reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=1; pad.trophy_boost=2; checked[checkedCount++]=35011000; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
  /* The pure decision on its own. */
  s=AP_WinStakesContentDecide(0,0,0); assert(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  s=AP_WinStakesContentDecide(35011000,1,1); assert(!s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;

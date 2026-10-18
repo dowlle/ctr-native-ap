@@ -2,7 +2,9 @@
 // same admission path. Implements standalone track entries with their Trophy,
 // CTR Challenge and Relic Race modes (#133 PR 3), their podium rungs, Reach 10
 // Wumpa and Lettersanity checks (#133 PR 3b), Cortex Vortex as a track and the
-// Relic Race Perfect checks (#133 PR 3c), and Crystal Challenge entries; a
+// Relic Race Perfect checks (#133 PR 3c), pool-only and character packs (#133
+// PR 4a, 4b), capability packs with per-check boost ranks (#133 PR 4c), and
+// Crystal Challenge entries; a
 // broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
 #include "ap_content_plan.h"
@@ -28,6 +30,10 @@ struct State {
     // Character unlocks (#133 PR 4b): the plan's `racers` record.
     bool racers = false, remove_oxide = false;
     int starting_character = -1, requested_locks = 0;
+    // Capability packs (#133 PR 4c): the `capability` record, each check's
+    // boost rank, and every ledger row's starting copies.
+    ctr_content_capability capability{};
+    std::map<int64_t, int> boosts, starts;
     std::set<int64_t> checks;
     std::string canonical;
 };
@@ -136,7 +142,16 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     text(pkg["display_name"], false); text(pkg["author"], false);
     target.laps = number(pkg["laps"], 1, 7);
     const J &caps = pkg["capabilities"];
-    fields(caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
+    // `super_turbo_pads` (#133 PR 4c) is optional: whether the LEV has a super
+    // turbo pad trigger quad. Measured and compared on load.
+    J mode_caps = caps;
+    target.super_turbo_pads = AP_CONTENT_SUPER_PADS_UNSTATED;
+    if (mode_caps.is_object() && mode_caps.contains("super_turbo_pads")) {
+        need(mode_caps["super_turbo_pads"].is_boolean(), "package capability flag is not true or false");
+        target.super_turbo_pads = mode_caps["super_turbo_pads"].get<bool>() ? 1 : 0;
+        mode_caps.erase("super_turbo_pads");
+    }
+    fields(mode_caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
     static const std::pair<const char *, unsigned> cap_bits[] = {
         {"time_trial", AP_CONTENT_CAP_TIME_TRIAL}, {"arcade", AP_CONTENT_CAP_ARCADE}, {"relic", AP_CONTENT_CAP_RELIC},
         {"ctr_tokens", AP_CONTENT_CAP_CTR_TOKENS}, {"wumpa", AP_CONTENT_CAP_WUMPA}};
@@ -299,6 +314,38 @@ static void racer_settings(const J &t, State &out) {
 static bool racer_excluded(const State &out, int character) {
     return character == out.starting_character || (out.remove_oxide && character == kOxide);
 }
+// Capability packs (#133 PR 4c), apworld content_capability.check_settings:
+// both modes 0 to 2 and not both off, Blue Fire only with boost, difficulty and
+// knowledge 0 to 2.
+static void capability_settings(const J &t, State &out) {
+    fields(t, {"boost_mode", "boost_blue_fire", "stats_mode", "logic_difficulty", "shortcut_knowledge"});
+    auto &c = out.capability;
+    c.present = 1;
+    c.boost_mode = number(t["boost_mode"], 0, 2);
+    c.stats_mode = number(t["stats_mode"], 0, 2);
+    c.logic_difficulty = number(t["logic_difficulty"], 0, 2);
+    c.shortcut_knowledge = number(t["shortcut_knowledge"], 0, 2);
+    need(t["boost_blue_fire"].is_boolean(), "capability.boost_blue_fire must be true or false");
+    c.boost_blue_fire = t["boost_blue_fire"].get<bool>() ? 1 : 0;
+    need(c.boost_mode || c.stats_mode, "capability is present only when Progressive Boost or Progressive Stats is on");
+    need(!c.boost_blue_fire || c.boost_mode, "capability.boost_blue_fire needs Progressive Boost");
+}
+// The ledger rows a `capability` record pools (apworld
+// progressive_capability.created_item_counts): Progressive Boost 35010027 with
+// 2 copies, 3 with Blue Fire, or per racer 35010031 + 4 * roster slot; the
+// three stat chains 35010028..30, or per racer + 1..3, four copies each.
+static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
+    std::map<int64_t, int> rows;
+    const int boost = c.boost_blue_fire ? 3 : 2;
+    for (int slot = 0; slot < 16; ++slot)
+        for (int chain = 0; chain < 4; ++chain) {
+            const int mode = chain ? c.stats_mode : c.boost_mode;
+            const int copies = chain ? 4 : boost;
+            if (mode == 1 && slot == 0) rows[35010027 + chain] = copies;
+            if (mode == 2) rows[35010031 + 4 * slot + chain] = copies;
+        }
+    return rows;
+}
 static unsigned record_caps(const State &out, const ctr_content_pad &pad) {
     return pad.package_index >= 0 ? out.packages[pad.package_index].capabilities : 0u;
 }
@@ -325,7 +372,9 @@ static void validate(const J &p, State &out) {
     const bool has_families = p.is_object() && p.contains("track_checks");
     const bool has_packs = p.is_object() && p.contains("item_packs");
     const bool has_racers = p.is_object() && p.contains("racers");
-    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u),
+    const bool has_capability = p.is_object() && p.contains("capability");
+    need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
+                                         (has_capability ? 1u : 0u),
          "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
@@ -341,6 +390,9 @@ static void validate(const J &p, State &out) {
         for (int slot = 0; slot < 16; ++slot)
             if (!racer_excluded(out, kRosterCharacter[slot])) racer_rows[kRacerItemBase + slot] = 1;
     }
+    // Capability packs (#133 PR 4c): the boost and stat chain rows.
+    if (has_capability) capability_settings(p["capability"], out);
+    const std::map<int64_t, int> cap_rows = has_capability ? capability_rows(out.capability) : std::map<int64_t, int>{};
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
     static const J registry = J::parse(kContentRegistryJSON);
     const auto &named_table = named_block_table(registry);
@@ -392,6 +444,7 @@ static void validate(const J &p, State &out) {
     if(fam.relic_perfect)features.push_back("relic_perfect_v1");
     if(!packs.empty())features.push_back("item_packs_v1");
     if(has_racers)features.push_back("character_unlocks_v1");
+    if(has_capability)features.push_back("capability_packs_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -732,18 +785,34 @@ static void validate(const J &p, State &out) {
         need(check_names.insert(fold(pair.second["display_name"].get<std::string>())).second, "two checks share a display name");
     need(entries.empty() || starting_entry, "no playable starting pad");
     need(p["checks"].is_array() && p["checks"].size() == expected_checks.size(), "check registry size mismatch");
+    // A check's `boost` (#133 PR 4c) is the apworld's logic as data: native
+    // checks its range and that the plan has Progressive Boost on, and reads
+    // it; it does not re-derive which ranks a race needs (the win_logic rule).
+    const int boost_ceiling = out.capability.boost_mode ? (out.capability.boost_blue_fire ? 3 : 2) : 0;
     for (const auto &check : p["checks"]) {
         const int64_t id = number(check.at("location"), 1);
-        need(out.checks.insert(id).second && expected_checks.count(id) && check == expected_checks.at(id), "check identity or route ownership mismatch");
+        J bare = check;
+        if (bare.is_object() && bare.contains("boost")) {
+            need(boost_ceiling > 0, "a check boost rank needs Progressive Boost (the capability record)");
+            out.boosts[id] = number(bare["boost"], 1, boost_ceiling);
+            bare.erase("boost");
+        }
+        need(out.checks.insert(id).second && expected_checks.count(id) && bare == expected_checks.at(id), "check identity or route ownership mismatch");
+    }
+    for (auto &pad : out.pads) {
+        if (!pad.occupied) continue;
+        const auto trophy = out.boosts.find(pad.trophy_location), ctr = out.boosts.find(pad.ctr_location);
+        pad.trophy_boost = pad.trophy_location > 0 && trophy != out.boosts.end() ? trophy->second : 0;
+        pad.ctr_boost = pad.ctr_location > 0 && ctr != out.boosts.end() ? ctr->second : 0;
     }
     const J &items = p["items"];
     fields(items, {"rows", "coded_checks", "locked_checks", "filler_count", "trap_count"});
     // The 15 counted families, plus one row per pooled letter item (#133 PR 3b),
     // one per pool-only pack item (#133 PR 4a) and one per unlock racer (#133 PR 4b).
-    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size(),
+    need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size() + cap_rows.size(),
          "item family registry mismatch");
     std::set<int> item_ids;
-    std::set<int64_t> letter_rows, pack_rows, unlock_rows;
+    std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
@@ -754,10 +823,12 @@ static void validate(const J &p, State &out) {
             need(letter_rows.insert(code).second && row["base"] == 1 && row["extra"] == 0, "a letter item is pooled once");
         }
         const bool racer = racer_rows.count(code) != 0;
-        const bool pack = packs.count(code) != 0 || racer;
+        const bool chain = cap_rows.count(code) != 0;
+        const bool pack = packs.count(code) != 0 || racer || chain;
         if (pack)
-            need((racer ? unlock_rows : pack_rows).insert(code).second && row["base"] == (racer ? 1 : packs.at(code)) &&
-                 row["extra"] == 0, "a pack or racer item row disagrees with item_packs or racers");
+            need((racer ? unlock_rows : chain ? chain_rows : pack_rows).insert(code).second &&
+                 row["base"] == (racer ? 1 : chain ? cap_rows.at(code) : packs.at(code)) &&
+                 row["extra"] == 0, "a pack, racer or capability item row disagrees with its record");
         const int i = letter_items.count(code) || pack ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
         need(i < 0 || item_ids.insert(i).second, "duplicate item family");
         auto &r = i < 0 ? letter_row : out.items[i];
@@ -768,6 +839,7 @@ static void validate(const J &p, State &out) {
         need(i != 14 || r.base == 4, "four base Keys are mandatory");
         need(i >= 0 || pack || r.base == 1, "a letter item is pooled once");
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
+        out.starts[code] = r.start_from_pool + r.start_additional;
         remaining += r.remaining;
     }
     // Manual requirement records: item identities and counts come from the
@@ -808,7 +880,7 @@ static void validate(const J &p, State &out) {
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
     }
     need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
-         unlock_rows.size() == racer_rows.size(), "item family registry mismatch");
+         unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size(), "item family registry mismatch");
     // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
     // occupied pad that does not open at the start, because its hub gate needs
     // Keys or its manual rule is not met by the starting items (from-pool and
@@ -870,23 +942,27 @@ static int parse_content_plan(const nlohmann::json &j) {
         for(const char *key:{"death_link_send","warp_pad_item_display","ap_item_type_colors"})base.erase(key);
         // Stat settings (#133 PR 4b), present only when set: the starting
         // racer's class, Penta's MAX table, and the resolved editable-stats
-        // trio (apworld content_plan.STAT_ENVELOPE). Progressive Stats (source
-        // 1) is still refused here; it comes with PR 4c.
+        // trio (apworld content_plan.STAT_ENVELOPE): editable stats (source 2,
+        // owner 1 or 2, editing on) or Progressive Stats (source 1, owner the
+        // stats mode, editing off, #133 PR 4c), checked against the plan below.
         const bool stat_class = co.contains("starting_stat_class"), penta = co.contains("penta_stats");
         const bool trio = co.contains("stat_source") || co.contains("stat_owner") || co.contains("stat_editing_allowed");
         const int start_class = stat_class ? number(co["starting_stat_class"], 1, 4) : 0;
         need(!penta || number(co["penta_stats"], 1, 1) == 1, "penta_stats must be 1 when present");
-        int stat_owner = 0;
+        int stat_owner = 0, stat_source = 0;
         if (trio) {
-            need(co.contains("stat_source") && co.contains("stat_owner") && co.contains("stat_editing_allowed") &&
-                 number(co["stat_source"], 2, 2) == 2 && co["stat_editing_allowed"] == true,
-                 "stat_source, stat_owner and stat_editing_allowed must be editable stats together");
+            need(co.contains("stat_source") && co.contains("stat_owner") && co.contains("stat_editing_allowed"),
+                 "stat_source, stat_owner and stat_editing_allowed must be sent together");
+            stat_source = number(co["stat_source"], 1, 2);
+            need(co["stat_editing_allowed"] == (stat_source == 2),
+                 "stat_source, stat_owner and stat_editing_allowed must be editable stats or Progressive Stats together");
             stat_owner = number(co["stat_owner"], 1, 2);
         }
         for(const char *key:{"starting_stat_class","penta_stats","stat_source","stat_owner","stat_editing_allowed"})base.erase(key);
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
-        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() && co["progressive_boost"] == 0 && co["progressive_stats"] == 0 && co["hit_character"] == false, "unsupported content-plan options");
+        need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() && co["hit_character"] == false, "unsupported content-plan options");
+        const int boost_mode = number(co["progressive_boost"], 0, 2), stats_mode = number(co["progressive_stats"], 0, 2);
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
         validate(j["content_plan"], candidate);
@@ -899,6 +975,13 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(co["character_unlocks"].get<bool>() == candidate.racers &&
              (!candidate.racers || number(co["starting_character"], 0, 15) == candidate.starting_character),
              "character envelope disagrees with the plan's racers record");
+        // Capability packs (#133 PR 4c): the envelope's two modes are the
+        // record's (0 without it), and Progressive Stats sends source 1 with
+        // its mode as owner.
+        need(boost_mode == candidate.capability.boost_mode && stats_mode == candidate.capability.stats_mode,
+             "capability envelope disagrees with the plan's capability record");
+        need((stat_source == 1) == (stats_mode != 0) && (stat_source != 1 || stat_owner == stats_mode),
+             "a Progressive Stats plan must send stat_source 1 with its mode as stat_owner");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
                                 (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u);
         if(arenas) {
@@ -933,10 +1016,18 @@ static int parse_content_plan(const nlohmann::json &j) {
             }
         ctr_cfg.starting_stat_class = start_class;
         ctr_cfg.penta_stats = penta ? 1 : 0;
-        ctr_cfg.stat_source = trio ? 2 : 0;
+        ctr_cfg.stat_source = stat_source;
         ctr_cfg.stat_owner = stat_owner;
-        ctr_cfg.stat_editing_allowed = trio ? 1 : 0;
-        ctr_cfg.editable_stats = stat_owner; // the raw option, for logs only
+        ctr_cfg.stat_editing_allowed = stat_source == 2 ? 1 : 0;
+        ctr_cfg.editable_stats = stat_source == 2 ? stat_owner : 0; // the raw option, for logs only
+        // Capability packs (#133 PR 4c): the kart reads these like a normal room's.
+        ctr_cfg.boost_mode = candidate.capability.boost_mode;
+        ctr_cfg.boost_blue_fire = candidate.capability.boost_blue_fire;
+        ctr_cfg.stats_mode = candidate.capability.stats_mode;
+        if (candidate.capability.present) {
+            ctr_cfg.logic_difficulty = candidate.capability.logic_difficulty;
+            ctr_cfg.shortcut_knowledge = candidate.capability.shortcut_knowledge;
+        }
         ctr_cfg.shuffle_gems = ctr_cfg.shuffle_keys = 1;
         ctr_cfg.shuffle_warp_pads = 0; // Hub objects keep their physical IDs.
         ctr_cfg.warppad_unlock_mode = ctr_cfg.bossgarage_mode = 0;
@@ -965,6 +1056,20 @@ extern "C" const ctr_content_package *ap_content_plan_package(int index) {
 extern "C" const ctr_content_checks *ap_content_plan_checks(void) {
     static const ctr_content_checks none{};
     return ap_content_plan_active() ? &content_plan::state.families : &none;
+}
+extern "C" const ctr_content_capability *ap_content_plan_capability(void) {
+    static const ctr_content_capability none{};
+    return ap_content_plan_active() ? &content_plan::state.capability : &none;
+}
+extern "C" int ap_content_plan_start_count(int64_t item) {
+    if (!ap_content_plan_active()) return 0;
+    const auto it = content_plan::state.starts.find(item);
+    return it == content_plan::state.starts.end() ? 0 : it->second;
+}
+extern "C" int ap_content_plan_check_boost(int64_t location) {
+    if (!ap_content_plan_active()) return 0;
+    const auto it = content_plan::state.boosts.find(location);
+    return it == content_plan::state.boosts.end() ? 0 : it->second;
 }
 extern "C" const ctr_content_item *ap_content_plan_item(int64_t item) {
     return ap_content_plan_active() && item >= 35010000 && item <= 35010014 ? &content_plan::state.items[item - 35010000] : nullptr;
