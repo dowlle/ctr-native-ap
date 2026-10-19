@@ -208,6 +208,41 @@ static inline int64_t ap_content_box_bit_code(const ctr_content_pad *pad, int sl
     if (!pad || slot < 0 || slot >= 15 || slot >= pad->box_count) return -1;
     return pad->box_locations[slot] > 0 ? pad->box_locations[slot] : -1;
 }
+// Cups (#133 PR 5): a cup pad's Win rides the Trophy display bit; its sweep
+// and its legs' Cup Leg Victory checks take 62200 + pad * 8 + slot (0 the
+// sweep, 1..4 the legs). They ride the race slot under by_reward_type.
+#define AP_CONTENT_BIT_CUP 62200
+#define AP_CONTENT_CUP_STRIDE 8
+static inline int ap_content_cup_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_CUP || bit >= AP_CONTENT_BIT_CUP + 111 * AP_CONTENT_CUP_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP) / AP_CONTENT_CUP_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_CUP) % AP_CONTENT_CUP_STRIDE;
+    return *slot <= AP_CONTENT_CUP_LEGS;
+}
+static inline int64_t ap_content_cup_bit_code(const ctr_content_pad *pad, int slot)
+{
+    int64_t code;
+    if (!pad || !pad->cup || slot < 0 || slot > AP_CONTENT_CUP_LEGS) return -1;
+    code = slot ? pad->legs[slot - 1].victory : pad->sweep_location;
+    return code > 0 ? code : -1;
+}
+// The cup's distinct check codes: Win, sweep, then each leg's Cup Leg Victory
+// once (a repeated leg track shares its check). Returns the count (<= 6);
+// slots[i] is the display slot (-1 the Win, 0 the sweep, 1..4 a leg).
+static inline int ap_content_cup_codes(const ctr_content_pad *pad, int64_t out[6], int slots[6])
+{
+    int n = 0, k, j, seen;
+    if (!pad || !pad->cup) return 0;
+    if (pad->trophy_location > 0) { out[n] = pad->trophy_location; slots[n++] = -1; }
+    if (pad->sweep_location > 0) { out[n] = pad->sweep_location; slots[n++] = 0; }
+    for (k = 0; k < AP_CONTENT_CUP_LEGS; ++k) {
+        if (pad->legs[k].victory <= 0) continue;
+        for (j = 0, seen = 0; j < n; ++j) seen |= out[j] == pad->legs[k].victory;
+        if (!seen) { out[n] = pad->legs[k].victory; slots[n++] = k + 1; }
+    }
+    return n;
+}
 static inline int ap_content_bit_decode(int bit, int *physical, int *mode, int *tier)
 {
     if (bit >= AP_CONTENT_BIT_TROPHY && bit <= AP_CONTENT_BIT_TROPHY + 104) {

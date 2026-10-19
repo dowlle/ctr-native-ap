@@ -379,7 +379,8 @@ static void AP_DumpState(struct GameTracker *gGT)
 			AP_TextBufPrintf(f,
 			        ", \"rungs\": [%lld, %lld, %lld, %lld, %lld], \"wumpa\": %lld, \"wumpa_modes\": %u, "
 			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
-			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d}",
+			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d, "
+			        "\"cup\": %d, \"cup_sweep\": %lld, \"cup_legs\": [%lld, %lld, %lld, %lld]}",
 			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
 			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
 			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
@@ -390,7 +391,12 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        AP_ContentLetterItemReceived(pad->letter_items[1]),
 			        AP_ContentLetterItemReceived(pad->letter_items[2]),
 			        // Relic Race Perfect and Cortex Vortex (#133 PR 3c).
-			        (long long)pad->perfect_location, pad->cortex);
+			        (long long)pad->perfect_location, pad->cortex,
+			        // Cups (#133 PR 5): the Win is the Trophy code above
+			        // (trophy_location); the sweep and each leg's Cup Leg Victory.
+			        pad->cup, (long long)pad->sweep_location,
+			        (long long)pad->legs[0].victory, (long long)pad->legs[1].victory,
+			        (long long)pad->legs[2].victory, (long long)pad->legs[3].victory);
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");

@@ -201,14 +201,131 @@ static int AP_ContentScanCortex(void)
 	return 1;
 }
 
+// Whether one track's bytes are ready: retail always, Cortex Vortex and a
+// custom package once measured (#133 PR 5 shares this with cup legs).
+static int AP_ContentTrackReady(int retail, int cortex, int packageIndex)
+{
+	if (retail) return 1;
+	if (cortex) return ap_content_cortex_ready;
+	return packageIndex >= 0 && packageIndex < AP_CONTENT_MAX_PACKAGES && ap_content_package_ready[packageIndex];
+}
+
 int AP_ContentPadReady(int physicalPad)
 {
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
-	if (pad && pad->occupied && pad->cortex)
-		return ap_content_cortex_ready;
-	return pad && pad->occupied && (pad->retail_id >= 0 ||
-	       (pad->package_index >= 0 && pad->package_index < AP_CONTENT_MAX_PACKAGES &&
-	        ap_content_package_ready[pad->package_index]));
+	int k;
+	if (!pad || !pad->occupied) return 0;
+	// A cup (#133 PR 5) is ready when every leg's track is.
+	if (pad->cup)
+	{
+		for (k = 0; k < AP_CONTENT_CUP_LEGS; ++k)
+			if (!AP_ContentTrackReady(pad->legs[k].retail_id >= 0, pad->legs[k].cortex, pad->legs[k].package_index))
+				return 0;
+		return 1;
+	}
+	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
+}
+
+// Locate, hash and measure a Cortex Vortex or custom track again, arm the
+// loader with it for `race` (host, laps) and copy its pins into the race. A
+// retail race needs nothing. Returns 0 on refusal (the content is marked
+// missing).
+static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRaceContext *race)
+{
+	if (race->retail) return 1;
+	if (cortex)
+	{
+		const struct CustomContentMeasurements *m;
+		struct CustomTrackSeedDescriptor d;
+		// Hash and measure again: a file swapped since connect is refused here.
+		if (!(ap_content_cortex_ready = AP_ContentScanCortex()))
+		{
+			ap_cortex_track_content_required = 1;
+			ap_state_gen++;
+			return 0;
+		}
+		m = &ap_content_cortex_files.measured;
+		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
+		{
+			ap_content_cortex_ready = 0;
+			ap_state_gen++;
+			return 0;
+		}
+		memset(&d, 0, sizeof d);
+		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
+		d.replacesCupLevelID = -1; d.boxes = 0;
+		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
+		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
+		d.flagWumpaCollectible = 1; // measured above (AP_CONTENT_CAP_WUMPA)
+		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
+		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		return CustomTrack_ApplySeedDescriptor(&d);
+	}
+	{
+		const ctr_content_package *pkg = ap_content_plan_package(packageIndex);
+		const struct CustomTrackManagerPackage *p = AP_ContentPackage(packageIndex);
+		const struct CustomContentMeasurements *m;
+		struct CustomTrackSeedDescriptor d;
+		char raceName[CTR_CT_NAME_MAX];
+		int used;
+		if (!pkg) return 0;
+		ap_content_package_index = packageIndex;
+		// Locate and measure again: a file swapped since connect is refused here.
+		if (!AP_ContentScanPackage(packageIndex, 0, &ap_custom_content_status))
+		{
+			ap_content_package_ready[packageIndex] = 0;
+			ap_custom_content_required = 1;
+			ap_state_gen++;
+			return 0;
+		}
+		m = &ap_content_files[packageIndex].measured;
+		AP_ContentRaceName(pkg->display_name, raceName, sizeof raceName);
+		used = p ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
+		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
+		                                       ap_content_files[packageIndex].vrmPath, raceName);
+		if (!used)
+		{
+			ap_content_package_ready[packageIndex] = 0;
+			ap_state_gen++;
+			return 0;
+		}
+		memset(&d, 0, sizeof d);
+		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
+		d.replacesCupLevelID = -1; d.boxes = 0;
+		// The flags the loader acts on are the measured ones, from the bytes it
+		// is about to hash, never the descriptor's claims.
+		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
+		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
+		d.flagMinimap = p ? p->flagMinimap : 0; d.flagGhosts = p ? p->flagGhosts : 0;
+		d.flagWumpaCollectible = (pkg->capabilities & AP_CONTENT_CAP_WUMPA) != 0;
+		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
+		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
+		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
+		return CustomTrack_ApplySeedDescriptor(&d);
+	}
+}
+
+// The race context of one leg of a cup pad (#133 PR 5), not yet armed.
+static void AP_ContentLegContext(const ctr_content_pad *pad, int leg, struct CustomTrackRaceContext *race)
+{
+	const ctr_content_leg *l = &pad->legs[leg];
+	memset(race, 0, sizeof *race);
+	race->physicalPad = pad->physical; race->returnHub = pad->hub;
+	race->laps = l->laps; race->trophyLocation = pad->trophy_location;
+	race->mode = AP_CONTENT_MODE_TROPHY; race->cup = 1; race->leg = leg;
+	race->seedEpoch = ap_content_plan_epoch(); race->retail = l->retail_id >= 0;
+	race->cortex = l->cortex;
+	race->hostLevelID = ap_content_leg_host(l);
+	race->slot = race->retail || race->cortex ? 0 : l->custom_slot;
+	snprintf(race->entryID, sizeof race->entryID, "%s", pad->entry_id);
+	snprintf(race->trackID, sizeof race->trackID, "%s", l->track_id);
 }
 
 int AP_ContentPreparePad(int physicalPad, int mode)
@@ -218,6 +335,15 @@ int AP_ContentPreparePad(int physicalPad, int mode)
 	int64_t codes[3] = {0, 0, 0};
 	if (!pad || !pad->occupied || CustomTrack_StandaloneBusy() || !AP_ContentPadReady(physicalPad) ||
 	    !AP_ContentPadOpen(pad)) return -1;
+	// A cup (#133 PR 5) starts at its first leg, whatever the selector said.
+	if (pad->cup)
+	{
+		AP_ContentLegContext(pad, 0, &race);
+		if (!AP_ContentArmTrack(pad->legs[0].cortex, pad->legs[0].package_index, &race) ||
+		    !CustomTrack_StageStandaloneRace(&race)) return -1;
+		CustomTrack_CortexTrackSelectNextLoad(0);
+		return race.hostLevelID;
+	}
 	// A track entry races one of its modes, through the same gate the
 	// selector used; a Crystal Challenge has no modes and races mode 0.
 	if (pad->crystal ? mode != AP_CONTENT_MODE_TROPHY
@@ -233,84 +359,7 @@ int AP_ContentPreparePad(int physicalPad, int mode)
 	race.slot = pad->custom_slot;
 	snprintf(race.entryID, sizeof race.entryID, "%s", pad->entry_id);
 	snprintf(race.trackID, sizeof race.trackID, "%s", pad->track_id);
-	if (race.cortex)
-	{
-		const struct CustomContentMeasurements *m;
-		struct CustomTrackSeedDescriptor d;
-		// Hash and measure again: a file swapped since connect is refused here.
-		if (!(ap_content_cortex_ready = AP_ContentScanCortex()))
-		{
-			ap_cortex_track_content_required = 1;
-			ap_state_gen++;
-			return -1;
-		}
-		m = &ap_content_cortex_files.measured;
-		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
-		{
-			ap_content_cortex_ready = 0;
-			ap_state_gen++;
-			return -1;
-		}
-		memset(&d, 0, sizeof d);
-		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
-		d.replacesCupLevelID = -1; d.boxes = 0;
-		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
-		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
-		d.flagWumpaCollectible = 1; // measured above (AP_CONTENT_CAP_WUMPA)
-		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
-		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
-		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
-		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
-		snprintf(race.levSha256, sizeof race.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
-		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
-		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
-	}
-	else if (!race.retail)
-	{
-		const ctr_content_package *pkg = ap_content_plan_package(pad->package_index);
-		const struct CustomTrackManagerPackage *p = AP_ContentPackage(pad->package_index);
-		const struct CustomContentMeasurements *m;
-		struct CustomTrackSeedDescriptor d;
-		char raceName[CTR_CT_NAME_MAX];
-		int used;
-		if (!pkg) return -1;
-		ap_content_package_index = pad->package_index;
-		// Locate and measure again: a file swapped since connect is refused here.
-		if (!AP_ContentScanPackage(pad->package_index, 0, &ap_custom_content_status))
-		{
-			ap_content_package_ready[pad->package_index] = 0;
-			ap_custom_content_required = 1;
-			ap_state_gen++;
-			return -1;
-		}
-		m = &ap_content_files[pad->package_index].measured;
-		AP_ContentRaceName(pkg->display_name, raceName, sizeof raceName);
-		used = p ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
-		         : CustomTrack_UseContentFiles(ap_content_files[pad->package_index].levPath,
-		                                       ap_content_files[pad->package_index].vrmPath, raceName);
-		if (!used)
-		{
-			ap_content_package_ready[pad->package_index] = 0;
-			ap_state_gen++;
-			return -1;
-		}
-		memset(&d, 0, sizeof d);
-		d.standalone = 1; d.laps = race.laps; d.hostLevelID = race.hostLevelID;
-		d.replacesCupLevelID = -1; d.boxes = 0;
-		// The flags the loader acts on are the measured ones, from the bytes it
-		// is about to hash, never the descriptor's claims.
-		d.flagCrates = m->ordinaryCrates > 0; d.flagCtrLetters = m->letterC && m->letterT && m->letterR;
-		d.flagRelicCrates = m->relicCrates > 0; d.flagAiNav = m->navPaths > 0;
-		d.flagMinimap = p ? p->flagMinimap : 0; d.flagGhosts = p ? p->flagGhosts : 0;
-		d.flagWumpaCollectible = (pkg->capabilities & AP_CONTENT_CAP_WUMPA) != 0;
-		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
-		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
-		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
-		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
-		snprintf(race.levSha256, sizeof race.levSha256, "%s", pkg->lev_sha256);
-		snprintf(race.vrmSha256, sizeof race.vrmSha256, "%s", pkg->vrm_sha256);
-		if (!CustomTrack_ApplySeedDescriptor(&d)) return -1;
-	}
+	if (!AP_ContentArmTrack(pad->cortex, pad->package_index, &race)) return -1;
 	if (!CustomTrack_StageStandaloneRace(&race)) return -1;
 	CustomTrack_CortexTrackSelectNextLoad(0);
 	return race.hostLevelID;

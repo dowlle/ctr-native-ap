@@ -788,6 +788,15 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 		*outCode = pad->trophy_location > 0 && pad->trophy_location <= 2147483647 ? (long)pad->trophy_location : 0;
 		return 1;
 	}
+	// A content-plan cup (#133 PR 5): its Win, decided at the cup's first leg
+	// and kept for every leg.
+	if ((pad = AP_ContentCupPad()) != NULL)
+	{
+		*outRacer = pad->racer_lock;
+		*outBoost = pad->trophy_boost;
+		*outCode = pad->trophy_location > 0 && pad->trophy_location <= 2147483647 ? (long)pad->trophy_location : 0;
+		return 1;
+	}
 	context = CustomTrack_StandaloneContext(gGT->levelID);
 	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
 		return 0;

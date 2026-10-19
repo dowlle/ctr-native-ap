@@ -16,6 +16,16 @@ extern "C" {
 #define AP_CONTENT_MODE_CTR 1
 #define AP_CONTENT_MODE_RELIC 2
 #define AP_CONTENT_MODE_COUNT 3
+/* One leg of a content-plan cup (#133 PR 5). */
+#define AP_CONTENT_CUP_LEGS 4
+typedef struct ctr_content_leg {
+    int retail_id;     /* engine track 0..15, or -1 */
+    int cortex;        /* 1 for Cortex Vortex */
+    int package_index; /* custom package, or -1 */
+    int custom_slot, named_block, laps;
+    int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
+    char leg_id[65], track_id[65];
+} ctr_content_leg;
 typedef struct ctr_content_pad {
     int physical, hub, keys, occupied;
     /* Manual stage-1 rule (#463), the resolved `manual_pad_requirements_v1`
@@ -85,6 +95,16 @@ typedef struct ctr_content_pad {
     int64_t box_locations[15];
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
+    /* Cups (#133 PR 5): a four-leg cup entry. cup_index is its name in the
+     * 27-name pool; trophy_location is then `<Cup>: Win` (trophy_boost its
+     * rank), sweep_location `<Cup>: Win All Legs` or 0, and track_id the
+     * check owner `cup:<index>`. mode_count is 0. Each leg names the track it
+     * races (as a standalone pad would: retail_id, cortex, or package_index
+     * with custom_slot and named_block), its laps and its `Cup Leg Victory`
+     * code, 0 when the track has a standalone Trophy Race. */
+    int cup, cup_index, sweep_boost;
+    int64_t sweep_location;
+    ctr_content_leg legs[AP_CONTENT_CUP_LEGS];
 } ctr_content_pad;
 
 /* Open admission (#133 PR 2): any complete descriptor, not only compiled
@@ -159,6 +179,11 @@ typedef struct ctr_content_checks {
 static inline int ap_content_pad_host(const struct ctr_content_pad *pad)
 {
     return pad->retail_id >= 0 ? pad->retail_id : pad->cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
+}
+/* The engine LevelID a cup leg races on (#133 PR 5). */
+static inline int ap_content_leg_host(const struct ctr_content_leg *leg)
+{
+    return leg->retail_id >= 0 ? leg->retail_id : leg->cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
 }
 
 /* The single pad-entry evaluator for the content-plan profile. Display, pad

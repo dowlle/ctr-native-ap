@@ -456,7 +456,9 @@ static void validate(const J &p, State &out) {
     for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
     reserved_titles.insert(fold(registry["cortex_vortex"]["name"].get<std::string>()));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
-    const auto tracks = table(p.at("tracks"), 27);
+    // Cups (#133 PR 5) add tracks raced only as legs: at most every retail
+    // race track, every package and Cortex Vortex.
+    const auto tracks = table(p.at("tracks"), 64);
     const auto entries = table(p.at("entries"), 27);
     const auto pads = table(p.at("pads"), 32);
     const auto requirements = table(p.at("requirements"), 64); // 5 hub, up to 27 manual and 27 stage-2
@@ -479,10 +481,11 @@ static void validate(const J &p, State &out) {
         need((later ? stage2_ids : manual_ids).emplace(std::stoi(digits), pair.first).second, "duplicate pad requirement");
     }
     need(requirements.size() == 5 + manual_ids.size() + stage2_ids.size(), "requirement registry mismatch");
-    bool arenas=false, arcade=false, pickups=false, modes=false;
+    bool arenas=false, arcade=false, pickups=false, modes=false, cups=false;
     for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
         arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
-    } else modes |= pair.second->at("modes") != J::array({"trophy"});
+    } else if (pair.second->at("kind") == "cup") cups = true;
+    else modes |= pair.second->at("modes") != J::array({"trophy"});
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
     for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
     J features=J::array({"content_plan_v1"});
@@ -500,6 +503,7 @@ static void validate(const J &p, State &out) {
     if(has_capability)features.push_back("capability_packs_v1");
     if(has_global)features.push_back("global_checks_v1");
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
+    if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -544,6 +548,87 @@ static void validate(const J &p, State &out) {
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
+    // Cups (#133 PR 5). A leg names a plan track; a track raced only in cups
+    // is checked here like a standalone one (registry metadata, package,
+    // named block, room title) and must list the trophy mode only. A leg track
+    // without a standalone Trophy Race owns a `Cup Leg Victory` check with a
+    // route per occurrence. Sweeps exist for every cup or none.
+    bool sweeps = false;
+    for (const auto &check : p["checks"])
+        sweeps |= check.is_object() && check.contains("kind") && check["kind"] == "cup_sweep";
+    std::set<std::string> trophy_tracks;
+    for (const auto &pair : entries)
+        if (pair.second->at("kind") == "track" && pair.second->at("modes").is_array())
+            for (const auto &m : pair.second->at("modes"))
+                if (m == "trophy") trophy_tracks.insert(text(pair.second->at("track_id")));
+    struct LegTrack { ctr_content_leg leg; std::string title; int full_laps; };
+    std::map<std::string, LegTrack> leg_tracks;
+    auto leg_track = [&](const std::string &track_id) -> const LegTrack & {
+        const auto known = leg_tracks.find(track_id);
+        if (known != leg_tracks.end()) return known->second;
+        need(tracks.count(track_id), "a cup leg names a track the plan does not list");
+        const J &track = *tracks.at(track_id);
+        LegTrack lt{};
+        ctr_content_leg &leg = lt.leg;
+        leg.retail_id = -1; leg.package_index = -1; leg.named_block = -1;
+        const auto title = text(track.at("display_name"), false);
+        lt.title = title;
+        if (track.at("origin") == "retail") {
+            fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            const int rid = number(track["retail_id"], 0, 17);
+            need(rid < 16 && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] &&
+                 track["laps"] == AP_CONTENT_RETAIL_LAPS, "a retail cup leg is not a race track or its metadata differs");
+            leg.retail_id = rid;
+            leg.victory = registry["retail"][rid]["cup_leg"].get<int64_t>();
+        } else if (track.at("origin") == "cortex_vortex") {
+            fields(track, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            const J &row = registry["cortex_vortex"];
+            need(track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
+                 title == row["name"].get<std::string>() && track["laps"] == row["laps"], "Cortex Vortex metadata mismatch");
+            leg.cortex = 1;
+            leg.victory = row["cup_leg"].get<int64_t>();
+        } else {
+            J base = track;
+            const bool named = base.is_object() && base.contains("named_block");
+            const bool titled = base.is_object() && base.contains("room_title");
+            if (named) base.erase("named_block");
+            if (titled) base.erase("room_title");
+            fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
+            const auto package_id = text(track["package_id"]);
+            need(track["origin"] == "custom" && packages.count(package_id), "unsupported custom origin or package");
+            const J &pkg = *packages.at(package_id);
+            const ctr_content_package &record = out.packages[package_index.at(package_id)];
+            need(track_id == "custom/" + pkg["content_id"].get<std::string>() + "/" + pkg["revision"].get<std::string>() &&
+                 title == pkg["display_name"] && number(track["laps"], 1, 7) == record.laps, "custom metadata mismatch");
+            // A custom leg races a Trophy-style race: eight karts with AI paths.
+            need(record.capabilities & AP_CONTENT_CAP_ARCADE, "a custom cup leg needs the arcade capability");
+            leg.package_index = package_index.at(package_id);
+            leg.custom_slot = number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES);
+            if (titled) {
+                lt.title = text(track["room_title"], false);
+                need(ap_room_title_ok(lt.title.c_str(), lt.title.size()), "invalid room title");
+            }
+            const auto owned = named_table.find(record.content_id);
+            if (named) {
+                leg.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                need(owned != named_table.end() && leg.named_block == owned->second.block &&
+                     titled && lt.title == owned->second.name, "named block does not match this build's registry");
+                leg.victory = ap_named_location_code(leg.named_block, AP_NAMED_OFF_CUP_LEG_VICTORY);
+            } else {
+                need(owned == named_table.end(), "a track with a named block must use it");
+                need(!reserved_titles.count(fold(lt.title)), "generic-slot room title takes a retail or named track's name");
+                leg.victory = registry["custom_cup_leg_locations"][leg.custom_slot - 1].get<int64_t>();
+            }
+        }
+        lt.full_laps = number(track["laps"], 1, 7);
+        if (trophy_tracks.count(track_id)) leg.victory = 0;
+        copy(leg.track_id, J(track_id));
+        return leg_tracks.emplace(track_id, lt).first->second;
+    };
+    int shortened = -1; // the plan-wide shortened-cup switch, -1 before a leg tells
+    std::set<int> cup_names;
+    struct LegUse { std::string track, entry, pad, leg; };
+    std::vector<LegUse> leg_uses; // in pad order; re-sorted to entry order below
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
         const int physical = garage ? pi - 27 : registry["pads"][pi]["physical"].get<int>();
@@ -577,6 +662,68 @@ static void validate(const J &p, State &out) {
         need(!garage && entries.count(entry_id) && used_entries.insert(entry_id).second, "invalid or repeated pad entry");
         const J &entry = *entries.at(entry_id);
         const bool crystal=entry.at("kind")=="crystal";
+        if (entry.at("kind") == "cup") {
+            // Cups (#133 PR 5): `entry/cup:<name index>`, the pool name, four
+            // legs `<entry>/leg:<n>`, the player-only roster, eight karts.
+            fields(entry, {"id", "kind", "display_name", "legs", "roster", "field_size"});
+            const std::string first = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
+            need(pad["mode_gates"] == J::array({J{{"mode", "cup"}, {"stage", 1}, {"requirement_id", first}}}), "unsupported mode gates");
+            if (manual_ids.count(physical)) manual_pad[physical] = &dest;
+            const std::string prefix = "entry/cup:";
+            need(entry_id.rfind(prefix, 0) == 0 && entry_id.size() > prefix.size() && entry_id.size() <= prefix.size() + 2, "cup entry id is not entry/cup:<name index>");
+            const std::string digits = entry_id.substr(prefix.size());
+            need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) &&
+                 (digits.size() == 1 || digits[0] != '0'), "cup entry id is not entry/cup:<name index>");
+            const int index = std::stoi(digits);
+            const J &names = registry["cups"];
+            need(index < (int)names.size() && cup_names.insert(index).second, "unknown or repeated cup name");
+            const std::string name = names[index]["name"];
+            need(entry["display_name"] == name, "cup display name is not its pool name");
+            need(entry["roster"] == J::array({J{{"role", "player"}, {"slot", 0}}}) && entry["field_size"] == 8,
+                 "cup roster or field size is not the Adventure field");
+            const J &legs = entry["legs"];
+            need(legs.is_array() && legs.size() == AP_CONTENT_CUP_LEGS, "a cup has exactly four legs");
+            for (int n = 0; n < AP_CONTENT_CUP_LEGS; ++n) {
+                const J &leg = legs[n];
+                fields(leg, {"id", "track_id", "laps"});
+                const std::string leg_id = entry_id + "/leg:" + std::to_string(n);
+                need(leg["id"] == leg_id, "cup leg id is not <entry>/leg:<n>");
+                const LegTrack &info = leg_track(text(leg["track_id"]));
+                dest.legs[n] = info.leg;
+                copy(dest.legs[n].leg_id, J(leg_id));
+                // Laps: the track's own, or max(1, floor(laps / 2)) with
+                // one_lap_cups, the same switch in every leg.
+                const int full = info.full_laps, short_laps = full / 2 > 1 ? full / 2 : 1;
+                const int laps = number(leg["laps"], 1, 7);
+                need(laps == full || laps == short_laps, "a cup leg's laps are not its track's laps or the shortened-cup laps");
+                if (full != short_laps) {
+                    const int now = laps == short_laps ? 1 : 0;
+                    need(shortened < 0 || shortened == now, "cup legs shorten their laps in some legs and not in others");
+                    shortened = now;
+                }
+                dest.legs[n].laps = laps;
+                if (dest.legs[n].victory) leg_uses.push_back(LegUse{dest.legs[n].track_id, entry_id, id, leg_id});
+            }
+            dest.occupied = dest.cup = 1;
+            dest.cup_index = index;
+            dest.laps = dest.legs[0].laps;
+            dest.trophy_location = names[index]["win"].get<int64_t>();
+            dest.sweep_location = sweeps ? names[index]["sweep"].get<int64_t>() : 0;
+            const std::string owner = "cup:" + std::to_string(index);
+            copy(dest.entry_id, entry["id"]); copy(dest.track_id, J(owner));
+            copy(dest.display_name, J(name)); copy(dest.room_title, J(name));
+            need(expected_checks.emplace(dest.trophy_location, J{{"location", dest.trophy_location}, {"owner", owner}, {"kind", "cup"},
+                                                                 {"display_name", name + ": Win"},
+                                                                 {"routes", J::array({route_record(entry_id, "cup", id, "win")})}}).second,
+                 "duplicate check identity");
+            if (sweeps)
+                need(expected_checks.emplace(dest.sweep_location, J{{"location", dest.sweep_location}, {"owner", owner}, {"kind", "cup_sweep"},
+                                                                    {"display_name", name + ": Win All Legs"},
+                                                                    {"routes", J::array({route_record(entry_id, "cup", id, "win_all_legs")})}}).second,
+                     "duplicate check identity");
+            if (!keys) starting_entry = true;
+            continue;
+        }
         const std::string first_gate = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
         if (crystal)
             need(pad["mode_gates"] == J::array({J{{"mode", "crystal"}, {"stage", 1}, {"requirement_id", first_gate}}}), "unsupported mode gates");
@@ -854,6 +1001,47 @@ static void validate(const J &p, State &out) {
         }
         if (!keys) starting_entry = true;
     }
+    // Cups (#133 PR 5): tracks raced only as legs take their identities here,
+    // once, and list the trophy mode only.
+    for (const auto &pair : leg_tracks) {
+        if (used_tracks.count(pair.first)) continue;
+        const J &track = *tracks.at(pair.first);
+        const ctr_content_leg &leg = pair.second.leg;
+        need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) &&
+             track.at("field_size") == 8, "a track raced only in cups lists the trophy mode only");
+        if (leg.retail_id >= 0) need(retail_ids.insert(leg.retail_id).second, "unknown or duplicate retail track");
+        else if (leg.cortex) { need(!cortex_seen, "Cortex Vortex metadata mismatch"); cortex_seen = true; }
+        else {
+            need(custom_slots.insert(leg.custom_slot).second, "custom metadata mismatch");
+            if (leg.named_block >= 0) need(named_blocks.insert(leg.named_block).second, "duplicate named block");
+            used_packages.insert(out.packages[leg.package_index].id);
+        }
+        used_tracks.insert(pair.first);
+    }
+    for (const auto &pair : leg_tracks)
+        if (pair.second.leg.package_index >= 0) used_packages.insert(out.packages[pair.second.leg.package_index].id);
+    // `Cup Leg Victory`: a route per occurrence, in the plan's entry order,
+    // then leg order (apworld content_cups.leg_victories).
+    {
+        std::map<std::string, size_t> entry_order;
+        for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
+        std::stable_sort(leg_uses.begin(), leg_uses.end(), [&](const LegUse &a, const LegUse &b) {
+            return entry_order.at(a.entry) < entry_order.at(b.entry); });
+        std::vector<std::string> order;
+        std::map<std::string, J> victories;
+        for (const auto &use : leg_uses) {
+            const LegTrack &info = leg_tracks.at(use.track);
+            if (!victories.count(use.track)) {
+                order.push_back(use.track);
+                victories[use.track] = J{{"location", info.leg.victory}, {"owner", use.track}, {"kind", "cup_leg"},
+                                         {"display_name", info.title + ": Cup Leg Victory"}, {"routes", J::array()}};
+            }
+            victories[use.track]["routes"].push_back(J{{"entry_id", use.entry}, {"mode", "cup"}, {"leg_id", use.leg},
+                                                       {"encounter_id", nullptr}, {"own_pad_id", use.pad}, {"award", "leg_win"}});
+        }
+        for (const auto &track : order)
+            need(expected_checks.emplace(victories[track]["location"].get<int64_t>(), victories[track]).second, "duplicate check identity");
+    }
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
     // `wumpa: global`: one check, a route per Trophy Race and CTR Challenge
     // that can reach ten fruit, in physical pad order, then mode order.
@@ -925,6 +1113,8 @@ static void validate(const J &p, State &out) {
     for (auto &pad : out.pads) {
         if (!pad.occupied) continue;
         const auto trophy = out.boosts.find(pad.trophy_location), ctr = out.boosts.find(pad.ctr_location);
+        const auto sweep = out.boosts.find(pad.sweep_location);
+        pad.sweep_boost = pad.sweep_location > 0 && sweep != out.boosts.end() ? sweep->second : 0;
         pad.trophy_boost = pad.trophy_location > 0 && trophy != out.boosts.end() ? trophy->second : 0;
         pad.ctr_boost = pad.ctr_location > 0 && ctr != out.boosts.end() ? ctr->second : 0;
     }

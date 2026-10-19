@@ -377,6 +377,20 @@ long AP_StandaloneRelicCode(int tier);
 // package refuses the entry.
 int AP_ContentPreparePad(int physicalPad, int mode);
 int AP_ContentPadReady(int physicalPad);
+// Content-plan cups (#133 PR 5, ap_hooks_custom_content.c): the running
+// cup's pad and leg, its standings name and hub-return pad, the next leg's
+// load, the leg results (Cup Leg Victory, sweep record) and the cup's end.
+struct GameTracker;
+const ctr_content_pad *AP_ContentCupPad(void);
+int AP_ContentCupLeg(void);
+const char *AP_ContentCupName(void);
+int AP_ContentCupPadLevel(void);
+int AP_ContentCupNextLeg(int leg, int *outLaps);
+void AP_ContentCupEnter(void);
+void AP_ContentCupOnLevelStart(void);
+void AP_ContentCupOnLoadRequested(int level);
+void AP_ContentCupLegResult(struct GameTracker *gGT);
+int AP_ContentCupFinish(struct GameTracker *gGT, int won);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);

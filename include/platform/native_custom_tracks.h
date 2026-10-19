@@ -82,6 +82,11 @@ struct CustomTrackSeedDescriptor
 // Stage only after applying a verified standalone descriptor. Entry sites
 // select retail explicitly; a same-host request without selection is restart.
 int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context);
+// Content-plan cup legs (#133 PR 5): open the window in which the next leg's
+// package may be armed while the cup is running, stage that leg, close it.
+int CustomTrack_BeginCupLegSwitch(void);
+void CustomTrack_EndCupLegSwitch(void);
+int CustomTrack_StageCupLeg(const struct CustomTrackRaceContext *context);
 int CustomTrack_StandaloneBusy(void);
 void CustomTrack_SelectRetailRace(void);
 void CustomTrack_OnRaceLoadRequested(int levelID);

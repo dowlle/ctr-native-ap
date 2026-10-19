@@ -332,6 +332,16 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
         int count=0,n;
         if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
+        if(pad->cup) {
+            // Cups (#133 PR 5): the Win, the sweep and each leg track's Cup
+            // Leg Victory once.
+            int64_t codes[6]; int slots[6], k, c=ap_content_cup_codes(pad,codes,slots);
+            for(k=0;k<c && count<cap;++k)
+                if(!ap_net_location_checked((long)codes[k]))
+                    outBits[count++]=slots[k]<0 ? AP_CONTENT_BIT_TROPHY+pad->physical
+                                                : AP_CONTENT_BIT_CUP+pad->physical*AP_CONTENT_CUP_STRIDE+slots[k];
+            return count;
+        }
         if(pad->crystal) {
             if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
         }
@@ -851,8 +861,11 @@ static int AP_GlowBitRewardGroup(int globalBit)
         // retail pads (ruling 2026-09-30); the perfect rides the relic slot.
         if(ap_content_family_bit_decode(globalBit,&contentPad,&contentTier))
             return ap_content_family_reward_group(contentTier);
-        // Item Box checks (#133 PR 4e) ride the race slot.
+        // Item Box checks (#133 PR 4e) ride the race slot, and so do a cup's
+        // sweep and Cup Leg Victory checks (#133 PR 5).
         if(ap_content_box_bit_decode(globalBit,&contentPad,&contentTier))
+            return 0;
+        if(ap_content_cup_bit_decode(globalBit,&contentPad,&contentTier))
             return 0;
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
@@ -1118,6 +1131,11 @@ int AP_PadState(int physLevelID, int destLevelID)
         if(pad->crystal) {
             int bits[21];
             return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
+        }
+        // Cups (#133 PR 5): open while a cup check is left, then done (replayable).
+        if(pad->cup) {
+            int bits[6];
+            return AP_PadUncollectedGlowBits(physLevelID,bits,6) ? 2 : 4;
         }
 		// Track modes (#133 PR 3): 2 while an open mode has a check left, 3
 		// when only the second-stage modes do, 4 when everything is checked.

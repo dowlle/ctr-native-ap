@@ -322,6 +322,9 @@ void MainRaceTrack_RequestLoad(s16 levelID)
 {
 #ifdef CTR_AP
     AP_CupSweepOnLoadRequested(levelID);
+#ifdef CTR_CUSTOM_TRACKS
+    AP_ContentCupOnLoadRequested(levelID); // #133 PR 5
+#endif
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
 	// A retry keeps the custom race. Leaving the host slot ends it only when

@@ -29,6 +29,11 @@ struct CustomTrackRaceContext
 	// Content-plan Cortex Vortex (#133 PR 3c): the bundled pair raced as a
 	// custom-bytes standalone race on host 13, with no custom slot.
 	int cortex;
+	// Content-plan cup (#133 PR 5): a leg of a four-leg cup. entryID is the
+	// cup's entry, trackID the leg's track, trophyLocation the cup's Win and
+	// laps this leg's laps. The context moves to the next leg at each leg
+	// advance (CustomRaceLatch_StageNext) and survives a restart.
+	int cup, leg;
 };
 
 struct CustomTrackRaceLatch
@@ -78,6 +83,8 @@ static inline int CustomRaceContext_Valid(const struct CustomTrackRaceContext *c
 	       c->returnHub >= 25 && c->returnHub <= 29 &&
 	       (c->retail == 0 || c->retail == 1) && (c->cortex == 0 || c->cortex == 1) &&
 	       (!c->cortex || (!c->retail && !c->crystal && c->hostLevelID == 13)) &&
+	       (c->cup == 0 || c->cup == 1) && c->leg >= 0 && c->leg <= 3 && (c->cup || c->leg == 0) &&
+	       (!c->cup || (!c->crystal && c->mode == 0)) &&
 	       ((c->retail || c->cortex) ? c->slot == 0 : (c->slot >= 1 && c->slot <= 132)) &&
 	       c->laps >= 1 && c->laps <= 7 &&
 	       c->trophyLocation > 0 && c->trophyLocation <= INT64_C(9007199254740991) &&
@@ -91,6 +98,22 @@ static inline int CustomRaceLatch_Stage(struct CustomTrackRaceLatch *l,
 	                                    const struct CustomTrackRaceContext *c)
 {
 	if (!l || !CustomRaceContext_Valid(c) || l->active || l->pendingKind)
+		return 0;
+	l->pending = *c;
+	l->pendingKind = 2;
+	return 1;
+}
+
+// The next leg of the running cup (#133 PR 5): only while the current race
+// is a cup leg of the same seed, cup entry and pad, and only for the next leg.
+// The latch stays active; the next load request makes the staged leg current.
+static inline int CustomRaceLatch_StageNext(struct CustomTrackRaceLatch *l,
+	                                        const struct CustomTrackRaceContext *c)
+{
+	if (!l || !CustomRaceContext_Valid(c) || !l->active || l->pendingKind || !l->current.cup || !c->cup ||
+	    c->seedEpoch != l->current.seedEpoch || c->physicalPad != l->current.physicalPad ||
+	    c->leg != l->current.leg + 1 || strcmp(c->entryID, l->current.entryID) ||
+	    c->trophyLocation != l->current.trophyLocation)
 		return 0;
 	l->pending = *c;
 	l->pendingKind = 2;

@@ -670,10 +670,19 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
 					// The first mode opens with the pad (#133 PR 3); its label
 					// leads the line. A Crystal Challenge keeps its one gate.
-					const char *firstMode = pad && pad->occupied && !pad->crystal ?
-						ap_content_mode_label(pad->modes[0]) : "Trophy";
+					const char *firstMode = pad && pad->occupied && pad->cup ? "Cup" :
+						pad && pad->occupied && !pad->crystal ? ap_content_mode_label(pad->modes[0]) : "Trophy";
 					int firstDone = 1, k;
-					for (k = 0; pad && pad->occupied && k < (pad->crystal ? 1 : pad->mode_count); k++)
+					// A cup (#133 PR 5) is done when its Win, sweep and Cup Leg
+					// Victory checks are.
+					if (pad && pad->occupied && pad->cup)
+					{
+						int64_t cupCodes[6];
+						int cupSlots[6], cupN = ap_content_cup_codes(pad, cupCodes, cupSlots);
+						for (k = 0; k < cupN; k++)
+							if (!AP_ContentCodeChecked(cupCodes[k])) firstDone = 0;
+					}
+					for (k = 0; pad && pad->occupied && !pad->cup && k < (pad->crystal ? 1 : pad->mode_count); k++)
 						if (pad->crystal ? !AP_ContentCodeChecked(pad->trophy_location)
 						                 : (pad->stages[k] == 1 &&
 						                    ap_content_mode_pending(pad, pad->modes[k], AP_ContentCodeChecked)))
@@ -1210,6 +1219,23 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			sdata->Loading.OnBegin.RemBitsConfig0 &= ~RELIC_RACE;
 		}
 		gGT->numLaps = (char)pad->laps;
+		// A content-plan cup (#133 PR 5) runs on the Adventure Cup machinery:
+		// engine cup 0 (never the Purple Cup's boss field), its legs and laps
+		// from the plan through the cup race context, its Win paid on points
+		// (UI_CupStandings.c, AP_ContentCupFinish).
+		if (pad->cup)
+		{
+			sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
+			sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
+			gGT->cup.cupID = 0;
+			gGT->cup.trackIndex = 0;
+			for (i = 0; i < 8; i++)
+				gGT->cup.points[i] = 0;
+			AP_HitCupSnapshotBegin(gGT->cup.cupID);
+			AP_CupEnterFromHub(gGT->levelID);
+			AP_ContentCupEnter();
+			gGT->numLaps = (char)pad->legs[0].laps;
+		}
 		levelID = host;
 		goto WarpPad_RequestLoad;
 	}

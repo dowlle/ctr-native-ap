@@ -10,6 +10,7 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
+#include <map>
 #include <cstring>
 #include <set>
 using J = nlohmann::json;
@@ -1252,6 +1253,61 @@ int main(int argc, char **argv) {
                 c["routes"] = kept;
             }
         expect(parse(crateless), "crates: without its routes the crateless track is admitted");
+    }
+    // Cups (#133 PR 5): nine cups over retail, custom (named and generic) and
+    // Cortex Vortex legs, shortened laps, sweeps and Cup Leg Victory checks.
+    // Every cup pad is checked against the room's own records.
+    J cups;
+    std::ifstream("tools/fixtures/content-plan/cups.json") >> cups;
+    expect(parse(cups) && bind_room(cups) && ap_content_plan_active(), "cups room binds");
+    {
+        const J &plan = cups["content_plan"];
+        std::map<std::string, J> tracks, checks_by_owner_leg;
+        for (const auto &t : plan["tracks"]) tracks[t["id"]] = t;
+        std::map<std::string, int64_t> victory;
+        for (const auto &c : plan["checks"]) if (c["kind"] == "cup_leg") victory[c["owner"]] = c["location"].get<int64_t>();
+        int seen = 0;
+        for (const auto &pad_record : plan["pads"]) {
+            if (pad_record["entry_id"].is_null()) continue;
+            const J *entry = nullptr;
+            for (const auto &e : plan["entries"]) if (e["id"] == pad_record["entry_id"]) entry = &e;
+            if (!entry || (*entry)["kind"] != "cup") continue;
+            ++seen;
+            const std::string id = pad_record["id"];
+            const ctr_content_pad *pad = ap_content_plan_pad(std::stoi(id.substr(4)));
+            const int index = std::stoi((*entry)["id"].get<std::string>().substr(10));
+            expect(pad && pad->occupied && pad->cup && !pad->crystal && pad->mode_count == 0 && pad->cup_index == index &&
+                   pad->trophy_location == 35027000 + index && pad->sweep_location == 35027200 + index &&
+                   (*entry)["display_name"] == pad->display_name, "cups: pad, name, Win and sweep codes");
+            for (int n = 0; pad && n < 4; ++n) {
+                const J &leg = (*entry)["legs"][n];
+                const J &track = tracks[leg["track_id"]];
+                const ctr_content_leg &l = pad->legs[n];
+                const int host = track["origin"] == "retail" ? track["retail_id"].get<int>() : track["origin"] == "cortex_vortex" ? 13 : 6;
+                expect(ap_content_leg_host(&l) == host && l.laps == leg["laps"].get<int>() && leg["track_id"] == l.track_id &&
+                       leg["id"] == l.leg_id && l.cortex == (track["origin"] == "cortex_vortex") &&
+                       (l.package_index >= 0) == (track["origin"] == "custom"),
+                       "cups: leg host, laps and identity");
+                expect(l.victory == (victory.count(leg["track_id"]) ? victory[leg["track_id"]] : 0), "cups: leg Cup Leg Victory code");
+                const int full = track["laps"].get<int>();
+                expect(l.laps == (full / 2 > 1 ? full / 2 : 1), "cups: one_lap_cups shortens every leg");
+            }
+            int64_t codes[6]; int slots[6];
+            const int n = ap_content_cup_codes(pad, codes, slots);
+            expect(n >= 2 && codes[0] == pad->trophy_location && slots[0] == -1 && codes[1] == pad->sweep_location,
+                   "cups: Win and sweep lead the cup's codes");
+            int phys = 0, slot = 0;
+            expect(ap_content_cup_bit_decode(AP_CONTENT_BIT_CUP + pad->physical * AP_CONTENT_CUP_STRIDE, &phys, &slot) &&
+                   phys == pad->physical && slot == 0 && ap_content_cup_bit_code(pad, 0) == pad->sweep_location,
+                   "cups: the sweep display bit resolves");
+        }
+        expect(seen == 9, "cups: nine cup pads");
+        expect(!victory.empty(), "cups: the fixture has Cup Leg Victory checks");
+        // A forged leg refuses the room.
+        J forged = cups;
+        for (auto &e : forged["content_plan"]["entries"])
+            if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
+        expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

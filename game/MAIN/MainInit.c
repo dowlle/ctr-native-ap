@@ -855,6 +855,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 		// loads reach this call too but leave the latch set.
 		AP_RaceAttempt_OnLevelStart(gGT);
 		AP_CupSweepOnLevelStart(gGT);
+#ifdef CTR_CUSTOM_TRACKS
+		AP_ContentCupOnLevelStart(); // #133 PR 5: content-plan cup sweep record
+#endif
 #endif
 
 		if (gGT->boolDemoMode != 0)

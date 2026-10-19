@@ -395,6 +395,7 @@
 #include "../ap/ap_hooks_race_checks.c"
 #include "../ap/ap_hooks_frame.c"
 #include "../ap/ap_hooks_cup_sweeps.c"
+#include "../ap/ap_hooks_content_cups.c" // #133 PR 5 content-plan cups
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
 #include "../ap/ap_oxide_scene.c"  // #377 once-per-seed Oxide scene decision (host-linkable)
 #include "../ap/ap_boss_door_scene.c" // #377 once-per-hub boss-door scene decision (host-linkable)
