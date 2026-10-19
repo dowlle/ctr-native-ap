@@ -175,6 +175,10 @@ int main(void) {
  envBoostMode=1; cupPad.trophy_boost=2; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
  got(35010027,1); got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35027004); cases++;
  checked[checkedCount++]=35027004; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ /* With a sweep: once the Win is collected the Win All Legs is at stake, at its own rank. */
+ cupPad.sweep_location=35027204; cupPad.sweep_boost=0; s=decide(&handled); assert(handled && s.stakes && s.code==35027204); cases++;
+ cupPad.sweep_boost=3; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ checked[checkedCount++]=35027204; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
  /* The pure decision on its own. */
  s=AP_WinStakesContentDecide(0,0,0); assert(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  s=AP_WinStakesContentDecide(35011000,1,1); assert(!s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
