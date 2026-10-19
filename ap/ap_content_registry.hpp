@@ -17,6 +17,9 @@
 // `itemsanity` and `hit_character` (#133 PR 4d) are the global check families'
 // codes and frozen names, in the apworld's class order (itemsanity.py,
 // hit_character.py): the 22 weapon use checks and the 16 Hit checks.
+// Cups (#133 PR 5): `cups` is the 27-name pool in code order with each name's
+// `win` and `sweep` codes; `cup_leg` on the retail rows and Cortex Vortex and
+// `custom_cup_leg_locations` per generic slot are the Cup Leg Victory codes.
 // Custom packages are not listed: content plans admit any complete descriptor
 // (#133 PR 2) and the bytes are verified on load.
 // `named_blocks` is the apworld's named-track table (data/named_tracks.json):
