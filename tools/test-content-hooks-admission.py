@@ -154,6 +154,7 @@ int main(void)
 	snprintf(plan_package.vrm_sha256, sizeof plan_package.vrm_sha256, "%s", report.vrmSha256);
 	plan_package.lev_bytes = (uint32_t)levSize; plan_package.vrm_bytes = sizeof vrmBytes;
 	plan_package.laps = 3;
+	plan_package.weapon_crates = AP_CONTENT_WEAPON_CRATES_UNSTATED; /* #133 PR 4e: unstated unless a case says */
 	memset(&plan_pad, 0, sizeof plan_pad);
 	plan_pad.physical = 3; plan_pad.hub = 26; plan_pad.occupied = 1; plan_pad.retail_id = -1;
 	plan_pad.package_index = 0; plan_pad.custom_slot = 1; plan_pad.laps = 3; plan_pad.named_block = -1;
@@ -198,6 +199,26 @@ int main(void)
 	plan_package.super_turbo_pads = 0;
 	reset_calls();
 	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "super pads stated false and absent admitted");
+
+	/* Weapon crates (#133 PR 4e): the fixture LEV holds one weapon crate. A
+	   stated count other than 1 is refused at connect and at pad entry; 1 and
+	   unstated are admitted. */
+	plan_package.weapon_crates = 2;
+	reset_calls();
+	expect(!preflight() && !AP_ContentPadReady(3) && ap_custom_content_required &&
+	       strstr(ap_custom_content_status.detail, "weapon_crates is 2") &&
+	       strstr(log_text, "content plan refused package/fixture-loop/2.1"), "a wrong weapon crate count refused at connect");
+	ap_content_package_ready[0] = 1;
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_package_ready[0] && used_files == 0,
+	       "a wrong weapon crate count refused at pad entry");
+	plan_package.weapon_crates = 0;
+	reset_calls();
+	expect(!preflight() && strstr(ap_custom_content_status.detail, "weapon_crates is 0"),
+	       "no weapon crates stated on a track with one refused");
+	plan_package.weapon_crates = 1;
+	reset_calls();
+	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "the measured weapon crate count admitted");
+	plan_package.weapon_crates = AP_CONTENT_WEAPON_CRATES_UNSTATED;
 
 	/* False claim: Wumpa is not in the bytes. Refused at connect and at pad entry. */
 	plan_package.capabilities |= AP_CONTENT_CAP_WUMPA;

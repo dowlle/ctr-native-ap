@@ -4,7 +4,8 @@
 // code a race sends, the family display bits and the Lettersanity answers on
 // the pad's own letter codes. Relic Race Perfect (#133 PR 3c): the family
 // slot of the Relic Race, the pad staying open for it, its glow prize slot,
-// and the engine host of a Cortex Vortex pad.
+// and the engine host of a Cortex Vortex pad. Item Box checks (#133 PR 4e):
+// pending on every mode, the pad staying open for them, and their display bits.
 // cc -std=c99 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -I ap -I . -I include -o /tmp/test-content-track-checks tools/test-content-track-checks.c
 #include <stdio.h>
 #include <string.h>
@@ -209,6 +210,47 @@ int main(void)
         r.retail_id = 3; expect(ap_content_pad_host(&r) == 3, "a retail pad races its own LevelID");
         r.retail_id = -1; expect(ap_content_pad_host(&r) == AP_CONTENT_CUSTOM_HOST, "a custom pad borrows host 6");
         r.cortex = 1; expect(ap_content_pad_host(&r) == 13, "Cortex Vortex races on host 13");
+    }
+
+    // Item Box checks (#133 PR 4e): every mode of the pad reaches all of
+    // them, the pad stays open while one is left, and each has a display bit
+    // on the race slot.
+    {
+        ctr_content_pad b = crash_cove();
+        int k;
+        memset(b.rung_locations, 0, sizeof b.rung_locations); b.wumpa_location = 0; b.wumpa_modes = 0;
+        memset(b.letter_locations, 0, sizeof b.letter_locations);
+        b.box_count = 3; b.box_locations[0] = 35014045; b.box_locations[1] = 35014046; b.box_locations[2] = 35014047;
+        checked_count = 0;
+        check(b.trophy_location); check(b.ctr_location);
+        for (k = 0; k < 3; ++k) check(b.relic_locations[k]);
+        expect(ap_content_box_pending(&b, checked) == 3, "three boxes pending");
+        expect(ap_content_mode_pending(&b, AP_CONTENT_MODE_TROPHY, checked) == 3 &&
+               ap_content_mode_pending(&b, AP_CONTENT_MODE_CTR, checked) == 3 &&
+               ap_content_mode_pending(&b, AP_CONTENT_MODE_RELIC, checked) == 3, "every mode reaches every box");
+        expect(ap_content_track_pad_state(&b, counts, checked) == 2, "a box left keeps the pad open");
+        b.modes[2] = AP_CONTENT_MODE_RELIC; b.mode_count = 2;
+        expect(ap_content_mode_pending(&b, AP_CONTENT_MODE_RELIC, checked) == 0, "a mode the pad lacks reaches no box");
+        b.mode_count = 3;
+        check(35014045); check(35014046); check(35014047);
+        expect(ap_content_track_pad_state(&b, counts, checked) == 4, "every box checked: replayable");
+        b.box_count = 0;
+        expect(ap_content_box_pending(&b, checked) == 0 && ap_content_box_pending(NULL, checked) == 0, "no boxes, no pending");
+        b.box_count = 3;
+        for (k = 0; k < 15; ++k) {
+            const int bit = AP_CONTENT_BIT_BOX + b.physical * AP_CONTENT_BOX_STRIDE + k;
+            expect(ap_content_box_bit_decode(bit, &physical, &slot) && physical == 3 && slot == k &&
+                   ap_content_box_bit_code(&b, slot) == (k < 3 ? b.box_locations[k] : -1), "box bit decodes to its code");
+            expect(!ap_content_family_bit_decode(bit, &physical, &i) && !ap_content_bit_decode(bit, &physical, &i, &n),
+                   "box bits are outside the mode and family bit ranges");
+        }
+        expect(!ap_content_box_bit_decode(AP_CONTENT_BIT_BOX + 3 * AP_CONTENT_BOX_STRIDE + 15, &physical, &slot) &&
+               !ap_content_box_bit_decode(AP_CONTENT_BIT_BOX - 1, &physical, &slot) &&
+               !ap_content_box_bit_decode(AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE, &physical, &slot) &&
+               ap_content_box_bit_code(NULL, 0) == -1 && ap_content_box_bit_code(&b, 15) == -1,
+               "unused and out-of-range box bits decode to nothing");
+        expect(AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE <= AP_CONTENT_BIT_BOX &&
+               AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE <= 60000, "box bits sit between the families and the crystal pickups");
     }
 
     printf("%d checks, %d failures\n", checks, failures);

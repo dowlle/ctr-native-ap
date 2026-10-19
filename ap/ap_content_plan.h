@@ -73,6 +73,16 @@ typedef struct ctr_content_pad {
      * Trophy Race and CTR Token Challenge need (the plan checks' `boost`), 0
      * when none. Bound to racer_lock when it is set. */
     int trophy_boost, ctr_boost;
+    /* Item Box Locations (#133 PR 4e): the track's box checks, by 0-based
+     * slot (the name is "Item Box <slot + 1>"), 0 where the slot has none.
+     * Retail tracks keep their frozen codes (35014000 block), a named-block
+     * custom track uses offsets 20..34 for its first box_count slots, and a
+     * generic slot or Cortex Vortex has none. box_count is the highest slot
+     * with a code. A custom track's boxes stand on its own weapon crates
+     * (ap_box_seat_logic.h); box_crates is the package's measured weapon
+     * crate count those seats are taken from (0 when it has no boxes). */
+    int box_count, box_crates;
+    int64_t box_locations[15];
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
 } ctr_content_pad;
@@ -108,7 +118,14 @@ typedef struct ctr_content_package {
     int has_relic_targets; /* relic targets in ticks (960 per second) */
     int relic_targets[3];  /* sapphire, gold, platinum */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
+    /* Optional measured `weapon_crates` (#133 PR 4e): how many weapon crates
+     * (PU_RANDOM_CRATE instances) the LEV holds, or
+     * AP_CONTENT_WEAPON_CRATES_UNSTATED. Native counts them on load and
+     * refuses a stated count the bytes disagree with. */
+    int weapon_crates;
 } ctr_content_package;
+#define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)
+#define AP_CONTENT_WEAPON_CRATES_MAX 65536 /* the verifier's instance-table ceiling */
 
 /* Capability packs (#133 PR 4c): the plan's `capability` record. `present`
  * is 0 when Progressive Boost and Progressive Stats are both off. Modes are
@@ -116,6 +133,13 @@ typedef struct ctr_content_package {
 typedef struct ctr_content_capability {
     int present, boost_mode, boost_blue_fire, stats_mode, logic_difficulty, shortcut_knowledge;
 } ctr_content_capability;
+
+/* Item Box Locations (#133 PR 4e): the plan's `item_boxes` record. `present`
+ * is 0 when they are off; `shortcut_knowledge` (0 easy to 2 hard) decides
+ * which retail box slots exist. */
+typedef struct ctr_content_item_boxes {
+    int present, shortcut_knowledge;
+} ctr_content_item_boxes;
 
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
@@ -205,6 +229,8 @@ const ctr_content_checks *ap_content_plan_checks(void);
 const ctr_content_capability *ap_content_plan_capability(void);
 int ap_content_plan_start_count(int64_t item);
 int ap_content_plan_check_boost(int64_t location);
+/* Item Box Locations (#133 PR 4e): the record (all zero without one). */
+const ctr_content_item_boxes *ap_content_plan_item_boxes(void);
 int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_bind(const char *seed, int team, int slot,
                          const int64_t *locations, size_t count);

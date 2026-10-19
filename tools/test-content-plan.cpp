@@ -61,7 +61,13 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
                                                            // #133 PR 4c: a check's boost rank is the
                                                            // apworld's logic as data (absent is rank 0),
                                                            // and super_turbo_pads may be unstated.
-                                                           "boost", "super_turbo_pads"};
+                                                           "boost", "super_turbo_pads",
+                                                           // #133 PR 4e: a box check's stat term is read
+                                                           // as given like `boost`.
+                                                           "stats",
+                                                           // and an unstated weapon crate count is legal
+                                                           // (a named track then has no boxes).
+                                                           "weapon_crates"};
             if (!optional.count(it.key())) {
                 changed = base; changed[path].erase(it.key());
                 refuse(changed, "missing field at " + path.to_string() + "/" + it.key());
@@ -1083,6 +1089,169 @@ int main(int argc, char **argv) {
         legacy.erase("content_plan"); legacy["ctr_options"].erase("content_plan");
         ap_seedcfg_parse_json(legacy);
         expect(ap_seedcfg_rejected(), "global checks: a normal room refuses the content-plan boss fallback");
+    }
+    // Item Box Locations (#133 PR 4e): an apworld-emitted room at Shortcut
+    // Knowledge hard with shared boost and stats, on N. Gin Labs (pad 15),
+    // Tiger Temple (pad 18), Papu's Pyramid (pad 11), Oxide Station (Gem Cup
+    // seat 100), Cortex Vortex (pad 8, no boxes), Baby T Park (pad 21, 8
+    // stated weapon crates), Acid Lake (pad 10, named, 20 crates: 15 boxes)
+    // and the B+ fixture-loop (pad 23, 12 crates, generic slot: no boxes).
+    // Item Box Colours off in the seed.
+    J boxes;
+    std::ifstream("tools/fixtures/content-plan/item-boxes.json") >> boxes;
+    expect(parse(boxes) && bind_room(boxes) && ap_content_plan_active(), "item-boxes room binds");
+    {
+        const ctr_content_item_boxes *b = ap_content_plan_item_boxes();
+        expect(b->present == 1 && b->shortcut_knowledge == 2 && ctr_cfg.shortcut_knowledge == 2, "boxes: record and tier");
+        expect(ctr_cfg.color_boxes_by_item == 0, "boxes: the seed's colour setting (off) is applied");
+        const ctr_content_pad *ngin = ap_content_plan_pad(15), *btp = ap_content_plan_pad(21), *acid = ap_content_plan_pad(10);
+        const ctr_content_pad *loop = ap_content_plan_pad(23), *cv = ap_content_plan_pad(8), *oxide = ap_content_plan_pad(100);
+        // Frozen codes: the box block's track order (item_boxes.BOX_TRACKS),
+        // not the LevelID, read back from the room's own check names.
+        auto code_of = [&](const std::string &name) -> int64_t {
+            for (const auto &c : boxes["content_plan"]["checks"]) if (c["display_name"] == name) return c["location"].get<int64_t>();
+            return -1;
+        };
+        bool retail = ngin && ngin->box_count == 15;
+        for (int i = 0; retail && i < 15; ++i)
+            retail = ngin->box_locations[i] == code_of("N. Gin Labs: Item Box " + std::to_string(i + 1)) &&
+                     ngin->box_locations[i] == ngin->box_locations[0] + i && ngin->box_locations[0] >= 35014000 &&
+                     ngin->box_locations[0] < 35014270;
+        expect(retail, "boxes: N. Gin Labs keeps its frozen codes, all 15 slots at hard");
+        expect(oxide && oxide->box_count == 14 && oxide->box_locations[5] == code_of("Oxide Station: Item Box 6") &&
+               oxide->box_locations[5] > 0, "boxes: Oxide Station on a Gem Cup seat, slot 6 created at hard");
+        bool named = btp && btp->box_count == 8 && btp->box_crates == 8;
+        for (int i = 0; named && i < 15; ++i) named = btp->box_locations[i] == (i < 8 ? 35200000 + 200 * 8 + 20 + i : 0);
+        expect(named, "boxes: Baby T Park takes Item Box 1 to 8 on its named block");
+        expect(acid && acid->box_count == 15 && acid->box_crates == 20 && acid->box_locations[14] == 35200000 + 20 + 14,
+               "boxes: twenty crates seat fifteen boxes");
+        expect(loop && loop->box_count == 0 && loop->box_locations[0] == 0, "boxes: a generic slot has none");
+        expect(cv && cv->box_count == 0, "boxes: Cortex Vortex has none");
+        expect(ap_content_plan_package(0) && ap_content_plan_package(0)->weapon_crates == 20, "boxes: the stated crate count is kept");
+        expect(parse(caps) && ap_content_plan_item_boxes()->present == 0 && ctr_cfg.color_boxes_by_item == 0,
+               "boxes: a room without the record has none and pink boxes");
+    }
+    // The walk covers the record, the envelope, the ledger, the packages
+    // (their new crate count), and the first box check of N. Gin Labs (a boost
+    // rank), of Oxide Station (the stat term) and of Acid Lake (named). The
+    // other checks, pads, tracks and entries are walked by earlier fixtures.
+    {
+        std::set<std::string> walked;
+        const auto &cs = boxes["content_plan"]["checks"];
+        std::set<std::string> owners_seen;
+        for (size_t i = 0; i < cs.size(); ++i) {
+            const std::string owner = cs[i]["owner"];
+            if (cs[i]["kind"] == "box" && (owner == "retail:11" || owner == "custom/acid-lake/1.0" ||
+                                           (owner == "retail:13" && cs[i].contains("stats"))) &&
+                owners_seen.insert(owner).second)
+                walked.insert("/content_plan/checks/" + std::to_string(i));
+        }
+        expect(walked.size() == 3, "boxes: the walk has its three box checks");
+        skip_path = [walked](const std::string &p) {
+            if (p.rfind("/content_plan/pads/", 0) == 0 || p.rfind("/content_plan/tracks/", 0) == 0 ||
+                p.rfind("/content_plan/entries/", 0) == 0) return true;
+            if (p.rfind("/content_plan/packages/", 0) == 0)
+                return p.find("/capabilities") == std::string::npos && p.size() > std::string("/content_plan/packages/0").size();
+            if (p.rfind("/content_plan/checks/", 0) == 0) {
+                const size_t end = p.find('/', 21);
+                return !walked.count(p.substr(0, end));
+            }
+            return false;
+        };
+        mutations(boxes, boxes, J::json_pointer(""));
+        skip_path = nullptr;
+    }
+    {
+        auto box = [](J &j, const std::string &name) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["display_name"] == name) return c;
+            throw std::runtime_error("no check " + name);
+        };
+        auto package = [](J &j, const std::string &key) -> J & {
+            for (auto &p : j["content_plan"]["packages"]) if (p["content_id"] == key) return p;
+            throw std::runtime_error("no package " + key);
+        };
+        auto drop_feature = [](J &j) {
+            auto &f = j["content_plan"]["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "item_boxes_v1") { f.erase(i); break; }
+        };
+        auto shrink = [](J &j, int by) {
+            auto &items = j["content_plan"]["items"];
+            items["coded_checks"] = items["coded_checks"].get<int>() - by;
+            items["filler_count"] = items["filler_count"].get<int>() - by;
+        };
+        auto b_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = boxes; change(bad); refuse(bad, "boxes: " + why);
+        };
+        auto b_accept = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J good = boxes; change(good); expect(parse(good), "boxes: " + why);
+        };
+        b_refuse("feature dropped", drop_feature);
+        b_refuse("record dropped", [&](J &j) { j["content_plan"].erase("item_boxes"); drop_feature(j); });
+        b_refuse("tier lowered", [](J &j) { j["content_plan"]["item_boxes"]["shortcut_knowledge"] = 1; });
+        b_refuse("tier 3", [](J &j) { j["content_plan"]["item_boxes"]["shortcut_knowledge"] = 3; });
+        b_refuse("tier disagrees with the capability record", [](J &j) { j["content_plan"]["capability"]["shortcut_knowledge"] = 1; });
+        b_refuse("record not an object", [](J &j) { j["content_plan"]["item_boxes"] = J::array(); });
+        b_refuse("box route dropped", [&](J &j) { box(j, "N. Gin Labs: Item Box 1")["routes"].erase(0); });
+        b_refuse("box award", [&](J &j) { box(j, "N. Gin Labs: Item Box 1")["routes"][0]["award"] = "win"; });
+        b_refuse("box code moved to the next slot", [&](J &j) { box(j, "N. Gin Labs: Item Box 1")["location"] = 35014166; });
+        b_refuse("box dropped", [&](J &j) {
+            auto &c = j["content_plan"]["checks"];
+            for (size_t i = 0; i < c.size(); ++i) if (c[i]["display_name"] == "Baby T Park: Item Box 8") { c.erase(i); break; }
+            shrink(j, 1); });
+        b_refuse("box on the generic slot", [&](J &j) {
+            J extra = box(j, "Baby T Park: Item Box 1");
+            extra["owner"] = "custom/fixture-loop/2.1"; extra["location"] = 35017000;
+            extra["display_name"] = "Fixture Loop: Item Box 1";
+            j["content_plan"]["checks"].push_back(extra); shrink(j, -1); });
+        b_refuse("weapon crates raised", [&](J &j) { package(j, "baby-t-park")["capabilities"]["weapon_crates"] = 9; });
+        b_refuse("weapon crates lowered", [&](J &j) { package(j, "baby-t-park")["capabilities"]["weapon_crates"] = 7; });
+        b_refuse("weapon crates unstated", [&](J &j) { package(j, "baby-t-park")["capabilities"].erase("weapon_crates"); });
+        b_refuse("weapon crates Boolean", [&](J &j) { package(j, "acid-lake")["capabilities"]["weapon_crates"] = true; });
+        b_refuse("weapon crates past the instance ceiling", [&](J &j) { package(j, "acid-lake")["capabilities"]["weapon_crates"] = 65537; });
+        b_refuse("stats false", [&](J &j) { box(j, "Oxide Station: Item Box 6")["stats"] = false; });
+        b_refuse("stats on a race check", [&](J &j) { box(j, "Oxide Station: Trophy Race")["stats"] = true; });
+        b_refuse("stats without Progressive Stats", [](J &j) {
+            j["content_plan"]["capability"]["stats_mode"] = 0;
+            auto &rows = j["content_plan"]["items"]["rows"];
+            for (size_t i = rows.size(); i-- > 0;) {
+                const int64_t item = rows[i]["item"];
+                if (item >= 35010028 && item <= 35010030) {
+                    j["content_plan"]["items"]["filler_count"] = j["content_plan"]["items"]["filler_count"].get<int>() + 4;
+                    rows.erase(i);
+                }
+            }
+            j["ctr_options"]["progressive_stats"] = 0;
+            for (const char *k : {"stat_source", "stat_owner", "stat_editing_allowed"}) j["ctr_options"].erase(k); });
+        b_refuse("envelope box_locations false", [](J &j) { j["ctr_options"]["box_locations"] = false; });
+        b_refuse("envelope box_locations dropped", [](J &j) { j["ctr_options"].erase("box_locations"); });
+        b_refuse("envelope colours dropped", [](J &j) { j["ctr_options"].erase("color_boxes_by_item"); });
+        b_refuse("envelope colours integer", [](J &j) { j["ctr_options"]["color_boxes_by_item"] = 1; });
+        {
+            J bad = caps;
+            bad["ctr_options"]["box_locations"] = true; bad["ctr_options"]["color_boxes_by_item"] = true;
+            refuse(bad, "boxes: envelope keys on a plan without the record");
+        }
+        // Read as given, like the boost rank: the apworld alone refuses these.
+        b_accept("a stat term dropped is read as given", [&](J &j) { box(j, "Oxide Station: Item Box 6").erase("stats"); });
+        b_accept("a box rank inside the chain is read as given", [&](J &j) { box(j, "N. Gin Labs: Item Box 4")["boost"] = 1; });
+        b_accept("colours on", [](J &j) { j["ctr_options"]["color_boxes_by_item"] = true; });
+        expect(parse(boxes) && ctr_cfg.color_boxes_by_item == 0, "boxes: the room parses again after the forgeries");
+    }
+    // A custom track that states no weapon crates is no Itemsanity or Hit
+    // route (#133 PR 4e): the global-checks room with Baby T Park at 0 crates
+    // keeps its routes and is refused; with its routes removed it is admitted.
+    {
+        J crateless = glob;
+        for (auto &p : crateless["content_plan"]["packages"])
+            if (p["content_id"] == "baby-t-park") p["capabilities"]["weapon_crates"] = 0;
+        refuse(crateless, "crates: a crateless track still routed for Itemsanity");
+        for (auto &c : crateless["content_plan"]["checks"])
+            if (c["kind"] == "itemsanity" || c["kind"] == "hit") {
+                J kept = J::array();
+                for (const auto &r : c["routes"]) if (r["entry_id"] != "entry/custom/baby-t-park/1.0.2") kept.push_back(r);
+                c["routes"] = kept;
+            }
+        expect(parse(crateless), "crates: without its routes the crateless track is admitted");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

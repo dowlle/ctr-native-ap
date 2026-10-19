@@ -363,6 +363,10 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
                 }
             }
         }
+        // Item Box checks (#133 PR 4e): every unchecked box of the pad.
+        for(n=0;!pad->crystal && n<pad->box_count && n<15 && count<cap;++n)
+            if(pad->box_locations[n]>0 && !ap_net_location_checked((long)pad->box_locations[n]))
+                outBits[count++]=AP_CONTENT_BIT_BOX+pad->physical*AP_CONTENT_BOX_STRIDE+n;
         for(n=0;n<pad->crystal_count && count<cap;++n)
             if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
         return count;
@@ -564,6 +568,19 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	if (!ctr_cfg_active())
 		return 0;
 
+	// #133 PR 4e: a content-plan pad owns its Item Box checks by its physical
+	// id, whatever track it holds; never the retail row of that number.
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
+		int b;
+		for (b = 0; pad && pad->occupied && b < pad->box_count && b < 15; b++)
+			if (pad->box_locations[b] > 0 && AP_PadBoxLive((long)pad->box_locations[b], 0) &&
+			    !AP_PadBoxChecked((long)pad->box_locations[b], 0))
+				n++;
+		return n;
+	}
+
 	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
 		return AP_PadTrackBoxesLeft(destLevelID);
 
@@ -707,6 +724,11 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 
 	if (!ctr_cfg_active())
 		return count;
+	// A content-plan pad's glow above already lists every family it owns, its
+	// Item Box checks included (#133 PR 4e). The legacy appends below key on
+	// a retail LevelID, which a content-plan physical pad is not.
+	if (ap_content_plan_active())
+		return count;
 #ifdef CTR_CUSTOM_TRACKS
 	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
 	{
@@ -829,6 +851,9 @@ static int AP_GlowBitRewardGroup(int globalBit)
         // retail pads (ruling 2026-09-30); the perfect rides the relic slot.
         if(ap_content_family_bit_decode(globalBit,&contentPad,&contentTier))
             return ap_content_family_reward_group(contentTier);
+        // Item Box checks (#133 PR 4e) ride the race slot.
+        if(ap_content_box_bit_decode(globalBit,&contentPad,&contentTier))
+            return 0;
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);

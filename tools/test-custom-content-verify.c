@@ -256,6 +256,7 @@ int main(void)
 	expect(v.measured.spawns == 8, "spawn count");
 	expect(v.measured.navPaths == 3, "nav path count");
 	expect(v.measured.ordinaryCrates == 1, "ordinary crate count");
+	expect(v.measured.weaponCrates == 1, "weapon crate count: the one PU_RANDOM crate (#133 PR 4e)");
 	expect(v.measured.relicCrates == 2, "relic crate count");
 	expect(v.measured.letterC == 1 && v.measured.letterT == 1 && v.measured.letterR == 1, "letter counts");
 	expect(v.measured.letterC == 1 && v.measured.letterT == 1 && v.measured.letterR == 1,

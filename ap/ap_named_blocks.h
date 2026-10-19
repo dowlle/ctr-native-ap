@@ -41,7 +41,10 @@ enum {
     AP_NAMED_OFF_LETTER_C = 11,
     AP_NAMED_OFF_LETTER_T = 12,
     AP_NAMED_OFF_LETTER_R = 13,
-    AP_NAMED_OFF_WUMPA = 14
+    AP_NAMED_OFF_WUMPA = 14,
+    /* Item Box 1 to 15 (#133 PR 4e, the 0.3.0 id step): 20 + slot. */
+    AP_NAMED_OFF_ITEM_BOX_1 = 20,
+    AP_NAMED_ITEM_BOX_SLOTS = 15
 };
 
 /* 1 when `code` is a Letter C/T/R item of any named block (item offsets 0..2).

@@ -4,7 +4,8 @@
 // Wumpa and Lettersanity checks (#133 PR 3b), Cortex Vortex as a track and the
 // Relic Race Perfect checks (#133 PR 3c), pool-only and character packs (#133
 // PR 4a, 4b), capability packs with per-check boost ranks (#133 PR 4c),
-// Itemsanity and Hit Character as global checks (#133 PR 4d), and Crystal
+// Itemsanity and Hit Character as global checks (#133 PR 4d), Item Box
+// Locations on retail and named-block custom tracks (#133 PR 4e), and Crystal
 // Challenge entries; a
 // broader schema shape is not a promise of runtime support.
 // Custom packages are admitted openly (#133 PR 2): any complete descriptor.
@@ -38,6 +39,10 @@ struct State {
     std::set<int64_t> checks;
     // Global check families (#133 PR 4d): the `global_checks` record.
     bool itemsanity = false, hit = false;
+    // Item Box Locations (#133 PR 4e): the `item_boxes` record, and the box
+    // checks that carry the hard-tier stat term (`stats`).
+    ctr_content_item_boxes item_boxes{};
+    std::set<int64_t> stat_checks;
     std::string canonical;
 };
 static State state;
@@ -153,6 +158,13 @@ static void package_record(const J &pkg, ctr_content_package &target) {
         need(mode_caps["super_turbo_pads"].is_boolean(), "package capability flag is not true or false");
         target.super_turbo_pads = mode_caps["super_turbo_pads"].get<bool>() ? 1 : 0;
         mode_caps.erase("super_turbo_pads");
+    }
+    // `weapon_crates` (#133 PR 4e) is optional: how many weapon crates the
+    // LEV holds, counted and compared on load. It seats a named track's boxes.
+    target.weapon_crates = AP_CONTENT_WEAPON_CRATES_UNSTATED;
+    if (mode_caps.is_object() && mode_caps.contains("weapon_crates")) {
+        target.weapon_crates = number(mode_caps["weapon_crates"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
+        mode_caps.erase("weapon_crates");
     }
     fields(mode_caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
     static const std::pair<const char *, unsigned> cap_bits[] = {
@@ -351,6 +363,19 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 }
 // Global check families (#133 PR 4d), apworld content_global_checks:
 // `itemsanity` and `hit_character`, each present only as true.
+// Item Box Locations (#133 PR 4e), apworld content_item_boxes.check_settings:
+// exactly `shortcut_knowledge` 0 to 2, equal to the capability record's when
+// that is present (checked by the caller once both are read).
+static void item_box_settings(const J &t, State &out) {
+    fields(t, {"shortcut_knowledge"});
+    out.item_boxes.present = 1;
+    out.item_boxes.shortcut_knowledge = number(t["shortcut_knowledge"], 0, 2);
+}
+// The seats a custom track's boxes take: min(crates, 15), spread over the
+// crate table (ap_box_seat_logic.h computes which).
+static int box_seats(int crates) {
+    return crates <= 0 ? 0 : crates < AP_NAMED_ITEM_BOX_SLOTS ? crates : AP_NAMED_ITEM_BOX_SLOTS;
+}
 static void global_settings(const J &t, State &out) {
     need(t.is_object() && !t.empty() && t.size() <= 2, "global_checks must be a nonempty record");
     for (auto it = t.begin(); it != t.end(); ++it) {
@@ -390,8 +415,9 @@ static void validate(const J &p, State &out) {
     const bool has_racers = p.is_object() && p.contains("racers");
     const bool has_capability = p.is_object() && p.contains("capability");
     const bool has_global = p.is_object() && p.contains("global_checks");
+    const bool has_boxes = p.is_object() && p.contains("item_boxes");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
-                                         (has_capability ? 1u : 0u) + (has_global ? 1u : 0u),
+                                         (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u),
          "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
@@ -412,6 +438,12 @@ static void validate(const J &p, State &out) {
     const std::map<int64_t, int> cap_rows = has_capability ? capability_rows(out.capability) : std::map<int64_t, int>{};
     // Itemsanity and Hit Character (#133 PR 4d): one row per weapon item.
     if (has_global) global_settings(p["global_checks"], out);
+    // Item Box Locations (#133 PR 4e): one Shortcut Knowledge tier per plan.
+    if (has_boxes) {
+        item_box_settings(p["item_boxes"], out);
+        need(!out.capability.present || out.capability.shortcut_knowledge == out.item_boxes.shortcut_knowledge,
+             "item_boxes.shortcut_knowledge disagrees with capability.shortcut_knowledge");
+    }
     std::map<int64_t, int> weapon_rows;
     for (int64_t w = 0; out.itemsanity && w < kWeaponCount; ++w) weapon_rows[kWeaponFirst + w] = 1;
     need(p.at("encounters") == J::array(), "encounter routes are not implemented");
@@ -467,6 +499,7 @@ static void validate(const J &p, State &out) {
     if(has_racers)features.push_back("character_unlocks_v1");
     if(has_capability)features.push_back("capability_packs_v1");
     if(has_global)features.push_back("global_checks_v1");
+    if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -777,7 +810,10 @@ static void validate(const J &p, State &out) {
         // reach ten fruit (a custom package needs its measured `wumpa` flag).
         const bool fruit = dest.retail_id >= 0 || dest.cortex || (record_caps(out, dest) & AP_CONTENT_CAP_WUMPA);
         const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
-        if (reach) race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.retail_id >= 0});
+        // A custom track whose package states no weapon crates rolls no weapon,
+        // so it is no Itemsanity or Hit route (#133 PR 4e).
+        const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0;
+        if (reach && !crateless) race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.retail_id >= 0});
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
             if (fam.wumpa == 2) {
@@ -787,6 +823,34 @@ static void validate(const J &p, State &out) {
                     if (reach & (1u << m)) routes.push_back(route_record(entry_id, mode_names[m], id, "wumpa"));
                 family_check(wumpa, "wumpa", "Reach 10 Wumpa", routes);
             } else global_routes.push_back(GlobalRoute{physical, entry_id, id, reach});
+        }
+        // Item Box Locations (#133 PR 4e), after the track's other checks: a
+        // retail track's frozen slots its tier creates (registry `boxes`, one
+        // [code, tier] per placed slot), a named-block custom track's Item
+        // Box 1 to min(weapon_crates, 15); a route per mode in the pad's order.
+        if (out.item_boxes.present) {
+            int slots = 0;
+            if (dest.retail_id >= 0) {
+                const J &rows = registry["retail"][dest.retail_id]["boxes"];
+                need(rows.is_array() && rows.size() <= AP_NAMED_ITEM_BOX_SLOTS, "registry box rows exceed the slot ceiling");
+                for (size_t b = 0; b < rows.size(); ++b)
+                    if (rows[b][1].get<int>() <= out.item_boxes.shortcut_knowledge) {
+                        dest.box_locations[b] = rows[b][0].get<int64_t>();
+                        slots = (int)b + 1;
+                    }
+            } else if (dest.named_block >= 0 && dest.package_index >= 0) {
+                slots = box_seats(out.packages[dest.package_index].weapon_crates);
+                dest.box_crates = slots ? out.packages[dest.package_index].weapon_crates : 0;
+                for (int b = 0; b < slots; ++b)
+                    dest.box_locations[b] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b);
+            }
+            dest.box_count = slots;
+            for (int b = 0; b < slots; ++b) {
+                if (!dest.box_locations[b]) continue;
+                J routes = J::array();
+                for (int k = 0; k < dest.mode_count; ++k) routes.push_back(route_record(entry_id, mode_names[dest.modes[k]], id, "box"));
+                family_check(dest.box_locations[b], "box", "Item Box " + std::to_string(b + 1), routes);
+            }
         }
         if (!keys) starting_entry = true;
     }
@@ -847,6 +911,14 @@ static void validate(const J &p, State &out) {
             need(boost_ceiling > 0, "a check boost rank needs Progressive Boost (the capability record)");
             out.boosts[id] = number(bare["boost"], 1, boost_ceiling);
             bare.erase("boost");
+        }
+        // An Item Box check's stat term (#133 PR 4e): true only, only on a box
+        // check, only with Progressive Stats on. Read as given, like `boost`.
+        if (bare.is_object() && bare.contains("stats")) {
+            need(bare["stats"] == true && out.capability.stats_mode && bare.contains("kind") && bare["kind"] == "box",
+                 "a check stat term must be true, on an Item Box check, with Progressive Stats on");
+            out.stat_checks.insert(id);
+            bare.erase("stats");
         }
         need(out.checks.insert(id).second && expected_checks.count(id) && bare == expected_checks.at(id), "check identity or route ownership mismatch");
     }
@@ -1016,6 +1088,12 @@ static int parse_content_plan(const nlohmann::json &j) {
             stat_owner = number(co["stat_owner"], 1, 2);
         }
         for(const char *key:{"starting_stat_class","penta_stats","stat_source","stat_owner","stat_editing_allowed"})base.erase(key);
+        // Item Box Locations (#133 PR 4e): `box_locations` true and the seed's
+        // `color_boxes_by_item`, present exactly with the plan's record.
+        const bool box_flag = co.contains("box_locations"), box_colours = co.contains("color_boxes_by_item");
+        need(!box_flag || co["box_locations"] == true, "box_locations must be true when present");
+        need(!box_colours || co["color_boxes_by_item"].is_boolean(), "color_boxes_by_item must be true or false");
+        for(const char *key:{"box_locations","color_boxes_by_item"})base.erase(key);
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["goal_oxide"] == 3 && co["goal_bosses"] == 0 && co["character_unlocks"].is_boolean() &&
@@ -1044,8 +1122,11 @@ static int parse_content_plan(const nlohmann::json &j) {
              "Hit Character envelope or block disagrees with the plan's global_checks record");
         need((stat_source == 1) == (stats_mode != 0) && (stat_source != 1 || stat_owner == stats_mode),
              "a Progressive Stats plan must send stat_source 1 with its mode as stat_owner");
+        need(box_flag == (candidate.item_boxes.present != 0) && box_colours == box_flag,
+             "box envelope disagrees with the plan's item_boxes record");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
-                                (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u);
+                                (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u) +
+                                (box_flag ? 2u : 0u);
         if(arenas) {
             need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
@@ -1089,6 +1170,13 @@ static int parse_content_plan(const nlohmann::json &j) {
         if (candidate.capability.present) {
             ctr_cfg.logic_difficulty = candidate.capability.logic_difficulty;
             ctr_cfg.shortcut_knowledge = candidate.capability.shortcut_knowledge;
+        }
+        // Item Box Locations (#133 PR 4e): the boxes stand from the room's own
+        // codes (server liveness, AP_BoxInSeed); the colours are the seed's,
+        // ANDed with the player's own setting as on a normal room.
+        if (candidate.item_boxes.present) {
+            ctr_cfg.shortcut_knowledge = candidate.item_boxes.shortcut_knowledge;
+            ctr_cfg.color_boxes_by_item = co["color_boxes_by_item"].get<bool>() ? 1 : 0;
         }
         ctr_cfg.shuffle_gems = ctr_cfg.shuffle_keys = 1;
         ctr_cfg.shuffle_warp_pads = 0; // Hub objects keep their physical IDs.
@@ -1148,6 +1236,10 @@ extern "C" int ap_content_plan_check_boost(int64_t location) {
     if (!ap_content_plan_active()) return 0;
     const auto it = content_plan::state.boosts.find(location);
     return it == content_plan::state.boosts.end() ? 0 : it->second;
+}
+extern "C" const ctr_content_item_boxes *ap_content_plan_item_boxes(void) {
+    static const ctr_content_item_boxes none{};
+    return ap_content_plan_active() ? &content_plan::state.item_boxes : &none;
 }
 extern "C" const ctr_content_item *ap_content_plan_item(int64_t item) {
     return ap_content_plan_active() && item >= 35010000 && item <= 35010014 ? &content_plan::state.items[item - 35010000] : nullptr;
