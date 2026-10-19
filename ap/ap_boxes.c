@@ -606,6 +606,15 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		s_live[i].seated = 1;
 		s_live[i].seatGen = AP_Spawn_Generation();
 		crate = def->ptrInstance;
+		// A table the engine did not finish initialising leaves raw LEV values
+		// here (INSTANCE_LevInitAll returns when its pool runs out): only an
+		// instance from the pool that points back at this crate is touched.
+		if (crate != 0 &&
+		    (!AP_BoxSeat_PoolItem((uintptr_t)crate, (uintptr_t)gGT->JitPools.instance.ptrPoolData,
+		                          (long)gGT->JitPools.instance.maxItems,
+		                          (unsigned long)gGT->JitPools.instance.itemSize) ||
+		     crate->instDef != def))
+			crate = 0;
 		s_live[i].seatInst = crate;
 		s_live[i].seatFlags = crate != 0 ? (crate->flags & DRAW_COLLISION_MASK) : 0;
 		if (crate != 0)

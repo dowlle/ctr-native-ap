@@ -1,6 +1,8 @@
 #ifndef AP_BOX_SEAT_LOGIC_H
 #define AP_BOX_SEAT_LOGIC_H
 
+#include <stdint.h>
+
 // Item Box seats on custom bytes (#133 PR 4e), deliberately freestanding like
 // ap_box_map.h: the engine half (ap_boxes.c) walks the live LEV instance table,
 // the arithmetic lives here so tools/test-box-seat.c pins it out of engine.
@@ -55,6 +57,22 @@ static inline int AP_BoxSeat_Agrees(long liveCrates, int planCrates, int planSea
 	if (planCrates <= 0 || (long)planCrates != liveCrates)
 		return 0;
 	return AP_BoxSeat_Count(liveCrates) == planSeats;
+}
+
+// 1 when `inst` is the start of an item in the instance pool that starts at
+// `base`, holds `maxItems` items and steps by `itemSize` rounded down to 4
+// (JitPool_Clear's stride). A crate's InstDef.ptrInstance is only written by
+// INSTANCE_LevInitAll, which returns early when the pool runs out; every later
+// entry then still holds the raw value from the LEV file. Seating must not
+// touch such a pointer, so anything outside the pool counts as no crate.
+static inline int AP_BoxSeat_PoolItem(uintptr_t inst, uintptr_t base, long maxItems, unsigned long itemSize)
+{
+	const uintptr_t stride = (uintptr_t)((itemSize >> 2) << 2);
+	if (inst == 0 || base == 0 || maxItems <= 0 || stride == 0 || inst < base)
+		return 0;
+	if ((inst - base) % stride != 0)
+		return 0;
+	return (inst - base) / stride < (uintptr_t)maxItems;
 }
 
 #endif

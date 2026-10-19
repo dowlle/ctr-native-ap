@@ -15,7 +15,10 @@ the game runs:
   4. a crate table the seed was not built for (one crate more or fewer), a pad
      without box ids, no plan, or an unreadable instance table stand nothing and
      touch nothing;
-  5. freeing a seat gives the crate its bits back, but never after a pool reset.
+  5. freeing a seat gives the crate its bits back, but never after a pool reset;
+  6. a crate whose instance pointer is not a pool instance pointing back at it
+     (a raw LEV value left when INSTANCE_LevInitAll ran out of pool) still
+     stands its box but is never written.
 
 A source scan then checks the wiring that cannot be called out of engine: every
 path that ends a live box frees its seat, the pool-reset path drops seats
@@ -57,11 +60,13 @@ typedef int AP_SpawnHandle;
 #define PU_RANDOM_CRATE 8
 #define DRAW_COLLISION_MASK 0xf
 struct Model { short id; };
-struct Instance { unsigned int flags; };
+struct InstDef;
+struct Instance { unsigned int flags; struct InstDef *instDef; };
 typedef union { struct { short x, y, z; }; short v[3]; } SVec3;
 struct InstDef { struct Model *model; struct Instance *ptrInstance; SVec3 pos; SVec3 rot; };
 struct Level { u32 numInstances; struct InstDef *ptrInstDefs; };
-struct GameTracker { struct Level *level1; };
+struct JitPool { int maxItems; u32 itemSize; void *ptrPoolData; };
+struct GameTracker { struct Level *level1; struct { struct JitPool instance; } JitPools; };
 struct CustomTrackRaceContext { int physicalPad; int retail; };
 #include "ap/ap_content_plan.h"
 #include "ap/ap_box_seat_logic.h"
@@ -104,6 +109,7 @@ static int table(int crates_wanted) {
     while (crates < crates_wanted) {
         struct InstDef *d = &defs[n];
         d->ptrInstance = &insts[n];
+        insts[n].instDef = d;
         insts[n].flags = 0x7 | 0x100;
         d->pos.x = (short)(100 + n); d->pos.y = (short)(-5 * n); d->pos.z = (short)(7 * n); d->rot.y = (short)(16 * n);
         if (n % 3 == 1) d->model = (n % 2) ? &fruit_model : &wumpa_model;
@@ -112,6 +118,8 @@ static int table(int crates_wanted) {
         n++;
     }
     lev.numInstances = (u32)n; lev.ptrInstDefs = defs; gGT.level1 = &lev;
+    gGT.JitPools.instance.maxItems = 200; gGT.JitPools.instance.itemSize = sizeof(struct Instance);
+    gGT.JitPools.instance.ptrPoolData = insts;
     return n;
 }
 static int crate_index(int ordinal, int n) {
@@ -180,6 +188,23 @@ int main(void) {
         expect(s_live[i].seatInst == &insts[k], "seat i takes crate floor(i * 69 / 15)");
     }
     expect(s_live[1].seatInst == &insts[crate_index(4, n)], "the second seat is the fifth crate");
+
+    /* 6. Raw or foreign instance pointers are never written. */
+    n = table(8); reset(8, 8);
+    defs[crate_index(0, n)].ptrInstance = (struct Instance *)(uintptr_t)1;
+    defs[crate_index(1, n)].ptrInstance = (struct Instance *)((char *)&insts[crate_index(1, n)] + 2);
+    defs[crate_index(2, n)].ptrInstance = &insts[199];
+    defs[crate_index(3, n)].ptrInstance = &insts[0] + 200;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 8, "every box still stands");
+    for (i = 0; i < 4; i++)
+        expect(s_live[i].seated && s_live[i].seatInst == 0 && s_live[i].seatFlags == 0,
+               "a raw, misaligned, foreign or out-of-pool pointer is no seat instance");
+    for (i = 0; i < n; i++)
+        if (i != crate_index(4, n) && i != crate_index(5, n) && i != crate_index(6, n) && i != crate_index(7, n))
+            expect(insts[i].flags == (0x7u | 0x100u), "instances behind a bad pointer are not written");
+    AP_BoxesFreeSeat(0);
+    expect(insts[crate_index(0, n)].flags == (0x7u | 0x100u), "freeing such a seat writes nothing");
 
     /* 4. Refusals touch nothing. */
     n = table(9); reset(8, 8);
