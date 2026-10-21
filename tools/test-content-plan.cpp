@@ -1061,10 +1061,10 @@ int main(int argc, char **argv) {
         g_refuse("use check route dropped", [&](J &j) { global(j, 35016000)["routes"].erase(0); });
         g_refuse("use check award", [&](J &j) { global(j, 35016001)["routes"][0]["award"] = "use"; });
         g_refuse("use check owner", [&](J &j) { global(j, 35016002)["owner"] = "retail:3"; });
-        g_refuse("guest routed from a custom track", [&](J &j) {
-            J custom;
-            for (const auto &r : global(j, 35025000)["routes"]) if (r["entry_id"] == "entry/custom/baby-t-park/1.0.2") custom = r;
-            global(j, 35025008)["routes"].push_back(custom); });
+        // #133 PR 5b: a guest routes from custom tracks like a default racer.
+        g_refuse("guest not routed from a custom track", [&](J &j) {
+            auto &routes = global(j, 35025008)["routes"];
+            for (size_t i = 0; i < routes.size(); ++i) if (routes[i]["entry_id"] == "entry/custom/baby-t-park/1.0.2") { routes.erase(i); break; } });
         g_refuse("default racer not routed from a custom track", [&](J &j) {
             auto &routes = global(j, 35025003)["routes"];
             for (size_t i = 0; i < routes.size(); ++i) if (routes[i]["entry_id"] == "entry/custom/fixture-loop/2.1") { routes.erase(i); break; } });
@@ -1308,6 +1308,78 @@ int main(int argc, char **argv) {
         for (auto &e : forged["content_plan"]["entries"])
             if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
         expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
+    }
+    // Hit Character with cups (#133 PR 5b): three cups over retail, custom
+    // (named and generic) and Cortex Vortex legs. Every Hit check routes from
+    // every Trophy Race, CTR Challenge and cup leg, guests included, and the
+    // block carries one draw order per cup name index.
+    J cuphits;
+    std::ifstream("tools/fixtures/content-plan/cup-hits.json") >> cuphits;
+    expect(parse(cuphits) && bind_room(cuphits) && ap_content_plan_active(), "cup hits: room binds");
+    {
+        const J &plan = cuphits["content_plan"];
+        const J &block = cuphits["hit_character_encounters"];
+        const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+        expect(h && h->enabled, "cup hits: Hit Character block admitted");
+        std::set<int> indices;
+        for (const auto &e : plan["entries"])
+            if (e["kind"] == "cup") indices.insert(std::stoi(e["id"].get<std::string>().substr(10)));
+        expect(indices.size() == 3, "cup hits: three cups");
+        bool orders = h != nullptr;
+        for (int c = 0; orders && c < CTR_CFG_HIT_CONTENT_CUP_COUNT; ++c) {
+            orders = (h->content_cup_present[c] != 0) == (indices.count(c) != 0);
+            for (int k = 0; orders && h->content_cup_present[c] && k < 16; ++k)
+                orders = h->content_cups[c].ids[k] == block["content_cups"][std::to_string(c)]["order"][k].get<int>();
+        }
+        expect(orders, "cup hits: one parsed order per cup name index, in wire order");
+        const J *first = nullptr;
+        int hits = 0, legs = 0;
+        for (const auto &c : plan["checks"]) {
+            if (c["kind"] != "hit") continue;
+            ++hits;
+            if (!first) first = &c;
+            expect(c["routes"] == (*first)["routes"], "cup hits: every target has the same routes");
+        }
+        for (const auto &r : (*first)["routes"]) legs += r["mode"] == "cup";
+        expect(hits == 16 && legs == 12, "cup hits: sixteen Hit checks, a route per cup leg");
+        auto c_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = cuphits; change(bad); refuse(bad, "cup hits: " + why);
+        };
+        auto hit = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        const std::string one = std::to_string(*indices.begin());
+        c_refuse("content_cups dropped", [](J &j) { j["hit_character_encounters"].erase("content_cups"); });
+        c_refuse("a cup order dropped", [&](J &j) { j["hit_character_encounters"]["content_cups"].erase(one); });
+        c_refuse("an order for a cup the plan lacks", [&](J &j) {
+            int other = 0; while (indices.count(other)) ++other;
+            j["hit_character_encounters"]["content_cups"][std::to_string(other)] = j["hit_character_encounters"]["content_cups"][one]; });
+        c_refuse("an order with a repeated id", [&](J &j) {
+            auto &o = j["hit_character_encounters"]["content_cups"][one]["order"]; o[1] = o[0]; });
+        c_refuse("an order with fifteen ids", [&](J &j) { j["hit_character_encounters"]["content_cups"][one]["order"].erase(15); });
+        c_refuse("content_cups empty", [](J &j) { j["hit_character_encounters"]["content_cups"] = J::object(); });
+        c_refuse("content_cups key with a leading zero", [&](J &j) {
+            auto &cc = j["hit_character_encounters"]["content_cups"]; cc["0" + one] = cc[one]; cc.erase(one); });
+        c_refuse("a guest without its cup leg routes", [&](J &j) {
+            auto &routes = hit(j, 35025012)["routes"];
+            for (size_t i = routes.size(); i-- > 0;) if (routes[i]["mode"] == "cup") routes.erase(i); });
+        c_refuse("a cup leg route without its leg", [&](J &j) {
+            for (auto &r : hit(j, 35025001)["routes"]) if (r["mode"] == "cup") { r["leg_id"] = nullptr; break; } });
+        c_refuse("cup leg routes out of leg order", [&](J &j) {
+            auto &routes = hit(j, 35025003)["routes"];
+            for (size_t i = 0; i + 1 < routes.size(); ++i)
+                if (routes[i]["mode"] == "cup" && routes[i + 1]["mode"] == "cup") { std::swap(routes[i], routes[i + 1]); break; } });
+        // A normal room never carries content_cups.
+        J legacy = cuphits;
+        legacy.erase("content_plan"); legacy["ctr_options"].erase("content_plan");
+        for (auto &t : legacy["hit_character_encounters"]["unlock_triggers"]) t.erase("fallback_keys");
+        ap_seedcfg_parse_json(legacy);
+        expect(ap_seedcfg_rejected() && std::string(ctr_cfg.seed_reject_reason).find("expected 7") != std::string::npos,
+               "cup hits: a normal room refuses content_cups");
+        expect(parse(cuphits), "cup hits: the room parses again after the forgeries");
+        // Without content_cups and Hit Character the cups room keeps its PR 5 shape.
+        expect(parse(cups) && !ap_seedcfg_hit_encounters(), "cup hits: the cups room has no encounter block");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;

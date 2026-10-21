@@ -27,7 +27,8 @@ extern "C" {
 
 // The ordinary destinations the encounter roster applies to: the sixteen retail
 // race tracks (0..15) plus the two trial Trophy tracks Slide Coliseum (16) and
-// Turbo Track (17). Cups are ticket 11.
+// Turbo Track (17). Cups are ticket 11. A content-plan custom or Cortex Vortex
+// race (#133 PR 5b) runs on host 6 or 13, so it draws from that host's order.
 #define AP_HIT_ORDINARY_TRACK_MAX 17
 
 // A drawn field: the AI engine ids in seat order (seat 0 first). `unhit` is how
@@ -347,6 +348,8 @@ typedef struct
 	int pending;     // a new cup start was signalled (pad entry)
 	int cupID;       // 0..4 (wire cups block keys are 100 + cupID)
 	int trackIndex;  // last leg seen, for continue/retry classification
+	int dest;        // wire destination the roster was drawn from: 100 + cupID,
+	                 // or 200 + name index for a content-plan cup (#133 PR 5b)
 	int count;
 	int ids[AP_HIT_FIELD_MAX];
 } ap_hit_cup_snapshot;
@@ -365,6 +368,7 @@ static inline void AP_HitCupSnapshotResetPure(ap_hit_cup_snapshot *s)
 	s->pending = 0;
 	s->cupID = -1;
 	s->trackIndex = -1;
+	s->dest = -1;
 	s->count = 0;
 }
 
@@ -385,6 +389,38 @@ static inline int AP_HitCupLegKindPure(int cupID, int trackIndex, int pending,
 	if (trackIndex == snapshotTrackIndex)
 		return AP_HIT_CUP_LEG_RETRY;
 	return AP_HIT_CUP_LEG_CONTINUE;
+}
+
+// A stored roster drawn from another destination is a new cup too: every
+// content-plan cup runs on engine cup 0, so only the destination (200 + its
+// name index) tells two of them apart (#133 PR 5b).
+static inline int AP_HitCupLegKindAtPure(int dest, int cupID, int trackIndex, int pending,
+                                         int snapshotValid, int snapshotDest, int snapshotCupID,
+                                         int snapshotTrackIndex)
+{
+	if (snapshotValid && snapshotDest != dest)
+		return AP_HIT_CUP_LEG_NEW;
+	return AP_HitCupLegKindPure(cupID, trackIndex, pending, snapshotValid, snapshotCupID,
+	                            snapshotTrackIndex);
+}
+
+// May this load take the encounter roster at all, given whether it serves
+// custom bytes? A legacy room keeps a custom-served load on its stock field
+// (the event race permute). A content plan (#133 PR 5b, ruling of 2026-10-21: no
+// logic or check differences between custom and retail tracks where
+// possible) seats the encounter field on custom and Cortex Vortex races too:
+// the load is the same 1P arcade-pack path with the same extra-model queue.
+static inline int AP_HitCustomServedAppliesPure(int customServed, int contentPlanActive)
+{
+	return !customServed || contentPlanActive;
+}
+
+// The wire destination a cup load draws its frozen field from: a running
+// content-plan cup's own (`contentCupDest`, 200 + name index, -1 when none
+// runs), else the retail Gem Cup's 100 + cupID.
+static inline int AP_HitCupDestinationPure(int cupID, int contentCupDest)
+{
+	return contentCupDest >= 0 ? contentCupDest : 100 + cupID;
 }
 
 // AI seat count for a cup: four in the retail Purple cup (cupID 4), seven

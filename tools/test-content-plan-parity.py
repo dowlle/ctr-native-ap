@@ -966,8 +966,9 @@ def gdrop_record(p):
     p.pop("global_checks")
     p["required_features"].remove(cgc.FEATURE)
 def gguest_custom(p):
-    route = next(r for r in gcheck(p, 35025000)["routes"] if r["entry_id"] == "entry/custom/baby-t-park/1.0.2")
-    gcheck(p, 35025009)["routes"].append(route)
+    # Since #133 PR 5b a guest routes from custom tracks too.
+    c = gcheck(p, 35025009)
+    c["routes"] = [r for r in c["routes"] if r["entry_id"] != "entry/custom/baby-t-park/1.0.2"]
 def gdefault_no_custom(p):
     c = gcheck(p, 35025002)
     c["routes"] = [r for r in c["routes"] if not r["entry_id"].startswith("entry/custom/")]
@@ -991,7 +992,7 @@ for name, change in [
         ("use owner", lambda p: gcheck(p, 35016001).__setitem__("owner", "retail:3")),
         ("use name", lambda p: gcheck(p, 35016001).__setitem__("display_name", "Itemsanity: Turbo")),
         ("use check with a boost rank", lambda p: gcheck(p, 35016000).__setitem__("boost", 1)),
-        ("guest routed from a custom track", gguest_custom),
+        ("guest without its custom track route", gguest_custom),
         ("default racer without its custom routes", gdefault_no_custom),
         ("hit kind", lambda p: gcheck(p, 35025004).__setitem__("kind", "itemsanity")),
         ("weapon row dropped", gweapon_dropped),
@@ -1225,6 +1226,64 @@ for name, change in [
                                                                   display_name=cp.RETAIL[15]))),
         ]:
     alter("cup-" + name, change, cup_base)
+# Hit Character with cups (#133 PR 5b): generated plans over the cup profiles
+# with Hit Character on, then forged cup orders and cup-leg Hit routes.
+from worlds.ctr.test.test_content_cups import hit_cup_options
+hit_cup_cases = []
+for seed in range(40):
+    try:
+        wire = make_world(hit_cup_options(seed, itemsanity=seed % 3 == 0), seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    hit_cup_cases.append(wire)
+    cases.append((f"cup-hits-generated-{seed}", wire, True))
+cases.append(("cup-hits-fixture", json.loads((root / "tools/fixtures/content-plan/cup-hits.json").read_text()), True))
+hit_cup_base = cases[-1][1]
+def hit_cup_env(name, change, source=None):
+    case = copy.deepcopy(source or hit_cup_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("cup-hits-" + name, case, accepted))
+def hc_orders(c):
+    return c["hit_character_encounters"]["content_cups"]
+def hc_one(c):
+    return sorted(hc_orders(c), key=int)[0]
+def hc_spare(c):
+    return str(next(i for i in range(27) if str(i) not in hc_orders(c)))
+def hc_hit(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def hc_drop_cup_routes(c, code):
+    x = hc_hit(c, code)
+    x["routes"] = [r for r in x["routes"] if r["mode"] != "cup"]
+def hc_swap_legs(c):
+    routes = hc_hit(c, 35025002)["routes"]
+    i = next(i for i in range(len(routes) - 1) if routes[i]["mode"] == "cup" == routes[i + 1]["mode"])
+    routes[i], routes[i + 1] = routes[i + 1], routes[i]
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("content_cups dropped", lambda c: c["hit_character_encounters"].pop("content_cups")),
+        ("content_cups empty", lambda c: c["hit_character_encounters"].__setitem__("content_cups", {})),
+        ("cup order dropped", lambda c: hc_orders(c).pop(hc_one(c))),
+        ("order for a missing cup", lambda c: hc_orders(c).__setitem__(hc_spare(c), copy.deepcopy(hc_orders(c)[hc_one(c)]))),
+        ("order with a repeated id", lambda c: hc_orders(c)[hc_one(c)]["order"].__setitem__(1, hc_orders(c)[hc_one(c)]["order"][0])),
+        ("order with fifteen ids", lambda c: hc_orders(c)[hc_one(c)]["order"].pop()),
+        ("order with an extra key", lambda c: hc_orders(c)[hc_one(c)].__setitem__("seed", 1)),
+        ("order shuffled", lambda c: hc_orders(c)[hc_one(c)]["order"].reverse()),
+        ("guest without its cup leg routes", lambda c: hc_drop_cup_routes(c, 35025013)),
+        ("default without its cup leg routes", lambda c: hc_drop_cup_routes(c, 35025004)),
+        ("cup leg routes out of order", hc_swap_legs),
+        ("cup leg route without its leg", lambda c: next(r for r in hc_hit(c, 35025006)["routes"] if r["mode"] == "cup").__setitem__("leg_id", None)),
+        ("cup leg route award", lambda c: next(r for r in hc_hit(c, 35025006)["routes"] if r["mode"] == "cup").__setitem__("award", "leg_win")),
+        ]:
+    hit_cup_env(name, change)
+hit_cup_env("content_cups on a Hit plan without cups",
+            lambda c: c["hit_character_encounters"].__setitem__("content_cups", copy.deepcopy(hit_cup_base["hit_character_encounters"]["content_cups"])),
+            glob_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

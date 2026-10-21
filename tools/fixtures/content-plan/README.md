@@ -144,12 +144,14 @@ none of these and are unchanged; their package records state no
 Global checks (#133 PR 4d): `global-checks.json` is slot data the paired
 apworld emitted (`worlds/ctr/test/test_global_checks.py` and
 `test_track_checks.py` helpers, seed 20261018, script
-`emit-global-checks-fixture.py` in the PR 4d artifacts) on Crash Cove, Slide
+`emit-global-checks-fixture.py` in the PR 4d artifacts; re-emitted for #133
+PR 5b by `emit-fixtures.py` in the PR 5b artifacts) on Crash Cove, Slide
 Coliseum, Tiger Temple and Cortex Vortex plus Baby T Park 1.0.2 and the B+
 `fixture-loop`, with all three modes, two stages, rungs and `wumpa: global`.
 Its plan carries `global_checks` (Itemsanity and Hit Character), the 22 use
 checks and 16 Hit checks with owner `global` and a route per Trophy Race and
-CTR Challenge (a Hit guest on retail races only), and the 11 weapon rows. The
+CTR Challenge (since #133 PR 5b a Hit guest too routes from the custom tracks
+and Cortex Vortex), and the 11 weapon rows. The
 room carries `hit_character_encounters` (block schema 3) with the content-plan
 Key fallback: the four boss guests, Penta Penguin (his wins are not in the
 plan) and Oxide. Its envelope has `hit_character` true.
@@ -157,3 +159,15 @@ plan) and Oxide. Its envelope has `hit_character` true.
 its fallback, runs the field mutations and refuses forged records, routes,
 rows, envelopes and fallbacks. The earlier fixtures have none of these and are
 unchanged.
+
+Cup hits (#133 PR 5b): `cup-hits.json` is slot data the paired apworld
+emitted (script `emit-fixtures.py` in the PR 5b artifacts, seed 20261021):
+Hit Character on, three cups over retail, custom (Baby T Park on its named
+block, the B+ `fixture-loop` on a generic slot) and Cortex Vortex legs,
+`one_lap_cups` and `cup_sweep_checks` on. Every Hit check, guests included,
+routes from every Trophy Race and CTR Challenge and from every cup leg (mode
+`cup`, the leg's `leg_id`), and `hit_character_encounters` carries
+`content_cups`: one draw order per cup name index. `test-content-plan.cpp`
+checks the parsed orders and the routes, refuses forged orders and routes,
+and refuses `content_cups` on a normal room. `cups.json` (Hit Character off)
+is unchanged.

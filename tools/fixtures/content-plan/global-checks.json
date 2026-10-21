@@ -17,7 +17,8 @@
      "relic": false,
      "ctr_tokens": true,
      "wumpa": true,
-     "super_turbo_pads": true
+     "super_turbo_pads": true,
+     "weapon_crates": 8
     },
     "files": [
      {
@@ -4543,6 +4544,46 @@
       "award": "hit"
      },
      {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
       "entry_id": "entry/retail:16",
       "mode": "trophy",
       "leg_id": null,
@@ -4596,6 +4637,46 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
       "award": "hit"
      },
      {
@@ -4655,6 +4736,46 @@
       "award": "hit"
      },
      {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
       "entry_id": "entry/retail:16",
       "mode": "trophy",
       "leg_id": null,
@@ -4708,6 +4829,46 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
       "award": "hit"
      },
      {
@@ -4767,6 +4928,46 @@
       "award": "hit"
      },
      {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
       "entry_id": "entry/retail:16",
       "mode": "trophy",
       "leg_id": null,
@@ -4820,6 +5021,46 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
       "award": "hit"
      },
      {
@@ -4879,6 +5120,46 @@
       "award": "hit"
      },
      {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
       "entry_id": "entry/retail:16",
       "mode": "trophy",
       "leg_id": null,
@@ -4932,6 +5213,46 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "hit"
+     },
+     {
+      "entry_id": "entry/cortex_vortex",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
       "award": "hit"
      },
      {

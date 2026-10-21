@@ -541,10 +541,15 @@ static void validate(const J &p, State &out) {
     std::set<int64_t> letter_items;                    // pooled letter items (modes 2 and 3)
     struct GlobalRoute { int physical; std::string entry, pad; unsigned modes; };
     std::vector<GlobalRoute> global_routes;           // `wumpa: global`
-    // Every Trophy Race and CTR Challenge (#133 PR 4d), and whether its track
-    // is retail: native seats the Hit Character draw on retail races only.
-    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; bool retail; };
+    // Every Trophy Race and CTR Challenge (#133 PR 4d), an Itemsanity and Hit
+    // route each. Since #133 PR 5b native seats the Hit Character draw on
+    // every such race, custom-served included, so a guest routes from all.
+    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; };
     std::vector<RaceRoute> race_routes;
+    // Every leg of every cup (#133 PR 5b): a Hit route each, the cup's frozen
+    // field seated in every leg. A leg on a crateless custom track is none.
+    struct CupHitRoute { int physical; std::string entry, pad, leg; };
+    std::vector<CupHitRoute> cup_hit_routes;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
@@ -703,6 +708,8 @@ static void validate(const J &p, State &out) {
                 }
                 dest.legs[n].laps = laps;
                 if (dest.legs[n].victory) leg_uses.push_back(LegUse{dest.legs[n].track_id, entry_id, id, leg_id});
+                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0)
+                    cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
             }
             dest.occupied = dest.cup = 1;
             dest.cup_index = index;
@@ -960,7 +967,7 @@ static void validate(const J &p, State &out) {
         // A custom track whose package states no weapon crates rolls no weapon,
         // so it is no Itemsanity or Hit route (#133 PR 4e).
         const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0;
-        if (reach && !crateless) race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.retail_id >= 0});
+        if (reach && !crateless) race_routes.push_back(RaceRoute{physical, entry_id, id, reach});
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
             if (fam.wumpa == 2) {
@@ -1060,14 +1067,26 @@ static void validate(const J &p, State &out) {
     }
     // Itemsanity and Hit Character (#133 PR 4d): global checks with a route
     // per Trophy Race and CTR Challenge, in physical pad order, then mode
-    // order; a Hit guest (8..15) only on retail races. The codes and names are
-    // the registry's (the apworld's frozen class order).
+    // order. A Hit check also routes from every cup leg (#133 PR 5b), in leg
+    // order on its pad, and every Hit target has the same routes. The codes
+    // and names are the registry's (the apworld's frozen class order).
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
-    auto global_check = [&](const J &row, const char *kind, const char *award, bool guest) {
+    std::vector<std::pair<int, J>> hit_route_list;
+    for (const auto &r : race_routes)
+        for (int m = 0; m < 2; ++m)
+            if (r.modes & (1u << m)) hit_route_list.emplace_back(r.physical, route_record(r.entry, m ? "ctr" : "trophy", r.pad, "hit"));
+    for (const auto &r : cup_hit_routes)
+        hit_route_list.emplace_back(r.physical, J{{"entry_id", r.entry}, {"mode", "cup"}, {"leg_id", r.leg},
+                                                  {"encounter_id", nullptr}, {"own_pad_id", r.pad}, {"award", "hit"}});
+    std::stable_sort(hit_route_list.begin(), hit_route_list.end(),
+                     [](const std::pair<int, J> &a, const std::pair<int, J> &b) { return a.first < b.first; });
+    auto global_check = [&](const J &row, const char *kind, const char *award, bool hit) {
         J routes = J::array();
-        for (const auto &r : race_routes)
-            if (r.retail || !guest)
+        if (hit)
+            for (const auto &r : hit_route_list) routes.push_back(r.second);
+        else
+            for (const auto &r : race_routes)
                 for (int m = 0; m < 2; ++m)
                     if (r.modes & (1u << m)) routes.push_back(route_record(r.entry, m ? "ctr" : "trophy", r.pad, award));
         need(!routes.empty(), std::string("global check without a race to earn it: ") + row["name"].get<std::string>());
@@ -1081,7 +1100,7 @@ static void validate(const J &p, State &out) {
             global_check(registry["itemsanity"][i], "itemsanity", i % 2 ? "use_juiced" : "use", false);
     if (out.hit)
         for (size_t i = 0; i < registry["hit_character"].size(); ++i)
-            global_check(registry["hit_character"][i], "hit", "hit", i >= 8);
+            global_check(registry["hit_character"][i], "hit", "hit", true);
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
     for (const auto &pair : expected_checks)
@@ -1386,6 +1405,14 @@ static int parse_content_plan(const nlohmann::json &j) {
                 bool present = false;
                 for (int k = 0; k < t.count; ++k) present |= candidate.checks.count(t.any_of[k]) != 0;
                 need((t.fallback_keys > 0) == !present, "hit_character_encounters fallback disagrees with the plan's unlock wins");
+            }
+            // Content-plan cups (#133 PR 5b): one draw order per cup of the
+            // plan, by name index, and none for any other index.
+            for (int c = 0; c < CTR_CFG_HIT_CONTENT_CUP_COUNT; ++c) {
+                bool cup = false;
+                for (const auto &pad : candidate.pads) cup |= pad.occupied && pad.cup && pad.cup_index == c;
+                need((ctr_cfg.hit.content_cup_present[c] != 0) == cup,
+                     "hit_character_encounters content_cups disagrees with the plan's cups");
             }
         }
         state = std::move(candidate);
