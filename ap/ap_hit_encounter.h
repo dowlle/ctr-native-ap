@@ -35,8 +35,8 @@ const int *AP_HitEncounterOrder(int destLevelID);
 // and the two trial Trophy tracks (16/17): the Trophy Race AND that track's CTR
 // Challenge (TOKEN_RACE), which is the same driver load with one extra mode bit.
 // Boss/cup/arcade/relic/crystal and multiplayer loads return 0. `isAdventure` is
-// ADVENTURE_MODE. Custom-served loads are excluded at the call site, except
-// on a content plan (#133 PR 5b), where they apply like retail races.
+// ADVENTURE_MODE. Custom-served loads apply like retail races (#133 PR 5b
+// content plans, PR 5c legacy rooms) and draw from their host's order.
 int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers);

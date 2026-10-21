@@ -1050,13 +1050,18 @@ static int AP_HitEffectivePlayer(int physLevelID)
 // opportunity at the sixteen retail tracks (0..15) and the two trial Trophy
 // tracks (16/17). A trial whose trial row is invalid has no Trophy route, so it never
 // reports an opportunity (the pad must not stay open with nothing to earn);
-// logged once per trial. Cups are ticket 11. Counted by AP_PadState as BOTH a
+// logged once per trial. Since #133 PR 5c the legacy Cortex Vortex pad track
+// (110, drawn on host 13) and a Gem Cup a legacy custom track took over (its
+// one custom race, drawn from that cup's order) are Hit races too; retail Gem
+// Cups stay extra opportunities (ticket 11). Counted by AP_PadState as BOTH a
 // remaining location and a plain-rerace check, so Done cannot hard-lock the pad
 // while a target can still be encountered, and a stage-2-locked pad keeps its
 // phase-1 plain rerace. Also consumed by AH_WarpPad.c's tier-2 choosers.
 int AP_HitPadOpportunity(int physLevelID, int destLevelID)
 {
 	int trialValid = 1;
+	int customCup = 0;
+	int drawDest;
 
 	if (!AP_HitEncounterEnabled())
 		return 0;
@@ -1080,10 +1085,17 @@ int AP_HitPadOpportunity(int physLevelID, int destLevelID)
 			return 0;
 		}
 	}
-	else if (!AP_HitPadDestEligiblePure(destLevelID, 1))
+#ifdef CTR_CUSTOM_TRACKS
+	// A package whose measured `crates` flag is false rolls no weapon, so
+	// nothing can be hit there; the apworld routes no Hit check from it.
+	customCup = AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID) && ctr_cfg.custom_track.flags.crates;
+#endif
+	drawDest = AP_HitPadDrawDestPure(destLevelID, trialValid, AP_CortexDestValid(),
+	                                 CORTEX_TRACK_HOST_LEVEL, customCup);
+	if (drawDest < 0)
 		return 0;
 
-	return AP_HitEncounterOpportunity(destLevelID, AP_HitEffectivePlayer(physLevelID)) >= 0;
+	return AP_HitEncounterOpportunity(drawDest, AP_HitEffectivePlayer(physLevelID)) >= 0;
 }
 
 void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,

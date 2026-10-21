@@ -77,6 +77,7 @@ tools/test-hit-boss-identity.cpp
 tools/test-hit-chooser.c
 tools/test-hit-cup-snapshot.cpp
 tools/test-hit-content-cups.cpp
+tools/test-hit-legacy-custom-production.py
 tools/test-hit-encounter-production.cpp
 tools/test-hit-policy.c
 tools/test-hit-roster-fixture.cpp

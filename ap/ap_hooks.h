@@ -391,10 +391,8 @@ void AP_ContentCupOnLevelStart(void);
 void AP_ContentCupOnLoadRequested(int level);
 void AP_ContentCupLegResult(struct GameTracker *gGT);
 int AP_ContentCupFinish(struct GameTracker *gGT, int won);
-// Hit Character on content plans (#133 PR 5b): custom-served loads seat the
-// encounter field while a plan is active; a content-plan cup draws its frozen
-// field from 200 + its name index (-1 when no content-plan cup runs).
-int AP_ContentHitServesCustom(void);
+// Hit Character on content plans (#133 PR 5b): a content-plan cup draws its
+// frozen field from 200 + its name index (-1 when no content-plan cup runs).
 int AP_ContentCupHitDestination(void);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);

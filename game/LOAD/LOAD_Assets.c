@@ -336,42 +336,48 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 			// the gameMode2 TOKEN_RACE bit set, so it seats the same field from
 			// the same destination key; an Adventure Gem Cup uses its
 			// FROZEN snapshot (drawn once at the pad entry, reused across every
-			// leg and same-session retry). On a legacy room custom-served loads
-			// keep their own permute and get no roster. On a content plan
-			// (#133 PR 5b) they apply like a retail race: a standalone custom or
+			// leg and same-session retry). Custom-served loads apply like a
+			// retail race (#133 PR 5b content plans, PR 5c legacy rooms; the
+			// event-race permute above is overwritten): a standalone custom or
 			// Cortex Vortex race draws from its host's order (6 or 13), and a
 			// content-plan cup draws its frozen field once, at its first leg,
 			// from its own order (200 + name index) whatever track that leg is,
-			// then seats it in every leg, custom legs included. The player's
+			// then seats it in every leg, custom legs included. A legacy custom
+			// track that took the Purple cup over is a one-race cup: its field
+			// is drawn at the pad entry from that cup's order. The player's
 			// arcade pack is built around the stock set LOAD_Robots1P just wrote,
 			// so any selected opponent outside it needs a BI_RACERMODELHI extra;
 			// the load path and queue are the same on a custom-served load.
 			{
 				int isCup = (gameMode1 & ADVENTURE_CUP) != 0;
 				int customServed = 0;
-				int contentPlan = 0;
 				int contentCupDest = -1;
-				int hitServed, hitCupDest;
+				int eventFieldSize = 0;
+				int hitCupDest;
 				int hitApply = 0;
 				int aiSeats = 7;
 
 #ifdef CTR_CUSTOM_TRACKS
 				customServed = CustomTrack_ServingLoad((int)gGT->levelID, isCup,
 				                                       gGT->cup.cupID);
-				contentPlan = AP_ContentHitServesCustom();
 				if (isCup)
 					contentCupDest = AP_ContentCupHitDestination();
+				// A legacy custom track that took a cup over grids its own
+				// field (MainInit, Purple cup only); a content-plan cup leg
+				// races on engine cup 0 with eight karts.
+				if (isCup && customServed && contentCupDest < 0)
+					eventFieldSize = CustomTrack_EventFieldSize((int)gGT->levelID, 1, gGT->cup.cupID);
 #endif
-				hitServed = AP_HitCustomServedAppliesPure(customServed, contentPlan);
 				hitCupDest = AP_HitCupDestinationPure((int)gGT->cup.cupID, contentCupDest);
-				if (hitServed && isCup && AP_HitEncounterEnabled())
+				if (isCup && AP_HitEncounterEnabled())
 				{
 					// Gem Cup: four AI in the retail Purple cup, seven otherwise,
+					// and the measured field of a legacy custom event race,
 					// matching MainInit's field count.
-					aiSeats = AP_HitEncounterCupFieldSize((int)gGT->cup.cupID);
+					aiSeats = AP_HitCupSeatsPure((int)gGT->cup.cupID, eventFieldSize);
 					hitApply = 1;
 				}
-				else if (hitServed &&
+				else if (
 				         AP_HitEncounterShouldApply(
 				             (gameMode1 & ADVENTURE_MODE) != 0, (int)gGT->levelID,
 				             isCup, IS_BOSS_RACE(gameMode1),

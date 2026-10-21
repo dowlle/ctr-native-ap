@@ -36,15 +36,6 @@ const ctr_content_pad *AP_ContentCupPad(void)
 	return pad;
 }
 
-// Hit Character on content plans (#133 PR 5b). A content-plan race seats the
-// encounter field on custom and Cortex Vortex tracks too, like a retail race,
-// so the loader lets a custom-served load apply while a plan is active. A
-// legacy room keeps its custom-served loads on the stock field.
-int AP_ContentHitServesCustom(void)
-{
-	return ap_content_plan_active();
-}
-
 // The wire destination of the running content-plan cup's frozen field:
 // 200 + the cup's name index (the encounter block's `content_cups`), or -1.
 int AP_ContentCupHitDestination(void)

@@ -404,15 +404,38 @@ static inline int AP_HitCupLegKindAtPure(int dest, int cupID, int trackIndex, in
 	                            snapshotTrackIndex);
 }
 
-// May this load take the encounter roster at all, given whether it serves
-// custom bytes? A legacy room keeps a custom-served load on its stock field
-// (the event race permute). A content plan (#133 PR 5b, ruling of 2026-10-21: no
-// logic or check differences between custom and retail tracks where
-// possible) seats the encounter field on custom and Cortex Vortex races too:
+// How many AI seats a cup load's encounter field has. The retail Purple cup
+// races four AI; every other cup seven. A legacy custom track that took a cup
+// over (the event race, #133 PR 5c) grids the field its descriptor measured,
+// `eventFieldSize` karts including the player (MainInit's
+// CustomTrackPolicy_DriverCount, Purple cup only); 0 when the load is not that
+// race. Since #133 PR 5c every custom-served load takes the encounter roster,
+// on legacy rooms too (ruling of 2026-10-21: the same Hit rule everywhere);
 // the load is the same 1P arcade-pack path with the same extra-model queue.
-static inline int AP_HitCustomServedAppliesPure(int customServed, int contentPlanActive)
+static inline int AP_HitCupSeatsPure(int cupID, int eventFieldSize)
 {
-	return !customServed || contentPlanActive;
+	if (cupID != 4)
+		return 7;
+	if (eventFieldSize <= 1)
+		return 4;
+	return eventFieldSize - 1 > 7 ? 7 : eventFieldSize - 1;
+}
+
+// The draw destination behind a pad, for its Hit opportunity, or -1 when the
+// pad hosts no Hit race. An ordinary track 0..17 is its own destination (a
+// trial needs a valid trial row). The legacy Cortex Vortex pad track
+// (destination 110) races on host 13 and draws from its order; a Gem Cup
+// destination 100..104 that a legacy custom track took over races one custom
+// race in that cup's context and draws from that cup's order (#133 PR 5c).
+// Retail Gem Cups stay extra opportunities, never a pad Hit opportunity.
+static inline int AP_HitPadDrawDestPure(int destLevelID, int trialValid, int cortexValid,
+                                        int cortexHost, int customCupOwned)
+{
+	if (destLevelID == 110)
+		return cortexValid ? cortexHost : -1;
+	if (destLevelID >= 100 && destLevelID < 105)
+		return customCupOwned ? destLevelID : -1;
+	return AP_HitPadDestEligiblePure(destLevelID, trialValid) ? destLevelID : -1;
 }
 
 // The wire destination a cup load draws its frozen field from: a running

@@ -1335,8 +1335,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		cvTokenLeft = AP_PadTokenSideLeft(cvTokenLeft,
 		                                  AP_PadUncollectedLetterCount(levelID),
 		                                  AP_PadUncollectedWumpaCount(levelID));
-		cvRoute = AP_PadTier2RouteDecide(cvTokenLeft, cvRelicLeft, 0);
+		// A Hit opportunity (#133 PR 5c) is the only plain re-race reason on
+		// this track: the field is drawn on host 13 like a retail race.
+		cvRoute = AP_PadTier2RouteDecide(cvTokenLeft, cvRelicLeft,
+		                                 AP_HitPadOpportunity(physLevelID, levelID));
 		AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + cvRoute);
+		if (cvRoute == AP_PAD_TIER2_BOX_RERACE)
+		{
+			// Same plain adventure load as the phase-1 re-race above.
+			sdata->boolOpenTokenRelicMenu = 0;
+			goto WarpPad_BoxReRace;
+		}
 		if (cvRoute == AP_PAD_TIER2_TOKEN)
 		{
 			gGT->gameMode2 |= TOKEN_RACE;
