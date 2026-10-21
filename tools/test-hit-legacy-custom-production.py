@@ -8,7 +8,11 @@ unhit. The production AP_HitPadOpportunity (ap/ap_hooks_pads.c) is compiled
 with the pure decisions it calls (ap/ap_hit_policy.h) and the real custom
 destination owner (ap/ap_custom_pad_logic.h); the encounter gather is a
 controlled seam that records which draw destination it was asked about.
-The pure seat count of a cup load (AP_HitCupSeatsPure) is pinned too.
+The pure seat count of a cup load (AP_HitCupSeatsPure) is pinned too, and so
+is the Cortex Vortex pad's route order (game/232/AH_WarpPad.c): a Hit
+opportunity goes through the Hit chooser before the token/relic routing, so
+a player with only a relic left besides the Hit is offered the Trophy row
+instead of being sent into a Relic Race, which seats no AI.
 """
 from pathlib import Path
 import subprocess
@@ -17,6 +21,13 @@ import ap_hooks_unit
 
 root = Path(__file__).resolve().parents[1]
 source = ap_hooks_unit.read()
+warppad = (root / "game" / "232" / "AH_WarpPad.c").read_text(encoding="utf-8")
+cv = warppad[warppad.index("if (levelID == AP_CORTEX_DEST)\n\t{\n\t\tint cvTokenLeft"):]
+cv = cv[:cv.index("// gem cups")]
+chooser = cv.index("AP_HitChooserFrame(")
+assert cv.index("AP_HitPadOpportunity(physLevelID, levelID)") < chooser < cv.index("cvRoute = AP_PadTier2RouteDecide("), \
+    "the Cortex Vortex pad must run the Hit chooser before its token/relic routing"
+assert "AP_HitChooserWarpStart(&apHitChooser)" in cv, "the Cortex Vortex pad must arm the Hit chooser at warp start"
 
 
 def function(signature, text=source):
@@ -36,6 +47,7 @@ fixture = r'''
 #define CTR_CUSTOM_TRACKS 1
 #include "ap/ap_hit_policy.h"
 #include "ap/ap_custom_pad_logic.h"
+#include "ap/ap_pad_state.h"
 #define CORTEX_TRACK_HOST_LEVEL 13
 ctr_seed_config ctr_cfg;
 static int enabled = 1, cortexValid, askedDest, opportunity;
@@ -79,6 +91,11 @@ int main(void) {
  assert(AP_HitCupSeatsPure(4, 0) == 4 && AP_HitCupSeatsPure(0, 0) == 7 && AP_HitCupSeatsPure(3, 8) == 7); cases++;
  assert(AP_HitCupSeatsPure(4, 5) == 4 && AP_HitCupSeatsPure(4, 6) == 5 && AP_HitCupSeatsPure(4, 8) == 7); cases++;
  assert(AP_HitCupSeatsPure(4, 9) == 7 && AP_HitCupSeatsPure(4, 1) == 4); cases++;
+ /* Hit plus only a relic left: the chooser offers rows (MENU), it never
+    routes straight into the Relic Race the token/relic decision would pick. */
+ assert(AP_HitOrdinaryRoutePure(1, 0, 1) == AP_HIT_ORDINARY_MENU); cases++;
+ assert(AP_PadTier2RouteDecide(0, 1, 0) == AP_PAD_TIER2_RELIC); cases++;
+ assert(AP_HitOrdinaryRoutePure(1, 0, 0) == AP_HIT_ORDINARY_PLAIN); cases++;
  printf("PASS %d legacy custom Hit cases\n", cases);
  return 0;
 }
