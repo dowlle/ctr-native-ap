@@ -1181,11 +1181,19 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 			}
 #endif
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			// A content-plan cup (#133 PR 5) returns to its own pad.
+			int apContentPad = AP_ContentCupPadLevel();
+#endif
 			// when loading is done remove bits for Adventure Cup, relic, and crystal challenge
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP | RELIC_RACE | CRYSTAL_CHALLENGE;
 
 			// Level ID
 			gGT->levelID = gGT->cup.cupID + ADV_CUP;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			if (apContentPad >= 0)
+				gGT->levelID = (s16)apContentPad;
+#endif
 		}
 		break;
 	default:

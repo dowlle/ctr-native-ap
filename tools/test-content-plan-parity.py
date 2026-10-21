@@ -75,6 +75,14 @@ from worlds.ctr.item_boxes import ITEM_BOX_CLASS as CBOX, PLACED_COUNTS as CBOX_
 for row in expected["retail"]:
     row["boxes"] = [[CBOX.slot_code(row["name"], s), CBOX_TIER.get((row["name"], s), 0)]
                     for s in range(1, CBOX_PLACED[row["name"]] + 1)]
+# Cups (#133 PR 5): the 27-name pool with its Win and Win All Legs codes, and
+# every track's Cup Leg Victory code (retail rows, Cortex Vortex, generic slots).
+from worlds.ctr import cup_checks as ccup
+for row in expected["retail"]:
+    row["cup_leg"] = L[ccup.cup_leg_name(row["name"])]
+expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
+expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
+expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 33)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -1169,6 +1177,54 @@ for row in range(32):
 for key in ("tracks", "entries", "pads", "checks", "requirements", "items"):
     alter("null-" + key, lambda p, key=key: p.__setitem__(key, None))
 
+# Cups (#133 PR 5): generated plans over counts, sources, repeats, laps,
+# sweeps, boost and racer locks, then forged cup records.
+from worlds.ctr.test.test_content_cups import cup_options
+cup_cases = []
+from Options import OptionError as CupOptionError
+for seed in range(80):
+    try:
+        wire = make_world(cup_options(seed), seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue  # a narrow start the slot refuses before any plan is emitted
+    cup_cases.append(wire)
+    cases.append((f"cups-generated-{seed}", wire, True))
+cup_base = next(w for w in cup_cases if any(c["kind"] == "cup_leg" for c in w["content_plan"]["checks"])
+                and any(c["kind"] == "cup_sweep" for c in w["content_plan"]["checks"])
+                and any(t["id"] not in {e.get("track_id") for e in w["content_plan"]["entries"]}
+                        for t in w["content_plan"]["tracks"]))
+def cup_entry(p):
+    return next(e for e in p["entries"] if e["kind"] == "cup")
+def cup_check(kind):
+    return lambda p: next(c for c in p["checks"] if c["kind"] == kind)
+for name, change in [
+        ("name index", lambda p: cup_entry(p).__setitem__("id", "entry/cup:30")),
+        ("display name", lambda p: cup_entry(p).__setitem__("display_name", "Cup")),
+        ("three legs", lambda p: cup_entry(p)["legs"].pop()),
+        ("leg id", lambda p: cup_entry(p)["legs"][1].__setitem__("id", "x")),
+        ("leg unknown track", lambda p: cup_entry(p)["legs"][0].__setitem__("track_id", "retail:99")),
+        ("leg trial track", lambda p: cup_entry(p)["legs"][0].__setitem__("track_id", "retail:16")),
+        ("leg laps", lambda p: cup_entry(p)["legs"][0].__setitem__("laps", 2)),
+        ("leg laps 0", lambda p: cup_entry(p)["legs"][0].__setitem__("laps", 0)),
+        ("roster opponent", lambda p: cup_entry(p)["roster"].append(dict(role="opponent", slot=1, character_id=1,
+                                                                        driving_profile="a", attack_profile="b"))),
+        ("field size", lambda p: cup_entry(p).__setitem__("field_size", 4)),
+        ("gate mode", lambda p: next(x for x in p["pads"] if x["entry_id"] == cup_entry(p)["id"])["mode_gates"][0].__setitem__("mode", "trophy")),
+        ("gate stage", lambda p: next(x for x in p["pads"] if x["entry_id"] == cup_entry(p)["id"])["mode_gates"][0].__setitem__("stage", 2)),
+        ("win code", lambda p: cup_check("cup")(p).__setitem__("location", 35027026)),
+        ("win route award", lambda p: cup_check("cup")(p)["routes"][0].__setitem__("award", "win_letters")),
+        ("win leg id", lambda p: cup_check("cup")(p)["routes"][0].__setitem__("leg_id", "x")),
+        ("sweep dropped", lambda p: p["checks"].remove(cup_check("cup_sweep")(p))),
+        ("leg victory dropped", lambda p: p["checks"].remove(cup_check("cup_leg")(p))),
+        ("leg victory route dropped", lambda p: cup_check("cup_leg")(p)["routes"].pop()),
+        ("leg victory name", lambda p: cup_check("cup_leg")(p).__setitem__("display_name", "Leg")),
+        ("feature missing", lambda p: p["required_features"].remove("cup_entries_v1")),
+        ("cup-only track mode", lambda p: next(t for t in p["tracks"] if t["id"] not in
+                                              {e.get("track_id") for e in p["entries"]})["modes"].append("ctr")),
+        ("unused cup-only track", lambda p: p["tracks"].append(dict(p["tracks"][0], id="retail:15", retail_id=15,
+                                                                  display_name=cp.RETAIL[15]))),
+        ]:
+    alter("cup-" + name, change, cup_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

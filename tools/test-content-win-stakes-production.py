@@ -58,6 +58,9 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
 }
 const ctr_content_pad *AP_ContentCrystalPad(void) { return crystalRunning ? &crystal : NULL; }
+/* Content-plan cups (#133 PR 5): the running cup's pad, validated in production by AP_ContentCupPad. */
+static ctr_content_pad cupPad; static int cupRunning;
+const ctr_content_pad *AP_ContentCupPad(void) { return cupRunning ? &cupPad : NULL; }
 static int AP_ContentLetterItemReceived(int64_t code) {
  for (int i=0;i<receivedCount;i++) if (received[i]==code) return 1;
  return 0;
@@ -88,7 +91,7 @@ fixture += r'''
 #define CC 3
 static void reset(int mode, int retail) {
  memset(&game,0,sizeof game); memset(&context,0,sizeof context); memset(&pad,0,sizeof pad); memset(&crystal,0,sizeof crystal);
- planActive=haveContext=1; crystalRunning=0; epoch=4; checkedCount=receivedCount=0; lastLog[0]=0;
+ planActive=haveContext=1; crystalRunning=0; cupRunning=0; memset(&cupPad,0,sizeof cupPad); epoch=4; checkedCount=receivedCount=0; lastLog[0]=0;
  AP_ItemIdTallyReset(&g_wl_tally); envBoostMode=0; envStart=0; envUnlocks=0; startId=0; startN=0;
  sdataStore.gGT=&game;
  context.physicalPad=CC; context.returnHub=26; context.seedEpoch=4; context.mode=mode; context.retail=retail;
@@ -166,6 +169,16 @@ int main(void) {
  /* A collected win is exempt whatever the rank. */
  reset(AP_CONTENT_MODE_TROPHY,1); envBoostMode=1; pad.trophy_boost=2; checked[checkedCount++]=35011000; s=decide(&handled);
  assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ /* A content-plan cup (#133 PR 5): its Win and its rank, the pad's racer. */
+ reset(AP_CONTENT_MODE_TROPHY,1); cupRunning=1; cupPad.cup=1; cupPad.trophy_location=35027004; cupPad.racer_lock=-1; s=decide(&handled);
+ assert(handled && s.stakes && s.code==35027004); cases++;
+ envBoostMode=1; cupPad.trophy_boost=2; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ got(35010027,1); got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35027004); cases++;
+ checked[checkedCount++]=35027004; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ /* With a sweep: once the Win is collected the Win All Legs is at stake, at its own rank. */
+ cupPad.sweep_location=35027204; cupPad.sweep_boost=0; s=decide(&handled); assert(handled && s.stakes && s.code==35027204); cases++;
+ cupPad.sweep_boost=3; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ checked[checkedCount++]=35027204; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
  /* The pure decision on its own. */
  s=AP_WinStakesContentDecide(0,0,0); assert(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  s=AP_WinStakesContentDecide(35011000,1,1); assert(!s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;

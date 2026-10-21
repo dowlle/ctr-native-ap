@@ -69,6 +69,13 @@ static int s_haveOxideFinalDescriptor;
 static int s_oxideFinalVerified;
 static int s_customTracksLoaded = 0;
 static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
+// Content-plan cup (#133 PR 5): set while the next leg's package is armed
+// between two legs, so the active cup context does not hold the loader.
+static int s_cupLegSwitch;
+static int CustomTrack_LatchHoldsPackage(void)
+{
+	return (s_standaloneRace.active && !s_cupLegSwitch) || s_standaloneRace.pendingKind == 2;
+}
 static char s_customTrackServeFault[128];
 
 // Entry owns the verified bytes through asynchronous load and every restart.
@@ -580,7 +587,7 @@ void CustomTrack_ClearSeedDescriptor(void)
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status)
 {
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0; // A prepared/active race retains its exact package until exit.
 	unsigned char uuid[CTR_CT_NAV_UUID_BYTES];
 
@@ -617,7 +624,7 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const char *raceName)
 {
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0; // A prepared/active race retains its exact package until exit.
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -691,7 +698,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// unchanged descriptor must cost a memcmp and nothing else.
 	if (s_haveDescriptor && memcmp(&s_descriptor, d, sizeof(s_descriptor)) == 0)
 		return s_customTrackConfig.contentVerified;
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0;
 
 	s_descriptor = *d;
@@ -841,6 +848,43 @@ int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context
 		return 0;
 	}
 	return CustomRaceLatch_Stage(&s_standaloneRace, context);
+}
+
+// Content-plan cup (#133 PR 5): arm the next leg between two legs. Begin lets
+// the loader take the next leg's package while the cup context is active;
+// End closes that window again. Only while the current race is a cup leg.
+int CustomTrack_BeginCupLegSwitch(void)
+{
+	s_cupLegSwitch = s_standaloneRace.active && s_standaloneRace.current.cup && !s_standaloneRace.pendingKind;
+	return s_cupLegSwitch;
+}
+void CustomTrack_EndCupLegSwitch(void) { s_cupLegSwitch = 0; }
+
+// Stage the next leg of the running cup: a retail leg holds no bytes; a custom
+// or Cortex Vortex leg retains the exact verified bytes of its armed package.
+int CustomTrack_StageCupLeg(const struct CustomTrackRaceContext *context)
+{
+	if (!s_cupLegSwitch || !CustomRaceContext_Valid(context) || !context->cup)
+		return 0;
+	if (context->retail)
+	{
+		CustomTrack_ReleaseStandaloneBytes();
+		return CustomRaceLatch_StageNext(&s_standaloneRace, context);
+	}
+	if (!s_haveDescriptor || !s_customTrackConfig.standalone || !s_customTrackConfig.contentVerified ||
+	    context->hostLevelID != s_descriptor.hostLevelID || context->laps != s_descriptor.laps ||
+	    !NativeSha256_HexEquals(s_descriptor.levSha256, context->levSha256) ||
+	    !NativeSha256_HexEquals(s_descriptor.vrmSha256, context->vrmSha256))
+		return 0;
+	CustomTrack_ReleaseStandaloneBytes();
+	if (!CustomTrack_RetainFile(&s_customTrackLev, &s_standaloneLev) ||
+	    !CustomTrack_RetainFile(&s_customTrackVrm, &s_standaloneVrm))
+	{
+		CustomTrack_ReleaseStandaloneBytes();
+		CustomTrack_Log("[CustomTracks] cup leg refused: unable to retain the exact verified package bytes\n");
+		return 0;
+	}
+	return CustomRaceLatch_StageNext(&s_standaloneRace, context);
 }
 
 void CustomTrack_SelectRetailRace(void) { CustomRaceLatch_Retail(&s_standaloneRace); }
