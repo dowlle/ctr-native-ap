@@ -23,7 +23,12 @@ Cases, each checked against the file system afterwards:
      written, and the player file is unchanged; a linked track.lev refuses,
   9. a VRM that cannot be published takes back the LEV it just published,
  10. on POSIX a backslash is a file-name character: "tracks\\x" is a sibling
-     of tracks and is refused.
+     of tracks and is refused,
+ 11. races with another program in the same folder: the package folder
+     swapped for a link after it was opened, a .part link planted after the
+     cleanup, a file appearing at track.lev before publish, and our LEV
+     replaced before a failed VRM. None writes outside tracks, through a
+     link, or over or away another program's file.
 """
 from pathlib import Path
 import subprocess
@@ -57,13 +62,34 @@ prelude = r'''
 #include <vector>
 #include <fcntl.h>
 #include <stdio.h>
-// Fail the publish of track.vrm on demand (case 9); the worker calls rename.
-static bool deny_vrm_rename;
-extern "C" int rename(const char *from, const char *to)
+#include <dlfcn.h>
+// File-operation hooks for the race and failure cases (8, 9, 11): the worker
+// publishes with linkat and creates folders with mkdirat; each hook runs once
+// at its named boundary (returning true once it acted), then the real call.
+static bool deny_vrm_link;
+static bool (*before_link)(const char *name);
+static bool (*after_unlink)(const char *name);
+static bool (*before_mkdir)(const char *name);
+extern "C" int linkat(int a, const char *from, int b, const char *to, int flags)
 {
-	const size_t n = std::strlen(to);
-	if (deny_vrm_rename && n >= 9 && !std::strcmp(to + n - 9, "track.vrm")) { errno = EACCES; return -1; }
-	return renameat(AT_FDCWD, from, AT_FDCWD, to);
+	static int (*real)(int, const char *, int, const char *, int) =
+		(int (*)(int, const char *, int, const char *, int))dlsym(RTLD_NEXT, "linkat");
+	if (before_link) { auto hook = before_link; if (hook(to) && before_link == hook) before_link = nullptr; }
+	if (deny_vrm_link && !std::strcmp(to, "track.vrm")) { errno = EACCES; return -1; }
+	return real(a, from, b, to, flags);
+}
+extern "C" int unlinkat(int dir, const char *name, int flags)
+{
+	static int (*real)(int, const char *, int) = (int (*)(int, const char *, int))dlsym(RTLD_NEXT, "unlinkat");
+	const int r = real(dir, name, flags);
+	if (after_unlink && after_unlink(name)) after_unlink = nullptr;
+	return r;
+}
+extern "C" int mkdirat(int dir, const char *name, mode_t mode)
+{
+	static int (*real)(int, const char *, mode_t) = (int (*)(int, const char *, mode_t))dlsym(RTLD_NEXT, "mkdirat");
+	if (before_mkdir && before_mkdir(name)) before_mkdir = nullptr;
+	return real(dir, name, mode);
 }
 '''
 
@@ -268,13 +294,67 @@ int main()
 		unlink(tlev.c_str());
 
 		// 9. VRM publish fails: the LEV is taken back.
-		deny_vrm_rename = true;
+		deny_vrm_link = true;
 		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
 		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && !exists(tlev) && !exists(tvrm) &&
 		       !exists(orig + "/.saphi-track.lev.part") && !exists(orig + "/.saphi-track.vrm.part"),
 		       "a failed VRM publish leaves no half revision: " + detail);
-		deny_vrm_rename = false;
+		deny_vrm_link = false;
 		rmdir(orig.c_str()); rmdir(pkg.c_str());
+
+		// 11. Races with another program writing the same folder.
+		static std::string g_pkg, g_orig, g_outside, g_victim, g_moved;
+		g_pkg = pkg; g_orig = orig; g_outside = outside; g_victim = victim; g_moved = tracks + "/moved";
+		// a. The package folder is swapped for a link after it was opened.
+		before_mkdir = [](const char *name) {
+			if (std::strcmp(name, "original")) return false;
+			rename(g_pkg.c_str(), g_moved.c_str());
+			symlink(g_outside.c_str(), g_pkg.c_str());
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		finish(detail);
+		expect(before_mkdir == nullptr && exists(g_moved), "the swap happened");
+		expect(!exists(outside + "/original") && !exists(outside + "/track.lev"), "a folder swapped for a link mid-install: nothing outside tracks");
+		unlink(pkg.c_str());
+		expect(std::system(("rm -rf '" + g_moved + "'").c_str()) == 0, "clean up the moved folder");
+		// b. A .part link planted right after the leftover name is cleared.
+		mkdir(pkg.c_str(), 0755); mkdir(orig.c_str(), 0755);
+		after_unlink = [](const char *name) {
+			if (std::strcmp(name, ".saphi-track.lev.part")) return false;
+			symlink(g_victim.c_str(), (g_orig + "/.saphi-track.lev.part").c_str());
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && after_unlink == nullptr && slurp(victim) == keep && !exists(tlev),
+		       "a .part link planted mid-install is never written through: " + detail);
+		unlink((orig + "/.saphi-track.lev.part").c_str());
+		// c. A player file appears at track.lev just before publish.
+		before_link = [](const char *name) {
+			if (std::strcmp(name, "track.lev")) return false;
+			std::ofstream f(g_orig + "/track.lev", std::ios::binary); f << "player";
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && before_link == nullptr &&
+		       slurp(tlev) == std::vector<unsigned char>({'p','l','a','y','e','r'}) && !exists(tvrm),
+		       "a file that appears before publish is never replaced: " + detail);
+		unlink(tlev.c_str());
+		// d. Our LEV is replaced by another program, then the VRM fails: the other file stays.
+		before_link = [](const char *name) {
+			if (std::strcmp(name, "track.vrm")) return false;
+			unlink((g_orig + "/track.lev").c_str());
+			std::ofstream f(g_orig + "/track.lev", std::ios::binary); f << "theirs";
+			deny_vrm_link = true;
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		{ int st = finish(detail); auto got = slurp(tlev);
+		expect(st == AP_CT_DOWNLOAD_FAILED && before_link == nullptr &&
+		       got == std::vector<unsigned char>({'t','h','e','i','r','s'}),
+		       "rollback never removes a file another program put there: " + detail); }
+		deny_vrm_link = false; before_link = nullptr;
+		unlink(tlev.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
 
 		// 10. A backslash sibling on POSIX.
 		const std::string sibling = tracks + "\\sibling";
@@ -293,7 +373,7 @@ with tempfile.TemporaryDirectory() as tmp:
     src.write_text(prelude + part_a + stub + part_b + tests, encoding="utf-8")
     subprocess.run(["g++", "-m32", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
                     "-I" + str(root / "ap"), "-I" + str(root / "ap/vendor/json/include"),
-                    str(src), "-o", str(exe), "-lcrypto", "-pthread"], check=True, cwd=root)
+                    str(src), "-o", str(exe), "-lcrypto", "-pthread", "-ldl"], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
 print("PASS: Current Seed download: unsafe roots, size pins, network failures, hash mismatches, links and an existing "
       "different file all refuse with no folder or file changed; a failed VRM publish takes back its LEV; identical files kept; legacy download unchanged")

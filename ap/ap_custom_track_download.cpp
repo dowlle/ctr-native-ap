@@ -30,6 +30,10 @@
 
 #include <sys/stat.h>
 #include <cerrno>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
@@ -498,6 +502,103 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 	return matches == 1;
 }
 
+// Publish a verified pinned install (Current Seed, #133 PR 7) without ever
+// writing through a link or replacing a file, even if the folder changes
+// while it runs. POSIX works on directory handles opened without following
+// links: <tracks>/<folder> and its original/ are created and opened with
+// O_NOFOLLOW, temporary files are created exclusively (O_EXCL | O_NOFOLLOW),
+// and each file is published with linkat, which fails when the name exists.
+// A LEV this call published is taken back when the VRM cannot be, but only
+// while the name still holds that same file (device, inode, size and both
+// timestamps, since an inode number can be reused at once). Windows uses the same steps by
+// path (exclusive create, a move that never replaces); a folder swapped for a
+// junction between the check and the write is not caught there.
+// `lev` / `vrm` are null when that file already is the pinned one.
+void publish_pinned(const std::string &tracks, const std::string &folder,
+                    const std::vector<unsigned char> *lev, const std::vector<unsigned char> *vrm)
+{
+	static const char *const names[2] = {"track.lev", "track.vrm"};
+	static const char *const temps[2] = {".saphi-track.lev.part", ".saphi-track.vrm.part"};
+	const std::vector<unsigned char> *bytes[2] = {lev, vrm};
+#ifdef _WIN32
+	const std::string original = join_path(join_path(tracks, folder.c_str()), "original");
+	if (!make_directory(join_path(tracks, folder.c_str())) || !make_directory(original))
+		throw std::runtime_error("Could not create the track folder. Nothing was installed.");
+	bool published[2] = {false, false};
+	for (int i = 0; i < 2; ++i)
+	{
+		if (!bytes[i]) continue;
+		const std::string temp = join_path(original, temps[i]), target = join_path(original, names[i]);
+		if (node_kind(temp) == kNodeFile) std::remove(temp.c_str());
+		HANDLE h = CreateFileA(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+		                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		DWORD wrote = 0;
+		const bool ok = h != INVALID_HANDLE_VALUE &&
+		                WriteFile(h, bytes[i]->data(), static_cast<DWORD>(bytes[i]->size()), &wrote, nullptr) &&
+		                wrote == bytes[i]->size() && FlushFileBuffers(h);
+		if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+		if (!ok || !MoveFileExA(temp.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH))
+		{
+			if (h != INVALID_HANDLE_VALUE) std::remove(temp.c_str());
+			if (i == 1 && published[0]) std::remove(join_path(original, names[0]).c_str());
+			throw std::runtime_error("Could not finish installing the verified Saphi files. Nothing was installed.");
+		}
+		published[i] = true;
+	}
+#else
+	const int tracks_fd = open(tracks.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (tracks_fd < 0)
+		throw std::runtime_error("Could not open the tracks folder. Nothing was installed.");
+	int root_fd = -1, original_fd = -1;
+	struct stat published[2];
+	bool done[2] = {false, false};
+	std::string failure;
+	if ((mkdirat(tracks_fd, folder.c_str(), 0755) != 0 && errno != EEXIST) ||
+	    (root_fd = openat(tracks_fd, folder.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0 ||
+	    (mkdirat(root_fd, "original", 0755) != 0 && errno != EEXIST) ||
+	    (original_fd = openat(root_fd, "original", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
+		failure = "Its folder is a link or could not be created. Nothing was installed.";
+	for (int i = 0; failure.empty() && i < 2; ++i)
+	{
+		if (!bytes[i]) continue;
+		unlinkat(original_fd, temps[i], 0); // a leftover name or a planted link; never its target
+		const int fd = openat(original_fd, temps[i], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+		size_t at = 0;
+		while (fd >= 0 && at < bytes[i]->size())
+		{
+			const ssize_t n = write(fd, bytes[i]->data() + at, bytes[i]->size() - at);
+			if (n <= 0) break;
+			at += static_cast<size_t>(n);
+		}
+		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0;
+		if (fd >= 0) close(fd);
+		const bool linked = written && linkat(original_fd, temps[i], original_fd, names[i], 0) == 0;
+		const bool exists_already = written && !linked && errno == EEXIST;
+		if (fd >= 0) unlinkat(original_fd, temps[i], 0);
+		if (linked && fstatat(original_fd, names[i], &published[i], AT_SYMLINK_NOFOLLOW) == 0)
+			done[i] = true;
+		else
+			failure = exists_already ? "A track file appeared in its folder during the install. Nothing was installed."
+			                         : "Could not finish installing the verified Saphi files. Nothing was installed.";
+	}
+	if (!failure.empty() && done[0])
+	{
+		struct stat now;
+		if (fstatat(original_fd, names[0], &now, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    now.st_dev == published[0].st_dev && now.st_ino == published[0].st_ino &&
+		    now.st_size == published[0].st_size && now.st_mtim.tv_sec == published[0].st_mtim.tv_sec &&
+		    now.st_mtim.tv_nsec == published[0].st_mtim.tv_nsec && now.st_ctim.tv_sec == published[0].st_ctim.tv_sec &&
+		    now.st_ctim.tv_nsec == published[0].st_ctim.tv_nsec)
+			unlinkat(original_fd, names[0], 0);
+	}
+	if (original_fd >= 0) close(original_fd);
+	if (root_fd >= 0) close(root_fd);
+	close(tracks_fd);
+	if (!failure.empty())
+		throw std::runtime_error(failure);
+#endif
+}
+
 // `lev_bytes` / `vrm_bytes` are the room's size pins and `tracks` the folder
 // the package root must sit in (Current Seed, #133 PR 7); all zero / empty for
 // the legacy single-package download, which keeps its old behaviour.
@@ -565,17 +666,10 @@ void worker(std::string package_root, std::string api_url, std::string version,
 				                         "Move it out, then try again. Nothing was changed.");
 			write_lev = lev_existing == 1;
 			write_vrm = vrm_existing == 1;
-			// A leftover temporary name (or a link planted there) is removed,
-			// never written through.
-			for (const std::string *temp : {&lev_temp, &vrm_temp})
-				if (node_kind(*temp) == kNodeDirectory)
-					throw std::runtime_error("Its folder has a stray .part folder. Move it out, then try again. "
-					                         "Nothing was changed.");
-			if (!make_directory(package_root) || !make_directory(original))
-				throw std::runtime_error("Could not create the track folder. Nothing was installed.");
-			for (const std::string *temp : {&lev_temp, &vrm_temp})
-				if (node_kind(*temp) != kNodeAbsent && std::remove(temp->c_str()) != 0)
-					throw std::runtime_error("Could not clear an old temporary file. Nothing was installed.");
+			publish_pinned(tracks, package_root.substr(tracks.size() + 1), write_lev ? &lev_bytes : nullptr,
+			               write_vrm ? &vrm_bytes : nullptr);
+			set_state(AP_CT_DOWNLOAD_SUCCEEDED, "Download verified. Finishing local setup...");
+			return;
 		}
 		if ((write_lev && !write_file(lev_temp, lev_bytes)) || (write_vrm && !write_file(vrm_temp, vrm_bytes)))
 		{
@@ -583,17 +677,11 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			std::remove(vrm_temp.c_str());
 			throw std::runtime_error("Could not write the downloaded files to the track folder.");
 		}
-		const bool lev_published = !write_lev || replace_file(lev_temp, lev_target);
-		if (!lev_published || (write_vrm && !replace_file(vrm_temp, vrm_target)))
+		if ((write_lev && !replace_file(lev_temp, lev_target)) || (write_vrm && !replace_file(vrm_temp, vrm_target)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
-			// A pinned install takes back a LEV it published itself, so a
-			// failed VRM never leaves half a revision (the target was absent).
-			if (pinned && write_lev && lev_published)
-				std::remove(lev_target.c_str());
-			throw std::runtime_error(pinned ? "Could not finish installing the verified Saphi files. Nothing was installed."
-			                                : "Could not finish installing the verified Saphi files.");
+			throw std::runtime_error("Could not finish installing the verified Saphi files.");
 		}
 		set_state(AP_CT_DOWNLOAD_SUCCEEDED, "Download verified. Finishing local setup...");
 	}
