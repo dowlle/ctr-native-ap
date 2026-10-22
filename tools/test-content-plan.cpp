@@ -1487,6 +1487,12 @@ int main(int argc, char **argv) {
             auto &f = j["content_plan"]["required_features"]; f.erase(f.size() - 1); });
         b_refuse("the record dropped", [](J &j) { j["content_plan"].erase("bosses"); });
         b_refuse("encounters without bosses", [](J &j) { j["content_plan"]["bosses"]["oxide_goal"] = 3; });
+        b_refuse("no filler slot for the Oxide goal check", [](J &j) {
+            auto &items = j["content_plan"]["items"];
+            const int filler = items["filler_count"];
+            for (auto &r : items["rows"])
+                if (r["item"] == 35010000) { r["extra"] = filler; r["remaining"] = 16 + filler; r["receipt_cap"] = 16 + filler; }
+            items["filler_count"] = 0; items["trap_count"] = 0; });
         expect(parse(bosses), "bosses: the room parses again after the forgeries");
     }
     expect(parse(finalroom) && bind_room(finalroom) && ap_content_plan_active(), "bosses-final: room binds");

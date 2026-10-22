@@ -1381,6 +1381,10 @@ static void validate(const J &p, State &out) {
     }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
     const int filler = number(items["filler_count"], 0, 4096);
+    // Boss garages (#133 PR 6): the Oxide goal check holds filler only (issue
+    // #27), so a plan whose goal is an Oxide challenge keeps one filler slot.
+    need(!out.bosses.present || (out.bosses.oxide_goal != 1 && out.bosses.oxide_goal != 2) || filler >= 1,
+         "the Oxide goal check needs one filler slot");
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
     // The goal (#133 PR 6): the Gem arm counts the selected distinct base Gem
     // colours, alone without the `bosses` record; with it, the AND of the

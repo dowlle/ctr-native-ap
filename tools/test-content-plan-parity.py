@@ -1316,6 +1316,8 @@ def b_req(c, rid):
     return next(r for r in c["content_plan"]["requirements"] if r["id"] == rid)
 def b_check(c, code):
     return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def b_row(c, item):
+    return next(r for r in c["content_plan"]["items"]["rows"] if r["item"] == item)
 def b_pad(c, pid):
     return next(x for x in c["content_plan"]["pads"] if x["id"] == pid)
 for name, change in [
@@ -1367,6 +1369,8 @@ for name, change in [
         ("envelope goal_bosses", lambda c: c["ctr_options"].__setitem__("goal_bosses", 0)),
         ("envelope goal_gems", lambda c: c["ctr_options"].__setitem__("goal_gems", 0)),
         ("boss-only venue mode", lambda c: next(t for t in c["content_plan"]["tracks"] if t["id"] == "cortex_vortex")["modes"].append("ctr")),
+        ("no filler for the Oxide goal check", lambda c: (b_row(c, 35010000).update(extra=75, remaining=91, receipt_cap=91),
+                                                          c["content_plan"]["items"].update(filler_count=0, trap_count=0))),
         ("boss rank 0", lambda c: b_check(c, 35011105).__setitem__("boost", 0)),
         ("boss rank above the chain", lambda c: b_check(c, 35011105).__setitem__("boost", 3)),
         ]:
