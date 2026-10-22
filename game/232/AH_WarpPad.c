@@ -1309,7 +1309,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// Snapshot the kart the frame this warp begins, so the entry
 		// fail-safe below can put it back like the other pad classes.
 		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
+		{
 			AH_WarpPad_WarpCapture(gGT);
+			AP_HitChooserWarpStart(&apHitChooser); // #133 PR 5c, as on a trial pad
+		}
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1335,6 +1338,95 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		cvTokenLeft = AP_PadTokenSideLeft(cvTokenLeft,
 		                                  AP_PadUncollectedLetterCount(levelID),
 		                                  AP_PadUncollectedWumpaCount(levelID));
+		// Hit Character (#133 PR 5c): the field is drawn on host 13 like a
+		// retail race, so a Hit opportunity takes the same chooser as a trial
+		// or retail pad: Trophy, CTR and Relic rows while a token or relic is
+		// left, else a plain re-race. A Relic Race seats no AI, so routing a
+		// Hit-only player into it would leave the Hit unearnable.
+		{
+			int apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
+			int apHitRoute = 0;
+			int apHitAction = AP_HitChooserFrame(
+			    &apHitChooser, apHitOpp, cvTokenLeft, cvRelicLeft,
+			    (int)gGT->gameMode1, (int)gGT->gameMode2,
+			    sdata->Loading.OnBegin.AddBitsConfig0,
+			    sdata->Loading.OnBegin.RemBitsConfig0,
+			    sdata->Loading.OnBegin.AddBitsConfig8,
+			    sdata->Loading.OnBegin.RemBitsConfig8,
+			    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+			AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
+			                 cvTokenLeft, cvRelicLeft);
+			if (apHitAction == AP_HIT_CHOOSER_OPEN)
+			{
+				AH_WarpPad_HitRaceRows(cvTokenLeft, cvRelicLeft);
+				apHitRaceMenu.rowSelected = 0;
+				RECTMENU_Show(&apHitRaceMenu);
+				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
+				goto WarpPad_TrophyAnimateOnly;
+			}
+			if (apHitAction == AP_HIT_CHOOSER_WAIT)
+				goto WarpPad_TrophyAnimateOnly;
+			if (apHitAction == AP_HIT_CHOOSER_PLAIN)
+			{
+				// A tier that cleared while the menu was open lands here: close it
+				// before the load (#133 PR 5c review).
+				RECTMENU_Hide(&apHitRaceMenu);
+				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
+				sdata->boolOpenTokenRelicMenu = 0;
+				warppadObj->boolEnteredWarppad = 0;
+				goto WarpPad_RequestLoad;
+			}
+			if (apHitAction == AP_HIT_CHOOSER_VANISH)
+			{
+				RECTMENU_Hide(&apHitRaceMenu);
+				// fall through to the normal tier-2 routing
+			}
+			else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
+			{
+				AP_HitChooserRestoreBitsPure(
+				    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+				    apHitChooser.savedGm1, apHitChooser.savedGm2,
+				    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+				    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+				    &gGT->gameMode1, &gGT->gameMode2,
+				    &sdata->Loading.OnBegin.AddBitsConfig0,
+				    &sdata->Loading.OnBegin.RemBitsConfig0,
+				    &sdata->Loading.OnBegin.AddBitsConfig8,
+				    &sdata->Loading.OnBegin.RemBitsConfig8);
+				sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
+				warppadObj->boolEnteredWarppad = 0;
+				warppadObj->framesWarping = 0;
+				AH_WarpPad_WarpRestore(gGT);
+				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+				// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+				// so the released kart is not grabbed again next frame (#133 PR 5c review).
+				apEntryRefusedDest = warppadObj->levelID;
+				goto WarpPad_AnimateOpen;
+			}
+			else if (apHitAction == AP_HIT_CHOOSER_APPLY)
+			{
+				unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
+				RECTMENU_Hide(&D232.menuTokenRelic);
+				AP_HitChooserApplyPure(apHitRoute,
+				                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+				                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
+				                       sdata->Loading.OnBegin.AddBitsConfig0,
+				                       sdata->Loading.OnBegin.RemBitsConfig0,
+				                       sdata->Loading.OnBegin.AddBitsConfig8,
+				                       sdata->Loading.OnBegin.RemBitsConfig8,
+				                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
+				gGT->gameMode1 = (int)apGm1;
+				gGT->gameMode2 = (int)apGm2;
+				sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
+				sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
+				sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
+				sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
+				sdata->boolOpenTokenRelicMenu = 0;
+				warppadObj->boolEnteredWarppad = 0;
+				goto WarpPad_RequestLoad;
+			}
+			// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
+		}
 		cvRoute = AP_PadTier2RouteDecide(cvTokenLeft, cvRelicLeft, 0);
 		AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + cvRoute);
 		if (cvRoute == AP_PAD_TIER2_TOKEN)
@@ -1620,6 +1712,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 				if (apHitAction == AP_HIT_CHOOSER_PLAIN)
 				{
+					// A tier that cleared while the menu was open lands here: close it
+					// before the load (#133 PR 5c review).
+					RECTMENU_Hide(&apHitRaceMenu);
 					AP_PadLogRoute(physLevelID, levelID,
 					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
 					goto WarpPad_RequestLoad;
@@ -1648,6 +1743,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					warppadObj->framesWarping = 0;
 					AH_WarpPad_WarpRestore(gGT);
 					gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+					// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+					// so the released kart is not grabbed again next frame (#133 PR 5c review).
+					apEntryRefusedDest = warppadObj->levelID;
 					goto WarpPad_AnimateOpen;
 				}
 				else if (apHitAction == AP_HIT_CHOOSER_APPLY)
@@ -1904,6 +2002,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					}
 					if (apHitAction == AP_HIT_CHOOSER_PLAIN)
 					{
+						// A tier that cleared while the menu was open lands here: close it
+						// before the load (#133 PR 5c review).
+						RECTMENU_Hide(&apHitRaceMenu);
 						// Only the Hit opportunity is left: plain adventure rerace.
 						AP_PadLogRoute(physLevelID, levelID,
 						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
@@ -1934,6 +2035,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						warppadObj->framesWarping = 0;
 						AH_WarpPad_WarpRestore(gGT);
 						gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+						// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+						// so the released kart is not grabbed again next frame (#133 PR 5c review).
+						apEntryRefusedDest = warppadObj->levelID;
 						goto WarpPad_AnimateOpen;
 					}
 					else if (apHitAction == AP_HIT_CHOOSER_APPLY)

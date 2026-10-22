@@ -7,8 +7,7 @@
 // its frozen field from its own order (destination 200 + name index, the
 // block's `content_cups`), once at its first leg, then reuses it for every
 // leg and retry; two content-plan cups never share a snapshot or cursors; a
-// retail Gem Cup keeps 100 + cupID. The pure load decisions: a custom-served
-// load takes the roster only on a content plan, and a cup draws from the
+// retail Gem Cup keeps 100 + cupID. The pure load decision: a cup draws from the
 // running content-plan cup's destination when there is one.
 
 #include <cstdio>
@@ -217,10 +216,9 @@ static void test_two_content_cups_apart(void)
 
 static void test_load_decisions(void)
 {
-	expect_eq(AP_HitCustomServedAppliesPure(0, 0), 1, "a retail load on a legacy room applies");
-	expect_eq(AP_HitCustomServedAppliesPure(0, 1), 1, "a retail load on a content plan applies");
-	expect_eq(AP_HitCustomServedAppliesPure(1, 0), 0, "a custom-served load on a legacy room keeps its stock field");
-	expect_eq(AP_HitCustomServedAppliesPure(1, 1), 1, "a custom-served load on a content plan applies");
+	// Since #133 PR 5c every custom-served load takes the roster; the seat
+	// count of a cup load is pinned in tools/test-hit-legacy-custom-production.py.
+	expect_eq(AP_HitCupSeatsPure(0, 0), 7, "a content-plan cup (engine cup 0) seats seven");
 	expect_eq(AP_HitCupDestinationPure(0, -1), 100, "no content cup: retail destination");
 	expect_eq(AP_HitCupDestinationPure(4, -1), 104, "purple cup destination");
 	expect_eq(AP_HitCupDestinationPure(0, 226), 226, "a running content cup's destination");
