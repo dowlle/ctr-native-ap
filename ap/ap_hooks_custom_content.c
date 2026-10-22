@@ -25,10 +25,24 @@ static void AP_OxideFinalContentPreflight(void)
 	ap_oxide_final_content_required = 0;
 	if (ap_content_plan_active())
 	{
-		// A content plan arms neither legacy role. Its Cortex Vortex entry
-		// is scanned by AP_CustomContentPreflightSeed, which owns
-		// ap_cortex_track_content_required for the plan.
-		CustomTrack_ClearOxideFinalDescriptor();
+		// A content plan never arms the legacy pad track: its Cortex Vortex
+		// entry is scanned by AP_CustomContentPreflightSeed, which owns
+		// ap_cortex_track_content_required for the plan. With boss garages
+		// (#133 PR 6) a Final Challenge on Cortex Vortex arms the Oxide 2
+		// venue role, exactly as a normal room's oxide_final_venue does.
+		const ctr_content_bosses *b = ap_content_plan_bosses();
+		if (!b->present || b->oxide_goal == 3 || b->final_track != CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX)
+		{
+			CustomTrack_ClearOxideFinalDescriptor();
+			return;
+		}
+		memset(&d, 0, sizeof d);
+		d.enabled = 1;
+		d.hostLevelID = CTR_CFG_CORTEX_HOST_LEVEL;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		if (!CustomTrack_ApplyOxideFinalDescriptor(&d, NativeAssets_GetAssetDir()))
+			ap_oxide_final_content_required = 1;
 		return;
 	}
 	ap_cortex_track_content_required = 0;

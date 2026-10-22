@@ -122,9 +122,14 @@ void AP_EvaluateGoal(void)
 
 	if (ap_content_plan_active())
 	{
+		// The plan's Gem arm, ANDed with its Oxide and Boss arms (#133 PR 6):
+		// the parser set goal_oxide and goal_bosses from the `bosses` record
+		// (3 and 0 without one, which contribute nothing).
 		int gems[5], i;
 		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
-		done = ap_content_plan_goal(gems);
+		done = ap_content_plan_goal(gems) &&
+		       AP_ComposedGoalMet(ctr_cfg.goal_oxide, ap_oxide_first_beaten, ap_oxide_final_beaten,
+		                          ctr_cfg.goal_bosses, AP_ComposedBossesWon(), 0, 0);
 	}
 	else if (!ctr_cfg_active())
 	{

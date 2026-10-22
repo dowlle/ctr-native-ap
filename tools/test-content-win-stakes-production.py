@@ -42,7 +42,20 @@ fixture = r'''
 #include "ap/ap_content_plan.h"
 #include "ap/ap_content_modes.h"
 #include "ap/ap_win_logic.h"
-struct GameTracker { int levelID; } game;
+#define ADVENTURE_CUP 0x10000000
+#define ADVENTURE_BOSS 0x80000000
+#define AP_BOSS_VENUE_LOCATION_BASE 35011100L
+struct GameTracker { int levelID; unsigned gameMode1; short bossID; } game;
+/* Boss garages (#133 PR 6): the plan's `bosses` record and its check ranks. */
+static ctr_content_bosses bossesRecord;
+static long long boostCode; static int boostRank;
+static long long roomCodes[8]; static int roomCount;
+const ctr_content_bosses *ap_content_plan_bosses(void) { return &bossesRecord; }
+int ap_content_plan_check_boost(int64_t code) { return code==boostCode ? boostRank : 0; }
+int ap_net_location_exists(long long code) {
+ for (int i=0;i<roomCount;i++) if (roomCodes[i]==code) return 1;
+ return 0;
+}
 static struct { struct GameTracker *gGT; } sdataStore, *sdata=&sdataStore;
 static struct CustomTrackRaceContext context;
 static ctr_content_pad pad, crystal;
@@ -93,6 +106,7 @@ static void reset(int mode, int retail) {
  memset(&game,0,sizeof game); memset(&context,0,sizeof context); memset(&pad,0,sizeof pad); memset(&crystal,0,sizeof crystal);
  planActive=haveContext=1; crystalRunning=0; cupRunning=0; memset(&cupPad,0,sizeof cupPad); epoch=4; checkedCount=receivedCount=0; lastLog[0]=0;
  AP_ItemIdTallyReset(&g_wl_tally); envBoostMode=0; envStart=0; envUnlocks=0; startId=0; startN=0;
+ memset(&bossesRecord,0,sizeof bossesRecord); boostCode=0; boostRank=0; roomCount=0;
  sdataStore.gGT=&game;
  context.physicalPad=CC; context.returnHub=26; context.seedEpoch=4; context.mode=mode; context.retail=retail;
  context.laps=3; context.slot=retail?0:2; context.hostLevelID=retail?3:6; game.levelID=context.hostLevelID;
@@ -179,6 +193,21 @@ int main(void) {
  cupPad.sweep_location=35027204; cupPad.sweep_boost=0; s=decide(&handled); assert(handled && s.stakes && s.code==35027204); cases++;
  cupPad.sweep_boost=3; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
  checked[checkedCount++]=35027204; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ /* A boss race in a content plan's garage (#133 PR 6): the physical
+    garage's own check (bossID 0..3 the Boss Races, 4 and 5 N. Oxide's two
+    challenges) with its rank and no racer; without the record the plan
+    decides nothing for it, as before. */
+ reset(AP_CONTENT_MODE_TROPHY,1); haveContext=0; game.gameMode1=ADVENTURE_BOSS; game.bossID=3;
+ decide(&handled); assert(!handled); cases++;                                           /* bosses off */
+ bossesRecord.present=1; roomCodes[roomCount++]=35011103; s=decide(&handled);
+ assert(handled && s.stakes && s.code==35011103); cases++;
+ envBoostMode=1; boostCode=35011103; boostRank=2; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_OUT_OF_LOGIC); cases++;
+ got(35010027,1); got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35011103); cases++;
+ checked[checkedCount++]=35011103; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ game.bossID=5; roomCodes[roomCount++]=35011105; s=decide(&handled); assert(handled && s.stakes && s.code==35011105); cases++;
+ game.bossID=4; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++; /* not in the room */
+ game.gameMode1=ADVENTURE_BOSS|ADVENTURE_CUP; decide(&handled); assert(!handled); cases++;
  /* The pure decision on its own. */
  s=AP_WinStakesContentDecide(0,0,0); assert(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  s=AP_WinStakesContentDecide(35011000,1,1); assert(!s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;

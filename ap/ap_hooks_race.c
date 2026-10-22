@@ -800,6 +800,18 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 		*outCode = code > 0 && code <= 2147483647 ? (long)code : 0;
 		return 1;
 	}
+	// A boss race in a content plan's garage (#133 PR 6): the garage's own
+	// completion check (gGT->bossID stays the physical garage on every venue;
+	// 4 is N. Oxide's Challenge, 5 his Final Challenge) with that check's
+	// rank, bound to no racer. The garage's door already held its requirement.
+	if (ap_content_plan_bosses()->present && (gGT->gameMode1 & ADVENTURE_BOSS) &&
+	    !(gGT->gameMode1 & ADVENTURE_CUP) && gGT->bossID >= 0 && gGT->bossID <= 5)
+	{
+		code = AP_BOSS_VENUE_LOCATION_BASE + gGT->bossID;
+		*outBoost = ap_content_plan_check_boost(code);
+		*outCode = ap_net_location_exists((long)code) ? (long)code : 0;
+		return 1;
+	}
 	context = CustomTrack_StandaloneContext(gGT->levelID);
 	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
 		return 0;

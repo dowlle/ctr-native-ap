@@ -1381,6 +1381,144 @@ int main(int argc, char **argv) {
         // Without content_cups and Hit Character the cups room keeps its PR 5 shape.
         expect(parse(cups) && !ap_seedcfg_hit_encounters(), "cup hits: the cups room has no encounter block");
     }
+    // Boss garages (#133 PR 6): bosses.json (Boss Track Shuffle, any_percent
+    // with the Boss and Gem companions, the Final Challenge on Cortex Vortex,
+    // Progressive Boost and Hit Character on) and bosses-final.json (retail
+    // pairs, 101_percent with Oxide 1 optional, the Final Challenge on Oxide
+    // Station with total_relics, two cups). The parser drives the normal
+    // room's garage, Oxide and goal configuration from the plan.
+    J bosses, finalroom;
+    std::ifstream("tools/fixtures/content-plan/bosses.json") >> bosses;
+    std::ifstream("tools/fixtures/content-plan/bosses-final.json") >> finalroom;
+    expect(parse(bosses) && bind_room(bosses) && ap_content_plan_active(), "bosses: room binds");
+    {
+        const J &plan = bosses["content_plan"];
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        std::map<std::string, J> entries;
+        for (const auto &e : plan["entries"]) entries[e["id"]] = e;
+        expect(b->present && b->oxide_goal == 1 && b->bosses_required == 2 && b->track_shuffle && !b->repeats &&
+               b->final_track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX && b->final_unlock == 0 &&
+               b->final_count == plan["bosses"]["oxide_final_count"].get<int>(), "bosses: record read");
+        bool venues = true;
+        std::set<int> distinct;
+        for (int g = 0; g < 4; ++g) {
+            const std::string track = entries["entry/boss:" + std::to_string(g) + "/0"]["track_id"];
+            venues = venues && track == "retail:" + std::to_string(b->venues[g]) &&
+                     ctr_boss_encounters.track[g] == b->venues[g] && AP_BossVenueCertified(g, b->venues[g]);
+            distinct.insert(b->venues[g]);
+        }
+        expect(venues && distinct.size() == 4 && ctr_boss_encounters.state == AP_BOSS_ENC_VALID,
+               "bosses: the drawn venues become the boss_encounters record");
+        expect(ctr_cfg.goal_oxide == 1 && ctr_cfg.goal_bosses == 2 && ctr_cfg.goal_gems == 2 && ctr_cfg.bossgarage_mode == 2 &&
+               ctr_cfg.oxide_final_unlock == 0 && ctr_cfg.oxide_final_count == b->final_count && !ctr_cfg.oxide_1_optional,
+               "bosses: goal and Oxide configuration");
+        bool reqs = ctr_cfg.boss_req[4].type == 2 && ctr_cfg.boss_req[4].count == 4;
+        for (int g = 0; g < 4; ++g) reqs = reqs && ctr_cfg.boss_req[g].type == 1 && ctr_cfg.boss_req[g].count == 4 * (g + 1);
+        expect(reqs, "bosses: Trophy doors 4, 8, 12, 16 and the Oxide garage's four Keys");
+        expect(ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
+               ctr_cfg.oxide_final_venue.location == 35011105 && ctr_cfg.oxide_final_venue.host_level_id == 13 &&
+               ctr_cfg.oxide_final_venue.wumpa_location == -1, "bosses: the Final Challenge venue");
+        int ranked = 0;
+        bool ranks = true;
+        for (const auto &c : plan["checks"])
+            if (c["kind"] == "boss_race") {
+                ranks = ranks && c.contains("boost") && ap_content_plan_check_boost(c["location"].get<int64_t>()) == c["boost"].get<int>();
+                ++ranked;
+            }
+        expect(ranked == 6 && ranks && ap_content_plan_check_boost(35011105) == 2,
+               "bosses: boss checks carry their boost ranks (USF on Cortex Vortex)");
+        int gems[5] = {1, 1, 0, 0, 0};
+        expect(ap_content_plan_gems_held(gems) == 2 && ap_content_plan_goal(gems), "bosses: the Gem arm counts colours");
+        // Hit Character: each boss's own race is one more route on its check.
+        const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
+        expect(h && h->enabled, "bosses: Hit Character block admitted");
+        int roo = 0, oxide = 0, other = 0;
+        for (const auto &c : plan["checks"]) {
+            if (c["kind"] != "hit") continue;
+            for (const auto &r : c["routes"]) {
+                if (r["mode"] != "boss_race") continue;
+                if (c["location"] == 35025010) ++roo; else if (c["location"] == 35025015) ++oxide; else ++other;
+            }
+        }
+        expect(roo == 1 && oxide == 2 && other == 3, "bosses: one boss race route per encounter, on its boss's check");
+        auto b_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = bosses; change(bad); refuse(bad, "bosses: " + why);
+        };
+        auto entry = [](J &j, int g, int index) -> J & {
+            for (auto &e : j["content_plan"]["entries"])
+                if (e["id"] == "entry/boss:" + std::to_string(g) + "/" + std::to_string(index)) return e;
+            throw std::runtime_error("no boss entry");
+        };
+        auto check = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        auto requirement = [](J &j, const std::string &id) -> J & {
+            for (auto &r : j["content_plan"]["requirements"]) if (r["id"] == id) return r["predicate"];
+            throw std::runtime_error("no requirement");
+        };
+        b_refuse("a repeated venue without repeats", [&](J &j) { entry(j, 0, 0)["track_id"] = entry(j, 1, 0)["track_id"]; });
+        b_refuse("another opponent", [&](J &j) { entry(j, 0, 0)["opponent"]["character_id"] = 3; });
+        b_refuse("another kit", [&](J &j) { entry(j, 2, 0)["opponent"]["attack_profile"] = "mixed"; });
+        b_refuse("another driving profile", [&](J &j) { entry(j, 3, 0)["opponent"]["driving_profile"] = "boss"; });
+        b_refuse("Oxide 1 off Oxide Station", [&](J &j) { entry(j, 4, 0)["track_id"] = "cortex_vortex"; });
+        b_refuse("an uncertified venue", [&](J &j) { entry(j, 1, 0)["track_id"] = "retail:18"; });
+        b_refuse("a Trophy door changed", [&](J &j) { requirement(j, "boss:3")["count"] = 4; });
+        b_refuse("the Oxide 1 companions dropped", [&](J &j) { const J t = requirement(j, "oxide:first")["terms"][0]; requirement(j, "oxide:first") = t; });
+        b_refuse("a garage gate opened", [](J &j) {
+            for (auto &p : j["content_plan"]["pads"]) if (p["id"] == "garage:2") p["entrance_req"] = "free"; });
+        b_refuse("the goal's boss count", [](J &j) { j["content_plan"]["goal"]["terms"][1]["count"] = 1; });
+        b_refuse("the goal's Oxide arm dropped", [](J &j) {
+            j["content_plan"]["goal"]["terms"].erase(0); });
+        b_refuse("the record's shuffle switch", [](J &j) { j["content_plan"]["bosses"]["track_shuffle"] = false; });
+        b_refuse("the record's relic count", [](J &j) { j["content_plan"]["bosses"]["oxide_final_count"] = 18; });
+        b_refuse("an encounter dropped", [](J &j) { j["content_plan"]["encounters"].erase(5); });
+        b_refuse("encounters out of order", [](J &j) {
+            std::swap(j["content_plan"]["encounters"][0], j["content_plan"]["encounters"][1]); });
+        b_refuse("a boss check award", [&](J &j) { check(j, 35011100)["routes"][0]["award"] = "hit"; });
+        b_refuse("a boss check owner", [&](J &j) { check(j, 35011101)["owner"] = "encounter/garage:0/0"; });
+        b_refuse("a boss race Hit route dropped", [&](J &j) {
+            auto &routes = check(j, 35025010)["routes"]; routes.erase(routes.size() - 1); });
+        b_refuse("a boss race Hit route on another check", [&](J &j) {
+            auto &routes = check(j, 35025000)["routes"]; routes.push_back(check(j, 35025010)["routes"].back()); });
+        b_refuse("the envelope's goal_bosses", [](J &j) { j["ctr_options"]["goal_bosses"] = 1; });
+        b_refuse("the envelope's goal_oxide", [](J &j) { j["ctr_options"]["goal_oxide"] = 3; });
+        b_refuse("the feature dropped", [](J &j) {
+            auto &f = j["content_plan"]["required_features"]; f.erase(f.size() - 1); });
+        b_refuse("the record dropped", [](J &j) { j["content_plan"].erase("bosses"); });
+        b_refuse("encounters without bosses", [](J &j) { j["content_plan"]["bosses"]["oxide_goal"] = 3; });
+        expect(parse(bosses), "bosses: the room parses again after the forgeries");
+    }
+    expect(parse(finalroom) && bind_room(finalroom) && ap_content_plan_active(), "bosses-final: room binds");
+    {
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        expect(b->present && b->oxide_goal == 2 && b->oxide_1_optional && !b->track_shuffle && b->final_unlock == 4 &&
+               b->final_track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION, "bosses-final: record read");
+        bool home = ctr_boss_encounters.state == AP_BOSS_ENC_RETAIL;
+        for (int g = 0; g < 4; ++g) home = home && b->venues[g] == AP_BOSS_VENUE_GARAGE[g].homeLevel;
+        expect(home, "bosses-final: retail pairs keep the retail venues");
+        expect(ctr_cfg.goal_oxide == 2 && ctr_cfg.goal_bosses == 0 && ctr_cfg.goal_gems == 0 && ctr_cfg.oxide_1_optional == 1 &&
+               ctr_cfg.oxide_final_unlock == 4 && ctr_cfg.oxide_final_count == b->final_count &&
+               ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_OXIDE_STATION,
+               "bosses-final: goal and Final Challenge configuration");
+        int none[5] = {0, 0, 0, 0, 0};
+        expect(ap_content_plan_goal(none), "bosses-final: no Gem arm");
+        // A mutation walk over the boss records only (the rest of the room is
+        // walked by the earlier fixtures).
+        skip_path = [](const std::string &path) {
+            static const char *keep[] = {"/content_plan/bosses", "/content_plan/encounters", "/content_plan/goal",
+                                         "/ctr_options/goal"};
+            if (path.empty() || path == "/content_plan" || path == "/ctr_options") return false;
+            for (const char *k : keep) if (path.rfind(k, 0) == 0 || std::string(k).rfind(path, 0) == 0) return false;
+            return true;
+        };
+        mutations(finalroom, finalroom, J::json_pointer());
+        skip_path = nullptr;
+        expect(parse(finalroom), "bosses-final: the room parses again after the walk");
+    }
+    // Bosses off: the garages stay empty and the goal is the Gem arm alone.
+    expect(parse(base) && bind_room(base) && !ap_content_plan_bosses()->present && ctr_cfg.goal_oxide == 3 &&
+           ctr_cfg.goal_bosses == 0 && ctr_boss_encounters.state == AP_BOSS_ENC_RETAIL, "bosses off: empty garages");
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
