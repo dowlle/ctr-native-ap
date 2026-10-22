@@ -49,6 +49,8 @@ prelude = r'''
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <algorithm>
 #include <cctype>
@@ -86,6 +88,17 @@ extern "C" int unlinkat(int dir, const char *name, int flags)
 	static int (*real)(int, const char *, int) = (int (*)(int, const char *, int))dlsym(RTLD_NEXT, "unlinkat");
 	const int r = real(dir, name, flags);
 	if (after_unlink && after_unlink(name)) after_unlink = nullptr;
+	return r;
+}
+static bool (*after_fstatat)(const char *name, int result);
+extern "C" int fstatat(int dir, const char *name, struct stat *st, int flags)
+{
+	static int (*real)(int, const char *, struct stat *, int) =
+		(int (*)(int, const char *, struct stat *, int))dlsym(RTLD_NEXT, "fstatat");
+	const int r = real(dir, name, st, flags);
+	const int saved = errno;
+	if (after_fstatat && after_fstatat(name, r)) after_fstatat = nullptr;
+	errno = saved;
 	return r;
 }
 extern "C" int mkdirat(int dir, const char *name, mode_t mode)
@@ -384,6 +397,25 @@ int main()
 			expect(st == AP_CT_DOWNLOAD_FAILED && slurp(planted) == player && slurp(old_name) == player && !exists(tlev),
 			       "rollback keeps files at its aside names and still takes the LEV back: " + detail);
 			unlink(planted.c_str()); unlink(old_name.c_str());
+		}
+		// f2. A file appears at the fresh rollback name right after it was found free.
+		{
+			static std::string planted;
+			planted = orig + "/.saphi-rollback-" + std::to_string(getpid()) + "-0.lev";
+			after_fstatat = [](const char *name, int result) {
+				if (result == 0 || std::strncmp(name, ".saphi-rollback-", 16)) return false;
+				std::ofstream f(planted, std::ios::binary); f << "PLAYER";
+				return true;
+			};
+			deny_vrm_link = true;
+			ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+			const int st = finish(detail);
+			deny_vrm_link = false;
+			expect(st == AP_CT_DOWNLOAD_FAILED && after_fstatat == nullptr &&
+			       slurp(planted) == std::vector<unsigned char>({'P','L','A','Y','E','R'}),
+			       "a file created at the rollback name in the gap is never replaced or removed: " + detail);
+			after_fstatat = nullptr;
+			unlink(planted.c_str()); unlink(tlev.c_str());
 		}
 		// g. The temporary file is changed in place just before publish.
 		before_link = [](const char *name) {

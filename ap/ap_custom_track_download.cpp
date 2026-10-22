@@ -32,6 +32,7 @@
 #include <cerrno>
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 #ifdef _WIN32
@@ -502,6 +503,21 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 	return matches == 1;
 }
 
+#ifndef _WIN32
+// renameat2(RENAME_NOREPLACE) through the system call, so the client does not
+// need a newer glibc symbol. False when the name exists or the kernel or file
+// system cannot do it; the caller then leaves the file where it is.
+bool rename_noreplace(int dir, const char *from, const char *to)
+{
+#if defined(SYS_renameat2)
+	return syscall(SYS_renameat2, dir, from, dir, to, 1u /* RENAME_NOREPLACE */) == 0;
+#else
+	(void)dir; (void)from; (void)to;
+	return false;
+#endif
+}
+#endif
+
 // Publish a verified pinned install (Current Seed, #133 PR 7) without ever
 // writing through a link or replacing a file, even if the folder changes
 // while it runs. POSIX works on directory handles opened without following
@@ -619,7 +635,9 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			failure = "A track file changed while it was installed. Nothing was installed.";
 	}
 	// On failure, take back every name this install published: move it aside
-	// under a fresh name that does not exist, then delete it only when it is
+	// under a fresh name, with a move that fails when that name exists
+	// (RENAME_NOREPLACE; without it the name is left published, which is the
+	// verified pinned file), then delete it only when it is
 	// this install's open file; anything else goes back under its name
 	// (never replacing) or stays aside. Nothing that is not ours is deleted.
 	for (int i = 0; !failure.empty() && i < 2; ++i)
@@ -633,7 +651,7 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			std::snprintf(aside, sizeof aside, ".saphi-rollback-%d-%d.%s", static_cast<int>(getpid()), k, i ? "vrm" : "lev");
 			if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT) break;
 		}
-		if (k == 64 || renameat(original_fd, names[i], original_fd, aside) != 0) continue;
+		if (k == 64 || !rename_noreplace(original_fd, names[i], aside)) continue;
 		if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(moved.st_mode) &&
 		    moved.st_dev == mine[i].st_dev && moved.st_ino == mine[i].st_ino)
 			unlinkat(original_fd, aside, 0);
