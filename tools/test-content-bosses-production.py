@@ -146,6 +146,8 @@ int main() {
     AP_EvaluateGoal(); assert(!g_sent); cases++;                                      /* Oxide not beaten */
     ap_oxide_first_beaten = 1; g_won = 1; AP_EvaluateGoal(); assert(!g_sent); cases++;/* one boss short */
     g_won = 2; AP_EvaluateGoal(); assert(g_sent); cases++;
+    /* A reconnect clears the session flag; the persisted personal win still counts (review finding 2). */
+    plan(1); ctr_cfg.goal_oxide = 1; g_first = 1; AP_EvaluateGoal(); assert(g_sent); cases++;
     plan(1); ctr_cfg.goal_oxide = 2; ctr_cfg.goal_gems = 0; ap_oxide_first_beaten = 1;
     AP_EvaluateGoal(); assert(!g_sent); cases++;
     ap_oxide_final_beaten = 1; AP_EvaluateGoal(); assert(g_sent); cases++;           /* no Gem arm */

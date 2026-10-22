@@ -1367,8 +1367,20 @@ for name, change in [
         ("envelope goal_bosses", lambda c: c["ctr_options"].__setitem__("goal_bosses", 0)),
         ("envelope goal_gems", lambda c: c["ctr_options"].__setitem__("goal_gems", 0)),
         ("boss-only venue mode", lambda c: next(t for t in c["content_plan"]["tracks"] if t["id"] == "cortex_vortex")["modes"].append("ctr")),
+        ("boss rank 0", lambda c: b_check(c, 35011105).__setitem__("boost", 0)),
+        ("boss rank above the chain", lambda c: b_check(c, 35011105).__setitem__("boost", 3)),
         ]:
     boss_env(name, change)
+# A boss check's `boost` is the apworld's logic as data, read as given like
+# every other check's rank (#133 PR 4c above): a forged rank inside the chain
+# is refused by the generator alone.
+for name, change in [
+        ("boss rank lowered", lambda c: b_check(c, 35011105).__setitem__("boost", 1)),
+        ("boss rank dropped", lambda c: b_check(c, 35011100).pop("boost")),
+        ]:
+    boss_env(name, change)
+    native_trusts.add("bosses-" + name)
+    assert cases[-1][2] is False, name + ": the apworld must refuse a forged rank"
 final_base = next(w for name, w, ok in cases if name == "bosses-final-fixture")
 for name, change in [
         ("final unchanged copy", lambda c: None),
