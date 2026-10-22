@@ -29,6 +29,16 @@ assert cv.index("AP_HitPadOpportunity(physLevelID, levelID)") < chooser < cv.ind
     "the Cortex Vortex pad must run the Hit chooser before its token/relic routing"
 assert "AP_HitChooserWarpStart(&apHitChooser)" in cv, "the Cortex Vortex pad must arm the Hit chooser at warp start"
 
+# Review round 2: every chooser call site closes the menu before a PLAIN load and
+# latches the pad on CANCEL, so the released kart is not grabbed again next frame.
+for marker, needle, why in (
+        ("if (apHitAction == AP_HIT_CHOOSER_PLAIN)", "RECTMENU_Hide(&apHitRaceMenu);", "close the Hit menu before a plain load"),
+        ("else if (apHitAction == AP_HIT_CHOOSER_CANCEL)", "apEntryRefusedDest = warppadObj->levelID;", "latch the pad on cancel")):
+    sites = warppad.split(marker)[1:]
+    assert len(sites) == 3, f"expected three Hit chooser call sites for {marker!r}, found {len(sites)}"
+    for body in sites:
+        assert needle in body[:body.index("goto WarpPad_")], f"a Hit chooser call site must {why}"
+
 
 def function(signature, text=source):
     start = text.index(signature)
