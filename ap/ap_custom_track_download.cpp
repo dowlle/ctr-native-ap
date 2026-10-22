@@ -509,8 +509,9 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 // O_NOFOLLOW, temporary files are created exclusively (O_EXCL | O_NOFOLLOW),
 // and each file is published with linkat, which fails when the name exists.
 // A LEV this call published is taken back when the VRM cannot be, but only
-// while the name still holds that same file (device, inode, size and both
-// timestamps, since an inode number can be reused at once). Windows uses the same steps by
+// while the name still holds that same file (kept open, so its inode is not
+// reused). The tracks folder itself is the player's configuration and may be
+// a link; everything below it is not followed. Windows uses the same steps by
 // path (exclusive create, a move that never replaces); a folder swapped for a
 // junction between the check and the write is not caught there.
 // `lev` / `vrm` are null when that file already is the pinned one.
@@ -525,6 +526,7 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 	if (!make_directory(join_path(tracks, folder.c_str())) || !make_directory(original))
 		throw std::runtime_error("Could not create the track folder. Nothing was installed.");
 	bool published[2] = {false, false};
+	WIN32_FILE_ATTRIBUTE_DATA lev_info = {};
 	for (int i = 0; i < 2; ++i)
 	{
 		if (!bytes[i]) continue;
@@ -539,18 +541,28 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 		if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
 		if (!ok || !MoveFileExA(temp.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH))
 		{
+			WIN32_FILE_ATTRIBUTE_DATA now;
+			const std::string lev_target = join_path(original, names[0]);
 			if (h != INVALID_HANDLE_VALUE) std::remove(temp.c_str());
-			if (i == 1 && published[0]) std::remove(join_path(original, names[0]).c_str());
+			// Take the LEV back only while it still looks like this install's file.
+			if (i == 1 && published[0] && GetFileAttributesExA(lev_target.c_str(), GetFileExInfoStandard, &now) &&
+			    !(now.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) && now.nFileSizeLow == lev_info.nFileSizeLow &&
+			    now.nFileSizeHigh == lev_info.nFileSizeHigh &&
+			    now.ftLastWriteTime.dwLowDateTime == lev_info.ftLastWriteTime.dwLowDateTime &&
+			    now.ftLastWriteTime.dwHighDateTime == lev_info.ftLastWriteTime.dwHighDateTime)
+				std::remove(lev_target.c_str());
 			throw std::runtime_error("Could not finish installing the verified Saphi files. Nothing was installed.");
 		}
 		published[i] = true;
+		if (i == 0 && !GetFileAttributesExA(target.c_str(), GetFileExInfoStandard, &lev_info))
+			published[0] = false; // unknown identity: never taken back
 	}
 #else
 	const int tracks_fd = open(tracks.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (tracks_fd < 0)
 		throw std::runtime_error("Could not open the tracks folder. Nothing was installed.");
 	int root_fd = -1, original_fd = -1;
-	struct stat published[2];
+	struct stat published[2] = {};
 	bool done[2] = {false, false};
 	std::string failure;
 	if ((mkdirat(tracks_fd, folder.c_str(), 0755) != 0 && errno != EEXIST) ||
@@ -558,11 +570,16 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 	    (mkdirat(root_fd, "original", 0755) != 0 && errno != EEXIST) ||
 	    (original_fd = openat(root_fd, "original", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
 		failure = "Its folder is a link or could not be created. Nothing was installed.";
+	// Each written file stays open until the end, so its inode cannot be
+	// reused: a published name is ours only while it is that open file.
+	int fds[2] = {-1, -1};
+	struct stat mine[2];
 	for (int i = 0; failure.empty() && i < 2; ++i)
 	{
 		if (!bytes[i]) continue;
 		unlinkat(original_fd, temps[i], 0); // a leftover name or a planted link; never its target
-		const int fd = openat(original_fd, temps[i], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+		const int fd = openat(original_fd, temps[i], O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+		fds[i] = fd;
 		size_t at = 0;
 		while (fd >= 0 && at < bytes[i]->size())
 		{
@@ -570,27 +587,40 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			if (n <= 0) break;
 			at += static_cast<size_t>(n);
 		}
-		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0;
-		if (fd >= 0) close(fd);
+		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0 && fstat(fd, &mine[i]) == 0;
 		const bool linked = written && linkat(original_fd, temps[i], original_fd, names[i], 0) == 0;
 		const bool exists_already = written && !linked && errno == EEXIST;
 		if (fd >= 0) unlinkat(original_fd, temps[i], 0);
-		if (linked && fstatat(original_fd, names[i], &published[i], AT_SYMLINK_NOFOLLOW) == 0)
+		if (linked && fstatat(original_fd, names[i], &published[i], AT_SYMLINK_NOFOLLOW) == 0 &&
+		    S_ISREG(published[i].st_mode) && published[i].st_dev == mine[i].st_dev && published[i].st_ino == mine[i].st_ino)
 			done[i] = true;
+		else if (linked)
+			// The temporary name was swapped before the link: what got
+			// published is not this install's file, so it is left alone.
+			failure = "Its folder changed during the install. Check tracks/<folder>/original. Nothing was installed.";
 		else
 			failure = exists_already ? "A track file appeared in its folder during the install. Nothing was installed."
 			                         : "Could not finish installing the verified Saphi files. Nothing was installed.";
 	}
 	if (!failure.empty() && done[0])
 	{
-		struct stat now;
-		if (fstatat(original_fd, names[0], &now, AT_SYMLINK_NOFOLLOW) == 0 &&
-		    now.st_dev == published[0].st_dev && now.st_ino == published[0].st_ino &&
-		    now.st_size == published[0].st_size && now.st_mtim.tv_sec == published[0].st_mtim.tv_sec &&
-		    now.st_mtim.tv_nsec == published[0].st_mtim.tv_nsec && now.st_ctim.tv_sec == published[0].st_ctim.tv_sec &&
-		    now.st_ctim.tv_nsec == published[0].st_ctim.tv_nsec)
-			unlinkat(original_fd, names[0], 0);
+		// Take the LEV back by moving its name aside first, then deleting only
+		// if the moved name is this install's open file; anything else goes
+		// back under its name (never replacing) or stays aside, never deleted.
+		static const char *const aside = ".saphi-rollback.lev";
+		struct stat moved;
+		unlinkat(original_fd, aside, 0);
+		if (renameat(original_fd, names[0], original_fd, aside) == 0)
+		{
+			if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(moved.st_mode) &&
+			    moved.st_dev == mine[0].st_dev && moved.st_ino == mine[0].st_ino)
+				unlinkat(original_fd, aside, 0);
+			else if (linkat(original_fd, aside, original_fd, names[0], 0) == 0)
+				unlinkat(original_fd, aside, 0);
+		}
 	}
+	for (int fd : fds)
+		if (fd >= 0) close(fd);
 	if (original_fd >= 0) close(original_fd);
 	if (root_fd >= 0) close(root_fd);
 	close(tracks_fd);

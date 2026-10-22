@@ -27,8 +27,9 @@ Cases, each checked against the file system afterwards:
  11. races with another program in the same folder: the package folder
      swapped for a link after it was opened, a .part link planted after the
      cleanup, a file appearing at track.lev before publish, and our LEV
-     replaced before a failed VRM. None writes outside tracks, through a
-     link, or over or away another program's file.
+     replaced before a failed VRM, the temporary name swapped for a link just
+     before publish. None writes outside tracks, through a link, or over or
+     away another program's file, and none reports success.
 """
 from pathlib import Path
 import subprocess
@@ -354,6 +355,20 @@ int main()
 		       got == std::vector<unsigned char>({'t','h','e','i','r','s'}),
 		       "rollback never removes a file another program put there: " + detail); }
 		deny_vrm_link = false; before_link = nullptr;
+		unlink(tlev.c_str());
+		// e. The temporary name is swapped for a link to a player file just before publish.
+		before_link = [](const char *name) {
+			if (std::strcmp(name, "track.lev")) return false;
+			unlink((g_orig + "/.saphi-track.lev.part").c_str());
+			symlink(g_victim.c_str(), (g_orig + "/.saphi-track.lev.part").c_str());
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		{ int st = finish(detail);
+		  struct stat ls_; const bool lev_is_link = lstat(tlev.c_str(), &ls_) == 0 && S_ISLNK(ls_.st_mode);
+		  expect(st == AP_CT_DOWNLOAD_FAILED && before_link == nullptr && slurp(victim) == keep && !exists(tvrm) &&
+		         (lev_is_link || !exists(tlev)), "a temporary name swapped before publish is reported, not trusted: " + detail); }
+		before_link = nullptr;
 		unlink(tlev.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
 
 		// 10. A backslash sibling on POSIX.
