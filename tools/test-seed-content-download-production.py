@@ -28,8 +28,10 @@ Cases, each checked against the file system afterwards:
      swapped for a link after it was opened, a .part link planted after the
      cleanup, a file appearing at track.lev before publish, and our LEV
      replaced before a failed VRM, the temporary name swapped for a link just
-     before publish. None writes outside tracks, through a link, or over or
-     away another program's file, and none reports success.
+     before publish, files already at the rollback names, and the temporary
+     file changed in place before publish. None writes outside tracks,
+     through a link, or over or away another program's file, and none
+     reports success.
 """
 from pathlib import Path
 import subprocess
@@ -368,6 +370,32 @@ int main()
 		  struct stat ls_; const bool lev_is_link = lstat(tlev.c_str(), &ls_) == 0 && S_ISLNK(ls_.st_mode);
 		  expect(st == AP_CT_DOWNLOAD_FAILED && before_link == nullptr && slurp(victim) == keep && !exists(tvrm) &&
 		         (lev_is_link || !exists(tlev)), "a temporary name swapped before publish is reported, not trusted: " + detail); }
+		before_link = nullptr;
+		unlink(tlev.c_str());
+		// f. A file already at the rollback names is never deleted by the rollback.
+		{
+			const std::string planted = orig + "/.saphi-rollback-" + std::to_string(getpid()) + "-0.lev";
+			const std::string old_name = orig + "/.saphi-rollback.lev";
+			spit(planted, player); spit(old_name, player);
+			deny_vrm_link = true;
+			ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+			const int st = finish(detail);
+			deny_vrm_link = false;
+			expect(st == AP_CT_DOWNLOAD_FAILED && slurp(planted) == player && slurp(old_name) == player && !exists(tlev),
+			       "rollback keeps files at its aside names and still takes the LEV back: " + detail);
+			unlink(planted.c_str()); unlink(old_name.c_str());
+		}
+		// g. The temporary file is changed in place just before publish.
+		before_link = [](const char *name) {
+			if (std::strcmp(name, "track.lev")) return false;
+			const int fd = open((g_orig + "/.saphi-track.lev.part").c_str(), O_WRONLY);
+			if (fd >= 0) { if (write(fd, "EVIL", 4) != 4) {} close(fd); }
+			return true;
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		{ const int st = finish(detail);
+		  expect(st == AP_CT_DOWNLOAD_FAILED && before_link == nullptr && !exists(tlev) && !exists(tvrm),
+		         "bytes changed in place before publish fail the install and are taken back: " + detail); }
 		before_link = nullptr;
 		unlink(tlev.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
 

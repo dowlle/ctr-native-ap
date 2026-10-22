@@ -510,7 +510,7 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 // and each file is published with linkat, which fails when the name exists.
 // A LEV this call published is taken back when the VRM cannot be, but only
 // while the name still holds that same file (kept open, so its inode is not
-// reused). The tracks folder itself is the player's configuration and may be
+// reused), and the published bytes are read back through that handle. The tracks folder itself is the player's configuration and may be
 // a link; everything below it is not followed. Windows uses the same steps by
 // path (exclusive create, a move that never replaces); a folder swapped for a
 // junction between the check and the write is not caught there.
@@ -602,22 +602,43 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			failure = exists_already ? "A track file appeared in its folder during the install. Nothing was installed."
 			                         : "Could not finish installing the verified Saphi files. Nothing was installed.";
 	}
-	if (!failure.empty() && done[0])
+	// After publishing, read each file back through its own handle: bytes
+	// changed in place since verification fail the install like a mismatch.
+	for (int i = 0; failure.empty() && i < 2; ++i)
 	{
-		// Take the LEV back by moving its name aside first, then deleting only
-		// if the moved name is this install's open file; anything else goes
-		// back under its name (never replacing) or stays aside, never deleted.
-		static const char *const aside = ".saphi-rollback.lev";
-		struct stat moved;
-		unlinkat(original_fd, aside, 0);
-		if (renameat(original_fd, names[0], original_fd, aside) == 0)
+		if (!done[i]) continue;
+		std::vector<unsigned char> back(bytes[i]->size());
+		size_t at = 0;
+		while (at < back.size())
 		{
-			if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(moved.st_mode) &&
-			    moved.st_dev == mine[0].st_dev && moved.st_ino == mine[0].st_ino)
-				unlinkat(original_fd, aside, 0);
-			else if (linkat(original_fd, aside, original_fd, names[0], 0) == 0)
-				unlinkat(original_fd, aside, 0);
+			const ssize_t n = pread(fds[i], back.data() + at, back.size() - at, static_cast<off_t>(at));
+			if (n <= 0) break;
+			at += static_cast<size_t>(n);
 		}
+		if (at != back.size() || back != *bytes[i])
+			failure = "A track file changed while it was installed. Nothing was installed.";
+	}
+	// On failure, take back every name this install published: move it aside
+	// under a fresh name that does not exist, then delete it only when it is
+	// this install's open file; anything else goes back under its name
+	// (never replacing) or stays aside. Nothing that is not ours is deleted.
+	for (int i = 0; !failure.empty() && i < 2; ++i)
+	{
+		if (!done[i]) continue;
+		char aside[64];
+		struct stat moved;
+		int k = 0;
+		for (; k < 64; ++k)
+		{
+			std::snprintf(aside, sizeof aside, ".saphi-rollback-%d-%d.%s", static_cast<int>(getpid()), k, i ? "vrm" : "lev");
+			if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT) break;
+		}
+		if (k == 64 || renameat(original_fd, names[i], original_fd, aside) != 0) continue;
+		if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(moved.st_mode) &&
+		    moved.st_dev == mine[i].st_dev && moved.st_ino == mine[i].st_ino)
+			unlinkat(original_fd, aside, 0);
+		else if (linkat(original_fd, aside, original_fd, names[i], 0) == 0)
+			unlinkat(original_fd, aside, 0);
 	}
 	for (int fd : fds)
 		if (fd >= 0) close(fd);
