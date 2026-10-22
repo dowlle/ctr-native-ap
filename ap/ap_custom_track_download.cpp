@@ -3,6 +3,7 @@
 // real thread runtime; the C unity build only sees the narrow API above.
 
 #include "ap_custom_track_download.h"
+#include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #ifdef CTR_CUSTOM_PACKAGES
 // Authoring build only: the Track Manager's Saphi catalogue and package install.
 #include <platform/native_saphi_catalogue.h>
@@ -27,9 +28,11 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
 #ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
+#include <direct.h>
 #else
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -424,6 +427,33 @@ std::string join_path(const std::string &left, const char *right)
 	return left + ((left.back() == '/' || left.back() == '\\') ? "" : "/") + right;
 }
 
+// Current Seed installs (#133 PR 7) create the package folder themselves,
+// and only after both files are verified, so a refused download leaves no
+// trace. An existing path must already be a directory.
+bool is_directory(const std::string &path)
+{
+	struct stat st;
+	return stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFDIR) != 0;
+}
+
+bool make_directory(const std::string &path)
+{
+	if (is_directory(path))
+		return true;
+#ifdef _WIN32
+	if (_mkdir(path.c_str()) == 0)
+		return true;
+#else
+	if (mkdir(path.c_str(), 0755) == 0)
+		return true;
+#endif
+	return is_directory(path);
+}
+
+// 1 when path does not exist, 2 when it holds exactly `expected`, 0 otherwise
+// (another file, or a name that is not a regular file).
+int existing_target(const std::string &path, const std::string &expected);
+
 struct MediaFile
 {
 	std::string path;
@@ -451,14 +481,21 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 	return matches == 1;
 }
 
+// `lev_bytes` / `vrm_bytes` are the room's size pins and `tracks` the folder
+// the package root must sit in (Current Seed, #133 PR 7); all zero / empty for
+// the legacy single-package download, which keeps its old behaviour.
 void worker(std::string package_root, std::string api_url, std::string version,
-	        std::string lev_hash, std::string vrm_hash)
+	        std::string lev_hash, std::string vrm_hash,
+	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks)
 {
+	const bool pinned = !tracks.empty();
 	try
 	{
 		std::string api_path;
 		if (!saphi_url_path(api_url, api_path))
 			throw std::runtime_error("The release registry has an invalid Saphi API URL.");
+		if (pinned && !ap_seed_root_safe(tracks.c_str(), package_root.c_str()))
+			throw std::runtime_error("The track folder is not a safe place to install. Nothing was changed.");
 		set_state(AP_CT_DOWNLOAD_RUNNING, "Contacting Project Saphi...");
 		std::vector<unsigned char> metadata;
 		std::string error;
@@ -469,6 +506,8 @@ void worker(std::string package_root, std::string api_url, std::string version,
 		MediaFile vrm;
 		if (!find_media(root, "lev", version, lev) || !find_media(root, "vrm", version, vrm))
 			throw std::runtime_error("Saphi does not list exactly one matching LEV and VRM for this release.");
+		if (!ap_seed_size_agrees(lev_pin, lev.size) || !ap_seed_size_agrees(vrm_pin, vrm.size))
+			throw std::runtime_error("Saphi lists another file size than this seed pins. Nothing was changed.");
 
 		std::vector<unsigned char> lev_bytes;
 		std::vector<unsigned char> vrm_bytes;
@@ -483,19 +522,36 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			throw std::runtime_error(error.empty() ? "The Saphi VRM download was incomplete." : error);
 		if (!hash_matches(vrm_bytes, vrm_hash))
 			throw std::runtime_error("The downloaded VRM does not match this release registry.");
+		if (!ap_seed_size_agrees(lev_pin, lev_bytes.size()) || !ap_seed_size_agrees(vrm_pin, vrm_bytes.size()))
+			throw std::runtime_error("The downloaded files are not the size this seed pins. Nothing was changed.");
 
 		const std::string original = join_path(package_root, "original");
 		const std::string lev_temp = join_path(original, ".saphi-track.lev.part");
 		const std::string vrm_temp = join_path(original, ".saphi-track.vrm.part");
 		const std::string lev_target = join_path(original, "track.lev");
 		const std::string vrm_target = join_path(original, "track.vrm");
-		if (!write_file(lev_temp, lev_bytes) || !write_file(vrm_temp, vrm_bytes))
+		bool write_lev = true, write_vrm = true;
+		if (pinned)
+		{
+			// Never replace a player's file: an existing track.lev / track.vrm
+			// must already be the pinned bytes, and is then kept as it is.
+			const int lev_existing = existing_target(lev_target, lev_hash);
+			const int vrm_existing = existing_target(vrm_target, vrm_hash);
+			if (!lev_existing || !vrm_existing)
+				throw std::runtime_error("Its folder already has a different track.lev or track.vrm. "
+				                         "Move it out, then try again. Nothing was changed.");
+			write_lev = lev_existing == 1;
+			write_vrm = vrm_existing == 1;
+			if (!make_directory(package_root) || !make_directory(original))
+				throw std::runtime_error("Could not create the track folder. Nothing was installed.");
+		}
+		if ((write_lev && !write_file(lev_temp, lev_bytes)) || (write_vrm && !write_file(vrm_temp, vrm_bytes)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
 			throw std::runtime_error("Could not write the downloaded files to the track folder.");
 		}
-		if (!replace_file(lev_temp, lev_target) || !replace_file(vrm_temp, vrm_target))
+		if ((write_lev && !replace_file(lev_temp, lev_target)) || (write_vrm && !replace_file(vrm_temp, vrm_target)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
@@ -506,6 +562,44 @@ void worker(std::string package_root, std::string api_url, std::string version,
 	catch (const std::exception &e)
 	{
 		set_state(AP_CT_DOWNLOAD_FAILED, e.what());
+	}
+}
+
+int existing_target(const std::string &path, const std::string &expected)
+{
+	struct stat st;
+	if (stat(path.c_str(), &st) != 0)
+		return 1;
+	if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size <= 0 || static_cast<uint64_t>(st.st_size) > kTrackFileMax)
+		return 0;
+	std::ifstream file(path, std::ios::binary);
+	std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+	return file.good() || file.eof() ? (hash_matches(bytes, expected) ? 2 : 0) : 0;
+}
+
+int start_worker(const char *package_root, const char *download_api_url, const char *package_version,
+	             const char *lev_sha256, const char *vrm_sha256,
+	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks)
+{
+	DownloadState &shared = download_state();
+	{
+		std::lock_guard<std::mutex> lock(shared.mutex);
+		if (shared.state == AP_CT_DOWNLOAD_RUNNING)
+			return 0;
+		shared.state = AP_CT_DOWNLOAD_RUNNING;
+		shared.detail = "Starting Project Saphi download...";
+	}
+	try
+	{
+		std::thread(worker, std::string(package_root), std::string(download_api_url), std::string(package_version),
+		            std::string(lev_sha256), std::string(vrm_sha256), lev_bytes, vrm_bytes,
+		            std::string(tracks ? tracks : "")).detach();
+		return 1;
+	}
+	catch (const std::exception &e)
+	{
+		set_state(AP_CT_DOWNLOAD_FAILED, std::string("Could not start downloader: ") + e.what());
+		return 0;
 	}
 }
 } // namespace
@@ -519,25 +613,22 @@ extern "C" int ap_custom_track_download_start(const char *package_root,
 	if (!package_root || !*package_root || !download_api_url || !*download_api_url ||
 	    !package_version || !*package_version || !lev_sha256 || !vrm_sha256)
 		return 0;
-	DownloadState &shared = download_state();
-	{
-		std::lock_guard<std::mutex> lock(shared.mutex);
-		if (shared.state == AP_CT_DOWNLOAD_RUNNING)
-			return 0;
-		shared.state = AP_CT_DOWNLOAD_RUNNING;
-		shared.detail = "Starting Project Saphi download...";
-	}
-	try
-	{
-		std::thread(worker, package_root, download_api_url, package_version,
-		            lev_sha256, vrm_sha256).detach();
-		return 1;
-	}
-	catch (const std::exception &e)
-	{
-		set_state(AP_CT_DOWNLOAD_FAILED, std::string("Could not start downloader: ") + e.what());
+	return start_worker(package_root, download_api_url, package_version, lev_sha256, vrm_sha256, 0, 0, nullptr);
+}
+
+extern "C" int ap_custom_track_download_start_pinned(const char *tracks_dir,
+	                                                  const char *package_root,
+	                                                  const char *download_api_url,
+	                                                  const char *package_version,
+	                                                  const char *lev_sha256, uint32_t lev_bytes,
+	                                                  const char *vrm_sha256, uint32_t vrm_bytes)
+{
+	if (!tracks_dir || !*tracks_dir || !package_root || !*package_root || !download_api_url ||
+	    !*download_api_url || !package_version || !*package_version || !lev_sha256 || !vrm_sha256 ||
+	    !lev_bytes || !vrm_bytes || !ap_seed_root_safe(tracks_dir, package_root))
 		return 0;
-	}
+	return start_worker(package_root, download_api_url, package_version, lev_sha256, vrm_sha256,
+	                    lev_bytes, vrm_bytes, tracks_dir);
 }
 
 extern "C" int ap_custom_track_download_status(char *detail, int detail_bytes)

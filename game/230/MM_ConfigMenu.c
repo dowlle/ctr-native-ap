@@ -13,6 +13,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
+#include "../../ap/ap_seed_content.h" // Current Seed (#133 PR 7)
 #ifdef CTR_CUSTOM_PACKAGES
 // Box authoring build: the package library and Saphi Track Manager replace the
 // single-package Custom Content page (CMakeLists.txt, CTR_CUSTOM_PACKAGES).
@@ -899,6 +900,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 }
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_CUSTOM_PACKAGES)
+#include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Download Saphi",
@@ -973,6 +975,10 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	char downloadMessage[128];
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	// A content-plan room opens on Current Seed; L1 / R1 reach this page.
+	if (MM_CurrentSeed_Page(ot, pad))
+		return;
 
 	if (package == NULL)
 	{
@@ -1222,6 +1228,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	    // Drain a package or Saphi worker before leaving; Back first leaves
 	    // the Versions list of one track.
 	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+#elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	    // Back first closes the Install missing content overview (#133 PR 7).
+	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
 #endif
 	)
 	{

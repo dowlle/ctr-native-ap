@@ -194,6 +194,14 @@ const struct CustomTrackManagerPackage *CustomTrackManager_MatchingPackage(
 
 const char *CustomTrackManager_StateText(int state);
 
+// The package's folder and file paths (packageRoot, levPath, vrmPath,
+// manifestPath, yamlPath) without touching the file system. Returns 1 when
+// the registry entry is supported and every path fits (Current Seed, #133 PR 7,
+// checks where an install would write before it starts one).
+int CustomTrackManager_ResolvePaths(const char *assetsRoot,
+	                                 const struct CustomTrackManagerPackage *package,
+	                                 struct CustomTrackManagerStatus *outStatus);
+
 // Create the deterministic non-destructive directory skeleton for a package.
 // Existing directories and creator files are left untouched.
 int CustomTrackManager_PrepareFolder(const char *assetsRoot,

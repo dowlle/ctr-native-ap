@@ -105,10 +105,24 @@ static void AP_ContentRaceName(const char *title, char *out, size_t size)
 	if (n == 0) snprintf(out, size, "CUSTOM TRACK");
 }
 
+// Current Seed (#133 PR 7): what the last scan of each package found, as
+// manager state + 1 (0 = not scanned).
+static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
+
+static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status);
+
 // Locate one package's files (compiled profile folder, or the open track-key
 // folder), measure the exact bytes and refuse a claimed capability they lack.
 // Returns 1 Ready; otherwise status says why.
 static int AP_ContentScanPackage(int index, int autoFinalize, struct CustomTrackManagerStatus *status)
+{
+	const int ready = AP_ContentScanPackageFiles(index, autoFinalize, status);
+	if (index >= 0 && index < AP_CONTENT_MAX_PACKAGES)
+		ap_content_package_scan[index] = (ready ? CTR_CT_MANAGER_READY : status->state) + 1;
+	return ready;
+}
+
+static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status)
 {
 	const ctr_content_package *pkg = ap_content_plan_package(index);
 	const struct CustomTrackManagerPackage *compiled = AP_ContentPackage(index);
@@ -642,7 +656,9 @@ void AP_DrawCustomContentWarning(void)
 	if (!ap_custom_content_required)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-	DecalFont_DrawLine("Open OPTIONS > Custom Content to download or verify the track.",
+	// A content-plan room lists every required track on its own tab.
+	DecalFont_DrawLine(ap_content_plan_active() ? "Open OPTIONS > Custom Content > Current Seed to install it."
+	                                            : "Open OPTIONS > Custom Content to download or verify the track.",
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif
