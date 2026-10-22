@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <sys/stat.h>
+#include <cerrno>
 #ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
@@ -429,29 +430,45 @@ std::string join_path(const std::string &left, const char *right)
 
 // Current Seed installs (#133 PR 7) create the package folder themselves,
 // and only after both files are verified, so a refused download leaves no
-// trace. An existing path must already be a directory.
-bool is_directory(const std::string &path)
+// trace. Nothing they write may be reached through a link: the package
+// folder, its original folder and every file name are checked without
+// following links (lstat; a reparse point on Windows).
+enum NodeKind { kNodeAbsent, kNodeDirectory, kNodeFile, kNodeOther };
+
+NodeKind node_kind(const std::string &path)
 {
+#ifdef _WIN32
+	const DWORD attributes = GetFileAttributesA(path.c_str());
+	if (attributes == INVALID_FILE_ATTRIBUTES)
+		return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? kNodeAbsent : kNodeOther;
+	if (attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+		return kNodeOther;
+	return (attributes & FILE_ATTRIBUTE_DIRECTORY) ? kNodeDirectory : kNodeFile;
+#else
 	struct stat st;
-	return stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFDIR) != 0;
+	if (lstat(path.c_str(), &st) != 0)
+		return errno == ENOENT || errno == ENOTDIR ? kNodeAbsent : kNodeOther;
+	if (S_ISDIR(st.st_mode)) return kNodeDirectory;
+	if (S_ISREG(st.st_mode)) return kNodeFile;
+	return kNodeOther;
+#endif
 }
 
 bool make_directory(const std::string &path)
 {
-	if (is_directory(path))
-		return true;
+	const NodeKind kind = node_kind(path);
+	if (kind != kNodeAbsent)
+		return kind == kNodeDirectory;
 #ifdef _WIN32
-	if (_mkdir(path.c_str()) == 0)
-		return true;
+	_mkdir(path.c_str());
 #else
-	if (mkdir(path.c_str(), 0755) == 0)
-		return true;
+	mkdir(path.c_str(), 0755);
 #endif
-	return is_directory(path);
+	return node_kind(path) == kNodeDirectory;
 }
 
 // 1 when path does not exist, 2 when it holds exactly `expected`, 0 otherwise
-// (another file, or a name that is not a regular file).
+// (another file, a link, or a name that is not a regular file).
 int existing_target(const std::string &path, const std::string &expected);
 
 struct MediaFile
@@ -533,6 +550,12 @@ void worker(std::string package_root, std::string api_url, std::string version,
 		bool write_lev = true, write_vrm = true;
 		if (pinned)
 		{
+			const NodeKind root_kind = node_kind(package_root), original_kind = node_kind(original);
+			if ((root_kind != kNodeAbsent && root_kind != kNodeDirectory) ||
+			    (original_kind != kNodeAbsent && original_kind != kNodeDirectory) ||
+			    (root_kind == kNodeAbsent && original_kind != kNodeAbsent))
+				throw std::runtime_error("Its folder is a link or not a folder. Move it out, then try again. "
+				                         "Nothing was changed.");
 			// Never replace a player's file: an existing track.lev / track.vrm
 			// must already be the pinned bytes, and is then kept as it is.
 			const int lev_existing = existing_target(lev_target, lev_hash);
@@ -542,8 +565,17 @@ void worker(std::string package_root, std::string api_url, std::string version,
 				                         "Move it out, then try again. Nothing was changed.");
 			write_lev = lev_existing == 1;
 			write_vrm = vrm_existing == 1;
+			// A leftover temporary name (or a link planted there) is removed,
+			// never written through.
+			for (const std::string *temp : {&lev_temp, &vrm_temp})
+				if (node_kind(*temp) == kNodeDirectory)
+					throw std::runtime_error("Its folder has a stray .part folder. Move it out, then try again. "
+					                         "Nothing was changed.");
 			if (!make_directory(package_root) || !make_directory(original))
 				throw std::runtime_error("Could not create the track folder. Nothing was installed.");
+			for (const std::string *temp : {&lev_temp, &vrm_temp})
+				if (node_kind(*temp) != kNodeAbsent && std::remove(temp->c_str()) != 0)
+					throw std::runtime_error("Could not clear an old temporary file. Nothing was installed.");
 		}
 		if ((write_lev && !write_file(lev_temp, lev_bytes)) || (write_vrm && !write_file(vrm_temp, vrm_bytes)))
 		{
@@ -551,11 +583,17 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			std::remove(vrm_temp.c_str());
 			throw std::runtime_error("Could not write the downloaded files to the track folder.");
 		}
-		if ((write_lev && !replace_file(lev_temp, lev_target)) || (write_vrm && !replace_file(vrm_temp, vrm_target)))
+		const bool lev_published = !write_lev || replace_file(lev_temp, lev_target);
+		if (!lev_published || (write_vrm && !replace_file(vrm_temp, vrm_target)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
-			throw std::runtime_error("Could not finish installing the verified Saphi files.");
+			// A pinned install takes back a LEV it published itself, so a
+			// failed VRM never leaves half a revision (the target was absent).
+			if (pinned && write_lev && lev_published)
+				std::remove(lev_target.c_str());
+			throw std::runtime_error(pinned ? "Could not finish installing the verified Saphi files. Nothing was installed."
+			                                : "Could not finish installing the verified Saphi files.");
 		}
 		set_state(AP_CT_DOWNLOAD_SUCCEEDED, "Download verified. Finishing local setup...");
 	}
@@ -568,9 +606,11 @@ void worker(std::string package_root, std::string api_url, std::string version,
 int existing_target(const std::string &path, const std::string &expected)
 {
 	struct stat st;
-	if (stat(path.c_str(), &st) != 0)
+	const NodeKind kind = node_kind(path);
+	if (kind == kNodeAbsent)
 		return 1;
-	if ((st.st_mode & S_IFMT) != S_IFREG || st.st_size <= 0 || static_cast<uint64_t>(st.st_size) > kTrackFileMax)
+	if (kind != kNodeFile || stat(path.c_str(), &st) != 0 || st.st_size <= 0 ||
+	    static_cast<uint64_t>(st.st_size) > kTrackFileMax)
 		return 0;
 	std::ifstream file(path, std::ios::binary);
 	std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

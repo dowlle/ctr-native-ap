@@ -122,7 +122,12 @@ static int AP_SeedInstallTarget(int index, const struct CustomTrackManagerPackag
 	const char *assets = NativeAssets_GetAssetDir();
 	*profile = AP_ContentPackage(index);
 	if (!pkg || !*profile || !assets || !assets[0]) return 0;
-	if (snprintf(tracks, tracksSize, "%s/tracks", assets) >= (int)tracksSize) return 0;
+	// The same join the track manager uses, so its package root matches.
+	{
+		const size_t len = strlen(assets);
+		const int sep = assets[len - 1] == '/' || assets[len - 1] == '\\';
+		if (snprintf(tracks, tracksSize, sep ? "%stracks" : "%s/tracks", assets) >= (int)tracksSize) return 0;
+	}
 	if (!CustomTrackManager_ResolvePaths(assets, *profile, paths)) return 0;
 	return ap_seed_root_safe(tracks, paths->packageRoot);
 }

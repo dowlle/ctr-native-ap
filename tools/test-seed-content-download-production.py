@@ -17,7 +17,13 @@ Cases, each checked against the file system afterwards:
   6. a clean install creates the folder only after verification, writes the
      pinned bytes and leaves no .part file,
   7. the legacy unpinned download keeps its behaviour (no size pin, replaces
-     track.lev in the folder the caller prepared).
+     track.lev in the folder the caller prepared),
+  8. links are never written through: a linked package folder or original
+     folder refuses, a .part name linked to a player file is removed, not
+     written, and the player file is unchanged; a linked track.lev refuses,
+  9. a VRM that cannot be published takes back the LEV it just published,
+ 10. on POSIX a backslash is a file-name character: "tracks\\x" is a sibling
+     of tracks and is refused.
 """
 from pathlib import Path
 import subprocess
@@ -49,6 +55,16 @@ prelude = r'''
 #include <string>
 #include <thread>
 #include <vector>
+#include <fcntl.h>
+#include <stdio.h>
+// Fail the publish of track.vrm on demand (case 9); the worker calls rename.
+static bool deny_vrm_rename;
+extern "C" int rename(const char *from, const char *to)
+{
+	const size_t n = std::strlen(to);
+	if (deny_vrm_rename && n >= 9 && !std::strcmp(to + n - 9, "track.vrm")) { errno = EACCES; return -1; }
+	return renameat(AT_FDCWD, from, AT_FDCWD, to);
+}
 '''
 
 stub = r'''
@@ -220,7 +236,53 @@ int main()
 		ap_custom_track_download_start(pkg.c_str(), api, "1.0.2", sha(served_lev).c_str(), vs.c_str());
 		expect(finish(detail) == AP_CT_DOWNLOAD_SUCCEEDED && slurp(tlev) == served_lev, "legacy download replaces track.lev as before");
 	}
-	unlink(tlev.c_str()); unlink(tvrm.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str()); rmdir(tracks.c_str()); rmdir(assets.c_str());
+	unlink(tlev.c_str()); unlink(tvrm.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
+
+	// 8. Links.
+	{
+		const std::string outside = assets + "/outside", victim = assets + "/victim.bin";
+		mkdir(outside.c_str(), 0755);
+		const std::vector<unsigned char> keep(55, 0x07);
+		spit(victim, keep);
+		expect(symlink(outside.c_str(), pkg.c_str()) == 0, "link the package folder outside");
+		serve(lb, vb);
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && detail.find("link") != std::string::npos, "a linked package folder refuses: " + detail);
+		expect(!exists(outside + "/original") && !exists(outside + "/track.lev"), "nothing written through it");
+		unlink(pkg.c_str());
+		mkdir(pkg.c_str(), 0755);
+		expect(symlink(outside.c_str(), orig.c_str()) == 0, "link the original folder outside");
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && !exists(outside + "/track.lev") && !exists(outside + "/track.vrm"),
+		       "a linked original folder refuses, nothing written through it");
+		unlink(orig.c_str());
+		mkdir(orig.c_str(), 0755);
+		expect(symlink(victim.c_str(), (orig + "/.saphi-track.lev.part").c_str()) == 0, "plant a .part link");
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_SUCCEEDED && slurp(victim) == keep && slurp(tlev) == lev && slurp(tvrm) == vrm,
+		       "a planted .part link is removed, the player file is unchanged, the install completes");
+		unlink(tlev.c_str()); unlink(tvrm.c_str());
+		expect(symlink(victim.c_str(), tlev.c_str()) == 0, "link track.lev to a player file");
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && slurp(victim) == keep && !exists(tvrm), "a linked track.lev refuses");
+		unlink(tlev.c_str());
+
+		// 9. VRM publish fails: the LEV is taken back.
+		deny_vrm_rename = true;
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		expect(finish(detail) == AP_CT_DOWNLOAD_FAILED && !exists(tlev) && !exists(tvrm) &&
+		       !exists(orig + "/.saphi-track.lev.part") && !exists(orig + "/.saphi-track.vrm.part"),
+		       "a failed VRM publish leaves no half revision: " + detail);
+		deny_vrm_rename = false;
+		rmdir(orig.c_str()); rmdir(pkg.c_str());
+
+		// 10. A backslash sibling on POSIX.
+		const std::string sibling = tracks + "\\sibling";
+		expect(!ap_custom_track_download_start_pinned(tracks.c_str(), sibling.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb) &&
+		       !exists(sibling), "tracks\\sibling is refused at start");
+		unlink(victim.c_str()); rmdir(outside.c_str());
+	}
+	rmdir(tracks.c_str()); rmdir(assets.c_str());
 	std::printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }
@@ -233,5 +295,5 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I" + str(root / "ap"), "-I" + str(root / "ap/vendor/json/include"),
                     str(src), "-o", str(exe), "-lcrypto", "-pthread"], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
-print("PASS: Current Seed download: unsafe roots, size pins, network failures, hash mismatches and an existing "
-      "different file all refuse with no folder or file changed; identical files kept; legacy download unchanged")
+print("PASS: Current Seed download: unsafe roots, size pins, network failures, hash mismatches, links and an existing "
+      "different file all refuse with no folder or file changed; a failed VRM publish takes back its LEV; identical files kept; legacy download unchanged")

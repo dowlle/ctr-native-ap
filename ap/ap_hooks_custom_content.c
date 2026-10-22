@@ -11,6 +11,7 @@
 
 #ifdef CTR_CUSTOM_TRACKS
 #include "ap_content_capability.h"
+#include "ap_seed_content.h" // AP_SeedContentInstallBusy (#133 PR 7)
 #include <platform/native_custom_content_verify.h>
 
 // Arms the bundled Cortex Vortex pair for whichever of its two roles this seed
@@ -604,6 +605,10 @@ int AP_CustomContentDownloadStart(void)
 {
 	const struct CustomTrackManagerPackage *package = AP_CustomContentSelectedPackage();
 	if (package == NULL) return 0;
+	// A running download (this page's or the Current Seed install, #133 PR 7)
+	// refuses before the folder is prepared, so a refusal changes nothing.
+	if (ap_custom_track_download_status(NULL, 0) == AP_CT_DOWNLOAD_RUNNING || AP_SeedContentInstallBusy())
+		return 0;
 	if (!CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(), package,
 	                                    &ap_custom_content_status)) return 0;
 	ap_custom_content_scanned = 1;

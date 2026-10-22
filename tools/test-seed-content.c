@@ -144,7 +144,11 @@ int main(void)
 		longName[64] = 'a'; longName[65] = '\0';
 		expect(!ap_seed_folder_safe(longName), "65 characters is refused");
 		expect(ap_seed_root_safe("/a/assets/tracks", "/a/assets/tracks/baby-t-park"), "root under tracks");
+#ifdef _WIN32
 		expect(ap_seed_root_safe("C:\\g\\assets/tracks", "C:\\g\\assets/tracks\\baby-t-park-1.0.2"), "Windows separator");
+#else
+		expect(!ap_seed_root_safe("/a/assets/tracks", "/a/assets/tracks\\sibling"), "a POSIX backslash is a sibling name, refused");
+#endif
 		expect(!ap_seed_root_safe("/a/assets/tracks", "/a/assets/tracks"), "tracks itself is not a package root");
 		expect(!ap_seed_root_safe("/a/assets/tracks", "/a/assets/tracks/"), "empty folder");
 		expect(!ap_seed_root_safe("/a/assets/tracks", "/a/assets/tracks/../x"), "traversal out of tracks");

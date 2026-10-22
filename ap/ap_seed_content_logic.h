@@ -117,14 +117,19 @@ static inline int ap_seed_folder_safe(const char *name)
 }
 
 /* A package root the installer may create or write: exactly
- * <tracks>/<one safe folder>, with '/' or '\\' as the separator. */
+ * <tracks>/<one safe folder>. '\\' is a separator only on Windows; on POSIX
+ * it is an ordinary file-name character, so "tracks\\x" is a sibling. */
 static inline int ap_seed_root_safe(const char *tracks, const char *root)
 {
 	size_t n;
 	if (!tracks || !root || !tracks[0]) return 0;
 	n = strlen(tracks);
 	if (strncmp(root, tracks, n) != 0) return 0;
+#ifdef _WIN32
 	if (root[n] != '/' && root[n] != '\\') return 0;
+#else
+	if (root[n] != '/') return 0;
+#endif
 	return ap_seed_folder_safe(root + n + 1);
 }
 
