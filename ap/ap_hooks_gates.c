@@ -404,7 +404,10 @@ int AP_BossReqMet(const ctr_req *r)
 // is never routed through this function.
 int AP_BossGarageOpen(int bossIdx)
 {
-	if (ap_content_plan_active()) return 0; // First profile has five empty garages.
+	// A content plan's garages are empty unless the plan has its `bosses`
+	// record (#133 PR 6); with it the parser filled boss_req and the venues
+	// like a normal room's, so the normal path below decides.
+	if (ap_content_plan_active() && !ap_content_plan_bosses()->present) return 0;
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
 	// #169: a seed whose boss_encounters record this build refused keeps the
@@ -580,6 +583,13 @@ static AP_OxideGarageInputs AP_OxideInputs(void)
 	in.bossesWon = AP_ComposedBossesWon();
 	in.goalGems = ctr_cfg.goal_gems;
 	in.gemsHeld = AP_GateCountGemSum();
+	// A content plan's Gem arm counts its distinct base Gem colours (#133 PR 6).
+	if (ap_content_plan_active())
+	{
+		int gems[5], i;
+		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
+		in.gemsHeld = ap_content_plan_gems_held(gems);
+	}
 	in.firstOptional = ctr_cfg.oxide_1_optional;
 	return in;
 }
