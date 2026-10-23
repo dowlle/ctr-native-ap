@@ -592,14 +592,17 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			if (fd < 0 && errno != EEXIST) break;
 		}
 		fds[i] = fd;
+		// Identify the file before writing, so cleanup after a failed write or
+		// fsync still knows which fallback name is this install's own.
+		const bool identified = fd >= 0 && fstat(fd, &mine[i]) == 0;
 		size_t at = 0;
-		while (fd >= 0 && at < bytes[i]->size())
+		while (identified && at < bytes[i]->size())
 		{
 			const ssize_t n = write(fd, bytes[i]->data() + at, bytes[i]->size() - at);
 			if (n <= 0) break;
 			at += static_cast<size_t>(n);
 		}
-		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0 && fstat(fd, &mine[i]) == 0;
+		const bool written = identified && at == bytes[i]->size() && fsync(fd) == 0;
 		bool linked = false;
 		// The fallback's fresh name is used, and later removed, only while it
 		// still is this install's open file.
@@ -621,7 +624,7 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			linked = linkat(AT_FDCWD, self, original_fd, names[i], AT_SYMLINK_FOLLOW) == 0;
 		}
 		const bool exists_already = written && !linked && !temp_swapped && errno == EEXIST;
-		if (fd >= 0 && temp[0] && temp_is_mine()) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
+		if (identified && temp[0] && temp_is_mine()) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
 		struct stat published;
 		if (linked && fstatat(original_fd, names[i], &published, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(published.st_mode) && published.st_dev == mine[i].st_dev && published.st_ino == mine[i].st_ino)

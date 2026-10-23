@@ -29,7 +29,7 @@ Cases, each checked against the file system afterwards:
      swapped for a link after it was opened, a file appearing at track.lev
      before publish, our LEV replaced before a failed VRM, our LEV changed
      after publish; and the fallback without O_TMPFILE, including a file
-     swapped onto its fresh name before the link. None writes outside
+     swapped onto its fresh name before the link, and a failed fsync. None writes outside
      tracks, through a link, or over or away another program's file, none
      reports success with other bytes, and no temporary name is left.
 """
@@ -94,6 +94,14 @@ extern "C" int openat(int dir, const char *path, int flags, ...)
 	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = (mode_t)va_arg(ap, int); va_end(ap); }
 	if (no_tmpfile && (flags & O_TMPFILE) == O_TMPFILE) { tmpfile_refused++; errno = EOPNOTSUPP; return -1; }
 	return real(dir, path, flags, mode);
+}
+// Case 11h: one forced fsync failure.
+static bool fail_one_fsync;
+extern "C" int fsync(int fd)
+{
+	static auto real = (int (*)(int))dlsym(RTLD_NEXT, "fsync");
+	if (fail_one_fsync) { fail_one_fsync = false; errno = EIO; return -1; }
+	return real(fd);
 }
 // Case 11g: swap the fallback's fresh name just before the install checks it.
 static const char *before_fstatat_name;
@@ -422,7 +430,16 @@ int main()
 		unlink(g_fresh.c_str());
 		no_tmpfile = false;
 		unlink((orig + "/.saphi-" + std::to_string(getpid()) + "-0.part").c_str());
-		unlink(tlev.c_str()); unlink(tvrm.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
+		unlink(tlev.c_str()); unlink(tvrm.c_str());
+		// h. Fallback: a failed fsync removes its own fresh name and says nothing was installed.
+		no_tmpfile = true; fail_one_fsync = true;
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		{ const int st = finish(detail);
+		  expect(st == AP_CT_DOWNLOAD_FAILED && !fail_one_fsync && entries(orig) == 0 && !exists(tlev) && !exists(tvrm) &&
+		         detail.find("Nothing was installed") != std::string::npos,
+		         "fallback: a failed fsync leaves no temporary name: " + detail); }
+		no_tmpfile = false;
+		rmdir(orig.c_str()); rmdir(pkg.c_str());
 
 		// 10. A backslash sibling on POSIX.
 		const std::string sibling = tracks + "\\sibling";
