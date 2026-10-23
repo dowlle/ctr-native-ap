@@ -53,6 +53,32 @@ CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TRAP_ITEM_INDEX_MAX);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_verify_custom_letter_foreign[AP_CUSTOM_LETTER_VERIFY_COUNT] = {0};
+// Foreign receipts of item codes outside that dense index (#133 PR 8): a
+// content plan's custom-track letter items. Bounded; a code that no longer
+// fits sets the overflow flag, and the content-plan verdict is then withheld
+// rather than computed from a partial tally. Rebuilt on every connect.
+#define AP_VERIFY_SPARSE_FOREIGN_MAX 256
+static long long ap_verify_sparse_foreign_code[AP_VERIFY_SPARSE_FOREIGN_MAX];
+static int ap_verify_sparse_foreign_count[AP_VERIFY_SPARSE_FOREIGN_MAX];
+static int ap_verify_sparse_foreign_n = 0;
+static int ap_verify_sparse_foreign_overflow = 0;
+static void ap_verify_sparse_foreign_add(long long code)
+{
+	int k;
+	for (k = 0; k < ap_verify_sparse_foreign_n; k++)
+		if (ap_verify_sparse_foreign_code[k] == code)
+		{
+			ap_verify_sparse_foreign_count[k]++;
+			return;
+		}
+	if (ap_verify_sparse_foreign_n >= AP_VERIFY_SPARSE_FOREIGN_MAX)
+	{
+		ap_verify_sparse_foreign_overflow = 1;
+		return;
+	}
+	ap_verify_sparse_foreign_code[ap_verify_sparse_foreign_n] = code;
+	ap_verify_sparse_foreign_count[ap_verify_sparse_foreign_n++] = 1;
+}
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 static unsigned char ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 // Received named-block letter items (#133 PR 3b), one bit per block and

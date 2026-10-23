@@ -244,6 +244,7 @@ int AP_GateCountForeign(int itemType);   // #85: foreign-only split (multiworld 
 // item index space (0..189). Own-location items are deliberately excluded and
 // are banked synchronously from scout+checked state by ap_verify.c.
 int AP_VerifyForeignItemCount(int itemIndex);
+int AP_VerifyForeignItemCodeCount(long long code);
 // Useful grants call this before applying a weapon-backed effect. When
 // itemsanity is active, Shield and Mask remain queued until their weapon unlock
 // has arrived; ids outside the frozen itemsanity weapon set stay available.
