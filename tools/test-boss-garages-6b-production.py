@@ -99,6 +99,10 @@ check("AddBitsConfig0 |= ADVENTURE_CUP" in block and "RemBitsConfig0 |= ADVENTUR
 bots = read("game/BOTS.c")
 check("(gameMode1 & ADVENTURE_CUP) != 0 && (gameMode1 & ADVENTURE_BOSS) == 0" in bots,
       "a boss cup leg takes the boss difficulty row")
+speed = bots[bots.index("b32 isInAdvArcadeOrVSCup = false;"):]
+speed = speed[:speed.index("difficultyStat; // sVar7")]
+check(speed.index("isInAdvArcadeOrVSCup = true;") < speed.index("if ((gGT->gameMode1 & ADVENTURE_BOSS) != 0)")
+      < speed.rindex("isInAdvArcadeOrVSCup = false;"), "a boss cup's catch-up reads live ranks, not the eight-kart cup grid")
 cups = read("ap/ap_hooks_content_cups.c")
 finish = cups[cups.index("int AP_ContentCupFinish("):]
 check("AP_NotifyCupAggregateReward(garage + ADV_REWARD_FIRST_BOSS_KEY)" in finish[:finish.index("\n}\n")]

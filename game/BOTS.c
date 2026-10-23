@@ -1334,6 +1334,16 @@ UpdateTireColorTimer:
 				{
 					isInAdvArcadeOrVSCup = true;
 				}
+#ifdef CTR_AP
+				// A content-plan boss cup (#133 PR 6b) seats one boss: his
+				// catch-up reads live ranks as in his boss race. The cup grid
+				// arithmetic below assumes eight karts and would take his rank
+				// to -1 and read before arcade_difficultyParams.
+				if ((gGT->gameMode1 & ADVENTURE_BOSS) != 0)
+				{
+					isInAdvArcadeOrVSCup = false;
+				}
+#endif
 
 				if (gGT->drivers[0]->driverRank < botDriver->driverRank)
 				{
