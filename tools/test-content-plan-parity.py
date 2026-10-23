@@ -1284,6 +1284,118 @@ for name, change in [
 hit_cup_env("content_cups on a Hit plan without cups",
             lambda c: c["hit_character_encounters"].__setitem__("content_cups", copy.deepcopy(hit_cup_base["hit_character_encounters"]["content_cups"])),
             glob_base)
+# Boss garages (#133 PR 6): generated plans over the goal arms, venue draws,
+# Final Challenge venues and relic modes, with cups, boost, racer locks,
+# Itemsanity and Hit Character in some, then forged boss records. A forgery
+# is judged by the generator's plan validation plus its envelope goal keys,
+# which native reads from the same plan.
+from worlds.ctr.test.test_content_bosses import varied as boss_varied
+for seed in range(60):
+    try:
+        wire = make_world(boss_varied(seed), seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    cases.append((f"bosses-generated-{seed}", wire, True))
+for fixture in ("bosses", "bosses-final"):
+    cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
+def boss_env(name, change, source=None):
+    case = copy.deepcopy(source or boss_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = cp.goal_envelope(case["content_plan"]) == {k: case["ctr_options"][k] for k in
+                                                              ("goal_oxide", "goal_bosses", "goal_gems")}
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError, IndexError):
+        accepted = False
+    cases.append(("bosses-" + name, case, accepted))
+def b_entry(c, g, index=0):
+    return next(e for e in c["content_plan"]["entries"] if e["id"] == f"entry/boss:{g}/{index}")
+def b_req(c, rid):
+    return next(r for r in c["content_plan"]["requirements"] if r["id"] == rid)
+def b_check(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def b_row(c, item):
+    return next(r for r in c["content_plan"]["items"]["rows"] if r["item"] == item)
+def b_pad(c, pid):
+    return next(x for x in c["content_plan"]["pads"] if x["id"] == pid)
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("venue repeated", lambda c: b_entry(c, 0).__setitem__("track_id", b_entry(c, 1)["track_id"])),
+        ("venue uncertified", lambda c: b_entry(c, 1).__setitem__("track_id", "retail:18")),
+        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
+        ("venue home track", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:6")),
+        ("Oxide 1 venue", lambda c: b_entry(c, 4).__setitem__("track_id", "cortex_vortex")),
+        ("Final venue retail", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "retail:3")),
+        ("opponent", lambda c: b_entry(c, 0)["opponent"].__setitem__("character_id", 3)),
+        ("opponent slot", lambda c: b_entry(c, 0)["opponent"].__setitem__("slot", 2)),
+        ("driving profile", lambda c: b_entry(c, 1)["opponent"].__setitem__("driving_profile", "boss")),
+        ("attack kit", lambda c: b_entry(c, 1)["opponent"].__setitem__("attack_profile", "mixed")),
+        ("laps", lambda c: b_entry(c, 3).__setitem__("laps", 1)),
+        ("Trophy door", lambda c: b_req(c, "boss:2")["predicate"].__setitem__("count", 11)),
+        ("Trophy door item", lambda c: b_req(c, "boss:0")["predicate"].__setitem__("item", 35010014)),
+        ("Oxide 1 companions dropped", lambda c: b_req(c, "oxide:first").__setitem__("predicate", b_req(c, "oxide:first")["predicate"]["terms"][0])),
+        ("Final relic count", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("count", 5)),
+        ("Final relic tier", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("item", 35010002)),
+        ("stray boss record", lambda c: c["content_plan"]["requirements"].append(dict(id="boss:9", predicate=dict(op="always")))),
+        ("garage gate", lambda c: b_pad(c, "garage:3").__setitem__("entrance_req", "keys:2")),
+        ("Oxide garage gate", lambda c: b_pad(c, "garage:4").__setitem__("entrance_req", "free")),
+        ("encounter requirement id", lambda c: c["content_plan"]["encounters"][4].__setitem__("requirement_id", "free")),
+        ("encounter index", lambda c: c["content_plan"]["encounters"][5].__setitem__("index", 0)),
+        ("encounter code", lambda c: c["content_plan"]["encounters"][0].__setitem__("completion_location", 35011101)),
+        ("encounter dropped", lambda c: c["content_plan"]["encounters"].pop()),
+        ("encounters swapped", lambda c: c["content_plan"]["encounters"].reverse()),
+        ("boss check award", lambda c: b_check(c, 35011100)["routes"][0].__setitem__("award", "hit")),
+        ("boss check owner", lambda c: b_check(c, 35011102).__setitem__("owner", "encounter/garage:0/0")),
+        ("boss check name", lambda c: b_check(c, 35011103).__setitem__("display_name", "Pinstripe")),
+        ("boss check dropped", lambda c: c["content_plan"]["checks"].remove(b_check(c, 35011101))),
+        ("boss Hit route dropped", lambda c: b_check(c, 35025010)["routes"].pop()),
+        ("boss Hit route elsewhere", lambda c: b_check(c, 35025001)["routes"].append(copy.deepcopy(b_check(c, 35025010)["routes"][-1]))),
+        ("goal boss count", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 3)),
+        ("goal Oxide arm", lambda c: c["content_plan"]["goal"]["terms"][0]["locations"].__setitem__(0, 35011105)),
+        ("goal arm order", lambda c: c["content_plan"]["goal"]["terms"].reverse()),
+        ("goal without arms", lambda c: c["content_plan"].__setitem__("goal", c["content_plan"]["goal"]["terms"][2])),
+        ("record oxide goal", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_goal", 2)),
+        ("record boss count", lambda c: c["content_plan"]["bosses"].__setitem__("bosses_required", 3)),
+        ("record shuffle", lambda c: c["content_plan"]["bosses"].__setitem__("track_shuffle", False)),
+        ("record repeats", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", True)),
+        ("record optional", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_1_optional", True)),
+        ("record relic mode", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_final_unlock", 1)),
+        ("record extra", lambda c: c["content_plan"]["bosses"].__setitem__("pairing", "retail_pairs")),
+        ("record dropped", lambda c: c["content_plan"].pop("bosses")),
+        ("feature dropped", lambda c: c["content_plan"]["required_features"].remove("boss_encounters_v1")),
+        ("envelope goal_oxide", lambda c: c["ctr_options"].__setitem__("goal_oxide", 3)),
+        ("envelope goal_bosses", lambda c: c["ctr_options"].__setitem__("goal_bosses", 0)),
+        ("envelope goal_gems", lambda c: c["ctr_options"].__setitem__("goal_gems", 0)),
+        ("boss-only venue mode", lambda c: next(t for t in c["content_plan"]["tracks"] if t["id"] == "cortex_vortex")["modes"].append("ctr")),
+        ("no filler for the Oxide goal check", lambda c: (b_row(c, 35010000).update(extra=75, remaining=91, receipt_cap=91),
+                                                          c["content_plan"]["items"].update(filler_count=0, trap_count=0))),
+        ("boss rank 0", lambda c: b_check(c, 35011105).__setitem__("boost", 0)),
+        ("boss rank above the chain", lambda c: b_check(c, 35011105).__setitem__("boost", 3)),
+        ]:
+    boss_env(name, change)
+# A boss check's `boost` is the apworld's logic as data, read as given like
+# every other check's rank (#133 PR 4c above): a forged rank inside the chain
+# is refused by the generator alone.
+for name, change in [
+        ("boss rank lowered", lambda c: b_check(c, 35011105).__setitem__("boost", 1)),
+        ("boss rank dropped", lambda c: b_check(c, 35011100).pop("boost")),
+        ]:
+    boss_env(name, change)
+    native_trusts.add("bosses-" + name)
+    assert cases[-1][2] is False, name + ": the apworld must refuse a forged rank"
+final_base = next(w for name, w, ok in cases if name == "bosses-final-fixture")
+for name, change in [
+        ("final unchanged copy", lambda c: None),
+        ("final retail pair moved", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:3")),
+        ("final total relics over supply", lambda c: (c["content_plan"]["bosses"].__setitem__("oxide_final_count", 13),
+                                                      b_req(c, "oxide:final")["predicate"].__setitem__("count", 13))),
+        ("final optional without 101", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_goal", 1)),
+        ("final gem arm added", lambda c: c["ctr_options"].__setitem__("goal_gems", 1)),
+        ("final venue Cortex Vortex", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "cortex_vortex")),
+        ]:
+    boss_env(name, change, final_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

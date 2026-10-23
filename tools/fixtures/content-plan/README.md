@@ -171,3 +171,17 @@ routes from every Trophy Race and CTR Challenge and from every cup leg (mode
 checks the parsed orders and the routes, refuses forged orders and routes,
 and refuses `content_cups` on a normal room. `cups.json` (Hit Character off)
 is unchanged.
+
+Boss garages (#133 PR 6): `bosses.json` and `bosses-final.json` are slot data
+the paired apworld emitted (script `emit-fixtures.py` in the PR 6 artifacts,
+seeds 20261022 and 20261023). `bosses.json`: bosses on with Boss Track
+Shuffle (four distinct certified venues), `oxide_goal` any_percent with
+Bosses Required Goal 2 and Gems Required Goal 2 (N. Oxide's Challenge carries
+the companion terms), the Final Challenge on Cortex Vortex with Sapphire
+relics, Progressive Boost and Hit Character on (each boss race is a Hit route
+for its boss). `bosses-final.json`: retail pairs, `oxide_goal` 101_percent
+with Oxide 1 optional, the Final Challenge on Oxide Station with
+total_relics, no Gem arm, two cups. `test-content-plan.cpp` checks the
+configuration the parser fills (Trophy doors, the Oxide garage's Keys, goal
+arms, Final Challenge venue, the drawn venues), refuses forged boss records
+and walks the boss records of `bosses-final.json`.

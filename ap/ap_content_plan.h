@@ -161,6 +161,20 @@ typedef struct ctr_content_item_boxes {
     int present, shortcut_knowledge;
 } ctr_content_item_boxes;
 
+/* Boss garages (#133 PR 6): the plan's `bosses` record. `present` is 0 when
+ * the garages are empty (bosses off); then oxide_goal is 3 (disabled) and
+ * bosses_required 0. venues[g] is the engine LevelID ordinary garage g races
+ * on (its home track unless track_shuffle); final_track is
+ * CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX (0) or _OXIDE_STATION (1), -1 when Oxide
+ * is disabled. The parser drives the normal room's garage, Oxide and goal
+ * configuration from it (ctr_cfg.boss_req, goal_oxide, goal_bosses,
+ * oxide_final_*, ctr_boss_encounters). */
+typedef struct ctr_content_bosses {
+    int present, oxide_goal, bosses_required, oxide_1_optional;
+    int final_unlock, final_count, track_shuffle, repeats;
+    int venues[4], final_track;
+} ctr_content_bosses;
+
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
@@ -257,6 +271,12 @@ int ap_content_plan_check_boost(int64_t location);
 /* Item Box Locations (#133 PR 4e): the record (all zero without one). */
 const ctr_content_item_boxes *ap_content_plan_item_boxes(void);
 int ap_content_plan_goal(const int received_gems[5]);
+/* The plan's Gem arm (#133 PR 6): how many of the goal's distinct base Gem
+ * colours are held, the count the Oxide garage's companion term compares
+ * with ctr_cfg.goal_gems. */
+int ap_content_plan_gems_held(const int received_gems[5]);
+/* Boss garages (#133 PR 6): the record (all zero without one). */
+const ctr_content_bosses *ap_content_plan_bosses(void);
 int ap_content_plan_bind(const char *seed, int team, int slot,
                          const int64_t *locations, size_t count);
 
