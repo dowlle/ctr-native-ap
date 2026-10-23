@@ -407,7 +407,12 @@ static void ap_vf_publish(int listed)
 		// sweep can only see this world's own items, so "not reachable from here
 		// alone" is the NORMAL state early on -- alarming words here just send
 		// players to Discord with healthy seeds.
-		if (!ap_vf_coverage_exact)
+		if (ap_vf_truncated == 2)
+			snprintf(msg, sizeof msg,
+			         "[AP VERIFY] INDETERMINATE: the content-plan model could not "
+			         "be built or the received-item tally overflowed. No "
+			         "completability claim is made for this seed.\n");
+		else if (!ap_vf_coverage_exact)
 			snprintf(msg, sizeof msg,
 			         "[AP VERIFY] INDETERMINATE: model covers %d/%d server-declared "
 			         "locations. No completability claim is made.\n",
@@ -446,15 +451,12 @@ static void ap_vf_publish(int listed)
 			AP_LogLine("[AP VERIFY] INDETERMINATE: location worklist overflowed "
 			           "(seed carries more locations than this build can track). "
 			           "No completability claim is made for this seed.\n");
-		else if (ap_vf_truncated == 2)
-			AP_LogLine("[AP VERIFY] INDETERMINATE: the content-plan model could not "
-			           "be built or the received-item tally overflowed. "
-			           "No completability claim is made for this seed.\n");
+
 		// The per-location dump is diagnostic detail for SOLO (where "unreachable"
 		// means broken). In a multiworld it would enumerate locations that simply
 		// need other players' items -- 16 lines of noise under an informational
 		// header, so it stays solo-only.
-		if (ap_vf_coverage_exact && ap_vf_solo &&
+		if (ap_vf_coverage_exact && ap_vf_solo && ap_vf_truncated != 2 &&
 		    (!ap_vf_goal_ok || ap_vf_reachable < ap_vf_total))
 		{
 			int k;
@@ -506,11 +508,25 @@ static int ap_vf_content_checked(void *ctx, int64_t location)
 	(void)ctx;
 	return ap_net_location_checked(location);
 }
+// The #458 boss-won flags, the same source the goal reads (ap_hooks_goal.c):
+// bosses 0..3 and N. Oxide's Challenge. The Final Challenge has no flag; its
+// win is the goal itself, so its checked location stands in.
+static int ap_vf_content_won(void *ctx, int64_t completion_location)
+{
+	unsigned bits = ap_net_boss_won_bits();
+	(void)ctx;
+	if (completion_location >= AP_BOSS_WON_LOCATION_CODE(0) &&
+	    completion_location <= AP_BOSS_WON_LOCATION_CODE(3))
+		return (bits & AP_BOSS_WON_BIT((int)(completion_location - AP_BOSS_WON_LOCATION_CODE(0)))) != 0;
+	if (completion_location == AP_BOSS_WON_OXIDE_FIRST_CODE)
+		return (bits & AP_BOSS_WON_OXIDE_FIRST) != 0;
+	return ap_net_location_checked(completion_location);
+}
 static void ap_vf_recompute_content(void)
 {
 	ap_vf_content_ctx ctx = { 0 };
 	ap_content_verify_io io = { &ctx, ap_vf_content_foreign, ap_vf_content_scout,
-	                            ap_vf_content_checked, 0 };
+	                            ap_vf_content_checked, ap_vf_content_won, 0 };
 	ap_content_verify_result r;
 	int k;
 	ap_vf_truncated = 0;

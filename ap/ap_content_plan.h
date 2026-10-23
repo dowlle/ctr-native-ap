@@ -310,8 +310,10 @@ const ctr_content_bosses *ap_content_plan_bosses(void);
  * returns that receipt count for an item code; `scout` returns 0 for a
  * location the room does not have, else 1 with *own_item the item it holds for
  * this slot (0 when the item belongs to another player); `checked` 1 for a
- * checked location; `unreached`, when set, is called for every location of
- * the room the sweep does not reach. Returns 0 with no verdict when no plan is
+ * checked location; `won`, when set, 1 for an encounter (by its completion
+ * location) the player personally won, which a checked location alone does
+ * not prove (Collect and Release check it too); `unreached`, when set, is
+ * called for every location of the room the sweep does not reach. Returns 0 with no verdict when no plan is
  * active or the model could not be built. */
 #define AP_CONTENT_VERIFY_LISTED 16
 typedef struct ap_content_verify_io {
@@ -319,6 +321,7 @@ typedef struct ap_content_verify_io {
     int (*foreign)(void *ctx, int64_t item);
     int (*scout)(void *ctx, int64_t location, int64_t *own_item);
     int (*checked)(void *ctx, int64_t location);
+    int (*won)(void *ctx, int64_t completion_location);
     void (*unreached)(void *ctx, int64_t location);
 } ap_content_verify_io;
 typedef struct ap_content_verify_result {

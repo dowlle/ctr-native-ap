@@ -376,9 +376,15 @@ struct Sweep {
         for (auto c : L.letters) if (count(c) <= 0) return false;
         return true;
     }
+    // The encounter's check is in reach: reached by the sweep or checked
+    // (a Hit route through the boss race, content_global_checks.install).
     bool encounter_ok(int e) const {
         const int i = m.encounter_loc[e];
-        return i >= 0 && (done[i] || (region(m.locs[i].region) && boost(m.locs[i])));
+        return i >= 0 && (done[i] || encounter_rule(e));
+    }
+    bool encounter_rule(int e) const {
+        const int i = m.encounter_loc[e];
+        return i >= 0 && region(m.locs[i].region) && boost(m.locs[i]);
     }
     bool hit(const Loc &L) const {
         if (m.itemsanity && !AP_VerifyHitMethodOwned(dense)) return false;
@@ -442,28 +448,16 @@ struct Sweep {
         return ok && (!L.door || AP_VerifyTigerDoorWeapon(dense));
     }
 };
-} // namespace content_verify
 
-extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content_verify_result *out) {
-    using namespace content_verify;
-    static Model model;
-    static bool have = false;
-    std::memset(out, 0, sizeof *out);
-    if (!ap_content_plan_active() || !io) return 0;
-    try {
-        if (!have || model.epoch != content_plan::epoch) { have = false; model = build(); have = true; }
-    } catch (const std::exception &e) {
-        AP_LogLine((std::string("[AP VERIFY] content plan model refused: ") + e.what() + "\n").c_str());
-        return 0;
-    }
+static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_verify_result *out) {
     Sweep s(model);
     for (auto code : model.items) s.bank(code, io->foreign(io->ctx, code));
     std::vector<char> present(model.locs.size());
     for (size_t i = 0; i < model.locs.size(); ++i) {
         int64_t own = 0;
-        // A location the room does not have still takes part in the logic
-        // (it cannot be, as admission binds the room to the plan's checks),
-        // but it is never counted and banks nothing.
+        // Admission binds the room to the plan's checks, so every location
+        // is present. One that were not would still take part in the logic,
+        // but it would never be counted and would bank nothing.
         present[i] = (char)io->scout(io->ctx, model.locs[i].code, &own);
         if (!present[i]) continue;
         out->total++;
@@ -476,8 +470,14 @@ extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content
             for (int g : model.regions[r].gates) ok = ok && s.eval(g);
             s.open[r] = ok;
         }
-        for (size_t e = 0; e < model.encounter_loc.size(); ++e)
-            if (!s.event[e] && s.encounter_ok((int)e)) { s.event[e] = 1; progress = true; }
+        // The companion event (`checked` predicates): the race won in this
+        // room, or its rule met now. A checked location alone is not a win.
+        for (size_t e = 0; e < model.encounter_loc.size(); ++e) {
+            if (s.event[e]) continue;
+            const int i = model.encounter_loc[e];
+            const bool won = i >= 0 && io->won && io->won(io->ctx, model.locs[i].code);
+            if (won || s.encounter_rule((int)e)) { s.event[e] = 1; progress = true; }
+        }
         for (size_t i = 0; i < model.locs.size(); ++i) {
             if (s.done[i] || !s.reachable(model.locs[i])) continue;
             int64_t own = 0;
@@ -498,3 +498,21 @@ extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content
     out->keys = s.count(kKeyItem);
     return 1;
 }
+} // namespace content_verify
+
+extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content_verify_result *out) {
+    using namespace content_verify;
+    static Model model;
+    static bool have = false;
+    std::memset(out, 0, sizeof *out);
+    if (!ap_content_plan_active() || !io) return 0;
+    try {
+        if (!have || model.epoch != content_plan::epoch) { have = false; model = build(); have = true; }
+        return sweep(model, io, out);
+    } catch (const std::exception &e) {
+        AP_LogLine((std::string("[AP VERIFY] content-plan sweep refused: ") + e.what() + "\n").c_str());
+        std::memset(out, 0, sizeof *out);
+        return 0;
+    }
+}
+

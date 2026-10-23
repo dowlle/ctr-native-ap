@@ -25,6 +25,7 @@ static void expect(bool good, const std::string &why) {
 }
 
 struct Room {
+    std::set<int64_t> won; // encounters personally won, by completion location
     std::map<int64_t, int> foreign;
     std::map<int64_t, int64_t> own; // location -> own item
     std::set<int64_t> present, checked;
@@ -43,10 +44,11 @@ static int scout_of(void *ctx, int64_t location, int64_t *own) {
     return 1;
 }
 static int checked_of(void *ctx, int64_t location) { return static_cast<Room *>(ctx)->checked.count(location) != 0; }
+static int won_of(void *ctx, int64_t location) { return static_cast<Room *>(ctx)->won.count(location) != 0; }
 static std::set<int64_t> *missed;
 static void unreached_of(void *, int64_t location) { if (missed) missed->insert(location); }
 static ap_content_verify_result run(Room &room, std::set<int64_t> *miss = nullptr) {
-    ap_content_verify_io io{&room, foreign_of, scout_of, checked_of, unreached_of};
+    ap_content_verify_io io{&room, foreign_of, scout_of, checked_of, won_of, unreached_of};
     ap_content_verify_result out;
     missed = miss;
     expect(ap_content_plan_verify(&io, &out) == 1, "the sweep gives a verdict on an admitted plan");
@@ -80,6 +82,12 @@ static std::string diff(const std::set<int64_t> &want, const std::set<int64_t> &
 // Checked-in fixtures: with every item the plan pools held (and every racer,
 // weapon and capability item), every check and the goal are reachable; with
 // nothing held the goal is not; removing the Gems blocks a Gem goal.
+static bool gem_goal(const J &slot) {
+    const J &goal = slot["content_plan"]["goal"];
+    return goal["op"] == "distinct" ||
+           (goal["op"] == "all" && std::any_of(goal["terms"].begin(), goal["terms"].end(),
+                                               [](const J &t) { return t["op"] == "distinct"; }));
+}
 static void fixtures() {
     static const char *names[] = {"baseline", "starts-extras", "manual-rules", "open-packages", "track-modes", "track-checks",
                                   "track-checks-global", "cortex-perfect", "item-packs", "racers", "capability",
@@ -109,11 +117,16 @@ static void fixtures() {
         for (auto id : ids) { done.checked.insert(id); }
         r = run(done);
         expect(r.reachable == r.total, std::string(name) + ": checked locations count as reached");
-        const J &goal = slot["content_plan"]["goal"];
-        const bool gem = goal["op"] == "distinct" ||
-                         (goal["op"] == "all" && std::any_of(goal["terms"].begin(), goal["terms"].end(),
-                                                             [](const J &t) { return t["op"] == "distinct"; }));
-        if (gem) {
+        // A checked encounter is not a win (Collect and Release check it):
+        // only the boss-won flags satisfy a `checked` goal term.
+        if (slot["content_plan"]["encounters"].size()) {
+            expect(!r.goal, std::string(name) + ": checked boss locations without a win do not reach the goal");
+            for (const auto &e : slot["content_plan"]["encounters"]) done.won.insert(e["completion_location"].get<int64_t>());
+            Room won = done;
+            r = run(won);
+            expect(r.goal || gem_goal(slot), std::string(name) + ": won encounters satisfy the goal's encounter terms");
+        }
+        if (gem_goal(slot)) {
             Room no_gems = all;
             for (int64_t code = 35010009; code <= 35010013; ++code) no_gems.foreign.erase(code);
             r = run(no_gems);
