@@ -509,8 +509,8 @@ static int ap_vf_content_checked(void *ctx, int64_t location)
 	return ap_net_location_checked(location);
 }
 // The #458 boss-won flags, the same source the goal reads (ap_hooks_goal.c):
-// bosses 0..3 and N. Oxide's Challenge. The Final Challenge has no flag; its
-// win is the goal itself, so its checked location stands in.
+// bosses 0..3 and N. Oxide's Challenge. The Final Challenge has no flag and
+// its checked location proves no win, so it takes its encounter rule only.
 static int ap_vf_content_won(void *ctx, int64_t completion_location)
 {
 	unsigned bits = ap_net_boss_won_bits();
@@ -520,7 +520,7 @@ static int ap_vf_content_won(void *ctx, int64_t completion_location)
 		return (bits & AP_BOSS_WON_BIT((int)(completion_location - AP_BOSS_WON_LOCATION_CODE(0)))) != 0;
 	if (completion_location == AP_BOSS_WON_OXIDE_FIRST_CODE)
 		return (bits & AP_BOSS_WON_OXIDE_FIRST) != 0;
-	return ap_net_location_checked(completion_location);
+	return 0;
 }
 static void ap_vf_recompute_content(void)
 {

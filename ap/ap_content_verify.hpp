@@ -332,9 +332,13 @@ struct Sweep {
     AP_VerifyOptions o;
     std::map<int64_t, int> held;
     int dense[AP_VF_ITEM_COUNT] = {};
-    std::vector<char> done, open;     // per location: collected; per region: reachable
+    // Per location: `done` counted and banked (reached, or checked at the
+    // start); `reached` its rule met in this sweep, which a checked location
+    // alone does not prove. Per region: reachable.
+    std::vector<char> done, reached, open;
     std::vector<char> event;          // per encounter: companion event held
-    Sweep(const Model &model) : m(model), o(options()), done(model.locs.size()), open(model.regions.size()),
+    Sweep(const Model &model) : m(model), o(options()), done(model.locs.size()), reached(model.locs.size()),
+                                open(model.regions.size()),
                                 event(model.encounter_loc.size()) {}
     int count(int64_t code) const { const auto it = held.find(code); return it == held.end() ? 0 : it->second; }
     void bank(int64_t code, int n) {
@@ -376,25 +380,21 @@ struct Sweep {
         for (auto c : L.letters) if (count(c) <= 0) return false;
         return true;
     }
-    // The encounter's check is in reach: reached by the sweep or checked
-    // (a Hit route through the boss race, content_global_checks.install).
-    bool encounter_ok(int e) const {
-        const int i = m.encounter_loc[e];
-        return i >= 0 && (done[i] || encounter_rule(e));
-    }
     bool encounter_rule(int e) const {
         const int i = m.encounter_loc[e];
         return i >= 0 && region(m.locs[i].region) && boost(m.locs[i]);
     }
     bool hit(const Loc &L) const {
         if (m.itemsanity && !AP_VerifyHitMethodOwned(dense)) return false;
-        for (const auto &r : L.routes) if (r.boss && encounter_ok(r.encounter)) return true;
+        // A boss route and an unlock win read the location's rule
+        // (location.can_reach), never its checked state.
+        for (const auto &r : L.routes) if (r.boss && encounter_rule(r.encounter)) return true;
         if (L.target >= kFirstGuest && ctr_cfg.hit.valid && ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) {
             if (count(kKeyItem) < ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) return false;
         } else if (!L.triggers.empty()) {
             bool any = false;
             for (auto code : L.triggers)
-                for (size_t j = 0; j < m.locs.size() && !any; ++j) any = m.locs[j].code == code && done[j];
+                for (size_t j = 0; j < m.locs.size() && !any; ++j) any = m.locs[j].code == code && reached[j];
             if (!any) return false;
         }
         for (const auto &r : L.routes) {
@@ -479,12 +479,14 @@ static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_
             if (won || s.encounter_rule((int)e)) { s.event[e] = 1; progress = true; }
         }
         for (size_t i = 0; i < model.locs.size(); ++i) {
-            if (s.done[i] || !s.reachable(model.locs[i])) continue;
+            if (s.reached[i] || !s.reachable(model.locs[i])) continue;
+            s.reached[i] = 1;
+            progress = true;
+            if (s.done[i]) continue; // checked at the start: already banked
             int64_t own = 0;
             if (present[i]) io->scout(io->ctx, model.locs[i].code, &own);
             s.done[i] = 1;
             s.bank(own, 1);
-            progress = true;
         }
     }
     for (size_t i = 0; i < model.locs.size(); ++i) {

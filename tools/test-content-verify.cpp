@@ -169,6 +169,44 @@ static void chain() {
     expect(r.keys == 0 && r.reachable == (int)by_keys[0].size(), "a Key behind its own gate leaves every keyed pad shut");
 }
 
+// A checked boss race is not a reachable one (bosses.json, Hit Character on):
+// with no Keys, a keyed garage's boss stays out of reach even when its race is
+// checked, so the boss's Hit check, whose boss route and unlock trigger both
+// read that race's rule, is not reached either.
+static void checked_is_not_reached() {
+    std::ifstream in("tools/fixtures/content-plan/bosses.json");
+    const J slot = J::parse(in);
+    const auto ids = plan_locations(slot);
+    expect(admit(slot, ids), "bosses: admitted for the checked boss case");
+    const J &plan = slot["content_plan"];
+    std::map<std::string, std::string> entrance;
+    for (const auto &pad : plan["pads"]) entrance[pad["id"]] = pad["entrance_req"];
+    int64_t boss = 0, hit = 0;
+    for (const auto &c : plan["checks"]) {
+        if (c["kind"] != "hit") continue;
+        for (const auto &r : c["routes"])
+            if ((r["mode"] == "boss_race" || r["mode"] == "boss_cup") && entrance[r["own_pad_id"]] != "free") {
+                for (const auto &e : plan["encounters"])
+                    if (e["id"] == r["encounter_id"]) boss = e["completion_location"].get<int64_t>();
+                hit = c["location"].get<int64_t>();
+            }
+        if (hit) break;
+    }
+    expect(boss && hit, "bosses has a Hit check routed through a keyed garage");
+    Room room;
+    for (auto id : ids) room.present.insert(id);
+    for (int64_t code = 35010000; code < 35010210; ++code) room.foreign[code] = 99;
+    room.foreign.erase(35010014);
+    room.checked.insert(boss);
+    std::set<int64_t> miss;
+    run(room, &miss);
+    expect(miss.count(hit) == 1, "a checked boss race does not open its boss's Hit check");
+    room.foreign[35010014] = 4;
+    miss.clear();
+    run(room, &miss);
+    expect(miss.count(hit) == 0, "with the Keys the boss race and its Hit check are reached");
+}
+
 static void probe(const char *path) {
     std::ifstream in(path);
     std::string line;
@@ -214,7 +252,7 @@ static void probe(const char *path) {
 
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
-    else { fixtures(); chain(); }
+    else { fixtures(); chain(); checked_is_not_reached(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
