@@ -222,10 +222,12 @@ static void probe(const char *path) {
         Room base;
         for (auto id : ids) base.present.insert(id);
         for (const auto &c : row["precollected"]) base.foreign[c.get<int64_t>()]++;
-        for (const auto &c : row["foreign"]) base.foreign[c.get<int64_t>()]++;
-        // The full placement: own items banked as the sweep reaches them.
+        // The full placement: own items banked as the sweep reaches them, and
+        // every item another slot holds for this one. A sample's inventory
+        // already lists those items wherever they sit, so it does not add them.
         {
             Room room = base;
+            for (const auto &c : row["foreign"]) room.foreign[c.get<int64_t>()]++;
             for (auto it = row["own"].begin(); it != row["own"].end(); ++it) room.own[std::stoll(it.key())] = it.value().get<int64_t>();
             ap_content_verify_result r;
             std::set<int64_t> want;
