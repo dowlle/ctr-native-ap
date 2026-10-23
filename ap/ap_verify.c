@@ -102,6 +102,7 @@ static unsigned ap_vf_gen = 0;          // AP_StateGen at last compute
 static int      ap_vf_truncated = 0;    // 1 worklist overflowed, 2 content-plan model or tally incomplete: verdict is not trustworthy
 static int      ap_vf_settled = 1;      // #85: last verdict computed with no checks in flight
 static int      ap_vf_coverage_exact = 0; // modeled locations == server-declared locations
+static unsigned ap_vf_won_bits = 0;     // #458 boss-won flags the last content-plan verdict read
 
 // #144: reachable/Keys last printed by the "waiting on other worlds" line, so a
 // resettle re-run (line 535) that lands on an unchanged multiworld snapshot
@@ -1195,7 +1196,23 @@ void AP_VerifyOnFrame(void)
 		ap_vf_have = 0; // scouts were cleared by a (re)connect: verdict is stale
 		return;         // LocationInfo not in yet; try again next frame
 	}
+	// #133 PR 8: a content-plan room with boss garages reads the #458
+	// boss-won flags, which arrive from data storage after connect and do not
+	// bump the state generation. Wait for them like the scouts, and treat a
+	// change in them like a generation change.
+	if (ap_content_plan_active() && ap_content_plan_bosses()->present &&
+	    !ap_net_boss_won_known())
+	{
+		ap_vf_have = 0;
+		return;
+	}
 	unsigned gen = AP_StateGen();
+	unsigned won = ap_content_plan_active() ? ap_net_boss_won_bits() : 0;
+	if (won != ap_vf_won_bits)
+	{
+		ap_vf_won_bits = won;
+		ap_vf_have = 0;
+	}
 	if (ap_vf_have && gen == ap_vf_gen)
 	{
 		// Gen unchanged, but a drain of only NON-gate items (Wumpa idx 15, traps)
