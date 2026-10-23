@@ -101,8 +101,10 @@ check("(gameMode1 & ADVENTURE_CUP) != 0 && (gameMode1 & ADVENTURE_BOSS) == 0" in
       "a boss cup leg takes the boss difficulty row")
 cups = read("ap/ap_hooks_content_cups.c")
 finish = cups[cups.index("int AP_ContentCupFinish("):]
-check("AP_NotifyAdvReward(garage + ADV_REWARD_FIRST_BOSS_KEY)" in finish[:finish.index("\n}\n")],
-      "a boss cup's points win completes the garage")
+check("AP_NotifyCupAggregateReward(garage + ADV_REWARD_FIRST_BOSS_KEY)" in finish[:finish.index("\n}\n")]
+      and "AP_NotifyAdvReward(garage" not in finish[:finish.index("\n}\n")],
+      "a boss cup's points win completes the garage through the cup-aggregate path (a standalone context blocks AP_NotifyAdvReward)")
+check("AP_ContentGarageCupReady(bossIdx) == 0" in venue, "a boss cup with a leg's files missing keeps the garage shut")
 check("AP_ContentGarageCupRunning() < 0" in cups[cups.index("int AP_ContentCupHitDestination"):],
       "a boss cup seats no Hit field")
 standings = read("game/UI/UI_CupStandings.c")

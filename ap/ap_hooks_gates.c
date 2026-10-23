@@ -453,6 +453,9 @@ int AP_BossGarageVenue(int bossIdx)
 	// armed for this garage; otherwise the garage stays shut.
 	if (ctr_boss_encounters.custom[bossIdx] && !CustomTrack_GarageVenueReady(bossIdx))
 		return -1;
+	// A boss cup races only once every leg's files are ready (#133 PR 6b).
+	if (AP_ContentGarageCupReady(bossIdx) == 0)
+		return -1;
 #else
 	if (ctr_boss_encounters.custom[bossIdx])
 		return -1;
@@ -868,7 +871,11 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	if (AP_BossGarageVenue(bossIdx) < 0)
 	{
 		// #133 PR 6b: a custom venue whose files are missing or changed.
-		if (ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+		if ((ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+#ifdef CTR_CUSTOM_TRACKS
+		    || AP_ContentGarageCupReady(bossIdx) == 0
+#endif
+		    )
 		{
 			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
 			return 1;

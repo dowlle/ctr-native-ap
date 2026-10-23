@@ -398,6 +398,7 @@ int AP_ContentCupHitDestination(void);
 // certified restart point count, garage entry staging (-2 no cup, -1 refused,
 // else the level to load) and the return to the garage.
 int AP_ContentGarageCupRunning(void);
+int AP_ContentGarageCupReady(int garage);
 int AP_ContentGarageCupLegPoints(void);
 int AP_ContentGarageCupPrepare(int garage);
 int AP_ContentGarageCupReturn(struct GameTracker *gGT, int garage);

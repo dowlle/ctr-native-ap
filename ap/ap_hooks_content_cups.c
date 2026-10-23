@@ -60,12 +60,26 @@ int AP_ContentGarageCupPrepare(int g)
 	const ctr_content_pad *pad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + g);
 	struct CustomTrackRaceContext race;
 	if (!pad) return -2;
-	if (CustomTrack_StandaloneBusy()) return -1;
+	if (CustomTrack_StandaloneBusy() || AP_ContentGarageCupReady(g) != 1) return -1;
 	AP_ContentLegContext(pad, 0, &race);
 	if (!AP_ContentArmTrack(pad->legs[0].cortex, pad->legs[0].package_index, &race) ||
 	    !CustomTrack_StageStandaloneRace(&race)) return -1;
 	CustomTrack_CortexTrackSelectNextLoad(0);
 	return race.hostLevelID;
+}
+
+// Are the bytes of every leg of garage `g`'s boss cup ready (#133 PR 6b)?
+// Retail legs always; Cortex Vortex and custom legs once scanned. Returns -1
+// when the garage holds no boss cup.
+int AP_ContentGarageCupReady(int g)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + g);
+	int n;
+	if (!pad) return -1;
+	for (n = 0; n < AP_CONTENT_CUP_LEGS; ++n)
+		if (!AP_ContentTrackReady(pad->legs[n].retail_id >= 0, pad->legs[n].cortex, pad->legs[n].package_index))
+			return 0;
+	return 1;
 }
 
 // After a boss cup (#133 PR 6b), won, lost or left: return as a boss race
@@ -186,14 +200,15 @@ int AP_ContentCupFinish(struct GameTracker *gGT, int won)
 	long win, sweep;
 	if (!pad) return 0;
 	// A boss cup (#133 PR 6b): a points win completes the garage's encounter
-	// exactly as its boss race would (AP_NotifyAdvReward sends the frozen
-	// Boss Race check and records the personal boss win), paid in full after
-	// a forced loss on the final leg like any cup (#286).
+	// exactly as its boss race would: the reward path sends the frozen Boss
+	// Race check and records the personal boss win. It is the cup-aggregate
+	// entry (paid in full after a forced loss on the final leg, #286), which
+	// a standalone cup context does not block, unlike AP_NotifyAdvReward.
 	if (garage >= 0)
 	{
 		AP_CupSweepReset(&ap_content_cup_attempt);
-		if (won && !AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUP_AGGREGATE))
-			AP_NotifyAdvReward(garage + ADV_REWARD_FIRST_BOSS_KEY);
+		if (won)
+			AP_NotifyCupAggregateReward(garage + ADV_REWARD_FIRST_BOSS_KEY);
 		gGT->podiumRewardID = 0;
 		return 1;
 	}
