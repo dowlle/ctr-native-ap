@@ -32,7 +32,6 @@
 #include <cerrno>
 #ifndef _WIN32
 #include <fcntl.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 #ifdef _WIN32
@@ -503,89 +502,75 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 	return matches == 1;
 }
 
-#ifndef _WIN32
-// renameat2(RENAME_NOREPLACE) through the system call, so the client does not
-// need a newer glibc symbol. False when the name exists or the kernel or file
-// system cannot do it; the caller then leaves the file where it is.
-bool rename_noreplace(int dir, const char *from, const char *to)
-{
-#if defined(SYS_renameat2)
-	return syscall(SYS_renameat2, dir, from, dir, to, 1u /* RENAME_NOREPLACE */) == 0;
-#else
-	(void)dir; (void)from; (void)to;
-	return false;
-#endif
-}
-#endif
-
-// Publish a verified pinned install (Current Seed, #133 PR 7) without ever
-// writing through a link or replacing a file, even if the folder changes
-// while it runs. POSIX works on directory handles opened without following
-// links: <tracks>/<folder> and its original/ are created and opened with
-// O_NOFOLLOW, temporary files are created exclusively (O_EXCL | O_NOFOLLOW),
-// and each file is published with linkat, which fails when the name exists.
-// A LEV this call published is taken back when the VRM cannot be, but only
-// while the name still holds that same file (kept open, so its inode is not
-// reused), and the published bytes are read back through that handle. The tracks folder itself is the player's configuration and may be
-// a link; everything below it is not followed. Windows uses the same steps by
-// path (exclusive create, a move that never replaces); a folder swapped for a
-// junction between the check and the write is not caught there.
+// Publish a verified pinned install (Current Seed, #133 PR 7). It never
+// writes through a link, never replaces or removes a file it did not write,
+// and never takes anything back: each file is written to an unnamed file and
+// then given its name with linkat, which fails when the name exists.
+//
+// POSIX works on directory handles opened without following links:
+// <tracks>/<folder> and its original/ are created and opened with
+// O_NOFOLLOW. The data goes into an O_TMPFILE file in original/ and is named
+// through /proc/self/fd, so no temporary name exists that anything could
+// swap. Where the file system has no O_TMPFILE, a fresh exclusive name is
+// used and removed after the link instead. A name counts as published only
+// when it is this install's still-open file, and the bytes are read back
+// through that handle. The tracks folder itself is the player's
+// configuration and may be a link.
+//
+// A failure after the LEV is published leaves that verified LEV in place:
+// the track then shows Missing, and installing again keeps it and adds the
+// VRM. Windows takes the same steps by path (exclusive create of a fresh
+// name, a move that never replaces); a folder swapped for a junction between
+// the check and the write is not caught there.
 // `lev` / `vrm` are null when that file already is the pinned one.
 void publish_pinned(const std::string &tracks, const std::string &folder,
                     const std::vector<unsigned char> *lev, const std::vector<unsigned char> *vrm)
 {
 	static const char *const names[2] = {"track.lev", "track.vrm"};
-	static const char *const temps[2] = {".saphi-track.lev.part", ".saphi-track.vrm.part"};
 	const std::vector<unsigned char> *bytes[2] = {lev, vrm};
+	bool done[2] = {false, false};
+	std::string failure;
 #ifdef _WIN32
 	const std::string original = join_path(join_path(tracks, folder.c_str()), "original");
 	if (!make_directory(join_path(tracks, folder.c_str())) || !make_directory(original))
 		throw std::runtime_error("Could not create the track folder. Nothing was installed.");
-	bool published[2] = {false, false};
-	WIN32_FILE_ATTRIBUTE_DATA lev_info = {};
-	for (int i = 0; i < 2; ++i)
+	for (int i = 0; failure.empty() && i < 2; ++i)
 	{
 		if (!bytes[i]) continue;
-		const std::string temp = join_path(original, temps[i]), target = join_path(original, names[i]);
-		if (node_kind(temp) == kNodeFile) std::remove(temp.c_str());
-		HANDLE h = CreateFileA(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-		                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		std::string temp;
+		HANDLE h = INVALID_HANDLE_VALUE;
+		for (int k = 0; k < 64 && h == INVALID_HANDLE_VALUE; ++k)
+		{
+			char name[64];
+			std::snprintf(name, sizeof name, ".saphi-%lu-%d.part", static_cast<unsigned long>(GetCurrentProcessId()), k);
+			temp = join_path(original, name);
+			h = CreateFileA(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+			                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			if (h == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_EXISTS) break;
+		}
 		DWORD wrote = 0;
 		const bool ok = h != INVALID_HANDLE_VALUE &&
 		                WriteFile(h, bytes[i]->data(), static_cast<DWORD>(bytes[i]->size()), &wrote, nullptr) &&
 		                wrote == bytes[i]->size() && FlushFileBuffers(h);
 		if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
-		if (!ok || !MoveFileExA(temp.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH))
+		if (ok && MoveFileExA(temp.c_str(), join_path(original, names[i]).c_str(), MOVEFILE_WRITE_THROUGH))
+			done[i] = true;
+		else
 		{
-			WIN32_FILE_ATTRIBUTE_DATA now;
-			const std::string lev_target = join_path(original, names[0]);
 			if (h != INVALID_HANDLE_VALUE) std::remove(temp.c_str());
-			// Take the LEV back only while it still looks like this install's file.
-			if (i == 1 && published[0] && GetFileAttributesExA(lev_target.c_str(), GetFileExInfoStandard, &now) &&
-			    !(now.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) && now.nFileSizeLow == lev_info.nFileSizeLow &&
-			    now.nFileSizeHigh == lev_info.nFileSizeHigh &&
-			    now.ftLastWriteTime.dwLowDateTime == lev_info.ftLastWriteTime.dwLowDateTime &&
-			    now.ftLastWriteTime.dwHighDateTime == lev_info.ftLastWriteTime.dwHighDateTime)
-				std::remove(lev_target.c_str());
-			throw std::runtime_error("Could not finish installing the verified Saphi files. Nothing was installed.");
+			failure = "Could not finish installing the verified Saphi files.";
 		}
-		published[i] = true;
-		if (i == 0 && !GetFileAttributesExA(target.c_str(), GetFileExInfoStandard, &lev_info))
-			published[0] = false; // unknown identity: never taken back
 	}
 #else
 	const int tracks_fd = open(tracks.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (tracks_fd < 0)
 		throw std::runtime_error("Could not open the tracks folder. Nothing was installed.");
 	int root_fd = -1, original_fd = -1;
-	struct stat published[2] = {};
-	bool done[2] = {false, false};
-	std::string failure;
 	if ((mkdirat(tracks_fd, folder.c_str(), 0755) != 0 && errno != EEXIST) ||
 	    (root_fd = openat(tracks_fd, folder.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0 ||
 	    (mkdirat(root_fd, "original", 0755) != 0 && errno != EEXIST) ||
 	    (original_fd = openat(root_fd, "original", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
-		failure = "Its folder is a link or could not be created. Nothing was installed.";
+		failure = "Its folder is a link or could not be created.";
 	// Each written file stays open until the end, so its inode cannot be
 	// reused: a published name is ours only while it is that open file.
 	int fds[2] = {-1, -1};
@@ -593,8 +578,17 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 	for (int i = 0; failure.empty() && i < 2; ++i)
 	{
 		if (!bytes[i]) continue;
-		unlinkat(original_fd, temps[i], 0); // a leftover name or a planted link; never its target
-		const int fd = openat(original_fd, temps[i], O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+		char temp[64] = "";
+		int fd = -1;
+#ifdef O_TMPFILE
+		fd = openat(original_fd, ".", O_TMPFILE | O_RDWR | O_CLOEXEC, 0644);
+#endif
+		for (int k = 0; fd < 0 && k < 64; ++k)
+		{
+			std::snprintf(temp, sizeof temp, ".saphi-%d-%d.part", static_cast<int>(getpid()), k);
+			fd = openat(original_fd, temp, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+			if (fd < 0 && errno != EEXIST) break;
+		}
 		fds[i] = fd;
 		size_t at = 0;
 		while (fd >= 0 && at < bytes[i]->size())
@@ -604,22 +598,29 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			at += static_cast<size_t>(n);
 		}
 		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0 && fstat(fd, &mine[i]) == 0;
-		const bool linked = written && linkat(original_fd, temps[i], original_fd, names[i], 0) == 0;
+		bool linked = false;
+		if (written && temp[0])
+			linked = linkat(original_fd, temp, original_fd, names[i], 0) == 0;
+		else if (written)
+		{
+			char self[48];
+			std::snprintf(self, sizeof self, "/proc/self/fd/%d", fd);
+			linked = linkat(AT_FDCWD, self, original_fd, names[i], AT_SYMLINK_FOLLOW) == 0;
+		}
 		const bool exists_already = written && !linked && errno == EEXIST;
-		if (fd >= 0) unlinkat(original_fd, temps[i], 0);
-		if (linked && fstatat(original_fd, names[i], &published[i], AT_SYMLINK_NOFOLLOW) == 0 &&
-		    S_ISREG(published[i].st_mode) && published[i].st_dev == mine[i].st_dev && published[i].st_ino == mine[i].st_ino)
+		if (fd >= 0 && temp[0]) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
+		struct stat published;
+		if (linked && fstatat(original_fd, names[i], &published, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    S_ISREG(published.st_mode) && published.st_dev == mine[i].st_dev && published.st_ino == mine[i].st_ino)
 			done[i] = true;
 		else if (linked)
-			// The temporary name was swapped before the link: what got
-			// published is not this install's file, so it is left alone.
-			failure = "Its folder changed during the install. Check tracks/<folder>/original. Nothing was installed.";
+			failure = "Its folder changed during the install. Check tracks/" + folder + "/original.";
 		else
-			failure = exists_already ? "A track file appeared in its folder during the install. Nothing was installed."
-			                         : "Could not finish installing the verified Saphi files. Nothing was installed.";
+			failure = exists_already ? "A track file appeared in its folder during the install."
+			                         : "Could not finish installing the verified Saphi files.";
 	}
-	// After publishing, read each file back through its own handle: bytes
-	// changed in place since verification fail the install like a mismatch.
+	// Read each published file back through its own handle: bytes changed
+	// since verification fail the install.
 	for (int i = 0; failure.empty() && i < 2; ++i)
 	{
 		if (!done[i]) continue;
@@ -632,40 +633,18 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			at += static_cast<size_t>(n);
 		}
 		if (at != back.size() || back != *bytes[i])
-			failure = "A track file changed while it was installed. Nothing was installed.";
-	}
-	// On failure, take back every name this install published: move it aside
-	// under a fresh name, with a move that fails when that name exists
-	// (RENAME_NOREPLACE; without it the name is left published, which is the
-	// verified pinned file), then delete it only when it is
-	// this install's open file; anything else goes back under its name
-	// (never replacing) or stays aside. Nothing that is not ours is deleted.
-	for (int i = 0; !failure.empty() && i < 2; ++i)
-	{
-		if (!done[i]) continue;
-		char aside[64];
-		struct stat moved;
-		int k = 0;
-		for (; k < 64; ++k)
-		{
-			std::snprintf(aside, sizeof aside, ".saphi-rollback-%d-%d.%s", static_cast<int>(getpid()), k, i ? "vrm" : "lev");
-			if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT) break;
-		}
-		if (k == 64 || !rename_noreplace(original_fd, names[i], aside)) continue;
-		if (fstatat(original_fd, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(moved.st_mode) &&
-		    moved.st_dev == mine[i].st_dev && moved.st_ino == mine[i].st_ino)
-			unlinkat(original_fd, aside, 0);
-		else if (linkat(original_fd, aside, original_fd, names[i], 0) == 0)
-			unlinkat(original_fd, aside, 0);
+			failure = "A track file changed while it was installed. Rescan, then try again.";
 	}
 	for (int fd : fds)
 		if (fd >= 0) close(fd);
 	if (original_fd >= 0) close(original_fd);
 	if (root_fd >= 0) close(root_fd);
 	close(tracks_fd);
-	if (!failure.empty())
-		throw std::runtime_error(failure);
 #endif
+	if (!failure.empty())
+		throw std::runtime_error(failure + (done[0] && !done[1] && bytes[1]
+		                                    ? " The verified LEV is in place; Install again adds the VRM."
+		                                    : done[0] || done[1] ? "" : " Nothing was installed."));
 }
 
 // `lev_bytes` / `vrm_bytes` are the room's size pins and `tracks` the folder
