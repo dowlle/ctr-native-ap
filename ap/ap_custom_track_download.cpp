@@ -624,7 +624,7 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 			linked = linkat(AT_FDCWD, self, original_fd, names[i], AT_SYMLINK_FOLLOW) == 0;
 		}
 		const bool exists_already = written && !linked && !temp_swapped && errno == EEXIST;
-		if (identified && temp[0] && temp_is_mine()) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
+		if (fd >= 0 && temp[0] && (!identified || temp_is_mine())) unlinkat(original_fd, temp, 0); // the fallback's own fresh name (unidentified only when fstat failed right after its exclusive create)
 		struct stat published;
 		if (linked && fstatat(original_fd, names[i], &published, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(published.st_mode) && published.st_dev == mine[i].st_dev && published.st_ino == mine[i].st_ino)
