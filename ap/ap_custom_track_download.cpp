@@ -512,7 +512,9 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 // O_NOFOLLOW. The data goes into an O_TMPFILE file in original/ and is named
 // through /proc/self/fd, so no temporary name exists that anything could
 // swap. Where the file system has no O_TMPFILE, a fresh exclusive name is
-// used and removed after the link instead. A name counts as published only
+// used: it is linked and later removed only while it still is this install's
+// open file (a swap in the instant between that check and the call remains
+// possible on such file systems). A name counts as published only
 // when it is this install's still-open file, and the bytes are read back
 // through that handle. The tracks folder itself is the player's
 // configuration and may be a link.
@@ -599,21 +601,32 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 		}
 		const bool written = fd >= 0 && at == bytes[i]->size() && fsync(fd) == 0 && fstat(fd, &mine[i]) == 0;
 		bool linked = false;
+		// The fallback's fresh name is used, and later removed, only while it
+		// still is this install's open file.
+		auto temp_is_mine = [&]() {
+			struct stat now;
+			return fstatat(original_fd, temp, &now, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(now.st_mode) &&
+			       now.st_dev == mine[i].st_dev && now.st_ino == mine[i].st_ino;
+		};
+		bool temp_swapped = false;
 		if (written && temp[0])
-			linked = linkat(original_fd, temp, original_fd, names[i], 0) == 0;
+		{
+			temp_swapped = !temp_is_mine();
+			linked = !temp_swapped && linkat(original_fd, temp, original_fd, names[i], 0) == 0;
+		}
 		else if (written)
 		{
 			char self[48];
 			std::snprintf(self, sizeof self, "/proc/self/fd/%d", fd);
 			linked = linkat(AT_FDCWD, self, original_fd, names[i], AT_SYMLINK_FOLLOW) == 0;
 		}
-		const bool exists_already = written && !linked && errno == EEXIST;
-		if (fd >= 0 && temp[0]) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
+		const bool exists_already = written && !linked && !temp_swapped && errno == EEXIST;
+		if (fd >= 0 && temp[0] && temp_is_mine()) unlinkat(original_fd, temp, 0); // the fallback's own fresh name
 		struct stat published;
 		if (linked && fstatat(original_fd, names[i], &published, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(published.st_mode) && published.st_dev == mine[i].st_dev && published.st_ino == mine[i].st_ino)
 			done[i] = true;
-		else if (linked)
+		else if (linked || temp_swapped)
 			failure = "Its folder changed during the install. Check tracks/" + folder + "/original.";
 		else
 			failure = exists_already ? "A track file appeared in its folder during the install."

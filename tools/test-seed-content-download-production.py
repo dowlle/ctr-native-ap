@@ -28,7 +28,8 @@ Cases, each checked against the file system afterwards:
  11. races with another program in the same folder: the package folder
      swapped for a link after it was opened, a file appearing at track.lev
      before publish, our LEV replaced before a failed VRM, our LEV changed
-     after publish; and the fallback without O_TMPFILE. None writes outside
+     after publish; and the fallback without O_TMPFILE, including a file
+     swapped onto its fresh name before the link. None writes outside
      tracks, through a link, or over or away another program's file, none
      reports success with other bytes, and no temporary name is left.
 """
@@ -93,6 +94,17 @@ extern "C" int openat(int dir, const char *path, int flags, ...)
 	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = (mode_t)va_arg(ap, int); va_end(ap); }
 	if (no_tmpfile && (flags & O_TMPFILE) == O_TMPFILE) { tmpfile_refused++; errno = EOPNOTSUPP; return -1; }
 	return real(dir, path, flags, mode);
+}
+// Case 11g: swap the fallback's fresh name just before the install checks it.
+static const char *before_fstatat_name;
+static void (*swap_fresh)();
+extern "C" int fstatat(int dir, const char *name, struct stat *st, int flags)
+{
+	static int (*real)(int, const char *, struct stat *, int) =
+		(int (*)(int, const char *, struct stat *, int))dlsym(RTLD_NEXT, "fstatat");
+	if (swap_fresh && before_fstatat_name && !std::strncmp(name, before_fstatat_name, std::strlen(before_fstatat_name)))
+	{ auto hook = swap_fresh; swap_fresh = nullptr; hook(); }
+	return real(dir, name, st, flags);
 }
 extern "C" int mkdirat(int dir, const char *name, mode_t mode)
 {
@@ -392,6 +404,22 @@ int main()
 		  expect(st == AP_CT_DOWNLOAD_SUCCEEDED && tmpfile_refused > 0 && slurp(tlev) == lev && slurp(tvrm) == vrm &&
 		         slurp(orig + "/.saphi-" + std::to_string(getpid()) + "-0.part") == player && entries(orig) == 3,
 		         "fallback install: fresh names, none left, a file at the first fresh name kept: " + detail); }
+		unlink(tlev.c_str()); unlink(tvrm.c_str());
+		// g. Fallback: another program puts its file at our fresh name before the link.
+		static std::string g_fresh;
+		g_fresh = orig + "/.saphi-" + std::to_string(getpid()) + "-1.part";
+		before_fstatat_name = ".saphi-";
+		swap_fresh = []() {
+			std::ofstream f(g_fresh + ".x", std::ios::binary); f << "THEIRS"; f.close();
+			rename((g_fresh + ".x").c_str(), g_fresh.c_str());
+		};
+		ap_custom_track_download_start_pinned(tracks.c_str(), pkg.c_str(), api, "1.0.2", ls.c_str(), lb, vs.c_str(), vb);
+		{ const int st = finish(detail);
+		  expect(st == AP_CT_DOWNLOAD_FAILED && swap_fresh == nullptr &&
+		         slurp(g_fresh) == std::vector<unsigned char>({'T','H','E','I','R','S'}) && !exists(tlev),
+		         "fallback: a file swapped onto the fresh name is neither published nor removed: " + detail); }
+		before_fstatat_name = nullptr;
+		unlink(g_fresh.c_str());
 		no_tmpfile = false;
 		unlink((orig + "/.saphi-" + std::to_string(getpid()) + "-0.part").c_str());
 		unlink(tlev.c_str()); unlink(tvrm.c_str()); rmdir(orig.c_str()); rmdir(pkg.c_str());
