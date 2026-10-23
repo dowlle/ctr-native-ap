@@ -8418,6 +8418,7 @@
    "oxide_goal": 1,
    "bosses_required": 2,
    "requirement_level": "very_high",
+   "cups": [],
    "oxide_1_optional": false,
    "oxide_final_unlock": 0,
    "oxide_final_count": 6,

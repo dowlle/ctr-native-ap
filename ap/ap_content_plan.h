@@ -126,6 +126,10 @@ typedef struct ctr_content_pad {
 /* Engine hosts of non-retail track entries: a custom package borrows Roo's
  * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
  * served on by the legacy pad track and the Oxide 2 venue. */
+/* Boss cups (#133 PR 6b): the cup pad of ordinary garage g is
+ * AP_CONTENT_GARAGE_CUP_PAD + g, above every physical pad id (pad ids are
+ * engine pad LevelIDs, the Cup room's up to 104). */
+#define AP_CONTENT_GARAGE_CUP_PAD 1000
 #define AP_CONTENT_CUSTOM_HOST 6
 #define AP_CONTENT_CORTEX_HOST 13
 #define AP_CONTENT_CORTEX_LAPS 3
@@ -191,6 +195,10 @@ typedef struct ctr_content_bosses {
      * venues[g] is the garage's home LevelID, the host the bytes are served
      * on, and venue_points[g] the certified restart point count. */
     int venue_package[4], venue_cortex[4], venue_points[4];
+    /* #133 PR 6b: boss cups. cup[g] 1 when ordinary garage g holds a boss
+     * cup (its legs are the cup pad ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
+     * + g)); cup_points[g][n] each leg's certified restart point count. */
+    int cup[4], cup_points[4][4];
 } ctr_content_bosses;
 
 typedef struct ctr_content_item {

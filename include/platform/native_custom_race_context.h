@@ -49,7 +49,8 @@ struct CustomTrackRaceLatch
 static inline int CustomRaceContext_IsPad(int id)
 {
 	return (id >= 0 && id <= 19) || id == 21 || id == 23 ||
-	       (id >= 100 && id <= 104);
+	       (id >= 100 && id <= 104) ||
+	       (id >= 1000 && id <= 1003); /* boss cup garages, AP_CONTENT_GARAGE_CUP_PAD (#133 PR 6b) */
 }
 
 static inline int CustomRaceContext_Key(const char *text, size_t size)

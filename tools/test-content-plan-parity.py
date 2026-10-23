@@ -1296,7 +1296,7 @@ for seed in range(60):
     except CupOptionError:
         continue
     cases.append((f"bosses-generated-{seed}", wire, True))
-for fixture in ("bosses", "bosses-final", "bosses-custom"):
+for fixture in ("bosses", "bosses-final", "bosses-custom", "bosses-cups"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
 boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
 def boss_env(name, change, source=None):
@@ -1425,6 +1425,20 @@ for name, change in [
         ("custom on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "custom/baby-t-park/1.0.2")),
         ]:
     boss_env(name, change, custom_base)
+# Boss cups (#133 PR 6b): forgeries on bosses-cups.json (cups in garages 0 and 1).
+cups_base = next(w for name, w, ok in cases if name == "bosses-cups-fixture")
+for name, change in [
+        ("cups unchanged copy", lambda c: None),
+        ("cups three legs", lambda c: b_entry(c, 0)["legs"].pop()),
+        ("cups repeated leg", lambda c: b_entry(c, 0)["legs"][1].__setitem__("track_id", b_entry(c, 0)["legs"][0]["track_id"])),
+        ("cups trial leg", lambda c: b_entry(c, 1)["legs"][2].__setitem__("track_id", "retail:16")),
+        ("cups leg laps", lambda c: b_entry(c, 0)["legs"][0].__setitem__("laps", 2)),
+        ("cups record short", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0])),
+        ("cups record long", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0, 1, 2])),
+        ("cups route mode", lambda c: b_check(c, 35011100)["routes"][0].__setitem__("mode", "boss_race")),
+        ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
+        ]:
+    boss_env(name, change, cups_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

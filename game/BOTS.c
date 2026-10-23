@@ -230,7 +230,13 @@ void BOTS_Adv_AdjustDifficulty(void)
 
 		cupDifficulty = (s16)((u16)gGT->arcadeDifficulty + 0x50);
 	}
+#ifdef CTR_AP
+	// A content-plan boss cup (#133 PR 6b) sets both bits: its legs take the
+	// boss row below, not the cup arm. Retail never sets both.
+	else if ((gameMode1 & ADVENTURE_CUP) != 0 && (gameMode1 & ADVENTURE_BOSS) == 0)
+#else
 	else if ((gameMode1 & ADVENTURE_CUP) != 0)
+#endif
 	{
 		s32 track = gGT->cup.trackIndex;
 		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostCupRace[track]);

@@ -389,6 +389,10 @@ void UI_RaceEnd_ExitToMap(void)
 		if (apCupReturn >= 0)
 			cupReturn = (s16)apCupReturn;
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		// A boss cup (#133 PR 6b) returns to its garage like a boss race.
+		AP_ContentGarageCupReturn(gGT, AP_ContentGarageCupRunning());
+#endif
 		MainRaceTrack_RequestLoad(cupReturn);
 		return;
 	}

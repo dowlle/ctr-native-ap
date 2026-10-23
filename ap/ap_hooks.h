@@ -394,6 +394,13 @@ int AP_ContentCupFinish(struct GameTracker *gGT, int won);
 // Hit Character on content plans (#133 PR 5b): a content-plan cup draws its
 // frozen field from 200 + its name index (-1 when no content-plan cup runs).
 int AP_ContentCupHitDestination(void);
+// Boss cups (#133 PR 6b): the running boss cup's garage (-1 none), its leg's
+// certified restart point count, garage entry staging (-2 no cup, -1 refused,
+// else the level to load) and the return to the garage.
+int AP_ContentGarageCupRunning(void);
+int AP_ContentGarageCupLegPoints(void);
+int AP_ContentGarageCupPrepare(int garage);
+int AP_ContentGarageCupReturn(struct GameTracker *gGT, int garage);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);

@@ -3298,6 +3298,7 @@
    "oxide_goal": 1,
    "bosses_required": 0,
    "requirement_level": "high",
+   "cups": [],
    "oxide_1_optional": false,
    "oxide_final_unlock": 0,
    "oxide_final_count": 6,

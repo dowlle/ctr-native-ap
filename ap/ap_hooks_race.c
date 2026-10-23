@@ -791,6 +791,15 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 	// A content-plan cup (#133 PR 5), decided at the cup's first leg and kept
 	// for every leg: its Win, or once the Win is collected its Win All Legs
 	// (the legacy Gem Cup win set holds both), with that check's rank.
+	// A boss cup (#133 PR 6b): the garage's own completion check and rank,
+	// bound to no racer, like the boss race below.
+	if (AP_ContentGarageCupRunning() >= 0 && (pad = AP_ContentCupPad()) != NULL)
+	{
+		code = pad->trophy_location;
+		*outBoost = ap_content_plan_check_boost(code);
+		*outCode = ap_net_location_exists((long)code) ? (long)code : 0;
+		return 1;
+	}
 	if ((pad = AP_ContentCupPad()) != NULL)
 	{
 		const int sweep = pad->sweep_location > 0 && ap_net_location_checked((long)pad->trophy_location);

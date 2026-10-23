@@ -1391,6 +1391,43 @@ int main(int argc, char **argv) {
     std::ifstream("tools/fixtures/content-plan/bosses.json") >> bosses;
     std::ifstream("tools/fixtures/content-plan/bosses-final.json") >> finalroom;
     std::ifstream("tools/fixtures/content-plan/bosses-custom.json") >> customroom;
+    // #133 PR 6b: bosses-cups.json holds boss cups in Ripper Roo's and Papu
+    // Papu's garages, one with a Cortex Vortex leg.
+    {
+        J cuproom;
+        std::ifstream("tools/fixtures/content-plan/bosses-cups.json") >> cuproom;
+        expect(parse(cuproom) && bind_room(cuproom) && ap_content_plan_active(), "bosses-cups: room binds");
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        const ctr_content_pad *roo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
+        const ctr_content_pad *papu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);
+        bool legs = roo && papu && roo->cup && roo->trophy_location == 35011100 && papu->trophy_location == 35011101 &&
+                    roo->racer_lock == -1 && roo->hub == 26 && papu->hub == 27;
+        bool cortex = false;
+        for (int n = 0; legs && n < AP_CONTENT_CUP_LEGS; ++n) {
+            legs = legs && roo->legs[n].laps == 3 && papu->legs[n].laps == 3 && roo->legs[n].victory == 0 &&
+                   b->cup_points[0][n] > 0 && AP_BossVenueScheduleFits(0, b->cup_points[0][n]) &&
+                   AP_BossVenueScheduleFits(1, b->cup_points[1][n]);
+            cortex = cortex || roo->legs[n].cortex || papu->legs[n].cortex;
+        }
+        expect(b->present && b->cup[0] && b->cup[1] && !b->cup[2] && !b->cup[3] && legs && cortex &&
+               !ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 2) && ap_content_plan_cortex(),
+               "bosses-cups: two garage cups with four certified legs");
+        auto k_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = cuproom; change(bad); refuse(bad, "bosses-cups: " + why);
+        };
+        auto cup = [](J &j, int g) -> J & {
+            for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/boss:" + std::to_string(g) + "/0") return e;
+            throw std::runtime_error("no boss entry");
+        };
+        k_refuse("three legs", [&](J &j) { cup(j, 0)["legs"].erase(3); });
+        k_refuse("a repeated leg", [&](J &j) { cup(j, 0)["legs"][1]["track_id"] = cup(j, 0)["legs"][0]["track_id"]; });
+        k_refuse("a leg on a trial track", [&](J &j) { cup(j, 1)["legs"][2]["track_id"] = "retail:16"; });
+        k_refuse("a leg with other laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        k_refuse("a cup garage missing from the record", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0}); });
+        k_refuse("a race garage listed as a cup", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0, 1, 2}); });
+        k_refuse("the cup check as a boss race", [&](J &j) {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == 35011100) c["routes"][0]["mode"] = "boss_race"; });
+    }
     // #133 PR 6b: bosses-custom.json races Cortex Vortex in Papu Papu's garage
     // and Baby T Park in Pinstripe's, served on their home LevelIDs by their
     // certified restart point counts (255 and 35).
