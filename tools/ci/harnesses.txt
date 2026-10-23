@@ -160,6 +160,7 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
+tools/test-content-verify.cpp
 tools/test-content-cup-latch.c
 tools/test-content-capability.c
 tools/test-content-hooks-admission.py

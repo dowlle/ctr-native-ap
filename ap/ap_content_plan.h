@@ -303,6 +303,29 @@ int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_gems_held(const int received_gems[5]);
 /* Boss garages (#133 PR 6): the record (all zero without one). */
 const ctr_content_bosses *ap_content_plan_bosses(void);
+/* Completability sweep (#133 PR 8, ap_content_verify.hpp): the plan's own
+ * logic graph evaluated to a fixed point from the receipts that are not this
+ * world's own location rewards (other players, starting inventory, server
+ * grants), banking each reached own location's scouted item. `foreign`
+ * returns that receipt count for an item code; `scout` returns 0 for a
+ * location the room does not have, else 1 with *own_item the item it holds for
+ * this slot (0 when the item belongs to another player); `checked` 1 for a
+ * checked location; `unreached`, when set, is called for every location of
+ * the room the sweep does not reach. Returns 0 with no verdict when no plan is
+ * active or the model could not be built. */
+#define AP_CONTENT_VERIFY_LISTED 16
+typedef struct ap_content_verify_io {
+    void *ctx;
+    int (*foreign)(void *ctx, int64_t item);
+    int (*scout)(void *ctx, int64_t location, int64_t *own_item);
+    int (*checked)(void *ctx, int64_t location);
+    void (*unreached)(void *ctx, int64_t location);
+} ap_content_verify_io;
+typedef struct ap_content_verify_result {
+    int goal, total, reachable, keys, unreachable_count;
+    int64_t unreachable[AP_CONTENT_VERIFY_LISTED];
+} ap_content_verify_result;
+int ap_content_plan_verify(const ap_content_verify_io *io, ap_content_verify_result *out);
 int ap_content_plan_bind(const char *seed, int team, int slot,
                          const int64_t *locations, size_t count);
 

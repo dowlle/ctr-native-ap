@@ -105,6 +105,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		memset(ap_named_letter_received, 0, sizeof ap_named_letter_received);
 		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
 		memset(ap_verify_custom_letter_foreign, 0, sizeof ap_verify_custom_letter_foreign);
+		ap_verify_sparse_foreign_n = 0;
+		ap_verify_sparse_foreign_overflow = 0;
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		for (k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
@@ -306,6 +308,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 			    AP_LetterItemIndexIsLetterPure((int)idx))
 				ap_state_gen++;
 		}
+		else if (ap_net_recv_batch_player(i) != ap_net_self_slot() ||
+		         ap_net_recv_batch_location(i) <= 0)
+			ap_verify_sparse_foreign_add(items[i]);
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
 			const ctr_content_item *row = ap_content_plan_item(items[i]);

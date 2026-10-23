@@ -1439,6 +1439,12 @@ for name, change in [
         ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
         ]:
     boss_env(name, change, cups_base)
+# The verifier's copy of the per-track USF finish rulings (#133 PR 8,
+# ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
+from worlds.ctr import content_capability as ccap
+native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
+                  re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
+assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

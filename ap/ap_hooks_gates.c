@@ -67,6 +67,21 @@ int AP_VerifyForeignItemCount(int itemIndex)
 	return ap_verify_recv_foreign[itemIndex];
 }
 
+// The same FOREIGN tally by raw item code, for the content-plan verifier
+// (#133 PR 8): the dense index above, else the sparse table. -1 when the
+// sparse table overflowed, so the caller can withhold its verdict.
+int AP_VerifyForeignItemCodeCount(long long code)
+{
+	long long idx = code - AP_ITEM_BASE;
+	int k;
+	if (idx >= 0 && idx < AP_VERIFY_ITEM_INDEX_COUNT)
+		return ap_verify_recv_foreign[idx];
+	for (k = 0; k < ap_verify_sparse_foreign_n; k++)
+		if (ap_verify_sparse_foreign_code[k] == code)
+			return ap_verify_sparse_foreign_count[k];
+	return ap_verify_sparse_foreign_overflow ? -1 : 0;
+}
+
 int AP_GateCountTokenColour(int colour)
 {
 	if (colour < 0 || colour > 4)

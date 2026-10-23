@@ -1638,6 +1638,7 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 }
 
 #include "ap_content_plan_impl.hpp"
+#include "ap_content_verify.hpp"
 
 // ── custom_track_titles (#306 B+, schema 18) ──────────────────────────────
 //
