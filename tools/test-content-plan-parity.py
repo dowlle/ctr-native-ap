@@ -1296,7 +1296,7 @@ for seed in range(60):
     except CupOptionError:
         continue
     cases.append((f"bosses-generated-{seed}", wire, True))
-for fixture in ("bosses", "bosses-final"):
+for fixture in ("bosses", "bosses-final", "bosses-custom"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
 boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
 def boss_env(name, change, source=None):
@@ -1324,7 +1324,6 @@ for name, change in [
         ("unchanged copy", lambda c: None),
         ("venue repeated", lambda c: b_entry(c, 0).__setitem__("track_id", b_entry(c, 1)["track_id"])),
         ("venue uncertified", lambda c: b_entry(c, 1).__setitem__("track_id", "retail:18")),
-        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
         ("venue home track", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:6")),
         ("Oxide 1 venue", lambda c: b_entry(c, 4).__setitem__("track_id", "cortex_vortex")),
         ("Final venue retail", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "retail:3")),
@@ -1391,6 +1390,9 @@ for name, change in [
 for name, change in [
         ("boss rank lowered", lambda c: b_check(c, 35011105).__setitem__("boost", 1)),
         ("boss rank dropped", lambda c: b_check(c, 35011100).pop("boost")),
+        # #133 PR 6b: Cortex Vortex is a certified garage venue now; moved there
+        # without its USF rank, only the rank is forged.
+        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
         ]:
     boss_env(name, change)
     native_trusts.add("bosses-" + name)
@@ -1406,6 +1408,23 @@ for name, change in [
         ("final venue Cortex Vortex", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "cortex_vortex")),
         ]:
     boss_env(name, change, final_base)
+# Custom and Cortex Vortex garage venues (#133 PR 6b): forgeries on
+# bosses-custom.json, where Papu Papu races Cortex Vortex and Pinstripe Baby T Park.
+custom_base = next(w for name, w, ok in cases if name == "bosses-custom-fixture")
+def c_pkg(c):
+    return next(p for p in c["content_plan"]["packages"] if p["content_id"] == "baby-t-park")
+for name, change in [
+        ("custom unchanged copy", lambda c: None),
+        ("custom count too small", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 3)),
+        ("custom count other", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 60)),
+        ("custom no nav", lambda c: c_pkg(c)["capabilities"].__setitem__("ai_nav", False)),
+        ("custom no count", lambda c: c_pkg(c)["capabilities"].pop("checkpoints")),
+        ("custom shuffle off", lambda c: c["content_plan"]["bosses"].__setitem__("track_shuffle", False)),
+        ("custom repeats off", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", False)),
+        ("Cortex Vortex on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "cortex_vortex")),
+        ("custom on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "custom/baby-t-park/1.0.2")),
+        ]:
+    boss_env(name, change, custom_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -170,7 +170,8 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	}
 	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why) ||
 	    !AP_ContentSuperTurboPadsHold(pkg->super_turbo_pads, &report, why, sizeof why) ||
-	    !AP_ContentWeaponCratesHold(pkg->weapon_crates, &report, why, sizeof why))
+	    !AP_ContentWeaponCratesHold(pkg->weapon_crates, &report, why, sizeof why) ||
+	    !AP_ContentBossVenueFactsHold(pkg->checkpoints, pkg->ai_nav, &report, why, sizeof why))
 	{
 		status->state = CTR_CT_MANAGER_UNSUPPORTED;
 		snprintf(status->detail, sizeof status->detail, "%.48s %.24s: %s", pkg->display_name, pkg->revision, why);
@@ -488,6 +489,60 @@ static void AP_CustomContentLogStatus(const char *action)
 	AP_AppendLog(line);
 }
 
+// Content-plan garage venues on custom bytes (#133 PR 6b): arm each ordinary
+// garage whose Boss Track Shuffle venue is a custom package or Cortex Vortex
+// with the scanned files, served on the garage's home LevelID. The measured
+// restart point count must be the certified one; a garage whose files are
+// missing or differ stays shut (AP_BossGarageVenue) and its door says why.
+static void AP_GarageVenuePreflight(void)
+{
+	const ctr_content_bosses *b = ap_content_plan_bosses();
+	int g;
+	CustomTrack_ClearGarageVenueDescriptors();
+	if (!b->present || !b->track_shuffle) return;
+	for (g = 0; g < 4; ++g)
+	{
+		struct GarageVenueDescriptor d;
+		const struct AP_ContentFiles *f = NULL;
+		const char *lev = NULL, *vrm = NULL;
+		char line[200];
+		if (b->venue_package[g] >= 0)
+		{
+			const ctr_content_package *pkg = ap_content_plan_package(b->venue_package[g]);
+			if (pkg && ap_content_package_ready[b->venue_package[g]])
+			{
+				f = &ap_content_files[b->venue_package[g]];
+				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
+			}
+		}
+		else if (b->venue_cortex[g] && ap_content_cortex_ready)
+		{
+			f = &ap_content_cortex_files;
+			lev = CTR_CFG_CORTEX_LEV_SHA256; vrm = CTR_CFG_CORTEX_VRM_SHA256;
+		}
+		else if (!b->venue_cortex[g])
+			continue; // a retail venue
+		if (f == NULL || (int)f->measured.checkpoints != b->venue_points[g] || f->measured.navPaths == 0)
+		{
+			snprintf(line, sizeof line, "[AP BOSS] garage %d custom venue not armed: files missing, or %lu restart "
+			         "points where %d were certified\n", g, f ? (unsigned long)f->measured.checkpoints : 0ul,
+			         b->venue_points[g]);
+			AP_AppendLog(line);
+			ap_custom_content_required = 1;
+			continue;
+		}
+		memset(&d, 0, sizeof d);
+		d.enabled = 1;
+		d.hostLevelID = b->venues[g];
+		snprintf(d.levPath, sizeof d.levPath, "%s", f->levPath);
+		snprintf(d.vrmPath, sizeof d.vrmPath, "%s", f->vrmPath);
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", lev);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", vrm);
+		if (!CustomTrack_ApplyGarageVenueDescriptor(g, &d))
+			ap_custom_content_required = 1;
+	}
+}
+
 static void AP_CustomContentPreflightSeed(int autoFinalize)
 {
 	if (ap_content_plan_active())
@@ -512,6 +567,7 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 		// Cortex Vortex (#133 PR 3c): the bundled pair, when the plan races it.
 		ap_content_cortex_ready = ap_content_plan_cortex() ? AP_ContentScanCortex() : 0;
 		ap_cortex_track_content_required = ap_content_plan_cortex() && !ap_content_cortex_ready;
+		AP_GarageVenuePreflight();
 		ap_custom_content_scanned = 1;
 		ap_state_gen++;
 		// A reconnect cannot replace the buffers of a race already in flight.
@@ -520,6 +576,7 @@ static void AP_CustomContentPreflightSeed(int autoFinalize)
 		return;
 	}
 	struct CustomTrackManagerRequirement requirement;
+	CustomTrack_ClearGarageVenueDescriptors(); // garage venues are content-plan only (#133 PR 6b)
 	ap_custom_content_seed_selected = ctr_cfg_active() && ctr_cfg.custom_tracks_ok;
 	ap_custom_content_gate_cached = 0;
 

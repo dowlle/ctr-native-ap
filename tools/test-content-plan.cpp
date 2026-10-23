@@ -1387,9 +1387,42 @@ int main(int argc, char **argv) {
     // pairs, 101_percent with Oxide 1 optional, the Final Challenge on Oxide
     // Station with total_relics, two cups). The parser drives the normal
     // room's garage, Oxide and goal configuration from the plan.
-    J bosses, finalroom;
+    J bosses, finalroom, customroom;
     std::ifstream("tools/fixtures/content-plan/bosses.json") >> bosses;
     std::ifstream("tools/fixtures/content-plan/bosses-final.json") >> finalroom;
+    std::ifstream("tools/fixtures/content-plan/bosses-custom.json") >> customroom;
+    // #133 PR 6b: bosses-custom.json races Cortex Vortex in Papu Papu's garage
+    // and Baby T Park in Pinstripe's, served on their home LevelIDs by their
+    // certified restart point counts (255 and 35).
+    expect(parse(customroom) && bind_room(customroom) && ap_content_plan_active(), "bosses-custom: room binds");
+    {
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        expect(b->present && b->track_shuffle && b->repeats &&
+               b->venue_cortex[1] == 1 && b->venue_points[1] == 255 && b->venues[1] == AP_BOSS_VENUE_GARAGE[1].homeLevel &&
+               b->venue_package[3] >= 0 && b->venue_points[3] == 35 && b->venues[3] == AP_BOSS_VENUE_GARAGE[3].homeLevel &&
+               b->venue_package[0] < 0 && !b->venue_cortex[0] && b->venue_package[2] < 0 && !b->venue_cortex[2],
+               "bosses-custom: custom and Cortex Vortex garage venues");
+        expect(ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[1] && ctr_boss_encounters.custom[3] &&
+               !ctr_boss_encounters.custom[0] && ctr_boss_encounters.points[3] == 35 &&
+               AP_BossEncounterShuffledGarage(&ctr_boss_encounters, 1, 0, 3, AP_BOSS_VENUE_GARAGE[3].homeLevel) == 3 &&
+               AP_BossEncounterShuffledGarage(&ctr_boss_encounters, 1, 0, 1, AP_BOSS_VENUE_GARAGE[1].homeLevel) == 1 &&
+               AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, 3, AP_BOSS_VENUE_GARAGE[3].homeLevel) == 35,
+               "bosses-custom: the encounter record carries the custom venues");
+        auto c_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = customroom; change(bad); refuse(bad, "bosses-custom: " + why);
+        };
+        auto pkg = [](J &j) -> J & {
+            for (auto &p : j["content_plan"]["packages"]) if (p["content_id"] == "baby-t-park") return p;
+            throw std::runtime_error("no package");
+        };
+        c_refuse("a count that cannot carry the attack", [&](J &j) { pkg(j)["capabilities"]["checkpoints"] = 3; });
+        c_refuse("no AI navigation", [&](J &j) { pkg(j)["capabilities"]["ai_nav"] = false; });
+        c_refuse("no stated count", [&](J &j) { pkg(j)["capabilities"].erase("checkpoints"); });
+        c_refuse("a custom venue without track_shuffle", [](J &j) { j["content_plan"]["bosses"]["track_shuffle"] = false; });
+        c_refuse("a repeated custom venue without repeats", [](J &j) {
+            j["content_plan"]["bosses"]["repeats"] = false;
+            for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/boss:0/0") e["track_id"] = "cortex_vortex"; });
+    }
     expect(parse(bosses) && bind_room(bosses) && ap_content_plan_active(), "bosses: room binds");
     {
         const J &plan = bosses["content_plan"];

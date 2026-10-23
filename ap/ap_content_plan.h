@@ -143,7 +143,14 @@ typedef struct ctr_content_package {
      * AP_CONTENT_WEAPON_CRATES_UNSTATED. Native counts them on load and
      * refuses a stated count the bytes disagree with. */
     int weapon_crates;
+    /* Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the LEV's
+     * restart point count (1..255) and whether it has AI navigation paths,
+     * or AP_CONTENT_UNSTATED. Native measures both on load and refuses a
+     * stated value the bytes disagree with. With both a track may be a
+     * boss venue under Boss Track Shuffle. */
+    int checkpoints, ai_nav;
 } ctr_content_package;
+#define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_MAX 65536 /* the verifier's instance-table ceiling */
 
@@ -179,6 +186,11 @@ typedef struct ctr_content_bosses {
      * ctr_req (type, count, colour) for AP_BossReqMet. */
     int requirement_level;
     int garage_req_type[4], garage_req_count[4], garage_req_colour[4];
+    /* #133 PR 6b: a garage venue on custom bytes. venue_package[g] is the
+     * package index (-1 none), venue_cortex[g] 1 for Cortex Vortex; then
+     * venues[g] is the garage's home LevelID, the host the bytes are served
+     * on, and venue_points[g] the certified restart point count. */
+    int venue_package[4], venue_cortex[4], venue_points[4];
 } ctr_content_bosses;
 
 typedef struct ctr_content_item {

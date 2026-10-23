@@ -448,6 +448,15 @@ int AP_BossGarageVenue(int bossIdx)
 		return -1;
 	if (!ctr_cfg_active())
 		return AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel;
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom venue (#133 PR 6b) races only once its verified bytes are
+	// armed for this garage; otherwise the garage stays shut.
+	if (ctr_boss_encounters.custom[bossIdx] && !CustomTrack_GarageVenueReady(bossIdx))
+		return -1;
+#else
+	if (ctr_boss_encounters.custom[bossIdx])
+		return -1;
+#endif
 	return AP_BossEncounterVenue(&ctr_boss_encounters, bossIdx);
 }
 
@@ -506,17 +515,18 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 	if (!fill)
 		return s_apBossVenueAttack;
 	venuePoints = gGT->level1->cnt_restart_points;
-	// The certification saw the retail LEV's restart point count. A loaded
-	// track with a different graph (modified disc) is refused loudly: the
-	// boss keeps its timers but throws nothing rather than indexing a
-	// checkpoint the certification never saw.
-	if (venuePoints != AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID] ||
+	// The certification saw the retail LEV's restart point count, or a custom
+	// venue's measured one (#133 PR 6b). A loaded track with a different graph
+	// (modified disc or files) is refused loudly: the boss keeps its timers
+	// but throws nothing rather than indexing a checkpoint the certification
+	// never saw.
+	if (venuePoints != AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, gGT->levelID) ||
 	    !AP_BossVenueScheduleFits(g, venuePoints))
 	{
 		char msg[160];
 		snprintf(msg, sizeof msg,
 		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
-		         (int)gGT->levelID, venuePoints, AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID]);
+		         (int)gGT->levelID, venuePoints, AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, gGT->levelID));
 		AP_AppendLog(msg);
 		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
 		s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
@@ -823,6 +833,12 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	// #169: a refused boss_encounters record is why the door is shut.
 	if (AP_BossGarageVenue(bossIdx) < 0)
 	{
+		// #133 PR 6b: a custom venue whose files are missing or changed.
+		if (ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+		{
+			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
+			return 1;
+		}
 		snprintf(out, (size_t)cap, "Boss track refused: %s",
 		         ctr_boss_encounters.reason[0] ? ctr_boss_encounters.reason : "update the client");
 		return 1;

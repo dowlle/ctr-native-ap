@@ -148,4 +148,38 @@ static inline int AP_ContentWeaponCratesHold(int stated, const struct CustomCont
 	return 0;
 }
 
+// Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the restart
+// point count and whether the LEV has AI navigation paths, which certify the
+// track as a boss venue. A stated value the bytes disagree with refuses the
+// package; unstated (AP_CONTENT_UNSTATED) is never a refusal, such a track is
+// only never a boss venue.
+static inline int AP_ContentBossVenueFactsHold(int checkpoints, int aiNav,
+                                               const struct CustomContentVerification *report,
+                                               char *why, size_t whySize)
+{
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (checkpoints != AP_CONTENT_UNSTATED && (unsigned long)checkpoints != (unsigned long)report->measured.checkpoints)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the descriptor says checkpoints is %d, but the files have %lu restart points",
+			         checkpoints, (unsigned long)report->measured.checkpoints);
+		return 0;
+	}
+	if (aiNav != AP_CONTENT_UNSTATED && (aiNav != 0) != (report->measured.navPaths > 0))
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the descriptor says ai_nav is %s, but the files have %s AI paths",
+			         aiNav ? "true" : "false", report->measured.navPaths > 0 ? "" : "no");
+		return 0;
+	}
+	return 1;
+}
+
 #endif

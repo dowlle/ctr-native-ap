@@ -245,6 +245,8 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 		              CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		              CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) ||
+		              CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID,
+		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0 ||
 		              CustomTrack_CortexTrackServing((int)gGT->levelID,
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
@@ -417,6 +419,8 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 		                                (gameMode & ADVENTURE_BOSS) != 0) ||
+		    CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID,
+		                                   (gameMode & ADVENTURE_BOSS) != 0) >= 0 ||
 		    CustomTrack_CortexTrackServing((int)gGT->levelID,
 		                                   (gameMode & ADVENTURE_BOSS) != 0);
 		if (gGT->level1 != NULL)

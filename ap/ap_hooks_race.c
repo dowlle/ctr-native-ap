@@ -1042,6 +1042,14 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 		facts->destLevelID = -1;
 		return;
 	}
+	// A content-plan garage venue on custom bytes (#133 PR 6b) races on the
+	// home track's LevelID; content plans route no Wumpa from boss races, so
+	// it must not resolve to the home track's code.
+	if (CustomTrack_GarageVenueServing(level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0)
+	{
+		facts->destLevelID = -1;
+		return;
+	}
 	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
 	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 	if (facts->servingOxideFinal)

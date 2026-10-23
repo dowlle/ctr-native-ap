@@ -18,7 +18,9 @@
      "ctr_tokens": true,
      "wumpa": true,
      "super_turbo_pads": true,
-     "weapon_crates": 8
+     "weapon_crates": 8,
+     "checkpoints": 35,
+     "ai_nav": true
     },
     "files": [
      {

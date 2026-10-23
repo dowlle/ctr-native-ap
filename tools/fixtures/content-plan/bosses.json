@@ -18,7 +18,9 @@
      "ctr_tokens": true,
      "wumpa": true,
      "super_turbo_pads": true,
-     "weapon_crates": 8
+     "weapon_crates": 8,
+     "checkpoints": 35,
+     "ai_nav": true
     },
     "files": [
      {
@@ -621,7 +623,7 @@
    {
     "id": "entry/boss:0/0",
     "kind": "boss_race",
-    "track_id": "retail:16",
+    "track_id": "retail:14",
     "laps": 3,
     "opponent": {
      "role": "opponent",
@@ -634,7 +636,7 @@
    {
     "id": "entry/boss:1/0",
     "kind": "boss_race",
-    "track_id": "retail:13",
+    "track_id": "retail:0",
     "laps": 3,
     "opponent": {
      "role": "opponent",
@@ -647,7 +649,7 @@
    {
     "id": "entry/boss:2/0",
     "kind": "boss_race",
-    "track_id": "retail:17",
+    "track_id": "retail:6",
     "laps": 3,
     "opponent": {
      "role": "opponent",
@@ -660,7 +662,7 @@
    {
     "id": "entry/boss:3/0",
     "kind": "boss_race",
-    "track_id": "retail:2",
+    "track_id": "retail:4",
     "laps": 3,
     "opponent": {
      "role": "opponent",
@@ -8107,7 +8109,7 @@
       "award": "win"
      }
     ],
-    "boost": 2
+    "boost": 1
    },
    {
     "location": 35011102,

@@ -170,6 +170,20 @@ static void package_record(const J &pkg, ctr_content_package &target) {
         target.weapon_crates = number(mode_caps["weapon_crates"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
         mode_caps.erase("weapon_crates");
     }
+    // `checkpoints` and `ai_nav` (#133 PR 6b) are optional: the restart point
+    // count and whether the LEV has AI paths, measured and compared on load.
+    // Together they let the track be a boss venue.
+    target.checkpoints = AP_CONTENT_UNSTATED;
+    target.ai_nav = AP_CONTENT_UNSTATED;
+    if (mode_caps.is_object() && mode_caps.contains("checkpoints")) {
+        target.checkpoints = number(mode_caps["checkpoints"], 1, 255);
+        mode_caps.erase("checkpoints");
+    }
+    if (mode_caps.is_object() && mode_caps.contains("ai_nav")) {
+        need(mode_caps["ai_nav"].is_boolean(), "package capability flag is not true or false");
+        target.ai_nav = mode_caps["ai_nav"].get<bool>() ? 1 : 0;
+        mode_caps.erase("ai_nav");
+    }
     fields(mode_caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
     static const std::pair<const char *, unsigned> cap_bits[] = {
         {"time_trial", AP_CONTENT_CAP_TIME_TRIAL}, {"arcade", AP_CONTENT_CAP_ARCADE}, {"relic", AP_CONTENT_CAP_RELIC},
@@ -435,6 +449,7 @@ static const char *const kBossNames[6] = {"Ripper Roo Garage: Boss Race", "Papu 
 static const int kBossOpponents[6] = {10, 9, 11, 8, 15, 15};
 static const int kOxideStationLevel = 13; // N. Oxide's Challenge, and the Final Challenge's other venue
 static const int kCortexVenue = -2;       // the Final Challenge on the bundled Cortex Vortex pair
+static const int kCortexRestartPoints = 255; // the bundled Cortex Vortex LEV (#133 PR 6b), re-measured on load
 static J all_of(const J &terms) { return terms.size() == 1 ? terms[0] : J{{"op", "all"}, {"terms", terms}}; }
 using Table = std::map<std::string, const J *>;
 static Table table(const J &rows, size_t maximum) {
@@ -495,7 +510,10 @@ static void validate(const J &p, State &out) {
     // record; they, their entries, requirements and checks are recomputed below.
     out.bosses = ctr_content_bosses{};
     out.bosses.oxide_goal = 3; out.bosses.final_track = -1;
-    for (int g = 0; g < 4; ++g) out.bosses.venues[g] = -1;
+    for (int g = 0; g < 4; ++g) {
+        out.bosses.venues[g] = -1;
+        out.bosses.venue_package[g] = -1; out.bosses.venue_cortex[g] = 0; out.bosses.venue_points[g] = 0;
+    }
     if (has_bosses) boss_settings(p["bosses"], out.bosses);
     need(p.at("encounters").is_array() && p.at("encounters").empty() == !has_bosses,
          "encounters without the bosses record, or the reverse");
@@ -1141,7 +1159,26 @@ static void validate(const J &p, State &out) {
                  "boss race entry does not match its garage's retail opponent");
             const std::string track_id = text(entry["track_id"]);
             int level = -1;
-            if (track_id == "cortex_vortex") level = kCortexVenue;
+            // #133 PR 6b: an ordinary garage may race a custom track the plan
+            // also races on a pad or in a cup (its record is checked there),
+            // served on the garage's home LevelID, by its stated restart point
+            // count; Cortex Vortex by its bundled count.
+            int custom_package = -1;
+            if (g < 4 && track_id.rfind("custom/", 0) == 0) {
+                need(out.bosses.track_shuffle, "a custom boss venue needs track_shuffle");
+                need(tracks.count(track_id) && used_tracks.count(track_id), "a custom boss venue the plan does not race");
+                const std::string package_id = text(tracks.at(track_id)->at("package_id"));
+                need(package_index.count(package_id), "a custom boss venue without its package");
+                custom_package = package_index.at(package_id);
+                const ctr_content_package &pkg = out.packages[custom_package];
+                need(pkg.ai_nav == 1 && pkg.checkpoints >= 1 && AP_BossVenueScheduleFits(g, pkg.checkpoints),
+                     "a custom boss venue that cannot carry the boss's attack");
+                need(out.bosses.repeats || drawn.insert(1000 + custom_package).second, "boss venues repeat without repeats");
+                out.bosses.venue_package[g] = custom_package;
+                out.bosses.venue_points[g] = pkg.checkpoints;
+                out.bosses.venues[g] = AP_BOSS_VENUE_GARAGE[g].homeLevel;
+            }
+            else if (track_id == "cortex_vortex") level = kCortexVenue;
             else if (track_id.rfind("retail:", 0) == 0 && track_id.size() <= 9) {
                 const std::string digits = track_id.substr(7);
                 need(!digits.empty() && std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) &&
@@ -1149,7 +1186,17 @@ static void validate(const J &p, State &out) {
                 level = std::stoi(digits);
                 need(level < 18 && AP_BossVenueTrackKnown(level), "unknown boss venue");
             } else need(false, "unknown boss venue");
-            if (g < 4) {
+            if (g < 4 && custom_package >= 0) {
+                // checked above
+            } else if (g < 4 && level == kCortexVenue) {
+                need(out.bosses.track_shuffle && AP_BossVenueScheduleFits(g, kCortexRestartPoints),
+                     "Cortex Vortex as a garage venue needs track_shuffle");
+                need(out.bosses.repeats || drawn.insert(level).second, "boss venues repeat without repeats");
+                out.bosses.venue_cortex[g] = 1;
+                out.cortex = true; // the bundled pair is scanned and measured at connect
+                out.bosses.venue_points[g] = kCortexRestartPoints;
+                out.bosses.venues[g] = AP_BOSS_VENUE_GARAGE[g].homeLevel;
+            } else if (g < 4) {
                 need(level >= 0, "an ordinary garage races a retail venue");
                 if (out.bosses.track_shuffle) need(AP_BossVenueCertified(g, level), "a boss venue that cannot carry the boss's attack");
                 else need(level == AP_BOSS_VENUE_GARAGE[g].homeLevel, "without track_shuffle a boss races its home track");
@@ -1647,7 +1694,12 @@ static int parse_content_plan(const nlohmann::json &j) {
             for (int g = 0; g < 5; ++g) ctr_cfg.boss_n_tracks[g] = 0;
             if (b.track_shuffle) {
                 ctr_boss_encounters.state = AP_BOSS_ENC_VALID;
-                for (int g = 0; g < 4; ++g) ctr_boss_encounters.track[g] = (signed char)b.venues[g];
+                for (int g = 0; g < 4; ++g) {
+                    ctr_boss_encounters.track[g] = (signed char)b.venues[g];
+                    // #133 PR 6b: custom bytes on the home LevelID.
+                    ctr_boss_encounters.custom[g] = (unsigned char)(b.venue_package[g] >= 0 || b.venue_cortex[g]);
+                    ctr_boss_encounters.points[g] = (short)b.venue_points[g];
+                }
             }
             std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
             ctr_cfg.oxide_final_venue.host_level_id = -1;
