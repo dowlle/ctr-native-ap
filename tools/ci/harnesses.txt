@@ -29,6 +29,7 @@ tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
 tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
+tools/test-current-seed-page-production.py
 tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
@@ -144,6 +145,9 @@ tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-saphi-catalogue.cpp
+tools/test-seed-content.c
+tools/test-seed-content-download-production.py
+tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c

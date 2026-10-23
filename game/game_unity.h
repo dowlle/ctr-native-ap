@@ -389,6 +389,7 @@
 #include "../ap/ap_hooks_gates.c"
 #include "../ap/ap_hooks_apply_items.c"
 #include "../ap/ap_hooks_custom_content.c"
+#include "../ap/ap_hooks_seed_content.c" // #133 PR 7 Current Seed
 #include "../ap/ap_hooks_net.c"
 #include "../ap/ap_hooks_race.c"
 #include "../ap/ap_hooks_itemsanity.c"
