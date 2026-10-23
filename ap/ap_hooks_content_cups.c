@@ -36,12 +36,71 @@ const ctr_content_pad *AP_ContentCupPad(void)
 	return pad;
 }
 
+// The ordinary garage whose boss cup is running (#133 PR 6b), or -1.
+int AP_ContentGarageCupRunning(void)
+{
+	const ctr_content_pad *pad = AP_ContentCupPad();
+	return pad && pad->physical >= AP_CONTENT_GARAGE_CUP_PAD && pad->physical < AP_CONTENT_GARAGE_CUP_PAD + 4
+	       ? pad->physical - AP_CONTENT_GARAGE_CUP_PAD : -1;
+}
+
+// The certified restart point count of the running boss cup leg, or -1.
+int AP_ContentGarageCupLegPoints(void)
+{
+	int g = AP_ContentGarageCupRunning(), leg = AP_ContentCupLeg();
+	const ctr_content_bosses *b = ap_content_plan_bosses();
+	return g >= 0 && leg >= 0 && leg < AP_CONTENT_CUP_LEGS ? b->cup_points[g][leg] : -1;
+}
+
+// Garage entry (#133 PR 6b): stage leg 0 of garage `g`'s boss cup. Returns
+// the engine level to load, -1 when the leg cannot be served (the garage
+// refuses the entry), or -2 when the garage holds no boss cup.
+int AP_ContentGarageCupPrepare(int g)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + g);
+	struct CustomTrackRaceContext race;
+	if (!pad) return -2;
+	if (CustomTrack_StandaloneBusy() || AP_ContentGarageCupReady(g) != 1) return -1;
+	AP_ContentLegContext(pad, 0, &race);
+	if (!AP_ContentArmTrack(pad->legs[0].cortex, pad->legs[0].package_index, &race) ||
+	    !CustomTrack_StageStandaloneRace(&race)) return -1;
+	CustomTrack_CortexTrackSelectNextLoad(0);
+	return race.hostLevelID;
+}
+
+// Are the bytes of every leg of garage `g`'s boss cup ready (#133 PR 6b)?
+// Retail legs always; Cortex Vortex and custom legs once scanned. Returns -1
+// when the garage holds no boss cup.
+int AP_ContentGarageCupReady(int g)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + g);
+	int n;
+	if (!pad) return -1;
+	for (n = 0; n < AP_CONTENT_CUP_LEGS; ++n)
+		if (!AP_ContentTrackReady(pad->legs[n].retail_id >= 0, pad->legs[n].cortex, pad->legs[n].package_index))
+			return 0;
+	return 1;
+}
+
+// After a boss cup (#133 PR 6b), won, lost or left: return as a boss race
+// does, to the garage of the hub the cup was entered from, and leave boss
+// mode. Returns 1 when a boss cup was running.
+int AP_ContentGarageCupReturn(struct GameTracker *gGT, int g)
+{
+	if (g < 0 || g >= 4 || !gGT) return 0;
+	sdata->Loading.OnBegin.AddBitsConfig8 |= SPAWN_AT_BOSS;
+	sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_BOSS | ADVENTURE_CUP;
+	gGT->levelID = (s16)AP_BOSS_VENUE_GARAGE[g].homeLevel;
+	return 1;
+}
+
 // The wire destination of the running content-plan cup's frozen field:
 // 200 + the cup's name index (the encounter block's `content_cups`), or -1.
+// A boss cup seats no Hit field (#133 PR 6b): the boss arm loads two karts.
 int AP_ContentCupHitDestination(void)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
-	return pad ? CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index : -1;
+	return pad && AP_ContentGarageCupRunning() < 0 ? CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index : -1;
 }
 
 // The running cup leg's index, or -1.
@@ -62,7 +121,8 @@ const char *AP_ContentCupName(void)
 int AP_ContentCupPadLevel(void)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
-	return pad ? pad->physical : -1;
+	// A boss cup returns to its garage instead (AP_ContentGarageCupReturn).
+	return pad && AP_ContentGarageCupRunning() < 0 ? pad->physical : -1;
 }
 
 // Between two legs: arm and stage leg `leg` of the running cup. Returns the
@@ -136,9 +196,22 @@ void AP_ContentCupLegResult(struct GameTracker *gGT)
 int AP_ContentCupFinish(struct GameTracker *gGT, int won)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
-	int swept;
+	int swept, garage = AP_ContentGarageCupRunning();
 	long win, sweep;
 	if (!pad) return 0;
+	// A boss cup (#133 PR 6b): a points win completes the garage's encounter
+	// exactly as its boss race would: the reward path sends the frozen Boss
+	// Race check and records the personal boss win. It is the cup-aggregate
+	// entry (paid in full after a forced loss on the final leg, #286), which
+	// a standalone cup context does not block, unlike AP_NotifyAdvReward.
+	if (garage >= 0)
+	{
+		AP_CupSweepReset(&ap_content_cup_attempt);
+		if (won)
+			AP_NotifyCupAggregateReward(garage + ADV_REWARD_FIRST_BOSS_KEY);
+		gGT->podiumRewardID = 0;
+		return 1;
+	}
 	swept = AP_CupSweepReady(&ap_content_cup_attempt, 0, AP_CONTENT_CUP_LEGS) &&
 	        !AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_ADV_REWARD);
 	AP_CupSweepReset(&ap_content_cup_attempt);

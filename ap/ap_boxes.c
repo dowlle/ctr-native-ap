@@ -269,7 +269,8 @@ static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 	// pad with nothing to do with this encounter -- the same unrelated-pad
 	// problem the event race has below. A custom encounter override keeps the
 	// ungated route; gating it is a separate decision with its own descriptor.
-	if (CustomTrack_OxideFinalServing(level, gGT->bossID, isBoss))
+	if (CustomTrack_OxideFinalServing(level, gGT->bossID, isBoss) ||
+	    CustomTrack_GarageVenueServing(level, gGT->bossID, isBoss) >= 0) // #133 PR 6b
 		return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0);
 #endif
 

@@ -448,6 +448,18 @@ int AP_BossGarageVenue(int bossIdx)
 		return -1;
 	if (!ctr_cfg_active())
 		return AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel;
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom venue (#133 PR 6b) races only once its verified bytes are
+	// armed for this garage; otherwise the garage stays shut.
+	if (ctr_boss_encounters.custom[bossIdx] && !CustomTrack_GarageVenueReady(bossIdx))
+		return -1;
+	// A boss cup races only once every leg's files are ready (#133 PR 6b).
+	if (AP_ContentGarageCupReady(bossIdx) == 0)
+		return -1;
+#else
+	if (ctr_boss_encounters.custom[bossIdx])
+		return -1;
+#endif
 	return AP_BossEncounterVenue(&ctr_boss_encounters, bossIdx);
 }
 
@@ -458,8 +470,17 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
 {
 	int venue;
 
-	if (out == 0 || cap <= 0 || !ctr_cfg_active() ||
-	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// #133 PR 6b: a garage holding a boss cup says so.
+	if (bossIdx >= 0 && bossIdx < 4 && ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + bossIdx))
+	{
+		snprintf(out, (size_t)cap, "Boss cup: four races, won on points");
+		return 1;
+	}
+#endif
+	if (ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
 		return 0;
 	venue = AP_BossGarageVenue(bossIdx);
 	if (!AP_BossVenueTrackKnown(venue))
@@ -474,6 +495,20 @@ static int AP_BossShuffledGarageNow(void)
 
 	if (gGT == NULL || !ctr_cfg_active())
 		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	// A boss cup leg (#133 PR 6b) carries the garage's attack too; only a
+	// retail leg on the garage's own home track keeps the exact retail path.
+	{
+		int g = AP_ContentGarageCupRunning();
+		if (g >= 0 && (gGT->gameMode1 & ADVENTURE_BOSS) && gGT->bossID == g)
+		{
+			const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+			if (race && race->retail && gGT->levelID == AP_BOSS_VENUE_GARAGE[g].homeLevel)
+				return -1;
+			return g;
+		}
+	}
+#endif
 	return AP_BossEncounterShuffledGarage(&ctr_boss_encounters,
 	                                      (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
 	                                      (gGT->gameMode1 & ADVENTURE_CUP) != 0,
@@ -494,6 +529,17 @@ int AP_BossRetailRulesLevel(int levelID)
 // same object identity retail keeps. The home track never takes this path.
 static struct MetaDataBOSS s_apBossVenueAttack[8];
 
+// The restart point count the running venue of garage `g` was certified on:
+// a boss cup leg's (#133 PR 6b), a custom venue's, or the retail table's.
+static int AP_BossVenueCertifiedNow(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_ContentGarageCupRunning() == g)
+		return AP_ContentGarageCupLegPoints();
+#endif
+	return AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, sdata->gGT->levelID);
+}
+
 struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -506,17 +552,18 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 	if (!fill)
 		return s_apBossVenueAttack;
 	venuePoints = gGT->level1->cnt_restart_points;
-	// The certification saw the retail LEV's restart point count. A loaded
-	// track with a different graph (modified disc) is refused loudly: the
-	// boss keeps its timers but throws nothing rather than indexing a
-	// checkpoint the certification never saw.
-	if (venuePoints != AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID] ||
+	// The certification saw the retail LEV's restart point count, or a custom
+	// venue's measured one (#133 PR 6b). A loaded track with a different graph
+	// (modified disc or files) is refused loudly: the boss keeps its timers
+	// but throws nothing rather than indexing a checkpoint the certification
+	// never saw.
+	if (venuePoints != AP_BossVenueCertifiedNow(g) ||
 	    !AP_BossVenueScheduleFits(g, venuePoints))
 	{
 		char msg[160];
 		snprintf(msg, sizeof msg,
 		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
-		         (int)gGT->levelID, venuePoints, AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID]);
+		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
 		AP_AppendLog(msg);
 		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
 		s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
@@ -823,6 +870,16 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	// #169: a refused boss_encounters record is why the door is shut.
 	if (AP_BossGarageVenue(bossIdx) < 0)
 	{
+		// #133 PR 6b: a custom venue whose files are missing or changed.
+		if ((ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+#ifdef CTR_CUSTOM_TRACKS
+		    || AP_ContentGarageCupReady(bossIdx) == 0
+#endif
+		    )
+		{
+			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
+			return 1;
+		}
 		snprintf(out, (size_t)cap, "Boss track refused: %s",
 		         ctr_boss_encounters.reason[0] ? ctr_boss_encounters.reason : "update the client");
 		return 1;

@@ -155,6 +155,8 @@ int main(void)
 	plan_package.lev_bytes = (uint32_t)levSize; plan_package.vrm_bytes = sizeof vrmBytes;
 	plan_package.laps = 3;
 	plan_package.weapon_crates = AP_CONTENT_WEAPON_CRATES_UNSTATED; /* #133 PR 4e: unstated unless a case says */
+	plan_package.checkpoints = AP_CONTENT_UNSTATED; /* #133 PR 6b: unstated unless a case says */
+	plan_package.ai_nav = AP_CONTENT_UNSTATED;
 	memset(&plan_pad, 0, sizeof plan_pad);
 	plan_pad.physical = 3; plan_pad.hub = 26; plan_pad.occupied = 1; plan_pad.retail_id = -1;
 	plan_pad.package_index = 0; plan_pad.custom_slot = 1; plan_pad.laps = 3; plan_pad.named_block = -1;
@@ -219,6 +221,24 @@ int main(void)
 	reset_calls();
 	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "the measured weapon crate count admitted");
 	plan_package.weapon_crates = AP_CONTENT_WEAPON_CRATES_UNSTATED;
+
+	/* Boss venue facts (#133 PR 6b): a stated restart point count or AI
+	   navigation flag the fixture's bytes disagree with is refused at connect;
+	   the measured values and unstated are admitted. */
+	plan_package.checkpoints = (int)report.measured.checkpoints + 1;
+	reset_calls();
+	expect(!preflight() && strstr(ap_custom_content_status.detail, "checkpoints is"),
+	       "a wrong restart point count refused at connect");
+	plan_package.checkpoints = (int)report.measured.checkpoints;
+	plan_package.ai_nav = report.measured.navPaths > 0 ? 0 : 1;
+	reset_calls();
+	expect(!preflight() && strstr(ap_custom_content_status.detail, "ai_nav is"),
+	       "a wrong AI navigation flag refused at connect");
+	plan_package.ai_nav = report.measured.navPaths > 0;
+	reset_calls();
+	expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "the measured boss venue facts admitted");
+	plan_package.checkpoints = AP_CONTENT_UNSTATED;
+	plan_package.ai_nav = AP_CONTENT_UNSTATED;
 
 	/* False claim: Wumpa is not in the bytes. Refused at connect and at pad entry. */
 	plan_package.capabilities |= AP_CONTENT_CAP_WUMPA;

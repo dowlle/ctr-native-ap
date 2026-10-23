@@ -791,6 +791,15 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 	// A content-plan cup (#133 PR 5), decided at the cup's first leg and kept
 	// for every leg: its Win, or once the Win is collected its Win All Legs
 	// (the legacy Gem Cup win set holds both), with that check's rank.
+	// A boss cup (#133 PR 6b): the garage's own completion check and rank,
+	// bound to no racer, like the boss race below.
+	if (AP_ContentGarageCupRunning() >= 0 && (pad = AP_ContentCupPad()) != NULL)
+	{
+		code = pad->trophy_location;
+		*outBoost = ap_content_plan_check_boost(code);
+		*outCode = ap_net_location_exists((long)code) ? (long)code : 0;
+		return 1;
+	}
 	if ((pad = AP_ContentCupPad()) != NULL)
 	{
 		const int sweep = pad->sweep_location > 0 && ap_net_location_checked((long)pad->trophy_location);
@@ -1038,6 +1047,14 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 	// Standalone routes never inherit the engine host's Wumpa identity or a
 	// legacy Gem Cup's Wumpa route. A content-plan Wumpa route is separate.
 	if (CustomTrack_StandaloneContext(level))
+	{
+		facts->destLevelID = -1;
+		return;
+	}
+	// A content-plan garage venue on custom bytes (#133 PR 6b) races on the
+	// home track's LevelID; content plans route no Wumpa from boss races, so
+	// it must not resolve to the home track's code.
+	if (CustomTrack_GarageVenueServing(level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0)
 	{
 		facts->destLevelID = -1;
 		return;

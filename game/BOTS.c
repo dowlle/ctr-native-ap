@@ -230,7 +230,13 @@ void BOTS_Adv_AdjustDifficulty(void)
 
 		cupDifficulty = (s16)((u16)gGT->arcadeDifficulty + 0x50);
 	}
+#ifdef CTR_AP
+	// A content-plan boss cup (#133 PR 6b) sets both bits: its legs take the
+	// boss row below, not the cup arm. Retail never sets both.
+	else if ((gameMode1 & ADVENTURE_CUP) != 0 && (gameMode1 & ADVENTURE_BOSS) == 0)
+#else
 	else if ((gameMode1 & ADVENTURE_CUP) != 0)
+#endif
 	{
 		s32 track = gGT->cup.trackIndex;
 		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostCupRace[track]);
@@ -374,7 +380,10 @@ void BOTS_Adv_AdjustDifficulty(void)
 		facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
 		facts.eventRaceNavIdentity =
 		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
-		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss);
+		// A garage venue on custom bytes (#133 PR 6b) blocks the host's
+		// retail lanes the same way.
+		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
+		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
 #ifdef CTR_CUSTOM_PACKAGES
 		// An Arcade custom-page race has no recording identity: block the host
@@ -1325,6 +1334,16 @@ UpdateTireColorTimer:
 				{
 					isInAdvArcadeOrVSCup = true;
 				}
+#ifdef CTR_AP
+				// A content-plan boss cup (#133 PR 6b) seats one boss: his
+				// catch-up reads live ranks as in his boss race. The cup grid
+				// arithmetic below assumes eight karts and would take his rank
+				// to -1 and read before arcade_difficultyParams.
+				if ((gGT->gameMode1 & ADVENTURE_BOSS) != 0)
+				{
+					isInAdvArcadeOrVSCup = false;
+				}
+#endif
 
 				if (gGT->drivers[0]->driverRank < botDriver->driverRank)
 				{

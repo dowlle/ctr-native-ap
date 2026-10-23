@@ -588,6 +588,7 @@ void UI_CupStandings_InputAndDraw(void)
 			// A content-plan cup (#133 PR 5), read before the leg advances.
 			const int apContentCup = AP_ContentCupPad() != NULL;
 			const int apContentPad = AP_ContentCupPadLevel();
+			const int apGarageCup = AP_ContentGarageCupRunning(); // #133 PR 6b
 #endif
 			// Increment Track Number by 1 (0-3 in the cup)
 			gGT->cup.trackIndex++;
@@ -620,6 +621,7 @@ void UI_CupStandings_InputAndDraw(void)
 						gGT->cup.trackIndex = 0;
 						sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP;
 						if (apContentPad >= 0) gGT->levelID = (s16)apContentPad;
+						AP_ContentGarageCupReturn(gGT, apGarageCup);
 						index = AP_CupReturnHub() >= 0 ? AP_CupReturnHub() : GEM_STONE_VALLEY;
 					}
 					else gGT->numLaps = (char)legLaps;
@@ -727,6 +729,8 @@ void UI_CupStandings_InputAndDraw(void)
 					// The hub return puts the kart on the cup's own pad.
 					if (apContentCup && apContentPad >= 0)
 						gGT->levelID = (s16)apContentPad;
+					// A boss cup returns to its garage (#133 PR 6b).
+					AP_ContentGarageCupReturn(gGT, apGarageCup);
 #endif
 
 					// when loading is done,

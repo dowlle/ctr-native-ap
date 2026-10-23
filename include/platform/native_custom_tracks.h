@@ -121,6 +121,28 @@ int CustomTrack_ReverifyOxideFinalContent(void);
 int CustomTrack_OxideFinalReady(void);
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive);
 
+// ── Content-plan garage venues on custom bytes (#133 PR 6b) ──────────────────
+// An ordinary garage (bossID 0..3) whose Boss Track Shuffle venue is a custom
+// package or Cortex Vortex races those bytes on its home LevelID. Each garage
+// holds one descriptor: the verified LEV/VRM paths and their pins. Serving
+// is a boss race of that garage on that host, the same shape as the Oxide 2
+// venue above, so the boss flow stays retail.
+#define CUSTOM_TRACK_GARAGE_VENUES 4
+struct GarageVenueDescriptor
+{
+	int enabled;
+	int hostLevelID;
+	char levPath[1024];
+	char vrmPath[1024];
+	char levSha256[NATIVE_SHA256_HEX_BYTES];
+	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
+};
+int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d);
+void CustomTrack_ClearGarageVenueDescriptors(void);
+int CustomTrack_GarageVenueReady(int garage);
+// The garage whose custom venue this load serves, or -1.
+int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive);
+
 // ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
 // See platform/native_cortex_track_latch.h for the state machine. The entry
 // sites call CustomTrack_CortexTrackSelectNextLoad right before requesting the

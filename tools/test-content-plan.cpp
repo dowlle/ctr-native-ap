@@ -1387,9 +1387,79 @@ int main(int argc, char **argv) {
     // pairs, 101_percent with Oxide 1 optional, the Final Challenge on Oxide
     // Station with total_relics, two cups). The parser drives the normal
     // room's garage, Oxide and goal configuration from the plan.
-    J bosses, finalroom;
+    J bosses, finalroom, customroom;
     std::ifstream("tools/fixtures/content-plan/bosses.json") >> bosses;
     std::ifstream("tools/fixtures/content-plan/bosses-final.json") >> finalroom;
+    std::ifstream("tools/fixtures/content-plan/bosses-custom.json") >> customroom;
+    // #133 PR 6b: bosses-cups.json holds boss cups in Ripper Roo's and Papu
+    // Papu's garages, one with a Cortex Vortex leg.
+    {
+        J cuproom;
+        std::ifstream("tools/fixtures/content-plan/bosses-cups.json") >> cuproom;
+        expect(parse(cuproom) && bind_room(cuproom) && ap_content_plan_active(), "bosses-cups: room binds");
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        const ctr_content_pad *roo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
+        const ctr_content_pad *papu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);
+        bool legs = roo && papu && roo->cup && roo->trophy_location == 35011100 && papu->trophy_location == 35011101 &&
+                    roo->racer_lock == -1 && roo->hub == 26 && papu->hub == 27;
+        bool cortex = false;
+        for (int n = 0; legs && n < AP_CONTENT_CUP_LEGS; ++n) {
+            legs = legs && roo->legs[n].laps == 3 && papu->legs[n].laps == 3 && roo->legs[n].victory == 0 &&
+                   b->cup_points[0][n] > 0 && AP_BossVenueScheduleFits(0, b->cup_points[0][n]) &&
+                   AP_BossVenueScheduleFits(1, b->cup_points[1][n]);
+            cortex = cortex || roo->legs[n].cortex || papu->legs[n].cortex;
+        }
+        expect(b->present && b->cup[0] && b->cup[1] && !b->cup[2] && !b->cup[3] && legs && cortex &&
+               !ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 2) && ap_content_plan_cortex(),
+               "bosses-cups: two garage cups with four certified legs");
+        auto k_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = cuproom; change(bad); refuse(bad, "bosses-cups: " + why);
+        };
+        auto cup = [](J &j, int g) -> J & {
+            for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/boss:" + std::to_string(g) + "/0") return e;
+            throw std::runtime_error("no boss entry");
+        };
+        k_refuse("three legs", [&](J &j) { cup(j, 0)["legs"].erase(3); });
+        k_refuse("a repeated leg", [&](J &j) { cup(j, 0)["legs"][1]["track_id"] = cup(j, 0)["legs"][0]["track_id"]; });
+        k_refuse("a leg on a trial track", [&](J &j) { cup(j, 1)["legs"][2]["track_id"] = "retail:16"; });
+        k_refuse("a leg with other laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        k_refuse("a cup garage missing from the record", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0}); });
+        k_refuse("a race garage listed as a cup", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0, 1, 2}); });
+        k_refuse("the cup check as a boss race", [&](J &j) {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == 35011100) c["routes"][0]["mode"] = "boss_race"; });
+    }
+    // #133 PR 6b: bosses-custom.json races Cortex Vortex in Papu Papu's garage
+    // and Baby T Park in Pinstripe's, served on their home LevelIDs by their
+    // certified restart point counts (255 and 35).
+    expect(parse(customroom) && bind_room(customroom) && ap_content_plan_active(), "bosses-custom: room binds");
+    {
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        expect(b->present && b->track_shuffle && b->repeats &&
+               b->venue_cortex[1] == 1 && b->venue_points[1] == 255 && b->venues[1] == AP_BOSS_VENUE_GARAGE[1].homeLevel &&
+               b->venue_package[3] >= 0 && b->venue_points[3] == 35 && b->venues[3] == AP_BOSS_VENUE_GARAGE[3].homeLevel &&
+               b->venue_package[0] < 0 && !b->venue_cortex[0] && b->venue_package[2] < 0 && !b->venue_cortex[2],
+               "bosses-custom: custom and Cortex Vortex garage venues");
+        expect(ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[1] && ctr_boss_encounters.custom[3] &&
+               !ctr_boss_encounters.custom[0] && ctr_boss_encounters.points[3] == 35 &&
+               AP_BossEncounterShuffledGarage(&ctr_boss_encounters, 1, 0, 3, AP_BOSS_VENUE_GARAGE[3].homeLevel) == 3 &&
+               AP_BossEncounterShuffledGarage(&ctr_boss_encounters, 1, 0, 1, AP_BOSS_VENUE_GARAGE[1].homeLevel) == 1 &&
+               AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, 3, AP_BOSS_VENUE_GARAGE[3].homeLevel) == 35,
+               "bosses-custom: the encounter record carries the custom venues");
+        auto c_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = customroom; change(bad); refuse(bad, "bosses-custom: " + why);
+        };
+        auto pkg = [](J &j) -> J & {
+            for (auto &p : j["content_plan"]["packages"]) if (p["content_id"] == "baby-t-park") return p;
+            throw std::runtime_error("no package");
+        };
+        c_refuse("a count that cannot carry the attack", [&](J &j) { pkg(j)["capabilities"]["checkpoints"] = 3; });
+        c_refuse("no AI navigation", [&](J &j) { pkg(j)["capabilities"]["ai_nav"] = false; });
+        c_refuse("no stated count", [&](J &j) { pkg(j)["capabilities"].erase("checkpoints"); });
+        c_refuse("a custom venue without track_shuffle", [](J &j) { j["content_plan"]["bosses"]["track_shuffle"] = false; });
+        c_refuse("a repeated custom venue without repeats", [](J &j) {
+            j["content_plan"]["bosses"]["repeats"] = false;
+            for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/boss:0/0") e["track_id"] = "cortex_vortex"; });
+    }
     expect(parse(bosses) && bind_room(bosses) && ap_content_plan_active(), "bosses: room binds");
     {
         const J &plan = bosses["content_plan"];
@@ -1412,9 +1482,27 @@ int main(int argc, char **argv) {
         expect(ctr_cfg.goal_oxide == 1 && ctr_cfg.goal_bosses == 2 && ctr_cfg.goal_gems == 2 && ctr_cfg.bossgarage_mode == 2 &&
                ctr_cfg.oxide_final_unlock == 0 && ctr_cfg.oxide_final_count == b->final_count && !ctr_cfg.oxide_1_optional,
                "bosses: goal and Oxide configuration");
+        // The garage roll (#133 PR 6b): each garage's ctr_req is its drawn
+        // predicate (count: the item's type and colour; sum: the Any type).
         bool reqs = ctr_cfg.boss_req[4].type == 2 && ctr_cfg.boss_req[4].count == 4;
-        for (int g = 0; g < 4; ++g) reqs = reqs && ctr_cfg.boss_req[g].type == 1 && ctr_cfg.boss_req[g].count == 4 * (g + 1);
-        expect(reqs, "bosses: Trophy doors 4, 8, 12, 16 and the Oxide garage's four Keys");
+        for (const auto &r : bosses["content_plan"]["requirements"]) {
+            const std::string id = r["id"];
+            if (id.rfind("boss:", 0) != 0) continue;
+            const int g = id[5] - '0';
+            const J &pred = r["predicate"];
+            int type, colour = -1;
+            if (pred["op"] == "count") {
+                const int item = pred["item"].get<int>() - 35010000;
+                type = item == 0 ? 1 : item <= 3 ? 4 : item <= 8 ? 3 : item <= 13 ? 5 : 2;
+                colour = item == 0 || item == 14 ? -1 : item <= 3 ? item - 1 : item <= 8 ? item - 4 : item - 9;
+            } else {
+                const int first = pred["items"][0].get<int>() - 35010000;
+                type = first <= 3 ? 7 : first <= 8 ? 6 : 8;
+            }
+            reqs = reqs && ctr_cfg.boss_req[g].type == type && ctr_cfg.boss_req[g].count == pred["count"].get<int>() &&
+                   ctr_cfg.boss_req[g].colour == colour;
+        }
+        expect(reqs, "bosses: each garage's drawn requirement and the Oxide garage's four Keys");
         expect(ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
                ctr_cfg.oxide_final_venue.location == 35011105 && ctr_cfg.oxide_final_venue.host_level_id == 13 &&
                ctr_cfg.oxide_final_venue.wumpa_location == -1, "bosses: the Final Challenge venue");
@@ -1463,7 +1551,18 @@ int main(int argc, char **argv) {
         b_refuse("another driving profile", [&](J &j) { entry(j, 3, 0)["opponent"]["driving_profile"] = "boss"; });
         b_refuse("Oxide 1 off Oxide Station", [&](J &j) { entry(j, 4, 0)["track_id"] = "cortex_vortex"; });
         b_refuse("an uncertified venue", [&](J &j) { entry(j, 1, 0)["track_id"] = "retail:18"; });
-        b_refuse("a Trophy door changed", [&](J &j) { requirement(j, "boss:3")["count"] = 4; });
+        // The garage roll (#133 PR 6b): native checks the drawn family and count.
+        b_refuse("a garage count above the base supply", [&](J &j) { requirement(j, "boss:3")["count"] = 99; });
+        b_refuse("a Trophy garage not at four", [&](J &j) {
+            requirement(j, "boss:0") = J{{"op", "count"}, {"item", 35010000}, {"count", 8}}; });
+        b_refuse("a Key garage at its hub gate", [&](J &j) {
+            requirement(j, "boss:2") = J{{"op", "count"}, {"item", 35010014}, {"count", 2}}; });
+        b_refuse("a four-Key garage", [&](J &j) {
+            requirement(j, "boss:0") = J{{"op", "count"}, {"item", 35010014}, {"count", 4}}; });
+        b_refuse("a free garage", [&](J &j) { requirement(j, "boss:1") = J{{"op", "always"}}; });
+        b_refuse("a sum over part of a family", [&](J &j) {
+            requirement(j, "boss:1") = J{{"op", "sum"}, {"items", J::array({35010001, 35010002})}, {"count", 1}}; });
+        b_refuse("an unknown requirement level", [](J &j) { j["content_plan"]["bosses"]["requirement_level"] = "extreme"; });
         b_refuse("the Oxide 1 companions dropped", [&](J &j) { const J t = requirement(j, "oxide:first")["terms"][0]; requirement(j, "oxide:first") = t; });
         b_refuse("a garage gate opened", [](J &j) {
             for (auto &p : j["content_plan"]["pads"]) if (p["id"] == "garage:2") p["entrance_req"] = "free"; });

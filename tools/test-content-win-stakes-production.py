@@ -74,6 +74,8 @@ const ctr_content_pad *AP_ContentCrystalPad(void) { return crystalRunning ? &cry
 /* Content-plan cups (#133 PR 5): the running cup's pad, validated in production by AP_ContentCupPad. */
 static ctr_content_pad cupPad; static int cupRunning;
 const ctr_content_pad *AP_ContentCupPad(void) { return cupRunning ? &cupPad : NULL; }
+/* Boss cups (#133 PR 6b): no garage cup runs in these cases. */
+int AP_ContentGarageCupRunning(void) { return -1; }
 static int AP_ContentLetterItemReceived(int64_t code) {
  for (int i=0;i<receivedCount;i++) if (received[i]==code) return 1;
  return 0;

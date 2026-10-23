@@ -47,6 +47,9 @@ struct State {
     // encounters race (engine LevelIDs; the Final Challenge on Cortex Vortex
     // or Oxide Station). goal_count is 0 when the goal has no Gem arm.
     ctr_content_bosses bosses{};
+    // Boss cups (#133 PR 6b): each cup garage's legs as a cup pad, found by
+    // ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + g); never in `pads`.
+    ctr_content_pad garage_cups[4]{};
     std::string canonical;
 };
 static State state;
@@ -169,6 +172,20 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     if (mode_caps.is_object() && mode_caps.contains("weapon_crates")) {
         target.weapon_crates = number(mode_caps["weapon_crates"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
         mode_caps.erase("weapon_crates");
+    }
+    // `checkpoints` and `ai_nav` (#133 PR 6b) are optional: the restart point
+    // count and whether the LEV has AI paths, measured and compared on load.
+    // Together they let the track be a boss venue.
+    target.checkpoints = AP_CONTENT_UNSTATED;
+    target.ai_nav = AP_CONTENT_UNSTATED;
+    if (mode_caps.is_object() && mode_caps.contains("checkpoints")) {
+        target.checkpoints = number(mode_caps["checkpoints"], 1, 255);
+        mode_caps.erase("checkpoints");
+    }
+    if (mode_caps.is_object() && mode_caps.contains("ai_nav")) {
+        need(mode_caps["ai_nav"].is_boolean(), "package capability flag is not true or false");
+        target.ai_nav = mode_caps["ai_nav"].get<bool>() ? 1 : 0;
+        mode_caps.erase("ai_nav");
     }
     fields(mode_caps, {"time_trial", "arcade", "relic", "ctr_tokens", "wumpa"});
     static const std::pair<const char *, unsigned> cap_bits[] = {
@@ -402,8 +419,25 @@ static J route_record(const std::string &entry, const char *mode, const std::str
 // the Final Challenge relic mode 0..4 (4 total_relics) and its resolved count;
 // the Oxide 1 skip only with 101_percent; repeats only with track_shuffle.
 static void boss_settings(const J &b, ctr_content_bosses &out) {
-    fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats"});
+    fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
     out.present = 1;
+    // #133 PR 6b: the ordinary garages holding a boss cup, distinct and in order.
+    need(b["cups"].is_array() && b["cups"].size() <= 4, "bosses.cups must list ordinary garages");
+    int previous = -1;
+    for (int g = 0; g < 4; ++g) out.cup[g] = 0;
+    for (const auto &g : b["cups"]) {
+        const int garage = number(g, 0, 3);
+        need(garage > previous, "bosses.cups must be distinct and in order");
+        out.cup[garage] = 1;
+        previous = garage;
+    }
+    {
+        static const char *const levels[4] = {"standard", "high", "very_high", "chaotic"};
+        out.requirement_level = -1;
+        if (b["requirement_level"].is_string())
+            for (int i = 0; i < 4; ++i) if (b["requirement_level"] == levels[i]) out.requirement_level = i;
+        need(out.requirement_level >= 0, "bosses.requirement_level must be standard, high, very_high or chaotic");
+    }
     out.oxide_goal = number(b["oxide_goal"], 0, 3);
     out.bosses_required = number(b["bosses_required"], 0, 4);
     for (const char *key : {"oxide_1_optional", "track_shuffle", "repeats"})
@@ -428,6 +462,7 @@ static const char *const kBossNames[6] = {"Ripper Roo Garage: Boss Race", "Papu 
 static const int kBossOpponents[6] = {10, 9, 11, 8, 15, 15};
 static const int kOxideStationLevel = 13; // N. Oxide's Challenge, and the Final Challenge's other venue
 static const int kCortexVenue = -2;       // the Final Challenge on the bundled Cortex Vortex pair
+static const int kCortexRestartPoints = 255; // the bundled Cortex Vortex LEV (#133 PR 6b), re-measured on load
 static J all_of(const J &terms) { return terms.size() == 1 ? terms[0] : J{{"op", "all"}, {"terms", terms}}; }
 using Table = std::map<std::string, const J *>;
 static Table table(const J &rows, size_t maximum) {
@@ -488,7 +523,10 @@ static void validate(const J &p, State &out) {
     // record; they, their entries, requirements and checks are recomputed below.
     out.bosses = ctr_content_bosses{};
     out.bosses.oxide_goal = 3; out.bosses.final_track = -1;
-    for (int g = 0; g < 4; ++g) out.bosses.venues[g] = -1;
+    for (int g = 0; g < 4; ++g) {
+        out.bosses.venues[g] = -1;
+        out.bosses.venue_package[g] = -1; out.bosses.venue_cortex[g] = 0; out.bosses.venue_points[g] = 0;
+    }
     if (has_bosses) boss_settings(p["bosses"], out.bosses);
     need(p.at("encounters").is_array() && p.at("encounters").empty() == !has_bosses,
          "encounters without the bosses record, or the reverse");
@@ -533,7 +571,7 @@ static void validate(const J &p, State &out) {
     for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
         arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
     } else if (pair.second->at("kind") == "cup") cups = true;
-    else if (pair.second->at("kind") != "boss_race") modes |= pair.second->at("modes") != J::array({"trophy"});
+    else if (pair.second->at("kind") != "boss_race" && pair.second->at("kind") != "boss_cup") modes |= pair.second->at("modes") != J::array({"trophy"});
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
     for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
     J features=J::array({"content_plan_v1"});
@@ -1127,6 +1165,90 @@ static void validate(const J &p, State &out) {
                  enc["completion_location"] == kBossCodes[k], "encounter record does not match its garage");
             need(entries.count(nid) && used_entries.insert(nid).second, "an encounter names no boss race entry");
             const J &entry = *entries.at(nid);
+            // Boss cups (#133 PR 6b): four legs against the garage's own boss
+            // alone, boss AI on every leg; a points win completes the garage.
+            // Each leg is a certified venue for this garage (as a Boss Track
+            // Shuffle venue), the four are different, three laps each. The
+            // garage's cup pad (ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
+            // + g)) carries the legs into the content-cup machinery.
+            const bool cup_garage = g < 4 && out.bosses.cup[g];
+            need(g < 4 || entry["kind"] != "boss_cup", "N. Oxide's encounters hold no boss cup");
+            need(cup_garage == (entry["kind"] == "boss_cup"), "boss cup garages do not match the bosses record");
+            if (cup_garage) {
+                fields(entry, {"id", "kind", "legs", "opponent"});
+                need(entry["opponent"] == J{{"role", "opponent"}, {"slot", 1}, {"character_id", kBossOpponents[k]},
+                                           {"driving_profile", "retail"}, {"attack_profile", "inherited"}},
+                     "boss cup entry does not match its garage's retail opponent");
+                const J &legs = entry["legs"];
+                need(legs.is_array() && legs.size() == AP_CONTENT_CUP_LEGS, "a boss cup races four legs");
+                ctr_content_pad &cp = out.garage_cups[g];
+                cp = ctr_content_pad{};
+                cp.physical = AP_CONTENT_GARAGE_CUP_PAD + g; cp.hub = 26 + g; cp.occupied = 1; cp.cup = 1;
+                cp.cup_index = -1; cp.retail_id = -1; cp.package_index = -1; cp.named_block = -1; cp.racer_lock = -1;
+                cp.trophy_location = kBossCodes[k];
+                copy(cp.entry_id, J(nid)); copy(cp.track_id, J(eid));
+                copy(cp.display_name, J(std::string(kBossNames[k]).substr(0, std::string(kBossNames[k]).find(':'))));
+                std::set<std::string> seen_legs;
+                for (size_t n = 0; n < AP_CONTENT_CUP_LEGS; ++n) {
+                    const J &leg = legs[n];
+                    fields(leg, {"id", "track_id", "laps"});
+                    const std::string lid = nid + "/leg:" + std::to_string(n);
+                    const std::string ltrack = text(leg["track_id"]);
+                    need(leg["id"] == lid && leg["laps"] == AP_CONTENT_RETAIL_LAPS && seen_legs.insert(ltrack).second,
+                         "a boss cup leg is not its garage's leg, three laps, or repeats a track");
+                    int points = -1;
+                    if (ltrack == "cortex_vortex") points = kCortexRestartPoints;
+                    else if (ltrack.rfind("custom/", 0) == 0) {
+                        need(tracks.count(ltrack) && used_tracks.count(ltrack), "a custom boss cup leg the plan does not race");
+                        const ctr_content_package &pkg = out.packages[package_index.at(text(tracks.at(ltrack)->at("package_id")))];
+                        need(pkg.ai_nav == 1, "a custom boss cup leg without AI navigation");
+                        points = pkg.checkpoints;
+                    } else if (ltrack.rfind("retail:", 0) == 0 && ltrack.size() <= 9) {
+                        const std::string digits = ltrack.substr(7);
+                        need(!digits.empty() && std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) &&
+                             (digits.size() == 1 || digits[0] != '0'), "unknown boss venue");
+                        const int lv = std::stoi(digits);
+                        need(lv < 18 && AP_BossVenueTrackKnown(lv), "unknown boss venue");
+                        points = AP_BOSS_VENUE_RESTART_POINTS[lv];
+                    } else need(false, "unknown boss venue");
+                    need(points >= 1 && AP_BossVenueScheduleFits(g, points), "a boss cup leg that cannot carry the boss's attack");
+                    need(tracks.count(ltrack), "a boss venue the plan does not list");
+                    if (!used_tracks.count(ltrack)) {
+                        const J &track = *tracks.at(ltrack);
+                        if (ltrack == "cortex_vortex") {
+                            const J &row = registry["cortex_vortex"];
+                            need(!cortex_seen && track == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
+                                                            {"display_name", row["name"]}, {"laps", row["laps"]}, {"modes", J::array({"trophy"})},
+                                                            {"capabilities", J::array({"trophy"})}, {"field_size", 8}},
+                                 "a boss venue raced nowhere else is not its trophy-only record");
+                            cortex_seen = true; out.cortex = true;
+                        } else {
+                            const int lv = std::stoi(ltrack.substr(7));
+                            need(retail_ids.insert(lv).second &&
+                                 track == J{{"id", ltrack}, {"origin", "retail"}, {"retail_id", lv}, {"display_name", registry["retail"][lv]["name"]},
+                                            {"laps", AP_CONTENT_RETAIL_LAPS}, {"modes", J::array({"trophy"})},
+                                            {"capabilities", J::array({"trophy"})}, {"field_size", 8}},
+                                 "a boss venue raced nowhere else is not its trophy-only record");
+                        }
+                        used_tracks.insert(ltrack);
+                    }
+                    if (ltrack == "cortex_vortex") out.cortex = true;
+                    ctr_content_leg l = leg_track(ltrack).leg;
+                    l.victory = 0; l.laps = AP_CONTENT_RETAIL_LAPS;
+                    copy(l.leg_id, J(lid));
+                    cp.legs[n] = l;
+                    out.bosses.cup_points[g][n] = points;
+                }
+                out.bosses.venues[g] = AP_BOSS_VENUE_GARAGE[g].homeLevel;
+                const J route{{"entry_id", nid}, {"mode", "boss_cup"}, {"leg_id", nullptr}, {"encounter_id", eid}, {"own_pad_id", pad}, {"award", "win"}};
+                need(expected_checks.emplace(kBossCodes[k], J{{"location", kBossCodes[k]}, {"owner", eid}, {"kind", "boss_cup"},
+                                                              {"display_name", kBossNames[k]}, {"routes", J::array({route})}}).second,
+                     "duplicate check identity");
+                J hit = route; hit["award"] = "hit";
+                boss_hits[kBossOpponents[k]].push_back(hit);
+                boss_requirement_ids.push_back(enc["requirement_id"]);
+                continue;
+            }
             fields(entry, {"id", "kind", "track_id", "laps", "opponent"});
             need(entry["kind"] == "boss_race" && entry["laps"] == AP_CONTENT_RETAIL_LAPS &&
                  entry["opponent"] == J{{"role", "opponent"}, {"slot", 1}, {"character_id", kBossOpponents[k]},
@@ -1134,7 +1256,26 @@ static void validate(const J &p, State &out) {
                  "boss race entry does not match its garage's retail opponent");
             const std::string track_id = text(entry["track_id"]);
             int level = -1;
-            if (track_id == "cortex_vortex") level = kCortexVenue;
+            // #133 PR 6b: an ordinary garage may race a custom track the plan
+            // also races on a pad or in a cup (its record is checked there),
+            // served on the garage's home LevelID, by its stated restart point
+            // count; Cortex Vortex by its bundled count.
+            int custom_package = -1;
+            if (g < 4 && track_id.rfind("custom/", 0) == 0) {
+                need(out.bosses.track_shuffle, "a custom boss venue needs track_shuffle");
+                need(tracks.count(track_id) && used_tracks.count(track_id), "a custom boss venue the plan does not race");
+                const std::string package_id = text(tracks.at(track_id)->at("package_id"));
+                need(package_index.count(package_id), "a custom boss venue without its package");
+                custom_package = package_index.at(package_id);
+                const ctr_content_package &pkg = out.packages[custom_package];
+                need(pkg.ai_nav == 1 && pkg.checkpoints >= 1 && AP_BossVenueScheduleFits(g, pkg.checkpoints),
+                     "a custom boss venue that cannot carry the boss's attack");
+                need(out.bosses.repeats || drawn.insert(1000 + custom_package).second, "boss venues repeat without repeats");
+                out.bosses.venue_package[g] = custom_package;
+                out.bosses.venue_points[g] = pkg.checkpoints;
+                out.bosses.venues[g] = AP_BOSS_VENUE_GARAGE[g].homeLevel;
+            }
+            else if (track_id == "cortex_vortex") level = kCortexVenue;
             else if (track_id.rfind("retail:", 0) == 0 && track_id.size() <= 9) {
                 const std::string digits = track_id.substr(7);
                 need(!digits.empty() && std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) &&
@@ -1142,7 +1283,17 @@ static void validate(const J &p, State &out) {
                 level = std::stoi(digits);
                 need(level < 18 && AP_BossVenueTrackKnown(level), "unknown boss venue");
             } else need(false, "unknown boss venue");
-            if (g < 4) {
+            if (g < 4 && custom_package >= 0) {
+                // checked above
+            } else if (g < 4 && level == kCortexVenue) {
+                need(out.bosses.track_shuffle && AP_BossVenueScheduleFits(g, kCortexRestartPoints),
+                     "Cortex Vortex as a garage venue needs track_shuffle");
+                need(out.bosses.repeats || drawn.insert(level).second, "boss venues repeat without repeats");
+                out.bosses.venue_cortex[g] = 1;
+                out.cortex = true; // the bundled pair is scanned and measured at connect
+                out.bosses.venue_points[g] = kCortexRestartPoints;
+                out.bosses.venues[g] = AP_BOSS_VENUE_GARAGE[g].homeLevel;
+            } else if (g < 4) {
                 need(level >= 0, "an ordinary garage races a retail venue");
                 if (out.bosses.track_shuffle) need(AP_BossVenueCertified(g, level), "a boss venue that cannot carry the boss's attack");
                 else need(level == AP_BOSS_VENUE_GARAGE[g].homeLevel, "without track_shuffle a boss races its home track");
@@ -1421,11 +1572,50 @@ static void validate(const J &p, State &out) {
         // the companion arms with any_percent; the Final Challenge the
         // companion arms when Oxide is the goal and its relic term on the base
         // supply (one tier, any tier with enough, or the sum of the tiers).
+        // The ordinary garages (#133 PR 6b) carry the mixed-item roll: one
+        // family over its base items, Trophy exactly four, Keys above the
+        // garage's hub gate (0, 1, 2, 3 Keys) and at most three, any other
+        // count 1 to the family's base supply (apworld
+        // content_bosses.check_garage_requirement). The draw is not redone.
         std::map<std::string, J> want;
         for (int g = 0; g < 4; ++g) {
-            const int trophies = 4 * (g + 1);
-            need(trophies <= out.items[0].base, "a boss garage asks for more Trophies than the base supply");
-            want["boss:" + std::to_string(g)] = J{{"op", "count"}, {"item", 35010000}, {"count", trophies}};
+            const std::string rid = "boss:" + std::to_string(g);
+            need(requirements.count(rid) != 0, "a boss garage has no requirement record");
+            fields(*requirements.at(rid), {"id", "predicate"});
+            const J &pred = requirements.at(rid)->at("predicate");
+            need(pred.is_object() && pred.contains("op") && (pred["op"] == "count" || pred["op"] == "sum"),
+                 "a boss garage requirement is one item count or one family sum");
+            int type = 0, colour = -1;
+            long long supply = 0;
+            if (pred["op"] == "count") {
+                fields(pred, {"op", "item", "count"});
+                const int item = number(pred["item"], 35010000, 35010014) - 35010000;
+                supply = out.items[item].base;
+                if (item == 0) type = 1;
+                else if (item <= 3) { type = 4; colour = item - 1; }
+                else if (item <= 8) { type = 3; colour = item - 4; }
+                else if (item <= 13) { type = 5; colour = item - 9; }
+                else type = 2;
+            } else {
+                fields(pred, {"op", "items", "count"});
+                static const int families[3][3] = {{1, 3, 7}, {4, 8, 6}, {9, 13, 8}}; // first, last, ctr_req Any type
+                for (const auto &family : families) {
+                    J eligible = J::array();
+                    long long sum = 0;
+                    for (int i = family[0]; i <= family[1]; ++i)
+                        if (out.items[i].base) { eligible.push_back(35010000 + i); sum += out.items[i].base; }
+                    if (eligible.size() >= 2 && pred["items"] == eligible) { type = family[2]; supply = sum; }
+                }
+                need(type != 0, "garage sum requirement items are not exactly one family's base items");
+            }
+            const int count = number(pred["count"], 1);
+            need(supply >= 1 && count <= supply, "a boss garage asks for more than the base supply");
+            if (type == 1) need(count == 4, "a Trophy garage asks exactly four Trophies");
+            if (type == 2) need(count > g && count <= 3, "a Key garage asks more than its hub gate and at most three");
+            out.bosses.garage_req_type[g] = type;
+            out.bosses.garage_req_count[g] = count;
+            out.bosses.garage_req_colour[g] = colour;
+            want[rid] = pred;
         }
         J ids = J::array({"boss:0", "boss:1", "boss:2", "boss:3"});
         if (b.oxide_goal != 3) {
@@ -1582,8 +1772,8 @@ static int parse_content_plan(const nlohmann::json &j) {
         text(co["world_version"]); copy(ctr_cfg.world_version, co["world_version"]);
         ctr_cfg.goal = -1; ctr_cfg.goal_oxide = 3; ctr_cfg.goal_bosses = 0; ctr_cfg.goal_gems = candidate.goal_count;
         // Boss garages (#133 PR 6): the normal room's garage, Oxide and goal
-        // code runs on these, as from a normal room's slot_data: the retail
-        // Trophy doors (boss_garage_req mode 2), the Oxide garage's four Keys,
+        // code runs on these, as from a normal room's slot_data: the garage
+        // roll as boss_req (boss_garage_req mode 2), the Oxide garage's four Keys,
         // the composed goal, the Final Challenge relic gate and venue, and the
         // drawn venues as a boss_encounters record (ctr_boss_encounters).
         std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -1595,12 +1785,18 @@ static int parse_content_plan(const nlohmann::json &j) {
             ctr_cfg.oxide_1_optional = b.oxide_1_optional;
             ctr_cfg.oxide_final_unlock = b.final_unlock;
             ctr_cfg.oxide_final_count = b.final_count;
-            for (int g = 0; g < 4; ++g) ctr_cfg.boss_req[g] = ctr_req{1, 4 * (g + 1), -1};
+            for (int g = 0; g < 4; ++g)
+                ctr_cfg.boss_req[g] = ctr_req{b.garage_req_type[g], b.garage_req_count[g], b.garage_req_colour[g]};
             ctr_cfg.boss_req[4] = ctr_req{2, 4, -1};
             for (int g = 0; g < 5; ++g) ctr_cfg.boss_n_tracks[g] = 0;
             if (b.track_shuffle) {
                 ctr_boss_encounters.state = AP_BOSS_ENC_VALID;
-                for (int g = 0; g < 4; ++g) ctr_boss_encounters.track[g] = (signed char)b.venues[g];
+                for (int g = 0; g < 4; ++g) {
+                    ctr_boss_encounters.track[g] = (signed char)b.venues[g];
+                    // #133 PR 6b: custom bytes on the home LevelID.
+                    ctr_boss_encounters.custom[g] = (unsigned char)(b.venue_package[g] >= 0 || b.venue_cortex[g]);
+                    ctr_boss_encounters.points[g] = (short)b.venue_points[g];
+                }
             }
             std::memset(&ctr_cfg.oxide_final_venue, 0, sizeof ctr_cfg.oxide_final_venue);
             ctr_cfg.oxide_final_venue.host_level_id = -1;
@@ -1693,6 +1889,10 @@ extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
 extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
+    if (ap_content_plan_active() && physical >= AP_CONTENT_GARAGE_CUP_PAD && physical < AP_CONTENT_GARAGE_CUP_PAD + 4) {
+        const int g = physical - AP_CONTENT_GARAGE_CUP_PAD;
+        return content_plan::state.bosses.cup[g] ? &content_plan::state.garage_cups[g] : nullptr;
+    }
     if (ap_content_plan_active()) for (const auto &p : content_plan::state.pads) if (p.physical == physical) return &p;
     return nullptr;
 }

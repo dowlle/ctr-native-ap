@@ -1296,7 +1296,7 @@ for seed in range(60):
     except CupOptionError:
         continue
     cases.append((f"bosses-generated-{seed}", wire, True))
-for fixture in ("bosses", "bosses-final"):
+for fixture in ("bosses", "bosses-final", "bosses-custom", "bosses-cups"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
 boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
 def boss_env(name, change, source=None):
@@ -1324,7 +1324,6 @@ for name, change in [
         ("unchanged copy", lambda c: None),
         ("venue repeated", lambda c: b_entry(c, 0).__setitem__("track_id", b_entry(c, 1)["track_id"])),
         ("venue uncertified", lambda c: b_entry(c, 1).__setitem__("track_id", "retail:18")),
-        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
         ("venue home track", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:6")),
         ("Oxide 1 venue", lambda c: b_entry(c, 4).__setitem__("track_id", "cortex_vortex")),
         ("Final venue retail", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "retail:3")),
@@ -1335,6 +1334,16 @@ for name, change in [
         ("laps", lambda c: b_entry(c, 3).__setitem__("laps", 1)),
         ("Trophy door", lambda c: b_req(c, "boss:2")["predicate"].__setitem__("count", 11)),
         ("Trophy door item", lambda c: b_req(c, "boss:0")["predicate"].__setitem__("item", 35010014)),
+        # The garage roll (#133 PR 6b): accepted shapes and refused ones agree.
+        ("garage Trophy four", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="count", item=35010000, count=4))),
+        ("garage Trophy eight", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="count", item=35010000, count=8))),
+        ("garage Keys at hub gate", lambda c: b_req(c, "boss:3").__setitem__("predicate", dict(op="count", item=35010014, count=3))),
+        ("garage Keys above hub gate", lambda c: b_req(c, "boss:0").__setitem__("predicate", dict(op="count", item=35010014, count=2))),
+        ("garage free", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="always"))),
+        ("garage one Gold Relic", lambda c: b_req(c, "boss:2").__setitem__("predicate", dict(op="count", item=35010002, count=1))),
+        ("garage over supply", lambda c: b_req(c, "boss:2").__setitem__("predicate", dict(op="count", item=35010002, count=99))),
+        ("record level", lambda c: c["content_plan"]["bosses"].__setitem__("requirement_level", "chaotic")),
+        ("record level unknown", lambda c: c["content_plan"]["bosses"].__setitem__("requirement_level", "extreme")),
         ("Oxide 1 companions dropped", lambda c: b_req(c, "oxide:first").__setitem__("predicate", b_req(c, "oxide:first")["predicate"]["terms"][0])),
         ("Final relic count", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("count", 5)),
         ("Final relic tier", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("item", 35010002)),
@@ -1381,6 +1390,9 @@ for name, change in [
 for name, change in [
         ("boss rank lowered", lambda c: b_check(c, 35011105).__setitem__("boost", 1)),
         ("boss rank dropped", lambda c: b_check(c, 35011100).pop("boost")),
+        # #133 PR 6b: Cortex Vortex is a certified garage venue now; moved there
+        # without its USF rank, only the rank is forged.
+        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
         ]:
     boss_env(name, change)
     native_trusts.add("bosses-" + name)
@@ -1396,6 +1408,37 @@ for name, change in [
         ("final venue Cortex Vortex", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "cortex_vortex")),
         ]:
     boss_env(name, change, final_base)
+# Custom and Cortex Vortex garage venues (#133 PR 6b): forgeries on
+# bosses-custom.json, where Papu Papu races Cortex Vortex and Pinstripe Baby T Park.
+custom_base = next(w for name, w, ok in cases if name == "bosses-custom-fixture")
+def c_pkg(c):
+    return next(p for p in c["content_plan"]["packages"] if p["content_id"] == "baby-t-park")
+for name, change in [
+        ("custom unchanged copy", lambda c: None),
+        ("custom count too small", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 3)),
+        ("custom count other", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 60)),
+        ("custom no nav", lambda c: c_pkg(c)["capabilities"].__setitem__("ai_nav", False)),
+        ("custom no count", lambda c: c_pkg(c)["capabilities"].pop("checkpoints")),
+        ("custom shuffle off", lambda c: c["content_plan"]["bosses"].__setitem__("track_shuffle", False)),
+        ("custom repeats off", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", False)),
+        ("Cortex Vortex on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "cortex_vortex")),
+        ("custom on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "custom/baby-t-park/1.0.2")),
+        ]:
+    boss_env(name, change, custom_base)
+# Boss cups (#133 PR 6b): forgeries on bosses-cups.json (cups in garages 0 and 1).
+cups_base = next(w for name, w, ok in cases if name == "bosses-cups-fixture")
+for name, change in [
+        ("cups unchanged copy", lambda c: None),
+        ("cups three legs", lambda c: b_entry(c, 0)["legs"].pop()),
+        ("cups repeated leg", lambda c: b_entry(c, 0)["legs"][1].__setitem__("track_id", b_entry(c, 0)["legs"][0]["track_id"])),
+        ("cups trial leg", lambda c: b_entry(c, 1)["legs"][2].__setitem__("track_id", "retail:16")),
+        ("cups leg laps", lambda c: b_entry(c, 0)["legs"][0].__setitem__("laps", 2)),
+        ("cups record short", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0])),
+        ("cups record long", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0, 1, 2])),
+        ("cups route mode", lambda c: b_check(c, 35011100)["routes"][0].__setitem__("mode", "boss_race")),
+        ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
+        ]:
+    boss_env(name, change, cups_base)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -18,7 +18,9 @@
      "ctr_tokens": true,
      "wumpa": true,
      "super_turbo_pads": true,
-     "weapon_crates": 8
+     "weapon_crates": 8,
+     "checkpoints": 35,
+     "ai_nav": true
     },
     "files": [
      {
@@ -1445,32 +1447,32 @@
     "id": "boss:0",
     "predicate": {
      "op": "count",
-     "item": 35010000,
-     "count": 4
+     "item": 35010003,
+     "count": 1
     }
    },
    {
     "id": "boss:1",
     "predicate": {
      "op": "count",
-     "item": 35010000,
-     "count": 8
+     "item": 35010014,
+     "count": 2
     }
    },
    {
     "id": "boss:2",
     "predicate": {
      "op": "count",
-     "item": 35010000,
-     "count": 12
+     "item": 35010002,
+     "count": 1
     }
    },
    {
     "id": "boss:3",
     "predicate": {
      "op": "count",
-     "item": 35010000,
-     "count": 16
+     "item": 35010012,
+     "count": 1
     }
    },
    {
@@ -3277,6 +3279,8 @@
   "bosses": {
    "oxide_goal": 2,
    "bosses_required": 0,
+   "requirement_level": "high",
+   "cups": [],
    "oxide_1_optional": true,
    "oxide_final_unlock": 4,
    "oxide_final_count": 10,
@@ -3292,7 +3296,7 @@
   "goal_oxide": 2,
   "goal_bosses": 0,
   "goal_gems": 0,
-  "starting_character": 1,
+  "starting_character": 7,
   "character_unlocks": false,
   "progressive_boost": 0,
   "progressive_stats": 0,

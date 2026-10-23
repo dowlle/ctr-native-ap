@@ -359,6 +359,64 @@ int CustomTrack_ReverifyOxideFinalContent(void)
 
 int CustomTrack_OxideFinalReady(void) { return s_oxideFinalVerified; }
 
+static struct GarageVenueDescriptor s_garageVenue[CUSTOM_TRACK_GARAGE_VENUES];
+static struct CustomTrackSource s_garageVenueLev[CUSTOM_TRACK_GARAGE_VENUES];
+static struct CustomTrackSource s_garageVenueVrm[CUSTOM_TRACK_GARAGE_VENUES];
+static int s_garageVenueVerified[CUSTOM_TRACK_GARAGE_VENUES];
+
+void CustomTrack_ClearGarageVenueDescriptors(void)
+{
+	memset(s_garageVenue, 0, sizeof s_garageVenue);
+	memset(s_garageVenueLev, 0, sizeof s_garageVenueLev);
+	memset(s_garageVenueVrm, 0, sizeof s_garageVenueVrm);
+	memset(s_garageVenueVerified, 0, sizeof s_garageVenueVerified);
+}
+
+int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d)
+{
+	if (garage < 0 || garage >= CUSTOM_TRACK_GARAGE_VENUES)
+		return 0;
+	if (d != NULL && d->enabled && !memcmp(&s_garageVenue[garage], d, sizeof *d))
+		return s_garageVenueVerified[garage];
+	memset(&s_garageVenue[garage], 0, sizeof s_garageVenue[garage]);
+	memset(&s_garageVenueLev[garage], 0, sizeof s_garageVenueLev[garage]);
+	memset(&s_garageVenueVrm[garage], 0, sizeof s_garageVenueVrm[garage]);
+	s_garageVenueVerified[garage] = 0;
+	if (d == NULL || !d->enabled)
+		return 1;
+	s_garageVenue[garage] = *d;
+	if (snprintf(s_garageVenueLev[garage].path, sizeof s_garageVenueLev[garage].path, "%s", d->levPath) >=
+	        (int)sizeof s_garageVenueLev[garage].path ||
+	    snprintf(s_garageVenueVrm[garage].path, sizeof s_garageVenueVrm[garage].path, "%s", d->vrmPath) >=
+	        (int)sizeof s_garageVenueVrm[garage].path || d->hostLevelID < 0)
+	{
+		CustomTrack_Log("[CustomTracks] garage %d venue REFUSED: file path or host LevelID is invalid\n", garage);
+		return 0;
+	}
+	CustomTrack_CopyField(s_garageVenueLev[garage].expectedHash, sizeof s_garageVenueLev[garage].expectedHash, d->levSha256);
+	CustomTrack_CopyField(s_garageVenueVrm[garage].expectedHash, sizeof s_garageVenueVrm[garage].expectedHash, d->vrmSha256);
+	CustomTrack_VerifySource(&s_garageVenueLev[garage], "garage venue lev");
+	CustomTrack_VerifySource(&s_garageVenueVrm[garage], "garage venue vrm");
+	s_garageVenueVerified[garage] = s_garageVenueLev[garage].verdict == CTR_CT_VERDICT_OK &&
+	                                s_garageVenueVrm[garage].verdict == CTR_CT_VERDICT_OK;
+	CustomTrack_Log("[CustomTracks] garage %d venue %s on host %d\n", garage,
+	                s_garageVenueVerified[garage] ? "armed" : "REFUSED: files missing or mismatched", d->hostLevelID);
+	return s_garageVenueVerified[garage];
+}
+
+int CustomTrack_GarageVenueReady(int garage)
+{
+	return garage >= 0 && garage < CUSTOM_TRACK_GARAGE_VENUES && s_garageVenueVerified[garage];
+}
+
+int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive)
+{
+	if (!adventureBossActive || bossID < 0 || bossID >= CUSTOM_TRACK_GARAGE_VENUES)
+		return -1;
+	return s_garageVenueVerified[bossID] && s_garageVenue[bossID].enabled &&
+	       s_garageVenue[bossID].hostLevelID == levelID ? bossID : -1;
+}
+
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
 {
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
@@ -927,6 +985,30 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+
+	// A content-plan garage venue on custom bytes (#133 PR 6b): the same
+	// shape as the Oxide 2 venue below, one descriptor per garage.
+	if (ctx != NULL)
+	{
+		int garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+		if (garage >= 0)
+		{
+			role = CustomTrackPolicy_SubfileRole(subfileIndex, s_garageVenue[garage].hostLevelID);
+			if (role == CTR_CT_ROLE_NONE) return 0;
+			source = (role == CTR_CT_ROLE_LEV) ? &s_garageVenueLev[garage] : &s_garageVenueVrm[garage];
+			if (stat(source->path, &st) != 0 || (u32)st.st_size != source->verifiedSize)
+			{
+				s_garageVenueVerified[garage] = 0;
+				CustomTrack_Log("[CustomTracks] garage %d venue REFUSED subfile %d: file changed after verification\n",
+				                garage, subfileIndex);
+				return 0;
+			}
+			CustomTrack_CopyField(s_customTrackResolved, sizeof s_customTrackResolved, source->path);
+			if (outPath) *outPath = s_customTrackResolved;
+			if (outSize) *outSize = source->verifiedSize;
+			return 1;
+		}
+	}
 
 	if (ctx != NULL && (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID,
 	                                                 ctx->adventureBossActive) ||

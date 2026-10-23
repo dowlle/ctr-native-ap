@@ -126,6 +126,10 @@ typedef struct ctr_content_pad {
 /* Engine hosts of non-retail track entries: a custom package borrows Roo's
  * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
  * served on by the legacy pad track and the Oxide 2 venue. */
+/* Boss cups (#133 PR 6b): the cup pad of ordinary garage g is
+ * AP_CONTENT_GARAGE_CUP_PAD + g, above every physical pad id (pad ids are
+ * engine pad LevelIDs, the Cup room's up to 104). */
+#define AP_CONTENT_GARAGE_CUP_PAD 1000
 #define AP_CONTENT_CUSTOM_HOST 6
 #define AP_CONTENT_CORTEX_HOST 13
 #define AP_CONTENT_CORTEX_LAPS 3
@@ -143,7 +147,14 @@ typedef struct ctr_content_package {
      * AP_CONTENT_WEAPON_CRATES_UNSTATED. Native counts them on load and
      * refuses a stated count the bytes disagree with. */
     int weapon_crates;
+    /* Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the LEV's
+     * restart point count (1..255) and whether it has AI navigation paths,
+     * or AP_CONTENT_UNSTATED. Native measures both on load and refuses a
+     * stated value the bytes disagree with. With both a track may be a
+     * boss venue under Boss Track Shuffle. */
+    int checkpoints, ai_nav;
 } ctr_content_package;
+#define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_MAX 65536 /* the verifier's instance-table ceiling */
 
@@ -167,12 +178,27 @@ typedef struct ctr_content_item_boxes {
  * on (its home track unless track_shuffle); final_track is
  * CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX (0) or _OXIDE_STATION (1), -1 when Oxide
  * is disabled. The parser drives the normal room's garage, Oxide and goal
- * configuration from it (ctr_cfg.boss_req, goal_oxide, goal_bosses,
+ * configuration from it (ctr_cfg.boss_req from the garage roll, goal_oxide, goal_bosses,
  * oxide_final_*, ctr_boss_encounters). */
 typedef struct ctr_content_bosses {
     int present, oxide_goal, bosses_required, oxide_1_optional;
     int final_unlock, final_count, track_shuffle, repeats;
     int venues[4], final_track;
+    /* #133 PR 6b: the mixed-item garage roll. requirement_level 0 standard,
+     * 1 high, 2 very_high, 3 chaotic (the apworld draws; native checks the
+     * result). garage_req_* is each ordinary garage's requirement as a
+     * ctr_req (type, count, colour) for AP_BossReqMet. */
+    int requirement_level;
+    int garage_req_type[4], garage_req_count[4], garage_req_colour[4];
+    /* #133 PR 6b: a garage venue on custom bytes. venue_package[g] is the
+     * package index (-1 none), venue_cortex[g] 1 for Cortex Vortex; then
+     * venues[g] is the garage's home LevelID, the host the bytes are served
+     * on, and venue_points[g] the certified restart point count. */
+    int venue_package[4], venue_cortex[4], venue_points[4];
+    /* #133 PR 6b: boss cups. cup[g] 1 when ordinary garage g holds a boss
+     * cup (its legs are the cup pad ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
+     * + g)); cup_points[g][n] each leg's certified restart point count. */
+    int cup[4], cup_points[4][4];
 } ctr_content_bosses;
 
 typedef struct ctr_content_item {
