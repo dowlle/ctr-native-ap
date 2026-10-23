@@ -1412,9 +1412,27 @@ int main(int argc, char **argv) {
         expect(ctr_cfg.goal_oxide == 1 && ctr_cfg.goal_bosses == 2 && ctr_cfg.goal_gems == 2 && ctr_cfg.bossgarage_mode == 2 &&
                ctr_cfg.oxide_final_unlock == 0 && ctr_cfg.oxide_final_count == b->final_count && !ctr_cfg.oxide_1_optional,
                "bosses: goal and Oxide configuration");
+        // The garage roll (#133 PR 6b): each garage's ctr_req is its drawn
+        // predicate (count: the item's type and colour; sum: the Any type).
         bool reqs = ctr_cfg.boss_req[4].type == 2 && ctr_cfg.boss_req[4].count == 4;
-        for (int g = 0; g < 4; ++g) reqs = reqs && ctr_cfg.boss_req[g].type == 1 && ctr_cfg.boss_req[g].count == 4 * (g + 1);
-        expect(reqs, "bosses: Trophy doors 4, 8, 12, 16 and the Oxide garage's four Keys");
+        for (const auto &r : bosses["content_plan"]["requirements"]) {
+            const std::string id = r["id"];
+            if (id.rfind("boss:", 0) != 0) continue;
+            const int g = id[5] - '0';
+            const J &pred = r["predicate"];
+            int type, colour = -1;
+            if (pred["op"] == "count") {
+                const int item = pred["item"].get<int>() - 35010000;
+                type = item == 0 ? 1 : item <= 3 ? 4 : item <= 8 ? 3 : item <= 13 ? 5 : 2;
+                colour = item == 0 || item == 14 ? -1 : item <= 3 ? item - 1 : item <= 8 ? item - 4 : item - 9;
+            } else {
+                const int first = pred["items"][0].get<int>() - 35010000;
+                type = first <= 3 ? 7 : first <= 8 ? 6 : 8;
+            }
+            reqs = reqs && ctr_cfg.boss_req[g].type == type && ctr_cfg.boss_req[g].count == pred["count"].get<int>() &&
+                   ctr_cfg.boss_req[g].colour == colour;
+        }
+        expect(reqs, "bosses: each garage's drawn requirement and the Oxide garage's four Keys");
         expect(ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX &&
                ctr_cfg.oxide_final_venue.location == 35011105 && ctr_cfg.oxide_final_venue.host_level_id == 13 &&
                ctr_cfg.oxide_final_venue.wumpa_location == -1, "bosses: the Final Challenge venue");
@@ -1463,7 +1481,18 @@ int main(int argc, char **argv) {
         b_refuse("another driving profile", [&](J &j) { entry(j, 3, 0)["opponent"]["driving_profile"] = "boss"; });
         b_refuse("Oxide 1 off Oxide Station", [&](J &j) { entry(j, 4, 0)["track_id"] = "cortex_vortex"; });
         b_refuse("an uncertified venue", [&](J &j) { entry(j, 1, 0)["track_id"] = "retail:18"; });
-        b_refuse("a Trophy door changed", [&](J &j) { requirement(j, "boss:3")["count"] = 4; });
+        // The garage roll (#133 PR 6b): native checks the drawn family and count.
+        b_refuse("a garage count above the base supply", [&](J &j) { requirement(j, "boss:3")["count"] = 99; });
+        b_refuse("a Trophy garage not at four", [&](J &j) {
+            requirement(j, "boss:0") = J{{"op", "count"}, {"item", 35010000}, {"count", 8}}; });
+        b_refuse("a Key garage at its hub gate", [&](J &j) {
+            requirement(j, "boss:2") = J{{"op", "count"}, {"item", 35010014}, {"count", 2}}; });
+        b_refuse("a four-Key garage", [&](J &j) {
+            requirement(j, "boss:0") = J{{"op", "count"}, {"item", 35010014}, {"count", 4}}; });
+        b_refuse("a free garage", [&](J &j) { requirement(j, "boss:1") = J{{"op", "always"}}; });
+        b_refuse("a sum over part of a family", [&](J &j) {
+            requirement(j, "boss:1") = J{{"op", "sum"}, {"items", J::array({35010001, 35010002})}, {"count", 1}}; });
+        b_refuse("an unknown requirement level", [](J &j) { j["content_plan"]["bosses"]["requirement_level"] = "extreme"; });
         b_refuse("the Oxide 1 companions dropped", [&](J &j) { const J t = requirement(j, "oxide:first")["terms"][0]; requirement(j, "oxide:first") = t; });
         b_refuse("a garage gate opened", [](J &j) {
             for (auto &p : j["content_plan"]["pads"]) if (p["id"] == "garage:2") p["entrance_req"] = "free"; });

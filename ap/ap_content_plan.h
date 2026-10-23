@@ -167,12 +167,18 @@ typedef struct ctr_content_item_boxes {
  * on (its home track unless track_shuffle); final_track is
  * CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX (0) or _OXIDE_STATION (1), -1 when Oxide
  * is disabled. The parser drives the normal room's garage, Oxide and goal
- * configuration from it (ctr_cfg.boss_req, goal_oxide, goal_bosses,
+ * configuration from it (ctr_cfg.boss_req from the garage roll, goal_oxide, goal_bosses,
  * oxide_final_*, ctr_boss_encounters). */
 typedef struct ctr_content_bosses {
     int present, oxide_goal, bosses_required, oxide_1_optional;
     int final_unlock, final_count, track_shuffle, repeats;
     int venues[4], final_track;
+    /* #133 PR 6b: the mixed-item garage roll. requirement_level 0 standard,
+     * 1 high, 2 very_high, 3 chaotic (the apworld draws; native checks the
+     * result). garage_req_* is each ordinary garage's requirement as a
+     * ctr_req (type, count, colour) for AP_BossReqMet. */
+    int requirement_level;
+    int garage_req_type[4], garage_req_count[4], garage_req_colour[4];
 } ctr_content_bosses;
 
 typedef struct ctr_content_item {

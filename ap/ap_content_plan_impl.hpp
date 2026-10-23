@@ -402,8 +402,15 @@ static J route_record(const std::string &entry, const char *mode, const std::str
 // the Final Challenge relic mode 0..4 (4 total_relics) and its resolved count;
 // the Oxide 1 skip only with 101_percent; repeats only with track_shuffle.
 static void boss_settings(const J &b, ctr_content_bosses &out) {
-    fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats"});
+    fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level"});
     out.present = 1;
+    {
+        static const char *const levels[4] = {"standard", "high", "very_high", "chaotic"};
+        out.requirement_level = -1;
+        if (b["requirement_level"].is_string())
+            for (int i = 0; i < 4; ++i) if (b["requirement_level"] == levels[i]) out.requirement_level = i;
+        need(out.requirement_level >= 0, "bosses.requirement_level must be standard, high, very_high or chaotic");
+    }
     out.oxide_goal = number(b["oxide_goal"], 0, 3);
     out.bosses_required = number(b["bosses_required"], 0, 4);
     for (const char *key : {"oxide_1_optional", "track_shuffle", "repeats"})
@@ -1421,11 +1428,50 @@ static void validate(const J &p, State &out) {
         // the companion arms with any_percent; the Final Challenge the
         // companion arms when Oxide is the goal and its relic term on the base
         // supply (one tier, any tier with enough, or the sum of the tiers).
+        // The ordinary garages (#133 PR 6b) carry the mixed-item roll: one
+        // family over its base items, Trophy exactly four, Keys above the
+        // garage's hub gate (0, 1, 2, 3 Keys) and at most three, any other
+        // count 1 to the family's base supply (apworld
+        // content_bosses.check_garage_requirement). The draw is not redone.
         std::map<std::string, J> want;
         for (int g = 0; g < 4; ++g) {
-            const int trophies = 4 * (g + 1);
-            need(trophies <= out.items[0].base, "a boss garage asks for more Trophies than the base supply");
-            want["boss:" + std::to_string(g)] = J{{"op", "count"}, {"item", 35010000}, {"count", trophies}};
+            const std::string rid = "boss:" + std::to_string(g);
+            need(requirements.count(rid) != 0, "a boss garage has no requirement record");
+            fields(*requirements.at(rid), {"id", "predicate"});
+            const J &pred = requirements.at(rid)->at("predicate");
+            need(pred.is_object() && pred.contains("op") && (pred["op"] == "count" || pred["op"] == "sum"),
+                 "a boss garage requirement is one item count or one family sum");
+            int type = 0, colour = -1;
+            long long supply = 0;
+            if (pred["op"] == "count") {
+                fields(pred, {"op", "item", "count"});
+                const int item = number(pred["item"], 35010000, 35010014) - 35010000;
+                supply = out.items[item].base;
+                if (item == 0) type = 1;
+                else if (item <= 3) { type = 4; colour = item - 1; }
+                else if (item <= 8) { type = 3; colour = item - 4; }
+                else if (item <= 13) { type = 5; colour = item - 9; }
+                else type = 2;
+            } else {
+                fields(pred, {"op", "items", "count"});
+                static const int families[3][3] = {{1, 3, 7}, {4, 8, 6}, {9, 13, 8}}; // first, last, ctr_req Any type
+                for (const auto &family : families) {
+                    J eligible = J::array();
+                    long long sum = 0;
+                    for (int i = family[0]; i <= family[1]; ++i)
+                        if (out.items[i].base) { eligible.push_back(35010000 + i); sum += out.items[i].base; }
+                    if (eligible.size() >= 2 && pred["items"] == eligible) { type = family[2]; supply = sum; }
+                }
+                need(type != 0, "garage sum requirement items are not exactly one family's base items");
+            }
+            const int count = number(pred["count"], 1);
+            need(supply >= 1 && count <= supply, "a boss garage asks for more than the base supply");
+            if (type == 1) need(count == 4, "a Trophy garage asks exactly four Trophies");
+            if (type == 2) need(count > g && count <= 3, "a Key garage asks more than its hub gate and at most three");
+            out.bosses.garage_req_type[g] = type;
+            out.bosses.garage_req_count[g] = count;
+            out.bosses.garage_req_colour[g] = colour;
+            want[rid] = pred;
         }
         J ids = J::array({"boss:0", "boss:1", "boss:2", "boss:3"});
         if (b.oxide_goal != 3) {
@@ -1582,8 +1628,8 @@ static int parse_content_plan(const nlohmann::json &j) {
         text(co["world_version"]); copy(ctr_cfg.world_version, co["world_version"]);
         ctr_cfg.goal = -1; ctr_cfg.goal_oxide = 3; ctr_cfg.goal_bosses = 0; ctr_cfg.goal_gems = candidate.goal_count;
         // Boss garages (#133 PR 6): the normal room's garage, Oxide and goal
-        // code runs on these, as from a normal room's slot_data: the retail
-        // Trophy doors (boss_garage_req mode 2), the Oxide garage's four Keys,
+        // code runs on these, as from a normal room's slot_data: the garage
+        // roll as boss_req (boss_garage_req mode 2), the Oxide garage's four Keys,
         // the composed goal, the Final Challenge relic gate and venue, and the
         // drawn venues as a boss_encounters record (ctr_boss_encounters).
         std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -1595,7 +1641,8 @@ static int parse_content_plan(const nlohmann::json &j) {
             ctr_cfg.oxide_1_optional = b.oxide_1_optional;
             ctr_cfg.oxide_final_unlock = b.final_unlock;
             ctr_cfg.oxide_final_count = b.final_count;
-            for (int g = 0; g < 4; ++g) ctr_cfg.boss_req[g] = ctr_req{1, 4 * (g + 1), -1};
+            for (int g = 0; g < 4; ++g)
+                ctr_cfg.boss_req[g] = ctr_req{b.garage_req_type[g], b.garage_req_count[g], b.garage_req_colour[g]};
             ctr_cfg.boss_req[4] = ctr_req{2, 4, -1};
             for (int g = 0; g < 5; ++g) ctr_cfg.boss_n_tracks[g] = 0;
             if (b.track_shuffle) {
