@@ -138,6 +138,11 @@ typedef struct
 	// section menu, and it is state rather than an option. Empty = never shown.
 	bool updateCheck;
 	char updateLastSeen[32];
+	// Signed in-game updater (issue #301): the release tag the player declined
+	// on the main-menu offer. Hidden [State] value like updateLastSeen and kept
+	// separate from it; only a newer release is offered again. update_check
+	// above also switches the updater's network check off.
+	char updateDeclined[32];
 	// Archipelago: in-game AP box placement author mode (#182, tooling for
 	// #109). Off by default; this toggle IS the gate for the author keys, so a
 	// release player who never opens the menu can never reach them.

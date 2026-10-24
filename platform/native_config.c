@@ -52,6 +52,7 @@ NativeConfig g_config = {
 	"",    // password
 	true,  // updateCheck (default on: the pair-version notice is informational)
 	"",    // updateLastSeen (empty = the title notice has never been shown)
+	"",    // updateDeclined (empty = no updater offer declined)
 	false, // boxAuthor (off: an authoring tool, not a player option)
 	false, // navRecord (off: this one writes files to the player's disk)
 	false, // navUseRecorded (off: changes how the AI drives)
@@ -183,6 +184,9 @@ const ConfigEntry g_configEntries[] = {
 	// this one is a decision about what it IS, no longer a missing renderer.)
 	// Written by the title-screen notice itself, never by a menu row.
 	{"State",       "update_last_seen",         "Update Last Seen",             CFG_STRING, g_config.updateLastSeen, 0, (int)sizeof(g_config.updateLastSeen), 0},
+	// Signed in-game updater (issue #301): the declined release tag. Written by
+	// the main-menu offer only, never by a menu row.
+	{"State",       "update_declined_version",  "Update Declined Version",      CFG_STRING, g_config.updateDeclined, 0, (int)sizeof(g_config.updateDeclined), 0},
 #endif
 	// Box placement editing is absent from ordinary public builds. Keeping the
 	// row out of g_configEntries means NativeConfig_Load cannot revive it from a
