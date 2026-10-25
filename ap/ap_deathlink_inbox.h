@@ -11,13 +11,17 @@
 // before the game thread drained the first overwrote it and the older death got
 // no popup at all.
 //
-// The inbox is bounded. Past AP_DL_INBOX_CAP deaths between two game frames the
-// oldest one is discarded without a popup; AP_DeathLinkInboxPush reports it so the
-// caller can log it.
+// The inbox is bounded. ap_net_poll runs once per frame (AP_NetTick) and the tick
+// drains the inbox later in the same frame, so it only fills if more than
+// AP_DL_INBOX_CAP deaths arrive in one poll. The cap matches what the feed can show
+// at once: each popup is two lines and the feed's pending ring holds 24
+// (AP_FEED_QUEUE_MAX in ap_hooks_feed.c), so beyond 12 deaths the feed would drop
+// the oldest lines anyway. Past the cap the oldest death is discarded without a
+// popup; AP_DeathLinkInboxPush reports it so the caller can log it.
 
 #include <string.h>
 
-#define AP_DL_INBOX_CAP        8
+#define AP_DL_INBOX_CAP        12
 #define AP_DL_INBOX_CAUSE_MAX  128
 #define AP_DL_INBOX_SOURCE_MAX 64
 
