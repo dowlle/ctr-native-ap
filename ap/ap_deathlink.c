@@ -27,7 +27,9 @@ static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnest
 // DeathLink is never queued. A received death is either applied inside a live race
 // or dropped. g_dl_pending_recv is only the short grace window (AP_DL_GRACE_FRAMES)
 // for a death that arrived in a live race but whose landing preconditions are not
-// met yet; outside a live race it is dropped at once.
+// met yet; outside a live race it is dropped at once. One death is pending at a
+// time: a newer one replaces it and the replaced one gets the ignored popup
+// (AP_DeathLinkDrainInbound).
 static int  g_dl_pending_recv = 0;         // in-window death still trying to land
 static int  g_dl_grace_left = 0;           // frames of grace left for it
 static char g_dl_pending_cause[128] = {0}; // its cause (log and popup)
@@ -393,6 +395,30 @@ static void AP_DeathLinkDrop(const char *why)
 	g_dl_hold_logged = 0;
 }
 
+// Take every death the network received since the last frame, oldest first. Only
+// the newest stays pending (DeathLink is never queued, and the newest is the one
+// that applies). Each death it replaces, in the same frame or still in its grace
+// window or held for a pause, ends here with the ignored popup naming who died.
+static void AP_DeathLinkDrainInbound(void)
+{
+	char cause[128];
+	char source[64];
+
+	while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
+	{
+		if (AP_DeathLinkEffMode() == CTR_DL_OFF)
+			continue;
+		if (g_dl_pending_recv)
+			AP_DeathLinkDrop("newer death");
+		g_dl_pending_recv = 1;
+		g_dl_grace_left = AP_DL_GRACE_FRAMES;
+		g_dl_defer_logged = 0; // a new death gets its own deferral line
+		g_dl_hold_logged = 0;
+		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
+		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
+	}
+}
+
 // Common bookkeeping once a forced loss is going to be applied: consume the
 // death, show its popup, and arm the attempt latch BEFORE the retail end sequence,
 // so every result callback in that sequence observes the forced loss.
@@ -632,25 +658,16 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		g_dl_defer_logged = 0;
 		g_dl_hold_logged = 0;
 		g_dl_swallow_edge = 0;
-		(void)ap_net_deathlink_take(cause, sizeof cause, source, sizeof source);
+		while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
+			;
 		return;
 	}
 
 	local = gGT->drivers[0];
 
-	// Drain the network inbound latch. A death is handled the frame it arrives: it
-	// applies inside a live race, is held while that race is paused, or is dropped. Two deaths in one grace window
-	// collapse to the newer one (the older is dropped without its own popup).
-	if (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source) &&
-	    AP_DeathLinkEffMode() != CTR_DL_OFF)
-	{
-		g_dl_pending_recv = 1;
-		g_dl_grace_left = AP_DL_GRACE_FRAMES;
-		g_dl_defer_logged = 0; // a new death gets its own deferral line
-		g_dl_hold_logged = 0;
-		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
-		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
-	}
+	// Drain the network inbox. A death is handled the frame it arrives: it applies
+	// inside a live race, is held while that race is paused, or is dropped.
+	AP_DeathLinkDrainInbound();
 
 	window = AP_DeathLinkWindow(gGT);
 	raceActive = window == AP_DL_WIN_LIVE;

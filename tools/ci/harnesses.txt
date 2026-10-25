@@ -48,6 +48,7 @@ tools/test-custom-package-unicode.c
 tools/test-custom-tracks-seedcfg.cpp
 tools/test-custom-trophy-ceremony.c
 tools/test-deathlink-race-loss.c
+tools/test-deathlink-replaced-popup.py
 tools/test-democam.c
 tools/test-disc-resolution.c
 tools/test-disc-copy.c

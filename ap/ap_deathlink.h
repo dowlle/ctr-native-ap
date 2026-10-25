@@ -40,7 +40,9 @@
 //       window that cannot land yet (mask-grab gate closed, rank order invalid) is
 //       retried for AP_DL_GRACE_FRAMES live frames, then dropped.
 //     * Every received death shows a feed popup naming the source and cause, or
-//       saying it was ignored (AP_FeedDeathLinkLine).
+//       saying it was ignored (AP_FeedDeathLinkLine). Only one death is pending at
+//       a time: a newer one (same frame, grace window or pause hold) replaces it,
+//       and the replaced one shows the ignored popup.
 //     * modes 1/2: force the full mask-grab reset via
 //       DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (the proven Shortcutless precedent,
 //       COLL.c:1488). The request bit MUST be OR'd from INSIDE the physics

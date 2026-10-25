@@ -26,6 +26,7 @@
 #include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
+#include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
@@ -390,15 +391,15 @@ static bool ap_char_accept(const nlohmann::json &v, int *out)
 }
 
 // ── DeathLink (issue #6) ──
-// Depth-1 inbound latch: the most recent DeathLink bounce not yet handed to the
-// game thread. A newer death overwrites an unhandled one, so extras are dropped
-// at the network boundary. The game side does not queue: it applies the death
-// inside a live race or drops it. Written in the bounced handler and drained by
-// ap_net_deathlink_take on the SAME poll thread (apclientpp is single-threaded,
-// the same guarantee the received-item queue relies on), so no lock is needed.
-static bool        g_dl_incoming = false;
-static std::string g_dl_incoming_cause;
-static std::string g_dl_incoming_source;
+// Inbound deaths not yet handed to the game thread (ap_deathlink_inbox.h).
+// AP_DeathLinkTick drains all of them every frame, oldest first: the newest stays
+// pending and each older one gets its ignored popup, so a second death in the
+// same frame no longer overwrites the first unseen. The game side does not queue:
+// it applies the death inside a live race or drops it. Written in the bounced
+// handler and drained by ap_net_deathlink_take on the SAME poll thread
+// (apclientpp is single-threaded, the same guarantee the received-item queue
+// relies on), so no lock is needed.
+static APDeathLinkInbox g_dl_inbox;
 
 // ── TLS trust store (issue #170) ──
 //
@@ -1207,7 +1208,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// DeathLink: incoming deaths arrive as a tagged Bounce. The handler fires
 	// inline on the poll thread like every other handler. It filters to the
 	// DeathLink tag, ignores our own death echoed back by the server (we carry the
-	// tag too), and latches the most recent death (depth 1) for the game thread.
+	// tag too), and adds the death to the inbox the game thread drains each frame.
 	g_ap->set_bounced_handler([](const nlohmann::json &packet) {
 		if (g_rejected)
 			return; // a refused seed's DeathLink bounce must not latch
@@ -1234,9 +1235,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		std::string cause = (d.contains("cause") && d["cause"].is_string())
 		                        ? d["cause"].get<std::string>()
 		                        : "";
-		g_dl_incoming = true; // depth-1: overwrite any death not yet drained
-		g_dl_incoming_cause = cause;
-		g_dl_incoming_source = source;
+		if (AP_DeathLinkInboxPush(&g_dl_inbox, cause.c_str(), source.c_str()))
+			std::fprintf(stderr, "[AP NET] deathlink inbox full: oldest undrained death discarded\n");
 		std::fprintf(stderr, "[AP NET] deathlink received from '%s': %s\n",
 		             source.c_str(), cause.c_str());
 	});
@@ -1356,7 +1356,7 @@ static void ap_net_apply_retry_stop(void)
 	g_scouts.clear();
 	g_scouts_done = false;
 	g_pending_checks.clear();
-	g_dl_incoming = false;
+	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
 	g_edit_known = false;
@@ -1400,7 +1400,7 @@ static void ap_net_apply_seed_reject(void)
 	g_scouts.clear();
 	g_scouts_done = false;
 	g_pending_checks.clear();
-	g_dl_incoming = false;
+	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
 	g_edit_known = false;
@@ -2199,18 +2199,11 @@ extern "C" void ap_net_deathlink_send(const char *cause)
 	});
 }
 
-// Drain the inbound death latch. Returns 1 (and copies the cause and source
-// strings, truncated to fit) if a death was pending, then clears it; 0 otherwise.
+// Take the oldest undrained inbound death. Returns 1 (and copies the cause and
+// source strings, truncated to fit) if one was waiting, 0 when none is left.
 extern "C" int ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n)
 {
-	if (!g_dl_incoming)
-		return 0;
-	g_dl_incoming = false;
-	if (cause_buf && cause_n > 0)
-		std::snprintf(cause_buf, (size_t)cause_n, "%s", g_dl_incoming_cause.c_str());
-	if (source_buf && source_n > 0)
-		std::snprintf(source_buf, (size_t)source_n, "%s", g_dl_incoming_source.c_str());
-	return 1;
+	return AP_DeathLinkInboxTake(&g_dl_inbox, cause_buf, cause_n, source_buf, source_n);
 }
 
 extern "C" void ap_net_shutdown(void)
@@ -2251,7 +2244,7 @@ extern "C" void ap_net_shutdown(void)
 	g_scouts.clear();
 	g_scouts_done = false;    // #85: no valid scout cache after shutdown
 	g_pending_checks.clear(); // #85: drop any in-flight checks on a server switch
-	g_dl_incoming = false; // a pending death must not survive a server switch
+	AP_DeathLinkInboxClear(&g_dl_inbox); // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_char_known = false; // nor may a racer selection leak into another slot
 	g_edit_known = false; // nor an edited stat package

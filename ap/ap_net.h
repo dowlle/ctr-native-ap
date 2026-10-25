@@ -237,10 +237,11 @@ void ap_net_deathlink_disable(void);
 // slot-connected.
 void ap_net_deathlink_send(const char *cause);
 
-// Drain the inbound death latch (network boundary only, one death per poll): returns
-// 1 and copies the cause and source-slot strings (truncated to their sizes, either
-// buffer may be NULL) if a DeathLink bounce was pending, then clears it; 0
-// otherwise. Own-slot echoes are already filtered out by the network handler.
+// Take the oldest inbound death not yet handed to the game thread: returns 1 and
+// copies the cause and source-slot strings (truncated to their sizes, either buffer
+// may be NULL), 0 when none is left. Call it until it returns 0: AP_DeathLinkTick
+// drains every death each frame (ap_deathlink_inbox.h). Own-slot echoes are
+// already filtered out by the network handler.
 int  ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n);
 
 void ap_net_shutdown(void);
