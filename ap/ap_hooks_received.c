@@ -129,8 +129,10 @@ static int AP_ContentLetterItemReceived(int64_t code)
 // (ap_net.h AP_NET_FX_EFFECT, key ctr_fx_<team>_<slot>), so a fresh room made
 // from the same seed starts empty and a reconnect to the same room reads it
 // back. The rules (hold until the Get reply, max-only writes, one-time
-// migration, no timeout) are in ap_fxmarker_logic.h. The Turbo Grant fired
-// count uses the same machinery under AP_NET_FX_TURBO_FIRED.
+// migration, no timeout) are in ap_fxmarker_logic.h. The 0.2.x Turbo Grant
+// fired count used the same machinery under AP_NET_FX_TURBO_FIRED. Since #487
+// the grant is per race and nothing reads that count; the key is still resolved
+// so the connect-time Get, its hold and the 0.2.1 migration stay as they were.
 //
 // ctr-ap-fxseen.txt (endpoint<TAB>seed<TAB>slot<TAB>max) and
 // ctr-ap-turbogrant.txt (seed<TAB>slot<TAB>fired) are the 0.2.1 local ledgers.
@@ -477,24 +479,6 @@ static void AP_FxBatchEnd(long long batchMax)
 {
 	if (AP_FxMarkerNoteDrained(&ap_fx_marker, batchMax))
 		AP_FxWrite(AP_NET_FX_EFFECT, &ap_fx_marker);
-}
-
-// Turbo Grant accounting seam (ap_turbogrant.c, same unity build).
-int AP_FxTurboFiredKnown(void)
-{
-	return ap_tg_marker.known;
-}
-
-int AP_FxTurboFired(void)
-{
-	long long v = ap_tg_marker.value;
-	return v < 0 ? 0 : v > 0x7fffffff ? 0x7fffffff : (int)v;
-}
-
-void AP_FxTurboFiredIncrement(void)
-{
-	if (AP_FxMarkerIncrement(&ap_tg_marker))
-		AP_FxWrite(AP_NET_FX_TURBO_FIRED, &ap_tg_marker);
 }
 
 #endif // CTR_AP

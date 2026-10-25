@@ -935,11 +935,12 @@ static void case_shipped_identity_receipt(void)
 	// prerequisite is absent stays armed. With no conditions set, Forced USF
 	// waits for a boost event and the three inventory and fruit traps wait for a
 	// held item or ten Wumpa, leaving Icy Road, Low Gravity, Forced Boost, First
-	// Person, Reverse Steering and Flatten to run.
+	// Person, Reverse Steering and Flatten to run, plus Nitro Drop and Red
+	// Potion, which need no ground probe since #486.
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 9);
+	expect("buildable identities still run in the same batch", fired, 11);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -950,8 +951,9 @@ static void case_shipped_identity_receipt(void)
 // Review-wave additions, 2026-08-19: three ruling gaps the first harness
 // missed, found adversarially, plus the engine-natural wiring contract.
 
-// Notebook, Item Reroll / Forced Use / Wumpa Wipeout: a prerequisite lost
-// during the warning re-arms the copy instead of consuming it.
+// Notebook, Wumpa Wipeout: a prerequisite lost during the warning re-arms the
+// copy instead of consuming it. (Item Reroll and Forced Use followed the same
+// rule until #486 made their warning commit; see the inventory cases below.)
 static void case_condition_lost_during_warning(void)
 {
 	AP_TrapSched s;
@@ -959,55 +961,58 @@ static void case_condition_lost_during_warning(void)
 	AP_TrapWorld empty = world_in(AP_TRAP_CTX_RACE);
 
 	AP_TrapSchedReset(&s);
-	AP_TrapSchedEnable(&s, AP_TRAP_ITEM_REROLL, 1);
-	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	AP_TrapSchedReceive(&s, AP_TRAP_WUMPA_WIPEOUT);
 
-	held.conditions = AP_TRAP_COND_HELD_ITEM;
+	held.conditions = AP_TRAP_COND_TEN_WUMPA;
 	AP_TrapSchedStep(&s, &held);
-	expect("a held item starts the reroll warning",
-	       AP_TrapSchedStateOf(&s, AP_TRAP_ITEM_REROLL), AP_TRAP_SLOT_WARNING);
+	expect("ten Wumpa start the wipeout warning",
+	       AP_TrapSchedStateOf(&s, AP_TRAP_WUMPA_WIPEOUT), AP_TRAP_SLOT_WARNING);
 
 	empty.conditions = 0;
 	run_ms(&s, &empty, 2000);
-	expect("the reroll does not fire after the item was used",
-	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 0);
-	expect("the copy returns to armed for a later item",
-	       AP_TrapSchedStateOf(&s, AP_TRAP_ITEM_REROLL), AP_TRAP_SLOT_ARMED);
+	expect("the wipeout does not fire after the fruit was lost",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 0);
+	expect("the copy returns to armed for later fruit",
+	       AP_TrapSchedStateOf(&s, AP_TRAP_WUMPA_WIPEOUT), AP_TRAP_SLOT_ARMED);
 
-	held.conditions = AP_TRAP_COND_HELD_ITEM;
+	held.conditions = AP_TRAP_COND_TEN_WUMPA;
 	run_ms(&s, &held, 2000);
-	expect("a later held item still fires the retained copy",
-	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
+	expect("ten Wumpa again still fire the retained copy",
+	       AP_TrapSchedActive(&s, AP_TRAP_WUMPA_WIPEOUT), 1);
 }
 
-// Hazard projection is a start gate, not a frame-perfect warning gate. Track
-// seams and jumps may briefly lose the ground query after the player has already
-// seen the warning; the warning must not loop, and the engine retries the actual
-// spawn quietly once the scheduler fires it.
-static void case_hazard_warning_commits_once(void)
+// #486: Nitro Drop and Red Potion hit the kart directly, so they need no
+// ground probe. They warn on any eligible map and fire after the warning; the
+// runtime retries the hit until it lands and then reports done.
+static void case_hazard_traps_need_no_condition(void)
 {
 	AP_TrapSched s;
-	AP_TrapWorld safe = world_in(AP_TRAP_CTX_RACE);
-	AP_TrapWorld airborne = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
+	AP_TrapWorld hub = world_in(AP_TRAP_CTX_HUB);
 	int effects[2] = {AP_TRAP_NITRO, AP_TRAP_RED_POTION};
 	int i;
 
-	safe.conditions = AP_TRAP_COND_SAFE_HAZARD;
 	for (i = 0; i < 2; i++)
 	{
+		expect("hit trap has no condition", AP_TRAP_DESC[effects[i]].condition,
+		       AP_TRAP_COND_NONE);
 		AP_TrapSchedReset(&s);
 		AP_TrapSchedReceive(&s, effects[i]);
-		AP_TrapSchedStep(&s, &safe);
+		run_ms(&s, &hub, 2000);
+		expect("hit trap stays armed in a hub",
+		       AP_TrapSchedArmedCount(&s, effects[i]), 1);
+		AP_TrapSchedStep(&s, &race);
 		drain(&s);
-		expect("hazard starts exactly one warning",
+		expect("hit trap starts exactly one warning in a race",
 		       count_ev(AP_TRAP_EV_WARN, effects[i]), 1);
-
-		run_ms(&s, &airborne, 1100);
-		drain(&s);
-		expect("lost ground does not re-arm the warning",
-		       count_ev(AP_TRAP_EV_REARM, effects[i]), 0);
-		expect("committed hazard reaches its quiet spawn retry",
+		run_ms(&s, &race, 1100);
+		expect("hit trap fires after its warning",
 		       AP_TrapSchedActive(&s, effects[i]), 1);
+		run_ms(&s, &race, 5000);
+		expect("it stays active until the hit is reported",
+		       AP_TrapSchedActive(&s, effects[i]), 1);
+		AP_TrapSchedEffectDone(&s, effects[i]);
+		expect("the landed hit consumes exactly one copy", slots_used(&s), 0);
 	}
 }
 
@@ -1291,9 +1296,11 @@ static void case_inventory_traps_wait_for_their_outcome(void)
 	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL), 1);
 }
 
-// Losing the held item during the warning re-arms both inventory traps: the
-// use-it-or-lose-it window is real counterplay, not a way to discard the trap.
-static void case_inventory_traps_rearm_on_lost_item(void)
+// #486 (ruling of 2026-10-23): losing the held item during the warning no longer
+// re-arms the inventory traps. Firing the weapon inside every warning used to
+// dodge them forever; now the warning commits, both copies fire on schedule,
+// and the runtime waits for the next resolved item (AP_TrapHeldItemWaitPoll).
+static void case_inventory_traps_commit_once_warned(void)
 {
 	AP_TrapSched s;
 	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE);
@@ -1307,19 +1314,50 @@ static void case_inventory_traps_rearm_on_lost_item(void)
 	race.conditions = 0; // the player fires the weapon during the warning
 	AP_TrapSchedStep(&s, &race);
 	drain(&s);
-	expect("Item Reroll re-arms when the item goes",
-	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_ITEM_REROLL), 1);
-	expect("Forced Use re-arms when the item goes",
-	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_FORCED_USE), 1);
-	expect("neither is consumed", slots_used(&s), 2);
+	expect("Item Reroll does not re-arm when the item goes",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_ITEM_REROLL), 0);
+	expect("Forced Use does not re-arm when the item goes",
+	       count_ev(AP_TRAP_EV_REARM, AP_TRAP_FORCED_USE), 0);
 
-	// The next resolved item pays both, each with a fresh full warning.
-	race.conditions = AP_TRAP_COND_HELD_ITEM;
-	run_ms(&s, &race, 1100);
-	expect("both fire on the next held item",
+	run_ms(&s, &race, 600);
+	expect("both fire when the warning runs out, slot empty or not",
 	       AP_TrapSchedActive(&s, AP_TRAP_ITEM_REROLL) +
 	           AP_TrapSchedActive(&s, AP_TRAP_FORCED_USE),
 	       2);
+
+	// An armed copy still needs a held item to START its warning.
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_ITEM_REROLL);
+	race.conditions = 0;
+	run_ms(&s, &race, 5000);
+	expect("no held item: the warning does not start",
+	       AP_TrapSchedArmedCount(&s, AP_TRAP_ITEM_REROLL), 1);
+}
+
+// The runtime half of #486: a fired inventory trap with nothing in the slot
+// waits, and applies the first frame a resolved weapon is held under control.
+static void case_inventory_wait_poll(void)
+{
+	expect("not waiting: nothing to do",
+	       AP_TrapHeldItemWaitPoll(0, AP_TRAP_POLL_RUN, 1, 1), AP_TRAP_HELD_WAIT);
+	expect("waiting, empty slot: wait",
+	       AP_TrapHeldItemWaitPoll(1, AP_TRAP_POLL_RUN, 1, 0), AP_TRAP_HELD_WAIT);
+	expect("waiting, no control: wait",
+	       AP_TrapHeldItemWaitPoll(1, AP_TRAP_POLL_RUN, 0, 1), AP_TRAP_HELD_WAIT);
+	expect("waiting, suspended by a mask sequence: wait",
+	       AP_TrapHeldItemWaitPoll(1, AP_TRAP_POLL_HOLD, 1, 1), AP_TRAP_HELD_WAIT);
+	expect("waiting, item resolved under control: apply",
+	       AP_TrapHeldItemWaitPoll(1, AP_TRAP_POLL_RUN, 1, 1), AP_TRAP_HELD_APPLY);
+	expect("waiting, slot cleared by a map change: drop the flag",
+	       AP_TrapHeldItemWaitPoll(1, AP_TRAP_POLL_GONE, 1, 1), AP_TRAP_HELD_DROP);
+	expect("a waiting copy is owed at the map boundary",
+	       AP_TrapHeldItemWaitOwed(1, AP_TRAP_POLL_RUN), 1);
+	expect("a suspended waiting copy is owed too",
+	       AP_TrapHeldItemWaitOwed(1, AP_TRAP_POLL_HOLD), 1);
+	expect("a cleared slot owes nothing",
+	       AP_TrapHeldItemWaitOwed(1, AP_TRAP_POLL_GONE), 0);
+	expect("not waiting owes nothing",
+	       AP_TrapHeldItemWaitOwed(0, AP_TRAP_POLL_RUN), 0);
 }
 
 // Reverse Steering: hub-eligible, one second of warning, exactly fifteen
@@ -2150,42 +2188,6 @@ static void case_weakened_boost_policy(void)
 	       AP_TrapWeakenedBoostTier(1, 0, 2), 0);
 }
 
-static void case_hazard_projection_distance(void)
-{
-	expect("source lookahead remains 1750 ms",
-	       AP_TRAP_HAZARD_LOOKAHEAD_MS, 1750);
-	expect("scheduler warning remains a distinct 1000 ms interval",
-	       AP_TRAP_WARNING_MS, 1000);
-	expect("a stopped kart still gets a visible minimum hazard lead",
-	       AP_TrapHazardDistance(0, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
-	expect("near-zero forward speed keeps a positive minimum lead",
-	       AP_TrapHazardDistance(1, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
-	expect("near-zero reverse speed keeps a negative minimum lead",
-	       AP_TrapHazardDistance(-1, AP_TRAP_HAZARD_LOOKAHEAD_MS), -160);
-	expect("ordinary race speed preserves the existing projection",
-	       AP_TrapHazardDistance(0x3000, AP_TRAP_HAZARD_LOOKAHEAD_MS), 328);
-	expect("reverse race speed mirrors the forward distance",
-	       AP_TrapHazardDistance(-0x3000, AP_TRAP_HAZARD_LOOKAHEAD_MS), -328);
-	expect("speed beyond the old cap is no longer clamped",
-	       AP_TrapHazardDistance(0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 874);
-	expect("signed minimum speed is handled without negation overflow",
-	       AP_TrapHazardDistance(-32768, AP_TRAP_HAZARD_LOOKAHEAD_MS), -875);
-	expect("forward speed follows the heading x axis",
-	       AP_TrapHazardOffset(4096, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 874);
-	expect("reverse speed projects opposite the heading x axis",
-	       AP_TrapHazardOffset(4096, -0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), -874);
-	expect("the heading z axis scales the signed offset",
-	       AP_TrapHazardOffset(2048, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 437);
-	expect("a perpendicular axis projects no offset",
-	       AP_TrapHazardOffset(0, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), 0);
-	expect("a reversed heading axis mirrors the offset",
-	       AP_TrapHazardOffset(-4096, 0x7fff, AP_TRAP_HAZARD_LOOKAHEAD_MS), -874);
-	expect("a stationary kart projects the positive minimum lead",
-	       AP_TrapHazardOffset(4096, 0, AP_TRAP_HAZARD_LOOKAHEAD_MS), 160);
-	expect("a stationary reversed heading projects the negative minimum lead",
-	       AP_TrapHazardOffset(-4096, 0, AP_TRAP_HAZARD_LOOKAHEAD_MS), -160);
-}
-
 static void case_remaining_roster_contracts(void)
 {
 	AP_TrapSched s;
@@ -2201,22 +2203,16 @@ static void case_remaining_roster_contracts(void)
 	       AP_TRAP_DESC[AP_TRAP_UPSIDE_DOWN].family, AP_TRAP_FAMILY_CAMERA_TRANSFORM);
 	expect("Mirror Mode is a camera transform",
 	       AP_TRAP_DESC[AP_TRAP_MIRROR_MODE].family, AP_TRAP_FAMILY_CAMERA_TRANSFORM);
-	expect("Nitro waits for a safe projected target",
-	       AP_TRAP_DESC[AP_TRAP_NITRO].condition, AP_TRAP_COND_SAFE_HAZARD);
-	expect("Red Potion waits for a safe projected target",
-	       AP_TRAP_DESC[AP_TRAP_RED_POTION].condition, AP_TRAP_COND_SAFE_HAZARD);
+	expect("scheduler warning remains a distinct 1000 ms interval",
+	       AP_TRAP_WARNING_MS, 1000);
 
 	AP_TrapSchedReset(&s);
 	AP_TrapSchedReceive(&s, AP_TRAP_NITRO);
-	run_ms(&s, &race, 2000);
-	expect("Nitro remains armed without safe ground",
-	       AP_TrapSchedArmedCount(&s, AP_TRAP_NITRO), 1);
-	race.conditions = AP_TRAP_COND_SAFE_HAZARD;
 	run_ms(&s, &race, 1100);
-	expect("Nitro fires after a safe-ground warning",
+	expect("Nitro fires after its warning, no ground probe (#486)",
 	       AP_TrapSchedActive(&s, AP_TRAP_NITRO), 1);
 	AP_TrapSchedEffectDone(&s, AP_TRAP_NITRO);
-	expect("a successful Nitro birth consumes exactly one copy",
+	expect("a landed Nitro hit consumes exactly one copy",
 	       slots_used(&s), 0);
 }
 
@@ -2581,7 +2577,7 @@ int main(void)
 	case_item_id_map();
 	case_shipped_identity_receipt();
 	case_condition_lost_during_warning();
-	case_hazard_warning_commits_once();
+	case_hazard_traps_need_no_condition();
 	case_receipt_during_podium_announces();
 	case_receipt_during_pause_announces();
 	case_engine_natural_requires_a_done_reporter();
@@ -2590,7 +2586,8 @@ int main(void)
 	case_wumpa_wipeout_lifecycle();
 	case_wumpa_wipeout_duplicates_serialize();
 	case_inventory_traps_wait_for_their_outcome();
-	case_inventory_traps_rearm_on_lost_item();
+	case_inventory_traps_commit_once_warned();
+	case_inventory_wait_poll();
 	case_reverse_steering_lifecycle();
 	case_wave2_batch1_map_change();
 	case_held_item_slot_states();
@@ -2613,7 +2610,6 @@ int main(void)
 	case_empty_crates_lifecycle();
 	case_boost_blocker_policy();
 	case_weakened_boost_policy();
-	case_hazard_projection_distance();
 	case_remaining_roster_contracts();
 	case_boost_blocker_lifecycle();
 	case_wireframe_lifecycle();

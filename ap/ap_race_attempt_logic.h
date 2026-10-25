@@ -21,7 +21,8 @@ enum
 	AP_DL_RECV_MASK_RESET = 1,
 	AP_DL_RECV_RACE_LOSS  = 2,
 	AP_DL_RECV_DROP       = 3, // pending death outside a live race: discard it
-	AP_DL_RECV_HOLD       = 4  // race paused: keep it until the race unpauses
+	AP_DL_RECV_HOLD       = 4, // race paused: keep it until the race unpauses
+	AP_DL_RECV_WEAPON_HIT = 5  // #483: spin out the local kart as a weapon hit would
 };
 
 // Where the local player is relative to a live adventure race.
@@ -37,9 +38,11 @@ enum
 // this many live frames and then dropped. It is never held for a later race.
 #define AP_DL_GRACE_FRAMES 10
 
-// mode: effective death_link (0 off / 1 mask_reset / 2 any_hit / 3 race_loss).
-// Any other nonzero value is an unknown future mode: it deliberately keeps the
-// old-client mask-reset fallback.
+// mode: effective death_link (0 off / 1 mask_reset / 2 any_hit / 3 race_loss /
+// 4 weapon_hit, #483). Legacy any_hit keeps receiving as the mask reset. Any
+// other nonzero value is an unknown future mode: it deliberately keeps the
+// old-client mask-reset fallback, which is also what a client from before #483
+// does with weapon_hit.
 //
 // DeathLink is never queued. A pending death acts only inside a live adventure race
 // (adventure mode, on a track, lights out, not paused / menu / cutscene / end of
@@ -59,6 +62,8 @@ static inline int AP_DeathLinkReceiveDecision(int mode, int pending,
 		return AP_DL_RECV_HOLD;
 	if (mode == 3)
 		return AP_DL_RECV_RACE_LOSS;
+	if (mode == 4)
+		return AP_DL_RECV_WEAPON_HIT;
 	return AP_DL_RECV_MASK_RESET;
 }
 
@@ -83,8 +88,10 @@ enum
 
 // The legacy coupling, used when the seed has no death_link_send key and for a
 // mode the player forces in the OPTIONS row: mask_reset sends falls, any_hit adds
-// hits, race_loss sends falls and losses. Any other nonzero mode is an unknown
-// future value that keeps the old-client fallback (falls only).
+// hits, race_loss sends falls and losses. weapon_hit (#483) sends falls only,
+// like mask_reset: it is a receive effect, and coupling it to weapon-hit sends
+// would make every hit taken a broadcast death. Any other nonzero mode is an
+// unknown future value that keeps the old-client fallback (falls only).
 static inline int AP_DeathLinkLegacySendMask(int mode)
 {
 	if (mode == 0)
@@ -120,7 +127,8 @@ static inline int AP_DeathLinkSendMask(int seedSend, int seedMode, int cfgMode,
 // The resolved DeathLink state: what the client receives and what it sends.
 typedef struct APDeathLinkState
 {
-	int recv; // effective receive mode: 0 off / 1 mask_reset / 2 any_hit / 3 race_loss
+	int recv; // effective receive mode: 0 off / 1 mask_reset / 2 any_hit / 3 race_loss /
+	          // 4 weapon_hit
 	int send; // effective send mask (AP_DL_TRIG_*)
 } APDeathLinkState;
 

@@ -150,10 +150,11 @@ static void send_trigger_tests(void)
 	expect(AP_DeathLinkLegacySendMask(1), AP_DL_TRIG_FALL, "legacy: mask_reset -> fall");
 	expect(AP_DeathLinkLegacySendMask(2), AP_DL_TRIG_FALL | AP_DL_TRIG_HIT, "legacy: any_hit -> fall+hit");
 	expect(AP_DeathLinkLegacySendMask(3), AP_DL_TRIG_FALL | AP_DL_TRIG_LOSS, "legacy: race_loss -> fall+loss");
+	expect(AP_DeathLinkLegacySendMask(4), AP_DL_TRIG_FALL, "legacy: weapon_hit -> fall only (#483)");
 	expect(AP_DeathLinkLegacySendMask(9), AP_DL_TRIG_FALL, "legacy: unknown future mode -> fall");
 
 	/* Seed follow: key absent (-1) uses the legacy coupling of death_link. */
-	for (m = 0; m <= 3; m++)
+	for (m = 0; m <= 4; m++)
 		expect(AP_DeathLinkSendMask(-1, m, -1, -1, -1, -1), AP_DeathLinkLegacySendMask(m),
 		       "absent death_link_send follows the legacy coupling");
 	/* A present key wins over death_link, independent of the receive effect. */
@@ -208,6 +209,15 @@ static void send_trigger_tests(void)
 		expect(st.send, AP_DL_TRIG_FALL | AP_DL_TRIG_HIT, "forced any_hit brings its legacy sends");
 		st = AP_DeathLinkResolve(1, -1, -1, -1, -1, -1);
 		expect(st.send, AP_DL_TRIG_FALL, "legacy seed mask_reset sends falls");
+		/* #483 weapon_hit, from the seed and from the forced OPTIONS row. */
+		st = AP_DeathLinkResolve(4, -1, -1, -1, -1, -1);
+		expect(st.recv, 4, "seed weapon_hit receives as weapon_hit");
+		expect(st.send, AP_DL_TRIG_FALL, "legacy seed weapon_hit sends falls only");
+		st = AP_DeathLinkResolve(4, 2, -1, -1, -1, -1);
+		expect(st.send, AP_DL_TRIG_HIT, "an explicit send mask wins over weapon_hit's coupling");
+		st = AP_DeathLinkResolve(0, 0, 4, -1, -1, -1);
+		expect(st.recv, 4, "forced weapon_hit receives as weapon_hit");
+		expect(st.send, AP_DL_TRIG_FALL, "forced weapon_hit brings fall-only sends");
 	}
 
 	/* The tag is declared while anything receives or sends. */
@@ -271,7 +281,7 @@ int main(void)
 
 	/* DeathLink is never queued: a pending death outside a live adventure race
 	 * window is DROPPED in every enabled mode, never held for the next race. */
-	for (mode = 0; mode <= 4; mode++)
+	for (mode = 0; mode <= 5; mode++)
 	{
 		int drop = (mode == 0) ? AP_DL_RECV_WAIT : AP_DL_RECV_DROP;
 
@@ -287,7 +297,7 @@ int main(void)
 
 	/* Pausing the race must not dodge a death: a pending death is HELD while the
 	 * same race is paused (any enabled mode) and applies when it runs again. */
-	for (mode = 1; mode <= 4; mode++)
+	for (mode = 1; mode <= 5; mode++)
 	{
 		expect(AP_DeathLinkReceiveDecision(mode, 1, 1, AP_DL_WIN_PAUSED), AP_DL_RECV_HOLD,
 		       "a death pending in a paused race is held for the pause");
@@ -302,7 +312,7 @@ int main(void)
 	       "unpaused: the held death applies as mask reset");
 	/* Leaving the race from the pause menu (quit, restart, exit), or the level
 	 * unloading, makes the window outside: the held death is dropped, not kept. */
-	for (mode = 1; mode <= 4; mode++)
+	for (mode = 1; mode <= 5; mode++)
 		expect(AP_DeathLinkReceiveDecision(mode, 1, 1, AP_DL_WIN_OUTSIDE), AP_DL_RECV_DROP,
 		       "a held death is dropped when the race is left before unpausing");
 
@@ -322,8 +332,16 @@ int main(void)
 	expect(AP_DeathLinkReceiveDecision(3, 1, 1, 0), AP_DL_RECV_DROP,
 	       "mode 3 outside window is dropped");
 
+	/* #483: weapon_hit spins the kart out, only in a valid race window. */
+	expect(AP_DeathLinkReceiveDecision(4, 1, 1, AP_DL_WIN_LIVE), AP_DL_RECV_WEAPON_HIT,
+	       "mode 4 (weapon_hit) in window -> weapon hit");
+	expect(AP_DeathLinkReceiveDecision(4, 1, 1, AP_DL_WIN_OUTSIDE), AP_DL_RECV_DROP,
+	       "mode 4 outside window is dropped");
+	expect(AP_DeathLinkReceiveDecision(4, 1, 1, AP_DL_WIN_PAUSED), AP_DL_RECV_HOLD,
+	       "mode 4 paused is held for the pause");
+
 	/* An unknown future nonzero value degrades to the old-client mask reset. */
-	expect(AP_DeathLinkReceiveDecision(4, 1, 1, AP_DL_WIN_LIVE), AP_DL_RECV_MASK_RESET,
+	expect(AP_DeathLinkReceiveDecision(5, 1, 1, AP_DL_WIN_LIVE), AP_DL_RECV_MASK_RESET,
 	       "unknown future mode -> mask-reset fallback");
 
 	/* Grace: an in-window death that cannot land yet is retried for exactly

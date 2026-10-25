@@ -1762,9 +1762,10 @@ static int parse_content_plan(const nlohmann::json &j) {
              number(co["goal_oxide"], 0, 3) == candidate.bosses.oxide_goal &&
              number(co["goal_bosses"], 0, 4) == candidate.bosses.bosses_required, "goal envelope disagrees with plan");
         ctr_cfg.starting_character = number(co["starting_character"], 0, 15);
-        // 0 off, 1 mask_reset, 2 any_hit, 3 race_loss (#286). Before #133 PR 4a
-        // this refused race_loss, which the apworld emits for content plans too.
-        ctr_cfg.death_link = number(co["death_link"], 0, 3);
+        // 0 off, 1 mask_reset, 2 any_hit, 3 race_loss (#286), 4 weapon_hit
+        // (#483). Before #133 PR 4a this refused race_loss, which the apworld
+        // emits for content plans too.
+        ctr_cfg.death_link = number(co["death_link"], 0, 4);
         ctr_cfg.deathlink_amnesty = number(co["deathlink_amnesty"], 1, 30);
         ctr_cfg.death_link_send = send_mask; // -1 absent: the legacy coupling
         ctr_cfg.warp_pad_item_display = display_mode;

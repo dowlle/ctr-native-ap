@@ -610,7 +610,7 @@ from worlds.ctr.test.test_item_packs import pack_options
 pack_cases = 0
 for seed in range(24):
     send = [None, [], ["mask_grab"], ["weapon_hit", "race_loss"]][seed % 4]
-    extra = dict(death_link=("off", "mask_reset", "any_hit", "race_loss")[seed % 4],
+    extra = dict(death_link=("off", "mask_reset", "any_hit", "race_loss", "weapon_hit")[seed % 5],
                  warp_pad_item_display=("one_pile", "by_reward_type")[seed % 2], ap_item_type_colors=seed % 3 != 0)
     if send is not None:
         extra["death_link_send"] = send

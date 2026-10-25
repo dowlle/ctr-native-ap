@@ -1,21 +1,21 @@
-// Host harness for the #224 Turbo Grant's pure rules (ap/ap_turbogrant_logic.h).
+// Host harness for the Turbo Grant's pure rules (ap/ap_turbogrant_logic.h,
+// #224, a Turbo every race since #487).
 //
-// Every rule in here is unreachable from a build machine: the accounting needs a
-// live server and a slot's item history, and the reserve rail needs a kart in a
-// race. So the arithmetic is lifted into a header with no engine, no network and
-// no config dependency, and driven here directly.
+// Every rule in here is unreachable from a build machine: the per-race latch
+// needs a live race and the reserve rail needs a kart in a race. So the rules
+// are lifted into a header with no engine, no network and no config dependency,
+// and driven here directly.
 //
 // WHAT IS COVERED
 //
-//   1. THE PENDING ARITHMETIC, including every lifecycle case the issue's rule 7
-//      names: a reconnect replaying the same list, a duplicate grant, a delivery
-//      that is fired, a delivery lost before firing (death, race restart), and a
-//      seed or slot change reading a different fired count.
-//   2. HOSTILE PERSISTED COUNTS. Negative, absurdly large, and larger than the
-//      number of receipts the server has actually sent.
-//   3. THE RULED ITEMSANITY GATE, exhaustively -- both itemsanity states crossed
-//      with both `Turbo` weapon states.
-//   4. THE RESERVE RAIL, per VehFire_Increment branch, including the exact
+//   1. THE PER-RACE LATCH: nothing before the item, one Turbo per race attempt,
+//      a new Turbo after a restart (a new countdown) and after the next race,
+//      none in the race-load gap before the countdown is seen, and more copies
+//      of the item still giving one Turbo per race.
+//   2. THE RULED ITEMSANITY GATE, exhaustively -- both itemsanity states crossed
+//      with both `Turbo` weapon states, and the race's Turbo still owed while
+//      the gate blocks it.
+//   3. THE RESERVE RAIL, per VehFire_Increment branch, including the exact
 //      boundary and the fact that it is a no-op for every payload the game
 //      actually produces today.
 //
@@ -49,101 +49,105 @@ static void check_eq(int got, int want, const char *what)
 }
 
 // ---------------------------------------------------------------------------
-// 1. The pending arithmetic and the lifecycle cases
+// 1. The per-race latch
 // ---------------------------------------------------------------------------
 
-static void test_nothing_received_owes_nothing(void)
+// One race start: on track, countdown running for a few frames, then lights out.
+static void start_race(AP_TurboGrantRace *r)
 {
-	check_eq(AP_TurboGrantPending(0, 0, 0), 0, "no receipts, nothing pending");
-	check_eq(AP_TurboGrantPending(0, 0, 1), 0,
-	         "no receipts cannot go negative through an in-flight bit");
+	AP_TurboGrantRaceStep(r, 1, 0, 1);
+	AP_TurboGrantRaceStep(r, 1, 0, 1);
+	AP_TurboGrantRaceStep(r, 1, 0, 0);
 }
 
-static void test_one_receipt_is_owed_until_it_is_fired(void)
+static void test_nothing_before_the_item(void)
 {
-	check_eq(AP_TurboGrantPending(1, 0, 0), 1, "received, not delivered -> owed");
-	check_eq(AP_TurboGrantPending(1, 0, 1), 0, "delivered, unfired -> not owed again");
-	check_eq(AP_TurboGrantPending(1, 1, 0), 0, "fired -> settled");
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(!AP_TurboGrantOwedThisRace(&r, 0), "no receipt, no Turbo");
+	check(!AP_TurboGrantOwedThisRace(&r, -3), "a negative receipt count is inert");
 }
 
-static void test_a_delivery_lost_before_firing_is_owed_again(void)
+static void test_one_turbo_per_race(void)
 {
-	// Death, race restart, level change: the caller drops the in-flight bit and
-	// never touches the fired count. Nothing else has to remember the requeue.
-	check_eq(AP_TurboGrantPending(1, 0, 1), 0, "in flight, not owed");
-	check_eq(AP_TurboGrantPending(1, 0, 0), 1, "lost before firing -> owed again");
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "received: this race's Turbo is owed");
+	r.givenThisRace = 1; // the runtime delivered it
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "delivered: not owed again this race");
+	// Fired, rerolled or lost: the latch does not reopen mid-race.
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "a Turbo that left the slot is not replaced");
 }
 
-static void test_duplicate_grants_are_counted_not_deduped(void)
+static void test_more_copies_still_give_one_turbo(void)
 {
-	check_eq(AP_TurboGrantPending(3, 0, 0), 3, "three receipts, three owed");
-	check_eq(AP_TurboGrantPending(3, 1, 1), 1,
-	         "one fired, one in the slot -> exactly one still owed");
-	check_eq(AP_TurboGrantPending(3, 3, 0), 0, "all three fired -> settled");
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 3), "three copies: owed");
+	r.givenThisRace = 1;
+	check(!AP_TurboGrantOwedThisRace(&r, 3), "three copies: still one Turbo per race");
 }
 
-static void test_a_reconnect_replaying_the_same_list_changes_nothing(void)
+static void test_a_restart_is_a_new_race(void)
 {
-	// received rebuilds to the same number out of the server's full replay while
-	// fired is read back from the room's DataStorage (#299), so the pair -- and therefore pending -- is
-	// exactly what it was before the disconnect.
-	const int received = 4, fired = 2;
-	check_eq(AP_TurboGrantPending(received, fired, 0), 2, "pending before reconnect");
-	check_eq(AP_TurboGrantPending(received, fired, 0), 2, "pending after replay");
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	r.givenThisRace = 1;
+	// A restart re-runs the countdown on the same track.
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "restart: a new Turbo is owed");
 }
 
-static void test_a_process_restart_does_not_credit_an_undelivered_grant(void)
+static void test_the_next_race_owes_a_new_turbo(void)
 {
-	// The in-flight bit is deliberately not persisted: a process that exited with
-	// a Turbo sitting in the slot never let the player spend it, so the grant is
-	// owed again rather than lost.
-	check_eq(AP_TurboGrantPending(2, 1, 1), 0, "before the quit: one in the slot");
-	check_eq(AP_TurboGrantPending(2, 1, 0), 1, "after the restart: owed again");
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	r.givenThisRace = 1;
+	AP_TurboGrantRaceStep(&r, 1, 1, 0); // end of race
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "end of race: nothing owed");
+	AP_TurboGrantRaceStep(&r, 0, 0, 0); // hub
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "hub: nothing owed");
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "next race: owed again");
 }
 
-static void test_a_slot_change_reads_its_own_count(void)
+static void test_nothing_before_the_countdown_is_seen(void)
 {
-	// Same seed, two slots. Slot A has fired both of its grants; slot B has
-	// received one and fired none. Reading B's key must not let A's count
-	// suppress it, which is what the per-team+slot room keys buy (#299). A fresh
-	// room of the same seed starts with no key, i.e. fired 0; that case is
-	// driven through the marker rules in tools/test-fxmarker.c.
-	check_eq(AP_TurboGrantPending(2, 2, 0), 0, "slot A settled");
-	check_eq(AP_TurboGrantPending(1, 0, 0), 1, "slot B still owed its grant");
+	// The race-load gap: on track, lights not observed yet. Anything written to
+	// the kart now would be wiped by VehBirth.
+	AP_TurboGrantRace r = {0, 0};
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "no countdown seen: not owed yet");
+	AP_TurboGrantRaceStep(&r, 1, 0, 1);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "countdown seen: owed");
+}
+
+static void test_a_reconnect_mid_race_keeps_the_latch(void)
+{
+	// The runtime keeps the latch across a connect reset; the replayed receipt
+	// then finds this race still owed (not yet delivered) or settled.
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "before the reconnect: owed");
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "after the replay, same race: still owed");
+	r.givenThisRace = 1;
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "delivered before the reconnect: not again");
+}
+
+static void test_receipt_mid_race_is_delivered_that_race(void)
+{
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(!AP_TurboGrantOwedThisRace(&r, 0), "before the receipt");
+	check(AP_TurboGrantOwedThisRace(&r, 1), "received mid-race: owed in this race");
 }
 
 // ---------------------------------------------------------------------------
-// 2. Hostile persisted counts
-// ---------------------------------------------------------------------------
-
-static void test_a_negative_persisted_count_cannot_manufacture_grants(void)
-{
-	check_eq(AP_TurboGrantClampFired(-1, 5), 0, "negative fired clamps to zero");
-	check_eq(AP_TurboGrantClampFired(-100000, 5), 0, "very negative clamps to zero");
-	check_eq(AP_TurboGrantPending(1, -50, 0), 1,
-	         "a negative row cannot inflate what is owed");
-}
-
-static void test_an_oversized_persisted_count_cannot_go_negative(void)
-{
-	check_eq(AP_TurboGrantClampFired(9999, 3), 3, "fired clamps down to received");
-	check_eq(AP_TurboGrantPending(3, 9999, 0), 0, "an oversized row settles, never owes");
-	check_eq(AP_TurboGrantPending(3, 9999, 1), 0, "and still not with one in flight");
-}
-
-static void test_a_corrupt_in_flight_value_cannot_double_count(void)
-{
-	check_eq(AP_TurboGrantPending(5, 0, 7), 4, "any non-zero in-flight counts as one");
-	check_eq(AP_TurboGrantPending(5, 0, -3), 4, "including a negative one");
-}
-
-static void test_a_negative_received_count_is_inert(void)
-{
-	check_eq(AP_TurboGrantPending(-4, 0, 0), 0, "a negative receipt count owes nothing");
-}
-
-// ---------------------------------------------------------------------------
-// 3. The ruled itemsanity gate
+// 2. The ruled itemsanity gate
 // ---------------------------------------------------------------------------
 
 static void test_itemsanity_off_needs_no_weapon_item(void)
@@ -164,15 +168,16 @@ static void test_itemsanity_on_needs_the_turbo_weapon_item(void)
 
 static void test_the_gate_never_consumes_a_grant(void)
 {
-	// The gate decides deliverability only. A grant blocked by it is still owed,
-	// which is the whole of the issue's "no received grant is silently
-	// discarded" for the pre-unlock case.
+	// The gate decides deliverability only. The race's Turbo blocked by it is
+	// still owed, so a `Turbo` weapon item that arrives mid-race delivers it.
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
 	check(!AP_TurboGrantDeliverable(1, 0), "blocked by the gate");
-	check_eq(AP_TurboGrantPending(1, 0, 0), 1, "and still owed while blocked");
+	check(AP_TurboGrantOwedThisRace(&r, 1), "and still owed while blocked");
 }
 
 // ---------------------------------------------------------------------------
-// 4. The reserve rail
+// 3. The reserve rail
 // ---------------------------------------------------------------------------
 
 // VehFire_Increment's three branches, by the type flags that select them.
@@ -281,18 +286,14 @@ static void test_the_rail_never_produces_an_overflowing_sum(void)
 
 int main(void)
 {
-	test_nothing_received_owes_nothing();
-	test_one_receipt_is_owed_until_it_is_fired();
-	test_a_delivery_lost_before_firing_is_owed_again();
-	test_duplicate_grants_are_counted_not_deduped();
-	test_a_reconnect_replaying_the_same_list_changes_nothing();
-	test_a_process_restart_does_not_credit_an_undelivered_grant();
-	test_a_slot_change_reads_its_own_count();
-
-	test_a_negative_persisted_count_cannot_manufacture_grants();
-	test_an_oversized_persisted_count_cannot_go_negative();
-	test_a_corrupt_in_flight_value_cannot_double_count();
-	test_a_negative_received_count_is_inert();
+	test_nothing_before_the_item();
+	test_one_turbo_per_race();
+	test_more_copies_still_give_one_turbo();
+	test_a_restart_is_a_new_race();
+	test_the_next_race_owes_a_new_turbo();
+	test_nothing_before_the_countdown_is_seen();
+	test_receipt_mid_race_is_delivered_that_race();
+	test_a_reconnect_mid_race_keeps_the_latch();
 
 	test_itemsanity_off_needs_no_weapon_item();
 	test_itemsanity_on_needs_the_turbo_weapon_item();
@@ -308,9 +309,9 @@ int main(void)
 
 	if (g_failures != 0)
 	{
-		printf("Turbo Grant accounting: %d FAILURE(S)\n", g_failures);
+		printf("Turbo Grant rules: %d FAILURE(S)\n", g_failures);
 		return 1;
 	}
-	printf("Turbo Grant accounting: PASS\n");
+	printf("Turbo Grant rules: PASS\n");
 	return 0;
 }
