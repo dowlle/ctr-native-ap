@@ -124,6 +124,20 @@ static void test_nothing_before_the_countdown_is_seen(void)
 	check(AP_TurboGrantOwedThisRace(&r, 1), "countdown seen: owed");
 }
 
+static void test_a_reconnect_mid_race_keeps_the_latch(void)
+{
+	// The runtime keeps the latch across a connect reset; the replayed receipt
+	// then finds this race still owed (not yet delivered) or settled.
+	AP_TurboGrantRace r = {0, 0};
+	start_race(&r);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "before the reconnect: owed");
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(AP_TurboGrantOwedThisRace(&r, 1), "after the replay, same race: still owed");
+	r.givenThisRace = 1;
+	AP_TurboGrantRaceStep(&r, 1, 0, 0);
+	check(!AP_TurboGrantOwedThisRace(&r, 1), "delivered before the reconnect: not again");
+}
+
 static void test_receipt_mid_race_is_delivered_that_race(void)
 {
 	AP_TurboGrantRace r = {0, 0};
@@ -279,6 +293,7 @@ int main(void)
 	test_the_next_race_owes_a_new_turbo();
 	test_nothing_before_the_countdown_is_seen();
 	test_receipt_mid_race_is_delivered_that_race();
+	test_a_reconnect_mid_race_keeps_the_latch();
 
 	test_itemsanity_off_needs_no_weapon_item();
 	test_itemsanity_on_needs_the_turbo_weapon_item();

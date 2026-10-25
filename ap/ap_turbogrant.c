@@ -41,8 +41,10 @@ void AP_TurboGrantReset(void)
 {
 	g_tg_received = 0;
 	g_tg_turbo_weapon = 0;
-	g_tg_race.countdownSeen = 0;
-	g_tg_race.givenThisRace = 0;
+	// The per-race latch is game state, not connection state: a reconnect in
+	// the middle of a race must neither forget that the countdown was seen
+	// (the race's Turbo would never come) nor that the Turbo was delivered
+	// (it would come twice). AP_TurboGrantTick clears it off-track.
 }
 
 void AP_TurboGrantReceive(void)

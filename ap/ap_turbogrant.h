@@ -62,7 +62,7 @@ struct GameTracker;
 #define AP_TURBOGRANT_HELD_ITEM_TURBO 0x0
 #define AP_TURBOGRANT_HELD_ITEM_NONE  0xf
 
-// Fresh connect / slot reset. Zeroes the receipts and the per-race latch.
+// Fresh connect / slot reset. Zeroes the receipts; the per-race latch is kept.
 // Called from the same point that zeroes the capability chains, BEFORE the
 // authoritative ReceivedItems replay rebuilds the receipts.
 void AP_TurboGrantReset(void);
