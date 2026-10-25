@@ -121,12 +121,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// authoritative replay, so a reconnect or a slot switch can never carry
 		// one slot's helper into another's session.
 		AP_TiziReset();
-		// Turbo Grant (#224): zero the session counters and reload this seed and
-		// slot's FIRED count (the room's AP_NET_FX_TURBO_FIRED key, #299).
-		// Deliberately not the effect-marker
-		// mechanism above -- that marks an item consumed when its batch drains,
-		// which would swallow a grant the player could not receive yet. See
-		// ap_turbogrant_logic.h.
+		// Turbo Grant (#224, per race since #487): zero the receipts and the
+		// per-race latch. The receipt is a switch rebuilt from the replay, not
+		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
 		AP_ReserveTopUpReset();
 		AP_WumpaConnectReset();
@@ -429,13 +426,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_TiziReceiveHelper();
 		}
 
-		// Turbo Grant (#224, idx 189). A COUNT, not a boolean: every receipt is
-		// one more Turbo the player is owed, and duplicates are legitimate. It is
-		// rebuilt from zero on each fresh connect (AP_TurboGrantReset above), so
-		// the server's full replay reconstructs exactly the same total -- which
-		// is why this must NOT be filtered through the effect marker the way the
-		// trap and Wumpa arms are. A grant that has not been delivered yet is
-		// still owed, whatever index it arrived at.
+		// Turbo Grant (#224, idx 189; a Turbo every race since #487). Rebuilt
+		// from zero on each fresh connect (AP_TurboGrantReset above), so the
+		// server's full replay reconstructs it -- which is why this must NOT be
+		// filtered through the effect marker the way the trap and Wumpa arms
+		// are: a replayed receipt still switches the per-race Turbo on.
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
