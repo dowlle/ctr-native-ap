@@ -44,7 +44,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bash tools/ci/build-clients.sh linux
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clients-linux-x86-${{ github.sha }}
           path: client-artifacts/*
@@ -77,7 +77,7 @@ jobs:
             mingw-w64-i686-zlib
       - name: Build and verify both configurations
         run: bash tools/ci/build-clients.sh windows
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clients-windows-x86-${{ github.sha }}
           path: client-artifacts/*
