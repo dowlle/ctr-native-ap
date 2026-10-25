@@ -429,6 +429,22 @@ static const int kHitFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
 	4, // guest 15 Nitros Oxide
 };
 
+// The Key fallback on a content-plan room (#133 PR 4d, apworld
+// hit_character.CONTENT_PLAN_FALLBACK_KEYS). A content plan has no boss
+// encounters yet (#133 PR 6), so the four boss guests have no boss race and
+// join through Keys too, in the retail boss order. The other four keep the
+// normal table.
+static const int kHitContentFallbackKeys[CTR_CFG_HIT_TRIGGER_COUNT] = {
+	4, // guest 8  Pinstripe
+	2, // guest 9  Papu Papu
+	1, // guest 10 Ripper Roo
+	3, // guest 11 Komodo Joe
+	3, // guest 12 N. Tropy
+	2, // guest 13 Penta Penguin
+	1, // guest 14 Fake Crash
+	4, // guest 15 Nitros Oxide
+};
+
 // Canonical boss-win keys, in the order boss_identity[] stores them.
 static const long kHitBossKeys[CTR_CFG_HIT_BOSS_COUNT] = {
 	35011100, 35011101, 35011102, 35011103, 35011104, 35011105,
@@ -480,8 +496,11 @@ static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
 // and must be validated even when ctr_options is absent or carries
 // schema_version 0. "Compatible legacy" means the feature data is ABSENT, never
 // that a present required block is bypassed by the legacy path.
-static int parse_hit_character(const nlohmann::json &j)
+// `contentPlan` selects the content-plan fallback table (#133 PR 4d); the
+// content-plan parser calls this after the plan itself is admitted.
+static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false)
 {
+	const int *fallbackTable = contentPlan ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
 	const nlohmann::json *opt = NULL;
@@ -578,9 +597,13 @@ static int parse_hit_character(const nlohmann::json &j)
 		return 0;
 	}
 	const nlohmann::json &b = *blk;
-	if (b.size() != 7)
+	// A content-plan room may carry `content_cups` (#133 PR 5b): one order per
+	// cup of the plan. The content-plan parser checks its keys against the
+	// plan's cups; a normal room never carries it.
+	const int hasContentCups = (contentPlan && b.is_object() && b.contains("content_cups")) ? 1 : 0;
+	if ((int)b.size() != 7 + hasContentCups)
 	{
-		hit_reject("hit_character_encounters has %d keys, expected 7", (int)b.size());
+		hit_reject("hit_character_encounters has %d keys, expected 7", (int)b.size() - hasContentCups);
 		return 0;
 	}
 	static const char *kTopKeys[7] = {"schema",     "locations", "policy", "tracks",
@@ -732,6 +755,34 @@ static int parse_hit_character(const nlohmann::json &j)
 		}
 	}
 
+	// content_cups (#133 PR 5b, content plans only): distinct cup name indices
+	// 0..26, each {order: a permutation of 0..15}, at least one.
+	if (hasContentCups)
+	{
+		const auto &cc = b["content_cups"];
+		if (!cc.is_object() || cc.empty() || cc.size() > CTR_CFG_HIT_CONTENT_CUP_COUNT)
+		{
+			hit_reject("content_cups must map 1..%d cup name indices", CTR_CFG_HIT_CONTENT_CUP_COUNT);
+			return 0;
+		}
+		for (auto it = cc.begin(); it != cc.end(); ++it)
+		{
+			int index;
+			if (!hit_key(it.key(), 0, CTR_CFG_HIT_CONTENT_CUP_COUNT - 1, &index) ||
+			    h.content_cup_present[index])
+			{
+				hit_reject("content_cups key '%s' is not a distinct cup name index", it.key().c_str());
+				return 0;
+			}
+			if (!hit_parse_order(it.value(), &h.content_cups[index]))
+			{
+				hit_reject("content_cups[%d] is not {order: a permutation of 0..15}", index);
+				return 0;
+			}
+			h.content_cup_present[index] = 1;
+		}
+	}
+
 	// unlock_triggers: exactly guests 8..15, approved kind + exact win set, and
 	// in a block schema 3 entry the optional fixed-table `fallback_keys`
 	{
@@ -817,7 +868,7 @@ static int parse_hit_character(const nlohmann::json &j)
 			if (hasFallback)
 			{
 				long long fb = 0;
-				if (kHitFallbackKeys[guest - 8] == 0)
+				if (fallbackTable[guest - 8] == 0)
 				{
 					hit_reject("unlock_triggers[%d].fallback_keys is set, but this guest "
 					           "always has its own boss race",
@@ -830,11 +881,11 @@ static int parse_hit_character(const nlohmann::json &j)
 					           guest);
 					return 0;
 				}
-				if ((int)fb != kHitFallbackKeys[guest - 8])
+				if ((int)fb != fallbackTable[guest - 8])
 				{
 					hit_reject("unlock_triggers[%d].fallback_keys is %d, but this guest's "
 					           "fixed fallback is %d",
-					           guest, (int)fb, kHitFallbackKeys[guest - 8]);
+					           guest, (int)fb, fallbackTable[guest - 8]);
 					return 0;
 				}
 				trig.fallback_keys = (int)fb;
@@ -1587,6 +1638,7 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 }
 
 #include "ap_content_plan_impl.hpp"
+#include "ap_content_verify.hpp"
 
 // ── custom_track_titles (#306 B+, schema 18) ──────────────────────────────
 //

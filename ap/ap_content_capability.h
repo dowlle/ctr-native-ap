@@ -88,4 +88,98 @@ static inline int AP_ContentCapabilitiesHold(unsigned claimed, const struct Cust
 	return 0;
 }
 
+// Super turbo pads (#133 PR 4c, ruling 2026-10-17): a custom track whose LEV
+// has any super turbo pad trigger quad takes the Hot Air Skyway finish rule
+// in logic, so the descriptor's optional `super_turbo_pads` must say what the
+// bytes hold. Unlike the mode flags above, both wrong answers refuse: a
+// false claim on a track with super pads would put its finish in logic
+// without USF, and a true claim on one without would gate it for nothing.
+// Unstated (AP_CONTENT_SUPER_PADS_UNSTATED) is never a refusal: logic then
+// already treats the track as having super pads.
+static inline int AP_ContentSuperTurboPadsHold(int stated, const struct CustomContentVerification *report,
+                                               char *why, size_t whySize)
+{
+	int measured;
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (stated == AP_CONTENT_SUPER_PADS_UNSTATED)
+		return 1;
+	measured = report->measured.superTurboPads > 0;
+	if ((stated != 0) == measured)
+		return 1;
+	if (why && whySize)
+		snprintf(why, whySize, "the descriptor says super_turbo_pads is %s, but the files have %lu super turbo pad quads",
+		         stated ? "true" : "false", report->measured.superTurboPads);
+	return 0;
+}
+
+// Weapon crates (#133 PR 4e): the descriptor's optional `weapon_crates`
+// says how many weapon crates the LEV holds. A named custom track's Item Box
+// checks are seated on them, and a count of 0 takes the track out of the
+// Itemsanity and Hit routes, so any disagreement with the bytes refuses: a
+// higher count would create box checks with no crate to seat them, a lower
+// one would seat them on the wrong crates. Unstated
+// (AP_CONTENT_WEAPON_CRATES_UNSTATED) is never a refusal: such a track has no
+// box checks.
+static inline int AP_ContentWeaponCratesHold(int stated, const struct CustomContentVerification *report,
+                                             char *why, size_t whySize)
+{
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (stated == AP_CONTENT_WEAPON_CRATES_UNSTATED)
+		return 1;
+	if (stated >= 0 && (unsigned long)stated == report->measured.weaponCrates)
+		return 1;
+	if (why && whySize)
+		snprintf(why, whySize, "the descriptor says weapon_crates is %d, but the files have %lu weapon crates",
+		         stated, report->measured.weaponCrates);
+	return 0;
+}
+
+// Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the restart
+// point count and whether the LEV has AI navigation paths, which certify the
+// track as a boss venue. A stated value the bytes disagree with refuses the
+// package; unstated (AP_CONTENT_UNSTATED) is never a refusal, such a track is
+// only never a boss venue.
+static inline int AP_ContentBossVenueFactsHold(int checkpoints, int aiNav,
+                                               const struct CustomContentVerification *report,
+                                               char *why, size_t whySize)
+{
+	if (why && whySize)
+		why[0] = '\0';
+	if (report == NULL || !report->loadable)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if (checkpoints != AP_CONTENT_UNSTATED && (unsigned long)checkpoints != (unsigned long)report->measured.checkpoints)
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the descriptor says checkpoints is %d, but the files have %lu restart points",
+			         checkpoints, (unsigned long)report->measured.checkpoints);
+		return 0;
+	}
+	if (aiNav != AP_CONTENT_UNSTATED && (aiNav != 0) != (report->measured.navPaths > 0))
+	{
+		if (why && whySize)
+			snprintf(why, whySize, "the descriptor says ai_nav is %s, but the files have %s AI paths",
+			         aiNav ? "true" : "false", report->measured.navPaths > 0 ? "" : "no");
+		return 0;
+	}
+	return 1;
+}
+
 #endif

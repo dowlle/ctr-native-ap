@@ -12,6 +12,7 @@
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
@@ -243,6 +244,7 @@ int AP_GateCountForeign(int itemType);   // #85: foreign-only split (multiworld 
 // item index space (0..189). Own-location items are deliberately excluded and
 // are banked synchronously from scout+checked state by ap_verify.c.
 int AP_VerifyForeignItemCount(int itemIndex);
+int AP_VerifyForeignItemCodeCount(long long code);
 // Useful grants call this before applying a weapon-backed effect. When
 // itemsanity is active, Shield and Mask remain queued until their weapon unlock
 // has arrived; ids outside the frozen itemsanity weapon set stay available.
@@ -327,6 +329,19 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 int AP_ContentPadOpen(const ctr_content_pad *pad);
 // Owned count for the pad's manual rule (0 when it has none).
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
+// Track modes (#133 PR 3): the pad is open and the mode's stage is met
+// (ap_content_mode_open over the received tallies). The mode selector, the
+// race-start gate, pad state and the pad text all call this.
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode);
+// Owned count for the pad's second-stage rule (0 when it has none).
+int AP_ContentStage2Owned(const ctr_content_pad *pad);
+// Server checked-state of one content-plan code (ap_content_checked_fn).
+int AP_ContentCodeChecked(int64_t code);
+// The pad's mode selector rows over the received tallies and the server's
+// checked set (ap_content_selector_build). Returns the number of open rows.
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out);
+// AP_PadState of an open or locked content-plan track pad (ap_content_track_pad_state).
+int AP_ContentTrackPadState(const ctr_content_pad *pad);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
@@ -341,9 +356,53 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 // connected seed's exact profile, otherwise the current Baby T Park release.
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_StandaloneRaceActive(void);
+// Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
+// the boost rank and racer from PR 4c).
+int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
+// Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
+int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);
-int AP_ContentPreparePad(int physicalPad);
+// Relic Race result of a content-plan standalone race (#133 PR 3): sends the
+// tiers the time reaches against the track's own targets. Returns the number
+// of tiers sent.
+int AP_NotifyStandaloneRelic(int raceTime);
+// Pad display identity of the running standalone race's CTR Challenge, or -1.
+int AP_StandaloneCtrBit(void);
+// The running standalone Relic Race's target for a tier, or -1 when no
+// content-plan Relic Race is running.
+int AP_StandaloneRelicTarget(int tier);
+// The running content-plan Relic Race's tier code; -2 when none is running.
+long AP_StandaloneRelicCode(int tier);
+// Stage the content-plan race for one of the pad's modes (AP_CONTENT_MODE_*).
+// Returns the host LevelID to load, or -1 when the mode's gate or the
+// package refuses the entry.
+int AP_ContentPreparePad(int physicalPad, int mode);
 int AP_ContentPadReady(int physicalPad);
+// Content-plan cups (#133 PR 5, ap_hooks_custom_content.c): the running
+// cup's pad and leg, its standings name and hub-return pad, the next leg's
+// load, the leg results (Cup Leg Victory, sweep record) and the cup's end.
+struct GameTracker;
+const ctr_content_pad *AP_ContentCupPad(void);
+int AP_ContentCupLeg(void);
+const char *AP_ContentCupName(void);
+int AP_ContentCupPadLevel(void);
+int AP_ContentCupNextLeg(int leg, int *outLaps);
+void AP_ContentCupEnter(void);
+void AP_ContentCupOnLevelStart(void);
+void AP_ContentCupOnLoadRequested(int level);
+void AP_ContentCupLegResult(struct GameTracker *gGT);
+int AP_ContentCupFinish(struct GameTracker *gGT, int won);
+// Hit Character on content plans (#133 PR 5b): a content-plan cup draws its
+// frozen field from 200 + its name index (-1 when no content-plan cup runs).
+int AP_ContentCupHitDestination(void);
+// Boss cups (#133 PR 6b): the running boss cup's garage (-1 none), its leg's
+// certified restart point count, garage entry staging (-2 no cup, -1 refused,
+// else the level to load) and the return to the garage.
+int AP_ContentGarageCupRunning(void);
+int AP_ContentGarageCupReady(int garage);
+int AP_ContentGarageCupLegPoints(void);
+int AP_ContentGarageCupPrepare(int garage);
+int AP_ContentGarageCupReturn(struct GameTracker *gGT, int garage);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);

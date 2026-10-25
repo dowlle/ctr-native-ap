@@ -31,6 +31,8 @@ fixture = r'''
 #include <platform/native_custom_tracks_policy.h>
 #include <platform/native_custom_race_context.h>
 static struct CustomTrackRaceLatch s_standaloneRace;
+static int s_cupLegSwitch; /* #133 PR 5 */
+static int CustomTrack_LatchHoldsPackage(void) { return (s_standaloneRace.active && !s_cupLegSwitch) || s_standaloneRace.pendingKind == 2; }
 #define CTR_CT_NAV_UUID_BYTES 16
 struct CustomTrackSeedDescriptor { int value; } s_descriptor;
 static struct { char path[1024]; } s_customTrackLev, s_customTrackVrm;

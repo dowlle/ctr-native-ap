@@ -27,7 +27,8 @@ extern "C" {
 
 // The ordinary destinations the encounter roster applies to: the sixteen retail
 // race tracks (0..15) plus the two trial Trophy tracks Slide Coliseum (16) and
-// Turbo Track (17). Cups are ticket 11.
+// Turbo Track (17). Cups are ticket 11. A content-plan custom or Cortex Vortex
+// race (#133 PR 5b) runs on host 6 or 13, so it draws from that host's order.
 #define AP_HIT_ORDINARY_TRACK_MAX 17
 
 // A drawn field: the AI engine ids in seat order (seat 0 first). `unhit` is how
@@ -347,6 +348,8 @@ typedef struct
 	int pending;     // a new cup start was signalled (pad entry)
 	int cupID;       // 0..4 (wire cups block keys are 100 + cupID)
 	int trackIndex;  // last leg seen, for continue/retry classification
+	int dest;        // wire destination the roster was drawn from: 100 + cupID,
+	                 // or 200 + name index for a content-plan cup (#133 PR 5b)
 	int count;
 	int ids[AP_HIT_FIELD_MAX];
 } ap_hit_cup_snapshot;
@@ -365,6 +368,7 @@ static inline void AP_HitCupSnapshotResetPure(ap_hit_cup_snapshot *s)
 	s->pending = 0;
 	s->cupID = -1;
 	s->trackIndex = -1;
+	s->dest = -1;
 	s->count = 0;
 }
 
@@ -385,6 +389,61 @@ static inline int AP_HitCupLegKindPure(int cupID, int trackIndex, int pending,
 	if (trackIndex == snapshotTrackIndex)
 		return AP_HIT_CUP_LEG_RETRY;
 	return AP_HIT_CUP_LEG_CONTINUE;
+}
+
+// A stored roster drawn from another destination is a new cup too: every
+// content-plan cup runs on engine cup 0, so only the destination (200 + its
+// name index) tells two of them apart (#133 PR 5b).
+static inline int AP_HitCupLegKindAtPure(int dest, int cupID, int trackIndex, int pending,
+                                         int snapshotValid, int snapshotDest, int snapshotCupID,
+                                         int snapshotTrackIndex)
+{
+	if (snapshotValid && snapshotDest != dest)
+		return AP_HIT_CUP_LEG_NEW;
+	return AP_HitCupLegKindPure(cupID, trackIndex, pending, snapshotValid, snapshotCupID,
+	                            snapshotTrackIndex);
+}
+
+// How many AI seats a cup load's encounter field has. The retail Purple cup
+// races four AI; every other cup seven. A legacy custom track that took a cup
+// over (the event race, #133 PR 5c) grids the field its descriptor measured,
+// `eventFieldSize` karts including the player (MainInit's
+// CustomTrackPolicy_DriverCount, Purple cup only); 0 when the load is not that
+// race. Since #133 PR 5c every custom-served load takes the encounter roster,
+// on legacy rooms too (ruling of 2026-10-21: the same Hit rule everywhere);
+// the load is the same 1P arcade-pack path with the same extra-model queue.
+static inline int AP_HitCupSeatsPure(int cupID, int eventFieldSize)
+{
+	if (cupID != 4)
+		return 7;
+	if (eventFieldSize <= 1)
+		return 4;
+	return eventFieldSize - 1 > 7 ? 7 : eventFieldSize - 1;
+}
+
+// The draw destination behind a pad, for its Hit opportunity, or -1 when the
+// pad hosts no Hit race. An ordinary track 0..17 is its own destination (a
+// trial needs a valid trial row). The legacy Cortex Vortex pad track
+// (destination 110) races on host 13 and draws from its order; a Gem Cup
+// destination 100..104 that a legacy custom track took over races one custom
+// race in that cup's context and draws from that cup's order (#133 PR 5c).
+// Retail Gem Cups stay extra opportunities, never a pad Hit opportunity.
+static inline int AP_HitPadDrawDestPure(int destLevelID, int trialValid, int cortexValid,
+                                        int cortexHost, int customCupOwned)
+{
+	if (destLevelID == 110)
+		return cortexValid ? cortexHost : -1;
+	if (destLevelID >= 100 && destLevelID < 105)
+		return customCupOwned ? destLevelID : -1;
+	return AP_HitPadDestEligiblePure(destLevelID, trialValid) ? destLevelID : -1;
+}
+
+// The wire destination a cup load draws its frozen field from: a running
+// content-plan cup's own (`contentCupDest`, 200 + name index, -1 when none
+// runs), else the retail Gem Cup's 100 + cupID.
+static inline int AP_HitCupDestinationPure(int cupID, int contentCupDest)
+{
+	return contentCupDest >= 0 ? contentCupDest : 100 + cupID;
 }
 
 // AI seat count for a cup: four in the retail Purple cup (cupID 4), seven

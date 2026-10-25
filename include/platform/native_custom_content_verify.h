@@ -51,6 +51,14 @@ struct CustomContentMeasurements
 	unsigned long crystals;
 	unsigned long startLines;
 	unsigned long finishLines;
+	/* #133 PR 4c: quad blocks, and trigger quads whose terrain byte carries
+	   the super turbo pad step flag (COLL_STEP_TRIGGER_SUPER_TURBO_PAD). */
+	unsigned long quadBlocks;
+	unsigned long superTurboPads;
+	/* #133 PR 4e: weapon crates (PU_RANDOM_CRATE instances), also counted in
+	   ordinaryCrates. A named custom track's Item Box checks take their seats
+	   from them. */
+	unsigned long weaponCrates;
 };
 
 struct CustomContentVerification

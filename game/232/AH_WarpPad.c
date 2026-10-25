@@ -8,6 +8,8 @@
 // Content-plan manual rule text (#463), defined beside the other requirement
 // display helpers below; the pad status line near the top of ThTick uses it.
 static const char *AP_ContentRuleName(const ctr_content_pad *pad);
+// The second-stage rule's item text (#133 PR 3), beside the manual rule's.
+static const char *AP_ContentStage2Name(const ctr_content_pad *pad);
 
 // Pre-warp kart/camera snapshot. Captured the frame a warp begins and restored
 // when an AP menu is cancelled, so the player is left exactly where they were
@@ -78,6 +80,45 @@ static struct RectMenu apCustomRaceMenu = {
 	.state = 0x100803, .rows = apCustomRaceRows,
 	.funcPtr = AH_WarpPad_CustomRaceMenuProc, .drawStyle = 4
 };
+
+// Content-plan mode selector (#133 PR 3). One row per mode of the pad's
+// entry, in the pad's mode order; a mode whose gate is not met is a grey row
+// that cannot be chosen (its requirement is shown under the pad name). Rows
+// are rebuilt on every entry from ap_content_selector_build, which asks the
+// same gate the race-start check (AP_ContentPreparePad) asks.
+static int apContentModeChoice = -2;
+static int apContentRowMode[AP_CONTENT_MODE_COUNT];
+static struct MenuRow apContentModeRows[AP_CONTENT_MODE_COUNT + 1];
+static void AH_WarpPad_ContentModeMenuProc(struct RectMenu *menu)
+{
+	int row = menu->rowSelected;
+	apContentModeChoice = (row < 0 || row >= AP_CONTENT_MODE_COUNT) ? -1 : apContentRowMode[row];
+	RECTMENU_Hide(menu);
+}
+static struct RectMenu apContentModeMenu = {
+	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
+	.posX_curr = 0x100, .posY_curr = 0x6c,
+	.state = 0x100803, .rows = apContentModeRows,
+	.funcPtr = AH_WarpPad_ContentModeMenuProc, .drawStyle = 4
+};
+static void AH_WarpPad_ContentModeRows(const ap_content_selector *sel)
+{
+	static const s16 strings[AP_CONTENT_MODE_COUNT] = {LNG_TROPHY_RACE, LNG_CTR_CHALLENGE_TITLE, LNG_RELIC_RACE};
+	int i;
+	for (i = 0; i < sel->count; i++)
+	{
+		apContentModeRows[i].stringIndex = (s16)(strings[sel->mode[i]] | (sel->open[i] ? 0 : 0x8000));
+		apContentModeRows[i].rowOnPressUp = (char)(i ? i - 1 : 0);
+		apContentModeRows[i].rowOnPressDown = (char)(i + 1 < sel->count ? i + 1 : i);
+		apContentModeRows[i].rowOnPressLeft = (char)i;
+		apContentModeRows[i].rowOnPressRight = (char)i;
+		apContentRowMode[i] = sel->mode[i];
+	}
+	apContentModeRows[i].stringIndex = -1;
+	apContentModeRows[i].rowOnPressUp = apContentModeRows[i].rowOnPressDown = 0;
+	apContentModeRows[i].rowOnPressLeft = apContentModeRows[i].rowOnPressRight = 0;
+	apContentModeMenu.rowSelected = (s16)(sel->cursor < 0 ? 0 : sel->cursor);
+}
 #endif
 
 #ifdef CTR_AP
@@ -627,23 +668,67 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					const char *physicalName = levelID < AH_WP_ADV_CUP ?
 						sdata->lngStrings[data.metaDataLEV[levelID].name_LNG] :
 						sdata->lngStrings[data.AdvCups[levelID - AH_WP_ADV_CUP].lngIndex_CupName];
+					// The first mode opens with the pad (#133 PR 3); its label
+					// leads the line. A Crystal Challenge keeps its one gate.
+					const char *firstMode = pad && pad->occupied && pad->cup ? "Cup" :
+						pad && pad->occupied && !pad->crystal ? ap_content_mode_label(pad->modes[0]) : "Trophy";
+					int firstDone = 1, k;
+					// A cup (#133 PR 5) is done when its Win, sweep and Cup Leg
+					// Victory checks are.
+					if (pad && pad->occupied && pad->cup)
+					{
+						int64_t cupCodes[6];
+						int cupSlots[6], cupN = ap_content_cup_codes(pad, cupCodes, cupSlots);
+						for (k = 0; k < cupN; k++)
+							if (!AP_ContentCodeChecked(cupCodes[k])) firstDone = 0;
+					}
+					for (k = 0; pad && pad->occupied && !pad->cup && k < (pad->crystal ? 1 : pad->mode_count); k++)
+						if (pad->crystal ? !AP_ContentCodeChecked(pad->trophy_location)
+						                 : (pad->stages[k] == 1 &&
+						                    ap_content_mode_pending(pad, pad->modes[k], AP_ContentCodeChecked)))
+							firstDone = 0;
 					if (pad && pad->occupied && pad->has_rule)
-						snprintf(line, sizeof line, "%s pad | Trophy: %d Keys + %d %s (have %d) | %s", physicalName, pad->keys,
+						snprintf(line, sizeof line, "%s pad | %s: %d Keys + %d %s (have %d) | %s", physicalName, firstMode, pad->keys,
 						         pad->rule_count, AP_ContentRuleName(pad), AP_ContentPadRuleOwned(pad),
 #ifdef CTR_CUSTOM_TRACKS
 						         !AP_ContentPadReady(levelID) ? "Install content in Options" :
 #endif
-						         ap_net_location_checked((long)pad->trophy_location) ? "Complete (replay)" : "Incomplete");
+						         firstDone ? "Complete (replay)" : "Incomplete");
 					else if (pad && pad->occupied)
-						snprintf(line, sizeof line, "%s pad | Trophy: %d Keys | %s", physicalName, pad->keys,
+						snprintf(line, sizeof line, "%s pad | %s: %d Keys | %s", physicalName, firstMode, pad->keys,
 #ifdef CTR_CUSTOM_TRACKS
 						         !AP_ContentPadReady(levelID) ? "Install content in Options" :
 #endif
-						         ap_net_location_checked((long)pad->trophy_location) ? "Complete (replay)" : "Incomplete");
+						         firstDone ? "Complete (replay)" : "Incomplete");
 					else snprintf(line, sizeof line, "%s pad", physicalName);
 					DecalFont_DrawLine(line, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
 					                   FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+					// Second-stage modes: their shared requirement while it is
+					// missing, else whether they still hold checks. Above the
+					// pad name; a racer-locked pad's racer line (#133 PR 4b)
+					// moves up one line to make room (apLockLift below).
+					if (pad && pad->occupied && pad->has_stage2)
+					{
+						char later[48], stage2[160];
+						int left = 0, n = 0;
+						later[0] = '\0';
+						for (k = 1; k < pad->mode_count; k++)
+						{
+							n += snprintf(later + n, sizeof later - n, "%s%s", k > 1 ? ", " : "",
+							              ap_content_mode_label(pad->modes[k]));
+							left += ap_content_mode_pending(pad, pad->modes[k], AP_ContentCodeChecked);
+						}
+						if (!AP_ContentModeOpen(pad, pad->modes[1]))
+							snprintf(stage2, sizeof stage2, "%s: locked, needs %d %s (have %d)", later,
+							         pad->stage2_count, AP_ContentStage2Name(pad), AP_ContentStage2Owned(pad));
+						else
+							snprintf(stage2, sizeof stage2, "%s: open | %s", later,
+							         left ? "Incomplete" : "Complete (replay)");
+						DecalFont_DrawLine(stage2, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+						                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 45,
+						                   FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+					}
 				}
 
 				// A trophy-complete pad can deliberately stay raceable while this
@@ -682,6 +767,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					int apLockPhys = ctr_cfg_warp_phys(levelID);
 					int apLockRacer = ctr_cfg_racer_lock(apLockPhys);
+					// A content-plan pad with second-stage modes draws their line
+					// at h-45 (above), so its racer line and portrait sit 15
+					// pixels higher (#133 PR 4b). Normal rooms are unchanged.
+					short apLockLift = 0;
+					if (ap_content_plan_active())
+					{
+						const ctr_content_pad *apLockPad = ap_content_plan_pad(levelID);
+						if (apLockPad && apLockPad->occupied && apLockPad->has_stage2)
+							apLockLift = 15;
+					}
 
 					if (apLockRacer >= 0)
 					{
@@ -696,7 +791,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 82);
+						                     + gGT->pushBuffer[0].rect.h - 82 - apLockLift);
 
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
@@ -719,7 +814,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
 						                   (short)(gGT->pushBuffer[0].rect.y
-						                           + gGT->pushBuffer[0].rect.h - 45),
+						                           + gGT->pushBuffer[0].rect.h - 45 - apLockLift),
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}
@@ -1060,15 +1155,38 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
-		int host;
+		int host, mode = AP_CONTENT_MODE_TROPHY;
 		if (!pad || !pad->occupied || !AP_ContentPadReady(physLevelID) ||
 		    !AP_ContentPadOpen(pad)) goto WarpPad_AnimateOpen;
 		if (!warppadObj->boolEnteredWarppad) AH_WarpPad_WarpCapture(gGT);
 		warppadObj->boolEnteredWarppad = 1;
-		warppadObj->framesWarping++;
+		if (warppadObj->framesWarping < 0x400) warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 		if (warppadObj->framesWarping < 61) goto WarpPad_AnimateOpen;
-		host = AP_ContentPreparePad(physLevelID);
+		if (!pad->crystal && pad->mode_count > 1)
+		{
+			// Several modes: the player chooses. Open modes are selectable;
+			// a mode behind its second-stage gate is a grey row.
+			if (warppadObj->framesWarping == 61)
+			{
+				ap_content_selector sel;
+				AP_ContentSelectorBuild(pad, &sel);
+				AH_WarpPad_ContentModeRows(&sel);
+				apContentModeChoice = -2;
+				RECTMENU_Show(&apContentModeMenu);
+			}
+			if (apContentModeChoice == -2)
+				goto WarpPad_TrophyAnimateOnly;
+			mode = apContentModeChoice;
+			apContentModeChoice = -2;
+			// Cancel: release the kart and do not grab it again until it
+			// leaves the pad, so the menu does not reopen at once.
+			if (mode < 0)
+				goto WarpPad_RefuseEntry;
+		}
+		else if (!pad->crystal)
+			mode = pad->modes[0];
+		host = AP_ContentPreparePad(physLevelID, mode);
 		if (host < 0)
 		{
 			warppadObj->boolEnteredWarppad = 0; warppadObj->framesWarping = 0;
@@ -1088,7 +1206,36 @@ void AH_WarpPad_ThTick(struct Thread *t)
             sdata->Loading.OnBegin.RemBitsConfig0 &= ~CRYSTAL_CHALLENGE;
             gGT->originalEventTime=pad->time_limit_ticks;
         }
+		else if (mode == AP_CONTENT_MODE_CTR)
+		{
+			gGT->gameMode2 |= TOKEN_RACE;
+			sdata->Loading.OnBegin.AddBitsConfig8 |= TOKEN_RACE;
+			sdata->Loading.OnBegin.RemBitsConfig8 &= ~TOKEN_RACE;
+		}
+		else if (mode == AP_CONTENT_MODE_RELIC)
+		{
+			gGT->gameMode1 |= RELIC_RACE;
+			sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
+			sdata->Loading.OnBegin.RemBitsConfig0 &= ~RELIC_RACE;
+		}
 		gGT->numLaps = (char)pad->laps;
+		// A content-plan cup (#133 PR 5) runs on the Adventure Cup machinery:
+		// engine cup 0 (never the Purple Cup's boss field), its legs and laps
+		// from the plan through the cup race context, its Win paid on points
+		// (UI_CupStandings.c, AP_ContentCupFinish).
+		if (pad->cup)
+		{
+			sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
+			sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
+			gGT->cup.cupID = 0;
+			gGT->cup.trackIndex = 0;
+			for (i = 0; i < 8; i++)
+				gGT->cup.points[i] = 0;
+			AP_HitCupSnapshotBegin(gGT->cup.cupID);
+			AP_CupEnterFromHub(gGT->levelID);
+			AP_ContentCupEnter();
+			gGT->numLaps = (char)pad->legs[0].laps;
+		}
 		levelID = host;
 		goto WarpPad_RequestLoad;
 	}
@@ -1162,7 +1309,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// Snapshot the kart the frame this warp begins, so the entry
 		// fail-safe below can put it back like the other pad classes.
 		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
+		{
 			AH_WarpPad_WarpCapture(gGT);
+			AP_HitChooserWarpStart(&apHitChooser); // #133 PR 5c, as on a trial pad
+		}
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1188,6 +1338,95 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		cvTokenLeft = AP_PadTokenSideLeft(cvTokenLeft,
 		                                  AP_PadUncollectedLetterCount(levelID),
 		                                  AP_PadUncollectedWumpaCount(levelID));
+		// Hit Character (#133 PR 5c): the field is drawn on host 13 like a
+		// retail race, so a Hit opportunity takes the same chooser as a trial
+		// or retail pad: Trophy, CTR and Relic rows while a token or relic is
+		// left, else a plain re-race. A Relic Race seats no AI, so routing a
+		// Hit-only player into it would leave the Hit unearnable.
+		{
+			int apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
+			int apHitRoute = 0;
+			int apHitAction = AP_HitChooserFrame(
+			    &apHitChooser, apHitOpp, cvTokenLeft, cvRelicLeft,
+			    (int)gGT->gameMode1, (int)gGT->gameMode2,
+			    sdata->Loading.OnBegin.AddBitsConfig0,
+			    sdata->Loading.OnBegin.RemBitsConfig0,
+			    sdata->Loading.OnBegin.AddBitsConfig8,
+			    sdata->Loading.OnBegin.RemBitsConfig8,
+			    sdata->boolOpenTokenRelicMenu, &apHitRoute);
+			AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
+			                 cvTokenLeft, cvRelicLeft);
+			if (apHitAction == AP_HIT_CHOOSER_OPEN)
+			{
+				AH_WarpPad_HitRaceRows(cvTokenLeft, cvRelicLeft);
+				apHitRaceMenu.rowSelected = 0;
+				RECTMENU_Show(&apHitRaceMenu);
+				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
+				goto WarpPad_TrophyAnimateOnly;
+			}
+			if (apHitAction == AP_HIT_CHOOSER_WAIT)
+				goto WarpPad_TrophyAnimateOnly;
+			if (apHitAction == AP_HIT_CHOOSER_PLAIN)
+			{
+				// A tier that cleared while the menu was open lands here: close it
+				// before the load (#133 PR 5c review).
+				RECTMENU_Hide(&apHitRaceMenu);
+				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
+				sdata->boolOpenTokenRelicMenu = 0;
+				warppadObj->boolEnteredWarppad = 0;
+				goto WarpPad_RequestLoad;
+			}
+			if (apHitAction == AP_HIT_CHOOSER_VANISH)
+			{
+				RECTMENU_Hide(&apHitRaceMenu);
+				// fall through to the normal tier-2 routing
+			}
+			else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
+			{
+				AP_HitChooserRestoreBitsPure(
+				    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+				    apHitChooser.savedGm1, apHitChooser.savedGm2,
+				    apHitChooser.savedAdd0, apHitChooser.savedRem0,
+				    apHitChooser.savedAdd8, apHitChooser.savedRem8,
+				    &gGT->gameMode1, &gGT->gameMode2,
+				    &sdata->Loading.OnBegin.AddBitsConfig0,
+				    &sdata->Loading.OnBegin.RemBitsConfig0,
+				    &sdata->Loading.OnBegin.AddBitsConfig8,
+				    &sdata->Loading.OnBegin.RemBitsConfig8);
+				sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
+				warppadObj->boolEnteredWarppad = 0;
+				warppadObj->framesWarping = 0;
+				AH_WarpPad_WarpRestore(gGT);
+				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+				// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+				// so the released kart is not grabbed again next frame (#133 PR 5c review).
+				apEntryRefusedDest = warppadObj->levelID;
+				goto WarpPad_AnimateOpen;
+			}
+			else if (apHitAction == AP_HIT_CHOOSER_APPLY)
+			{
+				unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
+				RECTMENU_Hide(&D232.menuTokenRelic);
+				AP_HitChooserApplyPure(apHitRoute,
+				                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
+				                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
+				                       sdata->Loading.OnBegin.AddBitsConfig0,
+				                       sdata->Loading.OnBegin.RemBitsConfig0,
+				                       sdata->Loading.OnBegin.AddBitsConfig8,
+				                       sdata->Loading.OnBegin.RemBitsConfig8,
+				                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
+				gGT->gameMode1 = (int)apGm1;
+				gGT->gameMode2 = (int)apGm2;
+				sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
+				sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
+				sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
+				sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
+				sdata->boolOpenTokenRelicMenu = 0;
+				warppadObj->boolEnteredWarppad = 0;
+				goto WarpPad_RequestLoad;
+			}
+			// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
+		}
 		cvRoute = AP_PadTier2RouteDecide(cvTokenLeft, cvRelicLeft, 0);
 		AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + cvRoute);
 		if (cvRoute == AP_PAD_TIER2_TOKEN)
@@ -1473,6 +1712,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 				if (apHitAction == AP_HIT_CHOOSER_PLAIN)
 				{
+					// A tier that cleared while the menu was open lands here: close it
+					// before the load (#133 PR 5c review).
+					RECTMENU_Hide(&apHitRaceMenu);
 					AP_PadLogRoute(physLevelID, levelID,
 					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
 					goto WarpPad_RequestLoad;
@@ -1501,6 +1743,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					warppadObj->framesWarping = 0;
 					AH_WarpPad_WarpRestore(gGT);
 					gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+					// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+					// so the released kart is not grabbed again next frame (#133 PR 5c review).
+					apEntryRefusedDest = warppadObj->levelID;
 					goto WarpPad_AnimateOpen;
 				}
 				else if (apHitAction == AP_HIT_CHOOSER_APPLY)
@@ -1757,6 +2002,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					}
 					if (apHitAction == AP_HIT_CHOOSER_PLAIN)
 					{
+						// A tier that cleared while the menu was open lands here: close it
+						// before the load (#133 PR 5c review).
+						RECTMENU_Hide(&apHitRaceMenu);
 						// Only the Hit opportunity is left: plain adventure rerace.
 						AP_PadLogRoute(physLevelID, levelID,
 						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
@@ -1787,6 +2035,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						warppadObj->framesWarping = 0;
 						AH_WarpPad_WarpRestore(gGT);
 						gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+						// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
+						// so the released kart is not grabbed again next frame (#133 PR 5c review).
+						apEntryRefusedDest = warppadObj->levelID;
 						goto WarpPad_AnimateOpen;
 					}
 					else if (apHitAction == AP_HIT_CHOOSER_APPLY)
@@ -2631,27 +2882,33 @@ static void AP_ContentRuleToReq(const ctr_content_pad *pad, ctr_req *r)
 }
 
 // Name of the item(s) a content-plan rule asks for, for the pad's status line.
-static const char *AP_ContentRuleName(const ctr_content_pad *pad)
+// Name of a pad rule's item set: one counted item, or an Any family when the
+// mask holds several items of one family (the content-plan `sum` record).
+static const char *AP_ContentMaskName(unsigned mask)
 {
 	static const char *const names[15] = {
 		"Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic",
 		"Red CTR Token", "Green CTR Token", "Blue CTR Token", "Yellow CTR Token", "Purple CTR Token",
 		"Red Gem", "Green Gem", "Blue Gem", "Yellow Gem", "Purple Gem", "Key"};
-	ctr_req r;
-	AP_ContentRuleToReq(pad, &r);
-	switch (r.type)
-	{
-	case 6: return "Any CTR Token";
-	case 7: return "Any Relic";
-	case 8: return "Any Gem";
-	default: break;
-	}
-	{
-		int i;
-		for (i = 0; i < 15; i++)
-			if (pad->rule_mask & (1u << i)) return names[i];
-	}
-	return "Item";
+	int i, first = -1, bits = 0;
+	for (i = 0; i < 15; i++)
+		if (mask & (1u << i))
+		{
+			bits++;
+			if (first < 0) first = i;
+		}
+	if (first < 0) return "Item";
+	if (bits > 1)
+		return first <= 3 ? "Any Relic" : first <= 8 ? "Any CTR Token" : "Any Gem";
+	return names[first];
+}
+static const char *AP_ContentRuleName(const ctr_content_pad *pad)
+{
+	return AP_ContentMaskName(pad->rule_mask);
+}
+static const char *AP_ContentStage2Name(const ctr_content_pad *pad)
+{
+	return AP_ContentMaskName(pad->stage2_mask);
 }
 
 // AP stage-2 re-lock advert for NON-trophy-track physical pads (trial / arena /

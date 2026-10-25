@@ -53,8 +53,72 @@ CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TRAP_ITEM_INDEX_MAX);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
 static unsigned char ap_verify_custom_letter_foreign[AP_CUSTOM_LETTER_VERIFY_COUNT] = {0};
+// Foreign receipts of item codes outside that dense index (#133 PR 8): a
+// content plan's custom-track letter items. Bounded; a code that no longer
+// fits sets the overflow flag, and the content-plan verdict is then withheld
+// rather than computed from a partial tally. Rebuilt on every connect.
+#define AP_VERIFY_SPARSE_FOREIGN_MAX 256
+static long long ap_verify_sparse_foreign_code[AP_VERIFY_SPARSE_FOREIGN_MAX];
+static int ap_verify_sparse_foreign_count[AP_VERIFY_SPARSE_FOREIGN_MAX];
+static int ap_verify_sparse_foreign_n = 0;
+static int ap_verify_sparse_foreign_overflow = 0;
+static void ap_verify_sparse_foreign_add(long long code)
+{
+	int k;
+	for (k = 0; k < ap_verify_sparse_foreign_n; k++)
+		if (ap_verify_sparse_foreign_code[k] == code)
+		{
+			ap_verify_sparse_foreign_count[k]++;
+			return;
+		}
+	if (ap_verify_sparse_foreign_n >= AP_VERIFY_SPARSE_FOREIGN_MAX)
+	{
+		ap_verify_sparse_foreign_overflow = 1;
+		return;
+	}
+	ap_verify_sparse_foreign_code[ap_verify_sparse_foreign_n] = code;
+	ap_verify_sparse_foreign_count[ap_verify_sparse_foreign_n++] = 1;
+}
 static unsigned char ap_letter_received[CTR_CFG_LETTER_TRACK_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
 static unsigned char ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][CTR_CFG_LETTER_COUNT] = {{0}};
+// Received named-block letter items (#133 PR 3b), one bit per block and
+// letter, for content-plan CTR Challenges on named tracks. Rebuilt by the
+// authoritative replay after the connect reset, like the tables above.
+static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8] = {0};
+static int AP_NamedLetterBit(int64_t code)
+{
+	if (!ap_named_item_is_letter(code)) return -1;
+	return (int)((code - AP_NAMED_ITEM_BASE) / AP_NAMED_ITEM_BUDGET) * 3 +
+	       (int)((code - AP_NAMED_ITEM_BASE) % AP_NAMED_ITEM_BUDGET);
+}
+static void AP_NamedLetterReceive(int64_t code)
+{
+	const int bit = AP_NamedLetterBit(code);
+	if (bit >= 0) ap_named_letter_received[bit / 8] |= (unsigned char)(1u << (bit % 8));
+}
+static int AP_NamedLetterReceived(int64_t code)
+{
+	const int bit = AP_NamedLetterBit(code);
+	return bit >= 0 && (ap_named_letter_received[bit / 8] & (1u << (bit % 8))) != 0;
+}
+// Whether a letter item a content plan pools was received (#133 PR 3b):
+// retail letters by item index, generic custom slots by slot, named blocks by
+// block, Cortex Vortex's own three items (#133 PR 3c). 0 for no item.
+static int AP_ContentLetterItemReceived(int64_t code)
+{
+	int level, letter, slot;
+	if (code <= 0)
+		return 0;
+	if (code >= AP_ITEM_BASE && code < AP_ITEM_BASE + 0x10000 &&
+	    (letter = AP_CortexLetterItemIndexPure(code - AP_ITEM_BASE)) >= 0)
+		return ap_cortex_letter_received[letter];
+	if (code >= AP_ITEM_BASE && code < AP_ITEM_BASE + 0x10000 &&
+	    AP_LetterItemIndexToIdentityPure((int)(code - AP_ITEM_BASE), &level, &letter))
+		return level >= 0 && level < CTR_CFG_LETTER_TRACK_COUNT && ap_letter_received[level][letter];
+	if (AP_CustomLetterItemToIdentityPure(code, &slot, &letter))
+		return ap_custom_letter_received[slot - 1][letter];
+	return AP_NamedLetterReceived(code);
+}
 
 // ── One-shot effect replay dedup (traps + Wumpa; #299 room-scoped) ──
 // The server resends the FULL ReceivedItems list on every (re)connect. Gate

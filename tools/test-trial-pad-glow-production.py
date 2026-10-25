@@ -1,6 +1,7 @@
 """Issue #343: compile the actual pad glow gather and prize-slot grouping.
 
-Also the 2026-09-30 display enumeration (boxes, letters, Wumpa on every pad).
+Also the 2026-09-30 display enumeration (boxes, letters, Wumpa on every pad),
+and a content-plan pad's Item Box checks (#133 PR 4e).
 
 Slide Coliseum / Turbo Track pads used to enumerate only relic tiers and
 podium rungs, so their Trophy and CTR Challenge items never appeared.
@@ -17,6 +18,7 @@ def extract(signature):
 fixture=r'''
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #define CTR_AP 1
 #include "ap_seedcfg.h"
 #include "ap_glow_slots_logic.h"
@@ -24,8 +26,10 @@ fixture=r'''
 #include "ap_relic_perfect.h"
 #include "ap_pad_glow_items.h"
 #include "ap_content_plan.h"
-int ap_content_plan_active(void){return 0;}
-const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
+#include "ap_content_modes.h"
+static int planOn;static ctr_content_pad cpad;
+int ap_content_plan_active(void){return planOn;}
+const ctr_content_pad *ap_content_plan_pad(int p){return planOn&&p==cpad.physical?&cpad:NULL;}
 static long crystalChecked;
 int ap_net_location_checked(long c){return c==crystalChecked;}
 int ap_net_location_exists(long c){return (c>=35028400 && c<35028480)||(c>=35028300 && c<35028305);}
@@ -222,10 +226,41 @@ int main(void){
   assert(AP_PadUncollectedGlowBits(18,bits,24)==0);
   ctr_crystal_checks.state=0;assert(AP_PadUncollectedGlowBits(21,bits,24)==0);
  }
+ /* #133 PR 4e: a content-plan pad lists its Item Box checks on the race
+    slot, by its own codes; the legacy appends (which key on a retail LevelID
+    the physical pad is not) and the retail box count stay out. */
+ {
+  int bits[AP_PAD_DISPLAY_BITS_MAX],n,i,slots3[3],phase,boxes=0;
+  planOn=1;memset(&cpad,0,sizeof cpad);nChecked=0;
+  cpad.physical=3;cpad.occupied=1;cpad.mode_count=1;cpad.modes[0]=AP_CONTENT_MODE_TROPHY;cpad.stages[0]=1;
+  cpad.trophy_location=35014990; /* an unchecked Trophy code */
+  cpad.box_count=8;for(i=0;i<8;i++)cpad.box_locations[i]=35201620+i;
+  ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_PER_TRACK;
+  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(n==1+8&&bits[0]==AP_CONTENT_BIT_TROPHY+3);
+  for(i=1;i<n;i++){int ph,sl;assert(ap_content_box_bit_decode(bits[i],&ph,&sl)&&ph==3&&sl==i-1);
+   assert(AP_GlowBitRewardGroup(bits[i])==0);boxes++;}
+  assert(boxes==8);
+  assert(AP_PadUncollectedDisplayBits(3,bits,AP_PAD_DISPLAY_BITS_MAX)==n); /* no retail boxes, letters or Wumpa of LevelID 3 */
+  for(phase=0;phase<16;phase++){AP_GlowSlots_Select(bits,n,phase,1,AP_GlowBitRewardGroup,slots3);
+   assert(slots3[1]<0&&slots3[2]<0&&slots3[0]>=0);}
+  assert(AP_PadUncollectedBoxCount(3)==8);
+  /* the glow reads ap_net_location_checked, the count AP_PadBoxChecked */
+  checked[nChecked++]=35201621;crystalChecked=35201621;
+  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);assert(n==1+7);
+  for(i=0;i<n;i++)assert(bits[i]!=AP_CONTENT_BIT_BOX+3*AP_CONTENT_BOX_STRIDE+1);
+  crystalChecked=0;
+  assert(AP_PadUncollectedBoxCount(3)==7);
+  assert(AP_PadUncollectedGlowBits(3,bits,4)==4);
+  assert(AP_PadUncollectedBoxCount(4)==0); /* a pad the plan does not know */
+  cpad.box_count=0;assert(AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX)==1&&AP_PadUncollectedBoxCount(3)==0);
+  planOn=0;nChecked=0;ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_GLOBAL;
+ }
  puts("Trial pad glow production gather passed");
 }
 '''
-signatures=['int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)','int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)','static int AP_GlowBitRewardGroup(int globalBit)']
+signatures=['static int AP_PadTrackBoxesLeft(int levelID)','int AP_PadUncollectedBoxCount(int destLevelID)',
+ 'int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)','int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)','static int AP_GlowBitRewardGroup(int globalBit)']
 with tempfile.TemporaryDirectory() as tmp:
  src=Path(tmp)/'fixture.c';exe=Path(tmp)/'fixture'
  src.write_text(fixture+'\n'.join(extract(s) for s in signatures)+tests)

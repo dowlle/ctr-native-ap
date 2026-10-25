@@ -34,6 +34,7 @@ prod = extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossRetailRulesLevel(int levelID)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
+prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
 prod += extract(unit, 'struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)\n{')
 
 # The retail rows, read from the data table so the stub cannot drift.

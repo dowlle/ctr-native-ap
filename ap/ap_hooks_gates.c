@@ -67,6 +67,21 @@ int AP_VerifyForeignItemCount(int itemIndex)
 	return ap_verify_recv_foreign[itemIndex];
 }
 
+// The same FOREIGN tally by raw item code, for the content-plan verifier
+// (#133 PR 8): the dense index above, else the sparse table. -1 when the
+// sparse table overflowed, so the caller can withhold its verdict.
+int AP_VerifyForeignItemCodeCount(long long code)
+{
+	long long idx = code - AP_ITEM_BASE;
+	int k;
+	if (idx >= 0 && idx < AP_VERIFY_ITEM_INDEX_COUNT)
+		return ap_verify_recv_foreign[idx];
+	for (k = 0; k < ap_verify_sparse_foreign_n; k++)
+		if (ap_verify_sparse_foreign_code[k] == code)
+			return ap_verify_sparse_foreign_count[k];
+	return ap_verify_sparse_foreign_overflow ? -1 : 0;
+}
+
 int AP_GateCountTokenColour(int colour)
 {
 	if (colour < 0 || colour > 4)
@@ -352,12 +367,37 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts)
 
 int AP_ContentPadOpen(const ctr_content_pad *pad)
 {
-	return ap_content_pad_open(pad, ap_recv_count);
+	// Racer lock (#133 PR 4b): ANDed onto the pad's own gates, never in place
+	// of them, like ctr_cfg_warp_unlocked on a normal room. Every content-plan
+	// consumer (pad state, glow, capture, the load gate, the pad text) asks
+	// this, so a locked pad reads closed until its racer is received.
+	return ap_content_pad_open(pad, ap_recv_count) &&
+	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
 }
 
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
 {
 	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;
+}
+
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode)
+{
+	return ap_content_mode_open(pad, mode, ap_recv_count);
+}
+
+int AP_ContentStage2Owned(const ctr_content_pad *pad)
+{
+	return pad && pad->has_stage2 ? ap_content_stage2_owned(pad, ap_recv_count) : 0;
+}
+
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out)
+{
+	return ap_content_selector_build(pad, ap_recv_count, AP_ContentCodeChecked, out);
+}
+
+int AP_ContentTrackPadState(const ctr_content_pad *pad)
+{
+	return ap_content_track_pad_state(pad, ap_recv_count, AP_ContentCodeChecked);
 }
 
 int AP_BossReqMet(const ctr_req *r)
@@ -379,7 +419,10 @@ int AP_BossReqMet(const ctr_req *r)
 // is never routed through this function.
 int AP_BossGarageOpen(int bossIdx)
 {
-	if (ap_content_plan_active()) return 0; // First profile has five empty garages.
+	// A content plan's garages are empty unless the plan has its `bosses`
+	// record (#133 PR 6); with it the parser filled boss_req and the venues
+	// like a normal room's, so the normal path below decides.
+	if (ap_content_plan_active() && !ap_content_plan_bosses()->present) return 0;
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
 	// #169: a seed whose boss_encounters record this build refused keeps the
@@ -420,6 +463,18 @@ int AP_BossGarageVenue(int bossIdx)
 		return -1;
 	if (!ctr_cfg_active())
 		return AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel;
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom venue (#133 PR 6b) races only once its verified bytes are
+	// armed for this garage; otherwise the garage stays shut.
+	if (ctr_boss_encounters.custom[bossIdx] && !CustomTrack_GarageVenueReady(bossIdx))
+		return -1;
+	// A boss cup races only once every leg's files are ready (#133 PR 6b).
+	if (AP_ContentGarageCupReady(bossIdx) == 0)
+		return -1;
+#else
+	if (ctr_boss_encounters.custom[bossIdx])
+		return -1;
+#endif
 	return AP_BossEncounterVenue(&ctr_boss_encounters, bossIdx);
 }
 
@@ -430,8 +485,17 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
 {
 	int venue;
 
-	if (out == 0 || cap <= 0 || !ctr_cfg_active() ||
-	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// #133 PR 6b: a garage holding a boss cup says so.
+	if (bossIdx >= 0 && bossIdx < 4 && ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + bossIdx))
+	{
+		snprintf(out, (size_t)cap, "Boss cup: four races, won on points");
+		return 1;
+	}
+#endif
+	if (ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
 		return 0;
 	venue = AP_BossGarageVenue(bossIdx);
 	if (!AP_BossVenueTrackKnown(venue))
@@ -446,6 +510,20 @@ static int AP_BossShuffledGarageNow(void)
 
 	if (gGT == NULL || !ctr_cfg_active())
 		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	// A boss cup leg (#133 PR 6b) carries the garage's attack too; only a
+	// retail leg on the garage's own home track keeps the exact retail path.
+	{
+		int g = AP_ContentGarageCupRunning();
+		if (g >= 0 && (gGT->gameMode1 & ADVENTURE_BOSS) && gGT->bossID == g)
+		{
+			const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+			if (race && race->retail && gGT->levelID == AP_BOSS_VENUE_GARAGE[g].homeLevel)
+				return -1;
+			return g;
+		}
+	}
+#endif
 	return AP_BossEncounterShuffledGarage(&ctr_boss_encounters,
 	                                      (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
 	                                      (gGT->gameMode1 & ADVENTURE_CUP) != 0,
@@ -466,6 +544,17 @@ int AP_BossRetailRulesLevel(int levelID)
 // same object identity retail keeps. The home track never takes this path.
 static struct MetaDataBOSS s_apBossVenueAttack[8];
 
+// The restart point count the running venue of garage `g` was certified on:
+// a boss cup leg's (#133 PR 6b), a custom venue's, or the retail table's.
+static int AP_BossVenueCertifiedNow(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_ContentGarageCupRunning() == g)
+		return AP_ContentGarageCupLegPoints();
+#endif
+	return AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, sdata->gGT->levelID);
+}
+
 struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -478,17 +567,18 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 	if (!fill)
 		return s_apBossVenueAttack;
 	venuePoints = gGT->level1->cnt_restart_points;
-	// The certification saw the retail LEV's restart point count. A loaded
-	// track with a different graph (modified disc) is refused loudly: the
-	// boss keeps its timers but throws nothing rather than indexing a
-	// checkpoint the certification never saw.
-	if (venuePoints != AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID] ||
+	// The certification saw the retail LEV's restart point count, or a custom
+	// venue's measured one (#133 PR 6b). A loaded track with a different graph
+	// (modified disc or files) is refused loudly: the boss keeps its timers
+	// but throws nothing rather than indexing a checkpoint the certification
+	// never saw.
+	if (venuePoints != AP_BossVenueCertifiedNow(g) ||
 	    !AP_BossVenueScheduleFits(g, venuePoints))
 	{
 		char msg[160];
 		snprintf(msg, sizeof msg,
 		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
-		         (int)gGT->levelID, venuePoints, AP_BOSS_VENUE_RESTART_POINTS[gGT->levelID]);
+		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
 		AP_AppendLog(msg);
 		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
 		s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
@@ -555,6 +645,13 @@ static AP_OxideGarageInputs AP_OxideInputs(void)
 	in.bossesWon = AP_ComposedBossesWon();
 	in.goalGems = ctr_cfg.goal_gems;
 	in.gemsHeld = AP_GateCountGemSum();
+	// A content plan's Gem arm counts its distinct base Gem colours (#133 PR 6).
+	if (ap_content_plan_active())
+	{
+		int gems[5], i;
+		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
+		in.gemsHeld = ap_content_plan_gems_held(gems);
+	}
 	in.firstOptional = ctr_cfg.oxide_1_optional;
 	return in;
 }
@@ -788,6 +885,16 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	// #169: a refused boss_encounters record is why the door is shut.
 	if (AP_BossGarageVenue(bossIdx) < 0)
 	{
+		// #133 PR 6b: a custom venue whose files are missing or changed.
+		if ((ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+#ifdef CTR_CUSTOM_TRACKS
+		    || AP_ContentGarageCupReady(bossIdx) == 0
+#endif
+		    )
+		{
+			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
+			return 1;
+		}
 		snprintf(out, (size_t)cap, "Boss track refused: %s",
 		         ctr_boss_encounters.reason[0] ? ctr_boss_encounters.reason : "update the client");
 		return 1;

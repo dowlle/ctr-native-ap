@@ -100,7 +100,13 @@ void AA_EndEvent_DrawMenu(void)
 	b32 didWin = (driver->driverRank == 0);
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
 #ifdef CTR_AP
-	if (ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2)
+	if (ctr_cfg_active() && (ctr_cfg.lettersanity_mode >= 2
+#ifdef CTR_CUSTOM_TRACKS
+	                         // A content-plan CTR Challenge reads its own
+	                         // Lettersanity letters (#133 PR 3b).
+	                         || AP_StandaloneRaceActive()
+#endif
+	                         ))
 		didEarnCtrToken = AP_LetterTokenEarned(
 			gGT->levelID, didWin, driver->PickupLetterHUD.numCollected);
 #endif
@@ -125,6 +131,12 @@ void AA_EndEvent_DrawMenu(void)
 			// never Oxide Station's token bit for LevelID 13.
 			if (AP_CortexTrackActive())
 				rewardBit = AP_CortexTrackBit(AP_CV_SLOT_TOKEN);
+#ifdef CTR_CUSTOM_TRACKS
+			// A content-plan CTR Challenge celebrates its pad's own check
+			// (#133 PR 3), never the engine host's token bit.
+			else if (AP_StandaloneCtrBit() >= 0)
+				rewardBit = AP_StandaloneCtrBit();
+#endif
 #endif
 			letterPos.x = hudCTR->x;
 			letterPos.y = hudCTR->y;
@@ -136,6 +148,10 @@ void AA_EndEvent_DrawMenu(void)
 #ifdef CTR_AP
 			    (AP_CortexTrackActive()
 			         ? !AP_CortexTrackChecked(AP_CV_SLOT_TOKEN)
+#ifdef CTR_CUSTOM_TRACKS
+			         : AP_StandaloneCtrBit() >= 0
+			         ? !AP_LocationCheckedByBit(rewardBit)
+#endif
 			         : AP_TrialTrackConfigured(gGT->levelID)
 			         ? !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_CTR)
 			         : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))

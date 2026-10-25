@@ -432,6 +432,10 @@ typedef struct
 #define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
 #define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
 #define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
+// Content-plan cups (#133 PR 5b): one order per cup name index 0..26, in the
+// block's optional `content_cups`; their draw destinations are 200..226.
+#define CTR_CFG_HIT_CONTENT_CUP_COUNT  27
+#define CTR_CFG_HIT_CONTENT_CUP_DEST   200
 #define CTR_CFG_HIT_BOSS_COUNT         6  // canonical boss-win codes, see below
 #define CTR_CFG_HIT_TRIGGER_COUNT      8  // guest engine ids 8..15
 #define CTR_CFG_HIT_TRIGGER_MAX        8  // max win codes in one any_of list
@@ -475,6 +479,10 @@ typedef struct
 	long         locations[CTR_CFG_HIT_CHARACTER_COUNT]; // engine id -> AP code
 	ctr_hit_order tracks[CTR_CFG_HIT_TRACK_COUNT];
 	ctr_hit_order cups[CTR_CFG_HIT_CUP_COUNT];
+	// Content-plan cups (#133 PR 5b): content_cup_present[i] is 1 when the
+	// block carries an order for cup name index i (content plans only).
+	int          content_cup_present[CTR_CFG_HIT_CONTENT_CUP_COUNT];
+	ctr_hit_order content_cups[CTR_CFG_HIT_CONTENT_CUP_COUNT];
 	ctr_hit_trigger triggers[CTR_CFG_HIT_TRIGGER_COUNT]; // index guest - 8
 	int          boss_identity[CTR_CFG_HIT_BOSS_COUNT]; // canonical key order
 } ctr_hit_encounters;

@@ -21,6 +21,10 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	// rung" in support bundles. A positive configured code can also disagree with
 	// the server's checked+missing location set; log that before preserving the
 	// existing send attempt so this patch changes evidence only, never behavior.
+	// A content-plan pad without this rung (#133 PR 3b): the seed's rung set
+	// leaves it out, which is not worth a diagnostic line.
+	if (code < 0 && track >= AP_CONTENT_PODIUM_LOGICAL_BASE)
+		return;
 	if (code < 0)
 	{
 		// Once per (track, rung, phase) per connect: the per-tick trophy
@@ -95,12 +99,18 @@ static void AP_SendPodiumChecks(int track, int placement)
 	// backstop and the connect-time reconnect reconciliation.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_PODIUM))
 		return;
-	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+	if (!ctr_cfg_active() || (!ctr_cfg.podium_enabled && !ap_content_plan_active()))
 		return;
 	if (placement < 1)
 		return; // -1 = placement unknown -> nothing to fan out
 
 	const ctr_podium_rungs *pr = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+	ctr_podium_rungs content;
+	if (ap_content_plan_active())
+		pr = AP_ContentPodiumRungs(track, &content) ? &content : NULL; // #133 PR 3b
+	else
+#endif
 	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
@@ -132,12 +142,18 @@ static void AP_SendPodiumChecks(int track, int placement)
 // final-position checks owned by AP_SendPodiumChecks. Dedup is automatic.
 static void AP_SendHeldChecks(int track, int position)
 {
-	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+	if (!ctr_cfg_active() || (!ctr_cfg.podium_enabled && !ap_content_plan_active()))
 		return;
 	if (position < 1)
 		return;
 
 	const ctr_podium_rungs *pr = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+	ctr_podium_rungs content;
+	if (ap_content_plan_active())
+		pr = AP_ContentPodiumRungs(track, &content) ? &content : NULL; // #133 PR 3b
+	else
+#endif
 	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
@@ -168,6 +184,24 @@ static void AP_SendHeldChecks(int track, int position)
 // races won in a prior session and finishes whose live capture was lost.
 static void AP_ReconcilePodiumFromTrophies(void)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	// Content plans (#133 PR 3b): a checked Trophy Race of a pad with rungs
+	// was won, so all its rungs are earned. The legacy rows below are empty.
+	if (ap_content_plan_active())
+	{
+		int id;
+		for (id = 0; id <= 110; id++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(id);
+			ctr_podium_rungs rungs;
+			if (pad && pad->occupied && !pad->crystal && pad->trophy_location > 0 &&
+			    AP_ContentPodiumRungs(AP_CONTENT_PODIUM_LOGICAL_BASE + id, &rungs) &&
+			    ap_net_location_checked((long)pad->trophy_location))
+				AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
+		}
+		return;
+	}
+#endif
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
 	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)

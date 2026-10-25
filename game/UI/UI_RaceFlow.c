@@ -389,6 +389,10 @@ void UI_RaceEnd_ExitToMap(void)
 		if (apCupReturn >= 0)
 			cupReturn = (s16)apCupReturn;
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		// A boss cup (#133 PR 6b) returns to its garage like a boss race.
+		AP_ContentGarageCupReturn(gGT, AP_ContentGarageCupRunning());
+#endif
 		MainRaceTrack_RequestLoad(cupReturn);
 		return;
 	}
@@ -399,6 +403,18 @@ void UI_RaceEnd_ExitToMap(void)
 		sdata->Loading.OnBegin.AddBitsConfig8 |= SPAWN_AT_BOSS;
 	}
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A standalone content-plan race returns to the hub it was entered from,
+	// as the pause menu's exit does (MainFreeze.c), even after a restart.
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		if (race)
+		{
+			MainRaceTrack_RequestLoad((s16)race->returnHub);
+			return;
+		}
+	}
+#endif
 	MainRaceTrack_RequestLoad(gGT->prevLEV);
 }
 

@@ -70,7 +70,7 @@ void ap_net_send_location(long long c) { (void)c; }
 for signature in (
     "static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)",
     "int AP_ContentPadReady(int physicalPad)",
-    "int AP_ContentPreparePad(int physicalPad)",
+    "int AP_ContentPreparePad(int physicalPad, int mode)",
     "static void AP_CustomContentPreflightSeed(int autoFinalize)",
 ):
     fixture += function(signature)
@@ -87,13 +87,13 @@ int exercise(const char *assets, int network) {
  for(int physical=0;physical<=104;physical++) {
   const ctr_content_pad *p=ap_content_plan_pad(physical);
   if(!p) continue;
-  if(!p->occupied) { assert(AP_ContentPreparePad(physical)==-1); empty++; continue; }
+  if(!p->occupied) { assert(AP_ContentPreparePad(physical,0)==-1); empty++; continue; }
   const ctr_content_pad saved=*p;
-  if(p->keys) { keys=p->keys-1; assert(AP_ContentPreparePad(physical)==-1); }
+  if(p->keys) { keys=p->keys-1; assert(AP_ContentPreparePad(physical,p->crystal?0:p->modes[0])==-1); }
   keys=4;
-  int host=AP_ContentPreparePad(physical);
+  int host=AP_ContentPreparePad(physical,p->crystal?0:p->modes[0]);
   assert(host==(p->retail_id<0?6:p->retail_id));
-  assert(AP_ContentPreparePad(physical)==-1); /* pending load cannot be replaced */
+  assert(AP_ContentPreparePad(physical,p->crystal?0:p->modes[0])==-1); /* pending load cannot be replaced */
   CustomTrack_OnRaceLoadRequested(host); game.levelID=host;
   const struct CustomTrackRaceContext *race=CustomTrack_StandaloneContext(host);
   assert(race && race->physicalPad==physical && race->returnHub==p->hub);

@@ -46,11 +46,13 @@ fixture = r'''
 #include "ap_seedcfg.h"
 #include "ap_pad_state.h"
 #include "ap_content_plan.h"
+#include "ap_content_modes.h"
 #define AP_IDX_KEY 14
 int ap_content_plan_active(void){return 0;}
 const ctr_content_pad *ap_content_plan_pad(int p){(void)p;return NULL;}
 int AP_GateCount(int i){(void)i;return 0;}
 int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 0;}
+int AP_ContentTrackPadState(const ctr_content_pad *p){(void)p;return 0;}
 #define ADV_REWARD_FIRST_TROPHY 0
 #define AP_CORTEX_DEST 110
 enum { AP_CV_SLOT_TROPHY = 0, AP_CV_SLOT_LETTER0 = 5 };
@@ -201,7 +203,8 @@ assert 'AP_TrialChallengeServable(levelID)' in trial
 assert 'AP_PadUncollectedLetterCount(levelID)' in trial
 assert 'AP_TrialLetters_Prepare()' not in trial
 assert 'AP_PadLogRoute(levelID, levelID' not in trial
-assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 5
+# Five route fail-safes plus the content-plan mode menu's cancel (#133 PR 3).
+assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 6
 battle = warp[warp.index('// Battle Tracks'):warp.index('gGT->originalEventTime = D232.timeCrystalChallenge')]
 assert 'if (ctr_cfg_arena_pad_disabled(levelID))' in battle
 assert battle.index('goto WarpPad_RefuseEntry;') < battle.index('AddBitsConfig0 |= CRYSTAL_CHALLENGE;')

@@ -128,6 +128,11 @@ typedef struct
 	int state;
 	signed char track[AP_BOSS_VENUE_GARAGES];
 	char reason[96]; // first refusal, for the log and the garage panel
+	// #133 PR 6b: a content-plan garage racing custom bytes (a custom package
+	// or Cortex Vortex) served on its home LevelID. track[g] is then the home
+	// level, custom[g] 1 and points[g] the certified restart point count.
+	unsigned char custom[AP_BOSS_VENUE_GARAGES];
+	short points[AP_BOSS_VENUE_GARAGES];
 } AP_BossEncounters;
 
 // One garage row's fields, already type-checked by the JSON reader.
@@ -183,6 +188,15 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 	return 0;
 }
 
+// The restart point count garage `g`'s venue was certified on: a custom
+// venue's stated (and load-measured) count, else the retail table's.
+static inline int AP_BossEncounterCertifiedPoints(const AP_BossEncounters *e, int g, int level)
+{
+	if (e != 0 && g >= 0 && g < AP_BOSS_VENUE_GARAGES && e->custom[g])
+		return e->points[g];
+	return AP_BossVenueTrackKnown(level) ? AP_BOSS_VENUE_RESTART_POINTS[level] : -1;
+}
+
 // The LevelID garage `g` loads, or -1 when the seed's record is refused.
 static inline int AP_BossEncounterVenue(const AP_BossEncounters *e, int g)
 {
@@ -206,7 +220,11 @@ static inline int AP_BossEncounterShuffledGarage(const AP_BossEncounters *e, int
 		return -1;
 	if (bossID < 0 || bossID >= AP_BOSS_VENUE_GARAGES)
 		return -1;
-	if (e->track[bossID] != level || level == AP_BOSS_VENUE_GARAGE[bossID].homeLevel)
+	if (e->track[bossID] != level)
+		return -1;
+	// Custom bytes on the home LevelID (#133 PR 6b) need the adapter too:
+	// the geometry is not the home track's.
+	if (level == AP_BOSS_VENUE_GARAGE[bossID].homeLevel && !e->custom[bossID])
 		return -1;
 	return bossID;
 }

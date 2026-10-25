@@ -19,6 +19,8 @@ tools/test-box-ghost-visual.py
 tools/test-box-map.c
 tools/test-box-number.c
 tools/test-box-offset.c
+tools/test-box-seat.c
+tools/test-box-seat-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
@@ -27,6 +29,7 @@ tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
 tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
+tools/test-current-seed-page-production.py
 tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
@@ -74,6 +77,8 @@ tools/test-hit-bots-gather.c
 tools/test-hit-boss-identity.cpp
 tools/test-hit-chooser.c
 tools/test-hit-cup-snapshot.cpp
+tools/test-hit-content-cups.cpp
+tools/test-hit-legacy-custom-production.py
 tools/test-hit-encounter-production.cpp
 tools/test-hit-policy.c
 tools/test-hit-roster-fixture.cpp
@@ -140,6 +145,9 @@ tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-saphi-catalogue.cpp
+tools/test-seed-content.c
+tools/test-seed-content-download-production.py
+tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
@@ -152,8 +160,21 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
+tools/test-content-verify.cpp
+tools/test-content-cup-latch.c
 tools/test-content-capability.c
 tools/test-content-hooks-admission.py
+tools/test-content-modes.c
+tools/test-content-relic-result.py
+tools/test-content-custom-scores.c
+tools/test-content-track-checks.c
+tools/test-content-track-checks-production.py
+tools/test-content-cortex-perfect-production.py
+tools/test-content-win-stakes-production.py
+tools/test-content-racer-lock-production.py
+tools/test-content-global-checks-production.cpp
+tools/test-content-bosses-production.py
+tools/test-boss-garages-6b-production.py
 tools/test-reserve-top-up-production.py
 tools/test-trial-letters.c
 tools/test-trial-pad-glow.c

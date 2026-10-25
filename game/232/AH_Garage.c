@@ -503,6 +503,36 @@ LAB_800aede8:
 		// slipped past it, and never substitutes the retail venue.
 		if (hubID >= 1 && hubID <= 4)
 		{
+#ifdef CTR_CUSTOM_TRACKS
+			// #133 PR 6b: a content-plan garage holding a boss cup runs it on
+			// the Adventure Cup machinery (engine cup 0) with boss mode kept:
+			// four legs against the garage's boss, his AI and attack on each,
+			// won on points (UI_CupStandings.c, AP_ContentCupFinish).
+			int cupLevel = AP_ContentGarageCupPrepare(hubID - 1);
+			if (cupLevel == -1)
+			{
+				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
+				gGT->pushBuffer_UI.fade_step = 0x2AA;
+				return;
+			}
+			if (cupLevel >= 0)
+			{
+				int i;
+				const ctr_content_pad *cupPad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + hubID - 1);
+				sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
+				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
+				gGT->cup.cupID = 0;
+				gGT->cup.trackIndex = 0;
+				for (i = 0; i < 8; i++)
+					gGT->cup.points[i] = 0;
+				AP_CupEnterFromHub(gGT->levelID);
+				AP_ContentCupEnter();
+				gGT->numLaps = (char)cupPad->legs[0].laps;
+				RaceFlag_SetDrawOrder(1);
+				MainRaceTrack_RequestLoad(cupLevel);
+				return;
+			}
+#endif
 			int venue = AP_BossGarageVenue(hubID - 1);
 			if (venue < 0)
 			{
