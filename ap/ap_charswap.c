@@ -1112,6 +1112,7 @@ static void ap_cs_close(struct GameTracker *gGT)
 }
 
 static int ap_cs_editorAvailable(void); // defined with the panel rows below
+static void ap_cs_revalidateRow(void);  // likewise
 
 static void ap_cs_devKeys(struct GameTracker *gGT)
 {
@@ -1145,6 +1146,7 @@ static void ap_cs_devKeys(struct GameTracker *gGT)
 			ap_cs_devProgMode = (ap_cs_devProgMode + 1) % 3;
 			if (!ap_cs_editorAvailable())
 				ap_cs_editFocus = 0; // ruled precedence: no free editor over progressive
+			ap_cs_revalidateRow();
 			ap_cs_reapplyLive(gGT);
 		}
 		else
@@ -1152,6 +1154,7 @@ static void ap_cs_devKeys(struct GameTracker *gGT)
 			ap_cs_devEditMode = (ap_cs_devEditMode + 1) % 3;
 			if (!ap_cs_editorAvailable())
 				ap_cs_editFocus = 0;
+			ap_cs_revalidateRow();
 			ap_cs_reapplyLive(gGT);
 		}
 	}
@@ -1167,14 +1170,14 @@ typedef char ap_cs_panelRowsAreChains
          : -1];
 
 // Is panel row `row` a Progressive rank selector for this racer? The boost row
-// whenever Progressive Boost is live; a bar row whenever Progressive Stats owns
-// the stats. Ruling 2026-09-11 (Boost added 2026-10-26): any rank from the
-// bottom of the chain up to what the received items unlock.
+// whenever Progressive Boost is live; a bar row whenever the Progressive Stats
+// pack is live -- keyed on the same pack test the physics uses, so the selector
+// exists exactly where AP_CapabilityStats writes ranks. Ruling 2026-09-11
+// (Boost added 2026-10-26): any rank from the bottom of the chain up to what
+// the received items unlock.
 static int ap_cs_rowIsSelector(int row, int characterID)
 {
 	if (!ctr_cfg_active() || row < 0 || row >= AP_SS_PANEL_ROWS)
-		return 0;
-	if (row != AP_SS_PANEL_BOOST && ap_cs_progMode == AP_CS_MODE_OFF)
 		return 0;
 	return AP_CapabilityCeilingForCharacter(row, characterID) >= 0;
 }
@@ -1190,8 +1193,13 @@ static unsigned ap_cs_panelRowsAvailable(int characterID)
 
 	for (row = 0; row < AP_SS_PANEL_ROWS; row++)
 	{
+		// A selector row is only worth focusing once there is something below
+		// the ceiling to pick: with no copies received it cannot move.
 		if (ap_cs_rowIsSelector(row, characterID))
-			mask |= 1u << row;
+		{
+			if (AP_CapabilityCeilingForCharacter(row, characterID) > 0)
+				mask |= 1u << row;
+		}
 		else if (row != AP_SS_PANEL_BOOST && ap_cs_progMode == AP_CS_MODE_OFF &&
 		         ap_cs_editMode != AP_CS_MODE_OFF)
 			mask |= 1u << row;
@@ -1202,6 +1210,15 @@ static unsigned ap_cs_panelRowsAvailable(int characterID)
 static int ap_cs_editorAvailable(void)
 {
 	return ap_cs_panelRowsAvailable(ap_cs_tiles[ap_cs_cursor].characterID) != 0;
+}
+
+// Keep the focused row on one that is still available after a mode change.
+static void ap_cs_revalidateRow(void)
+{
+	int row = AP_StatSel_ValidRow(ap_cs_panelRow,
+	                              ap_cs_panelRowsAvailable(ap_cs_tiles[ap_cs_cursor].characterID));
+	if (row >= 0)
+		ap_cs_panelRow = row;
 }
 
 static void ap_cs_adjust(struct GameTracker *gGT, int dir)
