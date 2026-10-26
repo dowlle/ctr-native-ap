@@ -192,6 +192,18 @@ static void AP_NetTick(struct GameTracker *gGT)
 			ap_net_editstats_subscribe();
 		}
 
+		// Progressive rank selection (ruling 2026-09-11, Boost 2026-10-26):
+		// reset unconditionally for the same reason as the stat package above,
+		// then fetch this slot's stored choice when a capability pack is live.
+		// Not gated on the character phase: Progressive Boost can be live on a
+		// seed without it, and the picker still opens there (browse mode).
+		AP_CapabilitySelectConnectReset();
+		if (ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_PER_CHARACTER)
+			ap_net_statselect_subscribe();
+
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
 		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
 		// the slot-connected handler that ran inside ap_net_poll() above, so

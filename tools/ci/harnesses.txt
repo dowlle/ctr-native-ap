@@ -152,6 +152,7 @@ tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
+tools/test-stat-select.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
 tools/test-title-ring.c

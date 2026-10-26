@@ -1200,7 +1200,7 @@ static void AP_TrapClampWeakenedFire(struct Driver *local)
 	if (local == 0 || !g_active[AP_TRAP_WEAKENED_KART] || local->reserves == 0)
 		return;
 
-	tier = AP_TrapWeakenBoostTier(AP_CapabilityBoostTier());
+	tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier()); // what the kart drives
 	if (tier <= AP_CAP_BOOST_NONE)
 		cap = 0;
 	else if (tier == AP_CAP_BOOST_BOOST)
