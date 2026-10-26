@@ -223,6 +223,19 @@ void ap_net_editstats_set(const int *values, int n);
 int  ap_net_editstats_known(int *out, int n);
 unsigned ap_net_editstats_revision(void);
 
+// ── Progressive rank selection sync (ruling 2026-09-11, Boost 2026-10-26) ──
+// AP_NET_STATSELECT_COUNT ints under "ctr_statselect_<slot>": the player's
+// chosen rank per capability chain, shared row then 16 roster rows (layout and
+// meaning owned by ap_capability.c / ap_stat_select_logic.h). Each value is -1
+// (follow the received ceiling) or an explicit rank 0..4. Same per-slot home and
+// the same untrusted-input rule as the editable package: exact length, integral,
+// every value in range, or the whole package is ignored.
+#define AP_NET_STATSELECT_COUNT 68
+void ap_net_statselect_subscribe(void);
+void ap_net_statselect_set(const int *values, int n);
+int  ap_net_statselect_known(int *out, int n);
+unsigned ap_net_statselect_revision(void);
+
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
 // deaths to this client. Called by the game side after slot_data is parsed, only

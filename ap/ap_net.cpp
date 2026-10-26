@@ -27,6 +27,7 @@
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
+#include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
@@ -67,6 +68,7 @@ static void ap_fx_store_clear()
 }
 
 #include <deque>
+#include <vector>
 #include <algorithm>
 #include <cctype>
 #include <list>
@@ -373,6 +375,75 @@ static bool ap_edit_accept(const nlohmann::json &v)
 		g_edit_value[i] = (int)staged[i];
 	g_edit_known = true;
 	g_edit_rev++;
+	return true;
+}
+
+// Progressive rank selection (ruling 2026-09-11, Boost 2026-10-26). Same
+// per-slot data-storage path and the same wholesale-reject rule as the editable
+// package; the value range is the selector's own (ap_stat_select_logic.h).
+static int         g_statsel_value[AP_NET_STATSELECT_COUNT];
+static bool        g_statsel_known = false;
+static unsigned    g_statsel_rev = 0;
+
+static std::string ap_statsel_key()
+{
+	return "ctr_statselect_" + g_slot;
+}
+
+// Our own writes still on their way back. SetNotify echoes every Set to its
+// writer too, and with fast presses an older echo can land after a newer local
+// write; applying it would roll the selection back and eat a press. The server
+// answers in order, so an echo that matches the oldest write in flight is ours
+// and is dropped; anything else is a foreign change and wins.
+static std::deque<std::vector<int>> g_statsel_inflight;
+
+static bool ap_statsel_parse(const nlohmann::json &v, std::vector<int> &out)
+{
+	if (!v.is_array() || v.size() != (size_t)AP_NET_STATSELECT_COUNT)
+		return false;
+	out.clear();
+	for (const auto &e : v)
+	{
+		long long n = 0;
+		if (!e.is_number_integer() || !ap_json_int64(e, &n) || !AP_StatSel_ValueOk(n))
+			return false;
+		out.push_back((int)n);
+	}
+	return true;
+}
+
+static void ap_statsel_store(const std::vector<int> &staged)
+{
+	for (int i = 0; i < AP_NET_STATSELECT_COUNT; i++)
+		g_statsel_value[i] = staged[i];
+	g_statsel_known = true;
+	g_statsel_rev++;
+}
+
+// A Get reply: authoritative, applied whole or not at all.
+static bool ap_statsel_accept(const nlohmann::json &v)
+{
+	std::vector<int> staged;
+	if (!ap_statsel_parse(v, staged))
+		return false;
+	g_statsel_inflight.clear();
+	ap_statsel_store(staged);
+	return true;
+}
+
+// A SetNotify update: our own echo is dropped, a foreign change is applied.
+static bool ap_statsel_notify(const nlohmann::json &v)
+{
+	std::vector<int> staged;
+	if (!ap_statsel_parse(v, staged))
+		return false;
+	if (!g_statsel_inflight.empty() && g_statsel_inflight.front() == staged)
+	{
+		g_statsel_inflight.pop_front();
+		return false;
+	}
+	g_statsel_inflight.clear();
+	ap_statsel_store(staged);
 	return true;
 }
 
@@ -1129,6 +1200,10 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		if (es != keys.end() && ap_edit_accept(es->second))
 			std::fprintf(stderr, "[AP NET] editable stat package retrieved (%d values)\n",
 			             AP_EDITSTAT_COUNT);
+		auto ss = keys.find(ap_statsel_key());
+		if (ss != keys.end() && ap_statsel_accept(ss->second))
+			std::fprintf(stderr, "[AP NET] rank selection retrieved (%d values)\n",
+			             AP_NET_STATSELECT_COUNT);
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
 	                               const nlohmann::json &) {
@@ -1191,6 +1266,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		}
 		if (key == ap_edit_key() && ap_edit_accept(value))
 			std::fprintf(stderr, "[AP NET] editable stat package changed\n");
+		if (key == ap_statsel_key() && ap_statsel_notify(value))
+			std::fprintf(stderr, "[AP NET] rank selection changed\n");
 	});
 	g_ap->set_items_received_handler([](const std::list<APClient::NetworkItem> &items) {
 		if (g_rejected)
@@ -1360,6 +1437,8 @@ static void ap_net_apply_retry_stop(void)
 	g_diff_known = false;
 	g_char_known = false;
 	g_edit_known = false;
+	g_statsel_known = false;
+	g_statsel_inflight.clear();
 	g_status = AP_NET_STATUS_RETRY_STOPPED; // set last: delete may fire handlers
 	g_last_error.clear();
 	g_retry.start(false); // fresh budget waits inertly until the next manual dial
@@ -1404,6 +1483,8 @@ static void ap_net_apply_seed_reject(void)
 	g_diff_known = false;
 	g_char_known = false;
 	g_edit_known = false;
+	g_statsel_known = false;
+	g_statsel_inflight.clear();
 	g_doors.disconnected();
 	ap_fx_store_clear();
 	g_doors_sent = 0;
@@ -2040,6 +2121,72 @@ extern "C" unsigned ap_net_editstats_revision(void)
 	return g_edit_rev;
 }
 
+extern "C" void ap_net_statselect_subscribe(void)
+{
+	if (!g_ap || !g_connected)
+		return;
+	AP_NET_GUARD("statselect_subscribe", {
+		const std::string key = ap_statsel_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_statselect_set(const int *values, int n)
+{
+	if (!g_ap || !g_connected)
+	{
+		// Not stored: the next connect restores the server's copy. Said in the
+		// log so a lost change is visible rather than silent.
+		std::fprintf(stderr, "[AP NET] rank selection changed while not connected; "
+		                     "it is not saved to the server\n");
+		return;
+	}
+	if (values == 0 || n != AP_NET_STATSELECT_COUNT)
+		return;
+	// Never store what we would refuse to load.
+	for (int i = 0; i < n; i++)
+	{
+		if (!AP_StatSel_ValueOk((long long)values[i]))
+		{
+			std::fprintf(stderr,
+			             "[AP NET] refusing to store an out-of-range rank selection "
+			             "(index %d = %d)\n", i, values[i]);
+			return;
+		}
+	}
+	nlohmann::json arr = nlohmann::json::array();
+	for (int i = 0; i < n; i++)
+		arr.push_back(values[i]);
+	AP_NET_GUARD("statselect_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = arr;
+		g_ap->Set(ap_statsel_key(), arr, false, {op});
+	});
+	g_statsel_inflight.emplace_back(values, values + n);
+	if (g_statsel_inflight.size() > 64)
+		g_statsel_inflight.pop_front(); // a server that never echoes must not grow this forever
+	for (int i = 0; i < n; i++)
+		g_statsel_value[i] = values[i];
+	g_statsel_known = true;
+	// Our own write needs no re-apply, so the revision is not bumped here.
+}
+
+extern "C" int ap_net_statselect_known(int *out, int n)
+{
+	if (!g_statsel_known || out == 0 || n != AP_NET_STATSELECT_COUNT)
+		return 0;
+	for (int i = 0; i < n; i++)
+		out[i] = g_statsel_value[i];
+	return 1;
+}
+
+extern "C" unsigned ap_net_statselect_revision(void)
+{
+	return g_statsel_rev;
+}
+
 extern "C" int ap_net_difficulty_known(int *out)
 {
 	if (!g_diff_known)
@@ -2248,6 +2395,8 @@ extern "C" void ap_net_shutdown(void)
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_char_known = false; // nor may a racer selection leak into another slot
 	g_edit_known = false; // nor an edited stat package
+	g_statsel_known = false; // nor a rank selection
+	g_statsel_inflight.clear();
 	g_status = AP_NET_STATUS_IDLE; // set last: delete g_ap may fire the disconnect handler
 	g_last_error.clear();
 	g_host.clear();     // #146: no host to name once the client is gone
