@@ -36,6 +36,8 @@ static int apCustomRaceChoice, shown, checked, active=1;
 void VehPhysProc_Driving_Init(void) {}
 int ctr_cfg_active(void) { return active; }
 int AP_CustomTrackTrophyChecked(void) { return checked; }
+/* #208 ctr_first seam: classic here, so the cursor rule is unchanged. */
+int AP_RaceStructureCtrFirst(void) { return 0; }
 void RECTMENU_Show(struct Menu *menu) { assert(menu==&apCustomRaceMenu); shown++; }
 '''
 fixture += capture + r'''
