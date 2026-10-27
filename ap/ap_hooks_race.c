@@ -389,6 +389,62 @@ void AP_NotifyRelicPerfect(void)
 	                  facts.levelID, facts.broken, facts.total, code);
 }
 
+// ── Adventure structure ctr_first (#208) ───────────────────────────────────
+int AP_RaceStructureCtrFirst(void)
+{
+	return ctr_cfg_active() && ctr_cfg.adventure_structure == AP_RS_STRUCTURE_CTR_FIRST;
+}
+
+// Under ctr_first a plain Trophy Race win must not send a Trophy Race check
+// that the award pairs give to a CTR Challenge win.
+int AP_RaceStructureSuppressTrophy(long trophyCode)
+{
+	return AP_RaceStructureCtrFirst() &&
+	       AP_RaceStructureTrophyIsStage1Ctr(&ctr_cfg.stage1_awards, trophyCode);
+}
+
+// The same, for a reward bit (retail Trophy bits, Cortex Vortex pseudo-bits).
+int AP_RaceStructureSuppressTrophyBit(int rewardBit)
+{
+	return AP_RaceStructureCtrFirst() &&
+	       AP_RaceStructureSuppressTrophy(AP_LookupLocationCode(rewardBit));
+}
+
+// A qualifying CTR win (first place with the letters) of `ctrCode` also sends
+// its paired Trophy Race check, once: the class emitter drops a code that is
+// already checked, so a re-win after Collect or a reconnect sends only what is
+// still open. The win is a first-place finish, so the podium rungs of
+// `podiumTrack` (-1: none) are earned too, as after a classic Trophy win.
+static void AP_RaceStructureCtrWon(long ctrCode, int podiumTrack, int ledgerBit)
+{
+	long trophy;
+	if (!AP_RaceStructureCtrFirst())
+		return;
+	trophy = AP_RaceStructurePairedTrophy(&ctr_cfg.stage1_awards, ctrCode);
+	if (trophy <= 0)
+		return;
+	AP_EmitClassCheck(trophy, ledgerBit >= 0, ledgerBit, -1, 1,
+	                  "[AP CHECK] ctr_first: CTR Challenge %ld won, Trophy Race location %ld\n",
+	                  ctrCode, trophy);
+	if (podiumTrack >= 0)
+		AP_SendPodiumChecks(podiumTrack, 1);
+	ap_state_gen++;
+}
+
+// Retail track, ctr_first, plain Trophy Race won (game/222.c): no Trophy check,
+// but first place still earns the podium rungs.
+void AP_RaceStructureTrophyRaceWon(int levelID)
+{
+	char msg[128];
+	if (levelID < 0 || levelID >= 16)
+		return;
+	snprintf(msg, sizeof msg,
+	         "[AP CHECK] ctr_first: Trophy Race won on track %d; its Trophy check "
+	         "comes from the CTR Challenge, rungs only\n", levelID);
+	AP_AppendLog(msg);
+	AP_SendPodiumChecks(levelID, 1);
+}
+
 void AP_NotifyTrialTrackRace(int levelID, int challenge)
 {
 	// #286: a forced-loss trial attempt emits no direct trial check or podium rung.
@@ -396,11 +452,21 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge)
 		return;
 
 	long code = AP_TrialTrackLocation(levelID, challenge);
+	int podium = AP_TRIAL_PODIUM_LOGICAL_BASE + levelID - 16;
+	if (challenge == CTR_CFG_TRIAL_TROPHY && AP_RaceStructureSuppressTrophy(code))
+	{
+		// #208 ctr_first: the CTR Challenge earns this Trophy; the win still
+		// earns the rungs.
+		AP_SendPodiumChecks(podium, 1);
+		return;
+	}
 	AP_EmitClassCheck(code, 0, -1, -1, 1,
 	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
 	                  levelID, challenge, code);
 	if (challenge == CTR_CFG_TRIAL_TROPHY && code > 0)
-		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, 1);
+		AP_SendPodiumChecks(podium, 1);
+	if (challenge == CTR_CFG_TRIAL_CTR)
+		AP_RaceStructureCtrWon(code, podium, -1);
 }
 
 // Schema 15: the Cortex Vortex pad track's race result. Called from the win
@@ -424,6 +490,10 @@ void AP_NotifyCortexTrackRace(int token)
 	for (i = 0; i < n; i++)
 	{
 		long code = AP_LookupLocationCode(bits[i]);
+		// #208 ctr_first: a plain Trophy Race win leaves this Trophy to the
+		// CTR Challenge.
+		if (!token && AP_RaceStructureSuppressTrophy(code))
+			continue;
 		AP_EmitClassCheck(code, 1, bits[i], -1, 1,
 		                  "[AP CHECK] Cortex Vortex %s location %ld\n",
 		                  token ? "CTR Token Challenge" : "Trophy Race", code);
@@ -431,6 +501,9 @@ void AP_NotifyCortexTrackRace(int token)
 	// A trophy win is a 1st-place finish: every configured rung is earned.
 	if (!token && AP_CortexTrackCode(AP_CV_SLOT_TROPHY) > 0)
 		AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK, 1);
+	if (token)
+		AP_RaceStructureCtrWon(AP_CortexTrackCode(AP_CV_SLOT_TOKEN), AP_CV_PODIUM_LOGICAL_TRACK,
+		                       AP_CortexPseudoBit(AP_CV_SLOT_TROPHY));
 	ap_state_gen++;
 }
 

@@ -115,6 +115,7 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	for (i = 0; i < 3; i++)
 		f->cortexCodes[1 + i] = AP_CortexTrackCode(AP_CV_SLOT_RELIC0 + i);
 	f->cortexCodes[4] = AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
+	f->ctrFirstAwards = AP_RaceStructureCtrFirst() ? &ctr_cfg.stage1_awards : 0;
 	f->customTrophy = -1;
 	f->customCtr = -1;
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok)

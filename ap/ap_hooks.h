@@ -740,6 +740,14 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge);
 // Pad lifecycle, glow and the trial entry route all key off this.
 int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
+// Adventure structure ctr_first (#208, ap_hooks_race.c). CtrFirst: the seed
+// runs ctr_first with a valid award block. SuppressTrophy: a plain Trophy Race
+// win must not send this Trophy code (a CTR win earns it). TrophyRaceWon: a
+// retail Trophy Race won under ctr_first; sends the podium rungs only.
+int AP_RaceStructureCtrFirst(void);
+int AP_RaceStructureSuppressTrophy(long trophyCode);
+int AP_RaceStructureSuppressTrophyBit(int rewardBit);
+void AP_RaceStructureTrophyRaceWon(int levelID);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
@@ -851,6 +859,14 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
+// #208 race type selector (ap_hooks_pads.c). Rows: fills the rows a race
+// destination offers now and returns 1, or returns 0 when the destination
+// does not use the selector. Replayable: a Done race pad whose entry is still
+// met, which opens the selector instead of staying hard-locked.
+int AP_PadUsesSelector(int destLevelID);
+int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows);
+void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows, int decision);
+int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there a Hit Character opportunity behind this pad (block schema 2, the
 // pool draw)? True for a Hit-supported ordinary destination (0..17, trials only

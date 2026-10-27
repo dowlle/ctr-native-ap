@@ -1,6 +1,8 @@
 #ifndef AP_WIN_LOGIC_H
 #define AP_WIN_LOGIC_H
 
+#include "ap_race_structure_logic.h"
+
 // Race-loss DeathLink stakes (native #449, 0.2.4): the freestanding half.
 //
 // With the race_loss send trigger on, a loss, a lost Gem Cup, or RESTART / EXIT
@@ -626,6 +628,9 @@ typedef struct
 	long cortexCodes[5];          // trophy, sapphire, gold, platinum, CTR (-1 absent)
 	long customTrophy, customCtr; // custom-slot direct codes (-1 absent)
 	long cupSweep; // #246: an independent four-first-place Cup win check
+	// #208 ctr_first award pairs, or 0 (classic): a CTR Challenge win also
+	// wins its paired Trophy Race check, so both are at stake.
+	const ap_rs_awards *ctrFirstAwards;
 } AP_WinRaceFacts;
 
 #define AP_WS_WINSET_MAX 3
@@ -716,12 +721,17 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 	}
 	*mode = f->token ? AP_WS_MODE_CTR : AP_WS_MODE_TROPHY;
 	if (f->cortex)
-		return AP_WinSetPush(out, n, f->token ? f->cortexCodes[4] : f->cortexCodes[0]);
-	if (f->trial)
-		return AP_WinSetPush(out, n, f->token ? f->trialCtr : f->trialTrophy);
-	if (L < 0 || L > 15)
+		n = AP_WinSetPush(out, n, f->token ? f->cortexCodes[4] : f->cortexCodes[0]);
+	else if (f->trial)
+		n = AP_WinSetPush(out, n, f->token ? f->trialCtr : f->trialTrophy);
+	else if (L < 0 || L > 15)
 		return 0;
-	return AP_WinSetPush(out, n, bitCode((f->token ? AP_WS_BIT_CTR_TOKEN : AP_WS_BIT_TROPHY) + L));
+	else
+		n = AP_WinSetPush(out, n, bitCode((f->token ? AP_WS_BIT_CTR_TOKEN : AP_WS_BIT_TROPHY) + L));
+	// #208 ctr_first: the CTR win also sends its paired Trophy Race check.
+	if (f->token && n == 1 && f->ctrFirstAwards)
+		n = AP_WinSetPush(out, n, AP_RaceStructurePairedTrophy(f->ctrFirstAwards, out[0]));
+	return n;
 }
 
 static inline const char *AP_WinModeName(int mode)

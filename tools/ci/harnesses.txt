@@ -228,3 +228,4 @@ tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a 
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
 tools/test-reverse-camera-production.py
+tools/test-race-structure.py
