@@ -215,5 +215,10 @@ require('game/BOTS.c', 'AP_BossLossEasingNow() ? sdata->advProgress.timesLostBos
 # The driving table stays the physical garage's boss-grade row.
 require('game/BOTS.c', 'data.BossDifficulty[gGT->bossID].params1')
 require('ap/ap_tracker.c', 'AP_BossRivalAdvert(ap_tracker.hub - 1, rival')
+# A drawn racer's icon may be missing from the garage boss's pack: the one
+# icon draw without a NULL guard has one now.
+icon = text('game/UI/UI_Icon.c')
+body = icon[icon.index('void UI_DrawDriverIcon('):]
+assert body.index('if (icon == NULL)') < body.index('icon->texLayout'), 'UI_DrawDriverIcon must guard a NULL icon'
 require('ap/ap_seedcfg.cpp', '"boss_opponent_shuffle", "boss_kit_shuffle"')
 print('boss opponent and kit production wiring: ok')
