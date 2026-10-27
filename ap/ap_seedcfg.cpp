@@ -1940,6 +1940,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.color_boxes_by_item = 0;
 	ctr_cfg.reserve_top_up = 0;
 	ctr_cfg.spoiler_items = 0;
+	ctr_cfg.seed_box_locations = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
@@ -1996,6 +1997,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	}
 	else
 		content_result = parse_content_plan(j);
+	// #459: an admitted content plan's envelope says whether it has AP boxes.
+	if (content_result == 2)
+		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
 	if (content_result != 1)
 		return;
 	if (!parse_hit_character(j))
@@ -2115,6 +2119,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.reserve_top_up = json_int(opt, "reserve_top_up", 0) != 0;
 	// Spoiler Items (#459): absent -> 0 -> previews and colours as before.
 	ctr_cfg.spoiler_items = json_int(opt, "spoiler_items", 0) != 0;
+	ctr_cfg.seed_box_locations = json_int(opt, "box_locations", 0) != 0;
 	if (ctr_cfg.spoiler_items)
 		ap_cfg_log("[AP CFG] spoiler_items=1 -> pad previews and AP box colours wait for their reveal items\n");
 	if (ctr_cfg.color_boxes_by_item)

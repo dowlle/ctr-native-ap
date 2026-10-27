@@ -589,6 +589,12 @@ typedef struct
 	// wait for Warp Pad Preview and AP box colours wait for AP Box Colours
 	// (ap_spoiler_items_logic.h). Display only: no gate, location or item.
 	int spoiler_items;
+	// ctr_options.box_locations (always emitted on ordinary rooms, present on a
+	// content-plan envelope exactly with its item_boxes record). Absent is off.
+	// Read only so Spoiler Items knows the seed has AP boxes, and therefore an
+	// AP Box Colours item to wait for; box spawning keeps its server-membership
+	// test.
+	int seed_box_locations;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the

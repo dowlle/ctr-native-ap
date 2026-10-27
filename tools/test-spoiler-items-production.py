@@ -21,7 +21,7 @@ fixture = r'''
 #include <string.h>
 #include "ap_box_colour_logic.h"
 #include "ap_glow_slots_logic.h"
-static struct {int spoiler_items;} ctr_cfg;
+static struct {int spoiler_items, seed_box_locations;} ctr_cfg;
 static int active=1, logs;
 static int ctr_cfg_active(void){return active;}
 static void AP_LogLine(const char *m){(void)m;logs++;}
@@ -65,7 +65,7 @@ static void boxes(void){
 static void receipts(void){
  // Four combinations of each item against its toggle.
  for(int on=0;on<2;on++)for(int preview=0;preview<2;preview++)for(int box=0;box<2;box++){
-  ctr_cfg.spoiler_items=on;active=1;AP_SpoilerItemsReset();
+  ctr_cfg.spoiler_items=on;ctr_cfg.seed_box_locations=1;active=1;AP_SpoilerItemsReset();
   if(preview)AP_SpoilerItemsReceive(AP_WARP_PAD_PREVIEW_ITEM_INDEX);
   if(box)AP_SpoilerItemsReceive(AP_BOX_COLOURS_ITEM_INDEX);
   assert(AP_SpoilerPadPreviewShown()==(!on||preview));
@@ -87,6 +87,11 @@ static void receipts(void){
  assert(!AP_SpoilerPadPreviewShown()&&!AP_SpoilerBoxColoursUnlocked());
  AP_SpoilerItemsReceive(AP_BOX_COLOURS_ITEM_INDEX);AP_SpoilerItemsReceive(AP_WARP_PAD_PREVIEW_ITEM_INDEX);
  assert(AP_SpoilerPadPreviewShown()&&AP_SpoilerBoxColoursUnlocked());
+ // A seed without AP boxes creates no AP Box Colours: nothing to wait for.
+ ctr_cfg.spoiler_items=1;ctr_cfg.seed_box_locations=0;AP_SpoilerItemsReset();
+ assert(AP_SpoilerBoxColoursUnlocked()&&!AP_SpoilerPadPreviewShown());
+ ctr_cfg.seed_box_locations=1;
+ assert(!AP_SpoilerBoxColoursUnlocked());
  // No active seed: nothing is held back.
  AP_SpoilerItemsReset();active=0;
  assert(AP_SpoilerPadPreviewShown()&&AP_SpoilerBoxColoursUnlocked());
@@ -109,7 +114,9 @@ static J legacy(const J &value){
  return j;
 }
 int main(int argc,char **argv){
- ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.spoiler_items==1);
+ ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.spoiler_items==1&&ctr_cfg.seed_box_locations==0);
+ {J b=legacy(true);b["ctr_options"]["box_locations"]=true;ap_seedcfg_parse_json(b);assert(ctr_cfg.seed_box_locations==1);
+  ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.seed_box_locations==0);}
  ap_seedcfg_parse_json(legacy(false));assert(ctr_cfg.spoiler_items==0);
  ap_seedcfg_parse_json(legacy(1));assert(ctr_cfg.spoiler_items==1);
  ap_seedcfg_parse_json(legacy(0));assert(ctr_cfg.spoiler_items==0);
@@ -125,6 +132,7 @@ int main(int argc,char **argv){
  assert(plan["content_plan"]["item_packs"]["warp_pad_preview"]==true && plan["content_plan"]["item_packs"]["ap_box_colours"]==true);
  ap_seedcfg_parse_json(plan);
  assert(ctr_cfg_active()&&ap_content_plan_present()&&ctr_cfg.spoiler_items==1&&ctr_cfg.color_boxes_by_item==1);
+ assert(ctr_cfg.seed_box_locations==1);
  assert(ctr_cfg.reserve_top_up==(plan["ctr_options"]["reserve_top_up"]==true));
  assert(!ap_content_plan_item(35010204)&&!ap_content_plan_item(35010205));
  J p=plan;p["ctr_options"]["spoiler_items"]=false;

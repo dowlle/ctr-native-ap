@@ -39,8 +39,13 @@ int AP_SpoilerPadPreviewShown(void)
 	return AP_Spoiler_PadPreviewShown(AP_SpoilerOn(), ap_spoiler_preview_received);
 }
 
+// AP Box Colours exists only on a seed with coloured AP boxes (box_locations
+// and color_boxes_by_item, the apworld's creation rule). Without AP boxes there
+// is no item to wait for, so nothing is locked; with colours off the row keeps
+// OFF (SEED) because the seed check comes first (AP_BoxColour_RowStateWithItem).
 int AP_SpoilerBoxColoursUnlocked(void)
 {
-	return AP_Spoiler_BoxColoursUnlocked(AP_SpoilerOn(), ap_spoiler_box_colours_received);
+	return AP_Spoiler_BoxColoursUnlocked(AP_SpoilerOn() && ctr_cfg.seed_box_locations,
+	                                     ap_spoiler_box_colours_received);
 }
 #endif
