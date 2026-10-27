@@ -782,7 +782,10 @@ void UI_CupStandings_InputAndDraw(void)
 							       // leaves this win something to send.
 							       ? (!AP_CustomTrackCtrChecked() ||
 							          (AP_RaceStructureCtrFirst() && !AP_CustomTrackTrophyChecked()))
-							       : !AP_CustomTrackTrophyChecked())
+							       // #208 ctr_first: a plain race does not earn
+							       // the custom Trophy, so no prize podium.
+							       : (!AP_CustomTrackTrophyChecked() &&
+							          !AP_CustomTrackTrophyEarnedByCtr()))
 							: !AP_LocationCheckedByBit(bitIndex))
 						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
 #else

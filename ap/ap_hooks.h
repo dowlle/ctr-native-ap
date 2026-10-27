@@ -748,6 +748,7 @@ int AP_RaceStructureCtrFirst(void);
 int AP_RaceStructureSuppressTrophy(long trophyCode);
 int AP_RaceStructureSuppressTrophyBit(int rewardBit);
 void AP_RaceStructureTrophyRaceWon(int levelID);
+int AP_CustomTrackTrophyEarnedByCtr(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks

@@ -1318,7 +1318,7 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 	int admitted[AP_RS_COUNT];
 	int unc[8];
 	int n, k;
-	int trophyChecked, ctrSide = 0, relicSide = 0, plainLeft;
+	int trophyChecked, ctrSide = 0, relicSide = 0, plainLeft, rungsLeft;
 	int structure = ctr_cfg.adventure_structure;
 
 	if (!ctr_cfg_active() || ap_content_plan_active() || !AP_DestIsRace(destLevelID))
@@ -1329,7 +1329,19 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		return 1; // fail closed: no row, the caller releases the kart
 	}
 	trophyChecked = AP_DestTrophyChecked(destLevelID);
-	plainLeft = AP_PadUncollectedBoxCount(destLevelID) +
+	// Open podium rungs: any race with AI earns them, the plain Trophy Race
+	// included, so they keep that row productive (a Collect can check every
+	// race location while a rung stays open).
+	{
+		int glow[24];
+		int g = AP_PadUncollectedGlowBits(destLevelID, glow, (int)(sizeof glow / sizeof glow[0]));
+		rungsLeft = 0;
+		for (k = 0; k < g; k++)
+			if (glow[k] >= AP_PODIUM_PSEUDO_BASE &&
+			    glow[k] < AP_PODIUM_PSEUDO_BASE + AP_PODIUM_LOGICAL_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT)
+				rungsLeft++;
+	}
+	plainLeft = rungsLeft + AP_PadUncollectedBoxCount(destLevelID) +
 	            AP_PadUncollectedWumpaCount(destLevelID) +
 	            AP_HitPadOpportunity(physLevelID, destLevelID) +
 	            AP_ItemsanityPadOpportunity(destLevelID);

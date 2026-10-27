@@ -415,20 +415,30 @@ int AP_RaceStructureSuppressTrophyBit(int rewardBit)
 // already checked, so a re-win after Collect or a reconnect sends only what is
 // still open. The win is a first-place finish, so the podium rungs of
 // `podiumTrack` (-1: none) are earned too, as after a classic Trophy win.
-static void AP_RaceStructureCtrWon(long ctrCode, int podiumTrack, int ledgerBit)
+static int AP_RaceStructureCtrWon(long ctrCode, int podiumTrack, int ledgerBit)
 {
 	long trophy;
+	int sent;
 	if (!AP_RaceStructureCtrFirst())
-		return;
+		return 0;
 	trophy = AP_RaceStructurePairedTrophy(&ctr_cfg.stage1_awards, ctrCode);
 	if (trophy <= 0)
-		return;
-	AP_EmitClassCheck(trophy, ledgerBit >= 0, ledgerBit, -1, 1,
-	                  "[AP CHECK] ctr_first: CTR Challenge %ld won, Trophy Race location %ld\n",
-	                  ctrCode, trophy);
+		return 0;
+	sent = AP_EmitClassCheck(trophy, ledgerBit >= 0, ledgerBit, -1, 1,
+	                         "[AP CHECK] ctr_first: CTR Challenge %ld won, Trophy Race location %ld\n",
+	                         ctrCode, trophy);
 	if (podiumTrack >= 0)
 		AP_SendPodiumChecks(podiumTrack, 1);
 	ap_state_gen++;
+	return sent;
+}
+
+// Legacy custom track (#208 ctr_first): its plain race does not earn its
+// Trophy, so the Cup standings give no prize podium for it.
+int AP_CustomTrackTrophyEarnedByCtr(void)
+{
+	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	       AP_RaceStructureSuppressTrophy(ctr_cfg.custom_track.trophy_location);
 }
 
 // Retail track, ctr_first, plain Trophy Race won (game/222.c): no Trophy check,
@@ -975,14 +985,16 @@ static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 	                  "[AP CHECK] custom track slot=%d CTR challenge location %ld\n",
 	                  ctr_cfg.custom_track.slot, ctr_cfg.custom_ctr_location);
 	// #208 ctr_first: the qualifying CTR win also sends the paired Trophy.
-	AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
-	                       CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1,
-	                       AP_CUSTOM_TROPHY_PSEUDO_BIT);
-	if (sent)
+	// When only the Trophy is new (the CTR check was collected), the
+	// ceremony shows the Trophy.
+	int pairSent = AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
+	                                      CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1,
+	                                      AP_CUSTOM_TROPHY_PSEUDO_BIT);
+	if (sent || pairSent)
 	{
 #ifdef CTR_CUSTOM_TRACKS
-		ap_custom_ceremony_bit = AP_CUSTOM_CTR_PSEUDO_BIT;
-		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
+		ap_custom_ceremony_bit = sent ? AP_CUSTOM_CTR_PSEUDO_BIT : AP_CUSTOM_TROPHY_PSEUDO_BIT;
+		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, 1);
 #endif
 	}
 }
