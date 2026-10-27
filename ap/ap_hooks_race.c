@@ -976,7 +976,8 @@ static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 	                  ctr_cfg.custom_track.slot, ctr_cfg.custom_ctr_location);
 	// #208 ctr_first: the qualifying CTR win also sends the paired Trophy.
 	AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
-	                       CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1, -1);
+	                       CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1,
+	                       AP_CUSTOM_TROPHY_PSEUDO_BIT);
 	if (sent)
 	{
 #ifdef CTR_CUSTOM_TRACKS

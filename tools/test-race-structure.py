@@ -116,15 +116,31 @@ static void winset(void){
  // ctr_first CTR race: CTR and its Trophy.
  f.ctrFirstAwards=&a;n=AP_WinSetResolve(&f,code,out,&mode);
  assert(n==2&&out[1]==code(AP_WS_BIT_TROPHY+3));
- // A Trophy race under ctr_first keeps its own set (classic stakes).
+ // A plain Trophy race under ctr_first cannot earn its paired Trophy: no win check (exempt).
  f.token=0;n=AP_WinSetResolve(&f,code,out,&mode);
- assert(n==1&&out[0]==code(AP_WS_BIT_TROPHY+3)&&mode==AP_WS_MODE_TROPHY);
+ assert(n==0&&mode==AP_WS_MODE_TROPHY);
+ // An unpaired track keeps its Trophy at stake.
+ f.levelID=4;n=AP_WinSetResolve(&f,code,out,&mode);
+ assert(n==1&&out[0]==code(AP_WS_BIT_TROPHY+4));
+ f.levelID=3;
+ // Classic: the Trophy race keeps its Trophy.
+ f.ctrFirstAwards=0;n=AP_WinSetResolve(&f,code,out,&mode);
+ assert(n==1&&out[0]==code(AP_WS_BIT_TROPHY+3));
+ f.ctrFirstAwards=&a;
  // Trial and Cortex Vortex CTR races pair through their direct codes.
  a.count=2;a.ctr[1]=35026004;a.trophy[1]=35026000;
  f.token=1;f.cortex=1;f.cortexCodes[0]=35026000;f.cortexCodes[4]=35026004;
  n=AP_WinSetResolve(&f,code,out,&mode);assert(n==2&&out[0]==35026004&&out[1]==35026000);
  // A track not in the pairs: CTR alone.
  f.cortex=0;f.levelID=4;n=AP_WinSetResolve(&f,code,out,&mode);assert(n==1);
+ // A legacy custom track on a cup pad pairs its direct codes, both ways.
+ a.count=3;a.ctr[2]=35020002;a.trophy[2]=35020001;
+ f.cup=1;f.cupCustom=1;f.customTrophy=35020001;f.customCtr=35020002;
+ f.token=1;n=AP_WinSetResolve(&f,code,out,&mode);
+ assert(n==2&&out[0]==35020002&&out[1]==35020001&&mode==AP_WS_MODE_GEM_CUP);
+ f.token=0;n=AP_WinSetResolve(&f,code,out,&mode);assert(n==0);
+ f.ctrFirstAwards=0;n=AP_WinSetResolve(&f,code,out,&mode);assert(n==1&&out[0]==35020001);
+ f.ctrFirstAwards=&a;f.cup=0;f.cupCustom=0;f.token=1;
  // Relic races never gain a Trophy.
  f.levelID=3;f.relic=1;n=AP_WinSetResolve(&f,code,out,&mode);assert(n==3&&mode==AP_WS_MODE_RELIC);
 }
@@ -208,6 +224,8 @@ result = (root / "game/222.c").read_text()
 trophy_at = result.index("rewardBit = gGT->levelID + ADV_REWARD_FIRST_TROPHY;")
 assert "AP_RaceStructureSuppressTrophyBit(rewardBit)" in result[trophy_at:trophy_at + 2500]
 assert "AP_RaceStructureTrophyRaceWon(gGT->levelID);" in result
+cups = (root / "game/UI/UI_CupStandings.c").read_text()
+assert "(AP_RaceStructureCtrFirst() && !AP_CustomTrackTrophyChecked())" in cups
 race = (root / "ap/ap_hooks_race.c").read_text()
 trial = race[race.index("void AP_NotifyTrialTrackRace("):]
 trial = trial[:trial.index("\n}\n")]

@@ -668,6 +668,18 @@ static inline int AP_WinSetPush(long *out, int n, long code)
 	return n;
 }
 
+// #208 ctr_first, applied to a one-code Trophy or CTR win set: a CTR win also
+// wins its paired Trophy; a plain Trophy race whose Trophy a CTR win earns has
+// no win check at all (exempt, like any race that cannot earn one).
+static inline int AP_WinSetPairCtrFirst(const AP_WinRaceFacts *f, long *out, int n)
+{
+	if (!f->ctrFirstAwards || n != 1)
+		return n;
+	if (f->token)
+		return AP_WinSetPush(out, n, AP_RaceStructurePairedTrophy(f->ctrFirstAwards, out[0]));
+	return AP_RaceStructureTrophyIsStage1Ctr(f->ctrFirstAwards, out[0]) ? 0 : n;
+}
+
 // Fills out[] with the race's win set and returns its size; *mode names the
 // race mode for the log. 0 entries means "no win identified".
 static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int bit),
@@ -699,7 +711,8 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 	{
 		*mode = AP_WS_MODE_GEM_CUP;
 		if (f->cupCustom)
-			return AP_WinSetPush(out, n, f->token ? f->customCtr : f->customTrophy);
+			return AP_WinSetPairCtrFirst(f, out,
+			    AP_WinSetPush(out, n, f->token ? f->customCtr : f->customTrophy));
 		if (f->cupID < 0 || f->cupID > 4)
 			return 0;
 		return AP_WinSetPush(out, AP_WinSetPush(out,n,bitCode(AP_WS_BIT_GEM+f->cupID)),f->cupSweep);
@@ -728,10 +741,7 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 		return 0;
 	else
 		n = AP_WinSetPush(out, n, bitCode((f->token ? AP_WS_BIT_CTR_TOKEN : AP_WS_BIT_TROPHY) + L));
-	// #208 ctr_first: the CTR win also sends its paired Trophy Race check.
-	if (f->token && n == 1 && f->ctrFirstAwards)
-		n = AP_WinSetPush(out, n, AP_RaceStructurePairedTrophy(f->ctrFirstAwards, out[0]));
-	return n;
+	return AP_WinSetPairCtrFirst(f, out, n);
 }
 
 static inline const char *AP_WinModeName(int mode)
