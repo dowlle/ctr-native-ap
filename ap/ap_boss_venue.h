@@ -225,6 +225,7 @@ typedef struct
 	// Version 2 rows (#169 tiers 2 and 3): the block's version, the two
 	// switches, and the row's schedule (scheduleCount -1 = not a valid list).
 	int version;
+	int trackOn;
 	int opponentOn;
 	int kitOn;
 	int scheduleCount;
@@ -269,6 +270,8 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 		return "wrong home track";
 	if (!AP_BossVenueTrackKnown(r->track))
 		return "unknown track";
+	if (v2 && !r->trackOn && r->track != r->homeTrack)
+		return "venue moved without the track switch";
 	if (v2 && r->opponentOn)
 	{
 		if (AP_BossOpponentCharacter(r->opponent) < 0)

@@ -191,6 +191,15 @@ static void refusals()
 	refuse("schedule on inherited row", [](nlohmann::json &j) {
 		j["boss_encounters"]["garages"]["ripper_roo"]["schedule"] = {{0, 3, 3, 0, 15, 0}};
 	}, "mask010");
+	refuse("venue moved with the track switch off", [](nlohmann::json &j) {
+		j["boss_encounters"]["garages"]["ripper_roo"]["track"] = 3;
+	}, "mask011");
+	refuse("location wraps in 32 bits", [](nlohmann::json &j) {
+		j["boss_encounters"]["garages"]["ripper_roo"]["location"] = 35011100LL + 4294967296LL;
+	});
+	refuse("track wraps in 32 bits", [](nlohmann::json &j) {
+		j["boss_encounters"]["garages"]["ripper_roo"]["track"] = 4294967302LL;
+	});
 	refuse("v2 block with only the track switch", [](nlohmann::json &j) {
 		j["ctr_options"]["boss_opponent_shuffle"] = false;
 	}, "mask110");

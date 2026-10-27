@@ -1649,9 +1649,14 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		}
 		AP_BossEncounterRow r;
 		std::memset(&r, 0, sizeof r);
+		// Range-checked before any narrowing: a 32-bit long or int would
+		// otherwise wrap an out-of-range value onto a valid code or LevelID.
 		auto num = [&](const char *k, long long fallback) -> long long {
 			auto f = row->find(k);
-			return (f != row->end() && f->is_number_integer()) ? f->get<long long>() : fallback;
+			if (f == row->end() || !f->is_number_integer())
+				return fallback;
+			long long n = f->get<long long>();
+			return (n < 0 || n > 0x7fffffffLL) ? fallback : n;
 		};
 		auto str = [&](const char *k) -> const char * {
 			auto f = row->find(k);
@@ -1667,6 +1672,7 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		r.attack = str("attack");
 		r.packagesEmpty = pk != row->end() && pk->is_array() && pk->empty();
 		r.version = e->version;
+		r.trackOn = sw[0];
 		r.opponentOn = sw[1];
 		r.kitOn = sw[2];
 		if (v2)
