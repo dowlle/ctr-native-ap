@@ -1,0 +1,15 @@
+{
+ "kits": {},
+ "opponents": {
+  "komodo_joe": "papu_papu",
+  "papu_papu": "ripper_roo",
+  "pinstripe": "fake_crash",
+  "ripper_roo": "crash_bandicoot"
+ },
+ "tracks": {
+  "komodo_joe": 5,
+  "papu_papu": 6,
+  "pinstripe": 8,
+  "ripper_roo": 3
+ }
+}

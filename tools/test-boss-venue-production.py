@@ -31,6 +31,7 @@ def extract(source, signature):
 
 
 prod = extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
+prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossRetailRulesLevel(int levelID)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'

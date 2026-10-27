@@ -504,6 +504,95 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
 	return 1;
 }
 
+// #169 tier 2: "Rival: <name>" for a garage whose seed drew its opponent,
+// open or shut; 0 otherwise.
+int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
+{
+	int c;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+	c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+	if (c < 0 || c >= 16)
+		return 0;
+	snprintf(out, (size_t)cap, "Rival: %s", sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+	return 1;
+}
+
+// #169 tier 3: "Kit: TNT, potion" for a garage with a composed kit; 0
+// otherwise. The families in the order the schedule first uses them.
+int AP_BossKitAdvert(int bossIdx, char *out, int cap)
+{
+	static const char *const names[4] = {"bomb", "missile", "TNT", "potion"};
+	int seen[4] = {0, 0, 0, 0};
+	int i, used;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active() || bossIdx < 0 || bossIdx >= AP_BOSS_VENUE_GARAGES ||
+	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID || !ctr_boss_encounters.composed[bossIdx])
+		return 0;
+	used = snprintf(out, (size_t)cap, "Kit:");
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS && used < cap; i++)
+	{
+		int w = ctr_boss_encounters.schedule[bossIdx][i].weapon;
+		int f = w == 0x01 ? 0 : w == 0x02 ? 1 : (w == 0x03 || w == 0x64) ? 2 : (w == 0x04 || w == 0x66) ? 3 : -1;
+		if (f < 0 || seen[f])
+			continue;
+		used += snprintf(out + used, (size_t)(cap - used), "%s %s", seen[0] + seen[1] + seen[2] + seen[3] ? "," : "",
+		                 names[f]);
+		seen[f] = 1;
+	}
+	return 1;
+}
+
+// #169 tier 2: the character garage bossIdx races, for the garage load. -1
+// keeps the retail boss (no record, tier 1, refused, or a content plan).
+int AP_BossGarageOpponent(int bossIdx)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+}
+
+// #169 tier 2: the models of the boss race being loaded. Returns the
+// time-trial pack character (the garage's own boss) and writes the extra hi
+// model's character to *extra (-1 for none), or returns -1 for every load
+// this does not own: the retail path then runs unchanged.
+int AP_BossRaceOpponentModels(int player, int *extra)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int g, opp;
+
+	*extra = -1;
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0 ||
+	    (gGT->gameMode1 & ADVENTURE_CUP) != 0)
+		return -1;
+	g = gGT->bossID;
+	opp = AP_BossEncounterOpponent(&ctr_boss_encounters, g);
+	if (opp < 0)
+		return -1;
+	return AP_BossOpponentModels(AP_BOSS_VENUE_GARAGE[g].character, opp, player, extra);
+}
+
+static int AP_BossKitGarageNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (gGT == NULL || !ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterKitGarage(&ctr_boss_encounters, (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
+	                                 (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->bossID, gGT->levelID);
+}
+
+// #169 tier 3: 0 when the running garage boss race has a composed kit with
+// boss_loss_easing off, so its cooldowns ignore the garage's loss count;
+// 1 (retail easing) for every other race.
+int AP_BossLossEasingNow(void)
+{
+	if (AP_BossKitGarageNow() < 0)
+		return 1;
+	return ctr_boss_encounters.lossEasing;
+}
+
 static int AP_BossShuffledGarageNow(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -562,6 +651,44 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 	const struct MetaDataBOSS *src;
 	int venuePoints, homeLast, i;
 
+	int k = AP_BossKitGarageNow();
+
+	// #169 tier 3: a composed kit replaces the garage's retail attack on any
+	// venue, the home track included. Its checkpoints were composed for the
+	// recorded venue's restart point count, so a loaded graph that differs
+	// is refused loudly, as for the inherited attack.
+	if (k >= 0 && gGT->level1 != NULL)
+	{
+		if (!fill)
+			return s_apBossVenueAttack;
+		venuePoints = gGT->level1->cnt_restart_points;
+		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
+		if (venuePoints != AP_BossVenueCertifiedNow(k) ||
+		    AP_BossKitScheduleProblem(ctr_boss_encounters.schedule[k], AP_BOSS_VENUE_SEGMENTS, venuePoints))
+		{
+			char msg[160];
+			snprintf(msg, sizeof msg,
+			         "[AP BOSS] venue %d has %d restart points, certified %d: composed kit refused\n",
+			         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(k));
+			AP_AppendLog(msg);
+			s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
+			s_apBossVenueAttack[0].weaponType = BOSS_WEAPON_NONE;
+			s_apBossVenueAttack[0].weaponCooldown = 0x0f;
+			return s_apBossVenueAttack;
+		}
+		for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+		{
+			const AP_BossKitSegment *seg = &ctr_boss_encounters.schedule[k][i];
+			s_apBossVenueAttack[i].trackCheckpoint = seg->checkpoint;
+			s_apBossVenueAttack[i].throwFlag = seg->throwFlag;
+			s_apBossVenueAttack[i].weaponType = seg->weapon;
+			s_apBossVenueAttack[i].pathChangeDisabled = seg->pathDisabled;
+			s_apBossVenueAttack[i].weaponCooldown = seg->cooldown;
+			s_apBossVenueAttack[i].juiceFlag = seg->juice;
+		}
+		// Row 5 stays zero: the terminator retail tables end with.
+		return s_apBossVenueAttack;
+	}
 	if (g < 0 || gGT->level1 == NULL)
 		return NULL;
 	if (!fill)

@@ -1068,6 +1068,25 @@ int AP_BossRetailRulesLevel(int levelID);
 // the door is open or shut. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
 
+// #169 tier 2: "Rival: <name>" for a garage whose seed drew its opponent;
+// #169 tier 3: "Kit: <families>" for one with a composed kit. 0 otherwise.
+// IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossRivalAdvert(int bossIdx, char *out, int cap);
+int AP_BossKitAdvert(int bossIdx, char *out, int cap);
+
+// #169 tier 2: the engine character garage bossIdx races (the garage load
+// writes it to data.characterIDs[1]), or -1 for the retail boss.
+int AP_BossGarageOpponent(int bossIdx);
+
+// #169 tier 2: for the boss race being loaded, the time-trial pack character
+// (the garage's own boss) and in *extra the one extra hi model the drawn
+// opponent needs (-1 for none); -1 for any load the retail path keeps.
+int AP_BossRaceOpponentModels(int player, int *extra);
+
+// #169 tier 3: 0 when the running garage race has a composed kit with
+// boss_loss_easing off; 1 otherwise (retail per-loss cooldown easing).
+int AP_BossLossEasingNow(void);
+
 // The per-race copy of the inherited attack schedule for a shuffled venue,
 // its checkpoints mapped onto the loaded track; `fill` rebuilds it (race
 // init), 0 returns it as is (lap wrap). NULL when no shuffled garage race is

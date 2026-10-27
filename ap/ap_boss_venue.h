@@ -26,6 +26,8 @@
 #define AP_BOSS_VENUE_TRACKS 18
 #define AP_BOSS_VENUE_SEGMENTS 5
 #define AP_BOSS_ENCOUNTERS_VERSION 1
+// #169 tiers 2 and 3: a block with the opponent or kit switch on.
+#define AP_BOSS_ENCOUNTERS_VERSION_2 2
 #define AP_BOSS_ENCOUNTERS_SCHEMA 18
 #define AP_BOSS_VENUE_LOCATION_BASE 35011100L
 
@@ -59,14 +61,78 @@ typedef struct
 	const char *key;      // wire key, same as boss_garage_req
 	short homeLevel;      // retail venue LevelID (R232.bossTracks[hub])
 	unsigned char attack[AP_BOSS_VENUE_SEGMENTS]; // retail segment starts
+	signed char character; // the garage boss's engine character id
 } AP_BossVenueGarage;
 
 static const AP_BossVenueGarage AP_BOSS_VENUE_GARAGE[AP_BOSS_VENUE_GARAGES] = {
-	{"ripper_roo", 6, {0x00, 0x10, 0x21, 0x2f, 0x46}}, // data.BossWeaponRoo
-	{"papu_papu", 5, {0x00, 0x0f, 0x22, 0x53, 0x5d}},  // data.BossWeaponPapu
-	{"komodo_joe", 1, {0x00, 0x10, 0x2a, 0x39, 0x46}}, // data.BossWeaponJoe
-	{"pinstripe", 7, {0x00, 0x10, 0x21, 0x2f, 0x46}},  // data.BossWeaponPinstripe
+	{"ripper_roo", 6, {0x00, 0x10, 0x21, 0x2f, 0x46}, 10}, // data.BossWeaponRoo
+	{"papu_papu", 5, {0x00, 0x0f, 0x22, 0x53, 0x5d}, 9},   // data.BossWeaponPapu
+	{"komodo_joe", 1, {0x00, 0x10, 0x2a, 0x39, 0x46}, 11}, // data.BossWeaponJoe
+	{"pinstripe", 7, {0x00, 0x10, 0x21, 0x2f, 0x46}, 8},   // data.BossWeaponPinstripe
 };
+
+// #169 tier 2: the racers a garage may draw, by wire key, with their engine
+// character id: the retail roster without N. Oxide (15), who stays outside
+// the four ordinary garages. Shared with the apworld through
+// tools/fixtures/boss_encounters.json.
+#define AP_BOSS_OPPONENTS 15
+typedef struct
+{
+	const char *key;
+	signed char character;
+} AP_BossOpponent;
+
+static const AP_BossOpponent AP_BOSS_OPPONENT[AP_BOSS_OPPONENTS] = {
+	{"crash_bandicoot", 0}, {"coco_bandicoot", 3}, {"polar", 6},       {"pura", 7},
+	{"neo_cortex", 1},      {"n_tropy", 12},       {"ripper_roo", 10}, {"papu_papu", 9},
+	{"komodo_joe", 11},     {"pinstripe", 8},      {"dingodile", 5},   {"tiny_tiger", 2},
+	{"n_gin", 4},           {"fake_crash", 14},    {"penta_penguin", 13},
+};
+
+// #169 tier 3: one composed attack segment, the retail MetaDataBOSS fields.
+// Weapon: 0x01 bomb, 0x02 missile, 0x03 TNT, 0x04 potion, 0x64 TNT and
+// 0x66 potion with the boss juice cycle, 0x0f none. Throw: 2 forward, 3
+// dropped or normal. Juice: 0 none, 1 juiced, 2 alternating. These are the
+// four projectile families the retail boss path fires through
+// VehPickupItem_ShootNow; nothing else is accepted.
+typedef struct
+{
+	unsigned char checkpoint, throwFlag, weapon, pathDisabled;
+	unsigned short cooldown, juice;
+} AP_BossKitSegment;
+
+#define AP_BOSS_KIT_COOLDOWN_MIN 2
+#define AP_BOSS_KIT_COOLDOWN_MAX 0xff
+
+static inline int AP_BossKitWeaponKnown(int w)
+{
+	return w == 0x01 || w == 0x02 || w == 0x03 || w == 0x04 || w == 0x0f || w == 0x64 || w == 0x66;
+}
+
+// NULL when `seg` is a schedule this build can race on a venue with
+// `venuePoints` restart points: five segments, the first at checkpoint 0,
+// strictly increasing inside the venue, every field a known code.
+static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg, int n, int venuePoints)
+{
+	int i, prev = -1;
+	if (seg == 0 || n != AP_BOSS_VENUE_SEGMENTS)
+		return "schedule must have five segments";
+	for (i = 0; i < n; i++)
+	{
+		const AP_BossKitSegment *s = &seg[i];
+		if ((int)s->checkpoint <= prev || (int)s->checkpoint >= venuePoints || (prev < 0 && s->checkpoint != 0))
+			return "schedule checkpoints do not fit the venue";
+		if (!AP_BossKitWeaponKnown(s->weapon) || (s->throwFlag != 2 && s->throwFlag != 3) ||
+		    s->pathDisabled > 1 || s->juice > 2 || s->cooldown < AP_BOSS_KIT_COOLDOWN_MIN ||
+		    s->cooldown > AP_BOSS_KIT_COOLDOWN_MAX)
+			return "schedule has a code this build cannot race";
+		prev = s->checkpoint;
+	}
+	return 0;
+}
+
+// The engine character id of wire opponent `key`, or -1.
+static inline int AP_BossOpponentCharacter(const char *key);
 
 // A retail segment start on the home track, mapped to the same relative lap
 // position on a venue whose last checkpoint index is `venueLast`. The apworld
@@ -128,6 +194,16 @@ typedef struct
 	int state;
 	signed char track[AP_BOSS_VENUE_GARAGES];
 	char reason[96]; // first refusal, for the log and the garage panel
+	// #169 tiers 2 and 3 (block version 2). opponent[g] is the engine
+	// character id the garage races (its own boss unless the opponent switch
+	// drew another), composed[g] 1 when schedule[g] replaces the garage's
+	// retail attack. lossEasing 0 drops the retail per-loss cooldown bonus.
+	int version;
+	signed char opponent[AP_BOSS_VENUE_GARAGES];
+	unsigned char composed[AP_BOSS_VENUE_GARAGES];
+	AP_BossKitSegment schedule[AP_BOSS_VENUE_GARAGES][AP_BOSS_VENUE_SEGMENTS];
+	unsigned char kit;
+	unsigned char lossEasing;
 	// #133 PR 6b: a content-plan garage racing custom bytes (a custom package
 	// or Cortex Vortex) served on its home LevelID. track[g] is then the home
 	// level, custom[g] 1 and points[g] the certified restart point count.
@@ -146,9 +222,17 @@ typedef struct
 	const char *attack;
 	int packagesEmpty;
 	int fieldCount; // exact number of keys in the row object
+	// Version 2 rows (#169 tiers 2 and 3): the block's version, the two
+	// switches, and the row's schedule (scheduleCount -1 = not a valid list).
+	int version;
+	int opponentOn;
+	int kitOn;
+	int scheduleCount;
+	AP_BossKitSegment schedule[AP_BOSS_VENUE_SEGMENTS];
 } AP_BossEncounterRow;
 
 #define AP_BOSS_ENCOUNTER_ROW_FIELDS 7
+#define AP_BOSS_ENCOUNTER_ROW_FIELDS_2 8
 
 static inline int AP_BossVenueStrEq(const char *a, const char *b)
 {
@@ -162,12 +246,22 @@ static inline int AP_BossVenueStrEq(const char *a, const char *b)
 	return *a == *b;
 }
 
+static inline int AP_BossOpponentCharacter(const char *key)
+{
+	int i;
+	for (i = 0; i < AP_BOSS_OPPONENTS; i++)
+		if (AP_BossVenueStrEq(key, AP_BOSS_OPPONENT[i].key))
+			return AP_BOSS_OPPONENT[i].character;
+	return -1;
+}
+
 // NULL when garage `g`'s row is one this build can race, else the reason.
 static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncounterRow *r)
 {
 	if (g < 0 || g >= AP_BOSS_VENUE_GARAGES || r == 0)
 		return "unknown garage";
-	if (r->fieldCount != AP_BOSS_ENCOUNTER_ROW_FIELDS)
+	int v2 = r->version == AP_BOSS_ENCOUNTERS_VERSION_2;
+	if (r->fieldCount != (v2 ? AP_BOSS_ENCOUNTER_ROW_FIELDS_2 : AP_BOSS_ENCOUNTER_ROW_FIELDS))
 		return "row has unexpected fields";
 	if (r->location != AP_BOSS_VENUE_LOCATION_BASE + g)
 		return "wrong Boss Race check code";
@@ -175,17 +269,80 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 		return "wrong home track";
 	if (!AP_BossVenueTrackKnown(r->track))
 		return "unknown track";
-	if (!AP_BossVenueStrEq(r->opponent, AP_BOSS_VENUE_GARAGE[g].key))
-		return "opponent swap is not supported by this build";
+	if (v2 && r->opponentOn)
+	{
+		if (AP_BossOpponentCharacter(r->opponent) < 0)
+			return "unknown opponent";
+	}
+	else if (!AP_BossVenueStrEq(r->opponent, AP_BOSS_VENUE_GARAGE[g].key))
+		return "opponent swap without the opponent switch";
+	// The physical garage's boss-grade driving table (BossDifficulty[bossID]).
 	if (!AP_BossVenueStrEq(r->aiProfile, "retail"))
 		return "AI profile is not supported by this build";
-	if (!AP_BossVenueStrEq(r->attack, "inherited"))
-		return "attack kit is not supported by this build";
+	if (v2 && r->kitOn)
+	{
+		if (!AP_BossVenueStrEq(r->attack, "composed"))
+			return "kit switch on but the attack is not composed";
+		if (r->scheduleCount < 0)
+			return "schedule is not a list of six integers per segment";
+		{
+			const char *p = AP_BossKitScheduleProblem(r->schedule, r->scheduleCount,
+			                                          AP_BOSS_VENUE_RESTART_POINTS[r->track]);
+			if (p)
+				return p;
+		}
+	}
+	else
+	{
+		if (!AP_BossVenueStrEq(r->attack, "inherited"))
+			return "attack kit without the kit switch";
+		if (v2 && r->scheduleCount != 0)
+			return "inherited attack with a schedule";
+	}
 	if (!r->packagesEmpty)
 		return "custom content pins are not supported by this build";
 	if (!AP_BossVenueCertified(g, r->track))
 		return "track cannot carry this boss's attack";
 	return 0;
+}
+
+// The engine character id garage `g` races, or -1 for the retail opponent
+// (no record, a tier 1 record, or a refused one).
+static inline int AP_BossEncounterOpponent(const AP_BossEncounters *e, int g)
+{
+	if (e == 0 || g < 0 || g >= AP_BOSS_VENUE_GARAGES || e->state != AP_BOSS_ENC_VALID ||
+	    e->version != AP_BOSS_ENCOUNTERS_VERSION_2)
+		return -1;
+	return e->opponent[g];
+}
+
+// The garage whose composed kit is running now, or -1: a garage boss race on
+// that garage's recorded venue, never Oxide, a cup leg or an ordinary race.
+// Unlike the inherited-attack adapter this applies on the home track too.
+static inline int AP_BossEncounterKitGarage(const AP_BossEncounters *e, int advBoss, int advCup,
+                                            int bossID, int level)
+{
+	if (!advBoss || advCup || e == 0 || e->state != AP_BOSS_ENC_VALID ||
+	    e->version != AP_BOSS_ENCOUNTERS_VERSION_2)
+		return -1;
+	if (bossID < 0 || bossID >= AP_BOSS_VENUE_GARAGES || !e->composed[bossID])
+		return -1;
+	if (e->track[bossID] != level || e->custom[bossID])
+		return -1;
+	return bossID;
+}
+
+// The models a garage boss race loads (LOAD_DriverMPK, boss branch): the
+// time-trial pack of the garage's own boss, which carries everything the
+// retail race needs, stays; a drawn opponent other than that boss and other
+// than the player's racer is one extra hi model. Returns the pack character
+// and writes the extra's character id (or -1) to *extra.
+static inline int AP_BossOpponentModels(int garageBoss, int opponent, int player, int *extra)
+{
+	*extra = -1;
+	if (opponent >= 0 && opponent != garageBoss && opponent != player)
+		*extra = opponent;
+	return garageBoss;
 }
 
 // The restart point count garage `g`'s venue was certified on: a custom

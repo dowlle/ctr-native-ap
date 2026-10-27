@@ -269,13 +269,21 @@ void BOTS_Adv_AdjustDifficulty(void)
 	else if ((gameMode1 & ADVENTURE_BOSS) != 0)
 	{
 		s32 bossID = gGT->bossID;
-		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostBossRace[bossID]) - 0xe1;
+#ifdef CTR_AP
+		// #169 tier 3: boss_loss_easing off drives the encounter at its
+		// zero-loss base on every try (Vanilla AI only; a fixed AI setting
+		// replaces this factor anyway).
+		s32 bossLosses = AP_BossLossEasingNow() ? sdata->advProgress.timesLostBossRace[bossID] : 0;
+#else
+		s32 bossLosses = sdata->advProgress.timesLostBossRace[bossID];
+#endif
+		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(bossLosses) - 0xe1;
 		s32 maxDifficulty = bossID * 5;
 
 		if ((gameMode2 & CHEAT_ADV) != 0)
 		{
 			maxDifficulty = bossID * 7;
-			lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostBossRace[bossID]) - 0x141;
+			lostModifier = BOTS_Adv_NumTimesLostEvent(bossLosses) - 0x141;
 		}
 
 		currDifficulty = maxDifficulty - lostModifier;

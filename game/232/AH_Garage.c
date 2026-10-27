@@ -279,7 +279,7 @@ LAB_800aec34:
 	int challengeY = (view.y + view.h) - 0x1e;
 
 #ifdef CTR_AP
-	char advert[128];
+	char advert[192];
 	int advertVisible = 0;
 	int advertLines = 0;
 
@@ -302,11 +302,16 @@ LAB_800aec34:
 		if (advertBoss < 4 &&
 		    AP_BossVenueAdvert(advertBoss, venueLine, (int)sizeof venueLine))
 		{
-			char joined[128];
-			if (advertVisible)
-				snprintf(joined, sizeof joined, "%s\r%s", venueLine, advert);
-			else
-				snprintf(joined, sizeof joined, "%s", venueLine);
+			char joined[192];
+			// #169 tiers 2 and 3: the drawn rival and kit follow the track.
+			char rivalLine[48], kitLine[48];
+			int used = snprintf(joined, sizeof joined, "%s", venueLine);
+			if (AP_BossRivalAdvert(advertBoss, rivalLine, (int)sizeof rivalLine) && used < (int)sizeof joined)
+				used += snprintf(joined + used, sizeof joined - used, "\r%s", rivalLine);
+			if (AP_BossKitAdvert(advertBoss, kitLine, (int)sizeof kitLine) && used < (int)sizeof joined)
+				used += snprintf(joined + used, sizeof joined - used, "\r%s", kitLine);
+			if (advertVisible && used < (int)sizeof joined)
+				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
 			memcpy(advert, joined, sizeof advert);
 			advertVisible = 1;
 		}
@@ -534,6 +539,7 @@ LAB_800aede8:
 			}
 #endif
 			int venue = AP_BossGarageVenue(hubID - 1);
+			int opponent;
 			if (venue < 0)
 			{
 				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
@@ -541,6 +547,12 @@ LAB_800aede8:
 				return;
 			}
 			levelID = venue;
+			// #169 tier 2: the seed's drawn racer replaces the garage's boss
+			// as P2. bossID stays physical; LOAD_DriverMPK keeps the boss's
+			// own pack and sideloads the racer's hi model.
+			opponent = AP_BossGarageOpponent(hubID - 1);
+			if (opponent >= 0)
+				data.characterIDs[1] = (s16)opponent;
 #ifdef CTR_CUSTOM_TRACKS
 			// The venue may be a custom track's host slot; this load is retail.
 			CustomTrack_SelectRetailRace();

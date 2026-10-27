@@ -259,8 +259,16 @@ static void PickupBots_SetBossCooldown(struct MetaDataBOSS *bossMeta)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
+#ifdef CTR_AP
+	// #169 tier 3: boss_loss_easing off keeps a composed kit's pressure the
+	// same on every try; the retail per-loss bonus applies everywhere else.
+	int lossBonus = AP_BossLossEasingNow() ? ((s8)sdata->advProgress.timesLostBossRace[gGT->bossID] * 4) : 0;
+	sdata->bossWeaponCooldown =
+	    (RngDeadCoed(&sdata->advRng) & 0x10) + bossMeta->weaponCooldown + 0xc + lossBonus;
+#else
 	sdata->bossWeaponCooldown =
 	    (RngDeadCoed(&sdata->advRng) & 0x10) + bossMeta->weaponCooldown + 0xc + ((s8)sdata->advProgress.timesLostBossRace[gGT->bossID] * 4);
+#endif
 }
 
 static struct MetaDataBOSS *PickupBots_GetInitialBossMeta(void)

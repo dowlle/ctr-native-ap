@@ -533,6 +533,10 @@ static void AP_TrackerBuildNodes(void)
 			snprintf(n->title, sizeof n->title, "%s", ap_tracker.hub ? names[ap_tracker.hub - 1] : "N. OXIDE");
 			/* #169: a drawn boss track is shown under the boss name. */
 			if (ap_tracker.hub) AP_BossVenueAdvert(ap_tracker.hub - 1, n->pad, (int)sizeof n->pad);
+			/* #169 tier 2: a drawn rival is shown under the boss name too. */
+			if (ap_tracker.hub) { char rival[48]; size_t used = strlen(n->pad);
+				if (AP_BossRivalAdvert(ap_tracker.hub - 1, rival, (int)sizeof rival) && used + 3 < sizeof n->pad)
+					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", rival); }
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}

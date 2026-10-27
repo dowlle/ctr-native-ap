@@ -1558,17 +1558,26 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 	if (schema < AP_BOSS_ENCOUNTERS_SCHEMA)
 		return; // pre-18 seeds never draw a venue
 
-	bool on = false;
-	auto flag = opt.find("boss_track_shuffle");
-	if (flag != opt.end())
+	// The three switches (#169 tiers 1 to 3). An absent scalar is off: a
+	// tier 1 seed carries only boss_track_shuffle.
+	bool sw[3] = {false, false, false};
+	static const char *const swName[3] = {"boss_track_shuffle", "boss_opponent_shuffle", "boss_kit_shuffle"};
+	for (int k = 0; k < 3; k++)
 	{
+		auto flag = opt.find(swName[k]);
+		if (flag == opt.end())
+			continue;
 		if (!flag->is_boolean())
 		{
-			ap_boss_encounters_refuse("boss_track_shuffle is not a boolean");
+			char why[96];
+			std::snprintf(why, sizeof why, "%s is not a boolean", swName[k]);
+			ap_boss_encounters_refuse(why);
 			return;
 		}
-		on = flag->get<bool>();
+		sw[k] = flag->get<bool>();
 	}
+	bool on = sw[0] || sw[1] || sw[2];
+	bool v2 = sw[1] || sw[2];
 	auto it = j.find("boss_encounters");
 	bool present = it != j.end();
 	if (!on && !present)
@@ -1584,10 +1593,45 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		return;
 	}
 	auto v = it->find("version");
-	if (v == it->end() || !v->is_number_integer() || v->get<long long>() != AP_BOSS_ENCOUNTERS_VERSION)
+	int want = v2 ? AP_BOSS_ENCOUNTERS_VERSION_2 : AP_BOSS_ENCOUNTERS_VERSION;
+	if (v == it->end() || !v->is_number_integer() || v->get<long long>() != want)
 	{
-		ap_boss_encounters_refuse("version is missing or not 1");
+		ap_boss_encounters_refuse(v2 ? "version is missing or not 2" : "version is missing or not 1");
 		return;
+	}
+	// Version 2: exactly version, garages and, with the kit switch, kit.
+	if (v2 && it->size() != (size_t)(sw[2] ? 3 : 2))
+	{
+		ap_boss_encounters_refuse("block has unexpected fields");
+		return;
+	}
+	e->version = want;
+	e->lossEasing = 1;
+	if (sw[2])
+	{
+		auto kit = it->find("kit");
+		if (kit == it->end() || !kit->is_object() || kit->size() != 3)
+		{
+			ap_boss_encounters_refuse("kit record missing or malformed");
+			return;
+		}
+		auto as = kit->find("assignment");
+		auto in = kit->find("intensity");
+		auto le = kit->find("loss_easing");
+		static const char *const intensities[4] = {"relaxed", "standard", "intense", "mayhem"};
+		bool okA = as != kit->end() && as->is_string() &&
+		           (*as == "mixed_loadouts" || *as == "signature_profiles");
+		bool okI = false;
+		if (in != kit->end() && in->is_string())
+			for (int k = 0; k < 4; k++)
+				okI = okI || *in == intensities[k];
+		if (!okA || !okI || le == kit->end() || !le->is_boolean())
+		{
+			ap_boss_encounters_refuse("kit record has a value this build cannot race");
+			return;
+		}
+		e->kit = 1;
+		e->lossEasing = le->get<bool>() ? 1 : 0;
 	}
 	auto g = it->find("garages");
 	if (g == it->end() || !g->is_object() || g->size() != AP_BOSS_VENUE_GARAGES)
@@ -1622,6 +1666,53 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		r.aiProfile = str("ai_profile");
 		r.attack = str("attack");
 		r.packagesEmpty = pk != row->end() && pk->is_array() && pk->empty();
+		r.version = e->version;
+		r.opponentOn = sw[1];
+		r.kitOn = sw[2];
+		if (v2)
+		{
+			auto sc = row->find("schedule");
+			r.scheduleCount = -1;
+			if (sc != row->end() && sc->is_array() && sc->size() <= AP_BOSS_VENUE_SEGMENTS)
+			{
+				bool ok = true;
+				int n = 0;
+				for (const auto &seg : *sc)
+				{
+					long long f[6];
+					if (!seg.is_array() || seg.size() != 6)
+					{
+						ok = false;
+						break;
+					}
+					for (int k = 0; k < 6; k++)
+					{
+						if (!seg[k].is_number_integer())
+						{
+							ok = false;
+							break;
+						}
+						f[k] = seg[k].get<long long>();
+						if (f[k] < 0 || f[k] > 0xffff)
+							ok = false;
+					}
+					if (!ok || f[0] > 0xff || f[1] > 0xff || f[2] > 0xff || f[3] > 0xff)
+					{
+						ok = false;
+						break;
+					}
+					r.schedule[n].checkpoint = (unsigned char)f[0];
+					r.schedule[n].throwFlag = (unsigned char)f[1];
+					r.schedule[n].weapon = (unsigned char)f[2];
+					r.schedule[n].pathDisabled = (unsigned char)f[3];
+					r.schedule[n].cooldown = (unsigned short)f[4];
+					r.schedule[n].juice = (unsigned short)f[5];
+					n++;
+				}
+				if (ok)
+					r.scheduleCount = n;
+			}
+		}
 		const char *problem = AP_BossEncounterRowProblem(i, &r);
 		if (problem)
 		{
@@ -1631,10 +1722,19 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 			return;
 		}
 		e->track[i] = (signed char)r.track;
+		e->opponent[i] = (signed char)(sw[1] ? AP_BossOpponentCharacter(r.opponent)
+		                                     : AP_BOSS_VENUE_GARAGE[i].character);
+		if (sw[2])
+		{
+			e->composed[i] = 1;
+			std::memcpy(e->schedule[i], r.schedule, sizeof e->schedule[i]);
+		}
 	}
 	e->state = AP_BOSS_ENC_VALID;
-	ap_cfg_log("[AP CFG] boss_encounters v%d: venues roo=%d papu=%d komodo=%d pinstripe=%d\n",
-	           AP_BOSS_ENCOUNTERS_VERSION, e->track[0], e->track[1], e->track[2], e->track[3]);
+	ap_cfg_log("[AP CFG] boss_encounters v%d: venues roo=%d papu=%d komodo=%d pinstripe=%d "
+	           "opponents=%d,%d,%d,%d kit=%d easing=%d\n",
+	           e->version, e->track[0], e->track[1], e->track[2], e->track[3],
+	           e->opponent[0], e->opponent[1], e->opponent[2], e->opponent[3], e->kit, e->lossEasing);
 }
 
 #include "ap_content_plan_impl.hpp"

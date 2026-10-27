@@ -9,6 +9,8 @@ tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-assist.c
+tools/test-boss-encounters.cpp
+tools/test-boss-encounters-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
