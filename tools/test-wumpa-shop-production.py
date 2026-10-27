@@ -7,8 +7,9 @@ checks that production calls them at the right sites:
 1. banking: fruit past 10 in RB_Player_ModifyWumpa (local human player only,
    after the unlimited-fruit cheat has returned), AP fruit past 10 in
    AP_WumpaReceive instead of discarding it, the held fruit on the player's
-   race-finished edge, armed by a newly seen countdown, never for a forced
-   DeathLink loss;
+   race-finished edge in every race mode, armed by a newly seen countdown,
+   never for a forced DeathLink loss, nothing under the cheat, and AP fruit
+   banked only after the effect marker that covers it is written;
 2. the wallet keys: connected, read, merged and flushed with "max", purchases
    written with "update", reserved against original_value, undone with "pop",
    and resent on connect;
@@ -49,22 +50,25 @@ check('ModifyWumpa banks before the count is capped', bank < rb.index('driver->n
 
 wumpa = text('ap/ap_wumpa.c')
 recv = body(wumpa, 'void AP_WumpaReceive(int count)')
-check('AP_WumpaReceive banks AP fruit past 10 when banking is on',
-      re.search(r'discarded > 0 && AP_WumpaBanking\(\)\)\s*\{\s*AP_WumpaBank\(discarded', recv) is not None)
+check('AP_WumpaReceive holds AP fruit past 10 for the bank when banking is on',
+      re.search(r'discarded > 0 && AP_WumpaBanking\(\)\)\s*\{\s*g_wumpa_ap_credit \+= discarded;', recv) is not None)
+fxwrite = body(text('ap/ap_hooks_received.c'), 'static void AP_FxWrite(')
+check('held AP credits are banked only after the effect marker write',
+      fxwrite.index('ap_net_fx_store_write(') < fxwrite.index('AP_WumpaCommitReceived();'))
+banking = body(wumpa, 'static int AP_WumpaBanking(void)')
+check('the unlimited-fruit cheat banks nothing', 'CHEAT_WUMPA' in banking)
 kart = body(wumpa, 'void AP_WumpaBankKart(')
-check('kart banking is the local player in Adventure mode only',
-      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'ADVENTURE_MODE' in kart)
+check('kart banking is the local human player',
+      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'AP_WumpaBanking()' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
       'AP_WumpaFinishTake(&g_finish_latch, driver->numWumpas, AP_RaceAttemptIsForcedLoss())' in fin)
 tick = body(wumpa, 'void AP_WumpaTick(')
 check('a newly seen countdown arms the finish payout',
       re.search(r'if \(!g_countdown_seen\)\s*AP_WumpaFinishArm\(&g_finish_latch\);\s*g_countdown_seen = 1;', tick) is not None)
-listener = body(text('ap/ap_hooks_race_checks.c'), 'static void AP_RaceListenerTick(')
-edge = listener.index('if (finishedNow && !ap_finish_prev && inRace)')
-check('the race listener banks on the rising finish edge',
-      listener.find('AP_WumpaOnRaceFinish(p);', edge) > edge and
-      listener.find('AP_WumpaOnRaceFinish(p);') < listener.index('else if (!finishedNow && ap_finish_prev)'))
+check('the Wumpa tick banks on the rising finish edge in every race mode',
+      re.search(r'if \(finished && !finishedPrev && !loading\)\s*AP_WumpaOnRaceFinish\(p\);', tick) is not None and
+      'AP_WumpaOnRaceFinish' not in text('ap/ap_hooks_race_checks.c'))
 
 net = text('ap/ap_net.cpp')
 check('wallet keys connected with the boss-won flags',
@@ -83,6 +87,7 @@ check('the set reply passes original_value to the reservation',
       'g_wumpa.shopReply(value, original)' in net and 'const nlohmann::json &original) {' in net)
 check('only a confirmed purchase sends its check',
       re.search(r'REPLY_CONFIRMED\) \{[^}]*ap_net_try_send_location\(\(int64_t\)code\);', net) is not None)
+check('an overspent wallet is repaired before resending', 'g_wumpa.repairOverspend(done)' in net)
 check('paid but unchecked purchases are resent after the wallet read',
       re.search(r'g_wumpa\.shopRetrieved\(wShop->second\);[\s\S]{0,400}ap_wumpa_resend_paid\(\);', net) is not None)
 

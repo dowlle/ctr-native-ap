@@ -95,6 +95,34 @@ int main()
         CHECK("resend: and costs nothing more", l.balance() == 40);
     }
     {
+        // The seed's prices decide what a stored entry costs.
+        APWumpaLedger l;
+        l.connect("ws://room", "seed", 0, 1);
+        l.configure({{35028600, 20}, {35028601, 30}});
+        l.bankRetrieved(json(100));
+        l.shopRetrieved(json{{"35028600", 99999}, {"35099999", 50}});
+        CHECK("wallet: an inflated price counts at the seed price, an unknown code counts nothing",
+              l.balance() == 80);
+    }
+    {
+        // Crash after an outspent purchase, before its undo: the entry is
+        // still in the wallet and its check was never sent.
+        APWumpaLedger l;
+        l.connect("ws://room", "seed", 0, 1);
+        l.configure({{35028600, 40}, {35028601, 40}});
+        l.bankRetrieved(json(50));
+        l.shopRetrieved(json{{"35028600", 40}, {"35028601", 40}});
+        std::set<long long> checked = {35028600};
+        auto undo = l.repairOverspend([&](long long c) { return checked.count(c) != 0; });
+        auto unsent = l.unsentPaid([&](long long c) { return checked.count(c) != 0; });
+        CHECK("repair: the unchecked outspent entry is undone, not resent",
+              undo.size() == 1 && undo[0] == 35028601 && unsent.empty() && l.balance() == 10 &&
+              l.rollbacks.size() == 1);
+        APWumpaLedger ok = ready(100, json{{"35028600", 40}});
+        CHECK("repair: a wallet that is not overspent is left alone",
+              ok.repairOverspend([](long long) { return false; }).empty() && ok.isBought(35028600));
+    }
+    {
         APWumpaLedger l = ready(100);
         l.tryBuy(35028600, 10, 0, false);
         CHECK("another client's write leaves our purchase pending",

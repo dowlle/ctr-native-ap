@@ -4,9 +4,8 @@
 // A bad block refuses the SHOP only, never the seed: the shop row then shows
 // SHOP UNAVAILABLE and banking still runs for a Wumpa goal. One log line
 // names the reason. `goal_wumpa` is read from ctr_options; a value outside
-// 0..5000 or a non-integer turns the arm off with a log line, so a hostile
-// room cannot make the goal unreachable by a huge number or reachable by a
-// negative one.
+// 0..5000 or a non-integer makes the arm unreadable (-1, never met) with a log
+// line: auto-goal then never completes on it, even when it is the only arm.
 #include <set>
 #include "ap_wumpa_shop.h"
 
@@ -70,7 +69,10 @@ static std::string ap_wumpa_shop_parse(const nlohmann::json &j, const nlohmann::
         if (goal->is_number_integer() && *goal >= 0 && *goal <= AP_WUMPA_GOAL_MAX)
             out->goal = goal->get<int>();
         else
-            log += "[AP WUMPA SHOP] goal_wumpa out of range: Wumpa goal arm off\n";
+        {
+            out->goal = -1;
+            log += "[AP WUMPA SHOP] goal_wumpa unreadable: the goal will not complete on its own\n";
+        }
     }
     auto hints = opt.find("wumpa_shop_hints");
     if (hints != opt.end() && hints->is_boolean())

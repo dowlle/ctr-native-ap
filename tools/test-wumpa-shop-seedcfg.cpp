@@ -76,10 +76,14 @@ int main()
         nlohmann::json g = {{"ctr_options", {{"goal_wumpa", -5}}}};
         std::string log;
         AP_WumpaShopConfig o = parse(g, 18, &log);
-        CHECK("goal: a negative target turns the arm off with a log line", o.goal == 0 && !log.empty());
+        CHECK("goal: a negative target is unreadable, never met, with a log line",
+              o.goal == -1 && !AP_WumpaGoalMet(o.goal, 1000000) && !log.empty() && !AP_WumpaBankingActive(&o));
         g["ctr_options"]["goal_wumpa"] = 5001;
         o = parse(g, 18, &log);
-        CHECK("goal: above 5000 turns the arm off", o.goal == 0 && !log.empty());
+        CHECK("goal: above 5000 is unreadable", o.goal == -1 && !log.empty());
+        g["ctr_options"]["goal_wumpa"] = "300";
+        o = parse(g, 18, &log);
+        CHECK("goal: a string is unreadable", o.goal == -1);
     }
     {
         nlohmann::json h = fixture();

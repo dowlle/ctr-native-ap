@@ -43,6 +43,7 @@ int main(void)
 	CHECK("goal: off is met", AP_WumpaGoalMet(0, 0));
 	CHECK("goal: short", !AP_WumpaGoalMet(1000, 999));
 	CHECK("goal: reached", AP_WumpaGoalMet(1000, 1000));
+	CHECK("goal: an unreadable target is never met", !AP_WumpaGoalMet(-1, 1000000));
 
 	CHECK("slot: sold beats everything", AP_WumpaSlotState(&s, 0, 0, 1, 0, 0) == AP_WUMPA_SLOT_SOLD);
 	CHECK("slot: a Collected slot is sold without a purchase", AP_WumpaSlotState(&s, 0, 0, 0, 1, 0) == AP_WUMPA_SLOT_SOLD);

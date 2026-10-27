@@ -35,7 +35,8 @@ static struct
 	char msg[48];
 	long long buying;     // code of the purchase in flight, -1 none
 	int hinted[AP_WUMPA_SHOP_HUBS];
-} ap_wshop = {0, 0, 0, 0, 0, "", -1, {0}};
+	char hintedSeed[96]; // the seed and slot the hinted flags belong to
+} ap_wshop = {0, 0, 0, 0, 0, "", -1, {0}, ""};
 
 // The green load/save rows with WUMPA SHOP above EXIT. Same wiring as retail:
 // up and down step, left and right stay.
@@ -86,7 +87,18 @@ static void AP_WShopSay(const char *text)
 static void AP_WShopHint(int hub)
 {
 	long long codes[AP_WUMPA_SHOP_MAX_SLOTS];
+	char seed[64], slot[32], id[96];
 	int n = 0, k;
+	seed[0] = slot[0] = '\0';
+	ap_net_seed_name(seed, (int)sizeof seed);
+	ap_net_slot_name(slot, (int)sizeof slot);
+	snprintf(id, sizeof id, "%s/%s", seed, slot);
+	if (strcmp(id, ap_wshop.hintedSeed) != 0)
+	{
+		// Another seed or slot: its shops have not been hinted yet.
+		memset(ap_wshop.hinted, 0, sizeof ap_wshop.hinted);
+		snprintf(ap_wshop.hintedSeed, sizeof ap_wshop.hintedSeed, "%s", id);
+	}
 	if (!ctr_wumpa_shop.hints || ap_wshop.hinted[hub] || !ap_net_is_connected() ||
 	    !AP_WumpaShopUsable(&ctr_wumpa_shop))
 		return;

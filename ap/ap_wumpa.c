@@ -41,11 +41,31 @@ static int g_countdown_seen = 0;
 static AP_WumpaFinishLatch g_finish_latch = {0};
 
 // #249: does this seed bank fruit? Banking runs on the local human player in
-// Adventure mode only.
+// every race mode that has Wumpa (ruling 2026-09-18), never under the
+// unlimited-fruit cheat.
 static int AP_WumpaBanking(void)
 {
 	return ctr_cfg_active() && !ctr_cfg.schema_newer &&
-	       AP_WumpaBankingActive(&ctr_wumpa_shop);
+	       AP_WumpaBankingActive(&ctr_wumpa_shop) &&
+	       (sdata->gGT == 0 || (sdata->gGT->gameMode2 & CHEAT_WUMPA) == 0);
+}
+
+// AP fruit past 10 waits here until the received-item effect marker that
+// covers it has been written, so a crash cannot bank a replayed receipt twice
+// (the marker write is queued before the bank write).
+static int g_wumpa_ap_credit = 0;
+
+void AP_WumpaCommitReceived(void)
+{
+	int n = g_wumpa_ap_credit;
+	char msg[96];
+	g_wumpa_ap_credit = 0;
+	if (n <= 0)
+		return;
+	ap_net_wumpa_credit(n);
+	snprintf(msg, sizeof msg, "[AP WUMPA BANK] +%d AP fruit past 10 (lifetime %lld)\n", n,
+	         ap_net_wumpa_lifetime());
+	AP_LogLine(msg);
 }
 
 static void AP_WumpaBank(int n, const char *why)
@@ -64,7 +84,7 @@ void AP_WumpaBankKart(struct Driver *driver, int held, int delta)
 	struct GameTracker *gGT = sdata->gGT;
 	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || (gGT->gameMode1 & ADVENTURE_MODE) == 0)
+	if ((driver->actionsFlagSet & ACTION_BOT) != 0)
 		return;
 	AP_WumpaBank(AP_WumpaBankOverflow(held, delta), "past 10");
 }
@@ -73,7 +93,7 @@ int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	if (!AP_WumpaBanking() || gGT == 0 || out == 0 || cap <= 0 || driver != gGT->drivers[0] ||
-	    gGT->numPlyrCurrGame != 1 || (gGT->gameMode1 & ADVENTURE_MODE) == 0)
+	    gGT->numPlyrCurrGame != 1)
 		return 0;
 	snprintf(out, (size_t)cap, "%lld", ap_net_wumpa_lifetime());
 	return 1;
@@ -86,7 +106,7 @@ void AP_WumpaOnRaceFinish(struct Driver *driver)
 	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
 	held = AP_WumpaFinishTake(&g_finish_latch, driver->numWumpas, AP_RaceAttemptIsForcedLoss());
-	if (!AP_WumpaBanking() || (gGT->gameMode1 & ADVENTURE_MODE) == 0)
+	if (!AP_WumpaBanking() || (driver->actionsFlagSet & ACTION_BOT) != 0)
 		return;
 	AP_WumpaBank(held, "held at the finish");
 }
@@ -125,7 +145,7 @@ void AP_WumpaReceive(int count)
 	// Wumpa bank at once, in or out of a race, instead of being discarded.
 	if (discarded > 0 && AP_WumpaBanking())
 	{
-		AP_WumpaBank(discarded, "AP fruit past 10");
+		g_wumpa_ap_credit += discarded; // committed by AP_WumpaCommitReceived
 		discarded = 0;
 	}
 
@@ -205,6 +225,16 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// imply a case the preceding line has not already survived.
 	onTrack = LOAD_IsOpen_RacingOrBattle();
 	loading = sdata->Loading.stage != LOAD_IDLE;
+	// #249: the player's race-finished rising edge, in every race mode, once
+	// per attempt (the latch below). A finish seen during a load is ignored.
+	{
+		static int finishedPrev = 0;
+		struct Driver *p = gGT->drivers[0];
+		int finished = p != 0 && onTrack && (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
+		if (finished && !finishedPrev && !loading)
+			AP_WumpaOnRaceFinish(p);
+		finishedPrev = finished;
+	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
 		g_countdown_seen = 0;

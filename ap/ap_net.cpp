@@ -1053,6 +1053,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_ap->Get({g_boss_won.key});
 		// #249: the Wumpa Shop wallet, same scoping. Only when the seed banks.
 		g_wumpa.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		{
+			// The seed's prices: a stored entry counts at its slot's price, and
+			// a code this seed does not sell counts nothing.
+			std::map<long long, int> prices;
+			if (AP_WumpaShopUsable(&ctr_wumpa_shop))
+				for (int h = 0; h < AP_WUMPA_SHOP_HUBS; ++h)
+					for (int k = 0; k < ctr_wumpa_shop.slots; ++k)
+						prices[ctr_wumpa_shop.slot[h][k].code] = ctr_wumpa_shop.slot[h][k].price;
+			g_wumpa.configure(prices);
+		}
 		if (AP_WumpaBankingActive(&ctr_wumpa_shop)) {
 			g_ap->SetNotify({g_wumpa.bankKey, g_wumpa.shopKey});
 			g_ap->Get({g_wumpa.bankKey, g_wumpa.shopKey});
@@ -2044,9 +2054,18 @@ static void ap_wumpa_resend_paid()
 {
 	if (!g_ap || !g_connected || g_rejected || !g_wumpa.shopKnown()) return;
 	ap_locs_refresh();
-	std::vector<long long> unsent = g_wumpa.unsentPaid([](long long code) {
+	auto done = [](long long code) {
 		return g_locs_chk.count((int64_t)code) != 0 || g_locs_miss.count((int64_t)code) == 0;
-	});
+	};
+	// A purchase another client outspent may still be in the wallet if this
+	// client stopped before undoing it. Its check was never sent, so undo it.
+	for (long long code : g_wumpa.repairOverspend(done)) {
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] wallet overspent: undoing unchecked slot %lld\n", code);
+		AP_LogLine(line);
+	}
+	ap_wumpa_flush();
+	std::vector<long long> unsent = g_wumpa.unsentPaid(done);
 	for (long long code : unsent) {
 		char line[128];
 		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] resending the check of bought slot %lld\n", code);

@@ -642,6 +642,9 @@ void AP_WumpaReachedTen(struct Driver *driver);
 // held at the race-finished edge, once per attempt.
 void AP_WumpaBankKart(struct Driver *driver, int held, int delta);
 void AP_WumpaOnRaceFinish(struct Driver *driver);
+// #249: bank AP fruit past 10 held since the last effect-marker write
+// (ap_hooks_received.c calls it right after that write).
+void AP_WumpaCommitReceived(void);
 // #249 HUD: writes the banked total for the in-race Wumpa counter; 0 = draw nothing.
 int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap);
 // #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).

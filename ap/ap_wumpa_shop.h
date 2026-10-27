@@ -47,7 +47,7 @@ typedef struct AP_WumpaShopConfig
 {
 	int state;      // AP_WUMPA_SHOP_*
 	int slots;      // per hub, 1..25 when valid
-	int goal;       // goal_wumpa, 0 = off
+	int goal;       // goal_wumpa, 0 = off, -1 = unreadable (never met)
 	int hints;      // wumpa_shop_hints
 	AP_WumpaShopSlot slot[AP_WUMPA_SHOP_HUBS][AP_WUMPA_SHOP_MAX_SLOTS];
 } AP_WumpaShopConfig;
@@ -138,10 +138,13 @@ static inline int AP_WumpaSlotState(const AP_WumpaShopSlot *s, long long lifetim
 	return AP_WUMPA_SLOT_FOR_SALE;
 }
 
-// Goal arm: off, or the lifetime total reached the target.
+// Goal arm: off, or the lifetime total reached the target. An unreadable
+// target (-1) is never met, so a bad room value cannot complete the goal.
 static inline int AP_WumpaGoalMet(int goal, long long lifetime)
 {
-	return goal <= 0 || lifetime >= goal;
+	if (goal < 0)
+		return 0;
+	return goal == 0 || lifetime >= goal;
 }
 
 #endif

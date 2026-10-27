@@ -51,6 +51,10 @@ struct APWumpaLedger {
     long long lifetime = 0; // local belief, >= server once known
     long long early = 0;    // credits before this connection's Get reply
     std::map<long long, int> bought;
+    // The seed's shop: code -> price. A stored entry counts at this price, and
+    // an entry for a code the seed does not have counts nothing, so a room
+    // value cannot invent or inflate a charge. Empty = no seed shop known.
+    std::map<long long, int> prices;
     long long pendingCode = -1;
     int pendingPrice = 0;
     std::vector<long long> rollbacks; // codes to pop
@@ -138,10 +142,32 @@ struct APWumpaLedger {
 
     // ── wallet ──
     bool shopKnown() const { return shopBarrier && shopValid; }
-    static long long spent(const std::map<long long, int> &m) {
+    void configure(const std::map<long long, int> &seedPrices) { prices = seedPrices; }
+    long long spent(const std::map<long long, int> &m) const {
         long long s = 0;
-        for (auto &kv : m) s += kv.second;
+        for (auto &kv : m) {
+            auto p = prices.find(kv.first);
+            if (prices.empty()) s += kv.second;
+            else if (p != prices.end()) s += p->second;
+        }
         return s;
+    }
+    // After a crash, a purchase another client outspent may still sit in the
+    // wallet with no check sent. While the balance is negative, return the
+    // unchecked entries to undo (highest code first) and queue their pops.
+    template <class Checked>
+    std::vector<long long> repairOverspend(Checked checked) {
+        std::vector<long long> out;
+        if (!bankKnown() || !shopKnown()) return out;
+        std::vector<long long> codes;
+        for (auto &kv : bought) codes.push_back(kv.first);
+        for (auto it = codes.rbegin(); it != codes.rend() && balance() < 0; ++it) {
+            if (checked(*it)) continue;
+            out.push_back(*it);
+            rollbacks.push_back(*it);
+            bought.erase(*it);
+        }
+        return out;
     }
     long long balance() const { return lifetime - spent(bought); }
     bool isBought(long long code) const { return bought.count(code) != 0; }
