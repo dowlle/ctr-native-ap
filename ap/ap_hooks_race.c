@@ -987,9 +987,14 @@ static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 	// #208 ctr_first: the qualifying CTR win also sends the paired Trophy.
 	// When only the Trophy is new (the CTR check was collected), the
 	// ceremony shows the Trophy.
+#ifdef CTR_CUSTOM_TRACKS
 	int pairSent = AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
 	                                      CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1,
 	                                      AP_CUSTOM_TROPHY_PSEUDO_BIT);
+#else
+	int pairSent = AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
+	                                      CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1, -1);
+#endif
 	if (sent || pairSent)
 	{
 #ifdef CTR_CUSTOM_TRACKS

@@ -1337,8 +1337,10 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		int g = AP_PadUncollectedGlowBits(destLevelID, glow, (int)(sizeof glow / sizeof glow[0]));
 		rungsLeft = 0;
 		for (k = 0; k < g; k++)
-			if (glow[k] >= AP_PODIUM_PSEUDO_BASE &&
-			    glow[k] < AP_PODIUM_PSEUDO_BASE + AP_PODIUM_LOGICAL_TRACK_COUNT * CTR_CFG_PODIUM_RUNG_COUNT)
+			// Rung pseudo-bits occupy [0x100, 0x200); the other pseudo
+			// families (custom, trial, Cortex Vortex, perfect, boxes,
+			// letters, Wumpa) start at 0x200.
+			if (glow[k] >= AP_PODIUM_PSEUDO_BASE && glow[k] < 0x200)
 				rungsLeft++;
 	}
 	plainLeft = rungsLeft + AP_PadUncollectedBoxCount(destLevelID) +
