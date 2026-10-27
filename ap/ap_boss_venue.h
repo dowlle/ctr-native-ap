@@ -313,8 +313,16 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 		{
 			const char *p = AP_BossKitScheduleProblem(r->schedule, r->scheduleCount,
 			                                          AP_BOSS_VENUE_RESTART_POINTS[r->track]);
+			int i, homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel] - 1;
 			if (p)
 				return p;
+			// The segments start where the garage's retail segments map to
+			// on this venue, as generation composes them.
+			for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+				if (r->schedule[i].checkpoint !=
+				    AP_BossVenueCheckpoint(AP_BOSS_VENUE_GARAGE[g].attack[i], homeLast,
+				                           AP_BOSS_VENUE_RESTART_POINTS[r->track] - 1))
+					return "schedule checkpoints are not the garage's mapped segments";
 		}
 	}
 	else

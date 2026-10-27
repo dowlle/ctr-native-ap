@@ -183,6 +183,10 @@ static void refusals()
 	refuse("zero cooldown", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][4] = 0; });
 	refuse("negative field", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][5] = -1; });
 	refuse("row without schedule", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"].erase("schedule"); });
+	refuse("checkpoint off the mapped segment", [](nlohmann::json &j) {
+		auto &seg = j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1];
+		seg[0] = seg[0].get<int>() + 1;
+	});
 	refuse("uncertified row", [](nlohmann::json &j) {
 		auto &seg = j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1];
 		seg = {seg[0], 2, 2, 1, 15, 2};
