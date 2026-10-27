@@ -411,6 +411,7 @@
 #include "../ap/ap_shortcut.c"
 #include "../ap/ap_surface.c"
 #include "../ap/ap_wumpa.c"
+#include "../ap/ap_wumpa_shop_ui.c" // #249 shop page (after ap_hooks_feed.c and ap_wumpa.c)
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_win_logic.c" // #449 race-loss DeathLink stakes (after ap_hooks.c: reads its statics)
 #include "../ap/ap_marker_model.c"

@@ -32,6 +32,7 @@ extern "C"
 	ctr_seed_config ctr_cfg = {0};
 	AP_CrystalChecks ctr_crystal_checks = {0};
     AP_CupSweepConfig ctr_cup_sweeps = {0};
+    AP_WumpaShopConfig ctr_wumpa_shop = {0};
 }
 
 // Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
@@ -1762,11 +1763,13 @@ static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
 }
 
 #include "ap_cup_sweep_parser.hpp"
+#include "ap_wumpa_shop_parser.hpp"
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
     std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
     std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
+    std::memset(&ctr_wumpa_shop, 0, sizeof ctr_wumpa_shop);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -3316,6 +3319,16 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	}
 
     if (!parse_cup_sweeps(j,opt,schema)) return;
+    {
+        // #249: the shop block and the Wumpa goal. Never refuses the seed.
+        AP_WumpaShopConfig shop;
+        std::string line = ap_wumpa_shop_parse(j, opt, schema, &shop);
+        if (!line.empty()) ap_cfg_log("%s", line.c_str());
+        ctr_wumpa_shop = shop;
+        if (shop.state == AP_WUMPA_SHOP_VALID || shop.goal > 0)
+            ap_cfg_log("[AP WUMPA SHOP] slots=%d goal=%d hints=%d\n",
+                       shop.slots, shop.goal, shop.hints);
+    }
 
 	// Activate LAST -- a partial parse never flips ctr_cfg_active() true.
 	ctr_cfg.schema_version = schema;

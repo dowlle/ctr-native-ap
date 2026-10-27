@@ -282,6 +282,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// crystal share the same levelIDs, so the type gate is load-bearing).
 		if (ap_last_race_mode == AP_RACE_TROPHY)
 			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
+		// #249: bank the fruit held at the finish, once per attempt.
+		AP_WumpaOnRaceFinish(p);
 	}
 	else if (!finishedNow && ap_finish_prev)
 	{

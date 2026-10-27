@@ -22,6 +22,11 @@ void UI_DrawNumWumpa(s16 posX, s16 posY, struct Driver *d)
 		// Draw number after the 'x'
 		sprintf(message, &sdata->s_int[0], d->numWumpas);
 		DecalFont_DrawLine(message, posX + 0xd, (int)posY, FONT_BIG, ORANGE);
+#ifdef CTR_AP
+		// #249: the banked total, smaller, below the count (1P, banking on).
+		if (AP_WumpaHudBanked(d, message, (int)sizeof message))
+			DecalFont_DrawLine(message, posX + 0xd, posY + 0x13, FONT_SMALL, ORANGE);
+#endif
 	}
 
 	// if numPlyrCurrGame is 3 or 4

@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+#include "ap_wumpa_shop_menu.h" // #249 green load/save menu row ids
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
@@ -637,6 +638,23 @@ void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
+// #249 banking (ap_wumpa.c): fruit past 10 for the local player, and the fruit
+// held at the race-finished edge, once per attempt.
+void AP_WumpaBankKart(struct Driver *driver, int held, int delta);
+void AP_WumpaOnRaceFinish(struct Driver *driver);
+// #249 HUD: writes the banked total for the in-race Wumpa counter; 0 = draw nothing.
+int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap);
+// #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
+// PrepareGreenMenu picks the green load/save rows before the save screen
+// shows them; GreenMenuRow maps a chosen row (opening the shop returns
+// AP_WSHOP_GREEN_HANDLED); GreenExitRow is that menu's EXIT row;
+// MenuFrame owns input and drawing while the page is open.
+struct RectMenu;
+int AP_WumpaShopRowShown(void);
+void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
+int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row);
+int AP_WumpaShopGreenExitRow(const struct RectMenu *menu);
+int AP_WumpaShopMenuFrame(void);
 
 // Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
 // through the shared class-check path (per-seed membership + server-checked
