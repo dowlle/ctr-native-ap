@@ -1620,7 +1620,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (warppadObj->framesWarping == 61)
 			{
 				apCustomRaceChoice = -2;
-				apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
+				// #208 ctr_first: the CTR Challenge is the first race.
+				apCustomRaceMenu.rowSelected =
+				    (AP_CustomTrackTrophyChecked() || AP_RaceStructureCtrFirst()) ? 1 : 0;
 				RECTMENU_Show(&apCustomRaceMenu);
 			}
 			if (apCustomRaceChoice == -2)

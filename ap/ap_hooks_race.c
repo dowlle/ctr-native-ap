@@ -806,6 +806,14 @@ static void AP_NotifyCustomTrackTrophyImpl(void)
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok ||
 	    (sdata->gGT && (sdata->gGT->gameMode2 & TOKEN_RACE)))
 		return;
+	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
+	// #208 ctr_first: the custom CTR Challenge earns this Trophy; the win
+	// still earns the rungs.
+	if (AP_RaceStructureSuppressTrophy(ctr_cfg.custom_track.trophy_location))
+	{
+		AP_SendPodiumChecks(podiumTrack, 1);
+		return;
+	}
 	sent = AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
 	                         1, AP_CUSTOM_TROPHY_PSEUDO_BIT, -1, 1,
 	                         "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
@@ -813,7 +821,6 @@ static void AP_NotifyCustomTrackTrophyImpl(void)
 	                         ctr_cfg.custom_track.trophy_location);
 	AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 	if (sent) ap_custom_ceremony_bit = AP_CUSTOM_TROPHY_PSEUDO_BIT;
-	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
 	AP_SendPodiumChecks(podiumTrack, 1);
 }
 
@@ -967,6 +974,9 @@ static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 	int sent = AP_EmitClassCheck(ctr_cfg.custom_ctr_location, 0, -1, -1, 1,
 	                  "[AP CHECK] custom track slot=%d CTR challenge location %ld\n",
 	                  ctr_cfg.custom_track.slot, ctr_cfg.custom_ctr_location);
+	// #208 ctr_first: the qualifying CTR win also sends the paired Trophy.
+	AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
+	                       CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1, -1);
 	if (sent)
 	{
 #ifdef CTR_CUSTOM_TRACKS

@@ -73,6 +73,8 @@ static int AP_CortexOpenCount(const void *t,int s,int n,int (*l)(long,void*),int
 static int AP_CortexDestValid(void){return 0;}
 static long AP_CortexTrackCode(int s){(void)s;return -1;}
 int AP_CortexTrackChecked(int s){(void)s;return 0;}
+int AP_RaceStructureCtrFirst(void){return 0;}
+static int AP_DestCtrSideLeft(int d){(void)d;return 0;}
 int AP_LocationCheckedByBit(int b){(void)b;return 0;}
 int AP_PadStage1Met(int p){(void)p;return 1;}
 int ctr_cfg_racer_lock_met(int p){(void)p;return 1;}
@@ -203,8 +205,9 @@ assert 'AP_TrialChallengeServable(levelID)' in trial
 assert 'AP_PadUncollectedLetterCount(levelID)' in trial
 assert 'AP_TrialLetters_Prepare()' not in trial
 assert 'AP_PadLogRoute(levelID, levelID' not in trial
-# Five route fail-safes plus the content-plan mode menu's cancel (#133 PR 3).
-assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 6
+# Five route fail-safes, the content-plan mode menu's cancel (#133 PR 3) and
+# the race type selector's cancel or no-row refusal (#208).
+assert len(re.findall(r'goto WarpPad_RefuseEntry;', warp)) == 7
 battle = warp[warp.index('// Battle Tracks'):warp.index('gGT->originalEventTime = D232.timeCrystalChallenge')]
 assert 'if (ctr_cfg_arena_pad_disabled(levelID))' in battle
 assert battle.index('goto WarpPad_RefuseEntry;') < battle.index('AddBitsConfig0 |= CRYSTAL_CHALLENGE;')
