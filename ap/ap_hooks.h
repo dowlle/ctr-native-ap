@@ -931,6 +931,8 @@ void AP_CupSweepOnLoadRequested(int level);
 void AP_CupSweepOnLevelStart(struct GameTracker *g);
 void AP_CupSweepRecordLeg(struct GameTracker *g);
 void AP_CupSweepComplete(struct GameTracker *g,int legs);
+// #344: a driver crossed the finish line forwards and lapIndex advanced.
+void AP_LapOnCrossing(struct GameTracker *gGT, struct Driver *driver, int driverSlot);
 int  AP_CupReturnHub(void);
 
 #else

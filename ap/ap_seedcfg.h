@@ -21,6 +21,7 @@
 #include "ap_boss_venue.h"
 #include "ap_crystal_checks.h"
 #include "ap_cup_sweeps.h"
+#include "ap_lap_checks.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -813,6 +814,7 @@ typedef struct
 extern ctr_seed_config ctr_cfg;
 extern AP_CrystalChecks ctr_crystal_checks;
 extern AP_CupSweepConfig ctr_cup_sweeps;
+extern AP_LapChecks ctr_lap_checks; // #344
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);

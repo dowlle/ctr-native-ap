@@ -83,6 +83,11 @@ for row in expected["retail"]:
 expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
 expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
 expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 33)]
+# Lap completion (#344): every track's Complete One Lap code.
+for row in expected["retail"]:
+    row["lap"] = L[row["name"] + ": Complete One Lap"]
+expected["cortex_vortex"]["lap"] = L[CV + ": Complete One Lap"]
+expected["custom_lap_locations"] = [L[f"Custom Track {i}: Complete One Lap"] for i in range(1, 33)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -1439,6 +1444,48 @@ for name, change in [
         ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
         ]:
     boss_env(name, change, cups_base)
+# Lap completion checks (#344): generated plans with laps on over the base,
+# cup and track-mode profiles, custom tracks and Cortex Vortex, then forged
+# lap records.
+lap_cases = []
+for seed in range(40):
+    options = cup_options(seed) if seed % 2 else profile_options()
+    options["lap_completion_checks"] = True
+    if seed % 4 == 2:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+        options["content_pool"]["tracks"]["modes"] = ["trophy", "ctr", "relic"]
+        options["pad_layout"]["stages"] = "two"
+    try:
+        wire = make_world(options, seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    assert any(c["kind"] == "lap" for c in wire["content_plan"]["checks"]), seed
+    lap_cases.append(wire)
+    cases.append((f"laps-generated-{seed}", wire, True))
+lap_base = next(w for w in lap_cases if any(len(c["routes"]) > 1 and c["kind"] == "lap" for c in w["content_plan"]["checks"])
+                and any(e["kind"] == "cup" for e in w["content_plan"]["entries"]))
+def lap_check(p, legs=False):
+    return next(c for c in p["checks"] if c["kind"] == "lap" and any((r["leg_id"] is not None) == legs for r in c["routes"]))
+def lap_env(name, change):
+    alter("lap-" + name, change, lap_base)
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("dropped", lambda p: p["checks"].remove(lap_check(p))),
+        ("all dropped", lambda p: p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"])),
+        ("code", lambda p: lap_check(p).__setitem__("location", lap_check(p)["location"] + 1)),
+        ("name", lambda p: lap_check(p).__setitem__("display_name", "Lap")),
+        ("owner", lambda p: lap_check(p).__setitem__("owner", "retail:15")),
+        ("route dropped", lambda p: lap_check(p)["routes"].pop()),
+        ("route award", lambda p: lap_check(p)["routes"][0].__setitem__("award", "win")),
+        ("route mode", lambda p: lap_check(p)["routes"][0].__setitem__("mode", "relic")),
+        ("route order", lambda p: lap_check(p)["routes"].reverse()),
+        ("cup route leg", lambda p: lap_check(p, True)["routes"][-1].__setitem__("leg_id", None)),
+        ("feature missing", lambda p: p["required_features"].remove("lap_checks_v1")),
+        ("feature without checks", lambda p: (p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"]))),
+        ]:
+    lap_env(name, change)
+# A plan with laps off that declares the feature.
+alter("lap-feature on a plan without laps", lambda p: p["required_features"].append("lap_checks_v1"))
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap

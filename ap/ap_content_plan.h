@@ -24,6 +24,7 @@ typedef struct ctr_content_leg {
     int package_index; /* custom package, or -1 */
     int custom_slot, named_block, laps;
     int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
+    int64_t lap;       /* `<Track>: Complete One Lap` (#344), 0 when none */
     char leg_id[65], track_id[65];
 } ctr_content_leg;
 typedef struct ctr_content_pad {
@@ -74,6 +75,10 @@ typedef struct ctr_content_pad {
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
+    /* Complete One Lap (#344): the track's lap check, paid by the first lap
+     * of any of this pad's modes; 0 when the seed has no lap checks. A cup
+     * pad carries its legs' lap codes in legs[n].lap instead. */
+    int64_t lap_location;
     /* Racer lock (#133 PR 4b): the engine character id this pad requires, or
      * -1. ANDed onto the pad's gates by AP_ContentPadOpen; the parser also
      * mirrors it into ctr_cfg.racer_lock / gem_cup_racer_lock, so the pad's
