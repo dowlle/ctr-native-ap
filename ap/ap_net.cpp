@@ -1290,8 +1290,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			ap_boss_won_flush();
 		}
 		if (g_connected && !g_wumpa.bankKey.empty() && key == g_wumpa.bankKey) {
+			bool wasOverspent = g_wumpa.overspent();
 			g_wumpa.bankReply(value);
 			ap_wumpa_flush();
+			// Banking that covers an overspent wallet releases the purchases
+			// that were waiting for it.
+			if (wasOverspent && !g_wumpa.overspent())
+				ap_wumpa_resend_paid();
 		}
 		if (g_connected && !g_wumpa.shopKey.empty() && key == g_wumpa.shopKey) {
 			long long code = g_wumpa.pendingCode;

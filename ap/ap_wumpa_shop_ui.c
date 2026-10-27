@@ -87,12 +87,13 @@ static void AP_WShopSay(const char *text)
 static void AP_WShopHint(int hub)
 {
 	long long codes[AP_WUMPA_SHOP_MAX_SLOTS];
-	char seed[64], slot[32], id[96];
+	char seed[40], slot[24], room[32], id[96];
 	int n = 0, k;
-	seed[0] = slot[0] = '\0';
+	seed[0] = slot[0] = room[0] = '\0';
 	ap_net_seed_name(seed, (int)sizeof seed);
 	ap_net_slot_name(slot, (int)sizeof slot);
-	snprintf(id, sizeof id, "%s/%s", seed, slot);
+	ap_net_room_endpoint(room, (int)sizeof room);
+	snprintf(id, sizeof id, "%s/%s/%s/%d", room, seed, slot, ap_net_self_slot());
 	if (strcmp(id, ap_wshop.hintedSeed) != 0)
 	{
 		// Another seed or slot: its shops have not been hinted yet.
