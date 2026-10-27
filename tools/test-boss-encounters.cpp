@@ -87,6 +87,15 @@ static void shared_fixture()
 	for (auto &r : doc["certified_rows"])
 		expect(AP_BossKitRowCertified(r[0], r[1], r[2], r[3]), "certified row known");
 	expect(!AP_BossKitRowCertified(0x02, 2, 1, 2), "uncertified missile variant refused");
+	// Both directions: every native row is in the fixture too.
+	for (int i = 0; i < AP_BOSS_KIT_CERTIFIED_ROWS; i++)
+	{
+		bool found = false;
+		for (auto &r : doc["certified_rows"])
+			found = found || (r[0] == AP_BOSS_KIT_CERTIFIED[i][0] && r[1] == AP_BOSS_KIT_CERTIFIED[i][1] &&
+			                  r[2] == AP_BOSS_KIT_CERTIFIED[i][2] && r[3] == AP_BOSS_KIT_CERTIFIED[i][3]);
+		expect(found, "native certified row is in the fixture");
+	}
 	for (auto &fam : doc["families"].items())
 		for (auto &row : fam.value())
 			expect(AP_BossKitWeaponKnown(row[0].get<int>()), "family weapon " + fam.key());
