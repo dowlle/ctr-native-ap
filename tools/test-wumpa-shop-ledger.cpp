@@ -112,15 +112,12 @@ int main()
         l.configure({{35028600, 40}, {35028601, 40}});
         l.bankRetrieved(json(50));
         l.shopRetrieved(json{{"35028600", 40}, {"35028601", 40}});
-        std::set<long long> checked = {35028600};
-        auto undo = l.repairOverspend([&](long long c) { return checked.count(c) != 0; });
-        auto unsent = l.unsentPaid([&](long long c) { return checked.count(c) != 0; });
-        CHECK("repair: the unchecked outspent entry is undone, not resent",
-              undo.size() == 1 && undo[0] == 35028601 && unsent.empty() && l.balance() == 10 &&
-              l.rollbacks.size() == 1);
+        CHECK("overspent: detected, nothing undone", l.overspent() && l.balance() == -30 &&
+                                                       l.isBought(35028600) && l.isBought(35028601));
+        l.credit(30);
+        CHECK("overspent: banking that pays for both ends it", !l.overspent());
         APWumpaLedger ok = ready(100, json{{"35028600", 40}});
-        CHECK("repair: a wallet that is not overspent is left alone",
-              ok.repairOverspend([](long long) { return false; }).empty() && ok.isBought(35028600));
+        CHECK("overspent: a covered wallet is not", !ok.overspent());
     }
     {
         APWumpaLedger l = ready(100);

@@ -2057,14 +2057,16 @@ static void ap_wumpa_resend_paid()
 	auto done = [](long long code) {
 		return g_locs_chk.count((int64_t)code) != 0 || g_locs_miss.count((int64_t)code) == 0;
 	};
-	// A purchase another client outspent may still be in the wallet if this
-	// client stopped before undoing it. Its check was never sent, so undo it.
-	for (long long code : g_wumpa.repairOverspend(done)) {
+	// A purchase another client outspent may still be in the wallet if that
+	// client stopped before undoing it. Send nothing while the wallet is
+	// overspent: the purchases wait until banking pays for them.
+	if (g_wumpa.overspent()) {
 		char line[128];
-		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] wallet overspent: undoing unchecked slot %lld\n", code);
+		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] wallet overspent by %lld: unchecked purchases wait\n",
+		              -g_wumpa.balance());
 		AP_LogLine(line);
+		return;
 	}
-	ap_wumpa_flush();
 	std::vector<long long> unsent = g_wumpa.unsentPaid(done);
 	for (long long code : unsent) {
 		char line[128];

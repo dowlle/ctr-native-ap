@@ -641,7 +641,7 @@ void AP_WumpaReachedTen(struct Driver *driver);
 // #249 banking (ap_wumpa.c): fruit past 10 for the local player, and the fruit
 // held at the race-finished edge, once per attempt.
 void AP_WumpaBankKart(struct Driver *driver, int held, int delta);
-void AP_WumpaOnRaceFinish(struct Driver *driver);
+void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
 // #249: bank AP fruit past 10 held since the last effect-marker write
 // (ap_hooks_received.c calls it right after that write).
 void AP_WumpaCommitReceived(void);

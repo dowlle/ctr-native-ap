@@ -62,12 +62,13 @@ check('kart banking is the local human player',
       'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'AP_WumpaBanking()' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
-      'AP_WumpaFinishTake(&g_finish_latch, driver->numWumpas, AP_RaceAttemptIsForcedLoss())' in fin)
+      'AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss())' in fin)
+check('battle mode banks nothing', 'BATTLE_MODE' in fin and 'BATTLE_MODE' in kart)
 tick = body(wumpa, 'void AP_WumpaTick(')
 check('a newly seen countdown arms the finish payout',
       re.search(r'if \(!g_countdown_seen\)\s*AP_WumpaFinishArm\(&g_finish_latch\);\s*g_countdown_seen = 1;', tick) is not None)
-check('the Wumpa tick banks on the rising finish edge in every race mode',
-      re.search(r'if \(finished && !finishedPrev && !loading\)\s*AP_WumpaOnRaceFinish\(p\);', tick) is not None and
+check('the Wumpa tick banks on the rising finish edge with the previous frame\'s human state',
+      re.search(r'if \(finished && !finishedPrev && !loading\)\s*AP_WumpaOnRaceFinish\(p, humanPrev,', tick) is not None and
       'AP_WumpaOnRaceFinish' not in text('ap/ap_hooks_race_checks.c'))
 
 net = text('ap/ap_net.cpp')
@@ -87,7 +88,8 @@ check('the set reply passes original_value to the reservation',
       'g_wumpa.shopReply(value, original)' in net and 'const nlohmann::json &original) {' in net)
 check('only a confirmed purchase sends its check',
       re.search(r'REPLY_CONFIRMED\) \{[^}]*ap_net_try_send_location\(\(int64_t\)code\);', net) is not None)
-check('an overspent wallet is repaired before resending', 'g_wumpa.repairOverspend(done)' in net)
+resend = body(net, 'static void ap_wumpa_resend_paid()\n{')
+check('an overspent wallet resends nothing', resend.index('if (g_wumpa.overspent())') < resend.index('g_wumpa.unsentPaid(done)'))
 check('paid but unchecked purchases are resent after the wallet read',
       re.search(r'g_wumpa\.shopRetrieved\(wShop->second\);[\s\S]{0,400}ap_wumpa_resend_paid\(\);', net) is not None)
 

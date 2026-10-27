@@ -84,7 +84,8 @@ void AP_WumpaBankKart(struct Driver *driver, int held, int delta)
 	struct GameTracker *gGT = sdata->gGT;
 	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	if ((driver->actionsFlagSet & ACTION_BOT) != 0)
+	// Battle mode is not a race (ruling 2026-09-18: race modes with Wumpa).
+	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || (gGT->gameMode1 & BATTLE_MODE) != 0)
 		return;
 	AP_WumpaBank(AP_WumpaBankOverflow(held, delta), "past 10");
 }
@@ -99,16 +100,20 @@ int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap)
 	return 1;
 }
 
-void AP_WumpaOnRaceFinish(struct Driver *driver)
+// `wasHuman` and `held` come from the frame before the finish edge: the engine
+// hands a finished player's kart to the AI on the finish frame
+// (PlayLevel_UpdateLapStats -> BOTS_Driver_Convert), so ACTION_BOT is already
+// set when the edge is seen.
+void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	int held;
+	int pay;
 	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	held = AP_WumpaFinishTake(&g_finish_latch, driver->numWumpas, AP_RaceAttemptIsForcedLoss());
-	if (!AP_WumpaBanking() || (driver->actionsFlagSet & ACTION_BOT) != 0)
+	pay = AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss());
+	if (!AP_WumpaBanking() || !wasHuman || (gGT->gameMode1 & BATTLE_MODE) != 0)
 		return;
-	AP_WumpaBank(held, "held at the finish");
+	AP_WumpaBank(pay, "held at the finish");
 }
 
 // The local human player. Single-player Adventure: drivers[0]. Same convention as
@@ -228,12 +233,15 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// #249: the player's race-finished rising edge, in every race mode, once
 	// per attempt (the latch below). A finish seen during a load is ignored.
 	{
-		static int finishedPrev = 0;
+		static int finishedPrev = 0, humanPrev = 0, heldPrev = 0;
 		struct Driver *p = gGT->drivers[0];
 		int finished = p != 0 && onTrack && (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
 		if (finished && !finishedPrev && !loading)
-			AP_WumpaOnRaceFinish(p);
+			AP_WumpaOnRaceFinish(p, humanPrev, p->numWumpas > heldPrev ? p->numWumpas : heldPrev);
 		finishedPrev = finished;
+		// The player as of this frame, for the next frame's finish edge.
+		humanPrev = p != 0 && onTrack && !finished && (p->actionsFlagSet & ACTION_BOT) == 0;
+		heldPrev = humanPrev ? p->numWumpas : 0;
 	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{

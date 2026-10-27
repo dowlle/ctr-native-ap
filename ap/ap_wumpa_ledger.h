@@ -153,22 +153,10 @@ struct APWumpaLedger {
         return s;
     }
     // After a crash, a purchase another client outspent may still sit in the
-    // wallet with no check sent. While the balance is negative, return the
-    // unchecked entries to undo (highest code first) and queue their pops.
-    template <class Checked>
-    std::vector<long long> repairOverspend(Checked checked) {
-        std::vector<long long> out;
-        if (!bankKnown() || !shopKnown()) return out;
-        std::vector<long long> codes;
-        for (auto &kv : bought) codes.push_back(kv.first);
-        for (auto it = codes.rbegin(); it != codes.rend() && balance() < 0; ++it) {
-            if (checked(*it)) continue;
-            out.push_back(*it);
-            rollbacks.push_back(*it);
-            bought.erase(*it);
-        }
-        return out;
-    }
+    // wallet with no check sent, and there is no telling which of the two was
+    // refused. While the wallet is overspent no unchecked purchase is resent:
+    // it waits until banking covers it again, so every item sent is paid for.
+    bool overspent() const { return bankKnown() && shopKnown() && balance() < 0; }
     long long balance() const { return lifetime - spent(bought); }
     bool isBought(long long code) const { return bought.count(code) != 0; }
     void shopRetrieved(const nlohmann::json &v) {
