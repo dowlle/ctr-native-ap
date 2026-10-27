@@ -29,7 +29,7 @@ static bool parse_lap_checks(const nlohmann::json &j, const nlohmann::json &opt,
                 if (code != AP_LAP_CORTEX_CODE) throw 0;
                 parsed.cortex = code;
             } else {
-                if (code != AP_LapRetailCode(lid)) throw 0;
+                if (lid < 0 || lid >= AP_LAP_RETAIL_TRACKS || code != AP_LapRetailCode(lid)) throw 0;
                 parsed.tracks[lid] = code;
             }
         }

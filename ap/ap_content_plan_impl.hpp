@@ -573,8 +573,8 @@ static void validate(const J &p, State &out) {
     } else if (pair.second->at("kind") == "cup") cups = true;
     else if (pair.second->at("kind") != "boss_race" && pair.second->at("kind") != "boss_cup") modes |= pair.second->at("modes") != J::array({"trophy"});
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
-    bool laps = false; // #344: lap checks exist for every raced track or none
-    for(const auto &check:p["checks"]) { pickups |= check.at("kind")=="crystal_pickup"; laps |= check.at("kind")=="lap"; }
+    bool plan_laps = false; // #344: lap checks exist for every raced track or none
+    for(const auto &check:p["checks"]) { pickups |= check.at("kind")=="crystal_pickup"; plan_laps |= check.at("kind")=="lap"; }
     J features=J::array({"content_plan_v1"});
     if(!manual_ids.empty())features.push_back("manual_pad_requirements_v1");
     if(arenas)features.push_back("crystal_entries_v1");
@@ -592,7 +592,7 @@ static void validate(const J &p, State &out) {
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
-    if(laps)features.push_back("lap_checks_v1");             // #344
+    if(plan_laps)features.push_back("lap_checks_v1");             // #344
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -811,7 +811,7 @@ static void validate(const J &p, State &out) {
                 }
                 dest.legs[n].laps = laps;
                 if (dest.legs[n].victory) leg_uses.push_back(LegUse{dest.legs[n].track_id, entry_id, id, leg_id});
-                if (laps) {
+                if (plan_laps) {
                     const ctr_content_leg &l = dest.legs[n];
                     dest.legs[n].lap = lap_code(l.retail_id, l.cortex, l.named_block, l.custom_slot);
                     lap_uses.push_back(LapUse{l.track_id, info.title, entry_id, id, "cup", leg_id, dest.legs[n].lap});
@@ -1115,7 +1115,7 @@ static void validate(const J &p, State &out) {
             }
         }
         // Complete One Lap (#344): every mode of the pad has laps.
-        if (laps) {
+        if (plan_laps) {
             dest.lap_location = lap_code(dest.retail_id, dest.cortex, dest.named_block, dest.custom_slot);
             for (int k = 0; k < dest.mode_count; ++k)
                 lap_uses.push_back(LapUse{track_id, check_title, entry_id, id, mode_names[dest.modes[k]], "", dest.lap_location});
@@ -1167,7 +1167,7 @@ static void validate(const J &p, State &out) {
     // `Complete One Lap` (#344): one check per raced track, a route per
     // standalone mode and per cup leg, in the plan's entry order, then mode or
     // leg order (apworld content_laps.checks). Boss races are no route.
-    if (laps) {
+    if (plan_laps) {
         std::map<std::string, size_t> entry_order;
         for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
         std::stable_sort(lap_uses.begin(), lap_uses.end(), [&](const LapUse &a, const LapUse &b) {

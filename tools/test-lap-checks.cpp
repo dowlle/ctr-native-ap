@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
     CHECK(!ctr_lap_checks.enabled && ctr_lap_checks.tracks[4] == -1);
 
     // Refusals.
-    for (int mutation = 0; mutation < 19; ++mutation) {
+    for (int mutation = 0; mutation < 21; ++mutation) {
         json b = seed();
         switch (mutation) {
         case 0: b["ctr_options"]["lap_completion_checks"] = 1; break;
@@ -139,6 +139,8 @@ int main(int argc, char **argv) {
         case 16: b["lap_checks"]["tracks"]["-1"] = 1; break;
         case 17: b["lap_checks"]["custom_slots"] = json::array(); break;
         case 18: b["lap_checks"] = 0; break;
+        case 19: b["lap_checks"]["tracks"]["18"] = -1; break;  // no index past the table
+        case 20: b["lap_checks"]["tracks"]["500"] = -1; break;
         }
         refused(b);
     }
