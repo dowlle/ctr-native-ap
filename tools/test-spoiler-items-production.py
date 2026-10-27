@@ -158,6 +158,32 @@ int main(int argc,char **argv){
  std::puts("PASS: legacy and content-plan spoiler_items parse");
 }
 '''
+# The production call sites route through the gates above. The pad enumerator
+# itself is engine code, unchanged by #459 and pinned by test-pad-glow-items.c;
+# these checks pin that its count passes the gate before the layout picks slots,
+# that box colour asks the unlock first, and that both receipts are dispatched
+# and reset on a fresh connect.
+warp = (root / "game/232/AH_WarpPad.c").read_text()
+enum_at = warp.index("apUncN = AP_PadUncollectedDisplayBits(")
+gate_at = warp.index("apUncN = AP_Spoiler_PadDisplayCount(AP_SpoilerPadPreviewShown(), apUncN);")
+slots_at = warp.index("AP_PadGlowSlots(apUncBits, apUncN,")
+assert enum_at < gate_at < slots_at, "pad glow gate must sit between enumeration and slot layout"
+assert warp.count("AP_PadUncollectedDisplayBits(") == 1 and warp.count("AP_PadGlowSlots(") == 1
+boxes = (root / "ap/ap_boxes.c").read_text()
+colour_for = boxes[boxes.index("static int AP_BoxesColourFor("):]
+colour_for = colour_for[:colour_for.index("\n}\n")]
+assert "AP_SpoilerBoxColoursUnlocked()" in colour_for and "AP_BoxColour_Effective(unlocked," in colour_for
+assert "AP_BoxColour_RowStateWithItem(" in boxes and boxes.count("AP_BoxesColourFor(") >= 2
+net = (root / "ap/ap_hooks_net.c").read_text()
+assert "AP_SpoilerItemsReset();" in net
+assert "idx == AP_WARP_PAD_PREVIEW_ITEM_INDEX || idx == AP_BOX_COLOURS_ITEM_INDEX" in net
+assert "AP_SpoilerItemsReceive((int)idx);" in net
+assert net.index("AP_SpoilerItemsReset();") < net.index("AP_SpoilerItemsReceive((int)idx);")
+menu = (root / "game/230/MM_ConfigMenu.c").read_text()
+assert "AP_BOX_COLOUR_ROW_ITEM_LOCKED" in menu and '"LOCKED (ITEM)"' in menu
+for line in ("Find AP Box Colours to see", "box colours. Boxes stay pink."):
+    assert len(line) <= 33 and line in menu
+
 with tempfile.TemporaryDirectory(prefix="ctr-spoiler-items-") as tmp:
     src, exe = Path(tmp)/"test.c", Path(tmp)/"test"
     src.write_text(fixture)
