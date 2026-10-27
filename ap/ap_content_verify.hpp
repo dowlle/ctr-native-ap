@@ -8,8 +8,8 @@
 //   * content_plan.create_regions: pad regions (entrance requirement, first
 //     stage-1 gate, racer lock), each check's routes, stage-2 gates, letter
 //     items, `boost` and `stats` bound to its first route's racer lock, the
-//     Itemsanity weapon alternative to a first-boost floor, and Cup Leg
-//     Victory routes;
+//     Itemsanity weapon alternative to a first-boost floor, Cup Leg
+//     Victory routes and Complete One Lap routes (#344, content_laps);
 //   * content_bosses.install: one region per encounter (garage entrance plus
 //     the encounter requirement) with its check and companion event;
 //   * content_global_checks.install and tiger_temple_door: Itemsanity and Hit
@@ -46,7 +46,7 @@ enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
 struct Region { std::vector<int> gates; int lock = -1; };
 struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; };
-enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT };
+enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, LAP };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
 struct Loc {
     int64_t code = 0;
@@ -276,6 +276,24 @@ static Model build() {
             m.locs.push_back(L);
             continue;
         }
+        // Complete One Lap (#344, content_plan.create_regions): any route; a
+        // standalone route needs its mode's stage-2 gate and the track's
+        // finish rank, a cup route the finish of every leg up to its own.
+        if (kind == "lap") {
+            L.kind = LAP;
+            for (const auto &r : routes) {
+                Route R;
+                R.region = region_of(r.at("entry_id").get<std::string>());
+                R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
+                R.need = track ? finish_boost(*track, packages, o) : 0;
+                if (r.at("leg_id").is_null()) R.stage = stage_of(r);
+                else R.need = std::max(R.need, leg_boost(*entries.at(r["entry_id"].get<std::string>()),
+                                                         r.at("leg_id").get<std::string>(), false, tracks, packages, o));
+                L.routes.push_back(R);
+            }
+            m.locs.push_back(L);
+            continue;
+        }
         std::set<std::string> pads_of;
         for (const auto &r : routes) pads_of.insert(r.at("own_pad_id").get<std::string>());
         if (pads_of.size() == 1) {
@@ -428,6 +446,11 @@ struct Sweep {
         case LEG:
             for (const auto &r : L.routes)
                 ok = ok || (region(r.region) && (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
+            break;
+        case LAP:
+            for (const auto &r : L.routes)
+                ok = ok || (region(r.region) && (r.stage < 0 || eval(r.stage)) &&
+                            (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
             break;
         case ENCOUNTER:
             ok = region(L.region) && boost(L);

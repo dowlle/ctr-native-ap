@@ -573,7 +573,8 @@ static void validate(const J &p, State &out) {
     } else if (pair.second->at("kind") == "cup") cups = true;
     else if (pair.second->at("kind") != "boss_race" && pair.second->at("kind") != "boss_cup") modes |= pair.second->at("modes") != J::array({"trophy"});
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
-    for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
+    bool plan_laps = false; // #344: lap checks exist for every raced track or none
+    for(const auto &check:p["checks"]) { pickups |= check.at("kind")=="crystal_pickup"; plan_laps |= check.at("kind")=="lap"; }
     J features=J::array({"content_plan_v1"});
     if(!manual_ids.empty())features.push_back("manual_pad_requirements_v1");
     if(arenas)features.push_back("crystal_entries_v1");
@@ -591,6 +592,7 @@ static void validate(const J &p, State &out) {
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
+    if(plan_laps)features.push_back("lap_checks_v1");             // #344
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -721,6 +723,17 @@ static void validate(const J &p, State &out) {
     std::set<int> cup_names;
     struct LegUse { std::string track, entry, pad, leg; };
     std::vector<LegUse> leg_uses; // in pad order; re-sorted to entry order below
+    // Complete One Lap (#344): a route per standalone mode and per cup leg,
+    // in pad order; re-sorted to entry order below (apworld content_laps).
+    struct LapUse { std::string track, title, entry, pad, mode, leg; int64_t code; };
+    std::vector<LapUse> lap_uses;
+    auto lap_code = [&](int retail_id, int cortex, int named_block, int custom_slot) -> int64_t {
+        if (retail_id >= 0) return registry["retail"][retail_id]["lap"].get<int64_t>();
+        if (cortex) return registry["cortex_vortex"]["lap"].get<int64_t>();
+        if (named_block >= 0) return ap_named_location_code(named_block, AP_NAMED_OFF_LAP);
+        need(custom_slot >= 1 && custom_slot <= AP_CONTENT_MAX_PACKAGES, "a lap check names no track identity");
+        return registry["custom_lap_locations"][custom_slot - 1].get<int64_t>();
+    };
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
         const int physical = garage ? pi - 27 : registry["pads"][pi]["physical"].get<int>();
@@ -798,6 +811,11 @@ static void validate(const J &p, State &out) {
                 }
                 dest.legs[n].laps = laps;
                 if (dest.legs[n].victory) leg_uses.push_back(LegUse{dest.legs[n].track_id, entry_id, id, leg_id});
+                if (plan_laps) {
+                    const ctr_content_leg &l = dest.legs[n];
+                    dest.legs[n].lap = lap_code(l.retail_id, l.cortex, l.named_block, l.custom_slot);
+                    lap_uses.push_back(LapUse{l.track_id, info.title, entry_id, id, "cup", leg_id, dest.legs[n].lap});
+                }
                 if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0)
                     cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
             }
@@ -1096,6 +1114,12 @@ static void validate(const J &p, State &out) {
                 family_check(dest.box_locations[b], "box", "Item Box " + std::to_string(b + 1), routes);
             }
         }
+        // Complete One Lap (#344): every mode of the pad has laps.
+        if (plan_laps) {
+            dest.lap_location = lap_code(dest.retail_id, dest.cortex, dest.named_block, dest.custom_slot);
+            for (int k = 0; k < dest.mode_count; ++k)
+                lap_uses.push_back(LapUse{track_id, check_title, entry_id, id, mode_names[dest.modes[k]], "", dest.lap_location});
+        }
         if (!keys) starting_entry = true;
     }
     // Cups (#133 PR 5): tracks raced only as legs take their identities here,
@@ -1139,6 +1163,30 @@ static void validate(const J &p, State &out) {
         }
         for (const auto &track : order)
             need(expected_checks.emplace(victories[track]["location"].get<int64_t>(), victories[track]).second, "duplicate check identity");
+    }
+    // `Complete One Lap` (#344): one check per raced track, a route per
+    // standalone mode and per cup leg, in the plan's entry order, then mode or
+    // leg order (apworld content_laps.checks). Boss races are no route.
+    if (plan_laps) {
+        std::map<std::string, size_t> entry_order;
+        for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
+        std::stable_sort(lap_uses.begin(), lap_uses.end(), [&](const LapUse &a, const LapUse &b) {
+            return entry_order.at(a.entry) < entry_order.at(b.entry); });
+        std::vector<std::string> order;
+        std::map<std::string, J> lap_checks;
+        for (const auto &use : lap_uses) {
+            if (!lap_checks.count(use.track)) {
+                order.push_back(use.track);
+                lap_checks[use.track] = J{{"location", use.code}, {"owner", use.track}, {"kind", "lap"},
+                                          {"display_name", use.title + ": Complete One Lap"}, {"routes", J::array()}};
+            }
+            need(lap_checks[use.track]["location"] == use.code, "a track's lap check has two codes");
+            lap_checks[use.track]["routes"].push_back(J{{"entry_id", use.entry}, {"mode", use.mode},
+                                                        {"leg_id", use.leg.empty() ? J(nullptr) : J(use.leg)},
+                                                        {"encounter_id", nullptr}, {"own_pad_id", use.pad}, {"award", "lap"}});
+        }
+        for (const auto &track : order)
+            need(expected_checks.emplace(lap_checks[track]["location"].get<int64_t>(), lap_checks[track]).second, "duplicate check identity");
     }
     // Boss garages (#133 PR 6), apworld content_bosses.build: one encounter
     // per ordinary garage, then N. Oxide's two unless Oxide is disabled, each

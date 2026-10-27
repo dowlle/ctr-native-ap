@@ -127,6 +127,10 @@ void PlayLevel_UpdateLapStats(void)
 
 				// lap counter = lap counter + 1
 				currDriver->lapIndex++;
+#ifdef CTR_AP
+				// #344: the first accepted lap sends the track's lap check.
+				AP_LapOnCrossing(gGT, currDriver, iVar10);
+#endif
 
 				// if farthest-ahead human
 				if (currDriver == firstRank)
