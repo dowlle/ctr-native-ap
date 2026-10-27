@@ -2459,6 +2459,10 @@ WarpPad_AnimateOpen:
 	{
 		apUncN = AP_PadUncollectedDisplayBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
+		// Spoiler Items (#459): until Warp Pad Preview arrives, hide all three
+		// prize slots, exactly as for a pad with nothing left. Only the draw is
+		// gated: AP_PadState, the counters and the entry gate are untouched.
+		apUncN = AP_Spoiler_PadDisplayCount(AP_SpoilerPadPreviewShown(), apUncN);
 		if (apUncN > 0)
 			AP_PadGlowSlots(apUncBits, apUncN, (int)(gGT->timer / 0x3C), apSlotBit);
 		// apUncN == 0 -> all apSlotBit stay -1 (hide everything: all checked).

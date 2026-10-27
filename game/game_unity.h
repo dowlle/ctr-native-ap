@@ -26,6 +26,8 @@
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
 #include "../ap/ap_reserve_top_up.h"
+#include "../ap/ap_spoiler_items.h" // reveal items for pad previews and box colours (#459)
+#include "../ap/ap_spoiler_items_logic.h"
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER row wiring (#238)
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
@@ -426,6 +428,7 @@
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_turbogrant.c"
 #include "../ap/ap_reserve_top_up.c"
+#include "../ap/ap_spoiler_items.c"
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"

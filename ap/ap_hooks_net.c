@@ -126,6 +126,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
 		AP_ReserveTopUpReset();
+		AP_SpoilerItemsReset(); // #459: both reveal receipts come back with the replay
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
 		AP_HitEncounterConnectReset(); // ticket 06: re-arm the Hit-check session mask
@@ -450,6 +451,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_RESERVE_TOP_UP_ITEM_INDEX)
 		{
 			AP_ReserveTopUpReceive();
+		}
+		// Spoiler Items (#459, idx 204 and 205). Booleans rebuilt by the replay,
+		// so like Turbo Grant they are not filtered through the effect marker.
+		else if (idx == AP_WARP_PAD_PREVIEW_ITEM_INDEX || idx == AP_BOX_COLOURS_ITEM_INDEX)
+		{
+			AP_SpoilerItemsReceive((int)idx);
 		}
 		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
 		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
