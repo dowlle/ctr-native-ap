@@ -79,7 +79,7 @@ static void kit(int g, int track, int lastCp) {
   for (int i = 0; i < 5; i++) {
     AP_BossKitSegment &s = ctr_boss_encounters.schedule[g][i];
     s.checkpoint = (u8)(i * lastCp / 4); s.throwFlag = (u8)(i % 2 ? 2 : 3);
-    s.weapon = (u8)(i % 2 ? 0x66 : 0x01); s.pathDisabled = 1; s.cooldown = (u16)(6 + i); s.juice = (u16)(i % 3);
+    s.weapon = (u8)(i % 2 ? 0x66 : 0x01); s.pathDisabled = 1; s.cooldown = (u16)(6 + i); s.juice = (u16)(i % 2 ? 2 : 0);
   }
 }
 int main() {

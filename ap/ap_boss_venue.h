@@ -109,12 +109,31 @@ static inline int AP_BossKitWeaponKnown(int w)
 	return w == 0x01 || w == 0x02 || w == 0x03 || w == 0x04 || w == 0x0f || w == 0x64 || w == 0x66;
 }
 
+// Every (weapon, throw, path, juice) a composed segment may carry: the
+// certified family variants and the four retail signature rows. The
+// apworld's boss_encounters.CERTIFIED_ROWS is the twin (shared fixture).
+#define AP_BOSS_KIT_CERTIFIED_ROWS 9
+static const unsigned char AP_BOSS_KIT_CERTIFIED[AP_BOSS_KIT_CERTIFIED_ROWS][4] = {
+	{0x01, 3, 1, 0}, {0x02, 3, 1, 0}, {0x03, 3, 0, 0}, {0x04, 2, 1, 1}, {0x0f, 2, 0, 2},
+	{0x0f, 2, 1, 2}, {0x0f, 3, 1, 0}, {0x64, 2, 0, 2}, {0x66, 2, 1, 2},
+};
+
+static inline int AP_BossKitRowCertified(int weapon, int throwFlag, int path, int juice)
+{
+	int i;
+	for (i = 0; i < AP_BOSS_KIT_CERTIFIED_ROWS; i++)
+		if (AP_BOSS_KIT_CERTIFIED[i][0] == weapon && AP_BOSS_KIT_CERTIFIED[i][1] == throwFlag &&
+		    AP_BOSS_KIT_CERTIFIED[i][2] == path && AP_BOSS_KIT_CERTIFIED[i][3] == juice)
+			return 1;
+	return 0;
+}
+
 // NULL when `seg` is a schedule this build can race on a venue with
 // `venuePoints` restart points: five segments, the first at checkpoint 0,
 // strictly increasing inside the venue, every field a known code.
 static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg, int n, int venuePoints)
 {
-	int i, prev = -1;
+	int i, prev = -1, attacks = 0;
 	if (seg == 0 || n != AP_BOSS_VENUE_SEGMENTS)
 		return "schedule must have five segments";
 	for (i = 0; i < n; i++)
@@ -122,12 +141,15 @@ static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg
 		const AP_BossKitSegment *s = &seg[i];
 		if ((int)s->checkpoint <= prev || (int)s->checkpoint >= venuePoints || (prev < 0 && s->checkpoint != 0))
 			return "schedule checkpoints do not fit the venue";
-		if (!AP_BossKitWeaponKnown(s->weapon) || (s->throwFlag != 2 && s->throwFlag != 3) ||
-		    s->pathDisabled > 1 || s->juice > 2 || s->cooldown < AP_BOSS_KIT_COOLDOWN_MIN ||
-		    s->cooldown > AP_BOSS_KIT_COOLDOWN_MAX)
+		if (!AP_BossKitRowCertified(s->weapon, s->throwFlag, s->pathDisabled, s->juice) ||
+		    s->cooldown < AP_BOSS_KIT_COOLDOWN_MIN || s->cooldown > AP_BOSS_KIT_COOLDOWN_MAX)
 			return "schedule has a code this build cannot race";
+		if (s->weapon != 0x0f)
+			attacks++;
 		prev = s->checkpoint;
 	}
+	if (attacks == 0)
+		return "schedule never attacks";
 	return 0;
 }
 

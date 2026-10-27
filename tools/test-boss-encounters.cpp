@@ -83,6 +83,10 @@ static void shared_fixture()
 	for (auto &w : doc["weapon_codes"])
 		expect(AP_BossKitWeaponKnown(w.get<int>()), "weapon code known");
 	expect(!AP_BossKitWeaponKnown(0x06) && !AP_BossKitWeaponKnown(0x09), "shield and warp orb refused");
+	expect(doc["certified_rows"].size() == AP_BOSS_KIT_CERTIFIED_ROWS, "certified row count");
+	for (auto &r : doc["certified_rows"])
+		expect(AP_BossKitRowCertified(r[0], r[1], r[2], r[3]), "certified row known");
+	expect(!AP_BossKitRowCertified(0x02, 2, 1, 2), "uncertified missile variant refused");
 	for (auto &fam : doc["families"].items())
 		for (auto &row : fam.value())
 			expect(AP_BossKitWeaponKnown(row[0].get<int>()), "family weapon " + fam.key());
@@ -179,6 +183,14 @@ static void refusals()
 	refuse("zero cooldown", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][4] = 0; });
 	refuse("negative field", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][5] = -1; });
 	refuse("row without schedule", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"].erase("schedule"); });
+	refuse("uncertified row", [](nlohmann::json &j) {
+		auto &seg = j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1];
+		seg = {seg[0], 2, 2, 1, 15, 2};
+	});
+	refuse("never attacks", [](nlohmann::json &j) {
+		for (auto &seg : j["boss_encounters"]["garages"]["papu_papu"]["schedule"])
+			seg = {seg[0], 2, 15, 1, 12, 2};
+	});
 	refuse("ai profile", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["ai_profile"] = "boss"; });
 	refuse("kit switch off with composed rows", [](nlohmann::json &j) { j["ctr_options"]["boss_kit_shuffle"] = false; });
 	refuse("opponent switch not bool", [](nlohmann::json &j) { j["ctr_options"]["boss_opponent_shuffle"] = 1; });
