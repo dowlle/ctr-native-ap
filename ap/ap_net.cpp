@@ -191,6 +191,7 @@ static std::string           g_room_endpoint;
 // teardown to after g_ap->poll() returns -- deleting g_ap from inside its own
 // slot-connected callback is unsafe.
 static bool                  g_rejected = false;
+static void ap_solo_journal_resend(const std::string &seed); // #89, defined below
 static bool                  g_reject_stop_pending = false;
 
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
