@@ -39,6 +39,18 @@ prod += extract(unit, 'int AP_BossLossEasingNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
 prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
+# J03: the helpers the attack schedule now calls (the final record, the
+# gauntlet and the decision 8 fit; test-boss-venue-production.py covers them).
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)\n{')
+prod += extract(unit, 'static void AP_BossFillKit(')
+prod += extract(unit, 'static int AP_BossFitKit(')
+prod += 'static struct MetaDataBOSS s_apBossFinalAttack[AP_BOSS_FINAL_SEGMENTS + 1];\n'
+prod += extract(unit, 'int AP_BossFinalComposedNow(void)\n{')
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)\n{')
+prod += 'static struct MetaDataBOSS s_apBossGauntletAttack[AP_BOSS_VENUE_SEGMENTS + 1];\nstatic int s_apBossGauntletLeg = -1;\n'
+prod += extract(unit, 'static int AP_BossGauntletLegNow(void)\n{')
+prod += extract(unit, 'int AP_BossGauntletAttacker(void)\n{')
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)\n{')
 prod += extract(unit, 'struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)\n{')
 
 data_c = (root / 'game/zGlobal_DATA.c').read_text()
@@ -56,13 +68,18 @@ fixture = r'''
 typedef unsigned char u8; typedef unsigned short u16;
 struct MetaDataBOSS { u8 trackCheckpoint, throwFlag, weaponType, pathChangeDisabled; u16 weaponCooldown, juiceFlag; };
 #include "ap_boss_venue.h"
+#define AP_BOSS_ADAPTER_PURE
+#include "ap_boss_adapter.h"
+#include "ap_oxide_weapon_schedule.h"
 #define ADVENTURE_BOSS 0x80000000u
 #define ADVENTURE_CUP 0x10000000u
+#define ADVENTURE_MODE 0x00080000u
 #define BOSS_WEAPON_NORMAL 3
 #define BOSS_WEAPON_NONE 0xf
 struct Level { int cnt_restart_points; };
-struct GameTracker { unsigned gameMode1; short levelID; char bossID; Level *level1; };
-struct SData { GameTracker *gGT; } sdata_s, *sdata = &sdata_s;
+struct Cup { int cupID; int trackIndex; };
+struct GameTracker { unsigned gameMode1; short levelID; char bossID; Level *level1; Cup cup; };
+struct SData { GameTracker *gGT; int bossWeaponCooldown; int bossJuiceCounter; } sdata_s, *sdata = &sdata_s;
 struct Data { MetaDataBOSS *bossWeaponMetaPtr[5]; } data;
 static MetaDataBOSS oxide[1], roo[6] = {ROO}, papu[6] = {PAPU}, joe[6] = {JOE}, pin[6] = {PIN};
 static int cfg_active = 1; static int ctr_cfg_active(void) { return cfg_active; }
@@ -125,11 +142,14 @@ int main() {
   assert(AP_BossRaceOpponentModels(3, &extra) == 9 && extra == -1);  // player is Coco
   assert(AP_BossGarageOpponent(1) == 3 && AP_BossGarageOpponent(0) == 10);
 
-  // A loaded graph the record did not see: logged, nothing thrown.
+  // Decision 8: a loaded graph the record did not see keeps the composed
+  // kit, remapped onto the count it has, with one log line.
   race(ADVENTURE_BOSS, 3, 1, 60);
   logs = 0;
   m = AP_BossVenueAttackSchedule(1);
-  assert(m != nullptr && logs == 1 && m[0].weaponType == BOSS_WEAPON_NONE && m[1].throwFlag == 0);
+  assert(m != nullptr && logs == 1 && m[0].weaponType == ctr_boss_encounters.schedule[1][0].weapon);
+  for (int i = 1; i < 5; i++) assert(m[i].trackCheckpoint > m[i - 1].trackCheckpoint && m[i].trackCheckpoint < 60);
+  assert(m[5].throwFlag == 0);
 
   // Joe inherits on his home track: retail path, retail easing.
   race(ADVENTURE_BOSS, 1, 2, 84);
