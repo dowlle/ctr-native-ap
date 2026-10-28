@@ -463,15 +463,17 @@ static void Enum_Advance(const ConfigEntry *e)
 // The Item Box Colours row is the player's opt-out of the seed's item box
 // colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
 // takes no input: a player can turn colours off, never on. While Spoiler Items
-// (#459) still holds the colours behind AP Box Colours, it reads "LOCKED (ITEM)"
-// the same way; the boxes are pink until the item arrives either way.
+// (#459) still holds the colours behind AP Box Colours, the row stays editable
+// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
+// keeps the boxes pink after the item arrives.
 static int Config_RowLockedBySeed(const ConfigEntry *e)
 {
-	int state;
-	if (e->valuePtr != &g_config.itemBoxColours)
-		return 0;
-	state = AP_Boxes_ColourRowState();
-	return state == AP_BOX_COLOUR_ROW_SEED_OFF || state == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+static int Config_RowLockedByItem(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
 }
 
 static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
@@ -490,10 +492,10 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
-		if (Config_RowLockedBySeed(e) && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED)
+		if (Config_RowLockedByItem(e))
 		{
-			first = "Find AP Box Colours to see";
-			second = "box colours. Boxes stay pink.";
+			first = "Pink until AP Box Colours.";
+			second = "Set OFF to keep them pink.";
 		}
 		else if (Config_RowLockedBySeed(e))
 		{
@@ -534,8 +536,12 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 #ifdef CTR_AP
 	if (Config_RowLockedBySeed(e))
 	{
-		DecalFont_DrawLineOT(AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED ? "LOCKED (ITEM)" : "OFF (SEED)",
-		                     valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedByItem(e))
+	{
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif
@@ -1343,7 +1349,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			if (e == NULL)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
-				; // the seed or AP Box Colours (#459) holds the colours: nothing to toggle
+				; // the seed has item box colours off: nothing to toggle
 			else
 #endif
 			if (e->type == CFG_BOOL)

@@ -27,14 +27,25 @@ static inline int AP_Spoiler_BoxColoursUnlocked(int spoilerOn, int boxColoursRec
 	return !spoilerOn || boxColoursReceived;
 }
 
-// How many display bits the warp pad glow pass may show (AH_WarpPad.c): n while
-// previews are shown, 0 while held back, which hides all three prize slots the
-// way a pad with nothing left does. -1 (not an AP glow destination, vanilla
-// glow) passes through unchanged. Both layouts select from this count, so
-// one_pile and by_reward_type hide alike.
+// How many display bits the warp pad glow pass may lay out (AH_WarpPad.c): n
+// while previews are shown, 0 while held back. -1 (not an AP glow destination,
+// vanilla glow) passes through unchanged. Both layouts select from this count,
+// so one_pile and by_reward_type hide alike.
 static inline int AP_Spoiler_PadDisplayCount(int previewShown, int n)
 {
 	return (previewShown || n < 0) ? n : 0;
+}
+
+// Whether a held-back pad shows one neutral Archipelago marker in slot 0
+// instead (#459 ruling, 2026-10-28): yes while the pad still has
+// any open location behind it, n > 0, which counts every glow family (rewards,
+// podium rungs, item boxes, CTR letters and Wumpa). A finished pad, n == 0,
+// shows nothing, and so does a pad with previews shown or a vanilla pad.
+// markerReady: the Archipelago marker model is parked; without it the pad
+// stays hidden rather than showing a placeholder model.
+static inline int AP_Spoiler_PadNeutralMarker(int previewShown, int n, int markerReady)
+{
+	return !previewShown && n > 0 && markerReady;
 }
 
 #endif // AP_SPOILER_ITEMS_LOGIC_H
