@@ -40,6 +40,11 @@ int  ap_net_take_recv_reset(void);
 int  ap_net_seed_name(char *buf, int n);
 int  ap_net_slot_name(char *buf, int n);
 
+// #89 solo mode: journal every check of the solo room to `path` and resend the
+// journalled checks the server still misses on each slot-connect to `seed`.
+// NULL path stops journalling.
+void ap_net_set_check_journal(const char *path, const char *seed);
+
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
 // location_code: the item placed there, the player who receives it, and AP

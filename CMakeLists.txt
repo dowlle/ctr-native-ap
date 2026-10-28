@@ -283,6 +283,10 @@ if(CTR_AP)
     if(NOT CTR_AP_AUTHORING)
         target_sources(ap_net PRIVATE ap/ap_update_core.cpp ap/ap_update_net.cpp)
     endif()
+    # #89 solo mode: bundled runtime jobs and the private solo server. It uses
+    # SDL3's process API, so the library sees SDL's headers.
+    target_sources(ap_net PRIVATE ap/ap_solo.cpp)
+    target_link_libraries(ap_net PRIVATE SDL3::SDL3)
     if(CTR_CUSTOM_TRACKS)
         target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_TRACKS)

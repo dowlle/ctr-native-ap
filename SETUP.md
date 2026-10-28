@@ -263,6 +263,33 @@ same step by hand works for any file whose `.old` copy is still there (for
 example `ctr.apworld.old` back to `ctr.apworld`). Your `config.ini`, saves and
 the disc image are never touched by an update.
 
+## Playing solo, without a server
+
+From 0.3.0 the client can make and host a single-player seed itself. Choose
+**PLAY SOLO** on the title screen, or open **Options > Connection > Play Solo**:
+
+- **New solo seed** offers the bundled presets (Quick, Standard, Full
+  Adventure), any YAML you imported, and any YAML you drop into the `solo/inbox`
+  folder next to the game (the screen shows the path). A preset opens a short
+  options screen; Square shows what an option does. DeathLink is off in solo,
+  because nobody else is in the room.
+- When custom tracks are installed, a preset then shows **Custom Tracks**. Cross
+  on a track cycles: not used, **In pool** (the seed may use it) and **Own pad**
+  (it gets an Adventure pad of its own). A track is listed when its files are in
+  `assets/tracks/<track>/original` and the client knows its descriptor: from a
+  room that used the track, or a descriptor file in the `solo/tracks` folder.
+- **Import YAML file** takes a YAML you made with the YAML Builder.
+- **Import room file** takes a one-player CTR room (`.archipelago` or
+  `AP_*.zip`) generated elsewhere.
+- Your solo seeds are listed with their progress. Cross resumes one; Square shows
+  its details and lets you delete it.
+
+The client starts a private Archipelago server on your own computer
+(127.0.0.1, ports 38301 to 38320) and connects to it; nothing goes over the
+internet. Everything solo is stored in the `solo` folder next to the game, so
+back that folder up together with your memory cards. Multiplayer still uses
+**Connect** as before.
+
 ## Experimental custom content in 0.2.0
 
 The public archive contains no custom-track files. Version 0.2.0 recognizes one

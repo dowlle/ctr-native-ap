@@ -150,6 +150,7 @@ tools/test-seed-content.c
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
+tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-stat-select.c
