@@ -577,6 +577,13 @@ void TickSession()
 				s.state = AP_SOLO_SESSION_LIVE;
 				Log("connected to the solo room " + s.roomId);
 			}
+			else if (ap_net_status() == AP_NET_STATUS_ERROR)
+			{
+				// The room was refused at slot-connect (for example a slot_data
+				// schema this client cannot admit). Show the client's reason.
+				const char *why = ap_net_last_error();
+				SessionFail(std::string("The client refused this room") + (why && *why ? ": " + std::string(why) : "."));
+			}
 			else if (now - s.phaseStart > kConnectLimitMs)
 				SessionFail("Could not connect to the solo server.");
 		}
