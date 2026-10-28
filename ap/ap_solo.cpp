@@ -297,6 +297,7 @@ struct Session
 	uint64_t phaseStart = 0;
 	uint64_t stopStart = 0;
 	int runningRetries = 0;
+	uint64_t retryAt = 0;      // a respawn waiting for an old server to exit
 	bool reconnecting = false; // our own AP_Net_Reconnect call
 } g_session;
 
@@ -404,15 +405,12 @@ void TickJob()
 			g_job.result = ev.body;
 		else if (ev.kind == AP_SOLO_EV_ERROR)
 		{
+			// The wrapper exits right after an error line; end and reap it now
+			// so no child outlives a refused job.
 			JobFail(ev.errorKind, ev.message, ev.option);
-			g_job.child.kill();
-		}
-	}
-	if (g_job.state != AP_SOLO_JOB_RUNNING)
-	{
-		if (g_job.child.exited)
 			FinishJob();
-		return;
+			return;
+		}
 	}
 	if (g_job.child.exited)
 	{
@@ -476,6 +474,18 @@ void TickSession()
 	Session &s = g_session;
 	if (s.state == AP_SOLO_SESSION_NONE || s.state == AP_SOLO_SESSION_FAILED)
 		return;
+	if (s.retryAt != 0)
+	{
+		if (SDL_GetTicks() < s.retryAt)
+			return;
+		s.retryAt = 0;
+		if (!SessionSpawn())
+		{
+			s.error = AP_SoloErrorText("start", "");
+			s.state = AP_SOLO_SESSION_FAILED;
+		}
+		return;
+	}
 	std::vector<std::string> lines = s.child.poll();
 	for (const std::string &line : lines)
 	{
@@ -509,9 +519,7 @@ void TickSession()
 			{
 				s.runningRetries++;
 				s.child.release();
-				SDL_Delay(1200);
-				if (!SessionSpawn())
-					SessionFail(AP_SoloErrorText("start", ""));
+				s.retryAt = SDL_GetTicks() + 1200;
 				return;
 			}
 			s.child.release();
