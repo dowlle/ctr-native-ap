@@ -304,7 +304,7 @@ LAB_800aec34:
 		{
 			char joined[192];
 			// #169 tiers 2 and 3: the drawn rival and kit follow the track.
-			char rivalLine[48], kitLine[48];
+			char rivalLine[48], kitLine[96];
 			int used = snprintf(joined, sizeof joined, "%s", venueLine);
 			if (AP_BossRivalAdvert(advertBoss, rivalLine, (int)sizeof rivalLine) && used < (int)sizeof joined)
 				used += snprintf(joined + used, sizeof joined - used, "\r%s", rivalLine);
