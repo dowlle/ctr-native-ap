@@ -468,6 +468,16 @@ void AP_FeedDrawResults(void)
 // normal session is byte-identical.
 void AP_DrawSchemaWarning(void)
 {
+	// Item-box slot numbering does not match this seed (Contract 7e): the
+	// affected tracks stand no boxes. Lower, so it never overlaps the line above.
+	if (ctr_cfg.box_placement_refused)
+	{
+		static char boxWarn1[] = "!! ITEM BOX CHECKS OFF ON SOME TRACKS !!";
+		static char boxWarn2[] = "Box numbering does not match this seed.";
+		int y = ctr_cfg.schema_newer ? 0x14 + 2 * AP_FEED_LINE_H : 0x14;
+		DecalFont_DrawLine(boxWarn1, AP_FEED_X, y, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn2, AP_FEED_X, y + AP_FEED_LINE_H, FONT_SMALL, RED);
+	}
 	if (!ctr_cfg.schema_newer)
 		return;
 	// Static so the strings are not rebuilt per frame; DrawLine takes char*.

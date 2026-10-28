@@ -585,9 +585,10 @@ typedef struct
 	// every earlier client draws. Display only: no gate, location or item.
 	int color_boxes_by_item;
 	// item_box_checks.placement_counts: -1 means no count for that LevelID.
-	// An absent map leaves the legacy box behaviour intact; a malformed map
-	// refuses all retail item-box checks for this room.
+	// A room without the item_box_checks block is unaffected. A block with a
+	// missing, partial or malformed map refuses all retail item-box checks.
 	int box_placement_state; // 0 absent, 1 valid, -1 malformed
+	int box_placement_refused; // 1 once any track's box checks were refused (banner)
 	int box_placement_counts[CTR_CFG_BOX_TRACK_COUNT];
 	// #451: absent is off; receipts still use their own room-backed accounting.
 	int reserve_top_up;

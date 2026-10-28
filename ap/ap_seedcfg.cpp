@@ -90,51 +90,76 @@ extern "C" unsigned int ctr_cfg_box_placement_revision(void)
 	return s_box_parse_revision;
 }
 
+static void ap_seedcfg_refuse_box_placement()
+{
+	ctr_cfg.box_placement_state = -1;
+	ctr_cfg.box_placement_refused = 1;
+	ap_cfg_log("[AP CFG] item_box_checks.placement_counts refused (expected all 18 decimal retail LevelIDs with non-negative integer counts): all retail item-box checks disabled\n");
+}
+
 static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
 {
 	auto block = j.find("item_box_checks");
-	if (block == j.end() || !block->is_object() || !block->contains("placement_counts"))
-		return; // older rooms have no guard
+	if (block == j.end() || !block->is_object())
+		return; // no item-box checks in this room, nothing to guard
+	// Contract 7e: the block always carries all 18 retail counts. A block
+	// without them cannot be checked, so it is refused like a bad map.
+	if (!block->contains("placement_counts") || !(*block)["placement_counts"].is_object() ||
+	    (*block)["placement_counts"].size() != CTR_CFG_BOX_TRACK_COUNT)
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
 	const auto &counts = (*block)["placement_counts"];
-	if (!counts.is_object())
-		goto malformed;
 	for (auto it = counts.begin(); it != counts.end(); ++it)
 	{
 		const std::string key = it.key();
 		int level = 0;
 		if (key.empty())
-			goto malformed;
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
 		for (char digit : key)
 		{
 			if (digit < '0' || digit > '9' || level > (CTR_CFG_BOX_TRACK_COUNT - 1) / 10)
-				goto malformed;
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
 			level = level * 10 + digit - '0';
 		}
 		if (level >= CTR_CFG_BOX_TRACK_COUNT || std::to_string(level) != key ||
 		    !it.value().is_number_integer())
-			goto malformed;
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
 		int count;
 		if (it.value().is_number_unsigned())
 		{
 			auto number = it.value().get<std::uint64_t>();
 			if (number > INT_MAX)
-				goto malformed;
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
 			count = (int)number;
 		}
 		else
 		{
 			auto number = it.value().get<std::int64_t>();
 			if (number < 0 || number > INT_MAX)
-				goto malformed;
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
 			count = (int)number;
 		}
 		ctr_cfg.box_placement_counts[level] = count;
 	}
 	ctr_cfg.box_placement_state = 1;
 	return;
-malformed:
-	ctr_cfg.box_placement_state = -1;
-	ap_cfg_log("[AP CFG] item_box_checks.placement_counts refused (expected decimal retail LevelIDs and non-negative integer counts): all retail item-box checks disabled\n");
 }
 
 extern "C" int ctr_cfg_box_placement_valid(int levelID, int nativeCount)
@@ -146,6 +171,7 @@ extern "C" int ctr_cfg_box_placement_valid(int levelID, int nativeCount)
 	int expected = ctr_cfg.box_placement_counts[levelID];
 	if (expected < 0 || expected == nativeCount)
 		return 1;
+	ctr_cfg.box_placement_refused = 1;
 	if (s_box_warned_count[levelID] != nativeCount)
 	{
 		ap_cfg_log("[AP CFG] item_box_checks: %s (LevelID %d) placement count mismatch (seed %d, native %d); item-box checks disabled on this track\n",
@@ -1866,6 +1892,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.schema_version = 0;
 	ctr_cfg.schema_newer = 0;
 	ctr_cfg.box_placement_state = 0;
+	ctr_cfg.box_placement_refused = 0;
 	for (int level = 0; level < CTR_CFG_BOX_TRACK_COUNT; level++)
 	{
 		ctr_cfg.box_placement_counts[level] = -1;

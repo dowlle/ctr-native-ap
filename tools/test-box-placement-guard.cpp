@@ -53,15 +53,29 @@ int main()
 	for (int level = 0; level < CTR_CFG_BOX_TRACK_COUNT; ++level)
 		CHECK(seed["item_box_checks"]["placement_counts"][std::to_string(level)] == native_count(level));
 
-	auto legacy = seed;
-	legacy["item_box_checks"].erase("placement_counts");
-	parse(legacy);
-	CHECK(ctr_cfg.box_placement_state == 0);
+	// A block without its counts, or with a partial map, cannot be checked:
+	// refuse every retail track and raise the banner flag.
+	auto nomap = seed;
+	nomap["item_box_checks"].erase("placement_counts");
+	parse(nomap);
+	CHECK(ctr_cfg.box_placement_state == -1);
+	CHECK(ctr_cfg.box_placement_refused == 1);
 	for (int level = 0; level < CTR_CFG_BOX_TRACK_COUNT; ++level)
-		CHECK(ctr_cfg_box_placement_valid(level, native_count(level) + 1));
+		CHECK(!ctr_cfg_box_placement_valid(level, native_count(level)));
+	auto partial = seed;
+	partial["item_box_checks"]["placement_counts"].erase("7");
+	parse(partial);
+	CHECK(ctr_cfg.box_placement_state == -1);
+	CHECK(!ctr_cfg_box_placement_valid(7, native_count(7)));
+	CHECK(!ctr_cfg_box_placement_valid(3, native_count(3)));
+	// No block at all: item-box checks are off in this room, nothing to guard.
+	auto legacy = seed;
 	legacy.erase("item_box_checks");
 	parse(legacy);
+	CHECK(ctr_cfg.box_placement_state == 0);
+	CHECK(ctr_cfg.box_placement_refused == 0);
 	CHECK(ctr_cfg_box_placement_valid(3, native_count(3) + 1));
+	CHECK(ctr_cfg.box_placement_refused == 0);
 
 	parse(seed);
 	CHECK(ctr_cfg.box_placement_state == 1);
@@ -75,6 +89,7 @@ int main()
 	CHECK(ctr_cfg_box_placement_revision() != revision);
 	CHECK(!ctr_cfg_box_placement_valid(3, native_count(3)));
 	CHECK(ctr_cfg_box_placement_valid(4, native_count(4)));
+	CHECK(ctr_cfg.box_placement_refused == 1);
 	CHECK(log_lines.find("CRASH_COVE (LevelID 3) placement count mismatch") != std::string::npos);
 	CHECK(log_lines.find("seed 11, native 10") != std::string::npos);
 	auto once = log_lines.size();
@@ -82,6 +97,7 @@ int main()
 	CHECK(log_lines.size() == once);
 	// Reparse must clear the refusal and its diagnostic latch.
 	parse(seed);
+	CHECK(ctr_cfg.box_placement_refused == 0);
 	CHECK(ctr_cfg_box_placement_valid(3, native_count(3)));
 	auto zero = seed;
 	zero["item_box_checks"]["placement_counts"]["3"] = 0;
