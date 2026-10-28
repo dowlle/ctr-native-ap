@@ -1340,11 +1340,17 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		int g = AP_PadUncollectedGlowBits(destLevelID, glow, (int)(sizeof glow / sizeof glow[0]));
 		rungsLeft = 0;
 		for (k = 0; k < g; k++)
+		{
+			int cvSlot;
 			// Rung pseudo-bits occupy [0x100, 0x200); the other pseudo
 			// families (custom, trial, Cortex Vortex, perfect, boxes,
-			// letters, Wumpa) start at 0x200.
+			// letters, Wumpa) start at 0x200. The Cortex Vortex track's
+			// own rungs are its slots AP_CV_SLOT_RUNG0.. in its block.
 			if (glow[k] >= AP_PODIUM_PSEUDO_BASE && glow[k] < 0x200)
 				rungsLeft++;
+			else if (AP_CortexPseudoDecode(glow[k], &cvSlot) && cvSlot >= AP_CV_SLOT_RUNG0)
+				rungsLeft++;
+		}
 	}
 	plainLeft = rungsLeft + AP_PadUncollectedBoxCount(destLevelID) +
 	            AP_PadUncollectedWumpaCount(destLevelID) +

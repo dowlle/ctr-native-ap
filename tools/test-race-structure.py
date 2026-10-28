@@ -269,6 +269,8 @@ pads_rows = (root / "ap/ap_hooks_pads.c").read_text()
 rows_fn = pads_rows[pads_rows.index("int AP_PadSelectorRows("):]
 rows_fn = rows_fn[:rows_fn.index("\n}\n")]
 assert "rungsLeft" in rows_fn and "AP_PadUncollectedGlowBits(" in rows_fn
+# Cortex Vortex rungs live in its own pseudo-bit block, not [0x100, 0x200).
+assert "AP_CortexPseudoDecode(glow[k], &cvSlot) && cvSlot >= AP_CV_SLOT_RUNG0" in rows_fn
 race_src = (root / "ap/ap_hooks_race.c").read_text()
 assert "sent ? AP_CUSTOM_CTR_PSEUDO_BIT : AP_CUSTOM_TROPHY_PSEUDO_BIT" in race_src
 race = (root / "ap/ap_hooks_race.c").read_text()

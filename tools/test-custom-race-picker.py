@@ -32,7 +32,19 @@ struct Warp { int framesWarping, boolEnteredWarppad; } warp, *warppadObj=&warp;
 struct MenuRow { int stringIndex; };
 struct Menu { int rowSelected; struct MenuRow *rows; } apCustomRaceMenu;
 static struct MenuRow apCustomRaceRows[3], apCustomRaceRowsCtrFirst[2];
-struct { struct { struct { int AddBitsConfig8, RemBitsConfig8, AddBitsConfig0, RemBitsConfig0; } OnBegin; } Loading; } data, *sdata=&data;
+struct { struct { struct { int AddBitsConfig8, RemBitsConfig8, AddBitsConfig0, RemBitsConfig0; } OnBegin; } Loading;
+ struct { int rewards[4]; } advProgress; } data, *sdata=&data;
+/* #208 decision 16 seam: the CTR Challenge hint and Aku Aku's presence. */
+#define ADV_REWARD_FIRST_HINT 0
+#define ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE 0x1a
+static int hintSeen=1, hintRequests, akuSpeaking;
+#define CHECK_ADV_BIT(rewards, bit) ((void)(rewards), (void)(bit), hintSeen)
+void MainFrame_RequestMaskHint(short id, char interrupt) { assert(id==0x1a && interrupt==1); hintRequests++; }
+int AH_MaskHint_boolCanSpawn(void) { return !akuSpeaking; }
+/* #208 decision 15 seam: the effective race type menu setting. */
+#define AP_RS_SELECTOR_PRODUCTIVE 0
+static int selectorSetting=1;
+int AP_RaceTypeSelectorSetting(void) { return selectorSetting; }
 struct { int custom_ctr_enabled; struct { int replaces_cup_level_id; } custom_track; } ctr_cfg;
 static int apCustomRaceChoice, shown, checked, active=1;
 void VehPhysProc_Driving_Init(void) {}
@@ -71,6 +83,14 @@ int main(void) {
  data.Loading.OnBegin.AddBitsConfig8=32; data.Loading.OnBegin.RemBitsConfig8=64 | TOKEN_RACE;
  assert(evaluate()==1 && game.gameMode2==(16 | TOKEN_RACE));
  assert(data.Loading.OnBegin.AddBitsConfig8==(32 | TOKEN_RACE) && data.Loading.OnBegin.RemBitsConfig8==64);
+ /* Decision 16: the first CTR choice waits for Aku Aku, then loads; a seen hint is not asked again. */
+ hintSeen=0; hintRequests=0; akuSpeaking=1; warp.framesWarping=63; apCustomRaceChoice=0;
+ assert(evaluate()==-2 && hintRequests==1 && apCustomRaceChoice==1);
+ akuSpeaking=0; hintSeen=1; assert(evaluate()==1 && hintRequests==1);
+ /* Decision 15: PRODUCTIVE loads the single CTR row without the menu. */
+ selectorSetting=AP_RS_SELECTOR_PRODUCTIVE; warp.framesWarping=61; shown=0; apCustomRaceChoice=0;
+ assert(evaluate()==1 && shown==0 && apCustomRaceChoice==1);
+ selectorSetting=1;
  /* Back to classic for the routing matrix below. */
  ctrFirst=0; warp.framesWarping=61; apCustomRaceChoice=0; assert(evaluate()==-2);
  for(int choice=-1;choice<=1;choice++)

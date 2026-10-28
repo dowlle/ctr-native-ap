@@ -1650,13 +1650,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					apCustomRaceMenu.rows = apCustomRaceRowsCtrFirst;
 					apCustomRaceMenu.rowSelected = 0;
+					// Decision 15: PRODUCTIVE loads the one race directly.
+					if (AP_RaceTypeSelectorSetting() == AP_RS_SELECTOR_PRODUCTIVE)
+						apCustomRaceChoice = 1;
 				}
 				else
 				{
 					apCustomRaceMenu.rows = apCustomRaceRows;
 					apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
 				}
-				RECTMENU_Show(&apCustomRaceMenu);
+				if (apCustomRaceChoice == -2)
+					RECTMENU_Show(&apCustomRaceMenu);
 			}
 			if (apCustomRaceChoice == -2)
 				goto WarpPad_TrophyAnimateOnly;
@@ -1682,6 +1686,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				gGT->gameMode2 |= TOKEN_RACE;
 				sdata->Loading.OnBegin.RemBitsConfig8 &= ~TOKEN_RACE;
 				sdata->Loading.OnBegin.AddBitsConfig8 |= TOKEN_RACE;
+				// Decision 16: Aku Aku's first-time CTR Challenge hint, as
+				// from the race type selector; the choice stays latched
+				// while he speaks. Skip Mask Hints returns at once.
+				if (CHECK_ADV_BIT(sdata->advProgress.rewards,
+				                  ADV_REWARD_FIRST_HINT + ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE) == 0)
+					MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE, 1);
+				if ((AH_MaskHint_boolCanSpawn() & 0xffff) == 0)
+					goto WarpPad_TrophyAnimateOnly;
 			}
 		}
 #endif
