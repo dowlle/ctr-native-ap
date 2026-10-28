@@ -530,14 +530,16 @@ static int AP_PadTrackBoxSlots(int levelID)
 				continue;
 			if (lvl < 0 || lvl >= AP_BOX_TRACK_COUNT)
 				continue;
-			if (s_slots[lvl] >= AP_BOX_SLOTS_PER_TRACK)
-				continue; // past the frozen ceiling: no name, never spawns
 			s_slots[lvl]++;
 		}
 		s_gen = gen;
 	}
 
-	return s_slots[levelID];
+	// The guard compares the raw authored count, including rows beyond the
+	// frozen 15-slot ceiling. A refused track contributes no box checks to pad
+	// state or glow, matching the spawn path in ap_boxes.c.
+	return ctr_cfg_box_placement_valid(levelID, s_slots[levelID])
+	           ? s_slots[levelID] : 0;
 }
 
 // Server truth, in the shape AP_BoxMap_CountStanding wants. ap_boxes.c holds its
